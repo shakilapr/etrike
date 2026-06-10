@@ -1,0 +1,32 @@
+// System diagnostics — CAN 0x600 @ 1 Hz.
+
+#include "diagnostics.h"
+#include "config.h"
+#include "can/can_protocol.h"
+#include "can/can_driver.h"
+#include "esp_log.h"
+
+namespace sys {
+namespace {
+constexpr const char* kTag = "diag";
+}
+
+void Diagnostics::report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) {
+    // TEC/REC from TWAI — requires driver access; report 0 for now
+    can::SysDiag diag;
+    diag.mode          = mode;
+    diag.brake_engaged = brake_engaged;
+    diag.heartbeat_ok  = hb_ok;
+    diag.estop_active  = estop;
+    diag.free_heap_kb  = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
+    diag.tec = 0;
+    diag.rec = 0;
+
+    can::Frame fr;
+    diag.to_frame(fr);
+    // Sending handled by caller (diag_task in main.cpp)
+    ESP_LOGD(kTag, "mode=%d brake=%d hb=%d estop=%d heap=%uK",
+             mode, brake_engaged, hb_ok, estop, diag.free_heap_kb);
+}
+
+}  // namespace sys
