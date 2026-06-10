@@ -1,8 +1,8 @@
 #pragma once
-// CAN protocol definitions.
-// Bus 1 (public): Jetson <-> RT ESP32-S3.
-// Bus 2 (private): SYS ESP32-S3 <-> Syntree EPS-C/SEB actuators.
-// RT <-> SYS actuator setpoints use shared/intermcu, not CAN.
+// CAN protocol definitions — single ESP32-S3 + Jetson (2-node architecture).
+// Bus 0 (public, TWAI0): Jetson <-> ESP32-S3.
+// Bus 1 (private, TWAI1): ESP32-S3 <-> Syntree EPS-C/SEB actuators.
+// Internal setpoints: control_task -> setpoint_queue (xQueueOverwrite) -> motor_task.
 
 #include <cstdint>
 #include "os/endian.h"
@@ -13,27 +13,25 @@ namespace can {
 // Lower ID = higher arbitration priority on the bus.
 // Safety-critical messages have the lowest IDs.
 
-constexpr uint32_t kIdSysEstop         = 0x001;  // mirrored SYS emergency stop
-constexpr uint32_t kIdRtEstop          = 0x002;  // RT emergency stop
-constexpr uint32_t kIdHostEstop        = 0x003;  // Jetson emergency stop
-constexpr uint32_t kIdSysSafetyStatus  = 0x011;  // RT mirrors SYS safety to Jetson
-constexpr uint32_t kIdSysThrottlePos   = 0x120;  // RT mirrors SYS throttle to Jetson
-constexpr uint32_t kIdRtStateReport    = 0x210;  // RT → Jetson
-constexpr uint32_t kIdRtPidFeedback    = 0x220;  // RT → Jetson
-constexpr uint32_t kIdHostDriveCmd     = 0x300;  // Jetson → RT: drive command
-constexpr uint32_t kIdHostBrakeRequest = 0x301;  // Jetson → RT: brake pressure request
-constexpr uint32_t kIdRtObstacleDist   = 0x400;  // RT → Jetson
-constexpr uint32_t kIdSysDiag          = 0x600;  // RT mirrors SYS diagnostics to Jetson
-constexpr uint32_t kIdHeartbeat        = 0x7FF;  // Jetson/RT public alive signal
+constexpr uint32_t kIdEstop           = 0x001;  // emergency stop (button, CAN, or HB timeout)
+constexpr uint32_t kIdSafetyStatus    = 0x011;  // ESP32 → Jetson: safety status
+constexpr uint32_t kIdThrottlePos     = 0x120;  // ESP32 → Jetson: throttle position
+constexpr uint32_t kIdStateReport     = 0x210;  // ESP32 → Jetson: RT state report
+constexpr uint32_t kIdPidFeedback     = 0x220;  // ESP32 → Jetson: PID telemetry
+constexpr uint32_t kIdHostDriveCmd    = 0x300;  // Jetson → ESP32: drive command
+constexpr uint32_t kIdHostBrakeReq    = 0x301;  // Jetson → ESP32: brake pressure request
+constexpr uint32_t kIdObstacleDist    = 0x400;  // ESP32 → Jetson: obstacle distance
+constexpr uint32_t kIdSysDiag         = 0x600;  // ESP32 → Jetson: system diagnostics
+constexpr uint32_t kIdHeartbeat       = 0x7FF;  // all nodes: liveness signal
 
-// ── Private CAN ID assignments: SYS <-> Syntree actuators ───────
-constexpr uint32_t kIdSyntreeEpsCommand = 0x169;  // SYS → EPS-C, 20 ms command
-constexpr uint32_t kIdSyntreeEpsStatus  = 0x201;  // EPS-C → SYS, status feedback
-constexpr uint32_t kIdSyntreeSebCommand = 0x7B0;  // SYS → SEB, 20 ms command
-constexpr uint32_t kIdSyntreeSebStatus  = 0x721;  // SEB → SYS, status feedback
+// ── Private CAN ID assignments: ESP32-S3 <-> Syntree actuators ──
+constexpr uint32_t kIdSyntreeEpsCommand = 0x169;  // ESP32 → EPS-C, 20 ms command
+constexpr uint32_t kIdSyntreeEpsStatus  = 0x201;  // EPS-C → ESP32, status feedback
+constexpr uint32_t kIdSyntreeSebCommand = 0x7B9;  // ESP32 → SEB, 20 ms command
+constexpr uint32_t kIdSyntreeSebStatus  = 0x721;  // SEB → ESP32, status feedback
 
 inline bool is_estop_id(uint32_t id) {
-    return id == kIdSysEstop || id == kIdRtEstop || id == kIdHostEstop;
+    return id == kIdEstop;
 }
 
 // ── CAN frame (hardware-independent) ────────────────────────────
@@ -78,7 +76,7 @@ struct HostBrakeRequest {
         return { f.i32_at(0) };
     }
     void to_frame(Frame& f) const {
-        f.id = kIdHostBrakeRequest; f.dlc = 4; f.extended = false;
+        f.id = kIdHostBrakeReq; f.dlc = 4; f.extended = false;
         f.put_i32(0, brake_pressure_kpa);
     }
 };
@@ -91,12 +89,12 @@ struct RtObstacleDist {
         return { uint32_t(f.i32_at(0)) };
     }
     void to_frame(Frame& f) const {
-        f.id = kIdRtObstacleDist; f.dlc = 4; f.extended = false;
+        f.id = kIdObstacleDist; f.dlc = 4; f.extended = false;
         f.put_i32(0, int32_t(distance_mm));
     }
 };
 
-// 0x011 SYS_SAFETY_STATUS — RT mirrors SYS status to Jetson
+// 0x011 SAFETY_STATUS — ESP32 → Jetson
 struct SysSafetyStatus {
     bool estop_active  = false;
     bool heartbeat_ok  = false;
@@ -105,7 +103,7 @@ struct SysSafetyStatus {
         return { f.u8_at(0) != 0, f.u8_at(1) != 0 };
     }
     void to_frame(Frame& f) const {
-        f.id = kIdSysSafetyStatus; f.dlc = 2; f.extended = false;
+        f.id = kIdSafetyStatus; f.dlc = 2; f.extended = false;
         f.put_u8(0, estop_active ? 1 : 0);
         f.put_u8(1, heartbeat_ok  ? 1 : 0);
     }
@@ -135,7 +133,7 @@ struct SyntreeSebCommand {
     }
 };
 
-// 0x120 SYS_THROTTLE_POS
+// 0x120 THROTTLE_POS — ESP32 → Jetson
 struct SysThrottlePos {
     int16_t speed_mmps = 0;
 
@@ -143,7 +141,7 @@ struct SysThrottlePos {
         return { f.i16_at(0) };
     }
     void to_frame(Frame& f) const {
-        f.id = kIdSysThrottlePos; f.dlc = 2; f.extended = false;
+        f.id = kIdThrottlePos; f.dlc = 2; f.extended = false;
         f.put_i16(0, speed_mmps);
     }
 };
@@ -155,7 +153,7 @@ struct RtStateReport {
     bool    reversing   = false;
 
     void to_frame(Frame& f) const {
-        f.id = kIdRtStateReport; f.dlc = 3; f.extended = false;
+        f.id = kIdStateReport; f.dlc = 3; f.extended = false;
         f.put_u8(0, mode);
         f.put_u8(1, steer_valid ? 1 : 0);
         f.put_u8(2, reversing   ? 1 : 0);
@@ -169,14 +167,14 @@ struct RtPidFeedback {
     int16_t pid_output          = 0;
 
     void to_frame(Frame& f) const {
-        f.id = kIdRtPidFeedback; f.dlc = 6; f.extended = false;
+        f.id = kIdPidFeedback; f.dlc = 6; f.extended = false;
         f.put_i16(0, speed_setpoint_mmps);
         f.put_i16(2, speed_measured_mmps);
         f.put_i16(4, pid_output);
     }
 };
 
-// 0x600 SYS_DIAG — SYS → Jetson
+// 0x600 SYS_DIAG — ESP32 → Jetson
 struct SysDiag {
     uint8_t  mode          = 0;
     bool     brake_engaged = false;

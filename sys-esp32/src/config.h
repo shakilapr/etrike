@@ -9,12 +9,6 @@ constexpr int kCanTxGpio         =       5;
 constexpr int kCanRxGpio         =       4;
 constexpr bool kSyntreeCanOutputEnabled = false;  // enable only after checksum/DBC verification
 
-// ── RT/SYS inter-MCU link ──────────────────────────────────────
-constexpr int kInterMcuUartPort =       1;
-constexpr int kInterMcuBaud     = 2'000'000;
-constexpr int kInterMcuTxGpio   =      12;   // connect to RT RX
-constexpr int kInterMcuRxGpio   =      13;   // connect to RT TX
-
 // ── motor driver ───────────────────────────────────────────────
 constexpr int kMotorPwmGpio      =       6;
 constexpr int kMotorDirGpio      =       7;

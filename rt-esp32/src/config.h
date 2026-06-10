@@ -41,13 +41,7 @@ constexpr int kCanBitrateHz   = 500'000;
 constexpr int kCanTxGpio      =      5;
 constexpr int kCanRxGpio      =      4;
 
-// ── RT/SYS inter-MCU link ──────────────────────────────────────
-constexpr int kInterMcuUartPort =       1;
-constexpr int kInterMcuBaud     = 2'000'000;
-constexpr int kInterMcuTxGpio   =      12;   // connect to SYS RX
-constexpr int kInterMcuRxGpio   =      13;   // connect to SYS TX
-
-// ── GPIO ───────────────────────────────────────────────────────
+// ── GPIO (pre-unification — to be merged into esp32/config.h) ──
 constexpr int kSteerServoGpio  =  6;
 constexpr int kObstacleTrigGpio=  7;
 constexpr int kObstacleEchoGpio=  8;

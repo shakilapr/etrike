@@ -152,7 +152,7 @@ Priority                            Priority
 | `dispatch` | **0** | 4 | 3072 B | event | Parses `can_rx_queue`. Routes `0x300` → `cmd_queue`, `0x301` → atomic, ESTOP IDs → `mode_set()`. |
 | `mode` | **0** | 4 | 2048 B | 10 Hz | Reads mode switch GPIO. Calls `mode_set()`. Ignored in ESTOP. |
 | `can_tx` | **0** | 4 | 3072 B | 5 Hz | Periodic safety status `0x011`. |
-| `control` | **1** | 4 | 4096 B | 100 Hz | `vTaskDelayUntil`. Physics resolve → obstacle limit → PID update → `setpoint_queue`. |
+| `control` | **1** | 4 | 4096 B | 100 Hz | Reads IMU yaw rate via I2C. `vTaskDelayUntil`. Physics resolve → obstacle limit → PID update → `setpoint_queue`. |
 | `motor` | **1** | 4 | 2048 B | 100 Hz | Reads `setpoint_queue`. Writes LEDC PWM + direction GPIO. In ESTOP, calls `motor_stop()`. |
 | `syntree_tx` | **1** | 4 | 3072 B | 50 Hz | Sends EPS-C and SEB command frames on private CAN bus (when enabled). |
 | `throttle` | **1** | 3 | 1536 B | 100 Hz | Reads ADC1_CH5, maps to speed, stores to atomic for CAN `0x120`. |
@@ -250,7 +250,7 @@ E-stop button (GPIO1 LOW) ──► safety_task (Core 0, prio 5)
 | E-stop button | 1 | Input | Active-low, internal pull-up |
 | Brake lever | 2 | Input | Active-low, internal pull-up |
 | **Throttle** | | | |
-| Throttle ADC | 10 | Input | ADC1_CH5, 12-bit, 0–3.3V |
+| Throttle ADC | 10 | Input | ADC1_CH9, 12-bit, 0–3.3V |
 | **Mode switch** | | | |
 | Mode switch | 11 | Input | Pull-up (Manual), GND (Auto) |
 | **Steering servo** | | | |
@@ -261,6 +261,9 @@ E-stop button (GPIO1 LOW) ──► safety_task (Core 0, prio 5)
 | **Encoder** | | | |
 | Encoder A | 3 | Input | Speed feedback (PCNT) |
 | Encoder B | 17 | Input | Speed feedback (PCNT) |
+| **IMU** | | | |
+| IMU SDA | 19 | I/O | I2C data (MPU6050 or similar) |
+| IMU SCL | 20 | Output | I2C clock |
 | **External watchdog** | | | |
 | Watchdog toggle | 21 | Output | Toggled by safety_task every tick |
 
@@ -305,7 +308,7 @@ constexpr int kEstopGpio         =       1;   // active-low
 constexpr int kBrakeLeverGpio    =       2;   // active-low
 
 // ── throttle ADC ───────────────────────────────────────────
-constexpr int      kThrottleAdcChannel  = 5;   // ADC1_CH5 → GPIO10
+constexpr int      kThrottleAdcChannel  = 9;   // ADC1_CH9 → GPIO10
 constexpr unsigned kThrottleDeadZone    = 200;
 constexpr int      kThrottleMaxSpeedMmps = 3000;
 
@@ -333,15 +336,19 @@ constexpr int      kObstacleEchoGpio    =    16;
 constexpr int kEncoderAGpio       =       3;
 constexpr int kEncoderBGpio       =      17;
 
+// ── IMU ────────────────────────────────────────────────────
+constexpr int kImuSdaGpio         =      19;
+constexpr int kImuSclGpio         =      20;
+
 // ── external watchdog ──────────────────────────────────────
 constexpr int kExtWatchdogGpio    =      21;
 
 // ── timing ─────────────────────────────────────────────────
 constexpr int kControlLoopHz       = 100;
 constexpr int kHeartbeatIntervalMs = 500;
-constexpr int kHeartbeatTimeoutMs  = 200;
-constexpr int kSafetyCheckHz       =  20;
-constexpr int kCmdStaleTimeoutMs   = 200;
+constexpr int kJetsonHbTimeoutMs   = 1500;  // Jetson heartbeat loss → ESTOP
+constexpr int kCmdStaleTimeoutMs   =  200;  // drive command stale → zero setpoint
+constexpr int kSafetyCheckHz       =   20;
 ```
 
 ---
@@ -392,7 +399,7 @@ Layer 4 — EXTERNAL WATCHDOG IC
 | E-stop pressed | GPIO1 LOW | `mode_set(ESTOP)` → motor stop, brake engage, steering disable |
 | CAN bus-off (public) | TWAI0 TEC > 255 | Log error, auto-recovery via TWAI hardware |
 | CAN bus-off (private) | TWAI1 TEC > 255 | Log error, EPS/SEB commands stop → actuators enter safe state |
-| Heartbeat timeout (Jetson) | >200 ms since last 0x7FF | `mode_set(ESTOP)` (AUTO mode only) |
+| Heartbeat timeout (Jetson) | >1500 ms since last 0x7FF | `mode_set(ESTOP)` (AUTO mode only) |
 | Command stale | >200 ms since last 0x300 | Zero setpoint → controlled stop |
 | Obstacle timeout | Echo pulse >30 ms | Distance = UINT32_MAX (no reading → passes through) |
 | Encoder missing | `encoder_get_speed_mmps()` returns 0 | PID operates on stale measurement (I-term saturates) |

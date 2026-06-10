@@ -59,3 +59,10 @@ CMakeLists.txt
 *.gcno
 *.gcov
 coverage/
+
+
+
+
+work-plan.md
+
+work-orders/
