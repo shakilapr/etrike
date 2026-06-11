@@ -4,6 +4,7 @@ Three-node distributed control: **Jetson** (ROS 2 perception/planning), **RT ESP
 
 ## Node topology
 
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                        CAN Bus (500 kbit/s)                   │
