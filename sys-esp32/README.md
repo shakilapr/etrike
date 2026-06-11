@@ -1,32 +1,6 @@
 # SYS ESP32-S3 — Safety, Motor Actuation & Body Control
 
-**Low-level CAN bus only** (built-in TWAI). All Jetson communication via RT gateway.
-
-Owns E-stop monitoring, CAN brake actuation, DC-DC converter control (CAN `0x012`), bidirectional throttle (0–5 V ADC/DAC), bidirectional gear selection (72 V D/S/R), mode switching, RT heartbeat watchdog, signal lights, mode indicator lights, 12 V accessory power, and system diagnostics.
-
-## Architecture
-
-See [`architecture-sys.md`](../architecture-sys.md) for full details.
-
-## 15 FreeRTOS tasks
-
-| Task | Prio | Rate |
-|------|------|------|
-| `can_rx` | 5 | Event-driven |
-| `safety` | 5 | 20 Hz fixed |
-| `dispatch` | 4 | Event-driven |
-| `mode` | 4 | 10 Hz |
-| `motor` | 4 | 100 Hz fixed |
-| `throttle` | 3 | 100 Hz fixed |
-| `gear` | 3 | 50 Hz fixed |
-| `brake` | 3 | 20 Hz fixed |
-| `lights` | 3 | 20 Hz fixed |
-| `dcdc` | 3 | 5 Hz |
-| `indicator` | 2 | 5 Hz |
-| `power` | 2 | 5 Hz |
-| `can_tx` | 2 | 5 Hz fixed |
-| `diag` | 1 | 1 Hz |
-| `hb` | 1 | 2 Hz |
+See [`architecture.md`](../architecture.md) for full system design.
 
 ## Build
 
@@ -36,6 +10,8 @@ pio run              # build
 pio run -t upload    # flash
 pio device monitor   # serial console
 ```
+
+Target: `esp32-s3-devkitc-1` | Framework: `espidf` | FreeRTOS, 1000 Hz tick
 
 ## Host tests
 
