@@ -1,10 +1,10 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_motor_driver.cpp ../src/motor_driver.cpp -o test_motor_driver && ./test_motor_driver
+// g++ -std=c++17 -I. -I../src test_motor_driver.cpp ../src/motor_driver.cpp -o test_motor_driver && ./test_motor_driver
 
 #include <cstdio>
 #include "stubs.h"
-#include "config.h"
-#include "motor_driver.h"
-#include "intermcu/intermcu_protocol.h"
+#include "../src/config.h"
+#include "../src/motor_driver.h"
+// intermcu/ removed — obsolete inter-MCU protocol
 
 static int tests_run = 0, tests_pass = 0, tests_fail = 0;
 #define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; } \

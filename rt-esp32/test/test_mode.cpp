@@ -1,11 +1,11 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_mode.cpp ../src/mode_manager.cpp -o test_mode && ./test_mode
+// g++ -std=c++17 -I. -I../src test_mode.cpp ../src/mode_manager.cpp -o test_mode && ./test_mode
 
 #include <cstdio>
 #include <cstring>
 #include "stubs.h"
-#include "config.h"
-#include "can/can_protocol.h"
-#include "mode_manager.h"
+#include "../src/config.h"
+#include "../src/can_protocol.h"
+#include "../src/mode_manager.h"
 
 static int tests_run = 0, tests_pass = 0, tests_fail = 0;
 #define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; } \

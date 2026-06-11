@@ -1,7 +1,7 @@
 #pragma once
 // Testable private CAN RX routing policy for SYS.
 
-#include "can/can_protocol.h"
+#include "can_protocol.h"
 
 namespace sys {
 

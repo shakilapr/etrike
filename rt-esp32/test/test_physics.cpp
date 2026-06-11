@@ -1,4 +1,4 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_physics.cpp -o test_physics && ./test_physics
+// g++ -std=c++17 -I. -I../src test_physics.cpp ../src/physics_model.cpp -o test_physics && ./test_physics
 
 #include <cstdio>
 #include <cmath>
@@ -8,8 +8,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#include "config.h"
-#include "physics_model.h"
+#include "../src/config.h"
+#include "../src/physics_model.h"
+using namespace cfg;
 
 static int tests_run = 0, tests_pass = 0, tests_fail = 0;
 #define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; } \

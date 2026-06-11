@@ -19,6 +19,7 @@ template<typename T> constexpr const T& clamp(const T& v, const T& lo, const T& 
 
 namespace rt {
 namespace {
+using namespace cfg;
 
 constexpr const char* kTag    = "steer";
 constexpr auto        kTimer  = LEDC_TIMER_0;

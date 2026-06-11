@@ -1,11 +1,11 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_control_logic.cpp ../src/control_logic.cpp ../src/physics_model.cpp ../src/speed_pid.cpp -o test_control_logic && ./test_control_logic
+// g++ -std=c++17 -I. -I../src test_control_logic.cpp ../src/control_logic.cpp ../src/physics_model.cpp ../src/speed_pid.cpp -o test_control_logic && ./test_control_logic
 
 #include <cstdio>
 #include <cmath>
 
-#include "config.h"
-#include "control_logic.h"
-#include "intermcu/intermcu_protocol.h"
+#include "../src/config.h"
+#include "../src/control_logic.h"
+// intermcu/ removed — Setpoint struct now defined in control_logic.h
 
 static int tests_run = 0, tests_pass = 0, tests_fail = 0;
 #define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; } \

@@ -2,8 +2,8 @@
 
 #include "diagnostics.h"
 #include "config.h"
-#include "can/can_protocol.h"
-#include "can/can_driver.h"
+#include "can_protocol.h"
+#include "can_driver.h"
 #include "esp_log.h"
 
 namespace sys {

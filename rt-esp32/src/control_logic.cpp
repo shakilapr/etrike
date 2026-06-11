@@ -1,19 +1,18 @@
-// RT control composition — converts a motion command into an inter-MCU setpoint.
+// Control composition — converts a motion command into a motor/steering/brake setpoint.
+// TODO Phase 5: full rewrite for unified single-ESP32 queue-based pipeline.
 
 #include "control_logic.h"
 #include <algorithm>
 
-#ifndef __cpp_lib_clamp
-namespace std {
-template<typename T> constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
-    return (v < lo) ? lo : (hi < v) ? hi : v;
+namespace {
+constexpr int32_t kMotorEffortMax = 8191;    // 13-bit PWM max
+constexpr uint8_t kFlagAutoEnable = 0x01;
+constexpr uint8_t kFlagEpsEnable  = 0x02;
 }
-}
-#endif
 
 namespace rt {
 
-inter_mcu::RtToSysSetpoint resolve_drive_setpoint(
+Setpoint resolve_drive_setpoint(
     PhysicsModel& physics,
     SpeedPid& pid,
     const DriveCmd& cmd,
@@ -32,21 +31,18 @@ inter_mcu::RtToSysSetpoint resolve_drive_setpoint(
         static_cast<float>(measured_speed_mmps),
         dt_s);
 
-    const int32_t motor_effort_pwm = std::clamp(
-        static_cast<int32_t>(effort),
-        -inter_mcu::kMotorEffortMax,
-        inter_mcu::kMotorEffortMax);
+    const int32_t motor_effort_pwm = std::max(
+        std::min(static_cast<int32_t>(effort), kMotorEffortMax),
+        -kMotorEffortMax);
 
-    // Brake arbitration: RT floor (0 today, obstacle-emergency later),
-    // Jetson can increase but never decrease below RT's safety floor.
-    const int32_t rt_computed_brake = 0;  // future: obstacle stop → hard brake
+    const int32_t rt_computed_brake = 0;
     const int32_t brake_pressure_kpa = std::max(rt_computed_brake, brake_request_kpa);
 
     return {
-        motor_effort_pwm,
         resolved.steer_angle_mdeg,
+        motor_effort_pwm,
         brake_pressure_kpa,
-        inter_mcu::kFlagAutoEnable | inter_mcu::kFlagEpsEnable,
+        kFlagAutoEnable | kFlagEpsEnable,
     };
 }
 

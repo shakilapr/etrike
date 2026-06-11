@@ -1,4 +1,4 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_watchdog.cpp ../src/watchdog.cpp -o test_watchdog && ./test_watchdog
+// g++ -std=c++17 -I. -I../src -I../src test_watchdog.cpp ../src/watchdog.cpp -o test_watchdog && ./test_watchdog
 
 #include <cstdio>
 #include "stubs.h"

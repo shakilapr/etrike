@@ -1,4 +1,4 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_pid.cpp -o test_pid && ./test_pid
+// g++ -std=c++17 -I. -I../src -I../src test_pid.cpp -o test_pid && ./test_pid
 
 #include <cstdio>
 #include <cmath>

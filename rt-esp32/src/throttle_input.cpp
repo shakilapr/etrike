@@ -8,6 +8,7 @@
 
 namespace sys {
 namespace {
+using namespace cfg;
 
 constexpr const char* kTag = "thr";
 std::atomic<int32_t> g_throttle_mmps{0};

@@ -7,6 +7,7 @@
 
 namespace sys {
 namespace {
+using namespace cfg;
 constexpr const char* kTag = "brake";
 }
 

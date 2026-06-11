@@ -1,4 +1,4 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_safety.cpp ../src/safety_monitor.cpp -o test_safety && ./test_safety
+// g++ -std=c++17 -I. -I../src -I../src test_safety.cpp ../src/safety_monitor.cpp -o test_safety && ./test_safety
 
 #include <cstdio>
 #include <cstdint>

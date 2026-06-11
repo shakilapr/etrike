@@ -1,4 +1,4 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_can_rx_router.cpp ../src/can_rx_router.cpp -o test_can_rx_router && ./test_can_rx_router
+// g++ -std=c++17 -I. -I../src -I../src test_can_rx_router.cpp ../src/can_rx_router.cpp -o test_can_rx_router && ./test_can_rx_router
 
 #include <cstdio>
 #include "can_rx_router.h"

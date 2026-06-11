@@ -1,9 +1,9 @@
-// g++ -std=c++17 -I. -I../../shared test_can_protocol.cpp -o test_can && ./test_can
+// g++ -std=c++17 -I. -I../src test_can_protocol.cpp -o test_can && ./test_can
 
 #include <cstdio>
 #include <cstdint>
 
-#include "can/can_protocol.h"
+#include "../src/can_protocol.h"
 
 static int tests_run = 0, tests_pass = 0, tests_fail = 0;
 #define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; } \

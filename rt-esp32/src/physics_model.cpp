@@ -16,6 +16,7 @@ template<typename T> constexpr const T& clamp(const T& v, const T& lo, const T& 
 
 namespace rt {
 namespace {
+using namespace cfg;
 
 constexpr const char* kTag = "physics";
 constexpr float kPi = 3.14159265358979323846f;

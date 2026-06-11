@@ -11,11 +11,10 @@
 #include "speed_pid.h"
 #include "obstacle_sensor.h"
 #include "watchdog.h"
-#include "can/can_protocol.h"
-#include "can/can_driver.h"
-#include "intermcu/intermcu_protocol.h"
-#include "intermcu/intermcu_driver.h"
+#include "can_protocol.h"
+#include "can_driver.h"
 #include "os/queue.h"
+// NOTE: intermcu/ removed — Phase 3 will rewrite this file for unified single-ESP32 architecture
 #include <atomic>
 
 namespace {

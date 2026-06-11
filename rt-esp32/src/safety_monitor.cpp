@@ -9,10 +9,11 @@
 namespace sys {
 namespace {
 constexpr const char* kTag = "safety";
+using namespace cfg;
 }
 
 void SafetyMonitor::init() {
-    m_last_hb_rt_us = 0;
+    m_last_hb_us = 0;
     gpio_set_direction(kEstopGpio, GPIO_MODE_INPUT);
     gpio_set_pull_mode(kEstopGpio, GPIO_PULLUP_ONLY);
     gpio_set_direction(kBrakeLeverGpio, GPIO_MODE_INPUT);
@@ -28,18 +29,14 @@ bool SafetyMonitor::brake_lever_pressed() const {
     return gpio_get_level(kBrakeLeverGpio) == 0;  // active-low
 }
 
-void SafetyMonitor::feed_heartbeat_rt() {
-    m_last_hb_rt_us = esp_timer_get_time();
-}
-
-void SafetyMonitor::feed_heartbeat_jetson() {
-    // SYS no longer sees Jetson directly. RT owns Jetson command freshness.
+void SafetyMonitor::feed_heartbeat() {
+    m_last_hb_us = esp_timer_get_time();
 }
 
 bool SafetyMonitor::heartbeat_ok() const {
     int64_t now = esp_timer_get_time();
-    int64_t rt_elapsed = (now - m_last_hb_rt_us) / 1000;
-    return rt_elapsed < kHeartbeatTimeoutMs;
+    int64_t elapsed = (now - m_last_hb_us) / 1000;
+    return elapsed < kJetsonHbTimeoutMs;
 }
 
 }  // namespace sys

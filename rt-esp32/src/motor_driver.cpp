@@ -2,8 +2,11 @@
 
 #include "motor_driver.h"
 #include "config.h"
-#include "intermcu/intermcu_protocol.h"
 #include <algorithm>
+
+namespace {
+constexpr int32_t kMotorEffortMax = 8191;  // 13-bit PWM (was inter_mcu::kMotorEffortMax)
+}
 
 #ifndef __cpp_lib_clamp
 namespace std {
@@ -19,6 +22,7 @@ template<typename T> constexpr const T& clamp(const T& v, const T& lo, const T& 
 
 namespace sys {
 namespace {
+using namespace cfg;
 
 constexpr const char* kTag     = "motor";
 constexpr auto        kTimer   = LEDC_TIMER_1;
@@ -66,8 +70,8 @@ void MotorDriver::set_speed(int32_t speed) {
 void MotorDriver::set_effort(int32_t effort_pwm) {
     effort_pwm = std::clamp(
         effort_pwm,
-        -inter_mcu::kMotorEffortMax,
-        inter_mcu::kMotorEffortMax);
+        -kMotorEffortMax,
+        kMotorEffortMax);
 
     gpio_set_level(kMotorDirGpio, effort_pwm >= 0 ? 1 : 0);
     uint32_t duty = static_cast<uint32_t>(effort_pwm >= 0 ? effort_pwm : -effort_pwm);

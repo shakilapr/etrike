@@ -8,6 +8,7 @@
 
 namespace sys {
 namespace {
+using namespace cfg;
 
 constexpr const char* kTag = "mode";
 std::atomic<int> g_mode{static_cast<int>(can::Mode::Manual)};

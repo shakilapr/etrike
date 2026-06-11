@@ -9,6 +9,7 @@
 
 namespace rt {
 namespace {
+using namespace cfg;
 
 constexpr const char* kTag = "obs";
 std::atomic<unsigned> g_distance_mm{UINT32_MAX};

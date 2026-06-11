@@ -2,7 +2,7 @@
 // Mode state machine — MANUAL ↔ AUTO (switch), ANY → ESTOP (button/CAN).
 // ESTOP cannot be overridden by the mode switch.
 
-#include "can/can_protocol.h"
+#include "can_protocol.h"
 
 namespace sys {
 

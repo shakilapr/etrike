@@ -1,6 +1,6 @@
 #pragma once
 // CAN driver — RAII wrapper around ESP-IDF TWAI.
-// Shared between RT and SYS ESP32-S3 (identical hardware interface).
+// Single ESP32-S3 operates two TWAI controllers (public + private CAN buses).
 
 #include "can_protocol.h"
 #include "freertos/FreeRTOS.h"
