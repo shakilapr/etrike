@@ -1,12 +1,14 @@
 # SYS ESP32-S3 — Safety, Motor Actuation & Body Control
 
-Owns E-stop monitoring, brake CAN actuation, bidirectional throttle (0–5 V ADC/DAC), bidirectional gear selection (72 V D/S/R), mode switching, heartbeat watchdog, signal lights, mode indicator lights, 12 V accessory power, and system diagnostics.
+**Low-level CAN bus only** (built-in TWAI). All Jetson communication via RT gateway.
+
+Owns E-stop monitoring, CAN brake actuation, DC-DC converter control (CAN `0x012`), bidirectional throttle (0–5 V ADC/DAC), bidirectional gear selection (72 V D/S/R), mode switching, RT heartbeat watchdog, signal lights, mode indicator lights, 12 V accessory power, and system diagnostics.
 
 ## Architecture
 
 See [`architecture-sys.md`](../architecture-sys.md) for full details.
 
-## 14 FreeRTOS tasks
+## 15 FreeRTOS tasks
 
 | Task | Prio | Rate |
 |------|------|------|
@@ -19,6 +21,7 @@ See [`architecture-sys.md`](../architecture-sys.md) for full details.
 | `gear` | 3 | 50 Hz fixed |
 | `brake` | 3 | 20 Hz fixed |
 | `lights` | 3 | 20 Hz fixed |
+| `dcdc` | 3 | 5 Hz |
 | `indicator` | 2 | 5 Hz |
 | `power` | 2 | 5 Hz |
 | `can_tx` | 2 | 5 Hz fixed |
