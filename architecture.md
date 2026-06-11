@@ -74,47 +74,75 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
 | ID | Name | Sender | Receiver(s) | DLC | Payload | Period | Prio |
 |----|------|--------|-------------|-----|---------|--------|------|
 | `0x001` | SAFETY_ESTOP | Any | All (bridged to high) | 0 | (none) | Event | Highest |
-| `0x011` | SYS_SAFETY_STATUS | SYS | RT (→ Jetson) | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
+| `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC converter | 1 | u8 enable | Change | V.High |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A) | Change | High |
-| `0x120` | SYS_THROTTLE_POS | SYS | RT (→ Jetson) | 2 | i16 speed_mmps | 100 Hz | Medium |
+| `0x120` | SYS_THROTTLE_STS | SYS | RT (→ Jetson) | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x200` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
-| `0x202` | RT_DRIVE_SETPOINT | RT | SYS | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
+| `0x202` | RT_DRIVE_CMD | RT | SYS | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | u8 lights bitfield | Change | Medium |
-| `0x600` | SYS_DIAG | SYS | RT (→ Jetson) | 8 | diag struct | 1 Hz | Lowest |
+| `0x600` | SYS_DIAG_RPT | SYS | RT (→ Jetson) | 8 | diag struct | 1 Hz | Lowest |
 | `0x720` | VCU_SEB_REQ | SYS | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Medium |
 | `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status feedback | 100 Hz | Medium |
-| `0x7FF` | HEARTBEAT | RT, SYS | RT, SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
 
-> **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x200` and status `0x201`. SEB uses factory command `0x720` and status `0x721`. `RT_DRIVE_SETPOINT` is placed at `0x202` to avoid collision with EPS-C `0x200`.
+> **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x200` and status `0x201`. SEB uses factory command `0x720` and status `0x721`. `RT_DRIVE_CMD` is placed at `0x202` to avoid collision with EPS-C `0x200`.
 
 ### 2.2 High-level CAN
 
 | ID | Name | Sender | Receiver(s) | DLC | Payload | Period | Prio |
 |----|------|--------|-------------|-----|---------|--------|------|
 | `0x001` | SAFETY_ESTOP | RT (fwd), Jetson | Jetson, RT | 0 | (none) | Event | Highest |
-| `0x011` | SYS_SAFETY_STATUS | RT (fwd) | Jetson | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
-| `0x120` | SYS_THROTTLE_POS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
-| `0x210` | RT_STATE_REPORT | RT | Jetson | 3 | u8 mode, u8 steer_valid, u8 reversing | 10 Hz | Low |
-| `0x220` | RT_PID_FEEDBACK | RT | Jetson | 6 | i16 sp, i16 meas, i16 out | 10 Hz | Low |
+| `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
+| `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
+| `0x210` | RT_STATE_RPT | RT | Jetson | 3 | u8 mode, u8 steer_valid, u8 reversing | 10 Hz | Low |
+| `0x220` | RT_PID_RPT | RT | Jetson | 6 | i16 sp, i16 meas, i16 out | 10 Hz | Low |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | i32 speed_mmps, i32 yaw_rate_mrad_s | ≤100 Hz | Medium |
-| `0x301` | HOST_BRAKE_REQUEST | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |
+| `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→ SYS) | 1 | u8 lights bitfield | Change | Medium |
-| `0x400` | RT_OBSTACLE_DIST | RT | Jetson | 4 | u32 distance_mm | 10 Hz | Low |
-| `0x600` | SYS_DIAG | RT (fwd) | Jetson | 8 | diag struct | 1 Hz | Lowest |
-| `0x7FF` | HEARTBEAT | RT, Jetson | RT, Jetson | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x400` | RT_OBSTACLE_RPT | RT | Jetson | 4 | u32 distance_mm | 10 Hz | Low |
+| `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | diag struct | 1 Hz | Lowest |
+| `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FC` | JETSON_HEARTBEAT | Jetson | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
 
 > Bit-level signal layouts in [`can-dictionary.md`](can-dictionary.md).
 
-### 2.3 CAN gateway forwarding (RT)
+### 2.3 RT CAN gateway — message handling by category
 
-| Direction | IDs forwarded | Notes |
-|-----------|--------------|-------|
-| Low → High | `0x001`, `0x011`, `0x120`, `0x600` | Transparent — same ID, same payload |
-| High → Low | `0x001`, `0x302` | Transparent |
+RT is the only dual-bus node. Every CAN message falls into exactly one of three categories:
 
-**Not forwarded**: `0x300`, `0x301` (consumed by RT); `0x200`, `0x202` (RT-generated on low); `0x210`, `0x220`, `0x400` (RT-generated on high); `0x012`, `0x110`, `0x720` (low only); `0x201`, `0x721` (low only, SYNTREE feedback); `0x7FF` (per-bus, alive counter, not bridged).
+#### Category 1: Transparent forward
+
+RT copies the frame to the other bus unchanged — same CAN ID, same payload, same DLC. The receiving node cannot tell whether RT or the original sender transmitted it.
+
+| Direction | IDs forwarded | Example |
+|-----------|--------------|---------|
+| Low → High | `0x001`, `0x011`, `0x120`, `0x600` | SYS sends `0x011` on low → RT transmits `0x011` on high → Jetson receives |
+| High → Low | `0x001`, `0x302` | Jetson sends `0x302` on high → RT transmits `0x302` on low → SYS receives |
+
+> `0x001` is the only bidirectional forward — ESTOP originates on either bus and must reach all nodes on both buses.
+
+#### Category 2: Consumed by RT → different message generated on other bus
+
+RT receives a command on one bus, processes it internally, and transmits a **different** CAN ID with **different** payload on the other bus. These are not forwards — they are translations.
+
+| Inbound (consumed) | Bus | Processing | Outbound (generated) | Bus |
+|--------------------|-----|-----------|----------------------|-----|
+| `0x300` HOST_DRIVE_CMD | High | Kinematics + PID → `ResolvedSetpoint` | `0x202` RT_DRIVE_CMD + `0x200` VCU_SES_REQ | Low |
+| `0x301` HOST_BRAKE_REQ | High | Max-select arbitration (TBD path to SYS — gap #1) | *(none yet)* | — |
+
+#### Category 3: Bus-local (never forwarded, never regenerated)
+
+These messages serve only nodes on a single bus. RT neither forwards nor translates them.
+
+| Bus | IDs | Reason |
+|-----|-----|--------|
+| Low only | `0x012`, `0x110`, `0x200`, `0x202`, `0x720` | DC-DC, mode, steering, drive, and brake commands. RT-generated or SYS-generated — never leave low bus. |
+| Low only | `0x201`, `0x721` | SYNTREE status feedback — RT/SYS consume locally for boot sync and monitoring |
+| High only | `0x210`, `0x220`, `0x400` | RT telemetry — generated by RT for Jetson consumption only |
+| Both (independent) | `0x7FF` | Per-bus heartbeat with alive counter — MUST NOT be bridged (see §8.6). Each bus has its own liveness domain. |
 
 ---
 
@@ -157,7 +185,7 @@ Throttle grip (0–5V) ──► SYS ADC ──► SYS MCP4725 (0–5V) ──�
 Gear selector (72V)  ──► TLP281 opto → SYS GPIO ──► relay module → 72V → ECU
 Brake lever           ──► SYS GPIO ──► CAN 0x720 → SEB (stroke=MAX if pressed)
 Steering wheel        ──► EPS-C standalone (RT idle, monitors 0x201)
-Signal lights         ──► Turn/head: rider switches (TBD). Brake: OR logic (lever + ESTOP) → GPIO21
+Signal lights         ──► Turn: handlebar switches (GPIO3/6). Head: toggle (GPIO7). Brake: OR logic → GPIO21
 DC-DC converter       ──► SYS CAN 0x012 enable=1 → 12V rail on
 ```
 
@@ -200,7 +228,7 @@ SYS ────► Low CAN 0x720 → SEB (50 Hz continuous: stroke control)
 | Brake boot sync (Listen-Before-Speaking) | | | ✓ |
 | Brake rolling counter + checksum | | | ✓ |
 | DC-DC converter CAN control (`0x012`) | | | ✓ |
-| Heartbeat monitoring | | ✓ (Jetson, high) | ✓ (RT, low) |
+| Heartbeat monitoring | | ✓ (Jetson high + SYS low) | ✓ (RT, low) |
 | Mode switch reading | | | ✓ (push button, GPIO11) |
 | Throttle ADC read (0–5V) | | | ✓ |
 | Throttle MCP4725 DAC output (0–5V) | | | ✓ |
@@ -251,15 +279,15 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Bus | ID | Name | Payload | Action |
 |-----|-----|------|---------|--------|
 | Low | `0x001` | SAFETY_ESTOP | — | `mode_set(Estop)`, forward to high |
-| Low | `0x011` | SYS_SAFETY_STATUS | `{u8 estop, u8 hb_ok}` | Forward to high |
+| Low | `0x011` | SYS_SAFETY_STS | `{u8 estop, u8 hb_ok}` | Forward to high |
 | Low | `0x110` | SYS_MODE_CMD | `u8 mode` | `mode_set(Manual/Auto)` |
-| Low | `0x120` | SYS_THROTTLE_POS | `i16 speed_mmps` | Forward to high |
+| Low | `0x120` | SYS_THROTTLE_STS | `i16 speed_mmps` | Forward to high |
 | Low | `0x201` | SES_STATUS | `{u8 status, i16 angle, …}` (8 bytes) | Steering feedback: sync boot angle, following error check |
-| Low | `0x600` | SYS_DIAG | 8 bytes | Forward to high |
+| Low | `0x600` | SYS_DIAG_RPT | 8 bytes | Forward to high |
 | Low | `0x7FF` | SYS HEARTBEAT | `u8 alive_ctr` | Feed SYS alive counter; if frozen for >200ms → ESTOP |
 | High | `0x001` | SAFETY_ESTOP | — | `mode_set(Estop)`, forward to low |
 | High | `0x300` | HOST_DRIVE_CMD | `{i32 speed, i32 yaw}` | → `cmd_queue` |
-| High | `0x301` | HOST_BRAKE_REQUEST | `i32 pressure_kpa` | → atomic store |
+| High | `0x301` | HOST_BRAKE_REQ | `i32 pressure_kpa` | → atomic store |
 | High | `0x302` | HOST_LIGHT_CMD | `u8` bitfield | Forward to low |
 | High | `0x7FF` | Jetson HEARTBEAT | `u8 alive_ctr` | Feed Jetson alive counter; frozen >500ms → stale command |
 
@@ -268,17 +296,17 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Bus | ID | Name | Payload | Rate |
 |-----|-----|------|---------|------|
 | Low | `0x001` | SAFETY_ESTOP | — | Event |
-| Low | `0x202` | RT_DRIVE_SETPOINT | `{i32 speed, u8 gear}` | 100 Hz |
+| Low | `0x202` | RT_DRIVE_CMD | `{i32 speed, u8 gear}` | 100 Hz |
 | Low | `0x200` | VCU_SES_REQ | `{u8 ctrl, i16 angle, u8 speed, u8 sec, u8 cnt+cksum, u8 cksum}` (8 bytes) | **50 Hz** |
 | Low | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | Change |
 | Low | `0x7FF` | RT HEARTBEAT | `u8 alive_ctr` | 2 Hz |
 | High | `0x001` | SAFETY_ESTOP (fwd) | — | Event |
-| High | `0x011` | SYS_SAFETY_STATUS (fwd) | `{u8 estop, u8 hb_ok}` | 5 Hz |
-| High | `0x120` | SYS_THROTTLE_POS (fwd) | `i16 speed_mmps` | 100 Hz |
-| High | `0x210` | RT_STATE_REPORT | `{u8 mode, u8 steer_valid, u8 reversing}` | 10 Hz |
-| High | `0x220` | RT_PID_FEEDBACK | `{i16 sp, i16 meas, i16 out}` | 10 Hz |
-| High | `0x400` | RT_OBSTACLE_DIST | `u32 distance_mm` | 10 Hz |
-| High | `0x600` | SYS_DIAG (fwd) | 8 bytes | 1 Hz |
+| High | `0x011` | SYS_SAFETY_STS (fwd) | `{u8 estop, u8 hb_ok}` | 5 Hz |
+| High | `0x120` | SYS_THROTTLE_STS (fwd) | `i16 speed_mmps` | 100 Hz |
+| High | `0x210` | RT_STATE_RPT | `{u8 mode, u8 steer_valid, u8 reversing}` | 10 Hz |
+| High | `0x220` | RT_PID_RPT | `{i16 sp, i16 meas, i16 out}` | 10 Hz |
+| High | `0x400` | RT_OBSTACLE_RPT | `u32 distance_mm` | 10 Hz |
+| High | `0x600` | SYS_DIAG_RPT (fwd) | 8 bytes | 1 Hz |
 | High | `0x7FF` | RT HEARTBEAT | `u8 alive_ctr` | 2 Hz |
 
 ### 7.5 Internal data types
@@ -555,7 +583,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | ID | Name | Payload | Source | Action |
 |----|------|---------|--------|--------|
 | `0x001` | SAFETY_ESTOP | — | RT or any | `mode_set(Estop)` |
-| `0x202` | RT_DRIVE_SETPOINT | `{i32 speed, u8 gear}` | RT | → `setpoint_queue` |
+| `0x202` | RT_DRIVE_CMD | `{i32 speed, u8 gear}` | RT | → `setpoint_queue` |
 | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | RT | → `g_light_state` |
 | `0x721` | SEB_STATUS | `{u8 status, u16 stroke, …}` (8 bytes) | SEB | Sync boot stroke, brake feedback |
 | `0x7FF` | RT HEARTBEAT | `u8 alive_ctr` | RT | Feed RT alive counter |
@@ -564,11 +592,11 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 
 | ID | Name | Payload | Rate | Notes |
 |----|------|---------|------|-------|
-| `0x011` | SYS_SAFETY_STATUS | `{u8 estop, u8 hb_ok}` | 5 Hz | → RT (fwd to Jetson) |
+| `0x011` | SYS_SAFETY_STS | `{u8 estop, u8 hb_ok}` | 5 Hz | → RT (fwd to Jetson) |
 | `0x012` | SYS_DCDC_CMD | `u8 enable` | Change | → DC-DC converter |
 | `0x110` | SYS_MODE_CMD | `u8 mode` | Change | → RT |
-| `0x120` | SYS_THROTTLE_POS | `i16 speed_mmps` | 100 Hz | → RT (fwd to Jetson) |
-| `0x600` | SYS_DIAG | 8 bytes | 1 Hz | → RT (fwd to Jetson) |
+| `0x120` | SYS_THROTTLE_STS | `i16 speed_mmps` | 100 Hz | → RT (fwd to Jetson) |
+| `0x600` | SYS_DIAG_RPT | 8 bytes | 1 Hz | → RT (fwd to Jetson) |
 | `0x720` | VCU_SEB_REQ | `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (8 bytes) | **50 Hz** | → SYNTREE SEB |
 | `0x7FF` | SYS HEARTBEAT | `u8 alive_ctr` | 2 Hz | → RT |
 
@@ -665,21 +693,35 @@ brake_light_on = safety_brake_lever_pressed()   // GPIO2 — physical lever
 
 All four sources are local to SYS. `g_light_state.brake_light` from Jetson is a **supplemental** trigger — useful for predictive illumination (Jetson sees obstacle before pressure builds) or hazard flashing — but can never be the *only* trigger. The physical braking state always wins.
 
+**Manual mode — handlebar switches:**
+
+| Switch | GPIO | Type | Action |
+|--------|------|------|--------|
+| Left turn | 3 | Momentary, active-low, pull-up | Press → left turn blinks (500ms on/off). Press again → cancel. |
+| Right turn | 6 | Momentary, active-low, pull-up | Press → right turn blinks. Press again → cancel. |
+| Headlight | 7 | Toggle, active-low, pull-up | Each press toggles headlight on/off. |
+
 **Mode-dependent behavior:**
 
 | Mode | Turn signals | Headlight | Brake light |
 |------|-------------|-----------|-------------|
-| MANUAL | Rider switches (GPIOs TBD) | Rider switch (TBD) | **OR logic** — lever + Jetson bit |
+| MANUAL | Handlebar switches → `lights_task` | Handlebar switch → GPIO22 | **OR logic** — lever + Jetson bit |
 | AUTO | `g_light_state` from CAN `0x302` | `g_light_state.headlight` | **OR logic** — lever + ESTOP + Jetson bit |
 | ESTOP | OFF | OFF | **ON** (forced, overrides all) |
 
 **Turn signal blink pattern** (`lights_task`):
-- 500 ms ON, 500 ms OFF, repeating while `left_turn` or `right_turn` is true
-- Canceled when both are false
+- 500 ms ON, 500 ms OFF, repeating while `left_turn` or `right_turn` is active
+- Pressing the same switch again cancels (toggle behavior)
+- Pressing the opposite switch cancels the current side and starts the new side
+- Both pressed simultaneously → hazard flashers (both blink in sync)
+
+**Headlight toggle** (`lights_task`):
+- Each press of GPIO7 toggles `headlight_on = !headlight_on`
+- AUTO mode: override from `g_light_state.headlight` via CAN `0x302`
 
 #### Mode switch — push button toggle
 
-A momentary push button on GPIO11 (active-low, internal pull-up, debounced). Each press toggles the mode: MANUAL → AUTO → MANUAL. ESTOP cannot be exited via the button — requires power-cycle or explicit CAN command.
+A momentary push button on GPIO11 (active-low, internal pull-up, debounced). Each press toggles the mode: MANUAL → AUTO → MANUAL. ESTOP cannot be exited via the MODE button — use the START button (GPIO32) or power-cycle.
 
 ```
 mode_task @ 10 Hz:
@@ -720,21 +762,45 @@ GPIO27 (HIGH=ON, ESTOP→OFF).
 
 #### Heartbeat — automotive liveness supervision
 
-`0x7FF` is a **1-byte alive counter** (not an empty frame). Every 500 ms each node increments its counter and broadcasts. A frozen counter = a frozen node, even if the CAN controller is still transmitting from a hardware buffer.
+`0x7FF` is a **1-byte alive counter** (not an empty frame) sent at 2 Hz. A frozen counter = a frozen node, even if the CAN controller is still DMA-ing from a hardware buffer.
 
-| Parameter | RT→SYS | SYS→RT | Jetson→RT |
-|-----------|--------|--------|-----------|
-| CAN ID | `0x7FF` | `0x7FF` | `0x7FF` |
-| DLC | 1 | 1 | 1 |
-| Payload | `u8 alive_ctr++` | `u8 alive_ctr++` | `u8 alive_ctr++` |
-| Period | 500 ms (2 Hz) | 500 ms (2 Hz) | 500 ms (2 Hz) |
-| Timeout | **200 ms** | **200 ms** | 500 ms |
-| Missed frames to trigger | 1 (at 2 Hz, 200ms = ~1 missed) | 1 | 2 |
-| Action on loss | SYS → ESTOP (AUTO only) | RT → CAN `0x001` ESTOP on low (AUTO only) | RT → zero `0x202` + stop `0x200` |
+**Why 0x7FF is NOT bridged between buses:**
 
-**Why 200 ms for inter-MCU?**
+Each CAN bus is an independent liveness domain. Bridging 0x7FF would create ambiguity: if RT forwards SYS's 0x7FF from low to high, Jetson would see two different heartbeat senders on the same bus with the same CAN ID but different alive counters — violating the one-sender-per-ID rule and making it impossible to identify which counter belongs to which node.
 
-SYS→RT→SYS is the safety-critical spine. At 25 km/h the trike travels ~1.4 m in 200 ms — well within a controlled-stop envelope. 1500 ms would be 10 meters, which is unacceptable for steer-by-wire (ISO 26262 FTTI < 200 ms for ASIL-C steering).
+Instead, each node monitors heartbeats only on the bus it shares with the peer:
+
+```
+Liveness matrix (who monitors whom):
+
+         SYS ──── low CAN ──── RT ──── high CAN ──── Jetson
+                0x7FF (SYS)         0x7FF (Jetson)
+                0x7FF (RT)          0x7FF (RT)
+
+  SYS watches: RT (low, 200ms timeout)
+  RT watches:  SYS (low, 200ms timeout) AND Jetson (high, 500ms timeout)
+  Jetson watches: RT (high, 500ms timeout)
+
+  SYS does NOT watch Jetson — RT handles Jetson failure (zero setpoints)
+  Jetson does NOT watch SYS — RT handles SYS failure (0x001 ESTOP)
+```
+
+| Parameter | Low bus (RT↔SYS) | High bus (RT↔Jetson) |
+|-----------|-------------------|----------------------|
+| CAN ID | `0x7FF` | `0x7FF` |
+| DLC | 1 | 1 |
+| Payload | `u8 alive_ctr` (0–255, wraps) | `u8 alive_ctr` (0–255, wraps) |
+| Period | 500 ms (2 Hz) | 500 ms (2 Hz) |
+| Senders | RT, SYS (two senders, same ID) | RT, Jetson (two senders, same ID) |
+| Receivers monitor | Each other's counters independently | Each other's counters independently |
+| Timeout | **200 ms** (automotive FTTI) | 500 ms (cmd staleness) |
+| Action on loss | ESTOP (AUTO only) | Zero setpoints (controlled stop) |
+
+**Why 200 ms for inter-MCU but 500 ms for Jetson?**
+
+SYS↔RT is the safety-critical spine. At 25 km/h the trike travels ~1.4 m in 200 ms — within a controlled-stop envelope. 1500 ms would be 10 meters, unacceptable for steer-by-wire (ISO 26262 FTTI < 200 ms for ASIL-C).
+
+Jetson→RT uses 500 ms because the command staleness watchdog already checks `0x300` at 10 Hz. Jetson failure results in a controlled stop (zero setpoints), not an immediate ESTOP — the rider still has manual override via the handlebar.
 
 **Startup grace period:**
 
@@ -903,6 +969,9 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 | Gear S output | 34 | Out | Relay ch2 → 1A fuse → ECU, TVS to GND |
 | Gear R output | 35 | Out | Relay ch3 → 1A fuse → ECU, TVS to GND |
 | Mode button | 11 | In | Push button, active-low, pull-up, debounced (momentary toggle MANUAL↔AUTO) |
+| Left turn switch | **3** | In | Handlebar switch, active-low, pull-up |
+| Right turn switch | **6** | In | Handlebar switch, active-low, pull-up |
+| Headlight switch | **7** | In | Handlebar toggle, active-low, pull-up |
 | Left turn | 18 | Out | Relay → lamp |
 | Right turn | 19 | Out | Relay → lamp |
 | Brake light | 21 | Out | Relay → lamp |
@@ -930,7 +999,9 @@ constexpr int kGearDOut = 33, kGearSOut = 34, kGearROut = 35;
 // Safety
 constexpr int kEstopGpio = 1, kBrakeLeverGpio = 2, kModeSwitchGpio = 11;
 constexpr int kWdtToggleGpio = 23;
-// Lights
+// Light inputs (handlebar switches, MANUAL mode)
+constexpr int kSwitchLeftTurn = 3, kSwitchRightTurn = 6, kSwitchHeadlight = 7;
+// Light outputs
 constexpr int kLightLeftTurn = 18, kLightRightTurn = 19;
 constexpr int kLightBrake = 21, kLightHead = 22;
 // Indicators & power
@@ -977,7 +1048,7 @@ constexpr int kBrakeCmdId = 0x720;
  3. safety_monitor_init() → GPIO1 (ESTOP), GPIO2 (brake lever), WDT GPIO23
  4. throttle_init()       → ADC1_CH5 + I2C + MCP4725 (output=0)
  5. gear_init()           → GPIO12-14 (IN), GPIO33-35 (OUT, LOW)
- 6. lights_init()         → GPIO18-22,25-26 (OUT, LOW)
+ 6. lights_init()         → GPIO3,6,7 (IN, switches) + GPIO18-22,25-26 (OUT)
  7. power_init()          → GPIO27 (OUT, LOW)
  8. brake_init()          → BRAKE_BOOT_WAIT (500ms) → LISTEN_SYNC (await 0x721) → ACTIVE
  9. dcdc_init()           → CAN 0x012 enable=0
@@ -1049,11 +1120,10 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 
 | # | Gap | Impact | Resolution |
 |---|-----|--------|------------|
-| 1 | RT brake arbitration (max-select of RT-computed + Jetson `0x301`) has no CAN path to SYS | Jetson `0x301` + RT obstacle braking never actuated. SYS brake via `0x720` uses ESTOP + lever only (Stroke Mode). AUTO braking — especially Pressure Mode for deceleration control — is blocked until resolved. | Add brake field to `0x202` RT_DRIVE_SETPOINT (DLC 5→6) or define `0x203 RT_BRAKE_CMD` (RT→SYS). |
+| 1 | RT brake arbitration (max-select of RT-computed + Jetson `0x301`) has no CAN path to SYS | Jetson `0x301` + RT obstacle braking never actuated. SYS brake via `0x720` uses ESTOP + lever only (Stroke Mode). AUTO braking — especially Pressure Mode for deceleration control — is blocked until resolved. | Add brake field to `0x202` RT_DRIVE_CMD (DLC 5→6) or define `0x203 RT_BRAKE_CMD` (RT→SYS). |
 | 2 | No CAN message for Jetson to request S (Sport) gear | AUTO can only select D/N/R | Add gear/sport field to `0x300` |
-| 3 | Manual mode turn/headlight switches not assigned GPIOs | Rider can't control turn signals or headlight in MANUAL. Brake light works regardless (OR logic — lever + ESTOP). | Assign GPIOs, read in `lights_task` |
-| 4 | EPS-C timeout-fault behavior unknown | On ESTOP or comm loss, steering may lock, center, or freewheel | Verify with SYNTREE spec; implement appropriate mechanical safety |
-| 5 | SEB pressure control mode not defined | SYS currently uses stroke mode only; pressure mode needed for brake arbitration | Define pressure target mapping from RT brake kPa to SEB MPa |
+| 3 | EPS-C timeout-fault behavior unknown | On ESTOP or comm loss, steering may lock, center, or freewheel | Verify with SYNTREE spec; implement appropriate mechanical safety |
+| 4 | SEB pressure control mode not defined | SYS currently uses stroke mode only; pressure mode needed for brake arbitration | Define pressure target mapping from RT brake kPa to SEB MPa |
 
 ---
 
@@ -1068,15 +1138,15 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 | [`sys-esp32/README.md`](sys-esp32/README.md) | SYS build & test |
 | [`notes/can-protocol.md`](notes/can-protocol.md) | CAN protocol theory — arbitration, frame types, standards |
 | [`notes/can-hardware-basics.md`](notes/can-hardware-basics.md) | CAN physical layer — termination, topology, transceivers |
-| [`notes/can-addressing-for-etrike.md`](notes/can-addressing-for-etrike.md) | CAN addressing scheme and bus load analysis |
+| [`legacy/notes/can-addressing-for-etrike.md`](legacy/notes/can-addressing-for-etrike.md) | DEPRECATED — CAN addressing scheme (single-ESP32 design, historical reference) |
 | [`notes/can-troubleshooting.md`](notes/can-troubleshooting.md) | CAN debugging — common mistakes, error states, tools |
-| [`notes/physics-model.md`](notes/physics-model.md) | Tricycle kinematics — forward/inverse, rollover, slip angles |
-| [`notes/listen-before-speaking.md`](notes/listen-before-speaking.md) | CAN actuator safe bootstrapping pattern |
-| [`notes/can-gateway-bridging.md`](notes/can-gateway-bridging.md) | CAN gateway forwarding rules and implementation |
-| [`notes/defense-in-depth-safety.md`](notes/defense-in-depth-safety.md) | Layered safety — ESTOP, following error, dynamic clamp, OR logic |
-| [`notes/syntree-security-protocol.md`](notes/syntree-security-protocol.md) | Rolling counter + XOR checksum for SYNTREE actuators |
-| [`notes/high-voltage-isolation.md`](notes/high-voltage-isolation.md) | 72V galvanic isolation — TLP281 optos, relays, fuses, TVS |
-| [`notes/distributed-architecture.md`](notes/distributed-architecture.md) | Three-node rationale — Jetson/RT/SYS split, dual-CAN on RT |
-| [`notes/actuator-interfacing.md`](notes/actuator-interfacing.md) | MCP4725 DAC throttle, gear pass-through, relay logic |
-| [`notes/external-watchdog.md`](notes/external-watchdog.md) | External watchdog IC — timeout, safe state, testing |
-| [`notes/pid-speed-control.md`](notes/pid-speed-control.md) | PID speed control theory, tuning, anti-windup |
+| [`docs/physics-model.md`](docs/physics-model.md) | Tricycle kinematics — forward/inverse, rollover, slip angles |
+| [`docs/listen-before-speaking.md`](docs/listen-before-speaking.md) | CAN actuator safe bootstrapping pattern |
+| [`docs/can-gateway-bridging.md`](docs/can-gateway-bridging.md) | CAN gateway forwarding rules and implementation |
+| [`docs/defense-in-depth-safety.md`](docs/defense-in-depth-safety.md) | Layered safety — ESTOP, following error, dynamic clamp, OR logic |
+| [`docs/syntree-security-protocol.md`](docs/syntree-security-protocol.md) | Rolling counter + XOR checksum for SYNTREE actuators |
+| [`docs/high-voltage-isolation.md`](docs/high-voltage-isolation.md) | 72V galvanic isolation — TLP281 optos, relays, fuses, TVS |
+| [`docs/distributed-architecture.md`](docs/distributed-architecture.md) | Three-node rationale — Jetson/RT/SYS split, dual-CAN on RT |
+| [`docs/actuator-interfacing.md`](docs/actuator-interfacing.md) | MCP4725 DAC throttle, gear pass-through, relay logic |
+| [`docs/external-watchdog.md`](docs/external-watchdog.md) | External watchdog IC — timeout, safe state, testing |
+| [`docs/pid-speed-control.md`](docs/pid-speed-control.md) | PID speed control theory, tuning, anti-windup |
