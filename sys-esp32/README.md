@@ -1,12 +1,12 @@
-# SYS ESP32-S3 — Safety & Motor Actuation
+# SYS ESP32-S3 — Safety, Motor Actuation & Body Control
 
-Owns E-stop monitoring, brake control, motor PWM, manual throttle ADC, mode switching, heartbeat watchdog, and system diagnostics.
+Owns E-stop monitoring, brake CAN actuation, bidirectional throttle (0–5 V ADC/DAC), bidirectional gear selection (72 V D/S/R), mode switching, heartbeat watchdog, signal lights, mode indicator lights, 12 V accessory power, and system diagnostics.
 
 ## Architecture
 
-See [`achitecture-sys.md`](../achitecture-sys.md) for full details.
+See [`architecture-sys.md`](../architecture-sys.md) for full details.
 
-## 10 FreeRTOS tasks
+## 14 FreeRTOS tasks
 
 | Task | Prio | Rate |
 |------|------|------|
@@ -16,7 +16,11 @@ See [`achitecture-sys.md`](../achitecture-sys.md) for full details.
 | `mode` | 4 | 10 Hz |
 | `motor` | 4 | 100 Hz fixed |
 | `throttle` | 3 | 100 Hz fixed |
+| `gear` | 3 | 50 Hz fixed |
 | `brake` | 3 | 20 Hz fixed |
+| `lights` | 3 | 20 Hz fixed |
+| `indicator` | 2 | 5 Hz |
+| `power` | 2 | 5 Hz |
 | `can_tx` | 2 | 5 Hz fixed |
 | `diag` | 1 | 1 Hz |
 | `hb` | 1 | 2 Hz |
