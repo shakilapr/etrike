@@ -23,7 +23,7 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 
 ---
 
-### 0x011 — SYS_SAFETY_STATUS
+### 0x011 — SYS_SAFETY_STS
 
 | Property | Value |
 |----------|-------|
@@ -71,7 +71,7 @@ ESTOP → 0 (off). All other modes → 1 (on).
 
 ---
 
-### 0x120 — SYS_THROTTLE_POS
+### 0x120 — SYS_THROTTLE_STS
 
 | Property | Value |
 |----------|-------|
@@ -86,7 +86,7 @@ ESTOP → 0 (off). All other modes → 1 (on).
 
 ---
 
-### 0x202 — RT_DRIVE_SETPOINT
+### 0x202 — RT_DRIVE_CMD
 
 | Property | Value |
 |----------|-------|
@@ -148,7 +148,7 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 | **DLC** | 8 |
 | **Period** | 20 ms (50 Hz) — **continuous, every frame** |
 | **Endianness** | Motorola LSB (little-endian) |
-| **Note** | Factory default `0x200`. SYNTREE unit is preprogrammed and not reconfigurable. `RT_DRIVE_SETPOINT` placed at `0x202` to avoid collision. |
+| **Note** | Factory default `0x200`. SYNTREE unit is preprogrammed and not reconfigurable. `RT_DRIVE_CMD` placed at `0x202` to avoid collision. |
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
@@ -199,7 +199,7 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 
 ---
 
-### 0x600 — SYS_DIAG
+### 0x600 — SYS_DIAG_RPT
 
 | Property | Value |
 |----------|-------|
@@ -317,10 +317,18 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 **Timeout**: **200 ms** (automotive FTTI). Both RT and SYS monitor each other. In AUTO, loss triggers ESTOP. Startup grace period: 3 seconds.
 
-| Monitor | Watches | Timeout | Action |
-|---------|---------|---------|--------|
-| SYS | RT alive_ctr frozen | 200 ms | ESTOP (AUTO only) |
-| RT | SYS alive_ctr frozen | 200 ms | CAN `0x001` ESTOP (AUTO only) |
+**Why 0x7FF is NOT bridged**: Each bus is an independent liveness domain. Bridging would put two senders with different alive counters on the same bus using the same CAN ID — impossible to distinguish which counter belongs to which node.
+
+**Liveness matrix:**
+
+| Monitor | Watches (bus) | Timeout | Action |
+|---------|--------------|---------|--------|
+| SYS | RT (low) | 200 ms | ESTOP (AUTO only) |
+| RT | SYS (low) | 200 ms | CAN `0x001` ESTOP (AUTO only) |
+| RT | Jetson (high) | 500 ms | Zero setpoints (controlled stop) |
+| Jetson | RT (high) | 500 ms | Stop publishing `/cmd_vel` |
+
+SYS does not watch Jetson (RT handles Jetson failure). Jetson does not watch SYS (RT handles SYS failure).
 
 ---
 
@@ -343,19 +351,19 @@ Bridged by RT between buses.
 
 ---
 
-### 0x011 — SYS_SAFETY_STATUS (forwarded)
+### 0x011 — SYS_SAFETY_STS (forwarded)
 
 Forwarded from low-level by RT. Same payload layout as §1 `0x011`.
 
 ---
 
-### 0x120 — SYS_THROTTLE_POS (forwarded)
+### 0x120 — SYS_THROTTLE_STS (forwarded)
 
 Forwarded from low-level by RT. Same payload layout as §1 `0x120`.
 
 ---
 
-### 0x210 — RT_STATE_REPORT
+### 0x210 — RT_STATE_RPT
 
 | Property | Value |
 |----------|-------|
@@ -374,7 +382,7 @@ Byte layout (big-endian): Byte 0=mode, 1=steer_valid, 2=reversing.
 
 ---
 
-### 0x220 — RT_PID_FEEDBACK
+### 0x220 — RT_PID_RPT
 
 | Property | Value |
 |----------|-------|
@@ -413,7 +421,7 @@ ROS 2 conversion: `speed_mmps = linear.x × 1000`, `yaw_rate_mrad_s = angular.z 
 
 ---
 
-### 0x301 — HOST_BRAKE_REQUEST
+### 0x301 — HOST_BRAKE_REQ
 
 | Property | Value |
 |----------|-------|
@@ -443,7 +451,7 @@ Layout identical to low-level `0x302`. RT forwards transparently.
 
 ---
 
-### 0x400 — RT_OBSTACLE_DIST
+### 0x400 — RT_OBSTACLE_RPT
 
 | Property | Value |
 |----------|-------|
@@ -460,7 +468,7 @@ UINT32_MAX = no reading / timeout.
 
 ---
 
-### 0x600 — SYS_DIAG (forwarded)
+### 0x600 — SYS_DIAG_RPT (forwarded)
 
 Forwarded from low-level by RT. Same layout as §1 `0x600`.
 
@@ -490,15 +498,15 @@ Forwarded from low-level by RT. Same layout as §1 `0x600`.
 | ID | Name | Sender | Receiver | DLC | Rate |
 |----|------|--------|----------|-----|------|
 | `0x001` | SAFETY_ESTOP | RT, SYS | All | 0 | Event |
-| `0x011` | SYS_SAFETY_STATUS | SYS | RT (→Jetson) | 2 | 5 Hz |
+| `0x011` | SYS_SAFETY_STS | SYS | RT (→Jetson) | 2 | 5 Hz |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC | 1 | Change |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | Change |
-| `0x120` | SYS_THROTTLE_POS | SYS | RT (→Jetson) | 2 | 100 Hz |
+| `0x120` | SYS_THROTTLE_STS | SYS | RT (→Jetson) | 2 | 100 Hz |
 | `0x200` | VCU_SES_REQ | RT | EPS-C | 8 | **50 Hz** |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | 100 Hz |
-| `0x202` | RT_DRIVE_SETPOINT | RT | SYS | 5 | 100 Hz |
+| `0x202` | RT_DRIVE_CMD | RT | SYS | 5 | 100 Hz |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | Change |
-| `0x600` | SYS_DIAG | SYS | RT (→Jetson) | 8 | 1 Hz |
+| `0x600` | SYS_DIAG_RPT | SYS | RT (→Jetson) | 8 | 1 Hz |
 | `0x720` | VCU_SEB_REQ | SYS | SEB | 8 | **50 Hz** |
 | `0x721` | SEB_STATUS | SEB | SYS | 8 | 100 Hz |
 | `0x7FF` | HEARTBEAT | RT, SYS | RT, SYS | 1 | 2 Hz |
@@ -508,31 +516,45 @@ Forwarded from low-level by RT. Same layout as §1 `0x600`.
 | ID | Name | Sender | Receiver | DLC | Rate |
 |----|------|--------|----------|-----|------|
 | `0x001` | SAFETY_ESTOP | Jetson, RT | Jetson, RT | 0 | Event |
-| `0x011` | SYS_SAFETY_STATUS | RT (fwd) | Jetson | 2 | 5 Hz |
-| `0x120` | SYS_THROTTLE_POS | RT (fwd) | Jetson | 2 | 100 Hz |
-| `0x210` | RT_STATE_REPORT | RT | Jetson | 3 | 10 Hz |
-| `0x220` | RT_PID_FEEDBACK | RT | Jetson | 6 | 10 Hz |
+| `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | 5 Hz |
+| `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | 100 Hz |
+| `0x210` | RT_STATE_RPT | RT | Jetson | 3 | 10 Hz |
+| `0x220` | RT_PID_RPT | RT | Jetson | 6 | 10 Hz |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | ≤100 Hz |
-| `0x301` | HOST_BRAKE_REQUEST | Jetson | RT | 4 | Demand |
+| `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | Demand |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→SYS) | 1 | Change |
-| `0x400` | RT_OBSTACLE_DIST | RT | Jetson | 4 | 10 Hz |
-| `0x600` | SYS_DIAG | RT (fwd) | Jetson | 8 | 1 Hz |
+| `0x400` | RT_OBSTACLE_RPT | RT | Jetson | 4 | 10 Hz |
+| `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
 | `0x7FF` | HEARTBEAT | Jetson, RT | Jetson, RT | 1 | 2 Hz |
 
 ---
 
 ## 4. Forwarding Rules (RT Gateway)
 
-| Direction | CAN IDs | Notes |
-|-----------|---------|-------|
-| Low → High | `0x001`, `0x011`, `0x120`, `0x600` | Transparent |
-| High → Low | `0x001`, `0x302` | Transparent |
-| Not forwarded | `0x300`, `0x301` | Consumed by RT |
-| Not forwarded | `0x200`, `0x202` | RT-generated on low |
-| Not forwarded | `0x210`, `0x220`, `0x400` | RT-generated on high |
-| Not forwarded | `0x012`, `0x110`, `0x720` | Low only |
-| Not forwarded | `0x201`, `0x721` | SYNTREE feedback, low only |
-| Not forwarded | `0x7FF` | Independent per bus |
+RT is the only dual-bus node. Every CAN message falls into exactly one of three categories:
+
+### Category 1: Transparent forward (same ID, same payload)
+
+| Direction | IDs |
+|-----------|-----|
+| Low → High | `0x001`, `0x011`, `0x120`, `0x600` |
+| High → Low | `0x001`, `0x302` |
+
+### Category 2: Consumed by RT → different message generated
+
+| Inbound | Bus | Outbound | Bus |
+|---------|-----|----------|-----|
+| `0x300` HOST_DRIVE_CMD | High | `0x202` RT_DRIVE_CMD + `0x200` VCU_SES_REQ | Low |
+| `0x301` HOST_BRAKE_REQ | High | *(none yet — design gap)* | — |
+
+### Category 3: Bus-local (never forwarded, never regenerated)
+
+| Bus | IDs |
+|-----|-----|
+| Low only | `0x012`, `0x110`, `0x200`, `0x202`, `0x720` |
+| Low only | `0x201`, `0x721` (SYNTREE feedback) |
+| High only | `0x210`, `0x220`, `0x400` (RT telemetry) |
+| Both independent | `0x7FF` (per-bus heartbeat — NOT bridged) |
 
 ---
 
