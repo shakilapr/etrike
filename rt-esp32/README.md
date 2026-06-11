@@ -1,30 +1,6 @@
 # RT ESP32-S3 — Realtime Physics, Steering & CAN Gateway
 
-Dual-bus node (only node on both CAN buses):
-- **High-level CAN** (MCP2515 SPI): communicates with Jetson — receives `/cmd_vel`, sends telemetry
-- **Low-level CAN** (built-in TWAI): communicates with SYS + steering/brake/DCDC modules — sends setpoints, bridges messages
-
-Converts ROS 2 `/cmd_vel`-style motion commands into:
-- **Speed + gear** → CAN `0x200` → SYS ESP32-S3 (low-level)
-- **Steering angle** → CAN `0x230` → drive-by-wire steering module (low-level)
-
-## Architecture
-
-See [`architecture-rt.md`](../architecture-rt.md) for full details.
-
-### 9 FreeRTOS tasks
-
-| Task | Prio | Rate |
-|------|------|------|
-| `can_rx_low` | 5 | Event-driven (TWAI) |
-| `can_rx_high` | 5 | Event-driven (MCP2515 SPI) |
-| `dispatch` | 4 | Event-driven |
-| `control` | 4 | 100 Hz fixed |
-| `can_tx_low` | 3 | Event-driven |
-| `can_tx_high` | 3 | Event-driven |
-| `obstacle` | 2 | 10 Hz |
-| `watchdog` | 1 | 10 Hz |
-| `heartbeat` | 1 | 2 Hz (both buses) |
+See [`architecture.md`](../architecture.md) for full system design.
 
 ## Build
 
@@ -34,6 +10,8 @@ pio run              # build
 pio run -t upload    # flash
 pio device monitor   # serial console
 ```
+
+Target: `esp32-s3-devkitc-1` | Framework: `espidf` | FreeRTOS, 1000 Hz tick
 
 ## Host tests
 
