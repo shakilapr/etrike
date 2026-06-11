@@ -466,7 +466,7 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | Encoder B (rear right wheel) | 14 | In | |
 | I2C SDA | 10 | I/O | IMU (optional) |
 | I2C SCL | 11 | Out | IMU (optional) |
-| WDT toggle | 21 | Out | External watchdog IC (TPS3850). Toggled by `control_task` every 10 ms. |
+| WDT toggle | 21 | Out | External watchdog IC (TPS3850). Toggled by `control_task` at 100 Hz (every 10 ms). |
 
 ### 7.9 Configuration constants
 
@@ -593,9 +593,57 @@ struct ActuatorSetpoint {
 
 ### 8.6 Control mechanisms
 
-#### Throttle, Gear, DC-DC — unchanged
+#### Throttle — MCP4725 I2C DAC (0–5V)
 
-See §8.6 of prior revision for: MCP4725 I2C DAC (0–5V), TLP281 optoisolator inputs + relay module outputs (72V) with 1A fuse + SMCJ90CA TVS protection, `0x012` DCDC CAN control.
+| Parameter | Value |
+|-----------|-------|
+| DAC device | MCP4725, I2C addr 0x60, SDA=GPIO15, SCL=GPIO16 |
+| Resolution | 12-bit (0–4095), VCC=5V → 0–5V output (no op-amp) |
+| ADC read | ADC1_CH5, GPIO10, 12-bit, voltage divider 5V→3.3V |
+| Dead zone | 200 (raw ADC) |
+| Max speed | 3000 mm/s |
+| Update rate | 100 Hz |
+
+| Mode | Behavior |
+|------|----------|
+| MANUAL | ADC read → MCP4725 write (pass-through) |
+| AUTO | `setpoint.speed` → `abs(speed)/3000 × 4095` → MCP4725 |
+| ESTOP | MCP4725 = 0 |
+
+Direction via gear lines — MCP4725 outputs 0–5V proportional to speed magnitude only.
+
+#### Gear — TLP281 input + relay output (72V)
+
+**Input** (manual sense, galvanic isolation):
+
+| Signal | GPIO | Conditioning |
+|--------|------|-------------|
+| D sense | 12 | TLP281 optoisolator ch1 (72V→3.3V) |
+| S sense | 13 | TLP281 optoisolator ch2 |
+| R sense | 14 | TLP281 optoisolator ch3 |
+
+**Output** (mimic 72V to ECU):
+
+| Signal | GPIO | Path |
+|--------|------|------|
+| D out | 33 | Relay ch1: GPIO→IN, 72V→1A fuse→COM→NO→ECU, TVS SMCJ90CA→GND |
+| S out | 34 | Relay ch2: same path |
+| R out | 35 | Relay ch3: same path |
+
+| Mode | Behavior |
+|------|----------|
+| MANUAL | Read TLP281 → mirror to relays |
+| AUTO | Gear from CAN `0x202` → energize relay |
+| ESTOP | All OFF (N) |
+
+#### DC-DC converter — CAN `0x012`
+
+| Condition | CAN `0x012` |
+|-----------|------------|
+| MANUAL or AUTO | `enable = 1` |
+| ESTOP | `enable = 0` |
+
+Sent on state change. The 12V accessory relay (GPIO27) is a secondary cut.
 
 #### Signal lights
 
@@ -719,7 +767,7 @@ Each ESP32 toggles a dedicated **external watchdog GPIO** every iteration of its
 
 | Node | GPIO | Toggled by | Period | Watchdog IC |
 |------|------|-----------|--------|-------------|
-| RT | **21** | `safety_task` (or `control_task`) | 20 Hz / 100 Hz | TPS3850 or equiv, 100ms window |
+| RT | **21** | `control_task` | 100 Hz | TPS3850 or equiv, 100ms window |
 | SYS | **23** | `safety_task` | 20 Hz | TPS3850 or equiv, 100ms window |
 
 > This is independent of CAN heartbeat. A hung MCU with a frozen CAN controller is invisible to heartbeat — but the external watchdog catches it.
@@ -782,7 +830,7 @@ BRAKE_FAULT:
 | Mode | Brake behavior |
 |------|---------------|
 | MANUAL | Brake lever GPIO2 LOW → stroke = `kBrakeManualStroke` (~15 mm). Released → stroke = 0 mm. Transmit at 50 Hz. |
-| AUTO | TBD — depends on RT brake arbitration gap resolution. Currently: no lever → stroke = 0. In future: RT-arbitrated target via `0x200` brake field or new ID. |
+| AUTO | Lever pressed → `kBrakeManualStroke` (driver override always works). No lever → stroke = 0 (RT-arbitrated braking via gap #1 not yet implemented). ESTOP → max. |
 | ESTOP | Stroke = `kBrakeMaxStroke` (full brake, ~27 mm). Transmit at 50 Hz. |
 
 **Stroke value calculation:**
@@ -800,7 +848,7 @@ Example: 0 mm → (0+30)/0.05 = 600
 Pri 5  can_rx      ── TWAI → can_rx_queue (16)
        safety      ── GPIO poll @ 20 Hz → ESTOP / HB check
 
-Pri 4  dispatch    ◀── can_rx_queue: 0x200→setpoint, 0x302→light, 0x001→ESTOP, 0x721→brake_feedback
+Pri 4  dispatch    ◀── can_rx_queue: 0x202→setpoint, 0x302→light, 0x001→ESTOP, 0x721→brake_feedback
        mode        ── Push button (GPIO11) @ 10 Hz → toggle MANUAL↔AUTO, CAN 0x110
        motor       ◀── setpoint_queue (4, overwrite)
              100 Hz: AUTO→MCP4725+gear, MANUAL→pass-through, ESTOP→all off
@@ -823,8 +871,8 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 |------|------|-------|--------|----------|
 | `can_rx` | 5 | 4096 B | Event | `twai_receive()`, copy to queue |
 | `safety` | 5 | 2048 B | 20 Hz | ESTOP GPIO, RT HB timeout |
-| `dispatch` | 4 | 3072 B | Event | Route 0x200, 0x302, 0x001, 0x721 |
-| `mode` | 4 | 2048 B | 10 Hz | Push button debounce + toggle MANUAL↔AUTO, CAN 0x110 |
+| `dispatch` | 4 | 3072 B | Event | Route 0x202, 0x302, 0x001, 0x721 |
+| `mode` | 4 | 2048 B | 10 Hz | MODE btn toggle + START btn (ESTOP→MANUAL), CAN 0x110 |
 | `motor` | 4 | 2048 B | 100 Hz | MCP4725 DAC + gear outputs |
 | `throttle` | 3 | 1536 B | 100 Hz | ADC read, CAN 0x120 |
 | `gear` | 3 | 1536 B | 50 Hz | TLP281 read / setpoint → relays |
@@ -1003,7 +1051,7 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 |---|-----|--------|------------|
 | 1 | RT brake arbitration (max-select of RT-computed + Jetson `0x301`) has no CAN path to SYS | Jetson `0x301` + RT obstacle braking never actuated. SYS brake via `0x720` uses ESTOP + lever only (Stroke Mode). AUTO braking — especially Pressure Mode for deceleration control — is blocked until resolved. | Add brake field to `0x202` RT_DRIVE_SETPOINT (DLC 5→6) or define `0x203 RT_BRAKE_CMD` (RT→SYS). |
 | 2 | No CAN message for Jetson to request S (Sport) gear | AUTO can only select D/N/R | Add gear/sport field to `0x300` |
-| 3 | Manual mode light switches not assigned GPIOs | Rider can't control signals/headlight in MANUAL | Assign GPIOs, read in `lights_task` |
+| 3 | Manual mode turn/headlight switches not assigned GPIOs | Rider can't control turn signals or headlight in MANUAL. Brake light works regardless (OR logic — lever + ESTOP). | Assign GPIOs, read in `lights_task` |
 | 4 | EPS-C timeout-fault behavior unknown | On ESTOP or comm loss, steering may lock, center, or freewheel | Verify with SYNTREE spec; implement appropriate mechanical safety |
 | 5 | SEB pressure control mode not defined | SYS currently uses stroke mode only; pressure mode needed for brake arbitration | Define pressure target mapping from RT brake kPa to SEB MPa |
 

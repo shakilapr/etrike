@@ -47,6 +47,7 @@ Desktop.ini
 # ── Internal docs (not for sync) ─────────────────────────────────────
 /docs/
 /notes/
+/standards/
 
 # ── PDF extraction tool artifacts ────────────────────────────────────
 /extract_pdfs.py
