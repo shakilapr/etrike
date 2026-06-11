@@ -1,10 +1,12 @@
 # RT ESP32-S3 — Realtime Physics & Steering
 
-Converts ROS 2 `/cmd_vel`-style motion commands (received via CAN from Jetson) into tricycle-specific actuator setpoints sent to the SYS ESP32-S3.
+Converts ROS 2 `/cmd_vel`-style motion commands (received via CAN from Jetson) into tricycle-specific actuator setpoints:
+- **Speed + gear** → CAN `0x200` → SYS ESP32-S3
+- **Steering angle** → CAN `0x230` → drive-by-wire steering CAN module
 
 ## Architecture
 
-See [`achitecture-rt.md`](../achitecture-rt.md) for full details.
+See [`architecture-rt.md`](../architecture-rt.md) for full details.
 
 ### 7 FreeRTOS tasks
 

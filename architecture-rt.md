@@ -2,7 +2,9 @@
 
 ## 1. Role
 
-The RT ESP32-S3 owns **vehicle dynamics**: tricycle kinematics, speed PID, steering servo, and obstacle-based speed limiting. It converts ROS 2 `/cmd_vel`-style motion commands (received via CAN from Jetson) into actuator setpoints sent to the SYS ESP32-S3.
+The RT ESP32-S3 owns **vehicle dynamics**: tricycle kinematics, speed PID, steering angle computation, and obstacle-based speed limiting. It converts ROS 2 `/cmd_vel`-style motion commands (received via CAN from Jetson) into:
+- **Speed + gear setpoints** sent to the SYS ESP32-S3 (CAN `0x200`), and
+- **Steering angle commands** sent directly to the drive-by-wire steering CAN module (CAN `0x230`).
 
 It runs **7 FreeRTOS tasks** on a single ESP32-S3 at 240 MHz with a 1000 Hz scheduler tick.
 
@@ -24,9 +26,10 @@ It runs **7 FreeRTOS tasks** on a single ESP32-S3 at 240 MHz with a 1000 Hz sche
 
 | CAN ID | Name | DLC | Payload | Rate | Notes |
 |--------|------|-----|---------|------|-------|
-| `0x200` | RT_DRIVE_SETPOINT | 8 | `i32 motor_speed_mmps`, `i32 steer_angle_mdeg` | 100 Hz | Consumed by SYS motor_task |
+| `0x200` | RT_DRIVE_SETPOINT | 5 | `i32 motor_speed_mmps`, `u8 gear` (0=N, 1=D, 2=S, 3=R) | 100 Hz | Consumed by SYS motor_task |
 | `0x210` | RT_STATE_REPORT | 3 | `u8 mode`, `u8 steer_valid`, `u8 reversing` | 10 Hz | Telemetry for Jetson |
 | `0x220` | RT_PID_FEEDBACK | 6 | `i16 speed_sp`, `i16 speed_meas`, `i16 pid_out` | 10 Hz | PID debug for Jetson |
+| `0x230` | RT_STEER_CMD | 4 | `i32 angle_mdeg` | 100 Hz | Steering angle to drive-by-wire CAN module |
 | `0x400` | RT_OBSTACLE_DIST | 4 | `u32 distance_mm` | 10 Hz | Obstacle sensor reading |
 | `0x7FF` | HEARTBEAT | 0 | (none) | 2 Hz | Alive signal |
 
@@ -48,9 +51,19 @@ struct HostBrakeRequest {
 
 // 0x200 RT_DRIVE_SETPOINT — RT → SYS
 struct RtDriveSetpoint {
-    int32_t motor_speed_mmps;  // rear motor target [mm/s]
-    int32_t steer_angle_mdeg;  // front steer angle [millideg] (+right, -left)
-    // Serialized: MSB-first, 4 bytes each at offsets 0 and 4
+    int32_t motor_speed_mmps;  // rear motor target [mm/s], range [-500, 3000]
+    uint8_t gear;               // 0=N, 1=D, 2=S, 3=R (derived from speed sign + mode)
+    // Serialized: MSB-first, 4 bytes speed at offset 0, 1 byte gear at offset 4
+};
+// Gear derivation:
+//   speed > 0  → gear = D (1)  (or S (2) if sport mode requested)
+//   speed == 0 → gear = N (0)
+//   speed < 0  → gear = R (3)
+
+// 0x230 RT_STEER_CMD — RT → Steering CAN module
+struct RtSteerCmd {
+    int32_t angle_mdeg;         // front steer angle [millideg], +right, -left
+    // Serialized: MSB-first, 4 bytes at offset 0
 };
 
 // 0x400 RT_OBSTACLE_DIST — RT → Jetson
@@ -92,6 +105,7 @@ struct DriveCmd {
 struct ResolvedSetpoint {
     int32_t motor_speed_mmps = 0;   // rear motor target [mm/s]
     int32_t steer_angle_mdeg = 0;   // front steer angle [millideg], +right
+    uint8_t gear             = 0;   // 0=N, 1=D, 2=S, 3=R
     bool    steer_valid      = false;
     bool    reversing        = false;
 };
@@ -123,12 +137,12 @@ enum class Mode : uint8_t { Manual = 0, Auto = 1, Estop = 2 };
 
 The RT ESP32 uses the **inverse bicycle model** to convert motion commands into steering angles:
 
-$$\\delta = \\arctan\\left(\\frac{L \\cdot \\omega}{|v|}\\right)$$
+$$\delta = \arctan\left(\frac{L \cdot \omega}{|v|}\right)$$
 
 Where:
-- $\\delta$ = front wheel steer angle [rad]
+- $\delta$ = front wheel steer angle [rad]
 - $L$ = wheelbase (1500 mm)
-- $\\omega$ = commanded yaw rate [rad/s]
+- $\omega$ = commanded yaw rate [rad/s]
 - $v$ = commanded forward speed [m/s]
 
 **Implementation** (`physics_model.cpp`):
@@ -144,13 +158,14 @@ Where:
 3. Clamp δ to ±steer_limit (45°)
 4. Clamp v to [max_rev, max_fwd] ([-500, 3000] mm/s)
 5. Set reversing flag if v < 0
+6. Determine gear: v > 0 → D, v == 0 → N, v < 0 → R
 ```
 
 ### 4.2 Speed PID
 
 Standard parallel-form PID with anti-windup:
 
-$$u(t) = K_p e(t) + K_i \\int_0^t e(\\tau)d\\tau + K_d \\frac{de(t)}{dt}$$
+$$u(t) = K_p e(t) + K_i \int_0^t e(\tau)d\tau + K_d \frac{de(t)}{dt}$$
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
@@ -166,29 +181,32 @@ $$u(t) = K_p e(t) + K_i \\int_0^t e(\\tau)d\\tau + K_d \\frac{de(t)}{dt}$$
 - dt ≤ 0: return previous output (safety)
 - Output = P + I + D (unclamped; motor driver clamps at actuator)
 
-### 4.3 Steering Servo with Slew Rate Limiting
+### 4.3 Steering — Drive-by-Wire via CAN
+
+Steering is actuated by a **CAN-based drive-by-wire module**. RT sends steering angle commands directly on the CAN bus — no PWM/servo hardware on the RT board.
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| PWM frequency | 50 Hz | Standard servo (20 ms period) |
-| Pulse range | 500–2500 µs | ±45° mechanical |
-| Center | 1500 µs | 0° = straight |
-| Slew rate | 180°/s | Max angular velocity |
-| Control rate | 100 Hz | Per `steering_tick()` call |
+| CAN ID | `0x230` | RT_STEER_CMD |
+| Payload | `i32 angle_mdeg` | Steering angle in millidegrees (+right, -left) |
+| Range | ±45° | ±45000 mdeg (clamped by kinematics) |
+| Rate | 100 Hz | Per control loop tick |
+| Sender | RT ESP32-S3 | Only in AUTO mode |
+| Receiver | Steering CAN module | Drive-by-wire actuator |
 
-**Slew rate algorithm**:
-```
-max_step_per_tick = slew_rate [°/s] · dt [s] · 1000 [mdeg/°]
-error = target - current
-step  = clamp(error, -max_step, +max_step)
-current += step
-```
+**CAN steering behavior by mode:**
+
+| Mode | Steering behavior |
+|------|------------------|
+| MANUAL | RT does NOT send `0x230`. Steering module operates standalone from rider input. |
+| AUTO | RT sends `0x230` at 100 Hz with resolved steer angle from kinematics. |
+| ESTOP | RT stops sending `0x230`. Steering module should center/lock (TBD by module spec). |
 
 ### 4.4 Obstacle Speed Limiting
 
 Linear interpolation between stop distance and clear distance:
 
-$$v*{limited} = v*{target} \\cdot \\frac{d*{obstacle} - d*{stop}}{d*{clear} - d_{stop}}$$
+$$v_{limited} = v_{target} \cdot \frac{d_{obstacle} - d_{stop}}{d_{clear} - d_{stop}}$$
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
@@ -209,12 +227,12 @@ If Jetson stops sending `0x300 HOST_DRIVE_CMD` for longer than the timeout:
 |-----------|-------|-------------|
 | Timeout | 500 ms | `kCmdStaleTimeoutMs` |
 | Check rate | 10 Hz | Every 100 ms |
-| Action on stale | Send zero setpoint via CAN 0x200 | Controlled stop |
+| Action on stale | Send zero setpoint via CAN 0x200 + 0x230 (straight, stop) | Controlled stop |
 
 **Implementation** (`watchdog.cpp`):
 - `watchdog_feed()` called on every valid 0x300 frame
 - `watchdog_is_stale()` compares `esp_timer_get_time() - last_feed > timeout`
-- On stale: send zero setpoint via inter-MCU link, set tripped flag
+- On stale: send zero speed + gear=N (0x200) and zero angle (0x230), set tripped flag
 - On resume: clear tripped flag, log warning
 
 ### 4.6 Brake Arbitration (Max-Select)
@@ -233,6 +251,7 @@ brake_pressure_kpa = max(rt_computed, jetson_request)
 - RT floor is `0` today (motor regen handles normal deceleration). Future: obstacle stop → hard brake.
 - Jetson can **increase** brake pressure but never **decrease** below RT's safety floor.
 - No conflict possible — max-select is commutative and the most conservative source wins.
+- **Gap**: RT-computed brake pressure currently has no CAN path to SYS. The arbitrated result is computed in `control_task` but `0x200 RT_DRIVE_SETPOINT` carries only speed + gear. To close this gap, either add a brake field to `0x200` or define a new CAN ID (e.g. `0x201 RT_BRAKE_CMD`). Until resolved, SYS brake actuation is driven solely by ESTOP state and the physical brake lever GPIO.
 
 ---
 
@@ -258,7 +277,8 @@ Priority
         │    output → setpoint_queue (4 slots, overwrite)
         │
    3    can_tx_task     ◀── setpoint_queue
-        │    Serializes ResolvedSetpoint → CAN 0x200
+        │    Serializes ResolvedSetpoint → CAN 0x200 (speed + gear)
+        │    Serializes steer_angle_mdeg → CAN 0x230
         │
    2    obstacle_task   ── HC-SR04 @ 10 Hz → CAN 0x400
         │
@@ -272,8 +292,8 @@ Priority
 |------|----------|-------|--------|----------|
 | `can_rx` | **5** (highest) | 4096 B | Event-driven | Blocks on `twai_receive()` with 100 ms timeout. Copies frame into `can_rx_queue`. Never blocks the TWAI ISR. |
 | `dispatch` | **4** | 3072 B | Event-driven | Blocks on `can_rx_queue` with `portMAX_DELAY`. Parses CAN ID, routes to `cmd_queue` or sets mode. |
-| `control` | **4** | 4096 B | **100 Hz fixed** | `vTaskDelayUntil` jitter-controlled. Non-blocking read from `cmd_queue`. Always runs `steering_tick()`. |
-| `can_tx` | **3** | 3072 B | Event-driven | Blocks on `setpoint_queue` with 50 ms timeout. Serializes to CAN 0x200. |
+| `control` | **4** | 4096 B | **100 Hz fixed** | `vTaskDelayUntil` jitter-controlled. Non-blocking read from `cmd_queue`. Computes kinematics, PID, brake arbitration, gear derivation. |
+| `can_tx` | **3** | 3072 B | Event-driven | Blocks on `setpoint_queue` with 50 ms timeout. Serializes speed+gear to CAN 0x200, angle to CAN 0x230. |
 | `obstacle` | **2** | 2048 B | **10 Hz** | Triggers HC-SR04 ultrasonic, measures echo pulse, pushes to CAN 0x400. |
 | `watchdog` | **1** | 2048 B | **10 Hz** | Checks `watchdog_is_stale()`. On trip, sends zero setpoint via CAN. |
 | `heartbeat` | **1** | 2048 B | **2 Hz** | Sends empty 0x7FF frame. |
@@ -305,13 +325,14 @@ Priority
 |--------|------|-----------|-------|
 | CAN TX | 5 | Output | To SN65HVD230 TXD |
 | CAN RX | 4 | Input | From SN65HVD230 RXD |
-| Steering servo PWM | 6 | Output | LEDC, 50 Hz, AUTO mode only |
 | Ultrasonic TRIG | 7 | Output | HC-SR04 trigger (10 µs pulse) |
 | Ultrasonic ECHO | 8 | Input | HC-SR04 echo (pulse width → distance) |
 | Encoder A | 1 | Input | Speed feedback (PCNT) |
 | Encoder B | 2 | Input | Speed feedback (PCNT) |
 | I2C SDA | 10 | I/O | IMU (optional, for yaw-rate feedback) |
 | I2C SCL | 11 | Output | IMU (optional) |
+
+> **Note**: Steering servo PWM (formerly GPIO6, LEDC 50 Hz) is **removed**. Steering is now CAN-based via `0x230 RT_STEER_CMD` to the drive-by-wire steering module.
 
 ---
 
@@ -325,13 +346,9 @@ constexpr float kWheelbaseMM        = 1500.0f;   // front–rear axle
 constexpr float kTrackWidthMM       =  800.0f;   // rear wheel spacing
 constexpr float kWheelRadiusMM      =  200.0f;   // driven wheel
 
-// Steering actuator
+// Steering actuator (CAN drive-by-wire)
 constexpr float kSteerLimitDeg      =   45.0f;
-constexpr int   kSteerServoMinUs    =    500;
-constexpr int   kSteerServoMaxUs    =   2500;
-constexpr int   kSteerServoCenterUs =   1500;
-constexpr float kSteerSlewRateDegS  =  180.0f;
-constexpr int   kSteerPwmFreqHz     =     50;
+constexpr int   kSteerLimitMdeg     =  45000;    // ±45° in millidegrees
 
 // Speed limits
 constexpr int   kMaxSpeedFwdMmps    =   3000;    // 3 m/s ≈ 10.8 km/h
@@ -358,14 +375,23 @@ constexpr int kCanBitrateHz         = 500000;
 constexpr int kCanTxGpio            =      5;
 constexpr int kCanRxGpio            =      4;
 
+// CAN IDs (TX)
+constexpr uint16_t kCanIdDriveSetpoint = 0x200;
+constexpr uint16_t kCanIdSteerCmd      = 0x230;
+constexpr uint16_t kCanIdStateReport   = 0x210;
+constexpr uint16_t kCanIdPidFeedback   = 0x220;
+constexpr uint16_t kCanIdObstacleDist  = 0x400;
+
 // GPIO
-constexpr int kSteerServoGpio       =      6;
 constexpr int kObstacleTrigGpio     =      7;
 constexpr int kObstacleEchoGpio     =      8;
 constexpr int kEncoderAGpio         =      1;
 constexpr int kEncoderBGpio         =      2;
 constexpr int kImuSdaGpio           =     10;
 constexpr int kImuSclGpio           =     11;
+
+// Gear
+enum class Gear : uint8_t { N = 0, D = 1, S = 2, R = 3 };
 
 } // namespace rt
 ```
@@ -380,7 +406,7 @@ constexpr int kImuSclGpio           =     11;
 | Command stale | Watchdog (500 ms timeout) | Send zero setpoint → controlled stop |
 | Obstacle timeout | Echo pulse > 30 ms | Set distance to UINT32_MAX (no reading) |
 | Encoder missing | `encoder_get_speed_mmps()` returns 0 | PID operates on stale measurement (I-term saturates) |
-| Steering servo fault | No feedback (open-loop servo) | Log warning, continue (no hardware feedback available) |
+| Steering CAN TX fail | TWAI TX error counter rising | Log warning, continue (steering module should hold last valid angle or center) |
 
 ---
 
@@ -388,13 +414,12 @@ constexpr int kImuSclGpio           =     11;
 
 ```
 1. can_driver_init()       — Install TWAI driver, start CAN
-2. steering_init()          — Configure LEDC PWM, disable servo
-3. obstacle_init()          — Configure TRIG/ECHO GPIOs
-4. pid_init()               — Load PID gains from config
-5. watchdog_init()          — Record initial timestamp
-6. Create queues            — can_rx(16), cmd(4), setpoint(4)
-7. Create 7 tasks           — See task layout above
-8. ESP_LOGI("Ready")
+2. obstacle_init()          — Configure TRIG/ECHO GPIOs
+3. pid_init()               — Load PID gains from config
+4. watchdog_init()          — Record initial timestamp
+5. Create queues            — can_rx(16), cmd(4), setpoint(4)
+6. Create 7 tasks           — See task layout above
+7. ESP_LOGI("Ready")
 ```
 
 ---
