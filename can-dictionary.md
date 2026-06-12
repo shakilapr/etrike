@@ -35,7 +35,7 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `SYS_EstopActive` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | — |
-| `SYS_HeartbeatOk` | 8 | 8 | u8 | 1 | 0 | 0 | 1 | — | 0 = RT alive counter frozen >200ms, 1 = alive counter incrementing |
+| `SYS_HeartbeatOk` | 8 | 8 | u8 | 1 | 0 | 0 | 1 | — | 0 = RT alive counter frozen >1000ms, 1 = alive counter incrementing |
 
 ---
 
@@ -105,6 +105,24 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 > Placed at `0x202` to avoid collision with EPS-C factory command at `0x200`. SYNTREE units are preprogrammed and cannot be reconfigured.
 
 ---
+
+### 0x203 — RT_BRAKE_CMD
+
+| Property | Value |
+|----------|-------|
+| **Sender** | RT |
+| **Receiver(s)** | SYS |
+| **DLC** | 4 |
+| **Period** | 50 Hz (20 ms) |
+
+| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
+|--------|-----------|-----|------|-------|--------|-----|-----|------|
+| `RT_BrakePressure` | 0 | 32 | i32 | 1 | 0 | 0 | 20000 | kPa |
+
+Byte layout (big-endian): Bytes 0-3 = brake pressure [kPa].
+
+RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS maps kPa to SEB Pressure Mode via placeholder conversion (`seb_raw = kpa * kSebPressureScale`, TBD: verify scale against SYNTREE spec). When `0x203 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x203 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
+
 
 ### 0x201 — SES_STATUS (SYNTREE EPS-C Feedback)
 
@@ -302,33 +320,39 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 ---
 
-### 0x7FF — HEARTBEAT (low-level)
+### 0x7FD — RT_HEARTBEAT (low-level)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | RT, SYS |
-| **Receiver(s)** | RT, SYS |
+| **Sender** | RT |
+| **Receiver(s)** | SYS |
 | **DLC** | 1 |
 | **Period** | 2 Hz (500 ms) |
+| **Timeout** | 1000ms (2 missed frames) → SYS triggers ESTOP (AUTO only) |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
-| `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen counter = hung node. |
+| `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung RT. |
 
-**Timeout**: **200 ms** (automotive FTTI). Both RT and SYS monitor each other. In AUTO, loss triggers ESTOP. Startup grace period: 3 seconds.
+`0x202` staleness check at 200ms provides faster detection. RT sends `0x7FD` independently on both buses (per-bus, NOT bridged; separate counters per bus).
 
-**Why 0x7FF is NOT bridged**: Each bus is an independent liveness domain. Bridging would put two senders with different alive counters on the same bus using the same CAN ID — impossible to distinguish which counter belongs to which node.
+---
 
-**Liveness matrix:**
+### 0x7FE — SYS_HEARTBEAT (low-level)
 
-| Monitor | Watches (bus) | Timeout | Action |
-|---------|--------------|---------|--------|
-| SYS | RT (low) | 200 ms | ESTOP (AUTO only) |
-| RT | SYS (low) | 200 ms | CAN `0x001` ESTOP (AUTO only) |
-| RT | Jetson (high) | 500 ms | Zero setpoints (controlled stop) |
-| Jetson | RT (high) | 500 ms | Stop publishing `/cmd_vel` |
+| Property | Value |
+|----------|-------|
+| **Sender** | SYS |
+| **Receiver(s)** | RT |
+| **DLC** | 1 |
+| **Period** | 2 Hz (500 ms) |
+| **Timeout** | 1000ms (2 missed frames) → RT sends CAN `0x001` ESTOP (AUTO only) |
 
-SYS does not watch Jetson (RT handles Jetson failure). Jetson does not watch SYS (RT handles SYS failure).
+| Signal | Start bit | Len | Type | Description |
+|--------|-----------|-----|------|-------------|
+| `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung SYS. |
+
+SYS heartbeat never leaves low bus. Startup grace period: 3 seconds (both heartbeat monitors).
 
 ---
 
@@ -413,9 +437,10 @@ Byte layout (big-endian): Bytes 0-1=sp, 2-3=meas, 4-5=out.
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `HOST_DriveSpeed` | 0 | 32 | i32 | 1 | 0 | -500 | 3000 | mm/s |
-| `HOST_YawRate` | 32 | 32 | i32 | 1 | 0 | -3000 | 3000 | mrad/s |
+| `HOST_YawRate` | 32 | 24 | i24 | 1 | 0 | -3000 | 3000 | mrad/s |
+| `HOST_Gear` | 56 | 8 | u8 | 1 | 0 | 0 | 3 | enum (0=N,1=D,2=S,3=R) |
 
-Byte layout (big-endian): Bytes 0-3=speed, 4-7=yaw.
+Byte layout (big-endian): Bytes 0-3=speed, 4-6=yaw[23:0], 7=gear.
 
 ROS 2 conversion: `speed_mmps = linear.x × 1000`, `yaw_rate_mrad_s = angular.z × 1000`.
 
@@ -474,20 +499,39 @@ Forwarded from low-level by RT. Same layout as §1 `0x600`.
 
 ---
 
-### 0x7FF — HEARTBEAT (high-level)
+### 0x7FD — RT_HEARTBEAT (high-level)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | Jetson, RT |
-| **Receiver(s)** | Jetson, RT |
+| **Sender** | RT |
+| **Receiver(s)** | Jetson |
 | **DLC** | 1 |
 | **Period** | 2 Hz (500 ms) |
+| **Timeout** | 1500ms (3 missed frames) → Jetson stops publishing `/cmd_vel` |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
-| `alive_ctr` | 0 | 8 | u8 | Increments every frame. Frozen = hung CAN controller or MCU. |
+| `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung RT. |
 
-**Timeout**: 500 ms (RT command staleness watchdog). Jetson HB lost → RT sends zero `0x202` + stop `0x200` (controlled stop). RT HB lost → Jetson logs, stops publishing `/cmd_vel`.
+RT sends `0x7FD` independently on both buses (per-bus, NOT bridged).
+
+---
+
+### 0x7FC — JETSON_HEARTBEAT (high-level)
+
+| Property | Value |
+|----------|-------|
+| **Sender** | Jetson |
+| **Receiver(s)** | RT |
+| **DLC** | 1 |
+| **Period** | 2 Hz (500 ms) |
+| **Timeout** | 1500ms (3 missed frames) → RT zeroes `0x202` + stops `0x200` (controlled stop) |
+
+| Signal | Start bit | Len | Type | Description |
+|--------|-----------|-----|------|-------------|
+| `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung Jetson. |
+
+Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not ESTOP.
 
 ---
 
@@ -505,11 +549,13 @@ Forwarded from low-level by RT. Same layout as §1 `0x600`.
 | `0x200` | VCU_SES_REQ | RT | EPS-C | 8 | **50 Hz** |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | 100 Hz |
 | `0x202` | RT_DRIVE_CMD | RT | SYS | 5 | 100 Hz |
+| `0x203` | RT_BRAKE_CMD | RT | SYS | 4 | **50 Hz** |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | Change |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→Jetson) | 8 | 1 Hz |
 | `0x720` | VCU_SEB_REQ | SYS | SEB | 8 | **50 Hz** |
 | `0x721` | SEB_STATUS | SEB | SYS | 8 | 100 Hz |
-| `0x7FF` | HEARTBEAT | RT, SYS | RT, SYS | 1 | 2 Hz |
+| `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | 2 Hz |
+| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | 2 Hz |
 
 ### High-level bus
 
@@ -525,7 +571,8 @@ Forwarded from low-level by RT. Same layout as §1 `0x600`.
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→SYS) | 1 | Change |
 | `0x400` | RT_OBSTACLE_RPT | RT | Jetson | 4 | 10 Hz |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
-| `0x7FF` | HEARTBEAT | Jetson, RT | Jetson, RT | 1 | 2 Hz |
+| `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | 2 Hz |
+| `0x7FC` | JETSON_HEARTBEAT | Jetson | RT | 1 | 2 Hz |
 
 ---
 
@@ -545,16 +592,16 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 | Inbound | Bus | Outbound | Bus |
 |---------|-----|----------|-----|
 | `0x300` HOST_DRIVE_CMD | High | `0x202` RT_DRIVE_CMD + `0x200` VCU_SES_REQ | Low |
-| `0x301` HOST_BRAKE_REQ | High | *(none yet — design gap)* | — |
+| `0x301` HOST_BRAKE_REQ | High | `0x203` RT_BRAKE_CMD | Low |
 
 ### Category 3: Bus-local (never forwarded, never regenerated)
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x200`, `0x202`, `0x720` |
+| Low only | `0x012`, `0x110`, `0x200`, `0x202`, `0x203`, `0x720` |
 | Low only | `0x201`, `0x721` (SYNTREE feedback) |
 | High only | `0x210`, `0x220`, `0x400` (RT telemetry) |
-| Both independent | `0x7FF` (per-bus heartbeat — NOT bridged) |
+| Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
 
 ---
 
@@ -567,6 +614,6 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 | High | `0x100`–`0x11F` | MODE_CMD |
 | Medium | `0x120`–`0x3FF` | THROTTLE, DRIVE, SES_STATUS/REQ, DRIVE_CMD, BRAKE_REQ, LIGHT_CMD |
 | Low | `0x400`–`0x5FF` | OBSTACLE, STATE_REPORT, PID_FEEDBACK |
-| Lowest | `0x600`–`0x7FF` | DIAG, SEB_REQ/STATUS, HEARTBEAT |
+| Lowest | `0x600`–`0x7FF` | DIAG, SEB_REQ/STATUS, HEARTBEAT (`0x7FC`–`0x7FE`) |
 
 > Lower CAN ID = higher bus arbitration priority. Safety-critical frames occupy `0x00X`. SYNTREE IDs (`0x2XX`, `0x7XX`) are in medium/lowest ranges per manufacturer assignment.
