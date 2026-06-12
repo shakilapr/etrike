@@ -121,7 +121,7 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 
 Byte layout (big-endian): Bytes 0-3 = brake pressure [kPa].
 
-RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS maps kPa to SEB Pressure Mode via placeholder conversion (`seb_raw = kpa * kSebPressureScale`, TBD: verify scale against SYNTREE spec). When `0x203 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x203 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
+RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified SYNTREE spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x203 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x203 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
 
 
 ### 0x201 — SES_STATUS (SYNTREE EPS-C Feedback)
@@ -259,8 +259,11 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 | (reserved) | 5 | 3 | — | — | — | — | — | — | |
 | (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
 | `VCU_SEB_Stroke_Value_Req` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Requested stroke position |
-| `VCU_SEB_Pre_Value_Req` | 32 | 16 | u16 | — | — | — | — | MPa | Requested pressure (TBD exact scale) |
-| (reserved) | 48 | 4 | — | — | — | — | — | — | Byte 6, bits 0–3 |
+| `VCU_SEB_Pre_Value_Req` | 32 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Requested pressure. Raw = kPa × 0.02 |
+| (reserved) | 40 | 8 | — | — | — | — | — | — | Byte 5 |
+| `VCU_SEB_RollCnt_Enable` | 48 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| `VCU_SEB_CheckSum_Enable` | 49 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| (reserved) | 50 | 2 | — | — | — | — | — | — | |
 | `VCU_SEB_RollCnt` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | — | Rolling counter. Increment every frame. |
 | `VCU_SEB_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | XOR of bytes 0–6, then `^ 0xFF` |
 
@@ -268,7 +271,7 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | ctrl bits | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | press [15:8] | rsvd(4)+RollCnt(4) | checksum |
+| Content | ctrl bits | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | rsvd | rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4) | checksum |
 
 **Stroke conversion**: `raw = (physical_mm + 30.0) / 0.05`
 
@@ -305,7 +308,8 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 | (reserved) | 6 | 2 | — | — | — | — | — | — | |
 | (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
 | `SEB_Stroke_Value` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Actual measured stroke |
-| `SEB_Pressure_Value` | 32 | 16 | u16 | — | — | — | — | MPa | Actual hydraulic pressure |
+| `SEB_Pressure_Value` | 32 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Actual hydraulic pressure |
+| (reserved) | 40 | 8 | — | — | — | — | — | — | Byte 5 |
 | `SEB_RollCnt_Status` | 48 | 4 | u8 | 1 | 0 | 0 | 15 | — | Echoes received rolling counter |
 | (reserved) | 52 | 4 | — | — | — | — | — | — | |
 | `SEB_CheckSum_Status` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum status |
@@ -314,7 +318,7 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | status bits | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | press [15:8] | rsvd(4)+RollCnt(4) | cksum_stat |
+| Content | status bits | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | rsvd | rsvd(4)+RollCnt(4) | cksum_stat |
 
 **SYS usage**: Boot sync — read `SEB_Stroke_Value` as initial command target. Active — confirm `SEB_Alignment_Status == 1`. `SEB_Error_Status > 0` → log and report via `0x011`.
 

@@ -3,6 +3,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 
 #include "config.h"
@@ -47,6 +48,11 @@ std::atomic<uint16_t> g_syntree_fault_bits{0};
 
 os::Queue<can::Frame, 16>                g_can_rx_queue;
 os::Queue<inter_mcu::RtToSysSetpoint, 4> g_setpoint_queue;
+
+// I2C mutex — serialises access to the shared I2C bus (MCP4725 DAC + optional IMU).
+// ESP-IDF I2C driver thread safety varies by version; application-level mutex
+// guarantees transaction atomicity regardless of driver version.
+SemaphoreHandle_t g_i2c_mutex = nullptr;
 
 // ── context structs for tasks needing multiple pointers ────────
 
@@ -304,6 +310,10 @@ void diagnostics_task(void*) {
 
 extern "C" void app_main() {
     ESP_LOGI(kTag, "SYS ESP32-S3 — safety & actuator");
+
+    // Init synchronisation primitives
+    g_i2c_mutex = xSemaphoreCreateMutex();
+    ESP_ERROR_CHECK(g_i2c_mutex != nullptr ? ESP_OK : ESP_ERR_NO_MEM);
 
     // Init hardware
     g_can.init();
