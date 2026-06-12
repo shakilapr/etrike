@@ -99,7 +99,7 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x210` | RT_STATE_RPT | RT | Jetson | 3 | u8 mode, u8 steer_valid, u8 reversing | 10 Hz | Low |
-| `0x220` | RT_PID_RPT | RT | Jetson | 6 | i16 sp, i16 meas, i16 out | 10 Hz | Low |
+| `0x220` | RT_PID_RPT | RT | Jetson | 6 | RESERVED — future closed-loop PID telemetry | — (inactive) | Low |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear | ≤100 Hz | Medium |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→ SYS) | 1 | u8 lights bitfield | Change | Medium |
@@ -218,7 +218,6 @@ SYS ────► Low CAN 0x720 → SEB (50 Hz continuous: stroke or pressure 
 | ROS 2 → CAN bridge | ✓ | | |
 | CAN gateway (low ↔ high) | | ✓ | |
 | Tricycle kinematics | | ✓ | |
-| Speed PID | | ✓ | |
 | Steering angle compute + CAN TX (`0x200`) | | ✓ | |
 | Steering boot sync (Listen-Before-Speaking) | | ✓ | |
 | Steering safety: dynamic angle clamp, hard-stops, following error | | ✓ | |
@@ -306,7 +305,7 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | High | `0x011` | SYS_SAFETY_STS (fwd) | `{u8 estop, u8 hb_ok}` | 5 Hz |
 | High | `0x120` | SYS_THROTTLE_STS (fwd) | `i16 speed_mmps` | 100 Hz |
 | High | `0x210` | RT_STATE_RPT | `{u8 mode, u8 steer_valid, u8 reversing}` | 10 Hz |
-| High | `0x220` | RT_PID_RPT | `{i16 sp, i16 meas, i16 out}` | 10 Hz |
+| High | `0x220` | RT_PID_RPT | RESERVED (inactive until encoders fitted) | — |
 | High | `0x400` | RT_OBSTACLE_RPT | `u32 distance_mm` | 10 Hz |
 | High | `0x600` | SYS_DIAG_RPT (fwd) | 8 bytes | 1 Hz |
 | High | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | 2 Hz |
@@ -434,9 +433,19 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 | AUTO | RT sends `0x200` at 50 Hz with resolved angle, dynamic clamp + slew rate applied. |
 | ESTOP | Obstacle: hold current angle, silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active `0x200`. Fall back to silent-stop if following error persists >1s. |
 
-#### Speed PID, Obstacle, Watchdog
+#### Speed control — open-loop (PID deferred)
 
-Unchanged. Same as prior revision: Kp=1.0, Ki=0.1, Kd=0.05, integral clamp ±500, 100 Hz. Obstacle limit 300–3000 mm. Staleness 500 ms → zero `0x202` + stop `0x200`.
+Motor speed control is **open-loop**: `0x202` desired speed → SYS MCP4725 DAC = `speed/3000 × 4095` (fixed voltage mapping). No feedback compensation. Acceptable for flat-ground steady-state operation but will not compensate for hills, headwinds, or load changes.
+
+`0x220 RT_PID_RPT` is reserved for future closed-loop PID. When rear motor encoders (GPIO1/2) are fitted, implement PID on SYS (direct DAC modulation from encoder feedback). See gap #5.
+
+#### Obstacle speed limit
+
+Linear: 300 mm→0, 3000 mm→full speed. HC-SR04 @ 10 Hz via `obstacle_task`.
+
+#### Command staleness watchdog
+
+500 ms, checked @ 10 Hz. Zero `0x202` + stop `0x200`.
 
 #### Brake arbitration (max-select)
 
@@ -479,14 +488,16 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | `can_rx_low` | 5 | 4096 B | Event | `twai_receive()` → queue |
 | `can_rx_high` | 5 | 4096 B | Event | MCP2515 SPI → queue |
 | `dispatch` | 4 | 4096 B | Event | Route both RX queues + gateway + steer feedback |
-| `control` | 4 | 4096 B | 100 Hz | Kinematics, PID, dynamic angle clamp, obstacle, brake, gear |
+| `control` | 4 | 4096 B | 100 Hz | Kinematics, dynamic angle clamp, obstacle, brake arbitration, gear derivation |
 | `can_tx_low` | 3 | 3072 B | Event | 0x202@100Hz, 0x200@50Hz (steer SM gated), 0x302 |
 | `can_tx_high` | 3 | 3072 B | Event | Telemetry → MCP2515 SPI |
 | `obstacle` | 2 | 2048 B | 10 Hz | HC-SR04 → 0x400 |
 | `watchdog` | 1 | 2048 B | 10 Hz | Staleness → zero setpoints + stop steer |
 | `heartbeat` | 1 | 2048 B | 2 Hz | `0x7FD` on both buses (per-bus, not bridged): `alive_ctr++ & 0xFF`, DLC=1 |
 
-### 7.8 Hardware pin assignments
+### 7.8 Hardware pin assignments — Board: RT ESP32-S3
+
+> ⚠️ **Board identity:** This is the **RT** ESP32-S3 (realtime physics, steering, CAN gateway). Do not confuse with SYS ESP32-S3 pin assignments in §8.8. Same GPIO numbers on different boards are different physical pins — connect to the board labeled "RT," not the one labeled "SYS."
 
 | Signal | GPIO | Direction | Notes |
 |--------|------|-----------|-------|
@@ -509,6 +520,7 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | Encoder B (rear right wheel) | 14 | In | |
 | I2C SDA | 10 | I/O | IMU (optional) |
 | I2C SCL | 11 | Out | IMU (optional) |
+| WDT toggle | 21 | Out | External watchdog IC (TPS3850). Toggled by `control_task` at 100 Hz. |
 | WDT toggle | 21 | Out | External watchdog IC (TPS3850). Toggled by `control_task` at 100 Hz (every 10 ms). |
 
 ### 7.9 Configuration constants
@@ -529,8 +541,7 @@ constexpr float kSteerMaxAngleAtHighSpeed = 5.0f;  // at 25 km/h
 // Speed limits
 constexpr int kMaxSpeedFwdMmps = 3000, kMaxSpeedRevMmps = 500;
 constexpr int kLowSpeedThreshMmps = 50;
-// PID
-constexpr float kPidKp = 1.0f, kPidKi = 0.1f, kPidKd = 0.05f, kPidMaxIntegral = 500.0f;
+// PID (deferred — see gap #5; gains TBD once encoders fitted)
 // Obstacle
 constexpr unsigned kObstacleStopMM = 300, kObstacleClearMM = 3000;
 // Timing
@@ -933,12 +944,15 @@ BRAKE_FAULT:
 | Rate | 50 Hz (20 ms) — continuous transmission required |
 | Control mode | 1 = Stroke Mode, 2 = Pressure Mode |
 | Stroke range | -5 to 27 mm (raw: 500–1140, scale 0.05, offset -30) |
+| Pressure range | 0 to 5 MPa (raw: 0–100, u8, scale 0.05 MPa/bit, offset 0) |
+| Pressure conversion | `seb_raw = kPa × 0.02` (1 MPa = 1000 kPa; 1 bit = 0.05 MPa) |
 | Rolling counter | 4-bit, increment every frame |
 | Checksum | XOR of bytes 0–6, then `^ 0xFF` (verify against spec) |
 
-> **Pressure Mode (2) — kPa→MPa mapping (ⓘ TBD: verify SEB pressure raw scale):**
+> **Pressure Mode (2) — verified kPa→raw conversion:**
 > 
-> RT sends `0x203 {i32 brake_pressure_kpa}`. SYS converts: `seb_raw = kpa * kSebPressureScale + kSebPressureOffset`. Placeholder: scale=1.0, offset=0 (raw = kPa). **Verify against SYNTREE SEB spec.**
+> RT sends `0x203 {i32 brake_pressure_kpa}`. SYS converts using verified SYNTREE SEB spec:
+> `seb_raw = (uint8_t)(kpa * 0.02f)`. Scale: 0.05 MPa/bit, range 0–5 MPa (raw 0–100). At 5000 kPa (5 MPa) → raw=100. Clamp to `kSebMaxPressureRaw` (100).
 > 
 > **Mode-switching:** 0x203 transitions 0→positive: hold current stroke, switch mode bit to 2 (Pressure), ramp pressure from current measured to target. 0x203 drops to 0: switch mode to 1 (Stroke), stroke=0. Prevents pressure transients.
 
@@ -1002,7 +1016,11 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 | `diag` | 1 | 2048 B | 1 Hz | CAN 0x600 |
 | `hb` | 1 | 2048 B | 2 Hz | CAN `0x7FE` (SYS heartbeat to RT) |
 
-### 8.8 Hardware pin assignments
+### 8.8 Hardware pin assignments — Board: SYS ESP32-S3
+
+> ⚠️ **Board identity:** This is the **SYS** ESP32-S3 (safety, motor actuation, body control). Do not confuse with RT ESP32-S3 pin assignments in §7.8. Same GPIO numbers on different boards are different physical pins — connect to the board labeled "SYS," not the one labeled "RT."
+>
+> **Shared GPIO numbers (safe — different chips):** GPIO 1,2,3,6,7,10,11,12,13,14,21 appear in both RT and SYS tables. These are physically separate pins on separate ESP32-S3 packages. No electrical conflict exists.
 
 | Signal | GPIO | Direction | Conditioning |
 |--------|------|-----------|-------------|
@@ -1069,8 +1087,9 @@ constexpr int kHeartbeatIdRT = 0x7FD;          // RT heartbeat (monitored by SYS
 constexpr int kHeartbeatIdSys = 0x7FE;         // SYS heartbeat (sent to RT)
 constexpr int kSetpointStaleMs = 200;           // 0x202 staleness → zero speed
 constexpr int kBrakeCmdId = 0x203;           // RT_BRAKE_CMD (from RT)
-constexpr float kSebPressureScale = 1.0f;    // TBD: SEB raw units per kPa
-constexpr float kSebPressureOffset = 0.0f;   // TBD
+constexpr float kSebPressureScale = 0.02f;     // kPa → SEB raw (1 bit = 0.05 MPa; 1 MPa = 1000 kPa → 0.05/1000 × raw = kPa → raw = kPa × 0.02)
+constexpr float kSebPressureOffset = 0.0f;
+constexpr uint8_t kSebMaxPressureRaw = 100;   // 100 × 0.05 = 5.0 MPa hardware limit
 constexpr int kStartupGracePeriodMs = 3000;    // mask at boot
 constexpr int kSafetyCheckHz = 20, kGearCheckHz = 50;
 // Brake (SYNTREE SEB)
@@ -1181,7 +1200,8 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 | 1 | ~~Brake arbitration has no CAN path to SYS~~ | ~~Jetson `0x301` + RT obstacle braking never actuated~~ | **RESOLVED:** `0x203 RT_BRAKE_CMD` (RT→SYS, DLC=4, i32 kPa, 50 Hz). SYS maps kPa→SEB Pressure Mode. Mode-switching protocol defined in §8.6. |
 | 2 | ~~No CAN message for Jetson to request S (Sport) gear~~ | ~~AUTO can only select D/N/R~~ | **RESOLVED:** `0x300 HOST_DRIVE_CMD` repacked: i32 speed + i24 yaw + u8 gear (N=0,D=1,S=2,R=3). RT passes gear through to `0x202`. |
 | 3 | ~~EPS-C timeout-fault behavior unknown~~ | ~~On ESTOP or comm loss, steering may lock, center, or freewheel~~ | **RESOLVED:** Two-tier ESTOP steering (§7.6). Active-zero centering for non-obstacle ESTOP with silent-stop fallback on mechanical jam. Obstacle-triggered ESTOP holds current angle. EPS-C timeout-fault is now a last-resort fallback (CAN bus dead), not the primary ESTOP mechanism. |
-| 4 | SEB pressure control mode not defined | SYS currently uses stroke mode only; pressure mode needed for brake arbitration | Define pressure target mapping from RT brake kPa to SEB MPa |
+| 4 | ~~SEB pressure control mode not defined~~ | ~~SYS currently uses stroke mode only~~ | **RESOLVED:** Verified SYNTREE SEB spec: `VCU_SEB_Pre_Value_Req` is u8 at bit 32, scale 0.05 MPa/bit, range 0–5 MPa (raw 0–100). Conversion: `seb_raw = kPa × 0.02`. Clamp to 100. |
+| 5 | Motor speed control is open-loop — no feedback compensation | SYS maps `0x202` speed to fixed MCP4725 voltage. Hills, headwinds, load changes uncompensated. Encoders reserved on GPIO1/2 but not yet fitted. `0x220 RT_PID_RPT` CAN ID reserved for future PID telemetry. | Once rear motor encoders are fitted and calibrated, implement PID on SYS for direct DAC modulation from encoder feedback. Tune gains (Kp/Ki/Kd) against actual vehicle dynamics. |
 
 ---
 
