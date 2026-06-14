@@ -16,8 +16,8 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
   │  │  Orin NX │            │              │                       │
   │  │          │            │ Physics      │                       │
   │  │ ROS 2    │            │ Steering     │                       │
-  │  │ Planning │            │ PID          │                       │
-  │  └────┬─────┘            │ CAN Gateway  │                       │
+  │  │ Planning │            │ Gateway      │                       │
+  │  └────┬─────┘            │              │                       │
   │       │                  └──────┬───────┘                       │
   │  TX:  0x300,0x301,    TX: 0x011,0x120, │                        │
   │       0x302,0x001           0x210,0x220,│                        │
@@ -131,7 +131,7 @@ RT receives a command on one bus, processes it internally, and transmits a **dif
 
 | Inbound (consumed) | Bus | Processing | Outbound (generated) | Bus |
 |--------------------|-----|-----------|----------------------|-----|
-| `0x300` HOST_DRIVE_CMD | High | Kinematics + PID → `ResolvedSetpoint` | `0x202` RT_DRIVE_CMD + `0x200` VCU_SES_REQ | Low |
+| `0x300` HOST_DRIVE_CMD | High | Kinematics  → `ResolvedSetpoint` | `0x202` RT_DRIVE_CMD + `0x200` VCU_SES_REQ | Low |
 | `0x301` HOST_BRAKE_REQ | High | Max-select arbitration → `0x203 RT_BRAKE_CMD` | `0x203` RT_BRAKE_CMD | Low |
 
 #### Category 3: Bus-local (never forwarded, never regenerated)
@@ -172,7 +172,7 @@ These messages serve only nodes on a single bus. RT neither forwards nor transla
 | Mode | Behavior |
 |------|----------|
 | **MANUAL** | Rider steers / rides throttle. SYS reads throttle ADC + gear sense → pass-through via MCP4725 + relays. Brake lever → SYS GPIO → CAN `0x720` → SEB. EPS-C standalone (RT idle). DC-DC on. |
-| **AUTO** | Jetson `/cmd_vel` → high CAN `0x300` → RT kinematics + PID → low CAN `0x202` (SYS: speed+gear) + `0x200` (EPS-C: angle). SYS drives MCP4725 + gear relays. Lights from Jetson via `0x302` (RT fwd). Brake via `0x720`. |
+| **AUTO** | Jetson `/cmd_vel` → high CAN `0x300` → RT kinematics  → low CAN `0x202` (SYS: speed+gear) + `0x200` (EPS-C: angle). SYS drives MCP4725 + gear relays. Lights from Jetson via `0x302` (RT fwd). Brake via `0x720`. |
 | **ESTOP** | MCP4725 = 0 V, all gear outputs OFF, `0x720` stroke=max (full brake), steering ramps to 0° at 20°/s via active `0x200` (unless obstacle-triggered → hold then silent-stop), DC-DC off (`0x012`), 12V relay OFF. Exit: **START button** → MANUAL, or power-cycle. |
 
 ---
@@ -193,7 +193,7 @@ DC-DC converter       ──► SYS CAN 0x012 enable=1 → 12V rail on
 ### 4.2 Auto mode
 
 ```
-Jetson /cmd_vel ──► High CAN 0x300 ──► RT kinematics + PID
+Jetson /cmd_vel ──► High CAN 0x300 ──► RT kinematics 
                                           │
                ┌──────────────────────────┤
                ▼ (low CAN)                ▼ (low CAN)
@@ -471,7 +471,7 @@ Pri 4  dispatch     ◀── both RX queues
                    any 0x001→mode_set(Estop)+gateway, low 0x110→mode_set
 
 Pri 4  control      ◀── cmd_queue (4, overwrite)
-           100 Hz: kinematics + PID + dynamic angle clamp + obstacle + brake → setpoint_queue
+           100 Hz: kinematics  + dynamic angle clamp + obstacle + brake → setpoint_queue
 
 Pri 3  can_tx_low   ◀── setpoint_queue + gw_tx_low_queue
            → 0x202 (100 Hz), 0x203 (50 Hz, drive setpoint), 0x200 (50 Hz, steer state machine), 0x302 (change)
@@ -567,7 +567,7 @@ constexpr int kEncRearRightA = 13, kEncRearRightB = 14;     // sensor TBD
 | High CAN bus-off | MCP2515 error flags | Log, auto-recover; zero setpoints until restored |
 | Command stale | Watchdog 500 ms | Zero `0x202` + stop `0x200` |
 | Obstacle timeout | Echo > 30 ms | Distance = UINT32_MAX |
-| Rear motor encoder missing | Speed = 0 | PID on stale measurement (I-term saturates) |
+| Rear motor encoder missing | Speed = 0 | open-loop - no encoder feedback (I-term saturates) |
 | Wheel encoder missing (any) | No pulses for >1s at known speed | Log warning; differential odometry degraded. Does NOT trigger ESTOP. |
 | Steering CAN TX fail | TWAI TX errors | Log, EPS-C will timeout-fault |
 | Steering following error | abs(cmd − actual) > 5° for 300 ms | `mode_set(Estop)` |
