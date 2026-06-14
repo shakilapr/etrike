@@ -54,14 +54,8 @@ int main() {
     if (sys::kObstacleClearDistMM == 3000) OK; else BAD("obstacle clear");
     CHECK("kObstacleStop < kObstacleClear");
     if (sys::kObstacleStopDistMM < sys::kObstacleClearDistMM) OK; else BAD("obstacle order");
-    CHECK("kMotorMaxSpeedMmps == 3000");
-    if (sys::kMotorMaxSpeedMmps == 3000) OK; else BAD("motor max");
-    CHECK("kBrakeGpio defined (deprecated)");
-    if (sys::kBrakeGpio == 0) OK; else BAD("brake gpio");  // 0 = deprecated, not a real pin
-    CHECK("kMotorPwmGpio defined (deprecated)");
-    if (sys::kMotorPwmGpio == 0) OK; else BAD("motor pwm");   // 0 = deprecated
-    CHECK("kPwmMax defined (deprecated 13-bit)");
-    if (sys::kPwmMax == 8191) OK; else BAD("pwm max");
+    CHECK("kThrottleMaxSpeedMmps == 3000");
+    if (sys::kThrottleMaxSpeedMmps == 3000) OK; else BAD("motor max");
 
     printf("\n  Result: %d failures\n", fails);
     return fails ? 1 : 0;

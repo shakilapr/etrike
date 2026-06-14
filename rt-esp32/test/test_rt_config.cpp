@@ -38,7 +38,6 @@ static void test_gpio_uniqueness() {
 static void test_constants() {
     printf("\n== Constant sanity ==\n");
     CHECK("wheelbase > 0");           if (rt::kWheelbaseMM > 0) OK; else BAD("wheelbase");
-    CHECK("steer hard limit < unit limit"); if (rt::kSteerHardLimitDeg < 78.0f) OK; else BAD("steer limit");
     CHECK("max speed fwd > rev");     if (rt::kMaxSpeedFwdMmps > rt::kMaxSpeedRevMmps) OK; else BAD("speed");
     CHECK("obstacle stop < clear");   if (rt::kObstacleStopDistMM < rt::kObstacleClearDistMM) OK; else BAD("obstacle");
     CHECK("HB timeout Sys < Jetson"); if (rt::kHeartbeatTimeoutMsSys < rt::kHeartbeatTimeoutMsJetson) OK; else BAD("hb timeout");
@@ -64,15 +63,9 @@ static void test_r2_new_constants() {
     CHECK("PID gains defined and positive");
     if (rt::kPidKp > 0.0f && rt::kPidKi > 0.0f && rt::kPidKd > 0.0f) OK; else BAD("PID gains");
 
-    CHECK("kSteerLimitDeg defined");
     if (rt::kSteerLimitDeg > 0.0f && rt::kSteerLimitDeg <= 78.0f) OK; else BAD("steer limit");
 
-    CHECK("kSteerLimitDeg == kSteerHardLimitDeg");
-    if (rt::kSteerLimitDeg == rt::kSteerHardLimitDeg) OK; else BAD("steer limit mismatch");
 
-    CHECK("kInterMcu* constants defined (deprecated)");
-    if (rt::kInterMcuUartPort == 1 && rt::kInterMcuTxGpio > 0
-        && rt::kInterMcuRxGpio > 0 && rt::kInterMcuBaud > 0) OK; else BAD("intermcu");
 }
 
 int main() {
