@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 
-inline int g_mock_gpio[48] = {};
+static int g_mock_gpio[48] = {};
 enum { GPIO_MODE_INPUT = 0, GPIO_MODE_OUTPUT = 1, GPIO_PULLUP_ONLY = 1 };
 
 inline int gpio_set_direction(int, int) { return 0; }
@@ -19,7 +19,7 @@ inline void gpio_set_level(int pin, int level) {
 }
 
 // Timer stub
-inline int64_t g_mock_time_us = 0;
+static int64_t g_mock_time_us = 0;
 
 inline int64_t esp_timer_get_time() { return g_mock_time_us; }
 
@@ -31,7 +31,7 @@ inline int64_t esp_timer_get_time() { return g_mock_time_us; }
 #define ESP_ERROR_CHECK(x) (x)
 
 // ADC stub
-inline int g_mock_adc_raw = 0;
+static int g_mock_adc_raw = 0;
 inline int adc1_get_raw(int) { return g_mock_adc_raw; }
 inline int adc1_config_width(int) { return 0; }
 inline int adc1_config_channel_atten(int, int) { return 0; }
@@ -62,7 +62,7 @@ struct ledc_channel_config_t {
     int duty = 0;
     int hpoint = 0;
 };
-inline int g_mock_ledc_duty[8] = {};
+static int g_mock_ledc_duty[8] = {};
 inline int ledc_timer_config(const ledc_timer_config_t*) { return 0; }
 inline int ledc_channel_config(const ledc_channel_config_t*) { return 0; }
 inline int ledc_set_duty(int, int channel, int duty) {

@@ -1,6 +1,9 @@
 #pragma once
-// Brake actuator — solenoid/relay on GPIO.
-// ESTOP → engage, brake lever → engage, normal → release.
+// ═══ DEPRECATED — Phase S5 ════════════════════════════════════════
+// Brake actuation is exclusively through SYNTREE SEB via CAN 0x720.
+// This GPIO-based solenoid/relay pattern is legacy.
+// See: brake_control.h for the CAN-based SEB implementation.
+// ═══════════════════════════════════════════════════════════════════
 
 namespace sys {
 

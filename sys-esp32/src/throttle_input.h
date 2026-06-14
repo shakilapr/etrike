@@ -9,17 +9,19 @@ namespace sys {
 
 class ThrottleInput {
 public:
-    void init() { m_speed_mmps = 0; }
+    void init();
 
-    // Call @ 100 Hz. raw_adc: 0-4095. Returns mapped speed in mm/s.
+    // Poll ADC (call @ 100 Hz). Stores result internally.
+    void poll();
+
+    // Last polled speed in mm/s.
+    int32_t read_mmps() const;
+
+    // Host-testable tick: pass raw ADC value, get mapped speed.
     int16_t tick(uint16_t raw_adc) {
         if (raw_adc < kThrottleDeadZone) raw_adc = 0;
-        m_speed_mmps = int16_t((int32_t(raw_adc) * kThrottleMaxSpeedMmps) / 4095);
-        return m_speed_mmps;
+        return int16_t((int32_t(raw_adc) * kThrottleMaxSpeedMmps) / 4095);
     }
-    int16_t speed_mmps() const { return m_speed_mmps; }
-private:
-    int16_t m_speed_mmps = 0;
 };
 
 }  // namespace sys
