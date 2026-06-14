@@ -1,50 +1,64 @@
-// Mode state machine — implementation.
+// Mode state machine implementation.  Architecture.md §8.6.
 
 #include "mode_manager.h"
-#include "config.h"
-#include <atomic>
-#include "driver/gpio.h"
-#include "esp_log.h"
+#include <cstdio>
 
 namespace sys {
-namespace {
-
-constexpr const char* kTag = "mode";
-std::atomic<int> g_mode{static_cast<int>(can::Mode::Manual)};
-
-}
 
 void ModeManager::init() {
-    g_mode.store(static_cast<int>(can::Mode::Manual), std::memory_order_relaxed);
-    m_prev_switch = false;
-    gpio_set_direction(kModeSwitchGpio, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(kModeSwitchGpio, GPIO_PULLUP_ONLY);
-    ESP_LOGI(kTag, "switch GPIO=%d", kModeSwitchGpio);
+    m_mode = can::Mode::Manual;
+    m_debounce = 0;
+    m_prev_mode_btn = true;
+    m_prev_start_btn = true;
 }
 
-can::Mode ModeManager::current() const {
-    return static_cast<can::Mode>(g_mode.load(std::memory_order_relaxed));
-}
+bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
+    if (m_debounce > 0) { m_debounce--; return false; }
 
-void ModeManager::set(can::Mode m) {
-    // ESTOP cannot be cleared except by explicit reset
-    auto cur = static_cast<can::Mode>(g_mode.load(std::memory_order_relaxed));
-    if (cur == can::Mode::Estop && m != can::Mode::Estop) return;
-    auto old = static_cast<can::Mode>(
-        g_mode.exchange(static_cast<int>(m), std::memory_order_relaxed));
-    if (old != m)
-        ESP_LOGI(kTag, "%s → %s", can::mode_name(old), can::mode_name(m));
-}
-
-void ModeManager::poll() {
-    auto cur = current();
-    if (cur == can::Mode::Estop) return;  // switch ignored in ESTOP
-
-    bool sw = (gpio_get_level(kModeSwitchGpio) == 0);  // LOW = Auto (switch closed)
-    if (sw != m_prev_switch) {
-        set(sw ? can::Mode::Auto : can::Mode::Manual);
-        m_prev_switch = sw;
+    // START button — exit ESTOP→MANUAL only
+    if (falling_edge(m_prev_start_btn, start_btn_pressed)) {
+        if (m_mode == can::Mode::Estop) {
+            set_mode(can::Mode::Manual);
+            m_prev_mode_btn = mode_btn_pressed;
+            m_prev_start_btn = start_btn_pressed;
+            m_debounce = kDebounceMs / 100;  // 500ms → 5 ticks @ 10 Hz
+            return true;
+        }
     }
+
+    // MODE button — toggle MANUAL↔AUTO. Ignored in ESTOP.
+    if (falling_edge(m_prev_mode_btn, mode_btn_pressed)) {
+        if (m_mode == can::Mode::Manual) {
+            set_mode(can::Mode::Auto);
+        } else if (m_mode == can::Mode::Auto) {
+            set_mode(can::Mode::Manual);
+        }
+        m_prev_mode_btn = mode_btn_pressed;
+        m_prev_start_btn = start_btn_pressed;
+        if (m_mode != can::Mode::Estop) {
+            m_debounce = kDebounceMs / 100;
+            return true;
+        }
+    }
+
+    m_prev_mode_btn = mode_btn_pressed;
+    m_prev_start_btn = start_btn_pressed;
+    return false;
+}
+
+void ModeManager::force_estop() { set_mode(can::Mode::Estop); }
+
+void ModeManager::set_from_can(uint8_t m) {
+    if (m <= 2) set_mode(static_cast<can::Mode>(m));
+}
+
+const char* ModeManager::name() const {
+    switch (m_mode) {
+        case can::Mode::Manual: return "MANUAL";
+        case can::Mode::Auto:   return "AUTO";
+        case can::Mode::Estop:  return "ESTOP";
+    }
+    return "?";
 }
 
 }  // namespace sys
