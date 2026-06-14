@@ -18,7 +18,7 @@ int16_t ang=0;q.steer_feedback_angle=&ang;
 
 can::Frame fr;fr.id=0x011;fr.dlc=2;fr.put_u8(0,1);
 rt::route_frame(fr,false,q);C("low 0x011->gw_high");if(gw_high.id==0x011)O;else B("f011");
-fr.id=0x300;fr.dlc=8;fr.put_i32(0,1500);fr.put_i32(4,-200);
+can::HostDriveCmd{1500,-200,0}.to_frame(fr);
 rt::route_frame(fr,true,q);C("high 0x300->cmd");if(cmd.speed_mmps==1500&&cmd.yaw_rate_mrad_s==-200)O;else B("300");
 fr.id=0x301;fr.dlc=4;fr.put_i32(0,8000);
 rt::route_frame(fr,true,q);C("high 0x301->brake_kpa");if(bkpa==8000)O;else B("301");
