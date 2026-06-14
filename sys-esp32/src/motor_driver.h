@@ -1,23 +1,26 @@
 #pragma once
-// Rear motor PWM + direction.
-// Mode-aware: AUTO -> inter-MCU setpoint, MANUAL -> throttle, ESTOP -> stop.
-
-#include <cstdint>
-
+// Motor driver — mode-dependent throttle + gear output. Architecture.md §8.6.
+#include "throttle_input.h"
+#include "mcp4725_dac.h"
+#include "can/can_protocol.h"
 namespace sys {
-
 class MotorDriver {
 public:
-    MotorDriver() = default;
+    void init() { m_dac.init(); m_throttle.init(); }
+    Mcp4725Dac& dac() { return m_dac; }
+    ThrottleInput& throttle() { return m_throttle; }
 
-    void init();
-    void set_speed(int32_t speed_mmps);  // Positive = forward
-    void set_effort(int32_t effort_pwm); // Signed raw PWM effort [-8191, +8191]
-    void stop();
-
+    // Call @ 100 Hz. MANUAL: pass-through. AUTO: setpoint. ESTOP: zero.
+    void tick(can::Mode mode, const can::RtDriveCmd* setpoint) {
+        if (mode == can::Mode::Estop) { m_dac.write(0); return; }
+        if (mode == can::Mode::Manual || !setpoint) {
+            m_dac.set_speed_mmps(m_throttle.speed_mmps());
+        } else {
+            m_dac.set_speed_mmps(setpoint->motor_speed_mmps);
+        }
+    }
 private:
-    static constexpr int kResBits = 13;
-    static constexpr int kPwmMax  = (1 << kResBits) - 1;  // 8191
+    Mcp4725Dac m_dac;
+    ThrottleInput m_throttle;
 };
-
-}  // namespace sys
+}
