@@ -1,23 +1,13 @@
 #pragma once
-// Command staleness watchdog.
-// If Jetson stops sending HOST_DRIVE_CMD (0x300), triggers controlled stop.
-
 #include <cstdint>
-
+#include "config.h"
 namespace rt {
-
-class Watchdog {
+class CmdWatchdog {
 public:
-    Watchdog() = default;
-
-    void init();                // Record initial timestamp
-    void feed();                // Call on every valid 0x300 receipt
-    bool is_stale() const;      // True if last command is older than timeout
-    bool is_tripped() const { return m_tripped; }
-
+    void init() { m_last_feed=-kCmdStaleTimeoutMs*1000; }
+    void feed(int64_t now_us) { m_last_feed=now_us; }
+    bool is_stale(int64_t now_us) const { return (now_us-m_last_feed)>int64_t(kCmdStaleTimeoutMs)*1000; }
 private:
-    int64_t m_last_feed_us = 0;
-    bool    m_tripped      = false;
+    int64_t m_last_feed=0;
 };
-
-}  // namespace rt
+}
