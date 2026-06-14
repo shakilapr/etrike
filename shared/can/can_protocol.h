@@ -1,42 +1,67 @@
 #pragma once
-// CAN protocol definitions.
-// Bus 1 (public): Jetson <-> RT ESP32-S3.
-// Bus 2 (private): SYS ESP32-S3 <-> Syntree EPS-C/SEB actuators.
-// RT <-> SYS actuator setpoints use shared/intermcu, not CAN.
+// CAN protocol definitions — three-node distributed architecture.
+// Low-level CAN (500 kbit/s): RT, SYS, EPS-C, SEB, DC-DC converter.
+// High-level CAN (500 kbit/s): RT, Jetson.
+// RT bridges selected IDs between buses (§2.3 architecture.md).
 
 #include <cstdint>
 #include "os/endian.h"
 
 namespace can {
 
-// ── Public CAN ID assignments: Jetson <-> RT ────────────────────
-// Lower ID = higher arbitration priority on the bus.
-// Safety-critical messages have the lowest IDs.
+// ───────────────────────────────────────────────────────────────────
+// Low-level CAN ID assignments
+// ───────────────────────────────────────────────────────────────────
 
-constexpr uint32_t kIdSysEstop         = 0x001;  // mirrored SYS emergency stop
-constexpr uint32_t kIdRtEstop          = 0x002;  // RT emergency stop
-constexpr uint32_t kIdHostEstop        = 0x003;  // Jetson emergency stop
-constexpr uint32_t kIdSysSafetyStatus  = 0x011;  // RT mirrors SYS safety to Jetson
-constexpr uint32_t kIdSysThrottlePos   = 0x120;  // RT mirrors SYS throttle to Jetson
-constexpr uint32_t kIdRtStateReport    = 0x210;  // RT → Jetson
-constexpr uint32_t kIdRtPidFeedback    = 0x220;  // RT → Jetson
-constexpr uint32_t kIdHostDriveCmd     = 0x300;  // Jetson → RT: drive command
-constexpr uint32_t kIdHostBrakeRequest = 0x301;  // Jetson → RT: brake pressure request
-constexpr uint32_t kIdRtObstacleDist   = 0x400;  // RT → Jetson
-constexpr uint32_t kIdSysDiag          = 0x600;  // RT mirrors SYS diagnostics to Jetson
-constexpr uint32_t kIdHeartbeat        = 0x7FF;  // Jetson/RT public alive signal
+constexpr uint32_t kIdSafetyEstop       = 0x001;  // ESTOP: any→all, bridged to high
+constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Jetson), 5 Hz
+constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→DC-DC converter, on change
+constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
+constexpr uint32_t kIdSysThrottleSts    = 0x120;  // SYS→RT (→Jetson), 100 Hz
+constexpr uint32_t kIdVcuSesReq         = 0x200;  // RT→EPS-C steering cmd, 50 Hz (SYNTREE factory default)
+constexpr uint32_t kIdSesStatus         = 0x201;  // EPS-C→RT steering feedback, 100 Hz
+constexpr uint32_t kIdRtDriveCmd        = 0x202;  // RT→SYS motor speed+gear, 100 Hz
+constexpr uint32_t kIdRtBrakeCmd        = 0x203;  // RT→SYS brake pressure kPa, 50 Hz
+constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
+constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson), 1 Hz
+constexpr uint32_t kIdVcuSebReq         = 0x720;  // SYS→SEB brake cmd, 50 Hz (SYNTREE)
+constexpr uint32_t kIdSebStatus         = 0x721;  // SEB→SYS brake feedback, 100 Hz
+constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
+constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 2 Hz
 
-// ── Private CAN ID assignments: SYS <-> Syntree actuators ───────
-constexpr uint32_t kIdSyntreeEpsCommand = 0x169;  // SYS → EPS-C, 20 ms command
-constexpr uint32_t kIdSyntreeEpsStatus  = 0x201;  // EPS-C → SYS, status feedback
-constexpr uint32_t kIdSyntreeSebCommand = 0x7B0;  // SYS → SEB, 20 ms command
-constexpr uint32_t kIdSyntreeSebStatus  = 0x721;  // SEB → SYS, status feedback
+// ───────────────────────────────────────────────────────────────────
+// High-level CAN ID assignments
+// ───────────────────────────────────────────────────────────────────
 
-inline bool is_estop_id(uint32_t id) {
-    return id == kIdSysEstop || id == kIdRtEstop || id == kIdHostEstop;
+constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Jetson, 10 Hz
+constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Jetson, reserved (future PID)
+constexpr uint32_t kIdHostDriveCmd      = 0x300;  // Jetson→RT, ≤100 Hz
+constexpr uint32_t kIdHostBrakeReq      = 0x301;  // Jetson→RT, on demand
+constexpr uint32_t kIdRtObstacleRpt     = 0x400;  // RT→Jetson, 10 Hz
+constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Jetson alive counter, 2 Hz
+constexpr uint32_t kIdJetsonHeartbeat   = 0x7FC;  // Jetson→RT alive counter, 2 Hz
+
+// ───────────────────────────────────────────────────────────────────
+// Forwarded IDs (same ID on both buses, transparent)
+// ───────────────────────────────────────────────────────────────────
+
+// Low→High: kIdSafetyEstop, kIdSysSafetySts, kIdSysThrottleSts, kIdSysDiagRpt
+// High→Low: kIdSafetyEstop, kIdHostLightCmd
+
+inline bool is_estop_id(uint32_t id) { return id == kIdSafetyEstop; }
+
+inline bool is_forwarded_low_to_high(uint32_t id) {
+    return id == kIdSafetyEstop || id == kIdSysSafetySts
+        || id == kIdSysThrottleSts || id == kIdSysDiagRpt;
 }
 
-// ── CAN frame (hardware-independent) ────────────────────────────
+inline bool is_forwarded_high_to_low(uint32_t id) {
+    return id == kIdSafetyEstop || id == kIdHostLightCmd;
+}
+
+// ───────────────────────────────────────────────────────────────────
+// CAN frame (hardware-independent)
+// ───────────────────────────────────────────────────────────────────
 
 struct Frame {
     uint32_t id       = 0;
@@ -44,150 +69,186 @@ struct Frame {
     uint8_t  dlc      = 0;
     uint8_t  data[8]  = {};
 
-    // Convenience: write int32_t at offset
     void put_i32(int offset, int32_t v) { os::write_be32(&data[offset], v); }
+    void put_u32(int offset, uint32_t v) { os::write_be32(&data[offset], int32_t(v)); }
     void put_i16(int offset, int16_t v) { os::write_be16(&data[offset], v); }
     void put_u8(int offset, uint8_t v)  { data[offset] = v; }
 
     int32_t  i32_at(int offset) const { return os::read_be32(&data[offset]); }
+    uint32_t u32_at(int offset) const { return uint32_t(os::read_be32(&data[offset])); }
     int16_t  i16_at(int offset) const { return os::read_be16(&data[offset]); }
     uint8_t  u8_at(int offset)  const { return data[offset]; }
 };
 
-// ── Frame payload types ─────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────
+// Shared enums
+// ───────────────────────────────────────────────────────────────────
 
-// 0x300 HOST_DRIVE_CMD — Jetson → RT
-struct HostDriveCmd {
-    int32_t speed_mmps      = 0;   // linear.x  [mm/s]
-    int32_t yaw_rate_mrad_s = 0;   // angular.z [millirad/s]
+enum class Mode : uint8_t { Manual = 0, Auto = 1, Estop = 2 };
+enum class Gear  : uint8_t { N = 0, D = 1, S = 2, R = 3 };
 
-    static HostDriveCmd from_frame(const Frame& f) {
-        return { f.i32_at(0), f.i32_at(4) };
+inline const char* mode_name(Mode m) {
+    switch (m) {
+        case Mode::Manual: return "MANUAL";
+        case Mode::Auto:   return "AUTO";
+        case Mode::Estop:  return "ESTOP";
     }
-    void to_frame(Frame& f) const {
-        f.id = kIdHostDriveCmd; f.dlc = 8; f.extended = false;
-        f.put_i32(0, speed_mmps); f.put_i32(4, yaw_rate_mrad_s);
-    }
-};
+    return "?";
+}
 
-// 0x301 HOST_BRAKE_REQUEST — Jetson → RT
-struct HostBrakeRequest {
-    int32_t brake_pressure_kpa = 0;   // desired brake pressure [kPa]; 0 = release
+// ───────────────────────────────────────────────────────────────────
+// Low-level CAN payload types
+// ───────────────────────────────────────────────────────────────────
 
-    static HostBrakeRequest from_frame(const Frame& f) {
-        return { f.i32_at(0) };
-    }
-    void to_frame(Frame& f) const {
-        f.id = kIdHostBrakeRequest; f.dlc = 4; f.extended = false;
-        f.put_i32(0, brake_pressure_kpa);
-    }
-};
+// 0x011 SYS_SAFETY_STS — SYS→RT (→Jetson)
+struct SysSafetySts {
+    bool estop_active = false;
+    bool heartbeat_ok = false;   // RT alive counter incrementing
 
-// 0x400 RT_OBSTACLE_DIST — RT → Jetson
-struct RtObstacleDist {
-    uint32_t distance_mm = 0;
-
-    static RtObstacleDist from_frame(const Frame& f) {
-        return { uint32_t(f.i32_at(0)) };
-    }
-    void to_frame(Frame& f) const {
-        f.id = kIdRtObstacleDist; f.dlc = 4; f.extended = false;
-        f.put_i32(0, int32_t(distance_mm));
-    }
-};
-
-// 0x011 SYS_SAFETY_STATUS — RT mirrors SYS status to Jetson
-struct SysSafetyStatus {
-    bool estop_active  = false;
-    bool heartbeat_ok  = false;
-
-    static SysSafetyStatus from_frame(const Frame& f) {
+    static SysSafetySts from_frame(const Frame& f) {
         return { f.u8_at(0) != 0, f.u8_at(1) != 0 };
     }
     void to_frame(Frame& f) const {
-        f.id = kIdSysSafetyStatus; f.dlc = 2; f.extended = false;
+        f.id = kIdSysSafetySts; f.dlc = 2;
         f.put_u8(0, estop_active ? 1 : 0);
-        f.put_u8(1, heartbeat_ok  ? 1 : 0);
+        f.put_u8(1, heartbeat_ok ? 1 : 0);
     }
 };
 
-// 0x169 EPS-C command on the private Syntree bus.
-// Byte layout must be verified against the project-specific Syntree protocol
-// before enabling transmission on hardware.
-struct SyntreeEpsCommand {
-    uint8_t raw[8] = {};
+// 0x110 SYS_MODE_CMD — SYS→RT
+struct SysModeCmd {
+    uint8_t mode = 0;   // Mode enum
 
+    static SysModeCmd from_frame(const Frame& f) { return { f.u8_at(0) }; }
     void to_frame(Frame& f) const {
-        f.id = kIdSyntreeEpsCommand; f.dlc = 8; f.extended = false;
-        for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
+        f.id = kIdSysModeCmd; f.dlc = 1;
+        f.put_u8(0, mode);
     }
 };
 
-// 0x7B0 SEB command on the private Syntree bus.
-// Byte layout must be verified against the project-specific Syntree protocol
-// before enabling transmission on hardware.
-struct SyntreeSebCommand {
-    uint8_t raw[8] = {};
-
-    void to_frame(Frame& f) const {
-        f.id = kIdSyntreeSebCommand; f.dlc = 8; f.extended = false;
-        for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
-    }
-};
-
-// 0x120 SYS_THROTTLE_POS
-struct SysThrottlePos {
+// 0x120 SYS_THROTTLE_STS — SYS→RT (→Jetson)
+struct SysThrottleSts {
     int16_t speed_mmps = 0;
 
-    static SysThrottlePos from_frame(const Frame& f) {
-        return { f.i16_at(0) };
-    }
+    static SysThrottleSts from_frame(const Frame& f) { return { f.i16_at(0) }; }
     void to_frame(Frame& f) const {
-        f.id = kIdSysThrottlePos; f.dlc = 2; f.extended = false;
+        f.id = kIdSysThrottleSts; f.dlc = 2;
         f.put_i16(0, speed_mmps);
     }
 };
 
-// 0x210 RT_STATE_REPORT — RT → Jetson
-struct RtStateReport {
-    uint8_t mode       = 0;   // 0=Manual, 1=Auto, 2=Estop
-    bool    steer_valid = false;
-    bool    reversing   = false;
+// 0x200 VCU_SES_REQ — RT→EPS-C (steering command, SYNTREE protocol)
+// Little-endian on the wire (Motorola LSB). Pack/unpack with explicit shifts.
+struct VcuSesReq {
+    uint8_t align_enable   : 1;
+    uint8_t control_enable : 1;
+    uint8_t control_mode   : 2;   // 0=None, 1=Angle
+    uint8_t reserved_0     : 4;
+    uint8_t reserved_1        = 0;
+    int16_t target_angle      = 0;   // 0.1 deg/bit, ±780 → ±78.0°
+    uint8_t target_speed      = 0;   // deg/s slew rate
+    uint8_t roll_cnt_enable   : 1;   // MUST be 1
+    uint8_t checksum_enable   : 1;   // MUST be 1
+    uint8_t reserved_2        : 6;
+    uint8_t reserved_3        : 4;
+    uint8_t rolling_counter   : 4;   // 0–15, increment every frame
+    uint8_t checksum          = 0;   // XOR(bytes[0..6]) ^ 0xFF
+
+    void pack(uint8_t raw[8]) const;
+    static VcuSesReq unpack(const uint8_t raw[8]);
 
     void to_frame(Frame& f) const {
-        f.id = kIdRtStateReport; f.dlc = 3; f.extended = false;
-        f.put_u8(0, mode);
-        f.put_u8(1, steer_valid ? 1 : 0);
-        f.put_u8(2, reversing   ? 1 : 0);
+        uint8_t raw[8]; pack(raw);
+        f.id = kIdVcuSesReq; f.dlc = 8;
+        for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
     }
 };
 
-// 0x220 RT_PID_FEEDBACK — RT → Jetson
-struct RtPidFeedback {
-    int16_t speed_setpoint_mmps = 0;
-    int16_t speed_measured_mmps = 0;
-    int16_t pid_output          = 0;
+// 0x202 RT_DRIVE_CMD — RT→SYS
+struct RtDriveCmd {
+    int32_t motor_speed_mmps = 0;   // [-500, 3000]
+    uint8_t gear             = 0;   // Gear enum
 
+    static RtDriveCmd from_frame(const Frame& f) {
+        return { f.i32_at(0), f.u8_at(4) };
+    }
     void to_frame(Frame& f) const {
-        f.id = kIdRtPidFeedback; f.dlc = 6; f.extended = false;
-        f.put_i16(0, speed_setpoint_mmps);
-        f.put_i16(2, speed_measured_mmps);
-        f.put_i16(4, pid_output);
+        f.id = kIdRtDriveCmd; f.dlc = 5;
+        f.put_i32(0, motor_speed_mmps);
+        f.put_u8(4, gear);
     }
 };
 
-// 0x600 SYS_DIAG — SYS → Jetson
-struct SysDiag {
+// 0x203 RT_BRAKE_CMD — RT→SYS
+struct RtBrakeCmd {
+    int32_t brake_pressure_kpa = 0;  // 0 = release
+
+    static RtBrakeCmd from_frame(const Frame& f) { return { f.i32_at(0) }; }
+    void to_frame(Frame& f) const {
+        f.id = kIdRtBrakeCmd; f.dlc = 4;
+        f.put_i32(0, brake_pressure_kpa);
+    }
+};
+
+// 0x302 HOST_LIGHT_CMD — Jetson→RT (→SYS, forwarded)
+struct HostLightCmd {
+    bool left_turn   = false;
+    bool right_turn  = false;
+    bool brake_light = false;
+    bool headlight   = false;
+
+    static HostLightCmd from_frame(const Frame& f) {
+        uint8_t b = f.u8_at(0);
+        return { bool(b & 0x01), bool(b & 0x02), bool(b & 0x04), bool(b & 0x08) };
+    }
+    void to_frame(Frame& f) const {
+        f.id = kIdHostLightCmd; f.dlc = 1;
+        uint8_t b = 0;
+        if (left_turn)   b |= 0x01;
+        if (right_turn)  b |= 0x02;
+        if (brake_light) b |= 0x04;
+        if (headlight)   b |= 0x08;
+        f.put_u8(0, b);
+    }
+};
+
+// 0x720 VCU_SEB_REQ — SYS→SEB (brake command, SYNTREE protocol)
+// Little-endian on the wire. Pack/unpack with explicit shifts.
+struct VcuSebReq {
+    uint8_t align_enable   : 1;
+    uint8_t control_enable : 1;
+    uint8_t control_mode   : 2;   // 0=None, 1=Stroke, 2=Pressure
+    uint8_t auto_brake     : 1;
+    uint8_t reserved_0     : 3;
+    uint8_t reserved_1        = 0;
+    uint16_t stroke_req       = 600; // raw: (mm+30)/0.05, 600=0mm
+    uint16_t pressure_req     = 0;   // MPa raw, TBD: verify scale
+    uint8_t reserved_2        : 4;
+    uint8_t rolling_counter   : 4;   // 0–15
+    uint8_t checksum          = 0;   // XOR(bytes[0..6]) ^ 0xFF
+
+    void pack(uint8_t raw[8]) const;
+    static VcuSebReq unpack(const uint8_t raw[8]);
+
+    void to_frame(Frame& f) const {
+        uint8_t raw[8]; pack(raw);
+        f.id = kIdVcuSebReq; f.dlc = 8;
+        for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
+    }
+};
+
+// 0x600 SYS_DIAG_RPT — SYS→RT (→Jetson)
+struct SysDiagRpt {
     uint8_t  mode          = 0;
     bool     brake_engaged = false;
     bool     heartbeat_ok  = false;
     bool     estop_active  = false;
     uint16_t free_heap_kb  = 0;
-    uint8_t  tec           = 0;   // TWAI transmit error counter
-    uint8_t  rec           = 0;   // TWAI receive error counter
+    uint8_t  tec           = 0;
+    uint8_t  rec           = 0;
 
     void to_frame(Frame& f) const {
-        f.id = kIdSysDiag; f.dlc = 8; f.extended = false;
+        f.id = kIdSysDiagRpt; f.dlc = 8;
         f.put_u8(0, mode);
         f.put_u8(1, brake_engaged ? 1 : 0);
         f.put_u8(2, heartbeat_ok  ? 1 : 0);
@@ -198,21 +259,143 @@ struct SysDiag {
     }
 };
 
-// ── Mode enum (shared) ──────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────
+// High-level CAN payload types
+// ───────────────────────────────────────────────────────────────────
 
-enum class Mode : uint8_t {
-    Manual = 0,
-    Auto   = 1,
-    Estop  = 2,
+// 0x210 RT_STATE_RPT — RT→Jetson
+struct RtStateRpt {
+    uint8_t mode        = 0;   // Mode enum
+    bool    steer_valid = false;
+    bool    reversing   = false;
+
+    void to_frame(Frame& f) const {
+        f.id = kIdRtStateRpt; f.dlc = 3;
+        f.put_u8(0, mode);
+        f.put_u8(1, steer_valid ? 1 : 0);
+        f.put_u8(2, reversing   ? 1 : 0);
+    }
 };
 
-inline const char* mode_name(Mode m) {
-    switch (m) {
-        case Mode::Manual: return "MANUAL";
-        case Mode::Auto:   return "AUTO";
-        case Mode::Estop:  return "ESTOP";
+// 0x220 RT_PID_RPT — RT→Jetson (reserved, inactive until encoders fitted)
+struct RtPidRpt {
+    int16_t speed_setpoint_mmps = 0;
+    int16_t speed_measured_mmps = 0;
+    int16_t pid_output          = 0;
+
+    void to_frame(Frame& f) const {
+        f.id = kIdRtPidRpt; f.dlc = 6;
+        f.put_i16(0, speed_setpoint_mmps);
+        f.put_i16(2, speed_measured_mmps);
+        f.put_i16(4, pid_output);
     }
-    return "?";
+};
+
+// 0x300 HOST_DRIVE_CMD — Jetson→RT
+struct HostDriveCmd {
+    int32_t speed_mmps      = 0;   // [-500, 3000]
+    int32_t yaw_rate_mrad_s = 0;   // [-3000, 3000]
+
+    static HostDriveCmd from_frame(const Frame& f) {
+        return { f.i32_at(0), f.i32_at(4) };
+    }
+    void to_frame(Frame& f) const {
+        f.id = kIdHostDriveCmd; f.dlc = 8;
+        f.put_i32(0, speed_mmps);
+        f.put_i32(4, yaw_rate_mrad_s);
+    }
+};
+
+// 0x301 HOST_BRAKE_REQ — Jetson→RT
+struct HostBrakeReq {
+    int32_t brake_pressure_kpa = 0;
+
+    static HostBrakeReq from_frame(const Frame& f) { return { f.i32_at(0) }; }
+    void to_frame(Frame& f) const {
+        f.id = kIdHostBrakeReq; f.dlc = 4;
+        f.put_i32(0, brake_pressure_kpa);
+    }
+};
+
+// 0x400 RT_OBSTACLE_RPT — RT→Jetson
+struct RtObstacleRpt {
+    uint32_t distance_mm = 0;   // UINT32_MAX = no reading
+
+    static RtObstacleRpt from_frame(const Frame& f) { return { f.u32_at(0) }; }
+    void to_frame(Frame& f) const {
+        f.id = kIdRtObstacleRpt; f.dlc = 4;
+        f.put_u32(0, distance_mm);
+    }
+};
+
+// ───────────────────────────────────────────────────────────────────
+// SYNTREE little-endian pack/unpack (Motorola LSB)
+// ───────────────────────────────────────────────────────────────────
+
+inline void VcuSesReq::pack(uint8_t raw[8]) const {
+    raw[0] = (align_enable & 1) | ((control_enable & 1) << 1)
+           | ((control_mode & 3) << 2) | ((reserved_0 & 0xF) << 4);
+    raw[1] = reserved_1;
+    raw[2] = target_angle & 0xFF;
+    raw[3] = (target_angle >> 8) & 0xFF;
+    raw[4] = target_speed;
+    raw[5] = (roll_cnt_enable & 1) | ((checksum_enable & 1) << 1)
+           | ((reserved_2 & 0x3F) << 2);
+    raw[6] = (reserved_3 & 0xF) | ((rolling_counter & 0xF) << 4);
+    // checksum
+    uint8_t ck = 0;
+    for (int i = 0; i < 7; ++i) ck ^= raw[i];
+    raw[7] = ck ^ 0xFF;
+}
+
+inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
+    VcuSesReq r;
+    r.align_enable   = raw[0] & 1;
+    r.control_enable = (raw[0] >> 1) & 1;
+    r.control_mode   = (raw[0] >> 2) & 3;
+    r.reserved_0     = (raw[0] >> 4) & 0xF;
+    r.reserved_1     = raw[1];
+    r.target_angle   = int16_t(raw[2] | (raw[3] << 8));
+    r.target_speed   = raw[4];
+    r.roll_cnt_enable = raw[5] & 1;
+    r.checksum_enable = (raw[5] >> 1) & 1;
+    r.reserved_2     = (raw[5] >> 2) & 0x3F;
+    r.reserved_3     = raw[6] & 0xF;
+    r.rolling_counter = (raw[6] >> 4) & 0xF;
+    r.checksum       = raw[7];
+    return r;
+}
+
+inline void VcuSebReq::pack(uint8_t raw[8]) const {
+    raw[0] = (align_enable & 1) | ((control_enable & 1) << 1)
+           | ((control_mode & 3) << 2) | ((auto_brake & 1) << 4)
+           | ((reserved_0 & 7) << 5);
+    raw[1] = reserved_1;
+    raw[2] = stroke_req & 0xFF;
+    raw[3] = (stroke_req >> 8) & 0xFF;
+    raw[4] = pressure_req & 0xFF;
+    raw[5] = (pressure_req >> 8) & 0xFF;
+    raw[6] = (reserved_2 & 0xF) | ((rolling_counter & 0xF) << 4);
+    // checksum
+    uint8_t ck = 0;
+    for (int i = 0; i < 7; ++i) ck ^= raw[i];
+    raw[7] = ck ^ 0xFF;
+}
+
+inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
+    VcuSebReq r;
+    r.align_enable   = raw[0] & 1;
+    r.control_enable = (raw[0] >> 1) & 1;
+    r.control_mode   = (raw[0] >> 2) & 3;
+    r.auto_brake     = (raw[0] >> 4) & 1;
+    r.reserved_0     = (raw[0] >> 5) & 7;
+    r.reserved_1     = raw[1];
+    r.stroke_req     = uint16_t(raw[2] | (raw[3] << 8));
+    r.pressure_req   = uint16_t(raw[4] | (raw[5] << 8));
+    r.reserved_2     = raw[6] & 0xF;
+    r.rolling_counter = (raw[6] >> 4) & 0xF;
+    r.checksum       = raw[7];
+    return r;
 }
 
 } // namespace can
