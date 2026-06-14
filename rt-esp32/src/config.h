@@ -1,59 +1,99 @@
 #pragma once
-// RT ESP32-S3 — configuration constants.  Change values here, not in source.
+// RT ESP32-S3 — configuration constants (architecture.md §7.9).
+// Change values here, not in source files.
+
+#include <cstdint>
 
 namespace rt {
 
-// ── vehicle geometry (mm) ──────────────────────────────────────
-constexpr float kWheelbaseMM     = 1500.0f;   // front–rear axle
-constexpr float kTrackWidthMM    =  800.0f;   // rear wheel spacing
-constexpr float kWheelRadiusMM   =  200.0f;   // driven wheel
+// ── vehicle geometry (mm) ─────────────────────────────────────────
+constexpr float kWheelbaseMM     = 1500.0f;
+constexpr float kTrackWidthMM    =  800.0f;
+constexpr float kWheelRadiusMM   =  200.0f;
 
-// ── steering actuator ──────────────────────────────────────────
-constexpr float kSteerLimitDeg       =  45.0f;
-constexpr int   kSteerServoMinUs     =   500;
-constexpr int   kSteerServoMaxUs     =  2500;
-constexpr int   kSteerServoCenterUs  =  1500;
-constexpr float kSteerSlewRateDegS   = 180.0f;
-constexpr int   kSteerPwmFreqHz      =    50;
+// ── steering — SYNTREE EPS-C via CAN 0x200 ───────────────────────
+constexpr float kSteerHardLimitDeg      =  40.0f;   // software hard-stop
+constexpr float kSteerFollowingErrDeg   =   5.0f;   // trigger ESTOP
+constexpr int   kSteerFollowingErrMs    =   300;    // must persist
+constexpr int   kSteerCmdRateHz         =    50;    // SYNTREE 20 ms period
+constexpr int   kSteerBootWaitMs        =   500;
+constexpr float kSteerMaxAngleLowSpeed  =  40.0f;   // at 2 km/h
+constexpr float kSteerMaxAngleHighSpeed =   5.0f;   // at 25 km/h
 
-// ── speed ──────────────────────────────────────────────────────
-constexpr int kMaxSpeedFwdMmps    =  3000;     // 3 m/s ≈ 10.8 km/h
-constexpr int kMaxSpeedRevMmps    =   500;     // 0.5 m/s
-constexpr int kLowSpeedThreshMmps =    50;     // freeze steering below this
+// ── speed limits (mm/s) ───────────────────────────────────────────
+constexpr int kMaxSpeedFwdMmps    =  3000;           // 3 m/s ≈ 10.8 km/h
+constexpr int kMaxSpeedRevMmps    =   500;
+constexpr int kLowSpeedThreshMmps =    50;           // freeze steering below
 
-// ── PID ────────────────────────────────────────────────────────
-constexpr float kPidKp           =  1.0f;
-constexpr float kPidKi           =  0.1f;
-constexpr float kPidKd           =  0.05f;
-constexpr float kPidMaxIntegral  = 500.0f;
+// ── PID (deferred — gains TBD once encoders fitted, gap #5) ──────
+// constexpr float kPidKp = 1.0f, kPidKi = 0.1f, kPidKd = 0.05f;
 
-// ── obstacle ───────────────────────────────────────────────────
+// ── obstacle ──────────────────────────────────────────────────────
 constexpr unsigned kObstacleStopDistMM  =   300;
 constexpr unsigned kObstacleClearDistMM =  3000;
 
-// ── timing ─────────────────────────────────────────────────────
-constexpr int kControlLoopHz      =  100;
-constexpr int kCmdStaleTimeoutMs  =  200;
-constexpr int kHeartbeatIntervalMs=   50;
+// ── timing (ms / Hz) ──────────────────────────────────────────────
+constexpr int kControlLoopHz           =  100;
+constexpr int kCmdStaleTimeoutMs       =  500;
+constexpr int kHeartbeatIntervalMs     =  500;  // 2 Hz
+constexpr int kHeartbeatTimeoutMsSys   = 1000;  // SYS→RT, 2 missed frames
+constexpr int kHeartbeatTimeoutMsJetson= 1500;  // Jetson→RT, 3 missed
 
-// ── CAN ────────────────────────────────────────────────────────
-constexpr int kCanBitrateHz   = 500'000;
-constexpr int kCanTxGpio      =      5;
-constexpr int kCanRxGpio      =      4;
+// ── CAN — low-level (built-in TWAI) ───────────────────────────────
+constexpr int kCanLowBitrateHz = 500'000;
+constexpr int kCanLowTxGpio    =      5;
+constexpr int kCanLowRxGpio    =      4;
 
-// ── RT/SYS inter-MCU link ──────────────────────────────────────
-constexpr int kInterMcuUartPort =       1;
-constexpr int kInterMcuBaud     = 2'000'000;
-constexpr int kInterMcuTxGpio   =      12;   // connect to SYS RX
-constexpr int kInterMcuRxGpio   =      13;   // connect to SYS TX
+// ── CAN — high-level (external MCP2515 via SPI) ───────────────────
+constexpr int kCanHighBitrateHz = 500'000;
+constexpr int kSpiSckGpio       =      36;
+constexpr int kSpiMosiGpio      =      37;
+constexpr int kSpiMisoGpio      =      38;
+constexpr int kSpiCsGpio        =      39;
+constexpr int kMcpIntGpio       =      40;
 
-// ── GPIO ───────────────────────────────────────────────────────
-constexpr int kSteerServoGpio  =  6;
-constexpr int kObstacleTrigGpio=  7;
-constexpr int kObstacleEchoGpio=  8;
-constexpr int kEncoderAGpio    =  1;
-constexpr int kEncoderBGpio    =  2;
-constexpr int kImuSdaGpio      = 10;
-constexpr int kImuSclGpio      = 11;
+// ── watchdog ──────────────────────────────────────────────────────
+constexpr int kWdtToggleGpio = 21;
+
+// ── encoders (quadrature, PCNT) ───────────────────────────────────
+constexpr int kEncRearMotorA  =  1;
+constexpr int kEncRearMotorB  =  2;
+constexpr int kEncFrontWheelA =  3;       // sensor TBD
+constexpr int kEncFrontWheelB =  6;       // sensor TBD
+constexpr int kEncRearLeftA   =  9;       // sensor TBD
+constexpr int kEncRearLeftB   = 12;       // sensor TBD
+constexpr int kEncRearRightA  = 13;       // sensor TBD
+constexpr int kEncRearRightB  = 14;       // sensor TBD
+
+// ── sensors ───────────────────────────────────────────────────────
+constexpr int kObstacleTrigGpio =  7;
+constexpr int kObstacleEchoGpio =  8;
+constexpr int kImuSdaGpio       = 10;      // IMU (optional)
+constexpr int kImuSclGpio       = 11;
+
+// ── CAN ID aliases (from shared/can/can_protocol.h) ───────────────
+// Low bus — RT sends
+constexpr uint32_t kIdRtDriveCmd     = 0x202;
+constexpr uint32_t kIdRtBrakeCmd     = 0x203;
+constexpr uint32_t kIdVcuSesReq      = 0x200;
+// Low bus — RT receives
+constexpr uint32_t kIdSysSafetySts   = 0x011;
+constexpr uint32_t kIdSysModeCmd     = 0x110;
+constexpr uint32_t kIdSysThrottleSts = 0x120;
+constexpr uint32_t kIdSysDiagRpt     = 0x600;
+constexpr uint32_t kIdSysHeartbeat   = 0x7FE;
+constexpr uint32_t kIdSesStatus      = 0x201;
+// High bus — RT sends
+constexpr uint32_t kIdRtStateRpt     = 0x210;
+constexpr uint32_t kIdRtPidRpt       = 0x220;   // reserved (future PID)
+constexpr uint32_t kIdRtObstacleRpt  = 0x400;
+// High bus — RT receives
+constexpr uint32_t kIdHostDriveCmd   = 0x300;
+constexpr uint32_t kIdHostBrakeReq   = 0x301;
+constexpr uint32_t kIdHostLightCmd   = 0x302;
+constexpr uint32_t kIdJetsonHeartbeat= 0x7FC;
+// Both buses
+constexpr uint32_t kIdSafetyEstop    = 0x001;
+constexpr uint32_t kIdRtHeartbeat    = 0x7FD;   // RT sends on both buses
 
 }  // namespace rt

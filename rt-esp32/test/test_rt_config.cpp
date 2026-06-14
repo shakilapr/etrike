@@ -1,0 +1,68 @@
+// Phase 2: rt-esp32/src/config.h validation
+// g++ -std=c++17 -I../src -I../../shared test_rt_config.cpp -o test_rt_config && ./test_rt_config
+
+#include <cstdio>
+#include "config.h"
+
+static int fails = 0;
+#define CHECK(desc) printf("  %-48s ", desc)
+#define OK          printf("PASS\n")
+#define BAD(m)      do { printf("FAIL: %s\n", m); ++fails; } while(0)
+
+static void test_gpio_uniqueness() {
+    printf("== GPIO uniqueness (no pin conflicts on RT ESP32) ==\n");
+    int gpios[] = {
+        // CAN low
+        rt::kCanLowTxGpio, rt::kCanLowRxGpio,
+        // SPI (MCP2515 high CAN)
+        rt::kSpiSckGpio, rt::kSpiMosiGpio, rt::kSpiMisoGpio,
+        rt::kSpiCsGpio, rt::kMcpIntGpio,
+        // Encoders
+        rt::kEncRearMotorA, rt::kEncRearMotorB,
+        rt::kEncFrontWheelA, rt::kEncFrontWheelB,
+        rt::kEncRearLeftA, rt::kEncRearLeftB,
+        rt::kEncRearRightA, rt::kEncRearRightB,
+        // Sensors
+        rt::kObstacleTrigGpio, rt::kObstacleEchoGpio,
+        rt::kImuSdaGpio, rt::kImuSclGpio,
+        // WDT
+        rt::kWdtToggleGpio,
+    };
+    int n = sizeof(gpios)/sizeof(gpios[0]);
+    for (int i=0;i<n;++i)
+        for (int j=i+1;j<n;++j)
+            if (gpios[i] == gpios[j]) BAD("duplicate GPIO");
+    CHECK("all GPIOs unique on RT ESP32"); if (!fails) OK;
+}
+
+static void test_constants() {
+    printf("\n== Constant sanity ==\n");
+    CHECK("wheelbase > 0");           if (rt::kWheelbaseMM > 0) OK; else BAD("wheelbase");
+    CHECK("steer hard limit < unit limit"); if (rt::kSteerHardLimitDeg < 78.0f) OK; else BAD("steer limit");
+    CHECK("max speed fwd > rev");     if (rt::kMaxSpeedFwdMmps > rt::kMaxSpeedRevMmps) OK; else BAD("speed");
+    CHECK("obstacle stop < clear");   if (rt::kObstacleStopDistMM < rt::kObstacleClearDistMM) OK; else BAD("obstacle");
+    CHECK("HB timeout Sys < Jetson"); if (rt::kHeartbeatTimeoutMsSys < rt::kHeartbeatTimeoutMsJetson) OK; else BAD("hb timeout");
+    CHECK("control loop 100 Hz");     if (rt::kControlLoopHz == 100) OK; else BAD("loop rate");
+    CHECK("CAN bitrate 500k");        if (rt::kCanLowBitrateHz == 500000 && rt::kCanHighBitrateHz == 500000) OK; else BAD("bitrate");
+    CHECK("steer boot wait > 0");     if (rt::kSteerBootWaitMs > 0) OK; else BAD("boot wait");
+    CHECK("following error > 0");     if (rt::kSteerFollowingErrDeg > 0) OK; else BAD("follow err");
+}
+
+static void test_can_id_prefixes() {
+    printf("\n== CAN ID prefix sanity ==\n");
+    // Safety IDs (0x001) should be lowest
+    CHECK("estop is lowest ID");
+    bool ok = (rt::kIdSafetyEstop < rt::kIdSysSafetySts)
+           && (rt::kIdSysSafetySts < rt::kIdSysModeCmd)
+           && (rt::kIdVcuSesReq < rt::kIdSysDiagRpt);
+    if (ok) OK; else BAD("priority order");
+}
+
+int main() {
+    printf("Phase 2: rt-esp32/src/config.h\n\n");
+    test_gpio_uniqueness();
+    test_constants();
+    test_can_id_prefixes();
+    printf("\n  Result: %d failures\n", fails);
+    return fails ? 1 : 0;
+}
