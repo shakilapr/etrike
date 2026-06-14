@@ -88,17 +88,7 @@ constexpr uint32_t kIdRtHeartbeat    = 0x7FD;
 // Both
 constexpr uint32_t kIdSafetyEstop    = 0x001;
 
-// ── DEPRECATED constants — present for compile compatibility ───────
-// These will be removed when the codebase aligns with architecture:
-//   - brake_actuator → CAN 0x720 SEB  (Phase S5)
-//   - motor_driver PWM → MCP4725 DAC  (Phase S6)
 
-constexpr int kBrakeGpio          = 0;     // DEPRECATED: brake is SEB CAN, not GPIO
-constexpr int kMotorPwmGpio       = 0;     // DEPRECATED: motor is MCP4725 DAC, not PWM
-constexpr int kMotorDirGpio       = 0;     // DEPRECATED
-constexpr int kMotorPwmFreqHz     = 20000; // DEPRECATED
-constexpr int kMotorMaxSpeedMmps  = 3000;
-constexpr int kPwmMax             = 8191;  // DEPRECATED: 13-bit PWM
 
 // ── obstacle constants (mirrored from RT, for speed_limiter.cpp) ────
 constexpr unsigned kObstacleStopDistMM  = 300;

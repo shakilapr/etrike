@@ -71,10 +71,6 @@ constexpr int kObstacleEchoGpio =  8;
 constexpr int kImuSdaGpio       = 10;      // IMU (optional)
 constexpr int kImuSclGpio       = 11;
 
-// ── inter-MCU UART (DEPRECATED — Phase R4 will remove) ───────────
-// Present only so the codebase compiles during migration.
-// Architecture: RT↔SYS communication is over low-level CAN, not UART.
-constexpr int kInterMcuUartPort = 1;        // REMOVE in Phase R4
 constexpr int kInterMcuTxGpio   = 17;       // REMOVE in Phase R4
 constexpr int kInterMcuRxGpio   = 18;       // REMOVE in Phase R4
 constexpr int kInterMcuBaud     = 2'000'000; // REMOVE in Phase R4
