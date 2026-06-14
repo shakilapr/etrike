@@ -1,30 +1,45 @@
 #pragma once
+// Delta trike kinematics — inverse bicycle model.
+// DriveCmd → PhysicsModel.resolve() → ResolvedSetpoint
+
 #include <cmath>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 #include <cstdint>
 #include "config.h"
-#include "can/can_protocol.h"
+
 namespace rt {
-struct ResolvedSetpoint { int32_t speed; int32_t steer_mdeg; uint8_t gear; bool valid, reversing; };
-inline ResolvedSetpoint physics_resolve(const can::HostDriveCmd& cmd) {
-    ResolvedSetpoint r{};
-    float v_ms=cmd.speed_mmps/1000.0f, w_rs=cmd.yaw_rate_mrad_s/1000.0f;
-    r.speed=cmd.speed_mmps;
-    if (r.speed>kMaxSpeedFwdMmps) r.speed=kMaxSpeedFwdMmps;
-    if (r.speed<-kMaxSpeedRevMmps) r.speed=-kMaxSpeedRevMmps;
-    r.reversing=r.speed<0;
-    r.gear=(r.speed>0)?1:(r.speed<0?3:0); // D,N,R
-    float abs_v=fabs(v_ms);
-    if (abs_v>float(kLowSpeedThreshMmps)/1000.0f) {
-        r.steer_mdeg=int32_t(atan2(kWheelbaseMM/1000.0f*w_rs,abs_v)*180000.0f/M_PI);
-        r.valid=true;
-    } else { r.steer_mdeg=0; r.valid=false; }
-    // Dynamic clamp (placeholder: fixed 40deg clamp)
-    float limit=kSteerHardLimitDeg*1000.0f;
-    if (r.steer_mdeg>limit) r.steer_mdeg=limit;
-    if (r.steer_mdeg<-limit) r.steer_mdeg=-limit;
-    return r;
-}
-}
+
+// ── Internal data types (architecture.md §7.5) ─────────────────────
+
+struct DriveCmd {
+    int32_t speed_mmps      = 0;   // [-500, 3000]
+    int32_t yaw_rate_mrad_s = 0;   // [-3000, 3000]
+};
+
+struct ResolvedSetpoint {
+    int32_t motor_speed_mmps  = 0;
+    int32_t steer_angle_mdeg  = 0;   // +right, ±45000
+    bool    steer_valid       = false;
+    bool    steer_saturated   = false;
+    bool    reversing         = false;
+};
+
+// ── Kinematics model ───────────────────────────────────────────────
+
+class PhysicsModel {
+public:
+    // Resolve a motion command into a vehicle setpoint.
+    // Returns true on success. Steer angle is internally clamped.
+    bool resolve(const DriveCmd& cmd, ResolvedSetpoint& out);
+
+    // Obstacle speed limiter: linearly scales speed from 0 at stop-dist
+    // to full speed at clear-dist.
+    static int32_t obstacle_limit(int32_t target_mmps, unsigned obstacle_mm);
+
+private:
+    float m_steer_hold_rad = 0.0f;   // last valid steer for decay
+};
+
+}  // namespace rt

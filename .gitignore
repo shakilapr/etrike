@@ -31,16 +31,8 @@ dependencies.lock
 Thumbs.db
 Desktop.ini
 
-# ── Test build artifacts (leaked to root during host testing) ─────────
-/esp_log.h
-/esp_timer.h
-/esp_system.h
-/stubs.h
-/stubs.cpp
-/test_physics.cpp
-/test_pid.cpp
-/driver/
-/freertos/
+# ── Test build artifacts ───────────────────────────────────────────
+*.exe
 /test_physics
 /test_pid
 

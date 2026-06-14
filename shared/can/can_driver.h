@@ -13,13 +13,17 @@ namespace can {
 class CanDriver {
 public:
     struct Config {
-        int tx_gpio     = 5;
-        int rx_gpio     = 4;
-        int bitrate_hz  = 500'000;
+        int tx_gpio;
+        int rx_gpio;
+        int bitrate_hz;
     };
 
-    explicit CanDriver(const Config& cfg = {})
-        : m_config(cfg) {}
+    static Config default_config() {
+        return { 5, 4, 500'000 };
+    }
+
+    CanDriver() : m_config(default_config()) {}
+    explicit CanDriver(const Config& cfg) : m_config(cfg) {}
 
     ~CanDriver() {
         twai_stop();

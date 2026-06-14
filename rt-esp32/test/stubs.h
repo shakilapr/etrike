@@ -5,7 +5,7 @@
 #include <cstdio>
 
 // GPIO stubs
-inline int g_mock_gpio[48] = {};
+static int g_mock_gpio[48] = {};
 enum { GPIO_MODE_INPUT = 0, GPIO_MODE_OUTPUT = 1, GPIO_PULLUP_ONLY = 1 };
 inline int gpio_set_direction(int, int) { return 0; }
 inline int gpio_set_pull_mode(int, int) { return 0; }
@@ -13,7 +13,7 @@ inline int  gpio_get_level(int pin) { return (pin >= 0 && pin < 48) ? g_mock_gpi
 inline void gpio_set_level(int pin, int level) { if (pin >= 0 && pin < 48) g_mock_gpio[pin] = level; }
 
 // Timer stub
-inline int64_t g_mock_time_us = 0;
+static int64_t g_mock_time_us = 0;
 inline int64_t esp_timer_get_time() { return g_mock_time_us; }
 
 // Logging stubs
@@ -47,7 +47,7 @@ struct ledc_channel_config_t {
     int duty = 0;
     int hpoint = 0;
 };
-inline int g_mock_ledc_duty[8] = {};
+static int g_mock_ledc_duty[8] = {};
 inline int ledc_timer_config(const ledc_timer_config_t*) { return 0; }
 inline int ledc_channel_config(const ledc_channel_config_t*) { return 0; }
 inline int ledc_set_duty(int, int channel, int duty) {

@@ -1,5 +1,6 @@
-// RT ESP32-S3 — Jetson bridge and realtime physics.
-// Public CAN: Jetson <-> RT. Direct inter-MCU link: RT <-> SYS.
+// RT ESP32-S3 — Realtime physics, steering & CAN gateway.
+// Architecture: architecture.md §7.
+// Phase R4: migrated from UART inter-MCU to CAN (dual-bus pending R5).
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,8 +14,6 @@
 #include "watchdog.h"
 #include "can/can_protocol.h"
 #include "can/can_driver.h"
-#include "intermcu/intermcu_protocol.h"
-#include "intermcu/intermcu_driver.h"
 #include "os/queue.h"
 #include <atomic>
 
@@ -22,55 +21,41 @@ namespace {
 
 constexpr const char* kTag = "rt";
 
-// ── application state ──────────────────────────────────────────
+// ── Application state ──────────────────────────────────────────────
+
 can::Mode             g_mode{can::Mode::Manual};
 rt::PhysicsModel      g_physics;
 rt::SpeedPid          g_pid;
 rt::ObstacleSensor    g_obstacle;
 rt::Watchdog          g_watchdog;
 std::atomic<int32_t>  g_brake_request_kpa{0};
-can::CanDriver     g_can;
-inter_mcu::InterMcuDriver g_link({
-    rt::kInterMcuUartPort,
-    rt::kInterMcuTxGpio,
-    rt::kInterMcuRxGpio,
-    rt::kInterMcuBaud,
-});
+can::CanDriver        g_can_low(can::CanDriver::Config{rt::kCanLowTxGpio,
+                                                          rt::kCanLowRxGpio,
+                                                          rt::kCanLowBitrateHz});
 
-os::Queue<can::Frame, 16>        g_can_rx_queue;
-os::Queue<rt::DriveCmd, 4>       g_cmd_queue;
-os::Queue<inter_mcu::RtToSysSetpoint, 4> g_setpoint_queue;
+// Queues
+os::Queue<can::Frame, 16>  g_can_rx_queue;
+os::Queue<rt::DriveCmd, 4> g_cmd_queue;         // from 0x300
+os::Queue<can::Frame, 8>   g_can_tx_low_queue;   // pending R7: CAN TX low
+os::Queue<can::Frame, 8>   g_can_tx_high_queue;  // pending R7: CAN TX high
 
-void send_link_estop() {
-    inter_mcu::Frame lf;
-    inter_mcu::RtToSysSetpoint{0, 0, 0, inter_mcu::kFlagEstop}.to_frame(lf);
-    g_link.send(lf);
-}
+// ── CAN RX task (low bus) ──────────────────────────────────────────
 
-// ── CAN RX task ────────────────────────────────────────────────
-
-struct CanRxContext {
-    can::CanDriver*                driver;
-    os::Queue<can::Frame, 16>*     queue;
-};
-
-void can_rx_task(void* arg) {
-    auto* ctx = static_cast<CanRxContext*>(arg);
+void can_rx_task(void*) {
     can::Frame fr;
     while (true) {
-        if (ctx->driver->receive(fr, 100)) {
+        if (g_can_low.receive(fr, 100)) {
             if (can::is_estop_id(fr.id)) {
                 g_mode = can::Mode::Estop;
-                send_link_estop();
                 ESP_LOGW(kTag, "ESTOP via CAN RX");
             } else {
-                ctx->queue->send(fr, 0);  // non-blocking; drop if full
+                g_can_rx_queue.send(fr, 0);  // non-blocking; drop if full
             }
         }
     }
 }
 
-// ── dispatch task ──────────────────────────────────────────────
+// ── Dispatch task ──────────────────────────────────────────────────
 
 void dispatch_task(void*) {
     can::Frame fr;
@@ -89,45 +74,35 @@ void dispatch_task(void*) {
             g_brake_request_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
         }
+        // Forwarding: SYS telemetry low→high (pending R6 gateway)
+        case can::kIdSysSafetySts:    // 0x011
+        case can::kIdSysThrottleSts:  // 0x120
+        case can::kIdSysDiagRpt:      // 0x600
+            g_can_tx_high_queue.send(fr, 0);
+            break;
+        // Forwarding: Jetson lights high→low (pending R6 gateway)
+        case can::kIdHostLightCmd:    // 0x302
+            g_can_tx_low_queue.send(fr, 0);
+            break;
+        // ESTOP from any source
         case can::kIdSysEstop:
         case can::kIdRtEstop:
         case can::kIdHostEstop:
             g_mode = can::Mode::Estop;
-            send_link_estop();
             ESP_LOGW(kTag, "ESTOP via CAN");
             break;
+        // SYS mode command
+        case can::kIdSysModeCmd: {    // 0x110
+            uint8_t m = fr.u8_at(0);
+            if (m == uint8_t(can::Mode::Auto))      g_mode = can::Mode::Auto;
+            else if (m == uint8_t(can::Mode::Manual)) g_mode = can::Mode::Manual;
+            break;
+        }
         }
     }
 }
 
-// ── inter-MCU RX task ──────────────────────────────────────────
-
-void link_rx_task(void*) {
-    inter_mcu::Frame fr;
-    while (true) {
-        if (!g_link.receive(fr, 100)) continue;
-
-        switch (fr.type) {
-        case inter_mcu::MessageType::SysToRtStatus: {
-            auto status = inter_mcu::SysToRtStatus::from_frame(fr);
-            if (status.estop_active || status.mode == static_cast<uint8_t>(can::Mode::Estop)) {
-                g_mode = can::Mode::Estop;
-            } else if (status.mode == static_cast<uint8_t>(can::Mode::Auto)) {
-                g_mode = can::Mode::Auto;
-            } else {
-                g_mode = can::Mode::Manual;
-            }
-            break;
-        }
-        case inter_mcu::MessageType::SysHeartbeat:
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-// ── control task (100 Hz) ──────────────────────────────────────
+// ── Control task (100 Hz) ──────────────────────────────────────────
 
 void control_task(void*) {
     using namespace rt;
@@ -143,30 +118,44 @@ void control_task(void*) {
             float measured = 0.0f;  // TODO: encoder_get_speed_mmps()
             float dt = 1.0f / kControlLoopHz;
             int32_t brake_kpa = g_brake_request_kpa.load(std::memory_order_relaxed);
-            auto sp = rt::resolve_drive_setpoint(g_physics, g_pid, cmd, measured, obs, brake_kpa, dt);
+            auto out = rt::resolve_drive_setpoint(g_physics, g_pid, cmd, measured, obs, brake_kpa, dt);
 
-            // Push setpoint to SYS over CAN.
-            g_setpoint_queue.overwrite(sp);
+            // Serialize to CAN frames → queue for can_tx_low_task (R7)
+            can::Frame drive_fr, brake_fr;
+            out.drive.to_frame(drive_fr);
+            out.brake.to_frame(brake_fr);
+            g_can_tx_low_queue.send(drive_fr, 0);   // 0x202
+            g_can_tx_low_queue.send(brake_fr, 0);   // 0x203
         }
 
         vTaskDelayUntil(&last, period);
     }
 }
 
-// ── inter-MCU TX task ──────────────────────────────────────────
+// ── CAN TX low task (pending R7: full implementation) ──────────────
 
-void link_tx_task(void*) {
-    inter_mcu::RtToSysSetpoint sp;
+void can_tx_low_task(void*) {
+    can::Frame fr;
     while (true) {
-        if (g_setpoint_queue.receive(sp, pdMS_TO_TICKS(50))) {
-            inter_mcu::Frame fr;
-            sp.to_frame(fr);
-            g_link.send(fr);
+        if (g_can_tx_low_queue.receive(fr, pdMS_TO_TICKS(10))) {
+            g_can_low.send(fr);
         }
     }
 }
 
-// ── obstacle task (10 Hz) ──────────────────────────────────────
+// ── CAN TX high task (pending R5+R7: MCP2515 driver) ───────────────
+
+void can_tx_high_task(void*) {
+    can::Frame fr;
+    while (true) {
+        if (g_can_tx_high_queue.receive(fr, pdMS_TO_TICKS(10))) {
+            // Pending R5: send via MCP2515
+            // g_can_high.send(fr);
+        }
+    }
+}
+
+// ── Obstacle task (10 Hz) ──────────────────────────────────────────
 
 void obstacle_task(void*) {
     while (true) {
@@ -174,77 +163,79 @@ void obstacle_task(void*) {
         unsigned d = g_obstacle.distance_mm();
         if (d != UINT32_MAX) {
             can::Frame fr;
-            can::RtObstacleDist{d}.to_frame(fr);
-            g_can.send(fr);
-
-            inter_mcu::Frame link_fr;
-            inter_mcu::RtObstacleDistance{d}.to_frame(link_fr);
-            g_link.send(link_fr);
+            can::RtObstacleRpt{d}.to_frame(fr);
+            g_can_tx_high_queue.send(fr, 0);  // → Jetson on high CAN
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
-// ── watchdog task (10 Hz) ──────────────────────────────────────
+// ── Watchdog task (10 Hz) ──────────────────────────────────────────
 
 void watchdog_task(void*) {
     vTaskDelay(pdMS_TO_TICKS(1000));  // let system initialize
     while (true) {
         if (g_watchdog.is_stale() && !g_watchdog.is_tripped()) {
             ESP_LOGW(kTag, "STALE — zero setpoint");
-            inter_mcu::Frame fr;
-            inter_mcu::RtToSysSetpoint{
-                0, 0, 0, inter_mcu::kFlagAutoEnable | inter_mcu::kFlagEpsEnable
-            }.to_frame(fr);
-            g_link.send(fr);
+            // Push zero-drive command
+            can::Frame fr;
+            can::RtDriveCmd{0, uint8_t(can::Gear::N)}.to_frame(fr);
+            g_can_tx_low_queue.send(fr, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
-// ── heartbeat task (2 Hz) ──────────────────────────────────────
+// ── Heartbeat task (2 Hz) ─────────────────────────────────────────
 
 void heartbeat_task(void*) {
     using namespace rt;
-    can::Frame can_fr;
-    can_fr.id = can::kIdHeartbeat;
-    can_fr.dlc = 0;
+    uint8_t ctr_low = 0, ctr_high = 0;
     while (true) {
-        g_can.send(can_fr);
-        auto link_fr = inter_mcu::heartbeat(inter_mcu::MessageType::RtHeartbeat);
-        g_link.send(link_fr);
+        // Low bus: 0x7FD RT→SYS
+        can::Frame fr_low;
+        fr_low.id = can::kIdRtHeartbeatLow;
+        fr_low.dlc = 1;
+        fr_low.put_u8(0, ++ctr_low);
+        g_can_low.send(fr_low);
+
+        // High bus: 0x7FD RT→Jetson (pending R5: MCP2515)
+        can::Frame fr_high;
+        fr_high.id = can::kIdRtHeartbeatHigh;
+        fr_high.dlc = 1;
+        fr_high.put_u8(0, ++ctr_high);
+        g_can_tx_high_queue.send(fr_high, 0);
+
         vTaskDelay(pdMS_TO_TICKS(kHeartbeatIntervalMs));
     }
 }
 
 }  // anonymous namespace
 
-// ── app_main ───────────────────────────────────────────────────
+// ── app_main ───────────────────────────────────────────────────────
 
 extern "C" void app_main() {
     ESP_LOGI(kTag, "RT ESP32-S3 — delta trike control");
 
     // Init hardware
-    g_can.init();
-    g_link.init();
+    g_can_low.init();
     g_obstacle.init();
     g_watchdog.init();
 
-    ESP_LOGI(kTag, "Kp=%.3f Ki=%.3f Kd=%.3f",
+    ESP_LOGI(kTag, "PID Kp=%.3f Ki=%.3f Kd=%.3f",
              static_cast<double>(rt::kPidKp),
              static_cast<double>(rt::kPidKi),
              static_cast<double>(rt::kPidKd));
 
     // Create tasks
-    static CanRxContext can_rx_ctx{&g_can, &g_can_rx_queue};
-    xTaskCreate(can_rx_task,       "can_rx",   4096, &can_rx_ctx,     5, nullptr);
-    xTaskCreate(link_rx_task,      "link_rx",  4096, nullptr,         5, nullptr);
-    xTaskCreate(dispatch_task,      "dispatch", 3072, nullptr,         4, nullptr);
-    xTaskCreate(control_task,       "control",  4096, nullptr,         4, nullptr);
-    xTaskCreate(link_tx_task,       "link_tx",  3072, nullptr,         3, nullptr);
-    xTaskCreate(obstacle_task,      "obstacle", 2048, nullptr,         2, nullptr);
-    xTaskCreate(watchdog_task,      "watchdog", 2048, nullptr,         1, nullptr);
-    xTaskCreate(heartbeat_task,     "hb",       2048, nullptr,         1, nullptr);
+    xTaskCreate(can_rx_task,       "can_rx",    4096, nullptr, 5, nullptr);
+    xTaskCreate(dispatch_task,      "dispatch",  3072, nullptr, 4, nullptr);
+    xTaskCreate(control_task,       "control",   4096, nullptr, 4, nullptr);
+    xTaskCreate(can_tx_low_task,    "can_tx_low", 3072, nullptr, 3, nullptr);
+    xTaskCreate(can_tx_high_task,   "can_tx_high",3072, nullptr, 3, nullptr);
+    xTaskCreate(obstacle_task,      "obstacle",  2048, nullptr, 2, nullptr);
+    xTaskCreate(watchdog_task,      "watchdog",  2048, nullptr, 1, nullptr);
+    xTaskCreate(heartbeat_task,     "hb",        2048, nullptr, 1, nullptr);
 
     ESP_LOGI(kTag, "Ready. Mode=%s", can::mode_name(g_mode));
 }

@@ -47,6 +47,22 @@ int main() {
     printf("\n== I2C address ==\n");
     CHECK("MCP4725 addr 0x60");      if (sys::kThrottleDacI2cAddr==0x60) OK; else BAD("i2c");
 
+    printf("\n== R3: new/deprecated constants ==\n");
+    CHECK("kObstacleStopDistMM == 300");
+    if (sys::kObstacleStopDistMM == 300) OK; else BAD("obstacle stop");
+    CHECK("kObstacleClearDistMM == 3000");
+    if (sys::kObstacleClearDistMM == 3000) OK; else BAD("obstacle clear");
+    CHECK("kObstacleStop < kObstacleClear");
+    if (sys::kObstacleStopDistMM < sys::kObstacleClearDistMM) OK; else BAD("obstacle order");
+    CHECK("kMotorMaxSpeedMmps == 3000");
+    if (sys::kMotorMaxSpeedMmps == 3000) OK; else BAD("motor max");
+    CHECK("kBrakeGpio defined (deprecated)");
+    if (sys::kBrakeGpio == 0) OK; else BAD("brake gpio");  // 0 = deprecated, not a real pin
+    CHECK("kMotorPwmGpio defined (deprecated)");
+    if (sys::kMotorPwmGpio == 0) OK; else BAD("motor pwm");   // 0 = deprecated
+    CHECK("kPwmMax defined (deprecated 13-bit)");
+    if (sys::kPwmMax == 8191) OK; else BAD("pwm max");
+
     printf("\n  Result: %d failures\n", fails);
     return fails ? 1 : 0;
 }
