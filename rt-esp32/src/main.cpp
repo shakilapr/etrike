@@ -76,7 +76,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
         q.gw_tx_low  = &gw_lo;
         q.gw_tx_high = &gw_hi;
 
-        rt::HostDriveCmd cmd_buf{};
+        can::HostDriveCmd cmd_buf{};
         q.cmd = &cmd_buf;
 
         int32_t bkpa = 0; q.brake_req_kpa = &bkpa;
@@ -99,7 +99,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_control(void*) {
     TickType_t per = pdMS_TO_TICKS(10), last = xTaskGetTickCount();
-    rt::HostDriveCmd cmd{};
+    can::HostDriveCmd cmd{};
     while (1) {
         if (xQueueReceive(g_cmd_q, &cmd, 0) != pdTRUE)
             cmd = {0, 0};
@@ -162,7 +162,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
     while (1) {
         if (g_watchdog.is_stale(esp_timer_get_time())) {
             ESP_LOGW(TAG, "Command stale");
-            rt::HostDriveCmd zero{};
+            can::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
         }
         vTaskDelayUntil(&last, per);
@@ -195,7 +195,7 @@ extern "C" void app_main() {
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
-    g_cmd_q         = xQueueCreate( 4, sizeof(rt::HostDriveCmd));
+    g_cmd_q         = xQueueCreate( 4, sizeof(can::HostDriveCmd));
     g_setpoint_q    = xQueueCreate( 4, sizeof(rt::ResolvedSetpoint));
     g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
