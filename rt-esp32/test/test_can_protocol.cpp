@@ -110,11 +110,10 @@ static void test_r1_aliases() {
        can::RtObstacleDist{1500},
        &can::RtObstacleDist::to_frame, can::RtObstacleDist::from_frame);
 
-    // SysDiagRpt has to_frame only (SYS sends, RT forwards raw)
-    CHECK("SysDiag alias resolves (compile check)");
-    can::SysDiag d; d.mode = 1; d.brake_engaged = true;
-    can::Frame f; d.to_frame(f);
-    if (f.id == can::kIdSysDiagRpt && f.dlc == 8) OK; else BAD("SysDiag to_frame");
+    // SysDiagRpt now has from_frame too (G6 fix)
+    rt("SysDiag → SysDiagRpt round-trip",
+       can::SysDiag{1, true, true, false, 128, 3, 1},
+       &can::SysDiag::to_frame, can::SysDiag::from_frame);
 }
 
 static void test_r1_host_drive_gear() {

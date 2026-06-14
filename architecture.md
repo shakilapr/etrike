@@ -103,7 +103,7 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear | ≤100 Hz | Medium |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→ SYS) | 1 | u8 lights bitfield | Change | Medium |
-| `0x400` | RT_OBSTACLE_RPT | RT | Jetson | 4 | u32 distance_mm | 10 Hz | Low |
+| `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | u32 distance_mm | 10 Hz | Low |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | diag struct | 1 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FC` | JETSON_HEARTBEAT | Jetson | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
@@ -265,7 +265,7 @@ Converts ROS 2 motion commands (high CAN `0x300`) into:
 
 Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steering feedback and safety monitoring.
 
-**9 FreeRTOS tasks** on ESP32-S3 @ 240 MHz, 1000 Hz tick.
+**8 FreeRTOS tasks** on ESP32-S3 @ 240 MHz, 1000 Hz tick.
 
 ### 7.2 Dual CAN hardware
 
@@ -441,7 +441,7 @@ Motor speed control is **open-loop**: `0x202` desired speed → SYS MCP4725 DAC 
 
 #### Obstacle speed limit
 
-Linear: 300 mm→0, 3000 mm→full speed. HC-SR04 @ 10 Hz via `obstacle_task`.
+Jetson perception (LiDAR/camera/stereo) provides minimum obstacle distance via CAN `0x400` at 10 Hz. RT applies linear clamp: 300 mm→0, 3000 mm→full speed. Jetson's own MPPI planner produces safe speed targets; RT's limiter is a safety backstop, not the primary avoidance mechanism.
 
 #### Command staleness watchdog
 
@@ -477,8 +477,6 @@ Pri 3  can_tx_low   ◀── setpoint_queue + gw_tx_low_queue
            → 0x202 (100 Hz), 0x203 (50 Hz, drive setpoint), 0x200 (50 Hz, steer state machine), 0x302 (change)
       can_tx_high  ◀── telemetry + gw_tx_high_queue → 0x011,0x120,0x210,0x220,0x400,0x600
 
-Pri 2  obstacle     ── HC-SR04 @ 10 Hz → high CAN 0x400
-
 Pri 1  watchdog     ── 10 Hz staleness check
       heartbeat    ── 2 Hz 0x7FD on both buses
 ```
@@ -491,7 +489,6 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | `control` | 4 | 4096 B | 100 Hz | Kinematics, dynamic angle clamp, obstacle, brake arbitration, gear derivation |
 | `can_tx_low` | 3 | 3072 B | Event | 0x202@100Hz, 0x200@50Hz (steer SM gated), 0x302 |
 | `can_tx_high` | 3 | 3072 B | Event | Telemetry → MCP2515 SPI |
-| `obstacle` | 2 | 2048 B | 10 Hz | HC-SR04 → 0x400 |
 | `watchdog` | 1 | 2048 B | 10 Hz | Staleness → zero setpoints + stop steer |
 | `heartbeat` | 1 | 2048 B | 2 Hz | `0x7FD` on both buses (per-bus, not bridged): `alive_ctr++ & 0xFF`, DLC=1 |
 
@@ -508,8 +505,6 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | SPI MISO | 38 | In | MCP2515 |
 | SPI CS | 39 | Out | MCP2515 |
 | MCP INT | 40 | In | MCP2515 interrupt |
-| Ultrasonic TRIG | 7 | Out | HC-SR04 |
-| Ultrasonic ECHO | 8 | In | HC-SR04 |
 | Encoder A (rear motor) | 1 | In | Speed feedback (PCNT), quadrature |
 | Encoder B (rear motor) | 2 | In | |
 | Encoder A (front wheel) | 3 | In | Speed/angle feedback (PCNT), quadrature — **sensor TBD** |
@@ -1179,7 +1174,7 @@ constexpr int kBrakeCmdId = 0x720;
 | CAN bitrate (both) | 500 kbit/s |
 | CAN transceiver | SN65HVD230 |
 | FreeRTOS tick | 1000 Hz |
-| RT tasks | 9 |
+| RT tasks | 8 |
 | SYS tasks | 15 |
 
 ---
