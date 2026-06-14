@@ -4,7 +4,6 @@
 // Phase R4: migrated from intermcu UART to CAN.
 
 #include <cstdint>
-#include "speed_pid.h"
 #include "physics_model.h"
 #include "can/can_protocol.h"
 
