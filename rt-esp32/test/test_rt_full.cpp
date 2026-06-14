@@ -4,7 +4,7 @@
 #include "can_rx_router.h"
 #include "physics_model.h"
 #include "steering_control.h"
-#include "obstacle_sensor.h"
+#include "obstacle_limit.h"
 #include "brake_arbitration.h"
 #include "watchdog.h"
 

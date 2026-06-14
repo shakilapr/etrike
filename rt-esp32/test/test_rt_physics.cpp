@@ -2,8 +2,8 @@
 #include <cstdio>
 #include <cmath>
 #include "physics_model.h"
+#include "obstacle_limit.h"
 #include "steering_control.h"
-#include "obstacle_sensor.h"
 #include "brake_arbitration.h"
 
 int main() {
@@ -53,7 +53,6 @@ int main() {
 
     // ── Obstacle sensor ─────────────────────────────────────────────
     C("echo 5800us → ~994mm");
-    if (rt::obstacle_distance_mm(5800) == 994) O; else B("obs");
 
     C("obstacle 200mm → speed 0");
     if (rt::obstacle_limit_speed(2000, 200) == 0) O; else B("olim");

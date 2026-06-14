@@ -14,7 +14,7 @@ public:
     void tick(can::Mode mode, const can::RtDriveCmd* setpoint) {
         if (mode == can::Mode::Estop) { m_dac.write(0); return; }
         if (mode == can::Mode::Manual || !setpoint) {
-            m_dac.set_speed_mmps(m_throttle.speed_mmps());
+            m_dac.set_speed_mmps(m_throttle.read_mmps());
         } else {
             m_dac.set_speed_mmps(setpoint->motor_speed_mmps);
         }

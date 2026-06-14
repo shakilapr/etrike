@@ -14,7 +14,6 @@
 #include "heartbeat.h"
 #include "can_rx_router.h"
 #include "physics_model.h"
-#include "obstacle_sensor.h"
 #include "brake_arbitration.h"
 #include "watchdog.h"
 
@@ -34,7 +33,7 @@ int main() {
     C("RT: 0x300 → PhysicsModel::resolve → setpoint");
     rt::PhysicsModel phys;
     rt::ResolvedSetpoint r;
-    phys.resolve(rt::DriveCmd{1500, 200}, r);
+    phys.resolve(can::HostDriveCmd{1500, 200}, r);
     // Gear derived from speed in control_logic, not physics model
     uint8_t gear = (r.motor_speed_mmps > 0) ? uint8_t(can::Gear::D) : uint8_t(can::Gear::N);
     can::RtDriveCmd sp{r.motor_speed_mmps, gear};
