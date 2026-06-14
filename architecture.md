@@ -433,11 +433,17 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 | AUTO | RT sends `0x200` at 50 Hz with resolved angle, dynamic clamp + slew rate applied. |
 | ESTOP | Obstacle: hold current angle, silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active `0x200`. Fall back to silent-stop if following error persists >1s. |
 
-#### Speed control — open-loop (PID deferred)
+#### Speed control — open-loop today, PID-ready
 
 Motor speed control is **open-loop**: `0x202` desired speed → SYS MCP4725 DAC = `speed/3000 × 4095` (fixed voltage mapping). No feedback compensation. Acceptable for flat-ground steady-state operation but will not compensate for hills, headwinds, or load changes.
 
-`0x220 RT_PID_RPT` is reserved for future closed-loop PID. When rear motor encoders (GPIO1/2) are fitted, implement PID on SYS (direct DAC modulation from encoder feedback). See gap #5.
+**Why open-loop?** The PID implementation exists (`speed_pid.cpp/.h` — parallel-form with anti-windup, Kp=1.0, Ki=0.1, Kd=0.05) and is correct, but the rear motor encoder hasn't been physically fitted to the trike yet. The PID expects a `measured_speed_mmps` input from the PCNT encoder (GPIO1/2), which currently reads zero. Running the PID against `measured=0` would command full throttle constantly — it MUST NOT be in the active control path until the encoder is wired.
+
+**Integration plan (gap #5):** Once the rear motor encoder is fitted:
+1. `control_task` on RT feeds `speed_pid_update(desired, measured, dt)` with real encoder data
+2. PID output (effort correction) is sent to SYS via an added field in `0x202` or a new CAN ID
+3. SYS adds the PID trim to the base MCP4725 voltage — closing the loop
+4. Until then, the PID runs as a **shadow controller** in RT, outputting to `0x220 RT_PID_RPT` (telemetry only) for validation against the open-loop command — the two should track closely on flat ground and diverge under load, telling us the PID gains are reasonable before wiring it in.
 
 #### Obstacle speed limit
 
@@ -1196,7 +1202,7 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 | 2 | ~~No CAN message for Jetson to request S (Sport) gear~~ | ~~AUTO can only select D/N/R~~ | **RESOLVED:** `0x300 HOST_DRIVE_CMD` repacked: i32 speed + i24 yaw + u8 gear (N=0,D=1,S=2,R=3). RT passes gear through to `0x202`. |
 | 3 | ~~EPS-C timeout-fault behavior unknown~~ | ~~On ESTOP or comm loss, steering may lock, center, or freewheel~~ | **RESOLVED:** Two-tier ESTOP steering (§7.6). Active-zero centering for non-obstacle ESTOP with silent-stop fallback on mechanical jam. Obstacle-triggered ESTOP holds current angle. EPS-C timeout-fault is now a last-resort fallback (CAN bus dead), not the primary ESTOP mechanism. |
 | 4 | ~~SEB pressure control mode not defined~~ | ~~SYS currently uses stroke mode only~~ | **RESOLVED:** Verified SYNTREE SEB spec: `VCU_SEB_Pre_Value_Req` is u8 at bit 32, scale 0.05 MPa/bit, range 0–5 MPa (raw 0–100). Conversion: `seb_raw = kPa × 0.02`. Clamp to 100. |
-| 5 | Motor speed control is open-loop — no feedback compensation | SYS maps `0x202` speed to fixed MCP4725 voltage. Hills, headwinds, load changes uncompensated. Encoders reserved on GPIO1/2 but not yet fitted. `0x220 RT_PID_RPT` CAN ID reserved for future PID telemetry. | Once rear motor encoders are fitted and calibrated, implement PID on SYS for direct DAC modulation from encoder feedback. Tune gains (Kp/Ki/Kd) against actual vehicle dynamics. |
+| 5 | Speed control open-loop — PID exists but encoder not fitted | `speed_pid.cpp` is correct but runs with `measured=0` (encoder not physically installed). PID must NOT be in the active control path until GPIO1/2 PCNT is wired. Currently runs as shadow controller → `0x220` telemetry for validation. | 1) Fit rear motor encoder to GPIO1/2. 2) Verify encoder pulses on PCNT. 3) Enable `pid_update(desired, measured, dt)` with real data. 4) Route PID effort trim to SYS via new field in `0x202` or dedicated ID. 5) Validate closed-loop response against open-loop baseline. |
 
 ---
 
