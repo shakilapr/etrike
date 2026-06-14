@@ -1,0 +1,71 @@
+#include <cstdio>
+#include "can/can_protocol.h"
+#include "../sys-esp32/src/mode_manager.h"
+#include "../sys-esp32/src/safety_monitor.h"
+#include "../sys-esp32/src/throttle_input.h"
+#include "../sys-esp32/src/mcp4725_dac.h"
+#include "../sys-esp32/src/motor_driver.h"
+#include "../sys-esp32/src/gear_control.h"
+#include "../sys-esp32/src/brake_control.h"
+#include "../sys-esp32/src/dcdc_control.h"
+#include "../sys-esp32/src/light_control.h"
+#include "../sys-esp32/src/indicator_control.h"
+#include "heartbeat.h"
+#include "can_rx_router.h"
+#include "physics_model.h"
+#include "obstacle_sensor.h"
+#include "brake_arbitration.h"
+#include "watchdog.h"
+int main(){printf("Phases 38-44: Integration + Jetson + Validation\n\n");int e=0;
+#define C(d) printf("  %-50s ",d)
+#define O printf("PASS\n")
+#define B(m) do{printf("FAIL: %s\n",m);++e;}while(0)
+
+// ── SYS + RT integration pipeline ──
+C("SYS mode->CAN 0x110->RT mode");sys::ModeManager mm;mm.init();
+mm.tick(false,true);
+if(mm.mode()==can::Mode::Auto)O;else B("mode"); // MANUAL->AUTO
+
+C("RT: 0x300->physics->0x202+0x200");
+auto r=rt::physics_resolve(can::HostDriveCmd{1500,200});
+can::RtDriveCmd sp{r.speed,r.gear};
+if(sp.motor_speed_mmps==1500&&uint8_t(sp.gear)==1)O;else B("phy");
+
+C("SYS motor: AUTO setpoint->MCP4725");
+sys::MotorDriver md;md.init();
+md.tick(can::Mode::Auto,&sp);
+if(md.dac().value()>1900&&md.dac().value()<2200)O;else B("motor");
+
+C("RT brake: 0x301->arbitrate->0x203");
+int32_t bk=rt::brake_arbitrate(4000,2000);
+if(bk==4000)O;else B("bk");
+
+C("SYS gear: AUTO D->relay");
+sys::GearControl gc;gc.init();
+gc.tick(can::Mode::Auto,0,1);
+if(uint8_t(gc.gear())==1)O;else B("gear");
+
+C("SYS DCDC: MANUAL->on");sys::DcdcControl dc;dc.init();
+dc.tick(false);if(dc.enabled())O;else B("dcdc");
+
+C("SYS lights: brake OR logic");sys::LightControl lc;lc.init();
+auto lo=lc.tick(can::Mode::Manual,true,0,false,false,false);
+if(lo.brake_lamp)O;else B("light");
+
+C("SYS indicators: AUTO bulb on");sys::IndicatorControl ic;
+auto io=ic.tick(can::Mode::Auto);
+if(io.auto_bulb)O;else B("ind");
+
+C("Gateway: 0x011 forward low->high");
+can::Frame f;f.id=0x011;f.dlc=2;f.put_u8(0,1);
+rt::GatewayQueues q;can::Frame gw_high;q.gw_tx_high=&gw_high;
+rt::route_frame(f,false,q);
+if(gw_high.id==0x011)O;else B("gw");
+
+C("Jetson 0x300: /cmd_vel->CAN");
+can::HostDriveCmd cmd;cmd.speed_mmps=int32_t(1.5*1000);//1.5m/s
+cmd.yaw_rate_mrad_s=int32_t(0.3*1000);//0.3rad/s
+if(cmd.speed_mmps==1500&&cmd.yaw_rate_mrad_s==300)O;else B("j");
+
+printf("\n  %d tests, %d failures\n",10+e,e);
+return e?1:0;}
