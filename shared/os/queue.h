@@ -1,9 +1,11 @@
 #pragma once
-// Queue<T> — type-safe FreeRTOS queue wrapper.
+// Queue<T> — type-safe FreeRTOS queue wrapper (ESP-IDF only).
 // Eliminates void* casting and sizeof mistakes.
 
+#ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#endif
 #include <type_traits>
 
 namespace os {
