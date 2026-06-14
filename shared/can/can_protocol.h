@@ -5,7 +5,7 @@
 // RT bridges selected IDs between buses (§2.3 architecture.md).
 
 #include <cstdint>
-#include "os/endian.h"
+#include "endian.h"
 
 namespace can {
 
