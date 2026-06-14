@@ -190,12 +190,20 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
             g_dac.set_speed_mmps(speed);
         }
 
-        // Gear: call GearControl::tick
-        uint8_t sense = 0;  // TLP281 read
-        uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
-        uint8_t out = g_gear.tick(mode, sense, set_gear);
-        (void)out;  // relay GPIOs set by gear_control
+        vTaskDelayUntil(&last, period);
+    }
+}
 
+// ── Gear task (prio 3, 50 Hz) ──────────────────────────────────────
+
+[[noreturn]] static void task_gear(void*) {
+    TickType_t period = pdMS_TO_TICKS(1000 / sys::kGearCheckHz);
+    TickType_t last   = xTaskGetTickCount();
+    while (1) {
+        can::Mode mode = g_mode_mgr.mode();
+        uint8_t sense = 0;  // TLP281 read (gpio_get_level on kGearDSense/SSense/RSense)
+        uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
+        g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs
         vTaskDelayUntil(&last, period);
     }
 }
@@ -410,6 +418,7 @@ extern "C" void app_main() {
     xTaskCreate(task_dispatch,  "dispatch",  3072, nullptr, 4, &h_dispatch);
     xTaskCreate(task_mode,      "mode",      2048, nullptr, 4, &h_mode);
     xTaskCreate(task_motor,     "motor",     2048, nullptr, 4, &h_motor);
+    xTaskCreate(task_gear,      "gear",      1536, nullptr, 3, &h_gear);
     xTaskCreate(task_throttle,  "throttle",  1536, nullptr, 3, &h_throttle);
     xTaskCreate(task_brake,     "brake",     2048, nullptr, 3, &h_brake);
     xTaskCreate(task_lights,    "lights",    1536, nullptr, 3, &h_lights);

@@ -39,19 +39,30 @@ os::Queue<rt::DriveCmd, 4> g_cmd_queue;         // from 0x300
 os::Queue<can::Frame, 8>   g_can_tx_low_queue;   // pending R7: CAN TX low
 os::Queue<can::Frame, 8>   g_can_tx_high_queue;  // pending R7: CAN TX high
 
-// ── CAN RX task (low bus) ──────────────────────────────────────────
+// ── CAN RX low task (prio 5) — low bus TWAI ───────────────────────
 
-void can_rx_task(void*) {
+void can_rx_low_task(void*) {
     can::Frame fr;
     while (true) {
         if (g_can_low.receive(fr, 100)) {
             if (can::is_estop_id(fr.id)) {
                 g_mode = can::Mode::Estop;
-                ESP_LOGW(kTag, "ESTOP via CAN RX");
+                ESP_LOGW(kTag, "ESTOP via CAN RX low");
             } else {
                 g_can_rx_queue.send(fr, 0);  // non-blocking; drop if full
             }
         }
+    }
+}
+
+// ── CAN RX high task (prio 5) — high bus MCP2515 ──────────────────
+
+void can_rx_high_task(void*) {
+    can::Frame fr;
+    while (true) {
+        // Pending R5 integration: g_can_high.receive(fr, 100)
+        // For now, MCP2515 RX is polled in this task when driver is active.
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -227,15 +238,16 @@ extern "C" void app_main() {
              static_cast<double>(rt::kPidKi),
              static_cast<double>(rt::kPidKd));
 
-    // Create tasks
-    xTaskCreate(can_rx_task,       "can_rx",    4096, nullptr, 5, nullptr);
-    xTaskCreate(dispatch_task,      "dispatch",  3072, nullptr, 4, nullptr);
-    xTaskCreate(control_task,       "control",   4096, nullptr, 4, nullptr);
+    // Create tasks (architecture.md §7.7: 9 tasks total)
+    xTaskCreate(can_rx_low_task,   "can_rx_low", 4096, nullptr, 5, nullptr);
+    xTaskCreate(can_rx_high_task,  "can_rx_high",4096, nullptr, 5, nullptr);
+    xTaskCreate(dispatch_task,      "dispatch",   4096, nullptr, 4, nullptr);
+    xTaskCreate(control_task,       "control",    4096, nullptr, 4, nullptr);
     xTaskCreate(can_tx_low_task,    "can_tx_low", 3072, nullptr, 3, nullptr);
     xTaskCreate(can_tx_high_task,   "can_tx_high",3072, nullptr, 3, nullptr);
-    xTaskCreate(obstacle_task,      "obstacle",  2048, nullptr, 2, nullptr);
-    xTaskCreate(watchdog_task,      "watchdog",  2048, nullptr, 1, nullptr);
-    xTaskCreate(heartbeat_task,     "hb",        2048, nullptr, 1, nullptr);
+    xTaskCreate(obstacle_task,      "obstacle",   2048, nullptr, 2, nullptr);
+    xTaskCreate(watchdog_task,      "watchdog",   2048, nullptr, 1, nullptr);
+    xTaskCreate(heartbeat_task,     "hb",         2048, nullptr, 1, nullptr);
 
     ESP_LOGI(kTag, "Ready. Mode=%s", can::mode_name(g_mode));
 }

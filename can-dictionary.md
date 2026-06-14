@@ -463,7 +463,7 @@ ROS 2 conversion: `speed_mmps = linear.x × 1000`, `yaw_rate_mrad_s = angular.z 
 |--------|-----------|-----|------|------|
 | `HOST_BrakePressure` | 0 | 32 | i32 | kPa |
 
-Byte layout (big-endian): Bytes 0-3. RT arbitrates: max(RT_computed, HOST_request). **Gap**: result not yet forwarded to SYS.
+Byte layout (big-endian): Bytes 0-3. RT arbitrates: max(RT_computed, HOST_request). Result forwarded to SYS via `0x203` RT_BRAKE_CMD (i32 kPa, 50 Hz).
 
 ---
 

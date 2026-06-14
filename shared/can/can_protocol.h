@@ -271,6 +271,17 @@ struct SysDiagRpt {
     uint8_t  tec           = 0;
     uint8_t  rec           = 0;
 
+    static SysDiagRpt from_frame(const Frame& f) {
+        return {
+            f.u8_at(0),
+            f.u8_at(1) != 0,
+            f.u8_at(2) != 0,
+            f.u8_at(3) != 0,
+            uint16_t(f.i16_at(4)),  // heap KB stored as BE i16
+            f.u8_at(6),
+            f.u8_at(7),
+        };
+    }
     void to_frame(Frame& f) const {
         f.id = kIdSysDiagRpt; f.dlc = 8;
         f.put_u8(0, mode);
