@@ -1,26 +1,39 @@
 #pragma once
-// Safety monitor — E-stop button, brake lever, heartbeat watchdog.
-// Calls mode_set(ESTOP) on fault.  Runs at priority 5 (life-critical).
+// Safety monitor — ESTOP button, brake lever, heartbeat watchdog.
+// Runs at priority 5 (life-critical). Architecture.md §8.6.
 
 #include <cstdint>
+#include "config.h"
 
 namespace sys {
 
 class SafetyMonitor {
 public:
-    SafetyMonitor() = default;
-
     void init();
-    bool estop_active() const;         // GPIO1 LOW
-    bool brake_lever_pressed() const;  // GPIO2 LOW
 
-    // Heartbeat tracking — call on each RT inter-MCU heartbeat receipt.
-    void feed_heartbeat_rt();
-    void feed_heartbeat_jetson();      // Legacy/test hook; no-op in split topology.
-    bool heartbeat_ok() const;         // RT link heartbeat within timeout
+    // GPIO state (polled by caller)
+    bool estop_active() const         { return m_estop; }
+    bool brake_lever_pressed() const  { return m_brake_lever; }
+
+    // Set from GPIO reads each tick
+    void set_estop(bool active)       { m_estop = active; }
+    void set_brake_lever(bool pressed){ m_brake_lever = pressed; }
+
+    // Feed RT heartbeat alive counter (call on each valid 0x7FD receipt)
+    void feed_heartbeat_rt(uint8_t alive_ctr);
+
+    // Returns true if RT heartbeat is fresh (within timeout, startup grace applied)
+    bool heartbeat_ok() const;
 
 private:
-    int64_t m_last_hb_rt_us     = 0;
+    bool     m_estop       = false;
+    bool     m_brake_lever = false;
+    int64_t  m_last_hb_us  = 0;
+    uint8_t  m_last_hb_ctr = 0;
+    bool     m_hb_ever_seen = false;
 };
+
+// Returns monotonic microseconds (host: stub with incrementing counter)
+int64_t get_time_us();
 
 }  // namespace sys
