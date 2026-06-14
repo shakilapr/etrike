@@ -49,6 +49,7 @@ Desktop.ini
 /notes/
 /standards/
 /legacy/
+/docs-main/
 
 # ── PDF extraction tool artifacts ────────────────────────────────────
 /extract_pdfs.py
