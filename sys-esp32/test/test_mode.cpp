@@ -1,80 +1,52 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_mode.cpp ../src/mode_manager.cpp -o test_mode && ./test_mode
+// Phase 7: sys-esp32/src/mode_manager validation
+// g++ -std=c++17 -I. -I../src -I../../shared test_mode.cpp ../src/mode_manager.cpp -o t && ./t
 
 #include <cstdio>
-#include <cstring>
-#include "stubs.h"
-#include "config.h"
-#include "can/can_protocol.h"
 #include "mode_manager.h"
 
-static int tests_run = 0, tests_pass = 0, tests_fail = 0;
-#define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; } \
-    else { ++tests_fail; fprintf(stderr, "  FAIL %s:%d\n", __FILE__, __LINE__); } } while(0)
+static int fails = 0;
+#define CHK(d) printf("  %-50s ", d)
+#define OK      printf("PASS\n")
+#define BAD(m)  do { printf("FAIL: %s\n", m); ++fails; } while(0)
 
 int main() {
-    printf("\n=== Mode Manager Tests ===\n\n");
-    using namespace can;
-
-    // Initialize mock GPIO: mode switch = Manual (HIGH/open)
-    g_mock_gpio[sys::kModeSwitchGpio] = 1;
-
+    printf("Phase 7: Mode manager\n\n");
     sys::ModeManager mm;
     mm.init();
-    CHECK(mm.current() == Mode::Manual);
-    printf("  ok  default is Manual\n");
 
-    mm.set(Mode::Auto);
-    CHECK(mm.current() == Mode::Auto);
-    printf("  ok  Manual -> Auto\n");
+    CHK("init = MANUAL"); if (mm.mode() == can::Mode::Manual) OK; else BAD("init");
 
-    mm.set(Mode::Manual);
-    CHECK(mm.current() == Mode::Manual);
-    printf("  ok  Auto -> Manual\n");
+    bool changed = mm.tick(false, true);
+    CHK("MODE press: MANUAL->AUTO");
+    if (changed && mm.mode()==can::Mode::Auto) OK; else BAD("no toggle");
 
-    mm.set(Mode::Estop);
-    CHECK(mm.current() == Mode::Estop);
-    printf("  ok  -> Estop\n");
+    CHK("debounce blocks immediate press");
+    changed = mm.tick(false, true);
+    if (!changed) OK; else BAD("debounce");
 
-    // Estop blocks lower-priority transitions
-    mm.set(Mode::Auto);
-    CHECK(mm.current() == Mode::Estop);
-    printf("  ok  Estop blocks Auto\n");
+    for (int i=0;i<6;++i) mm.tick(true, true);
+    changed = mm.tick(false, true);
+    CHK("MODE press: AUTO->MANUAL");
+    if (changed && mm.mode()==can::Mode::Manual) OK; else BAD("back");
 
-    mm.set(Mode::Manual);
-    CHECK(mm.current() == Mode::Estop);
-    printf("  ok  Estop blocks Manual\n");
+    mm.force_estop();
+    CHK("force_estop() -> ESTOP");
+    if (mm.mode()==can::Mode::Estop) OK; else BAD("estop");
 
-    mm.set(Mode::Estop);  // idempotent
-    CHECK(mm.current() == Mode::Estop);
-    printf("  ok  Estop idempotent\n");
+    changed = mm.tick(false, true);
+    CHK("MODE ignored in ESTOP");
+    if (!changed && mm.mode()==can::Mode::Estop) OK; else BAD("override");
 
-    // Switch polling: ignored in Estop
-    g_mock_gpio[sys::kModeSwitchGpio] = 0;  // LOW = Auto
-    mm.poll();
-    CHECK(mm.current() == Mode::Estop);
-    printf("  ok  switch ignored in Estop\n");
+    for (int i=0;i<6;++i) mm.tick(true, true);
+    changed = mm.tick(true, false);
+    CHK("START: ESTOP->MANUAL");
+    if (changed && mm.mode()==can::Mode::Manual) OK; else BAD("start");
 
-    // Test switch polling from clean state
-    sys::ModeManager mm2;
-    mm2.init();
-    CHECK(mm2.current() == Mode::Manual);
+    mm.set_from_can(1);
+    CHK("set_from_can(1)->AUTO"); if (mm.mode()==can::Mode::Auto) OK; else BAD("can");
+    mm.set_from_can(99);
+    CHK("set_from_can(99) ignored"); if (mm.mode()==can::Mode::Auto) OK; else BAD("invalid");
 
-    g_mock_gpio[sys::kModeSwitchGpio] = 0;  // LOW = Auto
-    mm2.poll();
-    CHECK(mm2.current() == Mode::Auto);
-    printf("  ok  switch -> Auto\n");
-
-    g_mock_gpio[sys::kModeSwitchGpio] = 1;  // HIGH = Manual
-    mm2.poll();
-    CHECK(mm2.current() == Mode::Manual);
-    printf("  ok  switch -> Manual\n");
-
-    // mode_name strings
-    CHECK(strcmp(mode_name(Mode::Manual), "MANUAL") == 0);
-    CHECK(strcmp(mode_name(Mode::Auto),   "AUTO")   == 0);
-    CHECK(strcmp(mode_name(Mode::Estop),  "ESTOP")  == 0);
-    printf("  ok  mode_name strings\n");
-
-    printf("\n--- %d/%d passed, %d failed ---\n\n", tests_pass, tests_run, tests_fail);
-    return tests_fail ? 1 : 0;
+    printf("\n  Result: %d failures\n", fails);
+    return fails ? 1 : 0;
 }
