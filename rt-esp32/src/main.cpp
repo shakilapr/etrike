@@ -9,6 +9,7 @@
 #include "config.h"
 #include "control_logic.h"
 #include "physics_model.h"
+#include "speed_pid.h"
 #include "obstacle_sensor.h"
 #include "watchdog.h"
 #include "can/can_protocol.h"
