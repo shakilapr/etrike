@@ -11,5 +11,5 @@ C("raw=199<DZ->0");if(ti.tick(199)==0)O;else B("dz2");
 C("raw=200==DZ->146");if(ti.tick(200)==146)O;else B("edge");
 C("raw=2048->1500");if(ti.tick(2048)==1500)O;else B("mid");
 C("raw=4095->3000");if(ti.tick(4095)==3000)O;else B("max");
-C("speed_mmps() ok");if(ti.speed_mmps()==3000)O;else B("last");
+C("speed_mmps() ok");if(ti.read_mmps()==3000)O;else B("last");
 printf("\n  Result: %d failures\n",f);return f?1:0;}
