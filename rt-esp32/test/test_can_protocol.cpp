@@ -99,6 +99,92 @@ static void test_roundtrips() {
        &can::RtDriveCmd::to_frame, can::RtDriveCmd::from_frame);
 }
 
+// ── Phase R1: new aliases + HostDriveCmd gear ──────────────────────
+
+static void test_r1_aliases() {
+    hdr("R1: alias round-trips");
+    rt("HostBrakeRequest → HostBrakeReq",
+       can::HostBrakeRequest{8000},
+       &can::HostBrakeRequest::to_frame, can::HostBrakeRequest::from_frame);
+    rt("RtObstacleDist → RtObstacleRpt",
+       can::RtObstacleDist{1500},
+       &can::RtObstacleDist::to_frame, can::RtObstacleDist::from_frame);
+
+    // SysDiagRpt has to_frame only (SYS sends, RT forwards raw)
+    CHECK("SysDiag alias resolves (compile check)");
+    can::SysDiag d; d.mode = 1; d.brake_engaged = true;
+    can::Frame f; d.to_frame(f);
+    if (f.id == can::kIdSysDiagRpt && f.dlc == 8) OK; else BAD("SysDiag to_frame");
+}
+
+static void test_r1_host_drive_gear() {
+    hdr("R1: HostDriveCmd with gear field");
+    // Round-trip with all fields set
+    can::HostDriveCmd orig{2500, -500, uint8_t(can::Gear::D)};  // speed, yaw, gear=D
+    can::Frame f;
+    orig.to_frame(f);
+    auto back = can::HostDriveCmd::from_frame(f);
+
+    CHECK("HostDriveCmd gear=D round-trip");
+    if (back.speed_mmps == 2500 && back.yaw_rate_mrad_s == -500
+        && back.gear == uint8_t(can::Gear::D) && f.dlc == 8) OK; else BAD("mismatch");
+
+    // Verify gear byte is at offset 7
+    CHECK("HostDriveCmd gear at byte 7");
+    if (f.u8_at(7) == uint8_t(can::Gear::D)) OK; else BAD("gear not at byte 7");
+
+    // All gear enum values
+    CHECK("HostDriveCmd gear=S round-trip");
+    can::HostDriveCmd s{0, 0, uint8_t(can::Gear::S)};
+    s.to_frame(f); auto sb = can::HostDriveCmd::from_frame(f);
+    if (sb.gear == uint8_t(can::Gear::S)) OK; else BAD("gear=S lost");
+
+    CHECK("HostDriveCmd gear=R round-trip");
+    can::HostDriveCmd r{0, 0, uint8_t(can::Gear::R)};
+    r.to_frame(f); auto rb = can::HostDriveCmd::from_frame(f);
+    if (rb.gear == uint8_t(can::Gear::R)) OK; else BAD("gear=R lost");
+
+    // i24 yaw boundary values
+    CHECK("HostDriveCmd yaw i24 max positive (+3000)");
+    can::HostDriveCmd pos{1000, 3000, 0};
+    pos.to_frame(f); auto pb = can::HostDriveCmd::from_frame(f);
+    if (pb.yaw_rate_mrad_s == 3000) OK; else BAD("yaw +3000 lost");
+
+    CHECK("HostDriveCmd yaw i24 min negative (-3000)");
+    can::HostDriveCmd neg{1000, -3000, 0};
+    neg.to_frame(f); auto nb = can::HostDriveCmd::from_frame(f);
+    if (nb.yaw_rate_mrad_s == -3000) OK; else BAD("yaw -3000 lost");
+
+    CHECK("HostDriveCmd yaw zero");
+    can::HostDriveCmd z{0, 0, 0};
+    z.to_frame(f); auto zb = can::HostDriveCmd::from_frame(f);
+    if (zb.yaw_rate_mrad_s == 0 && zb.speed_mmps == 0) OK; else BAD("zero lost");
+}
+
+static void test_r1_alias_id_constants() {
+    hdr("R1: alias ID constants");
+    CHECK("kIdHostBrakeRequest == kIdHostBrakeReq");
+    if (can::kIdHostBrakeRequest == can::kIdHostBrakeReq) OK; else BAD("mismatch");
+
+    CHECK("kIdHeartbeat == kIdRtHeartbeatLow");
+    if (can::kIdHeartbeat == can::kIdRtHeartbeatLow) OK; else BAD("mismatch");
+
+    CHECK("kIdSyntreeEpsStatus == kIdSesStatus");
+    if (can::kIdSyntreeEpsStatus == can::kIdSesStatus) OK; else BAD("mismatch");
+
+    CHECK("kIdSyntreeSebStatus == kIdSebStatus");
+    if (can::kIdSyntreeSebStatus == can::kIdSebStatus) OK; else BAD("mismatch");
+
+    CHECK("kIdSysEstop == kIdSafetyEstop");
+    if (can::kIdSysEstop == can::kIdSafetyEstop) OK; else BAD("mismatch");
+
+    CHECK("kIdRtEstop == kIdSafetyEstop");
+    if (can::kIdRtEstop == can::kIdSafetyEstop) OK; else BAD("mismatch");
+
+    CHECK("kIdHostEstop == kIdSafetyEstop");
+    if (can::kIdHostEstop == can::kIdSafetyEstop) OK; else BAD("mismatch");
+}
+
 // ── DLC checks ─────────────────────────────────────────────────────
 
 static void test_dlc() {
@@ -144,9 +230,11 @@ static void test_syntree() {
     if (b.target_angle==0) OK; else BAD("zero angle lost");
 
     CHECK("VcuSebReq 0mm stroke raw=600");
-    can::VcuSebReq sb; sb.control_mode=1; sb.stroke_req=600; sb.rolling_counter=3;
+    can::VcuSebReq sb; sb.control_mode=1; sb.stroke_req=600;
+    sb.roll_cnt_enable=1; sb.checksum_enable=1; sb.rolling_counter=3;
     sb.pack(r); auto bb=can::VcuSebReq::unpack(r);
-    if (bb.stroke_req==600 && bb.rolling_counter==3) OK; else BAD("0mm mismatch");
+    if (bb.stroke_req==600 && bb.rolling_counter==3
+        && bb.roll_cnt_enable==1 && bb.checksum_enable==1) OK; else BAD("0mm mismatch");
 
     CHECK("VcuSebReq 15mm stroke raw=900");
     sb.stroke_req=900; sb.pack(r); bb=can::VcuSebReq::unpack(r);
@@ -156,9 +244,17 @@ static void test_syntree() {
     sb.stroke_req=1140; sb.pack(r); bb=can::VcuSebReq::unpack(r);
     if (bb.stroke_req==1140) OK; else BAD("27mm mismatch");
 
-    CHECK("VcuSebReq Pressure Mode");
+    CHECK("VcuSebReq Pressure Mode (u8)");
     sb.control_mode=2; sb.pressure_req=50; sb.pack(r); bb=can::VcuSebReq::unpack(r);
     if (bb.control_mode==2 && bb.pressure_req==50) OK; else BAD("pressure mode");
+
+    CHECK("VcuSebReq pressure max clamp (100)");
+    sb.pressure_req=100; sb.pack(r); bb=can::VcuSebReq::unpack(r);
+    if (bb.pressure_req==100) OK; else BAD("pressure max");
+
+    CHECK("VcuSebReq enable bits in byte 6");
+    // byte 6: bits 2 (roll_cnt_en) + bit 3 (cksum_en) must be set
+    if ((r[6] & 0x0C) == 0x0C) OK; else BAD("enable bits missing");
 }
 
 // ── Priority ordering ──────────────────────────────────────────────
@@ -183,6 +279,9 @@ int main() {
     test_id_uniqueness();
     test_forwarding();
     test_roundtrips();
+    test_r1_aliases();
+    test_r1_host_drive_gear();
+    test_r1_alias_id_constants();
     test_dlc();
     test_syntree();
     test_priority();

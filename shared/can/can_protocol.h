@@ -42,6 +42,23 @@ constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Jetson alive counter, 
 constexpr uint32_t kIdJetsonHeartbeat   = 0x7FC;  // Jetson→RT alive counter, 2 Hz
 
 // ───────────────────────────────────────────────────────────────────
+// Aliases — codebase migration compatibility.
+// Preferred names are the canonical ones; aliases let existing code
+// compile until it is updated to use the canonical identifiers.
+// ───────────────────────────────────────────────────────────────────
+
+constexpr auto kIdHostBrakeRequest  = kIdHostBrakeReq;   // → canonical
+constexpr auto kIdHeartbeat         = kIdRtHeartbeatLow;  // → canonical
+constexpr auto kIdSyntreeEpsStatus  = kIdSesStatus;       // → canonical
+constexpr auto kIdSyntreeSebStatus  = kIdSebStatus;       // → canonical
+
+// Single ESTOP ID — every node sends 0x001.
+// Code that distinguishes sender can use these for clarity.
+constexpr auto kIdSysEstop  = kIdSafetyEstop;
+constexpr auto kIdRtEstop   = kIdSafetyEstop;
+constexpr auto kIdHostEstop = kIdSafetyEstop;
+
+// ───────────────────────────────────────────────────────────────────
 // Forwarded IDs (same ID on both buses, transparent)
 // ───────────────────────────────────────────────────────────────────
 
@@ -214,6 +231,10 @@ struct HostLightCmd {
 
 // 0x720 VCU_SEB_REQ — SYS→SEB (brake command, SYNTREE protocol)
 // Little-endian on the wire. Pack/unpack with explicit shifts.
+// Wire format per can-dictionary.md §0x720:
+//   Byte 0: ctrl bits, Byte 1: rsvd, Bytes 2-3: stroke LE,
+//   Byte 4: pressure u8, Byte 5: rsvd,
+//   Byte 6: rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4), Byte 7: checksum
 struct VcuSebReq {
     uint8_t align_enable   : 1;
     uint8_t control_enable : 1;
@@ -222,10 +243,13 @@ struct VcuSebReq {
     uint8_t reserved_0     : 3;
     uint8_t reserved_1        = 0;
     uint16_t stroke_req       = 600; // raw: (mm+30)/0.05, 600=0mm
-    uint16_t pressure_req     = 0;   // MPa raw, TBD: verify scale
-    uint8_t reserved_2        : 4;
-    uint8_t rolling_counter   : 4;   // 0–15
-    uint8_t checksum          = 0;   // XOR(bytes[0..6]) ^ 0xFF
+    uint8_t  pressure_req     = 0;   // u8: 0–100, scale 0.05 MPa/bit, 0–5 MPa
+    uint8_t  reserved_byte5   = 0;
+    uint8_t  reserved_6_lo    : 2;   // bits 0-1
+    uint8_t  roll_cnt_enable  : 1;   // bit 2 — MUST be 1
+    uint8_t  checksum_enable  : 1;   // bit 3 — MUST be 1
+    uint8_t  rolling_counter  : 4;   // bits 4-7, 0–15
+    uint8_t  checksum         = 0;   // XOR(bytes[0..6]) ^ 0xFF
 
     void pack(uint8_t raw[8]) const;
     static VcuSebReq unpack(const uint8_t raw[8]);
@@ -292,17 +316,28 @@ struct RtPidRpt {
 };
 
 // 0x300 HOST_DRIVE_CMD — Jetson→RT
+// Wire format: i32 speed (bytes 0-3), i24 yaw (bytes 4-6), u8 gear (byte 7). DLC=8.
 struct HostDriveCmd {
     int32_t speed_mmps      = 0;   // [-500, 3000]
     int32_t yaw_rate_mrad_s = 0;   // [-3000, 3000]
+    uint8_t gear            = 0;   // Gear enum (N=0,D=1,S=2,R=3)
 
     static HostDriveCmd from_frame(const Frame& f) {
-        return { f.i32_at(0), f.i32_at(4) };
+        // Decode i24 big-endian from bytes 4-6, then sign-extend to i32
+        int32_t yaw = (int32_t(f.u8_at(4)) << 16)
+                    | (int32_t(f.u8_at(5)) << 8)
+                    |  int32_t(f.u8_at(6));
+        if (yaw & 0x800000) yaw |= 0xFF000000;  // sign-extend i24→i32
+        return { f.i32_at(0), yaw, f.u8_at(7) };
     }
     void to_frame(Frame& f) const {
         f.id = kIdHostDriveCmd; f.dlc = 8;
         f.put_i32(0, speed_mmps);
-        f.put_i32(4, yaw_rate_mrad_s);
+        // i24 yaw big-endian in bytes 4-6
+        f.put_u8(4, (yaw_rate_mrad_s >> 16) & 0xFF);
+        f.put_u8(5, (yaw_rate_mrad_s >> 8)  & 0xFF);
+        f.put_u8(6,  yaw_rate_mrad_s        & 0xFF);
+        f.put_u8(7, gear);
     }
 };
 
@@ -373,9 +408,12 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
     raw[1] = reserved_1;
     raw[2] = stroke_req & 0xFF;
     raw[3] = (stroke_req >> 8) & 0xFF;
-    raw[4] = pressure_req & 0xFF;
-    raw[5] = (pressure_req >> 8) & 0xFF;
-    raw[6] = (reserved_2 & 0xF) | ((rolling_counter & 0xF) << 4);
+    raw[4] = pressure_req;                    // u8 pressure (0-100)
+    raw[5] = reserved_byte5;                  // reserved
+    raw[6] = (reserved_6_lo & 3)
+           | ((roll_cnt_enable & 1) << 2)
+           | ((checksum_enable & 1) << 3)
+           | ((rolling_counter & 0xF) << 4);
     // checksum
     uint8_t ck = 0;
     for (int i = 0; i < 7; ++i) ck ^= raw[i];
@@ -384,18 +422,30 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
 
 inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
     VcuSebReq r;
-    r.align_enable   = raw[0] & 1;
-    r.control_enable = (raw[0] >> 1) & 1;
-    r.control_mode   = (raw[0] >> 2) & 3;
-    r.auto_brake     = (raw[0] >> 4) & 1;
-    r.reserved_0     = (raw[0] >> 5) & 7;
-    r.reserved_1     = raw[1];
-    r.stroke_req     = uint16_t(raw[2] | (raw[3] << 8));
-    r.pressure_req   = uint16_t(raw[4] | (raw[5] << 8));
-    r.reserved_2     = raw[6] & 0xF;
+    r.align_enable    = raw[0] & 1;
+    r.control_enable  = (raw[0] >> 1) & 1;
+    r.control_mode    = (raw[0] >> 2) & 3;
+    r.auto_brake      = (raw[0] >> 4) & 1;
+    r.reserved_0      = (raw[0] >> 5) & 7;
+    r.reserved_1      = raw[1];
+    r.stroke_req      = uint16_t(raw[2] | (raw[3] << 8));
+    r.pressure_req    = raw[4];               // u8
+    r.reserved_byte5  = raw[5];
+    r.reserved_6_lo   = raw[6] & 3;
+    r.roll_cnt_enable = (raw[6] >> 2) & 1;
+    r.checksum_enable = (raw[6] >> 3) & 1;
     r.rolling_counter = (raw[6] >> 4) & 0xF;
-    r.checksum       = raw[7];
+    r.checksum        = raw[7];
     return r;
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Type aliases — migration compatibility.
+// Code references these names; the canonical names are defined above.
+// ───────────────────────────────────────────────────────────────────
+
+using HostBrakeRequest = HostBrakeReq;
+using RtObstacleDist   = RtObstacleRpt;
+using SysDiag          = SysDiagRpt;
 
 } // namespace can

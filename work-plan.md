@@ -1,349 +1,568 @@
-# E-Trike Coding Plan
+# E-Trike Architecture Remediation Plan
 
-44 phases. Each phase delivers compilable, testable code. Test harnesses are host-based (g++) where hardware isn't needed, ESP32-based where it is.
+Goal: bring the codebase into alignment with [`architecture.md`](architecture.md).  
+The analysis (2026-06-14) found that the codebase diverged from the architecture across three axes:
+1. **Transport layer**: code uses a UART inter-MCU link; architecture specifies CAN.
+2. **Unimplemented modules**: CAN gateway, steering control, brake control, and 15 SYS tasks are stubs or disconnected.
+3. **Symbol errors**: ~20 missing constants, wrong type names, and conflicting struct definitions.
 
----
-
-## Phase 1: Shared CAN protocol header
-**Files:** `shared/can_protocol.h`
-- All CAN ID constants (`#define CAN_ID_SAFETY_ESTOP 0x001` …)
-- All payload structs with `__attribute__((packed))`
-- All enums: `SysMode`, `Gear`, `SteerState`, `BrakeState`
-- Big-endian serialize/deserialize helpers for i16/i32/u32
-- **Test:** `g++ -std=c++17 -I. -c` — compiles. Struct sizes match DLC.
-
-## Phase 2: RT config header
-**Files:** `rt-esp32/src/config.h`
-- GPIO pins, timing constants, PID params (stubbed), CAN IDs from shared header
-- **Test:** Compiles against ESP-IDF. No undefined symbols.
-
-## Phase 3: SYS config header
-**Files:** `sys-esp32/src/config.h`
-- GPIO pins, timing constants, CAN IDs, brake stroke values
-- **Test:** Compiles against ESP-IDF.
-
-## Phase 4: SYS CAN driver
-**Files:** `sys-esp32/src/can_driver.cpp`, `can_driver.h`
-- `can_init()`: TWAI general config, 500 kbit/s, normal mode, acceptance filter (accept all)
-- `can_send(id, dlc, data)`: `twai_transmit()` wrapper with 0 timeout
-- `can_receive(frame, timeout_ms)`: `twai_receive()` wrapper
-- **Test:** ESP32 sends frame → logic analyzer verifies on CAN_H/CAN_L. Loopback with another ESP32.
-
-## Phase 5: SYS main.cpp skeleton
-**Files:** `sys-esp32/src/main.cpp`
-- `app_main()`: init CAN, create all 15 tasks (empty stubs), start scheduler
-- Each task: `while(1) { vTaskDelay(pdMS_TO_TICKS(period_ms)); }` — compiles, links, runs
-- **Test:** ESP32 boots. Serial shows "Ready". 15 tasks appear in `vTaskList()`.
-
-## Phase 6: SYS heartbeat task
-**Files:** `sys-esp32/src/heartbeat.cpp`, `heartbeat.h`
-- `heartbeat_task`: every 500ms, send `0x7FE` with `alive_ctr++ & 0xFF`, DLC=1
-- **Test:** Logic analyzer shows frame every 500ms ±10ms. Counter increments correctly.
-
-## Phase 7: SYS mode manager — button debounce
-**Files:** `sys-esp32/src/mode_manager.cpp`, `mode_manager.h`
-- `mode_manager_init()`: configure GPIO11 (MODE), GPIO32 (START) as inputs with pull-ups
-- `mode_task` at 10 Hz: read both GPIOs, falling-edge detect, 500ms debounce
-- `mode_get()`, `mode_set(SysMode m)`: ESTOP override enforces can't-leave-ESTOP via MODE button
-- Internal `std::atomic<int>` for `g_mode`
-- **Test (host):** `g++ test_mode.cpp mode_manager.cpp` — mock GPIO reads, verify state transitions. ESTOP→MODE button ignored. START→MANUAL works.
-
-## Phase 8: SYS safety monitor
-**Files:** `sys-esp32/src/safety_monitor.cpp`, `safety_monitor.h`
-- `safety_init()`: configure GPIO1 (ESTOP, NC, pull-up), GPIO2 (brake lever, pull-up)
-- `safety_task` at 20 Hz: read GPIOs, check heartbeat timeout (startup grace 3s, then 1000ms)
-- `safety_estop_active()`, `safety_brake_lever_pressed()`, `safety_heartbeat_ok()`
-- **Test (host):** Inject GPIO states, verify ESTOP detection within 50ms. Inject heartbeat timestamps, verify timeout detection. Startup grace returns true for 3s.
-
-## Phase 9: SYS mode state machine — integration
-**Files:** update `mode_manager.cpp`, `safety_monitor.cpp`, `main.cpp`
-- Wire mode_manager + safety_monitor together: ESTOP button → `mode_set(Estop)`
-- MODE button toggles MANUAL↔AUTO (ignored in ESTOP)
-- START button: ESTOP→MANUAL, no effect otherwise
-- CAN `0x110 SYS_MODE_CMD` sent on every mode change
-- **Test (ESP32):** Press ESTOP → mode=Estop, `0x110` shows mode=2. Press START → mode=Manual. Press MODE → mode=Auto. Press MODE again → mode=Manual.
-
-## Phase 10: SYS throttle ADC
-**Files:** `sys-esp32/src/throttle_input.cpp`, `throttle_input.h`
-- `throttle_init()`: ADC1_CH5, 12-bit, 0–3.3V range (voltage divider 5V→3.3V assumed external)
-- `throttle_task` at 100 Hz: `adc1_get_raw()`, dead zone (200), map to mm/s (0–3000)
-- Store to `std::atomic<int16_t> g_throttle_speed_mmps`
-- CAN `0x120 SYS_THROTTLE_STS` sent every tick
-- **Test (host):** Mock `adc1_get_raw()` return values. Verify dead zone, linear mapping, CAN payload.
-
-## Phase 11: SYS MCP4725 DAC driver
-**Files:** `sys-esp32/src/mcp4725_dac.cpp`, `mcp4725_dac.h`
-- `dac_init()`: I2C master init (GPIO15=SDA, GPIO16=SCL), verify device at addr 0x60
-- `dac_write(uint16_t value)`: 12-bit value (0–4095) → 0–5V output
-- `dac_set_voltage_mv(uint16_t mv)`: convenience wrapper with clamping
-- **Test (ESP32):** Write 0 → measure 0V on MCP4725 VOUT. Write 2048 → ~2.5V. Write 4095 → ~5V.
-
-## Phase 12: SYS motor driver — combined throttle + gear
-**Files:** `sys-esp32/src/motor_driver.cpp`, `motor_driver.h`
-- `motor_init()`: calls dac_init(), configures gear output GPIOs
-- `motor_task` at 100 Hz: reads `setpoint_queue` (AUTO) or `g_throttle_speed_mmps` (MANUAL)
-- MANUAL: ADC speed → MCP4725 (pass-through)
-- AUTO: `setpoint.speed` → `abs(speed)/3000 × 4095` → MCP4725
-- ESTOP: MCP4725 = 0
-- **Test (host):** Mock ADC, mock queue. Verify DAC values per mode. Mock ESTOP → DAC=0.
-
-## Phase 13: SYS gear control
-**Files:** `sys-esp32/src/gear_control.cpp`, `gear_control.h`
-- `gear_init()`: GPIO12-14 IN (TLP281), GPIO33-35 OUT (relays)
-- `gear_task` at 50 Hz:
-  - MANUAL: read TLP281 GPIOs → mirror to relay GPIOs
-  - AUTO: use gear from `ActuatorSetpoint` → energize correct relay
-  - ESTOP: all relays OFF
-  - Gear sense conflict (multiple HIGH) → treat as N (fail-safe)
-- **Test (host):** Inject gear sense patterns, verify relay outputs. AUTO gear from queue. ESTOP → all LOW.
-
-## Phase 14: SYS CAN receive — dispatch task
-**Files:** `sys-esp32/src/can_rx_router.cpp`, `can_rx_router.h`
-- `dispatch_task`: blocks on `can_rx_queue` (16 deep), routes by CAN ID
-- `0x202 RT_DRIVE_CMD` → `xQueueOverwrite(setpoint_queue)`
-- `0x203 RT_BRAKE_CMD` → `g_brake_pressure_kpa` (atomic)
-- `0x302 HOST_LIGHT_CMD` → `g_light_state` (atomic)
-- `0x001 SAFETY_ESTOP` → `mode_set(Estop)`
-- `0x721 SEB_STATUS` → brake feedback handler
-- `0x7FD RT_HEARTBEAT` → `safety_feed_heartbeat_rt()`
-- **Test (host):** Inject CAN frames into queue. Verify routing to correct destination. ESTOP frame → mode changes.
-
-## Phase 15: SYS CAN send — telemetry TX task
-**Files:** `sys-esp32/src/can_tx.cpp`, `can_tx.h`
-- `can_tx_task` at 5 Hz: assemble and send `0x011 SYS_SAFETY_STS`
-- `throttle_task` already sends `0x120` (phase 10)
-- `diag_task` at 1 Hz: assemble and send `0x600 SYS_DIAG_RPT`
-- `hb_task` already sends `0x7FE` (phase 6)
-- **Test (ESP32):** All four CAN IDs appear on bus at correct rates. Payloads match expected values.
-
-## Phase 16: SYS DC-DC control
-**Files:** `sys-esp32/src/dcdc_control.cpp`, `dcdc_control.h`
-- `dcdc_task` at 5 Hz: send `0x012 SYS_DCDC_CMD`
-- ESTOP → enable=0, all other modes → enable=1
-- Send only on state change (not every tick)
-- **Test (host):** Cycle modes. Verify CAN frames only on transition. ESTOP → 0, MANUAL → 1.
-
-## Phase 17: SYS brake control — SEB protocol
-**Files:** `sys-esp32/src/brake_control.cpp`, `brake_control.h`
-- `BrakeState` state machine: BOOT_WAIT (500ms) → LISTEN_SYNC (await `0x721`) → ACTIVE
-- `brake_task` at 50 Hz:
-  - Build `0x720 VCU_SEB_REQ` with control enables, mode, stroke value
-  - Rolling counter increment 0→15 every frame
-  - Checksum = XOR(bytes[0..6]) ^ 0xFF
-  - MANUAL: lever pressed → 15mm, released → 0mm
-  - AUTO: `g_brake_pressure_kpa > 0` → Pressure Mode (map kPa→MPa), else Stroke Mode with lever override
-  - ESTOP: max stroke (27mm)
-- **Test (host):** Build command frames, verify checksum algorithm. Roll cnt wraps at 15. Verify stroke→raw conversion: 0mm→600, 15mm→900, 27mm→1140.
-
-## Phase 18: SYS signal lights — outputs + OR logic
-**Files:** `sys-esp32/src/light_control.cpp`, `light_control.h`
-- `lights_init()`: GPIO18/19/21/22 OUT (relay lamps), GPIO3/6/7 IN (handlebar switches)
-- `lights_task` at 20 Hz:
-  - Left/right turn blink: 500ms on, 500ms off, toggle behavior
-  - Both pressed → hazard flashers (sync blink)
-  - Headlight: toggle on each press (MANUAL) or follow `g_light_state.headlight` (AUTO)
-  - Brake light OR logic: `lever_pressed OR mode==Estop OR g_light_state.brake_light`
-  - ESTOP: brake light ON, all others OFF
-- **Test (host):** Inject switch states + mode + light_state. Verify GPIO outputs match expected.
-
-## Phase 19: SYS mode indicator bulbs + 12V relay
-**Files:** `sys-esp32/src/indicator_control.cpp`, `indicator_control.h`, `power_control.cpp`, `power_control.h`
-- `indicator_task` at 5 Hz: AUTO→GPIO25, MANUAL→GPIO26, both OFF in ESTOP
-- `power_task` at 5 Hz: GPIO27 ON in MANUAL/AUTO, OFF in ESTOP
-- **Test (host):** Verify outputs per mode. ESTOP → both bulbs OFF, 12V relay OFF.
-
-## Phase 20: SYS external watchdog
-**Files:** `sys-esp32/src/watchdog.cpp`, `watchdog.h`
-- `safety_task` toggles GPIO23 (WDT) every iteration (50ms)
-- **Test (ESP32):** Stop `safety_task` → verify TPS3850 pulls MR LOW → ESP32 resets within 100ms.
-
-## Phase 21: SYS startup sequence
-**Files:** update `sys-esp32/src/main.cpp`
-- Wire all 15 tasks with correct init order:
-  1. CAN driver 2. mode_manager 3. safety_monitor 4. throttle+MCP4725 5. gear 6. lights 7. power 8. brake (boot state machine) 9. dcdc 10. queues 11. tasks
-- DCDC and 12V relay enabled only if not ESTOP at boot
-- WDT armed after safety_task starts
-- `ESP_LOGI("Ready")`
-- **Test (ESP32):** Cold boot. All tasks running. `vTaskList()` shows correct priorities. No crash for 30 minutes.
-
-## Phase 22: SYS host test — full simulation
-**Files:** `sys-esp32/test/test_sys_full.cpp`
-- Host-based integration test: mock all hardware (GPIO, ADC, TWAI, I2C)
-- Inject: button presses, throttle voltage, CAN frames, heartbeat timestamps
-- Verify: CAN frames out, GPIO outputs, mode transitions, brake stroke values
-- **Test:** Run through complete scenarios: boot→MANUAL→AUTO→ESTOP→START→MANUAL. All outputs correct at each step.
+Each phase delivers compilable code with a runnable test. Phases are ordered by dependency.
 
 ---
 
-## Phase 23: RT CAN driver — TWAI (low-level)
-**Files:** `rt-esp32/src/can_driver_twai.cpp`, `can_driver_twai.h`
-- `can_low_init()`: TWAI 500 kbit/s, GPIO5/4, normal mode
-- `can_low_send()`, `can_low_receive()`: same API as SYS CAN driver
-- **Test:** Loopback test with SYS ESP32 on low-level CAN bus.
+## Phase R1 — Fix shared CAN protocol (no regressions)
 
-## Phase 24: RT CAN driver — MCP2515 (high-level)
-**Files:** `rt-esp32/src/can_driver_mcp2515.cpp`, `can_driver_mcp2515.h`
-- SPI init: GPIO36(SCK)/37(MOSI)/38(MISO)/39(CS)/40(INT), 10 MHz
-- MCP2515 init: reset, set 500 kbit/s, normal mode, RX buffer config, interrupt enable
-- `can_high_send()`, `can_high_receive()`: SPI-based, same API shape as TWAI
-- **Test:** Loopback test with Jetson CAN interface on high-level bus.
+**Goal:** Resolve every type-name mismatch and missing constant in `shared/can/can_protocol.h`. All existing tests must pass with zero changes. New tests must pass.
 
-## Phase 25: RT main.cpp skeleton
-**Files:** `rt-esp32/src/main.cpp`
-- `app_main()`: init CAN low, CAN high, create 9 task stubs, start scheduler
-- **Test:** ESP32 boots. Both CAN interfaces initialized. 9 tasks in `vTaskList()`.
+**Files:**
+- `shared/can/can_protocol.h`
 
-## Phase 26: RT heartbeat task
-**Files:** `rt-esp32/src/heartbeat.cpp`, `heartbeat.h`
-- `heartbeat_task` at 2 Hz: send `0x7FD RT_HEARTBEAT` on both buses with `alive_ctr++`
-- Receive and track: `0x7FE` (SYS, low), `0x7FC` (Jetson, high)
-- Alive counter validation: frozen counter → treat as missed heartbeat
-- **Test:** Verify HB frames on both buses. Freeze SYS counter → RT detects timeout at 1000ms.
+**Changes:**
 
-## Phase 27: RT CAN gateway — dispatch + forwarding
-**Files:** `rt-esp32/src/can_rx_router.cpp`, `can_rx_router.h`
-- `dispatch_task`: blocks on `can_rx_low_queue` + `can_rx_high_queue` (16 each)
-- Category 1 (transparent forward):
-  - Low→High: `0x001`, `0x011`, `0x120`, `0x600` → push to `gw_tx_high_queue`
-  - High→Low: `0x001`, `0x302` → push to `gw_tx_low_queue`
-- Category 2 (consume):
-  - `0x300` (high) → `xQueueOverwrite(cmd_queue)`
-  - `0x301` (high) → `g_brake_request_kpa` (atomic)
-- Category 3 (local): `0x110`, `0x201`, `0x721`, `0x7FD`, `0x7FE` — consume only
-- `0x001` any bus: `mode_set(Estop)` + forward to other bus
-- **Test (host):** Inject frames on both buses. Verify routing, forwarding, queue contents.
+| # | Problem | Fix |
+|---|---------|-----|
+| R1.1 | `kIdHostBrakeReq` — code uses `kIdHostBrakeRequest` | Add `constexpr auto kIdHostBrakeRequest = kIdHostBrakeReq;` alias |
+| R1.2 | `HostBrakeReq` — code uses `HostBrakeRequest` | Add `using HostBrakeRequest = HostBrakeReq;` alias |
+| R1.3 | `RtObstacleRpt` — code uses `RtObstacleDist` | Add `using RtObstacleDist = RtObstacleRpt;` alias |
+| R1.4 | `SysDiagRpt` — code uses `SysDiag` | Add `using SysDiag = SysDiagRpt;` alias |
+| R1.5 | `kIdSesStatus`, `kIdSebStatus` — code uses `kIdSyntreeEpsStatus`, `kIdSyntreeSebStatus` | Add aliases |
+| R1.6 | No heartbeat ID constant — code uses `kIdHeartbeat` | Add `constexpr uint32_t kIdHeartbeat = 0x7FD;` alias |
+| R1.7 | `0x300 HostDriveCmd` missing gear field (architecture gap #2 resolved) | Add `uint8_t gear = 0;` field at byte 7 (repack DLC stays 8, yaw becomes i24 in bytes 4-6) |
+| R1.8 | No ESTOP sub-IDs (`kIdSysEstop`, `kIdRtEstop`, `kIdHostEstop`) — code in `can_rx_router.h` uses them | Add `constexpr` aliases all pointing to `kIdSafetyEstop` |
 
-## Phase 28: RT CAN TX tasks
-**Files:** `rt-esp32/src/can_tx_low.cpp`, `can_tx_high.cpp`
-- `can_tx_low_task`: serialize `setpoint_queue` → `0x202 RT_DRIVE_CMD` at 100 Hz, `0x200 VCU_SES_REQ` at 50 Hz (steer SM gated), `0x302` from gateway queue
-- `can_tx_high_task`: serialize telemetry → `0x011`, `0x120`, `0x210`, `0x220`, `0x400`, `0x600`
-- Gateway queues (8 deep, drop-if-full)
-- **Test (host):** Verify correct CAN IDs, rates, payloads on each bus.
-
-## Phase 29: RT tricycle kinematics
-**Files:** `rt-esp32/src/physics_model.cpp`, `physics_model.h`
-- `physics_resolve(DriveCmd)` → `ResolvedSetpoint`
-- Inverse bicycle: `δ = atan2(L·ω, |v|)`, L=1500mm
-- Speed clamp: [-500, 3000] mm/s
-- Steering clamp: ±45° with dynamic limit (speed-dependent, stub for now)
-- Low-speed threshold: 50 mm/s → hold last angle, decay ×0.8
-- Gear derivation: v>0→D, v=0→N, v<0→R
-- **Test (host):** `g++ test_physics.cpp physics_model.cpp`. Known inputs → expected outputs. Edge cases: v=0, extreme yaw, negative speed.
-
-## Phase 30: RT steering control — boot sync + CAN TX
-**Files:** `rt-esp32/src/steering_control.cpp`, `steering_control.h`
-- `SteerState` machine: BOOT_WAIT (500ms) → LISTEN_SYNC (await `0x201`) → ACTIVE
-- LISTEN_SYNC: read `SES_StrAngle` from `0x201`, set `active_target = current_physical`
-- ACTIVE: transmit `0x200` at 50 Hz with angle + slew rate + rolling counter + checksum
-- Unit conversion: internal mdeg ↔ SYNTREE decideg (÷100)
-- **Test (host):** Inject `0x201` with angle=+15°. Verify first `0x200` commands +15°. Then follow Jetson targets. Verify roll cnt + checksum algorithm.
-
-## Phase 31: RT steering safety mechanisms
-**Files:** update `steering_control.cpp`
-- Software hard-stops: clamp commanded to ±40° regardless of Jetson
-- Dynamic angle clamp: max angle = f(speed). 2km/h→40°, 25km/h→5°, linear between
-- Following error: `abs(cmd − SES_StrAngle) > 5° for 300ms → mode_set(Estop)`
-- Alignment check: `SES_INF_Angle_Status == 1` before AUTO engages
-- **Test (host):** Inject extreme Jetson targets → verify clamping. Inject feedback mismatches → verify ESTOP timing.
-
-## Phase 32: RT obstacle sensor
-**Files:** `rt-esp32/src/obstacle_sensor.cpp`, `obstacle_sensor.h`
-- `obstacle_init()`: GPIO7 (TRIG, OUT), GPIO8 (ECHO, IN)
-- `obstacle_task` at 10 Hz: 10µs trigger pulse → measure echo pulse width → convert to mm
-- Timeout: echo >30ms → UINT32_MAX (no reading)
-- Store to `g_obstacle_mm` (atomic)
-- Send `0x400 RT_OBSTACLE_RPT`
-- **Test (host):** Mock echo pulse widths → verify distance calculation. Timeout → UINT32_MAX.
-
-## Phase 33: RT obstacle speed limiting
-**Files:** update `rt-esp32/src/control_logic.cpp` (or inline in control_task)
-- `obstacle_limit(target_speed, obstacle_mm)`: 300mm→0, 3000mm→full, linear between
-- Applied in `control_task` before `0x202` TX
-- **Test (host):** Known distance + speed combinations → verify clamped output.
-
-## Phase 34: RT brake arbitration
-**Files:** `rt-esp32/src/brake_arbitration.cpp`, `brake_arbitration.h`
-- `brake_arbitrate(rt_obstacle_kpa, jetson_request_kpa)` → `max(r, j)`
-- RT obstacle: distance < 300mm → hard brake, 300–1000mm → proportional
-- Jetson request: `g_brake_request_kpa` from `0x301`
-- Result → `0x203 RT_BRAKE_CMD` at 50 Hz on low bus
-- **Test (host):** Various obstacle distances + Jetson requests. Verify max-select. Obstacle=200mm → outputs high kPa regardless of Jetson value.
-
-## Phase 35: RT command staleness watchdog
-**Files:** `rt-esp32/src/watchdog.cpp`, `watchdog.h`
-- `watchdog_task` at 10 Hz: check `esp_timer_get_time() - last_0x300_feed > 500ms`
-- On stale: zero `cmd_queue` → control_task produces zero `0x202` + stops `0x200`
-- Send `0x001` on both buses after 1000ms of staleness (delayed ESTOP for controlled stop first)
-- **Test (host):** Feed timestamps, verify state transitions. No feed for 500ms → zero setpoints. No feed for 1000ms → ESTOP.
-
-## Phase 36: RT startup sequence
-**Files:** update `rt-esp32/src/main.cpp`
-- Init order: can_low, can_high, obstacle, physics, steering SM, watchdog, queues (6), 9 tasks
-- Steering SM starts in BOOT_WAIT
-- **Test (ESP32):** Cold boot. All 9 tasks running. Both CAN buses active. Steering enters LISTEN_SYNC.
-
-## Phase 37: RT host test — full simulation
-**Files:** `rt-esp32/test/test_rt_full.cpp`
-- Mock both CAN buses, HC-SR04, EPS-C feedback
-- Inject `0x300` drive commands, `0x201` steering feedback, obstacle distances
-- Verify `0x202`, `0x200`, `0x203`, `0x400`, gateway forwards
-- **Test:** Drive scenario: Jetson commands speed=2000, yaw=100 → verify output setpoints, steering angle, gear selection, forwarding.
+**Acceptance:**
+```
+cd rt-esp32/test
+g++ -std=c++17 -I../../shared test_can_protocol.cpp -o test_can && ./test_can
+# All tests pass. 0 failures.
+```
 
 ---
 
-## Phase 38: SYS + RT integration — low-level CAN
-**Files:** `sys-esp32/test/test_integration_low.cpp` (or ESP32-to-ESP32 test)
-- Both ESP32s on same low-level CAN bus
-- SYS sends `0x110`, `0x120`, `0x600`, `0x7FE`, `0x011`, `0x012`
-- RT sends `0x202`, `0x200`, `0x203`, `0x302` (forwarded), `0x7FD`
-- SYS receives `0x202`, `0x203`, `0x302`, `0x7FD` → acts on them
-- RT receives `0x110`, `0x120`, `0x600`, `0x7FE` → forwards/acts
-- **Test (ESP32):** 30-minute run. All CAN frames at expected rates. TEC/REC=0. Mode transitions propagate correctly.
+## Phase R2 — Fix RT config header
 
-## Phase 39: SYS + RT — manual mode end-to-end
-**Files:** integration test on hardware
-- SYS in MANUAL. Throttle pot → ADC → MCP4725 → measure voltage.
-- Gear 72V → TLP281 → relays → verify ECU wires.
-- Brake lever → CAN → verify `0x720` at correct rate with correct stroke values.
-- Handlebar switches → lamps.
-- RT monitoring telemetry on both buses.
-- **Test (hardware):** Full manual-mode operation with real signals. All CAN frames verified on logic analyzer.
+**Goal:** Add every missing constant that RT code references. File must compile standalone.
 
-## Phase 40: Jetson ROS 2 node — CAN bridge
-**Files:** `jetson/src/can_bridge_node.cpp` (ROS 2)
-- Subscribe to `/cmd_vel` → convert to `0x300 HOST_DRIVE_CMD` (speed_mmps = linear.x×1000, yaw_mrad_s = angular.z×1000)
-- Subscribe to `/emergency_stop` → send `0x001` on high CAN
-- Publish `/light_cmd` → send `0x302` on high CAN
-- Subscribe to CAN telemetry → publish ROS 2 topics: `/etrike/safety_status`, `/etrike/throttle`, `/etrike/state`, `/etrike/obstacle`, `/etrike/diag`
-- Send `0x7FC JETSON_HEARTBEAT` at 2 Hz
-- **Test:** `ros2 topic pub /cmd_vel` → CAN frame appears. CAN telemetry → `ros2 topic echo`.
+**Files:**
+- `rt-esp32/src/config.h`
 
-## Phase 41: AUTO mode — drive + steer
-- SYS in AUTO. Jetson publishes `/cmd_vel`.
-- Verify full pipeline: `/cmd_vel` → `0x300` → RT kinematics → `0x202` + `0x200` → SYS MCP4725 + EPS-C angle.
-- Dynamic angle clamp active.
-- **Test (hardware):** Jetson commands speed=1500, yaw=200 → MCP4725 voltage correct, EPS-C angle correct, speed clamp applies, following error monitored.
+**Changes:**
 
-## Phase 42: AUTO mode — brake
-- Jetson sends brake request → `0x301` → RT max-select → `0x203` → SYS SEB Pressure Mode
-- Lever override test: while `0x203 > 0`, press lever → SEB switches to Stroke Mode (lever wins)
-- Obstacle-triggered brake: place object <300mm → RT outputs `0x203` with high kPa → SEB brakes
-- **Test (hardware):** Each brake trigger path verified. Lever override works. ESTOP → max brake always.
+| # | Missing constant | Value / source |
+|---|-----------------|----------------|
+| R2.1 | `kPidKp`, `kPidKi`, `kPidKd` | Uncomment the existing line: `constexpr float kPidKp = 1.0f, kPidKi = 0.1f, kPidKd = 0.05f;` |
+| R2.2 | `kInterMcuUartPort` | This is a **design error** — RT should not use UART to SYS. Remove the dependency instead. See Phase R4. For now: add with a `// REMOVE in Phase R5` comment so the file compiles. |
+| R2.3 | `kInterMcuTxGpio` | Ditto — `constexpr int kInterMcuTxGpio = 17;` with deprecation comment |
+| R2.4 | `kInterMcuRxGpio` | Ditto — `constexpr int kInterMcuRxGpio = 18;` with deprecation comment |
+| R2.5 | `kInterMcuBaud` | Ditto — `constexpr int kInterMcuBaud = 2'000'000;` with deprecation comment |
+| R2.6 | `kSteerLimitDeg` (used in `physics_model.cpp` but only `kSteerHardLimitDeg` exists) | Add `constexpr float kSteerLimitDeg = 40.0f;` |
 
-## Phase 43: Safety validation — every ESTOP path
-**Files:** `test/test_safety_paths.cpp` (host or scripted hardware)
-- Test each ESTOP trigger:
-  1. ESTOP button (GPIO1 LOW)
-  2. CAN `0x001` from Jetson
-  3. CAN `0x001` from RT (SYS HB timeout)
-  4. CAN `0x001` from SYS (RT HB timeout)
-  5. Steering following error >5° for 300ms
-  6. External watchdog timeout (MCU reset)
-- Each test verifies: motor=0V, gears=OFF, brake=max, DCDC=OFF, 12V relay=OFF
-- **Test (hardware):** Scripted test harness injects faults, measures response time, verifies safe state.
+**Acceptance:**
+```
+cd rt-esp32/test
+g++ -std=c++17 -I../../shared -I../src test_rt_config.cpp -o test_config && ./test_config
+# Compiles. All constants resolve.
+```
 
-## Phase 44: Endurance — 4-hour soak
-- All 3 nodes online, AUTO mode cycling: speed ramp 0→2000→0, steering weave ±10°, periodic braking
-- Monitor: stack high-water marks, heap free, TEC/REC, queue depths
-- Log every CAN frame to SD card for post-run analysis
-- **Test:** Zero crashes, zero CAN bus errors, zero watchdog resets, zero queue overflows. Heap stable (±1KB). All CAN frames at expected rates without gaps.
+---
+
+## Phase R3 — Fix SYS config header
+
+**Goal:** Add every missing constant that SYS code references.
+
+**Files:**
+- `sys-esp32/src/config.h`
+
+**Changes:**
+
+| # | Missing constant | Value / source |
+|---|-----------------|----------------|
+| R3.1 | `kBrakeGpio` (used by `brake_actuator.cpp`) | This is a **design error** — brake is SEB over CAN `0x720`, not a GPIO solenoid. Add `constexpr int kBrakeGpio = 0; // DEPRECATED — remove in Phase R8` so it compiles. |
+| R3.2 | `kMotorPwmGpio` (used by `motor_driver.cpp`) | `constexpr int kMotorPwmGpio = 0;` — MCP4725 DAC is the correct actuator per architecture. Add deprecation. |
+| R3.3 | `kMotorDirGpio` | `constexpr int kMotorDirGpio = 0;` — deprecation |
+| R3.4 | `kMotorPwmFreqHz` | `constexpr int kMotorPwmFreqHz = 20000;` — deprecation |
+| R3.5 | `kMotorMaxSpeedMmps` | `constexpr int kMotorMaxSpeedMmps = 3000;` |
+| R3.6 | `kPwmMax` | `constexpr int kPwmMax = 8191;` — deprecation |
+| R3.7 | `kObstacleStopDistMM` | `constexpr unsigned kObstacleStopDistMM = 300;` |
+| R3.8 | `kObstacleClearDistMM` | `constexpr unsigned kObstacleClearDistMM = 3000;` |
+
+**Acceptance:**
+```
+# Host-compile SYS config with a trivial main
+g++ -std=c++17 -I../../shared -I../src -c -x c++ ../src/config.h -o /dev/null
+# No undefined symbols.
+```
+
+---
+
+## Phase R4 — Eliminate the UART inter-MCU abstraction (RT side)
+
+**Goal:** All inter-MCU communication between RT and SYS moves to low-level CAN, matching architecture §7.3 and §8.3. The `inter_mcu` UART protocol is removed from RT.
+
+**This is the pivot phase.** It replaces the architectural violation at the root.
+
+**Files:**
+- `rt-esp32/src/main.cpp` — rewrite communication paths
+- `rt-esp32/src/control_logic.h` — change return type from `inter_mcu::RtToSysSetpoint` to the CAN-based structs
+- `rt-esp32/src/control_logic.cpp` — build `can::RtDriveCmd` + `can::RtBrakeCmd` instead of UART frame
+- Delete: `#include "intermcu/intermcu_protocol.h"` and `#include "intermcu/intermcu_driver.h"` from all RT files
+
+**What changes in `main.cpp`:**
+
+```
+BEFORE (UART):                    AFTER (CAN):
+┌──────────────────────┐          ┌──────────────────────────┐
+│ control_task         │          │ control_task (100 Hz)    │
+│  resolve → UART setpoint │      │  resolve → can::RtDriveCmd│
+│  push UART queue     │          │  push can_tx_low_queue   │
+│ link_tx_task         │          │  resolve → can::RtBrakeCmd│
+│  send UART frame     │          │  push can_tx_low_queue   │
+│ link_rx_task         │          │                          │
+│  receive UART status │          │ can_tx_low_task (prio 3) │
+└──────────────────────┘          │  send 0x202 @ 100 Hz    │
+                                  │  send 0x203 @ 50 Hz     │
+                                  │  send 0x200 @ 50 Hz     │
+                                  │ can_rx_low_task (prio 5)│
+                                  │  receive 0x110, 0x011,  │
+                                  │  0x120, 0x201, 0x600,   │
+                                  │  0x7FE → dispatch       │
+                                  └──────────────────────────┘
+```
+
+**Changed struct/return:**
+
+`control_logic.h`:
+```cpp
+struct ControlOutput {
+    can::RtDriveCmd drive;    // → 0x202
+    can::RtBrakeCmd brake;    // → 0x203
+    // 0x200 steering is generated by steering_control, not here
+};
+ControlOutput resolve_drive_setpoint(…);
+```
+
+**Acceptance (host test):**
+```
+cd rt-esp32/test
+g++ -std=c++17 -I../../shared -I../src test_control_logic.cpp ../src/control_logic.cpp ../src/physics_model.cpp ../src/speed_pid.cpp -o test_ctl && ./test_ctl
+# Known inputs → correct can::RtDriveCmd + can::RtBrakeCmd output. No intermcu headers included.
+```
+
+---
+
+## Phase R5 — Implement RT dual-CAN driver
+
+**Goal:** RT has two working CAN interfaces: built-in TWAI (low bus) and MCP2515 via SPI (high bus). Matches architecture §7.2.
+
+**Files:**
+- `rt-esp32/src/can_driver_twai.cpp` — replace empty stub with real TWAI init from `shared/can/can_driver.h`
+- `rt-esp32/src/can_driver_mcp2515.cpp` — implement MCP2515 init/read/write over SPI
+- `rt-esp32/src/can_driver_mcp2515.h` — keep the MCP2515 class interface
+- `rt-esp32/src/main.cpp` — create two `CanDriver` instances (or one TWAI + one MCP2515)
+
+**TWAI (low bus):** Reuse `can::CanDriver` from shared. Config: TX=5, RX=4, 500 kbit/s.
+
+**MCP2515 (high bus):** SPI at 10 MHz on SCK=36, MOSI=37, MISO=38, CS=39, INT=40. Implement:
+- `mcp2515_init()`: reset, set bitrate, normal mode, configure RX buffers + interrupts
+- `mcp2515_send(const can::Frame&)`: load TX buffer, request send
+- `mcp2515_receive(can::Frame&, timeout)`: read RX buffer on INT or poll
+
+**Acceptance (hardware loopback test):**
+```
+# ESP32 + MCP2515 module on breadboard. TX→RX loopback (120Ω terminated).
+# Send 1000 frames on each interface. Verify all received. 0 TEC/REC.
+```
+
+---
+
+## Phase R6 — Implement RT CAN gateway (dispatch + forwarding)
+
+**Goal:** RT correctly forwards, translates, and processes CAN frames per architecture §2.3 Categories 1–3.
+
+**Files:**
+- `rt-esp32/src/main.cpp` — rewrite `dispatch_task`
+- `rt-esp32/src/can_rx_router.h` — update `route_frame()` to use real queues, remove `GatewayQueues` raw-pointer struct
+
+**Implementation:**
+
+```
+dispatch_task @ prio 4:
+  Block on can_rx_low_queue OR can_rx_high_queue
+
+  Category 1 — Transparent forward:
+    0x001 (any bus)   → forward to other bus + mode_set(Estop)
+    0x011 (low)       → forward to high (gw_tx_high_queue)
+    0x120 (low)       → forward to high
+    0x600 (low)       → forward to high
+    0x302 (high)      → forward to low (gw_tx_low_queue)
+
+  Category 2 — Consume + generate:
+    0x300 (high)      → HostDriveCmd::from_frame → cmd_queue (overwrite)
+    0x301 (high)      → g_brake_request_kpa atomic store
+
+  Category 3 — Consume only:
+    0x110 (low)       → mode_set(Manual/Auto)
+    0x201 (low)       → steer_feedback queue (for steering SM)
+    0x7FE (low)       → feed SYS heartbeat alive counter
+    0x7FC (high)      → feed Jetson heartbeat alive counter
+```
+
+**Acceptance (host test):**
+```
+cd rt-esp32/test
+g++ -std=c++17 -I../../shared -I../src test_rt_full.cpp -o test_rt && ./test_rt
+# Inject CAN frames on both buses. Verify:
+#  - 0x011 on low → appears on gw_tx_high queue
+#  - 0x302 on high → appears on gw_tx_low queue
+#  - 0x300 on high → cmd_queue receives HostDriveCmd
+#  - 0x110 on low → mode changes to AUTO
+#  - 0x001 on either bus → ESTOP propagated to other bus
+#  - 0x201 on low → steer_feedback_queue receives angle
+```
+
+---
+
+## Phase R7 — Implement RT CAN TX tasks
+
+**Goal:** RT transmits all required CAN frames at correct rates on both buses.
+
+**Files:**
+- `rt-esp32/src/main.cpp` — add `can_tx_low_task`, `can_tx_high_task`
+- `rt-esp32/src/steering_control.cpp` — implement (replacing header-only stub)
+- `rt-esp32/src/heartbeat.cpp` — implement (replacing header-only stub)
+
+**can_tx_low_task @ prio 3:**
+| Frame | Rate | Source |
+|-------|------|--------|
+| `0x202 RT_DRIVE_CMD` | 100 Hz | `setpoint_queue` (from control_task) |
+| `0x203 RT_BRAKE_CMD` | 50 Hz | `brake_queue` (from control_task) |
+| `0x200 VCU_SES_REQ` | 50 Hz | steering state machine (STEER_ACTIVE only) |
+| `0x302 HOST_LIGHT_CMD` | On change | `gw_tx_low_queue` |
+| `0x001 SAFETY_ESTOP` | Event | direct TX (bypasses queues per principle #2) |
+
+**can_tx_high_task @ prio 3:**
+| Frame | Rate | Source |
+|-------|------|--------|
+| `0x011 SYS_SAFETY_STS` | 5 Hz | `gw_tx_high_queue` (forwarded from SYS) |
+| `0x120 SYS_THROTTLE_STS` | 100 Hz | `gw_tx_high_queue` |
+| `0x210 RT_STATE_RPT` | 10 Hz | g_mode + steer_valid + reversing |
+| `0x220 RT_PID_RPT` | — | Inactive until encoders fitted |
+| `0x400 RT_OBSTACLE_RPT` | 10 Hz | g_obstacle_mm |
+| `0x600 SYS_DIAG_RPT` | 1 Hz | `gw_tx_high_queue` (forwarded from SYS) |
+
+**Acceptance (ESP32):**
+```
+# Logic analyzer on low CAN: 0x202 every 10ms, 0x200 every 20ms (when steer active).
+# Logic analyzer on high CAN: 0x120 every 10ms, 0x210 every 100ms.
+# Both buses simultaneously active. TEC/REC = 0 after 10 min.
+```
+
+---
+
+## Phase R8 — Wire RT steering + heartbeat to CAN tasks
+
+**Goal:** The steering `Listen-Before-Speaking` state machine runs and transmits `0x200`. Heartbeat transmits `0x7FD` on both buses with alive counter.
+
+**Files:**
+- `rt-esp32/src/steering_control.cpp` — real implementation from header-only stub
+- `rt-esp32/src/heartbeat.cpp` — real implementation with alive counter validation
+
+**Steering control:**
+```
+steering_task @ prio 3, 50 Hz:
+  Switch on SteerState:
+    BOOT_WAIT:   500ms delay → LISTEN_SYNC
+    LISTEN_SYNC: Wait for 0x201 SES_STATUS → set active_target = current_angle → ACTIVE
+    ACTIVE:      Build VcuSesReq with dynamic clamp, slew rate, rolling counter, checksum
+                 → push to can_tx_low for 0x200 transmission
+    FAULT:       Stop transmitting
+```
+
+**Heartbeat:**
+```
+heartbeat_task @ 2 Hz:
+  Send 0x7FD on low CAN: DLC=1, alive_ctr_low++
+  Send 0x7FD on high CAN: DLC=1, alive_ctr_high++  (independent counters per bus)
+  
+  Receive monitoring:
+    0x7FE (SYS, low):  detect frozen counter → ESTOP after 1000ms
+    0x7FC (Jetson, high): detect frozen counter → zero setpoints after 1500ms
+```
+
+**Acceptance (ESP32):**
+```
+# Low CAN: 0x7FD every 500ms, counter increments per frame.
+# High CAN: 0x7FD every 500ms, independent counter.
+# Stop SYS → RT detects 0x7FE frozen → ESTOP after 1000ms.
+# Stop Jetson → RT detects 0x7FC frozen → zero 0x202 after 1500ms.
+```
+
+---
+
+## Phase S1 — Wire SYS CAN RX task (real CAN, not stubs)
+
+**Goal:** SYS receives CAN frames on low bus and routes them to the correct consumers using the existing `can_dispatch.h` logic.
+
+**Files:**
+- `sys-esp32/src/main.cpp` — replace `task_can_rx` stub with real TWAI receive loop
+
+**Implementation:**
+```cpp
+void task_can_rx(void*) {
+    can::CanDriver can({.tx_gpio = 5, .rx_gpio = 4, .bitrate_hz = 500'000});
+    can.init();
+    can::Frame fr;
+    while (1) {
+        if (can.receive(fr, 100)) {
+            xQueueSend(g_can_rx_queue, &fr, 0);  // drop if full
+        }
+    }
+}
+```
+
+**Acceptance (ESP32):**
+```
+# Send 0x202 from another node → frame appears in g_can_rx_queue.
+# Queue full → frame dropped (no crash).
+```
+
+---
+
+## Phase S2 — Wire SYS dispatch task
+
+**Goal:** SYS dispatch reads CAN RX queue and routes frames using the existing `DispatchTargets` struct.
+
+**Files:**
+- `sys-esp32/src/main.cpp` — replace `task_dispatch` stub
+
+**Implementation:**
+```cpp
+void task_dispatch(void*) {
+    can::Frame fr;
+    while (1) {
+        if (xQueueReceive(g_can_rx_queue, &fr, portMAX_DELAY) != pdTRUE) continue;
+        DispatchTargets t;
+        t.setpoint = &g_setpoint;
+        t.brake_kpa = &g_brake_kpa;
+        t.light_bits = &g_light_bits;
+        t.estop_flag = &g_estop_flag;
+        t.seb_status_raw = g_seb_status_raw;
+        t.rt_hb_ctr = &g_rt_hb_ctr;
+        t.rt_hb_received = &g_rt_hb_received;
+        dispatch_frame(fr, t);
+        if (g_estop_flag) mode_manager.force_estop();
+    }
+}
+```
+
+**Acceptance (host test):**
+```
+# Inject 0x202 → g_setpoint receives RtDriveCmd.
+# Inject 0x203 → g_brake_kpa receives pressure value.
+# Inject 0x001 → g_estop_flag set, mode transitions to ESTOP.
+# Inject 0x302 → g_light_bits updated.
+# Inject 0x721 → g_seb_status_raw populated.
+# Inject 0x7FD → g_rt_hb_ctr updated, g_rt_hb_received = true.
+```
+
+---
+
+## Phase S3 — Wire SYS motor task (MCP4725 DAC + gear relays)
+
+**Goal:** `motor_task` at 100 Hz reads the drive setpoint and controls the MCP4725 DAC + gear relays per architecture §8.6.
+
+**Files:**
+- `sys-esp32/src/main.cpp` — replace `task_motor` stub
+
+**Implementation:**
+```
+motor_task @ 100 Hz, prio 4:
+  if mode == ESTOP:
+      MCP4725 = 0, gear relays = all OFF
+  elif mode == MANUAL:
+      ADC read → MCP4725 pass-through
+      TLP281 gear sense → mirror to relays
+  elif mode == AUTO:
+      setpoint.speed → abs(speed)/3000 * 4095 → MCP4725
+      setpoint.gear → energize relay
+  Also check: 0x202 staleness > 200ms → zero speed + N
+```
+
+**Acceptance (ESP32 + multimeter):**
+```
+# MANUAL: twist throttle grip → MCP4725 VOUT tracks ADC linearly.
+# AUTO: inject 0x202 {speed=2000, gear=D} → MCP4725 ≈ 3.3V, gear D relay energized.
+# ESTOP: MCP4725 = 0V, all relays OFF.
+```
+
+---
+
+## Phase S4 — Wire SYS safety, mode, throttle, brake tasks
+
+**Goal:** All remaining SYS tasks are wired to their implementation modules. This is a bulk wiring phase — each task is straightforward.
+
+**Files:**
+- `sys-esp32/src/main.cpp` — replace stubs for: `task_safety`, `task_mode`, `task_throttle`, `task_brake`, `task_lights`, `task_dcdc`, `task_indicator`, `task_power`, `task_can_tx`, `task_diag`, `task_hb`
+
+**Each task:**
+
+| Task | Rate | What it does |
+|------|------|-------------|
+| `safety` | 20 Hz | Poll GPIO1 (ESTOP), GPIO2 (brake lever). Check `SafetyMonitor::heartbeat_ok()`. If ESTOP or HB timeout → `mode_manager.force_estop()`. Toggle WDT GPIO23. |
+| `mode` | 10 Hz | Read GPIO11 (MODE btn), GPIO32 (START btn). Call `ModeManager::tick()`. On change → send `0x110 SYS_MODE_CMD`. |
+| `throttle` | 100 Hz | ADC read → `ThrottleInput::poll()`. Send `0x120 SYS_THROTTLE_STS`. |
+| `brake` | 50 Hz | Run `BrakeControl::tick()`. Build `0x720 VCU_SEB_REQ` with rolling counter + checksum. Send on CAN. |
+| `lights` | 20 Hz | Read handlebar switches GPIO3/6/7. `LightControl::tick()` → update GPIO18-22. Handle blink timing. |
+| `dcdc` | 5 Hz | `DcdcControl::tick(estop)` → send `0x012` on state change. |
+| `indicator` | 5 Hz | `IndicatorControl::tick(mode)` → AUTO/MANUAL bulbs (GPIO25/26). |
+| `power` | 5 Hz | 12V relay GPIO27: ON in MANUAL/AUTO, OFF in ESTOP. |
+| `can_tx` | 5 Hz | Send `0x011 SYS_SAFETY_STS` (estop + hb_ok). |
+| `diag` | 1 Hz | Collect TEC/REC, heap, mode, estop. Send `0x600 SYS_DIAG_RPT`. |
+| `hb` | 2 Hz | Send `0x7FE SYS_HEARTBEAT`: DLC=1, `alive_ctr++ & 0xFF`. |
+
+**Acceptance (ESP32 + logic analyzer):**
+```
+# All 11 CAN messages appear on low bus at correct rates.
+# GPIO outputs change with mode transitions.
+# ESTOP button → all CAN messages stop except 0x011 (estop=1) and 0x720 (max stroke).
+# START button → transitions to MANUAL, 0x110 sent.
+```
+
+---
+
+## Phase S5 — Remove SYS brake_actuator (GPIO solenoid pattern)
+
+**Goal:** Brake actuation is exclusively through SYNTREE SEB via CAN `0x720`. The legacy GPIO-based `BrakeActuator` class is removed.
+
+**Files:**
+- Delete: `sys-esp32/src/brake_actuator.cpp`, `sys-esp32/src/brake_actuator.h`
+- `sys-esp32/src/config.h` — remove `kBrakeGpio`
+
+**Acceptance:** Build succeeds. No references to `BrakeActuator` or `kBrakeGpio` remain.
+
+---
+
+## Phase S6 — Remove or isolate SYS motor_driver.cpp (PWM pattern)
+
+**Goal:** Motor actuation is exclusively through MCP4725 DAC. The PWM-based `motor_driver.cpp` does not belong in the SYS architecture. Move it to a `legacy/` directory or delete it.
+
+**Files:**
+- Move `sys-esp32/src/motor_driver.cpp` → `legacy/sys-esp32/src/motor_driver.cpp`
+- `sys-esp32/src/config.h` — remove `kMotorPwmGpio`, `kMotorDirGpio`, `kMotorPwmFreqHz`, `kPwmMax`
+
+**Acceptance:** Build succeeds. `motor_driver.h` (the MCP4725-based header) is the only motor interface.
+
+---
+
+## Phase I1 — Integration: RT + SYS on low-level CAN
+
+**Goal:** Both ESP32s on the same CAN bus. RT sends `0x202`, `0x203`, `0x7FD`. SYS sends `0x011`, `0x110`, `0x120`, `0x600`, `0x720`, `0x7FE`. Each node correctly receives and acts on the other's frames.
+
+**Hardware:** Two ESP32-S3 devkits, one SN65HVD230 transceiver each, 120Ω termination at both ends.
+
+**Test scenarios:**
+
+| Test | RT action | SYS action | Verify |
+|------|-----------|------------|--------|
+| Mode toggle | — | MODE btn → `0x110` | RT mode changes to AUTO |
+| Heartbeat | Send `0x7FD` | Monitor counter | SYS `heartbeat_ok()` stays true |
+| HB loss | Stop RT | Counter frozen | SYS detects ESTOP after 1000ms |
+| Drive command | `0x202 {1500, D}` on low | Receive + actuate | MCP4725 ≈ 2.5V, gear D relay on |
+| Brake command | `0x203 {5000}` on low | Receive + forward | SYS sends `0x720` in Pressure Mode |
+| ESTOP button | — | ESTOP pressed | `0x001` on bus, RT enters ESTOP |
+
+**Acceptance:** All 6 scenarios pass. 30-minute soak: TEC/REC = 0, no queue overflows.
+
+---
+
+## Phase I2 — Integration: RT + SYS + Jetson (3-node)
+
+**Goal:** Jetson sends `0x300`, `0x301`, `0x302` on high CAN. RT bridges `0x302` to low CAN, translates `0x300`→`0x202`+`0x200`. SYS actuates. Telemetry flows SYS→RT→Jetson.
+
+**Test:** Jetson publishes `/cmd_vel {linear.x=1.5, angular.z=0.2}` → `0x300` on high CAN → RT receives, resolves kinematics → `0x202` on low CAN → SYS MCP4725 outputs correct voltage → EPS-C receives `0x200` angle command.
+
+**Acceptance:** Full pipeline from ROS 2 topic to actuator output. End-to-end latency < 50ms.
+
+---
+
+## Phase I3 — Safety validation (all ESTOP paths)
+
+**Goal:** Verify every ESTOP trigger in architecture §7.10 and §8.10.
+
+| # | Trigger | Expected response |
+|---|---------|------------------|
+| 1 | Physical ESTOP button (GPIO1 LOW) | SYS: DAC=0, gears OFF, `0x720` max stroke, DCDC `0x012`=0, 12V relay OFF. `0x011` estop=1. |
+| 2 | CAN `0x001` from Jetson | RT fwds to low → SYS enters ESTOP |
+| 3 | CAN `0x001` from RT (SYS HB timeout) | SYS enters ESTOP |
+| 4 | CAN `0x001` from SYS (RT HB timeout) | RT enters ESTOP |
+| 5 | Steering following error >5° for 300ms | RT → ESTOP, `0x200` ramps to 0° |
+| 6 | External watchdog timeout | MCU reset → all outputs safe state |
+
+**Acceptance:** Scripted test harness injects each fault. All 6 paths trigger ESTOP. Each verified by measuring DAC voltage, gear relay state, and CAN frames.
+
+---
+
+## Phase I4 — Endurance soak
+
+**Goal:** 4-hour continuous run with all 3 nodes. AUTO mode cycling: speed 0→2000→0 mm/s, steering weave ±10°, periodic brake at 5000 kPa.
+
+**Monitoring:**
+- Stack high-water marks (all tasks < 80% allocation)
+- Heap free (stable within ±2 KB)
+- TEC/REC (0 for entire run)
+- CAN frame rates (no gaps > 2x period)
+- Queue depths (never at capacity)
+- External watchdog never fires
+
+**Acceptance:** Zero crashes. Zero CAN bus errors. Zero watchdog resets. All CAN frames at correct rates throughout.
+
+---
+
+## Dependency graph
+
+```
+R1 (protocol) ─────────────────────────────────────────────────────────────┐
+    │                                                                       │
+    ├── R2 (RT config) ── R5 (dual CAN) ── R6 (gateway) ── R7 (TX tasks) ──┤
+    │                                     ── R8 (steer+hb)                  │
+    │                                                                       │
+    ├── R3 (SYS config) ────────────────────────────────────────────────────┤
+    │                                                                       │
+    └── R4 (remove UART) ───────────────────────────────────────────────────┤
+                                                                             │
+S1 (SYS CAN RX) ── S2 (dispatch) ── S3 (motor) ── S4 (all tasks)           │
+    └── S5 (remove GPIO brake) ── S6 (remove PWM motor)                     │
+                                                                             │
+                          ┌────── I1 (RT+SYS CAN) ──────┐                   │
+                          │                              │                   │
+All above ────────────────┤                              ├── I3 (safety)     │
+                          │                              │                   │
+                          └────── I2 (3-node) ───────────┴── I4 (soak)      │
+```
+
+**Parallel work possible:** R2+R3 can be done in parallel. S1–S4 can start after R1+R3. R5–R8 depend on R2+R4.
+
+---
+
+## File inventory — what changes
+
+| File | Phase | Action |
+|------|-------|--------|
+| `shared/can/can_protocol.h` | R1 | Add aliases, add gear to HostDriveCmd |
+| `rt-esp32/src/config.h` | R2 | Add missing constants |
+| `sys-esp32/src/config.h` | R3 | Add missing constants |
+| `rt-esp32/src/main.cpp` | R4,R5,R6,R7,R8 | Rewrite — remove UART, add dual CAN, gateway, TX tasks, steering, heartbeat |
+| `rt-esp32/src/control_logic.h` | R4 | Change return type to CAN-based structs |
+| `rt-esp32/src/control_logic.cpp` | R4 | Build can::RtDriveCmd + can::RtBrakeCmd |
+| `rt-esp32/src/can_driver_twai.cpp` | R5 | Real TWAI implementation |
+| `rt-esp32/src/can_driver_mcp2515.cpp` | R5 | Real MCP2515 SPI implementation |
+| `rt-esp32/src/can_driver_mcp2515.h` | R5 | Keep class interface |
+| `rt-esp32/src/can_rx_router.h` | R6 | Remove raw-pointer GatewayQueues |
+| `rt-esp32/src/steering_control.cpp` | R8 | Real LBS state machine (from header stub) |
+| `rt-esp32/src/heartbeat.cpp` | R8 | Alive counter + validation |
+| `sys-esp32/src/main.cpp` | S1,S2,S3,S4 | Rewrite all 15 task stubs with real implementations |
+| `sys-esp32/src/brake_actuator.cpp` | S5 | Delete |
+| `sys-esp32/src/brake_actuator.h` | S5 | Delete |
+| `sys-esp32/src/motor_driver.cpp` | S6 | Move to legacy |
+| `rt-esp32/test/test_*.cpp` | R1–R8 | Update tests for new interfaces |
+| `legacy/shared/intermcu/` | R4 | No longer referenced by active code |

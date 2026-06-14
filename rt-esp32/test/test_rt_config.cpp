@@ -58,11 +58,29 @@ static void test_can_id_prefixes() {
     if (ok) OK; else BAD("priority order");
 }
 
+static void test_r2_new_constants() {
+    printf("\n== R2: new constants ==\n");
+
+    CHECK("PID gains defined and positive");
+    if (rt::kPidKp > 0.0f && rt::kPidKi > 0.0f && rt::kPidKd > 0.0f) OK; else BAD("PID gains");
+
+    CHECK("kSteerLimitDeg defined");
+    if (rt::kSteerLimitDeg > 0.0f && rt::kSteerLimitDeg <= 78.0f) OK; else BAD("steer limit");
+
+    CHECK("kSteerLimitDeg == kSteerHardLimitDeg");
+    if (rt::kSteerLimitDeg == rt::kSteerHardLimitDeg) OK; else BAD("steer limit mismatch");
+
+    CHECK("kInterMcu* constants defined (deprecated)");
+    if (rt::kInterMcuUartPort == 1 && rt::kInterMcuTxGpio > 0
+        && rt::kInterMcuRxGpio > 0 && rt::kInterMcuBaud > 0) OK; else BAD("intermcu");
+}
+
 int main() {
     printf("Phase 2: rt-esp32/src/config.h\n\n");
     test_gpio_uniqueness();
     test_constants();
     test_can_id_prefixes();
+    test_r2_new_constants();
     printf("\n  Result: %d failures\n", fails);
     return fails ? 1 : 0;
 }

@@ -11,11 +11,14 @@ public:
     bool tick(int16_t ses_angle_raw, can::VcuSesReq& out) {
         switch(m_state) {
         case SteerState::BOOT_WAIT:
-            if(++m_timer>=25){m_state=SteerState::LISTEN_SYNC;m_timer=0;} return false;
+            if(++m_timer>=25){m_state=SteerState::LISTEN_SYNC;m_timer=0;}
+            return false;
         case SteerState::LISTEN_SYNC:
-            if(ses_angle_raw!=INT16_MIN){m_active_angle=ses_angle_raw;m_state=SteerState::ACTIVE;}else return false;
-            [[fallthrough]];
+            if(ses_angle_raw==INT16_MIN) return false;
+            m_active_angle=ses_angle_raw; m_state=SteerState::ACTIVE;
+            goto build_frame;  // fall through: send first frame immediately
         case SteerState::ACTIVE:
+        build_frame:
             out.align_enable=1;out.control_enable=1;out.control_mode=1;
             out.target_angle=m_active_angle;out.target_speed=100;
             out.roll_cnt_enable=1;out.checksum_enable=1;

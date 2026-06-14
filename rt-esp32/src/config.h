@@ -25,8 +25,8 @@ constexpr int kMaxSpeedFwdMmps    =  3000;           // 3 m/s ≈ 10.8 km/h
 constexpr int kMaxSpeedRevMmps    =   500;
 constexpr int kLowSpeedThreshMmps =    50;           // freeze steering below
 
-// ── PID (deferred — gains TBD once encoders fitted, gap #5) ──────
-// constexpr float kPidKp = 1.0f, kPidKi = 0.1f, kPidKd = 0.05f;
+// ── PID — placeholder gains (tune once encoders fitted, gap #5) ──
+constexpr float kPidKp = 1.0f, kPidKi = 0.1f, kPidKd = 0.05f;
 
 // ── obstacle ──────────────────────────────────────────────────────
 constexpr unsigned kObstacleStopDistMM  =   300;
@@ -70,6 +70,17 @@ constexpr int kObstacleTrigGpio =  7;
 constexpr int kObstacleEchoGpio =  8;
 constexpr int kImuSdaGpio       = 10;      // IMU (optional)
 constexpr int kImuSclGpio       = 11;
+
+// ── inter-MCU UART (DEPRECATED — Phase R4 will remove) ───────────
+// Present only so the codebase compiles during migration.
+// Architecture: RT↔SYS communication is over low-level CAN, not UART.
+constexpr int kInterMcuUartPort = 1;        // REMOVE in Phase R4
+constexpr int kInterMcuTxGpio   = 17;       // REMOVE in Phase R4
+constexpr int kInterMcuRxGpio   = 18;       // REMOVE in Phase R4
+constexpr int kInterMcuBaud     = 2'000'000; // REMOVE in Phase R4
+
+// ── steering alias (used by physics_model.cpp) ────────────────────
+constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLimitDeg
 
 // ── CAN ID aliases (from shared/can/can_protocol.h) ───────────────
 // Low bus — RT sends
