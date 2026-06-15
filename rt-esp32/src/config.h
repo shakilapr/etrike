@@ -93,7 +93,7 @@ constexpr uint32_t kIdSesStatus      = 0x201;
 // High bus — RT sends
 constexpr uint32_t kIdRtStateRpt     = 0x210;
 constexpr uint32_t kIdRtPidRpt       = 0x220;   // reserved (future PID)
-constexpr uint32_t kIdRtObstacleRpt  = 0x400;
+constexpr uint32_t kIdHostObstacleDist  = 0x400;
 // High bus — RT receives
 constexpr uint32_t kIdHostDriveCmd   = 0x300;
 constexpr uint32_t kIdHostBrakeReq   = 0x301;

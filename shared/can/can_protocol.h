@@ -37,7 +37,7 @@ constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Jetson, 10 Hz
 constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Jetson, reserved (future PID)
 constexpr uint32_t kIdHostDriveCmd      = 0x300;  // Jetson→RT, ≤100 Hz
 constexpr uint32_t kIdHostBrakeReq      = 0x301;  // Jetson→RT, on demand
-constexpr uint32_t kIdRtObstacleRpt     = 0x400;  // RT→Jetson, 10 Hz
+constexpr uint32_t kIdHostObstacleDist  = 0x400;  // Jetson→RT, 10 Hz
 constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Jetson alive counter, 2 Hz
 constexpr uint32_t kIdJetsonHeartbeat   = 0x7FC;  // Jetson→RT alive counter, 2 Hz
 
@@ -363,13 +363,13 @@ struct HostBrakeReq {
     }
 };
 
-// 0x400 RT_OBSTACLE_RPT — RT→Jetson
-struct RtObstacleRpt {
+// 0x400 HOST_OBSTACLE_DIST — Jetson→RT (perception pipeline)
+struct HostObstacleDist {
     uint32_t distance_mm = 0;   // UINT32_MAX = no reading
 
-    static RtObstacleRpt from_frame(const Frame& f) { return { f.u32_at(0) }; }
+    static HostObstacleDist from_frame(const Frame& f) { return { f.u32_at(0) }; }
     void to_frame(Frame& f) const {
-        f.id = kIdRtObstacleRpt; f.dlc = 4;
+        f.id = kIdHostObstacleDist; f.dlc = 4;
         f.put_u32(0, distance_mm);
     }
 };
@@ -456,7 +456,7 @@ inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
 // ───────────────────────────────────────────────────────────────────
 
 using HostBrakeRequest = HostBrakeReq;
-using RtObstacleDist   = RtObstacleRpt;
+using RtObstacleDist   = HostObstacleDist;
 using SysDiag          = SysDiagRpt;
 
 } // namespace can
