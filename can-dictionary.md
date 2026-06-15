@@ -362,7 +362,7 @@ SYS heartbeat never leaves low bus. Startup grace period: 3 seconds (both heartb
 
 ## 2. High-Level CAN Bus
 
-Nodes: Jetson Orin NX, RT ESP32-S3 (MCP2515 SPI).
+Nodes: Jetson Orin, RT ESP32-S3 (MCP2515 SPI).
 
 ---
 
