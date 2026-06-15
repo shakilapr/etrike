@@ -18,13 +18,13 @@ constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Jetson), 5 Hz
 constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→DC-DC converter, on change
 constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
 constexpr uint32_t kIdSysThrottleSts    = 0x120;  // SYS→RT (→Jetson), 100 Hz
-constexpr uint32_t kIdVcuSesReq         = 0x200;  // RT→EPS-C steering cmd, 50 Hz (SYNTREE factory default)
+constexpr uint32_t kIdVcuSesReq         = 0x169;  // RT->EPS-C steering cmd, 50 Hz (SYNTREE factory 0x169)
 constexpr uint32_t kIdSesStatus         = 0x201;  // EPS-C→RT steering feedback, 100 Hz
-constexpr uint32_t kIdRtDriveCmd        = 0x202;  // RT→SYS motor speed+gear, 100 Hz
-constexpr uint32_t kIdRtBrakeCmd        = 0x203;  // RT→SYS brake pressure kPa, 50 Hz
+constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT->SYS motor speed+gear, 100 Hz
+constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT->SYS brake pressure kPa, 50 Hz
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
 constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson), 1 Hz
-constexpr uint32_t kIdVcuSebReq         = 0x720;  // SYS→SEB brake cmd, 50 Hz (SYNTREE)
+constexpr uint32_t kIdVcuSebReq         = 0x7B9;  // SYS->SEB brake cmd, 50 Hz (SYNTREE factory 0x7B9)
 constexpr uint32_t kIdSebStatus         = 0x721;  // SEB→SYS brake feedback, 100 Hz
 constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
 constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 2 Hz
@@ -154,7 +154,7 @@ struct SysThrottleSts {
     }
 };
 
-// 0x200 VCU_SES_REQ — RT→EPS-C (steering command, SYNTREE protocol)
+// 0x169 VCU_SES_REQ — RT→EPS-C (steering command, SYNTREE protocol)
 // Little-endian on the wire (Motorola LSB). Pack/unpack with explicit shifts.
 struct VcuSesReq {
     uint8_t align_enable   : 1;
@@ -181,7 +181,7 @@ struct VcuSesReq {
     }
 };
 
-// 0x202 RT_DRIVE_CMD — RT→SYS
+// 0x204 RT_DRIVE_CMD — RT→SYS
 struct RtDriveCmd {
     int32_t motor_speed_mmps = 0;   // [-500, 3000]
     uint8_t gear             = 0;   // Gear enum
@@ -196,7 +196,7 @@ struct RtDriveCmd {
     }
 };
 
-// 0x203 RT_BRAKE_CMD — RT→SYS
+// 0x205 RT_BRAKE_CMD — RT→SYS
 struct RtBrakeCmd {
     int32_t brake_pressure_kpa = 0;  // 0 = release
 
@@ -229,9 +229,9 @@ struct HostLightCmd {
     }
 };
 
-// 0x720 VCU_SEB_REQ — SYS→SEB (brake command, SYNTREE protocol)
+// 0x7B9 VCU_SEB_REQ — SYS→SEB (brake command, SYNTREE protocol)
 // Little-endian on the wire. Pack/unpack with explicit shifts.
-// Wire format per can-dictionary.md §0x720:
+// Wire format per can-dictionary.md §0x7B9:
 //   Byte 0: ctrl bits, Byte 1: rsvd, Bytes 2-3: stroke LE,
 //   Byte 4: pressure u8, Byte 5: rsvd,
 //   Byte 6: rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4), Byte 7: checksum
