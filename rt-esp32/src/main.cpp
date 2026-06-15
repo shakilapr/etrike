@@ -131,7 +131,10 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
         if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
             t100 = xTaskGetTickCount();
             if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE) {
-                can::RtDriveCmd{sp.motor_speed_mmps, uint8_t(0)}.to_frame(fr);
+                uint8_t gear = (sp.motor_speed_mmps > 0) ? uint8_t(can::Gear::D)
+                             : (sp.motor_speed_mmps < 0) ? uint8_t(can::Gear::R)
+                             : uint8_t(can::Gear::N);
+                can::RtDriveCmd{sp.motor_speed_mmps, gear}.to_frame(fr);
                 drv->send(fr);
             }
         }

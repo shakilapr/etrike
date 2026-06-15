@@ -2,6 +2,7 @@
 // Signal lights + handlebar switches + brake OR logic. Architecture.md §8.6.
 #include <cstdint>
 #include "config.h"
+#include "can/can_protocol.h"
 namespace sys {
 struct LightState { bool left,right,brake,head; };
 struct LightOutputs { bool left_lamp,right_lamp,brake_lamp,head_lamp; };

@@ -278,7 +278,7 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
 
 // ── Diagnostics ────────────────────────────────────────────────────
 
-void Mcp2515Driver::get_error_counters(uint8_t& tec, uint8_t& rec) const {
+void Mcp2515Driver::get_error_counters(uint8_t& tec, uint8_t& rec) {
     tec = read_reg(kRegTec);
     rec = read_reg(kRegRec);
 }
