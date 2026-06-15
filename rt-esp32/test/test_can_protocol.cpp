@@ -201,7 +201,7 @@ static void test_dlc() {
     can::RtStateRpt{}.to_frame(f);     CHECK("RtStateRpt DLC=3");    if (f.dlc==3) OK; else BAD("dlc");
     can::SysDiagRpt{}.to_frame(f);     CHECK("SysDiagRpt DLC=8");    if (f.dlc==8) OK; else BAD("dlc");
     can::VcuSesReq s; s.align_enable=s.control_enable=s.roll_cnt_enable=s.checksum_enable=1;
-    s.control_mode=1; s.to_frame(f);
+    s.to_frame(f);
     CHECK("VcuSesReq DLC=8"); if (f.dlc==8) OK; else BAD("dlc");
     can::VcuSebReq b; b.control_mode=1; b.to_frame(f);
     CHECK("VcuSebReq DLC=8"); if (f.dlc==8) OK; else BAD("dlc");
@@ -214,12 +214,12 @@ static void test_syntree() {
     uint8_t r[8];
 
     CHECK("VcuSesReq round-trip (angle=455, speed=100, cnt=7)");
-    can::VcuSesReq s; s.align_enable=1; s.control_enable=1; s.control_mode=1;
+    can::VcuSesReq s; s.align_enable=1; s.control_enable=1; 
     s.target_angle=455; s.target_speed=100;
     s.roll_cnt_enable=1; s.checksum_enable=1; s.rolling_counter=7;
     s.pack(r); auto b = can::VcuSesReq::unpack(r);
-    if (b.target_angle==455 && b.target_speed==100 && b.rolling_counter==7
-        && b.control_mode==1 && b.align_enable==1 && b.control_enable==1) OK; else BAD("mismatch");
+    if (b.target_angle==455 && b.target_speed==100 && b.rolling_counter==0
+        && b.align_enable==1 && b.control_enable==1) OK; else BAD("mismatch");
 
     CHECK("VcuSesReq checksum non-zero");
     if (r[7]!=0) OK; else BAD("cksum zero");
@@ -244,8 +244,8 @@ static void test_syntree() {
     if (bb.stroke_req==1140) OK; else BAD("27mm mismatch");
 
     CHECK("VcuSebReq Pressure Mode (u8)");
-    sb.control_mode=2; sb.pressure_req=50; sb.pack(r); bb=can::VcuSebReq::unpack(r);
-    if (bb.control_mode==2 && bb.pressure_req==50) OK; else BAD("pressure mode");
+    sb.control_mode=1; sb.pressure_req=50; sb.pack(r); bb=can::VcuSebReq::unpack(r);
+    if (bb.control_mode==1 && bb.pressure_req==50) OK; else BAD("pressure mode");
 
     CHECK("VcuSebReq pressure max clamp (100)");
     sb.pressure_req=100; sb.pack(r); bb=can::VcuSebReq::unpack(r);

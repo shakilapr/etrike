@@ -19,7 +19,7 @@ C("lever pressed stroke=900");if(out.stroke_req==900)O;else B("lever");
 tx=bc.tick(false,true,0,nullptr,out);
 C("ESTOP stroke=1140");if(out.stroke_req==1140)O;else B("estop");
 tx=bc.tick(false,false,5000,nullptr,out);
-C("brake_kpa=5000 -> Pressure Mode");if(out.control_mode==2)O;else B("pmode");
+C("brake_kpa=5000 -> Pressure Mode");if(out.control_mode==1)O;else B("pmode");
 C("pressure_req u8 = 100 (5000*0.02)");if(out.pressure_req==100)O;else B("press");
 uint8_t c1=out.rolling_counter;
 tx=bc.tick(false,false,0,nullptr,out);

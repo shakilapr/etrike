@@ -55,7 +55,7 @@ private:
         } else if (brake_kpa > 0) {
             // Pressure Mode from 0x205 — verified kPa→raw conversion
             // Scale: 0.05 MPa/bit, range 0–5 MPa → raw = kPa * 0.02, clamp to 100
-            out.control_mode = 2;
+            out.control_mode = 1;  // Pressure mode (1-bit: 0=Stroke,1=Pressure)
             out.stroke_req = 600; // hold at 0mm
             // kPa * 0.02 = kPa / 50. Round to nearest integer.
             int32_t raw = (brake_kpa + 25) / 50;
