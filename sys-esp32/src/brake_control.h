@@ -1,6 +1,6 @@
 #pragma once
 // SYNTREE SEB brake control — boot state machine, 50 Hz TX, rolling ctr + checksum.
-// Architecture.md §8.6. CAN 0x720 command, 0x721 status.
+// Architecture.md §8.6. CAN 0x7B9 command, 0x721 status.
 #include <cstdint>
 #include "config.h"
 #include "can/can_protocol.h"
@@ -11,9 +11,9 @@ public:
     void init() { m_state=BrakeState::BOOT_WAIT; m_boot_timer=0; m_roll=0; }
     BrakeState state() const { return m_state; }
 
-    // Call @ 50 Hz. lever: brake lever pressed. estop: ESTOP active. brake_kpa: from 0x203 (0=release).
+    // Call @ 50 Hz. lever: brake lever pressed. estop: ESTOP active. brake_kpa: from 0x205 (0=release).
     // seb_status: raw 8 bytes from 0x721 (nullptr if none received yet).
-    // Returns true if a 0x720 frame should be transmitted. Fills out_frame.
+    // Returns true if a 0x7B9 frame should be transmitted. Fills out_frame.
     bool tick(bool lever, bool estop, int32_t brake_kpa,
               const uint8_t* seb_status, can::VcuSebReq& out) {
         switch (m_state) {
@@ -53,7 +53,7 @@ private:
             out.stroke_req = uint16_t((kBrakeMaxStroke - kBrakeStrokeOffset) / kBrakeStrokeScale);
             out.pressure_req = 0;
         } else if (brake_kpa > 0) {
-            // Pressure Mode from 0x203 — verified kPa→raw conversion
+            // Pressure Mode from 0x205 — verified kPa→raw conversion
             // Scale: 0.05 MPa/bit, range 0–5 MPa → raw = kPa * 0.02, clamp to 100
             out.control_mode = 2;
             out.stroke_req = 600; // hold at 0mm

@@ -113,7 +113,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
 
         int32_t obs_kpa = (obs <= rt::kObstacleStopDistMM) ? 20000 : 0;
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
-        (void)bk;  // sent via 0x203 in can_tx_low
+        (void)bk;  // sent via 0x205 in can_tx_low
 
         xQueueOverwrite(g_setpoint_q, &sp);
         vTaskDelayUntil(&last, per);
