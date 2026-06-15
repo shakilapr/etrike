@@ -86,7 +86,7 @@ ESTOP → 0 (off). All other modes → 1 (on).
 
 ---
 
-### 0x202 — RT_DRIVE_CMD
+### 0x204 — RT_DRIVE_CMD
 
 | Property | Value |
 |----------|-------|
@@ -102,11 +102,11 @@ ESTOP → 0 (off). All other modes → 1 (on).
 
 Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 
-> Placed at `0x202` to avoid collision with EPS-C factory command at `0x200`. SYNTREE units are preprogrammed and cannot be reconfigured.
+> Placed at `0x204` to avoid collision with EPS-C error info frame at `0x202`. SYNTREE units are preprogrammed and cannot be reconfigured.
 
 ---
 
-### 0x203 — RT_BRAKE_CMD
+### 0x205 — RT_BRAKE_CMD
 
 | Property | Value |
 |----------|-------|
@@ -121,7 +121,7 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 
 Byte layout (big-endian): Bytes 0-3 = brake pressure [kPa].
 
-RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified SYNTREE spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x203 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x203 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
+RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified SYNTREE spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x205 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x205 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
 
 
 ### 0x201 — SES_STATUS (SYNTREE EPS-C Feedback)
@@ -157,7 +157,7 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 
 ---
 
-### 0x200 — VCU_SES_REQ (SYNTREE EPS-C Command)
+### 0x169 — VCU_SES_REQ (SYNTREE EPS-C Command)
 
 | Property | Value |
 |----------|-------|
@@ -166,7 +166,7 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 | **DLC** | 8 |
 | **Period** | 20 ms (50 Hz) — **continuous, every frame** |
 | **Endianness** | Motorola LSB (little-endian) |
-| **Note** | Factory default `0x200`. SYNTREE unit is preprogrammed and not reconfigurable. `RT_DRIVE_CMD` placed at `0x202` to avoid collision. |
+| **Note** | Factory default `0x169`. SYNTREE unit is preprogrammed and not reconfigurable. `RT_DRIVE_CMD` placed at `0x204` to avoid collision. |
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
@@ -240,7 +240,7 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 ---
 
-### 0x720 — VCU_SEB_REQ (SYNTREE SEB Brake Command)
+### 0x7B9 — VCU_SEB_REQ (SYNTREE SEB Brake Command)
 
 | Property | Value |
 |----------|-------|
@@ -338,7 +338,7 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 |--------|-----------|-----|------|-------------|
 | `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung RT. |
 
-`0x202` staleness check at 200ms provides faster detection. RT sends `0x7FD` independently on both buses (per-bus, NOT bridged; separate counters per bus).
+`0x204` staleness check at 200ms provides faster detection. RT sends `0x7FD` independently on both buses (per-bus, NOT bridged; separate counters per bus).
 
 ---
 
@@ -463,7 +463,7 @@ ROS 2 conversion: `speed_mmps = linear.x × 1000`, `yaw_rate_mrad_s = angular.z 
 |--------|-----------|-----|------|------|
 | `HOST_BrakePressure` | 0 | 32 | i32 | kPa |
 
-Byte layout (big-endian): Bytes 0-3. RT arbitrates: max(RT_computed, HOST_request). Result forwarded to SYS via `0x203` RT_BRAKE_CMD (i32 kPa, 50 Hz).
+Byte layout (big-endian): Bytes 0-3. RT arbitrates: max(RT_computed, HOST_request). Result forwarded to SYS via `0x205` RT_BRAKE_CMD (i32 kPa, 50 Hz).
 
 ---
 
@@ -529,7 +529,7 @@ RT sends `0x7FD` independently on both buses (per-bus, NOT bridged).
 | **Receiver(s)** | RT |
 | **DLC** | 1 |
 | **Period** | 2 Hz (500 ms) |
-| **Timeout** | 1500ms (3 missed frames) → RT zeroes `0x202` + stops `0x200` (controlled stop) |
+| **Timeout** | 1500ms (3 missed frames) → RT zeroes `0x204` + stops `0x169` (controlled stop) |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
@@ -550,13 +550,13 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC | 1 | Change |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | Change |
 | `0x120` | SYS_THROTTLE_STS | SYS | RT (→Jetson) | 2 | 100 Hz |
-| `0x200` | VCU_SES_REQ | RT | EPS-C | 8 | **50 Hz** |
+| `0x169` | VCU_SES_REQ | RT | EPS-C | 8 | **50 Hz** |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | 100 Hz |
-| `0x202` | RT_DRIVE_CMD | RT | SYS | 5 | 100 Hz |
-| `0x203` | RT_BRAKE_CMD | RT | SYS | 4 | **50 Hz** |
+| `0x204` | RT_DRIVE_CMD | RT | SYS | 5 | 100 Hz |
+| `0x205` | RT_BRAKE_CMD | RT | SYS | 4 | **50 Hz** |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | Change |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→Jetson) | 8 | 1 Hz |
-| `0x720` | VCU_SEB_REQ | SYS | SEB | 8 | **50 Hz** |
+| `0x7B9` | VCU_SEB_REQ | SYS | SEB | 8 | **50 Hz** |
 | `0x721` | SEB_STATUS | SEB | SYS | 8 | 100 Hz |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | 2 Hz |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | 2 Hz |
@@ -595,14 +595,14 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Inbound | Bus | Outbound | Bus |
 |---------|-----|----------|-----|
-| `0x300` HOST_DRIVE_CMD | High | `0x202` RT_DRIVE_CMD + `0x200` VCU_SES_REQ | Low |
-| `0x301` HOST_BRAKE_REQ | High | `0x203` RT_BRAKE_CMD | Low |
+| `0x300` HOST_DRIVE_CMD | High | `0x204` RT_DRIVE_CMD + `0x169` VCU_SES_REQ | Low |
+| `0x301` HOST_BRAKE_REQ | High | `0x205` RT_BRAKE_CMD | Low |
 
 ### Category 3: Bus-local (never forwarded, never regenerated)
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x200`, `0x202`, `0x203`, `0x720` |
+| Low only | `0x012`, `0x110`, `0x169`, `0x204`, `0x205`, `0x7B9` |
 | Low only | `0x201`, `0x721` (SYNTREE feedback) |
 | High only | `0x210`, `0x220`, `0x400` (RT telemetry) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
