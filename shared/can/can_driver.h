@@ -3,10 +3,37 @@
 // Shared between RT and SYS ESP32-S3 (identical hardware interface).
 
 #include "can_protocol.h"
+
+#ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "driver/twai.h"
 #include "esp_log.h"
+#else
+// Host-side stubs for IntelliSense / unit tests
+#include <cstdint>
+using TickType_t = uint32_t;
+using gpio_num_t = int;
+inline constexpr int ESP_OK = 0;
+inline constexpr int ESP_ERR_INVALID_ARG = -1;
+struct twai_general_config_t { int controller_id, mode; gpio_num_t tx_io, rx_io, clkout_io, bus_off_io; uint32_t tx_queue_len, rx_queue_len, alerts_enabled, clkout_divider; int intr_flags; };
+struct twai_timing_config_t { uint32_t quanta_resolution_hz; int tseg_1, tseg_2, sjw; };
+struct twai_filter_config_t { int acceptance_code, acceptance_mask; bool single_filter; };
+struct twai_message_t { uint32_t identifier; uint8_t data_length_code; uint8_t data[8]; bool extd, self, ss; };
+struct twai_status_info_t { uint32_t tx_error_counter, rx_error_counter, msgs_to_tx, msgs_to_rx, tx_failed_count, rx_missed_count, rx_overrun_count, arb_lost_count, bus_error_count; int state; };
+enum twai_mode_t : int { TWAI_MODE_NORMAL = 0 };
+inline auto TWAI_FILTER_CONFIG_ACCEPT_ALL() -> twai_filter_config_t { return {}; }
+inline int twai_driver_install(const twai_general_config_t*, const twai_timing_config_t*, const twai_filter_config_t*) { return ESP_OK; }
+inline int twai_start() { return ESP_OK; }
+inline int twai_stop() { return ESP_OK; }
+inline int twai_driver_uninstall() { return ESP_OK; }
+inline int twai_transmit(const twai_message_t*, int) { return ESP_OK; }
+inline int twai_receive(twai_message_t*, int) { return 0; }
+inline int twai_get_status_info(twai_status_info_t*) { return ESP_OK; }
+inline int pdMS_TO_TICKS(int ms) { return ms; }
+#define ESP_LOGI(tag, fmt, ...) ((void)0)
+#define ESP_LOGD(tag, fmt, ...) ((void)0)
+#endif
 
 namespace can {
 
