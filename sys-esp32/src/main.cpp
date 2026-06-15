@@ -218,7 +218,7 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
 
         // Send 0x120 SYS_THROTTLE_STS
         can::Frame fr;
-        can::SysThrottleSts{g_throttle.read_mmps()}.to_frame(fr);
+        can::SysThrottleSts{int16_t(g_throttle.read_mmps())}.to_frame(fr);
         g_can.send(fr);
 
         vTaskDelayUntil(&last, period);
