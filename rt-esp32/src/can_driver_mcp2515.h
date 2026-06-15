@@ -4,6 +4,7 @@
 // 10 MHz SPI, 500 kbit/s CAN.
 
 #include <cstdint>
+#include <cstddef>
 #include "can/can_protocol.h"
 #include "config.h"
 
@@ -44,7 +45,7 @@ public:
 
     // ── Diagnostics ────────────────────────────────────────────────
 
-    void get_error_counters(uint8_t& tec, uint8_t& rec) const;
+    void get_error_counters(uint8_t& tec, uint8_t& rec);  // non-const: SPI I/O mutates hardware state
 
 private:
     // ── SPI primitives (ESP-IDF) ───────────────────────────────────
