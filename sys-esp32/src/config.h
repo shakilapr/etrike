@@ -80,8 +80,8 @@ constexpr uint32_t kIdSysDiagRpt     = 0x600;
 constexpr uint32_t kIdVcuSebReq      = 0x720;
 constexpr uint32_t kIdSysHeartbeat   = 0x7FE;
 // SYS receives
-constexpr uint32_t kIdRtDriveCmd     = 0x202;
-constexpr uint32_t kIdRtBrakeCmd     = 0x203;
+constexpr uint32_t kIdRtDriveCmd     = 0x204;
+constexpr uint32_t kIdRtBrakeCmd     = 0x205;
 constexpr uint32_t kIdHostLightCmd   = 0x302;   // forwarded by RT
 constexpr uint32_t kIdSebStatus      = 0x721;
 constexpr uint32_t kIdRtHeartbeat    = 0x7FD;

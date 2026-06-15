@@ -92,13 +92,13 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
 
         // Manual dispatch for atomic state
         switch (fr.id) {
-        case sys::kIdRtDriveCmd: {   // 0x202
+        case sys::kIdRtDriveCmd: {   // 0x204
             auto sp = can::RtDriveCmd::from_frame(fr);
             g_setpoint_speed_mmps.store(sp.motor_speed_mmps, std::memory_order_relaxed);
             g_setpoint_gear.store(sp.gear, std::memory_order_relaxed);
             break;
         }
-        case sys::kIdRtBrakeCmd: {   // 0x203
+        case sys::kIdRtBrakeCmd: {   // 0x205
             auto brk = can::RtBrakeCmd::from_frame(fr);
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
@@ -239,7 +239,7 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
         if (g_brake.tick(lever, estop, brake_kpa, g_seb_status_raw, seb_cmd)) {
             can::Frame fr;
             seb_cmd.to_frame(fr);
-            g_can.send(fr);  // 0x720 VCU_SEB_REQ
+            g_can.send(fr);  // 0x7B9 VCU_SEB_REQ
         }
 
         vTaskDelayUntil(&last, period);

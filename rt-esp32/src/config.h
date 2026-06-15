@@ -80,8 +80,8 @@ constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLi
 
 // ── CAN ID aliases (from shared/can/can_protocol.h) ───────────────
 // Low bus — RT sends
-constexpr uint32_t kIdRtDriveCmd     = 0x202;
-constexpr uint32_t kIdRtBrakeCmd     = 0x203;
+constexpr uint32_t kIdRtDriveCmd     = 0x204;
+constexpr uint32_t kIdRtBrakeCmd     = 0x205;
 constexpr uint32_t kIdVcuSesReq      = 0x200;
 // Low bus — RT receives
 constexpr uint32_t kIdSysSafetySts   = 0x011;
