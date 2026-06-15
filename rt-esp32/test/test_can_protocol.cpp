@@ -32,7 +32,7 @@ static void test_id_uniqueness() {
     uint32_t high[] = {
         can::kIdSafetyEstop, can::kIdSysSafetySts, can::kIdSysThrottleSts,
         can::kIdRtStateRpt, can::kIdRtPidRpt, can::kIdHostDriveCmd,
-        can::kIdHostBrakeReq, can::kIdHostLightCmd, can::kIdRtObstacleRpt,
+        can::kIdHostBrakeReq, can::kIdHostLightCmd, can::kIdHostObstacleDist,
         can::kIdSysDiagRpt, can::kIdRtHeartbeatHigh, can::kIdJetsonHeartbeat
     };
     int nh = sizeof(high)/sizeof(high[0]);
@@ -93,8 +93,8 @@ static void test_roundtrips() {
        &can::HostDriveCmd::to_frame, can::HostDriveCmd::from_frame);
     rt("HostBrakeReq {8000}", can::HostBrakeReq{8000},
        &can::HostBrakeReq::to_frame, can::HostBrakeReq::from_frame);
-    rt("RtObstacleRpt {1500}", can::RtObstacleRpt{1500},
-       &can::RtObstacleRpt::to_frame, can::RtObstacleRpt::from_frame);
+    rt("HostObstacleDist {1500}", can::HostObstacleDist{1500},
+       &can::HostObstacleDist::to_frame, can::HostObstacleDist::from_frame);
     rt("RtDriveCmd {-300}", can::RtDriveCmd{-300,0},
        &can::RtDriveCmd::to_frame, can::RtDriveCmd::from_frame);
 }
@@ -106,7 +106,7 @@ static void test_r1_aliases() {
     rt("HostBrakeRequest → HostBrakeReq",
        can::HostBrakeRequest{8000},
        &can::HostBrakeRequest::to_frame, can::HostBrakeRequest::from_frame);
-    rt("RtObstacleDist → RtObstacleRpt",
+    rt("RtObstacleDist alias → HostObstacleDist",
        can::RtObstacleDist{1500},
        &can::RtObstacleDist::to_frame, can::RtObstacleDist::from_frame);
 
@@ -197,7 +197,7 @@ static void test_dlc() {
     can::HostLightCmd{}.to_frame(f);   CHECK("HostLightCmd DLC=1");  if (f.dlc==1) OK; else BAD("dlc");
     can::HostDriveCmd{}.to_frame(f);   CHECK("HostDriveCmd DLC=8");  if (f.dlc==8) OK; else BAD("dlc");
     can::HostBrakeReq{}.to_frame(f);   CHECK("HostBrakeReq DLC=4");  if (f.dlc==4) OK; else BAD("dlc");
-    can::RtObstacleRpt{}.to_frame(f);  CHECK("RtObstacleRpt DLC=4"); if (f.dlc==4) OK; else BAD("dlc");
+    can::HostObstacleDist{}.to_frame(f);  CHECK("HostObstacleDist DLC=4"); if (f.dlc==4) OK; else BAD("dlc");
     can::RtStateRpt{}.to_frame(f);     CHECK("RtStateRpt DLC=3");    if (f.dlc==3) OK; else BAD("dlc");
     can::SysDiagRpt{}.to_frame(f);     CHECK("SysDiagRpt DLC=8");    if (f.dlc==8) OK; else BAD("dlc");
     can::VcuSesReq s; s.align_enable=s.control_enable=s.roll_cnt_enable=s.checksum_enable=1;

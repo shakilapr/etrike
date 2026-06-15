@@ -6,6 +6,14 @@
 #include <algorithm>
 #include "esp_log.h"
 
+#ifndef __cpp_lib_clamp
+namespace std {
+template<typename T> constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
+    return (v < lo) ? lo : (hi < v) ? hi : v;
+}
+}
+#endif
+
 namespace rt {
 namespace {
 
