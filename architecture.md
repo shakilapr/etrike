@@ -1,6 +1,6 @@
 # E-Trike System Architecture
 
-Three-node distributed control: **Jetson Orin NX** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering & CAN gateway), **SYS ESP32-S3** (safety, motor actuation & body control).
+Three-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering & CAN gateway), **SYS ESP32-S3** (safety, motor actuation & body control).
 
 Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and bridges selected messages. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake).
 
@@ -13,7 +13,7 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
   │                                                                  │
   │  ┌──────────┐            ┌──────────────┐                       │
   │  │  Jetson  │            │  RT ESP32-S3 │                       │
-  │  │  Orin NX │            │              │                       │
+  │  │  Orin │            │              │                       │
   │  │          │            │ Physics      │                       │
   │  │ ROS 2    │            │ Steering     │                       │
   │  │ Planning │            │ Gateway      │                       │
@@ -1159,7 +1159,7 @@ constexpr int kBrakeCmdId = 0x720;
 
 ```
  High-Level CAN (500 kbit/s)
-  ├── Jetson Orin NX             TX: 0x300,0x301,0x302,0x001,0x7FC
+  ├── Jetson Orin             TX: 0x300,0x301,0x302,0x001,0x7FC
   │                              RX: 0x001,0x011,0x120,0x210,0x220,0x400,0x600,0x7FD
   └── RT ESP32-S3 (MCP2515)      TX: 0x011,0x120,0x210,0x220,0x400,0x600,0x001,0x7FD
                                   RX: 0x001,0x300,0x301,0x302,0x7FC
@@ -1171,7 +1171,7 @@ constexpr int kBrakeCmdId = 0x720;
 
 | Node | Controller | MCU | Framework | CAN interfaces |
 |------|-----------|-----|-----------|---------------|
-| Jetson | Orin NX | — | ROS 2 | 1× CAN (high) |
+| Jetson | Orin | — | ROS 2 | 1× CAN (high) |
 | RT | ESP32-S3 @ 240 MHz | Xtensa LX7 | ESP-IDF + FreeRTOS | TWAI (low) + MCP2515 SPI (high) |
 | SYS | ESP32-S3 @ 240 MHz | Xtensa LX7 | ESP-IDF + FreeRTOS | TWAI (low only) |
 
