@@ -13,7 +13,7 @@ constexpr const char* kTag = "diag";
 
 void Diagnostics::report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) {
     // TEC/REC from TWAI — requires driver access; report 0 for now
-    can::SysDiag diag;
+    can::SysDiagRpt diag;
     diag.mode          = mode;
     diag.brake_engaged = brake_engaged;
     diag.heartbeat_ok  = hb_ok;

@@ -36,7 +36,9 @@ public:
 
     bool init() {
         twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT(
-            m_config.tx_gpio, m_config.rx_gpio, TWAI_MODE_NORMAL);
+            static_cast<gpio_num_t>(m_config.tx_gpio),
+            static_cast<gpio_num_t>(m_config.rx_gpio),
+            TWAI_MODE_NORMAL);
         twai_timing_config_t  t = (m_config.bitrate_hz == 500'000)
             ? TWAI_TIMING_CONFIG_500KBITS()
             : TWAI_TIMING_CONFIG_250KBITS();

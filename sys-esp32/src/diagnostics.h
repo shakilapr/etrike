@@ -1,5 +1,6 @@
 #pragma once
 // System diagnostics — collects health data, sends via CAN 0x600 @ 1 Hz.
+#include <cstdint>
 
 namespace sys {
 
