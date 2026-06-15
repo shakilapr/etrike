@@ -18,6 +18,9 @@ struct twai_message_t {
     uint8_t  ss         = 1;
 };
 
+// ── GPIO type (ESP-IDF v5.x) ─────────────────────────────────────────
+typedef int gpio_num_t;
+
 // ── TWAI configuration types ───────────────────────────────────────
 struct twai_general_config_t {
     int tx_io     = 5;
@@ -31,6 +34,7 @@ struct twai_general_config_t {
 };
 
 struct twai_timing_config_t {
+    uint32_t quanta_resolution_hz = 8'000'000;  // ESP-IDF v5.x
     uint32_t brp         = 0;
     uint8_t  tseg_1      = 0;
     uint8_t  tseg_2      = 0;
@@ -60,6 +64,9 @@ struct twai_status_info_t {
 // ── Configuration macros ───────────────────────────────────────────
 #define TWAI_GENERAL_CONFIG_DEFAULT(tx, rx, mode) \
     twai_general_config_t{ (tx), (rx), (mode), 5, 5, 0, 0, 0 }
+
+#define TWAI_GENERAL_CONFIG_DEFAULT_V2(ctrl_id, tx, rx, mode) \
+    twai_general_config_t{ (int)(tx), (int)(rx), (mode), 5, 5, 0, 0, 0 }
 
 inline twai_timing_config_t TWAI_TIMING_CONFIG_500KBITS() {
     twai_timing_config_t t = {};
