@@ -35,13 +35,19 @@ public:
     CanDriver& operator=(const CanDriver&) = delete;
 
     bool init() {
-        twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT(
+        twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT_V2(0,
             static_cast<gpio_num_t>(m_config.tx_gpio),
             static_cast<gpio_num_t>(m_config.rx_gpio),
             TWAI_MODE_NORMAL);
-        twai_timing_config_t  t = (m_config.bitrate_hz == 500'000)
-            ? TWAI_TIMING_CONFIG_500KBITS()
-            : TWAI_TIMING_CONFIG_250KBITS();
+        twai_timing_config_t t_500k = {
+            .quanta_resolution_hz = 8'000'000,
+            .tseg_1 = 11, .tseg_2 = 4, .sjw = 2
+        };
+        twai_timing_config_t t_250k = {
+            .quanta_resolution_hz = 8'000'000,
+            .tseg_1 = 14, .tseg_2 = 7, .sjw = 3
+        };
+        twai_timing_config_t t = (m_config.bitrate_hz == 500'000) ? t_500k : t_250k;
         twai_filter_config_t  f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
         if (twai_driver_install(&g, &t, &f) != ESP_OK) return false;
