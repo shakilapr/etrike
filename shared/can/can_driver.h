@@ -39,15 +39,13 @@ public:
             static_cast<gpio_num_t>(m_config.tx_gpio),
             static_cast<gpio_num_t>(m_config.rx_gpio),
             TWAI_MODE_NORMAL);
-        twai_timing_config_t t_500k = {
-            .quanta_resolution_hz = 8'000'000,
-            .tseg_1 = 11, .tseg_2 = 4, .sjw = 2
-        };
-        twai_timing_config_t t_250k = {
-            .quanta_resolution_hz = 8'000'000,
-            .tseg_1 = 14, .tseg_2 = 7, .sjw = 3
-        };
-        twai_timing_config_t t = (m_config.bitrate_hz == 500'000) ? t_500k : t_250k;
+        twai_timing_config_t t = {};
+        t.quanta_resolution_hz = 8'000'000;
+        if (m_config.bitrate_hz == 500'000) {
+            t.tseg_1 = 11; t.tseg_2 = 4; t.sjw = 2;
+        } else {
+            t.tseg_1 = 14; t.tseg_2 = 7; t.sjw = 3;
+        }
         twai_filter_config_t  f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
         if (twai_driver_install(&g, &t, &f) != ESP_OK) return false;
