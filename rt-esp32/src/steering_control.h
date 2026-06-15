@@ -19,7 +19,7 @@ public:
             goto build_frame;  // fall through: send first frame immediately
         case SteerState::ACTIVE:
         build_frame:
-            out.align_enable=1;out.control_enable=1;out.control_mode=1;
+            out.align_enable=1;out.control_enable=1;
             out.target_angle=m_active_angle;out.target_speed=100;
             out.roll_cnt_enable=1;out.checksum_enable=1;
             out.rolling_counter=m_roll;m_roll=(m_roll+1)&0xF;
