@@ -111,7 +111,7 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
             g_mode_mgr.force_estop();
             ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             break;
-        case sys::kIdSebStatus:      // 0x721
+        case sys::kIdSyntreeSebStatus:      // 0x721
             for (int i = 0; i < 8 && i < fr.dlc; ++i) {
                 g_seb_status_raw[i] = fr.data[i];
             }

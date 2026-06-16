@@ -9,29 +9,25 @@
 
 namespace can {
 
-// ───────────────────────────────────────────────────────────────────
-// Low-level CAN ID assignments
-// ───────────────────────────────────────────────────────────────────
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  OUR CAN IDs — we control these, can reassign as needed            ║
+// ╚══════════════════════════════════════════════════════════════════════╝
 
-constexpr uint32_t kIdSafetyEstop       = 0x001;  // ESTOP: any→all, bridged to high
+// ── Low-level bus (our IDs) ───────────────────────────────────────
+
+constexpr uint32_t kIdSafetyEstop       = 0x001;  // any→all, bridged to high
 constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Jetson), 5 Hz
 constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→DC-DC converter, on change
 constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
 constexpr uint32_t kIdSysThrottleSts    = 0x120;  // SYS→RT (→Jetson), 100 Hz
-constexpr uint32_t kIdVcuSesReq         = 0x169;  // RT->EPS-C steering cmd, 50 Hz (SYNTREE factory 0x169)
-constexpr uint32_t kIdSesStatus         = 0x201;  // EPS-C→RT steering feedback, 100 Hz
-constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT->SYS motor speed+gear, 100 Hz
-constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT->SYS brake pressure kPa, 50 Hz
+constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
+constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT→SYS brake pressure kPa, 50 Hz
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
 constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson), 1 Hz
-constexpr uint32_t kIdVcuSebReq         = 0x7B9;  // SYS->SEB brake cmd, 50 Hz (SYNTREE factory 0x7B9)
-constexpr uint32_t kIdSebStatus         = 0x721;  // SEB→SYS brake feedback, 100 Hz
 constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
 constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 2 Hz
 
-// ───────────────────────────────────────────────────────────────────
-// High-level CAN ID assignments
-// ───────────────────────────────────────────────────────────────────
+// ── High-level bus (our IDs) ──────────────────────────────────────
 
 constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Jetson, 10 Hz
 constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Jetson, reserved (future PID)
@@ -41,16 +37,32 @@ constexpr uint32_t kIdHostObstacleDist  = 0x400;  // Jetson→RT, 10 Hz
 constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Jetson alive counter, 2 Hz
 constexpr uint32_t kIdJetsonHeartbeat   = 0x7FC;  // Jetson→RT alive counter, 2 Hz
 
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  SYNTREE CAN IDs — factory-programmed, CANNOT be changed          ║
+// ║  Steering: EPS-C.  Brake: SEB.  Source: docs/by-wire-*.csv       ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
+// ── SYNTREE EPS-C (steering) ──────────────────────────────────────
+
+constexpr uint32_t kIdSyntreeEpsCmd      = 0x169;  // RT→EPS-C: VCU_SES_Req, 50 Hz (factory default)
+constexpr uint32_t kIdSyntreeEpsStatus   = 0x201;  // EPS-C→RT: SES_Status, 100 Hz (factory default)
+constexpr uint32_t kIdSyntreeEpsErrInfo  = 0x202;  // EPS-C→RT: SES_ErrInfo, 100 ms (factory default)
+constexpr uint32_t kIdSyntreeEpsVersion  = 0x203;  // EPS-C→RT: SES_Version, 1000 ms (factory default)
+
+// ── SYNTREE SEB (brake) ───────────────────────────────────────────
+
+constexpr uint32_t kIdSyntreeSebCmd      = 0x7B9;  // SYS→SEB: VCU_SEB_Req, 50 Hz (factory default)
+constexpr uint32_t kIdSyntreeSebStatus   = 0x721;  // SEB→SYS: SEB_Status, 100 Hz (factory default)
+constexpr uint32_t kIdSyntreeSebErrInfo  = 0x731;  // SEB→SYS: SEB_ErrInfo, 100 ms (factory default)
+
 // ───────────────────────────────────────────────────────────────────
 // Aliases — codebase migration compatibility.
 // Preferred names are the canonical ones; aliases let existing code
 // compile until it is updated to use the canonical identifiers.
 // ───────────────────────────────────────────────────────────────────
 
-constexpr auto kIdHostBrakeRequest  = kIdHostBrakeReq;   // → canonical
-constexpr auto kIdHeartbeat         = kIdRtHeartbeatLow;  // → canonical
-constexpr auto kIdSyntreeEpsStatus  = kIdSesStatus;       // → canonical
-constexpr auto kIdSyntreeSebStatus  = kIdSebStatus;       // → canonical
+constexpr auto kIdHostBrakeRequest  = kIdHostBrakeReq;
+constexpr auto kIdHeartbeat         = kIdRtHeartbeatLow;
 
 // Single ESTOP ID — every node sends 0x001.
 // Code that distinguishes sender can use these for clarity.
@@ -114,7 +126,7 @@ inline const char* mode_name(Mode m) {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// Low-level CAN payload types
+// ══ OUR payload structs (we control these) ══
 // ───────────────────────────────────────────────────────────────────
 
 // 0x011 SYS_SAFETY_STS — SYS→RT (→Jetson)
@@ -154,6 +166,8 @@ struct SysThrottleSts {
     }
 };
 
+// ══ SYNTREE payload structs (factory-fixed, cannot change) ══
+
 // 0x169 VCU_SES_REQ — RT→EPS-C (SYNTREE  // CSV spec, Motorola LSB)
 struct VcuSesReq {
     uint8_t  align_enable    : 1;   // Byte0,b0
@@ -175,7 +189,7 @@ struct VcuSesReq {
 
     void to_frame(Frame& f) const {
         uint8_t raw[8]; pack(raw);
-        f.id = kIdVcuSesReq; f.dlc = 8;
+        f.id = kIdSyntreeEpsCmd; f.dlc = 8;
         for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
     }
 };
@@ -255,7 +269,7 @@ struct VcuSebReq {
 
     void to_frame(Frame& f) const {
         uint8_t raw[8]; pack(raw);
-        f.id = kIdVcuSebReq; f.dlc = 8;
+        f.id = kIdSyntreeSebCmd; f.dlc = 8;
         for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
     }
 };

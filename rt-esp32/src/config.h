@@ -82,14 +82,14 @@ constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLi
 // Low bus — RT sends
 constexpr uint32_t kIdRtDriveCmd     = 0x204;
 constexpr uint32_t kIdRtBrakeCmd     = 0x205;
-constexpr uint32_t kIdVcuSesReq      = 0x200;
+constexpr uint32_t kIdSyntreeEpsCmd      = 0x169;
 // Low bus — RT receives
 constexpr uint32_t kIdSysSafetySts   = 0x011;
 constexpr uint32_t kIdSysModeCmd     = 0x110;
 constexpr uint32_t kIdSysThrottleSts = 0x120;
 constexpr uint32_t kIdSysDiagRpt     = 0x600;
 constexpr uint32_t kIdSysHeartbeat   = 0x7FE;
-constexpr uint32_t kIdSesStatus      = 0x201;
+constexpr uint32_t kIdSyntreeEpsStatus      = 0x201;
 // High bus — RT sends
 constexpr uint32_t kIdRtStateRpt     = 0x210;
 constexpr uint32_t kIdRtPidRpt       = 0x220;   // reserved (future PID)
