@@ -132,7 +132,7 @@ RT receives a command on one bus, processes it internally, and transmits a **dif
 | Inbound (consumed) | Bus | Processing | Outbound (generated) | Bus |
 |--------------------|-----|-----------|----------------------|-----|
 | `0x300` HOST_DRIVE_CMD | High | Kinematics  → `ResolvedSetpoint` | `0x204` RT_DRIVE_CMD + `0x169` VCU_SES_REQ | Low |
-| `0x301` HOST_BRAKE_REQ | High | Max-select arbitration → `0x205 RT_BRAKE_CMD` | `0x205` RT_BRAKE_CMD | Low |
+| `0x301` HOST_BRAKE_REQ | High | Max-select arbitration → `0x7B9` VCU_SEB_REQ (AUTO) | `0x7B9` (RT→SEB, AUTO only) | Low |
 
 #### Category 3: Bus-local (never forwarded, never regenerated)
 
@@ -253,7 +253,8 @@ SYS ────► Low CAN 0x7B9 → SEB (50 Hz continuous: stroke or pressure 
 7. **Actuators are standalone CAN modules.** EPS-C, SEB, and DC-DC are commanded via CAN.
 8. **RT is the only dual-bus node.** No direct Jetson ↔ SYS path.
 9. **Listen Before Speaking.** SYNTREE units require receiving status feedback before any command is sent. Boot state machines enforce this.
-10. **EGAS 3-level safety separation for motor actuation.** The motor controller takes raw analog signals (0–5V throttle, 72V gear) with no internal intelligence. This is the only actuator without built-in CAN monitoring. Per ISO 26262, it is isolated on a dedicated STM32 (MTR) with three independent safety levels:
+10. **EGAS 3-level safety separation for motor actuation.** The motor controller takes raw analog signals (0–5V throttle, 72V gear) with no internal intelligence. This is the only actuator without built-in CAN monitoring. Per ISO 26262, it is isolated on a dedicated STM32 (MTR) with three independent safety levels.
+11. **Mode-gated dual control of SYNTREE actuators (Option D).** In AUTO, RT commands both EPS-C and SEB directly — 1-hop from the kinematics engine. In MANUAL, SYS commands SEB based on lever position; EPS-C runs standalone. The `0x7B9` SEB command is dual-sender but mode-gated — only one node transmits at a time, no collision. Per ISO 26262-5:2018 §7.4.4, this is redundant-controller practice. No single MCU failure can take both actuators offline.
 
 ---
 
@@ -285,6 +286,40 @@ Level 1: Function Controller — MTR STM32
 | **Diverse monitoring** | SYS compares commanded speed vs actual from 0x206 — mismatch → ESTOP |
 | **Why only motor needed MTR** | SYNTREE EPS-C and SEB already do EGAS Level 1 internally (CAN, PID, angle sensor, fault detection). Motor controller is a dumb analog device — it has no intelligence, no CAN, no internal monitoring. That gap is filled by the dedicated MTR board. |
 | **Body control is QM** | Lights, indicators, DCDC, mode bulbs on SYS are non-safety — safe to share MCU with Level 2 monitoring per ISO 26262 QM classification |
+
+### 6.2 Mode-Gated Dual Control (Option D) — SYNTREE Actuators
+
+The EPS-C and SEB are commanded by different nodes depending on mode. Four options were evaluated (see §6.3). Option D was selected:
+
+**Why Option D over A (distributed fixed):** In AUTO, RT computes steering angle AND brake pressure from the same kinematics model. Option D sends both from RT — a single control tick produces both CAN frames. No cross-node sync needed for obstacle response. In A, brake required RT→0x205→SYS→0x7B9 (3 hops); in D it's RT→0x7B9 (1 hop).
+
+**Why Option D over C (SYS owns both):** C makes SYS a single point of failure for both actuators. D preserves independent failure modes — RT failure loses AUTO steering/brake but SYS can still brake in MANUAL; SYS failure loses MANUAL brake but RT can still brake in AUTO. The EPS-C's internal timeout (20ms comm loss → lock) and SEB's internal timeout provide hardware backup regardless.
+
+**Why not B (private CAN):** Adds hardware cost (MCP2515 + transceiver + bus wiring) and SYS bridging latency without safety improvement. The shared low-level CAN with SYNTREE's own rolling counter + checksum validation already prevents accidental actuation.
+
+| Property | RT (AUTO) | SYS (MANUAL/ESTOP) |
+|----------|-----------|---------------------|
+| EPS-C (0x169) | Sends angle from kinematics | Does NOT send — EPS-C standalone |
+| SEB (0x7B9) | Sends arbitrated brake kPa→pressure | Sends lever stroke / ESTOP max |
+| 0x201 (EPS-C status) | Monitors angle for following error | Does not monitor |
+| 0x721 (SEB status) | Does not monitor | Monitors stroke for boot sync |
+| Mode switch | Receives 0x110 from SYS | Sends 0x110 on change |
+
+> **Dual-sender exception**: `0x7B9` has two senders on the low-level bus. But only one is active at a time — mode-gated. In AUTO, RT sends continuously at 50 Hz and SYS is silent. In MANUAL/ESTOP, SYS sends and RT is silent. No simultaneous transmission in normal operation. The SEB accepts whichever frame has a valid checksum and rolling counter. This is standard automotive redundant-controller practice (ISO 26262-5:2018 §7.4.4).
+
+### 6.3 Options Comparison (Archived)
+
+| Criterion | A (distributed) | B (private CAN) | C (SYS only) | **D (mode-gated)** |
+|-----------|----|-----|----|-----|
+| Single point takes both actuators? | No | Yes | Yes | **No** |
+| AUTO brake latency | ~30ms | ~40ms | ~20ms | **~20ms** |
+| AUTO steer latency | ~20ms | ~30ms | ~30ms | **~20ms** |
+| SYS failure → brake lost? | Yes | Yes | Yes | **No (RT takes over)** |
+| RT failure → steer lost? | Yes | Same | No (SYS bridges) | Yes (EPS-C timeout backup) |
+| Code complexity (1-5) | 3 | 4 | 4 | **3** |
+| Hardware cost (1-5) | 4 | 2 | 4 | **4** |
+| Safety score (1-5) | 4 | 2 | 2 | **5** |
+| **Total (higher=better)** | 23 | 13 | 15 | **26** |
 
 ---
 
