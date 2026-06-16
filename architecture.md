@@ -1,8 +1,8 @@
 # E-Trike System Architecture
 
-Three-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering & CAN gateway), **SYS ESP32-S3** (safety, motor actuation & body control).
+Four-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (motor actuation).
 
-Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and bridges selected messages. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake).
+Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and bridges selected messages. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). Motor control is on a dedicated STM32 board for safety isolation — ESTOP wired direct, no CAN dependency for motor kill.
 
 ---
 
@@ -77,11 +77,12 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
 | `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC converter | 1 | u8 enable | Change | V.High |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A) | Change | High |
-| `0x120` | SYS_THROTTLE_STS | SYS | RT (→ Jetson) | 2 | i16 speed_mmps | 100 Hz | Medium |
+| `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson), SYS | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
-| `0x204` | RT_DRIVE_CMD | RT | SYS | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
+| `0x204` | RT_DRIVE_CMD | RT | **MTR (STM32)** | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
 | `0x205` | RT_BRAKE_CMD | RT | SYS | 4 | i32 brake_pressure_kpa | 50 Hz | Medium |
+| `0x206` | MTR_MOTOR_FBK | MTR | SYS, RT | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | u8 lights bitfield | Change | Medium |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→ Jetson) | 8 | diag struct | 1 Hz | Lowest |
 | `0x7B9` | VCU_SEB_REQ | SYS | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Medium |
