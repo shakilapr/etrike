@@ -1,8 +1,8 @@
 # E-Trike System Architecture
 
-Four-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (motor actuation).
+Four-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering, brake & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (motor actuation).
 
-Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and bridges selected messages. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept — ESTOP wired direct, no CAN dependency for motor kill. Only actuator requiring this separation: the motor controller takes raw analog signals with no internal intelligence (unlike SYNTREE units which have built-in CAN monitoring).
+Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. This ensures no single MCU failure takes both actuators, and AUTO-mode brake+steer are 1-hop from the kinematics engine. Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
 
 ---
 
@@ -81,11 +81,10 @@ Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and brid
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
 | `0x204` | RT_DRIVE_CMD | RT | **MTR (STM32)** | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
-| `0x205` | RT_BRAKE_CMD | RT | SYS | 4 | i32 brake_pressure_kpa | 50 Hz | Medium |
 | `0x206` | MTR_MOTOR_FBK | MTR | SYS, RT | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | u8 lights bitfield | Change | Medium |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→ Jetson) | 8 | diag struct | 1 Hz | Lowest |
-| `0x7B9` | VCU_SEB_REQ | SYS | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Medium |
+| `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Medium |
 | `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status feedback | 100 Hz | Medium |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
@@ -439,7 +438,7 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 
 | Parameter | Value |
 |-----------|-------|
-| Command ID | `0x169` (factory default — SYNTREE preprogrammed, not reconfigurable) |
+| Command ID | `0x169` (factory default — SYNTREE preprogrammed, not reconfigurable. `0x7B9` is sent by RT in AUTO, SYS in MANUAL/ESTOP — one sender active at a time, no collision. `0x205` removed (RT now sends SEB directly)) |
 | Rate | 50 Hz (20 ms period) — continuous transmission required |
 | Control mode | 1 = Angle Mode |
 | Angle range | ±780 raw (±78.0°, unit limit; software clamp tighter) |
