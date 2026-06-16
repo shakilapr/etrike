@@ -53,7 +53,7 @@ static void test_can_id_prefixes() {
     CHECK("estop is lowest ID");
     bool ok = (rt::kIdSafetyEstop < rt::kIdSysSafetySts)
            && (rt::kIdSysSafetySts < rt::kIdSysModeCmd)
-           && (rt::kIdVcuSesReq < rt::kIdSysDiagRpt);
+           && (rt::kIdSyntreeEpsCmd < rt::kIdSysDiagRpt);
     if (ok) OK; else BAD("priority order");
 }
 

@@ -25,7 +25,7 @@ Each phase delivers compilable code with a runnable test. Phases are ordered by 
 | R1.2 | `HostBrakeReq` — code uses `HostBrakeRequest` | Add `using HostBrakeRequest = HostBrakeReq;` alias |
 | R1.3 | `RtObstacleRpt` — code uses `RtObstacleDist` | Add `using RtObstacleDist = RtObstacleRpt;` alias |
 | R1.4 | `SysDiagRpt` — code uses `SysDiag` | Add `using SysDiag = SysDiagRpt;` alias |
-| R1.5 | `kIdSesStatus`, `kIdSebStatus` — code uses `kIdSyntreeEpsStatus`, `kIdSyntreeSebStatus` | Add aliases |
+| R1.5 | `kIdSyntreeEpsStatus`, `kIdSyntreeSebStatus` — code uses `kIdSyntreeEpsStatus`, `kIdSyntreeSebStatus` | Add aliases |
 | R1.6 | No heartbeat ID constant — code uses `kIdHeartbeat` | Add `constexpr uint32_t kIdHeartbeat = 0x7FD;` alias |
 | R1.7 | `0x300 HostDriveCmd` missing gear field (architecture gap #2 resolved) | Add `uint8_t gear = 0;` field at byte 7 (repack DLC stays 8, yaw becomes i24 in bytes 4-6) |
 | R1.8 | No ESTOP sub-IDs (`kIdSysEstop`, `kIdRtEstop`, `kIdHostEstop`) — code in `can_rx_router.h` uses them | Add `constexpr` aliases all pointing to `kIdSafetyEstop` |
