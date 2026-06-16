@@ -22,19 +22,7 @@ constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
 constexpr uint32_t kIdSysThrottleSts    = 0x120;  // SYS→RT (→Jetson), 100 Hz
 constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
 constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT→SYS brake pressure kPa, 50 Hz
-// 0x206 MTR_MOTOR_FBK — MTR(STM32)→SYS+RT
-struct MtrMotorFbk {
-    int16_t actual_speed_mmps = 0;
-    uint8_t gear_state        = 0;   // Gear enum
-    uint8_t fault_flags       = 0;   // bit0=overcurrent, bit1=overtemp, bit2=ESTOP_active
-
-    void to_frame(Frame& f) const {
-        f.id = kIdMtrMotorFbk; f.dlc = 4;
-        f.put_i16(0, actual_speed_mmps);
-        f.put_u8(2, gear_state);
-        f.put_u8(3, fault_flags);
-    }
-};
+constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)->SYS+RT motor feedback, 50 Hz
 
 constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)->SYS+RT motor feedback, 50 Hz
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
@@ -225,6 +213,31 @@ struct RtDriveCmd {
 };
 
 // 0x205 RT_BRAKE_CMD — RT→SYS
+n// 0x206 MTR_MOTOR_FBK — MTR(STM32)→SYS+RT
+struct MtrMotorFbk {
+    int16_t actual_speed_mmps = 0;
+    uint8_t gear_state        = 0;
+    uint8_t fault_flags       = 0;
+
+// 0x206 MTR_MOTOR_FBK — MTR(STM32)→SYS+RT
+struct MtrMotorFbk {
+    int16_t actual_speed_mmps = 0;
+    uint8_t gear_state        = 0;
+    uint8_t fault_flags       = 0;
+    void to_frame(Frame& f) const {
+        f.id = kIdMtrMotorFbk; f.dlc = 4;
+        f.put_i16(0, actual_speed_mmps);
+        f.put_u8(2, gear_state);
+        f.put_u8(3, fault_flags);
+    }
+};
+    void to_frame(Frame& f) const {
+        f.id = kIdMtrMotorFbk; f.dlc = 4;
+        f.put_i16(0, actual_speed_mmps);
+        f.put_u8(2, gear_state);
+        f.put_u8(3, fault_flags);
+    }
+};
 struct RtBrakeCmd {
     int32_t brake_pressure_kpa = 0;  // 0 = release
 
