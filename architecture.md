@@ -2,7 +2,7 @@
 
 Four-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (motor actuation).
 
-Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and bridges selected messages. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). Motor control is on a dedicated STM32 board for safety isolation — ESTOP wired direct, no CAN dependency for motor kill.
+Two physical CAN buses at 500 kbit/s. RT is the only node on both buses and bridges selected messages. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept — ESTOP wired direct, no CAN dependency for motor kill. Only actuator requiring this separation: the motor controller takes raw analog signals with no internal intelligence (unlike SYNTREE units which have built-in CAN monitoring).
 
 ---
 
@@ -183,8 +183,8 @@ These messages serve only nodes on a single bus. RT neither forwards nor transla
 ### 4.1 Manual mode
 
 ```
-Throttle grip (0–5V) ──► SYS ADC ──► SYS MCP4725 (0–5V) ──► Motor controller
-Gear selector (72V)  ──► TLP281 opto → SYS GPIO ──► relay module → 72V → ECU
+Throttle grip (0–5V) ──► MTR ADC ──► MTR MCP4725 (0–5V) ──► Motor controller
+Gear selector (72V)  ──► TLP281 opto → MTR GPIO ──► relay module → 72V → ECU
 Brake lever           ──► SYS GPIO ──► CAN 0x7B9 → SEB (stroke=MAX if pressed)
 Steering wheel        ──► EPS-C standalone (RT idle, monitors 0x201)
 Signal lights         ──► Turn: handlebar switches (GPIO3/6). Head: toggle (GPIO7). Brake: OR logic → GPIO21
@@ -213,32 +213,33 @@ SYS ────► Low CAN 0x7B9 → SEB (50 Hz continuous: stroke or pressure 
 
 ## 5. Responsibility split
 
-| Concern | Jetson | RT | SYS |
-|---------|--------|-----|-----|
-| Perception / planning | ✓ | | |
-| ROS 2 → CAN bridge | ✓ | | |
-| CAN gateway (low ↔ high) | | ✓ | |
-| Tricycle kinematics | | ✓ | |
-| Steering angle compute + CAN TX (`0x169`) | | ✓ | |
-| Steering boot sync (Listen-Before-Speaking) | | ✓ | |
-| Steering safety: dynamic angle clamp, hard-stops, following error | | ✓ | |
-| Obstacle speed limit | | ✓ | |
-| Command staleness watchdog | | ✓ | |
-| E-stop GPIO + button | | | ✓ |
-| Brake lever → CAN (`0x7B9`, 50 Hz continuous) | | | ✓ |
-| Brake boot sync (Listen-Before-Speaking) | | | ✓ |
-| Brake rolling counter + checksum | | | ✓ |
-| DC-DC converter CAN control (`0x012`) | | | ✓ |
-| Heartbeat monitoring | | ✓ (Jetson high + SYS low) | ✓ (RT, low) |
-| Mode switch reading | | | ✓ (push button, GPIO11) |
-| Throttle ADC read (0–5V) | | | ✓ |
-| Throttle MCP4725 DAC output (0–5V) | | | ✓ |
-| Gear 72V read (TLP281 opto) | | | ✓ |
-| Gear 72V output (relay module) | | | ✓ |
-| 12V accessory power relay | | | ✓ |
-| Mode indicator lights | | | ✓ |
-| Signal lights (turn, brake, head) | | | ✓ |
-| System diagnostics | | | ✓ |
+| Concern | Jetson | RT | SYS | MTR |
+|---------|--------|-----|-----|-----|
+| Perception / planning | ✓ | | | |
+| ROS 2 → CAN bridge | ✓ | | | |
+| CAN gateway (low ↔ high) | | ✓ | | |
+| Tricycle kinematics | | ✓ | | |
+| Steering angle compute + CAN TX (`0x169`) | | ✓ | | |
+| Steering boot sync (Listen-Before-Speaking) | | ✓ | | |
+| Steering safety: dynamic angle clamp, hard-stops, following error | | ✓ | | |
+| Obstacle speed limit | | ✓ | | |
+| Command staleness watchdog | | ✓ | | |
+| E-stop GPIO + button (wired to both) | | | ✓ | ✓ |
+| Brake lever → CAN (`0x7B9`, 50 Hz continuous) | | | ✓ | |
+| Brake boot sync (Listen-Before-Speaking) | | | ✓ | |
+| Brake rolling counter + checksum | | | ✓ | |
+| DC-DC converter CAN control (`0x012`) | | | ✓ | |
+| Heartbeat monitoring | | ✓ (Jetson high + SYS low) | ✓ (RT, low) | |
+| Mode switch reading | | | ✓ | |
+| Throttle ADC read (0–5V) | | | | ✓ |
+| Throttle MCP4725 DAC output (0–5V) | | | | ✓ |
+| Gear 72V read (TLP281 opto) | | | | ✓ |
+| Gear 72V output (relay module) | | | | ✓ |
+| Motor feedback CAN TX (`0x206`) | | | | ✓ |
+| 12V accessory power relay | | | ✓ | |
+| Mode indicator lights | | | ✓ | |
+| Signal lights (turn, brake, head) | | | ✓ | |
+| System diagnostics | | | ✓ | |
 
 ---
 
@@ -253,6 +254,38 @@ SYS ────► Low CAN 0x7B9 → SEB (50 Hz continuous: stroke or pressure 
 7. **Actuators are standalone CAN modules.** EPS-C, SEB, and DC-DC are commanded via CAN.
 8. **RT is the only dual-bus node.** No direct Jetson ↔ SYS path.
 9. **Listen Before Speaking.** SYNTREE units require receiving status feedback before any command is sent. Boot state machines enforce this.
+10. **EGAS 3-level safety separation for motor actuation.** The motor controller takes raw analog signals (0–5V throttle, 72V gear) with no internal intelligence. This is the only actuator without built-in CAN monitoring. Per ISO 26262, it is isolated on a dedicated STM32 (MTR) with three independent safety levels:
+
+---
+
+### 6.1 EGAS 3-Level Motor Safety Architecture
+
+The separation of **MTR (STM32)** from **SYS (ESP32-S3)** follows the EGAS 3-level electronic throttle monitoring concept (ISO 26262 ASIL-C):
+
+```
+Level 3: Hardware — ESTOP button wired direct to both MTR and SYS
+         TPS3850 external watchdog on each MCU. No software, no CAN.
+         ESTOP press → MTR cuts throttle + gear instantly (local).
+         
+Level 2: Function Monitor — SYS ESP32-S3
+         Monitors MTR via CAN: compares 0x204 setpoint vs 0x206 feedback.
+         Mismatch > threshold → CAN 0x001 ESTOP.
+         Also handles QM body functions (lights, DCDC, indicators).
+         
+Level 1: Function Controller — MTR STM32
+         Normal actuation: reads sensors, drives MCP4725 DAC + gear relays.
+         MANUAL: pass-through from grip/gear. AUTO: follows CAN 0x204.
+         No wireless, no OS, minimal attack surface.
+```
+
+| Principle | Implementation |
+|-----------|---------------|
+| **Freedom from interference** | Separate MCUs — a SYS crash/hang cannot block motor kill |
+| **ASIL decomposition** | MTR (QM level sensor reads) + SYS monitor (ASIL-B comparison) → combined ASIL-C |
+| **Independent safe state path** | ESTOP button wired to both MCUs — MTR cuts throttle locally, zero CAN delay |
+| **Diverse monitoring** | SYS compares commanded speed vs actual from 0x206 — mismatch → ESTOP |
+| **Why only motor needed MTR** | SYNTREE EPS-C and SEB already do EGAS Level 1 internally (CAN, PID, angle sensor, fault detection). Motor controller is a dumb analog device — it has no intelligence, no CAN, no internal monitoring. That gap is filled by the dedicated MTR board. |
+| **Body control is QM** | Lights, indicators, DCDC, mode bulbs on SYS are non-safety — safe to share MCU with Level 2 monitoring per ISO 26262 QM classification |
 
 ---
 
