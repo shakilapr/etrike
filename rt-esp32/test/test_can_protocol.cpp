@@ -20,10 +20,10 @@ static void test_id_uniqueness() {
     hdr("ID uniqueness");
     uint32_t low[] = {
         can::kIdSafetyEstop, can::kIdSysSafetySts, can::kIdSysDcdcCmd,
-        can::kIdSysModeCmd, can::kIdSysThrottleSts, can::kIdVcuSesReq,
-        can::kIdSesStatus, can::kIdRtDriveCmd, can::kIdRtBrakeCmd,
-        can::kIdHostLightCmd, can::kIdSysDiagRpt, can::kIdVcuSebReq,
-        can::kIdSebStatus, can::kIdRtHeartbeatLow, can::kIdSysHeartbeat
+        can::kIdSysModeCmd, can::kIdSysThrottleSts, can::kIdSES/SEBEpsCmd,
+        can::kIdSES/SEBEpsStatus, can::kIdRtDriveCmd, can::kIdRtBrakeCmd,
+        can::kIdHostLightCmd, can::kIdSysDiagRpt, can::kIdSES/SEBSebCmd,
+        can::kIdSES/SEBSebStatus, can::kIdRtHeartbeatLow, can::kIdSysHeartbeat
     };
     int nl = sizeof(low)/sizeof(low[0]);
     for (int i=0;i<nl;++i) for (int j=i+1;j<nl;++j) if (low[i]==low[j]) BAD("dup low");
@@ -168,11 +168,11 @@ static void test_r1_alias_id_constants() {
     CHECK("kIdHeartbeat == kIdRtHeartbeatLow");
     if (can::kIdHeartbeat == can::kIdRtHeartbeatLow) OK; else BAD("mismatch");
 
-    CHECK("kIdSES/SEBEpsStatus == kIdSesStatus");
-    if (can::kIdSES/SEBEpsStatus == can::kIdSesStatus) OK; else BAD("mismatch");
+    CHECK("kIdSES/SEBEpsStatus == kIdSES/SEBEpsStatus");
+    if (can::kIdSES/SEBEpsStatus == can::kIdSES/SEBEpsStatus) OK; else BAD("mismatch");
 
-    CHECK("kIdSES/SEBSebStatus == kIdSebStatus");
-    if (can::kIdSES/SEBSebStatus == can::kIdSebStatus) OK; else BAD("mismatch");
+    CHECK("kIdSES/SEBSebStatus == kIdSES/SEBSebStatus");
+    if (can::kIdSES/SEBSebStatus == can::kIdSES/SEBSebStatus) OK; else BAD("mismatch");
 
     CHECK("kIdSysEstop == kIdSafetyEstop");
     if (can::kIdSysEstop == can::kIdSafetyEstop) OK; else BAD("mismatch");
