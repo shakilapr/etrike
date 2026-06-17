@@ -173,7 +173,7 @@ These messages serve only nodes on a single bus. RT neither forwards nor transla
 |------|----------|
 | **MANUAL** | Rider steers / rides throttle. SYS reads throttle ADC + gear sense → pass-through via MCP4725 + relays. Brake lever → SYS GPIO → CAN `0x7B9` → SEB. EPS-C standalone (RT idle). DC-DC on. |
 | **AUTO** | Jetson `/cmd_vel` → high CAN `0x300` → RT kinematics  → low CAN `0x204` (SYS: speed+gear) + `0x169` (EPS-C: angle). SYS drives MCP4725 + gear relays. Lights from Jetson via `0x302` (RT fwd). Brake via `0x7B9`. |
-| **ESTOP** | MCP4725 = 0 V, all gear outputs OFF, `0x7B9` stroke=max (full brake), steering ramps to 0° at 20°/s via active `0x169` (unless obstacle-triggered → hold then silent-stop), DC-DC off (`0x012`), 12V relay OFF. Exit: **START button** → MANUAL, or power-cycle. |
+| **ESTOP** | MCP4725 = 0 V, all gear outputs OFF, `0x7B9` stroke=max (full brake), steering ramps to 0° at 20°/s via active `0x169` (unless obstacle-triggered → hold then silent-stop), DC-DC ON (`0x012 enable=1` — maintains 12V for MCUs, CAN transceivers, brake light), 12V accessory relay OFF (kills headlight, turn signals, mode bulbs). Brake light ON (powered from always-on DC-DC rail, not through accessory relay). Exit: **START button** or **MODE long-press (3s)** → MANUAL. Steering ramp completes before 0x169 handoff (brake/motor/lights transition immediately; steering defers until centered). Or power-cycle. |
 
 ---
 
@@ -448,7 +448,9 @@ STEER_ACTIVE:
   - Then follow Jetson targets with dynamic clamp
   - Monitor following error: if |cmd - actual| > threshold for > timeout → ESTOP
 	  - ESTOP behavior depends on trigger:
-	      Obstacle-triggered: hold current angle, then silent-stop after 500ms
+	      Obstacle-triggered: hold current angle (clamped to dynamic limit for speed),
+	        silent-stop after 500ms. If current angle exceeds dynamic limit, ramp to
+	        limit at 20°/s first, then hold. Prevents rollover during cornering + braking.
 	      Non-obstacle (heartbeat loss, cmd stale, manual button): ramp to 0° at 20°/s,
 	        continue transmitting 0x169 during ramp, then hold at 0°
 	  - If following error persists during ESTOP centering ramp (>5° for >1s):
@@ -499,7 +501,7 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 |------|------------------|
 | MANUAL | RT does NOT send `0x169`. EPS-C standalone. RT still listens `0x201` for telemetry. |
 | AUTO | RT sends `0x169` at 50 Hz with resolved angle, dynamic clamp + slew rate applied. |
-| ESTOP | Obstacle: hold current angle, silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active `0x169`. Fall back to silent-stop if following error persists >1s. |
+| ESTOP | Obstacle: hold current angle clamped to dynamic limit (ramp to limit if exceeding), silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active `0x169`. Fall back to silent-stop if following error persists >1s. Both paths non-interruptible by START button (steering transition defers until ramp/hold complete). |
 
 #### Speed control — open-loop today, PID-ready
 
@@ -616,8 +618,8 @@ constexpr unsigned kObstacleStopMM = 300, kObstacleClearMM = 3000;
 // Timing
 constexpr int kControlLoopHz = 100, kCmdStaleTimeoutMs = 500;
 constexpr int kHeartbeatIntervalMs = 500;
-constexpr int kHeartbeatTimeoutMsSys = 1000;     // SYS heartbeat loss (2 missed frames)
-constexpr int kHeartbeatTimeoutMsJetson = 1500;  // Jetson heartbeat loss (3 missed frames)
+constexpr int kHeartbeatTimeoutMsSys = 200;       // SYS heartbeat loss (2 missed at 10 Hz). RT takes over 0x7B9.
+constexpr int kHeartbeatTimeoutMsJetson = 1500;  // Jetson heartbeat loss (3 missed frames) → assisted stop
 constexpr int kHeartbeatIdRT = 0x7FD;            // RT heartbeat (both buses, per-bus)
 constexpr int kHeartbeatIdSys = 0x7FE;           // SYS heartbeat
 constexpr int kHeartbeatIdJetson = 0x7FC;        // Jetson heartbeat
@@ -709,8 +711,8 @@ enum class Gear : uint8_t { N = 0, D = 1, S = 2, R = 3 };
 enum class BrakeState : uint8_t {
     BRAKE_BOOT_WAIT,     // 500ms — do NOT transmit
     BRAKE_LISTEN_SYNC,   // Wait for 0x721 SEB_STATUS, read current stroke
-    BRAKE_ACTIVE,        // Transmit 0x7B9 at 50 Hz
-    BRAKE_FAULT
+    BRAKE_ACTIVE,        // Transmit 0x7B9 at 50 Hz, synced to SEB
+    BRAKE_DEGRADED       // LISTEN_SYNC timeout — transmit with lever defaults, no sync
 };
 
 struct ActuatorSetpoint {
@@ -766,12 +768,12 @@ Direction via gear lines — MCP4725 outputs 0–5V proportional to speed magnit
 
 #### DC-DC converter — CAN `0x012`
 
-| Condition | CAN `0x012` |
-|-----------|------------|
-| MANUAL or AUTO | `enable = 1` |
-| ESTOP | `enable = 0` |
+| Condition | CAN `0x012` | 12V accessory relay (GPIO27) |
+|-----------|------------|------------------------------|
+| MANUAL or AUTO | `enable = 1` | ON (all accessories powered) |
+| ESTOP | **`enable = 1`** (maintains 12V for MCUs, CAN transceivers, and brake light) | OFF (cuts headlight, turn signals, mode bulbs) |
 
-Sent on state change. The 12V accessory relay (GPIO27) is a secondary cut.
+Sent on state change. **DC-DC stays ON during ESTOP** — MCUs need 12V→3.3V to run, CAN transceivers need 5V, and the brake light must illuminate during ESTOP (fail-visible). The 12V accessory relay (GPIO27) provides the secondary cut for non-safety loads. The brake light is wired to the always-on DC-DC output, not through the accessory relay, so it remains powered during ESTOP.
 
 #### Signal lights
 
@@ -897,19 +899,19 @@ Jetson does NOT watch SYS — RT handles SYS failure (0x001 ESTOP)
 | Peer heartbeat ID | `0x7FE` (SYS) | — | `0x7FC` (Jetson) |
 | DLC | 1 | 1 | 1 |
 | Payload | `u8 alive_ctr` (0–255, wraps) | `u8 alive_ctr` | `u8 alive_ctr` |
-| Period | 500 ms (2 Hz) | 500 ms (2 Hz) | 500 ms (2 Hz) |
-| Timeout | **1000ms** (2 missed frames) | 1500ms (3 missed frames) | **1500ms** (3 missed frames) |
-| Action on loss | ESTOP (AUTO only) | Jetson: zero setpoints, controlled stop | RT: zero `0x204` + stop `0x169` |
+| Period | **100 ms (10 Hz)** | 500 ms (2 Hz) | 500 ms (2 Hz) |
+| Timeout | **200ms** (2 missed frames) | 1500ms (3 missed frames) | **1500ms** (3 missed frames) |
+| Action on loss | **RT takes over 0x7B9 (stroke=max) + CAN 0x001.** MTR kills motor/gear locally. Brake gap ≤220ms. | Jetson: **assisted stop** — zero 0x204 + stop 0x169 + 0x205 brake=2000 kPa + SYS→MANUAL. Rider can override. | RT: zero `0x204` + stop `0x169` |
 
-**Why 1000ms for inter-MCU (not 200ms):**
+**Why 200ms for SYS heartbeat (10 Hz):**
 
-The original 200ms value conflated heartbeat timeout with FTTI (Fault Tolerant Time Interval). FTTI is the *total* allowed time from fault to safe state, not the heartbeat parameter. The heartbeat is the slow detection path for compute-node crashes. The fast detection path for actuator faults is the steering following-error check (300ms → ESTOP) and `0x204` staleness (200ms, see below). The heartbeat catches failures those checks miss — frozen CAN controllers, partial CPU hangs — at a deliberately longer timescale to avoid false ESTOP from CAN jitter.
+SYS controls the SEB brake actuator — there is no independent fast-path check for brake command loss (unlike steering which has the 300ms following-error check, and motor which has the 200ms 0x204 staleness check). The heartbeat IS the brake fast-path check. At 25 km/h, 200ms is ~1.4m of travel — within FTTI for brake loss. At 10 Hz (100ms period), 2 missed frames = 200ms worst case. This is tight enough for brake safety while providing a 100ms debounce against CAN jitter.
 
-At 1000ms (2 missed frames at 2 Hz), worst-case detection is 1000ms after the last good frame. At 25 km/h this is ~7m of travel — acceptable for a compute-node failure detected by a backstop mechanism, given the fast-path checks catch actuator failures sooner.
+**RT brake takeover on SYS heartbeat loss:** Architecture §6.2 Option D explicitly requires RT to take over brake on SYS failure: "SYS failure → brake lost? No (RT takes over)." When RT detects SYS heartbeat loss, RT immediately begins transmitting 0x7B9 with stroke=max (full brake) at 50 Hz, regardless of current mode. RT already knows the full SYNTREE SEB protocol — this is the same transmission it performs in AUTO mode, with stroke=max substituted for the computed pressure target. The mode gate opens on emergency: both RT and SYS may briefly transmit 0x7B9 during the takeover transition, which is within the dual-sender exception documented in §6.2. Total brake gap: 200ms detection + 20ms first frame = 220ms worst case.
 
-**Jetson→RT at 1500ms:**
+**Jetson→RT at 1500ms — assisted stop:**
 
-Jetson is QM, not safety-critical. Its death triggers a controlled stop (zero setpoints), not ESTOP. Three missed frames protect against false triggers from Jetson's non-realtime Linux CAN stack.
+Jetson runs the perception stack (obstacle detection). When it dies, the vehicle must decelerate actively — pure coast is insufficient in traffic. Three missed frames at 2 Hz = 1500ms protects against false triggers from Jetson's non-realtime Linux CAN stack (a Linux machine that can't send a single CAN frame in 1.5s is genuinely dead). On timeout, RT commands: zero 0x204 speed, stop 0x169 steering, 0x205 brake = 2000 kPa (~2 MPa, moderate deceleration without wheel lockup), and transitions SYS to MANUAL mode. Brake light illuminates. Rider can override with lever. This is "assisted stop" — between pure coast and full ESTOP — providing active deceleration while preserving lights and rider agency.
 
 **SYS-side `0x204` staleness check (fast path):**
 
@@ -1001,8 +1003,15 @@ BRAKE_ACTIVE:
   - Rolling counter increments 0→15 every frame
   - Checksum = XOR(bytes 0–6) ^ 0xFF (verify against spec)
 
-BRAKE_FAULT:
-  - Stop transmitting
+BRAKE_DEGRADED:
+  - Entered when LISTEN_SYNC times out (no 0x721 within 2s)
+  - Transmit 0x7B9 at 50 Hz with conservative defaults:
+      Lever pressed (GPIO2 LOW) → stroke = kBrakeManualStroke (~15 mm)
+      Lever released → stroke = 0 mm
+  - Rolling counter still increments, checksum still computed
+  - When first valid 0x721 arrives: sync current stroke, → BRAKE_ACTIVE
+  - Diagnostic flag set in 0x600 SYS_DIAG_RPT
+  - Brake lever remains functional — this is not a terminal fault state
 ```
 
 **SYNTREE SEB protocol:**
@@ -1150,8 +1159,8 @@ constexpr int kDebounceMs = 500;         // push button debounce period
 constexpr int kTurnBlinkOnMs = 500, kTurnBlinkOffMs = 500;
 // Timing
 constexpr int kControlLoopHz = 100;
-constexpr int kHeartbeatIntervalMs = 500;
-constexpr int kHeartbeatTimeoutMs = 1000;      // RT heartbeat loss (2 missed frames at 2 Hz)
+constexpr int kHeartbeatIntervalMs = 100;       // 10 Hz SYS heartbeat (fast path for brake loss detection)
+constexpr int kHeartbeatTimeoutMs = 200;        // RT heartbeat loss (2 missed frames at 10 Hz). Brake FTTI-bound: 1.4m at 25 km/h.
 constexpr int kHeartbeatIdRT = 0x7FD;          // RT heartbeat (monitored by SYS)
 constexpr int kHeartbeatIdSys = 0x7FE;         // SYS heartbeat (sent to RT)
 constexpr int kSetpointStaleMs = 200;           // 0x204 staleness → zero speed
@@ -1181,8 +1190,12 @@ constexpr int kBrakeCmdId = 0x7B9;
 | ADC fail | `adc1_get_raw()==0` | Throttle = 0 |
 | Gear sense conflict | Multiple lines HIGH | Treat as N (fail-safe) |
 | DCDC CAN TX fail | TWAI TX errors | 12V relay backup cut |
-| SEB sync timeout | No `0x721` within 2s of boot | `BRAKE_FAULT`, lever inop |
+| SEB sync timeout | No `0x721` within 2s of boot | `BRAKE_DEGRADED` — transmits 0x7B9 with lever-based defaults (0mm released, 15mm pressed). Recovers when 0x721 arrives. Lever always functional. |
 | SEB checksum fail | SEB rejects frame | Frame dropped; counter still increments |
+| SEB stroke following error | abs(0x7B9 cmd − 0x721 actual) > 3mm for >100ms | Log brake fault to 0x600 diag. Set persistent fault flag. Cannot escalate (ESTOP is already max brake) but critical for post-incident analysis. |
+| SEB Level 3 fault | `SEB_Error_Status ≥ 3` in 0x721 or 0x731 | Log SEB severe fault to 0x600 diag. Alert rider via brake light flash pattern (if 12V available). |
+| 0x721 staleness | No 0x721 for >100ms (10 missed at 100 Hz) | SEB comms lost — log fault. If sustained, treat as brake system offline. |
+| MTR ESTOP ACK timeout | `ESTOP_ACTIVE` bit not set in 0x206 fault_flags within 100ms of ESTOP | Log MTR failure to acknowledge. If 0x206 also stale, MTR comms lost. |
 | External WDT timeout | TPS3850 MR pin | MCU hardware reset → all outputs safe state |
 | Queue full | `xQueueSend` fail | Frame dropped |
 
@@ -1271,6 +1284,20 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 | 3 | ~~EPS-C timeout-fault behavior unknown~~ | ~~On ESTOP or comm loss, steering may lock, center, or freewheel~~ | **RESOLVED:** Two-tier ESTOP steering (§7.6). Active-zero centering for non-obstacle ESTOP with silent-stop fallback on mechanical jam. Obstacle-triggered ESTOP holds current angle. EPS-C timeout-fault is now a last-resort fallback (CAN bus dead), not the primary ESTOP mechanism. |
 | 4 | ~~SEB pressure control mode not defined~~ | ~~SYS currently uses stroke mode only~~ | **RESOLVED:** Verified SYNTREE SEB spec: `VCU_SEB_Pre_Value_Req` is u8 at bit 32, scale 0.05 MPa/bit, range 0–5 MPa (raw 0–100). Conversion: `seb_raw = kPa × 0.02`. Clamp to 100. |
 | 5 | Speed control open-loop — PID exists but encoder not fitted | `speed_pid.cpp` is correct but runs with `measured=0` (encoder not physically installed). PID must NOT be in the active control path until GPIO1/2 PCNT is wired. Currently runs as shadow controller → `0x220` telemetry for validation. | 1) Fit rear motor encoder to GPIO1/2. 2) Verify encoder pulses on PCNT. 3) Enable `pid_update(desired, measured, dt)` with real data. 4) Route PID effort trim to SYS via new field in `0x204` or dedicated ID. 5) Validate closed-loop response against open-loop baseline. |
+| 6 | **ESTOP exit race condition — START button during steering ramp** | Pressing START before non-obstacle centering ramp completes stops 0x169 mid-ramp, leaving EPS-C to comm-fault at an off-center angle. A 30° steering lock in MANUAL mode (where EPS-C is standalone with no active centering) makes the vehicle unrideable. | **Software fix:** RT defers ESTOP→MANUAL steering transition until ramp completes. Brake/motor/lights transition immediately. No new CAN messages needed. See `docs/emergency-safety-analysis.md` §1. |
+| 7 | **SEB BRAKE_FAULT makes physical brake lever inoperative** | Original BRAKE_FAULT state permanently stops 0x7B9 transmission on boot sync timeout. Since SEB is by-wire (electro-hydraulic, no mechanical linkage), this disables the brake lever — contradicting the claim "brake lever always works." | **Software fix:** Replaced BRAKE_FAULT with BRAKE_DEGRADED (§8.6). On sync timeout, transmit 0x7B9 with lever-based defaults (0mm/15mm) without waiting for sync. Recovers when 0x721 arrives. Lever always functional. See `docs/emergency-safety-analysis.md` §2. |
+| 8 | **Watchdog reset unbraked window — SEB comm-fault behavior unverified** | When SYS watchdog resets, SEB enters comm-fault after 20ms. If SEB releases on timeout, the vehicle coasts without brake for ~2.5s (SYS reboot + brake LBS). If SEB holds, the window is only 20ms. Behavior is empirically unverified. | **Test SEB comm-fault behavior** (stroke=27mm, stop CAN, measure pressure over 5s). If release: add NC brake-hold relay gated by TPS3850 RST line. If hold: document as verified safety property. **Also mitigated by gap #11 — RT brake takeover closes most of the window.** See `docs/emergency-safety-analysis.md` §3. |
+| 9 | **Obstacle ESTOP "hold angle" can cause rollover during cornering** | Obstacle-triggered ESTOP holds current steering angle regardless of vehicle speed. A cornering vehicle under hard braking experiences lateral load transfer that the dynamic angle clamp was designed to prevent — but the clamp is only applied to commanded angles, not to the ESTOP hold angle. Physics model §8 defines the rollover threshold: a_y = v²/L·tan(δ) > g·w/(2h). | **Software fix:** During obstacle-triggered ESTOP, clamp the hold angle to the dynamic angle clamp limit for the current speed. If current angle exceeds the limit, ramp down to the limit at 20°/s. Straight-line cases unchanged. See `docs/emergency-safety-analysis.md` §4. |
+| 10 | **Jetson heartbeat loss → pure coast is insufficient for perception failure** | Jetson runs obstacle detection. When it dies, the vehicle coasts with no active brake, no perception, and no steering. At 25 km/h, >50m coast-to-stop. The rider must recognize the failure and manually brake. The heartbeat timeout (1500ms) is long enough that false positives from Linux CAN jitter are unlikely. | **Software fix:** On Jetson heartbeat loss, RT commands 0x205 = 2000 kPa (~2 MPa moderate brake) + transitions SYS to MANUAL. Brake light ON. Rider can override with lever. DC-DC stays on (lights work). This is "assisted stop" — between coast and full ESTOP. See `docs/emergency-safety-analysis.md` §5. |
+| 11 | **No secondary ESTOP exit path — START button is a single point of failure** | GPIO32 is the only ESTOP exit. Stuck HIGH (broken wire) = can never exit ESTOP. The only backup is power-cycle, which restarts all nodes and requires brake/steering LBS at roadside. | **Software fix:** MODE button (GPIO11) long-press (3s) exits ESTOP → MANUAL as secondary path. Two independent GPIOs on separate physical buttons. Add START button health monitoring in diag_task. See `docs/emergency-safety-analysis.md` §6. |
+| 12 | **SYS crash — 1000ms brake gap before RT responds, and RT doesn't take over 0x7B9** | Architecture §6.2 Option D explicitly claims "SYS failure → brake lost? No (RT takes over)." But RT only broadcasts CAN 0x001 on SYS heartbeat loss — which SEB ignores (it only responds to 0x7B9). The 1000ms heartbeat timeout creates a ~980ms brake gap. The heartbeat justification (1000ms acceptable because fast-path checks cover actuators) omits the brake — there is no fast-path check for SEB command loss. | **Software fix:** (1) Increase SYS heartbeat rate from 2 Hz to 10 Hz; RT timeout shortened to 200ms (2 missed frames at 100ms period). (2) On SYS heartbeat loss, RT immediately takes over 0x7B9 transmission with stroke=max, regardless of current mode (mode-gate opens on emergency). Brake gap: 220ms worst case. **Also mitigates gap #8** by reducing watchdog brake window from ~2.5s to ~220ms. See `docs/emergency-safety-analysis.md` §7. |
+| 13 | **No independent brake monitor — ESTOP could silently have no brakes** | All 8 safety layers protect motor+steering; none verify SEB actually applied braking force. If SEB's CAN receiver is faulted, ESTOP `0x7B9 stroke=max` is never received and the system never knows. SEB_STATUS (`0x721`, 100 Hz) already provides SEB_Stroke_Value, SEB_Pressure_Value, and SEB_Error_Status (Level 3 = severe/shutdown). This is sufficient for a brake following-error monitor with zero new sensors. | **Software fix:** Add brake following-error check in SYS `dispatch`: compare 0x7B9 cmd stroke vs 0x721 actual stroke (threshold 3mm, debounce 100ms). Monitor SEB_Error_Status for Level 3 faults. Add 0x721 staleness check (100ms timeout). Faults logged via 0x600 diagnostic — cannot escalate beyond ESTOP (already max brake) but essential for incident analysis. See `docs/emergency-safety-analysis.md` §8. |
+| 14 | **CAN 0x001 spoofable — no authentication, DoS-vulnerable** | 0x001 is DLC=0 with no sender ID, checksum, or rolling counter. A corrupted node can flood 0x001, triggering persistent ESTOP and saturating the CAN bus. CAN error containment (bus-off at TEC>255) eventually isolates the node, but the flood window is disruptive. | **Software fix:** (1) Rate-limit 0x001 processing: max 2 frames per 500ms window per node (the first one already triggered ESTOP). (2) Change 0x001 DLC from 0 to 1 with sender-ID byte (0=SYS, 1=RT, 2=Jetson, 3=MTR) for diagnostics and per-sender rate limiting. See `docs/emergency-safety-analysis.md` §9. |
+| 15 | **No ESTOP acknowledgment from MTR STM32** | SYS/RT have no confirmation that MTR received and acted on ESTOP. MTR has no dedicated heartbeat. If MTR freezes at zero output, the SYS monitor sees 0x204=0, 0x206=0 and assumes MTR responded correctly. No 0x206 staleness check exists. | **Software fix:** MTR sets `ESTOP_ACTIVE` bit in 0x206 fault_flags when it has locally cut throttle+gear. SYS checks for ACK within 100ms of ESTOP. Add 0x206 staleness check (>200ms → MTR comms lost). See `docs/emergency-safety-analysis.md` §10. |
+| 16 | **Startup grace period masks heartbeat but not 0x204 staleness** | On cold boot, 0x204 is absent for >200ms before RT comes online. SYS 0x204 staleness check triggers (harmlessly — forces speed=0 which is already default). But the startup grace concept is applied inconsistently: heartbeat checks are masked, staleness is not. | **Trivial fix:** Gate 0x204 staleness check with same 3-second startup grace period as heartbeat. See `docs/emergency-safety-analysis.md` §11. |
+| 17 | **ESTOP HMI ambiguous — "both bulbs OFF" identical to powered-off vehicle** | During ESTOP, DC-DC is OFF → 12V rail dead → brake light, mode bulbs, and indicators all dark. A rider returning to the vehicle cannot distinguish ESTOP from power-off. The OR logic claim "brake light ON during ESTOP" is physically impossible with DC-DC off. | **Software + wiring fix:** Keep DC-DC ON during ESTOP (needed for MCU power anyway). Cut only the 12V accessory relay (GPIO27). Rewire brake light to always-on DC-DC rail (not accessory relay output). Result: ESTOP = brake light ON + mode bulbs OFF. Power-off = everything OFF. See `docs/emergency-safety-analysis.md` §12. |
+| 18 | **EPS-C mechanical jam silent-stop recovery path unclear** | When mechanical jam triggers silent-stop during ESTOP centering, the architecture says "fall back to silent-stop" without specifying steer SM state transition. It's unclear whether the jam is recoverable via START short-press (STEER_FAULT path) or requires power-cycle. | **Documentation fix:** Explicitly transition to STEER_FAULT on mechanical jam during ESTOP centering. Existing STEER_FAULT recovery paths apply: START short-press → LISTEN_SYNC retry; START long-press 3s + throttle=0 → force-activate at 0° (MANUAL only). See `docs/emergency-safety-analysis.md` §13. |
+| 19 | **Fixed 5° steering following error threshold wrong at high speed** | At 25 km/h, dynamic clamp limits steering to ~5°. A fixed 5° threshold represents a 100% error — the EPS-C must have ZERO response to trigger. A 4° error at speed (80% authority loss) would NOT trigger ESTOP. At 2 km/h (40° limit), 5° is only 12.5% — potentially too sensitive for parking maneuvers. | **Software fix:** Speed-scaled threshold: `max(2°, 0.25 × dynamic_limit)`. Result: 2° at 25 km/h (tight), 4.5° at 10 km/h, 10° at 2 km/h (tolerant). One-line change in RT following-error check. See `docs/emergency-safety-analysis.md` §14. |
 
 ---
 
@@ -1298,6 +1325,8 @@ cd sys-esp32 && pio run && pio run -t upload && pio device monitor
 | [`docs/physics-model.md`](docs/physics-model.md) | Tricycle kinematics — forward/inverse, rollover, slip angles |
 | [`docs/listen-before-speaking.md`](docs/listen-before-speaking.md) | CAN actuator safe bootstrapping pattern |
 | [`docs/can-gateway-bridging.md`](docs/can-gateway-bridging.md) | CAN gateway forwarding rules and implementation |
+| [`docs/emergency-system.md`](docs/emergency-system.md) | **Primary:** ESTOP triggers, 8-layer defense, emergency response matrix, rider's guide, EGAS 3-level architecture, testing procedures |
+| [`docs/emergency-safety-analysis.md`](docs/emergency-safety-analysis.md) | **Safety analysis:** ESTOP exit race condition, SEB brake lever contradiction, watchdog unbraked window — causal traces, risk quantification, recommended fixes |
 | [`docs/defense-in-depth-safety.md`](docs/defense-in-depth-safety.md) | Layered safety — ESTOP, following error, dynamic clamp, OR logic |
 | [`docs/syntree-security-protocol.md`](docs/syntree-security-protocol.md) | Rolling counter + XOR checksum for SYNTREE actuators |
 | [`docs/high-voltage-isolation.md`](docs/high-voltage-isolation.md) | 72V galvanic isolation — TLP281 optos, relays, fuses, TVS |
