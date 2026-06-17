@@ -1,0 +1,292 @@
+# SYNTREE EPS-C — Steer-by-Wire Unit
+
+CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
+
+---
+
+## 1. CAN Interface
+
+| Parameter | Value |
+|-----------|-------|
+| Bus | Low-level CAN (500 kbit/s) |
+| Command ID | `0x200` VCU_SES_REQ (factory default) |
+| Status ID | `0x201` SES_STATUS |
+| Command rate | 20 ms (50 Hz) — **continuous transmission required** |
+| Status rate | 10 ms (100 Hz) |
+| Endianness | Motorola LSB (little-endian) |
+| DLC (both) | 8 |
+
+> **ID note**: Factory command ID `0x200` is fixed. `RT_DRIVE_SETPOINT` is placed at `0x202` to avoid collision.
+
+---
+
+## 2. Command Frame — 0x200 VCU_SES_REQ
+
+| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
+| `VCU_SES_Alignment_Enable` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | 1 = enable calibration |
+| `VCU_SES_Control_Enable` | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | 1 = enable active control |
+| `VCU_SES_Control_Mode` | 2 | 2 | u8 | 1 | 0 | 0 | 2 | enum | 0=None, 1=Angle Mode |
+| (reserved) | 4 | 4 | — | — | — | — | — | — | |
+| (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
+| `VCU_SES_Tgt_StrAngle` | 16 | 16 | i16 | 0.1 | 0 | -780 | 780 | deg | Target angle. Negative = left, positive = right. |
+| `VCU_SES_Tgt_StrAngleSpd` | 32 | 8 | u8 | 1 | 0 | 0 | 255 | deg/s | Maximum turning speed / slew rate |
+| `roll_cnt_enable` | 40 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| `checksum_enable` | 41 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| (reserved) | 42 | 6 | — | — | — | — | — | — | |
+| (reserved) | 48 | 4 | — | — | — | — | — | — | Byte 6, bits 0–3 |
+| `VCU_SES_RollCnt` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | — | Rolling counter. Increment every frame. |
+| `VCU_SES_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | XOR of bytes 0–6, then `^ 0xFF` |
+
+### Byte layout
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|---|---|---|---|---|---|---|---|
+| Content | ctrl bits | rsvd | angle [7:0] | angle [15:8] | speed | sec enables | rsvd(4)+RollCnt(4) | checksum |
+
+### Unit conversion (internal mdeg ↔ SYNTREE decideg)
+
+```
+SYNTREE raw = internal_angle_mdeg / 100    (45500 mdeg → 455 raw → 45.5°)
+internal_mdeg = SYNTREE raw × 100          (455 raw → 45500 mdeg → 45.5°)
+```
+
+---
+
+## 3. Status Frame — 0x201 SES_STATUS
+
+| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
+| `SES_INF_Angle_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Alignment/homing status. 1 = aligned. |
+| `SES_Control_Mode_Status` | 1 | 2 | u8 | 1 | 0 | 0 | 2 | enum | Current active mode |
+| `SES_Error_Status` | 4 | 2 | u8 | 1 | 0 | 0 | 3 | enum | 0=Normal, 1=L1, 2=L2, 3=L3 |
+| (reserved) | 6 | 2 | — | — | — | — | — | — | |
+| (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
+| `SES_StrAngle` | 16 | 16 | i16 | 0.1 | 0 | -780 | 780 | deg | Actual measured steering angle. Negative = left. |
+| (reserved) | — | 16 | — | — | — | — | — | — | Bytes 4–5 |
+| `EPS_SteeringWheel_Torq` | 40 | 8 | u8 | 1 | 0 | — | — | Nm | Resistance torque |
+
+### Byte layout
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|---|---|---|---|---|---|---|---|
+| Content | status bits | rsvd | `SES_StrAngle` [7:0] | `SES_StrAngle` [15:8] | rsvd | `EPS_Torq` | rsvd | rsvd |
+
+---
+
+## 4. Control Mode — Angle Control
+
+Command the steering rack to a specific angle. The EPS-C's internal PID drives the motor until the built-in angle sensor matches the target.
+
+**Slew rate (`VCU_SES_Tgt_StrAngleSpd`)** is a required second dimension — unlike the brake, every steering movement must specify a maximum turning speed in degrees/second. Low slew rate = smooth, controlled turns. High slew rate = aggressive snap (risk of traction loss or rack damage).
+
+**RT implementation:** Slew rate is speed-dependent. At low vehicle speed → low slew rate for comfort. At high speed → fast slew rate for responsiveness, but within the dynamic angle clamp (§5.2).
+
+---
+
+## 5. Safety Mechanisms (RT ESP32-S3)
+
+These are implemented in the RT firmware, not in the EPS-C unit itself.
+
+### 5.1 Software Hard-Stops
+
+The EPS-C accepts commands up to ±780° (raw ±7800). The physical trike steering rack maxes out around ±35–45°. Commanding beyond the mechanical limit will stall the motor, potentially burning out the driver or snapping a tie-rod.
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `kSteerHardLimitDeg` | 40.0 | Software clamp, inside physical end-stops |
+| Enforcement | RT `control_task` | Any Jetson command exceeding ±40° is clamped before `0x200` TX |
+
+### 5.2 Dynamic Angle Clamp (Rollover Prevention)
+
+A 40° turn at 2 km/h is safe. A 40° turn at 25 km/h will flip the trike. Maximum allowable steering angle is inversely proportional to vehicle speed.
+
+| Speed | Max angle |
+|-------|-----------|
+| 2 km/h (~555 mm/s) | ±40° |
+| 25 km/h (~6944 mm/s) | ±5° |
+| Interpolation | Linear between these points |
+
+Enforcement: RT `control_task` clamps resolved angle to `max_angle = f(RT_PidMeasured)` before CAN TX. This overrides Jetson regardless of what `/cmd_vel` requests.
+
+### 5.3 Following Error Detection
+
+If the physical wheel gets stuck (rock jam, linkage failure) while the EPS-C tries to turn:
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Threshold | 5° | `|commanded − SES_StrAngle|` |
+| Duration | 300 ms | Must persist this long before trigger |
+| Action | `mode_set(ESTOP)` | System-wide emergency stop |
+
+RT compares the last commanded angle (from `0x200`) against the feedback angle (from `0x201 SES_StrAngle`) every control tick.
+
+---
+
+## 6. Security Bytes
+
+### Rolling Counter
+
+Same as SEB: 4-bit value (0–15), increment every frame. Two consecutive frames with same counter → EPS-C rejects, triggers fault.
+
+### Checksum
+
+Same algorithm as SEB: `XOR(bytes[0..6]) ^ 0xFF`. Placed in Byte 7.
+
+### Security Enable Bits (Byte 5) — Unique to EPS-C
+
+Unlike the SEB, the EPS-C requires explicit enable bits to activate its security checks:
+
+- `roll_cnt_enable` (Byte 5, bit 0): **Must be 1**
+- `checksum_enable` (Byte 5, bit 1): **Must be 1**
+
+If either is 0, the unit may ignore perfectly valid rolling counter and checksum values.
+
+---
+
+## 7. Boot Sequence — "Listen Before Speaking"
+
+The EPS-C has an absolute encoder that retains calibration across power cycles. No physical homing sweep is required on every boot. However, a strict software handshake is mandatory.
+
+```
+State machine:
+
+STEER_BOOT_WAIT:
+  - 500 ms delay after power-on
+  - DO NOT transmit any 0x200 frames
+  - → STEER_LISTEN_SYNC
+
+STEER_LISTEN_SYNC:
+  - Wait for 0x201 SES_STATUS frame
+  - Read SES_StrAngle (current physical angle)
+  - CRITICAL: Set active_target_angle = current_physical_angle
+    (If trike was parked with wheels at 15°, first command must be 15° — not 0°)
+  - Wait for SES_INF_Angle_Status == 1 (aligned)
+  - → STEER_ACTIVE
+
+STEER_ACTIVE:
+  - Transmit 0x200 at 50 Hz continuously
+  - First frame commands exactly the current angle (no movement)
+  - Then follow Jetson targets with dynamic clamp applied
+  - Monitor following error → ESTOP on fault
+
+STEER_FAULT:
+  - Stop transmitting 0x200
+  - EPS-C will timeout-fault (lock or limp — verify behavior with SYNTREE spec)
+```
+
+**Critical rules:**
+1. Never apply power while VCU is already sending commands — causes angle sensor detection error.
+2. Never command 0° on boot if the wheels are physically turned — the resulting snap can damage the rack or cause injury.
+3. First frame after sync must command the current angle (stay where you are).
+4. `SES_INF_Angle_Status` must be 1 before AUTO mode engages. Drive motor locked out until aligned.
+
+---
+
+## 8. One-Time Calibration
+
+- **Required:** Only when the EPS-C is first mated to a new mechanical assembly.
+- **Procedure:** Trike stationary, `VCU_SES_Alignment_Enable = 1`. Motor physically finds end-stops or index pulse to establish center.
+- **After calibration:** ECU is permanently paired to that hardware. Not interchangeable between vehicles.
+- **Power cycles:** Calibration state retained. No daily homing needed.
+- **Boot-time:** Only the software sync handshake (§7) is required — no mechanical movement.
+
+---
+
+## 9. C++ Implementation Guide
+
+```cpp
+#include <stdint.h>
+#include <string.h>
+
+// Factory default — NOT reconfigurable
+#define CAN_ID_VCU_SES_REQ 0x200
+
+typedef struct {
+    uint8_t align_enable   : 1;
+    uint8_t control_enable : 1;
+    uint8_t control_mode   : 2;   // 0=None, 1=Angle Mode
+    uint8_t reserved_0     : 4;
+
+    uint8_t reserved_1;
+
+    // Signed. Scale 0.1 deg/bit.
+    // Example: 45.5° right → 455
+    int16_t target_angle;
+
+    uint8_t target_speed;         // deg/s slew rate
+
+    // Byte 5: Security enables
+    uint8_t roll_cnt_enable  : 1;  // MUST be 1
+    uint8_t checksum_enable  : 1;  // MUST be 1
+    uint8_t reserved_2       : 6;
+
+    uint8_t reserved_3       : 4;
+    uint8_t rolling_counter  : 4;  // Increment 0–15 every frame
+
+    uint8_t checksum;              // XOR(bytes[0..6]) ^ 0xFF
+} __attribute__((packed)) VCU_SES_Req_t;
+
+
+void ses_send_command(float target_angle_deg, uint8_t speed_limit_deg_s) {
+    static uint8_t roll_cnt = 0;
+    VCU_SES_Req_t payload;
+    memset(&payload, 0, sizeof(payload));
+
+    // 1. Enables + Mode
+    payload.align_enable   = 1;
+    payload.control_enable = 1;
+    payload.control_mode   = 1;   // Angle Mode
+
+    // 2. Security enables — MUST be 1
+    payload.roll_cnt_enable = 1;
+    payload.checksum_enable = 1;
+
+    // 3. Angle target (internal mdeg → SYNTREE decideg)
+    //    internal_angle_mdeg / 100 = target_angle_deg × 10
+    payload.target_angle = (int16_t)(target_angle_deg * 10.0f);
+
+    // 4. Slew rate
+    payload.target_speed = speed_limit_deg_s;
+
+    // 5. Rolling counter
+    payload.rolling_counter = roll_cnt;
+    roll_cnt = (roll_cnt + 1) & 0x0F;
+
+    // 6. Checksum
+    uint8_t* raw = (uint8_t*)&payload;
+    uint8_t cksum = 0;
+    for (int i = 0; i < 7; i++) cksum ^= raw[i];
+    payload.checksum = cksum ^ 0xFF;
+
+    // 7. Transmit
+    // CAN_Write(CAN_ID_VCU_SES_REQ, 8, raw);
+}
+```
+
+---
+
+## 10. Error Handling
+
+| Condition | EPS-C Response | Controller Action |
+|-----------|---------------|-------------------|
+| Rolling counter repeats | Reject frame, fault | Reset counter, re-sync |
+| Checksum mismatch | Discard frame | Re-transmit with correct checksum |
+| Comm timeout (>20 ms no frame) | Internal comm fault | Restart boot sequence |
+| Security enables = 0 | May ignore frame unpredictably | Firmware bug — enforce in struct |
+| `SES_Error_Status > 0` | Degraded mode | Log, report, ESTOP if L2/L3 |
+| Following error >5° for 300 ms | — | RT triggers system ESTOP |
+| Sync timeout (no `0x201` for 2s) | — | Remain in STEER_FAULT, MANUAL only |
+| EPS-C timeout-fault behavior | TBD — lock, center, or freewheel | Verify against SYNTREE spec |
+
+---
+
+## 11. Integration Notes
+
+- **Controlled by:** RT ESP32-S3 (low-level CAN)
+- **Mode:** Angle (1) — only supported mode
+- **No daily homing.** Absolute encoder retains calibration across power cycles.
+- **Not reconfigurable.** Factory CAN IDs are fixed. EPS-C command `0x200` is the factory default — `RT_DRIVE_SETPOINT` was moved to `0x202` to resolve the collision.
+- **MANUAL mode:** RT does not send `0x200`. EPS-C operates standalone from rider steering wheel input.
+- **AUTO mode:** RT sends `0x200` at 50 Hz with resolved angle + dynamic clamp + slew rate.
+- **ESTOP:** RT stops sending `0x200`. EPS-C timeout-faults (behavior TBD).
