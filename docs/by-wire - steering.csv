@@ -1,0 +1,48 @@
+Msg Name,Msg Type,Msg ID,Send Type,Cycle (ms),Len (B),Signal Name,Signal Description (English),Byte Order,Start Byte,Start Bit,Bit Len,Data Type,Res,Offset,Min,Max,Init (Hex),Unit,Signal Value Description
+VCU_SES_Req,Normal,"Rx(Custom, Def:0x169)",Cycle,20,8,VCU_SES_Alignment_Enable,SES Angle Initial Alignment Enable,Motorola LSB,0,0,1,Unsigned,1,0,0,1,0x0,-,0x0: Invalid0x1: Alignment Mode
+,,,,,,VCU_SES_Control_Enable,VCU Direction Control Enable,Motorola LSB,0,1,1,Unsigned,1,0,0,1,0x0,-,0x0: Invalid0x1: Connection
+,,,,,,VCU_SES_Tgt_StrAngle,VCU Target Steering Angle,Motorola LSB,2,16,16,Signed,0.1,0,-3000,780,0x0,°,
+,,,,,,VCU_SES_Tgt_StrAngleSpd,VCU Target Steering Angle Speed,Motorola LSB,4,32,16,Unsigned,1,0,125,1250,0x140,°/s,
+,,,,,,VCU_SES_RollCnt_Enable,Life Signal Enable,Motorola LSB,5,40,1,Unsigned,1,0,0,1,0x0,-,0x0: Invalid0x1: Valid
+,,,,,,VCU_SES_CheckSum_Enable,Checksum Enable,Motorola LSB,5,41,1,Unsigned,1,0,0,1,0x0,-,0x0: Invalid0x1: Valid
+,,,,,,VCU_SES_Rollcnt,,Motorola LSB,5,44,4,Unsigned,1,0,0,15,0x0,-,RollingCounter(new)=(RollingCounter(old)+1)&0x0F
+,,,,,,VCU_Veh_Spd_Value,Vehicle Speed,Motorola LSB,6,48,8,Unsigned,1,0,0,255,0x0,-,
+,,,,,,VCU_SES_CheckSum,Checksum,Motorola LSB,7,56,8,Unsigned,1,0,0,255,0x0,-,CheckSum=Byte0+Byte1...
+SES_Status,Normal,"Rx(Custom, Def:0x201)",Cycle,10,8,SES_INF_Angle_Status,Center Finding Status Feedback,Motorola LSB,0,0,1,Unsigned,1,0,0,1,0x0,-,0x0: Center Finding0x1: Found
+,,,,,,SES_Kptronic_Mode_Status,Control Mode Feedback,Motorola LSB,0,1,2,Unsigned,1,0,0,3,0x0,-,0x0: Manual Mode0x1: Automatic Mode
+,,,,,,SES_Error_Status,Error Status,Motorola LSB,0,6,2,Unsigned,1,0,0,3,0x0,-,0x0: Normal0x1: Level 1 Warning...
+,,,,,,SES_StrAngle,Steering Angle,Motorola LSB,2,16,16,Signed,0.1,0,-3000,780,0x0,°,
+,,,,,,SES_Tgt_StrAngleSpd,Target Angle Speed,Motorola LSB,4,32,16,Unsigned,0.1,0,0,1400,0x0,°/s,
+,,,,,,EPS_SteeringWheel_Torq,Steering Wheel Torque Feedback,Motorola LSB,5,40,8,Signed,0.1,0,-12.7,12,0x7F,Nm,
+,,,,,,SES_RollCnt_Enable_Status,Life Signal Enable Feedback,Motorola LSB,6,48,1,Unsigned,1,0,0,1,0x0,-,0x0: Invalid0x1: Valid
+,,,,,,SES_CheckSum_Enable_Status,Checksum Enable Feedback,Motorola LSB,6,49,1,Unsigned,1,0,0,1,0x0,-,0x0: Invalid0x1: Valid
+,,,,,,SES_RollCnt_Status,Life Signal Feedback,Motorola LSB,6,52,4,Unsigned,1,0,0,15,0x0,-,RollingCounter(0-14)
+,,,,,,SES_CheckSum_Status,Checksum Feedback,Motorola LSB,7,56,8,Unsigned,1,0,0,255,0x0,-,CheckSum=Byte0+Byte1...
+SES_ErrInfo,Normal,"Rx(Custom, Def:0x202)",Cycle,100,8,SES_ECUUnderVolt_Err,Controller Under Voltage L2,Motorola LSB,0,0,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_ECUOverVolt_Err,Controller Over Voltage L2,Motorola LSB,0,1,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_CanCom_Err,CAN Communication Fault L1,Motorola LSB,0,2,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_ECUTemp_Err,Controller Temp Fault L1,Motorola LSB,0,3,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Domain_drive_SC_Err,Domain Drive Short Circuit L2,Motorola LSB,0,4,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Domain_drive_V_Err,Domain Drive Voltage L2,Motorola LSB,0,5,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Domain_drive_T_Err,Domain Drive Temperature L2,Motorola LSB,0,6,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_TempSensor_Err,Temperature Sensor Fault,Motorola LSB,0,7,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_AngleSensor_P_OC_Err,Angle Sensor Pri. Open Circuit L3,Motorola LSB,1,8,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_AngleSensor_P_AF_Err,Angle Sensor Pri. Out of Range L3,Motorola LSB,1,9,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_AngleSensor_S_OC_Err,Angle Sensor Sec. Open Circuit L3,Motorola LSB,1,10,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_AngleSensor_S_AF_Err,Angle Sensor Sec. Out of Range L3,Motorola LSB,1,11,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_SensorPow_Err,Sensor Power Fault L2,Motorola LSB,1,12,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Alignment_Err,Centering Fault L1,Motorola LSB,1,13,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_OverAngle_Err,Over Angle Fault L2,Motorola LSB,1,14,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_StrMtr_Stall_Err,Motor Stall Fault L1,Motorola LSB,1,15,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_MtrCur_Err,Motor Current Fault L2,Motorola LSB,2,16,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Sensor5V_1_2_Err,Sensor 5V Power 1/2 Fault L2,Motorola LSB,2,17,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_TorqSensor_T1_OC_Err,Torque Sensor T1 Open Circuit L3,Motorola LSB,2,18,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_TorqSensor_T1_AF_Err,Torque Sensor T1 Out of Range L3,Motorola LSB,2,19,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_TorqSensor_T2_OC_Err,Torque Sensor T2 Open Circuit L3,Motorola LSB,2,20,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_TorqSensor_T2_AF_Err,Torque Sensor T2 Out of Range L3,Motorola LSB,2,21,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Angle_Err,Angle Error L1,Motorola LSB,2,22,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_StrMtr_Idling_Err,Motor Idling Fault L2,Motorola LSB,2,23,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_EEPROM_Err,EEPROM Fault L2,Motorola LSB,3,24,1,Unsigned,1,0,0,1,0x0,-,0x0: False0x1: True
+,,,,,,SES_Veh_Spd_Value,Vehicle Speed Signal,Motorola LSB,7,56,8,Unsigned,1,0,0,255,0x0,-,
+SES_Version,Normal,"Rx(Custom, Def:0x203)",Cycle,1000,8,SES_SW_Version,SES Software Version,Motorola LSB,0,0,8,Unsigned,0.01,0,0,255,0x64,-,"e.g., V1.0 Feedback"
+,,,,,,SES_HW_Version,SES Hardware Version,Motorola LSB,1,8,8,Unsigned,0.1,0,0,25.5,0x10,-,"e.g., V1.0 Feedback"
