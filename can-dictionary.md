@@ -1,6 +1,32 @@
 # CAN Signal Dictionary — E-Trike
 
-Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless noted.
+Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless noted (SYNTREE protocol uses Motorola LSB).
+
+### Type Notation
+
+| Notation | C Type | Meaning |
+|----------|--------|---------|
+| `i8 / i16 / i32` | `int8_t / int16_t / int32_t` | Signed integer |
+| `i24` | 24-bit signed (packed) | Non-standard width, CAN frame only |
+| `u8 / u16 / u32` | `uint8_t / uint16_t / uint32_t` | Unsigned integer |
+| `u8 bool` | `uint8_t` | Boolean in a byte (0 or 1) |
+| `u8 enum` | `uint8_t` | Enumeration in a byte |
+| `u8 bitmask` | `uint8_t` | Bitfield, each bit is a flag |
+| `DLC=0` | — | Zero-length CAN frame (event signal, no payload) |
+
+### Physical Units
+
+| Unit | Meaning | Example |
+|------|---------|---------|
+| `mm/s` | Millimeters per second | Speed: 3000 = 3.0 m/s |
+| `mrad/s` | Milliradians per second | Yaw rate |
+| `kPa` | Kilopascals | Brake pressure |
+| `mm` | Millimeters | Distance |
+| `0.1°/bit` | Tenths of a degree per LSB | Steer angle: 455 = 45.5° |
+| `0.05 mm/bit` | 0.05 mm per LSB | Brake stroke |
+| `0.05 MPa/bit` | 0.05 MPa per LSB | Brake pressure |
+| `°/s` | Degrees per second | Steer angle speed |
+| `Nm` | Newton-meters | Torque |
 
 ---
 
