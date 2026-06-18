@@ -171,8 +171,8 @@ These messages serve only nodes on a single bus. RT neither forwards nor transla
 
 | Mode | Behavior |
 |------|----------|
-| **MANUAL** | Rider steers / rides throttle. SYS reads throttle ADC + gear sense → pass-through via MCP4725 + relays. Brake lever → SYS GPIO → CAN `0x7B9` → SEB. EPS-C standalone (RT idle). DC-DC on. |
-| **AUTO** | Jetson `/cmd_vel` → high CAN `0x300` → RT kinematics  → low CAN `0x204` (SYS: speed+gear) + `0x169` (EPS-C: angle). SYS drives MCP4725 + gear relays. Lights from Jetson via `0x302` (RT fwd). Brake via `0x7B9`. |
+| **MANUAL** | Rider steers / rides throttle. **MTR** reads throttle ADC + gear sense → pass-through via MCP4725 + relays. Brake lever → SYS GPIO → CAN `0x7B9` → SEB. EPS-C standalone (RT idle). DC-DC on. Mode gated by SYS `0x110`. |
+| **AUTO** | Jetson `/cmd_vel` → high CAN `0x300` → RT kinematics → low CAN `0x204` (MTR: speed+gear) + `0x169` (EPS-C: angle). **MTR** drives MCP4725 + gear relays following `0x204`. Lights from Jetson via `0x302` (RT fwd). Brake via `0x7B9`. Mode gated by SYS `0x110`. |
 | **ESTOP** | MCP4725 = 0 V, all gear outputs OFF, `0x7B9` stroke=max (full brake), steering ramps to 0° at 20°/s via active `0x169` (unless obstacle-triggered → hold then silent-stop), DC-DC ON (`0x012 enable=1` — maintains 12V for MCUs, CAN transceivers, brake light), 12V accessory relay OFF (kills headlight, turn signals, mode bulbs). Brake light ON (powered from always-on DC-DC rail, not through accessory relay). Exit: **START button** or **MODE long-press (3s)** → MANUAL. Steering ramp completes before 0x169 handoff (brake/motor/lights transition immediately; steering defers until centered). Or power-cycle. |
 
 ---
@@ -186,26 +186,30 @@ Throttle grip (0–5V) ──► MTR ADC ──► MTR MCP4725 (0–5V) ──�
 Gear selector (72V)  ──► TLP281 opto → MTR GPIO ──► relay module → 72V → ECU
 Brake lever           ──► SYS GPIO ──► CAN 0x7B9 → SEB (stroke=MAX if pressed)
 Steering wheel        ──► EPS-C standalone (RT idle, monitors 0x201)
-Signal lights         ──► Turn: handlebar switches (GPIO3/6). Head: toggle (GPIO7). Brake: OR logic → GPIO21
+Signal lights         ──► Turn: handlebar switches (SYS GPIO3/6). Head: toggle (SYS GPIO7). Brake: OR logic → SYS GPIO21
 DC-DC converter       ──► SYS CAN 0x012 enable=1 → 12V rail on
+SYS → CAN 0x110       ──► MTR receives mode=Manual → ADC pass-through
 ```
 
 ### 4.2 Auto mode
 
 ```
-Jetson /cmd_vel ──► High CAN 0x300 ──► RT kinematics 
+Jetson /cmd_vel ──► High CAN 0x300 ──► RT kinematics
                                           │
                ┌──────────────────────────┤
                ▼ (low CAN)                ▼ (low CAN)
-   0x204 {speed, gear} → SYS        0x169 {angle} → EPS-C
+   0x204 {speed, gear} → MTR       0x169 {angle} → EPS-C
                │                          │
                ├──► MCP4725 → Motor       │  RT listens 0x201 for feedback
                ├──► Relays → ECU gear     │  Dynamic angle clamp + following error
-               └──► GPIO → Signal lights (turn/head from 0x302; brake = OR logic)
+               └──► CAN 0x120, 0x206 →    │
+                     RT (fwd to Host),     │
+                     SYS (EGAS L2 monitor) │
 
-Jetson ──► High CAN 0x301 ──► RT brake arbitration → Low CAN 0x205 → SYS → SEB (Pressure Mode)
+SYS → CAN 0x110 ──► MTR receives mode=Auto → follows 0x204
+Jetson ──► High CAN 0x301 ──► RT brake arbitration → Low CAN 0x7B9 → SEB (RT sends directly in AUTO)
 Jetson ──► High CAN 0x302 ──► RT fwd → Low CAN 0x302 → SYS → light relays
-SYS ────► Low CAN 0x7B9 → SEB (50 Hz continuous: stroke or pressure control)
+SYS ────► Low CAN 0x7B9 → SEB (MANUAL/ESTOP only; RT sends in AUTO)
 ```
 
 ---
@@ -505,14 +509,14 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 
 #### Speed control — open-loop today, PID-ready
 
-Motor speed control is **open-loop**: `0x204` desired speed → SYS MCP4725 DAC = `speed/3000 × 4095` (fixed voltage mapping). No feedback compensation. Acceptable for flat-ground steady-state operation but will not compensate for hills, headwinds, or load changes.
+Motor speed control is **open-loop**: `0x204` desired speed → MTR MCP4725 DAC = `speed/3000 × 4095` (fixed voltage mapping). No feedback compensation. Acceptable for flat-ground steady-state operation but will not compensate for hills, headwinds, or load changes.
 
 **Why open-loop?** The PID implementation exists (`speed_pid.cpp/.h` — parallel-form with anti-windup, Kp=1.0, Ki=0.1, Kd=0.05) and is correct, but the rear motor encoder hasn't been physically fitted to the trike yet. The PID expects a `measured_speed_mmps` input from the PCNT encoder (GPIO1/2), which currently reads zero. Running the PID against `measured=0` would command full throttle constantly — it MUST NOT be in the active control path until the encoder is wired.
 
 **Integration plan (gap #5):** Once the rear motor encoder is fitted:
 1. `control_task` on RT feeds `speed_pid_update(desired, measured, dt)` with real encoder data
 2. PID output (effort correction) is sent to SYS via an added field in `0x204` or a new CAN ID
-3. SYS adds the PID trim to the base MCP4725 voltage — closing the loop
+3. MTR adds the PID trim to the base MCP4725 voltage — closing the loop
 4. Until then, the PID runs as a **shadow controller** in RT, outputting to `0x220 RT_PID_RPT` (telemetry only) for validation against the open-loop command — the two should track closely on flat ground and diverge under load, telling us the PID gains are reasonable before wiring it in.
 
 #### Obstacle speed limit
@@ -913,9 +917,9 @@ SYS controls the SEB brake actuator — there is no independent fast-path check 
 
 Jetson runs the perception stack (obstacle detection). When it dies, the vehicle must decelerate actively — pure coast is insufficient in traffic. Three missed frames at 2 Hz = 1500ms protects against false triggers from Jetson's non-realtime Linux CAN stack (a Linux machine that can't send a single CAN frame in 1.5s is genuinely dead). On timeout, RT commands: zero 0x204 speed, stop 0x169 steering, 0x205 brake = 2000 kPa (~2 MPa, moderate deceleration without wheel lockup), and transitions SYS to MANUAL mode. Brake light illuminates. Rider can override with lever. This is "assisted stop" — between pure coast and full ESTOP — providing active deceleration while preserving lights and rider agency.
 
-**SYS-side `0x204` staleness check (fast path):**
+**MTR-side `0x204` staleness check (fast path):**
 
-SYS's `motor_task` checks data freshness independently of heartbeat. If `0x204 RT_DRIVE_CMD` stops arriving (RT control loop crashed, CAN TX failed):
+MTR's control loop checks data freshness independently of heartbeat. If `0x204 RT_DRIVE_CMD` stops arriving in AUTO mode (RT control loop crashed, CAN TX failed):
 
 ```
 motor_task @ 100Hz:
@@ -1079,43 +1083,34 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 | Task | Prio | Stack | Period | Behavior |
 |------|------|-------|--------|----------|
 | `can_rx` | 5 | 4096 B | Event | `twai_receive()`, copy to queue |
-| `safety` | 5 | 2048 B | 20 Hz | ESTOP GPIO, RT HB timeout |
-| `dispatch` | 4 | 3072 B | Event | Route 0x204, 0x302, 0x001, 0x721 |
-| `mode` | 4 | 2048 B | 10 Hz | MODE btn toggle + START btn (ESTOP→MANUAL), CAN 0x110 |
-| `motor` | 4 | 2048 B | 100 Hz | MCP4725 DAC + gear outputs |
-| `throttle` | 3 | 1536 B | 100 Hz | ADC read, CAN 0x120 |
-| `gear` | 3 | 1536 B | 50 Hz | TLP281 read / setpoint → relays |
+| `safety` | 5 | 2048 B | 20 Hz | ESTOP GPIO, RT HB timeout, EGAS L2: compare 0x204 vs 0x206 |
+| `dispatch` | 4 | 3072 B | Event | Route 0x206, 0x302, 0x001, 0x721 |
+| `mode` | 4 | 2048 B | 10 Hz | MODE btn toggle + START btn (ESTOP→MANUAL), CAN 0x110 → RT + MTR |
 | `brake` | 3 | 2048 B | **50 Hz** | Brake SM (boot sync) + CAN 0x7B9 with rolling ctr + checksum |
 | `lights` | 3 | 1536 B | 20 Hz | Light GPIOs + blink |
 | `dcdc` | 3 | 1024 B | 5 Hz | DCDC FSM, CAN 0x012 |
 | `indicator` | 2 | 1024 B | 5 Hz | Mode bulbs (AUTO/MANUAL) |
 | `power` | 2 | 1024 B | 5 Hz | 12V relay |
-| `can_tx` | 2 | 3072 B | 5 Hz | CAN 0x011 |
+| `can_tx` | 2 | 3072 B | 5 Hz | CAN 0x011, 0x110 |
 | `diag` | 1 | 2048 B | 1 Hz | CAN 0x600 |
 | `hb` | 1 | 2048 B | 2 Hz | CAN `0x7FE` (SYS heartbeat to RT) |
 
+> **Removed from SYS:** `motor` (MCP4725 DAC), `throttle` (ADC read, 0x120), `gear` (TLP281 sense, relay output). These are now on **MTR** — see §5.0.
+
 ### 8.8 Hardware pin assignments — Board: SYS ESP32-S3
 
-> ⚠️ **Board identity:** This is the **SYS** ESP32-S3 (safety, motor actuation, body control). Do not confuse with RT ESP32-S3 pin assignments in §7.8. Same GPIO numbers on different boards are different physical pins — connect to the board labeled "SYS," not the one labeled "RT."
+> ⚠️ **Board identity:** This is the **SYS** ESP32-S3 (safety, brake control, body control). Motor actuation is on the dedicated **MTR** STM32 board (§5.0). Do not confuse with RT ESP32-S3 pin assignments in §7.8. Same GPIO numbers on different boards are different physical pins — connect to the board labeled "SYS," not the one labeled "RT."
 >
-> **Shared GPIO numbers (safe — different chips):** GPIO 1,2,3,6,7,10,11,12,13,14,21 appear in both RT and SYS tables. These are physically separate pins on separate ESP32-S3 packages. No electrical conflict exists.
+> **Shared GPIO numbers (safe — different chips):** ESTOP button is shared between SYS GPIO1 and MTR (hardwired to both MCUs for Level 3 kill). No other signals are split. GPIO 3,6,7 appear in both RT and SYS tables but are physically separate pins on separate ESP32-S3 packages — no electrical conflict. Throttle ADC, gear sense, MCP4725 I2C, and gear outputs are on MTR only (§5.0).
 
 | Signal | GPIO | Direction | Conditioning |
 |--------|------|-----------|-------------|
 | CAN TX (low) | 5 | Out | SN65HVD230 |
 | CAN RX (low) | 4 | In | SN65HVD230 |
-| E-stop button | 1 | In | Big red mushroom, NC (active-low), pull-up, hardware ISR |
-| Brake lever | 2 | In | Active-low, pull-up |
+| E-stop button | 1 | In | Big red mushroom, NC (active-low), pull-up, hardware ISR. Shared with MTR. |
+| Brake lever | 2 | In | Active-low, pull-up → CAN 0x7B9 → SEB |
 | Start button | **32** | In | Momentary, active-low, pull-up, debounced. Exits ESTOP → MANUAL. |
-| Throttle read | 10 | In (ADC1_CH5) | Voltage divider 5V→3.3V |
-| Throttle output | — | I2C (SDA=15, SCL=16) | MCP4725, addr 0x60, VCC=5V |
-| Gear D sense | 12 | In | TLP281 optoisolator ch1 |
-| Gear S sense | 13 | In | TLP281 optoisolator ch2 |
-| Gear R sense | 14 | In | TLP281 optoisolator ch3 |
-| Gear D output | 33 | Out | Relay ch1 → 1A fuse → ECU, TVS to GND |
-| Gear S output | 34 | Out | Relay ch2 → 1A fuse → ECU, TVS to GND |
-| Gear R output | 35 | Out | Relay ch3 → 1A fuse → ECU, TVS to GND |
-| Mode button | 11 | In | Push button, active-low, pull-up, debounced (momentary toggle MANUAL↔AUTO) |
+| Mode button | 11 | In | Push button, active-low, pull-up, debounced (momentary toggle MANUAL↔AUTO). Publishes CAN 0x110 to RT + MTR. |
 | Left turn switch | **3** | In | Handlebar switch, active-low, pull-up |
 | Right turn switch | **6** | In | Handlebar switch, active-low, pull-up |
 | Headlight switch | **7** | In | Handlebar toggle, active-low, pull-up |
@@ -1128,24 +1123,18 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 | 12V relay | 27 | Out | Secondary cut on ESTOP |
 | WDT toggle | **23** | Out | External watchdog IC (TPS3850). Toggled by `safety_task` every 50 ms. |
 
+> **Motor I/O (throttle, gear, MCP4725) is on MTR STM32 only** — see §5.0 for MTR pin assignments.
+
 ### 8.9 Configuration constants
 
 ```cpp
 namespace sys {
 // CAN
 constexpr int kCanBitrateHz = 500000, kCanTxGpio = 5, kCanRxGpio = 4;
-// Throttle
-constexpr int kThrottleAdcChannel = 5;        // ADC1_CH5 → GPIO10
-constexpr int kThrottleI2cSda = 15, kThrottleI2cScl = 16;
-constexpr uint8_t kThrottleDacI2cAddr = 0x60; // MCP4725
-constexpr unsigned kThrottleDeadZone = 200;
-constexpr int kThrottleMaxSpeedMmps = 3000, kThrottleDacMaxVal = 4095;
-// Gear
-constexpr int kGearDSense = 12, kGearSSense = 13, kGearRSense = 14;
-constexpr int kGearDOut = 33, kGearSOut = 34, kGearROut = 35;
 // Safety
 constexpr int kEstopGpio = 1, kBrakeLeverGpio = 2, kModeSwitchGpio = 11;
 constexpr int kWdtToggleGpio = 23;
+// Throttle/gear I/O is on MTR (mtr-stm32/src/config.h), not SYS
 // Light inputs (handlebar switches, MANUAL mode)
 constexpr int kSwitchLeftTurn = 3, kSwitchRightTurn = 6, kSwitchHeadlight = 7;
 // Light outputs
