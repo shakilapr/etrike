@@ -2,6 +2,7 @@
 // Safety monitor — ESTOP button, brake lever, heartbeat watchdog.
 // Runs at priority 5 (life-critical). Architecture.md §8.6.
 
+#include <atomic>
 #include <cstdint>
 #include "config.h"
 
@@ -26,8 +27,10 @@ public:
     bool heartbeat_ok() const;
 
 private:
-    bool     m_estop       = false;
-    bool     m_brake_lever = false;
+    // Shared state: read by multiple tasks (brake, lights, can_tx, diag, etc.),
+    // written only by safety_task.  Must be atomic to prevent data races.
+    std::atomic<bool> m_estop       {false};
+    std::atomic<bool> m_brake_lever {false};
     int64_t  m_last_hb_us  = 0;
     uint8_t  m_last_hb_ctr = 0;
     bool     m_hb_ever_seen = false;

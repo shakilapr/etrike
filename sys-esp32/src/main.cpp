@@ -58,9 +58,11 @@ static uint8_t               g_seb_status_raw[8] = {};
 static std::atomic<uint8_t>  g_rt_hb_ctr{0};
 static std::atomic<bool>     g_rt_hb_received{false};
 
+// 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
+static std::atomic<uint32_t> g_last_setpoint_tick{0};
+
 // Queues
 static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
-static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
 
 // ── CAN RX task (prio 5) ───────────────────────────────────────────
 
@@ -96,6 +98,7 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
             auto sp = can::RtDriveCmd::from_frame(fr);
             g_setpoint_speed_mmps.store(sp.motor_speed_mmps, std::memory_order_relaxed);
             g_setpoint_gear.store(sp.gear, std::memory_order_relaxed);
+            g_last_setpoint_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
         case sys::kIdRtBrakeCmd: {   // 0x205
@@ -138,8 +141,18 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
         g_safety.set_estop(estop_hw);
         g_safety.set_brake_lever(brake_lever);
 
-        if (g_safety.estop_active() || !g_safety.heartbeat_ok()) {
-            g_mode_mgr.force_estop();
+        bool estop_triggered = g_safety.estop_active() || !g_safety.heartbeat_ok();
+        if (estop_triggered) {
+            if (g_mode_mgr.mode() != can::Mode::Estop) {
+                g_mode_mgr.force_estop();
+                // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
+                // Only send once on transition to avoid flooding
+                can::Frame estop_fr;
+                estop_fr.id = sys::kIdSafetyEstop;
+                estop_fr.dlc = 0;
+                g_can.send(estop_fr);
+                ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
+            }
         }
 
         // Toggle external watchdog
@@ -185,7 +198,14 @@ static QueueHandle_t g_setpoint_queue = nullptr;  // 4 deep, ActuatorSetpoint
             g_throttle.poll();
             g_dac.set_speed_mmps(g_throttle.read_mmps());
         } else {
-            // AUTO: CAN setpoint → DAC
+            // AUTO: CAN setpoint → DAC with staleness check
+            // Architecture §8.6: if 0x204 stale >200ms → zero speed + neutral
+            TickType_t now = xTaskGetTickCount();
+            TickType_t last = g_last_setpoint_tick.load(std::memory_order_relaxed);
+            if ((now - last) >= pdMS_TO_TICKS(200)) {
+                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+                g_setpoint_gear.store(0, std::memory_order_relaxed);
+            }
             int32_t speed = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
             g_dac.set_speed_mmps(speed);
         }
@@ -409,7 +429,6 @@ extern "C" void app_main() {
 
     // 3. Create queues
     g_can_rx_queue   = xQueueCreate(16, sizeof(can::Frame));
-    g_setpoint_queue = xQueueCreate(4, sizeof(int32_t));  // placeholder
     ESP_LOGI(TAG, "Queues created");
 
     // 4. Create tasks (priority, stack from architecture.md §8.7)
