@@ -5,7 +5,8 @@
 #include "config.h"
 #include "can/can_protocol.h"
 namespace sys {
-enum class BrakeState : uint8_t { BOOT_WAIT, LISTEN_SYNC, ACTIVE, FAULT };
+// Architecture.md §8.5: BRAKE_BOOT_WAIT, BRAKE_LISTEN_SYNC, BRAKE_ACTIVE, BRAKE_DEGRADED
+enum class BrakeState : uint8_t { BOOT_WAIT, LISTEN_SYNC, ACTIVE, DEGRADED };
 class BrakeControl {
 public:
     void init() { m_state=BrakeState::BOOT_WAIT; m_boot_timer=0; m_roll=0; }
@@ -23,19 +24,27 @@ public:
             }
             return false;
         case BrakeState::LISTEN_SYNC:
-            if (seb_status) {
-                // Check alignment bit (Byte 0, bit 0)
-                if (seb_status[0] & 1) {
-                    m_state = BrakeState::ACTIVE;
-                    goto build_frame;  // send first frame immediately
-                } else { return false; }
-            } else { return false; }
+            if (seb_status && (seb_status[0] & 1)) {
+                m_state = BrakeState::ACTIVE;
+                goto build_frame;  // send first frame immediately
+            }
+            // 2-second sync timeout → DEGRADED (architecture §8.6 BRAKE_DEGRADED)
+            if (++m_boot_timer >= (2000 / 20)) { // 2000ms / 20ms = 100 ticks
+                m_state = BrakeState::DEGRADED;
+                goto build_frame;
+            }
+            return false;
         case BrakeState::ACTIVE:
         build_frame:
             build_command(lever, estop, brake_kpa, out);
             return true;
-        case BrakeState::FAULT:
-            return false;
+        case BrakeState::DEGRADED:
+            // Architecture §8.6: transmit 50 Hz with lever-based defaults, ignore CAN 0x205
+            if (seb_status && (seb_status[0] & 1)) {
+                m_state = BrakeState::ACTIVE;    // recover when 0x721 arrives
+            }
+            build_command(lever, estop, 0, out); // DEGRADED: lever-only, no CAN pressure
+            return true;
         }
         return false;
     }
@@ -48,26 +57,28 @@ private:
         out.checksum_enable = 1;  // required by SYNTREE spec
 
         if (estop) {
-            // ESTOP: max stroke, Stroke Mode
-            out.control_mode = 1;
+            // ESTOP: Stroke Mode (0), max stroke 27mm → raw = (27+30)/0.05 = 1140
+            // Architecture §8.6: ESTOP uses Stroke Mode, not Pressure Mode
+            out.control_mode = 0;
             out.stroke_req = uint16_t((kBrakeMaxStroke - kBrakeStrokeOffset) / kBrakeStrokeScale);
             out.pressure_req = 0;
         } else if (brake_kpa > 0) {
             // Pressure Mode from 0x205 — verified kPa→raw conversion
             // Scale: 0.05 MPa/bit, range 0–5 MPa → raw = kPa * 0.02, clamp to 100
-            out.control_mode = 1;  // Pressure mode (1-bit: 0=Stroke,1=Pressure)
+            out.control_mode = 1;  // Pressure mode (1-bit: 0=Stroke, 1=Pressure)
             out.stroke_req = 600; // hold at 0mm
             // kPa * 0.02 = kPa / 50. Round to nearest integer.
             int32_t raw = (brake_kpa + 25) / 50;
             out.pressure_req = uint8_t(raw > 100 ? 100 : raw);
         } else if (lever) {
-            // Manual lever: Stroke Mode
-            out.control_mode = 1;
+            // Manual lever: Stroke Mode (0), 15mm → raw = (15+30)/0.05 = 900
+            // Architecture §8.6: MANUAL lever uses Stroke Mode, not Pressure Mode
+            out.control_mode = 0;
             out.stroke_req = uint16_t((kBrakeManualStroke - kBrakeStrokeOffset) / kBrakeStrokeScale);
             out.pressure_req = 0;
         } else {
-            // Released
-            out.control_mode = 1;
+            // Released: Stroke Mode (0), 0mm → raw = (0+30)/0.05 = 600
+            out.control_mode = 0;
             out.stroke_req = 600; // 0mm
             out.pressure_req = 0;
         }

@@ -4,6 +4,7 @@
 // START button (GPIO32): ESTOP→MANUAL. No effect otherwise.
 // Call tick() at 10 Hz with GPIO readings. Returns true on mode change.
 
+#include <atomic>
 #include <cstdint>
 #include "config.h"
 #include "can/can_protocol.h"
@@ -20,15 +21,15 @@ public:
     void force_estop();
     void set_from_can(uint8_t m);
 
-    can::Mode mode() const { return m_mode; }
-    uint8_t mode_u8() const { return uint8_t(m_mode); }
+    can::Mode mode() const { return m_mode.load(std::memory_order_relaxed); }
+    uint8_t mode_u8() const { return uint8_t(m_mode.load(std::memory_order_relaxed)); }
     const char* name() const;
 
 private:
-    void set_mode(can::Mode m) { m_mode = m; }
+    void set_mode(can::Mode m) { m_mode.store(m, std::memory_order_relaxed); }
     static bool falling_edge(bool prev, bool now) { return prev && !now; }
 
-    can::Mode m_mode = can::Mode::Manual;
+    std::atomic<can::Mode> m_mode{can::Mode::Manual};
     int       m_debounce = 0;
     bool      m_prev_mode_btn  = true;  // pull-up: HIGH
     bool      m_prev_start_btn = true;
