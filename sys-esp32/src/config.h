@@ -51,8 +51,8 @@ constexpr int kWdtToggleGpio = 23;
 
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;
-constexpr int kHeartbeatIntervalMs  =  500;   // 2 Hz
-constexpr int kHeartbeatTimeoutMs   = 1000;   // RT alive counter, 2 missed
+constexpr int kHeartbeatIntervalMs  =  100;   // 10 Hz SYS heartbeat (fast path for brake loss detection, gap #12)
+constexpr int kHeartbeatTimeoutMs   =  200;   // RT heartbeat loss (2 missed frames at 10 Hz). FTTI: 1.4m at 25 km/h.
 constexpr int kStartupGracePeriodMs = 3000;   // mask at boot
 constexpr int kSafetyCheckHz        =   20;
 constexpr int kGearCheckHz          =   50;

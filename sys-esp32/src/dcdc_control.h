@@ -6,8 +6,10 @@ class DcdcControl {
 public:
     void init() { m_enabled = false; m_last = false; }
     // Returns true if 0x012 should be sent (state changed)
-    bool tick(bool estop) {
-        bool want = !estop;
+    // DC-DC stays ON during ESTOP (architecture §8.6): MCUs, CAN transceivers, and brake light need 12V.
+    // Only the 12V accessory relay (GPIO27) is cut during ESTOP.
+    bool tick(bool /*estop*/) {
+        bool want = true;
         if (want == m_last) return false;
         m_last = want; m_enabled = want; return true;
     }
