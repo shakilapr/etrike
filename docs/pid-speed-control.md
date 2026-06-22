@@ -194,4 +194,4 @@ The PID is the outermost speed loop. The motor controller's internal current/tor
 
 ---
 
-*See also: [[physics-model]] for the tricycle kinematics that produce the speed setpoint, [[actuator-interfacing]] for the MCP4725 DAC that converts PID output to voltage, [[achitecture]] §7.6 for the control loop integration.*
+*See also: [[physics-model]] for the tricycle kinematics that produce the speed setpoint, [[actuator-interfacing]] for the MCP4725 DAC that converts PID output to voltage, [[architecture]] §7.6 for the control loop integration.*

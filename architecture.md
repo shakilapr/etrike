@@ -80,18 +80,19 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson), SYS | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
-| `0x202` | SES_ErrInfo | EPS-C | RT | 8 | 25 fault flags (6× L3) | 10 Hz | Medium |
+| `0x202` | SES_ErrInfo | EPS-C | RT | 8 | 25 fault flags (8× L3) | 10 Hz | Medium |
 | `0x203` | SES_Version | EPS-C | RT | 8 | SW + HW version | 1 Hz | Lowest |
-| `0x204` | RT_DRIVE_CMD | RT | **MTR (STM32)** | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
+| `0x204` | RT_DRIVE_CMD | RT | **MTR (STM32), SYS** | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
+| `0x205` | RT_BRAKE_CMD | RT | SYS | 4 | i32 brake_pressure_kpa | 50 Hz | Low |
 | `0x206` | MTR_MOTOR_FBK | MTR | SYS, RT | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | u8 lights bitfield | Change | Medium |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→ Jetson) | 8 | diag struct | 1 Hz | Lowest |
 | `0x6FA` | SES_Test | EPS-C | RT | 8 | Motor current, ECU temp, supply voltage | 100 Hz | Lowest |
 | `0x6FB` | SEB_Test | SEB | SYS | 8 | Motor current, ECU temp, supply voltage | 100 Hz | Lowest |
-| `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status + error level feedback | 100 Hz | Medium |
-| `0x731` | SEB_ErrInfo | SEB | SYS | 8 | 23 fault flags (14× L3) | 10 Hz | Medium |
+| `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status + error level feedback | 100 Hz | Lowest |
+| `0x731` | SEB_ErrInfo | SEB | SYS | 8 | 23 fault flags (16× L3) | 10 Hz | Lowest |
 | `0x741` | SEB_Version | SEB | SYS | 8 | SW + HW version | 1 Hz | Lowest |
-| `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Medium |
+| `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
 
@@ -138,7 +139,7 @@ RT receives a command on one bus, processes it internally, and transmits a **dif
 | Inbound (consumed) | Bus | Processing | Outbound (generated) | Bus |
 |--------------------|-----|-----------|----------------------|-----|
 | `0x300` HOST_DRIVE_CMD | High | Kinematics  → `ResolvedSetpoint` | `0x204` RT_DRIVE_CMD + `0x169` VCU_SES_REQ | Low |
-| `0x301` HOST_BRAKE_REQ | High | Max-select arbitration → `0x7B9` VCU_SEB_REQ (AUTO) | `0x7B9` (RT→SEB, AUTO only) | Low |
+| `0x301` HOST_BRAKE_REQ | High | Max-select arbitration → `0x205` RT_BRAKE_CMD | `0x205` (RT→SYS, AUTO only); SYS converts to `0x7B9` → SEB | Low |
 
 #### Category 3: Bus-local (never forwarded, never regenerated)
 
@@ -363,6 +364,7 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Low | `0x201` | SES_STATUS | `{u8 status, i16 angle, u8 torq, …}` (8 bytes) | Steering feedback: sync boot angle, following error check |
 | Low | `0x202` | SES_ErrInfo | 25 fault flags (8 bytes) | Log faults; escalate any L3 flag to ESTOP via `0x001` |
 | Low | `0x203` | SES_Version | `{u8 sw_ver, u8 hw_ver}` | Log on boot for compatibility check |
+| Low | `0x206` | MTR_MOTOR_FBK | `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | Forward to high; monitor motor feedback |
 | Low | `0x600` | SYS_DIAG_RPT | 8 bytes | Forward to high |
 | Low | `0x6FA` | SES_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | Monitor motor current / ECU temp for degradation |
 | Low | `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | Feed SYS alive counter; if frozen for >1000ms → ESTOP |
@@ -491,7 +493,7 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 | Command ID | `0x169` (factory default — SYNTREE preprogrammed, not reconfigurable. `0x7B9` is sent by RT in AUTO, SYS in MANUAL/ESTOP — one sender active at a time, no collision. `0x205` removed (RT now sends SEB directly)) |
 | Rate | 50 Hz (20 ms period) — continuous transmission required |
 | Control mode | 1 = Angle Mode |
-| Angle range | ±780 raw (±78.0°, unit limit; software clamp tighter) |
+| Angle range | ±700 raw (±70.0°, unit limit; software clamp tighter) |
 | Angle resolution | 0.1°/bit (int16) |
 | Slew rate | `VCU_SES_Tgt_StrAngleSpd` [°/s] — speed-dependent |
 | Rolling counter | 4-bit, increment 0→15 every frame |
@@ -605,7 +607,6 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | I2C SDA | 10 | I/O | IMU (optional) |
 | I2C SCL | 11 | Out | IMU (optional) |
 | WDT toggle | 21 | Out | External watchdog IC (TPS3850). Toggled by `control_task` at 100 Hz. |
-| WDT toggle | 21 | Out | External watchdog IC (TPS3850). Toggled by `control_task` at 100 Hz (every 10 ms). |
 
 ### 7.9 Configuration constants
 
@@ -699,6 +700,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x001` | SAFETY_ESTOP | — | RT or any | `mode_set(Estop)` |
 | `0x204` | RT_DRIVE_CMD | `{i32 speed, u8 gear}` | RT | → `setpoint_queue`; stale >200ms → zero speed + N |
 | `0x205` | RT_BRAKE_CMD | `i32 brake_pressure_kpa` | RT | → `g_brake_pressure_kpa` atomic; >0 → SEB Pressure Mode |
+| `0x206` | MTR_MOTOR_FBK | `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | MTR | EGAS L2: compare speed setpoint vs actual; mismatch → ESTOP |
 | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | RT | → `g_light_state` |
 | `0x6FB` | SEB_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | SEB | Monitor motor current / ECU temp trends for degradation early warning |
 | `0x721` | SEB_STATUS | `{u8 status, u16 stroke, u16 angle, u8 press, …}` (8 bytes) | SEB | Sync boot stroke, brake feedback, error level |
@@ -710,6 +712,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 
 | ID | Name | Payload | Rate | Notes |
 |----|------|---------|------|-------|
+| `0x001` | SAFETY_ESTOP | — | Event | → All nodes (ESTOP on L3 fault, RT heartbeat loss) |
 | `0x011` | SYS_SAFETY_STS | `{u8 estop, u8 hb_ok}` | 5 Hz | → RT (fwd to Jetson) |
 | `0x012` | SYS_DCDC_CMD | `u8 enable` | Change | → DC-DC converter |
 | `0x110` | SYS_MODE_CMD | `u8 mode` | Change | → RT |
@@ -790,6 +793,8 @@ Direction via gear lines — MCP4725 outputs 0–5V proportional to speed magnit
 | ESTOP | **`enable = 1`** (maintains 12V for MCUs, CAN transceivers, and brake light) | OFF (cuts headlight, turn signals, mode bulbs) |
 
 Sent on state change. **DC-DC stays ON during ESTOP** — MCUs need 12V→3.3V to run, CAN transceivers need 5V, and the brake light must illuminate during ESTOP (fail-visible). The 12V accessory relay (GPIO27) provides the secondary cut for non-safety loads. The brake light is wired to the always-on DC-DC output, not through the accessory relay, so it remains powered during ESTOP.
+
+> **Note:** [`can-dictionary.md`](can-dictionary.md) §0x012 still shows DC-DC → OFF on ESTOP (line 81). This paragraph documents the deliberate design change: DC-DC stays ON during ESTOP to maintain MCU power and brake light. The can-dictionary entry is outdated and should be updated to match this section.
 
 #### Signal lights
 
@@ -915,7 +920,7 @@ Jetson does NOT watch SYS — RT handles SYS failure (0x001 ESTOP)
 | Peer heartbeat ID | `0x7FE` (SYS) | — | `0x7FC` (Jetson) |
 | DLC | 1 | 1 | 1 |
 | Payload | `u8 alive_ctr` (0–255, wraps) | `u8 alive_ctr` | `u8 alive_ctr` |
-| Period | **100 ms (10 Hz)** | 500 ms (2 Hz) | 500 ms (2 Hz) |
+| Period | RT: 500 ms (2 Hz) / SYS: 100 ms (10 Hz) | 500 ms (2 Hz) | 500 ms (2 Hz) |
 | Timeout | **200ms** (2 missed frames) | 1500ms (3 missed frames) | **1500ms** (3 missed frames) |
 | Action on loss | **RT takes over 0x7B9 (stroke=max) + CAN 0x001.** MTR kills motor/gear locally. Brake gap ≤220ms. | Jetson: **assisted stop** — zero 0x204 + stop 0x169 + 0x205 brake=2000 kPa + SYS→MANUAL. Rider can override. | RT: zero `0x204` + stop `0x169` |
 
@@ -1048,7 +1053,7 @@ BRAKE_DEGRADED:
 > RT sends `0x205 {i32 brake_pressure_kpa}`. SYS converts using verified SYNTREE SEB spec:
 > `seb_raw = (uint8_t)(kpa * 0.02f)`. Scale: 0.05 MPa/bit, range 0–5 MPa (raw 0–100). At 5000 kPa (5 MPa) → raw=100. Clamp to `kSebMaxPressureRaw` (100).
 > 
-> **Mode-switching:** 0x205 transitions 0→positive: hold current stroke, switch mode bit to 2 (Pressure), ramp pressure from current measured to target. 0x205 drops to 0: switch mode to 1 (Stroke), stroke=0. Prevents pressure transients.
+> **Mode-switching:** 0x205 transitions 0→positive: hold current stroke, switch mode bit to 1 (Pressure), ramp pressure from current measured to target. 0x205 drops to 0: switch mode to 1 (Stroke), stroke=0. Prevents pressure transients.
 
 **Mode-dependent behavior:**
 

@@ -168,4 +168,4 @@ This means the controller has an ongoing duty to transmit — silence is interpr
 
 *Primary reference: [[emergency-system]] for ESTOP behavior, watchdog recovery sequence (which re-runs LBS), and testing procedures that exercise the LBS state machine.*
 
-*See also: [[defense-in-depth-safety]] for following error and dynamic angle clamp, [[syntree-security-protocol]] for rolling counter + checksum, [[achitecture]] §7.6 for the steering boot sequence, §8.6 for the brake boot sequence.*
+*See also: [[defense-in-depth-safety]] for following error and dynamic angle clamp, [[syntree-security-protocol]] for rolling counter + checksum, [[architecture]] §7.6 for the steering boot sequence, §8.6 for the brake boot sequence.*

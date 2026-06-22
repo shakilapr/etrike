@@ -69,7 +69,7 @@ The gateway receives a frame on one bus, processes it internally, and transmits 
 Jetson sends 0x300 {speed, yaw} on high bus
     → RT consumes it
     → RT runs kinematics + PID
-    → RT generates 0x202 {speed, gear} + 0x200 {angle} on low bus
+    → RT generates 0x204 {speed, gear} + 0x169 {angle} on low bus
 
 The low-bus messages are completely different from the high-bus message that triggered them.
 ```
@@ -106,10 +106,10 @@ dispatch_task loop:
 
        High bus IDs:
          0x001 → forward to low + mode_set(Estop) locally
-         0x300 → enqueue to cmd_queue (consume → generate 0x202 + 0x200)
+         0x300 → enqueue to cmd_queue (consume → generate 0x204 + 0x169)
          0x301 → atomic store brake_request (consume locally)
          0x302 → forward to low
-         0x7FF → update Jetson heartbeat liveness (consume locally)
+         0x7FC → update Jetson heartbeat liveness (consume locally)
 
       All other IDs → ignore (bus-local)
   4. Enqueue forwarded frames to gw_tx_low_queue or gw_tx_high_queue
@@ -144,8 +144,8 @@ The gateway is a **policy enforcement point**. It doesn't just pass bits — it 
 
 | Check | Where | What it prevents |
 |-------|-------|-----------------|
-| Steering angle clamp | RT control task, before `0x200` TX | Jetson commanding physically impossible or dangerous angles |
-| Speed limit clamp | RT control task, before `0x202` TX | Jetson commanding overspeed |
+| Steering angle clamp | RT control task, before `0x169` TX | Jetson commanding physically impossible or dangerous angles |
+| Speed limit clamp | RT control task, before `0x204` TX | Jetson commanding overspeed |
 | Obstacle speed limit | RT control task | Running into detected obstacles |
 | Command staleness | RT watchdog task | Jetson hung → zero setpoints |
 

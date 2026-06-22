@@ -27,9 +27,9 @@ Separating CAN buses serves three purposes:
  │  (ROS 2, planning)      │          │  (safety, motor, brake)     │
  │                         │          │                             │
  │  TX: 0x300,0x301,0x302  │          │  TX: 0x011,0x012,0x110,    │
- │      0x001,0x7FD         │          │      0x120,0x600,0x7B9,    │
- │  RX: 0x011,0x120,0x210  │          │      0x001,0x7FD            │
- │      0x220,0x400,0x600  │          │  RX: 0x001,0x202,0x302,    │
+ │      0x001,0x7FC         │          │      0x120,0x600,0x7B9,    │
+ │  RX: 0x011,0x120,0x210  │          │      0x001,0x7FE            │
+ │      0x220,0x400,0x600  │          │  RX: 0x001,0x204,0x302,    │
  │      0x001,0x7FD         │          │      0x721,0x7FD            │
  └───────────┬─────────────┘          └──────────────┬──────────────┘
              │                                       │
@@ -92,7 +92,7 @@ The gateway applies explicit, static forwarding rules. Not all messages cross th
 | `0x201` | SES_STATUS | Low | EPS-C feedback — consumed by RT on low |
 | `0x7B9` | VCU_SEB_REQ | Low | Brake command from SYS to SEB |
 | `0x721` | SEB_STATUS | Low | Brake feedback to SYS |
-| `0x7FD` | HEARTBEAT | Both | Independent per bus (each bus has its own heartbeat domain) |
+| `0x7FC`, `0x7FD`, `0x7FE` | HEARTBEAT (Jetson, RT, SYS) | Both | Independent per bus (each bus has its own heartbeat domain) |
 
 ---
 
@@ -153,4 +153,4 @@ This is acceptable because:
 
 ---
 
-*See also: [[can-addressing-for-etrike]] for the CAN ID scheme, [[distributed-architecture]] for three-node rationale, [[achitecture]] §2.3 for forwarding rules, §7.7 for gateway task layout.*
+*See also: [[can-addressing-for-etrike]] for the CAN ID scheme, [[distributed-architecture]] for three-node rationale, [[architecture]] §2.3 for forwarding rules, §7.7 for gateway task layout.*
