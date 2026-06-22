@@ -9,7 +9,7 @@ The E-Trike uses a **SYNTREE SEB** electro-hydraulic brake actuator commanded vi
 ```
 Brake lever (GPIO2, active-low) ──► SYS ESP32-S3
                                          │
-                                    CAN 0x720 (50 Hz) ──► SYNTREE SEB ──► hydraulic master cylinder
+                                    CAN 0x7B9 (50 Hz) ──► SYNTREE SEB ──► hydraulic master cylinder
                                                                               │
                                                                          calipers (front + rear)
 ```
@@ -18,12 +18,12 @@ Brake lever (GPIO2, active-low) ──► SYS ESP32-S3
 
 ## 2. Two control modes — same frame, different fields
 
-`0x720 VCU_SEB_REQ` carries both stroke and pressure targets in every frame. The `VCU_SEB_Control_Mode` bit (byte 0, bit 2) selects which one the SEB acts on:
+`0x7B9 VCU_SEB_REQ` carries both stroke and pressure targets in every frame. The `VCU_SEB_Control_Mode` bit (byte 0, bit 2) selects which one the SEB acts on:
 
 | Mode | Field | Type | What it commands | Used when |
 |------|-------|------|-----------------|-----------|
 | **Stroke (1)** | `VCU_SEB_Stroke_Value_Req` | u16, 0.05 mm/bit, offset -30 | Pushrod moves to an exact physical position | MANUAL lever, ESTOP, AUTO fallback |
-| **Pressure (2)** | `VCU_SEB_Pre_Value_Req` | u8, 0.05 MPa/bit, 0–5 MPa | SEB's internal PID holds a target hydraulic pressure | AUTO modulated braking via `0x203` |
+| **Pressure (2)** | `VCU_SEB_Pre_Value_Req` | u8, 0.05 MPa/bit, 0–5 MPa | SEB's internal PID holds a target hydraulic pressure | AUTO modulated braking via `0x205` |
 
 Both fields are present in every frame. The mode bit tells the SEB which one to obey. SYS can switch modes mid-operation by changing the bit — the SEB transitions on the next received frame.
 
@@ -40,7 +40,7 @@ Rider squeezes lever
        │
   brake_task (20 Hz): lever_pressed
        │
-       ▼  send 0x720 {mode=Stroke, stroke=15mm} at 50 Hz
+       ▼  send 0x7B9 {mode=Stroke, stroke=15mm} at 50 Hz
        │
   SEB pushrod → 15mm → hydraulic pressure builds → calipers clamp
        │
@@ -55,7 +55,7 @@ Manual braking is **binary** — 15 mm or 0 mm. No modulation. The rider control
 
 ## 4. AUTO mode — three sources, one actuator
 
-AUTO has three independent brake triggers converging on the same `0x720` frame. Priority order:
+AUTO has three independent brake triggers converging on the same `0x7B9` frame. Priority order:
 
 ### Priority: ESTOP > lever > modulated > released
 
@@ -63,27 +63,27 @@ AUTO has three independent brake triggers converging on the same `0x720` frame. 
 brake_task @ 20 Hz:
 
   if ESTOP:
-      send 0x720 {mode=Stroke, stroke=27mm}   ← full lock
+      send 0x7B9 {mode=Stroke, stroke=27mm}   ← full lock
 
   elif lever_pressed:
-      send 0x720 {mode=Stroke, stroke=15mm}   ← driver always wins
+      send 0x7B9 {mode=Stroke, stroke=15mm}   ← driver always wins
 
-  elif g_brake_pressure_kpa > 0:              ← from 0x203 RT_BRAKE_CMD
+  elif g_brake_pressure_kpa > 0:              ← from 0x205 RT_BRAKE_CMD
       raw = (uint8_t)(kpa * 0.02)             ← 5000 kPa → raw=100 (5 MPa)
       raw = clamp(raw, 0, 100)
-      send 0x720 {mode=Pressure, pressure=raw} ← modulated braking
+      send 0x7B9 {mode=Pressure, pressure=raw} ← modulated braking
 
   else:
-      send 0x720 {mode=Stroke, stroke=0mm}    ← released
+      send 0x7B9 {mode=Stroke, stroke=0mm}    ← released
 ```
 
-**The driver override is absolute.** If the rider squeezes the lever, SYS switches back to Stroke Mode at 15 mm regardless of what `0x203` commands. The human always wins.
+**The driver override is absolute.** If the rider squeezes the lever, SYS switches back to Stroke Mode at 15 mm regardless of what `0x205` commands. The human always wins.
 
 ### 4.1 Source 1: Brake lever (driver override)
 
 Identical to MANUAL mode. The lever is a binary switch — pressed = 15 mm, released = 0 mm. Available in all modes.
 
-### 4.2 Source 2: `0x203 RT_BRAKE_CMD` (modulated autonomous braking)
+### 4.2 Source 2: `0x205 RT_BRAKE_CMD` (modulated autonomous braking)
 
 ```
 Jetson perception stack
@@ -99,16 +99,16 @@ RT dispatch_task:
        │
        ▼
 RT can_tx_low_task:
-   send 0x203 {brake_kpa} at 50 Hz  (low CAN)
+   send 0x205 {brake_kpa} at 50 Hz  (low CAN)
        │
        ▼
 SYS dispatch_task:
-   g_brake_pressure_kpa = 0x203 value  (atomic)
+   g_brake_pressure_kpa = 0x205 value  (atomic)
        │
        ▼
 SYS brake_task:
    raw = (uint8_t)(kpa × 0.02)
-   send 0x720 {mode=Pressure, pressure=raw}
+   send 0x7B9 {mode=Pressure, pressure=raw}
        │
        ▼
 SEB internal PID: holds target pressure
@@ -118,7 +118,7 @@ RT uses max-select arbitration: the worse (higher) pressure between Jetson's dec
 
 ### 4.3 Source 3: ESTOP
 
-Always Stroke Mode at 27 mm (maximum physical stroke). This path bypasses every software decision — it doesn't check `0x203`, doesn't check the lever, doesn't care about Pressure Mode. It's the emergency stop.
+Always Stroke Mode at 27 mm (maximum physical stroke). This path bypasses every software decision — it doesn't check `0x205`, doesn't check the lever, doesn't care about Pressure Mode. It's the emergency stop.
 
 ---
 
@@ -129,7 +129,7 @@ ESTOP trigger (button / CAN 0x001 / heartbeat timeout)
        │
        ▼
 SYS brake_task:
-   send 0x720 {mode=Stroke, stroke=27mm}   ← maximum physical stroke
+   send 0x7B9 {mode=Stroke, stroke=27mm}   ← maximum physical stroke
        │
        ▼
 SEB: full hydraulic pressure → maximum braking force
@@ -144,18 +144,18 @@ brake_light GPIO21 = ON (forced)
 
 ## 6. Mode-switching protocol
 
-### Stroke → Pressure (0x203 transitions 0 → positive)
+### Stroke → Pressure (0x205 transitions 0 → positive)
 
 ```
 1. SYS is in Stroke Mode, stroke=0mm (released)
-2. 0x203 arrives with positive kPa value
+2. 0x205 arrives with positive kPa value
 3. SYS: hold current stroke position (already released)
-4. SYS: switch 0x720 mode bit from 1 (Stroke) to 2 (Pressure)
+4. SYS: switch 0x7B9 mode bit from 1 (Stroke) to 2 (Pressure)
 5. SYS: set VCU_SEB_Pre_Value_Req to converted raw value
 6. SEB: receives frame, sees mode=Pressure, starts PID loop from 0 MPa → target
 ```
 
-### Pressure → Stroke (0x203 drops to 0)
+### Pressure → Stroke (0x205 drops to 0)
 
 ```
 1. SYS: switch mode bit from 2 (Pressure) back to 1 (Stroke)
@@ -183,7 +183,7 @@ Example conversions:
   5000 kPa → 5000 × 0.02 = 100  → 5.0 MPa (maximum, emergency)
 ```
 
-Verified against SYNTREE SEB CAN protocol specification. `VCU_SEB_Pre_Value_Req` is u8 at bit 32 of `0x720`, scale 0.05 MPa/bit, range 0–5 MPa.
+Verified against SYNTREE SEB CAN protocol specification. `VCU_SEB_Pre_Value_Req` is u8 at bit 32 of `0x7B9`, scale 0.05 MPa/bit, range 0–5 MPa.
 
 ---
 
@@ -220,7 +220,7 @@ All three sources are local to SYS — no CAN round-trip needed for the lever or
 Power-on
     │
     ▼
-BRAKE_BOOT_WAIT (500ms) — do NOT transmit 0x720
+BRAKE_BOOT_WAIT (500ms) — do NOT transmit 0x7B9
     │
     ▼
 BRAKE_LISTEN_SYNC:
@@ -231,10 +231,10 @@ BRAKE_LISTEN_SYNC:
     Timeout: 2s → BRAKE_FAULT
     │
     ▼
-BRAKE_ACTIVE: transmit 0x720 at 50 Hz continuously
+BRAKE_ACTIVE: transmit 0x7B9 at 50 Hz continuously
 ```
 
-If the SEB never responds → `BRAKE_FAULT`. SYS stops transmitting `0x720`. The SEB enters its own timeout-fault. The rider has no hydraulic braking. This is a known single-point failure — there is currently no mechanical brake fallback (tracked as issue M2).
+If the SEB never responds → `BRAKE_FAULT`. SYS stops transmitting `0x7B9`. The SEB enters its own timeout-fault. The rider has no hydraulic braking. This is a known single-point failure — there is currently no mechanical brake fallback (tracked as issue M2).
 
 ---
 
@@ -244,10 +244,10 @@ If the SEB never responds → `BRAKE_FAULT`. SYS stops transmitting `0x720`. The
 |------|---------|------|---------|------|
 | Lever | Rider squeezes GPIO2 | Stroke (1) | 15 mm | MANUAL, AUTO (always overrides) |
 | ESTOP | Button / CAN `0x001` / HB loss | Stroke (1) | 27 mm (max) | Any mode |
-| Jetson decel | Perception → `0x301` → RT → `0x203` | Pressure (2) | 0–5 MPa | AUTO only, no lever |
-| Obstacle | HC-SR04 → RT → `0x203` | Pressure (2) | 0–5 MPa | AUTO only, no lever |
-| Released | No lever, no `0x203`, no ESTOP | Stroke (1) | 0 mm | AUTO default |
+| Jetson decel | Perception → `0x301` → RT → `0x205` | Pressure (2) | 0–5 MPa | AUTO only, no lever |
+| Obstacle | HC-SR04 → RT → `0x205` | Pressure (2) | 0–5 MPa | AUTO only, no lever |
+| Released | No lever, no `0x205`, no ESTOP | Stroke (1) | 0 mm | AUTO default |
 
 ---
 
-*See also: [`architecture.md`](../architecture.md) §8.6 for brake control mechanisms, [`can-dictionary.md`](../can-dictionary.md) §0x720 and §0x721 for bit-level frame layouts, [`docs/brake-unit.md`](brake-unit.md) for SYNTREE SEB protocol reference, [`issues.md`](../issues.md) M2 for the mechanical fallback gap.*
+*See also: [`architecture.md`](../architecture.md) §8.6 for brake control mechanisms, [`can-dictionary.md`](../can-dictionary.md) §0x7B9 and §0x721 for bit-level frame layouts (also §0x731 SEB_ErrInfo, §0x741 SEB_Version, §0x6FB SEB_Test), [`docs/brake-unit.md`](brake-unit.md) for SYNTREE SEB protocol reference, [`issues.md`](../issues.md) M2 for the mechanical fallback gap.*

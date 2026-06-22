@@ -153,7 +153,7 @@ void control_task() {
         float dac_value = pid.update(setpoint.motor_speed_mmps,
                                       measured_speed, dt);
 
-        // Push to downstream (0x202 for SYS + 0x200 for EPS-C)
+        // Push to downstream (0x204 for MTR + 0x169 for EPS-C)
         ActuatorOutput out = {
             .dac_value = static_cast<uint16_t>(dac_value),
             .gear = setpoint.gear,

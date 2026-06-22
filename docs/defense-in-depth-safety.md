@@ -49,8 +49,8 @@ RT's watchdog task runs at 10 Hz and checks the timestamp of the last received `
 
 ```
 if (time_since_last_drive_cmd > 500 ms) {
-    zero 0x202 RT_DRIVE_SETPOINT  →  SYS drives motor at 0 V
-    stop 0x200 VCU_SES_REQ        →  EPS-C timeout-faults
+    zero 0x204 RT_DRIVE_CMD       →  MTR drives motor at 0 V
+    stop 0x169 VCU_SES_REQ        →  EPS-C timeout-faults
 }
 ```
 
@@ -62,7 +62,7 @@ If Jetson's planning stack hangs or the ROS→CAN bridge crashes, the vehicle co
 
 ## Layer 5: Steering following error
 
-While in AUTO mode, RT compares the commanded steering angle (`0x200`) against the actual angle reported by EPS-C (`0x201 SES_StrAngle`):
+While in AUTO mode, RT compares the commanded steering angle (`0x169`) against the actual angle reported by EPS-C (`0x201 SES_StrAngle`):
 
 ```
 error = abs(cmd_angle_mdeg - actual_angle_mdeg);
@@ -74,7 +74,7 @@ if (error > 5000_mdeg && error_duration_ms > 300) {
 This catches:
 - **Mechanical faults:** stuck linkage, rock jam, bent tie rod.
 - **Actuator faults:** EPS-C motor failure, encoder failure, internal control loop fault.
-- **CAN faults:** corrupted `0x200` frames (caught because checksum failure → EPS-C rejects → angle doesn't move).
+- **CAN faults:** corrupted `0x169` frames (caught because checksum failure → EPS-C rejects → angle doesn't move).
 
 The 300 ms persistence requirement prevents false triggers from momentary CAN glitches or sensor noise.
 
@@ -163,8 +163,8 @@ All safety layers ultimately call `mode_set(Estop)`. The ESTOP handler:
 
 1. Sets `g_mode = Estop` (atomic, visible to all tasks).
 2. Motor task: MCP4725 → 0 V, all gear relays → OFF.
-3. Brake task: `0x720` stroke = max (full brake, ~27 mm).
-4. Steering: `0x200` stops transmitting → EPS-C timeout-faults.
+3. Brake task: `0x7B9` stroke = max (full brake, ~27 mm).
+4. Steering: `0x169` stops transmitting → EPS-C timeout-faults.
 5. DC-DC: `0x012` enable = 0 → 12V rail off.
 6. Lights: brake ON, all others OFF.
 7. Exit requires power-cycle (cannot leave ESTOP via mode switch).

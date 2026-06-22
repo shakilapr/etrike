@@ -14,7 +14,7 @@ The e-trike uses a **header-only shared library** consumed by each project via c
 └─────────────┘                  └─────────────┘
 
 Both must agree on:
-  • CAN message IDs (0x200 = steering, 0x203 = brake, …)
+  • CAN message IDs (0x169 = steering, 0x205 = brake, …)
   • Frame layouts (which byte is speed, gear, mode)
   • Enum values (Mode::Auto = 1, Gear::D = 1)
   • Serialisation order (big-endian vs little-endian per field)

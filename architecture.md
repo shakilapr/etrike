@@ -80,16 +80,22 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson), SYS | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
+| `0x202` | SES_ErrInfo | EPS-C | RT | 8 | 25 fault flags (6× L3) | 10 Hz | Medium |
+| `0x203` | SES_Version | EPS-C | RT | 8 | SW + HW version | 1 Hz | Lowest |
 | `0x204` | RT_DRIVE_CMD | RT | **MTR (STM32)** | 5 | i32 speed_mmps, u8 gear | 100 Hz | Medium |
 | `0x206` | MTR_MOTOR_FBK | MTR | SYS, RT | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | u8 lights bitfield | Change | Medium |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→ Jetson) | 8 | diag struct | 1 Hz | Lowest |
+| `0x6FA` | SES_Test | EPS-C | RT | 8 | Motor current, ECU temp, supply voltage | 100 Hz | Lowest |
+| `0x6FB` | SEB_Test | SEB | SYS | 8 | Motor current, ECU temp, supply voltage | 100 Hz | Lowest |
+| `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status + error level feedback | 100 Hz | Medium |
+| `0x731` | SEB_ErrInfo | SEB | SYS | 8 | 23 fault flags (14× L3) | 10 Hz | Medium |
+| `0x741` | SEB_Version | SEB | SYS | 8 | SW + HW version | 1 Hz | Lowest |
 | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Medium |
-| `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status feedback | 100 Hz | Medium |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
 
-> **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`. SEB uses factory command `0x7B9` and status `0x721`. `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`.
+> **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`, plus diagnostic frames `0x202` (err info), `0x203` (version), `0x6FA` (telemetry). SEB uses factory command `0x7B9` and status `0x721`, plus diagnostic frames `0x731` (err info), `0x741` (version), `0x6FB` (telemetry). `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`. `0x205` RT_BRAKE_CMD avoids collision with `0x202` and `0x203`.
 
 ### 2.2 High-level CAN
 
@@ -354,8 +360,11 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Low | `0x011` | SYS_SAFETY_STS | `{u8 estop, u8 hb_ok}` | Forward to high |
 | Low | `0x110` | SYS_MODE_CMD | `u8 mode` | `mode_set(Manual/Auto)` |
 | Low | `0x120` | SYS_THROTTLE_STS | `i16 speed_mmps` | Forward to high |
-| Low | `0x201` | SES_STATUS | `{u8 status, i16 angle, …}` (8 bytes) | Steering feedback: sync boot angle, following error check |
+| Low | `0x201` | SES_STATUS | `{u8 status, i16 angle, u8 torq, …}` (8 bytes) | Steering feedback: sync boot angle, following error check |
+| Low | `0x202` | SES_ErrInfo | 25 fault flags (8 bytes) | Log faults; escalate any L3 flag to ESTOP via `0x001` |
+| Low | `0x203` | SES_Version | `{u8 sw_ver, u8 hw_ver}` | Log on boot for compatibility check |
 | Low | `0x600` | SYS_DIAG_RPT | 8 bytes | Forward to high |
+| Low | `0x6FA` | SES_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | Monitor motor current / ECU temp for degradation |
 | Low | `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | Feed SYS alive counter; if frozen for >1000ms → ESTOP |
 | High | `0x001` | SAFETY_ESTOP | — | `mode_set(Estop)`, forward to low |
 | High | `0x300` | HOST_DRIVE_CMD | `{i32 speed, i32 yaw}` | → `cmd_queue` |
@@ -691,7 +700,10 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x204` | RT_DRIVE_CMD | `{i32 speed, u8 gear}` | RT | → `setpoint_queue`; stale >200ms → zero speed + N |
 | `0x205` | RT_BRAKE_CMD | `i32 brake_pressure_kpa` | RT | → `g_brake_pressure_kpa` atomic; >0 → SEB Pressure Mode |
 | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | RT | → `g_light_state` |
-| `0x721` | SEB_STATUS | `{u8 status, u16 stroke, …}` (8 bytes) | SEB | Sync boot stroke, brake feedback |
+| `0x6FB` | SEB_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | SEB | Monitor motor current / ECU temp trends for degradation early warning |
+| `0x721` | SEB_STATUS | `{u8 status, u16 stroke, u16 angle, u8 press, …}` (8 bytes) | SEB | Sync boot stroke, brake feedback, error level |
+| `0x731` | SEB_ErrInfo | 23 fault flags (8 bytes) | SEB | Log faults; escalate any L3 flag to ESTOP via `0x001` |
+| `0x741` | SEB_Version | `{u8 sw_ver, u8 hw_ver}` | SEB | Log on boot for compatibility check |
 | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | RT | Feed RT alive counter; timeout >1000ms → ESTOP. Faster detection: `0x204` staleness at 200ms → zero speed. |
 
 ### 8.4 CAN messages sent
@@ -1024,14 +1036,14 @@ BRAKE_DEGRADED:
 |-----------|-------|
 | Command ID | `0x7B9` |
 | Rate | 50 Hz (20 ms) — continuous transmission required |
-| Control mode | 1 = Stroke Mode, 2 = Pressure Mode |
+| Control mode | 0 = Stroke Mode, 1 = Pressure Mode (1-bit per CSV) |
 | Stroke range | -5 to 27 mm (raw: 500–1140, scale 0.05, offset -30) |
 | Pressure range | 0 to 5 MPa (raw: 0–100, u8, scale 0.05 MPa/bit, offset 0) |
 | Pressure conversion | `seb_raw = kPa × 0.02` (1 MPa = 1000 kPa; 1 bit = 0.05 MPa) |
 | Rolling counter | 4-bit, increment every frame |
 | Checksum | XOR of bytes 0–6, then `^ 0xFF` (verify against spec) |
 
-> **Pressure Mode (2) — verified kPa→raw conversion:**
+> **Pressure Mode (1) — verified kPa→raw conversion:**
 > 
 > RT sends `0x205 {i32 brake_pressure_kpa}`. SYS converts using verified SYNTREE SEB spec:
 > `seb_raw = (uint8_t)(kpa * 0.02f)`. Scale: 0.05 MPa/bit, range 0–5 MPa (raw 0–100). At 5000 kPa (5 MPa) → raw=100. Clamp to `kSebMaxPressureRaw` (100).
