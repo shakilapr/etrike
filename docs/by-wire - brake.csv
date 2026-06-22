@@ -4,7 +4,7 @@ VCU_SEB_Req,Normal,0xCustomize_Default_7B9,Cycle,20,8,VCU_SEB_Alignment_Enable,S
 ,,,,,,VCU_SEB_Control_Mode,SEB Control Mode,Motorola LSB,0,2,1,Unsigned,1,0,0,1,0x0
 ,,,,,,VCU_SEB_AutoBrake,SEB Auto Brake,Motorola LSB,0,3,1,Unsigned,1,0,0,1,0x0
 ,,,,,,VCU_SEB_Stroke_Value_Req,VCU Request Stroke Value,Motorola LSB,2,16,16,Unsigned,0.05,-30,-5,27,0x0
-,,,,,,VCU_SEB_Pre_Value_Req,VCU Request Pressure Value,Motorola LSB,4,32,8,Unsigned,0.05,0,0,Depends on motor power,0x0
+,,,,,,VCU_SEB_Pre_Value_Req,VCU Request Pressure Value,Motorola LSB,3,24,8,Unsigned,0.05,0,0,Depends on motor power,0x0
 ,,,,,,VCU_SEB_RollCnt_Enable,Life Signal Validity,Motorola LSB,6,48,1,Unsigned,1,0,0,1,0x0
 ,,,,,,VCU_SEB_CheckSum_Enable,Checksum Validity,Motorola LSB,6,49,1,Unsigned,1,0,0,1,0x0
 ,,,,,,VCU_SEB_RollCnt,Life Signal,Motorola LSB,6,52,4,Unsigned,1,0,0,15,0x0
@@ -15,7 +15,7 @@ SEB_Status,Normal,0xCustomize_Default_721,Cycle,10,8,SEB_INF_Alignment_Status,Al
 ,,,,,,SEB_AutoBrake_Status,Auto Brake Status Feedback,Motorola LSB,0,4,1,Unsigned,1,0,0,1,0x0
 ,,,,,,SEB_Error_Status,"0x0: No fault0x1: Level 1 fault (minor, warning)0x2: Level 2 fault (general, warning)0x3: Level 3 fault (severe, request shutdown)",Motorola LSB,0,6,2,Unsigned,1,0,0,3,0x0
 ,,,,,,SEB_Stroke_Value,Stroke Value Feedback,Motorola LSB,2,16,16,Unsigned,0.05,-30,-5,27,0x0
-,,,,,,SEB_Pressure_Value,Pressure Value Feedback,Motorola LSB,4,32,8,Unsigned,0.05,0,0,5,0x0
+,,,,,,SEB_Pressure_Value,Pressure Value Feedback,Motorola LSB,3,24,8,Unsigned,0.05,0,0,5,0x0
 ,,,,,,SEB_Angle_Value,Angle Feedback,Motorola LSB,5,40,16,Signed,0.5,0,-150,840,0x0
 ,,,,,,SEB_RollCnt_Enable_Status,Life Signal Status Feedback,Motorola LSB,6,48,1,Unsigned,1,0,0,1,0x0
 ,,,,,,SEB_CheckSum_Enable_Status,Checksum Status Feedback,Motorola LSB,6,49,1,Unsigned,1,0,0,1,0x0
@@ -36,16 +36,16 @@ SEB_ErrInfo,Normal,0xCustomize_Default_731,Cycle,100,8,SEB_ECUUnderVolt_Err,Cont
 ,,,,,,SEB_SensorUCL_Err,Sensor Plausibility Fault_L3,Motorola LSB,1,13,1,Unsigned,1,0,0,1,0x0
 ,,,,,,SEB_Alignment_Err,Alignment Fault_L2,Motorola LSB,1,14,1,Unsigned,1,0,0,1,0x0
 ,,,,,,SEB_AngleOver_Err,Angle Out of Bounds_L2,Motorola LSB,1,15,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_Mtr_Stall_Err,Motor Stall Fault_L3,Motorola LSB,2,16,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_MtrD/C_Err,Motor Disconnect Fault_L3,Motorola LSB,2,17,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_Oil_Err,Oil Pressure Error Fault_L2,Motorola LSB,2,18,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_InitOil_Err,Initial Oil Pressure Fault_L3,Motorola LSB,2,19,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_SentValue_Err,Send Value Error_L3,Motorola LSB,2,20,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_Mtr_No-load_Err,Motor No-load Fault_L3,Motorola LSB,2,21,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_PreSensorOver_Err,Oil Pressure Sensor Overvoltage Fault_L2,Motorola LSB,2,22,1,Unsigned,1,0,0,1,0x0
-,,,,,,SEB_Low-Volt Charging_Err,Low Voltage Charging Failure Fault_L2,Motorola LSB,2,23,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_Mtr_Stall_Err,Motor Stall Fault_L3,Motorola LSB,2,17,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_MtrD/C_Err,Motor Disconnect Fault_L3,Motorola LSB,2,18,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_Oil_Err,Oil Pressure Error Fault_L2,Motorola LSB,2,19,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_InitOil_Err,Initial Oil Pressure Fault_L3,Motorola LSB,2,20,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_SentValue_Err,Send Value Error_L3,Motorola LSB,2,21,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_Mtr_No-load_Err,Motor No-load Fault_L3,Motorola LSB,2,22,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_PreSensorOver_Err,Oil Pressure Sensor Overvoltage Fault_L2,Motorola LSB,3,24,1,Unsigned,1,0,0,1,0x0
+,,,,,,SEB_Low-Volt Charging_Err,Low Voltage Charging Failure Fault_L2,Motorola LSB,3,25,1,Unsigned,1,0,0,1,0x0
 SEB_Version,Normal,0xCustomize_Default_741,Cycle,1000,8,SEB_SW_Version,SEB Software Version,Motorola LSB,0,0,8,Unsigned,0.01,0,0,25.5,0xC8
 ,,,,,,SEB_HW_Version,SEB Hardware Version,Motorola LSB,1,8,8,Unsigned,0.1,0,0,25.5,0x0D
-SEB_Test,Normal,0xCustomize_Default_6FB,Cycle,10,8,SEB_MtrCurr,Motor Current,Motorola LSB,0,0,16,Signed,0.0078125,0,-255,255,0
-,,,,,,SEB_ECUTemp,ECU Temperature,Motorola LSB,2,16,16,Signed,0.5,0,-40,215,25
-,,,,,,SEB_PowVolt,Power Supply Voltage,Motorola LSB,4,32,16,Unsigned,0.00390625,0,0,32,17
+SEB_Test,Normal,0xCustomize_Default_6FB,Cycle,10,8,SEB_MtrCurr,Motor Current,Motorola LSB,1,0,16,Signed,0.0078125,0,-255,255,0
+,,,,,,SEB_ECUTemp,ECU Temperature,Motorola LSB,3,0,16,Unsigned,0.5,0,-40,215,25
+,,,,,,SEB_PowVolt,Power Supply Voltage,Motorola LSB,5,0,16,Unsigned,0.00390625,0,0,32,17
