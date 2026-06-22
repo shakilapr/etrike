@@ -11,7 +11,7 @@ constexpr float kWheelbaseMM     = 1500.0f;
 constexpr float kTrackWidthMM    =  800.0f;
 constexpr float kWheelRadiusMM   =  200.0f;
 
-// ── steering — SYNTREE EPS-C via CAN 0x200 ───────────────────────
+// ── steering — SYNTREE EPS-C via CAN 0x169 ───────────────────────
 constexpr float kSteerHardLimitDeg      =  40.0f;   // software hard-stop
 constexpr float kSteerFollowingErrDeg   =   5.0f;   // trigger ESTOP
 constexpr int   kSteerFollowingErrMs    =   300;    // must persist
@@ -36,7 +36,7 @@ constexpr unsigned kObstacleClearDistMM =  3000;
 constexpr int kControlLoopHz           =  100;
 constexpr int kCmdStaleTimeoutMs       =  500;
 constexpr int kHeartbeatIntervalMs     =  500;  // 2 Hz
-constexpr int kHeartbeatTimeoutMsSys   = 1000;  // SYS→RT, 2 missed frames
+constexpr int kHeartbeatTimeoutMsSys   = 200;  // SYS→RT, 2 missed at 10 Hz → brake takeover
 constexpr int kHeartbeatTimeoutMsJetson= 1500;  // Jetson→RT, 3 missed
 
 // ── CAN — low-level (built-in TWAI) ───────────────────────────────

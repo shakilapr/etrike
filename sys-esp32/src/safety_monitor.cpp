@@ -2,11 +2,18 @@
 // Startup grace: 3000ms. Timeout: 1000ms. Alive counter validation.
 
 #include "safety_monitor.h"
+#include "esp_timer.h"
 
 namespace sys {
 
 int64_t g_sys_test_time_us = 0;
-int64_t get_time_us() { return g_sys_test_time_us; }
+int64_t get_time_us() {
+#ifdef TESTING
+    return g_sys_test_time_us;
+#else
+    return esp_timer_get_time();
+#endif
+}
 
 void SafetyMonitor::init() {
     m_estop       = false;

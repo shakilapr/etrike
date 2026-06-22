@@ -23,8 +23,6 @@ constexpr uint32_t kIdSysThrottleSts    = 0x120;  // SYS→RT (→Jetson), 100 H
 constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
 constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT→SYS brake pressure kPa, 50 Hz
 constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)->SYS+RT motor feedback, 50 Hz
-
-constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)->SYS+RT motor feedback, 50 Hz
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
 constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson), 1 Hz
 constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
@@ -178,7 +176,7 @@ struct VcuSesReq {
     uint8_t  reserved_0      : 6;   // Byte0,b2-7
     uint8_t  reserved_1         = 0; // Byte1
     int16_t  target_angle       = 0; // Bytes2-3, i16 LE, scale 0.1 deg, -3000..780
-    uint16_t target_speed       = 320;// Bytes4-5, u16 LE, scale 1 deg/s, 125-1250, init 0x140
+    uint16_t target_speed       = 328;// Bytes4-5, u16 LE, scale 1 deg/s, 125-1250, init 0x0148
     // Byte5 also contains security bits (b40-47) — overlaid in pack()
     uint8_t  roll_cnt_enable  : 1;   // Byte5,b40
     uint8_t  checksum_enable  : 1;   // Byte5,b41
@@ -212,32 +210,24 @@ struct RtDriveCmd {
     }
 };
 
-// 0x205 RT_BRAKE_CMD — RT→SYS
-n// 0x206 MTR_MOTOR_FBK — MTR(STM32)→SYS+RT
-struct MtrMotorFbk {
-    int16_t actual_speed_mmps = 0;
-    uint8_t gear_state        = 0;
-    uint8_t fault_flags       = 0;
-
 // 0x206 MTR_MOTOR_FBK — MTR(STM32)→SYS+RT
 struct MtrMotorFbk {
-    int16_t actual_speed_mmps = 0;
-    uint8_t gear_state        = 0;
-    uint8_t fault_flags       = 0;
+    int16_t actual_speed_mmps = 0;  // i16 (mm/s)
+    uint8_t gear_state        = 0;  // u8 enum {N,D,S,R}
+    uint8_t fault_flags       = 0;  // u8 bitmask (bit0=ESTOP_ACTIVE)
+
     void to_frame(Frame& f) const {
         f.id = kIdMtrMotorFbk; f.dlc = 4;
         f.put_i16(0, actual_speed_mmps);
         f.put_u8(2, gear_state);
         f.put_u8(3, fault_flags);
     }
-};
-    void to_frame(Frame& f) const {
-        f.id = kIdMtrMotorFbk; f.dlc = 4;
-        f.put_i16(0, actual_speed_mmps);
-        f.put_u8(2, gear_state);
-        f.put_u8(3, fault_flags);
+    static MtrMotorFbk from_frame(const Frame& f) {
+        return {f.i16_at(0), f.u8_at(2), f.u8_at(3)};
     }
 };
+
+// 0x205 RT_BRAKE_CMD — RT→SYS
 struct RtBrakeCmd {
     int32_t brake_pressure_kpa = 0;  // 0 = release
 
@@ -272,10 +262,10 @@ struct HostLightCmd {
 
 // 0x7B9 VCU_SEB_REQ — SYS→SEB (brake command, SYNTREE protocol)
 // Little-endian on the wire. Pack/unpack with explicit shifts.
-// Wire format per can-dictionary.md §0x7B9:
-//   Byte 0: ctrl bits, Byte 1: rsvd, Bytes 2-3: stroke LE,
-//   Byte 4: pressure u8, Byte 5: rsvd,
-//   Byte 6: rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4), Byte 7: checksum
+// Wire format per docs/by-wire - brake.csv §VCU_SEB_Req:
+//   Byte 0: ctrl bits, Byte 1: rsvd, Byte 2: stroke low, Byte 3: pressure u8,
+//   Byte 4: rsvd, Byte 5: rsvd,
+//   Byte 6: RollCntEn(1)+ChkSumEn(1)+rsvd(2)+RollCnt(4), Byte 7: checksum
 struct VcuSebReq {
     uint8_t align_enable   : 1;   // Byte0,b0
     uint8_t control_enable : 1;   // Byte0,b1
@@ -287,8 +277,8 @@ struct VcuSebReq {
     uint8_t  pressure_req     = 0;   // u8: 0–100, scale 0.05 MPa/bit, 0–5 MPa
     uint8_t  reserved_byte5   = 0;
     uint8_t  reserved_6_lo    : 2;   // bits 0-1
-    uint8_t  roll_cnt_enable  : 1;   // bit 2 — MUST be 1
-    uint8_t  checksum_enable  : 1;   // bit 3 — MUST be 1
+    uint8_t  roll_cnt_enable  : 1;   // bit 0 — MUST be 1
+    uint8_t  checksum_enable  : 1;   // bit 1 — MUST be 1
     uint8_t  rolling_counter  : 4;   // bits 4-7, 0–15
     uint8_t  checksum         = 0;   // XOR(bytes[0..6]) ^ 0xFF
 
@@ -428,10 +418,10 @@ inline void VcuSesReq::pack(uint8_t raw[8]) const {
     raw[4] = target_speed & 0xFF;
     raw[5] = (target_speed >> 8) & 0xFF;
     // Overlay security bits on Byte 5 (bits 40-47 of frame)
-    raw[5] &= 0x0F;  // clear upper nibble for security fields
-    raw[5] |= (roll_cnt_enable & 1) << 4;
-    raw[5] |= (checksum_enable & 1) << 5;
-    raw[5] |= ((reserved_2 & 3) << 6);
+    raw[5] &= 0xF0;  // preserve upper nibble (rolling_counter), clear lower nibble for enable bits
+    raw[5] |= (roll_cnt_enable & 1);          // bit 0 = RollCnt_Enable
+    raw[5] |= (checksum_enable & 1) << 1;     // bit 1 = CheckSum_Enable
+    raw[5] |= (rolling_counter & 0xF) << 4;   // bits 4-7 = RollCnt
     raw[6] = vehicle_speed & 0xFF;
     //  // Checksum: sum of bytes 0-6 (CSV spec: "CheckSum=Byte0+Byte1...")
     uint16_t sum = 0;
@@ -447,10 +437,10 @@ inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
     r.reserved_1     = raw[1];
     r.target_angle   = int16_t(raw[2] | (raw[3] << 8));
     r.target_speed   = uint16_t(raw[4] | (raw[5] << 8)) & 0x0FFF; // lower 12 bits of Byte5
-    r.roll_cnt_enable = (raw[5] >> 4) & 1;
-    r.checksum_enable = (raw[5] >> 5) & 1;
-    r.reserved_2     = (raw[5] >> 6) & 3;
-    r.rolling_counter = 0; //  // CSV: rollcnt at Byte5,b44 — NOT at Byte6. Read from status feedback instead.
+    r.roll_cnt_enable = raw[5] & 1;
+    r.checksum_enable = (raw[5] >> 1) & 1;
+    r.reserved_2     = (raw[5] >> 2) & 3;
+    r.rolling_counter = (raw[5] >> 4) & 0xF;
     r.vehicle_speed  = raw[6];
     r.checksum       = raw[7];
     return r;
@@ -462,13 +452,12 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
            | ((reserved_0 & 0xF) << 4);
     raw[1] = reserved_1;
     raw[2] = stroke_req & 0xFF;
-    raw[3] = (stroke_req >> 8) & 0xFF;
-    raw[4] = pressure_req;                    // u8 pressure (0-100)
-    raw[5] = reserved_byte5;                  // reserved
-    raw[6] = (reserved_6_lo & 3)
-           | ((roll_cnt_enable & 1) << 2)
-           | ((checksum_enable & 1) << 3)
-           | ((rolling_counter & 0xF) << 4);
+    raw[3] = pressure_req;                    // u8 pressure (0-100) at Byte3,b24
+    raw[4] = reserved_byte5;                  // reserved
+    raw[5] = 0;                               // reserved
+    raw[6] = (roll_cnt_enable & 1)            // bit 0 = RollCnt_Enable
+           | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
+           | ((rolling_counter & 0xF) << 4);  // bits 4-7 = RollCnt
     // checksum
     uint8_t ck = 0;
     for (int i = 0; i < 7; ++i) ck ^= raw[i];
@@ -483,12 +472,12 @@ inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
     r.auto_brake      = (raw[0] >> 3) & 1;
     r.reserved_0      = (raw[0] >> 4) & 0xF;
     r.reserved_1      = raw[1];
-    r.stroke_req      = uint16_t(raw[2] | (raw[3] << 8));
-    r.pressure_req    = raw[4];               // u8
-    r.reserved_byte5  = raw[5];
+    r.stroke_req      = uint16_t(raw[2] | (raw[3] << 8));  // bytes 2-3 LE (low byte first)
+    r.pressure_req    = raw[3];                             // u8 pressure (also mapped to byte 3, overlaps stroke high byte)
+    r.reserved_byte5  = raw[4];
     r.reserved_6_lo   = raw[6] & 3;
-    r.roll_cnt_enable = (raw[6] >> 2) & 1;
-    r.checksum_enable = (raw[6] >> 3) & 1;
+    r.roll_cnt_enable = raw[6] & 1;
+    r.checksum_enable = (raw[6] >> 1) & 1;
     r.rolling_counter = (raw[6] >> 4) & 0xF;
     r.checksum        = raw[7];
     return r;
