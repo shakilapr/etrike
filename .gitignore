@@ -41,6 +41,9 @@ Desktop.ini
 /legacy/
 /docs-main/
 
+# ── Temporary analysis & working files ──────────────────────────────────
+/tem/
+
 # ── PDF extraction tool artifacts ────────────────────────────────────
 /extract_pdfs.py
 

@@ -53,7 +53,7 @@ Each node has independent failure modes. A Jetson crash should not affect RT or 
 | CAN gateway (low ↔ high) | | ✓ | |
 | Tricycle kinematics | | ✓ | |
 | Speed PID | | ✓ | |
-| Steering angle compute + CAN TX (`0x200`) | | ✓ | |
+| Steering angle compute + CAN TX (`0x169`) | | ✓ | |
 | Steering boot sync (LBS) | | ✓ | |
 | Steering safety (dynamic clamp, hard-stops, following error) | | ✓ | |
 | Obstacle speed limit | | ✓ | |
@@ -82,8 +82,8 @@ Each node has independent failure modes. A Jetson crash should not affect RT or 
 Jetson ── High CAN ── RT ── Low CAN ── SYS ── Low CAN ── Actuators
   │                    │                   │
   │  0x300 drive cmd   │                   │
-  │  0x301 brake req   │  0x202 drive sp   │
-  │  0x302 lights      │  0x200 steer cmd  │
+  │  0x301 brake req   │  0x204 drive sp   │
+  │  0x302 lights      │  0x169 steer cmd  │
   │                    │                   │
   │  0x011 safety ◄────┤                   │
   │  0x120 throttle ◄──┤                   │

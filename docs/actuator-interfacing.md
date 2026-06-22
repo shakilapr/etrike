@@ -165,7 +165,7 @@ MANUAL mode:
   - The rider's physical switch directly controls the motor controller
 
 AUTO mode:
-  - Read gear from 0x202 RT_DRIVE_SETPOINT.gear field
+  - Read gear from 0x204 RT_DRIVE_CMD.gear field
   - Drive relay outputs accordingly
   - Ignore physical switch position (rider can't override AUTO gear)
 
