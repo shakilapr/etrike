@@ -2,7 +2,7 @@
 
 In a distributed system, a node can fail silently. Its CAN controller might keep retransmitting the last frame from a DMA buffer while the CPU is frozen. Its power supply might dip below brownout threshold. Its crystal might drift out of tolerance. **Liveness monitoring** answers the question: *is the node on the other end of the bus still alive and thinking?*
 
-The E-Trike uses heartbeat frames (`0x7FD`, `0x7FE`, `0x7FF`) on every CAN bus for this purpose.
+The E-Trike uses heartbeat frames (`0x7FD`, `0x7FE`, `0x7FC`) on every CAN bus for this purpose.
 
 ---
 
@@ -88,9 +88,9 @@ Heartbeat frames MUST NOT be bridged between CAN buses. Each bus is an independe
 **Why bridging heartbeats creates ambiguity:**
 
 ```
-Low bus:  SYS sends 0x7FF {ctr=42}, RT sends 0x7FF {ctr=17}
-          ↓ RT bridges SYS's 0x7FF to high bus
-High bus: Jetson receives 0x7FF {ctr=42} — whose counter is this?
+Low bus:  SYS sends 0x7FE {ctr=42}, RT sends 0x7FD {ctr=17}
+          ↓ RT bridges SYS's 0x7FE to high bus
+High bus: Jetson receives 0x7FE {ctr=42} — whose counter is this?
           SYS? RT? Is the counter monotonic? Which node died?
 ```
 
@@ -102,8 +102,8 @@ With the same CAN ID on the same bus, you can't tell which sender is which. The 
 |---------|---------|-----|---------|---------------|
 | SYS | RT (`0x7FD`) | Low | 200 ms | ESTOP (AUTO only) |
 | RT | SYS (`0x7FE`) | Low | 200 ms | CAN `0x001` ESTOP |
-| RT | Jetson (`0x7FF`) | High | 500 ms | Zero setpoints |
-| Jetson | RT (`0x7FF`) | High | 500 ms | Stop publishing |
+| RT | Jetson (`0x7FC`) | High | 500 ms | Zero setpoints |
+| Jetson | RT (`0x7FD`) | High | 500 ms | Stop publishing |
 
 RT monitors both buses because it's the gateway — it's the only node that knows about failures on both sides.
 
@@ -138,4 +138,4 @@ Neither alone is sufficient for safety-critical systems. Both together cover the
 
 ---
 
-*See also: [[external-watchdog]] for hardware watchdog, [[can-gateway-bridging]] for why heartbeats stay local, `architecture.md` §8.6 for heartbeat implementation, `can-dictionary.md` §1 0x7FD/0x7FE/0x7FF for frame layout.*
+*See also: [[external-watchdog]] for hardware watchdog, [[can-gateway-bridging]] for why heartbeats stay local, `architecture.md` §8.6 for heartbeat implementation, `can-dictionary.md` §1 0x7FD/0x7FE/0x7FC for frame layout.*

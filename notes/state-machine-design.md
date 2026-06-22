@@ -186,7 +186,7 @@ void mode_set(Mode new_mode) {
     if (new_mode == Mode::Estop) {
         dac_write(0);                // motor off
         gear_all_off();              // neutral
-        brake_full();                // 0x720 stroke = max
+        brake_full();                // 0x7B9 stroke = max
         dcdc_disable();              // 12V rail off
         lights_brake_on();           // brake light forced ON
     }

@@ -153,4 +153,4 @@ The CAN bus shares a common ground reference. If 72 V leaks onto the CAN ground,
 
 *Primary reference: [[emergency-system]] for ESTOP electrical fault handling, emergency response matrix, and testing procedures.*
 
-*See also: [[defense-in-depth-safety]] for ESTOP layers including motor/gear shutdown, [[achitecture]] §5 for responsibility split, §8.6 for gear output details.*
+*See also: [[defense-in-depth-safety]] for ESTOP layers including motor/gear shutdown, [[architecture]] §5 for responsibility split, §8.6 for gear output details.*
