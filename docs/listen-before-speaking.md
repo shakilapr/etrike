@@ -12,7 +12,7 @@ This is used for both SYNTREE actuators on our tricycle.
 
 CAN actuators are stateful devices that maintain their own internal control loops:
 
-- **EPS-C** (steering): runs an internal position loop. If you send `0x200` with angle=0° and the wheel is physically at 15°, it will slew to 0° at maximum motor speed. This can yank the handlebars out of the rider's hands.
+- **EPS-C** (steering): runs an internal position loop. If you send `0x169` with angle=0° and the wheel is physically at 15°, it will slew to 0° at maximum motor speed. This can yank the handlebars out of the rider's hands.
 - **SEB** (brake): runs an internal pressure/stroke loop. If you command stroke=0 while the calipers are partially engaged, the brake releases abruptly.
 
 Both actuators also **require continuous 50 Hz command frames** once active. If frames stop for >20 ms, the actuator enters a comm-fault timeout (lock, limp, or freewheel — behavior is unit-specific).
@@ -61,10 +61,10 @@ Power-on
 | Status ID | `0x201` SES_STATUS (100 Hz from EPS-C) |
 | Position field | `SES_StrAngle` (int16, 0.1°/bit) |
 | Alignment field | `SES_INF_Angle_Status` (bit 0 of status byte) |
-| Command ID | `0x200` VCU_SES_REQ (50 Hz to EPS-C) |
+| Command ID | `0x169` VCU_SES_REQ (50 Hz to EPS-C) |
 | Boot wait | 500 ms |
 | Sync timeout | 2 seconds → STEER_FAULT, remain in MANUAL |
-| Mode behavior | MANUAL: do NOT send `0x200`, EPS-C standalone. AUTO: send at 50 Hz. ESTOP: stop sending. |
+| Mode behavior | MANUAL: do NOT send `0x169`, EPS-C standalone. AUTO: send at 50 Hz. ESTOP: stop sending. |
 
 ### Steering LBS in C++
 
@@ -72,7 +72,7 @@ Power-on
 enum class SteerState {
     STEER_BOOT_WAIT,    // 500 ms power-on delay
     STEER_LISTEN_SYNC,  // Wait for 0x201, read angle, wait for aligned
-    STEER_ACTIVE,       // Normal operation, transmit 0x200 at 50 Hz
+    STEER_ACTIVE,       // Normal operation, transmit 0x169 at 50 Hz
     STEER_FAULT         // Timeout or ESTOP, stop transmitting
 };
 
@@ -98,7 +98,7 @@ void steer_state_machine() {
         break;
 
     case STEER_ACTIVE:
-        send_0x200_at_50hz();
+        send_0x169_at_50hz();
         // Monitor following error
         if (abs(cmd_angle - actual_angle) > 5000_mdeg &&
             error_duration_ms > 300) {
@@ -122,7 +122,7 @@ void steer_state_machine() {
 | Status ID | `0x721` SEB_STATUS (100 Hz from SEB) |
 | Position field | `SEB_Stroke_Value` (uint16, scale 0.05, offset -30) |
 | Alignment field | `SEB_Alignment_Status` |
-| Command ID | `0x720` VCU_SEB_REQ (50 Hz to SEB) |
+| Command ID | `0x7B9` VCU_SEB_REQ (50 Hz to SEB) |
 | Boot wait | 500 ms |
 | Sync timeout | 2 seconds → BRAKE_FAULT, brake lever inoperative until resolved |
 
@@ -159,8 +159,8 @@ LBS guarantees the first command is always "stay exactly where you are."
 
 The continuous 50 Hz requirement is the **speaking** obligation once LBS completes:
 
-- EPS-C: if `0x200` stops for >20 ms → internal comm fault → locks or goes limp (TBD by unit spec).
-- SEB: if `0x720` stops → similar timeout.
+- EPS-C: if `0x169` stops for >20 ms → internal comm fault → locks or goes limp (TBD by unit spec).
+- SEB: if `0x7B9` stops → similar timeout.
 
 This means the controller has an ongoing duty to transmit — silence is interpreted as failure. The actuator's internal safety logic handles the timeout independently; the controller doesn't need to send an explicit "stop" command.
 

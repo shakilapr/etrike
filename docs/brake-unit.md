@@ -9,7 +9,7 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 | Parameter | Value |
 |-----------|-------|
 | Bus | Low-level CAN (500 kbit/s) |
-| Command ID | `0x720` VCU_SEB_REQ |
+| Command ID | `0x7B9` VCU_SEB_REQ (customized from factory default `0x720`) |
 | Status ID | `0x721` SEB_STATUS |
 | Command rate | 20 ms (50 Hz) — **continuous transmission required** |
 | Status rate | 10 ms (100 Hz) |
@@ -18,7 +18,7 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 
 ---
 
-## 2. Command Frame — 0x720 VCU_SEB_REQ
+## 2. Command Frame — 0x7B9 VCU_SEB_REQ
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
@@ -29,8 +29,11 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 | (reserved) | 5 | 3 | — | — | — | — | — | — | |
 | (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
 | `VCU_SEB_Stroke_Value_Req` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Requested stroke position |
-| `VCU_SEB_Pre_Value_Req` | 32 | 16 | u16 | — | — | — | — | MPa | Requested pressure (TBD: verify exact scale against spec) |
-| (reserved) | 48 | 4 | — | — | — | — | — | — | |
+| `VCU_SEB_Pre_Value_Req` | 32 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Requested pressure. Raw = kPa × 0.02. ⚠️ Was 16-bit; CSV and can-dictionary confirm 8-bit. |
+| (reserved) | 40 | 8 | — | — | — | — | — | — | Byte 5 |
+| `VCU_SEB_RollCnt_Enable` | 48 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| `VCU_SEB_CheckSum_Enable` | 49 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| (reserved) | 50 | 2 | — | — | — | — | — | — | |
 | `VCU_SEB_RollCnt` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | — | Rolling counter. Increment every frame. |
 | `VCU_SEB_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | XOR of bytes 0–6, then `^ 0xFF` |
 
@@ -38,7 +41,7 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | ctrl bits | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | press [15:8] | rsvd(4)+RollCnt(4) | checksum |
+| Content | Align[0]+CtrlEn[1]+Mode[2]+AutoBrk[3] | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | rsvd | rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4) | checksum |
 
 ### Stroke conversion
 
@@ -60,29 +63,33 @@ physical_mm = raw_value × 0.05 − 30.0
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
-| `SEB_Alignment_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | 1 = aligned |
-| `SEB_Control_Enable_Status` | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Control enabled |
-| `SEB_Control_Mode_Status` | 2 | 2 | u8 | 1 | 0 | 0 | 2 | enum | Current active mode |
-| `SEB_Error_Status` | 4 | 2 | u8 | 1 | 0 | 0 | 3 | enum | 0=Normal, 1=L1, 2=L2, 3=L3 |
-| (reserved) | 6 | 2 | — | — | — | — | — | — | |
-| (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
-| `SEB_Stroke_Value` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Actual measured stroke |
-| `SEB_Pressure_Value` | 32 | 16 | u16 | — | — | — | — | MPa | Actual hydraulic pressure |
-| `SEB_RollCnt_Status` | 48 | 4 | u8 | 1 | 0 | 0 | 15 | — | Echoes received rolling counter |
-| (reserved) | 52 | 4 | — | — | — | — | — | — | |
-| `SEB_CheckSum_Status` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum verification status |
+| `SEB_Alignment_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Alignment Info Feedback. 1 = aligned. |
+| `SEB_Control_Enable_Status` | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Control Enable Feedback |
+| `SEB_Control_Mode_Status` | 2 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Control Mode Feedback |
+| `SEB_AutoBrake_Status` | 4 | 1 | bool | 1 | 0 | 0 | 1 | — | Auto Brake Status Feedback |
+| (unaccounted) | 5 | 1 | — | — | — | — | — | — | |
+| `SEB_Error_Status` | 6 | 2 | u8 | 1 | 0 | 0 | 3 | enum | 0=No fault, 1=L1 minor, 2=L2 general, 3=L3 severe |
+| (unaccounted) | — | 8 | — | — | — | — | — | — | Byte 1 |
+| `SEB_Stroke_Value` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Stroke Value Feedback |
+| `SEB_Pressure_Value` | 24 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Pressure Value Feedback. Overlaps Stroke[15:8] — mode-dependent. |
+| `SEB_Angle_Value` | 40 | 16 | i16 | 0.5 | 0 | -150 | 840 | — | Angle Feedback. Overlaps security echo bits at byte 6. |
+| `SEB_RollCnt_Enable_Status` | 48 | 1 | bool | 1 | 0 | 0 | 1 | — | Life Signal Status Feedback. Overlaps Angle[15:8]. |
+| `SEB_CheckSum_Enable_Status` | 49 | 1 | bool | 1 | 0 | 0 | 1 | — | Checksum Status Feedback. Overlaps Angle[15:8]. |
+| (unaccounted) | 50 | 2 | — | — | — | — | — | — | |
+| `SEB_RollCnt_Status` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | — | Life Signal Feedback — echoes rolling counter |
+| `SEB_CheckSum_Status` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum Feedback |
 
 ### Byte layout
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | status bits | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | press [15:8] | rsvd(4)+RollCnt(4) | cksum_stat |
+| Content | Align[0]+CtrlEn[1]+Mode[2:3]+AutoBrk[4]+(gap)+Error[6:7] | (unacc.) | Stroke [7:0] | Stroke [15:8] / Pressure [7:0] (mode-muxed) | (unacc.) | Angle [7:0] | Angle[15:8] / RollCntEn[0]+CksEn[1]+(gap)+RollCnt[4:7] (overlap) | CksSum_Stat |
 
 ---
 
 ## 4. Control Modes
 
-### Mode 1 — Stroke Control (Position-Based)
+### Mode 0 — Stroke Control (Position-Based)
 
 Command the actuator's internal pushrod to move a specific distance in millimeters. Best for mimicking human pedal travel or simple proportional control.
 
@@ -92,7 +99,7 @@ Command the actuator's internal pushrod to move a specific distance in millimete
 
 **Current usage in E-Trike:** SYS uses Stroke Mode exclusively. The only brake triggers are the physical lever (binary) and ESTOP (binary) — both map to fixed stroke positions. No closed-loop pressure control needed.
 
-### Mode 2 — Pressure Control (Force-Based)
+### Mode 1 — Pressure Control (Force-Based)
 
 Command a specific hydraulic pressure in the brake fluid lines (MPa). The unit's internal PID moves the motor to maintain that exact pressure.
 
@@ -170,7 +177,7 @@ BRAKE_FAULT:
 #include <stdint.h>
 #include <string.h>
 
-#define CAN_ID_VCU_SEB_REQ 0x720
+#define CAN_ID_VCU_SEB_REQ 0x7B9  // customized from factory default 0x720
 
 typedef struct {
     uint8_t align_enable   : 1;
@@ -185,10 +192,14 @@ typedef struct {
     // Example: 0 mm → raw = (0 + 30) / 0.05 = 600
     uint16_t stroke_req;
 
-    uint16_t pressure_req;   // TBD: verify exact bit-length in spec
+    uint8_t pressure_req;     // u8: 0.05 MPa/bit, 0–5 MPa. Raw = kPa × 0.02
 
-    uint8_t reserved_2     : 4;
-    uint8_t rolling_counter : 4;   // Increment 0–15 every frame
+    uint8_t reserved_2;        // byte 5
+
+    uint8_t roll_cnt_enable  : 1;  // MUST be 1
+    uint8_t checksum_enable  : 1;  // MUST be 1
+    uint8_t reserved_3       : 2;
+    uint8_t rolling_counter  : 4;  // Increment 0–15 every frame
 
     uint8_t checksum;              // XOR(bytes[0..6]) ^ 0xFF
 } __attribute__((packed)) VCU_SEB_Req_t;
@@ -240,6 +251,6 @@ void seb_send_command(float target_stroke_mm) {
 
 - **Controlled by:** SYS ESP32-S3 (low-level CAN)
 - **Current mode:** Stroke (1) — lever press → 15 mm, ESTOP → 27 mm, released → 0 mm
-- **Planned mode:** Pressure (2) — when RT brake arbitration path to SYS is implemented (§12.1 in architecture.md)
+- **Planned mode:** Pressure (Mode 1) — when RT brake arbitration path to SYS is implemented (§12.1 in architecture.md)
 - **No daily homing required.** One-time zero-calibration when first mated to mechanical assembly. Calibration retained across power cycles.
 - **Not reconfigurable.** CAN IDs are factory-programmed. `RT_DRIVE_SETPOINT` placed at `0x202` to avoid collision with EPS-C `0x200`.

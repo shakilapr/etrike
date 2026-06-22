@@ -86,7 +86,7 @@ obstacle-emergency braking never reach the brake actuator.
 **Sources:** `architecture.md` §2.3 (Category 2), line 445, §12 Gap #1;
 `can-dictionary.md` line 437.
 
-**Solution:** New `0x203 RT_BRAKE_CMD` (RT→SYS, low bus, DLC 4, i32 brake_kpa, 50 Hz).
+**Solution:** New `0x205 RT_BRAKE_CMD` (RT→SYS, low bus, DLC 4, i32 brake_kpa, 50 Hz).
 SYS then switches SEB to Pressure Mode and maps kPa → `VCU_SEB_Pre_Value_Req` MPa.
 
 ---
@@ -167,7 +167,7 @@ UX should be validated with actual riders.
 
 `0x300 HOST_DRIVE_CMD` carries speed + yaw but no gear field. RT resolves gear
 automatically (v>0→D, v=0→N, v<0→R). Jetson cannot select Sport gear even though
-`0x202 RT_DRIVE_CMD` supports it (enum values N=0, D=1, S=2, R=3).
+`0x204 RT_DRIVE_CMD` supports it (enum values N=0, D=1, S=2, R=3).
 
 **Sources:** `architecture.md` §12 Gap #2.
 
@@ -249,8 +249,8 @@ clearly label which GPIO belongs to which board.
 | # | Priority | Issue | Action |
 |---|----------|-------|--------|
 | C1 | ~~P0~~ **DONE** | CAN dictionary heartbeat scheme stale | ✅ can-dictionary.md updated to `0x7FD`/`0x7FE`/`0x7FC`. All heartbeat sections, summary tables, forwarding rules, priority groups synced with architecture.md. |
-| C2 | ~~P0~~ **DONE** | Brake path to SYS missing (Gap #1) | ✅ `0x203 RT_BRAKE_CMD` defined (RT→SYS, DLC=4, i32 kPa, 50 Hz). Added to both docs. Mode-switching protocol in architecture.md §8.6. |
-| C3 | ~~P0~~ **DONE** | Pressure mode mapping undefined (Gap #4) | ✅ Verified SYNTREE SEB spec: `VCU_SEB_Pre_Value_Req` is u8 (not u16) at bit 32, scale 0.05 MPa/bit, range 0–5 MPa, raw 0–100. Conversion: `seb_raw = kPa × 0.02`. Both docs updated. Gap #4 struck through. |
+| C2 | ~~P0~~ **DONE** | Brake path to SYS missing (Gap #1) | ✅ `0x205 RT_BRAKE_CMD` defined (RT→SYS, DLC=4, i32 kPa, 50 Hz). Added to both docs. Mode-switching protocol in architecture.md §8.6. |
+| C3 | ~~P0~~ **DONE** | Pressure mode mapping undefined (Gap #4) | ✅ Verified SYNTREE SEB spec: `VCU_SEB_Pre_Value_Req` is u8 at bit 24 (byte 3, mode-muxed with Stroke), scale 0.05 MPa/bit, range 0–5 MPa, raw 0–100. Conversion: `seb_raw = kPa × 0.02`. Both docs updated. Gap #4 struck through. |
 | M1 | ~~P1~~ **DONE** | Full can-dictionary.md audit | ✅ All stale refs fixed: timeouts (200→1000ms, 500→1500ms), `0x011 SYS_HeartbeatOk`, liveness matrix, forwarding rules, priority groups, `0x300` gear field. |
 | M2 | **P1** | Brake sync failure immobilizes vehicle | Mechanical bypass cable + bench-test SEB unpowered behavior |
 | M3 | **P2** | Steering sync recovery UX | Rider validation of short/long-press START behavior |

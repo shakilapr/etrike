@@ -27,10 +27,10 @@ Separating CAN buses serves three purposes:
  │  (ROS 2, planning)      │          │  (safety, motor, brake)     │
  │                         │          │                             │
  │  TX: 0x300,0x301,0x302  │          │  TX: 0x011,0x012,0x110,    │
- │      0x001,0x7FF         │          │      0x120,0x600,0x720,    │
- │  RX: 0x011,0x120,0x210  │          │      0x001,0x7FF            │
+ │      0x001,0x7FD         │          │      0x120,0x600,0x7B9,    │
+ │  RX: 0x011,0x120,0x210  │          │      0x001,0x7FD            │
  │      0x220,0x400,0x600  │          │  RX: 0x001,0x202,0x302,    │
- │      0x001,0x7FF         │          │      0x721,0x7FF            │
+ │      0x001,0x7FD         │          │      0x721,0x7FD            │
  └───────────┬─────────────┘          └──────────────┬──────────────┘
              │                                       │
              │          ┌──────────────┐             │
@@ -70,15 +70,15 @@ The gateway applies explicit, static forwarding rules. Not all messages cross th
 
 | ID | Name | Why |
 |----|------|-----|
-| `0x300` | HOST_DRIVE_CMD | Consumed by RT — kinematics + PID resolve it to `0x202` + `0x200` |
+| `0x300` | HOST_DRIVE_CMD | Consumed by RT — kinematics resolve it to `0x204` + `0x169` |
 | `0x301` | HOST_BRAKE_REQUEST | Consumed by RT — brake arbitration (max-select) |
 
 ### Generated locally (not forwarded, originated by gateway)
 
 | ID | Name | Bus | Why |
 |----|------|-----|-----|
-| `0x202` | RT_DRIVE_SETPOINT | Low | RT output — speed+gear → SYS |
-| `0x200` | VCU_SES_REQ | Low | RT output — steering angle → EPS-C |
+| `0x204` | RT_DRIVE_CMD | Low | RT output — speed+gear → MTR |
+| `0x169` | VCU_SES_REQ | Low | RT output — steering angle → EPS-C |
 | `0x210` | RT_STATE_REPORT | High | RT telemetry → Jetson |
 | `0x220` | RT_PID_FEEDBACK | High | RT telemetry → Jetson |
 | `0x400` | RT_OBSTACLE_DIST | High | RT telemetry → Jetson |
@@ -90,9 +90,9 @@ The gateway applies explicit, static forwarding rules. Not all messages cross th
 | `0x012` | SYS_DCDC_CMD | Low | DC-DC only on low bus |
 | `0x110` | SYS_MODE_CMD | Low | Mode switch local to low bus |
 | `0x201` | SES_STATUS | Low | EPS-C feedback — consumed by RT on low |
-| `0x720` | VCU_SEB_REQ | Low | Brake command from SYS to SEB |
+| `0x7B9` | VCU_SEB_REQ | Low | Brake command from SYS to SEB |
 | `0x721` | SEB_STATUS | Low | Brake feedback to SYS |
-| `0x7FF` | HEARTBEAT | Both | Independent per bus (each bus has its own heartbeat domain) |
+| `0x7FD` | HEARTBEAT | Both | Independent per bus (each bus has its own heartbeat domain) |
 
 ---
 

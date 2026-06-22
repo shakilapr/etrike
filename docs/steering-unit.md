@@ -9,18 +9,18 @@ CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
 | Parameter | Value |
 |-----------|-------|
 | Bus | Low-level CAN (500 kbit/s) |
-| Command ID | `0x200` VCU_SES_REQ (factory default) |
+| Command ID | `0x169` VCU_SES_REQ (customized from factory default `0x200`) |
 | Status ID | `0x201` SES_STATUS |
 | Command rate | 20 ms (50 Hz) — **continuous transmission required** |
 | Status rate | 10 ms (100 Hz) |
 | Endianness | Motorola LSB (little-endian) |
 | DLC (both) | 8 |
 
-> **ID note**: Factory command ID `0x200` is fixed. `RT_DRIVE_SETPOINT` is placed at `0x202` to avoid collision.
+> **ID note**: Factory command ID `0x200` is the factory default, customized to `0x169`. `RT_DRIVE_CMD` is placed at `0x204` to avoid collision.
 
 ---
 
-## 2. Command Frame — 0x200 VCU_SES_REQ
+## 2. Command Frame — 0x169 VCU_SES_REQ
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
@@ -57,20 +57,25 @@ internal_mdeg = SYNTREE raw × 100          (455 raw → 45500 mdeg → 45.5°)
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
-| `SES_INF_Angle_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Alignment/homing status. 1 = aligned. |
-| `SES_Control_Mode_Status` | 1 | 2 | u8 | 1 | 0 | 0 | 2 | enum | Current active mode |
-| `SES_Error_Status` | 4 | 2 | u8 | 1 | 0 | 0 | 3 | enum | 0=Normal, 1=L1, 2=L2, 3=L3 |
-| (reserved) | 6 | 2 | — | — | — | — | — | — | |
-| (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
-| `SES_StrAngle` | 16 | 16 | i16 | 0.1 | 0 | -780 | 780 | deg | Actual measured steering angle. Negative = left. |
-| (reserved) | — | 16 | — | — | — | — | — | — | Bytes 4–5 |
-| `EPS_SteeringWheel_Torq` | 40 | 8 | u8 | 1 | 0 | — | — | Nm | Resistance torque |
+| `SES_INF_Angle_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Center Finding Status. 0=Center Finding, 1=Found. |
+| `SES_Control_Mode_Status` | 1 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Control Mode Feedback. 0=Manual, 1=Automatic. |
+| (unaccounted) | 3 | 3 | — | — | — | — | — | — | Bits 3–5 — not enumerated in CSV |
+| `SES_Error_Status` | 6 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Error Status. 0=Normal, 1=L1, 2=L2, 3=L3. |
+| (unaccounted) | — | 8 | — | — | — | — | — | — | Byte 1 — not enumerated in CSV |
+| `SES_StrAngle` | 16 | 16 | u16 | 0.1 | -3000 | -700 | 700 | ° | Steering Angle. Unsigned per CSV. Raw 30000→0°. |
+| `SES_Tgt_StrAngleSpd` | 32 | 16 | i16 | 0.5 | 0 | 0 | 1480 | °/s | Target Angle Speed feedback. Overlaps Torq at byte 5. |
+| `EPS_SteeringWheel_Torq` | 40 | 8 | u8 | 0.1 | -12.1 | -12 | 12 | Nm | Steering Wheel Torque. Init 0x79 (121=0 Nm). Overlaps StrAngleSpd[15:8]. |
+| `SES_RollCnt_Enable_Status` | 48 | 1 | bool | 1 | 0 | 0 | 1 | — | Life Signal Enable Feedback. 0=Invalid, 1=Valid. |
+| `SES_CheckSum_Enable_Status` | 49 | 1 | bool | 1 | 0 | 0 | 1 | — | Checksum Enable Feedback. |
+| (unaccounted) | 50 | 2 | — | — | — | — | — | — | |
+| `SES_RollCnt_Status` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | — | Life Signal Feedback. Rolling counter 0–15. |
+| `SES_CheckSum_Status` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum Feedback = XOR(bytes 0–6) ^ 0xFF. |
 
 ### Byte layout
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | status bits | rsvd | `SES_StrAngle` [7:0] | `SES_StrAngle` [15:8] | rsvd | `EPS_Torq` | rsvd | rsvd |
+| Content | AngleSts[0]+ModeSts[1:2]+(gap)+Error[6:7] | (unacc.) | StrAngle [7:0] | StrAngle [15:8] | Speed [7:0] | Speed[15:8] / Torq [7:0] (overlap) | RollCntEn[0]+CksEn[1]+(gap)+RollCnt[4:7] | CksSum_Stat |
 
 ---
 
@@ -95,7 +100,7 @@ The EPS-C accepts commands up to ±780° (raw ±7800). The physical trike steeri
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `kSteerHardLimitDeg` | 40.0 | Software clamp, inside physical end-stops |
-| Enforcement | RT `control_task` | Any Jetson command exceeding ±40° is clamped before `0x200` TX |
+| Enforcement | RT `control_task` | Any Jetson command exceeding ±40° is clamped before `0x169` TX |
 
 ### 5.2 Dynamic Angle Clamp (Rollover Prevention)
 
@@ -119,7 +124,7 @@ If the physical wheel gets stuck (rock jam, linkage failure) while the EPS-C tri
 | Duration | 300 ms | Must persist this long before trigger |
 | Action | `mode_set(ESTOP)` | System-wide emergency stop |
 
-RT compares the last commanded angle (from `0x200`) against the feedback angle (from `0x201 SES_StrAngle`) every control tick.
+RT compares the last commanded angle (from `0x169`) against the feedback angle (from `0x201 SES_StrAngle`) every control tick.
 
 ---
 
@@ -153,7 +158,7 @@ State machine:
 
 STEER_BOOT_WAIT:
   - 500 ms delay after power-on
-  - DO NOT transmit any 0x200 frames
+  - DO NOT transmit any 0x169 frames
   - → STEER_LISTEN_SYNC
 
 STEER_LISTEN_SYNC:
@@ -165,13 +170,13 @@ STEER_LISTEN_SYNC:
   - → STEER_ACTIVE
 
 STEER_ACTIVE:
-  - Transmit 0x200 at 50 Hz continuously
+  - Transmit 0x169 at 50 Hz continuously
   - First frame commands exactly the current angle (no movement)
   - Then follow Jetson targets with dynamic clamp applied
   - Monitor following error → ESTOP on fault
 
 STEER_FAULT:
-  - Stop transmitting 0x200
+  - Stop transmitting 0x169
   - EPS-C will timeout-fault (lock or limp — verify behavior with SYNTREE spec)
 ```
 
@@ -200,7 +205,7 @@ STEER_FAULT:
 #include <string.h>
 
 // Factory default — NOT reconfigurable
-#define CAN_ID_VCU_SES_REQ 0x200
+#define CAN_ID_VCU_SES_REQ 0x169  // customized from factory default 0x200
 
 typedef struct {
     uint8_t align_enable   : 1;
@@ -286,7 +291,7 @@ void ses_send_command(float target_angle_deg, uint8_t speed_limit_deg_s) {
 - **Controlled by:** RT ESP32-S3 (low-level CAN)
 - **Mode:** Angle (1) — only supported mode
 - **No daily homing.** Absolute encoder retains calibration across power cycles.
-- **Not reconfigurable.** Factory CAN IDs are fixed. EPS-C command `0x200` is the factory default — `RT_DRIVE_SETPOINT` was moved to `0x202` to resolve the collision.
-- **MANUAL mode:** RT does not send `0x200`. EPS-C operates standalone from rider steering wheel input.
-- **AUTO mode:** RT sends `0x200` at 50 Hz with resolved angle + dynamic clamp + slew rate.
-- **ESTOP:** RT stops sending `0x200`. EPS-C timeout-faults (behavior TBD).
+- **Not reconfigurable.** Factory CAN IDs are fixed. EPS-C command `0x169` (customized from factory default `0x200`). `RT_DRIVE_CMD` is at `0x204` to avoid collision.
+- **MANUAL mode:** RT does not send `0x169`. EPS-C operates standalone from rider steering wheel input.
+- **AUTO mode:** RT sends `0x169` at 50 Hz with resolved angle + dynamic clamp + slew rate.
+- **ESTOP:** RT stops sending `0x169`. EPS-C timeout-faults (behavior TBD).
