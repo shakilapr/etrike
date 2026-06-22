@@ -160,4 +160,4 @@ The downside: XOR catches single-bit errors but is weaker against multi-bit erro
 
 *Primary reference: [[emergency-system]] for how rolling counter failure modes fit into the 8-layer safety system and trigger ESTOP.*
 
-*See also: [[listen-before-speaking]] for the boot sequence that must complete before security bytes matter, [[achitecture]] §7.6 for EPS-C protocol, §8.6 for SEB protocol, [[can-dictionary]] for bit-level frame layouts.*
+*See also: [[listen-before-speaking]] for the boot sequence that must complete before security bytes matter, [[architecture]] §7.6 for EPS-C protocol, §8.6 for SEB protocol, [[can-dictionary]] for bit-level frame layouts.*

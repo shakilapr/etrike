@@ -32,10 +32,10 @@ Any node (Jetson, RT, SYS) can broadcast `0x001` on either CAN bus.
 
 ## Layer 3: Heartbeat timeout
 
-Each node sends `0x7FF` at 2 Hz on its bus. The safety monitor checks:
+Each node sends its own heartbeat (0x7FC/0x7FD/0x7FE) at 2 Hz on its bus. The safety monitor checks:
 
-- On RT: if Jetson heartbeat (`0x7FF` on high CAN) stops for >1500 ms → ESTOP in AUTO.
-- On SYS: if RT heartbeat (`0x7FF` on low CAN) stops for >1500 ms → ESTOP in AUTO.
+- On RT: if Jetson heartbeat (`0x7FC` on high CAN) stops for >1500 ms → ESTOP in AUTO.
+- On SYS: if RT heartbeat (`0x7FD` on low CAN) stops for >1500 ms → ESTOP in AUTO.
 
 A missing heartbeat means the controller node has crashed, rebooted, or lost CAN connectivity. The vehicle must stop.
 
@@ -149,7 +149,7 @@ Several safety checks use the same pattern:
 |-------|-----------|----------|--------|
 | Steering following error | >5° | >300 ms | ESTOP |
 | Command staleness | no `0x300` | >500 ms | Zero outputs |
-| Heartbeat timeout | no `0x7FF` | >1500 ms | ESTOP in AUTO |
+| Heartbeat timeout | no peer heartbeat | >1500 ms | ESTOP in AUTO |
 
 **Why duration matters:** CAN frames can be delayed by arbitration (low-priority messages wait for high-priority ones) or by bus errors. A single missed frame should not trigger ESTOP. The duration acts as a debounce — it confirms the condition is persistent, not transient.
 
@@ -190,4 +190,4 @@ ESTOP is an **absorbing state** — once entered, the only way out is a full pow
 
 *Primary reference: [[emergency-system]] for the complete ESTOP system, trigger paths, emergency response matrix, rider's guide, and testing procedures.*
 
-*See also: [[listen-before-speaking]] for actuator boot safety, [[external-watchdog]] for hardware watchdog, [[high-voltage-isolation]] for galvanic isolation, [[physics-model]] §8 for rollover threshold, [[achitecture]] §7.6 for safety mechanisms, §3 for mode state machine.*
+*See also: [[listen-before-speaking]] for actuator boot safety, [[external-watchdog]] for hardware watchdog, [[high-voltage-isolation]] for galvanic isolation, [[physics-model]] §8 for rollover threshold, [[architecture]] §7.6 for safety mechanisms, §3 for mode state machine.*

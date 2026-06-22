@@ -96,7 +96,7 @@ void throttle_task() {
 ### Throttle in AUTO mode
 
 ```
-CAN 0x202 (speed_mmps) ──► SYS dispatch ──► setpoint_queue ──► motor_task ──► MCP4725
+CAN 0x204 (speed_mmps) ──► SYS dispatch ──► setpoint_queue ──► motor_task ──► MCP4725
 ```
 
 The `motor_task` reads `setpoint_queue` and writes the DAC:
@@ -206,11 +206,11 @@ In MANUAL mode, SYS is a transparent conduit. The rider twists the throttle → 
 | Mode | Throttle DAC | Gear relays | Source |
 |------|-------------|-------------|--------|
 | MANUAL | ADC pass-through | TLP281 mirror | Physical controls |
-| AUTO | `0x202` setpoint → DAC | `0x202` gear field → relays | Jetson via RT |
+| AUTO | `0x204` setpoint → DAC | `0x204` gear field → relays | Jetson via RT |
 | ESTOP | 0 V (forced) | All OFF (forced) | Safety override |
 
 ---
 
 *Primary reference: [[emergency-system]] for ESTOP behavior on throttle DAC and gear relays, and the emergency response matrix.*
 
-*See also: [[high-voltage-isolation]] for TLP281 and relay isolation details, [[defense-in-depth-safety]] for ESTOP behavior, [[achitecture]] §4 for signal flow diagrams, §8.6 for SYS control mechanisms.*
+*See also: [[high-voltage-isolation]] for TLP281 and relay isolation details, [[defense-in-depth-safety]] for ESTOP behavior, [[architecture]] §4 for signal flow diagrams, §8.6 for SYS control mechanisms.*

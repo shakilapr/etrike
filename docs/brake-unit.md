@@ -24,9 +24,9 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
 | `VCU_SEB_Alignment_Enable` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Calibration enable |
 | `VCU_SEB_Control_Enable` | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Active control enable |
-| `VCU_SEB_Control_Mode` | 2 | 2 | u8 | 1 | 0 | 0 | 2 | enum | 0=None, 1=Stroke, 2=Pressure |
-| `VCU_SEB_AutoBrake` | 4 | 1 | bool | 1 | 0 | 0 | 1 | — | Auto-brake trigger |
-| (reserved) | 5 | 3 | — | — | — | — | — | — | |
+| `VCU_SEB_Control_Mode` | 2 | 1 | bool | 1 | 0 | 0 | 1 | — | 0=Stroke, 1=Pressure |
+| `VCU_SEB_AutoBrake` | 3 | 1 | bool | 1 | 0 | 0 | 1 | — | Auto-brake trigger |
+| (reserved) | 4 | 4 | — | — | — | — | — | — | |
 | (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
 | `VCU_SEB_Stroke_Value_Req` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Requested stroke position |
 | `VCU_SEB_Pre_Value_Req` | 32 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Requested pressure. Raw = kPa × 0.02. ⚠️ Was 16-bit; CSV and can-dictionary confirm 8-bit. |
@@ -41,7 +41,7 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | Align[0]+CtrlEn[1]+Mode[2]+AutoBrk[3] | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | rsvd | rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4) | checksum |
+| Content | Align[0]+CtrlEn[1]+Mode[2]+AutoBrk[3]+(gap)[4:7] | rsvd | stroke [7:0] | stroke [15:8] | press [7:0] | rsvd | rsvd(2)+RollCntEn(1)+CksEn(1)+RollCnt(4) | checksum |
 
 ### Stroke conversion
 
@@ -143,7 +143,7 @@ State machine:
 
 BRAKE_BOOT_WAIT:
   - 500 ms delay after power-on
-  - DO NOT transmit any 0x720 frames
+  - DO NOT transmit any 0x7B9 frames
   - → BRAKE_LISTEN_SYNC
 
 BRAKE_LISTEN_SYNC:
@@ -154,7 +154,7 @@ BRAKE_LISTEN_SYNC:
   - → BRAKE_ACTIVE
 
 BRAKE_ACTIVE:
-  - Transmit 0x720 at 50 Hz continuously
+  - Transmit 0x7B9 at 50 Hz continuously
   - First frame commands exactly the current position (no movement)
   - Rolling counter + checksum on every frame
   - → BRAKE_FAULT on error
@@ -182,9 +182,9 @@ BRAKE_FAULT:
 typedef struct {
     uint8_t align_enable   : 1;
     uint8_t control_enable : 1;
-    uint8_t control_mode   : 2;   // 0=None, 1=Stroke, 2=Pressure
+    uint8_t control_mode   : 1;   // 0=Stroke, 1=Pressure
     uint8_t auto_brake     : 1;
-    uint8_t reserved_0     : 3;
+    uint8_t reserved_0     : 4;
 
     uint8_t reserved_1;
 
@@ -213,7 +213,7 @@ void seb_send_command(float target_stroke_mm) {
     // 1. Enable + Mode
     payload.align_enable  = 1;
     payload.control_enable = 1;
-    payload.control_mode   = 1;   // Stroke Mode
+    payload.control_mode   = 0;   // Stroke Mode
 
     // 2. Stroke target (apply scale + offset)
     payload.stroke_req = (uint16_t)((target_stroke_mm + 30.0f) / 0.05f);
@@ -253,4 +253,4 @@ void seb_send_command(float target_stroke_mm) {
 - **Current mode:** Stroke (1) — lever press → 15 mm, ESTOP → 27 mm, released → 0 mm
 - **Planned mode:** Pressure (Mode 1) — when RT brake arbitration path to SYS is implemented (§12.1 in architecture.md)
 - **No daily homing required.** One-time zero-calibration when first mated to mechanical assembly. Calibration retained across power cycles.
-- **Not reconfigurable.** CAN IDs are factory-programmed. `RT_DRIVE_SETPOINT` placed at `0x202` to avoid collision with EPS-C `0x200`.
+- **Not reconfigurable.** CAN IDs are factory-programmed. `RT_DRIVE_CMD` placed at `0x204` (`0x202` is now SES_ErrInfo).

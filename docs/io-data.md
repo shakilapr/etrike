@@ -101,6 +101,11 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x201` | SES_STATUS | `SES_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} | EPS-C |
 | `0x201` | SES_STATUS | `SES_StrAngle` | i16 (0.1°/bit) | [-780, 780] | EPS-C |
 | `0x201` | SES_STATUS | `EPS_SteeringWheel_Torq` | u8 (Nm) | — | EPS-C |
+| `0x201` | SES_STATUS | `SES_Tgt_StrAngleSpd` | i16 (0.5°/s/bit) | — | EPS-C |
+| `0x201` | SES_STATUS | `SES_RollCnt_Enable_Status` | bool | 0/1 | EPS-C |
+| `0x201` | SES_STATUS | `SES_CheckSum_Enable_Status` | bool | 0/1 | EPS-C |
+| `0x201` | SES_STATUS | `SES_RollCnt_Status` | u8 (low 4 bits) | 0–15 | EPS-C |
+| `0x201` | SES_STATUS | `SES_CheckSum_Status` | u8 | XOR over bytes 0–6 | EPS-C |
 | `0x7FE` | SYS_HEARTBEAT | `alive_ctr` | u8 | — | SYS |
 
 ### 2.2 CAN Inputs — RT receives (high-side bus, via MCP2515)
@@ -148,6 +153,7 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x169` | VCU_SES_REQ | `checksum_enable` | bool | must be 1 | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_RollCnt` | u8 (low 4 bits) | 0–15 rolling | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_CheckSum` | u8 | XOR over bytes 0–6 | 50 Hz | EPS-C |
+| `0x169` | VCU_SES_REQ | `VCU_Veh_Spd_Value` | u8 (km/h) | 0–255 | 50 Hz | EPS-C |
 | `0x302` | HOST_LIGHT_CMD (fwd) | light bits | u8 bitmask | — | on change | SYS |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | 2 Hz | SYS |
 
@@ -198,9 +204,13 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 | `0x721` | SEB_STATUS | `SEB_Alignment_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_Control_Enable_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_Control_Mode_Status` | u8 enum | — | SEB |
+| `0x721` | SEB_STATUS | `SEB_AutoBrake_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} | SEB |
 | `0x721` | SEB_STATUS | `SEB_Stroke_Value` | u16 (0.05 mm/bit) | offset -30 mm | SEB |
 | `0x721` | SEB_STATUS | `SEB_Pressure_Value` | u8 (0.05 MPa/bit) | — | SEB |
+| `0x721` | SEB_STATUS | `SEB_Angle_Value` | i16 (0.5°/bit) | [-150, 840] | SEB |
+| `0x721` | SEB_STATUS | `SEB_RollCnt_Enable_Status` | bool | 0/1 | SEB |
+| `0x721` | SEB_STATUS | `SEB_CheckSum_Enable_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_RollCnt_Status` | u8 (low 4 bits) | — | SEB |
 | `0x721` | SEB_STATUS | `SEB_CheckSum_Status` | u8 | — | SEB |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | RT |
@@ -321,6 +331,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 | `VCU_SES_Control_Mode` | u8 | — |
 | `VCU_SES_Tgt_StrAngle` | i16 (0.1°/bit) | [-780, 780] |
 | `VCU_SES_Tgt_StrAngleSpd` | u8 (°/s) | — |
+| `VCU_Veh_Spd_Value` | u8 (km/h) | 0–255 |
 | `roll_cnt_enable` | bool | must be 1 |
 | `checksum_enable` | bool | must be 1 |
 | `VCU_SES_RollCnt` | u8 (low 4 bits) | 0–15 |
@@ -334,7 +345,12 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 | `SES_Control_Mode_Status` | u8 enum | — |
 | `SES_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} |
 | `SES_StrAngle` | i16 (0.1°/bit) | — |
+| `SES_Tgt_StrAngleSpd` | i16 (0.5°/s/bit) | — |
 | `EPS_SteeringWheel_Torq` | u8 (Nm) | — |
+| `SES_RollCnt_Enable_Status` | bool | 0/1 |
+| `SES_CheckSum_Enable_Status` | bool | 0/1 |
+| `SES_RollCnt_Status` | u8 (low 4 bits) | 0–15 |
+| `SES_CheckSum_Status` | u8 | XOR over bytes 0–6 |
 
 ### 5.2 SYNTREE SEB (Brake Actuator)
 
@@ -344,7 +360,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 |----------|------|-------|
 | `VCU_SEB_Alignment_Enable` | bool | 0/1 |
 | `VCU_SEB_Control_Enable` | bool | 0/1 |
-| `VCU_SEB_Control_Mode` | u8 enum | {1=stroke, 2=pressure} |
+| `VCU_SEB_Control_Mode` | bool | 0=Stroke, 1=Pressure |
 | `VCU_SEB_AutoBrake` | bool | 0/1 |
 | `VCU_SEB_Stroke_Value_Req` | u16 (0.05 mm/bit) | offset -30 mm |
 | `VCU_SEB_Pre_Value_Req` | u8 (0.05 MPa/bit) | — |
@@ -360,9 +376,13 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 | `SEB_Alignment_Status` | bool | 0/1 |
 | `SEB_Control_Enable_Status` | bool | 0/1 |
 | `SEB_Control_Mode_Status` | u8 enum | — |
+| `SEB_AutoBrake_Status` | bool | 0/1 |
 | `SEB_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} |
 | `SEB_Stroke_Value` | u16 (0.05 mm/bit) | — |
 | `SEB_Pressure_Value` | u8 (0.05 MPa/bit) | — |
+| `SEB_Angle_Value` | i16 (0.5°/bit) | [-150, 840] |
+| `SEB_RollCnt_Enable_Status` | bool | 0/1 |
+| `SEB_CheckSum_Enable_Status` | bool | 0/1 |
 | `SEB_RollCnt_Status` | u8 (low 4 bits) | — |
 | `SEB_CheckSum_Status` | u8 | — |
 

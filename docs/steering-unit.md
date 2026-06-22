@@ -25,30 +25,31 @@ CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
 | `VCU_SES_Alignment_Enable` | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | 1 = enable calibration |
-| `VCU_SES_Control_Enable` | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | 1 = enable active control |
-| `VCU_SES_Control_Mode` | 2 | 2 | u8 | 1 | 0 | 0 | 2 | enum | 0=None, 1=Angle Mode |
-| (reserved) | 4 | 4 | — | — | — | — | — | — | |
-| (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 |
-| `VCU_SES_Tgt_StrAngle` | 16 | 16 | i16 | 0.1 | 0 | -780 | 780 | deg | Target angle. Negative = left, positive = right. |
-| `VCU_SES_Tgt_StrAngleSpd` | 32 | 8 | u8 | 1 | 0 | 0 | 255 | deg/s | Maximum turning speed / slew rate |
-| `roll_cnt_enable` | 40 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
-| `checksum_enable` | 41 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
-| (reserved) | 42 | 6 | — | — | — | — | — | — | |
-| (reserved) | 48 | 4 | — | — | — | — | — | — | Byte 6, bits 0–3 |
-| `VCU_SES_RollCnt` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | — | Rolling counter. Increment every frame. |
-| `VCU_SES_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | XOR of bytes 0–6, then `^ 0xFF` |
+| `VCU_SES_Control_Enable` | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | 1 = enable active control (rising-edge trigger, no separate Control_Mode signal) |
+| (reserved) | 2 | 6 | — | — | — | — | — | — | Bits 2–7 — not enumerated in CSV |
+| (reserved) | — | 8 | — | — | — | — | — | — | Byte 1 — not enumerated in CSV |
+| `VCU_SES_Tgt_StrAngle` | 16 | 16 | i16 | 0.1 | -3000 | -700 | 700 | deg | Target angle. Negative = left, positive = right. Raw 30000→0°. Note: offset -3000 is unusual — physical scale is 0.1°/bit centered at 30000 raw for 0°. |
+| `VCU_SES_Tgt_StrAngleSpd` | 32 | 16 | u16 | 1 | 0 | 125 | 525 | deg/s | Maximum turning speed / slew rate |
+| `VCU_SES_RollCnt_Enable` | 40 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| `VCU_SES_CheckSum_Enable` | 41 | 1 | bool | 1 | 0 | 0 | 1 | — | **Must be 1** |
+| (reserved) | 42 | 2 | — | — | — | — | — | — | |
+| `VCU_SES_RollCnt` | 44 | 4 | u8 | 1 | 0 | 0 | 15 | — | Rolling counter. Increment every frame. |
+| `VCU_Veh_Spd_Value` | 48 | 8 | u8 | 1 | 0 | 0 | 255 | km/h | Vehicle speed |
+| `VCU_SES_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | — | Sum of bytes 0–6, low byte only |
 
 ### Byte layout
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | ctrl bits | rsvd | angle [7:0] | angle [15:8] | speed | sec enables | rsvd(4)+RollCnt(4) | checksum |
+| Content | Align[0]+CtrlEn[1]+rsvd[2-7] | rsvd | angle [7:0] | angle [15:8] | speed [7:0] | speed[11:8](lower nibble)+security(upper nibble) | veh_spd | checksum |
 
-### Unit conversion (internal mdeg ↔ SYNTREE decideg)
+### Unit conversion (internal mdeg ↔ SYNTREE raw, offset -3000)
+
+The CSV defines an offset of -3000 for `VCU_SES_Tgt_StrAngle`, meaning 0° corresponds to a raw value of 30000.
 
 ```
-SYNTREE raw = internal_angle_mdeg / 100    (45500 mdeg → 455 raw → 45.5°)
-internal_mdeg = SYNTREE raw × 100          (455 raw → 45500 mdeg → 45.5°)
+SYNTREE raw = (internal_angle_mdeg / 100) + 30000    (45500 mdeg → 455 + 30000 = 30455 raw → 45.5°)
+internal_mdeg = (SYNTREE raw - 30000) × 100          (30455 raw → 455 × 100 = 45500 mdeg → 45.5°)
 ```
 
 ---
@@ -208,63 +209,64 @@ STEER_FAULT:
 #define CAN_ID_VCU_SES_REQ 0x169  // customized from factory default 0x200
 
 typedef struct {
-    uint8_t align_enable   : 1;
-    uint8_t control_enable : 1;
-    uint8_t control_mode   : 2;   // 0=None, 1=Angle Mode
-    uint8_t reserved_0     : 4;
+    uint8_t align_enable    : 1;   // Byte0,b0
+    uint8_t control_enable  : 1;   // Byte0,b1 — rising-edge trigger, no separate Control_Mode
+    uint8_t reserved_0      : 6;   // Byte0,b2-7
 
-    uint8_t reserved_1;
+    uint8_t reserved_1;            // Byte1 — not enumerated in CSV
 
-    // Signed. Scale 0.1 deg/bit.
-    // Example: 45.5° right → 455
+    // Signed i16, scale 0.1 deg/bit, offset -3000, min -700, max 700.
+    // Example: 0° → 30000 (raw), 45.5° right → 30455 (raw)
     int16_t target_angle;
 
-    uint8_t target_speed;         // deg/s slew rate
+    uint16_t target_speed;         // Bytes4-5, u16, scale 1 deg/s, 125-525
 
-    // Byte 5: Security enables
-    uint8_t roll_cnt_enable  : 1;  // MUST be 1
-    uint8_t checksum_enable  : 1;  // MUST be 1
-    uint8_t reserved_2       : 6;
+    // Byte 5 lower nibble: target_speed[11:8]
+    // Byte 5 upper nibble: security
+    uint8_t roll_cnt_enable  : 1;  // Byte5,b40 — MUST be 1
+    uint8_t checksum_enable  : 1;  // Byte5,b41 — MUST be 1
+    uint8_t reserved_2       : 2;  // Byte5,b42-43
+    uint8_t rolling_counter  : 4;  // Byte5,b44-47, 0-15
 
-    uint8_t reserved_3       : 4;
-    uint8_t rolling_counter  : 4;  // Increment 0–15 every frame
-
-    uint8_t checksum;              // XOR(bytes[0..6]) ^ 0xFF
+    uint8_t vehicle_speed;         // Byte6, u8, 0-255 km/h
+    uint8_t checksum;              // Byte7, sum(bytes[0..6]) & 0xFF
 } __attribute__((packed)) VCU_SES_Req_t;
 
 
-void ses_send_command(float target_angle_deg, uint8_t speed_limit_deg_s) {
+void ses_send_command(float target_angle_deg, uint16_t speed_limit_deg_s) {
     static uint8_t roll_cnt = 0;
     VCU_SES_Req_t payload;
     memset(&payload, 0, sizeof(payload));
 
-    // 1. Enables + Mode
+    // 1. Enables (no separate Control_Mode — control_enable rising-edge triggers angle control)
     payload.align_enable   = 1;
     payload.control_enable = 1;
-    payload.control_mode   = 1;   // Angle Mode
 
     // 2. Security enables — MUST be 1
     payload.roll_cnt_enable = 1;
     payload.checksum_enable = 1;
 
-    // 3. Angle target (internal mdeg → SYNTREE decideg)
-    //    internal_angle_mdeg / 100 = target_angle_deg × 10
-    payload.target_angle = (int16_t)(target_angle_deg * 10.0f);
+    // 3. Angle target (internal mdeg → SYNTREE raw with offset -3000)
+    //    internal_angle_mdeg / 100 = target_angle_deg × 10, then add 30000 offset
+    payload.target_angle = (int16_t)(target_angle_deg * 10.0f + 30000);
 
-    // 4. Slew rate
+    // 4. Slew rate (16-bit, 125-525)
     payload.target_speed = speed_limit_deg_s;
 
     // 5. Rolling counter
     payload.rolling_counter = roll_cnt;
     roll_cnt = (roll_cnt + 1) & 0x0F;
 
-    // 6. Checksum
-    uint8_t* raw = (uint8_t*)&payload;
-    uint8_t cksum = 0;
-    for (int i = 0; i < 7; i++) cksum ^= raw[i];
-    payload.checksum = cksum ^ 0xFF;
+    // 6. Vehicle speed
+    payload.vehicle_speed = 0;  // set from vehicle state
 
-    // 7. Transmit
+    // 7. Checksum (sum of bytes 0-6, low byte only)
+    uint8_t* raw = (uint8_t*)&payload;
+    uint16_t sum = 0;
+    for (int i = 0; i < 7; i++) sum += raw[i];
+    payload.checksum = sum & 0xFF;
+
+    // 8. Transmit
     // CAN_Write(CAN_ID_VCU_SES_REQ, 8, raw);
 }
 ```

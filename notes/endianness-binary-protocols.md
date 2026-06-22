@@ -74,7 +74,7 @@ Most automotive standards (J1939, CANopen) follow this convention and define mul
 Embedded firmware often maps a C struct directly onto CAN payload bytes:
 
 ```cpp
-// Big-endian: RT_DRIVE_CMD (0x202), DLC=5
+// Big-endian: RT_DRIVE_CMD (0x204), DLC=5
 struct __attribute__((packed)) RtDriveCmd {
     uint8_t  speed_byte3;  // MSB of speed
     uint8_t  speed_byte2;

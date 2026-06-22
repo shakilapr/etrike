@@ -59,7 +59,7 @@ Each node has independent failure modes. A Jetson crash should not affect RT or 
 | Obstacle speed limit | | ✓ | |
 | Command staleness watchdog | | ✓ | |
 | E-stop GPIO + button | | | ✓ |
-| Brake lever → CAN (`0x720`, 50 Hz) | | | ✓ |
+| Brake lever → CAN (`0x7B9`, 50 Hz) | | | ✓ |
 | Brake boot sync (LBS) | | | ✓ |
 | Brake rolling counter + checksum | | | ✓ |
 | DC-DC converter CAN control (`0x012`) | | | ✓ |
@@ -91,7 +91,7 @@ Jetson ── High CAN ── RT ── Low CAN ── SYS ── Low CAN ──
   │  0x220 PID fb ◄────┤                   │
   │  0x400 obstacle ◄──┤                   │
   │  0x600 diag ◄──────┤                   │
-  │                    │                   │  0x720 brake cmd → SEB
+  │                    │                   │  0x7B9 brake cmd → SEB
   │                    │                   │  0x012 dcdc cmd  → DC-DC
   │                    │                   │  0x721 SEB status ◄──
   │                    │  0x201 EPS-C ◄─────┤
@@ -134,4 +134,4 @@ An earlier design note (`rtos-architecture.md`) describes a single ESP32-S3 runn
 
 ---
 
-*See also: [[can-gateway-bridging]] for the forwarding rules between buses, [[defense-in-depth-safety]] for layered safety across nodes, [[achitecture]] §1 for topology, §5 for responsibility split, §7.2 for dual CAN hardware.*
+*See also: [[can-gateway-bridging]] for the forwarding rules between buses, [[defense-in-depth-safety]] for layered safety across nodes, [[architecture]] §1 for topology, §5 for responsibility split, §7.2 for dual CAN hardware.*

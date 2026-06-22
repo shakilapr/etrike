@@ -135,4 +135,4 @@ The current `architecture.md` does **not** describe the external watchdog. This 
 
 *Primary reference: [[emergency-system]] for the complete ESTOP system including watchdog's role in the 8-layer defense and post-reset recovery procedures.*
 
-*See also: [[defense-in-depth-safety]] for the layered safety approach that the watchdog is part of, [[listen-before-speaking]] for the LBS sequence that runs after every watchdog reset, [[achitecture]] §8 for SYS ESP32-S3 details.*
+*See also: [[defense-in-depth-safety]] for the layered safety approach that the watchdog is part of, [[listen-before-speaking]] for the LBS sequence that runs after every watchdog reset, [[architecture]] §8 for SYS ESP32-S3 details.*
