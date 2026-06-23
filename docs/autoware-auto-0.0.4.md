@@ -451,13 +451,14 @@ AckermannControlCommand.longitudinal.speed (m/s)
 ### Phase 3: RT Firmware
 - [ ] Add dual-protocol RX (B3): new `0x200`/`0x201`/`0x202` + keep legacy `0x300`/`0x301`
 - [ ] Implement ratio→physical translation (steering, brake, throttle)
-- [ ] Implement physical→ratio feedback translation
+- [ ] Implement physical→ratio feedback translation functions **(do NOT enable CAN TX yet — see gate below)**
 - [ ] Add `0x721` SEB_STATUS parsing for brake feedback
 - [ ] Queue-based PendingSetpoint assembly (3 queues)
 - [ ] Per-field staleness: 100ms warning, 500ms controlled stop
 - [ ] Input ratio clamping: all ratios [0.0, 1.0] before conversion
 - [ ] Remove old Category 1 forwards: `0x011`, `0x120` → Category 2 translations
 - [ ] MCP4725 DAC readback (1 Hz, M7)
+- [ ] **GATE: Feedback CAN TX on `0x300`/`0x301`/`0x302` must remain DISABLED.** These IDs change direction (old: Jetson→RT commands, new: RT→Jetson feedback). If RT transmits them before Jetson stops, both nodes TX the same ID on the same high bus → CAN error. Enable in Phase 6.
 
 ### Phase 4: BLOCKERS — Bench Testing (GATE)
 - [ ] **B1:** Verify steering angle offset on live EPS-C CAN bus
@@ -478,6 +479,7 @@ AckermannControlCommand.longitudinal.speed (m/s)
 ### Phase 6: Switch Jetson to New Protocol
 - [ ] Jetson TX: `0x200`/`0x201`/`0x202`/`0x203` instead of `0x300`/`0x301`
 - [ ] Jetson RX: `0x300`/`0x301`/`0x302`/`0x303`/`0x320`/`0x340` instead of forwarded `0x011`/`0x120`
+- [ ] **After Jetson switch confirmed:** Enable RT feedback TX on `0x300`/`0x301`/`0x302` (gated since Phase 3)
 - [ ] Remove legacy `0x300`/`0x301` RX from RT dispatch
 
 ### Phase 7: Integration & Safety Validation
@@ -539,6 +541,49 @@ AckermannControlCommand.longitudinal.speed (m/s)
 | `0x7B9` | VCU_SEB_REQ | RT/SYS (mode-gated) | SYNTREE |
 | `0x7FD` | RT_HEARTBEAT | RT | — |
 | `0x7FE` | SYS_HEARTBEAT | SYS | — |
+
+---
+
+## 9. Transition Complications & Mitigations
+
+### 9.1 Real Complication: CAN ID Direction Reversal on High Bus
+
+Three CAN IDs change direction during the upgrade:
+
+| ID | Old (Jetson→RT) | New (RT→Jetson) |
+|:---|:---|:---|
+| `0x300` | HOST_DRIVE_CMD | STEER_FBK |
+| `0x301` | HOST_BRAKE_REQ | BRAKE_FBK |
+| `0x302` | HOST_LIGHT_CMD | THROTTLE_FBK |
+
+Both Jetson and RT transmit on the same high bus. If RT enables feedback TX before Jetson stops command TX, both nodes transmit the same CAN ID simultaneously → CAN bit error → error frames → bus degradation.
+
+**Mitigation:** RT feedback TX on `0x300`/`0x301`/`0x302` is gated behind a compile-time flag disabled in Phase 3, enabled in Phase 6 only after Jetson switch is confirmed. Phase 3 implements the translation functions but does NOT call `can_tx_high()` for these IDs. Phase 6 un-gates them.
+
+**Safe deployment sequence:**
+1. Phase 3: RT firmware with dual-protocol RX, feedback TX disabled. Jetson unchanged. Vehicle drives normally on old protocol.
+2. Phase 5: Jetson vehicle_interface node built and tested (not yet activated).
+3. Phase 6: Jetson switched to new protocol. RT feedback TX un-gated. Old RT RX removed.
+4. At no point do both nodes transmit `0x300`/`0x301`/`0x302` simultaneously.
+
+### 9.2 Non-Issues (Verified Against Two-Bus Topology)
+
+These were raised as concerns during audit but are not real problems. RT has two physically separate CAN controllers (TWAI for low bus, MCP2515/SPI for high bus). Same CAN ID on different buses is not a collision.
+
+| Claim | Why Not a Problem |
+|:---|:---|
+| **Cross-cycle frame mixing (no sequence numbers)** | Jetson sends `0x200`/`0x201`/`0x202` back-to-back from one ROS callback. Entire burst <1ms at 500kbit/s. RT's 100Hz control loop (10ms period) sees all three together. Even pathological Linux jitter produces at most 10ms staleness — negligible for vehicle dynamics. Sequence numbers are unnecessary overhead. |
+| **Vehicle dead during Phase 3** | Old dispatch path (`0x300`→cmd_queue) stays intact throughout Phase 3. Jetson unchanged. New RX handlers for `0x200`/`0x201`/`0x202` listen for IDs not yet on the bus. Vehicle drives normally. |
+| **Ratio encoding obscures candump** | Deliberate Layer 1 abstraction, not a bug. `0x320` carries physical speed. Entire low bus carries physical units — tap there for debugging. Formulas documented in §3.1–§3.2. |
+| **`0x302` dual-role conflict** | Forward (Jetson→RT→SYS) uses TWAI on low bus. Feedback (RT→Jetson) uses MCP2515 on high bus. Different controllers, different wires. MCP2515 doesn't echo own TX into RX buffer. No self-receive. |
+| **`0x204` on both buses** | High bus: TURN_CMD (Jetson→RT, MCP2515). Low bus: RT_DRIVE_CMD (RT→SYS, TWAI). Separate controllers, separate wires. |
+| **`0x201`/`0x202`/`0x203` collide with SYNTREE** | High bus (Jetson↔RT) vs low bus (actuators). Separate physical CAN networks. SYNTREE IDs are low-bus only and never forwarded (Category 3). |
+| **CAN bus load doubling** | Old: ~5%. New: ~10%. Both well under 50% safe limit at 500kbit/s. Transitional dual-protocol peak: ~11%. |
+| **Work plan conflicts** | The work plan (`work-plan.md`) was written for the pre-upgrade protocol. It must be revised to incorporate the new CAN IDs. This is a project management sequencing concern, not a technical complication. |
+
+### 9.3 Optional Enhancement: Sequence Number (Future)
+
+If Jetson Linux jitter is found to cause frame interleaving beyond 10ms in practice (e.g., under heavy GPU load from perception), add a 1-byte sequence counter to `0x200`/`0x201`/`0x202`. All three frames from the same planning cycle share the same counter. RT control loop rejects frames with mismatched counters. Cost: +1 byte DLC per frame. Not required for 0.0.4 — monitor in Phase 7 soak test first.
 
 ---
 
