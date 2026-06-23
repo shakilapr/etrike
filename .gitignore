@@ -79,6 +79,24 @@ playwright/.cache/
 .env
 .env.local
 
+# ── AURIX / TC275 build artifacts ──────────────────────────────────
+*.d
+*.hex
+*.lst
+*.a
+*.src
+*.asm
+*.lsl.preprocessed
+Configurations/Debug/
+Configurations/Release/
+Debug/
+Release/
+.settings/
+.cproject
+.project
+Libraries/.ads/
+.ads/
+
 # ── Claude Code ──────────────────────────────────────────────────────
 .claude/
 
