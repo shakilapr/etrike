@@ -1,32 +1,32 @@
 # Debug Tool — System Architecture
 
-A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to the **high-level CAN bus** (Jetson ↔ RT), bridges all traffic to a web UI over Wi-Fi/MQTT, and can inject commands to simulate the Jetson for bench testing.
+A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to **both CAN buses** (high + low) via the ESP32-S3's dual TWAI controllers. Streams all 28 CAN messages to a web UI over USB, and can inject commands on either bus to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
 
 ---
 
-## 1. Why High-Level Bus Only
+## 1. Why Dual-Bus
 
-The high-level CAN bus carries everything needed for system-level debugging:
+The high bus carries system-level telemetry. The low bus carries actuator-level commands and feedback. To verify the full pipeline — inject a Jetson command, see RT's output, see the actuator response — you need both.
 
-| What | CAN IDs | How it gets there |
-|------|---------|-------------------|
-| Jetson commands | `0x300`, `0x301`, `0x302`, `0x400` | Native — Jetson transmits here |
-| Safety status | `0x011`, `0x210`, `0x001` | RT forwards from low bus + RT own reports |
-| Actual speed | `0x120` | RT forwards from low bus (MTR→SYS→RT→high) |
-| System diagnostics | `0x600` | RT forwards from low bus (SYS→RT→high) |
-| Heartbeats | `0x7FC`, `0x7FD` | Jetson + RT native |
-| Obstacle distance | `0x400` | Jetson perception pipeline |
+```
+Inject 0x300 (high)  →  watch RT produce 0x204 + 0x169 (low)  →  see EPS-C respond 0x201 (low)
+Inject 0x301 (high)  →  watch RT produce 0x205 (low)  →  see SYS produce 0x7B9 (low)  →  see SEB respond 0x721 (low)
+```
 
-**What stays on the low bus** (actuator-level, only needed for deep SYNTREE/MTR debugging):
-`0x169`, `0x201`, `0x202`, `0x203`, `0x204`, `0x205`, `0x206`, `0x6FA`, `0x6FB`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9`, `0x7FE`, `0x012`, `0x110`
+Single-bus monitoring leaves you blind to RT's outputs and the actuators' responses. Since AI writes the code, the complexity of a second bus is just more switch cases — zero human maintenance cost.
 
-This means:
-- **1 CAN transceiver** (built-in TWAI), no MCP2515 SPI chip
-- **1 CAN RX task** instead of 2
-- **Simpler MQTT topic tree** — no `low`/`high` split
-- **~5 FreeRTOS tasks** instead of 7
+**USB serial transport** — the ESP32 is always connected to the bench computer by USB. Faster than Wi-Fi, immune to EMI, no network config. Wi-Fi/MQTT available as a compile-time option using the same JSON Lines protocol.
 
-If low-bus monitoring is needed later, a second TWAI (ESP32-S3 has two) or MCP2515 can be added as a v2 feature.
+```
+ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
+  │                │
+  │                ├── Backend reads COM port
+  │                ├── Stores to SQLite
+  │                └── Fans out to UI via WebSocket (:3000/ws)
+  │
+  ├── High-Level CAN Bus (TWAI0, GPIO 5/4, 500 kbit/s)
+  └── Low-Level CAN Bus  (TWAI1, GPIO 17/16, 500 kbit/s)
+```
 
 ---
 
@@ -35,227 +35,138 @@ If low-bus monitoring is needed later, a second TWAI (ESP32-S3 has two) or MCP25
 ```
 ┌── Developer Machine ────────────────────────────────────────────────────┐
 │                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Browser (localhost:5173)                                         │    │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐            │    │
-│  │  │Dashboard │ │Monitor   │ │Injector  │ │Stats     │            │    │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘            │    │
-│  └────────────────────────────┬─────────────────────────────────────┘    │
-│                               │ WebSocket + REST (:3000)                │
-│  ┌────────────────────────────┴─────────────────────────────────────┐    │
-│  │  Fastify Backend (:3000)                Aedes MQTT Broker (:1883)│    │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │    │
-│  │  │ REST API │ │WebSocket │ │Internal  │ │ SQLite           │    │    │
-│  │  │ Routes   │ │Stream    │ │MQTT Sub  │ │ (better-sqlite3) │    │    │
-│  │  └──────────┘ └──────────┘ └─────┬────┘ └────────┬─────────┘    │    │
-│  └──────────────────────────────────┼───────────────┼──────────────┘    │
-│                                     │ MQTT          │ DB writes          │
-└─────────────────────────────────────┼───────────────┼───────────────────┘
-                                      │               │
-                                Wi-Fi (TCP :1883)      │
-                                      │               │
-┌── ESP32-S3 (debug-esp32) ───────────┼───────────────┼───────────────────┐
-│                                     │               │                    │
+│  Browser (localhost:5173)                                                │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                   │
+│  │Dashboard │ │Monitor   │ │Injector  │ │Stats     │                   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘                   │
+│       │              │             │                                    │
+│       └──────────────┼─────────────┘                                    │
+│                      │ WebSocket + REST (:3000)                         │
+│  ┌───────────────────┴──────────────────────────────────────────────┐   │
+│  │  Fastify Backend (:3000)                                          │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────────┐ ┌──────────────────┐ │   │
+│  │  │ REST API │ │WebSocket │ │Serial Reader │ │ SQLite           │ │   │
+│  │  └──────────┘ └──────────┘ └──────┬───────┘ └────────┬─────────┘ │   │
+│  └───────────────────────────────────┼──────────────────┼───────────┘   │
+│                                      │ USB (CDC ACM)    │ DB writes     │
+└──────────────────────────────────────┼──────────────────┼──────────────┘
+                                       │ COM3              │
+┌── ESP32-S3 (debug-esp32) ────────────┼──────────────────┼──────────────┐
+│                                      │                   │               │
 │  ┌──────────────────────────────────────────────────────────────────┐    │
 │  │  FreeRTOS Scheduler                                               │    │
 │  │                                                                   │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │    │
-│  │  │ can_rx_task  │  │ can_decode   │  │ mqtt_publish │            │    │
-│  │  │ prio 5       │  │ prio 4       │  │ prio 3       │            │    │
-│  │  │ TWAI RX      │──│ ID→JSON      │──│ MQTT pub     │            │    │
-│  │  └──────────────┘  └──────────────┘  └──────┬───────┘            │    │
-│  │                                             │                     │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────┴───────┐            │    │
-│  │  │ mqtt_sub     │  │ can_inject   │  │ stats_task   │            │    │
-│  │  │ prio 3       │  │ (on cmd)     │  │ prio 1, 1 Hz │            │    │
-│  │  │ cmd topics ──│──│ CAN TX       │  │ per-ID cnts  │            │    │
-│  │  └──────────────┘  └──────┬───────┘  └──────────────┘            │    │
-│  │                           │                                       │    │
-│  └───────────────────────────┼───────────────────────────────────────┘    │
-│                              │                                            │
-│  ┌───────────────────────────┴───────────────────────────────────────┐    │
-│  │  TWAI (built-in CAN controller)                                    │    │
-│  │  GPIO 5 (TX), GPIO 4 (RX), 500 kbit/s                             │    │
-│  │  + SN65HVD230 transceiver                                         │    │
-│  └───────────────────────────┬───────────────────────────────────────┘    │
-└──────────────────────────────┼────────────────────────────────────────────┘
-                               │
-                     High-Level CAN Bus
-                         (500 kbit/s)
-                               │
-              ┌────────────────┼────────────────┐
-              │                │                │
-         ┌────┴────┐     ┌────┴────┐     ┌─────┴─────┐
-         │ Jetson  │     │RT ESP32 │     │ (other    │
-         │  Orin   │     │(Gateway)│     │  nodes    │
-         └─────────┘     └─────────┘     │  on low   │
-                                         │  bus)     │
-                                         └───────────┘
+│  │  can_rx_high (prio 5)    can_rx_low (prio 5)                     │    │
+│  │  TWAI0 → dec_hi_q        TWAI1 → dec_lo_q                        │    │
+│  │       │                        │                                  │    │
+│  │       └────────┬───────────────┘                                  │    │
+│  │                │                                                  │    │
+│  │         can_decode (prio 4)                                       │    │
+│  │         ID dispatch → JSON → serial_tx_q                          │    │
+│  │                │                                                  │    │
+│  │         serial_tx (prio 3)    serial_rx (prio 3)                  │    │
+│  │         printf JSON Lines     stdin → parse → cmd_q               │    │
+│  │                                      │                            │    │
+│  │                               can_inject (prio 3)                 │    │
+│  │                               cmd_q → TWAI0/1 TX                  │    │
+│  │                                                                   │    │
+│  │  stats (prio 1, 1 Hz)     status (prio 2, 5 s)                   │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐                                     │
+│  │  TWAI0       │  │  TWAI1       │                                     │
+│  │  GPIO 5,4    │  │  GPIO 17,16  │                                     │
+│  │  High CAN Bus│  │  Low CAN Bus │                                     │
+│  └──────┬───────┘  └──────┬───────┘                                     │
+└─────────┼──────────────────┼────────────────────────────────────────────┘
+          │                  │
+    High-Level CAN      Low-Level CAN
+    (500 kbit/s)        (500 kbit/s)
 ```
-
-**Key:** The debug-ESP32 is a passive listener + on-demand injector on the high bus. It never transmits unless commanded.
 
 ---
 
-## 3. CAN Message Catalog — 12 IDs
+## 3. CAN Message Catalog — All 28 IDs
 
-All IDs are from [shared/can/can_protocol.h](../shared/can/can_protocol.h).
+### 3.1 High-Level CAN Bus (12 IDs)
 
-### 3.1 Monitored Frames (always passive)
+| ID | Name | Sender | Period | DLC | Decoded Fields | Inject |
+|----|------|--------|--------|-----|----------------|--------|
+| `0x001` | SAFETY_ESTOP | any | Event | 0 | — | ✅ |
+| `0x011` | SYS_SAFETY_STS | RT (fwd) | 5 Hz | 2 | `estop_active`, `heartbeat_ok` | ✅ |
+| `0x120` | SYS_THROTTLE_STS | RT (fwd) | 100 Hz | 2 | `speed_mmps` | ✅ |
+| `0x206` | MTR_MOTOR_FBK | RT (fwd) | 50 Hz | 4 | `actual_speed_mmps`, `gear_state`, `fault_flags` | ✅ |
+| `0x210` | RT_STATE_RPT | RT | 10 Hz | 3 | `mode`, `steer_valid`, `reversing` | ✅ |
+| `0x220` | RT_PID_RPT | RT | — (reserved) | 6 | `speed_setpoint`, `speed_measured`, `pid_output` | — |
+| `0x300` | HOST_DRIVE_CMD | Jetson | ≤100 Hz | 8 | `speed_mmps`, `yaw_rate_mrad_s`, `gear` | ✅ |
+| `0x301` | HOST_BRAKE_REQ | Jetson | Demand | 4 | `brake_pressure_kpa` | ✅ |
+| `0x302` | HOST_LIGHT_CMD | Jetson | Change | 1 | `left_turn`, `right_turn`, `brake_light`, `headlight` | ✅ |
+| `0x400` | HOST_OBSTACLE_DIST | Jetson | 10 Hz | 4 | `distance_mm` | ✅ |
+| `0x600` | SYS_DIAG_RPT | RT (fwd) | 1 Hz | 8 | `mode`, `brake_engaged`, `hb_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` | — |
+| `0x7FC` | JETSON_HEARTBEAT | Jetson | 2 Hz | 1 | `alive_ctr` | ✅ |
+| `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | 1 | `alive_ctr` | — |
 
-| ID | Name | Sender | Period | DLC | Decoded Fields |
-|----|------|--------|--------|-----|----------------|
-| `0x001` | SAFETY_ESTOP | any | Event | 0 | (none — zero-length frame) |
-| `0x011` | SYS_SAFETY_STS | RT (fwd) | 5 Hz | 2 | `estop_active`, `heartbeat_ok` |
-| `0x120` | SYS_THROTTLE_STS | RT (fwd) | 100 Hz | 2 | `speed_mmps` |
-| `0x210` | RT_STATE_RPT | RT | 10 Hz | 3 | `mode` (Manual/Auto/Estop), `steer_valid`, `reversing` |
-| `0x220` | RT_PID_RPT | RT | — (reserved) | 6 | `speed_setpoint_mmps`, `speed_measured_mmps`, `pid_output` |
-| `0x300` | HOST_DRIVE_CMD | Jetson | ≤100 Hz | 8 | `speed_mmps`, `yaw_rate_mrad_s`, `gear` |
-| `0x301` | HOST_BRAKE_REQ | Jetson | Demand | 4 | `brake_pressure_kpa` |
-| `0x302` | HOST_LIGHT_CMD | Jetson | Change | 1 | `left_turn`, `right_turn`, `brake_light`, `headlight` |
-| `0x400` | HOST_OBSTACLE_DIST | Jetson | 10 Hz | 4 | `distance_mm` |
-| `0x600` | SYS_DIAG_RPT | RT (fwd) | 1 Hz | 8 | `mode`, `brake_engaged`, `heartbeat_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` |
-| `0x7FC` | JETSON_HEARTBEAT | Jetson | 2 Hz | 1 | `alive_ctr` |
-| `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | 1 | `alive_ctr` |
+### 3.2 Low-Level CAN Bus (22 IDs)
 
-### 3.2 Injectable Frames
-
-| ID | Name | Use for Testing |
-|----|------|-----------------|
-| `0x001` | SAFETY_ESTOP | Trigger ESTOP propagation, verify gateway |
-| `0x300` | HOST_DRIVE_CMD | Simulate Jetson driving — tests full RT→SYS→MTR pipeline |
-| `0x301` | HOST_BRAKE_REQ | Simulate Jetson braking — tests RT→SYS→SEB pipeline |
-| `0x302` | HOST_LIGHT_CMD | Test light relay outputs |
-| `0x400` | HOST_OBSTACLE_DIST | Test obstacle braking threshold |
-| `0x7FC` | JETSON_HEARTBEAT | Test RT heartbeat timeout → ESTOP behavior |
-| `0x011` | SYS_SAFETY_STS | Simulate SYS safety status (if testing Jetson in isolation) |
-| `0x120` | SYS_THROTTLE_STS | Simulate speed feedback (if testing Jetson in isolation) |
+| ID | Name | Sender | Period | DLC | Decoded Fields | Inject |
+|----|------|--------|--------|-----|----------------|--------|
+| `0x001` | SAFETY_ESTOP | any | Event | 0 | — | ✅ |
+| `0x011` | SYS_SAFETY_STS | SYS | 5 Hz | 2 | `estop_active`, `heartbeat_ok` | ✅ |
+| `0x012` | SYS_DCDC_CMD | SYS | Change | 1 | `enable` | — |
+| `0x110` | SYS_MODE_CMD | SYS | Change | 1 | `mode` | ✅ |
+| `0x120` | SYS_THROTTLE_STS | MTR | 100 Hz | 2 | `speed_mmps` | ✅ |
+| `0x169` | VCU_SES_REQ | RT | 50 Hz | 8 | `target_angle`, `target_speed`, `control_enable`, `rolling_counter`, `checksum` | ✅ |
+| `0x201` | SES_STATUS | EPS-C | 100 Hz | 8 | `angle_status`, `str_angle`, `tgt_angle_spd`, `error_status` | ✅ |
+| `0x202` | SES_ErrInfo | EPS-C | 10 Hz | 8 | 25 fault flags (8× L3) | — |
+| `0x203` | SES_Version | EPS-C | 1 Hz | 8 | SW + HW version | — |
+| `0x204` | RT_DRIVE_CMD | RT | 100 Hz | 5 | `motor_speed_mmps`, `gear` | ✅ |
+| `0x205` | RT_BRAKE_CMD | RT | 50 Hz | 4 | `brake_pressure_kpa` | ✅ |
+| `0x206` | MTR_MOTOR_FBK | MTR | 50 Hz | 4 | `actual_speed_mmps`, `gear_state`, `fault_flags` | ✅ |
+| `0x302` | HOST_LIGHT_CMD | RT (fwd) | Change | 1 | light bitfield | ✅ |
+| `0x600` | SYS_DIAG_RPT | SYS | 1 Hz | 8 | `mode`, `brake_engaged`, `hb_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` | — |
+| `0x6FA` | SES_Test | EPS-C | 100 Hz | 8 | motor current, ECU temp, supply voltage | — |
+| `0x6FB` | SEB_Test | SEB | 100 Hz | 8 | motor current, ECU temp, supply voltage | — |
+| `0x721` | SEB_STATUS | SEB | 100 Hz | 8 | `stroke_value`, `pressure_value`, `angle_value`, `error_status` | ✅ |
+| `0x731` | SEB_ErrInfo | SEB | 10 Hz | 8 | 23 fault flags (16× L3) | — |
+| `0x741` | SEB_Version | SEB | 1 Hz | 8 | SW + HW version | — |
+| `0x7B9` | VCU_SEB_REQ | RT/SYS | 50 Hz | 8 | `stroke_req`, `pressure_req`, `control_mode`, `rolling_counter`, `checksum` | ✅ |
+| `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | 1 | `alive_ctr` | — |
+| `0x7FE` | SYS_HEARTBEAT | SYS | 10 Hz | 1 | `alive_ctr` | — |
 
 ---
 
-## 4. MQTT Protocol
+## 4. USB Serial Protocol — JSON Lines
 
-### 4.1 Topic Tree (simplified — single bus)
+One JSON object per line, `\n` delimited.
 
-```
-etrike/
-└── debug/
-    ├── status                        ← retained, "online" | "offline"
-    ├── uptime                        ← seconds since boot (5 s period)
-    │
-    ├── can/
-    │   ├── rx/
-    │   │   ├── 0x001                 ← one topic per CAN ID
-    │   │   ├── 0x011
-    │   │   ├── 0x120
-    │   │   ├── 0x210
-    │   │   ├── 0x220
-    │   │   ├── 0x300
-    │   │   ├── 0x301
-    │   │   ├── 0x302
-    │   │   ├── 0x400
-    │   │   ├── 0x600
-    │   │   ├── 0x7FC
-    │   │   └── 0x7FD
-    │   └── stats                     ← 1 Hz: per-ID counts, bus load %, TEC/REC
-    │
-    ├── cmd/
-    │   ├── send                      → inject single CAN frame
-    │   ├── send/periodic             → start/stop periodic injection
-    │   └── response                  ← JSON ack/error for each command
-    │
-    └── system/
-        └── reset                     → soft-reset the ESP32
-```
-
-### 4.2 CAN Frame Payload (RX)
-
-Published by debug-esp32 for every received frame. Topic: `etrike/debug/can/rx/<ID>`
+### 4.1 CAN Frame (ESP32 → Backend)
 
 ```json
-{
-  "ts": 1719234567.890123,
-  "id": "0x300",
-  "name": "HOST_DRIVE_CMD",
-  "dlc": 8,
-  "data": [0, 0, 7, 208, 0, 0, 100, 1],
-  "decoded": {
-    "speed_mmps": 2000,
-    "yaw_rate_mrad_s": 100,
-    "gear": 1,
-    "gear_name": "D"
-  }
-}
+{"ts":890123,"bus":"low","id":"0x204","name":"RT_DRIVE_CMD","dlc":5,"data":[0,0,7,208,1,0,0,0],"decoded":{"motor_speed_mmps":2000,"gear":1,"gear_name":"D"}}
 ```
 
-### 4.3 Stats Payload (periodic, 1 Hz)
+The `bus` field is `"high"` or `"low"`. All other fields match the single-bus format.
 
-Topic: `etrike/debug/can/stats`
+### 4.2 Stats (ESP32 → Backend, 1 Hz)
 
 ```json
-{
-  "ts": 1719234568.0,
-  "uptime_s": 3600,
-  "total_frames": 245000,
-  "frames_per_s": 340,
-  "bus_load_pct": 22.3,
-  "tec": 0,
-  "rec": 0,
-  "by_id": {
-    "0x120": 360000,
-    "0x300": 18000,
-    "0x210": 3600,
-    "0x011": 1800,
-    "0x600": 360,
-    "0x7FC": 720,
-    "0x7FD": 720
-  }
-}
+{"type":"stats","uptime_s":3600,"high":{"total":89120,"fps":247,"load_pct":16.2,"tec":0,"rec":0,"by_id":{"0x300":18000,"0x120":36000}},"low":{"total":152340,"fps":423,"load_pct":28.5,"tec":0,"rec":0,"by_id":{"0x120":36000,"0x204":36000,"0x201":36000,"0x7B9":18000}}}
 ```
 
-### 4.4 Command Injection Payload
+### 4.3 Command (Backend → ESP32)
 
 ```json
-// → etrike/debug/cmd/send
-{
-  "request_id": "a1b2c3d4",
-  "id": "0x300",
-  "dlc": 8,
-  "data": [0, 0, 7, 208, 0, 0, 100, 1]
-}
+{"cmd":"send","bus":"low","id":"0x204","dlc":5,"data":[0,0,7,208,1,0,0,0]}
 ```
 
 ```json
-// → etrike/debug/cmd/send/periodic  (start)
-{
-  "request_id": "a1b2c3d5",
-  "action": "start",
-  "id": "0x300",
-  "dlc": 8,
-  "data": [0, 0, 7, 208, 0, 0, 100, 1],
-  "interval_ms": 20,
-  "count": 5000
-}
+{"cmd":"send_periodic","action":"start","bus":"high","id":"0x300","dlc":8,"data":[0,0,7,208,0,0,100,1],"interval_ms":20,"count":5000}
 ```
 
-```json
-// → etrike/debug/cmd/send/periodic  (stop)
-{
-  "request_id": "a1b2c3d6",
-  "action": "stop",
-  "id": "0x300"
-}
-```
-
-### 4.5 Command Response
+### 4.4 Command Ack (ESP32 → Backend)
 
 ```json
-// ← etrike/debug/cmd/response
-{
-  "request_id": "a1b2c3d4",
-  "status": "ok",
-  "error": null
-}
+{"type":"cmd_ack","cmd":"send","status":"ok"}
 ```
 
 ---
@@ -269,8 +180,7 @@ Topic: `etrike/debug/can/stats`
 | Runtime | Node.js 22 |
 | Language | TypeScript 5.x |
 | Web framework | Fastify 5.x |
-| MQTT broker | Aedes (embedded, port 1883) |
-| MQTT client | mqtt (MQTT.js) |
+| Serial port | `serialport` npm |
 | Database | better-sqlite3 |
 | Validation | Zod |
 
@@ -278,13 +188,13 @@ Topic: `etrike/debug/can/stats`
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/status` | Backend health + debug-esp32 online/offline + uptime |
-| `GET` | `/api/can/ids` | All 12 CAN IDs with names, DLC, field definitions, enum labels |
-| `GET` | `/api/can/frames` | Query history: `?id=0x300&since=<ts>&limit=500` |
-| `GET` | `/api/can/stats` | Latest bus statistics snapshot |
-| `POST` | `/api/cmd/send` | Inject CAN frame: `{id, dlc, data}` |
-| `POST` | `/api/cmd/periodic` | Start/stop periodic: `{action, id, dlc, data, interval_ms, count}` |
-| `GET` | `/api/recordings` | List sessions |
+| `GET` | `/api/status` | Backend health + ESP32 connected + uptime + bus stats |
+| `GET` | `/api/can/ids` | All 28 CAN IDs with names, bus, DLC, field defs, enum labels |
+| `GET` | `/api/can/frames` | Query history: `?bus=low&id=0x204&since=<ts>&limit=500` |
+| `GET` | `/api/can/stats` | Latest per-bus statistics |
+| `POST` | `/api/cmd/send` | Inject CAN frame: `{bus, id, dlc, data}` |
+| `POST` | `/api/cmd/periodic` | Start/stop periodic injection |
+| `GET` | `/api/recordings` | List recording sessions |
 | `POST` | `/api/recordings` | Start recording: `{label}` |
 | `PUT` | `/api/recordings/:id/stop` | Stop recording |
 | `GET` | `/api/recordings/:id/frames` | Get recording frames (paginated) |
@@ -293,19 +203,15 @@ Topic: `etrike/debug/can/stats`
 
 ### 5.3 WebSocket (`/ws`)
 
-Client connects → receives live stream. Protocol:
-
 ```json
 // Server → Client
-{ "type": "can_frame",  "payload": { /* CAN frame */ } }
-{ "type": "stats",      "payload": { /* stats */ } }
-{ "type": "cmd_ack",    "payload": { "request_id": "...", "status": "ok" } }
-{ "type": "status",     "payload": { "debug_esp32_online": true } }
-```
+{ "type": "can_frame",  "payload": { /* CAN frame with bus field */ } }
+{ "type": "stats",      "payload": { /* per-bus stats */ } }
+{ "type": "cmd_ack",    "payload": { "cmd": "send", "status": "ok" } }
+{ "type": "status",     "payload": { "esp32_connected": true } }
 
-```json
-// Client → Server (optional filter)
-{ "type": "filter", "ids": ["0x300", "0x120", "0x210"] }
+// Client → Server (filter)
+{ "type": "filter", "buses": ["low"], "ids": ["0x204", "0x169", "0x201"] }
 ```
 
 ### 5.4 SQLite Schema
@@ -313,25 +219,26 @@ Client connects → receives live stream. Protocol:
 ```sql
 CREATE TABLE can_frames (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts_real     REAL NOT NULL,           -- backend wall clock (unix epoch)
-    ts_device   REAL NOT NULL,           -- ESP32 boot-relative seconds
-    can_id      TEXT NOT NULL,           -- '0x300'
-    can_name    TEXT NOT NULL,           -- 'HOST_DRIVE_CMD'
+    ts_real     REAL NOT NULL,
+    ts_device   INTEGER NOT NULL,
+    bus         TEXT NOT NULL CHECK(bus IN ('high','low')),
+    can_id      TEXT NOT NULL,
+    can_name    TEXT NOT NULL,
     dlc         INTEGER NOT NULL,
-    data        BLOB NOT NULL,           -- raw 8 bytes
-    decoded     TEXT NOT NULL            -- JSON string
+    data        BLOB NOT NULL,
+    decoded     TEXT NOT NULL
 );
-CREATE INDEX idx_frames_id_ts ON can_frames(can_id, ts_real);
-CREATE INDEX idx_frames_ts    ON can_frames(ts_real);
+CREATE INDEX idx_frames_bus_id_ts ON can_frames(bus, can_id, ts_real);
+CREATE INDEX idx_frames_ts ON can_frames(ts_real);
 
 CREATE TABLE injected_frames (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts_real     REAL NOT NULL,
+    bus         TEXT NOT NULL,
     can_id      TEXT NOT NULL,
     dlc         INTEGER NOT NULL,
     data        BLOB NOT NULL,
-    request_id  TEXT NOT NULL,
-    response    TEXT                     -- JSON ack/error
+    status      TEXT
 );
 
 CREATE TABLE recordings (
@@ -349,13 +256,25 @@ CREATE TABLE recording_frames (
 );
 ```
 
-### 5.5 Internal MQTT Client
+### 5.5 Serial Port Reader
 
-The backend's internal MQTT client subscribes to:
-- `etrike/debug/can/rx/#` → write to `can_frames`, fan-out to WebSocket clients
-- `etrike/debug/can/stats` → cache, fan-out to WebSocket
-- `etrike/debug/status` → update device online state (retained)
-- `etrike/debug/cmd/response` → match `request_id`, update `injected_frames`
+```typescript
+const port = new SerialPort({ path: "COM3", baudRate: 115200 });
+const rl = readline.createInterface({ input: port });
+
+rl.on("line", (json) => {
+    const msg = JSON.parse(json);
+    if (msg.type === "stats")   { cache stats; fan WS; }
+    if (msg.type === "status")  { update device state; fan WS; }
+    if (msg.type === "cmd_ack") { resolve pending command; }
+    if (msg.id)                 { write to DB; fan WS; }
+});
+
+// Send command
+function sendCommand(cmd: object) {
+    port.write(JSON.stringify(cmd) + "\n");
+}
+```
 
 ---
 
@@ -378,66 +297,56 @@ The backend's internal MQTT client subscribes to:
 ┌─────────────────────────────────────────────────────────┐
 │  E-Trike Debug                           🟢 ESP32 Online│
 ├──────────────┬──────────────┬────────────┬──────────────┤
-│ Bus Load     │ Frames/s     │ ESTOP      │ Mode         │
-│ 22.3%        │ 340 fps      │ ⬜ CLEAR   │ AUTO         │
+│ Low Bus      │ High Bus     │ ESTOP      │ Mode         │
+│ 423 fps      │ 247 fps      │ ⬜ CLEAR   │ AUTO         │
+│ 28.5% load   │ 16.2% load   │            │              │
 ├──────────────┴──────────────┴────────────┴──────────────┤
 │  Latest Values                                          │
-│  Speed: 1500 mm/s  │  Yaw: 100 mrad/s  │  Gear: D      │
-│  Brake: 0 kPa      │  Obstacle: ∞ mm   │  HB RT: ✅    │
+│  Speed: 1500 mm/s  │  Steer: 12.3°  │  Brake: 0 kPa    │
+│  Gear: D           │  HB RT: ✅     │  HB SYS: ✅      │
 └─────────────────────────────────────────────────────────┘
 ```
 
 #### CAN Monitor
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  CAN Monitor                     [⏸ Pause] [Filter...]  │
-├────────────┬───────────────┬────────────────────────────┤
-│ Timestamp  │ ID / Name     │ Decoded                    │
-├────────────┼───────────────┼────────────────────────────┤
-│ 12:34:00.001│ 0x300 DRIVE   │ speed=2000 yaw=100 gear=D │
-│ 12:34:00.005│ 0x120 SPEED   │ speed=1980 mm/s           │
-│ 12:34:00.010│ 0x210 STATE   │ mode=AUTO steer=OK        │
-│ 12:34:00.020│ 0x011 SAFETY   │ estop=0 hb=OK            │
-│ 12:34:01.000│ 0x600 DIAG     │ mode=AUTO heap=245 TEC=0 │
-│ ...        │ ...           │ ...                        │
-└────────────┴───────────────┴────────────────────────────┘
-```
+- Real-time scrolling table with color-coded rows: **low bus = blue**, **high bus = orange**
+- Columns: timestamp, bus, CAN ID, name, decoded payload
+- Filter by bus (high/low/both), CAN ID (multi-select), time range
 - Click row → expand raw hex + all decoded fields
-- Filter: by CAN ID (multi-select), time range
-- Export visible rows as JSON/CSV
+- Pause/resume, export as JSON/CSV
 
 #### CAN Injector
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  CAN Injector                                            │
-├─────────────────────────────────────────────────────────┤
-│  CAN ID: [0x300 HOST_DRIVE_CMD ▼]                       │
-│                                                         │
-│  ┌─ Payload ────────────────────────────────────────┐   │
-│  │ speed_mmps:       [  2000  ] mm/s  (-500..3000)  │   │
-│  │ yaw_rate_mrad_s:  [   100  ] mrad/s (-3000..3000)│   │
-│  │ gear:             [  D   ▼]  (N/D/S/R)           │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                         │
-│  Raw: 00 00 07 D0 00 00 64 01                          │
-│                                                         │
-│  [Send Once]   [▶ Send Periodic...]                     │
-│                                                         │
-│  ┌─ History ────────────────────────────────────────┐   │
-│  │ 12:34:10  0x300  speed=2000 gear=D       ✅ ok   │   │
-│  │ 12:34:05  0x001  ESTOP                    ✅ ok   │   │
-│  │ 12:33:50  0x301  brake=5000               ❌ ack  │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-```
+- **Bus selector** (high/low) + CAN ID dropdown → dynamic form with labeled fields
+- Raw hex preview updates as fields are edited
+- "Send Once" and "Send Periodic" buttons
+- Pre-built templates (e.g. "Drive at 1.5 m/s", "Steer 10° left", "Full brake")
+- Command history with status (ok/error)
+- **Keyboard real-time control** — when injector has focus, keys drive directly:
+
+| Key | Action | Bus | Frame |
+|-----|--------|-----|-------|
+| `W` | Speed +200 mm/s | high | `0x300` |
+| `S` | Speed −200 mm/s | high | `0x300` |
+| `A` | Steer left | high | `0x300` yaw +87 mrad/s |
+| `D` | Steer right | high | `0x300` yaw −87 mrad/s |
+| `↑` `↓` | Speed ±100 mm/s fine | high | `0x300` |
+| `←` `→` | Yaw ±50 mrad/s fine | high | `0x300` |
+| `Space` | **ESTOP** (double-tap) | both | `0x001` |
+| `B` | Brake 5000 kPa | high | `0x301` |
+| `R` | Release brake | high | `0x301` |
+| `G` | Cycle gear N→D→S→R | high | `0x300` |
+| `Esc` | Kill — zero everything | high | `0x300` + `0x301` zeroed |
+
+Each keypress sends an immediate CAN frame — no form, no submit. Client tracks accumulated drive state.
+Holding a key repeats at OS key-repeat rate (~30 Hz). "KB: ON/OFF" indicator in toolbar, click to toggle.
 
 #### Statistics
-- Line chart: frame rate over time (last 5 min)
-- Bar chart: per-ID frame counts
-- Bus load gauge
-- TEC/REC display (alert if non-zero)
+
+- Two line charts: frame rate per bus (5 min window)
+- Bar chart: top-10 CAN IDs by count
+- Bus load gauges (both buses)
+- TEC/REC display per bus (alert if non-zero)
 
 ---
 
@@ -448,51 +357,60 @@ The backend's internal MQTT client subscribes to:
 | Component | Details |
 |-----------|---------|
 | MCU | ESP32-S3-DevKitC-1 |
-| CAN transceiver | SN65HVD230 on GPIO 5 (TX), GPIO 4 (RX) |
-| Bus termination | 120Ω (provided by existing bus termination) |
-| Wi-Fi | 2.4 GHz STA mode |
-
-**One transceiver, one bus.** The ESP32-S3's built-in TWAI controller handles everything.
+| CAN High | TWAI0 (built-in controller 0) — GPIO 5 (TX), GPIO 4 (RX) — SN65HVD230 |
+| CAN Low | TWAI1 (built-in controller 1) — GPIO 17 (TX), GPIO 16 (RX) — SN65HVD230 |
+| USB | Built-in USB-UART (CDC ACM) — power + data |
+| Termination | 120Ω on both buses (provided by existing bus termination) |
 
 ### 7.2 FreeRTOS Tasks
 
+ESP-IDF requires FreeRTOS — every app runs on it. The debug tool uses clean task separation with queues because AI writes the boilerplate. Zero human maintenance cost for clean architecture.
+
 | Task | Prio | Stack | Period | Purpose |
 |------|------|-------|--------|---------|
-| `can_rx` | 5 | 4096 | Blocking | TWAI receive → push to decode queue (32 deep) |
-| `can_decode` | 4 | 6144 | Event-driven | Pop queue → dispatch ID → call `from_frame()`/`unpack()` → serialize JSON → push to MQTT pub queue |
-| `mqtt_publish` | 3 | 8192 | Event-driven | Pop pub queue → `esp_mqtt_client_publish()` |
-| `mqtt_subscribe` | 3 | 6144 | Blocking | MQTT event handler → parse cmd topics → inject CAN frame or start/stop periodic timer |
-| `stats` | 1 | 4096 | 1000 ms | Compute per-ID counts, bus load %, publish stats JSON |
-| `heartbeat` | 2 | 3072 | 5000 ms | Publish `status=online` (retained) + uptime |
+| `can_rx_high` | 5 | 4096 | Blocking | TWAI0 receive → push to `dec_hi_q` (32 deep) |
+| `can_rx_low` | 5 | 4096 | Blocking | TWAI1 receive → push to `dec_lo_q` (32 deep) |
+| `can_decode` | 4 | 6144 | Event-driven | Drain both decode queues → dispatch ID → `from_frame()`/`unpack()` → serialize JSON → push to `serial_tx_q` |
+| `serial_tx` | 3 | 4096 | Event-driven | Pop `serial_tx_q` → `printf(json, "\n")` over USB CDC |
+| `serial_rx` | 3 | 4096 | Blocking | `select()` on stdin → read JSON line → parse command → push to `cmd_q` |
+| `can_inject` | 3 | 4096 | Event-driven | Pop `cmd_q` → `twai_transmit()` on correct bus. Also manages periodic injection timer. |
+| `stats` | 1 | 4096 | 1000 ms | Per-ID per-bus counters, bus load %, TEC/REC → push stats JSON to `serial_tx_q` |
+| `status` | 2 | 3072 | 5000 ms | Heap free, uptime, stack HWM → push status JSON to `serial_tx_q` |
 
-**Total stack:** ~28 KB. ESP32-S3 has 512 KB SRAM.
+**Total stack:** ~32 KB. ESP32-S3 has 512 KB SRAM.
 
 ### 7.3 Frame Decoding
 
-The decode task uses a dispatch table keyed on CAN ID, calling the appropriate `from_frame()` or `unpack()` from `shared/can/can_protocol.h`. This is the **single source of truth** — no decoding logic is duplicated in TypeScript.
+The decode task uses a dispatch table keyed on CAN ID, calling the appropriate `from_frame()` or `unpack()` from `shared/can/can_protocol.h` — the single source of truth. All 28 IDs are decoded in firmware.
 
 ```cpp
-void decode_and_publish(const can::Frame& fr) {
+void decode_frame(const can::Frame& fr, bool is_low_bus, char* buf, size_t max_len) {
+    const char* bus = is_low_bus ? "low" : "high";
     switch (fr.id) {
         case can::kIdHostDriveCmd: {
             auto cmd = can::HostDriveCmd::from_frame(fr);
-            publish_json("etrike/debug/can/rx/0x300",
-                R"({"name":"HOST_DRIVE_CMD","decoded":{)"
-                R"("speed_mmps":%d,"yaw_rate_mrad_s":%d,"gear":%d,"gear_name":"%s"}})",
+            snprintf(buf, max_len,
+                R"({"ts":%lu,"bus":"%s","id":"0x300","name":"HOST_DRIVE_CMD",)"
+                R"("dlc":8,"data":[%d,%d,%d,%d,%d,%d,%d,%d],)"
+                R"("decoded":{"speed_mmps":%d,"yaw_rate_mrad_s":%d,"gear":%d,"gear_name":"%s"}})",
+                now_ms(), bus,
+                fr.data[0],fr.data[1],fr.data[2],fr.data[3],
+                fr.data[4],fr.data[5],fr.data[6],fr.data[7],
                 cmd.speed_mmps, cmd.yaw_rate_mrad_s, cmd.gear,
                 can::gear_name(static_cast<can::Gear>(cmd.gear)));
             break;
         }
-        case can::kIdHostBrakeReq: {
-            auto cmd = can::HostBrakeReq::from_frame(fr);
-            publish_json("etrike/debug/can/rx/0x301", ...);
+        case can::kIdRtDriveCmd: {
+            auto cmd = can::RtDriveCmd::from_frame(fr);
+            snprintf(buf, max_len, /* ... */);
             break;
         }
-        // ... 10 more IDs
-        default:
-            // Unknown ID → raw hex only, no decoded fields
-            publish_json("etrike/debug/can/rx/<id>",
-                R"({"name":"UNKNOWN_%03X","decoded":{}})", fr.id);
+        case can::kIdVcuSesReq: {
+            auto cmd = can::VcuSesReq::unpack(fr.data);
+            snprintf(buf, max_len, /* SYNTREE little-endian fields */);
+            break;
+        }
+        // ... all 28 IDs + unknown-ID fallback (raw hex only)
     }
 }
 ```
@@ -500,42 +418,40 @@ void decode_and_publish(const can::Frame& fr) {
 ### 7.4 Command Injection Safety
 
 - Periodic injection: max 10 kHz rate, max 50,000 frames per command
-- ESTOP (`0x001`) requires `"confirm_estop": true` in the command payload
-- All periodic injections auto-cancel on MQTT disconnect
-- Every injected frame is counted and published in stats
+- ESTOP (`0x001`) requires `"confirm_estop":true` in command
+- All periodic injections auto-cancel on USB disconnect (CDC DTR drop)
+- `can_inject` task writes to TWAI TX on the correct bus based on command's `bus` field
+- Every injected frame counted in per-bus stats
 
-### 7.5 Wi-Fi Config
+### 7.5 Transport Config
 
-```ini
-# sdkconfig.defaults
-CONFIG_DEBUG_WIFI_SSID="MyNetwork"
-CONFIG_DEBUG_WIFI_PASSWORD="MyPassword"
-CONFIG_DEBUG_MQTT_BROKER_URL="mqtt://192.168.1.100:1883"
+```cpp
+// config.h
+enum class Transport { USB_CDC, WIFI_MQTT };
+constexpr Transport kTransport = Transport::USB_CDC;
 ```
+
+Wi-Fi/MQTT is a compile-time alternative. The JSON Lines frame format is identical — only the I/O layer changes (serial port vs MQTT topics). Switch the enum and reflash.
 
 ---
 
 ## 8. Simulator (`simulator/`)
 
-Hardware-free device simulator for UI development and CI testing. Connects to MQTT exactly like the real ESP32.
+Hardware-free device simulator. Connects to backend via TCP socket using the same JSON Lines protocol.
 
 ```
 sim.ts
-├── Connects to MQTT broker (localhost:1883)
-├── Publishes etrike/debug/status = "online" (retained)
-├── Generates synthetic CAN traffic:
-│   ├── 0x120 at 100 Hz (speed=~1500 mm/s, slight random walk)
-│   ├── 0x300 at 50 Hz  (drive cmd matching speed)
-│   ├── 0x210 at 10 Hz  (mode=AUTO, steer_valid=true)
-│   ├── 0x011 at 5 Hz   (estop=0, hb_ok=true)
-│   ├── 0x600 at 1 Hz   (diag: mode=AUTO, heap=245, TEC=0)
-│   ├── 0x400 at 10 Hz  (obstacle=UINT32_MAX)
-│   ├── 0x7FC at 2 Hz   (Jetson HB, counter++)
-│   ├── 0x7FD at 2 Hz   (RT HB, counter++)
-│   └── Stats at 1 Hz
-├── Handles etrike/debug/cmd/send → acks with response
-├── Handles etrike/debug/cmd/send/periodic → starts/stops generator
-└── Loads traffic profile from profiles/<name>.json
+├── Sends {"type":"status","esp32_connected":true} on connect
+├── Generates synthetic CAN traffic on both buses:
+│   ├── High: 0x120 (100 Hz), 0x300 (50 Hz), 0x210 (10 Hz), 0x011 (5 Hz),
+│   │         0x206 (50 Hz), 0x400 (10 Hz), 0x600 (1 Hz), 0x7FC (2 Hz), 0x7FD (2 Hz)
+│   └── Low:  0x120 (100 Hz), 0x204 (100 Hz), 0x201 (100 Hz), 0x169 (50 Hz),
+│              0x7B9 (50 Hz), 0x206 (50 Hz), 0x721 (100 Hz), 0x7FD (2 Hz),
+│              0x7FE (10 Hz), 0x011 (5 Hz), 0x600 (1 Hz), 0x110 (change),
+│              0x6FA (100 Hz), 0x6FB (100 Hz), 0x202 (10 Hz), 0x731 (10 Hz)
+├── Handles commands → acks with cmd_ack
+├── Periodic injection → starts/stops synthetic generator
+└── Traffic profile configurable via profiles/<name>.json
 ```
 
 ---
@@ -546,15 +462,17 @@ Playwright tests against backend + simulator + UI:
 
 | Test | What It Verifies |
 |------|-----------------|
-| Dashboard shows online | Simulator connects → green dot within 2s |
-| CAN frames stream to monitor | MQTT → WebSocket → table row rendered |
-| Inject single frame | UI form → REST → MQTT → ack shown |
-| Inject periodic | Start → frames at rate → stop → no more frames |
-| Filter by CAN ID | Filter dropdown → only matching rows |
-| Recording start/stop | Frames captured → recording listed with correct count |
-| Export recording | Download produces valid JSON |
-| Stats render | Charts + gauges populated with data |
-| ESTOP confirmation gate | Inject 0x001 without flag → error. With flag → ok |
+| Dashboard shows online | Simulator → green dot, both bus gauges render |
+| CAN frames stream to monitor | Both buses → WebSocket → color-coded table rows |
+| Bus filter works | Select "low only" → only blue rows shown |
+| Inject single frame | UI → REST → serial → ack shown |
+| Inject on low bus | Select low bus → inject 0x204 → appears in low bus monitor |
+| Periodic injection | Start → frames at rate → stop → no more frames |
+| Keyboard drive | Focus injector → press W → 0x300 frame sent immediately |
+| ESTOP double-tap | Single Space → warning. Double Space → 0x001 sent |
+| Recording | Start → frames captured from both buses → stop → correct count |
+| Export recording | Download button → valid JSON with bus field |
+| Stats dual-bus | Both bus charts render with distinct data |
 
 ---
 
@@ -562,25 +480,26 @@ Playwright tests against backend + simulator + UI:
 
 ```
 Phase 1 — Types (no deps)
-  backend/src/types/can.ts        ← TS mirror of can_protocol.h (12 IDs)
-  ui/src/lib/can-decoder.ts       ← Client-side field definitions
+  backend/src/types/can.ts          ← TS mirror of can_protocol.h (28 IDs, both buses)
+  ui/src/lib/can-decoder.ts         ← Client-side field definitions
 
 Phase 2 — Backend (no hardware needed)
-  Aedes broker + internal MQTT subscriber
+  Serial port reader (JSON Lines)
   SQLite schema + queries
   Fastify REST API + WebSocket stream
 
-Phase 3 — Firmware (needs ESP32-S3 + SN65HVD230)
-  TWAI CAN RX + decode dispatch
-  Wi-Fi STA + MQTT client (esp_mqtt)
-  Command injector + periodic timer
-  Stats + heartbeat tasks
+Phase 3 — Firmware (needs ESP32-S3 + 2× SN65HVD230)
+  Dual TWAI init + CAN RX tasks
+  Frame decoder (28-ID dispatch, shared/can/can_protocol.h)
+  Serial I/O (printf JSON Lines, stdin readline)
+  Command injector (per-bus TWAI TX, periodic timer)
+  Stats + status tasks
 
 Phase 4 — UI (dev against backend + simulator)
-  Dashboard, Monitor, Injector, Stats pages
+  Dashboard, Monitor (dual-bus color), Injector (bus selector + keyboard), Stats
 
 Phase 5 — Simulator
-  MQTT device simulator with traffic profiles
+  JSON Lines device simulator with dual-bus traffic profiles
 
 Phase 6 — E2E Tests
   Playwright full-stack tests
@@ -601,11 +520,11 @@ debug-tool/
 │   └── src/
 │       ├── index.ts
 │       ├── config.ts
-│       ├── mqtt/{broker.ts, client.ts}
+│       ├── serial/reader.ts      ← SerialPort + readline
 │       ├── api/{can.ts, cmd.ts, recordings.ts, system.ts}
 │       ├── ws/stream.ts
 │       ├── db/{schema.ts, queries.ts, prune.ts}
-│       └── types/can.ts
+│       └── types/can.ts          ← 28 CAN IDs, both buses
 │
 ├── ui/
 │   ├── package.json
@@ -622,20 +541,20 @@ debug-tool/
 │   ├── platformio.ini
 │   ├── sdkconfig.defaults
 │   └── src/
-│       ├── main.cpp
-│       ├── config.h
-│       ├── can_monitor.cpp
-│       ├── frame_decoder.cpp
-│       ├── mqtt_bridge.cpp
-│       ├── can_injector.cpp
-│       └── stats.cpp
+│       ├── main.cpp              ← app_main: dual TWAI init, queue + task creation
+│       ├── config.h               ← CAN GPIOs, timing, transport switch
+│       ├── can_monitor.cpp        ← can_rx_high + can_rx_low tasks
+│       ├── frame_decoder.cpp      ← 28-ID dispatch → JSON
+│       ├── serial_io.cpp          ← serial_tx (printf) + serial_rx (stdin select)
+│       ├── can_injector.cpp       ← cmd_q → TWAI0/1 TX, periodic timer
+│       └── stats.cpp              ← Per-ID per-bus counters, bus load, TEC/REC
 │
 ├── simulator/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
 │       ├── sim.ts
-│       ├── can-generator.ts
+│       ├── can-generator.ts       ← Dual-bus synthetic traffic
 │       ├── cmd-handler.ts
 │       └── profiles/default.json
 │

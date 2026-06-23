@@ -1,112 +1,92 @@
 # E-Trike Diagnostic & Debug Tool
 
-CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to the **high-level CAN bus** (Jetson ↔ RT), bridges all traffic to a web UI over Wi-Fi/MQTT, and can inject commands to simulate the Jetson for bench testing — no logic analyzer required.
+CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to **both CAN buses** (high + low) via the ESP32-S3's dual TWAI controllers. Streams all 28 CAN messages to a web UI over USB, and can inject commands on either bus.
 
 ## Architecture
 
 ```
-┌── Dev Machine ───────────────────────────────────────────────────────┐
-│  ┌──────────────┐   ┌───────────────────────────────────────────┐    │
-│  │  UI (Svelte) │◄──│  Backend (Fastify + Aedes MQTT + SQLite)  │    │
-│  │  :5173       │   │  :3000 (REST/WS)   :1883 (MQTT)           │    │
-│  └──────────────┘   └──────────────────┬────────────────────────┘    │
-└────────────────────────────────────────┼────────────────────────────┘
-                                         │ MQTT (Wi-Fi)
-┌── ESP32-S3 ────────────────────────────┼────────────────────────────┐
-│  ┌──────────────┐  ┌───────────────────┴──────────────────────┐     │
-│  │ TWAI (CAN)   │  │ MQTT Client                              │     │
-│  │ GPIO 5,4     │  │ Publish: all 12 CAN IDs                  │     │
-│  │ 500 kbit/s   │  │ Subscribe: cmd/send, cmd/send/periodic   │     │
-│  │ RX + TX*     │  └──────────────────────────────────────────┘     │
-│  └──────┬───────┘                                                    │
-└─────────┼────────────────────────────────────────────────────────────┘
-          │
-   High-Level CAN Bus (500 kbit/s)
-          │
-    ┌─────┴─────┐  ┌──────────┐
-    │  Jetson   │  │ RT ESP32 │──(low bus)── SYS, MTR, SYNTREE...
-    └───────────┘  └──────────┘
-
-* TX only when commanded (CAN injection for testing)
+ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
+  │                │
+  │                ├── Backend reads COM port (JSON Lines)
+  │                ├── Stores to SQLite
+  │                └── Fans out to UI via WebSocket (:3000/ws)
+  │
+  ├── High CAN Bus (TWAI0, GPIO 5/4, 500 kbit/s)
+  └── Low CAN Bus  (TWAI1, GPIO 17/16, 500 kbit/s)
 ```
 
-## Why High-Level Bus Only?
+## Why Dual-Bus
 
-The high-level bus already carries all system-level data — RT forwards key telemetry from the low bus (`0x011`, `0x120`, `0x600`) and ESTOP is bridged bidirectionally. This means **one CAN transceiver** (built-in TWAI, no MCP2515 needed) gives you:
+Single-bus monitoring leaves you blind to RT's outputs and actuator responses:
 
-- All Jetson commands (0x300, 0x301, 0x302, 0x400)
-- Safety status (0x001, 0x011, 0x210)
-- Actual speed (0x120)
-- System diagnostics (0x600)
-- All heartbeats (0x7FC, 0x7FD)
+```
+Inject 0x300 (high) → RT produces 0x204 + 0x169 (low) → EPS-C responds 0x201 (low)
+                         ↑ these are invisible on high bus
+```
 
-Actuator-level frames (SYNTREE 0x169/0x7B9, MTR 0x206, etc.) stay on the low bus and can be added as a v2 feature with a second TWAI or MCP2515.
+Dual-bus gives full pipeline visibility. ESP32-S3 has two built-in TWAI controllers — just add a second SN65HVD230 transceiver.
 
 ## Components
 
 | Folder | Tech | Purpose |
 |--------|------|---------|
-| `backend/` | Node.js + TypeScript + Fastify | REST API, WebSocket stream, embedded MQTT broker (Aedes), SQLite |
-| `ui/` | Svelte + TypeScript + Vite | Dashboard, CAN monitor, injector, statistics |
-| `debug-esp32/` | PlatformIO (C++17), ESP-IDF | Firmware: CAN RX/TX, MQTT bridge, command injection |
-| `simulator/` | Node.js + TypeScript | Software device simulator for UI dev and E2E testing |
+| `backend/` | Node.js + TypeScript + Fastify | REST API, WebSocket, serial port reader, SQLite |
+| `ui/` | Svelte + TypeScript + Vite | Dashboard, CAN monitor (dual-bus color), injector + keyboard control, stats |
+| `debug-esp32/` | PlatformIO (C++17), ESP-IDF | Firmware: dual TWAI, 28-ID decoder, JSON Lines over USB CDC |
+| `simulator/` | Node.js + TypeScript | Dual-bus device simulator for UI dev and E2E testing |
 | `e2e/` | Playwright | Full-stack tests |
 
 ## Quick Start
 
-### Backend + UI (no hardware needed)
-
 ```bash
-cd debug-tool/backend && npm install && npm run dev    # :3000 + :1883
+# Backend + UI (no hardware)
+cd debug-tool/backend && npm install && npm run dev    # :3000
 cd debug-tool/ui && npm install && npm run dev          # :5173
-```
 
-### With Simulator (no hardware)
+# Simulator (no hardware)
+cd debug-tool/simulator && npm install && npm run dev
 
-```bash
-cd debug-tool/simulator && npm install && npm run dev   # synthetic CAN traffic
-```
+# Firmware (ESP32-S3 + 2× SN65HVD230)
+cd debug-tool/debug-esp32 && pio run -t upload
 
-### Firmware (ESP32-S3 + SN65HVD230)
-
-```bash
-cd debug-tool/debug-esp32
-pio run -t upload
-pio device monitor
-```
-
-### E2E Tests
-
-```bash
+# Tests
 cd debug-tool/e2e && npm install && npm test
 ```
 
-## MQTT Topics
+## Serial Protocol — JSON Lines
 
-| Topic | Dir | Purpose |
-|-------|-----|---------|
-| `etrike/debug/status` | ← retained | Online/offline |
-| `etrike/debug/can/rx/<id>` | ← | Decoded CAN frames (12 topics, one per ID) |
-| `etrike/debug/can/stats` | ← | Per-ID counts, bus load (1 Hz) |
-| `etrike/debug/cmd/send` | → | Inject single CAN frame |
-| `etrike/debug/cmd/send/periodic` | → | Start/stop periodic injection |
-| `etrike/debug/cmd/response` | ← | Command ack/error |
+```json
+// ESP32 → Computer (CAN frame with bus field)
+{"ts":890123,"bus":"low","id":"0x204","name":"RT_DRIVE_CMD","dlc":5,"data":[0,0,7,208,1],"decoded":{"motor_speed_mmps":2000,"gear":1,"gear_name":"D"}}
+
+// Computer → ESP32 (inject on specific bus)
+{"cmd":"send","bus":"low","id":"0x204","dlc":5,"data":[0,0,7,208,1,0,0,0]}
+
+// ESP32 → Computer (ack)
+{"type":"cmd_ack","cmd":"send","status":"ok"}
+```
+
+## Keyboard Control
+
+When the injector has focus, drive the vehicle directly from the keyboard:
+
+| Key | Action |
+|-----|--------|
+| `W` `S` | Speed ±200 mm/s |
+| `A` `D` | Steer left/right |
+| `↑` `↓` `←` `→` | Fine speed/yaw adjust |
+| `Space` (×2) | **ESTOP** |
+| `B` / `R` | Brake / Release |
+| `G` | Cycle gear N→D→S→R |
+| `Esc` | Kill — zero everything |
+
+Each keypress sends an immediate CAN frame. No form, no submit — real-time control.
 
 ## Monitored CAN IDs
 
-| ID | Name | Period |
-|----|------|--------|
-| `0x001` | SAFETY_ESTOP | Event |
-| `0x011` | SYS_SAFETY_STS | 5 Hz |
-| `0x120` | SYS_THROTTLE_STS | 100 Hz |
-| `0x210` | RT_STATE_RPT | 10 Hz |
-| `0x220` | RT_PID_RPT | (reserved) |
-| `0x300` | HOST_DRIVE_CMD | ≤100 Hz |
-| `0x301` | HOST_BRAKE_REQ | Demand |
-| `0x302` | HOST_LIGHT_CMD | Change |
-| `0x400` | HOST_OBSTACLE_DIST | 10 Hz |
-| `0x600` | SYS_DIAG_RPT | 1 Hz |
-| `0x7FC` | JETSON_HEARTBEAT | 2 Hz |
-| `0x7FD` | RT_HEARTBEAT | 2 Hz |
+| Bus | Count | Key IDs |
+|-----|-------|---------|
+| High | 13 | 0x001, 0x011, 0x120, 0x206, 0x210, 0x220, 0x300, 0x301, 0x302, 0x400, 0x600, 0x7FC, 0x7FD |
+| Low | 22 | 0x001, 0x011, 0x012, 0x110, 0x120, 0x169, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x302, 0x600, 0x6FA, 0x6FB, 0x721, 0x731, 0x741, 0x7B9, 0x7FD, 0x7FE |
 
 Full architecture: [`debug-tool-architecture.md`](debug-tool-architecture.md)
