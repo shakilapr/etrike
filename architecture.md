@@ -96,11 +96,13 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x721` | SEB_STATUS | SEB | SYS | 8 | Brake stroke + status + error level feedback | 100 Hz | Lowest |
 | `0x731` | SEB_ErrInfo | SEB | SYS | 8 | 23 fault flags (16× L3) | 10 Hz | Lowest |
 | `0x741` | SEB_Version | SEB | SYS | 8 | SW + HW version | 1 Hz | Lowest |
-| `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Lowest |
+| `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) † | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 10 Hz | Lowest |
 
 > **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`, plus diagnostic frames `0x202` (err info), `0x203` (version), `0x6FA` (telemetry). SEB uses factory command `0x7B9` and status `0x721`, plus diagnostic frames `0x731` (err info), `0x741` (version), `0x6FB` (telemetry). `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`. `0x205` RT_BRAKE_CMD avoids collision with `0x202` and `0x203`.
+>
+> **† `0x7B9` dual-sender note:** Architecture §6.2 Option D specifies RT sends `0x7B9` directly in AUTO (1-hop from kinematics), SYS in MANUAL/ESTOP. **Current implementation (v0.0.4):** SYS is the sole `0x7B9` sender in all modes — RT sends `0x205 RT_BRAKE_CMD` to SYS, which converts to SEB protocol. Direct RT→SEB transmission is planned (gap #13).
 
 ### 2.2 High-level CAN
 
@@ -1252,9 +1254,9 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 ```
  Low-Level CAN (500 kbit/s)
   ├── RT ESP32-S3 (TWAI)        TX: 0x169,0x204,0x205,0x302,0x001,0x7FD
-  │                              RX: 0x001,0x011,0x110,0x120,0x201,0x600,0x7FD,0x7FE
+  │                              RX: 0x001,0x011,0x110,0x120,0x201,0x202,0x203,0x206,0x600,0x6FA,0x7FD,0x7FE
   ├── SYS ESP32-S3               TX: 0x011,0x012,0x110,0x600,0x7B9,0x001,0x7FE
-  │                              RX: 0x001,0x204,0x205,0x302,0x721,0x7FD
+  │                              RX: 0x001,0x204,0x205,0x206,0x302,0x6FB,0x721,0x731,0x741,0x7FD
   ├── SYNTREE EPS-C (steering)   TX: 0x201 | RX: 0x169
   ├── SYNTREE SEB (brake)        TX: 0x721 | RX: 0x7B9
   └── DC-DC converter (72→12V)  RX: 0x012
