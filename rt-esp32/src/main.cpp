@@ -136,7 +136,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         }
     }
     // 0x6FA SES_Test — motor current + ECU temp (arch §7.3, fix #3)
-    if (fr.id == 0x6FA && !is_high) {
+    if (fr.id == can::kIdSyntreeEpsTest && !is_high) {
         uint16_t mc = (uint16_t(fr.data[0]) << 8) | fr.data[1];  // motor current (mA or 0.1A)
         uint8_t  et = fr.data[2];                                 // ECU temperature (°C)
         g_ses_motor_current.store(mc);
@@ -229,7 +229,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     }
 
     // 5. Steering following-error check (arch §7.6, fix #5)
-    // abs(cmd_angle - actual_angle) > 5° for >300ms → ESTOP
+    // abs(cmd_angle - actual_angle) > threshold (speed-scaled, max(2°, 0.25×dynamic_limit)) for >300ms → ESTOP
     // Only check when not already zeroing or disabled
     if (!r.zero_setpoints && !g_steering_disabled.load()) {
         static int steer_follow_err_ticks = 0;
@@ -379,7 +379,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         rpt.to_frame(fr);
         g_can_high.send(fr);
 
-        // 0x400 RT_OBSTACLE_RPT — 10 Hz (arch §7.4, fix #2)
+        // 0x400 HOST_OBSTACLE_DIST — 10 Hz (Jetson→RT perception data)
         can::HostObstacleDist{g_obstacle_mm.load()}.to_frame(fr);
         g_can_high.send(fr);
 
