@@ -22,7 +22,7 @@ bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
             if (++m_estop_longpress_ctr >= (kEstopLongPressMs / 100)) {
                 set_mode(can::Mode::Manual);
                 m_estop_longpress_ctr = 0;
-                m_prev_mode_btn = mode_btn_pressed;
+                m_prev_mode_btn = false;  // prevent release from toggling back to AUTO
                 m_prev_start_btn = start_btn_pressed;
                 m_debounce = kDebounceMs / 100;
                 // Caller sends CAN 0x110 — log at that level
