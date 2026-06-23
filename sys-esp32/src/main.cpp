@@ -550,7 +550,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     }
 }
 
-// ── Heartbeat task (prio 1, 2 Hz) — 0x7FE SYS_HEARTBEAT ────────────
+// ── Heartbeat task (prio 1, 10 Hz) — 0x7FE SYS_HEARTBEAT ────────────
 
 [[noreturn]] static void task_hb(void*) {
     TickType_t period = pdMS_TO_TICKS(sys::kHeartbeatIntervalMs);

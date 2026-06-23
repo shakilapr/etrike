@@ -1,5 +1,5 @@
 // Safety monitor implementation. Architecture.md §8.6.
-// Startup grace: 3000ms. Timeout: 1000ms. Alive counter validation.
+// Startup grace: 3000ms. Timeout: 200ms. Alive counter validation.
 
 #include "safety_monitor.h"
 #include "esp_timer.h"
