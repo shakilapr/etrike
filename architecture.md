@@ -98,7 +98,7 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x741` | SEB_Version | SEB | SYS | 8 | SW + HW version | 1 Hz | Lowest |
 | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
-| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 10 Hz | Lowest |
 
 > **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`, plus diagnostic frames `0x202` (err info), `0x203` (version), `0x6FA` (telemetry). SEB uses factory command `0x7B9` and status `0x721`, plus diagnostic frames `0x731` (err info), `0x741` (version), `0x6FB` (telemetry). `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`. `0x205` RT_BRAKE_CMD avoids collision with `0x202` and `0x203`.
 
@@ -131,7 +131,7 @@ RT copies the frame to the other bus unchanged — same CAN ID, same payload, sa
 
 | Direction | IDs forwarded | Example |
 |-----------|--------------|---------|
-| Low → High | `0x001`, `0x011`, `0x120`, `0x600` | SYS sends `0x011` on low → RT transmits `0x011` on high → Jetson receives |
+| Low → High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600` | SYS sends `0x011` on low → RT transmits `0x011` on high → Jetson receives |
 | High → Low | `0x001`, `0x302` | Jetson sends `0x302` on high → RT transmits `0x302` on low → SYS receives |
 
 > `0x001` is the only bidirectional forward — ESTOP originates on either bus and must reach all nodes on both buses.
@@ -541,7 +541,7 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 
 Motor speed control is **open-loop**: `0x204` desired speed → MTR MCP4725 DAC = `speed/3000 × 4095` (fixed voltage mapping). No feedback compensation. Acceptable for flat-ground steady-state operation but will not compensate for hills, headwinds, or load changes.
 
-**Why open-loop?** The PID implementation exists (`speed_pid.cpp/.h` — parallel-form with anti-windup, Kp=1.0, Ki=0.1, Kd=0.05) and is correct, but the rear motor encoder hasn't been physically fitted to the trike yet. The PID expects a `measured_speed_mmps` input from the PCNT encoder (GPIO1/2), which currently reads zero. Running the PID against `measured=0` would command full throttle constantly — it MUST NOT be in the active control path until the encoder is wired.
+**Why open-loop?** PID gains are defined in config.h (Kp=1.0, Ki=0.1, Kd=0.05) but the implementation is deferred. The rear motor encoder hasn't been physically fitted to the trike yet. The PCNT encoder inputs (GPIO1/2) currently read zero. Running PID against `measured=0` would command full throttle — it MUST NOT be active until the encoder is wired.
 
 **Integration plan (gap #5):** Once the rear motor encoder is fitted:
 1. `control_task` on RT feeds `speed_pid_update(desired, measured, dt)` with real encoder data
@@ -656,10 +656,9 @@ constexpr int kControlLoopHz = 100, kCmdStaleTimeoutMs = 500;
 constexpr int kHeartbeatIntervalMs = 500;
 constexpr int kHeartbeatTimeoutMsSys = 200;       // SYS heartbeat loss (2 missed at 10 Hz). RT takes over 0x7B9.
 constexpr int kHeartbeatTimeoutMsJetson = 1500;  // Jetson heartbeat loss (3 missed frames) → assisted stop
-constexpr int kHeartbeatIdRT = 0x7FD;            // RT heartbeat (both buses, per-bus)
-constexpr int kHeartbeatIdSys = 0x7FE;           // SYS heartbeat
-constexpr int kHeartbeatIdJetson = 0x7FC;        // Jetson heartbeat
-constexpr int kBrakeCmdId = 0x205;              // RT_BRAKE_CMD (RT→SYS, i32 kPa, 50 Hz)
+// CAN IDs are in shared/can/can_protocol.h (namespace can):
+//   kIdRtHeartbeatLow (0x7FD), kIdSysHeartbeat (0x7FE), kIdJetsonHeartbeat (0x7FC),
+//   kIdRtBrakeCmd (0x205), kIdSyntreeEpsCmd (0x169), kIdSyntreeSebCmd (0x7B9), etc.
 constexpr int kWdtToggleGpio = 21;
 // CAN
 constexpr int kCanLowBitrateHz = 500000, kCanHighBitrateHz = 500000;
@@ -741,7 +740,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x120` | SYS_THROTTLE_STS | `i16 speed_mmps` | 100 Hz | → RT (fwd to Jetson) |
 | `0x600` | SYS_DIAG_RPT | 8 bytes | 1 Hz | → RT (fwd to Jetson) |
 | `0x7B9` | VCU_SEB_REQ | `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (8 bytes) | **50 Hz** | → SYNTREE SEB |
-| `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | 2 Hz | → RT |
+| `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | 10 Hz | → RT |
 
 ### 8.5 Internal data types
 
@@ -1189,20 +1188,17 @@ constexpr int kTurnBlinkOnMs = 500, kTurnBlinkOffMs = 500;
 constexpr int kControlLoopHz = 100;
 constexpr int kHeartbeatIntervalMs    = 100;   // SYS sends 0x7FE at 10 Hz (fast path for brake loss detection)
 constexpr int kHeartbeatTimeoutMsRt   = 1000;  // RT heartbeat loss (0x7FD at 2 Hz, 2 missed frames = 1000ms). Faster 0x204 staleness (200ms) catches RT crash first.
-constexpr int kHeartbeatIdRT = 0x7FD;          // RT heartbeat (monitored by SYS)
-constexpr int kHeartbeatIdSys = 0x7FE;         // SYS heartbeat (sent to RT)
+// CAN IDs are in shared/can/can_protocol.h (namespace can):
+//   kIdRtHeartbeatLow (0x7FD), kIdSysHeartbeat (0x7FE), kIdRtBrakeCmd (0x205),
+//   kIdSyntreeSebCmd (0x7B9), etc.
+// Shared constants are in shared/shared_config.h (namespace shared):
+//   kSebMaxPressureRaw (100), kStartupGracePeriodMs (3000),
+//   kBrakeStrokeScale (0.05), kBrakeStrokeOffset (-30.0)
 constexpr int kSetpointStaleMs = 200;           // 0x204 staleness → zero speed
-constexpr int kBrakeCmdId = 0x205;           // RT_BRAKE_CMD (from RT)
-constexpr float kSebPressureScale = 0.02f;     // kPa → SEB raw (1 bit = 0.05 MPa; 1 MPa = 1000 kPa → 0.05/1000 × raw = kPa → raw = kPa × 0.02)
-constexpr float kSebPressureOffset = 0.0f;
-constexpr uint8_t kSebMaxPressureRaw = 100;   // 100 × 0.05 = 5.0 MPa hardware limit
-constexpr int kStartupGracePeriodMs = 3000;    // mask at boot
 constexpr int kSafetyCheckHz = 20, kGearCheckHz = 50;
 // Brake (SYNTREE SEB)
 constexpr int kBrakeCmdRateHz = 50, kBrakeBootWaitMs = 500;
 constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
-constexpr float kBrakeStrokeScale = 0.05f, kBrakeStrokeOffset = -30.0f;
-constexpr int kBrakeCmdId = 0x7B9;
 } // namespace sys
 ```
 

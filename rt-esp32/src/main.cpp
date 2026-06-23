@@ -36,8 +36,8 @@ static std::atomic<bool>     g_estop_flag{false};
 static std::atomic<uint8_t>  g_mode_from_sys{0};
 static std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 static std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};    // steering angle from 0x201 (fix C6)
+static std::atomic<uint8_t>  g_ses_angle_status{0};         // 0x201 byte0 bit0: alignment (gap C2)
 static std::atomic<int32_t>  g_brake_kpa_to_send{0};        // resolved brake kPa for 0x205 (fix C7)
-static std::atomic<bool>     g_steering_disabled{false};     // gate 0x169 (fix H7 + H8)
 static std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};    // measured speed from 0x206 MTR (fix M4)
 
 // ── Heartbeat tracking (written by dispatch, checked by control) ─
@@ -89,6 +89,7 @@ struct DispatchContext {
     bool estop_flag;
     uint8_t mode_from_sys;
     int16_t steer_feedback_angle;
+    uint8_t steer_angle_status;  // 0x201 byte0 bit0: angle alignment (gap C2)
     bool has_mode = false;    // set true when 0x110 mode received (fix CRITICAL falsy check)
     bool has_brake = false;   // set true when 0x301 brake received (fix CRITICAL falsy check)
     bool has_cmd = false;     // set true when 0x300 drive cmd received (fix falsy check)
@@ -109,11 +110,15 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     q.estop_flag = &ctx.estop_flag;
     q.mode_from_sys = &ctx.mode_from_sys;
     q.steer_feedback_angle = &ctx.steer_feedback_angle;
+    q.steer_angle_status   = &ctx.steer_angle_status;
     rt::route_frame(fr, is_high, q);
 
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
-    if (fr.id == can::kIdSyntreeEpsStatus) { g_ses_angle_raw.store(ctx.steer_feedback_angle); }
+    if (fr.id == can::kIdSyntreeEpsStatus) {
+        g_ses_angle_raw.store(ctx.steer_feedback_angle);
+        g_ses_angle_status.store(ctx.steer_angle_status);  // alignment bit (gap C2)
+    }
     if (fr.id == can::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
     if (fr.id == can::kIdMtrMotorFbk && !is_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
 
@@ -178,14 +183,14 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
             g_mode_from_sys.store(ctx.mode_from_sys);
             if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
                 g_estop_flag.store(false);
-                g_steering_disabled.store(false);
+                g_steering.exit_estop();  // ESTOP → AUTO/MANUAL transition (gap C3)
             }
         }
         if (ctx.has_brake)   g_brake_request_kpa.store(ctx.brake_req_kpa);  // has_brake flag: 0=release is valid (fix CRITICAL falsy check)
         if (ctx.has_cmd) {
             xQueueOverwrite(g_cmd_q, &ctx.cmd);
             g_watchdog.feed(esp_timer_get_time());
-            g_steering_disabled.store(false);
+            g_steering.exit_estop();  // new drive cmd → clear any ESTOP hold (gap C3)
         }
     }
 }
@@ -231,7 +236,8 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     // 5. Steering following-error check (arch §7.6, fix #5)
     // abs(cmd_angle - actual_angle) > threshold (speed-scaled, max(2°, 0.25×dynamic_limit)) for >300ms → ESTOP
     // Only check when not already zeroing or disabled
-    if (!r.zero_setpoints && !g_steering_disabled.load()) {
+    // Only check following error when steering is actively commanding (gap C3)
+    if (!r.zero_setpoints && g_steering.state() == rt::SteerState::ACTIVE) {
         static int steer_follow_err_ticks = 0;
         int16_t cmd_raw    = g_last_cmd_angle_raw.load();  // 0.1° units
         int16_t actual_raw = g_ses_angle_raw.load();        // 0.1° units from 0x201
@@ -312,7 +318,11 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             xQueueSend(g_gw_tx_high_q, &estop_frame, 0);
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
-        if (sr.disable_steering) g_steering_disabled.store(true);
+        // Steering ESTOP: state machine handles ramp-to-zero (gap C3).
+        // Non-obstacle triggers use ramp; obstacle hold-then-silent reserved for future.
+        if (sr.disable_steering) {
+            g_steering.start_estop(false);  // non-obstacle → ramp to 0° at 20°/s
+        }
 
         g_brake_kpa_to_send.store(bk);  // consumed by can_tx_low → 0x205 at 50 Hz (fix C7)
         xQueueOverwrite(g_setpoint_q, &sp);
@@ -351,10 +361,16 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             // 0x205 RT_BRAKE_CMD at 50 Hz (arch §7.4, fix C7)
             can::RtBrakeCmd{g_brake_kpa_to_send.load()}.to_frame(fr);
             drv->send(fr);
-            // 0x169 VCU_SES_REQ at 50 Hz, gated by disabled flag (fix H7 + H8)
-            if (!g_steering_disabled.load()) {
+            // 0x169 VCU_SES_REQ at 50 Hz — steering state machine gates transmission.
+            // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
+            // Silent in BOOT_WAIT, LISTEN_SYNC, FAULT, and MANUAL mode.
+            if (g_mode_from_sys.load() == uint8_t(can::Mode::Auto)) {
                 can::VcuSesReq ses;
-                if (g_steering.tick(g_ses_angle_raw.load(), ses)) { ses.to_frame(fr); drv->send(fr); }
+                uint32_t now_ms = esp_timer_get_time() / 1000;
+                if (g_steering.tick(g_ses_angle_raw.load(), g_ses_angle_status.load(),
+                                    now_ms, ses)) {
+                    ses.to_frame(fr); drv->send(fr);
+                }
             }
         }
         if (xQueueReceive(g_gw_tx_low_q, &gw, 0) == pdTRUE) drv->send(gw);
@@ -395,7 +411,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             ESP_LOGW(TAG, "Command stale");
             can::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
-            g_steering_disabled.store(true);  // stop 0x169 per arch §7.10 (fix H7)
+            g_steering.start_estop(false);  // ramp to 0° (gap C3, replaces disable flag)
         }
         vTaskDelayUntil(&last, per);
     }
