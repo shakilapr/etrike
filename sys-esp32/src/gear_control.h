@@ -1,6 +1,7 @@
 #pragma once
 // Gear control — TLP281 inputs + relay outputs. Architecture.md §8.6.
 #include <cstdint>
+#include "driver/gpio.h"
 #include "config.h"
 #include "can/can_protocol.h"
 namespace sys {
@@ -16,10 +17,21 @@ constexpr uint8_t kGearOutR = 4u;
 
 class GearControl {
 public:
-    void init() { m_gear = can::Gear::N; }
+    void init() {
+        m_gear = can::Gear::N;
+        // Initialize relay output GPIOs
+        gpio_set_direction(static_cast<gpio_num_t>(sys::kGearDOut), GPIO_MODE_OUTPUT);
+        gpio_set_direction(static_cast<gpio_num_t>(sys::kGearSOut), GPIO_MODE_OUTPUT);
+        gpio_set_direction(static_cast<gpio_num_t>(sys::kGearROut), GPIO_MODE_OUTPUT);
+        // All off on init
+        gpio_set_level(static_cast<gpio_num_t>(sys::kGearDOut), 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kGearSOut), 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kGearROut), 0);
+    }
     // Call @ 50 Hz. sense: 3-bit (D|S|R). mode: current. setpoint_gear: from CAN.
-    uint8_t tick(can::Mode mode, uint8_t sense_bits, uint8_t setpoint_gear) {
-        if (mode == can::Mode::Estop) { m_gear = can::Gear::N; return 0; }
+    // Actuates relay GPIOs directly.
+    void tick(can::Mode mode, uint8_t sense_bits, uint8_t setpoint_gear) {
+        if (mode == can::Mode::Estop) { m_gear = can::Gear::N; apply(); return; }
         if (mode == can::Mode::Manual) {
             // mirror: if D→D, S→S, R→R. Conflict → N.
             bool d = (sense_bits & kGearSenseD) != 0;
@@ -37,18 +49,16 @@ public:
             bool valid = (setpoint_gear <= static_cast<uint8_t>(can::Gear::R));
             m_gear = valid ? can::Gear(setpoint_gear) : can::Gear::N;
         }
-        return gear_out_bits();
+        apply();
     }
     can::Gear gear() const { return m_gear; }
-    uint8_t gear_out_bits() const {
-        switch (m_gear) {
-        case can::Gear::D: return kGearOutD;
-        case can::Gear::S: return kGearOutS;
-        case can::Gear::R: return kGearOutR;
-        default:           return 0;
-        }
-    }
 private:
     can::Gear m_gear = can::Gear::N;
+
+    void apply() {
+        gpio_set_level(static_cast<gpio_num_t>(sys::kGearDOut), (m_gear == can::Gear::D) ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kGearSOut), (m_gear == can::Gear::S) ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kGearROut), (m_gear == can::Gear::R) ? 1 : 0);
+    }
 };
 }
