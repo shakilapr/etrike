@@ -71,4 +71,18 @@ constexpr int   kBrakeBootWaitMs   =  500;
 constexpr float kBrakeManualStroke = 15.0f;    // mm, lever pressed
 constexpr float kBrakeMaxStroke    = 27.0f;    // mm, ESTOP
 
+// ── EGAS L2 motor monitoring (architecture §6.1) ─────────────────────
+constexpr int kEgasSpeedThresholdMmps = 500;   // abs(cmd - actual) > 500 mm/s
+constexpr int kEgasFaultDurationMs    = 500;   // persist 500ms → ESTOP
+
+// ── brake following error (architecture §8.10) ──────────────────────
+constexpr int   kBrakeFollowingErrRaw = 60;    // 3mm in raw units (3 / 0.05)
+constexpr int   kBrakeFollowingErrMs  = 100;   // persist 100ms → log error
+
+// ── SEB status staleness (architecture §8.10) ───────────────────────
+constexpr int kSebStatusTimeoutMs     = 100;   // no 0x721 for 100ms → log warning
+
+// ── mode button long-press ESTOP exit (gap #11) ─────────────────────
+constexpr int kEstopLongPressMs       = 3000;  // held 3s → MANUAL
+
 }  // namespace sys

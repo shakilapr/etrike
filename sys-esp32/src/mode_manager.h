@@ -33,6 +33,7 @@ private:
     int       m_debounce = 0;
     bool      m_prev_mode_btn  = true;  // pull-up: HIGH
     bool      m_prev_start_btn = true;
+    int       m_estop_longpress_ctr = 0;  // tracks MODE btn hold during ESTOP
 };
 
 }  // namespace sys

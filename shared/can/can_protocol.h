@@ -55,6 +55,8 @@ constexpr uint32_t kIdSES/SEBEpsVersion  = 0x203;  // SES→RT: SES_Version, 100
 constexpr uint32_t kIdSES/SEBSebCmd      = 0x7B9;  // SYS→SEB: VCU_SEB_Req, 50 Hz (factory default)
 constexpr uint32_t kIdSES/SEBSebStatus   = 0x721;  // SEB→SYS: SEB_Status, 100 Hz (factory default)
 constexpr uint32_t kIdSES/SEBSebErrInfo  = 0x731;  // SEB→SYS: SEB_ErrInfo, 100 ms (factory default)
+constexpr uint32_t kIdSES/SEBSebTest     = 0x6FB;  // SEB→SYS: SEB_Test, 100 Hz (factory default)
+constexpr uint32_t kIdSES/SEBSebVersion  = 0x741;  // SEB→SYS: SEB_Version, 1000 ms (factory default)
 
 // ───────────────────────────────────────────────────────────────────
 // Aliases — codebase migration compatibility.

@@ -22,8 +22,10 @@ public:
     }
     // Call @ 20 Hz. mode: current. lever: brake lever. light_bits: from 0x302 CAN.
     // switches: L/R/head pressed (active-low, pull-up).
+    // seb_braking: true when SEB stroke > 0mm (catches SEB-internal braking from CAN cmds).
     LightOutputs tick(can::Mode mode, bool lever, uint8_t light_bits,
-                      bool sw_L, bool sw_R, bool sw_head) {
+                      bool sw_L, bool sw_R, bool sw_head,
+                      bool seb_braking = false) {
         LightOutputs out = {false, false, false, false};
         if (mode == can::Mode::Estop) { out.brake_lamp = true; return out; }
 
@@ -54,9 +56,10 @@ public:
                             ? m_head_on
                             : bool(light_bits & kLightBitHeadlight);
 
-        // Brake OR logic: lever OR ESTOP OR CAN brake bit
+        // Brake OR logic: lever OR ESTOP OR CAN brake bit OR SEB actively braking
         out.brake_lamp = lever || (mode == can::Mode::Estop)
-                         || bool(light_bits & kLightBitBrake);
+                         || bool(light_bits & kLightBitBrake)
+                         || seb_braking;
 
         return out;
     }

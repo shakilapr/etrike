@@ -17,7 +17,7 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
         if (q.estop_flag) *q.estop_flag = true;
         // Gateway both directions — caller handles
         break;
-    case 0x011: case 0x120: case 0x600:
+    case 0x011: case 0x120: case 0x206: case 0x600:
         if (!is_high_bus && q.gw_tx_high) { *q.gw_tx_high = f; }
         break;
     case 0x302:

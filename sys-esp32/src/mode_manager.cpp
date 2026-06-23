@@ -10,9 +10,31 @@ void ModeManager::init() {
     m_debounce = 0;
     m_prev_mode_btn = true;
     m_prev_start_btn = true;
+    m_estop_longpress_ctr = 0;
 }
 
 bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
+    // Gap #11: MODE button long-press (3s) in ESTOP → MANUAL
+    // This runs before debounce so a held MODE button is never blocked.
+    // At 10 Hz: 3000ms = 30 ticks.
+    if (m_mode == can::Mode::Estop) {
+        if (mode_btn_pressed) {
+            if (++m_estop_longpress_ctr >= (kEstopLongPressMs / 100)) {
+                set_mode(can::Mode::Manual);
+                m_estop_longpress_ctr = 0;
+                m_prev_mode_btn = mode_btn_pressed;
+                m_prev_start_btn = start_btn_pressed;
+                m_debounce = kDebounceMs / 100;
+                // Caller sends CAN 0x110 — log at that level
+                return true;
+            }
+        } else {
+            m_estop_longpress_ctr = 0;  // released before timeout
+        }
+    } else {
+        m_estop_longpress_ctr = 0;  // not in ESTOP, no need to track
+    }
+
     if (m_debounce > 0) { m_debounce--; return false; }
 
     // START button — exit ESTOP→MANUAL only
