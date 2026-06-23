@@ -5,7 +5,7 @@
 namespace sys {
 class WdtToggle {
 public:
-    void init() { m_state=false; gpio_set_level(static_cast<gpio_num_t>(sys::kWdtToggleGpio), 0); }
+    void init() { m_state=false; gpio_set_direction(static_cast<gpio_num_t>(sys::kWdtToggleGpio), GPIO_MODE_OUTPUT); gpio_set_level(static_cast<gpio_num_t>(sys::kWdtToggleGpio), 0); }
     bool tick() {
         m_state = !m_state;
         gpio_set_level(static_cast<gpio_num_t>(sys::kWdtToggleGpio), m_state ? 1 : 0);
