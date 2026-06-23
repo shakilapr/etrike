@@ -62,6 +62,23 @@ coverage/
 *.old
 *.bak
 
+# ── debug-tool: Node.js / TypeScript ────────────────────────────────
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ── debug-tool: Vite / Svelte ────────────────────────────────────────
+.vite/
+
+# ── debug-tool: Playwright ───────────────────────────────────────────
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ── debug-tool: env files ────────────────────────────────────────────
+.env
+.env.local
+
 # ── Claude Code ──────────────────────────────────────────────────────
 .claude/
 

@@ -40,7 +40,7 @@ bool SafetyMonitor::heartbeat_ok() const {
     if (m_last_hb_us == 0)
         return (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
 
-    return (now - m_last_hb_us) < int64_t(kHeartbeatTimeoutMs) * 1000;
+    return (now - m_last_hb_us) < int64_t(kHeartbeatTimeoutMsRt) * 1000;
 }
 
 }  // namespace sys
