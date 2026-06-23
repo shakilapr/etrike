@@ -422,10 +422,10 @@ inline void VcuSesReq::pack(uint8_t raw[8]) const {
     raw[5] |= (checksum_enable & 1) << 1;     // bit 1 = CheckSum_Enable
     raw[5] |= (rolling_counter & 0xF) << 4;   // bits 4-7 = RollCnt
     raw[6] = vehicle_speed & 0xFF;
-    //  // Checksum: sum of bytes 0-6 (CSV spec: "CheckSum=Byte0+Byte1...")
-    uint16_t sum = 0;
-    for (int i = 0; i < 7; ++i) sum += raw[i];
-    raw[7] = sum & 0xFF;
+    // Checksum: XOR of bytes 0-6, then ^ 0xFF (SYNTREE protocol — same as SEB)
+    uint8_t ck = 0;
+    for (int i = 0; i < 7; ++i) ck ^= raw[i];
+    raw[7] = ck ^ 0xFF;
 }
 
 inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
