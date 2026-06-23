@@ -26,7 +26,9 @@ constexpr int kMaxSpeedRevMmps    =   500;
 constexpr int kLowSpeedThreshMmps =    50;           // freeze steering below
 
 // ── PID — placeholder gains (tune once encoders fitted, gap #5) ──
-constexpr float kPidKp = 1.0f, kPidKi = 0.1f, kPidKd = 0.05f;
+constexpr float kPidKp = 1.0f;
+constexpr float kPidKi = 0.1f;
+constexpr float kPidKd = 0.05f;
 
 // ── obstacle ──────────────────────────────────────────────────────
 constexpr unsigned kObstacleStopDistMM  =   300;

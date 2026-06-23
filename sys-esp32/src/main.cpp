@@ -14,7 +14,6 @@
 #include "config.h"
 #include "can/can_protocol.h"
 #include "can/can_driver.h"
-#include "can_dispatch.h"
 #include "safety_monitor.h"
 #include "mode_manager.h"
 #include "throttle_input.h"
@@ -79,20 +78,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
 [[noreturn]] static void task_dispatch(void*) {
     can::Frame fr;
-    sys::DispatchTargets t;
     while (1) {
         if (xQueueReceive(g_can_rx_queue, &fr, portMAX_DELAY) != pdTRUE) continue;
 
-        // Route to local copies
-        t.setpoint        = nullptr;  // handled separately below
-        t.brake_kpa       = nullptr;
-        t.light_bits      = nullptr;
-        t.estop_flag      = nullptr;
-        t.seb_status_raw  = nullptr;
-        t.rt_hb_ctr       = nullptr;
-        t.rt_hb_received  = nullptr;
-
-        // Manual dispatch for atomic state
+        // Manual dispatch into atomic state (struct-based dispatch_frame not used
+        // because some targets are std::atomic<T> rather than plain T*)
         switch (fr.id) {
         case sys::kIdRtDriveCmd: {   // 0x204
             auto sp = can::RtDriveCmd::from_frame(fr);
@@ -311,10 +301,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        auto out = g_indicator.tick(g_mode_mgr.mode());
+        [[maybe_unused]] auto out = g_indicator.tick(g_mode_mgr.mode());
+        // TODO: wire to GPIOs
         // gpio_set_level(sys::kBulbAuto, out.auto_bulb);
         // gpio_set_level(sys::kBulbManual, out.manual_bulb);
-        (void)out;
 
         vTaskDelayUntil(&last, period);
     }
@@ -326,9 +316,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        bool on = (g_mode_mgr.mode() != can::Mode::Estop);
+        [[maybe_unused]] bool on = (g_mode_mgr.mode() != can::Mode::Estop);
+        // TODO: wire to GPIO
         // gpio_set_level(sys::kPower12vRelay, on ? 1 : 0);
-        (void)on;
 
         vTaskDelayUntil(&last, period);
     }

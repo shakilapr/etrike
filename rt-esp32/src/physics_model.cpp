@@ -6,13 +6,8 @@
 #include <algorithm>
 #include "esp_log.h"
 
-#ifndef __cpp_lib_clamp
-namespace std {
-template<typename T> constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
-    return (v < lo) ? lo : (hi < v) ? hi : v;
-}
-}
-#endif
+// std::clamp is available in C++17 (project standard: -std=gnu++17).
+// No polyfill needed.
 
 namespace rt {
 namespace {
@@ -20,15 +15,15 @@ namespace {
 constexpr const char* kTag = "physics";
 constexpr float kPi = 3.14159265358979323846f;
 
-float deg2rad(float d) { return d * kPi / 180.0f; }
-float rad2deg(float r) { return r * 180.0f / kPi; }
+constexpr float deg2rad(float d) { return d * kPi / 180.0f; }
+constexpr float rad2deg(float r) { return r * 180.0f / kPi; }
 
 }  // anonymous
 
 bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
-    float v = cmd.speed_mmps / 1000.0f;          // m/s
-    float w = cmd.yaw_rate_mrad_s / 1000.0f;     // rad/s
-    float L = kWheelbaseMM / 1000.0f;            // m
+    float       v = cmd.speed_mmps / 1000.0f;    // m/s
+    float const w = cmd.yaw_rate_mrad_s / 1000.0f; // rad/s
+    float const L = kWheelbaseMM / 1000.0f;      // m
     constexpr float kYawEpsilon = 0.001f;
     const float steer_limit_rad = deg2rad(kSteerLimitDeg);
     const float low_speed_mps = kLowSpeedThreshMmps / 1000.0f;
@@ -54,7 +49,8 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
         ok = true;
     } else {
         // Decay toward straight at low speed (avoids noisy steering near standstill)
-        steer = m_steer_hold_rad * 0.8f;
+        constexpr float kSteerDecayFactor = 0.8f;
+        steer = m_steer_hold_rad * kSteerDecayFactor;
     }
 
     // Clamp speed to configured limits

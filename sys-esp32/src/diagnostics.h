@@ -9,7 +9,7 @@ public:
     Diagnostics() = default;
 
     void init() {}  // no-op (ready immediately)
-    void report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop);
+    void report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) const;
 };
 
 }  // namespace sys

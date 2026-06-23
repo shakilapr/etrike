@@ -2,10 +2,6 @@
 // Delta trike kinematics — inverse bicycle model.
 // DriveCmd → PhysicsModel.resolve() → ResolvedSetpoint
 
-#include <cmath>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 #include <cstdint>
 #include "config.h"
 
