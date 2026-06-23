@@ -80,7 +80,7 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x001` | SAFETY_ESTOP | Any | All (bridged to high) | 0 | (none) | Event | Highest |
 | `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC converter | 1 | u8 enable | Change | V.High |
-| `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A) | Change | High |
+| `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A, 2=ESTOP) | Change | High |
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson), SYS | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
@@ -266,7 +266,7 @@ A new ROS 2 lifecycle node (`autoware_vehicle_bridge`) at `jetson/src/autoware_v
 
 **Publications:** `VelocityReport` ← CAN `0x120`. `SteeringReport` ← CAN `0x210`. `GearReport` ← CAN `0x210`. `ControlModeReport` ← CAN `0x210` + `0x011`.
 
-**Heartbeats:** Sends `0x7FC` at 2 Hz. Monitors `0x7FD` (1500ms timeout → stop publishing).
+**Heartbeats:** Sends `0x7FC` at 2 Hz. Monitors `0x7FD` (1500ms timeout → RCLCPP_WARN_THROTTLE). RT's own staleness watchdog (500ms) stops the vehicle independently.
 
 **Node parameters:** `wheel_base: 1.5m`, `max_speed_forward: 3.0 m/s`, `max_steering_angle: 0.698 rad`, `max_brake_pressure_kpa: 5000`, `loop_rate: 100 Hz`, `command_timeout_ms: 500`.
 
@@ -692,12 +692,11 @@ constexpr int kEncRearRightA = 13, kEncRearRightB = 14;     // sensor TBD
 ```
 1. can_low_init() → TWAI, low CAN
 2. can_high_init() → SPI + MCP2515, high CAN
-3. obstacle_init() → TRIG/ECHO GPIOs
-4. pid_init() → load gains
-5. watchdog_init() → timestamp
-6. steer SM → STEER_BOOT_WAIT (500ms) → STEER_LISTEN_SYNC (await 0x201) → STEER_ACTIVE
-7. Create queues (6), Create 9 tasks
-8. ESP_LOGI("Ready")
+3. steer SM → STEER_BOOT_WAIT (500ms) → STEER_LISTEN_SYNC (await 0x201) → STEER_ACTIVE
+4. watchdog_init() → timestamp
+5. heartbeat_init() → alive counter
+6. Create queues (6), Create 8 tasks
+7. ESP_LOGI("Ready")
 ```
 
 ---
@@ -739,7 +738,6 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x011` | SYS_SAFETY_STS | `{u8 estop, u8 hb_ok}` | 5 Hz | → RT (fwd to Jetson) |
 | `0x012` | SYS_DCDC_CMD | `u8 enable` | Change | → DC-DC converter |
 | `0x110` | SYS_MODE_CMD | `u8 mode` | Change | → RT |
-| `0x120` | SYS_THROTTLE_STS | `i16 speed_mmps` | 100 Hz | → RT (fwd to Jetson) |
 | `0x600` | SYS_DIAG_RPT | 8 bytes | 1 Hz | → RT (fwd to Jetson) |
 | `0x7B9` | VCU_SEB_REQ | `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (8 bytes) | **50 Hz** | → SYNTREE SEB |
 | `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | 10 Hz | → RT |
@@ -930,7 +928,7 @@ Each CAN bus is an independent liveness domain. RT sends `0x7FD` independently o
               0x7FD (RT)           0x7FD (RT)
 
 SYS watches:   RT (0x7FD on low, 1000ms timeout)
-RT watches:    SYS (0x7FE on low, 1000ms timeout) AND Jetson (0x7FC on high, 1500ms timeout)
+RT watches:    SYS (0x7FE on low, 200ms timeout — 2 missed frames at 10 Hz) AND Jetson (0x7FC on high, 1500ms timeout)
 Jetson watches: RT (0x7FD on high, 1500ms timeout)
 
 SYS does NOT watch Jetson — RT handles Jetson failure (zero setpoints)
@@ -1208,7 +1206,7 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 
 | Failure | Detection | Response |
 |---------|-----------|----------|
-| E-stop pressed | GPIO1 LOW | ESTOP → DAC=0, gears off, brake=max, DCDC off, 12V off |
+| E-stop pressed | GPIO1 LOW | ESTOP → DAC=0, gears off, brake=max, **DCDC on** (maintains 12V for MCUs, CAN transceivers, brake light), 12V accessory relay off |
 | CAN bus-off | TWAI TEC > 255 | Log, auto-recover |
 | RT HB timeout | `0x7FD` alive ctr frozen >1000ms | ESTOP (AUTO only) |
 | `0x204` stale | No `0x204` for >200ms | Zero speed + N gear (controlled stop) |
@@ -1255,7 +1253,7 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
  Low-Level CAN (500 kbit/s)
   ├── RT ESP32-S3 (TWAI)        TX: 0x169,0x204,0x205,0x302,0x001,0x7FD
   │                              RX: 0x001,0x011,0x110,0x120,0x201,0x600,0x7FD,0x7FE
-  ├── SYS ESP32-S3               TX: 0x011,0x012,0x110,0x120,0x600,0x7B9,0x001,0x7FE
+  ├── SYS ESP32-S3               TX: 0x011,0x012,0x110,0x600,0x7B9,0x001,0x7FE
   │                              RX: 0x001,0x204,0x205,0x302,0x721,0x7FD
   ├── SYNTREE EPS-C (steering)   TX: 0x201 | RX: 0x169
   ├── SYNTREE SEB (brake)        TX: 0x721 | RX: 0x7B9
