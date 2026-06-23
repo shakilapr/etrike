@@ -26,7 +26,7 @@ constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)->SYS+RT motor fe
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
 constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson), 1 Hz
 constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
-constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 2 Hz
+constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 10 Hz
 
 // ── High-level bus (our IDs) ──────────────────────────────────────
 
@@ -65,7 +65,6 @@ constexpr uint32_t kIdSyntreeSebVersion  = 0x741;  // SEB→SYS: SEB_Version, 10
 // ───────────────────────────────────────────────────────────────────
 
 constexpr auto kIdHostBrakeRequest  = kIdHostBrakeReq;
-constexpr auto kIdHeartbeat         = kIdRtHeartbeatLow;
 
 // Single ESTOP ID — every node sends 0x001.
 // Code that distinguishes sender can use these for clarity.
