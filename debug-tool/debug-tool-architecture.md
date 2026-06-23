@@ -164,8 +164,10 @@ The `bus` field is `"high"` or `"low"`. All other fields match the single-bus fo
 ### 4.2 Stats (ESP32 → Backend, 1 Hz)
 
 ```json
-{"type":"stats","uptime_s":3600,"high":{"total":89120,"fps":247,"load_pct":16.2,"tec":0,"rec":0,"by_id":{"0x300":18000,"0x120":36000}},"low":{"total":152340,"fps":423,"load_pct":28.5,"tec":0,"rec":0,"by_id":{"0x120":36000,"0x204":36000,"0x201":36000,"0x7B9":18000}}}
+{"type":"stats","uptime_s":3600,"buses":{"high":{"active":true,"total":89120,"fps":247,"load_pct":16.2,"tec":0,"rec":0,"by_id":{"0x300":18000,"0x120":36000}},"low":{"active":false,"total":0,"fps":0,"load_pct":0,"tec":0,"rec":0,"by_id":{}}}}
 ```
+
+`active: false` means no frames received on that bus in the last 5 seconds. The UI uses this for the 🟢/🔴 status indicators.
 
 ### 4.3 Command (Backend → ESP32)
 
@@ -308,59 +310,89 @@ function sendCommand(cmd: object) {
 #### Dashboard
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  E-Trike Debug                           🟢 ESP32 Online│
-├──────────────┬──────────────┬────────────┬──────────────┤
-│ Low Bus      │ High Bus     │ ESTOP      │ Mode         │
-│ 423 fps      │ 247 fps      │ ⬜ CLEAR   │ AUTO         │
-│ 28.5% load   │ 16.2% load   │            │              │
-├──────────────┴──────────────┴────────────┴──────────────┤
-│  Latest Values                                          │
-│  Speed: 1500 mm/s  │  Steer: 12.3°  │  Brake: 0 kPa    │
-│  Gear: D           │  HB RT: ✅     │  HB SYS: ✅      │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  E-Trike Debug                                🟢 ESP32 Online│
+├────────────────────┬─────────────────────────────────────────┤
+│  High Bus 🟢 Active│  Low Bus  🔴 No traffic                │
+│  247 fps  16.2%   │  (plug into low CAN header)            │
+├────────────────────┴─────────────────────────────────────────┤
+│  Latest Values                                               │
+│  Speed: 1500 mm/s  │  Mode: AUTO   │  ESTOP: ⬜ CLEAR       │
+│  HB RT: ✅  HB J: ✅│  Gear: D      │  Steer valid: ✅       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-#### CAN Monitor
+Each bus shows its connection status independently. The ESP32 firmware tracks frames received per controller — if zero frames for 5 seconds, that bus is marked inactive. The UI shows:
 
-- Real-time scrolling table with color-coded rows: **low bus = blue**, **high bus = orange**
-- Columns: timestamp, bus, CAN ID, name, decoded payload
-- Filter by bus (high/low/both), CAN ID (multi-select), time range
-- Click row → expand raw hex + all decoded fields
-- Pause/resume, export as JSON/CSV
+- 🟢 **Active** — receiving frames (any CAN ID in last 5s)
+- 🟡 **Silent** — was active but no frames for >5s (bus may be quiet, or all nodes stopped)
+- 🔴 **No traffic** — never received a frame (cable unplugged, or MCP2515 not installed)
+
+#### CAN Monitor — Two Tabs
+
+Separate tabs per bus — no mixing, no confusion about which IDs belong where:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  [High Bus 🟢]  [Low Bus 🔴]                   [⏸] [Filter] │
+├──────────┬──────────────┬───────────────────────────────────┤
+│ TS       │ ID / Name    │ Decoded                           │
+├──────────┼──────────────┼───────────────────────────────────┤
+│ 12:34.001│ 0x300 DRIVE   │ speed=2000 yaw=100 gear=D        │
+│ 12:34.005│ 0x120 SPEED   │ speed=1980 mm/s                  │
+│ 12:34.010│ 0x210 STATE   │ mode=AUTO steer=OK rev=0         │
+│ 12:34.020│ 0x011 SAFETY   │ estop=0 hb=OK                   │
+│ 12:35.000│ 0x600 DIAG     │ mode=AUTO heap=245 TEC=0        │
+└──────────┴──────────────┴───────────────────────────────────┘
+```
+
+**High Bus tab** shows only high-bus IDs: 0x001, 0x011, 0x120, 0x206, 0x210, 0x220, 0x300, 0x301, 0x302, 0x400, 0x600, 0x7FC, 0x7FD.
+
+**Low Bus tab** shows only low-bus IDs: 0x001, 0x011, 0x012, 0x110, 0x120, 0x169, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x302, 0x600, 0x6FA, 0x6FB, 0x721, 0x731, 0x741, 0x7B9, 0x7FD, 0x7FE.
+
+If a bus is disconnected, its tab shows: "Plug cable into [High/Low] CAN bus header" with a pinout diagram (GPIO 5=CAN TX, 4=CAN RX for TWAI; or MCP2515 for bus B).
+
+Each tab has independent pause/resume, filter, and export. Click a row to expand raw hex + all decoded fields.
 
 #### CAN Injector
 
-- **Bus selector** (high/low) + CAN ID dropdown → dynamic form with labeled fields
-- Raw hex preview updates as fields are edited
-- "Send Once" and "Send Periodic" buttons
-- Pre-built templates (e.g. "Drive at 1.5 m/s", "Steer 10° left", "Full brake")
-- Command history with status (ok/error)
-- **Keyboard real-time control** — when injector has focus, keys drive directly:
+```
+┌──────────────────────────────────────────────────────────────┐
+│  CAN Injector                                                 │
+├──────────────────────────────────────────────────────────────┤
+│  Inject on: [High Bus 🟢]  [Low Bus 🔴]                      │
+│                                                              │
+│  CAN ID: [0x300 HOST_DRIVE_CMD ▼]  ← only IDs for this bus  │
+│  ┌─ Payload ─────────────────────────────────────────────┐   │
+│  │ speed_mmps:       [  2000  ] mm/s                      │   │
+│  │ yaw_rate_mrad_s:  [   100  ] mrad/s                    │   │
+│  │ gear:             [  D   ▼]  (N/D/S/R)                 │   │
+│  └───────────────────────────────────────────────────────┘   │
+│  Raw: 00 00 07 D0 00 00 64 01                               │
+│                                                              │
+│  [Send Once]   [▶ Send Periodic...]                          │
+│                                                              │
+│  ⚠ Low Bus is disconnected — commands will error             │
+└──────────────────────────────────────────────────────────────┘
+```
 
-| Key | Action | Bus | Frame |
-|-----|--------|-----|-------|
-| `W` | Speed +200 mm/s | high | `0x300` |
-| `S` | Speed −200 mm/s | high | `0x300` |
-| `A` | Steer left | high | `0x300` yaw +87 mrad/s |
-| `D` | Steer right | high | `0x300` yaw −87 mrad/s |
-| `↑` `↓` | Speed ±100 mm/s fine | high | `0x300` |
-| `←` `→` | Yaw ±50 mrad/s fine | high | `0x300` |
-| `Space` | **ESTOP** (double-tap) | both | `0x001` |
-| `B` | Brake 5000 kPa | high | `0x301` |
-| `R` | Release brake | high | `0x301` |
-| `G` | Cycle gear N→D→S→R | high | `0x300` |
-| `Esc` | Kill — zero everything | high | `0x300` + `0x301` zeroed |
+The injector's bus selector shows the same status as the dashboard. CAN ID dropdown is filtered to the selected bus — you can't accidentally inject 0x169 on the high bus. Selecting a disconnected bus shows a warning but still lets you queue commands (they'll be sent if the bus comes back).
 
-Each keypress sends an immediate CAN frame — no form, no submit. Client tracks accumulated drive state.
-Holding a key repeats at OS key-repeat rate (~30 Hz). "KB: ON/OFF" indicator in toolbar, click to toggle.
+**Keyboard control** injects on the currently selected bus. `W`/`A`/`S`/`D` default to high bus (0x300 Jetstream commands). Press `Tab` to switch injection to the other bus (keys then send low-bus frames like 0x204). The keyboard map updates to show what each key does on the current bus.
+
+| Key | High Bus | Low Bus |
+|-----|----------|---------|
+| `W` / `S` | 0x300 speed ±200 | 0x204 speed ±200 |
+| `A` / `D` | 0x300 yaw ±87 | 0x169 angle ±5° |
+| `Space` ×2 | 0x001 ESTOP | 0x001 ESTOP |
+| `B` / `R` | 0x301 brake/release | 0x205 brake kPa set/release |
+| `Esc` | Zero 0x300+0x301 | Zero 0x204+0x205+0x169 |
 
 #### Statistics
 
-- Two line charts: frame rate per bus (5 min window)
-- Bar chart: top-10 CAN IDs by count
-- Bus load gauges (both buses)
-- TEC/REC display per bus (alert if non-zero)
+- Per-bus charts (side by side): frame rate, bus load, top IDs
+- TEC/REC per bus (alert if non-zero)
+- Disconnected buses show empty charts with "No data" label
 
 ---
 
@@ -431,7 +463,19 @@ void decode_frame(const can::Frame& fr, bool is_low_bus, char* buf, size_t max_l
 }
 ```
 
-### 7.4 Command Injection Safety
+### 7.4 Bus Auto-Detection
+
+Each CAN controller tracks its last frame timestamp. The stats task (1 Hz) checks:
+
+```cpp
+bool bus_active(uint32_t last_frame_ms, uint32_t now_ms) {
+    return (now_ms - last_frame_ms) < 5000;  // 5s timeout
+}
+```
+
+This is published in every stats message as `active: true/false` per bus. The UI uses it for 🟢/🔴 indicators. No configuration needed — plug into any bus header and it just works.
+
+### 7.5 Command Injection Safety
 
 - Periodic injection: max 10 kHz rate, max 50,000 frames per command
 - ESTOP (`0x001`) requires `"confirm_estop":true` in command
@@ -439,7 +483,7 @@ void decode_frame(const can::Frame& fr, bool is_low_bus, char* buf, size_t max_l
 - Command's `bus` field selects TWAI (bus A) or MCP2515 (bus B) for TX
 - Every injected frame counted in per-bus stats
 
-### 7.5 Config
+### 7.6 Config
 
 ```cpp
 // config.h

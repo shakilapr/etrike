@@ -52,6 +52,9 @@ cd debug-tool/e2e && npm install && npm test
 // ESP32 → Computer (CAN frame with bus field)
 {"ts":890123,"bus":"low","id":"0x204","name":"RT_DRIVE_CMD","dlc":5,"data":[0,0,7,208,1],"decoded":{"motor_speed_mmps":2000,"gear":1,"gear_name":"D"}}
 
+// ESP32 → Computer (bus status — active/inactive per controller)
+{"type":"stats","buses":{"high":{"active":true,"fps":247},"low":{"active":false,"fps":0}}}
+
 // Computer → ESP32 (inject on specific bus)
 {"cmd":"send","bus":"low","id":"0x204","dlc":5,"data":[0,0,7,208,1,0,0,0]}
 
@@ -59,21 +62,26 @@ cd debug-tool/e2e && npm install && npm test
 {"type":"cmd_ack","cmd":"send","status":"ok"}
 ```
 
+## UI — Two Bus Tabs
+
+The monitor has separate tabs for each bus — no mixing, no confusion:
+
+- **[High Bus 🟢]** — shows only high-bus CAN IDs (Jetson↔RT traffic)
+- **[Low Bus 🔴]** — shows only low-bus CAN IDs (RT↔actuator traffic)
+
+A disconnected bus shows 🔴 and a "plug cable here" diagram. The injector's CAN ID dropdown is filtered to the selected bus — you can't accidentally inject 0x169 on the high bus.
+
 ## Keyboard Control
 
-When the injector has focus, drive the vehicle directly from the keyboard:
+Inject on the currently selected bus. `Tab` switches buses. Keys adapt:
 
-| Key | Action |
-|-----|--------|
-| `W` `S` | Speed ±200 mm/s |
-| `A` `D` | Steer left/right |
-| `↑` `↓` `←` `→` | Fine speed/yaw adjust |
-| `Space` (×2) | **ESTOP** |
-| `B` / `R` | Brake / Release |
-| `G` | Cycle gear N→D→S→R |
-| `Esc` | Kill — zero everything |
-
-Each keypress sends an immediate CAN frame. No form, no submit — real-time control.
+| Key | High Bus | Low Bus |
+|-----|----------|---------|
+| `W` `S` | 0x300 speed ±200 | 0x204 speed ±200 |
+| `A` `D` | 0x300 yaw ±87 | 0x169 angle ±5° |
+| `Space` (×2) | 0x001 ESTOP | 0x001 ESTOP |
+| `B` / `R` | 0x301 brake/release | 0x205 brake kPa set/release |
+| `Esc` | Zero 0x300+0x301 | Zero 0x204+0x205+0x169 |
 
 ## Monitored CAN IDs
 
