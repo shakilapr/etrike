@@ -56,7 +56,7 @@ constexpr int kWdtToggleGpio = 23;
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;
 constexpr int kHeartbeatIntervalMs  =  100;   // 10 Hz SYS heartbeat (fast path for brake loss detection, gap #12)
-constexpr int kHeartbeatTimeoutMs   = 1000;   // RT heartbeat loss (2 missed frames at 2 Hz). Faster 0x204 staleness (200ms) catches RT crash first.
+constexpr int kHeartbeatTimeoutMsRt = 1000;   // RT heartbeat loss (0x7FD at 2 Hz, 2 missed frames = 1000ms). Faster 0x204 staleness (200ms) catches RT crash first.
 constexpr int kSafetyCheckHz        =   20;
 constexpr int kGearCheckHz          =   50;
 constexpr int kDebounceMs           =  500;   // push button debounce
