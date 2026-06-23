@@ -101,14 +101,14 @@ ESTOP → 0 (off). All other modes → 1 (on).
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYS |
+| **Sender** | MTR |
 | **Receiver(s)** | RT (→ Jetson) |
 | **DLC** | 2 |
 | **Period** | 100 Hz |
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
-| `SYS_ThrottleSpeed` | 0 | 16 | i16 | 1 | 0 | 0 | 3000 | mm/s |
+| `SYS_ThrottleSpeed` | 0 | 16 | i16 | 1 | 0 | -500 | 3000 | mm/s |
 
 ---
 
@@ -148,6 +148,24 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 Byte layout (big-endian): Bytes 0-3 = brake pressure [kPa].
 
 RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified SYNTREE spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x205 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x205 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
+
+
+### 0x206 — MTR_MOTOR_FBK
+
+| Property | Value |
+|----------|-------|
+| **Sender** | MTR STM32 |
+| **Receiver(s)** | SYS, RT |
+| **DLC** | 4 |
+| **Period** | 50 Hz (20 ms) |
+
+| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
+|--------|-----------|-----|------|-------|--------|-----|-----|------|
+| `MTR_ActualSpeed` | 0 | 16 | i16 | 1 | 0 | -500 | 3000 | mm/s |
+| `MTR_GearState` | 16 | 8 | u8 enum | 1 | 0 | 0 | 3 | {0=N,1=D,2=S,3=R} |
+| `MTR_FaultFlags` | 24 | 8 | u8 bitmask | — | — | — | — | bit0=overcurrent, bit1=overtemp, bit2=comms_loss |
+
+Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
 
 ### 0x201 — SES_STATUS (SYNTREE EPS-C Feedback)
@@ -586,8 +604,8 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 | **Sender** | SYS |
 | **Receiver(s)** | RT |
 | **DLC** | 1 |
-| **Period** | 2 Hz (500 ms) |
-| **Timeout** | 1000ms (2 missed frames) → RT sends CAN `0x001` ESTOP (AUTO only) |
+| **Period** | 10 Hz (100 ms) |
+| **Timeout** | 200ms (2 missed frames at 10 Hz) → RT takes over `0x7B9` (stroke=max) + sends CAN `0x001`. Total brake gap ≤220ms. |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
@@ -717,12 +735,12 @@ Layout identical to low-level `0x302`. RT forwards transparently.
 
 ---
 
-### 0x400 — RT_OBSTACLE_RPT
+### 0x400 — HOST_OBSTACLE_DIST
 
 | Property | Value |
 |----------|-------|
-| **Sender** | RT |
-| **Receiver(s)** | Jetson |
+| **Sender** | Jetson |
+| **Receiver(s)** | RT |
 | **DLC** | 4 |
 | **Period** | 10 Hz |
 
@@ -731,6 +749,8 @@ Layout identical to low-level `0x302`. RT forwards transparently.
 | `RT_ObstacleDistance` | 0 | 32 | u32 | 0 | 2³²−1 | mm |
 
 UINT32_MAX = no reading / timeout.
+
+Jetson perception (LiDAR/camera) → RT for obstacle speed limiting.
 
 ---
 
@@ -786,7 +806,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x011` | SYS_SAFETY_STS | SYS | RT (→Jetson) | 2 | 5 Hz |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC | 1 | Change |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | Change |
-| `0x120` | SYS_THROTTLE_STS | SYS | RT (→Jetson) | 2 | 100 Hz |
+| `0x120` | SYS_THROTTLE_STS | MTR | RT (→Jetson) | 2 | 100 Hz |
 | `0x169` | VCU_SES_REQ | RT | EPS-C | 8 | **50 Hz** |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | 100 Hz |
 | `0x202` | SES_ErrInfo | EPS-C | RT | 8 | 10 Hz |
@@ -845,7 +865,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
+| Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x206`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (SYNTREE EPS-C feedback) |
 | High only | `0x210`, `0x220`, `0x400` (RT telemetry) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
@@ -859,7 +879,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 | Highest | `0x001` | ESTOP |
 | Very High | `0x010`–`0x01F` | SAFETY_STATUS, DCDC_CMD |
 | High | `0x100`–`0x11F` | MODE_CMD |
-| Medium | `0x120`–`0x3FF` | THROTTLE, DRIVE, SES_STATUS/REQ/ErrInfo/Version, DRIVE_CMD, BRAKE_REQ, LIGHT_CMD |
+| Medium | `0x120`–`0x3FF` | THROTTLE, DRIVE, MTR_MOTOR_FBK, SES_STATUS/REQ/ErrInfo/Version, DRIVE_CMD, BRAKE_REQ, LIGHT_CMD |
 | Low | `0x400`–`0x5FF` | OBSTACLE, STATE_REPORT, PID_FEEDBACK |
 | Lowest | `0x600`–`0x7FF` | DIAG, SES_Test (`0x6FA`), SEB_Test (`0x6FB`), SEB_STATUS/ErrInfo/Version (`0x721`/`0x731`/`0x741`), SEB_REQ (`0x7B9`), HEARTBEAT (`0x7FC`–`0x7FE`) |
 
