@@ -40,6 +40,14 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
             *q.steer_feedback_angle = int16_t(f.data[2] | (f.data[3] << 8));
         }
         break;
+    case 0x721:
+        // SEB_STATUS — monitor for SEB errors (pre-existing gap H3)
+        // Error status at byte 0 bits 6-7; L3 faults escalate to ESTOP in main.cpp
+        if (!is_high_bus && q.estop_flag) {
+            uint8_t err = (f.data[0] >> 6) & 0x03;
+            if (err == 3) *q.estop_flag = true;
+        }
+        break;
     }
 }
 }
