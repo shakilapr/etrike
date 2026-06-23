@@ -1,0 +1,14 @@
+/**:
+  ros__parameters:
+    wheel_base: 1.5
+    max_speed_forward: 3.0
+    max_speed_reverse: 0.5
+    max_steering_angle: 0.698
+    max_brake_pressure_kpa: 5000
+    max_deceleration: 5.0
+    low_speed_threshold: 0.05
+    loop_rate: 100.0
+    command_timeout_ms: 500
+    heartbeat_interval_ms: 500
+    rt_heartbeat_timeout_ms: 1500
+    can_interface: "can0"

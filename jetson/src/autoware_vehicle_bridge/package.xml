@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>autoware_vehicle_bridge</name>
+  <version>0.1.0</version>
+  <description>
+    Autoware.Auto ROS 2 to CAN bridge for the E-Trike (Jetson Orin).
+    Converts AckermannControlCommand to CAN frames (0x300, 0x301, 0x302, 0x7FC)
+    on the high-level CAN bus and decodes feedback frames (0x120, 0x011, 0x210,
+    0x600, 0x7FD) into ROS 2 vehicle reports. Implements inverse tricycle
+    kinematics, heartbeat liveness monitoring, and command timeout safety.
+  </description>
+  <maintainer email="dev@etrike.local">E-Trike Dev</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>autoware_auto_control_msgs</depend>
+  <depend>autoware_auto_vehicle_msgs</depend>
+  <depend>can_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>lifecycle_msgs</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
