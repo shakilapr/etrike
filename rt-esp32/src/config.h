@@ -30,6 +30,9 @@ constexpr float kAngleClampSpeedRange   =  23.0f;   // 25 − 2 km/h
 constexpr float kSteerRateMinDegS       = 125.0f;   // at low speed
 constexpr float kSteerRateMaxDegS       = 525.0f;   // at high speed
 constexpr float kSteerRateRangeDegS     = 400.0f;   // max − min
+constexpr int   kSteerSyncTimeoutMs     = 5000;     // LISTEN_SYNC timeout → FAULT (gap C1)
+constexpr float kSteerEstopRampDegS     = 20.0f;    // ESTOP ramp-to-zero rate (gap C3)
+constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then silent-stop (gap C3)
 
 // ── PID — placeholder gains (tune once encoders fitted, gap #5) ──
 constexpr float kPidKp = 1.0f;
