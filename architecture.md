@@ -2,6 +2,8 @@
 
 Four-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering, brake & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (motor actuation).
 
+> **Variant:** A consolidated single-controller version exists at [`rt-aurix-lite/rt-aurix-lite-architecture.md`](rt-aurix-lite/rt-aurix-lite-architecture.md) — combines RT+SYS into one AURIX TC3xx on a single CAN bus. This document describes the distributed reference architecture. Both variants share the same CAN protocol and actuator interfaces.
+
 Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. This ensures no single MCU failure takes both actuators, and AUTO-mode brake+steer are 1-hop from the kinematics engine. Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
 
 ---
