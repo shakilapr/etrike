@@ -21,12 +21,15 @@ constexpr float rad2deg(float r) { return r * 180.0f / kPi; }
 }  // anonymous
 
 float compute_dynamic_limit(float speed_mmps) {
-    constexpr float kLowSpeed = 555.0f;   // 2 km/h in mm/s
-    constexpr float kHighSpeed = 6944.0f; // 25 km/h in mm/s
-    if (speed_mmps <= kLowSpeed) return kSteerMaxAngleLowSpeed;  // 40°
-    if (speed_mmps >= kHighSpeed) return kSteerMaxAngleHighSpeed; // 5°
-    float t = (speed_mmps - kLowSpeed) / (kHighSpeed - kLowSpeed);
-    return kSteerMaxAngleLowSpeed + t * (kSteerMaxAngleHighSpeed - kSteerMaxAngleLowSpeed);
+    // limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
+    float speed_kmh = speed_mmps * 3.6f / 1000.0f;
+    float limit_deg = kAngleClampBaseDeg - (speed_kmh - 2.0f) * (kAngleClampRangeDeg / kAngleClampSpeedRange);
+    return std::clamp(limit_deg, kAngleClampMinDeg, kAngleClampBaseDeg);
+}
+
+float compute_following_error_threshold(float speed_mmps) {
+    float dynamic_limit = compute_dynamic_limit(speed_mmps);
+    return std::max(kSteerFollowingErrMinDeg, kSteerFollowingErrFactor * dynamic_limit);
 }
 
 bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {

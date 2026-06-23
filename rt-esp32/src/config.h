@@ -16,12 +16,20 @@ constexpr float kWheelRadiusMM   =  200.0f;
 
 // ── steering — SYNTREE EPS-C via CAN 0x169 ───────────────────────
 constexpr float kSteerHardLimitDeg      =  40.0f;   // software hard-stop
-constexpr float kSteerFollowingErrDeg   =   5.0f;   // trigger ESTOP
+constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
+constexpr float kSteerFollowingErrFactor=  0.25f;   // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs    =   300;    // must persist
 constexpr int   kSteerCmdRateHz         =    50;    // SYNTREE 20 ms period
 constexpr int   kSteerBootWaitMs        =   500;
-constexpr float kSteerMaxAngleLowSpeed  =  40.0f;   // at 2 km/h
-constexpr float kSteerMaxAngleHighSpeed =   5.0f;   // at 25 km/h
+// Dynamic angle clamp: limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
+constexpr float kAngleClampBaseDeg      =  40.0f;   // max at 2 km/h
+constexpr float kAngleClampMinDeg       =   5.0f;   // min at ≥25 km/h
+constexpr float kAngleClampRangeDeg     =  35.0f;   // base − min
+constexpr float kAngleClampSpeedRange   =  23.0f;   // 25 − 2 km/h
+// Steering slew rate: rate_deg_s = 125 + (speed_kmh − 2) × (400/23), clamped [125, 525]
+constexpr float kSteerRateMinDegS       = 125.0f;   // at low speed
+constexpr float kSteerRateMaxDegS       = 525.0f;   // at high speed
+constexpr float kSteerRateRangeDegS     = 400.0f;   // max − min
 
 // ── PID — placeholder gains (tune once encoders fitted, gap #5) ──
 constexpr float kPidKp = 1.0f;
