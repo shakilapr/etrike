@@ -47,8 +47,9 @@ static std::atomic<int64_t>  g_last_jetson_hb_us{0};   // 0x7FC Jetson heartbeat
 // ── Telemetry atomics (written by control/dispatch, read by tx tasks) ─
 static std::atomic<int16_t>  g_last_cmd_angle_raw{0};   // commanded steering angle in 0.1° (fix #5)
 static std::atomic<bool>     g_reversing{false};         // reversing flag from resolved setpoint (fix #1)
-static std::atomic<uint16_t> g_ses_motor_current{0};     // 0x6FA motor current (fix #3)
-static std::atomic<uint8_t>  g_ses_ecu_temp{0};          // 0x6FA ECU temperature (fix #3)
+static std::atomic<uint16_t> g_ses_motor_current{0};     // 0x6FA motor current raw (bytes 1-2 LE, scale 0.0078125 A/bit)
+static std::atomic<uint16_t> g_ses_ecu_temp{0};          // 0x6FA ECU temperature raw (bytes 3-4 LE, scale 0.5 °C/bit)
+static std::atomic<uint16_t> g_ses_pow_volt{0};          // 0x6FA supply voltage raw (bytes 5-6 LE, scale 0.00390625 V/bit)
 
 // ── Queues ─────────────────────────────────────────────────────────
 static QueueHandle_t g_can_rx_low_q  = nullptr;  // 16 deep
@@ -140,14 +141,24 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
             ses_version_logged = true;
         }
     }
-    // 0x6FA SES_Test — motor current + ECU temp (arch §7.3, fix #3)
+    // 0x6FA SES_Test — motor current + ECU temp + supply voltage (arch §7.3, fix #3)
     if (fr.id == can::kIdSyntreeEpsTest && !is_high) {
-        uint16_t mc = (uint16_t(fr.data[0]) << 8) | fr.data[1];  // motor current (mA or 0.1A)
-        uint8_t  et = fr.data[2];                                 // ECU temperature (°C)
-        g_ses_motor_current.store(mc);
-        g_ses_ecu_temp.store(et);
-        if (et > 85)  ESP_LOGW(TAG, "SES ECU temp high: %d°C", et);
-        if (mc > 5000) ESP_LOGW(TAG, "SES motor current high: %d", mc);
+        // Byte layout (Motorola LSB / little-endian):
+        //   byte0=reserved, byte1-2=SES_MtrCurt (i16 LE, 0.0078125 A/bit),
+        //   byte3-4=SES_ECUTemp (u16 LE, 0.5 °C/bit),
+        //   byte5-6=SES_PowVolt (u16 LE, 0.00390625 V/bit), byte7=reserved
+        int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
+        uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
+        uint16_t pv_raw = (uint16_t(fr.data[6]) << 8) | fr.data[5];
+        g_ses_motor_current.store(mc_raw);
+        g_ses_ecu_temp.store(et_raw);
+        g_ses_pow_volt.store(pv_raw);
+        float mc_a = mc_raw * 0.0078125f;
+        float et_c = et_raw * 0.5f;
+        float pv_v = pv_raw * 0.00390625f;
+        if (et_c > 85.0f)  ESP_LOGW(TAG, "SES ECU temp high: %.1f°C", et_c);
+        if (mc_a > 30.0f)  ESP_LOGW(TAG, "SES motor current high: %.1f A", mc_a);
+        if (pv_v < 10.0f)  ESP_LOGW(TAG, "SES supply voltage low: %.2f V", pv_v);
     }
     // Track reception of 0x110 mode and 0x301 brake (fix #3: 0=Manual/0=release are valid)
     if (fr.id == can::kIdSysModeCmd) {

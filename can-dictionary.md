@@ -78,7 +78,7 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `SYS_DcdcEnable` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | — |
 
-ESTOP → 0 (off). All other modes → 1 (on).
+ESTOP → **1 (on)** — maintains 12V for MCUs, CAN transceivers, and brake light. The 12V accessory relay (GPIO27) provides the secondary cut for non-safety loads (see architecture §8.6). All other modes → 1 (on).
 
 ---
 
@@ -117,7 +117,7 @@ ESTOP → 0 (off). All other modes → 1 (on).
 | Property | Value |
 |----------|-------|
 | **Sender** | RT |
-| **Receiver(s)** | SYS |
+| **Receiver(s)** | SYS, **MTR (STM32)** |
 | **DLC** | 5 |
 | **Period** | 100 Hz |
 
@@ -127,6 +127,8 @@ ESTOP → 0 (off). All other modes → 1 (on).
 | `RT_Gear` | 32 | 8 | u8 | 1 | 0 | 0 | 3 | enum (0=N,1=D,2=S,3=R) |
 
 Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
+
+MTR receives 0x204 directly for motor actuation (speed → MCP4725 DAC, gear → relay module). SYS also receives 0x204 for EGAS Level 2 monitoring (compares setpoint vs 0x206 feedback).
 
 > Placed at `0x204` to avoid collision with EPS-C error info frame at `0x202`. SYNTREE units are preprogrammed and cannot be reconfigured.
 
@@ -163,7 +165,7 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `MTR_ActualSpeed` | 0 | 16 | i16 | 1 | 0 | -500 | 3000 | mm/s |
 | `MTR_GearState` | 16 | 8 | u8 enum | 1 | 0 | 0 | 3 | {0=N,1=D,2=S,3=R} |
-| `MTR_FaultFlags` | 24 | 8 | u8 bitmask | — | — | — | — | bit0=overcurrent, bit1=overtemp, bit2=comms_loss |
+| `MTR_FaultFlags` | 24 | 8 | u8 bitmask | — | — | — | — | bit0=ESTOP active, bit1=CMD timeout (0x204 stale), bit2=ADC fault, bit3=gear conflict |
 
 Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
@@ -302,7 +304,7 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 |------|---|---|---|---|---|---|---|---|
 | Content | faults [7:0] | faults [15:8] | faults [23:16] | faults [31:24] | rsvd | rsvd | rsvd | `SES_Veh_Spd_Value` |
 
-> **Safety note:** 6 faults are L3 (angle sensor primary/secondary open-circuit/out-of-range + torque sensor T1/T2 faults). RT must subscribe and escalate L3 faults to ESTOP. The EPS-C has dual-redundant angle sensors (P/S) and dual torque sensors (T1/T2) — L3 on either channel of a redundant pair indicates critical sensor failure. Note fault levels differ from SEB: steering CAN comms is L1 (minor) vs brake CAN comms L3 (severe) — steering comm loss is less immediately dangerous than brake comm loss.
+> **Safety note:** 8 faults are L3 (angle sensor primary/secondary open-circuit/out-of-range × 4 + torque sensor T1/T2 open-circuit/out-of-range × 4). RT must subscribe and escalate L3 faults to ESTOP. The EPS-C has dual-redundant angle sensors (P/S) and dual torque sensors (T1/T2) — L3 on either channel of a redundant pair indicates critical sensor failure. Note fault levels differ from SEB: steering CAN comms is L1 (minor) vs brake CAN comms L3 (severe) — steering comm loss is less immediately dangerous than brake comm loss.
 
 > ⚠️ **CSV Row 40–41 description swap:** Row 40 signal `SES_TorqSensor_T2_OC_Err` is labeled "Torque Sensor T1 Out of Range" — descriptions appear swapped. Signal names used above are authoritative; descriptions are corrected.
 
@@ -322,9 +324,9 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
 | `SES_SW_Version` | 0 | 8 | u8 | 0.01 | 0 | 0 | 255 | — | Software version (e.g., 0x64 = 1.00) |
 | `SES_HW_Version` | 8 | 8 | u8 | 0.1 | 0 | 0 | 25.5 | — | Hardware version (e.g., 0x0D = 1.3) |
-| (reserved) | 16 | 48 | — | — | — | — | — | — | Bytes 2–7 |
+| (reserved) | 16 | 48 | — | — | — | — | — | — | Bytes 2–7 (code also reads bytes 2-3 as extended HW version info — minor logging discrepancy) |
 
-**RT usage**: Log on boot for compatibility check. Report via telemetry to Jetson.
+**RT usage**: Log on boot for compatibility check (`SW=%02X.%02X HW=%02X.%02X`). Report via telemetry to Jetson.
 
 ---
 
@@ -735,12 +737,12 @@ Layout identical to low-level `0x302`. RT forwards transparently.
 
 ---
 
-### 0x400 — HOST_OBSTACLE_DIST
+### 0x400 — RT_OBSTACLE_RPT
 
 | Property | Value |
 |----------|-------|
-| **Sender** | Jetson |
-| **Receiver(s)** | RT |
+| **Sender** | RT |
+| **Receiver(s)** | Jetson |
 | **DLC** | 4 |
 | **Period** | 10 Hz |
 
@@ -750,7 +752,7 @@ Layout identical to low-level `0x302`. RT forwards transparently.
 
 UINT32_MAX = no reading / timeout.
 
-Jetson perception (LiDAR/camera) → RT for obstacle speed limiting.
+RT reports min obstacle distance to Jetson at 10 Hz. Jetson perception (LiDAR/camera) sends distance via internal path to RT, which rebroadcasts on the high bus for logging/monitoring.
 
 ---
 
@@ -811,7 +813,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | 100 Hz |
 | `0x202` | SES_ErrInfo | EPS-C | RT | 8 | 10 Hz |
 | `0x203` | SES_Version | EPS-C | RT | 8 | 1 Hz |
-| `0x204` | RT_DRIVE_CMD | RT | SYS | 5 | 100 Hz |
+| `0x204` | RT_DRIVE_CMD | RT | SYS, MTR | 5 | 100 Hz |
 | `0x205` | RT_BRAKE_CMD | RT | SYS | 4 | **50 Hz** |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | Change |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→Jetson) | 8 | 1 Hz |
@@ -822,7 +824,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x741` | SEB_Version | SEB | SYS | 8 | 1 Hz |
 | `0x7B9` | VCU_SEB_REQ | SYS | SEB | 8 | **50 Hz** |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | 2 Hz |
-| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | 2 Hz |
+| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | 10 Hz |
 
 ### High-level bus
 
@@ -832,7 +834,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | 5 Hz |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | 100 Hz |
 | `0x210` | RT_STATE_RPT | RT | Jetson | 3 | 10 Hz |
-| `0x220` | RT_PID_RPT | RT | Jetson | 6 | 10 Hz |
+| `0x220` | RT_PID_RPT | RT | Jetson | 6 | — (RESERVED, inactive) |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | ≤100 Hz |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | Demand |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→SYS) | 1 | Change |
@@ -851,7 +853,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Direction | IDs |
 |-----------|-----|
-| Low → High | `0x001`, `0x011`, `0x120`, `0x600` |
+| Low → High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600` |
 | High → Low | `0x001`, `0x302` |
 
 ### Category 2: Consumed by RT → different message generated
@@ -865,7 +867,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x206`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
+| Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (SYNTREE EPS-C feedback) |
 | High only | `0x210`, `0x220`, `0x400` (RT telemetry) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
