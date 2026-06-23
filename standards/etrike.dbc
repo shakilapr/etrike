@@ -1,0 +1,349 @@
+VERSION "E-Trike CAN Database v0.0.4-alpha — 2026-06-23"
+
+NS_ :
+    CM_ BA_DEF_ BA_ VAL_ CAT_DEF_ CAT_ FILTER
+    BA_DEF_SGTYPE_ BA_SGTYPE_ SIG_TYPE_ SIG_VALTYPE_
+    EV_DATA_ ENVVAR_DATA_ SGTYPE_ SGTYPE_VAL_
+    BA_DEF_DEF_
+
+BS_: 500000 500000
+
+BU_: Jetson RT SYS MTR EPS_C SEB DCDC
+
+;===============================================================================
+; HIGH-LEVEL CAN BUS (Jetson <-> RT, 500 kbit/s, big-endian)
+;===============================================================================
+
+BO_ 0x001 SAFETY_ESTOP_HI: 0 Vector__XXX
+ SG_ ESTOP_Event : 0|0@0+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 0x011 SYS_SAFETY_STS_HI: 2 RT
+ SG_ SYS_EstopActive : 0|8@0+ (1,0) [0|1] "" Jetson
+ SG_ SYS_HeartbeatOk : 8|8@0+ (1,0) [0|1] "" Jetson
+
+BO_ 0x120 SYS_THROTTLE_STS_HI: 2 RT
+ SG_ SYS_ThrottleSpeed : 0|16@0+ (1,0) [-500|3000] "mm/s" Jetson
+
+BO_ 0x210 RT_STATE_RPT: 3 RT
+ SG_ RT_Mode : 0|8@0+ (1,0) [0|2] "enum" Jetson
+ SG_ RT_SteerValid : 8|8@0+ (1,0) [0|1] "" Jetson
+ SG_ RT_Reversing : 16|8@0+ (1,0) [0|1] "" Jetson
+
+BO_ 0x300 HOST_DRIVE_CMD: 8 Jetson
+ SG_ HOST_DriveSpeed : 0|32@0- (1,0) [-500|3000] "mm/s" RT
+ SG_ HOST_YawRate : 32|24@0- (1,0) [-3000|3000] "mrad/s" RT
+ SG_ HOST_Gear : 56|8@0+ (1,0) [0|3] "enum" RT
+
+BO_ 0x301 HOST_BRAKE_REQ: 4 Jetson
+ SG_ HOST_BrakePressure : 0|32@0- (1,0) [0|20000] "kPa" RT
+
+BO_ 0x302 HOST_LIGHT_CMD_HI: 1 Jetson
+ SG_ HOST_LeftTurn : 0|1@0+ (1,0) [0|1] "" RT
+ SG_ HOST_RightTurn : 1|1@0+ (1,0) [0|1] "" RT
+ SG_ HOST_BrakeLight : 2|1@0+ (1,0) [0|1] "" RT
+ SG_ HOST_Headlight : 3|1@0+ (1,0) [0|1] "" RT
+
+BO_ 0x400 HOST_OBSTACLE_DIST: 4 Jetson
+ SG_ HOST_ObstacleDistance : 0|32@0+ (1,0) [0|4294967295] "mm" RT
+
+BO_ 0x600 SYS_DIAG_RPT_HI: 8 RT
+ SG_ SYS_DiagMode : 0|8@0+ (1,0) [0|2] "" Jetson
+ SG_ SYS_DiagBrakeEngaged : 8|8@0+ (1,0) [0|1] "" Jetson
+ SG_ SYS_DiagHeartbeatOk : 16|8@0+ (1,0) [0|1] "" Jetson
+ SG_ SYS_DiagEstopActive : 24|8@0+ (1,0) [0|1] "" Jetson
+ SG_ SYS_DiagFreeHeapKb : 32|16@0+ (1,0) [0|65535] "KB" Jetson
+ SG_ SYS_DiagTec : 48|8@0+ (1,0) [0|255] "" Jetson
+ SG_ SYS_DiagRec : 56|8@0+ (1,0) [0|255] "" Jetson
+
+BO_ 0x7FC JETSON_HEARTBEAT: 1 Jetson
+ SG_ Jetson_AliveCtr : 0|8@0+ (1,0) [0|255] "" RT
+
+BO_ 0x7FD RT_HEARTBEAT_HI: 1 RT
+ SG_ RT_AliveCtr_HI : 0|8@0+ (1,0) [0|255] "" Jetson
+
+;===============================================================================
+; LOW-LEVEL CAN BUS (RT/SYS/Actuators, 500 kbit/s)
+; SYNTREE frames use Intel (little-endian) format with Motorola-LSB bit numbering.
+; Custom frames use Motorola (big-endian) format.
+;===============================================================================
+
+BO_ 0x001 SAFETY_ESTOP_LO: 0 Vector__XXX
+ SG_ ESTOP_Event_LO : 0|0@0+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 0x011 SYS_SAFETY_STS_LO: 2 SYS
+ SG_ SYS_EstopActive_LO : 0|8@0+ (1,0) [0|1] "" RT
+ SG_ SYS_HeartbeatOk_LO : 8|8@0+ (1,0) [0|1] "" RT
+
+BO_ 0x012 SYS_DCDC_CMD: 1 SYS
+ SG_ SYS_DcdcEnable : 0|8@0+ (1,0) [0|1] "" DCDC
+
+BO_ 0x110 SYS_MODE_CMD: 1 SYS
+ SG_ SYS_Mode : 0|8@0+ (1,0) [0|2] "enum" RT
+
+BO_ 0x120 SYS_THROTTLE_STS_LO: 2 MTR
+ SG_ SYS_ThrottleSpeed_LO : 0|16@0- (1,0) [-500|3000] "mm/s" RT,SYS
+
+BO_ 0x204 RT_DRIVE_CMD: 5 RT
+ SG_ RT_MotorSpeed : 0|32@0- (1,0) [-500|3000] "mm/s" SYS,MTR
+ SG_ RT_Gear : 32|8@0+ (1,0) [0|3] "enum" SYS,MTR
+
+BO_ 0x205 RT_BRAKE_CMD: 4 RT
+ SG_ RT_BrakePressure : 0|32@0- (1,0) [0|20000] "kPa" SYS
+
+BO_ 0x206 MTR_MOTOR_FBK: 4 MTR
+ SG_ MTR_ActualSpeed : 0|16@0- (1,0) [-500|3000] "mm/s" RT,SYS
+ SG_ MTR_GearState : 16|8@0+ (1,0) [0|3] "enum" RT,SYS
+ SG_ MTR_FaultFlags : 24|8@0+ (1,0) [0|255] "" RT,SYS
+
+BO_ 0x302 HOST_LIGHT_CMD_LO: 1 RT
+ SG_ HOST_LeftTurn_LO : 0|1@0+ (1,0) [0|1] "" SYS
+ SG_ HOST_RightTurn_LO : 1|1@0+ (1,0) [0|1] "" SYS
+ SG_ HOST_BrakeLight_LO : 2|1@0+ (1,0) [0|1] "" SYS
+ SG_ HOST_Headlight_LO : 3|1@0+ (1,0) [0|1] "" SYS
+
+BO_ 0x600 SYS_DIAG_RPT_LO: 8 SYS
+ SG_ SYS_DiagMode_LO : 0|8@0+ (1,0) [0|2] "" RT
+ SG_ SYS_DiagBrakeEngaged_LO : 8|8@0+ (1,0) [0|1] "" RT
+ SG_ SYS_DiagHeartbeatOk_LO : 16|8@0+ (1,0) [0|1] "" RT
+ SG_ SYS_DiagEstopActive_LO : 24|8@0+ (1,0) [0|1] "" RT
+ SG_ SYS_DiagFreeHeapKb_LO : 32|16@0+ (1,0) [0|65535] "KB" RT
+ SG_ SYS_DiagTec_LO : 48|8@0+ (1,0) [0|255] "" RT
+ SG_ SYS_DiagRec_LO : 56|8@0+ (1,0) [0|255] "" RT
+
+BO_ 0x7FD RT_HEARTBEAT_LO: 1 RT
+ SG_ RT_AliveCtr_LO : 0|8@0+ (1,0) [0|255] "" SYS
+
+BO_ 0x7FE SYS_HEARTBEAT: 1 SYS
+ SG_ SYS_AliveCtr : 0|8@0+ (1,0) [0|255] "" RT
+
+;===============================================================================
+; SYNTREE EPS-C (Steering) — Intel (little-endian) format
+;===============================================================================
+
+BO_ 0x169 VCU_SES_REQ: 8 RT
+ SG_ SES_AlignEnable : 0|1@1+ (1,0) [0|1] "" EPS_C
+ SG_ SES_CtrlEnable : 1|1@1+ (1,0) [0|1] "" EPS_C
+ SG_ SES_TgtStrAngle : 16|16@1- (0.1,-3000) [-700|700] "deg" EPS_C
+ SG_ SES_TgtStrAngleSpd : 32|16@1+ (1,0) [125|525] "deg/s" EPS_C
+ SG_ SES_RollCntEnable : 40|1@1+ (1,0) [0|1] "" EPS_C
+ SG_ SES_ChecksumEnable : 41|1@1+ (1,0) [0|1] "" EPS_C
+ SG_ SES_RollCnt : 44|4@1+ (1,0) [0|15] "" EPS_C
+ SG_ SES_VehSpd : 48|8@1+ (1,0) [0|255] "km/h" EPS_C
+ SG_ SES_Checksum : 56|8@1+ (1,0) [0|255] "" EPS_C
+
+BO_ 0x201 SES_STATUS: 8 EPS_C
+ SG_ SES_AngleStatus : 0|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_CtrlModeStatus : 1|2@1+ (1,0) [0|1] "" RT
+ SG_ SES_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" RT
+ SG_ SES_StrAngle : 16|16@1+ (0.1,-3000) [-700|700] "deg" RT
+ SG_ SES_TgtStrAngleSpd_FB : 32|16@1- (0.5,0) [0|1480] "deg/s" RT
+ SG_ SES_SteeringTorq : 40|8@1+ (0.1,-12.1) [-12|12] "Nm" RT
+ SG_ SES_RollCntEnStatus : 48|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_ChecksumEnStatus : 49|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_RollCntStatus : 52|4@1+ (1,0) [0|15] "" RT
+ SG_ SES_ChecksumStatus : 56|8@1+ (1,0) [0|255] "" RT
+
+BO_ 0x202 SES_ErrInfo: 8 EPS_C
+ SG_ SES_ECUUnderVolt : 0|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_ECUOverVolt : 1|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_CanComErr : 2|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_ECUTempErr : 3|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_DomainSC : 4|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_DomainV : 5|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_DomainT : 6|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_TempSensor : 7|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_AngleP_OC : 8|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_AngleP_AF : 9|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_AngleS_OC : 10|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_AngleS_AF : 11|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_SensorPow : 12|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_Alignment : 13|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_OverAngle : 14|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_StrMtrStall : 15|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_MtrCurt : 16|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_SensorCL : 17|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_TorqT1_OC : 18|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_TorqT1_AF : 19|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_TorqT2_OC : 20|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_TorqT2_AF : 21|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_SentAngle : 22|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_StrMtrIdling : 23|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_EPROM : 24|1@1+ (1,0) [0|1] "" RT
+ SG_ SES_VehSpdSnapshot : 56|8@1+ (1,0) [0|255] "km/h" RT
+
+BO_ 0x203 SES_Version: 8 EPS_C
+ SG_ SES_SW_Version : 0|8@1+ (0.01,0) [0|2.55] "" RT
+ SG_ SES_HW_Version : 8|8@1+ (0.1,0) [0|25.5] "" RT
+
+BO_ 0x6FA SES_Test: 8 EPS_C
+ SG_ SES_MtrCurt : 8|16@1- (0.0078125,0) [0|60] "A" RT
+ SG_ SES_ECUTemp : 24|16@1+ (0.5,0) [0|255] "degC" RT
+ SG_ SES_PowVolt : 40|16@1+ (0.00390625,0) [0|18] "V" RT
+
+;===============================================================================
+; SYNTREE SEB (Brake) — Intel (little-endian) format
+;===============================================================================
+
+BO_ 0x7B9 VCU_SEB_REQ: 8 SYS
+ SG_ SEB_AlignEnable : 0|1@1+ (1,0) [0|1] "" SEB
+ SG_ SEB_CtrlEnable : 1|1@1+ (1,0) [0|1] "" SEB
+ SG_ SEB_CtrlMode : 2|1@1+ (1,0) [0|1] "enum" SEB
+ SG_ SEB_AutoBrake : 3|1@1+ (1,0) [0|1] "" SEB
+ SG_ SEB_StrokeReq : 16|16@1+ (0.05,-30) [-5|27] "mm" SEB
+ SG_ SEB_PressureReq : 24|8@1+ (0.05,0) [0|5] "MPa" SEB
+ SG_ SEB_RollCntEnable : 48|1@1+ (1,0) [0|1] "" SEB
+ SG_ SEB_ChecksumEnable : 49|1@1+ (1,0) [0|1] "" SEB
+ SG_ SEB_RollCnt : 52|4@1+ (1,0) [0|15] "" SEB
+ SG_ SEB_Checksum : 56|8@1+ (1,0) [0|255] "" SEB
+
+BO_ 0x721 SEB_STATUS: 8 SEB
+ SG_ SEB_AlignStatus : 0|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_CtrlEnStatus : 1|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_CtrlModeStatus : 2|2@1+ (1,0) [0|3] "" SYS
+ SG_ SEB_AutoBrakeStatus : 4|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" SYS
+ SG_ SEB_StrokeValue : 16|16@1+ (0.05,-30) [-5|27] "mm" SYS
+ SG_ SEB_PressureValue : 24|8@1+ (0.05,0) [0|5] "MPa" SYS
+ SG_ SEB_AngleValue : 40|16@1- (0.5,0) [-150|840] "" SYS
+ SG_ SEB_RollCntEnStatus : 48|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_ChecksumEnStatus : 49|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_RollCntStatus : 52|4@1+ (1,0) [0|15] "" SYS
+ SG_ SEB_ChecksumStatus : 56|8@1+ (1,0) [0|255] "" SYS
+
+BO_ 0x731 SEB_ErrInfo: 8 SEB
+ SG_ SEB_ECUUnderVolt : 0|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_ECUOverVolt : 1|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_CanComErr : 2|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_ECUTempErr : 3|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_DomainSC : 4|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_DomainV : 5|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_DomainT : 6|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_AngleP_OC : 7|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_AngleP_AF : 8|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_AngleS_OC : 9|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_AngleS_AF : 10|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_NoPreSensor : 11|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_SensorUCL : 13|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_AlignmentErr : 14|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_AngleOver : 15|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_MtrStall : 17|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_MtrDC : 18|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_OilErr : 19|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_InitOil : 20|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_SentValue : 21|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_MtrNoLoad : 22|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_PreSensorOver : 24|1@1+ (1,0) [0|1] "" SYS
+ SG_ SEB_LowVoltCharging : 25|1@1+ (1,0) [0|1] "" SYS
+
+BO_ 0x741 SEB_Version: 8 SEB
+ SG_ SEB_SW_Version : 0|8@1+ (0.01,0) [0|2.55] "" SYS
+ SG_ SEB_HW_Version : 8|8@1+ (0.1,0) [0|25.5] "" SYS
+
+BO_ 0x6FB SEB_Test: 8 SEB
+ SG_ SEB_MtrCurr : 8|16@1- (0.0078125,0) [-255|255] "A" SYS
+ SG_ SEB_ECUTemp : 24|16@1+ (0.5,0) [-40|215] "degC" SYS
+ SG_ SEB_PowVolt : 40|16@1+ (0.00390625,0) [0|32] "V" SYS
+
+;===============================================================================
+; VALUE TABLES (Enumerations)
+;===============================================================================
+
+VAL_ 0x210 RT_Mode 0 "Manual" 1 "Auto" 2 "ESTOP";
+VAL_ 0x300 HOST_Gear 0 "N" 1 "D" 2 "S" 3 "R";
+VAL_ 0x204 RT_Gear 0 "N" 1 "D" 2 "S" 3 "R";
+VAL_ 0x110 SYS_Mode 0 "Manual" 1 "Auto" 2 "ESTOP";
+VAL_ 0x201 SES_ErrorStatus 0 "Normal" 1 "L1_Warning" 2 "L2_General" 3 "L3_Severe";
+VAL_ 0x721 SEB_ErrorStatus 0 "Normal" 1 "L1_Warning" 2 "L2_General" 3 "L3_Severe";
+VAL_ 0x721 SEB_CtrlModeStatus 0 "None" 1 "Stroke" 2 "Pressure";
+VAL_ 0x206 MTR_FaultFlags 1 "Overcurrent" 2 "Overtemp" 4 "CommsLoss";
+
+;===============================================================================
+; COMMENTS
+;===============================================================================
+
+CM_ "E-Trike CAN Database v0.0.4-alpha — Autoware.Auto integration.";
+CM_ "Two physical CAN buses at 500 kbit/s.";
+CM_ "High bus: Jetson <-> RT. Custom frames: Motorola (big-endian) format.";
+CM_ "Low bus: RT/SYS/Actuators. SYNTREE frames: Intel (little-endian) format.";
+CM_ "0x001 is the only bidirectional frame (bridged by RT).";
+CM_ "0x7FC/0x7FD/0x7FE heartbeats are per-bus (NOT bridged).";
+CM_ " ";
+CM_ "Node descriptions:";
+CM_ "  Jetson  - Orin NX, Linux + ROS 2, perception/planning";
+CM_ "  RT      - ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway";
+CM_ "  SYS     - ESP32-S3, FreeRTOS, safety + motor + body control";
+CM_ "  MTR     - STM32, bare metal, motor DAC + gear relays (EGAS L1)";
+CM_ "  EPS_C   - SYNTREE EPS-C, steer-by-wire, 0x169 cmd / 0x201 status";
+CM_ "  SEB     - SYNTREE SEB, electro-hydraulic brake, 0x7B9 cmd / 0x721 status";
+CM_ "  DCDC    - DC-DC converter (72V->12V), CAN 0x012 control";
+CM_ " ";
+CM_ "SYNTREE EPS-C protocol:";
+CM_ "  Command: 0x169 at 50 Hz continuous. Rolling counter 0-15.";
+CM_ "  Checksum: XOR(bytes 0-6) ^ 0xFF (verify against hardware).";
+CM_ "  Encoding offset: -3000 per manufacturer CSV (verify on live CAN).";
+CM_ "  VCU_Veh_Spd_Value: vehicle speed in km/h (populated by RT).";
+CM_ "SYNTREE SEB protocol:";
+CM_ "  Command: 0x7B9 at 50 Hz continuous. Rolling counter 0-15.";
+CM_ "  Mode 0 = Stroke (position control), Mode 1 = Pressure (hydraulic control).";
+CM_ "  Stroke: raw = (physical_mm + 30.0) / 0.05. Range: 500(-5mm) to 1140(27mm).";
+CM_ "  Pressure: raw = kPa * 0.02. Range: 0-100 (0-5 MPa).";
+CM_ "Safety notes:";
+CM_ "  ESTOP (0x001) is the highest priority CAN frame. DLC=0 event signal.";
+CM_ "  SYS heartbeat (0x7FE): 10 Hz / 200ms timeout -> RT brake takeover.";
+CM_ "  RT heartbeat (0x7FD): 2 Hz / 1000ms timeout -> SYS ESTOP.";
+CM_ "  Jetson heartbeat (0x7FC): 2 Hz / 1500ms timeout -> assisted stop.";
+CM_ "  All steering commands must pass LBS (Listen-Before-Speaking) boot sequence.";
+CM_ "Autoware.Auto v0.0.4-alpha integration:";
+CM_ "  Jetson runs autoware_vehicle_bridge ROS 2 node.";
+CM_ "  Subscribes: AckermannControlCommand -> 0x300/0x301.";
+CM_ "  Publishes: VelocityReport <- 0x120, ControlModeReport <- 0x210.";
+CM_ "  CAN protocol unchanged from existing architecture.";
+
+;===============================================================================
+; ATTRIBUTE DEFINITIONS
+;===============================================================================
+
+BA_DEF_ "BusType" STRING;
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 10000;
+BA_DEF_ BO_ "GenMsgSendType" ENUM "Cyclic","Event","CyclicIfActive";
+BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 1000000;
+
+BA_DEF_DEF_ "BusType" "";
+BA_DEF_DEF_ "GenMsgCycleTime" 0;
+BA_DEF_DEF_ "GenMsgSendType" "Cyclic";
+BA_DEF_DEF_ "GenSigStartValue" 0;
+
+;===============================================================================
+; MESSAGE ATTRIBUTES (periods)
+;===============================================================================
+
+BA_ "GenMsgCycleTime" BO_ 0x011 200;
+BA_ "GenMsgCycleTime" BO_ 0x120 10;
+BA_ "GenMsgCycleTime" BO_ 0x210 100;
+BA_ "GenMsgCycleTime" BO_ 0x300 10;
+BA_ "GenMsgCycleTime" BO_ 0x400 100;
+BA_ "GenMsgCycleTime" BO_ 0x600 1000;
+BA_ "GenMsgCycleTime" BO_ 0x7FC 500;
+BA_ "GenMsgCycleTime" BO_ 0x7FD 500;
+BA_ "GenMsgCycleTime" BO_ 0x012 100;
+BA_ "GenMsgCycleTime" BO_ 0x204 10;
+BA_ "GenMsgCycleTime" BO_ 0x205 20;
+BA_ "GenMsgCycleTime" BO_ 0x206 20;
+BA_ "GenMsgCycleTime" BO_ 0x169 20;
+BA_ "GenMsgCycleTime" BO_ 0x201 10;
+BA_ "GenMsgCycleTime" BO_ 0x202 100;
+BA_ "GenMsgCycleTime" BO_ 0x203 1000;
+BA_ "GenMsgCycleTime" BO_ 0x6FA 10;
+BA_ "GenMsgCycleTime" BO_ 0x7B9 20;
+BA_ "GenMsgCycleTime" BO_ 0x721 10;
+BA_ "GenMsgCycleTime" BO_ 0x731 100;
+BA_ "GenMsgCycleTime" BO_ 0x741 1000;
+BA_ "GenMsgCycleTime" BO_ 0x6FB 10;
+BA_ "GenMsgCycleTime" BO_ 0x7FE 100;
+
+BA_ "GenMsgSendType" BO_ 0x001 1;
+BA_ "GenMsgSendType" BO_ 0x012 1;
+BA_ "GenMsgSendType" BO_ 0x110 1;
+BA_ "GenMsgSendType" BO_ 0x203 1;
+BA_ "GenMsgSendType" BO_ 0x302 1;
+BA_ "GenMsgSendType" BO_ 0x301 1;
