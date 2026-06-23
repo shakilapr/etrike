@@ -1,22 +1,22 @@
 import mqtt, { type MqttClient } from "mqtt";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
-import { normalizeCanId, normalizeFrame, type CanStats } from "../types/can";
+import { normalizeFrame, normalizeStats, type CanFrame, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
-export interface DeviceState {
-  debug_esp32_online: boolean;
-  last_status_at: number | null;
+export interface MqttBridgeState {
   mqtt_connected: boolean;
+  debug_esp32_online: boolean;
   uptime_s: number | null;
+  last_status_at: number | null;
 }
 
 export class MqttBridge {
-  readonly state: DeviceState = {
-    debug_esp32_online: false,
-    last_status_at: null,
+  public readonly state: MqttBridgeState = {
     mqtt_connected: false,
-    uptime_s: null
+    debug_esp32_online: false,
+    uptime_s: null,
+    last_status_at: null
   };
 
   private client: MqttClient | null = null;
@@ -28,138 +28,121 @@ export class MqttBridge {
   ) {}
 
   start(): void {
-    this.client = mqtt.connect(this.config.mqttUrl, {
-      clientId: `etrike-debug-backend-${process.pid}`,
-      reconnectPeriod: 1000
+    const brokerUrl = this.config.mqttUrl ?? `mqtt://${this.config.mqttHost}:${this.config.mqttPort}`;
+
+    this.client = mqtt.connect(brokerUrl, {
+      clientId: `etrike-debug-backend-${Date.now()}`,
+      clean: true,
+      reconnectPeriod: 3000,
+      connectTimeout: 5000
     });
 
     this.client.on("connect", () => {
       this.state.mqtt_connected = true;
-      this.client?.subscribe([
-        "etrike/debug/can/rx/#",
-        "etrike/debug/can/stats",
-        "etrike/debug/status",
-        "etrike/debug/uptime",
-        "etrike/debug/cmd/response"
-      ]);
-      this.broadcastStatus();
-    });
 
-    this.client.on("offline", () => {
-      this.state.mqtt_connected = false;
-      this.broadcastStatus();
+      this.client!.subscribe(
+        [
+          "etrike/debug/can/rx/#",
+          "etrike/debug/can/stats",
+          "etrike/debug/status",
+          "etrike/debug/uptime",
+          "etrike/debug/cmd/response"
+        ],
+        { qos: 1 },
+        (err) => {
+          if (err) {
+            console.error("MQTT subscribe error:", err);
+          }
+        }
+      );
     });
 
     this.client.on("close", () => {
       this.state.mqtt_connected = false;
-      this.broadcastStatus();
     });
 
-    this.client.on("message", (topic, payload) => this.handleMessage(topic, payload));
-  }
+    this.client.on("error", (err) => {
+      console.error("MQTT client error:", err);
+    });
 
-  publishJson(topic: string, payload: Record<string, unknown>): void {
-    if (!this.client?.connected) {
-      throw new Error("MQTT bridge is not connected");
-    }
-    this.client.publish(topic, JSON.stringify(payload), { qos: 0 });
+    this.client.on("message", (topic, payload) => {
+      this.handleMessage(topic, payload);
+    });
   }
 
   async close(): Promise<void> {
-    if (!this.client) return;
-    await new Promise<void>((resolve) => this.client?.end(false, {}, () => resolve()));
+    return new Promise<void>((resolve) => {
+      if (!this.client) {
+        resolve();
+        return;
+      }
+
+      this.client.end(false, {}, () => {
+        this.state.mqtt_connected = false;
+        resolve();
+      });
+    });
+  }
+
+  publishJson(topic: string, payload: unknown): void {
+    if (!this.client || !this.state.mqtt_connected) {
+      console.warn(`MQTT not connected; dropping publish to ${topic}`);
+      return;
+    }
+
+    this.client.publish(topic, JSON.stringify(payload), { qos: 1 });
   }
 
   private handleMessage(topic: string, payload: Buffer): void {
-    if (topic.startsWith("etrike/debug/can/rx/")) {
-      this.handleCanFrame(topic, payload);
-      return;
-    }
-
-    if (topic === "etrike/debug/can/stats") {
-      this.handleStats(payload);
-      return;
-    }
-
-    if (topic === "etrike/debug/status") {
-      const status = payload.toString("utf8").trim().toLowerCase();
-      this.state.debug_esp32_online = status === "online";
-      this.state.last_status_at = Date.now() / 1000;
-      this.broadcastStatus();
-      return;
-    }
-
-    if (topic === "etrike/debug/uptime") {
-      const uptime = Number(payload.toString("utf8"));
-      this.state.uptime_s = Number.isFinite(uptime) ? uptime : null;
-      this.broadcastStatus();
-      return;
-    }
-
-    if (topic === "etrike/debug/cmd/response") {
-      this.handleCommandResponse(payload);
-    }
-  }
-
-  private handleCanFrame(topic: string, payload: Buffer): void {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(payload.toString("utf8")) as {
-        ts?: number;
-        id?: string;
-        name?: string;
-        dlc?: number;
-        data?: number[];
-        decoded?: Record<string, unknown>;
-      };
-      const id = normalizeCanId(parsed.id ?? topic.split("/").at(-1) ?? "");
-      const frame = normalizeFrame({
-        ts: parsed.ts,
-        id,
-        name: parsed.name,
-        dlc: parsed.dlc,
-        data: parsed.data ?? [],
-        decoded: parsed.decoded
-      });
-      this.store.insertFrame(frame);
-      this.hub.broadcast({ type: "can_frame", payload: frame });
-    } catch (error) {
-      this.hub.broadcast({
-        type: "status",
-        payload: { warning: "invalid CAN MQTT payload", error: String(error) }
-      });
+      parsed = JSON.parse(payload.toString("utf8"));
+    } catch {
+      return;
     }
-  }
 
-  private handleStats(payload: Buffer): void {
-    try {
-      const stats = JSON.parse(payload.toString("utf8")) as CanStats;
-      this.store.setStats(stats);
-      this.hub.broadcast({ type: "stats", payload: stats });
-    } catch (error) {
-      this.hub.broadcast({
-        type: "status",
-        payload: { warning: "invalid stats MQTT payload", error: String(error) }
-      });
-    }
-  }
-
-  private handleCommandResponse(payload: Buffer): void {
-    try {
-      const response = JSON.parse(payload.toString("utf8")) as Record<string, unknown>;
-      const requestId = typeof response.request_id === "string" ? response.request_id : "";
-      if (requestId) {
-        this.store.updateInjectionResponse(requestId, response);
+    switch (topic) {
+      case "etrike/debug/can/stats": {
+        const stats = normalizeStats(parsed as Partial<CanStats> & Record<string, unknown>);
+        this.store.setStats(stats);
+        this.hub.broadcast({ type: "stats", payload: stats });
+        break;
       }
-      this.hub.broadcast({ type: "cmd_ack", payload: response });
-    } catch (error) {
-      this.hub.broadcast({
-        type: "cmd_ack",
-        payload: { status: "error", error: String(error) }
-      });
-    }
-  }
 
-  private broadcastStatus(): void {
-    this.hub.broadcast({ type: "status", payload: this.state });
+      case "etrike/debug/status": {
+        const data = parsed as Record<string, unknown>;
+        this.state.debug_esp32_online = Boolean(data.online);
+        this.state.last_status_at = Date.now() / 1000;
+        this.hub.broadcast({ type: "status", payload: data });
+        break;
+      }
+
+      case "etrike/debug/uptime": {
+        const data = parsed as { uptime_s?: number };
+        if (typeof data.uptime_s === "number") {
+          this.state.uptime_s = data.uptime_s;
+        }
+        break;
+      }
+
+      case "etrike/debug/cmd/response": {
+        const data = parsed as Record<string, unknown>;
+        if (typeof data.request_id === "string") {
+          this.store.updateInjectionResponse(data.request_id, data);
+        }
+        this.hub.broadcast({ type: "cmd_ack", payload: data });
+        break;
+      }
+
+      default: {
+        // etrike/debug/can/rx/<bus>/<id> or similar
+        if (topic.startsWith("etrike/debug/can/rx/")) {
+          const frame = normalizeFrame(parsed as Partial<CanFrame> & { id: string; data: number[] });
+          const stored = this.store.insertFrame(frame);
+          this.hub.broadcast({ type: "can_frame", payload: { ...frame, row_id: stored.row_id, ts_real: stored.ts_real } });
+        }
+        break;
+      }
+    }
   }
 }

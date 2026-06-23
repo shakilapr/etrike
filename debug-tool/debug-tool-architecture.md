@@ -1,6 +1,6 @@
 # Debug Tool — System Architecture
 
-A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to one or both CAN buses over USB, streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
+A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to one or both CAN buses via an ESP32-S3 bridge over MQTT/Wi-Fi, streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
 
 ---
 
@@ -27,15 +27,15 @@ Inject 0x300 (high) → watch RT produce 0x204 + 0x169 (low) → see EPS-C respo
 
 The firmware auto-detects which buses are active (no CAN traffic for 5s → marked inactive in UI). Same code, same JSON format — the `bus` field tells the UI which bus each frame came from.
 
-**USB serial transport** — always connected by USB to the bench computer. Faster than Wi-Fi, immune to EMI, no network config.
+**MQTT over Wi-Fi transport** — the ESP32 connects to the backend's embedded MQTT broker over Wi-Fi. No USB cable needed; immune to ground loops. For bench use where Wi-Fi is unavailable, the simulator can stand in.
 
 ```
-ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
-  │                │
-  │                ├── Backend reads COM port (JSON Lines)
-  │                ├── Stores to SQLite
-  │                └── Fans out to UI via WebSocket (:3000/ws)
-  │
+ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ──WebSocket──► Browser
+  │                     │                              │
+  │                     │                              ├── REST API (:3000)
+  │                     │                              ├── In-memory frame store
+  │                     │                              └── WebSocket fan-out (:3000/ws)
+  │                     │
   ├── Bus A: TWAI (GPIO 5/4, 500 kbit/s) — plug into high or low bus
   └── Bus B: MCP2515 SPI (GPIO 36–40, 500 kbit/s) — optional, for dual-bus
 ```
@@ -149,41 +149,71 @@ ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
 
 ---
 
-## 4. USB Serial Protocol — JSON Lines
+## 4. MQTT Protocol
 
-One JSON object per line, `\n` delimited.
+The ESP32 publishes JSON payloads to MQTT topics. The backend subscribes and fans out to the browser via WebSocket.
 
 ### 4.1 CAN Frame (ESP32 → Backend)
+
+**Topic:** `etrike/debug/can/rx/<bus>/<id>`
 
 ```json
 {"ts":890123,"bus":"low","id":"0x204","name":"RT_DRIVE_CMD","dlc":5,"data":[0,0,7,208,1,0,0,0],"decoded":{"motor_speed_mmps":2000,"gear":1,"gear_name":"D"}}
 ```
 
-The `bus` field is `"high"` or `"low"`. All other fields match the single-bus format.
+The `bus` field is `"high"` or `"low"`. Each frame is published to a topic that includes its bus and CAN ID for easy filtering.
 
 ### 4.2 Stats (ESP32 → Backend, 1 Hz)
+
+**Topic:** `etrike/debug/can/stats`
 
 ```json
 {"type":"stats","uptime_s":3600,"buses":{"high":{"active":true,"total":89120,"fps":247,"load_pct":16.2,"tec":0,"rec":0,"by_id":{"0x300":18000,"0x120":36000}},"low":{"active":false,"total":0,"fps":0,"load_pct":0,"tec":0,"rec":0,"by_id":{}}}}
 ```
 
-`active: false` means no frames received on that bus in the last 5 seconds. The UI uses this for the 🟢/🔴 status indicators.
+`active: false` means no frames received on that bus in the last 5 seconds.
 
-### 4.3 Command (Backend → ESP32)
+### 4.3 Status / Uptime (ESP32 → Backend)
 
-```json
-{"cmd":"send","bus":"low","id":"0x204","dlc":5,"data":[0,0,7,208,1,0,0,0]}
-```
+**Topics:** `etrike/debug/status` (every 5 s), `etrike/debug/uptime`
 
 ```json
-{"cmd":"send_periodic","action":"start","bus":"high","id":"0x300","dlc":8,"data":[0,0,7,208,0,0,100,1],"interval_ms":20,"count":5000}
+{"online":true,"uptime_s":3600,"free_heap":245000}
 ```
 
-### 4.4 Command Ack (ESP32 → Backend)
+### 4.4 Command (Backend → ESP32)
+
+**Topic:** `etrike/debug/cmd/send`
 
 ```json
-{"type":"cmd_ack","cmd":"send","status":"ok"}
+{"request_id":"abc-123","bus":"low","id":"0x204","dlc":5,"data":[0,0,7,208,1,0,0,0]}
 ```
+
+**Topic:** `etrike/debug/cmd/send/periodic`
+
+```json
+{"request_id":"def-456","action":"start","bus":"high","id":"0x300","dlc":8,"data":[0,0,7,208,0,0,100,1],"interval_ms":20,"count":5000}
+```
+
+### 4.5 Command Ack (ESP32 → Backend)
+
+**Topic:** `etrike/debug/cmd/response`
+
+```json
+{"type":"cmd_ack","request_id":"abc-123","status":"ok"}
+```
+
+### 4.6 Full MQTT Topic Map
+
+| Topic | Direction | QoS | Description |
+|-------|-----------|-----|-------------|
+| `etrike/debug/can/rx/#` | ESP32 → Backend | 0 | CAN frames (wildcard subscription) |
+| `etrike/debug/can/stats` | ESP32 → Backend | 1 | Per-bus stats every 1 s |
+| `etrike/debug/status` | ESP32 → Backend | 1 | Online heartbeat every 5 s |
+| `etrike/debug/uptime` | ESP32 → Backend | 1 | Uptime seconds |
+| `etrike/debug/cmd/send` | Backend → ESP32 | 1 | Single CAN injection |
+| `etrike/debug/cmd/send/periodic` | Backend → ESP32 | 1 | Periodic injection start/stop |
+| `etrike/debug/cmd/response` | ESP32 → Backend | 1 | Command acknowledgment |
 
 ---
 
@@ -196,8 +226,9 @@ The `bus` field is `"high"` or `"low"`. All other fields match the single-bus fo
 | Runtime | Node.js 22 |
 | Language | TypeScript 5.x |
 | Web framework | Fastify 5.x |
-| Serial port | `serialport` npm |
-| Database | better-sqlite3 |
+| MQTT broker | `aedes` (embedded) |
+| MQTT client | `mqtt` npm |
+| Storage | In-memory arrays (SQLite planned) |
 | Validation | Zod |
 
 ### 5.2 REST API
@@ -230,7 +261,7 @@ The `bus` field is `"high"` or `"low"`. All other fields match the single-bus fo
 { "type": "filter", "buses": ["low"], "ids": ["0x204", "0x169", "0x201"] }
 ```
 
-### 5.4 SQLite Schema
+### 5.4 SQLite Schema *(planned — currently uses in-memory DebugStore)*
 
 ```sql
 CREATE TABLE can_frames (
@@ -272,25 +303,31 @@ CREATE TABLE recording_frames (
 );
 ```
 
-### 5.5 Serial Port Reader
+### 5.5 MQTT Bridge
 
 ```typescript
-const port = new SerialPort({ path: "COM3", baudRate: 115200 });
-const rl = readline.createInterface({ input: port });
+// Embedded broker (aedes) starts on config.mqttPort
+const broker = await startMqttBroker(config.mqttPort, config.mqttHost);
 
-rl.on("line", (json) => {
-    const msg = JSON.parse(json);
-    if (msg.type === "stats")   { cache stats; fan WS; }
-    if (msg.type === "status")  { update device state; fan WS; }
-    if (msg.type === "cmd_ack") { resolve pending command; }
-    if (msg.id)                 { write to DB; fan WS; }
-});
+// MQTT client bridges device ↔ store ↔ WebSocket
+const bridge = new MqttBridge(config, store, hub);
+bridge.start();  // subscribes to etrike/debug/#
+
+// Incoming CAN frame
+// topic: etrike/debug/can/rx/high/0x300
+bridge.onMessage = (topic, payload) => {
+    const frame = normalizeFrame(JSON.parse(payload));
+    store.insertFrame(frame);
+    hub.broadcast({ type: "can_frame", payload: frame });
+};
 
 // Send command
-function sendCommand(cmd: object) {
-    port.write(JSON.stringify(cmd) + "\n");
-}
+bridge.publishJson("etrike/debug/cmd/send", {
+    request_id: "abc-123", bus: "low", id: "0x204", dlc: 5, data: [0,0,7,208,1]
+});
 ```
+
+The embedded broker means **no external MQTT server is required** for local development. For production or multi-machine setups, set `MQTT_URL` to an external broker.
 
 ---
 

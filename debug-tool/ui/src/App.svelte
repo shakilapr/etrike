@@ -72,7 +72,7 @@
 <div class="app-shell">
   <header class="topbar">
     <div>
-      <p class="eyebrow">High-level CAN bus</p>
+      <p class="eyebrow">Dual CAN Bus</p>
       <h1>E-Trike Debug</h1>
     </div>
     <div class="status-strip">

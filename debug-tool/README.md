@@ -1,19 +1,21 @@
 # E-Trike Diagnostic & Debug Tool
 
-CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to one or both CAN buses over USB. Streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
+CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to both CAN buses via an ESP32-S3 bridge over MQTT. Streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
 
 ## Architecture
 
 ```
-ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
-  │                │
-  │                ├── Backend reads COM port (JSON Lines)
-  │                ├── Stores to SQLite
-  │                └── Fans out to UI via WebSocket (:3000/ws)
-  │
+ESP32-S3 ──Wi-Fi──► MQTT Broker ──► Backend ──WebSocket──► Browser
+  │                     │                │
+  │                     │                ├── REST API (:3000)
+  │                     │                ├── In-memory frame store
+  │                     │                └── Fans out to UI via WebSocket (:3000/ws)
+  │                     │
   ├── Bus A: TWAI (GPIO 5/4, 500 kbit/s) — high or low bus
   └── Bus B: MCP2515 SPI (GPIO 36–40, 500 kbit/s) — optional second bus
 ```
+
+The backend runs an **embedded MQTT broker** (aedes) — no external MQTT server required for local development. The ESP32 publishes CAN frames as JSON to MQTT topics; the backend subscribes, decodes, stores, and fans out to the browser.
 
 ## Single-bus or dual-bus?
 
@@ -23,21 +25,21 @@ ESP32-S3 has **one** TWAI controller. Single-bus (one SN65HVD230) covers most be
 
 | Folder | Tech | Purpose |
 |--------|------|---------|
-| `backend/` | Node.js + TypeScript + Fastify | REST API, WebSocket, serial port reader, SQLite |
-| `ui/` | Svelte + TypeScript + Vite | Dashboard, CAN monitor (dual-bus color), injector + keyboard control, stats |
-| `debug-esp32/` | PlatformIO (C++17), ESP-IDF | Firmware: TWAI + optional MCP2515, 28-ID decoder, JSON Lines over USB CDC |
-| `simulator/` | Node.js + TypeScript | Dual-bus device simulator for UI dev and E2E testing |
-| `e2e/` | Playwright | Full-stack tests |
+| `backend/` | Node.js + TypeScript + Fastify | REST API, WebSocket, embedded MQTT broker, in-memory store |
+| `ui/` | Svelte + TypeScript + Vite | Dual-bus dashboard, CAN monitor with bus tabs, injector, stats |
+| `debug-esp32/` | PlatformIO (C++), ESP-IDF | Firmware: TWAI + optional MCP2515, 28-ID decoder, MQTT publisher |
+| `simulator/` | Node.js + TypeScript | Dual-bus CAN simulator via MQTT for UI development and testing |
+| `e2e/` | Playwright | Full-stack smoke tests |
 
 ## Quick Start
 
 ```bash
 # Backend + UI (no hardware)
-cd debug-tool/backend && npm install && npm run dev    # :3000
+cd debug-tool/backend && npm install && npm run dev    # :3000 (includes embedded MQTT broker)
 cd debug-tool/ui && npm install && npm run dev          # :5173
 
-# Simulator (no hardware)
-cd debug-tool/simulator && npm install && npm run dev
+# Simulator (publishes synthetic CAN traffic via MQTT)
+cd debug-tool/simulator && npm install && npx tsx src/index.ts
 
 # Firmware (ESP32-S3 + 1× SN65HVD230 for single-bus, add MCP2515 for dual-bus)
 cd debug-tool/debug-esp32 && pio run -t upload
@@ -46,48 +48,33 @@ cd debug-tool/debug-esp32 && pio run -t upload
 cd debug-tool/e2e && npm install && npm test
 ```
 
-## Serial Protocol — JSON Lines
+## MQTT Topic Structure
 
-```json
-// ESP32 → Computer (CAN frame with bus field)
-{"ts":890123,"bus":"low","id":"0x204","name":"RT_DRIVE_CMD","dlc":5,"data":[0,0,7,208,1],"decoded":{"motor_speed_mmps":2000,"gear":1,"gear_name":"D"}}
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `etrike/debug/can/rx/<bus>/<id>` | ESP32 → Backend | CAN frame JSON |
+| `etrike/debug/can/stats` | ESP32 → Backend | Per-bus stats (1 Hz) |
+| `etrike/debug/status` | ESP32 → Backend | ESP32 online/offline heartbeat (5 s) |
+| `etrike/debug/uptime` | ESP32 → Backend | ESP32 uptime seconds |
+| `etrike/debug/cmd/send` | Backend → ESP32 | Single CAN frame injection |
+| `etrike/debug/cmd/send/periodic` | Backend → ESP32 | Periodic injection start/stop |
+| `etrike/debug/cmd/response` | ESP32 → Backend | Command acknowledgment |
 
-// ESP32 → Computer (bus status — active/inactive per controller)
-{"type":"stats","buses":{"high":{"active":true,"fps":247},"low":{"active":false,"fps":0}}}
+## UI — Dual-Bus Tabs
 
-// Computer → ESP32 (inject on specific bus)
-{"cmd":"send","bus":"low","id":"0x204","dlc":5,"data":[0,0,7,208,1,0,0,0]}
+The monitor has bus tabs for filtering:
 
-// ESP32 → Computer (ack)
-{"type":"cmd_ack","cmd":"send","status":"ok"}
-```
+- **All** — shows all frames from both buses
+- **High** — shows only high-bus CAN IDs (Jetson↔RT traffic)
+- **Low** — shows only low-bus CAN IDs (RT↔actuator traffic)
 
-## UI — Two Bus Tabs
-
-The monitor has separate tabs for each bus — no mixing, no confusion:
-
-- **[High Bus 🟢]** — shows only high-bus CAN IDs (Jetson↔RT traffic)
-- **[Low Bus 🔴]** — shows only low-bus CAN IDs (RT↔actuator traffic)
-
-A disconnected bus shows 🔴 and a "plug cable here" diagram. The injector's CAN ID dropdown is filtered to the selected bus — you can't accidentally inject 0x169 on the high bus.
-
-## Keyboard Control
-
-Inject on the currently selected bus. `Tab` switches buses. Keys adapt:
-
-| Key | High Bus | Low Bus |
-|-----|----------|---------|
-| `W` `S` | 0x300 speed ±200 | 0x204 speed ±200 |
-| `A` `D` | 0x300 yaw ±87 | 0x169 angle ±5° |
-| `Space` (×2) | 0x001 ESTOP | 0x001 ESTOP |
-| `B` / `R` | 0x301 brake/release | 0x205 brake kPa set/release |
-| `Esc` | Zero 0x300+0x301 | Zero 0x204+0x205+0x169 |
+Each frame row shows a bus tag. The injector has a bus selector — you can't accidentally inject 0x169 on the high bus.
 
 ## Monitored CAN IDs
 
 | Bus | Count | Key IDs |
 |-----|-------|---------|
 | High | 13 | 0x001, 0x011, 0x120, 0x206, 0x210, 0x220, 0x300, 0x301, 0x302, 0x400, 0x600, 0x7FC, 0x7FD |
-| Low | 22 | 0x001, 0x011, 0x012, 0x110, 0x120, 0x169, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x302, 0x600, 0x6FA, 0x6FB, 0x721, 0x731, 0x741, 0x7B9, 0x7FD, 0x7FE |
+| Low | 15 | 0x001, 0x011, 0x012, 0x110, 0x120, 0x169, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x302, 0x600, 0x6FA, 0x6FB, 0x721, 0x731, 0x741, 0x7B9, 0x7FD, 0x7FE |
 
 Full architecture: [`debug-tool-architecture.md`](debug-tool-architecture.md)
