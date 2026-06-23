@@ -1,0 +1,49 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import type { DebugStore } from "../db/queries";
+
+const startRecordingSchema = z.object({
+  label: z.string().max(120).optional()
+});
+
+export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore): void {
+  app.get("/api/recordings", async () => ({ recordings: store.listRecordings() }));
+
+  app.post("/api/recordings", async (request, reply) => {
+    const parsed = startRecordingSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    return { recording: store.startRecording(parsed.data.label) };
+  });
+
+  app.put<{ Params: { id: string } }>("/api/recordings/:id/stop", async (request, reply) => {
+    const id = Number(request.params.id);
+    const recording = store.stopRecording(id);
+    if (!recording) {
+      return reply.code(404).send({ error: "recording not found" });
+    }
+    return { recording };
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    "/api/recordings/:id/frames",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      const limit = request.query.limit ? Number(request.query.limit) : undefined;
+      const frames = store.recordingFramesById(id, limit);
+      if (!frames) {
+        return reply.code(404).send({ error: "recording not found" });
+      }
+      return { frames };
+    }
+  );
+
+  app.delete<{ Params: { id: string } }>("/api/recordings/:id", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!store.deleteRecording(id)) {
+      return reply.code(404).send({ error: "recording not found" });
+    }
+    return { ok: true };
+  });
+}
