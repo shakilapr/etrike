@@ -50,6 +50,11 @@ static std::atomic<bool>     g_reversing{false};         // reversing flag from 
 static std::atomic<uint16_t> g_ses_motor_current{0};     // 0x6FA motor current raw (bytes 1-2 LE, scale 0.0078125 A/bit)
 static std::atomic<uint16_t> g_ses_ecu_temp{0};          // 0x6FA ECU temperature raw (bytes 3-4 LE, scale 0.5 °C/bit)
 static std::atomic<uint16_t> g_ses_pow_volt{0};          // 0x6FA supply voltage raw (bytes 5-6 LE, scale 0.00390625 V/bit)
+static std::atomic<uint8_t>  g_ses_error_status{0};     // 0x201 byte0 bits 6-7: EPS-C error level
+static std::atomic<uint16_t> g_seb_pressure_raw{0};     // 0x721 byte3: SEB pressure (0.05 MPa/bit)
+static std::atomic<uint8_t>  g_seb_error_status{0};     // 0x721 byte0 bits 6-7: SEB error level
+static std::atomic<uint16_t> g_seb_motor_current{0};    // 0x6FB motor current raw
+static std::atomic<uint16_t> g_seb_ecu_temp_c{0};       // 0x6FB ECU temp raw
 
 // ── Queues ─────────────────────────────────────────────────────────
 static QueueHandle_t g_can_rx_low_q  = nullptr;  // 16 deep
@@ -119,6 +124,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     if (fr.id == can::kIdSyntreeEpsStatus) {
         g_ses_angle_raw.store(ctx.steer_feedback_angle);
         g_ses_angle_status.store(ctx.steer_angle_status);  // alignment bit (gap C2)
+        g_ses_error_status.store((fr.data[0] >> 6) & 0x03);  // bits 6-7: error level
     }
     if (fr.id == can::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
     if (fr.id == can::kIdMtrMotorFbk && !is_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
@@ -159,6 +165,18 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         if (et_c > 85.0f)  ESP_LOGW(TAG, "SES ECU temp high: %.1f°C", et_c);
         if (mc_a > 30.0f)  ESP_LOGW(TAG, "SES motor current high: %.1f A", mc_a);
         if (pv_v < 10.0f)  ESP_LOGW(TAG, "SES supply voltage low: %.2f V", pv_v);
+    }
+    // 0x6FB SEB_Test — motor current + ECU temp (arch §7.3, for 0x311 BRAKE_DIAG)
+    if (fr.id == can::kIdSyntreeSebTest && !is_high) {
+        int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
+        uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
+        g_seb_motor_current.store(mc_raw);
+        g_seb_ecu_temp_c.store(et_raw);
+    }
+    // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
+    if (fr.id == can::kIdSyntreeSebStatus && !is_high) {
+        g_seb_pressure_raw.store(fr.data[3]);  // byte 3 = SEB_Pressure_Value (0.05 MPa/bit)
+        g_seb_error_status.store((fr.data[0] >> 6) & 0x03);
     }
     // Track reception of 0x110 mode and 0x301 brake (fix #3: 0=Manual/0=release are valid)
     if (fr.id == can::kIdSysModeCmd) {
@@ -409,6 +427,22 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         // 0x400 HOST_OBSTACLE_DIST — 10 Hz (Jetson→RT perception data)
         can::HostObstacleDist{g_obstacle_mm.load()}.to_frame(fr);
         g_can_high.send(fr);
+
+        // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Jetson)
+        {
+            int16_t angle = g_ses_angle_raw.load();
+            uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
+            can::SteerDiag{angle, fault, g_ses_motor_current.load(), g_ses_ecu_temp.load(), 0}.to_frame(fr);
+            g_can_high.send(fr);
+        }
+
+        // 0x311 BRAKE_DIAG — 10 Hz (v0.0.4: SEB telemetry for Jetson)
+        {
+            uint16_t seb_pressure = g_seb_pressure_raw.load();
+            uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
+            can::BrakeDiag{seb_pressure, seb_fault, g_seb_motor_current.load(), g_seb_ecu_temp_c.load(), 0}.to_frame(fr);
+            g_can_high.send(fr);
+        }
 
         vTaskDelayUntil(&last, pdMS_TO_TICKS(100));
     }

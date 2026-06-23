@@ -37,6 +37,8 @@ constexpr uint32_t kIdHostBrakeReq      = 0x301;  // Jetson→RT, on demand
 constexpr uint32_t kIdHostObstacleDist  = 0x400;  // Jetson→RT, 10 Hz
 constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Jetson alive counter, 2 Hz
 constexpr uint32_t kIdJetsonHeartbeat   = 0x7FC;  // Jetson→RT alive counter, 2 Hz
+constexpr uint32_t kIdSteerDiag         = 0x310;  // RT→Jetson steering telemetry, 10 Hz
+constexpr uint32_t kIdBrakeDiag         = 0x311;  // RT→Jetson brake telemetry, 10 Hz
 
 // ╔══════════════════════════════════════════════════════════════════════╗
 // ║  SYNTREE CAN IDs — factory-programmed, CANNOT be changed          ║
@@ -163,6 +165,48 @@ struct SysThrottleSts {
     void to_frame(Frame& f) const {
         f.id = kIdSysThrottleSts; f.dlc = 2;
         f.put_i16(0, speed_mmps);
+    }
+};
+
+// 0x310 STEER_DIAG — RT→Jetson steering telemetry @10Hz (v0.0.4)
+struct SteerDiag {
+    int16_t  angle_0_1deg;     // bytes 0-1: actual steering angle (0.1°/bit, offset -3000→subtract 30000)
+    uint8_t  fault;            // byte 2: 0=OK, 1=EPS-C fault
+    uint16_t motor_current;    // bytes 3-4: EPS-C motor current (0.01A/bit)
+    uint16_t ecu_temp;         // bytes 5-6: EPS-C ECU temperature (0.1°C/bit)
+    uint8_t  reserved;         // byte 7
+
+    void to_frame(Frame& f) const {
+        f.id = kIdSteerDiag; f.dlc = 8;
+        f.put_i16(0, angle_0_1deg);
+        f.put_u8(2, fault);
+        f.put_i16(3, motor_current);
+        f.put_i16(5, ecu_temp);
+        f.put_u8(7, 0);
+    }
+    static SteerDiag from_frame(const Frame& f) {
+        return {f.i16_at(0), f.u8_at(2), uint16_t(f.i16_at(3)), uint16_t(f.i16_at(5)), f.u8_at(7)};
+    }
+};
+
+// 0x311 BRAKE_DIAG — RT→Jetson brake telemetry @10Hz (v0.0.4)
+struct BrakeDiag {
+    uint16_t pressure_raw;     // bytes 0-1: SEB pressure (SEB raw, 0.05 MPa/bit)
+    uint8_t  fault;            // byte 2: 0=OK, 1=SEB fault
+    uint16_t motor_current;    // bytes 3-4: SEB motor current (0.01A/bit)
+    uint16_t ecu_temp;         // bytes 5-6: SEB ECU temperature (0.1°C/bit)
+    uint8_t  reserved;         // byte 7
+
+    void to_frame(Frame& f) const {
+        f.id = kIdBrakeDiag; f.dlc = 8;
+        f.put_i16(0, int16_t(pressure_raw));
+        f.put_u8(2, fault);
+        f.put_i16(3, motor_current);
+        f.put_i16(5, ecu_temp);
+        f.put_u8(7, 0);
+    }
+    static BrakeDiag from_frame(const Frame& f) {
+        return {uint16_t(f.i16_at(0)), f.u8_at(2), uint16_t(f.i16_at(3)), uint16_t(f.i16_at(5)), f.u8_at(7)};
     }
 };
 

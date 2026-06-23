@@ -705,6 +705,16 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
+    case 0x310: {  // STEER_DIAG — v0.0.4 EPS-C telemetry
+      if (frame.len < 8) break;
+      int16_t angle_raw = (int16_t)((uint16_t)frame.data[0] << 8 | frame.data[1]);
+      float steer_deg = (angle_raw - 30000) * 0.1f;  // offset=-3000, 0.1°/bit
+      autoware_auto_vehicle_msgs::msg::SteeringReport steer;
+      steer.steering_tire_angle = steer_deg * M_PI / 180.0f;
+      if (pub_steering_->is_activated()) pub_steering_->publish(steer);
+      break;
+    }
+
     case CAN_RT_HB:
       rt_heartbeat_.feed(frame.data[0], now());
       break;
