@@ -42,6 +42,12 @@ static std::atomic<bool>     g_steering_disabled{false};     // gate 0x169 (fix 
 static std::atomic<int64_t>  g_last_sys_hb_us{0};      // 0x7FE SYS heartbeat timestamp
 static std::atomic<int64_t>  g_last_jetson_hb_us{0};   // 0x7FC Jetson heartbeat timestamp
 
+// ── Telemetry atomics (written by control/dispatch, read by tx tasks) ─
+static std::atomic<int16_t>  g_last_cmd_angle_raw{0};   // commanded steering angle in 0.1° (fix #5)
+static std::atomic<bool>     g_reversing{false};         // reversing flag from resolved setpoint (fix #1)
+static std::atomic<uint16_t> g_ses_motor_current{0};     // 0x6FA motor current (fix #3)
+static std::atomic<uint8_t>  g_ses_ecu_temp{0};          // 0x6FA ECU temperature (fix #3)
+
 // ── Queues ─────────────────────────────────────────────────────────
 static QueueHandle_t g_can_rx_low_q  = nullptr;  // 16 deep
 static QueueHandle_t g_can_rx_high_q = nullptr;  // 16 deep
@@ -100,9 +106,38 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     q.steer_feedback_angle = &ctx.steer_feedback_angle;
     rt::route_frame(fr, is_high, q);
 
+    // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
     if (fr.id == can::kIdSyntreeEpsStatus) { g_ses_angle_raw.store(ctx.steer_feedback_angle); }
     if (fr.id == can::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
+
+    // 0x202 SES_ErrInfo — L3 fault bits (arch §7.3, fix #3)
+    if (fr.id == can::kIdSyntreeEpsErrInfo && !is_high) {
+        uint8_t angle_faults  = fr.data[1] & 0x0F;           // bits 8-11: angle sensor P/S O/C+AF
+        uint8_t torque_faults = (fr.data[2] >> 2) & 0x0F;    // bits 18-21: torque sensor T1/T2
+        if (angle_faults || torque_faults) {
+            ESP_LOGW(TAG, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
+            ctx.estop_flag = true;
+        }
+    }
+    // 0x203 SES_Version — log SW/HW once (arch §7.3, fix #3)
+    if (fr.id == can::kIdSyntreeEpsVersion && !is_high) {
+        static bool ses_version_logged = false;
+        if (!ses_version_logged) {
+            ESP_LOGI(TAG, "SES_Version: SW=%02X.%02X HW=%02X.%02X",
+                     fr.data[0], fr.data[1], fr.data[2], fr.data[3]);
+            ses_version_logged = true;
+        }
+    }
+    // 0x6FA SES_Test — motor current + ECU temp (arch §7.3, fix #3)
+    if (fr.id == 0x6FA && !is_high) {
+        uint16_t mc = (uint16_t(fr.data[0]) << 8) | fr.data[1];  // motor current (mA or 0.1A)
+        uint8_t  et = fr.data[2];                                 // ECU temperature (°C)
+        g_ses_motor_current.store(mc);
+        g_ses_ecu_temp.store(et);
+        if (et > 85)  ESP_LOGW(TAG, "SES ECU temp high: %d°C", et);
+        if (mc > 5000) ESP_LOGW(TAG, "SES motor current high: %d", mc);
+    }
 }
 
 [[noreturn]] static void t_dispatch(void*) {
@@ -177,6 +212,32 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         g_brake_request_kpa.store(shared::kAssistStopKpa);
     }
 
+    // 5. Steering following-error check (arch §7.6, fix #5)
+    // abs(cmd_angle - actual_angle) > 5° for >300ms → ESTOP
+    // Only check when not already zeroing or disabled
+    if (!r.zero_setpoints && !g_steering_disabled.load()) {
+        static int steer_follow_err_ticks = 0;
+        int16_t cmd_raw    = g_last_cmd_angle_raw.load();  // 0.1° units
+        int16_t actual_raw = g_ses_angle_raw.load();        // 0.1° units from 0x201
+        if (actual_raw != INT16_MIN) {                      // valid reading
+            int32_t diff = int32_t(cmd_raw) - int32_t(actual_raw);
+            int32_t err_mdeg = (diff >= 0 ? diff : -diff) * 100;  // convert 0.1° → mdeg
+            constexpr int32_t kThresholdMdeg = static_cast<int32_t>(rt::kSteerFollowingErrDeg * 1000.0f);
+            constexpr int kTickLimit = rt::kSteerFollowingErrMs / (1000 / rt::kControlLoopHz);
+            if (err_mdeg > kThresholdMdeg) {
+                if (++steer_follow_err_ticks >= kTickLimit) {
+                    ESP_LOGW(TAG, "Steer follow err >%.0f° for >%dms — ESTOP",
+                             rt::kSteerFollowingErrDeg, rt::kSteerFollowingErrMs);
+                    r.zero_setpoints = true;
+                    r.brake_kpa = shared::kMaxBrakeKpa;
+                    r.disable_steering = true;
+                }
+            } else {
+                steer_follow_err_ticks = 0;
+            }
+        }
+    }
+
     return r;
 }
 
@@ -212,6 +273,11 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
 
         g_brake_kpa_to_send.store(bk);  // consumed by can_tx_low → 0x205 at 50 Hz (fix C7)
         xQueueOverwrite(g_setpoint_q, &sp);
+
+        // ── Capture state for telemetry (fix #1, #5) ──────────────
+        g_last_cmd_angle_raw.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
+        g_reversing.store(sp.reversing);
+
         vTaskDelayUntil(&last, per);
     }
 }
@@ -255,10 +321,24 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
 // ── CAN TX high (prio 3) ───────────────────────────────────────────
 [[noreturn]] static void t_can_tx_high(void*) {
     can::Frame gw;
+    can::Frame fr;   // temp frame for telemetry
     TickType_t last = xTaskGetTickCount();
     while (1) {
         while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE)
             g_can_high.send(gw);
+
+        // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4, fix #1)
+        can::RtStateRpt rpt;
+        rpt.mode        = g_mode_from_sys.load();
+        rpt.steer_valid = (g_steering.state() == rt::SteerState::ACTIVE);
+        rpt.reversing   = g_reversing.load();
+        rpt.to_frame(fr);
+        g_can_high.send(fr);
+
+        // 0x400 RT_OBSTACLE_RPT — 10 Hz (arch §7.4, fix #2)
+        can::HostObstacleDist{g_obstacle_mm.load()}.to_frame(fr);
+        g_can_high.send(fr);
+
         vTaskDelayUntil(&last, pdMS_TO_TICKS(100));
     }
 }

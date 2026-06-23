@@ -55,6 +55,8 @@ constexpr uint32_t kIdSyntreeEpsVersion  = 0x203;  // EPS-C→RT: SES_Version, 1
 constexpr uint32_t kIdSyntreeSebCmd      = 0x7B9;  // SYS→SEB: VCU_SEB_Req, 50 Hz (factory default)
 constexpr uint32_t kIdSyntreeSebStatus   = 0x721;  // SEB→SYS: SEB_Status, 100 Hz (factory default)
 constexpr uint32_t kIdSyntreeSebErrInfo  = 0x731;  // SEB→SYS: SEB_ErrInfo, 100 ms (factory default)
+constexpr uint32_t kIdSyntreeSebTest     = 0x6FB;  // SEB→SYS: SEB_Test, 100 Hz (factory default)
+constexpr uint32_t kIdSyntreeSebVersion  = 0x741;  // SEB→SYS: SEB_Version, 1000 ms (factory default)
 
 // ───────────────────────────────────────────────────────────────────
 // Aliases — codebase migration compatibility.

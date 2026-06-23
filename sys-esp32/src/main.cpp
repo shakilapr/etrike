@@ -60,6 +60,27 @@ static std::atomic<bool>     g_rt_hb_received{false};
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
 
+// ── Motor feedback from 0x206 MTR_MOTOR_FBK ─────────────────────────
+static std::atomic<int16_t>  g_actual_speed_mmps{0};
+static std::atomic<uint8_t>  g_actual_gear_state{0};
+static std::atomic<uint8_t>  g_motor_fault_flags{0};
+
+// ── SEB test telemetry from 0x6FB SEB_Test ──────────────────────────
+static std::atomic<int16_t>  g_seb_motor_current{0};
+static std::atomic<int16_t>  g_seb_ecu_temp_c{0};              // deg C
+
+// ── SEB status from 0x721 SEB_STATUS ────────────────────────────────
+// Actual stroke in raw units (600 = 0mm, scale 0.05, offset -30)
+static std::atomic<uint16_t> g_seb_actual_stroke_raw{600};
+// Timestamp of last 0x721 arrival (for staleness check §8.10)
+static std::atomic<uint32_t> g_last_seb_status_tick{0};
+
+// ── Brake commanded stroke (set by brake task after build_command) ──
+static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
+
+// ── SEB version first-receipt guard (0x741) ─────────────────────────
+static std::atomic<bool>     g_seb_version_logged{false};
+
 // Queues
 static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
@@ -96,6 +117,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
         }
+        case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
+            auto fbk = can::MtrMotorFbk::from_frame(fr);
+            g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
+            g_actual_gear_state.store(fbk.gear_state, std::memory_order_relaxed);
+            g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
+            break;
+        }
         case can::kIdHostLightCmd:   // 0x302
             g_light_bits.store(fr.u8_at(0), std::memory_order_relaxed);
             break;
@@ -104,11 +132,85 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_mode_mgr.force_estop();
             ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             break;
-        case can::kIdSyntreeSebStatus:      // 0x721
+        case can::kIdSyntreeSebStatus: {  // 0x721
             for (int i = 0; i < 8 && i < fr.dlc; ++i) {
                 g_seb_status_raw[i] = fr.data[i];
             }
+            // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30)
+            uint16_t actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
+            g_seb_actual_stroke_raw.store(actual_raw, std::memory_order_relaxed);
+            g_last_seb_status_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+            // Brake following error monitor (§8.10): cmp cmd vs actual stroke
+            {
+                uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
+                uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
+                static bool  brake_follow_active = false;
+                static TickType_t brake_follow_start = 0;
+                if (diff > sys::kBrakeFollowingErrRaw) {
+                    if (!brake_follow_active) {
+                        brake_follow_active = true;
+                        brake_follow_start = xTaskGetTickCount();
+                    } else if ((xTaskGetTickCount() - brake_follow_start)
+                                >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
+                        ESP_LOGE(TAG, "Brake following err: cmd=%u actual=%u diff=%u raw (~%d mm)",
+                                 cmd, actual_raw, diff, int(diff * 0.05f));
+                        brake_follow_active = false;  // log once per event
+                    }
+                } else {
+                    brake_follow_active = false;
+                }
+            }
             break;
+        }
+        case can::kIdSyntreeSebTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
+            // Motor current: Byte1-2 i16 LE, scale 0.0078125 A/bit
+            // ECU temp: Byte3-4 u16 LE, scale 0.5 C/bit, offset -40
+            int16_t  mtr_curr = int16_t(uint16_t(fr.data[1] | (fr.data[2] << 8)));
+            uint16_t ecu_raw  = uint16_t(fr.data[3] | (fr.data[4] << 8));
+            int16_t  ecu_temp = int16_t(ecu_raw * 0.5f - 40.0f);
+            g_seb_motor_current.store(mtr_curr, std::memory_order_relaxed);
+            g_seb_ecu_temp_c.store(ecu_temp, std::memory_order_relaxed);
+            if (ecu_temp > 80) {
+                ESP_LOGW(TAG, "SEB_Test: ECU temp %d C exceeds 80 C threshold", ecu_temp);
+            }
+            break;
+        }
+        case can::kIdSyntreeSebErrInfo: {  // 0x731 — SEB_ErrInfo (arch §8.3)
+            // Check all 16 L3 fault bits per can-dictionary. Any L3 → force_estop.
+            // L3 bit positions: 2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22
+            static const int kL3Bits[] = {2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22};
+            static const char* kL3Names[] = {
+                "CanCom","ECUTemp","DomainDriveSC","DomainDriveV",
+                "DomainDriveT","AngleSensorP_OOC","AngleSensorP_AF","AngleSensorS_OOC",
+                "AngleSensorS_AF","NoPreSensor","SensorUCL","MtrStall",
+                "MtrD_C","InitOil","SentValue","NoLoad"
+            };
+            bool l3_found = false;
+            for (int i = 0; i < 16; ++i) {
+                int byte_idx = kL3Bits[i] / 8;
+                if (byte_idx < fr.dlc && (fr.data[byte_idx] & (1 << (kL3Bits[i] % 8)))) {
+                    ESP_LOGE(TAG, "SEB L3 fault: bit %d = %s", kL3Bits[i], kL3Names[i]);
+                    l3_found = true;
+                }
+            }
+            if (l3_found) {
+                g_mode_mgr.force_estop();
+                can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                g_can.send(ef);
+                ESP_LOGW(TAG, "ESTOP triggered by SEB 0x731 L3 fault(s)");
+            }
+            break;
+        }
+        case can::kIdSyntreeSebVersion: {  // 0x741 — SEB_Version (arch §8.3)
+            if (!g_seb_version_logged.load(std::memory_order_relaxed)) {
+                uint8_t sw_raw = fr.data[0];
+                uint8_t hw_raw = fr.data[1];
+                ESP_LOGI(TAG, "SEB_Version: SW=%.2f HW=%.1f",
+                         sw_raw * 0.01f, hw_raw * 0.1f);
+                g_seb_version_logged.store(true, std::memory_order_relaxed);
+            }
+            break;
+        }
         case can::kIdRtHeartbeatLow:    // 0x7FD
             g_rt_hb_ctr.store(fr.u8_at(0), std::memory_order_relaxed);
             g_rt_hb_received.store(true, std::memory_order_relaxed);
@@ -152,6 +254,37 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Toggle external watchdog
         g_wdt.tick();  // GPIO23 toggle
+
+        // EGAS L2: compare 0x204 setpoint vs 0x206 actual speed (arch §6.1)
+        // Only in AUTO mode. Mismatch > threshold for > duration → ESTOP.
+        {
+            static bool  egas_fault_active = false;
+            static TickType_t egas_fault_start = 0;
+            if (g_mode_mgr.mode() == can::Mode::Auto) {
+                int32_t cmd    = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
+                int16_t actual = g_actual_speed_mmps.load(std::memory_order_relaxed);
+                int32_t diff   = (cmd > actual) ? (cmd - actual) : (actual - cmd);
+                if (diff > sys::kEgasSpeedThresholdMmps) {
+                    if (!egas_fault_active) {
+                        egas_fault_active = true;
+                        egas_fault_start = xTaskGetTickCount();
+                    } else if ((xTaskGetTickCount() - egas_fault_start)
+                                >= pdMS_TO_TICKS(sys::kEgasFaultDurationMs)) {
+                        if (g_mode_mgr.mode() != can::Mode::Estop) {
+                            g_mode_mgr.force_estop();
+                            can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                            g_can.send(ef);
+                            ESP_LOGW(TAG, "EGAS L2: speed mismatch %ld mm/s > %d — ESTOP",
+                                     (long)diff, sys::kEgasSpeedThresholdMmps);
+                        }
+                    }
+                } else {
+                    egas_fault_active = false;
+                }
+            } else {
+                egas_fault_active = false;
+            }
+        }
 
         vTaskDelayUntil(&last, period);
     }
@@ -266,6 +399,26 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             can::Frame fr;
             seb_cmd.to_frame(fr);
             g_can.send(fr);  // 0x7B9 VCU_SEB_REQ
+            // Store commanded stroke for following error monitor (§8.10)
+            g_cmd_stroke_raw.store(seb_cmd.stroke_req, std::memory_order_relaxed);
+        }
+
+        // 0x721 staleness check (architecture §8.10): warn if no status for >100ms
+        {
+            TickType_t last = g_last_seb_status_tick.load(std::memory_order_relaxed);
+            if (last > 0) {
+                TickType_t age = xTaskGetTickCount() - last;
+                if (age >= pdMS_TO_TICKS(sys::kSebStatusTimeoutMs)) {
+                    static TickType_t last_staleness_warn = 0;
+                    if (last_staleness_warn == 0
+                        || (xTaskGetTickCount() - last_staleness_warn)
+                            >= pdMS_TO_TICKS(1000)) {
+                        ESP_LOGW(TAG, "0x721 SEB_STATUS stale — %lu ms since last frame",
+                                 (unsigned long)(age * portTICK_PERIOD_MS));
+                        last_staleness_warn = xTaskGetTickCount();
+                    }
+                }
+            }
         }
 
         vTaskDelayUntil(&last, period);
@@ -290,7 +443,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool sw_H = (gpio_get_level(static_cast<gpio_num_t>(sys::kSwitchHeadlight)) == 0);
 #endif
 
-        auto out = g_lights.tick(mode, lever, bits, sw_L, sw_R, sw_H);
+        // Brake light OR-logic (§8.6): add SEB stroke check — if SEB is actually
+        // braking (stroke > 0.5mm ≈ raw 610), light the brake lamp.
+        uint16_t seb_raw = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
+        bool seb_braking = (seb_raw > 610);  // 610 raw ≈ 0.5mm
+        auto out = g_lights.tick(mode, lever, bits, sw_L, sw_R, sw_H, seb_braking);
 #ifndef TESTING
         gpio_set_level(static_cast<gpio_num_t>(sys::kLightLeftTurn), out.left_lamp ? 1 : 0);
         gpio_set_level(static_cast<gpio_num_t>(sys::kLightRightTurn), out.right_lamp ? 1 : 0);
