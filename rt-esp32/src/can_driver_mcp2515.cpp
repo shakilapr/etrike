@@ -188,9 +188,9 @@ bool Mcp2515Driver::init() {
 bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
 
-    // Check TXB0 free
+    // Check TXB0 free via TX0IF
     uint8_t status = read_status();
-    if (!(status & 0x04)) {  // TXB0REQ not set → buffer free
+    if (!(status & 0x04)) {  // TX0IF clear → buffer busy, wait for TX0IF
         // Wait for buffer to become free
         int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
         while (!(read_status() & 0x04)) {

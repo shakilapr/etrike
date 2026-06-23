@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include "can/can_protocol.h"
+#include "config.h"
 
 namespace sys {
 
@@ -13,9 +14,8 @@ public:
     // Call at 2 Hz. Returns the CAN frame to transmit (DLC=1, alive_ctr incremented).
     void tick(can::Frame& out) {
         m_counter = (m_counter + 1) & 0xFF;
-        out.id = 0x7FE;
+        out.id  = kIdSysHeartbeat;
         out.dlc = 1;
-        out.extended = false;
         out.put_u8(0, m_counter);
     }
 

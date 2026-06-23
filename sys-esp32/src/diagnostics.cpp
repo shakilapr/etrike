@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kTag = "diag";
 }
 
-void Diagnostics::report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) {
+void Diagnostics::report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) const {
     // TEC/REC from TWAI — requires driver access; report 0 for now
     can::SysDiagRpt diag;
     diag.mode          = mode;
