@@ -88,8 +88,6 @@ constexpr uint32_t kIdRtHeartbeat    = 0x7FD;
 // Both
 constexpr uint32_t kIdSafetyEstop    = 0x001;
 
-
-
 // ── obstacle constants (mirrored from RT, for speed_limiter.cpp) ────
 constexpr unsigned kObstacleStopDistMM  = 300;
 constexpr unsigned kObstacleClearDistMM = 3000;

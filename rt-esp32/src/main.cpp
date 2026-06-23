@@ -1,6 +1,5 @@
 // RT ESP32-S3 — Realtime Physics, Steering & CAN Gateway.
 // Architecture: architecture.md §7.  8 FreeRTOS tasks.
-#include <cstdio>
 #include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -38,6 +37,10 @@ static std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 static std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};    // steering angle from 0x201 (fix C6)
 static std::atomic<int32_t>  g_brake_kpa_to_send{0};        // resolved brake kPa for 0x205 (fix C7)
 static std::atomic<bool>     g_steering_disabled{false};     // gate 0x169 (fix H7 + H8)
+
+// ── Brake constants ──────────────────────────────────────────────
+static constexpr int32_t kMaxBrakeKpa    = 20000;   // full brake pressure
+static constexpr int32_t kAssistStopKpa  =  2000;   // gentle assisted stop
 
 // ── Heartbeat tracking (written by dispatch, checked by control) ─
 static std::atomic<int64_t>  g_last_sys_hb_us{0};      // 0x7FE SYS heartbeat timestamp
@@ -100,15 +103,16 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
             g_last_jetson_hb_us.store(esp_timer_get_time());
         }
 
-        bool is_high = (fr.id == 0x300 || fr.id == 0x301 || fr.id == 0x302 || fr.id == 0x7FC);
+        bool is_high = (fr.id == rt::kIdHostDriveCmd || fr.id == rt::kIdHostBrakeReq
+                     || fr.id == rt::kIdHostLightCmd || fr.id == rt::kIdJetsonHeartbeat);
         rt::route_frame(fr, is_high, q);
 
         // Forward 0x001 to both buses (bidirectional gateway per arch §2.3)
-        if (fr.id == 0x001) { gw_lo = fr; gw_hi = fr; }
+        if (fr.id == rt::kIdSafetyEstop) { gw_lo = fr; gw_hi = fr; }
         // Capture steering feedback from 0x201 SES_StrAngle for steering SM (fix C6)
-        if (fr.id == 0x201) { g_ses_angle_raw.store(ang); }
+        if (fr.id == rt::kIdSyntreeEpsStatus) { g_ses_angle_raw.store(ang); }
         // Capture obstacle distance from Jetson 0x400 (arch §7.3)
-        if (fr.id == 0x400 && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
+        if (fr.id == rt::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
 
         if (gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &gw_lo, 0);
         if (gw_hi.id)  xQueueSend(g_gw_tx_high_q, &gw_hi, 0);
@@ -144,11 +148,11 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
         uint32_t obs = g_obstacle_mm.load();
         sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
 
-        int32_t obs_kpa = (obs <= rt::kObstacleStopDistMM) ? 20000 : 0;
+        int32_t obs_kpa = (obs <= rt::kObstacleStopDistMM) ? kMaxBrakeKpa : 0;
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
         // ── Safety checks ──────────────────────────────────────────
-        int64_t now = esp_timer_get_time();
+        int64_t const now = esp_timer_get_time();
         bool startup_grace = (now < kStartupGraceUs);
 
         // 1. ESTOP flag from CAN 0x001 — zero everything, max brake, disable steering (fix H8)
@@ -157,7 +161,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
             sp = {};
-            bk = 20000;                      // max brake kPa
+            bk = kMaxBrakeKpa;               // max brake kPa
             g_steering_disabled.store(true); // stop 0x169 transmission
             g_estop_flag.store(false);
         }
@@ -165,7 +169,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
         // 2. Mode from SYS 0x110 — zero setpoints in ESTOP mode
         if (g_mode_from_sys.load() == uint8_t(can::Mode::Estop)) {
             sp = {};
-            bk = 20000;
+            bk = kMaxBrakeKpa;
             g_steering_disabled.store(true);
         }
 
@@ -186,7 +190,7 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
                 cmd = {0, 0};
                 xQueueOverwrite(g_cmd_q, &cmd);
                 sp = {};
-                g_brake_request_kpa.store(2000);
+                g_brake_request_kpa.store(kAssistStopKpa);
             }
         }
 

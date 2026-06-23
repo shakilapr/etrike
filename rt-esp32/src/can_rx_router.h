@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include "can/can_protocol.h"
 namespace rt {
 struct GatewayQueues {
