@@ -1,31 +1,43 @@
 # Debug Tool — System Architecture
 
-A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to **both CAN buses** (high + low) via the ESP32-S3's dual TWAI controllers. Streams all 28 CAN messages to a web UI over USB, and can inject commands on either bus to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
+A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to one or both CAN buses over USB, streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
 
 ---
 
-## 1. Why Dual-Bus
+## 1. Bus Topology
 
-The high bus carries system-level telemetry. The low bus carries actuator-level commands and feedback. To verify the full pipeline — inject a Jetson command, see RT's output, see the actuator response — you need both.
+The ESP32-S3 has **one** TWAI controller (GPIO 5/4). For dual-bus monitoring, add an MCP2515 SPI controller (GPIO 36–40) for the second bus — the same setup RT uses.
+
+### Single-bus (default)
+
+Plug one SN65HVD230 into whichever bus you're testing. Swap the connector to switch buses. Most bench sessions only need one bus:
+
+| Bus | When to use it |
+|-----|---------------|
+| **High** only | Testing Jetson→RT pipeline. Inject 0x300, watch 0x120/0x210/0x600. |
+| **Low** only | Testing RT→actuators or SYS in isolation. Inject 0x204/0x169, watch 0x201/0x721. |
+
+### Dual-bus (MCP2515 option)
+
+Add the MCP2515 module to see both buses simultaneously — full pipeline visibility:
 
 ```
-Inject 0x300 (high)  →  watch RT produce 0x204 + 0x169 (low)  →  see EPS-C respond 0x201 (low)
-Inject 0x301 (high)  →  watch RT produce 0x205 (low)  →  see SYS produce 0x7B9 (low)  →  see SEB respond 0x721 (low)
+Inject 0x300 (high) → watch RT produce 0x204 + 0x169 (low) → see EPS-C respond 0x201 (low)
 ```
 
-Single-bus monitoring leaves you blind to RT's outputs and the actuators' responses. Since AI writes the code, the complexity of a second bus is just more switch cases — zero human maintenance cost.
+The firmware auto-detects which buses are active (no CAN traffic for 5s → marked inactive in UI). Same code, same JSON format — the `bus` field tells the UI which bus each frame came from.
 
-**USB serial transport** — the ESP32 is always connected to the bench computer by USB. Faster than Wi-Fi, immune to EMI, no network config. Wi-Fi/MQTT available as a compile-time option using the same JSON Lines protocol.
+**USB serial transport** — always connected by USB to the bench computer. Faster than Wi-Fi, immune to EMI, no network config.
 
 ```
 ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
   │                │
-  │                ├── Backend reads COM port
+  │                ├── Backend reads COM port (JSON Lines)
   │                ├── Stores to SQLite
   │                └── Fans out to UI via WebSocket (:3000/ws)
   │
-  ├── High-Level CAN Bus (TWAI0, GPIO 5/4, 500 kbit/s)
-  └── Low-Level CAN Bus  (TWAI1, GPIO 17/16, 500 kbit/s)
+  ├── Bus A: TWAI (GPIO 5/4, 500 kbit/s) — plug into high or low bus
+  └── Bus B: MCP2515 SPI (GPIO 36–40, 500 kbit/s) — optional, for dual-bus
 ```
 
 ---
@@ -56,8 +68,8 @@ ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
 │  ┌──────────────────────────────────────────────────────────────────┐    │
 │  │  FreeRTOS Scheduler                                               │    │
 │  │                                                                   │    │
-│  │  can_rx_high (prio 5)    can_rx_low (prio 5)                     │    │
-│  │  TWAI0 → dec_hi_q        TWAI1 → dec_lo_q                        │    │
+│  │  can_rx_a (prio 5)       can_rx_b (prio 5) [opt]                 │    │
+│  │  TWAI → dec_a_q          MCP2515 → dec_b_q                       │    │
 │  │       │                        │                                  │    │
 │  │       └────────┬───────────────┘                                  │    │
 │  │                │                                                  │    │
@@ -68,20 +80,22 @@ ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
 │  │         printf JSON Lines     stdin → parse → cmd_q               │    │
 │  │                                      │                            │    │
 │  │                               can_inject (prio 3)                 │    │
-│  │                               cmd_q → TWAI0/1 TX                  │    │
+│  │                               cmd_q → TWAI or MCP2515 TX          │    │
 │  │                                                                   │    │
 │  │  stats (prio 1, 1 Hz)     status (prio 2, 5 s)                   │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 │                                                                         │
-│  ┌──────────────┐  ┌──────────────┐                                     │
-│  │  TWAI0       │  │  TWAI1       │                                     │
-│  │  GPIO 5,4    │  │  GPIO 17,16  │                                     │
-│  │  High CAN Bus│  │  Low CAN Bus │                                     │
-│  └──────┬───────┘  └──────┬───────┘                                     │
+│  ┌──────────────┐  ┌──────────────────┐                                 │
+│  │  TWAI        │  │  MCP2515 (opt)   │                                 │
+│  │  GPIO 5,4    │  │  SCK=36 MOSI=37  │                                 │
+│  │  Bus A       │  │  MISO=38 CS=39   │                                 │
+│  │              │  │  INT=40          │                                 │
+│  │              │  │  Bus B           │                                 │
+│  └──────┬───────┘  └──────┬───────────┘                                 │
 └─────────┼──────────────────┼────────────────────────────────────────────┘
           │                  │
-    High-Level CAN      Low-Level CAN
-    (500 kbit/s)        (500 kbit/s)
+    CAN Bus A            CAN Bus B
+   (high or low)        (high or low)
 ```
 
 ---
@@ -354,30 +368,32 @@ Holding a key repeats at OS key-repeat rate (~30 Hz). "KB: ON/OFF" indicator in 
 
 ### 7.1 Hardware
 
-| Component | Details |
-|-----------|---------|
-| MCU | ESP32-S3-DevKitC-1 |
-| CAN High | TWAI0 (built-in controller 0) — GPIO 5 (TX), GPIO 4 (RX) — SN65HVD230 |
-| CAN Low | TWAI1 (built-in controller 1) — GPIO 17 (TX), GPIO 16 (RX) — SN65HVD230 |
-| USB | Built-in USB-UART (CDC ACM) — power + data |
-| Termination | 120Ω on both buses (provided by existing bus termination) |
+| Component | Single-bus (default) | Dual-bus (add MCP2515) |
+|-----------|---------------------|------------------------|
+| MCU | ESP32-S3-DevKitC-1 | Same |
+| Bus A | TWAI — GPIO 5 (TX), 4 (RX) — SN65HVD230 | Same |
+| Bus B | — | MCP2515 SPI — SCK=36, MOSI=37, MISO=38, CS=39, INT=40 — SN65HVD230 |
+| USB | Built-in USB-UART (CDC ACM) — power + data | Same |
+| Termination | 120Ω on connected bus | 120Ω on both buses |
+
+The ESP32-S3 has **one** TWAI controller (not two). Dual-bus uses the same MCP2515 setup as RT's high bus (`rt-esp32/src/can_driver_mcp2515.h`). Single-bus is the practical default — plug into whichever bus header you're testing.
 
 ### 7.2 FreeRTOS Tasks
 
-ESP-IDF requires FreeRTOS — every app runs on it. The debug tool uses clean task separation with queues because AI writes the boilerplate. Zero human maintenance cost for clean architecture.
+ESP-IDF requires FreeRTOS. Task count scales with connected buses — AI writes the boilerplate.
 
-| Task | Prio | Stack | Period | Purpose |
-|------|------|-------|--------|---------|
-| `can_rx_high` | 5 | 4096 | Blocking | TWAI0 receive → push to `dec_hi_q` (32 deep) |
-| `can_rx_low` | 5 | 4096 | Blocking | TWAI1 receive → push to `dec_lo_q` (32 deep) |
-| `can_decode` | 4 | 6144 | Event-driven | Drain both decode queues → dispatch ID → `from_frame()`/`unpack()` → serialize JSON → push to `serial_tx_q` |
-| `serial_tx` | 3 | 4096 | Event-driven | Pop `serial_tx_q` → `printf(json, "\n")` over USB CDC |
-| `serial_rx` | 3 | 4096 | Blocking | `select()` on stdin → read JSON line → parse command → push to `cmd_q` |
-| `can_inject` | 3 | 4096 | Event-driven | Pop `cmd_q` → `twai_transmit()` on correct bus. Also manages periodic injection timer. |
-| `stats` | 1 | 4096 | 1000 ms | Per-ID per-bus counters, bus load %, TEC/REC → push stats JSON to `serial_tx_q` |
-| `status` | 2 | 3072 | 5000 ms | Heap free, uptime, stack HWM → push status JSON to `serial_tx_q` |
+**Single-bus (4 tasks):**
 
-**Total stack:** ~32 KB. ESP32-S3 has 512 KB SRAM.
+| Task | Prio | Stack | Purpose |
+|------|------|-------|---------|
+| `can_rx` | 5 | 4096 | TWAI receive → push to decode queue (32 deep) |
+| `can_decode` | 4 | 6144 | Pop queue → dispatch ID → JSON → push to `serial_tx_q` |
+| `serial_io` | 3 | 6144 | `select()` on stdin/stdout: drain `serial_tx_q` → `printf`, read commands → `cmd_q` |
+| `periodic` | 1 | 4096 | 1 Hz stats + 5 s status + periodic CAN injection timer |
+
+**Dual-bus (6 tasks):** adds `can_rx_b` (MCP2515, prio 5) + splits `serial_io` into `serial_tx`/`serial_rx`.
+
+**Total stack:** ~20 KB (single) / ~28 KB (dual). ESP32-S3 has 512 KB SRAM.
 
 ### 7.3 Frame Decoding
 
@@ -420,18 +436,20 @@ void decode_frame(const can::Frame& fr, bool is_low_bus, char* buf, size_t max_l
 - Periodic injection: max 10 kHz rate, max 50,000 frames per command
 - ESTOP (`0x001`) requires `"confirm_estop":true` in command
 - All periodic injections auto-cancel on USB disconnect (CDC DTR drop)
-- `can_inject` task writes to TWAI TX on the correct bus based on command's `bus` field
+- Command's `bus` field selects TWAI (bus A) or MCP2515 (bus B) for TX
 - Every injected frame counted in per-bus stats
 
-### 7.5 Transport Config
+### 7.5 Config
 
 ```cpp
 // config.h
-enum class Transport { USB_CDC, WIFI_MQTT };
+enum class Transport  { USB_CDC, WIFI_MQTT };
+enum class BusConfig  { SINGLE_TWAI, DUAL_TWAI_MCP2515 };
 constexpr Transport kTransport = Transport::USB_CDC;
+constexpr BusConfig kBusConfig = BusConfig::SINGLE_TWAI;
 ```
 
-Wi-Fi/MQTT is a compile-time alternative. The JSON Lines frame format is identical — only the I/O layer changes (serial port vs MQTT topics). Switch the enum and reflash.
+Wi-Fi/MQTT and dual-bus are compile-time options. Same JSON Lines format — only the I/O layer and CAN controller count change.
 
 ---
 
@@ -541,12 +559,12 @@ debug-tool/
 │   ├── platformio.ini
 │   ├── sdkconfig.defaults
 │   └── src/
-│       ├── main.cpp              ← app_main: dual TWAI init, queue + task creation
-│       ├── config.h               ← CAN GPIOs, timing, transport switch
-│       ├── can_monitor.cpp        ← can_rx_high + can_rx_low tasks
+│       ├── main.cpp              ← app_main: TWAI + optional MCP2515 init, task creation
+│       ├── config.h               ← CAN GPIOs, timing, transport + bus config
+│       ├── can_monitor.cpp        ← can_rx_a (TWAI) + can_rx_b (MCP2515, optional)
 │       ├── frame_decoder.cpp      ← 28-ID dispatch → JSON
 │       ├── serial_io.cpp          ← serial_tx (printf) + serial_rx (stdin select)
-│       ├── can_injector.cpp       ← cmd_q → TWAI0/1 TX, periodic timer
+│       ├── can_injector.cpp       ← cmd_q → TWAI or MCP2515 TX, periodic timer
 │       └── stats.cpp              ← Per-ID per-bus counters, bus load, TEC/REC
 │
 ├── simulator/
