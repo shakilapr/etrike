@@ -27,7 +27,8 @@ constexpr int kStartupGracePeriodMs = 3000;
 constexpr float kBrakeStrokeScale = 0.05f;
 constexpr float kBrakeStrokeOffset = -30.0f;
 constexpr int kSebMaxPressureRaw = 100;
-constexpr int kMaxBrakeKpa = 20000;
+constexpr int kMaxBrakeKpa = 20000;       // absolute max (emergency stop)
+constexpr int kObstacleMaxKpa = 5000;     // max from obstacle distance formula (5 MPa = SEB limit)
 constexpr int kAssistStopKpa = 2000;
 
 } // namespace shared
