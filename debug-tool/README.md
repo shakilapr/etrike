@@ -1,6 +1,6 @@
 # E-Trike Diagnostic & Debug Tool
 
-CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to **both CAN buses** (high + low) via the ESP32-S3's dual TWAI controllers. Streams all 28 CAN messages to a web UI over USB, and can inject commands on either bus.
+CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to one or both CAN buses over USB. Streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
 
 ## Architecture
 
@@ -11,20 +11,13 @@ ESP32-S3 ──USB──► Computer ──WebSocket──► Browser
   │                ├── Stores to SQLite
   │                └── Fans out to UI via WebSocket (:3000/ws)
   │
-  ├── High CAN Bus (TWAI0, GPIO 5/4, 500 kbit/s)
-  └── Low CAN Bus  (TWAI1, GPIO 17/16, 500 kbit/s)
+  ├── Bus A: TWAI (GPIO 5/4, 500 kbit/s) — high or low bus
+  └── Bus B: MCP2515 SPI (GPIO 36–40, 500 kbit/s) — optional second bus
 ```
 
-## Why Dual-Bus
+## Single-bus or dual-bus?
 
-Single-bus monitoring leaves you blind to RT's outputs and actuator responses:
-
-```
-Inject 0x300 (high) → RT produces 0x204 + 0x169 (low) → EPS-C responds 0x201 (low)
-                         ↑ these are invisible on high bus
-```
-
-Dual-bus gives full pipeline visibility. ESP32-S3 has two built-in TWAI controllers — just add a second SN65HVD230 transceiver.
+ESP32-S3 has **one** TWAI controller. Single-bus (one SN65HVD230) covers most bench sessions — plug into whichever bus you're testing. For full pipeline visibility (watch 0x300→0x204→0x201 in real time), add the MCP2515 module for the second bus. Same code, same JSON format — the `bus` field tells the UI which bus each frame came from.
 
 ## Components
 
@@ -32,7 +25,7 @@ Dual-bus gives full pipeline visibility. ESP32-S3 has two built-in TWAI controll
 |--------|------|---------|
 | `backend/` | Node.js + TypeScript + Fastify | REST API, WebSocket, serial port reader, SQLite |
 | `ui/` | Svelte + TypeScript + Vite | Dashboard, CAN monitor (dual-bus color), injector + keyboard control, stats |
-| `debug-esp32/` | PlatformIO (C++17), ESP-IDF | Firmware: dual TWAI, 28-ID decoder, JSON Lines over USB CDC |
+| `debug-esp32/` | PlatformIO (C++17), ESP-IDF | Firmware: TWAI + optional MCP2515, 28-ID decoder, JSON Lines over USB CDC |
 | `simulator/` | Node.js + TypeScript | Dual-bus device simulator for UI dev and E2E testing |
 | `e2e/` | Playwright | Full-stack tests |
 
@@ -46,7 +39,7 @@ cd debug-tool/ui && npm install && npm run dev          # :5173
 # Simulator (no hardware)
 cd debug-tool/simulator && npm install && npm run dev
 
-# Firmware (ESP32-S3 + 2× SN65HVD230)
+# Firmware (ESP32-S3 + 1× SN65HVD230 for single-bus, add MCP2515 for dual-bus)
 cd debug-tool/debug-esp32 && pio run -t upload
 
 # Tests
