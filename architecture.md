@@ -640,9 +640,11 @@ constexpr float kSteerFollowingErrFactor = 0.25f;  // × dynamic_limit → thres
 constexpr int   kSteerFollowingErrMs = 300;        // duration before ESTOP
 constexpr int   kSteerCmdRateHz = 50;              // SYNTREE requires 20ms period
 constexpr int   kSteerBootWaitMs = 500;            // power-on delay before listening
-// Dynamic angle clamp
-constexpr float kSteerMaxAngleAtLowSpeed = 40.0f;  // at 2 km/h
-constexpr float kSteerMaxAngleAtHighSpeed = 5.0f;  // at 25 km/h
+// Dynamic angle clamp (0.0.4): limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
+constexpr float kAngleClampBaseDeg    = 40.0f;   // max at 2 km/h
+constexpr float kAngleClampMinDeg     =  5.0f;   // min at ≥25 km/h
+constexpr float kAngleClampRangeDeg   = 35.0f;   // base − min
+constexpr float kAngleClampSpeedRange = 23.0f;   // 25 − 2 km/h
 // Speed limits
 constexpr int kMaxSpeedFwdMmps = 3000, kMaxSpeedRevMmps = 500;
 constexpr int kLowSpeedThreshMmps = 50;
@@ -1185,8 +1187,8 @@ constexpr int kDebounceMs = 500;         // push button debounce period
 constexpr int kTurnBlinkOnMs = 500, kTurnBlinkOffMs = 500;
 // Timing
 constexpr int kControlLoopHz = 100;
-constexpr int kHeartbeatIntervalMs = 100;       // 10 Hz SYS heartbeat (fast path for brake loss detection)
-constexpr int kHeartbeatTimeoutMs = 200;        // RT heartbeat loss (2 missed frames at 10 Hz). Brake FTTI-bound: 1.4m at 25 km/h.
+constexpr int kHeartbeatIntervalMs    = 100;   // SYS sends 0x7FE at 10 Hz (fast path for brake loss detection)
+constexpr int kHeartbeatTimeoutMsRt   = 1000;  // RT heartbeat loss (0x7FD at 2 Hz, 2 missed frames = 1000ms). Faster 0x204 staleness (200ms) catches RT crash first.
 constexpr int kHeartbeatIdRT = 0x7FD;          // RT heartbeat (monitored by SYS)
 constexpr int kHeartbeatIdSys = 0x7FE;         // SYS heartbeat (sent to RT)
 constexpr int kSetpointStaleMs = 200;           // 0x204 staleness → zero speed
