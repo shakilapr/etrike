@@ -3,7 +3,7 @@ export interface AppConfig {
   port: number;
   mqttHost: string;
   mqttPort: number;
-  mqttUrl: string;
+  mqttUrl: string | null;
   maxFrames: number;
 }
 
@@ -15,15 +15,12 @@ function numberFromEnv(name: string, fallback: number): number {
 }
 
 export function loadConfig(): AppConfig {
-  const mqttHost = process.env.MQTT_HOST ?? "127.0.0.1";
-  const mqttPort = numberFromEnv("MQTT_PORT", 1883);
-
   return {
     host: process.env.HOST ?? "127.0.0.1",
     port: numberFromEnv("PORT", 3000),
-    mqttHost,
-    mqttPort,
-    mqttUrl: process.env.MQTT_URL ?? `mqtt://${mqttHost}:${mqttPort}`,
+    mqttHost: process.env.MQTT_HOST ?? "127.0.0.1",
+    mqttPort: numberFromEnv("MQTT_PORT", 1883),
+    mqttUrl: process.env.MQTT_URL || null,
     maxFrames: numberFromEnv("MAX_FRAMES", 50000)
   };
 }

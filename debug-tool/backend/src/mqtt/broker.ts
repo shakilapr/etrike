@@ -1,37 +1,32 @@
-import Aedes from "aedes";
-import net, { type Server } from "node:net";
+import aedesFactory from "aedes";
+import { createServer, type Server } from "node:net";
 
 export interface MqttBrokerHandle {
-  broker: Aedes;
-  server: Server;
-  close: () => Promise<void>;
+  close(): Promise<void>;
 }
 
+// aedes type definitions declare a class, but the runtime export is a factory function.
+// Cast to callable to work around the type mismatch.
+const createAedes = aedesFactory as unknown as () => InstanceType<typeof aedesFactory>;
+
 export async function startMqttBroker(port: number, host: string): Promise<MqttBrokerHandle> {
-  const broker = new Aedes();
-  const server = net.createServer(broker.handle);
+  const aedes = createAedes();
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => {
-      server.off("listening", onListening);
-      reject(error);
-    };
-    const onListening = () => {
-      server.off("error", onError);
-      resolve();
-    };
+  return new Promise<MqttBrokerHandle>((resolve, reject) => {
+    const server: Server = createServer(aedes.handle as (stream: unknown) => void);
 
-    server.once("error", onError);
-    server.once("listening", onListening);
-    server.listen(port, host);
+    server.once("error", reject);
+
+    server.listen(port, host, () => {
+      resolve({
+        async close() {
+          return new Promise<void>((resolveClose) => {
+            aedes.close(() => {
+              server.close(() => resolveClose());
+            });
+          });
+        }
+      });
+    });
   });
-
-  return {
-    broker,
-    server,
-    close: async () => {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await new Promise<void>((resolve) => broker.close(() => resolve()));
-    }
-  };
 }

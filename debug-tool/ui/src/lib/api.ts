@@ -65,6 +65,7 @@ export async function getTemplates(): Promise<InjectionTemplate[]> {
 }
 
 export function sendFrame(payload: {
+  bus?: string;
   id: string;
   dlc: number;
   data: number[];
@@ -77,6 +78,7 @@ export function sendFrame(payload: {
 }
 
 export function startPeriodic(payload: {
+  bus?: string;
   id: string;
   dlc: number;
   data: number[];

@@ -1,13 +1,13 @@
 <script lang="ts">
   import { commandAcks } from "../stores/can";
   import { sendFrame, startPeriodic, stopPeriodic } from "../lib/api";
-  import type { CanField, CanMessageDef, InjectionTemplate } from "../lib/can-decoder";
-  import { encodePayload, formatBytes } from "../lib/can-decoder";
+  import type { Bus, CanField, CanMessageDef, InjectionTemplate } from "../lib/can-decoder";
+  import { BUSES, encodePayload, formatBytes } from "../lib/can-decoder";
 
   export let ids: CanMessageDef[] = [];
   export let templates: InjectionTemplate[] = [];
 
-  $: injectableIds = ids.filter((item) => item.injectable);
+  let selectedBus: Bus = "high";
   let selectedId = "0x300";
   let values: Record<string, number | boolean> = {
     speed_mmps: 2000,
@@ -20,8 +20,16 @@
   let error = "";
   let pending = false;
 
+  $: busIds = ids.filter((item) => item.bus === selectedBus);
+  $: injectableIds = busIds.filter((item) => item.injectable);
   $: selected = injectableIds.find((item) => item.id === selectedId) ?? injectableIds[0];
-  $: encoded = selected ? encodePayload(selected.id, values) : { dlc: 0, data: [] };
+  $: encoded = selected ? encodePayload(selectedBus, selected.id, values) : { dlc: 0, data: [] };
+
+  function chooseBus(bus: Bus) {
+    selectedBus = bus;
+    const first = ids.find((item) => item.bus === bus && item.injectable);
+    if (first) chooseId(first.id);
+  }
 
   function chooseId(id: string) {
     selectedId = id;
@@ -31,6 +39,7 @@
   }
 
   function applyTemplate(template: InjectionTemplate) {
+    selectedBus = template.bus;
     selectedId = template.id;
     values = { ...template.values };
     confirmEstop = false;
@@ -46,6 +55,7 @@
   async function sendOnce() {
     await command(() =>
       sendFrame({
+        bus: selectedBus,
         id: selected.id,
         dlc: encoded.dlc,
         data: encoded.data,
@@ -57,6 +67,7 @@
   async function startLoop() {
     await command(() =>
       startPeriodic({
+        bus: selectedBus,
         id: selected.id,
         dlc: encoded.dlc,
         data: encoded.data,
@@ -107,6 +118,14 @@
     <div class="panel-title">
       <h2>CAN Injector</h2>
       <span class="mono">{formatBytes(encoded.data)}</span>
+    </div>
+
+    <div class="bus-tabs">
+      {#each BUSES as bus}
+        <button class:active={selectedBus === bus} type="button" on:click={() => chooseBus(bus)}>
+          {bus.toUpperCase()} Bus
+        </button>
+      {/each}
     </div>
 
     <label class="field">
@@ -187,8 +206,8 @@
     <div class="template-list">
       {#each templates as template}
         <button type="button" on:click={() => applyTemplate(template)}>
-          <strong>{template.name}</strong>
-          <span>{template.id} {template.description}</span>
+          <strong class="mono">{template.bus}:{template.id}</strong>
+          <span>{template.name} — {template.description}</span>
         </button>
       {/each}
     </div>

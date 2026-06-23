@@ -3,10 +3,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { DebugStore } from "../db/queries";
 import type { MqttBridge } from "../mqtt/client";
-import { CAN_BY_ID, INJECTION_TEMPLATES, normalizeCanId, validateDataBytes } from "../types/can";
+import { findMessage, INJECTION_TEMPLATES, normalizeCanId, validateDataBytes } from "../types/can";
 
 const sendSchema = z.object({
   request_id: z.string().min(1).optional(),
+  bus: z.enum(["high", "low"]).optional(),
   id: z.string().min(1),
   dlc: z.number().int().min(0).max(8),
   data: z.array(z.number().int().min(0).max(255)),
@@ -17,6 +18,7 @@ const periodicSchema = z.discriminatedUnion("action", [
   z.object({
     request_id: z.string().min(1).optional(),
     action: z.literal("start"),
+    bus: z.enum(["high", "low"]).optional(),
     id: z.string().min(1),
     dlc: z.number().int().min(0).max(8),
     data: z.array(z.number().int().min(0).max(255)),
@@ -43,7 +45,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     }
 
     const id = normalizeCanId(parsed.data.id);
-    const definition = CAN_BY_ID.get(id as never);
+    const definition = findMessage(parsed.data.bus ?? "high", id);
     if (!definition?.injectable) {
       return reply.code(400).send({ error: `${id} is not injectable` });
     }
@@ -61,6 +63,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     const requestId = parsed.data.request_id ?? crypto.randomUUID();
     const payload = {
       request_id: requestId,
+      bus: definition.bus,
       id,
       dlc: parsed.data.dlc,
       data
@@ -84,7 +87,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     }
 
     const id = normalizeCanId(parsed.data.id);
-    const definition = CAN_BY_ID.get(id as never);
+    const definition = findMessage(parsed.data.action === "stop" ? "high" : (parsed.data.bus ?? "high"), id);
     if (!definition?.injectable) {
       return reply.code(400).send({ error: `${id} is not injectable` });
     }
@@ -110,6 +113,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     const payload = {
       request_id: requestId,
       action: "start" as const,
+      bus: definition.bus,
       id,
       dlc: parsed.data.dlc,
       data,
