@@ -362,7 +362,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearRSense)) == 0) sense |= 0x04;
 #endif
         uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
-        g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs
+        g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs internally
         vTaskDelayUntil(&last, period);
     }
 }
