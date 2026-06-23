@@ -71,14 +71,17 @@ constexpr uint32_t kIdSyntreeSebVersion  = 0x741;  // SEB→SYS: SEB_Version, 10
 // Forwarded IDs (same ID on both buses, transparent)
 // ───────────────────────────────────────────────────────────────────
 
-// Low→High: kIdSafetyEstop, kIdSysSafetySts, kIdSysThrottleSts, kIdSysDiagRpt
+// Low→High: kIdSafetyEstop, kIdSysSafetySts, kIdSysThrottleSts, kIdMtrMotorFbk, kIdSysDiagRpt
 // High→Low: kIdSafetyEstop, kIdHostLightCmd
+//
+// Used by RT CAN router (can_rx_router.h). Keep in sync with the router dispatch.
 
 inline bool is_estop_id(uint32_t id) { return id == kIdSafetyEstop; }
 
 inline bool is_forwarded_low_to_high(uint32_t id) {
     return id == kIdSafetyEstop || id == kIdSysSafetySts
-        || id == kIdSysThrottleSts || id == kIdSysDiagRpt;
+        || id == kIdSysThrottleSts || id == kIdMtrMotorFbk
+        || id == kIdSysDiagRpt;
 }
 
 inline bool is_forwarded_high_to_low(uint32_t id) {
