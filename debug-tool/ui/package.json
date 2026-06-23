@@ -6,16 +6,21 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
-    "vite": "^6.0.7",
-    "svelte": "^5.17.3"
+    "svelte": "^5.17.3",
+    "vite": "^6.0.7"
   },
   "devDependencies": {
+    "@testing-library/svelte": "^5.4.2",
     "@tsconfig/svelte": "^5.0.4",
+    "jsdom": "^28.1.0",
     "svelte-check": "^4.1.1",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }

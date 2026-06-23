@@ -1,6 +1,9 @@
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { loadConfig } from "./config";
 import { registerCanRoutes } from "./api/can";
 import { registerCommandRoutes } from "./api/cmd";
@@ -22,6 +25,20 @@ async function main(): Promise<void> {
     origin: true
   });
   await app.register(websocket);
+
+  // Serve built UI in production (SERVE_UI=true or when ../ui/dist exists)
+  const uiDist = resolve(__dirname, "../../ui/dist");
+  if (process.env.SERVE_UI === "true" || existsSync(uiDist)) {
+    await app.register(fastifyStatic, {
+      root: uiDist,
+      prefix: "/"
+    });
+    // SPA fallback: serve index.html for non-API routes
+    app.setNotFoundHandler((_request, reply) => {
+      void reply.sendFile("index.html");
+    });
+    app.log.info(`Serving UI from ${uiDist}`);
+  }
 
   let mqttBroker: MqttBrokerHandle | null = null;
   try {

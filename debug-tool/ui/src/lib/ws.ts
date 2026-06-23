@@ -1,40 +1,97 @@
-import type { BackendStatus } from "./api";
-import type { CanFrame, CanStats } from "./can-decoder";
+import type { StreamMessage } from "./ws-types";
 
-export type StreamMessage =
-  | { type: "can_frame"; payload: CanFrame }
-  | { type: "stats"; payload: CanStats }
-  | { type: "cmd_ack"; payload: Record<string, unknown> }
-  | { type: "status"; payload: Partial<BackendStatus> & Record<string, unknown> };
+export { type StreamMessage };
 
 export interface StreamHandle {
   setFilter: (ids: string[]) => void;
   close: () => void;
 }
 
-export function connectStream(onMessage: (message: StreamMessage) => void, onState: (connected: boolean) => void): StreamHandle {
+const INITIAL_DELAY_MS = 500;
+const MAX_DELAY_MS = 10_000;
+const JITTER_MS = 1_000;
+
+export function connectStream(
+  onMessage: (message: StreamMessage) => void,
+  onState: (connected: boolean) => void
+): StreamHandle {
+  let socket: WebSocket | null = null;
+  let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  let pendingFilter: string[] | null = null;
+
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const explicitBase = import.meta.env.VITE_WS_URL as string | undefined;
   const url = explicitBase ?? `${protocol}//${window.location.host}/ws`;
-  const socket = new WebSocket(url);
 
-  socket.addEventListener("open", () => onState(true));
-  socket.addEventListener("close", () => onState(false));
-  socket.addEventListener("error", () => onState(false));
-  socket.addEventListener("message", (event) => {
-    try {
-      onMessage(JSON.parse(event.data) as StreamMessage);
-    } catch {
-      onMessage({ type: "status", payload: { warning: "invalid stream message" } });
-    }
-  });
+  function connect(): void {
+    if (closed) return;
+
+    socket = new WebSocket(url);
+
+    socket.addEventListener("open", () => {
+      attempt = 0;
+      onState(true);
+
+      // Re-apply pending filter after reconnect
+      if (pendingFilter && socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "filter", ids: pendingFilter }));
+      }
+    });
+
+    socket.addEventListener("close", () => {
+      onState(false);
+      scheduleReconnect();
+    });
+
+    socket.addEventListener("error", () => {
+      onState(false);
+      // close event will fire after error, triggering reconnect
+    });
+
+    socket.addEventListener("message", (event) => {
+      try {
+        onMessage(JSON.parse(event.data) as StreamMessage);
+      } catch {
+        onMessage({ type: "status", payload: { warning: "invalid stream message" } });
+      }
+    });
+  }
+
+  function scheduleReconnect(): void {
+    if (closed) return;
+    if (reconnectTimer) return; // already scheduled
+
+    const delay = Math.min(INITIAL_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
+    const jitter = Math.random() * JITTER_MS;
+    attempt += 1;
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay + jitter);
+  }
+
+  connect();
 
   return {
     setFilter: (ids: string[]) => {
-      if (socket.readyState === WebSocket.OPEN) {
+      pendingFilter = ids;
+      if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "filter", ids }));
       }
     },
-    close: () => socket.close()
+    close: () => {
+      closed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
+    }
   };
 }

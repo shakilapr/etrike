@@ -1,3 +1,14 @@
+import { z } from "zod";
+
+const envSchema = z.object({
+  HOST: z.string().default("127.0.0.1"),
+  PORT: z.coerce.number().int().positive().default(3000),
+  MQTT_HOST: z.string().default("127.0.0.1"),
+  MQTT_PORT: z.coerce.number().int().positive().default(1883),
+  MQTT_URL: z.string().optional(),
+  MAX_FRAMES: z.coerce.number().int().positive().default(50000)
+});
+
 export interface AppConfig {
   host: string;
   port: number;
@@ -7,20 +18,24 @@ export interface AppConfig {
   maxFrames: number;
 }
 
-function numberFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
-}
-
 export function loadConfig(): AppConfig {
+  const parsed = envSchema.safeParse(process.env);
+
+  if (!parsed.success) {
+    console.error("Invalid configuration:");
+    for (const issue of parsed.error.issues) {
+      console.error(`  ${issue.path.join(".")}: ${issue.message}`);
+    }
+    process.exit(1);
+  }
+
+  const env = parsed.data;
   return {
-    host: process.env.HOST ?? "127.0.0.1",
-    port: numberFromEnv("PORT", 3000),
-    mqttHost: process.env.MQTT_HOST ?? "127.0.0.1",
-    mqttPort: numberFromEnv("MQTT_PORT", 1883),
-    mqttUrl: process.env.MQTT_URL || null,
-    maxFrames: numberFromEnv("MAX_FRAMES", 50000)
+    host: env.HOST,
+    port: env.PORT,
+    mqttHost: env.MQTT_HOST,
+    mqttPort: env.MQTT_PORT,
+    mqttUrl: env.MQTT_URL || null,
+    maxFrames: env.MAX_FRAMES
   };
 }
