@@ -20,6 +20,7 @@ struct ResolvedSetpoint {
     bool    steer_valid       = false;
     bool    steer_saturated   = false;
     bool    reversing         = false;
+    uint8_t cmd_gear          = 0;   // CAN gear override (0=none, 1=D, 2=S, 3=R)
 };
 
 // ── Kinematics model ───────────────────────────────────────────────
@@ -38,7 +39,9 @@ private:
     float m_steer_hold_rad = 0.0f;   // last valid steer for decay
 };
 
-// Dynamic angle clamp (arch §7.6, fix #6): max_angle inversely proportional to speed.
-// 40deg at 2 km/h, 5deg at 25 km/h. Returns max allowed angle in degrees.
+// Dynamic angle clamp: limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0].
 float compute_dynamic_limit(float speed_mmps);
+
+// Following error threshold: max(2.0, 0.25 × dynamic_limit_deg). Speed-scaled (was fixed 5.0°).
+float compute_following_error_threshold(float speed_mmps);
 }  // namespace rt
