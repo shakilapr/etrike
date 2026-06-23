@@ -1,6 +1,6 @@
 # RT-AURIX-Lite — Consolidated E-Trike Controller
 
-Single AURIX TC3xx variant that combines RT (realtime physics, steering, CAN gateway) and SYS (safety, brake, body control, motor actuation) into one microcontroller on a single CAN bus.
+Single AURIX TC3xx variant that combines RT (realtime physics, steering, CAN gateway) and SYS (safety, brake, body control, motor actuation) into one microcontroller. Keeps the same two-CAN-bus topology as the distributed architecture — AURIX bridges between high and low buses.
 
 ## What this is
 
@@ -15,8 +15,8 @@ See [`rt-aurix-lite-architecture.md`](rt-aurix-lite-architecture.md) for the ful
 | | Distributed | AURIX Lite |
 |---|---|---|
 | MCUs | 2× ESP32-S3 | 1× AURIX TC3xx |
-| CAN buses | 2 (high + low) | 1 |
-| CAN gateway | Yes (RT bridges) | No (single bus) |
+| CAN buses | 2 (high + low) | 2 (high + low) |
+| CAN gateway | Yes (RT bridges) | Yes (AURIX bridges) |
 | Heartbeats | 3 nodes per bus | 2 nodes (AURIX + Jetson) |
 | Task count | 8 (RT) + 15 (SYS) = 23 | 16 (merged) |
 
