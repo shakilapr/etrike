@@ -20,6 +20,15 @@ constexpr float rad2deg(float r) { return r * 180.0f / kPi; }
 
 }  // anonymous
 
+float compute_dynamic_limit(float speed_mmps) {
+    constexpr float kLowSpeed = 555.0f;   // 2 km/h in mm/s
+    constexpr float kHighSpeed = 6944.0f; // 25 km/h in mm/s
+    if (speed_mmps <= kLowSpeed) return kSteerMaxAngleLowSpeed;  // 40°
+    if (speed_mmps >= kHighSpeed) return kSteerMaxAngleHighSpeed; // 5°
+    float t = (speed_mmps - kLowSpeed) / (kHighSpeed - kLowSpeed);
+    return kSteerMaxAngleLowSpeed + t * (kSteerMaxAngleHighSpeed - kSteerMaxAngleLowSpeed);
+}
+
 bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
     float       v = cmd.speed_mmps / 1000.0f;    // m/s
     float const w = cmd.yaw_rate_mrad_s / 1000.0f; // rad/s
