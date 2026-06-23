@@ -375,10 +375,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     while (1) {
         g_throttle.poll();
 
-        // Send 0x120 SYS_THROTTLE_STS
-        can::Frame fr;
-        can::SysThrottleSts{int16_t(g_throttle.read_mmps())}.to_frame(fr);
-        g_can.send(fr);
+        // TODO(arch): throttle migrated to MTR per architecture §2.1 (fix #4, #8).
+        // 0x120 SYS_THROTTLE_STS removed — MTR is the designated sender.
+        // Keep SYS-local throttle read for task_motor fallback until MTR migration complete.
 
         vTaskDelayUntil(&last, period);
     }
