@@ -1,9 +1,12 @@
 #pragma once
 // MTR STM32 — Motor controller configuration.
+// CAN protocol IDs are in shared/can/can_protocol.h (namespace can).
+// Vehicle-wide constants are in shared/shared_config.h (namespace shared).
 // Dedicated motor actuation: throttle DAC, gear relays, ADC, TLP281 sense.
 // ESTOP wired direct — cuts throttle/gear locally, no CAN dependency.
 
 #include <cstdint>
+#include "shared_config.h"
 
 namespace mtr {
 
@@ -35,15 +38,5 @@ constexpr int kEstopGpio = 0;  // TBD — NC, active-low. Shared with SYS GPIO1.
 constexpr int kControlLoopHz       = 100;
 constexpr int kMotorFeedbackHz     = 50;   // 0x206 rate
 constexpr int kGearCheckHz         = 50;
-
-// ── CAN ID aliases ────────────────────────────────────────────────
-// MTR receives
-constexpr uint32_t kIdRtDriveCmd     = 0x204;  // RT→MTR, 100 Hz
-constexpr uint32_t kIdSysModeCmd     = 0x110;  // SYS→MTR, on change
-constexpr uint32_t kIdSafetyEstop    = 0x001;
-constexpr uint32_t kIdRtHeartbeat    = 0x7FD;
-// MTR sends
-constexpr uint32_t kIdSysThrottleSts = 0x120;  // MTR→RT/SYS, 100 Hz
-constexpr uint32_t kIdMotorFbk       = 0x206;  // MTR→SYS/RT, 50 Hz
 
 }  // namespace mtr

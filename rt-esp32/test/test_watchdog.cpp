@@ -13,7 +13,7 @@ int main() {
     printf("\n=== RT Watchdog Tests ===\n\n");
     using namespace rt;
 
-    CHECK(kCmdStaleTimeoutMs <= 200);
+    CHECK(shared::kCmdStaleTimeoutMs <= 200);
     printf("  ok  command stale timeout bounded\n");
 
     Watchdog wd;
@@ -22,11 +22,11 @@ int main() {
     CHECK(!wd.is_stale());
     printf("  ok  fresh after init\n");
 
-    g_mock_time_us = (kCmdStaleTimeoutMs - 10) * 1000;
+    g_mock_time_us = (shared::kCmdStaleTimeoutMs - 10) * 1000;
     CHECK(!wd.is_stale());
     printf("  ok  fresh before timeout\n");
 
-    g_mock_time_us = (kCmdStaleTimeoutMs + 10) * 1000;
+    g_mock_time_us = (shared::kCmdStaleTimeoutMs + 10) * 1000;
     CHECK(wd.is_stale());
     printf("  ok  stale after timeout\n");
 

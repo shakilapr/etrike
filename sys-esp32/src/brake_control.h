@@ -63,7 +63,7 @@ public:
 private:
     // Stroke raw value for 0mm (released) — formula: (stroke_mm + 30.0) / 0.05
     static constexpr uint16_t kStrokeRawZero =
-        static_cast<uint16_t>((0.0f - kBrakeStrokeOffset) / kBrakeStrokeScale);
+        static_cast<uint16_t>((0.0f - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
 
     void build_command(bool lever, bool estop, int32_t brake_kpa, can::VcuSebReq& out) {
         out.align_enable   = 1;
@@ -75,7 +75,7 @@ private:
             // ESTOP: Stroke Mode (0), max stroke 27mm → raw = (27+30)/0.05 = 1140
             // Architecture §8.6: ESTOP uses Stroke Mode, not Pressure Mode
             out.control_mode = 0;
-            out.stroke_req = uint16_t((kBrakeMaxStroke - kBrakeStrokeOffset) / kBrakeStrokeScale);
+            out.stroke_req = uint16_t((kBrakeMaxStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
             out.pressure_req = 0;
         } else if (brake_kpa > 0) {
             // Pressure Mode from 0x205 — verified kPa→raw conversion
@@ -84,12 +84,12 @@ private:
             out.stroke_req = kStrokeRawZero; // hold at 0mm
             // kPa * 0.02 = kPa / 50. Round to nearest integer.
             int32_t raw = (brake_kpa + 25) / 50;
-            out.pressure_req = uint8_t(raw > kSebMaxPressureRaw ? kSebMaxPressureRaw : raw);
+            out.pressure_req = uint8_t(raw > shared::kSebMaxPressureRaw ? shared::kSebMaxPressureRaw : raw);
         } else if (lever) {
             // Manual lever: Stroke Mode (0), 15mm → raw = (15+30)/0.05 = 900
             // Architecture §8.6: MANUAL lever uses Stroke Mode, not Pressure Mode
             out.control_mode = 0;
-            out.stroke_req = uint16_t((kBrakeManualStroke - kBrakeStrokeOffset) / kBrakeStrokeScale);
+            out.stroke_req = uint16_t((kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
             out.pressure_req = 0;
         } else {
             // Released: Stroke Mode (0), 0mm → raw = (0+30)/0.05 = 600
