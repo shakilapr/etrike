@@ -49,6 +49,7 @@ constexpr uint32_t kIdSES/SEBEpsCmd      = 0x169;  // RT→SES: VCU_SES_Req, 50 
 constexpr uint32_t kIdSES/SEBEpsStatus   = 0x201;  // SES→RT: SES_Status, 100 Hz (factory default)
 constexpr uint32_t kIdSES/SEBEpsErrInfo  = 0x202;  // SES→RT: SES_ErrInfo, 100 ms (factory default)
 constexpr uint32_t kIdSES/SEBEpsVersion  = 0x203;  // SES→RT: SES_Version, 1000 ms (factory default)
+constexpr uint32_t kIdSES/SEBEpsTest     = 0x6FA;  // SES→RT: SES_Test, 100 Hz (factory default)
 
 // ── SES/SEB SEB (brake) ───────────────────────────────────────────
 
@@ -64,13 +65,7 @@ constexpr uint32_t kIdSES/SEBSebVersion  = 0x741;  // SEB→SYS: SEB_Version, 10
 // compile until it is updated to use the canonical identifiers.
 // ───────────────────────────────────────────────────────────────────
 
-constexpr auto kIdHostBrakeRequest  = kIdHostBrakeReq;
-
 // Single ESTOP ID — every node sends 0x001.
-// Code that distinguishes sender can use these for clarity.
-constexpr auto kIdSysEstop  = kIdSafetyEstop;
-constexpr auto kIdRtEstop   = kIdSafetyEstop;
-constexpr auto kIdHostEstop = kIdSafetyEstop;
 
 // ───────────────────────────────────────────────────────────────────
 // Forwarded IDs (same ID on both buses, transparent)
@@ -578,8 +573,6 @@ inline SebStatus SebStatus::from_frame(const Frame& f) {
 // Code references these names; the canonical names are defined above.
 // ───────────────────────────────────────────────────────────────────
 
-using HostBrakeRequest = HostBrakeReq;
-using RtObstacleDist   = HostObstacleDist;
-using SysDiag          = SysDiagRpt;
+
 
 } // namespace can
