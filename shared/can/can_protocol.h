@@ -174,8 +174,8 @@ struct VcuSesReq {
     uint8_t  control_enable  : 1;   // Byte0,b1
     uint8_t  reserved_0      : 6;   // Byte0,b2-7
     uint8_t  reserved_1         = 0; // Byte1
-    int16_t  target_angle       = 0; // Bytes2-3, i16 LE, scale 0.1 deg, -3000..780
-    uint16_t target_speed       = 328;// Bytes4-5, u16 LE, scale 1 deg/s, 125-1250, init 0x0148
+    int16_t  target_angle       = 0; // Bytes2-3, i16 LE, scale 0.1 deg/bit, offset -3000 (CSV), ±700 deg physical
+    uint16_t target_speed       = 328;// Bytes4-5, u16 LE, scale 1 deg/s, 125-525 (CSV), init 328 (0x148)
     // Byte5 also contains security bits (b40-47) — overlaid in pack()
     uint8_t  roll_cnt_enable  : 1;   // Byte5,b40
     uint8_t  checksum_enable  : 1;   // Byte5,b41
@@ -422,10 +422,10 @@ inline void VcuSesReq::pack(uint8_t raw[8]) const {
     raw[5] |= (checksum_enable & 1) << 1;     // bit 1 = CheckSum_Enable
     raw[5] |= (rolling_counter & 0xF) << 4;   // bits 4-7 = RollCnt
     raw[6] = vehicle_speed & 0xFF;
-    // Checksum: XOR of bytes 0-6, then ^ 0xFF (SYNTREE protocol — same as SEB)
-    uint8_t ck = 0;
-    for (int i = 0; i < 7; ++i) ck ^= raw[i];
-    raw[7] = ck ^ 0xFF;
+    // Checksum: arithmetic sum of bytes 0-6, low byte (per steering CSV "CheckSum=Byte0+Byte1...")
+    uint16_t sum = 0;
+    for (int i = 0; i < 7; ++i) sum += raw[i];
+    raw[7] = sum & 0xFF;
 }
 
 inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
@@ -461,10 +461,10 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
     raw[6] = (roll_cnt_enable & 1)            // bit 0 = RollCnt_Enable
            | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
            | ((rolling_counter & 0xF) << 4);  // bits 4-7 = RollCnt
-    // checksum
-    uint8_t ck = 0;
-    for (int i = 0; i < 7; ++i) ck ^= raw[i];
-    raw[7] = ck ^ 0xFF;
+    // checksum: arithmetic sum of bytes 0-6, low byte (same algorithm as steering per CSV)
+    uint16_t sum = 0;
+    for (int i = 0; i < 7; ++i) sum += raw[i];
+    raw[7] = sum & 0xFF;
 }
 
 inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
@@ -498,7 +498,7 @@ struct SesStatus {
     uint8_t  reserved_0        : 3;  // bits 3-5
     uint8_t  error_status      : 2;  // bits 6-7: 0=normal, 1=L1, 2=L2, 3=L3
     uint8_t  reserved_1;
-    int16_t  str_angle;             // bytes 2-3: steering angle (0.1 deg/bit, offset -3000)
+    uint16_t str_angle;             // bytes 2-3: steering angle (Unsigned per CSV, 0.1 deg/bit, offset -3000)
     int16_t  tgt_angle_spd;         // bytes 4-5: target angle speed (0.5 deg/s/bit, signed)
     uint8_t  steering_torq;         // byte 5 (overlaps tgt_angle_spd MSB) — scale 0.1, offset -12.1 Nm
     uint8_t  roll_cnt_enable_sts : 1; // byte 6 bit 0
@@ -518,7 +518,7 @@ inline SesStatus SesStatus::from_frame(const Frame& f) {
     r.reserved_0          = (raw[0] >> 3) & 7;
     r.error_status        = (raw[0] >> 6) & 3;
     r.reserved_1          = raw[1];
-    r.str_angle           = int16_t(raw[2] | (raw[3] << 8));  // LE (Motorola LSB)
+    r.str_angle           = uint16_t(raw[2] | (raw[3] << 8));  // LE (Motorola LSB), Unsigned per CSV
     r.tgt_angle_spd       = int16_t(raw[4] | (raw[5] << 8));  // LE, signed
     r.steering_torq       = raw[5];  // overlaps tgt_angle_spd MSB — per CSV
     r.roll_cnt_enable_sts = raw[6] & 1;
