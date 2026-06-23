@@ -76,9 +76,10 @@ constexpr int kObstacleEchoGpio =  8;
 constexpr int kImuSdaGpio       = 10;      // IMU (optional)
 constexpr int kImuSclGpio       = 11;
 
-constexpr int kInterMcuTxGpio   = 17;       // REMOVE in Phase R4
-constexpr int kInterMcuRxGpio   = 18;       // REMOVE in Phase R4
-constexpr int kInterMcuBaud     = 2'000'000; // REMOVE in Phase R4
+// DEPRECATED: Inter-MCU UART replaced by CAN (Phase R4). Schedule removal.
+constexpr int kInterMcuTxGpio   = 17;       // UNUSED — REMOVE in Phase R4
+constexpr int kInterMcuRxGpio   = 18;       // UNUSED — REMOVE in Phase R4
+constexpr int kInterMcuBaud     = 2'000'000; // UNUSED — REMOVE in Phase R4
 
 // ── steering alias (used by physics_model.cpp) ────────────────────
 constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLimitDeg
