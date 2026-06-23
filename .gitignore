@@ -55,3 +55,17 @@ CMakeLists.txt
 *.gcno
 *.gcov
 coverage/
+
+# ── Build artifacts ──────────────────────────────────────────────────
+*.o
+*.out
+*.old
+*.bak
+
+# ── Claude Code ──────────────────────────────────────────────────────
+.claude/
+
+# ── LaTeX build artifacts ────────────────────────────────────────────
+*.aux
+*.log
+*.toc
