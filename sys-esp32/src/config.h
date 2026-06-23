@@ -1,8 +1,12 @@
 #pragma once
 // SYS ESP32-S3 — safety & actuator configuration (architecture.md §8.9).
 // Change values here, not in source files.
+//
+// CAN protocol IDs are in shared/can/can_protocol.h (namespace can).
+// Vehicle-wide constants are in shared/shared_config.h (namespace shared).
 
 #include <cstdint>
+#include "shared_config.h"
 
 namespace sys {
 
@@ -53,7 +57,6 @@ constexpr int kWdtToggleGpio = 23;
 constexpr int kControlLoopHz        =  100;
 constexpr int kHeartbeatIntervalMs  =  100;   // 10 Hz SYS heartbeat (fast path for brake loss detection, gap #12)
 constexpr int kHeartbeatTimeoutMs   =  200;   // RT heartbeat loss (2 missed frames at 10 Hz). FTTI: 1.4m at 25 km/h.
-constexpr int kStartupGracePeriodMs = 3000;   // mask at boot
 constexpr int kSafetyCheckHz        =   20;
 constexpr int kGearCheckHz          =   50;
 constexpr int kDebounceMs           =  500;   // push button debounce
@@ -67,29 +70,5 @@ constexpr int   kBrakeCmdRateHz    =   50;     // 20 ms period
 constexpr int   kBrakeBootWaitMs   =  500;
 constexpr float kBrakeManualStroke = 15.0f;    // mm, lever pressed
 constexpr float kBrakeMaxStroke    = 27.0f;    // mm, ESTOP
-constexpr float kBrakeStrokeScale  =  0.05f;
-constexpr float kBrakeStrokeOffset = -30.0f;
-
-// ── CAN ID aliases (from shared/can/can_protocol.h) ───────────────
-// SYS sends
-constexpr uint32_t kIdSysSafetySts   = 0x011;
-constexpr uint32_t kIdSysDcdcCmd     = 0x012;
-constexpr uint32_t kIdSysModeCmd     = 0x110;
-constexpr uint32_t kIdSysThrottleSts = 0x120;
-constexpr uint32_t kIdSysDiagRpt     = 0x600;
-constexpr uint32_t kIdSyntreeSebCmd      = 0x7B9;
-constexpr uint32_t kIdSysHeartbeat   = 0x7FE;
-// SYS receives
-constexpr uint32_t kIdRtDriveCmd     = 0x204;
-constexpr uint32_t kIdRtBrakeCmd     = 0x205;
-constexpr uint32_t kIdHostLightCmd   = 0x302;   // forwarded by RT
-constexpr uint32_t kIdSyntreeSebStatus      = 0x721;
-constexpr uint32_t kIdRtHeartbeat    = 0x7FD;
-// Both
-constexpr uint32_t kIdSafetyEstop    = 0x001;
-
-// ── obstacle constants (mirrored from RT, for speed_limiter.cpp) ────
-constexpr unsigned kObstacleStopDistMM  = 300;
-constexpr unsigned kObstacleClearDistMM = 3000;
 
 }  // namespace sys

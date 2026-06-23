@@ -86,6 +86,18 @@ private:
     static constexpr uint8_t kRegEflg     = 0x2D;
     static constexpr uint8_t kRegTec      = 0x1C;
     static constexpr uint8_t kRegRec      = 0x1D;
+    // TX / RX buffer register addresses (Part 5 — named constants)
+    static constexpr uint8_t kRegTxb0Data  = 0x31;  // TXB0SIDH
+    static constexpr uint8_t kRegTxb0Data1 = 0x32;  // TXB0SIDL
+    static constexpr uint8_t kRegTxb1Data  = 0x35;  // TXB0DLC
+    static constexpr uint8_t kRegTxb1Data1 = 0x36;  // TXB0D0
+    static constexpr uint8_t kRegRxb0Data  = 0x61;  // RXB0SIDH
+    static constexpr uint8_t kRegRxb1Data  = 0x71;  // RXB1SIDH
+
+    // Initialization sub-steps (Part 4)
+    bool init_gpio();
+    bool init_spi();
+    bool init_mcp2515_regs();
 
     Config m_cfg;
     bool   m_initialized = false;

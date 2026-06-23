@@ -36,7 +36,7 @@ int main() {
     CHECK("debounce 500ms");         if (sys::kDebounceMs==500) OK; else BAD("debounce");
     CHECK("HB interval 500ms");      if (sys::kHeartbeatIntervalMs==500) OK; else BAD("hb interval");
     CHECK("HB timeout 1000ms");      if (sys::kHeartbeatTimeoutMs==1000) OK; else BAD("hb timeout");
-    CHECK("startup grace 3000ms");   if (sys::kStartupGracePeriodMs==3000) OK; else BAD("grace");
+    CHECK("startup grace 3000ms");   if (shared::kStartupGracePeriodMs==3000) OK; else BAD("grace");
     CHECK("brake cmd 50Hz");         if (sys::kBrakeCmdRateHz==50) OK; else BAD("brake rate");
     CHECK("brake boot wait 500ms");  if (sys::kBrakeBootWaitMs==500) OK; else BAD("brake boot");
     CHECK("manual stroke < max");    if (sys::kBrakeManualStroke < sys::kBrakeMaxStroke) OK; else BAD("brake stroke");
@@ -48,12 +48,12 @@ int main() {
     CHECK("MCP4725 addr 0x60");      if (sys::kThrottleDacI2cAddr==0x60) OK; else BAD("i2c");
 
     printf("\n== R3: new/deprecated constants ==\n");
-    CHECK("kObstacleStopDistMM == 300");
-    if (sys::kObstacleStopDistMM == 300) OK; else BAD("obstacle stop");
-    CHECK("kObstacleClearDistMM == 3000");
-    if (sys::kObstacleClearDistMM == 3000) OK; else BAD("obstacle clear");
+    CHECK("kObstacleStopMM == 300");
+    if (shared::kObstacleStopMM == 300) OK; else BAD("obstacle stop");
+    CHECK("kObstacleClearMM == 3000");
+    if (shared::kObstacleClearMM == 3000) OK; else BAD("obstacle clear");
     CHECK("kObstacleStop < kObstacleClear");
-    if (sys::kObstacleStopDistMM < sys::kObstacleClearDistMM) OK; else BAD("obstacle order");
+    if (shared::kObstacleStopMM < shared::kObstacleClearMM) OK; else BAD("obstacle order");
     CHECK("kThrottleMaxSpeedMmps == 3000");
     if (sys::kThrottleMaxSpeedMmps == 3000) OK; else BAD("motor max");
 

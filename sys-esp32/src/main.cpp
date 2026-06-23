@@ -84,32 +84,32 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // Manual dispatch into atomic state (struct-based dispatch_frame not used
         // because some targets are std::atomic<T> rather than plain T*)
         switch (fr.id) {
-        case sys::kIdRtDriveCmd: {   // 0x204
+        case can::kIdRtDriveCmd: {   // 0x204
             auto sp = can::RtDriveCmd::from_frame(fr);
             g_setpoint_speed_mmps.store(sp.motor_speed_mmps, std::memory_order_relaxed);
             g_setpoint_gear.store(sp.gear, std::memory_order_relaxed);
             g_last_setpoint_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
-        case sys::kIdRtBrakeCmd: {   // 0x205
+        case can::kIdRtBrakeCmd: {   // 0x205
             auto brk = can::RtBrakeCmd::from_frame(fr);
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
         }
-        case sys::kIdHostLightCmd:   // 0x302
+        case can::kIdHostLightCmd:   // 0x302
             g_light_bits.store(fr.u8_at(0), std::memory_order_relaxed);
             break;
-        case sys::kIdSafetyEstop:    // 0x001
+        case can::kIdSafetyEstop:    // 0x001
             g_estop_flag.store(true, std::memory_order_relaxed);
             g_mode_mgr.force_estop();
             ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             break;
-        case sys::kIdSyntreeSebStatus:      // 0x721
+        case can::kIdSyntreeSebStatus:      // 0x721
             for (int i = 0; i < 8 && i < fr.dlc; ++i) {
                 g_seb_status_raw[i] = fr.data[i];
             }
             break;
-        case sys::kIdRtHeartbeat:    // 0x7FD
+        case can::kIdRtHeartbeatLow:    // 0x7FD
             g_rt_hb_ctr.store(fr.u8_at(0), std::memory_order_relaxed);
             g_rt_hb_received.store(true, std::memory_order_relaxed);
             g_safety.feed_heartbeat_rt(fr.u8_at(0));
@@ -125,8 +125,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     while (1) {
         // Read hardware ESTOP button (NC: LOW = pressed)
-        bool estop_hw = false;  // gpio_get_level(sys::kEstopGpio) == 0
-        bool brake_lever = false;  // gpio_get_level(sys::kBrakeLeverGpio) == 0
+#ifdef TESTING
+        bool estop_hw = false;
+        bool brake_lever = false;
+#else
+        bool estop_hw = (gpio_get_level(static_cast<gpio_num_t>(sys::kEstopGpio)) == 0);
+        bool brake_lever = (gpio_get_level(static_cast<gpio_num_t>(sys::kBrakeLeverGpio)) == 0);
+#endif
 
         g_safety.set_estop(estop_hw);
         g_safety.set_brake_lever(brake_lever);
@@ -138,7 +143,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
                 // Only send once on transition to avoid flooding
                 can::Frame estop_fr;
-                estop_fr.id = sys::kIdSafetyEstop;
+                estop_fr.id = can::kIdSafetyEstop;
                 estop_fr.dlc = 0;
                 g_can.send(estop_fr);
                 ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
@@ -158,9 +163,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(100);  // 10 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        // Read hardware buttons (mocked for test)
-        bool mode_btn  = false;   // gpio_get_level(sys::kModeBtnGpio) == 0
-        bool start_btn = false;   // gpio_get_level(sys::kStartBtnGpio) == 0
+#ifdef TESTING
+        bool mode_btn  = false;
+        bool start_btn = false;
+#else
+        bool mode_btn  = (gpio_get_level(static_cast<gpio_num_t>(sys::kModeBtnGpio)) == 0);
+        bool start_btn = (gpio_get_level(static_cast<gpio_num_t>(sys::kStartBtnGpio)) == 0);
+#endif
 
         if (g_mode_mgr.tick(mode_btn, start_btn)) {
             // Mode changed → send 0x110 SYS_MODE_CMD
@@ -211,7 +220,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     while (1) {
         can::Mode mode = g_mode_mgr.mode();
-        uint8_t sense = 0;  // TLP281 read (gpio_get_level on kGearDSense/SSense/RSense)
+#ifdef TESTING
+        uint8_t sense = 0;
+#else
+        uint8_t sense = 0;
+        if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearDSense)) == 0) sense |= 0x01;
+        if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearSSense)) == 0) sense |= 0x02;
+        if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearRSense)) == 0) sense |= 0x04;
+#endif
         uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
         g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs
         vTaskDelayUntil(&last, period);
@@ -266,14 +282,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool lever     = g_safety.brake_lever_pressed();
         uint8_t bits   = g_light_bits.load(std::memory_order_relaxed);
 
-        // Read handlebar switches
+#ifdef TESTING
         bool sw_L = false, sw_R = false, sw_H = false;
-        // sw_L = (gpio_get_level(sys::kSwitchLeftTurn) == 0);
-        // sw_R = (gpio_get_level(sys::kSwitchRightTurn) == 0);
-        // sw_H = (gpio_get_level(sys::kSwitchHeadlight) == 0);
+#else
+        bool sw_L = (gpio_get_level(static_cast<gpio_num_t>(sys::kSwitchLeftTurn)) == 0);
+        bool sw_R = (gpio_get_level(static_cast<gpio_num_t>(sys::kSwitchRightTurn)) == 0);
+        bool sw_H = (gpio_get_level(static_cast<gpio_num_t>(sys::kSwitchHeadlight)) == 0);
+#endif
 
         auto out = g_lights.tick(mode, lever, bits, sw_L, sw_R, sw_H);
-        // Set GPIOs: gpio_set_level(sys::kLightLeftTurn, out.left_lamp); etc.
+#ifndef TESTING
+        gpio_set_level(static_cast<gpio_num_t>(sys::kLightLeftTurn), out.left_lamp ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kLightRightTurn), out.right_lamp ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kLightBrake), out.brake_lamp ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kLightHead), out.head_lamp ? 1 : 0);
+#endif
 
         vTaskDelayUntil(&last, period);
     }
@@ -301,10 +324,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        [[maybe_unused]] auto out = g_indicator.tick(g_mode_mgr.mode());
-        // TODO: wire to GPIOs
-        // gpio_set_level(sys::kBulbAuto, out.auto_bulb);
-        // gpio_set_level(sys::kBulbManual, out.manual_bulb);
+        auto out = g_indicator.tick(g_mode_mgr.mode());
+#ifndef TESTING
+        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbAuto), out.auto_bulb ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbManual), out.manual_bulb ? 1 : 0);
+#endif
 
         vTaskDelayUntil(&last, period);
     }
@@ -316,9 +340,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        [[maybe_unused]] bool on = (g_mode_mgr.mode() != can::Mode::Estop);
-        // TODO: wire to GPIO
-        // gpio_set_level(sys::kPower12vRelay, on ? 1 : 0);
+        bool on = (g_mode_mgr.mode() != can::Mode::Estop);
+#ifndef TESTING
+        gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), on ? 1 : 0);
+#endif
 
         vTaskDelayUntil(&last, period);
     }
@@ -377,7 +402,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     uint8_t alive_ctr = 0;
     while (1) {
         can::Frame fr;
-        fr.id  = sys::kIdSysHeartbeat;
+        fr.id  = can::kIdSysHeartbeat;
         fr.dlc = 1;
         fr.put_u8(0, ++alive_ctr);
         g_can.send(fr);

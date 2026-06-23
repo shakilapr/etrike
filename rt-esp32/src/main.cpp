@@ -38,14 +38,9 @@ static std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};    // steering angle fr
 static std::atomic<int32_t>  g_brake_kpa_to_send{0};        // resolved brake kPa for 0x205 (fix C7)
 static std::atomic<bool>     g_steering_disabled{false};     // gate 0x169 (fix H7 + H8)
 
-// ── Brake constants ──────────────────────────────────────────────
-static constexpr int32_t kMaxBrakeKpa    = 20000;   // full brake pressure
-static constexpr int32_t kAssistStopKpa  =  2000;   // gentle assisted stop
-
 // ── Heartbeat tracking (written by dispatch, checked by control) ─
 static std::atomic<int64_t>  g_last_sys_hb_us{0};      // 0x7FE SYS heartbeat timestamp
 static std::atomic<int64_t>  g_last_jetson_hb_us{0};   // 0x7FC Jetson heartbeat timestamp
-static constexpr int64_t     kStartupGraceUs = 3000000; // 3s startup grace
 
 // ── Queues ─────────────────────────────────────────────────────────
 static QueueHandle_t g_can_rx_low_q  = nullptr;  // 16 deep
@@ -55,26 +50,61 @@ static QueueHandle_t g_setpoint_q    = nullptr;  //  4 deep, overwrite
 static QueueHandle_t g_gw_tx_low_q   = nullptr;  //  8 deep
 static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
 
-// ── CAN RX — low bus (prio 5) ──────────────────────────────────────
-[[noreturn]] static void t_can_rx_low(void*) {
-    can::Frame fr;
-    while (1) {
-        auto* drv = rt::can_low_driver();
-        if (drv && drv->receive(fr, 100))
-            xQueueSend(g_can_rx_low_q, &fr, 0);
-    }
+// ── CAN RX — unified (prio 5) ─────────────────────────────────────
+using CanReceiveFn = bool (*)(can::Frame&, uint32_t);
+struct CanRxParams { CanReceiveFn receive; QueueHandle_t queue; };
+
+static bool low_receive(can::Frame& fr, uint32_t timeout) {
+    auto* drv = rt::can_low_driver();
+    return drv && drv->receive(fr, timeout);
 }
 
-// ── CAN RX — high bus, MCP2515 (prio 5) ────────────────────────────
-[[noreturn]] static void t_can_rx_high(void*) {
+static bool high_receive(can::Frame& fr, uint32_t timeout) {
+    return g_can_high.receive(fr, timeout);
+}
+
+[[noreturn]] static void task_can_rx(void* pv) {
+    auto& p = *static_cast<CanRxParams*>(pv);
     can::Frame fr;
     while (1) {
-        if (g_can_high.receive(fr, 100))
-            xQueueSend(g_can_rx_high_q, &fr, 0);
+        if (p.receive(fr, 100))
+            xQueueSend(p.queue, &fr, 0);
     }
 }
 
 // ── Dispatch + gateway (prio 4) ────────────────────────────────────
+struct DispatchContext {
+    can::Frame gw_lo;
+    can::Frame gw_hi;
+    can::HostDriveCmd cmd;
+    int32_t brake_req_kpa;
+    bool estop_flag;
+    uint8_t mode_from_sys;
+    int16_t steer_feedback_angle;
+};
+
+static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& ctx) {
+    if (fr.id == can::kIdSysHeartbeat) {
+        g_last_sys_hb_us.store(esp_timer_get_time());
+    } else if (fr.id == can::kIdJetsonHeartbeat) {
+        g_last_jetson_hb_us.store(esp_timer_get_time());
+    }
+
+    rt::GatewayQueues q;
+    q.gw_tx_low  = &ctx.gw_lo;
+    q.gw_tx_high = &ctx.gw_hi;
+    q.cmd = &ctx.cmd;
+    q.brake_req_kpa = &ctx.brake_req_kpa;
+    q.estop_flag = &ctx.estop_flag;
+    q.mode_from_sys = &ctx.mode_from_sys;
+    q.steer_feedback_angle = &ctx.steer_feedback_angle;
+    rt::route_frame(fr, is_high, q);
+
+    if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
+    if (fr.id == can::kIdSyntreeEpsStatus) { g_ses_angle_raw.store(ctx.steer_feedback_angle); }
+    if (fr.id == can::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
+}
+
 [[noreturn]] static void t_dispatch(void*) {
     can::Frame fr;
     while (1) {
@@ -83,55 +113,71 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
             xQueueReceive(g_can_rx_low_q, &fr, portMAX_DELAY);
         }
 
-        rt::GatewayQueues q;
-        can::Frame gw_lo, gw_hi;
-        q.gw_tx_low  = &gw_lo;
-        q.gw_tx_high = &gw_hi;
+        bool is_high = (fr.id == can::kIdHostDriveCmd || fr.id == can::kIdHostBrakeReq
+                     || fr.id == can::kIdHostLightCmd || fr.id == can::kIdJetsonHeartbeat);
 
-        can::HostDriveCmd cmd_buf{};
-        q.cmd = &cmd_buf;
+        DispatchContext ctx{};
+        process_frame(fr, is_high, ctx);
 
-        int32_t bkpa = 0; q.brake_req_kpa = &bkpa;
-        bool estop = false; q.estop_flag = &estop;
-        uint8_t mode = 0; q.mode_from_sys = &mode;
-        int16_t ang = 0; q.steer_feedback_angle = &ang;
-
-        // Heartbeat tracking (before route_frame — catches all bus sources)
-        if (fr.id == rt::kIdSysHeartbeat) {           // 0x7FE
-            g_last_sys_hb_us.store(esp_timer_get_time());
-        } else if (fr.id == rt::kIdJetsonHeartbeat) { // 0x7FC
-            g_last_jetson_hb_us.store(esp_timer_get_time());
-        }
-
-        bool is_high = (fr.id == rt::kIdHostDriveCmd || fr.id == rt::kIdHostBrakeReq
-                     || fr.id == rt::kIdHostLightCmd || fr.id == rt::kIdJetsonHeartbeat);
-        rt::route_frame(fr, is_high, q);
-
-        // Forward 0x001 to both buses (bidirectional gateway per arch §2.3)
-        if (fr.id == rt::kIdSafetyEstop) { gw_lo = fr; gw_hi = fr; }
-        // Capture steering feedback from 0x201 SES_StrAngle for steering SM (fix C6)
-        if (fr.id == rt::kIdSyntreeEpsStatus) { g_ses_angle_raw.store(ang); }
-        // Capture obstacle distance from Jetson 0x400 (arch §7.3)
-        if (fr.id == rt::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
-
-        if (gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &gw_lo, 0);
-        if (gw_hi.id)  xQueueSend(g_gw_tx_high_q, &gw_hi, 0);
-        if (estop)      g_estop_flag.store(true);
-        if (mode) {
-            g_mode_from_sys.store(mode);
-            // Clear ESTOP + steering disable when mode exits ESTOP (START btn → Manual, arch §3)
-            if (mode != uint8_t(can::Mode::Estop)) {
+        if (ctx.gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &ctx.gw_lo, 0);
+        if (ctx.gw_hi.id)  xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0);
+        if (ctx.estop_flag)     g_estop_flag.store(true);
+        if (ctx.mode_from_sys) {
+            g_mode_from_sys.store(ctx.mode_from_sys);
+            if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
                 g_estop_flag.store(false);
                 g_steering_disabled.store(false);
             }
         }
-        if (bkpa)       g_brake_request_kpa.store(bkpa);
-        if (cmd_buf.speed_mmps) {
-            xQueueOverwrite(g_cmd_q, &cmd_buf);
+        if (ctx.brake_req_kpa)  g_brake_request_kpa.store(ctx.brake_req_kpa);
+        if (ctx.cmd.speed_mmps) {
+            xQueueOverwrite(g_cmd_q, &ctx.cmd);
             g_watchdog.feed(esp_timer_get_time());
-            g_steering_disabled.store(false);  // fresh cmd → re-enable steering (fix H7)
+            g_steering_disabled.store(false);
         }
     }
+}
+
+// ── Safety checks (used by t_control) ─────────────────────────────
+struct SafetyResult { bool zero_setpoints; int32_t brake_kpa; bool disable_steering; };
+
+static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
+    SafetyResult r{};
+
+    // 1. ESTOP flag from CAN 0x001 — zero everything, max brake, disable steering (fix H8)
+    if (g_estop_flag.load()) {
+        ESP_LOGW(TAG, "ESTOP flag set — zeroing setpoints, max brake");
+        r.zero_setpoints = true;
+        r.brake_kpa = shared::kMaxBrakeKpa;
+        r.disable_steering = true;
+        g_estop_flag.store(false);
+    }
+
+    // 2. Mode from SYS 0x110 — zero setpoints in ESTOP mode
+    if (g_mode_from_sys.load() == uint8_t(can::Mode::Estop)) {
+        r.zero_setpoints = true;
+        r.brake_kpa = shared::kMaxBrakeKpa;
+        r.disable_steering = true;
+    }
+
+    if (startup_grace) return r;
+
+    // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
+    int64_t sys_hb = g_last_sys_hb_us.load();
+    if (sys_hb > 0 && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
+        ESP_LOGW(TAG, "SYS heartbeat timeout — zeroing setpoints");
+        r.zero_setpoints = true;
+    }
+
+    // 4. Jetson heartbeat timeout (arch §7.6: 1500ms → assisted stop)
+    int64_t jetson_hb = g_last_jetson_hb_us.load();
+    if (jetson_hb > 0 && (now - jetson_hb) > int64_t(shared::kHeartbeatTimeoutMsJetson) * 1000) {
+        ESP_LOGW(TAG, "Jetson heartbeat timeout — assisted stop brake=2000kPa");
+        r.zero_setpoints = true;
+        g_brake_request_kpa.store(shared::kAssistStopKpa);
+    }
+
+    return r;
 }
 
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
@@ -148,51 +194,21 @@ static QueueHandle_t g_gw_tx_high_q  = nullptr;  //  8 deep
         uint32_t obs = g_obstacle_mm.load();
         sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
 
-        int32_t obs_kpa = (obs <= rt::kObstacleStopDistMM) ? kMaxBrakeKpa : 0;
+        int32_t obs_kpa = (obs <= shared::kObstacleStopMM) ? shared::kMaxBrakeKpa : 0;
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
         // ── Safety checks ──────────────────────────────────────────
         int64_t const now = esp_timer_get_time();
-        bool startup_grace = (now < kStartupGraceUs);
+        bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
 
-        // 1. ESTOP flag from CAN 0x001 — zero everything, max brake, disable steering (fix H8)
-        if (g_estop_flag.load()) {
-            ESP_LOGW(TAG, "ESTOP flag set — zeroing setpoints, max brake");
+        SafetyResult sr = run_safety_checks(now, startup_grace);
+        if (sr.zero_setpoints) {
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
             sp = {};
-            bk = kMaxBrakeKpa;               // max brake kPa
-            g_steering_disabled.store(true); // stop 0x169 transmission
-            g_estop_flag.store(false);
         }
-
-        // 2. Mode from SYS 0x110 — zero setpoints in ESTOP mode
-        if (g_mode_from_sys.load() == uint8_t(can::Mode::Estop)) {
-            sp = {};
-            bk = kMaxBrakeKpa;
-            g_steering_disabled.store(true);
-        }
-
-        // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
-        if (!startup_grace) {
-            int64_t sys_hb = g_last_sys_hb_us.load();
-            if (sys_hb > 0 && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
-                ESP_LOGW(TAG, "SYS heartbeat timeout — zeroing setpoints");
-                cmd = {0, 0};
-                xQueueOverwrite(g_cmd_q, &cmd);
-                sp = {};
-            }
-
-            // 4. Jetson heartbeat timeout (arch §7.6: 1500ms → assisted stop)
-            int64_t jetson_hb = g_last_jetson_hb_us.load();
-            if (jetson_hb > 0 && (now - jetson_hb) > int64_t(rt::kHeartbeatTimeoutMsJetson) * 1000) {
-                ESP_LOGW(TAG, "Jetson heartbeat timeout — assisted stop brake=2000kPa");
-                cmd = {0, 0};
-                xQueueOverwrite(g_cmd_q, &cmd);
-                sp = {};
-                g_brake_request_kpa.store(kAssistStopKpa);
-            }
-        }
+        if (sr.brake_kpa) bk = sr.brake_kpa;
+        if (sr.disable_steering) g_steering_disabled.store(true);
 
         g_brake_kpa_to_send.store(bk);  // consumed by can_tx_low → 0x205 at 50 Hz (fix C7)
         xQueueOverwrite(g_setpoint_q, &sp);
@@ -292,8 +308,12 @@ extern "C" void app_main() {
     g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
 
-    xTaskCreate(t_can_rx_low,  "rx_low",  4096, nullptr, 5, nullptr);
-    xTaskCreate(t_can_rx_high, "rx_high", 4096, nullptr, 5, nullptr);
+    static CanRxParams rx_low_par  = { low_receive,  nullptr };
+    static CanRxParams rx_high_par = { high_receive, nullptr };
+    rx_low_par.queue  = g_can_rx_low_q;
+    rx_high_par.queue = g_can_rx_high_q;
+    xTaskCreate(task_can_rx, "rx_low",  4096, &rx_low_par,  5, nullptr);
+    xTaskCreate(task_can_rx, "rx_high", 4096, &rx_high_par, 5, nullptr);
     xTaskCreate(t_dispatch,    "dispatch",4096, nullptr, 4, nullptr);
     xTaskCreate(t_control,     "control", 4096, nullptr, 4, nullptr);
     xTaskCreate(t_can_tx_low,  "tx_low",  3072, nullptr, 3, nullptr);

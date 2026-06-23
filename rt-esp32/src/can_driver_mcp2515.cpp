@@ -106,15 +106,17 @@ uint8_t Mcp2515Driver::read_status() {
 
 // ── Init ───────────────────────────────────────────────────────────
 
-bool Mcp2515Driver::init() {
-    // ── GPIO: CS and INT ──────────────────────────────────────────
+// ── Init sub-steps (Part 4) ─────────────────────────────────────────
+
+bool Mcp2515Driver::init_gpio() {
     gpio_set_direction(static_cast<gpio_num_t>(m_cfg.cs_gpio), GPIO_MODE_OUTPUT);
     gpio_set_level(static_cast<gpio_num_t>(m_cfg.cs_gpio), 1);
-
     gpio_set_direction(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_MODE_INPUT);
     gpio_set_pull_mode(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_PULLUP_ONLY);
+    return true;
+}
 
-    // ── SPI bus ───────────────────────────────────────────────────
+bool Mcp2515Driver::init_spi() {
     spi_bus_config_t bus_cfg = {};
     bus_cfg.mosi_io_num     = m_cfg.mosi_gpio;
     bus_cfg.miso_io_num     = m_cfg.miso_gpio;
@@ -140,8 +142,10 @@ bool Mcp2515Driver::init() {
         ESP_LOGE(kTag, "SPI device add failed");
         return false;
     }
+    return true;
+}
 
-    // ── MCP2515 reset ─────────────────────────────────────────────
+bool Mcp2515Driver::init_mcp2515_regs() {
     reset();
 
     // Verify device: read CANSTAT after reset → should be 0x80 (config mode)
@@ -157,12 +161,10 @@ bool Mcp2515Driver::init() {
     write_reg(kRegCnf3, kCnf3_500k);
 
     // ── RX buffers: accept all, no filters ────────────────────────
-    // RXB0: receive all
-    write_reg(kRegRxb0Ctrl, 0x60);  // RXM[1:0]=11 = turn mask/filters off; receive all
-    // RXB1: receive all
+    write_reg(kRegRxb0Ctrl, 0x60);  // RXM[1:0]=11 = turn mask/filters off
     write_reg(kRegRxb1Ctrl, 0x60);
 
-    // ── Interrupts: enable RX0BF + RX1BF + error flags ────────────
+    // ── Interrupts: enable RX0BF + RX1BF ──────────────────────────
     write_reg(kRegCanIntE, 0x03);  // RX0IF + RX1IF
 
     // ── Normal mode ────────────────────────────────────────────────
@@ -175,6 +177,15 @@ bool Mcp2515Driver::init() {
         ESP_LOGE(kTag, "MCP2515 failed to enter normal mode (CANSTAT=0x%02X)", canstat);
         return false;
     }
+    return true;
+}
+
+// ── Init (orchestrator) ─────────────────────────────────────────────
+
+bool Mcp2515Driver::init() {
+    if (!init_gpio()) return false;
+    if (!init_spi()) return false;
+    if (!init_mcp2515_regs()) return false;
 
     m_initialized = true;
     ESP_LOGI(kTag, "MCP2515 ready: SCK=%d MOSI=%d MISO=%d CS=%d INT=%d @ %d MHz",
@@ -207,15 +218,15 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     uint8_t sidh = (frame.id >> 3) & 0xFF;
     uint8_t sidl = (frame.id & 0x07) << 5;
     if (frame.extended) sidl |= 0x08;  // EXIDE
-    write_reg(0x31, sidh);  // TXB0SIDH
-    write_reg(0x32, sidl);  // TXB0SIDL
+    write_reg(kRegTxb0Data, sidh);   // TXB0SIDH
+    write_reg(kRegTxb0Data1, sidl);  // TXB0SIDL
 
     // DLC
-    write_reg(0x35, frame.dlc & 0x0F);  // TXB0DLC
+    write_reg(kRegTxb1Data, frame.dlc & 0x0F);  // TXB0DLC
 
     // Data
     for (int i = 0; i < frame.dlc && i < 8; ++i) {
-        write_reg(0x36 + i, frame.data[i]);  // TXB0D0..D7
+        write_reg(kRegTxb1Data1 + i, frame.data[i]);  // TXB0D0..D7
     }
 
     // Request send
@@ -241,9 +252,9 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
 
         uint8_t base = 0;
         if (rx0) {
-            base = 0x61;  // RXB0SIDH
+            base = kRegRxb0Data;  // RXB0SIDH
         } else if (rx1) {
-            base = 0x71;  // RXB1SIDH
+            base = kRegRxb1Data;  // RXB1SIDH
         } else {
             // No frame available
             if (esp_timer_get_time() > deadline) return false;

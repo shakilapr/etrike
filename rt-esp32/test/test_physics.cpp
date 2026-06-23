@@ -71,7 +71,7 @@ int main() {
         DriveCmd cmd{5000, 0};
         ResolvedSetpoint sp;
         pm.resolve(cmd, sp);
-        CHECK(sp.motor_speed_mmps == kMaxSpeedFwdMmps);
+        CHECK(sp.motor_speed_mmps == shared::kMaxSpeedFwdMmps);
         printf("  ok  fwd clamp\n");
     }
 
@@ -80,7 +80,7 @@ int main() {
         DriveCmd cmd{-2000, 0};
         ResolvedSetpoint sp;
         pm.resolve(cmd, sp);
-        CHECK(sp.motor_speed_mmps == -kMaxSpeedRevMmps);
+        CHECK(sp.motor_speed_mmps == -shared::kMaxSpeedRevMmps);
         printf("  ok  rev clamp\n");
     }
 
@@ -129,9 +129,9 @@ int main() {
     }
 
     // obstacle limit
-    CHECK(PhysicsModel::obstacle_limit(2000, kObstacleClearDistMM + 1) == 2000);
+    CHECK(PhysicsModel::obstacle_limit(2000, shared::kObstacleClearMM + 1) == 2000);
     printf("  ok  obstacle clear\n");
-    CHECK(PhysicsModel::obstacle_limit(2000, kObstacleStopDistMM) == 0);
+    CHECK(PhysicsModel::obstacle_limit(2000, shared::kObstacleStopMM) == 0);
     printf("  ok  obstacle stop\n");
     CHECK(PhysicsModel::obstacle_limit(2000, 50) == 0);
     printf("  ok  obstacle too close\n");

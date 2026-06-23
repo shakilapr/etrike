@@ -38,7 +38,7 @@ bool SafetyMonitor::heartbeat_ok() const {
 
     // Startup grace: if never seen, OK for first 3 seconds
     if (m_last_hb_us == 0)
-        return (now < int64_t(kStartupGracePeriodMs) * 1000);
+        return (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
 
     return (now - m_last_hb_us) < int64_t(kHeartbeatTimeoutMs) * 1000;
 }
