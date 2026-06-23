@@ -1,6 +1,7 @@
 // RT ESP32-S3 — Realtime Physics, Steering & CAN Gateway.
 // Architecture: architecture.md §7.  8 FreeRTOS tasks.
 #include <atomic>
+#include <algorithm>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -87,6 +88,8 @@ struct DispatchContext {
     bool estop_flag;
     uint8_t mode_from_sys;
     int16_t steer_feedback_angle;
+    bool has_mode = false;    // set true when 0x110 mode received (fix CRITICAL falsy check)
+    bool has_brake = false;   // set true when 0x301 brake received (fix CRITICAL falsy check)
 };
 
 static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& ctx) {
@@ -138,6 +141,13 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         if (et > 85)  ESP_LOGW(TAG, "SES ECU temp high: %d°C", et);
         if (mc > 5000) ESP_LOGW(TAG, "SES motor current high: %d", mc);
     }
+    // Track reception of 0x110 mode and 0x301 brake (fix #3: 0=Manual/0=release are valid)
+    if (fr.id == can::kIdSysModeCmd) {
+        ctx.has_mode = true;
+    }
+    if (fr.id == can::kIdHostBrakeReq) {
+        ctx.has_brake = true;
+    }
 }
 
 [[noreturn]] static void t_dispatch(void*) {
@@ -157,14 +167,14 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         if (ctx.gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &ctx.gw_lo, 0);
         if (ctx.gw_hi.id)  xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0);
         if (ctx.estop_flag)     g_estop_flag.store(true);
-        if (ctx.mode_from_sys) {
+        if (ctx.has_mode) {  // has_mode flag: 0=Manual is valid (fix CRITICAL falsy check)
             g_mode_from_sys.store(ctx.mode_from_sys);
             if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
                 g_estop_flag.store(false);
                 g_steering_disabled.store(false);
             }
         }
-        if (ctx.brake_req_kpa)  g_brake_request_kpa.store(ctx.brake_req_kpa);
+        if (ctx.has_brake)   g_brake_request_kpa.store(ctx.brake_req_kpa);  // has_brake flag: 0=release is valid (fix CRITICAL falsy check)
         if (ctx.cmd.speed_mmps) {
             xQueueOverwrite(g_cmd_q, &ctx.cmd);
             g_watchdog.feed(esp_timer_get_time());
@@ -255,6 +265,13 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         uint32_t obs = g_obstacle_mm.load();
         sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
 
+        // ── Dynamic angle clamp (arch §7.6, fix #6) ─────────────────
+        {
+            float max_deg = rt::compute_dynamic_limit(static_cast<float>(std::abs(sp.motor_speed_mmps)));
+            int32_t limit_mdeg = static_cast<int32_t>(max_deg * 1000.0f);
+            sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
+        }
+
         int32_t obs_kpa = (obs <= shared::kObstacleStopMM) ? shared::kMaxBrakeKpa : 0;
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
@@ -267,6 +284,14 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
             sp = {};
+
+            // Originate 0x001 ESTOP on internal fault detection (fix #5)
+            // Send on both buses — SYS, EPS-C, SEB, Jetson all listen for 0x001
+            can::Frame estop_frame;
+            estop_frame.id = can::kIdSafetyEstop;
+            estop_frame.dlc = 0;
+            xQueueSend(g_gw_tx_low_q, &estop_frame, 0);
+            xQueueSend(g_gw_tx_high_q, &estop_frame, 0);
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
         if (sr.disable_steering) g_steering_disabled.store(true);

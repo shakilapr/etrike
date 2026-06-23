@@ -275,12 +275,12 @@ struct VcuSebReq {
     uint8_t auto_brake     : 1;   // Byte0,b3
     uint8_t reserved_0     : 4;   // Byte0,b4-7
     uint8_t reserved_1        = 0;
-    uint16_t stroke_req       = 600; // raw: (mm+30)/0.05, 600=0mm
+    uint16_t stroke_req       = 600; // raw: (mm+30)/0.05, 600=0mm (CSV init 0x0 = -30mm; 600 is safer — no unintended brake)
     uint8_t  pressure_req     = 0;   // u8: 0–100, scale 0.05 MPa/bit, 0–5 MPa
-    uint8_t  reserved_byte5   = 0;
-    uint8_t  reserved_6_lo    : 2;   // bits 0-1
+    uint8_t  reserved_4       = 0;   // byte 4 on wire
     uint8_t  roll_cnt_enable  : 1;   // bit 0 — MUST be 1
     uint8_t  checksum_enable  : 1;   // bit 1 — MUST be 1
+    uint8_t  reserved_6_mid   : 2;   // bits 2-3 (unused)
     uint8_t  rolling_counter  : 4;   // bits 4-7, 0–15
     uint8_t  checksum         = 0;   // XOR(bytes[0..6]) ^ 0xFF
 
@@ -454,8 +454,12 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
            | ((reserved_0 & 0xF) << 4);
     raw[1] = reserved_1;
     raw[2] = stroke_req & 0xFF;
-    raw[3] = pressure_req;                    // u8 pressure (0-100) at Byte3,b24
-    raw[4] = reserved_byte5;                  // reserved
+    if (control_mode == 0) {
+        raw[3] = (stroke_req >> 8) & 0xFF;   // byte 3: stroke high byte in Stroke mode
+    } else {
+        raw[3] = pressure_req;                // byte 3: pressure value in Pressure mode
+    }
+    raw[4] = reserved_4;                      // reserved
     raw[5] = 0;                               // reserved
     raw[6] = (roll_cnt_enable & 1)            // bit 0 = RollCnt_Enable
            | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
@@ -474,14 +478,99 @@ inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
     r.auto_brake      = (raw[0] >> 3) & 1;
     r.reserved_0      = (raw[0] >> 4) & 0xF;
     r.reserved_1      = raw[1];
-    r.stroke_req      = uint16_t(raw[2] | (raw[3] << 8));  // bytes 2-3 LE (low byte first)
-    r.pressure_req    = raw[3];                             // u8 pressure (also mapped to byte 3, overlaps stroke high byte)
-    r.reserved_byte5  = raw[4];
-    r.reserved_6_lo   = raw[6] & 3;
+    if (r.control_mode == 0) {
+        r.stroke_req   = uint16_t(raw[2] | (raw[3] << 8)); // bytes 2-3 LE: full 16-bit stroke
+        r.pressure_req = 0;
+    } else {
+        r.stroke_req   = raw[2];                            // byte 2 only: stroke low byte in Pressure mode
+        r.pressure_req = raw[3];                            // byte 3: pressure value
+    }
+    r.reserved_4      = raw[4];
+    r.reserved_6_mid  = (raw[6] >> 2) & 3;                  // bits 2-3 (unused)
     r.roll_cnt_enable = raw[6] & 1;
     r.checksum_enable = (raw[6] >> 1) & 1;
     r.rolling_counter = (raw[6] >> 4) & 0xF;
     r.checksum        = raw[7];
+    return r;
+}
+
+// 0x201 SES_Status — EPS-C→RT (SYNTREE status frame, per docs/by-wire - steering.csv)
+struct SesStatus {
+    uint8_t  angle_status      : 1;  // bit 0: 0=center finding, 1=found
+    uint8_t  control_mode_sts  : 2;  // bits 1-2: 0=manual, 1=automatic
+    uint8_t  reserved_0        : 3;  // bits 3-5
+    uint8_t  error_status      : 2;  // bits 6-7: 0=normal, 1=L1, 2=L2, 3=L3
+    uint8_t  reserved_1;
+    int16_t  str_angle;             // bytes 2-3: steering angle (0.1 deg/bit, offset -3000)
+    int16_t  tgt_angle_spd;         // bytes 4-5: target angle speed (0.5 deg/s/bit, signed)
+    uint8_t  steering_torq;         // byte 5 (overlaps tgt_angle_spd MSB) — scale 0.1, offset -12.1 Nm
+    uint8_t  roll_cnt_enable_sts : 1; // byte 6 bit 0
+    uint8_t  checksum_enable_sts : 1; // byte 6 bit 1
+    uint8_t  reserved_6          : 2; // byte 6 bits 2-3
+    uint8_t  roll_cnt_sts        : 4; // byte 6 bits 4-7
+    uint8_t  checksum_sts;           // byte 7
+
+    static SesStatus from_frame(const Frame& f);
+};
+
+inline SesStatus SesStatus::from_frame(const Frame& f) {
+    SesStatus r;
+    const uint8_t* raw = f.data;
+    r.angle_status        = raw[0] & 1;
+    r.control_mode_sts    = (raw[0] >> 1) & 3;
+    r.reserved_0          = (raw[0] >> 3) & 7;
+    r.error_status        = (raw[0] >> 6) & 3;
+    r.reserved_1          = raw[1];
+    r.str_angle           = int16_t(raw[2] | (raw[3] << 8));  // LE (Motorola LSB)
+    r.tgt_angle_spd       = int16_t(raw[4] | (raw[5] << 8));  // LE, signed
+    r.steering_torq       = raw[5];  // overlaps tgt_angle_spd MSB — per CSV
+    r.roll_cnt_enable_sts = raw[6] & 1;
+    r.checksum_enable_sts = (raw[6] >> 1) & 1;
+    r.reserved_6          = (raw[6] >> 2) & 3;
+    r.roll_cnt_sts        = (raw[6] >> 4) & 0xF;
+    r.checksum_sts        = raw[7];
+    return r;
+}
+
+// 0x721 SEB_Status — SEB→SYS (SYNTREE status frame, per docs/by-wire - brake.csv)
+struct SebStatus {
+    uint8_t  alignment_status   : 1;  // bit 0
+    uint8_t  control_enable_sts : 1;  // bit 1
+    uint8_t  control_mode_sts   : 2;  // bits 2-3
+    uint8_t  auto_brake_sts     : 1;  // bit 4
+    uint8_t  reserved_0         : 1;  // bit 5
+    uint8_t  error_status       : 2;  // bits 6-7: 0=normal, 1=L1, 2=L2, 3=L3
+    uint8_t  reserved_1;
+    uint16_t stroke_value;           // bytes 2-3: stroke (0.05mm/bit, offset -30mm)
+    uint8_t  pressure_value;         // byte 3 (overlaps stroke MSB — mode-dependent)
+    int16_t  angle_value;            // bytes 5-6: angle feedback (0.5/bit, -150 to 840)
+    uint8_t  roll_cnt_enable_sts : 1; // byte 6 bit 0
+    uint8_t  checksum_enable_sts : 1; // byte 6 bit 1
+    uint8_t  reserved_6          : 2; // byte 6 bits 2-3
+    uint8_t  roll_cnt_sts        : 4; // byte 6 bits 4-7
+    uint8_t  checksum_sts;           // byte 7
+
+    static SebStatus from_frame(const Frame& f);
+};
+
+inline SebStatus SebStatus::from_frame(const Frame& f) {
+    SebStatus r;
+    const uint8_t* raw = f.data;
+    r.alignment_status    = raw[0] & 1;
+    r.control_enable_sts  = (raw[0] >> 1) & 1;
+    r.control_mode_sts    = (raw[0] >> 2) & 3;
+    r.auto_brake_sts      = (raw[0] >> 4) & 1;
+    r.reserved_0          = (raw[0] >> 5) & 1;
+    r.error_status        = (raw[0] >> 6) & 3;
+    r.reserved_1          = raw[1];
+    r.stroke_value        = uint16_t(raw[2] | (raw[3] << 8));  // LE
+    r.pressure_value      = raw[3];  // overlaps stroke MSB
+    r.angle_value         = int16_t(raw[5] | (raw[6] << 8));   // LE, signed — shares byte 6 with status bits
+    r.roll_cnt_enable_sts = raw[6] & 1;
+    r.checksum_enable_sts = (raw[6] >> 1) & 1;
+    r.reserved_6          = (raw[6] >> 2) & 3;
+    r.roll_cnt_sts        = (raw[6] >> 4) & 0xF;
+    r.checksum_sts        = raw[7];
     return r;
 }
 
