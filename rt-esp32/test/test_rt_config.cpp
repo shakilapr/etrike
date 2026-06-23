@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include "config.h"
+#include "can/can_protocol.h"
 
 static int fails = 0;
 #define CHECK(desc) printf("  %-48s ", desc)
@@ -37,10 +38,10 @@ static void test_gpio_uniqueness() {
 
 static void test_constants() {
     printf("\n== Constant sanity ==\n");
-    CHECK("wheelbase > 0");           if (rt::kWheelbaseMM > 0) OK; else BAD("wheelbase");
-    CHECK("max speed fwd > rev");     if (rt::kMaxSpeedFwdMmps > rt::kMaxSpeedRevMmps) OK; else BAD("speed");
-    CHECK("obstacle stop < clear");   if (rt::kObstacleStopDistMM < rt::kObstacleClearDistMM) OK; else BAD("obstacle");
-    CHECK("HB timeout Sys < Jetson"); if (rt::kHeartbeatTimeoutMsSys < rt::kHeartbeatTimeoutMsJetson) OK; else BAD("hb timeout");
+    CHECK("wheelbase > 0");           if (shared::kWheelbaseMM > 0) OK; else BAD("wheelbase");
+    CHECK("max speed fwd > rev");     if (shared::kMaxSpeedFwdMmps > shared::kMaxSpeedRevMmps) OK; else BAD("speed");
+    CHECK("obstacle stop < clear");   if (shared::kObstacleStopMM < shared::kObstacleClearMM) OK; else BAD("obstacle");
+    CHECK("HB timeout Sys < Jetson"); if (rt::kHeartbeatTimeoutMsSys < shared::kHeartbeatTimeoutMsJetson) OK; else BAD("hb timeout");
     CHECK("control loop 100 Hz");     if (rt::kControlLoopHz == 100) OK; else BAD("loop rate");
     CHECK("CAN bitrate 500k");        if (rt::kCanLowBitrateHz == 500000 && rt::kCanHighBitrateHz == 500000) OK; else BAD("bitrate");
     CHECK("steer boot wait > 0");     if (rt::kSteerBootWaitMs > 0) OK; else BAD("boot wait");
@@ -48,12 +49,12 @@ static void test_constants() {
 }
 
 static void test_can_id_prefixes() {
-    printf("\n== CAN ID prefix sanity ==\n");
+    printf("\n== CAN ID prefix sanity (using can:: namespace) ==\n");
     // Safety IDs (0x001) should be lowest
     CHECK("estop is lowest ID");
-    bool ok = (rt::kIdSafetyEstop < rt::kIdSysSafetySts)
-           && (rt::kIdSysSafetySts < rt::kIdSysModeCmd)
-           && (rt::kIdSyntreeEpsCmd < rt::kIdSysDiagRpt);
+    bool ok = (can::kIdSafetyEstop < can::kIdSysSafetySts)
+           && (can::kIdSysSafetySts < can::kIdSysModeCmd)
+           && (can::kIdSyntreeEpsCmd < can::kIdSysDiagRpt);
     if (ok) OK; else BAD("priority order");
 }
 

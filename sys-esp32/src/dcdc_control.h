@@ -16,7 +16,7 @@ public:
     }
     bool enabled() const { return m_enabled; }
     void build_frame(can::Frame& f) const {
-        f.id  = kIdSysDcdcCmd;
+        f.id  = can::kIdSysDcdcCmd;
         f.dlc = 1;
         f.put_u8(0, m_enabled ? 1 : 0);
     }

@@ -23,10 +23,10 @@ constexpr float rad2deg(float r) { return r * 180.0f / kPi; }
 bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
     float       v = cmd.speed_mmps / 1000.0f;    // m/s
     float const w = cmd.yaw_rate_mrad_s / 1000.0f; // rad/s
-    float const L = kWheelbaseMM / 1000.0f;      // m
+    float const L = shared::kWheelbaseMM / 1000.0f;      // m
     constexpr float kYawEpsilon = 0.001f;
     const float steer_limit_rad = deg2rad(kSteerLimitDeg);
-    const float low_speed_mps = kLowSpeedThreshMmps / 1000.0f;
+    const float low_speed_mps = shared::kLowSpeedThreshMmps / 1000.0f;
 
     float steer = 0.0f;
     bool  ok    = false;
@@ -43,7 +43,7 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
         // a deliberate minimum-radius forward arc instead of a dead command.
         const float min_radius_m = L / std::tan(steer_limit_rad);
         const float turn_speed_mps = std::abs(w) * min_radius_m;
-        v = std::clamp(turn_speed_mps, low_speed_mps, kMaxSpeedFwdMmps / 1000.0f);
+        v = std::clamp(turn_speed_mps, low_speed_mps, shared::kMaxSpeedFwdMmps / 1000.0f);
         steer = (w > 0.0f) ? steer_limit_rad : -steer_limit_rad;
         m_steer_hold_rad = steer;
         ok = true;
@@ -54,7 +54,7 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
     }
 
     // Clamp speed to configured limits
-    v = std::clamp(v, -kMaxSpeedRevMmps / 1000.0f, kMaxSpeedFwdMmps / 1000.0f);
+    v = std::clamp(v, -shared::kMaxSpeedRevMmps / 1000.0f, shared::kMaxSpeedFwdMmps / 1000.0f);
 
     out.motor_speed_mmps  = static_cast<int32_t>(v * 1000.0f);
     out.steer_angle_mdeg  = static_cast<int32_t>(rad2deg(steer) * 1000.0f);
@@ -69,10 +69,10 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
 }
 
 int32_t PhysicsModel::obstacle_limit(int32_t target_mmps, unsigned obstacle_mm) {
-    if (obstacle_mm <= kObstacleStopDistMM)  return 0;
-    if (obstacle_mm >= kObstacleClearDistMM) return target_mmps;
-    float t = static_cast<float>(obstacle_mm - kObstacleStopDistMM)
-            / static_cast<float>(kObstacleClearDistMM - kObstacleStopDistMM);
+    if (obstacle_mm <= shared::kObstacleStopMM)  return 0;
+    if (obstacle_mm >= shared::kObstacleClearMM) return target_mmps;
+    float t = static_cast<float>(obstacle_mm - shared::kObstacleStopMM)
+            / static_cast<float>(shared::kObstacleClearMM - shared::kObstacleStopMM);
     return static_cast<int32_t>(target_mmps * t);
 }
 
