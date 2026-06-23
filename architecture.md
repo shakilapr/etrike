@@ -386,7 +386,7 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Low | `0x206` | MTR_MOTOR_FBK | `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | Forward to high; monitor motor feedback |
 | Low | `0x600` | SYS_DIAG_RPT | 8 bytes | Forward to high |
 | Low | `0x6FA` | SES_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | Monitor motor current / ECU temp for degradation |
-| Low | `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | Feed SYS alive counter; if frozen for >1000ms → ESTOP |
+| Low | `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | Feed SYS alive counter (10 Hz); if no frame for >200ms → zero setpoints, RT takes over brake |
 | High | `0x001` | SAFETY_ESTOP | — | `mode_set(Estop)`, forward to low |
 | High | `0x300` | HOST_DRIVE_CMD | `{i32 speed, i32 yaw}` | → `cmd_queue` |
 | High | `0x301` | HOST_BRAKE_REQ | `i32 pressure_kpa` | → atomic store |
@@ -419,10 +419,12 @@ enum class Mode : uint8_t { Manual = 0, Auto = 1, Estop = 2 };
 enum class Gear : uint8_t { N = 0, D = 1, S = 2, R = 3 };
 
 enum class SteerState : uint8_t {
-    STEER_BOOT_WAIT,     // 500ms power-on delay — do NOT transmit
-    STEER_LISTEN_SYNC,   // Waiting for 0x201 SES_STATUS, read current angle
-    STEER_ACTIVE,        // Normal operation — transmit 0x169 at 50 Hz
-    STEER_FAULT          // Timeout or ESTOP — stop transmitting
+    STEER_BOOT_WAIT,          // 500ms power-on delay — do NOT transmit
+    STEER_LISTEN_SYNC,        // Waiting for 0x201 SES_STATUS (angle + alignment), 5s timeout → FAULT
+    STEER_ACTIVE,             // Normal operation — transmit 0x169 at 50 Hz
+    ESTOP_RAMP_TO_ZERO,       // Non-obstacle ESTOP: ramp to 0° at 20°/s, continue transmitting
+    ESTOP_HOLD_THEN_SILENT,   // Obstacle ESTOP: hold current angle 500ms, then silent-stop
+    STEER_FAULT               // Timeout or silent-stop — stop transmitting
 };
 
 struct DriveCmd {
@@ -1115,7 +1117,7 @@ Pri 2  indicator   ── Mode bulbs @ 5 Hz
        can_tx      ── Safety status @ 5 Hz → CAN 0x011
 
 Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
-       hb          ── 0x7FE @ 2 Hz
+       hb          ── 0x7FE @ 10 Hz
 ```
 
 | Task | Prio | Stack | Period | Behavior |
@@ -1129,11 +1131,11 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 | `dcdc` | 3 | 1024 B | 5 Hz | DCDC FSM, CAN 0x012 |
 | `indicator` | 2 | 1024 B | 5 Hz | Mode bulbs (AUTO/MANUAL) |
 | `power` | 2 | 1024 B | 5 Hz | 12V relay |
-| `can_tx` | 2 | 3072 B | 5 Hz | CAN 0x011, 0x110 |
+| `can_tx` | 2 | 3072 B | 5 Hz | CAN `0x011` (mode task sends `0x110`) |
 | `diag` | 1 | 2048 B | 1 Hz | CAN 0x600 |
-| `hb` | 1 | 2048 B | 2 Hz | CAN `0x7FE` (SYS heartbeat to RT) |
+| `hb` | 1 | 2048 B | 10 Hz | CAN `0x7FE` (SYS heartbeat to RT, fast path for brake loss detection) |
 
-> **Removed from SYS:** `motor` (MCP4725 DAC), `throttle` (ADC read, 0x120), `gear` (TLP281 sense, relay output). These are now on **MTR** — see §5.0.
+> **Note:** Motor actuation (MCP4725 DAC), throttle ADC, and gear relay control run on SYS in MANUAL/AUTO modes. MTR STM32 handles only the bare-metal motor controller interface (EGAS L1). In ESTOP, SYS zeros the DAC and disengages all relays.
 
 ### 8.8 Hardware pin assignments — Board: SYS ESP32-S3
 
