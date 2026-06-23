@@ -38,6 +38,7 @@ static std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 static std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};    // steering angle from 0x201 (fix C6)
 static std::atomic<int32_t>  g_brake_kpa_to_send{0};        // resolved brake kPa for 0x205 (fix C7)
 static std::atomic<bool>     g_steering_disabled{false};     // gate 0x169 (fix H7 + H8)
+static std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};    // measured speed from 0x206 MTR (fix M4)
 
 // ── Heartbeat tracking (written by dispatch, checked by control) ─
 static std::atomic<int64_t>  g_last_sys_hb_us{0};      // 0x7FE SYS heartbeat timestamp
@@ -90,6 +91,7 @@ struct DispatchContext {
     int16_t steer_feedback_angle;
     bool has_mode = false;    // set true when 0x110 mode received (fix CRITICAL falsy check)
     bool has_brake = false;   // set true when 0x301 brake received (fix CRITICAL falsy check)
+    bool has_cmd = false;     // set true when 0x300 drive cmd received (fix falsy check)
 };
 
 static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& ctx) {
@@ -113,6 +115,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
     if (fr.id == can::kIdSyntreeEpsStatus) { g_ses_angle_raw.store(ctx.steer_feedback_angle); }
     if (fr.id == can::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
+    if (fr.id == can::kIdMtrMotorFbk && !is_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
 
     // 0x202 SES_ErrInfo — L3 fault bits (arch §7.3, fix #3)
     if (fr.id == can::kIdSyntreeEpsErrInfo && !is_high) {
@@ -148,6 +151,9 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     if (fr.id == can::kIdHostBrakeReq) {
         ctx.has_brake = true;
     }
+    if (fr.id == can::kIdHostDriveCmd) {
+        ctx.has_cmd = true;
+    }
 }
 
 [[noreturn]] static void t_dispatch(void*) {
@@ -159,7 +165,8 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         }
 
         bool is_high = (fr.id == can::kIdHostDriveCmd || fr.id == can::kIdHostBrakeReq
-                     || fr.id == can::kIdHostLightCmd || fr.id == can::kIdJetsonHeartbeat);
+                     || fr.id == can::kIdHostLightCmd || fr.id == can::kIdJetsonHeartbeat
+                     || fr.id == can::kIdHostObstacleDist);
 
         DispatchContext ctx{};
         process_frame(fr, is_high, ctx);
@@ -175,7 +182,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
             }
         }
         if (ctx.has_brake)   g_brake_request_kpa.store(ctx.brake_req_kpa);  // has_brake flag: 0=release is valid (fix CRITICAL falsy check)
-        if (ctx.cmd.speed_mmps) {
+        if (ctx.has_cmd) {
             xQueueOverwrite(g_cmd_q, &ctx.cmd);
             g_watchdog.feed(esp_timer_get_time());
             g_steering_disabled.store(false);
@@ -190,12 +197,11 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     SafetyResult r{};
 
     // 1. ESTOP flag from CAN 0x001 — zero everything, max brake, disable steering (fix H8)
-    if (g_estop_flag.load()) {
+    if (g_estop_flag.exchange(false)) {  // atomic read+clear, no TOCTOU race
         ESP_LOGW(TAG, "ESTOP flag set — zeroing setpoints, max brake");
         r.zero_setpoints = true;
         r.brake_kpa = shared::kMaxBrakeKpa;
         r.disable_steering = true;
-        g_estop_flag.store(false);
     }
 
     // 2. Mode from SYS 0x110 — zero setpoints in ESTOP mode
@@ -232,12 +238,13 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         if (actual_raw != INT16_MIN) {                      // valid reading
             int32_t diff = int32_t(cmd_raw) - int32_t(actual_raw);
             int32_t err_mdeg = (diff >= 0 ? diff : -diff) * 100;  // convert 0.1° → mdeg
-            constexpr int32_t kThresholdMdeg = static_cast<int32_t>(rt::kSteerFollowingErrDeg * 1000.0f);
+            float threshold_deg = rt::compute_following_error_threshold(g_mtr_actual_speed_mmps.load());
+            int32_t kThresholdMdeg = static_cast<int32_t>(threshold_deg * 1000.0f);
             constexpr int kTickLimit = rt::kSteerFollowingErrMs / (1000 / rt::kControlLoopHz);
             if (err_mdeg > kThresholdMdeg) {
                 if (++steer_follow_err_ticks >= kTickLimit) {
-                    ESP_LOGW(TAG, "Steer follow err >%.0f° for >%dms — ESTOP",
-                             rt::kSteerFollowingErrDeg, rt::kSteerFollowingErrMs);
+                    ESP_LOGW(TAG, "Steer follow err >%.1f° for >%dms — ESTOP",
+                             static_cast<double>(threshold_deg), rt::kSteerFollowingErrMs);
                     r.zero_setpoints = true;
                     r.brake_kpa = shared::kMaxBrakeKpa;
                     r.disable_steering = true;
@@ -261,6 +268,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
 
         rt::ResolvedSetpoint sp;
         g_physics.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
+        sp.cmd_gear = cmd.gear;  // propagate CAN gear override
 
         uint32_t obs = g_obstacle_mm.load();
         sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
@@ -272,7 +280,17 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
         }
 
-        int32_t obs_kpa = (obs <= shared::kObstacleStopMM) ? shared::kMaxBrakeKpa : 0;
+        // Obstacle→kPa: 300mm→5000, 3000mm→0, linear between
+        int32_t obs_kpa;
+        if (obs <= shared::kObstacleStopMM) {
+            obs_kpa = shared::kObstacleMaxKpa;
+        } else if (obs >= shared::kObstacleClearMM) {
+            obs_kpa = 0;
+        } else {
+            float t = static_cast<float>(obs - shared::kObstacleStopMM)
+                    / static_cast<float>(shared::kObstacleClearMM - shared::kObstacleStopMM);
+            obs_kpa = static_cast<int32_t>(shared::kObstacleMaxKpa * (1.0f - t));
+        }
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
         // ── Safety checks ──────────────────────────────────────────
@@ -319,8 +337,9 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
             t100 = xTaskGetTickCount();
             if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE) {
-                g_steering.set_target(sp.steer_angle_mdeg);  // feed resolved angle → 0x169
-                uint8_t gear = (sp.motor_speed_mmps > 0) ? uint8_t(can::Gear::D)
+                g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
+                uint8_t gear = (sp.cmd_gear != 0) ? sp.cmd_gear  // CAN override
+                             : (sp.motor_speed_mmps > 0) ? uint8_t(can::Gear::D)
                              : (sp.motor_speed_mmps < 0) ? uint8_t(can::Gear::R)
                              : uint8_t(can::Gear::N);
                 can::RtDriveCmd{sp.motor_speed_mmps, gear}.to_frame(fr);
