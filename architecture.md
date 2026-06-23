@@ -6,6 +6,8 @@ Four-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT
 
 Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. This ensures no single MCU failure takes both actuators, and AUTO-mode brake+steer are 1-hop from the kinematics engine. Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
 
+> **Autoware.Auto v0.0.4-alpha:** A new ROS 2 node on the Jetson (`autoware_vehicle_bridge`) provides Autoware.Auto topic compatibility (`AckermannControlCommand` in, `VelocityReport`/`SteeringReport` out). The CAN protocol across both buses is unchanged. See §5.1.
+
 ---
 
 ## 1. Topology
@@ -181,7 +183,7 @@ These messages serve only nodes on a single bus. RT neither forwards nor transla
 | Mode | Behavior |
 |------|----------|
 | **MANUAL** | Rider steers / rides throttle. **MTR** reads throttle ADC + gear sense → pass-through via MCP4725 + relays. Brake lever → SYS GPIO → CAN `0x7B9` → SEB. EPS-C standalone (RT idle). DC-DC on. Mode gated by SYS `0x110`. |
-| **AUTO** | Jetson `/cmd_vel` → high CAN `0x300` → RT kinematics → low CAN `0x204` (MTR: speed+gear) + `0x169` (EPS-C: angle). **MTR** drives MCP4725 + gear relays following `0x204`. Lights from Jetson via `0x302` (RT fwd). Brake via `0x7B9`. Mode gated by SYS `0x110`. |
+| **AUTO** | Jetson `AckermannControlCommand` → high CAN `0x300` → RT kinematics → low CAN `0x204` (MTR: speed+gear) + `0x169` (EPS-C: angle). **MTR** drives MCP4725 + gear relays following `0x204`. Lights from Jetson via `0x302` (RT fwd). Brake via `0x7B9`. Mode gated by SYS `0x110`. |
 | **ESTOP** | MCP4725 = 0 V, all gear outputs OFF, `0x7B9` stroke=max (full brake), steering ramps to 0° at 20°/s via active `0x169` (unless obstacle-triggered → hold then silent-stop), DC-DC ON (`0x012 enable=1` — maintains 12V for MCUs, CAN transceivers, brake light), 12V accessory relay OFF (kills headlight, turn signals, mode bulbs). Brake light ON (powered from always-on DC-DC rail, not through accessory relay). Exit: **START button** or **MODE long-press (3s)** → MANUAL. Steering ramp completes before 0x169 handoff (brake/motor/lights transition immediately; steering defers until centered). Or power-cycle. |
 
 ---
@@ -203,7 +205,7 @@ SYS → CAN 0x110       ──► MTR receives mode=Manual → ADC pass-through
 ### 4.2 Auto mode
 
 ```
-Jetson /cmd_vel ──► High CAN 0x300 ──► RT kinematics
+Jetson AckermannControlCommand ──► High CAN 0x300 ──► RT kinematics
                                           │
                ┌──────────────────────────┤
                ▼ (low CAN)                ▼ (low CAN)
@@ -228,7 +230,8 @@ SYS ────► Low CAN 0x7B9 → SEB (MANUAL/ESTOP only; RT sends in AUTO)
 | Concern | Jetson | RT | SYS | MTR |
 |---------|--------|-----|-----|-----|
 | Perception / planning | ✓ | | | |
-| ROS 2 → CAN bridge | ✓ | | | |
+| ROS 2 → CAN bridge (`AckermannControlCommand`) | ✓ | | | |
+| Autoware.Auto bridge (`autoware_vehicle_bridge`) | ✓ | | | |
 | CAN gateway (low ↔ high) | | ✓ | | |
 | Tricycle kinematics | | ✓ | | |
 | Steering angle compute + CAN TX (`0x169`) | | ✓ | | |
@@ -252,6 +255,20 @@ SYS ────► Low CAN 0x7B9 → SEB (MANUAL/ESTOP only; RT sends in AUTO)
 | Mode indicator lights | | | ✓ | |
 | Signal lights (turn, brake, head) | | | ✓ | |
 | System diagnostics | | | ✓ | |
+
+---
+
+### 5.1 Jetson Orin — Autoware.Auto ROS 2 Bridge (v0.0.4-alpha)
+
+A new ROS 2 lifecycle node (`autoware_vehicle_bridge`) at `jetson/src/autoware_vehicle_bridge/` provides Autoware.Auto topic compatibility. The CAN protocol on both buses is unchanged.
+
+**Subscriptions:** `autoware_auto_control_msgs/msg/AckermannControlCommand` → CAN `0x300`/`0x301`. `GearCommand`, `TurnIndicatorsCommand`, `HazardLightsCommand` → CAN `0x302`. `Engage` → internal state (false suppresses commands).
+
+**Publications:** `VelocityReport` ← CAN `0x120`. `SteeringReport` ← CAN `0x210`. `GearReport` ← CAN `0x210`. `ControlModeReport` ← CAN `0x210` + `0x011`.
+
+**Heartbeats:** Sends `0x7FC` at 2 Hz. Monitors `0x7FD` (1500ms timeout → stop publishing).
+
+**Node parameters:** `wheel_base: 1.5m`, `max_speed_forward: 3.0 m/s`, `max_steering_angle: 0.698 rad`, `max_brake_pressure_kpa: 5000`, `loop_rate: 100 Hz`, `command_timeout_ms: 500`.
 
 ---
 
@@ -618,7 +635,8 @@ namespace rt {
 constexpr float kWheelbaseMM = 1500.0f;
 // Steering (SYNTREE EPS-C)
 constexpr float kSteerHardLimitDeg = 40.0f;       // software hard-stop inside mechanical limit
-constexpr float kSteerFollowingErrDeg = 5.0f;     // following error threshold
+constexpr float kSteerFollowingErrMinDeg = 2.0f;   // floor threshold (was fixed 5.0)
+constexpr float kSteerFollowingErrFactor = 0.25f;  // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs = 300;        // duration before ESTOP
 constexpr int   kSteerCmdRateHz = 50;              // SYNTREE requires 20ms period
 constexpr int   kSteerBootWaitMs = 500;            // power-on delay before listening
