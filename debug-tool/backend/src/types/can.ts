@@ -315,3 +315,76 @@ function modeName(mode: number): string {
 function gearName(gear: number): string {
   return GEAR_OPTIONS.find((item) => item.value === gear)?.label ?? "?";
 }
+
+// ── Bus auto-detection ─────────────────────────────────────────────────
+
+/** CAN IDs that ONLY appear on the high bus — seeing any of these confirms the controller is on HIGH. */
+const HIGH_UNIQUE_IDS = new Set(
+  CAN_MESSAGES
+    .filter((m) => m.bus === "high")
+    .filter((m) => !CAN_MESSAGES.some((other) => other.bus === "low" && other.id === m.id))
+    .map((m) => m.id)
+);
+
+/** CAN IDs that ONLY appear on the low bus — seeing any of these confirms the controller is on LOW. */
+const LOW_UNIQUE_IDS = new Set(
+  CAN_MESSAGES
+    .filter((m) => m.bus === "low")
+    .filter((m) => !CAN_MESSAGES.some((other) => other.bus === "high" && other.id === m.id))
+    .map((m) => m.id)
+);
+
+export interface BusDetectorState {
+  detected: boolean;
+  bus: Bus;
+  confidence: "none" | "low" | "high";
+  highHits: number;
+  lowHits: number;
+}
+
+/**
+ * Auto-detects which physical CAN bus a controller is connected to
+ * by observing CAN IDs. Unique IDs (like 0x300 for high, 0x169 for low)
+ * are the fingerprint — seeing one confirms the bus assignment.
+ */
+export class BusDetector {
+  private highHits = 0;
+  private lowHits = 0;
+  private locked: Bus | null = null;
+
+  /** Feed a CAN ID to the detector. Returns the best-guess bus. */
+  feed(canId: string): Bus {
+    if (this.locked) return this.locked;
+
+    const id = normalizeCanId(canId);
+
+    if (HIGH_UNIQUE_IDS.has(id)) {
+      this.highHits += 1;
+      if (this.highHits >= 3) this.locked = "high";
+    } else if (LOW_UNIQUE_IDS.has(id)) {
+      this.lowHits += 1;
+      if (this.lowHits >= 3) this.locked = "low";
+    }
+
+    return this.locked ?? "high"; // default to high until detected
+  }
+
+  get state(): BusDetectorState {
+    if (this.locked) {
+      return { detected: true, bus: this.locked, confidence: "high", highHits: this.highHits, lowHits: this.lowHits };
+    }
+    if (this.highHits > 0 && this.lowHits === 0) {
+      return { detected: false, bus: "high", confidence: "low", highHits: this.highHits, lowHits: this.lowHits };
+    }
+    if (this.lowHits > 0 && this.highHits === 0) {
+      return { detected: false, bus: "low", confidence: "low", highHits: this.highHits, lowHits: this.lowHits };
+    }
+    return { detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 };
+  }
+
+  reset(): void {
+    this.highHits = 0;
+    this.lowHits = 0;
+    this.locked = null;
+  }
+}

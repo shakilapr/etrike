@@ -79,6 +79,12 @@
       <span class:good={$status.backend_online} class="status-pill">Backend {$status.backend_online ? "Online" : "Offline"}</span>
       <span class:good={$status.serial?.port_open} class="status-pill">Serial {$status.serial?.port_open ? "Open" : "Closed"}</span>
       <span class:good={$status.esp32_connected} class="status-pill">ESP32 {$status.esp32_connected ? "Online" : "Offline"}</span>
+      {#if $status.bus_detection}
+        {@const bd = $status.bus_detection}
+        <span class:good={bd.confidence === "high"} class="status-pill">
+          Bus: {bd.bus.toUpperCase()}{bd.confidence === "high" ? " ✓" : bd.confidence === "low" ? " ?" : " …"}
+        </span>
+      {/if}
     </div>
   </header>
 
