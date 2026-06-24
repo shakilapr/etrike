@@ -334,7 +334,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // Architecture §8.6: if 0x204 stale >200ms → zero speed + neutral
             TickType_t now = xTaskGetTickCount();
             TickType_t last = g_last_setpoint_tick.load(std::memory_order_relaxed);
-            if ((now - last) >= pdMS_TO_TICKS(200)) {
+            if ((now - last) >= pdMS_TO_TICKS(sys::kSetpointStaleMs)) {
                 g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
                 g_setpoint_gear.store(0, std::memory_order_relaxed);
             }
