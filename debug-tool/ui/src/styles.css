@@ -456,17 +456,15 @@ pre {
   font-size: 0.82rem;
 }
 
-/* ── Keyboard card (Injector) ── */
+/* ── Keyboard hints (Injector) ── */
 .kb-card {
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  margin-top: 14px;
-  padding: 10px 12px;
+  border-top: 1px solid var(--panel-border);
+  margin-top: 16px;
+  padding-top: 12px;
 }
 
 .kb-head {
-  color: var(--accent);
+  color: var(--muted);
   display: block;
   font-size: 0.72rem;
   font-weight: 700;
@@ -483,7 +481,7 @@ pre {
 
 .kb-grid span {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
@@ -493,7 +491,7 @@ kbd {
   border-radius: 3px;
   color: var(--fg);
   font-family: inherit;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   padding: 1px 5px;
 }
