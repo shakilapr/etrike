@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {

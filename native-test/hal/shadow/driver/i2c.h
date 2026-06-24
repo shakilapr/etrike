@@ -33,7 +33,7 @@ struct i2c_config_t {
 #define ACK_CHECK_EN                     0x1
 #define ACK_CHECK_DIS                    0x0
 
-/* ── API stubs ─────────────────────────────────────────────────── */
+/* ── API stubs (C linkage — callable from firmware) ──────────── */
 int i2c_param_config(i2c_port_t, const i2c_config_t*);
 int i2c_driver_install(i2c_port_t, int, int, int, int, int);
 int i2c_master_write_to_device(i2c_port_t, uint8_t addr,
@@ -47,17 +47,20 @@ int i2c_master_write_read_device(i2c_port_t, uint8_t addr,
                                  uint8_t* rdata, size_t rlen,
                                  int timeout_ms);
 
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
 /*
- * Test harness API:
- *   i2c_test_get_last_write(port, addr) — returns bytes last written to device.
- *   i2c_test_set_read_response(port, addr, data, len) — sets data for next read.
+ * Test harness API (C++ only — uses std::vector).
+ *   i2c_test_get_last_write(port, addr) — returns bytes last written.
+ *   i2c_test_set_read_response(port, addr, data, len) — sets response for next read.
+ *   i2c_test_reset() — clears all virtual state.
  */
+#ifdef __cplusplus
 #include <vector>
 const std::vector<uint8_t>& i2c_test_get_last_write(i2c_port_t port, uint8_t addr);
 void i2c_test_set_read_response(i2c_port_t port, uint8_t addr,
                                 const uint8_t* data, size_t len);
 void i2c_test_reset(void);
-
-#ifdef __cplusplus
-}
 #endif

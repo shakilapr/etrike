@@ -111,11 +111,14 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x001` | SAFETY_ESTOP | RT (fwd), Jetson | Jetson, RT | 0 | (none) | Event | Highest |
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
+| `0x206` | MTR_MOTOR_FBK | RT (fwd) | Jetson | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
 | `0x210` | RT_STATE_RPT | RT | Jetson | 3 | u8 mode, u8 steer_valid, u8 reversing | 10 Hz | Low |
 | `0x220` | RT_PID_RPT | RT | Jetson | 6 | RESERVED — future closed-loop PID telemetry | — (inactive) | Low |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear | ≤100 Hz | Medium |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→ SYS) | 1 | u8 lights bitfield | Change | Medium |
+| `0x310` | STEER_DIAG | RT | Jetson | 8 | i16 angle (0.1°/bit), u8 fault, i16 motor_current, u16 ecu_temp | 10 Hz | Low |
+| `0x311` | BRAKE_DIAG | RT | Jetson | 8 | u16 pressure (0.05 MPa/bit), u8 fault, i16 motor_current, u16 ecu_temp | 10 Hz | Low |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | u32 distance_mm | 10 Hz | Low |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | diag struct | 1 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | u8 alive_ctr | 2 Hz | Lowest |
@@ -264,9 +267,9 @@ SYS ────► Low CAN 0x7B9 → SEB (MANUAL/ESTOP only; RT sends in AUTO)
 
 A new ROS 2 lifecycle node (`autoware_vehicle_bridge`) at `jetson/src/autoware_vehicle_bridge/` provides Autoware.Auto topic compatibility. The CAN protocol on both buses is unchanged.
 
-**Subscriptions:** `autoware_auto_control_msgs/msg/AckermannControlCommand` → CAN `0x300`/`0x301`. `GearCommand`, `TurnIndicatorsCommand`, `HazardLightsCommand` → CAN `0x302`. `Engage` → internal state (false suppresses commands).
+**Subscriptions:** `AckermannControlCommand` → CAN `0x300`/`0x301`. `GearCommand`, `TurnIndicatorsCommand`, `HazardLightsCommand` → CAN `0x302`. `ControlModeCommand` → Engage state (AUTONOMOUS→engaged, MANUAL→stops commands; physical mode gated by SYS MODE button). `VehicleEmergencyStamped` → CAN `0x001` ESTOP (rate-limited: 1 per 500ms). `Engage` → internal state (false suppresses commands).
 
-**Publications:** `VelocityReport` ← CAN `0x120`. `SteeringReport` ← CAN `0x210`. `GearReport` ← CAN `0x210`. `ControlModeReport` ← CAN `0x210` + `0x011`.
+**Publications:** `VelocityReport` ← CAN `0x120`. `SteeringReport` ← CAN `0x310`. `GearReport` ← CAN `0x206` (primary: MTR_GearState N/D/S/R) + `0x210` (fallback: reversing flag). `ControlModeReport` ← CAN `0x210` + `0x011`. `TurnIndicatorsReport` / `HazardLightsReport` ← CAN `0x011` byte 2 (SYS light state, open-loop echo fallback until SYS updated). `VehicleKinematicState` ← dead reckoning from CAN `0x120` + `0x310` (drifts without absolute reference; full encoder+IMU odometry deferred to gap #5).
 
 **Heartbeats:** Sends `0x7FC` at 2 Hz. Monitors `0x7FD` (1500ms timeout → RCLCPP_WARN_THROTTLE). RT's own staleness watchdog (500ms) stops the vehicle independently.
 
@@ -408,8 +411,11 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | High | `0x001` | SAFETY_ESTOP (fwd) | — | Event |
 | High | `0x011` | SYS_SAFETY_STS (fwd) | `{u8 estop, u8 hb_ok}` | 5 Hz |
 | High | `0x120` | SYS_THROTTLE_STS (fwd) | `i16 speed_mmps` | 100 Hz |
+| High | `0x206` | MTR_MOTOR_FBK (fwd) | `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | 50 Hz |
 | High | `0x210` | RT_STATE_RPT | `{u8 mode, u8 steer_valid, u8 reversing}` | 10 Hz |
 | High | `0x220` | RT_PID_RPT | RESERVED (inactive until encoders fitted) | — |
+| High | `0x310` | STEER_DIAG | `{i16 angle, u8 fault, i16 motor_current, u16 ecu_temp, u8 reserved}` (8 bytes) | 10 Hz |
+| High | `0x311` | BRAKE_DIAG | `{u16 pressure, u8 fault, i16 motor_current, u16 ecu_temp, u8 reserved}` (8 bytes) | 10 Hz |
 | High | `0x400` | RT_OBSTACLE_RPT | `u32 distance_mm` | 10 Hz |
 | High | `0x600` | SYS_DIAG_RPT (fwd) | 8 bytes | 1 Hz |
 | High | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | 2 Hz |

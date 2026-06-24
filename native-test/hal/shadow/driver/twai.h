@@ -16,8 +16,8 @@ extern "C" {
 /* ── types matching ESP-IDF twai.h ─────────────────────────────── */
 
 typedef int twai_mode_t;
-#define TWAI_MODE_NORMAL  0
-#define TWAI_MODE_NO_ACK  1
+#define TWAI_MODE_NORMAL      0
+#define TWAI_MODE_NO_ACK      1
 #define TWAI_MODE_LISTEN_ONLY 2
 
 typedef int gpio_num_t;
@@ -49,12 +49,17 @@ struct twai_filter_config_t {
     bool single_filter;
 };
 
+/* TWAI message — host-compatible version.
+   On real ESP32, this uses bitfields inside a union. On host we keep it simple:
+   the fields that firmware code accesses directly (extd, rtr, ss, self, data_length_code,
+   identifier, data[8]) are present. The flags union is preserved for code that accesses it. */
 struct twai_message_t {
-    uint32_t identifier;
-    uint8_t  data_length_code;
-    uint8_t  data[8];
+    // Use a simple uint32_t for flags. Firmware code accesses .extd, .rtr, .ss, .self
+    // via the flags field. When host code needs to access these, it can read .flags.
     union {
         uint32_t flags;
+        // Anonymous bitfield struct (GNU extension, supported by GCC/MinGW).
+        // Members are promoted to struct scope.
         struct {
             unsigned extd : 1;
             unsigned rtr  : 1;
@@ -62,10 +67,9 @@ struct twai_message_t {
             unsigned self : 1;
         };
     };
-    // Convenience
-    bool extd;
-    bool self;
-    bool ss;
+    uint32_t identifier;
+    uint8_t  data_length_code;
+    uint8_t  data[8];
 };
 
 struct twai_status_info_t {
