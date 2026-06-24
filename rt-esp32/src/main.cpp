@@ -399,7 +399,9 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             // 0x169 VCU_SES_REQ at 50 Hz — steering state machine gates transmission.
             // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
             // Silent in BOOT_WAIT, LISTEN_SYNC, FAULT, and MANUAL mode.
-            if (g_mode_from_sys.load() == uint8_t(can::Mode::Auto)) {
+            // Allow in AUTO (active steering) and ESTOP (centering ramp per §7.6 gap #3).
+            // Only block in MANUAL — EPS-C runs standalone, RT must not command.
+            if (g_mode_from_sys.load() != uint8_t(can::Mode::Manual)) {
                 can::VcuSesReq ses;
                 uint32_t now_ms = esp_timer_get_time() / 1000;
                 if (g_steering.tick(g_ses_angle_raw.load(), g_ses_angle_status.load(),
