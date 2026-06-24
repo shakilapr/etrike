@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { HardwareBridge } from "../bridge/types";
 import type { DebugStore } from "../db/queries";
-import type { SerialBridge } from "../serial/reader";
 import { findMessage, INJECTION_TEMPLATES, normalizeBus, normalizeCanId, validateDataBytes } from "../types/can";
 
 const busSchema = z.enum(["high", "low"]);
@@ -32,7 +32,7 @@ const periodicSchema = z.discriminatedUnion("action", [
   })
 ]);
 
-export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, serial: SerialBridge): void {
+export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, bridge: HardwareBridge): void {
   app.get("/api/templates", async () => ({ templates: INJECTION_TEMPLATES }));
   app.get("/api/cmd/history", async () => ({ injections: store.listInjections() }));
 
@@ -55,7 +55,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, s
 
     store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued" });
     try {
-      serial.sendCommand({ cmd: "send", bus, id, dlc: parsed.data.dlc, data });
+      bridge.sendCommand({ cmd: "send", bus, id, dlc: parsed.data.dlc, data });
     } catch (error) {
       store.updateLatestInjectionStatus("error");
       return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
@@ -77,7 +77,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, s
 
     if (parsed.data.action === "stop") {
       try {
-        serial.sendCommand({ cmd: "send_periodic", action: "stop", bus, id });
+        bridge.sendCommand({ cmd: "send_periodic", action: "stop", bus, id });
       } catch (error) {
         return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
       }
@@ -93,7 +93,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, s
 
     store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued" });
     try {
-      serial.sendCommand({ cmd: "send_periodic", action: "start", bus, id, dlc: parsed.data.dlc, data, interval_ms: parsed.data.interval_ms, count: parsed.data.count });
+      bridge.sendCommand({ cmd: "send_periodic", action: "start", bus, id, dlc: parsed.data.dlc, data, interval_ms: parsed.data.interval_ms, count: parsed.data.count });
     } catch (error) {
       store.updateLatestInjectionStatus("error");
       return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
