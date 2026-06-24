@@ -100,11 +100,11 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 
 ---
 
-## 3. CAN Message Catalog — 37 IDs (13 high + 24 low)
+## 3. CAN Message Catalog — 37 IDs (15 high + 22 low)
 
 > **Source of truth:** `backend/src/types/can.ts` `CAN_MESSAGES` array. The frontend catalog (`ui/src/lib/can-decoder.ts`) currently mirrors 35 of these (13 high + 22 low) — 0x310 and 0x311 are backend-only pending a frontend sync. Any new CAN ID must be added to both files plus the YAML signal dictionary.
 
-### 3.1 High-Level CAN Bus (13 IDs)
+### 3.1 High-Level CAN Bus (15 IDs)
 
 | ID | Name | Sender | Period | DLC | Decoded Fields | Inject |
 |----|------|--------|--------|-----|----------------|--------|
@@ -117,12 +117,14 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 | `0x300` | HOST_DRIVE_CMD | Jetson | ≤100 Hz | 8 | `speed_mmps`, `yaw_rate_mrad_s`, `gear` | ✅ |
 | `0x301` | HOST_BRAKE_REQ | Jetson | Demand | 4 | `brake_pressure_kpa` | ✅ |
 | `0x302` | HOST_LIGHT_CMD | Jetson | Change | 1 | `left_turn`, `right_turn`, `brake_light`, `headlight` | ✅ |
+| `0x310` | STEER_DIAG | RT | 10 Hz | 8 | Angle, fault, motor current, ECU temp | — |
+| `0x311` | BRAKE_DIAG | RT | 10 Hz | 8 | Pressure, fault, motor current, ECU temp | — |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | 10 Hz | 4 | `distance_mm` | ✅ |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | 1 Hz | 8 | `mode`, `brake_engaged`, `hb_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` | — |
 | `0x7FC` | JETSON_HEARTBEAT | Jetson | 2 Hz | 1 | `alive_ctr` | ✅ |
 | `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | 1 | `alive_ctr` | — |
 
-### 3.2 Low-Level CAN Bus (24 IDs)
+### 3.2 Low-Level CAN Bus (22 IDs)
 
 | ID | Name | Sender | Period | DLC | Decoded Fields | Inject |
 |----|------|--------|--------|-----|----------------|--------|
@@ -139,8 +141,6 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 | `0x205` | RT_BRAKE_CMD | RT | 50 Hz | 4 | `brake_pressure_kpa` | ✅ |
 | `0x206` | MTR_MOTOR_FBK | MTR | 50 Hz | 4 | `actual_speed_mmps`, `gear_state`, `fault_flags` | ✅ |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | Change | 1 | light bitfield | ✅ |
-| `0x310` | STEER_DIAG | RT | 10 Hz | 8 | `SteerDiag_Angle0_1deg`, `SteerDiag_Fault`, `SteerDiag_MotorCurrent`, `SteerDiag_ECUTemp` | — |
-| `0x311` | BRAKE_DIAG | RT | 10 Hz | 8 | `BrakeDiag_PressureRaw`, `BrakeDiag_Fault`, `BrakeDiag_MotorCurrent`, `BrakeDiag_ECUTemp` | — |
 | `0x600` | SYS_DIAG_RPT | SYS | 1 Hz | 8 | `mode`, `brake_engaged`, `hb_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` | — |
 | `0x6FA` | SES_Test | EPS-C | 100 Hz | 8 | motor current, ECU temp, supply voltage | — |
 | `0x6FB` | SEB_Test | SEB | 100 Hz | 8 | motor current, ECU temp, supply voltage | — |
@@ -240,7 +240,7 @@ The `bus` field is `"high"` or `"low"`. Each frame is published to a topic that 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/api/status` | Backend health + ESP32 connected + uptime + bus stats |
-| `GET` | `/api/can/ids` | All CAN IDs (37: 13 high + 24 low) with names, bus, DLC, field defs, enum labels |
+| `GET` | `/api/can/ids` | All CAN IDs (37: 15 high + 22 low) with names, bus, DLC, field defs, enum labels |
 | `GET` | `/api/can/frames` | Query history: `?bus=low&id=0x204&since=<ts>&limit=500` |
 | `GET` | `/api/can/stats` | Latest per-bus statistics |
 | `POST` | `/api/cmd/send` | Inject CAN frame: `{bus, id, dlc, data}` |
@@ -633,12 +633,15 @@ debug-tool/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── vite.config.ts
+│   ├── vitest.config.ts
 │   ├── index.html
 │   └── src/
-│       ├── App.svelte, main.ts
-│       ├── lib/{api.ts, ws.ts, can-decoder.ts}
-│       ├── components/{Dashboard,CanMonitor,CanInjector,Stats}.svelte
-│       └── stores/can.ts
+│       ├── App.svelte, main.ts, styles.css
+│       ├── lib/{api.ts, ws.ts, ws-types.ts, can-decoder.ts}
+│       ├── lib/can-decoder.test.ts     ← Vitest unit tests (pure functions)
+│       ├── components/{Dashboard,CanMonitor,CanInjector,Controller,Stats,PipelineView,UnitTest}.svelte
+│       └── stores/{can.ts, keyboard.ts}
+│           └── can.test.ts            ← Vitest unit tests (Svelte stores)
 │
 ├── debug-esp32/
 │   ├── platformio.ini
@@ -665,8 +668,5 @@ debug-tool/
     ├── package.json
     ├── playwright.config.ts
     └── tests/
-        ├── dashboard.spec.ts
-        ├── can-monitor.spec.ts
-        ├── can-inject.spec.ts
-        └── stats.spec.ts
+        └── debug-tool.spec.ts          ← 8 E2E tests (single file; planned per-tab split pending)
 ```

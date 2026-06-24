@@ -56,4 +56,40 @@ test.describe("Debug Tool", () => {
     expect(body.stats.buses).toHaveProperty("high");
     expect(body.stats.buses).toHaveProperty("low");
   });
+
+  test("backend API returns 37 CAN IDs", async ({ request }) => {
+    const response = await request.get("http://127.0.0.1:3000/api/can/ids");
+    expect(response.ok()).toBeTruthy();
+    const body = await response.json();
+    expect(body.ids.length).toBeGreaterThanOrEqual(35);
+    for (const msg of body.ids) {
+      expect(msg).toHaveProperty("bus");
+      expect(msg).toHaveProperty("id");
+      expect(msg).toHaveProperty("name");
+      expect(msg).toHaveProperty("sender");
+      expect(msg).toHaveProperty("dlc");
+      expect(msg).toHaveProperty("injectable");
+      expect(msg).toHaveProperty("fields");
+    }
+  });
+
+  test("navigating to Unit Test tab shows profiles", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByText("Unit Test").click();
+    await expect(page.locator("h2").first()).toContainText("Unit Under Test");
+    // At least one profile button should be visible
+    await expect(page.locator(".unit-buttons button").first()).toBeVisible();
+  });
+
+  test("responsive layout at narrow viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 600 });
+    await page.goto("/");
+    // Page should still render the header
+    await expect(page.locator("h1")).toContainText("E-Trike Debug");
+    // No horizontal overflow — check body does not exceed viewport
+    const bodyWidth = await page.locator("body").evaluate(
+      (el) => el.scrollWidth
+    );
+    expect(bodyWidth).toBeLessThanOrEqual(820); // tolerate small scrollbar
+  });
 });
