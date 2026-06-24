@@ -13,8 +13,8 @@ BO_ 1977 VCU_SEB_REQ: 8 SYS
  SG_ SEB_CtrlEnable : 1|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_CtrlMode : 2|1@1+ (1,0) [0|1] "enum" Vector__XXX
  SG_ SEB_AutoBrake : 3|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SEB_StrokeReq : 16|16@1+ (0.05000000000000000277555756156289135105907917022705078125,-30) [-5|27] "mm" Vector__XXX
- SG_ SEB_PressureReq : 24|8@1+ (0.05000000000000000277555756156289135105907917022705078125,0) [0|5] "MPa" Vector__XXX
+ SG_ SEB_StrokeReq : 16|16@1+ (0.05,-30) [-5|27] "mm" Vector__XXX
+ SG_ SEB_PressureReq : 24|8@1+ (0.05,0) [0|5] "MPa" Vector__XXX
  SG_ SEB_RollCntEnable : 48|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_ChecksumEnable : 49|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_RollCnt : 52|4@1+ (1,0) [0|15] "" Vector__XXX
@@ -26,8 +26,8 @@ BO_ 1825 SEB_STATUS: 8 SEB
  SG_ SEB_CtrlModeStatus : 2|2@1+ (1,0) [0|3] "" Vector__XXX
  SG_ SEB_AutoBrakeStatus : 4|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" Vector__XXX
- SG_ SEB_StrokeValue : 16|16@1+ (0.05000000000000000277555756156289135105907917022705078125,-30) [-5|27] "mm" Vector__XXX
- SG_ SEB_PressureValue : 24|8@1+ (0.05000000000000000277555756156289135105907917022705078125,0) [0|5] "MPa" Vector__XXX
+ SG_ SEB_StrokeValue : 16|16@1+ (0.05,-30) [-5|27] "mm" Vector__XXX
+ SG_ SEB_PressureValue : 24|8@1+ (0.05,0) [0|5] "MPa" Vector__XXX
  SG_ SEB_AngleValue : 40|16@1- (0.5,0) [-150|840] "" Vector__XXX
  SG_ SEB_RollCntEnStatus : 48|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_ChecksumEnStatus : 49|1@1+ (1,0) [0|1] "" Vector__XXX
@@ -60,8 +60,8 @@ BO_ 1841 SEB_ErrInfo: 8 SEB
  SG_ SEB_LowVoltCharging : 25|1@1+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 1857 SEB_Version: 8 SEB
- SG_ SEB_SW_Version : 0|8@1+ (0.01000000000000000020816681711721685132943093776702880859375,0) [0|2.54999999999999982236431605997495353221893310546875] "" Vector__XXX
- SG_ SEB_HW_Version : 8|8@1+ (0.1000000000000000055511151231257827021181583404541015625,0) [0|25.5] "" Vector__XXX
+ SG_ SEB_SW_Version : 0|8@1+ (0.01,0) [0|2.55] "" Vector__XXX
+ SG_ SEB_HW_Version : 8|8@1+ (0.1,0) [0|25.5] "" Vector__XXX
 
 BO_ 1787 SEB_Test: 8 SEB
  SG_ SEB_MtrCurr : 8|16@1- (0.0078125,0) [-255|255] "A" Vector__XXX

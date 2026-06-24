@@ -94,12 +94,22 @@ def build_database(proto: ProtocolDef, ecu_defs) -> CanMatrix:
 
 def write_dbc(db: CanMatrix, output_path: str | Path) -> int:
     """Write a CanMatrix to a .dbc file. Returns byte count."""
+    import re
     buf = BytesIO()
     canmatrix.formats.dbc.dump(db, buf)
+    text = buf.getvalue().decode("utf-8")
+    # Round excessive IEEE 754 float precision (canmatrix artifact)
+    def round_float(m):
+        val = float(m.group(0))
+        if abs(val) < 1e-10:
+            return "0"
+        # 6 significant digits is more than enough for CAN scaling
+        return f"{val:.6g}"
+    text = re.sub(r'(?<!\d)(?:\d+\.\d{15,}|0\.\d{10,})(?!\d)', round_float, text)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "wb") as f:
-        f.write(buf.getvalue())
-    return len(buf.getvalue())
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return len(text)
 
 
 def validate_dbc(dbc_path: str | Path) -> int:
