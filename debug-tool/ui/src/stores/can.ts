@@ -14,6 +14,7 @@ export const stats = writable<CanStats>({
 });
 export const status = writable<Partial<BackendStatus>>({
   backend_online: false,
+  adapter_connected: false,
   esp32_connected: false
 });
 export const wsConnected = writable(false);
