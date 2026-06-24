@@ -346,7 +346,7 @@ protocols:
   syntree_eps:
     byte_order: intel
     bus: "low"
-    output: rt-esp32/syntree_eps.dbc
+    output: shared/can/syntree_eps.dbc
     messages:
 
       # 0x169 — VCU_SES_REQ (RT -> EPS_C, 50 Hz continuous)
@@ -489,7 +489,7 @@ protocols:
   syntree_seb:
     byte_order: intel
     bus: "low"
-    output: sys-esp32/syntree_seb.dbc
+    output: shared/can/syntree_seb.dbc
     messages:
 
       # 0x7B9 — VCU_SEB_REQ (SYS -> SEB, 50 Hz continuous)
