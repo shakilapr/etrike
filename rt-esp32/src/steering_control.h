@@ -1,8 +1,10 @@
 #pragma once
 #include <cstdint>
 #include <algorithm>
+#include <cmath>
 #include "config.h"
 #include "can/can_protocol.h"
+#include "physics_model.h"
 namespace rt {
 enum class SteerState : uint8_t {
     BOOT_WAIT,            // 500ms power-on delay — do NOT transmit
@@ -23,6 +25,7 @@ public:
         m_sync_start_ms = 0;
         m_estop_hold_start_ms = 0;
         m_estop_hold_angle = 0;
+        m_estop_following_err_start_ms = 0;
     }
     SteerState state() const { return m_state; }
 
@@ -75,8 +78,24 @@ public:
             } else {
                 m_active_angle = 0;
                 // Ramp complete — hold at 0°, continue transmitting
-                // Stay in this state (holds at 0° indefinitely)
             }
+
+            // Gap C3: following-error check during ESTOP centering ramp.
+            // If mechanical jam causes >5° error for >1s, fall back to silent-stop.
+            if (ses_angle_raw != INT16_MIN) {
+                int16_t err = std::abs(m_active_angle - ses_angle_raw);
+                if (err > 50) {  // 5° = 50 in 0.1° units
+                    if (m_estop_following_err_start_ms == 0)
+                        m_estop_following_err_start_ms = now_ms;
+                    else if (now_ms - m_estop_following_err_start_ms > 1000) {
+                        m_state = SteerState::FAULT;
+                        return false;  // silent-stop — linkage likely jammed
+                    }
+                } else {
+                    m_estop_following_err_start_ms = 0;
+                }
+            }
+
             build_command(out);
             return true;  // continue transmitting during ramp
         }
@@ -115,11 +134,24 @@ public:
     void start_estop(bool obstacle_triggered) {
         if (m_state == SteerState::ACTIVE) {
             if (obstacle_triggered) {
-                m_state = SteerState::ESTOP_HOLD_THEN_SILENT;
-                m_estop_hold_angle = m_active_angle;
-                m_estop_hold_start_ms = 0;  // caller sets timestamp via next tick
+                // Gap #9: clamp hold angle to dynamic limit for current speed.
+                // If current angle exceeds limit, ramp to limit first, then hold.
+                float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
+                float max_deg = compute_dynamic_limit(speed_kmh);
+                int16_t max_raw = static_cast<int16_t>(max_deg * 10.0f);  // 0.1° units
+                int16_t hold_angle = std::clamp(m_active_angle, -max_raw, max_raw);
+                if (hold_angle != m_active_angle) {
+                    // Current angle exceeds dynamic limit → ramp to limit first
+                    m_state = SteerState::ESTOP_RAMP_TO_ZERO;
+                    m_active_angle = hold_angle;  // ramp target is the safe limit
+                } else {
+                    m_state = SteerState::ESTOP_HOLD_THEN_SILENT;
+                    m_estop_hold_angle = m_active_angle;
+                    m_estop_hold_start_ms = 0;
+                }
             } else {
                 m_state = SteerState::ESTOP_RAMP_TO_ZERO;
+                m_estop_following_err_start_ms = 0;
                 // ramp starts from current m_active_angle
             }
         }
@@ -175,5 +207,6 @@ private:
     uint32_t   m_sync_start_ms = 0;
     uint32_t   m_estop_hold_start_ms = 0;
     int16_t    m_estop_hold_angle = 0;
+    uint32_t   m_estop_following_err_start_ms = 0;
 };
 }
