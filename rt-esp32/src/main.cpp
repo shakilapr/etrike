@@ -43,7 +43,7 @@ static std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};    // measured speed fr
 
 // ── Heartbeat tracking (written by dispatch, checked by control) ─
 static std::atomic<int64_t>  g_last_sys_hb_us{0};      // 0x7FE SYS heartbeat timestamp
-static std::atomic<int64_t>  g_last_jetson_hb_us{0};   // 0x7FC Jetson heartbeat timestamp
+static std::atomic<int64_t>  g_last_host_hb_us{0};    // 0x7FC Host heartbeat timestamp
 
 // ── Telemetry atomics (written by control/dispatch, read by tx tasks) ─
 static std::atomic<int16_t>  g_last_cmd_angle_raw{0};   // commanded steering angle in 0.1° (fix #5)
@@ -105,8 +105,8 @@ struct DispatchContext {
 static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& ctx) {
     if (fr.id == can::kIdSysHeartbeat) {
         g_last_sys_hb_us.store(esp_timer_get_time());
-    } else if (fr.id == can::kIdJetsonHeartbeat) {
-        g_last_jetson_hb_us.store(esp_timer_get_time());
+    } else if (fr.id == can::kIdHostHeartbeat) {
+        g_last_host_hb_us.store(esp_timer_get_time());
     }
 
     rt::GatewayQueues q;
@@ -200,7 +200,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         }
 
         bool is_high = (fr.id == can::kIdHostDriveCmd || fr.id == can::kIdHostBrakeReq
-                     || fr.id == can::kIdHostLightCmd || fr.id == can::kIdJetsonHeartbeat
+                     || fr.id == can::kIdHostLightCmd || fr.id == can::kIdHostHeartbeat
                      || fr.id == can::kIdHostObstacleDist);
 
         DispatchContext ctx{};
@@ -255,10 +255,10 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         r.zero_setpoints = true;
     }
 
-    // 4. Jetson heartbeat timeout (arch §7.6: 1500ms → assisted stop)
-    int64_t jetson_hb = g_last_jetson_hb_us.load();
-    if (jetson_hb > 0 && (now - jetson_hb) > int64_t(shared::kHeartbeatTimeoutMsJetson) * 1000) {
-        ESP_LOGW(TAG, "Jetson heartbeat timeout — assisted stop brake=2000kPa");
+    // 4. Host heartbeat timeout (arch §7.6: 1500ms → assisted stop)
+    int64_t jetson_hb = g_last_host_hb_us.load();
+    if (jetson_hb > 0 && (now - jetson_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
+        ESP_LOGW(TAG, "Host heartbeat timeout — assisted stop brake=2000kPa");
         r.zero_setpoints = true;
         g_brake_request_kpa.store(shared::kAssistStopKpa);
     }
@@ -340,7 +340,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             sp = {};
 
             // Originate 0x001 ESTOP on internal fault detection (fix #5)
-            // Send on both buses — SYS, EPS-C, SEB, Jetson all listen for 0x001
+            // Send on both buses — SYS, EPS-C, SEB, Host all listen for 0x001
             can::Frame estop_frame;
             estop_frame.id = can::kIdSafetyEstop;
             estop_frame.dlc = 0;
@@ -476,11 +476,11 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         rpt.to_frame(fr);
         g_can_high.send(fr);
 
-        // 0x400 HOST_OBSTACLE_DIST — 10 Hz (Jetson→RT perception data)
+        // 0x400 HOST_OBSTACLE_DIST — 10 Hz (Host→RT perception data)
         can::HostObstacleDist{g_obstacle_mm.load()}.to_frame(fr);
         g_can_high.send(fr);
 
-        // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Jetson)
+        // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         {
             int16_t angle = g_ses_angle_raw.load();
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
@@ -488,7 +488,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             g_can_high.send(fr);
         }
 
-        // 0x311 BRAKE_DIAG — 10 Hz (v0.0.4: SEB telemetry for Jetson)
+        // 0x311 BRAKE_DIAG — 10 Hz (v0.0.4: SEB telemetry for Host)
         {
             uint16_t seb_pressure = g_seb_pressure_raw.load();
             uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;

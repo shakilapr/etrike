@@ -20,7 +20,7 @@ constexpr int kLowSpeedThreshMmps = 50;
 
 // Safety timeouts
 constexpr int kCmdStaleTimeoutMs = 500;
-constexpr int kHeartbeatTimeoutMsJetson = 1500;
+constexpr int kHeartbeatTimeoutMsHost = 1500;
 constexpr int kStartupGracePeriodMs = 3000;
 
 // Brake

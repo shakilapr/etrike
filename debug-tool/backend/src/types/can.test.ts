@@ -206,7 +206,7 @@ describe("decodeFrame", () => {
     });
   });
 
-  it("decodes 0x7FC JETSON_HEARTBEAT", () => {
+  it("decodes 0x7FC HOST_HEARTBEAT", () => {
     const result = decodeFrame("high", "0x7FC", [42]);
     expect(result).toEqual({ alive_ctr: 42 });
   });
@@ -663,7 +663,7 @@ describe("normalizeFrame", () => {
   it("decodes known frames", () => {
     const frame = normalizeFrame({ bus: "high", id: "0x7FC", data: [42], ts: 1000 });
     expect(frame.decoded).toEqual({ alive_ctr: 42 });
-    expect(frame.name).toBe("JETSON_HEARTBEAT");
+    expect(frame.name).toBe("HOST_HEARTBEAT");
   });
 });
 

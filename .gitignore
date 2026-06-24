@@ -50,6 +50,7 @@ _filelist.txt
 
 # ── Generated CMakeLists (PlatformIO manages its own) ────────────────
 CMakeLists.txt
+!native-test/CMakeLists.txt
 
 # ── Coverage & profiling ─────────────────────────────────────────────
 *.gcda

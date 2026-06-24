@@ -1,5 +1,5 @@
 /**
- * Scenario: Jetson sends drive command → RT produces 0x204 + 0x169
+ * Scenario: Host sends drive command → RT produces 0x204 + 0x169
  * → MTR responds with 0x120/0x206 → EPS-C responds with 0x201.
  */
 
@@ -8,12 +8,12 @@ import { SimulationRunner } from "../harness/runner.js";
 
 export const driveForward = {
   name: "Drive forward",
-  description: "Jetson sends 0x300 speed=2000, yaw=0, gear=D → verify full pipeline",
+  description: "Host sends 0x300 speed=2000, yaw=0, gear=D → verify full pipeline",
 
   configure(): Partial<SimConfig> {
     return {
       initialMode: "auto",
-      jetsonDriveCycle: [
+      hostDriveCycle: [
         { speedMmps: 0, yawRateMradS: 0, gear: 0, durationMs: 500 },
         { speedMmps: 2000, yawRateMradS: 0, gear: 1, durationMs: 5000 },
       ],

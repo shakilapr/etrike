@@ -1,7 +1,7 @@
 #pragma once
 // CAN protocol definitions — three-node distributed architecture.
 // Low-level CAN (500 kbit/s): RT, SYS, EPS-C, SEB, DC-DC converter.
-// High-level CAN (500 kbit/s): RT, Jetson.
+// High-level CAN (500 kbit/s): RT, Host.
 // RT bridges selected IDs between buses (§2.3 architecture.md).
 
 #include <cstdint>
@@ -16,29 +16,29 @@ namespace can {
 // ── Low-level bus (our IDs) ───────────────────────────────────────
 
 constexpr uint32_t kIdSafetyEstop       = 0x001;  // any→all, bridged to high
-constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Jetson), 5 Hz
+constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Host), 5 Hz
 constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→DC-DC converter, on change
 constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
-constexpr uint32_t kIdSysThrottleSts    = 0x120;  // MTR(STM32)→RT (→Jetson), 100 Hz (SYS_ prefix is historical)
+constexpr uint32_t kIdSysThrottleSts    = 0x120;  // MTR(STM32)→RT (→Host), 100 Hz (SYS_ prefix is historical)
 constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
 constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT→SYS brake pressure kPa, 50 Hz
-constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)→SYS+RT (→Jetson via RT forwarding), 50 Hz
+constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)→SYS+RT (→Host via RT forwarding), 50 Hz
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
-constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson via RT forwarding), 1 Hz
+constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Host via RT forwarding), 1 Hz
 constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
 constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 10 Hz
 
 // ── High-level bus (our IDs) ──────────────────────────────────────
 
-constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Jetson, 10 Hz
-constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Jetson, reserved (future PID)
-constexpr uint32_t kIdHostDriveCmd      = 0x300;  // Jetson→RT, ≤100 Hz
-constexpr uint32_t kIdHostBrakeReq      = 0x301;  // Jetson→RT, on demand
-constexpr uint32_t kIdHostObstacleDist  = 0x400;  // Jetson→RT, 10 Hz
-constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Jetson alive counter, 2 Hz
-constexpr uint32_t kIdJetsonHeartbeat   = 0x7FC;  // Jetson→RT alive counter, 2 Hz
-constexpr uint32_t kIdSteerDiag         = 0x310;  // RT→Jetson steering telemetry, 10 Hz
-constexpr uint32_t kIdBrakeDiag         = 0x311;  // RT→Jetson brake telemetry, 10 Hz
+constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Host, 10 Hz
+constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Host, reserved (future PID)
+constexpr uint32_t kIdHostDriveCmd      = 0x300;  // Host→RT, ≤100 Hz
+constexpr uint32_t kIdHostBrakeReq      = 0x301;  // Host→RT, on demand
+constexpr uint32_t kIdHostObstacleDist  = 0x400;  // Host→RT, 10 Hz
+constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Host alive counter, 2 Hz
+constexpr uint32_t kIdHostHeartbeat     = 0x7FC;  // Host→RT alive counter, 2 Hz
+constexpr uint32_t kIdSteerDiag         = 0x310;  // RT→Host steering telemetry, 10 Hz
+constexpr uint32_t kIdBrakeDiag         = 0x311;  // RT→Host brake telemetry, 10 Hz
 
 // ╔══════════════════════════════════════════════════════════════════════╗
 // ║  SYNTREE CAN IDs — factory-programmed, CANNOT be changed          ║
@@ -131,7 +131,7 @@ inline const char* mode_name(Mode m) {
 // ══ OUR payload structs (we control these) ══
 // ───────────────────────────────────────────────────────────────────
 
-// 0x011 SYS_SAFETY_STS — SYS→RT (→Jetson)
+// 0x011 SYS_SAFETY_STS — SYS→RT (→Host)
 struct SysSafetySts {
     bool estop_active = false;
     bool heartbeat_ok = false;   // RT alive counter incrementing
@@ -161,7 +161,7 @@ struct SysModeCmd {
     }
 };
 
-// 0x120 SYS_THROTTLE_STS — SYS→RT (→Jetson)
+// 0x120 SYS_THROTTLE_STS — SYS→RT (→Host)
 struct SysThrottleSts {
     int16_t speed_mmps = 0;
 
@@ -172,7 +172,7 @@ struct SysThrottleSts {
     }
 };
 
-// 0x310 STEER_DIAG — RT→Jetson steering telemetry @10Hz (v0.0.4)
+// 0x310 STEER_DIAG — RT→Host steering telemetry @10Hz (v0.0.4)
 struct SteerDiag {
     int16_t  angle_0_1deg;     // bytes 0-1: actual steering angle (0.1°/bit, offset -3000→subtract 30000)
     uint8_t  fault;            // byte 2: 0=OK, 1=EPS-C fault
@@ -193,7 +193,7 @@ struct SteerDiag {
     }
 };
 
-// 0x311 BRAKE_DIAG — RT→Jetson brake telemetry @10Hz (v0.0.4)
+// 0x311 BRAKE_DIAG — RT→Host brake telemetry @10Hz (v0.0.4)
 struct BrakeDiag {
     uint16_t pressure_raw;     // bytes 0-1: SEB pressure (SEB raw, 0.05 MPa/bit)
     uint8_t  fault;            // byte 2: 0=OK, 1=SEB fault
@@ -285,7 +285,7 @@ struct RtBrakeCmd {
     }
 };
 
-// 0x302 HOST_LIGHT_CMD — Jetson→RT (→SYS, forwarded)
+// 0x302 HOST_LIGHT_CMD — Host→RT (→SYS, forwarded)
 struct HostLightCmd {
     bool left_turn   = false;
     bool right_turn  = false;
@@ -339,7 +339,7 @@ struct VcuSebReq {
     }
 };
 
-// 0x600 SYS_DIAG_RPT — SYS→RT (→Jetson)
+// 0x600 SYS_DIAG_RPT — SYS→RT (→Host)
 struct SysDiagRpt {
     uint8_t  mode          = 0;
     bool     brake_engaged = false;
@@ -376,7 +376,7 @@ struct SysDiagRpt {
 // High-level CAN payload types
 // ───────────────────────────────────────────────────────────────────
 
-// 0x210 RT_STATE_RPT — RT→Jetson
+// 0x210 RT_STATE_RPT — RT→Host
 struct RtStateRpt {
     uint8_t mode        = 0;   // Mode enum
     bool    steer_valid = false;
@@ -390,7 +390,7 @@ struct RtStateRpt {
     }
 };
 
-// 0x220 RT_PID_RPT — RT→Jetson (reserved, inactive until encoders fitted)
+// 0x220 RT_PID_RPT — RT→Host (reserved, inactive until encoders fitted)
 struct RtPidRpt {
     int16_t speed_setpoint_mmps = 0;
     int16_t speed_measured_mmps = 0;
@@ -404,7 +404,7 @@ struct RtPidRpt {
     }
 };
 
-// 0x300 HOST_DRIVE_CMD — Jetson→RT
+// 0x300 HOST_DRIVE_CMD — Host→RT
 // Wire format: i32 speed (bytes 0-3), i24 yaw (bytes 4-6), u8 gear (byte 7). DLC=8.
 struct HostDriveCmd {
     int32_t speed_mmps      = 0;   // [-500, 3000]
@@ -430,7 +430,7 @@ struct HostDriveCmd {
     }
 };
 
-// 0x301 HOST_BRAKE_REQ — Jetson→RT
+// 0x301 HOST_BRAKE_REQ — Host→RT
 struct HostBrakeReq {
     int32_t brake_pressure_kpa = 0;
 
@@ -441,7 +441,7 @@ struct HostBrakeReq {
     }
 };
 
-// 0x400 HOST_OBSTACLE_DIST — Jetson→RT (perception pipeline)
+// 0x400 HOST_OBSTACLE_DIST — Host→RT (perception pipeline)
 struct HostObstacleDist {
     uint32_t distance_mm = 0;   // UINT32_MAX = no reading
 

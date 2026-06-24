@@ -32,7 +32,7 @@ constexpr canid_t CAN_BRAKE_REQ    = 0x301;
 constexpr canid_t CAN_LIGHT_CMD    = 0x302;
 constexpr canid_t CAN_DIAG_RPT     = 0x600;
 constexpr canid_t CAN_MOTOR_FBK   = 0x206;
-constexpr canid_t CAN_JETSON_HB    = 0x7FC;
+constexpr canid_t CAN_HOST_HB     = 0x7FC;
 constexpr canid_t CAN_RT_HB        = 0x7FD;
 
 // =====================================================================
@@ -239,9 +239,9 @@ bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndica
 bool CanEncoder::encode_heartbeat(struct can_frame & frame)
 {
   std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = CAN_JETSON_HB;
+  frame.can_id = CAN_HOST_HB;
   frame.len = 1;
-  frame.data[0] = jetson_alive_ctr_++;
+  frame.data[0] = host_alive_ctr_++;
   return true;
 }
 
@@ -369,10 +369,13 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("vehicle_bridge", options)
 {
   using autoware_auto_control_msgs::msg::AckermannControlCommand;
+  using autoware_auto_vehicle_msgs::msg::ControlModeCommand;
   using autoware_auto_vehicle_msgs::msg::Engage;
   using autoware_auto_vehicle_msgs::msg::GearCommand;
   using autoware_auto_vehicle_msgs::msg::HazardLightsCommand;
   using autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand;
+  using autoware_auto_vehicle_msgs::msg::VehicleKinematicState;
+  using tier4_vehicle_msgs::msg::VehicleEmergencyStamped;
 
   declare_parameter("wheel_base", 1.5);
   declare_parameter("max_speed_forward", 3.0);
@@ -461,6 +464,12 @@ CallbackReturn VehicleBridgeNode::on_configure(const State &)
 CallbackReturn VehicleBridgeNode::on_activate(const State &)
 {
   RCLCPP_INFO(get_logger(), "on_activate");
+  // Reopen CAN socket (was closed in on_deactivate)
+  if (!can_->is_open() && !can_->open(params_.can_interface)) {
+    RCLCPP_ERROR(get_logger(), "Failed to reopen CAN '%s'", params_.can_interface.c_str());
+    return CallbackReturn::FAILURE;
+  }
+
   pub_velocity_->on_activate();
   pub_steering_->on_activate();
   pub_gear_->on_activate();
@@ -577,7 +586,7 @@ void VehicleBridgeNode::on_control_mode(const autoware_auto_vehicle_msgs::msg::C
 
 void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr /*msg*/)
 {
-  // Rate-limited: max 1 ESTOP frame per 500ms from Jetson
+  // Rate-limited: max 1 ESTOP frame per 500ms from Host
   auto n = now();
   if ((n - last_estop_tx_).seconds() * 1000.0 < 500.0) return;
   last_estop_tx_ = n;
@@ -661,7 +670,7 @@ void VehicleBridgeNode::tick_heartbeat()
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "RT heartbeat LOST");
   }
 
-  // Send Jetson heartbeat
+  // Send Host heartbeat (0x7FC)
   struct can_frame frame;
   if (encoder_->encode_heartbeat(frame))
     can_->send(frame);
@@ -686,8 +695,10 @@ void VehicleBridgeNode::tick_diagnostics()
   add("Engage", engaged_, engaged_ ? "engaged" : "disengaged");
   add("RT Heartbeat", rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms),
       rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms) ? "alive" : "timeout");
-  add("SYS Heartbeat", sys_heartbeat_ok_ == 1, sys_heartbeat_ok_ ? "alive" : "timeout");
-  add("SYS ESTOP", sys_estop_active_ == 0, sys_estop_active_ ? "ACTIVE" : "clear");
+  uint8_t hb = sys_heartbeat_ok_.load(std::memory_order_relaxed);
+  uint8_t estop = sys_estop_active_.load(std::memory_order_relaxed);
+  add("SYS Heartbeat", hb == 1, hb ? "alive" : "timeout");
+  add("SYS ESTOP", estop == 0, estop ? "ACTIVE" : "clear");
 
   pub_diag_->publish(diag);
 }
@@ -760,8 +771,8 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
 
     case CAN_SAFETY_STS: {  // 0x011 — SYS liveness + light state (forwarded low→high)
       if (frame.len < 2) break;
-      sys_estop_active_ = frame.data[0];
-      sys_heartbeat_ok_ = frame.data[1];
+      sys_estop_active_.store(frame.data[0], std::memory_order_relaxed);
+      sys_heartbeat_ok_.store(frame.data[1], std::memory_order_relaxed);
 
       // Light state feedback (present when DLC ≥ 3, v0.0.5)
       if (frame.len >= 3) {

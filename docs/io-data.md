@@ -50,23 +50,12 @@ All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physic
 | `0x011` | SYS_SAFETY_STS | `SYS_EstopActive` | u8 bool | 0/1 | SYS → RT → Host |
 | `0x011` | SYS_SAFETY_STS | `SYS_HeartbeatOk` | u8 bool | 0/1 | SYS → RT → Host |
 | `0x120` | SYS_THROTTLE_STS | `SYS_ThrottleSpeed` | i16 (mm/s) | — | MTR → RT → Host |
-| `0x206` | MTR_MOTOR_FBK | `actual_speed_mmps` | i16 (mm/s) | — | MTR → RT → Host |
-| `0x206` | MTR_MOTOR_FBK | `gear_state` | u8 enum | {N=0,D=1,S=2,R=3} | MTR → RT → Host |
-| `0x206` | MTR_MOTOR_FBK | `fault_flags` | u8 bitmask | bit0=ESTOP_ACTIVE | MTR → RT → Host |
 | `0x210` | RT_STATE_RPT | `RT_Mode` | u8 enum | {0=Manual, 1=Auto, 2=ESTOP} | RT |
 | `0x210` | RT_STATE_RPT | `RT_SteerValid` | u8 bool | 0/1 | RT |
 | `0x210` | RT_STATE_RPT | `RT_Reversing` | u8 bool | 0/1 | RT |
 | `0x220` | RT_PID_RPT | `RT_PidSetpoint` | i16 (mm/s) | — | RT (reserved) |
 | `0x220` | RT_PID_RPT | `RT_PidMeasured` | i16 (mm/s) | — | RT (reserved) |
 | `0x220` | RT_PID_RPT | `RT_PidOutput` | i16 | — | RT (reserved) |
-| `0x310` | STEER_DIAG | `SteerDiag_Angle0_1deg` | i16 (0.1°/bit) | offset -3000 | RT |
-| `0x310` | STEER_DIAG | `SteerDiag_Fault` | u8 bool | 0/1 | RT |
-| `0x310` | STEER_DIAG | `SteerDiag_MotorCurrent` | i16 (0.01 A/bit) | — | RT |
-| `0x310` | STEER_DIAG | `SteerDiag_ECUTemp` | u16 (0.1°C/bit) | — | RT |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_PressureRaw` | u16 (0.05 MPa/bit) | — | RT |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_Fault` | u8 bool | 0/1 | RT |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_MotorCurrent` | i16 (0.01 A/bit) | — | RT |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_ECUTemp` | u16 (0.1°C/bit) | — | RT |
 | `0x400` | RT_OBSTACLE_RPT | `RT_ObstacleDistance` | u32 (mm) | — | RT |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagMode` | u8 | — | SYS → RT → Host |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagBrakeEngaged` | u8 bool | 0/1 | SYS → RT → Host |
@@ -112,11 +101,6 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x201` | SES_STATUS | `SES_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} | EPS-C |
 | `0x201` | SES_STATUS | `SES_StrAngle` | i16 (0.1°/bit) | [-780, 780] | EPS-C |
 | `0x201` | SES_STATUS | `EPS_SteeringWheel_Torq` | u8 (Nm) | — | EPS-C |
-| `0x201` | SES_STATUS | `SES_Tgt_StrAngleSpd` | i16 (0.5°/s/bit) | — | EPS-C |
-| `0x201` | SES_STATUS | `SES_RollCnt_Enable_Status` | bool | 0/1 | EPS-C |
-| `0x201` | SES_STATUS | `SES_CheckSum_Enable_Status` | bool | 0/1 | EPS-C |
-| `0x201` | SES_STATUS | `SES_RollCnt_Status` | u8 (low 4 bits) | 0–15 | EPS-C |
-| `0x201` | SES_STATUS | `SES_CheckSum_Status` | u8 | XOR over bytes 0–6 | EPS-C |
 | `0x7FE` | SYS_HEARTBEAT | `alive_ctr` | u8 | — | SYS |
 
 ### 2.2 CAN Inputs — RT receives (high-side bus, via MCP2515)
@@ -164,7 +148,6 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x169` | VCU_SES_REQ | `checksum_enable` | bool | must be 1 | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_RollCnt` | u8 (low 4 bits) | 0–15 rolling | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_CheckSum` | u8 | XOR over bytes 0–6 | 50 Hz | EPS-C |
-| `0x169` | VCU_SES_REQ | `VCU_Veh_Spd_Value` | u8 (km/h) | 0–255 | 50 Hz | EPS-C |
 | `0x302` | HOST_LIGHT_CMD (fwd) | light bits | u8 bitmask | — | on change | SYS |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | 2 Hz | SYS |
 
@@ -175,23 +158,12 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x011` | SYS_SAFETY_STS (fwd) | `SYS_EstopActive` | u8 bool | 0/1 | 5 Hz | Host |
 | `0x011` | SYS_SAFETY_STS (fwd) | `SYS_HeartbeatOk` | u8 bool | 0/1 | 5 Hz | Host |
 | `0x120` | SYS_THROTTLE_STS (fwd) | `SYS_ThrottleSpeed` | i16 (mm/s) | — | 100 Hz | Host |
-| `0x206` | MTR_MOTOR_FBK (fwd) | `actual_speed_mmps` | i16 (mm/s) | — | 50 Hz | Host |
-| `0x206` | MTR_MOTOR_FBK (fwd) | `gear_state` | u8 enum | {N,D,S,R} | 50 Hz | Host |
-| `0x206` | MTR_MOTOR_FBK (fwd) | `fault_flags` | u8 bitmask | — | 50 Hz | Host |
 | `0x210` | RT_STATE_RPT | `RT_Mode` | u8 enum | {M,A,ESTOP} | 10 Hz | Host |
 | `0x210` | RT_STATE_RPT | `RT_SteerValid` | u8 bool | 0/1 | 10 Hz | Host |
 | `0x210` | RT_STATE_RPT | `RT_Reversing` | u8 bool | 0/1 | 10 Hz | Host |
 | `0x220` | RT_PID_RPT | `RT_PidSetpoint` | i16 (mm/s) | — | reserved | Host |
 | `0x220` | RT_PID_RPT | `RT_PidMeasured` | i16 (mm/s) | — | reserved | Host |
 | `0x220` | RT_PID_RPT | `RT_PidOutput` | i16 | — | reserved | Host |
-| `0x310` | STEER_DIAG | `SteerDiag_Angle0_1deg` | i16 (0.1°/bit) | — | 10 Hz | Host |
-| `0x310` | STEER_DIAG | `SteerDiag_Fault` | u8 bool | — | 10 Hz | Host |
-| `0x310` | STEER_DIAG | `SteerDiag_MotorCurrent` | i16 (0.01 A/bit) | — | 10 Hz | Host |
-| `0x310` | STEER_DIAG | `SteerDiag_ECUTemp` | u16 (0.1°C/bit) | — | 10 Hz | Host |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_PressureRaw` | u16 (0.05 MPa/bit) | — | 10 Hz | Host |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_Fault` | u8 bool | — | 10 Hz | Host |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_MotorCurrent` | i16 (0.01 A/bit) | — | 10 Hz | Host |
-| `0x311` | BRAKE_DIAG | `BrakeDiag_ECUTemp` | u16 (0.1°C/bit) | — | 10 Hz | Host |
 | `0x400` | RT_OBSTACLE_RPT | `RT_ObstacleDistance` | u32 (mm) | — | 10 Hz | Host |
 | `0x600` | SYS_DIAG_RPT (fwd) | 8-byte diagnostic struct | struct | — | 1 Hz | Host |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | 2 Hz | Host |
@@ -226,13 +198,9 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 | `0x721` | SEB_STATUS | `SEB_Alignment_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_Control_Enable_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_Control_Mode_Status` | u8 enum | — | SEB |
-| `0x721` | SEB_STATUS | `SEB_AutoBrake_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} | SEB |
 | `0x721` | SEB_STATUS | `SEB_Stroke_Value` | u16 (0.05 mm/bit) | offset -30 mm | SEB |
 | `0x721` | SEB_STATUS | `SEB_Pressure_Value` | u8 (0.05 MPa/bit) | — | SEB |
-| `0x721` | SEB_STATUS | `SEB_Angle_Value` | i16 (0.5°/bit) | [-150, 840] | SEB |
-| `0x721` | SEB_STATUS | `SEB_RollCnt_Enable_Status` | bool | 0/1 | SEB |
-| `0x721` | SEB_STATUS | `SEB_CheckSum_Enable_Status` | bool | 0/1 | SEB |
 | `0x721` | SEB_STATUS | `SEB_RollCnt_Status` | u8 (low 4 bits) | — | SEB |
 | `0x721` | SEB_STATUS | `SEB_CheckSum_Status` | u8 | — | SEB |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | RT |
@@ -287,7 +255,7 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 
 ## 4. MTR (STM32)
 
-Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole owner of all motor-related I/O. Active in all modes — behavior gated by `0x110 SYS_MODE_CMD` from SYS.
+Role: dedicated mo000000000000000000000000000000000000000000000000000000000000tor controller (EGAS Level 1 — Function Controller). Sole owner of all motor-related I/O. Active in all modes — behavior gated by `0x110 SYS_MODE_CMD` from SYS.
 
 ### 4.0 Mode-Gated Behavior
 
@@ -353,7 +321,6 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 | `VCU_SES_Control_Mode` | u8 | — |
 | `VCU_SES_Tgt_StrAngle` | i16 (0.1°/bit) | [-780, 780] |
 | `VCU_SES_Tgt_StrAngleSpd` | u8 (°/s) | — |
-| `VCU_Veh_Spd_Value` | u8 (km/h) | 0–255 |
 | `roll_cnt_enable` | bool | must be 1 |
 | `checksum_enable` | bool | must be 1 |
 | `VCU_SES_RollCnt` | u8 (low 4 bits) | 0–15 |
@@ -367,12 +334,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 | `SES_Control_Mode_Status` | u8 enum | — |
 | `SES_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} |
 | `SES_StrAngle` | i16 (0.1°/bit) | — |
-| `SES_Tgt_StrAngleSpd` | i16 (0.5°/s/bit) | — |
 | `EPS_SteeringWheel_Torq` | u8 (Nm) | — |
-| `SES_RollCnt_Enable_Status` | bool | 0/1 |
-| `SES_CheckSum_Enable_Status` | bool | 0/1 |
-| `SES_RollCnt_Status` | u8 (low 4 bits) | 0–15 |
-| `SES_CheckSum_Status` | u8 | XOR over bytes 0–6 |
 
 ### 5.2 SYNTREE SEB (Brake Actuator)
 
@@ -382,7 +344,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 |----------|------|-------|
 | `VCU_SEB_Alignment_Enable` | bool | 0/1 |
 | `VCU_SEB_Control_Enable` | bool | 0/1 |
-| `VCU_SEB_Control_Mode` | bool | 0=Stroke, 1=Pressure |
+| `VCU_SEB_Control_Mode` | u8 enum | {1=stroke, 2=pressure} |
 | `VCU_SEB_AutoBrake` | bool | 0/1 |
 | `VCU_SEB_Stroke_Value_Req` | u16 (0.05 mm/bit) | offset -30 mm |
 | `VCU_SEB_Pre_Value_Req` | u8 (0.05 MPa/bit) | — |
@@ -398,13 +360,9 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). Sole ow
 | `SEB_Alignment_Status` | bool | 0/1 |
 | `SEB_Control_Enable_Status` | bool | 0/1 |
 | `SEB_Control_Mode_Status` | u8 enum | — |
-| `SEB_AutoBrake_Status` | bool | 0/1 |
 | `SEB_Error_Status` | u8 enum | {0=N, 1=L1, 2=L2, 3=L3} |
 | `SEB_Stroke_Value` | u16 (0.05 mm/bit) | — |
 | `SEB_Pressure_Value` | u8 (0.05 MPa/bit) | — |
-| `SEB_Angle_Value` | i16 (0.5°/bit) | [-150, 840] |
-| `SEB_RollCnt_Enable_Status` | bool | 0/1 |
-| `SEB_CheckSum_Enable_Status` | bool | 0/1 |
 | `SEB_RollCnt_Status` | u8 (low 4 bits) | — |
 | `SEB_CheckSum_Status` | u8 | — |
 

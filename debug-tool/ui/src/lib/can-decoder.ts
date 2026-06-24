@@ -128,10 +128,10 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("high", "0x206", "MTR_MOTOR_FBK", "RT (fwd)", "50 Hz", 4, true, motorFeedbackFields),
   msg("high", "0x210", "RT_STATE_RPT", "RT", "10 Hz", 3, true, [modeField, bool("steer_valid", "Steer valid"), bool("reversing", "Reversing")]),
   msg("high", "0x220", "RT_PID_RPT", "RT", "reserved", 6, false, [num("speed_setpoint", "Setpoint", "mm/s"), num("speed_measured", "Measured", "mm/s"), num("pid_output", "PID output")]),
-  msg("high", "0x300", "HOST_DRIVE_CMD", "Jetson", "<=100 Hz", 8, true, [num("speed_mmps", "Speed", "mm/s", -500, 3000, 10), num("yaw_rate_mrad_s", "Yaw rate", "mrad/s", -3000, 3000, 10), gearField]),
-  msg("high", "0x301", "HOST_BRAKE_REQ", "Jetson", "demand", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
-  msg("high", "0x302", "HOST_LIGHT_CMD", "Jetson", "change", 1, true, lightFields),
-  msg("high", "0x400", "HOST_OBSTACLE_DIST", "Jetson", "10 Hz", 4, true, [num("distance_mm", "Distance", "mm", 0, 4294967295, 10)]),
+  msg("high", "0x300", "HOST_DRIVE_CMD", "Host", "<=100 Hz", 8, true, [num("speed_mmps", "Speed", "mm/s", -500, 3000, 10), num("yaw_rate_mrad_s", "Yaw rate", "mrad/s", -3000, 3000, 10), gearField]),
+  msg("high", "0x301", "HOST_BRAKE_REQ", "Host", "demand", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
+  msg("high", "0x302", "HOST_LIGHT_CMD", "Host", "change", 1, true, lightFields),
+  msg("high", "0x400", "HOST_OBSTACLE_DIST", "Host", "10 Hz", 4, true, [num("distance_mm", "Distance", "mm", 0, 4294967295, 10)]),
   msg("high", "0x310", "STEER_DIAG", "RT", "10 Hz", 8, false, [
     num("SteerDiag_Angle0_1deg", "Angle", "deg", -700, 700),
     bool("SteerDiag_Fault", "Fault"),
@@ -145,7 +145,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
     num("BrakeDiag_ECUTemp", "ECU temp", "degC", -40, 215),
   ]),
   msg("high", "0x600", "SYS_DIAG_RPT", "RT (fwd)", "1 Hz", 8, false, diagFields),
-  msg("high", "0x7FC", "JETSON_HEARTBEAT", "Jetson", "2 Hz", 1, true, heartbeatFields),
+  msg("high", "0x7FC", "HOST_HEARTBEAT", "Host", "2 Hz", 1, true, heartbeatFields),
   msg("high", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
 
   msg("low", "0x001", "SAFETY_ESTOP", "any", "event", 0, true, []),

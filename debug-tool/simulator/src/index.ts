@@ -31,7 +31,7 @@ const messages: SimMessage[] = [
   }},
   { bus: "high", id: "0x210", name: "RT_STATE_RPT", dlc: 3, intervalMs: 100, generator: () => [1, 1, 0] },
   { bus: "high", id: "0x600", name: "SYS_DIAG_RPT", dlc: 8, intervalMs: 1000, generator: () => [1, 0, 1, 0, 0x01, 0xF4, 0, 0] },
-  { bus: "high", id: "0x7FC", name: "JETSON_HEARTBEAT", dlc: 1, intervalMs: 500, generator: (t) => [Math.floor(t) % 256] },
+  { bus: "high", id: "0x7FC", name: "HOST_HEARTBEAT", dlc: 1, intervalMs: 500, generator: (t) => [Math.floor(t) % 256] },
   { bus: "high", id: "0x7FD", name: "RT_HEARTBEAT", dlc: 1, intervalMs: 500, generator: (t) => [Math.floor(t) % 256] },
   // Low bus
   { bus: "low", id: "0x011", name: "SYS_SAFETY_STS", dlc: 2, intervalMs: 200, generator: () => [0, 1] },

@@ -30,7 +30,7 @@ constants:
 
 # ── All ECUs ──────────────────────────────────────────────────────────
 ecus:
-  - {name: Jetson, comment: "Orin NX, Linux + ROS 2, perception/planning"}
+  - {name: Host,   comment: "Orin NX, Linux + ROS 2, perception/planning"}
   - {name: RT,     comment: "ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway"}
   - {name: SYS,    comment: "ESP32-S3, FreeRTOS, safety + motor + body control"}
   - {name: MTR,    comment: "STM32, bare metal, motor DAC + gear relays (EGAS L1)"}
@@ -56,7 +56,7 @@ protocols:
         name: SAFETY_ESTOP
         dlc: 0
         sender: RT
-        receivers: [SYS, Jetson, MTR, DCDC]
+        receivers: [SYS, Host, MTR, DCDC]
         cycle_ms: 0
         comment: "DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame."
         signals: []
@@ -66,7 +66,7 @@ protocols:
         name: SYS_SAFETY_STS
         dlc: 3
         sender: SYS
-        receivers: [RT, Jetson]
+        receivers: [RT, Host]
         cycle_ms: 200
         comment: "Forwarded low->high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5)."
         signals:
@@ -93,9 +93,9 @@ protocols:
         name: SYS_MODE_CMD
         dlc: 1
         sender: SYS
-        receivers: [RT]
+        receivers: [RT, MTR]
         cycle_ms: 0
-        comment: "0=Manual, 1=Auto, 2=ESTOP. Low bus only."
+        comment: "0=Manual, 1=Auto, 2=ESTOP. Low bus only. MTR needs mode for pass-through vs CAN control."
         signals:
           - {name: SYS_Mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2, unit: enum,
              values: {0: Manual, 1: Auto, 2: ESTOP}}
@@ -106,7 +106,7 @@ protocols:
         name: SYS_THROTTLE_STS
         dlc: 2
         sender: MTR
-        receivers: [RT, Jetson]
+        receivers: [RT, Host]
         cycle_ms: 10
         comment: "Current vehicle speed from MTR STM32. Forwarded low->high by RT. SYS_ prefix is historical."
         signals:
@@ -147,7 +147,7 @@ protocols:
         name: MTR_MOTOR_FBK
         dlc: 4
         sender: MTR
-        receivers: [RT, SYS, Jetson]
+        receivers: [RT, SYS, Host]
         cycle_ms: 20
         comment: "Motor feedback from STM32. Forwarded low→high by RT per gateway rules."
         signals:
@@ -160,14 +160,14 @@ protocols:
              values: {1: Overcurrent, 2: Overtemp, 4: CommsLoss},
              comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict"}
 
-      # 0x210 — RT_STATE_RPT (RT->Jetson on high bus)
+      # 0x210 — RT_STATE_RPT (RT->Host on high bus)
       - id: 0x210
         name: RT_STATE_RPT
         dlc: 3
         sender: RT
-        receivers: [Jetson]
+        receivers: [Host]
         cycle_ms: 100
-        comment: "RT state report to Jetson. High bus only."
+        comment: "RT state report to Host. High bus only."
         signals:
           - {name: RT_Mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2, unit: enum,
              values: {0: Manual, 1: Auto, 2: ESTOP}}
@@ -179,22 +179,22 @@ protocols:
         name: RT_PID_RPT
         dlc: 6
         sender: RT
-        receivers: [Jetson]
+        receivers: [Host]
         cycle_ms: 100
-        comment: "RESERVED, inactive. PID telemetry for Jetson debugging."
+        comment: "RESERVED, inactive. PID telemetry for Host debugging."
         signals:
           - {name: RT_PidSetpoint, byte: 0, bit_offset: 0, size: 16, type: signed, unit: mm/s}
           - {name: RT_PidMeasured, byte: 2, bit_offset: 0, size: 16, type: signed, unit: mm/s}
           - {name: RT_PidOutput, byte: 4, bit_offset: 0, size: 16, type: signed}
 
-      # 0x300 — HOST_DRIVE_CMD (Jetson->RT on high bus)
+      # 0x300 — HOST_DRIVE_CMD (Host->RT on high bus)
       - id: 0x300
         name: HOST_DRIVE_CMD
         dlc: 8
-        sender: Jetson
+        sender: Host
         receivers: [RT]
         cycle_ms: 10
-        comment: "Jetson Autoware.Auto drive command -> RT. High bus only."
+        comment: "Host (Jetson Orin) Autoware.Auto drive command -> RT. High bus only."
         signals:
           - {name: HOST_DriveSpeed, byte: 0, bit_offset: 0, size: 32,
              type: signed, factor: 1, offset: 0,
@@ -207,11 +207,11 @@ protocols:
           - {name: HOST_Gear, byte: 7, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
              values: {0: N, 1: D, 2: S, 3: R}}
 
-      # 0x301 — HOST_BRAKE_REQ (Jetson->RT on high bus)
+      # 0x301 — HOST_BRAKE_REQ (Host->RT on high bus)
       - id: 0x301
         name: HOST_BRAKE_REQ
         dlc: 4
-        sender: Jetson
+        sender: Host
         receivers: [RT]
         cycle_ms: 0
         comment: "On demand. RT arbitrates: max(RT_computed, HOST_request) -> 0x205."
@@ -220,11 +220,11 @@ protocols:
              type: signed, factor: 1, offset: 0,
              min: 0, max: 20000, unit: kPa}
 
-      # 0x302 — HOST_LIGHT_CMD (Jetson->RT, forwarded high->low)
+      # 0x302 — HOST_LIGHT_CMD (Host->RT, forwarded high->low)
       - id: 0x302
         name: HOST_LIGHT_CMD
         dlc: 1
-        sender: Jetson
+        sender: Host
         receivers: [RT, SYS]
         cycle_ms: 0
         comment: "Forwarded transparently high->low by RT."
@@ -234,14 +234,14 @@ protocols:
           - {name: HOST_BrakeLight, byte: 0, bit_offset: 2, size: 1, min: 0, max: 1}
           - {name: HOST_Headlight,  byte: 0, bit_offset: 3, size: 1, min: 0, max: 1}
 
-      # 0x310 — STEER_DIAG (RT->Jetson, steering telemetry @10Hz, v0.0.4)
+      # 0x310 — STEER_DIAG (RT->Host, steering telemetry @10Hz, v0.0.4)
       - id: 0x310
         name: STEER_DIAG
         dlc: 8
         sender: RT
-        receivers: [Jetson]
+        receivers: [Host]
         cycle_ms: 100
-        comment: "Steering telemetry to Jetson. v0.0.4 — previously missing from DBC."
+        comment: "Steering telemetry to Host. v0.0.4 — previously missing from DBC."
         signals:
           - {name: SteerDiag_Angle0_1deg,   byte: 0, bit_offset: 0, size: 16, type: signed,
              factor: 0.1, offset: -3000, unit: deg,
@@ -256,14 +256,14 @@ protocols:
              comment: "EPS-C ECU temperature, 0.1degC/bit"}
           - {name: SteerDiag_Reserved,      byte: 7, bit_offset: 0, size: 8, min: 0, max: 0}
 
-      # 0x311 — BRAKE_DIAG (RT->Jetson, brake telemetry @10Hz, v0.0.4)
+      # 0x311 — BRAKE_DIAG (RT->Host, brake telemetry @10Hz, v0.0.4)
       - id: 0x311
         name: BRAKE_DIAG
         dlc: 8
         sender: RT
-        receivers: [Jetson]
+        receivers: [Host]
         cycle_ms: 100
-        comment: "Brake telemetry to Jetson. v0.0.4 — previously missing from DBC."
+        comment: "Brake telemetry to Host. v0.0.4 — previously missing from DBC."
         signals:
           - {name: BrakeDiag_PressureRaw,   byte: 0, bit_offset: 0, size: 16,
              factor: 0.05, offset: 0, unit: MPa,
@@ -278,14 +278,14 @@ protocols:
              comment: "SEB ECU temperature, 0.1degC/bit"}
           - {name: BrakeDiag_Reserved,      byte: 7, bit_offset: 0, size: 8, min: 0, max: 0}
 
-      # 0x400 — HOST_OBSTACLE_DIST (Jetson->RT on high bus)
+      # 0x400 — HOST_OBSTACLE_DIST (Host->RT on high bus)
       - id: 0x400
         name: HOST_OBSTACLE_DIST
         dlc: 4
-        sender: Jetson
+        sender: Host
         receivers: [RT]
         cycle_ms: 100
-        comment: "Jetson sends min obstacle distance (from LiDAR/camera perception) to RT at 10 Hz. High bus only."
+        comment: "Host sends min obstacle distance (from LiDAR/camera perception) to RT at 10 Hz. High bus only."
         signals:
           - {name: HOST_ObstacleDistance, byte: 0, bit_offset: 0, size: 32,
              min: 0, max: 4294967295, unit: mm,
@@ -296,7 +296,7 @@ protocols:
         name: SYS_DIAG_RPT
         dlc: 8
         sender: SYS
-        receivers: [RT, Jetson]
+        receivers: [RT, Host]
         cycle_ms: 1000
         comment: "SYS diagnostics report. Forwarded low->high by RT."
         signals:
@@ -308,29 +308,29 @@ protocols:
           - {name: SYS_DiagTec,           byte: 6, bit_offset: 0, size: 8,  min: 0, max: 255}
           - {name: SYS_DiagRec,           byte: 7, bit_offset: 0, size: 8,  min: 0, max: 255}
 
-      # 0x7FC — JETSON_HEARTBEAT (Jetson->RT, high bus only)
+      # 0x7FC — HOST_HEARTBEAT (Host->RT, high bus only)
       - id: 0x7FC
-        name: JETSON_HEARTBEAT
+        name: HOST_HEARTBEAT
         dlc: 1
-        sender: Jetson
+        sender: Host
         receivers: [RT]
         cycle_ms: 500
         comment: "Not bridged, high bus only. Loss triggers controlled stop, not ESTOP."
         signals:
-          - {name: Jetson_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "Timeout 1500ms -> controlled stop. Jetson is QM, not safety-critical."}
+          - {name: Host_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical."}
 
       # 0x7FD — RT_HEARTBEAT (both buses, independent counters)
       - id: 0x7FD
         name: RT_HEARTBEAT
         dlc: 1
         sender: RT
-        receivers: [Jetson, SYS]
+        receivers: [Host, SYS]
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters."
         signals:
           - {name: RT_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "Low bus timeout 1000ms->SYS ESTOP; High bus 1500ms->Jetson stops /cmd_vel"}
+             comment: "Low bus timeout 1000ms->SYS ESTOP; High bus 1500ms->Host stops /cmd_vel"}
 
       # 0x7FE — SYS_HEARTBEAT (SYS->RT, low bus only)
       - id: 0x7FE
@@ -560,7 +560,7 @@ protocols:
         sender: SEB
         receivers: [SYS]
         cycle_ms: 100
-        comment: "SYNTREE SEB detailed fault flags. 14 of 23 faults are L3 -> SYS must escalate to ESTOP."
+        comment: "SYNTREE SEB detailed fault flags. 16 of 23 faults are L3 -> SYS must escalate to ESTOP."
         signals:
           - {name: SEB_ECUUnderVolt,     byte: 0, bit_offset: 0, size: 1, comment: "Controller Undervoltage [L2]"}
           - {name: SEB_ECUOverVolt,      byte: 0, bit_offset: 1, size: 1, comment: "Controller Overvoltage [L2]"}

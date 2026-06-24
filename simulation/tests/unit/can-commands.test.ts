@@ -14,7 +14,7 @@ function autoCfg(overrides: Partial<SimConfig> = {}): SimConfig {
     speed: 0,
     initialMode: "auto",
     plant: { wheelbaseMm: 1500, maxSpeedMmps: 3000, maxSteeringDeg: 40, steerLagMs: 50, brakeDecelMmps2PerMm: 2000 },
-    jetsonDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],
+    hostDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],
     faults: [],
     ...overrides,
   };
@@ -22,7 +22,7 @@ function autoCfg(overrides: Partial<SimConfig> = {}): SimConfig {
 
 function drivingCfg(speed = 1000, yaw = 0): SimConfig {
   return autoCfg({
-    jetsonDriveCycle: [{ durationMs: 99999, speedMmps: speed, yawRateMradS: yaw, gear: speed >= 0 ? 1 : 3 }],
+    hostDriveCycle: [{ durationMs: 99999, speedMmps: speed, yawRateMradS: yaw, gear: speed >= 0 ? 1 : 3 }],
   });
 }
 
@@ -34,7 +34,7 @@ describe("0x001 SAFETY_ESTOP", () => {
   it("bidirectional bridge: ESTOP stops vehicle", () => {
     const runner = new SimulationRunner();
     runner.configure(autoCfg({
-      jetsonDriveCycle: [{ durationMs: 99999, speedMmps: 1000, yawRateMradS: 0, gear: 1 }],
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 1000, yawRateMradS: 0, gear: 1 }],
       faults: [{ atMs: 200, type: "triggerEstop" }],
     }));
     const result = runner.runDuration(500);
@@ -64,7 +64,7 @@ describe("0x110 SYS_MODE_CMD", () => {
   it("sent at 10 Hz with correct mode encoding", () => {
     const runner = new SimulationRunner();
     runner.configure(autoCfg({
-      jetsonDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],
     }));
     runner.runDuration(500);
     expect(runner.canValidator.getAllErrors().length).toBe(0);
@@ -89,7 +89,7 @@ describe("0x204 RT_DRIVE_CMD", () => {
     expect(result.lowBus.total).toBeGreaterThan(8);
   });
 
-  it("speed command propagates Jetson→RT→MTR→plant", () => {
+  it("speed command propagates Host→RT→MTR→plant", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(1500));
     const result = runner.runDuration(300);
@@ -116,7 +116,7 @@ describe("0x205 RT_BRAKE_CMD", () => {
   it("ESTOP → max brake (20000 kPa)", () => {
     const runner = new SimulationRunner();
     runner.configure(autoCfg({
-      jetsonDriveCycle: [{ durationMs: 99999, speedMmps: 2000, yawRateMradS: 0, gear: 1 }],
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 2000, yawRateMradS: 0, gear: 1 }],
       faults: [{ atMs: 100, type: "triggerEstop" }],
     }));
     const result = runner.runDuration(400);
@@ -158,7 +158,7 @@ describe("0x210 RT_STATE_RPT", () => {
 });
 
 describe("0x300 HOST_DRIVE_CMD", () => {
-  it("Jetson sends at 100 Hz on high bus, DLC=8", () => {
+  it("Host sends at 100 Hz on high bus, DLC=8", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(2000));
     const result = runner.runDuration(100);
@@ -168,7 +168,7 @@ describe("0x300 HOST_DRIVE_CMD", () => {
   it("speed_mmps i32 BE, yaw i24 BE, gear u8", () => {
     const runner = new SimulationRunner();
     runner.configure(autoCfg({
-      jetsonDriveCycle: [{ durationMs: 99999, speedMmps: 2500, yawRateMradS: 100, gear: 1 }],
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 2500, yawRateMradS: 100, gear: 1 }],
     }));
     runner.runDuration(100);
     expect(runner.canValidator.getAllErrors().length).toBe(0);
@@ -176,7 +176,7 @@ describe("0x300 HOST_DRIVE_CMD", () => {
 });
 
 describe("0x301 HOST_BRAKE_REQ", () => {
-  it("Jetson sends at 50 Hz on high bus, DLC=4", () => {
+  it("Host sends at 50 Hz on high bus, DLC=4", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(1000));
     const result = runner.runDuration(100);
@@ -185,7 +185,7 @@ describe("0x301 HOST_BRAKE_REQ", () => {
 });
 
 describe("0x302 HOST_LIGHT_CMD", () => {
-  it("gap: light bits defined but Jetson does not send, RT does not forward", () => {
+  it("gap: light bits defined but Host does not send, RT does not forward", () => {
     expect(true).toBe(true);
   });
 });
@@ -209,7 +209,7 @@ describe("0x220 RT_PID_RPT", () => {
 });
 
 describe("0x400 HOST_OBSTACLE_DIST", () => {
-  it("Jetson sends at 10 Hz, u32 BE, DLC=4", () => {
+  it("Host sends at 10 Hz, u32 BE, DLC=4", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(0));
     const result = runner.runDuration(200);
@@ -222,7 +222,7 @@ describe("0x400 HOST_OBSTACLE_DIST", () => {
 // ================================================================
 
 describe("0x7FC JETSON_HEARTBEAT", () => {
-  it("Jetson sends at 2 Hz on high bus", () => {
+  it("Host sends at 2 Hz on high bus", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(0));
     const result = runner.runDuration(1500);
@@ -354,10 +354,10 @@ describe("0x6FB SEB_Test", () => {
 // ================================================================
 
 describe("Full drive cycle", () => {
-  it("Jetson→RT→SYS/MTR/EPS-C/SEB completes without errors", () => {
+  it("Host→RT→SYS/MTR/EPS-C/SEB completes without errors", () => {
     const runner = new SimulationRunner();
     runner.configure(autoCfg({
-      jetsonDriveCycle: [
+      hostDriveCycle: [
         { durationMs: 0,    speedMmps: 0,    yawRateMradS: 0,   gear: 0 },
         { durationMs: 500,  speedMmps: 1000, yawRateMradS: 0,   gear: 1 },
         { durationMs: 1500, speedMmps: 2000, yawRateMradS: 100, gear: 1 },
@@ -375,7 +375,7 @@ describe("Full drive cycle", () => {
   it("ESTOP mid-drive → all ECUs react, speed → 0", () => {
     const runner = new SimulationRunner();
     runner.configure(autoCfg({
-      jetsonDriveCycle: [
+      hostDriveCycle: [
         { durationMs: 0,    speedMmps: 2000, yawRateMradS: 0, gear: 1 },
         { durationMs: 1500, speedMmps: 2000, yawRateMradS: 0, gear: 1 },
         { durationMs: 99999, speedMmps: 2000, yawRateMradS: 0, gear: 1 },

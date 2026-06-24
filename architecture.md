@@ -24,11 +24,13 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
   │  └────┬─────┘            │              │                       │
   │       │                  └──────┬───────┘                       │
   │  TX:  0x300,0x301,    TX: 0x011,0x120, │                        │
-  │       0x302,0x001           0x210,0x220,│                        │
-  │                              0x400,0x600,│                       │
+  │       0x302,0x001,          0x210,0x220,│                        │
+  │       0x400,0x7FC           0x206,0x310,│                        │
+  │                              0x311,0x600,│                       │
   │  RX:  0x011,0x120,          0x001,0x7FC │                        │
-  │       0x210,0x220,      RX: 0x300,0x301,│                        │
-  │       0x400,0x600,          0x302,0x001 │                        │
+  │       0x206,0x210,      RX: 0x300,0x301,│                        │
+  │       0x220,0x310,          0x302,0x001,│                        │
+  │       0x311,0x600,          0x400,0x7FC │                        │
   │       0x001,0x7FD                       │                        │
   └─────────────────────────────────────────┘                        │
                                             │                        │
@@ -78,7 +80,7 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | ID | Name | Sender | Receiver(s) | DLC | Payload | Period | Prio |
 |----|------|--------|-------------|-----|---------|--------|------|
 | `0x001` | SAFETY_ESTOP | Any | All (bridged to high) | 0 | (none) | Event | Highest |
-| `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
+| `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 3 | u8 estop, u8 hb_ok, u4 light_state | 5 Hz | V.High |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC converter | 1 | u8 enable | Change | V.High |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A, 2=ESTOP) | Change | High |
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson), SYS | 2 | i16 speed_mmps | 100 Hz | Medium |
@@ -109,7 +111,7 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | ID | Name | Sender | Receiver(s) | DLC | Payload | Period | Prio |
 |----|------|--------|-------------|-----|---------|--------|------|
 | `0x001` | SAFETY_ESTOP | RT (fwd), Jetson | Jetson, RT | 0 | (none) | Event | Highest |
-| `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | u8 estop, u8 hb_ok | 5 Hz | V.High |
+| `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 3 | u8 estop, u8 hb_ok, u4 light_state | 5 Hz | V.High |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x206` | MTR_MOTOR_FBK | RT (fwd) | Jetson | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
 | `0x210` | RT_STATE_RPT | RT | Jetson | 3 | u8 mode, u8 steer_valid, u8 reversing | 10 Hz | Low |
@@ -416,7 +418,6 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | High | `0x220` | RT_PID_RPT | RESERVED (inactive until encoders fitted) | — |
 | High | `0x310` | STEER_DIAG | `{i16 angle, u8 fault, i16 motor_current, u16 ecu_temp, u8 reserved}` (8 bytes) | 10 Hz |
 | High | `0x311` | BRAKE_DIAG | `{u16 pressure, u8 fault, i16 motor_current, u16 ecu_temp, u8 reserved}` (8 bytes) | 10 Hz |
-| High | `0x400` | RT_OBSTACLE_RPT | `u32 distance_mm` | 10 Hz |
 | High | `0x600` | SYS_DIAG_RPT (fwd) | 8 bytes | 1 Hz |
 | High | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | 2 Hz |
 
@@ -1272,10 +1273,10 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 
 ```
  High-Level CAN (500 kbit/s)
-  ├── Jetson Orin             TX: 0x300,0x301,0x302,0x001,0x7FC
-  │                              RX: 0x001,0x011,0x120,0x210,0x220,0x400,0x600,0x7FD
-  └── RT ESP32-S3 (MCP2515)      TX: 0x011,0x120,0x210,0x220,0x400,0x600,0x001,0x7FD
-                                  RX: 0x001,0x300,0x301,0x302,0x7FC
+  ├── Jetson Orin             TX: 0x300,0x301,0x302,0x001,0x7FC,0x400
+  │                              RX: 0x001,0x011,0x120,0x206,0x210,0x220,0x310,0x311,0x600,0x7FD
+  └── RT ESP32-S3 (MCP2515)      TX: 0x011,0x120,0x206,0x210,0x220,0x310,0x311,0x600,0x001,0x7FD
+                                  RX: 0x001,0x300,0x301,0x302,0x400,0x7FC
 ```
 
 ---

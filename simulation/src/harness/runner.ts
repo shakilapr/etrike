@@ -13,7 +13,7 @@ import { VehiclePlant } from "../physics/plant.js";
 import { SafetyChecker } from "../checks/safety-checker.js";
 import { CanValidator } from "../checks/can-validator.js";
 import { FaultInjector } from "./fault-injector.js";
-import { JetsonEcu } from "../ecus/jetson.js";
+import { HostEcu } from "../ecus/host.js";
 import { RtEcu } from "../ecus/rt.js";
 import { SysEcu } from "../ecus/sys.js";
 import { MtrEcu } from "../ecus/mtr.js";
@@ -30,7 +30,7 @@ export class SimulationRunner {
   readonly faultInjector = new FaultInjector();
 
   readonly ecus: SimulatedEcu[] = [];
-  readonly jetson: JetsonEcu;
+  readonly host: HostEcu;
   readonly rt: RtEcu;
   readonly sys: SysEcu;
   readonly mtr: MtrEcu;
@@ -45,18 +45,18 @@ export class SimulationRunner {
   private config: SimConfig = {
     tickMs: 1, speed: 0, initialMode: "manual",
     plant: { wheelbaseMm: 1500, maxSpeedMmps: 3000, maxSteeringDeg: 40, steerLagMs: 50, brakeDecelMmps2PerMm: 2000 },
-    jetsonDriveCycle: [], faults: [],
+    hostDriveCycle: [], faults: [],
   };
 
   constructor() {
-    this.jetson = new JetsonEcu();
+    this.host = new HostEcu();
     this.rt = new RtEcu();
     this.sys = new SysEcu();
     this.mtr = new MtrEcu();
     this.epsc = new SyntreeEpsc();
     this.seb = new SyntreeSeb();
 
-    this.ecus = [this.jetson, this.rt, this.sys, this.mtr, this.epsc, this.seb];
+    this.ecus = [this.host, this.rt, this.sys, this.mtr, this.epsc, this.seb];
   }
 
   /** Configure simulation parameters. */
@@ -64,11 +64,11 @@ export class SimulationRunner {
     this.config = {
       tickMs: 1, speed: 0, initialMode: "manual",
       plant: { wheelbaseMm: 1500, maxSpeedMmps: 3000, maxSteeringDeg: 40, steerLagMs: 50, brakeDecelMmps2PerMm: 2000 },
-      jetsonDriveCycle: [], faults: [],
+      hostDriveCycle: [], faults: [],
       ...config,
     };
     this.clock.speed = this.config.speed;
-    this.jetson.setDriveCycle(this.config.jetsonDriveCycle);
+    this.host.setDriveCycle(this.config.hostDriveCycle);
     this.faultInjector.load(this.config.faults);
   }
 
@@ -127,7 +127,7 @@ export class SimulationRunner {
     const lowRx = this.lowBus.deliver(nowMs);
 
     // ── Run ECUs in fixed order ────────────────────────────────
-    // Order matters: Jetson sends commands → RT processes → SYS+MTR act
+    // Order matters: Host sends commands → RT processes → SYS+MTR act
     const allTx: SimFrame[] = [];
 
     for (const ecu of this.ecus) {
