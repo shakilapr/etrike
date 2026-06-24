@@ -79,7 +79,7 @@
   }
 
   async function stopLoop() {
-    await command(() => stopPeriodic(selected.id));
+    await command(() => stopPeriodic(selectedBus, selected.id));
   }
 
   async function command(run: () => Promise<unknown>) {

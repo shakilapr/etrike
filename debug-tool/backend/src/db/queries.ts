@@ -1,4 +1,9 @@
-import type { CanFrame, CanStats } from "../types/can";
+import Database from "better-sqlite3";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { SQLITE_SCHEMA } from "./schema";
+import type { Bus, CanFrame, CanStats } from "../types/can";
+import { defaultStats, normalizeBus, normalizeStats } from "../types/can";
 
 export interface StoredCanFrame extends CanFrame {
   row_id: number;
@@ -9,11 +14,11 @@ export interface StoredCanFrame extends CanFrame {
 export interface InjectedFrame {
   row_id: number;
   ts_real: number;
+  bus: Bus;
   can_id: string;
   dlc: number;
   data: number[];
-  request_id: string;
-  response: Record<string, unknown> | null;
+  status: string | null;
 }
 
 export interface Recording {
@@ -25,164 +30,228 @@ export interface Recording {
 }
 
 export interface FrameQuery {
+  bus?: Bus;
   id?: string;
   since?: number;
   limit?: number;
 }
 
-export class DebugStore {
-  private nextFrameId = 1;
-  private nextInjectionId = 1;
-  private nextRecordingId = 1;
-  private frames: StoredCanFrame[] = [];
-  private injected: InjectedFrame[] = [];
-  private recordings: Recording[] = [];
-  private recordingFrames = new Map<number, number[]>();
-  private latestStats: CanStats | null = null;
+interface FrameRow {
+  id: number;
+  ts_real: number;
+  ts_device: number;
+  bus: Bus;
+  can_id: string;
+  can_name: string;
+  dlc: number;
+  data: Buffer;
+  decoded: string;
+}
 
-  constructor(private readonly maxFrames = 50000) {}
+interface InjectionRow {
+  id: number;
+  ts_real: number;
+  bus: Bus;
+  can_id: string;
+  dlc: number;
+  data: Buffer;
+  status: string | null;
+}
+
+export class DebugStore {
+  private readonly db: Database.Database;
+
+  constructor(dbPath: string, private readonly maxFrames = 50000) {
+    const filename = dbPath === ":memory:" ? dbPath : resolve(dbPath);
+    if (filename !== ":memory:") mkdirSync(dirname(filename), { recursive: true });
+    this.db = new Database(filename);
+    this.db.pragma("journal_mode = WAL");
+    this.db.exec(SQLITE_SCHEMA);
+  }
 
   insertFrame(frame: CanFrame): StoredCanFrame {
-    const stored: StoredCanFrame = {
-      ...frame,
-      row_id: this.nextFrameId++,
-      ts_real: Date.now() / 1000,
-      ts_device: frame.ts
-    };
+    const tsReal = Date.now() / 1000;
+    const tsDevice = Math.round(frame.ts);
+    const result = this.db
+      .prepare(
+        `INSERT INTO can_frames (ts_real, ts_device, bus, can_id, can_name, dlc, data, decoded)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(tsReal, tsDevice, frame.bus, frame.id, frame.name, frame.dlc, Buffer.from(frame.data.slice(0, frame.dlc)), JSON.stringify(frame.decoded));
 
-    this.frames.push(stored);
-    this.trimFrames();
-
-    for (const recording of this.recordings) {
-      if (recording.stopped_at === null) {
-        const ids = this.recordingFrames.get(recording.id) ?? [];
-        ids.push(stored.row_id);
-        this.recordingFrames.set(recording.id, ids);
-        recording.frame_count = ids.length;
-      }
-    }
-
-    return stored;
+    const rowId = Number(result.lastInsertRowid);
+    this.attachToActiveRecordings(rowId);
+    this.pruneFrames();
+    return { ...frame, row_id: rowId, ts_real: tsReal, ts_device: tsDevice };
   }
 
   queryFrames(query: FrameQuery = {}): StoredCanFrame[] {
     const limit = Math.min(Math.max(query.limit ?? 500, 1), 5000);
-    let rows = this.frames;
-
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+    if (query.bus) {
+      clauses.push("bus = ?");
+      params.push(query.bus);
+    }
     if (query.id) {
-      rows = rows.filter((frame) => frame.id === query.id);
+      clauses.push("can_id = ?");
+      params.push(query.id);
     }
-
     if (typeof query.since === "number" && Number.isFinite(query.since)) {
-      rows = rows.filter((frame) => frame.ts_real >= query.since! || frame.ts >= query.since!);
+      clauses.push("ts_real >= ?");
+      params.push(query.since);
     }
-
-    return rows.slice(-limit).reverse();
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db.prepare(`SELECT * FROM can_frames ${where} ORDER BY ts_real DESC, id DESC LIMIT ?`).all(...params, limit) as FrameRow[];
+    return rows.map(rowToFrame);
   }
 
   latestById(): Record<string, StoredCanFrame> {
+    const rows = this.db.prepare("SELECT * FROM can_frames ORDER BY ts_real DESC, id DESC LIMIT 5000").all() as FrameRow[];
     const latest: Record<string, StoredCanFrame> = {};
-    for (const frame of this.frames) {
-      latest[String(frame.id)] = frame;
+    for (const row of rows) {
+      const key = `${row.bus}:${row.can_id}`;
+      if (!latest[key]) latest[key] = rowToFrame(row);
     }
     return latest;
   }
 
   setStats(stats: CanStats): void {
-    this.latestStats = stats;
+    const normalized = normalizeStats(stats);
+    this.db
+      .prepare("INSERT INTO runtime_state (key, value) VALUES ('stats', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(normalized));
   }
 
-  getStats(): CanStats | null {
-    return this.latestStats;
-  }
-
-  insertInjection(input: Omit<InjectedFrame, "row_id" | "ts_real" | "response">): InjectedFrame {
-    const row: InjectedFrame = {
-      ...input,
-      row_id: this.nextInjectionId++,
-      ts_real: Date.now() / 1000,
-      response: null
-    };
-    this.injected.push(row);
-    return row;
-  }
-
-  updateInjectionResponse(requestId: string, response: Record<string, unknown>): InjectedFrame | null {
-    let row: InjectedFrame | undefined;
-    for (let index = this.injected.length - 1; index >= 0; index -= 1) {
-      if (this.injected[index].request_id === requestId) {
-        row = this.injected[index];
-        break;
-      }
+  getStats(): CanStats {
+    const row = this.db.prepare("SELECT value FROM runtime_state WHERE key = 'stats'").get() as { value: string } | undefined;
+    if (!row) return defaultStats();
+    try {
+      return normalizeStats(JSON.parse(row.value) as CanStats);
+    } catch {
+      return defaultStats();
     }
+  }
+
+  insertInjection(input: Omit<InjectedFrame, "row_id" | "ts_real" | "status"> & { status?: string }): InjectedFrame {
+    const tsReal = Date.now() / 1000;
+    const status = input.status ?? "queued";
+    const result = this.db
+      .prepare("INSERT INTO injected_frames (ts_real, bus, can_id, dlc, data, status) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(tsReal, input.bus, input.can_id, input.dlc, Buffer.from(input.data), status);
+    return { row_id: Number(result.lastInsertRowid), ts_real: tsReal, bus: input.bus, can_id: input.can_id, dlc: input.dlc, data: input.data, status };
+  }
+
+  updateLatestInjectionStatus(status: string): InjectedFrame | null {
+    const row = this.db.prepare("SELECT id FROM injected_frames ORDER BY id DESC LIMIT 1").get() as { id: number } | undefined;
     if (!row) return null;
-    row.response = response;
-    return row;
+    this.db.prepare("UPDATE injected_frames SET status = ? WHERE id = ?").run(status, row.id);
+    const updated = this.db.prepare("SELECT * FROM injected_frames WHERE id = ?").get(row.id) as InjectionRow;
+    return rowToInjection(updated);
   }
 
   listInjections(limit = 50): InjectedFrame[] {
-    return this.injected.slice(-limit).reverse();
+    return (this.db.prepare("SELECT * FROM injected_frames ORDER BY ts_real DESC, id DESC LIMIT ?").all(limit) as InjectionRow[]).map(rowToInjection);
   }
 
   listRecordings(): Recording[] {
-    return [...this.recordings].sort((a, b) => b.started_at - a.started_at);
+    return this.db.prepare("SELECT * FROM recordings ORDER BY started_at DESC").all() as Recording[];
   }
 
   startRecording(label?: string): Recording {
-    const recording: Recording = {
-      id: this.nextRecordingId++,
-      label: label?.trim() || null,
-      started_at: Date.now() / 1000,
-      stopped_at: null,
-      frame_count: 0
-    };
-    this.recordings.push(recording);
-    this.recordingFrames.set(recording.id, []);
-    return recording;
+    const startedAt = Date.now() / 1000;
+    const cleanLabel = label?.trim() || null;
+    const result = this.db.prepare("INSERT INTO recordings (label, started_at, stopped_at, frame_count) VALUES (?, ?, NULL, 0)").run(cleanLabel, startedAt);
+    return { id: Number(result.lastInsertRowid), label: cleanLabel, started_at: startedAt, stopped_at: null, frame_count: 0 };
   }
 
   stopRecording(id: number): Recording | null {
-    const recording = this.recordings.find((item) => item.id === id);
-    if (!recording) return null;
-    if (recording.stopped_at === null) {
-      recording.stopped_at = Date.now() / 1000;
-    }
-    return recording;
+    this.db.prepare("UPDATE recordings SET stopped_at = COALESCE(stopped_at, ?) WHERE id = ?").run(Date.now() / 1000, id);
+    return (this.db.prepare("SELECT * FROM recordings WHERE id = ?").get(id) as Recording | undefined) ?? null;
   }
 
   deleteRecording(id: number): boolean {
-    const before = this.recordings.length;
-    this.recordings = this.recordings.filter((item) => item.id !== id);
-    this.recordingFrames.delete(id);
-    return this.recordings.length !== before;
+    this.db.prepare("DELETE FROM recording_frames WHERE recording_id = ?").run(id);
+    return this.db.prepare("DELETE FROM recordings WHERE id = ?").run(id).changes > 0;
   }
 
   recordingFramesById(id: number, limit = 1000): StoredCanFrame[] | null {
-    if (!this.recordingFrames.has(id)) return null;
-
-    const ids = new Set(this.recordingFrames.get(id)!.slice(-limit));
-    return this.frames.filter((frame) => ids.has(frame.row_id));
+    if (!this.db.prepare("SELECT id FROM recordings WHERE id = ?").get(id)) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT f.* FROM recording_frames rf
+         JOIN can_frames f ON f.id = rf.frame_id
+         WHERE rf.recording_id = ?
+         ORDER BY f.ts_real DESC, f.id DESC
+         LIMIT ?`
+      )
+      .all(id, limit) as FrameRow[];
+    return rows.map(rowToFrame);
   }
 
   counts(): { frames: number; injected: number; recordings: number } {
     return {
-      frames: this.frames.length,
-      injected: this.injected.length,
-      recordings: this.recordings.length
+      frames: (this.db.prepare("SELECT COUNT(*) AS n FROM can_frames").get() as { n: number }).n,
+      injected: (this.db.prepare("SELECT COUNT(*) AS n FROM injected_frames").get() as { n: number }).n,
+      recordings: (this.db.prepare("SELECT COUNT(*) AS n FROM recordings").get() as { n: number }).n
     };
   }
 
-  private trimFrames(): void {
-    if (this.frames.length <= this.maxFrames) return;
-    const dropCount = this.frames.length - this.maxFrames;
-    const dropped = new Set(this.frames.slice(0, dropCount).map((frame) => frame.row_id));
-    this.frames = this.frames.slice(dropCount);
+  close(): void {
+    this.db.close();
+  }
 
-    for (const [recordingId, ids] of this.recordingFrames) {
-      this.recordingFrames.set(
-        recordingId,
-        ids.filter((id) => !dropped.has(id))
-      );
-    }
+  private attachToActiveRecordings(frameId: number): void {
+    const active = this.db.prepare("SELECT id FROM recordings WHERE stopped_at IS NULL").all() as Array<{ id: number }>;
+    const insert = this.db.prepare("INSERT OR IGNORE INTO recording_frames (recording_id, frame_id) VALUES (?, ?)");
+    const update = this.db.prepare("UPDATE recordings SET frame_count = frame_count + 1 WHERE id = ?");
+    this.db.transaction(() => {
+      for (const recording of active) {
+        insert.run(recording.id, frameId);
+        update.run(recording.id);
+      }
+    })();
+  }
+
+  private pruneFrames(): void {
+    const count = (this.db.prepare("SELECT COUNT(*) AS n FROM can_frames").get() as { n: number }).n;
+    if (count <= this.maxFrames) return;
+    const ids = this.db.prepare("SELECT id FROM can_frames ORDER BY id ASC LIMIT ?").all(count - this.maxFrames) as Array<{ id: number }>;
+    const deleteRecordingFrame = this.db.prepare("DELETE FROM recording_frames WHERE frame_id = ?");
+    const deleteFrame = this.db.prepare("DELETE FROM can_frames WHERE id = ?");
+    this.db.transaction(() => {
+      for (const row of ids) {
+        deleteRecordingFrame.run(row.id);
+        deleteFrame.run(row.id);
+      }
+    })();
+  }
+}
+
+function rowToFrame(row: FrameRow): StoredCanFrame {
+  return {
+    row_id: row.id,
+    ts_real: row.ts_real,
+    ts_device: row.ts_device,
+    ts: row.ts_device,
+    bus: normalizeBus(row.bus),
+    id: row.can_id,
+    name: row.can_name,
+    dlc: row.dlc,
+    data: [...row.data],
+    decoded: safeJson(row.decoded)
+  };
+}
+
+function rowToInjection(row: InjectionRow): InjectedFrame {
+  return { row_id: row.id, ts_real: row.ts_real, bus: normalizeBus(row.bus), can_id: row.can_id, dlc: row.dlc, data: [...row.data], status: row.status };
+}
+
+function safeJson(input: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
   }
 }

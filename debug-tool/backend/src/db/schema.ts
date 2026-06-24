@@ -1,28 +1,29 @@
 export const SQLITE_SCHEMA = `
-CREATE TABLE can_frames (
+CREATE TABLE IF NOT EXISTS can_frames (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts_real     REAL NOT NULL,
-    ts_device   REAL NOT NULL,
+    ts_device   INTEGER NOT NULL,
+    bus         TEXT NOT NULL CHECK(bus IN ('high','low')),
     can_id      TEXT NOT NULL,
     can_name    TEXT NOT NULL,
     dlc         INTEGER NOT NULL,
     data        BLOB NOT NULL,
     decoded     TEXT NOT NULL
 );
-CREATE INDEX idx_frames_id_ts ON can_frames(can_id, ts_real);
-CREATE INDEX idx_frames_ts    ON can_frames(ts_real);
+CREATE INDEX IF NOT EXISTS idx_frames_bus_id_ts ON can_frames(bus, can_id, ts_real);
+CREATE INDEX IF NOT EXISTS idx_frames_ts ON can_frames(ts_real);
 
-CREATE TABLE injected_frames (
+CREATE TABLE IF NOT EXISTS injected_frames (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts_real     REAL NOT NULL,
+    bus         TEXT NOT NULL CHECK(bus IN ('high','low')),
     can_id      TEXT NOT NULL,
     dlc         INTEGER NOT NULL,
     data        BLOB NOT NULL,
-    request_id  TEXT NOT NULL,
-    response    TEXT
+    status      TEXT
 );
 
-CREATE TABLE recordings (
+CREATE TABLE IF NOT EXISTS recordings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     label       TEXT,
     started_at  REAL NOT NULL,
@@ -30,9 +31,14 @@ CREATE TABLE recordings (
     frame_count INTEGER DEFAULT 0
 );
 
-CREATE TABLE recording_frames (
+CREATE TABLE IF NOT EXISTS recording_frames (
     recording_id INTEGER NOT NULL REFERENCES recordings(id),
     frame_id     INTEGER NOT NULL REFERENCES can_frames(id),
     PRIMARY KEY (recording_id, frame_id)
+);
+
+CREATE TABLE IF NOT EXISTS runtime_state (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL
 );
 `;

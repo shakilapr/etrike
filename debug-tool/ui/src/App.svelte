@@ -77,8 +77,8 @@
     </div>
     <div class="status-strip">
       <span class:good={$status.backend_online} class="status-pill">Backend {$status.backend_online ? "Online" : "Offline"}</span>
-      <span class:good={$status.mqtt_connected} class="status-pill">MQTT {$status.mqtt_connected ? "Linked" : "Down"}</span>
-      <span class:good={$status.debug_esp32_online} class="status-pill">ESP32 {$status.debug_esp32_online ? "Online" : "Offline"}</span>
+      <span class:good={$status.serial?.port_open} class="status-pill">Serial {$status.serial?.port_open ? "Open" : "Closed"}</span>
+      <span class:good={$status.esp32_connected} class="status-pill">ESP32 {$status.esp32_connected ? "Online" : "Offline"}</span>
     </div>
   </header>
 

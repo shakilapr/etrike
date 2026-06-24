@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { CanFrame, CanStats } from "../types/can";
+import type { Bus, CanFrame, CanStats } from "../types/can";
 
 export type StreamEvent =
   | { type: "can_frame"; payload: CanFrame }
@@ -13,6 +13,7 @@ interface ClientState {
     send: (data: string) => void;
     on: (event: string, cb: (payload?: unknown) => void) => void;
   };
+  buses: Set<Bus> | null;
   ids: Set<string> | null;
 }
 
@@ -23,7 +24,7 @@ export class StreamHub {
 
   registerRoutes(app: FastifyInstance): void {
     app.get("/ws", { websocket: true }, (socket) => {
-      const client: ClientState = { socket: socket as ClientState["socket"], ids: null };
+      const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null };
       this.clients.add(client);
 
       client.socket.on("message", (payload) => {
@@ -47,8 +48,9 @@ export class StreamHub {
         continue;
       }
 
-      if (event.type === "can_frame" && client.ids && !client.ids.has(String(event.payload.id))) {
-        continue;
+      if (event.type === "can_frame") {
+        if (client.buses && !client.buses.has(event.payload.bus)) continue;
+        if (client.ids && !client.ids.has(String(event.payload.id))) continue;
       }
 
       client.socket.send(encoded);
@@ -68,9 +70,13 @@ export class StreamHub {
   private handleClientMessage(client: ClientState, payload: unknown): void {
     try {
       const text = Buffer.isBuffer(payload) ? payload.toString("utf8") : String(payload ?? "");
-      const message = JSON.parse(text) as { type?: string; ids?: string[] };
+      const message = JSON.parse(text) as { type?: string; buses?: string[]; ids?: string[] };
 
       if (message.type === "filter") {
+        client.buses =
+          message.buses && message.buses.length > 0
+            ? new Set(message.buses.filter((bus): bus is Bus => bus === "high" || bus === "low"))
+            : null;
         client.ids = message.ids && message.ids.length > 0 ? new Set(message.ids) : null;
       }
     } catch {

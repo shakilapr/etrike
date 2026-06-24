@@ -196,7 +196,7 @@ export function defaultStats(): CanStats {
   return { ts: Date.now() / 1000, uptime_s: 0, buses: { high: emptyBusStats(), low: emptyBusStats() } };
 }
 
-export function normalizeStats(input: Partial<CanStats> & Record<string, unknown>): CanStats {
+export function normalizeStats(input: Partial<CanStats> | Record<string, unknown>): CanStats {
   const buses = input.buses && typeof input.buses === "object" ? (input.buses as Partial<Record<Bus, Partial<BusStats>>>) : {};
   return {
     type: "stats",
