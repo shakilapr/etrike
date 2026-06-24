@@ -366,6 +366,50 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         wdt_toggle = !wdt_toggle;
         gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
 
+        // ── CAN bus-off monitoring — check both buses at 1 Hz ──────
+        static int bus_check_ctr = 0;
+        static int bus_off_count_low = 0, bus_off_count_high = 0;
+        if (++bus_check_ctr >= 100) {
+            bus_check_ctr = 0;
+            // Low bus (TWAI)
+            {
+                uint8_t tec = 0, rec = 0;
+                auto* drv = rt::can_low_driver();
+                if (drv) drv->get_error_counters(tec, rec);
+                if (tec > 128 && tec <= 255)
+                    ESP_LOGW(TAG, "Low CAN error-warning: TEC=%u REC=%u", tec, rec);
+                if (tec > 255) {
+                    ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", tec, rec);
+                    bus_off_count_low++;
+                    if (bus_off_count_low >= 5) {
+                        ESP_LOGE(TAG, "Low CAN bus-off persistent — triggering ESTOP");
+                        can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                        xQueueSend(g_gw_tx_low_q, &ef, 0);
+                        xQueueSend(g_gw_tx_high_q, &ef, 0);
+                    }
+                    if (drv) drv->init();  // attempt recovery
+                } else { bus_off_count_low = 0; }
+            }
+            // High bus (MCP2515)
+            {
+                uint8_t tec = 0, rec = 0;
+                g_can_high.get_error_counters(tec, rec);
+                if (tec > 128 && tec <= 255)
+                    ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
+                if (tec > 255) {
+                    ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
+                    bus_off_count_high++;
+                    if (bus_off_count_high >= 5) {
+                        ESP_LOGE(TAG, "High CAN bus-off persistent — zeroing setpoints");
+                        can::HostDriveCmd zero{};
+                        xQueueOverwrite(g_cmd_q, &zero);
+                        g_steering.start_estop(false);
+                    }
+                    g_can_high.init();  // attempt recovery
+                } else { bus_off_count_high = 0; }
+            }
+        }
+
         vTaskDelayUntil(&last, per);
     }
 }

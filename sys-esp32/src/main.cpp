@@ -527,6 +527,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 [[noreturn]] static void task_diag(void*) {
     TickType_t period = pdMS_TO_TICKS(1000);  // 1 Hz
     TickType_t last   = xTaskGetTickCount();
+    static int bus_off_count = 0;
     while (1) {
         g_diag.report(
             g_mode_mgr.mode_u8(),
@@ -534,17 +535,35 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_safety.heartbeat_ok(),
             g_mode_mgr.mode() == can::Mode::Estop
         );
-        // Send 0x600
+        // Send 0x600 with real TEC/REC
+        uint8_t tec = 0, rec = 0;
+        g_can.get_error_counters(tec, rec);
+
         can::SysDiagRpt rpt;
-        rpt.mode         = g_mode_mgr.mode_u8();
+        rpt.mode          = g_mode_mgr.mode_u8();
         rpt.brake_engaged = g_safety.brake_lever_pressed();
         rpt.heartbeat_ok  = g_safety.heartbeat_ok();
         rpt.estop_active  = (g_mode_mgr.mode() == can::Mode::Estop);
-        rpt.free_heap_kb  = 0;
-        rpt.tec = 0; rpt.rec = 0;
+        rpt.free_heap_kb  = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
+        rpt.tec = tec; rpt.rec = rec;
         can::Frame fr;
         rpt.to_frame(fr);
         g_can.send(fr);
+
+        // CAN bus-off monitoring (architecture §8.10)
+        if (tec > 128 && tec <= 255)
+            ESP_LOGW(TAG, "CAN error-warning: TEC=%u REC=%u", tec, rec);
+        if (tec > 255) {
+            ESP_LOGE(TAG, "CAN bus-off: TEC=%u REC=%u", tec, rec);
+            bus_off_count++;
+            if (bus_off_count >= 5) {
+                ESP_LOGE(TAG, "CAN bus-off persistent — forcing ESTOP");
+                g_mode_mgr.force_estop();
+                can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                g_can.send(ef);
+            }
+            g_can.init();  // attempt recovery (re-initialize TWAI)
+        } else { bus_off_count = 0; }
 
         vTaskDelayUntil(&last, period);
     }
@@ -597,6 +616,7 @@ extern "C" void app_main() {
     g_indicator.init();
     g_wdt.init();
     g_diag.init();
+    g_diag.set_can_driver(&g_can);
 
     // 3. Create queues
     g_can_rx_queue   = xQueueCreate(16, sizeof(can::Frame));
