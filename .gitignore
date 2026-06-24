@@ -98,6 +98,10 @@ debug-tool/e2e/screenshots/
 # ── CANalyst-II local Windows driver tooling ─────────────────────────
 tools/canalystii-driver/
 
+# ── Simulation build artifacts ─────────────────────────────────────
+simulation/dist/
+simulation/node_modules/
+
 # ── AURIX / TC275 build artifacts ──────────────────────────────────
 *.d
 *.hex
