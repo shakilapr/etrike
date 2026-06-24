@@ -64,15 +64,17 @@ protocols:
       # 0x011 — SYS_SAFETY_STS (forwarded low->high by RT)
       - id: 0x011
         name: SYS_SAFETY_STS
-        dlc: 2
+        dlc: 3
         sender: SYS
         receivers: [RT, Jetson]
         cycle_ms: 200
-        comment: "Forwarded low->high by RT. Same payload on both buses."
+        comment: "Forwarded low->high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5)."
         signals:
           - {name: SYS_EstopActive, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1}
           - {name: SYS_HeartbeatOk, byte: 1, bit_offset: 0, size: 8, min: 0, max: 1,
              comment: "0=RT alive counter frozen >1000ms, 1=incrementing"}
+          - {name: SYS_LightState, byte: 2, bit_offset: 0, size: 4,
+             comment: "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active"}
 
       # 0x012 — SYS_DCDC_CMD (low bus only)
       - id: 0x012
@@ -145,9 +147,9 @@ protocols:
         name: MTR_MOTOR_FBK
         dlc: 4
         sender: MTR
-        receivers: [RT, SYS]
+        receivers: [RT, SYS, Jetson]
         cycle_ms: 20
-        comment: "Motor feedback from STM32. Low bus only."
+        comment: "Motor feedback from STM32. Forwarded low→high by RT per gateway rules."
         signals:
           - {name: MTR_ActualSpeed, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,

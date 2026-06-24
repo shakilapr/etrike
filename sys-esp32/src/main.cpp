@@ -51,7 +51,8 @@ static sys::Diagnostics    g_diag;
 static std::atomic<int32_t>  g_setpoint_speed_mmps{0};
 static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
-static std::atomic<uint8_t>  g_light_bits{0};
+static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Jetson
+static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
 static std::atomic<bool>     g_estop_flag{false};
 static uint8_t               g_seb_status_raw[8] = {};
 static std::atomic<uint8_t>  g_rt_hb_ctr{0};
@@ -454,6 +455,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         gpio_set_level(static_cast<gpio_num_t>(sys::kLightHead), out.head_lamp ? 1 : 0);
 #endif
 
+        // Pack light output state for 0x011 byte 2 (v0.0.5 — CAN feedback)
+        uint8_t ls = 0;
+        if (out.left_lamp)  ls |= (1u << 0);
+        if (out.right_lamp) ls |= (1u << 1);
+        if (out.brake_lamp) ls |= (1u << 2);
+        if (out.head_lamp)  ls |= (1u << 3);
+        g_light_state.store(ls, std::memory_order_relaxed);
+
         vTaskDelayUntil(&last, period);
     }
 }
@@ -514,9 +523,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::Frame fr;
         can::SysSafetySts{
             g_mode_mgr.mode() == can::Mode::Estop,
-            g_safety.heartbeat_ok()
+            g_safety.heartbeat_ok(),
+            g_light_state.load(std::memory_order_relaxed)
         }.to_frame(fr);
-        g_can.send(fr);  // 0x011 SYS_SAFETY_STS
+        g_can.send(fr);  // 0x011 SYS_SAFETY_STS (DLC=3, v0.0.5)
 
         vTaskDelayUntil(&last, period);
     }

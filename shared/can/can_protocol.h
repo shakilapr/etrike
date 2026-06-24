@@ -135,14 +135,18 @@ inline const char* mode_name(Mode m) {
 struct SysSafetySts {
     bool estop_active = false;
     bool heartbeat_ok = false;   // RT alive counter incrementing
+    uint8_t light_state = 0;     // v0.0.5: bit0=left, bit1=right, bit2=brake, bit3=head
 
     static SysSafetySts from_frame(const Frame& f) {
-        return { f.u8_at(0) != 0, f.u8_at(1) != 0 };
+        SysSafetySts s{ f.u8_at(0) != 0, f.u8_at(1) != 0, 0 };
+        if (f.dlc >= 3) s.light_state = f.u8_at(2);
+        return s;
     }
     void to_frame(Frame& f) const {
-        f.id = kIdSysSafetySts; f.dlc = 2;
+        f.id = kIdSysSafetySts; f.dlc = 3;
         f.put_u8(0, estop_active ? 1 : 0);
         f.put_u8(1, heartbeat_ok ? 1 : 0);
+        f.put_u8(2, light_state);
     }
 };
 

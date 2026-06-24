@@ -50,12 +50,23 @@ All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physic
 | `0x011` | SYS_SAFETY_STS | `SYS_EstopActive` | u8 bool | 0/1 | SYS → RT → Host |
 | `0x011` | SYS_SAFETY_STS | `SYS_HeartbeatOk` | u8 bool | 0/1 | SYS → RT → Host |
 | `0x120` | SYS_THROTTLE_STS | `SYS_ThrottleSpeed` | i16 (mm/s) | — | MTR → RT → Host |
+| `0x206` | MTR_MOTOR_FBK | `actual_speed_mmps` | i16 (mm/s) | — | MTR → RT → Host |
+| `0x206` | MTR_MOTOR_FBK | `gear_state` | u8 enum | {N=0,D=1,S=2,R=3} | MTR → RT → Host |
+| `0x206` | MTR_MOTOR_FBK | `fault_flags` | u8 bitmask | bit0=ESTOP_ACTIVE | MTR → RT → Host |
 | `0x210` | RT_STATE_RPT | `RT_Mode` | u8 enum | {0=Manual, 1=Auto, 2=ESTOP} | RT |
 | `0x210` | RT_STATE_RPT | `RT_SteerValid` | u8 bool | 0/1 | RT |
 | `0x210` | RT_STATE_RPT | `RT_Reversing` | u8 bool | 0/1 | RT |
 | `0x220` | RT_PID_RPT | `RT_PidSetpoint` | i16 (mm/s) | — | RT (reserved) |
 | `0x220` | RT_PID_RPT | `RT_PidMeasured` | i16 (mm/s) | — | RT (reserved) |
 | `0x220` | RT_PID_RPT | `RT_PidOutput` | i16 | — | RT (reserved) |
+| `0x310` | STEER_DIAG | `SteerDiag_Angle0_1deg` | i16 (0.1°/bit) | offset -3000 | RT |
+| `0x310` | STEER_DIAG | `SteerDiag_Fault` | u8 bool | 0/1 | RT |
+| `0x310` | STEER_DIAG | `SteerDiag_MotorCurrent` | i16 (0.01 A/bit) | — | RT |
+| `0x310` | STEER_DIAG | `SteerDiag_ECUTemp` | u16 (0.1°C/bit) | — | RT |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_PressureRaw` | u16 (0.05 MPa/bit) | — | RT |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_Fault` | u8 bool | 0/1 | RT |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_MotorCurrent` | i16 (0.01 A/bit) | — | RT |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_ECUTemp` | u16 (0.1°C/bit) | — | RT |
 | `0x400` | RT_OBSTACLE_RPT | `RT_ObstacleDistance` | u32 (mm) | — | RT |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagMode` | u8 | — | SYS → RT → Host |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagBrakeEngaged` | u8 bool | 0/1 | SYS → RT → Host |
@@ -164,12 +175,23 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x011` | SYS_SAFETY_STS (fwd) | `SYS_EstopActive` | u8 bool | 0/1 | 5 Hz | Host |
 | `0x011` | SYS_SAFETY_STS (fwd) | `SYS_HeartbeatOk` | u8 bool | 0/1 | 5 Hz | Host |
 | `0x120` | SYS_THROTTLE_STS (fwd) | `SYS_ThrottleSpeed` | i16 (mm/s) | — | 100 Hz | Host |
+| `0x206` | MTR_MOTOR_FBK (fwd) | `actual_speed_mmps` | i16 (mm/s) | — | 50 Hz | Host |
+| `0x206` | MTR_MOTOR_FBK (fwd) | `gear_state` | u8 enum | {N,D,S,R} | 50 Hz | Host |
+| `0x206` | MTR_MOTOR_FBK (fwd) | `fault_flags` | u8 bitmask | — | 50 Hz | Host |
 | `0x210` | RT_STATE_RPT | `RT_Mode` | u8 enum | {M,A,ESTOP} | 10 Hz | Host |
 | `0x210` | RT_STATE_RPT | `RT_SteerValid` | u8 bool | 0/1 | 10 Hz | Host |
 | `0x210` | RT_STATE_RPT | `RT_Reversing` | u8 bool | 0/1 | 10 Hz | Host |
 | `0x220` | RT_PID_RPT | `RT_PidSetpoint` | i16 (mm/s) | — | reserved | Host |
 | `0x220` | RT_PID_RPT | `RT_PidMeasured` | i16 (mm/s) | — | reserved | Host |
 | `0x220` | RT_PID_RPT | `RT_PidOutput` | i16 | — | reserved | Host |
+| `0x310` | STEER_DIAG | `SteerDiag_Angle0_1deg` | i16 (0.1°/bit) | — | 10 Hz | Host |
+| `0x310` | STEER_DIAG | `SteerDiag_Fault` | u8 bool | — | 10 Hz | Host |
+| `0x310` | STEER_DIAG | `SteerDiag_MotorCurrent` | i16 (0.01 A/bit) | — | 10 Hz | Host |
+| `0x310` | STEER_DIAG | `SteerDiag_ECUTemp` | u16 (0.1°C/bit) | — | 10 Hz | Host |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_PressureRaw` | u16 (0.05 MPa/bit) | — | 10 Hz | Host |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_Fault` | u8 bool | — | 10 Hz | Host |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_MotorCurrent` | i16 (0.01 A/bit) | — | 10 Hz | Host |
+| `0x311` | BRAKE_DIAG | `BrakeDiag_ECUTemp` | u16 (0.1°C/bit) | — | 10 Hz | Host |
 | `0x400` | RT_OBSTACLE_RPT | `RT_ObstacleDistance` | u32 (mm) | — | 10 Hz | Host |
 | `0x600` | SYS_DIAG_RPT (fwd) | 8-byte diagnostic struct | struct | — | 1 Hz | Host |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | 2 Hz | Host |

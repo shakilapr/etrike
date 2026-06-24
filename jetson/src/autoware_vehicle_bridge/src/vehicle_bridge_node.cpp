@@ -31,6 +31,7 @@ constexpr canid_t CAN_DRIVE_CMD    = 0x300;
 constexpr canid_t CAN_BRAKE_REQ    = 0x301;
 constexpr canid_t CAN_LIGHT_CMD    = 0x302;
 constexpr canid_t CAN_DIAG_RPT     = 0x600;
+constexpr canid_t CAN_MOTOR_FBK   = 0x206;
 constexpr canid_t CAN_JETSON_HB    = 0x7FC;
 constexpr canid_t CAN_RT_HB        = 0x7FD;
 
@@ -396,6 +397,10 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
     [this](const HazardLightsCommand::SharedPtr m) { on_hazard(m); });
   sub_engage_ = create_subscription<Engage>("~/input/engage", rclcpp::QoS(1),
     [this](const Engage::SharedPtr m) { on_engage(m); });
+  sub_control_mode_ = create_subscription<ControlModeCommand>("~/input/control_mode", rclcpp::QoS(1),
+    [this](const ControlModeCommand::SharedPtr m) { on_control_mode(m); });
+  sub_emergency_ = create_subscription<VehicleEmergencyStamped>("~/input/emergency_cmd", rclcpp::QoS(1),
+    [this](const VehicleEmergencyStamped::SharedPtr m) { on_emergency(m); });
 
   pub_velocity_      = create_publisher<autoware_auto_vehicle_msgs::msg::VelocityReport>("~/output/velocity_status", rclcpp::QoS(1));
   pub_steering_      = create_publisher<autoware_auto_vehicle_msgs::msg::SteeringReport>("~/output/steering_status", rclcpp::QoS(1));
@@ -403,6 +408,7 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
   pub_mode_          = create_publisher<autoware_auto_vehicle_msgs::msg::ControlModeReport>("~/output/control_mode", rclcpp::QoS(1));
   pub_turn_status_   = create_publisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport>("~/output/turn_indicators_status", rclcpp::QoS(1));
   pub_hazard_status_ = create_publisher<autoware_auto_vehicle_msgs::msg::HazardLightsReport>("~/output/hazard_lights_status", rclcpp::QoS(1));
+  pub_kinematic_state_ = create_publisher<autoware_auto_vehicle_msgs::msg::VehicleKinematicState>("~/output/kinematic_state", rclcpp::QoS(1));
   pub_diag_          = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("~/output/diagnostics", rclcpp::QoS(1));
 
   can_ = std::make_unique<SocketCanDriver>();
@@ -461,6 +467,7 @@ CallbackReturn VehicleBridgeNode::on_activate(const State &)
   pub_mode_->on_activate();
   pub_turn_status_->on_activate();
   pub_hazard_status_->on_activate();
+  pub_kinematic_state_->on_activate();
   pub_diag_->on_activate();
 
   timer_control_->reset();
@@ -490,6 +497,7 @@ CallbackReturn VehicleBridgeNode::on_deactivate(const State &)
   pub_mode_->on_deactivate();
   pub_turn_status_->on_deactivate();
   pub_hazard_status_->on_deactivate();
+  pub_kinematic_state_->on_deactivate();
   pub_diag_->on_deactivate();
   return CallbackReturn::SUCCESS;
 }
@@ -558,6 +566,26 @@ void VehicleBridgeNode::on_engage(const autoware_auto_vehicle_msgs::msg::Engage:
 {
   engaged_ = msg->engage;
   RCLCPP_INFO(get_logger(), "Engage: %s", engaged_ ? "ON" : "OFF");
+}
+
+void VehicleBridgeNode::on_control_mode(const autoware_auto_vehicle_msgs::msg::ControlModeCommand::SharedPtr msg)
+{
+  // Map ControlModeCommand to Engage — physical mode gated by SYS MODE button
+  engaged_ = (msg->mode == autoware_auto_vehicle_msgs::msg::ControlModeCommand::AUTONOMOUS);
+  RCLCPP_INFO(get_logger(), "ControlMode request: %s", engaged_ ? "AUTONOMOUS" : "MANUAL");
+}
+
+void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr /*msg*/)
+{
+  // Rate-limited: max 1 ESTOP frame per 500ms from Jetson
+  auto n = now();
+  if ((n - last_estop_tx_).seconds() * 1000.0 < 500.0) return;
+  last_estop_tx_ = n;
+
+  RCLCPP_ERROR(get_logger(), "EMERGENCY received — sending ESTOP");
+  struct can_frame frame;
+  if (encoder_->encode_estop(frame) && can_->is_open())
+    can_->send(frame);
 }
 
 // ---- Timer ticks ----
@@ -658,6 +686,8 @@ void VehicleBridgeNode::tick_diagnostics()
   add("Engage", engaged_, engaged_ ? "engaged" : "disengaged");
   add("RT Heartbeat", rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms),
       rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms) ? "alive" : "timeout");
+  add("SYS Heartbeat", sys_heartbeat_ok_ == 1, sys_heartbeat_ok_ ? "alive" : "timeout");
+  add("SYS ESTOP", sys_estop_active_ == 0, sys_estop_active_ ? "ACTIVE" : "clear");
 
   pub_diag_->publish(diag);
 }
@@ -685,6 +715,74 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       autoware_auto_vehicle_msgs::msg::VelocityReport vel;
       if (decoder_->decode_velocity(frame, vel) && pub_velocity_->is_activated())
         pub_velocity_->publish(vel);
+
+      // Dead-reckoning odometry: integrate speed + steer angle via tricycle model
+      auto n = now();
+      if ((n - last_steer_time_).seconds() < 0.2 && last_odom_time_.nanoseconds() > 0) {
+        double dt = (n - last_odom_time_).seconds();
+        if (dt > 0.0 && dt < 0.5) {
+          double v = vel.longitudinal_velocity;
+          double omega = (std::abs(v) > params_.low_speed_threshold)
+            ? v * std::tan(steer_angle_rad_) / params_.wheel_base
+            : 0.0;
+          odom_yaw_ += omega * dt;
+          odom_x_ += v * std::cos(odom_yaw_) * dt;
+          odom_y_ += v * std::sin(odom_yaw_) * dt;
+
+          autoware_auto_vehicle_msgs::msg::VehicleKinematicState kine;
+          kine.state.pose.position.x = odom_x_;
+          kine.state.pose.position.y = odom_y_;
+          // Quaternion from yaw (rotation about Z)
+          kine.state.pose.orientation.z = std::sin(odom_yaw_ * 0.5);
+          kine.state.pose.orientation.w = std::cos(odom_yaw_ * 0.5);
+          kine.state.twist.linear.x = v;
+          kine.state.twist.angular.z = omega;
+          if (pub_kinematic_state_->is_activated()) pub_kinematic_state_->publish(kine);
+        }
+      }
+      last_odom_time_ = n;
+      break;
+    }
+
+    case CAN_MOTOR_FBK: {  // 0x206 — actual gear state from MTR (forwarded low→high)
+      if (frame.len < 3) break;
+      autoware_auto_vehicle_msgs::msg::GearReport gear;
+      switch (frame.data[2]) {  // MTR_GearState
+        case gear::CAN_N: gear.report = gear::NONE;    break;
+        case gear::CAN_D: gear.report = gear::DRIVE;   break;
+        case gear::CAN_S: gear.report = gear::LOW;     break;
+        case gear::CAN_R: gear.report = gear::REVERSE; break;
+        default:          gear.report = gear::NONE;     break;
+      }
+      if (pub_gear_->is_activated()) pub_gear_->publish(gear);
+      break;
+    }
+
+    case CAN_SAFETY_STS: {  // 0x011 — SYS liveness + light state (forwarded low→high)
+      if (frame.len < 2) break;
+      sys_estop_active_ = frame.data[0];
+      sys_heartbeat_ok_ = frame.data[1];
+
+      // Light state feedback (present when DLC ≥ 3, v0.0.5)
+      if (frame.len >= 3) {
+        uint8_t lights = frame.data[2];
+        autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport turn;
+        if ((lights & 0x03) == 0x03)
+          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
+        else if (lights & 0x01)
+          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
+        else if (lights & 0x02)
+          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
+        else
+          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
+        if (pub_turn_status_->is_activated()) pub_turn_status_->publish(turn);
+
+        autoware_auto_vehicle_msgs::msg::HazardLightsReport hazard;
+        hazard.report = ((lights & 0x03) == 0x03)
+          ? autoware_auto_vehicle_msgs::msg::HazardLightsReport::ENABLE
+          : autoware_auto_vehicle_msgs::msg::HazardLightsReport::DISABLE;
+        if (pub_hazard_status_->is_activated()) pub_hazard_status_->publish(hazard);
+      }
       break;
     }
 
@@ -709,9 +807,35 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       if (frame.len < 8) break;
       int16_t angle_raw = (int16_t)((uint16_t)frame.data[0] << 8 | frame.data[1]);
       float steer_deg = (angle_raw - 30000) * 0.1f;  // offset=-3000, 0.1°/bit
+      steer_angle_rad_ = steer_deg * M_PI / 180.0f;  // cache for odometry
+      last_steer_time_ = now();
       autoware_auto_vehicle_msgs::msg::SteeringReport steer;
-      steer.steering_tire_angle = steer_deg * M_PI / 180.0f;
+      steer.steering_tire_angle = steer_angle_rad_;
       if (pub_steering_->is_activated()) pub_steering_->publish(steer);
+      break;
+    }
+
+    case 0x311: {  // BRAKE_DIAG — v0.0.4 SEB telemetry
+      if (frame.len < 8) break;
+      // Publish brake telemetry to diagnostics
+      diagnostic_msgs::msg::DiagnosticArray diag;
+      diag.header.stamp = now();
+      auto add_kv = [&](const std::string & name, double val, const std::string & unit) {
+        diagnostic_msgs::msg::DiagnosticStatus s;
+        s.name = "brake/" + name;
+        s.hardware_id = "etrike";
+        s.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+        s.values = {{"value", std::to_string(val)}, {"unit", unit}};
+        diag.status.push_back(s);
+      };
+      uint16_t press_raw = (uint16_t)((uint16_t)frame.data[0] << 8 | frame.data[1]);
+      add_kv("pressure", press_raw * 0.05, "MPa");
+      add_kv("fault", static_cast<double>(frame.data[2]), "bool");
+      int16_t mtr_curr = (int16_t)((uint16_t)frame.data[3] << 8 | frame.data[4]);
+      add_kv("motor_current", mtr_curr * 0.01, "A");
+      uint16_t ecu_temp = (uint16_t)((uint16_t)frame.data[5] << 8 | frame.data[6]);
+      add_kv("ecu_temp", ecu_temp * 0.1, "degC");
+      if (pub_diag_->is_activated()) pub_diag_->publish(diag);
       break;
     }
 
