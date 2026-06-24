@@ -244,6 +244,29 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       writeI32BE(bytes, 0, numberValue(values.brake_pressure_kpa));
       return { dlc: 4, data: bytes.slice(0, 4) };
 
+    case "low:0x201":
+      bytes[0] =
+        (values.angle_status ? 0x01 : 0) |
+        ((numberValue(values.error_status) & 3) << 6);
+      writeI16LE(bytes, 2, numberValue(values.str_angle));
+      writeI16LE(bytes, 4, numberValue(values.tgt_angle_spd));
+      bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
+      bytes[7] = numberValue(values.checksum) & 0xff;
+      return { dlc: 8, data: bytes };
+
+    case "low:0x721":
+      bytes[0] =
+        (values.alignment_status ? 0x01 : 0) |
+        (values.control_enable_sts ? 0x02 : 0) |
+        ((numberValue(values.control_mode_sts) & 3) << 2) |
+        ((numberValue(values.error_status) & 3) << 6);
+      writeU16LE(bytes, 2, numberValue(values.stroke_value));
+      bytes[3] = numberValue(values.pressure_value) & 0xff;
+      writeI16LE(bytes, 5, numberValue(values.angle_value));
+      bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
+      bytes[7] = numberValue(values.checksum) & 0xff;
+      return { dlc: 8, data: bytes };
+
     case "low:0x7B9":
       bytes[0] =
         (values.align_enable ? 0x01 : 0) |
@@ -256,9 +279,6 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       return { dlc: 8, data: bytes };
 
     case "high:0x7FC":
-    case "high:0x7FD":
-    case "low:0x7FD":
-    case "low:0x7FE":
       bytes[0] = numberValue(values.alive_ctr) & 0xff;
       return { dlc: 1, data: bytes.slice(0, 1) };
 
