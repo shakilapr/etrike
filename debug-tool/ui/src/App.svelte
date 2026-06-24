@@ -104,7 +104,7 @@
     {#if activeTab === "dashboard"}
       <Dashboard {ids} />
     {:else if activeTab === "monitor"}
-      <CanMonitor {ids} {stream} />
+      <CanMonitor {ids} />
     {:else if activeTab === "injector"}
       <CanInjector {ids} {templates} />
     {:else}
