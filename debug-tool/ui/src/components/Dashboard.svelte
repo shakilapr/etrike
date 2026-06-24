@@ -275,6 +275,7 @@
     border-left: 4px solid var(--muted);
     border-radius: 6px;
     min-height: 96px;
+    min-width: 0;
     padding: 14px;
   }
 
@@ -326,6 +327,7 @@
     border: 1px solid var(--panel-border);
     border-radius: 6px;
     min-height: 72px;
+    min-width: 0;
     padding: 12px;
   }
 
@@ -348,6 +350,7 @@
     display: grid;
     gap: 0;
     overflow: hidden;
+    min-width: 0;
   }
 
   .pair-head,
@@ -370,6 +373,14 @@
     border-bottom: 1px solid var(--panel-border);
     border-left: 3px solid var(--muted);
     padding: 10px 12px;
+  }
+
+  .pair-head > *,
+  .pair-row > *,
+  .frame-head > *,
+  .frame-row > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .pair-row[data-state="ok"] { border-left-color: var(--ok); }

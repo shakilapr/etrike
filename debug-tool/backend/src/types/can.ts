@@ -150,6 +150,18 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x205", "RT_BRAKE_CMD", "RT", "50 Hz", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
   msg("low", "0x206", "MTR_MOTOR_FBK", "MTR", "50 Hz", 4, true, motorFeedbackFields),
   msg("low", "0x302", "HOST_LIGHT_CMD", "RT (fwd)", "change", 1, true, lightFields),
+  msg("low", "0x310", "STEER_DIAG", "RT", "10 Hz", 8, false, [
+    num("SteerDiag_Angle0_1deg", "Angle", "deg", -700, 700),
+    num("SteerDiag_Fault", "Fault", undefined, 0, 1),
+    num("SteerDiag_MotorCurrent", "Motor current", "A", 0, 60),
+    num("SteerDiag_ECUTemp", "ECU temp", "degC", 0, 255),
+  ]),
+  msg("low", "0x311", "BRAKE_DIAG", "RT", "10 Hz", 8, false, [
+    num("BrakeDiag_PressureRaw", "Pressure", "MPa", 0, 32),
+    num("BrakeDiag_Fault", "Fault", undefined, 0, 1),
+    num("BrakeDiag_MotorCurrent", "Motor current", "A", -255, 255),
+    num("BrakeDiag_ECUTemp", "ECU temp", "degC", -40, 215),
+  ]),
   msg("low", "0x600", "SYS_DIAG_RPT", "SYS", "1 Hz", 8, false, diagFields),
   msg("low", "0x6FA", "SES_TEST", "EPS-C", "100 Hz", 8, false, [num("motor_current", "Motor current"), num("ecu_temp", "ECU temp"), num("supply_voltage", "Supply voltage")]),
   msg("low", "0x6FB", "SEB_TEST", "SEB", "100 Hz", 8, false, [num("motor_current", "Motor current"), num("ecu_temp", "ECU temp"), num("supply_voltage", "Supply voltage")]),
