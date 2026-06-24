@@ -41,6 +41,9 @@ cd debug-tool/ui && npm install && npm run dev          # :5173
 # Simulator (publishes synthetic CAN traffic via MQTT)
 cd debug-tool/simulator && npm install && npx tsx src/index.ts
 
+# CANalyst-II (real two-bus USB adapter, after Zadig/WinUSB driver binding)
+cd debug-tool/backend && $env:CAN_TRANSPORT="canalystii"; npm run dev
+
 # Firmware (ESP32-S3 + 1× SN65HVD230 for single-bus, add MCP2515 for dual-bus)
 cd debug-tool/debug-esp32 && pio run -t upload
 
