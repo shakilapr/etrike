@@ -332,13 +332,28 @@
     align-items: start;
     display: grid;
     gap: 14px;
-    grid-template-columns: 300px minmax(0, 1fr) minmax(360px, 0.9fr);
+    grid-template-columns: 280px minmax(420px, 1fr) minmax(420px, 1.15fr);
+  }
+
+  .unit-test-layout > .panel,
+  .unit-test-layout label,
+  .unit-test-layout button,
+  .unit-test-layout span,
+  .unit-test-layout strong,
+  .unit-test-layout code,
+  .unit-test-layout pre {
+    min-width: 0;
   }
 
   .unit-list,
   .ack-panel {
     max-height: calc(100vh - 178px);
     overflow: auto;
+  }
+
+  .command-panel,
+  .feedback-panel {
+    overflow: hidden;
   }
 
   .unit-buttons,
@@ -380,13 +395,13 @@
   .encoded-row {
     display: grid;
     gap: 12px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     margin: 14px 0;
   }
 
   .encoded-row {
     align-items: end;
-    grid-template-columns: minmax(260px, 1fr) 140px 140px;
+    grid-template-columns: minmax(0, 1fr) minmax(92px, 120px) minmax(92px, 120px);
   }
 
   .encoded-row > div {
@@ -407,7 +422,8 @@
   .feedback-row {
     display: grid;
     gap: 10px;
-    grid-template-columns: minmax(180px, 0.65fr) 88px minmax(150px, 0.45fr) minmax(220px, 1fr);
+    grid-template-columns: minmax(132px, 1fr) minmax(70px, 0.45fr) minmax(96px, 0.7fr) minmax(0, 1.35fr);
+    min-width: 0;
   }
 
   .feedback-head {
@@ -437,6 +453,7 @@
     font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
     font-size: 0.78rem;
     overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .confirm-row {
@@ -468,6 +485,14 @@
     .unit-list,
     .ack-panel {
       max-height: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .encoded-row,
+    .feedback-head,
+    .feedback-row {
+      gap: 8px;
     }
   }
 </style>
