@@ -31,7 +31,7 @@ export class CanalystBridge implements HardwareBridge {
   }
 
   start(): void {
-    const scriptPath = resolve(process.cwd(), "canalystii_bridge.py");
+    const scriptPath = resolve(__dirname, "../../canalystii_bridge.py");
     if (!existsSync(scriptPath)) {
       this.state.last_error = `CANalyst-II bridge script not found: ${scriptPath}`;
       this.broadcastStatus();
@@ -44,6 +44,7 @@ export class CanalystBridge implements HardwareBridge {
         ...process.env,
         CANALYST_BITRATE: String(this.config.canalystBitrate),
         CANALYST_POLL_MS: String(this.config.canalystPollMs),
+        CANALYST_DEVICE_INDEX: String(this.config.canalystDeviceIndex),
         CANALYST_CH0_BUS: this.config.canalystChannel0Bus,
         CANALYST_CH1_BUS: this.config.canalystChannel1Bus
       },
