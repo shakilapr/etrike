@@ -26,6 +26,7 @@
   type BusFilter = Bus | "all";
   let busFilter: BusFilter = "all";
   let paused = false;
+  let pausedSnapshot: typeof filteredFrames = [];
   let filterText = "";
   let expandedKey = "";
   let collapsed = new Set<string>();
@@ -46,7 +47,8 @@
   });
 
   function framesForCat(catId: string): typeof filteredFrames {
-    return filteredFrames.filter((f) => CATEGORIES.find((c) => c.key === catId)?.ids.includes(f.id)).slice(-10);
+    const source = paused ? pausedSnapshot : filteredFrames;
+    return source.filter((f) => CATEGORIES.find((c) => c.key === catId)?.ids.includes(f.id)).slice(-10);
   }
 
   function toggleCat(key: string) {
@@ -100,7 +102,10 @@
       <input bind:value={filterText} placeholder="Filter frames by ID, name, or value" />
     </div>
     <div class="toolbar-actions">
-      <button type="button" on:click={() => (paused = !paused)}>{paused ? "Resume" : "Pause"}</button>
+      <button type="button" on:click={() => {
+        if (!paused) pausedSnapshot = filteredFrames.slice();
+        paused = !paused;
+      }}>{paused ? "Resume" : "Pause"}</button>
       <button type="button" on:click={toggleAll}>{allExpanded ? "Collapse All" : "Expand All"}</button>
       <button type="button" on:click={exportJson}>JSON</button>
       <button type="button" on:click={exportCsv}>CSV</button>
