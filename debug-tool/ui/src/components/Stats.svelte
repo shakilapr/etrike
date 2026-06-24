@@ -50,7 +50,7 @@
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel counters-full">
     <div class="panel-title">
       <h2>Controller Counters</h2>
       <span>TEC / REC</span>
