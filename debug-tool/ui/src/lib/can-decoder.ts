@@ -1,11 +1,17 @@
+// WARNING: This CAN message catalog is hand-maintained.
+// When adding/changing messages, also update the duplicate copy in:
+//   debug-tool/backend/src/types/can.ts
+// The single source of truth is: shared/can/can_signals.yaml
+
 export const BUSES = ["high", "low"] as const;
 export type Bus = (typeof BUSES)[number];
 
 export type CanId =
   | "0x001" | "0x011" | "0x012" | "0x110" | "0x120" | "0x169"
   | "0x201" | "0x202" | "0x203" | "0x204" | "0x205" | "0x206"
-  | "0x210" | "0x220" | "0x300" | "0x301" | "0x302" | "0x400"
-  | "0x600" | "0x6FA" | "0x6FB" | "0x721" | "0x731" | "0x741"
+  | "0x210" | "0x220" | "0x300" | "0x301" | "0x302"
+  | "0x310" | "0x311"
+  | "0x400" | "0x600" | "0x6FA" | "0x6FB" | "0x721" | "0x731" | "0x741"
   | "0x7B9" | "0x7FC" | "0x7FD" | "0x7FE";
 
 export type FieldKind = "number" | "boolean" | "enum";
@@ -126,6 +132,18 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("high", "0x301", "HOST_BRAKE_REQ", "Jetson", "demand", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
   msg("high", "0x302", "HOST_LIGHT_CMD", "Jetson", "change", 1, true, lightFields),
   msg("high", "0x400", "HOST_OBSTACLE_DIST", "Jetson", "10 Hz", 4, true, [num("distance_mm", "Distance", "mm", 0, 4294967295, 10)]),
+  msg("high", "0x310", "STEER_DIAG", "RT", "10 Hz", 8, false, [
+    num("SteerDiag_Angle0_1deg", "Angle", "deg", -700, 700),
+    bool("SteerDiag_Fault", "Fault"),
+    num("SteerDiag_MotorCurrent", "Motor current", "A", 0, 60),
+    num("SteerDiag_ECUTemp", "ECU temp", "degC", 0, 255),
+  ]),
+  msg("high", "0x311", "BRAKE_DIAG", "RT", "10 Hz", 8, false, [
+    num("BrakeDiag_PressureRaw", "Pressure", "MPa", 0, 32),
+    bool("BrakeDiag_Fault", "Fault"),
+    num("BrakeDiag_MotorCurrent", "Motor current", "A", -255, 255),
+    num("BrakeDiag_ECUTemp", "ECU temp", "degC", -40, 215),
+  ]),
   msg("high", "0x600", "SYS_DIAG_RPT", "RT (fwd)", "1 Hz", 8, false, diagFields),
   msg("high", "0x7FC", "JETSON_HEARTBEAT", "Jetson", "2 Hz", 1, true, heartbeatFields),
   msg("high", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
@@ -149,7 +167,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x721", "SEB_STATUS", "SEB", "100 Hz", 8, true, [num("stroke_value", "Stroke value", "raw"), num("pressure_value", "Pressure value", "raw"), num("angle_value", "Angle value", "raw"), num("error_status", "Error status", undefined, 0, 3)]),
   msg("low", "0x731", "SEB_ERRINFO", "SEB", "10 Hz", 8, false, [num("fault_mask", "Fault mask")]),
   msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
-  msg("low", "0x7B9", "VCU_SEB_REQ", "RT/SYS", "50 Hz", 8, true, [num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
+  msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
   msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 1, false, heartbeatFields)
 ];
@@ -235,6 +253,22 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       writeU32BE(bytes, 0, numberValue(values.distance_mm));
       return { dlc: 4, data: bytes.slice(0, 4) };
 
+    case "high:0x310":
+      writeI16BE(bytes, 0, numberValue(values.SteerDiag_Angle0_1deg));
+      bytes[2] = values.SteerDiag_Fault ? 1 : 0;
+      writeI16BE(bytes, 3, numberValue(values.SteerDiag_MotorCurrent));
+      writeI16BE(bytes, 5, numberValue(values.SteerDiag_ECUTemp));
+      bytes[7] = 0;
+      return { dlc: 8, data: bytes };
+
+    case "high:0x311":
+      writeI16BE(bytes, 0, numberValue(values.BrakeDiag_PressureRaw));
+      bytes[2] = values.BrakeDiag_Fault ? 1 : 0;
+      writeI16BE(bytes, 3, numberValue(values.BrakeDiag_MotorCurrent));
+      writeI16BE(bytes, 5, numberValue(values.BrakeDiag_ECUTemp));
+      bytes[7] = 0;
+      return { dlc: 8, data: bytes };
+
     case "low:0x204":
       writeI32BE(bytes, 0, numberValue(values.motor_speed_mmps));
       bytes[4] = numberValue(values.gear);
@@ -262,8 +296,13 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
         ((numberValue(values.error_status) & 3) << 6);
       writeU16LE(bytes, 2, numberValue(values.stroke_value));
       bytes[3] = numberValue(values.pressure_value) & 0xff;
-      writeI16LE(bytes, 5, numberValue(values.angle_value));
-      bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
+      // Angle: 12-bit effective (bits 8-9 in byte 6 bits 2-3, upper nibble overlaid by security echo)
+      const angleVal = numberValue(values.angle_value) & 0x0FFF;
+      bytes[5] = angleVal & 0xFF;
+      bytes[6] = 1                          // bit 0: RollCntEnStatus
+               | (1 << 1)                    // bit 1: ChecksumEnStatus
+               | (((angleVal >> 8) & 0x3) << 2)  // bits 2-3: angle bits 9-8
+               | ((numberValue(values.rolling_counter) & 0xF) << 4);  // bits 4-7: RollCntStatus
       bytes[7] = numberValue(values.checksum) & 0xff;
       return { dlc: 8, data: bytes };
 
@@ -341,27 +380,27 @@ export function numberValue(value: unknown): number {
   return Number.isFinite(number) ? number : 0;
 }
 
-function writeI16BE(bytes: number[], offset: number, value: number): void {
+export function writeI16BE(bytes: number[], offset: number, value: number): void {
   const raw = value & 0xffff;
   bytes[offset] = (raw >> 8) & 0xff;
   bytes[offset + 1] = raw & 0xff;
 }
 
-function writeI24BE(bytes: number[], offset: number, value: number): void {
+export function writeI24BE(bytes: number[], offset: number, value: number): void {
   const raw = value & 0xffffff;
   bytes[offset] = (raw >> 16) & 0xff;
   bytes[offset + 1] = (raw >> 8) & 0xff;
   bytes[offset + 2] = raw & 0xff;
 }
 
-function writeI32BE(bytes: number[], offset: number, value: number): void {
+export function writeI32BE(bytes: number[], offset: number, value: number): void {
   bytes[offset] = (value >> 24) & 0xff;
   bytes[offset + 1] = (value >> 16) & 0xff;
   bytes[offset + 2] = (value >> 8) & 0xff;
   bytes[offset + 3] = value & 0xff;
 }
 
-function writeU32BE(bytes: number[], offset: number, value: number): void {
+export function writeU32BE(bytes: number[], offset: number, value: number): void {
   const raw = value >>> 0;
   bytes[offset] = Math.floor(raw / 0x1000000) & 0xff;
   bytes[offset + 1] = (raw >> 16) & 0xff;
@@ -369,14 +408,111 @@ function writeU32BE(bytes: number[], offset: number, value: number): void {
   bytes[offset + 3] = raw & 0xff;
 }
 
-function writeI16LE(bytes: number[], offset: number, value: number): void {
+export function writeI16LE(bytes: number[], offset: number, value: number): void {
   const raw = value & 0xffff;
   bytes[offset] = raw & 0xff;
   bytes[offset + 1] = (raw >> 8) & 0xff;
 }
 
-function writeU16LE(bytes: number[], offset: number, value: number): void {
+export function writeU16LE(bytes: number[], offset: number, value: number): void {
   const raw = value & 0xffff;
   bytes[offset] = raw & 0xff;
   bytes[offset + 1] = (raw >> 8) & 0xff;
+}
+
+// ── Decode (mirrors backend/src/types/can.ts decodeFrame — keep in sync) ──
+
+function normalizeBytes(data: number[]): number[] {
+  const bytes = data.map((value) => Number(value) & 0xff);
+  while (bytes.length < 8) bytes.push(0);
+  return bytes;
+}
+
+function readI16BE(bytes: number[], offset: number): number {
+  const value = ((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0);
+  return value & 0x8000 ? value - 0x10000 : value;
+}
+
+function readU16BE(bytes: number[], offset: number): number {
+  return (((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0)) >>> 0;
+}
+
+function readI16LE(bytes: number[], offset: number): number {
+  const value = (bytes[offset] ?? 0) | ((bytes[offset + 1] ?? 0) << 8);
+  return value & 0x8000 ? value - 0x10000 : value;
+}
+
+function readU16LE(bytes: number[], offset: number): number {
+  return ((bytes[offset] ?? 0) | ((bytes[offset + 1] ?? 0) << 8)) >>> 0;
+}
+
+function readI24BE(bytes: number[], offset: number): number {
+  const value = ((bytes[offset] ?? 0) << 16) | ((bytes[offset + 1] ?? 0) << 8) | (bytes[offset + 2] ?? 0);
+  return value & 0x800000 ? value - 0x1000000 : value;
+}
+
+function readI32BE(bytes: number[], offset: number): number {
+  return ((bytes[offset] ?? 0) << 24) | ((bytes[offset + 1] ?? 0) << 16) | ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0);
+}
+
+function readU32BE(bytes: number[], offset: number): number {
+  return (((bytes[offset] ?? 0) * 0x1000000) + ((bytes[offset + 1] ?? 0) << 16) + ((bytes[offset + 2] ?? 0) << 8) + (bytes[offset + 3] ?? 0)) >>> 0;
+}
+
+function readU32LE(bytes: number[], offset: number): number {
+  return ((bytes[offset] ?? 0) + ((bytes[offset + 1] ?? 0) << 8) + ((bytes[offset + 2] ?? 0) << 16) + ((bytes[offset + 3] ?? 0) * 0x1000000)) >>> 0;
+}
+
+function decodeFaultMask(bytes: number[], prefix: "ses" | "seb"): Record<string, unknown> {
+  const faultMask = readU32LE(bytes, 0);
+  return {
+    fault_mask: faultMask,
+    fault_mask_hex: `0x${faultMask.toString(16).toUpperCase().padStart(8, "0")}`,
+    l3_fault: prefix === "seb" ? (faultMask & 0x007e3ffc) !== 0 : (faultMask & 0x003c3c00) !== 0
+  };
+}
+
+function modeName(mode: number): string {
+  return MODE_OPTIONS.find((item) => item.value === mode)?.label ?? "?";
+}
+
+function gearName(gear: number): string {
+  return GEAR_OPTIONS.find((item) => item.value === gear)?.label ?? "?";
+}
+
+export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string, unknown> {
+  const bytes = normalizeBytes(data);
+  switch (normalizeCanId(id)) {
+    case "0x001": return {};
+    case "0x011": return { estop_active: bytes[0] !== 0, heartbeat_ok: bytes[1] !== 0 };
+    case "0x012": return { enable: bytes[0] !== 0 };
+    case "0x110": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0) };
+    case "0x120": return { speed_mmps: readI16BE(bytes, 0) };
+    case "0x169": return { alignment_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), target_angle: readI16LE(bytes, 2), target_speed: (bytes[4] ?? 0) | (((bytes[5] ?? 0) & 0x0f) << 8), rolling_counter: ((bytes[5] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
+    case "0x201": return { angle_status: Boolean(bytes[0] & 1), control_mode_sts: ((bytes[0] ?? 0) >> 1) & 3, error_status: ((bytes[0] ?? 0) >> 6) & 3, str_angle: readI16LE(bytes, 2), tgt_angle_spd: readI16LE(bytes, 4), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
+    case "0x202": return decodeFaultMask(bytes, "ses");
+    case "0x203": return { sw_version: bytes[0] ?? 0, hw_version: bytes[1] ?? 0 };
+    case "0x204": return { motor_speed_mmps: readI32BE(bytes, 0), gear: bytes[4] ?? 0, gear_name: gearName(bytes[4] ?? 0) };
+    case "0x205": return { brake_pressure_kpa: readI32BE(bytes, 0) };
+    case "0x206": return { actual_speed_mmps: readI16BE(bytes, 0), gear_state: bytes[2] ?? 0, gear_name: gearName(bytes[2] ?? 0), fault_flags: bytes[3] ?? 0 };
+    case "0x210": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0), steer_valid: bytes[1] !== 0, reversing: bytes[2] !== 0 };
+    case "0x220": return { speed_setpoint: readI16BE(bytes, 0), speed_measured: readI16BE(bytes, 2), pid_output: readI16BE(bytes, 4) };
+    case "0x300": return { speed_mmps: readI32BE(bytes, 0), yaw_rate_mrad_s: readI24BE(bytes, 4), gear: bytes[7] ?? 0, gear_name: gearName(bytes[7] ?? 0) };
+    case "0x301": return { brake_pressure_kpa: readI32BE(bytes, 0) };
+    case "0x302": return { left_turn: Boolean(bytes[0] & 1), right_turn: Boolean(bytes[0] & 2), brake_light: Boolean(bytes[0] & 4), headlight: Boolean(bytes[0] & 8) };
+    case "0x310": return { SteerDiag_Angle0_1deg: readI16BE(bytes, 0) * 0.1 - 3000, SteerDiag_Fault: bytes[2] !== 0, SteerDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, SteerDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
+    case "0x311": return { BrakeDiag_PressureRaw: readI16BE(bytes, 0) * 0.05, BrakeDiag_Fault: bytes[2] !== 0, BrakeDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, BrakeDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
+    case "0x400": { const distance = readU32BE(bytes, 0); return { distance_mm: distance, distance_label: distance === 0xffffffff ? "clear" : `${distance} mm` }; }
+    case "0x600": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0), brake_engaged: bytes[1] !== 0, hb_ok: bytes[2] !== 0, estop_active: bytes[3] !== 0, free_heap_kb: readU16BE(bytes, 4), tec: bytes[6] ?? 0, rec: bytes[7] ?? 0 };
+    case "0x6FA":
+    case "0x6FB": return { motor_current: readI16LE(bytes, 1), ecu_temp: readU16LE(bytes, 3), supply_voltage: readU16LE(bytes, 5) };
+    case "0x721": { const angleRaw = (bytes[5] ?? 0) | (((bytes[6] ?? 0) & 0x0C) << 6); return { alignment_status: Boolean(bytes[0] & 1), control_enable_sts: Boolean(bytes[0] & 2), control_mode_sts: ((bytes[0] ?? 0) >> 2) & 3, auto_brake_sts: Boolean(bytes[0] & 0x10), error_status: ((bytes[0] ?? 0) >> 6) & 3, stroke_value: readU16LE(bytes, 2), pressure_value: bytes[3] ?? 0, angle_value: angleRaw, rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 }; }
+    case "0x731": return decodeFaultMask(bytes, "seb");
+    case "0x741": return { sw_version: bytes[0] ?? 0, hw_version: bytes[1] ?? 0 };
+    case "0x7B9": return { align_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), control_mode: ((bytes[0] ?? 0) >> 2) & 1, auto_brake: Boolean(bytes[0] & 8), stroke_req: readU16LE(bytes, 2), pressure_req: bytes[3] ?? 0, rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
+    case "0x7FC":
+    case "0x7FD":
+    case "0x7FE": return { alive_ctr: bytes[0] ?? 0 };
+    default: return { bus };
+  }
 }
