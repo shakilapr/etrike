@@ -49,11 +49,10 @@ int main(){
         sc.start_estop(true);  // obstacle_triggered=true
         CHECK(sc.state() == SteerState::ESTOP_HOLD_THEN_SILENT);
 
-        // Verify hold angle is clamped (we can't directly access m_estop_hold_angle,
-        // but we can tick() and check what angle is commanded)
+        // Set hold timestamp BEFORE first tick so the hold phase is active
         can::VcuSesReq out;
-        sc.tick(0, 1, now_ms += 20, out);  // tick to set hold timestamp
-        sc.set_estop_hold_time(now_ms);  // now we're in hold phase
+        sc.set_estop_hold_time(now_ms);
+        sc.tick(0, 1, now_ms += 20, out);
 
         // The commanded angle should be at most ~5° (50 in 0.1° units / raw)
         // At 25 km/h: limit = 5°, raw = 50 in 0.1° units
@@ -175,7 +174,7 @@ int main(){
 
         can::VcuSesReq out;
         // Hold phase: transmit for 500ms
-        for (int i = 0; i < 25; ++i, now_ms += 20) {  // 25 ticks = 500ms at 50Hz
+        for (int i = 0; i < 26; ++i, now_ms += 20) {  // 26 ticks ≈ 520ms at 50Hz
             sc.tick(0, 1, now_ms, out);
             if (sc.state() == SteerState::FAULT) break;
         }
