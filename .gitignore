@@ -43,6 +43,7 @@ Desktop.ini
 
 # ── Temporary analysis & working files ──────────────────────────────────
 /tem/
+_filelist.txt
 
 # ── PDF extraction tool artifacts ────────────────────────────────────
 /extract_pdfs.py
@@ -122,8 +123,11 @@ Libraries/.ads/
 
 # ── Claude Code ──────────────────────────────────────────────────────
 .claude/
+CLAUDE.md
 
 # ── LaTeX build artifacts ────────────────────────────────────────────
 *.aux
 *.log
 *.toc
+/tex/generated/
+/tex/output/

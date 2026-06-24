@@ -1,5 +1,7 @@
 # RT-AURIX-Lite — Consolidated E-Trike Controller
 
+> **Status: Architecture only.** No source implementation exists yet. This directory contains the architecture specification for a planned cost-reduced AURIX TC3xx variant. The distributed ESP32-S3 reference architecture (`rt-esp32/` + `sys-esp32/`) is the active implementation.
+
 Single AURIX TC3xx variant that combines RT (realtime physics, steering, CAN gateway) and SYS (safety, brake, body control, motor actuation) into one microcontroller. Keeps the same two-CAN-bus topology as the distributed architecture — AURIX bridges between high and low buses.
 
 ## What this is

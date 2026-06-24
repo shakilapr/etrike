@@ -60,4 +60,15 @@ describe("SyntreeEpsc", () => {
       expect((f201.data[0] >> 6) & 3).toBe(3);
     }
   });
+
+  it("0x201 checksum is XOR ^ 0xFF", () => {
+    const frames = epsc.tick(10, [], [make0x169(0)], ctx());
+    const f201 = frames.find(f => f.canId === "0x201");
+    expect(f201).toBeDefined();
+    if (f201) {
+      let c = 0;
+      for (let i = 0; i < 7; i++) c ^= f201.data[i];
+      expect(f201.data[7]).toBe(c ^ 0xFF);
+    }
+  });
 });

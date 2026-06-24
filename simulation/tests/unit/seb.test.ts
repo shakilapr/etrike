@@ -65,4 +65,26 @@ describe("SyntreeSeb", () => {
     const strokeRaw = f721!.data[2] | (f721!.data[3] << 8);
     expect(strokeRaw).toBe(900);
   });
+
+  it("0x721 checksum is XOR ^ 0xFF", () => {
+    const frames = seb.tick(10, [], [make0x7B9(0)], ctx());
+    const f721 = frames.find(f => f.canId === "0x721");
+    expect(f721).toBeDefined();
+    if (f721) {
+      let c = 0;
+      for (let i = 0; i < 7; i++) c ^= f721.data[i];
+      expect(f721.data[7]).toBe(c ^ 0xFF);
+    }
+  });
+
+  it("0x721 byte 6 has security echo bits set", () => {
+    const frames = seb.tick(10, [], [make0x7B9(0)], ctx());
+    const f721 = frames.find(f => f.canId === "0x721");
+    expect(f721).toBeDefined();
+    if (f721) {
+      // bit 0: RollCntEnStatus, bit 1: ChecksumEnStatus
+      expect(f721.data[6] & 1).toBe(1);
+      expect((f721.data[6] >> 1) & 1).toBe(1);
+    }
+  });
 });

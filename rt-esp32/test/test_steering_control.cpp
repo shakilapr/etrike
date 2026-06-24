@@ -20,11 +20,11 @@ static void boot_to_active(SteeringControl& sc, uint32_t& now_ms, int16_t sync_a
     can::VcuSesReq out;
     // 25 ticks at 50 Hz = 500 ms in BOOT_WAIT
     for (int i = 0; i < 25; ++i) {
-        sc.tick(INT16_MIN, 0, now_ms++, out);
+        sc.tick(INT16_MIN, 0, now_ms += 20, out);
     }
     CHECK(sc.state() == SteerState::LISTEN_SYNC);
     // Provide valid 0x201 data to sync
-    sc.tick(sync_angle, 1, now_ms++, out);  // angle_status=1 (aligned)
+    sc.tick(sync_angle, 1, now_ms += 20, out);  // angle_status=1 (aligned)
     CHECK(sc.state() == SteerState::ACTIVE);
 }
 
@@ -52,7 +52,7 @@ int main(){
         // Verify hold angle is clamped (we can't directly access m_estop_hold_angle,
         // but we can tick() and check what angle is commanded)
         can::VcuSesReq out;
-        sc.tick(0, 1, now_ms++, out);  // tick to set hold timestamp
+        sc.tick(0, 1, now_ms += 20, out);  // tick to set hold timestamp
         sc.set_estop_hold_time(now_ms);  // now we're in hold phase
 
         // The commanded angle should be at most ~5° (50 in 0.1° units / raw)
@@ -116,7 +116,7 @@ int main(){
         // After >1s (50 ticks), should trigger FAULT
 
         bool faulted = false;
-        for (int i = 0; i < 60; ++i, ++now_ms) {
+        for (int i = 0; i < 80; ++i, now_ms += 20) {
             // Actual angle stays at 30° (stuck linkage), cmd ramps down
             int16_t actual = 300;  // stuck at 30°
             sc.tick(actual, 1, now_ms, out);
@@ -143,7 +143,7 @@ int main(){
         // Actual angle tracks commanded angle closely (2° error < 5° threshold)
         int16_t cmd = 100;
         bool faulted = false;
-        for (int i = 0; i < 60; ++i, ++now_ms) {
+        for (int i = 0; i < 60; ++i, now_ms += 20) {
             if (cmd > 4) cmd -= 4; else cmd = 0;
             int16_t actual = cmd + 10;  // 1° tracking error (< 5° threshold)
             sc.tick(actual, 1, now_ms, out);
@@ -175,7 +175,7 @@ int main(){
 
         can::VcuSesReq out;
         // Hold phase: transmit for 500ms
-        for (int i = 0; i < 25; ++i, ++now_ms) {  // 25 ticks = 500ms at 50Hz
+        for (int i = 0; i < 25; ++i, now_ms += 20) {  // 25 ticks = 500ms at 50Hz
             sc.tick(0, 1, now_ms, out);
             if (sc.state() == SteerState::FAULT) break;
         }
@@ -211,7 +211,7 @@ int main(){
         // Force FAULT by sync timeout: go to LISTEN_SYNC, never provide valid angle
         can::VcuSesReq dummy;
         for (int i = 0; i < 25; ++i)
-            sc.tick(INT16_MIN, 0, now_ms++, dummy);
+            sc.tick(INT16_MIN, 0, now_ms += 20, dummy);
         CHECK(sc.state() == SteerState::LISTEN_SYNC);
         // Wait >5s with no valid data → FAULT
         now_ms += 5001;

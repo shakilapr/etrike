@@ -7,8 +7,8 @@
 #
 # Generates these files:
 #   -> shared/can/etrike_custom.dbc   (custom protocol, Motorola/big-endian)
-#   -> rt-esp32/syntree_eps.dbc       (SYNTREE EPS-C, Intel/little-endian)
-#   -> sys-esp32/syntree_seb.dbc      (SYNTREE SEB, Intel/little-endian)
+#   -> shared/can/syntree_eps.dbc     (SYNTREE EPS-C, Intel/little-endian)
+#   -> shared/can/syntree_seb.dbc     (SYNTREE SEB, Intel/little-endian)
 #
 # Usage:
 #   python generate_all_dbc.py              # generate all DBCs

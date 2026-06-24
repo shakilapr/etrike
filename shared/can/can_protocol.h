@@ -459,12 +459,13 @@ inline void VcuSesReq::pack(uint8_t raw[8]) const {
     raw[2] = target_angle & 0xFF;
     raw[3] = (target_angle >> 8) & 0xFF;
     raw[4] = target_speed & 0xFF;
-    raw[5] = (target_speed >> 8) & 0xFF;
     // Byte 5: security signals overlay target_speed bits 8-15.
-    // target_speed is effectively 12-bit (lower nibble used by enable bits, upper nibble by rolling counter).
-    raw[5] = (roll_cnt_enable & 1)           // bit 0 = RollCnt_Enable
-           | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
-           | ((rolling_counter & 0xF) << 4);  // bits 4-7 = RollCnt
+    // Effective speed is 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3.
+    // Bits 10-15 are overlaid by security signals (enable bits + rolling counter).
+    raw[5] = (roll_cnt_enable & 1)                      // bit 0 = RollCnt_Enable
+           | ((checksum_enable & 1) << 1)                // bit 1 = CheckSum_Enable
+           | (((target_speed >> 8) & 0x3) << 2)          // bits 2-3 = speed bits 9-8
+           | ((rolling_counter & 0xF) << 4);              // bits 4-7 = RollCnt
     raw[6] = vehicle_speed & 0xFF;
     // Checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
     uint8_t cksum = 0;
@@ -479,7 +480,7 @@ inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
     r.reserved_0     = (raw[0] >> 2) & 0x3F;
     r.reserved_1     = raw[1];
     r.target_angle   = int16_t(raw[2] | (raw[3] << 8));
-    r.target_speed   = uint16_t(raw[4] | (raw[5] << 8)) & 0x0FFF; // lower 12 bits of Byte5
+    r.target_speed   = uint16_t(raw[4] | ((raw[5] & 0x0C) << 6)); // byte4 + bits 2-3 of byte5 = 10-bit speed
     r.roll_cnt_enable = raw[5] & 1;
     r.checksum_enable = (raw[5] >> 1) & 1;
     r.reserved_2     = (raw[5] >> 2) & 3;

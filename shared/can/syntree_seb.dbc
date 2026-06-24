@@ -1,0 +1,145 @@
+VERSION "created by canmatrix"
+
+
+NS_ :
+
+BS_:
+
+BU_: SYS SEB 
+
+
+BO_ 1977 VCU_SEB_REQ: 8 SYS
+ SG_ SEB_AlignEnable : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_CtrlEnable : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_CtrlMode : 2|1@1+ (1,0) [0|1] "enum" Vector__XXX
+ SG_ SEB_AutoBrake : 3|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_StrokeReq : 16|16@1+ (0.05,-30) [-5|27] "mm" Vector__XXX
+ SG_ SEB_PressureReq : 24|8@1+ (0.05,0) [0|5] "MPa" Vector__XXX
+ SG_ SEB_RollCntEnable : 48|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_ChecksumEnable : 49|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_RollCnt : 52|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ SEB_Checksum : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1825 SEB_STATUS: 8 SEB
+ SG_ SEB_AlignStatus : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_CtrlEnStatus : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_CtrlModeStatus : 2|2@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ SEB_AutoBrakeStatus : 4|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" Vector__XXX
+ SG_ SEB_StrokeValue : 16|16@1+ (0.05,-30) [-5|27] "mm" Vector__XXX
+ SG_ SEB_PressureValue : 24|8@1+ (0.05,0) [0|5] "MPa" Vector__XXX
+ SG_ SEB_AngleValue : 40|16@1- (0.5,0) [-150|840] "" Vector__XXX
+ SG_ SEB_RollCntEnStatus : 48|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_ChecksumEnStatus : 49|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_RollCntStatus : 52|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ SEB_ChecksumStatus : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1841 SEB_ErrInfo: 8 SEB
+ SG_ SEB_ECUUnderVolt : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_ECUOverVolt : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_CanComErr : 2|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_ECUTempErr : 3|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_DomainSC : 4|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_DomainV : 5|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_DomainT : 6|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_AngleP_OC : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_AngleP_AF : 8|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_AngleS_OC : 9|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_AngleS_AF : 10|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_NoPreSensor : 11|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_SensorUCL : 13|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_AlignmentErr : 14|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_AngleOver : 15|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_MtrStall : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_MtrDC : 18|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_OilErr : 19|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_InitOil : 20|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_SentValue : 21|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_MtrNoLoad : 22|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_PreSensorOver : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SEB_LowVoltCharging : 25|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1857 SEB_Version: 8 SEB
+ SG_ SEB_SW_Version : 0|8@1+ (0.01,0) [0|2.55] "" Vector__XXX
+ SG_ SEB_HW_Version : 8|8@1+ (0.1,0) [0|25.5] "" Vector__XXX
+
+BO_ 1787 SEB_Test: 8 SEB
+ SG_ SEB_MtrCurr : 8|16@1- (0.0078125,0) [-255|255] "A" Vector__XXX
+ SG_ SEB_ECUTemp : 24|16@1+ (0.5,0) [-40|215] "degC" Vector__XXX
+ SG_ SEB_PowVolt : 40|16@1+ (0.00390625,0) [0|32] "V" Vector__XXX
+
+
+CM_ BO_ 1977  "SYNTREE SEB brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1.";
+CM_ BO_ 1825  "SYNTREE SEB status feedback. 100 Hz. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1.";
+CM_ BO_ 1841  "SYNTREE SEB detailed fault flags. 14 of 23 faults are L3 -> SYS must escalate to ESTOP.";
+CM_ BO_ 1857  "SYNTREE SEB firmware version. Log on boot for compatibility check.";
+CM_ BO_ 1787  "SYNTREE SEB telemetry. 100 Hz. Bytes 0,7 reserved. Wider ranges than steering SES_Test.";
+
+CM_ SG_ 1977 SEB_AlignEnable "Calibration enable.";
+CM_ SG_ 1977 SEB_CtrlEnable "Active control enable.";
+CM_ SG_ 1977 SEB_CtrlMode "0=Stroke (position), 1=Pressure (hydraulic).";
+CM_ SG_ 1977 SEB_AutoBrake "Auto-brake / emergency trigger.";
+CM_ SG_ 1977 SEB_StrokeReq "Stroke position. Full 16-bit in Stroke mode. Overlaps with PressureReq at byte 3.";
+CM_ SG_ 1977 SEB_PressureReq "Pressure in Mode 1. Overlaps Stroke[15:8]  mode-dependent.";
+CM_ SG_ 1977 SEB_RollCntEnable "Life Signal Validity  MUST be 1.";
+CM_ SG_ 1977 SEB_ChecksumEnable "Checksum Validity  MUST be 1.";
+CM_ SG_ 1977 SEB_RollCnt "Life Signal rolling counter. Increment every frame.";
+CM_ SG_ 1977 SEB_Checksum "Checksum = XOR(bytes 0-6) ^ 0xFF.";
+CM_ SG_ 1825 SEB_AlignStatus "Alignment Info Feedback. 1=aligned.";
+CM_ SG_ 1825 SEB_CtrlEnStatus "Control Enable Feedback.";
+CM_ SG_ 1825 SEB_CtrlModeStatus "Control Mode Feedback.";
+CM_ SG_ 1825 SEB_AutoBrakeStatus "Auto Brake Status Feedback.";
+CM_ SG_ 1825 SEB_ErrorStatus "Error Status.";
+CM_ SG_ 1825 SEB_StrokeValue "Stroke Value Feedback.";
+CM_ SG_ 1825 SEB_PressureValue "Pressure Feedback. Overlaps Stroke[15:8]  mode-dependent.";
+CM_ SG_ 1825 SEB_AngleValue "Angle Feedback. Overlaps security echo at byte 6.";
+CM_ SG_ 1825 SEB_RollCntEnStatus "Life Signal Status Feedback.";
+CM_ SG_ 1825 SEB_ChecksumEnStatus "Checksum Status Feedback.";
+CM_ SG_ 1825 SEB_RollCntStatus "Life Signal Feedback  echoes rolling counter.";
+CM_ SG_ 1825 SEB_ChecksumStatus "Checksum Feedback.";
+CM_ SG_ 1841 SEB_ECUUnderVolt "Controller Undervoltage [L2]";
+CM_ SG_ 1841 SEB_ECUOverVolt "Controller Overvoltage [L2]";
+CM_ SG_ 1841 SEB_CanComErr "CAN Communication Fault [L3]";
+CM_ SG_ 1841 SEB_ECUTempErr "Controller Temperature Fault [L3]";
+CM_ SG_ 1841 SEB_DomainSC "Domain Drive Short Circuit [L3]";
+CM_ SG_ 1841 SEB_DomainV "Domain Drive Voltage Fault [L3]";
+CM_ SG_ 1841 SEB_DomainT "Domain Drive Temperature Fault [L3]";
+CM_ SG_ 1841 SEB_AngleP_OC "Angle Sensor P Open Circuit [L3]";
+CM_ SG_ 1841 SEB_AngleP_AF "Angle Sensor P Mainboard Abnormal [L3]";
+CM_ SG_ 1841 SEB_AngleS_OC "Angle Sensor S Open Circuit [L3]";
+CM_ SG_ 1841 SEB_AngleS_AF "Angle Sensor S Sub-board Abnormal [L3]";
+CM_ SG_ 1841 SEB_NoPreSensor "Unconnected Oil Pressure Sensor [L3]";
+CM_ SG_ 1841 SEB_SensorUCL "Sensor Plausibility Fault [L3]";
+CM_ SG_ 1841 SEB_AlignmentErr "Alignment Fault [L2]";
+CM_ SG_ 1841 SEB_AngleOver "Angle Out of Bounds [L2]";
+CM_ SG_ 1841 SEB_MtrStall "Motor Stall Fault [L3]";
+CM_ SG_ 1841 SEB_MtrDC "Motor Disconnect Fault [L3]";
+CM_ SG_ 1841 SEB_OilErr "Oil Pressure Error [L2]";
+CM_ SG_ 1841 SEB_InitOil "Initial Oil Pressure Fault [L3]";
+CM_ SG_ 1841 SEB_SentValue "Send Value Error [L3]";
+CM_ SG_ 1841 SEB_MtrNoLoad "Motor No-load Fault [L3]";
+CM_ SG_ 1841 SEB_PreSensorOver "Oil Pressure Sensor Overvoltage [L2]";
+CM_ SG_ 1841 SEB_LowVoltCharging "Low Voltage Charging Failure [L2]";
+CM_ SG_ 1857 SEB_SW_Version "Software version (e.g. 0xC8 = 2.00)";
+CM_ SG_ 1857 SEB_HW_Version "Hardware version (e.g. 0x0D = 1.3)";
+CM_ SG_ 1787 SEB_MtrCurr "Motor current. Monitor for mechanical binding.";
+CM_ SG_ 1787 SEB_ECUTemp "ECU temperature. For over-temperature early warning.";
+CM_ SG_ 1787 SEB_PowVolt "Supply voltage. 0-32V range.";
+
+CM_ BU_ SYS "ESP32-S3, FreeRTOS, safety + motor + body control";
+CM_ BU_ SEB "SYNTREE SEB, electro-hydraulic brake module, preprogrammed CAN IDs";
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000000000;
+
+
+BA_ "GenMsgCycleTime" BO_ 1977 20;
+BA_ "GenMsgCycleTime" BO_ 1825 10;
+BA_ "GenMsgCycleTime" BO_ 1841 100;
+BA_ "GenMsgCycleTime" BO_ 1857 1000;
+BA_ "GenMsgCycleTime" BO_ 1787 10;
+
+
+VAL_ 1977 SEB_CtrlMode 0 "Stroke" 1 "Pressure";
+VAL_ 1825 SEB_CtrlModeStatus 0 "None" 1 "Stroke" 2 "Pressure";
+VAL_ 1825 SEB_ErrorStatus 0 "Normal" 1 "L1_Warning" 2 "L2_General" 3 "L3_Severe";

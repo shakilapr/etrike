@@ -137,11 +137,11 @@ public:
                 // Gap #9: clamp hold angle to dynamic limit for current speed.
                 // At high speed the dynamic limit may be as low as 5° — holding an
                 // angle beyond that during hard braking risks rollover.
-                float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
-                float max_deg = compute_dynamic_limit(speed_kmh);
+                // compute_dynamic_limit expects mm/s, returns degrees.
+                float max_deg = compute_dynamic_limit(static_cast<float>(std::abs(m_speed_mmps)));
                 int16_t max_raw = static_cast<int16_t>(max_deg * 10.0f);  // 0.1° units
                 m_state = SteerState::ESTOP_HOLD_THEN_SILENT;
-                m_estop_hold_angle = std::clamp(m_active_angle, -max_raw, max_raw);
+                m_estop_hold_angle = std::clamp(m_active_angle, int16_t(-max_raw), max_raw);
                 m_estop_hold_start_ms = 0;
             } else {
                 m_state = SteerState::ESTOP_RAMP_TO_ZERO;
