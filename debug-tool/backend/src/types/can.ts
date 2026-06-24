@@ -1,3 +1,8 @@
+// WARNING: This CAN message catalog is hand-maintained.
+// When adding/changing messages, also update the duplicate copy in:
+//   debug-tool/ui/src/lib/can-decoder.ts
+// The single source of truth is: shared/can/can_signals.yaml
+
 export const BUSES = ["high", "low"] as const;
 export type Bus = (typeof BUSES)[number];
 
@@ -150,15 +155,15 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x205", "RT_BRAKE_CMD", "RT", "50 Hz", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
   msg("low", "0x206", "MTR_MOTOR_FBK", "MTR", "50 Hz", 4, true, motorFeedbackFields),
   msg("low", "0x302", "HOST_LIGHT_CMD", "RT (fwd)", "change", 1, true, lightFields),
-  msg("low", "0x310", "STEER_DIAG", "RT", "10 Hz", 8, false, [
+  msg("high", "0x310", "STEER_DIAG", "RT", "10 Hz", 8, false, [
     num("SteerDiag_Angle0_1deg", "Angle", "deg", -700, 700),
-    num("SteerDiag_Fault", "Fault", undefined, 0, 1),
+    bool("SteerDiag_Fault", "Fault"),
     num("SteerDiag_MotorCurrent", "Motor current", "A", 0, 60),
     num("SteerDiag_ECUTemp", "ECU temp", "degC", 0, 255),
   ]),
-  msg("low", "0x311", "BRAKE_DIAG", "RT", "10 Hz", 8, false, [
+  msg("high", "0x311", "BRAKE_DIAG", "RT", "10 Hz", 8, false, [
     num("BrakeDiag_PressureRaw", "Pressure", "MPa", 0, 32),
-    num("BrakeDiag_Fault", "Fault", undefined, 0, 1),
+    bool("BrakeDiag_Fault", "Fault"),
     num("BrakeDiag_MotorCurrent", "Motor current", "A", -255, 255),
     num("BrakeDiag_ECUTemp", "ECU temp", "degC", -40, 215),
   ]),
@@ -168,7 +173,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x721", "SEB_STATUS", "SEB", "100 Hz", 8, true, [num("stroke_value", "Stroke value", "raw"), num("pressure_value", "Pressure value", "raw"), num("angle_value", "Angle value", "raw"), num("error_status", "Error status", undefined, 0, 3)]),
   msg("low", "0x731", "SEB_ERRINFO", "SEB", "10 Hz", 8, false, [num("fault_mask", "Fault mask")]),
   msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
-  msg("low", "0x7B9", "VCU_SEB_REQ", "RT/SYS", "50 Hz", 8, true, [num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
+  msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
   msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 1, false, heartbeatFields)
 ];
@@ -237,7 +242,7 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
     case "0x120": return { speed_mmps: readI16BE(bytes, 0) };
     case "0x169": return { alignment_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), target_angle: readI16LE(bytes, 2), target_speed: (bytes[4] ?? 0) | (((bytes[5] ?? 0) & 0x0f) << 8), rolling_counter: ((bytes[5] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
     case "0x201": return { angle_status: Boolean(bytes[0] & 1), control_mode_sts: ((bytes[0] ?? 0) >> 1) & 3, error_status: ((bytes[0] ?? 0) >> 6) & 3, str_angle: readI16LE(bytes, 2), tgt_angle_spd: readI16LE(bytes, 4), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
-    case "0x202": return decodeFaultMask(bytes, "ses");
+    case "0x202": return decodeSesFaults(bytes);
     case "0x203": return { sw_version: bytes[0] ?? 0, hw_version: bytes[1] ?? 0 };
     case "0x204": return { motor_speed_mmps: readI32BE(bytes, 0), gear: bytes[4] ?? 0, gear_name: gearName(bytes[4] ?? 0) };
     case "0x205": return { brake_pressure_kpa: readI32BE(bytes, 0) };
@@ -247,12 +252,14 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
     case "0x300": return { speed_mmps: readI32BE(bytes, 0), yaw_rate_mrad_s: readI24BE(bytes, 4), gear: bytes[7] ?? 0, gear_name: gearName(bytes[7] ?? 0) };
     case "0x301": return { brake_pressure_kpa: readI32BE(bytes, 0) };
     case "0x302": return { left_turn: Boolean(bytes[0] & 1), right_turn: Boolean(bytes[0] & 2), brake_light: Boolean(bytes[0] & 4), headlight: Boolean(bytes[0] & 8) };
+    case "0x310": return { SteerDiag_Angle0_1deg: readI16BE(bytes, 0) * 0.1 - 3000, SteerDiag_Fault: bytes[2] !== 0, SteerDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, SteerDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
+    case "0x311": return { BrakeDiag_PressureRaw: readI16BE(bytes, 0) * 0.05, BrakeDiag_Fault: bytes[2] !== 0, BrakeDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, BrakeDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
     case "0x400": { const distance = readU32BE(bytes, 0); return { distance_mm: distance, distance_label: distance === 0xffffffff ? "clear" : `${distance} mm` }; }
     case "0x600": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0), brake_engaged: bytes[1] !== 0, hb_ok: bytes[2] !== 0, estop_active: bytes[3] !== 0, free_heap_kb: readU16BE(bytes, 4), tec: bytes[6] ?? 0, rec: bytes[7] ?? 0 };
     case "0x6FA":
     case "0x6FB": return { motor_current: readI16LE(bytes, 1), ecu_temp: readU16LE(bytes, 3), supply_voltage: readU16LE(bytes, 5) };
-    case "0x721": return { alignment_status: Boolean(bytes[0] & 1), control_enable_sts: Boolean(bytes[0] & 2), control_mode_sts: ((bytes[0] ?? 0) >> 2) & 3, auto_brake_sts: Boolean(bytes[0] & 0x10), error_status: ((bytes[0] ?? 0) >> 6) & 3, stroke_value: readU16LE(bytes, 2), pressure_value: bytes[3] ?? 0, angle_value: readI16LE(bytes, 5), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
-    case "0x731": return decodeFaultMask(bytes, "seb");
+    case "0x721": { const angleRaw = (bytes[5] ?? 0) | (((bytes[6] ?? 0) & 0x0C) << 6); return { alignment_status: Boolean(bytes[0] & 1), control_enable_sts: Boolean(bytes[0] & 2), control_mode_sts: ((bytes[0] ?? 0) >> 2) & 3, auto_brake_sts: Boolean(bytes[0] & 0x10), error_status: ((bytes[0] ?? 0) >> 6) & 3, stroke_value: readU16LE(bytes, 2), pressure_value: bytes[3] ?? 0, angle_value: angleRaw, rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 }; }
+    case "0x731": return decodeSebFaults(bytes);
     case "0x741": return { sw_version: bytes[0] ?? 0, hw_version: bytes[1] ?? 0 };
     case "0x7B9": return { align_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), control_mode: ((bytes[0] ?? 0) >> 2) & 1, auto_brake: Boolean(bytes[0] & 8), stroke_req: readU16LE(bytes, 2), pressure_req: bytes[3] ?? 0, rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
     case "0x7FC":
@@ -290,36 +297,107 @@ function numberOr(input: unknown, fallback: number): number {
   return typeof input === "number" && Number.isFinite(input) ? input : fallback;
 }
 
-function readI16BE(bytes: number[], offset: number): number {
+export function readI16BE(bytes: number[], offset: number): number {
   const value = ((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0);
   return value & 0x8000 ? value - 0x10000 : value;
 }
-function readU16BE(bytes: number[], offset: number): number {
+export function readU16BE(bytes: number[], offset: number): number {
   return (((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0)) >>> 0;
 }
-function readI16LE(bytes: number[], offset: number): number {
+export function readI16LE(bytes: number[], offset: number): number {
   const value = (bytes[offset] ?? 0) | ((bytes[offset + 1] ?? 0) << 8);
   return value & 0x8000 ? value - 0x10000 : value;
 }
-function readU16LE(bytes: number[], offset: number): number {
+export function readU16LE(bytes: number[], offset: number): number {
   return ((bytes[offset] ?? 0) | ((bytes[offset + 1] ?? 0) << 8)) >>> 0;
 }
-function readI24BE(bytes: number[], offset: number): number {
+export function readI24BE(bytes: number[], offset: number): number {
   const value = ((bytes[offset] ?? 0) << 16) | ((bytes[offset + 1] ?? 0) << 8) | (bytes[offset + 2] ?? 0);
   return value & 0x800000 ? value - 0x1000000 : value;
 }
-function readI32BE(bytes: number[], offset: number): number {
+export function readI32BE(bytes: number[], offset: number): number {
   return ((bytes[offset] ?? 0) << 24) | ((bytes[offset + 1] ?? 0) << 16) | ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0);
 }
-function readU32BE(bytes: number[], offset: number): number {
+export function readU32BE(bytes: number[], offset: number): number {
   return (((bytes[offset] ?? 0) * 0x1000000) + ((bytes[offset + 1] ?? 0) << 16) + ((bytes[offset + 2] ?? 0) << 8) + (bytes[offset + 3] ?? 0)) >>> 0;
 }
-function readU32LE(bytes: number[], offset: number): number {
+export function readU32LE(bytes: number[], offset: number): number {
   return ((bytes[offset] ?? 0) + ((bytes[offset + 1] ?? 0) << 8) + ((bytes[offset + 2] ?? 0) << 16) + ((bytes[offset + 3] ?? 0) * 0x1000000)) >>> 0;
 }
-function decodeFaultMask(bytes: number[], prefix: "ses" | "seb"): Record<string, unknown> {
-  const faultMask = readU32LE(bytes, 0);
-  return { fault_mask: faultMask, fault_mask_hex: `0x${faultMask.toString(16).toUpperCase().padStart(8, "0")}`, l3_fault: prefix === "seb" ? (faultMask & 0x007e3ffc) !== 0 : (faultMask & 0x003c3c00) !== 0 };
+function decodeSesFaults(bytes: number[]): Record<string, unknown> {
+  const mask = readU32LE(bytes, 0);
+  return {
+    fault_mask: mask,
+    fault_mask_hex: `0x${mask.toString(16).toUpperCase().padStart(8, "0")}`,
+    l3_fault: (mask & 0x003c3c00) !== 0,
+    // Byte 0
+    SES_ECUUnderVolt: Boolean(bytes[0] & 0x01),
+    SES_ECUOverVolt: Boolean(bytes[0] & 0x02),
+    SES_CanComErr: Boolean(bytes[0] & 0x04),
+    SES_ECUTempErr: Boolean(bytes[0] & 0x08),
+    SES_DomainSC: Boolean(bytes[0] & 0x10),
+    SES_DomainV: Boolean(bytes[0] & 0x20),
+    SES_DomainT: Boolean(bytes[0] & 0x40),
+    SES_TempSensor: Boolean(bytes[0] & 0x80),
+    // Byte 1
+    SES_AngleP_OC: Boolean(bytes[1] & 0x01),
+    SES_AngleP_AF: Boolean(bytes[1] & 0x02),
+    SES_AngleS_OC: Boolean(bytes[1] & 0x04),
+    SES_AngleS_AF: Boolean(bytes[1] & 0x08),
+    SES_SensorPow: Boolean(bytes[1] & 0x10),
+    SES_Alignment: Boolean(bytes[1] & 0x20),
+    SES_OverAngle: Boolean(bytes[1] & 0x40),
+    SES_StrMtrStall: Boolean(bytes[1] & 0x80),
+    // Byte 2
+    SES_MtrCurtFault: Boolean(bytes[2] & 0x01),
+    SES_SensorCL: Boolean(bytes[2] & 0x02),
+    SES_TorqT1_OC: Boolean(bytes[2] & 0x04),
+    SES_TorqT1_AF: Boolean(bytes[2] & 0x08),
+    SES_TorqT2_OC: Boolean(bytes[2] & 0x10),
+    SES_TorqT2_AF: Boolean(bytes[2] & 0x20),
+    SES_SentAngle: Boolean(bytes[2] & 0x40),
+    SES_StrMtrIdling: Boolean(bytes[2] & 0x80),
+    // Byte 3
+    SES_EPROM: Boolean(bytes[3] & 0x01),
+    // Byte 7
+    SES_VehSpdSnapshot: bytes[7] ?? 0,
+  };
+}
+
+function decodeSebFaults(bytes: number[]): Record<string, unknown> {
+  const mask = readU32LE(bytes, 0);
+  return {
+    fault_mask: mask,
+    fault_mask_hex: `0x${mask.toString(16).toUpperCase().padStart(8, "0")}`,
+    l3_fault: (mask & 0x007e3ffc) !== 0,
+    // Byte 0
+    SEB_ECUUnderVolt: Boolean(bytes[0] & 0x01),
+    SEB_ECUOverVolt: Boolean(bytes[0] & 0x02),
+    SEB_CanComErr: Boolean(bytes[0] & 0x04),
+    SEB_ECUTempErr: Boolean(bytes[0] & 0x08),
+    SEB_DomainSC: Boolean(bytes[0] & 0x10),
+    SEB_DomainV: Boolean(bytes[0] & 0x20),
+    SEB_DomainT: Boolean(bytes[0] & 0x40),
+    SEB_AngleP_OC: Boolean(bytes[0] & 0x80),
+    // Byte 1
+    SEB_AngleP_AF: Boolean(bytes[1] & 0x01),
+    SEB_AngleS_OC: Boolean(bytes[1] & 0x02),
+    SEB_AngleS_AF: Boolean(bytes[1] & 0x04),
+    SEB_NoPreSensor: Boolean(bytes[1] & 0x08),
+    SEB_SensorUCL: Boolean(bytes[1] & 0x20),
+    SEB_AlignmentErr: Boolean(bytes[1] & 0x40),
+    SEB_AngleOver: Boolean(bytes[1] & 0x80),
+    // Byte 2
+    SEB_MtrStall: Boolean(bytes[2] & 0x02),
+    SEB_MtrDC: Boolean(bytes[2] & 0x04),
+    SEB_OilErr: Boolean(bytes[2] & 0x08),
+    SEB_InitOil: Boolean(bytes[2] & 0x10),
+    SEB_SentValue: Boolean(bytes[2] & 0x20),
+    SEB_MtrNoLoad: Boolean(bytes[2] & 0x40),
+    // Byte 3
+    SEB_PreSensorOver: Boolean(bytes[3] & 0x01),
+    SEB_LowVoltCharging: Boolean(bytes[3] & 0x02),
+  };
 }
 function modeName(mode: number): string {
   return MODE_OPTIONS.find((item) => item.value === mode)?.label ?? "?";
