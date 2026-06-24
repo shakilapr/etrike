@@ -1,77 +1,89 @@
 <script lang="ts">
   import type { Bus, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
-  import type { StreamHandle } from "../lib/ws";
   import { frames } from "../stores/can";
 
   export let ids: CanMessageDef[] = [];
-  export let stream: StreamHandle | null = null;
+
+  // ── CAN ID categories ──
+  interface Category {
+    key: string;
+    label: string;
+    color: string;
+    ids: string[];
+  }
+
+  const CATEGORIES: Category[] = [
+    { key: "safety",    label: "Safety",      color: "var(--cat-safety)",    ids: ["0x001", "0x011"] },
+    { key: "drive",     label: "Drive",       color: "var(--cat-drive)",     ids: ["0x120", "0x204", "0x206", "0x210", "0x300"] },
+    { key: "steering",  label: "Steering",    color: "var(--cat-steering)",  ids: ["0x169", "0x201", "0x202", "0x203"] },
+    { key: "brake",     label: "Brake",       color: "var(--cat-brake)",     ids: ["0x205", "0x301", "0x721", "0x731", "0x741", "0x7B9"] },
+    { key: "diag",      label: "Diagnostics", color: "var(--cat-diag)",      ids: ["0x110", "0x220", "0x302", "0x400", "0x600"] },
+    { key: "heartbeat", label: "Heartbeat",   color: "var(--cat-heartbeat)", ids: ["0x7FC", "0x7FD", "0x7FE"] },
+    { key: "test",      label: "Test/System", color: "var(--cat-system)",    ids: ["0x012", "0x6FA", "0x6FB"] }
+  ];
 
   type BusFilter = Bus | "all";
   let busFilter: BusFilter = "all";
   let paused = false;
   let filterText = "";
   let expandedKey = "";
-  let selectedIds = new Set<string>();
+  let collapsed = new Set<string>();
+  let allExpanded = true;
 
-  $: busIds = ids.filter((item) => busFilter === "all" || item.bus === busFilter);
+  $: categoryIds = CATEGORIES.map((cat) => {
+    const members = ids.filter((m) => cat.ids.includes(m.id) && (busFilter === "all" || m.bus === busFilter));
+    return { ...cat, members, count: members.length };
+  }).filter((cat) => cat.count > 0);
 
-  $: visibleFrames = paused
-    ? []
-    : $frames.filter((frame) => {
-        const matchesBus = busFilter === "all" || frame.bus === busFilter;
-        const matchesText =
-          filterText.trim().length === 0 ||
-          frame.id.toLowerCase().includes(filterText.toLowerCase()) ||
-          frame.name.toLowerCase().includes(filterText.toLowerCase()) ||
-          formatDecoded(frame.decoded).toLowerCase().includes(filterText.toLowerCase());
-        const matchesId = selectedIds.size === 0 || selectedIds.has(`${frame.bus}:${frame.id}`);
-        return matchesBus && matchesText && matchesId;
-      });
+  $: filteredFrames = $frames.filter((frame) => {
+    const matchesBus = busFilter === "all" || frame.bus === busFilter;
+    const matchesText = filterText.trim().length === 0 ||
+      frame.id.toLowerCase().includes(filterText.toLowerCase()) ||
+      frame.name.toLowerCase().includes(filterText.toLowerCase()) ||
+      formatDecoded(frame.decoded).toLowerCase().includes(filterText.toLowerCase());
+    return matchesBus && matchesText;
+  });
 
-  $: tableFrames = visibleFrames.slice(-300).reverse();
+  function framesForCat(catId: string): typeof filteredFrames {
+    return filteredFrames.filter((f) => CATEGORIES.find((c) => c.key === catId)?.ids.includes(f.id)).slice(-10);
+  }
 
-  function toggleId(bus: Bus, id: string) {
-    const key = `${bus}:${id}`;
-    selectedIds = new Set(selectedIds);
-    if (selectedIds.has(key)) {
-      selectedIds.delete(key);
+  function toggleCat(key: string) {
+    collapsed = new Set(collapsed);
+    if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+    allExpanded = collapsed.size === 0;
+  }
+
+  function toggleAll() {
+    if (allExpanded) {
+      collapsed = new Set(categoryIds.map((c) => c.key));
+      allExpanded = false;
     } else {
-      selectedIds.add(key);
+      collapsed = new Set();
+      allExpanded = true;
     }
-    stream?.setFilter([...selectedIds]);
   }
 
   function exportJson() {
-    download("etrike-can-visible.json", JSON.stringify(tableFrames, null, 2), "application/json");
+    download(`etrike-can-${busFilter}.json`, JSON.stringify(filteredFrames, null, 2), "application/json");
   }
 
   function exportCsv() {
     const rows = ["time,bus,id,name,dlc,data,decoded"];
-    for (const frame of tableFrames) {
+    for (const frame of filteredFrames) {
       rows.push(
-        [
-          frameTime(frame),
-          frame.bus,
-          frame.id,
-          frame.name,
-          frame.dlc,
-          formatBytes(frame.data),
-          JSON.stringify(frame.decoded).replaceAll('"', '""')
-        ]
-          .map((cell) => `"${cell}"`)
-          .join(",")
+        [frameTime(frame), frame.bus, frame.id, frame.name, frame.dlc, formatBytes(frame.data),
+          JSON.stringify(frame.decoded).replaceAll('"', '""')].map((c) => `"${c}"`).join(",")
       );
     }
-    download("etrike-can-visible.csv", rows.join("\n"), "text/csv");
+    download(`etrike-can-${busFilter}.csv`, rows.join("\n"), "text/csv");
   }
 
   function download(name: string, body: string, type: string) {
     const url = URL.createObjectURL(new Blob([body], { type }));
     const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
+    link.href = url; link.download = name; link.click();
     URL.revokeObjectURL(url);
   }
 </script>
@@ -81,59 +93,63 @@
     <div class="toolbar-main">
       <h2>CAN Monitor</h2>
       <div class="bus-tabs">
-        <button class:active={busFilter === "all"} type="button" on:click={() => (busFilter = "all")}>All</button>
+        <button class:active={busFilter === "all"}  type="button" on:click={() => (busFilter = "all")}>All</button>
         <button class:active={busFilter === "high"} type="button" on:click={() => (busFilter = "high")}>High</button>
-        <button class:active={busFilter === "low"} type="button" on:click={() => (busFilter = "low")}>Low</button>
+        <button class:active={busFilter === "low"}  type="button" on:click={() => (busFilter = "low")}>Low</button>
       </div>
-      <input bind:value={filterText} placeholder="Filter frames" />
+      <input bind:value={filterText} placeholder="Filter frames by ID, name, or value" />
     </div>
     <div class="toolbar-actions">
       <button type="button" on:click={() => (paused = !paused)}>{paused ? "Resume" : "Pause"}</button>
+      <button type="button" on:click={toggleAll}>{allExpanded ? "Collapse All" : "Expand All"}</button>
       <button type="button" on:click={exportJson}>JSON</button>
       <button type="button" on:click={exportCsv}>CSV</button>
     </div>
   </div>
 
-  <div class="filter-rail" aria-label="CAN ID filters">
-    {#each busIds as item}
-      <button class:active={selectedIds.has(`${item.bus}:${item.id}`)} type="button" on:click={() => toggleId(item.bus, item.id)}>
-        <span class="bus-tag">{item.bus}</span>
-        <span class="mono">{item.id}</span>
-        <span>{item.name}</span>
-      </button>
+  <div class="monitor-cards">
+    {#each categoryIds as cat}
+      {@const catFrames = framesForCat(cat.key)}
+      {@const isOpen = !collapsed.has(cat.key)}
+      <div class="cat-card" style={`--cat-color:${cat.color}`}>
+        <button class="cat-header" type="button" on:click={() => toggleCat(cat.key)}>
+          <span class="cat-arrow">{isOpen ? "▾" : "▸"}</span>
+          <span class="cat-label">{cat.label}</span>
+          <span class="cat-badge">{catFrames.length} / {cat.members.length} IDs</span>
+        </button>
+        {#if isOpen}
+          <div class="cat-body">
+            {#if catFrames.length === 0}
+              <p class="cat-empty">No frames yet — waiting for data</p>
+            {:else}
+              <table>
+                <thead>
+                  <tr><th>Timestamp</th><th>Bus</th><th>ID</th><th>Decoded</th></tr>
+                </thead>
+                <tbody>
+                  {#each catFrames.slice().reverse() as frame, idx (`${cat.key}-${frame.ts}-${frame.id}-${idx}`)}
+                    <tr class:expanded={expandedKey === `${cat.key}-${frame.ts}-${frame.id}`}
+                      on:click={() => (expandedKey = expandedKey === `${cat.key}-${frame.ts}-${frame.id}` ? "" : `${cat.key}-${frame.ts}-${frame.id}`)}>
+                      <td class="mono">{frameTime(frame)}</td>
+                      <td><span class="bus-tag">{frame.bus}</span></td>
+                      <td><span class="mono">{frame.id}</span> {frame.name}</td>
+                      <td>{formatDecoded(frame.decoded)}</td>
+                    </tr>
+                    {#if expandedKey === `${cat.key}-${frame.ts}-${frame.id}`}
+                      <tr class="detail-row">
+                        <td colspan="4">
+                          <div><span>Raw</span><strong class="mono">{formatBytes(frame.data)}</strong></div>
+                          <pre>{JSON.stringify(frame.decoded, null, 2)}</pre>
+                        </td>
+                      </tr>
+                    {/if}
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/each}
-  </div>
-
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Timestamp</th>
-          <th>Bus</th>
-          <th>ID / Name</th>
-          <th>DLC</th>
-          <th>Decoded</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each tableFrames as frame, index (`${frame.ts}-${frame.id}-${index}`)}
-          <tr class:expanded={expandedKey === `${frame.ts}-${frame.id}-${index}`} on:click={() => (expandedKey = expandedKey === `${frame.ts}-${frame.id}-${index}` ? "" : `${frame.ts}-${frame.id}-${index}`)}>
-            <td class="mono">{frameTime(frame)}</td>
-            <td><span class="bus-tag">{frame.bus}</span></td>
-            <td><span class="mono">{frame.id}</span> {frame.name}</td>
-            <td>{frame.dlc}</td>
-            <td>{formatDecoded(frame.decoded)}</td>
-          </tr>
-          {#if expandedKey === `${frame.ts}-${frame.id}-${index}`}
-            <tr class="detail-row">
-              <td colspan="5">
-                <div><span>Raw</span><strong class="mono">{formatBytes(frame.data)}</strong></div>
-                <pre>{JSON.stringify(frame.decoded, null, 2)}</pre>
-              </td>
-            </tr>
-          {/if}
-        {/each}
-      </tbody>
-    </table>
   </div>
 </section>
