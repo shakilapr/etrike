@@ -70,9 +70,10 @@
     </div>
     <div class="link-stack">
       <div><span>Backend</span><strong>{$status.backend_online ? "online" : "offline"}</strong></div>
-      <div><span>Serial</span><strong>{$status.serial?.port_open ? "open" : "closed"}</strong></div>
-      <div><span>ESP32</span><strong>{$status.esp32_connected ? "online" : "offline"}</strong></div>
-      <div><span>Port</span><strong>{$status.serial?.path ?? "--"}</strong></div>
+      <div><span>Adapter</span><strong>{$status.bridge?.adapter ?? "unknown"}</strong></div>
+      <div><span>Link</span><strong>{($status.bridge?.link_open ?? $status.serial?.port_open) ? "open" : "closed"}</strong></div>
+      <div><span>State</span><strong>{($status.adapter_connected ?? $status.esp32_connected) ? "online" : "offline"}</strong></div>
+      <div><span>Transport</span><strong>{$status.bridge?.transport ?? "serial"}</strong></div>
       <div><span>High TEC / REC</span><strong>{high.tec} / {high.rec}</strong></div>
       <div><span>Low TEC / REC</span><strong>{low.tec} / {low.rec}</strong></div>
     </div>

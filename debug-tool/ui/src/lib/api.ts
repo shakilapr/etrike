@@ -31,8 +31,20 @@ export interface BackendStatus {
   backend_online: boolean;
   started_at: number;
   uptime_s: number;
+  adapter_connected: boolean;
   esp32_connected: boolean;
   last_status_at: number | null;
+  bridge?: {
+    transport: "serial" | "canalystii" | "disabled";
+    adapter: string;
+    connected: boolean;
+    link_open: boolean;
+    path: string | null;
+    baud_rate: number | null;
+    bitrate: number | null;
+    last_status_at: number | null;
+    last_error: string | null;
+  };
   serial: {
     port_open: boolean;
     path: string | null;
