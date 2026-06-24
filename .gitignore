@@ -82,6 +82,7 @@ data/
 
 # ── debug-tool: local helper scripts ────────────────────────────────────
 run-*.ps1
+debug-tool/run.md
 
 # ── debug-tool: one-off audit / screenshot scripts ─────────────────────
 debug-tool/e2e/audit-ui.ts
