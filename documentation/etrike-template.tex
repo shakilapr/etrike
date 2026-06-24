@@ -1,0 +1,318 @@
+% ===========================================================================
+%  E-Trike System Documentation v0.0.2-alpha
+%  Generated: 2026-06-15
+%  Compile:  pdflatex -interaction=nonstopmode etrike-0.0.2-alpha.tex
+%            pdflatex -interaction=nonstopmode etrike-0.0.2-alpha.tex  (twice for TOC)
+% ===========================================================================
+
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{XCharter}
+\usepackage[inner=30mm,outer=20mm,top=22mm,bottom=25mm,footskip=14mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% ── Table spacing and behavior ──────────────────────────────────────
+\setlength{\LTpre}{6pt plus 2pt minus 2pt}
+\setlength{\LTpost}{6pt plus 2pt minus 2pt}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+% Allow longtables to break more gracefully
+\raggedbottom
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usepackage{soul}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{alltt}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{pmboxdraw}
+\usepackage{textcomp}
+\usepackage{calc}
+
+% ── Pandoc compatibility ────────────────────────────────────────────
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% ── Prevent overfull hboxes in narrow table columns ─────────────────
+\setlength{\emergencystretch}{3em}
+\tolerance=3000
+\hbadness=10000
+
+% ── Unicode character support for source docs ─────────────────────────
+\DeclareUnicodeCharacter{03A9}{\ensuremath{\Omega}}
+\DeclareUnicodeCharacter{03C0}{\ensuremath{\pi}}
+\DeclareUnicodeCharacter{03B4}{\ensuremath{\delta}}
+\DeclareUnicodeCharacter{03C9}{\ensuremath{\omega}}
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}
+\DeclareUnicodeCharacter{03B8}{\ensuremath{\theta}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{00B0}{\ensuremath{{}^\circ}}
+\DeclareUnicodeCharacter{00B1}{\ensuremath{\pm}}
+\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}}
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{2190}{\ensuremath{\leftarrow}}
+\DeclareUnicodeCharacter{2194}{\ensuremath{\leftrightarrow}}
+\DeclareUnicodeCharacter{25BA}{$\triangleright$}
+\DeclareUnicodeCharacter{25C0}{$\triangleleft$}
+\DeclareUnicodeCharacter{25BC}{$\triangledown$}
+\DeclareUnicodeCharacter{25B2}{$\triangle$}
+
+% ── Title formatting (14pt chapter/section headings, 12pt body) ───────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\fontsize{14}{17}\selectfont}
+  {\chaptertitlename\ \thechapter}{12pt}{}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{14}{17}\selectfont}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{13}{16}\selectfont}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\bfseries\fontsize{12}{15}\selectfont}
+  {\thesubsubsection}{1em}{}
+
+% ── Hyperref setup ────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black,
+  pdfauthor={E-Trike Project},
+  pdftitle={E-Trike System Documentation v0.0.2-alpha},
+  pdfsubject={Three-node distributed control vehicle architecture},
+  pdfkeywords={CAN bus, embedded systems, distributed control, steer-by-wire, brake-by-wire, tricycle, vehicle architecture},
+  bookmarksnumbered=true,
+  bookmarksopen=true,
+  bookmarksopenlevel=1
+}
+
+% ── Code listing style ────────────────────────────────────────────────
+\lstdefinestyle{etrike}{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  breakatwhitespace=true,
+  postbreak=\mbox{$\hookrightarrow$\space},
+  frame=single,
+  framesep=4pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+  showstringspaces=false,
+  columns=flexible,
+  keepspaces=true,
+  tabsize=2,
+  captionpos=b
+}
+\lstset{style=etrike}
+
+% ── Header / footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{E-Trike System Documentation}}
+\fancyhead[R]{\small\textit{v0.0.2-alpha}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{14pt}
+
+% ── Part page style ───────────────────────────────────────────────────
+\makeatletter
+\renewcommand{\@endpart}{\vfill\newpage}
+\makeatother
+
+% ── Convenience commands ──────────────────────────────────────────────
+\newcommand{\canid}[1]{\texttt{0x#1}}
+\newcommand{\canname}[1]{\textsc{#1}}
+\newcommand{\gpio}[1]{\texttt{GPIO#1}}
+\newcommand{\voltage}[1]{\ensuremath{#1\,\text{V}}}
+\newcommand{\bitrate}[1]{\ensuremath{#1\,\text{kbit/s}}}
+\newcommand{\frequency}[1]{\ensuremath{#1\,\text{Hz}}}
+\newcommand{\mcu}[1]{\texttt{#1}}
+\newcommand{\gap}[1]{\textbf{Gap \##1}}
+\newcommand{\gapresolved}[1]{\textbf{RESOLVED \##1}}
+\newcommand{\syntree}[1]{\textsf{#1}}
+
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% ── Page style for title page ─────────────────────────────────────────
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+}
+
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  TITLE PAGE
+% ═══════════════════════════════════════════════════════════════════════
+
+\thispagestyle{empty}
+
+\vspace*{60mm}
+
+\begin{center}
+  {\fontsize{28}{34}\selectfont\textbf{E-Trike}}\\[8mm]
+  {\fontsize{22}{28}\selectfont\textbf{System Documentation}}\\[20mm]
+  {\fontsize{14}{18}\selectfont\textit{Three-Node Distributed Control Architecture}}\\[30mm]
+  {\fontsize{12}{15}\selectfont Version 0.0.2-alpha}\\[4mm]
+  {\fontsize{11}{14}\selectfont 2026-06-15}
+\end{center}
+
+\vfill
+
+\begin{center}
+  {\footnotesize
+  Three-Node Distributed Control Architecture\\[2mm]
+  Dual CAN Bus (500 kbit/s) --- Real-Time Operating System --- Hard Realtime Safety\\[2mm]
+  Steer-by-Wire \textbullet\ Electro-Hydraulic Brake-by-Wire
+  }
+\end{center}
+
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  TABLE OF CONTENTS
+% ═══════════════════════════════════════════════════════════════════════
+
+\setcounter{tocdepth}{1}
+\tableofcontents
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  PART I -- SYSTEM ARCHITECTURE & CAN DICTIONARY
+% ═══════════════════════════════════════════════════════════════════════
+
+\part{System Architecture \& CAN Dictionary}
+\label{part:architecture}
+
+__ARCH_INPUT__
+
+% ═══════════════════════════════════════════════════════════════════════
+%  PART II -- COMPONENT DOCUMENTATION (docs/)
+% ═══════════════════════════════════════════════════════════════════════
+
+\part{Component Documentation}
+\label{part:docs}
+
+__DOC_INPUTS__
+
+% ═══════════════════════════════════════════════════════════════════════
+%  PART III -- THEORY & CONCEPTS (notes/)
+% ═══════════════════════════════════════════════════════════════════════
+
+\part{Theory \& Concepts}
+\label{part:notes}
+
+\textit{Background theory needed to understand the design decisions in Parts I--II. These are the notes --- learning material covering the fundamental concepts.}
+
+__NOTE_INPUTS__
+
+% ═══════════════════════════════════════════════════════════════════════
+%  PART IV -- STANDARDS (standards/)
+% ═══════════════════════════════════════════════════════════════════════
+
+\part{Standards}
+\label{part:standards}
+
+\textit{Industry standards that inform the E-Trike architecture. These are the pillars the design rests on --- not just reference material but active constraints on every design decision.}
+
+__STD_INPUTS__
+
+% ═══════════════════════════════════════════════════════════════════════
+%  APPENDIX
+% ═══════════════════════════════════════════════════════════════════════
+
+\appendix
+\part*{Appendix}
+\addcontentsline{toc}{part}{Appendix}
+
+\chapter{Reference Index}
+
+\section{Core Documents}
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{architecture.md} --- System architecture (topology, CAN catalog, FSMs, RT/SYS design)
+  \item \texttt{can-dictionary.md} --- Bit-level CAN signal layouts for all IDs on both buses
+\end{itemize}
+
+\section{Component Documentation (\texttt{docs/})}
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{steering-unit.md} --- SYNTREE EPS-C protocol reference and C++ implementation
+  \item \texttt{brake-unit.md} --- SYNTREE SEB protocol reference and C++ implementation
+  \item \texttt{physics-model.md} --- Tricycle kinematics (forward/inverse, rollover, slip angles)
+  \item \texttt{listen-before-speaking.md} --- CAN actuator safe bootstrapping pattern
+  \item \texttt{can-gateway-bridging.md} --- CAN gateway forwarding rules and implementation
+  \item \texttt{defense-in-depth-safety.md} --- 8-layer safety architecture
+  \item \texttt{syntree-security-protocol.md} --- Rolling counter + XOR checksum
+  \item \texttt{high-voltage-isolation.md} --- 72V galvanic isolation (TLP281, relays, fuses, TVS)
+  \item \texttt{distributed-architecture.md} --- Three-node rationale (Jetson/RT/SYS split)
+  \item \texttt{actuator-interfacing.md} --- MCP4725 DAC throttle, gear pass-through, relay logic
+  \item \texttt{external-watchdog.md} --- External watchdog IC design and testing
+  \item \texttt{pid-speed-control.md} --- PID speed control design and tuning
+  \item \texttt{given-documentation-ocr.md} --- Source PDF extraction (EPS-C/SEB/DCDC specs)
+\end{itemize}
+
+\section{Theory Notes (\texttt{notes/})}
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{can-protocol.md} --- CAN protocol theory (arbitration, frame types, standards)
+  \item \texttt{can-hardware-basics.md} --- CAN physical layer (termination, topology, transceivers)
+  \item \texttt{can-troubleshooting.md} --- CAN debugging (common mistakes, error states, tools)
+  \item \texttt{rtos-task-design.md} --- RTOS task design (priorities, scheduling, queues, tick rate)
+  \item \texttt{pid-control.md} --- PID control fundamentals (P/I/D terms, integral windup, tuning)
+  \item \texttt{state-machine-design.md} --- State machine design (FSMs, hierarchical states, C++ patterns)
+  \item \texttt{heartbeat-monitoring.md} --- Heartbeat \& liveness (alive counters, FTTI, timeout selection)
+  \item \texttt{distributed-safety-patterns.md} --- Distributed safety (defense in depth, ESTOP, fail-safe)
+  \item \texttt{endianness-binary-protocols.md} --- Endianness \& binary protocols (big/little endian, struct packing)
+  \item \texttt{can-gateway-design.md} --- CAN gateway design (multi-bus architecture, forwarding categories)
+  \item \texttt{analog-interfacing.md} --- Analog interfacing (ADC, DAC, optoisolators, relays, protection)
+\end{itemize}
+
+\section{Standards (\texttt{standards/})}
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{iso-11898-can.md} --- CAN bus physical and data-link layer (ISO 11898-1:2015)
+  \item \texttt{iso-26262-functional-safety.md} --- Functional safety for road vehicles (targeting ASIL-C steering)
+  \item \texttt{autosar-e2e-protection.md} --- End-to-End communication protection (alive counters, checksums, timeouts)
+  \item \texttt{freertos-esp-idf.md} --- FreeRTOS + ESP-IDF framework (task isolation, queues, tick rate)
+\end{itemize}
+
+\section{Firmware \& Source}
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{rt-esp32/} --- RT ESP32-S3 firmware (PlatformIO, ESP-IDF + FreeRTOS)
+  \item \texttt{sys-esp32/} --- SYS ESP32-S3 firmware (PlatformIO, ESP-IDF + FreeRTOS)
+  \item \texttt{shared/} --- Shared CAN protocol headers between RT and SYS
+  \item \texttt{legacy/} --- Deprecated design notes and historical references
+  \item \texttt{given-documentation.pdf} --- Original Syntree specification PDF (58 pages)
+  \item \texttt{given-documentation-ocr.pdf} --- Alternate OCR scan of original specification
+  \item \texttt{work-orders/} --- Manufacturing and assembly work orders
+\end{itemize}
+
+\vfill
+
+\begin{center}
+  \rule{0.5\textwidth}{0.4pt}\\[4mm]
+  {\small\textit{E-Trike System Documentation v0.0.2-alpha}}\\[2mm]
+  {\small Generated 2026-06-15 --- Covers architecture.md, can-dictionary.md, 14 component docs, 12 theory notes, 4 standards}\\[2mm]
+  {\small Compiled with \LaTeX\ --- PDF/A-2b compatible}
+\end{center}
+
+\end{document}
