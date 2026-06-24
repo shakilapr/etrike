@@ -9,6 +9,7 @@ const envSchema = z.object({
   CANALYST_PYTHON: z.string().default("python"),
   CANALYST_BITRATE: z.coerce.number().int().positive().default(500000),
   CANALYST_POLL_MS: z.coerce.number().int().positive().default(5),
+  CANALYST_DEVICE_INDEX: z.coerce.number().int().nonnegative().default(0),
   CANALYST_CH0_BUS: z.enum(["high", "low"]).default("high"),
   CANALYST_CH1_BUS: z.enum(["high", "low"]).default("low"),
   DB_PATH: z.string().default("data/debug-tool.sqlite"),
@@ -24,6 +25,7 @@ export interface AppConfig {
   canalystPython: string;
   canalystBitrate: number;
   canalystPollMs: number;
+  canalystDeviceIndex: number;
   canalystChannel0Bus: "high" | "low";
   canalystChannel1Bus: "high" | "low";
   dbPath: string;
@@ -46,11 +48,12 @@ export function loadConfig(): AppConfig {
     host: env.HOST,
     port: env.PORT,
     canTransport: env.CAN_TRANSPORT,
-    serialPath: env.CAN_TRANSPORT === "disabled" || env.SERIAL_PORT === "disabled" ? null : env.SERIAL_PORT,
+    serialPath: env.CAN_TRANSPORT === "serial" && env.SERIAL_PORT !== "disabled" ? env.SERIAL_PORT : null,
     serialBaudRate: env.SERIAL_BAUD,
     canalystPython: env.CANALYST_PYTHON,
     canalystBitrate: env.CANALYST_BITRATE,
     canalystPollMs: env.CANALYST_POLL_MS,
+    canalystDeviceIndex: env.CANALYST_DEVICE_INDEX,
     canalystChannel0Bus: env.CANALYST_CH0_BUS,
     canalystChannel1Bus: env.CANALYST_CH1_BUS,
     dbPath: env.DB_PATH,

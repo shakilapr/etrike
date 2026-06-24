@@ -13,6 +13,7 @@ import canalystii
 
 BITRATE = int(os.environ.get("CANALYST_BITRATE", "500000"))
 POLL_SECONDS = max(int(os.environ.get("CANALYST_POLL_MS", "5")), 1) / 1000.0
+DEVICE_INDEX = int(os.environ.get("CANALYST_DEVICE_INDEX", "0"))
 CHANNEL_TO_BUS = {
     0: os.environ.get("CANALYST_CH0_BUS", "high"),
     1: os.environ.get("CANALYST_CH1_BUS", "low"),
@@ -179,7 +180,7 @@ def main() -> int:
         pass
 
     try:
-        dev = canalystii.CanalystDevice(bitrate=BITRATE)
+        dev = canalystii.CanalystDevice(device_index=DEVICE_INDEX, bitrate=BITRATE)
     except Exception as exc:
         emit({"type": "status", "adapter_connected": False, "online": False, "error": str(exc)})
         return 2
@@ -189,6 +190,7 @@ def main() -> int:
         "adapter_connected": True,
         "online": True,
         "adapter": "CANalyst-II",
+        "device_index": DEVICE_INDEX,
         "bitrate": BITRATE,
         "channels": CHANNEL_TO_BUS,
     })
