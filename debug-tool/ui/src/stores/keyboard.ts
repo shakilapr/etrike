@@ -20,4 +20,3 @@ export interface KbEvent {
 
 export const kbEvent = writable<KbEvent | null>(null);
 export const kbBus = writable<Bus>("high");
-export const kbHud = writable(true); // show HUD overlay

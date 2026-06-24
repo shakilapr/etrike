@@ -9,7 +9,7 @@
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
-  import { kbBus, kbEvent, kbHud, type KbAction } from "./stores/keyboard";
+  import { kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
   type Tab = "dashboard" | "monitor" | "injector" | "pipeline" | "stats";
 
@@ -60,9 +60,6 @@
           lastSpaceTs = now;
         }
         break;
-      case "?":
-        kbHud.update((v) => !v);
-        return;
     }
 
     if (action) {
@@ -162,16 +159,4 @@
       <Stats {ids} />
     {/if}
   </main>
-
-  {#if $kbHud}
-    <div class="kb-hud">
-      <span class="kb-bus">{$kbBus.toUpperCase()} BUS</span>
-      <span class="kb-row"><kbd>W</kbd><kbd>S</kbd> Speed ±200</span>
-      <span class="kb-row"><kbd>A</kbd><kbd>D</kbd> {$kbBus === "high" ? "Yaw ±87" : "Angle ±5°"}</span>
-      <span class="kb-row"><kbd>B</kbd> Brake <kbd>R</kbd> Release</span>
-      <span class="kb-row"><kbd>Space×2</kbd> ESTOP</span>
-      <span class="kb-row"><kbd>Esc</kbd> Zero <kbd>Tab</kbd> Switch</span>
-      <span class="kb-hint">? toggle HUD</span>
-    </div>
-  {/if}
 </div>
