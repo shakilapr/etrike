@@ -95,6 +95,9 @@ debug-tool/e2e/screenshots/
 .env
 .env.local
 
+# ── CANalyst-II local Windows driver tooling ─────────────────────────
+tools/canalystii-driver/
+
 # ── AURIX / TC275 build artifacts ──────────────────────────────────
 *.d
 *.hex
