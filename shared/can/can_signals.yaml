@@ -5,10 +5,10 @@
 # Use byte/bit_offset notation (no 0-63 start_bit confusion).
 # byte=N, bit_offset=0 means "starts at bit 0 (LSB) of byte N in the CAN payload."
 #
-# Generated from this file:
-#   shared/can/etrike_custom.dbc   (custom protocol, Motorola/big-endian)
-#   rt-esp32/syntree_eps.dbc       (SYNTREE EPS-C, Intel/little-endian)
-#   sys-esp32/syntree_seb.dbc      (SYNTREE SEB, Intel/little-endian)
+# Generates these files:
+#   -> shared/can/etrike_custom.dbc   (custom protocol, Motorola/big-endian)
+#   -> rt-esp32/syntree_eps.dbc       (SYNTREE EPS-C, Intel/little-endian)
+#   -> sys-esp32/syntree_seb.dbc      (SYNTREE SEB, Intel/little-endian)
 #
 # Usage:
 #   python generate_all_dbc.py              # generate all DBCs
@@ -51,14 +51,14 @@ protocols:
     output: shared/can/etrike_custom.dbc
     messages:
 
-      # 0x001 — SAFETY_ESTOP (DLC=0 event frame)
+      # 0x001 — SAFETY_ESTOP (DLC=0 event frame, any node can send)
       - id: 0x001
         name: SAFETY_ESTOP
         dlc: 0
         sender: RT
         receivers: [SYS, Jetson, MTR, DCDC]
         cycle_ms: 0
-        comment: "DLC=0 — the frame ID itself is the ESTOP signal. Bridged bidirectionally by RT. Highest priority CAN frame."
+        comment: "DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame."
         signals: []
 
       # 0x011 — SYS_SAFETY_STS (forwarded low->high by RT)
@@ -99,13 +99,14 @@ protocols:
              values: {0: Manual, 1: Auto, 2: ESTOP}}
 
       # 0x120 — SYS_THROTTLE_STS (MTR->RT, forwarded low->high)
+      # Historical note: SYS_ prefix is legacy — physical sender is MTR (STM32).
       - id: 0x120
         name: SYS_THROTTLE_STS
         dlc: 2
         sender: MTR
         receivers: [RT, Jetson]
         cycle_ms: 10
-        comment: "Current vehicle speed from MTR STM32. Forwarded low->high by RT."
+        comment: "Current vehicle speed from MTR STM32. Forwarded low->high by RT. SYS_ prefix is historical."
         signals:
           - {name: SYS_ThrottleSpeed, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
@@ -240,15 +241,18 @@ protocols:
         cycle_ms: 100
         comment: "Steering telemetry to Jetson. v0.0.4 — previously missing from DBC."
         signals:
-          - {name: SD_Angle0_1deg,   byte: 0, bit_offset: 0, size: 16, type: signed,
-             unit: "0.1deg", comment: "Actual steering angle in 0.1° units (raw, offset -3000 in physical)"}
-          - {name: SD_Fault,         byte: 2, bit_offset: 0, size: 8, min: 0, max: 1,
+          - {name: SteerDiag_Angle0_1deg,   byte: 0, bit_offset: 0, size: 16, type: signed,
+             factor: 0.1, offset: -3000, unit: deg,
+             comment: "Actual steering angle. physical_deg = raw * 0.1 - 3000. Raw 30000 -> 0deg."}
+          - {name: SteerDiag_Fault,         byte: 2, bit_offset: 0, size: 8, min: 0, max: 1,
              comment: "0=OK, 1=EPS-C fault"}
-          - {name: SD_MotorCurrent,  byte: 3, bit_offset: 0, size: 16,
-             unit: "0.01A", comment: "EPS-C motor current, 0.01A/bit"}
-          - {name: SD_ECUTemp,       byte: 5, bit_offset: 0, size: 16,
-             unit: "0.1degC", comment: "EPS-C ECU temperature, 0.1°C/bit"}
-          - {name: SD_Reserved,      byte: 7, bit_offset: 0, size: 8, min: 0, max: 0}
+          - {name: SteerDiag_MotorCurrent,  byte: 3, bit_offset: 0, size: 16,
+             factor: 0.01, offset: 0, unit: A,
+             comment: "EPS-C motor current, 0.01A/bit"}
+          - {name: SteerDiag_ECUTemp,       byte: 5, bit_offset: 0, size: 16,
+             factor: 0.1, offset: 0, unit: degC,
+             comment: "EPS-C ECU temperature, 0.1degC/bit"}
+          - {name: SteerDiag_Reserved,      byte: 7, bit_offset: 0, size: 8, min: 0, max: 0}
 
       # 0x311 — BRAKE_DIAG (RT->Jetson, brake telemetry @10Hz, v0.0.4)
       - id: 0x311
@@ -259,26 +263,29 @@ protocols:
         cycle_ms: 100
         comment: "Brake telemetry to Jetson. v0.0.4 — previously missing from DBC."
         signals:
-          - {name: BD_PressureRaw,   byte: 0, bit_offset: 0, size: 16,
-             unit: "0.05MPa", comment: "SEB pressure raw, 0.05 MPa/bit"}
-          - {name: BD_Fault,         byte: 2, bit_offset: 0, size: 8, min: 0, max: 1,
+          - {name: BrakeDiag_PressureRaw,   byte: 0, bit_offset: 0, size: 16,
+             factor: 0.05, offset: 0, unit: MPa,
+             comment: "SEB pressure raw, 0.05 MPa/bit"}
+          - {name: BrakeDiag_Fault,         byte: 2, bit_offset: 0, size: 8, min: 0, max: 1,
              comment: "0=OK, 1=SEB fault"}
-          - {name: BD_MotorCurrent,  byte: 3, bit_offset: 0, size: 16,
-             unit: "0.01A", comment: "SEB motor current, 0.01A/bit"}
-          - {name: BD_ECUTemp,       byte: 5, bit_offset: 0, size: 16,
-             unit: "0.1degC", comment: "SEB ECU temperature, 0.1°C/bit"}
-          - {name: BD_Reserved,      byte: 7, bit_offset: 0, size: 8, min: 0, max: 0}
+          - {name: BrakeDiag_MotorCurrent,  byte: 3, bit_offset: 0, size: 16,
+             factor: 0.01, offset: 0, unit: A,
+             comment: "SEB motor current, 0.01A/bit"}
+          - {name: BrakeDiag_ECUTemp,       byte: 5, bit_offset: 0, size: 16,
+             factor: 0.1, offset: 0, unit: degC,
+             comment: "SEB ECU temperature, 0.1degC/bit"}
+          - {name: BrakeDiag_Reserved,      byte: 7, bit_offset: 0, size: 8, min: 0, max: 0}
 
-      # 0x400 — RT_OBSTACLE_RPT (RT->Jetson on high bus)
+      # 0x400 — HOST_OBSTACLE_DIST (Jetson->RT on high bus)
       - id: 0x400
-        name: RT_OBSTACLE_RPT
+        name: HOST_OBSTACLE_DIST
         dlc: 4
-        sender: RT
-        receivers: [Jetson]
+        sender: Jetson
+        receivers: [RT]
         cycle_ms: 100
-        comment: "RT reports min obstacle distance to Jetson at 10 Hz. High bus only."
+        comment: "Jetson sends min obstacle distance (from LiDAR/camera perception) to RT at 10 Hz. High bus only."
         signals:
-          - {name: RT_ObstacleDistance, byte: 0, bit_offset: 0, size: 32,
+          - {name: HOST_ObstacleDistance, byte: 0, bit_offset: 0, size: 32,
              min: 0, max: 4294967295, unit: mm,
              comment: "UINT32_MAX = no reading / timeout"}
 
@@ -431,7 +438,7 @@ protocols:
           - {name: SES_Alignment,     byte: 1, bit_offset: 5, size: 1, comment: "Centering Fault [L1]"}
           - {name: SES_OverAngle,     byte: 1, bit_offset: 6, size: 1, comment: "Over Angle Fault [L2]"}
           - {name: SES_StrMtrStall,   byte: 1, bit_offset: 7, size: 1, comment: "Motor Stall Fault [L1]"}
-          - {name: SES_MtrCurt,       byte: 2, bit_offset: 0, size: 1, comment: "Motor Current Fault [L2]"}
+          - {name: SES_MtrCurtFault,  byte: 2, bit_offset: 0, size: 1, comment: "Motor Current Fault [L2]"}
           - {name: SES_SensorCL,      byte: 2, bit_offset: 1, size: 1, comment: "Sensor 5V Power Fault [L2]"}
           - {name: SES_TorqT1_OC,     byte: 2, bit_offset: 2, size: 1, comment: "Torque Sensor T1 Open Circuit [L3]"}
           - {name: SES_TorqT1_AF,     byte: 2, bit_offset: 3, size: 1, comment: "Torque Sensor T1 Out of Range [L3]"}

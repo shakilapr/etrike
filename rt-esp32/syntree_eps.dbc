@@ -48,7 +48,7 @@ BO_ 514 SES_ErrInfo: 8 EPS_C
  SG_ SES_Alignment : 13|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_OverAngle : 14|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_StrMtrStall : 15|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SES_MtrCurt : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ SES_MtrCurtFault : 16|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_SensorCL : 17|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_TorqT1_OC : 18|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_TorqT1_AF : 19|1@1+ (1,0) [0|1] "" Vector__XXX
@@ -110,7 +110,7 @@ CM_ SG_ 514 SES_SensorPow "Sensor Power Fault [L2]";
 CM_ SG_ 514 SES_Alignment "Centering Fault [L1]";
 CM_ SG_ 514 SES_OverAngle "Over Angle Fault [L2]";
 CM_ SG_ 514 SES_StrMtrStall "Motor Stall Fault [L1]";
-CM_ SG_ 514 SES_MtrCurt "Motor Current Fault [L2]";
+CM_ SG_ 514 SES_MtrCurtFault "Motor Current Fault [L2]";
 CM_ SG_ 514 SES_SensorCL "Sensor 5V Power Fault [L2]";
 CM_ SG_ 514 SES_TorqT1_OC "Torque Sensor T1 Open Circuit [L3]";
 CM_ SG_ 514 SES_TorqT1_AF "Torque Sensor T1 Out of Range [L3]";

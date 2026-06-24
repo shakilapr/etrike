@@ -60,21 +60,21 @@ BO_ 770 HOST_LIGHT_CMD: 1 Jetson
  SG_ HOST_Headlight : 4|1@0+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 784 STEER_DIAG: 8 RT
- SG_ SD_Angle0_1deg : 7|16@0- (1,0) [-32768|32767] "0.1deg" Vector__XXX
- SG_ SD_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
- SG_ SD_MotorCurrent : 31|16@0+ (1,0) [0|65535] "0.01A" Vector__XXX
- SG_ SD_ECUTemp : 47|16@0+ (1,0) [0|65535] "0.1degC" Vector__XXX
- SG_ SD_Reserved : 63|8@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ SteerDiag_Angle0_1deg : 7|16@0- (0.1000000000000000055511151231257827021181583404541015625,-3000) [-32768|32767] "deg" Vector__XXX
+ SG_ SteerDiag_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SteerDiag_MotorCurrent : 31|16@0+ (0.01000000000000000020816681711721685132943093776702880859375,0) [0|65535] "A" Vector__XXX
+ SG_ SteerDiag_ECUTemp : 47|16@0+ (0.1000000000000000055511151231257827021181583404541015625,0) [0|65535] "degC" Vector__XXX
+ SG_ SteerDiag_Reserved : 63|8@0+ (1,0) [0|0] "" Vector__XXX
 
 BO_ 785 BRAKE_DIAG: 8 RT
- SG_ BD_PressureRaw : 7|16@0+ (1,0) [0|65535] "0.05MPa" Vector__XXX
- SG_ BD_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
- SG_ BD_MotorCurrent : 31|16@0+ (1,0) [0|65535] "0.01A" Vector__XXX
- SG_ BD_ECUTemp : 47|16@0+ (1,0) [0|65535] "0.1degC" Vector__XXX
- SG_ BD_Reserved : 63|8@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ BrakeDiag_PressureRaw : 7|16@0+ (0.05000000000000000277555756156289135105907917022705078125,0) [0|65535] "MPa" Vector__XXX
+ SG_ BrakeDiag_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ BrakeDiag_MotorCurrent : 31|16@0+ (0.01000000000000000020816681711721685132943093776702880859375,0) [0|65535] "A" Vector__XXX
+ SG_ BrakeDiag_ECUTemp : 47|16@0+ (0.1000000000000000055511151231257827021181583404541015625,0) [0|65535] "degC" Vector__XXX
+ SG_ BrakeDiag_Reserved : 63|8@0+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 1024 RT_OBSTACLE_RPT: 4 RT
- SG_ RT_ObstacleDistance : 7|32@0+ (1,0) [0|4294967295] "mm" Vector__XXX
+BO_ 1024 HOST_OBSTACLE_DIST: 4 Jetson
+ SG_ HOST_ObstacleDistance : 7|32@0+ (1,0) [0|4294967295] "mm" Vector__XXX
 
 BO_ 1536 SYS_DIAG_RPT: 8 SYS
  SG_ SYS_DiagMode : 7|8@0+ (1,0) [0|2] "" Vector__XXX
@@ -95,11 +95,11 @@ BO_ 2046 SYS_HEARTBEAT: 1 SYS
  SG_ SYS_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
 
 
-CM_ BO_ 1  "DLC=0  the frame ID itself is the ESTOP signal. Bridged bidirectionally by RT. Highest priority CAN frame.";
+CM_ BO_ 1  "DLC=0  the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.";
 CM_ BO_ 17  "Forwarded low->high by RT. Same payload on both buses.";
 CM_ BO_ 18  "DC-DC converter control. Low bus only.";
 CM_ BO_ 272  "0=Manual, 1=Auto, 2=ESTOP. Low bus only.";
-CM_ BO_ 288  "Current vehicle speed from MTR STM32. Forwarded low->high by RT.";
+CM_ BO_ 288  "Current vehicle speed from MTR STM32. Forwarded low->high by RT. SYS_ prefix is historical.";
 CM_ BO_ 516  "MTR receives for motor actuation. SYS receives for EGAS L2 monitoring. ID 0x204 avoids collision with EPS-C 0x202.";
 CM_ BO_ 517  "RT max-select: max(rt_obstacle, jetson_0x301) -> SYS SEB cmd.";
 CM_ BO_ 518  "Motor feedback from STM32. Low bus only.";
@@ -110,7 +110,7 @@ CM_ BO_ 769  "On demand. RT arbitrates: max(RT_computed, HOST_request) -> 0x205.
 CM_ BO_ 770  "Forwarded transparently high->low by RT.";
 CM_ BO_ 784  "Steering telemetry to Jetson. v0.0.4  previously missing from DBC.";
 CM_ BO_ 785  "Brake telemetry to Jetson. v0.0.4  previously missing from DBC.";
-CM_ BO_ 1024  "RT reports min obstacle distance to Jetson at 10 Hz. High bus only.";
+CM_ BO_ 1024  "Jetson sends min obstacle distance (from LiDAR/camera perception) to RT at 10 Hz. High bus only.";
 CM_ BO_ 1536  "SYS diagnostics report. Forwarded low->high by RT.";
 CM_ BO_ 2044  "Not bridged, high bus only. Loss triggers controlled stop, not ESTOP.";
 CM_ BO_ 2045  "RT sends independently on both buses (per-bus, NOT bridged). Separate counters.";
@@ -121,15 +121,15 @@ CM_ SG_ 18 SYS_DcdcEnable "ESTOP->1(on); maintains 12V for MCUs, CAN transceiver
 CM_ SG_ 518 MTR_FaultFlags "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict";
 CM_ SG_ 768 HOST_DriveSpeed "ROS 2: linear.x * 1000";
 CM_ SG_ 768 HOST_YawRate "ROS 2: angular.z * 1000. i24 big-endian at bytes 4-6.";
-CM_ SG_ 784 SD_Angle0_1deg "Actual steering angle in 0.1° units (raw, offset -3000 in physical)";
-CM_ SG_ 784 SD_Fault "0=OK, 1=EPS-C fault";
-CM_ SG_ 784 SD_MotorCurrent "EPS-C motor current, 0.01A/bit";
-CM_ SG_ 784 SD_ECUTemp "EPS-C ECU temperature, 0.1°C/bit";
-CM_ SG_ 785 BD_PressureRaw "SEB pressure raw, 0.05 MPa/bit";
-CM_ SG_ 785 BD_Fault "0=OK, 1=SEB fault";
-CM_ SG_ 785 BD_MotorCurrent "SEB motor current, 0.01A/bit";
-CM_ SG_ 785 BD_ECUTemp "SEB ECU temperature, 0.1°C/bit";
-CM_ SG_ 1024 RT_ObstacleDistance "UINT32_MAX = no reading / timeout";
+CM_ SG_ 784 SteerDiag_Angle0_1deg "Actual steering angle. physical_deg = raw * 0.1 - 3000. Raw 30000 -> 0deg.";
+CM_ SG_ 784 SteerDiag_Fault "0=OK, 1=EPS-C fault";
+CM_ SG_ 784 SteerDiag_MotorCurrent "EPS-C motor current, 0.01A/bit";
+CM_ SG_ 784 SteerDiag_ECUTemp "EPS-C ECU temperature, 0.1degC/bit";
+CM_ SG_ 785 BrakeDiag_PressureRaw "SEB pressure raw, 0.05 MPa/bit";
+CM_ SG_ 785 BrakeDiag_Fault "0=OK, 1=SEB fault";
+CM_ SG_ 785 BrakeDiag_MotorCurrent "SEB motor current, 0.01A/bit";
+CM_ SG_ 785 BrakeDiag_ECUTemp "SEB ECU temperature, 0.1degC/bit";
+CM_ SG_ 1024 HOST_ObstacleDistance "UINT32_MAX = no reading / timeout";
 CM_ SG_ 2044 Jetson_AliveCtr "Timeout 1500ms -> controlled stop. Jetson is QM, not safety-critical.";
 CM_ SG_ 2045 RT_AliveCtr "Low bus timeout 1000ms->SYS ESTOP; High bus 1500ms->Jetson stops /cmd_vel";
 CM_ SG_ 2046 SYS_AliveCtr "10 Hz / 200ms timeout -> RT brake takeover + ESTOP";
@@ -140,6 +140,7 @@ CM_ BU_ SYS "ESP32-S3, FreeRTOS, safety + motor + body control";
 CM_ BU_ MTR "STM32, bare metal, motor DAC + gear relays (EGAS L1)";
 
 BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000000000;
 
 
 BA_ "GenMsgCycleTime" BO_ 17 200;
