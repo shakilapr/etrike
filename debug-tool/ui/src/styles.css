@@ -596,6 +596,109 @@ pre {
   .toolbar-main input { max-width: none; }
 }
 
+/* ── Pipeline view ── */
+.pipeline-view {
+  min-height: 200px;
+}
+
+.pipeline-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+}
+
+.pipeline-chain {
+  align-items: center;
+  display: flex;
+  gap: 0;
+  padding: 12px 0;
+}
+
+.pipe-node {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 2px 8px;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "bus id" "bus name" "bus val" "bus ts";
+  min-width: 180px;
+  padding: 10px 14px;
+}
+
+.pipe-node.high {
+  border-color: var(--cat-drive);
+}
+
+.pipe-node.low {
+  border-color: var(--cat-steering);
+}
+
+.pipe-bus {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  grid-area: bus;
+  letter-spacing: 0.05em;
+  writing-mode: vertical-lr;
+}
+
+.pipe-id {
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.9rem;
+  font-weight: 700;
+  grid-area: id;
+}
+
+.pipe-name {
+  color: var(--muted);
+  font-size: 0.72rem;
+  grid-area: name;
+}
+
+.pipe-val {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  grid-area: val;
+}
+
+.pipe-ts {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  grid-area: ts;
+}
+
+.pipe-arrow {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 60px;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.pipe-arrow-line {
+  color: var(--accent);
+  font-size: 1.4rem;
+}
+
+.pipe-latency {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pipe-divider {
+  border-top: 1px solid var(--panel-border);
+  margin: 0 14px;
+}
+
 /* ── Keyboard HUD ── */
 .kb-hud {
   background: color-mix(in srgb, var(--panel) 92%, transparent);
