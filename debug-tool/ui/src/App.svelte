@@ -3,6 +3,7 @@
   import CanInjector from "./components/CanInjector.svelte";
   import CanMonitor from "./components/CanMonitor.svelte";
   import Dashboard from "./components/Dashboard.svelte";
+  import PipelineView from "./components/PipelineView.svelte";
   import Stats from "./components/Stats.svelte";
   import { getCanIds, getFrames, getStats, getStatus, getTemplates, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
@@ -10,7 +11,7 @@
   import { ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
   import { kbBus, kbEvent, kbHud, type KbAction } from "./stores/keyboard";
 
-  type Tab = "dashboard" | "monitor" | "injector" | "stats";
+  type Tab = "dashboard" | "monitor" | "injector" | "pipeline" | "stats";
 
   let activeTab: Tab = "dashboard";
   let ids: CanMessageDef[] = [];
@@ -22,6 +23,7 @@
     { id: "dashboard", label: "Dashboard" },
     { id: "monitor", label: "CAN Monitor" },
     { id: "injector", label: "Injector" },
+    { id: "pipeline", label: "Pipeline" },
     { id: "stats", label: "Statistics" }
   ];
 
@@ -154,6 +156,8 @@
       <CanMonitor {ids} />
     {:else if activeTab === "injector"}
       <CanInjector {ids} {templates} />
+    {:else if activeTab === "pipeline"}
+      <PipelineView />
     {:else}
       <Stats {ids} />
     {/if}
