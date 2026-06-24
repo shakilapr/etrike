@@ -135,24 +135,18 @@ public:
         if (m_state == SteerState::ACTIVE) {
             if (obstacle_triggered) {
                 // Gap #9: clamp hold angle to dynamic limit for current speed.
-                // If current angle exceeds limit, ramp to limit first, then hold.
+                // At high speed the dynamic limit may be as low as 5° — holding an
+                // angle beyond that during hard braking risks rollover.
                 float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
                 float max_deg = compute_dynamic_limit(speed_kmh);
                 int16_t max_raw = static_cast<int16_t>(max_deg * 10.0f);  // 0.1° units
-                int16_t hold_angle = std::clamp(m_active_angle, -max_raw, max_raw);
-                if (hold_angle != m_active_angle) {
-                    // Current angle exceeds dynamic limit → ramp to limit first
-                    m_state = SteerState::ESTOP_RAMP_TO_ZERO;
-                    m_active_angle = hold_angle;  // ramp target is the safe limit
-                } else {
-                    m_state = SteerState::ESTOP_HOLD_THEN_SILENT;
-                    m_estop_hold_angle = m_active_angle;
-                    m_estop_hold_start_ms = 0;
-                }
+                m_state = SteerState::ESTOP_HOLD_THEN_SILENT;
+                m_estop_hold_angle = std::clamp(m_active_angle, -max_raw, max_raw);
+                m_estop_hold_start_ms = 0;
             } else {
                 m_state = SteerState::ESTOP_RAMP_TO_ZERO;
                 m_estop_following_err_start_ms = 0;
-                // ramp starts from current m_active_angle
+                // ramp starts from current m_active_angle toward 0°
             }
         }
         // If already in an ESTOP state, no change — first trigger wins
