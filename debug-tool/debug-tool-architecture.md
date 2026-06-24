@@ -100,9 +100,11 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 
 ---
 
-## 3. CAN Message Catalog — All 28 IDs
+## 3. CAN Message Catalog — 37 IDs (13 high + 24 low)
 
-### 3.1 High-Level CAN Bus (12 IDs)
+> **Source of truth:** `backend/src/types/can.ts` `CAN_MESSAGES` array. The frontend catalog (`ui/src/lib/can-decoder.ts`) currently mirrors 35 of these (13 high + 22 low) — 0x310 and 0x311 are backend-only pending a frontend sync. Any new CAN ID must be added to both files plus the YAML signal dictionary.
+
+### 3.1 High-Level CAN Bus (13 IDs)
 
 | ID | Name | Sender | Period | DLC | Decoded Fields | Inject |
 |----|------|--------|--------|-----|----------------|--------|
@@ -120,7 +122,7 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 | `0x7FC` | JETSON_HEARTBEAT | Jetson | 2 Hz | 1 | `alive_ctr` | ✅ |
 | `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | 1 | `alive_ctr` | — |
 
-### 3.2 Low-Level CAN Bus (22 IDs)
+### 3.2 Low-Level CAN Bus (24 IDs)
 
 | ID | Name | Sender | Period | DLC | Decoded Fields | Inject |
 |----|------|--------|--------|-----|----------------|--------|
@@ -137,6 +139,8 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 | `0x205` | RT_BRAKE_CMD | RT | 50 Hz | 4 | `brake_pressure_kpa` | ✅ |
 | `0x206` | MTR_MOTOR_FBK | MTR | 50 Hz | 4 | `actual_speed_mmps`, `gear_state`, `fault_flags` | ✅ |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | Change | 1 | light bitfield | ✅ |
+| `0x310` | STEER_DIAG | RT | 10 Hz | 8 | `SteerDiag_Angle0_1deg`, `SteerDiag_Fault`, `SteerDiag_MotorCurrent`, `SteerDiag_ECUTemp` | — |
+| `0x311` | BRAKE_DIAG | RT | 10 Hz | 8 | `BrakeDiag_PressureRaw`, `BrakeDiag_Fault`, `BrakeDiag_MotorCurrent`, `BrakeDiag_ECUTemp` | — |
 | `0x600` | SYS_DIAG_RPT | SYS | 1 Hz | 8 | `mode`, `brake_engaged`, `hb_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` | — |
 | `0x6FA` | SES_Test | EPS-C | 100 Hz | 8 | motor current, ECU temp, supply voltage | — |
 | `0x6FB` | SEB_Test | SEB | 100 Hz | 8 | motor current, ECU temp, supply voltage | — |
@@ -236,7 +240,7 @@ The `bus` field is `"high"` or `"low"`. Each frame is published to a topic that 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/api/status` | Backend health + ESP32 connected + uptime + bus stats |
-| `GET` | `/api/can/ids` | All 28 CAN IDs with names, bus, DLC, field defs, enum labels |
+| `GET` | `/api/can/ids` | All CAN IDs (37: 13 high + 24 low) with names, bus, DLC, field defs, enum labels |
 | `GET` | `/api/can/frames` | Query history: `?bus=low&id=0x204&since=<ts>&limit=500` |
 | `GET` | `/api/can/stats` | Latest per-bus statistics |
 | `POST` | `/api/cmd/send` | Inject CAN frame: `{bus, id, dlc, data}` |
@@ -340,7 +344,8 @@ The embedded broker means **no external MQTT server is required** for local deve
 | Framework | Svelte 5 + Vite |
 | Language | TypeScript |
 | Charts | Chart.js (via svelte-chartjs) |
-| Testing | Playwright |
+| Unit testing | Vitest + jsdom |
+| E2E testing | Playwright |
 
 ### 6.2 Pages
 
@@ -557,21 +562,20 @@ sim.ts
 
 ## 9. E2E Tests (`e2e/`)
 
-Playwright tests against backend + simulator + UI:
+Playwright tests against backend + simulator + UI. Currently a single test file covering 8 scenarios (architecture §6.2 describes the planned per-tab split):
 
 | Test | What It Verifies |
 |------|-----------------|
-| Dashboard shows online | Simulator → green dot, both bus gauges render |
-| CAN frames stream to monitor | Both buses → WebSocket → color-coded table rows |
-| Bus filter works | Select "low only" → only blue rows shown |
-| Inject single frame | UI → REST → serial → ack shown |
-| Inject on low bus | Select low bus → inject 0x204 → appears in low bus monitor |
-| Periodic injection | Start → frames at rate → stop → no more frames |
-| Keyboard drive | Focus injector → press W → 0x300 frame sent immediately |
-| ESTOP double-tap | Single Space → warning. Double Space → 0x001 sent |
-| Recording | Start → frames captured from both buses → stop → correct count |
-| Export recording | Download button → valid JSON with bus field |
-| Stats dual-bus | Both bus charts render with distinct data |
+| Page loads with dual-bus header | H1 + eyebrow text render |
+| Status strip shows connection state | Backend connection indicator visible |
+| All tabs present | Dashboard, CAN Monitor, Injector, Statistics (4 tabs) |
+| Navigate to monitor tab | Click "CAN Monitor" → heading renders |
+| Navigate to injector | Click "Injector" → bus selector visible |
+| Navigate to stats | Click "Statistics" → 2 gauge panels render |
+| Backend API returns IDs with bus field | `GET /api/can/ids` → valid JSON with `bus` + `sender` fields |
+| Backend API returns dual-bus stats shape | `GET /api/can/stats` → `buses.high` + `buses.low` present |
+
+**Gaps** (tests from §6.2 not yet implemented): CAN frame streaming, bus filter, single-frame injection, periodic injection, keyboard drive, ESTOP double-tap, recording, export, responsive breakpoints, visual snapshots.
 
 ---
 
