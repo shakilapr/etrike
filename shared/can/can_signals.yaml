@@ -7,8 +7,8 @@
 #
 # Generates these files:
 #   -> shared/can/etrike_custom.dbc   (custom protocol, Motorola/big-endian)
-#   -> rt-esp32/SES/SEB_eps.dbc       (SES/SEB SES, Intel/little-endian)
-#   -> sys-esp32/SES/SEB_seb.dbc      (SES/SEB SEB, Intel/little-endian)
+#   -> shared/can/SES/SEB_eps.dbc     (SES/SEB SES, Intel/little-endian)
+#   -> shared/can/SES/SEB_seb.dbc     (SES/SEB SEB, Intel/little-endian)
 #
 # Usage:
 #   python generate_all_dbc.py              # generate all DBCs

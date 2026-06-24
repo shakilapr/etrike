@@ -8,7 +8,7 @@ compiles PDFs with pdflatex.
 
 Usage:
   python build-docs.py                          # build current version
-  python build-docs.py --version 0.0.3-alpha    # specify version
+  python build-docs.py --version 0.0.4-alpha    # specify version
   python build-docs.py --no-compile             # generate .tex only, skip PDF
   python build-docs.py --arch-only              # architecture PDF only (faster)
   python build-docs.py --date 2026-06-24        # override date
@@ -26,7 +26,7 @@ from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DOC_DIR = REPO_ROOT / "documentation"
+DOC_DIR = REPO_ROOT / "tex"
 TEMPLATE_DIR = DOC_DIR
 GENERATED_DIR = DOC_DIR / "generated"
 OUTPUT_DIR = DOC_DIR / "output"
@@ -228,8 +228,8 @@ def main() -> None:
         description="Build E-Trike LaTeX documentation from markdown sources."
     )
     parser.add_argument(
-        "--version", default="v0.0.3-alpha",
-        help="Version string for the documentation (default: v0.0.3-alpha)"
+        "--version", default="v0.0.4-alpha",
+        help="Version string for the documentation (default: v0.0.4-alpha)"
     )
     parser.add_argument(
         "--date", default=today,
