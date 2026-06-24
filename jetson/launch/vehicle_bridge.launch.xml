@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    E-Trike Autoware Vehicle Bridge — launch with topic remappings.
+    Maps Autoware.Auto standard topics to bridge-internal namespaced topics.
+
+    Usage:
+      ros2 launch autoware_vehicle_bridge vehicle_bridge.launch.xml
+
+    Autoware Input (subscribed by bridge):
+      /control/command/control_cmd        → ~/input/control_cmd
+      /control/command/gear_cmd           → ~/input/gear_cmd
+      /control/command/turn_indicators_cmd → ~/input/turn_indicators_cmd
+      /control/command/hazard_lights_cmd  → ~/input/hazard_lights_cmd
+      /control/control_mode_request       → ~/input/control_mode
+      /control/command/emergency_cmd      → ~/input/emergency_cmd
+
+    Vehicle Output (published by bridge):
+      /vehicle/status/velocity_status       ← ~/output/velocity_status
+      /vehicle/status/steering_status       ← ~/output/steering_status
+      /vehicle/status/gear_status           ← ~/output/gear_status
+      /vehicle/status/control_mode          ← ~/output/control_mode
+      /vehicle/status/turn_indicators_status ← ~/output/turn_indicators_status
+      /vehicle/status/hazard_lights_status  ← ~/output/hazard_lights_status
+      /vehicle/status/kinematic_state       ← ~/output/kinematic_state
+  -->
+  <node name="vehicle_bridge" pkg="autoware_vehicle_bridge" exec="vehicle_bridge_node">
+    <!-- Autoware → Bridge (commands) -->
+    <remap from="~/input/control_cmd" to="/control/command/control_cmd"/>
+    <remap from="~/input/gear_cmd" to="/control/command/gear_cmd"/>
+    <remap from="~/input/turn_indicators_cmd" to="/control/command/turn_indicators_cmd"/>
+    <remap from="~/input/hazard_lights_cmd" to="/control/command/hazard_lights_cmd"/>
+    <remap from="~/input/control_mode" to="/control/control_mode_request"/>
+    <remap from="~/input/emergency_cmd" to="/control/command/emergency_cmd"/>
+    <!-- Bridge → Autoware (feedback) -->
+    <remap from="~/output/velocity_status" to="/vehicle/status/velocity_status"/>
+    <remap from="~/output/steering_status" to="/vehicle/status/steering_status"/>
+    <remap from="~/output/gear_status" to="/vehicle/status/gear_status"/>
+    <remap from="~/output/control_mode" to="/vehicle/status/control_mode"/>
+    <remap from="~/output/turn_indicators_status" to="/vehicle/status/turn_indicators_status"/>
+    <remap from="~/output/hazard_lights_status" to="/vehicle/status/hazard_lights_status"/>
+    <remap from="~/output/kinematic_state" to="/vehicle/status/kinematic_state"/>
+  </node>
+</launch>

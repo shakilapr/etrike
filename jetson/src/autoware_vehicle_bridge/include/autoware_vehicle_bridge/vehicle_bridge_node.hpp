@@ -16,6 +16,7 @@
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
 #include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
+#include <autoware_auto_vehicle_msgs/msg/control_mode_command.hpp>
 #include <autoware_auto_vehicle_msgs/msg/control_mode_report.hpp>
 #include <autoware_auto_vehicle_msgs/msg/engage.hpp>
 #include <autoware_auto_vehicle_msgs/msg/gear_command.hpp>
@@ -25,7 +26,9 @@
 #include <autoware_auto_vehicle_msgs/msg/steering_report.hpp>
 #include <autoware_auto_vehicle_msgs/msg/turn_indicators_command.hpp>
 #include <autoware_auto_vehicle_msgs/msg/turn_indicators_report.hpp>
+#include <autoware_auto_vehicle_msgs/msg/vehicle_kinematic_state.hpp>
 #include <autoware_auto_vehicle_msgs/msg/velocity_report.hpp>
+#include <tier4_vehicle_msgs/msg/vehicle_emergency_stamped.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <diagnostic_msgs/msg/diagnostic_status.hpp>
 
@@ -179,6 +182,8 @@ private:
   rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand>::SharedPtr sub_turn_;
   rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::HazardLightsCommand>::SharedPtr sub_hazard_;
   rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::Engage>::SharedPtr sub_engage_;
+  rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::ControlModeCommand>::SharedPtr sub_control_mode_;
+  rclcpp::Subscription<tier4_vehicle_msgs::msg::VehicleEmergencyStamped>::SharedPtr sub_emergency_;
 
   // ---- Publishers ----
   rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::VelocityReport>::SharedPtr pub_velocity_;
@@ -187,6 +192,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::ControlModeReport>::SharedPtr pub_mode_;
   rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport>::SharedPtr pub_turn_status_;
   rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::HazardLightsReport>::SharedPtr pub_hazard_status_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::VehicleKinematicState>::SharedPtr pub_kinematic_state_;
   rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr pub_diag_;
 
   // ---- Timers ----
@@ -210,12 +216,27 @@ private:
   // ---- Heartbeat ----
   HeartbeatMonitor rt_heartbeat_;
 
+  // ---- Odometry (dead reckoning) ----
+  double steer_angle_rad_{0.0};
+  rclcpp::Time last_steer_time_{0, 0, RCL_SYSTEM_TIME};
+  double odom_x_{0.0}, odom_y_{0.0}, odom_yaw_{0.0};
+  rclcpp::Time last_odom_time_{0, 0, RCL_SYSTEM_TIME};
+
+  // ---- SYS liveness (from 0x011) ----
+  uint8_t sys_estop_active_{0};
+  uint8_t sys_heartbeat_ok_{1};
+
+  // ---- Rate limiting ----
+  rclcpp::Time last_estop_tx_{0, 0, RCL_SYSTEM_TIME};
+
   // ---- Callbacks ----
   void on_control(const autoware_auto_control_msgs::msg::AckermannControlCommand::SharedPtr msg);
   void on_gear(const autoware_auto_vehicle_msgs::msg::GearCommand::SharedPtr msg);
   void on_turn(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr msg);
   void on_hazard(const autoware_auto_vehicle_msgs::msg::HazardLightsCommand::SharedPtr msg);
   void on_engage(const autoware_auto_vehicle_msgs::msg::Engage::SharedPtr msg);
+  void on_control_mode(const autoware_auto_vehicle_msgs::msg::ControlModeCommand::SharedPtr msg);
+  void on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr msg);
 
   void tick_control();
   void tick_heartbeat();

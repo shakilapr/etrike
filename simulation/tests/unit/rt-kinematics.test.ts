@@ -56,4 +56,24 @@ describe("RtKinematicsController", () => {
   it("getFollowingErrorThreshold is at least 2°", () => {
     expect(ctrl.getFollowingErrorThreshold(0)).toBeGreaterThanOrEqual(2);
   });
+
+  // Issue #11: Sign convention — verify yaw rate → steer angle direction.
+  // ROS REP-103: +steer = right = +yaw (counter-clockwise viewed from above).
+  // Tricycle model: δ = atan2(L·ω, |v|), so +ω → +δ (right turn).
+  it("positive yaw → positive steer (right turn per REP-103)", () => {
+    const out = ctrl.resolve({ speedMmps: 2000, yawRateMradS: 200, gear: 1 });
+    expect(out.steerAngleDeg).toBeGreaterThan(0);  // right = positive
+    expect(out.steerAngleDeg).toBeLessThan(40);     // within hard limit
+  });
+
+  it("negative yaw → negative steer (left turn per REP-103)", () => {
+    const out = ctrl.resolve({ speedMmps: 2000, yawRateMradS: -200, gear: 1 });
+    expect(out.steerAngleDeg).toBeLessThan(0);      // left = negative
+    expect(out.steerAngleDeg).toBeGreaterThan(-40); // within hard limit
+  });
+
+  it("zero yaw → zero steer (straight line)", () => {
+    const out = ctrl.resolve({ speedMmps: 2000, yawRateMradS: 0, gear: 1 });
+    expect(out.steerAngleDeg).toBe(0);
+  });
 });

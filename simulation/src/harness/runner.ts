@@ -41,6 +41,7 @@ export class SimulationRunner {
   private lastCmdSpeedMmps = 0;
   private lastCmdSteerDeg = 0;
   private lastCmdBrakeMm = 0;
+  private estopLatched = false;  // ESTOP latches until simulation reset
   private config: SimConfig = {
     tickMs: 1, speed: 0, initialMode: "manual",
     plant: { wheelbaseMm: 1500, maxSpeedMmps: 3000, maxSteeringDeg: 40, steerLagMs: 50, brakeDecelMmps2PerMm: 2000 },
@@ -83,6 +84,7 @@ export class SimulationRunner {
     this.lastCmdSpeedMmps = 0;
     this.lastCmdSteerDeg = 0;
     this.lastCmdBrakeMm = 0;
+    this.estopLatched = false;
 
     for (const ecu of this.ecus) {
       ecu.init();
@@ -107,13 +109,16 @@ export class SimulationRunner {
       nowMs,
       ticks: this.clock.ticks,
       mode: this.config.initialMode,
-      estopActive: false,
+      estopActive: this.estopLatched,  // latched: once triggered, stays active
       brakeLeverPressed: false,
     };
 
     // ── Process fault injection ────────────────────────────────
     const mutation = this.faultInjector.tick(nowMs, ctx);
-    if (mutation.estopActive) ctx.estopActive = true;
+    if (mutation.estopActive) {
+      ctx.estopActive = true;
+      this.estopLatched = true;  // latch ESTOP permanently
+    }
     if (mutation.estopGpio !== undefined) this.sys.setEstopButton(mutation.estopGpio);
     if (mutation.brakeLever !== undefined) this.sys.setBrakeLever(mutation.brakeLever);
 
