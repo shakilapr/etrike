@@ -60,15 +60,22 @@ export class SyntreeSeb implements SimulatedEcu {
     if (nowMs % 10 === 0) {
       const stroke16 = this.actualStroke & 0xFFFF;
       const statusByte = (this.aligned ? 1 : 0)
-        | (1 << 1)  // control_enable
+        | (1 << 1)  // control_enable_sts = 1 (active)
         | (this.errorStatus << 6);
+      const angleRaw = 0;  // placeholder: no angle model yet
       const data = [
         statusByte,
-        0,
-        stroke16 & 0xFF,
-        (stroke16 >> 8) & 0xFF,
-        0, 0, // pressure, angle
-        0,    // checksum placeholder
+        0,                         // byte 1: reserved
+        stroke16 & 0xFF,           // byte 2: stroke low
+        (stroke16 >> 8) & 0xFF,    // byte 3: stroke high / pressure (mode-dependent)
+        0,                         // byte 4: reserved
+        angleRaw & 0xFF,           // byte 5: angle low
+        // Byte 6: angle bits 8-9 + security echo overlay
+        (1 & 1)                    // bit 0: RollCntEnStatus = 1
+        | ((1 & 1) << 1)            // bit 1: ChecksumEnStatus = 1
+        | (((angleRaw >> 8) & 0x3) << 2)  // bits 2-3: angle bits 9-8
+        | ((1 & 0xF) << 4),         // bits 4-7: RollCntStatus (echoes rolling counter)
+        0,                         // byte 7: checksum placeholder
       ];
       let cksum = 0;
       for (let i = 0; i < 7; i++) cksum ^= data[i];

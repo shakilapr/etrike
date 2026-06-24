@@ -11,7 +11,7 @@ BU_: RT EPS_C
 BO_ 361 VCU_SES_REQ: 8 RT
  SG_ SES_AlignEnable : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_CtrlEnable : 1|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SES_TgtStrAngle : 16|16@1- (0.1000000000000000055511151231257827021181583404541015625,-3000) [-700|700] "deg" Vector__XXX
+ SG_ SES_TgtStrAngle : 16|16@1- (0.1,-3000) [-700|700] "deg" Vector__XXX
  SG_ SES_TgtStrAngleSpd : 32|16@1+ (1,0) [125|525] "deg/s" Vector__XXX
  SG_ SES_RollCntEnable : 40|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_ChecksumEnable : 41|1@1+ (1,0) [0|1] "" Vector__XXX
@@ -23,9 +23,9 @@ BO_ 513 SES_STATUS: 8 EPS_C
  SG_ SES_AngleStatus : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_CtrlModeStatus : 1|2@1+ (1,0) [0|3] "" Vector__XXX
  SG_ SES_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" Vector__XXX
- SG_ SES_StrAngle : 16|16@1+ (0.1000000000000000055511151231257827021181583404541015625,-3000) [-700|700] "deg" Vector__XXX
+ SG_ SES_StrAngle : 16|16@1+ (0.1,-3000) [-700|700] "deg" Vector__XXX
  SG_ SES_TgtStrAngleSpd_FB : 32|16@1- (0.5,0) [0|1480] "deg/s" Vector__XXX
- SG_ SES_SteeringTorq : 40|8@1+ (0.1000000000000000055511151231257827021181583404541015625,-12.0999999999999996447286321199499070644378662109375) [-12|12] "Nm" Vector__XXX
+ SG_ SES_SteeringTorq : 40|8@1+ (0.1,-12.1) [-12|12] "Nm" Vector__XXX
  SG_ SES_RollCntEnStatus : 48|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_ChecksumEnStatus : 49|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_RollCntStatus : 52|4@1+ (1,0) [0|15] "" Vector__XXX
@@ -60,8 +60,8 @@ BO_ 514 SES_ErrInfo: 8 EPS_C
  SG_ SES_VehSpdSnapshot : 56|8@1+ (1,0) [0|255] "km/h" Vector__XXX
 
 BO_ 515 SES_Version: 8 EPS_C
- SG_ SES_SW_Version : 0|8@1+ (0.01000000000000000020816681711721685132943093776702880859375,0) [0|2.54999999999999982236431605997495353221893310546875] "" Vector__XXX
- SG_ SES_HW_Version : 8|8@1+ (0.1000000000000000055511151231257827021181583404541015625,0) [0|25.5] "" Vector__XXX
+ SG_ SES_SW_Version : 0|8@1+ (0.01,0) [0|2.55] "" Vector__XXX
+ SG_ SES_HW_Version : 8|8@1+ (0.1,0) [0|25.5] "" Vector__XXX
 
 BO_ 1786 SES_Test: 8 EPS_C
  SG_ SES_MtrCurt : 8|16@1- (0.0078125,0) [0|60] "A" Vector__XXX
@@ -78,7 +78,7 @@ CM_ BO_ 1786  "SYNTREE EPS-C telemetry. 100 Hz. Bytes 0,7 reserved. Narrower ran
 CM_ SG_ 361 SES_AlignEnable "Angle Initial Alignment Enable. 0=disabled, 1=centering.";
 CM_ SG_ 361 SES_CtrlEnable "Direction Control Enable. 0=Disabled, 1=Enable (Angle Control).";
 CM_ SG_ 361 SES_TgtStrAngle "Target Steering Angle. Negative=left. Offset=-3000 per mfr CSV.";
-CM_ SG_ 361 SES_TgtStrAngleSpd "Target Angle Speed. Overlaps security signals at byte 5 per CSV.";
+CM_ SG_ 361 SES_TgtStrAngleSpd "Target Angle Speed. Overlaps security signals at byte 5 per CSV. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3. Bits 10-15 overlaid.";
 CM_ SG_ 361 SES_RollCntEnable "Life Signal Enable  MUST be 1. Overlaps Speed[15:8].";
 CM_ SG_ 361 SES_ChecksumEnable "Checksum Enable  MUST be 1.";
 CM_ SG_ 361 SES_RollCnt "Life Signal rolling counter. Increment every frame.";

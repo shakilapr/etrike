@@ -205,24 +205,29 @@ export class RtEcu implements SimulatedEcu {
       // Feed EPS-C data to steering controller
       const cmd = this.steering.tick(this.sesAngleRaw, this.sesAngleStatus, nowMs);
       if (cmd) {
-        // Build 0x169 VCU_SES_REQ
+        // Build 0x169 VCU_SES_REQ (SYNTREE LE encoding)
         const angle16 = cmd.targetAngle & 0xFFFF;
-        const speed16 = cmd.targetSpeed & 0xFFFF;
-        // SYNTREE LE encoding
+        const speedRaw = cmd.targetSpeed & 0xFFFF;
+        const rollCnt = (this.rtHbCtrLow & 0xF);
         const data = [
           (cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1),
           0,
           angle16 & 0xFF,
           (angle16 >> 8) & 0xFF,
-          speed16 & 0xFF,
-          (speed16 >> 8) & 0xFF,
+          speedRaw & 0xFF,
+          // Byte 5: speed[11:8] in bits 2-3, security signals overlay bits 0-1 and 4-7.
+          // RollCntEnable(bit0)=1, ChecksumEnable(bit1)=1, RollCnt(bits 4-7), speed[11:8] in bits 2-3.
+          1                          // bit 0: RollCntEnable = 1 (MUST be 1)
+          | (1 << 1)                  // bit 1: ChecksumEnable = 1 (MUST be 1)
+          | (((speedRaw >> 8) & 0x3) << 2)  // bits 2-3: speed bits 9-8
+          | ((rollCnt & 0xF) << 4),   // bits 4-7: Rolling counter
           cmd.vehicleSpeed & 0xFF,
           0, // checksum placeholder
         ];
-        // Compute checksum: XOR bytes 0-6
+        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
         let cksum = 0;
         for (let i = 0; i < 7; i++) cksum ^= data[i];
-        data[7] = cksum;
+        data[7] = cksum ^ 0xFF;
 
         out.push({
           simTimeMs: nowMs,

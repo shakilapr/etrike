@@ -367,7 +367,7 @@ protocols:
              comment: "Target Steering Angle. Negative=left. Offset=-3000 per mfr CSV."}
           - {name: SES_TgtStrAngleSpd, byte: 4, bit_offset: 0, size: 16,
              min: 125, max: 525, unit: deg/s,
-             comment: "Target Angle Speed. Overlaps security signals at byte 5 per CSV."}
+             comment: "Target Angle Speed. Overlaps security signals at byte 5 per CSV. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3. Bits 10-15 overlaid."}
           - {name: SES_RollCntEnable,  byte: 5, bit_offset: 0, size: 1,
              comment: "Life Signal Enable — MUST be 1. Overlaps Speed[15:8]."}
           - {name: SES_ChecksumEnable, byte: 5, bit_offset: 1, size: 1,
@@ -572,6 +572,7 @@ protocols:
           - {name: SEB_AngleS_OC,        byte: 1, bit_offset: 1, size: 1, comment: "Angle Sensor S Open Circuit [L3]"}
           - {name: SEB_AngleS_AF,        byte: 1, bit_offset: 2, size: 1, comment: "Angle Sensor S Sub-board Abnormal [L3]"}
           - {name: SEB_NoPreSensor,      byte: 1, bit_offset: 3, size: 1, comment: "Unconnected Oil Pressure Sensor [L3]"}
+          # Byte 1 bit 4: reserved (unused per SYNTREE CSV)
           - {name: SEB_SensorUCL,        byte: 1, bit_offset: 5, size: 1, comment: "Sensor Plausibility Fault [L3]"}
           - {name: SEB_AlignmentErr,     byte: 1, bit_offset: 6, size: 1, comment: "Alignment Fault [L2]"}
           - {name: SEB_AngleOver,        byte: 1, bit_offset: 7, size: 1, comment: "Angle Out of Bounds [L2]"}

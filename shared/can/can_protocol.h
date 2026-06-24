@@ -19,12 +19,12 @@ constexpr uint32_t kIdSafetyEstop       = 0x001;  // any→all, bridged to high
 constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Jetson), 5 Hz
 constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→DC-DC converter, on change
 constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
-constexpr uint32_t kIdSysThrottleSts    = 0x120;  // SYS→RT (→Jetson), 100 Hz
+constexpr uint32_t kIdSysThrottleSts    = 0x120;  // MTR(STM32)→RT (→Jetson), 100 Hz (SYS_ prefix is historical)
 constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
 constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT→SYS brake pressure kPa, 50 Hz
-constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)->SYS+RT motor feedback, 50 Hz
+constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)→SYS+RT (→Jetson via RT forwarding), 50 Hz
 constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
-constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson), 1 Hz
+constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Jetson via RT forwarding), 1 Hz
 constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
 constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 10 Hz
 
@@ -460,16 +460,16 @@ inline void VcuSesReq::pack(uint8_t raw[8]) const {
     raw[3] = (target_angle >> 8) & 0xFF;
     raw[4] = target_speed & 0xFF;
     raw[5] = (target_speed >> 8) & 0xFF;
-    // Overlay security bits on Byte 5 (bits 40-47 of frame)
-    raw[5] &= 0xF0;  // preserve upper nibble (rolling_counter), clear lower nibble for enable bits
-    raw[5] |= (roll_cnt_enable & 1);          // bit 0 = RollCnt_Enable
-    raw[5] |= (checksum_enable & 1) << 1;     // bit 1 = CheckSum_Enable
-    raw[5] |= (rolling_counter & 0xF) << 4;   // bits 4-7 = RollCnt
+    // Byte 5: security signals overlay target_speed bits 8-15.
+    // target_speed is effectively 12-bit (lower nibble used by enable bits, upper nibble by rolling counter).
+    raw[5] = (roll_cnt_enable & 1)           // bit 0 = RollCnt_Enable
+           | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
+           | ((rolling_counter & 0xF) << 4);  // bits 4-7 = RollCnt
     raw[6] = vehicle_speed & 0xFF;
-    // Checksum: arithmetic sum of bytes 0-6, low byte (per steering CSV "CheckSum=Byte0+Byte1...")
-    uint16_t sum = 0;
-    for (int i = 0; i < 7; ++i) sum += raw[i];
-    raw[7] = sum & 0xFF;
+    // Checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
+    uint8_t cksum = 0;
+    for (int i = 0; i < 7; ++i) cksum ^= raw[i];
+    raw[7] = cksum ^ 0xFF;
 }
 
 inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
@@ -505,10 +505,10 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
     raw[6] = (roll_cnt_enable & 1)            // bit 0 = RollCnt_Enable
            | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
            | ((rolling_counter & 0xF) << 4);  // bits 4-7 = RollCnt
-    // checksum: arithmetic sum of bytes 0-6, low byte (same algorithm as steering per CSV)
-    uint16_t sum = 0;
-    for (int i = 0; i < 7; ++i) sum += raw[i];
-    raw[7] = sum & 0xFF;
+    // Checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
+    uint8_t cksum = 0;
+    for (int i = 0; i < 7; ++i) cksum ^= raw[i];
+    raw[7] = cksum ^ 0xFF;
 }
 
 inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {

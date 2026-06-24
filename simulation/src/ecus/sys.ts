@@ -118,9 +118,10 @@ export class SysEcu implements SimulatedEcu {
           (cmd.rollCntEnable ? 0x10 : 0) | (cmd.checksumEnable ? 0x20 : 0) | (cmd.rollingCounter << 4),
           0, // checksum placeholder
         ];
+        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
         let cksum = 0;
         for (let i = 0; i < 7; i++) cksum ^= data[i];
-        data[7] = cksum;
+        data[7] = cksum ^ 0xFF;
 
         out.push({
           simTimeMs: nowMs, bus: "low", canId: "0x7B9", name: "VCU_SEB_REQ",

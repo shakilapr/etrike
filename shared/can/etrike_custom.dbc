@@ -60,17 +60,17 @@ BO_ 770 HOST_LIGHT_CMD: 1 Jetson
  SG_ HOST_Headlight : 4|1@0+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 784 STEER_DIAG: 8 RT
- SG_ SteerDiag_Angle0_1deg : 7|16@0- (0.1000000000000000055511151231257827021181583404541015625,-3000) [-32768|32767] "deg" Vector__XXX
+ SG_ SteerDiag_Angle0_1deg : 7|16@0- (0.1,-3000) [-32768|32767] "deg" Vector__XXX
  SG_ SteerDiag_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
- SG_ SteerDiag_MotorCurrent : 31|16@0+ (0.01000000000000000020816681711721685132943093776702880859375,0) [0|65535] "A" Vector__XXX
- SG_ SteerDiag_ECUTemp : 47|16@0+ (0.1000000000000000055511151231257827021181583404541015625,0) [0|65535] "degC" Vector__XXX
+ SG_ SteerDiag_MotorCurrent : 31|16@0+ (0.01,0) [0|65535] "A" Vector__XXX
+ SG_ SteerDiag_ECUTemp : 47|16@0+ (0.1,0) [0|65535] "degC" Vector__XXX
  SG_ SteerDiag_Reserved : 63|8@0+ (1,0) [0|0] "" Vector__XXX
 
 BO_ 785 BRAKE_DIAG: 8 RT
- SG_ BrakeDiag_PressureRaw : 7|16@0+ (0.05000000000000000277555756156289135105907917022705078125,0) [0|65535] "MPa" Vector__XXX
+ SG_ BrakeDiag_PressureRaw : 7|16@0+ (0.05,0) [0|65535] "MPa" Vector__XXX
  SG_ BrakeDiag_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
- SG_ BrakeDiag_MotorCurrent : 31|16@0+ (0.01000000000000000020816681711721685132943093776702880859375,0) [0|65535] "A" Vector__XXX
- SG_ BrakeDiag_ECUTemp : 47|16@0+ (0.1000000000000000055511151231257827021181583404541015625,0) [0|65535] "degC" Vector__XXX
+ SG_ BrakeDiag_MotorCurrent : 31|16@0+ (0.01,0) [0|65535] "A" Vector__XXX
+ SG_ BrakeDiag_ECUTemp : 47|16@0+ (0.1,0) [0|65535] "degC" Vector__XXX
  SG_ BrakeDiag_Reserved : 63|8@0+ (1,0) [0|0] "" Vector__XXX
 
 BO_ 1024 HOST_OBSTACLE_DIST: 4 Jetson
