@@ -315,7 +315,7 @@ export function normalizeBus(input: unknown): Bus {
 
 // ── Internal helpers ──
 
-function numberValue(value: unknown): number {
+export function numberValue(value: unknown): number {
   if (typeof value === "boolean") return value ? 1 : 0;
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;

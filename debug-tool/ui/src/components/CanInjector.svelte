@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { commandAcks } from "../stores/can";
   import { sendFrame, startPeriodic, stopPeriodic } from "../lib/api";
   import type { Bus, CanField, CanMessageDef, InjectionTemplate } from "../lib/can-decoder";
-  import { BUSES, encodePayload, formatBytes } from "../lib/can-decoder";
+  import { BUSES, encodePayload, formatBytes, numberValue } from "../lib/can-decoder";
+  import { kbBus, kbEvent } from "../stores/keyboard";
 
   export let ids: CanMessageDef[] = [];
   export let templates: InjectionTemplate[] = [];
@@ -25,8 +27,104 @@
   $: selected = injectableIds.find((item) => item.id === selectedId) ?? injectableIds[0];
   $: encoded = selected ? encodePayload(selectedBus, selected.id, values) : { dlc: 0, data: [] };
 
+  // ── Keyboard integration ──
+  onMount(() => {
+    const unsubBus = kbBus.subscribe((b) => {
+      if (b !== selectedBus) chooseBus(b);
+    });
+    const unsubEvent = kbEvent.subscribe((evt) => {
+      if (!evt) return;
+      handleKbAction(evt.bus, evt.action);
+    });
+    return () => { unsubBus(); unsubEvent(); };
+  });
+
+  function handleKbAction(bus: Bus, action: { type: string }) {
+    if (bus !== selectedBus) chooseBus(bus);
+
+    switch (action.type) {
+      case "speed_up":
+        if (bus === "high") {
+          chooseId("0x300");
+          values = { ...values, speed_mmps: numberValue(values.speed_mmps) + 200 };
+        } else {
+          chooseId("0x204");
+          values = { ...values, motor_speed_mmps: numberValue(values.motor_speed_mmps) + 200 };
+        }
+        break;
+      case "speed_down":
+        if (bus === "high") {
+          chooseId("0x300");
+          values = { ...values, speed_mmps: numberValue(values.speed_mmps) - 200 };
+        } else {
+          chooseId("0x204");
+          values = { ...values, motor_speed_mmps: numberValue(values.motor_speed_mmps) - 200 };
+        }
+        break;
+      case "yaw_left":
+        if (bus === "high") {
+          chooseId("0x300");
+          values = { ...values, yaw_rate_mrad_s: numberValue(values.yaw_rate_mrad_s) - 87 };
+        } else {
+          chooseId("0x169");
+          values = { ...values, target_angle: numberValue(values.target_angle) - 50 };
+        }
+        break;
+      case "yaw_right":
+        if (bus === "high") {
+          chooseId("0x300");
+          values = { ...values, yaw_rate_mrad_s: numberValue(values.yaw_rate_mrad_s) + 87 };
+        } else {
+          chooseId("0x169");
+          values = { ...values, target_angle: numberValue(values.target_angle) + 50 };
+        }
+        break;
+      case "brake_set":
+        if (bus === "high") {
+          chooseId("0x301");
+          values = { brake_pressure_kpa: 5000 };
+        } else {
+          chooseId("0x205");
+          values = { brake_pressure_kpa: 5000 };
+        }
+        break;
+      case "brake_release":
+        if (bus === "high") {
+          chooseId("0x301");
+          values = { brake_pressure_kpa: 0 };
+        } else {
+          chooseId("0x205");
+          values = { brake_pressure_kpa: 0 };
+        }
+        break;
+      case "estop_confirm":
+        error = "Press Space again within 1s to confirm ESTOP";
+        confirmEstop = true;
+        break;
+      case "estop_send":
+        chooseId("0x001");
+        confirmEstop = true;
+        error = "";
+        void sendOnce();
+        break;
+      case "zero_all":
+        if (bus === "high") {
+          values = { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 0 };
+        } else {
+          values = { motor_speed_mmps: 0, gear: 0 };
+        }
+        error = "";
+        break;
+    }
+    // Auto-send on speed/angle/brake changes
+    if (["speed_up", "speed_down", "yaw_left", "yaw_right", "brake_set", "brake_release"].includes(action.type)) {
+      void sendOnce();
+    }
+  }
+
   function chooseBus(bus: Bus) {
     selectedBus = bus;
+    kbBus.set(bus);
     const first = ids.find((item) => item.bus === bus && item.injectable);
     if (first) chooseId(first.id);
   }

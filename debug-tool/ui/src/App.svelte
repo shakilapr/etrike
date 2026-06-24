@@ -5,9 +5,10 @@
   import Dashboard from "./components/Dashboard.svelte";
   import Stats from "./components/Stats.svelte";
   import { getCanIds, getFrames, getStats, getStatus, getTemplates, type BackendStatus } from "./lib/api";
-  import type { CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
+  import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
+  import { kbBus, kbEvent, kbHud, type KbAction } from "./stores/keyboard";
 
   type Tab = "dashboard" | "monitor" | "injector" | "stats";
 
@@ -24,14 +25,60 @@
     { id: "stats", label: "Statistics" }
   ];
 
+  // ── Keyboard controls ──
+  let lastSpaceTs = 0;
+
+  function handleKeydown(e: KeyboardEvent) {
+    // Ignore when typing in inputs
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+
+    let action: KbAction | null = null;
+    let bus: Bus | null = null;
+
+    switch (e.key) {
+      case "w": case "W": action = { type: "speed_up" }; break;
+      case "s": case "S": action = { type: "speed_down" }; break;
+      case "a": case "A": action = { type: "yaw_left" }; break;
+      case "d": case "D": action = { type: "yaw_right" }; break;
+      case "b": case "B": action = { type: "brake_set" }; break;
+      case "r": case "R": action = { type: "brake_release" }; break;
+      case "Escape": action = { type: "zero_all" }; break;
+      case "Tab":
+        e.preventDefault();
+        kbBus.update((b) => b === "high" ? "low" : "high");
+        return;
+      case " ":
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastSpaceTs < 1000) {
+          action = { type: "estop_send" };
+          lastSpaceTs = 0;
+        } else {
+          action = { type: "estop_confirm" };
+          lastSpaceTs = now;
+        }
+        break;
+      case "?":
+        kbHud.update((v) => !v);
+        return;
+    }
+
+    if (action) {
+      kbBus.subscribe((b) => bus = b)();
+      kbEvent.set({ action, bus: bus!, ts: Date.now() });
+    }
+  }
+
   onMount(() => {
     void bootstrap();
     const timer = window.setInterval(refreshStatus, 3000);
     stream = connectStream(ingestMessage, (connected) => wsConnected.set(connected));
+    window.addEventListener("keydown", handleKeydown);
 
     return () => {
       window.clearInterval(timer);
       stream?.close();
+      window.removeEventListener("keydown", handleKeydown);
     };
   });
 
@@ -111,4 +158,16 @@
       <Stats {ids} />
     {/if}
   </main>
+
+  {#if $kbHud}
+    <div class="kb-hud">
+      <span class="kb-bus">{$kbBus.toUpperCase()} BUS</span>
+      <span class="kb-row"><kbd>W</kbd><kbd>S</kbd> Speed ±200</span>
+      <span class="kb-row"><kbd>A</kbd><kbd>D</kbd> {$kbBus === "high" ? "Yaw ±87" : "Angle ±5°"}</span>
+      <span class="kb-row"><kbd>B</kbd> Brake <kbd>R</kbd> Release</span>
+      <span class="kb-row"><kbd>Space×2</kbd> ESTOP</span>
+      <span class="kb-row"><kbd>Esc</kbd> Zero <kbd>Tab</kbd> Switch</span>
+      <span class="kb-hint">? toggle HUD</span>
+    </div>
+  {/if}
 </div>
