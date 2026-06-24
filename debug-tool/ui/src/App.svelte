@@ -6,13 +6,14 @@
   import Dashboard from "./components/Dashboard.svelte";
   import PipelineView from "./components/PipelineView.svelte";
   import Stats from "./components/Stats.svelte";
+  import UnitTest from "./components/UnitTest.svelte";
   import { getCanIds, getFrames, getStats, getStatus, getTemplates, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
-  type Tab = "dashboard" | "monitor" | "injector" | "controller" | "pipeline" | "stats";
+  type Tab = "dashboard" | "monitor" | "injector" | "controller" | "unit-test" | "pipeline" | "stats";
 
   let activeTab: Tab = "dashboard";
   let ids: CanMessageDef[] = [];
@@ -25,6 +26,7 @@
     { id: "monitor", label: "CAN Monitor" },
     { id: "injector", label: "Injector" },
     { id: "controller", label: "Controller" },
+    { id: "unit-test", label: "Unit Test" },
     { id: "pipeline", label: "Pipeline" },
     { id: "stats", label: "Statistics" }
   ];
@@ -185,6 +187,8 @@
       <CanInjector {ids} {templates} />
     {:else if activeTab === "controller"}
       <Controller />
+    {:else if activeTab === "unit-test"}
+      <UnitTest {ids} />
     {:else if activeTab === "pipeline"}
       <PipelineView />
     {:else}
