@@ -4,6 +4,7 @@
  * Captures writes for inspection; returns configurable read responses.
  */
 #include "driver/i2c.h"
+#include "esp_err.h"
 #include <cstdio>
 #include <cstring>
 #include <vector>

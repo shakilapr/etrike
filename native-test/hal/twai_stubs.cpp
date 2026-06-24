@@ -63,7 +63,7 @@ int twai_transmit(const twai_message_t* msg, int timeout_ms) {
     frame.id       = msg->identifier;
     frame.extended = msg->extd;
     frame.dlc      = msg->data_length_code;
-    for (int i = 0; i < msg->data_length_code && i < 8; i++)
+    for (int i = 0; i < (int)msg->data_length_code && i < 8; i++)
         frame.data[i] = msg->data[i];
 
     auto* bus = active_bus();
@@ -101,8 +101,10 @@ int twai_get_status_info(twai_status_info_t* info) {
         info->tx_error_counter = 0;
         info->rx_error_counter = 0;
     } else {
-        bus->get_error_counters(info->tx_error_counter,
-                                info->rx_error_counter);
+        uint8_t tec, rec;
+        bus->get_error_counters(tec, rec);
+        info->tx_error_counter = tec;
+        info->rx_error_counter = rec;
     }
     info->msgs_to_tx      = 0;
     info->msgs_to_rx      = 0;
