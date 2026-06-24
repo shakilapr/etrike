@@ -294,6 +294,18 @@
       <button disabled={pending || !selected} type="button" on:click={startLoop}>Start Periodic</button>
       <button disabled={pending || !selected} type="button" on:click={stopLoop}>Stop</button>
     </div>
+
+    <div class="kb-card">
+      <span class="kb-head">{$kbBus.toUpperCase()} Bus Keys</span>
+      <div class="kb-grid">
+        <span><kbd>W</kbd><kbd>S</kbd> Speed ±200</span>
+        <span><kbd>A</kbd><kbd>D</kbd> {$kbBus === "high" ? "Yaw ±87" : "Angle ±5°"}</span>
+        <span><kbd>B</kbd><kbd>R</kbd> Brake / Release</span>
+        <span><kbd>Space×2</kbd> ESTOP</span>
+        <span><kbd>Esc</kbd> Zero all</span>
+        <span><kbd>Tab</kbd> Switch bus</span>
+      </div>
+    </div>
   </div>
 
   <div class="panel">
