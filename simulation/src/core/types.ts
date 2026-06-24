@@ -8,7 +8,7 @@
 
 // ── Node identity ──────────────────────────────────────────────────
 
-export type SimNodeId = "jetson" | "rt" | "sys" | "mtr" | "epsc" | "seb";
+export type SimNodeId = "host" | "rt" | "sys" | "mtr" | "epsc" | "seb";
 
 export type BusId = "high" | "low";
 
@@ -71,8 +71,8 @@ export interface SimConfig {
   initialMode: "manual" | "auto" | "estop";
   /** Vehicle plant parameters. */
   plant: PlantConfig;
-  /** Jetson drive cycle (empty = no Jetson commands). */
-  jetsonDriveCycle: DriveCycleStep[];
+  /** Host drive cycle (empty = no Host commands). */
+  hostDriveCycle: DriveCycleStep[];
   /** Fault injection schedule. */
   faults: FaultSpec[];
 }

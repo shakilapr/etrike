@@ -1,5 +1,5 @@
 /**
- * Scenario: Freeze Jetson heartbeat after startup — RT should detect timeout
+ * Scenario: Freeze Host heartbeat after startup — RT should detect timeout
  * and apply assisted stop (2000 kPa brake).
  */
 import type { SimConfig, SimulationResult } from "../core/types.js";
@@ -7,16 +7,16 @@ import { SimulationRunner } from "../harness/runner.js";
 
 export const heartbeatTimeout = {
   name: "Heartbeat timeout",
-  description: "Freeze Jetson 0x7FC at t=500ms, verify RT continues producing frames",
+  description: "Freeze Host heartbeat 0x7FC at t=500ms, verify RT continues producing frames",
 
   configure(): Partial<SimConfig> {
     return {
       initialMode: "auto",
-      jetsonDriveCycle: [
+      hostDriveCycle: [
         { speedMmps: 1000, yawRateMradS: 0, gear: 1, durationMs: 10000 },
       ],
       faults: [
-        { atMs: 500, type: "freezeHeartbeat", target: "jetson" },
+        { atMs: 500, type: "freezeHeartbeat", target: "host" },
       ],
     };
   },

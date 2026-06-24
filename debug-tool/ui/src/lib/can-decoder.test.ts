@@ -306,7 +306,7 @@ describe("encodePayload", () => {
     expect(result.data).toEqual([0xFF, 0xFF, 0xFF, 0xFF]);
   });
 
-  it("encodes 0x7FC Jetson heartbeat (high bus)", () => {
+  it("encodes 0x7FC Host heartbeat (high bus)", () => {
     const result = encodePayload("high", "0x7FC", { alive_ctr: 42 });
     expect(result.dlc).toBe(1);
     expect(result.data).toEqual([42]);

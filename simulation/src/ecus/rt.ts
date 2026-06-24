@@ -1,7 +1,7 @@
 /**
  * RtEcu — simulated RT ESP32-S3 (dual-bus gateway, kinematics, steering).
  *
- * Receives Jetson commands on high bus, produces actuator commands on low bus.
+ * Receives Host commands on high bus, produces actuator commands on low bus.
  * Bridges selected messages between buses.
  */
 
@@ -13,7 +13,7 @@ import {
   SteerState,
 } from "../controllers/rt-steering.js";
 import {
-  JETSON_HEARTBEAT_TIMEOUT_MS,
+  HOST_HEARTBEAT_TIMEOUT_MS,
   STEER_CMD_RATE_HZ,
   ASSIST_STOP_KPA,
   OBSTACLE_MAX_KPA,
@@ -28,15 +28,15 @@ export class RtEcu implements SimulatedEcu {
   private kinematics = new RtKinematicsController();
   private steering = new RtSteeringController();
 
-  private lastJetsonCmdMs = -Infinity;
+  private lastHostCmdMs = -Infinity;
   private lastSysHbMs = -Infinity;
   private lastSysHbCtr = 0;
   private sysHbEverSeen = false;
-  private lastJetsonHbMs = -Infinity;
+  private lastHostHbMs = -Infinity;
   private currentMode: "manual" | "auto" | "estop" = "manual";
   private obstacleDistanceMm = 3000; // default: clear
-  private jetsonDriveCmd: DriveCommand = { speedMmps: 0, yawRateMradS: 0, gear: 0 };
-  private jetsonBrakeKpa = 0;
+  private hostDriveCmd: DriveCommand = { speedMmps: 0, yawRateMradS: 0, gear: 0 };
+  private hostBrakeKpa = 0;
   private rtHbCtrLow = 0;
   private rtHbCtrHigh = 0;
   private lastSpeedMmps = 0;
@@ -65,10 +65,10 @@ export class RtEcu implements SimulatedEcu {
     for (const f of highBusRx) {
       switch (f.canId) {
         case "0x300": {
-          // HOST_DRIVE_CMD — Jetson → RT
-          this.lastJetsonCmdMs = nowMs;
+          // HOST_DRIVE_CMD — Host → RT
+          this.lastHostCmdMs = nowMs;
           if (ctx.mode === "auto" && !ctx.estopActive) {
-            this.jetsonDriveCmd = {
+            this.hostDriveCmd = {
               speedMmps: (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0,
               yawRateMradS: ((f.data[4] << 16 | f.data[5] << 8 | f.data[6]) << 8) >> 8, // i24 BE sign-extend
               gear: f.data[7] ?? 0,
@@ -78,12 +78,12 @@ export class RtEcu implements SimulatedEcu {
         }
         case "0x301": {
           // HOST_BRAKE_REQ
-          this.jetsonBrakeKpa = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
+          this.hostBrakeKpa = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
           break;
         }
         case "0x7FC": {
           // JETSON_HEARTBEAT
-          this.lastJetsonHbMs = nowMs;
+          this.lastHostHbMs = nowMs;
           break;
         }
         case "0x001": {
@@ -129,11 +129,11 @@ export class RtEcu implements SimulatedEcu {
     // ── Check safety conditions ─────────────────────────────
 
     // Command staleness
-    const cmdStale = nowMs - this.lastJetsonCmdMs > CMD_STALE_TIMEOUT_MS;
+    const cmdStale = nowMs - this.lastHostCmdMs > CMD_STALE_TIMEOUT_MS;
     // SYS heartbeat timeout (200ms)
     const sysHbTimeout = this.sysHbEverSeen && nowMs - this.lastSysHbMs > 200;
-    // Jetson heartbeat timeout (1500ms)
-    const jetsonHbTimeout = this.lastJetsonHbMs >= 0 && nowMs - this.lastJetsonHbMs > JETSON_HEARTBEAT_TIMEOUT_MS;
+    // Host heartbeat timeout (1500ms)
+    const hostHbTimeout = this.lastHostHbMs >= 0 && nowMs - this.lastHostHbMs > HOST_HEARTBEAT_TIMEOUT_MS;
 
     const shouldEstop = ctx.estopActive || cmdStale || sysHbTimeout;
 
@@ -141,7 +141,7 @@ export class RtEcu implements SimulatedEcu {
     if (nowMs % 10 === 0) {
       const cmd = shouldEstop || ctx.mode !== "auto"
         ? { speedMmps: 0, yawRateMradS: 0, gear: 0 }
-        : this.jetsonDriveCmd;
+        : this.hostDriveCmd;
 
       const resolved = this.kinematics.resolve(cmd);
 
@@ -169,10 +169,10 @@ export class RtEcu implements SimulatedEcu {
     // ── Brake command (50 Hz) ───────────────────────────────
     if (nowMs % 20 === 0) {
       const obstacleKpa = this.computeObstacleKpa();
-      let brakeKpa = Math.max(obstacleKpa, this.jetsonBrakeKpa);
+      let brakeKpa = Math.max(obstacleKpa, this.hostBrakeKpa);
 
       if (shouldEstop) brakeKpa = MAX_BRAKE_KPA;
-      else if (jetsonHbTimeout) brakeKpa = ASSIST_STOP_KPA;
+      else if (hostHbTimeout) brakeKpa = ASSIST_STOP_KPA;
 
       // 0x205 RT_BRAKE_CMD on low bus (50 Hz)
       out.push({

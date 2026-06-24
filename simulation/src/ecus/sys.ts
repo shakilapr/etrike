@@ -80,7 +80,7 @@ export class SysEcu implements SimulatedEcu {
           break;
         }
         case "0x302": {
-          // HOST_LIGHT_CMD (forwarded from Jetson via RT)
+          // HOST_LIGHT_CMD (forwarded from Host via RT)
           this.lights = f.data[0];
           break;
         }

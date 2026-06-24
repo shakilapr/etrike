@@ -107,7 +107,7 @@ public:
 
 private:
   const VehicleParams & params_;
-  uint8_t jetson_alive_ctr_{0};
+  uint8_t host_alive_ctr_{0};
   int32_t last_brake_kpa_{-1};
   uint8_t last_light_bits_{0xFF};
 
@@ -222,9 +222,9 @@ private:
   double odom_x_{0.0}, odom_y_{0.0}, odom_yaw_{0.0};
   rclcpp::Time last_odom_time_{0, 0, RCL_SYSTEM_TIME};
 
-  // ---- SYS liveness (from 0x011) ----
-  uint8_t sys_estop_active_{0};
-  uint8_t sys_heartbeat_ok_{1};
+  // ---- SYS liveness (from 0x011, written in RX thread, read in executor thread) ----
+  std::atomic<uint8_t> sys_estop_active_{0};
+  std::atomic<uint8_t> sys_heartbeat_ok_{1};
 
   // ---- Rate limiting ----
   rclcpp::Time last_estop_tx_{0, 0, RCL_SYSTEM_TIME};

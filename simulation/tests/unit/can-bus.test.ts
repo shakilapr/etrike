@@ -10,7 +10,7 @@ function makeFrame(canId: string, bus: "high" | "low", simTimeMs: number): SimFr
     name: `TEST_${canId}`,
     dlc: 2,
     data: [0, 0],
-    sender: "jetson",
+    sender: "host",
   };
 }
 

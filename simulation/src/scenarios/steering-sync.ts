@@ -13,7 +13,7 @@ export const steeringSync = {
     return {
       initialMode: "auto",
       // Gentle drive command so RT has a target to steer to
-      jetsonDriveCycle: [
+      hostDriveCycle: [
         { speedMmps: 1000, yawRateMradS: 50, gear: 1, durationMs: 5000 },
       ],
     };

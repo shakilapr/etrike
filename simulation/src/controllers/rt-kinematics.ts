@@ -26,7 +26,7 @@ export class RtKinematicsController {
   private kinematics = new TricycleKinematics();
 
   /**
-   * Resolve a Jetson drive command (0x300) into motor speed + steering angle.
+   * Resolve a Host drive command (0x300) into motor speed + steering angle.
    */
   resolve(cmd: DriveCommand): ResolvedSetpoint {
     const raw = this.kinematics.resolve({

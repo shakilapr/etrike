@@ -11,7 +11,7 @@ export const estopFlow = {
   configure(): Partial<SimConfig> {
     return {
       initialMode: "auto",
-      jetsonDriveCycle: [
+      hostDriveCycle: [
         { speedMmps: 2000, yawRateMradS: 0, gear: 1, durationMs: 5000 },
       ],
       faults: [

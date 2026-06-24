@@ -51,7 +51,7 @@ static sys::Diagnostics    g_diag;
 static std::atomic<int32_t>  g_setpoint_speed_mmps{0};
 static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
-static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Jetson
+static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Host
 static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
 static std::atomic<bool>     g_estop_flag{false};
 static uint8_t               g_seb_status_raw[8] = {};

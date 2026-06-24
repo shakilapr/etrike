@@ -7,7 +7,7 @@ import type { SimulationContext } from "../../src/ecus/base.js";
 import type { SimFrame } from "../../src/core/types.js";
 
 function makeFrame(canId: string, bus: "high" | "low", data: number[]): SimFrame {
-  return { simTimeMs: 0, bus, canId, name: canId, dlc: data.length, data, sender: "jetson" };
+  return { simTimeMs: 0, bus, canId, name: canId, dlc: data.length, data, sender: "host" };
 }
 
 function autoCtx(nowMs: number): SimulationContext {
@@ -31,7 +31,7 @@ describe("RT to low-bus pipeline", () => {
     seb.init();
   });
 
-  it("RT produces 0x204 when Jetson sends 0x300", () => {
+  it("RT produces 0x204 when Host sends 0x300", () => {
     // Boot RT steering to ACTIVE
     for (let i = 0; i < 30; i++) {
       rt.tick(i * 20, [], [], autoCtx(i * 20));
@@ -42,7 +42,7 @@ describe("RT to low-bus pipeline", () => {
         dlc: 8, data: [1, 0, 0, 0, 0, 0, 0, 0], sender: "epsc" },
     ], autoCtx(600));
 
-    // Now send Jetson drive command
+    // Now send Host drive command
     const driveCmd = makeFrame("0x300", "high", [0, 0, 0x07, 0xD0, 0, 0, 0, 1]); // 2000mm/s, D
     const frames = rt.tick(610, [driveCmd], [], autoCtx(610));
 

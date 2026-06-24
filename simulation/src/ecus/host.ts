@@ -1,5 +1,5 @@
 /**
- * JetsonEcu — simulated Jetson Orin (ROS 2 bridge).
+ * HostEcu — simulated Host (Jetson Orin) (ROS 2 bridge).
  *
  * Sends drive commands, brake requests, light commands, obstacle distance,
  * and heartbeat. Follows a configurable drive cycle (sequence of steps).
@@ -8,9 +8,9 @@
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId, DriveCycleStep } from "../core/types.js";
 
-export class JetsonEcu implements SimulatedEcu {
-  readonly id = "Jetson Orin";
-  readonly nodeId: SimNodeId = "jetson";
+export class HostEcu implements SimulatedEcu {
+  readonly id = "Host (Jetson Orin)";
+  readonly nodeId: SimNodeId = "host";
 
   private driveCycle: DriveCycleStep[] = [];
   private stepIndex = 0;
@@ -76,7 +76,7 @@ export class JetsonEcu implements SimulatedEcu {
           (s32 >> 24) & 0xFF, (s32 >> 16) & 0xFF, (s32 >> 8) & 0xFF, s32 & 0xFF,
           (y24 >> 16) & 0xFF, (y24 >> 8) & 0xFF, y24 & 0xFF,
           gear & 0xFF,
-        ], sender: "jetson",
+        ], sender: "host",
       });
     }
 
@@ -84,7 +84,7 @@ export class JetsonEcu implements SimulatedEcu {
     if (nowMs % 20 === 0) {
       out.push({
         simTimeMs: nowMs, bus: "high", canId: "0x301", name: "HOST_BRAKE_REQ",
-        dlc: 4, data: [0, 0, 0, 0], sender: "jetson",
+        dlc: 4, data: [0, 0, 0, 0], sender: "host",
       });
     }
 
@@ -95,16 +95,16 @@ export class JetsonEcu implements SimulatedEcu {
         simTimeMs: nowMs, bus: "high", canId: "0x400", name: "HOST_OBSTACLE_DIST",
         dlc: 4, data: [
           (mm >> 24) & 0xFF, (mm >> 16) & 0xFF, (mm >> 8) & 0xFF, mm & 0xFF,
-        ], sender: "jetson",
+        ], sender: "host",
       });
     }
 
-    // ── 0x7FC JETSON_HEARTBEAT (2 Hz) ───────────────────────────
+    // ── 0x7FC HOST_HEARTBEAT (2 Hz) ───────────────────────────
     if (nowMs % 500 === 0) {
       this.heartbeatCtr = (this.heartbeatCtr + 1) & 0xFF;
       out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x7FC", name: "JETSON_HEARTBEAT",
-        dlc: 1, data: [this.heartbeatCtr], sender: "jetson",
+        simTimeMs: nowMs, bus: "high", canId: "0x7FC", name: "HOST_HEARTBEAT",
+        dlc: 1, data: [this.heartbeatCtr], sender: "host",
       });
     }
 
