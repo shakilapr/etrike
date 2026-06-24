@@ -1,19 +1,16 @@
 import { ReadlineParser, SerialPort } from "serialport";
+import type { HardwareBridge, BridgeState } from "../bridge/types";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
 import { BusDetector, normalizeFrame, normalizeStats, type Bus, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
-export interface SerialState {
+export interface SerialState extends BridgeState {
   esp32_connected: boolean;
   port_open: boolean;
-  path: string | null;
-  baud_rate: number;
-  last_status_at: number | null;
-  last_error: string | null;
 }
 
-export class SerialBridge {
+export class SerialBridge implements HardwareBridge {
   readonly state: SerialState;
   private port: SerialPort | null = null;
   private busDetector = new BusDetector();
@@ -25,10 +22,15 @@ export class SerialBridge {
     private readonly hub: StreamHub
   ) {
     this.state = {
+      transport: "serial",
+      adapter: "ESP32 serial bridge",
+      connected: false,
+      link_open: false,
       esp32_connected: false,
       port_open: false,
       path: config.serialPath,
       baud_rate: config.serialBaudRate,
+      bitrate: null,
       last_status_at: null,
       last_error: null
     };
@@ -46,6 +48,8 @@ export class SerialBridge {
     parser.on("data", (line: string) => this.handleLine(line));
 
     this.port.on("open", () => {
+      this.state.connected = true;
+      this.state.link_open = true;
       this.state.port_open = true;
       this.state.esp32_connected = true;
       this.state.last_error = null;
@@ -54,12 +58,16 @@ export class SerialBridge {
       this.broadcastStatus();
     });
     this.port.on("close", () => {
+      this.state.connected = false;
+      this.state.link_open = false;
       this.state.port_open = false;
       this.state.esp32_connected = false;
       this.broadcastStatus();
     });
     this.port.on("error", (error) => {
       this.state.last_error = error.message;
+      this.state.connected = false;
+      this.state.link_open = false;
       this.state.port_open = false;
       this.state.esp32_connected = false;
       this.broadcastStatus();
@@ -105,6 +113,7 @@ export class SerialBridge {
 
     if (message.type === "status") {
       this.state.esp32_connected = message.esp32_connected !== false;
+      this.state.connected = this.state.esp32_connected;
       this.state.last_status_at = Date.now() / 1000;
       this.state.last_error = typeof message.error === "string" ? message.error : null;
       this.broadcastStatus();
@@ -119,9 +128,11 @@ export class SerialBridge {
     }
 
     if (typeof message.id === "string" && Array.isArray(message.data)) {
-      // Auto-detect which CAN bus this controller is connected to
+      // Auto-detect which CAN bus this controller is connected to when the
+      // producer doesn't include an explicit bus field.
       const prevDetected = this.detectedBus;
-      this.detectedBus = this.busDetector.feed(message.id);
+      const explicitBus = message.bus === "low" || message.bus === "high" ? message.bus : null;
+      this.detectedBus = explicitBus ?? this.busDetector.feed(message.id);
 
       const frame = normalizeFrame({
         ts: typeof message.ts === "number" ? message.ts : undefined,
@@ -149,6 +160,7 @@ export class SerialBridge {
     this.hub.broadcast({
       type: "status",
       payload: {
+        bridge: this.state,
         ...this.state,
         bus_detection: this.busDetector.state
       }
