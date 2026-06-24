@@ -7,6 +7,7 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "driver/gpio.h"
 
 #include "config.h"
 #include "can/can_protocol.h"
@@ -360,6 +361,11 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         g_last_cmd_angle_raw.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
         g_reversing.store(sp.reversing);
 
+        // External watchdog kick — toggled at 100 Hz (TPS3850, 100ms window)
+        static bool wdt_toggle = false;
+        wdt_toggle = !wdt_toggle;
+        gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
+
         vTaskDelayUntil(&last, per);
     }
 }
@@ -485,6 +491,10 @@ extern "C" void app_main() {
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();
+
+    // External watchdog GPIO — toggled by control_task at 100 Hz (TPS3850 or equiv)
+    gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
