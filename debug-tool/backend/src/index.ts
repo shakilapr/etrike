@@ -9,6 +9,7 @@ import { registerCanRoutes } from "./api/can";
 import { registerCommandRoutes } from "./api/cmd";
 import { registerRecordingRoutes } from "./api/recordings";
 import { registerSystemRoutes } from "./api/system";
+import { CanalystBridge } from "./canalyst/bridge";
 import { DebugStore } from "./db/queries";
 import { SerialBridge } from "./serial/reader";
 import { StreamHub } from "./ws/stream";
@@ -39,18 +40,20 @@ async function main(): Promise<void> {
     app.log.info(`Serving UI from ${uiDist}`);
   }
 
-  const serial = new SerialBridge(config, store, hub);
-  serial.start();
+  const bridge = config.canTransport === "canalystii"
+    ? new CanalystBridge(config, store, hub)
+    : new SerialBridge(config, store, hub);
+  bridge.start();
 
-  registerSystemRoutes(app, store, serial, hub, startedAt);
+  registerSystemRoutes(app, store, bridge, hub, startedAt);
   registerCanRoutes(app, store);
-  registerCommandRoutes(app, store, serial);
+  registerCommandRoutes(app, store, bridge);
   registerRecordingRoutes(app, store);
   hub.registerRoutes(app);
 
   const shutdown = async () => {
     app.log.info("Shutting down debug backend");
-    await serial.close();
+    await bridge.close();
     store.close();
     await app.close();
   };
