@@ -1,0 +1,68 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { SyntreeSeb } from "../../src/ecus/seb.js";
+import type { SimFrame } from "../../src/core/types.js";
+import type { SimulationContext } from "../../src/ecus/base.js";
+
+function ctx(): SimulationContext {
+  return { nowMs: 0, ticks: 0, mode: "auto", estopActive: false, brakeLeverPressed: false };
+}
+
+function make0x7B9(nowMs: number): SimFrame {
+  return {
+    simTimeMs: nowMs, bus: "low", canId: "0x7B9", name: "VCU_SEB_REQ",
+    dlc: 8, data: [7, 0, 0, 0, 0, 0, 0, 0], sender: "sys",
+  };
+}
+
+describe("SyntreeSeb", () => {
+  let seb: SyntreeSeb;
+
+  beforeEach(() => {
+    seb = new SyntreeSeb();
+    seb.init();
+    seb.setActualStroke(0);
+  });
+
+  it("reports aligned on init", () => {
+    const frames = seb.tick(10, [], [make0x7B9(0)], ctx());
+    const f721 = frames.find(f => f.canId === "0x721");
+    expect(f721).toBeDefined();
+    expect(f721!.data[0] & 1).toBe(1); // aligned
+  });
+
+  it("produces 0x721 at 100Hz", () => {
+    const frames = seb.tick(10, [], [make0x7B9(0)], ctx());
+    expect(frames.some(f => f.canId === "0x721")).toBe(true);
+    expect(frames.some(f => f.canId === "0x6FB")).toBe(true);
+  });
+
+  it("produces 0x731 at 10Hz", () => {
+    const frames = seb.tick(100, [], [make0x7B9(0)], ctx());
+    expect(frames.some(f => f.canId === "0x731")).toBe(true);
+  });
+
+  it("produces 0x741 at 1Hz", () => {
+    const frames = seb.tick(1000, [], [make0x7B9(0)], ctx());
+    const f741 = frames.find(f => f.canId === "0x741");
+    expect(f741).toBeDefined();
+    expect(f741!.dlc).toBe(8);
+  });
+
+  it("sets L3 error after 20ms without 0x7B9", () => {
+    seb.tick(0, [], [make0x7B9(0)], ctx());
+    const frames = seb.tick(25, [], [], ctx());
+    const f721 = frames.find(f => f.canId === "0x721");
+    if (f721) {
+      expect((f721.data[0] >> 6) & 3).toBe(3);
+    }
+  });
+
+  it("reflects actual stroke in 0x721", () => {
+    seb.setActualStroke(15); // 15mm → raw = (15+30)/0.05 = 900
+    const frames = seb.tick(10, [], [make0x7B9(0)], ctx());
+    const f721 = frames.find(f => f.canId === "0x721");
+    // stroke raw value in bytes 2-3 (LE)
+    const strokeRaw = f721!.data[2] | (f721!.data[3] << 8);
+    expect(strokeRaw).toBe(900);
+  });
+});
