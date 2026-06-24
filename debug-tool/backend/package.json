@@ -13,12 +13,13 @@
     "@fastify/cors": "^10.0.2",
     "@fastify/static": "^9.1.3",
     "@fastify/websocket": "^11.0.1",
-    "aedes": "^0.51.3",
+    "better-sqlite3": "^11.8.1",
     "fastify": "^5.2.1",
-    "mqtt": "^5.10.3",
+    "serialport": "^13.0.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

@@ -1,4 +1,4 @@
-import type { CanFrame, CanMessageDef, CanStats, InjectionTemplate } from "./can-decoder";
+import type { Bus, CanFrame, CanMessageDef, CanStats, InjectionTemplate } from "./can-decoder";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -13,7 +13,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || response.statusText);
+    let message = text || response.statusText;
+    try {
+      const payload = JSON.parse(text) as { error?: unknown };
+      if (typeof payload.error === "string") message = payload.error;
+      else if (payload.error) message = JSON.stringify(payload.error);
+    } catch {
+      // Keep the raw response text for non-JSON errors.
+    }
+    throw new Error(message);
   }
 
   return (await response.json()) as T;
@@ -23,10 +31,15 @@ export interface BackendStatus {
   backend_online: boolean;
   started_at: number;
   uptime_s: number;
-  debug_esp32_online: boolean;
-  debug_esp32_uptime_s: number | null;
+  esp32_connected: boolean;
   last_status_at: number | null;
-  mqtt_connected: boolean;
+  serial: {
+    port_open: boolean;
+    path: string | null;
+    baud_rate: number;
+    last_error: string | null;
+  };
+  bus_stats: CanStats["buses"];
   websocket_clients: number;
   storage: {
     frames: number;
@@ -36,7 +49,9 @@ export interface BackendStatus {
 }
 
 export interface CommandResponse {
-  request_id: string;
+  cmd: string;
+  bus: Bus;
+  id: string;
   status: string;
 }
 
@@ -49,8 +64,10 @@ export async function getCanIds(): Promise<CanMessageDef[]> {
   return payload.ids;
 }
 
-export async function getFrames(limit = 300): Promise<CanFrame[]> {
-  const payload = await request<{ frames: CanFrame[] }>(`/api/can/frames?limit=${limit}`);
+export async function getFrames(limit = 300, bus?: Bus): Promise<CanFrame[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (bus) query.set("bus", bus);
+  const payload = await request<{ frames: CanFrame[] }>(`/api/can/frames?${query.toString()}`);
   return payload.frames.reverse();
 }
 
@@ -65,7 +82,7 @@ export async function getTemplates(): Promise<InjectionTemplate[]> {
 }
 
 export function sendFrame(payload: {
-  bus?: string;
+  bus: Bus;
   id: string;
   dlc: number;
   data: number[];
@@ -78,7 +95,7 @@ export function sendFrame(payload: {
 }
 
 export function startPeriodic(payload: {
-  bus?: string;
+  bus: Bus;
   id: string;
   dlc: number;
   data: number[];
@@ -92,9 +109,9 @@ export function startPeriodic(payload: {
   });
 }
 
-export function stopPeriodic(id: string): Promise<CommandResponse> {
+export function stopPeriodic(bus: Bus, id: string): Promise<CommandResponse> {
   return request<CommandResponse>("/api/cmd/periodic", {
     method: "POST",
-    body: JSON.stringify({ action: "stop", id })
+    body: JSON.stringify({ action: "stop", bus, id })
   });
 }

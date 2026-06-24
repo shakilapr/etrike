@@ -3,18 +3,18 @@ import { z } from "zod";
 const envSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().positive().default(3000),
-  MQTT_HOST: z.string().default("127.0.0.1"),
-  MQTT_PORT: z.coerce.number().int().positive().default(1883),
-  MQTT_URL: z.string().optional(),
+  SERIAL_PORT: z.string().default("COM3"),
+  SERIAL_BAUD: z.coerce.number().int().positive().default(115200),
+  DB_PATH: z.string().default("data/debug-tool.sqlite"),
   MAX_FRAMES: z.coerce.number().int().positive().default(50000)
 });
 
 export interface AppConfig {
   host: string;
   port: number;
-  mqttHost: string;
-  mqttPort: number;
-  mqttUrl: string | null;
+  serialPath: string | null;
+  serialBaudRate: number;
+  dbPath: string;
   maxFrames: number;
 }
 
@@ -33,9 +33,9 @@ export function loadConfig(): AppConfig {
   return {
     host: env.HOST,
     port: env.PORT,
-    mqttHost: env.MQTT_HOST,
-    mqttPort: env.MQTT_PORT,
-    mqttUrl: env.MQTT_URL || null,
+    serialPath: env.SERIAL_PORT === "disabled" ? null : env.SERIAL_PORT,
+    serialBaudRate: env.SERIAL_BAUD,
+    dbPath: env.DB_PATH,
     maxFrames: env.MAX_FRAMES
   };
 }

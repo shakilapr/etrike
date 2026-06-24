@@ -14,8 +14,7 @@ export const stats = writable<CanStats>({
 });
 export const status = writable<Partial<BackendStatus>>({
   backend_online: false,
-  debug_esp32_online: false,
-  mqtt_connected: false
+  esp32_connected: false
 });
 export const wsConnected = writable(false);
 export const commandAcks = writable<Record<string, unknown>[]>([]);

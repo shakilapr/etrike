@@ -1,4 +1,5 @@
 import type { StreamMessage } from "./ws-types";
+import type { Bus } from "./can-decoder";
 
 export { type StreamMessage };
 
@@ -19,7 +20,7 @@ export function connectStream(
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0;
-  let pendingFilter: string[] | null = null;
+  let pendingFilter: { buses: Bus[]; ids: string[] } | null = null;
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const explicitBase = import.meta.env.VITE_WS_URL as string | undefined;
@@ -36,7 +37,7 @@ export function connectStream(
 
       // Re-apply pending filter after reconnect
       if (pendingFilter && socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "filter", ids: pendingFilter }));
+        socket.send(JSON.stringify({ type: "filter", ...pendingFilter }));
       }
     });
 
@@ -77,9 +78,9 @@ export function connectStream(
 
   return {
     setFilter: (ids: string[]) => {
-      pendingFilter = ids;
+      pendingFilter = normalizeFilter(ids);
       if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "filter", ids }));
+        socket.send(JSON.stringify({ type: "filter", ...pendingFilter }));
       }
     },
     close: () => {
@@ -93,5 +94,25 @@ export function connectStream(
         socket = null;
       }
     }
+  };
+}
+
+function normalizeFilter(keys: string[]): { buses: Bus[]; ids: string[] } {
+  const buses = new Set<Bus>();
+  const ids = new Set<string>();
+
+  for (const key of keys) {
+    const [maybeBus, maybeId] = key.split(":");
+    if ((maybeBus === "high" || maybeBus === "low") && maybeId) {
+      buses.add(maybeBus);
+      ids.add(maybeId);
+    } else if (key) {
+      ids.add(key);
+    }
+  }
+
+  return {
+    buses: [...buses],
+    ids: [...ids]
   };
 }

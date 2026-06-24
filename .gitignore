@@ -1,6 +1,6 @@
 # ── PDFs (large binaries — keep out of repo) ──────────────────────────
 *.pdf
-
+*.png
 # ── Python cache ─────────────────────────────────────────────────────
 __pycache__/
 *.pyc
@@ -74,6 +74,14 @@ dist/
 test-results/
 playwright-report/
 playwright/.cache/
+.playwright-mcp/
+
+# ── debug-tool: runtime artifacts ──────────────────────────────────────
+.runtime/
+data/
+
+# ── debug-tool: local helper scripts ────────────────────────────────────
+run-*.ps1
 
 # ── debug-tool: env files ────────────────────────────────────────────
 .env
