@@ -56,7 +56,7 @@ constexpr int kGearCheckHz         = 50;
 constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 
 // ── Timeouts ──────────────────────────────────────────────────────
-constexpr int kCmdStaleTimeoutMs   = 200;   // 0x204 staleness (2 frames at 100 Hz)
+constexpr int kCmdStaleTimeoutMs   = 200;   // 0x204 staleness (20 missed frames at 100 Hz → 200ms)
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 
 // ── Fault flags (bit positions in 0x206 fault_flags byte) ─────────
