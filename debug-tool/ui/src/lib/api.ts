@@ -39,6 +39,13 @@ export interface BackendStatus {
     baud_rate: number;
     last_error: string | null;
   };
+  bus_detection?: {
+    detected: boolean;
+    bus: string;
+    confidence: "none" | "low" | "high";
+    highHits: number;
+    lowHits: number;
+  };
   bus_stats: CanStats["buses"];
   websocket_clients: number;
   storage: {

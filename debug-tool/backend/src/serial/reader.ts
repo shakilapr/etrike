@@ -1,7 +1,7 @@
 import { ReadlineParser, SerialPort } from "serialport";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
-import { normalizeFrame, normalizeStats, type CanStats } from "../types/can";
+import { BusDetector, normalizeFrame, normalizeStats, type Bus, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
 export interface SerialState {
@@ -16,6 +16,8 @@ export interface SerialState {
 export class SerialBridge {
   readonly state: SerialState;
   private port: SerialPort | null = null;
+  private busDetector = new BusDetector();
+  private detectedBus: Bus = "high";
 
   constructor(
     private readonly config: AppConfig,
@@ -47,6 +49,8 @@ export class SerialBridge {
       this.state.port_open = true;
       this.state.esp32_connected = true;
       this.state.last_error = null;
+      this.busDetector.reset();
+      this.detectedBus = "high";
       this.broadcastStatus();
     });
     this.port.on("close", () => {
@@ -115,9 +119,13 @@ export class SerialBridge {
     }
 
     if (typeof message.id === "string" && Array.isArray(message.data)) {
+      // Auto-detect which CAN bus this controller is connected to
+      const prevDetected = this.detectedBus;
+      this.detectedBus = this.busDetector.feed(message.id);
+
       const frame = normalizeFrame({
         ts: typeof message.ts === "number" ? message.ts : undefined,
-        bus: message.bus === "low" ? "low" : "high",
+        bus: this.detectedBus,
         id: message.id,
         name: typeof message.name === "string" ? message.name : undefined,
         dlc: typeof message.dlc === "number" ? message.dlc : undefined,
@@ -126,6 +134,11 @@ export class SerialBridge {
       });
       this.store.insertFrame(frame);
       this.hub.broadcast({ type: "can_frame", payload: frame });
+
+      // Notify when bus detection locks in
+      if (this.detectedBus !== prevDetected || this.busDetector.state.confidence === "high") {
+        this.broadcastStatus();
+      }
       return;
     }
 
@@ -133,6 +146,12 @@ export class SerialBridge {
   }
 
   private broadcastStatus(): void {
-    this.hub.broadcast({ type: "status", payload: this.state });
+    this.hub.broadcast({
+      type: "status",
+      payload: {
+        ...this.state,
+        bus_detection: this.busDetector.state
+      }
+    });
   }
 }
