@@ -95,7 +95,7 @@ struct DispatchContext {
     int32_t brake_req_kpa;
     bool estop_flag;
     uint8_t mode_from_sys;
-    int16_t steer_feedback_angle;
+    uint16_t steer_feedback_angle;
     uint8_t steer_angle_status;  // 0x201 byte0 bit0: angle alignment (gap C2)
     bool has_mode = false;    // set true when 0x110 mode received (fix CRITICAL falsy check)
     bool has_brake = false;   // set true when 0x301 brake received (fix CRITICAL falsy check)

@@ -230,7 +230,7 @@ struct VcuSesReq {
     uint8_t  reserved_2       : 2;   // Byte5,b42-43
     uint8_t  rolling_counter  : 4;   // Byte5,b44-47, 0-15
     uint8_t  vehicle_speed       = 0; // Byte6, u8, 0-255 km/h
-    uint8_t  checksum           = 0; // Byte7, sum(bytes[0..6]) & 0xFF
+    uint8_t  checksum           = 0; // Byte7, XOR(bytes[0..6]) ^ 0xFF
 
     void pack(uint8_t raw[8]) const;
     static VcuSesReq unpack(const uint8_t raw[8]);

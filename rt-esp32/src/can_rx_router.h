@@ -9,7 +9,7 @@ struct GatewayQueues {
     int32_t* brake_req_kpa=nullptr;
     bool* estop_flag=nullptr;
     uint8_t* mode_from_sys=nullptr;
-    int16_t* steer_feedback_angle=nullptr; // from 0x201 SES_StrAngle raw value
+    uint16_t* steer_feedback_angle=nullptr; // from 0x201 SES_StrAngle raw value (CSV: Unsigned)
     uint8_t* steer_angle_status=nullptr;   // 0x201 byte0 bit0: 0=center finding, 1=found (gap C2)
 };
 inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q) {
@@ -32,7 +32,7 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
     case 0x201:  // SES_STATUS — consumed by RT (steering feedback)
         if (!is_high_bus) {
             if (q.steer_feedback_angle) {
-                *q.steer_feedback_angle = int16_t(f.data[2] | (f.data[3] << 8));
+                *q.steer_feedback_angle = uint16_t(f.data[2] | (f.data[3] << 8));
             }
             if (q.steer_angle_status) {
                 *q.steer_angle_status = f.data[0] & 1;  // byte0 bit0: angle_status
