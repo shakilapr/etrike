@@ -36,6 +36,7 @@ export interface VcuSebReq {
   alignEnable: number;
   controlEnable: number;
   controlMode: number;     // 0=Stroke, 1=Pressure
+  autoBrake: number;       // 0=manual, 1=auto brake active (bit 3 of byte 0)
   strokeReq: number;       // raw units
   pressureReq: number;     // raw units
   rollCntEnable: number;
@@ -125,10 +126,13 @@ export class SysBrakeController {
     const rc = this.rollCounter;
     this.rollCounter = (this.rollCounter + 1) & 0x0F;
 
+    const autoBrake = (brakeKpa > 0 || estop) ? 1 : 0;
+
     return {
       alignEnable: 1,
       controlEnable: 1,
       controlMode,
+      autoBrake,
       strokeReq,
       pressureReq,
       rollCntEnable: 1,

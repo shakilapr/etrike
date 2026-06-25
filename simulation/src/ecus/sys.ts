@@ -110,7 +110,7 @@ export class SysEcu implements SimulatedEcu {
         // Build 0x7B9 VCU_SEB_REQ (SYNTREE LE encoding)
         const stroke16 = cmd.strokeReq & 0xFFFF;
         const data = [
-          ((cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1) | (cmd.controlMode << 2)),
+          ((cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1) | (cmd.controlMode << 2) | ((cmd.autoBrake & 1) << 3)),
           0,
           stroke16 & 0xFF,
           // Byte 3: Stroke mode → stroke high byte; Pressure mode → pressure_req
