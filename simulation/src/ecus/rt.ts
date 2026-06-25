@@ -91,6 +91,11 @@ export class RtEcu implements SimulatedEcu {
           out.push({ ...f, bus: "low", sender: "rt" });
           break;
         }
+        case "0x302": {
+          // HOST_LIGHT_CMD — forward high→low to SYS
+          out.push({ ...f, bus: "low", sender: "rt" });
+          break;
+        }
       }
     }
 
@@ -214,7 +219,7 @@ export class RtEcu implements SimulatedEcu {
         // Build 0x169 VCU_SES_REQ (SYNTREE LE encoding)
         const angle16 = cmd.targetAngle & 0xFFFF;
         const speedRaw = cmd.targetSpeed & 0xFFFF;
-        const rollCnt = (this.rtHbCtrLow & 0xF);
+        const rollCnt = cmd.rollingCounter;  // steering's own 50 Hz counter (0-15)
         const data = [
           (cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1),
           0,
@@ -261,11 +266,12 @@ export class RtEcu implements SimulatedEcu {
       });
 
       // 0x310 STEER_DIAG (10 Hz, high bus, DLC=8)
-      const sesAngle = this.sesAngleRaw !== null ? (this.sesAngleRaw - 3000) / 10 : 0; // raw→deg
-      const steerRaw16 = Math.round((sesAngle + 300) * 10) & 0xFFFF; // deg * 10 with offset for i16
+      // angle in 0.1°/bit signed i16 BE, NO OFFSET (unlike 0x169 encoding)
+      const sesAngle01deg = this.sesAngleRaw !== null ? (this.sesAngleRaw - 3000) : 0;
+      const steerDiagAngle = Math.max(-32768, Math.min(32767, sesAngle01deg));
       out.push({
         simTimeMs: nowMs, bus: "high", canId: "0x310", name: "STEER_DIAG", dlc: 8, data: [
-          (steerRaw16 >> 8) & 0xFF, steerRaw16 & 0xFF,  // angle 0.1° i16 BE
+          (steerDiagAngle >> 8) & 0xFF, steerDiagAngle & 0xFF,  // angle 0.1° i16 BE
           0, // fault=0 (EPS-C ok)
           0, 0, // motor_current=0 (stub)
           0, 0, // ecu_temp=0 (stub)
