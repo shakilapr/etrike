@@ -68,4 +68,15 @@ describe("SysSafetyMonitor", () => {
     // Timer should have been reset
     expect(m.checkEgasL2(800, 2000, 1950)).toBe(false);
   });
+
+  it("gap #15: SYS detects MTR ESTOP_ACTIVE bit in 0x206 within 100ms", () => {
+    // Trigger ESTOP
+    m.setEstop(true);
+
+    // Simulate MTR 0x206 with ESTOP_ACTIVE bit (bit0 = 1 = faultFlags)
+    const mtrFbk = { actualSpeed: 0, gearState: 0, faultFlags: 0x01 };
+    m.feedMtrFeedback(mtrFbk, 100); // t=100ms
+
+    expect(m.mtrEstopAcked()).toBe(true);
+  });
 });

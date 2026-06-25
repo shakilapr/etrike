@@ -102,7 +102,7 @@ CM_ BO_ 18  "DC-DC converter control. Low bus only.";
 CM_ BO_ 272  "0=Manual, 1=Auto, 2=ESTOP. Low bus only. MTR needs mode for pass-through vs CAN control.";
 CM_ BO_ 288  "Current vehicle speed from MTR STM32. Forwarded low->high by RT. SYS_ prefix is historical.";
 CM_ BO_ 516  "MTR receives for motor actuation. SYS receives for EGAS L2 monitoring. ID 0x204 avoids collision with EPS-C 0x202.";
-CM_ BO_ 517  "RT max-select: max(rt_obstacle, jetson_0x301) -> SYS SEB cmd.";
+CM_ BO_ 517  "RT max-select: max(rt_obstacle, host_0x301) -> SYS SEB cmd.";
 CM_ BO_ 518  "Motor feedback from STM32. Forwarded lowhigh by RT per gateway rules.";
 CM_ BO_ 528  "RT state report to Host. High bus only.";
 CM_ BO_ 544  "RESERVED, inactive. PID telemetry for Host debugging.";

@@ -31,4 +31,15 @@ describe("SafetyChecker", () => {
     sc.checkEstopResponse(300, ctx, true, true);
     expect(sc.getAllViolations()).toHaveLength(0);
   });
+
+  it("gap #14: rate-limits ESTOP frames to 2 per 500ms window", () => {
+    // Flood 10 ESTOPs in 100ms (10ms apart)
+    let estopCount = 0;
+    for (let i = 0; i < 10; i++) {
+      if (sc.processEstop(100 + i * 10)) estopCount++;
+    }
+
+    // Only first 2 should be accepted within the 500ms window
+    expect(estopCount).toBeLessThanOrEqual(2);
+  });
 });
