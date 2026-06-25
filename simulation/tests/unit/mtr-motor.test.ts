@@ -66,4 +66,16 @@ describe("MtrMotorController", () => {
     const frames = mtr.tick(3, [], 0, false);
     expect(frames).toHaveLength(0);
   });
+
+  it("gap #16: 0x204 staleness does not trigger during startup grace period", () => {
+    // Within first 3 seconds, no 0x204 received — should NOT trigger CMD_TIMEOUT
+    mtr.tick(1000, [], 0, false); // t=1s, no setpoint
+    const state1 = mtr.getState();
+    expect(state1.faultFlags & 0x02).toBe(0); // CMD_TIMEOUT not set
+
+    // After 3 seconds, should trigger
+    mtr.tick(3500, [], 0, false); // t=3.5s, still no setpoint
+    const state2 = mtr.getState();
+    expect(state2.faultFlags & 0x02).not.toBe(0); // CMD_TIMEOUT now set
+  });
 });

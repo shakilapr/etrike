@@ -160,6 +160,16 @@ export class RtSteeringController {
     }
   }
 
+  /** Return current state (for test access). */
+  getState(): SteerState {
+    return this.state;
+  }
+
+  /** Return the instantaneous dynamic limit for steering angle (millidegrees). */
+  getHoldAngle(): number {
+    return this.estopHoldAngle;
+  }
+
   /** Exit ESTOP states back to ACTIVE. */
   exitEstop(): void {
     if (this.state === SteerState.ESTOP_RAMP_TO_ZERO
