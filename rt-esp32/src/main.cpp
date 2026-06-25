@@ -271,8 +271,8 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     }
 
     // 4. Host heartbeat timeout (arch §7.6: 1500ms → assisted stop)
-    int64_t jetson_hb = g_last_host_hb_us.load();
-    if (jetson_hb > 0 && (now - jetson_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
+    int64_t host_hb = g_last_host_hb_us.load();
+    if (host_hb > 0 && (now - host_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
         ESP_LOGW(TAG, "Host heartbeat timeout — assisted stop brake=2000kPa");
         r.zero_setpoints = true;
         g_brake_request_kpa.store(shared::kAssistStopKpa);

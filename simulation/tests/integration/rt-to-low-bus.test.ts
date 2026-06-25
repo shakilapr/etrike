@@ -80,4 +80,29 @@ describe("RT to low-bus pipeline", () => {
     const frames = epsc.tick(10, [], [cmd169], autoCtx(10));
     expect(frames.some(f => f.canId === "0x201")).toBe(true);
   });
+
+  it("gap #12: RT transmits 0x7B9 on SYS heartbeat loss", () => {
+    // Standalone test using SimulationRunner — requires different setup
+    // so we test the underlying behavior directly via RtEcu
+    // RT should send 0x7B9 stroke command when SYS heartbeat is missing >200ms
+    // Mock SYS heartbeat at t=0, then let it expire
+    rt.tick(0, [], [], autoCtx(0));
+    // No more SYS heartbeats — after 200ms RT takes over
+    for (let i = 1; i <= 15; i++) {
+      const frames = rt.tick(i * 20, [], [], autoCtx(i * 20));
+      // After 200ms (10 ticks), RT should produce 0x7B9 on low bus
+      if (i >= 10) {
+        const sebFrames = frames.filter(f => f.canId === "0x7B9" && f.bus === "low");
+        if (sebFrames.length > 0) {
+          // Verify stroke=max (1140 raw = 27mm)
+          const lastSeb = sebFrames[sebFrames.length - 1];
+          const stroke = ((lastSeb.data[2] << 8) | lastSeb.data[3]) & 0xFFFF;
+          expect(stroke).toBeGreaterThanOrEqual(1140);
+          return; // success
+        }
+      }
+    }
+    // If we get here, no 0x7B9 was produced
+    expect(false).toBe(true); // fail — no takeover detected
+  });
 });

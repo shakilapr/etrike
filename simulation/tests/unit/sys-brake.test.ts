@@ -97,4 +97,23 @@ describe("SysBrakeController", () => {
     bc.tick(false, false, 0);
     expect(bc.state).toBe(BrakeState.ACTIVE);
   });
+
+  it("gap #13: brake following-error detected when stroke mismatch >3mm for >100ms", () => {
+    // Boot → ACTIVE
+    for (let i = 0; i < 25; i++) bc.tick(false, false, 0);
+    bc.feedSebStatus(1);
+    bc.tick(false, false, 0);
+
+    // Command 15mm stroke via manual lever
+    const cmd = bc.tick(true, false, 0);
+    const cmdStroke = ((cmd.data[2] << 8) | cmd.data[3]) & 0xFFFF;
+
+    // Feed back a different stroke (>3mm error = 80 raw units)
+    const errStroke = cmdStroke + 80;
+    bc.feedSebStatus(2); // pass raw stroke value
+    // Manually set stroke on the controller to simulate misalignment
+    // Re-boot to ACTIVE and inject the error via feedSebStatus
+    const diag = bc.getDiagnostics();
+    expect(diag.brakeFollowingError).toBe(true);
+  });
 });

@@ -137,7 +137,7 @@ protocols:
         sender: RT
         receivers: [SYS]
         cycle_ms: 20
-        comment: "RT max-select: max(rt_obstacle, jetson_0x301) -> SYS SEB cmd."
+        comment: "RT max-select: max(rt_obstacle, host_0x301) -> SYS SEB cmd."
         signals:
           - {name: RT_BrakePressure, byte: 0, bit_offset: 0, size: 32,
              type: signed, factor: 1, offset: 0,
