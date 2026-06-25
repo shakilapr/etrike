@@ -21,8 +21,9 @@ constexpr float rad2deg(float r) { return r * 180.0f / kPi; }
 }  // anonymous
 
 float compute_dynamic_limit(float speed_mmps) {
-    // limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
-    float speed_kmh = speed_mmps * 3.6f / 1000.0f;
+    // limit_deg = 40.0 − (|speed_kmh| − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
+    // Uses absolute speed — rollover risk is symmetric in forward/reverse.
+    float speed_kmh = std::abs(speed_mmps) * 3.6f / 1000.0f;
     float limit_deg = kAngleClampBaseDeg - (speed_kmh - 2.0f) * (kAngleClampRangeDeg / kAngleClampSpeedRange);
     return std::clamp(limit_deg, kAngleClampMinDeg, kAngleClampBaseDeg);
 }
@@ -86,6 +87,48 @@ int32_t PhysicsModel::obstacle_limit(int32_t target_mmps, unsigned obstacle_mm) 
     float t = static_cast<float>(obstacle_mm - shared::kObstacleStopMM)
             / static_cast<float>(shared::kObstacleClearMM - shared::kObstacleStopMM);
     return static_cast<int32_t>(target_mmps * t);
+}
+
+// ── PID controller ──────────────────────────────────────────────────
+
+float PidController::update(float setpoint, float measured, float dt) {
+    if (dt <= 0.0f) return 0.0f;
+    float error = setpoint - measured;
+    float p_term = kp * error;
+
+    integral += ki * error * dt;
+    // Anti-windup: clamp integral term
+    integral = std::clamp(integral, output_min / std::max(ki, 0.001f),
+                                     output_max / std::max(ki, 0.001f));
+
+    float d_term = (dt > 0.0f) ? kd * (error - prev_error) / dt : 0.0f;
+    prev_error = error;
+
+    float output = p_term + integral + d_term;
+    return std::clamp(output, output_min, output_max);
+}
+
+void PidController::reset() {
+    integral = 0.0f;
+    prev_error = 0.0f;
+}
+
+void PhysicsModel::update_shadow_pid(int32_t desired_mmps, int32_t measured_mmps,
+                                      float dt, int16_t& pid_output_mmps) {
+    // Guard: no encoder fitted → measured=0. Running PID against zero would
+    // saturate the I-term and command full throttle. Only run with real data.
+    if (measured_mmps == 0) {
+        m_speed_pid.reset();
+        pid_output_mmps = 0;
+        return;
+    }
+
+    float effort = m_speed_pid.update(
+        static_cast<float>(desired_mmps),
+        static_cast<float>(measured_mmps), dt);
+
+    // Convert effort fraction → mm/s correction (scale to full speed range)
+    pid_output_mmps = static_cast<int16_t>(effort * shared::kMaxSpeedFwdMmps);
 }
 
 }  // namespace rt

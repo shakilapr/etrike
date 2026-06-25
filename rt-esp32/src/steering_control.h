@@ -7,17 +7,17 @@
 #include "physics_model.h"
 namespace rt {
 enum class SteerState : uint8_t {
-    BOOT_WAIT,            // 500ms power-on delay — do NOT transmit
-    LISTEN_SYNC,          // Waiting for 0x201 SES_STATUS (angle + alignment)
-    ACTIVE,               // Normal operation — transmit 0x169 at 50 Hz
-    ESTOP_RAMP_TO_ZERO,   // Non-obstacle ESTOP: ramp to 0° at 20°/s, then hold
-    ESTOP_HOLD_THEN_SILENT, // Obstacle ESTOP: hold 500ms, then silent-stop
-    FAULT                 // Timeout or silent-stop — stop transmitting
+    STEER_BOOT_WAIT,          // 500ms power-on delay — do NOT transmit
+    STEER_LISTEN_SYNC,        // Waiting for 0x201 SES_STATUS (angle + alignment)
+    STEER_ACTIVE,             // Normal operation — transmit 0x169 at 50 Hz
+    ESTOP_RAMP_TO_ZERO,       // Non-obstacle ESTOP: ramp to 0° at 20°/s, then hold
+    ESTOP_HOLD_THEN_SILENT,   // Obstacle ESTOP: hold 500ms, then silent-stop
+    STEER_FAULT               // Timeout or silent-stop — stop transmitting
 };
 class SteeringControl {
 public:
     void init() {
-        m_state = SteerState::BOOT_WAIT;
+        m_state = SteerState::STEER_BOOT_WAIT;
         m_timer = 0;
         m_active_angle = 0;
         m_roll = 0;
@@ -37,18 +37,18 @@ public:
               uint32_t now_ms, can::VcuSesReq& out) {
         constexpr int kBootWaitTicks = 25;  // 50 Hz × 500 ms
         switch (m_state) {
-        case SteerState::BOOT_WAIT:
+        case SteerState::STEER_BOOT_WAIT:
             if (++m_timer >= kBootWaitTicks) {
-                m_state = SteerState::LISTEN_SYNC;
+                m_state = SteerState::STEER_LISTEN_SYNC;
                 m_timer = 0;
                 m_sync_start_ms = now_ms;
             }
             return false;
 
-        case SteerState::LISTEN_SYNC: {
+        case SteerState::STEER_LISTEN_SYNC: {
             // Timeout check (gap C1): 5s without valid 0x201 → FAULT
             if (now_ms - m_sync_start_ms > static_cast<uint32_t>(kSteerSyncTimeoutMs)) {
-                m_state = SteerState::FAULT;
+                m_state = SteerState::STEER_FAULT;
                 return false;
             }
             // Wait for valid angle data
@@ -57,12 +57,12 @@ public:
             if (ses_angle_status == 0) return false;  // still center-finding
             // Synchronized — capture current angle (ses_angle_raw is already offset-free 0.1°)
             m_active_angle = ses_angle_raw;
-            m_state = SteerState::ACTIVE;
+            m_state = SteerState::STEER_ACTIVE;
             build_command(out);
             return true;
         }
 
-        case SteerState::ACTIVE:
+        case SteerState::STEER_ACTIVE:
             build_command(out);
             return true;
 
@@ -88,7 +88,7 @@ public:
                     if (m_estop_following_err_start_ms == 0)
                         m_estop_following_err_start_ms = now_ms;
                     else if (now_ms - m_estop_following_err_start_ms > 1000) {
-                        m_state = SteerState::FAULT;
+                        m_state = SteerState::STEER_FAULT;
                         return false;  // silent-stop — linkage likely jammed
                     }
                 } else {
@@ -109,11 +109,11 @@ public:
                 return true;
             }
             // Hold period expired → silent-stop
-            m_state = SteerState::FAULT;
+            m_state = SteerState::STEER_FAULT;
             return false;
         }
 
-        case SteerState::FAULT:
+        case SteerState::STEER_FAULT:
             return false;
         }
         return false;
@@ -122,7 +122,7 @@ public:
     // Set the desired steering angle (called by control task at 100 Hz).
     // angle_mdeg: millidegrees, +right. speed_mmps: current speed for slew rate calc.
     void set_target(int32_t angle_mdeg, int32_t speed_mmps) {
-        if (m_state == SteerState::ACTIVE) {
+        if (m_state == SteerState::STEER_ACTIVE) {
             m_active_angle = int16_t(angle_mdeg / 100);
             m_speed_mmps = speed_mmps;
         }
@@ -132,7 +132,7 @@ public:
     // Trigger ESTOP behavior. obstacle_triggered=true → hold-then-silent.
     // obstacle_triggered=false → ramp-to-zero. Called from safety checks.
     void start_estop(bool obstacle_triggered) {
-        if (m_state == SteerState::ACTIVE) {
+        if (m_state == SteerState::STEER_ACTIVE) {
             if (obstacle_triggered) {
                 // Gap #9: clamp hold angle to dynamic limit for current speed.
                 // At high speed the dynamic limit may be as low as 5° — holding an
@@ -161,8 +161,8 @@ public:
 
     // Reset from FAULT to LISTEN_SYNC (START button short-press retry).
     void reset_to_listen(uint32_t now_ms) {
-        if (m_state == SteerState::FAULT) {
-            m_state = SteerState::LISTEN_SYNC;
+        if (m_state == SteerState::STEER_FAULT) {
+            m_state = SteerState::STEER_LISTEN_SYNC;
             m_sync_start_ms = now_ms;
         }
     }
@@ -171,7 +171,7 @@ public:
     void exit_estop() {
         if (m_state == SteerState::ESTOP_RAMP_TO_ZERO ||
             m_state == SteerState::ESTOP_HOLD_THEN_SILENT) {
-            m_state = SteerState::ACTIVE;
+            m_state = SteerState::STEER_ACTIVE;
         }
     }
 
@@ -193,7 +193,7 @@ private:
     }
 
     static constexpr int kRollCounterMask = 0x0F;
-    SteerState m_state = SteerState::BOOT_WAIT;
+    SteerState m_state = SteerState::STEER_BOOT_WAIT;
     int        m_timer = 0;
     int16_t    m_active_angle = 0;
     uint8_t    m_roll = 0;
