@@ -236,7 +236,8 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
 }
 
 // ── Safety checks (used by t_control) ─────────────────────────────
-struct SafetyResult { bool zero_setpoints; int32_t brake_kpa; bool disable_steering; };
+struct SafetyResult { bool zero_setpoints; int32_t brake_kpa; bool disable_steering; bool takeover_seb; };
+static std::atomic<bool> g_seb_takeover{false};  // gap #12: RT→0x7B9 takeover active
 
 static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     SafetyResult r{};
@@ -261,8 +262,12 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
     int64_t sys_hb = g_last_sys_hb_us.load();
     if (sys_hb > 0 && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
-        ESP_LOGW(TAG, "SYS heartbeat timeout — zeroing setpoints");
+        ESP_LOGW(TAG, "SYS heartbeat timeout — RT taking over brake via 0x7B9");
         r.zero_setpoints = true;
+        g_seb_takeover.store(true, std::memory_order_relaxed);  // gap #12
+    } else if (g_seb_takeover.load(std::memory_order_relaxed)) {
+        // SYS heartbeat recovered — release takeover
+        g_seb_takeover.store(false, std::memory_order_relaxed);
     }
 
     // 4. Host heartbeat timeout (arch §7.6: 1500ms → assisted stop)
@@ -464,6 +469,25 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
                 }
             }
         }
+
+        // Gap #12: SEB brake takeover — RT sends 0x7B9 at 50Hz on SYS heartbeat loss
+        static uint8_t seb_roll = 0;
+        if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
+            t50 = xTaskGetTickCount();
+            if (g_seb_takeover.load(std::memory_order_relaxed)) {
+                can::VcuSebReq seb;
+                seb.control_enable = 1;
+                seb.control_mode   = 0;    // Stroke mode
+                seb.auto_brake     = 1;    // Emergency trigger
+                seb.stroke_req     = 1140; // 27mm max stroke: (27+30)/0.05
+                seb.roll_cnt_enable = 1;
+                seb.checksum_enable = 1;
+                seb.rolling_counter = seb_roll;
+                seb_roll = (seb_roll + 1) & 0x0F;
+                seb.to_frame(fr); drv->send(fr);
+            }
+        }
+
         if (xQueueReceive(g_gw_tx_low_q, &gw, 0) == pdTRUE) drv->send(gw);
         vTaskDelay(pdMS_TO_TICKS(5));
     }
