@@ -83,7 +83,7 @@ Two physical CAN buses at 500 kbit/s. RT bridges selected messages between buses
 | `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 3 | u8 estop, u8 hb_ok, u4 light_state | 5 Hz | V.High |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC converter | 1 | u8 enable | Change | V.High |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A, 2=ESTOP) | Change | High |
-| `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson), SYS | 2 | i16 speed_mmps | 100 Hz | Medium |
+| `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson) | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | Steering angle + status feedback | 100 Hz | Medium |
 | `0x202` | SES_ErrInfo | EPS-C | RT | 8 | 25 fault flags (8× L3) | 10 Hz | Medium |

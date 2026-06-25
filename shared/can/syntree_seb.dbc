@@ -70,10 +70,10 @@ BO_ 1787 SEB_Test: 8 SEB
 
 
 CM_ BO_ 1977  "SYNTREE SEB brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1.";
-CM_ BO_ 1825  "SYNTREE SEB status feedback. 100 Hz. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1.";
+CM_ BO_ 1825  "SYNTREE SEB status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1.";
 CM_ BO_ 1841  "SYNTREE SEB detailed fault flags. 16 of 23 faults are L3 -> SYS must escalate to ESTOP.";
 CM_ BO_ 1857  "SYNTREE SEB firmware version. Log on boot for compatibility check.";
-CM_ BO_ 1787  "SYNTREE SEB telemetry. 100 Hz. Bytes 0,7 reserved. Wider ranges than steering SES_Test.";
+CM_ BO_ 1787  "SYNTREE SEB telemetry. 100 Hz. RT monitors for 0x311 BRAKE_DIAG population.";
 
 CM_ SG_ 1977 SEB_AlignEnable "Calibration enable.";
 CM_ SG_ 1977 SEB_CtrlEnable "Active control enable.";

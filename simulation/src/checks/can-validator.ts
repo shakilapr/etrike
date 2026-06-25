@@ -9,7 +9,7 @@ import type { ValidationError, BusId } from "../core/types.js";
 
 /** Expected DLC for each CAN ID (partial — extend as needed). */
 const EXPECTED_DLC: Record<string, number> = {
-  "0x001": 0, "0x011": 2, "0x012": 1, "0x110": 1,
+  "0x001": 0, "0x011": 3, "0x012": 1, "0x110": 1,  // 0x011 DLC=3 v0.0.5 (SYS_LightState)
   "0x120": 2, "0x169": 8, "0x201": 8, "0x202": 8, "0x203": 8,
   "0x204": 5, "0x205": 4, "0x206": 4, "0x210": 3,
   "0x300": 8, "0x301": 4, "0x302": 1, "0x400": 4,

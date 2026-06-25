@@ -476,10 +476,6 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         rpt.to_frame(fr);
         g_can_high.send(fr);
 
-        // 0x400 HOST_OBSTACLE_DIST — 10 Hz (Host→RT perception data)
-        can::HostObstacleDist{g_obstacle_mm.load()}.to_frame(fr);
-        g_can_high.send(fr);
-
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         {
             int16_t angle = g_ses_angle_raw.load();

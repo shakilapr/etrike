@@ -102,7 +102,7 @@ function msg(bus: Bus, id: string, name: string, sender: string, period: string,
   return { bus, id, name, sender, period, dlc, injectable, fields };
 }
 
-const safetyFields = [bool("estop_active", "ESTOP active"), bool("heartbeat_ok", "Heartbeat OK")];
+const safetyFields = [bool("estop_active", "ESTOP active"), bool("heartbeat_ok", "Heartbeat OK"), bool("light_left", "Light: left turn"), bool("light_right", "Light: right turn"), bool("light_brake", "Light: brake"), bool("light_head", "Light: head")];
 const throttleFields = [num("speed_mmps", "Speed", "mm/s", -500, 3000, 10)];
 const motorFeedbackFields = [
   num("actual_speed_mmps", "Actual speed", "mm/s", -500, 3000, 10),
@@ -123,7 +123,7 @@ const heartbeatFields = [num("alive_ctr", "Alive counter", undefined, 0, 255)];
 
 export const CAN_MESSAGES: CanMessageDef[] = [
   msg("high", "0x001", "SAFETY_ESTOP", "any", "event", 0, true, []),
-  msg("high", "0x011", "SYS_SAFETY_STS", "RT (fwd)", "5 Hz", 2, true, safetyFields),
+  msg("high", "0x011", "SYS_SAFETY_STS", "RT (fwd)", "5 Hz", 3, true, safetyFields),
   msg("high", "0x120", "SYS_THROTTLE_STS", "RT (fwd)", "100 Hz", 2, true, throttleFields),
   msg("high", "0x206", "MTR_MOTOR_FBK", "RT (fwd)", "50 Hz", 4, true, motorFeedbackFields),
   msg("high", "0x210", "RT_STATE_RPT", "RT", "10 Hz", 3, true, [modeField, bool("steer_valid", "Steer valid"), bool("reversing", "Reversing")]),
@@ -149,7 +149,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("high", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
 
   msg("low", "0x001", "SAFETY_ESTOP", "any", "event", 0, true, []),
-  msg("low", "0x011", "SYS_SAFETY_STS", "SYS", "5 Hz", 2, true, safetyFields),
+  msg("low", "0x011", "SYS_SAFETY_STS", "SYS", "5 Hz", 3, true, safetyFields),
   msg("low", "0x012", "SYS_DCDC_CMD", "SYS", "change", 1, false, [bool("enable", "Enable")]),
   msg("low", "0x110", "SYS_MODE_CMD", "SYS", "change", 1, true, [modeField]),
   msg("low", "0x120", "SYS_THROTTLE_STS", "MTR", "100 Hz", 2, true, throttleFields),
@@ -198,7 +198,8 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
     case "low:0x011":
       bytes[0] = values.estop_active ? 1 : 0;
       bytes[1] = values.heartbeat_ok ? 1 : 0;
-      return { dlc: 2, data: bytes.slice(0, 2) };
+      bytes[2] = (values.light_left ? 0x01 : 0) | (values.light_right ? 0x02 : 0) | (values.light_brake ? 0x04 : 0) | (values.light_head ? 0x08 : 0);
+      return { dlc: 3, data: bytes.slice(0, 3) };
 
     case "high:0x120":
     case "low:0x120":
@@ -484,7 +485,7 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
   const bytes = normalizeBytes(data);
   switch (normalizeCanId(id)) {
     case "0x001": return {};
-    case "0x011": return { estop_active: bytes[0] !== 0, heartbeat_ok: bytes[1] !== 0 };
+    case "0x011": return { estop_active: bytes[0] !== 0, heartbeat_ok: bytes[1] !== 0, light_left: Boolean((bytes[2] ?? 0) & 0x01), light_right: Boolean((bytes[2] ?? 0) & 0x02), light_brake: Boolean((bytes[2] ?? 0) & 0x04), light_head: Boolean((bytes[2] ?? 0) & 0x08) };
     case "0x012": return { enable: bytes[0] !== 0 };
     case "0x110": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0) };
     case "0x120": return { speed_mmps: readI16BE(bytes, 0) };

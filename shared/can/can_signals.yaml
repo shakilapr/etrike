@@ -527,9 +527,9 @@ protocols:
         name: SEB_STATUS
         dlc: 8
         sender: SEB
-        receivers: [SYS]
+        receivers: [SYS, RT]
         cycle_ms: 10
-        comment: "SYNTREE SEB status feedback. 100 Hz. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1."
+        comment: "SYNTREE SEB status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1."
         signals:
           - {name: SEB_AlignStatus,        byte: 0, bit_offset: 0, size: 1, comment: "Alignment Info Feedback. 1=aligned."}
           - {name: SEB_CtrlEnStatus,       byte: 0, bit_offset: 1, size: 1, comment: "Control Enable Feedback."}
@@ -608,9 +608,9 @@ protocols:
         name: SEB_Test
         dlc: 8
         sender: SEB
-        receivers: [SYS]
+        receivers: [SYS, RT]
         cycle_ms: 10
-        comment: "SYNTREE SEB telemetry. 100 Hz. Bytes 0,7 reserved. Wider ranges than steering SES_Test."
+        comment: "SYNTREE SEB telemetry. 100 Hz. RT monitors for 0x311 BRAKE_DIAG population."
         signals:
           - {name: SEB_MtrCurr,  byte: 1, bit_offset: 0, size: 16, type: signed,
              factor: 0.0078125, offset: 0, min: -255, max: 255, unit: A,
