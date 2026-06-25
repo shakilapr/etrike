@@ -89,8 +89,8 @@ export class RtSteeringController {
         if (sesAngleRaw === null) return null;
         // Alignment check: EPS-C must report angle_status == 1
         if (sesAngleStatus === 0) return null;
-        // Synchronized — capture current angle, transition to ACTIVE
-        this.activeAngle = sesAngleRaw;
+        // Synchronized — convert raw SYNTREE (0.1°+3000 offset) to millidegrees
+        this.activeAngle = (sesAngleRaw - 3000) * 100;
         this.state = SteerState.ACTIVE;
         return this.buildCommand();
       }
@@ -100,8 +100,8 @@ export class RtSteeringController {
 
       case SteerState.ESTOP_RAMP_TO_ZERO: {
         // Ramp toward 0° at kSteerEstopRampDegS (20°/s)
-        // At 50 Hz tick rate: 200 (0.1°)/s / 50 = 4 (0.1°) per tick
-        const rampStep = Math.round(STEER_ESTOP_RAMP_DEG_S * 10 / STEER_CMD_RATE_HZ);
+        // activeAngle is in millidegrees. Ramp step = 20 deg/s * 1000 / 50 Hz
+        const rampStep = Math.round(STEER_ESTOP_RAMP_DEG_S * 1000 / STEER_CMD_RATE_HZ);
         if (this.activeAngle > rampStep) {
           this.activeAngle -= rampStep;
         } else if (this.activeAngle < -rampStep) {
@@ -130,10 +130,11 @@ export class RtSteeringController {
 
   // ── Commands ──────────────────────────────────────────────────────
 
-  /** Set desired steering angle (called by RT control task at 100 Hz). */
+  /** Set desired steering angle (called by RT control task at 100 Hz).
+   *  @param angleMdeg desired angle in millidegrees (matching C++ set_target). */
   setTarget(angleMdeg: number, speedMmps: number): void {
     if (this.state === SteerState.ACTIVE) {
-      this.activeAngle = Math.round(angleMdeg / 100); // convert mdeg to 0.1°
+      this.activeAngle = Math.round(angleMdeg);
       this.speedMmps = speedMmps;
     }
   }
@@ -175,15 +176,19 @@ export class RtSteeringController {
     const rollingCounter = this.rollCounter;
     this.rollCounter = (this.rollCounter + 1) & 0x0F;
 
+    // Convert millidegrees to SYNTREE raw format:
+    //   raw = (angle_mdeg / 100) + 3000   (0.1° units with -3000 offset)
+    const rawAngle = Math.round(this.activeAngle / 100 + 3000);
+
     return {
       alignEnable: 1,
       controlEnable: 1,
-      targetAngle: this.activeAngle,
+      targetAngle: rawAngle,
       targetSpeed: Math.round(rateDegS),
       rollCntEnable: 1,
       checksumEnable: 1,
       rollingCounter,
-      vehicleSpeed: Math.min(Math.round(speedKmh), 255),
+      vehicleSpeed: Math.max(0, Math.min(Math.round(speedKmh), 255)),
     };
   }
 

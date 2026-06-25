@@ -83,11 +83,19 @@ export class SyntreeEpsc implements SimulatedEcu {
       });
     }
 
-    // 0x202 SES_ErrInfo at 10Hz
+    // 0x202 SES_ErrInfo at 10Hz (24 fault bits in LE byte order)
     if (nowMs % 100 === 0) {
+      // All faults clear during normal operation.
+      // When errorStatus===L3, set critical fault bits:
+      //   byte1 bit0: AngleP_OC (L3), byte1 bit1: AngleP_AF (L3)
+      const isL3 = this.errorStatus === 3;
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x202", name: "SES_ErrInfo",
-        dlc: 8, data: [0, 0, 0, 0, 0, 0, 0, 0], sender: "epsc",
+        dlc: 8, data: [
+          isL3 ? 0x03 : 0,  // byte0: ECU_UnderVolt|ECU_OverVolt if L3
+          isL3 ? 0x03 : 0,  // byte1: AngleP_OC|AngleP_AF if L3
+          0, 0, 0, 0, 0, 0,
+        ], sender: "epsc",
       });
     }
 
@@ -99,11 +107,21 @@ export class SyntreeEpsc implements SimulatedEcu {
       });
     }
 
-    // 0x6FA SES_Test at 100Hz
+    // 0x6FA SES_Test at 100Hz (telemetry: motor current, ECU temp, voltage)
     if (nowMs % 10 === 0) {
+      // Realistic idle values: motor_current=0A, ecu_temp=25°C, voltage=12V
+      const motorCurrent = 0; // A, scaled: 0 / 0.0078125 = 0
+      const ecuTemp = Math.round(25 / 0.5); // 25°C, scaled: 25/0.5 = 50 = 0x32
+      const powVolt = Math.round(12 / 0.00390625); // 12V, scaled: 12/0.00390625 = 3072 = 0x0C00
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x6FA", name: "SES_Test",
-        dlc: 8, data: [0, 0, 0, 0, 0, 0, 0, 0], sender: "epsc",
+        dlc: 8, data: [
+          0,  // byte 0: reserved
+          0, motorCurrent & 0xFF,  // bytes 1-2: motor_current i16 LE
+          ecuTemp & 0xFF, (ecuTemp >> 8) & 0xFF,  // bytes 3-4: ecu_temp u16 LE
+          powVolt & 0xFF, (powVolt >> 8) & 0xFF,  // bytes 5-6: power_voltage u16 LE
+          0,  // byte 7: reserved
+        ], sender: "epsc",
       });
     }
 

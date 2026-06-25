@@ -115,7 +115,9 @@ export class SysEcu implements SimulatedEcu {
           (stroke16 >> 8) & 0xFF,
           cmd.pressureReq & 0xFF,
           0,
-          (cmd.rollCntEnable ? 0x10 : 0) | (cmd.checksumEnable ? 0x20 : 0) | (cmd.rollingCounter << 4),
+          (cmd.rollCntEnable ? 0x01 : 0)    // bit 0: RollCntEnable (was WRONG at 0x10=bit4)
+          | (cmd.checksumEnable ? 0x02 : 0)   // bit 1: ChecksumEnable (was WRONG at 0x20=bit5)
+          | (cmd.rollingCounter << 4),          // bits 4-7: rolling counter
           0, // checksum placeholder
         ];
         // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
@@ -134,9 +136,10 @@ export class SysEcu implements SimulatedEcu {
     if (nowMs % 200 === 0) {
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x011", name: "SYS_SAFETY_STS",
-        dlc: 2, data: [
+        dlc: 3, data: [
           effectiveEstop ? 1 : 0,
           this.safety.heartbeatOk(nowMs) ? 1 : 0,
+          this.lights & 0x0F,  // v0.0.5: SYS_LightState (low 4 bits)
         ], sender: "sys",
       });
     }

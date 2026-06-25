@@ -82,7 +82,7 @@ export class RtEcu implements SimulatedEcu {
           break;
         }
         case "0x7FC": {
-          // JETSON_HEARTBEAT
+          // HOST_HEARTBEAT
           this.lastHostHbMs = nowMs;
           break;
         }
@@ -144,6 +144,12 @@ export class RtEcu implements SimulatedEcu {
         : this.hostDriveCmd;
 
       const resolved = this.kinematics.resolve(cmd);
+
+      // Feed resolved steering target to steering controller (matching C++ main.cpp line 429)
+      this.steering.setTarget(
+        Math.round(resolved.steerAngleDeg * 1000),  // degrees → millidegrees
+        resolved.motorSpeedMmps,
+      );
 
       // 0x204 RT_DRIVE_CMD on low bus (100 Hz)
       const speed = resolved.motorSpeedMmps;
@@ -252,6 +258,31 @@ export class RtEcu implements SimulatedEcu {
         dlc: 3,
         data: [modeByte, this.kinematics.getDynamicLimit(this.lastSpeedMmps) > 5 ? 1 : 0, 0],
         sender: "rt",
+      });
+
+      // 0x310 STEER_DIAG (10 Hz, high bus, DLC=8)
+      const sesAngle = this.sesAngleRaw !== null ? (this.sesAngleRaw - 3000) / 10 : 0; // raw→deg
+      const steerRaw16 = Math.round((sesAngle + 300) * 10) & 0xFFFF; // deg * 10 with offset for i16
+      out.push({
+        simTimeMs: nowMs, bus: "high", canId: "0x310", name: "STEER_DIAG", dlc: 8, data: [
+          (steerRaw16 >> 8) & 0xFF, steerRaw16 & 0xFF,  // angle 0.1° i16 BE
+          0, // fault=0 (EPS-C ok)
+          0, 0, // motor_current=0 (stub)
+          0, 0, // ecu_temp=0 (stub)
+          0, // reserved
+        ], sender: "rt",
+      });
+
+      // 0x311 BRAKE_DIAG (10 Hz, high bus, DLC=8)
+      const brakePressureRaw = Math.round((this.computeObstacleKpa() / 1000) / 0.05) & 0xFFFF;
+      out.push({
+        simTimeMs: nowMs, bus: "high", canId: "0x311", name: "BRAKE_DIAG", dlc: 8, data: [
+          (brakePressureRaw >> 8) & 0xFF, brakePressureRaw & 0xFF, // pressure raw
+          0, // fault=0 (SEB ok)
+          0, 0, // motor_current=0 (stub)
+          0, 0, // ecu_temp=0 (stub)
+          0, // reserved
+        ], sender: "rt",
       });
     }
 
