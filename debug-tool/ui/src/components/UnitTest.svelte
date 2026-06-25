@@ -95,7 +95,7 @@
       commands: [
         { bus: "high", id: "0x300", label: "Host drive command", intervalMs: 20, defaults: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 } },
         { bus: "high", id: "0x301", label: "Host brake request", intervalMs: 50, defaults: { brake_pressure_kpa: 0 } },
-        { bus: "high", id: "0x7FC", label: "Jetson heartbeat", intervalMs: 500, defaults: { alive_ctr: 1 } }
+        { bus: "high", id: "0x7FC", label: "Host heartbeat", intervalMs: 500, defaults: { alive_ctr: 1 } }
       ],
       feedback: [
         { bus: "high", id: "0x210", label: "RT state" },
@@ -107,7 +107,7 @@
     },
     {
       id: "host",
-      name: "Jetson Host Interface",
+      name: "Host Interface",
       role: "High bus host-side commands: drive, brake, lights, obstacle distance, heartbeat.",
       commands: [
         { bus: "high", id: "0x300", label: "Drive command", intervalMs: 20, defaults: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 } },

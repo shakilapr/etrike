@@ -32,6 +32,7 @@
     <remap from="~/input/hazard_lights_cmd" to="/control/command/hazard_lights_cmd"/>
     <remap from="~/input/control_mode" to="/control/control_mode_request"/>
     <remap from="~/input/emergency_cmd" to="/control/command/emergency_cmd"/>
+    <remap from="~/input/engage" to="/control/command/engage"/>
     <!-- Bridge → Autoware (feedback) -->
     <remap from="~/output/velocity_status" to="/vehicle/status/velocity_status"/>
     <remap from="~/output/steering_status" to="/vehicle/status/steering_status"/>

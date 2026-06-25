@@ -253,9 +253,9 @@ describe("encodePayload", () => {
   });
 
   it("encodes 0x011 safety status (high bus)", () => {
-    const result = encodePayload("high", "0x011", { estop_active: true, heartbeat_ok: false });
-    expect(result.dlc).toBe(2);
-    expect(result.data).toEqual([1, 0]);
+    const result = encodePayload("high", "0x011", { estop_active: true, heartbeat_ok: false, light_left: false, light_right: false, light_brake: false, light_head: false });
+    expect(result.dlc).toBe(3);
+    expect(result.data).toEqual([1, 0, 0]);
   });
 
   it("encodes 0x120 throttle (high bus)", () => {
@@ -352,7 +352,7 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x011 SAFETY_STS", () => {
-    expect(decodeFrame("high", "0x011", [1, 0])).toEqual({ estop_active: true, heartbeat_ok: false });
+    expect(decodeFrame("high", "0x011", [1, 0, 0])).toEqual({ estop_active: true, heartbeat_ok: false, light_left: false, light_right: false, light_brake: false, light_head: false });
   });
 
   it("decodes 0x120 THROTTLE", () => {
@@ -438,7 +438,7 @@ describe("decodeFrame", () => {
 
 describe("round-trip encode→decode", () => {
   const cases: Array<[string, string, Record<string, number | boolean>]> = [
-    ["high", "0x011", { estop_active: true, heartbeat_ok: false }],
+    ["high", "0x011", { estop_active: true, heartbeat_ok: false, light_left: false, light_right: false, light_brake: false, light_head: false }],
     ["high", "0x120", { speed_mmps: 2000 }],
     ["high", "0x206", { actual_speed_mmps: 2000, gear_state: 1, fault_flags: 0 }],
     ["high", "0x210", { mode: 1, steer_valid: true, reversing: false }],
@@ -447,7 +447,7 @@ describe("round-trip encode→decode", () => {
     ["high", "0x302", { left_turn: true, right_turn: false, brake_light: true, headlight: false }],
     ["high", "0x400", { distance_mm: 1500 }],
     ["high", "0x7FC", { alive_ctr: 42 }],
-    ["low", "0x011", { estop_active: false, heartbeat_ok: true }],
+    ["low", "0x011", { estop_active: false, heartbeat_ok: true, light_left: false, light_right: false, light_brake: false, light_head: false }],
     ["low", "0x110", { mode: 2 }],
     ["low", "0x120", { speed_mmps: -500 }],
     ["low", "0x204", { motor_speed_mmps: 2000, gear: 1 }],

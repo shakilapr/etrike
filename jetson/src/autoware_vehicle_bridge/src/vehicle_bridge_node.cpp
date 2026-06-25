@@ -350,6 +350,7 @@ bool CanDecoder::validate_heartbeat(const struct can_frame & frame,
 // =====================================================================
 void HeartbeatMonitor::feed(uint8_t counter, const rclcpp::Time & now)
 {
+  std::lock_guard<std::mutex> lk(mutex_);
   if (counter != counter_) {
     counter_ = counter;
     last_time_ = now;
@@ -358,6 +359,7 @@ void HeartbeatMonitor::feed(uint8_t counter, const rclcpp::Time & now)
 
 bool HeartbeatMonitor::is_alive(const rclcpp::Time & now, int timeout_ms) const
 {
+  std::lock_guard<std::mutex> lk(mutex_);
   if (last_time_.nanoseconds() == 0) return true;  // no data yet
   return (now - last_time_).seconds() * 1000.0 < timeout_ms;
 }
@@ -648,17 +650,7 @@ void VehicleBridgeNode::tick_control()
   if (encoder_->encode_lights(turn.get(), hazard.get(), braking, frame))
     can_->send(frame);
 
-  // Publish turn/hazard status (open-loop echo — no CAN feedback)
-  if (pub_turn_status_->is_activated()) {
-    autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport turn_rpt;
-    turn_rpt.report = turn ? turn->command : autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
-    pub_turn_status_->publish(turn_rpt);
-  }
-  if (pub_hazard_status_->is_activated()) {
-    autoware_auto_vehicle_msgs::msg::HazardLightsReport hazard_rpt;
-    hazard_rpt.report = hazard ? hazard->command : autoware_auto_vehicle_msgs::msg::HazardLightsReport::DISABLE;
-    pub_hazard_status_->publish(hazard_rpt);
-  }
+  // Turn/hazard status published from 0x011 CAN feedback (actual state, not echo)
 }
 
 void VehicleBridgeNode::tick_heartbeat()

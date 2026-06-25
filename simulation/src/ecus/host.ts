@@ -1,5 +1,5 @@
 /**
- * HostEcu — simulated Host (Jetson Orin) (ROS 2 bridge).
+ * HostEcu — simulated Host ECU (ROS 2 bridge).
  *
  * Sends drive commands, brake requests, light commands, obstacle distance,
  * and heartbeat. Follows a configurable drive cycle (sequence of steps).
@@ -9,7 +9,7 @@ import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId, DriveCycleStep } from "../core/types.js";
 
 export class HostEcu implements SimulatedEcu {
-  readonly id = "Host (Jetson Orin)";
+  readonly id = "Host";
   readonly nodeId: SimNodeId = "host";
 
   private driveCycle: DriveCycleStep[] = [];

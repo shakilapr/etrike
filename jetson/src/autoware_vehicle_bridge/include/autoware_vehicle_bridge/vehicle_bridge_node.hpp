@@ -139,16 +139,17 @@ public:
                           const rclcpp::Time & now, int timeout_ms) const;
 };
 
-// ---- Heartbeat monitor ----
+// ---- Heartbeat monitor (thread-safe: accessed from RX and executor threads) ----
 class HeartbeatMonitor
 {
 public:
   void feed(uint8_t counter, const rclcpp::Time & now);
   bool is_alive(const rclcpp::Time & now, int timeout_ms) const;
-  uint8_t counter() const { return counter_; }
-  rclcpp::Time last_time() const { return last_time_; }
+  uint8_t counter() const { std::lock_guard<std::mutex> lk(mutex_); return counter_; }
+  rclcpp::Time last_time() const { std::lock_guard<std::mutex> lk(mutex_); return last_time_; }
 
 private:
+  mutable std::mutex mutex_;
   uint8_t counter_{0};
   rclcpp::Time last_time_{0, 0, RCL_SYSTEM_TIME};
 };

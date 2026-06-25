@@ -24,7 +24,7 @@ interface SimMessage {
 
 const messages: SimMessage[] = [
   // High bus
-  { bus: "high", id: "0x011", name: "SYS_SAFETY_STS", dlc: 2, intervalMs: 200, generator: () => [0, 1] },
+  { bus: "high", id: "0x011", name: "SYS_SAFETY_STS", dlc: 3, intervalMs: 200, generator: () => [0, 1, 0] },
   { bus: "high", id: "0x120", name: "SYS_THROTTLE_STS", dlc: 2, intervalMs: 10, generator: (t) => {
     const speed = Math.round(Math.sin(t * 0.5) * 2000);
     return [(speed >> 8) & 0xff, speed & 0xff];
@@ -34,7 +34,7 @@ const messages: SimMessage[] = [
   { bus: "high", id: "0x7FC", name: "HOST_HEARTBEAT", dlc: 1, intervalMs: 500, generator: (t) => [Math.floor(t) % 256] },
   { bus: "high", id: "0x7FD", name: "RT_HEARTBEAT", dlc: 1, intervalMs: 500, generator: (t) => [Math.floor(t) % 256] },
   // Low bus
-  { bus: "low", id: "0x011", name: "SYS_SAFETY_STS", dlc: 2, intervalMs: 200, generator: () => [0, 1] },
+  { bus: "low", id: "0x011", name: "SYS_SAFETY_STS", dlc: 3, intervalMs: 200, generator: () => [0, 1, 0] },
   { bus: "low", id: "0x120", name: "SYS_THROTTLE_STS", dlc: 2, intervalMs: 10, generator: (t) => {
     const speed = Math.round(Math.cos(t * 0.3) * 1500);
     return [(speed >> 8) & 0xff, speed & 0xff];
