@@ -55,13 +55,14 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 |----------|-------|
 | **Sender** | SYS |
 | **Receiver(s)** | RT (→ Jetson) |
-| **DLC** | 2 |
+| **DLC** | 3 |
 | **Period** | 5 Hz |
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `SYS_EstopActive` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | — |
 | `SYS_HeartbeatOk` | 8 | 8 | u8 | 1 | 0 | 0 | 1 | — | 0 = RT alive counter frozen >1000ms, 1 = alive counter incrementing |
+| `SYS_LightState` | 16 | 4 | u8 bitmask | — | — | — | — | — | bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active |
 
 ---
 
@@ -737,22 +738,22 @@ Layout identical to low-level `0x302`. RT forwards transparently.
 
 ---
 
-### 0x400 — RT_OBSTACLE_RPT
+### 0x400 — HOST_OBSTACLE_DIST
 
 | Property | Value |
 |----------|-------|
-| **Sender** | RT |
-| **Receiver(s)** | Jetson |
+| **Sender** | Host (Jetson) |
+| **Receiver(s)** | RT |
 | **DLC** | 4 |
 | **Period** | 10 Hz |
 
 | Signal | Start bit | Len | Type | Min | Max | Unit |
 |--------|-----------|-----|------|-----|-----|------|
-| `RT_ObstacleDistance` | 0 | 32 | u32 | 0 | 2³²−1 | mm |
+| `HOST_ObstacleDistance` | 0 | 32 | u32 | 0 | 2³²−1 | mm |
 
 UINT32_MAX = no reading / timeout.
 
-RT reports min obstacle distance to Jetson at 10 Hz. Jetson perception (LiDAR/camera) sends distance via internal path to RT, which rebroadcasts on the high bus for logging/monitoring.
+Jetson sends min obstacle distance from perception (LiDAR/camera) to RT at 10 Hz.
 
 ---
 
@@ -805,7 +806,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | ID | Name | Sender | Receiver | DLC | Rate |
 |----|------|--------|----------|-----|------|
 | `0x001` | SAFETY_ESTOP | RT, SYS | All | 0 | Event |
-| `0x011` | SYS_SAFETY_STS | SYS | RT (→Jetson) | 2 | 5 Hz |
+| `0x011` | SYS_SAFETY_STS | SYS | RT (→Jetson) | 3 | 5 Hz |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC | 1 | Change |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | Change |
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→Jetson) | 2 | 100 Hz |
@@ -831,14 +832,14 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | ID | Name | Sender | Receiver | DLC | Rate |
 |----|------|--------|----------|-----|------|
 | `0x001` | SAFETY_ESTOP | Jetson, RT | Jetson, RT | 0 | Event |
-| `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 2 | 5 Hz |
+| `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 3 | 5 Hz |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | 100 Hz |
 | `0x210` | RT_STATE_RPT | RT | Jetson | 3 | 10 Hz |
 | `0x220` | RT_PID_RPT | RT | Jetson | 6 | — (RESERVED, inactive) |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | ≤100 Hz |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | Demand |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→SYS) | 1 | Change |
-| `0x400` | RT_OBSTACLE_RPT | RT | Jetson | 4 | 10 Hz |
+| `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | 10 Hz |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | 2 Hz |
 | `0x7FC` | JETSON_HEARTBEAT | Jetson | RT | 1 | 2 Hz |
@@ -869,7 +870,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 |-----|-----|
 | Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (SYNTREE EPS-C feedback) |
-| High only | `0x210`, `0x220`, `0x400` (RT telemetry) |
+| High only | `0x210`, `0x220`, `0x400` (obstacle distance) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
 
 ---

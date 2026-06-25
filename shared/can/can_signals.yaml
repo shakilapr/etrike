@@ -37,6 +37,7 @@ ecus:
   - {name: DCDC,   comment: "DC-DC converter (72V->12V), CAN 0x012 control"}
   - {name: EPS_C,  comment: "SYNTREE EPS-C, steer-by-wire module, preprogrammed CAN IDs"}
   - {name: SEB,    comment: "SYNTREE SEB, electro-hydraulic brake module, preprogrammed CAN IDs"}
+  - {name: Any,    comment: "Wildcard — any node may send (e.g., ESTOP frames)"}
 
 # =============================================================================
 # Protocols
@@ -55,7 +56,7 @@ protocols:
       - id: 0x001
         name: SAFETY_ESTOP
         dlc: 0
-        sender: RT
+        sender: Any
         receivers: [SYS, Host, MTR, DCDC]
         cycle_ms: 0
         comment: "DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame."
@@ -82,7 +83,7 @@ protocols:
         dlc: 1
         sender: SYS
         receivers: [DCDC]
-        cycle_ms: 100
+        cycle_ms: 0
         comment: "DC-DC converter control. Low bus only."
         signals:
           - {name: SYS_DcdcEnable, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,

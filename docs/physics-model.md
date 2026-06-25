@@ -53,7 +53,7 @@ Current RT configuration uses:
 - `L = 1500 mm`
 - `w = 800 mm`
 - `r_r = 200 mm`
-- steering limit = `45 deg`
+- steering limit = `40 deg`
 - low-speed threshold = `50 mm/s`
 
 ## 3. Base tricycle kinematics

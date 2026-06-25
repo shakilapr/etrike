@@ -30,7 +30,7 @@ All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physic
 |------|---------|----------|---------------|
 | `mm/s` | Millimeters per second | Speed | [-500, 3000] = -0.5 to 3.0 m/s |
 | `mrad/s` | Milliradians per second | Yaw rate | [-3000, 3000] |
-| `kPa` | Kilopascals | Brake pressure | 0–12000 (~12 MPa max) |
+| `kPa` | Kilopascals | Brake pressure | 0–20000 (20 MPa max) |
 | `mm` | Millimeters | Distance | Obstacle: 0–4000 |
 | `0.1°/bit` | Tenths of a degree per LSB | Steering angle | 455 = 45.5° |
 | `0.05 mm/bit` | 0.05 mm per LSB | Brake stroke | -30 mm offset |
@@ -56,7 +56,6 @@ All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physic
 | `0x220` | RT_PID_RPT | `RT_PidSetpoint` | i16 (mm/s) | — | RT (reserved) |
 | `0x220` | RT_PID_RPT | `RT_PidMeasured` | i16 (mm/s) | — | RT (reserved) |
 | `0x220` | RT_PID_RPT | `RT_PidOutput` | i16 | — | RT (reserved) |
-| `0x400` | RT_OBSTACLE_RPT | `RT_ObstacleDistance` | u32 (mm) | — | RT |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagMode` | u8 | — | SYS → RT → Host |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagBrakeEngaged` | u8 bool | 0/1 | SYS → RT → Host |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagHeartbeatOk` | u8 bool | 0/1 | SYS → RT → Host |
@@ -79,6 +78,7 @@ All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physic
 | `0x302` | HOST_LIGHT_CMD | `HOST_RightTurn` | bool | 0/1 | RT |
 | `0x302` | HOST_LIGHT_CMD | `HOST_BrakeLight` | bool | 0/1 | RT |
 | `0x302` | HOST_LIGHT_CMD | `HOST_Headlight` | bool | 0/1 | RT |
+| `0x400` | HOST_OBSTACLE_DIST | `HOST_ObstacleDistance` | u32 (mm) | — | RT |
 | `0x7FC` | JETSON_HEARTBEAT | `alive_ctr` | u8 | — | RT |
 
 ---
@@ -164,7 +164,6 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x220` | RT_PID_RPT | `RT_PidSetpoint` | i16 (mm/s) | — | reserved | Host |
 | `0x220` | RT_PID_RPT | `RT_PidMeasured` | i16 (mm/s) | — | reserved | Host |
 | `0x220` | RT_PID_RPT | `RT_PidOutput` | i16 | — | reserved | Host |
-| `0x400` | RT_OBSTACLE_RPT | `RT_ObstacleDistance` | u32 (mm) | — | 10 Hz | Host |
 | `0x600` | SYS_DIAG_RPT (fwd) | 8-byte diagnostic struct | struct | — | 1 Hz | Host |
 | `0x7FD` | RT_HEARTBEAT | `alive_ctr` | u8 | — | 2 Hz | Host |
 
@@ -235,7 +234,7 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagTec` | u8 | — | 1 Hz | RT → Host |
 | `0x600` | SYS_DIAG_RPT | `SYS_DiagRec` | u8 | — | 1 Hz | RT → Host |
 | `0x7B9` | VCU_SEB_REQ | (see §5.2) | — | — | 50 Hz | SEB (MANUAL/ESTOP only) |
-| `0x7FE` | SYS_HEARTBEAT | `alive_ctr` | u8 | — | 2 Hz | RT |
+| `0x7FE` | SYS_HEARTBEAT | `alive_ctr` | u8 | — | 10 Hz (100 ms) | RT |
 
 ### 3.4 Physical Outputs — SYS
 
