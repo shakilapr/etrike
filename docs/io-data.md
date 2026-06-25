@@ -182,7 +182,7 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 
 ## 3. SYS (ESP32-S3)
 
-Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via CAN), body control (lights, DCDC, mode management), watchdog. Motor actuation is on MTR only — SYS monitors via CAN 0x206 feedback.
+Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via CAN), body control (lights, DCDC, mode management), watchdog. Motor actuation currently runs on SYS as fallback (MCP4725 DAC, throttle ADC, gear relays). Target: MTR STM32 for EGAS Level 1 isolation — see docs/mtr-migration.md. SYS also performs EGAS Level 2 monitoring via CAN 0x206 feedback.
 
 ### 3.1 CAN Inputs — SYS receives
 
@@ -254,7 +254,7 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 
 ## 4. MTR (STM32)
 
-Role: dedicated mo000000000000000000000000000000000000000000000000000000000000tor controller (EGAS Level 1 — Function Controller). Sole owner of all motor-related I/O. Active in all modes — behavior gated by `0x110 SYS_MODE_CMD` from SYS.
+Role: dedicated motor controller (EGAS Level 1 — Function Controller). **Current status:** Task skeleton complete with correct state machines and CAN protocol handling. STM32 HAL driver layer (I2C, ADC, GPIO) is stubbed — migration from SYS pending. See docs/mtr-migration.md. Active in all modes — behavior gated by `0x110 SYS_MODE_CMD` from SYS.
 
 ### 4.0 Mode-Gated Behavior
 

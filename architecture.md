@@ -254,15 +254,17 @@ SYS ────► Low CAN 0x7B9 → SEB (MANUAL/ESTOP only; RT sends in AUTO)
 | DC-DC converter CAN control (`0x012`) | | | ✓ | |
 | Heartbeat monitoring | | ✓ (Jetson high + SYS low) | ✓ (RT, low) | |
 | Mode switch reading | | | ✓ | |
-| Throttle ADC read (0–5V) | | | | ✓ |
-| Throttle MCP4725 DAC output (0–5V) | | | | ✓ |
-| Gear 72V read (TLP281 opto) | | | | ✓ |
-| Gear 72V output (relay module) | | | | ✓ |
-| Motor feedback CAN TX (`0x206`) | | | | ✓ |
+| Throttle ADC read (0–5V) | | | SYS (ESP32-S3), target MTR (STM32)[1] | |
+| Throttle MCP4725 DAC output (0–5V) | | | SYS (ESP32-S3), target MTR (STM32)[1] | |
+| Gear 72V read (TLP281 opto) | | | SYS (ESP32-S3), target MTR (STM32)[1] | |
+| Gear 72V output (relay module) | | | SYS (ESP32-S3), target MTR (STM32)[1] | |
+| Motor feedback CAN TX (`0x206`) | | | SYS (ESP32-S3), target MTR (STM32)[1] | |
 | 12V accessory power relay | | | ✓ | |
 | Mode indicator lights | | | ✓ | |
 | Signal lights (turn, brake, head) | | | ✓ | |
 | System diagnostics | | | ✓ | |
+
+> **[1] Motor I/O note:** Motor actuation (MCP4725 DAC, throttle ADC, gear relays) currently runs on SYS ESP32-S3. The dedicated MTR STM32 board has a complete task skeleton with correct state machines but the STM32 HAL driver layer (I2C, ADC, GPIO) is not yet implemented. Migration to MTR is tracked as architecture gap #5. Until migration is complete, EGAS Level 2 monitoring (SYS comparing 0x204 vs 0x206) provides CAN-level staleness detection but not physical speed verification since no wheel encoder is fitted.
 
 ---
 
@@ -1170,7 +1172,7 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 | 12V relay | 27 | Out | Secondary cut on ESTOP |
 | WDT toggle | **23** | Out | External watchdog IC (TPS3850). Toggled by `safety_task` every 50 ms. |
 
-> **Motor I/O (throttle, gear, MCP4725) is on MTR STM32 only** — see §5.0 for MTR pin assignments.
+> **Motor I/O (throttle, gear, MCP4725) currently runs on SYS ESP32-S3. Migration to MTR STM32 is tracked as architecture gap #5. See §5 responsibility table footnote and docs/mtr-migration.md.**
 
 ### 8.9 Configuration constants
 

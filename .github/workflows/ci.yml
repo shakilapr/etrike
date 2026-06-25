@@ -1,0 +1,62 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  dbc-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install canmatrix pydantic
+      - run: cd shared/can && python generate_all_dbc.py --check
+
+  simulation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: cd simulation && npm ci && npm test
+
+  native-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cd native-test && mkdir -p build && cd build && cmake ..
+      - name: Build
+        run: cd native-test/build && make -j$(nproc)
+      - name: Test
+        run: cd native-test/build && ctest --output-on-failure
+
+  pio-rt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio
+      - run: cd rt-esp32 && pio run
+
+  pio-sys:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio
+      - run: cd sys-esp32 && pio run
+
+  pio-mtr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio
+      - run: cd mtr-stm32 && pio run
