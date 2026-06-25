@@ -606,7 +606,13 @@ void VehicleBridgeNode::tick_control()
 
   auto cmd_age = (now() - last_cmd_time_).seconds() * 1000.0;
   if (cmd_age > params_.command_timeout_ms) {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Command timeout: %.0fms", cmd_age);
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Command timeout: %.0fms — sending zero speed", cmd_age);
+    // Send zero-speed frame so RT's staleness watchdog doesn't need to wait 500ms
+    struct can_frame z;
+    std::memset(&z, 0, sizeof(z));
+    z.can_id = CAN_DRIVE_CMD; z.len = 8;
+    z.data[7] = gear::CAN_N;  // all zeros = speed 0, yaw 0, gear N
+    can_->send(z);
     return;
   }
   if (!engaged_) return;
@@ -733,6 +739,8 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
           odom_y_ += v * std::sin(odom_yaw_) * dt;
 
           autoware_auto_vehicle_msgs::msg::VehicleKinematicState kine;
+          kine.header.stamp = n;
+          kine.header.frame_id = "base_link";
           kine.state.pose.position.x = odom_x_;
           kine.state.pose.position.y = odom_y_;
           // Quaternion from yaw (rotation about Z)

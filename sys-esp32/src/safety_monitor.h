@@ -31,7 +31,7 @@ private:
     // written only by safety_task.  Must be atomic to prevent data races.
     std::atomic<bool> m_estop       {false};
     std::atomic<bool> m_brake_lever {false};
-    int64_t  m_last_hb_us  = 0;
+    std::atomic<int64_t>  m_last_hb_us{0};
     uint8_t  m_last_hb_ctr = 0;
     bool     m_hb_ever_seen = false;
 };
