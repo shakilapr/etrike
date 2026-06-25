@@ -88,7 +88,7 @@ Any node can broadcast `0x001` on either CAN bus to trigger ESTOP. This is the r
 | Property | Value |
 |----------|-------|
 | CAN ID | `0x001` — highest priority on both buses (wins every arbitration) |
-| DLC | 1 (sender-ID byte: 0=SYS, 1=RT, 2=Jetson, 3=MTR) |
+| DLC | 0 (DLC=1 with sender-ID byte is gap #14, not yet implemented) |
 | Senders | Jetson, RT, SYS, MTR |
 | Forwarding | RT transparently forwards between buses (bypasses gateway queue) |
 
@@ -102,7 +102,7 @@ Any node can broadcast `0x001` on either CAN bus to trigger ESTOP. This is the r
 
 ### Layer 3: Heartbeat Timeout — Node Crash Detection
 
-Each MCU sends a 1-byte alive counter on its own CAN ID at 2 Hz. A frozen counter = a frozen node.
+Each MCU sends a 1-byte alive counter on its own CAN ID (SYS at 10 Hz for fast brake-loss detection, RT and Host at 2 Hz). A frozen counter = a frozen node.
 
 | Watcher | Watchee | CAN ID | Bus | Timeout | Action |
 |---------|---------|--------|-----|---------|--------|
