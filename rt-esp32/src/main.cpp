@@ -47,6 +47,8 @@ static std::atomic<int64_t>  g_last_host_hb_us{0};    // 0x7FC Host heartbeat ti
 
 // ── Telemetry atomics (written by control/dispatch, read by tx tasks) ─
 static std::atomic<int16_t>  g_last_cmd_angle_raw{0};   // commanded steering angle in 0.1° (fix #5)
+static std::atomic<int16_t>  g_pid_output_mmps{0};      // shadow PID output for 0x220 telemetry
+static std::atomic<int32_t>  g_last_speed_setpoint_mmps{0}; // latest speed setpoint for 0x220
 static std::atomic<bool>     g_reversing{false};         // reversing flag from resolved setpoint (fix #1)
 static std::atomic<uint16_t> g_ses_motor_current{0};     // 0x6FA motor current raw (bytes 1-2 LE, scale 0.0078125 A/bit)
 static std::atomic<uint16_t> g_ses_ecu_temp{0};          // 0x6FA ECU temperature raw (bytes 3-4 LE, scale 0.5 °C/bit)
@@ -102,7 +104,7 @@ struct DispatchContext {
     bool has_cmd = false;     // set true when 0x300 drive cmd received (fix falsy check)
 };
 
-static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& ctx) {
+static void process_frame(const can::Frame& fr, bool from_high, DispatchContext& ctx) {
     // Frozen counter detection: skip timestamp update if alive counter hasn't changed
     // (prevents stuck CAN controller from masking a hung peer)
     if (fr.id == can::kIdSysHeartbeat) {
@@ -128,7 +130,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     q.mode_from_sys = &ctx.mode_from_sys;
     q.steer_feedback_angle = &ctx.steer_feedback_angle;
     q.steer_angle_status   = &ctx.steer_angle_status;
-    rt::route_frame(fr, is_high, q);
+    rt::route_frame(fr, from_high, q);
 
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
@@ -137,11 +139,11 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         g_ses_angle_status.store(ctx.steer_angle_status);  // alignment bit (gap C2)
         g_ses_error_status.store((fr.data[0] >> 6) & 0x03);  // bits 6-7: error level
     }
-    if (fr.id == can::kIdHostObstacleDist && is_high) { g_obstacle_mm.store(fr.u32_at(0)); }
-    if (fr.id == can::kIdMtrMotorFbk && !is_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
+    if (fr.id == can::kIdHostObstacleDist && from_high) { g_obstacle_mm.store(fr.u32_at(0)); }
+    if (fr.id == can::kIdMtrMotorFbk && !from_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
 
     // 0x202 SES_ErrInfo — L3 fault bits (arch §7.3, fix #3)
-    if (fr.id == can::kIdSyntreeEpsErrInfo && !is_high) {
+    if (fr.id == can::kIdSyntreeEpsErrInfo && !from_high) {
         uint8_t angle_faults  = fr.data[1] & 0x0F;           // bits 8-11: angle sensor P/S O/C+AF
         uint8_t torque_faults = (fr.data[2] >> 2) & 0x0F;    // bits 18-21: torque sensor T1/T2
         if (angle_faults || torque_faults) {
@@ -150,7 +152,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         }
     }
     // 0x203 SES_Version — log SW/HW once (arch §7.3, fix #3)
-    if (fr.id == can::kIdSyntreeEpsVersion && !is_high) {
+    if (fr.id == can::kIdSyntreeEpsVersion && !from_high) {
         static bool ses_version_logged = false;
         if (!ses_version_logged) {
             ESP_LOGI(TAG, "SES_Version: SW=%02X.%02X HW=%02X.%02X",
@@ -159,7 +161,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         }
     }
     // 0x6FA SES_Test — motor current + ECU temp + supply voltage (arch §7.3, fix #3)
-    if (fr.id == can::kIdSyntreeEpsTest && !is_high) {
+    if (fr.id == can::kIdSyntreeEpsTest && !from_high) {
         // Byte layout (Motorola LSB / little-endian):
         //   byte0=reserved, byte1-2=SES_MtrCurt (i16 LE, 0.0078125 A/bit),
         //   byte3-4=SES_ECUTemp (u16 LE, 0.5 °C/bit),
@@ -178,14 +180,14 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
         if (pv_v < 10.0f)  ESP_LOGW(TAG, "SES supply voltage low: %.2f V", pv_v);
     }
     // 0x6FB SEB_Test — motor current + ECU temp (arch §7.3, for 0x311 BRAKE_DIAG)
-    if (fr.id == can::kIdSyntreeSebTest && !is_high) {
+    if (fr.id == can::kIdSyntreeSebTest && !from_high) {
         int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
         uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
         g_seb_motor_current.store(mc_raw);
         g_seb_ecu_temp_c.store(et_raw);
     }
     // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
-    if (fr.id == can::kIdSyntreeSebStatus && !is_high) {
+    if (fr.id == can::kIdSyntreeSebStatus && !from_high) {
         g_seb_pressure_raw.store(fr.data[3]);  // byte 3 = SEB_Pressure_Value (0.05 MPa/bit)
         g_seb_error_status.store((fr.data[0] >> 6) & 0x03);
     }
@@ -204,17 +206,20 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
 [[noreturn]] static void t_dispatch(void*) {
     can::Frame fr;
     while (1) {
-        if (xQueueReceive(g_can_rx_low_q, &fr, 0) != pdTRUE &&
-            xQueueReceive(g_can_rx_high_q, &fr, 0) != pdTRUE) {
+        bool from_high = false;
+        if (xQueueReceive(g_can_rx_low_q, &fr, 0) == pdTRUE) {
+            from_high = false;
+        } else if (xQueueReceive(g_can_rx_high_q, &fr, 0) == pdTRUE) {
+            from_high = true;
+        } else {
+            // Both queues empty — block on low queue (preserves original priority).
+            // Track origin for correct gateway routing (fix: robust detection).
             xQueueReceive(g_can_rx_low_q, &fr, portMAX_DELAY);
+            from_high = false;
         }
 
-        bool is_high = (fr.id == can::kIdHostDriveCmd || fr.id == can::kIdHostBrakeReq
-                     || fr.id == can::kIdHostLightCmd || fr.id == can::kIdHostHeartbeat
-                     || fr.id == can::kIdHostObstacleDist);
-
         DispatchContext ctx{};
-        process_frame(fr, is_high, ctx);
+        process_frame(fr, from_high, ctx);
 
         if (ctx.gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &ctx.gw_lo, 0);
         if (ctx.gw_hi.id)  xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0);
@@ -236,10 +241,10 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
 }
 
 // ── Safety checks (used by t_control) ─────────────────────────────
-struct SafetyResult { bool zero_setpoints; int32_t brake_kpa; bool disable_steering; bool takeover_seb; };
+struct SafetyResult { bool zero_setpoints; int32_t brake_kpa; bool disable_steering; bool takeover_seb; bool obstacle_triggered; };
 static std::atomic<bool> g_seb_takeover{false};  // gap #12: RT→0x7B9 takeover active
 
-static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
+static SafetyResult run_safety_checks(int64_t now, bool startup_grace, uint32_t obstacle_mm) {
     SafetyResult r{};
 
     // 1. ESTOP flag from CAN 0x001 — zero everything, max brake, disable steering (fix H8)
@@ -282,7 +287,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
     // abs(cmd_angle - actual_angle) > threshold (speed-scaled, max(2°, 0.25×dynamic_limit)) for >300ms → ESTOP
     // Only check when not already zeroing or disabled
     // Only check following error when steering is actively commanding (gap C3)
-    if (!r.zero_setpoints && g_steering.state() == rt::SteerState::ACTIVE) {
+    if (!r.zero_setpoints && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
         static int steer_follow_err_ticks = 0;
         int16_t cmd_raw    = g_last_cmd_angle_raw.load();  // 0.1° units
         int16_t actual_raw = g_ses_angle_raw.load();        // 0.1° units from 0x201
@@ -304,6 +309,16 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
                 steer_follow_err_ticks = 0;
             }
         }
+    }
+
+    // 6. Obstacle-triggered ESTOP detection (arch §7.6, gap #9).
+    // Obstacle within stop distance + vehicle moving → hold-then-silent (not ramp-to-zero).
+    // Also mark as obstacle-triggered if following error already set disable_steering and
+    // obstacle is nearby — prevents rollover during emergency cornering brake.
+    if (r.disable_steering
+        && obstacle_mm <= shared::kObstacleStopMM
+        && std::abs(g_mtr_actual_speed_mmps.load()) > shared::kLowSpeedThreshMmps) {
+        r.obstacle_triggered = true;
     }
 
     return r;
@@ -348,7 +363,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         int64_t const now = esp_timer_get_time();
         bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
 
-        SafetyResult sr = run_safety_checks(now, startup_grace);
+        SafetyResult sr = run_safety_checks(now, startup_grace, obs);
         if (sr.zero_setpoints) {
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
@@ -364,13 +379,27 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
         // Steering ESTOP: state machine handles ramp-to-zero (gap C3).
-        // Non-obstacle triggers use ramp; obstacle hold-then-silent reserved for future.
+        // Obstacle-triggered → hold-then-silent (arch §7.6, gap #9).
+        // Non-obstacle triggers → ramp to 0° at 20°/s.
         if (sr.disable_steering) {
-            g_steering.start_estop(false);  // non-obstacle → ramp to 0° at 20°/s
+            g_steering.start_estop(sr.obstacle_triggered);
+            if (sr.obstacle_triggered) {
+                g_steering.set_estop_hold_time(esp_timer_get_time() / 1000);
+            }
         }
 
         g_brake_kpa_to_send.store(bk);  // consumed by can_tx_low → 0x205 at 50 Hz (fix C7)
         xQueueOverwrite(g_setpoint_q, &sp);
+
+        // ── Shadow PID (telemetry only — arch §7.6, gap #5) ───────
+        {
+            int16_t pid_out = 0;
+            g_physics.update_shadow_pid(sp.motor_speed_mmps,
+                                        g_mtr_actual_speed_mmps.load(),
+                                        0.01f, pid_out);
+            g_pid_output_mmps.store(pid_out);
+            g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
+        }
 
         // ── Capture state for telemetry (fix #1, #5) ──────────────
         g_last_cmd_angle_raw.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
@@ -442,19 +471,39 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
             t100 = xTaskGetTickCount();
             if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE) {
                 g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
-                uint8_t gear = (sp.cmd_gear != 0) ? sp.cmd_gear  // CAN override
-                             : (sp.motor_speed_mmps > 0) ? uint8_t(can::Gear::D)
-                             : (sp.motor_speed_mmps < 0) ? uint8_t(can::Gear::R)
-                             : uint8_t(can::Gear::N);
-                can::RtDriveCmd{sp.motor_speed_mmps, gear}.to_frame(fr);
+                // Drive motor lockout: only send 0x204 when steering is ready (arch §7.6).
+                // Block during boot, listen-sync, and fault — send {0,N} instead of silence
+                // so MTR's 200ms staleness check does not false-trigger.
+                auto ss = g_steering.state();
+                bool drive_allowed = (ss == rt::SteerState::STEER_ACTIVE
+                                   || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
+                                   || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT);
+                int32_t speed_out = drive_allowed ? sp.motor_speed_mmps : 0;
+                uint8_t gear_out;
+                if (!drive_allowed) {
+                    gear_out = uint8_t(can::Gear::N);
+                } else if (sp.cmd_gear != 0) {
+                    gear_out = sp.cmd_gear;  // CAN override
+                } else if (sp.motor_speed_mmps > 0) {
+                    gear_out = uint8_t(can::Gear::D);
+                } else if (sp.motor_speed_mmps < 0) {
+                    gear_out = uint8_t(can::Gear::R);
+                } else {
+                    gear_out = uint8_t(can::Gear::N);
+                }
+                can::RtDriveCmd{speed_out, gear_out}.to_frame(fr);
                 drv->send(fr);
             }
         }
         if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
             t50 = xTaskGetTickCount();
-            // 0x205 RT_BRAKE_CMD at 50 Hz (arch §7.4, fix C7)
-            can::RtBrakeCmd{g_brake_kpa_to_send.load()}.to_frame(fr);
-            drv->send(fr);
+            // 0x205 RT_BRAKE_CMD at 50 Hz (arch §7.4, fix C7).
+            // Architecture §2.3: RT→SYS, AUTO only. Suppress in MANUAL — SYS handles brake directly.
+            uint8_t mode_now = g_mode_from_sys.load();
+            if (mode_now != uint8_t(can::Mode::Manual)) {
+                can::RtBrakeCmd{g_brake_kpa_to_send.load()}.to_frame(fr);
+                drv->send(fr);
+            }
             // 0x169 VCU_SES_REQ at 50 Hz — steering state machine gates transmission.
             // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
             // Silent in BOOT_WAIT, LISTEN_SYNC, FAULT, and MANUAL mode.
@@ -468,12 +517,10 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
                     ses.to_frame(fr); drv->send(fr);
                 }
             }
-        }
 
-        // Gap #12: SEB brake takeover — RT sends 0x7B9 at 50Hz on SYS heartbeat loss
-        static uint8_t seb_roll = 0;
-        if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
-            t50 = xTaskGetTickCount();
+            // Gap #12: SEB brake takeover — RT sends 0x7B9 at 50Hz on SYS heartbeat loss.
+            // Must be in same 50Hz block (not a separate timing check — was dead code).
+            static uint8_t seb_roll = 0;
             if (g_seb_takeover.load(std::memory_order_relaxed)) {
                 can::VcuSebReq seb;
                 seb.control_enable = 1;
@@ -484,6 +531,36 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
                 seb.checksum_enable = 1;
                 seb.rolling_counter = seb_roll;
                 seb_roll = (seb_roll + 1) & 0x0F;
+                seb.to_frame(fr); drv->send(fr);
+            }
+
+            // Gap #12 completion: Option D — RT sends 0x7B9 directly in AUTO mode.
+            // Architecture §6.2: 1-hop from kinematics, no cross-node sync needed.
+            // NOTE: SYS MUST gate its own 0x7B9 on mode (stop sending in AUTO).
+            // Uses Pressure Mode for kPa-based braking, Stroke Mode when no brake.
+            // Only active when NOT in SEB takeover (takeover has priority).
+            static uint8_t seb_auto_roll = 0;
+            if (!g_seb_takeover.load(std::memory_order_relaxed)
+                && g_mode_from_sys.load() == uint8_t(can::Mode::Auto)
+                && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
+                int32_t kpa = g_brake_kpa_to_send.load();
+                can::VcuSebReq seb;
+                seb.control_enable = 1;
+                if (kpa > 0) {
+                    // Pressure Mode: kPa → SEB raw (0.05 MPa/bit, 1 kPa = 0.02 raw)
+                    uint8_t pressure_raw = static_cast<uint8_t>(std::min(
+                        static_cast<int32_t>(kpa * 0.02f), int32_t(shared::kSebMaxPressureRaw)));
+                    seb.control_mode = 1;  // Pressure
+                    seb.pressure_req = pressure_raw;
+                    seb.stroke_req   = 600;  // 0mm baseline
+                } else {
+                    seb.control_mode = 0;  // Stroke
+                    seb.stroke_req   = 600; // 0mm: (0+30)/0.05
+                }
+                seb.roll_cnt_enable = 1;
+                seb.checksum_enable = 1;
+                seb.rolling_counter = seb_auto_roll;
+                seb_auto_roll = (seb_auto_roll + 1) & 0x0F;
                 seb.to_frame(fr); drv->send(fr);
             }
         }
@@ -505,7 +582,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4, fix #1)
         can::RtStateRpt rpt;
         rpt.mode        = g_mode_from_sys.load();
-        rpt.steer_valid = (g_steering.state() == rt::SteerState::ACTIVE);
+        rpt.steer_valid = (g_steering.state() == rt::SteerState::STEER_ACTIVE);
         rpt.reversing   = g_reversing.load();
         rpt.to_frame(fr);
         g_can_high.send(fr);
@@ -515,7 +592,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         {
             int16_t angle = g_ses_angle_raw.load();
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
-            int16_t mtr_curr = int16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
+            uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
             can::SteerDiag{angle, fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
             g_can_high.send(fr);
@@ -526,9 +603,19 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         {
             uint16_t seb_pressure = g_seb_pressure_raw.load();
             uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
-            int16_t mtr_curr = int16_t((g_seb_motor_current.load() * 25) / 32);   // ×0.78125
-            int16_t ecu_tmp  = int16_t(g_seb_ecu_temp_c.load() * 5);              // ×5
+            uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ×0.78125
+            uint16_t ecu_tmp  = uint16_t(g_seb_ecu_temp_c.load() * 5);           // ×5
             can::BrakeDiag{seb_pressure, seb_fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
+            g_can_high.send(fr);
+        }
+
+        // 0x220 RT_PID_RPT — 10 Hz (shadow PID telemetry, arch §7.6, gap #5)
+        {
+            int16_t setpoint = static_cast<int16_t>(std::clamp(
+                g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
+            int16_t measured = g_mtr_actual_speed_mmps.load();
+            int16_t pid      = g_pid_output_mmps.load();
+            can::RtPidRpt{setpoint, measured, pid}.to_frame(fr);
             g_can_high.send(fr);
         }
 

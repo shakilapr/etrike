@@ -22,10 +22,10 @@ static void boot_to_active(SteeringControl& sc, uint32_t& now_ms, int16_t sync_a
     for (int i = 0; i < 25; ++i) {
         sc.tick(INT16_MIN, 0, now_ms += 20, out);
     }
-    CHECK(sc.state() == SteerState::LISTEN_SYNC);
+    CHECK(sc.state() == SteerState::STEER_LISTEN_SYNC);
     // Provide valid 0x201 data to sync
     sc.tick(sync_angle, 1, now_ms += 20, out);  // angle_status=1 (aligned)
-    CHECK(sc.state() == SteerState::ACTIVE);
+    CHECK(sc.state() == SteerState::STEER_ACTIVE);
 }
 
 int main(){
@@ -54,12 +54,13 @@ int main(){
         sc.set_estop_hold_time(now_ms);
         sc.tick(0, 1, now_ms += 20, out);
 
-        // The commanded angle should be at most ~5° (50 in 0.1° units / raw)
-        // At 25 km/h: limit = 5°, raw = 50 in 0.1° units
+        // The commanded angle should be at most ~5° (50 in 0.1° units offset-free)
+        // At 25 km/h: limit = 5°, offset-free raw = 50 in 0.1° units
         int16_t cmd_angle = out.target_angle;
-        CHECK(std::abs(cmd_angle) <= 60);  // ~6° max (slight margin)
+        int16_t cmd_offset_free = cmd_angle - rt::kSyntreeAngleOffset;  // strip SYNTREE offset
+        CHECK(std::abs(cmd_offset_free) <= 60);  // ~6° max (slight margin)
         printf("  Obstacle ESTOP hold angle = %.1f deg (clamped from 30.0, limit ~5.0)\n",
-               cmd_angle / 10.0);
+               cmd_offset_free / 10.0);
     }
 
     // ── Test 2: Obstacle ESTOP — angle within limit is preserved ─────
@@ -95,8 +96,9 @@ int main(){
         can::VcuSesReq out;
         sc.tick(300, 1, now_ms, out);  // actual=30.0°, cmd should decrease
         int16_t first_step = out.target_angle;
-        CHECK(first_step < 300);  // should have stepped toward zero
-        printf("  Ramp started: 30.0° → %.1f° (step ~2°/tick)\n", first_step / 10.0);
+        int16_t first_step_offset_free = first_step - rt::kSyntreeAngleOffset;  // strip SYNTREE offset
+        CHECK(first_step_offset_free < 300);  // should have stepped toward zero
+        printf("  Ramp started: 30.0° → %.1f° (step ~2°/tick)\n", first_step_offset_free / 10.0);
     }
 
     // ── Test 4: Ramp following-error fallback (>5° for >1s) ──────────
@@ -119,13 +121,13 @@ int main(){
             // Actual angle stays at 30° (stuck linkage), cmd ramps down
             int16_t actual = 300;  // stuck at 30°
             sc.tick(actual, 1, now_ms, out);
-            if (sc.state() == SteerState::FAULT) {
+            if (sc.state() == SteerState::STEER_FAULT) {
                 faulted = true;
                 break;
             }
         }
         CHECK(faulted);
-        CHECK(sc.state() == SteerState::FAULT);
+        CHECK(sc.state() == SteerState::STEER_FAULT);
         printf("  Mechanical jam detected → FAULT after ~1s of >5° error\n");
     }
 
@@ -146,7 +148,7 @@ int main(){
             if (cmd > 4) cmd -= 4; else cmd = 0;
             int16_t actual = cmd + 10;  // 1° tracking error (< 5° threshold)
             sc.tick(actual, 1, now_ms, out);
-            if (sc.state() == SteerState::FAULT) {
+            if (sc.state() == SteerState::STEER_FAULT) {
                 faulted = true;
                 break;
             }
@@ -176,10 +178,10 @@ int main(){
         // Hold phase: transmit for 500ms
         for (int i = 0; i < 26; ++i, now_ms += 20) {  // 26 ticks ≈ 520ms at 50Hz
             sc.tick(0, 1, now_ms, out);
-            if (sc.state() == SteerState::FAULT) break;
+            if (sc.state() == SteerState::STEER_FAULT) break;
         }
         // After 500ms hold, should transition to FAULT (silent-stop)
-        CHECK(sc.state() == SteerState::FAULT);
+        CHECK(sc.state() == SteerState::STEER_FAULT);
         printf("  Hold 500ms → FAULT (silent-stop)\n");
     }
 
@@ -196,7 +198,7 @@ int main(){
         CHECK(sc.state() == SteerState::ESTOP_RAMP_TO_ZERO);
 
         sc.exit_estop();
-        CHECK(sc.state() == SteerState::ACTIVE);
+        CHECK(sc.state() == SteerState::STEER_ACTIVE);
         printf("  ESTOP_RAMP_TO_ZERO → exit_estop() → ACTIVE\n");
     }
 
@@ -211,15 +213,15 @@ int main(){
         can::VcuSesReq dummy;
         for (int i = 0; i < 25; ++i)
             sc.tick(INT16_MIN, 0, now_ms += 20, dummy);
-        CHECK(sc.state() == SteerState::LISTEN_SYNC);
+        CHECK(sc.state() == SteerState::STEER_LISTEN_SYNC);
         // Wait >5s with no valid data → FAULT
         now_ms += 5001;
         sc.tick(INT16_MIN, 0, now_ms, dummy);
-        CHECK(sc.state() == SteerState::FAULT);
+        CHECK(sc.state() == SteerState::STEER_FAULT);
 
         // START button short-press → reset to LISTEN_SYNC
         sc.reset_to_listen(now_ms);
-        CHECK(sc.state() == SteerState::LISTEN_SYNC);
+        CHECK(sc.state() == SteerState::STEER_LISTEN_SYNC);
         printf("  FAULT → reset_to_listen() → LISTEN_SYNC\n");
     }
 

@@ -23,6 +23,25 @@ struct ResolvedSetpoint {
     uint8_t cmd_gear          = 0;   // CAN gear override (0=none, 1=D, 2=S, 3=R)
 };
 
+// ── PID speed controller (shadow — telemetry only until encoders fitted) ─
+
+struct PidController {
+    float kp = 1.0f;
+    float ki = 0.1f;
+    float kd = 0.05f;
+    float integral = 0.0f;
+    float prev_error = 0.0f;
+    float output_min = -1.0f;   // fraction of full scale
+    float output_max =  1.0f;
+
+    // Standard PID update with anti-windup clamping.
+    // setpoint, measured in mm/s. dt in seconds.
+    // Returns effort correction (fraction of full-scale, -1..+1).
+    float update(float setpoint, float measured, float dt);
+
+    void reset();
+};
+
 // ── Kinematics model ───────────────────────────────────────────────
 
 class PhysicsModel {
@@ -35,8 +54,14 @@ public:
     // to full speed at clear-dist.
     static int32_t obstacle_limit(int32_t target_mmps, unsigned obstacle_mm);
 
+    // Shadow PID — runs in t_control at 100 Hz for telemetry (0x220 RT_PID_RPT).
+    // Only runs when measured speed is non-zero (guard against no-encoder condition).
+    void update_shadow_pid(int32_t desired_mmps, int32_t measured_mmps, float dt,
+                           int16_t& pid_output_mmps);
+
 private:
-    float m_steer_hold_rad = 0.0f;   // last valid steer for decay
+    float   m_steer_hold_rad = 0.0f;   // last valid steer for decay
+    PidController m_speed_pid;          // shadow PID controller
 };
 
 // Dynamic angle clamp: limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0].

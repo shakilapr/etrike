@@ -31,8 +31,8 @@ Eight logical sub-harnesses interconnect at three junction points. Each can be b
 JP1 — Center Power Bay (mid-chassis, under seat/enclosure)
   ├── 72 V battery input (Anderson SB50)
   ├── DC-DC converter (72 V → 12 V)
-  ├── Blue Sea 5025 ATO fuse block (12-circuit)
-  ├── Blue Sea 2306 ground bus bar (M6 studs)
+  ├── 12-circuit ATO/ATC fuse block
+  ├── M6 ground bus bar (nickel-plated brass, ≥6 studs)
   ├── Chassis bond point (M6 bolt to frame rail)
   ├── CAN low bus termination (120 Ω at farthest end: DC-DC or JP1)
   └── Stub connections to H4, H5, H6, H7
@@ -143,23 +143,22 @@ The harness wires **both** paths to the motor controller. In AUTO mode, MTR driv
 | 4 | 39-01-2040 | 22-23-2041 | 44476-1111 |
 | 6 | 39-01-2060 | 22-23-2061 | 44476-1111 |
 
-### 2.5 Other Connectors
+### 2.5 Other Hardware
 
-| Use | Part Number | Notes |
-|-----|------------|-------|
+| Use | Specification | Notes |
+|-----|--------------|-------|
 | Battery disconnect | Anderson SB50 (gray housing) + SB50G boot | 6 AWG contacts |
-| ATO fuse block | Blue Sea Systems 5025 | 12 circuits, #10-32 input stud |
-| Fuse block cover | Blue Sea Systems 5026 | Clear insulating cover |
-| Ground bus bar | Blue Sea Systems 2306 | 6 × M6 stud, nickel-plated brass |
-| ANL fuse holder | Blue Sea Systems 5006 | 60 A main fuse |
-| MEGA fuse holder (inline) | Blue Sea Systems 5105 | 15 A DC-DC input |
+| ATO fuse block | 12-circuit ATO/ATC, #10-32 input stud | Common automotive |
+| Ground bus bar | M6 studs, nickel-plated brass, ≥6 position | Insulated standoff mount |
+| ANL fuse holder | ANL format, 60 A rating | Main traction fuse |
+| MEGA fuse holder (inline) | MEGA format, waterproof | DC-DC input |
 | 3AG inline sealed holder | Littelfuse FHAC0001ZXJ | Per gear line 1 A fuse |
-| Chassis bond bolt | M6 × 20 mm stainless steel, serrated washer | Green/yellow 6 AWG ring terminal |
-| Cable ties | Panduit PLT1.5M-M0 | 100 mm, UV-resistant nylon |
-| Adhesive tie mounts | Panduit ABM100-A-C | 25 × 25 mm, for frame rails |
-| P-clips | Heyco 0100 series | For 10–25 mm bundle diameters |
-| Grommets (panel) | Heyco 3180/3200/3220/3230 | Per panel thickness |
-| Heat-shrink labels | Brady B-642 (BMP21 printer) | White-on-black, 6.4 mm |
+| Chassis bond bolt | M6 × 20 mm stainless, serrated washer | Green/yellow 6 AWG ring terminal |
+| Cable ties | 100 mm, UV-resistant nylon | For bundle management |
+| Adhesive cable tie mounts | 25 × 25 mm | For flat surfaces on frame |
+| P-clips | Rubber-lined, for 10–25 mm bundles | Frame rail attachment every 300 mm |
+| Grommets (panel) | Rubber, sized to panel thickness | All chassis pass-throughs |
+| Heat-shrink labels | White-on-black, 6.4 mm diameter | Wire identification, both ends |
 
 ---
 
@@ -317,8 +316,8 @@ The DC-DC protocol specification references J1939 extended CAN at **250 kbps**, 
 
 | ID | Type | Rating | Holder | Protects |
 |----|------|--------|--------|----------|
-| F1 | ANL | 60 A | Blue Sea 5006 | Main traction (motor + DC-DC total) |
-| F2 | MEGA | 15 A | Blue Sea 5105 (inline) | DC-DC converter 72 V input |
+| F1 | ANL | 60 A | ANL fuse holder | Main traction (motor + DC-DC total) |
+| F2 | MEGA | 15 A | Inline MEGA holder (waterproof) | DC-DC converter 72 V input |
 | F3–F8 | 3AG fast-blow | 1 A | FHAC0001ZXJ (×6 inline sealed) | Each gear output line (D/S/R ×2 paths) |
 
 ### 5.2 12 V Distribution (ATO Fuse Block)
@@ -326,7 +325,7 @@ The DC-DC protocol specification references J1939 extended CAN at **250 kbps**, 
 ```
 DC-DC Output (12 V, 8 AWG red)
   │
-  └── Blue Sea 5025 (12-circuit ATO/ATC)
+  └── 12-circuit ATO/ATC fuse block
        │
        ├── [ATO 40 A] ── 12 V Main Bus (8 AWG → junction distribution)
        ├── [ATO 30 A] ── EPS-C (12 AWG, H5)        + PTC RUEF300-2
@@ -382,8 +381,8 @@ ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → acces
 
 ```
                  ┌─────────────────────────────────┐
-                 │  Ground Bus Bar (M6 ×6 studs)    │
-                 │  Blue Sea 2306                    │
+                 │  Ground Bus Bar (M6 studs, ≥6 pos) │
+                 │  Nickel-plated brass              │
                  │  JP1 — Center Power Bay           │
                  │  Mounted on insulated standoffs   │
                  └──────────┬───────────────────────┘
@@ -523,13 +522,13 @@ Already specified in `docs/high-voltage-isolation.md`. Confirmed for harness:
 
 | Harness | Sleeve Type | Diameter | Color |
 |---------|------------|----------|-------|
-| H1 Dashboard | Braided PET (Techflex F6N0.75BK) | 19 mm | Black |
+| H1 Dashboard | Braided PET sleeve | 19 mm | Black |
 | H2 Power (72 V) | Split loom, UV-resistant | 25 mm | Orange |
 | H2 Power (12 V) | Split loom | 19 mm | Black |
-| H3 CAN Backbone | Braided PET (Techflex F6N0.50BK) | 12 mm | Black |
-| H4 MTR/Sensor | Braided PET | 19 mm | Black |
-| H5 Steering | Braided PET | 16 mm | Black |
-| H6 Brake | Braided PET | 16 mm | Black |
+| H3 CAN Backbone | Braided PET sleeve | 12 mm | Black |
+| H4 MTR/Sensor | Braided PET sleeve | 19 mm | Black |
+| H5 Steering | Braided PET sleeve | 16 mm | Black |
+| H6 Brake | Braided PET sleeve | 16 mm | Black |
 | H7 Lighting | Split loom | 12 mm | Black |
 | H8 Ground | Split loom | 10 mm | Black |
 
@@ -554,20 +553,20 @@ Left Frame Rail:                    Right Frame Rail:
 
 ### 8.4 Grommets & Pass-Throughs
 
-Every chassis pass-through requires a rubber grommet:
+Every chassis pass-through requires a rubber grommet sized to the panel thickness:
 
-| Location | Heyco Part | Panel Thickness |
-|----------|-----------|-----------------|
-| Center enclosure (all cables) | 3180 | 1.2 mm |
-| Rear bulkhead (H4, H7) | 3200 | 1.0 mm |
-| Steering column (H5) | 3230 | 1.5 mm |
-| Brake module bracket (H6) | 3220 | 1.0 mm |
+| Location | Panel Thickness | Bundle Diameter |
+|----------|----------------|-----------------|
+| Center enclosure (all cables) | 1.2 mm | 25 mm |
+| Rear bulkhead (H4, H7) | 1.0 mm | 19 mm |
+| Steering column (H5) | 1.5 mm | 16 mm |
+| Brake module bracket (H6) | 1.0 mm | 16 mm |
 
 ### 8.5 Strain Relief & Service Loops
 
 - Every connector with >150 mm unsupported wire: cable tie anchor within 50 mm of connector backshell
-- Adhesive-backed mounts: Panduit ABM100-A-C (on flat surfaces), screw-down on frame rails
-- Main trunk secured every 300 mm with P-clips (Heyco 0100 series)
+- Adhesive-backed mounts on flat surfaces; screw-down P-clips on frame rails
+- Main trunk secured every 300 mm with rubber-lined P-clips
 - 150 mm service loop at every connector (200 mm inside enclosures, 300 mm at battery)
 - Coil excess and zip-tie to nearest frame point
 
@@ -582,7 +581,7 @@ Examples:
 - `H1-J4-2` = Dashboard, ESTOP connector J4, pin 2
 - `H4-J18-3` = MTR harness, encoder connector J18, pin 3 (ChA)
 
-Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 6.4 mm diameter).
+Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 
 ---
 
@@ -614,8 +613,8 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | SMCJ90CA TVS | 3 | Littelfuse | SYS gear line TVS (72 V) |
 | 3AG 1A fuse + FHAC0001ZXJ | 3 | Littelfuse | SYS gear output fuses |
 | SMCJ18A TVS | 1 | Littelfuse | Bulb power protection |
-| Braided PET sleeve, 19 mm | 1.5 m | Techflex F6N0.75BK | Harness wrap |
-| Heat-shrink labels | 30 | Brady B-642 | Wire markers |
+| Braided PET sleeve, 19 mm | 1.5 m | — | Harness wrap |
+| Heat-shrink labels | 30 | — | Wire markers, both ends |
 
 ### H2 — Power Distribution (0.8 m)
 
@@ -627,21 +626,20 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | Wire, 8 AWG red (GXL) | 1.5 m | GXL-8-RED | DC-DC → fuse block |
 | Wire, 8 AWG black (GXL) | 1.5 m | GXL-8-BLK | DC-DC 12 V return |
 | Anderson SB50 + SB50G boot | 1 pair | Anderson | Battery disconnect |
-| Blue Sea 5006 ANL fuse holder | 1 | — | Main 60 A fuse |
-| Blue Sea 5105 MEGA inline holder | 1 | — | DC-DC 15 A fuse |
-| Blue Sea 5025 ATO fuse block | 1 | 12-circuit | 12 V distribution |
-| Blue Sea 5026 cover | 1 | — | Fuse block cover |
-| Blue Sea 2306 ground bus | 1 | 6-stud | Ground star point |
-| ANL 60 A fuse | 1 | ANL-60 | Main traction |
-| MEGA 15 A fuse | 1 | MEGA-15 | DC-DC input |
+| ANL fuse holder | 1 | — | Main 60 A fuse |
+| MEGA inline fuse holder | 1 | — | DC-DC 15 A fuse, waterproof |
+| 12-circuit ATO/ATC fuse block | 1 | — | #10-32 input stud |
+| M6 ground bus bar, ≥6 stud | 1 | — | Nickel-plated brass, insulated standoffs |
+| ANL 60 A fuse | 1 | — | Main traction |
+| MEGA 15 A fuse | 1 | — | DC-DC input |
 | ATO fuses (40,30,25,5,3×3,15,2 A) | 10 | Assorted | Per branch |
 | DT04-2P + contacts | 1 | Deutsch | DC-DC 72 V input J7 |
 | DTP04-2P + contacts | 1 | Deutsch DTP | DC-DC 12 V output J8 |
 | DT04-6P + contacts | 1 | Deutsch | 12 V distribution output J9 |
 | Split loom, 25 mm orange | 1 m | — | 72 V conduit |
 | Split loom, 19 mm black | 1 m | — | 12 V conduit |
-| M6 ring terminals (6 AWG) | 4 | AMP 53325-1 | Ground & power terminations |
-| Heat-shrink labels | 20 | Brady B-642 | — |
+| M6 ring terminals (6 AWG) | 4 | — | Ground & power terminations |
+| Heat-shrink labels | 20 | — | Wire markers, both ends |
 
 ### H3 — CAN Backbone (2.5 m trunk + 6 × 0.3 m drops)
 
@@ -656,8 +654,8 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | 120 Ω 1/4W 1% resistor | 2 | RNMF14FTD120R | Termination (×2 buses) |
 | NUP2105L + ACT45B-510-2P | 8 sets | CAN protection | One per node |
 | FR4 pigtail boards | 8 | Custom (15×10 mm) | Solder CMC + TVS |
-| Braided PET sleeve, 12 mm | 3 m | Techflex F6N0.50BK | Trunk wrap |
-| Heat-shrink labels | 30 | Brady B-642 | — |
+| Braided PET sleeve, 12 mm | 3 m | — | Trunk wrap |
+| Heat-shrink labels | 30 | — | Wire markers, both ends |
 
 ### H4 — MTR / Sensor (1.5 m, Rear Motor Area)
 
@@ -687,7 +685,7 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | SMBJ5.0A TVS | 1 | Littelfuse | MTR throttle ADC protection |
 | PESD5V0S2UT TVS | 1 | Nexperia | Rear motor encoder protection |
 | NUP2105L + ACT45B-510-2P | 1 set | CAN protection | MTR CAN node |
-| Braided PET sleeve, 19 mm | 2 m | Techflex | Harness wrap |
+| Braided PET sleeve, 19 mm | 2 m | — | Harness wrap |
 
 ### H5 — Steering / Front (1.0 m)
 
@@ -703,7 +701,7 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | RUEF300-2 PTC | 1 | Littelfuse | EPS-C overcurrent protection |
 | PESD5V0S2UT TVS | 1 | Nexperia | Front encoder protection |
 | NUP2105L + ACT45B-510-2P | 1 set | CAN protection | EPS-C CAN node |
-| Braided PET sleeve, 16 mm | 1.5 m | Techflex | Harness wrap |
+| Braided PET sleeve, 16 mm | 1.5 m | — | Harness wrap |
 
 ### H6 — Brake Module (1.0 m)
 
@@ -716,7 +714,7 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | DT04-4P + 0462-201-2031 | 1 | Deutsch | SEB CAN J23b |
 | RUEF250-2 PTC | 1 | Littelfuse | SEB overcurrent protection |
 | NUP2105L + ACT45B-510-2P | 1 set | CAN protection | SEB CAN node |
-| Braided PET sleeve, 16 mm | 1.5 m | Techflex | Harness wrap |
+| Braided PET sleeve, 16 mm | 1.5 m | — | Harness wrap |
 
 ### H7 — Lighting Rear (2.0 m)
 
@@ -728,7 +726,7 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | Wire, 16 AWG red/white | 2 m | GXL-16-RED/WHT | Brake light (always-on rail) |
 | DT04-2P + 0462-201-16141 | 3 | Deutsch | Lamp connectors J24 (left turn), J25 (right turn), J26 (brake) |
 | SMCJ18A TVS | 3 | Littelfuse | Per-lamp transient protection |
-| Split loom, 12 mm | 2.5 m | WL-12 | Harness wrap |
+| Split loom, 12 mm | 2.5 m | — | Harness wrap |
 
 ### H8 — Chassis Ground (2.0 m Total)
 
@@ -737,8 +735,8 @@ Use Brady BMP21-PLUS label maker with B-642 heat-shrink tubing (white-on-black, 
 | Wire, 6 AWG green/yellow (SXL) | 1 m | SXL-6-GRN/YEL | Ground bus → chassis bolt |
 | Wire, 6 AWG black (SXL) | 1 m | SXL-6-BLK | 72 V ground bus link |
 | M6 stainless bolt + nut + serrated washer | 1 set | — | Chassis bond point |
-| M6 ring terminals (6 AWG) | 4 | AMP 53325-1 | Ground cable terminations |
-| Split loom, 10 mm | 2 m | WL-10 | Individual ground wire protection |
+| M6 ring terminals (6 AWG) | 4 | — | Ground cable terminations |
+| Split loom, 10 mm | 2 m | — | Individual ground wire protection |
 
 ---
 
@@ -863,11 +861,11 @@ Per SAE J1128. Power distribution column assumes 30% bundle derating.
 | TE 1490200-1 open-barrel crimper | Superseal contacts |
 | Automotive ratcheting wire stripper (6–24 AWG) | All wire preparation |
 | Heat gun with shrink nozzle | Heat-shrink labels + adhesive-lined tubing |
-| Digital multimeter (Fluke 87V or equiv.) | Continuity, resistance, voltage |
+| Digital multimeter | Continuity, resistance, voltage |
 | Megohmmeter / insulation tester (1000 V) | 72 V isolation verification |
-| CAN bus interface (PCAN-USB or Kvaser) | CAN traffic validation |
-| Brady BMP21-PLUS label maker | Wire identification labels |
-| Cable tie tension gun (Panduit GS4B) | Consistent tie tension |
+| CAN bus interface (PCAN-USB or similar) | CAN traffic validation |
+| Industrial heat-shrink label maker | Wire identification labels |
+| Cable tie tension gun | Consistent tie tension |
 | Soldering iron (temperature-controlled) | CMC/TVS pigtail boards, termination resistors |
 | M6 torque wrench | Ground bus and Anderson connector terminals |
 | Wire ferrule crimper | Ferrule termination for screw terminals |
