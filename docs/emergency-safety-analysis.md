@@ -360,7 +360,7 @@ If SEB is verified to **hold pressure on CAN timeout**, the current design is ac
 | Issue | Severity | Probability | Fix complexity | Recommended action |
 |-------|----------|-------------|----------------|--------------------|
 | **1. ESTOP exit race** | High | Medium | Low (software only, RT-local) | Defer mode transition until ramp complete |
-| **2. SEB brake lever contradiction** | High | Low | Low (software only, SYS-local) | Replace BRAKE_FAULT with BRAKE_DEGRADED |
+| **2. SEB brake lever contradiction** | High | Low | Low (software only, SYS-local) | **Implemented** — BRAKE_DEGRADED state added to architecture §8.6. |
 | **3. Watchdog unbraked window** | High | Low (if SEB holds) / High (if SEB releases) | Medium (hardware) | **Test SEB comm-fault behavior first.** If release: add NC brake relay on WDT RST line. |
 
 **Issue 1 and 2 are software-only fixes** that can be implemented immediately in the RT and SYS firmware respectively. **Issue 3 requires empirical testing** of SEB behavior before the fix path is known — and may require a hardware change.
