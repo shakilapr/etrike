@@ -16,7 +16,7 @@ export class SyntreeSeb implements SimulatedEcu {
   private aligned = true;
   private lastCmdMs = -Infinity;
   private errorStatus = 0;
-  private swVersion = 0x64;
+  private swVersion = 0xC8;  // v2.00 per manufacturer CSV Init value
   private hwVersion = 0x0D;
 
   /** Set actual brake stroke from plant (in mm, 0–27). */

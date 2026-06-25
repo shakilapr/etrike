@@ -617,8 +617,8 @@ protocols:
              factor: 0.0078125, offset: 0, min: -255, max: 255, unit: A,
              comment: "Motor current. Monitor for mechanical binding."}
           - {name: SEB_ECUTemp,  byte: 3, bit_offset: 0, size: 16,
-             factor: 0.5, offset: 0, min: -40, max: 215, unit: degC,
-             comment: "ECU temperature. For over-temperature early warning."}
+             factor: 0.5, offset: -40, min: -40, max: 215, unit: degC,
+             comment: "ECU temperature. Offset=-40 per manufacturer CSV physical range (raw 0 = -40 degC)."}
           - {name: SEB_PowVolt,  byte: 5, bit_offset: 0, size: 16,
              factor: 0.00390625, offset: 0, min: 0, max: 32, unit: V,
              comment: "Supply voltage. 0-32V range."}
