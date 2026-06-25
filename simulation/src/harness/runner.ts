@@ -42,6 +42,7 @@ export class SimulationRunner {
   private lastCmdSteerDeg = 0;
   private lastCmdBrakeMm = 0;
   private estopLatched = false;  // ESTOP latches until simulation reset
+  capturedFrames: SimFrame[] = [];    // test hook: full frame log
   private config: SimConfig = {
     tickMs: 1, speed: 0, initialMode: "manual",
     plant: { wheelbaseMm: 1500, maxSpeedMmps: 3000, maxSteeringDeg: 40, steerLagMs: 50, brakeDecelMmps2PerMm: 2000 },
@@ -85,7 +86,7 @@ export class SimulationRunner {
     this.lastCmdSteerDeg = 0;
     this.lastCmdBrakeMm = 0;
     this.estopLatched = false;
-
+    this.capturedFrames = [];
     for (const ecu of this.ecus) {
       ecu.init();
     }
@@ -154,6 +155,7 @@ export class SimulationRunner {
     }
 
     this.allFrames.push(...allTx);
+    this.capturedFrames.push(...allTx);  // test hook
 
     // ── Advance physical plant ─────────────────────────────────
     // Feed actual state back to ECUs

@@ -71,7 +71,8 @@ export class SysEcu implements SimulatedEcu {
         }
         case "0x206": {
           // MTR_MOTOR_FBK — for EGAS L2
-          this.actualSpeedMmps = (f.data[0] << 8 | f.data[1]) >> 0; // i16 BE
+          // i16 BE with sign extension: shift to bit 31 then arithmetic shift right
+          this.actualSpeedMmps = (f.data[0] << 24 | f.data[1] << 16) >> 16;
           break;
         }
         case "0x721": {
@@ -112,8 +113,9 @@ export class SysEcu implements SimulatedEcu {
           ((cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1) | (cmd.controlMode << 2)),
           0,
           stroke16 & 0xFF,
-          (stroke16 >> 8) & 0xFF,
-          cmd.pressureReq & 0xFF,
+          // Byte 3: Stroke mode → stroke high byte; Pressure mode → pressure_req
+          cmd.controlMode === 1 ? (cmd.pressureReq & 0xFF) : ((stroke16 >> 8) & 0xFF),
+          cmd.controlMode === 1 ? 0 : (cmd.pressureReq & 0xFF),
           0,
           (cmd.rollCntEnable ? 0x01 : 0)    // bit 0: RollCntEnable (was WRONG at 0x10=bit4)
           | (cmd.checksumEnable ? 0x02 : 0)   // bit 1: ChecksumEnable (was WRONG at 0x20=bit5)
