@@ -61,6 +61,18 @@ static std::atomic<bool>     g_rt_hb_received{false};
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
 
+// Gap #14: Rate-limit 0x001 ESTOP broadcasts. Prevents flooding.
+static std::atomic<int64_t>  g_last_estop_sent_us{0};
+
+static bool can_send_estop() {
+    constexpr int64_t kMinIntervalUs = 250'000;  // 250ms between broadcasts
+    int64_t now = esp_timer_get_time();
+    int64_t last = g_last_estop_sent_us.load(std::memory_order_relaxed);
+    if (now - last < kMinIntervalUs) return false;
+    g_last_estop_sent_us.store(now, std::memory_order_relaxed);
+    return true;
+}
+
 // ── Motor feedback from 0x206 MTR_MOTOR_FBK ─────────────────────────
 static std::atomic<int16_t>  g_actual_speed_mmps{0};
 static std::atomic<uint8_t>  g_actual_gear_state{0};
@@ -123,6 +135,19 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
             g_actual_gear_state.store(fbk.gear_state, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
+
+            // Gap #15: Check if MTR has triggered local ESTOP (ESTOP_ACTIVE bit).
+            // MTR sets this bit when its ESTOP GPIO or CAN 0x001 is detected.
+            // If SYS missed the ESTOP frame, this provides a redundant path.
+            if ((fbk.fault_flags & shared::kMtrFaultEstopActive)
+                && g_mode_mgr.mode() != can::Mode::Estop) {
+                ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
+                g_mode_mgr.force_estop();
+                if (can_send_estop()) {
+                    can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                    g_can.send(ef);
+                }
+            }
             break;
         }
         case can::kIdHostLightCmd:   // 0x302
@@ -196,8 +221,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             if (l3_found) {
                 g_mode_mgr.force_estop();
-                can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                g_can.send(ef);
+                if (can_send_estop()) {
+                    can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                    g_can.send(ef);
+                }
                 ESP_LOGW(TAG, "ESTOP triggered by SEB 0x731 L3 fault(s)");
             }
             break;
@@ -244,12 +271,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (g_mode_mgr.mode() != can::Mode::Estop) {
                 g_mode_mgr.force_estop();
                 // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
-                // Only send once on transition to avoid flooding
-                can::Frame estop_fr;
-                estop_fr.id = can::kIdSafetyEstop;
-                estop_fr.dlc = 0;
-                g_can.send(estop_fr);
-                ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
+                // Gap #14: rate-limited to prevent bus flooding
+                if (can_send_estop()) {
+                    can::Frame estop_fr;
+                    estop_fr.id = can::kIdSafetyEstop;
+                    estop_fr.dlc = 0;
+                    g_can.send(estop_fr);
+                    ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
+                }
             }
         }
 
@@ -273,8 +302,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                                 >= pdMS_TO_TICKS(sys::kEgasFaultDurationMs)) {
                         if (g_mode_mgr.mode() != can::Mode::Estop) {
                             g_mode_mgr.force_estop();
-                            can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                            g_can.send(ef);
+                            if (can_send_estop()) {
+                                can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                                g_can.send(ef);
+                            }
                             ESP_LOGW(TAG, "EGAS L2: speed mismatch %ld mm/s > %d — ESTOP",
                                      (long)diff, sys::kEgasSpeedThresholdMmps);
                         }
@@ -321,7 +352,15 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 [[noreturn]] static void task_motor(void*) {
     TickType_t period = pdMS_TO_TICKS(1000 / sys::kControlLoopHz);
     TickType_t last   = xTaskGetTickCount();
+    // Gap #16: 3s startup grace period — mask staleness check during boot.
+    // RT sends 0x204 at 100 Hz once online, but during cold boot it isn't
+    // sending yet. Without this, SYS would false-trigger staleness at 200ms.
+    TickType_t startup_end = xTaskGetTickCount() + pdMS_TO_TICKS(shared::kStartupGracePeriodMs);
+    bool startup_grace = true;
     while (1) {
+        if (startup_grace && xTaskGetTickCount() >= startup_end)
+            startup_grace = false;
+
         can::Mode mode = g_mode_mgr.mode();
 
         if (mode == can::Mode::Estop) {
@@ -333,10 +372,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         } else {
             // AUTO: CAN setpoint → DAC with staleness check
             // Architecture §8.6: if 0x204 stale >200ms → zero speed + neutral
-            // Gap #16: gate with 3s startup grace to avoid false trigger during boot
+            // Gap #16: masked during startup grace to avoid false trigger
             TickType_t now = xTaskGetTickCount();
-            TickType_t last = g_last_setpoint_tick.load(std::memory_order_relaxed);
-            if (last != 0 && (now - last) >= pdMS_TO_TICKS(sys::kSetpointStaleMs)) {
+            TickType_t last_sp = g_last_setpoint_tick.load(std::memory_order_relaxed);
+            if (!startup_grace && last_sp != 0
+                && (now - last_sp) >= pdMS_TO_TICKS(sys::kSetpointStaleMs)) {
                 g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
                 g_setpoint_gear.store(0, std::memory_order_relaxed);
             }
@@ -387,21 +427,33 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
 // ── Brake task (prio 3, 50 Hz) ─────────────────────────────────────
 
+// Gap #12 / Option D: In AUTO mode, RT sends 0x7B9 directly to SEB (1-hop).
+// SYS suppresses its own 0x7B9 to avoid bus collision. SYS resumes sending
+// in MANUAL, ESTOP, when lever is pressed (rider override), or when RT
+// heartbeat is lost (takeover fallback).
 [[noreturn]] static void task_brake(void*) {
     TickType_t period = pdMS_TO_TICKS(1000 / sys::kBrakeCmdRateHz);
     TickType_t last   = xTaskGetTickCount();
     while (1) {
         bool lever     = g_safety.brake_lever_pressed();
         bool estop     = (g_mode_mgr.mode() == can::Mode::Estop);
+        can::Mode mode = g_mode_mgr.mode();
         int32_t brake_kpa = g_brake_pressure_kpa.load(std::memory_order_relaxed);
 
+        // Suppress SYS 0x7B9 in AUTO when RT is healthy and no rider override
+        bool rt_alive   = g_safety.heartbeat_ok();
+        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && !lever && !estop;
+
         can::VcuSebReq seb_cmd;
-        if (g_brake.tick(lever, estop, brake_kpa, g_seb_status_raw, seb_cmd)) {
+        bool should_tx = g_brake.tick(lever, estop, brake_kpa, g_seb_status_raw, seb_cmd);
+        // Store commanded stroke for following-error monitor even when suppressed
+        if (should_tx) {
+            g_cmd_stroke_raw.store(seb_cmd.stroke_req, std::memory_order_relaxed);
+        }
+        if (should_tx && !suppress_seb) {
             can::Frame fr;
             seb_cmd.to_frame(fr);
             g_can.send(fr);  // 0x7B9 VCU_SEB_REQ
-            // Store commanded stroke for following error monitor (§8.10)
-            g_cmd_stroke_raw.store(seb_cmd.stroke_req, std::memory_order_relaxed);
         }
 
         // 0x721 staleness check (architecture §8.10): warn if no status for >100ms
@@ -570,8 +622,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (bus_off_count >= 5) {
                 ESP_LOGE(TAG, "CAN bus-off persistent — forcing ESTOP");
                 g_mode_mgr.force_estop();
-                can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                g_can.send(ef);
+                if (can_send_estop()) {
+                    can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                    g_can.send(ef);
+                }
             }
             g_can.init();  // attempt recovery (re-initialize TWAI)
         } else { bus_off_count = 0; }

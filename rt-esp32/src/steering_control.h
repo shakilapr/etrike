@@ -77,6 +77,11 @@ public:
                 m_active_angle += kRampStep;
             } else {
                 m_active_angle = 0;
+                // Gap #6: if exit was requested during ramp, transition to ACTIVE now
+                if (m_estop_exit_pending) {
+                    m_state = SteerState::STEER_ACTIVE;
+                    m_estop_exit_pending = false;
+                }
                 // Ramp complete — hold at 0°, continue transmitting
             }
 
@@ -108,8 +113,14 @@ public:
                 build_command(out);
                 return true;
             }
-            // Hold period expired → silent-stop
-            m_state = SteerState::STEER_FAULT;
+            // Gap #6: if exit was requested during hold, transition to ACTIVE.
+            // Otherwise silent-stop (standard obstacle ESTOP behavior).
+            if (m_estop_exit_pending) {
+                m_state = SteerState::STEER_ACTIVE;
+                m_estop_exit_pending = false;
+            } else {
+                m_state = SteerState::STEER_FAULT;
+            }
             return false;
         }
 
@@ -125,6 +136,7 @@ public:
         if (m_state == SteerState::STEER_ACTIVE) {
             m_active_angle = int16_t(angle_mdeg / 100);
             m_speed_mmps = speed_mmps;
+            m_estop_exit_pending = false;  // Gap #6: fresh command clears pending exit
         }
         // In ESTOP states, ignore target updates — ramp/hold uses its own angle
     }
@@ -132,6 +144,7 @@ public:
     // Trigger ESTOP behavior. obstacle_triggered=true → hold-then-silent.
     // obstacle_triggered=false → ramp-to-zero. Called from safety checks.
     void start_estop(bool obstacle_triggered) {
+        m_estop_exit_pending = false;  // Gap #6: new ESTOP overrides any pending exit
         if (m_state == SteerState::STEER_ACTIVE) {
             if (obstacle_triggered) {
                 // Gap #9: clamp hold angle to dynamic limit for current speed.
@@ -167,11 +180,14 @@ public:
         }
     }
 
-    // Exit ESTOP states back to ACTIVE (when mode transitions away from ESTOP).
+    // Gap #6: Exit ESTOP states — deferred until ramp/hold completes.
+    // Pressing START during centering ramp must NOT stop 0x169 mid-ramp.
+    // The steering ramp completes first, then transitions to ACTIVE.
+    // Brake/motor/lights transition immediately (handled by caller).
     void exit_estop() {
         if (m_state == SteerState::ESTOP_RAMP_TO_ZERO ||
             m_state == SteerState::ESTOP_HOLD_THEN_SILENT) {
-            m_state = SteerState::STEER_ACTIVE;
+            m_estop_exit_pending = true;  // defer until ramp/hold completes
         }
     }
 
@@ -202,5 +218,6 @@ private:
     uint32_t   m_estop_hold_start_ms = 0;
     int16_t    m_estop_hold_angle = 0;
     uint32_t   m_estop_following_err_start_ms = 0;
+    bool       m_estop_exit_pending = false;  // Gap #6: deferred exit flag
 };
 }

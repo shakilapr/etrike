@@ -170,11 +170,14 @@ export class RtSteeringController {
     return this.estopHoldAngle;
   }
 
-  /** Exit ESTOP states back to ACTIVE. */
+  // Gap #6: pending exit flag — deferred until ramp/hold completes
+  private estopExitPending = false;
+
+  /** Exit ESTOP states — deferred until ramp/hold completes (Gap #6). */
   exitEstop(): void {
     if (this.state === SteerState.ESTOP_RAMP_TO_ZERO
       || this.state === SteerState.ESTOP_HOLD_THEN_SILENT) {
-      this.state = SteerState.ACTIVE;
+      this.estopExitPending = true;
     }
   }
 

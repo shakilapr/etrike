@@ -168,32 +168,33 @@ All wire: stranded tinned copper, automotive-grade GXL/SXL, 105 °C minimum, 300
 
 ### 3.1 Wire Gauge by Circuit
 
-| Circuit | AWG | mm² | Insulation | Color | Current | Max Length | Drop |
-|---------|-----|-----|-----------|-------|---------|-----------|------|
-| 72 V battery main (motor + DC-DC) | 6 | 13.3 | SXL 600 V | Orange | 50 A cont | 1.0 m | 0.09 V |
-| 72 V DC-DC input | 14 | 2.1 | GXL 600 V | Orange | 5 A | 0.8 m | 0.03 V |
-| 72 V gear sense (×6: D/S/R ×2 paths) | 20 | 0.52 | GXL 600 V | Orange | <10 mA | 1.5 m | negl. |
-| 72 V gear output (×6: D/S/R ×2 paths) | 18 | 0.82 | GXL 600 V | Orange | 1 A fused | 1.5 m | 0.03 V |
-| 12 V main bus (DC-DC → fuse block) | 8 | 8.4 | GXL 300 V | Red | 42 A | 0.5 m | 0.04 V |
-| 12 V EPS-C power | 12 | 3.3 | GXL 300 V | Red | 30 A peak | 1.0 m | 0.16 V |
-| 12 V SEB power | 12 | 3.3 | GXL 300 V | Red | 20 A peak | 1.0 m | 0.11 V |
-| 12 V Jetson power | 16 | 1.3 | GXL 300 V | Red | 3 A | 0.5 m | 0.02 V |
-| 12 V RT ESP32-S3 | 18 | 0.82 | GXL 300 V | Red | 0.5 A | 0.5 m | 0.01 V |
-| 12 V SYS ESP32-S3 | 18 | 0.82 | GXL 300 V | Red | 0.5 A | 1.2 m | 0.01 V |
-| 12 V MTR STM32 | 18 | 0.82 | GXL 300 V | Red | 0.2 A | 1.5 m | 0.01 V |
-| 12 V lighting bus (accessory relay out) | 14 | 2.1 | GXL 300 V | Red | 10 A peak | 2.0 m | 0.17 V |
-| 12 V always-on (brake light, CAN) | 16 | 1.3 | GXL 300 V | Red/White | 3 A | 2.0 m | 0.08 V |
-| 12 V individual lamp | 18 | 0.82 | GXL 300 V | Red | 2 A | 2.0 m | 0.09 V |
-| 12 V relay coil | 22 | 0.33 | GXL 300 V | Yellow | 0.15 A | 1.2 m | 0.01 V |
-| CAN trunk (low + high) | 22 | 0.33 | STP 300 V | Yellow/Green | signal | 2.5 m | — |
-| CAN drop | 22 | 0.33 | STP 300 V | Yellow/Green | signal | ≤0.3 m | — |
-| CAN_GND backbone | 18 | 0.82 | GXL 300 V | Black/White | return | 2.5 m | negl. |
-| Throttle signal (shielded) | 22 | 0.33 | Shielded 300 V | White | <1 mA | 1.5 m | critical |
-| Encoder signal (shielded) | 24 | 0.21 | Shielded 300 V | Gray / Gray+White | <10 mA | 2.0 m | negl. |
-| Switch inputs (handlebar/dash) | 22 | 0.33 | GXL 300 V | Blue / Brown | <1 mA | 1.2 m | negl. |
-| Ground return (12 V circuits) | match supply +1 | — | GXL 300 V | Black | per circuit | per circuit | per circuit |
-| Ground return (72 V gear) | 18 | 0.82 | GXL 600 V | Black/Orange | 1 A | 1.5 m | negl. |
-| Chassis bond | 6 | 13.3 | SXL 300 V | Green/Yellow | fault only | 0.5 m | — |
+All voltages drops are one-way (positive wire only). Chassis is the return path; its resistance is negligible (steel frame tube cross-section ≫ any wire).
+
+| Circuit | AWG | Color | Current | Length (one-way) | Drop |
+|---------|-----|-------|---------|-----------------|------|
+| 72 V battery → bus bar | 6 | Orange | 50 A cont | 0.5 m | 0.03 V |
+| 72 V bus → motor controller | 6 | Orange | 42 A cont | 0.5 m | 0.03 V |
+| 72 V bus → DC-DC input | 14 | Orange | 5 A | 1.5 m | 0.06 V |
+| 72 V gear sense (×6: D/S/R ×2 paths) | 20 | Orange | <10 mA | 1.5 m | negl. |
+| 72 V gear output (×6: D/S/R ×2 paths) | 18 | Orange | 1 A fused | 1.5 m | 0.03 V |
+| DC-DC output → forward fuse block (rear→center) | 8 | Red | 35 A | 2.0 m | 0.15 V |
+| Fuse block → EPS-C | 12 | Red | 30 A peak | 1.0 m | 0.16 V |
+| Fuse block → SEB | 12 | Red | 20 A peak | 0.5 m | 0.05 V |
+| Fuse block → Jetson | 16 | Red | 3 A | 0.5 m | 0.02 V |
+| Fuse block → RT ESP32-S3 | 18 | Red | 0.5 A | 0.3 m | 0.003 V |
+| Fuse block → SYS ESP32-S3 | 18 | Red | 0.5 A | 1.0 m | 0.01 V |
+| Fuse block → MTR STM32 | 18 | Red | 0.2 A | 0.3 m | 0.001 V |
+| Fuse block → lighting bus | 14 | Red | 10 A peak | 1.5 m | 0.13 V |
+| Fuse block → always-on rail | 16 | Red/White | 3 A | 1.5 m | 0.04 V |
+| Individual lamp feed | 18 | Red | 2 A | 2.0 m | 0.09 V |
+| CAN trunk/drops | 22 | Yellow/Green | signal | 2.5 m | — |
+| CAN_GND (signal reference) | 18 | Black/White | return | 2.5 m | negl. |
+| Throttle signal (shielded) | 22 | White | <1 mA | 1.5 m | — |
+| Encoder signal (shielded) | 24 | Gray | <10 mA | 2.0 m | — |
+| Switch inputs (handlebar/dash) | 22 | Blue/Brown | <1 mA | 1.2 m | — |
+| Relay coil drive | 22 | Yellow | 0.15 A | 1.2 m | 0.01 V |
+| Chassis ground straps (short, local) | match supply | Black | per circuit | ≤0.3 m | negl. |
+| Chassis bond (battery negative → frame) | 6 | Black | 50 A | 0.2 m | 0.01 V |
 
 ### 3.2 Color Code
 
@@ -269,22 +270,11 @@ High-Level CAN Bus (500 kbit/s) — 2 nodes, point-to-point:
 | 3 | CAN_GND | Black/White | 0462-201-16141 (18 AWG) |
 | 4 | Shield drain | Bare (tinned) | 0462-201-2031 |
 
-### 4.4 CAN Node Protection (Every Node, Within 50 mm of Connector)
+### 4.4 CAN Node Protection
 
-Each CAN drop requires, in this order from connector toward transceiver:
+Place a NUP2105L TVS diode (ON Semi, SOT-23, 24 V standoff, bidirectional) between CAN_H and CAN_GND, and between CAN_L and CAN_GND, within 50 mm of each node's connector. One device protects both lines. 8 nodes total (6 low bus + 2 high bus).
 
-```
-DT04-4P ── CMC ── TVS to GND ── SN65HVD230
-```
-
-**Common-mode choke:** TDK ACT45B-510-2P (51 µH, 2-line, 200 mA, 3 kΩ @ 100 MHz)
-**TVS diode pair:** ON Semi NUP2105L (bidirectional, 24 V standoff, 44 V clamp, SOT-23)
-
-Solder CMC and TVS to a small FR4 pigtail board, pot in heat-shrink, within 50 mm of the DT04-4P backshell.
-
-**Nodes requiring protection: 8 total**
-- Low bus: RT, SYS, MTR, EPS-C, SEB, DC-DC = 6
-- High bus: RT(MCP2515), Jetson = 2
+A common-mode choke (TDK ACT45B-510-2P) on each drop is recommended if EMI is observed, but not required for initial build.
 
 ### 4.5 Stub Length Limits
 
@@ -300,128 +290,140 @@ The DC-DC protocol specification references J1939 extended CAN at **250 kbps**, 
 
 ## 5. Power Distribution
 
-### 5.1 72 V Traction Distribution
+Heavy components (battery, motor controller, DC-DC converter) are at the **rear**. High-current 12 V loads (EPS-C steering, Jetson) are at the **front/center**. The chassis frame is the ground return for all power circuits — this is standard automotive practice and avoids running heavy copper return wires the length of the vehicle.
+
+### 5.1 Component Placement & Power Flow
 
 ```
-72 V Battery ── SB50 Anderson ── [ANL 60 A] ── 72 V Bus Bar (M6 stud)
-                                                    │
-                             ┌──────────────────────┼──────────────────────┐
-                             │                      │                      │
-                         Motor Ctrl              DC-DC Conv            Gear Relays
-                         (42 A cont)             (5 A, 72→12)          (1 A ×6 paths)
-                                                 [MEGA 15 A]           [1 A 3AG ×6]
-```
-
-**Fuses (72 V side):**
-
-| ID | Type | Rating | Holder | Protects |
-|----|------|--------|--------|----------|
-| F1 | ANL | 60 A | ANL fuse holder | Main traction (motor + DC-DC total) |
-| F2 | MEGA | 15 A | Inline MEGA holder (waterproof) | DC-DC converter 72 V input |
-| F3–F8 | 3AG fast-blow | 1 A | FHAC0001ZXJ (×6 inline sealed) | Each gear output line (D/S/R ×2 paths) |
-
-### 5.2 12 V Distribution (ATO Fuse Block)
-
-```
-DC-DC Output (12 V, 8 AWG red)
+REAR ───────────────────────────────────────────────────── FRONT
+  │                                                          │
+  │  ┌──────────┐   72 V, 6 AWG, 0.5 m                      │
+  │  │ 72 V     │──────┬────────────── Motor Controller      │
+  │  │ Battery  │      │            (rear, short run)        │
+  │  └────┬─────┘      │                                     │
+  │       │            ├── 14 AWG, 2.0 m ──────────────┐    │
+  │       │            │   (72 V forward to DC-DC)     │    │
+  │       │            │                               │    │
+  │       │    [ANL 60 A] at battery (+) terminal      │    │
+  │       │    [MEGA 15 A] at DC-DC tap point          │    │
+  │       │                                            │    │
+  │  ┌────▼─────┐                              ┌───────▼──────┐
+  │  │ DC-DC    │  12 V, 8 AWG, 0.3 m          │ DC-DC        │
+  │  │ 72→12 V  │────── 12 V fuse block ───────│ (preferred:  │
+  │  │ (rear)   │       (rear)                 │  at front    │
+  │  └──────────┘                              │  near loads) │
+  │                                            └──────────────┘
+  │  12 V runs forward from rear:
+  │  ┌──────────────────────────────────────────────────────┐
+  │  │ 8 AWG red: DC-DC → forward fuse block (JP2, center)  │
+  │  │                 ↓                                    │
+  │  │   ├── EPS-C steering (12 AWG, front, 1.0 m)          │
+  │  │   ├── Jetson Orin (16 AWG, center, 0.5 m)            │
+  │  │   ├── RT ESP32-S3 (18 AWG, center, 0.3 m)            │
+  │  │   ├── SYS ESP32-S3 (18 AWG, handlebar, 1.0 m)        │
+  │  │   ├── Lighting (14 AWG, front+rear, 1.5 m)           │
+  │  │   └── Always-on rail (16 AWG, 1.5 m)                 │
+  │  │                                                      │
+  │  │  Rear loads (short runs from rear fuse block):        │
+  │  │   ├── SEB brake (12 AWG, rear, 0.5 m)                │
+  │  │   └── MTR STM32 (18 AWG, rear, 0.3 m)               │
+  │  └──────────────────────────────────────────────────────┘
   │
-  └── 12-circuit ATO/ATC fuse block
-       │
-       ├── [ATO 40 A] ── 12 V Main Bus (8 AWG → junction distribution)
-       ├── [ATO 30 A] ── EPS-C (12 AWG, H5)        + PTC RUEF300-2
-       ├── [ATO 25 A] ── SEB (12 AWG, H6)           + PTC RUEF250-2
-       ├── [ATO  5 A] ── Jetson Orin (16 AWG, JP2)  + PTC RUEF300
-       ├── [ATO  3 A] ── RT ESP32-S3 (18 AWG, JP2)  + PTC BK60-020
-       ├── [ATO  3 A] ── SYS ESP32-S3 (18 AWG, H1)  + PTC BK60-020
-       ├── [ATO  3 A] ── MTR STM32 (18 AWG, H4)     + PTC BK60-010
-       ├── [ATO 15 A] ── Lighting bus (14 AWG, → GPIO27 accy relay → H7) + PTC RUEF110-2
-       └── [ATO  2 A] ── Always-on rail (16 AWG red/white → brake light, CAN xcvrs)
+  │  All grounds: chassis return (see §6)
 ```
 
-**PTC resettable fuse notes:**
-- Install PTC inline on positive wire, within 150 mm of the fuse block output
-- PTC trip current selected at ~1.8–2× hold current to avoid nuisance trips
-- All PTCs rated for 12 VDC minimum; RUEF series rated 30 VDC
+**Key decision — DC-DC placement:** If the DC-DC is at the rear (with the battery), 12 V runs forward at high current through 8 AWG. If moved to the front/center, 72 V runs forward at only ~5 A through 14 AWG, and 12 V is generated right where the big loads are. The DC-DC is on the CAN bus which spans the full vehicle, so either placement works. This spec assumes **DC-DC at rear** (worst-case for 12 V distribution); front placement halves the 12 V copper weight.
 
-### 5.3 Voltage Drop Summary (Worst-Case)
+### 5.2 Fuse Strategy
 
-| Path | Voltage | Current | Gauge | Round-trip Length | Resistance | Drop | % |
-|------|---------|---------|-------|-------------------|-----------|------|---|
-| Battery → Motor Controller | 72 V | 50 A | 6 AWG | 2.0 m | 3.6 mΩ | 0.18 V | 0.25% |
-| DC-DC → Fuse block | 12 V | 42 A | 8 AWG | 1.0 m | 2.1 mΩ | 0.09 V | 0.75% |
-| Fuse block → EPS-C | 12 V | 30 A | 12 AWG | 2.0 m | 10.6 mΩ | 0.32 V | 2.65% |
-| Fuse block → SEB | 12 V | 20 A | 12 AWG | 2.0 m | 10.6 mΩ | 0.21 V | 1.77% |
-| Fuse block → Jetson | 12 V | 3 A | 16 AWG | 1.0 m | 13.5 mΩ | 0.04 V | 0.34% |
-| Fuse block → SYS (longest MCU) | 12 V | 0.5 A | 18 AWG | 2.4 m | 51.4 mΩ | 0.03 V | 0.21% |
-| Fuse block → Rear lamp | 12 V | 2 A | 18 AWG | 4.0 m | 85.6 mΩ | 0.17 V | 1.43% |
+Fuses protect the **wire**, so they go at the **source end** of every wire run — as close to the power source as physically possible.
 
-All drops < 3% — compliant with SAE J1292.
+| ID | Location | Type | Rating | Protects (wire run) | Fault current path |
+|----|----------|------|--------|---------------------|-------------------|
+| F_main | Battery (+) terminal, inside battery box | ANL | 60 A | 6 AWG from battery to bus bar (0.5 m) | Battery → short → chassis at rear |
+| F_dcdc | 72 V bus bar, rear | MEGA | 15 A | 14 AWG 72 V feed to DC-DC input | 72 V bus → DC-DC → chassis |
+| F_gear_* | At gear relay COM terminal, rear | 3AG fast | 1 A ×6 | 18 AWG gear output wires to motor ctrl | 72 V → gear wire → motor ctrl → chassis |
+| F_12v_main | DC-DC output terminal, rear | ATO | 40 A | 8 AWG 12 V forward run (2 m) | DC-DC → 12 V wire → chassis short |
+| F_epsc | Forward fuse block (JP2), center | ATO | 30 A | 12 AWG to EPS-C (1 m) | 12 V bus → EPS-C → chassis at front |
+| F_seb | Rear fuse block, rear | ATO | 25 A | 12 AWG to SEB (0.5 m) | 12 V bus → SEB → chassis at rear |
+| F_jetson | Forward fuse block (JP2), center | ATO | 5 A | 16 AWG to Jetson (0.5 m) | 12 V bus → Jetson → chassis |
+| F_rt | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG to RT ESP32 (0.3 m) | 12 V bus → RT → chassis |
+| F_sys | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG to SYS ESP32 (1 m) | 12 V bus → SYS → chassis |
+| F_mtr | Rear fuse block, rear | ATO | 3 A | 18 AWG to MTR STM32 (0.3 m) | 12 V bus → MTR → chassis |
+| F_lights | Forward fuse block (JP2), center | ATO | 15 A | 14 AWG lighting bus (1.5 m) | 12 V bus → GPIO27 relay → lamps → chassis |
+| F_always | Forward fuse block (JP2), center | ATO | 2 A | 16 AWG always-on rail (1.5 m) | 12 V bus → brake light, CAN → chassis |
 
-### 5.4 12 V Accessory Relay (GPIO27)
+**Fuse coordination:** F_main (60 A) is the last-resort protection at the battery. Every branch fuse opens before F_main does. The DC-DC has its own input fuse (F_dcdc, 15 A on 72 V side) and output is protected by F_12v_main (40 A on 12 V side). A DC-DC internal fault that shorts 72 V to 12 V would be caught by F_dcdc opening.
 
-SYS GPIO27 controls a 40 A automotive relay (TE 1-1393302-1 or equivalent):
+**All fuse holders must be at the source end of the wire they protect.** The ANL fuse lives on the battery positive terminal. Branch fuses live in two ATO/ATC blocks: one at the rear (near DC-DC, for SEB and MTR), one at the center (near JP2, for front loads).
+
+### 5.3 Voltage Drop (One-Way, Chassis Return)
+
+With chassis as the ground return, only the positive wire length matters. Chassis steel has higher resistivity than copper, but the cross-sectional area of a frame tube is enormous — effective resistance is ≪1 mΩ over 2 meters. The dominant drop is in the positive wire only.
+
+| Path | Voltage | Current | Gauge | Length (one-way) | Drop | % |
+|------|---------|---------|-------|-----------------|------|---|
+| Battery → Motor Controller | 72 V | 50 A | 6 AWG | 0.5 m | 0.03 V | 0.04% |
+| Battery → DC-DC (72 V side) | 72 V | 5 A | 14 AWG | 1.5 m | 0.06 V | 0.09% |
+| DC-DC → Forward fuse block | 12 V | 35 A | 8 AWG | 2.0 m | 0.15 V | 1.22% |
+| Fuse block → EPS-C | 12 V | 30 A | 12 AWG | 1.0 m | 0.16 V | 1.33% |
+| Fuse block → SEB | 12 V | 20 A | 12 AWG | 0.5 m | 0.05 V | 0.44% |
+| Fuse block → Jetson | 12 V | 3 A | 16 AWG | 0.5 m | 0.02 V | 0.17% |
+| Fuse block → SYS (longest MCU run) | 12 V | 0.5 A | 18 AWG | 1.0 m | 0.01 V | 0.09% |
+
+All drops well under 3%. The 8 AWG forward run from rear DC-DC to center fuse block is the dominant drop at 1.22%. If DC-DC is moved to the front, this run disappears entirely and 12 V distribution starts at the center.
+
+### 5.5 12 V Accessory Relay (GPIO27)
+
+SYS GPIO27 controls a 40 A automotive relay:
 
 ```
 GPIO27 ── 1 kΩ base R ── NPN (2N2222) ── relay coil ── 12 V
                                  │
-                                 └── 1N4007 flyback (cathode to 12 V)
+                                 └── 1N4007 flyback (cathode to +12 V)
 
-Relay COM  ← always-on 12 V rail (ATO 15 A → PTC RUEF110-2)
-Relay NO   → accessory bus: headlight, turn signals, mode bulbs, position lights
+Relay COM  ← always-on 12 V rail (F_always, 2 A)
+Relay NO   → accessory bus: headlight, turn signals, mode bulbs
 Relay NC   → not connected
+Relay coil return → chassis (local)
 ```
 
-ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → accessory bus de-energized. Brake light is on the **always-on** rail (before this relay), so it stays powered in ESTOP.
+ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → accessory bus dead. Brake light is on the **always-on** rail (before this relay), so it stays powered in ESTOP.
 
 ---
 
 ## 6. Grounding Strategy
 
-### 6.1 Star Ground Topology
+The trike's steel frame is the ground return conductor for all power circuits. This is how every production vehicle works — the chassis cross-section is orders of magnitude larger than any wire you'd run, so its resistance is effectively zero. The weight and cost savings vs. running dedicated return wires over 2-meter distances are substantial.
 
-```
-                 ┌─────────────────────────────────┐
-                 │  Ground Bus Bar (M6 studs, ≥6 pos) │
-                 │  Nickel-plated brass              │
-                 │  JP1 — Center Power Bay           │
-                 │  Mounted on insulated standoffs   │
-                 └──────────┬───────────────────────┘
-                            │
-       ┌────────────────────┼──────────────────────┐
-       │           │        │        │              │
-   DC-DC GND    Battery   RT GND   SYS GND    CAN_GND (one
-   (8 AWG blk)  return    (18 AWG) (18 AWG)    point only,
-                 (6 AWG                       18 AWG blk/wht)
-                 blk/org)
-       │                                    │
-  12 V returns                         Shield drains
-  (one per                               (one point,
-  device)                                at chassis
-                                         bond)
-```
+### 6.1 Grounding Rules
 
-### 6.2 Ground Rules
+1. **Chassis IS the power ground return.** Every device's negative/ground terminal connects to the nearest clean frame point with a short strap. No long dedicated ground return wires. This applies to 72 V, 12 V, and 5 V returns alike — they all reference chassis.
 
-1. **72 V traction ground is SEPARATE from 12 V ground.** Two physically separate bus bars, ≥50 mm clearance. 72 V return wires are black/orange stripe.
-2. **Every 12 V device gets its own ground return wire** from the device to the 12 V ground bus bar. No daisy-chaining ground through chassis or other devices.
-3. **CAN_GND (black/white, 18 AWG) connects to 12 V ground bus at exactly ONE point** (at JP1). Do NOT connect CAN_GND to chassis. The wire runs with the CAN backbone.
-4. **Chassis bond:** Single 6 AWG green/yellow wire from ground bus bar to M6 stainless bolt on frame rail near JP1. Use serrated washer to bite through paint/powder-coat.
-5. **Shield drains:** All shielded cable drain wires connect to chassis at exactly ONE point (the chassis bond bolt near JP1). Drain wire floats (unconnected, insulated) at the far end.
-6. **EPS-C ECU housing** requires chassis ground per manufacturer spec — bond to same chassis bolt.
+2. **Battery negative → chassis at exactly ONE point** (at the rear, near the battery). This is the system ground reference. Use a 6 AWG strap ≤0.2 m long. Remove paint/powder-coat to bare metal, apply dielectric grease, torque to spec.
 
-### 6.3 Ground Wire Gauge
+3. **Ground strap sizing** — short straps to chassis carry the same current as the positive supply wire, but over ~0.2 m instead of 2 m. They can be the same gauge as the positive or one size smaller:
+   - Motor controller: 6 AWG strap
+   - DC-DC converter: 8 AWG strap
+   - EPS-C: 12 AWG strap
+   - SEB: 12 AWG strap
+   - Jetson: 16 AWG strap
+   - ESP32-S3 / STM32: 18 AWG strap
+   - Lamps: 18 AWG strap, local to mounting bolt
 
-| Return Path | Gauge | Notes |
-|------------|-------|-------|
-| 72 V battery return | 6 AWG | Black/orange, to 72 V ground bus |
-| DC-DC 12 V return | 8 AWG | Black, to 12 V ground bus |
-| EPS-C return | 12 AWG | Black |
-| SEB return | 12 AWG | Black |
-| Jetson return | 16 AWG | Black |
-| RT, SYS, MTR return | 18 AWG | Black |
-| Lighting return | 14 AWG | Black (common return for all rear lamps) |
-| CAN_GND | 18 AWG | Black/white |
-| Chassis bond | 6 AWG | Green/yellow |
+4. **CAN_GND is the exception.** It is NOT a power return — it's a signal reference. Run a dedicated 18 AWG black/white wire in the CAN backbone. Connect it to chassis at exactly ONE point (at JP2, the center). This prevents CAN return current from taking paths through the chassis that would create common-mode voltage differences between nodes.
+
+5. **Shield drains** for all shielded cables (CAN, throttle, encoders) connect to chassis at exactly ONE point (near JP2). The far end of each shield is cut flush and insulated — no connection. This prevents ground loops while maintaining an RF drain path.
+
+6. **Clean the bond points.** Every chassis ground connection must be to bare metal. Use a serrated washer to bite through any remaining coating. Apply dielectric grease after torquing to prevent corrosion. On a powder-coated or painted frame, grind a clean patch for each ground strap.
+
+7. **EPS-C ECU housing** requires a chassis ground per the Syntree manufacturer spec — this is for RF shielding, not power return. Bond the housing to chassis with a dedicated strap at its mounting point.
+
+### 6.3 Notes
+
+With chassis-referenced ground, the 72 V and 12 V domains share the same return path — there is one ground, not two separate buses. A positive-to-chassis short anywhere draws fault current through the nearest fuse and opens it; the fuse is the ground-fault protection.
+
+CAN transceivers (SN65HVD230, ±25 V common-mode) are safe: the steel frame has ≪1 mΩ over 2 m, so even 50 A motor current produces ≪50 mV of ground offset. The dedicated CAN_GND wire provides a secondary signal reference path connected to chassis at one point.
 
 ---
 
@@ -429,26 +431,9 @@ ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → acces
 
 ### 7.1 CAN Bus (Per Node)
 
-| Component | Part Number | Qty per Node | Purpose |
-|-----------|------------|-------------|---------|
-| Common-mode choke | TDK ACT45B-510-2P | 1 | Suppress CAN bus radiated EMI |
-| TVS diode pair | ON Semi NUP2105L | 1 | ESD + transient clamp on CAN_H / CAN_L |
+NUP2105L TVS diode (ON Semi, SOT-23) between CAN_H and CAN_GND, and between CAN_L and CAN_GND. 8 nodes total. Add a common-mode choke (TDK ACT45B-510-2P) only if EMI issues appear in testing.
 
-**Total: 8 sets** (6 low bus nodes + 2 high bus nodes)
-
-### 7.2 PTC Resettable Fuses (12 V Branches)
-
-| Branch | PTC | Hold Current | Trip Current |
-|--------|-----|-------------|--------------|
-| EPS-C | Littelfuse RUEF300-2 | 3 A | 6 A |
-| SEB | Littelfuse RUEF250-2 | 2.5 A | 5 A |
-| Lighting bus | Littelfuse RUEF110-2 | 1.1 A | 2.2 A |
-| Jetson | Littelfuse RUEF300 | 3 A | 6 A |
-| RT ESP32-S3 | Bourns BK60-020 | 0.2 A | 0.4 A |
-| SYS ESP32-S3 | Bourns BK60-020 | 0.2 A | 0.4 A |
-| MTR STM32 | Bourns BK60-010 | 0.1 A | 0.2 A |
-
-### 7.3 Throttle Signal Protection
+### 7.2 Throttle Signal Protection
 
 At the ADC input (both SYS GPIO10 and MTR PA0):
 
@@ -462,7 +447,7 @@ Throttle signal ── 100 Ω series ──┬── ADC pin
 
 **TVS:** Littelfuse SMBJ5.0A (unidirectional, DO-214AA). Install at both SYS and MTR throttle ADC inputs.
 
-### 7.4 Encoder Input Protection
+### 7.3 Encoder Input Protection
 
 At each encoder input on RT ESP32-S3:
 
@@ -476,7 +461,7 @@ Encoder A/B ── 330 Ω series ──┬── GPIO
 
 **TVS:** Nexperia PESD5V0S2UT (2-channel, SOT-23). One array per encoder (2 channels = A+B). Total: 4 arrays (rear motor, front wheel, rear left, rear right — rear left/right are TBD sensors).
 
-### 7.5 Relay Flyback Diodes
+### 7.4 Relay Flyback Diodes
 
 Every relay coil MUST have a flyback diode soldered directly across the coil terminals (cathode to +12 V side, anode to ground/switched side).
 
@@ -491,7 +476,7 @@ Every relay coil MUST have a flyback diode soldered directly across the coil ter
 | SYS lighting | 6 | Left turn, Right turn, Brake, Headlight, AUTO bulb, MANUAL bulb |
 | SYS 12 V accessory | 1 | GPIO27 main accessory relay |
 
-### 7.6 Lamp Circuit TVS Protection
+### 7.5 Lamp Circuit TVS Protection
 
 At each lamp connector, bidirectional TVS across 12 V and GND:
 
@@ -503,7 +488,7 @@ At each lamp connector, bidirectional TVS across 12 V and GND:
 
 **TVS:** Littelfuse SMCJ18A (unidirectional, SMC/DO-214AB). One per lamp: brake light, left turn, right turn, headlight = 4 total.
 
-### 7.7 72 V Gear Line Protection (Per Existing Design)
+### 7.6 72 V Gear Line Protection
 
 Already specified in `docs/high-voltage-isolation.md`. Confirmed for harness:
 
@@ -546,9 +531,9 @@ Already specified in `docs/high-voltage-isolation.md`. Confirmed for harness:
 ```
 Left Frame Rail:                    Right Frame Rail:
   CAN backbone (H3, 12 mm sleeve)     72 V gear lines (orange, split loom)
-  Sensor cables (throttle, enc.)       Motor controller power (6 AWG orange)
-  Ground bus wires (black)            DC-DC input (14 AWG orange)
-  12 V low-current (18 AWG red)       12 V high-current (EPS-C/SEB)
+  CAN_GND (18 AWG black/white)         Motor controller power (6 AWG orange)
+  Sensor cables (throttle, enc.)       DC-DC 72 V input (14 AWG orange)
+  12 V distribution (8 AWG red)       12 V high-current (EPS-C/SEB, 12 AWG red)
 ```
 
 ### 8.4 Grommets & Pass-Throughs
@@ -591,14 +576,14 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 
 | Item | Qty | Part Number | Notes |
 |------|-----|-------------|-------|
-| Wire, 18 AWG red (GXL) | 4 m | GXL-18-RED | SYS power, bulb power |
-| Wire, 18 AWG black (GXL) | 4 m | GXL-18-BLK | Ground returns |
-| Wire, 22 AWG blue | 4 m | GXL-22-BLU | Switch signals (×5) |
-| Wire, 22 AWG brown | 2 m | GXL-22-BRN | Switch common/return |
-| Wire, 22 AWG yellow | 3 m | GXL-22-YEL | Relay coil drives (×6 + GPIO27) |
+| Wire, 18 AWG red (GXL) | 4 m | SYS power, bulb power |
+| Wire, 18 AWG black (GXL) | 0.5 m | SYS (−) → chassis strap (0.2 m); bulb ground straps (×2, 0.15 m) |
+| Wire, 22 AWG blue | 4 m | Switch signals (×5) |
+| Wire, 22 AWG brown | 2 m | Switch common/return |
+| Wire, 22 AWG yellow | 3 m | Relay coil drives (×6 + GPIO27) |
 | Wire, 22 AWG white shielded | 1.5 m | Belden 8451 | Throttle grip signal |
-| Wire, 20 AWG orange (×3) | 4 m | GXL-20-ORG | Gear sense TLP281 inputs (D/S/R) |
-| Wire, 18 AWG orange (×3) | 2 m | GXL-18-ORG | Gear relay outputs to motor controller |
+| Wire, 20 AWG orange (×3) | 4 m | Gear sense TLP281 inputs (D/S/R) |
+| Wire, 18 AWG orange (×3) | 2 m | Gear relay outputs to motor controller |
 | Shielded pair, 22 AWG | 1.5 m | Belden 9841 | CAN drop to SYS |
 | DT04-4P + contacts | 2 | Deutsch | Handlebar switch connectors J2 (left), J3 (right) |
 | DT06-6S + contacts | 1 | Deutsch | Dashboard buttons + bulbs J4 |
@@ -607,7 +592,7 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 | Molex 39-01-2040 + 44476-1111 | 1 | Mini-Fit Jr 4-pin | SYS board power J1c |
 | TE Superseal 1-967628-1 (3-pin) | 1 | Superseal 1.5 | Throttle grip connector J15 |
 | SMBJ5.0A TVS | 1 | Littelfuse | Throttle signal protection (at SYS ADC) |
-| NUP2105L + ACT45B-510-2P | 1 set | CAN protection | SYS CAN node |
+| NUP2105L TVS | 1 | CAN protection | SYS CAN node |
 | 1N4007 flyback diode | 7 | — | SYS relay coils (gear×3, lights×3, GPIO27) |
 | TLP281 optoisolator | 3 | Toshiba | SYS gear sense (D/S/R) |
 | SMCJ90CA TVS | 3 | Littelfuse | SYS gear line TVS (72 V) |
@@ -616,30 +601,35 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 | Braided PET sleeve, 19 mm | 1.5 m | — | Harness wrap |
 | Heat-shrink labels | 30 | — | Wire markers, both ends |
 
-### H2 — Power Distribution (0.8 m)
+### H2 — Power Distribution
 
-| Item | Qty | Part Number | Notes |
-|------|-----|-------------|-------|
-| Wire, 6 AWG orange (SXL) | 2 m | SXL-6-ORG | Battery → bus → motor controller |
-| Wire, 6 AWG black/orange (SXL) | 2 m | SXL-6-BLK/ORG | 72 V return |
-| Wire, 14 AWG orange (GXL) | 1 m | GXL-14-ORG | DC-DC input |
-| Wire, 8 AWG red (GXL) | 1.5 m | GXL-8-RED | DC-DC → fuse block |
-| Wire, 8 AWG black (GXL) | 1.5 m | GXL-8-BLK | DC-DC 12 V return |
-| Anderson SB50 + SB50G boot | 1 pair | Anderson | Battery disconnect |
-| ANL fuse holder | 1 | — | Main 60 A fuse |
-| MEGA inline fuse holder | 1 | — | DC-DC 15 A fuse, waterproof |
-| 12-circuit ATO/ATC fuse block | 1 | — | #10-32 input stud |
-| M6 ground bus bar, ≥6 stud | 1 | — | Nickel-plated brass, insulated standoffs |
-| ANL 60 A fuse | 1 | — | Main traction |
-| MEGA 15 A fuse | 1 | — | DC-DC input |
-| ATO fuses (40,30,25,5,3×3,15,2 A) | 10 | Assorted | Per branch |
-| DT04-2P + contacts | 1 | Deutsch | DC-DC 72 V input J7 |
-| DTP04-2P + contacts | 1 | Deutsch DTP | DC-DC 12 V output J8 |
-| DT04-6P + contacts | 1 | Deutsch | 12 V distribution output J9 |
-| Split loom, 25 mm orange | 1 m | — | 72 V conduit |
-| Split loom, 19 mm black | 1 m | — | 12 V conduit |
-| M6 ring terminals (6 AWG) | 4 | — | Ground & power terminations |
-| Heat-shrink labels | 20 | — | Wire markers, both ends |
+Includes 72 V battery cabling, DC-DC converter, fuse blocks, and chassis ground straps at the rear.
+
+| Item | Qty | Notes |
+|------|-----|-------|
+| Wire, 6 AWG orange (SXL) | 1.5 m | Battery (+) → ANL fuse → 72 V bus → motor controller |
+| Wire, 6 AWG black (SXL) | 0.5 m | Battery (−) → chassis bond strap (0.2 m); motor ctrl (−) → chassis strap (0.2 m) |
+| Wire, 14 AWG orange (GXL) | 2 m | 72 V bus → DC-DC input (rear to center run) |
+| Wire, 8 AWG red (GXL) | 2.5 m | DC-DC output → forward fuse block (JP2) |
+| Wire, 8 AWG black (GXL) | 0.3 m | DC-DC (−) → chassis strap |
+| Wire, 12 AWG red (GXL) | 1 m | Forward fuse block → EPS-C |
+| Wire, 12 AWG red (GXL) | 0.7 m | Rear fuse block → SEB |
+| Wire, 12 AWG black (GXL) | 0.5 m | EPS-C (−) → chassis strap; SEB (−) → chassis strap |
+| Anderson SB50 + SB50G boot | 1 pair | Battery disconnect |
+| ANL fuse holder + 60 A fuse | 1 | At battery (+) terminal |
+| MEGA inline fuse holder + 15 A fuse | 1 | At 72 V bus, DC-DC tap point |
+| ATO/ATC fuse block, 6-circuit | 2 | One at rear (SEB, MTR, always-on), one at center (EPS-C, Jetson, RT, SYS, lights) |
+| ATO fuses: 40,30,25,5,3×3,15,2 A | 10 | Per branch |
+| 3AG 1 A fuse + Littelfuse FHAC0001ZXJ holder | 6 | Gear output lines (×2 paths ×3 gears) |
+| DT04-2P | 1 | DC-DC 72 V input connector |
+| DTP04-2P | 1 | DC-DC 12 V output connector |
+| M6 ring terminals (6 AWG) | 4 | Chassis bond straps |
+| M6 ring terminals (8–12 AWG) | 8 | Device ground straps |
+| M6 stainless bolts + serrated washers | 6 | Chassis bond points (bare metal prep) |
+| Dielectric grease | 1 tube | Corrosion protection at bond points |
+| Split loom, 25 mm orange | 1 m | 72 V conduit |
+| Split loom, 19 mm black | 2 m | 12 V conduit |
+| Heat-shrink labels | 25 | Wire markers, both ends |
 
 ### H3 — CAN Backbone (2.5 m trunk + 6 × 0.3 m drops)
 
@@ -652,8 +642,7 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 | DT04-4P + 0462-201-2031 | 2 | Deutsch | High bus node drops (J10g–h): RT-MCP2515, Jetson |
 | DT04-2P + 0462-201-2031 | 2 | Deutsch | Terminator enclosures (J11, J12) — one per bus |
 | 120 Ω 1/4W 1% resistor | 2 | RNMF14FTD120R | Termination (×2 buses) |
-| NUP2105L + ACT45B-510-2P | 8 sets | CAN protection | One per node |
-| FR4 pigtail boards | 8 | Custom (15×10 mm) | Solder CMC + TVS |
+| NUP2105L TVS | 8 | ON Semi, SOT-23 | CAN protection, one per node |
 | Braided PET sleeve, 12 mm | 3 m | — | Trunk wrap |
 | Heat-shrink labels | 30 | — | Wire markers, both ends |
 
@@ -661,9 +650,9 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 
 | Item | Qty | Part Number | Notes |
 |------|-----|-------------|-------|
-| Wire, 18 AWG red | 2 m | GXL-18-RED | MTR STM32 power |
-| Wire, 18 AWG black | 2 m | GXL-18-BLK | MTR ground return |
-| Wire, 14 AWG red | 1 m | GXL-14-RED | 12 V to relay module COM |
+| Wire, 18 AWG red | 2 m | MTR STM32 power |
+| Wire, 18 AWG black | 0.3 m | MTR (−) → chassis strap (0.2 m) |
+| Wire, 14 AWG red | 1 m | 12 V to relay module COM |
 | Wire, 18 AWG orange (×3) | 4 m | GXL-18-ORG | Gear D/S/R relay outputs |
 | Wire, 20 AWG orange (×3) | 4 m | GXL-20-ORG | Gear D/S/R TLP281 sense inputs |
 | Shielded pair, 22 AWG | 0.3 m | Belden 9841 | CAN drop |
@@ -684,93 +673,72 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 | 1N4007 flyback diode | 3 | — | MTR gear relay coils |
 | SMBJ5.0A TVS | 1 | Littelfuse | MTR throttle ADC protection |
 | PESD5V0S2UT TVS | 1 | Nexperia | Rear motor encoder protection |
-| NUP2105L + ACT45B-510-2P | 1 set | CAN protection | MTR CAN node |
+| NUP2105L TVS | 1 | CAN protection | MTR CAN node |
 | Braided PET sleeve, 19 mm | 2 m | — | Harness wrap |
 
 ### H5 — Steering / Front (1.0 m)
 
 | Item | Qty | Part Number | Notes |
 |------|-----|-------------|-------|
-| Wire, 12 AWG red | 1.5 m | GXL-12-RED | EPS-C 12 V power |
-| Wire, 12 AWG black | 1.5 m | GXL-12-BLK | EPS-C ground return |
+| Wire, 12 AWG red | 1.5 m | EPS-C 12 V power |
+| Wire, 12 AWG black | 0.3 m | EPS-C (−) → chassis strap (0.2 m) |
 | Shielded pair, 22 AWG | 1.5 m | Belden 9841 | CAN drop |
 | Shielded quad, 24 AWG | 1.5 m | Belden 8772 | Front wheel encoder (TBD sensor) |
 | DTP04-2P + 0460-202-1631 | 1 | Deutsch DTP | EPS-C power J21a |
 | DT04-4P + 0462-201-2031 | 1 | Deutsch | EPS-C CAN J21b |
 | TE Superseal 1.5 4-pin | 1 | 1-967629-1 | Front encoder J22 |
-| RUEF300-2 PTC | 1 | Littelfuse | EPS-C overcurrent protection |
 | PESD5V0S2UT TVS | 1 | Nexperia | Front encoder protection |
-| NUP2105L + ACT45B-510-2P | 1 set | CAN protection | EPS-C CAN node |
+| NUP2105L TVS | 1 | CAN protection | EPS-C CAN node |
 | Braided PET sleeve, 16 mm | 1.5 m | — | Harness wrap |
 
 ### H6 — Brake Module (1.0 m)
 
 | Item | Qty | Part Number | Notes |
 |------|-----|-------------|-------|
-| Wire, 12 AWG red | 1.5 m | GXL-12-RED | SEB 12 V power |
-| Wire, 12 AWG black | 1.5 m | GXL-12-BLK | SEB ground return |
+| Wire, 12 AWG red | 1.5 m | SEB 12 V power |
+| Wire, 12 AWG black | 0.3 m | SEB (−) → chassis strap (0.2 m) |
 | Shielded pair, 22 AWG | 1.5 m | Belden 9841 | CAN drop |
 | DTP04-2P + 0460-202-1631 | 1 | Deutsch DTP | SEB power J23a |
 | DT04-4P + 0462-201-2031 | 1 | Deutsch | SEB CAN J23b |
-| RUEF250-2 PTC | 1 | Littelfuse | SEB overcurrent protection |
-| NUP2105L + ACT45B-510-2P | 1 set | CAN protection | SEB CAN node |
+| NUP2105L TVS | 1 | CAN protection | SEB CAN node |
 | Braided PET sleeve, 16 mm | 1.5 m | — | Harness wrap |
 
 ### H7 — Lighting Rear (2.0 m)
 
 | Item | Qty | Part Number | Notes |
 |------|-----|-------------|-------|
-| Wire, 14 AWG red | 2 m | GXL-14-RED | Lighting bus from accy relay |
-| Wire, 18 AWG red | 5 m | GXL-18-RED | Individual lamp feeds (×3) |
-| Wire, 18 AWG black | 5 m | GXL-18-BLK | Lamp ground returns |
-| Wire, 16 AWG red/white | 2 m | GXL-16-RED/WHT | Brake light (always-on rail) |
+| Wire, 14 AWG red | 2 m | Lighting bus from accy relay |
+| Wire, 18 AWG red | 5 m | Individual lamp feeds (×3) |
+| Wire, 18 AWG black | 1 m | Lamp (−) → chassis straps (×3, each ≤0.15 m local) |
+| Wire, 16 AWG red/white | 2 m | Brake light (always-on rail) |
 | DT04-2P + 0462-201-16141 | 3 | Deutsch | Lamp connectors J24 (left turn), J25 (right turn), J26 (brake) |
 | SMCJ18A TVS | 3 | Littelfuse | Per-lamp transient protection |
 | Split loom, 12 mm | 2.5 m | — | Harness wrap |
 
-### H8 — Chassis Ground (2.0 m Total)
+### H8 — Chassis Ground Straps
 
-| Item | Qty | Part Number | Notes |
-|------|-----|-------------|-------|
-| Wire, 6 AWG green/yellow (SXL) | 1 m | SXL-6-GRN/YEL | Ground bus → chassis bolt |
-| Wire, 6 AWG black (SXL) | 1 m | SXL-6-BLK | 72 V ground bus link |
-| M6 stainless bolt + nut + serrated washer | 1 set | — | Chassis bond point |
-| M6 ring terminals (6 AWG) | 4 | — | Ground cable terminations |
-| Split loom, 10 mm | 2 m | — | Individual ground wire protection |
+Short local straps from each device's negative terminal to the nearest clean frame point. No long ground return wires — the chassis is the return path.
+
+| Item | Qty | Notes |
+|------|-----|-------|
+| Wire, 6 AWG black (SXL) | 0.5 m | Battery (−) strap + motor controller (−) strap (×2, each ≤0.2 m) |
+| Wire, 8 AWG black (GXL) | 0.3 m | DC-DC (−) strap |
+| Wire, 12 AWG black (GXL) | 0.5 m | EPS-C (−) strap + SEB (−) strap (×2) |
+| Wire, 16 AWG black (GXL) | 0.3 m | Jetson (−) strap |
+| Wire, 18 AWG black (GXL) | 1.0 m | RT (−), SYS (−), MTR (−) straps + lamp grounds (×6) |
+| M6 ring terminals (6 AWG) | 4 | Battery and motor controller straps |
+| M6 ring terminals (8–12 AWG) | 8 | Mid-current device straps |
+| M5 ring terminals (16–18 AWG) | 12 | Low-current device and lamp straps |
+| M6 stainless bolts + serrated washers | 8 | Bond points (grind to bare metal, grease, torque) |
+| M5 stainless bolts + serrated washers | 12 | Smaller device bond points |
+| Dielectric grease | 1 tube | All chassis bond points |
+| Split loom, 10 mm | 2 m | Strap protection where routed along frame |
 
 ---
 
 ## 10. Reference Tables
 
-### 10.1 Wire Ampacity (GXL/SXL, 105 °C, in-bundle derated by 30%)
-
-| AWG | mm² | Ampacity (chassis) | Ampacity (power dist.) | Ω/km |
-|-----|-----|-------------------|----------------------|------|
-| 6 | 13.3 | 120 A | 55 A | 1.3 |
-| 8 | 8.4 | 85 A | 40 A | 2.1 |
-| 10 | 5.3 | 65 A | 30 A | 3.3 |
-| 12 | 3.3 | 50 A | 20 A | 5.3 |
-| 14 | 2.1 | 40 A | 15 A | 8.5 |
-| 16 | 1.3 | 25 A | 10 A | 13.5 |
-| 18 | 0.82 | 18 A | 7 A | 21.4 |
-| 20 | 0.52 | 11 A | 4 A | 34.1 |
-| 22 | 0.33 | 7 A | 3 A | 54.3 |
-| 24 | 0.21 | 3.5 A | 2 A | 86.4 |
-
-Per SAE J1128. Power distribution column assumes 30% bundle derating.
-
-### 10.2 Connector Family Comparison
-
-| Family | Contact Res. | Mating Cycles | Seal | Temp Range | Cost/Conn. |
-|--------|-------------|--------------|------|------------|-----------|
-| Deutsch DT | 8 mΩ | 100+ | IP68 | −55 to +125 °C | $8–12 |
-| Deutsch DTP | 5 mΩ | 100+ | IP68 | −55 to +125 °C | $10–15 |
-| TE Superseal 1.5 | 10 mΩ | 50+ | IP67 | −40 to +130 °C | $3–6 |
-| Molex Mini-Fit Jr | 10 mΩ | 30 | Unsealed | −40 to +105 °C | $1–3 |
-| JST SM | 20 mΩ | 20 | Unsealed | −25 to +85 °C | $0.50–1 |
-| Anderson SB50 | 0.5 mΩ | 1000+ | IP20 | −20 to +105 °C | $8–12 |
-
-### 10.3 CAN Message → Physical Node Wiring
+### 10.1 CAN Message → Physical Node Wiring
 
 **Low-Level CAN Bus (500 kbit/s):**
 
@@ -821,77 +789,19 @@ Per SAE J1128. Power distribution column assumes 30% bundle derating.
 
 ---
 
-## Appendix A: Assembly Checklist
+## Appendix: Assembly Checklist
 
-- [ ] All wires cut to length with 150 mm extra for service loops
-- [ ] Continuity test on every wire BEFORE terminating (verify no internal breaks)
-- [ ] Deutsch DT/DTP contacts crimped with proper 4-indent crimp tool (Deutsch HDT-48-00 or equiv.)
-- [ ] Molex Mini-Fit Jr contacts crimped with proper tool (Molex 63811-8700)
-- [ ] TE Superseal contacts crimped with open-barrel tool (TE 1490200-1)
-- [ ] Anderson SB50 contacts crimped or soldered to 6 AWG; torque connector screws to spec
-- [ ] Flyback diode polarity verified on all 13 relay coils (cathode → +12 V, anode → GPIO/NPN)
-- [ ] CAN termination: measure 60 Ω ±5% between CAN_H and CAN_L at any node with both terminators installed
-- [ ] CAN CMC + TVS soldered on FR4 pigtail within 50 mm of each node connector
-- [ ] CAN_GND wired to 12 V ground bus at exactly ONE point (JP1)
-- [ ] Shield drains bonded to chassis at exactly ONE point (JP1 chassis bolt)
-- [ ] 72 V circuits → chassis: must measure OPEN (>10 MΩ at 500 V)
-- [ ] 12 V ground bus → chassis: must measure CLOSED (<1 Ω)
-- [ ] CAN_GND → 12 V ground bus: CLOSED at JP1 only
-- [ ] 100 mm minimum separation between 72 V power and signal/CAN verified along entire route
-- [ ] 90° crossing verified at every power/signal intersection
-- [ ] Heat-shrink labels on BOTH ends of every wire, within 20 mm of terminal
-- [ ] 150 mm service loop at every connector
-- [ ] Grommets installed at all chassis pass-through points
-- [ ] All connectors fully seated with wedge locks engaged
-- [ ] DC-DC converter CAN baud rate verified (500 kbps) or workaround implemented
-- [ ] Power-up sequence test:
-  1. Battery connected → DC-DC output 12.0–13.8 V
-  2. All ATO fuses installed one at a time; verify no shorts
-  3. LDO outputs: 3.3 V ±5% at each ESP32-S3, 5 V ±5% at STM32 and MCP4725
-  4. CAN bus: verify traffic on both buses with PCAN-USB or logic analyzer
-- [ ] ESTOP test: press button → all relays de-energize, MCP4725 outputs 0 V, brake light ON
-- [ ] No smoke, no hot wires, no sparking on any connection
-
-## Appendix B: Tools Required
-
-| Tool | Use |
-|------|-----|
-| Deutsch HDT-48-00 crimp tool | DT and DTP contacts |
-| Molex 63811-8700 crimp tool | Mini-Fit Jr contacts |
-| TE 1490200-1 open-barrel crimper | Superseal contacts |
-| Automotive ratcheting wire stripper (6–24 AWG) | All wire preparation |
-| Heat gun with shrink nozzle | Heat-shrink labels + adhesive-lined tubing |
-| Digital multimeter | Continuity, resistance, voltage |
-| Megohmmeter / insulation tester (1000 V) | 72 V isolation verification |
-| CAN bus interface (PCAN-USB or similar) | CAN traffic validation |
-| Industrial heat-shrink label maker | Wire identification labels |
-| Cable tie tension gun | Consistent tie tension |
-| Soldering iron (temperature-controlled) | CMC/TVS pigtail boards, termination resistors |
-| M6 torque wrench | Ground bus and Anderson connector terminals |
-| Wire ferrule crimper | Ferrule termination for screw terminals |
-| Oscilloscope (optional, 2-ch 100 MHz) | CAN signal integrity, throttle noise check |
+- [ ] Continuity test on every wire before terminating
+- [ ] Flyback diode polarity verified on all 13 relay coils (cathode to +12 V, anode to switched side)
+- [ ] CAN termination: 60 Ω ±5% between CAN_H and CAN_L at any node (both terminators installed)
+- [ ] CAN_GND connected to chassis at exactly ONE point (JP2 center)
+- [ ] Shield drains bonded to chassis at exactly ONE point (JP2), floating at far ends
+- [ ] Every device ground strap to chassis: <0.1 Ω (bare metal, greased, tight)
+- [ ] Battery disconnected: 72 V positive to chassis >100 kΩ (no short before power-up)
+- [ ] Power-up: DC-DC output 12.0–13.8 V; LDO outputs 3.3 V ±5% and 5 V ±5%
+- [ ] CAN bus traffic verified on both buses
+- [ ] ESTOP test: all relays open, MCP4725 outputs 0 V, brake light ON
 
 ---
 
-## Appendix C: EGAS Dual-Path Motor Control Wiring Detail
-
-Both SYS (Level 2) and MTR (Level 1) have a complete throttle + gear path to the motor controller. The motor controller sees only one active signal at a time through mode-gated control. To prevent both MCUs driving the same analog line simultaneously:
-
-**Throttle (0–5 V analog):**
-```
-SYS MCP4725 (GPIO15/16) ── 1 kΩ ──┐
-                                     ├── Motor Controller Throttle Input
-MTR MCP4725 (PB6/PB7)    ── 1 kΩ ──┘
-```
-Both DACs can be connected through 1 kΩ series resistors at all times. The inactive MCU outputs 0 V (DAC code 0). The series resistors prevent either DAC from loading the other. Verify: when one DAC outputs 5 V through 1 kΩ and the other outputs 0 V, the motor controller sees ~2.5 V — acceptable because only the active MCU drives a non-zero value, and the idle MCU is held at 0 V by firmware.
-
-**Gear (72 V discrete lines):**
-```
-SYS gear relays (GPIO33/34/35) ── COM: 72 V (fused 1 A) ──┬── Motor Controller
-MTR gear relays (PA3/PA4/PA5)   ── COM: 72 V (fused 1 A) ──┘   Gear Input
-```
-Relay outputs can be parallel-connected: when a relay is open, its output floats. The active MCU's relay closure provides 72 V. Both MCUs asserting the same gear is safe (same voltage on same line). Both asserting DIFFERENT gears would create a conflict — prevented in firmware (only one MCU controls gears at a time per mode gate).
-
----
-
-*Document version 1.0. Generated from architecture.md, all three config.h files, and the comprehensive codebase audit of 2026-06-25.*
+*Document version 1.0. Generated from architecture.md and all three config.h files, 2026-06-25.*

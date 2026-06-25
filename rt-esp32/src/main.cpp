@@ -44,6 +44,7 @@ static std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};    // measured speed fr
 // ── Heartbeat tracking (written by dispatch, checked by control) ─
 static std::atomic<int64_t>  g_last_sys_hb_us{0};      // 0x7FE SYS heartbeat timestamp
 static std::atomic<int64_t>  g_last_host_hb_us{0};    // 0x7FC Host heartbeat timestamp
+static std::atomic<int64_t>  g_last_estop_sent_us{0}; // Gap #14: 0x001 rate limiter
 
 // ── Telemetry atomics (written by control/dispatch, read by tx tasks) ─
 static std::atomic<int16_t>  g_last_cmd_angle_raw{0};   // commanded steering angle in 0.1° (fix #5)
@@ -240,6 +241,18 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
 }
 
+// Gap #14: Rate-limit 0x001 ESTOP broadcasts. Prevents a corrupted node
+// from flooding the bus with ESTOP frames. Max 2 frames per 500ms window.
+// Returns true if the ESTOP frame should be sent, false if suppressed.
+static bool can_send_estop() {
+    constexpr int64_t kMinIntervalUs = 250'000;  // 250ms between broadcasts
+    int64_t now = esp_timer_get_time();
+    int64_t last = g_last_estop_sent_us.load(std::memory_order_relaxed);
+    if (now - last < kMinIntervalUs) return false;
+    g_last_estop_sent_us.store(now, std::memory_order_relaxed);
+    return true;
+}
+
 // ── Safety checks (used by t_control) ─────────────────────────────
 struct SafetyResult { bool zero_setpoints; int32_t brake_kpa; bool disable_steering; bool takeover_seb; bool obstacle_triggered; };
 static std::atomic<bool> g_seb_takeover{false};  // gap #12: RT→0x7B9 takeover active
@@ -371,11 +384,14 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace, uint32_t 
 
             // Originate 0x001 ESTOP on internal fault detection (fix #5)
             // Send on both buses — SYS, EPS-C, SEB, Host all listen for 0x001
-            can::Frame estop_frame;
-            estop_frame.id = can::kIdSafetyEstop;
-            estop_frame.dlc = 0;
-            xQueueSend(g_gw_tx_low_q, &estop_frame, 0);
-            xQueueSend(g_gw_tx_high_q, &estop_frame, 0);
+            // Gap #14: rate-limited to prevent bus flooding
+            if (can_send_estop()) {
+                can::Frame estop_frame;
+                estop_frame.id = can::kIdSafetyEstop;
+                estop_frame.dlc = 0;
+                xQueueSend(g_gw_tx_low_q, &estop_frame, portMAX_DELAY);
+                xQueueSend(g_gw_tx_high_q, &estop_frame, portMAX_DELAY);
+            }
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
         // Steering ESTOP: state machine handles ramp-to-zero (gap C3).
@@ -399,6 +415,31 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace, uint32_t 
                                         0.01f, pid_out);
             g_pid_output_mmps.store(pid_out);
             g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
+
+#ifdef CONFIG_ENABLE_ACTIVE_PID
+            // ── ACTIVE PID CONTROL ────────────────────────────────
+            // ENABLED: PID correction injected into motor setpoint.
+            // PREREQUISITES BEFORE ENABLING (all must be true):
+            //   1. Rear motor encoder physically installed on GPIO 1/2
+            //   2. Quadrature phasing verified (swap A/B if reversed)
+            //   3. CONFIG_ENABLE_ENCODERS defined (enables PCNT hardware)
+            //   4. Speed reading validated on 0x220 RT_PID_RPT telemetry
+            //   5. No-load bench test: PID tracks setpoint without oscillation
+            //   6. THEN define CONFIG_ENABLE_ACTIVE_PID
+            //
+            // SAFETY: measured==0 guard in update_shadow_pid() prevents
+            // runaway if encoder fails (wire break → zero reading).
+            // Additional guards needed before production:
+            //   - RPM plausibility: measured cannot jump > X mm/s per tick
+            //   - Zero-speed timeout: if measured==0 for >500ms while
+            //     setpoint>0 → fault (encoder failure, not stationary)
+            //   - Encoder fault output monitoring (if encoder has FLT pin)
+            if (g_mtr_actual_speed_mmps.load() != 0) {
+                sp.motor_speed_mmps += pid_out;
+                sp.motor_speed_mmps = std::clamp(sp.motor_speed_mmps,
+                    -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
+            }
+#endif // CONFIG_ENABLE_ACTIVE_PID
         }
 
         // ── Capture state for telemetry (fix #1, #5) ──────────────
@@ -427,9 +468,11 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace, uint32_t 
                     bus_off_count_low++;
                     if (bus_off_count_low >= 5) {
                         ESP_LOGE(TAG, "Low CAN bus-off persistent — triggering ESTOP");
-                        can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                        xQueueSend(g_gw_tx_low_q, &ef, 0);
-                        xQueueSend(g_gw_tx_high_q, &ef, 0);
+                        if (can_send_estop()) {
+                            can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                            xQueueSend(g_gw_tx_low_q, &ef, portMAX_DELAY);
+                            xQueueSend(g_gw_tx_high_q, &ef, portMAX_DELAY);
+                        }
                     }
                     if (drv) drv->init();  // attempt recovery
                 } else { bus_off_count_low = 0; }

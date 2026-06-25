@@ -185,21 +185,57 @@ int main(){
         printf("  Hold 500ms → FAULT (silent-stop)\n");
     }
 
-    // ── Test 7: exit_estop() returns to ACTIVE ───────────────────────
-    printf("-- Test 7: exit_estop() recovery --\n");
+    // ── Test 7: exit_estop() defers until ramp completes (Gap #6) ────
+    printf("-- Test 7: exit_estop() deferred (Gap #6) --\n");
     {
         SteeringControl sc;
         sc.init();
         uint32_t now_ms = 0;
         boot_to_active(sc, now_ms);
 
-        sc.set_target(0, 0);
-        sc.start_estop(false);  // ramp to zero
+        // Start non-obstacle ESTOP at 30°; ramp to 0° at ~2°/tick
+        sc.set_target(300 * 10, 0);  // 300 (0.1° units) = 30°
+        sc.start_estop(false);
         CHECK(sc.state() == SteerState::ESTOP_RAMP_TO_ZERO);
 
+        // Gap #6: exit_estop() sets pending flag; state stays in ramp
         sc.exit_estop();
+        CHECK(sc.state() == SteerState::ESTOP_RAMP_TO_ZERO);
+        printf("  exit_estop() during ramp → stays in ramp (pending)\n");
+
+        // Ramp continues; after ~150 ticks → angle reaches 0
+        can::VcuSesReq dummy;
+        for (int i = 0; i < 160; ++i) {
+            int16_t ses_angle = 0;  // EPS-C tracking perfectly
+            if (i < 150) ses_angle = int16_t(300 - i * 2);  // ramp tracking
+            sc.tick(ses_angle, 1, now_ms += 20, dummy);
+        }
+        // Ramp complete + pending exit → ACTIVE
         CHECK(sc.state() == SteerState::STEER_ACTIVE);
-        printf("  ESTOP_RAMP_TO_ZERO → exit_estop() → ACTIVE\n");
+        printf("  Ramp completed + pending → ACTIVE\n");
+    }
+    {
+        SteeringControl sc;
+        sc.init();
+        uint32_t now_ms = 0;
+        boot_to_active(sc, now_ms);
+
+        // Obstacle ESTOP: hold-then-silent
+        sc.start_estop(true);  // obstacle
+        sc.set_estop_hold_time(now_ms);
+        CHECK(sc.state() == SteerState::ESTOP_HOLD_THEN_SILENT);
+
+        // Gap #6: exit during hold defers
+        sc.exit_estop();
+        CHECK(sc.state() == SteerState::ESTOP_HOLD_THEN_SILENT);
+        printf("  exit_estop() during hold → stays in hold (pending)\n");
+
+        // After hold expires (500ms) with pending → ACTIVE, not FAULT
+        can::VcuSesReq dummy;
+        now_ms += 501;
+        sc.tick(INT16_MIN, 0, now_ms, dummy);
+        CHECK(sc.state() == SteerState::STEER_ACTIVE);
+        printf("  Hold expired + pending → ACTIVE (not FAULT)\n");
     }
 
     // ── Test 8: FAULT → reset_to_listen() recovery ───────────────────

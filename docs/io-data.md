@@ -143,7 +143,7 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x169` | VCU_SES_REQ | `VCU_SES_Control_Enable` | bool | 0/1 | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_Control_Mode` | u8 | — | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_Tgt_StrAngle` | i16 (0.1°/bit) | [-780, 780] | 50 Hz | EPS-C |
-| `0x169` | VCU_SES_REQ | `VCU_SES_Tgt_StrAngleSpd` | u8 (°/s) | — | 50 Hz | EPS-C |
+| `0x169` | VCU_SES_REQ | `VCU_SES_Tgt_StrAngleSpd` | u16 (°/s) | — | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `roll_cnt_enable` | bool | must be 1 | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `checksum_enable` | bool | must be 1 | 50 Hz | EPS-C |
 | `0x169` | VCU_SES_REQ | `VCU_SES_RollCnt` | u8 (low 4 bits) | 0–15 rolling | 50 Hz | EPS-C |
@@ -343,7 +343,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). **Curre
 |----------|------|-------|
 | `VCU_SEB_Alignment_Enable` | bool | 0/1 |
 | `VCU_SEB_Control_Enable` | bool | 0/1 |
-| `VCU_SEB_Control_Mode` | u8 enum | {1=stroke, 2=pressure} |
+| `VCU_SEB_Control_Mode` | u8 enum | {0=Stroke, 1=Pressure} |
 | `VCU_SEB_AutoBrake` | bool | 0/1 |
 | `VCU_SEB_Stroke_Value_Req` | u16 (0.05 mm/bit) | offset -30 mm |
 | `VCU_SEB_Pre_Value_Req` | u8 (0.05 MPa/bit) | — |
@@ -422,7 +422,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). **Curre
 |------|-------------|
 | SYS → MTR (0x110) | Mode gating: Manual → MTR reads ADC/gear; Auto → MTR follows CAN 0x204; ESTOP → cut all |
 | Host → RT → MTR (0x204) | Autonomous drive: speed + gear from RT kinematics → MTR DAC/relays |
-| Host → RT → SEB (0x7B9) | AUTO brake: 1-hop from RT kinematics to SEB |
+| Host → RT → SEB (0x7B9) | AUTO brake: (2-hop via SYS; 1-hop RT→SEB planned per gap #12) |
 | SYS → SEB (0x7B9) | MANUAL/ESTOP brake: brake lever → SYS GPIO2 → SEB CAN |
 | RT → EPS-C (0x169) | Steering angle commands from RT to steering actuator |
 | MTR → RT → Host (0x120) | Speed telemetry upstream for autonomy stack |

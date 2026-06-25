@@ -60,9 +60,11 @@ constexpr int kCmdStaleTimeoutMs   = 200;   // 0x204 staleness (20 missed frames
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 
 // ── Fault flags (bit positions in 0x206 fault_flags byte) ─────────
-constexpr uint8_t kFaultEstopActive   = 0x01;  // ESTOP confirmed active
-constexpr uint8_t kFaultCmdTimeout    = 0x02;  // 0x204 stale in AUTO
-constexpr uint8_t kFaultAdcFault      = 0x04;  // ADC read failure
-constexpr uint8_t kFaultGearConflict  = 0x08;  // multiple gear lines active
+// Gap #15: Canonical definitions in shared/shared_config.h (shared::kMtrFault*).
+// Local aliases retained for MTR code compatibility.
+constexpr uint8_t kFaultEstopActive   = shared::kMtrFaultEstopActive;
+constexpr uint8_t kFaultCmdTimeout    = shared::kMtrFaultCmdTimeout;
+constexpr uint8_t kFaultAdcFault      = shared::kMtrFaultAdcFault;
+constexpr uint8_t kFaultGearConflict  = shared::kMtrFaultGearConflict;
 
 }  // namespace mtr

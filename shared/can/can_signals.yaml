@@ -23,7 +23,7 @@ description: "E-Trike CAN signal definitions — single source of truth for DBC 
 constants:
   max_speed_fwd_mmps: 3000
   max_speed_rev_mmps: 500
-  max_brake_kpa: 20000
+  max_brake_kpa: 5000   # SEB physical limit: 5 MPa = 100 raw = 5000 kPa
   brake_stroke_scale: 0.05
   brake_stroke_offset: -30.0
   seb_max_pressure_raw: 100
