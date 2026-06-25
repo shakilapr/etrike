@@ -31,6 +31,7 @@ constexpr float kSteerRateMinDegS       = 125.0f;   // at low speed
 constexpr float kSteerRateMaxDegS       = 525.0f;   // at high speed
 constexpr float kSteerRateRangeDegS     = 400.0f;   // max − min
 constexpr int   kSteerSyncTimeoutMs     = 5000;     // LISTEN_SYNC timeout → FAULT (gap C1)
+constexpr int   kSyntreeAngleOffset     = 30000;    // SYNTREE CSV offset: raw = angle_0_1deg + offset (0° → raw=30000)
 constexpr float kSteerEstopRampDegS     = 20.0f;    // ESTOP ramp-to-zero rate (gap C3)
 constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then silent-stop (gap C3)
 

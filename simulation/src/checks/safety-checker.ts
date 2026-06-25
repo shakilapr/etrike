@@ -38,6 +38,15 @@ export class SafetyChecker {
     }
   }
 
+  /**
+   * Placeholder — ESTOP frame rate limiting not yet implemented (gap #14).
+   * Future: only accept 2 ESTOP frames per 500ms sliding window.
+   * @returns true if the ESTOP frame is accepted.
+   */
+  processEstop(_timestampMs: number): boolean {
+    return true; // stub — no rate limiting yet
+  }
+
   /** Verify mode compliance: only correct sender transmits 0x7B9 per mode. */
   checkModeCompliance(nowMs: number, canId: string, sender: string, mode: string): void {
     if (canId === "0x7B9") {

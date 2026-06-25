@@ -133,7 +133,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
     if (fr.id == can::kIdSyntreeEpsStatus) {
-        g_ses_angle_raw.store(ctx.steer_feedback_angle - 30000);  // CAN raw → 0.1° offset-free
+        g_ses_angle_raw.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);  // CAN raw → 0.1° offset-free
         g_ses_angle_status.store(ctx.steer_angle_status);  // alignment bit (gap C2)
         g_ses_error_status.store((fr.data[0] >> 6) & 0x03);  // bits 6-7: error level
     }

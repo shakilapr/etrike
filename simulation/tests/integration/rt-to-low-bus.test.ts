@@ -3,6 +3,7 @@ import { RtEcu } from "../../src/ecus/rt.js";
 import { MtrEcu } from "../../src/ecus/mtr.js";
 import { SyntreeEpsc } from "../../src/ecus/epsc.js";
 import { SyntreeSeb } from "../../src/ecus/seb.js";
+import { SimulationRunner } from "../../src/harness/runner.js";
 import type { SimulationContext } from "../../src/ecus/base.js";
 import type { SimFrame } from "../../src/core/types.js";
 
@@ -82,27 +83,24 @@ describe("RT to low-bus pipeline", () => {
   });
 
   it("gap #12: RT transmits 0x7B9 on SYS heartbeat loss", () => {
-    // Standalone test using SimulationRunner — requires different setup
-    // so we test the underlying behavior directly via RtEcu
-    // RT should send 0x7B9 stroke command when SYS heartbeat is missing >200ms
-    // Mock SYS heartbeat at t=0, then let it expire
-    rt.tick(0, [], [], autoCtx(0));
-    // No more SYS heartbeats — after 200ms RT takes over
-    for (let i = 1; i <= 15; i++) {
-      const frames = rt.tick(i * 20, [], [], autoCtx(i * 20));
-      // After 200ms (10 ticks), RT should produce 0x7B9 on low bus
-      if (i >= 10) {
-        const sebFrames = frames.filter(f => f.canId === "0x7B9" && f.bus === "low");
-        if (sebFrames.length > 0) {
-          // Verify stroke=max (1140 raw = 27mm)
-          const lastSeb = sebFrames[sebFrames.length - 1];
-          const stroke = ((lastSeb.data[2] << 8) | lastSeb.data[3]) & 0xFFFF;
-          expect(stroke).toBeGreaterThanOrEqual(1140);
-          return; // success
-        }
-      }
-    }
-    // If we get here, no 0x7B9 was produced
-    expect(false).toBe(true); // fail — no takeover detected
+    const runner = new SimulationRunner();
+    runner.configure({
+      tickMs: 1, speed: 0, initialMode: "auto",
+      plant: { wheelbaseMm: 1500, maxSpeedMmps: 3000, maxSteeringDeg: 40, steerLagMs: 50, brakeDecelMmps2PerMm: 2000 },
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],
+      faults: [{ atMs: 500, type: "freezeHeartbeat", target: "sys" }],
+    });
+    const result = runner.runDuration(1500);
+
+    // After 200ms SYS heartbeat timeout, RT should take over 0x7B9
+    const sebCount = result.lowBus.byId["0x7B9"] || 0;
+    expect(sebCount).toBeGreaterThan(0);
+
+    // Verify stroke=max (1140 raw = 27mm) in captured frames from RT
+    const sebFrames = runner.capturedFrames.filter(f => f.canId === "0x7B9" && f.sender === "rt");
+    expect(sebFrames.length).toBeGreaterThan(0);
+    const lastSeb = sebFrames[sebFrames.length - 1];
+    const stroke = ((lastSeb.data[2] << 8) | lastSeb.data[3]) & 0xFFFF;
+    expect(stroke).toBeGreaterThanOrEqual(1140);
   });
 });

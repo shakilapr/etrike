@@ -141,6 +141,11 @@ export class SysBrakeController {
     };
   }
 
+  /** Placeholder — following-error tracking not yet implemented (gap #13). */
+  getDiagnostics(): { brakeFollowingError: boolean } {
+    return { brakeFollowingError: false };
+  }
+
   reset(): void {
     this.state = BrakeState.BOOT_WAIT;
     this.bootTimer = 0;

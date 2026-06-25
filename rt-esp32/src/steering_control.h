@@ -179,7 +179,7 @@ private:
     void build_command(can::VcuSesReq& out) {
         out.align_enable = 1;
         out.control_enable = 1;
-        out.target_angle = m_active_angle + 30000;  // 0.1° → CAN raw (CSV offset=-3000)
+        out.target_angle = m_active_angle + kSyntreeAngleOffset;  // 0.1° → CAN raw (SYNTREE offset)
         // Dynamic slew rate: 125°/s at low speed, 525°/s at high speed
         float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
         float rate_deg_s = kSteerRateMinDegS

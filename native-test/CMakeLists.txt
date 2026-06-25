@@ -131,9 +131,31 @@ target_include_directories(smoke_test PRIVATE
     ${CMAKE_SOURCE_DIR}/../shared
 )
 
+# ── Protocol roundtrip test (all structs with to_frame / from_frame) ──
+add_executable(protocol_roundtrip
+    test/test_protocol_roundtrip.cpp
+)
+target_link_libraries(protocol_roundtrip PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(protocol_roundtrip PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_SOURCE_DIR}/../shared
+)
+
+# ── SYNTREE checksum full test ──────────────────────────────────────
+add_executable(checksum_full
+    test/test_checksum_full.cpp
+)
+target_link_libraries(checksum_full PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(checksum_full PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_SOURCE_DIR}/../shared
+)
+
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
-add_test(NAME smoke COMMAND smoke_test)
+add_test(NAME smoke              COMMAND smoke_test)
+add_test(NAME protocol_roundtrip  COMMAND protocol_roundtrip)
+add_test(NAME checksum_full      COMMAND checksum_full)
 
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")

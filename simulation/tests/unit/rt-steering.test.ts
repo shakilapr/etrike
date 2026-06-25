@@ -152,4 +152,66 @@ describe("RtSteeringController", () => {
     sc.exitEstop();
     expect(sc.state).toBe(SteerState.ACTIVE);
   });
+
+  // ── Architecture Gap #6: ESTOP Exit Race Condition ────────────────
+
+  it("gap #6: defers ESTOP exit until centering ramp completes", () => {
+    // Boot + sync to ACTIVE
+    for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
+    sc.tick(30000, 1, 500);
+
+    // Start non-obstacle ESTOP with steering at 30 degrees
+    sc.setTarget(30000, 2000); // 30 deg in millidegrees, 2 m/s
+    sc.startEstop(false, 600); // non-obstacle → ESTOP_RAMP_TO_ZERO
+
+    // Ramp should be active
+    expect(sc.getState()).toBe(SteerState.ESTOP_RAMP_TO_ZERO);
+
+    // Try to exit mid-ramp — should NOT immediately transition out of ESTOP
+    // (GAP: exitEstop currently transitions to ACTIVE immediately)
+    sc.exitEstop();
+    expect(sc.getState()).toBe(SteerState.ESTOP_RAMP_TO_ZERO);
+
+    // Simulate ramp completing (tick at 50Hz until angle reaches 0)
+    for (let i = 0; i < 100; i++) {
+      sc.tick(null, 0, 700 + i * 20);
+    }
+
+    // After ramp completes, should auto-transition
+    // (GAP: state currently stays in ESTOP_RAMP_TO_ZERO)
+    const finalState = sc.getState();
+    expect(finalState === SteerState.ACTIVE || finalState === SteerState.FAULT).toBe(true);
+  });
+
+  // ── Architecture Gap #9: Obstacle ESTOP Hold-Angle Clamp ─────────
+
+  it("gap #9: obstacle ESTOP clamps hold angle to dynamic limit at high speed", () => {
+    // Boot + sync to ACTIVE
+    for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
+    sc.tick(30000, 1, 500);
+
+    // Set large steering angle at high speed (25 km/h ≈ 7000 mm/s)
+    sc.setTarget(40000, 7000); // 40 deg, 25 km/h
+    sc.startEstop(true, 600); // obstacle-triggered
+
+    expect(sc.getState()).toBe(SteerState.ESTOP_HOLD_THEN_SILENT);
+
+    // At 25 km/h, dynamic limit is ~5 deg. Hold angle should be clamped.
+    // (GAP: estopHoldAngle is currently set to activeAngle with no dynamic limit clamp)
+    const holdAngle = sc.getHoldAngle();
+    expect(Math.abs(holdAngle)).toBeLessThanOrEqual(5000); // 5 deg in millidegrees
+  });
+
+  it("gap #9: obstacle ESTOP allows wider hold angle at low speed", () => {
+    // Boot + sync to ACTIVE
+    for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
+    sc.tick(30000, 1, 500);
+
+    sc.setTarget(40000, 500); // 40 deg, 0.5 m/s
+    sc.startEstop(true, 600);
+
+    const holdAngle = sc.getHoldAngle();
+    // At 0.5 m/s, dynamic limit is ~40 deg — should allow full angle
+    expect(Math.abs(holdAngle)).toBeGreaterThan(30000); // >30 deg
+  });
 });
