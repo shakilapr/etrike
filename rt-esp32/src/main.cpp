@@ -36,7 +36,7 @@ static std::atomic<int32_t>  g_brake_request_kpa{0};
 static std::atomic<bool>     g_estop_flag{false};
 static std::atomic<uint8_t>  g_mode_from_sys{0};
 static std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
-static std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};    // steering angle from 0x201 (fix C6)
+static std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};    // steering angle, 0.1° offset-free (CAN raw - 30000)
 static std::atomic<uint8_t>  g_ses_angle_status{0};         // 0x201 byte0 bit0: alignment (gap C2)
 static std::atomic<int32_t>  g_brake_kpa_to_send{0};        // resolved brake kPa for 0x205 (fix C7)
 static std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};    // measured speed from 0x206 MTR (fix M4)
@@ -103,10 +103,20 @@ struct DispatchContext {
 };
 
 static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& ctx) {
+    // Frozen counter detection: skip timestamp update if alive counter hasn't changed
+    // (prevents stuck CAN controller from masking a hung peer)
     if (fr.id == can::kIdSysHeartbeat) {
-        g_last_sys_hb_us.store(esp_timer_get_time());
+        static uint8_t last_sys_ctr = 0xFF;
+        if (fr.data[0] != last_sys_ctr) {
+            last_sys_ctr = fr.data[0];
+            g_last_sys_hb_us.store(esp_timer_get_time());
+        }
     } else if (fr.id == can::kIdHostHeartbeat) {
-        g_last_host_hb_us.store(esp_timer_get_time());
+        static uint8_t last_host_ctr = 0xFF;
+        if (fr.data[0] != last_host_ctr) {
+            last_host_ctr = fr.data[0];
+            g_last_host_hb_us.store(esp_timer_get_time());
+        }
     }
 
     rt::GatewayQueues q;
@@ -123,7 +133,7 @@ static void process_frame(const can::Frame& fr, bool is_high, DispatchContext& c
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) { ctx.gw_lo = fr; ctx.gw_hi = fr; }
     if (fr.id == can::kIdSyntreeEpsStatus) {
-        g_ses_angle_raw.store(ctx.steer_feedback_angle);
+        g_ses_angle_raw.store(ctx.steer_feedback_angle - 30000);  // CAN raw → 0.1° offset-free
         g_ses_angle_status.store(ctx.steer_angle_status);  // alignment bit (gap C2)
         g_ses_error_status.store((fr.data[0] >> 6) & 0x03);  // bits 6-7: error level
     }
@@ -477,18 +487,24 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace) {
         g_can_high.send(fr);
 
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
+        // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
             int16_t angle = g_ses_angle_raw.load();
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
-            can::SteerDiag{angle, fault, g_ses_motor_current.load(), g_ses_ecu_temp.load(), 0}.to_frame(fr);
+            int16_t mtr_curr = int16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
+            uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
+            can::SteerDiag{angle, fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
             g_can_high.send(fr);
         }
 
         // 0x311 BRAKE_DIAG — 10 Hz (v0.0.4: SEB telemetry for Host)
+        // Rescale: SEB_Test source (0.0078125 A/bit, 0.5 degC/bit) → BRAKE_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
             uint16_t seb_pressure = g_seb_pressure_raw.load();
             uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
-            can::BrakeDiag{seb_pressure, seb_fault, g_seb_motor_current.load(), g_seb_ecu_temp_c.load(), 0}.to_frame(fr);
+            int16_t mtr_curr = int16_t((g_seb_motor_current.load() * 25) / 32);   // ×0.78125
+            int16_t ecu_tmp  = int16_t(g_seb_ecu_temp_c.load() * 5);              // ×5
+            can::BrakeDiag{seb_pressure, seb_fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
             g_can_high.send(fr);
         }
 

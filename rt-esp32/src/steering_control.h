@@ -55,7 +55,7 @@ public:
             if (ses_angle_raw == INT16_MIN) return false;
             // Alignment check (gap C2): EPS-C must report angle_status == 1
             if (ses_angle_status == 0) return false;  // still center-finding
-            // Synchronized — capture current angle, transition to ACTIVE
+            // Synchronized — capture current angle (ses_angle_raw is already offset-free 0.1°)
             m_active_angle = ses_angle_raw;
             m_state = SteerState::ACTIVE;
             build_command(out);
@@ -81,7 +81,7 @@ public:
             }
 
             // Gap C3: following-error check during ESTOP centering ramp.
-            // If mechanical jam causes >5° error for >1s, fall back to silent-stop.
+            // Both m_active_angle and ses_angle_raw are offset-free 0.1° units.
             if (ses_angle_raw != INT16_MIN) {
                 int16_t err = std::abs(m_active_angle - ses_angle_raw);
                 if (err > 50) {  // 5° = 50 in 0.1° units
@@ -179,7 +179,7 @@ private:
     void build_command(can::VcuSesReq& out) {
         out.align_enable = 1;
         out.control_enable = 1;
-        out.target_angle = m_active_angle;
+        out.target_angle = m_active_angle + 30000;  // 0.1° → CAN raw (CSV offset=-3000)
         // Dynamic slew rate: 125°/s at low speed, 525°/s at high speed
         float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
         float rate_deg_s = kSteerRateMinDegS

@@ -170,12 +170,10 @@ void task_safety(void* pvParameters) {
         /* Physical ESTOP button (NC, active-low). When pressed:
          *   - Hardware directly kills throttle/gear (Level 3)
          *   - This firmware also detects it for CAN feedback (0x206)
-         *
-         * STM32 HAL:
-         *   if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_RESET) {
-         *       g_estop_active.store(true, std::memory_order_relaxed);
-         *   }
          */
+        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_RESET) {
+            g_estop_active.store(true, std::memory_order_relaxed);
+        }
 
         /* ── 2. CAN 0x204 staleness check ── */
         can::Mode mode = g_mode.load(std::memory_order_relaxed);
