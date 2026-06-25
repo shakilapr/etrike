@@ -317,7 +317,6 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). **Curre
 |----------|------|-------|
 | `VCU_SES_Alignment_Enable` | bool | 0/1 |
 | `VCU_SES_Control_Enable` | bool | 0/1 |
-| `VCU_SES_Control_Mode` | u8 | — |
 | `VCU_SES_Tgt_StrAngle` | i16 (0.1°/bit) | [-780, 780] |
 | `VCU_SES_Tgt_StrAngleSpd` | u8 (°/s) | — |
 | `roll_cnt_enable` | bool | must be 1 |

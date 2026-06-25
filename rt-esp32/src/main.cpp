@@ -17,6 +17,7 @@
 #include "physics_model.h"
 #include "steering_control.h"
 #include "brake_arbitration.h"
+#include "speed_controller.h"
 #include "heartbeat.h"
 #include "watchdog.h"
 
@@ -27,6 +28,7 @@ static rt::Mcp2515Driver g_can_high;
 
 // ── Application objects ────────────────────────────────────────────
 static rt::PhysicsModel    g_physics;
+static rt::SpeedController g_speed_ctrl;
 static rt::SteeringControl g_steering;
 static rt::DualHeartbeat   g_heartbeat;
 static rt::CmdWatchdog     g_watchdog;
@@ -410,7 +412,7 @@ static SafetyResult run_safety_checks(int64_t now, bool startup_grace, uint32_t 
         // ── Shadow PID (telemetry only — arch §7.6, gap #5) ───────
         {
             int16_t pid_out = 0;
-            g_physics.update_shadow_pid(sp.motor_speed_mmps,
+            g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps,
                                         g_mtr_actual_speed_mmps.load(),
                                         0.01f, pid_out);
             g_pid_output_mmps.store(pid_out);
