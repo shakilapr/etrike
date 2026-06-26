@@ -7,83 +7,467 @@ rack, brake actuator, or high-voltage power required.
 
 ---
 
-## 1. Architecture Under Test
+## 1. How CAN Works (Physical Layer)
+
+Before connecting anything, it helps to know what's happening electrically.
+
+### 1.1 Two Wires, One Signal
+
+A CAN bus is a **differential pair**: two wires — CAN_H (high) and CAN_L (low).
+The signal is the *voltage difference* between them, not the absolute voltage on
+either wire. This makes CAN immune to electrical noise: if a motor or relay
+induces a spike, it hits both wires equally and the *difference* stays clean.
 
 ```
-┌──────────────────┐         ┌──────────────────┐
-│   RT ESP32-S3    │         │   SYS ESP32-S3   │
-│                  │         │                  │
-│  TWAI (low bus)  │         │  TWAI (low bus)  │
-│  TX=5  RX=4      │         │  TX=5  RX=4      │
-│       │          │         │       │          │
-│   SN65HVD230     │         │   SN65HVD230     │
-│       │          │         │       │          │
-│   CAN_H ────────[shared low CAN bus, 500 kbit/s]───────┐
-│   CAN_L ────────────────────────────────────────────────┤
-│                  │         │                  │         │
-│  MCP2515 (high)  │         │                  │    CANalyst-II
-│  UNCONNECTED     │         │                  │    (monitor + inject)
-└──────────────────┘         └──────────────────┘         │
-                                                   ┌──────┴──────┐
-                                                   │ CANalyst-II │
-                                                   │ Ch0 → low   │
-                                                   │ Ch1 → unused│
-                                                   └──────┬──────┘
-                                                          │ USB
-                                                   ┌──────┴──────┐
-                                                   │ Debug Tool  │
-                                                   │ Backend :3000│
-                                                   │ UI :5173     │
-                                                   └─────────────┘
+         recessive (bit = 1)          dominant (bit = 0)
+         ┌─────────────────┐          ┌─────────────────┐
+CAN_H    │     ~2.5 V       │          │     ~3.5 V       │
+         │                  │          │               ██│
+CAN_L    │     ~2.5 V       │          │  ██             │
+         │                  │          │     ~1.5 V       │
+         └─────────────────┘          └─────────────────┘
+         ΔV ≈ 0 V                     ΔV ≈ 2 V
 ```
 
-- **RT's high bus (MCP2515) is disconnected** — no Host (Jetson) commands arrive.
-  RT boots fine without it; `Mcp2515Driver::init()` fails gracefully (return value
-  unchecked in `app_main`), and the high-bus tasks spin harmlessly.
-- **MTR, EPS-C, SEB are absent** — we inject their frames via CANalyst-II.
-- **SYS pulls up** ESTOP, brake lever, mode, and start button GPIOs internally
-  (all are NC active-low with pull-up), so they read as "not pressed." If any
-  float low, define `TESTING` in the SYS build to skip GPIO reads.
+**Recessive** (logical 1): both wires sit at ~2.5 V. This is the idle state.
+**Dominant** (logical 0): CAN_H is pulled to ~3.5 V and CAN_L to ~1.5 V — a
+~2 V differential. A dominant bit on the bus "wins" over a recessive bit, which
+is how arbitration works (lower CAN ID = higher priority).
+
+### 1.2 The Pieces
+
+Each node on the bus needs three things to talk CAN:
+
+```
+ESP32-S3                    SN65HVD230                  CAN Bus
+┌──────────┐              ┌──────────────┐
+│          │              │              │
+│  TWAI    │   TX  ───────│ D   (TXD)    │
+│  Controller│  RX  ───────│ R   (RXD)    │─── CAN_H ────┐
+│  (inside │              │              │─── CAN_L ────┤
+│   chip)  │              │  RS (mode)   │              │
+│          │              │  VCC 3.3V    │              │ bus
+│          │              │  GND         │              │
+│          │              └──────────────┘              │
+└──────────┘                                            │
+                                                    other nodes
+```
+
+| Part | What It Does |
+|------|-------------|
+| **TWAI Controller** | Inside the ESP32-S3. Handles the CAN protocol — bit timing, arbitration, CRC, ACK, error counters. Talks to the transceiver via TX and RX pins (GPIO 5 and 4 on both RT and SYS). |
+| **WCMCU-230 / SN65HVD230 Transceiver** | Small breakout board (~2×3 cm) between the ESP32 and the physical bus. Uses the TI SN65HVD230 chip (3.3V CAN transceiver). The same module is sold under multiple brand names — **WCMCU-230**, **CJMCU-230**, or just "SN65HVD230 CAN module" — they all contain the same TI chip. Converts the TWAI's single-ended 3.3V logic signals (TX/RX) into the differential CAN_H/CAN_L signals the bus needs. |
+| **MCP2515 SPI CAN Module** | Separate SPI-to-CAN controller (Microchip MCP2515 + TJA1050 transceiver). RT uses one for its high bus. For this bench test the module is **available but not used** — RT's MCP2515 high bus stays disconnected. Could optionally serve as a second bus monitor if combined with the debug-esp32 firmware. |
+| **CANalyst-II** | USB analyzer that listens *passively* on the bus (it never ACKs or arbitrates). Has two independent channels — we use Channel 0 for the low bus. The PC-side driver (WinUSB via Zadig) lets our debug-tool backend read and inject frames. |
+
+### 1.3 WCMCU-230 / SN65HVD230 Transceiver Module
+
+Your CAN transceiver module (sold as **WCMCU-230**, **CJMCU-230**, or generically
+as "SN65HVD230 CAN module") looks like this:
+
+```
+     ┌─────────────────────┐
+     │  VCC  GND  CAN_H    │
+     │   ●    ●    ●       │  ← 3-pin terminal block
+     │  CAN_L  CTX CRX     │     to CAN bus
+     │   ●      ●   ●      │  ← 3-pin header to ESP32
+     └─────────────────────┘
+```
+
+Common pin labels vary by batch. Match yours to the table below:
+
+| Label on Module | Connects To | Notes |
+|----------------|-------------|-------|
+| VCC / 3V3 | ESP32 3.3V | **Must be 3.3V, not 5V** — the SN65HVD230 is a 3.3V chip |
+| GND | ESP32 GND | Common ground reference |
+| CTX / TX / TXD / D | ESP32 GPIO 5 | TWAI TX → transceiver TXD input |
+| CRX / RX / RXD / R | ESP32 GPIO 4 | Transceiver RXD output → TWAI RX |
+| CAN_H | Bus CAN_H | Differential high (yellow/green wire) |
+| CAN_L | Bus CAN_L | Differential low (white/brown wire) |
+
+> **Pin label confusion:** On WCMCU-230 modules, the pins are often silk-screened
+> as **CTX** (CAN TX) and **CRX** (CAN RX). These connect to the ESP32's TX (GPIO5)
+> and RX (GPIO4) respectively — CTX→GPIO5, CRX→GPIO4. If you see no frames after
+> power-up, try swapping these two wires on one board.
+
+The module only needs **4 wires**: VCC, GND, CTX, CRX. The RS (mode select)
+pin is pulled to GND by an onboard 10 kΩ resistor — the transceiver is locked
+in high-speed mode automatically. No external connection needed.
+
+**Counterfeit warning:** Some WCMCU-230 modules from AliExpress/Amazon ship with
+fake or marginal SN65HVD230 chips that can *receive* but cannot *transmit* reliably.
+If one board's frames appear in the monitor but the other's don't, swap the
+transceiver modules between the two boards — if the problem follows the module,
+replace it.
+
+### 1.4 Termination — Why 120Ω
+
+CAN is a transmission line. Without termination, the fast edge transitions
+(~50 ns rise time) reflect off the open ends of the bus and cause data
+corruption. A **120Ω resistor between CAN_H and CAN_L at each physical end**
+of the bus absorbs these reflections.
+
+```
+    [RT] ──── CAN_H ──── [SYS] ──── CAN_H ──── [CANalyst-II]
+      │                    │                     │
+    120Ω                 120Ω                    │
+      │                    │                     │
+    [RT] ──── CAN_L ──── [SYS] ──── CAN_L ──── [CANalyst-II]
+             
+    Total bus impedance: 120Ω ∥ 120Ω = 60Ω  ← measure this with power off
+```
+
+- **Two terminators minimum** — one at each end. With only RT and SYS on the
+  bus, both must have termination. The CANalyst-II is a middle tap and must
+  NOT be terminated (it already has one internally for its monitoring mode).
+- **Most SN65HVD230 modules have an onboard 120Ω resistor** controlled by a
+  jumper, solder bridge, or DIP switch. Look for a pair of pads labeled
+  "120Ω" or "TERM" and bridge them with solder, or set the jumper to ON.
+- **If you're unsure**, measure resistance between CAN_H and CAN_L on the
+  module with power off. You should see ~120Ω. If you see >10kΩ, termination
+  is not enabled — solder the bridge.
+
+### 1.5 CANalyst-II as a Passive Listener
+
+The CANalyst-II is a USB-connected dual-channel CAN analyzer. In this test:
+
+| Channel | Connected To | Role |
+|---------|-------------|------|
+| Ch0 | Low bus (CAN_H, CAN_L, GND) | Monitor all traffic + inject frames |
+| Ch1 | Nothing | Unused |
+
+It operates in **listen-only mode** — it never acknowledges frames or
+participates in arbitration. This means it can't accidentally disrupt the bus.
+The debug-tool backend reads frames from Ch0 and can inject frames (which the
+CANalyst-II sends as a normal CAN node would, with arbitration and ACK).
 
 ---
 
-## 2. Prerequisites
-
-### 2.1 Hardware
-
-| Item | Qty | Notes |
-|------|-----|-------|
-| RT ESP32-S3 board | 1 | With SN65HVD230 CAN module attached (TWAI TX=5, RX=4) |
-| SYS ESP32-S3 board | 1 | With SN65HVD230 CAN module attached (TWAI TX=5, RX=4) |
-| CANalyst-II USB analyzer | 1 | Zadig WinUSB driver bound to both channels |
-| 120Ω termination | ≥1 | Usually built into the SN65HVD230 modules — verify one is present |
-| Jumper wires | 3 | CAN-H, CAN-L, GND between the two SN65HVD230 modules |
-| USB cables | 3 | Power + serial for RT, SYS, and CANalyst-II |
-
-### 2.2 Wiring
+## 2. Architecture Under Test
 
 ```
-RT SN65HVD230          SYS SN65HVD230         CANalyst-II
-┌──────────┐          ┌──────────┐          ┌──────────┐
-│ CAN_H ●──┼──────────┼──● CAN_H │          │          │
-│ CAN_L ●──┼──────────┼──● CAN_L │          │          │
-│ GND   ●──┼──────────┼──● GND   │          │          │
-└──────────┘          └──────────┘          │          │
-       │                                     │          │
-       └─────────────────────────────────────┤ CAN_H ●──┤
-                                             │ CAN_L ●──┤
-                                             │ GND   ●──┤
-                                             └──────────┘
+                         HIGH CAN BUS (500 kbit/s)
+  ┌──────────────────────────────────────────────────────────────┐
+  │                                                              │
+  │  ┌──────────────────┐                     ┌──────────────┐   │
+  │  │   RT ESP32-S3    │                     │ CANalyst-II  │   │
+  │  │  MCP2515 (SPI)   │◄───────────────────►│ Ch1          │   │
+  │  │  SCK=36 MOSI=37  │    inject 0x300,     │ terminator   │   │
+  │  │  MISO=38 CS=39   │    0x301, 0x7FC      │ 120Ω ON      │   │
+  │  │  INT=40          │                     └──────────────┘   │
+  │  └──────┬───────────┘                                        │
+  │         │                                                    │
+  └─────────┼────────────────────────────────────────────────────┘
+            │  RT is the CAN gateway — forwards high↔low
+            │
+  ┌─────────┼────────────────────────────────────────────────────┐
+  │         │            LOW CAN BUS (500 kbit/s)                 │
+  │  ┌──────┴───────────┐         ┌──────────────────┐           │
+  │  │   RT ESP32-S3    │         │   SYS ESP32-S3   │           │
+  │  │  TWAI (built-in) │         │  TWAI (built-in) │           │
+  │  │  TX=GPIO5 RX=4   │         │  TX=GPIO5 RX=4   │           │
+  │  │       │          │         │       │          │           │
+  │  │   WCMCU-230      │         │   WCMCU-230      │           │
+  │  │   120Ω TERM ON   │         │   120Ω TERM ON   │           │
+  │  └──────────────────┘         └──────────────────┘           │
+  │           │                            │                     │
+  └───────────┼────────────────────────────┼─────────────────────┘
+              │                            │
+              └──────────┬─────────────────┘
+                         │
+                  ┌──────┴───────┐
+                  │ CANalyst-II  │
+                  │ Ch0          │
+                  │ terminator   │
+                  │ OFF (60Ω bus)│
+                  └──────────────┘
 ```
 
-- CAN-H (often yellow/green wire on SN65HVD230) → CAN-H on both modules and CANalyst-II Ch0 H
-- CAN-L (often white/brown wire on SN65HVD230) → CAN-L on both modules and CANalyst-II Ch0 L
-- GND → common ground between all three
-- **Verify at least one 120Ω resistor** across CAN-H/CAN-L — most SN65HVD230 modules
-  have a jumper or solder bridge for this. Measure ~60Ω between CAN-H and CAN-L
-  when both modules are connected (two 120Ω in parallel).
+- **High bus:** RT MCP2515 ↔ CANalyst-II Ch1. We inject `0x300` (Host drive),
+  `0x301` (Host brake), `0x7FC` (Host heartbeat) here. CANalyst-II Ch1 provides
+  the sole 120Ω terminator.
+- **Low bus:** RT WCMCU-230 ↔ SYS WCMCU-230 ↔ CANalyst-II Ch0. RT and SYS
+  both terminate (60Ω total). CANalyst-II Ch0 is a middle tap.
+- **RT is the gateway** — receives Host commands on the high bus, forwards
+  `0x204`/`0x205`/`0x169` to the low bus. Forwards `0x011`/`0x120`/`0x206`/`0x600`
+  low→high for telemetry.
+- **MTR, EPS-C, SEB are absent** — we inject their frames on the low bus.
 
-### 2.3 Software
+---
+
+## 3. Hardware Setup
+
+### 3.1 Complete Parts List
+
+| # | Part | Qty | Details |
+|---|------|-----|---------|
+| 1 | ESP32-S3 DevKit board | 2 | RT + SYS. Any ESP32-S3 dev board with boot/release buttons. |
+| 2 | WCMCU-230 CAN module | 2 | SN65HVD230 3.3V transceiver. RT + SYS each get one for the low bus. |
+| 3 | MCP2515 SPI CAN module | 1 | RT's high bus. MCP2515 + TJA1050, 8-pin SPI header + 3-pin screw terminal. |
+| 4 | CANalyst-II USB analyzer | 1 | Dual-channel. **Ch0 → low bus**, **Ch1 → high bus**. Two green 3-pin pluggable terminals. |
+| 5 | USB cable (data) | 3 | One per ESP32 (flash + serial), one for CANalyst-II. |
+| 6 | Female-female Dupont jumpers | 16 | 20 cm. 4 per WCMCU-230 + 7 for MCP2515 SPI + spares. |
+| 7 | Solid-core hookup wire, 22 AWG | 2 m each | CAN_H (yellow), CAN_L (green), GND (black). For both bus backbones. |
+| 8 | Multimeter | 1 | Measure resistance (termination) and voltage (bus health). |
+
+**On-module components** (no separate purchase needed):
+
+| Component | On Which Module | Value | Purpose |
+|-----------|----------------|-------|---------|
+| 120Ω SMD resistor | WCMCU-230 (×2) | 120 Ω | CAN bus termination. Enabled via solder jumper or 2-pin header shunt. |
+| 120Ω resistor | CANalyst-II Ch1 | 120 Ω | Software-switched terminator for the high bus. |
+| 10 kΩ pull-down | WCMCU-230 | 10 kΩ | Pulls RS to GND — locks transceiver in high-speed mode. Onboard, no user action. |
+| 100 nF decoupling cap | WCMCU-230 | 100 nF | VCC-GND power rail filtering. Onboard. |
+
+### 3.2 Controller Wiring — RT ESP32-S3
+
+RT is the CAN gateway — it has **two** CAN modules:
+
+| Module | Interface | CAN Bus | This Test |
+|--------|----------|---------|-----------|
+| **WCMCU-230** (SN65HVD230) | TWAI controller (built-in) | **Low** | ✅ Active — RT↔SYS traffic |
+| **MCP2515 SPI** (MCP2515 + TJA1050) | SPI (GPIO36–40) | **High** | ✅ Active — injected Host commands |
+
+The ESP32-S3-DevKitC-1 has two 22-pin headers. Hold the board with the USB port
+pointing **down**. The left strip is **J1**, the right strip is **J3**.
+
+```
+       ESP32-S3-DevKitC-1 (USB facing DOWN)
+       ┌──────────────────────────────────────────────────┐
+       │  ┌──── J1 ──────────┐  ┌──── J3 ──────────────┐ │
+       │  │ 1  3V3         ● │  │ ● GND              1  │ │
+       │  │ 2  3V3         ● │  │ ● TX    (GPIO43)   2  │ │  ← UART0 serial, not CAN
+       │  │ 3  RST         ● │  │ ● RX    (GPIO44)   3  │ │
+       │  │ 4  GPIO4  (4)  ● │  │ ● GPIO1  (1)       4  │ │
+       │  │ 5  GPIO5  (5)  ● │  │ ● GPIO2  (2)       5  │ │
+       │  │ 6  GPIO6  (6)  ● │  │ ...                    │ │
+       │  │ ...              │  │ ● GPIO36 (36)          │ │  ← MCP2515 SCK
+       │  │ ...              │  │ ● GPIO37 (37)          │ │  ← MCP2515 MOSI
+       │  │ ...              │  │ ● GPIO38 (38)          │ │  ← MCP2515 MISO
+       │  │ ...              │  │ ● GPIO39 (39)          │ │  ← MCP2515 CS
+       │  │ ...              │  │ ● GPIO40 (40)          │ │  ← MCP2515 INT
+       │  │ 21  5V         ● │  │ ● GND              21  │ │
+       │  │ 22  GND        ● │  │ ● GND              22  │ │
+       │  └─────────────────┘  └───────────────────────┘ │
+       └──────────────────────────────────────────────────┘
+```
+
+#### Module A — WCMCU-230 (Low Bus, Active)
+
+Config in `rt-esp32/src/config.h`:
+```cpp
+constexpr int kCanLowTxGpio = 5;   // TWAI TX → transceiver CTX
+constexpr int kCanLowRxGpio = 4;   // TWAI RX → transceiver CRX
+```
+
+**⚠️ Do NOT use J3 pins 2-3 labeled "TX"/"RX" — those are GPIO43/44 (UART0
+serial console). CAN uses GPIO4 and GPIO5 on J1.**
+
+| Connection | GPIO | J1 Pin | Silkscreen | Wire | WCMCU-230 Pin |
+|-----------|------|--------|-----------|------|--------------|
+| Power | — | 1 | **3V3** | Dupont F-F, red | **VCC** |
+| Ground | — | 22 | **GND** | Dupont F-F, black | **GND** |
+| CAN TX | **GPIO5** | 5 | **5** | Dupont F-F, blue | **CTX** |
+| CAN RX | **GPIO4** | 4 | **4** | Dupont F-F, green | **CRX** |
+| Bus high | — | — | — | 22 AWG, yellow | **CAN_H** (screw term) |
+| Bus low | — | — | — | 22 AWG, green | **CAN_L** (screw term) |
+| Bus ground | — | — | — | 22 AWG, black | **GND** (screw term) |
+| Termination | — | — | — | shunt / solder blob | **120Ω jumper** |
+
+- 120Ω jumper **MUST BE ON** — RT is a bus endpoint
+
+#### Module B — MCP2515 SPI (High Bus, Active)
+
+Config in `rt-esp32/src/config.h`:
+```cpp
+constexpr int kSpiSckGpio  = 36;
+constexpr int kSpiMosiGpio = 37;
+constexpr int kSpiMisoGpio = 38;
+constexpr int kSpiCsGpio   = 39;
+constexpr int kMcpIntGpio  = 40;
+```
+
+The MCP2515 module is RT's second CAN interface. In this test we inject `0x300`
+(Host drive) and `0x7FC` (Host heartbeat) on the high bus via CANalyst-II Ch1,
+and watch RT forward `0x204`/`0x205`/`0x169` to the low bus.
+
+| Connection | GPIO | Silkscreen | Wire | MCP2515 Pin |
+|-----------|------|-----------|------|------------|
+| SPI clock | **GPIO36** | **36** | Dupont F-F | **SCK** |
+| SPI MOSI | **GPIO37** | **37** | Dupont F-F | **MOSI** (SI) |
+| SPI MISO | **GPIO38** | **38** | Dupont F-F | **MISO** (SO) |
+| SPI chip select | **GPIO39** | **39** | Dupont F-F | **CS** |
+| Interrupt | **GPIO40** | **40** | Dupont F-F | **INT** |
+| Power | — | **3V3** (J1-1) | Dupont F-F, red | **VCC** |
+| Ground | — | **GND** (J1-22) | Dupont F-F, black | **GND** |
+| Bus high | — | — | 22 AWG, yellow | **CAN_H** (screw term) |
+| Bus low | — | — | 22 AWG, green | **CAN_L** (screw term) |
+
+- The 3.3V and GND can share the J1-1/J1-22 header pins with the WCMCU-230 Dupont wires.
+- **MCP2515 CAN_H/CAN_L connect to the high bus backbone** — this is a separate physical pair from the low bus.
+- The MCP2515 module uses a TJA1050 transceiver (5V-tolerant but works at 3.3V logic levels). Its CAN_H/CAN_L operate at standard CAN voltage levels.
+- **No termination needed on the MCP2515 module** — the CANalyst-II Ch1 provides the 120Ω terminator for the high bus (software-enabled via the backend).
+
+### 3.3 Controller Wiring — SYS ESP32-S3
+
+SYS has **one** CAN module: WCMCU-230 on the low bus only. The MCP2515 high
+bus is RT's responsibility. Config in `sys-esp32/src/config.h`:
+```cpp
+constexpr int kCanTxGpio = 5;   // TWAI TX → transceiver CTX
+constexpr int kCanRxGpio = 4;   // TWAI RX → transceiver CRX
+```
+
+Same physical wiring as RT:
+
+| Connection | GPIO | J1 Pin | Silkscreen | Wire | WCMCU-230 Pin |
+|-----------|------|--------|-----------|------|--------------|
+| Power | — | 1 | **3V3** | Dupont F-F, red | **VCC** |
+| Ground | — | 22 | **GND** | Dupont F-F, black | **GND** |
+| CAN TX | **GPIO5** | 5 | **5** | Dupont F-F, blue | **CTX** |
+| CAN RX | **GPIO4** | 4 | **4** | Dupont F-F, green | **CRX** |
+| Bus high | — | — | — | 22 AWG, yellow | **CAN_H** (screw term) |
+| Bus low | — | — | — | 22 AWG, green | **CAN_L** (screw term) |
+| Bus ground | — | — | — | 22 AWG, black | **GND** (screw term) |
+| Termination | — | — | — | shunt / solder blob | **120Ω jumper** |
+
+> **If a board's frames never appear:** Try swapping CTX ↔ CRX on that board's
+> WCMCU-230. Some module batches have the silk screen labels swapped.
+
+### 3.4 Monitor Wiring — CANalyst-II
+
+The CANalyst-II rear panel has two green 3-pin pluggable terminal blocks.
+**Both channels are used** — Ch0 on the low bus, Ch1 on the high bus.
+
+```
+         CANalyst-II rear panel
+    ┌───────────────────────────────┐
+    │  ┌──── Ch0 ────┐ ┌── Ch1 ──┐ │
+    │  │             │ │         │ │
+    │  │ H  L  G     │ │ H  L G  │ │
+    │  │ ●  ●  ●     │ │ ●  ● ●  │ │  ← pluggable green terminals
+    │  └──┬──┬──┬────┘ └─┬──┬──┬─┘ │
+    │     │  │  │         │  │  │   │
+    └─────┼──┼──┼─────────┼──┼──┼───┘
+          │  │  │         │  │  │
+     yellow green black yellow green black
+          │  │  │         │  │  │
+     LOW BUS backbone    HIGH BUS backbone
+     (shared with        (shared with
+      RT + SYS WCMCU)     RT MCP2515 only)
+```
+
+| Channel | Bus | Connects To | Termination |
+|---------|-----|------------|-------------|
+| **Ch0** | Low | RT WCMCU-230 + SYS WCMCU-230 | ❌ Off (RT + SYS provide 120Ω ∥ 120Ω = 60Ω) |
+| **Ch1** | High | RT MCP2515 | ✅ On (sole terminator — MCP2515 has none) |
+
+### 3.5 Bus Backbones — Low and High
+
+There are **two independent CAN buses**. They share no electrical connections.
+
+#### Low Bus (RT ↔ SYS)
+
+```
+   RT WCMCU-230          SYS WCMCU-230         CANalyst-II Ch0
+   screw terminals       screw terminals       pluggable terminal
+   ┌──────────┐         ┌──────────┐         ┌──────────────┐
+   │ CAN_H ●──┼────┬────┼──● CAN_H │    ┌────┼──● H         │
+   │ CAN_L ●──┼──┬─┼────┼──● CAN_L │    │ ┌──┼──● L         │
+   │ GND   ●──┼──│─┼────┼──● GND   │    │ │  │              │
+   └──────────┘  │ │     └──────────┘    │ │  └──────────────┘
+                 │ │                     │ │
+        yellow ──┘ │                     │ │
+        green  ───┘                     │ │
+        black ─────────────────────────┘ │
+        black ───────────────────────────┘
+
+   Termination: RT 120Ω ∥ SYS 120Ω = 60Ω (both WCMCU-230 jumpers ON, CANalyst-II OFF)
+```
+
+#### High Bus (RT MCP2515 ↔ CANalyst-II)
+
+```
+   RT MCP2515                      CANalyst-II Ch1
+   screw terminals                 pluggable terminal
+   ┌──────────┐                   ┌──────────────┐
+   │ CAN_H ●──┼── yellow ────────┼──● H         │
+   │ CAN_L ●──┼── green  ────────┼──● L         │
+   │ GND   ●──┼── black  ────────┼──● G         │
+   └──────────┘                   └──────────────┘
+
+   Termination: CANalyst-II Ch1 = 120Ω (software-ON via backend).
+   MCP2515 module has NO termination — CANalyst-II is the sole terminator.
+```
+
+| Bus | Nodes | CAN_H Wire | CAN_L Wire | GND Wire | Termination |
+|-----|-------|-----------|-----------|---------|-------------|
+| Low | RT WCMCU, SYS WCMCU, CANalyst-II Ch0 | yellow | green | black | 60Ω (two 120Ω ∥) |
+| High | RT MCP2515, CANalyst-II Ch1 | yellow | green | black | 120Ω (CANalyst-II Ch1 only) |
+
+> Use **different colored wire** for high vs low bus to avoid accidentally
+> bridging them. E.g., yellow/green/black for low bus, orange/blue/gray for high.
+
+### 3.6 Pre-Power Checklist
+
+Before plugging in USB:
+
+**RT — WCMCU-230 (low bus):**
+- [ ] J1-1 **"3V3"** → WCMCU-230 **VCC** (red Dupont)
+- [ ] J1-22 **"GND"** → WCMCU-230 **GND** (black Dupont)
+- [ ] J1-5 **GPIO5** (silkscreen "5") → WCMCU-230 **CTX** (blue Dupont)
+- [ ] J1-4 **GPIO4** (silkscreen "4") → WCMCU-230 **CRX** (green Dupont)
+- [ ] 120Ω termination jumper **ON**
+
+**RT — MCP2515 (high bus):**
+- [ ] **GPIO36** (silkscreen "36") → MCP2515 **SCK** (Dupont)
+- [ ] **GPIO37** (silkscreen "37") → MCP2515 **MOSI** (Dupont)
+- [ ] **GPIO38** (silkscreen "38") → MCP2515 **MISO** (Dupont)
+- [ ] **GPIO39** (silkscreen "39") → MCP2515 **CS** (Dupont)
+- [ ] **GPIO40** (silkscreen "40") → MCP2515 **INT** (Dupont)
+- [ ] MCP2515 **VCC** → J1-1 "3V3" (share with WCMCU-230)
+- [ ] MCP2515 **GND** → J1-22 "GND" (share with WCMCU-230)
+
+**SYS — WCMCU-230 (low bus):**
+- [ ] J1-1 **"3V3"** → WCMCU-230 **VCC** (red Dupont)
+- [ ] J1-22 **"GND"** → WCMCU-230 **GND** (black Dupont)
+- [ ] J1-5 **GPIO5** (silkscreen "5") → WCMCU-230 **CTX** (blue Dupont)
+- [ ] J1-4 **GPIO4** (silkscreen "4") → WCMCU-230 **CRX** (green Dupont)
+- [ ] 120Ω termination jumper **ON**
+
+**Low bus backbone:**
+- [ ] CAN_H: RT WCMCU → SYS WCMCU → CANalyst-II Ch0 **H** (yellow)
+- [ ] CAN_L: RT WCMCU → SYS WCMCU → CANalyst-II Ch0 **L** (green)
+- [ ] GND: RT WCMCU → SYS WCMCU → CANalyst-II Ch0 **G** (black)
+
+**High bus backbone:**
+- [ ] CAN_H: RT MCP2515 → CANalyst-II Ch1 **H** (orange or different color)
+- [ ] CAN_L: RT MCP2515 → CANalyst-II Ch1 **L** (blue or different color)
+- [ ] GND: RT MCP2515 → CANalyst-II Ch1 **G** (gray)
+
+**Multimeter checks (power off):**
+- [ ] Low bus CAN_H ↔ CAN_L = **~60 Ω** (two 120Ω ∥)
+- [ ] High bus CAN_H ↔ CAN_L = **~120 Ω** (CANalyst-II Ch1 terminator)
+- [ ] Low bus CAN_H ↔ high bus CAN_H = **∞** (buses are isolated)
+- [ ] All CAN pins → GND > 1 kΩ (no shorts)
+
+**PC side:**
+- [ ] CANalyst-II USB plugged in, Zadig WinUSB driver installed
+
+### 3.7 Power-On Voltage Check
+
+After plugging in both ESP32s (USB power):
+
+- **CAN_H to GND:** ~2.5 V (recessive/idle state)
+- **CAN_L to GND:** ~2.5 V (recessive/idle state)
+- **CAN_H to CAN_L:** ~0 V (idle — no frames transmitting yet)
+
+When the boards start sending frames, you'll see brief pulses where CAN_H
+rises to ~3.5 V and CAN_L drops to ~1.5 V. A multimeter is too slow to
+catch these — the debug-tool UI will show you the frames directly.
+
+## 4. Software & Firmware
+
+### 4.1 Install Debug Tool Dependencies
 
 ```powershell
 # Install dependencies (one-time)
@@ -97,7 +481,7 @@ cd debug-tool\ui && npm install
 #  4. Select "CANalyst-II" (or "STM32 Virtual ComPort") → WinUSB driver → Replace Driver
 ```
 
-### 2.4 Firmware
+### 4.2 Flash Firmware
 
 Both RT and SYS firmware work **as-is — no code changes required.** Flash the
 current `main` branch:
@@ -116,28 +500,29 @@ Verify each board boots via serial monitor (115200 baud):
 
 ---
 
-## 3. Start the Debug Tool
+## 5. Start the Debug Tool
 
-### 3.1 Backend (CANalyst-II mode)
+### 5.1 Backend (CANalyst-II mode — dual bus)
 
 ```powershell
 cd debug-tool\backend
 $env:CAN_TRANSPORT = "canalystii"
 $env:CANALYST_BITRATE = "500000"
-$env:CANALYST_CH0_BUS = "low"     # we're on the low bus only
-$env:CANALYST_CH1_BUS = "low"     # unused, set to low to avoid confusion
+$env:CANALYST_CH0_BUS = "low"
+$env:CANALYST_CH1_BUS = "high"
+$env:CANALYST_CH1_TERM = "true"    # Ch1 is sole terminator on high bus
 npm run dev
 ```
 
 Expected output:
 ```
 CANalyst-II bridge: connected (device 0)
-  ch0 → low bus  (500000 bit/s)
-  ch1 → low bus  (500000 bit/s)
+  ch0 → low bus   (500000 bit/s)
+  ch1 → high bus  (500000 bit/s, terminator ON)
 Server listening on http://127.0.0.1:3000
 ```
 
-### 3.2 UI
+### 5.2 UI
 
 ```powershell
 cd debug-tool\ui
@@ -148,46 +533,72 @@ Open **http://localhost:5173** in a browser.
 
 ---
 
-## 4. What Happens Naturally (No Injection)
+## 6. What Happens Naturally (No Injection)
 
-With both boards powered and CAN wired, you will see these frames immediately
-in the **CAN Monitor → Low Bus** tab:
+With both ESP32s powered and both CAN buses wired, open the UI at
+http://localhost:5173. Use the **bus tabs** to switch views.
 
-| CAN ID | Name | Sender | Period | Expected Content |
-|--------|------|--------|--------|-----------------|
+### High Bus tab
+
+Frames RT produces with no Host input:
+
+| CAN ID | Name | Sender | Period | Content |
+|--------|------|--------|--------|---------|
+| `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | `alive_ctr` incrementing |
+| `0x210` | RT_STATE_RPT | RT | 10 Hz | `mode=0, steer_valid=0, reversing=0` |
+| `0x220` | RT_PID_RPT | RT | 10 Hz | all zeros (shadow PID, no MTR feedback) |
+
+RT also **forwards low→high**: `0x011` (SYS safety), `0x600` (SYS diag). These
+won't appear until SYS is powered and sending them on the low bus.
+
+### Low Bus tab
+
+| CAN ID | Name | Sender | Period | Content |
+|--------|------|--------|--------|---------|
 | `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | `alive_ctr` incrementing |
 | `0x7FE` | SYS_HEARTBEAT | SYS | 10 Hz | `alive_ctr` incrementing |
 | `0x011` | SYS_SAFETY_STS | SYS | 5 Hz | `estop_active=0, heartbeat_ok=1` |
 | `0x110` | SYS_MODE_CMD | SYS | on change | `mode=0` (MANUAL) |
-| `0x204` | RT_DRIVE_CMD | RT | 100 Hz | `motor_speed_mmps=0, gear=N` |
+| `0x204` | RT_DRIVE_CMD | RT | 100 Hz | `speed=0, gear=N` (idle — no Host cmd yet) |
 | `0x600` | SYS_DIAG_RPT | SYS | 1 Hz | `mode=0, estop=0, hb_ok=1` |
 
-**Verify these baseline checks:**
+RT also **forwards high→low**: `0x302` (if injected on high bus). When Host `0x300`
+is injected, RT generates `0x205` (brake cmd, 50 Hz) and `0x169` (steer cmd, 50 Hz)
+on the low bus.
 
-| Check | How to verify |
-|-------|---------------|
-| RT heartbeat OK | Dashboard → "HB RT: ✅" |
-| SYS heartbeat OK | `0x011` decoded `heartbeat_ok=1` |
-| No ESTOP | `0x011` decoded `estop_active=0` |
-| Mode = MANUAL | `0x110` decoded `mode=0` or `mode_name=MANUAL` |
-| RT sending drive | `0x204` appears at ~100 Hz, speed=0, gear=N |
+### Baseline Checks
 
-If `0x011` shows `heartbeat_ok=0` or `estop_active=1`, check wiring (section 9).
+| Check | Where | How |
+|-------|-------|-----|
+| RT heartbeat OK | Low bus `0x011` | `heartbeat_ok=1` |
+| No ESTOP | Low bus `0x011` | `estop_active=0` |
+| RT high bus alive | High bus `0x7FD` | counter increments |
+| SYS alive | Low bus `0x7FE` | counter increments |
+| Mode = MANUAL | Low bus `0x110` | `mode=0` |
+| RT sending idle drive | Low bus `0x204` | `speed=0, gear=N` at 100 Hz |
 
 ---
 
-## 5. Mimic Absent Nodes — Injection Guide
+## 7. Mimic Absent Nodes — Injection Guide
 
-The bus has four missing nodes. Inject each to keep RT and SYS fully satisfied.
+Four nodes are missing. Inject the high-bus ones to exercise the full pipeline,
+and the low-bus ones to simulate actuators.
 
-### 5.1 Quick-Start: Inject All at Once
+| Node | Bus | What to Inject | Why |
+|------|-----|---------------|-----|
+| **Host (Jetson)** | High | `0x300`, `0x301`, `0x7FC` | RT needs these to generate `0x204`/`0x205`/`0x169` on the low bus |
+| **MTR (STM32)** | Low | `0x120`, `0x206` | EGAS L2 check, RT PID telemetry |
+| **EPS-C (steering)** | Low | `0x201` | RT steering state machine — prevents FAULT after 5s |
+| **SEB (brake)** | Low | `0x721` | SYS brake staleness check — prevents log spam |
+
+### 7.1 Quick-Start: Inject All at Once
 
 Save as `start-bench-injections.ps1`:
 
 ```powershell
 # start-bench-injections.ps1
-# Mimics MTR + EPS-C + SEB on the low CAN bus for RT↔SYS bench testing.
-# Requires debug-tool backend running on :3000 with CANalyst-II.
+# Mimics Host (high bus) + MTR + EPS-C + SEB (low bus) for RT↔SYS bench test.
+# Requires debug-tool backend running on :3000 with CANalyst-II (dual bus).
 
 param(
   [string]$Backend = "http://localhost:3000"
@@ -195,26 +606,28 @@ param(
 
 $headers = @{ "Content-Type" = "application/json" }
 
-$periodics = @(
-  # ── MTR (motor controller) ──────────────────────────────────────
-  @{ id="0x120"; dlc=2; data=@(0,0);           ms=10; desc="MTR throttle status (0 mm/s)" },
-  @{ id="0x206"; dlc=4; data=@(0,0,0,0);       ms=20; desc="MTR motor feedback (speed=0, N, no faults)" },
-
-  # ── EPS-C (steering actuator) ────────────────────────────────────
-  @{ id="0x201"; dlc=8; data=@(1,0,0,0,0,0,0,0); ms=10; desc="EPS-C status (angle=0, OK)" },
-
-  # ── SEB (brake actuator) ─────────────────────────────────────────
-  @{ id="0x721"; dlc=8; data=@(1,0,0,0,0,0,0,0); ms=10; desc="SEB status (stroke=0, OK)" },
-
-  # ── RT drive keep-alive (in case RT's own 0x204 stops) ──────────
-  @{ id="0x204"; dlc=5; data=@(0,0,0,0,0);     ms=10; desc="RT drive cmd (0 mm/s, N) — redundant with RT's own" }
+# ── HIGH BUS: Host (Jetson) ─────────────────────────────────────
+$highBus = @(
+  @{ bus="high"; id="0x300"; dlc=8; data=@(0,0,0,0,0,0,0,0); ms=10;  desc="Host drive (0 mm/s, N) → RT forwards as 0x204" },
+  @{ bus="high"; id="0x301"; dlc=4; data=@(0,0,0,0);         ms=20;  desc="Host brake (0 kPa)" },
+  @{ bus="high"; id="0x7FC"; dlc=1; data=@(1);               ms=500; desc="Host heartbeat (alive_ctr=1)" }
 )
 
-Write-Host "Starting periodic CAN injections on low bus..." -ForegroundColor Cyan
-foreach ($inj in $periodics) {
+# ── LOW BUS: MTR, EPS-C, SEB ───────────────────────────────────
+$lowBus = @(
+  @{ bus="low";  id="0x120"; dlc=2; data=@(0,0);             ms=10;  desc="MTR throttle (0 mm/s)" },
+  @{ bus="low";  id="0x206"; dlc=4; data=@(0,0,0,0);         ms=20;  desc="MTR motor feedback (speed=0, N)" },
+  @{ bus="low";  id="0x201"; dlc=8; data=@(1,0,0,0,0,0,0,0); ms=10; desc="EPS-C status (angle=0, OK)" },
+  @{ bus="low";  id="0x721"; dlc=8; data=@(1,0,0,0,0,0,0,0); ms=10; desc="SEB status (stroke=0, OK)" }
+)
+
+$all = @($highBus) + @($lowBus)
+
+Write-Host "Starting periodic CAN injections..." -ForegroundColor Cyan
+foreach ($inj in $all) {
   $body = @{
     action      = "start"
-    bus         = "low"
+    bus         = $inj.bus
     id          = $inj.id
     dlc         = $inj.dlc
     data        = $inj.data
@@ -223,15 +636,14 @@ foreach ($inj in $periodics) {
 
   try {
     $null = Invoke-RestMethod -Uri "$Backend/api/cmd/periodic" -Method Post -Headers $headers -Body $body
-    Write-Host "  OK  $($inj.desc) — $($inj.id) @ $($inj.ms)ms" -ForegroundColor Green
+    Write-Host "  OK  [$($inj.bus)] $($inj.desc) — $($inj.id) @ $($inj.ms)ms" -ForegroundColor Green
   } catch {
-    Write-Host "  FAIL $($inj.desc) — $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  FAIL [$($inj.bus)] $($inj.desc) — $($_.Exception.Message)" -ForegroundColor Red
   }
 }
 
 Write-Host ""
-Write-Host "All injections running. Open http://localhost:5173 to monitor." -ForegroundColor Cyan
-Write-Host "Stop injections: restart the backend, or call POST /api/cmd/periodic with action=stop for each ID."
+Write-Host "All injections running. Open http://localhost:5173 to monitor both buses." -ForegroundColor Cyan
 ```
 
 Run it:
@@ -240,20 +652,32 @@ cd E:\doc\etrike
 .\start-bench-injections.ps1
 ```
 
-### 5.2 Inject Individually (via REST)
-
-Use these for manual testing or scripting:
+### 7.2 Inject Individually (via REST)
 
 ```powershell
 $backend = "http://localhost:3000"
 $headers = @{ "Content-Type" = "application/json" }
 
-# MTR throttle status — 0 mm/s, 100 Hz
+# ── HIGH BUS — Host (Jetson) ────────────────────────────────────
+
+# Host drive command — 2.0 m/s, D gear, 100 Hz
+Invoke-RestMethod -Uri "$backend/api/cmd/periodic" -Method Post -Headers $headers -Body (@{
+  action="start"; bus="high"; id="0x300"; dlc=8; data=@(0,0,7,0xD0,0,0,0,1); interval_ms=10
+} | ConvertTo-Json)
+
+# Host heartbeat — 2 Hz
+Invoke-RestMethod -Uri "$backend/api/cmd/periodic" -Method Post -Headers $headers -Body (@{
+  action="start"; bus="high"; id="0x7FC"; dlc=1; data=@(1); interval_ms=500
+} | ConvertTo-Json)
+
+# ── LOW BUS — MTR, EPS-C, SEB ───────────────────────────────────
+
+# MTR throttle — 0 mm/s, 100 Hz
 Invoke-RestMethod -Uri "$backend/api/cmd/periodic" -Method Post -Headers $headers -Body (@{
   action="start"; bus="low"; id="0x120"; dlc=2; data=@(0,0); interval_ms=10
 } | ConvertTo-Json)
 
-# MTR motor feedback — 0 mm/s, gear N, no faults, 50 Hz
+# MTR motor feedback — 0 mm/s, gear N, 50 Hz
 Invoke-RestMethod -Uri "$backend/api/cmd/periodic" -Method Post -Headers $headers -Body (@{
   action="start"; bus="low"; id="0x206"; dlc=4; data=@(0,0,0,0); interval_ms=20
 } | ConvertTo-Json)
@@ -268,13 +692,13 @@ Invoke-RestMethod -Uri "$backend/api/cmd/periodic" -Method Post -Headers $header
   action="start"; bus="low"; id="0x721"; dlc=8; data=@(1,0,0,0,0,0,0,0); interval_ms=10
 } | ConvertTo-Json)
 
-# Stop a specific injection
+# Stop a specific injection (example)
 Invoke-RestMethod -Uri "$backend/api/cmd/periodic" -Method Post -Headers $headers -Body (@{
-  action="stop"; bus="low"; id="0x201"
+  action="stop"; bus="high"; id="0x300"
 } | ConvertTo-Json)
 ```
 
-### 5.3 Inject via UI
+### 7.3 Inject via UI
 
 The **Injector** tab offers a form-based interface:
 1. Select **Low Bus**
@@ -293,39 +717,42 @@ The keyboard shortcuts also work on the low bus:
 
 ---
 
-## 6. Test Scenarios
+## 8. Test Scenarios
 
-### 6.1 Scenario A — Heartbeat Exchange (Passive)
+### 8.1 Scenario A — Heartbeat Exchange (Passive)
 
-**Goal:** Confirm basic CAN connectivity.
+**Goal:** Confirm both CAN buses are alive.
 
-1. Start backend + UI (section 3). Do NOT run injections yet.
+1. Start backend + UI (section 5). Do NOT run injections yet.
 2. Power RT and SYS.
-3. In the UI's Low Bus tab, verify `0x7FD` (RT→SYS) and `0x7FE` (SYS→RT)
-   appear. Both counters should increment.
+3. **High Bus tab:** verify `0x7FD`, `0x210` from RT.
+4. **Low Bus tab:** verify `0x7FD` (RT), `0x7FE` (SYS), `0x011`, `0x204`, `0x600`.
 
-**Pass:** `heartbeat_ok=1` in `0x011`, no ESTOP, RT heartbeat alive counter
-changes each frame.
+**Pass:** Both buses show frames. `heartbeat_ok=1` in `0x011`. No ESTOP.
 
-### 6.2 Scenario B — Inject Drive Command
+### 8.2 Scenario B — Full Pipeline: Host→RT→SYS
 
-**Goal:** Verify SYS receives and processes injected drive commands.
+**Goal:** Inject `0x300` on the high bus, watch RT forward `0x204` to the low
+bus, verify SYS consumes it.
 
-1. Inject `0x204` with speed=1500 mm/s:
+1. Start all baseline injections (section 7.1).
+2. Inject Host drive at 2.0 m/s on the high bus:
    ```powershell
    Invoke-RestMethod -Uri "$backend/api/cmd/send" -Method Post -Headers $headers -Body (@{
-     bus="low"; id="0x204"; dlc=5; data=@(0,0,5,0xDC,1)
+     bus="high"; id="0x300"; dlc=8; data=@(0,0,7,0xD0,0,0,0,1)
    } | ConvertTo-Json)
    ```
-   (data bytes: speed_mmps=1500 [0x05DC big-endian], gear=1 [D])
+   (speed_mmps=2000 = 0x07D0 big-endian in bytes 2-3, gear=1 [D] in byte 6)
 
-2. SYS dispatch task updates `g_setpoint_speed_mmps` → 1500.
-3. SYS motor task outputs 1500 mm/s on DAC (MCP4725 at I2C 0x60).
+3. **High Bus tab:** injected `0x300` appears.
+4. **Low Bus tab (within 10 ms):** RT generates `0x204{speed=2000, gear=D}`.
+5. SYS dispatch updates `g_setpoint_speed_mmps` → 2000. DAC output changes
+   proportionally (2000/3000 × Vref on MCP4725 I2C 0x60).
 
-**Pass:** SYS logs no errors. If an oscilloscope is on the MCP4725 output pin,
-voltage changes proportional to 1500/3000 × Vref.
+**Pass:** `0x300` on high bus → `0x204` on low bus with matching speed/gear.
+The PipelineView in the debug-tool shows the 0x300→0x204 chain.
 
-### 6.3 Scenario C — ESTOP via CAN
+### 8.3 Scenario C — ESTOP via CAN
 
 **Goal:** Verify ESTOP propagation and both nodes' reactions.
 
@@ -349,7 +776,7 @@ voltage changes proportional to 1500/3000 × Vref.
 **Pass:** Both nodes enter ESTOP. `0x011` shows `estop_active=1`. RT `0x204`
 drops to speed=0, gear=N.
 
-### 6.4 Scenario D — RT Heartbeat Loss → SYS ESTOP
+### 8.4 Scenario D — RT Heartbeat Loss → SYS ESTOP
 
 **Goal:** Verify SYS detects RT heartbeat timeout and enters ESTOP.
 
@@ -365,7 +792,7 @@ drops to speed=0, gear=N.
 
 **Pass:** SYS detects heartbeat loss within ~1s. SYS enters ESTOP.
 
-### 6.5 Scenario E — Mode Change (MANUAL ↔ AUTO)
+### 8.5 Scenario E — Mode Change (MANUAL ↔ AUTO)
 
 **Goal:** Verify mode transitions work over CAN.
 
@@ -389,7 +816,7 @@ drops to speed=0, gear=N.
 **Pass:** Both transitions complete without ESTOP. SYS `0x110` reflects the
 change. Indicator bulbs follow mode.
 
-### 6.6 Scenario F — SYS 0x204 Staleness
+### 8.6 Scenario F — SYS 0x204 Staleness
 
 **Goal:** Verify that when `0x204` stops arriving, SYS zeros the speed setpoint
 (but does NOT ESTOP — staleness zeroes, doesn't ESTOP).
@@ -413,14 +840,14 @@ change. Indicator bulbs follow mode.
 
 ---
 
-## 7. What Each Injection Mimics
+## 9. What Each Injection Mimics
 
-| Real Node | CAN IDs It Sends | What to Inject | Why |
-|-----------|-----------------|----------------|-----|
-| **MTR (STM32)** | `0x120` (100 Hz), `0x206` (50 Hz) | Both | SYS EGAS L2 checks `0x206` actual vs `0x204` cmd in AUTO mode. RT forwards `0x120` to Host. Missing → EGAS may false-trigger. |
-| **EPS-C (steering)** | `0x201` (100 Hz), `0x202` (10 Hz), `0x203` (1 Hz), `0x6FA` (100 Hz) | `0x201` minimum | RT steering state machine needs `0x201` to track angle. Without it, steering stays in LISTEN_SYNC, times out after 5s → FAULT. |
-| **SEB (brake)** | `0x721` (100 Hz), `0x731` (10 Hz), `0x741` (1 Hz), `0x6FB` (100 Hz) | `0x721` minimum | SYS brake task checks `0x721` staleness (100ms). Without it, SYS logs warnings. Brake following-error monitor needs actual stroke. |
-| **Host (Jetson)** | `0x300`, `0x301`, `0x302`, `0x400`, `0x7FC` (high bus) | Not needed | RT's high bus (MCP2515) is disconnected. RT control loop runs with `cmd={0,0}`. SYS doesn't see high-bus frames directly. |
+| Real Node | Bus | CAN IDs It Sends | What to Inject | Why |
+|-----------|-----|-----------------|----------------|-----|
+| **Host (Jetson)** | High | `0x300` (≤100 Hz), `0x301`, `0x7FC` (2 Hz) | All three | RT consumes `0x300` → generates `0x204`/`0x169` on low bus. `0x7FC` needed for RT heartbeat tracking. Without Host input RT sends idle `0x204{speed=0,N}`. |
+| **MTR (STM32)** | Low | `0x120` (100 Hz), `0x206` (50 Hz) | Both | SYS EGAS L2 checks `0x206` actual vs `0x204` cmd in AUTO mode. RT forwards `0x120` low→high for telemetry. |
+| **EPS-C (steering)** | Low | `0x201` (100 Hz), `0x202` (10 Hz) | `0x201` min | RT steering needs `0x201` angle feedback. Without it, LISTEN_SYNC times out after 5s → FAULT. |
+| **SEB (brake)** | Low | `0x721` (100 Hz), `0x731` (10 Hz) | `0x721` min | SYS brake checks `0x721` staleness (100ms). Without it, SYS logs warnings every 1s. |
 
 **Minimum injection set** for a quiet bench: `0x201` (keep RT steering happy),
 `0x721` (keep SYS brake happy), `0x120` + `0x206` (keep EGAS L2 happy).
@@ -431,16 +858,17 @@ This is fine for basic connectivity testing.
 
 ---
 
-## 8. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | No frames in UI | CANalyst-II not connected | Check USB, Zadig driver, `CAN_TRANSPORT=canalystii` |
-| Only one board's frames visible | CAN wiring open/short | Check CAN-H/CAN-L continuity. Verify 120Ω termination. |
-| SYS stuck in ESTOP | RT heartbeat missing (`0x7FD`) | Check RT is powered, CAN wired correctly, TWAI TX/RX not swapped |
+| Only one board's frames visible | CAN wiring open/short, or one WCMCU-230 TX not working | Check CAN-H/CAN-L continuity. Verify 120Ω termination. Swap WCMCU-230 modules between boards — if the silent board follows the module, the module's SN65HVD230 may be counterfeit. |
+| One board receives but doesn't transmit | Counterfeit/fake SN65HVD230 chip | Common on WCMCU-230 modules from AliExpress. Transceiver can listen but not drive the bus. Swap modules to confirm, then replace the bad one. |
+| SYS stuck in ESTOP | RT heartbeat missing (`0x7FD`) | Check RT is powered, CAN wired correctly, CTX/CRX not swapped |
 | `heartbeat_ok=0` in `0x011` | RT `0x7FD` not arriving at SYS | SYS TWAI RX issue or CAN bus wiring |
-| RT steering FAULT | No `0x201` (EPS-C status) injected | Start `0x201` periodic injection (section 5) |
-| SYS CAN bus-off errors | No termination resistor | Add 120Ω across CAN-H/CAN-L on one SN65HVD230 |
+| RT steering FAULT | No `0x201` (EPS-C status) injected | Start `0x201` periodic injection (section 7) |
+| SYS CAN bus-off errors | No termination resistor | Add 120Ω across CAN-H/CAN-L on both WCMCU-230 modules (jumper ON) |
 | CANalyst-II `connect timeout` | Wrong device or driver | Re-run Zadig, check Device Manager for "WinUSB" device |
 | `Cmd too long` or API errors | Backend not running | Start backend first (`npm run dev` in `debug-tool/backend`) |
 | RT serial: `MCP2515 not in config mode` | Normal — MCP2515 not installed | Expected. RT continues booting. No action needed. |
@@ -460,7 +888,7 @@ With power on and bus idle:
 
 ---
 
-## 9. Code Changes Required
+## 11. Code Changes Required
 
 **None.** Both RT and SYS firmware work as-is for this bench test.
 
@@ -496,7 +924,7 @@ AUTO mode to output a non-zero DAC voltage. **Do not commit this change.**
 
 ---
 
-## 10. Shutdown Procedure
+## 12. Shutdown Procedure
 
 1. Stop periodic injections (or just stop the backend — all injections auto-cancel):
    ```powershell
@@ -513,7 +941,7 @@ AUTO mode to output a non-zero DAC voltage. **Do not commit this change.**
 
 ---
 
-## 11. References
+## 13. References
 
 - [Architecture Overview](../architecture.md) — system topology and message catalog
 - [CAN Protocol](../shared/can/can_protocol.h) — message ID constants and struct layouts

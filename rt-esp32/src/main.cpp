@@ -75,7 +75,7 @@ QueueHandle_t g_gw_tx_high_q  = nullptr;
 
 // ── CAN RX — unified (prio 5) ─────────────────────────────────────
 using CanReceiveFn = bool (*)(can::Frame&, uint32_t);
-struct CanRxParams { CanReceiveFn receive; QueueHandle_t queue; };
+struct CanRxParams { CanReceiveFn receive; QueueHandle_t queue; rt::Mcp2515Driver* overflow_drv = nullptr; };
 
 static bool low_receive(can::Frame& fr, uint32_t timeout) {
     auto* drv = rt::can_low_driver();
@@ -90,8 +90,16 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
     auto& p = *static_cast<CanRxParams*>(pv);
     can::Frame fr;
     while (1) {
-        if (p.receive(fr, 100))
-            xQueueSend(p.queue, &fr, 0);
+        if (p.receive(fr, 100)) {
+            if (xQueueSend(p.queue, &fr, 0) != pdTRUE && p.overflow_drv) {
+                p.overflow_drv->record_rx_overflow();
+                static bool warned = false;
+                if (!warned) {
+                    ESP_LOGW(TAG, "High CAN RX queue overflow — check RT_STATE_RPT byte 3");
+                    warned = true;
+                }
+            }
+        }
     }
 }
 
@@ -422,6 +430,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         rpt.mode        = g_mode_current.load();
         rpt.steer_valid = (g_steering.state() == rt::SteerState::STEER_ACTIVE);
         rpt.reversing   = g_reversing.load();
+        rpt.rx_overflow = static_cast<uint8_t>(g_can_high.rx_overflow_count());
         rpt.to_frame(fr);
         g_can_high.send(fr);
 
@@ -505,14 +514,14 @@ extern "C" void app_main() {
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
-    g_cmd_q         = xQueueCreate( 4, sizeof(can::HostDriveCmd));
-    g_setpoint_q    = xQueueCreate( 4, sizeof(rt::ResolvedSetpoint));
+    g_cmd_q         = xQueueCreate( 1, sizeof(can::HostDriveCmd));       // overwrite queue — only latest value matters
+    g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
     g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
     g_safety_evt_q  = xQueueCreate( 8, sizeof(rt::SafetyEvent));
 
     static CanRxParams rx_low_par  = { low_receive,  nullptr };
-    static CanRxParams rx_high_par = { high_receive, nullptr };
+    static CanRxParams rx_high_par = { high_receive, nullptr, &g_can_high };
     rx_low_par.queue  = g_can_rx_low_q;
     rx_high_par.queue = g_can_rx_high_q;
     xTaskCreate(task_can_rx, "rx_low",  4096, &rx_low_par,  5, nullptr);
