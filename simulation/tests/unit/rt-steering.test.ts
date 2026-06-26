@@ -146,6 +146,7 @@ describe("RtSteeringController", () => {
   it("exitEstop defers until ramp completes (Gap #6)", () => {
     for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
     sc.tick(30000, 1, 500);
+    sc.setTarget(30000, 2000); // 30 deg, will complete ramp in ~75 ticks
     sc.startEstop(false, 600);
     expect(sc.state).toBe(SteerState.ESTOP_RAMP_TO_ZERO);
 

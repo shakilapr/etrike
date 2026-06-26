@@ -15,6 +15,7 @@ import {
   STEER_SYNC_TIMEOUT_MS,
   STEER_ESTOP_RAMP_DEG_S,
   STEER_ESTOP_HOLD_MS,
+  computeDynamicLimit,
 } from "../physics/tricycle.js";
 import { RtKinematicsController } from "./rt-kinematics.js";
 import type { DriveCommand } from "../core/types.js";
@@ -108,6 +109,11 @@ export class RtSteeringController {
           this.activeAngle += rampStep;
         } else {
           this.activeAngle = 0;
+          // Gap #6: if exit was requested, transition back to ACTIVE
+          if (this.estopExitPending) {
+            this.estopExitPending = false;
+            this.state = SteerState.ACTIVE;
+          }
         }
         return this.buildCommand();
       }
@@ -144,7 +150,10 @@ export class RtSteeringController {
     if (this.state === SteerState.ACTIVE) {
       if (obstacleTriggered) {
         this.state = SteerState.ESTOP_HOLD_THEN_SILENT;
-        this.estopHoldAngle = this.activeAngle;
+        // Clamp hold angle to dynamic limit for current speed (Gap #9)
+        const maxAngleDeg = computeDynamicLimit(this.speedMmps);
+        const maxAngleMdeg = Math.round(maxAngleDeg * 1000);
+        this.estopHoldAngle = Math.max(-maxAngleMdeg, Math.min(maxAngleMdeg, this.activeAngle));
         this.estopHoldStartMs = nowMs;
       } else {
         this.state = SteerState.ESTOP_RAMP_TO_ZERO;

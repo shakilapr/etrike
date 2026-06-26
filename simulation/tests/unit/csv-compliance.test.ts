@@ -201,6 +201,7 @@ describe("CSV: 0x7B9 VCU_SEB_REQ", () => {
     const f = runner.capturedFrames.find(fr => fr.canId === "0x7B9" && fr.bus === "low");
     // AutoBrake at byte0 bit3 — should be 0 when released (no brake pressure, no estop)
     // This field now EXISTS in the frame (was missing before the fix)
+    // SEB startup grace (Gap #16) prevents spurious ESTOP latching during boot
     expect((f!.data[0] >> 3) & 1).toBe(0);
   });
 
