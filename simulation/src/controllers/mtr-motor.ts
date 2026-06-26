@@ -21,6 +21,7 @@ export class MtrMotorController {
   private faultFlags = 0;
   private lastCmdMs = -Infinity;
   private estopActive = false;
+  private initTimeMs = 0; // simulation-time reference, set on first tick or constructor (Gap #16)
 
   /** Called every tick. Returns frames to send. */
   tick(nowMs: number, rxFrames: SimFrame[], actualSpeedMmps: number, estop: boolean): SimFrame[] {
@@ -49,8 +50,10 @@ export class MtrMotorController {
       this.faultFlags |= 1; // bit0=ESTOP
     }
 
-    // Command staleness check (Gap #16: masked during startup grace)
-    if (nowMs >= STARTUP_GRACE_PERIOD_MS && nowMs - this.lastCmdMs > CMD_STALE_TIMEOUT_MS) {
+    // Command staleness check (Gap #16: startup grace only when no command ever received)
+    const neverReceivedCmd = this.lastCmdMs <= -Infinity;
+    const inStartupGrace = neverReceivedCmd && (nowMs - this.initTimeMs) < STARTUP_GRACE_PERIOD_MS;
+    if (!inStartupGrace && nowMs - this.lastCmdMs > CMD_STALE_TIMEOUT_MS) {
       this.dacValue = 0;
       this.gear = 0;
       this.faultFlags |= 2; // bit1=CMD_TIMEOUT
