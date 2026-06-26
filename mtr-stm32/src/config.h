@@ -17,16 +17,7 @@
 
 namespace mtr {
 
-// ── CAN (low-level bus only, STM32 bxCAN1) ────────────────────────
-constexpr int kCanBitrateHz = 500'000;
-constexpr int kCanRxGpio    = 24;  // PB8 (16+8) — CAN1_RX
-constexpr int kCanTxGpio    = 25;  // PB9 (16+9) — CAN1_TX
-
 // ── Throttle — MCP4725 I2C DAC (0-5V) + ADC read ─────────────────
-constexpr int      kThrottleAdcChannel  = 0;     // ADC1_IN0  (PA0)
-constexpr int      kThrottleI2cSda      = 23;    // PB7 (16+7) — I2C1_SDA
-constexpr int      kThrottleI2cScl      = 22;    // PB6 (16+6) — I2C1_SCL
-constexpr uint8_t  kThrottleDacI2cAddr  = 0x60;  // MCP4725 (A0=GND)
 constexpr unsigned kThrottleDeadZone    = 200;   // raw ADC counts
 constexpr int      kThrottleMaxSpeedMmps= 3000;
 constexpr int      kThrottleDacMaxVal   = 4095;  // 12-bit DAC
@@ -45,14 +36,10 @@ constexpr int kGearROut   = 5;   // PA5 — relay ch3
 // NC (normally-closed), active-low, pull-up.
 // When button is pressed, GPIO goes LOW.
 // Shared with SYS GPIO1 (separate MCU, different physical pin).
-constexpr int kEstopGpio = 1;  // PA1
 
 // ── Timing ────────────────────────────────────────────────────────
 constexpr int kControlLoopHz       = 100;   // 10 ms — main motor control
-constexpr int kThrottleStsRateHz   = 100;   // 0x120 SYS_THROTTLE_STS
-constexpr int kMotorFeedbackHz     = 50;    // 0x206 MTR_MOTOR_FBK
 constexpr int kSafetyCheckHz       = 20;    // ESTOP GPIO + staleness
-constexpr int kGearCheckHz         = 50;
 constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 
 // ── Timeouts ──────────────────────────────────────────────────────
@@ -64,7 +51,5 @@ constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 // Local aliases retained for MTR code compatibility.
 constexpr uint8_t kFaultEstopActive   = shared::kMtrFaultEstopActive;
 constexpr uint8_t kFaultCmdTimeout    = shared::kMtrFaultCmdTimeout;
-constexpr uint8_t kFaultAdcFault      = shared::kMtrFaultAdcFault;
-constexpr uint8_t kFaultGearConflict  = shared::kMtrFaultGearConflict;
 
 }  // namespace mtr

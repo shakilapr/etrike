@@ -4,12 +4,12 @@
 // Phases S1-S4: CAN RX, dispatch, motor, safety, mode, throttle, brake,
 //               lights, dcdc, indicator, power, can_tx, diag, heartbeat.
 
-#include <cstdio>
 #include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "config.h"
 #include "can/can_protocol.h"
@@ -53,10 +53,7 @@ static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Host
 static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
-static std::atomic<bool>     g_estop_flag{false};
 static uint8_t               g_seb_status_raw[8] = {};
-static std::atomic<uint8_t>  g_rt_hb_ctr{0};
-static std::atomic<bool>     g_rt_hb_received{false};
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
@@ -75,12 +72,7 @@ static bool can_send_estop() {
 
 // ── Motor feedback from 0x206 MTR_MOTOR_FBK ─────────────────────────
 static std::atomic<int16_t>  g_actual_speed_mmps{0};
-static std::atomic<uint8_t>  g_actual_gear_state{0};
 static std::atomic<uint8_t>  g_motor_fault_flags{0};
-
-// ── SEB test telemetry from 0x6FB SEB_Test ──────────────────────────
-static std::atomic<int16_t>  g_seb_motor_current{0};
-static std::atomic<int16_t>  g_seb_ecu_temp_c{0};              // deg C
 
 // ── SEB status from 0x721 SEB_STATUS ────────────────────────────────
 // Actual stroke in raw units (600 = 0mm, scale 0.05, offset -30)
@@ -93,6 +85,16 @@ static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
 
 // ── SEB version first-receipt guard (0x741) ─────────────────────────
 static std::atomic<bool>     g_seb_version_logged{false};
+
+// ── ESTOP trigger timestamp (Gap #15: MTR ACK check) ────────────────
+static std::atomic<uint32_t> g_last_estop_trigger_tick{0};
+
+// ── 0x206 staleness tracking (Gap #15) ───────────────────────────────
+static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
+
+// ── SEB fault state for 0x600 diag (Gap #13) ─────────────────────────
+static std::atomic<uint8_t>  g_seb_error_status{0};   // from 0x721 byte0 bits6-7
+static std::atomic<bool>     g_brake_fault_active{false};
 
 // Queues
 static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
@@ -133,8 +135,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
             auto fbk = can::MtrMotorFbk::from_frame(fr);
             g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
-            g_actual_gear_state.store(fbk.gear_state, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
+            g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
             // Gap #15: Check if MTR has triggered local ESTOP (ESTOP_ACTIVE bit).
             // MTR sets this bit when its ESTOP GPIO or CAN 0x001 is detected.
@@ -153,14 +155,49 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         case can::kIdHostLightCmd:   // 0x302
             g_light_bits.store(fr.u8_at(0), std::memory_order_relaxed);
             break;
-        case can::kIdSafetyEstop:    // 0x001
-            g_estop_flag.store(true, std::memory_order_relaxed);
+        case can::kIdSafetyEstop: {  // 0x001 — rate-limited RX (Gap #14)
+            // Rate-limit incoming 0x001 frames: max 2 per 500ms window.
+            // Prevents a corrupted node from flooding ESTOP and saturating the bus.
+            static int        estop_rx_count = 0;
+            static TickType_t estop_rx_window_start = 0;
+            TickType_t now = xTaskGetTickCount();
+            if (estop_rx_window_start == 0
+                || (now - estop_rx_window_start) >= pdMS_TO_TICKS(sys::kEstopRateLimitWindowMs)) {
+                estop_rx_window_start = now;
+                estop_rx_count = 1;
+            } else if (++estop_rx_count <= sys::kEstopRateLimitMax) {
+                // within limit — process
+            } else {
+                ESP_LOGW(TAG, "0x001 ESTOP rate-limited — %d frames in %dms window",
+                         estop_rx_count, sys::kEstopRateLimitWindowMs);
+                break;  // drop this frame
+            }
             g_mode_mgr.force_estop();
+            g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
             ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             break;
+        }
         case can::kIdSyntreeSebStatus: {  // 0x721
+            // F13: Validate checksum before using data (XOR bytes 0-6 ^ 0xFF == byte 7)
+            {
+                uint8_t cksum = 0;
+                for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
+                if (fr.dlc >= 8 && (cksum ^ 0xFF) != fr.data[7]) {
+                    ESP_LOGW(TAG, "0x721 checksum fail — dropping frame");
+                    break;
+                }
+            }
             for (int i = 0; i < 8 && i < fr.dlc; ++i) {
                 g_seb_status_raw[i] = fr.data[i];
+            }
+            // F7: Extract SEB error_status from byte 0 bits 6-7 (architecture §8.10)
+            {
+                uint8_t es = (fr.data[0] >> 6) & 0x3;
+                g_seb_error_status.store(es, std::memory_order_relaxed);
+                if (es >= 3) {
+                    ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x)", fr.data[0]);
+                    g_brake_fault_active.store(true, std::memory_order_relaxed);
+                }
             }
             // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30)
             uint16_t actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
@@ -180,6 +217,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                                 >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
                         ESP_LOGE(TAG, "Brake following err: cmd=%u actual=%u diff=%u raw (~%d mm)",
                                  cmd, actual_raw, diff, int(diff * 0.05f));
+                        g_brake_fault_active.store(true, std::memory_order_relaxed);
                         brake_follow_active = false;  // log once per event
                     }
                 } else {
@@ -191,11 +229,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         case can::kIdSyntreeSebTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
             // Motor current: Byte1-2 i16 LE, scale 0.0078125 A/bit
             // ECU temp: Byte3-4 u16 LE, scale 0.5 C/bit, offset -40
-            int16_t  mtr_curr = int16_t(uint16_t(fr.data[1] | (fr.data[2] << 8)));
             uint16_t ecu_raw  = uint16_t(fr.data[3] | (fr.data[4] << 8));
             int16_t  ecu_temp = int16_t(ecu_raw * 0.5f - 40.0f);
-            g_seb_motor_current.store(mtr_curr, std::memory_order_relaxed);
-            g_seb_ecu_temp_c.store(ecu_temp, std::memory_order_relaxed);
             if (ecu_temp > 80) {
                 ESP_LOGW(TAG, "SEB_Test: ECU temp %d C exceeds 80 C threshold", ecu_temp);
             }
@@ -240,8 +275,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             break;
         }
         case can::kIdRtHeartbeatLow:    // 0x7FD
-            g_rt_hb_ctr.store(fr.u8_at(0), std::memory_order_relaxed);
-            g_rt_hb_received.store(true, std::memory_order_relaxed);
             g_safety.feed_heartbeat_rt(fr.u8_at(0));
             break;
         }
@@ -270,6 +303,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (estop_triggered) {
             if (g_mode_mgr.mode() != can::Mode::Estop) {
                 g_mode_mgr.force_estop();
+                g_last_estop_trigger_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
                 // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
                 // Gap #14: rate-limited to prevent bus flooding
                 if (can_send_estop()) {
@@ -315,6 +349,38 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
             } else {
                 egas_fault_active = false;
+            }
+        }
+
+        // F3: MTR ESTOP ACK check (Gap #15)
+        // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags.
+        {
+            uint32_t last_trig = g_last_estop_trigger_tick.load(std::memory_order_relaxed);
+            if (last_trig > 0
+                && (xTaskGetTickCount() - last_trig) >= pdMS_TO_TICKS(sys::kMtrEstopAckTimeoutMs)) {
+                uint8_t flags = g_motor_fault_flags.load(std::memory_order_relaxed);
+                if (!(flags & shared::kMtrFaultEstopActive)) {
+                    ESP_LOGE(TAG, "MTR ESTOP ACK timeout: no ESTOP_ACTIVE in 0x206 within %dms",
+                             sys::kMtrEstopAckTimeoutMs);
+                }
+                g_last_estop_trigger_tick.store(0, std::memory_order_relaxed);  // reset
+            }
+        }
+
+        // F4: 0x206 staleness check (Gap #15)
+        // Warn if no MTR feedback for >200ms (MTR comms lost).
+        // Startup grace: skip if never received (g_last_mtr_fbk_tick == 0).
+        {
+            uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
+            if (last_fbk > 0
+                && (xTaskGetTickCount() - last_fbk) >= pdMS_TO_TICKS(sys::kMtrFbkStaleMs)) {
+                static TickType_t last_mtr_stale_warn = 0;
+                if (last_mtr_stale_warn == 0
+                    || (xTaskGetTickCount() - last_mtr_stale_warn) >= pdMS_TO_TICKS(1000)) {
+                    ESP_LOGW(TAG, "0x206 MTR_MOTOR_FBK stale — %lu ms since last frame",
+                             (unsigned long)((xTaskGetTickCount() - last_fbk) * portTICK_PERIOD_MS));
+                    last_mtr_stale_warn = xTaskGetTickCount();
+                }
             }
         }
 
@@ -445,7 +511,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && !lever && !estop;
 
         can::VcuSebReq seb_cmd;
-        bool should_tx = g_brake.tick(lever, estop, brake_kpa, g_seb_status_raw, seb_cmd);
+        bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode, g_seb_status_raw, seb_cmd);
         // Store commanded stroke for following-error monitor even when suppressed
         if (should_tx) {
             g_cmd_stroke_raw.store(seb_cmd.stroke_req, std::memory_order_relaxed);
@@ -592,12 +658,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     static int bus_off_count = 0;
     while (1) {
-        g_diag.report(
-            g_mode_mgr.mode_u8(),
-            g_safety.brake_lever_pressed(),
-            g_safety.heartbeat_ok(),
-            g_mode_mgr.mode() == can::Mode::Estop
-        );
         // Send 0x600 with real TEC/REC
         uint8_t tec = 0, rec = 0;
         g_can.get_error_counters(tec, rec);
@@ -605,6 +665,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::SysDiagRpt rpt;
         rpt.mode          = g_mode_mgr.mode_u8();
         rpt.brake_engaged = g_safety.brake_lever_pressed();
+        rpt.brake_fault   = g_brake_fault_active.load(std::memory_order_relaxed);
         rpt.heartbeat_ok  = g_safety.heartbeat_ok();
         rpt.estop_active  = (g_mode_mgr.mode() == can::Mode::Estop);
         rpt.free_heap_kb  = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);

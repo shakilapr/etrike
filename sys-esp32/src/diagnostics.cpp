@@ -11,10 +11,12 @@ namespace {
 constexpr const char* kTag = "diag";
 }
 
-void Diagnostics::report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) const {
+void Diagnostics::report(uint8_t mode, bool brake_engaged, bool brake_fault,
+                         bool hb_ok, bool estop) const {
     can::SysDiagRpt diag;
     diag.mode          = mode;
     diag.brake_engaged = brake_engaged;
+    diag.brake_fault   = brake_fault;
     diag.heartbeat_ok  = hb_ok;
     diag.estop_active  = estop;
     diag.free_heap_kb  = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
@@ -33,8 +35,9 @@ void Diagnostics::report(uint8_t mode, bool brake_engaged, bool hb_ok, bool esto
     can::Frame fr;
     diag.to_frame(fr);
     // Sending handled by caller (diag_task in main.cpp)
-    ESP_LOGD(kTag, "mode=%d brake=%d hb=%d estop=%d heap=%uK tec=%u rec=%u",
-             mode, brake_engaged, hb_ok, estop, diag.free_heap_kb, diag.tec, diag.rec);
+    ESP_LOGD(kTag, "mode=%d brake=%d fault=%d hb=%d estop=%d heap=%uK tec=%u rec=%u",
+             mode, brake_engaged, brake_fault, hb_ok, estop,
+             diag.free_heap_kb, diag.tec, diag.rec);
 }
 
 }  // namespace sys

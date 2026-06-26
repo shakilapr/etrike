@@ -32,9 +32,8 @@ export class FaultInjector {
    */
   tick(nowMs: number, ctx: SimulationContext): ContextMutation {
     const mutation: ContextMutation = {};
-    this.activeFaults = [];
 
-    // Activate any faults due at this timestamp
+    // Activate any faults due at this timestamp (faults persist once activated)
     while (this.schedule.length > 0 && this.schedule[0].atMs <= nowMs) {
       const fault = this.schedule.shift()!;
       this.activeFaults.push({

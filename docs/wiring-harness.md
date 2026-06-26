@@ -86,16 +86,39 @@ JP3 — Handlebar Junction
 
 ### 1.4 EGAS Dual-Redundant Note
 
-Both **SYS ESP32-S3** and **MTR STM32** have complete throttle + gear hardware:
+Both **SYS ESP32-S3** (Level 2 monitor) and **MTR STM32** (Level 1 primary) have complete throttle + gear hardware:
 
-| Function | SYS (Level 2 monitor) | MTR (Level 1 primary) |
-|----------|----------------------|----------------------|
+| Function | SYS (Level 2) | MTR (Level 1) |
+|----------|--------------|---------------|
 | Throttle ADC | GPIO10 (ADC1_CH5) | PA0 (ADC1_IN0) |
-| MCP4725 DAC | I²C addr 0x60, SDA=GPIO15, SCL=GPIO16 | I²C addr 0x60, SDA=PB7, SCL=PB6 |
+| MCP4725 DAC | I²C addr 0x60, SDA=GPIO15, SCL=GPIO16 | I²C addr 0x61, SDA=PB7, SCL=PB6 |
 | Gear sense (TLP281) | D=GPIO12, S=GPIO13, R=GPIO14 | D=PB0, S=PB1, R=PB2 |
 | Gear relay out | D=GPIO33, S=GPIO34, R=GPIO35 | D=PA3, S=PA4, R=PA5 |
 
-The harness wires **both** paths to the motor controller. In AUTO mode, MTR drives; SYS monitors. In MANUAL mode, SYS passes through physical inputs. The motor controller's throttle input and gear inputs receive signals from whichever MCU is active. Use a **double-throw relay or diode-OR** to prevent both DACs driving the throttle line simultaneously if both MCUs are active.
+**MTR MCP4725 A0 pin is tied to VCC (5 V)** to differentiate addresses — SYS at 0x60, MTR at 0x61. Both are on separate I²C buses so no functional collision, but address differentiation prevents debugging traps.
+
+### 1.5 Mode-Gate Relay — Hardware Arbitration
+
+A single **4PDT signal relay** physically switches the motor controller's throttle input and three gear inputs between the SYS path and the MTR path. This is mandatory hardware arbitration — firmware-only prevention is insufficient for 72 V drive-by-wire.
+
+| Relay pole | Motor controller pin | SYS source (de-energized) | MTR source (energized) |
+|-----------|---------------------|--------------------------|------------------------|
+| Pole 1 | Throttle input (0–5 V) | SYS MCP4725 (GPIO15/16) | MTR MCP4725 (PB6/PB7) |
+| Pole 2 | Gear D (72 V) | SYS relay GPIO33 | MTR relay PA3 |
+| Pole 3 | Gear S (72 V) | SYS relay GPIO34 | MTR relay PA4 |
+| Pole 4 | Gear R (72 V) | SYS relay GPIO35 | MTR relay PA5 |
+
+**Relay:** Omron G6K-4P-DC12 (4PDT, 12 V coil, DIP, 1 A contacts) or Finder 55.34.9.012.0040.
+
+**Coil drive:** Controlled by a dedicated GPIO (e.g., SYS GPIO8) through an NPN transistor (2N2222) with 1N4007 flyback diode. Coil return to chassis.
+
+**Fail-safe behavior (de-energized = SYS path):**
+- Power-up / boot: relay off → SYS path active → motor controller sees SYS DAC (held at 0 V by LDO ramp)
+- Watchdog reset: GPIO floats → NPN off → relay opens → SYS path. SYS WDT resets the MCU which re-initializes the DAC to 0 V
+- ESTOP: SYS enters ESTOP → DAC commanded to 0 V, gear relays off → motor controller sees neutral + zero throttle
+- AUTO mode (healthy): SYS asserts GPIO HIGH → relay energized → MTR path active. SYS asserts ONLY when mode == AUTO AND both heartbeats valid (SYS 0x7FE, RT 0x7FD)
+
+**Location:** Mode-gate relay module is mounted in the rear motor area, close to the motor controller. It is part of H4 (MTR/Sensor harness).
 
 ---
 
@@ -177,15 +200,15 @@ All voltages drops are one-way (positive wire only). Chassis is the return path;
 | 72 V bus → DC-DC input | 14 | Orange | 5 A | 1.5 m | 0.06 V |
 | 72 V gear sense (×6: D/S/R ×2 paths) | 20 | Orange | <10 mA | 1.5 m | negl. |
 | 72 V gear output (×6: D/S/R ×2 paths) | 18 | Orange | 1 A fused | 1.5 m | 0.03 V |
-| DC-DC output → forward fuse block (rear→center) | 8 | Red | 35 A | 2.0 m | 0.15 V |
-| Fuse block → EPS-C | 12 | Red | 30 A peak | 1.0 m | 0.16 V |
-| Fuse block → SEB | 12 | Red | 20 A peak | 0.5 m | 0.05 V |
+| Fuse block (JP2) → EPS-C | 12 | Red | 30 A peak | 1.0 m | 0.16 V |
+| Fuse block (JP2) → SEB | 12 | Red | 20 A peak | 1.5 m | 0.16 V |
 | Fuse block → Jetson | 16 | Red | 3 A | 0.5 m | 0.02 V |
 | Fuse block → RT ESP32-S3 | 18 | Red | 0.5 A | 0.3 m | 0.003 V |
 | Fuse block → SYS ESP32-S3 | 18 | Red | 0.5 A | 1.0 m | 0.01 V |
 | Fuse block → MTR STM32 | 18 | Red | 0.2 A | 0.3 m | 0.001 V |
 | Fuse block → lighting bus | 14 | Red | 10 A peak | 1.5 m | 0.13 V |
-| Fuse block → always-on rail | 16 | Red/White | 3 A | 1.5 m | 0.04 V |
+| Fuse block → brake light (always-on) | 16 | Red/White | 5 A | 1.5 m | 0.06 V |
+| Fuse block → CAN/MCU keep-alive | 18 | Red/White | 1 A | 1.5 m | 0.03 V |
 | Individual lamp feed | 18 | Red | 2 A | 2.0 m | 0.09 V |
 | CAN trunk/drops | 22 | Yellow/Green | signal | 2.5 m | — |
 | CAN_GND (signal reference) | 18 | Black/White | return | 2.5 m | negl. |
@@ -280,11 +303,14 @@ A common-mode choke (TDK ACT45B-510-2P) on each drop is recommended if EMI is ob
 
 At 500 kbit/s, maximum stub length is 0.3 m (bit time = 2 µs, round-trip propagation ≈ 0.3 m at 5 ns/m). All drops in this design are ≤0.3 m.
 
-### 4.6 DC-DC Converter Baud Rate Warning
+### 4.6 DC-DC Converter Baud Rate — BLOCKING
 
-The DC-DC protocol specification references J1939 extended CAN at **250 kbps**, but the low bus operates at **500 kbps**. Before finalizing: verify the DC-DC converter's CAN interface can be configured for 500 kbps. If it is fixed at 250 kbps, either:
-1. Place it on a separate CAN segment with a baud rate converter, or
-2. Replace with a unit supporting 500 kbps operation.
+The DC-DC protocol specification references J1939 extended CAN at **250 kbps**. The low CAN bus operates at **500 kbps**. A baud-mismatched node corrupts all bus traffic (bit-timing mismatch → every frame seen as an error → bus-off after repeated errors, with corruption during the error period). **Do not connect the DC-DC to the low CAN bus until its baud rate is resolved.**
+
+Resolution options (in order of preference):
+1. **Reconfigure to 500 kbps.** Verify with the DC-DC manufacturer whether the CAN controller supports 500 kbps via configuration (DIP switch, config CAN ID, or firmware setting).
+2. **Dedicated CAN segment.** If fixed at 250 kbps, connect the DC-DC to a separate CAN controller (e.g., an MCP2515 on SYS or RT's spare SPI) running at 250 kbps. The MCU acts as a 2-node gateway.
+3. **Replace the DC-DC converter.** Select a unit with native 500 kbps CAN support.
 
 ---
 
@@ -295,44 +321,46 @@ Heavy components (battery, motor controller, DC-DC converter) are at the **rear*
 ### 5.1 Component Placement & Power Flow
 
 ```
-REAR ───────────────────────────────────────────────────── FRONT
+REAR ───────────────────────────────────────────── FRONT/CENTER
   │                                                          │
   │  ┌──────────┐   72 V, 6 AWG, 0.5 m                      │
   │  │ 72 V     │──────┬────────────── Motor Controller      │
   │  │ Battery  │      │            (rear, short run)        │
   │  └────┬─────┘      │                                     │
-  │       │            ├── 14 AWG, 2.0 m ──────────────┐    │
+  │       │            ├── 14 AWG, 1.5 m ──────────────┐    │
   │       │            │   (72 V forward to DC-DC)     │    │
   │       │            │                               │    │
   │       │    [ANL 60 A] at battery (+) terminal      │    │
-  │       │    [MEGA 15 A] at DC-DC tap point          │    │
   │       │                                            │    │
-  │  ┌────▼─────┐                              ┌───────▼──────┐
-  │  │ DC-DC    │  12 V, 8 AWG, 0.3 m          │ DC-DC        │
-  │  │ 72→12 V  │────── 12 V fuse block ───────│ (preferred:  │
-  │  │ (rear)   │       (rear)                 │  at front    │
-  │  └──────────┘                              │  near loads) │
-  │                                            └──────────────┘
-  │  12 V runs forward from rear:
-  │  ┌──────────────────────────────────────────────────────┐
-  │  │ 8 AWG red: DC-DC → forward fuse block (JP2, center)  │
-  │  │                 ↓                                    │
-  │  │   ├── EPS-C steering (12 AWG, front, 1.0 m)          │
-  │  │   ├── Jetson Orin (16 AWG, center, 0.5 m)            │
-  │  │   ├── RT ESP32-S3 (18 AWG, center, 0.3 m)            │
-  │  │   ├── SYS ESP32-S3 (18 AWG, handlebar, 1.0 m)        │
-  │  │   ├── Lighting (14 AWG, front+rear, 1.5 m)           │
-  │  │   └── Always-on rail (16 AWG, 1.5 m)                 │
-  │  │                                                      │
-  │  │  Rear loads (short runs from rear fuse block):        │
-  │  │   ├── SEB brake (12 AWG, rear, 0.5 m)                │
-  │  │   └── MTR STM32 (18 AWG, rear, 0.3 m)               │
-  │  └──────────────────────────────────────────────────────┘
+  │       │                                    ┌───────▼──────┐
+  │       │                                    │ DC-DC        │
+  │       │                                    │ 72→12 V      │
+  │       │                                    │ (front, JP2) │
+  │       │                                    └───────┬──────┘
+  │       │                                            │
+  │       │    [MEGA 15 A] at DC-DC 72 V input         │
+  │       │                                    12 V fuse block
+  │       │                                    at JP2 (center)
+  │       │                                            │
+  │  Front/center loads (short runs from JP2):         │
+  │  ┌─────────────────────────────────────────────────┤
+  │  │  ├── EPS-C steering (12 AWG, 1.0 m)            │
+  │  │  ├── Jetson Orin (16 AWG, 0.5 m)               │
+  │  │  ├── RT ESP32-S3 (18 AWG, 0.3 m)               │
+  │  │  ├── SYS ESP32-S3 (18 AWG, handlebar, 1.0 m)   │
+  │  │  ├── Lighting (14 AWG, 1.5 m)                  │
+  │  │  ├── Brake light F_brake (16 AWG, 1.5 m)       │
+  │  │  └── CAN/MCU keep-alive F_can_mcu (18 AWG)     │
+  │  └─────────────────────────────────────────────────┘
+  │
+  │  Rear loads (12 AWG rearward from JP2, or local rear block):
+  │   ├── SEB brake (12 AWG, 1.5 m front→rear)
+  │   └── MTR STM32 (18 AWG, 1.5 m front→rear)
   │
   │  All grounds: chassis return (see §6)
 ```
 
-**Key decision — DC-DC placement:** If the DC-DC is at the rear (with the battery), 12 V runs forward at high current through 8 AWG. If moved to the front/center, 72 V runs forward at only ~5 A through 14 AWG, and 12 V is generated right where the big loads are. The DC-DC is on the CAN bus which spans the full vehicle, so either placement works. This spec assumes **DC-DC at rear** (worst-case for 12 V distribution); front placement halves the 12 V copper weight.
+**DC-DC at front/center (near JP2).** 72 V runs forward from the rear battery at ~5 A on 14 AWG. The DC-DC converts to 12 V at the center where the largest loads are (EPS-C, Jetson). This eliminates a heavy 8 AWG forward 12 V run and cuts 12 V copper weight by more than half. SEB and MTR 12 V runs go rearward from JP2.
 
 ### 5.2 Fuse Strategy
 
@@ -345,13 +373,14 @@ Fuses protect the **wire**, so they go at the **source end** of every wire run �
 | F_gear_* | At gear relay COM terminal, rear | 3AG fast | 1 A ×6 | 18 AWG gear output wires to motor ctrl | 72 V → gear wire → motor ctrl → chassis |
 | F_12v_main | DC-DC output terminal, rear | ATO | 40 A | 8 AWG 12 V forward run (2 m) | DC-DC → 12 V wire → chassis short |
 | F_epsc | Forward fuse block (JP2), center | ATO | 30 A | 12 AWG to EPS-C (1 m) | 12 V bus → EPS-C → chassis at front |
-| F_seb | Rear fuse block, rear | ATO | 25 A | 12 AWG to SEB (0.5 m) | 12 V bus → SEB → chassis at rear |
+| F_seb | Rear fuse block, rear | ATO | 20 A | 12 AWG to SEB (0.5 m) | 12 V bus → SEB → chassis at rear |
 | F_jetson | Forward fuse block (JP2), center | ATO | 5 A | 16 AWG to Jetson (0.5 m) | 12 V bus → Jetson → chassis |
 | F_rt | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG to RT ESP32 (0.3 m) | 12 V bus → RT → chassis |
 | F_sys | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG to SYS ESP32 (1 m) | 12 V bus → SYS → chassis |
 | F_mtr | Rear fuse block, rear | ATO | 3 A | 18 AWG to MTR STM32 (0.3 m) | 12 V bus → MTR → chassis |
 | F_lights | Forward fuse block (JP2), center | ATO | 15 A | 14 AWG lighting bus (1.5 m) | 12 V bus → GPIO27 relay → lamps → chassis |
-| F_always | Forward fuse block (JP2), center | ATO | 2 A | 16 AWG always-on rail (1.5 m) | 12 V bus → brake light, CAN → chassis |
+| F_brake | Forward fuse block (JP2), center | ATO slow-blow | 5 A | 16 AWG, brake light only | 12 V bus → brake light → chassis |
+| F_can_mcu | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG, CAN xcvrs + MCU keep-alive | 12 V bus → CAN, MCU → chassis |
 
 **Fuse coordination:** F_main (60 A) is the last-resort protection at the battery. Every branch fuse opens before F_main does. The DC-DC has its own input fuse (F_dcdc, 15 A on 72 V side) and output is protected by F_12v_main (40 A on 12 V side). A DC-DC internal fault that shorts 72 V to 12 V would be caught by F_dcdc opening.
 
@@ -365,13 +394,12 @@ With chassis as the ground return, only the positive wire length matters. Chassi
 |------|---------|---------|-------|-----------------|------|---|
 | Battery → Motor Controller | 72 V | 50 A | 6 AWG | 0.5 m | 0.03 V | 0.04% |
 | Battery → DC-DC (72 V side) | 72 V | 5 A | 14 AWG | 1.5 m | 0.06 V | 0.09% |
-| DC-DC → Forward fuse block | 12 V | 35 A | 8 AWG | 2.0 m | 0.15 V | 1.22% |
-| Fuse block → EPS-C | 12 V | 30 A | 12 AWG | 1.0 m | 0.16 V | 1.33% |
-| Fuse block → SEB | 12 V | 20 A | 12 AWG | 0.5 m | 0.05 V | 0.44% |
-| Fuse block → Jetson | 12 V | 3 A | 16 AWG | 0.5 m | 0.02 V | 0.17% |
-| Fuse block → SYS (longest MCU run) | 12 V | 0.5 A | 18 AWG | 1.0 m | 0.01 V | 0.09% |
+| DC-DC → EPS-C | 12 V | 30 A | 12 AWG | 1.0 m | 0.16 V | 1.33% |
+| DC-DC → SEB | 12 V | 20 A | 12 AWG | 1.5 m | 0.16 V | 1.33% |
+| DC-DC → Jetson | 12 V | 3 A | 16 AWG | 0.5 m | 0.02 V | 0.17% |
+| DC-DC → SYS (longest MCU run) | 12 V | 0.5 A | 18 AWG | 1.0 m | 0.01 V | 0.09% |
 
-All drops well under 3%. The 8 AWG forward run from rear DC-DC to center fuse block is the dominant drop at 1.22%. If DC-DC is moved to the front, this run disappears entirely and 12 V distribution starts at the center.
+All drops well under 3%. DC-DC at the front eliminates the heavy 8 AWG forward 12 V run — 72 V runs forward at 5 A on 14 AWG instead of 12 V at 35 A on 8 AWG.
 
 ### 5.5 12 V Accessory Relay (GPIO27)
 
@@ -382,13 +410,13 @@ GPIO27 ── 1 kΩ base R ── NPN (2N2222) ── relay coil ── 12 V
                                  │
                                  └── 1N4007 flyback (cathode to +12 V)
 
-Relay COM  ← always-on 12 V rail (F_always, 2 A)
+Relay COM  ← lighting bus (F_lights, 15 A, after accessory relay in circuit path)
 Relay NO   → accessory bus: headlight, turn signals, mode bulbs
 Relay NC   → not connected
 Relay coil return → chassis (local)
 ```
 
-ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → accessory bus dead. Brake light is on the **always-on** rail (before this relay), so it stays powered in ESTOP.
+ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → accessory bus dead. Brake light is on its own dedicated fuse (F_brake, 5 A slow-blow, always-on, before this relay) and stays powered in ESTOP. CAN transceivers and MCU keep-alive are on F_can_mcu (3 A, always-on), independent of both the brake light and the accessory relay.
 
 ---
 
@@ -529,11 +557,12 @@ Already specified in `docs/high-voltage-isolation.md`. Confirmed for harness:
 ### 8.3 Routing Layout (Frame Cross-Section)
 
 ```
-Left Frame Rail:                    Right Frame Rail:
-  CAN backbone (H3, 12 mm sleeve)     72 V gear lines (orange, split loom)
-  CAN_GND (18 AWG black/white)         Motor controller power (6 AWG orange)
-  Sensor cables (throttle, enc.)       DC-DC 72 V input (14 AWG orange)
-  12 V distribution (8 AWG red)       12 V high-current (EPS-C/SEB, 12 AWG red)
+Left Frame Rail (signal):           Right Frame Rail (power):
+  CAN backbone (H3, 12 mm sleeve)      Motor controller power (6 AWG orange)
+  CAN_GND (18 AWG black/white)         DC-DC 72 V input (14 AWG orange)
+  Sensor cables (throttle, enc.)       12 V distribution (8 AWG red)
+  Gear sense lines (20 AWG orange)     12 V EPS-C/SEB (12 AWG red)
+  Switch/signal wires (22 AWG)         72 V gear output (18 AWG orange)
 ```
 
 ### 8.4 Grommets & Pass-Throughs
@@ -572,6 +601,8 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 
 ## 9. Sub-Harness Bills of Materials
 
+Wire lengths include 150–200 mm service loop at each connector plus 5–10% routing tolerance beyond the nominal harness length in §1.1. Lengths listed are per-harness totals, not per-wire.
+
 ### H1 — Dashboard / Handlebar (1.2 m)
 
 | Item | Qty | Part Number | Notes |
@@ -591,6 +622,7 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 | Molex 39-01-2060 + 44476-1111 | 2 | Mini-Fit Jr 6-pin | SYS board I/O breakout J1a, J1b |
 | Molex 39-01-2040 + 44476-1111 | 1 | Mini-Fit Jr 4-pin | SYS board power J1c |
 | TE Superseal 1-967628-1 (3-pin) | 1 | Superseal 1.5 | Throttle grip connector J15 |
+| ESTOP button NC loop | 2-conductor 22 AWG, twisted, 1.5 m | Y-splice: button → SYS GPIO1 AND MTR PA1 | Solder + adhesive heat-shrink on splice. 10k pull-up to 3.3V at each MCU. Button other terminal → chassis GND |
 | SMBJ5.0A TVS | 1 | Littelfuse | Throttle signal protection (at SYS ADC) |
 | NUP2105L TVS | 1 | CAN protection | SYS CAN node |
 | 1N4007 flyback diode | 7 | — | SYS relay coils (gear×3, lights×3, GPIO27) |
@@ -603,31 +635,29 @@ Use an industrial heat-shrink label maker with white-on-black 6.4 mm tubing.
 
 ### H2 — Power Distribution
 
-Includes 72 V battery cabling, DC-DC converter, fuse blocks, and chassis ground straps at the rear.
+72 V battery cabling at rear, DC-DC converter at front/center (JP2), fuse blocks at both locations.
 
 | Item | Qty | Notes |
 |------|-----|-------|
-| Wire, 6 AWG orange (SXL) | 1.5 m | Battery (+) → ANL fuse → 72 V bus → motor controller |
-| Wire, 6 AWG black (SXL) | 0.5 m | Battery (−) → chassis bond strap (0.2 m); motor ctrl (−) → chassis strap (0.2 m) |
-| Wire, 14 AWG orange (GXL) | 2 m | 72 V bus → DC-DC input (rear to center run) |
-| Wire, 8 AWG red (GXL) | 2.5 m | DC-DC output → forward fuse block (JP2) |
-| Wire, 8 AWG black (GXL) | 0.3 m | DC-DC (−) → chassis strap |
-| Wire, 12 AWG red (GXL) | 1 m | Forward fuse block → EPS-C |
-| Wire, 12 AWG red (GXL) | 0.7 m | Rear fuse block → SEB |
-| Wire, 12 AWG black (GXL) | 0.5 m | EPS-C (−) → chassis strap; SEB (−) → chassis strap |
+| Wire, 6 AWG orange (SXL) | 1.0 m | Battery (+) → ANL fuse → 72 V bus → motor controller (rear, short) |
+| Wire, 6 AWG black (SXL) | 0.4 m | Battery (−) → chassis strap (0.2 m); motor ctrl (−) → chassis strap (0.2 m) |
+| Wire, 14 AWG orange (GXL) | 2.0 m | 72 V bus (rear) → DC-DC input (front JP2). 5 A, one-way drop 0.06 V |
+| Wire, 8 AWG black (GXL) | 0.3 m | DC-DC (−) → chassis strap (at JP2) |
+| Wire, 12 AWG red (GXL) | 1.5 m | JP2 fuse block → EPS-C (1.0 m) + JP2 → SEB (1.5 m front→rear) |
+| Wire, 12 AWG black (GXL) | 0.4 m | EPS-C (−) → chassis strap; SEB (−) → chassis strap |
 | Anderson SB50 + SB50G boot | 1 pair | Battery disconnect |
-| ANL fuse holder + 60 A fuse | 1 | At battery (+) terminal |
-| MEGA inline fuse holder + 15 A fuse | 1 | At 72 V bus, DC-DC tap point |
-| ATO/ATC fuse block, 6-circuit | 2 | One at rear (SEB, MTR, always-on), one at center (EPS-C, Jetson, RT, SYS, lights) |
-| ATO fuses: 40,30,25,5,3×3,15,2 A | 10 | Per branch |
+| ANL fuse holder + 60 A fuse | 1 | At battery (+) terminal, rear |
+| MEGA inline fuse holder + 15 A fuse | 1 | At DC-DC 72 V input, front JP2 |
+| ATO/ATC fuse block, 6-circuit | 2 | One at JP2 center (EPS-C, Jetson, RT, SYS, lights, brake, CAN/MCU), one at rear (SEB, MTR) |
+| ATO fuses | 11 | 40, 30, 20, 5, 3×4, 15, 5-slow, 3 A — per §5.2 table |
 | 3AG 1 A fuse + Littelfuse FHAC0001ZXJ holder | 6 | Gear output lines (×2 paths ×3 gears) |
 | DT04-2P | 1 | DC-DC 72 V input connector |
 | DTP04-2P | 1 | DC-DC 12 V output connector |
-| M6 ring terminals (6 AWG) | 4 | Chassis bond straps |
+| M6 ring terminals (6 AWG) | 4 | Battery + motor controller chassis straps |
 | M6 ring terminals (8–12 AWG) | 8 | Device ground straps |
 | M6 stainless bolts + serrated washers | 6 | Chassis bond points (bare metal prep) |
 | Dielectric grease | 1 tube | Corrosion protection at bond points |
-| Split loom, 25 mm orange | 1 m | 72 V conduit |
+| Split loom, 25 mm orange | 2 m | 72 V conduit (includes 1.5 m forward run) |
 | Split loom, 19 mm black | 2 m | 12 V conduit |
 | Heat-shrink labels | 25 | Wire markers, both ends |
 
@@ -674,6 +704,10 @@ Includes 72 V battery cabling, DC-DC converter, fuse blocks, and chassis ground 
 | SMBJ5.0A TVS | 1 | Littelfuse | MTR throttle ADC protection |
 | PESD5V0S2UT TVS | 1 | Nexperia | Rear motor encoder protection |
 | NUP2105L TVS | 1 | CAN protection | MTR CAN node |
+| TE Superseal 1.5 4-pin (optional) | 2 | 1-967629-1 | Rear left + rear right encoder connectors (TBD sensors). Connectors provisioned; wiring not installed until sensors selected. Same 5 V constraint as front encoder. |
+| PESD5V0S2UT TVS (optional) | 2 | Nexperia | Rear encoder protection (install with connectors) |
+| 4PDT mode-gate relay | 1 | Omron G6K-4P-DC12 or Finder 55.34.9.012.0040 | Throttle + gear arbitration. Coil driven by SYS GPIO8 via NPN + 1N4007 flyback. De-energized = SYS path. |
+| 1N4007 flyback diode | 1 | — | Mode-gate relay coil |
 | Braided PET sleeve, 19 mm | 2 m | — | Harness wrap |
 
 ### H5 — Steering / Front (1.0 m)
@@ -686,7 +720,7 @@ Includes 72 V battery cabling, DC-DC converter, fuse blocks, and chassis ground 
 | Shielded quad, 24 AWG | 1.5 m | Belden 8772 | Front wheel encoder (TBD sensor) |
 | DTP04-2P + 0460-202-1631 | 1 | Deutsch DTP | EPS-C power J21a |
 | DT04-4P + 0462-201-2031 | 1 | Deutsch | EPS-C CAN J21b |
-| TE Superseal 1.5 4-pin | 1 | 1-967629-1 | Front encoder J22 |
+| TE Superseal 1.5 4-pin | 1 | 1-967629-1 | Front encoder J22 — select a 5 V incremental quadrature encoder (AB-phase) compatible with ESP32-S3 PCNT. Examples: CUI AMT11 series, Broadcom HEDS-9700, generic Hall-effect AB module. If a 12 V encoder is later selected, upgrade TVS to SMBJ15A and add a level shifter. |
 | PESD5V0S2UT TVS | 1 | Nexperia | Front encoder protection |
 | NUP2105L TVS | 1 | CAN protection | EPS-C CAN node |
 | Braided PET sleeve, 16 mm | 1.5 m | — | Harness wrap |
@@ -710,7 +744,7 @@ Includes 72 V battery cabling, DC-DC converter, fuse blocks, and chassis ground 
 | Wire, 14 AWG red | 2 m | Lighting bus from accy relay |
 | Wire, 18 AWG red | 5 m | Individual lamp feeds (×3) |
 | Wire, 18 AWG black | 1 m | Lamp (−) → chassis straps (×3, each ≤0.15 m local) |
-| Wire, 16 AWG red/white | 2 m | Brake light (always-on rail) |
+| Wire, 16 AWG red/white | 2 m | Brake light (F_brake, 5 A slow-blow, always-on) |
 | DT04-2P + 0462-201-16141 | 3 | Deutsch | Lamp connectors J24 (left turn), J25 (right turn), J26 (brake) |
 | SMCJ18A TVS | 3 | Littelfuse | Per-lamp transient protection |
 | Split loom, 12 mm | 2.5 m | — | Harness wrap |
@@ -748,7 +782,7 @@ Short local straps from each device's negative terminal to the nearest clean fra
 | 0x011 | SYS_SAFETY_STS | SYS | H1 (dash) | RT (JP2) |
 | 0x012 | SYS_DCDC_CMD | SYS | H1 (dash) | DC-DC converter (JP1) |
 | 0x110 | SYS_MODE_CMD | SYS | H1 (dash) | RT (JP2) |
-| 0x120 | SYS_THROTTLE_STS | MTR | H4 (rear motor) | RT (JP2) |
+| 0x120 | SYS_THROTTLE_STS * | MTR | H4 (rear motor) | RT (JP2) |
 | 0x169 | VCU_SES_REQ | RT | JP2 (center) | EPS-C (H5, front steering) |
 | 0x201 | SES_STATUS | EPS-C | H5 (front steering) | RT (JP2) |
 | 0x202 | SES_ErrInfo | EPS-C | H5 (front steering) | RT (JP2) |
@@ -786,6 +820,12 @@ Short local straps from each device's negative terminal to the nearest clean fra
 | 0x311 | BRAKE_DIAG | RT | Jetson |
 | 0x600 | SYS_DIAG_RPT | RT (fwd) | Jetson |
 | 0x7FD | RT_HEARTBEAT | RT | Jetson |
+
+**\* Naming note:** CAN ID 0x120 is named `SYS_THROTTLE_STS` in the protocol but is physically sent by MTR STM32 — the message carries throttle status consumed by SYS and forwarded by RT. This is a known inconsistency in `architecture.md`.
+
+**Forwarding rules — bridged messages (RT gateway):** Messages forwarded from low bus → high bus (0x011, 0x120, 0x206, 0x210, 0x220, 0x310, 0x311, 0x600, 0x001) and high bus → low bus (0x300, 0x301, 0x302, 0x400, 0x001) are **one-way only.** RT must NOT re-forward a message back onto the bus it was received from — this creates a forwarding loop.
+
+For the complete CAN message catalog including DLC, payload layout, periods, and priorities, see `architecture.md` §2 and `shared/can/can_signals.yaml`.
 
 ---
 

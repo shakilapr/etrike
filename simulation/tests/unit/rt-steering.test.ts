@@ -143,14 +143,19 @@ describe("RtSteeringController", () => {
     expect(sc.state).toBe(SteerState.LISTEN_SYNC);
   });
 
-  it("exitEstop returns to ACTIVE", () => {
+  it("exitEstop defers until ramp completes (Gap #6)", () => {
     for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
     sc.tick(30000, 1, 500);
     sc.startEstop(false, 600);
     expect(sc.state).toBe(SteerState.ESTOP_RAMP_TO_ZERO);
 
+    // Gap #6: exitEstop sets pending flag; state stays in ramp
     sc.exitEstop();
-    expect(sc.state).toBe(SteerState.ACTIVE);
+    expect(sc.state).toBe(SteerState.ESTOP_RAMP_TO_ZERO);
+
+    // Ramp completes → deferred transition to ACTIVE
+    for (let i = 0; i < 100; i++) sc.tick(null, 0, 700 + i * 20);
+    expect(sc.getState()).toBe(SteerState.ACTIVE);
   });
 
   // ── Architecture Gap #6: ESTOP Exit Race Condition ────────────────

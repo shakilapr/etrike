@@ -10,12 +10,7 @@
 
 namespace rt {
 
-// ── vehicle geometry (mm) ─────────────────────────────────────────
-constexpr float kTrackWidthMM    =  800.0f;
-constexpr float kWheelRadiusMM   =  200.0f;
-
 // ── steering — SYNTREE EPS-C via CAN 0x169 ───────────────────────
-constexpr float kSteerHardLimitDeg      =  40.0f;   // software hard-stop
 constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
 constexpr float kSteerFollowingErrFactor=  0.25f;   // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs    =   300;    // must persist
@@ -34,11 +29,6 @@ constexpr int   kSteerSyncTimeoutMs     = 5000;     // LISTEN_SYNC timeout → F
 constexpr int   kSyntreeAngleOffset     = 30000;    // SYNTREE CSV offset: raw = angle_0_1deg + offset (0° → raw=30000)
 constexpr float kSteerEstopRampDegS     = 20.0f;    // ESTOP ramp-to-zero rate (gap C3)
 constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then silent-stop (gap C3)
-
-// ── PID — placeholder gains (tune once encoders fitted, gap #5) ──
-constexpr float kPidKp = 1.0f;
-constexpr float kPidKi = 0.1f;
-constexpr float kPidKd = 0.05f;
 
 // ── timing (ms / Hz) ──────────────────────────────────────────────
 constexpr int kControlLoopHz           =  100;
@@ -60,22 +50,6 @@ constexpr int kMcpIntGpio       =      40;
 
 // ── watchdog ──────────────────────────────────────────────────────
 constexpr int kWdtToggleGpio = 21;
-
-// ── encoders (quadrature, PCNT) ───────────────────────────────────
-constexpr int kEncRearMotorA  =  1;
-constexpr int kEncRearMotorB  =  2;
-constexpr int kEncFrontWheelA =  3;       // sensor TBD
-constexpr int kEncFrontWheelB =  6;       // sensor TBD
-constexpr int kEncRearLeftA   =  9;       // sensor TBD
-constexpr int kEncRearLeftB   = 12;       // sensor TBD
-constexpr int kEncRearRightA  = 13;       // sensor TBD
-constexpr int kEncRearRightB  = 14;       // sensor TBD
-
-// ── sensors ───────────────────────────────────────────────────────
-constexpr int kObstacleTrigGpio =  7;
-constexpr int kObstacleEchoGpio =  8;
-constexpr int kImuSdaGpio       = 10;      // IMU (optional)
-constexpr int kImuSclGpio       = 11;
 
 // ── steering alias (used by physics_model.cpp) ────────────────────
 constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLimitDeg

@@ -21,14 +21,12 @@ constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
 constexpr int kStartBtnGpio   = 32;   // green momentary, exits ESTOP→MANUAL
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
 
-// ── throttle — MCP4725 I2C DAC (0–5V) + ADC read ─────────────────
-constexpr int      kThrottleAdcChannel  =  5;   // ADC1_CH5 → GPIO10
+// ── throttle/gear I/O — currently on SYS ESP32-S3 (migration to MTR STM32 is Gap #5) ──
 constexpr int      kThrottleI2cSda      = 15;
 constexpr int      kThrottleI2cScl      = 16;
 constexpr uint8_t  kThrottleDacI2cAddr  = 0x60; // MCP4725
 constexpr unsigned kThrottleDeadZone    =  200;
 constexpr int      kThrottleMaxSpeedMmps= 3000;
-constexpr int      kThrottleDacMaxVal   = 4095; // 12-bit, VCC=5V → 0–5V
 
 // ── gear — TLP281 optoisolator input + relay output (72V) ────────
 constexpr int kGearDSense = 12, kGearSSense = 13, kGearRSense = 14;
@@ -62,10 +60,6 @@ constexpr int kSafetyCheckHz        =   20;
 constexpr int kGearCheckHz          =   50;
 constexpr int kDebounceMs           =  500;   // push button debounce
 
-// ── turn signal blink ─────────────────────────────────────────────
-constexpr int kTurnBlinkOnMs  = 500;
-constexpr int kTurnBlinkOffMs = 500;
-
 // ── brake — SYNTREE SEB via CAN 0x7B9 ────────────────────────────
 constexpr int   kBrakeCmdRateHz    =   50;     // 20 ms period
 constexpr int   kBrakeBootWaitMs   =  500;
@@ -85,5 +79,15 @@ constexpr int kSebStatusTimeoutMs     = 100;   // no 0x721 for 100ms → log war
 
 // ── mode button long-press ESTOP exit (gap #11) ─────────────────────
 constexpr int kEstopLongPressMs       = 3000;  // held 3s → MANUAL
+
+// ── MTR ESTOP ACK (gap #15) ──────────────────────────────────────────
+constexpr int kMtrEstopAckTimeoutMs   =  100;  // ESTOP_ACTIVE bit in 0x206 within 100ms
+
+// ── 0x206 staleness (gap #15) ────────────────────────────────────────
+constexpr int kMtrFbkStaleMs          =  200;  // MTR comms lost if no 0x206 for 200ms
+
+// ── 0x001 ESTOP rate limiting (gap #14) ──────────────────────────────
+constexpr int kEstopRateLimitWindowMs =  500;  // rolling window
+constexpr int kEstopRateLimitMax      =    2;  // max 0x001 frames per window
 
 }  // namespace sys

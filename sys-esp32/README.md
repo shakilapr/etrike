@@ -16,10 +16,17 @@ Target: `esp32-s3-devkitc-1` | Framework: `espidf` | FreeRTOS, 1000 Hz tick
 ## Host tests
 
 ```bash
-cd test
-g++ -std=c++17 -I. -I../src -I../../shared test_mode.cpp ../src/mode_manager.cpp -o test_mode && ./test_mode
-g++ -std=c++17 -I. -I../src -I../../shared test_safety.cpp ../src/safety_monitor.cpp -o test_safety && ./test_safety
-g++ -std=c++17 -I. -I../src -I../../shared test_can_rx_router.cpp ../src/can_rx_router.cpp -o test_can_rx_router && ./test_can_rx_router
-g++ -std=c++17 -I. -I../src -I../../shared test_speed_limiter.cpp ../src/speed_limiter.cpp -o test_speed_limiter && ./test_speed_limiter
-g++ -std=c++17 -I. -I../src -I../../shared test_motor_driver.cpp ../src/motor_driver.cpp -o test_motor_driver && ./test_motor_driver
+cd sys-esp32/test
+
+# Brake control priority, auto_brake bit, kPa→raw conversion, rolling counter
+g++ -std=c++17 -DTESTING -I. -I../src -I../../shared -I../../shared/can \
+    test_brake_priority.cpp -o test_bp && ./test_bp
+
+# Mode manager: MANUAL↔AUTO toggle, ESTOP exit, long-press, debounce
+g++ -std=c++17 -DTESTING -I. -I../src -I../../shared -I../../shared/can \
+    test_mode_manager.cpp ../src/mode_manager.cpp -o test_mm && ./test_mm
+
+# Safety monitor: heartbeat timeout, frozen counter, startup grace
+g++ -std=c++17 -DTESTING -I. -I../src -I../../shared -I../../shared/can \
+    test_safety_monitor.cpp ../src/safety_monitor.cpp -o test_sm && ./test_sm
 ```

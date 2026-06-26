@@ -107,15 +107,20 @@ describe("SysBrakeController", () => {
     // Command via manual lever: stroke=15mm (raw 900)
     const cmd = bc.tick(true, false, 0);
     expect(cmd).not.toBeNull();
-    const cmdStroke = cmd!.strokeReq; // VcuSebReq.strokeReq is raw units
 
-    // Feed back SEB status (aligned bit = 1), but actual stroke differs
-    // Note: feedSebStatus only accepts status byte — stroke feedback is a gap
-    bc.feedSebStatus(1);
+    // Feed SEB status with mismatched actual stroke (0mm = raw 600 vs cmd 900)
+    // Diff = 300 raw > 60 raw (3mm) threshold
+    bc.feedSebStatus(1, 600);  // Gap #13: passing stroke feedback
 
-    // Gap: following-error tracking not yet implemented.
-    // Should detect stroke mismatch >3mm for >100ms and set brakeFollowingError.
-    const diag = bc.getDiagnostics();
+    // Run checkFollowingError at t=0 (first detection)
+    bc.checkFollowingError(0);
+    // First detection — error start timer begins, not yet active
+    let diag = bc.getDiagnostics();
+    expect(diag.brakeFollowingError).toBe(false);
+
+    // Run checkFollowingError at t=150ms (persisted > 100ms)
+    bc.checkFollowingError(150);
+    diag = bc.getDiagnostics();
     expect(diag.brakeFollowingError).toBe(true);
   });
 });

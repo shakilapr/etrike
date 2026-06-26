@@ -25,6 +25,7 @@ export class SysEcu implements SimulatedEcu {
   private diagHeapKb = 500;
   private tec = 0;
   private rec = 0;
+  private lastSentMode = -1;  // sentinel: first mode change always sends
 
   // ── Simulation inputs ────────────────────────────────────────────
 
@@ -73,6 +74,18 @@ export class SysEcu implements SimulatedEcu {
           // MTR_MOTOR_FBK — for EGAS L2
           // i16 BE with sign extension: shift to bit 31 then arithmetic shift right
           this.actualSpeedMmps = (f.data[0] << 24 | f.data[1] << 16) >> 16;
+          break;
+        }
+        case "0x731": {
+          // SEB_ERR_INFO — L3 fault bits trigger ESTOP
+          // Byte 0 bits 2-7, Byte 1 bits 0-3,5, Byte 2 bits 1,2,4,5,6
+          const l3Active =
+            (f.data[0] & 0xFC) !== 0 ||
+            (f.data[1] & 0x2F) !== 0 ||
+            (f.data[2] & 0x76) !== 0;
+          if (l3Active) {
+            this.safety.setEstop(true);
+          }
           break;
         }
         case "0x721": {
@@ -146,9 +159,10 @@ export class SysEcu implements SimulatedEcu {
       });
     }
 
-    // ── 0x110 SYS_MODE_CMD (10 Hz, or on change) ────────────────
-    if (nowMs % 100 === 0) {
-      const modeByte = ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0;
+    // ── 0x110 SYS_MODE_CMD (on change only) ──────────────────────
+    const modeByte = ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0;
+    if (modeByte !== this.lastSentMode) {
+      this.lastSentMode = modeByte;
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x110", name: "SYS_MODE_CMD",
         dlc: 1, data: [modeByte], sender: "sys",

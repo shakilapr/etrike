@@ -1,0 +1,180 @@
+#pragma once
+// CAN dispatch — routes incoming CAN frames to the correct consumer.
+//
+// process_frame() classifies each frame, updates sensor atomics, and
+// enqueues safety events (ESTOP, MODE_CHANGE) via g_safety_evt_q.
+// t_dispatch() is the FreeRTOS task (prio 4) that reads both CAN RX
+// queues and drives the pipeline.
+//
+// Architecture §2.3: gateway forwarding categories (transparent,
+// consumed→regenerated, bus-local).
+
+#include <cstdint>
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "rt_state.h"
+#include "safety_monitor.h"
+#include "can_rx_router.h"
+#include "watchdog.h"
+
+static const char* TAG_DISP = "rt-dispatch";
+
+// ── Per-frame dispatch context ──────────────────────────────────────
+
+struct DispatchContext {
+    can::Frame        gw_lo;
+    can::Frame        gw_hi;
+    can::HostDriveCmd cmd;
+    int32_t           brake_req_kpa = 0;
+    bool              estop_flag    = false;
+    uint8_t           mode_from_sys = 0;
+    uint16_t          steer_feedback_angle = 0;
+    uint8_t           steer_angle_status   = 0;
+    bool              has_mode  = false;
+    bool              has_brake = false;
+    bool              has_cmd   = false;
+};
+
+// ── Frame processor ─────────────────────────────────────────────────
+
+static void process_frame(const can::Frame& fr, bool from_high, DispatchContext& ctx) {
+    // Frozen counter detection: skip timestamp update if alive counter
+    // hasn't changed (prevents stuck CAN controller from masking a hung peer).
+    if (fr.id == can::kIdSysHeartbeat) {
+        static uint8_t last_sys_ctr = 0xFF;
+        if (fr.data[0] != last_sys_ctr) {
+            last_sys_ctr = fr.data[0];
+            g_last_sys_hb_us.store(esp_timer_get_time());
+        }
+    } else if (fr.id == can::kIdHostHeartbeat) {
+        static uint8_t last_host_ctr = 0xFF;
+        if (fr.data[0] != last_host_ctr) {
+            last_host_ctr = fr.data[0];
+            g_last_host_hb_us.store(esp_timer_get_time());
+        }
+    }
+
+    rt::GatewayQueues q;
+    q.gw_tx_low  = &ctx.gw_lo;
+    q.gw_tx_high = &ctx.gw_hi;
+    q.cmd = &ctx.cmd;
+    q.brake_req_kpa = &ctx.brake_req_kpa;
+    q.estop_flag = &ctx.estop_flag;
+    q.mode_from_sys = &ctx.mode_from_sys;
+    q.steer_feedback_angle = &ctx.steer_feedback_angle;
+    q.steer_angle_status   = &ctx.steer_angle_status;
+    rt::route_frame(fr, from_high, q);
+
+    // ── Post-routing handlers ───────────────────────────────────────
+    if (fr.id == can::kIdSafetyEstop) {
+        ctx.gw_lo = fr;
+        ctx.gw_hi = fr;
+        // Enqueue ESTOP event (not atomic — queue guarantees delivery)
+        rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
+        xQueueSend(g_safety_evt_q, &evt, 0);
+    }
+    if (fr.id == can::kIdSyntreeEpsStatus) {
+        g_ses_angle_raw.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
+        g_ses_angle_status.store(ctx.steer_angle_status);
+        g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
+    }
+    if (fr.id == can::kIdHostObstacleDist && from_high) { g_obstacle_mm.store(fr.u32_at(0)); }
+    if (fr.id == can::kIdMtrMotorFbk && !from_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
+
+    // 0x202 SES_ErrInfo — L3 fault bits → ESTOP (arch §7.3)
+    if (fr.id == can::kIdSyntreeEpsErrInfo && !from_high) {
+        uint8_t angle_faults  = fr.data[1] & 0x0F;
+        uint8_t torque_faults = (fr.data[2] >> 2) & 0x0F;
+        if (angle_faults || torque_faults) {
+            ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
+            rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
+            xQueueSend(g_safety_evt_q, &evt, 0);
+        }
+    }
+    // 0x203 SES_Version — log SW/HW once (arch §7.3)
+    if (fr.id == can::kIdSyntreeEpsVersion && !from_high) {
+        static bool ses_version_logged = false;
+        if (!ses_version_logged) {
+            ESP_LOGI(TAG_DISP, "SES_Version: SW=%02X.%02X HW=%02X.%02X",
+                     fr.data[0], fr.data[1], fr.data[2], fr.data[3]);
+            ses_version_logged = true;
+        }
+    }
+    // 0x6FA SES_Test — motor current + ECU temp + supply voltage
+    if (fr.id == can::kIdSyntreeEpsTest && !from_high) {
+        int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
+        uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
+        uint16_t pv_raw = (uint16_t(fr.data[6]) << 8) | fr.data[5];
+        g_ses_motor_current.store(mc_raw);
+        g_ses_ecu_temp.store(et_raw);
+        g_ses_pow_volt.store(pv_raw);
+        float mc_a = mc_raw * 0.0078125f;
+        float et_c = et_raw * 0.5f;
+        float pv_v = pv_raw * 0.00390625f;
+        if (et_c > 85.0f)  ESP_LOGW(TAG_DISP, "SES ECU temp high: %.1f°C", et_c);
+        if (mc_a > 30.0f)  ESP_LOGW(TAG_DISP, "SES motor current high: %.1f A", mc_a);
+        if (pv_v < 10.0f)  ESP_LOGW(TAG_DISP, "SES supply voltage low: %.2f V", pv_v);
+    }
+    // 0x6FB SEB_Test — motor current + ECU temp (for 0x311 BRAKE_DIAG)
+    if (fr.id == can::kIdSyntreeSebTest && !from_high) {
+        int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
+        uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
+        g_seb_motor_current.store(mc_raw);
+        g_seb_ecu_temp_c.store(et_raw);
+    }
+    // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
+    if (fr.id == can::kIdSyntreeSebStatus && !from_high) {
+        g_seb_pressure_raw.store(fr.data[3]);
+        g_seb_error_status.store((fr.data[0] >> 6) & 0x03);
+    }
+    // Track reception flags (fix #3: 0=Manual/0=release are valid values)
+    if (fr.id == can::kIdSysModeCmd)   { ctx.has_mode = true; }
+    if (fr.id == can::kIdHostBrakeReq) { ctx.has_brake = true; }
+    if (fr.id == can::kIdHostDriveCmd) { ctx.has_cmd = true; }
+}
+
+// ── Dispatch task (prio 4) ──────────────────────────────────────────
+
+[[noreturn]] static void t_dispatch(void*) {
+    can::Frame fr;
+    while (1) {
+        bool from_high = false;
+        if (xQueueReceive(g_can_rx_low_q, &fr, 0) == pdTRUE) {
+            from_high = false;
+        } else if (xQueueReceive(g_can_rx_high_q, &fr, 0) == pdTRUE) {
+            from_high = true;
+        } else {
+            xQueueReceive(g_can_rx_low_q, &fr, portMAX_DELAY);
+            from_high = false;
+        }
+
+        DispatchContext ctx{};
+        process_frame(fr, from_high, ctx);
+
+        // Gateway forwarding
+        if (ctx.gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &ctx.gw_lo, 0);
+        if (ctx.gw_hi.id)  xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0);
+
+        // Mode change → safety event queue (guaranteed delivery)
+        if (ctx.has_mode) {
+            rt::SafetyEvent evt{rt::SafetyEvent::MODE_CHANGE, ctx.mode_from_sys};
+            xQueueSend(g_safety_evt_q, &evt, 0);
+            // Also clear ESTOP if exiting ESTOP mode
+            if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
+                g_steering.exit_estop();
+            }
+        }
+
+        // Brake request → atomic (latest-value OK — max-select in control)
+        if (ctx.has_brake)   g_brake_request_kpa.store(ctx.brake_req_kpa);
+
+        // Drive command → queue (already queue-based via g_cmd_q)
+        if (ctx.has_cmd) {
+            xQueueOverwrite(g_cmd_q, &ctx.cmd);
+            g_watchdog.feed(esp_timer_get_time());
+            g_steering.exit_estop();
+        }
+    }
+}

@@ -19,6 +19,7 @@ import {
   OBSTACLE_MAX_KPA,
   MAX_BRAKE_KPA,
   CMD_STALE_TIMEOUT_MS,
+  computeFollowingErrorThreshold,
 } from "../physics/tricycle.js";
 
 export class RtEcu implements SimulatedEcu {
@@ -27,10 +28,12 @@ export class RtEcu implements SimulatedEcu {
 
   private kinematics = new RtKinematicsController();
   private steering = new RtSteeringController();
+  private sebRollCounter = 0;  // Gap #12: rolling counter for RT→0x7B9
 
   private lastHostCmdMs = -Infinity;
   private lastSysHbMs = -Infinity;
-  private lastSysHbCtr = 0;
+  private lastSysHbCtr = -1;
+  private lastHostHbCtr = -1;
   private sysHbEverSeen = false;
   private lastHostHbMs = -Infinity;
   private currentMode: "manual" | "auto" | "estop" = "manual";
@@ -42,6 +45,8 @@ export class RtEcu implements SimulatedEcu {
   private lastSpeedMmps = 0;
   private sesAngleRaw: number | null = null;  // 0.1° units
   private sesAngleStatus = 0;
+  private steerFollowErrTicks = 0;
+  private lastCmdAngleRaw: number | null = null;  // 0.1° units, from steering tick
 
   init(): void {
     this.kinematics.reset();
@@ -83,7 +88,10 @@ export class RtEcu implements SimulatedEcu {
         }
         case "0x7FC": {
           // HOST_HEARTBEAT
-          this.lastHostHbMs = nowMs;
+          if (f.data[0] !== this.lastHostHbCtr) {
+            this.lastHostHbMs = nowMs;
+            this.lastHostHbCtr = f.data[0];
+          }
           break;
         }
         case "0x001": {
@@ -104,7 +112,10 @@ export class RtEcu implements SimulatedEcu {
       switch (f.canId) {
         case "0x7FE": {
           // SYS_HEARTBEAT — monitor for 200ms timeout
-          this.lastSysHbMs = nowMs;
+          if (f.data[0] !== this.lastSysHbCtr) {
+            this.lastSysHbMs = nowMs;
+            this.lastSysHbCtr = f.data[0];
+          }
           this.sysHbEverSeen = true;
           break;
         }
@@ -140,7 +151,7 @@ export class RtEcu implements SimulatedEcu {
     // Host heartbeat timeout (1500ms)
     const hostHbTimeout = this.lastHostHbMs >= 0 && nowMs - this.lastHostHbMs > HOST_HEARTBEAT_TIMEOUT_MS;
 
-    const shouldEstop = ctx.estopActive || cmdStale || sysHbTimeout;
+    let shouldEstop = ctx.estopActive || cmdStale || sysHbTimeout;
 
     // ── Kinematics (100 Hz) ─────────────────────────────────
     if (nowMs % 10 === 0) {
@@ -175,6 +186,22 @@ export class RtEcu implements SimulatedEcu {
       });
 
       this.lastSpeedMmps = speed;
+
+      // Steering following-error check (100 Hz)
+      // Threshold in degrees from speed-based lookup, converted to raw (0.1°/bit)
+      if (this.sesAngleRaw !== null && this.lastCmdAngleRaw !== null) {
+        const thresholdDeg = computeFollowingErrorThreshold(this.lastSpeedMmps);
+        const thresholdRaw = thresholdDeg * 10;
+        const error = Math.abs(this.lastCmdAngleRaw - this.sesAngleRaw);
+        if (error > thresholdRaw) {
+          this.steerFollowErrTicks++;
+          if (this.steerFollowErrTicks >= 30) {  // 300ms at 100Hz
+            shouldEstop = true;
+          }
+        } else {
+          this.steerFollowErrTicks = 0;
+        }
+      }
     }
 
     // ── Brake command (50 Hz) ───────────────────────────────
@@ -185,21 +212,58 @@ export class RtEcu implements SimulatedEcu {
       if (shouldEstop) brakeKpa = MAX_BRAKE_KPA;
       else if (hostHbTimeout) brakeKpa = ASSIST_STOP_KPA;
 
-      // 0x205 RT_BRAKE_CMD on low bus (50 Hz)
-      out.push({
-        simTimeMs: nowMs,
-        bus: "low",
-        canId: "0x205",
-        name: "RT_BRAKE_CMD",
-        dlc: 4,
-        data: [
-          (brakeKpa >> 24) & 0xFF,
-          (brakeKpa >> 16) & 0xFF,
-          (brakeKpa >> 8) & 0xFF,
-          brakeKpa & 0xFF,
-        ],
-        sender: "rt",
-      });
+      // Fix 2: Originate 0x001 ESTOP on both buses on internal fault detection
+      // Matches firmware run_safety_checks() — DLC=0, no data
+      if (shouldEstop) {
+        out.push({ simTimeMs: nowMs, bus: "low", canId: "0x001", name: "ESTOP", dlc: 0, data: [], sender: "rt" });
+        out.push({ simTimeMs: nowMs, bus: "high", canId: "0x001", name: "ESTOP", dlc: 0, data: [], sender: "rt" });
+      }
+
+      // 0x205 RT_BRAKE_CMD on low bus (50 Hz) — suppressed in MANUAL mode (EPS-C standalone, SYS handles brake)
+      if (ctx.mode !== "manual") {
+        out.push({
+          simTimeMs: nowMs,
+          bus: "low",
+          canId: "0x205",
+          name: "RT_BRAKE_CMD",
+          dlc: 4,
+          data: [
+            (brakeKpa >> 24) & 0xFF,
+            (brakeKpa >> 16) & 0xFF,
+            (brakeKpa >> 8) & 0xFF,
+            brakeKpa & 0xFF,
+          ],
+          sender: "rt",
+        });
+      }
+
+      // Gap #12: RT takes over 0x7B9 on SYS heartbeat loss (stroke=max)
+      // Matches firmware VcuSebReq::pack() — per SYNTREE CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
+      if (sysHbTimeout) {
+        const strokeRaw = 1140;  // 27mm max: (27+30)/0.05
+        const raw = [0, 0, 0, 0, 0, 0, 0, 0];
+        // Byte 0: align=0, control_enable=1, mode=0(Stroke), auto_brake=1
+        raw[0] = (0 << 0) | (1 << 1) | (0 << 2) | (1 << 3);
+        // Bytes 2-3: stroke_req LE (full 16-bit in Stroke mode)
+        raw[2] = strokeRaw & 0xFF;
+        raw[3] = (strokeRaw >> 8) & 0xFF;
+        // Byte 6: roll_cnt_enable=1, checksum_enable=1, rolling_counter(bits 4-7)
+        raw[6] = 0x03 | ((this.sebRollCounter & 0x0F) << 4);
+        // Checksum: XOR(raw[0..6]) ^ 0xFF
+        let cksum = 0;
+        for (let i = 0; i < 7; i++) cksum ^= raw[i];
+        raw[7] = cksum ^ 0xFF;
+        this.sebRollCounter = (this.sebRollCounter + 1) & 0x0F;
+        out.push({
+          simTimeMs: nowMs,
+          bus: "low",
+          canId: "0x7B9",
+          name: "VCU_SEB_REQ",
+          dlc: 8,
+          data: raw,
+          sender: "rt",
+        });
+      }
     }
 
     // ── Steering (50 Hz) ────────────────────────────────────
@@ -216,6 +280,7 @@ export class RtEcu implements SimulatedEcu {
       // Feed EPS-C data to steering controller
       const cmd = this.steering.tick(this.sesAngleRaw, this.sesAngleStatus, nowMs);
       if (cmd) {
+        this.lastCmdAngleRaw = cmd.targetAngle;
         // Build 0x169 VCU_SES_REQ (SYNTREE LE encoding)
         const angle16 = cmd.targetAngle & 0xFFFF;
         const speedRaw = cmd.targetSpeed & 0xFFFF;
@@ -240,15 +305,17 @@ export class RtEcu implements SimulatedEcu {
         for (let i = 0; i < 7; i++) cksum ^= data[i];
         data[7] = cksum ^ 0xFF;
 
-        out.push({
-          simTimeMs: nowMs,
-          bus: "low",
-          canId: "0x169",
-          name: "VCU_SES_REQ",
-          dlc: 8,
-          data,
-          sender: "rt",
-        });
+        if (ctx.mode !== "manual") {
+          out.push({
+            simTimeMs: nowMs,
+            bus: "low",
+            canId: "0x169",
+            name: "VCU_SES_REQ",
+            dlc: 8,
+            data,
+            sender: "rt",
+          });
+        }
       }
     }
 

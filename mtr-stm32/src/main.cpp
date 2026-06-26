@@ -21,17 +21,14 @@
  */
 
 #include <cstdint>
-#include <cstdlib>
 #include <atomic>
 
 /* FreeRTOS */
 #include "FreeRTOS.h"
 #include "task.h"
-#include "queue.h"
 
 /* Shared protocol headers */
 #include "can/can_protocol.h"
-#include "shared_config.h"
 
 /* MTR module headers */
 #include "config.h"

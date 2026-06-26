@@ -38,13 +38,21 @@ export class SafetyChecker {
     }
   }
 
-  /**
-   * Placeholder — ESTOP frame rate limiting not yet implemented (gap #14).
-   * Future: only accept 2 ESTOP frames per 500ms sliding window.
-   * @returns true if the ESTOP frame is accepted.
-   */
-  processEstop(_timestampMs: number): boolean {
-    return true; // stub — no rate limiting yet
+  // Gap #14: ESTOP rate limiter — sliding window timestamps
+  private estopAcceptedTs: number[] = [];
+  private static readonly ESTOP_RATE_WINDOW_MS = 500;
+  private static readonly ESTOP_RATE_MAX = 2;
+
+  /** Rate-limit ESTOP frames: max 2 per 500ms sliding window. */
+  processEstop(timestampMs: number): boolean {
+    // Remove timestamps outside the window
+    const cutoff = timestampMs - SafetyChecker.ESTOP_RATE_WINDOW_MS;
+    this.estopAcceptedTs = this.estopAcceptedTs.filter(t => t > cutoff);
+    if (this.estopAcceptedTs.length < SafetyChecker.ESTOP_RATE_MAX) {
+      this.estopAcceptedTs.push(timestampMs);
+      return true;
+    }
+    return false;
   }
 
   /** Verify mode compliance: only correct sender transmits 0x7B9 per mode. */

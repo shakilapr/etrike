@@ -1,15 +1,14 @@
 // Mode state machine implementation.  Architecture.md §8.6.
 
 #include "mode_manager.h"
-#include <cstdio>
 
 namespace sys {
 
 void ModeManager::init() {
     m_mode = can::Mode::Manual;
     m_debounce = 0;
-    m_prev_mode_btn = true;
-    m_prev_start_btn = true;
+    m_prev_mode_btn = false;   // match expected startup: button NOT pressed
+    m_prev_start_btn = false;  // (gpio_get_level==0) → false when HIGH/pull-up
     m_estop_longpress_ctr = 0;
 }
 

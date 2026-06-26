@@ -48,34 +48,6 @@ uint8_t Mcp2515Driver::spi_read_byte(uint8_t addr) {
     return rx[2];
 }
 
-void Mcp2515Driver::spi_write_buf(uint8_t addr, const uint8_t* data, size_t len) {
-    // For load TX buffer: first byte is command+addr, then data
-    uint8_t cmd = addr;  // kCmdLoadTx0 already includes the command bits
-    uint8_t tx_hdr[1] = { cmd };
-    spi_transaction_t t1 = {};
-    t1.length = 8;
-    t1.tx_buffer = tx_hdr;
-    spi_device_transmit(g_spi_handle, &t1);
-
-    spi_transaction_t t2 = {};
-    t2.length = len * 8;
-    t2.tx_buffer = data;
-    spi_device_transmit(g_spi_handle, &t2);
-}
-
-void Mcp2515Driver::spi_read_buf(uint8_t addr, uint8_t* data, size_t len) {
-    uint8_t tx_hdr[1] = { addr };
-    spi_transaction_t t1 = {};
-    t1.length = 8;
-    t1.tx_buffer = tx_hdr;
-    spi_device_transmit(g_spi_handle, &t1);
-
-    spi_transaction_t t2 = {};
-    t2.rxlength = len * 8;
-    t2.rx_buffer = data;
-    spi_device_transmit(g_spi_handle, &t2);
-}
-
 // ── MCP2515 register primitives ────────────────────────────────────
 
 void Mcp2515Driver::reset() {

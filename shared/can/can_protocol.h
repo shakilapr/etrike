@@ -1,8 +1,11 @@
 #pragma once
-// CAN protocol definitions — three-node distributed architecture.
-// Low-level CAN (500 kbit/s): RT, SYS, EPS-C, SEB, DC-DC converter.
+// CAN protocol definitions — five-node distributed architecture.
+// Low-level CAN (500 kbit/s): RT, SYS, PWT, EPS-C, SEB.
 // High-level CAN (500 kbit/s): RT, Host.
-// RT bridges selected IDs between buses (§2.3 architecture.md).
+// Powertrain CAN (250 kbit/s): PWT, DC-DC converter, motor controller.
+// RT bridges selected IDs between high and low buses (§2.3 architecture.md).
+// PWT bridges selected IDs between low and powertrain buses (pwt-esp32/pwt-architecture.md).
+// PWT bridges selected IDs between low and powertrain buses (pwt-esp32/pwt-architecture.md).
 
 #include <cstdint>
 #include "endian.h"
@@ -17,7 +20,7 @@ namespace can {
 
 constexpr uint32_t kIdSafetyEstop       = 0x001;  // any→all, bridged to high
 constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Host), 5 Hz
-constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→DC-DC converter, on change
+constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→PWT→DC-DC converter, on change. PWT bridges 500k→250k.
 constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
 constexpr uint32_t kIdSysThrottleSts    = 0x120;  // MTR(STM32)→RT (→Host), 100 Hz (SYS_ prefix is historical)
 constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
@@ -343,6 +346,7 @@ struct VcuSebReq {
 struct SysDiagRpt {
     uint8_t  mode          = 0;
     bool     brake_engaged = false;
+    bool     brake_fault   = false;  // v0.0.5: brake following-error active or SEB L3
     bool     heartbeat_ok  = false;
     bool     estop_active  = false;
     uint16_t free_heap_kb  = 0;
@@ -352,10 +356,11 @@ struct SysDiagRpt {
     static SysDiagRpt from_frame(const Frame& f) {
         return {
             f.u8_at(0),
-            f.u8_at(1) != 0,
-            f.u8_at(2) != 0,
-            f.u8_at(3) != 0,
-            uint16_t(f.i16_at(4)),  // heap KB stored as BE i16
+            (f.u8_at(1) & 1) != 0,
+            (f.u8_at(1) & 2) != 0,   // brake_fault in byte1 bit1
+            (f.u8_at(2) & 1) != 0,
+            (f.u8_at(3) & 1) != 0,
+            uint16_t(f.i16_at(4)),   // heap KB stored as BE i16
             f.u8_at(6),
             f.u8_at(7),
         };
@@ -363,7 +368,7 @@ struct SysDiagRpt {
     void to_frame(Frame& f) const {
         f.id = kIdSysDiagRpt; f.dlc = 8;
         f.put_u8(0, mode);
-        f.put_u8(1, brake_engaged ? 1 : 0);
+        f.put_u8(1, (brake_engaged ? 1 : 0) | (brake_fault ? 2 : 0));
         f.put_u8(2, heartbeat_ok  ? 1 : 0);
         f.put_u8(3, estop_active  ? 1 : 0);
         f.put_i16(4, int16_t(free_heap_kb));
