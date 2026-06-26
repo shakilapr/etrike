@@ -386,12 +386,14 @@ struct RtStateRpt {
     uint8_t mode        = 0;   // Mode enum
     bool    steer_valid = false;
     bool    reversing   = false;
+    uint8_t rx_overflow = 0;   // High CAN RX overflow counter (wraps at 256)
 
     void to_frame(Frame& f) const {
-        f.id = kIdRtStateRpt; f.dlc = 3;
+        f.id = kIdRtStateRpt; f.dlc = 4;
         f.put_u8(0, mode);
         f.put_u8(1, steer_valid ? 1 : 0);
         f.put_u8(2, reversing   ? 1 : 0);
+        f.put_u8(3, rx_overflow);
     }
 };
 

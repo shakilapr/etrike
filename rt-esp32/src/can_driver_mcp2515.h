@@ -3,6 +3,7 @@
 // Architecture.md §7.2: SCK=36, MOSI=37, MISO=38, CS=39, INT=40.
 // 10 MHz SPI, 500 kbit/s CAN.
 
+#include <atomic>
 #include <cstdint>
 #include <cstddef>
 #include "can/can_protocol.h"
@@ -45,10 +46,17 @@ public:
 
     void get_error_counters(uint8_t& tec, uint8_t& rec);  // non-const: SPI I/O mutates hardware state
 
+    // ── RX overflow telemetry ─────────────────────────────────────
+    uint16_t rx_overflow_count() const { return m_rx_overflow_count.load(std::memory_order_relaxed); }
+    void record_rx_overflow() { m_rx_overflow_count.fetch_add(1, std::memory_order_relaxed); }
+
 private:
     // ── SPI primitives (ESP-IDF) ───────────────────────────────────
     void spi_write_byte(uint8_t addr, uint8_t data);
     uint8_t spi_read_byte(uint8_t addr);
+    void spi_write_buf(uint8_t addr, const uint8_t* data, size_t len);
+    void spi_read_buf(uint8_t addr, uint8_t* data, size_t len);
+    void spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len);
     void spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
 
     // ── MCP2515 register-level helpers ─────────────────────────────
@@ -57,6 +65,7 @@ private:
     void write_reg(uint8_t reg, uint8_t val);
     void modify_reg(uint8_t reg, uint8_t mask, uint8_t val);
     uint8_t read_status();
+    void read_frame_burst(can::Frame& out, uint8_t base_addr);
 
     // ── MCP2515 register addresses ─────────────────────────────────
     static constexpr uint8_t kCmdReset      = 0xC0;
@@ -95,6 +104,16 @@ private:
 
     Config m_cfg;
     bool   m_initialized = false;
+
+    // ── ISR-driven RX state ───────────────────────────────────────
+    // Cached second-buffer frame: when both RXB0 and RXB1 have data
+    // in one notification cycle, the first is returned immediately
+    // and the second is cached for zero-latency access on next call.
+    can::Frame m_pending_frame{};
+    bool       m_has_pending = false;
+
+    // ── Overflow telemetry ────────────────────────────────────────
+    std::atomic<uint16_t> m_rx_overflow_count{0};
 };
 
 }  // namespace rt

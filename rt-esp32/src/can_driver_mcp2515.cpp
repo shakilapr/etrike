@@ -2,6 +2,7 @@
 // Architecture.md §7.2. ESP-IDF SPI master + GPIO.
 
 #include "can_driver_mcp2515.h"
+#include <algorithm>
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -23,6 +24,25 @@ constexpr uint8_t kCnf2_500k = 0x92;  // BTLMODE=1, PS2=2, PropSeg=2
 constexpr uint8_t kCnf3_500k = 0x02;  // PS1=3, wake filter off
 
 spi_device_handle_t g_spi_handle = nullptr;
+
+// ── ISR notification infrastructure ──────────────────────────────
+// The GPIO ISR on the MCP2515 INT pin (GPIO 40) notifies the RX
+// task when a CAN frame is available. See docs/latency-issues.md §3.
+// Task handle is set on first receive() call; null-guarded in ISR
+// for the cold-boot window between init() and task creation.
+static TaskHandle_t g_rx_task_handle = nullptr;
+
+// GPIO ISR for MCP2515 INT pin (falling edge, active-low).
+// IRAM_ATTR: prevents crash during concurrent flash operations
+// (NVS writes, OTA, crash dumps). Both vTaskNotifyGiveFromISR and
+// portYIELD_FROM_ISR are already in IRAM under ESP-IDF defaults.
+static void IRAM_ATTR mcp_int_isr(void* arg) {
+    if (g_rx_task_handle) {
+        BaseType_t yield = pdFALSE;
+        vTaskNotifyGiveFromISR(g_rx_task_handle, &yield);
+        if (yield) portYIELD_FROM_ISR(yield);
+    }
+}
 
 }  // anonymous namespace
 
@@ -76,6 +96,54 @@ uint8_t Mcp2515Driver::read_status() {
     return rx[1];
 }
 
+// ── Burst SPI read ───────────────────────────────────────────────
+// Reads 'len' consecutive bytes from the MCP2515 starting at
+// 'start_addr' in a single spi_device_transmit() call. The MCP2515
+// auto-increments its internal address register for burst reads.
+//
+// SPI bus contention note: ESP-IDF's SPI master serializes individual
+// spi_device_transmit() calls via a per-device queue spinlock. Since
+// this is a single transaction, there is no interleaving risk with
+// tx_high (prio 3) or get_error_counters() from t_control (prio 4).
+// If multi-transaction sequences are ever added, wrap them in
+// spi_device_acquire_bus() / spi_device_release_bus().
+void Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len) {
+    constexpr size_t kMaxBurst = 16;  // RX buffer is 13 bytes
+    uint8_t tx_buf[kMaxBurst] = {};
+    uint8_t rx_buf[kMaxBurst] = {};
+    tx_buf[0] = kCmdRead;       // 0x03
+    tx_buf[1] = start_addr;
+
+    spi_transaction_t t = {};
+    t.length    = (2 + len) * 8;
+    t.rxlength  = (2 + len) * 8;
+    t.tx_buffer = tx_buf;
+    t.rx_buffer = rx_buf;
+    spi_device_transmit(g_spi_handle, &t);
+
+    memcpy(data, &rx_buf[2], len);
+}
+
+// ── Burst frame read ─────────────────────────────────────────────
+// Reads a complete CAN frame from an MCP2515 RX buffer in one SPI
+// transaction. 13 bytes: SIDH, SIDL, EID8, EID0, DLC, D0-D7.
+void Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
+    uint8_t buf[13];
+    spi_read_burst(base_addr, buf, 13);
+
+    // Standard ID (11-bit): SIDH[7:0] = ID[10:3], SIDL[7:5] = ID[2:0]
+    out.extended = (buf[1] & 0x08) != 0;  // EXIDE bit
+    out.id = (uint32_t(buf[0]) << 3) | ((buf[1] >> 5) & 0x07);
+
+    // DLC
+    out.dlc = buf[4] & 0x0F;
+
+    // Data bytes
+    for (int i = 0; i < out.dlc && i < 8; ++i) {
+        out.data[i] = buf[5 + i];
+    }
+}
+
 // ── Init ───────────────────────────────────────────────────────────
 
 // ── Init sub-steps (Part 4) ─────────────────────────────────────────
@@ -85,6 +153,15 @@ bool Mcp2515Driver::init_gpio() {
     gpio_set_level(static_cast<gpio_num_t>(m_cfg.cs_gpio), 1);
     gpio_set_direction(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_MODE_INPUT);
     gpio_set_pull_mode(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_PULLUP_ONLY);
+
+    // ── Install ISR for interrupt-driven RX ───────────────────────
+    // ESP_INTR_FLAG_LEVEL3: default GPIO interrupt level on ESP32-S3.
+    // gpio_install_isr_service is idempotent — second call returns
+    // ESP_ERR_INVALID_STATE, safe for bus-off re-init (main.cpp:497).
+    gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
+    gpio_isr_handler_add(static_cast<gpio_num_t>(m_cfg.int_gpio), mcp_int_isr, nullptr);
+    gpio_set_intr_type(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_INTR_NEGEDGE);
+
     return true;
 }
 
@@ -208,54 +285,70 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     return true;
 }
 
-// ── Receive ────────────────────────────────────────────────────────
+// ── Receive (ISR-driven, with polling fallback) ───────────────────
 
 bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
     if (!m_initialized) return false;
 
-    int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
+    // ── Register this task on first call ──────────────────────────
+    // Cold boot: ISR is installed during init() but task doesn't
+    // exist yet. Bus-off recovery: task already exists and handle
+    // is already set (idempotent assignment).
+    if (g_rx_task_handle == nullptr)
+        g_rx_task_handle = xTaskGetCurrentTaskHandle();
+
+    // ── Return pre-read second buffer with zero SPI latency ───────
+    // When both RXB0 and RXB1 have frames, the first is returned
+    // immediately and the second is cached here. The INT pin stays
+    // low while any interrupt flag is set, so no new ISR edge fires
+    // for RXB1 — we must drain it proactively.
+    if (m_has_pending) {
+        out = m_pending_frame;
+        m_has_pending = false;
+        return true;
+    }
+
+    int64_t const deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
 
     while (true) {
-        uint8_t status = read_status();
+        // ── Check CANINTF for pending RX buffers ──────────────────
+        uint8_t canintf = read_reg(kRegCanIntF);
 
-        // Check RXB0 or RXB1
-        bool rx0 = (status & 0x01) != 0;  // RX0IF
-        bool rx1 = (status & 0x02) != 0;  // RX1IF
-
-        uint8_t base = 0;
-        if (rx0) {
-            base = kRegRxb0Data;  // RXB0SIDH
-        } else if (rx1) {
-            base = kRegRxb1Data;  // RXB1SIDH
-        } else {
-            // No frame available
-            if (esp_timer_get_time() > deadline) return false;
-            vTaskDelay(pdMS_TO_TICKS(1));
-            continue;
-        }
-
-        // Read SID
-        uint8_t sidh = read_reg(base);      // SIDH
-        uint8_t sidl = read_reg(base + 1);  // SIDL
-        out.extended = (sidl & 0x08) != 0;
-        out.id = (uint32_t(sidh) << 3) | ((sidl >> 5) & 0x07);
-
-        // Read DLC
-        out.dlc = read_reg(base + 4) & 0x0F;
-
-        // Read data
-        for (int i = 0; i < out.dlc && i < 8; ++i) {
-            out.data[i] = read_reg(base + 5 + i);
-        }
-
-        // Clear interrupt flag
-        if (rx0) {
+        if (canintf & 0x01) {  // RX0IF — RXB0 has data
+            read_frame_burst(out, kRegRxb0Data);
             modify_reg(kRegCanIntF, 0x01, 0x00);  // clear RX0IF
-        } else {
-            modify_reg(kRegCanIntF, 0x02, 0x00);  // clear RX1IF
+
+            // Check for second frame in RXB1 (no new ISR edge —
+            // INT stays low while any flag remains set)
+            canintf = read_reg(kRegCanIntF);
+            if (canintf & 0x02) {
+                read_frame_burst(m_pending_frame, kRegRxb1Data);
+                modify_reg(kRegCanIntF, 0x02, 0x00);  // clear RX1IF
+                m_has_pending = true;
+            }
+            return true;
         }
 
-        return true;
+        if (canintf & 0x02) {  // RX1IF — RXB1 has data
+            read_frame_burst(out, kRegRxb1Data);
+            modify_reg(kRegCanIntF, 0x02, 0x00);  // clear RX1IF
+            return true;
+        }
+
+        // ── No frame available ────────────────────────────────────
+        if (esp_timer_get_time() > deadline) return false;
+
+        // Block on ISR notification with 10 ms polling fallback.
+        // 10 ms: catches a missed ISR (cold-boot race, INT glitch,
+        // or noise) within one 20 ms SEB period.
+        // pdTRUE: clears accumulated count on exit. If ISR fires
+        // twice while blocked (both buffers fill), count=2 and the
+        // next ulTaskNotifyTake returns immediately without blocking.
+        int64_t rem_us = deadline - esp_timer_get_time();
+        uint32_t wait_ms = (rem_us > 0)
+            ? static_cast<uint32_t>(std::min(int64_t(10), rem_us / 1000))
+            : 0;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
     }
 }
 
