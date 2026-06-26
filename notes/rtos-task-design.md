@@ -165,3 +165,69 @@ The alternative — bare-metal superloop — works for simple devices. But when 
 ---
 
 *See also: [[pid-speed-control]] for the 100 Hz control loop, [[can-protocol]] for CAN RX/TX task design, `architecture.md` §7.7 for RT task layout, §8.7 for SYS task layout.*
+
+---
+
+## 9. E-Trike RT Task Patterns (project-specific)
+
+### Event drain pattern
+
+Used in `t_control()` to process safety events (ESTOP, mode changes, SEB takeover) queued by dispatch. Replaces fragile atomic flags — guarantees no transition is missed.
+
+```cpp
+// Drain ALL events since last tick at 100 Hz.
+rt::SafetyEvent evt;
+while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
+    switch (evt.type) {
+        case rt::SafetyEvent::ESTOP:        m_estop_pending = true; break;
+        case rt::SafetyEvent::MODE_CHANGE:  m_current_mode = evt.payload; break;
+        case rt::SafetyEvent::SEB_TAKEOVER: m_seb_takeover = true; break;
+        case rt::SafetyEvent::SEB_RELEASE:  m_seb_takeover = false; break;
+    }
+}
+// Publish derived state for read-heavy tx tasks (read at 50 Hz / 10 Hz).
+g_mode_current.store(m_current_mode);
+g_seb_takeover.store(m_seb_takeover);
+```
+
+**Why this beats atomics:** `g_estop_flag.exchange(false)` drops a second ESTOP arriving between control ticks. The queue preserves both events.
+
+### Multi-rate TX task
+
+Used in `t_can_tx_low()` — one task sends at two rates (100 Hz drive, 50 Hz brake+steer) by tracking two independent timers:
+
+```cpp
+TickType_t t100 = xTaskGetTickCount(), t50 = t100;
+while (1) {
+    if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
+        t100 = xTaskGetTickCount();
+        // 100 Hz: send 0x204 drive command
+    }
+    if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
+        t50 = xTaskGetTickCount();
+        // 50 Hz: send 0x205 brake, 0x169 steering, 0x7B9 SEB
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));  // poll at 200 Hz
+}
+```
+
+### The modular pattern (current architecture)
+
+```
+rt_state.h          — extern declarations for all cross-task state (atomics, queues, objects)
+can_dispatch.h      — DispatchContext, process_frame(), t_dispatch() task
+safety_monitor.h    — SafetyEvent, SafetyResult, run_safety_checks(), can_send_estop()
+main.cpp            — task definitions, app_main() — pure orchestration (~530 lines)
+```
+
+Each module is a self-contained `.h` file (header-only for FreeRTOS compatibility). `main.cpp` includes them and provides the single translation unit.
+
+### Active Object progression
+
+| Pattern | State | Atomics | Queues |
+|---------|-------|---------|--------|
+| **1: Static tasks + atomics** | (original) | Everything | CAN RX/TX, cmd, setpoint |
+| **3: Mailbox hybrid** | (current) | Sensor data (angle, speed, temps), derived state (mode, takeover) | CAN RX/TX, cmd, setpoint, **safety events** |
+| **2: Full Active Object** | (future) | None | Every cross-task datum is a queue message |
+
+Pattern 3 gives guaranteed event delivery where it matters for safety without queue-ifying every sensor reading. Pattern 2 is the ISO 26262 ASIL target — every byte traceable from source to sink via queue handles.

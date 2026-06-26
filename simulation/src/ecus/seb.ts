@@ -29,7 +29,12 @@ export class SyntreeSeb implements SimulatedEcu {
     this.actualStroke = 600;
     this.aligned = true;
     this.errorStatus = 0;
+    this.startupMs = null;
   }
+
+  /** Startup grace: tolerate missing 0x7B9 for this long (SYS has 500ms boot wait). */
+  private static readonly SEB_STARTUP_GRACE_MS = 500;
+  private startupMs: number | null = null;
 
   shutdown(): void {
     // nothing
@@ -49,8 +54,15 @@ export class SyntreeSeb implements SimulatedEcu {
       }
     }
 
+    // Track startup time for comm timeout grace
+    if (this.startupMs === null) {
+      this.startupMs = nowMs;
+    }
+    const timeSinceStartup = nowMs - this.startupMs;
+
     // Comm timeout: no 0x7B9 for >20ms → L3 error
-    if (nowMs - this.lastCmdMs > 20) {
+    // Gap #16: tolerate during SYS boot wait (500ms) so SYS doesn't latch ESTOP
+    if (nowMs - this.lastCmdMs > 20 && timeSinceStartup > SyntreeSeb.SEB_STARTUP_GRACE_MS) {
       this.errorStatus = 3;
     } else {
       this.errorStatus = 0;
