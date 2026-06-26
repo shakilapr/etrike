@@ -34,8 +34,17 @@ struct PidController {
 
     // PID update with anti-windup. setpoint/measured in mm/s, dt in seconds.
     // Returns effort correction (fraction of full-scale, -1..+1).
+    // First call: seeds prev_measurement/prev_setpoint to avoid D-term spike.
     float update(float setpoint, float measured, float dt) {
         if (dt <= 0.0f) return 0.0f;
+
+        // First-call seeding: set prev_measurement = measured so D-term is zero,
+        // set prev_setpoint = setpoint so anti-windup reset isn't spuriously triggered.
+        if (!m_first_call_done) {
+            prev_measurement = measured;
+            prev_setpoint = setpoint;
+            m_first_call_done = true;
+        }
 
         // Anti-windup: reset integral on large setpoint changes
         if (std::abs(setpoint - prev_setpoint) > setpoint_change_threshold) {
@@ -58,14 +67,12 @@ struct PidController {
         // the derivative opposes the motion (braking effect).
         // Optional low-pass filter.
         float d_term = 0.0f;
-        if (dt > 0.0f) {
-            float d_input = -(measured - prev_measurement) / dt;
-            if (d_filter_alpha > 0.0f) {
-                d_filtered = d_filter_alpha * d_filtered + (1.0f - d_filter_alpha) * d_input;
-                d_term = kd * d_filtered;
-            } else {
-                d_term = kd * d_input;
-            }
+        float d_input = -(measured - prev_measurement) / dt;
+        if (d_filter_alpha > 0.0f) {
+            d_filtered = d_filter_alpha * d_filtered + (1.0f - d_filter_alpha) * d_input;
+            d_term = kd * d_filtered;
+        } else {
+            d_term = kd * d_input;
         }
 
         prev_error = error;
@@ -82,7 +89,11 @@ struct PidController {
         prev_measurement = 0.0f;
         prev_setpoint = 0.0f;
         d_filtered = 0.0f;
+        m_first_call_done = false;
     }
+
+private:
+    bool m_first_call_done = false;
 };
 
 }  // namespace rt

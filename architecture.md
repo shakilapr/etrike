@@ -280,6 +280,47 @@ A new ROS 2 lifecycle node (`autoware_vehicle_bridge`) at `jetson/src/autoware_v
 
 **Node parameters:** `wheel_base: 1.5m`, `max_speed_forward: 3.0 m/s`, `max_steering_angle: 0.698 rad`, `max_brake_pressure_kpa: 5000`, `loop_rate: 100 Hz`, `command_timeout_ms: 500`.
 
+#### 5.1.1 Jetson I/O & Processing Summary
+
+The Jetson Orin is the perception, planning, and high-level control node. It runs ROS 2 with the `autoware_vehicle_bridge` lifecycle node translating Autoware.Auto topics ↔ CAN frames. The Jetson has **no direct actuator connections** — all actuation is delegated to RT/SYS/MTR via CAN.
+
+**ROS 2 → CAN (subscriptions → outputs):**
+
+| ROS 2 Topic (subscribe) | Processing | CAN ID (TX) | Controls |
+|--------------------------|------------|-------------|----------|
+| `AckermannControlCommand` | Speed m/s→mm/s, steering_angle→yaw_rate via kinematics, gear derivation | `0x300` HOST_DRIVE_CMD | Vehicle motion (speed, yaw, gear) |
+| `AckermannControlCommand` (deceleration) | Deceleration m/s² → brake pressure kPa mapping | `0x301` HOST_BRAKE_REQ | Service brake |
+| `GearCommand` | Gear enum → u8 (N=0, D=1, S=2, R=3) | `0x300` (gear byte) | Gear selection |
+| `TurnIndicatorsCommand` / `HazardLightsCommand` | Pack turn L, turn R, hazard, brake, headlight bits | `0x302` HOST_LIGHT_CMD | Signal lights |
+| `ControlModeCommand` (AUTONOMOUS) | Engages command transmission | Enables `0x300`/`0x301` TX | Mode engagement |
+| `ControlModeCommand` (MANUAL) | Suppresses all commands | Stops all TX | Mode disengagement |
+| `VehicleEmergencyStamped` | Rate-limited: 1 per 500ms | `0x001` SAFETY_ESTOP | Emergency stop |
+| Perception (LiDAR/camera/stereo) | Minimum obstacle distance mm | `0x400` HOST_OBSTACLE_DIST (10 Hz) | Obstacle speed limit (RT safety backstop) |
+
+**CAN → ROS 2 (inputs → publications):**
+
+| CAN ID (RX) | Processing | ROS 2 Topic (publish) | Provides |
+|-------------|------------|----------------------|----------|
+| `0x120` SYS_THROTTLE_STS | Speed mm/s → m/s | `VelocityReport` | Longitudinal velocity |
+| `0x310` STEER_DIAG | Angle 0.1°/bit, offset=-3000 → radians | `SteeringReport` | Steering tire angle |
+| `0x206` MTR_MOTOR_FBK | gear_state byte → GearReport enum | `GearReport` | Current gear |
+| `0x210` RT_STATE_RPT + `0x011` SYS_SAFETY_STS | mode + estop → ControlMode enum | `ControlModeReport` | Current control mode |
+| `0x011` SYS_SAFETY_STS byte 2 | light_state bitfield → indicator topics | `TurnIndicatorsReport` / `HazardLightsReport` | Light state |
+| `0x120` + `0x310` | Dead reckoning: integrate speed + steer angle over time | `VehicleKinematicState` | Odometry (drifts; encoder+IMU fusion deferred to gap #5) |
+
+**CAN I/O consolidated:**
+
+| Direction | CAN IDs | Rate | Purpose |
+|-----------|---------|------|---------|
+| TX (6) | `0x300`, `0x301`, `0x302`, `0x400`, `0x001`, `0x7FC` | Various | Commands, obstacle data, ESTOP, heartbeat |
+| RX (7) | `0x011`, `0x120`, `0x206`, `0x210`, `0x310`, `0x600`, `0x7FD` | Various | Telemetry, diagnostics, liveness |
+
+**Heartbeats:** Sends `0x7FC` at 2 Hz. Monitors `0x7FD` — 1500ms timeout → RCLCPP_WARN_THROTTLE (RT's own 500ms staleness watchdog stops vehicle independently).
+
+**What the Jetson manipulates:** Autoware.Auto vehicle commands → CAN frames (unit conversion, topic-to-ID mapping, rate limiting). Dead reckoning odometry (speed + steer integration — drifts without absolute reference; full encoder+IMU fusion deferred to gap #5).
+
+**What the Jetson controls:** Nothing directly. All actuation is via CAN commands to RT (which forwards to SYS/MTR and commands EPS-C). The Jetson is a pure perception/planning/command node — no GPIO, no analog I/O, no direct actuator wiring.
+
 ---
 
 ## 6. Design principles
@@ -326,6 +367,44 @@ Level 1: Function Controller — MTR STM32
 | **Diverse monitoring** | SYS compares commanded speed vs actual from 0x206 — mismatch → ESTOP |
 | **Why only motor needed MTR** | SYNTREE EPS-C and SEB already do EGAS Level 1 internally (CAN, PID, angle sensor, fault detection). Motor controller is a dumb analog device — it has no intelligence, no CAN, no internal monitoring. That gap is filled by the dedicated MTR board. |
 | **Body control is QM** | Lights, indicators, DCDC, mode bulbs on SYS are non-safety — safe to share MCU with Level 2 monitoring per ISO 26262 QM classification |
+
+### 6.1.1 MTR STM32 — I/O & Processing
+
+The MTR STM32 is the EGAS Level 1 Function Controller — the only node with direct motor actuation authority. **Bare-metal, no OS, no wireless** — minimal attack surface per ISO 26262.
+
+**What MTR does:** Reads throttle grip position (0–5V ADC) and gear selector position (72V via TLP281 optocouplers → 3.3V GPIO). In MANUAL mode, passes ADC straight through to MCP4725 DAC and mirrors gear selector to relay outputs. In AUTO mode, follows CAN `0x204` speed + gear commands. In ESTOP, hardware ISR instantly kills all outputs (Level 3). Reports motor speed and fault flags via CAN.
+
+**CAN I/O with processing logic:**
+
+| Input (RX) | Processing | Output (TX) | Controls |
+|-------------|------------|--------------|----------|
+| ESTOP GPIO (hardwired, NC, active-low) | Hardware ISR: DAC=0, all gear relays OFF, set `ESTOP_ACTIVE` in fault_flags | `0x206` fault_flags with ESTOP_ACTIVE bit | Motor kill (Level 3) |
+| Throttle ADC 0–5V (MANUAL) | `dac_value = adc_read()` — direct pass-through, dead zone 200 | MCP4725 DAC 0–5V → motor controller | Motor speed (MANUAL) |
+| `0x204` RT_DRIVE_CMD speed (AUTO) | `dac_value = abs(speed)/3000 × 4095` — fixed voltage mapping (open-loop, no PID) | MCP4725 DAC 0–5V → motor controller | Motor speed (AUTO) |
+| `0x204` RT_DRIVE_CMD gear (AUTO) | Energize matching relay (D/S/R); N → all off | Gear relay module → 72V ECU | Motor gear (AUTO) |
+| Gear sense GPIOs — TLP281 opto (MANUAL) | Mirror: D sense HIGH → energize D relay. Conflict (multiple HIGH) → treat as N. | Gear relay module → 72V ECU | Motor gear (MANUAL) |
+| `0x110` SYS_MODE_CMD — mode byte | Mode gate: AUTO → follow 0x204, MANUAL → ADC/gear pass-through, ESTOP → all zero | — (internal state) | Mode gating |
+| `0x204` staleness >200ms (AUTO) | Zero speed + N gear (controlled stop, not ESTOP) | MCP4725=0, all gear relays OFF | Stale command safety |
+| Speed feedback (ADC or encoder) | Pack into i16 mm/s | `0x120` SYS_THROTTLE_STS → RT (fwd to Jetson), 100 Hz | Speed telemetry |
+| State + faults | Pack gear_state, fault_flags (`ESTOP_ACTIVE`, etc.), actual_speed | `0x206` MTR_MOTOR_FBK → SYS, RT, 50 Hz | Motor feedback |
+
+**Physical I/O:**
+
+| Signal | Type | Range | Purpose |
+|--------|------|-------|---------|
+| Throttle ADC | Analog in, 12-bit | 0–5V | Grip position → speed demand |
+| MCP4725 DAC | I²C out, addr 0x60, 12-bit | 0–5V | Drive motor controller throttle input |
+| Gear D sense | TLP281 opto → GPIO | 72V → 3.3V | Gear selector D position (galvanic isolation) |
+| Gear S sense | TLP281 opto → GPIO | 72V → 3.3V | Gear selector S position |
+| Gear R sense | TLP281 opto → GPIO | 72V → 3.3V | Gear selector R position |
+| Gear D relay | GPIO → relay → 72V | 72V fused, TVS protected | Energize D line to ECU |
+| Gear S relay | GPIO → relay → 72V | 72V fused, TVS protected | Energize S line |
+| Gear R relay | GPIO → relay → 72V | 72V fused, TVS protected | Energize R line |
+| ESTOP button | GPIO, hardwired | NC, active-low, ISR | Hardware kill — zero CAN latency |
+
+**What MTR manipulates:** Throttle voltage (maps ADC or CAN speed to 0–5V DAC output), gear selection (mirrors TLP281 inputs or follows CAN gear byte), fault flags (ESTOP_ACTIVE acknowledgment).
+
+**What MTR controls:** Motor controller throttle via MCP4725 DAC (0–5V analog — the only non-CAN actuator in the system), motor gear via relay module (72V D/S/R lines to ECU). Speed control is open-loop; PID closure deferred until rear encoder fitted (gap #5).
 
 ### 6.2 Mode-Gated Dual Control (Option D) — SYNTREE Actuators
 
@@ -711,6 +790,44 @@ constexpr int kEncRearRightA = 13, kEncRearRightB = 14;     // sensor TBD
 6. Create queues (6), Create 8 tasks
 7. ESP_LOGI("Ready")
 ```
+
+### 7.12 I/O & Processing Summary
+
+RT converts ROS 2 motion commands into motor speed + gear and steering angle commands. It is the only dual-bus node and bridges selected CAN messages. It monitors steering feedback and system liveness for safety.
+
+**CAN I/O with processing logic:**
+
+| Input (RX) | Processing | Output (TX) | Controls |
+|-------------|------------|--------------|----------|
+| `0x300` HOST_DRIVE_CMD — speed + yaw rate | Tricycle kinematics: δ = atan2(L·ω, \|v\|), dynamic angle clamp, gear derivation (v>0→D, v=0→N, v<0→R) | `0x204` RT_DRIVE_CMD → MTR, SYS | Motor speed + gear |
+| `0x301` HOST_BRAKE_REQ — brake kPa | Max-select arbitration: max(RT obstacle kPa, Jetson 0x301 kPa) | `0x205` RT_BRAKE_CMD → SYS; `0x7B9` VCU_SEB_REQ → SEB (AUTO, planned) | Brake pressure |
+| `0x400` HOST_OBSTACLE_DIST — distance mm | Linear speed clamp: 0 at 300 mm → full at 3000 mm | Clamped speed in `0x204` | Obstacle speed limit |
+| `0x201` SES_STATUS — steering angle + status | Steering SM: boot sync angle, alignment check, following-error monitor, SYNTREE rolling counter + XOR checksum | `0x169` VCU_SES_REQ → EPS-C (50 Hz, Angle Mode) | Steering angle |
+| `0x110` SYS_MODE_CMD — mode byte | Mode gating: AUTO → transmit 0x169+0x204, MANUAL → silent, ESTOP → ramp/hold | Mode state gates TX | Mode control |
+| `0x001` SAFETY_ESTOP | Immediate: ramp/hold steering, zero speed, max brake, forward to other bus | `0x001` to other bus + setpoints zeroed | Emergency stop |
+| `0x7FE` SYS_HEARTBEAT — alive counter | Liveness: 200ms timeout → RT takes over `0x7B9` with stroke=max (full brake) | `0x7B9` (emergency takeover) → SEB | Brake takeover on SYS loss |
+| `0x7FC` JETSON_HEARTBEAT — alive counter | Staleness: 1500ms timeout → assisted stop (zero speed, stop steer, 2000 kPa brake, SYS→MANUAL) | `0x204`=0, `0x169` stop, `0x205`=2000 kPa | Assisted stop |
+| `0x011`, `0x120`, `0x206`, `0x600` (low bus) | Transparent forward — same ID, same payload, forwarded to high bus | Same IDs on high bus → Jetson | CAN gateway |
+| `0x302` (high bus) | Transparent forward | Same ID on low bus → SYS | CAN gateway |
+| `0x202` SES_ErrInfo, `0x203` SES_Version, `0x6FA` SES_Test | L3 fault → ESTOP; version log on boot; telemetry monitoring | — (consumed locally) | Steering health |
+| — | Telemetry aggregation: mode, steer state, reversing, diag | `0x210` RT_STATE_RPT (10 Hz), `0x310` STEER_DIAG (10 Hz), `0x311` BRAKE_DIAG (10 Hz) | Host monitoring |
+| — | Heartbeat generation: alive_ctr++ per bus (NOT bridged) | `0x7FD` RT_HEARTBEAT on both buses (2 Hz) | Liveness |
+
+**Physical I/O (RT board):**
+
+| Signal | GPIO | Type | Purpose |
+|--------|------|------|---------|
+| CAN (low) | TX=5, RX=4 | TWAI | Low-level CAN bus |
+| CAN (high) | SCK=36, MOSI=37, MISO=38, CS=39, INT=40 | SPI → MCP2515 | High-level CAN bus |
+| Encoder (rear motor) | A=1, B=2 | PCNT quadrature | Speed feedback (future PID) |
+| Encoder (front wheel) | A=3, B=6 | PCNT quadrature | Sensor TBD |
+| Encoder (rear wheels) | L:9/12, R:13/14 | PCNT quadrature | Differential speed (sensor TBD) |
+| I²C | SDA=10, SCL=11 | I²C | IMU (optional) |
+| WDT toggle | 21 | GPIO out, 100 Hz | TPS3850 external watchdog |
+
+**What RT manipulates:** Speed setpoint (clamped by obstacle distance), steering angle (resolved from kinematics + dynamic clamp), brake pressure (arbitrated max-select), CAN frames (bridged between buses), mode state (gates actuator transmission).
+
+**What RT controls:** EPS-C steering angle via `0x169` (Angle Mode, 50 Hz, SYNTREE rolling counter + checksum security), MTR motor speed + gear via `0x204` (100 Hz), SEB brake via `0x205`→SYS→`0x7B9` (50 Hz, Pressure/Stroke Mode). CAN gateway message forwarding between low and high buses.
 
 ---
 
@@ -1253,6 +1370,55 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 14. safety_task starts WDT toggle → external watchdog armed
 15. ESP_LOGI("Ready")
 ```
+
+### 8.12 I/O & Processing Summary
+
+SYS is the safety controller and body control module. It monitors ESTOP, heartbeats, and brake lever; performs EGAS Level 2 motor monitoring; controls the SEB brake actuator; and manages all vehicle body functions (lights, indicators, DC-DC, 12V power, mode bulbs).
+
+**CAN I/O with processing logic:**
+
+| Input (RX) | Processing | Output (TX) | Controls |
+|-------------|------------|--------------|----------|
+| GPIO1 ESTOP button (NC, active-low) | Hardware ISR → immediate ESTOP: DAC=0, all gear OFF, brake=max, DC-DC ON, 12V accessory OFF | `0x001` SAFETY_ESTOP → all nodes | Emergency stop |
+| GPIO2 brake lever (active-low) | Lever LOW → `0x7B9` stroke = `kBrakeManualStroke` (~15 mm). Driver always wins over AUTO. | `0x7B9` VCU_SEB_REQ → SEB (Stroke Mode) | Brake (MANUAL override) |
+| `0x204` RT_DRIVE_CMD — speed + gear | AUTO: `abs(speed)/3000 × 4095` → MCP4725 DAC, gear byte → relay. MANUAL: ADC→DAC pass-through. ESTOP: DAC=0, all gear OFF. Stall >200ms → zero+N. | MCP4725 DAC (0–5V) + gear relays (72V) | Motor throttle + gear |
+| `0x205` RT_BRAKE_CMD — brake kPa | kPa→SEB raw (`kPa × 0.02`), clamp to 100. Mode-switch: 0→positive → Pressure Mode; positive→0 → Stroke Mode stroke=0. | `0x7B9` VCU_SEB_REQ → SEB (Pressure Mode) | Brake pressure (AUTO) |
+| `0x206` MTR_MOTOR_FBK — speed, gear, faults | EGAS L2: compare 0x204 setpoint vs 0x206 actual. Mismatch → ESTOP. ESTOP_ACTIVE bit → force ESTOP. | `0x001` if mismatch | Motor safety (EGAS L2) |
+| `0x7FD` RT_HEARTBEAT — alive counter | 1000ms timeout → ESTOP. Faster: 0x204 staleness at 200ms catches RT crash first. | `0x001` if timeout | RT liveness |
+| GPIO11 MODE button (active-low, debounced) | Toggle MANUAL ↔ AUTO on falling edge. Ignored in ESTOP. | `0x110` SYS_MODE_CMD → RT + MTR | Mode control |
+| GPIO32 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. | `0x110` SYS_MODE_CMD → RT + MTR | ESTOP exit |
+| `0x302` HOST_LIGHT_CMD — light bitfield | Lights bitfield → GPIO relay outputs. AUTO: from CAN. MANUAL: handlebar switches (GPIO 3/6/7). ESTOP: all OFF except brake. | GPIO 18 (L), 19 (R), 21 (brake), 22 (head) | Signal lights |
+| `0x721` SEB_STATUS — stroke, status, error | Brake SM: boot sync stroke, check alignment, following error >3 mm for >100 ms → fault log. L3 fault → ESTOP. | `0x7B9` VCU_SEB_REQ (50 Hz, rolling counter + checksum) | Brake actuator |
+| `0x731` SEB_ErrInfo, `0x741` SEB_Version, `0x6FB` SEB_Test | L3 fault → ESTOP. Version check on boot. Telemetry trend monitoring. | — (consumed locally) | Brake health |
+| `0x012` SYS_DCDC_CMD generation | DC-DC ON in all modes (MANUAL, AUTO, ESTOP). Sent on state change. | `0x012` SYS_DCDC_CMD → DC-DC converter | DC-DC 72V→12V |
+| — | Diagnostics aggregation: system health, faults | `0x600` SYS_DIAG_RPT → RT (fwd to Jetson), 1 Hz | System diagnostics |
+| — | Heartbeat generation: alive_ctr++, 10 Hz (fast path for brake loss detection) | `0x7FE` SYS_HEARTBEAT → RT, 10 Hz | Liveness |
+| GPIO3/6/7 handlebar switches (MANUAL) | Turn L/R toggle, headlight toggle, both→hazard. Blink 500ms on/off pattern. | GPIO 18/19/22 relay outputs | Manual lights |
+
+**Physical I/O (SYS board):**
+
+| Signal | GPIO | Type | Purpose |
+|--------|------|------|---------|
+| CAN (low) | TX=5, RX=4 | TWAI | Low-level CAN bus |
+| ESTOP button | 1 | In, NC, active-low, ISR | Emergency stop (shared with MTR hardwire) |
+| Brake lever | 2 | In, active-low, pull-up | Manual brake trigger |
+| START button | 32 | In, active-low, pull-up, debounced | Exit ESTOP → MANUAL |
+| MODE button | 11 | In, active-low, pull-up, debounced | Toggle MANUAL ↔ AUTO |
+| Left turn switch | 3 | In, active-low, pull-up | Handlebar left turn |
+| Right turn switch | 6 | In, active-low, pull-up | Handlebar right turn |
+| Headlight switch | 7 | In, active-low, pull-up | Handlebar headlight toggle |
+| Left turn relay | 18 | Out | Left turn lamp |
+| Right turn relay | 19 | Out | Right turn lamp |
+| Brake light relay | 21 | Out | Brake light (always-on DC-DC rail, not accessory) |
+| Headlight relay | 22 | Out | Headlight |
+| AUTO bulb | 25 | Out | AUTO mode indicator (relay → 12V bulb) |
+| MANUAL bulb | 26 | Out | MANUAL mode indicator (relay → 12V bulb) |
+| 12V accessory relay | 27 | Out | Secondary power cut on ESTOP |
+| WDT toggle | 23 | Out, 20 Hz | TPS3850 external watchdog |
+
+**What SYS manipulates:** ESTOP state (from GPIO1, CAN 0x001, or RT heartbeat loss), mode state (from MODE button or START button), brake command (stroke from lever or pressure from 0x205), motor setpoint (from 0x204 or ADC pass-through), light state (from 0x302 or handlebar switches), gear state (from 0x204 or TLP281 mirroring), DC-DC enable (always ON).
+
+**What SYS controls:** SEB brake actuator via `0x7B9` (Stroke Mode for lever/ESTOP, Pressure Mode for AUTO 0x205), motor throttle via MCP4725 DAC (0–5V analog), motor gear via relay module (72V D/S/R lines), DC-DC converter via `0x012`, 12V accessory relay via GPIO27 (OFF on ESTOP), signal lights via GPIO 18/19/21/22, mode indicator bulbs via GPIO 25/26.
 
 ---
 
