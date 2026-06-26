@@ -7,7 +7,7 @@
 
 import { SimulationClock } from "../core/clock.js";
 import { CanBusModel } from "../bus/can-bus.js";
-import type { SimFrame, SimConfig, SimulationResult, BusId } from "../core/types.js";
+import type { SimFrame, SimConfig, SimulationResult, BusId, SimNodeId } from "../core/types.js";
 import type { SimulatedEcu, SimulationContext } from "../ecus/base.js";
 import { VehiclePlant } from "../physics/plant.js";
 import { SafetyChecker } from "../checks/safety-checker.js";
@@ -136,6 +136,9 @@ export class SimulationRunner {
       for (let f of tx) {
         // Apply fault injection
         if (this.faultInjector.shouldDrop(f.canId, f.bus)) continue;
+        // Gap #12: freezeHeartbeat — stop heartbeat frames from frozen nodes
+        const hbCanIds = ["0x7FC", "0x7FD", "0x7FE"];
+        if (hbCanIds.includes(f.canId) && this.faultInjector.isHeartbeatFrozen(f.sender as SimNodeId)) continue;
 
         let data = f.data;
         data = this.faultInjector.corrupt(f.canId, f.bus, data);

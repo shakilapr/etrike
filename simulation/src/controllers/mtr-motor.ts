@@ -5,7 +5,7 @@
  * produces 0x120 speed and 0x206 motor feedback.
  */
 
-import { MAX_SPEED_FWD_MMPS, CMD_STALE_TIMEOUT_MS } from "../physics/tricycle.js";
+import { MAX_SPEED_FWD_MMPS, CMD_STALE_TIMEOUT_MS, STARTUP_GRACE_PERIOD_MS } from "../physics/tricycle.js";
 import type { SimFrame, BusId } from "../core/types.js";
 
 export interface MtrState {
@@ -49,8 +49,8 @@ export class MtrMotorController {
       this.faultFlags |= 1; // bit0=ESTOP
     }
 
-    // Command staleness check
-    if (nowMs - this.lastCmdMs > CMD_STALE_TIMEOUT_MS) {
+    // Command staleness check (Gap #16: masked during startup grace)
+    if (nowMs >= STARTUP_GRACE_PERIOD_MS && nowMs - this.lastCmdMs > CMD_STALE_TIMEOUT_MS) {
       this.dacValue = 0;
       this.gear = 0;
       this.faultFlags |= 2; // bit1=CMD_TIMEOUT

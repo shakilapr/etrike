@@ -50,9 +50,18 @@ export class SysBrakeController {
   private rollCounter = 0;
   private sebAligned = false; // bit 0 of 0x721[0]
 
-  /** Feed SEB status byte 0 (from 0x721). */
-  feedSebStatus(statusByte0: number): void {
+  // Gap #13: brake following-error tracking
+  private actualStrokeRaw = 600;          // from 0x721 bytes 2-3 (0mm)
+  private cmdStrokeRaw = 600;             // last commanded stroke
+  private followingErrStartMs = -1;
+  private brakeFollowingError = false;
+
+  /** Feed SEB status with stroke feedback for following-error monitor (gap #13). */
+  feedSebStatus(statusByte0: number, strokeRaw?: number): void {
     this.sebAligned = (statusByte0 & 1) !== 0;
+    if (strokeRaw !== undefined) {
+      this.actualStrokeRaw = strokeRaw;
+    }
   }
 
   /**
@@ -128,6 +137,9 @@ export class SysBrakeController {
 
     const autoBrake = (brakeKpa > 0 || estop) ? 1 : 0;
 
+    // Store commanded stroke for following-error monitor (gap #13)
+    this.cmdStrokeRaw = strokeReq;
+
     return {
       alignEnable: 1,
       controlEnable: 1,
@@ -141,9 +153,24 @@ export class SysBrakeController {
     };
   }
 
-  /** Placeholder — following-error tracking not yet implemented (gap #13). */
+  /** Check brake following-error: cmd vs actual stroke >3mm for >100ms (gap #13). */
+  checkFollowingError(nowMs: number): void {
+    const diff = Math.abs(this.cmdStrokeRaw - this.actualStrokeRaw);
+    const RAW_3MM = 60;  // 3mm in raw units (3 / 0.05)
+    if (diff > RAW_3MM) {
+      if (this.followingErrStartMs < 0) {
+        this.followingErrStartMs = nowMs;
+      } else if (nowMs - this.followingErrStartMs >= 100) {
+        this.brakeFollowingError = true;
+      }
+    } else {
+      this.followingErrStartMs = -1;
+      this.brakeFollowingError = false;
+    }
+  }
+
   getDiagnostics(): { brakeFollowingError: boolean } {
-    return { brakeFollowingError: false };
+    return { brakeFollowingError: this.brakeFollowingError };
   }
 
   reset(): void {

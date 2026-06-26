@@ -11,7 +11,8 @@ public:
 
     void init() {}  // no-op (ready immediately)
     void set_can_driver(can::CanDriver* drv) { m_can = drv; }
-    void report(uint8_t mode, bool brake_engaged, bool hb_ok, bool estop) const;
+    void report(uint8_t mode, bool brake_engaged, bool brake_fault,
+                bool hb_ok, bool estop) const;
 private:
     can::CanDriver* m_can = nullptr;
 };

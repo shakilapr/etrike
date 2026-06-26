@@ -28,7 +28,6 @@ public:
     }
 
     Mcp2515Driver() : m_cfg(default_config()) {}
-    explicit Mcp2515Driver(const Config& cfg) : m_cfg(cfg) {}
 
     Mcp2515Driver(const Mcp2515Driver&) = delete;
     Mcp2515Driver& operator=(const Mcp2515Driver&) = delete;
@@ -36,7 +35,6 @@ public:
     // ── Lifecycle ─────────────────────────────────────────────────
 
     bool init();
-    bool is_initialized() const { return m_initialized; }
 
     // ── Frame I/O (same API as can::CanDriver) ─────────────────────
 
@@ -51,8 +49,6 @@ private:
     // ── SPI primitives (ESP-IDF) ───────────────────────────────────
     void spi_write_byte(uint8_t addr, uint8_t data);
     uint8_t spi_read_byte(uint8_t addr);
-    void spi_write_buf(uint8_t addr, const uint8_t* data, size_t len);
-    void spi_read_buf(uint8_t addr, uint8_t* data, size_t len);
     void spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
 
     // ── MCP2515 register-level helpers ─────────────────────────────
@@ -67,9 +63,7 @@ private:
     static constexpr uint8_t kCmdRead       = 0x03;
     static constexpr uint8_t kCmdWrite      = 0x02;
     static constexpr uint8_t kCmdReadStatus = 0xA0;
-    static constexpr uint8_t kCmdRxStatus   = 0xB0;
     static constexpr uint8_t kCmdBitModify  = 0x05;
-    static constexpr uint8_t kCmdLoadTx0    = 0x40;
     static constexpr uint8_t kCmdRtsTx0     = 0x81;
 
     // CNF registers for 500 kbit/s @ 8 MHz crystal

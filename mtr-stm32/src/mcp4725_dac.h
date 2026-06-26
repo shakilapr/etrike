@@ -23,12 +23,11 @@ class Mcp4725Dac {
 public:
     /// Initialise the DAC (no-op on this class; I2C peripheral init is
     /// handled by STM32CubeMX MX_I2C1_Init()).
-    void init() { m_value = 0; }
+    void init() {}
 
     /// Write a 12-bit value directly to the DAC (0-4095 → 0-5V).
     void write(uint16_t val) {
         if (val > kThrottleDacMaxVal) val = kThrottleDacMaxVal;
-        m_value = val;
         // Hardware write via STM32 HAL:
         // uint8_t buf[2];
         // buf[0] = (val >> 4) & 0xFF;        // D[11:4]
@@ -48,11 +47,6 @@ public:
         write(static_cast<uint16_t>(v > 4095 ? 4095 : v));
     }
 
-    /// Last written value (0-4095).
-    uint16_t value() const { return m_value; }
-
-private:
-    uint16_t m_value = 0;
 };
 
 /// Global DAC instance.

@@ -19,21 +19,6 @@
 
 namespace mtr {
 
-/// GPIO port from combined pin number (0-15=PORTA, 16-31=PORTB, 32-47=PORTC).
-inline void* gpio_port(int pin) {
-    // STM32: returns GPIOA, GPIOB, or GPIOC based on pin range.
-    // Cast to void* to avoid requiring stm32 HAL header here;
-    // consumers reinterpret_cast to GPIO_TypeDef*.
-    return reinterpret_cast<void*>(
-        pin < 16 ? 0x40010800U :        // GPIOA base (STM32F103)
-        (pin < 32 ? 0x40010C00U :       // GPIOB base
-                    0x40011000U));      // GPIOC base
-}
-
-inline uint16_t gpio_pin_mask(int pin) {
-    return static_cast<uint16_t>(1U << (pin & 0x0F));
-}
-
 class GearControl {
 public:
     /// Initialise gear I/O pins.

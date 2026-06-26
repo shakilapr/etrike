@@ -122,9 +122,20 @@ Release/
 Libraries/.ads/
 .ads/
 
-# ── Claude Code ──────────────────────────────────────────────────────
+# ── AI assistant local files ─────────────────────────────────────────
 .claude/
 CLAUDE.md
+.agents/
+.codex/
+.cursor/
+.continue/
+.windsurf/
+.aider*
+.augment/
+.kiro/
+.roo/
+AGENTS.md
+GEMINI.md
 
 # ── LaTeX build artifacts ────────────────────────────────────────────
 *.aux

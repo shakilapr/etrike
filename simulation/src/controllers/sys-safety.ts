@@ -90,17 +90,20 @@ export class SysSafetyMonitor {
 
   get egasActive(): boolean { return this.egasFaultActive; }
 
-  /** Placeholder — MTR feedback processing not yet implemented (gap #15). */
+  // Gap #15: MTR ESTOP ACK tracking
+  private mtrFaultFlags = 0;
+
+  /** Feed MTR motor feedback from 0x206 for ESTOP ACK detection (gap #15). */
   feedMtrFeedback(
-    _fbk: { actualSpeed: number; gearState: number; faultFlags: number },
+    fbk: { actualSpeed: number; gearState: number; faultFlags: number },
     _nowMs: number,
   ): void {
-    // stub — MTR ESTOP_ACTIVE bit detection not implemented
+    this.mtrFaultFlags = fbk.faultFlags;
   }
 
-  /** Placeholder — MTR ESTOP ACK check not yet implemented (gap #15). */
+  /** Returns true when MTR has acknowledged ESTOP (gap #15). */
   mtrEstopAcked(): boolean {
-    return false; // stub — not implemented
+    return this.estopActive && (this.mtrFaultFlags & 0x01) !== 0;
   }
 
   reset(): void {

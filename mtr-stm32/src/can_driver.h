@@ -70,7 +70,6 @@ public:
         return false;  // stub
     }
 
-    bool is_initialized() const { return m_initialized; }
 
 private:
     bool m_initialized = false;

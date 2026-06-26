@@ -18,7 +18,7 @@ namespace mtr {
 class ThrottleInput {
 public:
     /// Initialise (no-op; ADC peripheral init is via STM32CubeMX MX_ADC1_Init()).
-    void init() { m_speed_mmps = 0; }
+    void init() {}
 
     /// Read raw ADC value from the hardware (12-bit, 0-4095).
     /// In MANUAL mode the control task calls this and feeds the result
@@ -37,19 +37,13 @@ public:
 
     /// Convert raw ADC value to speed in mm/s.
     /// Applies dead zone, then linear map [0..4095] → [0..kThrottleMaxSpeedMmps].
-    /// Returns speed_mmps and caches it internally.
     int16_t tick(uint16_t raw_adc) {
         if (raw_adc < kThrottleDeadZone) raw_adc = 0;
-        m_speed_mmps = static_cast<int16_t>(
+        return static_cast<int16_t>(
             (static_cast<int32_t>(raw_adc) * kThrottleMaxSpeedMmps) / 4095);
-        return m_speed_mmps;
     }
 
-    /// Cached speed from last tick() call.
-    int32_t read_mmps() const { return m_speed_mmps; }
-
 private:
-    int16_t m_speed_mmps = 0;  // most recent computed speed
 };
 
 /// Global throttle input instance.

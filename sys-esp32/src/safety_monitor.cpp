@@ -2,7 +2,9 @@
 // Startup grace: 3000ms. Timeout: 200ms. Alive counter validation.
 
 #include "safety_monitor.h"
+#ifndef TESTING
 #include "esp_timer.h"
+#endif
 
 namespace sys {
 
