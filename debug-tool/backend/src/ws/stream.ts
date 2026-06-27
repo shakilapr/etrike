@@ -73,6 +73,14 @@ export class StreamHub {
     }
   }
 
+  close(): void {
+    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    for (const client of this.clients) {
+      try { client.socket.close?.(); } catch { /* ignore */ }
+    }
+    this.clients.clear();
+  }
+
   clientCount(): number {
     return this.clients.size;
   }

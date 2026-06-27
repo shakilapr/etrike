@@ -131,7 +131,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 3 | u8 estop, u8 hb_ok, u4 light_state | 5 Hz | V.High |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x206` | MTR_MOTOR_FBK | RT (fwd) | Jetson | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
-| `0x210` | RT_STATE_RPT | RT | Jetson | 3 | u8 mode, u8 steer_valid, u8 reversing | 10 Hz | Low |
+| `0x210` | RT_STATE_RPT | RT | Jetson | 4 | u8 mode, u8 steer_valid, u8 reversing, u8 rx_overflow | 10 Hz | Low |
 | `0x220` | RT_PID_RPT | RT | Jetson | 6 | RESERVED — future closed-loop PID telemetry | — (inactive) | Low |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear | ≤100 Hz | Medium |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |

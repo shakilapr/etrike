@@ -43,14 +43,18 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     // Frozen counter detection: skip timestamp update if alive counter
     // hasn't changed (prevents stuck CAN controller from masking a hung peer).
     if (fr.id == can::kIdSysHeartbeat) {
-        static uint8_t last_sys_ctr = 0xFF;
-        if (fr.data[0] != last_sys_ctr) {
+        static uint8_t last_sys_ctr = 0;
+        static bool sys_first = true;
+        if (sys_first || fr.data[0] != last_sys_ctr) {
+            sys_first = false;
             last_sys_ctr = fr.data[0];
             g_last_sys_hb_us.store(esp_timer_get_time());
         }
     } else if (fr.id == can::kIdHostHeartbeat) {
-        static uint8_t last_host_ctr = 0xFF;
-        if (fr.data[0] != last_host_ctr) {
+        static uint8_t last_host_ctr = 0;
+        static bool host_first = true;
+        if (host_first || fr.data[0] != last_host_ctr) {
+            host_first = false;
             last_host_ctr = fr.data[0];
             g_last_host_hb_us.store(esp_timer_get_time());
         }
@@ -146,8 +150,15 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         } else if (xQueueReceive(g_can_rx_high_q, &fr, 0) == pdTRUE) {
             from_high = true;
         } else {
-            xQueueReceive(g_can_rx_low_q, &fr, portMAX_DELAY);
-            from_high = false;
+            // Both queues empty — block on low with short timeout to avoid
+            // starving the high bus (portMAX_DELAY blocks forever on low).
+            if (xQueueReceive(g_can_rx_low_q, &fr, pdMS_TO_TICKS(10)) == pdTRUE) {
+                from_high = false;
+            } else if (xQueueReceive(g_can_rx_high_q, &fr, pdMS_TO_TICKS(10)) == pdTRUE) {
+                from_high = true;
+            } else {
+                continue;
+            }
         }
 
         DispatchContext ctx{};

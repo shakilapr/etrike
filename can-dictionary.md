@@ -663,6 +663,7 @@ Forwarded from low-level by RT. Same payload layout as §1 `0x120`.
 | `RT_Mode` | 0 | 8 | u8 (enum) | 0 | 2 | — |
 | `RT_SteerValid` | 8 | 8 | u8 (bool) | 0 | 1 | — |
 | `RT_Reversing` | 16 | 8 | u8 (bool) | 0 | 1 | — |
+| `RT_RxOverflow` | 24 | 8 | u8 | 0 | 255 | — |
 
 Byte layout (big-endian): Byte 0=mode, 1=steer_valid, 2=reversing.
 

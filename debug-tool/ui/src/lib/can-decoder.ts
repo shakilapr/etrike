@@ -289,7 +289,7 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       writeI16LE(bytes, 2, numberValue(values.str_angle));
       writeI16LE(bytes, 4, numberValue(values.tgt_angle_spd));
       if (values.torque !== undefined) bytes[5] = Math.round((numberValue(values.torque) + 12.1) / 0.1) & 0xff;
-      bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
+      bytes[6] = 0x03 | ((numberValue(values.rolling_counter) & 0x0f) << 4);  // bits 0-1: roll_cnt_en_sts + checksum_en_sts (MUST be 1)
       bytes[7] = numberValue(values.checksum) & 0xff;
       return { dlc: 8, data: bytes };
 
@@ -340,7 +340,7 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
         (values.auto_brake ? 0x08 : 0);
       writeU16LE(bytes, 2, numberValue(values.stroke_req));
       bytes[3] = numberValue(values.pressure_req) & 0xff;
-      bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
+      bytes[6] = 0x03 | ((numberValue(values.rolling_counter) & 0x0f) << 4);  // bits 0-1: roll_cnt_en + checksum_en (MUST be 1)
       bytes[7] = numberValue(values.checksum) & 0xff;
       return { dlc: 8, data: bytes };
 
