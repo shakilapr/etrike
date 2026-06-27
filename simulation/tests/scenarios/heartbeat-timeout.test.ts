@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { SimulationRunner } from "../../src/harness/runner.js";
 
 describe("Architecture Gaps", () => {
-  it.skip("gap #10: Host heartbeat loss triggers assisted stop brake (2000 kPa) — SKIP: plant brake model requires SYS 0x7B9→runner path fix", () => {
+  // Skip: 0x205 with 2000kPa IS generated (assistBrakeFound passes).
+  // Plant model doesn't decelerate because 0x7B9→cmdBrakeMm path has
+  // a timing interaction with bus scheduling that needs deeper investigation.
+  it.skip("gap #10: Host heartbeat loss triggers assisted stop brake (2000 kPa) — plant model timing", () => {
     const runner = new SimulationRunner();
     runner.configure({
       initialMode: "auto",
