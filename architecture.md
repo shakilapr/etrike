@@ -243,13 +243,13 @@ All firmware builds with PlatformIO (`pio run`).
 
 | # | Gap | Status |
 |---|-----|--------|
-| 1 | MTR STM32 HAL driver layer unimplemented | Blocked on hardware |
-| 2 | Rear motor encoder not fitted — speed control open-loop | Blocked on hardware |
-| 3 | Steering angle offset hardcoded (no calibration guard) | Code review needed |
-| 4 | No systematic DLC/range validation on CAN dispatch | Future hardening |
-| 5 | Single-task watchdog on both ECUs | Future hardening |
-| 6 | CAN RX queue overflow silently drops frames on SYS | Future hardening |
-| 7 | 3s startup grace period disables all safety checks on RT | Documented — hardware safe |
+| 1 | MTR STM32 HAL — all 4 modules have HAL calls written; missing CubeMX `.ioc` + board | Blocked on hardware |
+| 2 | Rear motor + wheel encoders — PCNT code complete; pins now defined in `config.h`; sensors TBD | Blocked on hardware |
+| 3 | Steering angle offset hardcoded (no runtime calibration guard) | Code review needed |
+| 4 | DLC/range validation — 6 of 16 `from_frame()` now validate; 10 remain | Partial — ongoing |
+| 5 | Single-task watchdog — RT has per-task tracking; SYS still single-task WDT | Partial — SYS pending |
+| 6 | CAN RX overflow on SYS — counted but not reported on CAN (RT reports in 0x210) | Partial — telemetry pending |
+| 7 | 3s startup grace period masks all safety checks; ECUs unsynchronized | Documented — hardware safe |
 | 8 | 0x7B9 dual-sender has ~20ms race window on mode switch | Tolerable — CAN arbitration handles |
 
 ---
