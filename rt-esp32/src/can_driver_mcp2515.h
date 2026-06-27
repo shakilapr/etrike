@@ -52,7 +52,7 @@ public:
 
     // ── Frame I/O (same API as can::CanDriver) ─────────────────────
 
-    bool send(const can::Frame& frame, uint32_t timeout_ms = 10);
+    bool send(const can::Frame& frame, uint32_t timeout_ms = 2);
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
 
     // ── Diagnostics ────────────────────────────────────────────────
@@ -88,6 +88,7 @@ private:
     static constexpr uint8_t kCmdReadStatus = 0xA0;
     static constexpr uint8_t kCmdBitModify  = 0x05;
     static constexpr uint8_t kCmdRtsTx0     = 0x81;
+    static constexpr uint8_t kCmdRtsTx2     = 0x84;
 
     // CNF registers for 500 kbit/s @ 8 MHz crystal
     static constexpr uint8_t kRegCnf1 = 0x2A;
@@ -108,8 +109,12 @@ private:
     static constexpr uint8_t kRegTxb0Data1 = 0x32;  // TXB0SIDL
     static constexpr uint8_t kRegTxb0Dlc  = 0x35;  // TXB0DLC
     static constexpr uint8_t kRegTxb0D0   = 0x36;  // TXB0D0
+    static constexpr uint8_t kRegTxb2Data = 0x51;  // TXB2SIDH
     static constexpr uint8_t kRegRxb0Data  = 0x61;  // RXB0SIDH
     static constexpr uint8_t kRegRxb1Data  = 0x71;  // RXB1SIDH
+
+    static constexpr uint8_t kReadStatusTx0Req = 0x01;
+    static constexpr uint8_t kReadStatusTx2Req = 0x04;
 
     // Initialization sub-steps (Part 4)
     bool init_gpio();

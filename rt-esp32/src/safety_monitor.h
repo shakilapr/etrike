@@ -22,7 +22,7 @@
 
 namespace rt {
 
-// ── Safety event (replaces g_estop_flag, g_mode_from_sys, g_seb_takeover) ─
+// ── Safety event (replaces g_estop_flag and g_mode_from_sys) ─
 
 struct SafetyEvent {
     enum Type : uint8_t {

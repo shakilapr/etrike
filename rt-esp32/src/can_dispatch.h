@@ -42,7 +42,7 @@ struct DispatchContext {
 static void process_frame(const can::Frame& fr, bool from_high, DispatchContext& ctx) {
     // Frozen counter detection: skip timestamp update if alive counter
     // hasn't changed (prevents stuck CAN controller from masking a hung peer).
-    if (fr.id == can::kIdSysHeartbeat) {
+    if (fr.id == can::kIdSysHeartbeat && !from_high) {
         static uint8_t last_sys_ctr = 0;
         static bool sys_first = true;
         if (sys_first || fr.data[0] != last_sys_ctr) {
@@ -50,7 +50,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             last_sys_ctr = fr.data[0];
             g_last_sys_hb_us.store(esp_timer_get_time());
         }
-    } else if (fr.id == can::kIdHostHeartbeat) {
+    } else if (fr.id == can::kIdHostHeartbeat && from_high) {
         static uint8_t last_host_ctr = 0;
         static bool host_first = true;
         if (host_first || fr.data[0] != last_host_ctr) {
@@ -137,9 +137,9 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         g_seb_error_status.store((fr.data[0] >> 6) & 0x03);
     }
     // Track reception flags (fix #3: 0=Manual/0=release are valid values)
-    if (fr.id == can::kIdSysModeCmd)   { ctx.has_mode = true; }
-    if (fr.id == can::kIdHostBrakeReq) { ctx.has_brake = true; }
-    if (fr.id == can::kIdHostDriveCmd) { ctx.has_cmd = true; }
+    if (fr.id == can::kIdSysModeCmd && !from_high)   { ctx.has_mode = true; }
+    if (fr.id == can::kIdHostBrakeReq && from_high)  { ctx.has_brake = true; }
+    if (fr.id == can::kIdHostDriveCmd && from_high)  { ctx.has_cmd = true; }
 }
 
 // ── Dispatch task (prio 4) ──────────────────────────────────────────
