@@ -372,6 +372,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             if (g_seb_takeover.load(std::memory_order_relaxed)) {
                 can::VcuSebReq seb;
                 seb.control_enable = 1;
+                seb.align_enable   = 1;
                 seb.control_mode   = 0;    // Stroke mode
                 seb.auto_brake     = 1;    // Emergency trigger
                 seb.stroke_req     = 1140; // 27mm max stroke: (27+30)/0.05
@@ -401,6 +402,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                     seb.control_mode = 1;  // Pressure
                     seb.pressure_req = pressure_raw;
                     seb.stroke_req   = 600;  // 0mm baseline
+                    seb.auto_brake   = 1;    // automated braking
                 } else {
                     seb.control_mode = 0;  // Stroke
                     seb.stroke_req   = 600; // 0mm: (0+30)/0.05
@@ -452,7 +454,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
-            int16_t angle = g_ses_angle_raw.load();
+            int16_t angle = g_ses_angle_raw.load() + rt::kSyntreeAngleOffset;
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5

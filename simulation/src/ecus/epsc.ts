@@ -117,7 +117,7 @@ export class SyntreeEpsc implements SimulatedEcu {
         simTimeMs: nowMs, bus: "low", canId: "0x6FA", name: "SES_Test",
         dlc: 8, data: [
           0,  // byte 0: reserved
-          0, motorCurrent & 0xFF,  // bytes 1-2: motor_current i16 LE
+          motorCurrent & 0xFF, (motorCurrent >> 8) & 0xFF,  // bytes 1-2: motor_current i16 LE
           ecuTemp & 0xFF, (ecuTemp >> 8) & 0xFF,  // bytes 3-4: ecu_temp u16 LE
           powVolt & 0xFF, (powVolt >> 8) & 0xFF,  // bytes 5-6: power_voltage u16 LE
           0,  // byte 7: reserved

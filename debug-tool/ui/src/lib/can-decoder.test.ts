@@ -296,8 +296,8 @@ describe("encodePayload", () => {
 
   it("encodes 0x210 RT state (high bus)", () => {
     const result = encodePayload("high", "0x210", { mode: 1, steer_valid: true, reversing: false });
-    expect(result.dlc).toBe(3);
-    expect(result.data).toEqual([0x01, 0x01, 0x00]);
+    expect(result.dlc).toBe(4);
+    expect(result.data).toEqual([0x01, 0x01, 0x00, 0x00]);  // byte 3 = rx_overflow
   });
 
   it("encodes 0x400 obstacle distance (clear)", () => {
