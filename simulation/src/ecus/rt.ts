@@ -342,6 +342,16 @@ export class RtEcu implements SimulatedEcu {
         data: [modeByte, safetyState, 0, 0],
         sender: "rt",
       });
+      // Also send on low bus so SYS can read RT safety_state
+      out.push({
+        simTimeMs: nowMs,
+        bus: "low",
+        canId: "0x210",
+        name: "RT_STATE_RPT",
+        dlc: 4,
+        data: [modeByte, safetyState, 0, 0],
+        sender: "rt",
+      });
 
       // 0x310 STEER_DIAG (10 Hz, high bus, DLC=8)
       // angle in 0.1°/bit signed i16 BE, NO OFFSET (unlike 0x169 encoding)

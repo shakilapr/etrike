@@ -82,6 +82,7 @@ static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Host
 static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
+static std::atomic<uint8_t>  g_rt_safety_state{0}; // RT safety_state from 0x210 (0=Normal, 1=InternalEstop, 2=Fault)
 static uint8_t               g_seb_status_raw[8] = {};
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
@@ -302,6 +303,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
+        case can::kIdRtStateRpt:    // 0x210 — RT safety state for takeover detection
+            if (fr.dlc >= 2) {
+                g_rt_safety_state.store(fr.u8_at(1) & 0x03, std::memory_order_relaxed);
+            }
+            break;
         case can::kIdRtHeartbeatLow:    // 0x7FD
             g_safety.feed_heartbeat_rt(fr.u8_at(0));
             break;
@@ -566,9 +572,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::Mode mode = g_mode_mgr.mode();
         int32_t brake_kpa = g_brake_pressure_kpa.load(std::memory_order_relaxed);
 
-        // Suppress SYS 0x7B9 in AUTO when RT is healthy and no rider override
-        bool rt_alive   = g_safety.heartbeat_ok();
-        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && !lever && !estop;
+        // Suppress SYS 0x7B9 in AUTO when RT is healthy, no rider override,
+        // AND RT safety_state is Normal (not in InternalEstop/takeover).
+        bool rt_alive     = g_safety.heartbeat_ok();
+        bool rt_normal    = (g_rt_safety_state.load(std::memory_order_relaxed) == 0);
+        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal && !lever && !estop;
 
         can::VcuSebReq seb_cmd;
         bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode, g_seb_status_raw, seb_cmd);
