@@ -28,8 +28,8 @@ struct SafetyEvent {
     enum Type : uint8_t {
         ESTOP = 0,          // CAN 0x001 received or internal fault
         MODE_CHANGE,        // SYS 0x110 mode command (payload = new mode)
-        SEB_TAKEOVER,       // SYS heartbeat lost → RT takes over 0x7B9
-        SEB_RELEASE         // SYS heartbeat recovered → release takeover
+        SEB_TAKEOVER,       // Reserved: SYS heartbeat lost → RT takes over 0x7B9 (future event-queue path)
+        SEB_RELEASE         // Reserved: SYS heartbeat recovered → release takeover (future event-queue path)
     };
     Type    type;
     uint8_t payload;  // for MODE_CHANGE: 0=Manual, 1=Auto, 2=Estop

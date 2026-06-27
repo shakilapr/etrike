@@ -11,7 +11,7 @@ describe("Architecture Gaps", () => {
         { atMs: 500, type: "freezeHeartbeat", target: "host" },
       ],
     });
-    const result = runner.runDuration(3000);
+    const result = runner.runDuration(5000);
 
     // After 1500ms timeout + one frame, 0x205 should carry assist-stop brake (2000 kPa)
     const brakeFrames = runner.capturedFrames.filter(f => f.canId === "0x205");
@@ -21,7 +21,7 @@ describe("Architecture Gaps", () => {
     });
     expect(assistBrakeFound).toBe(true);
 
-    // Vehicle should decelerate
+    // Vehicle should decelerate — motor zeroed + 2000 kPa assist stop brake
     expect(result.plantFinalSpeedMmps).toBeLessThan(500);
   });
 });

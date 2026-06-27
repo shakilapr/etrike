@@ -21,7 +21,7 @@ constexpr const char* kTag = "mcp2515";
 // Sync=1, PropSeg=2, PS1=3, PS2=2, SJW=1 → total = 8 TQ.
 constexpr uint8_t kCnf1_500k = 0x00;  // SJW=1, BRP=0
 constexpr uint8_t kCnf2_500k = 0x91;  // BTLMODE=1, PS1=3, PropSeg=2
-constexpr uint8_t kCnf3_500k = 0x08;  // PS2=2 (PHSEG2=1 → 1+1=2 TQ)
+constexpr uint8_t kCnf3_500k = 0x01;  // PS2=2 (PHSEG2=1 → 1+1=2 TQ, total 8 TQ)
 
 spi_device_handle_t g_spi_handle = nullptr;
 

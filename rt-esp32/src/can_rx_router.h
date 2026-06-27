@@ -15,21 +15,21 @@ struct GatewayQueues {
 inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q) {
     // ── Specific handlers for non-forwarding frames ──────────────────
     switch (f.id) {
-    case 0x001:  // SAFETY_ESTOP — bidirectional forward handled by caller
+    case can::kIdSafetyEstop:  // SAFETY_ESTOP — bidirectional forward handled by caller
         if (q.estop_flag) *q.estop_flag = true;
         return;  // caller handles gw_tx_high + gw_tx_low push
-    case 0x300:  // HOST_DRIVE_CMD — consumed by RT
+    case can::kIdHostDriveCmd:  // HOST_DRIVE_CMD — consumed by RT
         if (is_high_bus && q.cmd) {
             *q.cmd = can::HostDriveCmd::from_frame(f);
         }
         return;
-    case 0x301:  // HOST_BRAKE_REQ — consumed by RT
+    case can::kIdHostBrakeReq:  // HOST_BRAKE_REQ — consumed by RT
         if (is_high_bus && q.brake_req_kpa) { *q.brake_req_kpa = f.i32_at(0); }
         return;
-    case 0x110:  // SYS_MODE_CMD — consumed by RT
+    case can::kIdSysModeCmd:  // SYS_MODE_CMD — consumed by RT
         if (!is_high_bus && q.mode_from_sys) { *q.mode_from_sys = f.u8_at(0); }
         return;
-    case 0x201:  // SES_STATUS — consumed by RT (steering feedback)
+    case can::kIdSyntreeEpsStatus:  // SES_STATUS — consumed by RT (steering feedback)
         if (!is_high_bus) {
             if (q.steer_feedback_angle) {
                 *q.steer_feedback_angle = uint16_t(f.data[2] | (f.data[3] << 8));
@@ -39,7 +39,7 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
             }
         }
         return;
-    case 0x721:  // SEB_STATUS — monitor L3 errors
+    case can::kIdSyntreeSebStatus:  // SEB_STATUS — monitor L3 errors
         if (!is_high_bus && q.estop_flag) {
             uint8_t err = (f.data[0] >> 6) & 0x03;
             if (err == 3) *q.estop_flag = true;
