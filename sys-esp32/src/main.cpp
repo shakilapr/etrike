@@ -33,10 +33,20 @@ static can::CanDriver g_can(can::CanDriver::Config{sys::kCanTxGpio,
                                                     sys::kCanRxGpio,
                                                     sys::kCanBitrateHz});
 
-// ── CAN TX helper — checks return value, logs failures ──────────────
+// ── CAN TX helper — checks return, retries critical frames ──────────
 static uint32_t g_can_tx_fail_count = 0;
 static bool send_can(can::Frame& fr, const char* caller = "?") {
     if (!g_can.send(fr)) {
+        // Retry once for safety-critical frames (0x7B9 brake, 0x001 ESTOP)
+        if (fr.id == 0x7B9 || fr.id == 0x001) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            if (!g_can.send(fr, 20)) {  // longer timeout on retry
+                g_can_tx_fail_count++;
+                ESP_LOGE(TAG, "CAN TX critical frame %03X failed after retry (%s)", fr.id, caller);
+                return false;
+            }
+            return true;
+        }
         g_can_tx_fail_count++;
         static bool warned = false;
         if (!warned) {
