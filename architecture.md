@@ -922,15 +922,60 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 
 ---
 
-## 8. SYS ESP32-S3 — Safety, Motor Actuation & Body Control
+## 8. SYS ESP32-S3 — Vehicle Safety & Mode Authority
 
 ### 8.1 Role
 
-Safety (E-stop, brake lever, RT heartbeat), motor actuation (0–5V via MCP4725, 72V gear via relays), brake control (SYNTREE SEB via CAN `0x7B9`), DC-DC converter, signal lights, mode indicators, 12V power, diagnostics.
+SYS is the **vehicle safety and mode authority.** It owns the mode state machine
+that all other nodes follow. It is physically wired to the rider controls
+(ESTOP, Mode, Start buttons) and the brake lever. It monitors RT and MTR
+health via CAN and escalates to ESTOP when safety checks fail.
 
-Low-level CAN only. Jetson communication via RT.
+SYS runs two distinct concern groups on one ESP32-S3 (shared for prototype
+hardware simplicity). In production these would be separate MCUs:
 
-**15 FreeRTOS tasks** on ESP32-S3 @ 240 MHz, 1000 Hz tick.
+#### Group A — Safety & Mode Authority (ASIL-relevant, must not fail)
+
+| Function | Mechanism | Priority |
+|----------|-----------|----------|
+| **ESTOP detection** | GPIO1 (NC, active-low), wired in parallel to MTR PA1. Hardware path: button → ISR → mode change → CAN 0x001. | Prio 5 (max) |
+| **Mode state machine** | Reads Mode + Start buttons (GPIOs). Toggle MANUAL↔AUTO. Long-press MODE in ESTOP → MANUAL. Sends 0x110 to RT + MTR. **SYS is the authoritative mode source.** | Prio 4 |
+| **RT heartbeat monitor** | Receives 0x7FD at 2 Hz on low bus. Timeout >1000ms → ESTOP via CAN 0x001. Frozen-counter detection prevents stuck-controller masking. | Prio 5 |
+| **EGAS L2 speed monitor** | Compares 0x204 setpoint vs 0x206 actual speed from MTR. Mismatch >500 mm/s for >500ms → ESTOP. | Prio 5 |
+| **Brake control** | Lever sensor (GPIO) → CAN 0x7B9 → SYNTREE SEB. ESTOP → max stroke (27mm). MANUAL → lever stroke (15mm). AUTO → converts RT 0x205 kPa to SEB pressure mode. **Brake priority: ESTOP > lever > CAN pressure > released.** | Prio 3 |
+| **CAN TX** | Sends 0x011 (5 Hz), 0x7B9 (50 Hz), 0x110 (on-change + every 1s), 0x001 (event), 0x7FE (10 Hz). | Prio 2 |
+
+#### Group B — Body Controller (QM, non-safety)
+
+| Function | Mechanism | Priority |
+|----------|-----------|----------|
+| **Signal lights** | Left/right turn (500ms blink), brake light OR logic (lever + CAN 0x302 brake bit), headlight | Prio 3 |
+| **DC-DC converter** | CAN 0x012 enable. Always ON during ESTOP (keeps 12V for MCUs + brake light). Periodic refresh every 5s. | Prio 3 |
+| **Mode indicators** | Bulbs showing current mode (MANUAL/AUTO/ESTOP) | Prio 2 |
+| **12V accessory relay** | GPIO27. Cuts headlight, turn signals, mode bulbs during ESTOP. Brake light is on always-on DC-DC rail — not through this relay. | Prio 2 |
+| **Diagnostics** | 0x600 SYS_DIAG_RPT at 1 Hz: mode, brake state, heartbeat, ESTOP, free heap, TEC/REC | Prio 1 |
+
+#### Freedom from interference
+
+Group B (QM) functions **must not** affect Group A (safety) functions. This is
+enforced by convention in the prototype: QM tasks write only to their own
+atomics, never to safety atomics (`g_mode_mgr`, `g_safety`, `g_brake`). The
+FreeRTOS priority assignment (safety at 5-4, QM at 3-1) ensures a QM task
+cannot preempt a safety task.
+
+#### SYS owns, SYS hosts
+
+| Owns (SYS is authoritative) | Hosts (could run on any MCU) |
+|-----------------------------|------------------------------|
+| Mode state machine | Signal lights |
+| ESTOP detection (GPIO) | DC-DC converter control |
+| RT heartbeat monitoring | Mode indicator bulbs |
+| EGAS L2 speed monitoring | 12V accessory relay |
+| Brake lever → SEB control | Diagnostics reporting |
+| Mode command (0x110) | |
+
+**15 FreeRTOS tasks** on ESP32-S3 @ 240 MHz, 1000 Hz tick. Safety tasks at
+prio 5-4, brake at prio 3, QM tasks at prio 3-1.
 
 ### 8.2 CAN interface
 
