@@ -334,7 +334,7 @@ export class RtEcu implements SimulatedEcu {
 
       // 0x310 STEER_DIAG (10 Hz, high bus, DLC=8)
       // angle in 0.1°/bit signed i16 BE, NO OFFSET (unlike 0x169 encoding)
-      const sesAngle01deg = this.sesAngleRaw !== null ? (this.sesAngleRaw - 3000) : 0;
+      const sesAngle01deg = this.sesAngleRaw !== null ? (this.sesAngleRaw - 30000) : 0;
       const steerDiagAngle = Math.max(-32768, Math.min(32767, sesAngle01deg));
       out.push({
         simTimeMs: nowMs, bus: "high", canId: "0x310", name: "STEER_DIAG", dlc: 8, data: [

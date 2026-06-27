@@ -384,8 +384,8 @@ describe("0x169 VCU_SES_REQ encoding (SYNTREE)", () => {
     expect(runner.canValidator.getAllErrors().length).toBe(0);
   });
 
-  it("target angle LE encoding: 0° → bytes 2-3 = [B8,0B] (3000 raw)", () => {
-    // 0° steering = raw 3000 = 0x0BB8 → LE: [B8, 0B]
+  it("target angle LE encoding: 0° → bytes 2-3 = [30,75] (30000 raw)", () => {
+    // 0° steering = raw 30000 = 0x7530 → LE: [30, 75]
     // Verified by checksum validity (bad angle would corrupt checksum)
     const runner = new SimulationRunner();
     runner.configure(cfg({

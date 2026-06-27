@@ -50,10 +50,10 @@ describe("CSV: 0x169 VCU_SES_REQ", () => {
     runner.runDuration(2000);
     const f = runner.capturedFrames.find(fr => fr.canId === "0x169" && fr.bus === "low");
     const raw = f!.data[2] | (f!.data[3] << 8);
-    // Raw 16-bit value: 0° steering → raw = 3000 (0x0BB8)
-    // Normal range [-40°..+40°] → raw [2600..3400]
-    expect(raw).toBeGreaterThan(2000);
-    expect(raw).toBeLessThan(4000);
+    // Raw 16-bit value: 0° steering → raw = 30000 (0x7530)
+    // Normal range [-40°..+40°] → raw [26000..34000]
+    expect(raw).toBeGreaterThan(25000);
+    expect(raw).toBeLessThan(35000);
   });
 
   it("Row 6: RollCntEnable — byte5 bit0, 0=Invalid 1=Valid (MUST be 1)", () => {

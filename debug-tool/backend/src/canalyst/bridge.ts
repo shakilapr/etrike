@@ -5,12 +5,13 @@ import { resolve } from "node:path";
 import type { HardwareBridge, BridgeState } from "../bridge/types";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
-import { normalizeFrame, normalizeStats, type CanStats } from "../types/can";
+import { normalizeFrame, normalizeStats, BusDetector, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
 export class CanalystBridge implements HardwareBridge {
   readonly state: BridgeState;
   private process: ChildProcessWithoutNullStreams | null = null;
+  private busDetector = new BusDetector();
 
   constructor(
     private readonly config: AppConfig,
@@ -140,6 +141,7 @@ export class CanalystBridge implements HardwareBridge {
         decoded: typeof message.decoded === "object" && message.decoded ? (message.decoded as Record<string, unknown>) : undefined
       });
       this.store.insertFrame(frame);
+      this.busDetector.feed(frame.id);
       this.hub.broadcast({ type: "can_frame", payload: frame });
       return;
     }
@@ -154,6 +156,7 @@ export class CanalystBridge implements HardwareBridge {
         bridge: this.state,
         adapter_connected: this.state.connected,
         esp32_connected: this.state.connected,
+        bus_detection: this.busDetector.state,
         serial: {
           port_open: this.state.link_open,
           path: this.state.path,

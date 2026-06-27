@@ -21,8 +21,8 @@ export class SyntreeEpsc implements SimulatedEcu {
 
   /** Set the actual steering angle from the plant. */
   setActualAngle(deg: number): void {
-    // Convert degrees to 0.1° units with offset 3000
-    this.actualAngle = Math.round(deg * 10 + 3000);
+    // Convert degrees to 0.1° units with offset 30000
+    this.actualAngle = Math.round(deg * 10 + 30000);
   }
 
   init(): void {

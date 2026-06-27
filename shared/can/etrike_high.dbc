@@ -23,10 +23,11 @@ BO_ 518 MTR_MOTOR_FBK: 4 MTR
  SG_ MTR_GearState : 23|8@0+ (1,0) [0|3] "enum" Vector__XXX
  SG_ MTR_FaultFlags : 31|8@0+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 528 RT_STATE_RPT: 3 RT
+BO_ 528 RT_STATE_RPT: 4 RT
  SG_ RT_Mode : 7|8@0+ (1,0) [0|2] "enum" Vector__XXX
  SG_ RT_SteerValid : 15|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ RT_Reversing : 23|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ RT_RxOverflow : 31|8@0+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 544 RT_PID_RPT: 6 RT
  SG_ RT_PidSetpoint : 7|16@0- (1,0) [-32768|32767] "mm/s" Vector__XXX
@@ -48,7 +49,7 @@ BO_ 770 HOST_LIGHT_CMD: 1 Host
  SG_ HOST_Headlight : 4|1@0+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 784 STEER_DIAG: 8 RT
- SG_ SteerDiag_Angle0_1deg : 7|16@0- (0.1,-3000) [-32768|32767] "deg" Vector__XXX
+ SG_ SteerDiag_Angle0_1deg : 7|16@0+ (0.1,-3000) [0|65535] "deg" Vector__XXX
  SG_ SteerDiag_Fault : 23|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SteerDiag_MotorCurrent : 31|16@0+ (0.01,0) [0|65535] "A" Vector__XXX
  SG_ SteerDiag_ECUTemp : 47|16@0+ (0.1,0) [0|65535] "degC" Vector__XXX
@@ -99,6 +100,7 @@ CM_ BO_ 2045  "RT sends independently on both buses (per-bus, NOT bridged). Sepa
 CM_ SG_ 17 SYS_HeartbeatOk "0=RT alive counter frozen >1000ms, 1=incrementing";
 CM_ SG_ 17 SYS_LightState "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active";
 CM_ SG_ 518 MTR_FaultFlags "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict";
+CM_ SG_ 528 RT_RxOverflow "MCP2515 RX overflow counter  telemetry for CAN bus health monitoring";
 CM_ SG_ 768 HOST_DriveSpeed "ROS 2: linear.x * 1000";
 CM_ SG_ 768 HOST_YawRate "ROS 2: angular.z * 1000. i24 big-endian at bytes 4-6.";
 CM_ SG_ 784 SteerDiag_Angle0_1deg "Actual steering angle. physical_deg = raw * 0.1 - 3000. Raw 30000 -> 0deg.";

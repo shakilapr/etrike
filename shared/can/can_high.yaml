@@ -1,17 +1,42 @@
 # =============================================================================
-# E-Trike High-Level CAN Bus — Jetson ↔ RT perception/planning (500 kbit/s).
+# E-Trike CAN Definitions — single source of truth for DBC generation.
 # =============================================================================
+# High-Level CAN Bus — Jetson ↔ RT perception/planning (500 kbit/s).
 # All messages that appear on the high CAN bus.
-# Forwarded frames (0x001,0x011,0x120,0x206,0x302,0x600) are duplicated
-# identically in can_low.yaml — each DBC must be self-contained.
+# Forwarded frames are duplicated identically in can_low.yaml — each DBC
+# must be self-contained.
+#
+# This is the primary YAML file — it owns the shared metadata
+# (can_version, constants, ecus). can_low.yaml only defines protocols.
 #
 # Generates: shared/can/etrike_high.dbc (custom protocol, Motorola/big-endian)
-#
-# Usage:
-#   python generate_all_dbc.py              # generate all 4 DBCs
-#   python generate_all_dbc.py --check      # generate + validate
-#   python generate_all_dbc.py --summary    # print signal table
+# Usage:     python generate_all_dbc.py              # generate all 4 DBCs
+#            python generate_all_dbc.py --check      # generate + validate
+#            python generate_all_dbc.py --summary    # print signal table
 # =============================================================================
+
+can_version: "1.0"
+description: "E-Trike CAN signal definitions — single source of truth for DBC generation"
+
+# ── Shared Constants (from shared_config.h) ───────────────────────────
+constants:
+  max_speed_fwd_mmps: 3000
+  max_speed_rev_mmps: 500
+  max_brake_kpa: 5000   # SEB physical limit: 5 MPa = 100 raw = 5000 kPa
+  brake_stroke_scale: 0.05
+  brake_stroke_offset: -30.0
+  seb_max_pressure_raw: 100
+
+# ── All ECUs ──────────────────────────────────────────────────────────
+ecus:
+  - {name: Host,   comment: "Orin NX, Linux + ROS 2, perception/planning"}
+  - {name: RT,     comment: "ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway"}
+  - {name: SYS,    comment: "ESP32-S3, FreeRTOS, safety + motor + body control"}
+  - {name: MTR,    comment: "STM32, bare metal, motor DAC + gear relays (EGAS L1)"}
+  - {name: DCDC,   comment: "DC-DC converter (72V->12V), CAN 0x012 control"}
+  - {name: EPS_C,  comment: "SYNTREE EPS-C, steer-by-wire module, preprogrammed CAN IDs"}
+  - {name: SEB,    comment: "SYNTREE SEB, electro-hydraulic brake module, preprogrammed CAN IDs"}
+  - {name: Any,    comment: "Wildcard — any node may send (e.g., ESTOP frames)"}
 
 protocols:
 
@@ -83,7 +108,7 @@ protocols:
       # 0x210 — RT_STATE_RPT (RT→Host on high bus)
       - id: 0x210
         name: RT_STATE_RPT
-        dlc: 3
+        dlc: 4
         sender: RT
         receivers: [Host]
         cycle_ms: 100
@@ -93,6 +118,8 @@ protocols:
              values: {0: Manual, 1: Auto, 2: ESTOP}}
           - {name: RT_SteerValid, byte: 1, bit_offset: 0, size: 8, min: 0, max: 1}
           - {name: RT_Reversing, byte: 2, bit_offset: 0, size: 8, min: 0, max: 1}
+          - {name: RT_RxOverflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "MCP2515 RX overflow counter — telemetry for CAN bus health monitoring"}
 
       # 0x220 — RT_PID_RPT (reserved, inactive)
       - id: 0x220
@@ -163,7 +190,7 @@ protocols:
         cycle_ms: 100
         comment: "Steering telemetry to Host. v0.0.4 — previously missing from DBC."
         signals:
-          - {name: SteerDiag_Angle0_1deg,   byte: 0, bit_offset: 0, size: 16, type: signed,
+          - {name: SteerDiag_Angle0_1deg,   byte: 0, bit_offset: 0, size: 16,
              factor: 0.1, offset: -3000, unit: deg,
              comment: "Actual steering angle. physical_deg = raw * 0.1 - 3000. Raw 30000 -> 0deg."}
           - {name: SteerDiag_Fault,         byte: 2, bit_offset: 0, size: 8, min: 0, max: 1,
