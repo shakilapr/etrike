@@ -1,27 +1,44 @@
 # E-Trike — Drive-by-Wire Control System
 
-Autonomous electric tricycle with five-node distributed CAN bus architecture, ROS 2
-perception/planning, and ISO 26262 EGAS 3-level motor safety.
+Autonomous electric tricycle with distributed CAN bus architecture, ROS 2
+perception/planning, and EGAS 3-level motor safety.
 
 **Version:** v0.0.5-alpha
 
 ## What It Does
 
-- **Steer-by-wire** (SYNTREE EPS-C) and **brake-by-wire** (SYNTREE SEB) via CAN
+- Steer-by-wire and brake-by-wire via CAN-connected actuator modules
 - **Autonomous mode** — Jetson Orin ROS 2 + Autoware.Auto → CAN commands → RT kinematics → actuators
 - **Manual mode** — rider throttle, gear selector, and brake lever pass-through
 - **Emergency stop** — hardwired GPIO + CAN 0x001 with steering ramp-to-zero
 - **EGAS 3-level motor safety** — dedicated STM32 isolates motor actuation from body control
 
-## Architecture
+## Responsibility Split
 
-| Node | Hardware | Role |
-|------|----------|------|
-| Jetson Orin | NVIDIA | ROS 2 perception, planning, Autoware.Auto bridge |
-| RT ESP32-S3 | ESP32-S3 | Realtime physics, steering control, CAN gateway (high↔low) |
-| SYS ESP32-S3 | ESP32-S3 | Safety monitor, brake control, body/lights, diagnostics |
-| MTR STM32 | STM32 | Motor actuation (DAC 0–5V, gear relays, throttle ADC) |
-| PWT ESP32-S3 | ESP32-S3 | Powertrain CAN gateway (low↔powertrain 250k) |
+| Concern | Jetson | RT | SYS | MTR | PWT |
+|---------|--------|-----|-----|-----|-----|
+| Perception / planning | ✓ | | | | |
+| ROS 2 → CAN bridge | ✓ | | | | |
+| CAN gateway (low ↔ high) | | ✓ | | | |
+| CAN gateway (low ↔ powertrain) | | | | | ✓ |
+| Tricycle kinematics | | ✓ | | | |
+| Steering angle compute + CAN TX | | ✓ | | | |
+| Steering boot sync | | ✓ | | | |
+| Steering safety (clamp, hard-stops, following error) | | ✓ | | | |
+| Obstacle speed limit | | ✓ | | | |
+| Command staleness watchdog | | ✓ | | | |
+| E-stop GPIO + button | | | ✓ | ✓ | |
+| Brake lever → CAN | | | ✓ | | |
+| Brake boot sync + rolling counter | | | ✓ | | |
+| DC-DC converter CAN control | | | ✓ | | ✓ |
+| Heartbeat monitoring | | ✓ | ✓ | | ✓ |
+| Mode switch reading | | | ✓ | | |
+| Throttle ADC / DAC / gear I/O * | | | ✓ | ✓ | |
+| Motor feedback CAN TX | | | ✓ | ✓ | |
+| 12V accessory / lights / indicators | | | ✓ | | |
+| System diagnostics | | | ✓ | | |
+
+> * Motor I/O currently on SYS; target is MTR STM32 (migration pending).
 
 Three CAN buses: high-level (500k), low-level (500k), powertrain (250k).
 Full architecture: [`architecture.md`](architecture.md) · CAN IDs: [`can-dictionary.md`](can-dictionary.md)
