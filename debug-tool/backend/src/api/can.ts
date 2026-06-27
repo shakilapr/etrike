@@ -109,4 +109,9 @@ export function registerCanRoutes(app: FastifyInstance, store: DebugStore): void
     const chains = correlatePipeline(recent);
     return { chains };
   });
+
+  app.delete("/api/can/frames", async () => {
+    store.clearFrames();
+    return { cleared: true };
+  });
 }

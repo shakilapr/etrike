@@ -26,6 +26,10 @@ export class StreamHub {
 
   registerRoutes(app: FastifyInstance): void {
     app.get("/ws", { websocket: true }, (socket) => {
+      if (this.clients.size >= 100) {
+        socket.close(1013, "Too many connections");
+        return;
+      }
       const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null };
       this.clients.add(client);
 

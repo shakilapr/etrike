@@ -32,7 +32,7 @@ rt::DualHeartbeat   g_heartbeat;
 rt::CmdWatchdog     g_watchdog;
 
 // ── Safety event queue ─────────────────────────────────────────────
-QueueHandle_t g_safety_evt_q = nullptr;  // depth 8, SafetyEvent
+QueueHandle_t g_safety_evt_q = nullptr;  // depth 16, SafetyEvent
 
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 std::atomic<int32_t>  g_brake_request_kpa{0};
@@ -541,7 +541,7 @@ extern "C" void app_main() {
     g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
     g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
-    g_safety_evt_q  = xQueueCreate( 8, sizeof(rt::SafetyEvent));
+    g_safety_evt_q  = xQueueCreate(16, sizeof(rt::SafetyEvent));
 
     static CanRxParams rx_low_par  = { low_receive,  nullptr };
     static CanRxParams rx_high_par = { high_receive, nullptr, &g_can_high };
