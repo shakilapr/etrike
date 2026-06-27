@@ -154,8 +154,8 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x012", "SYS_DCDC_CMD", "SYS", "change", 1, false, [bool("enable", "Enable")]),
   msg("low", "0x110", "SYS_MODE_CMD", "SYS", "change", 1, true, [modeField]),
   msg("low", "0x120", "SYS_THROTTLE_STS", "MTR", "100 Hz", 2, true, throttleFields),
-  msg("low", "0x169", "VCU_SES_REQ", "RT", "50 Hz", 8, true, [num("target_angle", "Target angle", "0.1 deg", -3000, 780), num("target_speed", "Target speed", "deg/s", 125, 1250), bool("control_enable", "Control enable"), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
-  msg("low", "0x201", "SES_STATUS", "EPS-C", "100 Hz", 8, true, [bool("angle_status", "Angle status"), num("str_angle", "Steer angle", "0.1 deg"), num("tgt_angle_spd", "Target angle speed", "deg/s"), num("error_status", "Error status", undefined, 0, 3)]),
+  msg("low", "0x169", "VCU_SES_REQ", "RT", "50 Hz", 8, true, [bool("alignment_enable", "Alignment enable"), num("target_angle", "Target angle", "0.1 deg", -3000, 780), num("target_speed", "Target speed", "deg/s", 125, 1250), bool("control_enable", "Control enable"), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
+  msg("low", "0x201", "SES_STATUS", "EPS-C", "100 Hz", 8, true, [bool("angle_status", "Angle status"), num("control_mode_sts", "Control mode status", undefined, 0, 3), num("str_angle", "Steer angle", "0.1 deg"), num("tgt_angle_spd", "Target angle speed", "deg/s"), num("error_status", "Error status", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x202", "SES_ERRINFO", "EPS-C", "10 Hz", 8, true, [num("fault_mask", "Fault mask")]),
   msg("low", "0x203", "SES_VERSION", "EPS-C", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
   msg("low", "0x204", "RT_DRIVE_CMD", "RT", "100 Hz", 5, true, [num("motor_speed_mmps", "Motor speed", "mm/s", -500, 3000, 10), gearField]),
@@ -165,10 +165,10 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x600", "SYS_DIAG_RPT", "SYS", "1 Hz", 8, false, diagFields),
   msg("low", "0x6FA", "SES_TEST", "EPS-C", "100 Hz", 8, false, [num("motor_current", "Motor current"), num("ecu_temp", "ECU temp"), num("supply_voltage", "Supply voltage")]),
   msg("low", "0x6FB", "SEB_TEST", "SEB", "100 Hz", 8, false, [num("motor_current", "Motor current"), num("ecu_temp", "ECU temp"), num("supply_voltage", "Supply voltage")]),
-  msg("low", "0x721", "SEB_STATUS", "SEB", "100 Hz", 8, true, [num("stroke_value", "Stroke value", "raw"), num("pressure_value", "Pressure value", "raw"), num("angle_value", "Angle value", "raw"), num("error_status", "Error status", undefined, 0, 3)]),
+  msg("low", "0x721", "SEB_STATUS", "SEB", "100 Hz", 8, true, [bool("alignment_status", "Alignment status"), bool("control_enable_sts", "Control enable status"), num("control_mode_sts", "Control mode status", undefined, 0, 3), bool("auto_brake_sts", "Auto brake status"), num("stroke_value", "Stroke value", "raw"), num("pressure_value", "Pressure value", "raw"), num("angle_value", "Angle value", "raw"), num("error_status", "Error status", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x731", "SEB_ERRINFO", "SEB", "10 Hz", 8, true, [num("fault_mask", "Fault mask")]),
   msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
-  msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
+  msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [bool("align_enable", "Align enable"), bool("control_enable", "Control enable"), num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), bool("auto_brake", "Auto brake"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
   msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 1, false, heartbeatFields)
 ];
@@ -215,7 +215,7 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       bytes[0] = (values.control_enable ? 0x02 : 0) | (values.alignment_enable ? 0x01 : 0);
       writeI16LE(bytes, 2, numberValue(values.target_angle));
       bytes[4] = numberValue(values.target_speed) & 0xff;
-      bytes[5] = ((numberValue(values.rolling_counter) & 0x0f) << 4) | ((numberValue(values.target_speed) >> 8) & 0x0f);
+      bytes[5] = ((numberValue(values.rolling_counter) & 0x0f) << 4) | ((numberValue(values.target_speed) >> 8) & 0x03) << 2 | 0x03;  // bits 0-1: RollCntEn + ChecksumEn (MUST be 1), bits 2-3: speed[9:8]
       bytes[7] = numberValue(values.checksum) & 0xff;
       return { dlc: 8, data: bytes };
 
@@ -283,9 +283,11 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
     case "low:0x201":
       bytes[0] =
         (values.angle_status ? 0x01 : 0) |
+        ((numberValue(values.control_mode_sts) & 3) << 1) |
         ((numberValue(values.error_status) & 3) << 6);
       writeI16LE(bytes, 2, numberValue(values.str_angle));
       writeI16LE(bytes, 4, numberValue(values.tgt_angle_spd));
+      if (values.torque !== undefined) bytes[5] = Math.round((numberValue(values.torque) + 12.1) / 0.1) & 0xff;
       bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
       bytes[7] = numberValue(values.checksum) & 0xff;
       return { dlc: 8, data: bytes };
@@ -312,7 +314,8 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       bytes[0] =
         (values.align_enable ? 0x01 : 0) |
         (values.control_enable ? 0x02 : 0) |
-        ((numberValue(values.control_mode) & 1) << 2);
+        ((numberValue(values.control_mode) & 1) << 2) |
+        (values.auto_brake ? 0x08 : 0);
       writeU16LE(bytes, 2, numberValue(values.stroke_req));
       bytes[3] = numberValue(values.pressure_req) & 0xff;
       bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
@@ -465,36 +468,71 @@ function readU32LE(bytes: number[], offset: number): number {
   return ((bytes[offset] ?? 0) + ((bytes[offset + 1] ?? 0) << 8) + ((bytes[offset + 2] ?? 0) << 16) + ((bytes[offset + 3] ?? 0) * 0x1000000)) >>> 0;
 }
 
-function decodeFaultMask(bytes: number[], prefix: "ses" | "seb"): Record<string, unknown> {
-  const faultMask = readU32LE(bytes, 0);
-  const l3Mask = prefix === "seb" ? 0x007e3ffc : 0x003c3c00;
-  const result: Record<string, unknown> = {
-    fault_mask: faultMask,
-    fault_mask_hex: `0x${faultMask.toString(16).toUpperCase().padStart(8, "0")}`,
-    l3_fault: (faultMask & l3Mask) !== 0,
+function decodeSesFaults(bytes: number[]): Record<string, unknown> {
+  const mask = readU32LE(bytes, 0);
+  return {
+    fault_mask: mask,
+    fault_mask_hex: `0x${mask.toString(16).toUpperCase().padStart(8, "0")}`,
+    l3_fault: (mask & 0x003c3c00) !== 0,
+    SES_ECUUnderVolt: Boolean(bytes[0] & 0x01),
+    SES_ECUOverVolt: Boolean(bytes[0] & 0x02),
+    SES_CanComErr: Boolean(bytes[0] & 0x04),
+    SES_ECUTempErr: Boolean(bytes[0] & 0x08),
+    SES_DomainSC: Boolean(bytes[0] & 0x10),
+    SES_DomainV: Boolean(bytes[0] & 0x20),
+    SES_DomainT: Boolean(bytes[0] & 0x40),
+    SES_TempSensor: Boolean(bytes[0] & 0x80),
+    SES_AngleP_OC: Boolean(bytes[1] & 0x01),
+    SES_AngleP_AF: Boolean(bytes[1] & 0x02),
+    SES_AngleS_OC: Boolean(bytes[1] & 0x04),
+    SES_AngleS_AF: Boolean(bytes[1] & 0x08),
+    SES_SensorPow: Boolean(bytes[1] & 0x10),
+    SES_Alignment: Boolean(bytes[1] & 0x20),
+    SES_OverAngle: Boolean(bytes[1] & 0x40),
+    SES_StrMtrStall: Boolean(bytes[1] & 0x80),
+    SES_MtrCurtFault: Boolean(bytes[2] & 0x01),
+    SES_SensorCL: Boolean(bytes[2] & 0x02),
+    SES_TorqT1_OC: Boolean(bytes[2] & 0x04),
+    SES_TorqT1_AF: Boolean(bytes[2] & 0x08),
+    SES_TorqT2_OC: Boolean(bytes[2] & 0x10),
+    SES_TorqT2_AF: Boolean(bytes[2] & 0x20),
+    SES_SentAngle: Boolean(bytes[2] & 0x40),
+    SES_StrMtrIdling: Boolean(bytes[2] & 0x80),
+    SES_EPROM: Boolean(bytes[3] & 0x01),
+    SES_VehSpdSnapshot: bytes[7] ?? 0,
   };
-  // Extract individual fault bits like the backend does
-  if (prefix === "ses") {
-    const sesBits: Record<string, number> = {
-      SES_ECUUnderVolt: 0, SES_ECUOverVolt: 1, SES_ECUOverTemp: 2,
-      SES_ECUCommError: 3, SES_StrMtrOverTemp: 8, SES_StrMtrOverCurr: 9,
-      SES_StrMtrCommError: 10, SES_PosSnsrCommError: 13, SES_PosSnsrErr: 14,
-    };
-    for (const [name, bit] of Object.entries(sesBits)) {
-      result[name] = Boolean(faultMask & (1 << bit));
-    }
-  } else {
-    const sebBits: Record<string, number> = {
-      SEB_ECUUnderVolt: 0, SEB_ECUOverVolt: 1, SEB_ECUOverTemp: 2,
-      SEB_ECUCommError: 3, SEB_MtrOverTemp: 8, SEB_MtrOverCurr: 9,
-      SEB_MtrCommError: 10, SEB_StrkSnsrCommError: 13, SEB_StrkSnsrErr: 14,
-      SEB_PrsSnsrCommError: 15, SEB_PrsSnsrErr: 16,
-    };
-    for (const [name, bit] of Object.entries(sebBits)) {
-      result[name] = Boolean(faultMask & (1 << bit));
-    }
-  }
-  return result;
+}
+
+function decodeSebFaults(bytes: number[]): Record<string, unknown> {
+  const mask = readU32LE(bytes, 0);
+  return {
+    fault_mask: mask,
+    fault_mask_hex: `0x${mask.toString(16).toUpperCase().padStart(8, "0")}`,
+    l3_fault: (mask & 0x007e3ffc) !== 0,
+    SEB_ECUUnderVolt: Boolean(bytes[0] & 0x01),
+    SEB_ECUOverVolt: Boolean(bytes[0] & 0x02),
+    SEB_CanComErr: Boolean(bytes[0] & 0x04),
+    SEB_ECUTempErr: Boolean(bytes[0] & 0x08),
+    SEB_DomainSC: Boolean(bytes[0] & 0x10),
+    SEB_DomainV: Boolean(bytes[0] & 0x20),
+    SEB_DomainT: Boolean(bytes[0] & 0x40),
+    SEB_AngleP_OC: Boolean(bytes[0] & 0x80),
+    SEB_AngleP_AF: Boolean(bytes[1] & 0x01),
+    SEB_AngleS_OC: Boolean(bytes[1] & 0x02),
+    SEB_AngleS_AF: Boolean(bytes[1] & 0x04),
+    SEB_NoPreSensor: Boolean(bytes[1] & 0x08),
+    SEB_SensorUCL: Boolean(bytes[1] & 0x20),
+    SEB_AlignmentErr: Boolean(bytes[1] & 0x40),
+    SEB_AngleOver: Boolean(bytes[1] & 0x80),
+    SEB_MtrStall: Boolean(bytes[2] & 0x02),
+    SEB_MtrDC: Boolean(bytes[2] & 0x04),
+    SEB_OilErr: Boolean(bytes[2] & 0x08),
+    SEB_InitOil: Boolean(bytes[2] & 0x10),
+    SEB_SentValue: Boolean(bytes[2] & 0x20),
+    SEB_MtrNoLoad: Boolean(bytes[2] & 0x40),
+    SEB_PreSensorOver: Boolean(bytes[3] & 0x01),
+    SEB_LowVoltCharging: Boolean(bytes[3] & 0x02),
+  };
 }
 
 function modeName(mode: number): string {
@@ -513,9 +551,9 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
     case "0x012": return { enable: bytes[0] !== 0 };
     case "0x110": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0) };
     case "0x120": return { speed_mmps: readI16BE(bytes, 0) };
-    case "0x169": return { alignment_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), target_angle: readI16LE(bytes, 2), target_speed: (bytes[4] ?? 0) | (((bytes[5] ?? 0) & 0x0f) << 8), rolling_counter: ((bytes[5] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
-    case "0x201": return { angle_status: Boolean(bytes[0] & 1), control_mode_sts: ((bytes[0] ?? 0) >> 1) & 3, error_status: ((bytes[0] ?? 0) >> 6) & 3, str_angle: readI16LE(bytes, 2), tgt_angle_spd: readI16LE(bytes, 4), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
-    case "0x202": return decodeFaultMask(bytes, "ses");
+    case "0x169": return { alignment_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), target_angle: readI16LE(bytes, 2), target_speed: (bytes[4] ?? 0) | (((bytes[5] ?? 0) & 0x0C) << 6), roll_cnt_enable: Boolean((bytes[5] ?? 0) & 0x01), checksum_enable: Boolean((bytes[5] ?? 0) & 0x02), rolling_counter: ((bytes[5] ?? 0) >> 4) & 0x0f, vehicle_speed: bytes[6] ?? 0, checksum: bytes[7] ?? 0 };
+    case "0x201": return { angle_status: Boolean(bytes[0] & 1), control_mode_sts: ((bytes[0] ?? 0) >> 1) & 3, error_status: ((bytes[0] ?? 0) >> 6) & 3, str_angle: readI16LE(bytes, 2), tgt_angle_spd: readI16LE(bytes, 4), torque: ((bytes[5] ?? 0) * 0.1 - 12.1), roll_cnt_enable_sts: Boolean((bytes[6] ?? 0) & 0x01), checksum_enable_sts: Boolean((bytes[6] ?? 0) & 0x02), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
+    case "0x202": return decodeSesFaults(bytes);
     case "0x203": return { sw_version: bytes[0] ?? 0, hw_version: bytes[1] ?? 0 };
     case "0x204": return { motor_speed_mmps: readI32BE(bytes, 0), gear: bytes[4] ?? 0, gear_name: gearName(bytes[4] ?? 0) };
     case "0x205": return { brake_pressure_kpa: readI32BE(bytes, 0) };
@@ -525,16 +563,16 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
     case "0x300": return { speed_mmps: readI32BE(bytes, 0), yaw_rate_mrad_s: readI24BE(bytes, 4), gear: bytes[7] ?? 0, gear_name: gearName(bytes[7] ?? 0) };
     case "0x301": return { brake_pressure_kpa: readI32BE(bytes, 0) };
     case "0x302": return { left_turn: Boolean(bytes[0] & 1), right_turn: Boolean(bytes[0] & 2), brake_light: Boolean(bytes[0] & 4), headlight: Boolean(bytes[0] & 8) };
-    case "0x310": return { SteerDiag_Angle0_1deg: readI16BE(bytes, 0) * 0.1 - 3000, SteerDiag_Fault: bytes[2] !== 0, SteerDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, SteerDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
+    case "0x310": return { SteerDiag_Angle0_1deg: readU16BE(bytes, 0) * 0.1 - 3000, SteerDiag_Fault: bytes[2] !== 0, SteerDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, SteerDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
     case "0x311": return { BrakeDiag_PressureRaw: readI16BE(bytes, 0) * 0.05, BrakeDiag_Fault: bytes[2] !== 0, BrakeDiag_MotorCurrent: readI16BE(bytes, 3) * 0.01, BrakeDiag_ECUTemp: readI16BE(bytes, 5) * 0.1 };
     case "0x400": { const distance = readU32BE(bytes, 0); return { distance_mm: distance, distance_label: distance === 0xffffffff ? "clear" : `${distance} mm` }; }
     case "0x600": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0), brake_engaged: Boolean((bytes[1] ?? 0) & 0x01), brake_fault: Boolean((bytes[1] ?? 0) & 0x02), hb_ok: bytes[2] !== 0, estop_active: bytes[3] !== 0, free_heap_kb: readU16BE(bytes, 4), tec: bytes[6] ?? 0, rec: bytes[7] ?? 0 };
-    case "0x6FA":
-    case "0x6FB": return { motor_current: readI16LE(bytes, 1), ecu_temp: readU16LE(bytes, 3), supply_voltage: readU16LE(bytes, 5) };
-    case "0x721": { const angleRaw = (bytes[5] ?? 0) | (((bytes[6] ?? 0) & 0x0C) << 6); return { alignment_status: Boolean(bytes[0] & 1), control_enable_sts: Boolean(bytes[0] & 2), control_mode_sts: ((bytes[0] ?? 0) >> 2) & 3, auto_brake_sts: Boolean(bytes[0] & 0x10), error_status: ((bytes[0] ?? 0) >> 6) & 3, stroke_value: readU16LE(bytes, 2), pressure_value: bytes[3] ?? 0, angle_value: angleRaw, rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 }; }
-    case "0x731": return decodeFaultMask(bytes, "seb");
+    case "0x6FA": return { motor_current: (readI16LE(bytes, 1) * 0.0078125), ecu_temp: (readU16LE(bytes, 3) * 0.5), supply_voltage: (readU16LE(bytes, 5) * 0.00390625) };
+    case "0x6FB": return { motor_current: (readI16LE(bytes, 1) * 0.0078125), ecu_temp: (readU16LE(bytes, 3) * 0.5 - 40), supply_voltage: (readU16LE(bytes, 5) * 0.00390625) };
+    case "0x721": { const angleRaw = (bytes[5] ?? 0) | (((bytes[6] ?? 0) & 0x0C) << 6); return { alignment_status: Boolean(bytes[0] & 1), control_enable_sts: Boolean(bytes[0] & 2), control_mode_sts: ((bytes[0] ?? 0) >> 2) & 3, auto_brake_sts: Boolean(bytes[0] & 0x10), error_status: ((bytes[0] ?? 0) >> 6) & 3, stroke_value: readU16LE(bytes, 2), pressure_value: bytes[3] ?? 0, angle_value: angleRaw, roll_cnt_enable_sts: Boolean((bytes[6] ?? 0) & 0x01), checksum_enable_sts: Boolean((bytes[6] ?? 0) & 0x02), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 }; }
+    case "0x731": return decodeSebFaults(bytes);
     case "0x741": return { sw_version: bytes[0] ?? 0, hw_version: bytes[1] ?? 0 };
-    case "0x7B9": return { align_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), control_mode: ((bytes[0] ?? 0) >> 2) & 1, auto_brake: Boolean(bytes[0] & 8), stroke_req: readU16LE(bytes, 2), pressure_req: bytes[3] ?? 0, rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
+    case "0x7B9": return { align_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), control_mode: ((bytes[0] ?? 0) >> 2) & 1, auto_brake: Boolean(bytes[0] & 8), stroke_req: readU16LE(bytes, 2), pressure_req: bytes[3] ?? 0, roll_cnt_enable: Boolean((bytes[6] ?? 0) & 0x01), checksum_enable: Boolean((bytes[6] ?? 0) & 0x02), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
     case "0x7FC":
     case "0x7FD":
     case "0x7FE": return { alive_ctr: bytes[0] ?? 0 };

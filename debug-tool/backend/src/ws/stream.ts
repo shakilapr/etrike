@@ -11,6 +11,7 @@ interface ClientState {
   socket: {
     readyState: number;
     send: (data: string) => void;
+    ping: () => void;
     on: (event: string, cb: (payload?: unknown) => void) => void;
   };
   buses: Set<Bus> | null;
@@ -21,6 +22,7 @@ const OPEN = 1;
 
 export class StreamHub {
   private clients = new Set<ClientState>();
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   registerRoutes(app: FastifyInstance): void {
     app.get("/ws", { websocket: true }, (socket) => {
@@ -36,7 +38,21 @@ export class StreamHub {
       });
 
       this.send(client, { type: "status", payload: { connected: true } });
+
+      // Push initial state sync: CAN message catalog so the UI can render
+      // without waiting for the first frame.
+      const { CAN_MESSAGES } = require("../types/can");
+      this.send(client, { type: "can_ids", payload: { messages: CAN_MESSAGES } });
     });
+
+    // Keepalive: send ping every 30s, expect pong from clients
+    this.pingTimer = setInterval(() => {
+      for (const client of this.clients) {
+        if (client.socket.readyState === 1) {
+          client.socket.ping();
+        }
+      }
+    }, 30000);
   }
 
   broadcast(event: StreamEvent): void {

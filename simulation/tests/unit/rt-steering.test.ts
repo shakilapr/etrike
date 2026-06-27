@@ -71,17 +71,17 @@ describe("RtSteeringController", () => {
     sc.tick(30000, 1, 500);
 
     // Set target to 15° (15000 millidegrees)
-    // Raw angle = 15000/100 + 3000 = 3150
+    // Raw angle = 15000/100 + 30000 = 30150
     sc.setTarget(15000, 2000);
 
     const out = sc.tick(null, 1, 520);
-    expect(out!.targetAngle).toBe(3150);
+    expect(out!.targetAngle).toBe(30150);
   });
 
   // ── ESTOP behavior ───────────────────────────────────────────────
 
   it("ramps toward zero on non-obstacle ESTOP", () => {
-    // Boot + sync + set angle to 20° (20000 millidegrees → raw = 20000/100+3000 = 3200)
+    // Boot + sync + set angle to 20° (20000 millidegrees → raw = 20000/100+30000 = 30200)
     for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
     sc.tick(30000, 1, 500);
     sc.setTarget(20000, 2000);
@@ -92,7 +92,7 @@ describe("RtSteeringController", () => {
 
     // After first ramp tick, angle should have decreased
     const out = sc.tick(null, 1, 620);
-    expect(out!.targetAngle).toBeLessThan(3200);
+    expect(out!.targetAngle).toBeLessThan(30200);
     expect(out!.targetAngle).toBeGreaterThan(0); // Not yet zero
   });
 
@@ -100,7 +100,7 @@ describe("RtSteeringController", () => {
     // Boot + sync
     for (let i = 0; i < 26; i++) sc.tick(null, 0, i * 20);
     sc.tick(30000, 1, 500);
-    sc.setTarget(10000, 2000); // 10° → raw = 10000/100+3000 = 3100
+    sc.setTarget(10000, 2000); // 10° → raw = 10000/100+30000 = 30100
 
     // Trigger obstacle ESTOP
     sc.startEstop(true, 600);

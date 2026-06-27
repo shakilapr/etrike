@@ -816,7 +816,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
 
     case 0x310: {  // STEER_DIAG — v0.0.4 EPS-C telemetry
       if (frame.len < 8) break;
-      int16_t angle_raw = (int16_t)((uint16_t)frame.data[0] << 8 | frame.data[1]);
+      uint16_t angle_raw = (uint16_t)frame.data[0] << 8 | frame.data[1];
       float steer_deg = (angle_raw - 30000) * 0.1f;  // offset=-3000, 0.1°/bit
       steer_angle_rad_ = steer_deg * M_PI / 180.0f;  // cache for odometry
       last_steer_time_ = now();
