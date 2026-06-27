@@ -12,10 +12,10 @@ test.describe("Debug Tool", () => {
     await expect(page.locator(".status-strip")).toBeVisible();
   });
 
-  test("all four tabs are present", async ({ page }) => {
+  test("all seven tabs are present", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("nav.tabs button")).toHaveCount(4);
-    const tabs = ["Dashboard", "CAN Monitor", "Injector", "Statistics"];
+    await expect(page.locator("nav.tabs button")).toHaveCount(7);
+    const tabs = ["Dashboard", "CAN Monitor", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline"];
     for (const name of tabs) {
       await expect(page.locator("nav.tabs").getByText(name)).toBeVisible();
     }

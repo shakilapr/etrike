@@ -121,12 +121,14 @@ describe("decodeFrame", () => {
 
   it("decodes 0x011 SAFETY_STS (high) — estop active, hb OK", () => {
     const result = decodeFrame("high", "0x011", [1, 1]);
-    expect(result).toEqual({ estop_active: true, heartbeat_ok: true });
+    expect(result).toEqual({ estop_active: true, heartbeat_ok: true,
+      light_left: false, light_right: false, light_brake: false, light_head: false });
   });
 
   it("decodes 0x011 SAFETY_STS — both false", () => {
     const result = decodeFrame("high", "0x011", [0, 0]);
-    expect(result).toEqual({ estop_active: false, heartbeat_ok: false });
+    expect(result).toEqual({ estop_active: false, heartbeat_ok: false,
+      light_left: false, light_right: false, light_brake: false, light_head: false });
   });
 
   it("decodes 0x120 THROTTLE (high) — positive speed", () => {
@@ -147,7 +149,7 @@ describe("decodeFrame", () => {
 
   it("decodes 0x210 STATE_RPT (high) — AUTO, steer valid, not reversing", () => {
     const result = decodeFrame("high", "0x210", [1, 1, 0]);
-    expect(result).toEqual({ mode: 1, mode_name: "AUTO", steer_valid: true, reversing: false });
+    expect(result).toEqual({ mode: 1, mode_name: "AUTO", steer_valid: true, reversing: false, rx_overflow: 0 });
   });
 
   it("decodes 0x220 PID_RPT (high)", () => {
@@ -201,7 +203,7 @@ describe("decodeFrame", () => {
     const result = decodeFrame("high", "0x600", [1, 0, 1, 1, 0x01, 0x00, 0, 0]);
     expect(result).toEqual({
       mode: 1, mode_name: "AUTO",
-      brake_engaged: false, hb_ok: true, estop_active: true,
+      brake_engaged: false, brake_fault: false, hb_ok: true, estop_active: true,
       free_heap_kb: 256, tec: 0, rec: 0
     });
   });
@@ -398,9 +400,10 @@ describe("decodeFrame", () => {
   });
 
   it("decodes with full 8 bytes for DLC < 8 message", () => {
-    // 0x011 is DLC 2 but we send 8 bytes — extra bytes ignored
+    // 0x011 is DLC 2 but we send 8 bytes — extra bytes parsed as light_state
     const result = decodeFrame("high", "0x011", [1, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
-    expect(result).toEqual({ estop_active: true, heartbeat_ok: false });
+    expect(result).toEqual({ estop_active: true, heartbeat_ok: false,
+      light_left: true, light_right: true, light_brake: true, light_head: true });
   });
 });
 

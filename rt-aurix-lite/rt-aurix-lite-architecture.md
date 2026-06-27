@@ -97,7 +97,7 @@ Two physical CAN buses at 500 kbit/s. AURIX bridges selected messages between bu
 | `0x302` | HOST_LIGHT_CMD | Jetson | AURIX | 8 | Change | Medium |
 | `0x400` | RT_OBSTACLE_RPT | AURIX | Jetson | 4 | 10 Hz | Low |
 | `0x600` | SYS_DIAG_RPT | AURIX (fwd from low) | Jetson | 8 | 1 Hz | Lowest |
-| `0x7FC` | JETSON_HEARTBEAT | Jetson | AURIX | 1 | 2 Hz | Lowest |
+| `0x7FC` | HOST_HEARTBEAT | Jetson | AURIX | 1 | 2 Hz | Lowest |
 | `0x7FD` | AURIX_HEARTBEAT | AURIX | Jetson | 1 | 2 Hz | Lowest |
 
 ### 2.3 AURIX CAN Gateway — Forwarding Rules
