@@ -42,9 +42,10 @@ constexpr int kAssistStopKpa = 2000;
 
 // MTR fault flags (0x206 MTR_MOTOR_FBK byte 3, Gap #15)
 // Bit definitions shared between MTR STM32 and SYS ESP32 for ESTOP acknowledgment.
-constexpr uint8_t kMtrFaultEstopActive  = 0x01;  // ESTOP confirmed active (Gap #15)
-constexpr uint8_t kMtrFaultCmdTimeout   = 0x02;  // 0x204 command stale >200ms
-constexpr uint8_t kMtrFaultAdcFault     = 0x04;  // Throttle ADC fault
-constexpr uint8_t kMtrFaultGearConflict = 0x08;  // Multiple gear lines HIGH
+constexpr uint8_t kMtrFaultEstopActive   = 0x01;  // ESTOP confirmed active
+constexpr uint8_t kMtrFaultCmdTimeout    = 0x02;  // 0x204 command stale >200ms
+constexpr uint8_t kMtrFaultAdcFault      = 0x04;  // Throttle ADC fault
+constexpr uint8_t kMtrFaultGearConflict  = 0x08;  // Multiple gear lines HIGH
+constexpr uint8_t kMtrFaultStartupReady  = 0x10;  // MTR boot complete, ready for commands (Gap 4)
 
 } // namespace shared

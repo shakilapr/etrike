@@ -100,4 +100,4 @@ BA_ "GenMsgCycleTime" BO_ 2046 100;
 VAL_ 272 SYS_Mode 0 "Manual" 1 "Auto" 2 "ESTOP";
 VAL_ 516 RT_Gear 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 518 MTR_GearState 0 "N" 1 "D" 2 "S" 3 "R";
-VAL_ 518 MTR_FaultFlags 1 "EstopActive" 2 "CmdTimeout" 4 "AdcFault" 8 "GearConflict";
+VAL_ 518 MTR_FaultFlags 1 "EstopActive" 2 "CmdTimeout" 4 "AdcFault" 8 "GearConflict" 16 "StartupReady";
