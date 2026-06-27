@@ -37,6 +37,15 @@
 #include "throttle_input.h"
 #include "gear_control.h"
 
+/* ── CubeMX-generated stubs — replace with generated code ──────────── */
+/* When STM32CubeMX project is configured, these externs link to the   */
+/* generated main.c. Until then, stubs satisfy the linker for CI.       */
+extern "C" {
+CAN_HandleTypeDef hcan = {};
+I2C_HandleTypeDef  hi2c1 = {};
+ADC_HandleTypeDef  hadc1 = {};
+}
+
 /* ── Cross-task state (std::atomic, lock-free) ────────────────────── */
 
 /// Current system mode (written by task_can_rx from 0x110).
@@ -73,6 +82,11 @@ namespace mtr {
     ThrottleInput g_throttle;
     GearControl g_gear;
     CanDriver   g_can;
+}
+
+static bool estop_gpio_pressed() {
+    // Stub until the CubeMX GPIO layer is wired into this target.
+    return false;
 }
 
 /* ── Task function prototypes ─────────────────────────────────────── */
@@ -168,7 +182,7 @@ void task_safety(void* pvParameters) {
          *   - Hardware directly kills throttle/gear (Level 3)
          *   - This firmware also detects it for CAN feedback (0x206)
          */
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_RESET) {
+        if (estop_gpio_pressed()) {
             g_estop_active.store(true, std::memory_order_relaxed);
         }
 
