@@ -104,6 +104,11 @@ export class RtEcu implements SimulatedEcu {
           out.push({ ...f, bus: "low", sender: "rt" });
           break;
         }
+        case "0x400": {
+          // HOST_OBSTACLE_DIST — u32 BE mm, consumed by RT for obstacle braking
+          this.obstacleDistanceMm = ((f.data[0] << 24) | (f.data[1] << 16) | (f.data[2] << 8) | f.data[3]) >>> 0;
+          break;
+        }
       }
     }
 

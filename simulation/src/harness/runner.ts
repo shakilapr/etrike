@@ -185,9 +185,16 @@ export class SimulationRunner {
         cmdSteerDeg = (angleRaw - 30000) / 10;
       }
       if (f.canId === "0x7B9" && f.dlc >= 8) {
-        // VCU_SEB_REQ: stroke u16 LE bytes 2-3, raw=(mm+30)/0.05
-        const strokeRaw = (f.data[3] << 8 | f.data[2]) & 0xFFFF;
-        cmdBrakeMm = Math.max(0, strokeRaw * 0.05 - 30);
+        const isPressureMode = (f.data[0] & 0x04) !== 0;
+        if (isPressureMode) {
+          // Pressure mode: byte 3 is SEB_PressureReq (0.05 MPa/bit = 50 kPa/bit)
+          const pressureRaw = f.data[3] & 0xFF;
+          cmdBrakeMm = (pressureRaw / 100) * 27;  // proportional to 27mm max stroke
+        } else {
+          // Stroke mode: u16 LE bytes 2-3, raw=(mm+30)/0.05
+          const strokeRaw = (f.data[3] << 8 | f.data[2]) & 0xFFFF;
+          cmdBrakeMm = Math.max(0, strokeRaw * 0.05 - 30);
+        }
       }
     }
 

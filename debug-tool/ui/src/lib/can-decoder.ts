@@ -230,7 +230,8 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       bytes[0] = numberValue(values.mode);
       bytes[1] = values.steer_valid ? 1 : 0;
       bytes[2] = values.reversing ? 1 : 0;
-      return { dlc: 3, data: bytes.slice(0, 3) };
+      bytes[3] = values.rx_overflow !== undefined ? numberValue(values.rx_overflow) & 0xff : 0;
+      return { dlc: 4, data: bytes.slice(0, 4) };
 
     case "high:0x300":
       writeI32BE(bytes, 0, numberValue(values.speed_mmps));
@@ -291,6 +292,27 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       bytes[6] = ((numberValue(values.rolling_counter) & 0x0f) << 4);
       bytes[7] = numberValue(values.checksum) & 0xff;
       return { dlc: 8, data: bytes };
+
+    case "low:0x202": {
+      // SES_ERRINFO: bytes 0-3 = fault mask u32 LE, byte 7 = VehSpdSnapshot
+      const fm202 = numberValue(values.fault_mask);
+      bytes[0] = fm202 & 0xff;
+      bytes[1] = (fm202 >> 8) & 0xff;
+      bytes[2] = (fm202 >> 16) & 0xff;
+      bytes[3] = (fm202 >>> 24) & 0xff;
+      if (values.SES_VehSpdSnapshot !== undefined) bytes[7] = numberValue(values.SES_VehSpdSnapshot) & 0xff;
+      return { dlc: 8, data: bytes };
+    }
+
+    case "low:0x731": {
+      // SEB_ERRINFO: bytes 0-3 = fault mask u32 LE
+      const fm731 = numberValue(values.fault_mask);
+      bytes[0] = fm731 & 0xff;
+      bytes[1] = (fm731 >> 8) & 0xff;
+      bytes[2] = (fm731 >> 16) & 0xff;
+      bytes[3] = (fm731 >>> 24) & 0xff;
+      return { dlc: 8, data: bytes };
+    }
 
     case "low:0x721":
       bytes[0] =
