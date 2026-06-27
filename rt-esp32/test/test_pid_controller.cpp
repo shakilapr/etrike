@@ -158,6 +158,25 @@ int main(){
         printf("  setpoint=1000 measured=900 → pid_output=%d mm/s (positive, no D spike)\n", pid_out);
     }
 
+    // ── Test 11: Slow ramp does not wind up while output saturated ───
+    printf("-- Slow ramp anti-windup under saturation --\n");
+    {
+        PidController pid;
+        pid.kp = 1.0f;
+        pid.ki = 0.1f;
+        pid.kd = 0.0f;
+        pid.output_min = -1.0f;
+        pid.output_max = 1.0f;
+
+        for (int i = 0; i < 100; ++i) {
+            float setpoint = 100.0f + i * 10.0f;  // below setpoint reset threshold per step
+            (void)pid.update(setpoint, 0.0f, 0.01f);
+        }
+
+        NEAR(pid.integral, 0.0f, 0.001f);
+        printf("  saturated slow ramp leaves integral=%.4f (no windup)\n", pid.integral);
+    }
+
     printf("\n=== %d pass, %d fail ===\n", pass, fail);
     return fail ? 1 : 0;
 }

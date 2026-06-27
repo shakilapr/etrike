@@ -39,7 +39,7 @@ public:
 
     // ── Frame I/O (same API as can::CanDriver) ─────────────────────
 
-    bool send(const can::Frame& frame, uint32_t timeout_ms = 10);
+    bool send(const can::Frame& frame, uint32_t timeout_ms = 2);
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
 
     // ── Diagnostics ────────────────────────────────────────────────
@@ -55,6 +55,7 @@ private:
     void spi_write_byte(uint8_t addr, uint8_t data);
     uint8_t spi_read_byte(uint8_t addr);
     void spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len);
+    void spi_write_burst(uint8_t start_addr, const uint8_t* data, size_t len);
     void spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
 
     // ── MCP2515 register-level helpers ─────────────────────────────

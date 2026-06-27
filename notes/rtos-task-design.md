@@ -172,7 +172,7 @@ The alternative — bare-metal superloop — works for simple devices. But when 
 
 ### Event drain pattern
 
-Used in `t_control()` to process safety events (ESTOP, mode changes, SEB takeover) queued by dispatch. Replaces fragile atomic flags — guarantees no transition is missed.
+Used in `t_control()` to process safety events (ESTOP and mode changes) queued by dispatch. Replaces fragile atomic flags — guarantees no transition is missed. Latest-value safety state such as SEB takeover is derived by the safety checks and published separately.
 
 ```cpp
 // Drain ALL events since last tick at 100 Hz.
@@ -181,13 +181,10 @@ while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
     switch (evt.type) {
         case rt::SafetyEvent::ESTOP:        m_estop_pending = true; break;
         case rt::SafetyEvent::MODE_CHANGE:  m_current_mode = evt.payload; break;
-        case rt::SafetyEvent::SEB_TAKEOVER: m_seb_takeover = true; break;
-        case rt::SafetyEvent::SEB_RELEASE:  m_seb_takeover = false; break;
     }
 }
-// Publish derived state for read-heavy tx tasks (read at 50 Hz / 10 Hz).
+// Publish mode for read-heavy tx tasks (read at 50 Hz / 10 Hz).
 g_mode_current.store(m_current_mode);
-g_seb_takeover.store(m_seb_takeover);
 ```
 
 **Why this beats atomics:** `g_estop_flag.exchange(false)` drops a second ESTOP arriving between control ticks. The queue preserves both events.

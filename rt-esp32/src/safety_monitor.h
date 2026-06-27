@@ -1,8 +1,8 @@
 #pragma once
 // Safety monitor — event-driven safety checks for t_control.
 //
-// SafetyEvent queue replaces 3 fragile atomics (g_estop_flag, g_mode_from_sys
-// dispatch→control, g_seb_takeover). Events are guaranteed delivery —
+// SafetyEvent queue replaces fragile transition atomics (g_estop_flag,
+// g_mode_from_sys dispatch→control). Events are guaranteed delivery —
 // no transition is missed, unlike atomic exchange() which can drop events.
 //
 // Architecture principle #1: "Queues over shared state."
@@ -27,9 +27,7 @@ namespace rt {
 struct SafetyEvent {
     enum Type : uint8_t {
         ESTOP = 0,          // CAN 0x001 received or internal fault
-        MODE_CHANGE,        // SYS 0x110 mode command (payload = new mode)
-        SEB_TAKEOVER,       // Reserved: SYS heartbeat lost → RT takes over 0x7B9 (future event-queue path)
-        SEB_RELEASE         // Reserved: SYS heartbeat recovered → release takeover (future event-queue path)
+        MODE_CHANGE         // SYS 0x110 mode command (payload = new mode)
     };
     Type    type;
     uint8_t payload;  // for MODE_CHANGE: 0=Manual, 1=Auto, 2=Estop
@@ -51,12 +49,7 @@ struct SafetyResult {
 // Max 2 frames per 500ms window.  Returns true if ESTOP should be sent.
 
 inline bool can_send_estop() {
-    constexpr int64_t kMinIntervalUs = 250'000;  // 250ms between broadcasts
-    int64_t now = esp_timer_get_time();
-    int64_t last = g_last_estop_sent_us.load(std::memory_order_relaxed);
-    if (now - last < kMinIntervalUs) return false;
-    g_last_estop_sent_us.store(now, std::memory_order_relaxed);
-    return true;
+    return shared::should_send_estop_now(g_last_estop_sent_us, esp_timer_get_time());
 }
 
 // ── Safety checks (called by t_control at 100 Hz) ───────────────────
@@ -116,15 +109,15 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     // 5. Steering following-error check (arch §7.6, fix #5)
     static int steer_follow_err_ticks = 0;
     if (!r.zero_setpoints && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
-        int16_t cmd_raw    = g_last_cmd_angle_raw.load();
-        int16_t actual_raw = g_ses_angle_raw.load();
-        if (actual_raw != INT16_MIN) {
-            int32_t diff = int32_t(cmd_raw) - int32_t(actual_raw);
-            int32_t err_mdeg = (diff >= 0 ? diff : -diff) * 100;
+        int16_t cmd_0_1deg    = g_last_cmd_angle_0_1deg.load();
+        int16_t actual_0_1deg = g_ses_angle_0_1deg.load();
+        if (actual_0_1deg != INT16_MIN) {
+            int32_t diff = int32_t(cmd_0_1deg) - int32_t(actual_0_1deg);
+            int32_t err_0_1deg = (diff >= 0 ? diff : -diff);
             float threshold_deg = rt::compute_following_error_threshold(g_mtr_actual_speed_mmps.load());
-            int32_t kThresholdMdeg = static_cast<int32_t>(threshold_deg * 1000.0f);
+            int32_t threshold_0_1deg = static_cast<int32_t>(threshold_deg * 10.0f);
             constexpr int kTickLimit = rt::kSteerFollowingErrMs / (1000 / rt::kControlLoopHz);
-            if (err_mdeg > kThresholdMdeg) {
+            if (err_0_1deg > threshold_0_1deg) {
                 if (++steer_follow_err_ticks >= kTickLimit) {
                     ESP_LOGW("rt", "Steer follow err >%.1f° for >%dms — ESTOP",
                              static_cast<double>(threshold_deg), rt::kSteerFollowingErrMs);

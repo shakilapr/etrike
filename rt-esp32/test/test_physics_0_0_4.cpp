@@ -1,5 +1,6 @@
-// g++ -std=c++17 -I. -I../src -I../../shared test_physics_0_0_4.cpp ../../shared/../rt-esp32/src/physics_model.cpp -o test_physics_0_0_4 && ./test_physics_0_0_4
+// g++ -std=c++17 -include test_compat.h -I. -I../src -I../../shared test_physics_0_0_4.cpp ../src/physics_model.cpp -o test_physics_0_0_4 && ./test_physics_0_0_4
 
+#include "test_compat.h"
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
@@ -35,6 +36,17 @@ int main(){
     float prev=compute_dynamic_limit(0);
     for(float s=100;s<=10000;s+=100){float cur=compute_dynamic_limit(s);CHECK(cur<=prev+0.001f);prev=cur;}
     printf("  ok monotonic, clamp [5,40]\n");
+
+    printf("\n-- Obstacle Brake Curve --\n");
+    CHECK(PhysicsModel::obstacle_to_kpa(shared::kObstacleStopMM) == shared::kObstacleMaxKpa);
+    CHECK(PhysicsModel::obstacle_to_kpa(shared::kObstacleClearMM) == 0);
+    CHECK(PhysicsModel::obstacle_to_kpa(0) == shared::kObstacleMaxKpa);
+    CHECK(PhysicsModel::obstacle_to_kpa(10'000) == 0);
+    {
+        unsigned mid = (shared::kObstacleStopMM + shared::kObstacleClearMM) / 2;
+        NEAR(PhysicsModel::obstacle_to_kpa(mid), shared::kObstacleMaxKpa / 2, 2);
+        printf("  midpoint %umm -> %ld kPa\n", mid, long(PhysicsModel::obstacle_to_kpa(mid)));
+    }
 
     printf("\n=== %d pass, %d fail ===\n",pass,fail);
     return fail?1:0;

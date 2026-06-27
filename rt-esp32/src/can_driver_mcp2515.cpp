@@ -3,8 +3,10 @@
 
 #include "can_driver_mcp2515.h"
 #include <algorithm>
+#include <cstring>
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -124,6 +126,21 @@ void Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len
     memcpy(data, &rx_buf[2], len);
 }
 
+void Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, size_t len) {
+    constexpr size_t kMaxBurst = 16;  // command + address + 13 TX buffer bytes
+    if (len + 2 > kMaxBurst) return;
+
+    uint8_t tx_buf[kMaxBurst] = {};
+    tx_buf[0] = kCmdWrite;
+    tx_buf[1] = start_addr;
+    memcpy(&tx_buf[2], data, len);
+
+    spi_transaction_t t = {};
+    t.length    = (2 + len) * 8;
+    t.tx_buffer = tx_buf;
+    spi_device_transmit(g_spi_handle, &t);
+}
+
 // ── Burst frame read ─────────────────────────────────────────────
 // Reads a complete CAN frame from an MCP2515 RX buffer in one SPI
 // transaction. 13 bytes: SIDH, SIDL, EID8, EID0, DLC, D0-D7.
@@ -158,9 +175,21 @@ bool Mcp2515Driver::init_gpio() {
     // ESP_INTR_FLAG_LEVEL3: default GPIO interrupt level on ESP32-S3.
     // gpio_install_isr_service is idempotent — second call returns
     // ESP_ERR_INVALID_STATE, safe for bus-off re-init (main.cpp:497).
-    gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
-    gpio_set_intr_type(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_INTR_NEGEDGE);
-    gpio_isr_handler_add(static_cast<gpio_num_t>(m_cfg.int_gpio), mcp_int_isr, nullptr);
+    esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(kTag, "GPIO ISR service install failed: %d", err);
+        return false;
+    }
+    err = gpio_set_intr_type(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_INTR_NEGEDGE);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "GPIO interrupt type set failed: %d", err);
+        return false;
+    }
+    err = gpio_isr_handler_add(static_cast<gpio_num_t>(m_cfg.int_gpio), mcp_int_isr, nullptr);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(kTag, "GPIO ISR handler add failed: %d", err);
+        return false;
+    }
 
     return true;
 }
@@ -264,23 +293,20 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
         }
     }
 
-    // Load TX buffer 0
-    // TXP defaults to 11 (highest priority) after reset — no explicit write needed.
+    // Load TX buffer 0 in one burst write. TXP defaults to 11 (highest priority)
+    // after reset, so no explicit TXB0CTRL write is needed.
+    uint8_t dlc = std::min<uint8_t>(frame.dlc, 8);
+    uint8_t tx_buf[13] = {};
 
-    // Standard ID (11-bit) → SIDH+SIDL
+    // Standard ID (11-bit) -> SIDH+SIDL
     uint8_t sidh = (frame.id >> 3) & 0xFF;
     uint8_t sidl = (frame.id & 0x07) << 5;
     if (frame.extended) sidl |= 0x08;  // EXIDE
-    write_reg(kRegTxb0Data, sidh);   // TXB0SIDH
-    write_reg(kRegTxb0Data1, sidl);  // TXB0SIDL
-
-    // DLC
-    write_reg(kRegTxb0Dlc, frame.dlc & 0x0F);  // TXB0DLC
-
-    // Data
-    for (int i = 0; i < frame.dlc && i < 8; ++i) {
-        write_reg(kRegTxb0D0 + i, frame.data[i]);  // TXB0D0..D7
-    }
+    tx_buf[0] = sidh;   // TXB0SIDH
+    tx_buf[1] = sidl;   // TXB0SIDL
+    tx_buf[4] = dlc & 0x0F;  // TXB0DLC
+    for (int i = 0; i < dlc; ++i) tx_buf[5 + i] = frame.data[i];  // TXB0D0..D7
+    spi_write_burst(kRegTxb0Data, tx_buf, 5 + dlc);
 
     // Request send
     uint8_t rts = kCmdRtsTx0;

@@ -83,7 +83,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
     if (fr.id == can::kIdSyntreeEpsStatus) {
-        g_ses_angle_raw.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
+        g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
         g_ses_angle_status.store(ctx.steer_angle_status);
         g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
     }
