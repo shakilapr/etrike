@@ -203,6 +203,7 @@ static void monitor_can_bus_off() {
     bool     m_seb_takeover  = false;
 
     while (1) {
+        g_alive_control.store(xTaskGetTickCount(), std::memory_order_relaxed);
         // ── Drain safety event queue (guaranteed delivery, no missed events) ─
         rt::SafetyEvent evt;
         while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
@@ -372,6 +373,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
     rt::ResolvedSetpoint sp{};
     can::Frame fr; can::Frame gw;
     while (1) {
+        g_alive_tx_low.store(xTaskGetTickCount(), std::memory_order_relaxed);
         auto* drv = rt::can_low_driver();
         if (!drv) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
 
@@ -458,6 +460,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
     can::Frame gw;
     can::Frame fr;
     while (1) {
+        g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
         // Drain gateway queue every 10ms (100 Hz) — was 100ms
         for (int i = 0; i < 10; i++) {
             while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE) {
@@ -523,6 +526,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
 [[noreturn]] static void t_watchdog(void*) {
     TickType_t per = pdMS_TO_TICKS(100), last = xTaskGetTickCount();
     while (1) {
+        check_task_watchdog();
         if (g_watchdog.is_stale(esp_timer_get_time())) {
             ESP_LOGW(TAG, "Command stale");
             can::HostDriveCmd zero{};
@@ -531,6 +535,26 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         }
         vTaskDelayUntil(&last, per);
     }
+}
+
+// ── Task watchdog: each critical task updates its counter ────────────
+// t_watchdog checks all counters. If any task hasn't ticked in 500ms,
+// logs an error. The hardware WDT (TPS3850) is the ultimate backstop.
+static std::atomic<uint32_t> g_alive_control{0};
+static std::atomic<uint32_t> g_alive_dispatch{0};
+static std::atomic<uint32_t> g_alive_tx_low{0};
+static std::atomic<uint32_t> g_alive_tx_high{0};
+
+static void check_task_watchdog() {
+    TickType_t now = xTaskGetTickCount();
+    auto stale = [now](std::atomic<uint32_t>& a, const char* name) {
+        if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(500))
+            ESP_LOGE(TAG, "Task %s stalled >500ms — hardware WDT may fire", name);
+    };
+    stale(g_alive_control,  "control");
+    stale(g_alive_dispatch, "dispatch");
+    stale(g_alive_tx_low,   "tx_low");
+    stale(g_alive_tx_high,  "tx_high");
 }
 
 // ── Heartbeat (prio 1, 2 Hz) ───────────────────────────────────────
