@@ -216,6 +216,70 @@ def load_can_database(path: str | Path) -> CanDatabase:
     return CanDatabase.model_validate(data)
 
 
+def load_can_database_dir(path: str | Path) -> CanDatabase:
+    """Load and merge all CAN YAML files from a directory.
+
+    Reads can_shared.yaml for metadata (can_version, description, constants,
+    ecus), then iterates all other can_*.yaml files and merges their
+    protocols dicts into one combined CanDatabase.
+
+    Forwarded frames (same CAN ID in multiple files) are intentional —
+    each bus DBC must be self-contained. The caller can cross-validate
+    that forwarded signal layouts are identical.
+    """
+    path = Path(path)
+    if not path.is_dir():
+        raise ValueError(f"Not a directory: {path}")
+
+    shared_path = path / "can_shared.yaml"
+    if not shared_path.exists():
+        raise FileNotFoundError(
+            f"Missing can_shared.yaml in {path} — required for metadata"
+        )
+
+    with open(shared_path, encoding="utf-8") as f:
+        shared_data = yaml.safe_load(f)
+
+    if not isinstance(shared_data, dict) or "can_version" not in shared_data:
+        raise ValueError(
+            f"Missing 'can_version' key — is '{shared_path}' a valid shared CAN YAML?"
+        )
+
+    # Merge protocol definitions from all bus-specific YAMLs
+    all_protocols: dict = {}
+    yaml_files = sorted(
+        p for p in path.glob("can_*.yaml")
+        if p.name not in ("can_shared.yaml", "can_signals.yaml")
+    )
+    if not yaml_files:
+        raise FileNotFoundError(f"No can_*.yaml bus files found in {path}")
+
+    for yaml_file in yaml_files:
+        with open(yaml_file, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid YAML structure in {yaml_file.name}")
+        file_protocols = data.get("protocols", {})
+        if file_protocols:
+            # Check for protocol name collisions across files
+            collisions = set(all_protocols.keys()) & set(file_protocols.keys())
+            if collisions:
+                raise ValueError(
+                    f"Protocol name collision in {yaml_file.name}: "
+                    f"{collisions} already defined in another file"
+                )
+            all_protocols.update(file_protocols)
+
+    merged = {
+        "can_version": shared_data.get("can_version", "1.0"),
+        "description": shared_data.get("description", ""),
+        "constants": shared_data.get("constants", {}),
+        "ecus": shared_data.get("ecus", []),
+        "protocols": all_protocols,
+    }
+    return CanDatabase.model_validate(merged)
+
+
 def dump_signal_summary(db: CanDatabase) -> str:
     """Produce a human-readable signal table (for --summary flag)."""
     lines = []

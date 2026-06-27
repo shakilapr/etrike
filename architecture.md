@@ -141,7 +141,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | u32 distance_mm | 10 Hz | Low |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | diag struct | 1 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | u8 alive_ctr | 2 Hz | Lowest |
-| `0x7FC` | JETSON_HEARTBEAT | Jetson | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
 
 > Bit-level signal layouts in [`can-dictionary.md`](can-dictionary.md).
 
@@ -350,7 +350,7 @@ The Jetson Orin is the perception, planning, and high-level control node. It run
 | `ControlModeCommand` — `{mode}` (MANUAL) | Suppresses all commands | Stops all TX | Mode disengagement |
 | `VehicleEmergencyStamped` — `{emergency}` | Rate-limited: 1 per 500ms | `0x001` SAFETY_ESTOP — DLC=0 | Emergency stop |
 | Perception (LiDAR/camera/stereo) | Minimum obstacle distance mm | `0x400` HOST_OBSTACLE_DIST — DLC=4, `{u32 distance_mm}` (10 Hz) | Obstacle speed limit (RT safety backstop) |
-| — | Heartbeat: alive_ctr++ | `0x7FC` JETSON_HEARTBEAT — DLC=1, `{u8 alive_ctr}` (2 Hz) | Liveness |
+| — | Heartbeat: alive_ctr++ | `0x7FC` HOST_HEARTBEAT — DLC=1, `{u8 alive_ctr}` (2 Hz) | Liveness |
 
 **CAN → ROS 2 (inputs → publications):**
 
@@ -539,7 +539,7 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | High | `0x301` | HOST_BRAKE_REQ | `i32 pressure_kpa` | → atomic store |
 | High | `0x302` | HOST_LIGHT_CMD | `u8` bitfield | Forward to low |
 | High | `0x400` | HOST_OBSTACLE_DIST | `u32 distance_mm` | Obstacle distance for speed limiting (§7.6) |
-| High | `0x7FC` | JETSON_HEARTBEAT | `u8 alive_ctr` | Feed Jetson alive counter; frozen >1500ms → stale command |
+| High | `0x7FC` | HOST_HEARTBEAT | `u8 alive_ctr` | Feed Jetson alive counter; frozen >1500ms → stale command |
 
 ### 7.4 CAN messages sent
 
@@ -864,7 +864,7 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` | Mode gating: AUTO → transmit 0x169+0x204, MANUAL → silent, ESTOP → ramp/hold | Mode state gates TX | Mode control |
 | `0x001` SAFETY_ESTOP — DLC=0 (no payload) | Immediate: ramp/hold steering, zero speed, max brake, forward to other bus | `0x001` DLC=0 to other bus + setpoints zeroed | Emergency stop |
 | `0x7FE` SYS_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Liveness: 200ms timeout (2 missed at 10 Hz) → RT takes over `0x7B9` with stroke=max (full brake) | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (emergency takeover) → SEB | Brake takeover on SYS loss |
-| `0x7FC` JETSON_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Staleness: 1500ms timeout (3 missed at 2 Hz) → assisted stop (zero speed, stop steer, 2000 kPa brake, SYS→MANUAL) | `0x204`=0, `0x169` stop, `0x205`=2000 kPa | Assisted stop |
+| `0x7FC` HOST_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Staleness: 1500ms timeout (3 missed at 2 Hz) → assisted stop (zero speed, stop steer, 2000 kPa brake, SYS→MANUAL) | `0x204`=0, `0x169` stop, `0x205`=2000 kPa | Assisted stop |
 | `0x011` SYS_SAFETY_STS — DLC=3, `{u8 estop, u8 hb_ok, u4 light_state}` (low bus) | Transparent forward — same ID, same payload, forwarded to high bus | `0x011` on high bus → Jetson | CAN gateway |
 | `0x120` SYS_THROTTLE_STS — DLC=2, `{i16 speed_mmps}` (low bus) | Transparent forward | `0x120` on high bus → Jetson | CAN gateway |
 | `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 actual_speed, u8 gear_state, u8 fault_flags}` (low bus) | Transparent forward | `0x206` on high bus → Jetson | CAN gateway |

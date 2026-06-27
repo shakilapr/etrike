@@ -95,7 +95,7 @@ g++ -std=c++17 -I../../shared -I../src -c -x c++ ../src/config.h -o /dev/null
 
 ---
 
-## Phase R4 — Eliminate the UART inter-MCU abstraction (RT side)
+## Phase R4 — Eliminate the UART inter-MCU abstraction (RT side) ✅ COMPLETED
 
 **Goal:** All inter-MCU communication between RT and SYS moves to low-level CAN, matching architecture §7.3 and §8.3. The `inter_mcu` UART protocol is removed from RT.
 

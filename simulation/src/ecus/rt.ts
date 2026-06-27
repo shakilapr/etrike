@@ -327,8 +327,8 @@ export class RtEcu implements SimulatedEcu {
         bus: "high",
         canId: "0x210",
         name: "RT_STATE_RPT",
-        dlc: 3,
-        data: [modeByte, this.kinematics.getDynamicLimit(this.lastSpeedMmps) > 5 ? 1 : 0, 0],
+        dlc: 4,
+        data: [modeByte, this.kinematics.getDynamicLimit(this.lastSpeedMmps) > 5 ? 1 : 0, 0, 0],
         sender: "rt",
       });
 

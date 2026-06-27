@@ -809,7 +809,7 @@ Short local straps from each device's negative terminal to the nearest clean fra
 | 0x301 | HOST_BRAKE_REQ | Jetson | RT |
 | 0x302 | HOST_LIGHT_CMD | Jetson | RT |
 | 0x400 | HOST_OBSTACLE_DIST | Jetson | RT |
-| 0x7FC | JETSON_HEARTBEAT | Jetson | RT |
+| 0x7FC | HOST_HEARTBEAT | Jetson | RT |
 | 0x001 | SAFETY_ESTOP | RT or Jetson | Both |
 | 0x011 | SYS_SAFETY_STS | RT (fwd) | Jetson |
 | 0x120 | SYS_THROTTLE_STS | RT (fwd) | Jetson |

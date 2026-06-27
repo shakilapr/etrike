@@ -121,7 +121,7 @@ ESP32-S3 ──Wi-Fi──► MQTT Broker (aedes, :1883) ──► Backend ─�
 | `0x311` | BRAKE_DIAG | RT | 10 Hz | 8 | Pressure, fault, motor current, ECU temp | — |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | 10 Hz | 4 | `distance_mm` | ✅ |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | 1 Hz | 8 | `mode`, `brake_engaged`, `hb_ok`, `estop_active`, `free_heap_kb`, `tec`, `rec` | — |
-| `0x7FC` | JETSON_HEARTBEAT | Jetson | 2 Hz | 1 | `alive_ctr` | ✅ |
+| `0x7FC` | HOST_HEARTBEAT | Jetson | 2 Hz | 1 | `alive_ctr` | ✅ |
 | `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | 1 | `alive_ctr` | — |
 
 ### 3.2 Low-Level CAN Bus (22 IDs)

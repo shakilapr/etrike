@@ -781,7 +781,7 @@ RT sends `0x7FD` independently on both buses (per-bus, NOT bridged).
 
 ---
 
-### 0x7FC — JETSON_HEARTBEAT (high-level)
+### 0x7FC — HOST_HEARTBEAT (high-level)
 
 | Property | Value |
 |----------|-------|
@@ -842,7 +842,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | 10 Hz |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | 2 Hz |
-| `0x7FC` | JETSON_HEARTBEAT | Jetson | RT | 1 | 2 Hz |
+| `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 1 | 2 Hz |
 
 ---
 
