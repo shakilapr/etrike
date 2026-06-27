@@ -6,7 +6,7 @@
 namespace sys {
 class MotorDriver {
 public:
-    void init() { m_dac.init(); m_throttle.init(); }
+    void init() { /* DAC and throttle init done via globals g_dac/g_throttle */ }
 private:
     Mcp4725Dac m_dac;
     ThrottleInput m_throttle;

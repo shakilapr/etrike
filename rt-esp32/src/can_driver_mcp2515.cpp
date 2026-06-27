@@ -16,12 +16,12 @@ namespace {
 constexpr const char* kTag = "mcp2515";
 
 // ── CNF timing for 500 kbit/s with 8 MHz crystal ──────────────────
-// TQ = 2 * (BRP+1) / Fosc. BRP=1 → TQ=0.25µs.
+// TQ = 2 * (BRP+1) / Fosc. BRP=0 → TQ=0.25µs.
 // 500 kbit/s → bit time = 2µs = 8 TQ.
-// PropSeg=2, PS1=3, PS2=2, SJW=1 → total = 1+2+3+2 = 8 TQ.
-constexpr uint8_t kCnf1_500k = 0x01;  // SJW=1, BRP=1
-constexpr uint8_t kCnf2_500k = 0x92;  // BTLMODE=1, PS2=2, PropSeg=2
-constexpr uint8_t kCnf3_500k = 0x02;  // PS1=3, wake filter off
+// Sync=1, PropSeg=2, PS1=3, PS2=2, SJW=1 → total = 8 TQ.
+constexpr uint8_t kCnf1_500k = 0x00;  // SJW=1, BRP=0
+constexpr uint8_t kCnf2_500k = 0x91;  // BTLMODE=1, PS1=3, PropSeg=2
+constexpr uint8_t kCnf3_500k = 0x08;  // PS2=2 (PHSEG2=1 → 1+1=2 TQ)
 
 spi_device_handle_t g_spi_handle = nullptr;
 
@@ -149,8 +149,8 @@ void Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
 // ── Init sub-steps (Part 4) ─────────────────────────────────────────
 
 bool Mcp2515Driver::init_gpio() {
-    gpio_set_direction(static_cast<gpio_num_t>(m_cfg.cs_gpio), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(m_cfg.cs_gpio), 1);
+    // CS pin is managed by the SPI driver via spics_io_num — do NOT
+    // configure it as a manual GPIO, which would conflict.
     gpio_set_direction(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_MODE_INPUT);
     gpio_set_pull_mode(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_PULLUP_ONLY);
 
@@ -159,13 +159,16 @@ bool Mcp2515Driver::init_gpio() {
     // gpio_install_isr_service is idempotent — second call returns
     // ESP_ERR_INVALID_STATE, safe for bus-off re-init (main.cpp:497).
     gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);
-    gpio_isr_handler_add(static_cast<gpio_num_t>(m_cfg.int_gpio), mcp_int_isr, nullptr);
     gpio_set_intr_type(static_cast<gpio_num_t>(m_cfg.int_gpio), GPIO_INTR_NEGEDGE);
+    gpio_isr_handler_add(static_cast<gpio_num_t>(m_cfg.int_gpio), mcp_int_isr, nullptr);
 
     return true;
 }
 
 bool Mcp2515Driver::init_spi() {
+    // Idempotent: skip re-init if SPI bus is already running (bus-off recovery path).
+    if (g_spi_handle) return true;
+
     spi_bus_config_t bus_cfg = {};
     bus_cfg.mosi_io_num     = m_cfg.mosi_gpio;
     bus_cfg.miso_io_num     = m_cfg.miso_gpio;
@@ -248,20 +251,21 @@ bool Mcp2515Driver::init() {
 bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
 
-    // Check TXB0 free via TX0IF
+    // Check TXB0 free via TX0REQ (bit 0) in Read Status byte.
+    // MCP2515 datasheet: bit 0=TX0REQ (TX request pending), bit 2=TX0IF (complete).
+    // Only wait if a prior transmission is still in progress (TX0REQ=1).
+    // After reset TX0REQ=0, so first send proceeds immediately.
     uint8_t status = read_status();
-    if (!(status & 0x04)) {  // TX0IF clear → buffer busy, wait for TX0IF
-        // Wait for buffer to become free
+    if (status & 0x01) {  // TX0REQ=1 → buffer busy, wait for completion
         int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
-        while (!(read_status() & 0x04)) {
+        while (read_status() & 0x01) {
             if (esp_timer_get_time() > deadline) return false;
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
 
     // Load TX buffer 0
-    // TXB0CTRL: TXP[1:0]=00 (highest priority)
-    write_reg(kRegTxb0Ctrl, 0x03);  // TXP=11 (highest priority)
+    // TXP defaults to 11 (highest priority) after reset — no explicit write needed.
 
     // Standard ID (11-bit) → SIDH+SIDL
     uint8_t sidh = (frame.id >> 3) & 0xFF;
@@ -271,11 +275,11 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     write_reg(kRegTxb0Data1, sidl);  // TXB0SIDL
 
     // DLC
-    write_reg(kRegTxb1Data, frame.dlc & 0x0F);  // TXB0DLC
+    write_reg(kRegTxb0Dlc, frame.dlc & 0x0F);  // TXB0DLC
 
     // Data
     for (int i = 0; i < frame.dlc && i < 8; ++i) {
-        write_reg(kRegTxb1Data1 + i, frame.data[i]);  // TXB0D0..D7
+        write_reg(kRegTxb0D0 + i, frame.data[i]);  // TXB0D0..D7
     }
 
     // Request send
@@ -338,17 +342,12 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
         // ── No frame available ────────────────────────────────────
         if (esp_timer_get_time() > deadline) return false;
 
-        // Block on ISR notification with 10 ms polling fallback.
-        // 10 ms: catches a missed ISR (cold-boot race, INT glitch,
-        // or noise) within one 20 ms SEB period.
-        // pdTRUE: clears accumulated count on exit. If ISR fires
-        // twice while blocked (both buffers fill), count=2 and the
-        // next ulTaskNotifyTake returns immediately without blocking.
-        int64_t rem_us = deadline - esp_timer_get_time();
-        uint32_t wait_ms = (rem_us > 0)
-            ? static_cast<uint32_t>(std::min(int64_t(10), rem_us / 1000))
-            : 0;
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
+        // ISR-driven wait: MCP2515 INT pin (GPIO 40) fires on RX buffer fill.
+        // ulTaskNotifyTake blocks until the ISR gives a notification or 1ms
+        // timeout expires (silent bus fallback). Combined ISR+polling approach:
+        // the ISR is the fast path (microsecond latency); the 1ms timeout
+        // handles the silent-bus case without burning CPU on SPI reads.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1));
     }
 }
 

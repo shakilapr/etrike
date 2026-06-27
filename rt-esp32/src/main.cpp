@@ -99,6 +99,8 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                     warned = true;
                 }
             }
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(1));  // yield when silent or uninitialized
         }
     }
 }
@@ -193,7 +195,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                 estop_frame.id = can::kIdSafetyEstop;
                 estop_frame.dlc = 0;
                 xQueueSend(g_gw_tx_low_q, &estop_frame, portMAX_DELAY);
-                xQueueSend(g_gw_tx_high_q, &estop_frame, portMAX_DELAY);
+                xQueueSend(g_gw_tx_high_q, &estop_frame, 0);  // non-blocking (high bus may be disabled)
             }
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
@@ -264,9 +266,9 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                 uint8_t tec = 0, rec = 0;
                 auto* drv = rt::can_low_driver();
                 if (drv) drv->get_error_counters(tec, rec);
-                if (tec > 128 && tec <= 255)
+                if (tec > 128)
                     ESP_LOGW(TAG, "Low CAN error-warning: TEC=%u REC=%u", tec, rec);
-                if (tec > 255) {
+                if (tec >= 255) {
                     ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", tec, rec);
                     bus_off_count_low++;
                     if (bus_off_count_low >= 5) {
@@ -284,9 +286,9 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             {
                 uint8_t tec = 0, rec = 0;
                 g_can_high.get_error_counters(tec, rec);
-                if (tec > 128 && tec <= 255)
+                if (tec > 128)
                     ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
-                if (tec > 255) {
+                if (tec >= 255) {
                     ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
                     bus_off_count_high++;
                     if (bus_off_count_high >= 5) {
@@ -422,8 +424,15 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
     can::Frame fr;   // temp frame for telemetry
     TickType_t last = xTaskGetTickCount();
     while (1) {
-        while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE)
-            g_can_high.send(gw);
+        while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE) {
+            if (!g_can_high.send(gw)) {
+                static bool gw_fail_warned = false;
+                if (!gw_fail_warned) {
+                    ESP_LOGW(TAG, "MCP2515 high-bus GW send failed (ID=0x%03lX)", gw.id);
+                    gw_fail_warned = true;
+                }
+            }
+        }
 
         // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4, fix #1)
         can::RtStateRpt rpt;
@@ -432,7 +441,13 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         rpt.reversing   = g_reversing.load();
         rpt.rx_overflow = static_cast<uint8_t>(g_can_high.rx_overflow_count());
         rpt.to_frame(fr);
-        g_can_high.send(fr);
+        if (!g_can_high.send(fr)) {
+            static bool rpt_fail_warned = false;
+            if (!rpt_fail_warned) {
+                ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed");
+                rpt_fail_warned = true;
+            }
+        }
 
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
@@ -442,7 +457,10 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
             can::SteerDiag{angle, fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
-            g_can_high.send(fr);
+            if (!g_can_high.send(fr)) {
+                static bool diag_fail = false;
+                if (!diag_fail) { ESP_LOGW(TAG, "MCP2515 STEER_DIAG send failed"); diag_fail = true; }
+            }
         }
 
         // 0x311 BRAKE_DIAG — 10 Hz (v0.0.4: SEB telemetry for Host)
@@ -493,7 +511,10 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         auto* drv = rt::can_low_driver();
         if (drv) drv->send(fr);
         g_heartbeat.tick_high(fr);
-        g_can_high.send(fr);
+        if (!g_can_high.send(fr)) {
+            static bool hb_fail = false;
+            if (!hb_fail) { ESP_LOGW(TAG, "MCP2515 heartbeat send failed"); hb_fail = true; }
+        }
         vTaskDelayUntil(&last, per);
     }
 }

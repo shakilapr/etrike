@@ -25,7 +25,7 @@ public:
 
     static Config default_config() {
         return { rt::kSpiSckGpio, rt::kSpiMosiGpio, rt::kSpiMisoGpio,
-                 rt::kSpiCsGpio, rt::kMcpIntGpio, 2, 10'000'000 };
+                 rt::kSpiCsGpio, rt::kMcpIntGpio, 2, 8'000'000 };
     }
 
     Mcp2515Driver() : m_cfg(default_config()) {}
@@ -54,8 +54,6 @@ private:
     // ── SPI primitives (ESP-IDF) ───────────────────────────────────
     void spi_write_byte(uint8_t addr, uint8_t data);
     uint8_t spi_read_byte(uint8_t addr);
-    void spi_write_buf(uint8_t addr, const uint8_t* data, size_t len);
-    void spi_read_buf(uint8_t addr, uint8_t* data, size_t len);
     void spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len);
     void spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
 
@@ -92,8 +90,8 @@ private:
     // TX / RX buffer register addresses (Part 5 — named constants)
     static constexpr uint8_t kRegTxb0Data  = 0x31;  // TXB0SIDH
     static constexpr uint8_t kRegTxb0Data1 = 0x32;  // TXB0SIDL
-    static constexpr uint8_t kRegTxb1Data  = 0x35;  // TXB0DLC
-    static constexpr uint8_t kRegTxb1Data1 = 0x36;  // TXB0D0
+    static constexpr uint8_t kRegTxb0Dlc  = 0x35;  // TXB0DLC
+    static constexpr uint8_t kRegTxb0D0   = 0x36;  // TXB0D0
     static constexpr uint8_t kRegRxb0Data  = 0x61;  // RXB0SIDH
     static constexpr uint8_t kRegRxb1Data  = 0x71;  // RXB1SIDH
 
