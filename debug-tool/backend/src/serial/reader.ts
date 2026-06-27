@@ -13,6 +13,7 @@ export interface SerialState extends BridgeState {
 export class SerialBridge implements HardwareBridge {
   readonly state: SerialState;
   private port: SerialPort | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private busDetector = new BusDetector();
   private detectedBus: Bus = "high";
 
@@ -63,6 +64,7 @@ export class SerialBridge implements HardwareBridge {
       this.state.port_open = false;
       this.state.esp32_connected = false;
       this.broadcastStatus();
+      this.scheduleReconnect();
     });
     this.port.on("error", (error) => {
       this.state.last_error = error.message;
@@ -71,6 +73,7 @@ export class SerialBridge implements HardwareBridge {
       this.state.port_open = false;
       this.state.esp32_connected = false;
       this.broadcastStatus();
+      this.scheduleReconnect();
     });
     this.port.open((error) => {
       if (error) {
@@ -88,8 +91,19 @@ export class SerialBridge implements HardwareBridge {
   }
 
   async close(): Promise<void> {
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (!this.port || !this.port.isOpen) return;
     await new Promise<void>((resolve) => this.port?.close(() => resolve()));
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return; // already pending
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.state.connected && this.config.serialPath) {
+        this.start();
+      }
+    }, 2000);
   }
 
   private handleLine(line: string): void {

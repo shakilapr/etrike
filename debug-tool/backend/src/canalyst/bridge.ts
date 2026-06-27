@@ -11,6 +11,7 @@ import type { StreamHub } from "../ws/stream";
 export class CanalystBridge implements HardwareBridge {
   readonly state: BridgeState;
   private process: ChildProcessWithoutNullStreams | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private busDetector = new BusDetector();
 
   constructor(
@@ -73,6 +74,7 @@ export class CanalystBridge implements HardwareBridge {
       this.state.link_open = false;
       this.state.last_error = code === 0 ? null : `CANalyst-II bridge exited code=${code ?? "null"} signal=${signal ?? "null"}`;
       this.broadcastStatus();
+      if (code !== 0) this.scheduleReconnect(); // respawn on crash
     });
   }
 
@@ -84,6 +86,7 @@ export class CanalystBridge implements HardwareBridge {
   }
 
   async close(): Promise<void> {
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (!this.process) return;
     const child = this.process;
     this.process = null;
@@ -92,6 +95,14 @@ export class CanalystBridge implements HardwareBridge {
       child.kill();
       setTimeout(resolveClose, 1000).unref();
     });
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.state.connected) this.start();
+    }, 2000);
   }
 
   private handleLine(line: string): void {
