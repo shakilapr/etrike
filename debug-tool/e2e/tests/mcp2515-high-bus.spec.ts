@@ -42,7 +42,7 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
     }
 
     // Wait for frames to appear
-    await page.waitForTimeout(3000);
+    await page.waitForSelector("table tr", { timeout: 5000 });
 
     // Check that frame rows exist in the monitor table
     const frameRows = page.locator("table tr, [data-testid=frame-row]");
@@ -52,7 +52,7 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
 
   test("high bus shows 0x7FD RT_HEARTBEAT at ~2 Hz", async ({ page }) => {
     await page.click("text=Statistics"); // or wherever per-ID stats show
-    await page.waitForTimeout(3000);
+    await page.waitForSelector("table tr", { timeout: 5000 });
 
     // Look for 0x7FD in the page content — it should have a non-zero count
     const pageContent = await page.textContent("body") ?? "";
