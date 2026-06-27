@@ -28,7 +28,7 @@ function strokeToRaw(mm: number): number {
 
 /** Convert kPa to SEB pressure raw. */
 function kpaToPressureRaw(kpa: number): number {
-  const raw = Math.round((kpa + 25) / 50);
+  const raw = Math.round(kpa / 50);
   return Math.min(raw, SEB_MAX_PRESSURE_RAW);
 }
 

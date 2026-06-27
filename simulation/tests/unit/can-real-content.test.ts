@@ -308,9 +308,9 @@ describe("0x721 SEB_STATUS — real bytes", () => {
     runner.runDuration(1000);
     const f = getFirst(runner, "0x721", "low");
     expect(f).toBeDefined();
-    // angle is i16 LE at bytes 5-6 (overlaps byte 6 security bits)
-    // After fix, should be non-zero during operation
-    const angleRaw = f!.data[4] | (f!.data[5] << 8);
+    // angle is i16 at bytes 5-6 (overlaps byte 6 security bits at bits 0-1 and 4-7)
+    // Extract effective 10-bit: byte5 low 8 bits + byte6 bits 2-3 as bits 8-9
+    const angleRaw = f!.data[5] | (((f!.data[6] >> 2) & 0x03) << 8);
     expect(angleRaw).toBeGreaterThanOrEqual(0);
   });
 });

@@ -74,8 +74,8 @@ export class SyntreeSeb implements SimulatedEcu {
       const statusByte = (this.aligned ? 1 : 0)
         | (1 << 1)  // control_enable_sts = 1 (active)
         | (this.errorStatus << 6);
-      // Use actual stroke value as proxy for angle (SEB doesn't have real angle sensor in simulation)
-      const angleRaw = Math.round((this.actualStroke / 0.5) + 150); // scaled angle from stroke
+      // SEB angle sensor: raw = angle_deg * 2 (factor 0.5, offset 0). 0° → raw 0.
+      const angleRaw = Math.round(this.actualStroke / 0.05 * 0.02); // weak coupling: stroke→angle for monitoring
       const data = [
         statusByte,
         0,                         // byte 1: reserved
@@ -107,8 +107,8 @@ export class SyntreeSeb implements SimulatedEcu {
         simTimeMs: nowMs, bus: "low", canId: "0x731", name: "SEB_ErrInfo",
         dlc: 8, data: [
           isL3 ? 0xFC : 0,  // byte0: ECU errors + domain faults if L3
-          isL3 ? 0xFF : 0,  // byte1: angle/sensor errors if L3
-          isL3 ? 0x3F : 0,  // byte2: motor/oil errors if L3
+          isL3 ? 0x2F : 0,  // byte1: angle/sensor L3 errors (bits 0,1,2,3,5)
+          isL3 ? 0x76 : 0,  // byte2: motor/oil L3 errors (bits 1,2,4,5,6)
           0, 0, 0, 0, 0,
         ], sender: "seb",
       });
@@ -131,7 +131,7 @@ export class SyntreeSeb implements SimulatedEcu {
         simTimeMs: nowMs, bus: "low", canId: "0x6FB", name: "SEB_Test",
         dlc: 8, data: [
           0,  // byte 0: reserved
-          0, motorCurrent & 0xFF,  // bytes 1-2: motor current
+          motorCurrent & 0xFF, (motorCurrent >> 8) & 0xFF,  // bytes 1-2: motor current
           ecuTemp & 0xFF, (ecuTemp >> 8) & 0xFF,  // bytes 3-4: ecu temp
           powVolt & 0xFF, (powVolt >> 8) & 0xFF,  // bytes 5-6: power voltage
           0,  // byte 7: reserved

@@ -102,7 +102,7 @@ protocols:
           - {name: MTR_GearState, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
              values: {0: N, 1: D, 2: S, 3: R}}
           - {name: MTR_FaultFlags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
-             values: {1: Overcurrent, 2: Overtemp, 4: CommsLoss},
+             values: {1: EstopActive, 2: CmdTimeout, 4: AdcFault, 8: GearConflict},
              comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict"}
 
       # 0x210 — RT_STATE_RPT (RT→Host on high bus)
