@@ -18,8 +18,10 @@ constexpr int kCanRxGpio    =       4;
 // ── safety inputs ─────────────────────────────────────────────────
 constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-low, pull-up
 constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
-constexpr int kStartBtnGpio   = 32;   // green momentary, exits ESTOP→MANUAL
+constexpr int kStartBtnGpio   = 32;   // green momentary — press=ignition ON, hold 3s=OFF
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
+constexpr int kIgnitionGpio   =  8;   // main 12V relay — HIGH=vehicle ON, LOW=all ECUs dead
+                                       // Wired in parallel with CAN 0x012 DC-DC enable for dual-path ignition
 
 // ── throttle/gear I/O — currently on SYS ESP32-S3 (migration to MTR STM32 is Gap #5) ──
 constexpr int      kThrottleI2cSda      = 15;
