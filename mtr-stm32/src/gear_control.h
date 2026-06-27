@@ -50,6 +50,8 @@ public:
     }
 
     /// Set relay outputs to match the given gear.
+    /// WARNING: Shifting 72V contactors under load can damage hardware.
+    /// Caller must ensure vehicle speed < 50 mm/s before calling.
     void set_relays(can::Gear gear) {
         set_relay_pin(kGearDOut, gear == can::Gear::D);
         set_relay_pin(kGearSOut, gear == can::Gear::S);

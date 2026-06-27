@@ -91,7 +91,10 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
     can::Frame fr;
     while (1) {
         if (p.receive(fr, 100)) {
-            if (xQueueSend(p.queue, &fr, 0) != pdTRUE && p.overflow_drv) {
+            // ESTOP (0x001) gets priority: use send-to-front to skip queue
+            if (fr.id == can::kIdSafetyEstop) {
+                xQueueSendToFront(p.queue, &fr, 0);
+            } else if (xQueueSend(p.queue, &fr, 0) != pdTRUE && p.overflow_drv) {
                 p.overflow_drv->record_rx_overflow();
                 static bool warned = false;
                 if (!warned) {
@@ -194,7 +197,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                 can::Frame estop_frame;
                 estop_frame.id = can::kIdSafetyEstop;
                 estop_frame.dlc = 0;
-                xQueueSend(g_gw_tx_low_q, &estop_frame, portMAX_DELAY);
+                xQueueSend(g_gw_tx_low_q, &estop_frame, 0);   // non-blocking (low TX task drains every 5ms)
                 xQueueSend(g_gw_tx_high_q, &estop_frame, 0);  // non-blocking (high bus may be disabled)
             }
         }

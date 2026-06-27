@@ -43,6 +43,7 @@ Desktop.ini
 
 # ── Temporary analysis & working files ──────────────────────────────────
 /tem/
+/issues/
 _filelist.txt
 
 # ── PDF extraction tool artifacts ────────────────────────────────────

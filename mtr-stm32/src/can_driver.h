@@ -45,6 +45,8 @@ public:
         //   uint8_t data[8];
         //   for (int i = 0; i < frame.dlc && i < 8; ++i) data[i] = frame.data[i];
         //   return HAL_CAN_AddTxMessage(&hcan, &tx, data, &mailbox) == HAL_OK;
+        // STUB: bxCAN HAL driver not implemented. See architecture.md §6.1.
+        // Uncomment the HAL_CAN_AddTxMessage block above when STM32 HAL is available.
         (void)frame;
         return false;  // stub
     }

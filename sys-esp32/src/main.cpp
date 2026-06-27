@@ -29,6 +29,20 @@
 
 static const char* TAG = "sys";
 
+// ── CAN TX helper — checks return value, logs failures ──────────────
+static uint32_t g_can_tx_fail_count = 0;
+static bool send_can(can::Frame& fr, const char* caller = "?") {
+    if (!g_can.send(fr)) {
+        g_can_tx_fail_count++;
+        static bool warned = false;
+        if (!warned) {
+            ESP_LOGW(TAG, "CAN TX mailbox full (%s) — frame %03X dropped", caller, fr.id);
+        }
+        return false;
+    }
+    return true;
+}
+
 // ── Application state ──────────────────────────────────────────────
 
 static can::CanDriver      g_can(can::CanDriver::Config{sys::kCanTxGpio,
@@ -147,7 +161,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_mode_mgr.force_estop();
                 if (can_send_estop()) {
                     can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    g_can.send(ef);
+                    send_can(ef, "ESTOP");
                 }
             }
             break;
@@ -258,7 +272,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_mode_mgr.force_estop();
                 if (can_send_estop()) {
                     can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    g_can.send(ef);
+                    send_can(ef, "ESTOP");
                 }
                 ESP_LOGW(TAG, "ESTOP triggered by SEB 0x731 L3 fault(s)");
             }
@@ -310,7 +324,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     can::Frame estop_fr;
                     estop_fr.id = can::kIdSafetyEstop;
                     estop_fr.dlc = 0;
-                    g_can.send(estop_fr);
+                    send_can(estop_fr, "ESTOP");
                     ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
                 }
             }
@@ -338,7 +352,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                             g_mode_mgr.force_estop();
                             if (can_send_estop()) {
                                 can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                                g_can.send(ef);
+                                send_can(ef, "ESTOP");
                             }
                             ESP_LOGW(TAG, "EGAS L2: speed mismatch %ld mm/s > %d — ESTOP",
                                      (long)diff, sys::kEgasSpeedThresholdMmps);
@@ -406,7 +420,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // Mode changed → send 0x110 SYS_MODE_CMD
             can::Frame fr;
             can::SysModeCmd{g_mode_mgr.mode_u8()}.to_frame(fr);
-            g_can.send(fr);
+            send_can(fr);
         }
 
         vTaskDelayUntil(&last, period);
@@ -519,7 +533,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (should_tx && !suppress_seb) {
             can::Frame fr;
             seb_cmd.to_frame(fr);
-            g_can.send(fr);  // 0x7B9 VCU_SEB_REQ
+            send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
         }
 
         // 0x721 staleness check (architecture §8.10): warn if no status for >100ms
@@ -596,7 +610,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (g_dcdc.tick(estop)) {
             can::Frame fr;
             g_dcdc.build_frame(fr);
-            g_can.send(fr);  // 0x012 SYS_DCDC_CMD
+            send_can(fr, "dcdc"); // 0x012 SYS_DCDC_CMD
         }
         vTaskDelayUntil(&last, period);
     }
@@ -645,7 +659,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_safety.heartbeat_ok(),
             g_light_state.load(std::memory_order_relaxed)
         }.to_frame(fr);
-        g_can.send(fr);  // 0x011 SYS_SAFETY_STS (DLC=3, v0.0.5)
+        send_can(fr, "safety"); // 0x011 SYS_SAFETY_STS (DLC=3, v0.0.5)
 
         vTaskDelayUntil(&last, period);
     }
@@ -672,7 +686,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         rpt.tec = tec; rpt.rec = rec;
         can::Frame fr;
         rpt.to_frame(fr);
-        g_can.send(fr);
+        send_can(fr);
 
         // CAN bus-off monitoring (architecture §8.10)
         if (tec > 128)
@@ -685,7 +699,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_mode_mgr.force_estop();
                 if (can_send_estop()) {
                     can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    g_can.send(ef);
+                    send_can(ef, "ESTOP");
                 }
             }
             g_can.init();  // attempt recovery (re-initialize TWAI)
@@ -706,7 +720,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         fr.id  = can::kIdSysHeartbeat;
         fr.dlc = 1;
         fr.put_u8(0, ++alive_ctr);
-        g_can.send(fr);
+        send_can(fr);
 
         vTaskDelayUntil(&last, period);
     }

@@ -101,7 +101,7 @@ private:
     bool init_mcp2515_regs();
 
     Config m_cfg;
-    bool   m_initialized = false;
+    std::atomic<bool> m_initialized{false};
 
     // ── ISR-driven RX state ───────────────────────────────────────
     // Cached second-buffer frame: when both RXB0 and RXB1 have data

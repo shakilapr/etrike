@@ -160,7 +160,7 @@ export class RtEcu implements SimulatedEcu {
 
     // ── Kinematics (100 Hz) ─────────────────────────────────
     if (nowMs % 10 === 0) {
-      const cmd = shouldEstop || ctx.mode !== "auto"
+      const cmd = shouldEstop || ctx.mode !== "auto" || hostHbTimeout
         ? { speedMmps: 0, yawRateMradS: 0, gear: 0 }
         : this.hostDriveCmd;
 
