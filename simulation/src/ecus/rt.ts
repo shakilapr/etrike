@@ -137,16 +137,6 @@ export class RtEcu implements SimulatedEcu {
           out.push({ ...f, bus: "high", sender: "rt" });
           break;
         }
-        case "0x202": {
-          // SES_ErrInfo — L3 fault bits trigger ESTOP (matches firmware can_dispatch.h)
-          const angleFaults = (f.data[1] ?? 0) & 0x0F;
-          const torqueFaults = ((f.data[2] ?? 0) >> 2) & 0x0F;
-          if (angleFaults || torqueFaults) {
-            out.push({ simTimeMs: nowMs, bus: "low", canId: "0x001", name: "ESTOP", dlc: 0, data: [], sender: "rt" });
-            out.push({ simTimeMs: nowMs, bus: "high", canId: "0x001", name: "ESTOP", dlc: 0, data: [], sender: "rt" });
-          }
-          break;
-        }
         // Category 1 forward: low→high
         case "0x011":
         case "0x120":
