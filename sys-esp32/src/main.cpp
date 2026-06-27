@@ -29,6 +29,10 @@
 
 static const char* TAG = "sys";
 
+static can::CanDriver g_can(can::CanDriver::Config{sys::kCanTxGpio,
+                                                    sys::kCanRxGpio,
+                                                    sys::kCanBitrateHz});
+
 // ── CAN TX helper — checks return value, logs failures ──────────────
 static uint32_t g_can_tx_fail_count = 0;
 static bool send_can(can::Frame& fr, const char* caller = "?") {
@@ -45,9 +49,6 @@ static bool send_can(can::Frame& fr, const char* caller = "?") {
 
 // ── Application state ──────────────────────────────────────────────
 
-static can::CanDriver      g_can(can::CanDriver::Config{sys::kCanTxGpio,
-                                                         sys::kCanRxGpio,
-                                                         sys::kCanBitrateHz});
 static sys::SafetyMonitor  g_safety;
 static sys::ModeManager    g_mode_mgr;
 static sys::ThrottleInput  g_throttle;
