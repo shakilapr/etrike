@@ -89,4 +89,12 @@ int32_t PhysicsModel::obstacle_limit(int32_t target_mmps, unsigned obstacle_mm) 
     return static_cast<int32_t>(target_mmps * t);
 }
 
+int32_t PhysicsModel::obstacle_to_kpa(unsigned obstacle_mm) {
+    if (obstacle_mm <= shared::kObstacleStopMM) return shared::kObstacleMaxKpa;
+    if (obstacle_mm >= shared::kObstacleClearMM) return 0;
+    float t = static_cast<float>(obstacle_mm - shared::kObstacleStopMM)
+            / static_cast<float>(shared::kObstacleClearMM - shared::kObstacleStopMM);
+    return static_cast<int32_t>(shared::kObstacleMaxKpa * (1.0f - t));
+}
+
 }  // namespace rt

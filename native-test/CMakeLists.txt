@@ -164,12 +164,37 @@ target_include_directories(mcp2515_config PRIVATE
 # and the config.h from rt-esp32/src. No FreeRTOS or HAL stubs needed
 # since we only import the CNF constants.
 
+# ── RT CAN router test ──────────────────────────────────────────────
+add_executable(rt_can_rx_router
+    test/test_rt_can_rx_router.cpp
+)
+target_link_libraries(rt_can_rx_router PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(rt_can_rx_router PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+)
+
+# ── RT safety monitor test ──────────────────────────────────────────
+add_executable(rt_safety_monitor
+    test/test_rt_safety_monitor.cpp
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src/physics_model.cpp
+)
+target_link_libraries(rt_safety_monitor PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(rt_safety_monitor PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+)
+
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME smoke              COMMAND smoke_test)
 add_test(NAME protocol_roundtrip  COMMAND protocol_roundtrip)
 add_test(NAME checksum_full      COMMAND checksum_full)
 add_test(NAME mcp2515_config     COMMAND mcp2515_config)
+add_test(NAME rt_can_rx_router   COMMAND rt_can_rx_router)
+add_test(NAME rt_safety_monitor  COMMAND rt_safety_monitor)
 
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")

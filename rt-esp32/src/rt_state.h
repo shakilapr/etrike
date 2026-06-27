@@ -28,13 +28,13 @@ extern rt::SteeringControl g_steering;
 extern rt::DualHeartbeat   g_heartbeat;
 extern rt::CmdWatchdog     g_watchdog;
 
-// ── Safety event queue (replaces g_estop_flag, g_mode_from_sys, g_seb_takeover) ─
+// ── Safety event queue (replaces g_estop_flag, g_mode_from_sys) ─
 extern QueueHandle_t g_safety_evt_q;  // depth 8, SafetyEvent
 
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 extern std::atomic<int32_t>  g_brake_request_kpa;
 extern std::atomic<uint32_t> g_obstacle_mm;
-extern std::atomic<int32_t>  g_ses_angle_raw;
+extern std::atomic<int32_t>  g_ses_angle_0_1deg;
 extern std::atomic<uint8_t>  g_ses_angle_status;
 extern std::atomic<int32_t>  g_brake_kpa_to_send;
 extern std::atomic<int32_t>  g_mtr_actual_speed_mmps;
@@ -49,7 +49,7 @@ extern std::atomic<int64_t>  g_last_host_hb_us;
 extern std::atomic<int64_t>  g_last_estop_sent_us;  // 0x001 rate limiter
 
 // ── Telemetry atomics (written by control/dispatch, read by tx) ─────
-extern std::atomic<int16_t>  g_last_cmd_angle_raw;
+extern std::atomic<int16_t>  g_last_cmd_angle_0_1deg;
 extern std::atomic<int16_t>  g_pid_output_mmps;
 extern std::atomic<int32_t>  g_last_speed_setpoint_mmps;
 extern std::atomic<bool>     g_reversing;

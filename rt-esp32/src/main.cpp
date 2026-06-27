@@ -37,7 +37,7 @@ QueueHandle_t g_safety_evt_q = nullptr;  // depth 16, SafetyEvent
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 std::atomic<int32_t>  g_brake_request_kpa{0};
 std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
-std::atomic<int32_t>  g_ses_angle_raw{INT16_MIN};
+std::atomic<int32_t>  g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t>  g_ses_angle_status{0};
 std::atomic<int32_t>  g_brake_kpa_to_send{0};
 std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};
@@ -52,7 +52,7 @@ std::atomic<int64_t>  g_last_host_hb_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
 // ── Telemetry atomics ──────────────────────────────────────────────
-std::atomic<int16_t>  g_last_cmd_angle_raw{0};
+std::atomic<int16_t>  g_last_cmd_angle_0_1deg{0};
 std::atomic<int16_t>  g_pid_output_mmps{0};
 std::atomic<int32_t>  g_last_speed_setpoint_mmps{0};
 std::atomic<bool>     g_reversing{false};
@@ -113,6 +113,59 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 // ── Safety monitor (extracted to safety_monitor.h) ──────────────────
 #include "safety_monitor.h"
 
+static void monitor_can_bus_off() {
+    static int bus_check_ctr = 0;
+    static int bus_off_count_low = 0, bus_off_count_high = 0;
+    if (++bus_check_ctr < 100) return;
+
+    bus_check_ctr = 0;
+
+    // Low bus (TWAI)
+    {
+        uint8_t tec = 0, rec = 0;
+        auto* drv = rt::can_low_driver();
+        if (drv) drv->get_error_counters(tec, rec);
+        if (tec > 128)
+            ESP_LOGW(TAG, "Low CAN error-warning: TEC=%u REC=%u", tec, rec);
+        if (tec >= 255) {
+            ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", tec, rec);
+            bus_off_count_low++;
+            if (bus_off_count_low >= 5) {
+                ESP_LOGE(TAG, "Low CAN bus-off persistent - triggering ESTOP");
+                if (can_send_estop()) {
+                    can::Frame ef{}; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                    xQueueSend(g_gw_tx_low_q, &ef, portMAX_DELAY);
+                    xQueueSend(g_gw_tx_high_q, &ef, portMAX_DELAY);
+                }
+            }
+            if (drv) drv->init();  // attempt recovery
+        } else {
+            bus_off_count_low = 0;
+        }
+    }
+
+    // High bus (MCP2515)
+    {
+        uint8_t tec = 0, rec = 0;
+        g_can_high.get_error_counters(tec, rec);
+        if (tec > 128)
+            ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
+        if (tec >= 255) {
+            ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
+            bus_off_count_high++;
+            if (bus_off_count_high >= 5) {
+                ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
+                can::HostDriveCmd zero{};
+                xQueueOverwrite(g_cmd_q, &zero);
+                g_steering.start_estop(false);
+            }
+            g_can_high.init();  // attempt recovery
+        } else {
+            bus_off_count_high = 0;
+        }
+    }
+}
+
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_control(void*) {
     TickType_t per = pdMS_TO_TICKS(10), last = xTaskGetTickCount();
@@ -137,17 +190,11 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                     m_estop_pending = false;
                 }
                 break;
-            case rt::SafetyEvent::SEB_TAKEOVER:
-                m_seb_takeover = true;
-                break;
-            case rt::SafetyEvent::SEB_RELEASE:
-                m_seb_takeover = false;
-                break;
             }
         }
-        // Publish derived state for read-heavy tx tasks (read at 50Hz/10Hz)
+        // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
+        // SEB takeover is published immediately after safety checks below.
         g_mode_current.store(m_current_mode);
-        g_seb_takeover.store(m_seb_takeover);
 
         if (xQueueReceive(g_cmd_q, &cmd, 0) != pdTRUE)
             cmd = {0, 0};
@@ -166,17 +213,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
         }
 
-        // Obstacle→kPa: 300mm→5000, 3000mm→0, linear between
-        int32_t obs_kpa;
-        if (obs <= shared::kObstacleStopMM) {
-            obs_kpa = shared::kObstacleMaxKpa;
-        } else if (obs >= shared::kObstacleClearMM) {
-            obs_kpa = 0;
-        } else {
-            float t = static_cast<float>(obs - shared::kObstacleStopMM)
-                    / static_cast<float>(shared::kObstacleClearMM - shared::kObstacleStopMM);
-            obs_kpa = static_cast<int32_t>(shared::kObstacleMaxKpa * (1.0f - t));
-        }
+        int32_t obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
         // ── Safety checks ──────────────────────────────────────────
@@ -185,6 +222,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 
         rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
                                                   m_estop_pending, m_current_mode, m_seb_takeover);
+        g_seb_takeover.store(m_seb_takeover);
         if (sr.zero_setpoints) {
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
@@ -251,7 +289,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         }
 
         // ── Capture state for telemetry (fix #1, #5) ──────────────
-        g_last_cmd_angle_raw.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
+        g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
         g_reversing.store(sp.reversing);
 
         // External watchdog kick — toggled at 100 Hz (TPS3850, 100ms window)
@@ -259,54 +297,47 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         wdt_toggle = !wdt_toggle;
         gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
 
-        // ── CAN bus-off monitoring — check both buses at 1 Hz ──────
-        static int bus_check_ctr = 0;
-        static int bus_off_count_low = 0, bus_off_count_high = 0;
-        if (++bus_check_ctr >= 100) {
-            bus_check_ctr = 0;
-            // Low bus (TWAI)
-            {
-                uint8_t tec = 0, rec = 0;
-                auto* drv = rt::can_low_driver();
-                if (drv) drv->get_error_counters(tec, rec);
-                if (tec > 128)
-                    ESP_LOGW(TAG, "Low CAN error-warning: TEC=%u REC=%u", tec, rec);
-                if (tec >= 255) {
-                    ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", tec, rec);
-                    bus_off_count_low++;
-                    if (bus_off_count_low >= 5) {
-                        ESP_LOGE(TAG, "Low CAN bus-off persistent — triggering ESTOP");
-                        if (can_send_estop()) {
-                            can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                            xQueueSend(g_gw_tx_low_q, &ef, portMAX_DELAY);
-                            xQueueSend(g_gw_tx_high_q, &ef, portMAX_DELAY);
-                        }
-                    }
-                    if (drv) drv->init();  // attempt recovery
-                } else { bus_off_count_low = 0; }
-            }
-            // High bus (MCP2515)
-            {
-                uint8_t tec = 0, rec = 0;
-                g_can_high.get_error_counters(tec, rec);
-                if (tec > 128)
-                    ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
-                if (tec >= 255) {
-                    ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
-                    bus_off_count_high++;
-                    if (bus_off_count_high >= 5) {
-                        ESP_LOGE(TAG, "High CAN bus-off persistent — zeroing setpoints");
-                        can::HostDriveCmd zero{};
-                        xQueueOverwrite(g_cmd_q, &zero);
-                        g_steering.start_estop(false);
-                    }
-                    g_can_high.init();  // attempt recovery
-                } else { bus_off_count_high = 0; }
-            }
-        }
+        monitor_can_bus_off();
 
         vTaskDelayUntil(&last, per);
     }
+}
+
+static can::VcuSebReq make_seb_takeover_req() {
+    can::VcuSebReq seb{};
+    seb.align_enable = 1;
+    seb.control_mode = 0;    // Stroke mode
+    seb.auto_brake   = 1;    // Emergency trigger
+    seb.stroke_req   = 1140; // 27mm max stroke: (27+30)/0.05
+    return seb;
+}
+
+static can::VcuSebReq make_seb_auto_req(int32_t kpa) {
+    can::VcuSebReq seb{};
+    if (kpa > 0) {
+        // Pressure Mode: kPa -> SEB raw (0.05 MPa/bit, 1 kPa = 0.02 raw)
+        uint8_t pressure_raw = static_cast<uint8_t>(std::min(
+            static_cast<int32_t>(kpa * 0.02f), int32_t(shared::kSebMaxPressureRaw)));
+        seb.control_mode = 1;     // Pressure
+        seb.pressure_req = pressure_raw;
+        seb.stroke_req   = 600;   // 0mm baseline
+        seb.auto_brake   = 1;     // automated braking
+    } else {
+        seb.control_mode = 0;     // Stroke
+        seb.stroke_req   = 600;   // 0mm: (0+30)/0.05
+    }
+    return seb;
+}
+
+static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
+                         can::VcuSebReq seb, uint8_t& rolling_counter) {
+    seb.control_enable = 1;
+    seb.roll_cnt_enable = 1;
+    seb.checksum_enable = 1;
+    seb.rolling_counter = rolling_counter;
+    rolling_counter = (rolling_counter + 1) & 0x0F;
+    seb.to_frame(fr);
+    drv.send(fr);
 }
 
 // ── CAN TX low (prio 3) ────────────────────────────────────────────
@@ -363,7 +394,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             if (g_mode_current.load() != uint8_t(can::Mode::Manual)) {
                 can::VcuSesReq ses;
                 int64_t now_ms = esp_timer_get_time() / 1000;
-                if (g_steering.tick(g_ses_angle_raw.load(), g_ses_angle_status.load(),
+                if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
                                     now_ms, ses)) {
                     ses.to_frame(fr); drv->send(fr);
                 }
@@ -372,49 +403,20 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             // Gap #12: SEB brake takeover — RT sends 0x7B9 at 50Hz on SYS heartbeat loss.
             // Must be in same 50Hz block (not a separate timing check — was dead code).
             static uint8_t seb_roll = 0;
-            if (g_seb_takeover.load(std::memory_order_relaxed)) {
-                can::VcuSebReq seb;
-                seb.control_enable = 1;
-                seb.align_enable   = 1;
-                seb.control_mode   = 0;    // Stroke mode
-                seb.auto_brake     = 1;    // Emergency trigger
-                seb.stroke_req     = 1140; // 27mm max stroke: (27+30)/0.05
-                seb.roll_cnt_enable = 1;
-                seb.checksum_enable = 1;
-                seb.rolling_counter = seb_roll;
-                seb_roll = (seb_roll + 1) & 0x0F;
-                seb.to_frame(fr); drv->send(fr);
+            bool seb_takeover = g_seb_takeover.load(std::memory_order_relaxed);
+            if (seb_takeover) {
+                send_seb_req(*drv, fr, make_seb_takeover_req(), seb_roll);
             }
 
-            // Gap #12 completion: Option D — RT sends 0x7B9 directly in AUTO mode.
+            // Gap #12 completion: Option D - RT sends 0x7B9 directly in AUTO mode.
             // Architecture §6.2: 1-hop from kinematics, no cross-node sync needed.
             // NOTE: SYS MUST gate its own 0x7B9 on mode (stop sending in AUTO).
             // Uses Pressure Mode for kPa-based braking, Stroke Mode when no brake.
             // Only active when NOT in SEB takeover (takeover has priority).
-            static uint8_t seb_auto_roll = 0;
-            if (!g_seb_takeover.load(std::memory_order_relaxed)
+            if (!seb_takeover
                 && g_mode_current.load() == uint8_t(can::Mode::Auto)
                 && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
-                int32_t kpa = g_brake_kpa_to_send.load();
-                can::VcuSebReq seb;
-                seb.control_enable = 1;
-                if (kpa > 0) {
-                    // Pressure Mode: kPa → SEB raw (0.05 MPa/bit, 1 kPa = 0.02 raw)
-                    uint8_t pressure_raw = static_cast<uint8_t>(std::min(
-                        static_cast<int32_t>(kpa * 0.02f), int32_t(shared::kSebMaxPressureRaw)));
-                    seb.control_mode = 1;  // Pressure
-                    seb.pressure_req = pressure_raw;
-                    seb.stroke_req   = 600;  // 0mm baseline
-                    seb.auto_brake   = 1;    // automated braking
-                } else {
-                    seb.control_mode = 0;  // Stroke
-                    seb.stroke_req   = 600; // 0mm: (0+30)/0.05
-                }
-                seb.roll_cnt_enable = 1;
-                seb.checksum_enable = 1;
-                seb.rolling_counter = seb_auto_roll;
-                seb_auto_roll = (seb_auto_roll + 1) & 0x0F;
-                seb.to_frame(fr); drv->send(fr);
+                send_seb_req(*drv, fr, make_seb_auto_req(g_brake_kpa_to_send.load()), seb_roll);
             }
         }
 
@@ -457,7 +459,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
-            int16_t angle = g_ses_angle_raw.load() + rt::kSyntreeAngleOffset;
+            int16_t angle = g_ses_angle_0_1deg.load() + rt::kSyntreeAngleOffset;
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
