@@ -167,9 +167,21 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         DispatchContext ctx{};
         process_frame(fr, from_high, ctx);
 
-        // Gateway forwarding
-        if (ctx.gw_lo.id)  xQueueSend(g_gw_tx_low_q,  &ctx.gw_lo, 0);
-        if (ctx.gw_hi.id)  xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0);
+        // Gateway forwarding — ESTOP (0x001) skips to front of queue
+        if (ctx.gw_lo.id) {
+            bool is_estop = (ctx.gw_lo.id == can::kIdSafetyEstop);
+            if (!(is_estop ? xQueueSendToFront(g_gw_tx_low_q, &ctx.gw_lo, 0)
+                          : xQueueSend(g_gw_tx_low_q, &ctx.gw_lo, 0))) {
+                static uint32_t gw_lo_drops = 0; gw_lo_drops++;
+            }
+        }
+        if (ctx.gw_hi.id) {
+            bool is_estop = (ctx.gw_hi.id == can::kIdSafetyEstop);
+            if (!(is_estop ? xQueueSendToFront(g_gw_tx_high_q, &ctx.gw_hi, 0)
+                          : xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0))) {
+                static uint32_t gw_hi_drops = 0; gw_hi_drops++;
+            }
+        }
 
         // Mode change → safety event queue (guaranteed delivery)
         if (ctx.has_mode) {
