@@ -5,13 +5,17 @@
 #include "can_driver_twai.h"
 #include "can/can_driver.h"
 #include "esp_log.h"
+#include <new>
+#include <type_traits>
 
 namespace rt {
 namespace {
 
 constexpr const char* kTag = "twai";
 
-// Global instance created by can_low_init().
+// Global instance created by can_low_init() in static storage.
+using CanDriverStorage = std::aligned_storage<sizeof(can::CanDriver), alignof(can::CanDriver)>::type;
+CanDriverStorage g_can_low_storage;
 can::CanDriver* g_can_low = nullptr;
 
 }  // anonymous namespace
@@ -22,10 +26,11 @@ bool can_low_init(int tx_gpio, int rx_gpio, int bitrate_hz) {
         return true;
     }
 
-    g_can_low = new can::CanDriver(can::CanDriver::Config{tx_gpio, rx_gpio, bitrate_hz});
+    g_can_low = new (&g_can_low_storage) can::CanDriver(
+        can::CanDriver::Config{tx_gpio, rx_gpio, bitrate_hz});
     if (!g_can_low->init()) {
         ESP_LOGE(kTag, "TWAI init failed (TX=%d RX=%d)", tx_gpio, rx_gpio);
-        delete g_can_low;
+        g_can_low->~CanDriver();
         g_can_low = nullptr;
         return false;
     }

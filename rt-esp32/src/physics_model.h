@@ -35,6 +35,10 @@ public:
     // to full speed at clear-dist.
     static int32_t obstacle_limit(int32_t target_mmps, unsigned obstacle_mm);
 
+    // Obstacle brake request: linearly scales brake from max at stop-dist
+    // to 0 at clear-dist.
+    static int32_t obstacle_to_kpa(unsigned obstacle_mm);
+
 private:
     float m_steer_hold_rad = 0.0f;   // last valid steer for decay
 };

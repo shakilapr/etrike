@@ -494,7 +494,7 @@ inline VcuSesReq VcuSesReq::unpack(const uint8_t raw[8]) {
     r.target_speed   = uint16_t(raw[4] | ((raw[5] & 0x0C) << 6)); // byte4 + bits 2-3 of byte5 = 10-bit speed
     r.roll_cnt_enable = raw[5] & 1;
     r.checksum_enable = (raw[5] >> 1) & 1;
-    r.reserved_2     = (raw[5] >> 2) & 3;
+    r.speed_bits_9_8 = (raw[5] >> 2) & 3;
     r.rolling_counter = (raw[5] >> 4) & 0xF;
     r.vehicle_speed  = raw[6];
     r.checksum       = raw[7];

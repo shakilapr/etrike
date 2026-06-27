@@ -2,7 +2,8 @@
 // PID speed controller — standalone, reusable across domains.
 //
 // Derivatives-on-measurement to avoid derivative kick on setpoint steps.
-// Optional D-term low-pass filter. Anti-windup with setpoint-change I-reset.
+// Optional D-term low-pass filter. Anti-windup with conditional integration
+// plus setpoint-change I-reset.
 // Gains are placeholder values; tune once rear motor encoder fitted (gap #5).
 //
 // Future: MPC controller will live in this directory alongside PID.
@@ -55,12 +56,6 @@ struct PidController {
         float error = setpoint - measured;
         float p_term = kp * error;
 
-        // Integral with anti-windup clamping scaled to output limits
-        integral += ki * error * dt;
-        float max_integral = (output_max - output_min) / std::max(ki * 2.0f, 0.001f);
-        integral = std::clamp(integral, -max_integral, max_integral);
-        float i_term = integral;  // integral already includes ki * dt accumulation
-
         // Derivative-on-measurement (avoids derivative kick on setpoint steps):
         //   d_input = -(measured - prev_measurement) / dt
         // Negative sign: when measured increases (closing gap to setpoint),
@@ -75,12 +70,25 @@ struct PidController {
             d_term = kd * d_input;
         }
 
+        // Integral anti-windup: trial-integrate, but do not accept growth
+        // that pushes farther into output saturation.
+        float max_integral = (output_max - output_min) / std::max(ki * 2.0f, 0.001f);
+        float candidate_integral = integral + ki * error * dt;
+        candidate_integral = std::clamp(candidate_integral, -max_integral, max_integral);
+
+        float unclamped = p_term + candidate_integral + d_term;
+        float output = std::clamp(unclamped, output_min, output_max);
+        bool saturated_high = output >= output_max && error > 0.0f;
+        bool saturated_low  = output <= output_min && error < 0.0f;
+        if (!saturated_high && !saturated_low) {
+            integral = candidate_integral;
+        }
+
         prev_error = error;
         prev_measurement = measured;
         prev_setpoint = setpoint;
 
-        float output = p_term + i_term + d_term;
-        return std::clamp(output, output_min, output_max);
+        return output;
     }
 
     void reset() {

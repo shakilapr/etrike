@@ -76,12 +76,7 @@ static std::atomic<uint32_t> g_last_setpoint_tick{0};
 static std::atomic<int64_t>  g_last_estop_sent_us{0};
 
 static bool can_send_estop() {
-    constexpr int64_t kMinIntervalUs = 250'000;  // 250ms between broadcasts
-    int64_t now = esp_timer_get_time();
-    int64_t last = g_last_estop_sent_us.load(std::memory_order_relaxed);
-    if (now - last < kMinIntervalUs) return false;
-    g_last_estop_sent_us.store(now, std::memory_order_relaxed);
-    return true;
+    return shared::should_send_estop_now(g_last_estop_sent_us, esp_timer_get_time());
 }
 
 // ── Motor feedback from 0x206 MTR_MOTOR_FBK ─────────────────────────

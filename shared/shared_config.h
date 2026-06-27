@@ -2,6 +2,7 @@
 // Shared configuration constants — single source of truth for vehicle/safety
 // parameters that are identical across all ECU projects.
 // Include via each project's config.h.
+#include <atomic>
 #include <cstdint>
 
 namespace shared {
@@ -22,6 +23,14 @@ constexpr int kLowSpeedThreshMmps = 50;
 constexpr int kHostCmdStaleTimeoutMs = 500;  // RT watchdog for Host drive commands (0x300)
 constexpr int kHeartbeatTimeoutMsHost = 1500;
 constexpr int kStartupGracePeriodMs = 3000;
+constexpr int64_t kEstopBroadcastMinIntervalUs = 250'000;  // 250ms between 0x001 broadcasts per ECU
+
+inline bool should_send_estop_now(std::atomic<int64_t>& last_sent_us, int64_t now_us) {
+    int64_t last = last_sent_us.load(std::memory_order_relaxed);
+    if (now_us - last < kEstopBroadcastMinIntervalUs) return false;
+    last_sent_us.store(now_us, std::memory_order_relaxed);
+    return true;
+}
 
 // Brake
 constexpr float kBrakeStrokeScale = 0.05f;
