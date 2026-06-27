@@ -20,8 +20,9 @@ static uint8_t seb_ok[8] = {0x01, 0, 0x58, 0x02, 0, 0, 0, 0};
 static void bootstrap_active(sys::BrakeControl& bc) {
     // Run 110 ticks at 50 Hz = 2.2s — exceeds BOOT_WAIT(500ms) + LISTEN_SYNC(2s timeout)
     // This enters DEGRADED via timeout, then we feed valid 0x721 to recover to ACTIVE
+    can::VcuSebReq unused;
     for (int i = 0; i < 110; ++i) {
-        bc.tick(false, false, 0, can::Mode::Manual, nullptr, *(can::VcuSebReq*)nullptr);
+        bc.tick(false, false, 0, can::Mode::Manual, nullptr, unused);
     }
     // Now feed valid 0x721 to recover from DEGRADED → ACTIVE
     can::VcuSebReq dummy;
