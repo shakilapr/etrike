@@ -53,6 +53,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     app.log.info("Shutting down debug backend");
+    hub.close();
     await bridge.close();
     store.close();
     await app.close();

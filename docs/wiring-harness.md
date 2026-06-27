@@ -823,7 +823,7 @@ Short local straps from each device's negative terminal to the nearest clean fra
 
 **\* Naming note:** CAN ID 0x120 is named `SYS_THROTTLE_STS` in the protocol but is physically sent by MTR STM32 — the message carries throttle status consumed by SYS and forwarded by RT. This is a known inconsistency in `architecture.md`.
 
-**Forwarding rules — bridged messages (RT gateway):** Messages forwarded from low bus → high bus (0x011, 0x120, 0x206, 0x210, 0x220, 0x310, 0x311, 0x600, 0x001) and high bus → low bus (0x300, 0x301, 0x302, 0x400, 0x001) are **one-way only.** RT must NOT re-forward a message back onto the bus it was received from — this creates a forwarding loop.
+**Forwarding rules — bridged messages (RT gateway):** Messages forwarded from low bus → high bus (0x001, 0x011, 0x120, 0x206, 0x600) and high bus → low bus (0x001, 0x302) — only transparent forwards; 0x300/0x301/0x400 are consumed by RT, not forwarded are **one-way only.** RT must NOT re-forward a message back onto the bus it was received from — this creates a forwarding loop.
 
 For the complete CAN message catalog including DLC, payload layout, periods, and priorities, see `architecture.md` §2 and `shared/can/can_signals.yaml`.
 

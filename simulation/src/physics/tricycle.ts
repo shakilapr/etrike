@@ -99,7 +99,7 @@ export class TricycleKinematics {
     let saturated = false;
 
     if (Math.abs(v) > lowSpeedMps) {
-      const requestedSteer = Math.atan2(L * w, Math.abs(v));
+      const requestedSteer = Math.atan2(L * w, v);
       saturated = Math.abs(requestedSteer) > steerLimitRad;
       steer = Math.max(-steerLimitRad, Math.min(steerLimitRad, requestedSteer));
       this.steerHoldRad = steer;

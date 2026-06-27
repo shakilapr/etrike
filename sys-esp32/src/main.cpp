@@ -675,9 +675,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_can.send(fr);
 
         // CAN bus-off monitoring (architecture §8.10)
-        if (tec > 128 && tec <= 255)
+        if (tec > 128)
             ESP_LOGW(TAG, "CAN error-warning: TEC=%u REC=%u", tec, rec);
-        if (tec > 255) {
+        if (tec >= 255) {
             ESP_LOGE(TAG, "CAN bus-off: TEC=%u REC=%u", tec, rec);
             bus_off_count++;
             if (bus_off_count >= 5) {
