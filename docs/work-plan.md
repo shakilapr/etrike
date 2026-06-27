@@ -150,7 +150,7 @@ g++ -std=c++17 -I../../shared -I../src test_control_logic.cpp ../src/control_log
 
 ---
 
-## Phase R5 — Implement RT dual-CAN driver
+## Phase R5 — Implement RT dual-CAN driver ✅ COMPLETED
 
 **Goal:** RT has two working CAN interfaces: built-in TWAI (low bus) and MCP2515 via SPI (high bus). Matches architecture §7.2.
 
@@ -175,7 +175,7 @@ g++ -std=c++17 -I../../shared -I../src test_control_logic.cpp ../src/control_log
 
 ---
 
-## Phase R6 — Implement RT CAN gateway (dispatch + forwarding)
+## Phase R6 — Implement RT CAN gateway (dispatch + forwarding) ✅ COMPLETED
 
 **Goal:** RT correctly forwards, translates, and processes CAN frames per architecture §2.3 Categories 1–3.
 
@@ -222,7 +222,7 @@ g++ -std=c++17 -I../../shared -I../src test_rt_full.cpp -o test_rt && ./test_rt
 
 ---
 
-## Phase R7 — Implement RT CAN TX tasks
+## Phase R7 — Implement RT CAN TX tasks ✅ COMPLETED
 
 **Goal:** RT transmits all required CAN frames at correct rates on both buses.
 
@@ -259,7 +259,7 @@ g++ -std=c++17 -I../../shared -I../src test_rt_full.cpp -o test_rt && ./test_rt
 
 ---
 
-## Phase R8 — Wire RT steering + heartbeat to CAN tasks
+## Phase R8 — Wire RT steering + heartbeat to CAN tasks ✅ COMPLETED
 
 **Goal:** The steering `Listen-Before-Speaking` state machine runs and transmits `0x169`. Heartbeat transmits `0x7FD` on both buses with alive counter.
 
