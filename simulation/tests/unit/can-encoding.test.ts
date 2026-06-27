@@ -600,3 +600,45 @@ describe("30s soak — content stability", () => {
     expect(result.validationErrors.length).toBe(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+//  ESTOP TIMING — sim-verified for docs/timing-budget.md (P2+P5)
+// ═══════════════════════════════════════════════════════════════
+
+describe("ESTOP latency (simulation-verified)", () => {
+  it("0x001 appears within 20ms of trigger", () => {
+    const runner = new SimulationRunner();
+    runner.configure(cfg({
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 500, yawRateMradS: 0, gear: 1 }],
+      faults: [{ atMs: 2000, type: "triggerEstop" }],
+    }));
+    const result = runner.runDuration(2500);
+    const estopFrames = runner.capturedFrames.filter(f => f.canId === "0x001" && f.simTimeMs >= 2000);
+    expect(estopFrames.length).toBeGreaterThan(0);
+    expect(estopFrames[0].simTimeMs).toBeLessThan(2010); // <10ms (budget says 10ms)
+  });
+
+  it("0x204 speed zeroed within 100ms of ESTOP", () => {
+    const runner = new SimulationRunner();
+    runner.configure(cfg({
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 500, yawRateMradS: 0, gear: 1 }],
+      faults: [{ atMs: 2000, type: "triggerEstop" }],
+    }));
+    runner.runDuration(2500);
+    const driveFrames = runner.capturedFrames.filter(f => f.canId === "0x204" && f.simTimeMs >= 2100 && f.simTimeMs < 2150);
+    driveFrames.forEach(f => {
+      const speed = (f.data[0] << 24) | (f.data[1] << 16) | (f.data[2] << 8) | f.data[3];
+      expect(speed).toBe(0);
+    });
+  });
+
+  it("vehicle fully stopped within 2s of ESTOP", () => {
+    const runner = new SimulationRunner();
+    runner.configure(cfg({
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 500, yawRateMradS: 0, gear: 1 }],
+      faults: [{ atMs: 2000, type: "triggerEstop" }],
+    }));
+    const result = runner.runDuration(4000);
+    expect(result.plantFinalSpeedMmps).toBe(0);
+  });
+});
