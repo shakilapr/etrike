@@ -134,8 +134,8 @@ static void monitor_can_bus_off() {
                 ESP_LOGE(TAG, "Low CAN bus-off persistent - triggering ESTOP");
                 if (can_send_estop()) {
                     can::Frame ef{}; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    xQueueSend(g_gw_tx_low_q, &ef, portMAX_DELAY);
-                    xQueueSend(g_gw_tx_high_q, &ef, portMAX_DELAY);
+                    xQueueSend(g_gw_tx_low_q, &ef, 0);
+                    xQueueSend(g_gw_tx_high_q, &ef, 0);
                 }
             }
             if (drv) drv->init();  // attempt recovery
@@ -144,8 +144,17 @@ static void monitor_can_bus_off() {
         }
     }
 
-    // High bus (MCP2515)
+    // High bus (MCP2515) — interrupt-driven + polled fallback
     {
+        // Fast path: bus-off detected by interrupt (ERRIF handler in receive())
+        if (g_can_high.bus_off()) {
+            g_can_high.clear_bus_off();
+            ESP_LOGE(TAG, "High CAN bus-off (interrupt) — reinitializing");
+            bus_off_count_high++;
+            g_can_high.init();
+        }
+
+        // Slow path: polled TEC for error-warning and as fallback
         uint8_t tec = 0, rec = 0;
         g_can_high.get_error_counters(tec, rec);
         if (tec > 128)
