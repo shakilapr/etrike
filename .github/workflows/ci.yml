@@ -10,6 +10,7 @@ jobs:
           python-version: '3.11'
       - run: pip install canmatrix pydantic
       - run: cd shared/can && python generate_all_dbc.py --check --smoke
+      - run: cd shared/can && python generate_code.py --verify
 
   simulation:
     runs-on: ubuntu-latest
