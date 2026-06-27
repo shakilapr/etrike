@@ -148,7 +148,7 @@ protocols:
         sender: RT
         receivers: [Host]
         cycle_ms: 100
-        comment: "RT state report to Host and SYS. SYS monitors safety_state for RT health."
+        comment: "RT state report to Host (high bus) and SYS (low bus). SYS monitors safety_state for takeover detection and RT health."
         signals:
           - {name: RT_Mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2, unit: enum,
              values: {0: Manual, 1: Auto, 2: ESTOP}}

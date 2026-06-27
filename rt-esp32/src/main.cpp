@@ -495,6 +495,9 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                 rpt_fail_warned = true;
             }
         }
+        // Also send on low bus so SYS can read RT safety_state for takeover detection
+        auto* drv_low = rt::can_low_driver();
+        if (drv_low) drv_low->send(fr);
 
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
