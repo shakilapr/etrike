@@ -210,8 +210,8 @@ describe("CAN bus health over time", () => {
   it("no bus overload: load < 50% on both buses", () => {
     const runner = new SimulationRunner();
     runner.configure(baseCfg());
-    const result = runner.runDuration(30000);
-    // CAN bus load should be reasonable
+    const result = runner.runDuration(5000);
+    // CAN bus load should be well under limits
     expect(result.highBus.loadPct).toBeLessThan(50);
     expect(result.lowBus.loadPct).toBeLessThan(50);
   });

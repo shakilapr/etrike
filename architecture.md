@@ -677,7 +677,7 @@ internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
 |-----------|-------------|
 | **Software hard-stops** | Clamp commanded angle to ±40° (inside physical end-stops). Reject any Jetson command exceeding this regardless of unit's ±78° capability. |
 | **Dynamic angle clamp** | Max allowable angle inversely proportional to `RT_PidMeasured` speed. At 25 km/h → max ~5°. At 2 km/h → max ~40°. Prevents rollover. |
-| **Following error** | Compare commanded angle (`0x169`) vs actual (`SES_StrAngle` from `0x201`). If abs(error) > 5° for > 300 ms → trigger ESTOP (stuck linkage / rock jam). |
+| **Following error** | Compare commanded angle (`0x169`) vs actual (`SES_StrAngle` from `0x201`). If abs(error) > max(2°, 0.25×dynamic_limit) for > 300 ms → trigger ESTOP (stuck linkage / rock jam). (v0.0.5: was fixed 5°, now dynamic threshold.) |
 | **Timeout fault** | If `0x169` stops for >20 ms, EPS-C triggers internal comm fault. RT must maintain 50 Hz in AUTO. |
 | **Alignment check** | `SES_INF_Angle_Status` must be 1 before AUTO mode engages. Drive motor locked out until aligned. |
 

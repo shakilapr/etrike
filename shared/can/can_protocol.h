@@ -230,7 +230,7 @@ struct VcuSesReq {
     // Byte5 also contains security bits (b40-47) — overlaid in pack()
     uint8_t  roll_cnt_enable  : 1;   // Byte5,b40
     uint8_t  checksum_enable  : 1;   // Byte5,b41
-    uint8_t  reserved_2       : 2;   // Byte5,b42-43
+    uint8_t  speed_bits_9_8   : 2;   // Byte5,b42-43 (target_speed[9:8], overlaps with security bits)
     uint8_t  rolling_counter  : 4;   // Byte5,b44-47, 0-15
     uint8_t  vehicle_speed       = 0; // Byte6, u8, 0-255 km/h
     uint8_t  checksum           = 0; // Byte7, XOR(bytes[0..6]) ^ 0xFF

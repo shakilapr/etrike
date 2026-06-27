@@ -19,7 +19,7 @@ constexpr int kMaxSpeedRevMmps = 500;
 constexpr int kLowSpeedThreshMmps = 50;
 
 // Safety timeouts
-constexpr int kCmdStaleTimeoutMs = 500;
+constexpr int kHostCmdStaleTimeoutMs = 500;  // RT watchdog for Host drive commands (0x300)
 constexpr int kHeartbeatTimeoutMsHost = 1500;
 constexpr int kStartupGracePeriodMs = 3000;
 

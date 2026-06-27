@@ -62,6 +62,12 @@ public:
     CanDriver& operator=(const CanDriver&) = delete;
 
     bool init() {
+        // Re-init safety: uninstall previous driver if already initialized
+        if (m_initialized) {
+            twai_stop();
+            twai_driver_uninstall();
+            m_initialized = false;
+        }
         twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT_V2(0,
             static_cast<gpio_num_t>(m_config.tx_gpio),
             static_cast<gpio_num_t>(m_config.rx_gpio),
@@ -108,7 +114,7 @@ public:
         tx.extd             = frame.extended ? 1 : 0;
         tx.data_length_code = frame.dlc;
         tx.self             = 0;
-        tx.ss               = 1;
+        tx.ss               = 0;
         for (int i = 0; i < frame.dlc && i < 8; ++i)
             tx.data[i] = frame.data[i];
         return twai_transmit(&tx, pdMS_TO_TICKS(timeout_ms)) == ESP_OK;
@@ -121,7 +127,7 @@ public:
         tx.extd             = frame.extended ? 1 : 0;
         tx.data_length_code = frame.dlc;
         tx.self             = 0;
-        tx.ss               = 1;
+        tx.ss               = 0;
         for (int i = 0; i < frame.dlc && i < 8; ++i)
             tx.data[i] = frame.data[i];
         return twai_transmit(&tx, pdMS_TO_TICKS(timeout_ms)) == ESP_OK;

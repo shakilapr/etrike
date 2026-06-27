@@ -75,9 +75,12 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     if (fr.id == can::kIdSafetyEstop) {
         ctx.gw_lo = fr;
         ctx.gw_hi = fr;
-        // Enqueue ESTOP event (not atomic — queue guarantees delivery)
+        // Enqueue ESTOP event with 10ms timeout (blocking — safety critical)
         rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
-        xQueueSend(g_safety_evt_q, &evt, 0);
+        if (xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
+            // Queue full — overwrite latest ESTOP to avoid loss
+            xQueueOverwrite(g_safety_evt_q, &evt);
+        }
     }
     if (fr.id == can::kIdSyntreeEpsStatus) {
         g_ses_angle_raw.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
