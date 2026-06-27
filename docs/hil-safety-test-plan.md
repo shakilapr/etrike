@@ -11,7 +11,7 @@ Each scenario specifies concrete CAN IDs, payload values, timing tolerances, and
 - CAN protocol: `shared/can/can_protocol.h`, `shared/can/can_signals.yaml`
 - RT config: `rt-esp32/src/config.h`
 - SYS config: `sys-esp32/src/config.h` (constants in `architecture.md` section 8.9)
-- Emergency safety analysis: `docs/emergency-safety-analysis.md`
+- Emergency safety analysis: `issues/emergency-safety-analysis.md`
 
 **Equipment pool (shared across tiers):**
 - CAN bus analyzer / USB-CAN adapter (e.g., CANalyst-II, PCAN-USB)

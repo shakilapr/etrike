@@ -34,7 +34,7 @@ spi_device_handle_t g_spi_handle = nullptr;
 
 // ── ISR notification infrastructure ──────────────────────────────
 // The GPIO ISR on the MCP2515 INT pin (GPIO 40) notifies the RX
-// task when a CAN frame is available. See docs/latency-issues.md §3.
+// task when a CAN frame is available. See issues/latency-issues.md §3.
 // Task handle is set on first receive() call; null-guarded in ISR
 // for the cold-boot window between init() and task creation.
 static TaskHandle_t g_rx_task_handle = nullptr;
