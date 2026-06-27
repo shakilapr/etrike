@@ -464,6 +464,32 @@ The MTR STM32 is the EGAS Level 1 Function Controller — the only node with dir
 
 **What MTR controls:** Motor controller throttle via MCP4725 DAC (0–5V analog — the only non-CAN actuator in the system), motor gear via relay module (72V D/S/R lines to ECU). Speed control is open-loop; PID closure deferred until rear encoder fitted (gap #5).
 
+### 6.1.2 Startup Grace Period — Hardware Safety Guarantees
+
+A 3000ms startup grace period suppresses software safety checks (heartbeat
+timeout, steering following-error, obstacle ESTOP) on RT and SYS during boot.
+The vehicle relies on hardware defaults during this window:
+
+| Component | Power-up State | Safety Guarantee |
+|-----------|---------------|-----------------|
+| MCP4725 DAC | Output = 0V (PD=1, 1kΩ pulldown per datasheet) | Motor controller sees 0V = zero throttle |
+| Gear relays | GPIOs default to input/floating during MCU reset | Relay module requires active HIGH drive — floating = all relays OFF = neutral |
+| EPS-C (steering) | Internal boot delay ~2s, then enters centering | Does not accept commands until internally aligned |
+| SEB (brake) | Internal boot delay ~2s, then reports status | Does not actuate until commanded |
+| TPS3850 watchdog | Enabled at power-on, 100ms window | Resets MCU if control loop fails during grace |
+| ESTOP button | Hardwired NC to both SYS and MTR GPIOs | Works immediately — no software dependency |
+
+**Hazard analysis:** If the vehicle is powered on while moving, no software
+safety checks run for 3 seconds. The rider must hold the brake lever. Hardware
+defaults (DAC=0V, relays=OFF) prevent unintended acceleration but do NOT
+actively brake. The EPS-C centering sequence may briefly move the steering
+wheel. These are acceptable for a prototype where the vehicle is always
+stationary at power-on.
+
+**Production hardening:** Add a "vehicle stationary" check before grace
+expires — speed must be <50 mm/s from 0x120 for >500ms. If not stationary
+after 3s, extend grace and log warning.
+
 ### 6.2 Mode-Gated Dual Control (Option D) — SYNTREE Actuators
 
 The EPS-C and SEB are commanded by different nodes depending on mode. Four options were evaluated (see §6.3). Option D was selected:
