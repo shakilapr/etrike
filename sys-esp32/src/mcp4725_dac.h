@@ -19,14 +19,28 @@ public:
         cfg.sda_pullup_en = GPIO_PULLUP_ENABLE;
         cfg.scl_pullup_en = GPIO_PULLUP_ENABLE;
         cfg.master.clk_speed = 100000;  // 100 kHz standard mode
-        ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &cfg));
-        ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
+        esp_err_t err = i2c_param_config(I2C_NUM_0, &cfg);
+        if (err != ESP_OK) {
+            ESP_LOGW("mcp4725", "I2C param config failed: %s — DAC disabled", esp_err_to_name(err));
+            m_initialized = false;
+            return;
+        }
+        err = i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0);
+        if (err != ESP_OK) {
+            ESP_LOGW("mcp4725", "I2C driver install failed: %s — DAC disabled", esp_err_to_name(err));
+            m_initialized = false;
+            return;
+        }
         m_value = 0;
         m_mismatch_count = 0;
+        m_initialized = true;
     }
+
+    bool is_initialized() const { return m_initialized; }
 
     // Write 12-bit value (0-4095) to DAC output. Returns true on ACK.
     bool write(uint16_t val) {
+        if (!m_initialized) return false;
         val = (val > 4095) ? 4095 : val;
         m_value = val;
 
@@ -79,6 +93,7 @@ public:
 private:
     uint16_t m_value = 0;
     int m_mismatch_count = 0;
+    bool m_initialized = false;
 };
 
 }  // namespace sys

@@ -750,19 +750,19 @@ extern "C" void app_main() {
 
     // 4. Create tasks (priority, stack from architecture.md §8.7)
     xTaskCreate(task_can_rx,    "can_rx",    4096, nullptr, 5, &h_can_rx);
-    xTaskCreate(task_safety,    "safety",    2048, nullptr, 5, &h_safety);
+    xTaskCreate(task_safety,    "safety",    4096, nullptr, 5, &h_safety);
     xTaskCreate(task_dispatch,  "dispatch",  3072, nullptr, 4, &h_dispatch);
     xTaskCreate(task_mode,      "mode",      2048, nullptr, 4, &h_mode);
-    xTaskCreate(task_motor,     "motor",     2048, nullptr, 4, &h_motor);
+    xTaskCreate(task_motor,     "motor",     3072, nullptr, 4, &h_motor);
     xTaskCreate(task_gear,      "gear",      1536, nullptr, 3, &h_gear);
     xTaskCreate(task_throttle,  "throttle",  1536, nullptr, 3, &h_throttle);
-    xTaskCreate(task_brake,     "brake",     2048, nullptr, 3, &h_brake);
-    xTaskCreate(task_lights,    "lights",    1536, nullptr, 3, &h_lights);
-    xTaskCreate(task_dcdc,      "dcdc",      1024, nullptr, 3, &h_dcdc);
-    xTaskCreate(task_indicator, "indicator", 1024, nullptr, 2, &h_indicator);
-    xTaskCreate(task_power,     "power",     1024, nullptr, 2, &h_power);
+    xTaskCreate(task_brake,     "brake",     3072, nullptr, 3, &h_brake);
+    xTaskCreate(task_lights,    "lights",    2048, nullptr, 3, &h_lights);
+    xTaskCreate(task_dcdc,      "dcdc",      2048, nullptr, 3, &h_dcdc);
+    xTaskCreate(task_indicator, "indicator", 2048, nullptr, 2, &h_indicator);
+    xTaskCreate(task_power,     "power",     2048, nullptr, 2, &h_power);
     xTaskCreate(task_can_tx,    "can_tx",    3072, nullptr, 2, &h_can_tx);
-    xTaskCreate(task_diag,      "diag",      2048, nullptr, 1, &h_diag);
+    xTaskCreate(task_diag,      "diag",      3072, nullptr, 1, &h_diag);
     xTaskCreate(task_hb,        "hb",        2048, nullptr, 1, &h_hb);
 
     ESP_LOGI(TAG, "Ready — 15 tasks running. Mode=%s", g_mode_mgr.name());
