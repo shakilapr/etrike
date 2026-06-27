@@ -72,17 +72,22 @@ export class DebugStore {
   insertFrame(frame: CanFrame): StoredCanFrame {
     const tsReal = Date.now() / 1000;
     const tsDevice = Math.round(frame.ts);
-    const result = this.db
-      .prepare(
-        `INSERT INTO can_frames (ts_real, ts_device, bus, can_id, can_name, dlc, data, decoded)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(tsReal, tsDevice, frame.bus, frame.id, frame.name, frame.dlc, Buffer.from(frame.data.slice(0, frame.dlc)), JSON.stringify(frame.decoded));
+    try {
+      const result = this.db
+        .prepare(
+          `INSERT INTO can_frames (ts_real, ts_device, bus, can_id, can_name, dlc, data, decoded)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(tsReal, tsDevice, frame.bus, frame.id, frame.name, frame.dlc, Buffer.from(frame.data.slice(0, frame.dlc)), JSON.stringify(frame.decoded));
 
-    const rowId = Number(result.lastInsertRowid);
-    this.attachToActiveRecordings(rowId);
-    this.pruneFrames();
-    return { ...frame, row_id: rowId, ts_real: tsReal, ts_device: tsDevice };
+      const rowId = Number(result.lastInsertRowid);
+      this.attachToActiveRecordings(rowId);
+      this.pruneFrames();
+      return { ...frame, row_id: rowId, ts_real: tsReal, ts_device: tsDevice };
+    } catch (err) {
+      console.error("insertFrame failed:", String(err));
+      return { ...frame, row_id: -1, ts_real: tsReal, ts_device: tsDevice };
+    }
   }
 
   queryFrames(query: FrameQuery = {}): StoredCanFrame[] {
@@ -225,6 +230,10 @@ export class DebugStore {
         deleteFrame.run(row.id);
       }
     })();
+  }
+
+  clearFrames(): void {
+    this.db.exec("DELETE FROM can_frames; DELETE FROM recording_frames;");
   }
 }
 
