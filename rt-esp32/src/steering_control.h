@@ -1,4 +1,11 @@
 #pragma once
+// SteeringControl — SYNTREE EPS-C command generation (0x169 VCU_SES_REQ).
+//
+// TASK OWNERSHIP: This class is owned by t_control (prio 4). All mutation
+// (tick, start_estop, exit_estop, set_target, reset) must happen from
+// t_control only. t_watchdog and t_can_tx_low may READ state() but must
+// NOT mutate. This is enforced by convention, not by mutex — adding a
+// mutex would risk priority inversion (p1 watchdog blocks p4 control).
 #include <cstdint>
 #include <algorithm>
 #include <cmath>
