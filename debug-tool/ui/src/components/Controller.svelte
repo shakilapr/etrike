@@ -88,17 +88,17 @@
         ? { speed_mmps: speed, yaw_rate_mrad_s: yaw, gear }
         : { motor_speed_mmps: speed, gear };
     const enc = encodePayload(selectedBus, driveId, vals);
-    sendFrame({ bus: selectedBus, id: driveId, dlc: enc.dlc, data: enc.data }).catch(() => {});
+    sendFrame({ bus: selectedBus, id: driveId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Drive send failed: ${String(e)}`; });
   }
 
   function sendSteerFrame() {
     const enc = encodePayload("low", steerId, { target_angle: yaw });
-    sendFrame({ bus: "low", id: steerId, dlc: enc.dlc, data: enc.data }).catch(() => {});
+    sendFrame({ bus: "low", id: steerId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
   }
 
   function sendBrakeFrame() {
     const enc = encodePayload(selectedBus, brakeId, { brake_pressure_kpa: brake });
-    sendFrame({ bus: selectedBus, id: brakeId, dlc: enc.dlc, data: enc.data }).catch(() => {});
+    sendFrame({ bus: selectedBus, id: brakeId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
   }
 
   async function sendEstopFrame(bus: Bus) {
@@ -143,9 +143,9 @@
     const lowEnc = encodePayload("low", "0x204", valsLow);
     const steerEnc = encodePayload("low", "0x169", valsSteer);
 
-    sendFrame({ bus: "high", id: "0x300", dlc: highEnc.dlc, data: highEnc.data }).catch(() => {});
-    sendFrame({ bus: "low", id: "0x204", dlc: lowEnc.dlc, data: lowEnc.data }).catch(() => {});
-    sendFrame({ bus: "low", id: "0x169", dlc: steerEnc.dlc, data: steerEnc.data }).catch(() => {});
+    sendFrame({ bus: "high", id: "0x300", dlc: highEnc.dlc, data: highEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    sendFrame({ bus: "low", id: "0x204", dlc: lowEnc.dlc, data: lowEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    sendFrame({ bus: "low", id: "0x169", dlc: steerEnc.dlc, data: steerEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
   }
 
   function chooseBus(bus: Bus) {

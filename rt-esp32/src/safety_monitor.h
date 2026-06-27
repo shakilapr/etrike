@@ -114,8 +114,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     }
 
     // 5. Steering following-error check (arch §7.6, fix #5)
+    static int steer_follow_err_ticks = 0;
     if (!r.zero_setpoints && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
-        static int steer_follow_err_ticks = 0;
         int16_t cmd_raw    = g_last_cmd_angle_raw.load();
         int16_t actual_raw = g_ses_angle_raw.load();
         if (actual_raw != INT16_MIN) {
@@ -136,6 +136,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
                 steer_follow_err_ticks = 0;
             }
         }
+    } else {
+        steer_follow_err_ticks = 0;  // Reset on state transitions (e.g., ESTOP → recovery)
     }
 
     // 6. Obstacle-triggered ESTOP detection (arch §7.6, gap #9)

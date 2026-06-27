@@ -359,7 +359,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             // Only block in MANUAL — EPS-C runs standalone, RT must not command.
             if (g_mode_current.load() != uint8_t(can::Mode::Manual)) {
                 can::VcuSesReq ses;
-                uint32_t now_ms = esp_timer_get_time() / 1000;
+                int64_t now_ms = esp_timer_get_time() / 1000;
                 if (g_steering.tick(g_ses_angle_raw.load(), g_ses_angle_status.load(),
                                     now_ms, ses)) {
                     ses.to_frame(fr); drv->send(fr);
