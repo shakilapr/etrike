@@ -83,6 +83,10 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
     if (fr.id == can::kIdSyntreeEpsStatus) {
+        // SYNTREE checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
+        uint8_t cksum = 0;
+        for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
+        if (fr.dlc < 8 || (cksum ^ 0xFF) != fr.data[7]) break;  // corrupt — drop
         g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
         g_ses_angle_status.store(ctx.steer_angle_status);
         g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
@@ -133,7 +137,10 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
     if (fr.id == can::kIdSyntreeSebStatus && !from_high) {
-        g_seb_pressure_raw.store(fr.data[3]);
+        // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
+        // In Stroke mode it's Stroke[15:8] — not pressure data.
+        uint8_t seb_mode = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure
+        g_seb_pressure_raw.store(seb_mode == 1 ? fr.data[3] : 0);
         g_seb_error_status.store((fr.data[0] >> 6) & 0x03);
     }
     // Track reception flags (fix #3: 0=Manual/0=release are valid values)
