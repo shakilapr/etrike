@@ -441,10 +441,16 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             // NOTE: SYS MUST gate its own 0x7B9 on mode (stop sending in AUTO).
             // Uses Pressure Mode for kPa-based braking, Stroke Mode when no brake.
             // Only active when NOT in SEB takeover (takeover has priority).
+            auto ss = g_steering.state();
             if (!seb_takeover
                 && g_mode_current.load() == uint8_t(can::Mode::Auto)
-                && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
-                send_seb_req(*drv, fr, make_seb_auto_req(g_brake_kpa_to_send.load()), seb_roll);
+                && (ss == rt::SteerState::STEER_ACTIVE
+                    || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
+                    || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT
+                    || ss == rt::SteerState::STEER_FAULT)) {
+                int32_t brake = g_brake_kpa_to_send.load();
+                if (ss != rt::SteerState::STEER_ACTIVE) brake = 0;  // no brake when steering degraded
+                send_seb_req(*drv, fr, make_seb_auto_req(brake), seb_roll);
             }
         }
 

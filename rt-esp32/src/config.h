@@ -14,7 +14,7 @@ namespace rt {
 constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
 constexpr float kSteerFollowingErrFactor=  0.25f;   // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs    =   300;    // must persist
-constexpr int   kSteerCmdRateHz         =    50;    // SYNTREE 20 ms period
+constexpr int   kSteerCmdRateHz         =   100;    // SYNTREE 10 ms period (was 50Hz — 20ms margin too tight with ±5ms TX jitter)
 constexpr int   kSteerBootWaitMs        =   500;
 // Dynamic angle clamp: limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
 constexpr float kAngleClampBaseDeg      =  40.0f;   // max at 2 km/h
