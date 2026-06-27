@@ -158,8 +158,9 @@ export class RtEcu implements SimulatedEcu {
 
     let shouldEstop = ctx.estopActive || cmdStale || sysHbTimeout;
 
-    // ── Kinematics (100 Hz) ─────────────────────────────────
+    // ── Kinematics (100 Hz) — MANUAL mode: RT does not command actuators
     if (nowMs % 10 === 0) {
+      if (ctx.mode !== "manual") {  // gate: RT actuator commands only in AUTO/ESTOP
       const cmd = shouldEstop || ctx.mode !== "auto" || hostHbTimeout
         ? { speedMmps: 0, yawRateMradS: 0, gear: 0 }
         : this.hostDriveCmd;
@@ -207,6 +208,7 @@ export class RtEcu implements SimulatedEcu {
           this.steerFollowErrTicks = 0;
         }
       }
+      } // ctx.mode !== "manual" gate
     }
 
     // ── Brake command (50 Hz) ───────────────────────────────
@@ -327,13 +329,17 @@ export class RtEcu implements SimulatedEcu {
     // ── RT_STATE_RPT 0x210 on high bus (10 Hz) ──────────────
     if (nowMs % 100 === 0) {
       const modeByte = ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0;
+      // safety_state: 0=Normal, 1=InternalEstop, 2=Fault
+      const ss = this.steering.getState();
+      const safetyState = ss === SteerState.ACTIVE ? 0 :
+                          ss === SteerState.FAULT ? 2 : 1;
       out.push({
         simTimeMs: nowMs,
         bus: "high",
         canId: "0x210",
         name: "RT_STATE_RPT",
         dlc: 4,
-        data: [modeByte, this.kinematics.getDynamicLimit(this.lastSpeedMmps) > 5 ? 1 : 0, 0, 0],
+        data: [modeByte, safetyState, 0, 0],
         sender: "rt",
       });
 

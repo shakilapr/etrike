@@ -148,11 +148,13 @@ protocols:
         sender: RT
         receivers: [Host]
         cycle_ms: 100
-        comment: "RT state report to Host. High bus only."
+        comment: "RT state report to Host and SYS. SYS monitors safety_state for RT health."
         signals:
           - {name: RT_Mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2, unit: enum,
              values: {0: Manual, 1: Auto, 2: ESTOP}}
-          - {name: RT_SteerValid, byte: 1, bit_offset: 0, size: 8, min: 0, max: 1}
+          - {name: RT_SafetyState, byte: 1, bit_offset: 0, size: 2, min: 0, max: 2, unit: enum,
+             values: {0: Normal, 1: InternalEstop, 2: Fault},
+             comment: "RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault"}
           - {name: RT_Reversing, byte: 2, bit_offset: 0, size: 8, min: 0, max: 1}
           - {name: RT_RxOverflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "MCP2515 RX overflow counter — telemetry for CAN bus health monitoring"}
