@@ -187,6 +187,14 @@ export class SysEcu implements SimulatedEcu {
     }
 
     // ── 0x7FE SYS_HEARTBEAT (10 Hz) ─────────────────────────────
+    // ── 0x012 SYS_DCDC_CMD (5 Hz) ────────────────────────────────
+    if (nowMs % 200 === 0) {
+      out.push({
+        simTimeMs: nowMs, bus: "low", canId: "0x012", name: "SYS_DCDC_CMD",
+        dlc: 1, data: [1], sender: "sys",  // enable=1: keep 12V rail alive
+      });
+    }
+
     if (nowMs % 100 === 0) {
       this.sysHbCtr = (this.sysHbCtr + 1) & 0xFF;
       out.push({

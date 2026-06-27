@@ -62,7 +62,11 @@ static sys::IndicatorControl g_indicator;
 static sys::WdtToggle      g_wdt;
 static sys::Diagnostics    g_diag;
 
-// Shared state (written by dispatch, read by actuators)
+// Shared state (written by dispatch, read by actuators).
+// Uses memory_order_relaxed throughout: each variable has exactly one
+// writer (dispatch task) and one reader (motor/safety task). No ordering
+// needed between variables — each is independently self-consistent.
+// seq_cst would add ~20ns per access with no safety benefit here.
 static std::atomic<int32_t>  g_setpoint_speed_mmps{0};
 static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
@@ -115,7 +119,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     can::Frame fr;
     while (1) {
         if (g_can.receive(fr, 100)) {
-            xQueueSend(g_can_rx_queue, &fr, 0);  // non-blocking drop-if-full
+            if (xQueueSend(g_can_rx_queue, &fr, 0) != pdTRUE) {
+                static uint32_t rx_overflow_count = 0;
+                rx_overflow_count++;
+                if (rx_overflow_count == 1) ESP_LOGW(TAG, "CAN RX queue overflow — frames dropped");
+            }
         }
     }
 }
@@ -370,8 +378,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 && (xTaskGetTickCount() - last_trig) >= pdMS_TO_TICKS(sys::kMtrEstopAckTimeoutMs)) {
                 uint8_t flags = g_motor_fault_flags.load(std::memory_order_relaxed);
                 if (!(flags & shared::kMtrFaultEstopActive)) {
-                    ESP_LOGE(TAG, "MTR ESTOP ACK timeout: no ESTOP_ACTIVE in 0x206 within %dms",
-                             sys::kMtrEstopAckTimeoutMs);
+                    ESP_LOGE(TAG, "MTR ESTOP ACK timeout — retriggering ESTOP");
+                    g_mode_mgr.force_estop();
+                    if (can_send_estop()) {
+                        can::Frame ef{}; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
+                        send_can(ef, "ESTOP");
+                    }
+                    g_brake_fault_active.store(true, std::memory_order_relaxed);
                 }
                 g_last_estop_trigger_tick.store(0, std::memory_order_relaxed);  // reset
             }
@@ -384,13 +397,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
             if (last_fbk > 0
                 && (xTaskGetTickCount() - last_fbk) >= pdMS_TO_TICKS(sys::kMtrFbkStaleMs)) {
-                static TickType_t last_mtr_stale_warn = 0;
-                if (last_mtr_stale_warn == 0
-                    || (xTaskGetTickCount() - last_mtr_stale_warn) >= pdMS_TO_TICKS(1000)) {
-                    ESP_LOGW(TAG, "0x206 MTR_MOTOR_FBK stale — %lu ms since last frame",
-                             (unsigned long)((xTaskGetTickCount() - last_fbk) * portTICK_PERIOD_MS));
-                    last_mtr_stale_warn = xTaskGetTickCount();
-                }
+                ESP_LOGE(TAG, "0x206 MTR_MOTOR_FBK stale — zeroing speed + neutral");
+                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+                g_setpoint_gear.store(0, std::memory_order_relaxed);
+                g_brake_fault_active.store(true, std::memory_order_relaxed);
             }
         }
 
@@ -438,18 +448,16 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             startup_grace = false;
 
         can::Mode mode = g_mode_mgr.mode();
+        TickType_t now = xTaskGetTickCount();
 
+#ifdef SYS_OWNS_MOTOR
+        // ── SYS owns motor: direct DAC + gear actuation ──────────
         if (mode == can::Mode::Estop) {
             g_dac.write(0);   // MCP4725 = 0V
         } else if (mode == can::Mode::Manual) {
-            // Pass-through: ADC → DAC
             g_throttle.poll();
             g_dac.set_speed_mmps(g_throttle.read_mmps());
         } else {
-            // AUTO: CAN setpoint → DAC with staleness check
-            // Architecture §8.6: if 0x204 stale >200ms → zero speed + neutral
-            // Gap #16: masked during startup grace to avoid false trigger
-            TickType_t now = xTaskGetTickCount();
             TickType_t last_sp = g_last_setpoint_tick.load(std::memory_order_relaxed);
             if (!startup_grace && last_sp != 0
                 && (now - last_sp) >= pdMS_TO_TICKS(sys::kSetpointStaleMs)) {
@@ -459,6 +467,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             int32_t speed = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
             g_dac.set_speed_mmps(speed);
         }
+#else
+        // ── MTR owns motor: EGAS L2 monitoring only ─────────────
+        // SYS does NOT write the DAC or drive gear relays.
+        // Monitors 0x204 setpoint vs 0x206 actual on CAN.
+        if (mode == can::Mode::Auto) {
+            int32_t cmd    = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
+            int32_t actual = g_actual_speed_mmps.load(std::memory_order_relaxed);
+            if (g_safety.check_egas_l2(now, cmd, actual)) {
+                ESP_LOGE(TAG, "EGAS L2: speed mismatch cmd=%ld actual=%ld — ESTOP",
+                         (long)cmd, (long)actual);
+                g_mode_mgr.force_estop();
+                g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
+            }
+        }
+#endif
 
         vTaskDelayUntil(&last, period);
     }
@@ -471,16 +494,29 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     while (1) {
         can::Mode mode = g_mode_mgr.mode();
-#ifdef TESTING
+#ifdef SYS_OWNS_MOTOR
+# ifdef TESTING
         uint8_t sense = 0;
-#else
+# else
         uint8_t sense = 0;
         if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearDSense)) == 0) sense |= 0x01;
         if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearSSense)) == 0) sense |= 0x02;
         if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearRSense)) == 0) sense |= 0x04;
-#endif
+# endif
         uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
         g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs internally
+#else
+        // MTR owns motor: monitor gear mismatch via CAN
+        uint8_t reported  = g_current_gear.load(std::memory_order_relaxed);   // from 0x206
+        uint8_t commanded = g_setpoint_gear.load(std::memory_order_relaxed);  // from 0x204
+        if (reported != commanded && mode == can::Mode::Auto) {
+            static int mismatch_ticks = 0;
+            if (++mismatch_ticks > 50) {  // 500ms debounce
+                ESP_LOGE(TAG, "Gear mismatch: cmd=%d rpt=%d", commanded, reported);
+                mismatch_ticks = 0;
+            }
+        } else { mismatch_ticks = 0; }
+#endif
         vTaskDelayUntil(&last, period);
     }
 }

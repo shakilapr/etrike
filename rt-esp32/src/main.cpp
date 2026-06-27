@@ -113,10 +113,22 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 // ── Safety monitor (extracted to safety_monitor.h) ──────────────────
 #include "safety_monitor.h"
 
+// ── CAN TX helper — checks return, logs failure, counts ─────────────
+static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
+static bool send_can_low(can::Frame& fr) {
+    auto* drv = rt::can_low_driver();
+    if (!drv || !drv->send(fr)) { g_can_tx_fail_low++; return false; }
+    return true;
+}
+static bool send_can_high(can::Frame& fr) {
+    if (!g_can_high.send(fr)) { g_can_tx_fail_high++; return false; }
+    return true;
+}
+
 static void monitor_can_bus_off() {
     static int bus_check_ctr = 0;
     static int bus_off_count_low = 0, bus_off_count_high = 0;
-    if (++bus_check_ctr < 100) return;
+    if (++bus_check_ctr < 10) return;  // check at 10 Hz (was 1 Hz)
 
     bus_check_ctr = 0;
 
@@ -388,7 +400,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                     gear_out = uint8_t(can::Gear::N);
                 }
                 can::RtDriveCmd{speed_out, gear_out}.to_frame(fr);
-                drv->send(fr);
+                send_can_low(fr);
             }
         }
         if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
@@ -398,7 +410,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             uint8_t mode_now = g_mode_current.load();
             if (mode_now != uint8_t(can::Mode::Manual)) {
                 can::RtBrakeCmd{g_brake_kpa_to_send.load()}.to_frame(fr);
-                drv->send(fr);
+                send_can_low(fr);
             }
             // 0x169 VCU_SES_REQ at 50 Hz — steering state machine gates transmission.
             // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
@@ -410,7 +422,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                 int64_t now_ms = esp_timer_get_time() / 1000;
                 if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
                                     now_ms, ses)) {
-                    ses.to_frame(fr); drv->send(fr);
+                    ses.to_frame(fr); send_can_low(fr);
                 }
             }
 
@@ -440,19 +452,18 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
 }
 
 // ── CAN TX high (prio 3) ───────────────────────────────────────────
+// Gateway frames are drained at 100 Hz (10ms inner loop) while
+// periodic telemetry is produced at 10 Hz (100ms outer loop).
 [[noreturn]] static void t_can_tx_high(void*) {
     can::Frame gw;
-    can::Frame fr;   // temp frame for telemetry
-    TickType_t last = xTaskGetTickCount();
+    can::Frame fr;
     while (1) {
-        while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE) {
-            if (!g_can_high.send(gw)) {
-                static bool gw_fail_warned = false;
-                if (!gw_fail_warned) {
-                    ESP_LOGW(TAG, "MCP2515 high-bus GW send failed (ID=0x%03lX)", gw.id);
-                    gw_fail_warned = true;
-                }
+        // Drain gateway queue every 10ms (100 Hz) — was 100ms
+        for (int i = 0; i < 10; i++) {
+            while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE) {
+                send_can_high(gw);
             }
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
 
         // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4, fix #1)
@@ -492,7 +503,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ×0.78125
             uint16_t ecu_tmp  = uint16_t(g_seb_ecu_temp_c.load() * 5 - 400);           // SEB: factor 0.5 offset -40 → BRAKE_DIAG: factor 0.1 offset 0
             can::BrakeDiag{seb_pressure, seb_fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
-            g_can_high.send(fr);
+            send_can_high(fr);
         }
 
         // 0x220 RT_PID_RPT — 10 Hz (shadow PID telemetry, arch §7.6, gap #5)
@@ -502,10 +513,9 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             int16_t measured = g_mtr_actual_speed_mmps.load();
             int16_t pid      = g_pid_output_mmps.load();
             can::RtPidRpt{setpoint, measured, pid}.to_frame(fr);
-            g_can_high.send(fr);
+            send_can_high(fr);
         }
 
-        vTaskDelayUntil(&last, pdMS_TO_TICKS(100));
     }
 }
 
@@ -530,7 +540,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
     while (1) {
         g_heartbeat.tick_low(fr);
         auto* drv = rt::can_low_driver();
-        if (drv) drv->send(fr);
+        if (drv) send_can_low(fr);
         g_heartbeat.tick_high(fr);
         if (!g_can_high.send(fr)) {
             static bool hb_fail = false;

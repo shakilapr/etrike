@@ -251,6 +251,7 @@ struct RtDriveCmd {
     uint8_t gear             = 0;   // Gear enum
 
     static RtDriveCmd from_frame(const Frame& f) {
+        if (f.dlc < 5) return {};  // corrupt frame → safe default (zero speed, N gear)
         return { f.i32_at(0), f.u8_at(4) };
     }
     void to_frame(Frame& f) const {
@@ -273,6 +274,7 @@ struct MtrMotorFbk {
         f.put_u8(3, fault_flags);
     }
     static MtrMotorFbk from_frame(const Frame& f) {
+        if (f.dlc < 4) return {};  // corrupt → safe default
         return {f.i16_at(0), f.u8_at(2), f.u8_at(3)};
     }
 };
@@ -281,7 +283,10 @@ struct MtrMotorFbk {
 struct RtBrakeCmd {
     int32_t brake_pressure_kpa = 0;  // 0 = release
 
-    static RtBrakeCmd from_frame(const Frame& f) { return { f.i32_at(0) }; }
+    static RtBrakeCmd from_frame(const Frame& f) {
+        if (f.dlc < 4) return {};  // corrupt → zero brake
+        return { f.i32_at(0) };
+    }
     void to_frame(Frame& f) const {
         f.id = kIdRtBrakeCmd; f.dlc = 4;
         f.put_i32(0, brake_pressure_kpa);
@@ -419,7 +424,7 @@ struct HostDriveCmd {
     uint8_t gear            = 0;   // Gear enum (N=0,D=1,S=2,R=3)
 
     static HostDriveCmd from_frame(const Frame& f) {
-        // Decode i24 big-endian from bytes 4-6, then sign-extend to i32
+        if (f.dlc < 8) return {};  // corrupt → safe default
         int32_t yaw = (int32_t(f.u8_at(4)) << 16)
                     | (int32_t(f.u8_at(5)) << 8)
                     |  int32_t(f.u8_at(6));
@@ -441,7 +446,10 @@ struct HostDriveCmd {
 struct HostBrakeReq {
     int32_t brake_pressure_kpa = 0;
 
-    static HostBrakeReq from_frame(const Frame& f) { return { f.i32_at(0) }; }
+    static HostBrakeReq from_frame(const Frame& f) {
+        if (f.dlc < 4) return {};  // corrupt → zero brake
+        return { f.i32_at(0) };
+    }
     void to_frame(Frame& f) const {
         f.id = kIdHostBrakeReq; f.dlc = 4;
         f.put_i32(0, brake_pressure_kpa);
