@@ -955,6 +955,30 @@ hardware simplicity). In production these would be separate MCUs:
 | **12V accessory relay** | GPIO27. Cuts headlight, turn signals, mode bulbs during ESTOP. Brake light is on always-on DC-DC rail — not through this relay. | Prio 2 |
 | **Diagnostics** | 0x600 SYS_DIAG_RPT at 1 Hz: mode, brake state, heartbeat, ESTOP, free heap, TEC/REC | Prio 1 |
 
+#### Ignition — dual-path (hardware + CAN)
+
+Vehicle power state is controlled by SYS through two redundant paths, following
+the same principle as ESTOP:
+
+| Path | Mechanism | Action |
+|------|-----------|--------|
+| **Hardware** | Ignition GPIO (GPIO26) → main 12V relay | HIGH = 12V rail ON. LOW = all ECUs + actuators power down. Direct GPIO — no CAN, no software dependency. |
+| **CAN** | 0x012 SYS_DCDC_CMD `enable` byte | `enable=0` → DC-DC converter OFF → 12V rail drops → CAN transceivers and actuators lose power. Software path, redundant to hardware relay. |
+
+**START button controls ignition:**
+
+| State | Action | Ignition GPIO | 0x012 |
+|-------|--------|--------------|-------|
+| Vehicle OFF | Press START | HIGH (ON) | enable=1 |
+| Vehicle ON (any mode) | Press START | No change | No change |
+| ESTOP | Press START | No change (stays ON) | No change → exits ESTOP to MANUAL |
+| Vehicle ON | Hold START 3s | LOW (OFF) | enable=0 |
+
+The ignition GPIO and 0x012 enable are set together — both paths activate
+simultaneously. Either path alone can kill vehicle power. The hardware relay
+is the ultimate backstop (no software, no CAN). The CAN path allows the DC-DC
+to be controlled remotely for diagnostics and automated shutdown.
+
 #### Freedom from interference
 
 Group B (QM) functions **must not** affect Group A (safety) functions. This is
