@@ -33,18 +33,33 @@ public:
     Mcp2515Driver(const Mcp2515Driver&) = delete;
     Mcp2515Driver& operator=(const Mcp2515Driver&) = delete;
 
+    // ── Operating mode (for diagnostics) ────────────────────────────
+    enum class Mode : uint8_t {
+        Normal       = 0x00,  // REQOP=000 — normal TX/RX
+        Sleep        = 0x20,  // REQOP=001 — low power, wakes on CAN activity
+        Loopback     = 0x40,  // REQOP=010 — internal TX→RX, bus not driven
+        ListenOnly   = 0x60,  // REQOP=011 — RX only, never ACKs, bus-safe
+        Configuration = 0x80, // REQOP=100 — required for register writes
+    };
+
     // ── Lifecycle ─────────────────────────────────────────────────
 
     bool init();
 
+    /// Switch operating mode. Returns false if the chip fails to enter
+    /// the requested mode within 1ms. ListenOnly is safe for bus monitoring.
+    bool set_mode(Mode mode);
+
     // ── Frame I/O (same API as can::CanDriver) ─────────────────────
 
-    bool send(const can::Frame& frame, uint32_t timeout_ms = 2);
+    bool send(const can::Frame& frame, uint32_t timeout_ms = 10);
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
 
     // ── Diagnostics ────────────────────────────────────────────────
 
-    void get_error_counters(uint8_t& tec, uint8_t& rec);  // non-const: SPI I/O mutates hardware state
+    void get_error_counters(uint8_t& tec, uint8_t& rec);
+    bool bus_off() const { return m_bus_off.load(std::memory_order_relaxed); }
+    void clear_bus_off() { m_bus_off.store(false, std::memory_order_relaxed); }
 
     // ── RX overflow telemetry ─────────────────────────────────────
     uint16_t rx_overflow_count() const { return m_rx_overflow_count.load(std::memory_order_relaxed); }
@@ -113,6 +128,9 @@ private:
 
     // ── Overflow telemetry ────────────────────────────────────────
     std::atomic<uint16_t> m_rx_overflow_count{0};
+
+    // ── Bus-off detection (set by ISR via receive path) ───────────
+    std::atomic<bool> m_bus_off{false};
 };
 
 }  // namespace rt

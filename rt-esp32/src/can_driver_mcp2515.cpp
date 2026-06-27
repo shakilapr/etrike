@@ -241,12 +241,12 @@ bool Mcp2515Driver::init_mcp2515_regs() {
     write_reg(kRegCnf2, kCnf2_500k);
     write_reg(kRegCnf3, kCnf3_500k);
 
-    // ── RX buffers: accept all, no filters ────────────────────────
-    write_reg(kRegRxb0Ctrl, 0x60);  // RXM[1:0]=11 = turn mask/filters off
-    write_reg(kRegRxb1Ctrl, 0x60);
+    // ── RX buffers: accept all, no filters, rollover enabled ──────
+    write_reg(kRegRxb0Ctrl, 0x64);  // RXM[1:0]=11 (accept all), BUKT=1 (rollover to RXB1)
+    write_reg(kRegRxb1Ctrl, 0x60);  // RXM[1:0]=11 (accept all)
 
-    // ── Interrupts: enable RX0BF + RX1BF ──────────────────────────
-    write_reg(kRegCanIntE, 0x03);  // RX0IF + RX1IF
+    // ── Interrupts: RX + error state change + message error ────────
+    write_reg(kRegCanIntE, 0xA3);  // RX0IE | RX1IE | ERRIE | MERRE
 
     // ── Normal mode ────────────────────────────────────────────────
     modify_reg(kRegCanCtrl, 0xE0, 0x00);  // REQOP[2:0]=000 = normal mode
@@ -275,41 +275,55 @@ bool Mcp2515Driver::init() {
     return true;
 }
 
+// ── Mode switch ─────────────────────────────────────────────────────
+
+bool Mcp2515Driver::set_mode(Mode mode) {
+    if (!m_initialized) return false;
+    modify_reg(kRegCanCtrl, 0xE0, static_cast<uint8_t>(mode));
+    vTaskDelay(pdMS_TO_TICKS(1));
+    uint8_t canstat = read_reg(kRegCanStat);
+    uint8_t opmode = (canstat >> 5) & 0x07;
+    uint8_t expected = static_cast<uint8_t>(mode) >> 5;
+    return opmode == expected;
+}
+
 // ── Send ───────────────────────────────────────────────────────────
+// ESTOP (ID 0x001) uses TXB2 (highest default priority). All other
+// frames use TXB0. The MCP2515 transmits TXB2 before TXB0 when both
+// are pending, giving ESTOP automatic hardware priority without code.
 
 bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
 
-    // Check TXB0 free via TX0REQ (bit 0) in Read Status byte.
-    // MCP2515 datasheet: bit 0=TX0REQ (TX request pending), bit 2=TX0IF (complete).
-    // Only wait if a prior transmission is still in progress (TX0REQ=1).
-    // After reset TX0REQ=0, so first send proceeds immediately.
+    bool is_estop = (frame.id == 0x001);
+    uint8_t txb_data_reg = is_estop ? 0x41 : kRegTxb0Data;  // TXB2SIDH=0x41, TXB0SIDH=0x31
+    uint8_t rts_cmd      = is_estop ? 0x84 : kCmdRtsTx0;     // RTS TXB2=0x84, RTS TXB0=0x81
+    uint8_t txreq_bit    = is_estop ? 0x10 : 0x01;            // TX2REQ bit 4, TX0REQ bit 0
+
+    // Wait if the selected TX buffer is busy
     uint8_t status = read_status();
-    if (status & 0x01) {  // TX0REQ=1 → buffer busy, wait for completion
+    if (status & txreq_bit) {
         int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
-        while (read_status() & 0x01) {
+        while (read_status() & txreq_bit) {
             if (esp_timer_get_time() > deadline) return false;
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
 
-    // Load TX buffer 0 in one burst write. TXP defaults to 11 (highest priority)
-    // after reset, so no explicit TXB0CTRL write is needed.
+    // Load TX buffer in one burst write.
     uint8_t dlc = std::min<uint8_t>(frame.dlc, 8);
     uint8_t tx_buf[13] = {};
 
-    // Standard ID (11-bit) -> SIDH+SIDL
     uint8_t sidh = (frame.id >> 3) & 0xFF;
     uint8_t sidl = (frame.id & 0x07) << 5;
-    if (frame.extended) sidl |= 0x08;  // EXIDE
-    tx_buf[0] = sidh;   // TXB0SIDH
-    tx_buf[1] = sidl;   // TXB0SIDL
-    tx_buf[4] = dlc & 0x0F;  // TXB0DLC
-    for (int i = 0; i < dlc; ++i) tx_buf[5 + i] = frame.data[i];  // TXB0D0..D7
-    spi_write_burst(kRegTxb0Data, tx_buf, 5 + dlc);
+    if (frame.extended) sidl |= 0x08;
+    tx_buf[0] = sidh;
+    tx_buf[1] = sidl;
+    tx_buf[4] = dlc & 0x0F;
+    for (int i = 0; i < dlc; ++i) tx_buf[5 + i] = frame.data[i];
+    spi_write_burst(txb_data_reg, tx_buf, 5 + dlc);
 
-    // Request send
-    uint8_t rts = kCmdRtsTx0;
+    uint8_t rts = rts_cmd;
     spi_transfer(&rts, nullptr, 1);
 
     return true;
@@ -341,8 +355,23 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
     int64_t const deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
 
     while (true) {
-        // ── Check CANINTF for pending RX buffers ──────────────────
+        // ── Check CANINTF for pending RX buffers or errors ────────
         uint8_t canintf = read_reg(kRegCanIntF);
+
+        // Handle error interrupts (ERRIF + MERRE)
+        if (canintf & 0xA0) {  // bits 5 (ERRIF) or 7 (MERRE)
+            uint8_t eflg = read_reg(kRegEflg);
+            if (eflg & 0x80) {  // TXBO — bus-off
+                m_bus_off.store(true, std::memory_order_release);
+                ESP_LOGW(kTag, "MCP2515 entered bus-off (TEC=%d REC=%d)",
+                         read_reg(kRegTec), read_reg(kRegRec));
+            } else if (eflg & 0x40) {  // TXEP — error-passive
+                ESP_LOGW(kTag, "MCP2515 error-passive (TEC=%d REC=%d)",
+                         read_reg(kRegTec), read_reg(kRegRec));
+            }
+            // Clear error interrupt flags
+            modify_reg(kRegCanIntF, 0xA0, 0x00);
+        }
 
         if (canintf & 0x01) {  // RX0IF — RXB0 has data
             read_frame_burst(out, kRegRxb0Data);
