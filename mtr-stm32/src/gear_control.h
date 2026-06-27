@@ -75,24 +75,18 @@ public:
 
 private:
     /// Read a single TLP281 sense pin (active-low).
-    /// Returns true if the gear is active (GPIO LOW).
+    /// Returns true if the gear is active (GPIO LOW — TLP281 active-low).
     static bool read_sense_pin(int pin) {
-        // STM32 HAL implementation:
-        // GPIO_TypeDef* port = static_cast<GPIO_TypeDef*>(gpio_port(pin));
-        // uint16_t mask = gpio_pin_mask(pin);
-        // return HAL_GPIO_ReadPin(port, mask) == GPIO_PIN_RESET;
-        (void)pin;
-        return false;  // stub
+        GPIO_TypeDef* port = (pin < 16) ? GPIOA : GPIOB;
+        uint16_t mask = 1 << (pin & 0x0F);
+        return HAL_GPIO_ReadPin(port, mask) == GPIO_PIN_RESET;
     }
 
     /// Set a single relay output pin.
     static void set_relay_pin(int pin, bool on) {
-        // STM32 HAL implementation:
-        // GPIO_TypeDef* port = static_cast<GPIO_TypeDef*>(gpio_port(pin));
-        // uint16_t mask = gpio_pin_mask(pin);
-        // HAL_GPIO_WritePin(port, mask, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
-        (void)pin;
-        (void)on;
+        GPIO_TypeDef* port = (pin < 16) ? GPIOA : GPIOB;
+        uint16_t mask = 1 << (pin & 0x0F);
+        HAL_GPIO_WritePin(port, mask, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 
     can::Gear m_current_gear = can::Gear::N;

@@ -31,8 +31,12 @@ public:
     ///   HAL_ADC_Stop(&hadc1);
     ///   return raw;
     uint16_t read_raw() {
-        // Placeholder — real HAL call goes here.
-        return 0;
+        extern ADC_HandleTypeDef hadc1;
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        uint16_t raw = static_cast<uint16_t>(HAL_ADC_GetValue(&hadc1));
+        HAL_ADC_Stop(&hadc1);
+        return raw;
     }
 
     /// Convert raw ADC value to speed in mm/s.

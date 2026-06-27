@@ -28,13 +28,12 @@ public:
     /// Write a 12-bit value directly to the DAC (0-4095 → 0-5V).
     void write(uint16_t val) {
         if (val > kThrottleDacMaxVal) val = kThrottleDacMaxVal;
-        // Hardware write via STM32 HAL:
-        // uint8_t buf[2];
-        // buf[0] = (val >> 4) & 0xFF;        // D[11:4]
-        // buf[1] = (val << 4) & 0xFF;         // D[3:0] << 4, lower nibble zero
-        // extern I2C_HandleTypeDef hi2c1;
-        // HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
-        //                   0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
+        extern I2C_HandleTypeDef hi2c1;
+        uint8_t buf[2];
+        buf[0] = (val >> 4) & 0xFF;
+        buf[1] = (val << 4) & 0xFF;
+        HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
+                          0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
     }
 
     /// Convenience: set DAC from speed in mm/s.
