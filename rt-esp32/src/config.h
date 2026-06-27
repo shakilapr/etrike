@@ -51,6 +51,16 @@ constexpr int kMcpIntGpio       =      40;
 // ── watchdog ──────────────────────────────────────────────────────
 constexpr int kWdtToggleGpio = 21;
 
+// ── encoders (quadrature PCNT, sensor TBD for wheels) ──────────────
+constexpr int kEncRearMotorA   =  1;  // rear motor speed feedback
+constexpr int kEncRearMotorB   =  2;
+constexpr int kEncFrontWheelA  =  3;  // front wheel speed/angle
+constexpr int kEncFrontWheelB  =  6;
+constexpr int kEncRearLeftA    =  9;  // rear left wheel differential
+constexpr int kEncRearLeftB    = 12;
+constexpr int kEncRearRightA   = 13;  // rear right wheel differential
+constexpr int kEncRearRightB   = 14;
+
 // ── steering alias (used by physics_model.cpp) ────────────────────
 constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLimitDeg
 

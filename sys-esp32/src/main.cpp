@@ -719,6 +719,26 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     }
 }
 
+// ── Multi-task watchdog — per-task alive counters ───────────────────
+// task_diag (lowest prio) checks all counters. Logs ERROR if any
+// critical safety task hasn't ticked within its deadline.
+static std::atomic<uint32_t> g_alive_safety{0};
+static std::atomic<uint32_t> g_alive_brake{0};
+static std::atomic<uint32_t> g_alive_dispatch{0};
+static std::atomic<uint32_t> g_alive_can_tx{0};
+
+static void check_task_watchdog() {
+    TickType_t now = xTaskGetTickCount();
+    auto stale = [now](std::atomic<uint32_t>& a, const char* name, int ms) {
+        if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(ms))
+            ESP_LOGE(TAG, "Task %s stalled >%dms", name, ms);
+    };
+    stale(g_alive_safety,   "safety",   200);
+    stale(g_alive_brake,    "brake",    200);
+    stale(g_alive_dispatch, "dispatch", 200);
+    stale(g_alive_can_tx,   "can_tx",   500);
+}
+
 // ── Diag task (prio 1, 1 Hz) — 0x600 SYS_DIAG_RPT ──────────────────
 
 [[noreturn]] static void task_diag(void*) {

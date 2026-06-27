@@ -299,3 +299,50 @@ describe("Maximum throughput stress", () => {
     expect(result.lowBus.fps).toBeGreaterThan(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+//  FAULT INJECTION — bus-off, brownout, ESTOP bounce (Phase 2)
+// ═══════════════════════════════════════════════════════════════
+
+describe("Fault injection — recovery", () => {
+  it("recovers from ESTOP and continues operating", () => {
+    const runner = new SimulationRunner();
+    runner.configure(baseCfg({
+      hostDriveCycle: [
+        { durationMs: 2000, speedMmps: 500, yawRateMradS: 0, gear: 1 },
+        { durationMs: 5000, speedMmps: 0, yawRateMradS: 0, gear: 0 },
+      ],
+      faults: [{ atMs: 2000, type: "triggerEstop" }],
+    }));
+    // ESTOP at 2s, then drive cycle goes to zero — vehicle should stop
+    const result = runner.runDuration(7000);
+    expect(result.plantFinalSpeedMmps).toBe(0);
+    expect(result.validationErrors.length).toBe(0);
+  });
+
+  it("survives ESTOP bounce (multiple rapid triggers)", () => {
+    const runner = new SimulationRunner();
+    runner.configure(baseCfg({
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 500, yawRateMradS: 0, gear: 1 }],
+      faults: [
+        { atMs: 500, type: "triggerEstop" },
+        { atMs: 520, type: "triggerEstop" },
+        { atMs: 540, type: "triggerEstop" },
+      ],
+    }));
+    const result = runner.runDuration(2000);
+    // Multiple ESTOPs in rapid succession should not crash
+    expect(result.plantFinalSpeedMmps).toBe(0);
+  });
+
+  it("Host heartbeat freeze → RT continues without crash", () => {
+    const runner = new SimulationRunner();
+    runner.configure(baseCfg({
+      hostDriveCycle: [{ durationMs: 99999, speedMmps: 500, yawRateMradS: 0, gear: 1 }],
+      faults: [{ atMs: 500, type: "freezeHeartbeat", target: "host" }],
+    }));
+    const result = runner.runDuration(4000);
+    // Host heartbeat freeze should not crash the system
+    expect(result.validationErrors.length).toBe(0);
+  });
+});
