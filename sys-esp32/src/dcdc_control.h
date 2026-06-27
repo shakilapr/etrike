@@ -11,7 +11,9 @@ public:
     // Only the 12V accessory relay (GPIO27) is cut during ESTOP.
     bool tick(bool /*estop*/) {
         bool want = true;
-        if (want == m_last) return false;
+        m_refresh_ctr++;
+        if (want == m_last && m_refresh_ctr < kRefreshTicks) return false;
+        m_refresh_ctr = 0;
         m_last = want; m_enabled = want; return true;
     }
     bool enabled() const { return m_enabled; }
@@ -22,5 +24,7 @@ public:
     }
 private:
     bool m_enabled=false, m_last=false;
+    int m_refresh_ctr = 0;
+    static constexpr int kRefreshTicks = 25; // 5s at 5 Hz (200ms period)
 };
 }

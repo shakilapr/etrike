@@ -18,7 +18,7 @@
 #include "mode_manager.h"
 #include "throttle_input.h"
 #include "mcp4725_dac.h"
-#include "motor_driver.h"
+
 #include "gear_control.h"
 #include "brake_control.h"
 #include "light_control.h"
@@ -63,7 +63,7 @@ static sys::SafetyMonitor  g_safety;
 static sys::ModeManager    g_mode_mgr;
 static sys::ThrottleInput  g_throttle;
 static sys::Mcp4725Dac     g_dac;
-static sys::MotorDriver    g_motor;
+
 static sys::GearControl    g_gear;
 static sys::BrakeControl   g_brake;
 static sys::LightControl   g_lights;
@@ -465,7 +465,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 #ifdef SYS_OWNS_MOTOR
         // ── SYS owns motor: direct DAC + gear actuation ──────────
         if (mode == can::Mode::Estop) {
-            g_dac.write(0);   // MCP4725 = 0V
+            if (!g_dac.write(0)) {  // MCP4725 = 0V
+                ESP_LOGE(TAG, "ESTOP: DAC write failed — relying on HW ESTOP GPIO (Level 3)");
+            }
         } else if (mode == can::Mode::Manual) {
             g_throttle.poll();
             g_dac.set_speed_mmps(g_throttle.read_mmps());
@@ -792,7 +794,7 @@ extern "C" void app_main() {
     g_mode_mgr.init();
     g_throttle.init();
     g_dac.init();
-    g_motor.init();
+
     g_gear.init();
     g_brake.init();
     g_lights.init();
