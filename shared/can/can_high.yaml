@@ -18,14 +18,50 @@
 can_version: "1.0"
 description: "E-Trike CAN signal definitions — single source of truth for DBC generation"
 
-# ── Shared Constants (from shared_config.h) ───────────────────────────
+# ── Shared Constants — single source of truth for all projects ───────
 constants:
+  # Vehicle geometry
+  wheelbase_mm: 1500
+
+  # Obstacle
+  obstacle_stop_mm: 300
+  obstacle_clear_mm: 3000
+
+  # Speed limits
   max_speed_fwd_mmps: 3000
   max_speed_rev_mmps: 500
-  max_brake_kpa: 5000   # SEB physical limit: 5 MPa = 100 raw = 5000 kPa
+  low_speed_thresh_mmps: 50
+
+  # Safety timeouts
+  cmd_stale_timeout_ms: 500
+  heartbeat_timeout_host_ms: 1500
+  heartbeat_timeout_sys_ms: 200     # SYS→RT: 2 missed at 10 Hz
+  heartbeat_timeout_rt_ms: 1000     # RT→SYS: 2 missed at 2 Hz (low bus)
+  startup_grace_period_ms: 3000
+
+  # Brake
   brake_stroke_scale: 0.05
   brake_stroke_offset: -30.0
-  seb_max_pressure_raw: 100
+  max_brake_kpa: 5000               # SEB physical limit: 5 MPa = 100 raw = 5000 kPa
+  seb_max_pressure_raw: 100         # SEB max pressure raw value
+  obstacle_max_kpa: 5000            # max from obstacle distance formula
+  assist_stop_kpa: 2000             # Host heartbeat loss → assisted stop
+  host_brake_max_kpa: 20000         # 0x301 HOST_BRAKE_REQ max range
+
+  # Steering
+  steer_hard_limit_deg: 40.0
+  steer_following_err_min_deg: 2.0
+  steer_following_err_factor: 0.25
+  steer_following_err_ms: 300
+  steer_estop_ramp_deg_s: 20.0
+  steer_estop_hold_ms: 500
+  steer_cmd_rate_hz: 50
+
+  # MTR fault flags (0x206 byte 3)
+  mtr_fault_estop_active: 0x01
+  mtr_fault_cmd_timeout: 0x02
+  mtr_fault_adc_fault: 0x04
+  mtr_fault_gear_conflict: 0x08
 
 # ── All ECUs ──────────────────────────────────────────────────────────
 ecus:
