@@ -85,9 +85,9 @@ The MSVC-MingW port expects `<timeapi.h>` from the Windows SDK. MinGW provides t
 | Phase | Status | What |
 |-------|--------|------|
 | 1. Foundation | ✅ Done | FreeRTOS kernel + HAL stubs + virtual CAN + smoke test |
-| 2. Existing tests | ⬜ | Port g++ host tests to CMake/ctest |
-| 3. RT ECU | ⬜ | Compile RT firmware natively with 8 FreeRTOS tasks |
+| 2. Existing tests | 🔄 Partial | RT+SYS module tests (steering, brake, heartbeat, PID, safety) running in CI |
+| 3. RT ECU | 🔄 Partial | Individual modules compiled natively; full 8-task concurrent scheduler not yet done |
 | 4. SYS ECU | ⬜ | Compile SYS firmware, dual-ECU CAN routing |
 | 5. Physics | ⬜ | Vehicle dynamics model + peripheral simulators |
 | 6. Scenarios | ⬜ | 4 integration scenarios |
-| 7. CI | ⬜ | GitHub Actions workflow |
+| 7. CI | ✅ Done | GitHub Actions: `dbc-validate`, `simulation`, `native-test`, `pio-rt`, `pio-sys`, `pio-mtr`, `static-analysis` |
