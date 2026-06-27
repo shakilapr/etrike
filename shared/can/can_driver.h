@@ -99,6 +99,7 @@ public:
         if (twai_receive(&rx, pdMS_TO_TICKS(timeout_ms)) != ESP_OK)
             return false;
 
+        out = {};
         out.id       = rx.identifier;
         out.extended = rx.extd;
         out.dlc      = rx.data_length_code;
