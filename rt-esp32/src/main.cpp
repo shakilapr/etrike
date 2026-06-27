@@ -469,7 +469,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
             uint16_t seb_pressure = g_seb_pressure_raw.load();
             uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ×0.78125
-            uint16_t ecu_tmp  = uint16_t(g_seb_ecu_temp_c.load() * 5);           // ×5
+            uint16_t ecu_tmp  = uint16_t(g_seb_ecu_temp_c.load() * 5 - 400);           // SEB: factor 0.5 offset -40 → BRAKE_DIAG: factor 0.1 offset 0
             can::BrakeDiag{seb_pressure, seb_fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
             g_can_high.send(fr);
         }

@@ -396,7 +396,7 @@ describe("decodeFrame", () => {
     expect(result.alignment_enable).toBe(false);
     expect(result.control_enable).toBe(true);
     expect(result.target_angle).toBe(-3000);
-    expect(result.target_speed).toBe(328);
+    expect(result.target_speed).toBe(72);  // byte4=0x48, byte5 bits2-3=0 (RollCntEnable=1)
     expect(result.rolling_counter).toBe(1);
   });
 

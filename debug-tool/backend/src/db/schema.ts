@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS injected_frames (
     data        BLOB NOT NULL,
     status      TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_injected_ts ON injected_frames(ts_real);
 
 CREATE TABLE IF NOT EXISTS recordings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

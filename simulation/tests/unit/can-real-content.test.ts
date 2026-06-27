@@ -136,7 +136,7 @@ describe("0x210 RT_STATE_RPT — real bytes", () => {
     runner.runDuration(200);
     const f = getFirst(runner, "0x210", "high");
     expect(f).toBeDefined();
-    expect(f!.dlc).toBe(3);
+    expect(f!.dlc).toBe(4);
     expect(f!.data[0]).toBe(1); // auto
     expect(f!.bus).toBe("high");
   });
@@ -241,9 +241,9 @@ describe("0x169 VCU_SES_REQ — real bytes", () => {
     expect(f).toBeDefined();
     // angle is u16 LE at bytes 2-3
     const rawAngle = f!.data[2] | (f!.data[3] << 8);
-    // Should be near 3000 (0° steering = 3000 raw)
-    expect(rawAngle).toBeGreaterThan(2500);
-    expect(rawAngle).toBeLessThan(3500);
+    // Should be near 30000 (0° steering = 30000 raw)
+    expect(rawAngle).toBeGreaterThan(29500);
+    expect(rawAngle).toBeLessThan(30500);
   });
 });
 

@@ -24,6 +24,7 @@ export function registerSystemRoutes(
       baud_rate: bridge.state.baud_rate ?? 0,
       last_error: bridge.state.last_error
     },
+    bus_detection: bridge.state.bus_detection ?? { highHits: 0, lowHits: 0, confidence: "none" },
     bus_stats: store.getStats().buses,
     websocket_clients: hub.clientCount(),
     storage: store.counts()

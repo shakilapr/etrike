@@ -238,12 +238,12 @@ describe("decodeFrame", () => {
     // Bytes 2-3: target_angle = -3000 = 0xF448 LE → [0x48, 0xF4]
     // Bytes 4-5: target_speed low byte + rolling_counter nibble
     const data = [0x02, 0x00, 0x48, 0xF4, 0x48, 0x11, 0x00, 0x00];
-    // target_speed = 0x148 = 328, rolling_counter = 1
+    // target_speed = byte4=0x48, byte5 bits2-3=0 → 72; rolling_counter=1, roll_cnt_enable=1
     const result = decodeFrame("low", "0x169", data);
     expect(result.alignment_enable).toBe(false);
     expect(result.control_enable).toBe(true);
     expect(result.target_angle).toBe(-3000);
-    expect(result.target_speed).toBe(328);
+    expect(result.target_speed).toBe(72);
     expect(result.rolling_counter).toBe(1);
     expect(result.checksum).toBe(0);
   });

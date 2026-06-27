@@ -219,41 +219,40 @@ def load_can_database(path: str | Path) -> CanDatabase:
 def load_can_database_dir(path: str | Path) -> CanDatabase:
     """Load and merge all CAN YAML files from a directory.
 
-    Reads can_shared.yaml for metadata (can_version, description, constants,
-    ecus), then iterates all other can_*.yaml files and merges their
-    protocols dicts into one combined CanDatabase.
+    Metadata (can_version, constants, ecus) is read from can_high.yaml
+    (the primary bus file). Protocols are merged from all can_*.yaml files.
 
     Forwarded frames (same CAN ID in multiple files) are intentional —
-    each bus DBC must be self-contained. The caller can cross-validate
-    that forwarded signal layouts are identical.
+    each bus DBC must be self-contained.
     """
     path = Path(path)
     if not path.is_dir():
         raise ValueError(f"Not a directory: {path}")
 
-    shared_path = path / "can_shared.yaml"
-    if not shared_path.exists():
-        raise FileNotFoundError(
-            f"Missing can_shared.yaml in {path} — required for metadata"
-        )
-
-    with open(shared_path, encoding="utf-8") as f:
-        shared_data = yaml.safe_load(f)
-
-    if not isinstance(shared_data, dict) or "can_version" not in shared_data:
-        raise ValueError(
-            f"Missing 'can_version' key — is '{shared_path}' a valid shared CAN YAML?"
-        )
-
-    # Merge protocol definitions from all bus-specific YAMLs
-    all_protocols: dict = {}
     yaml_files = sorted(
         p for p in path.glob("can_*.yaml")
-        if p.name not in ("can_shared.yaml", "can_signals.yaml")
+        if p.name != "can_signals.yaml"  # skip legacy combined file
     )
     if not yaml_files:
         raise FileNotFoundError(f"No can_*.yaml bus files found in {path}")
 
+    # Use can_high.yaml as the metadata owner
+    primary = path / "can_high.yaml"
+    if primary.exists():
+        with open(primary, encoding="utf-8") as f:
+            primary_data = yaml.safe_load(f)
+    else:
+        # Fallback: use the first available file
+        with open(yaml_files[0], encoding="utf-8") as f:
+            primary_data = yaml.safe_load(f)
+
+    if not isinstance(primary_data, dict) or "can_version" not in primary_data:
+        raise ValueError(
+            f"Missing 'can_version' key — is '{primary}' a valid CAN YAML?"
+        )
+
+    # Merge protocol definitions from ALL bus files
+    all_protocols: dict = {}
     for yaml_file in yaml_files:
         with open(yaml_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -261,7 +260,6 @@ def load_can_database_dir(path: str | Path) -> CanDatabase:
             raise ValueError(f"Invalid YAML structure in {yaml_file.name}")
         file_protocols = data.get("protocols", {})
         if file_protocols:
-            # Check for protocol name collisions across files
             collisions = set(all_protocols.keys()) & set(file_protocols.keys())
             if collisions:
                 raise ValueError(
@@ -271,10 +269,10 @@ def load_can_database_dir(path: str | Path) -> CanDatabase:
             all_protocols.update(file_protocols)
 
     merged = {
-        "can_version": shared_data.get("can_version", "1.0"),
-        "description": shared_data.get("description", ""),
-        "constants": shared_data.get("constants", {}),
-        "ecus": shared_data.get("ecus", []),
+        "can_version": primary_data.get("can_version", "1.0"),
+        "description": primary_data.get("description", ""),
+        "constants": primary_data.get("constants", {}),
+        "ecus": primary_data.get("ecus", []),
         "protocols": all_protocols,
     }
     return CanDatabase.model_validate(merged)

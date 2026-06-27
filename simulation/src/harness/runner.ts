@@ -182,7 +182,7 @@ export class SimulationRunner {
       if (f.canId === "0x169" && f.dlc >= 8) {
         // VCU_SES_REQ: target angle u16 LE bytes 2-3, 0.1°/bit, offset -3000
         const angleRaw = (f.data[3] << 8 | f.data[2]) & 0xFFFF;
-        cmdSteerDeg = (angleRaw - 3000) / 10;
+        cmdSteerDeg = (angleRaw - 30000) / 10;
       }
       if (f.canId === "0x7B9" && f.dlc >= 8) {
         // VCU_SEB_REQ: stroke u16 LE bytes 2-3, raw=(mm+30)/0.05

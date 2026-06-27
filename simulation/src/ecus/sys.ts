@@ -175,7 +175,7 @@ export class SysEcu implements SimulatedEcu {
         simTimeMs: nowMs, bus: "low", canId: "0x600", name: "SYS_DIAG_RPT",
         dlc: 8, data: [
           ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0,
-          this.brake.state === BrakeState.ACTIVE ? 1 : 0,
+          (this.brake.state === BrakeState.ACTIVE ? 1 : 0) | (this.safety.estop ? 2 : 0),
           this.safety.heartbeatOk(nowMs) ? 1 : 0,
           effectiveEstop ? 1 : 0,
           (this.diagHeapKb >> 8) & 0xFF,
