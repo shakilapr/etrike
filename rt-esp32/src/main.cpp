@@ -149,9 +149,14 @@ static void monitor_can_bus_off() {
         // Fast path: bus-off detected by interrupt (ERRIF handler in receive())
         if (g_can_high.bus_off()) {
             g_can_high.clear_bus_off();
-            ESP_LOGE(TAG, "High CAN bus-off (interrupt) — reinitializing");
-            bus_off_count_high++;
-            g_can_high.init();
+            static int64_t last_reinit_us = 0;
+            int64_t now = esp_timer_get_time();
+            if (now - last_reinit_us > 500'000) {  // debounce: max 2 reinit/sec
+                last_reinit_us = now;
+                ESP_LOGE(TAG, "High CAN bus-off (interrupt) — reinitializing");
+                bus_off_count_high++;
+                g_can_high.init();
+            }
         }
 
         // Slow path: polled TEC for error-warning and as fallback
