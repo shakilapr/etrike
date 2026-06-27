@@ -25,7 +25,7 @@ BO_ 518 MTR_MOTOR_FBK: 4 MTR
 
 BO_ 528 RT_STATE_RPT: 4 RT
  SG_ RT_Mode : 7|8@0+ (1,0) [0|2] "enum" Vector__XXX
- SG_ RT_SteerValid : 15|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ RT_SafetyState : 15|2@0+ (1,0) [0|2] "enum" Vector__XXX
  SG_ RT_Reversing : 23|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ RT_RxOverflow : 31|8@0+ (1,0) [0|255] "" Vector__XXX
 
@@ -85,7 +85,7 @@ CM_ BO_ 1  "DLC=0  the frame ID itself is the ESTOP signal. Any node can send (R
 CM_ BO_ 17  "Forwarded lowhigh by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).";
 CM_ BO_ 288  "Current vehicle speed from MTR STM32. Forwarded lowhigh by RT. SYS_ prefix is historical.";
 CM_ BO_ 518  "Motor feedback from STM32. Forwarded lowhigh by RT per gateway rules.";
-CM_ BO_ 528  "RT state report to Host. High bus only.";
+CM_ BO_ 528  "RT state report to Host and SYS. SYS monitors safety_state for RT health.";
 CM_ BO_ 544  "RESERVED, inactive. PID telemetry for Host debugging.";
 CM_ BO_ 768  "Host (Jetson Orin) Autoware.Auto drive command -> RT. High bus only.";
 CM_ BO_ 769  "On demand. RT arbitrates: max(RT_computed, HOST_request) -> 0x205.";
@@ -100,6 +100,7 @@ CM_ BO_ 2045  "RT sends independently on both buses (per-bus, NOT bridged). Sepa
 CM_ SG_ 17 SYS_HeartbeatOk "0=RT alive counter frozen >1000ms, 1=incrementing";
 CM_ SG_ 17 SYS_LightState "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active";
 CM_ SG_ 518 MTR_FaultFlags "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict";
+CM_ SG_ 528 RT_SafetyState "RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault";
 CM_ SG_ 528 RT_RxOverflow "MCP2515 RX overflow counter  telemetry for CAN bus health monitoring";
 CM_ SG_ 768 HOST_DriveSpeed "ROS 2: linear.x * 1000";
 CM_ SG_ 768 HOST_YawRate "ROS 2: angular.z * 1000. i24 big-endian at bytes 4-6.";
@@ -142,4 +143,5 @@ BA_ "GenMsgCycleTime" BO_ 2045 500;
 VAL_ 518 MTR_GearState 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 518 MTR_FaultFlags 1 "EstopActive" 2 "CmdTimeout" 4 "AdcFault" 8 "GearConflict";
 VAL_ 528 RT_Mode 0 "Manual" 1 "Auto" 2 "ESTOP";
+VAL_ 528 RT_SafetyState 0 "Normal" 1 "InternalEstop" 2 "Fault";
 VAL_ 768 HOST_Gear 0 "N" 1 "D" 2 "S" 3 "R";

@@ -386,19 +386,23 @@ struct SysDiagRpt {
 // High-level CAN payload types
 // ───────────────────────────────────────────────────────────────────
 
-// 0x210 RT_STATE_RPT — RT→Host
+// 0x210 RT_STATE_RPT — RT→Host + SYS (low bus)
 struct RtStateRpt {
-    uint8_t mode        = 0;   // Mode enum
-    bool    steer_valid = false;
-    bool    reversing   = false;
-    uint8_t rx_overflow = 0;   // High CAN RX overflow counter (wraps at 256)
+    uint8_t mode         = 0;   // Mode enum (0=Manual,1=Auto,2=ESTOP)
+    uint8_t safety_state = 0;   // 0=Normal, 1=InternalEstop(steer/CAN fault), 2=Fault
+    bool    reversing    = false;
+    uint8_t rx_overflow  = 0;   // High CAN RX overflow counter (wraps at 256)
 
     void to_frame(Frame& f) const {
         f.id = kIdRtStateRpt; f.dlc = 4;
         f.put_u8(0, mode);
-        f.put_u8(1, steer_valid ? 1 : 0);
-        f.put_u8(2, reversing   ? 1 : 0);
+        f.put_u8(1, safety_state & 0x03);           // bits 0-1: safety state
+        f.put_u8(2, reversing ? 1 : 0);
         f.put_u8(3, rx_overflow);
+    }
+    static RtStateRpt from_frame(const Frame& f) {
+        if (f.dlc < 4) return {};
+        return {f.u8_at(0), f.u8_at(1), f.u8_at(2) != 0, f.u8_at(3)};
     }
 };
 
