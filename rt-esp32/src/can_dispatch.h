@@ -147,6 +147,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
 [[noreturn]] static void t_dispatch(void*) {
     can::Frame fr;
     while (1) {
+        g_alive_dispatch.store(xTaskGetTickCount(), std::memory_order_relaxed);
         bool from_high = false;
         if (xQueueReceive(g_can_rx_low_q, &fr, 0) == pdTRUE) {
             from_high = false;
