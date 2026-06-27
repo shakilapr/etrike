@@ -148,6 +148,8 @@ void Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
     uint8_t buf[13];
     spi_read_burst(base_addr, buf, 13);
 
+    out = {};
+
     // Standard ID (11-bit): SIDH[7:0] = ID[10:3], SIDL[7:5] = ID[2:0]
     out.extended = (buf[1] & 0x08) != 0;  // EXIDE bit
     out.id = (uint32_t(buf[0]) << 3) | ((buf[1] >> 5) & 0x07);
@@ -296,9 +298,9 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
 
     bool is_estop = (frame.id == 0x001);
-    uint8_t txb_data_reg = is_estop ? 0x41 : kRegTxb0Data;  // TXB2SIDH=0x41, TXB0SIDH=0x31
-    uint8_t rts_cmd      = is_estop ? 0x84 : kCmdRtsTx0;     // RTS TXB2=0x84, RTS TXB0=0x81
-    uint8_t txreq_bit    = is_estop ? 0x10 : 0x01;            // TX2REQ bit 4, TX0REQ bit 0
+    uint8_t txb_data_reg = is_estop ? kRegTxb2Data : kRegTxb0Data;
+    uint8_t rts_cmd      = is_estop ? kCmdRtsTx2 : kCmdRtsTx0;
+    uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : kReadStatusTx0Req;
 
     // Wait if the selected TX buffer is busy
     uint8_t status = read_status();

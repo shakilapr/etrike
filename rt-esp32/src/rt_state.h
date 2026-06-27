@@ -41,7 +41,7 @@ extern std::atomic<int32_t>  g_mtr_actual_speed_mmps;
 
 // ── Derived state (written by control, read by tx tasks) ────────────
 extern std::atomic<uint8_t>  g_mode_current;     // current mode (control publishes after event drain)
-extern std::atomic<bool>     g_seb_takeover;     // SEB takeover active (control publishes after event drain)
+extern std::atomic<bool>     g_seb_takeover;     // SEB takeover active (control publishes after safety checks)
 
 // ── Heartbeat tracking (written by dispatch, checked by control) ────
 extern std::atomic<int64_t>  g_last_sys_hb_us;
