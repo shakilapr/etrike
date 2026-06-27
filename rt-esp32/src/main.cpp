@@ -369,13 +369,14 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
 
 // ── CAN TX low (prio 3) ────────────────────────────────────────────
 [[noreturn]] static void t_can_tx_low(void*) {
-    TickType_t t100 = xTaskGetTickCount(), t50 = t100;
+    TickType_t last_wake = xTaskGetTickCount();
+    TickType_t t100 = last_wake, t50 = last_wake;
     rt::ResolvedSetpoint sp{};
     can::Frame fr; can::Frame gw;
     while (1) {
         g_alive_tx_low.store(xTaskGetTickCount(), std::memory_order_relaxed);
         auto* drv = rt::can_low_driver();
-        if (!drv) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
+        if (!drv) { vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(5)); continue; }
 
         if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
             t100 = xTaskGetTickCount();
@@ -457,7 +458,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         }
 
         if (xQueueReceive(g_gw_tx_low_q, &gw, 0) == pdTRUE) drv->send(gw);
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(5));
     }
 }
 
