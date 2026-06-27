@@ -25,7 +25,7 @@
 #include "dcdc_control.h"
 #include "indicator_control.h"
 #include "wdt_toggle.h"
-#include "diagnostics.h"
+
 
 static const char* TAG = "sys";
 
@@ -70,7 +70,7 @@ static sys::LightControl   g_lights;
 static sys::DcdcControl    g_dcdc;
 static sys::IndicatorControl g_indicator;
 static sys::WdtToggle      g_wdt;
-static sys::Diagnostics    g_diag;
+
 
 // Shared state (written by dispatch, read by actuators).
 // Uses memory_order_relaxed throughout: each variable has exactly one
@@ -801,8 +801,7 @@ extern "C" void app_main() {
     g_dcdc.init();
     g_indicator.init();
     g_wdt.init();
-    g_diag.init();
-    g_diag.set_can_driver(&g_can);
+
 
     // 3. Create queues
     g_can_rx_queue   = xQueueCreate(16, sizeof(can::Frame));
