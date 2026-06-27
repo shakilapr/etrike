@@ -79,7 +79,7 @@ All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physic
 | `0x302` | HOST_LIGHT_CMD | `HOST_BrakeLight` | bool | 0/1 | RT |
 | `0x302` | HOST_LIGHT_CMD | `HOST_Headlight` | bool | 0/1 | RT |
 | `0x400` | HOST_OBSTACLE_DIST | `HOST_ObstacleDistance` | u32 (mm) | — | RT |
-| `0x7FC` | JETSON_HEARTBEAT | `alive_ctr` | u8 | — | RT |
+| `0x7FC` | HOST_HEARTBEAT | `alive_ctr` | u8 | — | RT |
 
 ---
 
@@ -112,7 +112,7 @@ Role: real-time physics model, steering control (EPS-C via CAN), CAN gateway bet
 | `0x300` | HOST_DRIVE_CMD | `HOST_Gear` | u8 enum | {N,D,S,R} | Host |
 | `0x301` | HOST_BRAKE_REQ | `HOST_BrakePressure` | i32 (kPa) | — | Host |
 | `0x302` | HOST_LIGHT_CMD | light bits (4× bool) | u8 bitmask | — | Host |
-| `0x7FC` | JETSON_HEARTBEAT | `alive_ctr` | u8 | — | Host |
+| `0x7FC` | HOST_HEARTBEAT | `alive_ctr` | u8 | — | Host |
 
 ### 2.3 Physical Inputs — RT
 

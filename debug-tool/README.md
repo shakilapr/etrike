@@ -1,6 +1,6 @@
 # E-Trike Diagnostic & Debug Tool
 
-CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects to both CAN buses via an ESP32-S3 bridge over MQTT. Streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
+CAN bus monitor, analyzer, and command injector for the E-Trike vehicle control system. Connects via USB serial (ESP32-S3 bridge) or CANalyst-II USB analyzer. Streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
 
 ## Architecture
 

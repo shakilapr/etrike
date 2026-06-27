@@ -221,7 +221,7 @@ describe("0x400 HOST_OBSTACLE_DIST", () => {
 //  HEARTBEATS
 // ================================================================
 
-describe("0x7FC JETSON_HEARTBEAT", () => {
+describe("0x7FC HOST_HEARTBEAT", () => {
   it("Host sends at 2 Hz on high bus", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(0));

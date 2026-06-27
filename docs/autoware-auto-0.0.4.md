@@ -88,7 +88,7 @@ The high-bus CAN protocol stays exactly as defined in `architecture.md` §2.2 an
 | `0x300` | HOST_DRIVE_CMD | `{i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear}` | ≤100 Hz |
 | `0x301` | HOST_BRAKE_REQ | `{i32 brake_pressure_kpa}` | On demand |
 | `0x302` | HOST_LIGHT_CMD | `{u8 bits: LT[0] RT[1] BRK[2] HEAD[3]}` | On change |
-| `0x7FC` | JETSON_HEARTBEAT | `{u8 alive_ctr}` | 2 Hz |
+| `0x7FC` | HOST_HEARTBEAT | `{u8 alive_ctr}` | 2 Hz |
 
 ### 2.2 Feedback (RT → Jetson) — UNCHANGED
 
@@ -358,7 +358,7 @@ These issues exist in the current system regardless of Autoware.Auto integration
 | `0x302` | HOST_LIGHT_CMD | → | `{u8 bits}` |
 | `0x400` | HOST_OBSTACLE_DIST | → | `{u32 mm}` |
 | `0x600` | SYS_DIAG_RPT | ← (fwd) | `{8 bytes}` |
-| `0x7FC` | JETSON_HEARTBEAT | → | `{u8 ctr}` |
+| `0x7FC` | HOST_HEARTBEAT | → | `{u8 ctr}` |
 | `0x7FD` | RT_HEARTBEAT | ← | `{u8 ctr}` |
 
 ### Low Bus (RT/SYS/Actuators) — UNCHANGED

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Generate all E-Trike DBC files from shared/can/can_signals.yaml.
+Generate all E-Trike DBC files from shared/can/ YAML directory.
 
-Single source of truth: YAML -> pydantic -> canmatrix -> .dbc files.
+Single source of truth: shared/can/can_shared.yaml + can_high.yaml + can_low.yaml.
+YAML directory -> pydantic -> canmatrix -> .dbc files.
 
 Usage:
-  python generate_all_dbc.py                    # generate all 3 DBCs
-  python generate_all_dbc.py --check            # generate + re-parse + smoke test
-  python generate_all_dbc.py --check --smoke    # generate + re-parse + full smoke test
-  python generate_all_dbc.py --protocol custom  # single protocol only
-  python generate_all_dbc.py --summary          # print signal table to stdout
+  python generate_all_dbc.py                        # generate all 4 DBCs
+  python generate_all_dbc.py --check                # generate + re-parse + smoke test
+  python generate_all_dbc.py --check --smoke        # generate + re-parse + full smoke test
+  python generate_all_dbc.py --protocol custom_high # single protocol only
+  python generate_all_dbc.py --summary              # print signal table to stdout
 """
 
 import os
@@ -23,12 +24,12 @@ import canmatrix.formats.dbc
 from canmatrix import CanMatrix, Ecu, Frame, Signal, ArbitrationId
 
 from can_signals_schema import (
-    load_can_database, dump_signal_summary,
+    load_can_database, load_can_database_dir, dump_signal_summary,
     CanDatabase, ProtocolDef, MessageDef, SignalDef, ByteOrder,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # etrike/
-YAML_PATH = Path(__file__).resolve().parent / "can_signals.yaml"
+YAML_PATH = Path(__file__).resolve().parent  # shared/can/ directory (was single file)
 
 
 # ── Conversion: YAML -> canmatrix ─────────────────────────────────────
@@ -143,10 +144,14 @@ def smoke_test_frame(frame: Frame) -> Optional[str]:
 def main():
     if not YAML_PATH.exists():
         print(f"Error: {YAML_PATH} not found", file=sys.stderr)
-        print("Run from the repo root or create shared/can/can_signals.yaml", file=sys.stderr)
+        print("Run from the repo root or ensure shared/can/ directory exists", file=sys.stderr)
         sys.exit(1)
 
-    db: CanDatabase = load_can_database(YAML_PATH)
+    # Auto-detect: directory (new split format) or single file (legacy)
+    if YAML_PATH.is_dir():
+        db: CanDatabase = load_can_database_dir(YAML_PATH)
+    else:
+        db: CanDatabase = load_can_database(YAML_PATH)
     print(f"Loaded {YAML_PATH}: {len(db.protocols)} protocol(s), {len(db.ecus)} ECU(s)")
 
     if "--summary" in sys.argv:
@@ -156,11 +161,17 @@ def main():
     do_check = "--check" in sys.argv
     do_smoke = "--smoke" in sys.argv
 
-    # Filter protocols (--protocol custom|syntree_eps|syntree_seb)
+    # Filter protocols (--protocol custom_high|custom_low|syntree_eps|syntree_seb)
     protocol_names = list(db.protocols.keys())
     for i, arg in enumerate(sys.argv):
         if arg == "--protocol" and i + 1 < len(sys.argv):
-            protocol_names = [sys.argv[i + 1]]
+            requested = sys.argv[i + 1]
+            # Legacy alias: --protocol custom → suggest new names
+            if requested == "custom":
+                print("Error: 'custom' protocol has been split into 'custom_high' and 'custom_low'.", file=sys.stderr)
+                print("Use --protocol custom_high or --protocol custom_low instead.", file=sys.stderr)
+                sys.exit(1)
+            protocol_names = [requested]
             break
 
     total_bytes = 0
