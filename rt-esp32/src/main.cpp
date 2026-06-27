@@ -379,6 +379,8 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
 
         if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
             t100 = xTaskGetTickCount();
+            // Gate: in MANUAL mode, RT does not command actuators
+            if (g_mode_current.load() == uint8_t(can::Mode::Manual)) continue;
             if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE) {
                 g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
                 // Drive motor lockout: only send 0x204 when steering is ready (arch §7.6).
@@ -475,12 +477,15 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             vTaskDelay(pdMS_TO_TICKS(10));
         }
 
-        // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4, fix #1)
+        // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4)
         can::RtStateRpt rpt;
-        rpt.mode        = g_mode_current.load();
-        rpt.steer_valid = (g_steering.state() == rt::SteerState::STEER_ACTIVE);
-        rpt.reversing   = g_reversing.load();
-        rpt.rx_overflow = static_cast<uint8_t>(g_can_high.rx_overflow_count());
+        rpt.mode         = g_mode_current.load();
+        auto ss = g_steering.state();
+        rpt.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
+                           (ss == rt::SteerState::STEER_FAULT)   ? 2 : 1;
+                           // 0=Normal, 1=InternalEstop(ramp/hold), 2=Fault
+        rpt.reversing    = g_reversing.load();
+        rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
         rpt.to_frame(fr);
         if (!g_can_high.send(fr)) {
             static bool rpt_fail_warned = false;
