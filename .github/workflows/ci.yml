@@ -1,6 +1,13 @@
 name: CI
 on: [push, pull_request]
 jobs:
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
+      - run: cppcheck --enable=all --suppress=missingIncludeSystem --suppress=unmatchedSuppression --inline-suppr --error-exitcode=0 --quiet rt-esp32/src/ sys-esp32/src/ mtr-stm32/src/ shared/
+
   dbc-validate:
     runs-on: ubuntu-latest
     steps:
