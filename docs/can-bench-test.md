@@ -298,7 +298,7 @@ and watch RT forward `0x204`/`0x205`/`0x169` to the low bus.
 | SPI MISO | **GPIO38** | **38** | Dupont F-F | **MISO** (SO) |
 | SPI chip select | **GPIO39** | **39** | Dupont F-F | **CS** |
 | Interrupt | **GPIO40** | **40** | Dupont F-F | **INT** |
-| Power | — | **3V3** (J1-1) | Dupont F-F, red | **VCC** |
+| Power | — | **5V** (J1-21) | Dupont F-F, red | **VCC** |
 | Ground | — | **GND** (J1-22) | Dupont F-F, black | **GND** |
 | Bus high | — | — | 22 AWG, yellow | **CAN_H** (screw term) |
 | Bus low | — | — | 22 AWG, green | **CAN_L** (screw term) |
@@ -424,8 +424,8 @@ Before plugging in USB:
 - [ ] **GPIO38** (silkscreen "38") → MCP2515 **MISO** (Dupont)
 - [ ] **GPIO39** (silkscreen "39") → MCP2515 **CS** (Dupont)
 - [ ] **GPIO40** (silkscreen "40") → MCP2515 **INT** (Dupont)
-- [ ] MCP2515 **VCC** → J1-1 "3V3" (share with WCMCU-230)
-- [ ] MCP2515 **GND** → J1-22 "GND" (share with WCMCU-230)
+- [ ] MCP2515 **VCC** → J1-21 **"5V"** (TJA1050 transceiver needs 5V)
+- [ ] MCP2515 **GND** → J1-22 "GND"
 
 **SYS — WCMCU-230 (low bus):**
 - [ ] J1-1 **"3V3"** → WCMCU-230 **VCC** (red Dupont)

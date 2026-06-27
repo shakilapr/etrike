@@ -151,11 +151,25 @@ target_include_directories(checksum_full PRIVATE
     ${CMAKE_SOURCE_DIR}/../shared
 )
 
+# ── MCP2515 CNF config test ──────────────────────────────────────────
+add_executable(mcp2515_config
+    test/test_mcp2515_config.cpp
+)
+target_include_directories(mcp2515_config PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+)
+# The MCP2515 driver header needs the CAN protocol header from shared/
+# and the config.h from rt-esp32/src. No FreeRTOS or HAL stubs needed
+# since we only import the CNF constants.
+
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME smoke              COMMAND smoke_test)
 add_test(NAME protocol_roundtrip  COMMAND protocol_roundtrip)
 add_test(NAME checksum_full      COMMAND checksum_full)
+add_test(NAME mcp2515_config     COMMAND mcp2515_config)
 
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")
