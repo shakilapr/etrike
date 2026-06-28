@@ -57,7 +57,7 @@ int main(){
         // The commanded angle should be at most ~5° (50 in 0.1° units offset-free)
         // At 25 km/h: limit = 5°, offset-free raw = 50 in 0.1° units
         int16_t cmd_angle = out.target_angle;
-        int16_t cmd_offset_free = cmd_angle - rt::kSyntreeAngleOffset;  // strip SYNTREE offset
+        int16_t cmd_offset_free = cmd_angle - rt::kActuatorAngleOffset;  // strip steer-by-wire offset
         CHECK(std::abs(cmd_offset_free) <= 60);  // ~6° max (slight margin)
         printf("  Obstacle ESTOP hold angle = %.1f deg (clamped from 30.0, limit ~5.0)\n",
                cmd_offset_free / 10.0);
@@ -96,7 +96,7 @@ int main(){
         can::VcuSesReq out;
         sc.tick(300, 1, now_ms, out);  // actual=30.0°, cmd should decrease
         int16_t first_step = out.target_angle;
-        int16_t first_step_offset_free = first_step - rt::kSyntreeAngleOffset;  // strip SYNTREE offset
+        int16_t first_step_offset_free = first_step - rt::kActuatorAngleOffset;  // strip steer-by-wire offset
         CHECK(first_step_offset_free < 300);  // should have stepped toward zero
         printf("  Ramp started: 30.0° → %.1f° (step ~2°/tick)\n", first_step_offset_free / 10.0);
     }

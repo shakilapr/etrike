@@ -4,7 +4,7 @@ Five-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT
 
 > **Variant:** A consolidated single-controller version exists at [`rt-aurix-lite/`](rt-aurix-lite/) — combines RT+SYS into one AURIX TC3xx on a single CAN bus. This document describes the distributed reference architecture. Both variants share the same CAN protocol and actuator interfaces.
 
-Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one at 250 kbit/s (powertrain). RT bridges selected messages between high and low buses. PWT bridges selected messages between low and powertrain buses. Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. This ensures no single MCU failure takes both actuators, and AUTO-mode brake+steer are 1-hop from the kinematics engine. Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
+Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one at 250 kbit/s (powertrain). RT bridges selected messages between high and low buses. PWT bridges selected messages between low and powertrain buses. Actuators are CAN bus modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. This ensures no single MCU failure takes both actuators, and AUTO-mode brake+steer are 1-hop from the kinematics engine. Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
 
 > **Autoware.Auto v0.0.4-alpha:** A new ROS 2 node on the Jetson (`autoware_vehicle_bridge`) provides Autoware.Auto topic compatibility (`AckermannControlCommand` in, `VelocityReport`/`SteeringReport` out). The CAN protocol across both buses is unchanged. See §5.1.
 >
@@ -63,7 +63,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
                 ┌───────────────────────┼────────────────────┐        │
                 │                       │                    │        │
           ┌─────▼─────┐          ┌─────▼─────┐        ┌─────▼─────┐  │
-          │  SYNTREE  │          │  SYNTREE  │        │   MTR     │  │
+          │  brake-by-wire│          │ steer-by-wire │        │   MTR     │  │
           │  SEB      │          │  EPS-C    │        │  STM32   │  │
           │  (Brake)  │          │ (Steering)│        │ (Motor)  │  │
           │ 0x7B9 cmd │          │ 0x169 cmd │        │ 0x204 cmd │  │
@@ -119,7 +119,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 10 Hz | Lowest |
 
-> **ID note**: SYNTREE units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`, plus diagnostic frames `0x202` (err info), `0x203` (version), `0x6FA` (telemetry). SEB uses factory command `0x7B9` and status `0x721`, plus diagnostic frames `0x731` (err info), `0x741` (version), `0x6FB` (telemetry). `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`. `0x205` RT_BRAKE_CMD avoids collision with `0x202` and `0x203`.
+> **ID note**: actuator units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`, plus diagnostic frames `0x202` (err info), `0x203` (version), `0x6FA` (telemetry). SEB uses factory command `0x7B9` and status `0x721`, plus diagnostic frames `0x731` (err info), `0x741` (version), `0x6FB` (telemetry). `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`. `0x205` RT_BRAKE_CMD avoids collision with `0x202` and `0x203`.
 >
 > **† `0x7B9` dual-sender note:** Architecture §6.2 Option D specifies RT sends `0x7B9` directly in AUTO (1-hop from kinematics), SYS in MANUAL/ESTOP. **Current implementation (v0.0.4):** SYS is the sole `0x7B9` sender in all modes — RT sends `0x205 RT_BRAKE_CMD` to SYS, which converts to SEB protocol. Direct RT→SEB transmission is planned (gap #12).
 
@@ -386,13 +386,13 @@ The Jetson Orin is the perception, planning, and high-level control node. It run
 2. **ESTOP bypasses queues.** Safety task preempts and writes directly to actuators.
 3. **One CAN ID = one sender per bus.** Every CAN ID has exactly one originator on a given bus. Each node's heartbeat uses its own ID (`0x7FD` RT, `0x7FE` SYS, `0x7FC` Jetson).
 4. **Lower CAN ID = higher bus priority.** Safety IDs (`0x00X`) win arbitration.
-5. **All multi-byte CAN fields are big-endian (MSB first)** — unless SYNTREE protocol specifies otherwise (see `0x169`, `0x7B9` in can-dictionary).
+5. **All multi-byte CAN fields are big-endian (MSB first)** — unless actuator protocol specifies otherwise (see `0x169`, `0x7B9` in can-dictionary).
 6. **Manual mode is pass-through, not dead.** SYS mirrors physical inputs to outputs.
 7. **Actuators are standalone CAN modules.** EPS-C, SEB, and DC-DC are commanded via CAN.
 8. **RT is the only dual-bus node.** No direct Jetson ↔ SYS path.
-9. **Listen Before Speaking.** SYNTREE units require receiving status feedback before any command is sent. Boot state machines enforce this.
+9. **Listen Before Speaking.** steer-by-wire units require receiving status feedback before any command is sent. Boot state machines enforce this.
 10. **EGAS 3-level safety separation for motor actuation.** The motor controller takes raw analog signals (0–5V throttle, 72V gear) with no internal intelligence. This is the only actuator without built-in CAN monitoring. Per ISO 26262, it is isolated on a dedicated STM32 (MTR) with three independent safety levels.
-11. **Mode-gated dual control of SYNTREE actuators (Option D).** In AUTO, RT commands both EPS-C and SEB directly — 1-hop from the kinematics engine. In MANUAL, SYS commands SEB based on lever position; EPS-C runs standalone. The `0x7B9` SEB command is dual-sender but mode-gated — only one node transmits at a time, no collision. Per ISO 26262-5:2018 §7.4.4, this is redundant-controller practice. No single MCU failure can take both actuators offline.
+11. **Mode-gated dual control of steer-by-wire actuators (Option D).** In AUTO, RT commands both EPS-C and SEB directly — 1-hop from the kinematics engine. In MANUAL, SYS commands SEB based on lever position; EPS-C runs standalone. The `0x7B9` SEB command is dual-sender but mode-gated — only one node transmits at a time, no collision. Per ISO 26262-5:2018 §7.4.4, this is redundant-controller practice. No single MCU failure can take both actuators offline.
 
 ---
 
@@ -422,7 +422,7 @@ Level 1: Function Controller — MTR STM32
 | **ASIL decomposition** | MTR (QM level sensor reads) + SYS monitor (ASIL-B comparison) → combined ASIL-C |
 | **Independent safe state path** | ESTOP button wired to both MCUs — MTR cuts throttle locally, zero CAN delay |
 | **Diverse monitoring** | SYS compares commanded speed vs actual from 0x206 — mismatch → ESTOP |
-| **Why only motor needed MTR** | SYNTREE EPS-C and SEB already do EGAS Level 1 internally (CAN, PID, angle sensor, fault detection). Motor controller is a dumb analog device — it has no intelligence, no CAN, no internal monitoring. That gap is filled by the dedicated MTR board. |
+| **Why only motor needed MTR** | steering and brake units already do EGAS Level 1 internally (CAN, PID, angle sensor, fault detection). Motor controller is a dumb analog device — it has no intelligence, no CAN, no internal monitoring. That gap is filled by the dedicated MTR board. |
 | **Body control is QM** | Lights, indicators, DCDC, mode bulbs on SYS are non-safety — safe to share MCU with Level 2 monitoring per ISO 26262 QM classification |
 
 ### 6.1.1 MTR STM32 — I/O & Processing
@@ -490,7 +490,7 @@ stationary at power-on.
 expires — speed must be <50 mm/s from 0x120 for >500ms. If not stationary
 after 3s, extend grace and log warning.
 
-### 6.2 Mode-Gated Dual Control (Option D) — SYNTREE Actuators
+### 6.2 Mode-Gated Dual Control (Option D) — CAN Actuators
 
 The EPS-C and SEB are commanded by different nodes depending on mode. Four options were evaluated (see §6.3). Option D was selected:
 
@@ -498,7 +498,7 @@ The EPS-C and SEB are commanded by different nodes depending on mode. Four optio
 
 **Why Option D over C (SYS owns both):** C makes SYS a single point of failure for both actuators. D preserves independent failure modes — RT failure loses AUTO steering/brake but SYS can still brake in MANUAL; SYS failure loses MANUAL brake but RT can still brake in AUTO. The EPS-C's internal timeout (20ms comm loss → lock) and SEB's internal timeout provide hardware backup regardless.
 
-**Why not B (private CAN):** Adds hardware cost (MCP2515 + transceiver + bus wiring) and SYS bridging latency without safety improvement. The shared low-level CAN with SYNTREE's own rolling counter + checksum validation already prevents accidental actuation.
+**Why not B (private CAN):** Adds hardware cost (MCP2515 + transceiver + bus wiring) and SYS bridging latency without safety improvement. The shared low-level CAN with actuator's own rolling counter + checksum validation already prevents accidental actuation.
 
 | Property | RT (AUTO) | SYS (MANUAL/ESTOP) |
 |----------|-----------|---------------------|
@@ -532,7 +532,7 @@ The EPS-C and SEB are commanded by different nodes depending on mode. Four optio
 
 Converts ROS 2 motion commands (high CAN `0x300`) into:
 - **Speed + gear** → low CAN `0x204` → SYS
-- **Steering angle** → low CAN `0x169` → SYNTREE EPS-C
+- **Steering angle** → low CAN `0x169` → steer-by-wire unit
 
 Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steering feedback and safety monitoring.
 
@@ -610,7 +610,7 @@ struct DriveCmd {
 
 struct ResolvedSetpoint {
     int32_t motor_speed_mmps = 0;
-    int32_t steer_angle_mdeg = 0;  // ±45000, +right (internal; convert to decideg for SYNTREE)
+    int32_t steer_angle_mdeg = 0;  // ±45000, +right (internal; convert to decideg for steer-by-wire)
     uint8_t gear             = 0;
     bool    steer_valid      = false;
     bool    reversing        = false;
@@ -634,7 +634,7 @@ physics_resolve(cmd):
   6. gear: v > 0 → D, v == 0 → N, v < 0 → R
 ```
 
-#### Steering — SYNTREE EPS-C via CAN (`0x169`)
+#### Steering — steer-by-wire unit via CAN (`0x169`)
 
 **Boot sequence — "Listen Before Speaking":**
 
@@ -676,18 +676,18 @@ STEER_FAULT:
 	    (MANUAL mode only; AUTO bulb blinks 2 Hz = degraded steering, AUTO mode locked out)
 ```
 
-**Unit conversion** (internal mdeg ↔ SYNTREE decideg):
+**Unit conversion** (internal mdeg ↔ actuator decideg):
 
 ```
-SYNTREE raw = internal_angle_mdeg / 100   (45500 mdeg → 455 raw → 45.5°)
-internal_mdeg = SYNTREE raw * 100         (455 raw → 45500 mdeg)
+steer-by-wire raw = internal_angle_mdeg / 100   (45500 mdeg → 455 raw → 45.5°)
+internal_mdeg = steer-by-wire raw * 100         (455 raw → 45500 mdeg)
 ```
 
-**SYNTREE protocol specifics:**
+**steer-by-wire protocol specifics:**
 
 | Parameter | Value |
 |-----------|-------|
-| Command ID | `0x169` (factory default — SYNTREE preprogrammed, not reconfigurable. `0x7B9` is sent by RT in AUTO, SYS in MANUAL/ESTOP — one sender active at a time, no collision. `0x205` removed (RT now sends SEB directly)) |
+| Command ID | `0x169` (factory default — actuator preprogrammed, not reconfigurable. `0x7B9` is sent by RT in AUTO, SYS in MANUAL/ESTOP — one sender active at a time, no collision. `0x205` removed (RT now sends SEB directly)) |
 | Rate | 50 Hz (20 ms period) — continuous transmission required |
 | Control mode | 1 = Angle Mode |
 | Angle range | ±700 raw (±70.0°, unit limit; software clamp tighter) |
@@ -811,12 +811,12 @@ Pri 1  watchdog     ── 10 Hz staleness check
 namespace rt {
 // Vehicle
 constexpr float kWheelbaseMM = 1500.0f;
-// Steering (SYNTREE EPS-C)
+// Steering (steer-by-wire unit)
 constexpr float kSteerHardLimitDeg = 40.0f;       // software hard-stop inside mechanical limit
 constexpr float kSteerFollowingErrMinDeg = 2.0f;   // floor threshold (was fixed 5.0)
 constexpr float kSteerFollowingErrFactor = 0.25f;  // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs = 300;        // duration before ESTOP
-constexpr int   kSteerCmdRateHz = 50;              // SYNTREE requires 20ms period
+constexpr int   kSteerCmdRateHz = 50;              // actuator unit requires 20ms period
 constexpr int   kSteerBootWaitMs = 500;            // power-on delay before listening
 // Dynamic angle clamp (0.0.4): limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
 constexpr float kAngleClampBaseDeg    = 40.0f;   // max at 2 km/h
@@ -836,7 +836,7 @@ constexpr int kHeartbeatTimeoutMsSys = 200;       // SYS heartbeat loss (2 misse
 constexpr int kHeartbeatTimeoutMsJetson = 1500;  // Jetson heartbeat loss (3 missed frames) → assisted stop
 // CAN IDs are in shared/can/can_protocol.h (namespace can):
 //   kIdRtHeartbeatLow (0x7FD), kIdSysHeartbeat (0x7FE), kIdJetsonHeartbeat (0x7FC),
-//   kIdRtBrakeCmd (0x205), kIdSyntreeEpsCmd (0x169), kIdSyntreeSebCmd (0x7B9), etc.
+//   kIdRtBrakeCmd (0x205), kIdSbwCmd (0x169), kIdBbwCmd (0x7B9), etc.
 constexpr int kWdtToggleGpio = 21;
 // CAN
 constexpr int kCanLowBitrateHz = 500000, kCanHighBitrateHz = 500000;
@@ -886,7 +886,7 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 | `0x300` HOST_DRIVE_CMD — DLC=8, `{i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear}` | Tricycle kinematics: δ = atan2(L·ω, \|v\|), dynamic angle clamp, gear derivation (v>0→D, v=0→N, v<0→R) | `0x204` RT_DRIVE_CMD — DLC=5, `{i32 speed_mmps, u8 gear}` → MTR, SYS | Motor speed + gear |
 | `0x301` HOST_BRAKE_REQ — DLC=4, `{i32 brake_pressure_kpa}` | Max-select arbitration: max(RT obstacle kPa, Jetson 0x301 kPa) | `0x205` RT_BRAKE_CMD — DLC=4, `{i32 brake_pressure_kpa}` → SYS; `0x7B9` VCU_SEB_REQ → SEB (AUTO, planned) | Brake pressure |
 | `0x400` HOST_OBSTACLE_DIST — DLC=4, `{u32 distance_mm}` | Linear speed clamp: 0 at 300 mm → full at 3000 mm | Clamped speed in `0x204` | Obstacle speed limit |
-| `0x201` SES_STATUS — DLC=8, `{u8 status, i16 angle, u8 torq, …}` | Steering SM: boot sync angle, alignment check, following-error monitor, SYNTREE rolling counter + XOR checksum | `0x169` VCU_SES_REQ — DLC=8, `{u8 ctrl, i16 angle, u8 speed, u8 sec, u8 cnt+cksum, u8 cksum}` → EPS-C (50 Hz, Angle Mode) | Steering angle |
+| `0x201` SES_STATUS — DLC=8, `{u8 status, i16 angle, u8 torq, …}` | Steering SM: boot sync angle, alignment check, following-error monitor, steer-by-wire rolling counter + XOR checksum | `0x169` VCU_SES_REQ — DLC=8, `{u8 ctrl, i16 angle, u8 speed, u8 sec, u8 cnt+cksum, u8 cksum}` → EPS-C (50 Hz, Angle Mode) | Steering angle |
 | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` | Mode gating: AUTO → transmit 0x169+0x204, MANUAL → silent, ESTOP → ramp/hold | Mode state gates TX | Mode control |
 | `0x001` SAFETY_ESTOP — DLC=0 (no payload) | Immediate: ramp/hold steering, zero speed, max brake, forward to other bus | `0x001` DLC=0 to other bus + setpoints zeroed | Emergency stop |
 | `0x7FE` SYS_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Liveness: 200ms timeout (2 missed at 10 Hz) → RT takes over `0x7B9` with stroke=max (full brake) | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (emergency takeover) → SEB | Brake takeover on SYS loss |
@@ -918,7 +918,7 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 
 **What RT manipulates:** Speed setpoint (clamped by obstacle distance), steering angle (resolved from kinematics + dynamic clamp), brake pressure (arbitrated max-select), CAN frames (bridged between buses), mode state (gates actuator transmission).
 
-**What RT controls:** EPS-C steering angle via `0x169` (Angle Mode, 50 Hz, SYNTREE rolling counter + checksum security), MTR motor speed + gear via `0x204` (100 Hz), SEB brake via `0x205`→SYS→`0x7B9` (50 Hz, Pressure/Stroke Mode). CAN gateway message forwarding between low and high buses.
+**What RT controls:** EPS-C steering angle via `0x169` (Angle Mode, 50 Hz, steer-by-wire rolling counter + checksum security), MTR motor speed + gear via `0x204` (100 Hz), SEB brake via `0x205`→SYS→`0x7B9` (50 Hz, Pressure/Stroke Mode). CAN gateway message forwarding between low and high buses.
 
 ---
 
@@ -942,7 +942,7 @@ hardware simplicity). In production these would be separate MCUs:
 | **Mode state machine** | Reads Mode + Start buttons (GPIOs). Toggle MANUAL↔AUTO. Long-press MODE in ESTOP → MANUAL. Sends 0x110 to RT + MTR. **SYS is the authoritative mode source.** | Prio 4 |
 | **RT heartbeat monitor** | Receives 0x7FD at 2 Hz on low bus. Timeout >1000ms → ESTOP via CAN 0x001. Frozen-counter detection prevents stuck-controller masking. | Prio 5 |
 | **EGAS L2 speed monitor** | Compares 0x204 setpoint vs 0x206 actual speed from MTR. Mismatch >500 mm/s for >500ms → ESTOP. | Prio 5 |
-| **Brake control** | Lever sensor (GPIO) → CAN 0x7B9 → SYNTREE SEB. ESTOP → max stroke (27mm). MANUAL → lever stroke (15mm). AUTO → converts RT 0x205 kPa to SEB pressure mode. **Brake priority: ESTOP > lever > CAN pressure > released.** | Prio 3 |
+| **Brake control** | Lever sensor (GPIO) → CAN 0x7B9 → brake-by-wire unit. ESTOP → max stroke (27mm). MANUAL → lever stroke (15mm). AUTO → converts RT 0x205 kPa to SEB pressure mode. **Brake priority: ESTOP > lever > CAN pressure > released.** | Prio 3 |
 | **CAN TX** | Sends 0x011 (5 Hz), 0x7B9 (50 Hz), 0x110 (on-change + every 1s), 0x001 (event), 0x7FE (10 Hz). | Prio 2 |
 
 #### Group B — Body Controller (QM, non-safety)
@@ -1029,7 +1029,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x012` | SYS_DCDC_CMD | `u8 enable` | Change | → DC-DC converter |
 | `0x110` | SYS_MODE_CMD | `u8 mode` | Change | → RT |
 | `0x600` | SYS_DIAG_RPT | 8 bytes | 1 Hz | → RT (fwd to Jetson) |
-| `0x7B9` | VCU_SEB_REQ | `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (8 bytes) | **50 Hz** | → SYNTREE SEB |
+| `0x7B9` | VCU_SEB_REQ | `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (8 bytes) | **50 Hz** | → brake-by-wire unit |
 | `0x7FE` | SYS_HEARTBEAT | `u8 alive_ctr` | 10 Hz | → RT |
 
 ### 8.5 Internal data types
@@ -1237,7 +1237,7 @@ Jetson does NOT watch SYS — RT handles SYS failure (0x001 ESTOP)
 
 SYS controls the SEB brake actuator — there is no independent fast-path check for brake command loss (unlike steering which has the 300ms following-error check, and motor which has the 200ms 0x204 staleness check). The heartbeat IS the brake fast-path check. At 25 km/h, 200ms is ~1.4m of travel — within FTTI for brake loss. At 10 Hz (100ms period), 2 missed frames = 200ms worst case. This is tight enough for brake safety while providing a 100ms debounce against CAN jitter.
 
-**RT brake takeover on SYS heartbeat loss:** Architecture §6.2 Option D explicitly requires RT to take over brake on SYS failure: "SYS failure → brake lost? No (RT takes over)." When RT detects SYS heartbeat loss, RT immediately begins transmitting 0x7B9 with stroke=max (full brake) at 50 Hz, regardless of current mode. RT already knows the full SYNTREE SEB protocol — this is the same transmission it performs in AUTO mode, with stroke=max substituted for the computed pressure target. The mode gate opens on emergency: both RT and SYS may briefly transmit 0x7B9 during the takeover transition, which is within the dual-sender exception documented in §6.2. Total brake gap: 200ms detection + 20ms first frame = 220ms worst case.
+**RT brake takeover on SYS heartbeat loss:** Architecture §6.2 Option D explicitly requires RT to take over brake on SYS failure: "SYS failure → brake lost? No (RT takes over)." When RT detects SYS heartbeat loss, RT immediately begins transmitting 0x7B9 with stroke=max (full brake) at 50 Hz, regardless of current mode. RT already knows the full brake-by-wire unit protocol — this is the same transmission it performs in AUTO mode, with stroke=max substituted for the computed pressure target. The mode gate opens on emergency: both RT and SYS may briefly transmit 0x7B9 during the takeover transition, which is within the dual-sender exception documented in §6.2. Total brake gap: 200ms detection + 20ms first frame = 220ms worst case.
 
 **Jetson→RT at 1500ms — assisted stop:**
 
@@ -1311,7 +1311,7 @@ Plus brake lever on GPIO2 (active-low, pull-up). Safety task polls ESTOP + brake
 
 > Industrial safety pattern: separate STOP (red mushroom) and START (green) buttons. STOP is NC (normally-closed) — a cut wire triggers ESTOP, not a failure-silent state.
 
-#### Brake — SYNTREE SEB via CAN (`0x7B9`)
+#### Brake — brake-by-wire unit via CAN (`0x7B9`)
 
 **Boot sequence — "Listen Before Speaking":**
 
@@ -1344,7 +1344,7 @@ BRAKE_DEGRADED:
   - Brake lever remains functional — this is not a terminal fault state
 ```
 
-**SYNTREE SEB protocol:**
+**brake-by-wire unit protocol:**
 
 | Parameter | Value |
 |-----------|-------|
@@ -1359,7 +1359,7 @@ BRAKE_DEGRADED:
 
 > **Pressure Mode (1) — verified kPa→raw conversion:**
 > 
-> RT sends `0x205 {i32 brake_pressure_kpa}`. SYS converts using verified SYNTREE SEB spec:
+> RT sends `0x205 {i32 brake_pressure_kpa}`. SYS converts using verified brake-by-wire unit spec:
 > `seb_raw = (uint8_t)(kpa * 0.02f)`. Scale: 0.05 MPa/bit, range 0–5 MPa (raw 0–100). At 5000 kPa (5 MPa) → raw=100. Clamp to `kSebMaxPressureRaw` (100).
 > 
 > **Mode-switching:** 0x205 transitions 0→positive: hold current stroke, switch mode bit to 1 (Pressure), ramp pressure from current measured to target. 0x205 drops to 0: switch mode to 1 (Stroke), stroke=0. Prevents pressure transients.
@@ -1478,13 +1478,13 @@ constexpr int kHeartbeatIntervalMs    = 100;   // SYS sends 0x7FE at 10 Hz (fast
 constexpr int kHeartbeatTimeoutMsRt   = 1000;  // RT heartbeat loss (0x7FD at 2 Hz, 2 missed frames = 1000ms). Faster 0x204 staleness (200ms) catches RT crash first.
 // CAN IDs are in shared/can/can_protocol.h (namespace can):
 //   kIdRtHeartbeatLow (0x7FD), kIdSysHeartbeat (0x7FE), kIdRtBrakeCmd (0x205),
-//   kIdSyntreeSebCmd (0x7B9), etc.
+//   kIdBbwCmd (0x7B9), etc.
 // Shared constants are in shared/shared_config.h (namespace shared):
 //   kSebMaxPressureRaw (100), kStartupGracePeriodMs (3000),
 //   kBrakeStrokeScale (0.05), kBrakeStrokeOffset (-30.0)
 constexpr int kSetpointStaleMs = 200;           // 0x204 staleness → zero speed
 constexpr int kSafetyCheckHz = 20, kGearCheckHz = 50;
-// Brake (SYNTREE SEB)
+// Brake (brake-by-wire unit)
 constexpr int kBrakeCmdRateHz = 50, kBrakeBootWaitMs = 500;
 constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 } // namespace sys
@@ -1596,8 +1596,8 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
   ├── SYS ESP32-S3               TX: 0x011,0x012,0x110,0x600,0x7B9,0x001,0x7FE
   │                              RX: 0x001,0x204,0x205,0x206,0x302,0x6FB,0x721,0x731,0x741,0x7FD,0x7FB
   ├── PWT ESP32-S3 (TWAI0)      TX: 0x7FB | RX: 0x001,0x012,0x7FD,0x7FE
-  ├── SYNTREE EPS-C (steering)   TX: 0x201 | RX: 0x169
-  ├── SYNTREE SEB (brake)        TX: 0x721 | RX: 0x7B9
+  ├── steer-by-wire unit (steering)   TX: 0x201 | RX: 0x169
+  ├── brake-by-wire unit (brake)        TX: 0x721 | RX: 0x7B9
   └── MTR STM32 (motor)          TX: 0x120,0x206 | RX: 0x001,0x110,0x204,0x7FD
 ```
 
@@ -1661,7 +1661,7 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 | 1 | ~~Brake arbitration has no CAN path to SYS~~ | ~~Jetson `0x301` + RT obstacle braking never actuated~~ | **RESOLVED:** `0x205 RT_BRAKE_CMD` (RT→SYS, DLC=4, i32 kPa, 50 Hz). SYS maps kPa→SEB Pressure Mode. Mode-switching protocol defined in §8.6. |
 | 2 | ~~No CAN message for Jetson to request S (Sport) gear~~ | ~~AUTO can only select D/N/R~~ | **RESOLVED:** `0x300 HOST_DRIVE_CMD` repacked: i32 speed + i24 yaw + u8 gear (N=0,D=1,S=2,R=3). RT passes gear through to `0x204`. |
 | 3 | ~~EPS-C timeout-fault behavior unknown~~ | ~~On ESTOP or comm loss, steering may lock, center, or freewheel~~ | **RESOLVED:** Two-tier ESTOP steering (§7.6). Active-zero centering for non-obstacle ESTOP with silent-stop fallback on mechanical jam. Obstacle-triggered ESTOP holds current angle. EPS-C timeout-fault is now a last-resort fallback (CAN bus dead), not the primary ESTOP mechanism. |
-| 4 | ~~SEB pressure control mode not defined~~ | ~~SYS currently uses stroke mode only~~ | **RESOLVED:** Verified SYNTREE SEB spec: `VCU_SEB_Pre_Value_Req` is u8 at bit 32, scale 0.05 MPa/bit, range 0–5 MPa (raw 0–100). Conversion: `seb_raw = kPa × 0.02`. Clamp to 100. |
+| 4 | ~~SEB pressure control mode not defined~~ | ~~SYS currently uses stroke mode only~~ | **RESOLVED:** Verified brake-by-wire unit spec: `VCU_SEB_Pre_Value_Req` is u8 at bit 32, scale 0.05 MPa/bit, range 0–5 MPa (raw 0–100). Conversion: `seb_raw = kPa × 0.02`. Clamp to 100. |
 | 5 | Speed control open-loop — PID exists but encoder not fitted | `speed_pid.cpp` is correct but runs with `measured=0` (encoder not physically installed). PID must NOT be in the active control path until GPIO1/2 PCNT is wired. Currently runs as shadow controller → `0x220` telemetry for validation. | 1) Fit rear motor encoder to GPIO1/2. 2) Verify encoder pulses on PCNT. 3) Enable `pid_update(desired, measured, dt)` with real data. 4) Route PID effort trim to SYS via new field in `0x204` or dedicated ID. 5) Validate closed-loop response against open-loop baseline. |
 | 6 | ~~ESTOP exit race condition — START button during steering ramp~~ | ~~Pressing START before non-obstacle centering ramp completes stops 0x169 mid-ramp, leaving EPS-C to comm-fault at an off-center angle.~~ | **RESOLVED:** `exit_estop()` sets `m_estop_exit_pending` flag instead of immediate transition. `tick()` checks flag after ramp/hold completes → ACTIVE. Brake/motor/lights transition immediately. |
 | 7 | **SEB BRAKE_FAULT makes physical brake lever inoperative** | Original BRAKE_FAULT state permanently stops 0x7B9 transmission on boot sync timeout. Since SEB is by-wire (electro-hydraulic, no mechanical linkage), this disables the brake lever — contradicting the claim "brake lever always works." | **Software fix:** Replaced BRAKE_FAULT with BRAKE_DEGRADED (§8.6). On sync timeout, transmit 0x7B9 with lever-based defaults (0mm/15mm) without waiting for sync. Recovers when 0x721 arrives. Lever always functional. See `issues/emergency-safety-analysis.md` §2. |
@@ -1686,8 +1686,8 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 | File | Content |
 |------|---------|
 | [`can-dictionary.md`](can-dictionary.md) | Bit-level CAN signal layouts for all IDs on both buses |
-| [`docs/steering-unit.md`](docs/steering-unit.md) | SYNTREE EPS-C protocol reference |
-| [`docs/brake-unit.md`](docs/brake-unit.md) | SYNTREE SEB protocol reference |
+| [`docs/steering-unit.md`](docs/steering-unit.md) | steer-by-wire unit protocol reference |
+| [`docs/brake-unit.md`](docs/brake-unit.md) | brake-by-wire unit protocol reference |
 | [`rt-esp32/README.md`](rt-esp32/README.md) | RT build & test |
 | [`sys-esp32/README.md`](sys-esp32/README.md) | SYS build & test |
 | [`notes/can-protocol.md`](notes/can-protocol.md) | CAN protocol theory — arbitration, frame types, standards |
@@ -1707,7 +1707,7 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 | [`docs/emergency-system.md`](docs/emergency-system.md) | **Primary:** ESTOP triggers, 8-layer defense, emergency response matrix, rider's guide, EGAS 3-level architecture, testing procedures |
 | [`issues/emergency-safety-analysis.md`](issues/emergency-safety-analysis.md) | **Safety analysis:** ESTOP exit race condition, SEB brake lever contradiction, watchdog unbraked window — causal traces, risk quantification, recommended fixes |
 | [`docs/defense-in-depth-safety.md`](docs/defense-in-depth-safety.md) | Layered safety — ESTOP, following error, dynamic clamp, OR logic |
-| [`docs/syntree-security-protocol.md`](docs/syntree-security-protocol.md) | Rolling counter + XOR checksum for SYNTREE actuators |
+| [`docs/steer-by-wire-security-protocol.md`](docs/steer-by-wire-security-protocol.md) | Rolling counter + XOR checksum for steer-by-wire actuators |
 | [`docs/high-voltage-isolation.md`](docs/high-voltage-isolation.md) | 72V galvanic isolation — TLP281 optos, relays, fuses, TVS |
 | [`docs/distributed-architecture.md`](docs/distributed-architecture.md) | Three-node rationale — Jetson/RT/SYS split, dual-CAN on RT |
 | [`docs/actuator-interfacing.md`](docs/actuator-interfacing.md) | MCP4725 DAC throttle, gear pass-through, relay logic |

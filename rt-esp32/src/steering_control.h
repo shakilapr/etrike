@@ -1,5 +1,5 @@
 #pragma once
-// SteeringControl — SYNTREE EPS-C command generation (0x169 VCU_SES_REQ).
+// SteeringControl — steer-by-wire unit command generation (0x169 VCU_SES_REQ).
 //
 // TASK OWNERSHIP: This class is owned by t_control (prio 4). All mutation
 // (tick, start_estop, exit_estop, set_target, reset) must happen from
@@ -216,7 +216,7 @@ private:
     void build_command(can::VcuSesReq& out) {
         out.align_enable = 1;
         out.control_enable = 1;
-        out.target_angle = m_active_angle + kSyntreeAngleOffset;  // 0.1° → CAN raw (SYNTREE offset)
+        out.target_angle = m_active_angle + kSbwAngleOffset;  // 0.1° → CAN raw (steer-by-wire offset)
         // Dynamic slew rate: 125°/s at low speed, 525°/s at high speed
         float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
         float rate_deg_s = kSteerRateMinDegS

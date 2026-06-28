@@ -2,7 +2,7 @@
 
 When a CAN frame carries a 16-bit or 32-bit value (speed, angle, pressure), the sender and receiver must agree on *byte order*. Getting it wrong silently swaps bytes — your 3000 mm/s becomes 768 mm/s, or worse, a negative number.
 
-The E-Trike uses **big-endian (MSB first)** for multi-byte CAN fields — except SYNTREE actuators which use **little-endian (LSB first)** per their factory protocol. The `can-dictionary.md` marks endianness on every signal.
+The E-Trike uses **big-endian (MSB first)** for multi-byte CAN fields — except steer-by-wire actuators which use **little-endian (LSB first)** per their factory protocol. The `can-dictionary.md` marks endianness on every signal.
 
 ---
 
@@ -57,7 +57,7 @@ Motorola: bit 0 = MSB of signal → signal bits are [0..15] = [MSB..LSB]
 Intel:    bit 0 = LSB of signal → signal bits are [0..15] = [LSB..MSB]
 ```
 
-**The E-Trike convention:** All signals use big-endian (Motorola) unless marked otherwise. SYNTREE protocols use "Motorola LSB" — Motorola bit numbering but little-endian byte order. See the signal tables in `can-dictionary.md`.
+**The E-Trike convention:** All signals use big-endian (Motorola) unless marked otherwise. steer-by-wire protocols use "Motorola LSB" — Motorola bit numbering but little-endian byte order. See the signal tables in `can-dictionary.md`.
 
 ---
 
@@ -65,7 +65,7 @@ Intel:    bit 0 = LSB of signal → signal bits are [0..15] = [LSB..MSB]
 
 CAN itself is big-endian at the bit level: the most significant bit of the CAN ID is transmitted first during arbitration. This is why lower IDs (more leading zeros in the MSB) win arbitration — the first dominant bit (0) from a competing node overrides a recessive bit (1) from another, and the lower-ID frame continues.
 
-Most automotive standards (J1939, CANopen) follow this convention and define multi-byte signals as big-endian. The E-Trike does the same for consistency — except where SYNTREE factory protocols dictate little-endian.
+Most automotive standards (J1939, CANopen) follow this convention and define multi-byte signals as big-endian. The E-Trike does the same for consistency — except where steer-by-wire factory protocols dictate little-endian.
 
 ---
 
@@ -128,13 +128,13 @@ uint32_t htonl(uint32_t host) {
            ((host & 0xFF000000) >> 24);
 }
 
-// For SYNTREE (little-endian), just memcpy if the CPU is little-endian (ESP32 is).
+// For steer-by-wire (little-endian), just memcpy if the CPU is little-endian (ESP32 is).
 // If your CPU is big-endian, reverse.
 ```
 
 The ESP32 (Xtensa LX7) is **little-endian**. So:
 - For E-Trike big-endian CAN signals: reverse the bytes before sending.
-- For SYNTREE little-endian signals: use native byte order — no conversion needed.
+- For steer-by-wire little-endian signals: use native byte order — no conversion needed.
 
 ---
 
@@ -150,4 +150,4 @@ The ESP32 (Xtensa LX7) is **little-endian**. So:
 
 ---
 
-*See also: [[can-protocol]] for CAN frame structure, `can-dictionary.md` for bit-level layouts of every signal, `docs/steering-unit.md` for SYNTREE little-endian layout.*
+*See also: [[can-protocol]] for CAN frame structure, `can-dictionary.md` for bit-level layouts of every signal, `docs/steering-unit.md` for steer-by-wire little-endian layout.*

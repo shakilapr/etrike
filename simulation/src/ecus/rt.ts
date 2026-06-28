@@ -245,7 +245,7 @@ export class RtEcu implements SimulatedEcu {
       }
 
       // Gap #12: RT takes over 0x7B9 on SYS heartbeat loss (stroke=max)
-      // Matches firmware VcuSebReq::pack() — per SYNTREE CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
+      // Matches firmware VcuSebReq::pack() — per steer-by-wire CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
       if (sysHbTimeout) {
         const strokeRaw = 1140;  // 27mm max: (27+30)/0.05
         const raw = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -288,7 +288,7 @@ export class RtEcu implements SimulatedEcu {
       const cmd = this.steering.tick(this.sesAngleRaw, this.sesAngleStatus, nowMs);
       if (cmd) {
         this.lastCmdAngleRaw = cmd.targetAngle;
-        // Build 0x169 VCU_SES_REQ (SYNTREE LE encoding)
+        // Build 0x169 VCU_SES_REQ (steer-by-wire LE encoding)
         const angle16 = cmd.targetAngle & 0xFFFF;
         const speedRaw = cmd.targetSpeed & 0xFFFF;
         const rollCnt = cmd.rollingCounter;  // steering's own 50 Hz counter (0-15)
@@ -307,7 +307,7 @@ export class RtEcu implements SimulatedEcu {
           cmd.vehicleSpeed & 0xFF,
           0, // checksum placeholder
         ];
-        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
+        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per steer-by-wire CSV spec)
         let cksum = 0;
         for (let i = 0; i < 7; i++) cksum ^= data[i];
         data[7] = cksum ^ 0xFF;

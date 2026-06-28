@@ -297,7 +297,7 @@ The MTR STM32 is the EGAS Level 1 Function Controller for motor actuation. SYS E
 |---------|-----------|----------|
 | Low CAN bus-off | TWAI TEC > 255 | Log, auto-recover. ESTOP if persistent. |
 | High CAN bus-off | MCP2515 error flags | Log, auto-recover. Zero setpoints until restored. |
-| CAN frame corruption | SYNTREE checksum fail | Frame silently discarded. Rolling counter NOT incremented. |
+| CAN frame corruption | steer-by-wire checksum fail | Frame silently discarded. Rolling counter NOT incremented. |
 | CAN transceiver dead | No frames from that node | Heartbeat timeout → ESTOP or controlled stop. |
 
 **Bus-off recovery:** The CAN controller automatically attempts to recover after 128 occurrences of 11 recessive bits (standard CAN spec). During bus-off, the node cannot transmit. If recovery fails, the heartbeat timeout on the peer node triggers.
@@ -508,7 +508,7 @@ If the system reboots unexpectedly (watchdog fired):
 | [[high-voltage-isolation]] | 72V galvanic isolation — TLP281, relays, fuses, TVS |
 | [[distributed-architecture]] | Three-node rationale — Jetson/RT/SYS/MTR split |
 | [[listen-before-speaking]] | CAN actuator safe bootstrapping after ESTOP/watchdog reset |
-| [[syntree-security-protocol]] | Rolling counter + XOR checksum for SYNTREE actuators |
+| [[steer-by-wire-security-protocol]] | Rolling counter + XOR checksum for steer-by-wire actuators |
 | [[wiring]] | Pin-to-pin wiring including ESTOP button, brake lever, START button |
 | [architecture.md](../architecture.md) §3 | Mode state machine (MANUAL → AUTO → ESTOP) |
 | [architecture.md](../architecture.md) §6.1 | EGAS 3-level motor safety architecture |

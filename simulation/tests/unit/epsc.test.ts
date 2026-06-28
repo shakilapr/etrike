@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SyntreeEpsc } from "../../src/ecus/epsc.js";
+import { Sbwc } from "../../src/ecus/epsc.js";
 import type { SimFrame } from "../../src/core/types.js";
 import type { SimulationContext } from "../../src/ecus/base.js";
 
@@ -14,11 +14,11 @@ function make0x169(nowMs: number): SimFrame {
   };
 }
 
-describe("SyntreeEpsc", () => {
-  let epsc: SyntreeEpsc;
+describe("Sbwc", () => {
+  let epsc: Sbwc;
 
   beforeEach(() => {
-    epsc = new SyntreeEpsc();
+    epsc = new Sbwc();
     epsc.init();
     epsc.setActualAngle(0);
   });

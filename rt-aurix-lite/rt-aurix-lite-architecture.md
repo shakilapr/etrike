@@ -2,7 +2,7 @@
 
 **Three-node consolidated control:** **Jetson Orin** (ROS 2 perception/planning), **AURIX TC3xx** (realtime physics, steering, brake, safety, body control, CAN gateway — combined RT+SYS), **MTR STM32** (motor actuation EGAS Level 1).
 
-Two physical CAN buses at 500 kbit/s. AURIX bridges selected messages between buses (same role as RT in the distributed variant). Actuators are **SYNTREE** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). The AURIX directly commands both EPS-C and SEB in all modes — no mode-gated dual control needed (single controller owns both actuators). Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
+Two physical CAN buses at 500 kbit/s. AURIX bridges selected messages between buses (same role as RT in the distributed variant). Actuators are **steer-by-wire** CAN modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). The AURIX directly commands both EPS-C and SEB in all modes — no mode-gated dual control needed (single controller owns both actuators). Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
 
 > **Relationship to distributed architecture:** This is a consolidated variant of [`architecture.md`](../architecture.md). The distributed variant (RT ESP32-S3 + SYS ESP32-S3 on two CAN buses) remains the primary design. The AURIX Lite variant merges RT and SYS into one controller, keeping the same two-bus CAN topology. All CAN IDs, signal layouts, and protocol definitions are identical between variants. AURIX inherits both CAN interfaces that RT and SYS previously owned separately.
 
@@ -44,7 +44,7 @@ Two physical CAN buses at 500 kbit/s. AURIX bridges selected messages between bu
   │           0x731,0x741,0x6FB,0x206,0x120                          │
   │                                                                  │
   │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-  │  │ SYNTREE  │  │ SYNTREE  │  │  DC-DC   │  │   MTR    │        │
+  │  │ steer-by-wire  │  │ steer-by-wire  │  │  DC-DC   │  │   MTR    │        │
   │  │   SEB    │  │  EPS-C   │  │ Converter│  │  STM32   │        │
   │  │ (Brake)  │  │(Steering)│  │ 72V→12V  │  │          │        │
   │  │0x7B9 cmd │  │0x169 cmd │  │ (0x012)  │  │RX:0x110, │        │
@@ -56,7 +56,7 @@ Two physical CAN buses at 500 kbit/s. AURIX bridges selected messages between bu
   └──────────────────────────────────────────────────────────────────┘
 ```
 
-> **Dual CAN hardware on AURIX:** The AURIX TC3xx has multiple MCMCAN modules. MCMCAN0 drives the low-level CAN bus (SYNTREE, MTR, DC-DC). MCMCAN1 drives the high-level CAN bus (Jetson). The `task_can_rx` and `task_can_tx` run per-bus, same as RT's `can_rx_low`/`can_rx_high` in the distributed variant.
+> **Dual CAN hardware on AURIX:** The AURIX TC3xx has multiple MCMCAN modules. MCMCAN0 drives the low-level CAN bus (steer-by-wire, MTR, DC-DC). MCMCAN1 drives the high-level CAN bus (Jetson). The `task_can_rx` and `task_can_tx` run per-bus, same as RT's `can_rx_low`/`can_rx_high` in the distributed variant.
 
 ---
 
@@ -283,7 +283,7 @@ namespace aurix {
 // ── Vehicle (shared) ──────────────────────────────────────────
 // Use shared:: constants from shared/shared_config.h
 
-// ── Steering (SYNTREE EPS-C) ──────────────────────────────────
+// ── Steering (steer-by-wire unit) ──────────────────────────────────
 constexpr float kSteerHardLimitDeg = 40.0f;
 constexpr float kSteerFollowingErrDeg = 5.0f;
 constexpr int   kSteerFollowingErrMs = 300;
@@ -292,7 +292,7 @@ constexpr int   kSteerBootWaitMs = 500;
 constexpr float kSteerMaxAngleLowSpeed = 40.0f;
 constexpr float kSteerMaxAngleHighSpeed = 5.0f;
 
-// ── Brake (SYNTREE SEB) ───────────────────────────────────────
+// ── Brake (brake-by-wire unit) ───────────────────────────────────────
 constexpr int   kBrakeCmdRateHz = 50;
 constexpr int   kBrakeBootWaitMs = 500;
 constexpr float kBrakeManualStroke = 15.0f;

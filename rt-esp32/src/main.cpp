@@ -445,7 +445,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
-            int16_t angle = g_ses_angle_0_1deg.load() + rt::kSyntreeAngleOffset;
+            int16_t angle = g_ses_angle_0_1deg.load() + rt::kSbwAngleOffset;
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5

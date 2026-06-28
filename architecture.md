@@ -128,7 +128,7 @@ Jetson 0x302 → RT forward → 0x302 → SYS → lights
 2. **ESTOP bypasses queues.** Safety task preempts and writes directly to actuators.
 3. **One CAN ID = one sender per bus.** Heartbeats use per-node IDs (0x7FD RT, 0x7FE SYS, 0x7FC Jetson).
 4. **Lower CAN ID = higher bus priority.** Safety IDs (0x00X) win arbitration.
-5. **All multi-byte CAN fields big-endian** unless SYNTREE protocol specifies otherwise.
+5. **All multi-byte CAN fields big-endian** unless actuator protocol specifies otherwise.
 6. **Manual mode is pass-through, not dead.** SYS mirrors physical inputs to outputs.
 7. **Actuators are standalone CAN modules.** Commanded via CAN, no direct MCU GPIO.
 8. **RT is the only dual-bus node.** No direct Jetson ↔ SYS CAN path.
@@ -288,7 +288,7 @@ Four per-task alive counters (safety, brake, dispatch, can_tx). Updated every ta
 
 ### 9.1 Bench Testing Without Full Hardware
 
-The system has hardware dependencies on peer ECUs and SYNTREE actuators. For
+The system has hardware dependencies on peer ECUs and steer-by-wire actuators. For
 bench testing with a single ESP32-S3 and a CAN bus analyzer, compile-time
 bypass flags disable these dependencies:
 

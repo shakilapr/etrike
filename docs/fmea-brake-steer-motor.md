@@ -19,7 +19,7 @@ all modes, and add quantitative failure rates.
 | # | Failure Mode | Detection | Response | Safe State |
 |---|-------------|-----------|----------|------------|
 | S1 | EPS-C CAN comm loss (>20ms) | EPS-C internal watchdog | EPS-C locks current angle | Steering holds |
-| S2 | 0x169 checksum corruption | SYNTREE checksum check in EPS-C | EPS-C rejects frame, holds last valid | 3 consecutive fails → EPS-C fault |
+| S2 | 0x169 checksum corruption | steer-by-wire checksum check in EPS-C | EPS-C rejects frame, holds last valid | 3 consecutive fails → EPS-C fault |
 | S3 | RT steering follow-error > threshold | RT safety_monitor.h: compares cmd vs actual | ESTOP after 300ms persistence | Steering ramps to 0° at 20°/s |
 | S4 | EPS-C angle sensor fault (L3) | 0x202 SES_ErrInfo → RT → ESTOP | RT detects L3 bits, triggers ESTOP | Hardware ESTOP kills motor |
 | S5 | RT steering control crash | SYS heartbeat monitor → ESTOP | SYS takes over brake, mode→ESTOP | EPS-C internal hold on comm loss |

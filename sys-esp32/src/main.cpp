@@ -206,7 +206,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             break;
         }
-        case can::kIdSyntreeSebStatus: {  // 0x721
+        case can::kIdBbwStatus: {  // 0x721
             // F13: Validate checksum before using data (XOR bytes 0-6 ^ 0xFF == byte 7)
             {
                 uint8_t cksum = 0;
@@ -255,7 +255,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdSyntreeSebTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
+        case can::kIdBbwTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
             // Motor current: Byte1-2 i16 LE, scale 0.0078125 A/bit
             // ECU temp: Byte3-4 u16 LE, scale 0.5 C/bit, offset -40
             uint16_t ecu_raw  = uint16_t(fr.data[3] | (fr.data[4] << 8));
@@ -265,7 +265,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdSyntreeSebErrInfo: {  // 0x731 — SEB_ErrInfo (arch §8.3)
+        case can::kIdBbwErrInfo: {  // 0x731 — SEB_ErrInfo (arch §8.3)
             // Check all 16 L3 fault bits per can-dictionary. Any L3 → force_estop.
             // L3 bit positions: 2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22
             static const int kL3Bits[] = {2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22};
@@ -293,7 +293,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdSyntreeSebVersion: {  // 0x741 — SEB_Version (arch §8.3)
+        case can::kIdBbwVersion: {  // 0x741 — SEB_Version (arch §8.3)
             if (!g_seb_version_logged.load(std::memory_order_relaxed)) {
                 uint8_t sw_raw = fr.data[0];
                 uint8_t hw_raw = fr.data[1];

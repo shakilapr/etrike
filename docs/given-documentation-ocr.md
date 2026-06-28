@@ -1,12 +1,12 @@
-# Syntree EPS-C & SEB — Technical Reference
+# steer-by-wire EPS-C & SEB — Technical Reference
 
-Extracted and cleaned from the original Syntree product specification PDFs (`given-documentation.pdf`, `given-documentation-ocr.pdf`). The source PDFs are bilingual (Chinese/English) scanned documents; the OCR quality varies. This document distills the **technically actionable** information needed for firmware integration. Always verify byte layouts against the original PDFs before enabling actuator output.
+Extracted and cleaned from the original steer-by-wire product specification PDFs (`given-documentation.pdf`, `given-documentation-ocr.pdf`). The source PDFs are bilingual (Chinese/English) scanned documents; the OCR quality varies. This document distills the **technically actionable** information needed for firmware integration. Always verify byte layouts against the original PDFs before enabling actuator output.
 
 ---
 
 ## 1. EPS-C — Electric Power Steering Column
 
-**Product:** Syntree steer-by-wire intelligent steering system (SES)
+**Product:** steer-by-wire steer-by-wire intelligent steering system (SES)
 **Version:** A/10 (2024-11-22)
 **Category:** EPS-C
 
@@ -38,7 +38,7 @@ Extracted and cleaned from the original Syntree product specification PDFs (`giv
 ### 1.2 Communication
 
 - **Baud rate:** 500K (default), 250K optional
-- **Protocol:** CAN_SES (Syntree proprietary steer-by-wire)
+- **Protocol:** CAN_SES (steer-by-wire proprietary steer-by-wire)
 - **Terminal resistance:** Not populated by default on ECU
 
 ### 1.3 Operating Principle
@@ -61,7 +61,7 @@ The VCU transmits steering angle commands via CAN. The ECU calculates and drives
 | `VCU_Veh_Spd_Value` | Vehicle speed value |
 | `VCU_SES_CheckSum` | Frame checksum |
 
-> **⚠️ The exact byte layout, bit positions, scaling factors, and checksum algorithm must be verified against the project-specific protocol document before transmitting on hardware.** The `kSyntreeCanOutputEnabled` flag in `config.h` defaults to `false` for this reason.
+> **⚠️ The exact byte layout, bit positions, scaling factors, and checksum algorithm must be verified against the project-specific protocol document before transmitting on hardware.** The `ksteer-by-wireCanOutputEnabled` flag in `config.h` defaults to `false` for this reason.
 
 #### EPS-C → VCU Status (ID: 0x201, cycle: 10 ms, DLC: 8)
 
@@ -126,7 +126,7 @@ The VCU transmits steering angle commands via CAN. The ECU calculates and drives
 
 ## 2. SEB — Electronic Brake System
 
-**Product:** Syntree wire-controlled braking system (SEB)
+**Product:** steer-by-wire wire-controlled braking system (SEB)
 **Version:** A/19 (2024-08-02)
 **Category:** SEB
 
@@ -315,7 +315,7 @@ The SEB supports test-mode commands for bleeding and calibration. These use CAN 
 
 ## 4. Key Integration Notes
 
-1. **Both EPS-C and SEB use proprietary CAN protocols with checksums and rolling counters.** Do not transmit actuator commands until the byte layout, scaling, and checksum algorithm are confirmed against the project-specific protocol document from Syntree.
+1. **Both EPS-C and SEB use proprietary CAN protocols with checksums and rolling counters.** Do not transmit actuator commands until the byte layout, scaling, and checksum algorithm are confirmed against the project-specific protocol document from steer-by-wire.
 
 2. **EPS-C requires zero-calibration** when paired with a new assembly. This is a one-time procedure, likely triggered via the `Alignment_Enable` flag in the command frame.
 
@@ -325,10 +325,10 @@ The SEB supports test-mode commands for bleeding and calibration. These use CAN 
 
 5. **EPS-C and SEB are on the private CAN bus** (TWAI1 on the ESP32-S3). They must never be exposed to the public Jetson CAN bus.
 
-6. **VCU address 0x27** appears in the DCDC spec for J1939 addressing. The EPS-C and SEB protocols may use different addressing — verify with Syntree.
+6. **VCU address 0x27** appears in the DCDC spec for J1939 addressing. The EPS-C and SEB protocols may use different addressing — verify with steer-by-wire.
 
 7. **Fault handling:** Both ECUs report faults via status frames. Level-1 faults (L1) are most severe. The ESP32-S3 should monitor `Error_Status` and trigger ESTOP on critical faults.
 
 ---
 
-*Source PDFs: `given-documentation.pdf` (58 pages, Syntree EPS-C + DCDC CAN spec), `given-documentation-ocr.pdf` (58 pages, alternate scan with higher-quality text layer). Both preserved in the project root for byte-layout verification.*
+*Source PDFs: `given-documentation.pdf` (58 pages, steer-by-wire EPS-C + DCDC CAN spec), `given-documentation-ocr.pdf` (58 pages, alternate scan with higher-quality text layer). Both preserved in the project root for byte-layout verification.*

@@ -1,4 +1,4 @@
-# SYNTREE EPS-C — Steer-by-Wire Unit
+# steer-by-wire unit — Steer-by-Wire Unit
 
 CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
 
@@ -43,13 +43,13 @@ CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
 |------|---|---|---|---|---|---|---|---|
 | Content | Align[0]+CtrlEn[1]+rsvd[2-7] | rsvd | angle [7:0] | angle [15:8] | speed [7:0] | speed[11:8](lower nibble)+security(upper nibble) | veh_spd | checksum |
 
-### Unit conversion (internal mdeg ↔ SYNTREE raw, offset -3000)
+### Unit conversion (internal mdeg ↔ steer-by-wire raw, offset -3000)
 
 The CSV defines an offset of -3000 for `VCU_SES_Tgt_StrAngle`, meaning 0° corresponds to a raw value of 30000.
 
 ```
-SYNTREE raw = (internal_angle_mdeg / 100) + 30000    (45500 mdeg → 455 + 30000 = 30455 raw → 45.5°)
-internal_mdeg = (SYNTREE raw - 30000) × 100          (30455 raw → 455 × 100 = 45500 mdeg → 45.5°)
+steer-by-wire raw = (internal_angle_mdeg / 100) + 30000    (45500 mdeg → 455 + 30000 = 30455 raw → 45.5°)
+internal_mdeg = (steer-by-wire raw - 30000) × 100          (30455 raw → 455 × 100 = 45500 mdeg → 45.5°)
 ```
 
 ---
@@ -178,7 +178,7 @@ STEER_ACTIVE:
 
 STEER_FAULT:
   - Stop transmitting 0x169
-  - EPS-C will timeout-fault (lock or limp — verify behavior with SYNTREE spec)
+  - EPS-C will timeout-fault (lock or limp — verify behavior with steer-by-wire spec)
 ```
 
 **Critical rules:**
@@ -246,7 +246,7 @@ void ses_send_command(float target_angle_deg, uint16_t speed_limit_deg_s) {
     payload.roll_cnt_enable = 1;
     payload.checksum_enable = 1;
 
-    // 3. Angle target (internal mdeg → SYNTREE raw with offset -3000)
+    // 3. Angle target (internal mdeg → steer-by-wire raw with offset -3000)
     //    internal_angle_mdeg / 100 = target_angle_deg × 10, then add 30000 offset
     payload.target_angle = (int16_t)(target_angle_deg * 10.0f + 30000);
 
@@ -284,7 +284,7 @@ void ses_send_command(float target_angle_deg, uint16_t speed_limit_deg_s) {
 | `SES_Error_Status > 0` | Degraded mode | Log, report, ESTOP if L2/L3 |
 | Following error >5° for 300 ms | — | RT triggers system ESTOP |
 | Sync timeout (no `0x201` for 2s) | — | Remain in STEER_FAULT, MANUAL only |
-| EPS-C timeout-fault behavior | TBD — lock, center, or freewheel | Verify against SYNTREE spec |
+| EPS-C timeout-fault behavior | TBD — lock, center, or freewheel | Verify against steer-by-wire spec |
 
 ---
 

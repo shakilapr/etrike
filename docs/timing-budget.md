@@ -67,7 +67,7 @@ Task execution times are estimates based on the ESP32-S3 at 240 MHz and STM32 at
 | 0x7FD | RT_HEARTBEAT | 1 | 2 | 2 | 216 | 0.1% |
 | 0x7FE | SYS_HEARTBEAT | 1 | 10 | 10 | 1,080 | 0.5% |
 
-**Low bus total: ~86% of 500 kbit/s** (primarily from 100 Hz SYNTREE telemetry frames). 0x6FA and 0x6FB alone contribute ~24%. These are lowest-priority diagnostic frames — under bus saturation they would be the first to drop.
+**Low bus total: ~86% of 500 kbit/s** (primarily from 100 Hz steer-by-wire telemetry frames). 0x6FA and 0x6FB alone contribute ~24%. These are lowest-priority diagnostic frames — under bus saturation they would be the first to drop.
 
 ### High Bus (500 kbit/s)
 
@@ -115,4 +115,4 @@ Hardware ESTOP GPIO path (Level 3): **~5ms** (direct wire, no CAN dependency).
 | MTR STM32 | 50mA @ 3.3V | 50mA (bxCAN+transceiver) | 10mA (MCP4725 DAC) | ~0.4W |
 | PWT ESP32-S3 | 200mA @ 3.3V | 100mA (DC-DC bus) | — | ~1.0W |
 
-**Total system: ~5W** (excluding Jetson Orin, SYNTREE actuators, motor controller).
+**Total system: ~5W** (excluding Jetson Orin, steer-by-wire actuators, motor controller).

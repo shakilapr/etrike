@@ -62,7 +62,7 @@ constexpr int kSafetyCheckHz        =   20;
 constexpr int kGearCheckHz          =   50;
 constexpr int kDebounceMs           =  500;   // push button debounce
 
-// ── brake — SYNTREE SEB via CAN 0x7B9 ────────────────────────────
+// ── brake — brake-by-wire unit via CAN 0x7B9 ────────────────────────────
 constexpr int   kBrakeCmdRateHz    =   50;     // 20 ms period
 constexpr int   kBrakeBootWaitMs   =  500;
 constexpr float kBrakeManualStroke = 15.0f;    // mm, lever pressed

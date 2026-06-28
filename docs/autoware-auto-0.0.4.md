@@ -369,13 +369,13 @@ These issues exist in the current system regardless of Autoware.Auto integration
 | `0x011` | SYS_SAFETY_STS | SYS | — |
 | `0x110` | SYS_MODE_CMD | SYS | — |
 | `0x120` | SYS_THROTTLE_STS | MTR | — |
-| `0x169` | VCU_SES_REQ | RT | SYNTREE |
-| `0x201` | SES_STATUS | EPS-C | SYNTREE |
+| `0x169` | VCU_SES_REQ | RT | steer-by-wire |
+| `0x201` | SES_STATUS | EPS-C | steer-by-wire |
 | `0x204` | RT_DRIVE_CMD | RT | — |
 | `0x205` | RT_BRAKE_CMD | RT | — |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | — |
-| `0x721` | SEB_STATUS | SEB | SYNTREE |
-| `0x7B9` | VCU_SEB_REQ | RT/SYS (mode-gated) | SYNTREE |
+| `0x721` | SEB_STATUS | SEB | steer-by-wire |
+| `0x7B9` | VCU_SEB_REQ | RT/SYS (mode-gated) | steer-by-wire |
 | `0x7FD` | RT_HEARTBEAT | RT | — |
 | `0x7FE` | SYS_HEARTBEAT | SYS | — |
 

@@ -44,25 +44,25 @@ constexpr uint32_t kIdSteerDiag         = 0x310;  // RT→Host steering telemetr
 constexpr uint32_t kIdBrakeDiag         = 0x311;  // RT→Host brake telemetry, 10 Hz
 
 // ╔══════════════════════════════════════════════════════════════════════╗
-// ║  SYNTREE CAN IDs — factory-programmed, CANNOT be changed          ║
+// ║  steer-by-wire CAN IDs — factory-programmed, CANNOT be changed          ║
 // ║  Steering: EPS-C.  Brake: SEB.  Source: docs/by-wire-*.csv       ║
 // ╚══════════════════════════════════════════════════════════════════════╝
 
-// ── SYNTREE EPS-C (steering) ──────────────────────────────────────
+// ── steer-by-wire unit (steering) ──────────────────────────────────────
 
-constexpr uint32_t kIdSyntreeEpsCmd      = 0x169;  // RT→EPS-C: VCU_SES_Req, 50 Hz (factory default)
-constexpr uint32_t kIdSyntreeEpsStatus   = 0x201;  // EPS-C→RT: SES_Status, 100 Hz (factory default)
-constexpr uint32_t kIdSyntreeEpsErrInfo  = 0x202;  // EPS-C→RT: SES_ErrInfo, 100 ms (factory default)
-constexpr uint32_t kIdSyntreeEpsVersion  = 0x203;  // EPS-C→RT: SES_Version, 1000 ms (factory default)
-constexpr uint32_t kIdSyntreeEpsTest     = 0x6FA;  // EPS-C→RT: SES_Test, 100 Hz (factory default)
+constexpr uint32_t kIdSbwCmd      = 0x169;  // RT→EPS-C: VCU_SES_Req, 50 Hz (factory default)
+constexpr uint32_t kIdSbwStatus   = 0x201;  // EPS-C→RT: SES_Status, 100 Hz (factory default)
+constexpr uint32_t kIdSbwErrInfo  = 0x202;  // EPS-C→RT: SES_ErrInfo, 100 ms (factory default)
+constexpr uint32_t kIdSbwVersion  = 0x203;  // EPS-C→RT: SES_Version, 1000 ms (factory default)
+constexpr uint32_t kIdSbwTest     = 0x6FA;  // EPS-C→RT: SES_Test, 100 Hz (factory default)
 
-// ── SYNTREE SEB (brake) ───────────────────────────────────────────
+// ── brake-by-wire unit (brake) ───────────────────────────────────────────
 
-constexpr uint32_t kIdSyntreeSebCmd      = 0x7B9;  // SYS→SEB: VCU_SEB_Req, 50 Hz (factory default)
-constexpr uint32_t kIdSyntreeSebStatus   = 0x721;  // SEB→SYS: SEB_Status, 100 Hz (factory default)
-constexpr uint32_t kIdSyntreeSebErrInfo  = 0x731;  // SEB→SYS: SEB_ErrInfo, 100 ms (factory default)
-constexpr uint32_t kIdSyntreeSebTest     = 0x6FB;  // SEB→SYS: SEB_Test, 100 Hz (factory default)
-constexpr uint32_t kIdSyntreeSebVersion  = 0x741;  // SEB→SYS: SEB_Version, 1000 ms (factory default)
+constexpr uint32_t kIdBbwCmd      = 0x7B9;  // SYS→SEB: VCU_SEB_Req, 50 Hz (factory default)
+constexpr uint32_t kIdBbwStatus   = 0x721;  // SEB→SYS: SEB_Status, 100 Hz (factory default)
+constexpr uint32_t kIdBbwErrInfo  = 0x731;  // SEB→SYS: SEB_ErrInfo, 100 ms (factory default)
+constexpr uint32_t kIdBbwTest     = 0x6FB;  // SEB→SYS: SEB_Test, 100 Hz (factory default)
+constexpr uint32_t kIdBbwVersion  = 0x741;  // SEB→SYS: SEB_Version, 1000 ms (factory default)
 
 // ───────────────────────────────────────────────────────────────────
 // Aliases — codebase migration compatibility.
@@ -217,9 +217,9 @@ struct BrakeDiag {
     }
 };
 
-// ══ SYNTREE payload structs (factory-fixed, cannot change) ══
+// ══ steer-by-wire payload structs (factory-fixed, cannot change) ══
 
-// 0x169 VCU_SES_REQ — RT→EPS-C (SYNTREE  // CSV spec, Motorola LSB)
+// 0x169 VCU_SES_REQ — RT→EPS-C (steer-by-wire  // CSV spec, Motorola LSB)
 struct VcuSesReq {
     uint8_t  align_enable    : 1;   // Byte0,b0
     uint8_t  control_enable  : 1;   // Byte0,b1
@@ -240,7 +240,7 @@ struct VcuSesReq {
 
     void to_frame(Frame& f) const {
         uint8_t raw[8]; pack(raw);
-        f.id = kIdSyntreeEpsCmd; f.dlc = 8;
+        f.id = kIdSbwCmd; f.dlc = 8;
         for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
     }
 };
@@ -315,7 +315,7 @@ struct HostLightCmd {
     }
 };
 
-// 0x7B9 VCU_SEB_REQ — SYS→SEB (brake command, SYNTREE protocol)
+// 0x7B9 VCU_SEB_REQ — SYS→SEB (brake command, steer-by-wire protocol)
 // Little-endian on the wire. Pack/unpack with explicit shifts.
 // Wire format per docs/by-wire - brake.csv §VCU_SEB_Req:
 //   Byte 0: ctrl bits, Byte 1: rsvd, Byte 2: stroke low, Byte 3: pressure u8,
@@ -342,7 +342,7 @@ struct VcuSebReq {
 
     void to_frame(Frame& f) const {
         uint8_t raw[8]; pack(raw);
-        f.id = kIdSyntreeSebCmd; f.dlc = 8;
+        f.id = kIdBbwCmd; f.dlc = 8;
         for (int i = 0; i < 8; ++i) f.data[i] = raw[i];
     }
 };
@@ -472,7 +472,7 @@ struct HostObstacleDist {
 };
 
 // ───────────────────────────────────────────────────────────────────
-// SYNTREE little-endian pack/unpack (Motorola LSB)
+// steer-by-wire little-endian pack/unpack (Motorola LSB)
 // ───────────────────────────────────────────────────────────────────
 
 inline void VcuSesReq::pack(uint8_t raw[8]) const {
@@ -490,7 +490,7 @@ inline void VcuSesReq::pack(uint8_t raw[8]) const {
            | (((target_speed >> 8) & 0x3) << 2)          // bits 2-3 = speed bits 9-8
            | ((rolling_counter & 0xF) << 4);              // bits 4-7 = RollCnt
     raw[6] = vehicle_speed & 0xFF;
-    // Checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
+    // Checksum: XOR(bytes 0-6) ^ 0xFF (per steer-by-wire CSV spec)
     uint8_t cksum = 0;
     for (int i = 0; i < 7; ++i) cksum ^= raw[i];
     raw[7] = cksum ^ 0xFF;
@@ -529,7 +529,7 @@ inline void VcuSebReq::pack(uint8_t raw[8]) const {
     raw[6] = (roll_cnt_enable & 1)            // bit 0 = RollCnt_Enable
            | ((checksum_enable & 1) << 1)     // bit 1 = CheckSum_Enable
            | ((rolling_counter & 0xF) << 4);  // bits 4-7 = RollCnt
-    // Checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
+    // Checksum: XOR(bytes 0-6) ^ 0xFF (per steer-by-wire CSV spec)
     uint8_t cksum = 0;
     for (int i = 0; i < 7; ++i) cksum ^= raw[i];
     raw[7] = cksum ^ 0xFF;
@@ -559,7 +559,7 @@ inline VcuSebReq VcuSebReq::unpack(const uint8_t raw[8]) {
     return r;
 }
 
-// 0x201 SES_Status — EPS-C→RT (SYNTREE status frame, per docs/by-wire - steering.csv)
+// 0x201 SES_Status — EPS-C→RT (steer-by-wire status frame, per docs/by-wire - steering.csv)
 struct SesStatus {
     uint8_t  angle_status      : 1;  // bit 0: 0=center finding, 1=found
     uint8_t  control_mode_sts  : 2;  // bits 1-2: 0=manual, 1=automatic
@@ -597,7 +597,7 @@ inline SesStatus SesStatus::from_frame(const Frame& f) {
     return r;
 }
 
-// 0x721 SEB_Status — SEB→SYS (SYNTREE status frame, per docs/by-wire - brake.csv)
+// 0x721 SEB_Status — SEB→SYS (steer-by-wire status frame, per docs/by-wire - brake.csv)
 struct SebStatus {
     uint8_t  alignment_status   : 1;  // bit 0
     uint8_t  control_enable_sts : 1;  // bit 1

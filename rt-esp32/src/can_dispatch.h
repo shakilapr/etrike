@@ -82,12 +82,12 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             xQueueOverwrite(g_safety_evt_q, &evt);
         }
     }
-    if (fr.id == can::kIdSyntreeEpsStatus) {
-        // SYNTREE checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
+    if (fr.id == can::kIdSbwStatus) {
+        // steer-by-wire checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
         uint8_t cksum = 0;
         for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
         if (fr.dlc >= 8 && (cksum ^ 0xFF) == fr.data[7]) {
-            g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
+            g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSbwAngleOffset);
             g_ses_angle_status.store(ctx.steer_angle_status);
             g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
         }
@@ -96,7 +96,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     if (fr.id == can::kIdMtrMotorFbk && !from_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
 
     // 0x202 SES_ErrInfo — L3 fault bits → ESTOP (arch §7.3)
-    if (fr.id == can::kIdSyntreeEpsErrInfo && !from_high) {
+    if (fr.id == can::kIdSbwErrInfo && !from_high) {
         uint8_t angle_faults  = fr.data[1] & 0x0F;
         uint8_t torque_faults = (fr.data[2] >> 2) & 0x0F;
         if (angle_faults || torque_faults) {
@@ -106,7 +106,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
     // 0x203 SES_Version — log SW/HW once (arch §7.3)
-    if (fr.id == can::kIdSyntreeEpsVersion && !from_high) {
+    if (fr.id == can::kIdSbwVersion && !from_high) {
         static bool ses_version_logged = false;
         if (!ses_version_logged) {
             ESP_LOGI(TAG_DISP, "SES_Version: SW=%02X.%02X HW=%02X.%02X",
@@ -115,7 +115,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
     // 0x6FA SES_Test — motor current + ECU temp + supply voltage
-    if (fr.id == can::kIdSyntreeEpsTest && !from_high) {
+    if (fr.id == can::kIdSbwTest && !from_high) {
         int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
         uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
         uint16_t pv_raw = (uint16_t(fr.data[6]) << 8) | fr.data[5];
@@ -130,14 +130,14 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (pv_v < 10.0f)  ESP_LOGW(TAG_DISP, "SES supply voltage low: %.2f V", pv_v);
     }
     // 0x6FB SEB_Test — motor current + ECU temp (for 0x311 BRAKE_DIAG)
-    if (fr.id == can::kIdSyntreeSebTest && !from_high) {
+    if (fr.id == can::kIdBbwTest && !from_high) {
         int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
         uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
         g_seb_motor_current.store(mc_raw);
         g_seb_ecu_temp_c.store(et_raw);
     }
     // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
-    if (fr.id == can::kIdSyntreeSebStatus && !from_high) {
+    if (fr.id == can::kIdBbwStatus && !from_high) {
         // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
         // In Stroke mode it's Stroke[15:8] — not pressure data.
         uint8_t seb_mode = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure

@@ -2,7 +2,7 @@
 
 In a multi-bus CAN architecture, the **gateway** is the single node connected to both buses. It selectively forwards messages between them, acting as a controlled bridge.
 
-On the E-Trike, the **RT ESP32-S3** is the gateway between the High-Level CAN (Jetson + RT) and Low-Level CAN (RT + SYS + SYNTREE actuators).
+On the E-Trike, the **RT ESP32-S3** is the gateway between the High-Level CAN (Jetson + RT) and Low-Level CAN (RT + SYS + steer-by-wire actuators).
 
 ---
 

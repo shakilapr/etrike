@@ -1,7 +1,7 @@
 /**
  * CAN Commands Test Suite — exercises every CAN frame end-to-end.
  *
- * Groups: Low-bus custom, High-bus custom, SYNTREE EPS-C, SYNTREE SEB,
+ * Groups: Low-bus custom, High-bus custom, steer-by-wire unit, brake-by-wire unit,
  * Heartbeats, Diagnostics, Drive cycle integration.
  */
 import { describe, it, expect } from "vitest";
@@ -145,7 +145,7 @@ describe("0x600 SYS_DIAG_RPT", () => {
 });
 
 // ================================================================
-//  HIGH BUS — Custom Protocol (IDs ≥ 0x300, except SYNTREE)
+//  HIGH BUS — Custom Protocol (IDs ≥ 0x300, except steer-by-wire)
 // ================================================================
 
 describe("0x210 RT_STATE_RPT", () => {
@@ -250,11 +250,11 @@ describe("0x7FE SYS_HEARTBEAT", () => {
 });
 
 // ================================================================
-//  SYNTREE EPS-C (Steering) — IDs 0x169, 0x201, 0x202, 0x203, 0x6FA
+//  steer-by-wire unit (Steering) — IDs 0x169, 0x201, 0x202, 0x203, 0x6FA
 // ================================================================
 
 describe("0x169 VCU_SES_REQ (RT→EPS-C)", () => {
-  it("RT sends at 50 Hz, DLC=8, valid SYNTREE checksum", () => {
+  it("RT sends at 50 Hz, DLC=8, valid steer-by-wire checksum", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(500, 100));
     const result = runner.runDuration(100);
@@ -300,11 +300,11 @@ describe("0x6FA SES_Test", () => {
 });
 
 // ================================================================
-//  SYNTREE SEB (Brake) — IDs 0x7B9, 0x721, 0x731, 0x741, 0x6FB
+//  brake-by-wire unit (Brake) — IDs 0x7B9, 0x721, 0x731, 0x741, 0x6FB
 // ================================================================
 
 describe("0x7B9 VCU_SEB_REQ (SYS→SEB)", () => {
-  it("SYS sends at 50 Hz, DLC=8, valid SYNTREE checksum", () => {
+  it("SYS sends at 50 Hz, DLC=8, valid steer-by-wire checksum", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(500));
     const result = runner.runDuration(100);

@@ -391,7 +391,7 @@ describe("decodeFrame", () => {
     expect(result.BrakeDiag_Fault).toBe(true);
   });
 
-  it("decodes 0x169 VCU_SES_REQ (SYNTREE LE)", () => {
+  it("decodes 0x169 VCU_SES_REQ (steer-by-wire LE)", () => {
     const result = decodeFrame("low", "0x169", [0x02, 0x00, 0x48, 0xF4, 0x48, 0x11, 0x00, 0x00]);
     expect(result.alignment_enable).toBe(false);
     expect(result.control_enable).toBe(true);
@@ -464,8 +464,8 @@ describe("round-trip encode→decode", () => {
     }
   });
 
-  // SYNTREE messages have rolling_counter and checksum that aren't perfectly round-tripped
-  it("round-trip: low:0x169 (SYNTREE steering)", () => {
+  // steer-by-wire messages have rolling_counter and checksum that aren't perfectly round-tripped
+  it("round-trip: low:0x169 (steer-by-wire steering)", () => {
     const values: Record<string, number | boolean> = { control_enable: true, alignment_enable: false, target_angle: -3000, target_speed: 328, rolling_counter: 1, checksum: 0 };
     const { data } = encodePayload("low", "0x169", values);
     const decoded = decodeFrame("low", "0x169", data);
@@ -477,7 +477,7 @@ describe("round-trip encode→decode", () => {
     expect(decoded.checksum).toBe(0);
   });
 
-  it("round-trip: low:0x7B9 (SYNTREE brake)", () => {
+  it("round-trip: low:0x7B9 (steer-by-wire brake)", () => {
     const values: Record<string, number | boolean> = { align_enable: true, control_enable: false, control_mode: 0, auto_brake: false, stroke_req: 12850, pressure_req: 50, rolling_counter: 3, checksum: 0 };
     const { data } = encodePayload("low", "0x7B9", values);
     const decoded = decodeFrame("low", "0x7B9", data);

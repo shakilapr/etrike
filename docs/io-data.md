@@ -309,7 +309,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). **Curre
 
 ## 5. External Actuators (non-host CAN nodes)
 
-### 5.1 SYNTREE EPS-C (Steering Actuator)
+### 5.1 steer-by-wire unit (Steering Actuator)
 
 **CAN Inputs** (receives `0x169 VCU_SES_REQ` from RT):
 
@@ -334,7 +334,7 @@ Role: dedicated motor controller (EGAS Level 1 — Function Controller). **Curre
 | `SES_StrAngle` | i16 (0.1°/bit) | — |
 | `EPS_SteeringWheel_Torq` | u8 (Nm) | — |
 
-### 5.2 SYNTREE SEB (Brake Actuator)
+### 5.2 brake-by-wire unit (Brake Actuator)
 
 **CAN Inputs** (receives `0x7B9 VCU_SEB_REQ` — mode-gated sender: SYS in MANUAL/ESTOP, RT in AUTO):
 

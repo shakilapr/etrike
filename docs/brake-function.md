@@ -1,6 +1,6 @@
 # Brake System — End-to-End Function
 
-The E-Trike uses a **SYNTREE SEB** electro-hydraulic brake actuator commanded via CAN. There is no mechanical cable from lever to master cylinder — the SEB is the sole hydraulic path. This document describes how braking works in each operating mode, how the two control modes (Stroke and Pressure) differ, and how multiple brake sources arbitrate to a single actuator.
+The E-Trike uses a **brake-by-wire unit** electro-hydraulic brake actuator commanded via CAN. There is no mechanical cable from lever to master cylinder — the SEB is the sole hydraulic path. This document describes how braking works in each operating mode, how the two control modes (Stroke and Pressure) differ, and how multiple brake sources arbitrate to a single actuator.
 
 ---
 
@@ -9,7 +9,7 @@ The E-Trike uses a **SYNTREE SEB** electro-hydraulic brake actuator commanded vi
 ```
 Brake lever (GPIO2, active-low) ──► SYS ESP32-S3
                                          │
-                                    CAN 0x7B9 (50 Hz) ──► SYNTREE SEB ──► hydraulic master cylinder
+                                    CAN 0x7B9 (50 Hz) ──► brake-by-wire unit ──► hydraulic master cylinder
                                                                               │
                                                                          calipers (front + rear)
 ```
@@ -183,7 +183,7 @@ Example conversions:
   5000 kPa → 5000 × 0.02 = 100  → 5.0 MPa (maximum, emergency)
 ```
 
-Verified against SYNTREE SEB CAN protocol specification. `VCU_SEB_Pre_Value_Req` is u8 at bit 32 of `0x7B9`, scale 0.05 MPa/bit, range 0–5 MPa.
+Verified against brake-by-wire unit CAN protocol specification. `VCU_SEB_Pre_Value_Req` is u8 at bit 32 of `0x7B9`, scale 0.05 MPa/bit, range 0–5 MPa.
 
 ---
 
@@ -250,4 +250,4 @@ If the SEB never responds → `BRAKE_FAULT`. SYS stops transmitting `0x7B9`. The
 
 ---
 
-*See also: [`architecture.md`](../architecture.md) §8.6 for brake control mechanisms, [`can-dictionary.md`](../can-dictionary.md) §0x7B9 and §0x721 for bit-level frame layouts (also §0x731 SEB_ErrInfo, §0x741 SEB_Version, §0x6FB SEB_Test), [`docs/brake-unit.md`](brake-unit.md) for SYNTREE SEB protocol reference, [`issues.md`](../issues.md) M2 for the mechanical fallback gap.*
+*See also: [`architecture.md`](../architecture.md) §8.6 for brake control mechanisms, [`can-dictionary.md`](../can-dictionary.md) §0x7B9 and §0x721 for bit-level frame layouts (also §0x731 SEB_ErrInfo, §0x741 SEB_Version, §0x6FB SEB_Test), [`docs/brake-unit.md`](brake-unit.md) for brake-by-wire unit protocol reference, [`issues.md`](../issues.md) M2 for the mechanical fallback gap.*

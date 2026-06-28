@@ -1,4 +1,4 @@
-# SYNTREE SEB — Electro-Hydraulic Brake Unit
+# brake-by-wire unit — Electro-Hydraulic Brake Unit
 
 CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 
@@ -130,7 +130,7 @@ for (int i = 0; i < 7; i++) checksum ^= raw_bytes[i];
 checksum ^= 0xFF;
 ```
 
-> **Verify against SYNTREE spec** — some units use a different constant or a shift operation.
+> **Verify against steer-by-wire spec** — some units use a different constant or a shift operation.
 
 ---
 

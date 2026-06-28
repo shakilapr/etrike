@@ -21,13 +21,13 @@ Fail-safe behavior of each component at power-up, during reset, and under fault 
 - **Relay module:** Requires active HIGH drive from GPIO
 - **Fail-safe:** Floating GPIOs → all relays OFF → motor ECU sees no gear selected = NEUTRAL
 
-## SYNTREE EPS-C (Steering)
+## steer-by-wire unit (Steering)
 
 - **Internal boot delay:** ~2 seconds before entering centering routine
 - **During boot:** Does not accept CAN commands. Standalone centering.
 - **CAN timeout:** 20ms without valid 0x169 → holds last angle (internal watchdog)
 
-## SYNTREE SEB (Brake)
+## brake-by-wire unit (Brake)
 
 - **Internal boot delay:** ~2 seconds before reporting aligned status
 - **During boot:** Does not accept CAN commands

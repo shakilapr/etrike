@@ -120,7 +120,7 @@ export class SysEcu implements SimulatedEcu {
         effectiveEstop ? 0 : this.brakeKpa,
       );
       if (cmd) {
-        // Build 0x7B9 VCU_SEB_REQ (SYNTREE LE encoding)
+        // Build 0x7B9 VCU_SEB_REQ (steer-by-wire LE encoding)
         const stroke16 = cmd.strokeReq & 0xFFFF;
         const data = [
           ((cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1) | (cmd.controlMode << 2) | ((cmd.autoBrake & 1) << 3)),
@@ -135,7 +135,7 @@ export class SysEcu implements SimulatedEcu {
           | (cmd.rollingCounter << 4),          // bits 4-7: rolling counter
           0, // checksum placeholder
         ];
-        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per SYNTREE CSV spec)
+        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per steer-by-wire CSV spec)
         let cksum = 0;
         for (let i = 0; i < 7; i++) cksum ^= data[i];
         data[7] = cksum ^ 0xFF;

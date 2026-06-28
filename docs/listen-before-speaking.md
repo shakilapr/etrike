@@ -4,7 +4,7 @@ When a CAN actuator powers on, it has no idea what state the vehicle is in. If t
 
 **Listen Before Speaking (LBS)** is the pattern that prevents this. The controller waits for the actuator's first status frame, reads the *current physical position*, and sets its initial command to match. Only then does it begin transmitting commands.
 
-This is used for both SYNTREE actuators on our tricycle.
+This is used for both steer-by-wire actuators on our tricycle.
 
 ---
 
@@ -132,7 +132,7 @@ The brake LBS is identical in structure to steering but runs on the SYS ESP32-S3
 
 ## Why 500 ms boot wait?
 
-SYNTREE actuators run an internal bootloader and self-test on power-up. During this window:
+steer-by-wire actuators run an internal bootloader and self-test on power-up. During this window:
 
 - The CAN interface may not be ready (no ACK, no status frames).
 - The internal position sensor may not be calibrated.
@@ -168,4 +168,4 @@ This means the controller has an ongoing duty to transmit — silence is interpr
 
 *Primary reference: [[emergency-system]] for ESTOP behavior, watchdog recovery sequence (which re-runs LBS), and testing procedures that exercise the LBS state machine.*
 
-*See also: [[defense-in-depth-safety]] for following error and dynamic angle clamp, [[syntree-security-protocol]] for rolling counter + checksum, [[architecture]] §7.6 for the steering boot sequence, §8.6 for the brake boot sequence.*
+*See also: [[defense-in-depth-safety]] for following error and dynamic angle clamp, [[steer-by-wire-security-protocol]] for rolling counter + checksum, [[architecture]] §7.6 for the steering boot sequence, §8.6 for the brake boot sequence.*
