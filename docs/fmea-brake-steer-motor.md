@@ -19,7 +19,7 @@ all modes, and add quantitative failure rates.
 | # | Failure Mode | Detection | Response | Safe State |
 |---|-------------|-----------|----------|------------|
 | S1 | SES CAN comm loss (>20ms) | SES internal watchdog | SES locks current angle | Steering holds |
-| S2 | 0x169 checksum corruption | SES/SEB checksum check in SES | SES rejects frame, holds last valid | 3 consecutive fails → SES fault |
+| S2 | 0x169 checksum corruption | steer-by-wire checksum check in SES | SES rejects frame, holds last valid | 3 consecutive fails → SES fault |
 | S3 | RT steering follow-error > threshold | RT safety_monitor.h: compares cmd vs actual | ESTOP after 300ms persistence | Steering ramps to 0° at 20°/s |
 | S4 | SES angle sensor fault (L3) | 0x202 SES_ErrInfo → RT → ESTOP | RT detects L3 bits, triggers ESTOP | Hardware ESTOP kills motor |
 | S5 | RT steering control crash | SYS heartbeat monitor → ESTOP | SYS takes over brake, mode→ESTOP | SES internal hold on comm loss |

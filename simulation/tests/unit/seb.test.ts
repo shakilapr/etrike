@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SES/SEBSeb } from "../../src/ecus/seb.js";
+import { Bbw } from "../../src/ecus/seb.js";
 import type { SimFrame } from "../../src/core/types.js";
 import type { SimulationContext } from "../../src/ecus/base.js";
 
@@ -14,11 +14,11 @@ function make0x7B9(nowMs: number): SimFrame {
   };
 }
 
-describe("SES/SEBSeb", () => {
-  let seb: SES/SEBSeb;
+describe("Bbw", () => {
+  let seb: Bbw;
 
   beforeEach(() => {
-    seb = new SES/SEBSeb();
+    seb = new Bbw();
     seb.init();
     seb.setActualStroke(0);
   });

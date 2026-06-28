@@ -2,8 +2,8 @@
  * CSV Compliance Tests — verifies each CAN signal against manufacturer CSV specs.
  *
  * Tests every row from:
- *   docs/by-wire - steering.csv (SES/SEB SES)
- *   docs/by-wire - brake.csv     (SES/SEB SEB)
+ *   docs/by-wire - steering.csv (steer-by-wire unit)
+ *   docs/by-wire - brake.csv     (brake-by-wire unit)
  *
  * Each test verifies: byte position, bit position, bit length,
  * scaling (resolution + offset), min/max range, initial value.

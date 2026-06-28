@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RtEcu } from "../../src/ecus/rt.js";
 import { MtrEcu } from "../../src/ecus/mtr.js";
-import { SES/SEBEpsc } from "../../src/ecus/epsc.js";
-import { SES/SEBSeb } from "../../src/ecus/seb.js";
+import { Sbwc } from "../../src/ecus/epsc.js";
+import { Bbw } from "../../src/ecus/seb.js";
 import { SimulationRunner } from "../../src/harness/runner.js";
 import type { SimulationContext } from "../../src/ecus/base.js";
 import type { SimFrame } from "../../src/core/types.js";
@@ -18,17 +18,17 @@ function autoCtx(nowMs: number): SimulationContext {
 describe("RT to low-bus pipeline", () => {
   let rt: RtEcu;
   let mtr: MtrEcu;
-  let epsc: SES/SEBEpsc;
-  let seb: SES/SEBSeb;
+  let epsc: Sbwc;
+  let seb: Bbw;
 
   beforeEach(() => {
     rt = new RtEcu();
     rt.init();
     mtr = new MtrEcu();
     mtr.init();
-    epsc = new SES/SEBEpsc();
+    epsc = new Sbwc();
     epsc.init();
-    seb = new SES/SEBSeb();
+    seb = new Bbw();
     seb.init();
   });
 
