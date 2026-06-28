@@ -392,28 +392,28 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
   declare_parameter("rt_heartbeat_timeout_ms", 1500);
   declare_parameter("can_interface", "can0");
 
-  sub_control_ = create_subscription<AckermannControlCommand>("~/input/control_cmd", rclcpp::QoS(1),
+  sub_control_ = create_subscription<AckermannControlCommand>("/control/command/control_cmd", rclcpp::QoS(1),
     [this](const AckermannControlCommand::SharedPtr m) { on_control(m); });
-  sub_gear_ = create_subscription<GearCommand>("~/input/gear_cmd", rclcpp::QoS(1),
+  sub_gear_ = create_subscription<GearCommand>("/control/command/gear_cmd", rclcpp::QoS(1),
     [this](const GearCommand::SharedPtr m) { on_gear(m); });
-  sub_turn_ = create_subscription<TurnIndicatorsCommand>("~/input/turn_indicators_cmd", rclcpp::QoS(1),
+  sub_turn_ = create_subscription<TurnIndicatorsCommand>("/control/command/turn_indicators_cmd", rclcpp::QoS(1),
     [this](const TurnIndicatorsCommand::SharedPtr m) { on_turn(m); });
-  sub_hazard_ = create_subscription<HazardLightsCommand>("~/input/hazard_lights_cmd", rclcpp::QoS(1),
+  sub_hazard_ = create_subscription<HazardLightsCommand>("/control/command/hazard_lights_cmd", rclcpp::QoS(1),
     [this](const HazardLightsCommand::SharedPtr m) { on_hazard(m); });
   sub_engage_ = create_subscription<Engage>("~/input/engage", rclcpp::QoS(1),
     [this](const Engage::SharedPtr m) { on_engage(m); });
-  sub_control_mode_ = create_subscription<ControlModeCommand>("~/input/control_mode", rclcpp::QoS(1),
+  sub_control_mode_ = create_subscription<ControlModeCommand>("/control/control_mode_request", rclcpp::QoS(1),
     [this](const ControlModeCommand::SharedPtr m) { on_control_mode(m); });
-  sub_emergency_ = create_subscription<VehicleEmergencyStamped>("~/input/emergency_cmd", rclcpp::QoS(1),
+  sub_emergency_ = create_subscription<VehicleEmergencyStamped>("/control/command/emergency_cmd", rclcpp::QoS(1),
     [this](const VehicleEmergencyStamped::SharedPtr m) { on_emergency(m); });
 
-  pub_velocity_      = create_publisher<autoware_auto_vehicle_msgs::msg::VelocityReport>("~/output/velocity_status", rclcpp::QoS(1));
-  pub_steering_      = create_publisher<autoware_auto_vehicle_msgs::msg::SteeringReport>("~/output/steering_status", rclcpp::QoS(1));
-  pub_gear_          = create_publisher<autoware_auto_vehicle_msgs::msg::GearReport>("~/output/gear_status", rclcpp::QoS(1));
-  pub_mode_          = create_publisher<autoware_auto_vehicle_msgs::msg::ControlModeReport>("~/output/control_mode", rclcpp::QoS(1));
-  pub_turn_status_   = create_publisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport>("~/output/turn_indicators_status", rclcpp::QoS(1));
-  pub_hazard_status_ = create_publisher<autoware_auto_vehicle_msgs::msg::HazardLightsReport>("~/output/hazard_lights_status", rclcpp::QoS(1));
-  pub_kinematic_state_ = create_publisher<autoware_auto_vehicle_msgs::msg::VehicleKinematicState>("~/output/kinematic_state", rclcpp::QoS(1));
+  pub_velocity_      = create_publisher<autoware_auto_vehicle_msgs::msg::VelocityReport>("/vehicle/status/velocity_status", rclcpp::QoS(1));
+  pub_steering_      = create_publisher<autoware_auto_vehicle_msgs::msg::SteeringReport>("/vehicle/status/steering_status", rclcpp::QoS(1));
+  pub_gear_          = create_publisher<autoware_auto_vehicle_msgs::msg::GearReport>("/vehicle/status/gear_status", rclcpp::QoS(1));
+  pub_mode_          = create_publisher<autoware_auto_vehicle_msgs::msg::ControlModeReport>("/vehicle/status/control_mode", rclcpp::QoS(1));
+  pub_turn_status_   = create_publisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport>("/vehicle/status/turn_indicators_status", rclcpp::QoS(1));
+  pub_hazard_status_ = create_publisher<autoware_auto_vehicle_msgs::msg::HazardLightsReport>("/vehicle/status/hazard_lights_status", rclcpp::QoS(1));
+  pub_kinematic_state_ = create_publisher<autoware_auto_vehicle_msgs::msg::VehicleKinematicState>("/vehicle/status/kinematic_state", rclcpp::QoS(1));
   pub_diag_          = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("~/output/diagnostics", rclcpp::QoS(1));
 
   can_ = std::make_unique<SocketCanDriver>();

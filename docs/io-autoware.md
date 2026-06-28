@@ -76,25 +76,7 @@ This section cross-references the standard Autoware.Auto interface (§1–2) aga
 | `/vehicle/status/kinematic_state` | `VehicleKinematicState` | `~/output/kinematic_state` | `VehicleKinematicState` ✅ | Dead reckoning from `0x120` speed + `0x310` steer angle. **Drifts without absolute reference.** Full encoder+IMU odometry deferred to gap #5. | **Type match; topic namespace mismatch** |
 | *(not in standard)* | — | `~/output/diagnostics` | `DiagnosticArray` | `0x600` SYS_DIAG_RPT + local state (CAN status, engage, RT/SYS heartbeats, ESTOP) | **Extra — standard ROS diagnostics** |
 
-### 3.2 Topic Namespace Gap
-
-All E-Trike topics use `~/input/*` and `~/output/*` (node-private namespace) instead of the standard Autoware.Auto global names `/control/command/*` and `/vehicle/status/*`.
-
-**Impact:** An unmodified Autoware.Auto planning stack publishing to `/control/command/control_cmd` will NOT reach the E-Trike bridge subscribing to `~/input/control_cmd`. A **topic remap** is required at launch:
-
-```yaml
-# In autoware_vehicle_bridge launch file
-remappings:
-  - from: "~/input/control_cmd"
-    to: "/control/command/control_cmd"
-  - from: "~/input/gear_cmd"
-    to: "/control/command/gear_cmd"
-  # ... etc for all 7 subscriptions and 7 publications
-```
-
-Alternatively, the bridge could be reconfigured to subscribe/publish on the standard global topics directly (changing `~/input/*` → `/control/command/*` in the C++ source).
-
-### 3.3 CAN Protocol Compatibility
+### 3.2 CAN Protocol Compatibility
 
 | Aspect | Status | Detail |
 |:---|:---|:---|
@@ -154,8 +136,8 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 
 ## 4. Gap Summary
 
-### Topic namespace (GAP-1)
-**All 7 subscriptions and 7 publications** use `~/input/*` / `~/output/*` instead of standard Autoware.Auto global topic names. Requires launch-file remapping or source-code change.
+### Topic namespace (GAP-1) — ✅ RESOLVED
+Bridge now uses standard Autoware.Auto global topic names: `/control/command/*` (sub) and `/vehicle/status/*` (pub). No remapping needed. Two extras remain local: `~/input/engage` and `~/output/diagnostics` (not Autoware-standard topics).
 
 ### Steering angle offset (GAP-2) — ✅ RESOLVED
 Offset verified correct: raw=30000→0°. CSV spec confirmed. Signed→unsigned fix applied in bridge (commit ab08472).
