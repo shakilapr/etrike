@@ -21,7 +21,7 @@ const BRAKE_STROKE_SCALE = 0.05;
 const BRAKE_STROKE_OFFSET = -30.0;
 const SEB_MAX_PRESSURE_RAW = 100;
 
-/** Convert stroke mm to SYNTREE raw value. */
+/** Convert stroke mm to steer-by-wire raw value. */
 function strokeToRaw(mm: number): number {
   return Math.round((mm - BRAKE_STROKE_OFFSET) / BRAKE_STROKE_SCALE);
 }

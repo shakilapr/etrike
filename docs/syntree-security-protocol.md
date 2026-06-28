@@ -1,12 +1,12 @@
-# SYNTREE CAN Security Protocol — Rolling Counter + Checksum
+# steer-by-wire CAN Security Protocol — Rolling Counter + Checksum
 
-SYNTREE EPS-C and SEB actuators require two security bytes in every command frame: a **rolling counter** and an **XOR checksum**. If either is wrong, the actuator silently discards the frame — no error response, no fault flag, just ignored.
+steer-by-wire unit and SEB actuators require two security bytes in every command frame: a **rolling counter** and an **XOR checksum**. If either is wrong, the actuator silently discards the frame — no error response, no fault flag, just ignored.
 
 This is a **liveness check**, not encryption. It proves the controller hasn't crashed and is still computing fresh frames (not stuck in a loop replaying the same buffer).
 
 ---
 
-## Why SYNTREE requires this
+## Why steer-by-wire requires this
 
 CAN is a broadcast bus. Without security bytes, a crashed controller could:
 
@@ -67,7 +67,7 @@ Or equivalently: XOR all 7 bytes together, then invert all bits.
 ## C++ implementation
 
 ```cpp
-struct SyntreeSecurityFrame {
+struct steer-by-wireSecurityFrame {
     uint8_t bytes[8];
 
     void set_security_enables() {
@@ -95,7 +95,7 @@ struct SyntreeSecurityFrame {
 
 // Usage in 50 Hz transmit loop
 static uint8_t rolling_counter = 0;
-SyntreeSecurityFrame cmd;
+steer-by-wireSecurityFrame cmd;
 
 // EPS-C steering command
 cmd.bytes[0] = 0x01;           // control mode = Angle
@@ -140,7 +140,7 @@ If the actuator seems unresponsive despite valid-looking CAN traffic:
 1. Verify byte 5 = `0x03` on every frame.
 2. Verify checksum with a CAN analyzer that can compute XOR across bytes.
 3. Verify the rolling counter increments monotonically (0, 1, 2, ..., 15, 0, 1, ...).
-4. Check that byte ordering matches SYNTREE's little-endian expectation.
+4. Check that byte ordering matches steer-by-wire's little-endian expectation.
 
 The most common bug: forgetting to call `finalize()` or calling it before setting all payload bytes (so bytes 0–4 are zero when checksum is computed, then payload is written afterward, invalidating the checksum).
 
@@ -148,13 +148,13 @@ The most common bug: forgetting to call `finalize()` or calling it before settin
 
 ## Why not CRC?
 
-SYNTREE chose XOR + inversion over a proper CRC:
+steer-by-wire chose XOR + inversion over a proper CRC:
 
 - XOR is computationally trivial (no lookup table, no polynomial division).
 - Combined with the rolling counter, it covers both integrity (corruption detection) and liveness (stuck-controller detection).
 - A standalone CRC only proves the frame wasn't corrupted in transit, not that the controller is still alive.
 
-The downside: XOR catches single-bit errors but is weaker against multi-bit errors than CRC-8 or CRC-16. SYNTREE's design trades stronger error detection for simplicity and the addition of liveness checking via the counter.
+The downside: XOR catches single-bit errors but is weaker against multi-bit errors than CRC-8 or CRC-16. steer-by-wire's design trades stronger error detection for simplicity and the addition of liveness checking via the counter.
 
 ---
 

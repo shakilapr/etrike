@@ -1,5 +1,5 @@
 /**
- * SyntreeSeb — simulated SYNTREE SEB brake actuator.
+ * Bbw — simulated brake-by-wire unit brake actuator.
  *
  * Responds to 0x7B9 VCU_SEB_REQ with 0x721 SEB_STATUS.
  * Models first-order stroke/pressure response.
@@ -8,8 +8,8 @@
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId } from "../core/types.js";
 
-export class SyntreeSeb implements SimulatedEcu {
-  readonly id = "SYNTREE SEB";
+export class Bbw implements SimulatedEcu {
+  readonly id = "brake-by-wire unit";
   readonly nodeId: SimNodeId = "seb";
 
   private actualStroke = 600;   // raw units, 600 = 0mm
@@ -62,7 +62,7 @@ export class SyntreeSeb implements SimulatedEcu {
 
     // Comm timeout: no 0x7B9 for >20ms → L3 error
     // Gap #16: tolerate during SYS boot wait (500ms) so SYS doesn't latch ESTOP
-    if (nowMs - this.lastCmdMs > 20 && timeSinceStartup > SyntreeSeb.SEB_STARTUP_GRACE_MS) {
+    if (nowMs - this.lastCmdMs > 20 && timeSinceStartup > Bbw.SEB_STARTUP_GRACE_MS) {
       this.errorStatus = 3;
     } else {
       this.errorStatus = 0;

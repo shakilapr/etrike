@@ -445,7 +445,7 @@ The trike's steel frame is the ground return conductor for all power circuits. T
 
 6. **Clean the bond points.** Every chassis ground connection must be to bare metal. Use a serrated washer to bite through any remaining coating. Apply dielectric grease after torquing to prevent corrosion. On a powder-coated or painted frame, grind a clean patch for each ground strap.
 
-7. **EPS-C ECU housing** requires a chassis ground per the Syntree manufacturer spec — this is for RF shielding, not power return. Bond the housing to chassis with a dedicated strap at its mounting point.
+7. **EPS-C ECU housing** requires a chassis ground per the steer-by-wire manufacturer spec — this is for RF shielding, not power return. Bond the housing to chassis with a dedicated strap at its mounting point.
 
 ### 6.3 Notes
 

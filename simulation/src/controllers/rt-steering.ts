@@ -90,7 +90,7 @@ export class RtSteeringController {
         if (sesAngleRaw === null) return null;
         // Alignment check: EPS-C must report angle_status == 1
         if (sesAngleStatus === 0) return null;
-        // Synchronized — convert raw SYNTREE (0.1°+30000 offset) to millidegrees
+        // Synchronized — convert raw steer-by-wire (0.1°+30000 offset) to millidegrees
         this.activeAngle = (sesAngleRaw - 30000) * 100;
         this.state = SteerState.ACTIVE;
         return this.buildCommand();
@@ -198,7 +198,7 @@ export class RtSteeringController {
     const rollingCounter = this.rollCounter;
     this.rollCounter = (this.rollCounter + 1) & 0x0F;
 
-    // Convert millidegrees to SYNTREE raw format:
+    // Convert millidegrees to steer-by-wire raw format:
     //   raw = (angle_mdeg / 100) + 30000   (0.1° units with -3000 offset)
     const rawAngle = Math.round(this.activeAngle / 100 + 30000);
 

@@ -360,11 +360,11 @@ describe("0x206 MTR_MOTOR_FBK encoding", () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//  SYNTREE EPS-C
+//  steer-by-wire unit
 // ═══════════════════════════════════════════════════════════
 
-describe("0x169 VCU_SES_REQ encoding (SYNTREE)", () => {
-  it("DLC=8, 50 Hz, low bus, valid SYNTREE checksum", () => {
+describe("0x169 VCU_SES_REQ encoding (steer-by-wire)", () => {
+  it("DLC=8, 50 Hz, low bus, valid steer-by-wire checksum", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
       hostDriveCycle: [{ durationMs: 99999, speedMmps: 500, yawRateMradS: 100, gear: 1 }],
@@ -415,7 +415,7 @@ describe("0x169 VCU_SES_REQ encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x201 SES_STATUS encoding (SYNTREE)", () => {
+describe("0x201 SES_STATUS encoding (steer-by-wire)", () => {
   it("DLC=8, 100 Hz, low bus, valid checksum", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -426,7 +426,7 @@ describe("0x201 SES_STATUS encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x202 SES_ErrInfo encoding (SYNTREE)", () => {
+describe("0x202 SES_ErrInfo encoding (steer-by-wire)", () => {
   it("DLC=8, 10 Hz, fault bits populated", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -438,7 +438,7 @@ describe("0x202 SES_ErrInfo encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x203 SES_Version encoding (SYNTREE)", () => {
+describe("0x203 SES_Version encoding (steer-by-wire)", () => {
   it("DLC=8, 1 Hz, with SW/HW version", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -449,7 +449,7 @@ describe("0x203 SES_Version encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x6FA SES_Test encoding (SYNTREE)", () => {
+describe("0x6FA SES_Test encoding (steer-by-wire)", () => {
   it("DLC=8, 100 Hz, telemetry populated (non-zero)", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -461,10 +461,10 @@ describe("0x6FA SES_Test encoding (SYNTREE)", () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//  SYNTREE SEB
+//  brake-by-wire unit
 // ═══════════════════════════════════════════════════════════
 
-describe("0x7B9 VCU_SEB_REQ encoding (SYNTREE)", () => {
+describe("0x7B9 VCU_SEB_REQ encoding (steer-by-wire)", () => {
   it("DLC=8, 50 Hz, low bus, valid checksum", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -496,7 +496,7 @@ describe("0x7B9 VCU_SEB_REQ encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x721 SEB_STATUS encoding (SYNTREE)", () => {
+describe("0x721 SEB_STATUS encoding (steer-by-wire)", () => {
   it("DLC=8, 100 Hz, stroke/pressure/angle populated", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -507,7 +507,7 @@ describe("0x721 SEB_STATUS encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x731 SEB_ErrInfo encoding (SYNTREE)", () => {
+describe("0x731 SEB_ErrInfo encoding (steer-by-wire)", () => {
   it("DLC=8, 10 Hz, fault bits populated", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -518,7 +518,7 @@ describe("0x731 SEB_ErrInfo encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x741 SEB_Version encoding (SYNTREE)", () => {
+describe("0x741 SEB_Version encoding (steer-by-wire)", () => {
   it("DLC=8, 1 Hz", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
@@ -529,7 +529,7 @@ describe("0x741 SEB_Version encoding (SYNTREE)", () => {
   });
 });
 
-describe("0x6FB SEB_Test encoding (SYNTREE)", () => {
+describe("0x6FB SEB_Test encoding (steer-by-wire)", () => {
   it("DLC=8, 100 Hz, telemetry populated (non-zero)", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({

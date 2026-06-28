@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SyntreeSeb } from "../../src/ecus/seb.js";
+import { Bbw } from "../../src/ecus/seb.js";
 import type { SimFrame } from "../../src/core/types.js";
 import type { SimulationContext } from "../../src/ecus/base.js";
 
@@ -14,11 +14,11 @@ function make0x7B9(nowMs: number): SimFrame {
   };
 }
 
-describe("SyntreeSeb", () => {
-  let seb: SyntreeSeb;
+describe("Bbw", () => {
+  let seb: Bbw;
 
   beforeEach(() => {
-    seb = new SyntreeSeb();
+    seb = new Bbw();
     seb.init();
     seb.setActualStroke(0);
   });

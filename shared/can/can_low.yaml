@@ -10,8 +10,8 @@
 #
 # Generates these files:
 #   -> shared/can/etrike_low.dbc   (custom protocol, Motorola/big-endian)
-#   -> shared/can/syntree_eps.dbc  (SYNTREE EPS-C, Intel/little-endian)
-#   -> shared/can/syntree_seb.dbc  (SYNTREE SEB, Intel/little-endian)
+#   -> shared/can/sbw_unit.dbc  (steer-by-wire unit, Intel/little-endian)
+#   -> shared/can/bbw_unit.dbc  (brake-by-wire unit, Intel/little-endian)
 #
 # Usage:
 #   python generate_all_dbc.py              # generate all 4 DBCs
@@ -173,7 +173,7 @@ protocols:
       # Low-bus instance — independent counter from high bus.
       - id: 0x7FD
         name: RT_HEARTBEAT
-        dlc: 1
+        dlc: 2
         sender: RT
         receivers: [Host, SYS]
         cycle_ms: 500
@@ -185,7 +185,7 @@ protocols:
       # 0x7FE — SYS_HEARTBEAT (SYS→RT, low bus only)
       - id: 0x7FE
         name: SYS_HEARTBEAT
-        dlc: 1
+        dlc: 2
         sender: SYS
         receivers: [RT]
         cycle_ms: 100
@@ -194,11 +194,11 @@ protocols:
           - {name: SYS_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "10 Hz / 200ms timeout -> RT brake takeover + ESTOP"}
 
-  # ── SYNTREE EPS-C (Intel/little-endian) ────────────────────────────
-  syntree_eps:
+  # ── steer-by-wire unit (Intel/little-endian) ────────────────────────────
+  sbw_unit:
     byte_order: intel
     bus: "low"
-    output: shared/can/syntree_eps.dbc
+    output: shared/can/sbw_unit.dbc
     messages:
 
       # 0x169 — VCU_SES_REQ (RT -> EPS_C, 50 Hz continuous)
@@ -208,7 +208,7 @@ protocols:
         sender: RT
         receivers: [EPS_C]
         cycle_ms: 20
-        comment: "SYNTREE EPS-C command. 50 Hz continuous. Byte 5 overlap: Speed[15:8] shares with security nibble per CSV."
+        comment: "steer-by-wire unit command. 50 Hz continuous. Byte 5 overlap: Speed[15:8] shares with security nibble per CSV."
         signals:
           - {name: SES_AlignEnable,    byte: 0, bit_offset: 0, size: 1,
              comment: "Angle Initial Alignment Enable. 0=disabled, 1=centering."}
@@ -238,7 +238,7 @@ protocols:
         sender: EPS_C
         receivers: [RT]
         cycle_ms: 10
-        comment: "SYNTREE EPS-C status feedback. 100 Hz. Byte 5 overlap: StrAngleSpd[15:8] / Torq share byte 5 per CSV."
+        comment: "steer-by-wire unit status feedback. 100 Hz. Byte 5 overlap: StrAngleSpd[15:8] / Torq share byte 5 per CSV."
         signals:
           - {name: SES_AngleStatus,        byte: 0, bit_offset: 0, size: 1,
              comment: "Center Finding Status. 0=Finding, 1=Found."}
@@ -272,7 +272,7 @@ protocols:
         sender: EPS_C
         receivers: [RT]
         cycle_ms: 100
-        comment: "SYNTREE EPS-C detailed fault flags. 8 L3 faults (redundant sensor loss) -> RT must escalate to ESTOP."
+        comment: "steer-by-wire unit detailed fault flags. 8 L3 faults (redundant sensor loss) -> RT must escalate to ESTOP."
         signals:
           - {name: SES_ECUUnderVolt,  byte: 0, bit_offset: 0, size: 1, comment: "Controller Under Voltage [L2]"}
           - {name: SES_ECUOverVolt,   byte: 0, bit_offset: 1, size: 1, comment: "Controller Over Voltage [L2]"}
@@ -309,7 +309,7 @@ protocols:
         sender: EPS_C
         receivers: [RT]
         cycle_ms: 1000
-        comment: "SYNTREE EPS-C firmware version. Log on boot for compatibility check."
+        comment: "steer-by-wire unit firmware version. Log on boot for compatibility check."
         signals:
           - {name: SES_SW_Version, byte: 0, bit_offset: 0, size: 8,
              factor: 0.01, offset: 0, min: 0, max: 2.55,
@@ -325,7 +325,7 @@ protocols:
         sender: EPS_C
         receivers: [RT]
         cycle_ms: 10
-        comment: "SYNTREE EPS-C telemetry. 100 Hz. Bytes 0,7 reserved. Narrower ranges than brake SEB_Test."
+        comment: "steer-by-wire unit telemetry. 100 Hz. Bytes 0,7 reserved. Narrower ranges than brake SEB_Test."
         signals:
           - {name: SES_MtrCurt,  byte: 1, bit_offset: 0, size: 16, type: signed,
              factor: 0.0078125, offset: 0, min: 0, max: 60, unit: A,
@@ -337,11 +337,11 @@ protocols:
              factor: 0.00390625, offset: 0, min: 0, max: 18, unit: V,
              comment: "Supply voltage. 0-18V range."}
 
-  # ── SYNTREE SEB (Intel/little-endian) ──────────────────────────────
-  syntree_seb:
+  # ── brake-by-wire unit (Intel/little-endian) ──────────────────────────────
+  bbw_unit:
     byte_order: intel
     bus: "low"
-    output: shared/can/syntree_seb.dbc
+    output: shared/can/bbw_unit.dbc
     messages:
 
       # 0x7B9 — VCU_SEB_REQ (SYS -> SEB, 50 Hz continuous)
@@ -351,7 +351,7 @@ protocols:
         sender: SYS
         receivers: [SEB]
         cycle_ms: 20
-        comment: "SYNTREE SEB brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1."
+        comment: "brake-by-wire unit brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1."
         signals:
           - {name: SEB_AlignEnable,    byte: 0, bit_offset: 0, size: 1, comment: "Calibration enable."}
           - {name: SEB_CtrlEnable,     byte: 0, bit_offset: 1, size: 1, comment: "Active control enable."}
@@ -379,7 +379,7 @@ protocols:
         sender: SEB
         receivers: [SYS, RT]
         cycle_ms: 10
-        comment: "SYNTREE SEB status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1."
+        comment: "brake-by-wire unit status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1."
         signals:
           - {name: SEB_AlignStatus,        byte: 0, bit_offset: 0, size: 1, comment: "Alignment Info Feedback. 1=aligned."}
           - {name: SEB_CtrlEnStatus,       byte: 0, bit_offset: 1, size: 1, comment: "Control Enable Feedback."}
@@ -410,7 +410,7 @@ protocols:
         sender: SEB
         receivers: [SYS]
         cycle_ms: 100
-        comment: "SYNTREE SEB detailed fault flags. 16 of 23 faults are L3 -> SYS must escalate to ESTOP."
+        comment: "brake-by-wire unit detailed fault flags. 16 of 23 faults are L3 -> SYS must escalate to ESTOP."
         signals:
           - {name: SEB_ECUUnderVolt,     byte: 0, bit_offset: 0, size: 1, comment: "Controller Undervoltage [L2]"}
           - {name: SEB_ECUOverVolt,      byte: 0, bit_offset: 1, size: 1, comment: "Controller Overvoltage [L2]"}
@@ -424,7 +424,7 @@ protocols:
           - {name: SEB_AngleS_OC,        byte: 1, bit_offset: 1, size: 1, comment: "Angle Sensor S Open Circuit [L3]"}
           - {name: SEB_AngleS_AF,        byte: 1, bit_offset: 2, size: 1, comment: "Angle Sensor S Sub-board Abnormal [L3]"}
           - {name: SEB_NoPreSensor,      byte: 1, bit_offset: 3, size: 1, comment: "Unconnected Oil Pressure Sensor [L3]"}
-          # Byte 1 bit 4: reserved (unused per SYNTREE CSV)
+          # Byte 1 bit 4: reserved (unused per steer-by-wire CSV)
           - {name: SEB_SensorUCL,        byte: 1, bit_offset: 5, size: 1, comment: "Sensor Plausibility Fault [L3]"}
           - {name: SEB_AlignmentErr,     byte: 1, bit_offset: 6, size: 1, comment: "Alignment Fault [L2]"}
           - {name: SEB_AngleOver,        byte: 1, bit_offset: 7, size: 1, comment: "Angle Out of Bounds [L2]"}
@@ -444,7 +444,7 @@ protocols:
         sender: SEB
         receivers: [SYS]
         cycle_ms: 1000
-        comment: "SYNTREE SEB firmware version. Log on boot for compatibility check."
+        comment: "brake-by-wire unit firmware version. Log on boot for compatibility check."
         signals:
           - {name: SEB_SW_Version, byte: 0, bit_offset: 0, size: 8,
              factor: 0.01, offset: 0, min: 0, max: 2.55,
@@ -460,7 +460,7 @@ protocols:
         sender: SEB
         receivers: [SYS, RT]
         cycle_ms: 10
-        comment: "SYNTREE SEB telemetry. 100 Hz. RT monitors for 0x311 BRAKE_DIAG population."
+        comment: "brake-by-wire unit telemetry. 100 Hz. RT monitors for 0x311 BRAKE_DIAG population."
         signals:
           - {name: SEB_MtrCurr,  byte: 1, bit_offset: 0, size: 16, type: signed,
              factor: 0.0078125, offset: 0, min: -255, max: 255, unit: A,

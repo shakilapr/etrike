@@ -29,7 +29,7 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
     case can::kIdSysModeCmd:  // SYS_MODE_CMD — consumed by RT
         if (!is_high_bus && q.mode_from_sys) { *q.mode_from_sys = f.u8_at(0); }
         return;
-    case can::kIdSyntreeEpsStatus:  // SES_STATUS — consumed by RT (steering feedback)
+    case can::kIdSbwStatus:  // SES_STATUS — consumed by RT (steering feedback)
         if (!is_high_bus) {
             if (q.steer_feedback_angle) {
                 *q.steer_feedback_angle = uint16_t(f.data[2] | (f.data[3] << 8));
@@ -39,7 +39,7 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
             }
         }
         return;
-    case can::kIdSyntreeSebStatus:  // SEB_STATUS — monitor L3 errors
+    case can::kIdBbwStatus:  // SEB_STATUS — monitor L3 errors
         if (!is_high_bus && q.estop_flag) {
             uint8_t err = (f.data[0] >> 6) & 0x03;
             if (err == 3) *q.estop_flag = true;

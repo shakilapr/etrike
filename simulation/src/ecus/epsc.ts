@@ -1,5 +1,5 @@
 /**
- * SyntreeEpsc — simulated SYNTREE EPS-C steering actuator.
+ * Sbwc — simulated steer-by-wire unit steering actuator.
  *
  * Responds to 0x169 VCU_SES_REQ with 0x201 SES_STATUS.
  * Models first-order angle response with rate limiting.
@@ -8,8 +8,8 @@
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId } from "../core/types.js";
 
-export class SyntreeEpsc implements SimulatedEcu {
-  readonly id = "SYNTREE EPS-C";
+export class Sbwc implements SimulatedEcu {
+  readonly id = "steer-by-wire unit";
   readonly nodeId: SimNodeId = "epsc";
 
   private actualAngle = 30000;  // 0.1° units, 30000 = 0°

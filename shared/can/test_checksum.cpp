@@ -1,10 +1,10 @@
-// Test: SYNTREE checksum algorithm (XOR ^ 0xFF) and byte 5/6 overlay bits.
+// Test: steer-by-wire checksum algorithm (XOR ^ 0xFF) and byte 5/6 overlay bits.
 //
 // Build and run:
 //   g++ -std=c++17 -I. test_checksum.cpp -o test_checksum && ./test_checksum
 //
 // This verifies the fix that changed checksum from arithmetic SUM to XOR ^ 0xFF
-// (matching the SYNTREE manufacturer CSV specification).
+// (matching the steer-by-wire manufacturer CSV specification).
 
 #include "can_protocol.h"
 #include <cstdio>
@@ -300,7 +300,7 @@ void test_known_vector_seb() {
 // ───────────────────────────────────────────────────────────────────
 
 int main() {
-    printf("=== SYNTREE Checksum Test (XOR ^ 0xFF) ===\n\n");
+    printf("=== steer-by-wire Checksum Test (XOR ^ 0xFF) ===\n\n");
 
     printf("--- VcuSesReq (0x169) ---\n");
     test_vcu_ses_req_pack_checksum();

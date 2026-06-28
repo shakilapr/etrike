@@ -70,8 +70,8 @@ ecus:
   - {name: SYS,    comment: "ESP32-S3, FreeRTOS, safety + motor + body control"}
   - {name: MTR,    comment: "STM32, bare metal, motor DAC + gear relays (EGAS L1)"}
   - {name: DCDC,   comment: "DC-DC converter (72V->12V), CAN 0x012 control"}
-  - {name: EPS_C,  comment: "SYNTREE EPS-C, steer-by-wire module, preprogrammed CAN IDs"}
-  - {name: SEB,    comment: "SYNTREE SEB, electro-hydraulic brake module, preprogrammed CAN IDs"}
+  - {name: EPS_C,  comment: "steer-by-wire unit, steer-by-wire module, preprogrammed CAN IDs"}
+  - {name: SEB,    comment: "brake-by-wire unit, electro-hydraulic brake module, preprogrammed CAN IDs"}
   - {name: Any,    comment: "Wildcard — any node may send (e.g., ESTOP frames)"}
 
 protocols:
@@ -296,7 +296,7 @@ protocols:
       # 0x7FC — HOST_HEARTBEAT (Host→RT, high bus only)
       - id: 0x7FC
         name: HOST_HEARTBEAT
-        dlc: 1
+        dlc: 2
         sender: Host
         receivers: [RT]
         cycle_ms: 500
@@ -304,16 +304,18 @@ protocols:
         signals:
           - {name: Host_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical."}
+          - {name: Host_Health, byte: 1, bit_offset: 0, size: 5, min: 0, max: 31,
+             comment: "bit0=internal_fault, bit1=can_warning, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded"}
 
       # 0x7FD — RT_HEARTBEAT (both buses, independent counters)
       # High-bus instance — independent counter from low bus.
       - id: 0x7FD
         name: RT_HEARTBEAT
-        dlc: 1
+        dlc: 2
         sender: RT
         receivers: [Host, SYS]
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the high-bus instance."
         signals:
           - {name: RT_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "High bus timeout 1500ms->Host stops /cmd_vel"}
+             comment: "RT health flags: bit0=int_fault, bit1=can_warn, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded" "High bus timeout 1500ms->Host stops /cmd_vel"}

@@ -1,6 +1,6 @@
 # Debug Tool — System Architecture
 
-A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to one or both CAN buses via an ESP32-S3 bridge over MQTT/Wi-Fi, streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or SYNTREE actuators.
+A CAN bus diagnostic, monitoring, and hardware-in-the-loop test tool for the E-Trike vehicle control system. Connects to one or both CAN buses via an ESP32-S3 bridge over MQTT/Wi-Fi, streams decoded frames to a web UI, and can inject commands to simulate any node — Jetson, RT, SYS, MTR, or steer-by-wire actuators.
 
 ---
 
@@ -497,7 +497,7 @@ void decode_frame(const can::Frame& fr, bool is_low_bus, char* buf, size_t max_l
         }
         case can::kIdVcuSesReq: {
             auto cmd = can::VcuSesReq::unpack(fr.data);
-            snprintf(buf, max_len, /* SYNTREE little-endian fields */);
+            snprintf(buf, max_len, /* steer-by-wire little-endian fields */);
             break;
         }
         // ... all 28 IDs + unknown-ID fallback (raw hex only)

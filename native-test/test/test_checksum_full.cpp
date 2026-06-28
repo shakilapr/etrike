@@ -1,9 +1,9 @@
 /*
  * test_checksum_full.cpp
  *
- * Comprehensive checksum validation for SYNTREE protocol messages.
+ * Comprehensive checksum validation for steer-by-wire protocol messages.
  *
- * The SYNTREE checksum is: XOR(bytes[0..6]) ^ 0xFF
+ * The steer-by-wire checksum is: XOR(bytes[0..6]) ^ 0xFF
  * This produces the property: XOR(bytes[0..7]) == 0xFF
  *
  * Test categories:
@@ -108,7 +108,7 @@ static void test_known_vector_ses_max_angle() {
     r.align_enable    = 1;
     r.control_enable  = 1;
     r.target_angle    = 6000;       // 0x1770
-    r.target_speed    = 525;        // 0x20D, max SYNTREE range
+    r.target_speed    = 525;        // 0x20D, max steer-by-wire range
     r.roll_cnt_enable = 1;
     r.checksum_enable = 1;
     r.rolling_counter = 0xF;
@@ -485,7 +485,7 @@ static void test_frame_roundtrip_checksum() {
 /* =================================================================== */
 
 int main() {
-    printf("=== SYNTREE Checksum Full Tests ===\n\n");
+    printf("=== steer-by-wire Checksum Full Tests ===\n\n");
 
     printf("--- Known-answer tests ---\n");
     test_known_vector_ses_defaults();

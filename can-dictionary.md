@@ -1,6 +1,6 @@
 # CAN Signal Dictionary — E-Trike
 
-Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless noted (SYNTREE protocol uses Motorola LSB).
+Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless noted (steer-by-wire protocol uses Motorola LSB).
 
 ### Type Notation
 
@@ -32,7 +32,7 @@ Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless n
 
 ## 1. Low-Level CAN Bus
 
-Nodes: RT ESP32-S3, SYS ESP32-S3, SYNTREE EPS-C (steering), SYNTREE SEB (brake), DC-DC converter.
+Nodes: RT ESP32-S3, SYS ESP32-S3, steer-by-wire unit (steering), brake-by-wire unit (brake), DC-DC converter.
 
 ---
 
@@ -131,7 +131,7 @@ Byte layout (big-endian): Byte 0-3 = speed [31:0], Byte 4 = gear.
 
 MTR receives 0x204 directly for motor actuation (speed → MCP4725 DAC, gear → relay module). SYS also receives 0x204 for EGAS Level 2 monitoring (compares setpoint vs 0x206 feedback).
 
-> Placed at `0x204` to avoid collision with EPS-C error info frame at `0x202`. SYNTREE units are preprogrammed and cannot be reconfigured.
+> Placed at `0x204` to avoid collision with EPS-C error info frame at `0x202`. actuator units are preprogrammed and cannot be reconfigured.
 
 ---
 
@@ -150,7 +150,7 @@ MTR receives 0x204 directly for motor actuation (speed → MCP4725 DAC, gear →
 
 Byte layout (big-endian): Bytes 0-3 = brake pressure [kPa].
 
-RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified SYNTREE spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x205 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x205 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
+RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified steer-by-wire spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x205 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x205 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
 
 
 ### 0x206 — MTR_MOTOR_FBK
@@ -171,11 +171,11 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
 
-### 0x201 — SES_STATUS (SYNTREE EPS-C Feedback)
+### 0x201 — SES_STATUS (steer-by-wire unit Feedback)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE EPS-C (steering module) |
+| **Sender** | steer-by-wire unit (steering module) |
 | **Receiver(s)** | RT |
 | **DLC** | 8 |
 | **Period** | 10 ms (100 Hz) |
@@ -211,16 +211,16 @@ Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
 ---
 
-### 0x169 — VCU_SES_REQ (SYNTREE EPS-C Command)
+### 0x169 — VCU_SES_REQ (steer-by-wire unit Command)
 
 | Property | Value |
 |----------|-------|
 | **Sender** | RT ESP32-S3 |
-| **Receiver(s)** | SYNTREE EPS-C (steering module) |
+| **Receiver(s)** | steer-by-wire unit (steering module) |
 | **DLC** | 8 |
 | **Period** | 20 ms (50 Hz) — **continuous, every frame** |
 | **Endianness** | Motorola LSB (little-endian) |
-| **Note** | Factory default `0x169`. SYNTREE unit is preprogrammed and not reconfigurable. `RT_DRIVE_CMD` placed at `0x204` to avoid collision. |
+| **Note** | Factory default `0x169`. steer-by-wire unit is preprogrammed and not reconfigurable. `RT_DRIVE_CMD` placed at `0x204` to avoid collision. |
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
@@ -251,17 +251,17 @@ Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
 **Internal conversion (architecture, offset=0)**: `VCU_SES_Tgt_StrAngle_raw = internal_angle_mdeg / 100` (45500 mdeg → 455 raw → 45.5°). CSV declares offset=-3000; if that encoding is used, the formula would be `raw = internal_angle_mdeg / 100 + 30000` (45500 mdeg → 30455 raw → 45.5°). Verify which encoding the EPS-C actually expects by observing CAN bus traffic.
 
-**Security**: If `roll_cnt_enable=0` or `checksum_enable=0`, unit may reject frames. Both must be 1. Checksum algorithm: `XOR(bytes[0..6]) ^ 0xFF` (verify exact formula against SYNTREE spec).
+**Security**: If `roll_cnt_enable=0` or `checksum_enable=0`, unit may reject frames. Both must be 1. Checksum algorithm: `XOR(bytes[0..6]) ^ 0xFF` (verify exact formula against steer-by-wire spec).
 
 **Slew rate**: Speed-dependent. RT computes `VCU_SES_Tgt_StrAngleSpd` based on speed to ensure smooth steering. Lower speed → lower slew rate for comfort; higher speed → higher slew rate for responsiveness (within dynamic clamp).
 
 ---
 
-### 0x202 — SES_ErrInfo (SYNTREE EPS-C Error Detail)
+### 0x202 — SES_ErrInfo (steer-by-wire unit Error Detail)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE EPS-C (steering module) |
+| **Sender** | steer-by-wire unit (steering module) |
 | **Receiver(s)** | RT ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 100 ms (10 Hz) |
@@ -311,11 +311,11 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 
 ---
 
-### 0x203 — SES_Version (SYNTREE EPS-C Firmware Version)
+### 0x203 — SES_Version (steer-by-wire unit Firmware Version)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE EPS-C (steering module) |
+| **Sender** | steer-by-wire unit (steering module) |
 | **Receiver(s)** | RT ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 1000 ms (1 Hz) |
@@ -331,11 +331,11 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 
 ---
 
-### 0x6FA — SES_Test (SYNTREE EPS-C Telemetry)
+### 0x6FA — SES_Test (steer-by-wire unit Telemetry)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE EPS-C (steering module) |
+| **Sender** | steer-by-wire unit (steering module) |
 | **Receiver(s)** | RT ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 10 ms (100 Hz) |
@@ -395,12 +395,12 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 ---
 
-### 0x7B9 — VCU_SEB_REQ (SYNTREE SEB Brake Command)
+### 0x7B9 — VCU_SEB_REQ (brake-by-wire unit Brake Command)
 
 | Property | Value |
 |----------|-------|
 | **Sender** | SYS ESP32-S3 |
-| **Receiver(s)** | SYNTREE SEB (brake module) |
+| **Receiver(s)** | brake-by-wire unit (brake module) |
 | **DLC** | 8 |
 | **Period** | 20 ms (50 Hz) — **continuous, every frame** |
 | **Endianness** | Motorola LSB (little-endian) |
@@ -439,18 +439,18 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 | 15 mm | 900 | Manual lever pressed |
 | 27 mm | 1140 | ESTOP full brake |
 
-**Security**: Rolling counter must increment 0→15 every frame. Same value twice → SEB rejects (assumes frozen controller). Checksum = `XOR(bytes[0..6]) ^ 0xFF` (verify against SYNTREE spec).
+**Security**: Rolling counter must increment 0→15 every frame. Same value twice → SEB rejects (assumes frozen controller). Checksum = `XOR(bytes[0..6]) ^ 0xFF` (verify against steer-by-wire spec).
 
 **Mode 0 (Stroke)**: Command a specific pushrod position in mm. Best for mimicking pedal travel / ESTOP full brake / manual lever.
 **Mode 1 (Pressure)**: Command hydraulic pressure in MPa. SEB's internal PID maintains target. Best for autonomous deceleration control (compensates for pad wear, temperature).
 
 ---
 
-### 0x721 — SEB_STATUS (SYNTREE SEB Brake Feedback)
+### 0x721 — SEB_STATUS (brake-by-wire unit Brake Feedback)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE SEB (brake module) |
+| **Sender** | brake-by-wire unit (brake module) |
 | **Receiver(s)** | SYS ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 10 ms (100 Hz) |
@@ -488,11 +488,11 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 
 ---
 
-### 0x731 — SEB_ErrInfo (SYNTREE SEB Error Detail)
+### 0x731 — SEB_ErrInfo (brake-by-wire unit Error Detail)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE SEB (brake module) |
+| **Sender** | brake-by-wire unit (brake module) |
 | **Receiver(s)** | SYS ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 100 ms (10 Hz) |
@@ -540,11 +540,11 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 
 ---
 
-### 0x741 — SEB_Version (SYNTREE SEB Firmware Version)
+### 0x741 — SEB_Version (brake-by-wire unit Firmware Version)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE SEB (brake module) |
+| **Sender** | brake-by-wire unit (brake module) |
 | **Receiver(s)** | SYS ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 1000 ms (1 Hz) |
@@ -560,11 +560,11 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 
 ---
 
-### 0x6FB — SEB_Test (SYNTREE SEB Telemetry)
+### 0x6FB — SEB_Test (brake-by-wire unit Telemetry)
 
 | Property | Value |
 |----------|-------|
-| **Sender** | SYNTREE SEB (brake module) |
+| **Sender** | brake-by-wire unit (brake module) |
 | **Receiver(s)** | SYS ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 10 ms (100 Hz) |
@@ -870,7 +870,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 | Bus | IDs |
 |-----|-----|
 | Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
-| Low only | `0x201` (SYNTREE EPS-C feedback) |
+| Low only | `0x201` (steer-by-wire unit feedback) |
 | High only | `0x210`, `0x220`, `0x400` (obstacle distance) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
 
@@ -887,4 +887,4 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 | Low | `0x400`–`0x5FF` | OBSTACLE, STATE_REPORT, PID_FEEDBACK |
 | Lowest | `0x600`–`0x7FF` | DIAG, SES_Test (`0x6FA`), SEB_Test (`0x6FB`), SEB_STATUS/ErrInfo/Version (`0x721`/`0x731`/`0x741`), SEB_REQ (`0x7B9`), HEARTBEAT (`0x7FC`–`0x7FE`) |
 
-> Lower CAN ID = higher bus arbitration priority. Safety-critical frames occupy `0x00X`. SYNTREE IDs (`0x2XX`, `0x7XX`) are in medium/lowest ranges per manufacturer assignment.
+> Lower CAN ID = higher bus arbitration priority. Safety-critical frames occupy `0x00X`. steer-by-wire IDs (`0x2XX`, `0x7XX`) are in medium/lowest ranges per manufacturer assignment.

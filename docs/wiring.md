@@ -257,8 +257,8 @@ Each ESP32 has a TPS3850 (or equivalent) window watchdog IC.
   │     └── STM32 Board (5V regulated)
   │           └── MCP4725 VCC (5V) — on MTR, provides 0–5V to motor controller
   │
-  ├── SYNTREE EPS-C (steering) — internal power
-  ├── SYNTREE SEB (brake) — internal power
+  ├── steer-by-wire unit (steering) — internal power
+  ├── brake-by-wire unit (brake) — internal power
   │
   └── 72V Gear Lines (via 1A fuse → relay COM terminals on MTR)
 

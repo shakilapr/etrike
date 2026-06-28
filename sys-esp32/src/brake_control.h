@@ -1,5 +1,5 @@
 #pragma once
-// SYNTREE SEB brake control — boot state machine, 50 Hz TX, rolling ctr + checksum.
+// brake-by-wire unit brake control — boot state machine, 50 Hz TX, rolling ctr + checksum.
 // Architecture.md §8.6. CAN 0x7B9 command, 0x721 status.
 #include <cstdint>
 #include "config.h"
@@ -88,8 +88,8 @@ private:
                        can::VcuSebReq& out) {
         out.align_enable    = 1;
         out.control_enable  = 1;
-        out.roll_cnt_enable = 1;  // required by SYNTREE spec
-        out.checksum_enable = 1;  // required by SYNTREE spec
+        out.roll_cnt_enable = 1;  // required by steer-by-wire spec
+        out.checksum_enable = 1;  // required by steer-by-wire spec
 
         // Boot-sync hold: on first ACTIVE frame, command the captured stroke
         if (m_use_sync_stroke && m_sync_stroke_raw > 0) {

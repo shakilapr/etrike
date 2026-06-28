@@ -17,8 +17,8 @@ import { HostEcu } from "../ecus/host.js";
 import { RtEcu } from "../ecus/rt.js";
 import { SysEcu } from "../ecus/sys.js";
 import { MtrEcu } from "../ecus/mtr.js";
-import { SyntreeEpsc } from "../ecus/epsc.js";
-import { SyntreeSeb } from "../ecus/seb.js";
+import { Sbwc } from "../ecus/epsc.js";
+import { Bbw } from "../ecus/seb.js";
 
 export class SimulationRunner {
   readonly clock = new SimulationClock(0);
@@ -34,8 +34,8 @@ export class SimulationRunner {
   readonly rt: RtEcu;
   readonly sys: SysEcu;
   readonly mtr: MtrEcu;
-  readonly epsc: SyntreeEpsc;
-  readonly seb: SyntreeSeb;
+  readonly epsc: Sbwc;
+  readonly seb: Bbw;
 
   private allFrames: SimFrame[] = [];
   private lastCmdSpeedMmps = 0;
@@ -54,8 +54,8 @@ export class SimulationRunner {
     this.rt = new RtEcu();
     this.sys = new SysEcu();
     this.mtr = new MtrEcu();
-    this.epsc = new SyntreeEpsc();
-    this.seb = new SyntreeSeb();
+    this.epsc = new Sbwc();
+    this.seb = new Bbw();
 
     this.ecus = [this.host, this.rt, this.sys, this.mtr, this.epsc, this.seb];
   }

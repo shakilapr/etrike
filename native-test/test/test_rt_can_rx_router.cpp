@@ -98,7 +98,7 @@ int main() {
         uint16_t steer_angle = 0;
         auto q = make_queues(low, high, cmd, brake_kpa, estop, mode, steer_angle, steer_status);
 
-        fr.id = can::kIdSyntreeEpsStatus;
+        fr.id = can::kIdSbwStatus;
         fr.dlc = 8;
         fr.data[0] = 0x01;
         fr.data[2] = 0x30;

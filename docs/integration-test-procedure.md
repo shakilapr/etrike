@@ -135,5 +135,5 @@ proceeding to the next. Stop on first failure — debug before continuing.
 
 ## Pass Criteria
 
-All tests T1.1 through T6.3 must pass before connecting SYNTREE actuators
+All tests T1.1 through T6.3 must pass before connecting steer-by-wire actuators
 or the motor controller. Any failure: stop, debug, fix, restart from T1.1.

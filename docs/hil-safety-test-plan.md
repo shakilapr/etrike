@@ -37,7 +37,7 @@ Each scenario specifies concrete CAN IDs, payload values, timing tolerances, and
 
 ## Tier 1 — Bench-Test Blockers (MUST pass before road testing)
 
-Tests that verify fundamental hardware behavior of the SYNTREE actuators. These must pass before any powered integration test is conducted. They require only the actuator unit, a CAN analyzer, and a power supply -- no firmware needed.
+Tests that verify fundamental hardware behavior of the steer-by-wire actuators. These must pass before any powered integration test is conducted. They require only the actuator unit, a CAN analyzer, and a power supply -- no firmware needed.
 
 ---
 

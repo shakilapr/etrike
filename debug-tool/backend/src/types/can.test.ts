@@ -233,7 +233,7 @@ describe("decodeFrame", () => {
     expect(result).toEqual({ mode: 2, mode_name: "ESTOP" });
   });
 
-  it("decodes 0x169 VCU_SES_REQ (low) — SYNTREE LE", () => {
+  it("decodes 0x169 VCU_SES_REQ (low) — steer-by-wire LE", () => {
     // Byte 0: 0x02 = control_enable (alignment_enable off)
     // Bytes 2-3: target_angle = -3000 = 0xF448 LE → [0x48, 0xF4]
     // Bytes 4-5: target_speed low byte + rolling_counter nibble
@@ -362,7 +362,7 @@ describe("decodeFrame", () => {
     expect(result).toEqual({ sw_version: 1, hw_version: 3 });
   });
 
-  it("decodes 0x7B9 VCU_SEB_REQ (low) — LE SYNTREE", () => {
+  it("decodes 0x7B9 VCU_SEB_REQ (low) — LE steer-by-wire", () => {
     // align_enable=true, control_enable=true, control_mode=0, auto_brake=false
     // stroke=12850=0x3232 LE → bytes[2]=0x32, bytes[3]=0x32
     // pressure_req reads bytes[3] = 0x32 = 50, rolling_counter=3, checksum=0

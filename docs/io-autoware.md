@@ -104,7 +104,7 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 | ESTOP encoding | ✅ Compatible | `0x001` DLC=0, rate-limited 500ms |
 | Heartbeat encoding | ✅ Compatible | `0x7FC` DLC=1, `alive_ctr++` at 2 Hz |
 | Velocity decoding | ✅ Compatible | `0x120` i16 mm/s → float m/s |
-| Steering decoding | ⚠️ Offset risk | `0x310` STEER_DIAG: code uses `offset=-3000` (30.0°). SYNTREE EPS-C CSV spec may differ. Pre-existing issue B1 in v0.0.4 audit. |
+| Steering decoding | ⚠️ Offset risk | `0x310` STEER_DIAG: code uses `offset=-3000` (30.0°). steer-by-wire unit CSV spec may differ. Pre-existing issue B1 in v0.0.4 audit. |
 | Gear decoding | ✅ Compatible | `0x206` gear_state byte: CAN 0/1/2/3 → Autoware NONE/DRIVE/LOW/REVERSE |
 | Mode decoding | ✅ Compatible | `0x210` mode byte: 0→MANUAL(4), 1→AUTONOMOUS(1), 2→DISENGAGED(5) |
 | Light feedback | ⚠️ Echo only | `0x011` light_state is SYS→RT→Jetson forwarded. No independent sensor confirms relay state. Open-loop echo until SYS adds dedicated light status bits. |
@@ -119,8 +119,8 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 | **Emergency stop** | `/control/command/emergency_cmd` → immediate safe state | `0x001` ESTOP via CAN, rate-limited 500ms. RT → ramp/hold steering, zero speed, max brake. | ✅ Compatible |
 | **Mode switching** | `ControlModeCommand` AUTONOMOUS/MANUAL | Bridge `engaged_` gates TX. Physical mode gated by SYS MODE button + `0x110` CAN. | ✅ Two-layer: logical + physical |
 | **Gear selection** | `GearCommand` NONE/DRIVE/LOW/REVERSE/PARK | `0x300` gear byte → RT → `0x204` → MTR relays. PARK not supported (no mechanical parking pawl). | ⚠️ PARK unsupported |
-| **Steering actuation** | CAN command → steering ECU | `0x169` VCU_SES_REQ → SYNTREE EPS-C (Angle Mode, 50 Hz, rolling counter + checksum) | ✅ Proprietary but validated |
-| **Brake actuation** | CAN command → brake ECU | `0x7B9` VCU_SEB_REQ → SYNTREE SEB (Pressure/Stroke Mode, 50 Hz, rolling counter + checksum). RT→`0x205`→SYS→`0x7B9` (AUTO) or SYS→`0x7B9` (MANUAL/ESTOP). | ✅ Mode-gated dual sender |
+| **Steering actuation** | CAN command → steering ECU | `0x169` VCU_SES_REQ → steer-by-wire unit (Angle Mode, 50 Hz, rolling counter + checksum) | ✅ Proprietary but validated |
+| **Brake actuation** | CAN command → brake ECU | `0x7B9` VCU_SEB_REQ → brake-by-wire unit (Pressure/Stroke Mode, 50 Hz, rolling counter + checksum). RT→`0x205`→SYS→`0x7B9` (AUTO) or SYS→`0x7B9` (MANUAL/ESTOP). | ✅ Mode-gated dual sender |
 | **Throttle actuation** | Analog/CAN → motor controller | MCP4725 DAC 0–5V via MTR STM32 (open-loop). No PID until rear encoder fitted (gap #5). | ⚠️ Open-loop only |
 | **Safety architecture** | EGAS / ISO 26262 | EGAS 3-level: MTR L1 (STM32), SYS L2 (ESP32-S3), hardware ESTOP L3. TPS3850 external watchdog on both RT and SYS. | ✅ ASIL-C decomposition |
 | **Heartbeat/liveness** | Per-node alive counter | `0x7FD` (RT), `0x7FE` (SYS, 10 Hz), `0x7FC` (Jetson, 2 Hz). RT: SYS timeout 200ms, Jetson timeout 1500ms. SYS: RT timeout 1000ms. | ✅ Automotive-grade |
@@ -158,7 +158,7 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 **All 7 subscriptions and 7 publications** use `~/input/*` / `~/output/*` instead of standard Autoware.Auto global topic names. Requires launch-file remapping or source-code change.
 
 ### Steering angle offset (GAP-2)
-`0x310` STEER_DIAG decoding uses `offset=-3000` (30.0°). The SYNTREE EPS-C CSV spec must be verified. A wrong offset produces a constant steering angle bias in `SteeringReport` and dead-reckoning odometry. **Pre-existing issue B1** from v0.0.4 audit.
+`0x310` STEER_DIAG decoding uses `offset=-3000` (30.0°). The steer-by-wire unit CSV spec must be verified. A wrong offset produces a constant steering angle bias in `SteeringReport` and dead-reckoning odometry. **Pre-existing issue B1** from v0.0.4 audit.
 
 ### Steering decode split path (GAP-3)
 `CanDecoder::decode_steering()` returns `steering_tire_angle = 0.0f` (stub). Actual steering decoding happens inline in `publish_vehicle_reports()` case `0x310`. The `~/output/steering_status` publisher appears to use the stub path, while the odometry code uses the inline path. Verify which code path feeds `pub_steering_`.

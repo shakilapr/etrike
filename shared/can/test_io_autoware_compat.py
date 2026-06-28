@@ -173,7 +173,7 @@ EXPECTED = [
         },
     }),
 
-    # SYNTREE EPS-C (low bus only)
+    # steer-by-wire unit (low bus only)
     ("0x169", "low", "VCU_SES_REQ", {
         "dlc": 8,
         "signals": {
@@ -191,7 +191,7 @@ EXPECTED = [
         },
     }),
 
-    # SYNTREE SEB (low bus only)
+    # brake-by-wire unit (low bus only)
     ("0x7B9", "low", "VCU_SEB_REQ", {
         "dlc": 8,
         "signals": {

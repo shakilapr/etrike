@@ -10,11 +10,11 @@
 
 namespace rt {
 
-// ── steering — SYNTREE EPS-C via CAN 0x169 ───────────────────────
+// ── steering — steer-by-wire unit via CAN 0x169 ───────────────────────
 constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
 constexpr float kSteerFollowingErrFactor=  0.25f;   // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs    =   300;    // must persist
-constexpr int   kSteerCmdRateHz         =   100;    // SYNTREE 10 ms period (was 50Hz — 20ms margin too tight with ±5ms TX jitter)
+constexpr int   kSteerCmdRateHz         =   100;    // steer-by-wire 10 ms period (was 50Hz — 20ms margin too tight with ±5ms TX jitter)
 constexpr int   kSteerBootWaitMs        =   500;
 // Dynamic angle clamp: limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
 constexpr float kAngleClampBaseDeg      =  40.0f;   // max at 2 km/h
@@ -26,7 +26,7 @@ constexpr float kSteerRateMinDegS       = 125.0f;   // at low speed
 constexpr float kSteerRateMaxDegS       = 525.0f;   // at high speed
 constexpr float kSteerRateRangeDegS     = 400.0f;   // max − min
 constexpr int   kSteerSyncTimeoutMs     = 5000;     // LISTEN_SYNC timeout → FAULT (gap C1)
-constexpr int   kSyntreeAngleOffset     = 30000;    // SYNTREE CSV offset: raw = angle_0_1deg + offset (0° → raw=30000)
+constexpr int   kSbwAngleOffset     = 30000;    // steer-by-wire CSV offset: raw = angle_0_1deg + offset (0° → raw=30000)
 constexpr float kSteerEstopRampDegS     = 20.0f;    // ESTOP ramp-to-zero rate (gap C3)
 constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then silent-stop (gap C3)
 

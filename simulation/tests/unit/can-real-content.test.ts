@@ -200,7 +200,7 @@ describe("0x300 HOST_DRIVE_CMD — real bytes", () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//  0x169 VCU_SES_REQ — SYNTREE LE encoding + checksum
+//  0x169 VCU_SES_REQ — steer-by-wire LE encoding + checksum
 // ═══════════════════════════════════════════════════════════
 
 describe("0x169 VCU_SES_REQ — real bytes", () => {
@@ -248,7 +248,7 @@ describe("0x169 VCU_SES_REQ — real bytes", () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//  0x7B9 VCU_SEB_REQ — SYNTREE LE encoding (BROKEN BEFORE — verified fixed)
+//  0x7B9 VCU_SEB_REQ — steer-by-wire LE encoding (BROKEN BEFORE — verified fixed)
 // ═══════════════════════════════════════════════════════════
 
 describe("0x7B9 VCU_SEB_REQ — real bytes", () => {
@@ -361,7 +361,7 @@ describe("0x6FA SES_Test — telemetry populated", () => {
     const f = getFirst(runner, "0x6FA", "low");
     expect(f).toBeDefined();
     expect(f!.dlc).toBe(8);
-    // SYNTREE layout: byte0=reserved, bytes1-2=motor_current, bytes3-4=ecu_temp, bytes5-6=voltage
+    // steer-by-wire layout: byte0=reserved, bytes1-2=motor_current, bytes3-4=ecu_temp, bytes5-6=voltage
     const temp = f!.data[3] | (f!.data[4] << 8);
     const volt = f!.data[5] | (f!.data[6] << 8);
     expect(temp).toBe(50); // 25°C in raw units

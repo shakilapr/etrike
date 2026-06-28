@@ -11,7 +11,7 @@
  *   - Boundary values for each numeric field
  *   - Bool field encoding/decoding (SysSafetySts, HostLightCmd, SysDiagRpt)
  *   - Bitfield packing (VcuSesReq, VcuSebReq)
- *   - SYNTREE LE pack/unpack roundtrips
+ *   - steer-by-wire LE pack/unpack roundtrips
  */
 
 #include <cstdio>
@@ -624,7 +624,7 @@ static void test_host_obstacle_dist() {
 }
 
 /* ===================================================================
- *  14) VcuSesReq (0x169)  -- SYNTREE LE pack/unpack + checksum
+ *  14) VcuSesReq (0x169)  -- steer-by-wire LE pack/unpack + checksum
  * =================================================================== */
 
 static void test_vcu_ses_req() {
@@ -664,7 +664,7 @@ static void test_vcu_ses_req() {
     // All zeros (straight ahead, no control)
     {
         can::VcuSesReq r{};
-        r.target_speed = 328;   // SYNTREE default
+        r.target_speed = 328;   // steer-by-wire default
 
         can::Frame f{}; r.to_frame(f);
         auto unpacked = can::VcuSesReq::unpack(f.data);
@@ -689,7 +689,7 @@ static void test_vcu_ses_req() {
 }
 
 /* ===================================================================
- *  15) VcuSebReq (0x7B9)  -- SYNTREE LE pack/unpack + checksum
+ *  15) VcuSebReq (0x7B9)  -- steer-by-wire LE pack/unpack + checksum
  * =================================================================== */
 
 static void test_vcu_seb_req() {
@@ -792,7 +792,7 @@ int main() {
     test_host_drive_cmd();
     test_host_brake_req();
     test_host_obstacle_dist();
-    printf("\n--- SYNTREE protocol (little-endian) ---\n");
+    printf("\n--- steer-by-wire protocol (little-endian) ---\n");
     test_vcu_ses_req();
     test_vcu_seb_req();
 

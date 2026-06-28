@@ -161,7 +161,7 @@ def main():
     do_check = "--check" in sys.argv
     do_smoke = "--smoke" in sys.argv
 
-    # Filter protocols (--protocol custom_high|custom_low|syntree_eps|syntree_seb)
+    # Filter protocols (--protocol custom_high|custom_low|sbw_unit|bbw_unit)
     protocol_names = list(db.protocols.keys())
     for i, arg in enumerate(sys.argv):
         if arg == "--protocol" and i + 1 < len(sys.argv):
