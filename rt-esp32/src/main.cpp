@@ -51,6 +51,13 @@ std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
+// ── Per-task alive counters for multi-task watchdog (gap #5) ──────
+static std::atomic<uint32_t> g_alive_control{0};
+static std::atomic<uint32_t> g_alive_dispatch{0};
+static std::atomic<uint32_t> g_alive_tx_low{0};
+static std::atomic<uint32_t> g_alive_tx_high{0};
+static void check_task_watchdog();
+
 // ── Telemetry atomics ──────────────────────────────────────────────
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{0};
 std::atomic<int16_t>  g_pid_output_mmps{0};
@@ -487,14 +494,6 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         vTaskDelayUntil(&last, per);
     }
 }
-
-// ── Task watchdog: each critical task updates its counter ────────────
-// t_watchdog checks all counters. If any task hasn't ticked in 500ms,
-// logs an error. The hardware WDT (TPS3850) is the ultimate backstop.
-static std::atomic<uint32_t> g_alive_control{0};
-static std::atomic<uint32_t> g_alive_dispatch{0};
-static std::atomic<uint32_t> g_alive_tx_low{0};
-static std::atomic<uint32_t> g_alive_tx_high{0};
 
 static void check_task_watchdog() {
     TickType_t now = xTaskGetTickCount();
