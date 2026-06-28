@@ -203,7 +203,57 @@ Jetson 0x302 → RT forward → 0x302 → SYS → lights
 
 ---
 
-## 9. CAN Bus Device Maps
+## 9. Bench Bypass & Debug Tool
+
+### 9.1 Bench Testing Without Full Hardware
+
+The system has hardware dependencies on peer ECUs and SYNTREE actuators. For
+bench testing with a single ESP32-S3 and a CAN bus analyzer, compile-time
+bypass flags disable these dependencies:
+
+| Flag | Effect | ECU |
+|------|--------|-----|
+| `CONFIG_BENCH_SOLO` | Disable cross-ECU heartbeat timeouts. Single board won't ESTOP. | RT, SYS |
+| `CONFIG_BYPASS_EPS_C_SYNC` | Skip EPS-C listen-sync. Steering assumes centered (0°). | RT |
+| `CONFIG_BYPASS_SEB_SYNC` | Skip SEB listen-sync. Brake operates in DEGRADED (lever-only). | SYS |
+| `CONFIG_BYPASS_MTR_ABSENT` | Skip EGAS L2 speed monitoring. No MTR feedback required. | SYS |
+
+These flags are in `platformio.ini` `build_flags`. Remove all `CONFIG_BENCH_*`
+and `CONFIG_BYPASS_*` before vehicle deployment.
+
+### 9.2 Debug Tool — Synthetic Peer ECUs
+
+When bypass flags aren't sufficient (e.g., testing EGAS L2 with realistic MTR
+data), the debug tool can inject synthetic CAN frames to simulate absent peers:
+
+| Peer | Frame | Rate | What it simulates |
+|------|-------|------|-------------------|
+| EPS-C | 0x201 SES_STATUS | 100 ms | Centered, aligned. RT steering syncs. |
+| SEB | 0x721 SEB_STATUS | 100 ms | Aligned, 0mm stroke. SYS brake syncs. |
+| MTR | 0x206 MTR_MOTOR_FBK | 50 ms | Speed feedback. SYS EGAS L2 has data. |
+| SYS | 0x7FE SYS_HEARTBEAT | 100 ms | SYS alive. RT heartbeat monitor satisfied. |
+| RT | 0x7FD RT_HEARTBEAT | 500 ms | RT alive. SYS heartbeat monitor satisfied. |
+| Host | 0x300 HOST_DRIVE_CMD | 100 ms | Drive commands. RT generates 0x204/0x169. |
+| Host | 0x7FC HOST_HEARTBEAT | 500 ms | Host alive. RT heartbeat monitor satisfied. |
+
+The debug tool has 12 injection templates (was 6). Templates are convenience
+presets — the tool can inject any CAN frame via the encode API.
+
+### 9.3 Bench Test Configurations
+
+**Minimal bench (1 ECU + CANalyst-II):**
+- Enable `CONFIG_BENCH_SOLO` + all `CONFIG_BYPASS_*` flags
+- CANalyst-II injects Host frames (0x300, 0x7FC) on high bus
+- No peer ECUs, no actuators
+
+**Full bench (2 ECUs + CANalyst-II):**
+- RT + SYS on low bus, CANalyst-II as Host on high bus
+- Enable `CONFIG_BENCH_SOLO`, disable actuator bypasses
+- CANalyst-II injects synthetic peer frames as needed
+
+---
+
+## 10. CAN Bus Device Maps
 
 **Low-level (500 kbit/s):** RT, SYS, PWT, EPS-C, SEB
 

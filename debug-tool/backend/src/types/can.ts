@@ -182,12 +182,21 @@ export const CAN_MESSAGES: CanMessageDef[] = [
 export const CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
 
 export const INJECTION_TEMPLATES: InjectionTemplate[] = [
-  { bus: "high", id: "0x300", name: "High drive 2.0 m/s", description: "Host drive command in D gear.", dlc: 8, values: { speed_mmps: 2000, yaw_rate_mrad_s: 0, gear: 1 } },
-  { bus: "high", id: "0x301", name: "High brake 5 MPa", description: "Host brake request.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
-  { bus: "low", id: "0x204", name: "Low motor 2.0 m/s", description: "RT to SYS drive command.", dlc: 5, values: { motor_speed_mmps: 2000, gear: 1 } },
-  { bus: "low", id: "0x205", name: "Low brake 5 MPa", description: "RT to SYS brake command.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
-  { bus: "low", id: "0x169", name: "Steer center", description: "EPS-C steering command.", dlc: 8, values: { target_angle: 0, target_speed: 328, control_enable: true, rolling_counter: 1, checksum: 0 } },
-  { bus: "high", id: "0x7FC", name: "Host heartbeat", description: "Single high-bus Host heartbeat.", dlc: 1, values: { alive_ctr: 1 } }
+  // ── Host simulation (high bus) ──────────────────────────────
+  { bus: "high", id: "0x300", name: "Host drive 2.0 m/s", description: "Host drive command in D gear.", dlc: 8, values: { speed_mmps: 2000, yaw_rate_mrad_s: 0, gear: 1 } },
+  { bus: "high", id: "0x301", name: "Host brake 5 MPa", description: "Host brake request.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
+  { bus: "high", id: "0x7FC", name: "Host heartbeat", description: "Host heartbeat. Inject every 500ms.", dlc: 1, values: { alive_ctr: 1 } },
+  // ── RT simulation (low bus) ─────────────────────────────────
+  { bus: "low", id: "0x204", name: "RT drive 2.0 m/s", description: "RT to MTR drive command.", dlc: 5, values: { motor_speed_mmps: 2000, gear: 1 } },
+  { bus: "low", id: "0x205", name: "RT brake 5 MPa", description: "RT to SYS brake command.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
+  { bus: "low", id: "0x169", name: "RT steer center", description: "RT to EPS-C steering command.", dlc: 8, values: { target_angle: 0, target_speed: 328, control_enable: true, rolling_counter: 1, checksum: 0 } },
+  { bus: "low", id: "0x7FD", name: "RT heartbeat", description: "RT heartbeat on low bus. Inject every 500ms.", dlc: 1, values: { alive_ctr: 1 } },
+  // ── Bench bypass: simulate absent peer ECUs ─────────────────
+  { bus: "low", id: "0x201", name: "EPS-C status (bypass)", description: "Synthetic EPS-C status: 0° centered, aligned. Inject every 100ms.", dlc: 8, values: { angle_status: true, str_angle: 0, tgt_angle_spd: 0, error_status: 0, rolling_counter: 1, checksum: 0 } },
+  { bus: "low", id: "0x721", name: "SEB status (bypass)", description: "Synthetic SEB status: aligned, 0mm stroke. Inject every 100ms.", dlc: 8, values: { alignment_status: true, stroke_value: 600, pressure_value: 0, error_status: 0, rolling_counter: 1, checksum: 0 } },
+  { bus: "low", id: "0x206", name: "MTR feedback (bypass)", description: "Synthetic MTR feedback: 500 mm/s, D gear, no faults. Inject every 50ms.", dlc: 4, values: { actual_speed_mmps: 500, gear_state: 1, fault_flags: 0 } },
+  { bus: "low", id: "0x7FE", name: "SYS heartbeat (bypass)", description: "Synthetic SYS heartbeat for RT bench. Inject every 100ms.", dlc: 1, values: { alive_ctr: 1 } },
+  { bus: "low", id: "0x001", name: "ESTOP trigger", description: "DLC=0 ESTOP frame. Triggers emergency stop on all nodes.", dlc: 0, values: {} },
 ];
 
 export function normalizeBus(input: unknown): Bus {
