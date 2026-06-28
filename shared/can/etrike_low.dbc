@@ -51,10 +51,10 @@ BO_ 1536 SYS_DIAG_RPT: 8 SYS
  SG_ SYS_DiagTec : 55|8@0+ (1,0) [0|255] "" Vector__XXX
  SG_ SYS_DiagRec : 63|8@0+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 2045 RT_HEARTBEAT: 1 RT
+BO_ 2045 RT_HEARTBEAT: 2 RT
  SG_ RT_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 2046 SYS_HEARTBEAT: 1 SYS
+BO_ 2046 SYS_HEARTBEAT: 2 SYS
  SG_ SYS_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
 
 
