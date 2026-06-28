@@ -74,10 +74,11 @@ BO_ 1536 SYS_DIAG_RPT: 8 SYS
  SG_ SYS_DiagTec : 55|8@0+ (1,0) [0|255] "" Vector__XXX
  SG_ SYS_DiagRec : 63|8@0+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 2044 HOST_HEARTBEAT: 1 Host
+BO_ 2044 HOST_HEARTBEAT: 2 Host
  SG_ Host_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ Host_Health : 15|5@0+ (1,0) [0|31] "" Vector__XXX
 
-BO_ 2045 RT_HEARTBEAT: 1 RT
+BO_ 2045 RT_HEARTBEAT: 2 RT
  SG_ RT_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
 
 
@@ -114,7 +115,8 @@ CM_ SG_ 785 BrakeDiag_MotorCurrent "SEB motor current, 0.01A/bit";
 CM_ SG_ 785 BrakeDiag_ECUTemp "SEB ECU temperature, 0.1degC/bit";
 CM_ SG_ 1024 HOST_ObstacleDistance "UINT32_MAX = no reading / timeout";
 CM_ SG_ 2044 Host_AliveCtr "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical.";
-CM_ SG_ 2045 RT_AliveCtr "High bus timeout 1500ms->Host stops /cmd_vel";
+CM_ SG_ 2044 Host_Health "bit0=internal_fault, bit1=can_warning, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded";
+CM_ SG_ 2045 RT_AliveCtr "High bus timeout 1500ms->Host stops /cmd_vel. Health flags: bit0=int_fault, bit1=can_warn, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded";
 
 CM_ BU_ Host "Orin NX, Linux + ROS 2, perception/planning";
 CM_ BU_ RT "ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway";
