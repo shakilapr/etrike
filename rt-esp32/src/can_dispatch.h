@@ -86,10 +86,11 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         // SYNTREE checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
         uint8_t cksum = 0;
         for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
-        if (fr.dlc < 8 || (cksum ^ 0xFF) != fr.data[7]) break;  // corrupt — drop
-        g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
-        g_ses_angle_status.store(ctx.steer_angle_status);
-        g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
+        if (fr.dlc >= 8 && (cksum ^ 0xFF) == fr.data[7]) {
+            g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSyntreeAngleOffset);
+            g_ses_angle_status.store(ctx.steer_angle_status);
+            g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
+        }
     }
     if (fr.id == can::kIdHostObstacleDist && from_high) { g_obstacle_mm.store(fr.u32_at(0)); }
     if (fr.id == can::kIdMtrMotorFbk && !from_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
