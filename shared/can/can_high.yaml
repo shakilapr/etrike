@@ -296,7 +296,7 @@ protocols:
       # 0x7FC — HOST_HEARTBEAT (Host→RT, high bus only)
       - id: 0x7FC
         name: HOST_HEARTBEAT
-        dlc: 2
+        dlc: 1
         sender: Host
         receivers: [RT]
         cycle_ms: 500
@@ -304,14 +304,12 @@ protocols:
         signals:
           - {name: Host_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical."}
-          - {name: Host_Health, byte: 1, bit_offset: 0, size: 5, min: 0, max: 31,
-             comment: "bit0=internal_fault, bit1=can_warning, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded"}
 
       # 0x7FD — RT_HEARTBEAT (both buses, independent counters)
       # High-bus instance — independent counter from low bus.
       - id: 0x7FD
         name: RT_HEARTBEAT
-        dlc: 2
+        dlc: 1
         sender: RT
         receivers: [Host, SYS]
         cycle_ms: 500

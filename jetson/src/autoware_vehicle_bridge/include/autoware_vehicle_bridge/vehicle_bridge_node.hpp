@@ -123,9 +123,6 @@ public:
   bool decode_velocity(const struct can_frame & frame,
                        autoware_auto_vehicle_msgs::msg::VelocityReport & msg) const;
 
-  bool decode_steering(const struct can_frame & frame,
-                       autoware_auto_vehicle_msgs::msg::SteeringReport & msg) const;
-
   bool decode_state(const struct can_frame & frame,
                     autoware_auto_vehicle_msgs::msg::ControlModeReport & mode_msg,
                     autoware_auto_vehicle_msgs::msg::GearReport & gear_msg) const;
@@ -133,10 +130,6 @@ public:
   bool decode_diagnostics(const struct can_frame & frame,
                           diagnostic_msgs::msg::DiagnosticArray & msg,
                           const rclcpp::Time & now) const;
-
-  bool validate_heartbeat(const struct can_frame & frame,
-                          uint8_t & last_ctr, rclcpp::Time & last_time,
-                          const rclcpp::Time & now, int timeout_ms) const;
 };
 
 // ---- Heartbeat monitor (thread-safe: accessed from RX and executor threads) ----
@@ -218,7 +211,7 @@ private:
   HeartbeatMonitor rt_heartbeat_;
 
   // ---- Odometry (dead reckoning) ----
-  double steer_angle_rad_{0.0};
+  std::atomic<double> steer_angle_rad_{0.0};  // written by RX thread, read by executor thread
   rclcpp::Time last_steer_time_{0, 0, RCL_SYSTEM_TIME};
   double odom_x_{0.0}, odom_y_{0.0}, odom_yaw_{0.0};
   rclcpp::Time last_odom_time_{0, 0, RCL_SYSTEM_TIME};

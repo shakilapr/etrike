@@ -169,7 +169,11 @@ bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannCo
   int32_t speed_mmps = speed_to_mmps(speed_ms);
 
   float v_abs = std::abs(speed_ms);
-  float steer = cmd.lateral.is_defined_steering_tire_angle ? cmd.lateral.steering_tire_angle : 0.0f;
+  float steer = cmd.lateral.is_defined_steering_tire_angle
+    ? std::clamp(cmd.lateral.steering_tire_angle,
+                 -params_.max_steering_angle,
+                  params_.max_steering_angle)
+    : 0.0f;
   int32_t yaw_mrad = steering_to_yaw(steer, v_abs);
 
   uint8_t gear = derive_gear(speed_mmps, gear_override, has_override);
@@ -267,16 +271,6 @@ bool CanDecoder::decode_velocity(const struct can_frame & frame,
   return true;
 }
 
-bool CanDecoder::decode_steering(const struct can_frame & frame,
-                                 autoware_auto_vehicle_msgs::msg::SteeringReport & msg) const
-{
-  (void)frame;
-  // Steering feedback not yet available on high bus (EPS-C 0x201 is low-bus only).
-  // RT_STATE_RPT byte 1 gives steer_valid flag only.
-  msg.steering_tire_angle = 0.0f;
-  return true;
-}
-
 bool CanDecoder::decode_state(const struct can_frame & frame,
                               autoware_auto_vehicle_msgs::msg::ControlModeReport & mode_msg,
                               autoware_auto_vehicle_msgs::msg::GearReport & gear_msg) const
@@ -328,21 +322,6 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   add("tec", frame.data[6], 96, 128);
   add("rec", frame.data[7], 96, 128);
   return true;
-}
-
-bool CanDecoder::validate_heartbeat(const struct can_frame & frame,
-                                    uint8_t & last_ctr, rclcpp::Time & last_time,
-                                    const rclcpp::Time & now, int timeout_ms) const
-{
-  if (frame.len < 1) return false;
-  uint8_t ctr = frame.data[0];
-  if (ctr != last_ctr) {
-    last_ctr = ctr;
-    last_time = now;
-    return true;
-  }
-  // Same counter = frozen controller
-  return (now - last_time).seconds() * 1000.0 < timeout_ms;
 }
 
 // =====================================================================
@@ -732,7 +711,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
         if (dt > 0.0 && dt < 0.5) {
           double v = vel.longitudinal_velocity;
           double omega = (std::abs(v) > params_.low_speed_threshold)
-            ? v * std::tan(steer_angle_rad_) / params_.wheel_base
+            ? v * std::tan(steer_angle_rad_.load(std::memory_order_relaxed)) / params_.wheel_base
             : 0.0;
           odom_yaw_ += omega * dt;
           odom_x_ += v * std::cos(odom_yaw_) * dt;
@@ -818,10 +797,10 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       if (frame.len < 8) break;
       uint16_t angle_raw = (uint16_t)frame.data[0] << 8 | frame.data[1];
       float steer_deg = (angle_raw - 30000) * 0.1f;  // offset=-3000, 0.1°/bit
-      steer_angle_rad_ = steer_deg * M_PI / 180.0f;  // cache for odometry
+      steer_angle_rad_.store(steer_deg * M_PI / 180.0f, std::memory_order_relaxed);  // cache for odometry
       last_steer_time_ = now();
       autoware_auto_vehicle_msgs::msg::SteeringReport steer;
-      steer.steering_tire_angle = steer_angle_rad_;
+      steer.steering_tire_angle = steer_angle_rad_.load(std::memory_order_relaxed);
       if (pub_steering_->is_activated()) pub_steering_->publish(steer);
       break;
     }
