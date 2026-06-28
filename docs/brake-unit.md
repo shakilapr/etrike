@@ -130,7 +130,7 @@ for (int i = 0; i < 7; i++) checksum ^= raw_bytes[i];
 checksum ^= 0xFF;
 ```
 
-> **Verify against steer-by-wire spec** — some units use a different constant or a shift operation.
+> **Verify against actuator spec** — some units use a different constant or a shift operation.
 
 ---
 

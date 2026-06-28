@@ -1,6 +1,6 @@
 # steer-by-wire CAN Security Protocol — Rolling Counter + Checksum
 
-steer-by-wire unit and SEB actuators require two security bytes in every command frame: a **rolling counter** and an **XOR checksum**. If either is wrong, the actuator silently discards the frame — no error response, no fault flag, just ignored.
+Actuator units require two security bytes in every command frame: a **rolling counter** and an **XOR checksum**. If either is wrong, the actuator silently discards the frame — no error response, no fault flag, just ignored.
 
 This is a **liveness check**, not encryption. It proves the controller hasn't crashed and is still computing fresh frames (not stuck in a loop replaying the same buffer).
 
