@@ -98,18 +98,18 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 
 | Aspect | Status | Detail |
 |:---|:---|:---|
-| Command encoding | ✅ Compatible | `0x300` speed + yaw + gear matches RT kinematics expectations (big-endian, physical units) |
-| Brake encoding | ✅ Compatible | `0x301` deceleration→kPa via `max_deceleration` parameter (5 m/s² → 5000 kPa) |
-| Light encoding | ✅ Compatible | `0x302` bitfield: L=0x01, R=0x02, hazard=0x03, brake=0x04 |
-| ESTOP encoding | ✅ Compatible | `0x001` DLC=0, rate-limited 500ms |
-| Heartbeat encoding | ✅ Compatible | `0x7FC` DLC=1, `alive_ctr++` at 2 Hz |
-| Velocity decoding | ✅ Compatible | `0x120` i16 mm/s → float m/s |
-| Steering decoding | ⚠️ Offset risk | `0x310` STEER_DIAG: code uses `offset=-3000` (30.0°). steer-by-wire unit CSV spec may differ. Pre-existing issue B1 in v0.0.4 audit. |
-| Gear decoding | ✅ Compatible | `0x206` gear_state byte: CAN 0/1/2/3 → Autoware NONE/DRIVE/LOW/REVERSE |
-| Mode decoding | ✅ Compatible | `0x210` mode byte: 0→MANUAL(4), 1→AUTONOMOUS(1), 2→DISENGAGED(5) |
-| Light feedback | ⚠️ Echo only | `0x011` light_state is SYS→RT→Jetson forwarded. No independent sensor confirms relay state. Open-loop echo until SYS adds dedicated light status bits. |
-| RT heartbeat | ✅ Compatible | `0x7FD` alive counter, 1500ms timeout |
-| CAN gateway forwarding | ✅ Compatible | RT forwards `0x011`, `0x120`, `0x206`, `0x600` low→high unchanged |
+| Command encoding | ✅ Compatible | `0x300` speed + yaw + gear: i32 BE speed, i24 BE yaw, u8 gear. RT kinematics validated. |
+| Brake encoding | ✅ Compatible | `0x301` deceleration→kPa. RT arbitrates max(obstacle, host). Option D: RT→SEB direct. |
+| Light encoding | ✅ Compatible | `0x302` bitfield: L=0x01, R=0x02, hazard=0x03, brake=0x04. RT forwards transparently. |
+| ESTOP encoding | ✅ Compatible | `0x001` DLC=0, rate-limited 250ms. RT forwards bidirectionally. TXB2 priority on MCP2515. |
+| Heartbeat encoding | ✅ Compatible | `0x7FC` DLC=2 (alive_ctr + health byte). Host timeout 1500ms → assisted stop. |
+| Velocity decoding | ✅ Compatible | `0x120` i16 mm/s → float m/s. Forwarded low→high by RT at 100 Hz. |
+| Steering decoding | ✅ Fixed | `0x310` STEER_DIAG: unsigned read, factor 0.1, offset -3000. Raw 30000→0°. Verified against CSV. |
+| Gear decoding | ✅ Compatible | `0x206` gear_state byte: CAN 0/1/2/3 → Autoware NONE/DRIVE/LOW/REVERSE. |
+| Mode decoding | ✅ Compatible | `0x210` mode byte + `safety_state` byte. SYS authoritative via `0x110`. RT reports via `0x210`. |
+| Light feedback | ⚠️ Echo only | `0x011` light_state echoes `0x302` command bits. No independent relay sensor. |
+| RT heartbeat | ✅ Compatible | `0x7FD` DLC=2 (alive_ctr + health byte). Sent on BOTH buses, independent counters. |
+| CAN gateway forwarding | ✅ Compatible | RT forwards `0x011`, `0x120`, `0x206`, `0x600` low→high. ESTOP uses send-to-front. |
 
 ### 3.4 Low-Level Architecture Compatibility
 
@@ -120,10 +120,10 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 | **Mode switching** | `ControlModeCommand` AUTONOMOUS/MANUAL | Bridge `engaged_` gates TX. Physical mode gated by SYS MODE button + `0x110` CAN. | ✅ Two-layer: logical + physical |
 | **Gear selection** | `GearCommand` NONE/DRIVE/LOW/REVERSE/PARK | `0x300` gear byte → RT → `0x204` → MTR relays. PARK not supported (no mechanical parking pawl). | ⚠️ PARK unsupported |
 | **Steering actuation** | CAN command → steering ECU | `0x169` VCU_SES_REQ → steer-by-wire unit (Angle Mode, 50 Hz, rolling counter + checksum) | ✅ Proprietary but validated |
-| **Brake actuation** | CAN command → brake ECU | `0x7B9` VCU_SEB_REQ → brake-by-wire unit (Pressure/Stroke Mode, 50 Hz, rolling counter + checksum). RT→`0x205`→SYS→`0x7B9` (AUTO) or SYS→`0x7B9` (MANUAL/ESTOP). | ✅ Mode-gated dual sender |
-| **Throttle actuation** | Analog/CAN → motor controller | MCP4725 DAC 0–5V via MTR STM32 (open-loop). No PID until rear encoder fitted (gap #5). | ⚠️ Open-loop only |
-| **Safety architecture** | EGAS / ISO 26262 | EGAS 3-level: MTR L1 (STM32), SYS L2 (ESP32-S3), hardware ESTOP L3. TPS3850 external watchdog on both RT and SYS. | ✅ ASIL-C decomposition |
-| **Heartbeat/liveness** | Per-node alive counter | `0x7FD` (RT), `0x7FE` (SYS, 10 Hz), `0x7FC` (Jetson, 2 Hz). RT: SYS timeout 200ms, Jetson timeout 1500ms. SYS: RT timeout 1000ms. | ✅ Automotive-grade |
+| **Brake actuation** | CAN command → brake ECU | `0x7B9` VCU_SEB_REQ (Pressure/Stroke, 50 Hz). RT sends directly in AUTO (Option D). SYS sends in MANUAL/ESTOP. SYS reads RT safety_state from 0x210 to avoid dual-send. | ✅ Mode-gated dual sender |
+| **Throttle actuation** | Analog/CAN → motor controller | MCP4725 DAC 0–5V via MTR STM32 (open-loop). Motor I/O being migrated to MTR (SYS_OWNS_MOTOR flag). | ⚠️ Open-loop, migration in progress |
+| **Safety architecture** | EGAS / ISO 26262 | EGAS 3-level: MTR L1 (STM32), SYS L2 (ESP32-S3), hardware ESTOP L3. RT+SYS per-task WDT. MCP2515 error interrupts. | ✅ ASIL-C decomposition |
+| **Heartbeat/liveness** | Per-node alive counter | `0x7FD` (RT, DLC=2), `0x7FE` (SYS, 10 Hz), `0x7FC` (Host, DLC=2). Health byte on RT+Host. Frozen-counter detection. | ✅ Automotive-grade |
 
 ### 3.5 Data Flow Latency
 
@@ -131,7 +131,7 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 |:---|:---|:---|:---|
 | AckermannControlCommand → motor speed | 2 CAN frames | ~10 ms | Jetson→`0x300`→RT→`0x204`→MTR/MCP4725 (both at 100 Hz) |
 | AckermannControlCommand → steering angle | 2 CAN frames | ~20 ms | Jetson→`0x300`→RT→kinematics→`0x169`→EPS-C (50 Hz steering loop) |
-| AckermannControlCommand → brake pressure | 3 CAN frames | ~30 ms | Jetson→`0x301`→RT→max-select→`0x205`→SYS→`0x7B9`→SEB (RT→SYS at 50 Hz, SYS→SEB at 50 Hz) |
+| AckermannControlCommand → brake pressure | 2 CAN frames | ~20 ms | Jetson→`0x301`→RT→`0x7B9`→SEB (Option D: RT sends directly in AUTO) |
 | Speed feedback → VelocityReport | 2 CAN frames | ~10 ms | MTR→`0x120`→RT(fwd)→Jetson (100 Hz) |
 | Steering feedback → SteeringReport | 2 CAN frames | ~20 ms | EPS-C→`0x201`→RT→`0x310`→Jetson (10 Hz steering diag) |
 | Light command round-trip | 4 CAN frames | ~20–40 ms | Jetson→`0x302`→RT(fwd)→SYS→`0x011`→RT(fwd)→Jetson |
@@ -157,29 +157,29 @@ Alternatively, the bridge could be reconfigured to subscribe/publish on the stan
 ### Topic namespace (GAP-1)
 **All 7 subscriptions and 7 publications** use `~/input/*` / `~/output/*` instead of standard Autoware.Auto global topic names. Requires launch-file remapping or source-code change.
 
-### Steering angle offset (GAP-2)
-`0x310` STEER_DIAG decoding uses `offset=-3000` (30.0°). The steer-by-wire unit CSV spec must be verified. A wrong offset produces a constant steering angle bias in `SteeringReport` and dead-reckoning odometry. **Pre-existing issue B1** from v0.0.4 audit.
+### Steering angle offset (GAP-2) — ✅ RESOLVED
+Offset verified correct: raw=30000→0°. CSV spec confirmed. Signed→unsigned fix applied in bridge (commit ab08472).
 
 ### Steering decode split path (GAP-3)
-`CanDecoder::decode_steering()` returns `steering_tire_angle = 0.0f` (stub). Actual steering decoding happens inline in `publish_vehicle_reports()` case `0x310`. The `~/output/steering_status` publisher appears to use the stub path, while the odometry code uses the inline path. Verify which code path feeds `pub_steering_`.
+`CanDecoder::decode_steering()` returns `steering_tire_angle = 0.0f` (stub). Actual steering decoding happens inline in `publish_vehicle_reports()` case `0x310`. Needs code path consolidation in the bridge.
 
 ### Light feedback open-loop (GAP-4)
-`TurnIndicatorsReport` and `HazardLightsReport` are echoed from the same `0x011` light_state that SYS sets based on the incoming `0x302` command. No independent sensor confirms the relay actually energized. A failed relay or GPIO would report "active" while the lamp is dark.
+`TurnIndicatorsReport` and `HazardLightsReport` echoed from `0x011` light_state. No independent relay-state sensor. A failed relay would report "active" while lamp is dark.
 
 ### PARK gear unsupported (GAP-5)
-`GearCommand::PARK` (22) maps to CAN gear N (0). The trike has no mechanical parking pawl. Autoware.Auto planning must be configured to never request PARK — or the bridge must translate PARK→N and log a warning.
+`GearCommand::PARK` (22) maps to CAN gear N (0). No mechanical parking pawl. Planning must never request PARK.
 
 ### Dead-reckoning drift (GAP-6)
-`VehicleKinematicState` uses pure integration of speed + steer angle. Drifts unboundedly without GNSS, IMU, or wheel encoder fusion. Acceptable for short-duration planning; not suitable for localization. Full odometry deferred to gap #5 (rear motor encoder).
+Pure integration of speed + steer angle. Drifts without GNSS/IMU/encoder fusion. Acceptable for short-duration planning.
 
 ### Open-loop throttle (GAP-7)
-Motor speed control is open-loop (fixed voltage mapping). No PID compensation for hills, headwinds, or load changes. `VelocityReport` may show speed diverging from `AckermannControlCommand.longitudinal.speed` target under load. PID closure deferred to gap #5.
+Motor speed control is open-loop (fixed voltage mapping). No PID compensation. PID closure deferred to rear encoder (gap #5).
 
-### Brake latency (GAP-8)
-AUTO brake path: Jetson→`0x301`→RT→`0x205`→SYS→`0x7B9`→SEB is **3 CAN hops**. Architecture Option D (RT→`0x7B9` direct in AUTO) would reduce this to 2 hops but is not yet implemented (gap #12).
+### Brake latency (GAP-8) — ✅ RESOLVED
+Option D implemented. RT sends `0x7B9` directly in AUTO mode. Path now: Jetson→`0x301`→RT→`0x7B9`→SEB (2 CAN hops, was 3).
 
-### 0x7B9 dual-sender gap (GAP-9)
-Per architecture §6.2 Option D, RT should send `0x7B9` directly in AUTO mode (1-hop from kinematics). Currently SYS is the sole `0x7B9` sender in all modes. RT sends `0x205` to SYS, which converts to SEB protocol. **Pre-existing gap #12** — planned, not implemented.
+### 0x7B9 dual-sender gap (GAP-9) — ✅ RESOLVED
+RT sends `0x7B9` directly in AUTO (Option D). SYS reads RT `safety_state` from `0x210` and suppresses its own `0x7B9` only when RT is Normal. No collision.
 
 ### `0x011` light_state DLC dependency (GAP-10)
-Light state feedback is only published when `0x011` DLC ≥ 3. The architecture specifies `u4 light_state` in byte 2, but SYS may not populate it in all firmware versions. The bridge code guards with `if (frame.len >= 3)` — if SYS sends DLC=2, light feedback silently stops.
+Light feedback only published when `0x011` DLC ≥ 3. SYS always sends DLC=3 (firmware verified). Bridge guards with `if (frame.len >= 3)`. Low risk.
