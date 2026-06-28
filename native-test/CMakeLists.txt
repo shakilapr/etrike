@@ -199,6 +199,19 @@ target_include_directories(rt_safety_monitor PRIVATE
     ${CMAKE_SOURCE_DIR}/../rt-esp32/src
 )
 
+# ── SYS CAN dispatch test ────────────────────────────────────────────
+add_executable(sys_can_dispatch
+    test/test_sys_can_dispatch.cpp
+)
+target_include_directories(sys_can_dispatch PRIVATE
+    ${CMAKE_SOURCE_DIR}/../shared
+)
+
+# ── Task watchdog test ───────────────────────────────────────────────
+add_executable(task_watchdog
+    test/test_task_watchdog.cpp
+)
+
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME smoke              COMMAND smoke_test)
@@ -207,6 +220,8 @@ add_test(NAME checksum_full      COMMAND checksum_full)
 add_test(NAME mcp2515_config     COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router   COMMAND rt_can_rx_router)
 add_test(NAME rt_can_dispatch    COMMAND rt_can_dispatch)
+add_test(NAME sys_can_dispatch   COMMAND sys_can_dispatch)
+add_test(NAME task_watchdog      COMMAND task_watchdog)
 add_test(NAME rt_safety_monitor  COMMAND rt_safety_monitor)
 
 # ── Status ───────────────────────────────────────────────────────────
