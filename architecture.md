@@ -372,26 +372,7 @@ Remove all `CONFIG_BENCH_*` and `CONFIG_BYPASS_*` before vehicle deployment.
 
 ---
 
-## 12. Known Design Gaps
-
-| # | Gap | Status |
-|---|-----|--------|
-| 1 | MTR STM32 CubeMX `.ioc` + board | Blocked on hardware. All HAL driver code written. |
-| 2 | Rear motor + wheel encoders | PCNT code complete. Sensors TBD. |
-| 3 | Steering angle startup check | ✅ Added: >30° at boot → FAULT. |
-| 4 | DLC validation | ✅ 5 critical `from_frame()` guarded. |
-| 5 | Multi-task watchdog | ✅ RT + SYS: per-task alive counters. |
-| 6 | CAN RX overflow visibility | ✅ SYS: counter + warning. RT: 0x210 byte 3. |
-| 7 | 3s startup grace period | ✅ Documented: HW safety guarantees. |
-| 8 | 0x7B9 dual-sender | ✅ Resolved: SYS reads RT safety_state. |
-| 9 | RT TX jitter | ✅ Fixed: `vTaskDelayUntil`. |
-| 10 | MCP2515 error detection | ✅ ERRIF+MERRE interrupts. |
-| 11 | SYNTREE checksum on 0x201 | ✅ Added to RT dispatch. |
-| 12 | SEB pressure mode-dependent byte | ✅ Fixed: mode check before storing. |
-
----
-
-## 13. Reference Documents
+## 12. Reference Documents
 
 - [`can-dictionary.md`](can-dictionary.md) — Full CAN signal catalog
 - [`docs/architecture-reference.md`](docs/architecture-reference.md) — Detailed tables, pseudocode, processing summaries
