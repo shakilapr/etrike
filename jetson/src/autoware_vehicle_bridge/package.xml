@@ -19,6 +19,7 @@
   <depend>rclcpp_lifecycle</depend>
   <depend>autoware_auto_control_msgs</depend>
   <depend>autoware_auto_vehicle_msgs</depend>
+  <depend>tier4_vehicle_msgs</depend>
   <depend>diagnostic_msgs</depend>
   <depend>lifecycle_msgs</depend>
 

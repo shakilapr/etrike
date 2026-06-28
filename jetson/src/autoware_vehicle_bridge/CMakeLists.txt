@@ -10,6 +10,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(autoware_auto_control_msgs REQUIRED)
 find_package(autoware_auto_vehicle_msgs REQUIRED)
+find_package(tier4_vehicle_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 
@@ -24,6 +25,7 @@ ament_target_dependencies(vehicle_bridge_node
   rclcpp_lifecycle
   autoware_auto_control_msgs
   autoware_auto_vehicle_msgs
+  tier4_vehicle_msgs
   diagnostic_msgs
   lifecycle_msgs
 )
