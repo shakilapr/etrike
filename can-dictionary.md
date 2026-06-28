@@ -150,7 +150,7 @@ MTR receives 0x204 directly for motor actuation (speed → MCP4725 DAC, gear →
 
 Byte layout (big-endian): Bytes 0-3 = brake pressure [kPa].
 
-RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified steer-by-wire spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x205 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x205 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
+RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_raw = (uint8_t)(kpa * 0.02f)` (verified against actuator spec: `VCU_SEB_Pre_Value_Req` is u8, scale 0.05 MPa/bit, range 0–5 MPa). When `0x205 > 0`, SYS switches SEB to Pressure Mode (mode=2). When `0x205 == 0`, falls back to Stroke Mode for lever/ESTOP triggers.
 
 
 ### 0x206 — MTR_MOTOR_FBK
@@ -439,7 +439,7 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=te
 | 15 mm | 900 | Manual lever pressed |
 | 27 mm | 1140 | ESTOP full brake |
 
-**Security**: Rolling counter must increment 0→15 every frame. Same value twice → SEB rejects (assumes frozen controller). Checksum = `XOR(bytes[0..6]) ^ 0xFF` (verify against steer-by-wire spec).
+**Security**: Rolling counter must increment 0→15 every frame. Same value twice → SEB rejects (assumes frozen controller). Checksum = `XOR(bytes[0..6]) ^ 0xFF` (verify against actuator spec).
 
 **Mode 0 (Stroke)**: Command a specific pushrod position in mm. Best for mimicking pedal travel / ESTOP full brake / manual lever.
 **Mode 1 (Pressure)**: Command hydraulic pressure in MPa. SEB's internal PID maintains target. Best for autonomous deceleration control (compensates for pad wear, temperature).
