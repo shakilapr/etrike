@@ -6,7 +6,7 @@ Extracted and cleaned from the original steer-by-wire product specification PDFs
 
 ## 1. EPS-C — Electric Power Steering Column
 
-**Product:** steer-by-wire steer-by-wire intelligent steering system (SES)
+**Product:** Steer-by-wire intelligent steering system (SES)
 **Version:** A/10 (2024-11-22)
 **Category:** EPS-C
 
@@ -126,7 +126,7 @@ The VCU transmits steering angle commands via CAN. The ECU calculates and drives
 
 ## 2. SEB — Electronic Brake System
 
-**Product:** steer-by-wire wire-controlled braking system (SEB)
+**Product:** Brake-by-wire controlled braking system (SEB)
 **Version:** A/19 (2024-08-02)
 **Category:** SEB
 

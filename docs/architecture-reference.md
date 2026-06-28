@@ -392,7 +392,7 @@ The Jetson Orin is the perception, planning, and high-level control node. It run
 8. **RT is the only dual-bus node.** No direct Jetson ↔ SYS path.
 9. **Listen Before Speaking.** steer-by-wire units require receiving status feedback before any command is sent. Boot state machines enforce this.
 10. **EGAS 3-level safety separation for motor actuation.** The motor controller takes raw analog signals (0–5V throttle, 72V gear) with no internal intelligence. This is the only actuator without built-in CAN monitoring. Per ISO 26262, it is isolated on a dedicated STM32 (MTR) with three independent safety levels.
-11. **Mode-gated dual control of steer-by-wire actuators (Option D).** In AUTO, RT commands both EPS-C and SEB directly — 1-hop from the kinematics engine. In MANUAL, SYS commands SEB based on lever position; EPS-C runs standalone. The `0x7B9` SEB command is dual-sender but mode-gated — only one node transmits at a time, no collision. Per ISO 26262-5:2018 §7.4.4, this is redundant-controller practice. No single MCU failure can take both actuators offline.
+11. **Mode-gated dual control of CAN actuators (Option D).** In AUTO, RT commands both EPS-C and SEB directly — 1-hop from the kinematics engine. In MANUAL, SYS commands SEB based on lever position; EPS-C runs standalone. The `0x7B9` SEB command is dual-sender but mode-gated — only one node transmits at a time, no collision. Per ISO 26262-5:2018 §7.4.4, this is redundant-controller practice. No single MCU failure can take both actuators offline.
 
 ---
 
