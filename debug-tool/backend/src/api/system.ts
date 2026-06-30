@@ -25,25 +25,35 @@ export function registerSystemRoutes(
       baud_rate: bridge.state.baud_rate ?? 0,
       last_error: bridge.state.last_error
     },
-    bus_detection: bridge.state.bus_detection ?? { highHits: 0, lowHits: 0, confidence: "none" },
+    bus_detection: bridge.state.bus_detection ?? { detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 },
     bus_stats: store.getStats().buses,
     websocket_clients: hub.clientCount(),
     storage: store.counts()
   }));
 
   app.post("/api/system/stop", async () => {
-    if (shutdown) {
-      // Graceful shutdown after a short delay to allow the response to be sent
-      setTimeout(() => { void shutdown(); }, 100);
+    try {
+      await bridge.close();
+      return { ok: true, action: "bridge closed" };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
-    return { ok: true };
   });
 
   app.post("/api/system/restart", async () => {
-    if (shutdown) {
-      // Restart: shutdown and exit so a process manager (or user) restarts it
-      setTimeout(() => { shutdown().then(() => process.exit(0)).catch(() => process.exit(1)); }, 100);
+    try {
+      await bridge.close();
+      await bridge.start();
+      return { ok: true, action: "bridge restarted" };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
-    return { ok: true };
+  });
+
+  app.post("/api/system/shutdown", async () => {
+    if (shutdown) {
+      setTimeout(() => { void shutdown(); }, 200);
+    }
+    return { ok: true, action: "shutting down" };
   });
 }
