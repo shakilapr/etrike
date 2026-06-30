@@ -1,6 +1,8 @@
 import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig, loadEnv } from "vite";
 
+declare const process: { cwd(): string };
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiHost = env.VITE_API_HOST ?? "127.0.0.1";

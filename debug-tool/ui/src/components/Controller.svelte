@@ -33,6 +33,11 @@
   $: driveId = selectedBus === "high" ? "0x300" : "0x204";
   $: steerId = "0x169";  // low bus only
   $: brakeId = selectedBus === "high" ? "0x301" : "0x205";
+  $: publishFrames = [
+    { label: "Drive", bus: selectedBus, id: driveId, rate: `${Math.round(1000 / intervalMs)} Hz`, active: active },
+    ...(selectedBus === "low" ? [{ label: "Steer", bus: "low" as Bus, id: steerId, rate: `${Math.round(1000 / intervalMs)} Hz`, active: active }] : []),
+    { label: "Brake", bus: selectedBus, id: brakeId, rate: brake > 0 ? `${Math.round(1000 / intervalMs)} Hz` : "on demand", active: brake > 0 }
+  ];
 
   // ── Display ──
   $: yawLabel = selectedBus === "high" ? "Yaw rate" : "Steer";
@@ -304,18 +309,41 @@
     </div>
   </div>
 
-  <!-- Info panel -->
   <div class="panel">
     <div class="panel-title">
-      <h2>How it works</h2>
+      <h2>Publish Contract</h2>
+      <span>{selectedBus.toUpperCase()} bus</span>
     </div>
-    <div style="color:var(--muted);font-size:0.82rem;line-height:1.6;">
-      <p>Mimics how <strong>Autoware</strong> continuously publishes control commands.</p>
-      <p><strong>Hold</strong> a key to activate its control; <strong>release</strong> to return to neutral. The loop polls which keys are held and sends the corresponding CAN frames at the configured interval — just like a game engine's input→update→publish cycle.</p>
-      <ul style="padding-left:16px;display:grid;gap:6px;">
-        <li><strong>HIGH</strong>: 0x300 (drive) + 0x301 (brake)</li>
-        <li><strong>LOW</strong>: 0x204 (speed) + 0x169 (steer) + 0x205 (brake)</li>
-      </ul>
+    <div class="contract-table">
+      <div class="contract-head">
+        <span>Signal</span>
+        <span>Frame</span>
+        <span>Rate</span>
+        <span>State</span>
+      </div>
+      {#each publishFrames as frame}
+        <div class="contract-row" class:active={frame.active}>
+          <strong>{frame.label}</strong>
+          <span class="mono">{frame.bus}:{frame.id}</span>
+          <span>{frame.rate}</span>
+          <span>{frame.active ? "publishing" : "armed"}</span>
+        </div>
+      {/each}
+    </div>
+
+    <div class="safety-grid">
+      <div>
+        <span>Zero command</span>
+        <strong>Esc / Zero</strong>
+      </div>
+      <div>
+        <span>ESTOP guard</span>
+        <strong>Space x2 / 1 s</strong>
+      </div>
+      <div>
+        <span>Focus loss</span>
+        <strong>keys cleared</strong>
+      </div>
     </div>
   </div>
 
@@ -417,6 +445,72 @@
     font-size: 0.82rem;
   }
 
+  .contract-table {
+    display: grid;
+    gap: 0;
+  }
+
+  .contract-head,
+  .contract-row {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(72px, 0.8fr) minmax(88px, 1fr) minmax(70px, 0.8fr) minmax(80px, 0.9fr);
+    min-width: 0;
+  }
+
+  .contract-head {
+    background: var(--bg);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 9px 10px;
+  }
+
+  .contract-head span,
+  .safety-grid span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .contract-row {
+    border-bottom: 1px solid var(--panel-border);
+    border-left: 3px solid var(--muted);
+    padding: 10px;
+  }
+
+  .contract-row.active {
+    border-left-color: var(--ok);
+  }
+
+  .contract-row span,
+  .contract-row strong {
+    font-size: 0.82rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .safety-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 14px;
+  }
+
+  .safety-grid div {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    min-height: 64px;
+    padding: 10px;
+  }
+
+  .safety-grid strong {
+    display: block;
+    font-size: 0.9rem;
+    margin-top: 8px;
+  }
+
   .estop-warn {
     background: color-mix(in srgb, var(--warn) 20%, var(--bg));
     border-color: var(--warn);
@@ -426,6 +520,12 @@
   @media (max-width: 980px) {
     .ctrl-state {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .contract-head,
+    .contract-row,
+    .safety-grid {
+      grid-template-columns: 1fr;
     }
   }
 
