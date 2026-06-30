@@ -22,6 +22,7 @@
   $: transport = $status.bridge?.transport ?? "serial";
   $: linkOpen = Boolean($status.bridge?.link_open ?? $status.serial?.port_open);
   $: adapterOnline = Boolean($status.adapter_connected ?? $status.esp32_connected);
+  $: backendUptime = firstValue($status.uptime_s, $stats.uptime_s, 0) as number;
 
   $: safety = $latestById["high:0x011"]?.decoded ?? $latestById["low:0x011"]?.decoded ?? {};
   $: diag = $latestById["high:0x600"]?.decoded ?? $latestById["low:0x600"]?.decoded ?? {};
@@ -58,7 +59,19 @@
   function activityState(bus: Bus): SignalState {
     const busStats = bus === "high" ? high : low;
     if (busStats.tec > 0 || busStats.rec > 0) return "warn";
-    return busStats.active ? "ok" : "idle";
+    return busStats.active && busStats.fps > 0 ? "ok" : "idle";
+  }
+
+  function busLabel(bus: Bus): string {
+    const busStats = bus === "high" ? high : low;
+    return busStats.active && busStats.fps > 0 ? "ACTIVE" : "QUIET";
+  }
+
+  function formatSeconds(value?: number | null): string {
+    if (!value) return "--";
+    if (value < 60) return `${Math.round(value)} s`;
+    if (value < 3600) return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`;
+    return `${Math.floor(value / 3600)}h ${Math.round((value % 3600) / 60)}m`;
   }
 
   function pairState(command?: CanFrame, feedback?: CanFrame): SignalState {
@@ -114,15 +127,15 @@
       <strong>{adapter}</strong>
       <small>{transport} / {linkOpen ? "link open" : "link closed"}</small>
     </article>
-    <article class="status-tile" data-state={activityState("high")}>
+    <article class="status-tile" data-state={activityState("high")} data-testid="bus-status-high">
       <span>High bus</span>
-      <strong>{high.active ? "ACTIVE" : "QUIET"}</strong>
-      <small>{Math.round(high.fps)} fps / {high.load_pct.toFixed(1)}% load / TEC {high.tec}</small>
+      <strong>{busLabel("high")}</strong>
+      <small>{Math.round(high.fps)} fps / {high.total} frames / TEC {high.tec}</small>
     </article>
-    <article class="status-tile" data-state={activityState("low")}>
+    <article class="status-tile" data-state={activityState("low")} data-testid="bus-status-low">
       <span>Low bus</span>
-      <strong>{low.active ? "ACTIVE" : "QUIET"}</strong>
-      <small>{Math.round(low.fps)} fps / {low.load_pct.toFixed(1)}% load / TEC {low.tec}</small>
+      <strong>{busLabel("low")}</strong>
+      <small>{Math.round(low.fps)} fps / {low.total} frames / TEC {low.tec}</small>
     </article>
     <article class="status-tile" data-state={estopActive ? "danger" : "ok"}>
       <span>Safety state</span>
@@ -174,12 +187,48 @@
         <div><span>Backend</span><strong>{$status.backend_online ? "online" : "offline"}</strong></div>
         <div><span>Adapter</span><strong>{adapterOnline ? "online" : "offline"}</strong></div>
         <div><span>Transport</span><strong>{transport}</strong></div>
+        <div><span>Path</span><strong>{$status.bridge?.path ?? $status.serial?.path ?? "--"}</strong></div>
+        <div><span>Uptime</span><strong>{formatSeconds(backendUptime)}</strong></div>
+        <div><span>WS clients</span><strong>{$status.websocket_clients ?? "--"}</strong></div>
         <div><span>Last status</span><strong>{$status.last_status_at ? frameAge({ ts_real: $status.last_status_at } as CanFrame) : "--"}</strong></div>
-        <div><span>High REC</span><strong>{high.rec}</strong></div>
-        <div><span>Low REC</span><strong>{low.rec}</strong></div>
+        <div><span>Last error</span><strong>{$status.bridge?.last_error ?? $status.serial?.last_error ?? "--"}</strong></div>
       </div>
     </section>
   </div>
+
+  <section class="panel">
+    <div class="panel-title">
+      <h2>Runtime Inventory</h2>
+      <span>backend state</span>
+    </div>
+    <div class="inventory-grid">
+      <div>
+        <span>Stored frames</span>
+        <strong>{$status.storage?.frames ?? "--"}</strong>
+      </div>
+      <div>
+        <span>Injected cmds</span>
+        <strong>{$status.storage?.injected ?? "--"}</strong>
+      </div>
+      <div>
+        <span>Recordings</span>
+        <strong>{$status.storage?.recordings ?? "--"}</strong>
+      </div>
+      <div>
+        <span>Detected bus</span>
+        <strong>{$status.bus_detection?.detected ? $status.bus_detection.bus.toUpperCase() : "UNCONFIRMED"}</strong>
+        <small>H {$status.bus_detection?.highHits ?? 0} / L {$status.bus_detection?.lowHits ?? 0} hits</small>
+      </div>
+      <div>
+        <span>High errors</span>
+        <strong>TEC {high.tec} / REC {high.rec}</strong>
+      </div>
+      <div>
+        <span>Low errors</span>
+        <strong>TEC {low.tec} / REC {low.rec}</strong>
+      </div>
+    </div>
+  </section>
 
   <section class="panel">
     <div class="panel-title">
@@ -276,6 +325,7 @@
   .status-tile span,
   .state-grid span,
   .link-table span,
+  .inventory-grid span,
   .pair-row span,
   .pair-head span,
   .frame-head span {
@@ -301,7 +351,8 @@
   }
 
   .state-grid,
-  .link-table {
+  .link-table,
+  .inventory-grid {
     display: grid;
     gap: 8px;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -312,7 +363,8 @@
   }
 
   .state-grid div,
-  .link-table div {
+  .link-table div,
+  .inventory-grid div {
     background: var(--bg);
     border: 1px solid var(--panel-border);
     border-radius: 6px;
@@ -322,14 +374,16 @@
   }
 
   .state-grid strong,
-  .link-table strong {
+  .link-table strong,
+  .inventory-grid strong {
     display: block;
     font-size: 1.1rem;
     margin-top: 8px;
     overflow-wrap: anywhere;
   }
 
-  .state-grid small {
+  .state-grid small,
+  .inventory-grid small {
     color: var(--muted);
     font-size: 0.7rem;
     font-weight: 500;
@@ -438,7 +492,8 @@
     .summary-grid,
     .console-grid,
     .state-grid,
-    .link-table {
+    .link-table,
+    .inventory-grid {
       grid-template-columns: 1fr;
     }
 

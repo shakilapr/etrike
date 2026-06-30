@@ -18,7 +18,7 @@
     { key: "drive",     label: "Drive",       color: "var(--cat-drive)",     ids: ["0x120", "0x204", "0x206", "0x210", "0x300"] },
     { key: "steering",  label: "Steering",    color: "var(--cat-steering)",  ids: ["0x169", "0x201", "0x202", "0x203"] },
     { key: "brake",     label: "Brake",       color: "var(--cat-brake)",     ids: ["0x205", "0x301", "0x721", "0x731", "0x741", "0x7B9"] },
-    { key: "diag",      label: "Diagnostics", color: "var(--cat-diag)",      ids: ["0x110", "0x220", "0x302", "0x400", "0x600"] },
+    { key: "diag",      label: "Diagnostics", color: "var(--cat-diag)",      ids: ["0x110", "0x220", "0x302", "0x310", "0x311", "0x400", "0x600"] },
     { key: "heartbeat", label: "Heartbeat",   color: "var(--cat-heartbeat)", ids: ["0x7FC", "0x7FD", "0x7FE"] },
     { key: "test",      label: "Test/System", color: "var(--cat-system)",    ids: ["0x012", "0x6FA", "0x6FB"] }
   ];
@@ -125,7 +125,25 @@
         {#if isOpen}
           <div class="cat-body">
             {#if catFrames.length === 0}
-              <p class="cat-empty">No frames yet — waiting for data</p>
+              <div class="cat-empty">
+                <strong>No live frames</strong>
+                <span>Configured IDs: {cat.members.map((item) => `${item.bus}:${item.id}`).join(", ")}</span>
+                <table class="catalog-table">
+                  <thead>
+                    <tr><th>Bus</th><th>ID</th><th>Name</th><th>Period</th></tr>
+                  </thead>
+                  <tbody>
+                    {#each cat.members as item}
+                      <tr>
+                        <td><span class="bus-tag">{item.bus}</span></td>
+                        <td class="mono">{item.id}</td>
+                        <td>{item.name}</td>
+                        <td>{item.period}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
             {:else}
               <table>
                 <thead>

@@ -125,7 +125,7 @@ h2 { font-size: 1rem; }
   align-items: center;
   background: var(--panel);
   border: 1px solid var(--warn);
-  border-radius: 999px;
+  border-radius: 6px;
   color: var(--warn);
   display: inline-flex;
   font-size: 0.82rem;
@@ -204,12 +204,13 @@ h2 { font-size: 1rem; }
 .action-btn {
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--fg);
   cursor: pointer;
   font-size: 0.72rem;
   font-weight: 600;
-  padding: 3px 10px;
+  min-height: 36px;
+  padding: 0 12px;
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
@@ -233,14 +234,15 @@ h2 { font-size: 1rem; }
 .transport-pill {
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--muted);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  padding: 2px 8px;
+  min-height: 32px;
+  padding: 0 12px;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -707,10 +709,32 @@ kbd {
 }
 
 .cat-empty {
+  background: var(--bg);
+  border: 1px dashed var(--panel-border);
+  border-radius: 6px;
   color: var(--muted);
+  display: grid;
+  gap: 6px;
   font-size: 0.82rem;
-  padding: 14px 0;
-  text-align: center;
+  padding: 14px;
+}
+
+.cat-empty strong {
+  color: var(--fg);
+}
+
+.cat-empty span {
+  overflow-wrap: anywhere;
+}
+
+.catalog-table {
+  margin-top: 4px;
+}
+
+.catalog-table th,
+.catalog-table td {
+  font-size: 0.76rem;
+  padding: 6px 8px;
 }
 
 /* ── Bars ── */

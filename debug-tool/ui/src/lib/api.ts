@@ -43,7 +43,7 @@ export interface BackendStatus {
   esp32_connected: boolean;
   last_status_at: number | null;
   bridge?: {
-    transport: "serial" | "canalystii" | "disabled";
+    transport: "serial" | "canalystii" | "mqtt" | "disabled";
     adapter: string;
     connected: boolean;
     link_open: boolean;

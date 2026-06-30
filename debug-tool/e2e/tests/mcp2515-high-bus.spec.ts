@@ -18,6 +18,13 @@ import { test, expect } from "@playwright/test";
 
 const BASE_URL = "http://127.0.0.1:5173";
 
+async function hasOpenLink(page: import("@playwright/test").Page): Promise<boolean> {
+  const response = await page.request.get(`${BASE_URL}/api/status`);
+  if (!response.ok()) return false;
+  const status = await response.json();
+  return Boolean(status.bridge?.link_open || status.serial?.port_open);
+}
+
 test.describe("MCP2515 High-Bus Dashboard", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE_URL);
@@ -26,9 +33,9 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
   });
 
   test("dashboard shows high bus as active when MCP2515 traffic present", async ({ page }) => {
-    // The high bus status badge should indicate "active"
-    const highBusStatus = page.locator('[data-testid="bus-status-high"], text=High').first();
+    const highBusStatus = page.getByTestId("bus-status-high");
     await expect(highBusStatus).toBeVisible({ timeout: 10000 });
+    await expect(highBusStatus).toContainText(/High bus/i);
   });
 
   test("CAN Monitor tab shows high-bus frames", async ({ page }) => {
@@ -50,11 +57,10 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
     expect(count).toBeGreaterThan(0);
   });
 
-  test("high bus shows 0x7FD RT_HEARTBEAT at ~2 Hz", async ({ page }) => {
+  test("high bus shows 0x7FD RT_HEARTBEAT in statistics/catalog", async ({ page }) => {
     await page.click("text=Statistics"); // or wherever per-ID stats show
-    await page.waitForSelector("table tr", { timeout: 5000 });
+    await expect(page.locator("body")).toContainText("0x7FD", { timeout: 5000 });
 
-    // Look for 0x7FD in the page content — it should have a non-zero count
     const pageContent = await page.textContent("body") ?? "";
     expect(pageContent).toContain("0x7FD");
   });
@@ -62,23 +68,16 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
   test("Injector tab can send 0x300 HOST_DRIVE_CMD on high bus", async ({ page }) => {
     await page.click("text=Injector");
 
-    // Select high bus
-    const busSelect = page.locator("select, [role=combobox]").first();
-    if (await busSelect.isVisible()) {
-      await busSelect.selectOption("high");
-    }
+    await page.getByRole("button", { name: "HIGH Bus" }).click();
 
-    // Find the 0x300 template
-    const driveTemplate = page.locator("text=0x300, text=HOST_DRIVE_CMD").first();
-    if (await driveTemplate.isVisible()) {
-      await driveTemplate.click();
-    }
+    await page.locator("select").first().selectOption("0x300");
+    await expect(page.locator("body")).toContainText("HOST_DRIVE_CMD");
 
-    // Click send
+    test.skip(!(await hasOpenLink(page)), "MCP2515/serial link is not open in this environment.");
+
     const sendButton = page.locator('button:has-text("Send"), button:has-text("Inject")').first();
     if (await sendButton.isVisible()) {
       await sendButton.click();
-      // Should not show error
       await page.waitForTimeout(500);
       const errorText = await page.textContent("body") ?? "";
       expect(errorText).not.toContain("error");

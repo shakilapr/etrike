@@ -18,6 +18,7 @@ import {
   writeU32BE,
   writeI16LE,
   writeU16LE,
+  type Bus,
   type CanMessageDef
 } from "./can-decoder";
 
@@ -437,7 +438,7 @@ describe("decodeFrame", () => {
 // ── Round-trip: encodePayload → decodeFrame ──
 
 describe("round-trip encode→decode", () => {
-  const cases: Array<[string, string, Record<string, number | boolean>]> = [
+  const cases: Array<[Bus, string, Record<string, number | boolean>]> = [
     ["high", "0x011", { estop_active: true, heartbeat_ok: false, light_left: false, light_right: false, light_brake: false, light_head: false }],
     ["high", "0x120", { speed_mmps: 2000 }],
     ["high", "0x206", { actual_speed_mmps: 2000, gear_state: 1, fault_flags: 0 }],
