@@ -1,16 +1,22 @@
 import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
-export default defineConfig({
-  plugins: [svelte({ preprocess: vitePreprocess({ script: true }) })],
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": "http://127.0.0.1:3000",
-      "/ws": {
-        target: "ws://127.0.0.1:3000",
-        ws: true
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const apiHost = env.VITE_API_HOST ?? "127.0.0.1";
+  const apiPort = env.VITE_API_PORT ?? "3000";
+
+  return {
+    plugins: [svelte({ preprocess: vitePreprocess({ script: true }) })],
+    server: {
+      port: 5173,
+      proxy: {
+        "/api": `http://${apiHost}:${apiPort}`,
+        "/ws": {
+          target: `ws://${apiHost}:${apiPort}`,
+          ws: true
+        }
       }
     }
-  }
+  };
 });

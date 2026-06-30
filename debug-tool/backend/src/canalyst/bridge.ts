@@ -55,12 +55,17 @@ export class CanalystBridge implements HardwareBridge {
 
     this.state.link_open = true;
     this.state.last_error = null;
+    this.reconnectAttempt = 0;
     this.broadcastStatus();
 
     createInterface({ input: this.process.stdout }).on("line", (line) => this.handleLine(line));
     createInterface({ input: this.process.stderr }).on("line", (line) => {
-      this.state.last_error = line;
-      this.hub.broadcast({ type: "status", payload: { bridge: this.state, warning: "canalystii stderr", error: line } });
+      const trimmed = line.trim();
+      // Filter known non-error output (Python logging, warnings, etc.)
+      if (!trimmed) return;
+      if (trimmed.startsWith("[INFO]") || trimmed.startsWith("[WARN]") || trimmed.startsWith("DEBUG:")) return;
+      this.state.last_error = trimmed;
+      this.hub.broadcast({ type: "status", payload: { bridge: { ...this.state }, warning: "canalystii stderr", error: trimmed } });
     });
 
     this.process.on("error", (error) => {
@@ -97,12 +102,28 @@ export class CanalystBridge implements HardwareBridge {
     });
   }
 
+  private reconnectAttempt = 0;
+  private static readonly MAX_RECONNECT_ATTEMPTS = 10;
+  private static readonly RECONNECT_BASE_MS = 1000;
+  private static readonly RECONNECT_MAX_MS = 30000;
+
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+    if (this.reconnectTimer || this.reconnectAttempt >= CanalystBridge.MAX_RECONNECT_ATTEMPTS) {
+      if (this.reconnectAttempt >= CanalystBridge.MAX_RECONNECT_ATTEMPTS) {
+        this.state.last_error = "max reconnection attempts reached";
+        this.broadcastStatus();
+      }
+      return;
+    }
+    const delay = Math.min(
+      CanalystBridge.RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempt),
+      CanalystBridge.RECONNECT_MAX_MS
+    );
+    this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.state.connected) this.start();
-    }, 2000);
+    }, delay);
   }
 
   private handleLine(line: string): void {

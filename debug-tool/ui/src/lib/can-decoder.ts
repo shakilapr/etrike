@@ -389,6 +389,16 @@ export function frameTime(frame: CanFrame): string {
   });
 }
 
+export function frameAge(frame: { ts_real?: number; ts?: number } | undefined): string {
+  if (!frame) return "--";
+  const stamp = frame.ts_real ?? frame.ts;
+  if (!stamp || stamp <= 0) return "--";
+  const age = Math.max(Date.now() / 1000 - stamp, 0);
+  if (age < 1) return `${Math.round(age * 1000)} ms`;
+  if (age < 60) return `${age.toFixed(1)} s`;
+  return `${Math.round(age)} s`;
+}
+
 export function normalizeCanId(id: string): string {
   const value = id.toLowerCase().startsWith("0x") ? Number.parseInt(id.slice(2), 16) : Number.parseInt(id, 16);
   if (!Number.isFinite(value)) return id.toUpperCase();

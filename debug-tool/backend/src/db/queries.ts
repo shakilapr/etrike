@@ -60,13 +60,19 @@ interface InjectionRow {
 
 export class DebugStore {
   private readonly db: Database.Database;
+  private walTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(dbPath: string, private readonly maxFrames = 50000) {
     const filename = dbPath === ":memory:" ? dbPath : resolve(dbPath);
     if (filename !== ":memory:") mkdirSync(dirname(filename), { recursive: true });
     this.db = new Database(filename);
     this.db.pragma("journal_mode = WAL");
+    this.db.pragma("foreign_keys = ON");
     this.db.exec(SQLITE_SCHEMA);
+    // Periodic WAL checkpoint to prevent unbounded WAL growth
+    this.walTimer = setInterval(() => {
+      this.db.pragma("wal_checkpoint(TRUNCATE)");
+    }, 30000).unref();
   }
 
   insertFrame(frame: CanFrame): StoredCanFrame {
@@ -138,13 +144,25 @@ export class DebugStore {
     }
   }
 
-  insertInjection(input: Omit<InjectedFrame, "row_id" | "ts_real" | "status"> & { status?: string }): InjectedFrame {
+  insertInjection(input: Omit<InjectedFrame, "row_id" | "ts_real" | "status"> & { status?: string; correlation_id?: string }): InjectedFrame {
     const tsReal = Date.now() / 1000;
     const status = input.status ?? "queued";
+    const correlationId = input.correlation_id ?? null;
     const result = this.db
-      .prepare("INSERT INTO injected_frames (ts_real, bus, can_id, dlc, data, status) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(tsReal, input.bus, input.can_id, input.dlc, Buffer.from(input.data), status);
+      .prepare("INSERT INTO injected_frames (ts_real, bus, can_id, dlc, data, status, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(tsReal, input.bus, input.can_id, input.dlc, Buffer.from(input.data), status, correlationId);
     return { row_id: Number(result.lastInsertRowid), ts_real: tsReal, bus: input.bus, can_id: input.can_id, dlc: input.dlc, data: input.data, status };
+  }
+
+  updateInjectionByCorrelation(correlationId: string, status: string): InjectedFrame | null {
+    const row = this.db.prepare("SELECT id FROM injected_frames WHERE correlation_id = ?").get(correlationId) as { id: number } | undefined;
+    if (!row) {
+      // Fallback to the old behavior: update the most recent injection
+      return this.updateLatestInjectionStatus(status);
+    }
+    this.db.prepare("UPDATE injected_frames SET status = ? WHERE id = ?").run(status, row.id);
+    const updated = this.db.prepare("SELECT * FROM injected_frames WHERE id = ?").get(row.id) as InjectionRow;
+    return rowToInjection(updated);
   }
 
   updateLatestInjectionStatus(status: string): InjectedFrame | null {
@@ -203,6 +221,7 @@ export class DebugStore {
   }
 
   close(): void {
+    if (this.walTimer) { clearInterval(this.walTimer); this.walTimer = null; }
     this.db.close();
   }
 
@@ -221,7 +240,16 @@ export class DebugStore {
   private pruneFrames(): void {
     const count = (this.db.prepare("SELECT COUNT(*) AS n FROM can_frames").get() as { n: number }).n;
     if (count <= this.maxFrames) return;
-    const ids = this.db.prepare("SELECT id FROM can_frames ORDER BY id ASC LIMIT ?").all(count - this.maxFrames) as Array<{ id: number }>;
+    // Only delete frames NOT referenced by any active recording
+    const ids = this.db
+      .prepare(
+        `SELECT f.id FROM can_frames f
+         LEFT JOIN recording_frames rf ON rf.frame_id = f.id
+         WHERE rf.frame_id IS NULL
+         ORDER BY f.id ASC
+         LIMIT ?`
+      )
+      .all(count - this.maxFrames) as Array<{ id: number }>;
     const deleteRecordingFrame = this.db.prepare("DELETE FROM recording_frames WHERE frame_id = ?");
     const deleteFrame = this.db.prepare("DELETE FROM can_frames WHERE id = ?");
     this.db.transaction(() => {

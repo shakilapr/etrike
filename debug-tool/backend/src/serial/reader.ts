@@ -49,6 +49,7 @@ export class SerialBridge implements HardwareBridge {
     parser.on("data", (line: string) => this.handleLine(line));
 
     this.port.on("open", () => {
+      this.reconnectAttempt = 0;
       this.state.connected = true;
       this.state.link_open = true;
       this.state.port_open = true;
@@ -96,14 +97,29 @@ export class SerialBridge implements HardwareBridge {
     await new Promise<void>((resolve) => this.port?.close(() => resolve()));
   }
 
+  private reconnectAttempt = 0;
+  private static readonly MAX_RECONNECT_ATTEMPTS = 10;
+  private static readonly RECONNECT_BASE_MS = 1000;
+  private static readonly RECONNECT_MAX_MS = 30000;
+
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return; // already pending
+    if (this.reconnectAttempt >= SerialBridge.MAX_RECONNECT_ATTEMPTS) {
+      this.state.last_error = "max reconnection attempts reached";
+      this.broadcastStatus();
+      return;
+    }
+    const delay = Math.min(
+      SerialBridge.RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempt),
+      SerialBridge.RECONNECT_MAX_MS
+    );
+    this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.state.connected && this.config.serialPath) {
         this.start();
       }
-    }, 2000);
+    }, delay);
   }
 
   private handleLine(line: string): void {

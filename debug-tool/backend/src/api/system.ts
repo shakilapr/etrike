@@ -8,7 +8,8 @@ export function registerSystemRoutes(
   store: DebugStore,
   bridge: HardwareBridge,
   hub: StreamHub,
-  startedAt: number
+  startedAt: number,
+  shutdown?: () => Promise<void>
 ): void {
   app.get("/api/status", async () => ({
     backend_online: true,
@@ -29,4 +30,20 @@ export function registerSystemRoutes(
     websocket_clients: hub.clientCount(),
     storage: store.counts()
   }));
+
+  app.post("/api/system/stop", async () => {
+    if (shutdown) {
+      // Graceful shutdown after a short delay to allow the response to be sent
+      setTimeout(() => { void shutdown(); }, 100);
+    }
+    return { ok: true };
+  });
+
+  app.post("/api/system/restart", async () => {
+    if (shutdown) {
+      // Restart: shutdown and exit so a process manager (or user) restarts it
+      setTimeout(() => { shutdown().then(() => process.exit(0)).catch(() => process.exit(1)); }, 100);
+    }
+    return { ok: true };
+  });
 }
