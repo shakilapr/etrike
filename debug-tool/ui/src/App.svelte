@@ -7,7 +7,7 @@
   import PipelineView from "./components/PipelineView.svelte";
   import Stats from "./components/Stats.svelte";
   import UnitTest from "./components/UnitTest.svelte";
-  import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBackend, stopBackend, type BackendStatus } from "./lib/api";
+  import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
@@ -169,19 +169,21 @@
     }
   }
 
-  async function restartBackendHandler() {
-    if (!window.confirm("Restart the backend process? The page will reload when it comes back.")) return;
+  async function restartBridgeHandler() {
+    if (!window.confirm("Restart the bridge connection? This will disconnect and reconnect the CAN transport.")) return;
     try {
-      await restartBackend();
+      await restartBridge();
+      loadError = "";
     } catch (err) {
       loadError = "Restart failed: " + (err instanceof Error ? err.message : String(err));
     }
   }
 
-  async function stopBackendHandler() {
-    if (!window.confirm("Stop the backend process? You will need to restart it manually.")) return;
+  async function stopBridgeHandler() {
+    if (!window.confirm("Stop the bridge connection? The backend stays online but CAN traffic will stop.")) return;
     try {
-      await stopBackend();
+      await stopBridge();
+      loadError = "";
     } catch (err) {
       loadError = "Stop failed: " + (err instanceof Error ? err.message : String(err));
     }
@@ -202,7 +204,7 @@
       <span class:good={$status.adapter_connected || $status.esp32_connected} class="status-pill">
         {$status.bridge?.adapter ?? "Adapter"} {($status.adapter_connected || $status.esp32_connected) ? "Online" : "Offline"}
       </span>
-      {#if $status.bus_detection}
+      {#if $status.bus_detection?.bus}
         {@const bd = $status.bus_detection}
         <span class:good={bd.confidence === "high"} class="status-pill">
           Bus: {bd.bus.toUpperCase()}{bd.confidence === "high" ? " ✓" : bd.confidence === "low" ? " ?" : " …"}
@@ -210,13 +212,13 @@
       {/if}
     </div>
     <div class="action-strip">
-      <button type="button" class="action-btn" on:click={resetFrames} title="Clear all CAN frames">
+      <button type="button" class="action-btn" on:click={resetFrames} title="Clear all stored CAN frames">
         ⟳ Reset
       </button>
-      <button type="button" class="action-btn" on:click={restartBackendHandler} title="Restart the backend process">
+      <button type="button" class="action-btn" on:click={restartBridgeHandler} title="Restart the CAN bridge connection">
         ↻ Restart
       </button>
-      <button type="button" class="action-btn danger" on:click={stopBackendHandler} title="Stop the backend process">
+      <button type="button" class="action-btn danger" on:click={stopBridgeHandler} title="Stop the CAN bridge connection">
         ⏹ Stop
       </button>
     </div>

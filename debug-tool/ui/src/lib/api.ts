@@ -147,11 +147,11 @@ export function clearFrames(): Promise<{ ok: boolean }> {
   return request("/api/can/frames", { method: "DELETE" });
 }
 
-export function restartBackend(): Promise<{ ok: boolean }> {
+export function restartBridge(): Promise<{ ok: boolean }> {
   return request("/api/system/restart", { method: "POST" });
 }
 
-export function stopBackend(): Promise<{ ok: boolean }> {
+export function stopBridge(): Promise<{ ok: boolean }> {
   return request("/api/system/stop", { method: "POST" });
 }
 
