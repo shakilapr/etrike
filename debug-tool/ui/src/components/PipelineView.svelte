@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { formatDecoded, frameTime } from "../lib/can-decoder";
+  import { getPipelineChains } from "../lib/api";
 
   interface PipelineNode {
     bus: string;
@@ -21,9 +22,8 @@
 
   async function refresh() {
     try {
-      const resp = await fetch("/api/can/pipeline");
-      const data = await resp.json();
-      chains = data.chains ?? [];
+      const data = await getPipelineChains();
+      chains = data.chains as PipelineChain[] ?? [];
       error = "";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);

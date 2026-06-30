@@ -4,18 +4,25 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { loadConfig } from "./config";
+import { loadConfig, type AppConfig } from "./config";
 import { registerCanRoutes } from "./api/can";
 import { registerCommandRoutes } from "./api/cmd";
 import { registerRecordingRoutes } from "./api/recordings";
 import { registerSystemRoutes } from "./api/system";
 import { CanalystBridge } from "./canalyst/bridge";
 import { DebugStore } from "./db/queries";
+import { MqttBridge } from "./mqtt/bridge";
 import { SerialBridge } from "./serial/reader";
 import { StreamHub } from "./ws/stream";
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  let config: AppConfig;
+  try {
+    config = loadConfig();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
   const startedAt = Date.now() / 1000;
   const app = Fastify({ logger: true });
   const store = new DebugStore(config.dbPath, config.maxFrames);
@@ -34,7 +41,10 @@ async function main(): Promise<void> {
       prefix: "/"
     });
     // SPA fallback: serve index.html for non-API routes
-    app.setNotFoundHandler((_request, reply) => {
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith("/api/")) {
+        return reply.code(404).send({ error: "not found" });
+      }
       void reply.sendFile("index.html");
     });
     app.log.info(`Serving UI from ${uiDist}`);
@@ -42,28 +52,39 @@ async function main(): Promise<void> {
 
   const bridge = config.canTransport === "canalystii"
     ? new CanalystBridge(config, store, hub)
-    : new SerialBridge(config, store, hub);
-  bridge.start();
+    : config.canTransport === "mqtt"
+      ? new MqttBridge(config, store, hub)
+      : new SerialBridge(config, store, hub);
+  await bridge.start();
 
-  registerSystemRoutes(app, store, bridge, hub, startedAt);
+  const shutdown = async () => {
+    app.log.info("Shutting down debug backend");
+    hub.close();
+    const timeout = setTimeout(() => {
+      app.log.warn("bridge.close() timed out after 5s, forcing exit");
+      process.exit(1);
+    }, 5000).unref();
+    try {
+      await bridge.close();
+    } catch (error) {
+      app.log.error(error, "bridge.close() failed");
+    }
+    clearTimeout(timeout);
+    store.close();
+    await app.close();
+  };
+
+  registerSystemRoutes(app, store, bridge, hub, startedAt, shutdown);
   registerCanRoutes(app, store);
   registerCommandRoutes(app, store, bridge);
   registerRecordingRoutes(app, store);
   hub.registerRoutes(app);
 
-  const shutdown = async () => {
-    app.log.info("Shutting down debug backend");
-    hub.close();
-    await bridge.close();
-    store.close();
-    await app.close();
-  };
-
   process.once("SIGINT", () => {
-    void shutdown().then(() => process.exit(0));
+    shutdown().then(() => process.exit(0)).catch(() => process.exit(1));
   });
   process.once("SIGTERM", () => {
-    void shutdown().then(() => process.exit(0));
+    shutdown().then(() => process.exit(0)).catch(() => process.exit(1));
   });
 
   await app.listen({ host: config.host, port: config.port });

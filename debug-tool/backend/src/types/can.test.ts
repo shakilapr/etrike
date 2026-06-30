@@ -492,11 +492,11 @@ describe("BusDetector", () => {
     detector.feed("0x169"); // low
     detector.feed("0x001"); // both buses — not unique
     // After mixed hits (both high and low unique IDs seen), the state
-    // resets to none/zeroed (BusDetector falls through to default return)
+    // reports actual counts with no confidence (no lock)
     expect(detector.state.detected).toBe(false);
     expect(detector.state.confidence).toBe("none");
-    expect(detector.state.highHits).toBe(0);
-    expect(detector.state.lowHits).toBe(0);
+    expect(detector.state.highHits).toBe(1);
+    expect(detector.state.lowHits).toBe(1);
   });
 
   it("ignores further feeds after lock", () => {

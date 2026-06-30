@@ -1,4 +1,12 @@
-export type BridgeTransport = "serial" | "canalystii" | "disabled";
+export type BridgeTransport = "serial" | "canalystii" | "mqtt" | "disabled";
+
+export interface BusDetectionState {
+  detected: boolean;
+  bus: "high" | "low";
+  confidence: "none" | "low" | "high";
+  highHits: number;
+  lowHits: number;
+}
 
 export interface BridgeState {
   transport: BridgeTransport;
@@ -10,11 +18,12 @@ export interface BridgeState {
   bitrate: number | null;
   last_status_at: number | null;
   last_error: string | null;
+  bus_detection?: BusDetectionState;
 }
 
 export interface HardwareBridge {
   readonly state: BridgeState;
-  start(): void;
+  start(): void | Promise<void>;
   sendCommand(command: Record<string, unknown>): void;
   close(): Promise<void>;
 }

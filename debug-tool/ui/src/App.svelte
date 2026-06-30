@@ -7,10 +7,10 @@
   import PipelineView from "./components/PipelineView.svelte";
   import Stats from "./components/Stats.svelte";
   import UnitTest from "./components/UnitTest.svelte";
-  import { getCanIds, getFrames, getStats, getStatus, getTemplates, type BackendStatus } from "./lib/api";
+  import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBackend, stopBackend, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
-  import { ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
+  import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
   type Tab = "dashboard" | "monitor" | "injector" | "controller" | "unit-test" | "pipeline" | "stats";
@@ -93,7 +93,6 @@
   onMount(() => {
     void bootstrap();
     const timer = window.setInterval(refreshStatus, 3000);
-    stream = connectStream(ingestMessage, (connected) => wsConnected.set(connected));
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("keydown", handleDiscrete);
@@ -110,23 +109,38 @@
   });
 
   async function bootstrap() {
+    const errors: string[] = [];
     try {
-      const [statusPayload, idsPayload, framesPayload, statsPayload, templatesPayload] = await Promise.all([
+      const [statusR, idsR, framesR, statsR, templatesR] = await Promise.allSettled([
         getStatus(),
         getCanIds(),
         getFrames(),
         getStats(),
         getTemplates()
       ]);
-      status.set(statusPayload);
-      ids = idsPayload;
-      ingestInitialFrames(framesPayload);
-      stats.set(statsPayload);
-      templates = templatesPayload;
-      loadError = "";
+
+      if (statusR.status === "fulfilled") status.set(statusR.value);
+      else errors.push(`status: ${String(statusR.reason)}`);
+
+      if (idsR.status === "fulfilled") ids = idsR.value;
+      else errors.push(`ids: ${String(idsR.reason)}`);
+
+      if (framesR.status === "fulfilled") ingestInitialFrames(framesR.value);
+      else errors.push(`frames: ${String(framesR.reason)}`);
+
+      if (statsR.status === "fulfilled") stats.set(statsR.value);
+      else errors.push(`stats: ${String(statsR.reason)}`);
+
+      if (templatesR.status === "fulfilled") templates = templatesR.value;
+      else errors.push(`templates: ${String(templatesR.reason)}`);
+
+      loadError = errors.length > 0 ? errors.join("; ") : "";
     } catch (error) {
       loadError = error instanceof Error ? error.message : String(error);
     }
+
+    // Connect WebSocket AFTER initial REST data loads so WS frames don't get wiped
+    stream = connectStream(ingestMessage, (connected) => wsConnected.set(connected));
   }
 
   async function refreshStatus() {
@@ -137,8 +151,39 @@
       status.update((current) => ({
         ...current,
         backend_online: false,
+        adapter_connected: false,
+        esp32_connected: false,
         warning: error instanceof Error ? error.message : String(error)
       }));
+    }
+  }
+
+  async function resetFrames() {
+    if (!window.confirm("Clear all stored CAN frames? This cannot be undone.")) return;
+    try {
+      await clearFrames();
+      frames.set([]);
+      loadError = "";
+    } catch (err) {
+      loadError = "Reset failed: " + (err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function restartBackendHandler() {
+    if (!window.confirm("Restart the backend process? The page will reload when it comes back.")) return;
+    try {
+      await restartBackend();
+    } catch (err) {
+      loadError = "Restart failed: " + (err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function stopBackendHandler() {
+    if (!window.confirm("Stop the backend process? You will need to restart it manually.")) return;
+    try {
+      await stopBackend();
+    } catch (err) {
+      loadError = "Stop failed: " + (err instanceof Error ? err.message : String(err));
     }
   }
 </script>
@@ -151,11 +196,11 @@
     </div>
     <div class="status-strip">
       <span class:good={$status.backend_online} class="status-pill">Backend {$status.backend_online ? "Online" : "Offline"}</span>
-      <span class:good={$status.bridge?.link_open ?? $status.serial?.port_open} class="status-pill">
-        Link {($status.bridge?.link_open ?? $status.serial?.port_open) ? "Open" : "Closed"}
+      <span class:good={$status.bridge?.link_open || $status.serial?.port_open} class="status-pill">
+        Link {($status.bridge?.link_open || $status.serial?.port_open) ? "Open" : "Closed"}
       </span>
-      <span class:good={$status.adapter_connected ?? $status.esp32_connected} class="status-pill">
-        {$status.bridge?.adapter ?? "Adapter"} {($status.adapter_connected ?? $status.esp32_connected) ? "Online" : "Offline"}
+      <span class:good={$status.adapter_connected || $status.esp32_connected} class="status-pill">
+        {$status.bridge?.adapter ?? "Adapter"} {($status.adapter_connected || $status.esp32_connected) ? "Online" : "Offline"}
       </span>
       {#if $status.bus_detection}
         {@const bd = $status.bus_detection}
@@ -163,6 +208,17 @@
           Bus: {bd.bus.toUpperCase()}{bd.confidence === "high" ? " ✓" : bd.confidence === "low" ? " ?" : " …"}
         </span>
       {/if}
+    </div>
+    <div class="action-strip">
+      <button type="button" class="action-btn" on:click={resetFrames} title="Clear all CAN frames">
+        ⟳ Reset
+      </button>
+      <button type="button" class="action-btn" on:click={restartBackendHandler} title="Restart the backend process">
+        ↻ Restart
+      </button>
+      <button type="button" class="action-btn danger" on:click={stopBackendHandler} title="Stop the backend process">
+        ⏹ Stop
+      </button>
     </div>
   </header>
 

@@ -473,10 +473,14 @@ export class BusDetector {
     if (this.locked) {
       return { detected: true, bus: this.locked, confidence: "high", highHits: this.highHits, lowHits: this.lowHits };
     }
-    if (this.highHits > 0 && this.lowHits === 0) {
+    if (this.highHits > 0 && this.lowHits > 0) {
+      // Mixed hits detected — report actual counts to aid debugging
+      return { detected: false, bus: "high", confidence: "none", highHits: this.highHits, lowHits: this.lowHits };
+    }
+    if (this.highHits > 0) {
       return { detected: false, bus: "high", confidence: "low", highHits: this.highHits, lowHits: this.lowHits };
     }
-    if (this.lowHits > 0 && this.highHits === 0) {
+    if (this.lowHits > 0) {
       return { detected: false, bus: "low", confidence: "low", highHits: this.highHits, lowHits: this.lowHits };
     }
     return { detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 };

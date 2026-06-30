@@ -1,17 +1,20 @@
 import type { FastifyInstance } from "fastify";
+import { CAN_MESSAGES } from "../types/can";
 import type { Bus, CanFrame, CanStats } from "../types/can";
 
 export type StreamEvent =
   | { type: "can_frame"; payload: CanFrame }
   | { type: "stats"; payload: CanStats }
   | { type: "cmd_ack"; payload: object }
-  | { type: "status"; payload: object };
+  | { type: "status"; payload: object }
+  | { type: "can_ids"; payload: { messages: Array<{ bus: string; id: string; name: string }> } };
 
 interface ClientState {
   socket: {
     readyState: number;
     send: (data: string) => void;
     ping: () => void;
+    close?: (code?: number, reason?: string) => void;
     on: (event: string, cb: (payload?: unknown) => void) => void;
   };
   buses: Set<Bus> | null;
@@ -45,7 +48,6 @@ export class StreamHub {
 
       // Push initial state sync: CAN message catalog so the UI can render
       // without waiting for the first frame.
-      const { CAN_MESSAGES } = require("../types/can");
       this.send(client, { type: "can_ids", payload: { messages: CAN_MESSAGES } });
     });
 

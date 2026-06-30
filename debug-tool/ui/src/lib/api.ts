@@ -1,30 +1,38 @@
 import type { Bus, CanFrame, CanMessageDef, CanStats, InjectionTemplate } from "./can-decoder";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+const FETCH_TIMEOUT_MS = 10_000;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    ...init
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        "content-type": "application/json",
+        ...(init?.headers ?? {})
+      },
+      signal: controller.signal,
+      ...init
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    let message = text || response.statusText;
-    try {
-      const payload = JSON.parse(text) as { error?: unknown };
-      if (typeof payload.error === "string") message = payload.error;
-      else if (payload.error) message = JSON.stringify(payload.error);
-    } catch {
-      // Keep the raw response text for non-JSON errors.
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text || response.statusText;
+      try {
+        const payload = JSON.parse(text) as { error?: unknown };
+        if (typeof payload.error === "string") message = payload.error;
+        else if (payload.error) message = JSON.stringify(payload.error);
+      } catch {
+        // Keep the raw response text for non-JSON errors.
+      }
+      throw new Error(message);
     }
-    throw new Error(message);
-  }
 
-  return (await response.json()) as T;
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface BackendStatus {
@@ -133,4 +141,20 @@ export function stopPeriodic(bus: Bus, id: string): Promise<CommandResponse> {
     method: "POST",
     body: JSON.stringify({ action: "stop", bus, id })
   });
+}
+
+export function clearFrames(): Promise<{ ok: boolean }> {
+  return request("/api/can/frames", { method: "DELETE" });
+}
+
+export function restartBackend(): Promise<{ ok: boolean }> {
+  return request("/api/system/restart", { method: "POST" });
+}
+
+export function stopBackend(): Promise<{ ok: boolean }> {
+  return request("/api/system/stop", { method: "POST" });
+}
+
+export function getPipelineChains(): Promise<{ chains: unknown[] }> {
+  return request("/api/can/pipeline");
 }

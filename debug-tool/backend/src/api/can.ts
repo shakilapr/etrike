@@ -21,11 +21,22 @@ const SPEED_MATCH_TOLERANCE = 50;
 const ANGLE_MATCH_TOLERANCE = 50; // 0.1° units = 5°
 
 function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
+  // Pre-index frames by bus:id for O(1) lookup
+  const byKey: Record<string, CanFrame[]> = {};
+  for (const f of frames) {
+    const key = `${f.bus}:${f.id}`;
+    (byKey[key] ??= []).push(f);
+  }
+
+  const driveFrames = byKey["low:0x204"] ?? [];
+  const steerFrames = byKey["low:0x169"] ?? [];
+  const statusFrames = byKey["low:0x201"] ?? [];
+  const triggerFrames = byKey["high:0x300"] ?? [];
+
   const chains: PipelineChain[] = [];
+  const winSec = CORRELATION_WINDOW_MS / 1000;
 
-  for (const frame of frames) {
-    if (frame.bus !== "high" || frame.id !== "0x300") continue;
-
+  for (const frame of triggerFrames) {
     const trigger: PipelineNode = {
       bus: frame.bus, id: frame.id, name: frame.name,
       decoded: frame.decoded, ts: frame.ts
@@ -34,44 +45,32 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     const steps: PipelineNode[] = [];
     let cursor = frame.ts;
 
-    // Look for 0x204 (RT_DRIVE_CMD) on low bus within window
-    const drive = frames.find((f) =>
-      f.bus === "low" && f.id === "0x204" &&
-      f.ts > cursor && f.ts - cursor < CORRELATION_WINDOW_MS / 1000 &&
+    // Look for matching 0x204 (RT_DRIVE_CMD) in the window
+    const drive = driveFrames.find((f) =>
+      f.ts > cursor && f.ts - cursor < winSec &&
       Math.abs((f.decoded.motor_speed_mmps as number ?? 0) - (frame.decoded.speed_mmps as number ?? 0)) <= SPEED_MATCH_TOLERANCE
     );
     if (drive) {
-      steps.push({
-        bus: drive.bus, id: drive.id, name: drive.name,
-        decoded: drive.decoded, ts: drive.ts
-      });
+      steps.push({ bus: drive.bus, id: drive.id, name: drive.name, decoded: drive.decoded, ts: drive.ts });
       cursor = drive.ts;
     }
 
-    // Look for 0x169 (VCU_SES_REQ) on low bus
-    const steer = frames.find((f) =>
-      f.bus === "low" && f.id === "0x169" &&
-      f.ts > cursor && f.ts - cursor < CORRELATION_WINDOW_MS / 1000
+    // Look for matching 0x169 (VCU_STEER_CMD)
+    const steer = steerFrames.find((f) =>
+      f.ts > cursor && f.ts - cursor < winSec
     );
     if (steer) {
-      steps.push({
-        bus: steer.bus, id: steer.id, name: steer.name,
-        decoded: steer.decoded, ts: steer.ts
-      });
+      steps.push({ bus: steer.bus, id: steer.id, name: steer.name, decoded: steer.decoded, ts: steer.ts });
       cursor = steer.ts;
     }
 
-    // Look for 0x201 (SES_STATUS) response
-    const status = frames.find((f) =>
-      f.bus === "low" && f.id === "0x201" &&
-      f.ts > cursor && f.ts - cursor < CORRELATION_WINDOW_MS / 1000 &&
+    // Look for matching 0x201 (SES_STEER_STATUS)
+    const status = statusFrames.find((f) =>
+      f.ts > cursor && f.ts - cursor < winSec &&
       (steer ? Math.abs((f.decoded.str_angle as number ?? 0) - (steer.decoded.target_angle as number ?? 0)) <= ANGLE_MATCH_TOLERANCE : true)
     );
     if (status) {
-      steps.push({
-        bus: status.bus, id: status.id, name: status.name,
-        decoded: status.decoded, ts: status.ts
-      });
+      steps.push({ bus: status.bus, id: status.id, name: status.name, decoded: status.decoded, ts: status.ts });
     }
 
     if (steps.length > 0) {

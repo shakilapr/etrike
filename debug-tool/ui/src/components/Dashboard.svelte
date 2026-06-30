@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Bus, CanFrame, CanMessageDef } from "../lib/can-decoder";
-  import { formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
+  import { formatBytes, formatDecoded, frameAge, frameTime } from "../lib/can-decoder";
   import { latestById, stats, status, wsConnected } from "../stores/can";
 
   export let ids: CanMessageDef[] = [];
@@ -53,16 +53,6 @@
 
   function frameStamp(frame?: CanFrame): number {
     return frame?.ts_real ?? frame?.ts ?? 0;
-  }
-
-  function frameAge(frame?: CanFrame): string {
-    if (!frame) return "--";
-    const stamp = frameStamp(frame);
-    const now = Date.now() / 1000;
-    const age = Math.max(now - stamp, 0);
-    if (age < 1) return `${Math.round(age * 1000)} ms`;
-    if (age < 60) return `${age.toFixed(1)} s`;
-    return `${Math.round(age)} s`;
   }
 
   function activityState(bus: Bus): SignalState {

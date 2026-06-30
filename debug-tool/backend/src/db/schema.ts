@@ -20,9 +20,11 @@ CREATE TABLE IF NOT EXISTS injected_frames (
     can_id      TEXT NOT NULL,
     dlc         INTEGER NOT NULL,
     data        BLOB NOT NULL,
-    status      TEXT
+    status      TEXT,
+    correlation_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_injected_ts ON injected_frames(ts_real);
+CREATE INDEX IF NOT EXISTS idx_injected_correlation ON injected_frames(correlation_id);
 
 CREATE TABLE IF NOT EXISTS recordings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

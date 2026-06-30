@@ -3,7 +3,8 @@ import { z } from "zod";
 const envSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().positive().default(3000),
-  CAN_TRANSPORT: z.enum(["serial", "canalystii", "disabled"]).default("serial"),
+  CAN_TRANSPORT: z.enum(["serial", "canalystii", "mqtt", "disabled"]).default("serial"),
+  MQTT_PORT: z.coerce.number().int().positive().default(1883),
   SERIAL_PORT: z.string().default("COM3"),
   SERIAL_BAUD: z.coerce.number().int().positive().default(115200),
   CANALYST_PYTHON: z.string().default("python"),
@@ -19,7 +20,8 @@ const envSchema = z.object({
 export interface AppConfig {
   host: string;
   port: number;
-  canTransport: "serial" | "canalystii" | "disabled";
+  canTransport: "serial" | "canalystii" | "mqtt" | "disabled";
+  mqttPort: number;
   serialPath: string | null;
   serialBaudRate: number;
   canalystPython: string;
@@ -36,11 +38,10 @@ export function loadConfig(): AppConfig {
   const parsed = envSchema.safeParse(process.env);
 
   if (!parsed.success) {
-    console.error("Invalid configuration:");
-    for (const issue of parsed.error.issues) {
-      console.error(`  ${issue.path.join(".")}: ${issue.message}`);
-    }
-    process.exit(1);
+    const messages = parsed.error.issues
+      .map((issue) => `  ${issue.path.join(".")}: ${issue.message}`)
+      .join("\n");
+    throw new Error(`Invalid configuration:\n${messages}`);
   }
 
   const env = parsed.data;
@@ -48,6 +49,7 @@ export function loadConfig(): AppConfig {
     host: env.HOST,
     port: env.PORT,
     canTransport: env.CAN_TRANSPORT,
+    mqttPort: env.MQTT_PORT,
     serialPath: env.CAN_TRANSPORT === "serial" && env.SERIAL_PORT !== "disabled" ? env.SERIAL_PORT : null,
     serialBaudRate: env.SERIAL_BAUD,
     canalystPython: env.CANALYST_PYTHON,
