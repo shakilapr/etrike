@@ -48,11 +48,11 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
       await highBusTab.click();
     }
 
-    // Wait for frames to appear
-    await page.waitForSelector("table tr", { timeout: 5000 });
+    // Wait for monitor cards/index entries to appear
+    await page.waitForSelector("[data-testid=frame-row]", { timeout: 5000 });
 
-    // Check that frame rows exist in the monitor table
-    const frameRows = page.locator("table tr, [data-testid=frame-row]");
+    // Check that frame cards exist in the monitor
+    const frameRows = page.locator("[data-testid=frame-row]");
     const count = await frameRows.count();
     expect(count).toBeGreaterThan(0);
   });
