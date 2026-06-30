@@ -6,12 +6,12 @@ const FETCH_TIMEOUT_MS = 10_000;
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const hasBody = init?.body != null;
   try {
     const response = await fetch(`${API_BASE}${path}`, {
-      headers: {
-        "content-type": "application/json",
-        ...(init?.headers ?? {})
-      },
+      headers: hasBody
+        ? { "content-type": "application/json", ...(init?.headers ?? {}) }
+        : { ...(init?.headers ?? {}) },
       signal: controller.signal,
       ...init
     });

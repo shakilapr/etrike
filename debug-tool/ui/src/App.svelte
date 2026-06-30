@@ -11,6 +11,7 @@
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
+  import { errorLog, logError } from "./stores/errors";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
   type Tab = "dashboard" | "monitor" | "injector" | "controller" | "unit-test" | "pipeline" | "stats";
@@ -30,6 +31,18 @@
     { id: "pipeline", label: "Pipeline" },
     { id: "stats", label: "Statistics" }
   ];
+
+  // ── Transport source label ──
+  function transportLabel(): string {
+    const t = $status.bridge?.transport;
+    switch (t) {
+      case "canalystii": return "CANalyst-II";
+      case "serial": return "ESP32 Serial";
+      case "mqtt": return "MQTT";
+      case "disabled": return "Disabled";
+      default: return t ?? "Unknown";
+    }
+  }
 
   // ── Keyboard controls ──
   // Layer 1: held-keys state map — raw, no input-filtering.
@@ -135,8 +148,11 @@
       else errors.push(`templates: ${String(templatesR.reason)}`);
 
       loadError = errors.length > 0 ? errors.join("; ") : "";
+      for (const e of errors) logError(e);
     } catch (error) {
-      loadError = error instanceof Error ? error.message : String(error);
+      const msg = error instanceof Error ? error.message : String(error);
+      loadError = msg;
+      logError(msg);
     }
 
     // Connect WebSocket AFTER initial REST data loads so WS frames don't get wiped
@@ -148,13 +164,15 @@
       const payload: BackendStatus = await getStatus();
       status.set(payload);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       status.update((current) => ({
         ...current,
         backend_online: false,
         adapter_connected: false,
         esp32_connected: false,
-        warning: error instanceof Error ? error.message : String(error)
+        warning: msg
       }));
+      logError("Status poll: " + msg);
     }
   }
 
@@ -165,7 +183,9 @@
       frames.set([]);
       loadError = "";
     } catch (err) {
-      loadError = "Reset failed: " + (err instanceof Error ? err.message : String(err));
+      const msg = "Reset failed: " + (err instanceof Error ? err.message : String(err));
+      loadError = msg;
+      logError(msg);
     }
   }
 
@@ -175,7 +195,9 @@
       await restartBridge();
       loadError = "";
     } catch (err) {
-      loadError = "Restart failed: " + (err instanceof Error ? err.message : String(err));
+      const msg = "Restart failed: " + (err instanceof Error ? err.message : String(err));
+      loadError = msg;
+      logError(msg);
     }
   }
 
@@ -185,7 +207,9 @@
       await stopBridge();
       loadError = "";
     } catch (err) {
-      loadError = "Stop failed: " + (err instanceof Error ? err.message : String(err));
+      const msg = "Stop failed: " + (err instanceof Error ? err.message : String(err));
+      loadError = msg;
+      logError(msg);
     }
   }
 </script>
@@ -198,6 +222,9 @@
     </div>
     <div class="status-strip">
       <span class:good={$status.backend_online} class="status-pill">Backend {$status.backend_online ? "Online" : "Offline"}</span>
+      <span class="transport-pill" class:connected={$status.bridge?.connected}>
+        {transportLabel()} {$status.bridge?.connected ? "●" : "○"}
+      </span>
       <span class:good={$status.bridge?.link_open || $status.serial?.port_open} class="status-pill">
         Link {($status.bridge?.link_open || $status.serial?.port_open) ? "Open" : "Closed"}
       </span>
@@ -253,4 +280,20 @@
       <Stats {ids} />
     {/if}
   </main>
+
+  {#if $errorLog.length > 0}
+    <section class="error-log">
+      <details>
+        <summary>Error Log ({$errorLog.length})</summary>
+        <div class="log-entries">
+          {#each $errorLog as entry}
+            <div class="log-entry">
+              <span class="log-time">{new Date(entry.ts * 1000).toLocaleTimeString()}</span>
+              <span class="log-msg">{entry.message}</span>
+            </div>
+          {/each}
+        </div>
+      </details>
+    </section>
+  {/if}
 </div>
