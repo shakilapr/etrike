@@ -44,6 +44,17 @@
     }
   }
 
+  function transportShortLabel(): string {
+    const t = $status.bridge?.transport;
+    switch (t) {
+      case "canalystii": return "CANalyst";
+      case "serial": return "Serial";
+      case "mqtt": return "MQTT";
+      case "disabled": return "Disabled";
+      default: return t ?? "Unknown";
+    }
+  }
+
   function healthState(ok: boolean, degraded = false): "ok" | "warn" | "bad" {
     if (ok) return "ok";
     return degraded ? "warn" : "bad";
@@ -64,7 +75,7 @@
 
   function bridgeLabel(): string {
     const linkOpen = Boolean($status.bridge?.link_open || $status.serial?.port_open);
-    return `${transportLabel()} / ${linkOpen ? "Open" : "Closed"}`;
+    return `${transportShortLabel()} / ${linkOpen ? "Open" : "Closed"}`;
   }
 
   function canBusState(bus: Bus): "ok" | "warn" | "bad" {
