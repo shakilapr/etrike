@@ -1,5 +1,7 @@
 <script lang="ts">
+  import BitGrid from "./BitGrid.svelte";
   import SignalBox from "./SignalBox.svelte";
+  import SignalTable from "./SignalTable.svelte";
   import type { CanMessageIndex, CanSignalDef } from "../lib/can-index";
   import type { CanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameAge } from "../lib/can-decoder";
@@ -8,8 +10,10 @@
   export let frame: CanFrame | undefined = undefined;
   export let legacy: CanMessageDef | undefined = undefined;
   export let categoryColor = "var(--muted)";
+  export let mode: "live" | "dictionary" | "both" = "both";
 
   let expanded = false;
+  let activeSignal = -1;
 
   $: ageSeconds = frame ? Math.max(Date.now() / 1000 - (frame.ts_real ?? frame.ts), 0) : Number.POSITIVE_INFINITY;
   $: freshness = frame ? freshnessState(ageSeconds) : "idle";
@@ -17,6 +21,8 @@
   $: routeLabel = `${message.sender} -> ${(message.receivers.length ? message.receivers : ["all"]).join(", ")}`;
   $: decodedText = frame ? formatDecoded(frame.decoded) : "No live frame";
   $: visibleSignals = message.signals.length > 0 ? message.signals : eventSignals();
+  $: showLiveSummary = mode !== "dictionary";
+  $: showDictionary = mode === "dictionary" || expanded;
 
   function freshnessState(age: number): "live" | "fresh" | "stale" | "old" | "idle" {
     if (age < 0.2) return "live";
@@ -75,25 +81,37 @@
     <span>{message.byte_order}</span>
   </div>
 
-  {#if message.comment}
+  {#if message.comment && mode !== "dictionary"}
     <p class="message-comment">{message.comment}</p>
   {/if}
 
-  <div class="signal-grid">
-    {#each visibleSignals as signal, index}
-      <SignalBox {signal} value={valueFor(signal, index)} stale={freshness === "stale" || freshness === "old"} />
-    {/each}
-  </div>
+  {#if showLiveSummary}
+    <div class="signal-grid">
+      {#each visibleSignals as signal, index}
+        <SignalBox {signal} value={valueFor(signal, index)} stale={freshness === "stale" || freshness === "old"} />
+      {/each}
+    </div>
 
-  <div class="freshness-row">
-    <span>{frame ? frameAge(frame) : "idle"}</span>
-    <span>{decodedText}</span>
-  </div>
+    <div class="freshness-row">
+      <span>{frame ? frameAge(frame) : "idle"}</span>
+      <span>{decodedText}</span>
+    </div>
+  {/if}
 
-  {#if expanded}
+  {#if showDictionary}
+    <section class="dictionary-detail" data-testid="dictionary-detail">
+      {#if message.comment}
+        <p class="message-comment">{message.comment}</p>
+      {/if}
+      <BitGrid {message} bind:activeSignal />
+      <SignalTable {message} bind:activeSignal />
+    </section>
+  {/if}
+
+  {#if expanded && frame}
     <div class="message-detail">
       <div><span>Raw</span><strong class="mono">{frame ? formatBytes(frame.data) : "--"}</strong></div>
-      <pre>{frame ? JSON.stringify(frame.decoded, null, 2) : JSON.stringify(message, null, 2)}</pre>
+      <pre>{JSON.stringify(frame.decoded, null, 2)}</pre>
     </div>
   {/if}
 </article>
@@ -167,6 +185,14 @@
     font-size: 0.78rem;
     line-height: 1.4;
     margin: 0;
+  }
+
+  .dictionary-detail {
+    border-top: 1px solid var(--panel-border);
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding-top: 10px;
   }
 
   .signal-grid {

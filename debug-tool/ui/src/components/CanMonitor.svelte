@@ -25,7 +25,9 @@
   ];
 
   type BusFilter = Bus | "all";
+  type ViewMode = "live" | "dictionary" | "both";
   let busFilter: BusFilter = "all";
+  let viewMode: ViewMode = "both";
   let paused = false;
   let pausedFrames: CanFrame[] = [];
   let pausedLatest: Record<string, CanFrame> = {};
@@ -185,6 +187,11 @@
       <input bind:value={filterText} placeholder="Filter by ID, name, signal, ECU, or value" />
     </div>
     <div class="toolbar-actions">
+      <div class="mode-tabs" aria-label="Monitor view mode">
+        <button class:active={viewMode === "live"} type="button" on:click={() => (viewMode = "live")}>Live</button>
+        <button class:active={viewMode === "dictionary"} type="button" on:click={() => (viewMode = "dictionary")}>Dictionary</button>
+        <button class:active={viewMode === "both"} type="button" on:click={() => (viewMode = "both")}>Both</button>
+      </div>
       <label class="toggle-control">
         <input bind:checked={hideIdle} type="checkbox" />
         <span>Hide idle</span>
@@ -206,13 +213,14 @@
           <em>{category.liveCount} live / {category.messages.length} shown</em>
         </button>
         {#if isOpen}
-          <div class="message-grid">
+          <div class="message-grid" class:dictionary-mode={viewMode === "dictionary"}>
             {#each category.messages as message (`${message.bus}:${message.id}:${message.name}`)}
               <MessageCard
                 {message}
                 frame={liveLatest[`${message.bus}:${message.id}`]}
                 legacy={legacyFor(message)}
                 categoryColor={category.color}
+                mode={viewMode}
               />
             {/each}
           </div>
@@ -272,6 +280,10 @@
     padding-left: 10px;
   }
 
+  .message-grid.dictionary-mode {
+    grid-template-columns: 1fr;
+  }
+
   .toggle-control {
     align-items: center;
     color: var(--muted);
@@ -281,6 +293,35 @@
     gap: 6px;
     min-height: 36px;
     white-space: nowrap;
+  }
+
+  .mode-tabs {
+    align-items: center;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    display: inline-flex;
+    min-height: 36px;
+    overflow: hidden;
+  }
+
+  .mode-tabs button {
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--panel-border);
+    border-radius: 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    min-height: 34px;
+  }
+
+  .mode-tabs button:last-child {
+    border-right: 0;
+  }
+
+  .mode-tabs button.active {
+    background: var(--accent-dim);
+    color: var(--accent);
   }
 
   .toggle-control input {
@@ -307,12 +348,27 @@
     }
 
     .index-category-head,
-    .message-grid {
+    .message-grid,
+    .mode-tabs {
       grid-template-columns: 1fr;
     }
 
     .message-grid {
       padding-left: 0;
+    }
+
+    .mode-tabs {
+      display: grid;
+      width: 100%;
+    }
+
+    .mode-tabs button {
+      border-bottom: 1px solid var(--panel-border);
+      border-right: 0;
+    }
+
+    .mode-tabs button:last-child {
+      border-bottom: 0;
     }
   }
 </style>
