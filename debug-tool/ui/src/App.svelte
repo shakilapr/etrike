@@ -44,6 +44,56 @@
     }
   }
 
+  function healthState(ok: boolean, degraded = false): "ok" | "warn" | "bad" {
+    if (ok) return "ok";
+    return degraded ? "warn" : "bad";
+  }
+
+  function busDetectionLabel(): string {
+    const bd = $status.bus_detection;
+    if (!bd?.detected || bd.confidence === "none") return "Unconfirmed";
+    const suffix = bd.confidence === "low" ? " low confidence" : "";
+    return `${bd.bus.toUpperCase()}${suffix}`;
+  }
+
+  function busDetectionState(): "ok" | "warn" | "bad" {
+    const bd = $status.bus_detection;
+    if (!bd?.detected || bd.confidence === "none") return "warn";
+    return bd.confidence === "high" ? "ok" : "warn";
+  }
+
+  function bridgeLabel(): string {
+    const linkOpen = Boolean($status.bridge?.link_open || $status.serial?.port_open);
+    return `${transportLabel()} / ${linkOpen ? "Open" : "Closed"}`;
+  }
+
+  function canBusState(bus: Bus): "ok" | "warn" | "bad" {
+    if (!$status.backend_online) return "bad";
+    const linkOpen = Boolean($status.bridge?.link_open || $status.serial?.port_open);
+    const busStats = bus === "high" ? $stats.buses.high : $stats.buses.low;
+    if (busStats.active && busStats.fps > 0) return "ok";
+    if (linkOpen || busStats.total > 0) return "warn";
+    return "bad";
+  }
+
+  function canBusLabel(bus: Bus): string {
+    const busStats = bus === "high" ? $stats.buses.high : $stats.buses.low;
+    if (busStats.active && busStats.fps > 0) return `${Math.round(busStats.fps)} fps`;
+    if (busStats.total > 0) return "Quiet";
+    return "No traffic";
+  }
+
+  function bridgeTitle(): string {
+    const bridge = $status.bridge;
+    const parts = [
+      bridge?.adapter,
+      bridge?.path,
+      bridge?.bitrate ? `${bridge.bitrate} bit/s` : "",
+      bridge?.last_error ? `Last error: ${bridge.last_error}` : ""
+    ].filter(Boolean);
+    return parts.join(" / ") || "CAN bridge status";
+  }
+
   // ── Keyboard controls ──
   // Layer 1: held-keys state map — raw, no input-filtering.
   // Tracks which physical keys are down so the Controller can
@@ -216,37 +266,41 @@
 
 <div class="app-shell">
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Dual CAN Bus</p>
+    <div class="brand-block">
+      <p class="eyebrow">Dual CAN Bus Bench Tool</p>
       <h1>E-Trike Debug</h1>
     </div>
-    <div class="status-strip">
-      <span class:good={$status.backend_online} class="status-pill">Backend {$status.backend_online ? "Online" : "Offline"}</span>
-      <span class="transport-pill" class:connected={$status.bridge?.connected}>
-        {transportLabel()} {$status.bridge?.connected ? "●" : "○"}
+    <div class="status-strip health-strip" aria-label="System health">
+      <span class="health-item" data-state={healthState(Boolean($status.backend_online))} data-testid="health-backend" title="Backend API process">
+        <span class="health-dot"></span>
+        <span class="health-label">Backend</span>
+        <strong>{$status.backend_online ? "Online" : "Offline"}</strong>
       </span>
-      <span class:good={$status.bridge?.link_open || $status.serial?.port_open} class="status-pill">
-        Link {($status.bridge?.link_open || $status.serial?.port_open) ? "Open" : "Closed"}
+      <span class="health-item" data-state={healthState(Boolean($status.bridge?.connected), Boolean($status.backend_online))} data-testid="health-bridge" title={bridgeTitle()}>
+        <span class="health-dot"></span>
+        <span class="health-label">Bridge</span>
+        <strong>{bridgeLabel()}</strong>
       </span>
-      <span class:good={$status.adapter_connected || $status.esp32_connected} class="status-pill">
-        {$status.bridge?.adapter ?? "Adapter"} {($status.adapter_connected || $status.esp32_connected) ? "Online" : "Offline"}
+      <span class="health-item" data-state={canBusState("high")} data-testid="health-high-can" title={`High bus: ${Math.round($stats.buses.high.fps)} fps, ${$stats.buses.high.total} frames, TEC ${$stats.buses.high.tec}, REC ${$stats.buses.high.rec}`}>
+        <span class="health-dot"></span>
+        <span class="health-label">High CAN</span>
+        <strong>{canBusLabel("high")}</strong>
       </span>
-      {#if $status.bus_detection?.bus}
-        {@const bd = $status.bus_detection}
-        <span class:good={bd.confidence === "high"} class="status-pill">
-          Bus: {bd.bus.toUpperCase()}{bd.confidence === "high" ? " ✓" : bd.confidence === "low" ? " ?" : " …"}
-        </span>
-      {/if}
+      <span class="health-item" data-state={canBusState("low")} data-testid="health-low-can" title={`Low bus: ${Math.round($stats.buses.low.fps)} fps, ${$stats.buses.low.total} frames, TEC ${$stats.buses.low.tec}, REC ${$stats.buses.low.rec}. Detection: ${busDetectionLabel()}`}>
+        <span class="health-dot"></span>
+        <span class="health-label">Low CAN</span>
+        <strong>{canBusLabel("low")}</strong>
+      </span>
     </div>
-    <div class="action-strip">
-      <button type="button" class="action-btn" on:click={resetFrames} title="Clear all stored CAN frames">
-        ⟳ Reset
+    <div class="action-strip" aria-label="Bridge actions">
+      <button type="button" class="action-btn" data-testid="action-reset" on:click={resetFrames} title="Clear all stored CAN frames">
+        Reset
       </button>
-      <button type="button" class="action-btn" on:click={restartBridgeHandler} title="Restart the CAN bridge connection">
-        ↻ Restart
+      <button type="button" class="action-btn" data-testid="action-restart" on:click={restartBridgeHandler} title="Restart the CAN bridge connection">
+        Restart
       </button>
-      <button type="button" class="action-btn danger" on:click={stopBridgeHandler} title="Stop the CAN bridge connection">
-        ⏹ Stop
+      <button type="button" class="action-btn danger" data-testid="action-stop" on:click={stopBridgeHandler} title="Stop the CAN bridge connection">
+        Stop
       </button>
     </div>
   </header>
