@@ -93,9 +93,13 @@ select {
 
 .topbar {
   align-items: center;
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(260px, auto) minmax(420px, 1fr) auto;
+}
+
+.brand-block {
+  min-width: 0;
 }
 
 .eyebrow {
@@ -111,7 +115,7 @@ h1, h2 { margin: 0; }
 h1 { font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1; }
 h2 { font-size: 1rem; }
 
-/* ── Status pills ── */
+/* ── Header health ── */
 .status-strip,
 .button-row,
 .toolbar-actions {
@@ -119,6 +123,65 @@ h2 { font-size: 1rem; }
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.health-strip {
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  justify-self: stretch;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.health-item {
+  align-items: center;
+  border-right: 1px solid var(--panel-border);
+  display: grid;
+  gap: 2px 8px;
+  grid-template-columns: 8px minmax(58px, auto) minmax(0, 1fr);
+  min-height: 46px;
+  min-width: 0;
+  padding: 7px 10px;
+}
+
+.health-item:last-child {
+  border-right: 0;
+}
+
+.health-dot {
+  border-radius: 999px;
+  display: block;
+  grid-row: 1 / span 2;
+  height: 8px;
+  width: 8px;
+}
+
+.health-item[data-state="ok"] .health-dot { background: var(--ok); }
+.health-item[data-state="warn"] .health-dot { background: var(--warn); }
+.health-item[data-state="bad"] .health-dot { background: var(--err); }
+
+.health-item[data-state="ok"] strong { color: var(--ok); }
+.health-item[data-state="warn"] strong { color: var(--warn); }
+.health-item[data-state="bad"] strong { color: var(--err); }
+
+.health-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.health-item strong {
+  font-size: 0.82rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-pill {
@@ -199,6 +262,7 @@ h2 { font-size: 1rem; }
   gap: 6px;
   align-items: center;
   margin-left: auto;
+  min-width: max-content;
 }
 
 .action-btn {
@@ -207,8 +271,8 @@ h2 { font-size: 1rem; }
   border-radius: 6px;
   color: var(--fg);
   cursor: pointer;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
   min-height: 36px;
   padding: 0 12px;
   white-space: nowrap;
@@ -250,6 +314,17 @@ h2 { font-size: 1rem; }
 .transport-pill.connected {
   border-color: var(--ok);
   color: var(--ok);
+}
+
+@media (max-width: 1180px) and (min-width: 981px) {
+  .topbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .health-strip {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* ── Error log ── */
@@ -762,9 +837,26 @@ kbd {
   .value-grid, .counter-grid, .form-grid, .periodic-controls {
     grid-template-columns: 1fr;
   }
-  .toolbar, .toolbar-main, .topbar {
+  .toolbar, .toolbar-main {
     align-items: stretch;
     flex-direction: column;
+  }
+  .topbar {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+  .health-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .health-item:nth-child(2) {
+    border-right: 0;
+  }
+  .health-item:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .action-strip {
+    justify-content: flex-start;
+    margin-left: 0;
   }
   .toolbar-main input { max-width: none; }
 }
@@ -874,6 +966,22 @@ kbd {
 
 @media (max-width: 680px) {
   .app-shell { padding: 14px; }
+  h1 { font-size: 1.7rem; }
+  .health-strip { grid-template-columns: 1fr; }
+  .health-item,
+  .health-item:nth-child(2),
+  .health-item:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--panel-border);
+    border-right: 0;
+  }
+  .health-item:last-child {
+    border-bottom: 0;
+  }
+  .action-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
   .dashboard-grid, .stats-layout { grid-template-columns: 1fr; }
   .latest-row, .bar-row { grid-template-columns: 1fr; }
   .table-wrap { max-height: none; }
