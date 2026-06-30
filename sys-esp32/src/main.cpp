@@ -131,9 +131,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     while (1) {
         if (g_can.receive(fr, 100)) {
             if (xQueueSend(g_can_rx_queue, &fr, 0) != pdTRUE) {
-                static uint32_t rx_overflow_count = 0;
-                rx_overflow_count++;
-                if (rx_overflow_count == 1) ESP_LOGW(TAG, "CAN RX queue overflow — frames dropped");
+                g_can_rx_overflow.fetch_add(1, std::memory_order_relaxed);
+                static bool warned = false;
+                if (!warned) { ESP_LOGW(TAG, "CAN RX queue overflow — frames dropped"); warned = true; }
             }
         }
     }
@@ -144,6 +144,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 [[noreturn]] static void task_dispatch(void*) {
     can::Frame fr;
     while (1) {
+        g_alive_dispatch.store(xTaskGetTickCount(), std::memory_order_relaxed);
         if (xQueueReceive(g_can_rx_queue, &fr, portMAX_DELAY) != pdTRUE) continue;
 
         // Manual dispatch into atomic state (struct-based dispatch_frame not used
@@ -350,7 +351,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
         }
 
-        // Toggle external watchdog
+        // Toggle external watchdog + per-task alive counter
+        g_alive_safety.store(xTaskGetTickCount(), std::memory_order_relaxed);
         g_wdt.tick();  // GPIO23 toggle
 
         // EGAS L2: compare 0x204 setpoint vs 0x206 actual speed (arch §6.1)
@@ -567,6 +569,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(1000 / sys::kBrakeCmdRateHz);
     TickType_t last   = xTaskGetTickCount();
     while (1) {
+        g_alive_brake.store(xTaskGetTickCount(), std::memory_order_relaxed);
         bool lever     = g_safety.brake_lever_pressed();
         bool estop     = (g_mode_mgr.mode() == can::Mode::Estop);
         can::Mode mode = g_mode_mgr.mode();
@@ -707,6 +710,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
+        g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Frame fr;
         can::SysSafetySts{
             g_mode_mgr.mode() == can::Mode::Estop,
@@ -726,6 +730,7 @@ static std::atomic<uint32_t> g_alive_safety{0};
 static std::atomic<uint32_t> g_alive_brake{0};
 static std::atomic<uint32_t> g_alive_dispatch{0};
 static std::atomic<uint32_t> g_alive_can_tx{0};
+static std::atomic<uint32_t> g_can_rx_overflow{0};
 
 static void check_task_watchdog() {
     TickType_t now = xTaskGetTickCount();
