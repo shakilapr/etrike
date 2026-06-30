@@ -229,6 +229,79 @@ h2 { font-size: 1rem; }
   color: var(--bg);
 }
 
+/* ── Transport pill ── */
+.transport-pill {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.transport-pill.connected {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+/* ── Error log ── */
+.error-log {
+  margin-top: 16px;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 12px;
+}
+
+.error-log details {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.error-log summary {
+  cursor: pointer;
+  color: var(--warn);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  user-select: none;
+}
+
+.error-log summary:hover {
+  background: var(--bg);
+}
+
+.log-entries {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.log-entry {
+  display: flex;
+  gap: 12px;
+  padding: 4px 14px;
+  border-top: 1px solid var(--panel-border);
+  font-size: 0.74rem;
+}
+
+.log-time {
+  color: var(--muted);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  white-space: nowrap;
+  min-width: 80px;
+}
+
+.log-msg {
+  color: var(--fg);
+  word-break: break-all;
+}
+
 /* ── Grids ── */
 .dashboard-grid,
 .stats-layout {
