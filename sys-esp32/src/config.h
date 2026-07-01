@@ -48,6 +48,8 @@ constexpr int kLightHead      = 22;
 // ── mode indicator bulbs + 12V relay ─────────────────────────────
 constexpr int kBulbAuto       = 25;
 constexpr int kBulbManual     = 26;
+constexpr int kBulbReady      = 17;  // green — system ready (AUTO/MANUAL, RT alive, no faults)
+constexpr int kBulbEstop      = 20;  // red — dedicated ESTOP indicator
 constexpr int kPower12vRelay  = 27;
 
 // ── watchdog ──────────────────────────────────────────────────────

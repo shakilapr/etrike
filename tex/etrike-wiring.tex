@@ -663,10 +663,12 @@ Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
 \# & Signal & GPIO & Type & Connected To & Notes \\
 \midrule
 \endhead
-1 & AUTO Mode Bulb  & 25 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
-2 & MANUAL Mode Bulb & 26 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
-3 & 12\,V Power Relay & 27 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V bus, NO = accessories. Opens in ESTOP. \\
-4 & WDT Toggle       & 23 & Digital out & TPS3850 WDI pin        & Toggled at 20\,Hz by safety\_task \\
+1 & AUTO Mode Bulb   & 25 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
+2 & MANUAL Mode Bulb  & 26 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
+3 & READY Bulb (green)& 17 & Digital out & Relay coil $\rightarrow$ 12\,V & System ready: AUTO/MANUAL, RT alive, no faults \\
+4 & ESTOP Bulb (red)  & 20 & Digital out & Relay coil $\rightarrow$ 12\,V & Dedicated ESTOP indicator \\
+5 & 12\,V Power Relay & 27 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V bus, NO = accessories. Opens in ESTOP. \\
+6 & WDT Toggle        & 23 & Digital out & TPS3850 WDI pin        & Toggled at 20\,Hz by safety\_task \\
 \bottomrule
 \caption{SYS mode indicators and power control.}
 \end{longtable}
@@ -700,10 +702,10 @@ Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
 14 & IN, 10k pull-up  & Gear R sense $\leftarrow$ TLP281 ch3 \\
 15 & I/O, I2C         & MCP4725 DAC SDA (I2C addr \iicaddr{60}) \\
 16 & OUT, I2C         & MCP4725 DAC SCL \\
-17 & ---              & (unused) \\
+17 & OUT              & READY bulb (green) --- relay output \\
 18 & OUT              & Left turn lamp --- relay output \\
 19 & OUT              & Right turn lamp --- relay output \\
-20 & ---              & (unused) \\
+20 & OUT              & ESTOP bulb (red) --- relay output \\
 21 & OUT              & Brake light --- relay output \\
 22 & OUT              & Headlight --- relay output \\
 23 & OUT, 20\,Hz      & WDT toggle $\rightarrow$ TPS3850 WDI \\
@@ -1387,7 +1389,7 @@ Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
 \chkbox & Gear relays: \gpio{33}/\gpio{34}/\gpio{35} $\rightarrow$ relay module IN1/IN2/IN3 & --- \\
 \chkbox & Signal switches: \gpio{3} (left), \gpio{6} (right), \gpio{7} (headlight) $\rightarrow$ GND & --- \\
 \chkbox & Lamp relays: \gpio{18}/\gpio{19}/\gpio{21}/\gpio{22} $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
-\chkbox & Indicator relays: \gpio{25} (AUTO), \gpio{26} (MANUAL), \gpio{27} (12\,V power) $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
+\chkbox & Indicator relays: \gpio{25} (AUTO), \gpio{26} (MANUAL), \gpio{17} (READY), \gpio{20} (ESTOP), \gpio{27} (12\,V power) $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
 \chkbox & WDT: \gpio{23} $\rightarrow$ TPS3850 WDI & --- \\
 \bottomrule
 \caption{SYS ESP32-S3 pre-power checklist.}
