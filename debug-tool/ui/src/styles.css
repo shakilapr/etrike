@@ -1034,16 +1034,16 @@ kbd {
   .app-shell { padding: 14px; }
   h1 { font-size: 1.7rem; }
   .tabs {
-    display: grid;
+    display: grid !important;
     gap: 4px;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    overflow: visible;
+    overflow: visible !important;
   }
   .tabs button {
     border: 1px solid var(--panel-border);
     border-bottom: 3px solid transparent;
     border-radius: 6px;
-    min-width: 0;
+    min-width: 0 !important;
     padding: 0 8px;
   }
   .tabs button.active {
