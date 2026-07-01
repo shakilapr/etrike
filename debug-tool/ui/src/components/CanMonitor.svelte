@@ -25,9 +25,9 @@
   ];
 
   type BusFilter = Bus | "all";
-  type ViewMode = "live" | "dictionary" | "both";
+  type Surface = "monitor" | "dictionary";
   let busFilter: BusFilter = "all";
-  let viewMode: ViewMode = "both";
+  let surface: Surface = "monitor";
   let paused = false;
   let pausedFrames: CanFrame[] = [];
   let pausedLatest: Record<string, CanFrame> = {};
@@ -42,7 +42,7 @@
   $: visibleSignals = filteredCatalog.reduce((total, message) => total + message.signals.length, 0);
   $: fallbackMessages = filteredCatalog.filter((message) => message.protocol === "debug_api_fallback").length;
   $: generatedMessages = filteredCatalog.length - fallbackMessages;
-  $: currentModeLabel = viewMode === "dictionary" ? "Dictionary reference" : viewMode === "live" ? "Live frames" : "Live + dictionary";
+  $: currentModeLabel = surface === "dictionary" ? "Signal dictionary" : "Live monitor";
   $: sourceLabel = `${generatedMessages} YAML / ${fallbackMessages} API fallback`;
   $: liveLatest = paused ? pausedLatest : $latestById;
   $: sourceFrames = paused ? pausedFrames : $frames;
@@ -66,7 +66,7 @@
       message.receivers.join(" ").toLowerCase().includes(text) ||
       message.signals.some((signal) => signal.name.toLowerCase().includes(text) || signal.comment.toLowerCase().includes(text)) ||
       (frame ? formatDecoded(frame.decoded).toLowerCase().includes(text) : false);
-    const matchesActivity = !hideIdle || Boolean(frame);
+    const matchesActivity = surface !== "monitor" || !hideIdle || Boolean(frame);
     return matchesBus && matchesText && matchesActivity;
   });
   $: categoryGroups = CATEGORIES
@@ -186,7 +186,7 @@
   <div class="toolbar">
     <div class="toolbar-main">
       <div class="toolbar-title">
-        <h2>CAN Monitor</h2>
+        <h2>{surface === "dictionary" ? "CAN Dictionary" : "CAN Monitor"}</h2>
         <span>{currentModeLabel}</span>
       </div>
       <div class="bus-tabs compact-tabs" aria-label="CAN bus filter">
@@ -197,20 +197,17 @@
       <input bind:value={filterText} placeholder="Filter by ID, name, signal, ECU, or value" />
     </div>
     <div class="toolbar-actions">
-      <div class="mode-tabs" aria-label="Monitor view mode">
-        <button class:active={viewMode === "live"} type="button" on:click={() => (viewMode = "live")} title="Show live decoded values only">Live</button>
-        <button class:active={viewMode === "dictionary"} type="button" on:click={() => (viewMode = "dictionary")} title="Show the generated CAN dictionary">Dictionary</button>
-        <button class:active={viewMode === "both"} type="button" on:click={() => (viewMode = "both")} title="Show live values with expandable dictionary details">Both</button>
+      <div class="surface-tabs" aria-label="CAN tool surface">
+        <button class:active={surface === "monitor"} type="button" on:click={() => (surface = "monitor")} title="Show live CAN traffic and decoded values">Monitor</button>
+        <button class:active={surface === "dictionary"} type="button" on:click={() => (surface = "dictionary")} title="Show the generated CAN signal dictionary">Dictionary</button>
       </div>
-      {#if viewMode !== "dictionary"}
+      {#if surface === "monitor"}
         <label class="toggle-control" title="Hide catalog entries without a currently received frame">
           <input bind:checked={hideIdle} type="checkbox" />
           <span>Hide idle</span>
         </label>
         <button type="button" on:click={togglePause} title={paused ? "Resume live updates" : "Freeze the current live frame list"}>{paused ? "Resume" : "Pause"}</button>
-      {/if}
-      <button type="button" on:click={toggleAll}>{allExpanded ? "Collapse All" : "Expand All"}</button>
-      {#if viewMode !== "dictionary"}
+        <button type="button" on:click={toggleAll}>{allExpanded ? "Collapse All" : "Expand All"}</button>
         <button type="button" on:click={exportJson} title="Export visible live frames as JSON">JSON</button>
         <button type="button" on:click={exportCsv} title="Export visible live frames as CSV">CSV</button>
       {/if}
@@ -218,49 +215,75 @@
   </div>
 
   <div class="monitor-summary" aria-label="CAN monitor summary">
-    <span><strong>{visibleMessages}</strong> messages</span>
-    <span><strong>{visibleSignals}</strong> signals</span>
-    <span><strong>{visibleLiveMessages}</strong> live</span>
-    <span class:warn={fallbackMessages > 0}><strong>{sourceLabel}</strong></span>
+    {#if surface === "dictionary"}
+      <span><strong>{visibleMessages}</strong> messages</span>
+      <span><strong>{visibleSignals}</strong> signals</span>
+      <span class:warn={fallbackMessages > 0}><strong>{sourceLabel}</strong></span>
+    {:else}
+      <span><strong>{visibleLiveMessages}</strong> live</span>
+      <span><strong>{visibleMessages}</strong> shown</span>
+      <span><strong>{sourceFrames.length}</strong> buffered frames</span>
+    {/if}
     <a href="/docs/how-to-read-can-tables.md" title="Open the CAN table reading guide">CAN table guide</a>
   </div>
 
-  <div class="monitor-index">
-    {#each categoryGroups as category}
-      {@const isOpen = !collapsed.has(category.key)}
-      <section class="index-category" style={`--cat-color:${category.color}`}>
-        <button class="index-category-head" type="button" on:click={() => toggleCat(category.key)}>
-          <span>{isOpen ? "v" : ">"}</span>
-          <strong>{category.label}</strong>
-          <em>{category.liveCount} live / {category.messages.length} shown</em>
-        </button>
-        {#if isOpen}
-          <div class="message-grid" class:dictionary-mode={viewMode === "dictionary"}>
-            {#each category.messages as message (`${message.bus}:${message.id}:${message.name}`)}
-              <MessageCard
-                {message}
-                frame={liveLatest[`${message.bus}:${message.id}`]}
-                legacy={legacyFor(message)}
-                categoryColor={category.color}
-                mode={viewMode}
-              />
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {:else}
-      <div class="empty-state">No CAN messages match the current filters.</div>
-    {/each}
-  </div>
+  {#if surface === "dictionary"}
+    <div class="dictionary-reference">
+      {#each filteredCatalog as message (`dict:${message.bus}:${message.id}:${message.name}`)}
+        <MessageCard
+          {message}
+          frame={liveLatest[`${message.bus}:${message.id}`]}
+          legacy={legacyFor(message)}
+          categoryColor="var(--accent)"
+          mode="dictionary"
+        />
+      {:else}
+        <div class="empty-state">No CAN dictionary messages match the current filters.</div>
+      {/each}
+    </div>
+  {:else}
+    <div class="monitor-index">
+      {#each categoryGroups as category}
+        {@const isOpen = !collapsed.has(category.key)}
+        <section class="index-category" style={`--cat-color:${category.color}`}>
+          <button class="index-category-head" type="button" on:click={() => toggleCat(category.key)}>
+            <span>{isOpen ? "v" : ">"}</span>
+            <strong>{category.label}</strong>
+            <em>{category.liveCount} live / {category.messages.length} shown</em>
+          </button>
+          {#if isOpen}
+            <div class="message-grid">
+              {#each category.messages as message (`mon:${message.bus}:${message.id}:${message.name}`)}
+                <MessageCard
+                  {message}
+                  frame={liveLatest[`${message.bus}:${message.id}`]}
+                  legacy={legacyFor(message)}
+                  categoryColor={category.color}
+                  mode="monitor"
+                />
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {:else}
+        <div class="empty-state">No CAN messages match the current monitor filters.</div>
+      {/each}
+    </div>
+  {/if}
 </section>
 
 <style>
-  .monitor-index {
+  .monitor-index,
+  .dictionary-reference {
     display: grid;
     gap: 12px;
     max-height: calc(100vh - 278px);
     overflow: auto;
     padding: 14px;
+  }
+
+  .dictionary-reference {
+    gap: 12px;
   }
 
   .toolbar-title {
@@ -355,10 +378,6 @@
     padding-left: 10px;
   }
 
-  .message-grid.dictionary-mode {
-    grid-template-columns: 1fr;
-  }
-
   .toggle-control {
     align-items: center;
     color: var(--muted);
@@ -370,7 +389,7 @@
     white-space: nowrap;
   }
 
-  .mode-tabs {
+  .surface-tabs {
     align-items: center;
     border: 1px solid var(--panel-border);
     border-radius: 6px;
@@ -379,7 +398,7 @@
     overflow: hidden;
   }
 
-  .mode-tabs button {
+  .surface-tabs button {
     background: transparent;
     border: 0;
     border-right: 1px solid var(--panel-border);
@@ -390,11 +409,11 @@
     min-height: 34px;
   }
 
-  .mode-tabs button:last-child {
+  .surface-tabs button:last-child {
     border-right: 0;
   }
 
-  .mode-tabs button.active {
+  .surface-tabs button.active {
     background: var(--accent-dim);
     color: var(--accent);
   }
@@ -427,7 +446,7 @@
     }
 
     .message-grid,
-    .mode-tabs {
+    .surface-tabs {
       grid-template-columns: 1fr;
     }
 
@@ -439,9 +458,9 @@
       padding-left: 0;
     }
 
-    .mode-tabs {
+    .surface-tabs {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       width: 100%;
     }
 
@@ -451,7 +470,7 @@
       width: 100%;
     }
 
-    .toolbar-actions .mode-tabs {
+    .toolbar-actions .surface-tabs {
       grid-column: 1 / -1;
     }
 
@@ -461,12 +480,12 @@
       width: 100%;
     }
 
-    .mode-tabs button {
+    .surface-tabs button {
       border-bottom: 0;
       border-right: 1px solid var(--panel-border);
     }
 
-    .mode-tabs button:last-child {
+    .surface-tabs button:last-child {
       border-right: 0;
     }
   }

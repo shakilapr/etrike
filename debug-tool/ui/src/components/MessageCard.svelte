@@ -10,7 +10,7 @@
   export let frame: CanFrame | undefined = undefined;
   export let legacy: CanMessageDef | undefined = undefined;
   export let categoryColor = "var(--muted)";
-  export let mode: "live" | "dictionary" | "both" = "both";
+  export let mode: "monitor" | "dictionary" = "monitor";
 
   let expanded = false;
   let activeSignal = -1;
@@ -18,15 +18,14 @@
   $: ageSeconds = frame ? Math.max(Date.now() / 1000 - (frame.ts_real ?? frame.ts), 0) : Number.POSITIVE_INFINITY;
   $: freshness = frame ? freshnessState(ageSeconds) : "idle";
   $: cycleLabel = message.cycle_ms > 0 ? `${message.cycle_ms} ms` : "event";
-  $: routeLabel = `${message.sender} -> ${(message.receivers.length ? message.receivers : ["all"]).join(", ")}`;
   $: decodedText = frame ? formatDecoded(frame.decoded) : "No live frame";
   $: visibleSignals = message.signals.length > 0 ? message.signals : eventSignals();
-  $: showLiveSummary = mode !== "dictionary";
-  $: showDictionary = mode === "dictionary" || expanded;
+  $: showLiveSummary = mode === "monitor";
+  $: showDictionary = mode === "dictionary";
   $: isFallback = message.protocol === "debug_api_fallback";
   $: receiverLabel = (message.receivers.length ? message.receivers : ["all"]).join(", ");
   $: signalCountLabel = message.signals.length === 1 ? "1 signal" : `${message.signals.length} signals`;
-  $: canExpandRaw = Boolean(frame);
+  $: canExpandRaw = mode === "monitor" && Boolean(frame);
   $: expandLabel = canExpandRaw ? (expanded ? "Hide raw frame detail" : "Show raw frame detail") : "No live raw frame to expand";
 
   function freshnessState(age: number): "live" | "fresh" | "stale" | "old" | "idle" {
@@ -78,6 +77,7 @@
 
 <article
   class="message-card"
+  class:is-dictionary={mode === "dictionary"}
   class:is-fallback={isFallback}
   data-freshness={freshness}
   data-testid="frame-row"
@@ -108,7 +108,7 @@
     </div>
   {/if}
 
-  {#if message.comment && mode !== "dictionary"}
+  {#if message.comment && mode === "monitor"}
     <p class="message-comment">{message.comment}</p>
   {/if}
 
@@ -157,6 +157,17 @@
 
   .message-card.is-fallback {
     border-right-color: color-mix(in srgb, var(--warn) 45%, var(--panel-border));
+  }
+
+  .message-card.is-dictionary {
+    border-left-width: 1px;
+  }
+
+  .message-card.is-dictionary .message-head {
+    background: color-mix(in srgb, var(--bg) 72%, var(--panel));
+    border-bottom: 1px solid var(--panel-border);
+    margin: -12px -12px 0;
+    padding: 10px 12px;
   }
 
   .message-card[data-freshness="live"],
