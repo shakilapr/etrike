@@ -529,7 +529,7 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "RT ESP32-S3 boot");
 
     rt::can_low_init();
-    g_can_high.init();
+    bool has_high_can = g_can_high.init();
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();
@@ -546,19 +546,34 @@ extern "C" void app_main() {
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
     g_safety_evt_q  = xQueueCreate(16, sizeof(rt::SafetyEvent));
 
-    static CanRxParams rx_low_par  = { low_receive,  nullptr };
-    static CanRxParams rx_high_par = { high_receive, nullptr, &g_can_high };
-    rx_low_par.queue  = g_can_rx_low_q;
-    rx_high_par.queue = g_can_rx_high_q;
-    xTaskCreate(task_can_rx, "rx_low",  4096, &rx_low_par,  5, nullptr);
-    xTaskCreate(task_can_rx, "rx_high", 4096, &rx_high_par, 5, nullptr);
-    xTaskCreate(t_dispatch,    "dispatch",4096, nullptr, 4, nullptr);
-    xTaskCreate(t_control,     "control", 4096, nullptr, 4, nullptr);
-    xTaskCreate(t_can_tx_low,  "tx_low",  3072, nullptr, 3, nullptr);
-    xTaskCreate(t_can_tx_high, "tx_high", 3072, nullptr, 3, nullptr);
-    xTaskCreate(t_watchdog,    "watchdog",2048, nullptr, 1, nullptr);
-    xTaskCreate(t_heartbeat,   "hb",      2048, nullptr, 1, nullptr);
+    int task_count = 0;
 
-    ESP_LOGI(TAG, "Ready — 8 tasks");
+    static CanRxParams rx_low_par  = { low_receive,  nullptr };
+    rx_low_par.queue  = g_can_rx_low_q;
+    xTaskCreate(task_can_rx, "rx_low",  4096, &rx_low_par,  5, nullptr);
+    task_count++;
+
+    if (has_high_can) {
+        static CanRxParams rx_high_par = { high_receive, nullptr, &g_can_high };
+        rx_high_par.queue = g_can_rx_high_q;
+        xTaskCreate(task_can_rx, "rx_high", 4096, &rx_high_par, 5, nullptr);
+        task_count++;
+    } else {
+        ESP_LOGW(TAG, "High CAN (MCP2515) not available — rx_high/tx_high tasks skipped");
+    }
+
+    xTaskCreate(t_dispatch,    "dispatch",4096, nullptr, 4, nullptr); task_count++;
+    xTaskCreate(t_control,     "control", 4096, nullptr, 4, nullptr); task_count++;
+    xTaskCreate(t_can_tx_low,  "tx_low",  3072, nullptr, 3, nullptr); task_count++;
+
+    if (has_high_can) {
+        xTaskCreate(t_can_tx_high, "tx_high", 3072, nullptr, 3, nullptr);
+        task_count++;
+    }
+
+    xTaskCreate(t_watchdog,    "watchdog",4096, nullptr, 1, nullptr); task_count++;
+    xTaskCreate(t_heartbeat,   "hb",      3072, nullptr, 1, nullptr); task_count++;
+
+    ESP_LOGI(TAG, "Ready — %d tasks", task_count);
     vTaskDelete(nullptr);
 }

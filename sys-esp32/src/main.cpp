@@ -29,6 +29,13 @@
 
 static const char* TAG = "sys";
 
+// ── Per-task alive counters for multi-task watchdog ─────────────────
+static std::atomic<uint32_t> g_alive_safety{0};
+static std::atomic<uint32_t> g_alive_brake{0};
+static std::atomic<uint32_t> g_alive_dispatch{0};
+static std::atomic<uint32_t> g_alive_can_tx{0};
+static std::atomic<uint32_t> g_can_rx_overflow{0};
+
 static can::CanDriver g_can(can::CanDriver::Config{sys::kCanTxGpio,
                                                     sys::kCanRxGpio,
                                                     sys::kCanBitrateHz});
@@ -756,11 +763,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 // ── Multi-task watchdog — per-task alive counters ───────────────────
 // task_diag (lowest prio) checks all counters. Logs ERROR if any
 // critical safety task hasn't ticked within its deadline.
-static std::atomic<uint32_t> g_alive_safety{0};
-static std::atomic<uint32_t> g_alive_brake{0};
-static std::atomic<uint32_t> g_alive_dispatch{0};
-static std::atomic<uint32_t> g_alive_can_tx{0};
-static std::atomic<uint32_t> g_can_rx_overflow{0};
 
 static void check_task_watchdog() {
     TickType_t now = xTaskGetTickCount();

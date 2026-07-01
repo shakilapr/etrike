@@ -144,3 +144,7 @@ GEMINI.md
 *.toc
 /tex/generated/
 /tex/output/
+
+
+
+/install.cmd
