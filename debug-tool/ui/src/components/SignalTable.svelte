@@ -25,6 +25,15 @@
     return Object.entries(signal.values).map(([key, value]) => `${key}=${value}`).join(", ");
   }
 
+  function rangeFor(signal: CanSignalDef): string {
+    if (signal.min === null && signal.max === null) return "--";
+    return `${dash(signal.min)}..${dash(signal.max)}`;
+  }
+
+  function receiversFor(signal: CanSignalDef): string {
+    return signal.receivers.length > 0 ? signal.receivers.join(", ") : "--";
+  }
+
   function dash(value: string | number | null | undefined): string {
     if (value === undefined || value === null || value === "") return "--";
     return String(value);
@@ -39,12 +48,15 @@
       <thead>
         <tr>
           <th>Signal</th>
+          <th>Start</th>
           <th>Byte</th>
           <th>Bit</th>
           <th>Len</th>
           <th>Type</th>
           <th>Scale</th>
+          <th>Range</th>
           <th>Unit</th>
+          <th>Rx</th>
           <th>Values</th>
           <th>Description</th>
         </tr>
@@ -58,18 +70,21 @@
             on:focusin={() => (activeSignal = index)}
             on:focusout={() => (activeSignal = -1)}
           >
-            <td>
+            <td data-label="Signal">
               <span class="sig-color" style={`--sig-color:${colorFor(index)}`}></span>
               <strong>{signal.name}</strong>
             </td>
-            <td>{signal.byte}</td>
-            <td>{signal.bit_offset}</td>
-            <td>{signal.size}</td>
-            <td>{signal.type}</td>
-            <td>{scaleFor(signal)}</td>
-            <td>{dash(signal.unit)}</td>
-            <td>{valuesFor(signal)}</td>
-            <td>{dash(signal.comment)}</td>
+            <td data-label="Start">B{signal.byte}.{signal.bit_offset}</td>
+            <td data-label="Byte">{signal.byte}</td>
+            <td data-label="Bit">{signal.bit_offset}</td>
+            <td data-label="Len">{signal.size}</td>
+            <td data-label="Type">{signal.type}</td>
+            <td data-label="Scale">{scaleFor(signal)}</td>
+            <td data-label="Range">{rangeFor(signal)}</td>
+            <td data-label="Unit">{dash(signal.unit)}</td>
+            <td data-label="Rx">{receiversFor(signal)}</td>
+            <td data-label="Values">{valuesFor(signal)}</td>
+            <td data-label="Description">{dash(signal.comment)}</td>
           </tr>
         {/each}
       </tbody>
@@ -85,7 +100,7 @@
   .signal-table {
     border-collapse: collapse;
     font-size: 0.78rem;
-    min-width: 880px;
+    min-width: 1080px;
     width: 100%;
   }
 
@@ -108,15 +123,16 @@
 
   .signal-table tr.highlight td,
   .signal-table tr:hover td {
-    background: var(--hover-row);
+    background: color-mix(in srgb, var(--accent) 14%, var(--hover-row));
   }
 
   .signal-table td {
     color: var(--fg);
   }
 
-  .signal-table td:nth-child(8),
-  .signal-table td:nth-child(9) {
+  .signal-table td:nth-child(10),
+  .signal-table td:nth-child(11),
+  .signal-table td:nth-child(12) {
     color: var(--muted);
     min-width: 160px;
   }
@@ -134,5 +150,51 @@
   .signal-empty {
     color: var(--muted);
     font-size: 0.82rem;
+  }
+
+  @media (max-width: 720px) {
+    .signal-table {
+      min-width: 0;
+    }
+
+    .signal-table thead {
+      display: none;
+    }
+
+    .signal-table,
+    .signal-table tbody,
+    .signal-table tr,
+    .signal-table td {
+      display: block;
+      width: 100%;
+    }
+
+    .signal-table tr {
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .signal-table td {
+      align-items: start;
+      border-bottom: 1px solid var(--panel-border);
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 86px minmax(0, 1fr);
+      padding: 7px 9px;
+    }
+
+    .signal-table td:last-child {
+      border-bottom: 0;
+    }
+
+    .signal-table td::before {
+      color: var(--muted);
+      content: attr(data-label);
+      font-size: 0.66rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
   }
 </style>

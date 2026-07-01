@@ -37,6 +37,13 @@
   let allExpanded = true;
 
   $: catalog = mergedCatalog(ids);
+  $: visibleMessages = filteredCatalog.length;
+  $: visibleLiveMessages = filteredCatalog.filter((message) => liveLatest[`${message.bus}:${message.id}`]).length;
+  $: visibleSignals = filteredCatalog.reduce((total, message) => total + message.signals.length, 0);
+  $: fallbackMessages = filteredCatalog.filter((message) => message.protocol === "debug_api_fallback").length;
+  $: generatedMessages = filteredCatalog.length - fallbackMessages;
+  $: currentModeLabel = viewMode === "dictionary" ? "Dictionary reference" : viewMode === "live" ? "Live frames" : "Live + dictionary";
+  $: sourceLabel = `${generatedMessages} YAML / ${fallbackMessages} API fallback`;
   $: liveLatest = paused ? pausedLatest : $latestById;
   $: sourceFrames = paused ? pausedFrames : $frames;
   $: filteredFrames = sourceFrames.filter((frame) => {
@@ -178,29 +185,44 @@
 <section class="panel monitor-panel">
   <div class="toolbar">
     <div class="toolbar-main">
-      <h2>CAN Monitor</h2>
-      <div class="bus-tabs">
-        <button class:active={busFilter === "all"}  type="button" on:click={() => (busFilter = "all")}>All</button>
-        <button class:active={busFilter === "high"} type="button" on:click={() => (busFilter = "high")}>High</button>
-        <button class:active={busFilter === "low"}  type="button" on:click={() => (busFilter = "low")}>Low</button>
+      <div class="toolbar-title">
+        <h2>CAN Monitor</h2>
+        <span>{currentModeLabel}</span>
+      </div>
+      <div class="bus-tabs compact-tabs" aria-label="CAN bus filter">
+        <button class:active={busFilter === "all"}  type="button" on:click={() => (busFilter = "all")} title="Show both CAN buses">All</button>
+        <button class:active={busFilter === "high"} type="button" on:click={() => (busFilter = "high")} title="Show High CAN only">High</button>
+        <button class:active={busFilter === "low"}  type="button" on:click={() => (busFilter = "low")} title="Show Low CAN only">Low</button>
       </div>
       <input bind:value={filterText} placeholder="Filter by ID, name, signal, ECU, or value" />
     </div>
     <div class="toolbar-actions">
       <div class="mode-tabs" aria-label="Monitor view mode">
-        <button class:active={viewMode === "live"} type="button" on:click={() => (viewMode = "live")}>Live</button>
-        <button class:active={viewMode === "dictionary"} type="button" on:click={() => (viewMode = "dictionary")}>Dictionary</button>
-        <button class:active={viewMode === "both"} type="button" on:click={() => (viewMode = "both")}>Both</button>
+        <button class:active={viewMode === "live"} type="button" on:click={() => (viewMode = "live")} title="Show live decoded values only">Live</button>
+        <button class:active={viewMode === "dictionary"} type="button" on:click={() => (viewMode = "dictionary")} title="Show the generated CAN dictionary">Dictionary</button>
+        <button class:active={viewMode === "both"} type="button" on:click={() => (viewMode = "both")} title="Show live values with expandable dictionary details">Both</button>
       </div>
-      <label class="toggle-control">
-        <input bind:checked={hideIdle} type="checkbox" />
-        <span>Hide idle</span>
-      </label>
-      <button type="button" on:click={togglePause}>{paused ? "Resume" : "Pause"}</button>
+      {#if viewMode !== "dictionary"}
+        <label class="toggle-control" title="Hide catalog entries without a currently received frame">
+          <input bind:checked={hideIdle} type="checkbox" />
+          <span>Hide idle</span>
+        </label>
+        <button type="button" on:click={togglePause} title={paused ? "Resume live updates" : "Freeze the current live frame list"}>{paused ? "Resume" : "Pause"}</button>
+      {/if}
       <button type="button" on:click={toggleAll}>{allExpanded ? "Collapse All" : "Expand All"}</button>
-      <button type="button" on:click={exportJson}>JSON</button>
-      <button type="button" on:click={exportCsv}>CSV</button>
+      {#if viewMode !== "dictionary"}
+        <button type="button" on:click={exportJson} title="Export visible live frames as JSON">JSON</button>
+        <button type="button" on:click={exportCsv} title="Export visible live frames as CSV">CSV</button>
+      {/if}
     </div>
+  </div>
+
+  <div class="monitor-summary" aria-label="CAN monitor summary">
+    <span><strong>{visibleMessages}</strong> messages</span>
+    <span><strong>{visibleSignals}</strong> signals</span>
+    <span><strong>{visibleLiveMessages}</strong> live</span>
+    <span class:warn={fallbackMessages > 0}><strong>{sourceLabel}</strong></span>
+    <a href="/docs/how-to-read-can-tables.md" title="Open the CAN table reading guide">CAN table guide</a>
   </div>
 
   <div class="monitor-index">
@@ -236,9 +258,62 @@
   .monitor-index {
     display: grid;
     gap: 12px;
-    max-height: calc(100vh - 236px);
+    max-height: calc(100vh - 278px);
     overflow: auto;
     padding: 14px;
+  }
+
+  .toolbar-title {
+    display: grid;
+    gap: 2px;
+    min-width: max-content;
+  }
+
+  .toolbar-title span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .compact-tabs {
+    margin-bottom: 0;
+  }
+
+  .monitor-summary {
+    align-items: center;
+    border-bottom: 1px solid var(--panel-border);
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 14px;
+  }
+
+  .monitor-summary span,
+  .monitor-summary a {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 5px;
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    min-height: 28px;
+    padding: 5px 9px;
+    text-decoration: none;
+  }
+
+  .monitor-summary strong {
+    color: var(--fg);
+  }
+
+  .monitor-summary .warn {
+    border-color: color-mix(in srgb, var(--warn) 55%, var(--panel-border));
+    color: var(--warn);
+  }
+
+  .monitor-summary a {
+    margin-left: auto;
   }
 
   .index-category {
@@ -347,10 +422,17 @@
       padding: 10px;
     }
 
-    .index-category-head,
+    .monitor-summary a {
+      margin-left: 0;
+    }
+
     .message-grid,
     .mode-tabs {
       grid-template-columns: 1fr;
+    }
+
+    .index-category-head {
+      grid-template-columns: auto minmax(0, 1fr) auto;
     }
 
     .message-grid {
@@ -359,16 +441,33 @@
 
     .mode-tabs {
       display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .toolbar-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .toolbar-actions .mode-tabs {
+      grid-column: 1 / -1;
+    }
+
+    .toolbar-actions > button,
+    .toolbar-actions .toggle-control {
+      justify-content: center;
       width: 100%;
     }
 
     .mode-tabs button {
-      border-bottom: 1px solid var(--panel-border);
-      border-right: 0;
+      border-bottom: 0;
+      border-right: 1px solid var(--panel-border);
     }
 
     .mode-tabs button:last-child {
-      border-bottom: 0;
+      border-right: 0;
     }
   }
 </style>

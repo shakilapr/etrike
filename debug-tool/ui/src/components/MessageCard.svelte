@@ -23,6 +23,11 @@
   $: visibleSignals = message.signals.length > 0 ? message.signals : eventSignals();
   $: showLiveSummary = mode !== "dictionary";
   $: showDictionary = mode === "dictionary" || expanded;
+  $: isFallback = message.protocol === "debug_api_fallback";
+  $: receiverLabel = (message.receivers.length ? message.receivers : ["all"]).join(", ");
+  $: signalCountLabel = message.signals.length === 1 ? "1 signal" : `${message.signals.length} signals`;
+  $: canExpandRaw = Boolean(frame);
+  $: expandLabel = canExpandRaw ? (expanded ? "Hide raw frame detail" : "Show raw frame detail") : "No live raw frame to expand";
 
   function freshnessState(age: number): "live" | "fresh" | "stale" | "old" | "idle" {
     if (age < 0.2) return "live";
@@ -65,21 +70,43 @@
   function normalizeName(input: string): string {
     return input.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
   }
+
+  function toggleRawDetail() {
+    if (canExpandRaw) expanded = !expanded;
+  }
 </script>
 
-<article class="message-card" data-freshness={freshness} data-testid="frame-row" style={`--card-color:${categoryColor}`}>
-  <button class="message-head" type="button" on:click={() => (expanded = !expanded)} aria-expanded={expanded}>
+<article
+  class="message-card"
+  class:is-fallback={isFallback}
+  data-freshness={freshness}
+  data-testid="frame-row"
+  style={`--card-color:${categoryColor}`}
+>
+  <button class="message-head" class:no-raw={!canExpandRaw} type="button" on:click={toggleRawDetail} aria-expanded={expanded} title={expandLabel}>
+    <span class="message-arrow" aria-hidden="true">{canExpandRaw ? (expanded ? "v" : ">") : ""}</span>
     <span class="message-id">{message.id}</span>
     <strong>{message.name}</strong>
     <span class="message-bus">{message.bus}</span>
   </button>
 
   <div class="message-meta">
-    <span>{routeLabel}</span>
-    <span>DLC {message.dlc}</span>
-    <span>{cycleLabel}</span>
-    <span>{message.byte_order}</span>
+    <span class="badge sender" title="Sender ECU">TX {message.sender}</span>
+    <span class="badge receiver" title="Receiver ECU(s)">RX {receiverLabel}</span>
+    <span class="badge" title="CAN payload length">DLC {message.dlc}</span>
+    <span class="badge" title="Transmit period">{cycleLabel}</span>
+    <span class="badge" title="Signal byte order">{message.byte_order}</span>
+    <span class="badge" title="Signal count">{signalCountLabel}</span>
+    <span class="badge source" class:fallback={isFallback} title={isFallback ? "Fallback entry from the debug-tool API catalog" : "Generated from shared/can/can_*.yaml"}>
+      {isFallback ? "API fallback" : "YAML"}
+    </span>
   </div>
+
+  {#if isFallback}
+    <div class="metadata-warning" role="note">
+      No YAML byte map for this message. Signal positions are debug API fallback positions.
+    </div>
+  {/if}
 
   {#if message.comment && mode !== "dictionary"}
     <p class="message-comment">{message.comment}</p>
@@ -128,6 +155,10 @@
     padding: 12px;
   }
 
+  .message-card.is-fallback {
+    border-right-color: color-mix(in srgb, var(--warn) 45%, var(--panel-border));
+  }
+
   .message-card[data-freshness="live"],
   .message-card[data-freshness="fresh"] {
     border-top-color: color-mix(in srgb, var(--ok) 60%, var(--panel-border));
@@ -147,7 +178,7 @@
     border: 0;
     display: grid;
     gap: 8px;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     min-height: 28px;
     padding: 0;
     text-align: left;
@@ -155,6 +186,22 @@
 
   .message-head:hover {
     color: var(--accent);
+  }
+
+  .message-head.no-raw {
+    cursor: default;
+  }
+
+  .message-head.no-raw:hover {
+    color: inherit;
+  }
+
+  .message-arrow {
+    color: var(--card-color);
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 0.78rem;
+    font-weight: 800;
+    width: 12px;
   }
 
   .message-id,
@@ -173,11 +220,55 @@
   }
 
   .message-meta {
-    color: var(--muted);
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 12px;
-    font-size: 0.74rem;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .badge {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    color: var(--muted);
+    display: inline-flex;
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1.2;
+    min-height: 24px;
+    max-width: 100%;
+    padding: 4px 7px;
+    text-transform: uppercase;
+  }
+
+  .badge.sender {
+    border-color: color-mix(in srgb, var(--cat-drive) 45%, var(--panel-border));
+    color: var(--cat-drive);
+  }
+
+  .badge.receiver {
+    border-color: color-mix(in srgb, var(--ok) 45%, var(--panel-border));
+    color: var(--ok);
+  }
+
+  .badge.source {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-border));
+    color: var(--accent);
+  }
+
+  .badge.fallback {
+    border-color: color-mix(in srgb, var(--warn) 55%, var(--panel-border));
+    color: var(--warn);
+  }
+
+  .metadata-warning {
+    background: color-mix(in srgb, var(--warn) 12%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--panel-border));
+    border-radius: 6px;
+    color: var(--warn);
+    font-size: 0.76rem;
+    font-weight: 700;
+    padding: 8px 10px;
   }
 
   .message-comment {
