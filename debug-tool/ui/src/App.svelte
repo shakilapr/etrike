@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import CanDictionary from "./components/CanDictionary.svelte";
   import CanInjector from "./components/CanInjector.svelte";
   import CanMonitor from "./components/CanMonitor.svelte";
   import Controller from "./components/Controller.svelte";
@@ -14,7 +15,7 @@
   import { errorLog, logError } from "./stores/errors";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
-  type Tab = "dashboard" | "monitor" | "injector" | "controller" | "unit-test" | "pipeline" | "stats";
+  type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats";
 
   let activeTab: Tab = "dashboard";
   let ids: CanMessageDef[] = [];
@@ -25,6 +26,7 @@
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "dashboard", label: "Dashboard" },
     { id: "monitor", label: "CAN Monitor" },
+    { id: "dictionary", label: "CAN Dictionary" },
     { id: "injector", label: "Injector" },
     { id: "controller", label: "Controller" },
     { id: "unit-test", label: "Unit Test" },
@@ -348,6 +350,8 @@
       <Dashboard {ids} />
     {:else if activeTab === "monitor"}
       <CanMonitor {ids} />
+    {:else if activeTab === "dictionary"}
+      <CanDictionary {ids} />
     {:else if activeTab === "injector"}
       <CanInjector {ids} {templates} />
     {:else if activeTab === "controller"}

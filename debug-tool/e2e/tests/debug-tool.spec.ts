@@ -12,10 +12,10 @@ test.describe("Debug Tool", () => {
     await expect(page.locator(".status-strip")).toBeVisible();
   });
 
-  test("all seven tabs are present", async ({ page }) => {
+  test("all eight tabs are present", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("nav.tabs button")).toHaveCount(7);
-    const tabs = ["Dashboard", "CAN Monitor", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline"];
+    await expect(page.locator("nav.tabs button")).toHaveCount(8);
+    const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline"];
     for (const name of tabs) {
       await expect(page.locator("nav.tabs").getByText(name)).toBeVisible();
     }
@@ -25,6 +25,13 @@ test.describe("Debug Tool", () => {
     await page.goto("/");
     await page.locator("nav.tabs").getByText("CAN Monitor").click();
     await expect(page.locator("h2")).toContainText("CAN Monitor");
+  });
+
+  test("navigating to dictionary tab works", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByText("CAN Dictionary").click();
+    await expect(page.locator("h2")).toContainText("CAN Dictionary");
+    await expect(page.locator("[data-testid=dictionary-detail]").first()).toBeVisible();
   });
 
   test("navigating to injector shows bus selector", async ({ page }) => {
