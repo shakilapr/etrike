@@ -309,8 +309,10 @@ GPIO 40 : INT ← MCP2515
 |---|--------|------|------|-------------|-------|
 | 1 | AUTO Mode Bulb | 25 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = bulb |
 | 2 | MANUAL Mode Bulb | 26 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = bulb |
-| 3 | 12V Power Relay | 27 | Digital out | Relay coil → 12 V | Relay COM = 12 V bus, NO = accessories. Opens in ESTOP. |
-| 4 | WDT Toggle | 23 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety_task |
+| 3 | READY Bulb | 17 | Digital out | Relay coil → 12 V | Green — system ready (AUTO/MANUAL, RT alive, no faults) |
+| 4 | ESTOP Bulb | 20 | Digital out | Relay coil → 12 V | Red — dedicated ESTOP indicator |
+| 5 | 12V Power Relay | 27 | Digital out | Relay coil → 12 V | Relay COM = 12 V bus, NO = accessories. Opens in ESTOP. |
+| 6 | WDT Toggle | 23 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety_task |
 
 ### 4.6 SYS — GPIO Quick Reference
 
@@ -331,10 +333,10 @@ GPIO 13 : Gear S sense — TLP281 opto ch2 input
 GPIO 14 : Gear R sense — TLP281 opto ch3 input
 GPIO 15 : MCP4725 DAC SDA (I2C addr 0x60)
 GPIO 16 : MCP4725 DAC SCL
-GPIO 17 : (unused)
+GPIO 17 : READY bulb (green) — relay output
 GPIO 18 : Left turn lamp — relay output
 GPIO 19 : Right turn lamp — relay output
-GPIO 20 : (unused)
+GPIO 20 : ESTOP bulb (red) — relay output
 GPIO 21 : Brake light — relay output
 GPIO 22 : Headlight — relay output
 GPIO 23 : WDT toggle → TPS3850 WDI (20 Hz)
@@ -976,10 +978,10 @@ GPIO 13 : Gear S sense ← TLP281 ch2                 [IN, 10k pull-up]
 GPIO 14 : Gear R sense ← TLP281 ch3                 [IN, 10k pull-up]
 GPIO 15 : MCP4725 DAC SDA                           [I/O, I2C addr 0x60]
 GPIO 16 : MCP4725 DAC SCL                           [OUT, I2C]
-GPIO 17 : —                                         [unused]
+GPIO 17 : READY bulb (green) relay                  [OUT, active-high]
 GPIO 18 : Left turn lamp relay                      [OUT, active-high]
 GPIO 19 : Right turn lamp relay                     [OUT, active-high]
-GPIO 20 : —                                         [unused]
+GPIO 20 : ESTOP bulb (red) relay                    [OUT, active-high]
 GPIO 21 : Brake light relay                         [OUT, active-high]
 GPIO 22 : Headlight relay                           [OUT, active-high]
 GPIO 23 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]

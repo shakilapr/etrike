@@ -702,6 +702,19 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbManual), out.manual_bulb ? 1 : 0);
 #endif
 
+        // Green "ready" bulb: AUTO or MANUAL, RT alive, no brake fault
+        can::Mode mode = g_mode_mgr.mode();
+        bool ready = (mode == can::Mode::Auto || mode == can::Mode::Manual)
+                  && g_safety.heartbeat_ok()
+                  && !g_brake_fault_active.load(std::memory_order_relaxed);
+        // Red "ESTOP" bulb: dedicated, independent of brake lamp
+        bool estop = (mode == can::Mode::Estop);
+
+#ifndef TESTING
+        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), ready ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), estop ? 1 : 0);
+#endif
+
         vTaskDelayUntil(&last, period);
     }
 }
@@ -851,6 +864,12 @@ extern "C" void app_main() {
     g_dcdc.init();
     g_indicator.init();
     g_wdt.init();
+
+    // Init status bulbs (green=ready, red=ESTOP) — start both OFF
+    gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbReady), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), 0);
+    gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbEstop), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), 0);
 
 
     // 3. Create queues
