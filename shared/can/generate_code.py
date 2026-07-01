@@ -159,8 +159,8 @@ def generate_can_ids_ts(db) -> str:
     fwd_low_to_high = sorted(low_ids & high_ids)
     lines.append("// ── Gateway forwarding rules ────────────────────────────────")
     lines.append("// Messages forwarded low→high by RT (transparent copy)")
-    lines.append(f"export const FWD_LOW_TO_HIGH: number[] = {[hex(x) for x in fwd_low_to_high]};")
-    lines.append(f"export const FWD_HIGH_TO_LOW: number[] = {[hex(x) for x in fwd_low_to_high]};")
+    lines.append(f"export const FWD_LOW_TO_HIGH: number[] = {[f'0x{x:03X}' for x in fwd_low_to_high]};")
+    lines.append(f"export const FWD_HIGH_TO_LOW: number[] = {[f'0x{x:03X}' for x in fwd_low_to_high]};")
     lines.append("// (Same set — bidirectional forwarding for these IDs)")
     lines.append("")
 

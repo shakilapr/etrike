@@ -44,7 +44,8 @@ BO_ 770 HOST_LIGHT_CMD: 1 Host
 
 BO_ 1536 SYS_DIAG_RPT: 8 SYS
  SG_ SYS_DiagMode : 7|8@0+ (1,0) [0|2] "" Vector__XXX
- SG_ SYS_DiagBrakeEngaged : 15|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_DiagBrakeEngaged : 15|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_DiagBrakeFault : 14|1@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SYS_DiagHeartbeatOk : 23|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SYS_DiagEstopActive : 31|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SYS_DiagFreeHeapKb : 39|16@0+ (1,0) [0|65535] "KB" Vector__XXX
@@ -75,6 +76,7 @@ CM_ SG_ 17 SYS_HeartbeatOk "0=RT alive counter frozen >1000ms, 1=incrementing";
 CM_ SG_ 17 SYS_LightState "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active";
 CM_ SG_ 18 SYS_DcdcEnable "ESTOP->1(on); maintains 12V for MCUs, CAN transceivers, brake light";
 CM_ SG_ 518 MTR_FaultFlags "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict";
+CM_ SG_ 1536 SYS_DiagBrakeFault "SEB L3 fault or brake following-error active";
 CM_ SG_ 2045 RT_AliveCtr "Low bus timeout 1000ms->SYS ESTOP";
 CM_ SG_ 2046 SYS_AliveCtr "10 Hz / 200ms timeout -> RT brake takeover + ESTOP";
 

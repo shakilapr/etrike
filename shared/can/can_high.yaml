@@ -286,7 +286,8 @@ protocols:
         comment: "SYS diagnostics report. Forwarded low→high by RT."
         signals:
           - {name: SYS_DiagMode,          byte: 0, bit_offset: 0, size: 8,  min: 0, max: 2}
-          - {name: SYS_DiagBrakeEngaged,  byte: 1, bit_offset: 0, size: 8,  min: 0, max: 1}
+          - {name: SYS_DiagBrakeEngaged,  byte: 1, bit_offset: 0, size: 1,  min: 0, max: 1}
+          - {name: SYS_DiagBrakeFault,    byte: 1, bit_offset: 1, size: 1,  min: 0, max: 1, comment: "SEB L3 fault or brake following-error active"}
           - {name: SYS_DiagHeartbeatOk,   byte: 2, bit_offset: 0, size: 8,  min: 0, max: 1}
           - {name: SYS_DiagEstopActive,   byte: 3, bit_offset: 0, size: 8,  min: 0, max: 1}
           - {name: SYS_DiagFreeHeapKb,    byte: 4, bit_offset: 0, size: 16, min: 0, max: 65535, unit: KB}

@@ -83,7 +83,8 @@ static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Host
 static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
 static std::atomic<uint8_t>  g_rt_safety_state{0}; // RT safety_state from 0x210 (0=Normal, 1=InternalEstop, 2=Fault)
-static uint8_t               g_seb_status_raw[8] = {};
+static std::atomic<uint8_t>  g_seb_status_byte0{0xFF}; // byte 0 from 0x721 (alignment + error_status), 0xFF = no frame yet
+static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 MTR_MOTOR_FBK (C6b)
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
@@ -104,6 +105,8 @@ static std::atomic<uint8_t>  g_motor_fault_flags{0};
 static std::atomic<uint16_t> g_seb_actual_stroke_raw{600};
 // Timestamp of last 0x721 arrival (for staleness check §8.10)
 static std::atomic<uint32_t> g_last_seb_status_tick{0};
+// SEB rolling counter incrementing (H1: true = SEB is acknowledging commands)
+static std::atomic<bool>     g_seb_rolling{true};
 
 // ── Brake commanded stroke (set by brake task after build_command) ──
 static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
@@ -166,6 +169,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             auto fbk = can::MtrMotorFbk::from_frame(fr);
             g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
+            g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
             g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
             // Gap #15: Check if MTR has triggered local ESTOP (ESTOP_ACTIVE bit).
@@ -217,9 +221,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     break;
                 }
             }
-            for (int i = 0; i < 8 && i < fr.dlc; ++i) {
-                g_seb_status_raw[i] = fr.data[i];
-            }
+            // Store byte 0 atomically (alignment, error_status, control_mode) —
+            // eliminates data race with brake task reading raw byte array (H3).
+            g_seb_status_byte0.store(fr.data[0], std::memory_order_relaxed);
             // F7: Extract SEB error_status from byte 0 bits 6-7 (architecture §8.10)
             {
                 uint8_t es = (fr.data[0] >> 6) & 0x3;
@@ -233,6 +237,20 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             uint16_t actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
             g_seb_actual_stroke_raw.store(actual_raw, std::memory_order_relaxed);
             g_last_seb_status_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+
+            // H1: Track SEB rolling counter — if RT's 0x7B9 is failing, SEB stops
+            // acknowledging. SYS detects stale status and resumes sending 0x7B9.
+            static uint8_t  last_seb_roll = 0xFF;
+            static bool     seb_roll_init = false;
+            uint8_t seb_roll = (fr.data[6] >> 4) & 0x0F;
+            if (!seb_roll_init || seb_roll != last_seb_roll) {
+                seb_roll_init = true;
+                last_seb_roll = seb_roll;
+                g_seb_rolling.store(true, std::memory_order_relaxed);  // SEB is acknowledging
+            } else {
+                // Frozen rolling counter — SEB may not be receiving commands
+                g_seb_rolling.store(false, std::memory_order_relaxed);
+            }
             // Brake following error monitor (§8.10): cmp cmd vs actual stroke
             {
                 uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
@@ -492,17 +510,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 #else
         // ── MTR owns motor: EGAS L2 monitoring only ─────────────
         // SYS does NOT write the DAC or drive gear relays.
-        // Monitors 0x204 setpoint vs 0x206 actual on CAN.
-        if (mode == can::Mode::Auto) {
-            int32_t cmd    = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
-            int32_t actual = g_actual_speed_mmps.load(std::memory_order_relaxed);
-            if (g_safety.check_egas_l2(now, cmd, actual)) {
-                ESP_LOGE(TAG, "EGAS L2: speed mismatch cmd=%ld actual=%ld — ESTOP",
-                         (long)cmd, (long)actual);
-                g_mode_mgr.force_estop();
-                g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
-            }
-        }
+        // EGAS L2 speed mismatch check is handled by task_safety at 20 Hz
+        // (compares 0x204 setpoint vs 0x206 actual, independent of this task).
+        // This task exists for the SYS_OWNS_MOTOR bench path above.
+        (void)mode; (void)now; (void)startup_grace; // unused in production path
 #endif
 
         vTaskDelayUntil(&last, period);
@@ -529,8 +540,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs internally
 #else
         // MTR owns motor: monitor gear mismatch via CAN
-        uint8_t reported  = g_current_gear.load(std::memory_order_relaxed);   // from 0x206
-        uint8_t commanded = g_setpoint_gear.load(std::memory_order_relaxed);  // from 0x204
+        uint8_t reported  = g_mtr_gear_state.load(std::memory_order_relaxed);   // from 0x206
+        uint8_t commanded = g_setpoint_gear.load(std::memory_order_relaxed);    // from 0x204
         if (reported != commanded && mode == can::Mode::Auto) {
             static int mismatch_ticks = 0;
             if (++mismatch_ticks > 50) {  // 500ms debounce
@@ -577,12 +588,18 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Suppress SYS 0x7B9 in AUTO when RT is healthy, no rider override,
         // AND RT safety_state is Normal (not in InternalEstop/takeover).
+        // H1: Also require SEB rolling counter to be incrementing — if RT's
+        // 0x7B9 is failing, SEB stops acknowledging and SYS resumes sending.
         bool rt_alive     = g_safety.heartbeat_ok();
         bool rt_normal    = (g_rt_safety_state.load(std::memory_order_relaxed) == 0);
-        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal && !lever && !estop;
+        bool seb_ack      = g_seb_rolling.load(std::memory_order_relaxed);
+        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal && seb_ack && !lever && !estop;
 
         can::VcuSebReq seb_cmd;
-        bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode, g_seb_status_raw, seb_cmd);
+        uint8_t  seb_b0 = g_seb_status_byte0.load(std::memory_order_relaxed);
+        uint16_t seb_stroke = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
+        bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode,
+                                      seb_b0, seb_stroke, seb_cmd);
         // Store commanded stroke for following-error monitor even when suppressed
         if (should_tx) {
             g_cmd_stroke_raw.store(seb_cmd.stroke_req, std::memory_order_relaxed);

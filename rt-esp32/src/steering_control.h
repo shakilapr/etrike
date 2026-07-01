@@ -108,8 +108,11 @@ public:
 
             // Gap C3: following-error check during ESTOP centering ramp.
             // Both m_active_angle and ses_angle_raw are offset-free 0.1° units.
+            // Use int32_t to avoid overflow when angles span large ranges
+            // (e.g., m_active_angle=30000, ses_angle_raw=-30000 → diff=60000,
+            //  which overflows int16_t).
             if (ses_angle_raw != INT16_MIN) {
-                int16_t err = std::abs(m_active_angle - ses_angle_raw);
+                int32_t err = std::abs(int32_t(m_active_angle) - int32_t(ses_angle_raw));
                 if (err > 50) {  // 5° = 50 in 0.1° units
                     if (m_estop_following_err_start_ms == 0)
                         m_estop_following_err_start_ms = now_ms;

@@ -22,10 +22,14 @@ public:
 
     // Call @ 50 Hz. lever: brake lever pressed. estop: ESTOP active.
     // brake_kpa: from 0x205 (0=release). mode: current system mode.
-    // seb_status: raw 8 bytes from 0x721 (nullptr if none received yet).
+    // status_byte0: byte 0 from 0x721 (alignment, error_status bits).
+    //   Use 0xFF if no 0x721 frame has been received yet.
+    // stroke_raw: LE u16 from 0x721 bytes 2-3 (raw stroke value).
     // Returns true if a 0x7B9 frame should be transmitted. Fills out_frame.
     bool tick(bool lever, bool estop, int32_t brake_kpa, can::Mode mode,
-              const uint8_t* seb_status, can::VcuSebReq& out) {
+              uint8_t status_byte0, uint16_t stroke_raw, can::VcuSebReq& out) {
+        bool has_status = (status_byte0 != 0xFF);  // valid 0x721 received
+
         switch (m_state) {
         case BrakeState::BOOT_WAIT:
             if (++m_boot_timer >= kBrakeBootTicks) {
@@ -35,13 +39,12 @@ public:
 
         case BrakeState::LISTEN_SYNC: {
             // Architecture §8.6: extract current stroke, hold position on first sync
-            if (seb_status) {
-                uint16_t raw_stroke = uint16_t(seb_status[2] | (seb_status[3] << 8));
+            if (has_status) {
                 if (m_sync_stroke_raw == 0) {
-                    m_sync_stroke_raw = raw_stroke;  // capture for hold-on-sync
+                    m_sync_stroke_raw = stroke_raw;  // capture for hold-on-sync
                 }
                 // Alignment bit in byte 0 bit 0
-                if (seb_status[0] & 1) {
+                if (status_byte0 & 1) {
                     m_state = BrakeState::ACTIVE;
                     // First frame: hold current position, then normal logic takes over
                     m_use_sync_stroke = true;
@@ -65,7 +68,7 @@ public:
 
         case BrakeState::DEGRADED:
             // Architecture §8.6: transmit 50 Hz with lever-based defaults, ignore CAN 0x205
-            if (seb_status && (seb_status[0] & 1)) {
+            if (has_status && (status_byte0 & 1)) {
                 m_state = BrakeState::ACTIVE;    // recover when 0x721 alignment arrives
             }
             build_command(lever, estop, 0, mode, out); // DEGRADED: lever-only, no CAN pressure

@@ -46,6 +46,9 @@ constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 constexpr int kCmdStaleTimeoutMs   = 200;   // 0x204 staleness (20 missed frames at 100 Hz → 200ms)
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 
+// ── Gear safety ───────────────────────────────────────────────────
+constexpr int kGearSwitchMaxSpeedMmps = 50;  // max speed for safe gear change (mm/s)
+
 // ── Fault flags (bit positions in 0x206 fault_flags byte) ─────────
 // Gap #15: Canonical definitions in shared/shared_config.h (shared::kMtrFault*).
 // Local aliases retained for MTR code compatibility.
