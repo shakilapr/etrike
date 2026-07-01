@@ -292,9 +292,10 @@ function moveBitHoverPanel(event) {
   if (!panel) return;
   const width = 340, height = 180;
   const left = Math.max(12, Math.min(event.clientX + 16, window.innerWidth - width - 12));
-  const top = Math.max(12, Math.min(event.clientY + 18, window.innerHeight - height - 12));
+  const cellTop = event.currentTarget ? event.currentTarget.getBoundingClientRect().top : event.clientY;
+  const bottom = Math.max(8, Math.min(window.innerHeight - height - 12, window.innerHeight - cellTop + 10));
   panel.style.left = `${left}px`;
-  panel.style.top = `${top}px`;
+  panel.style.bottom = `${bottom}px`;
 }
 
 // Hover bit cell → highlight signal row

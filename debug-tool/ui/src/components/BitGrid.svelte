@@ -91,8 +91,8 @@
     const viewportWidth = typeof window === "undefined" ? 1440 : window.innerWidth;
     const viewportHeight = typeof window === "undefined" ? 900 : window.innerHeight;
     const left = Math.max(12, Math.min(x + 16, viewportWidth - width - 12));
-    const top = Math.max(12, Math.min(y + 18, viewportHeight - height - 12));
-    return `left:${left}px;top:${top}px;`;
+    const bottom = Math.max(8, Math.min(viewportHeight - height - 12, viewportHeight - y + 10));
+    return `left:${left}px;bottom:${bottom}px;`;
   }
 
   function setPointer(event: MouseEvent | FocusEvent) {
@@ -100,7 +100,7 @@
     if (!(target instanceof HTMLElement)) return;
     const rect = target.getBoundingClientRect();
     pointerX = "clientX" in event ? event.clientX : rect.left + rect.width / 2;
-    pointerY = "clientY" in event ? event.clientY : rect.bottom;
+    pointerY = rect.top;
   }
 
   function showBit(event: MouseEvent | FocusEvent, byte: number, bit: number, signalIndex: number) {
