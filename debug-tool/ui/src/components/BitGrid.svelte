@@ -152,24 +152,28 @@
       {/each}
     </div>
   </div>
-  {#if activeSignal >= 0}
+  <div class="bit-inspector" role="status">
+    {#if activeSignal >= 0}
       {@const signal = message.signals[activeSignal]}
       {@const activeParts = activeBit.match(/^B(\d+)\.(\d+)$/)}
       {@const activeMeaning = activeParts ? bitMeaningFor(activeSignal, Number(activeParts[1]), Number(activeParts[2])) : ""}
-    <div class="bit-inspector" role="status">
       <strong>{activeBit}</strong>
       <span>{signal.name}</span>
       {#if activeMeaning}
         <b>{activeMeaning}</b>
       {/if}
       <em>{signal.size}-bit {signal.type} · scale {scaleFor(activeSignal)}{signal.unit ? ` ${signal.unit}` : ""}</em>
-      {#if valuesFor(activeSignal)}
-        <small>{valuesFor(activeSignal)}</small>
-      {/if}
-      {#if signal.comment}
-        <small>{signal.comment}</small>
-      {/if}
-    </div>
+    {:else}
+      <strong>Bit detail</strong>
+      <span>{message.name}</span>
+      <em>Hover a mapped bit to inspect byte position, type, scale, and bit meaning.</em>
+    {/if}
+  </div>
+
+  {#if activeSignal >= 0}
+    {@const signal = message.signals[activeSignal]}
+    {@const activeParts = activeBit.match(/^B(\d+)\.(\d+)$/)}
+    {@const activeMeaning = activeParts ? bitMeaningFor(activeSignal, Number(activeParts[1]), Number(activeParts[2])) : ""}
     <div class="bit-float-tooltip" role="tooltip" style={tooltipStyle}>
       <strong>{signal.name}</strong>
       <small>{activeBit} · {signal.size}-bit {signal.type}</small>
@@ -333,7 +337,7 @@
     flex-wrap: wrap;
     gap: 6px 10px;
     margin-top: 8px;
-    min-height: 34px;
+    min-height: 42px;
     padding: 7px 10px;
   }
 
@@ -351,11 +355,13 @@
     font-family: inherit;
   }
 
-  .bit-inspector em,
-  .bit-inspector small {
+  .bit-inspector em {
     color: var(--muted);
     font-size: 0.72rem;
     font-style: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .bit-empty {
