@@ -24,6 +24,7 @@
   $: showDictionary = mode === "dictionary";
   $: isFallback = message.protocol === "debug_api_fallback";
   $: receiverLabel = (message.receivers.length ? message.receivers : ["all"]).join(", ");
+  $: receivers = message.receivers.length ? message.receivers : ["all"];
   $: signalCountLabel = message.signals.length === 1 ? "1 signal" : `${message.signals.length} signals`;
   $: canExpandRaw = mode === "monitor" && Boolean(frame);
   $: expandLabel = canExpandRaw ? (expanded ? "Hide raw frame detail" : "Show raw frame detail") : "No live raw frame to expand";
@@ -105,6 +106,18 @@
   {#if isFallback}
     <div class="metadata-warning" role="note">
       No YAML byte map for this message. Signal positions are debug API fallback positions.
+    </div>
+  {/if}
+
+  {#if mode === "dictionary"}
+    <div class="route-map" aria-label={`${message.name} sender and receivers`}>
+      <span class="route-node tx">TX {message.sender}</span>
+      <span class="route-arrow" aria-hidden="true">-&gt;</span>
+      <span class="route-receivers">
+        {#each receivers as receiver}
+          <span class="route-node rx">RX {receiver}</span>
+        {/each}
+      </span>
     </div>
   {/if}
 
@@ -280,6 +293,48 @@
     font-size: 0.76rem;
     font-weight: 700;
     padding: 8px 10px;
+  }
+
+  .route-map {
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .route-node {
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 4px 8px;
+    text-transform: uppercase;
+  }
+
+  .route-node.tx {
+    border-color: color-mix(in srgb, var(--cat-drive) 55%, var(--panel-border));
+    color: var(--cat-drive);
+  }
+
+  .route-node.rx {
+    border-color: color-mix(in srgb, var(--ok) 50%, var(--panel-border));
+    color: var(--ok);
+  }
+
+  .route-arrow {
+    color: var(--accent);
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    font-weight: 800;
+  }
+
+  .route-receivers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .message-comment {
