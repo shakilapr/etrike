@@ -38,7 +38,7 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
     await expect(highBusStatus).toContainText(/High bus/i);
   });
 
-  test("CAN Monitor tab shows high-bus frames", async ({ page }) => {
+  test("CAN Monitor tab shows high-bus monitor groups", async ({ page }) => {
     // Navigate to CAN Monitor tab
     await page.click("text=CAN Monitor");
 
@@ -48,13 +48,9 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
       await highBusTab.click();
     }
 
-    // Wait for monitor cards/index entries to appear
-    await page.waitForSelector("[data-testid=frame-row]", { timeout: 5000 });
-
-    // Check that frame cards exist in the monitor
-    const frameRows = page.locator("[data-testid=frame-row]");
-    const count = await frameRows.count();
-    expect(count).toBeGreaterThan(0);
+    await expect(page.locator(".monitor-cards")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".cat-card").first()).toBeVisible();
+    await expect(page.locator("body")).toContainText(/0x7FD|0x210|0x220|0x310|0x311/);
   });
 
   test("high bus shows 0x7FD RT_HEARTBEAT in statistics/catalog", async ({ page }) => {
@@ -85,8 +81,8 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
   });
 
   test("all 5 MCP2515 telemetry IDs appear in the message catalog", async ({ page }) => {
-    // Navigate to a tab that shows the message list
-    await page.click("text=CAN Monitor");
+    // Navigate to the dictionary tab that shows the full message catalog.
+    await page.click("text=CAN Dictionary");
     await page.waitForTimeout(1000);
 
     const pageContent = await page.textContent("body") ?? "";
