@@ -31,7 +31,8 @@ public:
 
     /// Read TLP281 optoisolator inputs.
     /// Returns the gear enum corresponding to the active sense line.
-    /// If multiple lines are active, returns N (fail-safe).
+    /// If multiple lines are active, returns N (fail-safe) and sets
+    /// the conflict-detected flag (query via gear_conflict_detected()).
     /// If no line is active, returns N.
     can::Gear read_sense() {
         bool d = read_sense_pin(kGearDSense);
@@ -41,13 +42,20 @@ public:
         int count = (d ? 1 : 0) + (s ? 1 : 0) + (r ? 1 : 0);
         if (count > 1) {
             // Conflict — multiple gears selected. Fail-safe to N.
+            m_gear_conflict = true;
             return can::Gear::N;
         }
+        m_gear_conflict = false;
         if (d) return can::Gear::D;
         if (s) return can::Gear::S;
         if (r) return can::Gear::R;
         return can::Gear::N;
     }
+
+    /// Returns true if the last read_sense() detected a gear conflict
+    /// (multiple gear lines active simultaneously). Caller should set
+    /// the kMtrFaultGearConflict flag in g_fault_flags.
+    bool gear_conflict_detected() const { return m_gear_conflict; }
 
     /// Set relay outputs to match the given gear.
     /// WARNING: Shifting 72V contactors under load can damage hardware.
@@ -77,19 +85,20 @@ private:
     /// Read a single TLP281 sense pin (active-low).
     /// Returns true if the gear is active (GPIO LOW — TLP281 active-low).
     static bool read_sense_pin(int pin) {
-        GPIO_TypeDef* port = (pin < 16) ? GPIOA : GPIOB;
+        GPIO_TypeDef* port = (pin < 16) ? GPIOA : ((pin < 32) ? GPIOB : GPIOC);
         uint16_t mask = 1 << (pin & 0x0F);
         return HAL_GPIO_ReadPin(port, mask) == GPIO_PIN_RESET;
     }
 
     /// Set a single relay output pin.
     static void set_relay_pin(int pin, bool on) {
-        GPIO_TypeDef* port = (pin < 16) ? GPIOA : GPIOB;
+        GPIO_TypeDef* port = (pin < 16) ? GPIOA : ((pin < 32) ? GPIOB : GPIOC);
         uint16_t mask = 1 << (pin & 0x0F);
         HAL_GPIO_WritePin(port, mask, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 
     can::Gear m_current_gear = can::Gear::N;
+    bool       m_gear_conflict = false;
 };
 
 /// Global gear control instance.

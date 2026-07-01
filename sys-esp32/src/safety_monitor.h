@@ -33,7 +33,7 @@ private:
     std::atomic<bool> m_brake_lever {false};
     std::atomic<int64_t>  m_last_hb_us{0};
     uint8_t  m_last_hb_ctr = 0;
-    bool     m_hb_ever_seen = false;
+    std::atomic<bool> m_hb_ever_seen{false};
 };
 
 // Returns monotonic microseconds (host: stub with incrementing counter)

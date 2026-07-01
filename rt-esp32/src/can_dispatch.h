@@ -138,6 +138,11 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
     if (fr.id == can::kIdBbwStatus && !from_high) {
+        // Validate checksum before using data (matching SYS pattern)
+        uint8_t cksum = 0;
+        for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
+        if (fr.dlc >= 8 && (cksum ^ 0xFF) != fr.data[7]) return;  // drop corrupt frame
+
         // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
         // In Stroke mode it's Stroke[15:8] — not pressure data.
         uint8_t seb_mode = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure

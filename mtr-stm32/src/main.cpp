@@ -196,15 +196,11 @@ void task_safety(void* pvParameters) {
                 /* Stale: zero command so control loop sees safe values */
                 g_cmd_speed_mmps.store(0, std::memory_order_relaxed);
                 g_cmd_gear.store(0, std::memory_order_relaxed);
-                /* Set stale fault flag */
-                uint8_t ff = g_fault_flags.load(std::memory_order_relaxed);
-                ff |= mtr::kFaultCmdTimeout;
-                g_fault_flags.store(ff, std::memory_order_relaxed);
+                /* Set stale fault flag — atomic RMW to avoid race with task_control */
+                g_fault_flags.fetch_or(mtr::kFaultCmdTimeout, std::memory_order_relaxed);
             } else {
                 /* Clear stale fault flag when commands resume */
-                uint8_t ff = g_fault_flags.load(std::memory_order_relaxed);
-                ff &= ~mtr::kFaultCmdTimeout;
-                g_fault_flags.store(ff, std::memory_order_relaxed);
+                g_fault_flags.fetch_and(~mtr::kFaultCmdTimeout, std::memory_order_relaxed);
             }
         }
     }
@@ -233,36 +229,45 @@ void task_safety(void* pvParameters) {
 void task_control(void* pvParameters) {
     (void)pvParameters;
     TickType_t last_wake = xTaskGetTickCount();
+    uint32_t startup_end_tick = last_wake + pdMS_TO_TICKS(mtr::kStartupGracePeriodMs);
 
     for (;;) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000 / mtr::kControlLoopHz));
 
         bool     estop   = g_estop_active.load(std::memory_order_relaxed);
         can::Mode mode   = g_mode.load(std::memory_order_relaxed);
+        TickType_t now   = xTaskGetTickCount();
+
+        /* ── Startup grace expiry ── */
+        bool grace = g_startup_grace.load(std::memory_order_relaxed);
+        if (grace && now >= startup_end_tick) {
+            g_startup_grace.store(false, std::memory_order_relaxed);
+            grace = false;
+            /* Set StartupReady fault flag — MTR boot complete, ready for commands */
+            g_fault_flags.fetch_or(shared::kMtrFaultStartupReady, std::memory_order_relaxed);
+        }
 
         /* ── Handle ESTOP ── */
         if (estop || mode == can::Mode::Estop) {
-            mtr::g_dac.write(0);                  // Cut throttle
+            if (!mtr::g_dac.write(0)) {
+                // I2C write failed — throttle may still be at previous voltage.
+                // Hardware ESTOP GPIO (Level 3) is the backstop.
+                g_fault_flags.fetch_or(shared::kMtrFaultAdcFault, std::memory_order_relaxed);
+            }
             mtr::g_gear.all_off();                // All relays off → N
 
             g_actual_speed_mmps.store(0, std::memory_order_relaxed);
             g_current_gear.store(static_cast<uint8_t>(can::Gear::N),
                                  std::memory_order_relaxed);
 
-            /* Set ESTOP_ACTIVE fault flag */
-            uint8_t ff = g_fault_flags.load(std::memory_order_relaxed);
-            ff |= mtr::kFaultEstopActive;
-            g_fault_flags.store(ff, std::memory_order_relaxed);
+            /* Set ESTOP_ACTIVE fault flag — atomic RMW to avoid race with task_safety */
+            g_fault_flags.fetch_or(shared::kMtrFaultEstopActive, std::memory_order_relaxed);
 
             continue;
         }
 
         /* ── Clear ESTOP fault bit when not in ESTOP ── */
-        {
-            uint8_t ff = g_fault_flags.load(std::memory_order_relaxed);
-            ff &= ~mtr::kFaultEstopActive;
-            g_fault_flags.store(ff, std::memory_order_relaxed);
-        }
+        g_fault_flags.fetch_and(~shared::kMtrFaultEstopActive, std::memory_order_relaxed);
 
         /* ── Manual mode: pass-through ── */
         if (mode == can::Mode::Manual) {
@@ -270,11 +275,25 @@ void task_control(void* pvParameters) {
             uint16_t raw_adc = mtr::g_throttle.read_raw();
             int16_t speed = mtr::g_throttle.tick(raw_adc);
 
+            /* ADC stuck-at-rail detection: 0 = short to GND, 4095 = short to VCC */
+            if (raw_adc == 0 || raw_adc == 4095) {
+                g_fault_flags.fetch_or(shared::kMtrFaultAdcFault, std::memory_order_relaxed);
+            } else {
+                g_fault_flags.fetch_and(~shared::kMtrFaultAdcFault, std::memory_order_relaxed);
+            }
+
             /* Write to DAC */
             mtr::g_dac.set_speed_mmps(speed);
 
             /* Read TLP281 gear sense → mirror to relays */
             mtr::g_gear.pass_through();
+
+            /* Check for gear conflict and set fault flag */
+            if (mtr::g_gear.gear_conflict_detected()) {
+                g_fault_flags.fetch_or(shared::kMtrFaultGearConflict, std::memory_order_relaxed);
+            } else {
+                g_fault_flags.fetch_and(~shared::kMtrFaultGearConflict, std::memory_order_relaxed);
+            }
 
             /* Publish for CAN TX tasks */
             g_actual_speed_mmps.store(speed, std::memory_order_relaxed);
@@ -290,8 +309,7 @@ void task_control(void* pvParameters) {
             int32_t  cmd_speed = g_cmd_speed_mmps.load(std::memory_order_relaxed);
             uint8_t  cmd_gear  = g_cmd_gear.load(std::memory_order_relaxed);
             uint32_t last_tick = g_last_cmd_tick.load(std::memory_order_relaxed);
-            uint32_t now       = xTaskGetTickCount();
-            bool stale         = (!g_startup_grace.load(std::memory_order_relaxed))
+            bool stale         = !grace
                                && (now - last_tick > pdMS_TO_TICKS(mtr::kCmdStaleTimeoutMs));
 
             if (stale) {
@@ -299,11 +317,22 @@ void task_control(void* pvParameters) {
                 cmd_gear  = static_cast<uint8_t>(can::Gear::N);
             }
 
+            /* Clamp speed to valid range before DAC write (C5).
+             * Guards against corrupt CAN 0x204 frames producing arbitrary throttle. */
+            if (cmd_speed > shared::kMaxSpeedFwdMmps) cmd_speed = shared::kMaxSpeedFwdMmps;
+            else if (cmd_speed < -shared::kMaxSpeedRevMmps) cmd_speed = -shared::kMaxSpeedRevMmps;
+
             /* Write DAC */
             mtr::g_dac.set_speed_mmps(cmd_speed);
 
-            /* Set gear relays */
-            mtr::g_gear.set_relays(static_cast<can::Gear>(cmd_gear & 0x03));
+            /* Set gear relays — only if speed is safe for contactor switching (C7).
+             * Shifting 72V contactors under load damages hardware. */
+            int16_t current_speed = g_actual_speed_mmps.load(std::memory_order_relaxed);
+            int16_t abs_speed = current_speed >= 0 ? current_speed : int16_t(-current_speed);
+            if (abs_speed <= mtr::kGearSwitchMaxSpeedMmps) {
+                mtr::g_gear.set_relays(static_cast<can::Gear>(cmd_gear & 0x03));
+            }
+            /* else: defer gear change — keep current gear until speed drops */
 
             /* Publish for CAN TX tasks */
             g_actual_speed_mmps.store(

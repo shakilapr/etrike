@@ -1,0 +1,1603 @@
+% ===========================================================================
+%  E-Trike Complete Wiring Reference v0.0.6-alpha
+%  Generated: 2026-07-01
+%  Compile:  pdflatex -interaction=nonstopmode etrike-wiring.tex
+%            pdflatex -interaction=nonstopmode etrike-wiring.tex  (twice for TOC)
+%  Source:   docs/wiring.md
+% ===========================================================================
+
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{XCharter}
+\usepackage[inner=25mm,outer=20mm,top=22mm,bottom=25mm,footskip=14mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% ── Table spacing and behavior ──────────────────────────────────────
+\setlength{\LTpre}{6pt plus 2pt minus 2pt}
+\setlength{\LTpost}{6pt plus 2pt minus 2pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\raggedbottom
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usepackage{soul}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{alltt}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{pmboxdraw}
+\usepackage{textcomp}
+\usepackage{calc}
+
+% ── Prevent overfull hboxes in narrow table columns ─────────────────
+\setlength{\emergencystretch}{3em}
+\tolerance=3000
+\hbadness=10000
+
+% ── Unicode character support ─────────────────────────────────────────
+\DeclareUnicodeCharacter{03A9}{\ensuremath{\Omega}}
+\DeclareUnicodeCharacter{03C0}{\ensuremath{\pi}}
+\DeclareUnicodeCharacter{03B4}{\ensuremath{\delta}}
+\DeclareUnicodeCharacter{03C9}{\ensuremath{\omega}}
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}
+\DeclareUnicodeCharacter{03B8}{\ensuremath{\theta}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{00B0}{\ensuremath{{}^\circ}}
+\DeclareUnicodeCharacter{00B1}{\ensuremath{\pm}}
+\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}}
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{2190}{\ensuremath{\leftarrow}}
+\DeclareUnicodeCharacter{2194}{\ensuremath{\leftrightarrow}}
+\DeclareUnicodeCharacter{25CB}{\ensuremath{\circ}}
+\DeclareUnicodeCharacter{2713}{$\checkmark$}
+
+% ── Title formatting (14pt chapter/section headings, 12pt body) ───────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\fontsize{14}{17}\selectfont}
+  {\chaptertitlename\ \thechapter}{12pt}{}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{14}{17}\selectfont}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{13}{16}\selectfont}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\bfseries\fontsize{12}{15}\selectfont}
+  {\thesubsubsection}{1em}{}
+
+% ── Hyperref setup ────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black,
+  pdfauthor={E-Trike Project},
+  pdftitle={E-Trike Complete Wiring Reference v0.0.6-alpha},
+  pdfsubject={Pin-to-pin wiring for all ECUs, CAN buses, and peripherals},
+  pdfkeywords={CAN bus, embedded systems, distributed control, wiring, GPIO, pinout, ESP32-S3, STM32},
+  bookmarksnumbered=true,
+  bookmarksopen=true,
+  bookmarksopenlevel=1
+}
+
+% ── Code listing style ────────────────────────────────────────────────
+\lstdefinestyle{etrike}{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  breakatwhitespace=true,
+  postbreak=\mbox{$\hookrightarrow$\space},
+  frame=single,
+  framesep=4pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+  showstringspaces=false,
+  columns=flexible,
+  keepspaces=true,
+  tabsize=2,
+  captionpos=b
+}
+\lstset{style=etrike}
+
+% ── Header / footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{E-Trike Wiring Reference}}
+\fancyhead[R]{\small\textit{v0.0.6-alpha}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{14pt}
+
+% ── Part page style ───────────────────────────────────────────────────
+\makeatletter
+\renewcommand{\@endpart}{\vfill\newpage}
+\makeatother
+
+% ── Convenience commands ──────────────────────────────────────────────
+\newcommand{\canid}[1]{\texttt{0x#1}}
+\newcommand{\canname}[1]{\textsc{#1}}
+\newcommand{\gpio}[1]{\texttt{GPIO#1}}
+\newcommand{\voltage}[1]{\ensuremath{#1\,\text{V}}}
+\newcommand{\bitrate}[1]{\ensuremath{#1\,\text{kbit/s}}}
+\newcommand{\frequency}[1]{\ensuremath{#1\,\text{Hz}}}
+\newcommand{\mcu}[1]{\texttt{#1}}
+\newcommand{\pinname}[1]{\texttt{#1}}
+\newcommand{\iicaddr}[1]{\texttt{0x#1}}
+
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% ── Checkbox for pre-power checklists ─────────────────────────────────
+\newcommand{\chkbox}{$\square$}
+
+% ── Page style for title page ─────────────────────────────────────────
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+}
+
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  TITLE PAGE
+% ═══════════════════════════════════════════════════════════════════════
+
+\thispagestyle{empty}
+
+\vspace*{60mm}
+
+\begin{center}
+  {\fontsize{28}{34}\selectfont\textbf{E-Trike}}\\[8mm]
+  {\fontsize{22}{28}\selectfont\textbf{Complete Wiring Reference}}\\[20mm]
+  {\fontsize{14}{18}\selectfont\textit{Pin-to-Pin Wiring for All ECUs, CAN Buses, and Peripherals}}\\[30mm]
+  {\fontsize{12}{15}\selectfont Version 0.0.6-alpha}\\[4mm]
+  {\fontsize{11}{14}\selectfont 2026-07-01}
+\end{center}
+
+\vfill
+
+\begin{center}
+  {\footnotesize
+  Five-Node Distributed Control Architecture\\[2mm]
+  Three CAN Buses --- 72\,V / 12\,V / 5\,V / 3.3\,V --- Galvanic Isolation\\[2mm]
+  Steer-by-Wire \textbullet\ Electro-Hydraulic Brake-by-Wire \textbullet\ EGAS Dual-Redundant Throttle
+  }
+\end{center}
+
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  TABLE OF CONTENTS
+% ═══════════════════════════════════════════════════════════════════════
+
+\setcounter{tocdepth}{1}
+\tableofcontents
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 1 — SYSTEM TOPOLOGY
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{System Topology}
+
+\section{Architecture Overview}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{ECU} & \textbf{MCU} & \textbf{CAN Modules} & \textbf{Role} \\
+\midrule
+RT   & ESP32-S3 & 2 (TWAI + MCP2515 SPI)   & CAN gateway, real-time kinematics \\
+SYS  & ESP32-S3 & 1 (TWAI)                  & Safety monitor (EGAS L2), body control \\
+MTR  & STM32    & 1 (CAN transceiver)       & Motor controller (EGAS L1) \\
+PWT  & ESP32-S3 & 2 (TWAI0 + TWAI1)         & Powertrain CAN gateway \\
+Host & Jetson Orin NX & 1 (built-in CAN)  & High-level autonomy \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{CAN Bus Summary}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Bus} & \textbf{Bitrate} & \textbf{Nodes} & \textbf{Termination} \\
+\midrule
+High       & 500\,kbit/s & Jetson, RT (MCP2515)          & 120\,\textOmega\ at both ends \\
+Low        & 500\,kbit/s & RT, SYS, MTR, PWT, EPS-C, SEB, DC-DC & 120\,\textOmega\ at both ends \\
+Powertrain & 250\,kbit/s & PWT, DC-DC, Motor Controller   & 120\,\textOmega\ at both ends \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Voltage Domains}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Domain} & \textbf{Source} & \textbf{Used By} & \textbf{Isolation} \\
+\midrule
+72\,V DC   & Traction battery & Motor controller, gear relays (COM), DC-DC input & Fuse + contactor \\
+12\,V DC   & DC-DC converter  & Lamps, bulbs, relay coils, EPS-C, SEB, ECU boards & 12\,V relay (SYS \gpio{27}) \\
+5\,V DC    & Onboard regulators & MCP4725 DACs, MCP2515 (TJA1050), gear relay coils & --- \\
+3.3\,V DC  & Onboard regulators & ESP32-S3, STM32, WCMCU-230, TLP281 output side & --- \\
+72\,V gear & Traction battery  & Gear selector $\rightarrow$ TLP281 $\rightarrow$ GPIO   & \textbf{Galvanic} (TLP281, 2500\,Vrms) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 2 — CAN PHYSICAL LAYER
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{CAN Bus Physical Layer}
+
+\section{Bus Specifications}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Parameter} & \textbf{High Bus} & \textbf{Low Bus} & \textbf{Powertrain Bus} \\
+\midrule
+Bitrate         & 500\,kbit/s & 500\,kbit/s & 250\,kbit/s \\
+Max nodes       & 7           & 8           & 4 \\
+Termination     & 120\,\textOmega\ $\times$ 2 ends & 120\,\textOmega\ $\times$ 2 ends & 120\,\textOmega\ $\times$ 2 ends \\
+Wire            & Twisted pair, 22\,AWG & Twisted pair, 22\,AWG & Twisted pair, 22\,AWG \\
+CAN\_H color    & Orange       & Yellow       & Blue \\
+CAN\_L color    & Blue         & Green        & White \\
+GND color       & Gray         & Black        & Black \\
+Idle $V_H$      & $\sim$2.5\,V & $\sim$2.5\,V & $\sim$2.5\,V \\
+Idle $V_L$      & $\sim$2.5\,V & $\sim$2.5\,V & $\sim$2.5\,V \\
+Dominant $V_H$  & $\sim$3.5\,V & $\sim$3.5\,V & $\sim$3.5\,V \\
+Dominant $V_L$  & $\sim$1.5\,V & $\sim$1.5\,V & $\sim$1.5\,V \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{CAN Transceiver Module --- WCMCU-230 (SN65HVD230)}
+
+The standard CAN transceiver module used by RT, SYS, and PWT. Contains a TI SN65HVD230 3.3\,V CAN transceiver.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Label on Module} & \textbf{Connects To} & \textbf{Notes} \\
+\midrule
+VCC / 3V3         & ESP32 3.3\,V pin     & \textbf{Must be 3.3\,V, not 5\,V} \\
+GND               & ESP32 GND pin        & Common ground \\
+CTX / TX / TXD / D & ESP32 TWAI TX GPIO   & From ESP32 to transceiver \\
+CRX / RX / RXD / R & ESP32 TWAI RX GPIO   & From transceiver to ESP32 \\
+CAN\_H             & Bus CAN\_H (screw term) & Differential high \\
+CAN\_L             & Bus CAN\_L (screw term) & Differential low \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Key facts:}
+\begin{itemize}[leftmargin=*,nosep]
+  \item 4 wires needed: VCC, GND, CTX ($\rightarrow$ TX), CRX ($\rightarrow$ RX)
+  \item RS pin: pulled to GND by onboard 10\,k\textOmega\ --- locked in high-speed mode
+  \item 120\,\textOmega\ terminator: onboard resistor controlled by solder jumper or DIP switch
+  \item Current draw: $\sim$30\,mA at 3.3\,V
+  \item Counterfeit warning: some modules receive but cannot transmit. Swap to isolate.
+\end{itemize}
+
+\section{CAN Controller Module --- MCP2515 SPI (MCP2515 + TJA1050)}
+
+Used by RT for the high bus. Standalone SPI-to-CAN controller.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Label} & \textbf{Connects To} & \textbf{Notes} \\
+\midrule
+VCC   & \textbf{5\,V} from ESP32 dev board & TJA1050 transceiver needs 5\,V \\
+GND   & ESP32 GND            & Common ground \\
+SCK   & ESP32 \gpio{36}      & SPI clock, $\leq$10\,MHz \\
+SI (MOSI) & ESP32 \gpio{37}  & SPI data: MCU $\rightarrow$ MCP2515 \\
+SO (MISO) & ESP32 \gpio{38}  & SPI data: MCP2515 $\rightarrow$ MCU \\
+CS    & ESP32 \gpio{39}      & Chip select, active low \\
+INT   & ESP32 \gpio{40}      & Interrupt: RX buffer ready, active low \\
+CAN\_H & Bus CAN\_H (screw)   & High bus backbone \\
+CAN\_L & Bus CAN\_L (screw)   & High bus backbone \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Key facts:}
+\begin{itemize}[leftmargin=*,nosep]
+  \item SPI Mode 0 or 1; clock 8\,MHz safe, 10\,MHz max
+  \item Crystal: 8\,MHz or 16\,MHz --- check laser etching; BRP must match
+  \item 5\,V power required --- TJA1050 produces marginal CAN levels at 3.3\,V
+  \item No onboard termination --- rely on CANalyst-II Ch1 or external 120\,\textOmega
+\end{itemize}
+
+\section{CANalyst-II USB Analyzer}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Channel} & \textbf{Typical Bus} & \textbf{Termination} & \textbf{Notes} \\
+\midrule
+Ch0 & Low bus  & OFF (RT + SYS provide 60\,\textOmega) & Middle tap \\
+Ch1 & High bus & ON (sole terminator for high bus)      & Endpoint \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Termination Summary --- All Nodes}
+
+\begin{center}
+\begin{longtable}{lccc}
+\toprule
+\textbf{Bus} & \textbf{Node} & \textbf{Terminator} & \textbf{Value} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Bus} & \textbf{Node} & \textbf{Terminator} & \textbf{Value} \\
+\midrule
+\endhead
+High & Jetson Orin        & ON  & 120\,\textOmega\ (endpoint) \\
+High & RT MCP2515         & OFF & --- (middle in bench test) \\
+High & CANalyst-II Ch1    & ON  & 120\,\textOmega\ (bench endpoint) \\
+\midrule
+Low  & RT WCMCU-230       & ON  & 120\,\textOmega\ (endpoint) \\
+Low  & SYS WCMCU-230      & ON  & 120\,\textOmega\ (endpoint) \\
+Low  & PWT WCMCU-230 \#1  & OFF & --- (middle tap) \\
+Low  & MTR CAN transceiver& OFF & --- (middle tap) \\
+Low  & EPS-C              & OFF & --- (unless at physical end) \\
+Low  & SEB                & OFF & --- (unless at physical end) \\
+Low  & DC-DC Converter    & OFF & --- (unless at physical end) \\
+Low  & CANalyst-II Ch0    & OFF & --- (middle tap) \\
+\midrule
+Pwt  & PWT WCMCU-230 \#2  & ON  & 120\,\textOmega\ (endpoint) \\
+Pwt  & Motor Controller   & ON  & 120\,\textOmega\ (endpoint) \\
+Pwt  & DC-DC Converter    & OFF & --- (middle tap) \\
+\bottomrule
+\caption{CAN termination per node. Two terminators per bus --- one at each physical end.}
+\end{longtable}
+\end{center}
+
+\noindent\textbf{Resulting bus impedances (power off):}
+\begin{itemize}[leftmargin=*,nosep]
+  \item High bus: $\sim$120\,\textOmega\ (Jetson $\parallel$ CANalyst-II Ch1; bench) or $\sim$60\,\textOmega\ (Jetson $\parallel$ RT; production)
+  \item Low bus: $\sim$60\,\textOmega\ (RT $\parallel$ SYS, both 120\,\textOmega)
+  \item Powertrain bus: $\sim$60\,\textOmega\ (PWT $\parallel$ Motor Controller, both 120\,\textOmega)
+\end{itemize}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 3 — RT ESP32-S3
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{RT ESP32-S3 --- CAN Gateway \& Real-Time Controller}
+
+\textbf{Role:} CAN gateway (high $\leftrightarrow$ low), real-time kinematics, steering state machine, PID speed control.\\
+\textbf{Board:} ESP32-S3-DevKitC-1\\
+\textbf{CAN modules:} 2 --- TWAI (built-in, low bus) + MCP2515 (SPI, high bus)
+
+% --- 3.1 CAN Module Wiring ---
+\section{CAN Module Wiring}
+
+\subsection{WCMCU-230 --- Low Bus (TWAI, \bitrate{500})}
+
+\begin{center}
+\begin{tabular}{lcll}
+\toprule
+\textbf{GPIO} & \textbf{J1 Pin} & \textbf{Signal} & \textbf{Connected To} \\
+\midrule
+--- & 1 (3V3)  & 3.3\,V power & WCMCU-230 VCC \\
+--- & 22 (GND) & Ground       & WCMCU-230 GND \\
+5   & 5        & CAN TX (TWAI)& WCMCU-230 CTX \\
+4   & 4        & CAN RX (TWAI)& WCMCU-230 CRX \\
+--- & ---      & CAN\_H        & Low bus backbone (yellow, 22\,AWG) \\
+--- & ---      & CAN\_L        & Low bus backbone (green, 22\,AWG) \\
+--- & ---      & GND          & Low bus backbone (black, 22\,AWG) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent 120\,\textOmega\ terminator: \textbf{ON} (RT is a bus endpoint).\\
+Source: \texttt{rt::kCanLowTxGpio=5}, \texttt{rt::kCanLowRxGpio=4}.
+
+\subsection{MCP2515 SPI --- High Bus (\bitrate{500})}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connected To} \\
+\midrule
+36 & SPI SCK  & MCP2515 SCK \\
+37 & SPI MOSI & MCP2515 SI \\
+38 & SPI MISO & MCP2515 SO \\
+39 & SPI CS   & MCP2515 CS \\
+40 & INT      & MCP2515 INT \\
+--- (J1-21, 5V)  & 5\,V power & MCP2515 VCC \\
+--- (J1-22, GND) & Ground     & MCP2515 GND \\
+--- & CAN\_H & High bus backbone (orange, 22\,AWG) \\
+--- & CAN\_L & High bus backbone (blue, 22\,AWG) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Source: \texttt{rt::kSpiSckGpio=36}, \texttt{rt::kSpiMosiGpio=37}, \texttt{rt::kSpiMisoGpio=38}, \texttt{rt::kSpiCsGpio=39}, \texttt{rt::kMcpIntGpio=40}.
+
+% --- 3.2 Inputs ---
+\section{Inputs}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{38mm} p{8mm} p{22mm} p{42mm} p{16mm} p{35mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Status & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Status & Notes \\
+\midrule
+\endhead
+1  & CAN RX (low bus)   & 4  & TWAI RX    & SN65HVD230 CRX     & Active   & Frames from SYS, MTR, EPS-C, SEB \\
+2  & MCP2515 MISO       & 38 & SPI        & MCP2515 SO         & Active   & High bus RX data (Host commands) \\
+3  & MCP2515 INT        & 40 & Digital, falling & MCP2515 INT   & Active   & RX buffer ready interrupt \\
+4  & Enc A (rear motor) & 1  & PCNT quadrature & Motor encoder & Active   & Speed feedback \\
+5  & Enc B (rear motor) & 2  & PCNT quadrature & Motor encoder & Active   & Quadrature phase B \\
+6  & Enc A (front whl)  & 3  & PCNT quadrature & TBD sensor    & Disabled & \texttt{CONFIG\_ENABLE\_ENCODERS} off \\
+7  & Enc B (front whl)  & 6  & PCNT quadrature & TBD sensor    & Disabled & \texttt{CONFIG\_ENABLE\_ENCODERS} off \\
+8  & Enc A (rear left)  & 9  & PCNT quadrature & TBD sensor    & Disabled & Differential speed \\
+9  & Enc B (rear left)  & 12 & PCNT quadrature & TBD sensor    & Disabled & Differential speed \\
+10 & Enc A (rear right) & 13 & PCNT quadrature & TBD sensor    & Disabled & Differential speed \\
+11 & Enc B (rear right) & 14 & PCNT quadrature & TBD sensor    & Disabled & Differential speed \\
+12 & I2C SDA (IMU)      & 10 & I2C         & Optional IMU       & Optional  & Pull-up to 3.3\,V \\
+13 & I2C SCL (IMU)      & 11 & I2C         & Optional IMU       & Optional  & --- \\
+\bottomrule
+\caption{RT ESP32-S3 inputs. Encoders 0 (rear motor) are active; encoders 1--3 are compile-disabled pending sensor installation.}
+\end{longtable}
+\end{center}
+
+% --- 3.3 Outputs ---
+\section{Outputs}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{28mm} p{8mm} p{20mm} p{32mm} p{58mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & CAN TX (low bus) & 5  & TWAI TX   & SN65HVD230 CTX & \canid{204}, \canid{205}, \canid{169}, \canid{001}, \canid{302}, \canid{7FD} on low bus \\
+2 & SPI SCK          & 36 & SPI out   & MCP2515 SCK    & 10\,MHz max \\
+3 & SPI MOSI         & 37 & SPI out   & MCP2515 SI     & High bus TX data \\
+4 & SPI CS           & 39 & Digital out & MCP2515 CS    & Active low \\
+5 & WDT Toggle       & 21 & Digital out & TPS3850 WDI   & Toggled at 100\,Hz by control\_task \\
+\bottomrule
+\caption{RT ESP32-S3 outputs.}
+\end{longtable}
+\end{center}
+
+% --- 3.4 GPIO Quick Reference ---
+\section{GPIO Quick Reference}
+
+\begin{center}
+\begin{longtable}{lll}
+\toprule
+\textbf{GPIO} & \textbf{Direction} & \textbf{Signal} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{GPIO} & \textbf{Direction} & \textbf{Signal} \\
+\midrule
+\endhead
+1  & IN, PCNT  & Encoder A --- rear motor (active) \\
+2  & IN, PCNT  & Encoder B --- rear motor (active) \\
+3  & IN, PCNT  & Encoder A --- front wheel (TBD, disabled) \\
+4  & IN        & CAN RX --- low bus TWAI \\
+5  & OUT       & CAN TX --- low bus TWAI \\
+6  & IN, PCNT  & Encoder B --- front wheel (TBD, disabled) \\
+7  & ---       & (unused) \\
+8  & ---       & (unused) \\
+9  & IN, PCNT  & Encoder A --- rear left (TBD, disabled) \\
+10 & I/O, I2C  & I2C SDA --- IMU (optional) \\
+11 & OUT, I2C  & I2C SCL --- IMU (optional) \\
+12 & IN, PCNT  & Encoder B --- rear left (TBD, disabled) \\
+13 & IN, PCNT  & Encoder A --- rear right (TBD, disabled) \\
+14 & IN, PCNT  & Encoder B --- rear right (TBD, disabled) \\
+15--20 & --- & (unused) \\
+21 & OUT, 100\,Hz & WDT toggle $\rightarrow$ TPS3850 WDI \\
+22--35 & --- & (unused) \\
+36 & OUT, $\leq$10\,MHz & SPI SCK $\rightarrow$ MCP2515 \\
+37 & OUT       & SPI MOSI $\rightarrow$ MCP2515 SI \\
+38 & IN        & SPI MISO $\leftarrow$ MCP2515 SO \\
+39 & OUT, $\overline{\text{CS}}$ & SPI CS $\rightarrow$ MCP2515 \\
+40 & IN, falling & INT $\leftarrow$ MCP2515 \\
+\bottomrule
+\caption{RT ESP32-S3 GPIO master reference.}
+\end{longtable}
+\end{center}
+
+% --- 3.5 Power ---
+\section{Power}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\midrule
+3.3\,V & USB or dev board regulator & ESP32-S3, WCMCU-230 transceiver \\
+5\,V   & USB or dev board regulator (J1-21) & MCP2515 module (TJA1050 needs 5\,V) \\
+GND    & USB or dev board & Common ground --- shared with both CAN modules \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 4 — SYS ESP32-S3
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{SYS ESP32-S3 --- Safety \& Body Controller}
+
+\textbf{Role:} Safety monitor (EGAS Level 2), body control (lights, gear, indicators), throttle pass-through (MANUAL mode), brake-by-wire interface.\\
+\textbf{Board:} ESP32-S3-DevKitC-1\\
+\textbf{CAN modules:} 1 --- TWAI (built-in, low bus only)
+
+\section{CAN Module Wiring --- WCMCU-230}
+
+\begin{center}
+\begin{tabular}{lcll}
+\toprule
+\textbf{GPIO} & \textbf{J1 Pin} & \textbf{Signal} & \textbf{Connected To} \\
+\midrule
+--- & 1 (3V3)  & 3.3\,V power & WCMCU-230 VCC \\
+--- & 22 (GND) & Ground       & WCMCU-230 GND \\
+5   & 5        & CAN TX (TWAI) & WCMCU-230 CTX \\
+4   & 4        & CAN RX (TWAI) & WCMCU-230 CRX \\
+--- & ---      & CAN\_H       & Low bus backbone (yellow) \\
+--- & ---      & CAN\_L       & Low bus backbone (green) \\
+--- & ---      & GND          & Low bus backbone (black) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent 120\,\textOmega\ terminator: \textbf{ON} (SYS is a bus endpoint).\\
+Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
+
+\section{Safety Inputs}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{28mm} p{8mm} p{28mm} p{28mm} p{58mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & ESTOP Button  & 1  & Digital, NC, active-low & Red mushroom $\rightarrow$ GND & 10k pull-up to 3.3\,V. LOW = ESTOP. Shared with MTR. \\
+2 & Brake Lever   & 2  & Digital, NO, active-low & Lever switch $\rightarrow$ GND & Internal pull-up. LOW = pressed $\rightarrow$ SEB via CAN \canid{7B9}. \\
+3 & START Button  & 32 & Digital, NO, active-low & Green momentary $\rightarrow$ GND & Internal pull-up. Press = ON, hold 3s = OFF. \\
+4 & MODE Button   & 11 & Digital, NO, active-low & Momentary $\rightarrow$ GND & Internal pull-up. Toggle MANUAL $\leftrightarrow$ AUTO. Long-press 3s exits ESTOP. \\
+5 & Ignition Relay & 8 & Digital out & 12\,V relay coil driver & HIGH = vehicle ON, LOW = all ECUs dead. Dual-path with CAN \canid{012}. \\
+6 & Throttle ADC  & 10 (ADC1\_CH5) & Analog, 12-bit & 0--5\,V grip via divider & 5\,V $\rightarrow$ 3.3\,V resistive divider. Dead zone: 200 counts. \\
+7 & CAN RX (low)  & 4  & TWAI RX & SN65HVD230 CRX & RT commands, MTR feedback \\
+\bottomrule
+\caption{SYS ESP32-S3 safety inputs.}
+\end{longtable}
+\end{center}
+
+\section{Throttle \& Gear I/O}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{32mm} p{10mm} p{18mm} p{38mm} p{48mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & MCP4725 DAC SDA  & 15 & I2C data  & MCP4725 DAC & I2C addr \iicaddr{60}, VCC = 5\,V \\
+2 & MCP4725 DAC SCL  & 16 & I2C clock & MCP4725 DAC & 100\,kHz standard mode \\
+3 & Gear D Sense      & 12 & Digital, active-low & TLP281 opto ch1 & 72\,V gear line $\rightarrow$ opto $\rightarrow$ GPIO. 10k pull-up. \\
+4 & Gear S Sense      & 13 & Digital, active-low & TLP281 opto ch2 & Same circuit \\
+5 & Gear R Sense      & 14 & Digital, active-low & TLP281 opto ch3 & Same circuit \\
+6 & Gear D Out        & 33 & Digital out & 4-ch relay IN1 & HIGH = energized $\rightarrow$ 72\,V to ECU Gear D \\
+7 & Gear S Out        & 34 & Digital out & 4-ch relay IN2 & HIGH = energized $\rightarrow$ 72\,V to ECU Gear S \\
+8 & Gear R Out        & 35 & Digital out & 4-ch relay IN3 & HIGH = energized $\rightarrow$ 72\,V to ECU Gear R \\
+\bottomrule
+\caption{SYS throttle \& gear I/O. Currently on SYS, migrating to MTR per gap \#5.}
+\end{longtable}
+\end{center}
+
+\section{Signal Lights \& Switches}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{28mm} p{8mm} p{24mm} p{30mm} p{44mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & Left Turn Switch  & 3  & Digital, NO, active-low & Handlebar momentary $\rightarrow$ GND & Internal pull-up \\
+2 & Right Turn Switch & 6  & Digital, NO, active-low & Handlebar momentary $\rightarrow$ GND & Internal pull-up \\
+3 & Headlight Switch  & 7  & Digital, NO, active-low & Handlebar toggle $\rightarrow$ GND   & Internal pull-up \\
+4 & Left Turn Lamp    & 18 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+5 & Right Turn Lamp   & 19 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+6 & Brake Light       & 21 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+7 & Headlight         & 22 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+\bottomrule
+\caption{SYS signal lights and handlebar switches.}
+\end{longtable}
+\end{center}
+
+\section{Indicators \& Power Control}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{28mm} p{8mm} p{18mm} p{30mm} p{48mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & AUTO Mode Bulb  & 25 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
+2 & MANUAL Mode Bulb & 26 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
+3 & 12\,V Power Relay & 27 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V bus, NO = accessories. Opens in ESTOP. \\
+4 & WDT Toggle       & 23 & Digital out & TPS3850 WDI pin        & Toggled at 20\,Hz by safety\_task \\
+\bottomrule
+\caption{SYS mode indicators and power control.}
+\end{longtable}
+\end{center}
+
+\section{GPIO Quick Reference}
+
+\begin{center}
+\begin{longtable}{lll}
+\toprule
+\textbf{GPIO} & \textbf{Direction} & \textbf{Signal} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{GPIO} & \textbf{Direction} & \textbf{Signal} \\
+\midrule
+\endhead
+1  & IN, 10k pull-up  & ESTOP button (NC, active-low) --- shared with MTR \\
+2  & IN, int pull-up  & Brake lever (active-low) $\rightarrow$ SEB via CAN \canid{7B9} \\
+3  & IN, int pull-up  & Left turn switch (active-low) \\
+4  & IN               & CAN RX --- low bus TWAI \\
+5  & OUT              & CAN TX --- low bus TWAI \\
+6  & IN, int pull-up  & Right turn switch (active-low) \\
+7  & IN, int pull-up  & Headlight switch (active-low) \\
+8  & OUT              & Ignition relay --- HIGH = vehicle ON \\
+9  & ---              & (unused) \\
+10 & IN, analog       & Throttle ADC (ADC1\_CH5) --- 0--5\,V via voltage divider \\
+11 & IN, int pull-up  & MODE button (active-low) --- publishes CAN \canid{110} \\
+12 & IN, 10k pull-up  & Gear D sense $\leftarrow$ TLP281 ch1 \\
+13 & IN, 10k pull-up  & Gear S sense $\leftarrow$ TLP281 ch2 \\
+14 & IN, 10k pull-up  & Gear R sense $\leftarrow$ TLP281 ch3 \\
+15 & I/O, I2C         & MCP4725 DAC SDA (I2C addr \iicaddr{60}) \\
+16 & OUT, I2C         & MCP4725 DAC SCL \\
+17 & ---              & (unused) \\
+18 & OUT              & Left turn lamp --- relay output \\
+19 & OUT              & Right turn lamp --- relay output \\
+20 & ---              & (unused) \\
+21 & OUT              & Brake light --- relay output \\
+22 & OUT              & Headlight --- relay output \\
+23 & OUT, 20\,Hz      & WDT toggle $\rightarrow$ TPS3850 WDI \\
+24 & ---              & (unused) \\
+25 & OUT              & AUTO mode bulb --- relay output \\
+26 & OUT              & MANUAL mode bulb --- relay output \\
+27 & OUT              & 12\,V power relay --- opens in ESTOP \\
+28--31 & ---          & (unused) \\
+32 & IN, int pull-up  & START button (active-low) \\
+33 & OUT              & Gear D relay out $\rightarrow$ 4-ch relay IN1 \\
+34 & OUT              & Gear S relay out $\rightarrow$ 4-ch relay IN2 \\
+35 & OUT              & Gear R relay out $\rightarrow$ 4-ch relay IN3 \\
+\bottomrule
+\caption{SYS ESP32-S3 GPIO master reference.}
+\end{longtable}
+\end{center}
+
+\section{Power}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\midrule
+3.3\,V & USB or dev board regulator & ESP32-S3, WCMCU-230 transceiver \\
+5\,V   & USB or dev board regulator & MCP4725 DAC VCC (for 0--5\,V output) \\
+12\,V  & DC-DC converter (via 12\,V relay) & Lamps, bulbs, relay coils \\
+GND    & USB or dev board & Common ground \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 5 — MTR STM32
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{MTR STM32 --- Motor Controller (EGAS Level 1)}
+
+\textbf{Role:} Dedicated throttle \& gear actuation. EGAS Level 1 primary controller.\\
+\textbf{Board:} STM32 (specific variant TBD)\\
+\textbf{CAN modules:} 1 --- CAN transceiver (low bus, pin assignment TBD)\\
+\textbf{Pin encoding:} $(\text{port} \times 16 + \text{pin})$. PA0--PA15 = 0--15, PB0--PB15 = 16--31, PC0--PC15 = 32--47.
+
+\section{Inputs}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{30mm} p{28mm} p{26mm} p{26mm} p{36mm}}
+\toprule
+\# & Signal & Pin & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & Pin & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & CAN RX (low bus) & TBD          & CAN RX    & CAN transceiver RXD & RT \canid{204}, SYS \canid{110} \\
+2 & ESTOP Button     & TBD          & Digital, NC, active-low & Red mushroom $\rightarrow$ GND & Shared with SYS \gpio{1}. Hardwired Level 3 kill. \\
+3 & Throttle ADC     & PA0 (ADC1\_IN0) & Analog, 12-bit & 0--5\,V grip via divider & 5\,V $\rightarrow$ 3.3\,V resistive divider \\
+4 & Gear D Sense     & PB0 (enc. 16)& Digital, active-low & TLP281 opto ch1 output & 72\,V gear line $\rightarrow$ opto $\rightarrow$ GPIO \\
+5 & Gear S Sense     & PB1 (enc. 17)& Digital, active-low & TLP281 opto ch2 output & Same circuit \\
+6 & Gear R Sense     & PB2 (enc. 18)& Digital, active-low & TLP281 opto ch3 output & Same circuit \\
+\bottomrule
+\caption{MTR STM32 inputs.}
+\end{longtable}
+\end{center}
+
+\section{Outputs}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{28mm} p{26mm} p{18mm} p{36mm} p{38mm}}
+\toprule
+\# & Signal & Pin & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & Pin & Type & Connected To & Notes \\
+\midrule
+\endhead
+1 & CAN TX (low bus)   & TBD   & CAN TX    & CAN transceiver TXD & \canid{120} (100\,Hz), \canid{206} (50\,Hz) \\
+2 & MCP4725 DAC SDA    & PB7   & I2C data  & MCP4725 DAC & I2C addr \textbf{\iicaddr{61}} (A0 tied to VCC). Separate I$^2$C bus. \\
+3 & MCP4725 DAC SCL    & PB6   & I2C clock & MCP4725 DAC & 100\,kHz standard mode \\
+4 & Gear D Out         & PA3 (enc. 3)  & Digital out & 4-ch relay IN1 & HIGH = energized $\rightarrow$ 72\,V to ECU Gear D \\
+5 & Gear S Out         & PA4 (enc. 4)  & Digital out & 4-ch relay IN2 & HIGH = energized $\rightarrow$ 72\,V to ECU Gear S \\
+6 & Gear R Out         & PA5 (enc. 5)  & Digital out & 4-ch relay IN3 & HIGH = energized $\rightarrow$ 72\,V to ECU Gear R \\
+\bottomrule
+\caption{MTR STM32 outputs.}
+\end{longtable}
+\end{center}
+
+\section{Throttle Circuit (0--5\,V)}
+
+\begin{lstlisting}[language=C, caption={MTR throttle DAC circuit. SYS at \iicaddr{60}, MTR at \iicaddr{61} (A0 tied to VCC).}]
+Throttle Grip (0-5V) --+-- R1 (1.8 kOhm) --+-- ADC pin (PA0)
+                       |                    |
+                       +-- R2 (3.3 kOhm) --+-- GND
+
+MCP4725 DAC #2: VCC=5V, GND, SDA=PB7, SCL=PB6
+  I2C addr 0x61 (A0 tied to VCC)
+  VOUT -> Motor Controller throttle input
+\end{lstlisting}
+
+\section{Gear Circuit (72\,V, Bidirectional)}
+
+\noindent\textbf{Input --- read gear selector (galvanic isolation via TLP281):}
+
+\begin{lstlisting}[language=C, caption={TLP281 gear sense circuit. 72\,V present = GPIO reads LOW.}]
+72V Gear D --+-- R (33k/2W) -- TLP281 pin1 (anode)
+             +-- TLP281 pin2 (cathode) -- GND_72V
+
+                              || (optical, 2500 Vrms)
+
+TLP281 pin4 (collector) -- GPIO (PB0) -- 10k pull-up -- 3.3V
+TLP281 pin3 (emitter) -- GND
+\end{lstlisting}
+
+\noindent\textbf{Output --- mimic 72\,V to ECU (mechanical relay isolation):}
+
+\begin{lstlisting}[language=C, caption={Gear relay output protection. 1A fuse + TVS per channel.}]
+72V Battery --+--[1A fast-blow fuse]--+-- Relay COM(D) -- NO -- ECU Gear D --+-- [TVS SMCJ90CA] -- GND
+              |                       +-- Relay COM(S) -- NO -- ECU Gear S --+-- [TVS SMCJ90CA] -- GND
+              |                       +-- Relay COM(R) -- NO -- ECU Gear R --+-- [TVS SMCJ90CA] -- GND
+\end{lstlisting}
+
+\noindent\textbf{Protection components:}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Part} & \textbf{Spec} & \textbf{Purpose} \\
+\midrule
+Fuse       & 1\,A fast-blow, 72\,V    & Overcurrent protection \\
+TVS $\times$3 & SMCJ90CA bidirectional  & 90--100\,V standoff, 1500\,W peak \\
+Optoisolator  & TLP281-4 (4-ch)          & 2500\,Vrms isolation \\
+Gear relays   & 5\,V coil, 4-channel     & COM rated for 72\,V DC \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Mode-Gated Behavior}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Mode} & \textbf{CAN \canid{110}} & \textbf{Throttle} & \textbf{Gear} \\
+\midrule
+MANUAL & 0 & ADC $\rightarrow$ DAC pass-through & Sense $\rightarrow$ relay pass-through \\
+AUTO   & 1 & Follow CAN \canid{204} \texttt{RT\_MotorSpeed} & Follow CAN \canid{204} \texttt{RT\_Gear} \\
+ESTOP  & 2 & DAC = 0 (cut throttle) & All relays off \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{GPIO Quick Reference}
+
+\begin{center}
+\begin{longtable}{lll}
+\toprule
+\textbf{Pin} & \textbf{Encoded} & \textbf{Signal} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Pin} & \textbf{Encoded} & \textbf{Signal} \\
+\midrule
+\endhead
+PA0 (ADC1\_IN0) & 0     & Throttle ADC (0--3.3\,V via divider) --- IN \\
+PA1             & 1     & (unused) \\
+PA2             & 2     & (unused) \\
+PA3             & 3     & Gear D relay out $\rightarrow$ relay IN1 --- OUT \\
+PA4             & 4     & Gear S relay out $\rightarrow$ relay IN2 --- OUT \\
+PA5             & 5     & Gear R relay out $\rightarrow$ relay IN3 --- OUT \\
+PA6--PA15       & 6--15 & (unused) \\
+PB0             & 16    & Gear D sense $\leftarrow$ TLP281 ch1 --- IN, 10k pull-up \\
+PB1             & 17    & Gear S sense $\leftarrow$ TLP281 ch2 --- IN, 10k pull-up \\
+PB2             & 18    & Gear R sense $\leftarrow$ TLP281 ch3 --- IN, 10k pull-up \\
+PB3--PB5        & 19--21 & (unused) \\
+PB6             & 22    & MCP4725 DAC SCL --- OUT, I2C \\
+PB7             & 23    & MCP4725 DAC SDA --- I/O, I2C addr \iicaddr{61} \\
+PB8--PB15       & 24--31 & (unused) \\
+PC0--PC15       & 32--47 & (unused / reserved) \\
+---             & TBD    & CAN RX $\leftarrow$ transceiver --- IN \\
+---             & TBD    & CAN TX $\rightarrow$ transceiver --- OUT \\
+---             & TBD    & ESTOP button (shared with SYS) --- IN, NC, active-low \\
+\bottomrule
+\caption{MTR STM32 GPIO master reference. Pin encoding: $(\text{port} \times 16 + \text{pin})$.}
+\end{longtable}
+\end{center}
+
+\section{Power}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\midrule
+3.3\,V & STM32 board regulator & STM32 MCU, TLP281 output side pull-ups \\
+5\,V   & STM32 board regulator (or external) & MCP4725 DAC VCC, gear relay coils \\
+72\,V  & Traction battery (via 1\,A fuse) & Gear relay COM terminals \\
+GND    & Board ground & Common 3.3\,V/5\,V ground. \textbf{Isolated from 72\,V GND} via TLP281. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 6 — PWT ESP32-S3
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{PWT ESP32-S3 --- Powertrain CAN Gateway}
+
+\textbf{Role:} Bridge low bus (\bitrate{500}) $\leftrightarrow$ powertrain bus (\bitrate{250}). DC-DC converter control.\\
+\textbf{Board:} ESP32-S3-DevKitC-1\\
+\textbf{CAN modules:} 2 --- TWAI0 (built-in, low bus) + TWAI1 (built-in, powertrain bus)
+
+\section{CAN Module Wiring}
+
+\subsection{WCMCU-230 \#1 --- Low Bus (TWAI0, \bitrate{500})}
+
+\begin{center}
+\begin{tabular}{lcl}
+\toprule
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connected To} \\
+\midrule
+--- (3V3) & 3.3\,V power & WCMCU-230 \#1 VCC \\
+--- (GND) & Ground       & WCMCU-230 \#1 GND \\
+5         & CAN TX (TWAI0) & WCMCU-230 \#1 CTX \\
+4         & CAN RX (TWAI0) & WCMCU-230 \#1 CRX \\
+---       & CAN\_H        & Low bus backbone (yellow) \\
+---       & CAN\_L        & Low bus backbone (green) \\
+---       & GND           & Low bus backbone (black) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{WCMCU-230 \#2 --- Powertrain Bus (TWAI1, \bitrate{250})}
+
+\begin{center}
+\begin{tabular}{lcl}
+\toprule
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connected To} \\
+\midrule
+--- (3V3) & 3.3\,V power & WCMCU-230 \#2 VCC \\
+--- (GND) & Ground       & WCMCU-230 \#2 GND \\
+7         & CAN TX (TWAI1) & WCMCU-230 \#2 CTX \\
+6         & CAN RX (TWAI1) & WCMCU-230 \#2 CRX \\
+---       & CAN\_H        & Powertrain bus backbone (blue) \\
+---       & CAN\_L        & Powertrain bus backbone (white) \\
+---       & GND           & Powertrain bus backbone (black) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Source: \texttt{pwt::kCanLowTxGpio=5}, \texttt{pwt::kCanLowRxGpio=4} (TWAI0), \texttt{pwt::kCanPwtTxGpio=7}, \texttt{pwt::kCanPwtRxGpio=6} (TWAI1).
+
+\section{Inputs \& Outputs}
+
+\begin{center}
+\begin{longtable}{p{4mm} p{28mm} p{8mm} p{20mm} p{32mm} p{48mm}}
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endfirsthead
+\toprule
+\# & Signal & GPIO & Type & Connected To & Notes \\
+\midrule
+\endhead
+\multicolumn{6}{c}{\textbf{Inputs}} \\
+\midrule
+1 & CAN RX (low bus)  & 4 & TWAI0 RX & WCMCU-230 \#1 CRX & \canid{012}, \canid{001}, \canid{7FD}, \canid{7FE} \\
+2 & CAN RX (pwt bus)  & 6 & TWAI1 RX & WCMCU-230 \#2 CRX & Motor telemetry, \canid{001} \\
+\midrule
+\multicolumn{6}{c}{\textbf{Outputs}} \\
+\midrule
+1 & CAN TX (low bus)  & 5 & TWAI0 TX & WCMCU-230 \#1 CTX & \canid{001} forward, PWT heartbeat (\canid{7FB}), motor telemetry \\
+2 & CAN TX (pwt bus)  & 7 & TWAI1 TX & WCMCU-230 \#2 CTX & \canid{012} DC-DC cmd, \canid{001} forward \\
+3 & WDT Toggle         & 21 & Digital out & TPS3850 WDI & Toggled at 20\,Hz \\
+\bottomrule
+\caption{PWT ESP32-S3 inputs and outputs.}
+\end{longtable}
+\end{center}
+
+\section{CAN Gateway Forwarding}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Direction} & \textbf{CAN ID} & \textbf{Action} \\
+\midrule
+Low $\rightarrow$ Pwt & \canid{012} (SYS\_DCDC\_CMD) & Transparent forward --- same ID, same payload, on change \\
+Low $\rightarrow$ Pwt & \canid{001} (SAFETY\_ESTOP)  & Transparent forward --- rate-limited (max 2 per 500\,ms) \\
+Pwt $\rightarrow$ Low & \canid{001} (SAFETY\_ESTOP)  & Transparent forward --- rate-limited \\
+Pwt $\rightarrow$ Low & Motor telemetry (TBD)        & Parse and republish as new IDs (TBD) on low bus \\
+Low only              & \canid{7FB} (PWT\_HEARTBEAT) & 2\,Hz heartbeat to RT/SYS on low bus \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{DC-DC Converter Protocol}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+CAN ID               & \texttt{0x10262B27} (29-bit extended) \\
+DLC                  & 8 \\
+Cycle                & 100\,ms (10\,Hz) \\
+Byte 0: Control      & \texttt{0x00} = Disable, \texttt{0x01} = Enable \\
+Bytes 1--6: Reserved & \texttt{0xFF} \\
+Byte 7: Reset Ctrl   & \texttt{0x00} = No reset, \texttt{0x01} = Reset \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{GPIO Quick Reference}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{GPIO} & \textbf{Direction} & \textbf{Signal} \\
+\midrule
+4  & IN            & CAN RX --- low bus TWAI0 (\bitrate{500}) \\
+5  & OUT           & CAN TX --- low bus TWAI0 (\bitrate{500}) \\
+6  & IN            & CAN RX --- powertrain bus TWAI1 (\bitrate{250}) \\
+7  & OUT           & CAN TX --- powertrain bus TWAI1 (\bitrate{250}) \\
+21 & OUT, 20\,Hz   & WDT toggle $\rightarrow$ TPS3850 WDI \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Power}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\midrule
+3.3\,V & USB or dev board regulator & ESP32-S3, both WCMCU-230 transceivers \\
+GND    & USB or dev board & Common ground --- shared with both CAN modules \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 7 — JETSON, DEBUG, ACTUATORS
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{Jetson Orin, Debug Tool, and Actuators}
+
+\section{Jetson Orin NX --- Host Autonomy Computer}
+
+\textbf{Role:} High-level autonomy, path planning, obstacle detection.\\
+\textbf{CAN:} 1 --- built-in CAN interface (high bus only).
+
+\subsection{CAN Interface}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\midrule
+CAN\_H  & High bus backbone & Direct to RT MCP2515 \\
+CAN\_L  & High bus backbone & --- \\
+CAN GND & High bus backbone & Ground reference \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent 120\,\textOmega\ terminator: \textbf{ON} (Jetson is one end of the high bus).
+
+\subsection{CAN Messages (High Bus)}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Dir} & \textbf{CAN ID} & \textbf{Name} & \textbf{Rate} \\
+\midrule
+TX & \canid{300} & HOST\_DRIVE\_CMD  & $\leq$100\,Hz \\
+TX & \canid{301} & HOST\_BRAKE\_REQ  & on change \\
+TX & \canid{7FC} & HOST\_HEARTBEAT   & 2\,Hz \\
+\midrule
+RX & \canid{7FD} & RT\_HEARTBEAT     & 2\,Hz \\
+RX & \canid{011} & SYS\_SAFETY\_STS  & 5\,Hz \\
+RX & \canid{120} & SYS\_THROTTLE\_STS & 100\,Hz \\
+RX & \canid{210} & RT\_STATE\_RPT    & 10\,Hz \\
+RX & \canid{220} & RT\_PID\_RPT      & 10\,Hz \\
+RX & \canid{600} & SYS\_DIAG\_RPT    & 1\,Hz \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Debug ESP32-S3 --- CAN Diagnostic Tool}
+
+\textbf{Role:} CAN bus monitor, frame decoder, injector node for bench testing.\\
+\textbf{Board:} ESP32-S3-DevKitC-1\\
+\textbf{CAN modules:} 1 or 2 --- TWAI (built-in) + optional MCP2515 SPI for dual-bus.
+
+\subsection{CAN Module Wiring}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connected To} \\
+\midrule
+\multicolumn{3}{c}{\textbf{Module A: WCMCU-230 (TWAI, \bitrate{500})}} \\
+\midrule
+--- (3V3) & 3.3\,V power & WCMCU-230 VCC \\
+--- (GND) & Ground       & WCMCU-230 GND \\
+5         & CAN TX (TWAI) & WCMCU-230 CTX \\
+4         & CAN RX (TWAI) & WCMCU-230 CRX \\
+\midrule
+\multicolumn{3}{c}{\textbf{Module B: MCP2515 SPI (optional, for dual-bus)}} \\
+\midrule
+36 & SPI SCK  & MCP2515 SCK \\
+37 & SPI MOSI & MCP2515 SI \\
+38 & SPI MISO & MCP2515 SO \\
+39 & SPI CS   & MCP2515 CS \\
+40 & INT      & MCP2515 INT \\
+--- (5V) & 5\,V power & MCP2515 VCC \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Transport: MQTT over Wi-Fi. Termination: OFF (middle tap / passive listener).
+
+\section{EPS-C --- Steer-by-Wire Unit}
+
+\textbf{CAN bus:} Low bus (\bitrate{500})\\
+\textbf{Power:} 12\,V (from DC-DC converter via fuse)
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Dir} & \textbf{CAN ID} & \textbf{Name} & \textbf{Rate} \\
+\midrule
+TX & \canid{201} & SES\_STATUS  & 100\,Hz \\
+TX & \canid{202} & SES\_ERRINFO & 10\,Hz \\
+RX & \canid{169} & VCU\_SES\_REQ & 50\,Hz \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{SEB --- Brake-by-Wire Unit}
+
+\textbf{CAN bus:} Low bus (\bitrate{500})\\
+\textbf{Power:} 12\,V (from DC-DC converter via fuse)
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Dir} & \textbf{CAN ID} & \textbf{Name} & \textbf{Rate} \\
+\midrule
+TX & \canid{721} & SEB\_STATUS & 100\,Hz \\
+TX & \canid{731} & SEB\_DIAG   & 10\,Hz \\
+RX & \canid{7B9} & SYS\_SEB\_CMD & 50\,Hz \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{DC-DC Converter (72\,V $\rightarrow$ 12\,V)}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\midrule
+72\,V input  & Traction battery (+)      & Via main contactor / fuse \\
+72\,V GND    & Traction battery ($-$)    & --- \\
+12\,V output & 12\,V accessory bus (fused) & Powers lamps, relays, bulbs, ECU boards \\
+12\,V GND    & Chassis ground             & --- \\
+CAN\_H       & Low bus + Powertrain bus   & See note below \\
+CAN\_L       & Low bus + Powertrain bus   & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Note:} The DC-DC converter's CAN connection topology depends on the specific unit. If single CAN, connect to powertrain bus (\bitrate{250}) and PWT bridges \canid{012} from low bus. If dual CAN, it sits on both buses.
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 8 — EXTERNAL WATCHDOG
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{External Watchdog --- TPS3850}
+
+Each ESP32 has a TPS3850 (or equivalent) window watchdog IC. If firmware stops toggling the WDI pin, the IC asserts a hardware reset within $\sim$100\,ms.
+
+\section{Watchdog Wiring}
+
+\begin{center}
+\begin{tabular}{lccccl}
+\toprule
+\textbf{Controller} & \textbf{WDI GPIO} & \textbf{Toggle Rate} & \textbf{Timeout} & \textbf{TPS3850 MR} $\rightarrow$ \\
+\midrule
+RT ESP32-S3  & 21 & 100\,Hz (control\_task) & $\sim$100\,ms & ESP32 EN pin \\
+SYS ESP32-S3 & 23 & 20\,Hz (safety\_task)  & $\sim$100\,ms & ESP32 EN pin \\
+PWT ESP32-S3 & 21 & 20\,Hz                 & $\sim$100\,ms & ESP32 EN pin \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Wiring per controller:}
+\begin{lstlisting}
+GPIO (WDI pin) -> TPS3850 WDI
+TPS3850 MR     -> ESP32 EN pin (active-low reset)
+TPS3850 VCC    -> 3.3V
+TPS3850 GND    -> GND
+\end{lstlisting}
+
+\section{Behavior on Reset}
+
+\begin{enumerate}[leftmargin=*,nosep]
+  \item GPIO toggles at specified rate in safety/control task
+  \item If toggling stops $>$100\,ms: TPS3850 pulls MR LOW $\rightarrow$ ESP32 hardware reset
+  \item All GPIOs go high-impedance $\rightarrow$ motor controller sees 0\,V throttle, all gear relays open
+  \item Post-reset: firmware boots clean, starts in MANUAL mode, re-runs LBS sequences
+  \item Startup delay $\sim$200\,ms before first toggle arms the watchdog
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 9 — POWER DISTRIBUTION
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{Power Distribution}
+
+\section{Power Tree}
+
+\begin{lstlisting}[language=C, caption={Power distribution from 72\,V battery to all loads.}]
+72V Traction Battery
+  |
+  +--[Main fuse/contactor]-- Motor Controller (72V)
+  |                            |
+  |                            +-- Motor (3-phase BLDC)
+  |
+  +-- DC-DC Converter (72V->12V, CAN: 0x012)
+  |     |
+  |     +--[12V Fuse Block -- ATO/ATC, 12 circuits]
+  |     |     |
+  |     |     +-- 12V Relay (SYS GPIO27) -- 12V Accessory Bus
+  |     |     |     +-- Signal lamps (via relays: 18,19,21,22)
+  |     |     |     +-- Mode bulbs (via relays: 25,26)
+  |     |     |     +-- Headlight (via relay: 22)
+  |     |     |
+  |     |     +-- ESP32-S3 Dev Boards (x4) -- onboard 5V/3.3V regulation
+  |     |     +-- STM32 Board -- onboard 5V/3.3V regulation
+  |     |     +-- EPS-C (steer-by-wire unit)
+  |     |     +-- SEB (brake-by-wire unit)
+  |     |     +-- Jetson Orin NX (19V via separate DC-DC)
+  |     |
+  |     +--[M6 Ground Bus Bar -- nickel-plated brass, >=6 studs]
+  |
+  +-- 72V Gear Lines (via 1A fuse -> MTR relay COM terminals)
+        +-- Relay D COM -> NO -> ECU Gear D
+        +-- Relay S COM -> NO -> ECU Gear S
+        +-- Relay R COM -> NO -> ECU Gear R
+\end{lstlisting}
+
+\section{Voltage Domain Isolation}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Domain} & \textbf{Source} & \textbf{Used By} & \textbf{Isolation} \\
+\midrule
+72\,V DC   & Traction battery & Motor controller, gear relays (COM), DC-DC input & Fuse + contactor \\
+12\,V DC   & DC-DC converter  & Lamps, bulbs, relay coils, EPS-C, SEB, ECU boards & 12\,V relay (\gpio{27}) \\
+5\,V DC    & Onboard regulators & MCP4725 DACs, MCP2515 (TJA1050), gear relay coils & --- \\
+3.3\,V DC  & Onboard regulators & ESP32-S3, STM32, WCMCU-230, TLP281 output side & --- \\
+72\,V gear & Traction battery (fused) & Gear selector $\rightarrow$ TLP281 $\rightarrow$ GPIO & \textbf{Galvanic} via TLP281 (2500\,Vrms) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 10 — ISOLATION & PROTECTION CIRCUITS
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{Gear Isolation \& Throttle DAC Circuits}
+
+\section{TLP281 Optoisolator --- 72\,V Gear Sense}
+
+The 72\,V gear selector signals must be galvanically isolated from the 3.3\,V MCU GPIOs. A TLP281-4 quad optoisolator provides this isolation.
+
+\subsection{Channel Mapping}
+
+\begin{center}
+\begin{tabular}{clll}
+\toprule
+\textbf{Channel} & \textbf{72\,V Gear Line} & \textbf{GPIO (SYS)} & \textbf{GPIO (MTR)} \\
+\midrule
+1 & Gear D & 12 & PB0 (encoded 16) \\
+2 & Gear S & 13 & PB1 (encoded 17) \\
+3 & Gear R & 14 & PB2 (encoded 18) \\
+4 & (spare) & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Behavior:}
+\begin{itemize}[leftmargin=*,nosep]
+  \item 72\,V present $\rightarrow$ LED on $\rightarrow$ phototransistor conducts $\rightarrow$ GPIO reads LOW
+  \item 72\,V absent $\rightarrow$ LED off $\rightarrow$ phototransistor off $\rightarrow$ pull-up holds GPIO HIGH
+  \item $R_{\text{current\_limit}}$: $\sim$33\,k\textOmega, 2\,W. At 72\,V: $I \approx 2.2$\,mA. $P \approx 0.16$\,W.
+\end{itemize}
+
+\section{MCP4725 Throttle DAC Comparison}
+
+Two MCP4725 12-bit I$^2$C DACs produce 0--5\,V analog signals for the motor controller throttle input.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{SYS (Level 2)} & \textbf{MTR (Level 1)} \\
+\midrule
+I2C address    & \iicaddr{60}          & \iicaddr{61} (A0 tied to VCC) \\
+I2C SDA        & \gpio{15}            & PB7 \\
+I2C SCL        & \gpio{16}            & PB6 \\
+I2C bus        & I2C\_NUM\_0 (separate) & Separate I$^2$C bus \\
+VCC            & 5\,V                  & 5\,V \\
+VOUT range     & 0--5\,V              & 0--5\,V \\
+Resolution     & 12-bit (4096 steps)  & 12-bit (4096 steps) \\
+Mode-gated?    & Yes --- ESTOP $\rightarrow$ 0\,V & Yes --- ESTOP $\rightarrow$ 0\,V \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{MCP4725 Fast Write Command:}
+\begin{lstlisting}
+Byte 0: [0 0 PD1 PD0 D11 D10 D9 D8]  -- C2=C1=0 (Fast Write), PD1=PD0=0 (normal)
+Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
+\end{lstlisting}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 11 — PRE-POWER CHECKLIST
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{Pre-Power \& Verification Checklists}
+
+\section{RT ESP32-S3}
+
+\begin{center}
+\begin{longtable}{p{8mm} p{70mm} p{60mm}}
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endhead
+\chkbox & WCMCU-230 (low bus): VCC $\rightarrow$ 3V3 (J1-1), GND $\rightarrow$ GND (J1-22) & Red/black Dupont \\
+\chkbox & WCMCU-230: CTX $\rightarrow$ \gpio{5}, CRX $\rightarrow$ \gpio{4} & Blue/green Dupont \\
+\chkbox & WCMCU-230: 120\,\textOmega\ terminator jumper \textbf{ON} & Solder bridge or DIP switch \\
+\chkbox & MCP2515 (high bus): VCC $\rightarrow$ 5\,V (J1-21), GND $\rightarrow$ GND (J1-22) & TJA1050 needs 5\,V \\
+\chkbox & MCP2515: SCK $\rightarrow$ \gpio{36}, MOSI $\rightarrow$ \gpio{37}, MISO $\rightarrow$ \gpio{38}, CS $\rightarrow$ \gpio{39}, INT $\rightarrow$ \gpio{40} & 5 Dupont wires \\
+\chkbox & MCP2515: CAN\_H/CAN\_L to high bus backbone & Orange/blue, 22\,AWG \\
+\chkbox & WDT: \gpio{21} $\rightarrow$ TPS3850 WDI & --- \\
+\bottomrule
+\caption{RT ESP32-S3 pre-power checklist.}
+\end{longtable}
+\end{center}
+
+\section{SYS ESP32-S3}
+
+\begin{center}
+\begin{longtable}{p{8mm} p{70mm} p{60mm}}
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endhead
+\chkbox & WCMCU-230 (low bus): VCC $\rightarrow$ 3V3 (J1-1), GND $\rightarrow$ GND (J1-22), CTX $\rightarrow$ \gpio{5}, CRX $\rightarrow$ \gpio{4} & --- \\
+\chkbox & WCMCU-230: 120\,\textOmega\ terminator jumper \textbf{ON} & --- \\
+\chkbox & ESTOP button: \gpio{1} $\rightarrow$ NC button $\rightarrow$ GND. 10k pull-up to 3.3\,V. & --- \\
+\chkbox & Brake lever: \gpio{2} $\rightarrow$ NO switch $\rightarrow$ GND. Internal pull-up. & --- \\
+\chkbox & START button: \gpio{32} $\rightarrow$ NO momentary $\rightarrow$ GND. Internal pull-up. & --- \\
+\chkbox & MODE button: \gpio{11} $\rightarrow$ NO momentary $\rightarrow$ GND. Internal pull-up. & --- \\
+\chkbox & Throttle ADC: \gpio{10} $\rightarrow$ voltage divider midpoint (0--5\,V grip) & --- \\
+\chkbox & MCP4725 DAC: SDA $\rightarrow$ \gpio{15}, SCL $\rightarrow$ \gpio{16}, VCC $\rightarrow$ 5\,V & --- \\
+\chkbox & Gear sense: \gpio{12}/\gpio{13}/\gpio{14} $\rightarrow$ TLP281 ch1/ch2/ch3 (10k pull-ups to 3.3\,V) & --- \\
+\chkbox & Gear relays: \gpio{33}/\gpio{34}/\gpio{35} $\rightarrow$ relay module IN1/IN2/IN3 & --- \\
+\chkbox & Signal switches: \gpio{3} (left), \gpio{6} (right), \gpio{7} (headlight) $\rightarrow$ GND & --- \\
+\chkbox & Lamp relays: \gpio{18}/\gpio{19}/\gpio{21}/\gpio{22} $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
+\chkbox & Indicator relays: \gpio{25} (AUTO), \gpio{26} (MANUAL), \gpio{27} (12\,V power) $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
+\chkbox & WDT: \gpio{23} $\rightarrow$ TPS3850 WDI & --- \\
+\bottomrule
+\caption{SYS ESP32-S3 pre-power checklist.}
+\end{longtable}
+\end{center}
+
+\section{MTR STM32}
+
+\begin{center}
+\begin{longtable}{p{8mm} p{80mm} p{50mm}}
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endhead
+\chkbox & CAN transceiver: TX/RX $\rightarrow$ STM32 CAN pins (TBD) & --- \\
+\chkbox & ESTOP: shared hardwire with SYS \gpio{1} & --- \\
+\chkbox & Throttle ADC: PA0 $\rightarrow$ voltage divider (0--5\,V grip) & --- \\
+\chkbox & Gear sense: PB0/PB1/PB2 $\rightarrow$ TLP281 ch1/ch2/ch3 outputs & --- \\
+\chkbox & Gear relays: PA3/PA4/PA5 $\rightarrow$ relay module IN1/IN2/IN3 & --- \\
+\chkbox & MCP4725 DAC \#2: SDA $\rightarrow$ PB7, SCL $\rightarrow$ PB6, A0 $\rightarrow$ VCC (addr \iicaddr{61}) & --- \\
+\bottomrule
+\caption{MTR STM32 pre-power checklist.}
+\end{longtable}
+\end{center}
+
+\section{PWT ESP32-S3}
+
+\begin{center}
+\begin{longtable}{p{8mm} p{80mm} p{50mm}}
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\toprule
+\chkbox & \textbf{Check} & \textbf{Notes} \\
+\midrule
+\endhead
+\chkbox & WCMCU-230 \#1 (low bus): VCC $\rightarrow$ 3V3, GND $\rightarrow$ GND, CTX $\rightarrow$ \gpio{5}, CRX $\rightarrow$ \gpio{4} & --- \\
+\chkbox & WCMCU-230 \#2 (pwt bus): VCC $\rightarrow$ 3V3, GND $\rightarrow$ GND, CTX $\rightarrow$ \gpio{7}, CRX $\rightarrow$ \gpio{6} & --- \\
+\chkbox & Terminators: enable on modules that are bus endpoints & --- \\
+\chkbox & WDT: \gpio{21} $\rightarrow$ TPS3850 WDI & --- \\
+\bottomrule
+\caption{PWT ESP32-S3 pre-power checklist.}
+\end{longtable}
+\end{center}
+
+\section{Multimeter Checks (All Power OFF)}
+
+\begin{center}
+\begin{longtable}{p{65mm} p{35mm} p{45mm}}
+\toprule
+\textbf{Measurement} & \textbf{Expected} & \textbf{If Wrong} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Measurement} & \textbf{Expected} & \textbf{If Wrong} \\
+\midrule
+\endhead
+High bus CAN\_H $\leftrightarrow$ CAN\_L   & $\sim$120\,\textOmega\ (bench) or $\sim$60\,\textOmega\ (production) & Check terminators \\
+Low bus CAN\_H $\leftrightarrow$ CAN\_L    & $\sim$60\,\textOmega   & Check RT + SYS terminators \\
+Pwt bus CAN\_H $\leftrightarrow$ CAN\_L    & $\sim$60\,\textOmega   & Check PWT + motor controller terminators \\
+High bus CAN\_H $\leftrightarrow$ Low bus CAN\_H & $\infty$ (open)   & Buses must be isolated \\
+Any CAN pin $\leftrightarrow$ GND          & $>$1\,k\textOmega      & Possible short \\
+Any CAN pin $\leftrightarrow$ VCC (3.3\,V) & $>$1\,k\textOmega      & Possible short \\
+3.3\,V rail $\leftrightarrow$ GND          & $>$100\,\textOmega     & Check for dead shorts \\
+\bottomrule
+\caption{Multimeter checks before applying power.}
+\end{longtable}
+\end{center}
+
+\section{Power-On Voltage Checks}
+
+\begin{center}
+\begin{longtable}{p{55mm} p{35mm} p{50mm}}
+\toprule
+\textbf{Measurement} & \textbf{Expected} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Measurement} & \textbf{Expected} & \textbf{Notes} \\
+\midrule
+\endhead
+CAN\_H to GND (any bus)      & $\sim$2.5\,V & Recessive / idle state \\
+CAN\_L to GND (any bus)      & $\sim$2.5\,V & Recessive / idle state \\
+CAN\_H to CAN\_L (idle)      & $\sim$0\,V   & No frames transmitting \\
+MCP4725 VOUT (ESTOP)         & 0\,V         & DAC disabled in ESTOP \\
+ESP32 3.3\,V rail            & 3.3\,V $\pm$ 0.1\,V & Within spec \\
+ESP32 5\,V rail              & 5.0\,V $\pm$ 0.25\,V & Within spec \\
+TLP281 collector (gear off)  & 3.3\,V       & Pull-up holds HIGH \\
+TLP281 collector (gear on)   & $\sim$0\,V   & Opto pulls LOW \\
+\bottomrule
+\caption{Voltage checks after power-on, before CAN traffic.}
+\end{longtable}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 12 — TROUBLESHOOTING
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{Troubleshooting}
+
+\begin{center}
+\begin{longtable}{p{52mm} p{40mm} p{52mm}}
+\toprule
+\textbf{Symptom} & \textbf{Likely Cause} & \textbf{Check / Fix} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Symptom} & \textbf{Likely Cause} & \textbf{Check / Fix} \\
+\midrule
+\endhead
+No frames on any bus & Power not applied, transceiver not powered & 3.3\,V at WCMCU-230 VCC pin \\
+Only one node's frames visible & CAN wiring open/short, or one transceiver bad & Continuity CAN\_H/CAN\_L. Swap WCMCU-230 modules. \\
+Node receives but doesn't transmit & Counterfeit/fake SN65HVD230 chip & Swap modules between working and non-working node \\
+SYS stuck in ESTOP & RT heartbeat missing (\canid{7FD}) & Check RT powered, CAN wired, CTX/CRX not swapped \\
+\texttt{heartbeat\_ok=0} in \canid{011} & RT \canid{7FD} not arriving at SYS & SYS TWAI RX issue or bus wiring \\
+RT steering FAULT & No \canid{201} (EPS-C status) on low bus & Inject \canid{201} or connect EPS-C \\
+CAN bus-off errors & Missing or wrong termination & Measure CAN\_H $\leftrightarrow$ CAN\_L (power off) \\
+Random CRC errors & Missing CAN ground reference & Connect GND between all CAN nodes \\
+MCP2515 init fails & SPI wiring wrong, crystal mismatch & Check MOSI/MISO not swapped. Verify crystal (8/16\,MHz). \\
+MCP2515 ``not in config mode'' & Normal --- MCP2515 not installed & Expected. RT boots without high bus. \\
+MCP4725 I2C write fails & Wrong address, wiring & Check SDA/SCL. Verify addr: SYS=\iicaddr{60}, MTR=\iicaddr{61}. \\
+Gear sense always HIGH & 72\,V not present, TLP281 circuit open & Verify 72\,V at gear selector. Check TLP281 input resistor. \\
+Relay chatters / doesn't engage & Insufficient coil voltage, no flyback diode & Check 5\,V at relay module. Add flyback diode. \\
+ESP32 random resets & Watchdog not toggling, power brownout & Check WDT GPIO toggling on scope. Verify 3.3\,V rail stable. \\
+CANalyst-II ``connect timeout'' & Wrong driver, device not found & Re-run Zadig. Device Manager $\rightarrow$ ``WinUSB''. \\
+\bottomrule
+\caption{Common wiring and CAN bus issues with troubleshooting steps.}
+\end{longtable}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  APPENDIX
+% ═══════════════════════════════════════════════════════════════════════
+
+\appendix
+\part*{Appendix}
+\addcontentsline{toc}{part}{Appendix}
+
+\chapter{Connector \& Wire Reference}
+
+\section{Wire Gauges}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Circuit} & \textbf{AWG} & \textbf{Notes} \\
+\midrule
+CAN\_H / CAN\_L (bus backbone) & 22 & Twisted pair \\
+CAN GND (bus backbone)         & 22 & Ground reference \\
+ESP32 $\leftrightarrow$ Transceiver (Dupont) & 24--26 & 20\,cm female-female jumpers \\
+72\,V traction power           & 8--10  & High current \\
+12\,V accessory power          & 14--16 & Medium current \\
+5\,V DAC / logic power         & 20--22 & Low current \\
+Signal / GPIO                  & 20--22 & Low current \\
+Chassis ground bonding         & 8--10  & Safety ground (green/yellow) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Connector Types}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Application} & \textbf{Connector Series} & \textbf{Notes} \\
+\midrule
+72\,V battery            & Anderson SB50              & 50\,A rated, polarized \\
+12\,V power distribution & ATO/ATC fuse block         & 12 circuits \\
+CAN bus drops            & Deutsch DT 4-pin           & Sealed, automotive \\
+Gear relay outputs       & TE Superseal 3-pin         & Sealed \\
+ESP32 dev board I/O      & 2.54\,mm Dupont headers    & Bench test only --- use Deutsch for vehicle \\
+Dashboard controls       & Molex Mini-Fit Jr          & Handlebar junction \\
+Ground bus               & M6 ring terminals $\rightarrow$ bus bar & Nickel-plated brass \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\chapter{Source References}
+
+\begin{itemize}[leftmargin=*,nosep]
+  \item \texttt{architecture.md} --- System architecture (topology, CAN catalog, FSMs)
+  \item \texttt{can-dictionary.md} --- Bit-level CAN signal layouts
+  \item \texttt{docs/wiring.md} --- Complete wiring reference (source of this document)
+  \item \texttt{docs/wiring-harness.md} --- Buildable harness, connectors, BOM
+  \item \texttt{docs/can-bench-test.md} --- Bench test wiring, injection scripts, test scenarios
+  \item \texttt{docs/io-data.md} --- Complete variable inventory across all ECUs
+  \item \texttt{docs/high-voltage-isolation.md} --- 72\,V isolation, TLP281, TVS protection
+  \item \texttt{docs/external-watchdog.md} --- TPS3850 wiring, timeout, testing
+  \item \texttt{notes/can-module-notes.md} --- WCMCU-230 and MCP2515 practical notes
+  \item \texttt{notes/can-hardware-basics.md} --- CAN physical layer fundamentals
+  \item \texttt{rt-esp32/src/config.h} --- RT timing and GPIO constants
+  \item \texttt{sys-esp32/src/config.h} --- SYS timing and GPIO constants
+  \item \texttt{mtr-stm32/src/config.h} --- MTR timing and pin constants
+  \item \texttt{pwt-esp32/src/config.h} --- PWT timing and GPIO constants
+  \item \texttt{pwt-esp32/pwt-architecture.md} --- Powertrain gateway detailed design
+  \item \texttt{shared/shared\_config.h} --- Vehicle-wide constants
+\end{itemize}
+
+\vfill
+
+\begin{center}
+  \rule{0.5\textwidth}{0.4pt}\\[4mm]
+  {\small\textit{E-Trike Complete Wiring Reference v0.0.6-alpha}}\\[2mm]
+  {\small Generated 2026-07-01 --- 12 chapters, 5 ECUs, 3 CAN buses, all GPIOs, power, and isolation}\\[2mm]
+  {\small Compiled with \LaTeX}
+\end{center}
+
+\end{document}

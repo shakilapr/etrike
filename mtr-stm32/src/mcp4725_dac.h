@@ -14,7 +14,6 @@
 //                              I2C_MEMADD_SIZE_8BIT, data, 2, timeout)
 
 #include <cstdint>
-#include <cstdlib>
 #include "config.h"
 
 namespace mtr {
@@ -26,23 +25,39 @@ public:
     void init() {}
 
     /// Write a 12-bit value directly to the DAC (0-4095 → 0-5V).
-    void write(uint16_t val) {
+    /// Returns true on success, false if I2C write failed after retry.
+    /// ESTOP callers must check the return value — DAC write failure
+    /// leaves the throttle at the last non-zero voltage.
+    bool write(uint16_t val) {
         if (val > kThrottleDacMaxVal) val = kThrottleDacMaxVal;
         extern I2C_HandleTypeDef hi2c1;
         uint8_t buf[2];
         buf[0] = (val >> 4) & 0xFF;
         buf[1] = (val << 4) & 0xFF;
-        HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
-                          0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
+        HAL_StatusTypeDef st = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
+                                                  0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
+        if (st != HAL_OK) {
+            // Retry once — I2C bus may have had a transient glitch
+            st = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
+                                   0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
+        }
+        return st == HAL_OK;
     }
 
     /// Convenience: set DAC from speed in mm/s.
     /// Maps abs(speed) / 3000 × 4095 → 12-bit DAC value.
     /// Zero speed → 0 V. Negative (reverse) uses magnitude only — gear
     /// lines carry direction.
+    /// Speed is clamped to [-kThrottleMaxSpeedMmps, kThrottleMaxSpeedMmps]
+    /// before conversion to guard against corrupt CAN 0x204 values.
     void set_speed_mmps(int32_t speed_mmps) {
-        uint32_t v = (static_cast<uint32_t>(std::abs(speed_mmps)) * 4095U)
-                   / static_cast<uint32_t>(kThrottleMaxSpeedMmps);
+        // Clamp to valid range — prevents UB from std::abs(INT32_MIN) and
+        // guards against corrupt CAN frames producing arbitrary DAC output.
+        if (speed_mmps > kThrottleMaxSpeedMmps) speed_mmps = kThrottleMaxSpeedMmps;
+        else if (speed_mmps < -kThrottleMaxSpeedMmps) speed_mmps = -kThrottleMaxSpeedMmps;
+        // Branch-based abs to avoid std::abs(INT32_MIN) undefined behavior
+        uint32_t abs_speed = speed_mmps < 0 ? uint32_t(-speed_mmps) : uint32_t(speed_mmps);
+        uint32_t v = (abs_speed * 4095U) / static_cast<uint32_t>(kThrottleMaxSpeedMmps);
         write(static_cast<uint16_t>(v > 4095 ? 4095 : v));
     }
 

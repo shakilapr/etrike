@@ -788,7 +788,7 @@ export const CAN_INDEX: CanMessageIndex[] = [
         "name": "SYS_DiagBrakeEngaged",
         "byte": 1,
         "bit_offset": 0,
-        "size": 8,
+        "size": 1,
         "type": "unsigned",
         "factor": 1.0,
         "offset": 0.0,
@@ -798,6 +798,21 @@ export const CAN_INDEX: CanMessageIndex[] = [
         "receivers": [],
         "values": null,
         "comment": ""
+      },
+      {
+        "name": "SYS_DiagBrakeFault",
+        "byte": 1,
+        "bit_offset": 1,
+        "size": 1,
+        "type": "unsigned",
+        "factor": 1.0,
+        "offset": 0.0,
+        "min": 0.0,
+        "max": 1.0,
+        "unit": "",
+        "receivers": [],
+        "values": null,
+        "comment": "SEB L3 fault or brake following-error active"
       },
       {
         "name": "SYS_DiagHeartbeatOk",
@@ -2160,7 +2175,7 @@ export const CAN_INDEX: CanMessageIndex[] = [
         "name": "SYS_DiagBrakeEngaged",
         "byte": 1,
         "bit_offset": 0,
-        "size": 8,
+        "size": 1,
         "type": "unsigned",
         "factor": 1.0,
         "offset": 0.0,
@@ -2170,6 +2185,21 @@ export const CAN_INDEX: CanMessageIndex[] = [
         "receivers": [],
         "values": null,
         "comment": ""
+      },
+      {
+        "name": "SYS_DiagBrakeFault",
+        "byte": 1,
+        "bit_offset": 1,
+        "size": 1,
+        "type": "unsigned",
+        "factor": 1.0,
+        "offset": 0.0,
+        "min": 0.0,
+        "max": 1.0,
+        "unit": "",
+        "receivers": [],
+        "values": null,
+        "comment": "SEB L3 fault or brake following-error active"
       },
       {
         "name": "SYS_DiagHeartbeatOk",

@@ -27,12 +27,12 @@ void SafetyMonitor::init() {
 
 void SafetyMonitor::feed_heartbeat_rt(uint8_t alive_ctr) {
     // Alive counter validation: frozen counter = stuck CAN controller
-    if (m_hb_ever_seen && alive_ctr == m_last_hb_ctr) {
+    if (m_hb_ever_seen.load(std::memory_order_relaxed) && alive_ctr == m_last_hb_ctr) {
         return;  // frozen — don't update timestamp
     }
     m_last_hb_ctr = alive_ctr;
     m_last_hb_us.store(get_time_us());
-    m_hb_ever_seen = true;
+    m_hb_ever_seen.store(true, std::memory_order_relaxed);
 }
 
 bool SafetyMonitor::heartbeat_ok() const {
