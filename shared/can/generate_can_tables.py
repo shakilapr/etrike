@@ -61,35 +61,35 @@ h1{font-size:20px;font-weight:600;border-bottom:1px solid var(--border);padding-
 .msg-comment{color:var(--meta);font-style:italic;font-size:13px;margin:0 0 14px}
 
 /* byte grid */
-.byte-grid-scroll{overflow-x:auto;overflow-y:visible;padding:10px 2px 2px}
-.byte-grid{display:flex;gap:2px;margin-bottom:16px;overflow:visible;min-width:fit-content}
+.byte-grid-scroll{overflow:visible;padding:10px 2px 2px}
+.byte-grid{display:flex;flex-wrap:wrap;gap:2px 8px;margin-bottom:16px;overflow:visible;min-width:0}
 .table-scroll{overflow-x:auto;margin-top:12px}
 .byte-col{display:flex;flex-direction:column;gap:2px;align-items:center}
 .byte-label{font:10px 'Cascadia Code','Fira Code','Consolas',monospace;color:var(--meta)}
 .bit-grid{display:flex;flex-direction:column;gap:2px;overflow:visible}
 .bit-row{display:flex;gap:2px}
-.bit-cell{width:18px;height:18px;border-radius:2px;border:1px solid var(--border);cursor:pointer;transition:all .12s;position:relative}
+.bit-cell{width:18px;height:18px;border-radius:2px;border:1px solid var(--border);cursor:pointer;transition:box-shadow .12s;position:relative}
 .bit-cell.empty{background:var(--bit-0)}
 .bit-cell.filled{background:var(--bit-1);border-color:var(--bit-1)}
 .bit-cell.wide{width:15px;height:15px}
-.bit-cell:hover{transform:scale(1.45);z-index:5;outline:2px solid #000;outline-offset:1px}
-.bit-cell.highlight{outline:3px solid #000;outline-offset:2px;z-index:3}
-.bit-cell:last-child .bit-tooltip{left:auto;right:0;transform:none}
-.bit-cell:last-child .bit-tooltip::after{left:auto;right:8px}
+.bit-cell:hover{z-index:5;outline:0;box-shadow:inset 0 0 0 2px #000,0 0 0 1px rgba(0,0,0,.35)}
+.bit-cell.highlight{z-index:3;box-shadow:inset 0 0 0 2px #000}
 
 /* signal info tooltip on bit hover */
-.bit-tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
-  background:#1a1a1a;color:#fff;font-size:11px;padding:4px 10px;border-radius:4px;white-space:nowrap;pointer-events:none;z-index:20;
-  box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.bit-tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
-  border:4px solid transparent;border-top-color:#1a1a1a}
-.bit-cell:hover .bit-tooltip{display:block}
+.bit-tooltip{display:none}
+.bit-tooltip span{display:block}
+.bit-tooltip b{color:#93c5fd}
+.bit-hover-panel{display:none;position:fixed;z-index:99999;pointer-events:none;background:#1a1a1a;color:#fff;font-size:11px;
+  padding:7px 10px;border-radius:4px;white-space:normal;min-width:190px;max-width:min(340px,80vw);text-align:left;line-height:1.35;
+  box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.bit-hover-panel.visible{display:block}
+.bit-hover-panel span{display:block}
+.bit-hover-panel b{color:#93c5fd}
 
 /* signal table */
 .sig-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
 .sig-table th{background:var(--th-bg);color:var(--fg);padding:7px 10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid var(--th-border);position:sticky;top:0}
 .sig-table td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:top}
-.sig-table tr:hover td{background:var(--row-hover)}
 .sig-table tr.sig-highlight td{background:var(--sig-hover)}
 .sig-color{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .empty{color:#bbb;font-style:italic}
@@ -135,11 +135,11 @@ function colorForIndex(i) { return SIGNAL_COLORS[i % SIGNAL_COLORS.length]; }
 
 function escapeHtml(s) {
   if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function orDash(s) {
-  return s ? escapeHtml(s) : '<span class=empty>&mdash;</span>';
+  return (s === undefined || s === null || s === '') ? '<span class=empty>&mdash;</span>' : escapeHtml(s);
 }
 
 function scaleStr(sig) {
@@ -157,6 +157,39 @@ function typeStr(sig) {
 function valuesStr(sig) {
   if (!sig.values || Object.keys(sig.values).length === 0) return '';
   return Object.entries(sig.values).map(([k,v]) => `${k}=${v}`).join(', ');
+}
+
+function bitMeaningStr(sig, byte, bit) {
+  const relativeBit = (byte * 8 + bit) - (sig.byte * 8 + sig.bit_offset);
+  const commentMatch = sig.comment ? sig.comment.match(new RegExp(`bit${relativeBit}\\s*=\\s*([^,;]+)`, 'i')) : null;
+  if (commentMatch && commentMatch[1]) return commentMatch[1].trim();
+
+  const mask = String(2 ** relativeBit);
+  if (sig.values && sig.values[mask]) return sig.values[mask];
+
+  if (sig.size === 1) {
+    const activeName = sig.name
+      .replace(/^[A-Z0-9]+_/, '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/_/g, ' ')
+      .toLowerCase();
+    return `1 = ${activeName || 'active'}, 0 = inactive`;
+  }
+
+  return '';
+}
+
+function bitTooltip(sig, byte, bit) {
+  const bitMeaning = bitMeaningStr(sig, byte, bit);
+  const lines = [
+    `<b>${escapeHtml(sig.name)}</b>`,
+    `B${byte}.${bit} &middot; ${sig.size}-bit ${typeStr(sig)}`,
+    bitMeaning ? `Bit meaning: ${escapeHtml(bitMeaning)}` : '',
+    `Scale: ${escapeHtml(scaleStr(sig))}${sig.unit ? ' ' + escapeHtml(sig.unit) : ''}`,
+    valuesStr(sig) ? `Values: ${escapeHtml(valuesStr(sig))}` : '',
+    sig.comment ? escapeHtml(sig.comment) : ''
+  ].filter(Boolean);
+  return `<span class=bit-tooltip>${lines.map(line => `<span>${line}</span>`).join('')}</span>`;
 }
 
 function buildBitGrid(msg) {
@@ -183,7 +216,7 @@ function buildBitGrid(msg) {
       const filled = si >= 0;
       const color = filled ? colorForIndex(si) : '';
       const tooltip = filled
-        ? `<span class=bit-tooltip>${escapeHtml(msg.signals[si].name)}</span>`
+        ? bitTooltip(msg.signals[si], b, bit)
         : '';
       cells += `<div class="bit-cell${wide}${filled ? ' filled' : ' empty'}"`
         + (filled ? ` style="background:${color};border-color:${color}"` : '')
@@ -205,12 +238,13 @@ function buildSignalTable(msg) {
       + `<td><span class=sig-color style="background:${color}"></span><b>${escapeHtml(sig.name)}</b></td>`
       + `<td>${sig.byte}</td><td>${sig.bit_offset}</td><td>${sig.size}</td>`
       + `<td>${typeStr(sig)}</td><td>${scaleStr(sig)}</td>`
+      + `<td>${orDash(sig.min)}</td><td>${orDash(sig.max)}</td>`
       + `<td>${orDash(sig.unit)}</td><td>${orDash(valuesStr(sig))}</td>`
       + `<td>${orDash(sig.comment)}</td></tr>`;
   });
   return `<table class=sig-table><thead><tr>`
     + '<th>Signal</th><th>Byte</th><th>Bit</th><th>Len</th>'
-    + '<th>Type</th><th>Scale</th><th>Unit</th><th>Values</th><th>Description</th>'
+    + '<th>Type</th><th>Scale</th><th>Min</th><th>Max</th><th>Unit</th><th>Values</th><th>Description</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -241,42 +275,51 @@ function renderAll(allMessages) {
   let html = '';
   allMessages.forEach(m => html += buildMessageCard(m));
   container.innerHTML = html;
+  ensureBitHoverPanel();
   attachBitHover(container);
-  attachSignalHover(container);
+}
+
+function ensureBitHoverPanel() {
+  if (document.getElementById('bit-hover-panel')) return;
+  const panel = document.createElement('div');
+  panel.id = 'bit-hover-panel';
+  panel.className = 'bit-hover-panel';
+  document.body.appendChild(panel);
+}
+
+function moveBitHoverPanel(event) {
+  const panel = document.getElementById('bit-hover-panel');
+  if (!panel) return;
+  const width = 340, height = 180;
+  const left = Math.max(12, Math.min(event.clientX + 16, window.innerWidth - width - 12));
+  const top = Math.max(12, Math.min(event.clientY + 18, window.innerHeight - height - 12));
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
 }
 
 // Hover bit cell → highlight signal row
 function attachBitHover(container) {
   container.querySelectorAll('.bit-cell[data-signal]').forEach(cell => {
-    cell.addEventListener('mouseenter', () => {
+    cell.addEventListener('mouseenter', (event) => {
       const si = cell.dataset.signal;
       const card = cell.closest('.msg-card');
       card.querySelectorAll(`tr[data-signal="${si}"]`).forEach(r => r.classList.add('sig-highlight'));
       card.querySelectorAll(`.bit-cell[data-signal="${si}"]`).forEach(c => c.classList.add('highlight'));
+      const tooltip = cell.querySelector('.bit-tooltip');
+      const panel = document.getElementById('bit-hover-panel');
+      if (tooltip && panel) {
+        panel.innerHTML = tooltip.innerHTML;
+        panel.classList.add('visible');
+        moveBitHoverPanel(event);
+      }
     });
+    cell.addEventListener('mousemove', moveBitHoverPanel);
     cell.addEventListener('mouseleave', () => {
       const si = cell.dataset.signal;
       const card = cell.closest('.msg-card');
       card.querySelectorAll(`tr[data-signal="${si}"]`).forEach(r => r.classList.remove('sig-highlight'));
       card.querySelectorAll(`.bit-cell[data-signal="${si}"]`).forEach(c => c.classList.remove('highlight'));
-    });
-  });
-}
-
-// Hover signal table row → highlight bit cells
-function attachSignalHover(container) {
-  container.querySelectorAll('tr[data-signal]').forEach(row => {
-    row.addEventListener('mouseenter', () => {
-      const si = row.dataset.signal;
-      const card = row.closest('.msg-card');
-      card.querySelectorAll(`.bit-cell[data-signal="${si}"]`).forEach(c => c.classList.add('highlight'));
-      row.classList.add('sig-highlight');
-    });
-    row.addEventListener('mouseleave', () => {
-      const si = row.dataset.signal;
-      const card = row.closest('.msg-card');
-      card.querySelectorAll(`.bit-cell[data-signal="${si}"]`).forEach(c => c.classList.remove('highlight'));
-      row.classList.remove('sig-highlight');
+      document.getElementById('bit-hover-panel')?.classList.remove('visible');
     });
   });
 }
@@ -342,6 +385,8 @@ def msg_to_dict(msg):
                 "type": s.type.value if s.type else "unsigned",
                 "factor": s.factor,
                 "offset": s.offset,
+                "min": s.min,
+                "max": s.max,
                 "unit": s.unit,
                 "values": {str(k): v for k, v in s.values.items()} if s.values else None,
                 "comment": s.comment,

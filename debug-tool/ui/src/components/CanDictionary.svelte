@@ -94,7 +94,7 @@
         <button class:active={busFilter === "high"} type="button" on:click={() => (busFilter = "high")}>High</button>
         <button class:active={busFilter === "low"}  type="button" on:click={() => (busFilter = "low")}>Low</button>
       </div>
-      <input bind:value={filterText} placeholder="Search by CAN ID, name, signal, ECU, or comment" />
+      <input class="dictionary-search" bind:value={filterText} placeholder="Search by CAN ID, name, signal, ECU, or comment" />
     </div>
     <div class="dictionary-count">
       <span>{filteredCatalog.length} messages</span>
@@ -144,6 +144,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .dictionary-search {
+    max-width: 440px;
   }
 
   .dictionary-count span,

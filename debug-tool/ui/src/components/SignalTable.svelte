@@ -25,13 +25,10 @@
     return Object.entries(signal.values).map(([key, value]) => `${key}=${value}`).join(", ");
   }
 
-  function rangeFor(signal: CanSignalDef): string {
-    if (signal.min === null && signal.max === null) return "--";
-    return `${dash(signal.min)}..${dash(signal.max)}`;
-  }
-
   function receiversFor(signal: CanSignalDef): string {
-    return signal.receivers.length > 0 ? signal.receivers.join(", ") : "--";
+    if (signal.receivers.length > 0) return signal.receivers.join(", ");
+    if (message.receivers.length > 0) return message.receivers.join(", ");
+    return "--";
   }
 
   function dash(value: string | number | null | undefined): string {
@@ -54,7 +51,8 @@
           <th>Len</th>
           <th>Type</th>
           <th>Scale</th>
-          <th>Range</th>
+          <th>Min</th>
+          <th>Max</th>
           <th>Unit</th>
           <th>Rx</th>
           <th>Values</th>
@@ -63,13 +61,7 @@
       </thead>
       <tbody>
         {#each message.signals as signal, index}
-          <tr
-            class:highlight={activeSignal === index}
-            on:mouseenter={() => (activeSignal = index)}
-            on:mouseleave={() => (activeSignal = -1)}
-            on:focusin={() => (activeSignal = index)}
-            on:focusout={() => (activeSignal = -1)}
-          >
+          <tr class:highlight={activeSignal === index}>
             <td data-label="Signal">
               <span class="sig-color" style={`--sig-color:${colorFor(index)}`}></span>
               <strong>{signal.name}</strong>
@@ -80,7 +72,8 @@
             <td data-label="Len">{signal.size}</td>
             <td data-label="Type">{signal.type}</td>
             <td data-label="Scale">{scaleFor(signal)}</td>
-            <td data-label="Range">{rangeFor(signal)}</td>
+            <td data-label="Min">{dash(signal.min)}</td>
+            <td data-label="Max">{dash(signal.max)}</td>
             <td data-label="Unit">{dash(signal.unit)}</td>
             <td data-label="Rx">{receiversFor(signal)}</td>
             <td data-label="Values">{valuesFor(signal)}</td>
@@ -100,7 +93,7 @@
   .signal-table {
     border-collapse: collapse;
     font-size: 0.78rem;
-    min-width: 1080px;
+    min-width: 1120px;
     width: 100%;
   }
 
@@ -121,8 +114,7 @@
     text-transform: uppercase;
   }
 
-  .signal-table tr.highlight td,
-  .signal-table tr:hover td {
+  .signal-table tr.highlight td {
     background: color-mix(in srgb, var(--accent) 14%, var(--hover-row));
   }
 
@@ -130,9 +122,9 @@
     color: var(--fg);
   }
 
-  .signal-table td:nth-child(10),
   .signal-table td:nth-child(11),
-  .signal-table td:nth-child(12) {
+  .signal-table td:nth-child(12),
+  .signal-table td:nth-child(13) {
     color: var(--muted);
     min-width: 160px;
   }

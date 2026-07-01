@@ -3,6 +3,9 @@
 
   export let message: CanMessageIndex;
   export let activeSignal = -1;
+  let activeBit = "";
+  let pointerX = 0;
+  let pointerY = 0;
 
   const COLORS = [
     "#4ea1ff", "#e0556a", "#4caf82", "#e6b34a", "#b06bff", "#3dd6c8",
@@ -10,12 +13,13 @@
   ];
 
   $: bitMap = buildBitMap(message);
-  $: effectiveDlc = Math.min(Math.max(message.dlc, 0), 8);
+  $: effectiveDlc = Math.max(message.dlc, 0);
   $: wide = effectiveDlc >= 7;
   $: mappedBits = bitMap.filter((index) => index >= 0).length;
+  $: tooltipStyle = floatingTooltipStyle(pointerX, pointerY);
 
   function buildBitMap(input: CanMessageIndex): number[] {
-    const map = Array.from({ length: Math.min(Math.max(input.dlc, 0), 8) * 8 }, () => -1);
+    const map = Array.from({ length: Math.max(input.dlc, 0) * 8 }, () => -1);
     input.signals.forEach((signal, index) => {
       const start = signal.byte * 8 + signal.bit_offset;
       for (let offset = 0; offset < signal.size; offset++) {
@@ -30,10 +34,84 @@
     return COLORS[index % COLORS.length];
   }
 
+  function scaleFor(index: number): string {
+    const signal = message.signals[index];
+    if (signal.factor === 1 && signal.offset === 0) return "raw";
+    if (signal.factor === 1) return `raw ${signal.offset >= 0 ? "+" : "-"} ${Math.abs(signal.offset)}`;
+    if (signal.offset === 0) return `raw x ${signal.factor}`;
+    return `raw x ${signal.factor} ${signal.offset >= 0 ? "+" : "-"} ${Math.abs(signal.offset)}`;
+  }
+
+  function valuesFor(index: number): string {
+    const values = message.signals[index].values;
+    if (!values || Object.keys(values).length === 0) return "";
+    return Object.entries(values).map(([key, value]) => `${key}=${value}`).join(", ");
+  }
+
+  function bitMeaningFor(index: number, byte: number, bit: number): string {
+    const signal = message.signals[index];
+    const absoluteBit = byte * 8 + bit;
+    const relativeBit = absoluteBit - (signal.byte * 8 + signal.bit_offset);
+    const commentMatch = signal.comment?.match(new RegExp(`bit${relativeBit}\\s*=\\s*([^,;]+)`, "i"));
+    if (commentMatch?.[1]) return commentMatch[1].trim();
+
+    const bitMask = String(2 ** relativeBit);
+    const maskMeaning = signal.values?.[bitMask];
+    if (maskMeaning) return maskMeaning;
+
+    if (signal.size === 1) {
+      const activeName = signal.name
+        .replace(/^[A-Z0-9]+_/, "")
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/_/g, " ")
+        .toLowerCase();
+      return `1 = ${activeName || "active"}, 0 = inactive`;
+    }
+
+    return "";
+  }
+
   function bitLabel(byte: number, bit: number, signalIndex: number): string {
     if (signalIndex < 0) return `B${byte}.${bit} unused`;
     const signal = message.signals[signalIndex];
-    return `${signal.name}: B${byte}.${bit}, ${signal.size}-bit ${signal.type}`;
+    return [
+      `${signal.name}: B${byte}.${bit}`,
+      bitMeaningFor(signalIndex, byte, bit) ? `bit meaning ${bitMeaningFor(signalIndex, byte, bit)}` : "",
+      `${signal.size}-bit ${signal.type}`,
+      `scale ${scaleFor(signalIndex)}`,
+      signal.unit ? `unit ${signal.unit}` : "",
+      valuesFor(signalIndex),
+      signal.comment
+    ].filter(Boolean).join(" / ");
+  }
+
+  function floatingTooltipStyle(x: number, y: number): string {
+    const width = 340;
+    const height = 180;
+    const viewportWidth = typeof window === "undefined" ? 1440 : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? 900 : window.innerHeight;
+    const left = Math.max(12, Math.min(x + 16, viewportWidth - width - 12));
+    const top = Math.max(12, Math.min(y + 18, viewportHeight - height - 12));
+    return `left:${left}px;top:${top}px;`;
+  }
+
+  function setPointer(event: MouseEvent | FocusEvent) {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const rect = target.getBoundingClientRect();
+    pointerX = "clientX" in event ? event.clientX : rect.left + rect.width / 2;
+    pointerY = "clientY" in event ? event.clientY : rect.bottom;
+  }
+
+  function showBit(event: MouseEvent | FocusEvent, byte: number, bit: number, signalIndex: number) {
+    setPointer(event);
+    activeSignal = signalIndex;
+    activeBit = signalIndex >= 0 ? `B${byte}.${bit}` : "";
+  }
+
+  function clearBit() {
+    activeSignal = -1;
+    activeBit = "";
   }
 </script>
 
@@ -59,12 +137,12 @@
                 class:highlight={activeSignal === signalIndex && signalIndex >= 0}
                 style={signalIndex >= 0 ? `--bit-color:${colorFor(signalIndex)}` : ""}
                 aria-label={bitLabel(byte, bit, signalIndex)}
-                title={bitLabel(byte, bit, signalIndex)}
                 type="button"
-                on:mouseenter={() => (activeSignal = signalIndex)}
-                on:mouseleave={() => (activeSignal = -1)}
-                on:focus={() => (activeSignal = signalIndex)}
-                on:blur={() => (activeSignal = -1)}
+                on:mouseenter={(event) => showBit(event, byte, bit, signalIndex)}
+                on:mousemove={setPointer}
+                on:mouseleave={clearBit}
+                on:focus={(event) => showBit(event, byte, bit, signalIndex)}
+                on:blur={clearBit}
               >
                 <span>{signalIndex >= 0 ? "" : bit}</span>
               </button>
@@ -74,6 +152,39 @@
       {/each}
     </div>
   </div>
+  {#if activeSignal >= 0}
+      {@const signal = message.signals[activeSignal]}
+      {@const activeParts = activeBit.match(/^B(\d+)\.(\d+)$/)}
+      {@const activeMeaning = activeParts ? bitMeaningFor(activeSignal, Number(activeParts[1]), Number(activeParts[2])) : ""}
+    <div class="bit-inspector" role="status">
+      <strong>{activeBit}</strong>
+      <span>{signal.name}</span>
+      {#if activeMeaning}
+        <b>{activeMeaning}</b>
+      {/if}
+      <em>{signal.size}-bit {signal.type} · scale {scaleFor(activeSignal)}{signal.unit ? ` ${signal.unit}` : ""}</em>
+      {#if valuesFor(activeSignal)}
+        <small>{valuesFor(activeSignal)}</small>
+      {/if}
+      {#if signal.comment}
+        <small>{signal.comment}</small>
+      {/if}
+    </div>
+    <div class="bit-float-tooltip" role="tooltip" style={tooltipStyle}>
+      <strong>{signal.name}</strong>
+      <small>{activeBit} · {signal.size}-bit {signal.type}</small>
+      {#if activeMeaning}
+        <small>Bit meaning: {activeMeaning}</small>
+      {/if}
+      <small>Scale: {scaleFor(activeSignal)}{signal.unit ? ` ${signal.unit}` : ""}</small>
+      {#if valuesFor(activeSignal)}
+        <small>Values: {valuesFor(activeSignal)}</small>
+      {/if}
+      {#if signal.comment}
+        <em>{signal.comment}</em>
+      {/if}
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -99,14 +210,17 @@
   }
 
   .byte-grid-scroll {
-    overflow-x: auto;
+    overflow: visible;
     padding: 6px 0 2px;
   }
 
   .byte-grid {
     display: flex;
     gap: 8px;
-    min-width: fit-content;
+    flex-wrap: wrap;
+    min-width: 0;
+    overflow: visible;
+    row-gap: 12px;
   }
 
   .byte-col {
@@ -138,6 +252,7 @@
     justify-content: center;
     min-height: 18px;
     padding: 0;
+    position: relative;
     width: 18px;
   }
 
@@ -159,13 +274,88 @@
     color: #ffffff;
   }
 
-  .bit-cell.highlight,
+  .bit-cell.highlight {
+    box-shadow: inset 0 0 0 2px var(--fg);
+    z-index: 1;
+  }
+
   .bit-cell:hover,
   .bit-cell:focus-visible {
-    outline: 2px solid var(--fg);
-    outline-offset: 1px;
-    transform: scale(1.16);
+    box-shadow: inset 0 0 0 2px var(--fg), 0 0 0 1px color-mix(in srgb, var(--fg) 45%, transparent);
+    outline: 0;
     z-index: 2;
+  }
+
+  .bit-float-tooltip {
+    background: #080a0f;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    box-shadow: 0 8px 22px rgb(0 0 0 / 0.38);
+    color: var(--fg);
+    display: grid;
+    gap: 3px;
+    max-width: min(340px, 78vw);
+    min-width: 190px;
+    padding: 8px 10px;
+    pointer-events: none;
+    position: fixed;
+    text-align: left;
+    white-space: normal;
+    z-index: 10000;
+  }
+
+  .bit-float-tooltip strong,
+  .bit-float-tooltip small,
+  .bit-float-tooltip em {
+    display: block;
+  }
+
+  .bit-float-tooltip strong {
+    color: var(--accent);
+    font-size: 0.72rem;
+  }
+
+  .bit-float-tooltip small,
+  .bit-float-tooltip em {
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-style: normal;
+    line-height: 1.3;
+  }
+
+  .bit-inspector {
+    align-items: center;
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--panel-border));
+    border-radius: 6px;
+    color: var(--fg);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 8px;
+    min-height: 34px;
+    padding: 7px 10px;
+  }
+
+  .bit-inspector strong,
+  .bit-inspector span,
+  .bit-inspector b {
+    color: var(--accent);
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 0.76rem;
+    font-weight: 800;
+  }
+
+  .bit-inspector b {
+    color: var(--fg);
+    font-family: inherit;
+  }
+
+  .bit-inspector em,
+  .bit-inspector small {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-style: normal;
   }
 
   .bit-empty {
