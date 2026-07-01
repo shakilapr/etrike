@@ -120,15 +120,29 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 // ── Safety monitor (extracted to safety_monitor.h) ──────────────────
 #include "safety_monitor.h"
 
-// ── CAN TX helper — checks return, logs failure, counts ─────────────
+// ── CAN TX helper — checks return, logs failure, detects recovery ────
 static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
+static uint32_t g_can_tx_ok_low = 0, g_can_tx_ok_high = 0;
+static bool g_can_tx_had_fail_low = false, g_can_tx_had_fail_high = false;
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
-    if (!drv || !drv->send(fr)) { g_can_tx_fail_low++; return false; }
+    if (!drv || !drv->send(fr)) {
+        g_can_tx_fail_low++;
+        if (!g_can_tx_had_fail_low) { ESP_LOGW(TAG, "Low CAN TX failed"); g_can_tx_had_fail_low = true; }
+        return false;
+    }
+    if (g_can_tx_had_fail_low) { ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu", g_can_tx_fail_low, g_can_tx_ok_low); g_can_tx_had_fail_low = false; }
+    g_can_tx_ok_low++;
     return true;
 }
 static bool send_can_high(can::Frame& fr) {
-    if (!g_can_high.send(fr)) { g_can_tx_fail_high++; return false; }
+    if (!g_can_high.send(fr)) {
+        g_can_tx_fail_high++;
+        if (!g_can_tx_had_fail_high) { ESP_LOGW(TAG, "High CAN TX failed"); g_can_tx_had_fail_high = true; }
+        return false;
+    }
+    if (g_can_tx_had_fail_high) { ESP_LOGI(TAG, "High CAN TX recovered — fail=%lu ok=%lu", g_can_tx_fail_high, g_can_tx_ok_high); g_can_tx_had_fail_high = false; }
+    g_can_tx_ok_high++;
     return true;
 }
 

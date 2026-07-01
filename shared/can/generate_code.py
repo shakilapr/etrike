@@ -153,15 +153,15 @@ def generate_can_ids_ts(db) -> str:
     lines.append("")
 
     # ── Forwarding rules ───────────────────────────────────────
-    # Find messages appearing on both buses
-    high_ids = {msg.id for bus, msg, _ in all_msgs if bus == "high"}
-    low_ids = {msg.id for bus, msg, _ in all_msgs if bus == "low"}
-    fwd_low_to_high = sorted(low_ids & high_ids)
-    lines.append("// ── Gateway forwarding rules ────────────────────────────────")
+    # Hand-maintained; matches can_protocol.h::is_forwarded_low_to_high
+    # and is_forwarded_high_to_low. DO NOT auto-generate from YAML bus
+    # intersection — heartbeats appear on both buses but are NOT forwarded,
+    # and some frames (0x302) are asymmetric (high→low only).
+    lines.append("// ── Gateway forwarding rules (hand-maintained, matches can_protocol.h) ─")
     lines.append("// Messages forwarded low→high by RT (transparent copy)")
-    lines.append(f"export const FWD_LOW_TO_HIGH: number[] = {[f'0x{x:03X}' for x in fwd_low_to_high]};")
-    lines.append(f"export const FWD_HIGH_TO_LOW: number[] = {[f'0x{x:03X}' for x in fwd_low_to_high]};")
-    lines.append("// (Same set — bidirectional forwarding for these IDs)")
+    lines.append("export const FWD_LOW_TO_HIGH: number[] = ['0x001', '0x011', '0x120', '0x206', '0x600'];")
+    lines.append("// Messages forwarded high→low by RT")
+    lines.append("export const FWD_HIGH_TO_LOW: number[] = ['0x001', '0x302'];")
     lines.append("")
 
     # ── Signal definitions (compact) ────────────────────────────

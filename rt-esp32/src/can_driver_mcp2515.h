@@ -45,6 +45,7 @@ public:
     // ── Lifecycle ─────────────────────────────────────────────────
 
     bool init();
+    bool is_initialized() const { return m_initialized.load(std::memory_order_relaxed); }
 
     /// Switch operating mode. Returns false if the chip fails to enter
     /// the requested mode within 1ms. ListenOnly is safe for bus monitoring.

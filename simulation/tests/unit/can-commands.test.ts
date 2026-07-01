@@ -55,9 +55,7 @@ describe("0x011 SYS_SAFETY_STS", () => {
 });
 
 describe("0x012 SYS_DCDC_CMD", () => {
-  it("gap: defined in protocol but DCDC ECU not simulated", () => {
-    expect(true).toBe(true);
-  });
+  it.skip("GAP(issue#dcdc-sim): defined in protocol but DCDC ECU not simulated");
 });
 
 describe("0x110 SYS_MODE_CMD", () => {
@@ -185,27 +183,19 @@ describe("0x301 HOST_BRAKE_REQ", () => {
 });
 
 describe("0x302 HOST_LIGHT_CMD", () => {
-  it("gap: light bits defined but Host does not send, RT does not forward", () => {
-    expect(true).toBe(true);
-  });
+  it.skip("GAP(issue#light-fwd): light bits defined but Host does not send, RT does not forward");
 });
 
 describe("0x310 STEER_DIAG", () => {
-  it("gap: defined in protocol; C++ firmware sends it, simulation does not", () => {
-    expect(true).toBe(true);
-  });
+  it.skip("GAP(issue#steer-diag-sim): defined in protocol; C++ firmware sends it, simulation does not");
 });
 
 describe("0x311 BRAKE_DIAG", () => {
-  it("gap: defined in protocol; C++ firmware sends it, simulation does not", () => {
-    expect(true).toBe(true);
-  });
+  it.skip("GAP(issue#brake-diag-sim): defined in protocol; C++ firmware sends it, simulation does not");
 });
 
 describe("0x220 RT_PID_RPT", () => {
-  it("reserved / not yet enabled", () => {
-    expect(true).toBe(true);
-  });
+  it.skip("GAP(issue#pid-rpt-sim): reserved / not yet enabled");
 });
 
 describe("0x400 HOST_OBSTACLE_DIST", () => {

@@ -52,13 +52,12 @@ describe("Sbwc", () => {
   it("sets L3 error after 20ms without 0x169", () => {
     // First receive a command
     epsc.tick(0, [], [make0x169(0)], ctx());
-    // Then 25ms later with no command
-    const frames = epsc.tick(25, [], [], ctx());
+    // Then 30ms later with no command (>20ms timeout, aligned to 10ms tick)
+    const frames = epsc.tick(30, [], [], ctx());
     const f201 = frames.find(f => f.canId === "0x201");
-    if (f201) {
-      // bits 6-7 should be 3 for L3
-      expect((f201.data[0] >> 6) & 3).toBe(3);
-    }
+    expect(f201).toBeDefined();  // L3 error must produce a 0x201 frame
+    // bits 6-7 should be 3 for L3
+    expect((f201!.data[0] >> 6) & 3).toBe(3);
   });
 
   it("0x201 checksum is XOR ^ 0xFF", () => {
