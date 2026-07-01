@@ -10,10 +10,12 @@
   ];
 
   $: bitMap = buildBitMap(message);
-  $: wide = message.dlc >= 7;
+  $: effectiveDlc = Math.min(Math.max(message.dlc, 0), 8);
+  $: wide = effectiveDlc >= 7;
+  $: mappedBits = bitMap.filter((index) => index >= 0).length;
 
   function buildBitMap(input: CanMessageIndex): number[] {
-    const map = Array.from({ length: Math.max(input.dlc, 0) * 8 }, () => -1);
+    const map = Array.from({ length: Math.min(Math.max(input.dlc, 0), 8) * 8 }, () => -1);
     input.signals.forEach((signal, index) => {
       const start = signal.byte * 8 + signal.bit_offset;
       for (let offset = 0; offset < signal.size; offset++) {
@@ -27,14 +29,24 @@
   function colorFor(index: number): string {
     return COLORS[index % COLORS.length];
   }
+
+  function bitLabel(byte: number, bit: number, signalIndex: number): string {
+    if (signalIndex < 0) return `B${byte}.${bit} unused`;
+    const signal = message.signals[signalIndex];
+    return `${signal.name}: B${byte}.${bit}, ${signal.size}-bit ${signal.type}`;
+  }
 </script>
 
 {#if message.dlc === 0}
   <div class="bit-empty">DLC=0 event frame. The CAN ID is the signal.</div>
 {:else}
+  <div class="bit-grid-head">
+    <span>Byte layout</span>
+    <em>{mappedBits}/{effectiveDlc * 8} bits mapped</em>
+  </div>
   <div class="byte-grid-scroll" aria-label={`${message.name} byte layout`}>
     <div class="byte-grid">
-      {#each Array.from({ length: message.dlc }) as _, byte}
+      {#each Array.from({ length: effectiveDlc }) as _, byte}
         <div class="byte-col">
           <span class="byte-label">B{byte}</span>
           <div class="bit-row">
@@ -46,14 +58,15 @@
                 class:filled={signalIndex >= 0}
                 class:highlight={activeSignal === signalIndex && signalIndex >= 0}
                 style={signalIndex >= 0 ? `--bit-color:${colorFor(signalIndex)}` : ""}
-                title={signalIndex >= 0 ? message.signals[signalIndex].name : `B${byte}.${bit}`}
+                aria-label={bitLabel(byte, bit, signalIndex)}
+                title={bitLabel(byte, bit, signalIndex)}
                 type="button"
                 on:mouseenter={() => (activeSignal = signalIndex)}
                 on:mouseleave={() => (activeSignal = -1)}
                 on:focus={() => (activeSignal = signalIndex)}
                 on:blur={() => (activeSignal = -1)}
               >
-                <span>{bit}</span>
+                <span>{signalIndex >= 0 ? "" : bit}</span>
               </button>
             {/each}
           </div>
@@ -64,9 +77,30 @@
 {/if}
 
 <style>
+  .bit-grid-head {
+    align-items: center;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+  }
+
+  .bit-grid-head span {
+    color: var(--fg);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .bit-grid-head em {
+    font-size: 0.72rem;
+    font-style: normal;
+    font-weight: 700;
+  }
+
   .byte-grid-scroll {
     overflow-x: auto;
-    padding: 4px 0 2px;
+    padding: 6px 0 2px;
   }
 
   .byte-grid {
@@ -115,12 +149,12 @@
 
   .bit-cell span {
     font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-    font-size: 0.52rem;
+    font-size: 0.46rem;
     line-height: 1;
   }
 
   .bit-cell.filled {
-    background: color-mix(in srgb, var(--bit-color) 78%, var(--bg));
+    background: color-mix(in srgb, var(--bit-color) 86%, var(--bg));
     border-color: var(--bit-color);
     color: #ffffff;
   }
@@ -130,7 +164,7 @@
   .bit-cell:focus-visible {
     outline: 2px solid var(--fg);
     outline-offset: 1px;
-    transform: scale(1.2);
+    transform: scale(1.16);
     z-index: 2;
   }
 
