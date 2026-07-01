@@ -11,39 +11,6 @@ Pin-to-pin wiring for all five ECUs, three CAN buses, power distribution, and ev
 
 ## 1. System Topology
 
-```
-                         ┌── HIGH CAN BUS (500 kbit/s) ──┐
-                         │                                │
-    ┌────────────────────┼──────┐          ┌──────────────┴──────────┐
-    │  Jetson Orin NX    │      │          │    RT ESP32-S3           │
-    │  (Host autonomy)   │      │          │                          │
-    │                    │      │          │  MCP2515 (SPI) ── High   │
-    │  CAN: built-in     │      │          │  TWAI (GPIO 5/4) ── Low  │
-    └────────────────────┘      │          │  Gateway: High ↔ Low     │
-                                │          └──────────┬───────────────┘
-                                │                     │
-    ┌───────────────────────────┼── LOW CAN BUS (500 kbit/s) ────────────────────────────┐
-    │                           │                     │                                   │
-    │  ┌──────────────┐  ┌──────┴──────┐  ┌──────────┴───────────┐  ┌─────────────────┐  │
-    │  │ SYS ESP32-S3 │  │ MTR STM32   │  │   PWT ESP32-S3       │  │   Actuators     │  │
-    │  │              │  │             │  │                       │  │                 │  │
-    │  │ TWAI:5/4     │  │ CAN: TBD    │  │ TWAI0: 5/4 (low)     │  │ EPS-C (steer)   │  │
-    │  │ Safety L2    │  │ EGAS L1     │  │ TWAI1: 7/6 (pwt)     │  │ SEB   (brake)   │  │
-    │  │ Body control │  │ Throttle    │  │ Gateway: Low ↔ Pwt   │  │ DC-DC (72→12V)  │  │
-    │  └──────────────┘  │ Gear        │  └──────────┬───────────┘  └─────────────────┘  │
-    │                    └─────────────┘             │                                   │
-    └────────────────────────────────────────────────┼───────────────────────────────────┘
-                                                     │
-                         ┌── POWERTRAIN CAN BUS (250 kbit/s) ──┐
-                         │         │                           │
-                         │  ┌──────┴──────┐    ┌───────────────┴──────┐
-                         │  │ PWT ESP32-S3│    │  Motor Controller     │
-                         │  │ TWAI1: 7/6  │    │  (telemetry via CAN)  │
-                         │  └─────────────┘    │  DC-DC Converter      │
-                         │                     │  (0x012 enable cmd)   │
-                         │                     └──────────────────────┘
-```
-
 - **High bus:** Jetson ↔ RT MCP2515. 120 Ω at both ends.
 - **Low bus:** RT TWAI ↔ SYS TWAI ↔ MTR ↔ PWT TWAI0 ↔ EPS-C ↔ SEB ↔ DC-DC. 120 Ω at both physical ends.
 - **Powertrain bus:** PWT TWAI1 ↔ DC-DC ↔ Motor Controller. 120 Ω at both ends.
@@ -400,35 +367,14 @@ GPIO 35 : Gear R relay out → 4-ch relay module IN3
 
 ### 5.4 MTR — Throttle Circuit (0–5 V)
 
-```
-Throttle Grip (0–5V) ──┬── R1 (1.8 kΩ) ──┬── ADC pin (PA0)
-                        │                  │
-                        └── R2 (3.3 kΩ) ──┴── GND
-
-MCP4725 DAC #2: VCC = 5 V, GND, SDA = PB7, SCL = PB6
-  I2C addr 0x61 (A0 tied to VCC)
-  VOUT → Motor Controller throttle input
-```
+- **Throttle Grip (0–5 V)** → voltage divider (R1: 1.8 kΩ, R2: 3.3 kΩ) → ADC pin (PA0)
+- **MCP4725 DAC #2:** VCC = 5 V, GND, SDA = PB7, SCL = PB6, I2C addr 0x61 (A0 tied to VCC), VOUT → Motor Controller throttle input
 
 ### 5.5 MTR — Gear Circuit (72 V Bidirectional)
 
-**Input (read gear selector, galvanic isolation via TLP281):**
+**Input (read gear selector, galvanic isolation via TLP281):** 72V gear line → R_current_limit (~33 kΩ / 2 W) → TLP281 pin 1 (anode), TLP281 pin 2 (cathode) → GND_72V. TLP281 pin 4 (collector) → GPIO (PB0) with 10k pull-up to 3.3 V, pin 3 (emitter) → GND.
 
-```
-72V Gear D ──┬── R_current_limit (~33 kΩ / 2 W) ── TLP281 pin 1 (anode)
-             └── TLP281 pin 2 (cathode) ── GND_72V
-
-TLP281 pin 4 (collector) ── GPIO (PB0) ── 10k pull-up ── 3.3 V
-TLP281 pin 3 (emitter) ── GND
-```
-
-**Output (mimic 72V to ECU, mechanical relay isolation):**
-
-```
-72V Battery ──┬──[1A fast-blow fuse]──┬── Relay COM (D) ── NO ── ECU Gear D ──┬── [TVS SMCJ90CA] ── GND
-              │                       ├── Relay COM (S) ── NO ── ECU Gear S ──┼── [TVS SMCJ90CA] ── GND
-              │                       └── Relay COM (R) ── NO ── ECU Gear R ──┴── [TVS SMCJ90CA] ── GND
-```
+**Output (mimic 72V to ECU, mechanical relay isolation):** 72V Battery → 1A fast-blow fuse → Relay COM (D/S/R) → NO → ECU Gear D/S/R, each with TVS SMCJ90CA to GND.
 
 **Protection components:**
 
@@ -725,37 +671,15 @@ TPS3850 GND → GND
 
 ## 13. Power Distribution
 
-```
-72V Traction Battery
-  │
-  ├── [Main fuse / contactor] ── Motor Controller (72 V)
-  │     │                         │
-  │     │                         └── Motor (3-phase BLDC)
-  │     │
-  │     ├── DC-DC Converter (72 V → 12 V, CAN: 0x012)
-  │     │     │
-  │     │     ├── [12V Fuse Block — ATO/ATC, 12 circuits]
-  │     │     │     │
-  │     │     │     ├── 12V Relay (SYS GPIO27) ── 12V Accessory Bus
-  │     │     │     │     ├── Signal lamps (via relays: 18, 19, 21, 22)
-  │     │     │     │     ├── Mode bulbs (via relays: 25, 26)
-  │     │     │     │     └── Headlight (via relay: 22)
-  │     │     │     │
-  │     │     │     ├── ESP32-S3 Dev Boards (×4) — onboard 5V/3.3V regulation
-  │     │     │     ├── STM32 Board — onboard 5V/3.3V regulation
-  │     │     │     ├── EPS-C (steer-by-wire unit)
-  │     │     │     ├── SEB (brake-by-wire unit)
-  │     │     │     └── Jetson Orin NX (19 V via separate DC-DC)
-  │     │     │
-  │     │     └── [M6 Ground Bus Bar — nickel-plated brass, ≥6 studs]
-  │     │
-  │     └── 72V Gear Lines (via 1A fuse → MTR relay COM terminals)
-  │           ├── Relay D COM → NO → ECU Gear D
-  │           ├── Relay S COM → NO → ECU Gear S
-  │           └── Relay R COM → NO → ECU Gear R
-  │
-  └── Chassis Ground (M6 bolt to frame rail)
-```
+**Power distribution path:**
+
+- **72V Traction Battery** → Main fuse/contactor → Motor Controller (72V) → Motor (3-phase BLDC)
+- **72V** → DC-DC Converter (72V → 12V, CAN 0x012) → 12V Fuse Block (ATO/ATC, 12 circuits)
+- **12V Fuse Block** → 12V Relay (SYS GPIO27) → 12V Accessory Bus (signal lamps via relays 18/19/21/22, mode bulbs via relays 25/26, headlight via relay 22)
+- **12V Fuse Block** → ESP32-S3 Dev Boards (×4), STM32 Board, EPS-C, SEB, Jetson Orin NX (via separate 19V DC-DC)
+- **12V Fuse Block** → M6 Ground Bus Bar (nickel-plated brass, ≥6 studs)
+- **72V Gear Lines** (via 1A fuse → MTR relay COM terminals) → Relay D/S/R COM → NO → ECU Gear D/S/R
+- **Chassis Ground** (M6 bolt to frame rail)
 
 ### 13.1 Voltage Domain Summary
 
@@ -775,17 +699,7 @@ The 72 V gear selector signals must be galvanically isolated from the 3.3 V MCU 
 
 ### 14.1 Circuit per Gear Channel
 
-```
-72V Gear line ──┬── R_current_limit (~33 kΩ / 2 W) ── TLP281 pin 1 (anode)
-                └── TLP281 pin 2 (cathode) ── GND_72V
-
-                                          ║  (optical isolation, 2500 Vrms)
-                                          ║
-
-TLP281 pin 4 (collector) ── GPIO (sense) ── 10k pull-up ── 3.3 V
-TLP281 pin 3 (emitter) ── GND
-```
-
+Each gear channel: 72V gear line → R_current_limit (~33 kΩ / 2 W) → TLP281 pin 1 (anode). TLP281 pin 2 (cathode) → GND_72V. TLP281 pin 4 (collector) → GPIO (sense) with 10k pull-up to 3.3 V. TLP281 pin 3 (emitter) → GND. Optical isolation: 2500 Vrms.
 - **72V present** → LED on → phototransistor conducts → GPIO reads LOW
 - **72V absent** → LED off → phototransistor off → pull-up holds GPIO HIGH
 - **R_current_limit:** ~33 kΩ, 2 W. At 72 V: I ≈ 2.2 mA through LED. P ≈ 0.16 W in resistor.
@@ -999,42 +913,37 @@ GPIO 36–48: —                                       [PSRAM / unavailable]
 
 ### 18.3 MTR STM32
 
-```
-Pin            Encoded  Signal                         Direction
-──────────────────────────────────────────────────────────────────
-PA0 (ADC1_IN0)    0     Throttle ADC (0–3.3V via divider)  [IN]
-PA1               1     (unused)
-PA2               2     (unused)
-PA3               3     Gear D relay out → relay IN1       [OUT]
-PA4               4     Gear S relay out → relay IN2       [OUT]
-PA5               5     Gear R relay out → relay IN3       [OUT]
-PA6–PA15        6–15   (unused)
-PB0              16     Gear D sense ← TLP281 ch1          [IN, 10k pull-up]
-PB1              17     Gear S sense ← TLP281 ch2          [IN, 10k pull-up]
-PB2              18     Gear R sense ← TLP281 ch3          [IN, 10k pull-up]
-PB3–PB5        19–21   (unused)
-PB6              22     MCP4725 DAC SCL                    [OUT, I2C]
-PB7              23     MCP4725 DAC SDA                    [I/O, I2C addr 0x61]
-PB8–PB15       24–31   (unused)
-PC0–PC15       32–47   (unused / reserved)
-—               TBD     CAN RX ← transceiver               [IN]
-—               TBD     CAN TX → transceiver               [OUT]
-—               TBD     ESTOP button (shared with SYS)     [IN, NC, active-low]
-```
+| Pin | Encoded | Signal | Direction |
+|-----|---------|--------|-----------|
+| PA0 (ADC1_IN0) | 0 | Throttle ADC (0–3.3V via divider) | [IN] |
+| PA1 | 1 | (unused) | — |
+| PA2 | 2 | (unused) | — |
+| PA3 | 3 | Gear D relay out → relay IN1 | [OUT] |
+| PA4 | 4 | Gear S relay out → relay IN2 | [OUT] |
+| PA5 | 5 | Gear R relay out → relay IN3 | [OUT] |
+| PA6–PA15 | 6–15 | (unused) | — |
+| PB0 | 16 | Gear D sense ← TLP281 ch1 | [IN, 10k pull-up] |
+| PB1 | 17 | Gear S sense ← TLP281 ch2 | [IN, 10k pull-up] |
+| PB2 | 18 | Gear R sense ← TLP281 ch3 | [IN, 10k pull-up] |
+| PB3–PB5 | 19–21 | (unused) | — |
+| PB6 | 22 | MCP4725 DAC SCL | [OUT, I2C] |
+| PB7 | 23 | MCP4725 DAC SDA | [I/O, I2C addr 0x61] |
+| PB8–PB15 | 24–31 | (unused) | — |
+| PC0–PC15 | 32–47 | (unused / reserved) | — |
+| — | TBD | CAN RX ← transceiver | [IN] |
+| — | TBD | CAN TX → transceiver | [OUT] |
+| — | TBD | ESTOP button (shared with SYS) | [IN, NC, active-low] |
 
 ### 18.4 PWT ESP32-S3
 
-```
 GPIO 4  : CAN RX — low bus TWAI0 (500 kbit/s)        [IN]
 GPIO 5  : CAN TX — low bus TWAI0 (500 kbit/s)        [OUT]
 GPIO 6  : CAN RX — powertrain bus TWAI1 (250 kbit/s) [IN]
 GPIO 7  : CAN TX — powertrain bus TWAI1 (250 kbit/s) [OUT]
 GPIO 21 : WDT toggle → TPS3850 WDI                   [OUT, 20 Hz]
-```
 
 ### 18.5 Debug ESP32-S3
 
-```
 GPIO 4  : CAN RX — TWAI (bus A, 500 kbit/s)          [IN]
 GPIO 5  : CAN TX — TWAI (bus A, 500 kbit/s)          [OUT]
 GPIO 36 : SPI SCK → MCP2515 (optional, bus B)        [OUT]
@@ -1042,7 +951,6 @@ GPIO 37 : SPI MOSI → MCP2515 SI (optional)           [OUT]
 GPIO 38 : SPI MISO ← MCP2515 SO (optional)           [IN]
 GPIO 39 : SPI CS → MCP2515 (optional)                [OUT]
 GPIO 40 : INT ← MCP2515 (optional)                   [IN]
-```
 
 ---
 

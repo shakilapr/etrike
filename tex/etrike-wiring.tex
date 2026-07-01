@@ -11,7 +11,7 @@
 % ── Packages ──────────────────────────────────────────────────────────
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{XCharter}
+\usepackage{lmodern}
 \usepackage[inner=25mm,outer=20mm,top=22mm,bottom=25mm,footskip=14mm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
@@ -36,7 +36,6 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage{parskip}
-\usepackage{pmboxdraw}
 \usepackage{textcomp}
 \usepackage{calc}
 
@@ -220,9 +219,9 @@ Host & Jetson Orin NX & 1 (built-in CAN)  & High-level autonomy \\
 \toprule
 \textbf{Bus} & \textbf{Bitrate} & \textbf{Nodes} & \textbf{Termination} \\
 \midrule
-High       & 500\,kbit/s & Jetson, RT (MCP2515)          & 120\,\textOmega\ at both ends \\
-Low        & 500\,kbit/s & RT, SYS, MTR, PWT, EPS-C, SEB, DC-DC & 120\,\textOmega\ at both ends \\
-Powertrain & 250\,kbit/s & PWT, DC-DC, Motor Controller   & 120\,\textOmega\ at both ends \\
+High       & 500\,kbit/s & Jetson, RT (MCP2515)          & 120\,$\Omega$\ at both ends \\
+Low        & 500\,kbit/s & RT, SYS, MTR, PWT, EPS-C, SEB, DC-DC & 120\,$\Omega$\ at both ends \\
+Powertrain & 250\,kbit/s & PWT, DC-DC, Motor Controller   & 120\,$\Omega$\ at both ends \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -258,7 +257,7 @@ Powertrain & 250\,kbit/s & PWT, DC-DC, Motor Controller   & 120\,\textOmega\ at 
 \midrule
 Bitrate         & 500\,kbit/s & 500\,kbit/s & 250\,kbit/s \\
 Max nodes       & 7           & 8           & 4 \\
-Termination     & 120\,\textOmega\ $\times$ 2 ends & 120\,\textOmega\ $\times$ 2 ends & 120\,\textOmega\ $\times$ 2 ends \\
+Termination     & 120\,$\Omega$\ $\times$ 2 ends & 120\,$\Omega$\ $\times$ 2 ends & 120\,$\Omega$\ $\times$ 2 ends \\
 Wire            & Twisted pair, 22\,AWG & Twisted pair, 22\,AWG & Twisted pair, 22\,AWG \\
 CAN\_H color    & Orange       & Yellow       & Blue \\
 CAN\_L color    & Blue         & Green        & White \\
@@ -293,8 +292,8 @@ CAN\_L             & Bus CAN\_L (screw term) & Differential low \\
 \textbf{Key facts:}
 \begin{itemize}[leftmargin=*,nosep]
   \item 4 wires needed: VCC, GND, CTX ($\rightarrow$ TX), CRX ($\rightarrow$ RX)
-  \item RS pin: pulled to GND by onboard 10\,k\textOmega\ --- locked in high-speed mode
-  \item 120\,\textOmega\ terminator: onboard resistor controlled by solder jumper or DIP switch
+  \item RS pin: pulled to GND by onboard 10\,k$\Omega$\ --- locked in high-speed mode
+  \item 120\,$\Omega$\ terminator: onboard resistor controlled by solder jumper or DIP switch
   \item Current draw: $\sim$30\,mA at 3.3\,V
   \item Counterfeit warning: some modules receive but cannot transmit. Swap to isolate.
 \end{itemize}
@@ -326,7 +325,7 @@ CAN\_L & Bus CAN\_L (screw)   & High bus backbone \\
   \item SPI Mode 0 or 1; clock 8\,MHz safe, 10\,MHz max
   \item Crystal: 8\,MHz or 16\,MHz --- check laser etching; BRP must match
   \item 5\,V power required --- TJA1050 produces marginal CAN levels at 3.3\,V
-  \item No onboard termination --- rely on CANalyst-II Ch1 or external 120\,\textOmega
+  \item No onboard termination --- rely on CANalyst-II Ch1 or external 120\,$\Omega$
 \end{itemize}
 
 \section{CANalyst-II USB Analyzer}
@@ -336,7 +335,7 @@ CAN\_L & Bus CAN\_L (screw)   & High bus backbone \\
 \toprule
 \textbf{Channel} & \textbf{Typical Bus} & \textbf{Termination} & \textbf{Notes} \\
 \midrule
-Ch0 & Low bus  & OFF (RT + SYS provide 60\,\textOmega) & Middle tap \\
+Ch0 & Low bus  & OFF (RT + SYS provide 60\,$\Omega$) & Middle tap \\
 Ch1 & High bus & ON (sole terminator for high bus)      & Endpoint \\
 \bottomrule
 \end{tabular}
@@ -354,12 +353,12 @@ Ch1 & High bus & ON (sole terminator for high bus)      & Endpoint \\
 \textbf{Bus} & \textbf{Node} & \textbf{Terminator} & \textbf{Value} \\
 \midrule
 \endhead
-High & Jetson Orin        & ON  & 120\,\textOmega\ (endpoint) \\
+High & Jetson Orin        & ON  & 120\,$\Omega$\ (endpoint) \\
 High & RT MCP2515         & OFF & --- (middle in bench test) \\
-High & CANalyst-II Ch1    & ON  & 120\,\textOmega\ (bench endpoint) \\
+High & CANalyst-II Ch1    & ON  & 120\,$\Omega$\ (bench endpoint) \\
 \midrule
-Low  & RT WCMCU-230       & ON  & 120\,\textOmega\ (endpoint) \\
-Low  & SYS WCMCU-230      & ON  & 120\,\textOmega\ (endpoint) \\
+Low  & RT WCMCU-230       & ON  & 120\,$\Omega$\ (endpoint) \\
+Low  & SYS WCMCU-230      & ON  & 120\,$\Omega$\ (endpoint) \\
 Low  & PWT WCMCU-230 \#1  & OFF & --- (middle tap) \\
 Low  & MTR CAN transceiver& OFF & --- (middle tap) \\
 Low  & EPS-C              & OFF & --- (unless at physical end) \\
@@ -367,8 +366,8 @@ Low  & SEB                & OFF & --- (unless at physical end) \\
 Low  & DC-DC Converter    & OFF & --- (unless at physical end) \\
 Low  & CANalyst-II Ch0    & OFF & --- (middle tap) \\
 \midrule
-Pwt  & PWT WCMCU-230 \#2  & ON  & 120\,\textOmega\ (endpoint) \\
-Pwt  & Motor Controller   & ON  & 120\,\textOmega\ (endpoint) \\
+Pwt  & PWT WCMCU-230 \#2  & ON  & 120\,$\Omega$\ (endpoint) \\
+Pwt  & Motor Controller   & ON  & 120\,$\Omega$\ (endpoint) \\
 Pwt  & DC-DC Converter    & OFF & --- (middle tap) \\
 \bottomrule
 \caption{CAN termination per node. Two terminators per bus --- one at each physical end.}
@@ -377,9 +376,9 @@ Pwt  & DC-DC Converter    & OFF & --- (middle tap) \\
 
 \noindent\textbf{Resulting bus impedances (power off):}
 \begin{itemize}[leftmargin=*,nosep]
-  \item High bus: $\sim$120\,\textOmega\ (Jetson $\parallel$ CANalyst-II Ch1; bench) or $\sim$60\,\textOmega\ (Jetson $\parallel$ RT; production)
-  \item Low bus: $\sim$60\,\textOmega\ (RT $\parallel$ SYS, both 120\,\textOmega)
-  \item Powertrain bus: $\sim$60\,\textOmega\ (PWT $\parallel$ Motor Controller, both 120\,\textOmega)
+  \item High bus: $\sim$120\,$\Omega$\ (Jetson $\parallel$ CANalyst-II Ch1; bench) or $\sim$60\,$\Omega$\ (Jetson $\parallel$ RT; production)
+  \item Low bus: $\sim$60\,$\Omega$\ (RT $\parallel$ SYS, both 120\,$\Omega$)
+  \item Powertrain bus: $\sim$60\,$\Omega$\ (PWT $\parallel$ Motor Controller, both 120\,$\Omega$)
 \end{itemize}
 
 % ═══════════════════════════════════════════════════════════════════════
@@ -413,7 +412,7 @@ Pwt  & DC-DC Converter    & OFF & --- (middle tap) \\
 \end{tabular}
 \end{center}
 
-\noindent 120\,\textOmega\ terminator: \textbf{ON} (RT is a bus endpoint).\\
+\noindent 120\,$\Omega$\ terminator: \textbf{ON} (RT is a bus endpoint).\\
 Source: \texttt{rt::kCanLowTxGpio=5}, \texttt{rt::kCanLowRxGpio=4}.
 
 \subsection{MCP2515 SPI --- High Bus (\bitrate{500})}
@@ -575,7 +574,7 @@ GND    & USB or dev board & Common ground --- shared with both CAN modules \\
 \end{tabular}
 \end{center}
 
-\noindent 120\,\textOmega\ terminator: \textbf{ON} (SYS is a bus endpoint).\\
+\noindent 120\,$\Omega$\ terminator: \textbf{ON} (SYS is a bus endpoint).\\
 Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
 
 \section{Safety Inputs}
@@ -1072,7 +1071,7 @@ CAN GND & High bus backbone & Ground reference \\
 \end{tabular}
 \end{center}
 
-\noindent 120\,\textOmega\ terminator: \textbf{ON} (Jetson is one end of the high bus).
+\noindent 120\,$\Omega$\ terminator: \textbf{ON} (Jetson is one end of the high bus).
 
 \subsection{CAN Messages (High Bus)}
 
@@ -1305,7 +1304,7 @@ The 72\,V gear selector signals must be galvanically isolated from the 3.3\,V MC
 \begin{itemize}[leftmargin=*,nosep]
   \item 72\,V present $\rightarrow$ LED on $\rightarrow$ phototransistor conducts $\rightarrow$ GPIO reads LOW
   \item 72\,V absent $\rightarrow$ LED off $\rightarrow$ phototransistor off $\rightarrow$ pull-up holds GPIO HIGH
-  \item $R_{\text{current\_limit}}$: $\sim$33\,k\textOmega, 2\,W. At 72\,V: $I \approx 2.2$\,mA. $P \approx 0.16$\,W.
+  \item $R_{\text{current\_limit}}$: $\sim$33\,k$\Omega$, 2\,W. At 72\,V: $I \approx 2.2$\,mA. $P \approx 0.16$\,W.
 \end{itemize}
 
 \section{MCP4725 Throttle DAC Comparison}
@@ -1355,7 +1354,7 @@ Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
 \endhead
 \chkbox & WCMCU-230 (low bus): VCC $\rightarrow$ 3V3 (J1-1), GND $\rightarrow$ GND (J1-22) & Red/black Dupont \\
 \chkbox & WCMCU-230: CTX $\rightarrow$ \gpio{5}, CRX $\rightarrow$ \gpio{4} & Blue/green Dupont \\
-\chkbox & WCMCU-230: 120\,\textOmega\ terminator jumper \textbf{ON} & Solder bridge or DIP switch \\
+\chkbox & WCMCU-230: 120\,$\Omega$\ terminator jumper \textbf{ON} & Solder bridge or DIP switch \\
 \chkbox & MCP2515 (high bus): VCC $\rightarrow$ 5\,V (J1-21), GND $\rightarrow$ GND (J1-22) & TJA1050 needs 5\,V \\
 \chkbox & MCP2515: SCK $\rightarrow$ \gpio{36}, MOSI $\rightarrow$ \gpio{37}, MISO $\rightarrow$ \gpio{38}, CS $\rightarrow$ \gpio{39}, INT $\rightarrow$ \gpio{40} & 5 Dupont wires \\
 \chkbox & MCP2515: CAN\_H/CAN\_L to high bus backbone & Orange/blue, 22\,AWG \\
@@ -1378,7 +1377,7 @@ Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
 \midrule
 \endhead
 \chkbox & WCMCU-230 (low bus): VCC $\rightarrow$ 3V3 (J1-1), GND $\rightarrow$ GND (J1-22), CTX $\rightarrow$ \gpio{5}, CRX $\rightarrow$ \gpio{4} & --- \\
-\chkbox & WCMCU-230: 120\,\textOmega\ terminator jumper \textbf{ON} & --- \\
+\chkbox & WCMCU-230: 120\,$\Omega$\ terminator jumper \textbf{ON} & --- \\
 \chkbox & ESTOP button: \gpio{1} $\rightarrow$ NC button $\rightarrow$ GND. 10k pull-up to 3.3\,V. & --- \\
 \chkbox & Brake lever: \gpio{2} $\rightarrow$ NO switch $\rightarrow$ GND. Internal pull-up. & --- \\
 \chkbox & START button: \gpio{32} $\rightarrow$ NO momentary $\rightarrow$ GND. Internal pull-up. & --- \\
@@ -1452,13 +1451,13 @@ Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
 \textbf{Measurement} & \textbf{Expected} & \textbf{If Wrong} \\
 \midrule
 \endhead
-High bus CAN\_H $\leftrightarrow$ CAN\_L   & $\sim$120\,\textOmega\ (bench) or $\sim$60\,\textOmega\ (production) & Check terminators \\
-Low bus CAN\_H $\leftrightarrow$ CAN\_L    & $\sim$60\,\textOmega   & Check RT + SYS terminators \\
-Pwt bus CAN\_H $\leftrightarrow$ CAN\_L    & $\sim$60\,\textOmega   & Check PWT + motor controller terminators \\
+High bus CAN\_H $\leftrightarrow$ CAN\_L   & $\sim$120\,$\Omega$\ (bench) or $\sim$60\,$\Omega$\ (production) & Check terminators \\
+Low bus CAN\_H $\leftrightarrow$ CAN\_L    & $\sim$60\,$\Omega$   & Check RT + SYS terminators \\
+Pwt bus CAN\_H $\leftrightarrow$ CAN\_L    & $\sim$60\,$\Omega$   & Check PWT + motor controller terminators \\
 High bus CAN\_H $\leftrightarrow$ Low bus CAN\_H & $\infty$ (open)   & Buses must be isolated \\
-Any CAN pin $\leftrightarrow$ GND          & $>$1\,k\textOmega      & Possible short \\
-Any CAN pin $\leftrightarrow$ VCC (3.3\,V) & $>$1\,k\textOmega      & Possible short \\
-3.3\,V rail $\leftrightarrow$ GND          & $>$100\,\textOmega     & Check for dead shorts \\
+Any CAN pin $\leftrightarrow$ GND          & $>$1\,k$\Omega$      & Possible short \\
+Any CAN pin $\leftrightarrow$ VCC (3.3\,V) & $>$1\,k$\Omega$      & Possible short \\
+3.3\,V rail $\leftrightarrow$ GND          & $>$100\,$\Omega$     & Check for dead shorts \\
 \bottomrule
 \caption{Multimeter checks before applying power.}
 \end{longtable}
