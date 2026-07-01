@@ -11,8 +11,8 @@ const envSchema = z.object({
   CANALYST_BITRATE: z.coerce.number().int().positive().default(500000),
   CANALYST_POLL_MS: z.coerce.number().int().positive().default(5),
   CANALYST_DEVICE_INDEX: z.coerce.number().int().nonnegative().default(0),
-  CANALYST_CH0_BUS: z.enum(["high", "low"]).default("high"),
-  CANALYST_CH1_BUS: z.enum(["high", "low"]).default("low"),
+  CANALYST_CH0_BUS: z.enum(["high", "low"]).default("low"),
+  CANALYST_CH1_BUS: z.enum(["high", "low"]).default("high"),
   DB_PATH: z.string().default("data/debug-tool.sqlite"),
   MAX_FRAMES: z.coerce.number().int().positive().default(50000)
 });

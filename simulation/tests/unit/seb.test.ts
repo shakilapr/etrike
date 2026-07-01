@@ -49,12 +49,14 @@ describe("Bbw", () => {
   });
 
   it("sets L3 error after 20ms without 0x7B9", () => {
+    // Feed command at t=0, then tick past 500ms startup grace
     seb.tick(0, [], [make0x7B9(0)], ctx());
-    const frames = seb.tick(25, [], [], ctx());
+    seb.tick(510, [], [make0x7B9(0)], ctx());
+    // Then 30ms without command (>20ms L3 timeout, aligned to 10ms tick)
+    const frames = seb.tick(540, [], [], ctx());
     const f721 = frames.find(f => f.canId === "0x721");
-    if (f721) {
-      expect((f721.data[0] >> 6) & 3).toBe(3);
-    }
+    expect(f721).toBeDefined();  // L3 error must produce a 0x721 frame
+    expect((f721!.data[0] >> 6) & 3).toBe(3);
   });
 
   it("reflects actual stroke in 0x721", () => {

@@ -15,8 +15,8 @@ BITRATE = int(os.environ.get("CANALYST_BITRATE", "500000"))
 POLL_SECONDS = max(int(os.environ.get("CANALYST_POLL_MS", "5")), 1) / 1000.0
 DEVICE_INDEX = int(os.environ.get("CANALYST_DEVICE_INDEX", "0"))
 CHANNEL_TO_BUS = {
-    0: os.environ.get("CANALYST_CH0_BUS", "high"),
-    1: os.environ.get("CANALYST_CH1_BUS", "low"),
+    0: os.environ.get("CANALYST_CH0_BUS", "low"),
+    1: os.environ.get("CANALYST_CH1_BUS", "high"),
 }
 BUS_TO_CHANNEL = {bus: channel for channel, bus in CHANNEL_TO_BUS.items()}
 

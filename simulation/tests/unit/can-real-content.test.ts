@@ -113,13 +113,12 @@ describe("0x205 RT_BRAKE_CMD — real bytes", () => {
     runner.runDuration(300);
     const frames = runner.capturedFrames.filter(f => f.canId === "0x205" && f.bus === "low");
     const estopFrame = frames.find(f => f.data[3] !== 0 || f.data[2] !== 0);
-    if (estopFrame) {
-      // 20000 = 0x00004E20
-      expect(estopFrame.data[0]).toBe(0x00);
-      expect(estopFrame.data[1]).toBe(0x00);
-      expect(estopFrame.data[2]).toBe(0x4E);
-      expect(estopFrame.data[3]).toBe(0x20);
-    }
+    expect(estopFrame).toBeDefined();  // must find ESTOP brake frame
+    // 20000 = 0x00004E20
+    expect(estopFrame!.data[0]).toBe(0x00);
+    expect(estopFrame!.data[1]).toBe(0x00);
+    expect(estopFrame!.data[2]).toBe(0x4E);
+    expect(estopFrame!.data[3]).toBe(0x20);
   });
 });
 
@@ -479,8 +478,9 @@ describe("0x001 ESTOP broadcast", () => {
     // RT bridges 0x001 between buses
     const high = runner.capturedFrames.filter(f => f.canId === "0x001" && f.bus === "high");
     const low = runner.capturedFrames.filter(f => f.canId === "0x001" && f.bus === "low");
-    // 0x001 is an event frame: it may or may not appear on both buses
-    // depending on where the ESTOP was triggered. Verify no validation errors.
+    // 0x001 must appear on at least one bus when ESTOP is triggered
+    expect(high.length + low.length).toBeGreaterThan(0);
+    // Also verify no validation errors
     expect(runner.canValidator.getAllErrors().length).toBe(0);
   });
 });

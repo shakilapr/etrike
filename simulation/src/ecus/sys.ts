@@ -199,7 +199,7 @@ export class SysEcu implements SimulatedEcu {
       this.sysHbCtr = (this.sysHbCtr + 1) & 0xFF;
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x7FE", name: "SYS_HEARTBEAT",
-        dlc: 1, data: [this.sysHbCtr], sender: "sys",
+        dlc: 2, data: [this.sysHbCtr, 0x01], sender: "sys",  // byte0=alive_ctr, byte1=health_flags (heartbeat_ok=1)
       });
     }
 

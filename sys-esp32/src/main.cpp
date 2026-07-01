@@ -42,6 +42,8 @@ static can::CanDriver g_can(can::CanDriver::Config{sys::kCanTxGpio,
 
 // ── CAN TX helper — checks return, retries critical frames ──────────
 static uint32_t g_can_tx_fail_count = 0;
+static uint32_t g_can_tx_ok_count = 0;
+static bool g_can_tx_had_failure = false;  // tracks if we've seen a TX failure
 static bool send_can(can::Frame& fr, const char* caller = "?") {
     if (!g_can.send(fr)) {
         // Retry once for safety-critical frames (0x7B9 brake, 0x001 ESTOP)
@@ -52,15 +54,22 @@ static bool send_can(can::Frame& fr, const char* caller = "?") {
                 ESP_LOGE(TAG, "CAN TX critical frame %03X failed after retry (%s)", fr.id, caller);
                 return false;
             }
+            g_can_tx_ok_count++;
             return true;
         }
         g_can_tx_fail_count++;
-        static bool warned = false;
-        if (!warned) {
+        if (!g_can_tx_had_failure) {
             ESP_LOGW(TAG, "CAN TX mailbox full (%s) — frame %03X dropped", caller, fr.id);
+            g_can_tx_had_failure = true;
         }
         return false;
     }
+    // Recovery: log when TX succeeds after prior failures
+    if (g_can_tx_had_failure) {
+        ESP_LOGI(TAG, "CAN TX recovered (%s) — fail=%lu ok=%lu", caller, g_can_tx_fail_count, g_can_tx_ok_count);
+        g_can_tx_had_failure = false;
+    }
+    g_can_tx_ok_count++;
     return true;
 }
 
@@ -600,7 +609,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool rt_alive     = g_safety.heartbeat_ok();
         bool rt_normal    = (g_rt_safety_state.load(std::memory_order_relaxed) == 0);
         bool seb_ack      = g_seb_rolling.load(std::memory_order_relaxed);
-        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal && seb_ack && !lever && !estop;
+
+        // Fast-path deadman (gap C4): if RT 0x204 setpoint is stale (>200ms),
+        // RT has likely crashed — resume direct brake control immediately.
+        // This is faster than waiting for the 1000ms heartbeat timeout.
+        bool rt_setpoint_fresh = (xTaskGetTickCount() - g_last_setpoint_tick.load(std::memory_order_relaxed))
+                                 < pdMS_TO_TICKS(sys::kSetpointStaleMs);
+        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal
+                           && seb_ack && !lever && !estop && rt_setpoint_fresh;
 
         can::VcuSebReq seb_cmd;
         uint8_t  seb_b0 = g_seb_status_byte0.load(std::memory_order_relaxed);
@@ -829,8 +845,13 @@ static void check_task_watchdog() {
     while (1) {
         can::Frame fr;
         fr.id  = can::kIdSysHeartbeat;
-        fr.dlc = 1;
+        fr.dlc = 2;
         fr.put_u8(0, ++alive_ctr);
+        // byte 1: health_flags — bit 0=heartbeat_ok, bit 1=estop_active, bits 2-3=mode
+        uint8_t health = (g_safety.heartbeat_ok() ? 0x01 : 0x00)
+                       | (g_safety.estop_active() ? 0x02 : 0x00)
+                       | ((static_cast<uint8_t>(g_mode_mgr.mode()) & 0x03) << 2);
+        fr.put_u8(1, health);
         send_can(fr);
 
         vTaskDelayUntil(&last, period);
