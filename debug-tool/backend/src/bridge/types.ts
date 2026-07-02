@@ -6,6 +6,7 @@ export interface BusDetectionState {
   confidence: "none" | "low" | "high";
   highHits: number;
   lowHits: number;
+  _ts?: number;  // Date.now() when last updated (for staleness check in UI)
 }
 
 export interface BridgeState {

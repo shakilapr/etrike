@@ -236,7 +236,10 @@
       status.update((current) => ({
         ...current,
         ...payload,
-        bus_detection: current.bus_detection ?? payload.bus_detection,
+        // Preserve WebSocket-derived bus_detection if fresh (<30s old),
+        // otherwise allow REST to update (handles bridge restart).
+        bus_detection: (current.bus_detection && (!current.bus_detection._ts || Date.now() - current.bus_detection._ts < 30_000))
+          ? current.bus_detection : payload.bus_detection,
       }));
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
