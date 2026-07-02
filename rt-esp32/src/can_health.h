@@ -37,6 +37,8 @@ static void monitor_can_bus_off() {
 
     // High bus (MCP2515) — interrupt-driven + polled fallback
     {
+        bool fast_path_handled = false;
+
         // Fast path: bus-off detected by interrupt (ERRIF handler in receive())
         if (g_can_high.bus_off()) {
             g_can_high.clear_bus_off();
@@ -48,25 +50,31 @@ static void monitor_can_bus_off() {
                 bus_off_count_high++;
                 g_can_high.init();
             }
+            fast_path_handled = true;  // prevent slow path from resetting counter (bug 4.7)
         }
 
-        // Slow path: polled TEC for error-warning and as fallback
-        uint8_t tec = 0, rec = 0;
-        g_can_high.get_error_counters(tec, rec);
-        if (tec > 128)
-            ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
-        if (tec >= 255) {
-            ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
-            bus_off_count_high++;
-            if (bus_off_count_high >= 5) {
-                ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
-                can::HostDriveCmd zero{};
-                xQueueOverwrite(g_cmd_q, &zero);
-                g_steering.start_estop(false);
+        // Slow path: polled TEC for error-warning and as fallback.
+        // Only runs when fast path didn't handle a bus-off this cycle.
+        // Without this guard, reinit() in the fast path zeros TEC, causing
+        // the slow path to clear bus_off_count_high before it reaches 5.
+        if (!fast_path_handled) {
+            uint8_t tec = 0, rec = 0;
+            g_can_high.get_error_counters(tec, rec);
+            if (tec > 128)
+                ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
+            if (tec >= 255) {
+                ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
+                bus_off_count_high++;
+                if (bus_off_count_high >= 5) {
+                    ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
+                    can::HostDriveCmd zero{};
+                    xQueueOverwrite(g_cmd_q, &zero);
+                    g_steering.start_estop(false);
+                }
+                g_can_high.init();  // attempt recovery
+            } else {
+                bus_off_count_high = 0;
             }
-            g_can_high.init();  // attempt recovery
-        } else {
-            bus_off_count_high = 0;
         }
     }
 }

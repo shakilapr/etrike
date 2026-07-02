@@ -46,19 +46,23 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
     bool  saturated = false;
 
     if (std::abs(v) > low_speed_mps) {
-        const float requested_steer = std::atan2(L * w, std::abs(v));
+        // Use signed velocity — std::abs(v) destroys the sign, causing
+        // inverted steering in reverse (bug 4.4). atan2(y, x) with
+        // negative x correctly produces the mirrored steering angle
+        // needed for reverse-direction turns.
+        const float requested_steer = std::atan2(L * w, v);
         saturated = std::abs(requested_steer) > steer_limit_rad;
         steer = std::clamp(requested_steer, -steer_limit_rad, steer_limit_rad);
         m_steer_hold_rad = steer;
         ok = !saturated;
     } else if (std::abs(w) > kYawEpsilon) {
-        // A tricycle cannot spin in place. Convert pure/near-pure yaw into
-        // a deliberate minimum-radius forward arc instead of a dead command.
-        const float min_radius_m = L / std::tan(steer_limit_rad);
-        const float turn_speed_mps = std::abs(w) * min_radius_m;
-        v = std::clamp(turn_speed_mps, low_speed_mps, shared::kMaxSpeedFwdMmps / 1000.0f);
+        // Tricycle cannot spin in place. Set steering to full lock in the
+        // requested direction but keep speed at zero to prevent unexpected
+        // forward lurch (bug 4.3). The steering angle prepares the vehicle
+        // for the turn when speed is later applied by the planner.
         steer = (w > 0.0f) ? steer_limit_rad : -steer_limit_rad;
         m_steer_hold_rad = steer;
+        // v stays 0 — do not generate forward speed
         ok = true;
     } else {
         // Decay toward straight at low speed (avoids noisy steering near standstill)

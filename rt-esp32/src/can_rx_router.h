@@ -39,11 +39,7 @@ inline void route_frame(const can::Frame& f, bool is_high_bus, GatewayQueues& q)
             }
         }
         return;
-    case can::kIdBbwStatus:  // SEB_STATUS — monitor L3 errors
-        if (!is_high_bus && q.estop_flag) {
-            uint8_t err = (f.data[0] >> 6) & 0x03;
-            if (err == 3) *q.estop_flag = true;
-        }
+    case can::kIdBbwStatus:  // SEB_STATUS — L3 errors checked after checksum validation in dispatch
         return;
     }
     // ── Transparent forwarding (all remaining IDs) ───────────────────
