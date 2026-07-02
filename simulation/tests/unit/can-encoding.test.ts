@@ -575,7 +575,7 @@ describe("RT CAN forwarding rules", () => {
 //  Continuous soak with content verification
 // ═══════════════════════════════════════════════════════════
 
-describe("30s soak — content stability", () => {
+describe("18s soak — content stability", () => {
   it("all diagnostic frames present throughout", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
