@@ -52,8 +52,8 @@ public:
             t.tseg_1 = 11; t.tseg_2 = 4; t.sjw = 2;
         } else {
             // 250 kbit/s default
-            // 8M / 250k = 32 TQ: 1 + 14 + 7 = 22 — ESP-IDF auto-adjusts
-            t.tseg_1 = 14; t.tseg_2 = 7; t.sjw = 3;
+            // 8M / 250k = 32 TQ: 1 + 22 + 9 = 32 (sync=1, tseg1=22, tseg2=9)
+            t.tseg_1 = 22; t.tseg_2 = 9; t.sjw = 3;
         }
 
         twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
@@ -78,7 +78,7 @@ public:
             msg.extd                = 0;
             msg.data_length_code    = frame.dlc;
         }
-        msg.ss = 1;  // single-shot — no retry on error
+        msg.ss = 0;  // normal mode — hardware auto-retransmit on arbitration loss
         std::memcpy(msg.data, frame.data, frame.dlc);
 
         esp_err_t err = twai_transmit(&msg, pdMS_TO_TICKS(timeout_ms));

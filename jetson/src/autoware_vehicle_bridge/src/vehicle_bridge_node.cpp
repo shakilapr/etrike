@@ -168,13 +168,12 @@ bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannCo
   float speed_ms = cmd.longitudinal.is_defined_speed ? cmd.longitudinal.speed : 0.0f;
   int32_t speed_mmps = speed_to_mmps(speed_ms);
 
-  float v_abs = std::abs(speed_ms);
   float steer = cmd.lateral.is_defined_steering_tire_angle
     ? std::clamp(cmd.lateral.steering_tire_angle,
                  -params_.max_steering_angle,
                   params_.max_steering_angle)
     : 0.0f;
-  int32_t yaw_mrad = steering_to_yaw(steer, v_abs);
+  int32_t yaw_mrad = steering_to_yaw(steer, speed_ms);
 
   uint8_t gear = derive_gear(speed_mmps, gear_override, has_override);
 
@@ -203,9 +202,6 @@ bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannCo
     kpa = std::clamp(kpa, 0, static_cast<int32_t>(params_.max_brake_pressure_kpa));
   }
 
-  if (kpa == last_brake_kpa_) return false;  // no change
-  last_brake_kpa_ = kpa;
-
   std::memset(&frame, 0, sizeof(frame));
   frame.can_id = CAN_BRAKE_REQ;
   frame.len = 4;
@@ -229,9 +225,6 @@ bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndica
   if (hazard && hazard->command == autoware_auto_vehicle_msgs::msg::HazardLightsCommand::ENABLE) bits |= 0x03;
   if (is_braking) bits |= 0x04;
   // bit3=headlight reserved for future
-
-  if (bits == last_light_bits_) return false;
-  last_light_bits_ = bits;
 
   std::memset(&frame, 0, sizeof(frame));
   frame.can_id = CAN_LIGHT_CMD;

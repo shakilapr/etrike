@@ -108,8 +108,6 @@ public:
 private:
   const VehicleParams & params_;
   uint8_t host_alive_ctr_{0};
-  int32_t last_brake_kpa_{-1};
-  uint8_t last_light_bits_{0xFF};
 
   int32_t speed_to_mmps(float speed_ms) const;
   int32_t steering_to_yaw(float angle_rad, float speed_ms) const;
