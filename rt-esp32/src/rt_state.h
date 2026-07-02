@@ -48,6 +48,9 @@ extern std::atomic<int64_t>  g_last_sys_hb_us;
 extern std::atomic<int64_t>  g_last_host_hb_us;
 extern std::atomic<int64_t>  g_last_estop_sent_us;  // 0x001 rate limiter
 
+// ── ESTOP reason (written by dispatch/safety/health, read by tx) ───
+extern std::atomic<uint8_t>  g_estop_reason;
+
 // ── Telemetry atomics (written by control/dispatch, read by tx) ─────
 extern std::atomic<int16_t>  g_last_cmd_angle_0_1deg;
 extern std::atomic<int16_t>  g_pid_output_mmps;

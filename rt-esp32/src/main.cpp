@@ -66,6 +66,9 @@ static std::atomic<uint32_t> g_alive_tx_low{0};
 static std::atomic<uint32_t> g_alive_tx_high{0};
 static void check_task_watchdog();
 
+// ── ESTOP reason atomic (written by dispatch/safety/health, read by tx) ─
+std::atomic<uint8_t>  g_estop_reason{0};
+
 // ── Telemetry atomics ──────────────────────────────────────────────
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{0};
 std::atomic<int16_t>  g_pid_output_mmps{0};
@@ -220,6 +223,20 @@ static bool send_can_high(can::Frame& fr) {
         rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
                                                   m_estop_pending, m_current_mode, m_seb_takeover);
         g_seb_takeover.store(m_seb_takeover);
+
+        // Propagate ESTOP reason from safety checks to telemetry atomic.
+        // Internal checks (heartbeat, following-error, obstacle) set it in
+        // SafetyResult. External triggers (0x001, L3 faults, bus-off) were
+        // already set by dispatch/can_health directly on g_estop_reason.
+        // Reset to None when no ESTOP condition is active (mode != Estop
+        // and no safety check triggered zero_setpoints/disable_steering).
+        if (sr.estop_reason != 0) {
+            g_estop_reason.store(sr.estop_reason);
+        } else if (!sr.zero_setpoints && !sr.disable_steering
+                   && m_current_mode != uint8_t(can::Mode::Estop)) {
+            g_estop_reason.store(can::kEstopReasonNone);
+        }
+
         if (sr.zero_setpoints) {
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
@@ -457,6 +474,8 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                            // 0=Normal, 1=InternalEstop(ramp/hold), 2=Fault
         rpt.reversing    = g_reversing.load();
         rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
+        rpt.estop_reason = g_estop_reason.load();
+        rpt.steer_state  = static_cast<uint8_t>(ss);
         // Task health bitmask: bit set = task alive within 500ms
         {
             TickType_t now = xTaskGetTickCount();
