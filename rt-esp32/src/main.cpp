@@ -224,8 +224,8 @@ static bool send_can_high(can::Frame& fr) {
                 can::Frame estop_frame;
                 estop_frame.id = can::kIdSafetyEstop;
                 estop_frame.dlc = 0;
-                xQueueSend(g_gw_tx_low_q, &estop_frame, 0);   // non-blocking (low TX task drains every 5ms)
-                xQueueSend(g_gw_tx_high_q, &estop_frame, 0);  // non-blocking (high bus may be disabled)
+                xQueueSendToFront(g_gw_tx_low_q, &estop_frame, pdMS_TO_TICKS(10));
+                xQueueSendToFront(g_gw_tx_high_q, &estop_frame, pdMS_TO_TICKS(10));
             }
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
@@ -481,7 +481,10 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             uint16_t seb_pressure = g_seb_pressure_raw.load();
             uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ×0.78125
-            uint16_t ecu_tmp  = uint16_t(g_seb_ecu_temp_c.load() * 5 - 400);           // SEB: factor 0.5 offset -40 → BRAKE_DIAG: factor 0.1 offset 0
+            // SEB: factor 0.5 offset -40 → BRAKE_DIAG: factor 0.1 offset 0.
+            // Use signed intermediate to prevent wrap on sub-zero temps (bug B3).
+            int32_t ecu_tmp_raw = int32_t(g_seb_ecu_temp_c.load()) * 5 - 400;
+            uint16_t ecu_tmp = ecu_tmp_raw < 0 ? 0 : uint16_t(ecu_tmp_raw);
             can::BrakeDiag{seb_pressure, seb_fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
             send_can_high(fr);
         }
