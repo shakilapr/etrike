@@ -594,8 +594,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // MTR owns motor: monitor gear mismatch via CAN
         uint8_t reported  = g_mtr_gear_state.load(std::memory_order_relaxed);   // from 0x206
         uint8_t commanded = g_setpoint_gear.load(std::memory_order_relaxed);    // from 0x204
+        static int mismatch_ticks = 0;
         if (reported != commanded && mode == can::Mode::Auto) {
-            static int mismatch_ticks = 0;
             if (++mismatch_ticks > 50) {  // 500ms debounce
                 ESP_LOGE(TAG, "Gear mismatch: cmd=%d rpt=%d", commanded, reported);
                 mismatch_ticks = 0;
