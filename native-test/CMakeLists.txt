@@ -231,6 +231,11 @@ add_executable(dual_heartbeat
 add_executable(estop_latch
     test/test_estop_latch.cpp
 )
+
+# ── SPI failure propagation test (PCR2) ─────────────────────────────
+add_executable(spi_failure
+    test/test_spi_failure.cpp
+)
 target_include_directories(dual_heartbeat PRIVATE
     ${CMAKE_SOURCE_DIR}/../shared
     ${CMAKE_SOURCE_DIR}/../rt-esp32/src
@@ -251,6 +256,7 @@ add_test(NAME heartbeat_recovery  COMMAND heartbeat_recovery)
 add_test(NAME watchdog_wraparound COMMAND watchdog_wraparound)
 add_test(NAME dual_heartbeat      COMMAND dual_heartbeat)
 add_test(NAME estop_latch          COMMAND estop_latch)
+add_test(NAME spi_failure          COMMAND spi_failure)
 
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")
