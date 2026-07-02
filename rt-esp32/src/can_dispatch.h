@@ -91,8 +91,18 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         uint8_t cksum = 0;
         for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
         if (fr.dlc >= 8 && (cksum ^ 0xFF) == fr.data[7]) {
-            g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSbwAngleOffset);
-            g_ses_angle_status.store(ctx.steer_angle_status);
+            // Frozen rolling counter guard (D4): skip update if EPS-C counter
+            // hasn't incremented, preventing stuck-CAN from masking actuator fault.
+            static uint8_t last_eps_roll = 0;
+            static bool eps_first = true;
+            uint8_t roll = (fr.data[6] >> 4) & 0x0F;
+            uint8_t delta = roll - last_eps_roll;
+            if (eps_first || delta != 0) {
+                eps_first = false;
+                last_eps_roll = roll;
+                g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSbwAngleOffset);
+                g_ses_angle_status.store(ctx.steer_angle_status);
+            }
             g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
         }
     }
