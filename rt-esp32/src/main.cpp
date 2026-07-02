@@ -450,12 +450,15 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         rpt.reversing    = g_reversing.load();
         rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
         rpt.to_frame(fr);
+        static uint32_t rpt_fail_count = 0;
         if (!g_can_high.send(fr)) {
-            static bool rpt_fail_warned = false;
-            if (!rpt_fail_warned) {
-                ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed");
-                rpt_fail_warned = true;
+            rpt_fail_count++;
+            if (rpt_fail_count == 1 || rpt_fail_count % 100 == 0) {
+                ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed (count=%lu)", rpt_fail_count);
             }
+        } else if (rpt_fail_count > 0) {
+            ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
+            rpt_fail_count = 0;
         }
         // Also send on low bus so SYS can read RT safety_state for takeover detection
         auto* drv_low = rt::can_low_driver();
@@ -469,9 +472,15 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
             can::SteerDiag{angle, fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
+            static uint32_t diag_fail_count = 0;
             if (!g_can_high.send(fr)) {
-                static bool diag_fail = false;
-                if (!diag_fail) { ESP_LOGW(TAG, "MCP2515 STEER_DIAG send failed"); diag_fail = true; }
+                diag_fail_count++;
+                if (diag_fail_count == 1 || diag_fail_count % 100 == 0) {
+                    ESP_LOGW(TAG, "MCP2515 STEER_DIAG send failed (count=%lu)", diag_fail_count);
+                }
+            } else if (diag_fail_count > 0) {
+                ESP_LOGI(TAG, "MCP2515 STEER_DIAG send recovered after %lu failures", diag_fail_count);
+                diag_fail_count = 0;
             }
         }
 
@@ -538,9 +547,15 @@ static void check_task_watchdog() {
         auto* drv = rt::can_low_driver();
         if (drv) send_can_low(fr);
         g_heartbeat.tick_high(fr);
+        static uint32_t hb_fail_count = 0;
         if (!g_can_high.send(fr)) {
-            static bool hb_fail = false;
-            if (!hb_fail) { ESP_LOGW(TAG, "MCP2515 heartbeat send failed"); hb_fail = true; }
+            hb_fail_count++;
+            if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
+                ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
+            }
+        } else if (hb_fail_count > 0) {
+            ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
+            hb_fail_count = 0;
         }
         vTaskDelayUntil(&last, per);
     }
