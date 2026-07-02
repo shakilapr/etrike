@@ -38,5 +38,8 @@ private:
 
 // Returns monotonic microseconds (host: stub with incrementing counter)
 int64_t get_time_us();
+// Host test-time injection (set before calling feed_heartbeat_rt / heartbeat_ok).
+// Only used when TESTING is defined; otherwise esp_timer_get_time() is used.
+extern int64_t g_sys_test_time_us;
 
 }  // namespace sys

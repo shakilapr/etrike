@@ -385,26 +385,48 @@ struct SysDiagRpt {
 // High-level CAN payload types
 // ───────────────────────────────────────────────────────────────────
 
+// ESTOP reason codes for RtStateRpt byte 1 bits 4-7
+constexpr uint8_t kEstopReasonNone           = 0;
+constexpr uint8_t kEstopReasonButton         = 1;  // physical ESTOP button
+constexpr uint8_t kEstopReasonHeartbeat      = 2;  // SYS or Host heartbeat timeout
+constexpr uint8_t kEstopReasonFollowingError = 3;  // steering following error
+constexpr uint8_t kEstopReasonObstacle       = 4;  // obstacle within stop distance
+constexpr uint8_t kEstopReasonCanEstop       = 5;  // 0x001 received from another node
+constexpr uint8_t kEstopReasonBusOff         = 6;  // CAN bus-off persistent
+constexpr uint8_t kEstopReasonInternal       = 7;  // SEB L3, EPS-C L3 fault, etc.
+
 // 0x210 RT_STATE_RPT — RT→Host + SYS (low bus)
 struct RtStateRpt {
     uint8_t mode         = 0;   // Mode enum (0=Manual,1=Auto,2=ESTOP)
-    uint8_t safety_state = 0;   // 0=Normal, 1=InternalEstop(steer/CAN fault), 2=Fault
+    uint8_t safety_state = 0;   // byte 1 bits 0-1: 0=Normal,1=InternalEstop,2=Fault
     bool    reversing    = false;
     uint8_t rx_overflow  = 0;   // High CAN RX overflow counter (wraps at 256)
 
     uint8_t task_health  = 0;   // byte 4: bitmask of alive tasks (bits 0-3)
+    uint8_t estop_reason = 0;   // byte 1 bits 4-7: reason for ESTOP state
+    uint8_t steer_state  = 0;   // byte 5: steering state machine state
 
     void to_frame(Frame& f) const {
-        f.id = kIdRtStateRpt; f.dlc = 5;
+        f.id = kIdRtStateRpt; f.dlc = 6;
         f.put_u8(0, mode);
-        f.put_u8(1, safety_state & 0x03);           // bits 0-1: safety state
+        f.put_u8(1, (safety_state & 0x03) | ((estop_reason & 0x0F) << 4));
         f.put_u8(2, reversing ? 1 : 0);
         f.put_u8(3, rx_overflow);
         f.put_u8(4, task_health);
+        f.put_u8(5, steer_state);
     }
     static RtStateRpt from_frame(const Frame& f) {
         if (f.dlc < 4) return {};
-        return {f.u8_at(0), f.u8_at(1), f.u8_at(2) != 0, f.u8_at(3), f.dlc >= 5 ? f.u8_at(4) : uint8_t(0)};
+        uint8_t b1 = f.u8_at(1);
+        return {
+            f.u8_at(0),
+            uint8_t(b1 & 0x03),                          // safety_state bits 0-1
+            f.u8_at(2) != 0,
+            f.u8_at(3),
+            f.dlc >= 5 ? f.u8_at(4) : uint8_t(0),       // task_health
+            uint8_t((b1 >> 4) & 0x0F),                   // estop_reason bits 4-7
+            f.dlc >= 6 ? f.u8_at(5) : uint8_t(0)         // steer_state
+        };
     }
 };
 

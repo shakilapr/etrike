@@ -40,6 +40,7 @@ struct SafetyResult {
     int32_t brake_kpa        = 0;
     bool    disable_steering = false;
     bool    obstacle_triggered = false;
+    uint8_t estop_reason     = 0;
 };
 
 }  // namespace rt
@@ -92,6 +93,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     if (sys_hb > 0 && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
         ESP_LOGW("rt", "SYS heartbeat timeout — RT taking over brake via 0x7B9");
         r.zero_setpoints = true;
+        r.estop_reason = can::kEstopReasonHeartbeat;
         seb_takeover = true;
     } else if (seb_takeover) {
         // SYS heartbeat recovered — release takeover
@@ -103,6 +105,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     if (host_hb > 0 && (now - host_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
         ESP_LOGW("rt", "Host heartbeat timeout — assisted stop brake=2000kPa");
         r.zero_setpoints = true;
+        r.estop_reason = can::kEstopReasonHeartbeat;
         g_brake_request_kpa.store(shared::kAssistStopKpa);
     }
 
@@ -124,6 +127,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
                     r.zero_setpoints = true;
                     r.brake_kpa = shared::kMaxBrakeKpa;
                     r.disable_steering = true;
+                    r.estop_reason = can::kEstopReasonFollowingError;
                 }
             } else {
                 steer_follow_err_ticks = 0;
@@ -142,6 +146,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         && std::abs(g_mtr_actual_speed_mmps.load()) > shared::kLowSpeedThreshMmps) {
         r.disable_steering = true;
         r.obstacle_triggered = true;
+        r.estop_reason = can::kEstopReasonObstacle;
     }
 
     return r;
