@@ -350,6 +350,7 @@ struct SysDiagRpt {
     bool     brake_fault   = false;  // v0.0.5: brake following-error active or SEB L3
     bool     heartbeat_ok  = false;
     bool     estop_active  = false;
+    uint8_t  rx_overflow   = 0;    // CAN RX overflow counter (6-bit, packed into byte 2 bits 1-6)
     uint16_t free_heap_kb  = 0;
     uint8_t  tec           = 0;
     uint8_t  rec           = 0;
@@ -362,6 +363,7 @@ struct SysDiagRpt {
             (f.u8_at(1) & 2) != 0,   // brake_fault in byte1 bit1
             (f.u8_at(2) & 1) != 0,
             (f.u8_at(3) & 1) != 0,
+            uint8_t((f.u8_at(2) >> 1) & 0x3F),  // rx_overflow in byte2 bits 1-6
             uint16_t(f.i16_at(4)),   // heap KB stored as BE i16
             f.u8_at(6),
             f.u8_at(7),
@@ -371,7 +373,7 @@ struct SysDiagRpt {
         f.id = kIdSysDiagRpt; f.dlc = 8;
         f.put_u8(0, mode);
         f.put_u8(1, (brake_engaged ? 1 : 0) | (brake_fault ? 2 : 0));
-        f.put_u8(2, heartbeat_ok  ? 1 : 0);
+        f.put_u8(2, (heartbeat_ok ? 1 : 0) | ((rx_overflow & 0x3F) << 1));
         f.put_u8(3, estop_active  ? 1 : 0);
         f.put_i16(4, int16_t(free_heap_kb));
         f.put_u8(6, tec);
@@ -390,16 +392,19 @@ struct RtStateRpt {
     bool    reversing    = false;
     uint8_t rx_overflow  = 0;   // High CAN RX overflow counter (wraps at 256)
 
+    uint8_t task_health  = 0;   // byte 4: bitmask of alive tasks (bits 0-3)
+
     void to_frame(Frame& f) const {
-        f.id = kIdRtStateRpt; f.dlc = 4;
+        f.id = kIdRtStateRpt; f.dlc = 5;
         f.put_u8(0, mode);
         f.put_u8(1, safety_state & 0x03);           // bits 0-1: safety state
         f.put_u8(2, reversing ? 1 : 0);
         f.put_u8(3, rx_overflow);
+        f.put_u8(4, task_health);
     }
     static RtStateRpt from_frame(const Frame& f) {
         if (f.dlc < 4) return {};
-        return {f.u8_at(0), f.u8_at(1), f.u8_at(2) != 0, f.u8_at(3)};
+        return {f.u8_at(0), f.u8_at(1), f.u8_at(2) != 0, f.u8_at(3), f.dlc >= 5 ? f.u8_at(4) : uint8_t(0)};
     }
 };
 

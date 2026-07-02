@@ -841,6 +841,11 @@ static void check_task_watchdog() {
         rpt.estop_active  = (g_mode_mgr.mode() == can::Mode::Estop);
         rpt.free_heap_kb  = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
         rpt.tec = tec; rpt.rec = rec;
+        // Report CAN RX overflow count (6-bit, saturated at 63)
+        {
+            uint32_t ov = g_can_rx_overflow.load(std::memory_order_relaxed);
+            rpt.rx_overflow = ov > 63 ? 63 : static_cast<uint8_t>(ov);
+        }
         can::Frame fr;
         rpt.to_frame(fr);
         send_can(fr);
