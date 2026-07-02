@@ -62,8 +62,8 @@ export class HostEcu implements SimulatedEcu {
     for (const f of highBusRx) {
       switch (f.canId) {
         case "0x210": {
-          // RT_STATE_RPT — store latest mode + safety_state
-          this.lastRtStateRpt = { mode: f.data[0], safetyState: f.data[1] };
+          // RT_STATE_RPT — store latest mode + safety_state (mask byte 1 bits 0-1)
+          this.lastRtStateRpt = { mode: f.data[0], safetyState: f.data[1] & 0x03 };
           break;
         }
         case "0x310": {
