@@ -68,3 +68,98 @@ jobs:
           python-version: '3.11'
       - run: pip install platformio
       - run: cd mtr-stm32 && pio run
+
+  backend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: cd debug-tool/backend && npm ci
+      - run: cd debug-tool/backend && npm test
+
+  vehicle-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio pydantic PyYAML
+      - name: Build all 4 ECUs with vehicle profile
+        run: |
+          failed=0
+          for dir in rt-esp32 sys-esp32 mtr-stm32 pwt-esp32; do
+            echo "=== Building $dir (vehicle profile) ==="
+            cd "$dir"
+            pio run -e vehicle 2>&1 | tee build.log
+            # Check build log for bypass flags in compiler commands
+            if grep -Eq '\-D\s*(CONFIG_BENCH_SOLO|TESTING|SYS_OWNS_MOTOR|CONFIG_BYPASS)' build.log; then
+              echo "FAIL: bypass flag found in build output for $dir"
+              failed=1
+            fi
+            # Check generated sdkconfig.h for bypass defines
+            sdk=".pio/build/vehicle/config/sdkconfig.h"
+            if [ -f "$sdk" ]; then
+              if grep -qE '(CONFIG_BENCH_SOLO|TESTING|SYS_OWNS_MOTOR|CONFIG_BYPASS)' "$sdk"; then
+                echo "FAIL: bypass flag found in $dir sdkconfig.h"
+                failed=1
+              fi
+            fi
+            cd ..
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "Vehicle profile verification FAILED — bypass flags detected"
+            exit 1
+          fi
+          echo "All 4 ECUs built with zero bypass flags"
+
+  bypass-audit:
+    needs: [vehicle-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit vehicle profiles for bypass flags
+        run: |
+          failed=0
+          for dir in rt-esp32 sys-esp32 mtr-stm32 pwt-esp32; do
+            ini="$dir/platformio.ini"
+            echo "=== Auditing $ini ==="
+            # Check that the [env:vehicle] section contains zero bypass flags
+            in_vehicle=false
+            while IFS= read -r line; do
+              case "$line" in
+                "[env:vehicle]") in_vehicle=true ;;
+                "[env:"*) test "$line" = "[env:vehicle]" || in_vehicle=false ;;
+              esac
+              if $in_vehicle; then
+                if echo "$line" | grep -qE '(CONFIG_BENCH_SOLO|TESTING|SYS_OWNS_MOTOR|CONFIG_BYPASS)'; then
+                  echo "FAIL: $dir vehicle profile contains bypass flag: $line"
+                  failed=1
+                fi
+              fi
+            done < "$ini"
+          done
+          # Verify bench profile has expected bypass flags (sanity check)
+          for dir in rt-esp32 sys-esp32; do
+            ini="$dir/platformio.ini"
+            found_bench=false
+            in_bench=false
+            while IFS= read -r line; do
+              case "$line" in
+                "[env:bench]") in_bench=true ;;
+                "[env:"*) test "$line" = "[env:bench]" || in_bench=false ;;
+              esac
+              if $in_bench; then
+                if echo "$line" | grep -qE 'CONFIG_BENCH_SOLO'; then
+                  found_bench=true
+                fi
+              fi
+            done < "$ini"
+            if ! $found_bench; then
+              echo "WARNING: $dir bench profile missing CONFIG_BENCH_SOLO (might need update)"
+            fi
+          done
+          echo "Audit complete"
+          exit "$failed"
