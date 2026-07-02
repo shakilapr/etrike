@@ -449,6 +449,15 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                            // 0=Normal, 1=InternalEstop(ramp/hold), 2=Fault
         rpt.reversing    = g_reversing.load();
         rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
+        // Task health bitmask: bit set = task alive within 500ms
+        {
+            TickType_t now = xTaskGetTickCount();
+            rpt.task_health = 0;
+            if (now - g_alive_control.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x01;
+            if (now - g_alive_dispatch.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x02;
+            if (now - g_alive_tx_low.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x04;
+            if (now - g_alive_tx_high.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x08;
+        }
         rpt.to_frame(fr);
         static uint32_t rpt_fail_count = 0;
         if (!g_can_high.send(fr)) {
