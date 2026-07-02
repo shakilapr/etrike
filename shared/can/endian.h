@@ -24,7 +24,7 @@ inline int32_t read_be32(const uint8_t* buf) {
 }
 
 inline int16_t read_be16(const uint8_t* buf) {
-    return (int16_t(buf[0]) << 8) | int16_t(buf[1]);
+    return int16_t((uint16_t(buf[0]) << 8) | uint16_t(buf[1]));
 }
 
 } // namespace os

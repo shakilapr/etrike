@@ -168,7 +168,7 @@ struct SysModeCmd {
 struct SysThrottleSts {
     int16_t speed_mmps = 0;
 
-    static SysThrottleSts from_frame(const Frame& f) { return { f.i16_at(0) }; }
+    static SysThrottleSts from_frame(const Frame& f) { if (f.dlc < 2) return {}; return { f.i16_at(0) }; }
     void to_frame(Frame& f) const {
         f.id = kIdSysThrottleSts; f.dlc = 2;
         f.put_i16(0, speed_mmps);
@@ -191,9 +191,7 @@ struct SteerDiag {
         f.put_i16(5, ecu_temp);
         f.put_u8(7, 0);
     }
-    static SteerDiag from_frame(const Frame& f) {
-        return {f.i16_at(0), f.u8_at(2), uint16_t(f.i16_at(3)), uint16_t(f.i16_at(5)), f.u8_at(7)};
-    }
+    static SteerDiag from_frame(const Frame& f) { if (f.dlc < 8) return {}; return {f.i16_at(0), f.u8_at(2), uint16_t(f.i16_at(3)), uint16_t(f.i16_at(5)), f.u8_at(7)}; }
 };
 
 // 0x311 BRAKE_DIAG — RT→Host brake telemetry @10Hz (v0.0.4)
@@ -212,9 +210,7 @@ struct BrakeDiag {
         f.put_i16(5, ecu_temp);
         f.put_u8(7, 0);
     }
-    static BrakeDiag from_frame(const Frame& f) {
-        return {uint16_t(f.i16_at(0)), f.u8_at(2), uint16_t(f.i16_at(3)), uint16_t(f.i16_at(5)), f.u8_at(7)};
-    }
+    static BrakeDiag from_frame(const Frame& f) { if (f.dlc < 8) return {}; return {uint16_t(f.i16_at(0)), f.u8_at(2), uint16_t(f.i16_at(3)), uint16_t(f.i16_at(5)), f.u8_at(7)}; }
 };
 
 // ══ steer-by-wire payload structs (factory-fixed, cannot change) ══
@@ -359,6 +355,7 @@ struct SysDiagRpt {
     uint8_t  rec           = 0;
 
     static SysDiagRpt from_frame(const Frame& f) {
+        if (f.dlc < 8) return {};
         return {
             f.u8_at(0),
             (f.u8_at(1) & 1) != 0,
@@ -579,6 +576,7 @@ struct SesStatus {
 };
 
 inline SesStatus SesStatus::from_frame(const Frame& f) {
+    if (f.dlc < 8) return {};
     SesStatus r;
     const uint8_t* raw = f.data;
     r.angle_status        = raw[0] & 1;
@@ -619,6 +617,7 @@ struct SebStatus {
 };
 
 inline SebStatus SebStatus::from_frame(const Frame& f) {
+    if (f.dlc < 8) return {};
     SebStatus r;
     const uint8_t* raw = f.data;
     r.alignment_status    = raw[0] & 1;
