@@ -111,11 +111,13 @@ private:
     static constexpr uint8_t kRegTxb0Data1 = 0x32;  // TXB0SIDL
     static constexpr uint8_t kRegTxb0Dlc  = 0x35;  // TXB0DLC
     static constexpr uint8_t kRegTxb0D0   = 0x36;  // TXB0D0
+    static constexpr uint8_t kRegTxb1Data = 0x41;  // TXB1SIDH
     static constexpr uint8_t kRegTxb2Data = 0x51;  // TXB2SIDH
     static constexpr uint8_t kRegRxb0Data  = 0x61;  // RXB0SIDH
     static constexpr uint8_t kRegRxb1Data  = 0x71;  // RXB1SIDH
 
     static constexpr uint8_t kReadStatusTx0Req = 0x01;
+    static constexpr uint8_t kReadStatusTx1Req = 0x02;
     static constexpr uint8_t kReadStatusTx2Req = 0x04;
 
     // Initialization sub-steps (Part 4)
