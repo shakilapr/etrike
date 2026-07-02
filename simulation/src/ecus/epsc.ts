@@ -50,8 +50,8 @@ export class Sbwc implements SimulatedEcu {
       }
     }
 
-    // Comm timeout: no 0x169 for >20ms → L3 error
-    if (nowMs - this.lastCmdMs > 20) {
+    // Comm timeout: no 0x169 for >30ms → L3 error (3 missed 100Hz frames)
+    if (nowMs - this.lastCmdMs > 30) {
       this.errorStatus = 3;
     } else {
       this.errorStatus = 0;
