@@ -22,21 +22,21 @@ function findMsg(bus: "high" | "low", id: string) {
 describe("MCP2515 high-bus CAN frame decode", () => {
   // 0x7FD — RT_HEARTBEAT (2 Hz)
   describe("0x7FD RT_HEARTBEAT (MCP2515 TX, 2 Hz)", () => {
-    it("decodes alive counter byte", () => {
-      const result = decodeFrame("high", "0x7FD", [0xAB]);
-      expect(result).toEqual({ alive_ctr: 0xAB });
+    it("decodes alive counter byte and health_flags", () => {
+      const result = decodeFrame("high", "0x7FD", [0xAB, 0x0F]);
+      expect(result).toEqual({ alive_ctr: 0xAB, health_flags: 0x0F });
     });
 
-    it("alive counter wrap at 256 (uint8 overflow)", () => {
-      const r1 = decodeFrame("high", "0x7FD", [0xFF]);
-      const r2 = decodeFrame("high", "0x7FD", [0x00]);
-      expect(r1).toEqual({ alive_ctr: 255 });
-      expect(r2).toEqual({ alive_ctr: 0 });
+    it("alive counter wrap at 256 (uint8 overflow), health_flags zero", () => {
+      const r1 = decodeFrame("high", "0x7FD", [0xFF, 0x00]);
+      const r2 = decodeFrame("high", "0x7FD", [0x00, 0x00]);
+      expect(r1).toEqual({ alive_ctr: 255, health_flags: 0 });
+      expect(r2).toEqual({ alive_ctr: 0, health_flags: 0 });
     });
 
-    it("DLC is 1 byte", () => {
+    it("DLC is 2 bytes", () => {
       const msg = findMsg("high", "0x7FD");
-      expect(msg?.dlc).toBe(1);
+      expect(msg?.dlc).toBe(2);
     });
 
     it("sender is RT", () => {
@@ -52,41 +52,41 @@ describe("MCP2515 high-bus CAN frame decode", () => {
 
   // 0x210 — RT_STATE_RPT (10 Hz)
   describe("0x210 RT_STATE_RPT (MCP2515 TX, 10 Hz)", () => {
-    it("decodes mode, steer_valid, reversing", () => {
-      const result = decodeFrame("high", "0x210", [1, 1, 0]);
-      expect(result).toMatchObject({ mode: 1, steer_valid: true, reversing: false });
+    it("decodes mode, safety_state, reversing", () => {
+      const result = decodeFrame("high", "0x210", [1, 0, 0]);
+      expect(result).toMatchObject({ mode: 1, safety_state: 0, estop_reason: 0, reversing: false });
     });
 
     it("decodes mode_name AUTO", () => {
-      const result = decodeFrame("high", "0x210", [1, 1, 0]);
+      const result = decodeFrame("high", "0x210", [1, 0, 0]);
       expect(result).toMatchObject({ mode: 1, mode_name: "AUTO" });
     });
 
-    it("manual mode, no steer valid", () => {
+    it("manual mode, Normal safety state", () => {
       const result = decodeFrame("high", "0x210", [0, 0, 0]);
       expect(result).toMatchObject({
         mode: 0, mode_name: "MANUAL",
-        steer_valid: false, reversing: false,
+        safety_state: 0, estop_reason: 0, reversing: false,
       });
     });
 
-    it("ESTOP mode, reversing", () => {
-      const result = decodeFrame("high", "0x210", [2, 0, 1]);
+    it("ESTOP mode, Fault safety state, reversing", () => {
+      const result = decodeFrame("high", "0x210", [2, 2, 1]);
       expect(result).toMatchObject({
         mode: 2, mode_name: "ESTOP",
-        steer_valid: false, reversing: true,
+        safety_state: 2, estop_reason: 0, reversing: true,
       });
     });
 
-    it("extra byte 4 ignored by decoder (rx_overflow not yet decoded)", () => {
-      // Sending DLC=4 with rx_overflow in byte 3 — decoder only uses first 3 bytes
-      const result = decodeFrame("high", "0x210", [1, 1, 0, 7]);
-      expect(result).toMatchObject({ mode: 1, steer_valid: true, reversing: false });
+    it("decodes estop_reason and safety_state from packed byte 1", () => {
+      // Byte 1: safety_state=2 (bits 0-1), estop_reason=5 (bits 4-7) -> 0x52
+      const result = decodeFrame("high", "0x210", [1, 0x52, 0, 0, 0, 0]);
+      expect(result).toMatchObject({ mode: 1, safety_state: 2, estop_reason: 5 });
     });
 
-    it("DLC is 4 bytes", () => {
+    it("DLC is 6 bytes", () => {
       const msg = findMsg("high", "0x210");
-      expect(msg?.dlc).toBe(4);
+      expect(msg?.dlc).toBe(6);
     });
   });
 
