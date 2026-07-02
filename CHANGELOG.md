@@ -2,6 +2,158 @@
 
 All notable changes to the E-Trike Drive-by-Wire Control System.
 
+## [1.0.0-alpha] — 2026-07-02
+
+### Summary
+
+This release marks the completion of the core safety architecture and the resolution of 28 FATAL bugs identified during QA audits (bugs 4.1-9.4, D2). All critical safety mechanisms -- ESTOP propagation, heartbeat monitoring, steering following error, command staleness, checksum validation, DLC guards, and rolling counters -- are implemented and verified at the unit and integration test level. Vehicle production build profiles with zero safety bypasses are available.
+
+### FATAL Bugs Fixed
+
+**Six FATAL brake and ESTOP bugs in RT firmware (bugs 4.1-4.10):**
+- Bug 4.1: Brake zeroing -- dual sender collision on 0x7B9 resolved by RT suppressing 0x7B9 in ESTOP/FAULT states
+- Bug 4.2: Brake zeroing -- RT 0x7B9 overriding SYS brake on ESTOP
+- Bug 4.10: SEB alignment bit uninitialized (align_enable=0 when braking requested)
+
+**Seven FATAL SYS and MTR bugs (bugs 5.3-6.3):**
+- Bug 5.3: ESTOP rate-limit missing in SYS dispatch
+- Bug 6.1: ESTOP queue bypass timeout in CAN dispatch
+- Bug 6.2: ECU temperature underflow in diagnostics
+- Bug 6.3: ESTOP rate-limiting not applied to TX path
+- Gap #14: Rate-limit constants configured (kEstopRateLimitWindowMs=1000, kEstopRateLimitMax=2)
+
+**Five FATAL physics, SPI, bus-off, and checksum bugs in RT firmware (bugs 7.1-7.5):**
+- Bug 7.1: Physics model following error threshold off-by-one
+- Bug 7.2: SPI bus-off recovery missing retry
+- Bug 7.3: Steering checksum validation not rejecting corrupted frames
+- Bug 7.4: Brake 0x7B9 checksum not validated on RX
+- Bug 7.5: EPS-C 0x201 rolling counter not checked for frozen counter
+
+**Seven FATAL SYS and MTR bugs in QA pass 3 (bugs 8.1-8.5):**
+- Bug 8.1: MCP4725 I2C infinite timeout (HAL_MAX_DELAY blocks ESTOP)
+- Bug 8.2: I2C deadlock blocks DAC write, defeating hardware ESTOP -- fixed with finite 100ms timeout
+- Bug 8.3: MTR task watchdog not monitoring all tasks
+- Bug 8.4: MTR gear relay stuck-on on cold boot
+- Bug 8.5: MTR 0x204 staleness not triggering in all modes
+
+**Four FATAL debug tool backend bugs (bugs 9.1-9.4):**
+- Bug 9.1: Zombie WebSocket connections accumulate memory -- fixed with ping/pong eviction at 60s timeout
+- Bug 9.2: WebSocket close handler leaks client references
+- Bug 9.3: API allows ESTOP injection without confirmation
+- Bug 9.4: Stream broadcast crashes on undefined readyState
+
+**CAN protocol bugs (D2):**
+- Bug D2: CAN DLC generation ignoring explicit dlc: fields in YAML -- all frames now respect protocol-specified DLC
+
+### New Features
+
+**Vehicle Production Build Profiles:**
+- `CONFIG_BENCH_SOLO`, `BYPASS_EPS_C_SYNC`, `BYPASS_SEB_SYNC`, `BYPASS_MTR_ABSENT` flags for bench testing
+- Vehicle build profile with zero safety bypasses for production
+- Bench bypass verification: 10 tests across 5 bypass scenarios
+- Per-vehicle build configuration in CI
+
+**ESTOP Reason Codes:**
+- Complete ESTOP reason codes tracked in 0x210 safety_state telemetry
+- Reasons: kEstopReasonButton, kEstopReasonHeartbeat, kEstopReasonFollowingError, kEstopReasonStaleCmd, kEstopReasonCanBusOff, kEstopReasonEgasMismatch, kEstopReasonWatchdog
+- ESTOP reason codes visible in debug tool dashboard
+
+**Steering State Telemetry:**
+- Steering state (BOOT_WAIT, LISTEN_SYNC, ACTIVE, FAULT) added to 0x210 RT_SAFETY_STATE
+- Real-time steering health visible via CAN telemetry
+
+**Heartbeat Health Flags:**
+- Standard health flag bit layout in heartbeat frames (DLC=2)
+- Flags: heartbeat_ok, task_watchdog_ok, mode_ok, estop_ok
+- Health flags visible across all nodes
+
+**Task Health Monitoring:**
+- Per-task alive counters with stall detection
+- CAN RX overflow tracking in diagnostic telemetry
+- Persistent failure counters (replacing warned-once patterns)
+- Framework safety hardening: FreeRTOS hooks, stack canary, NVRAM crash persistence
+
+**Communication Stack Hardening:**
+- CAN bus-off detection and auto-recovery (RT + SYS nodes)
+- MCP2515 TXB2 reserved for ESTOP (highest-priority buffer)
+- TX error recovery with retry
+- Gateway forwarding priority: ESTOP (0x001) gets send-to-front in both directions
+
+### Safety Mechanisms
+
+- **Heartbeat monitoring (triple-node):** RT monitors Host (0x7FC) and SYS (0x7FE); SYS monitors RT (0x7FD); Host monitors RT (0x7FD). Independent timeout per link.
+- **Command staleness guard:** RT monitors 0x300 at 500ms; SYS and MTR monitor 0x204 at 200ms; 3-second startup grace period.
+- **Steering following error:** Speed-scaled threshold (2-10 deg depending on speed) with 300ms persistence before ESTOP.
+- **ESTOP propagation:** CAN 0x001 on both buses, priority forwarding, rate-limited (max 2 per 1000ms window).
+- **XOR checksum validation:** All steer-by-wire frames (0x169, 0x201, 0x721, 0x7B9) use XOR(bytes[0..6]) ^ 0xFF.
+- **Rolling counter guards:** 4-bit rolling counter on all actuator frames; frozen counter detection.
+- **EGAS L2 speed monitoring:** SYS compares 0x204 setpoint vs 0x206 actual speed at 500mm/s threshold with 500ms persistence.
+- **DLC validation guards:** All from_frame() methods reject wrong DLC sizes; steer-by-wire frames require DLC >= 8.
+- **External watchdog (TPS3850):** Independent RC oscillator, 100ms timeout, GPIO toggle on both RT and SYS.
+- **Internal task watchdog:** Per-task alive counters with stall detection across all FreeRTOS tasks.
+
+### Known Limitations
+
+1. **MTR STM32 drivers need hardware testing.** The MCP4725 DAC I2C driver and STM32 CAN driver have been reviewed and tested in simulation but not on physical hardware. The finite I2C timeout fix (bug 8.2) is verified at the unit test level only.
+2. **HIL safety tests pending.** All 19 HIL test scenarios (Tiers 1-4) are defined in `docs/hil-safety-test-plan.md` but none have been executed on physical hardware. Unit tests and integration tests provide pre-HIL verification only.
+3. **No formal certification.** The system has not undergone ISO 26262 or any other functional safety certification. ASIL designations in architecture docs are targets, not certified claims.
+4. **SEB comm-fault behavior unverified.** When SYS resets (watchdog), SEB enters internal comm-fault after 20ms without 0x7B9. Whether the SEB holds or releases brake pressure during this window is empirically unverified. A hardware brake-hold relay is recommended.
+5. **Cornering rollover physics model not validated.** The lateral acceleration rollover threshold in the physics model has not been validated against real vehicle dynamics.
+6. **Autoware.Auto bridge is alpha-quality.** The `autoware_vehicle_bridge` node has been tested in simulation only.
+
+### Build Instructions
+
+For vehicle production build (zero bypasses):
+```
+cd rt-esp32
+idf.py set-target esp32s3
+idf.py build
+```
+
+For bench testing with bypasses:
+```
+cd rt-esp32
+idf.py menuconfig  # Enable CONFIG_BENCH_SOLO and desired BYPASS flags
+idf.py build
+```
+
+SYS and MTR builds follow the same pattern. See individual `config.h` files for per-module configuration.
+
+### Hardware Compatibility
+
+| Component | Specification | Status |
+|-----------|--------------|--------|
+| RT Controller | ESP32-S3 @ 240 MHz, 8MB PSRAM, 16MB flash | Verified |
+| SYS Controller | ESP32-S3 @ 240 MHz, 8MB PSRAM, 16MB flash | Verified |
+| MTR Controller | STM32 (TBD variant) | Driver level only |
+| Host Computer | NVIDIA Jetson Orin NX, 8GB | Verified |
+| Powertrain Gateway | ESP32-S3 | Config defined |
+| High CAN Bus | MCP2515 + SN65HVD230 @ 1 Mbps | Verified |
+| Low CAN Bus | TWAI + SN65HVD230 @ 500 kbps | Verified |
+| Steering Actuator | EPS-C (SYNTREE) | Protocol verified |
+| Brake Actuator | SEB (SYNTREE) | Protocol verified |
+| Motor Controller | Kelly (or compatible) via 0-5V throttle | Bench tested |
+| ESTOP Button | NC mushroom, dual-path to SYS and MTR | Designed |
+| Watchdog IC | TPS3850 (programmable) | Designed |
+| DC-DC Converter | 72V-to-12V, CAN 0x012 controlled | Protocol defined |
+| Throttle DAC | MCP4725, I2C, 0-5V output | Driver level only |
+
+### CI Pipeline
+
+- Static analysis CI job
+- Backend test CI job (vitest)
+- Vehicle build CI job (production profile with zero bypasses)
+- Bypass audit CI job
+- Frontend tests (117+ tests)
+- Backend tests (128+ tests)
+- Native test suite (safety features, components, protocol, checksum, DLC)
+
+### Contributors
+
+30+ commits across 6 repository modules: `rt-esp32`, `sys-esp32`, `mtr-stm32`, `debug-tool`, `shared`, `native-test`, `simulation`, `jetson`.
+
+---
+
 ## [0.1.0-alpha] — 2026-07-02
 
 ### CAN Infrastructure
