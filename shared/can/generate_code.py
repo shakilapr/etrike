@@ -12,6 +12,8 @@ Usage:
   python generate_code.py --verify       # check generated files match YAML
 """
 
+from __future__ import annotations
+
 import sys
 import os
 from pathlib import Path
@@ -78,13 +80,17 @@ def generate_can_ids_ts(db) -> str:
     # ── DLC table ────────────────────────────────────────────────
     lines.append("// ── DLC table (CAN ID → expected byte count) ──────────────")
     lines.append("export const DLC: Record<string, number> = {")
-    seen = set()
-    for bus, msg, pname in sorted(all_msgs, key=lambda x: x[1].id):
+    # Use max DLC across all protocol definitions (defensive against
+    # inconsistent DLC values for forwarded IDs on different buses)
+    dlc_by_id: dict[str, tuple[int, str]] = {}
+    for bus, msg, pname in all_msgs:
         key = to_hex(msg.id)
-        if key in seen:
-            continue
-        seen.add(key)
-        lines.append(f'  "{key}": {msg.dlc},  // {msg.name}')
+        prev_dlc, prev_name = dlc_by_id.get(key, (-1, ""))
+        if msg.dlc > prev_dlc:
+            dlc_by_id[key] = (msg.dlc, msg.name)
+    for key in sorted(dlc_by_id.keys(), key=lambda k: int(k, 16)):
+        dlc, name = dlc_by_id[key]
+        lines.append(f'  "{key}": {dlc},  // {name}')
     lines.append("};")
     lines.append("")
 
@@ -236,15 +242,16 @@ def generate_can_data_h(db) -> str:
             lines.append(f"constexpr uint16_t {cname} = {to_hex(msg.id)};  // {msg.name}")
     lines.append("")
 
-    # DLC values
+    # DLC values (use max DLC across all protocol definitions for the same CAN ID)
     lines.append("// ── DLC values (per CAN ID) ─────────────────────────────")
-    seen = set()
+    dlc_by_id: dict[int, tuple[int, str]] = {}
     for pname, proto in db.protocols.items():
         for msg in proto.messages:
-            if msg.id in seen:
-                continue
-            seen.add(msg.id)
-            lines.append(f"constexpr uint8_t kDlc_{msg.name} = {msg.dlc};")
+            if msg.id not in dlc_by_id or msg.dlc > dlc_by_id[msg.id][0]:
+                dlc_by_id[msg.id] = (msg.dlc, msg.name)
+    for mid in sorted(dlc_by_id.keys()):
+        dlc, name = dlc_by_id[mid]
+        lines.append(f"constexpr uint8_t kDlc_{name} = {dlc};")
     lines.append("")
 
     # Shared constants

@@ -98,7 +98,8 @@ class MessageDef(BaseModel):
     id: int = Field(..., ge=0, le=0x7FF)
     name: str = Field(..., min_length=1, max_length=64,
                       pattern=r'^[A-Z][A-Za-z0-9_]*$')
-    dlc: int = Field(..., ge=0, le=64, description="Data length in bytes")
+    dlc: Optional[int] = Field(None, ge=0, le=64,
+        description="Data length in bytes. Auto-computed from max signal byte if omitted.")
     sender: str
     receivers: list[str] = Field(default_factory=list)
     cycle_ms: int = Field(0, ge=0)
@@ -114,12 +115,29 @@ class MessageDef(BaseModel):
         return v
 
     @model_validator(mode="after")
+    def compute_dlc_if_missing(self):
+        """Auto-compute DLC from max signal byte if not explicitly set."""
+        if self.dlc is not None:
+            return self
+        if not self.signals:
+            self.dlc = 0
+        else:
+            max_byte = 0
+            for sig in self.signals:
+                start_bit = sig.byte * 8 + sig.bit_offset
+                end_bit = start_bit + sig.size - 1
+                end_byte = end_bit // 8
+                if end_byte > max_byte:
+                    max_byte = end_byte
+            self.dlc = max_byte + 1
+        return self
+
+    @model_validator(mode="after")
     def check_signal_bit_bounds(self):
-        """Check no signal exceeds frame DLC."""
-        if self.dlc == 0:
+        """Check no signal exceeds frame DLC (only when DLC is explicit)."""
+        if self.dlc is None or self.dlc == 0:
             return self
         for sig in self.signals:
-            # The last byte occupied is roughly start_bit/8 + size/8
             start_bit = sig.byte * 8 + sig.bit_offset
             end_bit = start_bit + sig.size - 1
             end_byte = end_bit // 8

@@ -182,6 +182,8 @@ protocols:
         signals:
           - {name: RT_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Low bus timeout 1000ms->SYS ESTOP"}
+          - {name: RT_HealthFlags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "bit0=int_fault, bit1=can_warn, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded"}
 
       # 0x7FE — SYS_HEARTBEAT (SYS→RT, low bus only)
       - id: 0x7FE
@@ -194,6 +196,8 @@ protocols:
         signals:
           - {name: SYS_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "10 Hz / 200ms timeout -> RT brake takeover + ESTOP"}
+          - {name: SYS_HealthFlags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "bit0=heartbeat_ok, bit1=estop_active, bits2-3=reserved"}
 
   # ── steer-by-wire unit (Intel/little-endian) ────────────────────────────
   sbw_unit:
