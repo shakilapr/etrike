@@ -31,7 +31,7 @@ int main() {
         // At t=0, heartbeat should be OK (startup grace)
         CHECK(sm.heartbeat_ok());
 
-        // At t=2.9s, still OK
+        // At t = grace - 100ms, still OK
         g_sys_test_time_us = int64_t(shared::kStartupGracePeriodMs - 100) * 1000;
         CHECK(sm.heartbeat_ok());
     }
@@ -43,7 +43,7 @@ int main() {
         sm.init();
         g_sys_test_time_us = 0;
 
-        // At t=3.1s with no heartbeat → should fail
+        // At t = grace + 100ms with no heartbeat → should fail
         g_sys_test_time_us = int64_t(shared::kStartupGracePeriodMs + 100) * 1000;
         CHECK(!sm.heartbeat_ok());
     }
