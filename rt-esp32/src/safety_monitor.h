@@ -71,12 +71,15 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     using rt::SafetyResult;
     SafetyResult r{};
 
-    // 1. ESTOP event — zero everything, max brake, disable steering
+    // 1. ESTOP event — latch until SYS mode clears it (PCR3).
+    // CAN 0x001 is not a one-shot; it holds ESTOP until SYS explicitly
+    // transitions away from ESTOP mode via 0x110 MODE_CMD. The MODE_CHANGE
+    // handler in t_control clears m_estop_pending on non-ESTOP transitions.
     if (estop_pending) {
-        estop_pending = false;
         r.zero_setpoints = true;
         r.brake_kpa = shared::kMaxBrakeKpa;
         r.disable_steering = true;
+        r.estop_reason = can::kEstopReasonCanEstop;
     }
 
     // 2. Mode is ESTOP — zero setpoints
