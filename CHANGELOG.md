@@ -2,7 +2,7 @@
 
 All notable changes to the E-Trike Drive-by-Wire Control System.
 
-## [1.0.0-alpha] — 2026-07-02
+## [0.2.0-alpha] — 2026-07-02
 
 ### Summary
 
