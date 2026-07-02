@@ -367,17 +367,21 @@ bool Mcp2515Driver::set_mode(Mode mode) {
 }
 
 // ── Send ───────────────────────────────────────────────────────────
-// ESTOP (ID 0x001) uses TXB2 (highest default priority). All other
-// frames use TXB0. The MCP2515 transmits TXB2 before TXB0 when both
-// are pending, giving ESTOP automatic hardware priority without code.
+// Three-level TX buffer priority (MCP2515: TXB2 > TXB1 > TXB0):
+//   TXB2 (highest): ESTOP (0x001)
+//   TXB1 (medium):  Periodic telemetry (0x310, 0x311, 0x220)
+//   TXB0 (normal):  Gateway forwarding, heartbeat, everything else
+// Routing telemetry through TXB1 prevents gateway bursts on TXB0
+// from delaying diagnostic frames visible to external monitors.
 
 bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
 
     bool is_estop = (frame.id == 0x001);
-    uint8_t txb_data_reg = is_estop ? kRegTxb2Data : kRegTxb0Data;
-    uint8_t rts_cmd      = is_estop ? kCmdRtsTx2 : kCmdRtsTx0;
-    uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : kReadStatusTx0Req;
+    bool is_telem = (frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220);
+    uint8_t txb_data_reg = is_estop ? kRegTxb2Data : (is_telem ? kRegTxb1Data : kRegTxb0Data);
+    uint8_t rts_cmd      = is_estop ? kCmdRtsTx2 : (is_telem ? kCmdRtsTx1 : kCmdRtsTx0);
+    uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : (is_telem ? 0x02 : kReadStatusTx0Req);
 
     // Wait if the selected TX buffer is busy
     uint8_t status = read_status();

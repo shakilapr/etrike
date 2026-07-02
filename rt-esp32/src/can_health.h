@@ -29,7 +29,7 @@ static void monitor_can_bus_off() {
                     xQueueSend(g_gw_tx_high_q, &ef, 0);
                 }
             }
-            if (drv) drv->init();  // attempt recovery
+            if (drv) drv->recovery();  // lightweight bus-off recovery
         } else {
             bus_off_count_low = 0;
         }

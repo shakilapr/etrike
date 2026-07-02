@@ -89,6 +89,7 @@ private:
     static constexpr uint8_t kCmdReadStatus = 0xA0;
     static constexpr uint8_t kCmdBitModify  = 0x05;
     static constexpr uint8_t kCmdRtsTx0     = 0x81;
+    static constexpr uint8_t kCmdRtsTx1     = 0x82;
     static constexpr uint8_t kCmdRtsTx2     = 0x84;
 
     // CNF registers for 500 kbit/s @ 8 MHz crystal

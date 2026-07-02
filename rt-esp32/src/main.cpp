@@ -1,5 +1,13 @@
 // RT ESP32-S3 — Realtime Physics, Steering & CAN Gateway.
 // Architecture: architecture.md §7.  8 FreeRTOS tasks.
+
+// Bench build safety guard: bench firmware disables critical safety
+// mechanisms and must never be flashed to a vehicle. Require explicit
+// acknowledgement to compile.
+#if defined(CONFIG_BENCH_SOLO) && !defined(BENCH_BUILD_ACKNOWLEDGED)
+#error "Bench build selected. Define BENCH_BUILD_ACKNOWLEDGED to proceed. Vehicle builds must NOT define BENCH_BUILD_ACKNOWLEDGED."
+#endif
+
 #include <algorithm>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -457,6 +465,9 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             if (now - g_alive_dispatch.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x02;
             if (now - g_alive_tx_low.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x04;
             if (now - g_alive_tx_high.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x08;
+#ifdef BENCH_BUILD_ACKNOWLEDGED
+            rpt.task_health |= 0x80;  // bit 7: bench build indicator
+#endif
         }
         rpt.to_frame(fr);
         static uint32_t rpt_fail_count = 0;
