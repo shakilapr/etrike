@@ -16,9 +16,11 @@ interface ClientState {
     ping: () => void;
     close?: (code?: number, reason?: string) => void;
     on: (event: string, cb: (payload?: unknown) => void) => void;
+    terminate?: () => void;
   };
   buses: Set<Bus> | null;
   ids: Set<string> | null;
+  lastPong: number;
 }
 
 const OPEN = 1;
@@ -26,6 +28,7 @@ const OPEN = 1;
 export class StreamHub {
   private clients = new Set<ClientState>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private staleTimer: ReturnType<typeof setInterval> | null = null;
 
   registerRoutes(app: FastifyInstance): void {
     app.get("/ws", { websocket: true }, (socket) => {
@@ -33,11 +36,15 @@ export class StreamHub {
         socket.close(1013, "Too many connections");
         return;
       }
-      const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null };
+      const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null, lastPong: Date.now() };
       this.clients.add(client);
 
       client.socket.on("message", (payload) => {
         this.handleClientMessage(client, payload);
+      });
+
+      client.socket.on("pong", () => {
+        client.lastPong = Date.now();
       });
 
       client.socket.on("close", () => {
@@ -59,6 +66,18 @@ export class StreamHub {
         }
       }
     }, 30000);
+
+    // Evict clients with no pong response within 60s (zombie connection guard)
+    this.staleTimer = setInterval(() => {
+      const stale = Date.now() - 60000;
+      for (const client of this.clients) {
+        if (client.lastPong < stale) {
+          client.socket.terminate?.();
+          client.socket.close?.(1001, "pong timeout");
+          this.clients.delete(client);
+        }
+      }
+    }, 60000);
   }
 
   broadcast(event: StreamEvent): void {
@@ -81,6 +100,7 @@ export class StreamHub {
 
   close(): void {
     if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.staleTimer) { clearInterval(this.staleTimer); this.staleTimer = null; }
     for (const client of this.clients) {
       try { client.socket.close?.(); } catch { /* ignore */ }
     }

@@ -30,6 +30,7 @@ class PeriodicTask:
     interval_s: float
     remaining: int | None
     next_due: float
+    extended: bool | None = None
 
 
 running = True
@@ -54,24 +55,26 @@ def parse_can_id(value) -> int:
     raise ValueError(f"invalid CAN id: {value!r}")
 
 
-def make_message(can_id: int, dlc: int, data: list[int]) -> canalystii.Message:
+def make_message(can_id: int, dlc: int, data: list[int], extended: bool | None = None) -> canalystii.Message:
     padded = [int(byte) & 0xFF for byte in data[:dlc]]
     while len(padded) < 8:
         padded.append(0)
+    if extended is None:
+        extended = can_id > 0x7FF
     return canalystii.Message(
         can_id=can_id,
         remote=False,
-        extended=can_id > 0x7FF,
+        extended=extended,
         data_len=dlc,
         data=tuple(padded),
     )
 
 
-def send_frame(dev: canalystii.CanalystDevice, bus: str, can_id: int, dlc: int, data: list[int]) -> None:
+def send_frame(dev: canalystii.CanalystDevice, bus: str, can_id: int, dlc: int, data: list[int], extended: bool | None = None) -> None:
     if bus not in BUS_TO_CHANNEL:
         raise ValueError(f"bus {bus!r} is not mapped to a CANalyst-II channel")
     channel = BUS_TO_CHANNEL[bus]
-    dev.send(channel, make_message(can_id, dlc, data))
+    dev.send(channel, make_message(can_id, dlc, data, extended))
     stats[bus]["tx_total"] += 1
 
 
@@ -85,7 +88,8 @@ def handle_command(dev: canalystii.CanalystDevice, command: dict) -> None:
             can_id = parse_can_id(command["id"])
             dlc = int(command["dlc"])
             data = list(command["data"])
-            send_frame(dev, bus, can_id, dlc, data)
+            extended = command.get("extended")
+            send_frame(dev, bus, can_id, dlc, data, extended)
             emit({"type": "cmd_ack", "request_id": request_id, "status": "ok", "cmd": "send"})
             return
 
@@ -110,6 +114,7 @@ def handle_command(dev: canalystii.CanalystDevice, command: dict) -> None:
                     interval_s=interval_s,
                     remaining=int(count_value) if count_value is not None else None,
                     next_due=time.monotonic(),
+                    extended=command.get("extended"),
                 )
                 emit({"type": "cmd_ack", "request_id": request_id, "status": "ok", "cmd": "send_periodic", "action": "start"})
                 return
@@ -160,7 +165,7 @@ def receive_channel(dev: canalystii.CanalystDevice, channel: int) -> None:
         bus_stats["total"] += 1
         bus_stats["last_rx"] = now
         bus_stats["by_id"][can_id_text] = bus_stats["by_id"].get(can_id_text, 0) + 1
-        emit({"ts": now, "bus": bus, "id": can_id_text, "dlc": dlc, "data": data})
+        emit({"ts": now, "bus": bus, "id": can_id_text, "dlc": dlc, "data": data, "extended": message.extended})
 
 
 def main() -> int:
@@ -211,20 +216,19 @@ def main() -> int:
 
         now_mono = time.monotonic()
         for key, task in list(periodic.items()):
-            if now_mono < task.next_due:
-                continue
-            try:
-                send_frame(dev, task.bus, task.can_id, task.dlc, task.data)
-            except Exception as exc:
-                emit({"type": "cmd_ack", "status": "error", "error": str(exc), "cmd": "send_periodic"})
-                periodic.pop(key, None)
-                continue
-            if task.remaining is not None:
-                task.remaining -= 1
-                if task.remaining <= 0:
+            while now_mono >= task.next_due:
+                try:
+                    send_frame(dev, task.bus, task.can_id, task.dlc, task.data, task.extended)
+                except Exception as exc:
+                    emit({"type": "cmd_ack", "status": "error", "error": str(exc), "cmd": "send_periodic"})
                     periodic.pop(key, None)
-                    continue
-            task.next_due = now_mono + task.interval_s
+                    break
+                if task.remaining is not None:
+                    task.remaining -= 1
+                    if task.remaining <= 0:
+                        periodic.pop(key, None)
+                        break
+                task.next_due += task.interval_s
 
         now = time.time()
         if now - last_stats >= 1.0:

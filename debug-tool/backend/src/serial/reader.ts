@@ -80,6 +80,7 @@ export class SerialBridge implements HardwareBridge {
       if (error) {
         this.state.last_error = error.message;
         this.broadcastStatus();
+        this.scheduleReconnect();
       }
     });
   }
