@@ -507,9 +507,78 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 34 | Gear S out | Relay output (72V) |
 | 35 | Gear R out | Relay output (72V) |
 
+### MTR STM32
+
+| Pin | Function | Notes |
+|-----|----------|-------|
+| PB0 | Gear D sense | TLP281 optoisolator input (72V) |
+| PB1 | Gear S sense | TLP281 optoisolator input (72V) |
+| PB2 | Gear R sense | TLP281 optoisolator input (72V) |
+| PA3 | Gear D out | Relay output (72V) |
+| PA4 | Gear S out | Relay output (72V) |
+| PA5 | Gear R out | Relay output (72V) |
+| PB1 | CAN RX | STM32 bxCAN |
+| PB0 | CAN TX | STM32 bxCAN |
+| PA4 | DAC SDA (I2C) | MCP4725 throttle DAC |
+| PA5 | DAC SCL (I2C) | MCP4725 throttle DAC |
+| PA0 | ADC throttle | 0-5V via voltage divider |
+
 ---
 
-## 14. Steering State Machine & 0x7B9 Suppression
+## 14. MTR STM32 — Motor Actuation
+
+**Role:** Motor control with EGAS L1 safety isolation on a dedicated STM32F103C8. Reads analog throttle (ADC) and gear selector (TLP281 optos). Writes throttle DAC (MCP4725 0-5V) and gear relays (72V). CAN telemetry-only to motor controller — no CAN motor control.
+
+**4 FreeRTOS tasks, bxCAN (500 kbit/s), I2C DAC.**
+
+### Task Architecture
+
+| Task | Priority | Rate | Function |
+|------|----------|------|----------|
+| can_rx | 5 | event-driven (2ms poll) | Process 0x001/0x110/0x204 into atomics |
+| safety | 5 | 20 Hz | ESTOP GPIO, 0x204 staleness, startup grace |
+| control | 4 | 100 Hz | Mode-gated motor control (see below) |
+| can_tx | 3 | 100 Hz | TX 0x120 every cycle, 0x206 every 2nd cycle |
+
+### Atomic Sensor Pipeline (Same Pattern as RT)
+
+Nine lock-free atomics: `g_mode`, `g_estop_active`, `g_cmd_speed_mmps`, `g_cmd_gear`, `g_last_cmd_tick`, `g_actual_speed_mmps`, `g_current_gear`, `g_fault_flags`, `g_startup_grace`. CAN RX writes to atomics. Control reads atomics + ADC. CAN TX reads atomics. No locks.
+
+### Mode-Gated Control
+
+| Mode | DAC Output | Gear Relays | CAN TX |
+|------|-----------|-------------|--------|
+| MANUAL | ADC passthrough (0-5V → 0-4095 DAC) | Follow gear selector | 0x120 (speed=0), 0x206 |
+| AUTO | 0x204 speed → DAC value | 0x204 gear → relays* | 0x120 (actual speed), 0x206 |
+| ESTOP | DAC=0V, all relays OFF | Forced N | 0x120, 0x206 (fault flags set) |
+
+*Gear switching in AUTO is speed-supervised: relays only change when `abs(speed) < 50mm/s` to prevent shifting 72V contactors under load.
+
+### Safety Features
+
+| Feature | Implementation |
+|---------|---------------|
+| ADC stuck-at-rail | Raw 0 or 4095 → `kMtrFaultAdcFault` (short to GND/VCC detection) |
+| Gear conflict | Multiple gear sense lines HIGH → `kMtrFaultGearConflict` → forces N |
+| Speed clamping | AUTO speed clamped to `[kMaxSpeedRevMmps, kMaxSpeedFwdMmps]` — guards against corrupt CAN 0x204 |
+| 0x204 staleness | 200ms timeout → `kMtrFaultCmdTimeout` |
+| Startup grace | 3s grace period → auto-sets `kMtrFaultStartupReady` (bit 4 in 0x206) |
+| DAC timeout | 100ms finite I2C timeout (never `HAL_MAX_DELAY`). Retries once. Tracks consecutive failures. |
+| CAN peripheral | STM32 bxCAN (memory-mapped, no SPI mutex needed). Hardware RX FIFO. Non-blocking TX via mailbox. |
+
+### CAN I/O
+
+| Frame | Dir | Rate | Purpose |
+|-------|-----|------|---------|
+| 0x001 | RX | event | ESTOP → DAC=0, relays OFF |
+| 0x110 | RX | change | Mode from SYS |
+| 0x204 | RX | 100 Hz | Drive setpoint (speed+gear) from RT |
+| 0x120 | TX | 100 Hz | Throttle position feedback (actual speed) |
+| 0x206 | TX | 50 Hz | Motor feedback (speed, gear, fault flags) |
+
+---
+
+## 15. Steering State Machine & 0x7B9 Suppression
 
 ### Steering (6 States)
 
@@ -545,7 +614,7 @@ Any condition failing → SYS resumes sending 0x7B9 immediately. The `rt_sp_fres
 
 ---
 
-## 15. RT Control Architecture
+## 16. RT Control Architecture
 
 ### Safety Event Pipeline
 
@@ -599,7 +668,7 @@ For steering (0x201) and brake (0x721) status frames, the L3 error check happens
 
 ---
 
-## 16. SYS Control Architecture
+## 17. SYS Control Architecture
 
 ### Startup Sequence
 
@@ -647,7 +716,7 @@ Brake lamp illuminates on any of: lever pressed, CAN 0x302 brake bit set, or SEB
 
 ---
 
-## 17. Steering Control Architecture (Full)
+## 18. Steering Control Architecture (Full)
 
 ### 6-State Machine with Sub-Behaviors
 
@@ -695,7 +764,7 @@ must persist >300ms to trigger FAULT
 
 ---
 
-## 18. Brake Control Architecture (Full)
+## 19. Brake Control Architecture (Full)
 
 ### 4-State Machine
 
@@ -725,7 +794,7 @@ BOOT_WAIT(500ms) ──→ LISTEN_SYNC ──→ ACTIVE ←── DEGRADED
 
 ---
 
-## 19. ESTOP Rate Limiting Architecture
+## 20. ESTOP Rate Limiting Architecture
 
 Two-layer rate limiting prevents ESTOP bus flooding from a faulty node:
 
@@ -737,7 +806,7 @@ Two-layer rate limiting prevents ESTOP bus flooding from a faulty node:
 
 ---
 
-## 20. MTR Fault Flag Protocol
+## 21. MTR Fault Flag Protocol
 
 Defined in `shared_config.h`. MTR reports fault state in 0x206 byte 3:
 
@@ -753,7 +822,7 @@ SYS monitors ESTOP_ACTIVE for ACK (100ms timeout) and STARTUP_READY for MTR live
 
 ---
 
-## 21. Reference Documents
+## 22. Reference Documents
 
 - [`can-dictionary.md`](can-dictionary.md) — Full CAN signal catalog
 - [`docs/architecture-reference.md`](docs/architecture-reference.md) — Detailed tables, pseudocode, processing summaries
