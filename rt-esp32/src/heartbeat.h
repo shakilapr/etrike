@@ -6,8 +6,8 @@ class DualHeartbeat {
 public:
     void init() { m_ctr_low=0; m_ctr_high=0; }
 
-    /// Build heartbeat frame. health_flags: bit0=internal_fault, bit1=can_warning,
-    /// bit2=can_passive, bit3=peer_hb_lost, bit4=degraded, bit5-7=reserved.
+    /// Build heartbeat frame. health_flags bits (shared in can_protocol.h):
+    /// bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bit4-7=reserved.
     void tick_low(can::Frame& out, uint8_t health_flags=0) {
         out.id=can::kIdRtHeartbeatLow; out.dlc=2;
         out.put_u8(0, ++m_ctr_low);

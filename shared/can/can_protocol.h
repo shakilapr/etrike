@@ -395,6 +395,12 @@ constexpr uint8_t kEstopReasonCanEstop       = 5;  // 0x001 received from anothe
 constexpr uint8_t kEstopReasonBusOff         = 6;  // CAN bus-off persistent
 constexpr uint8_t kEstopReasonInternal       = 7;  // SEB L3, EPS-C L3 fault, etc.
 
+// Heartbeat health flags — byte 1 bits for all heartbeat CAN IDs (0x7FC/0x7FD/0x7FE)
+constexpr uint8_t kHbHealthBitHeartbeatOk = 0x01;  // bit 0: this node believes all peers alive
+constexpr uint8_t kHbHealthBitEstopActive = 0x02;  // bit 1: this node is in ESTOP mode
+constexpr uint8_t kHbHealthBitModeAuto    = 0x04;  // bit 2: this node is in AUTO mode
+constexpr uint8_t kHbHealthBitCanOk       = 0x08;  // bit 3: CAN bus operational
+
 // 0x210 RT_STATE_RPT — RT→Host + SYS (low bus)
 struct RtStateRpt {
     uint8_t mode         = 0;   // Mode enum (0=Manual,1=Auto,2=ESTOP)
