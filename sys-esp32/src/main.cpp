@@ -149,7 +149,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     can::Frame fr;
     while (1) {
         if (g_can.receive(fr, 100)) {
-            if (xQueueSend(g_can_rx_queue, &fr, 0) != pdTRUE) {
+            // Use pdMS_TO_TICKS(5) timeout instead of 0 to prevent priority
+            // inversion (bug 6.4). When queue is full (16 frames), RX task at
+            // prio 5 must yield briefly so dispatch at prio 4 can drain it.
+            // A 0 timeout causes continuous frame drops under CAN bursts.
+            if (xQueueSend(g_can_rx_queue, &fr, pdMS_TO_TICKS(5)) != pdTRUE) {
                 g_can_rx_overflow.fetch_add(1, std::memory_order_relaxed);
                 static bool warned = false;
                 if (!warned) { ESP_LOGW(TAG, "CAN RX queue overflow — frames dropped"); warned = true; }
@@ -206,33 +210,37 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_light_bits.store(fr.u8_at(0), std::memory_order_relaxed);
             break;
         case can::kIdSafetyEstop: {  // 0x001 — rate-limited RX (Gap #14)
-            // Rate-limit incoming 0x001 frames: max 2 per 500ms window.
-            // Prevents a corrupted node from flooding ESTOP and saturating the bus.
+            // Always process the safety state change — rate-limiting must
+            // never suppress safety override processing (bug 6.3).
+            // Rate-limit only downstream actions (logging, CAN forwarding).
             static int        estop_rx_count = 0;
             static TickType_t estop_rx_window_start = 0;
             TickType_t now = xTaskGetTickCount();
+            bool within_limit = true;
             if (estop_rx_window_start == 0
                 || (now - estop_rx_window_start) >= pdMS_TO_TICKS(sys::kEstopRateLimitWindowMs)) {
                 estop_rx_window_start = now;
                 estop_rx_count = 1;
-            } else if (++estop_rx_count <= sys::kEstopRateLimitMax) {
-                // within limit — process
             } else {
-                ESP_LOGW(TAG, "0x001 ESTOP rate-limited — %d frames in %dms window",
-                         estop_rx_count, sys::kEstopRateLimitWindowMs);
-                break;  // drop this frame
+                ++estop_rx_count;
+                within_limit = (estop_rx_count <= sys::kEstopRateLimitMax);
             }
             g_mode_mgr.force_estop();
             g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
-            ESP_LOGW(TAG, "ESTOP via CAN 0x001");
+            if (within_limit) {
+                ESP_LOGW(TAG, "ESTOP via CAN 0x001");
+            }
             break;
         }
         case can::kIdBbwStatus: {  // 0x721
+            // Reject short frames before checksum check (bug B1 in SYS).
+            // DLC < 8 means we cannot validate checksum — drop immediately.
+            if (fr.dlc < 8) break;
             // F13: Validate checksum before using data (XOR bytes 0-6 ^ 0xFF == byte 7)
             {
                 uint8_t cksum = 0;
-                for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
-                if (fr.dlc >= 8 && (cksum ^ 0xFF) != fr.data[7]) {
+                for (int i = 0; i < 7; ++i) cksum ^= fr.data[i];
+                if ((cksum ^ 0xFF) != fr.data[7]) {
                     ESP_LOGW(TAG, "0x721 checksum fail — dropping frame");
                     break;
                 }
@@ -249,9 +257,20 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     g_brake_fault_active.store(true, std::memory_order_relaxed);
                 }
             }
-            // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30)
-            uint16_t actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
-            g_seb_actual_stroke_raw.store(actual_raw, std::memory_order_relaxed);
+            // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30).
+            // In Pressure mode (ctrl_mode=1), byte 3 is overwritten with pressure
+            // data — using it as Stroke[15:8] produces corrupted astronomical values.
+            // Use last valid stroke when in Pressure mode (bug 6.2).
+            {
+                uint8_t seb_ctrl = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure
+                uint16_t actual_raw;
+                if (seb_ctrl == 0) {
+                    actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
+                } else {
+                    actual_raw = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
+                }
+                g_seb_actual_stroke_raw.store(actual_raw, std::memory_order_relaxed);
+            }
             g_last_seb_status_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
             // H1: Track SEB rolling counter — if RT's 0x7B9 is failing, SEB stops
@@ -267,25 +286,32 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 // Frozen rolling counter — SEB may not be receiving commands
                 g_seb_rolling.store(false, std::memory_order_relaxed);
             }
-            // Brake following error monitor (§8.10): cmp cmd vs actual stroke
+            // Brake following error monitor (§8.10): cmp cmd vs actual stroke.
+            // Only in Stroke mode — in Pressure mode cmd_stroke is fixed at 600
+            // (0mm baseline) while the SEB physically moves to build pressure,
+            // which would false-trigger the following error (bug 6.1).
             {
-                uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
-                uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
-                static bool  brake_follow_active = false;
-                static TickType_t brake_follow_start = 0;
-                if (diff > sys::kBrakeFollowingErrRaw) {
-                    if (!brake_follow_active) {
-                        brake_follow_active = true;
-                        brake_follow_start = xTaskGetTickCount();
-                    } else if ((xTaskGetTickCount() - brake_follow_start)
-                                >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
-                        ESP_LOGE(TAG, "Brake following err: cmd=%u actual=%u diff=%u raw (~%d mm)",
-                                 cmd, actual_raw, diff, int(diff * 0.05f));
-                        g_brake_fault_active.store(true, std::memory_order_relaxed);
-                        brake_follow_active = false;  // log once per event
+                uint8_t seb_ctrl = (fr.data[0] >> 2) & 1;
+                if (seb_ctrl == 0) {  // Stroke mode only
+                    uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
+                    uint16_t actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
+                    uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
+                    static bool  brake_follow_active = false;
+                    static TickType_t brake_follow_start = 0;
+                    if (diff > sys::kBrakeFollowingErrRaw) {
+                        if (!brake_follow_active) {
+                            brake_follow_active = true;
+                            brake_follow_start = xTaskGetTickCount();
+                        } else if ((xTaskGetTickCount() - brake_follow_start)
+                                    >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
+                            ESP_LOGE(TAG, "Brake following err: cmd=%u actual=%u diff=%u raw (~%d mm)",
+                                     cmd, actual_raw, diff, int(diff * 0.05f));
+                            g_brake_fault_active.store(true, std::memory_order_relaxed);
+                            brake_follow_active = false;  // log once per event
+                        }
+                    } else {
+                        brake_follow_active = false;
                     }
-                } else {
-                    brake_follow_active = false;
                 }
             }
             break;
@@ -320,6 +346,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             if (l3_found) {
                 g_mode_mgr.force_estop();
+                // Record ESTOP trigger tick for MTR ACK timeout check (bug 6.5).
+                // Without this, the MTR ESTOP ACK safety check in task_safety
+                // is permanently bypassed for SEB-triggered ESTOPs.
+                g_last_estop_trigger_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
                 if (can_send_estop()) {
                     can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
                     send_can(ef, "ESTOP");
