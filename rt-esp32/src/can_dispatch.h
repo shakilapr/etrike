@@ -40,12 +40,14 @@ struct DispatchContext {
 // ── Frame processor ─────────────────────────────────────────────────
 
 static void process_frame(const can::Frame& fr, bool from_high, DispatchContext& ctx) {
-    // Frozen counter detection: skip timestamp update if alive counter
-    // hasn't changed (prevents stuck CAN controller from masking a hung peer).
+    // Frozen counter detection: use delta comparison to handle 8-bit
+    // rollover correctly. Equality check (new != old) false-positives
+    // when counter wraps from 0xFF back to a previously-seen value (bug M8).
     if (fr.id == can::kIdSysHeartbeat && !from_high) {
         static uint8_t last_sys_ctr = 0;
         static bool sys_first = true;
-        if (sys_first || fr.data[0] != last_sys_ctr) {
+        uint8_t delta = fr.data[0] - last_sys_ctr;  // unsigned wrap-safe delta
+        if (sys_first || delta != 0) {
             sys_first = false;
             last_sys_ctr = fr.data[0];
             g_last_sys_hb_us.store(esp_timer_get_time());
@@ -53,7 +55,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     } else if (fr.id == can::kIdHostHeartbeat && from_high) {
         static uint8_t last_host_ctr = 0;
         static bool host_first = true;
-        if (host_first || fr.data[0] != last_host_ctr) {
+        uint8_t delta = fr.data[0] - last_host_ctr;
+        if (host_first || delta != 0) {
             host_first = false;
             last_host_ctr = fr.data[0];
             g_last_host_hb_us.store(esp_timer_get_time());
@@ -102,7 +105,10 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (angle_faults || torque_faults) {
             ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
             rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
-            xQueueSend(g_safety_evt_q, &evt, 0);
+            // Use timeout to avoid silent ESTOP drop when queue is full (bug B4)
+            if (xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
+                xQueueOverwrite(g_safety_evt_q, &evt);
+            }
         }
     }
     // 0x203 SES_Version — log SW/HW once (arch §7.3)
