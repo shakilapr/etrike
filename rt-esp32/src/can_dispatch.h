@@ -95,8 +95,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
         }
     }
-    if (fr.id == can::kIdHostObstacleDist && from_high) { g_obstacle_mm.store(fr.u32_at(0)); }
-    if (fr.id == can::kIdMtrMotorFbk && !from_high) { g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
+    if (fr.id == can::kIdHostObstacleDist && from_high) { if (fr.dlc >= 4) g_obstacle_mm.store(fr.u32_at(0)); }
+    if (fr.id == can::kIdMtrMotorFbk && !from_high) { if (fr.dlc >= 2) g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
 
     // 0x202 SES_ErrInfo — L3 fault bits → ESTOP (arch §7.3)
     if (fr.id == can::kIdSbwErrInfo && !from_high) {
@@ -112,7 +112,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
     // 0x203 SES_Version — log SW/HW once (arch §7.3)
-    if (fr.id == can::kIdSbwVersion && !from_high) {
+    if (fr.id == can::kIdSbwVersion && !from_high && fr.dlc >= 4) {
         static bool ses_version_logged = false;
         if (!ses_version_logged) {
             ESP_LOGI(TAG_DISP, "SES_Version: SW=%02X.%02X HW=%02X.%02X",
@@ -121,7 +121,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
     // 0x6FA SES_Test — motor current + ECU temp + supply voltage
-    if (fr.id == can::kIdSbwTest && !from_high) {
+    if (fr.id == can::kIdSbwTest && !from_high && fr.dlc >= 7) {
         int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
         uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
         uint16_t pv_raw = (uint16_t(fr.data[6]) << 8) | fr.data[5];
@@ -136,7 +136,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (pv_v < 10.0f)  ESP_LOGW(TAG_DISP, "SES supply voltage low: %.2f V", pv_v);
     }
     // 0x6FB SEB_Test — motor current + ECU temp (for 0x311 BRAKE_DIAG)
-    if (fr.id == can::kIdBbwTest && !from_high) {
+    if (fr.id == can::kIdBbwTest && !from_high && fr.dlc >= 5) {
         int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
         uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
         g_seb_motor_current.store(mc_raw);
