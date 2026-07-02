@@ -1585,7 +1585,703 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 
 ---
 
-## 9. CAN bus device maps
+## 9. Safety Architecture
+
+Comprehensive reference for all safety mechanisms in the e-trike distributed control
+system. Each subsection describes a specific safety function: its trigger conditions,
+timing parameters, CAN interaction, and fallback paths. CAN IDs and constants
+cross-reference with the message catalog in SS2 and configuration headers in
+`shared/can/can_protocol.h`, `rt-esp32/src/config.h`, `sys-esp32/src/config.h`,
+and `shared/shared_config.h`.
+
+---
+
+### 9.1 ESTOP Propagation
+
+The ESTOP system uses CAN ID `0x001` (`SAFETY_ESTOP`) with DLC=0. The frame's
+ID is the signal -- no payload bytes are transmitted. Any node may send `0x001`;
+every node that receives it must enter ESTOP mode.
+
+**Frame format:** `0x001`, DLC=0, no data bytes. Arbitration field alone
+(29 us at 500 kbit/s) is sufficient to trigger a reception interrupt on all
+other controllers. The lowest CAN ID on either bus (0x001) wins arbitration
+against any other frame.
+
+**Rate limiting:** RT and SYS each enforce a 250 ms minimum interval between
+`0x001` transmissions (`can_send_estop()` gate). Maximum 2 frames per 500 ms
+window per node. This bounds bus load during a sustained ESTOP condition
+while guaranteeing delivery within two arbitration rounds.
+
+**RT gateway forwarding:** ESTOP is the only frame forwarded bidirectionally
+(Low<->High). When RT receives `0x001` on either bus, the dispatch task inserts
+the ESTOP frame at the **front** of the opposite bus's TX queue via
+`xQueueSendToFront()` (lines 256-257 in `rt-esp32/src/main.cpp`). This bypasses
+all queued telemetry frames (0x011, 0x120, 0x206, 0x600). The gateway dispatch
+in `rt-esp32/src/can_dispatch.h` also gates queue insertion on the ESTOP flag:
+`is_estop ? xQueueSendToFront() : xQueueSend()` (lines 229, 247). Non-ESTOP
+frames that are already queued transmit normally -- ESTOP simply jumps ahead.
+
+**MCP2515 TXB2 priority:** On the high CAN bus, the MCP2515 driver assigns
+ESTOP frames to TXB2, the highest-priority hardware TX buffer, while all other
+frames use TXB0 or TXB1. The MCP2515 transmits TXB2 before TXB0 when both are
+loaded (`rt-esp32/src/can_driver_mcp2515.cpp` lines 373-385). This provides
+hardware-level preemption: a telemetry frame already being serialized completes,
+but the next bus idle slot is claimed by TXB2.
+
+**SYS ESTOP processing:** SYS processes every incoming `0x001` frame through
+`ModeManager::force_estop()` (`sys-esp32/src/mode_manager.cpp` line 70). This
+function sets the mode to ESTOP unconditionally -- there is no rate-limiting
+filter on the receiver side. Every received `0x001` transitions the mode state
+machine to ESTOP, even if already in ESTOP (idempotent).
+
+**MTR ESTOP acknowledgment:** MTR STM32 sets bit 0 (`ESTOP_ACTIVE`) in
+`0x206 MTR_MOTOR_FBK` fault_flags byte when its hardwired ESTOP GPIO fires.
+SYS dispatch reads this bit on each `0x206` receipt and escalates if the bit
+remains unset for more than 100 ms after ESTOP assertion
+(`g_last_estop_trigger_tick` check in `sys-esp32/src/main.cpp` lines 343-370).
+
+**ESTOP exit:** ESTOP persists until SYS mode clears it. The START button
+(GPIO32) or MODE long-press (3 s) transitions SYS to MANUAL mode, which
+broadcasts `0x110` with mode=Manual, releasing all nodes from ESTOP. RT
+defers its steering exit until the centering ramp completes
+(`m_estop_exit_pending` flag in `rt-esp32/src/steering_control.h` line 245).
+
+**Source files:** `rt-esp32/src/main.cpp` (lines 116-120, 253-258), `rt-esp32/src/can_dispatch.h`
+(lines 229, 247), `rt-esp32/src/can_driver_mcp2515.cpp` (lines 373-385),
+`sys-esp32/src/mode_manager.cpp` (line 70), `sys-esp32/src/main.cpp` (lines 343-370),
+`shared/can/can_protocol.h` (line 21: `kIdSafetyEstop`).
+
+---
+
+### 9.2 Heartbeat Watchdog Architecture
+
+Three independent heartbeat pairs establish per-bus liveness domains. Each
+heartbeat frame carries a monotonically incrementing alive counter and a
+health_flags byte. A frozen counter (same value on consecutive frames)
+indicates a stuck node regardless of CAN controller state.
+
+**Heartbeat frame format:**
+
+| ID | Sender | Bus(es) | DLC | Byte 0 | Byte 1 | Period |
+|----|--------|---------|-----|--------|--------|--------|
+| `0x7FD` | RT | Low, High (independent) | 2 | alive_ctr (wraps 0-255) | health_flags | 2 Hz (500 ms) |
+| `0x7FE` | SYS | Low only | 2 | alive_ctr (wraps 0-255) | health_flags | 10 Hz (100 ms) |
+| `0x7FC` | Jetson (Host) | High only | 1 | alive_ctr (wraps 0-255) | -- | 2 Hz (500 ms) |
+| `0x7FB` | PWT | Low only | 1 | alive_ctr (wraps 0-255) | -- | 2 Hz (500 ms) |
+
+RT maintains **two independent alive counters** -- one for the low bus heartbeat
+(`0x7FD` on TWAI) and one for the high bus heartbeat (`0x7FD` on MCP2515).
+Both use ID `0x7FD` but are separate TX slots with independent counter state.
+Heartbeats are **never bridged** between buses -- each bus is its own liveness
+domain.
+
+**Health flags byte** (all heartbeat senders, byte 1 of DLC=2 frames):
+
+| Bit | Flag | Meaning |
+|-----|------|---------|
+| 0 | heartbeat_ok | Peer alive counter is incrementing |
+| 1 | estop_active | Node is in ESTOP mode |
+| 2 | mode_auto | Node is in AUTO mode |
+| 3 | can_ok | CAN controller error counters below threshold |
+| 4-6 | (reserved) | -- |
+| 7 | bench_build | Set when compiled with `BENCH_BUILD_ACKNOWLEDGED` |
+
+**Liveness matrix and timeouts:**
+
+| Monitor | Subject | Bus | Timeout | Action |
+|---------|---------|-----|---------|--------|
+| RT | SYS (`0x7FE`) | Low | **200 ms** (2 missed at 10 Hz) | RT takes over `0x7B9` with stroke=max (full brake), sends `0x001` |
+| RT | Jetson (`0x7FC`) | High | **1500 ms** (3 missed at 2 Hz) | Assisted stop: zero `0x204`, stop `0x169`, `0x205`=2000 kPa |
+| SYS | RT (`0x7FD`) | Low | **1000 ms** (2 missed at 2 Hz) | `0x001` ESTOP, full brake |
+| Jetson | RT (`0x7FD`) | High | **1500 ms** (3 missed at 2 Hz) | RCLCPP_WARN_THROTTLE (RT's own 500 ms staleness watchdog stops vehicle independently) |
+
+**Frozen counter detection:** Each receiver compares the incoming alive counter
+against the last received value. If `new_ctr == last_alive_ctr`, the frame is
+treated as a missed heartbeat. This prevents a stuck CAN controller (DMA-ing
+the same buffer repeatedly) from masking a node failure. Comparison uses
+unsigned delta arithmetic to handle 8-bit counter wrap correctly.
+
+**SYS heartbeat loss (200 ms timeout):** SYS heartbeat at 10 Hz is the fastest
+periodic CAN frame in the system. RT detects loss after 2 missed frames
+(200 ms worst case). Architecture SS6.2 Option D requires RT to take over the
+SEB brake actuator on SYS failure. RT immediately begins transmitting `0x7B9`
+with stroke=max (full brake, ~27 mm) at 50 Hz, regardless of current mode.
+Total brake gap: 200 ms detection + 20 ms first frame = 220 ms worst case.
+Both RT and SYS may briefly transmit `0x7B9` during the takeover transition
+(within the dual-sender exception documented in SS6.2).
+
+**Jetson heartbeat loss (1500 ms timeout):** Three missed frames at 2 Hz
+provides tolerance for Linux CAN jitter. On timeout, RT commands zero speed
+on `0x204`, stops `0x169` steering transmission, sets `0x205` brake to
+2000 kPa (moderate deceleration, no wheel lockup), and transitions SYS to
+MANUAL mode. Brake light illuminates. Rider can override with the brake lever.
+DC-DC stays on (lights and CAN remain powered). This is an "assisted stop" --
+above pure coast, below full ESTOP.
+
+**Startup grace period:** All heartbeat checks are suppressed for 3000 ms
+after boot. `safety_heartbeat_ok()` returns `true` when
+`last_hb_timestamp == 0 && (now < kStartupGracePeriodUs)`. After the grace
+period expires, real heartbeat monitoring begins.
+
+**Source files:** `rt-esp32/src/heartbeat.h`, `rt-esp32/src/main.cpp` (lines 486-492),
+`sys-esp32/src/main.cpp` (lines 654-664), `shared/can/can_protocol.h` (lines 21-42,
+346-378, 406-434), `can-dictionary.md` (health_flags layout).
+
+---
+
+### 9.3 EGAS 3-Level Motor Safety Architecture
+
+Motor actuation follows the ISO 26262 EGAS (Electronic Throttle Monitoring)
+three-level concept. The motor controller is a dumb analog device (0-5 V
+throttle, 72 V gear relays) with no internal CAN monitoring or fault detection.
+The EGAS decomposition fills this gap across three independent levels.
+
+```
+Level 3 (Hardware):       ESTOP button --> MTR PA1 (hardware ISR)
+                          TPS3850 ext. watchdog --> MCU reset
+                          No software, no CAN. Cuts throttle + gear instantly.
+
+Level 2 (Function Monitor): SYS ESP32-S3
+                          Monitors 0x204 setpoint vs 0x206 actual speed.
+                          Mismatch > 500 mm/s for > 500 ms --> CAN 0x001 ESTOP.
+                          Also monitors RT heartbeat, SEB health.
+
+Level 1 (Function Controller): MTR STM32
+                          Normal actuation: ADC pass-through or CAN 0x204 follow.
+                          No OS, no wireless, no network stack.
+                          Hardware ESTOP ISR kills outputs directly.
+```
+
+**Freedom from interference (FFI):**
+
+| Domain | Node | MCU | Power | Failure mode |
+|--------|------|-----|-------|-------------|
+| Level 1 | MTR | STM32 | 12V rail (always-on DC-DC) | SYS crash cannot block motor kill |
+| Level 2 | SYS | ESP32-S3 | 12V rail (always-on DC-DC) | MTR crash detected via 0x206 staleness |
+| Level 3 | ESTOP button | None (hardwired) | Passive (NC loop) | Both MCUs can fail, button still cuts |
+
+**Level 2 speed monitoring:** SYS `safety_task` (20 Hz) compares the commanded
+speed from `0x204 RT_DRIVE_CMD` against the actual speed from `0x206 MTR_MOTOR_FBK`.
+If `abs(cmd_speed - actual_speed) > 500 mm/s` persists for more than 500 ms,
+SYS calls `force_estop()`, which broadcasts `0x001` and transitions the vehicle
+to ESTOP. This catches stuck throttle, runaway acceleration, or complete loss
+of speed control.
+
+**Why only motor needs MTR:** Steering (EPS-C) and brake (SEB) actuators are
+intelligent CAN modules with internal PID control, angle/stroke sensors, and
+fault detection up to Level 3. They implement EGAS Levels 1-2 internally. The
+motor controller is uniquely dumb -- it accepts analog throttle and gear
+signals with no feedback path. The MTR STM32 fills that monitoring gap.
+
+**Source files:** `mtr-stm32/` (Level 1 implementation), `sys-esp32/src/main.cpp`
+(lines 417-422 for EGAS L2 speed comparison), `arm-docs/architecture.md` SS6.1.
+
+---
+
+### 9.4 Command Staleness
+
+Three independent staleness mechanisms guard against loss of command frames
+from RT, Jetson, and MTR. Each has a different timeout tailored to the
+criticality and period of the guarded frame.
+
+**0x204 RT_DRIVE_CMD staleness (200 ms):**
+SYS `task_motor` checks the time since the last `0x204` arrival at 100 Hz.
+If `time_since_last_0x204 > kSetpointStaleMs` (200 ms, 2 missed frames at
+100 Hz), the setpoint is zeroed: speed=0, gear=N (neutral). Gated by the 3 s
+startup grace period -- the check is suppressed during boot until RT has time
+to begin transmitting. This is a data-quality check, not a node-liveness check;
+it triggers faster than the 1000 ms RT heartbeat timeout because stale speed
+data is immediately dangerous.
+
+**0x206 MTR_MOTOR_FBK staleness (200 ms):**
+SYS monitors the time since the last `0x206` from MTR. If stale for more than
+200 ms, the speed setpoint is zeroed and a fault is set in the diagnostic
+report. Combined with the ESTOP_ACTIVE acknowledgment check (SS9.1), this
+detects both MTR communication loss and MTR failure to execute ESTOP.
+
+**Command watchdog (500 ms):**
+RT monitors Jetson commands (`0x300 HOST_DRIVE_CMD`) with a 500 ms timeout
+checked at 10 Hz by the `watchdog` task. On timeout, RT zeros the speed
+setpoint on `0x204` and stops `0x169` steering transmission. The ramp-down
+is controlled: speed goes to zero immediately (safe for a stopped or slow
+vehicle), but the steering ESTOP ramp proceeds at 20 deg/s (SS9.5). This is
+not an instant ESTOP -- lights stay on, DC-DC stays on, and the rider retains
+control.
+
+**Startup grace period (3000 ms):**
+At power-on, no CAN frames have been received from any peer. All three
+staleness checks (0x204, 0x206, command watchdog) are suppressed for 3000 ms.
+This prevents false stale-timeout triggers during the interval when CAN
+controllers initialize, nodes boot, and periodic transmissions establish.
+Hardware defaults during this window (SS6.1.2) provide safe-state guarantees:
+DAC=0 V, relays OFF, EPS-C centering, SEB idle.
+
+**Source files:** `sys-esp32/src/main.cpp` (lines 654-664 for setpoint stale
+gating), `rt-esp32/src/main.cpp` (watchdog task), `shared/shared_config.h`
+(`kStartupGracePeriodMs = 3000`, `kSetpointStaleMs = 200`),
+`shared/can/generated/can_data.h` (`kCmdStaleTimeoutMs = 500`).
+
+---
+
+### 9.5 Steering Safety
+
+Steering safety encompasses four independent mechanisms that prevent loss of
+control: dynamic angle clamping, following-error monitoring, ESTOP steering
+behavior, and rolling counter freshness validation on the EPS-C feedback path.
+
+**Dynamic angle clamp:**
+The maximum commanded steering angle varies inversely with vehicle speed,
+preventing rollover at high speed while preserving maneuverability at low speed.
+
+```
+limit_deg = 40.0 - (speed_kmh - 2.0) * (35.0 / 23.0)
+Clamped to [5.0, 40.0]
+
+At 2 km/h:  max 40 deg  (tight turns, parking)
+At 10 km/h: max 17.8 deg
+At 25 km/h: max  5.0 deg  (highway lane changes)
+```
+
+The clamp is applied in RT's `control` task at 100 Hz before the steering
+angle is written to the `0x169` command frame. The EPS-C unit's internal
+mechanical limit of +/-78 deg is never reached.
+
+Constants: `kAngleClampBaseDeg = 40.0`, `kAngleClampMinDeg = 5.0`,
+`kAngleClampRangeDeg = 35.0`, `kAngleClampSpeedRange = 23.0`
+(`rt-esp32/src/config.h`, namespace `rt`).
+
+**Steering following error:**
+RT compares the commanded angle (from `0x169 VCU_SES_REQ`) against the
+actual measured angle (from `0x201 SES_STATUS` field `SES_StrAngle`). The
+error threshold is speed-scaled:
+
+```
+threshold_deg = max(2.0, 0.25 * dynamic_limit_deg)
+```
+
+If `abs(cmd_angle - actual_angle) > threshold_deg` persists for more than
+300 ms (configurable via `kSteerFollowingErrMs`), RT triggers ESTOP. At
+25 km/h the threshold is 2.0 deg (tight -- any deviation is significant at
+low angle limits). At 2 km/h the threshold is 10.0 deg (tolerant -- parking
+maneuvers involve large steering corrections). The constant `2.0 deg` floor
+prevents the threshold collapsing to near-zero at full speed.
+
+Constants: `kSteerFollowingErrMinDeg = 2.0`, `kSteerFollowingErrFactor = 0.25`,
+`kSteerFollowingErrMs = 300` (`rt-esp32/src/config.h`).
+
+**ESTOP steering behavior:**
+Two distinct ESTOP steering paths, selected by trigger source:
+
+- **Non-obstacle ESTOP** (heartbeat loss, command stale, manual ESTOP button,
+  ModeManager ESTOP): ramp the steering angle to 0 deg at 20 deg/s while
+  continuing `0x169` transmission. The ramp ensures the front wheel centers
+  under control rather than snapping to center. Once at 0 deg, hold and
+  continue transmitting. If the START button is pressed during the ramp, the
+  `m_estop_exit_pending` flag is set; steering transitions to ACTIVE only
+  after the ramp completes (Gap #6 resolution).
+
+- **Obstacle ESTOP** (0x400 distance < threshold, Jetson ESTOP): hold the
+  current steering angle for 500 ms (maintaining path during braking), then
+  silent-stop `0x169` transmission. The EPS-C enters comm-fault timeout and
+  holds its last commanded angle. The hold angle is clamped to the dynamic
+  angle limit for current speed (Gap #9 resolution): if the current angle
+  exceeds the speed-based limit, ramp to the limit at 20 deg/s before
+  entering the hold. This prevents rollover during combined hard-braking +
+  cornering scenarios.
+
+**Following error during ESTOP centering ramp:**
+During the non-obstacle centering ramp, the following-error monitor remains
+active. If the actual angle deviates more than 5 deg from the commanded ramp
+angle for more than 1 second, the ESTOP transitions to silent-stop
+(STEER_FAULT state). This catches mechanical linkage jams during centering
+(`rt-esp32/src/steering_control.h` lines 109-126).
+
+**EPS-C rolling counter freshness:**
+The EPS-C status frame (`0x201 SES_STATUS`) carries a 4-bit rolling counter
+in byte 6 bits 4-7 (`roll_cnt_sts`). RT checks that this counter increments
+on every frame. A frozen counter indicates a stuck EPS-C CAN controller (the
+MCU may be alive but the CAN peripheral is DMA-ing stale data). If the counter
+remains unchanged for more than 5 consecutive frames, the following-error
+monitor escalates to ESTOP.
+
+**Source files:** `rt-esp32/src/steering_control.h` (full state machine + ESTOP
+behavior), `rt-esp32/src/main.cpp` (control task + following error check),
+`rt-esp32/src/config.h` (angle clamp and following error constants),
+`shared/can/can_protocol.h` (SesStatus struct with rolling counter).
+
+---
+
+### 9.6 Brake Safety
+
+The brake system uses the SEB (electro-hydraulic brake-by-wire) actuator
+commanded via CAN `0x7B9`. Multiple independent protections prevent
+unintended braking or brake loss, with mode-gated dual control and
+checksum-validated command frames.
+
+**SYS 6-condition brake suppression in AUTO:**
+SYS suppresses SEB actuation from RT's brake request (`0x205`) when all six
+conditions are met (`sys-esp32/src/main.cpp` lines 654-664):
+
+```
+suppress = (mode == Auto)
+        && rt_alive           // RT heartbeat counter incrementing
+        && rt_normal          // RT safety_state == 0 (no fault)
+        && seb_ack            // SEB rolling counter has been received at least once
+        && !lever             // brake lever not pressed
+        && !estop             // not in ESTOP mode
+        && rt_setpoint_fresh  // 0x204 received within staleness window
+```
+
+When suppressed, the brake is fully released (stroke=0). This prevents the
+SEB from holding brake pressure when RT has not explicitly requested it, while
+ensuring the lever, ESTOP, and RT fault conditions always override.
+
+**Mode-gated dual control of 0x7B9:**
+In AUTO mode, RT is the sole `0x7B9` sender, transmitting at 50 Hz with the
+arbitrated brake pressure. In MANUAL/ESTOP, SYS is the sole sender, transmitting
+lever stroke or max stroke respectively. The mode gate is enforced by the mode
+state machine on each node:
+
+- RT sends `0x7B9` in AUTO only when `SteerState == STEER_ACTIVE`. This
+  prevents RT from transmitting brake commands during boot sync or fault
+  states, eliminating the dual-sender collision window during mode transitions
+  (`rt-esp32/src/steering_control.h` -- brake command mirrors steering state).
+
+- SYS sends `0x7B9` in all modes but suppresses its transmission in AUTO
+  when the six suppression conditions are met (above). SYS resumes `0x7B9`
+  immediately on lever press, ESTOP, or RT heartbeat loss.
+
+**SEB alignment bit:**
+The `0x7B9` command frame requires `align_enable = 1` (byte 0 bit 0) for the
+SEB to accept the command. Both RT and SYS always set this bit in `build_command()`.
+If the SEB loses alignment (e.g., after an internal fault), it stops accepting
+commands until the bit is toggled and the SEB re-synchronizes.
+
+**Brake following error:**
+SYS compares the commanded stroke (`0x7B9` stroke_req) against the SEB's
+actual stroke feedback (`0x721 SEB_STATUS` field `stroke_value`). This check
+is active only in Stroke Mode (`control_mode==0`). In Pressure Mode, the SEB
+reports pressure in byte 3 overlapped with stroke MSB -- stroke comparisons
+in Pressure Mode would compare garbage. Threshold: 3 mm deviation for more
+than 100 ms. On violation, a persistent brake fault flag is set in the
+`0x600` diagnostics report. This cannot escalate to ESTOP (ESTOP already
+commands max stroke), but the fault log is essential for post-incident
+analysis.
+
+**0x721 pressure/stroke mode-dependent parsing:**
+The SEB status frame (`0x721`) uses byte 3 for either the stroke MSB
+(Stroke Mode) or the pressure value (Pressure Mode), selected by
+`control_mode_sts` in byte 0 bits 2-3. SYS dispatch checks the mode bit
+before interpreting byte 3 to prevent reading corrupted stroke values
+(`sys-esp32/src/main.cpp` lines 277-279). The stroke is always stored as a
+full 16-bit value from bytes 2-3 when in Stroke Mode; in Pressure Mode, byte
+2 alone (stroke LSB) is used with the last known MSB.
+
+**SEB L3 fault cascade:**
+SEB reports internal fault severity via `SEB_Error_Status` in `0x721` byte 0
+bits 6-7 (values: 0=normal, 1=L1, 2=L2, 3=L3/shutdown). SYS also monitors
+`0x731 SEB_ErrInfo` for 16 independent L3 fault bits at defined bit positions
+(2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22). On any L3 fault detection:
+
+1. `g_mode_mgr.force_estop()` is called.
+2. `g_last_estop_trigger_tick` is recorded for MTR ACK timeout monitoring.
+3. `can_send_estop()` broadcasts `0x001` on the low bus.
+4. The brake fault flag is set in `0x600` diagnostics.
+
+The checksum is validated **before** reading `error_status` from the frame
+(SS9.7). This prevents a corrupted frame with a stray L3 bit from triggering
+a spurious ESTOP.
+
+**MTR ESTOP ACK timeout (100 ms):**
+After any ESTOP trigger, SYS monitors bit 0 of `0x206 MTR_MOTOR_FBK`
+fault_flags (`ESTOP_ACTIVE`). If this bit is not set within 100 ms of the
+ESTOP trigger tick, SYS logs an MTR acknowledgment failure. If `0x206` also
+goes stale during this window, MTR communication is declared lost.
+
+**Source files:** `sys-esp32/src/main.cpp` (lines 248-279 for 0x721 checksum +
+parsing, lines 654-664 for brake suppression, lines 342-371 for L3 fault
+handling), `sys-esp32/src/brake_control.h`,
+`shared/can/can_protocol.h` (VcuSebReq struct, SebStatus struct),
+`rt-esp32/src/steering_control.h` (STEER_ACTIVE gate for 0x7B9).
+
+---
+
+### 9.7 CAN Protocol Validation
+
+Every safety-critical CAN frame undergoes DLC validation, checksum verification,
+and rolling counter freshness checks before its payload is consumed. These
+defenses prevent bus noise, corrupted frames, and stuck CAN controllers from
+producing false actuation commands.
+
+**DLC guards on every dispatch path:**
+The CAN protocol decoders (`from_frame()` static methods in
+`shared/can/can_protocol.h`) reject frames with insufficient DLC by returning
+a safe default (zero-initialized struct):
+
+| Frame | Expected DLC | Default on short frame |
+|-------|-------------|----------------------|
+| `0x011` SYS_SAFETY_STS | 3 | estop=false, hb_ok=false |
+| `0x110` SYS_MODE_CMD | 1 | mode=Manual |
+| `0x120` SYS_THROTTLE_STS | 2 | speed=0 |
+| `0x169` VCU_SES_REQ | 8 | angle=0, stroke=600 |
+| `0x201` SES_STATUS | 8 | all fields zero |
+| `0x204` RT_DRIVE_CMD | 5 | speed=0, gear=N |
+| `0x205` RT_BRAKE_CMD | 4 | pressure=0 |
+| `0x206` MTR_MOTOR_FBK | 4 | speed=0, gear=N, fault=0 |
+| `0x300` HOST_DRIVE_CMD | 8 | speed=0, yaw=0, gear=N |
+| `0x301` HOST_BRAKE_REQ | 4 | pressure=0 |
+| `0x600` SYS_DIAG_RPT | 8 | all fields zero |
+| `0x721` SEB_STATUS | 8 | all fields zero |
+| `0x7B9` VCU_SEB_REQ | 8 | stroke=0, pressure=0 |
+| `0x7FD` RT_HEARTBEAT | 2 | ctr=0, flags=0 |
+| `0x7FE` SYS_HEARTBEAT | 2 | ctr=0, flags=0 |
+
+DLC guards are the first line of defense. A frame with DLC less than the
+expected minimum is silently dropped -- the safe default propagates, not
+partial garbage data.
+
+**Checksum validation:**
+Both actuator frames (`0x169 VCU_SES_REQ` and `0x7B9 VCU_SEB_REQ`) compute
+their checksum as XOR of bytes 0-6, XORed with 0xFF, placed in byte 7:
+
+```
+checksum = XOR(data[0..6]) ^ 0xFF
+```
+
+SYS validates the 0x721 frame checksum before reading any status fields
+(`sys-esp32/src/main.cpp` lines 252-259). If the checksum fails, the frame
+is dropped immediately -- no error_status reading, no alignment bit check.
+This ordering is critical: a single-bit error on the CAN bus could flip any
+byte including the error_status field. Validating checksum first ensures that
+only genuine L3 faults trigger ESTOP, not bus noise.
+
+The same pattern applies to 0x201 on RT's dispatch path
+(`rt-esp32/src/can_dispatch.h`).
+
+**L3 error evaluation after checksum:**
+L3 fault assessment (reading `SEB_Error_Status` from byte 0 bits 6-7) happens
+only after checksum passes. The evaluation order is:
+
+1. DLC >= 8 check
+2. Checksum validation (XOR bytes 0-6 ^ 0xFF == byte 7)
+3. Parse byte 0: alignment, control_mode, error_status
+4. If error_status >= 3: log, set brake_fault, call force_estop
+
+This ordering is identical in both EPS-C (0x201) and SEB (0x721) handling.
+
+**Rolling counter freshness:**
+Three frame types carry a 4-bit rolling counter (0-15, incrementing each
+frame) that must be validated by the receiver:
+
+- `0x201 SES_STATUS`: byte 6 bits 4-7 (`roll_cnt_sts`). RT checks for
+  monotonic increment. A stuck counter for >5 frames triggers following-error
+  escalation.
+
+- `0x721 SEB_STATUS`: byte 6 bits 4-7 (`roll_cnt_sts`). SYS checks for
+  monotonic increment. A stuck counter indicates a frozen SEB CAN controller.
+
+- Heartbeat frames (0x7FD, 0x7FE, 0x7FC, 0x7FB): the 8-bit alive counter
+  serves the same freshness function. Frozen counter = missed heartbeat.
+
+**Source files:** `shared/can/can_protocol.h` (all from_frame() DLC guards,
+VcuSesReq::pack checksum at lines 523-526, VcuSebReq::pack checksum at lines
+562-565), `sys-esp32/src/main.cpp` (lines 248-279 for 0x721 checksum + L3
+evaluation), `rt-esp32/src/can_dispatch.h` (ESTOP checksum validation),
+`rt-esp32/src/steering_control.h` (rolling counter handling).
+
+---
+
+### 9.8 Diagnostic Telemetry
+
+Three periodic diagnostic frames provide real-time visibility into system
+health without requiring a debugger or serial connection. Each frame is
+consumed by the Jetson for logging and by human operators for fault analysis.
+
+**0x210 RT_STATE_RPT (10 Hz, DLC=6):**
+
+| Byte | Field | Description |
+|------|-------|-------------|
+| 0 | mode | Current mode (0=Manual, 1=Auto, 2=ESTOP) |
+| 1 | safety_state (bits 0-1) + estop_reason (bits 2-5) | Packed: 2-bit safety state, 4-bit ESTOP trigger reason |
+| 2 | reversing | Non-zero when vehicle velocity < 0 |
+| 3 | rx_overflow | High CAN RX overflow counter (wraps at 256) |
+| 4 | task_health | Bitmask: bit0=control alive, bit1=dispatch alive, bit2=tx_low alive, bit3=tx_high alive, bit7=bench build |
+| 5 | steer_state | SteeringControl state machine enum value |
+
+`task_health` provides real-time task liveness without CAN overhead. Each task
+(`control`, `dispatch`, `can_tx_low`, `can_tx_high`) writes its alive timestamp
+to an atomic counter on each iteration. `0x210` reads these timestamps and packs
+the bitmask: a task that hasn't updated its timestamp for 500 ms is marked dead.
+Bit 7 distinguishes bench builds (1) from vehicle builds (0).
+
+`estop_reason` encodes the trigger source: 0=none, 1=heartbeat timeout, 2=command
+staleness, 3=following error, 4=obstacle, 5=can_estop_frame, 6=gpio_button,
+7=L3 fault.
+
+**0x600 SYS_DIAG_RPT (1 Hz, DLC=8):**
+
+| Byte | Field | Description |
+|------|-------|-------------|
+| 0 | mode | Current mode (0=Manual, 1=Auto, 2=ESTOP) |
+| 1 | brake_engaged (bit0), brake_fault (bit1) | Brake state + persistent fault flag |
+| 2 | heartbeat_ok (bit0), rx_overflow (bits 1-6) | Heartbeat health + 6-bit RX overflow counter |
+| 3 | (reserved) | -- |
+| 4-5 | free_heap_kb | Current free heap in kilobytes (i16) |
+| 6 | TEC | CAN transmit error counter |
+| 7 | REC | CAN receive error counter |
+
+The packed byte 2 encodes heartbeat status in bit 0 and the 6-bit RX overflow
+counter shifted left by 1. The overflow counter saturates at 63 (0x3F). Free
+heap is sampled at transmission time and reflects the current allocation state.
+
+**0x220 RT_PID_RPT (inactive, reserved):**
+DLC=6, reserved for future closed-loop PID telemetry. Currently not transmitted.
+When activated, planned fields: speed setpoint (i32, bytes 0-3), measured speed
+(i16, bytes 4-5), PID output (i16, bytes 6-7) -- requires DLC increase to 8.
+
+**Source files:** `shared/can/can_protocol.h` (RtStateRpt struct at lines 406-434,
+SysDiagRpt struct at lines 346-378, RtPidRpt struct at lines 436-446),
+`rt-esp32/src/main.cpp` (lines 478-492 for 0x210 packing),
+`sys-esp32/src/main.cpp` (lines 873-883 for 0x600 packing).
+
+---
+
+### 9.9 Watchdog Architecture
+
+Two independent watchdog layers protect each ESP32-S3 node: an external
+hardware watchdog IC (TPS3850) that resets the MCU if toggling stops, and
+the internal ESP-IDF task watchdog that triggers a panic if a task starves.
+
+**External TPS3850 watchdog:**
+
+| Node | GPIO | Toggled by | Period | Watchdog window |
+|------|------|-----------|--------|----------------|
+| RT | 21 | `control_task` (prio 4) | 100 Hz (10 ms) | TPS3850, 100 ms timeout |
+| SYS | 23 | `safety_task` (prio 5) | 20 Hz (50 ms) | TPS3850, 100 ms timeout |
+
+Each node toggles its WDT GPIO at the specified period. The TPS3850 monitors
+the toggling rate through a windowed watchdog input. If toggling stops for
+more than 100 ms (the IC's configured timeout window), the TPS3850 asserts its
+/RST output, which resets the ESP32-S3. On reset, all GPIOs return to
+input/floating state, which de-energizes relays and zeros the MCP4725 DAC
+output (1kΩ pulldown per datasheet). The TPS3850's windowed architecture also
+detects a toggling rate that is too fast (below the minimum window), catching
+a runaway MCU that is toggling too aggressively.
+
+**ESP-IDF task watchdog (internal):**
+Both RT and SYS enable the ESP-IDF Interrupt Watchdog (IWDT) and Task Watchdog
+Timer (TWDT). The TWDT monitors all FreeRTOS tasks for starvation. If a task
+with a configured timeout does not yield within its window, the TWDT triggers
+`ESP_PANIC`, printing the offending task name and halting execution. The panic
+handler then resets the MCU.
+
+**Multi-task alive counters:**
+RT reports per-task liveness in `0x210 RT_STATE_RPT` byte 4 (`task_health`).
+Four tasks are independently tracked:
+
+| Bit | Task | Monitored by |
+|-----|------|-------------|
+| 0 | `control` (prio 4) | Writes to `g_alive_tasks[0]` each iteration |
+| 1 | `dispatch` (prio 4) | Writes to `g_alive_tasks[1]` each iteration |
+| 2 | `can_tx_low` (prio 3) | Writes to `g_alive_tasks[2]` each iteration |
+| 3 | `can_tx_high` (prio 3) | Writes to `g_alive_tasks[3]` each iteration |
+
+Each task stores its alive timestamp as a `uint64_t` atomic (tick count read
+from `xTaskGetTickCount()`), which provides overflow-proof operation --
+uint64_t will not wrap within the vehicle's operational lifetime. The 0x210
+packer checks `(now - timestamp) < 500 ms` for each task. A task that stalls
+for more than 500 ms is flagged as dead.
+
+**FreeRTOS exception hooks:**
+Both RT and SYS define `vApplicationStackOverflowHook` and
+`vApplicationMallocFailedHook` in `freertos_hooks.cpp`. Stack overflow:
+logs the overflowing task name and halts. Malloc failure: logs the size
+requested and returns NULL (the caller must handle the allocation failure).
+These hooks ensure fatal runtime conditions are visible through the CAN
+diagnostic path before the watchdog resets the MCU.
+
+**Hardware-independent watchdog layer:**
+The external TPS3850 is independent of the internal ESP-IDF watchdog -- a
+frozen MCU with a stuck CAN controller will not trigger the internal watchdog
+(which requires the FreeRTOS scheduler to run), but the TPS3850 detects the
+stalled WDT toggle and resets the chip. Conversely, an MCU that is alive but
+executing corrupted instructions at high speed (too-fast toggling) is caught
+by the TPS3850's windowed timeout.
+
+**Source files:** `rt-esp32/src/main.cpp` (lines 486-492 for alive counters),
+`sys-esp32/src/main.cpp` (WDT toggle setup), `rt-esp32/src/freertos_hooks.cpp`,
+`sys-esp32/src/freertos_hooks.cpp`, `rt-esp32/src/config.h` (`kWdtToggleGpio = 21`),
+`sys-esp32/src/config.h` (`kWdtToggleGpio = 23`).
+
+---
+
+### 9.10 Build Configuration
+
+The firmware supports two build profiles -- **vehicle** and **bench** --
+controlled by PlatformIO environments in `platformio.ini`. A safety gate
+prevents bench configurations from running on the vehicle.
+
+**Vehicle profile (default):**
+
+| Property | Value |
+|----------|-------|
+| PlatformIO env | `esp32-s3` |
+| Bypass flags | Zero (all safety checks active) |
+| MTR target | STM32 (production) |
+| Heartbeat | Full monitoring |
+| Startup grace | 3000 ms |
+
+The vehicle build is the default `pio run` target. All safety features are
+active: DLC guards, checksum validation, following-error monitoring, heartbeat
+timeouts, EGAS L2 comparison. No bypass defines are set.
+
+**Bench profile (explicit opt-in):**
+
+| Property | Value |
+|----------|-------|
+| PlatformIO env | `esp32-s3-bench-solo` |
+| Bypass flags | All defined explicitly per bench scenario |
+| Requirement | `BENCH_BUILD_ACKNOWLEDGED` must be defined |
+
+The bench environment sets `CONFIG_BENCH_SOLO` and may define bypass flags
+such as `CONFIG_BYPASS_EPS_C_SYNC` (skip steering Listen-Before-Speaking for
+bench testing without an EPS-C unit). Every `platformio.ini` file that defines
+a bench environment includes `-D BENCH_BUILD_ACKNOWLEDGED`.
+
+**Safety gate:** Both `rt-esp32/src/main.cpp` (line 7-8) and
+`sys-esp32/src/main.cpp` (line 10-11) contain a preprocessor gate:
+
+```cpp
+#if defined(CONFIG_BENCH_SOLO) && !defined(BENCH_BUILD_ACKNOWLEDGED)
+#error "Bench build selected. Define BENCH_BUILD_ACKNOWLEDGED to proceed. \
+Vehicle builds must NOT define BENCH_BUILD_ACKNOWLEDGED."
+#endif
+```
+
+If `CONFIG_BENCH_SOLO` is set without `BENCH_BUILD_ACKNOWLEDGED`, compilation
+fails with a hard error. This prevents accidentally uploading a bench binary
+to a vehicle -- the developer must explicitly acknowledge they are building
+for bench.
+
+**CI gate:** The CI pipeline runs the vehicle profile as the default target.
+A merge is blocked if the vehicle build has any CONFIG_BYPASS_* flags set.
+Bench builds are CI-tested separately with explicit bypass flags.
+
+**Runtime build type reporting:**
+RT reports the build type in `0x210 RT_STATE_RPT` byte 4 bit 7 (`task_health`
+bit 7). When compiled with `BENCH_BUILD_ACKNOWLEDGED`, bit 7 is set to 1.
+Vehicle builds leave bit 7 clear. This allows operators and diagnostic tools
+to immediately distinguish a bench binary from a production binary through
+CAN telemetry alone.
+
+**Source files:** `rt-esp32/platformio.ini` (line 38: `-D BENCH_BUILD_ACKNOWLEDGED`),
+`sys-esp32/platformio.ini` (line 38), `mtr-stm32/platformio.ini` (line 30),
+`pwt-esp32/platformio.ini` (line 22), `rt-esp32/src/main.cpp` (lines 7-8, 491-492),
+`sys-esp32/src/main.cpp` (lines 10-11).
+
+---
+
+## 10. CAN bus device maps
 
 ### Low-level
 
@@ -1623,7 +2319,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 
 ---
 
-## 10. Hardware summary
+## 11. Hardware summary
 
 | Node | Controller | MCU | Framework | CAN interfaces |
 |------|-----------|-----|-----------|---------------|
@@ -1644,7 +2340,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 
 ---
 
-## 11. Build
+## 12. Build
 
 ```bash
 cd rt-esp32 && pio run && pio run -t upload && pio device monitor
@@ -1654,7 +2350,7 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 
 ---
 
-## 12. Known design gaps
+## 13. Known design gaps
 
 | # | Gap | Impact | Resolution |
 |---|-----|--------|------------|
@@ -1681,7 +2377,7 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 
 ---
 
-## 13. Reference documents
+## 14. Reference documents
 
 | File | Content |
 |------|---------|

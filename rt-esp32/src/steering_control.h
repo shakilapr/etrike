@@ -53,7 +53,7 @@ public:
             return false;
 
         case SteerState::STEER_LISTEN_SYNC: {
-#ifdef CONFIG_BYPASS_EPS_C_SYNC
+#if defined(CONFIG_BYPASS_EPS_C_SYNC) && defined(CONFIG_BENCH_SOLO)
             // Bench mode: skip EPS-C listen-sync, assume centered
             m_active_angle = 0;
             m_state = SteerState::STEER_ACTIVE;

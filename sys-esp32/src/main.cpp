@@ -4,6 +4,13 @@
 // Phases S1-S4: CAN RX, dispatch, motor, safety, mode, throttle, brake,
 //               lights, dcdc, indicator, power, can_tx, diag, heartbeat.
 
+// Bench build safety guard: bench firmware disables critical safety
+// mechanisms and must never be flashed to a vehicle. Require explicit
+// acknowledgement to compile.
+#if defined(CONFIG_BENCH_SOLO) && !defined(BENCH_BUILD_ACKNOWLEDGED)
+#error "Bench build selected. Define BENCH_BUILD_ACKNOWLEDGED to proceed. Vehicle builds must NOT define BENCH_BUILD_ACKNOWLEDGED."
+#endif
+
 #include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -427,6 +434,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // EGAS L2: compare 0x204 setpoint vs 0x206 actual speed (arch §6.1)
         // Only in AUTO mode. Mismatch > threshold for > duration → ESTOP.
+#ifndef CONFIG_BYPASS_MTR_ABSENT
         {
             static bool  egas_fault_active = false;
             static TickType_t egas_fault_start = 0;
@@ -457,6 +465,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 egas_fault_active = false;
             }
         }
+#endif  // CONFIG_BYPASS_MTR_ABSENT
 
         // F3: MTR ESTOP ACK check (Gap #15)
         // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags.
@@ -755,7 +764,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        auto out = g_indicator.tick(g_mode_mgr.mode());
+        [[maybe_unused]] auto out = g_indicator.tick(g_mode_mgr.mode());
 #ifndef TESTING
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbAuto), out.auto_bulb ? 1 : 0);
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbManual), out.manual_bulb ? 1 : 0);
@@ -763,11 +772,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Green "ready" bulb: AUTO or MANUAL, RT alive, no brake fault
         can::Mode mode = g_mode_mgr.mode();
-        bool ready = (mode == can::Mode::Auto || mode == can::Mode::Manual)
+        [[maybe_unused]] bool ready = (mode == can::Mode::Auto || mode == can::Mode::Manual)
                   && g_safety.heartbeat_ok()
                   && !g_brake_fault_active.load(std::memory_order_relaxed);
         // Red "ESTOP" bulb: dedicated, independent of brake lamp
-        bool estop = (mode == can::Mode::Estop);
+        [[maybe_unused]] bool estop = (mode == can::Mode::Estop);
 
 #ifndef TESTING
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), ready ? 1 : 0);
@@ -784,7 +793,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        bool on = (g_mode_mgr.mode() != can::Mode::Estop);
+        [[maybe_unused]] bool on = (g_mode_mgr.mode() != can::Mode::Estop);
 #ifndef TESTING
         gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), on ? 1 : 0);
 #endif
@@ -811,23 +820,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         vTaskDelayUntil(&last, period);
     }
 }
-
-// ── Multi-task watchdog — per-task alive counters ───────────────────
-// task_diag (lowest prio) checks all counters. Logs ERROR if any
-// critical safety task hasn't ticked within its deadline.
-
-static void check_task_watchdog() {
-    TickType_t now = xTaskGetTickCount();
-    auto stale = [now](std::atomic<uint32_t>& a, const char* name, int ms) {
-        if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(ms))
-            ESP_LOGE(TAG, "Task %s stalled >%dms", name, ms);
-    };
-    stale(g_alive_safety,   "safety",   200);
-    stale(g_alive_brake,    "brake",    200);
-    stale(g_alive_dispatch, "dispatch", 200);
-    stale(g_alive_can_tx,   "can_tx",   500);
-}
-
 // ── Diag task (prio 1, 1 Hz) — 0x600 SYS_DIAG_RPT ──────────────────
 
 [[noreturn]] static void task_diag(void*) {
