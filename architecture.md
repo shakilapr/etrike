@@ -36,7 +36,7 @@ Key architectural IDs:
 | High | `0x301` | HOST_BRAKE_REQ | Jetson → RT: brake kPa |
 | High | `0x302` | HOST_LIGHT_CMD | Jetson → RT (→ SYS): lights |
 | High | `0x400` | HOST_OBSTACLE_DIST | Jetson → RT: min obstacle mm |
-| High | `0x210` | RT_STATE_RPT | RT → Jetson: mode, steer valid, reversing |
+| High | `0x210` | RT_STATE_RPT | RT → Jetson: mode, safety_state, reversing, rx_overflow (DLC=4) |
 | High | `0x310` | STEER_DIAG | RT → Jetson: steering telemetry |
 | High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry |
 | Low | `0x001` | SAFETY_ESTOP | Any → All: emergency stop (bridged) |
@@ -49,8 +49,8 @@ Key architectural IDs:
 | Low | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL/ESTOP) → SEB: brake |
 | Low | `0x721` | SEB_STATUS | SEB → SYS: stroke feedback |
 | Low | `0x206` | MTR_MOTOR_FBK | MTR → SYS, RT: speed, gear, faults |
-| Low | `0x7FD` | RT_HEARTBEAT | RT → SYS, Jetson: alive counter |
-| Low | `0x7FE` | SYS_HEARTBEAT | SYS → RT: alive counter |
+| Low | `0x7FD` | RT_HEARTBEAT | RT → SYS, Jetson: alive counter + health flags (DLC=2) |
+| Low | `0x7FE` | SYS_HEARTBEAT | SYS → RT: alive counter + health flags (DLC=2) |
 | Low | `0x7FB` | PWT_HEARTBEAT | PWT → RT, SYS: alive counter |
 
 > Full forwarding rules, per-ECU receive/send tables, and ID-to-bus mapping in [`docs/architecture-reference.md`](docs/architecture-reference.md).
@@ -124,7 +124,7 @@ Jetson 0x302 → RT forward → 0x302 → SYS → lights
 
 ## 6. Design Principles
 
-1. **Queues over shared state.** No mutexes. Thread-safe FreeRTOS queue pipes.
+1. **Queues over shared state.** No mutexes between FreeRTOS tasks — thread-safe FreeRTOS queue pipes for all inter-task communication. **Exception:** MCP2515 SPI bus uses a FreeRTOS mutex (`g_spi_mutex`) because ESP-IDF's SPI master driver was observed to assertion-fail (`ret_trans == trans_desc`) under concurrent access from rx_high(prio5), tx_high(prio3), control(prio4), and heartbeat(prio1). All `spi_device_transmit()` calls are wrapped in `spi_lock()`/`spi_unlock()`.
 2. **ESTOP bypasses queues.** Safety task preempts and writes directly to actuators.
 3. **One CAN ID = one sender per bus.** Heartbeats use per-node IDs (0x7FD RT, 0x7FE SYS, 0x7FC Jetson).
 4. **Lower CAN ID = higher bus priority.** Safety IDs (0x00X) win arbitration.
@@ -135,8 +135,62 @@ Jetson 0x302 → RT forward → 0x302 → SYS → lights
 9. **Listen Before Speaking.** Actuators require status feedback before commands begin.
 10. **EGAS 3-level motor safety.** MTR (STM32) = L1 function controller, SYS = L2 monitor, hardwired ESTOP = L3.
 11. **Mode-gated dual control (Option D).** RT commands both steering and brake in AUTO (1-hop from kinematics). SYS commands brake in MANUAL/ESTOP. No single MCU failure takes both actuators.
+12. **Global state in a single translation unit.** `main.cpp` is the owner of all global state. `rt_state.h` declares externs for every global object, atomic, and queue. Cross-file access goes through the header. No hidden global state in .cpp files.
+13. **Atomic sensor pipeline.** CAN RX task writes decoded values to atomics. Control task reads atomics, computes physics, writes setpoint atomics. TX task reads setpoint atomics, sends CAN frames. No locks — atomic load/store with relaxed memory order (single-writer, single-reader per atomic).
+14. **Safety events use a queue.** Safety conditions (ESTOP, mode change) are enqueued as `SafetyEvent` structs on `g_safety_evt_q` (depth 16). The control task drains the queue at the start of each 100 Hz cycle. The queue guarantees no missed events (unlike flag atomics which can be overwritten). ESTOP events use `xQueueSendToFront` for priority.
+15. **Dual heartbeat — independent per bus.** RT sends 0x7FD on both high and low buses with independent alive counters. Receivers track per-bus liveness independently using frozen-counter detection (timestamp only updated when counter changes). Heartbeats are never forwarded between buses.
+16. **Layered watchdog.** Per-task alive counters checked at 10 Hz (RT) / 1 Hz (SYS) → log ERROR on stall. External TPS3850 hardware WDT toggled from control task. ESP-IDF task WDT monitors idle tasks. Three independent watchdog layers.
 
 > Full rationale, Options A-D comparison, and EGAS architecture detail in [`docs/architecture-reference.md`](docs/architecture-reference.md).
+
+### Task Priority Architecture
+
+FreeRTOS priorities reflect the safety criticality and data-flow order:
+
+| Priority | RT Tasks | SYS Tasks | Rationale |
+|----------|----------|-----------|-----------|
+| 5 | rx_low, rx_high | can_rx, safety | CAN RX must never be delayed. Safety is highest-app priority. |
+| 4 | dispatch, control | dispatch, mode, motor | Data processing and control. Mode authority. |
+| 3 | tx_low, tx_high | throttle, gear, brake, lights, dcdc | CAN TX and actuation. |
+| 2 | — | indicator, power, can_tx | Body control and TX. |
+| 1 | watchdog, heartbeat | diag, heartbeat | Lowest — background monitoring. |
+
+### CAN Health Monitoring Architecture
+
+Two ECUs monitor their own CAN bus health independently:
+
+| Path | Trigger | Check Rate | Action |
+|------|---------|------------|--------|
+| TWAI TEC poll | `g_can_low.get_error_counters()` | 10 Hz (RT), 1 Hz (SYS) | TEC>128 → warning. TEC≥255 → bus-off → `init()` recovery. 5 consecutive bus-off → ESTOP. |
+| MCP2515 interrupt | ERRIF/MERRE in `receive()` ISR | ~100µs latency | Bus-off detected immediately via EFLG TXBO bit. Sets `m_bus_off` flag. |
+| MCP2515 polled fallback | `get_error_counters()` | 10 Hz | Catches bus-off if ISR was missed. Debounced 500ms between reinit attempts. |
+
+Recovery: `twai_initiate_recovery()` for TWAI (waits 128×11 recessive bits). Full `init()` reinstall for MCP2515 (stop→uninstall→install→start).
+
+### Gateway Forwarding Architecture
+
+```
+Low Bus RX Queue (depth 16) ──→ dispatch ──→ gateway TX queues (depth 8)
+High Bus RX Queue (depth 16) ──→ (prio 4) ──→ tx_low (prio 3) / tx_high (prio 3)
+```
+
+ESTOP (0x001) uses `xQueueSendToFront` to skip the queue. All other forwarded frames use normal `xQueueSend` with 0 timeout (non-blocking — dropped if queue full, counter incremented).
+
+### CAN TX Recovery Logging
+
+Each CAN TX path tracks failures and recovery independently:
+- First failure → `ESP_LOGW` (warning) + set `had_failure` flag
+- Subsequent failures → silent (counter incremented)
+- First success after failure → `ESP_LOGI` (recovery) with fail/ok counts + clear `had_failure`
+- This avoids log spam while still detecting intermittent CAN issues
+
+### NVS Crash Persistence (SYS Only)
+
+SYS persists reset reason and boot count to NVS flash:
+- `esp_reset_reason()` read at boot → stored to NVS
+- Boot counter incremented, logged at INFO
+- NVS initialized with migration handling (`ESP_ERR_NVS_NO_FREE_PAGES`)
+- Provides post-mortem crash analysis without external debugger
 
 ---
 
@@ -144,7 +198,7 @@ Jetson 0x302 → RT forward → 0x302 → SYS → lights
 
 **Role:** Converts Host 0x300 (speed+yaw+gear) into 0x204 (motor) + 0x169 (steering). Bridges CAN between high/low buses. Monitors SYS/Host liveness. Only operates in AUTO mode; silent in MANUAL.
 
-**8 FreeRTOS tasks, dual CAN (TWAI GPIO5/4 + MCP2515 SPI GPIO36-40).**
+**6–8 FreeRTOS tasks (varies by hardware):** `rx_low`, `rx_high`*, `dispatch`, `control`, `tx_low`, `tx_high`*, `watchdog`, `heartbeat`. Tasks marked * are only created if MCP2515 init succeeds — system degrades gracefully to 6 tasks when high CAN is absent. All tasks pinned to CPU0. Dual CAN (TWAI GPIO5/4 + MCP2515 SPI GPIO36-40).
 
 ### CAN I/O
 
@@ -182,12 +236,40 @@ SYS reads this at 10 Hz. If `safety_state != 0`, SYS does NOT suppress its own 0
 
 | Feature | Implementation |
 |---------|---------------|
-| Error interrupts | ERRIF + MERRE enabled. Bus-off detected in ~100µs via ISR. |
-| RX rollover | BUKT=1. Overflow → RXB1 instead of drop. |
-| ESTOP priority | ESTOP (0x001) → TXB2. All others → TXB0. TXB2 transmits first. |
-| Listen-Only mode | `set_mode(ListenOnly)` API. Bus-safe monitoring. |
+| TX buffer priority | TXB2 (highest) → ESTOP (0x001). TXB1 (medium) → telemetry (0x310, 0x311, 0x220). TXB0 (normal) → everything else. Prevents gateway bursts from delaying diagnostic frames. |
+| Error interrupts | ERRIF + MERRE enabled. Bus-off detected in ~100µs via ISR on GPIO40 (NEGEDGE, IRAM_ATTR). ISR uses `vTaskNotifyGiveFromISR` to wake rx task. Null-guarded for cold-boot window. |
+| RX rollover | BUKT=1. Overflow → RXB1 instead of drop. Two-buffer pending frame cache eliminates second SPI read when both buffers fill. |
+| SPI mutex | FreeRTOS `SemaphoreHandle_t` serializes all SPI transactions across 4 tasks. Present because ESP-IDF driver assertion-fails under concurrent access. |
+| Cold-boot retry | Up to 4 attempts (200/400/600ms backoff). MCP2515 oscillator needs up to 128ms to stabilize. Polls CANSTAT for config mode (0x80). |
+| Listen-Only mode | Bench only (`CONFIG_BENCH_SOLO`). Prevents TX error accumulation from un-ACKed frames when using CANalyst-II. |
 | Crystal | 8 MHz default. `-D MCP2515_16MHZ` for 16 MHz modules. |
-| Bus-off recovery | Interrupt-driven fast path + 10 Hz polled fallback. Debounced 500ms. |
+| Bus-off recovery | Interrupt-driven fast path + 10 Hz polled fallback. `fast_path_handled` guard prevents polled path from racing ISR reinit. Debounced 500ms. |
+
+### Kinematics (Inverse Bicycle Model)
+
+`PhysicsModel::resolve()` converts Host drive command (speed, yaw) to motor speed + steer angle. Standard inverse bicycle model with three speed regimes:
+
+| Regime | Condition | Behavior |
+|--------|-----------|----------|
+| Normal | \|v\| ≥ 50mm/s | `steer = atan2(L * yaw, v)`. Signed v for reverse handling. |
+| Low-speed decay | \|v\| < 50mm/s, w ≈ 0 | `steer *= 0.8` per cycle → straight |
+| Zero-speed yaw | \|v\| ≈ 0, \|w\| > 0.001 | Full steering lock in yaw direction, speed=0 (no forward lurch) |
+
+Obstacle response: `obstacle_limit()` scales speed 0→full (300mm→3000mm). `obstacle_to_kpa()` scales brake 5000kPa→0 (300mm→3000mm). Max-selected with Host brake kPa.
+
+### PID Controller (Shadow, Future Active)
+
+Shadow PID (`SpeedController::update_shadow_pid()`) computes correction for telemetry only:
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Kp, Ki, Kd | 1.0, 0.1, 0.05 | Gains |
+| Algorithm | D-on-measurement | Avoids derivative kick |
+| Anti-windup | Conditional integration | Stops when output saturated |
+| I-reset | On setpoint change >500mm/s | Prevents integral windup |
+| Encoder guard | `measured==0 → output=0, PID reset` | Prevents spurious correction |
+
+Active PID (`CONFIG_ENABLE_ACTIVE_PID`): correction injected into motor setpoint. Disabled by default — requires physical encoder installed, quadrature verified, PCNT enabled, speed validated on 0x220 telemetry, and no-load bench test passed.
 
 ### Gateway Forwarding
 
@@ -337,16 +419,10 @@ presets — the tool can inject any CAN frame via the encode API.
 ## 10. CAN Bus Device Maps
 
 **Low-level (500 kbit/s):** RT, SYS, PWT, EPS-C, SEB
-
 **High-level (500 kbit/s):** Jetson, RT
-
 **Powertrain (250 kbit/s):** PWT, DC-DC converter, motor controller (telemetry-only)
 
-> Full per-bus CAN ID tables in [`docs/architecture-reference.md`](docs/architecture-reference.md).
-
----
-
-## 10. Hardware Summary
+## 11. Hardware Summary
 
 - **Motor controller:** Analog throttle 0–5V (MCP4725), gear 72V relays, CAN telemetry-only
 - **EPS-C:** Steer-by-wire, 0x169 command @ 50 Hz, 0x201 feedback @ 100 Hz
@@ -357,22 +433,327 @@ presets — the tool can inject any CAN frame via the encode API.
 
 ---
 
-## 11. Build
+## 12. Build Profiles
 
-All firmware builds with PlatformIO (`pio run`). Bench bypass flags documented in §9.
+All firmware builds with PlatformIO. Three environments per ECU:
 
-| ECU | Board | Framework | Key Flags |
-|-----|-------|-----------|-----------|
-| RT | esp32-s3-devkitc-1 | espidf | `-D CONFIG_BENCH_SOLO -D CONFIG_BYPASS_EPS_C_SYNC` (bench only) |
-| SYS | esp32-s3-devkitc-1 | espidf | `-D SYS_OWNS_MOTOR -D CONFIG_BENCH_SOLO -D CONFIG_BYPASS_SEB_SYNC -D CONFIG_BYPASS_MTR_ABSENT` (bench only) |
-| MTR | genericSTM32F103C8 | stm32cube | HAL calls uncommented; CubeMX `.ioc` pending |
-| PWT | esp32-s3-devkitc-1 | espidf | 250k CAN |
+| Environment | Purpose | Flags |
+|---|---|---|
+| `[env:vehicle]` | Production. No bypass flags. | `FW_VERSION` only |
+| `[env:bench]` | Bench testing. All bypass flags. | `BENCH_BUILD_ACKNOWLEDGED` + all bypass flags |
+| `[env:native]` | Host-side validation. PlatformIO `native`. | `HOST_BUILD`, `TESTING`, shadow HAL headers |
 
-Remove all `CONFIG_BENCH_*` and `CONFIG_BYPASS_*` before vehicle deployment.
+**Bench build safety guard:** Both RT and SYS `main.cpp` require `BENCH_BUILD_ACKNOWLEDGED` to be defined when `CONFIG_BENCH_SOLO` is active. Compilation fails without it — prevents accidental bench firmware on a vehicle. At runtime, `BENCH_BUILD_ACKNOWLEDGED` sets bit 7 of `task_health` byte in `0x210 RT_STATE_RPT` as an in-band indicator.
+
+**Native test environment:** `[env:native]` compiles selected source files for the host OS using shadow HAL headers from `native-test/hal/shadow/`. Produces a console executable that validates physics, kinematics, mode manager, and safety monitor. No ESP32 hardware required. Run via `pio test -e native`.
+
+| ECU | Board | Framework | Vehicle Flags | Bench Flags |
+|-----|-------|-----------|--------------|-------------|
+| RT | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | + `-D BENCH_BUILD_ACKNOWLEDGED -D CONFIG_BENCH_SOLO -D CONFIG_BYPASS_EPS_C_SYNC -D CONFIG_BYPASS_SEB_SYNC -D CONFIG_BYPASS_MTR_ABSENT` |
+| SYS | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | + `-D BENCH_BUILD_ACKNOWLEDGED -D TESTING -D SYS_OWNS_MOTOR -D CONFIG_BENCH_SOLO -D CONFIG_BYPASS_SEB_SYNC -D CONFIG_BYPASS_MTR_ABSENT` |
+| MTR | genericSTM32F103C8 | stm32cube | HAL calls | `BENCH_BUILD_ACKNOWLEDGED` |
+| PWT | esp32-s3-devkitc-1 | espidf | 250k CAN | `BENCH_BUILD_ACKNOWLEDGED` |
+
+**ESP-IDF requirement:** 5.0 or later (`#error` guard in both RT and SYS `main.cpp`).
 
 ---
 
-## 12. Reference Documents
+## 13. Hardware Pin Assignments
+
+### RT ESP32-S3
+
+| GPIO | Function | Notes |
+|------|----------|-------|
+| 4 | TWAI RX | Low CAN bus |
+| 5 | TWAI TX | Low CAN bus |
+| 21 | WDT toggle | TPS3850 external watchdog, toggled at 100 Hz by t_control |
+| 36 | MCP2515 SCK | SPI clock, 8 MHz |
+| 37 | MCP2515 MOSI | SPI data out |
+| 38 | MCP2515 MISO | SPI data in |
+| 39 | MCP2515 CS | SPI chip select |
+| 40 | MCP2515 INT | Interrupt (active low, pull-up, NEGEDGE) |
+| 1-2 | Encoder rear motor | Quadrature PCNT (rear motor speed feedback) |
+| 3,6 | Encoder front wheel | Quadrature PCNT (front wheel) |
+| 9,12 | Encoder rear left | Quadrature PCNT (differential) |
+| 13,14 | Encoder rear right | Quadrature PCNT (differential) |
+
+### SYS ESP32-S3
+
+| GPIO | Function | Notes |
+|------|----------|-------|
+| 4 | TWAI RX | Low CAN bus |
+| 5 | TWAI TX | Low CAN bus |
+| 1 | ESTOP button | NC, active-low, pull-up. Hardware ESTOP (Level 3). |
+| 2 | Brake lever | Active-low, pull-up. Rider brake input for MANUAL mode. |
+| 8 | Ignition relay | HIGH=vehicle ON, LOW=all ECUs dead. Dual-path with CAN 0x012. |
+| 11 | Mode button | Momentary, toggles MANUAL↔AUTO |
+| 12 | Gear D sense | TLP281 optoisolator input (72V) |
+| 13 | Gear S sense | TLP281 optoisolator input (72V) |
+| 14 | Gear R sense | TLP281 optoisolator input (72V) |
+| 15 | Throttle I2C SDA | MCP4725 DAC (migrating to MTR) |
+| 16 | Throttle I2C SCL | MCP4725 DAC |
+| 17 | Bulb READY | Green indicator — system ready (AUTO/MANUAL, RT alive, no faults) |
+| 18 | Light left turn | Relay output |
+| 19 | Light right turn | Relay output |
+| 20 | Bulb ESTOP | Red indicator — dedicated ESTOP indicator |
+| 21 | Light brake | Relay output |
+| 22 | Light head | Relay output |
+| 23 | WDT toggle | TPS3850 external watchdog, toggled at 20 Hz by task_safety |
+| 25 | Bulb AUTO | Mode indicator |
+| 26 | Bulb MANUAL | Mode indicator |
+| 27 | 12V relay | Accessory power relay |
+| 32 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
+| 33 | Gear D out | Relay output (72V) |
+| 34 | Gear S out | Relay output (72V) |
+| 35 | Gear R out | Relay output (72V) |
+
+---
+
+## 14. Steering State Machine & 0x7B9 Suppression
+
+### Steering (6 States)
+
+RT steering (`steering_control.h`):
+
+```
+BOOT_WAIT(500ms) → LISTEN_SYNC → ACTIVE
+                      ↓(timeout)     ↓(obstacle/ESTOP)
+                     FAULT       ESTOP_RAMP(20°/s)
+                      ↑              ↓(ramp done)
+                 (follow err)    ESTOP_HOLD(500ms)→SILENT
+```
+
+| State | 0x169 TX | 0x204 Gate |
+|-------|----------|------------|
+| BOOT_WAIT | No | Suppressed |
+| LISTEN_SYNC | No | Suppressed |
+| ACTIVE | 100 Hz | Allowed |
+| ESTOP_RAMP | Ramping to 0° | Allowed |
+| ESTOP_HOLD/SILENT | Hold/stop | Allowed |
+| FAULT | No | Suppressed |
+
+### 0x7B9 Suppression (6 Conditions)
+
+SYS suppresses its own 0x7B9 in AUTO (RT sends directly via Option D). All 6 conditions required:
+```
+suppress = AUTO && rt_hb_ok && rt_safety==Normal
+        && seb_roll_ok && !lever && !estop && rt_sp_fresh
+```
+Any condition failing → SYS resumes sending 0x7B9 immediately. The `rt_sp_fresh` (200ms) provides fast deadman before the 1000ms heartbeat timeout.
+
+---
+
+---
+
+## 15. RT Control Architecture
+
+### Safety Event Pipeline
+
+The control task (`t_control`, 100 Hz) drains the safety event queue each cycle:
+
+```
+CAN RX → process_frame() → SafetyEvent enqueued on g_safety_evt_q (depth 16)
+                                  ↓
+t_control drains queue (xQueueReceive with 0 timeout, then xQueueOverwrite fallback)
+                                  ↓
+    ESTOP event      → m_estop_pending = true
+    MODE_CHANGE event → m_current_mode updated; clears m_estop_pending ONLY if
+                        no ESTOP arrived in same drain cycle (race guard)
+    HB timeout       → m_seb_takeover = true (auto-cleared on recovery)
+                                  ↓
+    run_safety_checks() → evaluates m_estop_pending, m_current_mode, m_seb_takeover
+                                  ↓
+    produces SafetyResult { zero_setpoints, brake_kpa, disable_steering, obstacle_triggered }
+```
+
+Startup grace: All heartbeat and following-error checks are suppressed for 3 seconds after boot to prevent false ESTOPs during ECU synchronization.
+
+### Asymmetric Bus-Off Response
+
+| Bus | 5× Bus-Off Response | Rationale |
+|-----|---------------------|-----------|
+| Low | Full ESTOP: 0x001 on both buses, g_estop_reason set to kEstopReasonBusOff | Loss of actuator bus is non-survivable |
+| High | Graceful degradation: zero setpoints, steering ramp-to-zero | Loss of Jetson link is survivable |
+
+Bus-off recovery uses a fast-path (MCP2515 ISR at ~100µs) plus polled fallback (10 Hz). A `fast_path_handled` guard prevents the polled path from clearing the bus-off counter after the ISR path already reinitialized.
+
+### Frozen Counter Heartbeat Detection
+
+Instead of timestamp-delta, RT uses frozen-counter detection: the heartbeat timestamp is only updated when `fr.data[0]` (alive counter byte) differs from the last received value. Uses unsigned delta comparison (`uint8_t delta = current - last`) to correctly handle 8-bit rollover. Applied to SYS heartbeat (0x7FE, timeout 200ms) and Host heartbeat (0x7FC, timeout 1500ms).
+
+### Heartbeat Health Flags
+
+RT 0x7FD byte 1 carries four health bits (defined in `can_protocol.h`):
+- bit 0: `heartbeat_ok` — both SYS and Host heartbeats alive
+- bit 1: `estop_active` — steering in ramp/hold OR mode is ESTOP
+- bit 2: `mode_auto` — mode is AUTO
+- bit 3: `can_ok` — MCP2515 reports not bus-off
+
+### Command Watchdog
+
+Starts stale at boot (last feed = negative). Requires first Host 0x300 command to feed. On staleness (500ms): overwrites command queue with zero + triggers steering ramp-to-zero. Clears on next valid Host command.
+
+### Checksum-Before-L3 Pattern
+
+For steering (0x201) and brake (0x721) status frames, the L3 error check happens AFTER checksum validation. A corrupt frame with noise flipping error bits to 3 is rejected by checksum before L3 evaluation. DLC < 8 causes immediate reject (cannot validate checksum).
+
+---
+
+## 16. SYS Control Architecture
+
+### Startup Sequence
+
+```
+app_main:
+  0. NVS init: read esp_reset_reason(), store reset_count + reset_reason in "sys_diag" namespace
+  1. CAN init (g_can.init)
+  2. Sequential module init: safety → mode_mgr → throttle → dac → gear → brake → lights → dcdc → indicator → wdt
+  3. GPIO init: status bulbs (AUTO/MANUAL/READY/ESTOP)
+  4. Create CAN RX queue (depth 16)
+  5. Create 15 tasks in priority order
+```
+
+### CAN TX Retry Strategy
+
+Critical frames (0x7B9 brake, 0x001 ESTOP, 0x011 safety status) get one retry with 20ms timeout. Non-critical frames are dropped after first failure. This balances safety delivery against bus congestion.
+
+### CAN RX Queue Timeout (Priority Inversion Fix)
+
+`xQueueSend` to the CAN RX queue uses 5ms timeout instead of 0. When the queue is full, the prio 5 can_rx task yields briefly so the prio 4 dispatch task can drain the queue. Without this, continuous CAN bursts cause continuous frame drops.
+
+### SEB Rolling Counter Monitor
+
+SYS monitors the SEB 0x721 rolling counter (4-bit). If frozen, `g_seb_rolling` is set false. This feeds into the 0x7B9 suppression logic — if SEB stops acknowledging RT's commands, SYS resumes sending its own 0x7B9 immediately. This is a third deadman layer (beyond heartbeat timeout and setpoint staleness).
+
+### MTR ESTOP_ACTIVE Propagation
+
+When SYS sees ESTOP_ACTIVE (bit 0) in 0x206 fault_flags and SYS is not already in ESTOP, SYS calls `force_estop()` and broadcasts 0x001. This provides a redundant ESTOP path — if SYS missed the original 0x001 frame, MTR's ACK triggers it anyway.
+
+### Brake Following-Error Monitor
+
+In 0x721 dispatch: compares commanded stroke vs actual stroke. If `|cmd - actual| > 60` raw (~3mm) for >100ms → sets `g_brake_fault_active`. Only active in Stroke mode (Pressure mode would false-trigger because cmd_stroke stays at 600 while SEB builds pressure).
+
+### Gear Mismatch Monitor
+
+Compares commanded gear (0x204) vs reported gear (0x206). Mismatch persisting >500ms → ERROR log. For the future MTR-owned-motor configuration where SYS is EGAS L2 monitor only.
+
+### 0x204 Startup Grace
+
+`task_motor` has a 3-second startup grace period before enforcing the 200ms 0x204 staleness timeout. This masks the gap between SYS boot and RT's first 0x204 transmission.
+
+### Brake Light OR-Logic
+
+Brake lamp illuminates on any of: lever pressed, CAN 0x302 brake bit set, or SEB stroke >0.5mm (raw 610). Three-input OR for redundancy.
+
+---
+
+## 17. Steering Control Architecture (Full)
+
+### 6-State Machine with Sub-Behaviors
+
+```
+BOOT_WAIT(500ms) ──→ LISTEN_SYNC ──→ ACTIVE
+                        │                │
+                   ┌────┼────┐      ┌────┼────┐
+                   │timeout│plaus│    │obst│es│top│
+                   ▼       ▼     ▼    ▼    ▼  ▼
+                  FAULT  FAULT FAULT RAMP_TO_ZERO(20°/s)
+                   ▲                     │
+                   │(follow err >300ms)   │(ramp done)
+                   └─────────────────────┘
+                                        HOLD_THEN_SILENT(500ms)
+                                           │(hold expires)
+                                          SILENT_STOP
+```
+
+**LISTEN_SYNC failures:**
+- Timeout: no 0x201 for 5s → FAULT
+- Alignment: EPS-C reports `angle_status != 1` → FAULT
+- Plausibility: angle >30° off center at boot → FAULT
+
+**RAM monitoring (Gap C3):** During ESTOP_RAMP_TO_ZERO, monitors `|active_angle - ses_angle|`. If >5° for >1s → FAULT (jammed linkage detection).
+
+**Deferred exit (Gap #6):** START button during ramp sets `m_estop_exit_pending`. Ramp completes to 0° first, THEN transitions to ACTIVE. A new `set_target()` clears pending exit. A new `start_estop()` overrides it.
+
+**Obstacle ESTOP dynamic clamp (Gap #9):** Hold angle is clamped to `compute_dynamic_limit(speed)`. At high speed the limit may be only 5°, preventing rollover during hard braking.
+
+**Dynamic slew rate:** `125 + (speed_kmh - 2) * (400/23)` deg/s, clamped [125, 525]. Faster steering at higher speeds.
+
+### Dynamic Angle Clamp Formula
+
+```
+limit_deg = 40.0 - (speed_kmh - 2.0) * (35.0 / 23.0)
+clamped to [5.0, 40.0]
+```
+
+### Following Error Threshold Formula
+
+```
+threshold_deg = max(2.0, 0.25 * dynamic_limit)
+must persist >300ms to trigger FAULT
+```
+
+---
+
+## 18. Brake Control Architecture (Full)
+
+### 4-State Machine
+
+```
+BOOT_WAIT(500ms) ──→ LISTEN_SYNC ──→ ACTIVE ←── DEGRADED
+                         │(2s timeout)              │(0x721 aligned)
+                         ▼                          │
+                      DEGRADED ─────────────────────┘
+```
+
+**LISTEN_SYNC:** Waits for 0x721 with alignment bit. First ACTIVE frame re-sends the stroke captured during sync (prevents sudden release). Timeout 2s → DEGRADED.
+
+**DEGRADED:** Sends lever-only commands (no CAN pressure). Recovers to ACTIVE when valid aligned 0x721 arrives. Not a terminal state.
+
+### build_command() Priority Chain
+
+1. **ESTOP** → max stroke 27mm (raw 1140), Stroke mode, `auto_brake=0`
+2. **Lever pressed** → 15mm stroke (raw 900), Stroke mode
+3. **CAN brake_kpa > 0** → Pressure mode (control_mode=1), `auto_brake=1`
+4. **Released** → 0mm stroke (raw 600)
+
+### Stroke vs Pressure Encoding
+
+- **Stroke mode:** `raw = (mm + 30) / 0.05`. 0mm→600, 15mm→900, 27mm→1140.
+- **Pressure mode:** `raw = kPa / 50`. 5000kPa→100, 20000kPa→400.
+- All multi-byte fields are LE per vendor protocol. XOR checksum over bytes 0-6 ^ 0xFF.
+
+---
+
+## 19. ESTOP Rate Limiting Architecture
+
+Two-layer rate limiting prevents ESTOP bus flooding from a faulty node:
+
+| Layer | Scope | Limit | Implementation |
+|-------|-------|-------|---------------|
+| Per-ECU broadcast | RT or SYS individually | 250ms interval between broadcasts | `shared_config.h`: `kEstopBroadcastMinIntervalUs`, `g_last_estop_sent_us` atomic |
+| Per-ECU RX | SYS receiving 0x001 | 2 frames per 500ms window | `sys-esp32/config.h`: `kEstopRateLimitWindowMs`, `kEstopRateLimitMax` |
+| Gateway forwarding | RT gateway per-bus | 1 frame per 100ms per bus | `can_dispatch.h`: independent per-bus rate limiters |
+
+---
+
+## 20. MTR Fault Flag Protocol
+
+Defined in `shared_config.h`. MTR reports fault state in 0x206 byte 3:
+
+| Bit | Name | Meaning |
+|-----|------|---------|
+| 0 | ESTOP_ACTIVE | MTR confirms ESTOP received and active |
+| 1 | CMD_TIMEOUT | 0x204 command stale >200ms |
+| 2 | ADC_FAULT | Throttle ADC reading fault |
+| 3 | GEAR_CONFLICT | Multiple gear select lines HIGH simultaneously |
+| 4 | STARTUP_READY | MTR boot complete, accepting commands |
+
+SYS monitors ESTOP_ACTIVE for ACK (100ms timeout) and STARTUP_READY for MTR liveness.
+
+---
+
+## 21. Reference Documents
 
 - [`can-dictionary.md`](can-dictionary.md) — Full CAN signal catalog
 - [`docs/architecture-reference.md`](docs/architecture-reference.md) — Detailed tables, pseudocode, processing summaries
