@@ -163,14 +163,19 @@ static bool send_can_high(can::Frame& fr) {
         g_alive_control.store(xTaskGetTickCount(), std::memory_order_relaxed);
         // ── Drain safety event queue (guaranteed delivery, no missed events) ─
         rt::SafetyEvent evt;
+        bool had_estop_this_cycle = false;
         while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
             switch (evt.type) {
             case rt::SafetyEvent::ESTOP:
                 m_estop_pending = true;
+                had_estop_this_cycle = true;
                 break;
             case rt::SafetyEvent::MODE_CHANGE:
                 m_current_mode = evt.payload;
-                if (evt.payload != uint8_t(can::Mode::Estop)) {
+                // Only clear ESTOP on mode change if no ESTOP arrived in this
+                // drain cycle. Prevents periodic Auto broadcasts from cancelling
+                // a valid ESTOP that arrived in the same queue window (bug 4.9).
+                if (evt.payload != uint8_t(can::Mode::Estop) && !had_estop_this_cycle) {
                     m_estop_pending = false;
                 }
                 break;
@@ -298,6 +303,7 @@ static can::VcuSebReq make_seb_takeover_req() {
 
 static can::VcuSebReq make_seb_auto_req(int32_t kpa) {
     can::VcuSebReq seb{};
+    seb.align_enable = 1;  // Required by SEB protocol — frame rejected without this bit
     if (kpa > 0) {
         // Pressure Mode: kPa -> SEB raw (0.05 MPa/bit, 1 kPa = 0.02 raw)
         uint8_t pressure_raw = static_cast<uint8_t>(std::min(
@@ -401,15 +407,14 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             // NOTE: SYS MUST gate its own 0x7B9 on mode (stop sending in AUTO).
             // Uses Pressure Mode for kPa-based braking, Stroke Mode when no brake.
             // Only active when NOT in SEB takeover (takeover has priority).
+            // Safety: Only send when steering is ACTIVE. In ESTOP/FAULT states,
+            // SYS is the 0x7B9 authority — RT must suppress to avoid dual-sender
+            // bus collision and brake=0 override (bugs 4.1, 4.2).
             auto ss = g_steering.state();
             if (!seb_takeover
                 && g_mode_current.load() == uint8_t(can::Mode::Auto)
-                && (ss == rt::SteerState::STEER_ACTIVE
-                    || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
-                    || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT
-                    || ss == rt::SteerState::STEER_FAULT)) {
+                && ss == rt::SteerState::STEER_ACTIVE) {
                 int32_t brake = g_brake_kpa_to_send.load();
-                if (ss != rt::SteerState::STEER_ACTIVE) brake = 0;  // no brake when steering degraded
                 send_seb_req(*drv, fr, make_seb_auto_req(brake), seb_roll);
             }
         }

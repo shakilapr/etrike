@@ -134,9 +134,13 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     }
 
     // 6. Obstacle-triggered ESTOP detection (arch §7.6, gap #9)
-    if (r.disable_steering
-        && obstacle_mm <= shared::kObstacleStopMM
+    // Obstacle within stop distance at non-trivial speed → freeze steering
+    // and trigger obstacle brake. Must set disable_steering independently of
+    // ESTOP events — the previous condition required disable_steering to already
+    // be true, which only ESTOP events set, making this dead code (bug 4.11).
+    if (obstacle_mm <= shared::kObstacleStopMM
         && std::abs(g_mtr_actual_speed_mmps.load()) > shared::kLowSpeedThreshMmps) {
+        r.disable_steering = true;
         r.obstacle_triggered = true;
     }
 
