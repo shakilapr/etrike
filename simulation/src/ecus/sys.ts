@@ -306,9 +306,13 @@ export class SysEcu implements SimulatedEcu {
 
     if (nowMs % 100 === 0) {
       this.sysHbCtr = (this.sysHbCtr + 1) & 0xFF;
+      const healthFlags = (this.safety.heartbeatOk(nowMs) ? 0x01 : 0)
+        | (effectiveEstop ? 0x02 : 0)
+        | (ctx.mode === "auto" ? 0x04 : 0)
+        | 0x08; // can_ok always asserted in simulation
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x7FE", name: "SYS_HEARTBEAT",
-        dlc: 2, data: [this.sysHbCtr, 0x01], sender: "sys",  // byte0=alive_ctr, byte1=health_flags (heartbeat_ok=1)
+        dlc: 2, data: [this.sysHbCtr, healthFlags], sender: "sys",
       });
     }
 
