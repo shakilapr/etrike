@@ -19,6 +19,7 @@ interface PipelineChain {
 const CORRELATION_WINDOW_MS = 200;
 const SPEED_MATCH_TOLERANCE = 50;
 const ANGLE_MATCH_TOLERANCE = 50; // 0.1° units = 5°
+const PRESSURE_MATCH_TOLERANCE = 500; // kPa tolerance for brake pressure
 
 function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
   // Pre-index frames by bus:id for O(1) lookup
@@ -33,9 +34,16 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
   const statusFrames = byKey["low:0x201"] ?? [];
   const triggerFrames = byKey["high:0x300"] ?? [];
 
+  // Brake pipeline frames
+  const brakeCmdFrames = byKey["low:0x205"] ?? [];
+  const sebReqFrames = byKey["low:0x7B9"] ?? [];
+  const sebStatusFrames = byKey["low:0x721"] ?? [];
+  const brakeTriggerFrames = byKey["high:0x301"] ?? [];
+
   const chains: PipelineChain[] = [];
   const winSec = CORRELATION_WINDOW_MS / 1000;
 
+  // ── Steering pipeline: 0x300 -> 0x204 -> 0x169 -> 0x201 ──────────
   for (const frame of triggerFrames) {
     const trigger: PipelineNode = {
       bus: frame.bus, id: frame.id, name: frame.name,
@@ -71,6 +79,48 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     );
     if (status) {
       steps.push({ bus: status.bus, id: status.id, name: status.name, decoded: status.decoded, ts: status.ts });
+    }
+
+    if (steps.length > 0) {
+      chains.push({ trigger, steps });
+    }
+  }
+
+  // ── Brake pipeline: 0x301 -> 0x205 -> 0x7B9 -> 0x721 ────────────
+  for (const frame of brakeTriggerFrames) {
+    const trigger: PipelineNode = {
+      bus: frame.bus, id: frame.id, name: frame.name,
+      decoded: frame.decoded, ts: frame.ts
+    };
+
+    const steps: PipelineNode[] = [];
+    let cursor = frame.ts;
+
+    // Look for matching 0x205 (RT_BRAKE_CMD)
+    const brakeCmd = brakeCmdFrames.find((f) =>
+      f.ts > cursor && f.ts - cursor < winSec &&
+      Math.abs((f.decoded.brake_pressure_kpa as number ?? 0) - (frame.decoded.brake_pressure_kpa as number ?? 0)) <= PRESSURE_MATCH_TOLERANCE
+    );
+    if (brakeCmd) {
+      steps.push({ bus: brakeCmd.bus, id: brakeCmd.id, name: brakeCmd.name, decoded: brakeCmd.decoded, ts: brakeCmd.ts });
+      cursor = brakeCmd.ts;
+    }
+
+    // Look for matching 0x7B9 (VCU_SEB_REQ)
+    const sebReq = sebReqFrames.find((f) =>
+      f.ts > cursor && f.ts - cursor < winSec
+    );
+    if (sebReq) {
+      steps.push({ bus: sebReq.bus, id: sebReq.id, name: sebReq.name, decoded: sebReq.decoded, ts: sebReq.ts });
+      cursor = sebReq.ts;
+    }
+
+    // Look for matching 0x721 (SEB_STATUS)
+    const sebStatus = sebStatusFrames.find((f) =>
+      f.ts > cursor && f.ts - cursor < winSec
+    );
+    if (sebStatus) {
+      steps.push({ bus: sebStatus.bus, id: sebStatus.id, name: sebStatus.name, decoded: sebStatus.decoded, ts: sebStatus.ts });
     }
 
     if (steps.length > 0) {

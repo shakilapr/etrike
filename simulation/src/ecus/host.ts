@@ -18,6 +18,18 @@ export class HostEcu implements SimulatedEcu {
   private heartbeatCtr = 0;
   private obstacleDistanceMm = 0xFFFFFFFF; // max = clear
 
+  // I11: Incoming telemetry store (latest values from 0x210/0x310/0x311)
+  private lastRtStateRpt: { mode: number; safetyState: number } | null = null;
+  private lastSteerDiag: { angle: number; fault: number } | null = null;
+  private lastBrakeDiag: { pressureRaw: number; fault: number } | null = null;
+
+  /** Latest RT_STATE_RPT (0x210) data. */
+  getRtStateRpt(): { mode: number; safetyState: number } | null { return this.lastRtStateRpt; }
+  /** Latest STEER_DIAG (0x310) data. */
+  getSteerDiag(): { angle: number; fault: number } | null { return this.lastSteerDiag; }
+  /** Latest BRAKE_DIAG (0x311) data. */
+  getBrakeDiag(): { pressureRaw: number; fault: number } | null { return this.lastBrakeDiag; }
+
   /** Set the drive cycle. Each step has {speedMmps, yawRateMradS, gear, durationMs}. */
   setDriveCycle(cycle: DriveCycleStep[]): void {
     this.driveCycle = cycle;
@@ -40,11 +52,34 @@ export class HostEcu implements SimulatedEcu {
 
   tick(
     nowMs: number,
-    _highBusRx: SimFrame[],
+    highBusRx: SimFrame[],
     _lowBusRx: SimFrame[],
     ctx: SimulationContext,
   ): SimFrame[] {
     const out: SimFrame[] = [];
+
+    // ── Process incoming high-bus telemetry (I11) ───────────────
+    for (const f of highBusRx) {
+      switch (f.canId) {
+        case "0x210": {
+          // RT_STATE_RPT — store latest mode + safety_state
+          this.lastRtStateRpt = { mode: f.data[0], safetyState: f.data[1] };
+          break;
+        }
+        case "0x310": {
+          // STEER_DIAG — angle i16 BE bytes 0-1, fault byte 2
+          const angle = ((f.data[0] << 8) | f.data[1]) << 16 >> 16; // i16 sign-extend
+          this.lastSteerDiag = { angle, fault: f.data[2] ?? 0 };
+          break;
+        }
+        case "0x311": {
+          // BRAKE_DIAG — pressure u16 BE bytes 0-1, fault byte 2
+          const pressureRaw = ((f.data[0] << 8) | f.data[1]) & 0xFFFF;
+          this.lastBrakeDiag = { pressureRaw, fault: f.data[2] ?? 0 };
+          break;
+        }
+      }
+    }
 
     // ── Advance drive cycle ─────────────────────────────────────
     let speed = 0;
