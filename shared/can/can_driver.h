@@ -17,6 +17,8 @@ using gpio_num_t = int;
 inline constexpr int ESP_OK = 0;
 inline constexpr int ESP_ERR_INVALID_ARG = -1;
 struct twai_general_config_t { int controller_id, mode; gpio_num_t tx_io, rx_io, clkout_io, bus_off_io; uint32_t tx_queue_len, rx_queue_len, alerts_enabled, clkout_divider; int intr_flags; };
+#define TWAI_GENERAL_CONFIG_DEFAULT_V2(controller_id, tx_io, rx_io, mode) \
+    twai_general_config_t{controller_id, mode, tx_io, rx_io, {}, {}, 0, 0, 0, 0, 0}
 struct twai_timing_config_t { uint32_t quanta_resolution_hz; int tseg_1, tseg_2, sjw; };
 struct twai_filter_config_t { int acceptance_code, acceptance_mask; bool single_filter; };
 struct twai_message_t { uint32_t identifier; uint8_t data_length_code; uint8_t data[8]; bool extd, self, ss; };
@@ -31,8 +33,12 @@ inline int twai_transmit(const twai_message_t*, int) { return ESP_OK; }
 inline int twai_receive(twai_message_t*, int) { return 0; }
 inline int twai_get_status_info(twai_status_info_t*) { return ESP_OK; }
 inline int pdMS_TO_TICKS(int ms) { return ms; }
+#ifndef ESP_LOGI
 #define ESP_LOGI(tag, fmt, ...) ((void)0)
+#endif
+#ifndef ESP_LOGD
 #define ESP_LOGD(tag, fmt, ...) ((void)0)
+#endif
 #endif
 
 namespace can {
@@ -92,6 +98,23 @@ public:
     }
 
     bool is_initialized() const { return m_initialized; }
+
+    // Lightweight bus-off recovery using twai_initiate_recovery().
+    // Re-enters the bus in ~1ms (vs ~50ms for full init), preserves TX queue.
+    bool recovery() {
+        if (!m_initialized) return init();
+        if (twai_initiate_recovery() != ESP_OK) {
+            ESP_LOGE("can", "twai_initiate_recovery failed — falling back to full init");
+            return init();
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+        if (twai_start() != ESP_OK) {
+            ESP_LOGE("can", "twai_start after recovery failed");
+            return false;
+        }
+        ESP_LOGI("can", "TWAI bus-off recovered");
+        return true;
+    }
 
     // Receive — non-blocking.  Returns true if a frame was available.
     bool receive(Frame& out, TickType_t timeout_ms = 100) {

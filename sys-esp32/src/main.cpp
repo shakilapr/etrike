@@ -46,8 +46,8 @@ static uint32_t g_can_tx_ok_count = 0;
 static bool g_can_tx_had_failure = false;  // tracks if we've seen a TX failure
 static bool send_can(can::Frame& fr, const char* caller = "?") {
     if (!g_can.send(fr)) {
-        // Retry once for safety-critical frames (0x7B9 brake, 0x001 ESTOP)
-        if (fr.id == 0x7B9 || fr.id == 0x001) {
+        // Retry once for safety-critical frames
+        if (fr.id == 0x7B9 || fr.id == 0x001 || fr.id == 0x011) {
             vTaskDelay(pdMS_TO_TICKS(1));
             if (!g_can.send(fr, 20)) {  // longer timeout on retry
                 g_can_tx_fail_count++;
@@ -864,7 +864,7 @@ static void check_task_watchdog() {
                     send_can(ef, "ESTOP");
                 }
             }
-            g_can.init();  // attempt recovery (re-initialize TWAI)
+            g_can.recovery();  // lightweight bus-off recovery via twai_initiate_recovery
         } else { bus_off_count = 0; }
 
         vTaskDelayUntil(&last, period);
