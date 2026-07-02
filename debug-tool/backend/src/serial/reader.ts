@@ -193,6 +193,8 @@ export class SerialBridge implements HardwareBridge {
       payload: {
         bridge: this.state,
         ...this.state,
+        adapter_connected: this.state.connected,
+        esp32_connected: this.state.connected,
         bus_detection: this.busDetector.state
       }
     });

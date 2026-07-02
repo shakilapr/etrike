@@ -10,6 +10,12 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_idf_version.h"
+#include "nvs_flash.h"
+#include "esp_system.h"
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+#error "ESP-IDF 5.0 or later required"
+#endif
 
 #include "config.h"
 #include "can/can_protocol.h"
