@@ -917,6 +917,30 @@ static TaskHandle_t h_indicator, h_power, h_can_tx, h_diag, h_hb;
 extern "C" void app_main() {
     ESP_LOGI(TAG, "SYS ESP32-S3 initializing...");
 
+    // 0. NVS init + crash persistence
+    {
+        esp_err_t ret = nvs_flash_init();
+        if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+            ESP_ERROR_CHECK(nvs_flash_erase());
+            ret = nvs_flash_init();
+        }
+        ESP_ERROR_CHECK(ret);
+
+        nvs_handle_t nvs;
+        uint32_t reset_count = 0;
+        esp_reset_reason_t reason = esp_reset_reason();
+
+        if (nvs_open("sys_diag", NVS_READWRITE, &nvs) == ESP_OK) {
+            nvs_get_u32(nvs, "reset_count", &reset_count);
+            reset_count++;
+            nvs_set_u32(nvs, "reset_count", reset_count);
+            nvs_set_u32(nvs, "reset_reason", static_cast<uint32_t>(reason));
+            nvs_commit(nvs);
+            nvs_close(nvs);
+        }
+        ESP_LOGI(TAG, "Reset reason: %d, reset count: %lu", static_cast<int>(reason), static_cast<unsigned long>(reset_count));
+    }
+
     // 1. Init CAN driver
     if (!g_can.init()) {
         ESP_LOGE(TAG, "CAN init failed");
