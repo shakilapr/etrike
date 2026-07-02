@@ -226,6 +226,11 @@ add_executable(watchdog_wraparound
 add_executable(dual_heartbeat
     test/test_dual_heartbeat.cpp
 )
+
+# ── ESTOP latch test (PCR3) ──────────────────────────────────────────
+add_executable(estop_latch
+    test/test_estop_latch.cpp
+)
 target_include_directories(dual_heartbeat PRIVATE
     ${CMAKE_SOURCE_DIR}/../shared
     ${CMAKE_SOURCE_DIR}/../rt-esp32/src
@@ -245,6 +250,7 @@ add_test(NAME rt_safety_monitor   COMMAND rt_safety_monitor)
 add_test(NAME heartbeat_recovery  COMMAND heartbeat_recovery)
 add_test(NAME watchdog_wraparound COMMAND watchdog_wraparound)
 add_test(NAME dual_heartbeat      COMMAND dual_heartbeat)
+add_test(NAME estop_latch          COMMAND estop_latch)
 
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")
