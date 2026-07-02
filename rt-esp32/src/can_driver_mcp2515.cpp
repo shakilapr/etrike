@@ -78,7 +78,10 @@ void Mcp2515Driver::spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
     t.length    = len * 8;
     t.tx_buffer = tx;
     t.rx_buffer = rx;
-    spi_lock();
+    if (!spi_lock()) {
+        ESP_LOGE(kTag, "SPI mutex timeout — aborting transfer");
+        return;
+    }
     spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
 }
@@ -146,7 +149,10 @@ void Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len
     t.rxlength  = (2 + len) * 8;
     t.tx_buffer = tx_buf;
     t.rx_buffer = rx_buf;
-    spi_lock();
+    if (!spi_lock()) {
+        ESP_LOGE(kTag, "SPI mutex timeout — aborting burst read");
+        return;
+    }
     spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
 
@@ -165,7 +171,10 @@ void Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, siz
     spi_transaction_t t = {};
     t.length    = (2 + len) * 8;
     t.tx_buffer = tx_buf;
-    spi_lock();
+    if (!spi_lock()) {
+        ESP_LOGE(kTag, "SPI mutex timeout — aborting burst write");
+        return;
+    }
     spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
 }

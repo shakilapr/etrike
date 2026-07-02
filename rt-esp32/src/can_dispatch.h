@@ -138,16 +138,27 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
     if (fr.id == can::kIdBbwStatus && !from_high) {
-        // Validate checksum before using data (matching SYS pattern)
+        // Validate checksum before using data (matching SYS pattern).
+        // DLC < 8 → reject immediately — can't validate checksum.
+        if (fr.dlc < 8) return;
         uint8_t cksum = 0;
-        for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
-        if (fr.dlc >= 8 && (cksum ^ 0xFF) != fr.data[7]) return;  // drop corrupt frame
+        for (int i = 0; i < 7; ++i) cksum ^= fr.data[i];
+        if ((cksum ^ 0xFF) != fr.data[7]) return;  // drop corrupt frame
+
+        // L3 error check AFTER checksum validation (bug 4.8).
+        // Previously evaluated in route_frame() BEFORE checksum, so bus noise
+        // flipping error bits to 3 would trigger spurious ESTOP on corrupt frames.
+        uint8_t seb_err = (fr.data[0] >> 6) & 0x03;
+        if (seb_err == 3) {
+            rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
+            xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10));
+        }
 
         // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
         // In Stroke mode it's Stroke[15:8] — not pressure data.
         uint8_t seb_mode = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure
         g_seb_pressure_raw.store(seb_mode == 1 ? fr.data[3] : 0);
-        g_seb_error_status.store((fr.data[0] >> 6) & 0x03);
+        g_seb_error_status.store(seb_err);
     }
     // Track reception flags (fix #3: 0=Manual/0=release are valid values)
     if (fr.id == can::kIdSysModeCmd && !from_high)   { ctx.has_mode = true; }
