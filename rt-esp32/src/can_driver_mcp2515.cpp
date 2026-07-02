@@ -73,28 +73,29 @@ static void spi_unlock() {
 
 // ── SPI primitives ─────────────────────────────────────────────────
 
-void Mcp2515Driver::spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
+bool Mcp2515Driver::spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
     spi_transaction_t t = {};
     t.length    = len * 8;
     t.tx_buffer = tx;
     t.rx_buffer = rx;
     if (!spi_lock()) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting transfer");
-        return;
+        return false;
     }
     spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
+    return true;
 }
 
 void Mcp2515Driver::spi_write_byte(uint8_t addr, uint8_t data) {
     uint8_t tx[3] = { kCmdWrite, addr, data };
-    spi_transfer(tx, nullptr, 3);
+    (void)spi_transfer(tx, nullptr, 3);
 }
 
 uint8_t Mcp2515Driver::spi_read_byte(uint8_t addr) {
     uint8_t tx[3] = { kCmdRead, addr, 0x00 };
     uint8_t rx[3] = {};
-    spi_transfer(tx, rx, 3);
+    (void)spi_transfer(tx, rx, 3);
     return rx[2];
 }
 
@@ -102,7 +103,7 @@ uint8_t Mcp2515Driver::spi_read_byte(uint8_t addr) {
 
 void Mcp2515Driver::reset() {
     uint8_t cmd = kCmdReset;
-    spi_transfer(&cmd, nullptr, 1);
+    (void)spi_transfer(&cmd, nullptr, 1);
     vTaskDelay(pdMS_TO_TICKS(10));  // post-reset stabilization
 }
 
@@ -116,13 +117,13 @@ void Mcp2515Driver::write_reg(uint8_t reg, uint8_t val) {
 
 void Mcp2515Driver::modify_reg(uint8_t reg, uint8_t mask, uint8_t val) {
     uint8_t tx[4] = { kCmdBitModify, reg, mask, val };
-    spi_transfer(tx, nullptr, 4);
+    (void)spi_transfer(tx, nullptr, 4);
 }
 
 uint8_t Mcp2515Driver::read_status() {
     uint8_t tx[2] = { kCmdReadStatus, 0x00 };
     uint8_t rx[2] = {};
-    spi_transfer(tx, rx, 2);
+    (void)spi_transfer(tx, rx, 2);
     return rx[1];
 }
 
@@ -137,7 +138,7 @@ uint8_t Mcp2515Driver::read_status() {
 // tx_high (prio 3) or get_error_counters() from t_control (prio 4).
 // If multi-transaction sequences are ever added, wrap them in
 // spi_device_acquire_bus() / spi_device_release_bus().
-void Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len) {
+bool Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len) {
     constexpr size_t kMaxBurst = 16;  // RX buffer is 13 bytes
     uint8_t tx_buf[kMaxBurst] = {};
     uint8_t rx_buf[kMaxBurst] = {};
@@ -151,17 +152,18 @@ void Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len
     t.rx_buffer = rx_buf;
     if (!spi_lock()) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting burst read");
-        return;
+        return false;
     }
     spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
 
     memcpy(data, &rx_buf[2], len);
+    return true;
 }
 
-void Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, size_t len) {
+bool Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, size_t len) {
     constexpr size_t kMaxBurst = 16;  // command + address + 13 TX buffer bytes
-    if (len + 2 > kMaxBurst) return;
+    if (len + 2 > kMaxBurst) return false;
 
     uint8_t tx_buf[kMaxBurst] = {};
     tx_buf[0] = kCmdWrite;
@@ -173,10 +175,11 @@ void Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, siz
     t.tx_buffer = tx_buf;
     if (!spi_lock()) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting burst write");
-        return;
+        return false;
     }
     spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
+    return true;
 }
 
 // ── Burst frame read ─────────────────────────────────────────────
@@ -184,7 +187,7 @@ void Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, siz
 // transaction. 13 bytes: SIDH, SIDL, EID8, EID0, DLC, D0-D7.
 void Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
     uint8_t buf[13];
-    spi_read_burst(base_addr, buf, 13);
+    (void)spi_read_burst(base_addr, buf, 13);
 
     out = {};
 
@@ -381,7 +384,7 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     bool is_telem = (frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220);
     uint8_t txb_data_reg = is_estop ? kRegTxb2Data : (is_telem ? kRegTxb1Data : kRegTxb0Data);
     uint8_t rts_cmd      = is_estop ? kCmdRtsTx2 : (is_telem ? kCmdRtsTx1 : kCmdRtsTx0);
-    uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : (is_telem ? 0x02 : kReadStatusTx0Req);
+    uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : (is_telem ? kReadStatusTx1Req : kReadStatusTx0Req);
 
     // Wait if the selected TX buffer is busy
     uint8_t status = read_status();
@@ -404,10 +407,10 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     tx_buf[1] = sidl;
     tx_buf[4] = dlc & 0x0F;
     for (int i = 0; i < dlc; ++i) tx_buf[5 + i] = frame.data[i];
-    spi_write_burst(txb_data_reg, tx_buf, 5 + dlc);
+    if (!spi_write_burst(txb_data_reg, tx_buf, 5 + dlc)) return false;
 
     uint8_t rts = rts_cmd;
-    spi_transfer(&rts, nullptr, 1);
+    if (!spi_transfer(&rts, nullptr, 1)) return false;
 
     return true;
 }
