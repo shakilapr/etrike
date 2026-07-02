@@ -34,15 +34,41 @@ export class SysEcu implements SimulatedEcu {
   private sebRollInit = false;     // first 0x721 seen?
   private lastSetpointTickMs = 0;  // timestamp of last 0x204 arrival
 
+  // Gap I9a: ESTOP rate-limiting — track ESTOP CAN frame RX timestamps
+  private estopTimestamps: number[] = [];
+
+  // Gap I9b: MTR ESTOP ACK watchdog
+  private estopTriggerMs = -1;     // when ESTOP was first triggered (ms)
+  private mtrAcked = false;        // whether MTR has acknowledged ESTOP
+
   // ── Simulation inputs ────────────────────────────────────────────
 
   setEstopButton(pressed: boolean): void { this.safety.setEstop(pressed); }
   setBrakeLever(pressed: boolean): void { this.safety.setBrakeLever(pressed); }
   setActualSpeed(mmps: number): void { this.actualSpeedMmps = mmps; }
 
+  /**
+   * Track ESTOP events for rate-limiting (I9a).
+   * Logs a warning if >2 ESTOP frames arrive within a 500ms window,
+   * but still processes the ESTOP for safety.
+   */
+  private trackEstopEvent(nowMs: number): void {
+    this.estopTimestamps.push(nowMs);
+    // Prune entries older than 500ms
+    const windowMs = 500;
+    this.estopTimestamps = this.estopTimestamps.filter(t => nowMs - t <= windowMs);
+    if (this.estopTimestamps.length > 2) {
+      console.warn(`[SYS] ESTOP rate-limit: ${this.estopTimestamps.length} frames in ${windowMs}ms window (limit 2)`);
+    }
+    this.safety.setEstop(true);
+  }
+
   init(): void {
     this.safety.reset();
     this.brake.reset();
+    this.estopTimestamps = [];
+    this.estopTriggerMs = -1;
+    this.mtrAcked = false;
   }
 
   shutdown(): void {
@@ -79,9 +105,23 @@ export class SysEcu implements SimulatedEcu {
           break;
         }
         case "0x206": {
-          // MTR_MOTOR_FBK — for EGAS L2
+          // MTR_MOTOR_FBK — for EGAS L2, ESTOP ACK (I9b)
           // i16 BE with sign extension: shift to bit 31 then arithmetic shift right
           this.actualSpeedMmps = (f.data[0] << 24 | f.data[1] << 16) >> 16;
+          // byte 2 = gearState, byte 3 = faultFlags (bit0=ESTOP_ACTIVE)
+          if (f.data.length >= 4) {
+            const faultFlags = f.data[3] & 0xFF;
+            const gearState = f.data[2] & 0xFF;
+            this.safety.feedMtrFeedback(
+              { actualSpeed: this.actualSpeedMmps, gearState, faultFlags },
+              nowMs,
+            );
+          }
+          break;
+        }
+        case "0x001": {
+          // ESTOP CAN message (I9a) — rate-limited ESTOP trigger
+          this.trackEstopEvent(nowMs);
           break;
         }
         case "0x210": {
@@ -97,13 +137,24 @@ export class SysEcu implements SimulatedEcu {
             (f.data[1] & 0x2F) !== 0 ||
             (f.data[2] & 0x76) !== 0;
           if (l3Active) {
-            this.safety.setEstop(true);
+            this.trackEstopEvent(nowMs);
           }
           break;
         }
         case "0x721": {
           // SEB_STATUS — for brake sync + rolling counter tracking (Gap I2)
-          this.brake.feedSebStatus(f.data[0]);
+          // I9a: Validate checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
+          if (f.data.length >= 8) {
+            let cksum = 0;
+            for (let i = 0; i < 7; i++) cksum ^= f.data[i];
+            if ((cksum ^ 0xFF) !== f.data[7]) {
+              console.warn(`[SYS] 0x721 checksum mismatch — dropping frame`);
+              break;
+            }
+          }
+          // Extract stroke feedback bytes 2-3 (u16 LE) for following-error monitor
+          const strokeRaw = f.data.length >= 4 ? ((f.data[3] << 8 | f.data[2]) & 0xFFFF) : undefined;
+          this.brake.feedSebStatus(f.data[0], strokeRaw);
           // H1: Track SEB rolling counter (byte 6 bits 4-7). Frozen counter
           // means SEB isn't receiving commands — SYS must resume sending 0x7B9.
           const sebRoll = (f.data[6] >> 4) & 0x0F;
@@ -129,11 +180,33 @@ export class SysEcu implements SimulatedEcu {
       const egasFault = this.safety.checkEgasL2(nowMs, this.cmdSpeedMmps, this.actualSpeedMmps);
       if (egasFault) {
         // EGAS L2 fault triggers ESTOP
-        this.safety.setEstop(true);
+        this.trackEstopEvent(nowMs);
       }
     }
 
     const effectiveEstop = estopActive || this.safety.estop;
+
+    // ── MTR ESTOP ACK watchdog (I9b) ─────────────────────────────
+    if (effectiveEstop) {
+      if (this.estopTriggerMs < 0) {
+        // ESTOP just became active — start the ACK timer
+        this.estopTriggerMs = nowMs;
+        this.mtrAcked = false;
+      } else if (!this.mtrAcked) {
+        // Check if MTR has acknowledged with ESTOP_ACTIVE bit
+        this.mtrAcked = this.safety.mtrEstopAcked();
+        if (!this.mtrAcked && (nowMs - this.estopTriggerMs) >= 100) {
+          // 100ms elapsed without ACK — retrigger ESTOP
+          console.warn(`[SYS] MTR ESTOP ACK timeout at ${nowMs}ms — retriggering`);
+          this.safety.setEstop(true);
+          this.estopTriggerMs = nowMs;  // restart the timer
+        }
+      }
+    } else {
+      // No ESTOP — reset watchdog
+      this.estopTriggerMs = -1;
+      this.mtrAcked = false;
+    }
 
     // ── Brake control (50 Hz) ────────────────────────────────────
     if (nowMs % 20 === 0) {
