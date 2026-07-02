@@ -143,7 +143,7 @@ export function stopPeriodic(bus: Bus, id: string): Promise<CommandResponse> {
   });
 }
 
-export function clearFrames(): Promise<{ ok: boolean }> {
+export function clearFrames(): Promise<{ cleared: boolean }> {
   return request("/api/can/frames", { method: "DELETE" });
 }
 

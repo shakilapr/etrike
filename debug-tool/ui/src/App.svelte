@@ -233,7 +233,11 @@
   async function refreshStatus() {
     try {
       const payload: BackendStatus = await getStatus();
-      status.set(payload);
+      status.update((current) => ({
+        ...current,
+        ...payload,
+        bus_detection: current.bus_detection ?? payload.bus_detection,
+      }));
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       status.update((current) => ({
