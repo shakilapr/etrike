@@ -80,16 +80,29 @@ def generate_can_ids_ts(db) -> str:
     # ── DLC table ────────────────────────────────────────────────
     lines.append("// ── DLC table (CAN ID → expected byte count) ──────────────")
     lines.append("export const DLC: Record<string, number> = {")
-    # Use max DLC across all protocol definitions (defensive against
-    # inconsistent DLC values for forwarded IDs on different buses)
-    dlc_by_id: dict[str, tuple[int, str]] = {}
+    # Collect DLC across all protocol definitions. For forwarded CAN IDs
+    # appearing on multiple buses, detect conflicts and use the maximum.
+    dlc_by_id: dict[str, tuple[int, str, list[tuple[str,int]]]] = {}  # id -> (max_dlc, name, [(proto, dlc)])
     for bus, msg, pname in all_msgs:
         key = to_hex(msg.id)
-        prev_dlc, prev_name = dlc_by_id.get(key, (-1, ""))
-        if msg.dlc > prev_dlc:
-            dlc_by_id[key] = (msg.dlc, msg.name)
+        if key not in dlc_by_id:
+            dlc_by_id[key] = (msg.dlc, msg.name, [(pname, msg.dlc)])
+        else:
+            prev_dlc, prev_name, sources = dlc_by_id[key]
+            sources.append((pname, msg.dlc))
+            if msg.dlc > prev_dlc:
+                dlc_by_id[key] = (msg.dlc, msg.name, sources)
+            elif msg.dlc != prev_dlc:
+                # PCR7: Same CAN ID with different DLC on different buses is a spec
+                # conflict. Max-DLC hides the inconsistency — warn so the developer
+                # can reconcile the protocol definitions.
+                print(f"WARNING: CAN ID {key} ({msg.name}) has DLC={msg.dlc} in "
+                      f"{pname} but DLC={prev_dlc} in other protocols. "
+                      f"Using max DLC={max(msg.dlc, prev_dlc)}. "
+                      f"Verify both protocol YAMLs agree on DLC.",
+                      file=sys.stderr)
     for key in sorted(dlc_by_id.keys(), key=lambda k: int(k, 16)):
-        dlc, name = dlc_by_id[key]
+        dlc, name, _ = dlc_by_id[key]
         lines.append(f'  "{key}": {dlc},  // {name}')
     lines.append("};")
     lines.append("")
@@ -242,15 +255,26 @@ def generate_can_data_h(db) -> str:
             lines.append(f"constexpr uint16_t {cname} = {to_hex(msg.id)};  // {msg.name}")
     lines.append("")
 
-    # DLC values (use max DLC across all protocol definitions for the same CAN ID)
+    # DLC values with conflict detection for duplicate CAN IDs across protocols
     lines.append("// ── DLC values (per CAN ID) ─────────────────────────────")
-    dlc_by_id: dict[int, tuple[int, str]] = {}
+    dlc_by_id: dict[int, tuple[int, str, list[tuple[str, int]]]] = {}
     for pname, proto in db.protocols.items():
         for msg in proto.messages:
-            if msg.id not in dlc_by_id or msg.dlc > dlc_by_id[msg.id][0]:
-                dlc_by_id[msg.id] = (msg.dlc, msg.name)
+            if msg.id not in dlc_by_id:
+                dlc_by_id[msg.id] = (msg.dlc, msg.name, [(pname, msg.dlc)])
+            else:
+                prev_dlc, prev_name, sources = dlc_by_id[msg.id]
+                sources.append((pname, msg.dlc))
+                if msg.dlc > prev_dlc:
+                    dlc_by_id[msg.id] = (msg.dlc, msg.name, sources)
+                elif msg.dlc != prev_dlc:
+                    print(f"WARNING: CAN ID 0x{msg.id:03X} ({msg.name}) has DLC={msg.dlc} in "
+                          f"{pname} but DLC={prev_dlc} in other protocols. "
+                          f"Using max DLC={max(msg.dlc, prev_dlc)}. "
+                          f"Verify both protocol YAMLs agree on DLC.",
+                          file=sys.stderr)
     for mid in sorted(dlc_by_id.keys()):
-        dlc, name = dlc_by_id[mid]
+        dlc, name, _ = dlc_by_id[mid]
         lines.append(f"constexpr uint8_t kDlc_{name} = {dlc};")
     lines.append("")
 
