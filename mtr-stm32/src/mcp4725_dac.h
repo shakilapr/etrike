@@ -26,23 +26,31 @@ public:
 
     /// Write a 12-bit value directly to the DAC (0-4095 → 0-5V).
     /// Returns true on success, false if I2C write failed after retry.
-    /// ESTOP callers must check the return value — DAC write failure
-    /// leaves the throttle at the last non-zero voltage.
+    /// Uses 100ms finite timeout — HAL_MAX_DELAY would block forever on
+    /// I2C bus disruption, defeating hardware ESTOP (bug 8.2).
     bool write(uint16_t val) {
         if (val > kThrottleDacMaxVal) val = kThrottleDacMaxVal;
         extern I2C_HandleTypeDef hi2c1;
         uint8_t buf[2];
         buf[0] = (val >> 4) & 0xFF;
         buf[1] = (val << 4) & 0xFF;
+        constexpr uint32_t kI2cTimeoutMs = 100;  // Finite — never HAL_MAX_DELAY
         HAL_StatusTypeDef st = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
-                                                  0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
+                                                  0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, kI2cTimeoutMs);
         if (st != HAL_OK) {
             // Retry once — I2C bus may have had a transient glitch
             st = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
-                                   0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, HAL_MAX_DELAY);
+                                   0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, kI2cTimeoutMs);
+        }
+        if (st != HAL_OK) {
+            m_i2c_fail_count++;
         }
         return st == HAL_OK;
     }
+
+    /// Returns consecutive I2C write failure count. Caller should force
+    /// throttle to safe state if this exceeds threshold (e.g., 3).
+    uint32_t i2c_failures() const { return m_i2c_fail_count; }
 
     /// Convenience: set DAC from speed in mm/s.
     /// Maps abs(speed) / 3000 × 4095 → 12-bit DAC value.
@@ -50,7 +58,8 @@ public:
     /// lines carry direction.
     /// Speed is clamped to [-kThrottleMaxSpeedMmps, kThrottleMaxSpeedMmps]
     /// before conversion to guard against corrupt CAN 0x204 values.
-    void set_speed_mmps(int32_t speed_mmps) {
+    /// Returns true if DAC write succeeded.
+    bool set_speed_mmps(int32_t speed_mmps) {
         // Clamp to valid range — prevents UB from std::abs(INT32_MIN) and
         // guards against corrupt CAN frames producing arbitrary DAC output.
         if (speed_mmps > kThrottleMaxSpeedMmps) speed_mmps = kThrottleMaxSpeedMmps;
@@ -58,8 +67,11 @@ public:
         // Branch-based abs to avoid std::abs(INT32_MIN) undefined behavior
         uint32_t abs_speed = speed_mmps < 0 ? uint32_t(-speed_mmps) : uint32_t(speed_mmps);
         uint32_t v = (abs_speed * 4095U) / static_cast<uint32_t>(kThrottleMaxSpeedMmps);
-        write(static_cast<uint16_t>(v > 4095 ? 4095 : v));
+        return write(static_cast<uint16_t>(v > 4095 ? 4095 : v));
     }
+
+private:
+    uint32_t m_i2c_fail_count = 0;
 
 };
 
