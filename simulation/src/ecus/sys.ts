@@ -27,6 +27,13 @@ export class SysEcu implements SimulatedEcu {
   private rec = 0;
   private lastSentMode = -1;  // sentinel: first mode change always sends
 
+  // Gap I2: brake-suppression tracking state (matches firmware main.cpp)
+  private rtSafetyState = 0;       // from 0x210 byte 1 bits 0-1 (0=Normal)
+  private sebRolling = true;       // SEB rolling counter incrementing (H1)
+  private lastSebRoll = 0xFF;      // last SEB counter for change detection
+  private sebRollInit = false;     // first 0x721 seen?
+  private lastSetpointTickMs = 0;  // timestamp of last 0x204 arrival
+
   // ── Simulation inputs ────────────────────────────────────────────
 
   setEstopButton(pressed: boolean): void { this.safety.setEstop(pressed); }
@@ -63,6 +70,7 @@ export class SysEcu implements SimulatedEcu {
         case "0x204": {
           // RT_DRIVE_CMD
           this.cmdSpeedMmps = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
+          this.lastSetpointTickMs = nowMs;
           break;
         }
         case "0x205": {
@@ -74,6 +82,11 @@ export class SysEcu implements SimulatedEcu {
           // MTR_MOTOR_FBK — for EGAS L2
           // i16 BE with sign extension: shift to bit 31 then arithmetic shift right
           this.actualSpeedMmps = (f.data[0] << 24 | f.data[1] << 16) >> 16;
+          break;
+        }
+        case "0x210": {
+          // RT_STATE_RPT — RT safety_state byte 1 bits 0-1 (0=Normal, 1=InternalEstop, 2=Fault)
+          this.rtSafetyState = f.data[1] & 0x03;
           break;
         }
         case "0x731": {
@@ -89,8 +102,18 @@ export class SysEcu implements SimulatedEcu {
           break;
         }
         case "0x721": {
-          // SEB_STATUS — for brake sync
+          // SEB_STATUS — for brake sync + rolling counter tracking (Gap I2)
           this.brake.feedSebStatus(f.data[0]);
+          // H1: Track SEB rolling counter (byte 6 bits 4-7). Frozen counter
+          // means SEB isn't receiving commands — SYS must resume sending 0x7B9.
+          const sebRoll = (f.data[6] >> 4) & 0x0F;
+          if (!this.sebRollInit || sebRoll !== this.lastSebRoll) {
+            this.sebRollInit = true;
+            this.lastSebRoll = sebRoll;
+            this.sebRolling = true;
+          } else {
+            this.sebRolling = false;
+          }
           break;
         }
         case "0x302": {
@@ -119,7 +142,20 @@ export class SysEcu implements SimulatedEcu {
         effectiveEstop,
         effectiveEstop ? 0 : this.brakeKpa,
       );
-      if (cmd) {
+
+      // Gap I2: 6-condition brake suppression. In AUTO mode when all safety
+      // signals are healthy, RT owns the brake and SYS suppresses 0x7B9 to
+      // avoid bus collision. SYS resumes sending in MANUAL, ESTOP, rider
+      // override (brake lever), RT heartbeat loss, RT safety fault, SEB
+      // command failure (stale rolling counter), or stale RT setpoint.
+      const rtAlive = this.safety.heartbeatOk(nowMs);
+      const rtNormal = this.rtSafetyState === 0;
+      const sebAck = this.sebRolling;
+      const rtSetpointFresh = (nowMs - this.lastSetpointTickMs) < 200; // kSetpointStaleMs=200
+      const suppressSeb = this.currentMode === "auto" && rtAlive && rtNormal
+                       && sebAck && !this.safety.brakeLever && !effectiveEstop && rtSetpointFresh;
+
+      if (cmd && !suppressSeb) {
         // Build 0x7B9 VCU_SEB_REQ (steer-by-wire LE encoding)
         const stroke16 = cmd.strokeReq & 0xFFFF;
         const data = [
