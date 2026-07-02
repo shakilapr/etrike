@@ -212,17 +212,39 @@ add_executable(task_watchdog
     test/test_task_watchdog.cpp
 )
 
+# ── Heartbeat recovery test ──────────────────────────────────────────
+add_executable(heartbeat_recovery
+    test/test_heartbeat_recovery.cpp
+)
+
+# ── Watchdog wraparound test ─────────────────────────────────────────
+add_executable(watchdog_wraparound
+    test/test_watchdog_wraparound.cpp
+)
+
+# ── Dual heartbeat independence test ─────────────────────────────────
+add_executable(dual_heartbeat
+    test/test_dual_heartbeat.cpp
+)
+target_include_directories(dual_heartbeat PRIVATE
+    ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+)
+
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
-add_test(NAME smoke              COMMAND smoke_test)
-add_test(NAME protocol_roundtrip  COMMAND protocol_roundtrip)
-add_test(NAME checksum_full      COMMAND checksum_full)
-add_test(NAME mcp2515_config     COMMAND mcp2515_config)
-add_test(NAME rt_can_rx_router   COMMAND rt_can_rx_router)
-add_test(NAME rt_can_dispatch    COMMAND rt_can_dispatch)
-add_test(NAME sys_can_dispatch   COMMAND sys_can_dispatch)
-add_test(NAME task_watchdog      COMMAND task_watchdog)
-add_test(NAME rt_safety_monitor  COMMAND rt_safety_monitor)
+add_test(NAME smoke               COMMAND smoke_test)
+add_test(NAME protocol_roundtrip   COMMAND protocol_roundtrip)
+add_test(NAME checksum_full       COMMAND checksum_full)
+add_test(NAME mcp2515_config      COMMAND mcp2515_config)
+add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
+add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
+add_test(NAME sys_can_dispatch    COMMAND sys_can_dispatch)
+add_test(NAME task_watchdog       COMMAND task_watchdog)
+add_test(NAME rt_safety_monitor   COMMAND rt_safety_monitor)
+add_test(NAME heartbeat_recovery  COMMAND heartbeat_recovery)
+add_test(NAME watchdog_wraparound COMMAND watchdog_wraparound)
+add_test(NAME dual_heartbeat      COMMAND dual_heartbeat)
 
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")
