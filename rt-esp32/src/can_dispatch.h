@@ -78,6 +78,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     if (fr.id == can::kIdSafetyEstop) {
         ctx.gw_lo = fr;
         ctx.gw_hi = fr;
+        g_estop_reason.store(can::kEstopReasonCanEstop);
         // Enqueue ESTOP event with 10ms timeout (blocking — safety critical)
         rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
         if (xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
@@ -104,6 +105,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         uint8_t torque_faults = (fr.data[2] >> 2) & 0x0F;
         if (angle_faults || torque_faults) {
             ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
+            g_estop_reason.store(can::kEstopReasonInternal);
             rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
             // Use timeout to avoid silent ESTOP drop when queue is full (bug B4)
             if (xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
@@ -156,6 +158,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         // flipping error bits to 3 would trigger spurious ESTOP on corrupt frames.
         uint8_t seb_err = (fr.data[0] >> 6) & 0x03;
         if (seb_err == 3) {
+            g_estop_reason.store(can::kEstopReasonInternal);
             rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
             xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10));
         }
