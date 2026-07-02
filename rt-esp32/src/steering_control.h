@@ -53,7 +53,7 @@ public:
             return false;
 
         case SteerState::STEER_LISTEN_SYNC: {
-#ifdef CONFIG_BYPASS_SES_SYNC
+#if defined(CONFIG_BYPASS_SES_SYNC) && defined(CONFIG_BENCH_SOLO)
             // Bench mode: skip SES listen-sync, assume centered
             m_active_angle = 0;
             m_state = SteerState::STEER_ACTIVE;
