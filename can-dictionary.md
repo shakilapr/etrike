@@ -588,13 +588,14 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 |----------|-------|
 | **Sender** | RT |
 | **Receiver(s)** | SYS |
-| **DLC** | 1 |
+| **DLC** | 2 |
 | **Period** | 2 Hz (500 ms) |
 | **Timeout** | 1000ms (2 missed frames) → SYS triggers ESTOP (AUTO only) |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
 | `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung RT. |
+| `health_flags` | 8 | 8 | u8 | bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok |
 
 `0x204` staleness check at 200ms provides faster detection. RT sends `0x7FD` independently on both buses (per-bus, NOT bridged; separate counters per bus).
 
@@ -606,13 +607,14 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 |----------|-------|
 | **Sender** | SYS |
 | **Receiver(s)** | RT |
-| **DLC** | 1 |
+| **DLC** | 2 |
 | **Period** | 10 Hz (100 ms) |
 | **Timeout** | 200ms (2 missed frames at 10 Hz) → RT takes over `0x7B9` (stroke=max) + sends CAN `0x001`. Total brake gap ≤220ms. |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
 | `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung SYS. |
+| `health_flags` | 8 | 8 | u8 | bit0=heartbeat_ok, bit1=estop_active, bits2-3=reserved |
 
 SYS heartbeat never leaves low bus. Startup grace period: 3 seconds (both heartbeat monitors).
 
@@ -654,18 +656,21 @@ Forwarded from low-level by RT. Same payload layout as §1 `0x120`.
 | Property | Value |
 |----------|-------|
 | **Sender** | RT |
-| **Receiver(s)** | Jetson |
-| **DLC** | 3 |
+| **Receiver(s)** | Jetson (+ SYS on low bus) |
+| **DLC** | 6 |
 | **Period** | 10 Hz |
 
 | Signal | Start bit | Len | Type | Min | Max | Unit |
 |--------|-----------|-----|------|-----|-----|------|
 | `RT_Mode` | 0 | 8 | u8 (enum) | 0 | 2 | — |
-| `RT_SteerValid` | 8 | 8 | u8 (bool) | 0 | 1 | — |
+| `RT_SafetyState` | 8 | 2 | u8 (enum) | 0 | 2 | — |
+| `RT_EstopReason` | 12 | 4 | u8 (enum) | 0 | 7 | — |
 | `RT_Reversing` | 16 | 8 | u8 (bool) | 0 | 1 | — |
 | `RT_RxOverflow` | 24 | 8 | u8 | 0 | 255 | — |
+| `RT_TaskHealth` | 32 | 8 | u8 | 0 | 255 | — |
+| `RT_SteerState` | 40 | 8 | u8 (enum) | 0 | 5 | — |
 
-Byte layout (big-endian): Byte 0=mode, 1=steer_valid, 2=reversing.
+Byte layout (big-endian): Byte 0=mode, 1=`safety_state[1:0]`+`estop_reason[7:4]`, 2=reversing, 3=rx_overflow, 4=task_health, 5=steer_state.
 
 ---
 
@@ -770,13 +775,14 @@ Forwarded from low-level by RT. Same layout as §1 `0x600`.
 |----------|-------|
 | **Sender** | RT |
 | **Receiver(s)** | Jetson |
-| **DLC** | 1 |
+| **DLC** | 2 |
 | **Period** | 2 Hz (500 ms) |
 | **Timeout** | 1500ms (3 missed frames) → Jetson stops publishing `/cmd_vel` |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
 | `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung RT. |
+| `health_flags` | 8 | 8 | u8 | bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok |
 
 RT sends `0x7FD` independently on both buses (per-bus, NOT bridged).
 
@@ -825,8 +831,8 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x731` | SEB_ErrInfo | SEB | SYS | 8 | 10 Hz |
 | `0x741` | SEB_Version | SEB | SYS | 8 | 1 Hz |
 | `0x7B9` | VCU_SEB_REQ | SYS | SEB | 8 | **50 Hz** |
-| `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | 2 Hz |
-| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | 10 Hz |
+| `0x7FD` | RT_HEARTBEAT | RT | SYS | 2 | 2 Hz |
+| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 2 | 10 Hz |
 
 ### High-level bus
 
@@ -835,14 +841,14 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x001` | SAFETY_ESTOP | Jetson, RT | Jetson, RT | 0 | Event |
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 3 | 5 Hz |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | 100 Hz |
-| `0x210` | RT_STATE_RPT | RT | Jetson | 3 | 10 Hz |
+| `0x210` | RT_STATE_RPT | RT | Jetson | 6 | 10 Hz |
 | `0x220` | RT_PID_RPT | RT | Jetson | 6 | — (RESERVED, inactive) |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | ≤100 Hz |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | Demand |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→SYS) | 1 | Change |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | 10 Hz |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
-| `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | 2 Hz |
+| `0x7FD` | RT_HEARTBEAT | RT | Jetson | 2 | 2 Hz |
 | `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 1 | 2 Hz |
 
 ---

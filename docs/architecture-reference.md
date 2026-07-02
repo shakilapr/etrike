@@ -116,8 +116,8 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x741` | SEB_Version | SEB | SYS | 8 | SW + HW version | 1 Hz | Lowest |
 | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) † | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Lowest |
 | `0x7FB` | PWT_HEARTBEAT | PWT | RT, SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
-| `0x7FD` | RT_HEARTBEAT | RT | SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
-| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 1 | u8 alive_ctr | 10 Hz | Lowest |
+| `0x7FD` | RT_HEARTBEAT | RT | SYS | 2 | u8 alive_ctr, u8 health_flags | 2 Hz | Lowest |
+| `0x7FE` | SYS_HEARTBEAT | SYS | RT | 2 | u8 alive_ctr, u8 health_flags | 10 Hz | Lowest |
 
 > **ID note**: actuator units are preprogrammed and cannot be reconfigured. EPS-C uses factory command `0x169` and status `0x201`, plus diagnostic frames `0x202` (err info), `0x203` (version), `0x6FA` (telemetry). SEB uses factory command `0x7B9` and status `0x721`, plus diagnostic frames `0x731` (err info), `0x741` (version), `0x6FB` (telemetry). `RT_DRIVE_CMD` is placed at `0x204` to avoid collision with EPS-C `0x169`. `0x205` RT_BRAKE_CMD avoids collision with `0x202` and `0x203`.
 >
@@ -131,7 +131,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 3 | u8 estop, u8 hb_ok, u4 light_state | 5 Hz | V.High |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x206` | MTR_MOTOR_FBK | RT (fwd) | Jetson | 4 | i16 actual_speed, u8 gear_state, u8 fault_flags | 50 Hz | Low |
-| `0x210` | RT_STATE_RPT | RT | Jetson | 4 | u8 mode, u8 steer_valid, u8 reversing, u8 rx_overflow | 10 Hz | Low |
+| `0x210` | RT_STATE_RPT | RT | Jetson | 6 | u8 mode, u2 safety_state+u4 estop_reason (byte1), u8 reversing, u8 rx_overflow, u8 task_health, u8 steer_state | 10 Hz | Low |
 | `0x220` | RT_PID_RPT | RT | Jetson | 6 | RESERVED — future closed-loop PID telemetry | — (inactive) | Low |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | i32 speed_mmps, i24 yaw_rate_mrad_s, u8 gear | ≤100 Hz | Medium |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | i32 brake_pressure_kpa | Demand | Medium |
@@ -140,7 +140,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x311` | BRAKE_DIAG | RT | Jetson | 8 | u16 pressure (0.05 MPa/bit), u8 fault, i16 motor_current, u16 ecu_temp | 10 Hz | Low |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | u32 distance_mm | 10 Hz | Low |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | diag struct | 1 Hz | Lowest |
-| `0x7FD` | RT_HEARTBEAT | RT | Jetson | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FD` | RT_HEARTBEAT | RT | Jetson | 2 | u8 alive_ctr, u8 health_flags | 2 Hz | Lowest |
 | `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 1 | u8 alive_ctr | 2 Hz | Lowest |
 
 > Bit-level signal layouts in [`can-dictionary.md`](can-dictionary.md).
@@ -359,11 +359,11 @@ The Jetson Orin is the perception, planning, and high-level control node. It run
 | `0x120` SYS_THROTTLE_STS — DLC=2, `{i16 speed_mmps}` | Speed mm/s → m/s, sign→direction | `VelocityReport` — `{header, longitudinal_velocity, heading_rate}` | Longitudinal velocity |
 | `0x310` STEER_DIAG — DLC=8, `{i16 angle, u8 fault, i16 motor_current, u16 ecu_temp}` | Angle 0.1°/bit, offset=-3000 → radians | `SteeringReport` — `{stamp, steering_tire_angle}` | Steering tire angle |
 | `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | gear_state byte → GearReport enum | `GearReport` — `{stamp, report}` | Current gear (primary) |
-| `0x210` RT_STATE_RPT — DLC=3, `{u8 mode, u8 steer_valid, u8 reversing}` + `0x011` SYS_SAFETY_STS — DLC=3, `{u8 estop, u8 hb_ok, u4 light_state}` | mode + estop + hb_ok → ControlMode enum | `ControlModeReport` — `{stamp, mode}` | Current control mode |
+| `0x210` RT_STATE_RPT — DLC=6, `{u8 mode, u2 safety_state+u4 estop_reason (byte1), u8 reversing, u8 rx_overflow, u8 task_health, u8 steer_state}` + `0x011` SYS_SAFETY_STS — DLC=3, `{u8 estop, u8 hb_ok, u4 light_state}` | mode + estop + hb_ok → ControlMode enum | `ControlModeReport` — `{stamp, mode}` | Current control mode |
 | `0x011` SYS_SAFETY_STS byte 2 — `{u4 light_state}` | light_state bitfield → indicator topic enum | `TurnIndicatorsReport` / `HazardLightsReport` | Light state (open-loop echo fallback) |
 | `0x120` + `0x310` | Dead reckoning: integrate speed + steer angle over time (drifts without absolute reference) | `VehicleKinematicState` — `{stamp, state, pose, twist, accel}` | Odometry (full encoder+IMU fusion deferred to gap #5) |
 | `0x600` SYS_DIAG_RPT — DLC=8, `{diag struct}` | Pass-through for logging / diagnostics | Internal diagnostics topic (1 Hz) | System diagnostics |
-| `0x7FD` RT_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | 1500ms timeout (3 missed at 2 Hz) → RCLCPP_WARN_THROTTLE | — (internal monitoring) | RT liveness |
+| `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | 1500ms timeout (3 missed at 2 Hz) → RCLCPP_WARN_THROTTLE | — (internal monitoring) | RT liveness |
 
 **CAN I/O consolidated:**
 
@@ -442,7 +442,7 @@ The MTR STM32 is the EGAS Level 1 Function Controller — the only node with dir
 | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` | Mode gate: AUTO → follow 0x204, MANUAL → ADC/gear pass-through, ESTOP → all zero | — (internal state) | Mode gating |
 | `0x204` staleness >200ms (AUTO mode) | Zero speed + N gear (controlled stop, not ESTOP). Gated by 3s startup grace period. | MCP4725=0, all gear relays OFF | Stale command safety |
 | `0x001` SAFETY_ESTOP — DLC=0 | Hardware ISR: immediate kill (redundant with hardwired ESTOP GPIO) | — | Emergency stop (CAN path) |
-| `0x7FD` RT_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Monitor RT liveness (secondary; local ESTOP GPIO is primary kill path) | — (consumed locally) | RT liveness |
+| `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | Monitor RT liveness (secondary; local ESTOP GPIO is primary kill path) | — (consumed locally) | RT liveness |
 | Speed feedback (ADC or encoder) | Pack into i16 mm/s | `0x120` SYS_THROTTLE_STS — DLC=2, `{i16 speed_mmps}` → RT (fwd to Jetson), 100 Hz | Speed telemetry |
 | State + faults | Pack gear_state, fault_flags (`ESTOP_ACTIVE`=0x01, etc.), actual_speed | `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 actual_speed, u8 gear_state, u8 fault_flags}` → SYS, RT, 50 Hz | Motor feedback |
 
@@ -576,17 +576,17 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Low | `0x205` | RT_BRAKE_CMD | `i32 brake_pressure_kpa` | **50 Hz** |
 | Low | `0x169` | VCU_SES_REQ | `{u8 ctrl, i16 angle, u8 speed, u8 sec, u8 cnt+cksum, u8 cksum}` (8 bytes) | **50 Hz** |
 | Low | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | Change |
-| Low | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | 2 Hz |
+| Low | `0x7FD` | RT_HEARTBEAT | `{u8 alive_ctr, u8 health_flags}` | 2 Hz |
 | High | `0x001` | SAFETY_ESTOP (fwd) | — | Event |
 | High | `0x011` | SYS_SAFETY_STS (fwd) | `{u8 estop, u8 hb_ok}` | 5 Hz |
 | High | `0x120` | SYS_THROTTLE_STS (fwd) | `i16 speed_mmps` | 100 Hz |
 | High | `0x206` | MTR_MOTOR_FBK (fwd) | `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | 50 Hz |
-| High | `0x210` | RT_STATE_RPT | `{u8 mode, u8 steer_valid, u8 reversing}` | 10 Hz |
+| High | `0x210` | RT_STATE_RPT | `{u8 mode, u2 safety_state+u4 estop_reason (byte1), u8 reversing, u8 rx_overflow, u8 task_health, u8 steer_state}` | 10 Hz |
 | High | `0x220` | RT_PID_RPT | RESERVED (inactive until encoders fitted) | — |
 | High | `0x310` | STEER_DIAG | `{i16 angle, u8 fault, i16 motor_current, u16 ecu_temp, u8 reserved}` (8 bytes) | 10 Hz |
 | High | `0x311` | BRAKE_DIAG | `{u16 pressure, u8 fault, i16 motor_current, u16 ecu_temp, u8 reserved}` (8 bytes) | 10 Hz |
 | High | `0x600` | SYS_DIAG_RPT (fwd) | 8 bytes | 1 Hz |
-| High | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | 2 Hz |
+| High | `0x7FD` | RT_HEARTBEAT | `{u8 alive_ctr, u8 health_flags}` | 2 Hz |
 
 ### 7.5 Internal data types
 
@@ -778,7 +778,7 @@ Pri 1  watchdog     ── 10 Hz staleness check
 | `can_tx_low` | 3 | 3072 B | Event | 0x204@100Hz, 0x169@50Hz (steer SM gated), 0x302 |
 | `can_tx_high` | 3 | 3072 B | Event | Telemetry → MCP2515 SPI |
 | `watchdog` | 1 | 2048 B | 10 Hz | Staleness → zero setpoints + stop steer |
-| `heartbeat` | 1 | 2048 B | 2 Hz | `0x7FD` on both buses (per-bus, not bridged): `alive_ctr++ & 0xFF`, DLC=1 |
+| `heartbeat` | 1 | 2048 B | 2 Hz | `0x7FD` on both buses (per-bus, not bridged): `alive_ctr++ & 0xFF`, DLC=2 (u8 alive_ctr, u8 health_flags) |
 
 ### 7.8 Hardware pin assignments — Board: RT ESP32-S3
 
@@ -889,7 +889,7 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 | `0x201` SES_STATUS — DLC=8, `{u8 status, i16 angle, u8 torq, …}` | Steering SM: boot sync angle, alignment check, following-error monitor, steer-by-wire rolling counter + XOR checksum | `0x169` VCU_SES_REQ — DLC=8, `{u8 ctrl, i16 angle, u8 speed, u8 sec, u8 cnt+cksum, u8 cksum}` → EPS-C (50 Hz, Angle Mode) | Steering angle |
 | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` | Mode gating: AUTO → transmit 0x169+0x204, MANUAL → silent, ESTOP → ramp/hold | Mode state gates TX | Mode control |
 | `0x001` SAFETY_ESTOP — DLC=0 (no payload) | Immediate: ramp/hold steering, zero speed, max brake, forward to other bus | `0x001` DLC=0 to other bus + setpoints zeroed | Emergency stop |
-| `0x7FE` SYS_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Liveness: 200ms timeout (2 missed at 10 Hz) → RT takes over `0x7B9` with stroke=max (full brake) | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (emergency takeover) → SEB | Brake takeover on SYS loss |
+| `0x7FE` SYS_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | Liveness: 200ms timeout (2 missed at 10 Hz) → RT takes over `0x7B9` with stroke=max (full brake) | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (emergency takeover) → SEB | Brake takeover on SYS loss |
 | `0x7FC` HOST_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | Staleness: 1500ms timeout (3 missed at 2 Hz) → assisted stop (zero speed, stop steer, 2000 kPa brake, SYS→MANUAL) | `0x204`=0, `0x169` stop, `0x205`=2000 kPa | Assisted stop |
 | `0x011` SYS_SAFETY_STS — DLC=3, `{u8 estop, u8 hb_ok, u4 light_state}` (low bus) | Transparent forward — same ID, same payload, forwarded to high bus | `0x011` on high bus → Jetson | CAN gateway |
 | `0x120` SYS_THROTTLE_STS — DLC=2, `{i16 speed_mmps}` (low bus) | Transparent forward | `0x120` on high bus → Jetson | CAN gateway |
@@ -899,10 +899,10 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 | `0x202` SES_ErrInfo — DLC=8, `{25 fault flags (8× L3)}` | Log faults; L3 flag → ESTOP via `0x001` | — (consumed locally) | Steering health |
 | `0x203` SES_Version — DLC=8, `{u8 sw_ver, u8 hw_ver}` | Log on boot for compatibility check | — (consumed locally) | Steering health |
 | `0x6FA` SES_Test — DLC=8, `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | Monitor motor current / ECU temp for degradation | — (consumed locally) | Steering health |
-| — | Telemetry aggregation | `0x210` RT_STATE_RPT — DLC=3, `{u8 mode, u8 steer_valid, u8 reversing}` (10 Hz) | Host monitoring |
+| — | Telemetry aggregation | `0x210` RT_STATE_RPT — DLC=6, `{u8 mode, u2 safety_state+u4 estop_reason (byte1), u8 reversing, u8 rx_overflow, u8 task_health, u8 steer_state}` (10 Hz) | Host monitoring |
 | — | Telemetry aggregation | `0x310` STEER_DIAG — DLC=8, `{i16 angle, u8 fault, i16 motor_current, u16 ecu_temp}` (10 Hz) | Host monitoring |
 | — | Telemetry aggregation | `0x311` BRAKE_DIAG — DLC=8, `{u16 pressure, u8 fault, i16 motor_current, u16 ecu_temp}` (10 Hz) | Host monitoring |
-| — | Heartbeat generation: alive_ctr++ per bus (NOT bridged) | `0x7FD` RT_HEARTBEAT — DLC=1, `{u8 alive_ctr}` on both buses (2 Hz) | Liveness |
+| — | Heartbeat generation: alive_ctr++ per bus (NOT bridged) | `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` on both buses (2 Hz) | Liveness |
 
 **Physical I/O (RT board):**
 
@@ -1544,7 +1544,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | `0x204` RT_DRIVE_CMD — DLC=5, `{i32 speed_mmps, u8 gear}` | AUTO: `abs(speed)/3000 × 4095` → MCP4725 DAC, gear byte → relay. MANUAL: ADC→DAC pass-through. ESTOP: DAC=0, all gear OFF. Stall >200ms → zero+N. | MCP4725 DAC (0–5V) + gear relays (72V D/S/R) | Motor throttle + gear |
 | `0x205` RT_BRAKE_CMD — DLC=4, `{i32 brake_pressure_kpa}` | kPa→SEB raw (`kPa × 0.02`), clamp to `kSebMaxPressureRaw` (100). Mode-switch: 0→positive → Pressure Mode (bit=1); positive→0 → Stroke Mode stroke=0. | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` → SEB (Pressure Mode) | Brake pressure (AUTO) |
 | `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | EGAS L2: compare 0x204 setpoint vs 0x206 actual. Mismatch → ESTOP. `ESTOP_ACTIVE` bit (0x01) → force ESTOP. | `0x001` SAFETY_ESTOP — DLC=0 if mismatch | Motor safety (EGAS L2) |
-| `0x7FD` RT_HEARTBEAT — DLC=1, `{u8 alive_ctr}` | 1000ms timeout (2 missed at 2 Hz) → ESTOP. Faster: 0x204 staleness at 200ms catches RT crash first. | `0x001` SAFETY_ESTOP — DLC=0 if timeout | RT liveness |
+| `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | 1000ms timeout (2 missed at 2 Hz) → ESTOP. Faster: 0x204 staleness at 200ms catches RT crash first. | `0x001` SAFETY_ESTOP — DLC=0 if timeout | RT liveness |
 | GPIO11 MODE button (active-low, debounced) | Toggle MANUAL ↔ AUTO on falling edge. Ignored in ESTOP. | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` → RT + MTR | Mode control |
 | GPIO32 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. Long-press (3s) secondary ESTOP exit (gap #11). | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode}` → RT + MTR | ESTOP exit |
 | `0x302` HOST_LIGHT_CMD — DLC=1, `{u8 lights bitfield}` (fwd from RT) | Lights bitfield → GPIO relay outputs. AUTO: from CAN. MANUAL: handlebar switches (GPIO 3/6/7). ESTOP: all OFF except brake. | GPIO 18 (L turn), 19 (R turn), 21 (brake), 22 (head) | Signal lights |
@@ -1554,7 +1554,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | `0x6FB` SEB_Test — DLC=8, `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | Monitor motor current / ECU temp trends for degradation early warning | — (consumed locally) | Brake health |
 | — | DC-DC ON in all modes (MANUAL, AUTO, ESTOP). Sent on state change. | `0x012` SYS_DCDC_CMD — DLC=1, `{u8 enable}` → DC-DC converter | DC-DC 72V→12V |
 | — | Diagnostics aggregation: system health, faults | `0x600` SYS_DIAG_RPT — DLC=8, `{diag struct}` → RT (fwd to Jetson), 1 Hz | System diagnostics |
-| — | Heartbeat generation: alive_ctr++, 10 Hz (fast path for brake loss detection) | `0x7FE` SYS_HEARTBEAT — DLC=1, `{u8 alive_ctr}` → RT, 10 Hz | Liveness |
+| — | Heartbeat generation: alive_ctr++, 10 Hz (fast path for brake loss detection) | `0x7FE` SYS_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` → RT, 10 Hz | Liveness |
 | `0x011` SYS_SAFETY_STS generation | Pack estop state, heartbeat OK, light state | `0x011` SYS_SAFETY_STS — DLC=3, `{u8 estop, u8 hb_ok, u4 light_state}` → RT (fwd to Jetson), 5 Hz | Safety status |
 | GPIO3 L-turn switch, GPIO6 R-turn switch, GPIO7 headlight switch (MANUAL) | Turn L/R toggle, headlight toggle, both→hazard. Blink 500ms on/off pattern. Pressing opposite cancels. | GPIO 18 (L), 19 (R), 22 (head) relay outputs | Manual lights |
 

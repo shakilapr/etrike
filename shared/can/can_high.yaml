@@ -141,12 +141,12 @@ protocols:
              values: {1: EstopActive, 2: CmdTimeout, 4: AdcFault, 8: GearConflict, 16: StartupReady},
              comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready"}
 
-      # 0x210 — RT_STATE_RPT (RT→Host on high bus)
+      # 0x210 — RT_STATE_RPT (RT→Host on high bus, also sent on low bus for SYS)
       - id: 0x210
         name: RT_STATE_RPT
-        dlc: 4
+        dlc: 6
         sender: RT
-        receivers: [Host]
+        receivers: [Host, SYS]
         cycle_ms: 100
         comment: "RT state report to Host (high bus) and SYS (low bus). SYS monitors safety_state for takeover detection and RT health."
         signals:
@@ -155,9 +155,17 @@ protocols:
           - {name: RT_SafetyState, byte: 1, bit_offset: 0, size: 2, min: 0, max: 2, unit: enum,
              values: {0: Normal, 1: InternalEstop, 2: Fault},
              comment: "RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault"}
+          - {name: RT_EstopReason, byte: 1, bit_offset: 4, size: 4, min: 0, max: 7, unit: enum,
+             values: {0: None, 1: Button, 2: Heartbeat, 3: FollowingError, 4: Obstacle, 5: CanEstop, 6: BusOff, 7: Internal},
+             comment: "Reason for ESTOP state, packed in byte 1 bits 4-7"}
           - {name: RT_Reversing, byte: 2, bit_offset: 0, size: 8, min: 0, max: 1}
           - {name: RT_RxOverflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "MCP2515 RX overflow counter — telemetry for CAN bus health monitoring"}
+          - {name: RT_TaskHealth, byte: 4, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Bitmask of alive tasks (bits 0-3: control/dispatch/tx_low/tx_high)"}
+          - {name: RT_SteerState, byte: 5, bit_offset: 0, size: 8, min: 0, max: 5, unit: enum,
+             values: {0: BootWait, 1: ListenSync, 2: Active, 3: EstopRamp, 4: EstopHold, 5: Fault},
+             comment: "Steering state machine value"}
 
       # 0x220 — RT_PID_RPT (reserved, inactive)
       - id: 0x220

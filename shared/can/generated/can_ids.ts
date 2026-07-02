@@ -50,7 +50,7 @@ export const DLC: Record<string, number> = {
   "0x204": 5,  // RT_DRIVE_CMD
   "0x205": 4,  // RT_BRAKE_CMD
   "0x206": 4,  // MTR_MOTOR_FBK
-  "0x210": 4,  // RT_STATE_RPT
+  "0x210": 6,  // RT_STATE_RPT
   "0x220": 6,  // RT_PID_RPT
   "0x300": 8,  // HOST_DRIVE_CMD
   "0x301": 4,  // HOST_BRAKE_REQ
