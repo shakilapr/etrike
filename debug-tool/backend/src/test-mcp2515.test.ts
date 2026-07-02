@@ -92,17 +92,17 @@ describe("MCP2515 high-bus CAN frame decode", () => {
 
   // 0x310 — STEER_DIAG (10 Hz)
   describe("0x310 STEER_DIAG (MCP2515 TX, 10 Hz)", () => {
-    it("decodes angle (scaled: raw × 0.1 − 3000), fault, current (×0.01 A), temp (×0.1 °C)", () => {
-      // raw angle=0 → decoded 0*0.1-3000 = -3000, fault=0, raw current=1000→10A, raw temp=400→40°C
+    it("decodes angle (scaled: (raw − 30000) × 0.1), fault, current (×0.01 A), temp (×0.1 °C)", () => {
+      // raw angle=30000 → decoded (30000-30000)*0.1 = 0°, fault=0, raw current=1000→10A, raw temp=400→40°C
       const result = decodeFrame("high", "0x310", [
-        0x00, 0x00,  // angle raw = 0
+        0x75, 0x30,  // angle raw = 30000 → 0° (center)
         0x00,         // fault = false
         0x03, 0xE8,   // current raw = 1000 → 10.0 A
         0x01, 0x90,   // temp raw = 400 → 40.0 °C
         0x00,
       ]);
       expect(result).toMatchObject({
-        SteerDiag_Angle0_1deg: -3000, // 0*0.1 - 3000
+        SteerDiag_Angle0_1deg: 0,     // (30000-30000)*0.1 = 0
         SteerDiag_Fault: false,
         SteerDiag_MotorCurrent: 10,   // 1000*0.01
         SteerDiag_ECUTemp: 40,        // 400*0.1
