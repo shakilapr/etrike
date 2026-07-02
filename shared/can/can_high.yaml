@@ -310,11 +310,13 @@ protocols:
       # High-bus instance — independent counter from low bus.
       - id: 0x7FD
         name: RT_HEARTBEAT
-        dlc: 1
+        dlc: 2
         sender: RT
         receivers: [Host, SYS]
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the high-bus instance."
         signals:
           - {name: RT_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "High bus timeout 1500ms->Host stops /cmd_vel. Health flags: bit0=int_fault, bit1=can_warn, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded"}
+             comment: "High bus timeout 1500ms->Host stops /cmd_vel"}
+          - {name: RT_HealthFlags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "bit0=int_fault, bit1=can_warn, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded"}

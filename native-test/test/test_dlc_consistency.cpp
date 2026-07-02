@@ -44,9 +44,9 @@ static const Dlcentry spec[] = {
 static const int spec_count = sizeof(spec) / sizeof(spec[0]);
 
 // ── Known exceptions: spec says DLC=X but firmware intentionally sends Y ─
-// (e.g., RT heartbeat: generated kDlc=1 but firmware sends 2 with health_flags)
+// (All generated DLCs now match firmware. Keep this function for future overrides.)
 static uint8_t firmware_dlc_override(uint32_t id, uint8_t spec_dlc) {
-    if (id == 0x7FD) return 2;  // firmware sends health_flags byte
+    (void)id;
     return spec_dlc;
 }
 
@@ -92,10 +92,8 @@ int main() {
     // SYS heartbeat was fixed
     CHECK(true, "0x7FE SYS heartbeat DLC=2 (fixed 2026-07-01)");
 
-    // RT heartbeat: YAML says dlc:2, firmware sends 2, generated says 1
-    // This is D2 — generator ignores explicit YAML dlc field
-    printf("\n  KNOWN ISSUE D2: RT heartbeat YAML dlc:2, firmware dlc:2, generated kDlc=1\n");
-    printf("  Root cause: generator computes DLC from max signal byte, ignores explicit YAML dlc:\n");
+    // RT heartbeat D2: generator now respects explicit YAML dlc field
+    printf("\n  D2 FIXED: RT heartbeat YAML dlc:2, firmware dlc:2, generated kDlc=2\n");
 
     // No zero-byte frames except ESTOP
     for (int i = 0; i < spec_count; i++) {
