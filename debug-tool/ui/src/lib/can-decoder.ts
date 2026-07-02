@@ -97,6 +97,19 @@ const num = (key: string, label: string, unit?: string, min?: number, max?: numb
 });
 const modeField: CanField = { key: "mode", label: "Mode", kind: "enum", options: MODE_OPTIONS };
 const gearField: CanField = { key: "gear", label: "Gear", kind: "enum", options: GEAR_OPTIONS };
+const SAFETY_STATE_OPTIONS = [
+  { label: "Normal", value: 0 },
+  { label: "InternalEstop", value: 1 },
+  { label: "Fault", value: 2 }
+];
+const STEER_STATE_OPTIONS = [
+  { label: "Idle", value: 0 },
+  { label: "Active", value: 1 },
+  { label: "Fault", value: 2 },
+  { label: "Inhibited", value: 3 },
+  { label: "Disabled", value: 4 },
+  { label: "Unknown", value: 5 }
+];
 
 function msg(bus: Bus, id: string, name: string, sender: string, period: string, dlc: number, injectable: boolean, fields: CanField[]): CanMessageDef {
   return { bus, id, name, sender, period, dlc, injectable, fields };
@@ -120,14 +133,14 @@ const diagFields = [
   num("tec", "TEC", undefined, 0, 255),
   num("rec", "REC", undefined, 0, 255)
 ];
-const heartbeatFields = [num("alive_ctr", "Alive counter", undefined, 0, 255)];
+const heartbeatFields = [num("alive_ctr", "Alive counter", undefined, 0, 255), num("health_flags", "Health flags", undefined, 0, 15)];
 
 export const CAN_MESSAGES: CanMessageDef[] = [
   msg("high", "0x001", "SAFETY_ESTOP", "any", "event", 0, true, []),
   msg("high", "0x011", "SYS_SAFETY_STS", "RT (fwd)", "5 Hz", 3, true, safetyFields),
   msg("high", "0x120", "SYS_THROTTLE_STS", "RT (fwd)", "100 Hz", 2, true, throttleFields),
   msg("high", "0x206", "MTR_MOTOR_FBK", "RT (fwd)", "50 Hz", 4, true, motorFeedbackFields),
-  msg("high", "0x210", "RT_STATE_RPT", "RT", "10 Hz", 4, true, [modeField, bool("steer_valid", "Steer valid"), bool("reversing", "Reversing"), num("rx_overflow", "RX overflow", undefined, 0, 255)]),
+  msg("high", "0x210", "RT_STATE_RPT", "RT", "10 Hz", 6, true, [modeField, { key: "safety_state", label: "Safety state", kind: "enum", options: SAFETY_STATE_OPTIONS }, num("estop_reason", "ESTOP reason", undefined, 0, 7), bool("reversing", "Reversing"), num("rx_overflow", "RX overflow", undefined, 0, 255), num("task_health", "Task health", undefined, 0, 255), { key: "steer_state", label: "Steer state", kind: "enum", options: STEER_STATE_OPTIONS }]),
   msg("high", "0x220", "RT_PID_RPT", "RT", "reserved", 6, false, [num("speed_setpoint", "Setpoint", "mm/s"), num("speed_measured", "Measured", "mm/s"), num("pid_output", "PID output")]),
   msg("high", "0x300", "HOST_DRIVE_CMD", "Host", "<=100 Hz", 8, true, [num("speed_mmps", "Speed", "mm/s", -500, 3000, 10), num("yaw_rate_mrad_s", "Yaw rate", "mrad/s", -3000, 3000, 10), gearField]),
   msg("high", "0x301", "HOST_BRAKE_REQ", "Host", "demand", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
@@ -146,8 +159,8 @@ export const CAN_MESSAGES: CanMessageDef[] = [
     num("BrakeDiag_ECUTemp", "ECU temp", "degC", -40, 215),
   ]),
   msg("high", "0x600", "SYS_DIAG_RPT", "RT (fwd)", "1 Hz", 8, false, diagFields),
-  msg("high", "0x7FC", "HOST_HEARTBEAT", "Host", "2 Hz", 1, true, heartbeatFields),
-  msg("high", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
+  msg("high", "0x7FC", "HOST_HEARTBEAT", "Host", "2 Hz", 2, true, heartbeatFields),
+  msg("high", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 2, false, heartbeatFields),
 
   msg("low", "0x001", "SAFETY_ESTOP", "any", "event", 0, true, []),
   msg("low", "0x011", "SYS_SAFETY_STS", "SYS", "5 Hz", 3, true, safetyFields),
@@ -169,8 +182,8 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x731", "SEB_ERRINFO", "SEB", "10 Hz", 8, true, [num("fault_mask", "Fault mask")]),
   msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
   msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [bool("align_enable", "Align enable"), bool("control_enable", "Control enable"), num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), bool("auto_brake", "Auto brake"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
-  msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 1, false, heartbeatFields),
-  msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 1, false, heartbeatFields)
+  msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 2, false, heartbeatFields),
+  msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 2, false, heartbeatFields)
 ];
 
 const CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
@@ -228,10 +241,12 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
 
     case "high:0x210":
       bytes[0] = numberValue(values.mode);
-      bytes[1] = values.steer_valid ? 1 : 0;
+      bytes[1] = ((numberValue(values.safety_state) & 0x03)) | ((numberValue(values.estop_reason) & 0x0f) << 4);
       bytes[2] = values.reversing ? 1 : 0;
       bytes[3] = values.rx_overflow !== undefined ? numberValue(values.rx_overflow) & 0xff : 0;
-      return { dlc: 4, data: bytes.slice(0, 4) };
+      bytes[4] = numberValue(values.task_health) & 0xff;
+      bytes[5] = numberValue(values.steer_state) & 0xff;
+      return { dlc: 6, data: bytes.slice(0, 6) };
 
     case "high:0x300":
       writeI32BE(bytes, 0, numberValue(values.speed_mmps));
@@ -345,8 +360,11 @@ export function encodePayload(bus: Bus, id: string, values: Record<string, numbe
       return { dlc: 8, data: bytes };
 
     case "high:0x7FC":
+    case "low:0x7FD":
+    case "low:0x7FE":
       bytes[0] = numberValue(values.alive_ctr) & 0xff;
-      return { dlc: 1, data: bytes.slice(0, 1) };
+      bytes[1] = numberValue(values.health_flags) & 0xff;
+      return { dlc: 2, data: bytes.slice(0, 2) };
 
     default:
       return { dlc: 0, data: [] };
@@ -590,7 +608,7 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
     case "0x204": return { motor_speed_mmps: readI32BE(bytes, 0), gear: bytes[4] ?? 0, gear_name: gearName(bytes[4] ?? 0) };
     case "0x205": return { brake_pressure_kpa: readI32BE(bytes, 0) };
     case "0x206": return { actual_speed_mmps: readI16BE(bytes, 0), gear_state: bytes[2] ?? 0, gear_name: gearName(bytes[2] ?? 0), fault_flags: bytes[3] ?? 0 };
-    case "0x210": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0), steer_valid: bytes[1] !== 0, reversing: bytes[2] !== 0, rx_overflow: bytes[3] ?? 0 };
+    case "0x210": return { mode: bytes[0] ?? 0, mode_name: modeName(bytes[0] ?? 0), safety_state: (bytes[1] ?? 0) & 0x03, estop_reason: ((bytes[1] ?? 0) >> 4) & 0x0f, reversing: bytes[2] !== 0, rx_overflow: bytes[3] ?? 0, task_health: bytes[4] ?? 0, steer_state: bytes[5] ?? 0 };
     case "0x220": return { speed_setpoint: readI16BE(bytes, 0), speed_measured: readI16BE(bytes, 2), pid_output: readI16BE(bytes, 4) };
     case "0x300": return { speed_mmps: readI32BE(bytes, 0), yaw_rate_mrad_s: readI24BE(bytes, 4), gear: bytes[7] ?? 0, gear_name: gearName(bytes[7] ?? 0) };
     case "0x301": return { brake_pressure_kpa: readI32BE(bytes, 0) };
@@ -607,7 +625,7 @@ export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string
     case "0x7B9": return { align_enable: Boolean(bytes[0] & 1), control_enable: Boolean(bytes[0] & 2), control_mode: ((bytes[0] ?? 0) >> 2) & 1, auto_brake: Boolean(bytes[0] & 8), stroke_req: readU16LE(bytes, 2), pressure_req: bytes[3] ?? 0, roll_cnt_enable: Boolean((bytes[6] ?? 0) & 0x01), checksum_enable: Boolean((bytes[6] ?? 0) & 0x02), rolling_counter: ((bytes[6] ?? 0) >> 4) & 0x0f, checksum: bytes[7] ?? 0 };
     case "0x7FC":
     case "0x7FD":
-    case "0x7FE": return { alive_ctr: bytes[0] ?? 0 };
+    case "0x7FE": return { alive_ctr: bytes[0] ?? 0, health_flags: bytes[1] ?? 0 };
     default: return { bus };
   }
 }
