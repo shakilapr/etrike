@@ -244,6 +244,33 @@ export class RtEcu implements SimulatedEcu {
         });
       }
 
+      // CMP3: RT sends 0x7B9 in AUTO mode as 1-hop brake (steering ACTIVE, not ESTOP)
+      // Matches real firmware: forwards g_brake_kpa_to_send as pressure-mode VCU_SEB_REQ
+      if (ctx.mode === "auto" && this.steering.state === SteerState.ACTIVE && !shouldEstop && !sysHbTimeout) {
+        const pressureRaw = Math.min(Math.round(brakeKpa / 50), 100);
+        const autoRaw = [0, 0, 0, 0, 0, 0, 0, 0];
+        // Byte 0: align=0, control_enable=1, mode=1(Pressure), auto_brake=1
+        autoRaw[0] = (0 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+        // Byte 3: pressure_req (pressure mode uses byte 3)
+        autoRaw[3] = pressureRaw & 0xFF;
+        // Byte 6: roll_cnt_enable=1, checksum_enable=1, rolling_counter
+        autoRaw[6] = 0x03 | ((this.sebRollCounter & 0x0F) << 4);
+        // Checksum: XOR(raw[0..6]) ^ 0xFF
+        let cksum = 0;
+        for (let i = 0; i < 7; i++) cksum ^= autoRaw[i];
+        autoRaw[7] = cksum ^ 0xFF;
+        this.sebRollCounter = (this.sebRollCounter + 1) & 0x0F;
+        out.push({
+          simTimeMs: nowMs,
+          bus: "low",
+          canId: "0x7B9",
+          name: "VCU_SEB_REQ",
+          dlc: 8,
+          data: autoRaw,
+          sender: "rt",
+        });
+      }
+
       // Gap #12: RT takes over 0x7B9 on SYS heartbeat loss (stroke=max)
       // Matches firmware VcuSebReq::pack() — per steer-by-wire CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
       if (sysHbTimeout) {
