@@ -110,6 +110,19 @@ const STEER_STATE_OPTIONS = [
   { label: "Disabled", value: 4 },
   { label: "Unknown", value: 5 }
 ];
+const SAFETY_STATE_OPTIONS = [
+  { label: "Normal", value: 0 },
+  { label: "InternalEstop", value: 1 },
+  { label: "Fault", value: 2 }
+];
+const STEER_STATE_OPTIONS = [
+  { label: "Idle", value: 0 },
+  { label: "Active", value: 1 },
+  { label: "Fault", value: 2 },
+  { label: "Inhibited", value: 3 },
+  { label: "Disabled", value: 4 },
+  { label: "Unknown", value: 5 }
+];
 
 function msg(bus: Bus, id: string, name: string, sender: string, period: string, dlc: number, injectable: boolean, fields: CanField[]): CanMessageDef {
   return { bus, id, name, sender, period, dlc, injectable, fields };
