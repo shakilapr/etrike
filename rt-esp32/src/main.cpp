@@ -582,10 +582,28 @@ static void check_task_watchdog() {
     TickType_t per = pdMS_TO_TICKS(rt::kHeartbeatIntervalMs), last = xTaskGetTickCount();
     can::Frame fr;
     while (1) {
-        g_heartbeat.tick_low(fr);
+        // Compute health flags for heartbeat byte 1
+        uint8_t hf = 0;
+        {
+            int64_t now_us = esp_timer_get_time();
+            bool sys_alive = (g_last_sys_hb_us.load() > 0
+                && (now_us - g_last_sys_hb_us.load()) <= int64_t(rt::kHeartbeatTimeoutMsSys) * 1000);
+            bool host_alive = (g_last_host_hb_us.load() > 0
+                && (now_us - g_last_host_hb_us.load()) <= int64_t(shared::kHeartbeatTimeoutMsHost) * 1000);
+            if (sys_alive && host_alive) hf |= can::kHbHealthBitHeartbeatOk;
+            if (g_steering.state() == rt::SteerState::ESTOP_RAMP_TO_ZERO
+                || g_steering.state() == rt::SteerState::ESTOP_HOLD_THEN_SILENT
+                || g_mode_current.load() == uint8_t(can::Mode::Estop))
+                hf |= can::kHbHealthBitEstopActive;
+            if (g_mode_current.load() == uint8_t(can::Mode::Auto))
+                hf |= can::kHbHealthBitModeAuto;
+            if (!g_can_high.bus_off())
+                hf |= can::kHbHealthBitCanOk;
+        }
+        g_heartbeat.tick_low(fr, hf);
         auto* drv = rt::can_low_driver();
         if (drv) send_can_low(fr);
-        g_heartbeat.tick_high(fr);
+        g_heartbeat.tick_high(fr, hf);
         static uint32_t hb_fail_count = 0;
         if (!g_can_high.send(fr)) {
             hb_fail_count++;

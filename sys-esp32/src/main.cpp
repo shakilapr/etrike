@@ -882,10 +882,17 @@ static void check_task_watchdog() {
         fr.id  = can::kIdSysHeartbeat;
         fr.dlc = 2;
         fr.put_u8(0, ++alive_ctr);
-        // byte 1: health_flags — bit 0=heartbeat_ok, bit 1=estop_active, bits 2-3=mode
-        uint8_t health = (g_safety.heartbeat_ok() ? 0x01 : 0x00)
-                       | (g_safety.estop_active() ? 0x02 : 0x00)
-                       | ((static_cast<uint8_t>(g_mode_mgr.mode()) & 0x03) << 2);
+        // byte 1: health_flags using shared constants from can_protocol.h
+        // bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok
+        uint8_t health = (g_safety.heartbeat_ok() ? can::kHbHealthBitHeartbeatOk : 0)
+                       | (g_safety.estop_active() ? can::kHbHealthBitEstopActive : 0)
+                       | (g_mode_mgr.mode() == can::Mode::Auto ? can::kHbHealthBitModeAuto : 0);
+        // can_ok: set if not in bus-off (TEC < 255) and not error-passive (TEC <= 128)
+        {
+            uint8_t tec = 0, rec = 0;
+            g_can.get_error_counters(tec, rec);
+            if (tec < 255) health |= can::kHbHealthBitCanOk;
+        }
         fr.put_u8(1, health);
         send_can(fr);
 
