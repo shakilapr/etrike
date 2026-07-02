@@ -70,9 +70,9 @@ private:
     // ── SPI primitives (ESP-IDF) ───────────────────────────────────
     void spi_write_byte(uint8_t addr, uint8_t data);
     uint8_t spi_read_byte(uint8_t addr);
-    void spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len);
-    void spi_write_burst(uint8_t start_addr, const uint8_t* data, size_t len);
-    void spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
+    bool spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len);
+    bool spi_write_burst(uint8_t start_addr, const uint8_t* data, size_t len);
+    bool spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
 
     // ── MCP2515 register-level helpers ─────────────────────────────
     void reset();
@@ -116,6 +116,10 @@ private:
     static constexpr uint8_t kRegRxb0Data  = 0x61;  // RXB0SIDH
     static constexpr uint8_t kRegRxb1Data  = 0x71;  // RXB1SIDH
 
+    // READ STATUS (0xA0) response bits — MCP2515 datasheet §12.3:
+    //   TX0REQ = bit 0 (0x01)
+    //   TX1REQ = bit 1 (0x02)
+    //   TX2REQ = bit 2 (0x04)
     static constexpr uint8_t kReadStatusTx0Req = 0x01;
     static constexpr uint8_t kReadStatusTx1Req = 0x02;
     static constexpr uint8_t kReadStatusTx2Req = 0x04;
