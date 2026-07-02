@@ -448,18 +448,10 @@ describe("CAN forwarding rules", () => {
     expect(getFirst(runner, "0x120", "high")).toBeDefined();
   });
 
-  it("0x302 light command forwarded high→low (NEW — was missing)", () => {
+  it.skip("0x302 light command forwarded high→low (NEW — was missing)", () => {
     // Host sends 0x302, RT should forward high→low
     // Note: HostEcu doesn't originate 0x302 yet (future gap),
-    // but RT has the forwarding rule in place.
-    const runner = new SimulationRunner();
-    runner.configure(cfg({
-      hostDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],
-    }));
-    runner.runDuration(100);
-    // RT forwarding rule now exists (case "0x302" in high-bus processing)
-    // Even without Host origination, the forwarding rule is verified present
-    expect(true).toBe(true); // forwarding rule exists in rt.ts
+    // so this cannot be tested until the Host drives 0x302.
   });
 });
 
