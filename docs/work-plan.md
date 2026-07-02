@@ -245,7 +245,7 @@ g++ -std=c++17 -I../../shared -I../src test_rt_full.cpp -o test_rt && ./test_rt
 |-------|------|--------|
 | `0x011 SYS_SAFETY_STS` | 5 Hz | `gw_tx_high_queue` (forwarded from SYS) |
 | `0x120 SYS_THROTTLE_STS` | 100 Hz | `gw_tx_high_queue` |
-| `0x210 RT_STATE_RPT` | 10 Hz | g_mode + steer_valid + reversing |
+| `0x210 RT_STATE_RPT` | 10 Hz | g_mode + safety_state/estop_reason + reversing |
 | `0x220 RT_PID_RPT` | — | Inactive until encoders fitted |
 | `0x400 RT_OBSTACLE_RPT` | 10 Hz | g_obstacle_mm |
 | `0x600 SYS_DIAG_RPT` | 1 Hz | `gw_tx_high_queue` (forwarded from SYS) |
@@ -281,8 +281,8 @@ steering_task @ prio 3, 50 Hz:
 **Heartbeat:**
 ```
 heartbeat_task @ 2 Hz:
-  Send 0x7FD on low CAN: DLC=1, alive_ctr_low++
-  Send 0x7FD on high CAN: DLC=1, alive_ctr_high++  (independent counters per bus)
+  Send 0x7FD on low CAN: DLC=2, alive_ctr_low++, health_flags byte1
+  Send 0x7FD on high CAN: DLC=2, alive_ctr_high++, health_flags byte1  (independent counters per bus)
   
   Receive monitoring:
     0x7FE (SYS, low):  detect frozen counter → ESTOP after 1000ms
@@ -418,7 +418,7 @@ motor_task @ 100 Hz, prio 4:
 | `power` | 5 Hz | 12V relay GPIO27: ON in MANUAL/AUTO, OFF in ESTOP. |
 | `can_tx` | 5 Hz | Send `0x011 SYS_SAFETY_STS` (estop + hb_ok). |
 | `diag` | 1 Hz | Collect TEC/REC, heap, mode, estop. Send `0x600 SYS_DIAG_RPT`. |
-| `hb` | 2 Hz | Send `0x7FE SYS_HEARTBEAT`: DLC=1, `alive_ctr++ & 0xFF`. |
+| `hb` | 2 Hz | Send `0x7FE SYS_HEARTBEAT`: DLC=2, `alive_ctr++ & 0xFF, health_flags`. |
 
 **Acceptance (ESP32 + logic analyzer):**
 ```

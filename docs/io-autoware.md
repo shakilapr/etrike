@@ -84,7 +84,7 @@ This section cross-references the standard Autoware.Auto interface (§1–2) aga
 | Brake encoding | ✅ Compatible | `0x301` deceleration→kPa. RT arbitrates max(obstacle, host). Option D: RT→SEB direct. |
 | Light encoding | ✅ Compatible | `0x302` bitfield: L=0x01, R=0x02, hazard=0x03, brake=0x04. RT forwards transparently. |
 | ESTOP encoding | ✅ Compatible | `0x001` DLC=0, rate-limited 250ms. RT forwards bidirectionally. TXB2 priority on MCP2515. |
-| Heartbeat encoding | ✅ Compatible | `0x7FC` DLC=2 (alive_ctr + health byte). Host timeout 1500ms → assisted stop. |
+| Heartbeat encoding | ✅ Compatible | `0x7FC` DLC=1 (alive_ctr). Host timeout 1500ms → assisted stop. |
 | Velocity decoding | ✅ Compatible | `0x120` i16 mm/s → float m/s. Forwarded low→high by RT at 100 Hz. |
 | Steering decoding | ✅ Fixed | `0x310` STEER_DIAG: unsigned read, factor 0.1, offset -3000. Raw 30000→0°. Verified against CSV. |
 | Gear decoding | ✅ Compatible | `0x206` gear_state byte: CAN 0/1/2/3 → Autoware NONE/DRIVE/LOW/REVERSE. |
@@ -105,7 +105,7 @@ This section cross-references the standard Autoware.Auto interface (§1–2) aga
 | **Brake actuation** | CAN command → brake ECU | `0x7B9` VCU_SEB_REQ (Pressure/Stroke, 50 Hz). RT sends directly in AUTO (Option D). SYS sends in MANUAL/ESTOP. SYS reads RT safety_state from 0x210 to avoid dual-send. | ✅ Mode-gated dual sender |
 | **Throttle actuation** | Analog/CAN → motor controller | MCP4725 DAC 0–5V via MTR STM32 (open-loop). Motor I/O being migrated to MTR (SYS_OWNS_MOTOR flag). | ⚠️ Open-loop, migration in progress |
 | **Safety architecture** | EGAS / ISO 26262 | EGAS 3-level: MTR L1 (STM32), SYS L2 (ESP32-S3), hardware ESTOP L3. RT+SYS per-task WDT. MCP2515 error interrupts. | ✅ ASIL-C decomposition |
-| **Heartbeat/liveness** | Per-node alive counter | `0x7FD` (RT, DLC=2), `0x7FE` (SYS, 10 Hz), `0x7FC` (Host, DLC=2). Health byte on RT+Host. Frozen-counter detection. | ✅ Automotive-grade |
+| **Heartbeat/liveness** | Per-node alive counter | `0x7FD` (RT, DLC=2), `0x7FE` (SYS, DLC=2), `0x7FC` (Host, DLC=1). Health byte on RT+SYS. Frozen-counter detection. | ✅ Automotive-grade |
 
 ### 3.5 Data Flow Latency
 

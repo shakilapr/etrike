@@ -38,13 +38,13 @@ proceeding to the next. Stop on first failure — debug before continuing.
 ### T2.1 — RT low bus TX
 - Power RT only
 - CANalyst-II Ch1 on low bus
-- Verify 0x7FD RT_HEARTBEAT at 2 Hz (DLC=1, alive_ctr incrementing)
+- Verify 0x7FD RT_HEARTBEAT at 2 Hz (DLC=2, alive_ctr incrementing, health_flags present)
 - Verify 0x7FE absent (SYS not powered)
 
 ### T2.2 — RT high bus TX (via MCP2515)
 - CANalyst-II Ch1 on high bus
 - Verify 0x7FD RT_HEARTBEAT at 2 Hz
-- Verify 0x210 RT_STATE_RPT at 10 Hz (DLC=4, mode=0 Manual, safety_state=0)
+- Verify 0x210 RT_STATE_RPT at 10 Hz (DLC=6, mode=0 Manual, safety_state=0)
 - If nothing: check MCP2515 crystal (8 vs 16 MHz)
 
 ### T2.3 — SYS low bus TX

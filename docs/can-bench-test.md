@@ -545,7 +545,7 @@ Frames RT produces with no Host input:
 | CAN ID | Name | Sender | Period | Content |
 |--------|------|--------|--------|---------|
 | `0x7FD` | RT_HEARTBEAT | RT | 2 Hz | `alive_ctr` incrementing |
-| `0x210` | RT_STATE_RPT | RT | 10 Hz | `mode=0, steer_valid=0, reversing=0` |
+| `0x210` | RT_STATE_RPT | RT | 10 Hz | `mode=0, safety_state=0, reversing=0` |
 | `0x220` | RT_PID_RPT | RT | 10 Hz | all zeros (shadow PID, no MTR feedback) |
 
 RT also **forwards low→high**: `0x011` (SYS safety), `0x600` (SYS diag). These

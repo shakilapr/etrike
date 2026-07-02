@@ -97,10 +97,10 @@ The high-bus CAN protocol stays exactly as defined in `architecture.md` §2.2 an
 | `0x001` | SAFETY_ESTOP | DLC=0 (forwarded from low bus) | Event |
 | `0x011` | SYS_SAFETY_STS | `{u8 estop, u8 hb_ok}` (forwarded from SYS) | 5 Hz |
 | `0x120` | SYS_THROTTLE_STS | `{i16 speed_mmps}` (forwarded from MTR) | 100 Hz |
-| `0x210` | RT_STATE_RPT | `{u8 mode, u8 steer_valid, u8 reversing}` | 10 Hz |
+| `0x210` | RT_STATE_RPT | `{u8 mode, u2 safety_state+u4 estop_reason (byte1), u8 reversing, u8 rx_overflow, u8 task_health, u8 steer_state}` | 10 Hz |
 | `0x400` | HOST_OBSTACLE_DIST | `{u32 distance_mm}` | 10 Hz |
 | `0x600` | SYS_DIAG_RPT | `{u8 mode, u8 brake, u8 hb, u8 estop, u16 heap, u8 tec, u8 rec}` | 1 Hz |
-| `0x7FD` | RT_HEARTBEAT | `{u8 alive_ctr}` | 2 Hz |
+| `0x7FD` | RT_HEARTBEAT | `{u8 alive_ctr, u8 health_flags}` | 2 Hz |
 
 ### 2.3 Why No Changes
 
@@ -352,7 +352,7 @@ These issues exist in the current system regardless of Autoware.Auto integration
 | `0x001` | SAFETY_ESTOP | Bidir (bridged) | DLC=0 |
 | `0x011` | SYS_SAFETY_STS | ← (fwd) | `{u8 estop, u8 hb_ok}` |
 | `0x120` | SYS_THROTTLE_STS | ← (fwd) | `{i16 speed_mmps}` |
-| `0x210` | RT_STATE_RPT | ← | `{u8 mode, u8 steer_valid, u8 reversing}` |
+| `0x210` | RT_STATE_RPT | ← | `{u8 mode, u2 safety_state+u4 estop_reason (byte1), u8 reversing, u8 rx_overflow, u8 task_health, u8 steer_state}` |
 | `0x300` | HOST_DRIVE_CMD | → | `{i32 speed_mmps, i24 yaw_mrad_s, u8 gear}` |
 | `0x301` | HOST_BRAKE_REQ | → | `{i32 brake_pressure_kpa}` |
 | `0x302` | HOST_LIGHT_CMD | → | `{u8 bits}` |
