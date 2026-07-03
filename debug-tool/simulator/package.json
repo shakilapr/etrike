@@ -1,6 +1,6 @@
 {
   "name": "@etrike/debug-simulator",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "CAN bus simulator for debug tool testing without hardware",
   "type": "module",

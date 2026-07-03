@@ -2,6 +2,35 @@
 
 All notable changes to the E-Trike Drive-by-Wire Control System.
 
+## [0.3.0] — 2026-07-03
+
+### Summary
+
+Firmware bring-up on bench hardware. Both RT and SYS ESP32-S3 boards booting stably
+with full CAN bus communication verified. Mode button now toggles MANUAL↔AUTO only;
+ESTOP is a separate safety state triggered by hardware button or safety faults.
+
+### Added
+- `can-test/` minimal test project (TWAI send/receive + MCP2515 SPI verification)
+- `shared/can/patch_sdkconfig.py` pre-build script to patch CONFIG_FREERTOS_HZ
+- `sdkconfig.defaults` for RT and SYS projects
+
+### Fixed
+- CONFIG_FREERTOS_HZ=100 → 1000: all `pdMS_TO_TICKS()` calls with sub-10ms values
+  evaluated to 0, causing xTaskDelayUntil assert and MCP2515 SPI bus lockup
+- SYS task stack sizes increased for 1ms tick (min 1536→2048, main 3584→6144)
+- SYS NVS corruption from crash-loop reboots required full chip erase
+- CAN 0x110 mode command: ESTOP (value 2) rejected — only MANUAL/AUTO accepted
+- Debug tool simulator: 0x110 name fixed (MTR_CTRL_CMD → SYS_MODE_CMD), DLC 8→1
+
+### Verified
+- TWAI low CAN bus: bidirectional traffic between RT and SYS, zero TX failures
+- MCP2515 high CAN: SPI communication verified (CANSTAT=0x80), chip present
+- RT vehicle firmware: stable boot, no crashes, no watchdog events
+- SYS vehicle firmware: stable boot after stack increase and flash erase
+- All 171 backend tests passing
+- Debug tool type-checks clean (backend + UI)
+
 ## [0.2.0-alpha] — 2026-07-02
 
 ### Summary

@@ -765,6 +765,13 @@ h2 { font-size: 1rem; }
   padding: 5px 8px;
   white-space: nowrap;
 }
+.tbt.speed {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, var(--panel)), color-mix(in srgb, var(--bg) 74%, var(--panel)));
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--panel-border));
+  grid-template-columns: minmax(42px, auto) minmax(76px, auto) minmax(38px, auto);
+  min-width: 178px;
+}
 .tbt.brake {
   grid-template-columns: minmax(44px, auto) 52px minmax(54px, auto) minmax(34px, auto);
 }
@@ -783,6 +790,21 @@ h2 { font-size: 1rem; }
   font-weight: 800;
   min-width: 3.8em;
   text-align: right;
+}
+.tbt.speed strong {
+  color: var(--accent);
+  font-size: 1.28rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  min-width: 4.6em;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.tbt.speed em {
+  color: color-mix(in srgb, var(--accent) 72%, var(--fg));
+}
+.tbt.speed u {
+  color: color-mix(in srgb, var(--accent) 78%, var(--muted));
 }
 .tbt u {
   color: color-mix(in srgb, var(--muted) 88%, var(--fg));
@@ -927,6 +949,14 @@ h2 { font-size: 1rem; }
     grid-template-columns: minmax(40px, auto) minmax(48px, 1fr) minmax(32px, auto);
     min-width: 0;
     width: 100%;
+  }
+  .tbt.speed {
+    grid-template-columns: minmax(40px, auto) minmax(70px, 1fr) minmax(38px, auto);
+    min-width: 0;
+  }
+  .tbt.speed strong {
+    font-size: 1.1rem;
+    min-width: 0;
   }
   .tbt.brake {
     grid-column: 1 / -1;
