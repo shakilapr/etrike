@@ -658,14 +658,24 @@ h2 { font-size: 1rem; }
   border-radius: 4px;
   color: color-mix(in srgb, var(--muted) 82%, var(--fg));
   cursor: default;
-  display: flex;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: 16px minmax(0, auto);
   height: 26px;
   justify-content: center;
   position: relative;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
-  width: 32px;
+  padding: 0 6px;
+  width: auto;
 }
 .tbi svg { height: 17px; width: 17px; }
+.tbi span {
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+}
 .tbi.on { color: var(--fg); }
 .tbi.flash { color: color-mix(in srgb, var(--muted) 20%, transparent); }
 .tbi.turn-l.on, .tbi.turn-r.on {
@@ -679,7 +689,6 @@ h2 { font-size: 1rem; }
 }
 .tbi.brake-i {
   color: color-mix(in srgb, var(--err) 56%, var(--muted));
-  width: 30px;
 }
 .tbi.brake-i.on {
   background: color-mix(in srgb, var(--err) 18%, var(--bg));
@@ -688,7 +697,6 @@ h2 { font-size: 1rem; }
 }
 .tbi.estop-i {
   color: color-mix(in srgb, var(--err) 64%, var(--muted));
-  width: 30px;
 }
 .tbi.estop-i.on {
   background: color-mix(in srgb, var(--err) 22%, var(--bg));
@@ -697,12 +705,50 @@ h2 { font-size: 1rem; }
 }
 
 /* Vehicle state */
-.tb-vstate { align-items: center; display: flex; flex-shrink: 0; gap: 5px; }
+.tb-vstate {
+  align-items: center;
+  background: color-mix(in srgb, var(--panel) 66%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 3px;
+}
 .tvs-gear {
-  border: 2px solid var(--muted); border-radius: 4px;
+  align-items: center;
+  background: color-mix(in srgb, var(--bg) 52%, var(--panel));
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  display: grid;
+  gap: 1px;
+  grid-template-columns: auto;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.95rem; font-weight: 800; line-height: 1; min-width: 24px;
-  padding: 2px 6px; text-align: center;
+  height: 30px;
+  justify-items: center;
+  min-width: 56px;
+  padding: 3px 7px;
+  text-align: center;
+}
+.tvs-gear em,
+.tvs-mode em,
+.tvs-safety em {
+  color: var(--muted);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.47rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.tvs-gear strong,
+.tvs-mode strong,
+.tvs-safety strong {
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
 }
 .tvs-mode {
   align-items: center;
@@ -710,16 +756,13 @@ h2 { font-size: 1rem; }
   border: 1px solid color-mix(in srgb, var(--muted) 45%, var(--panel-border));
   border-radius: 4px;
   color: var(--muted);
-  display: inline-flex;
-  font-size: 0.58rem;
-  font-weight: 800;
-  height: 22px;
-  justify-content: center;
-  letter-spacing: 0.04em;
-  padding: 0 6px;
+  display: grid;
+  gap: 1px;
+  height: 30px;
+  justify-items: center;
+  padding: 3px 8px;
   text-align: center;
-  text-transform: uppercase;
-  width: 64px;
+  width: 76px;
 }
 .tvs-mode.manual {
   background: color-mix(in srgb, var(--ok) 14%, var(--bg));
@@ -742,8 +785,16 @@ h2 { font-size: 1rem; }
   color: var(--muted);
 }
 .tvs-safety {
-  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.05em;
-  min-width: 36px; text-transform: uppercase;
+  align-items: center;
+  background: color-mix(in srgb, var(--err) 12%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--err) 48%, var(--panel-border));
+  border-radius: 4px;
+  display: grid;
+  gap: 1px;
+  height: 30px;
+  justify-items: center;
+  min-width: 66px;
+  padding: 3px 8px;
 }
 
 /* Telemetry */
@@ -800,6 +851,29 @@ h2 { font-size: 1rem; }
   min-width: 4.6em;
   text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 28%, transparent);
 }
+.tbt.noData strong {
+  color: color-mix(in srgb, var(--muted) 78%, var(--fg));
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-align: center;
+  text-shadow: none;
+  text-transform: uppercase;
+}
+.tbt.speed.noData {
+  background: color-mix(in srgb, var(--panel) 62%, var(--bg));
+  border-color: color-mix(in srgb, var(--panel-border) 90%, var(--muted));
+}
+.tbt.speed.noData strong {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  min-width: 4.8em;
+}
+.tbt.speed.noData em,
+.tbt.speed.noData u {
+  color: color-mix(in srgb, var(--muted) 86%, var(--fg));
+}
 .tbt.speed em {
   color: color-mix(in srgb, var(--accent) 72%, var(--fg));
 }
@@ -844,6 +918,18 @@ h2 { font-size: 1rem; }
   flex-shrink: 0;
   gap: 4px;
   padding: 3px;
+}
+.tb-group-label {
+  border-right: 1px solid var(--panel-border);
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 0.52rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  margin-right: 2px;
+  padding: 0 6px 0 3px;
+  text-transform: uppercase;
 }
 .tb-btn {
   align-items: center;
@@ -956,6 +1042,12 @@ h2 { font-size: 1rem; }
   }
   .tbt.speed strong {
     font-size: 1.1rem;
+    min-width: 0;
+  }
+  .tbt.noData strong,
+  .tbt.speed.noData strong {
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
     min-width: 0;
   }
   .tbt.brake {
