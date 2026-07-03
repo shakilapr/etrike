@@ -130,6 +130,9 @@
     group,
     items: healthBar.filter((item) => item.group === group)
   }));
+
+  $: ecuHealth = healthBar.filter((item) => item.group === "ECU");
+  $: ecuReady = ecuHealth.filter((item) => item.state === "ok").length;
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -182,33 +185,39 @@
   <div class="tb-health-row">
     <div class="tb-health" aria-label="System health">
       {#each healthByGroup as section}
-        <span class="tbh-group" aria-label={section.group + " health"}>
+        <span class="tbh-group" class:tbh-group-ecu={section.group === "ECU"} aria-label={section.group + " health"}>
           <span class="tbh-group-label">{section.group}</span>
-          {#each section.items as h}
-            <span class="tbh" data-state={h.state} title={h.title}>
-              <span class="tbh-icon" aria-hidden="true">
-                {#if h.kind === "api"}
-                  <svg viewBox="0 0 24 24"><path d="M5 7h14v10H5z"/><path d="M8 20h8M12 17v3"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></svg>
-                {:else if h.kind === "usb"}
-                  <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M7 13a3 3 0 0 0 3 3h2"/><path d="M17 13a3 3 0 0 1-3 3h-2"/><path d="M18 10v4h-2v-4z"/></svg>
-                {:else if h.kind === "can"}
-                  <svg viewBox="0 0 24 24"><path d="M4 8h16v8H4z"/><path d="M7 8V5m10 3V5M7 19v-3m10 3v-3"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
-                {:else if h.kind === "motor"}
-                  <svg viewBox="0 0 24 24"><path d="M5 9h10l3 3v4H5z"/><path d="M2 11h3m13 2h4M8 9V6h5v3"/><path d="M8 13h4"/></svg>
-                {:else if h.kind === "steer"}
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 12l-4 6m4-6 4 6"/></svg>
-                {:else if h.kind === "brake"}
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M7 7 5 5m12 2 2-2M7 17l-2 2m12-2 2 2"/><path d="M12 8v5"/></svg>
-                {:else}
-                  <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/></svg>
-                {/if}
-              </span>
-              <span class="tbh-copy">
-                <em>{h.label}</em>
-                <strong>{h.value}</strong>
-              </span>
+          {#if section.group === "ECU"}
+            <span class="tbh-rollup" data-state={ecuReady === ecuHealth.length ? "ok" : ecuReady > 0 ? "warn" : "bad"} title="ECU presence summary">
+              <span>{ecuReady}/{ecuHealth.length}</span>
+              <strong>ready</strong>
             </span>
-          {/each}
+            <span class="ecu-dots" aria-label="ECU detail">
+              {#each section.items as h}
+                <span class="ecu-dot" data-state={h.state} title={h.title}>
+                  <span>{h.label}</span>
+                </span>
+              {/each}
+            </span>
+          {:else}
+            {#each section.items as h}
+              <span class="tbh" data-state={h.state} title={h.title}>
+                <span class="tbh-icon" aria-hidden="true">
+                  {#if h.kind === "api"}
+                    <svg viewBox="0 0 24 24"><path d="M5 7h14v10H5z"/><path d="M8 20h8M12 17v3"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></svg>
+                  {:else if h.kind === "usb"}
+                    <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M7 13a3 3 0 0 0 3 3h2"/><path d="M17 13a3 3 0 0 1-3 3h-2"/><path d="M18 10v4h-2v-4z"/></svg>
+                  {:else}
+                    <svg viewBox="0 0 24 24"><path d="M4 8h16v8H4z"/><path d="M7 8V5m10 3V5M7 19v-3m10 3v-3"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
+                  {/if}
+                </span>
+                <span class="tbh-copy">
+                  <em>{h.label}</em>
+                  <strong>{h.value}</strong>
+                </span>
+              </span>
+            {/each}
+          {/if}
         </span>
       {/each}
     </div>
@@ -219,7 +228,7 @@
     <!-- Telemetry — fixed-width readouts -->
     <div class="tb-telem">
       <span class="tbt speed" title="Motor speed"><em>Speed</em> <strong>{t.motorSpeedKmh !== null ? t.motorSpeedKmh.toFixed(1) : "--.-"}</strong> <u>km/h</u></span>
-      <span class="tbt steer" title="Steering angle"><em>Steer</em> <strong>{t.steerAngleDeg !== null ? (t.steerAngleDeg > 0 ? "+" : "") + t.steerAngleDeg.toFixed(1) : "--.-"}</strong> <u>°</u></span>
+      <span class="tbt steer" title="Steering angle"><em>Steer</em> <strong>{t.steerAngleDeg !== null ? (t.steerAngleDeg > 0 ? "+" : "") + t.steerAngleDeg.toFixed(1) : "--.-"}</strong> <u>deg</u></span>
       <span class="tbt brake" title="Brake pressure">
         <em>Brake</em>
         <span class="tbt-gauge"><span class="tbt-fill" style="width:{Math.min((t.brakePressureMpa ?? 0) / 20 * 100, 100)}%"></span></span>
