@@ -941,7 +941,100 @@ AUTO mode to output a non-zero DAC voltage. **Do not commit this change.**
 
 ---
 
-## 13. References
+## 13. Hardware Verification Results (2026-07-03)
+
+Both RT and SYS boards were tested with vehicle firmware on the low CAN bus.
+No Host, MTR, EPS-C, or SEB connected.
+
+### 13.1 Hardware Under Test
+
+| Board | Chip | MAC | Notes |
+|-------|------|-----|-------|
+| RT | ESP32-S3 rev v0.2, 8MB PSRAM | `80:b5:4e:c7:d0:34` | Dual CAN (TWAI + MCP2515 via SPI) |
+| SYS | ESP32-S3 rev v0.2, 8MB PSRAM | `80:b5:4e:c5:b9:4c` | TWAI only, USB-Serial/JTAG |
+
+### 13.2 Low CAN Bus (TWAI) — Working
+
+Bidirectional traffic at 500 kbit/s verified with two independent tests:
+
+1. **Minimal test** (`can-test/src/main.cpp`): bare `app_main` loop, no RTOS tasks.
+   Each board sends 0x555 with 4-byte counter every 500ms. Both boards receive
+   each other's frames. Zero TX failures, TEC=0, REC=0, zero bus errors.
+
+2. **Vehicle firmware**: RT and SYS running production `vehicle` environment.
+   Both initialized TWAI at 500 kbit/s. Zero CAN TX failures on the low bus
+   (each board ACKs the other's frames at the controller level).
+
+### 13.3 High CAN Bus (MCP2515) — Working
+
+RT's MCP2515 SPI communication verified with dedicated SPI test
+(`can-test/src/spi_test.cpp`). Chip responds correctly: `CANSTAT=0x80`
+(Configuration mode after reset). SPI bus stable at 8 MHz for 2+ minutes
+continuous polling, zero errors.
+
+In vehicle firmware, MCP2515 operates in Normal mode. Intermittent TX failures
+(~17%) on the high bus are expected — no Host node present to ACK frames.
+The bus-off recovery mechanism works correctly.
+
+### 13.4 Firmware Stability
+
+| Metric | RT | SYS |
+|--------|-----|-----|
+| Boot crashes | 0 | 0 |
+| Watchdog events | 0 | 0 |
+| Stack overflows | 0 | 0 |
+| CAN TX failures (low bus) | 0 | 0 |
+| CAN TX failures (high bus) | 29/168 (17%) — no Host | N/A |
+
+### 13.5 Issues Found and Fixed
+
+**CONFIG_FREERTOS_HZ = 100 (not 1000).** ESP-IDF Kconfig defaulted to 100 Hz
+(10ms tick) despite `-D CONFIG_FREERTOS_HZ=1000` in build flags. sdkconfig.h's
+unconditional `#define` overrides compiler `-D` flags. This caused:
+
+- `pdMS_TO_TICKS(5)` = 0 → `xTaskDelayUntil` assert in RT `t_can_tx_low`
+- `pdMS_TO_TICKS(1)` = 0 → MCP2515 SPI continuous polling → bus lockup + watchdog
+- Stack corruption on SYS from incorrect timing (GPIO 308/238 errors)
+
+**Fix:** `shared/can/patch_sdkconfig.py` — PlatformIO pre-build script that
+patches generated `sdkconfig.h` after CMake configure. Sets `CONFIG_FREERTOS_HZ=1000`
+and `CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144`.
+
+**SYS task stacks too small for 1ms tick.** Minimum was 1536 bytes — increased
+all stacks ~20-33% (min now 2048). Main task stack 3584→6144.
+
+**SYS NVS corruption** from 6600+ crash-loop reboots. Required full chip erase
+(`pio run --target erase`) before clean flash.
+
+### 13.6 Expected Bench Behavior (Vehicle Firmware)
+
+With vehicle firmware on bench (no other ECUs):
+
+| Symptom | Cause | Fix for clean bench testing |
+|---------|-------|----------------------------|
+| RT "Command stale" every 100ms | No Host sending 0x300 | Use `bench` env or inject 0x300 via CANalyst-II |
+| RT high CAN TX intermittent fails | No Host to ACK MCP2515 frames | Use `bench` env (MCP2515 in ListenOnly) |
+| SYS ESTOP loop (MTR ACK timeout) | No MTR to respond to ESTOP | Use `bench` env (`CONFIG_BYPASS_MTR_ABSENT`) |
+| SYS floating ESTOP button | GPIO1 NC, floating = "pressed" | Pull GPIO1 high or use `bench` env (`TESTING` flag) |
+
+### 13.7 Test Code
+
+Minimal test projects at `can-test/`:
+- `can-test/src/main.cpp` — TWAI send/receive, no RTOS tasks
+- `can-test/src/spi_test.cpp` — MCP2515 SPI register dump and verification
+- `can-test/platformio.ini` — `twai` and `spi` environments
+
+Usage:
+```bash
+cd can-test
+pio run -e twai -t upload --upload-port COM6   # TWAI test
+pio run -e spi  -t upload --upload-port COM6   # SPI test (swap main.cpp first)
+pio device monitor --port COM6
+```
+
+---
+
+## 14. References
 
 - [Architecture Overview](../architecture.md) — system topology and message catalog
 - [CAN Protocol](../shared/can/can_protocol.h) — message ID constants and struct layouts
