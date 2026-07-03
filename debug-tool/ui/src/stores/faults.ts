@@ -1,5 +1,5 @@
 import { latestById } from "./can";
-import { logError } from "./errors";
+import { logError, logWarn, logInfo } from "./errors";
 
 // ── ESTOP reason codes ──
 const ESTOP_REASONS: Record<number, string> = {
@@ -145,7 +145,7 @@ export function initFaultWatcher(): () => void {
         if (cd("brake_on"))
           logError("BRAKE FAULT — actuator or pressure sensor (triggers ESTOP)");
       } else {
-        if (cd("brake_off")) { logError("Brake fault cleared"); flushEstop(); }
+        if (cd("brake_off")) { logInfo("Brake fault cleared"); flushEstop(); }
       }
       lastBrakeFault = brakeFault;
     }
@@ -166,24 +166,22 @@ export function initFaultWatcher(): () => void {
     // ═══ Mode changes ═══
     if (mode !== null && mode !== lastMode) {
       const labels = ["MANUAL", "AUTO", "ESTOP"];
-      const label = labels[mode] ?? "?" + mode;
-      if (cd("mode")) logError("Mode changed to " + label);
+      if (cd("mode")) logInfo("Mode: " + labels[mode] ?? "?" + mode);
       lastMode = mode;
     }
 
     // ═══ Gear changes ═══
     if (gear !== null && gear !== lastGear) {
       const labels = ["N", "D", "S", "R"];
-      const label = labels[gear] ?? "?" + gear;
-      if (cd("gear")) logError("Gear: " + label);
+      if (cd("gear")) logInfo("Gear: " + (labels[gear] ?? "?" + gear));
       lastGear = gear;
     }
 
     // ═══ Motor fault ═══
     if (faultFlags !== lastMotorFault && cd("motor")) {
       if (faultFlags > 0)
-        logError("Motor fault 0x" + faultFlags.toString(16).toUpperCase().padStart(2,"0"));
-      else if (lastMotorFault > 0) logError("Motor fault cleared");
+        logWarn("Motor fault 0x" + faultFlags.toString(16).toUpperCase().padStart(2,"0"));
+      else if (lastMotorFault > 0) logInfo("Motor fault cleared");
       lastMotorFault = faultFlags;
     }
 
@@ -194,10 +192,8 @@ export function initFaultWatcher(): () => void {
       const added = now.filter(f => !was.includes(f));
       const removed = was.filter(f => !now.includes(f));
       if (added.length)   logError("SES fault: " + added.join(", "));
-      if (removed.length) logError("SES cleared: " + removed.join(", "));
+      if (removed.length) logInfo("SES cleared: " + removed.join(", "));
       lastSesMask = sesMask;
-    } else if (sesL3 && sesMask === lastSesMask && cd("ses_l3")) {
-      // L3 but no bit change — log once
     }
 
     // ═══ SEB faults (detailed) ═══
@@ -207,22 +203,29 @@ export function initFaultWatcher(): () => void {
       const added = now.filter(f => !was.includes(f));
       const removed = was.filter(f => !now.includes(f));
       if (added.length)   logError("SEB fault: " + added.join(", "));
-      if (removed.length) logError("SEB cleared: " + removed.join(", "));
+      if (removed.length) logInfo("SEB cleared: " + removed.join(", "));
       lastSebMask = sebMask;
     }
 
     // ═══ Steering diag fault ═══
     if (steerDiagFault !== lastSteerDiagFault && cd("steer_diag")) {
-      if (steerDiagFault) logError("Steering diagnostic fault (0x310)");
-      else logError("Steering diagnostic fault cleared");
+      if (steerDiagFault) logWarn("Steering diag fault (0x310)");
+      else logInfo("Steering diag fault cleared");
       lastSteerDiagFault = steerDiagFault;
     }
 
     // ═══ Obstacle proximity ═══
     if (obstacleWarn !== lastObstacleWarn && cd("obstacle")) {
-      if (obstacleWarn) logError("OBSTACLE — " + distMm + "mm (<2m)");
-      else logError("Obstacle cleared");
+      if (obstacleWarn) logWarn("Obstacle: " + distMm + "mm (<2m)");
+      else logInfo("Obstacle cleared");
       lastObstacleWarn = obstacleWarn;
+    }
+
+    // ═══ ESTOP burst ═══
+    if (estopToggleCount >= 3 && cd("estop_burst")) {
+      logError("ESTOP burst: " + estopToggleCount + " cycles in " +
+        ((Date.now() - estopToggleStart) / 1000).toFixed(1) + "s, cause=" + rLabel(estopLastReason));
+      estopToggleCount = 0; estopToggleStart = 0;
     }
 
     // ═══ Mobility blockers ═══
@@ -243,7 +246,7 @@ export function initFaultWatcher(): () => void {
     const blocked = blockers.length > 0;
     if (blocked !== lastBlocked && cd("mobility")) {
       if (blocked) logError("BLOCKED: " + blockers.join("; "));
-      else logError("CLEAR — vehicle ready");
+      else logInfo("CLEAR — vehicle ready");
     }
     lastBlocked = blocked;
   });
