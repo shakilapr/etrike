@@ -627,8 +627,7 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "RT ESP32-S3 boot");
 
     rt::can_low_init();
-    bool has_high_can = false;  // TEMP: skip MCP2515 to isolate TWAI
-    // bool has_high_can = g_can_high.init();
+    bool has_high_can = g_can_high.init();
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();
