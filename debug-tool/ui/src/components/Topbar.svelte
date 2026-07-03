@@ -36,9 +36,9 @@
   function gColor(g: string | null): string {
     switch (g) { case "D": return "var(--ok)"; case "R": return "var(--warn)"; case "S": return "var(--accent)"; default: return "var(--muted)"; }
   }
-  // ── Mode color ──
-  function mColor(m: string | null): string {
-    switch (m) { case "MANUAL": return "var(--ok)"; case "AUTO": return "var(--accent)"; case "ESTOP": return "var(--err)"; default: return "var(--muted)"; }
+  // ── Mode state ──
+  function modeClass(m: string | null): string {
+    switch (m) { case "MANUAL": return "manual"; case "AUTO": return "auto"; case "ESTOP": return "estop"; default: return "unknown"; }
   }
   // ── Safety color ──
   function sColor(s: string | null): string {
@@ -74,16 +74,62 @@
 
   const online = () => $status.bridge?.connected ?? false;
 
-  // Health bar — each item auto-computes its ok/bad state from reactive stores
+  type HealthKind = "api" | "usb" | "can" | "ecu" | "motor" | "steer" | "brake";
+  type HealthItem = {
+    group: "Link" | "Bus" | "ECU";
+    label: string;
+    value: string;
+    kind: HealthKind;
+    state: "ok" | "warn" | "bad";
+    title: string;
+  };
+
+  const healthGroups = ["Link", "Bus", "ECU"] as const;
+
+  function busValue(bus: Bus): string {
+    const s = $stats.buses[bus];
+    if (s.active && s.fps > 0) return Math.round(s.fps) + " fps";
+    return s.total > 0 ? "seen" : "silent";
+  }
+
+  // Health bar — grouped like a vehicle diagnostic cluster: interface, CAN bus, ECUs.
   $: healthBar = [
-    { label: "API",  ok: Boolean($status.backend_online),               okTT: "Backend online",         badTT: "Backend offline" },
-    { label: "USB",  ok: Boolean($status.bridge?.connected),            okTT: bridgeTT(),               badTT: "Bridge disconnected" },
-    { label: "RT",   ok: $ecuPresence.rt,                               okTT: "RT controller present",  badTT: "RT missing" },
-    { label: "SYS",  ok: $ecuPresence.sys,                              okTT: "SYS controller present", badTT: "SYS missing" },
-    { label: "MTR",  ok: $ecuPresence.mtr,                              okTT: "Motor ECU present",      badTT: "Motor missing" },
-    { label: "SES",  ok: $ecuPresence.ses,                              okTT: "Steering ECU present",   badTT: "Steering missing" },
-    { label: "SEB",  ok: $ecuPresence.seb,                              okTT: "Brake ECU present",      badTT: "Brake missing" },
-  ];
+    {
+      group: "Link", label: "API", value: $status.backend_online ? "online" : "offline", kind: "api",
+      state: hState(Boolean($status.backend_online)), title: $status.backend_online ? "Backend online" : "Backend offline"
+    },
+    {
+      group: "Link", label: "USB", value: $status.bridge?.connected ? "linked" : "open", kind: "usb",
+      state: hState(Boolean($status.bridge?.connected)), title: $status.bridge?.connected ? bridgeTT() : "Bridge disconnected"
+    },
+    { group: "Bus", label: "High", value: busValue("high"), kind: "can", state: canState("high"), title: canTT("high") },
+    { group: "Bus", label: "Low",  value: busValue("low"),  kind: "can", state: canState("low"),  title: canTT("low") },
+    {
+      group: "ECU", label: "RT", value: $ecuPresence.rt ? "ready" : "lost", kind: "ecu",
+      state: hState($ecuPresence.rt), title: $ecuPresence.rt ? "RT controller present" : "RT controller missing"
+    },
+    {
+      group: "ECU", label: "SYS", value: $ecuPresence.sys ? "ready" : "lost", kind: "ecu",
+      state: hState($ecuPresence.sys), title: $ecuPresence.sys ? "SYS controller present" : "SYS controller missing"
+    },
+    {
+      group: "ECU", label: "MTR", value: $ecuPresence.mtr ? "ready" : "lost", kind: "motor",
+      state: hState($ecuPresence.mtr), title: $ecuPresence.mtr ? "Motor controller present" : "Motor controller missing"
+    },
+    {
+      group: "ECU", label: "SES", value: $ecuPresence.ses ? "ready" : "lost", kind: "steer",
+      state: hState($ecuPresence.ses), title: $ecuPresence.ses ? "Steer-by-wire ECU present" : "Steer-by-wire ECU missing"
+    },
+    {
+      group: "ECU", label: "SEB", value: $ecuPresence.seb ? "ready" : "lost", kind: "brake",
+      state: hState($ecuPresence.seb), title: $ecuPresence.seb ? "Brake-by-wire ECU present" : "Brake-by-wire ECU missing"
+    },
+  ] satisfies HealthItem[];
+
+  $: healthByGroup = healthGroups.map((group) => ({
+    group,
+    items: healthBar.filter((item) => item.group === group)
+  }));
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -92,23 +138,12 @@
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <header class="topbar v3">
   <!-- ── Row 1 ── -->
-  <div class="tb-row">
+  <div class="tb-row tb-row-main">
     <!-- Brand -->
     <div class="tb-brand">
       <svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 12l4-8h8l4 8-8 8z" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/></svg>
       <span>E-Trike</span>
     </div>
-
-    <!-- Health bar: each ECU is one entry in the array, green=present, red=missing -->
-    <div class="tb-health">
-      {#each healthBar as h}
-        <span class="tbh" data-state={h.ok ? 'ok' : 'bad'} title={h.ok ? h.okTT : h.badTT}>
-          <em>{h.label}</em>
-        </span>
-      {/each}
-    </div>
-
-    <span class="tb-sep"></span>
 
     <!-- Indicators — automotive-standard shapes, fixed size -->
     <div class="tb-indicators">
@@ -136,10 +171,46 @@
     <!-- Vehicle state: gear + mode — fixed width badges -->
     <div class="tb-vstate">
       <span class="tvs-gear" style="color:{gColor(t.gear)};border-color:{gColor(t.gear)}">{t.gear ?? "?"}</span>
-      <span class="tvs-mode" style="color:{mColor(t.mode)};background:{mColor(t.mode)}">{t.mode ?? "--"}</span>
+      <span class="tvs-mode {modeClass(t.mode)}">{t.mode ?? "--"}</span>
       {#if t.safetyState && t.safetyState !== "Normal"}
         <span class="tvs-safety" style="color:{sColor(t.safetyState)}">{t.safetyState}</span>
       {/if}
+    </div>
+  </div>
+
+  <!-- Health bar: diagnostic groups mirror vehicle bring-up checks. -->
+  <div class="tb-health-row">
+    <div class="tb-health" aria-label="System health">
+      {#each healthByGroup as section}
+        <span class="tbh-group" aria-label={section.group + " health"}>
+          <span class="tbh-group-label">{section.group}</span>
+          {#each section.items as h}
+            <span class="tbh" data-state={h.state} title={h.title}>
+              <span class="tbh-icon" aria-hidden="true">
+                {#if h.kind === "api"}
+                  <svg viewBox="0 0 24 24"><path d="M5 7h14v10H5z"/><path d="M8 20h8M12 17v3"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></svg>
+                {:else if h.kind === "usb"}
+                  <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M7 13a3 3 0 0 0 3 3h2"/><path d="M17 13a3 3 0 0 1-3 3h-2"/><path d="M18 10v4h-2v-4z"/></svg>
+                {:else if h.kind === "can"}
+                  <svg viewBox="0 0 24 24"><path d="M4 8h16v8H4z"/><path d="M7 8V5m10 3V5M7 19v-3m10 3v-3"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
+                {:else if h.kind === "motor"}
+                  <svg viewBox="0 0 24 24"><path d="M5 9h10l3 3v4H5z"/><path d="M2 11h3m13 2h4M8 9V6h5v3"/><path d="M8 13h4"/></svg>
+                {:else if h.kind === "steer"}
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 12l-4 6m4-6 4 6"/></svg>
+                {:else if h.kind === "brake"}
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M7 7 5 5m12 2 2-2M7 17l-2 2m12-2 2 2"/><path d="M12 8v5"/></svg>
+                {:else}
+                  <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/></svg>
+                {/if}
+              </span>
+              <span class="tbh-copy">
+                <em>{h.label}</em>
+                <strong>{h.value}</strong>
+              </span>
+            </span>
+          {/each}
+        </span>
+      {/each}
     </div>
   </div>
 
