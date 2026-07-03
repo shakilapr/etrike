@@ -25,6 +25,7 @@
 #include "driver/gpio.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "mqtt_client.h"
 #include "cJSON.h"
@@ -32,9 +33,22 @@
 static const char *TAG = "debug-esp32";
 
 // ── Configuration ──
+// Override via Kconfig (idf.py menuconfig) or define defaults here for CI.
+#ifndef CONFIG_DEBUG_WIFI_SSID
+#define WIFI_SSID      "debug-ap"
+#else
 #define WIFI_SSID      CONFIG_DEBUG_WIFI_SSID
+#endif
+#ifndef CONFIG_DEBUG_WIFI_PASSWORD
+#define WIFI_PASS      "debug-pass"
+#else
 #define WIFI_PASS      CONFIG_DEBUG_WIFI_PASSWORD
+#endif
+#ifndef CONFIG_DEBUG_MQTT_BROKER
+#define MQTT_BROKER    "mqtt://192.168.1.1"
+#else
 #define MQTT_BROKER    CONFIG_DEBUG_MQTT_BROKER
+#endif
 #define MQTT_PORT      1883
 
 #define TWAI_TX_PIN    GPIO_NUM_5
@@ -79,11 +93,11 @@ static void task_status(void *arg);
 static void wifi_init(void);
 static void mqtt_init(void);
 static char *frame_to_json(const can_frame_t *frame);
-static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
+[[maybe_unused]] static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data);
 
 // ── Main ──
-void app_main(void) {
+extern "C" void app_main(void) {
     ESP_LOGI(TAG, "debug-esp32 starting");
 
     // Init NVS
@@ -156,9 +170,9 @@ static void wifi_init(void) {
 }
 
 // ── MQTT ──
-static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
+[[maybe_unused]] static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data) {
-    esp_mqtt_event_handle_t event = event_data;
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT connected");
@@ -184,7 +198,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             }
             if (j_dlc) cmd.dlc = (uint8_t)j_dlc->valueint;
             if (j_data && cJSON_IsArray(j_data)) {
-                for (int i = 0; i < j_data->size && i < 8; i++) {
+                for (int i = 0; i < cJSON_GetArraySize(j_data) && i < 8; i++) {
                     cmd.data[i] = (uint8_t)cJSON_GetArrayItem(j_data, i)->valueint;
                 }
             }
@@ -200,12 +214,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 }
 
 static void mqtt_init(void) {
-    esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = "mqtt://" MQTT_BROKER,
-        .broker.address.port = MQTT_PORT,
-    };
+    esp_mqtt_client_config_t mqtt_cfg = {};
+    mqtt_cfg.broker.address.uri = "mqtt://" MQTT_BROKER;
+    mqtt_cfg.broker.address.port = MQTT_PORT;
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
+    esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
     esp_mqtt_client_start(mqtt_client);
 }
 
@@ -218,7 +231,7 @@ static void task_can_rx_a(void *arg) {
                 .bus   = 0,  // high
                 .id    = msg.identifier,
                 .dlc   = msg.data_length_code,
-                .ts_us = esp_timer_get_time(),
+                .ts_us = (uint64_t)esp_timer_get_time(),
             };
             memcpy(frame.data, msg.data, msg.data_length_code);
             xQueueSend(decode_q, &frame, 0);
@@ -227,7 +240,7 @@ static void task_can_rx_a(void *arg) {
 }
 
 // ── CAN RX task (MCP2515) — stub ──
-static void task_can_rx_b(void *arg) {
+[[maybe_unused]] static void task_can_rx_b(void *arg) {
     // TODO: implement when MCP2515 hardware is present
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -314,7 +327,7 @@ static void task_stats(void *arg) {
             for (int id = 0; id < 0x800; id++) {
                 if (g_stats.rx_by_id[b][id] > 0) {
                     char key[8];
-                    snprintf(key, sizeof(key), "0x%03X", id);
+                    snprintf(key, sizeof(key), "0x%03X", (unsigned int)id);
                     cJSON_AddNumberToObject(by_id, key, g_stats.rx_by_id[b][id]);
                 }
             }
@@ -355,7 +368,7 @@ static char *frame_to_json(const can_frame_t *frame) {
     cJSON_AddStringToObject(root, "bus", frame->bus == 1 ? "low" : "high");
 
     char id_str[8];
-    snprintf(id_str, sizeof(id_str), "0x%03X", frame->id);
+    snprintf(id_str, sizeof(id_str), "0x%03lX", frame->id);
     cJSON_AddStringToObject(root, "id", id_str);
     cJSON_AddNumberToObject(root, "dlc", frame->dlc);
 

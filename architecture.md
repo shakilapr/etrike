@@ -318,7 +318,7 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | A — Safety (ASIL) | 5–4 | ESTOP, mode, RT heartbeat, EGAS L2, brake control, CAN TX |
 | B — Body (QM) | 3–1 | Lights, DCDC, indicators, 12V relay, diagnostics, heartbeat |
 
-**15 FreeRTOS tasks. TWAI GPIO5/4 (low bus only). I2C DAC (MCP4725, migrating to MTR).**
+**13–15 FreeRTOS tasks (vehicle=13, bench=15 with SYS_OWNS_MOTOR). TWAI GPIO5/4 (low bus only). I2C DAC + gear MOSFETs are bench-only; MTR owns all motor I/O in vehicle.**
 
 ### CAN I/O
 
@@ -516,11 +516,11 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 26 | Bulb MANUAL | Mode indicator |
 | 27 | 12V relay | Accessory power relay |
 | 32 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
-| 33 | Gear D out | MOSFET output (72V) |
-| 34 | Gear S out | MOSFET output (72V) |
-| 35 | Gear R out | MOSFET output (72V) |
+| 33 | — | *Reserved (legacy SYS_OWNS_MOTOR bench path — MTR owns gear in vehicle)* |
+| 34 | — | *Reserved* |
+| 35 | — | *Reserved* |
 
-### MTR STM32
+### MTR STM32 (Vehicle — owns all motor I/O)
 
 | Pin | Function | Notes |
 |-----|----------|-------|

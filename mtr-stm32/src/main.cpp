@@ -5,7 +5,7 @@
  *   - MCP4725 I2C DAC (0-5V throttle output)
  *   - ADC (throttle grip position, 0-5V)
  *   - TLP281 optoisolator inputs (72V gear sense, active-low)
- *   - Relay outputs (72V gear control)
+ *   - MOSFET outputs (72V gear control)
  *   - ESTOP button GPIO (Level 3 — direct hardware kill, also monitored)
  *   - CAN (low-level bus, bxCAN)
  *
@@ -22,6 +22,9 @@
 
 #include <cstdint>
 #include <atomic>
+
+/* STM32 HAL */
+#include "stm32f1xx_hal.h"
 
 /* FreeRTOS */
 #include "FreeRTOS.h"
@@ -40,7 +43,7 @@
 /* ── CubeMX-generated stubs — replace with generated code ──────────── */
 /* When STM32CubeMX project is configured, these externs link to the   */
 /* generated main.c. Until then, stubs satisfy the linker for CI.       */
-extern "C" {
+namespace mtr {
 CAN_HandleTypeDef hcan = {};
 I2C_HandleTypeDef  hi2c1 = {};
 ADC_HandleTypeDef  hadc1 = {};
@@ -215,16 +218,16 @@ void task_safety(void* pvParameters) {
  *
  *   MANUAL (mode=0):
  *     - Read throttle ADC → MCP4725 DAC (pass-through)
- *     - Read TLP281 gear sense → gear relays (pass-through)
+ *     - Read TLP281 gear sense → gear MOSFETs (pass-through)
  *
  *   AUTO (mode=1):
  *     - Follow CAN 0x204 RT_MotorSpeed → MCP4725 DAC
- *     - Follow CAN 0x204 RT_Gear → gear relays
+ *     - Follow CAN 0x204 RT_Gear → gear MOSFETs
  *     - If 0x204 stale (>200 ms since last frame): speed=0, gear=N
  *
  *   ESTOP (mode=2):
  *     - DAC = 0 (cut throttle)
- *     - All gear relays off
+ *     - All gear MOSFETs off
  */
 void task_control(void* pvParameters) {
     (void)pvParameters;
@@ -254,7 +257,7 @@ void task_control(void* pvParameters) {
                 // Hardware ESTOP GPIO (Level 3) is the backstop.
                 g_fault_flags.fetch_or(shared::kMtrFaultAdcFault, std::memory_order_relaxed);
             }
-            mtr::g_gear.all_off();                // All relays off → N
+            mtr::g_gear.all_off();                // All MOSFETs off → N
 
             g_actual_speed_mmps.store(0, std::memory_order_relaxed);
             g_current_gear.store(static_cast<uint8_t>(can::Gear::N),
@@ -285,7 +288,7 @@ void task_control(void* pvParameters) {
             /* Write to DAC */
             mtr::g_dac.set_speed_mmps(speed);
 
-            /* Read TLP281 gear sense → mirror to relays */
+            /* Read TLP281 gear sense → mirror to MOSFETs */
             mtr::g_gear.pass_through();
 
             /* Check for gear conflict and set fault flag */
@@ -325,12 +328,12 @@ void task_control(void* pvParameters) {
             /* Write DAC */
             mtr::g_dac.set_speed_mmps(cmd_speed);
 
-            /* Set gear relays — only if speed is safe for contactor switching (C7).
+            /* Set gear MOSFETs — only if speed is safe for contactor switching (C7).
              * Shifting 72V contactors under load damages hardware. */
             int16_t current_speed = g_actual_speed_mmps.load(std::memory_order_relaxed);
             int16_t abs_speed = current_speed >= 0 ? current_speed : int16_t(-current_speed);
             if (abs_speed <= mtr::kGearSwitchMaxSpeedMmps) {
-                mtr::g_gear.set_relays(static_cast<can::Gear>(cmd_gear & 0x03));
+                mtr::g_gear.set_mosfets(static_cast<can::Gear>(cmd_gear & 0x03));
             }
             /* else: defer gear change — keep current gear until speed drops */
 
@@ -425,7 +428,7 @@ int main(void) {
     /* ── MTR module init ── */
     mtr::g_dac.init();           // DAC starts at 0 V
     mtr::g_throttle.init();      // ADC ready
-    mtr::g_gear.init();          // All relays OFF
+    mtr::g_gear.init();          // All MOSFETs OFF
     mtr::g_can.init();           // bxCAN started + RX interrupt armed
 
     /* ── Create FreeRTOS tasks ── */

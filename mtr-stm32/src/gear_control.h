@@ -1,13 +1,13 @@
 #pragma once
-// Gear control — TLP281 optoisolator input read + relay output drives.
+// Gear control — TLP281 optoisolator input read + MOSFET output drives.
 //
 // TLP281 inputs (active-low):
 //   72V present → opto LED on → phototransistor conducts → GPIO LOW
 //   72V absent  → phototransistor off → internal pull-up → GPIO HIGH
 //
-// Relay outputs (active-high):
+// MOSFET outputs (active-high):
 //   GPIO HIGH → optocoupler LED on → TRIAC/transistor gate on → 72V to ECU
-//   GPIO LOW  → relay off → ECU gear line floating
+//   GPIO LOW  → MOSFET off → ECU gear line floating
 //
 // STM32 HAL GPIO access (helpers use the pin encoding from config.h):
 //   GPIO_PORT(p) = (p < 16) ? GPIOA : ((p < 32) ? GPIOB : GPIOC)
@@ -22,7 +22,7 @@ namespace mtr {
 class GearControl {
 public:
     /// Initialise gear I/O pins.
-    /// Sets relay outputs to OFF (LOW) and configures TLP281 inputs with
+    /// Sets MOSFET outputs to OFF (LOW) and configures TLP281 inputs with
     /// internal pull-up (handled by CubeMX MX_GPIO_Init()).
     void init() {
         all_off();
@@ -57,25 +57,25 @@ public:
     /// the kMtrFaultGearConflict flag in g_fault_flags.
     bool gear_conflict_detected() const { return m_gear_conflict; }
 
-    /// Set relay outputs to match the given gear.
+    /// Set MOSFET outputs to match the given gear.
     /// WARNING: Shifting 72V contactors under load can damage hardware.
     /// Caller must ensure vehicle speed < 50 mm/s before calling.
-    void set_relays(can::Gear gear) {
-        set_relay_pin(kGearDOut, gear == can::Gear::D);
-        set_relay_pin(kGearSOut, gear == can::Gear::S);
-        set_relay_pin(kGearROut, gear == can::Gear::R);
+    void set_mosfets(can::Gear gear) {
+        set_mosfet_pin(kGearDOut, gear == can::Gear::D);
+        set_mosfet_pin(kGearSOut, gear == can::Gear::S);
+        set_mosfet_pin(kGearROut, gear == can::Gear::R);
         m_current_gear = gear;
     }
 
-    /// Pass-through: read TLP281 sense lines, mirror to relay outputs.
+    /// Pass-through: read TLP281 sense lines, mirror to MOSFET outputs.
     void pass_through() {
         can::Gear g = read_sense();
-        set_relays(g);
+        set_mosfets(g);
     }
 
-    /// All relays OFF (neutral / ESTOP).
+    /// All MOSFETs OFF (neutral / ESTOP).
     void all_off() {
-        set_relays(can::Gear::N);
+        set_mosfets(can::Gear::N);
     }
 
     /// Currently selected gear (last written).
@@ -90,8 +90,8 @@ private:
         return HAL_GPIO_ReadPin(port, mask) == GPIO_PIN_RESET;
     }
 
-    /// Set a single relay output pin.
-    static void set_relay_pin(int pin, bool on) {
+    /// Set a single MOSFET output pin.
+    static void set_mosfet_pin(int pin, bool on) {
         GPIO_TypeDef* port = (pin < 16) ? GPIOA : ((pin < 32) ? GPIOB : GPIOC);
         uint16_t mask = 1 << (pin & 0x0F);
         HAL_GPIO_WritePin(port, mask, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
