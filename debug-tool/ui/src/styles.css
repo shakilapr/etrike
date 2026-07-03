@@ -519,6 +519,56 @@ h2 { font-size: 1rem; }
   z-index: 10;
 }
 
+/* Vehicle state: gear + mode */
+.vstate-strip {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.vstate-gear {
+  align-items: center;
+  display: flex;
+  min-width: 30px;         /* N/D/S/R all same width in mono font */
+}
+.vstate-badge {
+  border: 2px solid var(--muted);
+  border-radius: 4px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 24px;
+  padding: 2px 6px;
+  text-align: center;
+}
+.vstate-mode {
+  border-radius: 4px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  min-width: 56px;         /* MANUAL=6ch AUTO=4ch ESTOP=5ch → lock to widest */
+  padding: 2px 8px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.vstate-safety {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  min-width: 40px;
+  text-transform: uppercase;
+}
+.vstate-mode.manual { background: color-mix(in srgb, var(--ok) 20%, var(--bg)); color: var(--ok); }
+.vstate-mode.auto   { background: color-mix(in srgb, var(--accent) 20%, var(--bg)); color: var(--accent); }
+.vstate-mode.estop  { background: color-mix(in srgb, var(--err) 20%, var(--bg)); color: var(--err); }
+.vstate-safety {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* Telemetry readouts */
 .telemetry-strip {
   align-items: center;
@@ -542,8 +592,8 @@ h2 { font-size: 1rem; }
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 0.82rem;
   font-weight: 700;
-  min-width: 2.8em;
   text-align: right;
+  width: 4.2em;             /* wide enough for "+3276.8" or "--.-" without shift */
 }
 .telem-unit {
   color: var(--muted);
@@ -587,57 +637,36 @@ h2 { font-size: 1rem; }
 .cmd-strip {
   align-items: center;
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 .cmd-btn {
   align-items: center;
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--fg);
+  border-radius: 5px;
+  color: var(--muted);
   cursor: pointer;
   display: inline-flex;
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.72rem;
-  font-weight: 700;
-  gap: 5px;
   justify-content: center;
-  min-height: 32px;
-  padding: 0 10px;
-  transition: background 0.15s, border-color 0.15s;
-  white-space: nowrap;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .cmd-btn:hover:not(:disabled) {
-  background: var(--accent-dim);
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--fg);
 }
 .cmd-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
-.cmd-icon {
-  font-size: 0.85rem;
-  line-height: 1;
-}
-.cmd-label {
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.cmd-btn.mode-btn {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.cmd-btn.on-btn {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-.cmd-btn.estop-btn {
+.cmd-btn.estop-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 12%, var(--bg));
   border-color: var(--err);
   color: var(--err);
-}
-.cmd-btn.estop-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--err) 18%, var(--bg));
 }
 
 /* Action buttons — compact icon-only */
@@ -761,13 +790,16 @@ h2 { font-size: 1rem; }
   gap: 6px;
 }
 .term-btn {
+  align-items: center;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 4px;
   color: var(--fg);
   cursor: pointer;
+  display: inline-flex;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 0.72rem;
+  gap: 4px;
   padding: 3px 10px;
   transition: background 0.15s;
 }
@@ -857,157 +889,48 @@ h2 { font-size: 1rem; }
 }
 
 /* ── Simulator ── */
-.sim-panel {
-  max-width: 720px;
-}
-.sim-header {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.sim-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
+.sim-panel { max-width: 640px; }
+.sim-header { align-items: center; display: flex; gap: 12px; margin-bottom: 6px; }
+.sim-title { font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .sim-master {
-  background: var(--panel);
-  border: 2px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--fg);
-  cursor: pointer;
+  background: var(--panel); border: 2px solid var(--panel-border); border-radius: 6px;
+  color: var(--fg); cursor: pointer;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.78rem;
-  font-weight: 800;
-  padding: 5px 16px;
+  font-size: 0.74rem; font-weight: 800; padding: 4px 14px;
   transition: background 0.15s, border-color 0.15s;
 }
-.sim-master.on {
-  border-color: var(--err);
-  color: var(--err);
-}
-.sim-master.off {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-.sim-master:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.sim-warn {
-  color: var(--warn);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-.sim-desc {
-  color: var(--muted);
-  font-size: 0.74rem;
-  margin: 0 0 16px;
-  line-height: 1.4;
-}
+.sim-master.on  { border-color: var(--err); color: var(--err); }
+.sim-master.off { border-color: var(--ok); color: var(--ok); }
+.sim-master:disabled { opacity: 0.4; cursor: not-allowed; }
+.sim-warn { color: var(--warn); font-size: 0.7rem; font-weight: 600; }
+.sim-desc { color: var(--muted); font-size: 0.72rem; margin: 0 0 14px; line-height: 1.4; }
 
-/* Collapsible sections */
-.sim-panel details {
+.sim-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.sim-card {
+  align-items: center;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
-  margin-bottom: 8px;
-  overflow: hidden;
-}
-.sim-panel details[open] {
-  border-color: var(--accent-dim);
-}
-.sim-panel summary {
-  align-items: center;
   cursor: pointer;
   display: flex;
-  font-size: 0.78rem;
-  font-weight: 700;
-  justify-content: space-between;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 8px 10px;
+  transition: border-color 0.15s, background 0.15s;
   user-select: none;
 }
-.sim-panel summary:hover {
-  background: var(--bg);
-}
-.section-name {
-  color: var(--fg);
-}
-.section-arrow {
-  color: var(--muted);
-  font-size: 0.65rem;
-}
-
-/* Signal rows */
-.signal-list {
-  border-top: 1px solid var(--panel-border);
-}
-.signal-row {
-  align-items: center;
-  border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 50%, transparent);
-  display: flex;
-  gap: 10px;
-  padding: 7px 12px;
-  transition: background 0.12s;
-}
-.signal-row:hover {
-  background: color-mix(in srgb, var(--bg) 60%, var(--panel));
-}
-.signal-row.disabled {
-  opacity: 0.45;
-}
-.sig-toggle {
-  flex-shrink: 0;
-}
-.sig-toggle input {
-  accent-color: var(--accent);
-  cursor: pointer;
-  height: 16px;
-  width: 16px;
-}
-.sig-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 140px;
-}
-.sig-name {
-  color: var(--fg);
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-.sig-meta {
-  color: var(--muted);
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.62rem;
-}
-.sig-desc {
-  color: var(--muted);
-  flex: 1;
-  font-size: 0.7rem;
-  min-width: 0;
-}
-.sig-badge {
-  border-radius: 3px;
-  flex-shrink: 0;
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  padding: 2px 6px;
-  text-transform: uppercase;
-}
-.sig-badge.on {
-  background: color-mix(in srgb, var(--ok) 20%, var(--bg));
-  color: var(--ok);
-}
-.sig-badge.pending {
-  background: color-mix(in srgb, var(--warn) 20%, var(--bg));
-  color: var(--warn);
-}
+.sim-card:hover { background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
+.sim-card.active { border-color: var(--ok); }
+.sim-card.disabled { opacity: 0.45; cursor: not-allowed; }
+.sim-card input { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; height: 14px; width: 14px; }
+.sim-card-label { color: var(--fg); font-size: 0.76rem; font-weight: 700; }
+.sim-card-meta { color: var(--muted); font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.6rem; margin-left: auto; }
+.sim-dot { border-radius: 50%; flex-shrink: 0; height: 6px; width: 6px; }
+.sim-dot.on { background: var(--ok); }
+.sim-dot.pending { background: var(--warn); }
 
 /* ── Grids ── */
 .dashboard-grid,

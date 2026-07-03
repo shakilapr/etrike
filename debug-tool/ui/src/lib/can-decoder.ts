@@ -183,7 +183,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, true, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
   msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [bool("align_enable", "Align enable"), bool("control_enable", "Control enable"), num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), bool("auto_brake", "Auto brake"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 2, false, heartbeatFields),
-  msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 2, false, heartbeatFields)
+  msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 2, true, heartbeatFields)
 ];
 
 const CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));

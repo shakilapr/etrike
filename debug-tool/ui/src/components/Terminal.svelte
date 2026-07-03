@@ -61,10 +61,17 @@
     <div class="terminal-actions">
       {#if $errorLog.length > 0}
         <button class="term-btn" on:click={copyAll} title="Copy all errors">
-          {copiedAll ? "✓ Copied" : "📋 Copy all"}
+          {#if copiedAll}
+            <svg width="13" height="13" viewBox="0 0 16 16"><path d="M13.5 2.5L6 10l-3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Copied
+          {:else}
+            <svg width="13" height="13" viewBox="0 0 16 16"><rect x="4" y="1" width="10" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 4v10.5A1.5 1.5 0 003.5 16H12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            Copy all
+          {/if}
         </button>
         <button class="term-btn danger" on:click={clearErrors} title="Clear error log">
-          ✕ Clear
+          <svg width="12" height="12" viewBox="0 0 16 16"><line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="14" y1="2" x2="2" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Clear
         </button>
       {/if}
     </div>
@@ -80,9 +87,13 @@
           <button
             class="term-copy"
             on:click={() => copyEntry(entry, i)}
-            title="Copy this error"
+            title="Copy to clipboard"
           >
-            {copiedIdx === i ? "✓" : "📋"}
+            {#if copiedIdx === i}
+              <svg width="11" height="11" viewBox="0 0 16 16"><path d="M13.5 2.5L6 10l-3-3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            {:else}
+              <svg width="11" height="11" viewBox="0 0 16 16"><rect x="4" y="1" width="10" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 4v10.5A1.5 1.5 0 003.5 16H12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            {/if}
           </button>
         </div>
       {/each}
