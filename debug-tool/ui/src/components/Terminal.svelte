@@ -81,7 +81,7 @@
       <span class="terminal-empty">No errors. All clear.</span>
     {:else}
       {#each $errorLog as entry, i (entry.ts + "_" + i)}
-        <div class="terminal-line" class:error={entry.message.toLowerCase().includes("error")} class:warn={!entry.message.toLowerCase().includes("error")}>
+        <div class="terminal-line {entry.severity}">
           <span class="term-time">[{fmtTime(entry.ts)}]</span>
           <span class="term-msg">{entry.message}</span>
           <button

@@ -845,12 +845,9 @@ h2 { font-size: 1rem; }
 .terminal-line:hover {
   background: color-mix(in srgb, var(--panel) 40%, transparent);
 }
-.terminal-line.error {
-  border-left: 3px solid var(--err);
-}
-.terminal-line.warn {
-  border-left: 3px solid var(--warn);
-}
+.terminal-line.info  { border-left: 3px solid var(--ok); }
+.terminal-line.warn  { border-left: 3px solid var(--warn); }
+.terminal-line.error { border-left: 3px solid var(--err); }
 .term-time {
   color: var(--muted);
   flex-shrink: 0;
@@ -861,12 +858,9 @@ h2 { font-size: 1rem; }
   flex: 1;
   word-break: break-all;
 }
-.terminal-line.error .term-msg {
-  color: color-mix(in srgb, var(--err) 90%, var(--fg));
-}
-.terminal-line.warn .term-msg {
-  color: color-mix(in srgb, var(--warn) 90%, var(--fg));
-}
+.terminal-line.info .term-msg  { color: var(--ok); }
+.terminal-line.warn .term-msg  { color: var(--warn); }
+.terminal-line.error .term-msg { color: var(--err); }
 .term-copy {
   background: transparent;
   border: 1px solid transparent;
