@@ -395,11 +395,7 @@ h2 { font-size: 1rem; }
 .brand-compact {
   align-items: center;
   display: flex;
-  gap: 6px;
   flex-shrink: 0;
-}
-.brand-icon {
-  font-size: 1.2rem;
 }
 .brand-name {
   font-weight: 800;
@@ -587,6 +583,63 @@ h2 { font-size: 1rem; }
   text-align: center;
 }
 
+/* Vehicle command buttons */
+.cmd-strip {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cmd-btn {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  gap: 5px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.cmd-btn:hover:not(:disabled) {
+  background: var(--accent-dim);
+}
+.cmd-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.cmd-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.cmd-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cmd-btn.mode-btn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cmd-btn.on-btn {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.cmd-btn.estop-btn {
+  border-color: var(--err);
+  color: var(--err);
+}
+.cmd-btn.estop-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 18%, var(--bg));
+}
+
 /* Action buttons — compact icon-only */
 .action-strip.compact {
   gap: 4px;
@@ -679,6 +732,281 @@ h2 { font-size: 1rem; }
 .log-msg {
   color: var(--fg);
   word-break: break-all;
+}
+
+/* ── Terminal / error tab ── */
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.terminal-header {
+  align-items: center;
+  border-bottom: 1px solid var(--panel-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 8px 0 10px;
+  margin-bottom: 0;
+}
+.terminal-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.terminal-actions {
+  display: flex;
+  gap: 6px;
+}
+.term-btn {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  transition: background 0.15s;
+}
+.term-btn:hover {
+  background: var(--accent-dim);
+}
+.term-btn.danger {
+  border-color: color-mix(in srgb, var(--err) 40%, var(--panel-border));
+  color: var(--err);
+}
+.term-btn.danger:hover {
+  background: color-mix(in srgb, var(--err) 15%, var(--bg));
+}
+.terminal-body {
+  background: #0a0c11;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.55;
+  min-height: 200px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.terminal-body.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.terminal-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+.terminal-line {
+  align-items: baseline;
+  border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 30%, transparent);
+  display: flex;
+  gap: 8px;
+  padding: 3px 10px;
+  transition: background 0.12s;
+}
+.terminal-line:hover {
+  background: color-mix(in srgb, var(--panel) 40%, transparent);
+}
+.terminal-line.error {
+  border-left: 3px solid var(--err);
+}
+.terminal-line.warn {
+  border-left: 3px solid var(--warn);
+}
+.term-time {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 0.7rem;
+}
+.term-msg {
+  color: var(--fg);
+  flex: 1;
+  word-break: break-all;
+}
+.terminal-line.error .term-msg {
+  color: color-mix(in srgb, var(--err) 90%, var(--fg));
+}
+.terminal-line.warn .term-msg {
+  color: color-mix(in srgb, var(--warn) 90%, var(--fg));
+}
+.term-copy {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  opacity: 0;
+  padding: 1px 5px;
+  transition: opacity 0.12s, border-color 0.12s;
+}
+.terminal-line:hover .term-copy {
+  opacity: 1;
+}
+.term-copy:hover {
+  border-color: var(--panel-border);
+  background: var(--panel);
+}
+
+/* ── Simulator ── */
+.sim-panel {
+  max-width: 720px;
+}
+.sim-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.sim-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.sim-master {
+  background: var(--panel);
+  border: 2px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 5px 16px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sim-master.on {
+  border-color: var(--err);
+  color: var(--err);
+}
+.sim-master.off {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.sim-master:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.sim-warn {
+  color: var(--warn);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.sim-desc {
+  color: var(--muted);
+  font-size: 0.74rem;
+  margin: 0 0 16px;
+  line-height: 1.4;
+}
+
+/* Collapsible sections */
+.sim-panel details {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.sim-panel details[open] {
+  border-color: var(--accent-dim);
+}
+.sim-panel summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  justify-content: space-between;
+  padding: 8px 12px;
+  user-select: none;
+}
+.sim-panel summary:hover {
+  background: var(--bg);
+}
+.section-name {
+  color: var(--fg);
+}
+.section-arrow {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+/* Signal rows */
+.signal-list {
+  border-top: 1px solid var(--panel-border);
+}
+.signal-row {
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 50%, transparent);
+  display: flex;
+  gap: 10px;
+  padding: 7px 12px;
+  transition: background 0.12s;
+}
+.signal-row:hover {
+  background: color-mix(in srgb, var(--bg) 60%, var(--panel));
+}
+.signal-row.disabled {
+  opacity: 0.45;
+}
+.sig-toggle {
+  flex-shrink: 0;
+}
+.sig-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 16px;
+  width: 16px;
+}
+.sig-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 140px;
+}
+.sig-name {
+  color: var(--fg);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.sig-meta {
+  color: var(--muted);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+}
+.sig-desc {
+  color: var(--muted);
+  flex: 1;
+  font-size: 0.7rem;
+  min-width: 0;
+}
+.sig-badge {
+  border-radius: 3px;
+  flex-shrink: 0;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+.sig-badge.on {
+  background: color-mix(in srgb, var(--ok) 20%, var(--bg));
+  color: var(--ok);
+}
+.sig-badge.pending {
+  background: color-mix(in srgb, var(--warn) 20%, var(--bg));
+  color: var(--warn);
 }
 
 /* ── Grids ── */
