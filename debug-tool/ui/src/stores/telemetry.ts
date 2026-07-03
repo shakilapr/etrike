@@ -30,6 +30,7 @@ export interface Telemetry {
 }
 
 const GEAR_LABELS = ["N", "D", "S", "R"];
+// Mode values: 0=MANUAL, 1=AUTO, 2=ESTOP (from CAN protocol 0x110/0x210)
 const MODE_LABELS = ["MANUAL", "AUTO", "ESTOP"];
 const SAFETY_LABELS = ["Normal", "InternalEstop", "Fault"];
 
@@ -45,6 +46,7 @@ function numField(decoded: Record<string, unknown> | undefined, key: string): nu
 
 function gearLabel(v: number | null): string | null {
   if (v === null || v === undefined) return null;
+  if (v < 0 || v >= GEAR_LABELS.length) return null; // out of range → no data
   return GEAR_LABELS[v] ?? null;
 }
 function modeLabel(v: number | null): string | null {
@@ -55,6 +57,23 @@ function safetyLabel(v: number | null): string | null {
   if (v === null || v === undefined) return null;
   return SAFETY_LABELS[v] ?? null;
 }
+
+/** Which ECUs are present on the CAN bus (detected via heartbeat/status frames). */
+export interface EcuPresence {
+  rt: boolean;   // RT controller (0x7FD high, or 0x210)
+  sys: boolean;  // SYS controller (0x7FE low, or 0x011 low)
+  mtr: boolean;  // Motor (0x206 either bus)
+  ses: boolean;  // Steering EPS-C (0x201 low)
+  seb: boolean;  // Brake-by-wire SEB (0x721 low)
+}
+
+export const ecuPresence = derived(latestById, ($latest): EcuPresence => ({
+  rt:  !!($latest["high:0x7FD"] || $latest["high:0x210"]),
+  sys: !!($latest["low:0x7FE"]  || $latest["low:0x011"]),
+  mtr: !!($latest["high:0x206"] || $latest["low:0x206"]),
+  ses: !!($latest["low:0x201"]),
+  seb: !!($latest["low:0x721"]),
+}));
 
 export const telemetry = derived(latestById, ($latest): Telemetry => {
   // Lights / indicators: prefer SYS_SAFETY_STS (0x011) on high bus, fall back to low
