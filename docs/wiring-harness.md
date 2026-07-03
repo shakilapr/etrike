@@ -94,18 +94,6 @@ Both **SYS ESP32-S3** (Level 2 monitor) and **MTR STM32** (Level 1 primary) have
 | MCP4725 DAC | I²C addr 0x60, SDA=GPIO15, SCL=GPIO16 | I²C addr 0x61, SDA=PB7, SCL=PB6 |
 | Gear sense (TLP281) | D=GPIO12, S=GPIO13, R=GPIO14 | D=PB0, S=PB1, R=PB2 |
 | Gear relay out | D=GPIO33, S=GPIO34, R=GPIO35 | D=PA3, S=PA4, R=PA5 |
-| ESTOP button | GPIO1 (NC, active-low, pull-up) | PA1 (NC, active-low) |
-| Brake lever | GPIO2 (active-low, pull-up) | — |
-| Start button | GPIO32 (momentary, active-low) | — |
-| Mode button | GPIO11 (momentary) | — |
-| Left turn switch | GPIO9 (active-low) | — |
-| Right turn switch | GPIO6 (active-low) | — |
-| Headlight switch | GPIO7 (active-low) | — |
-| Left turn lamp | GPIO18 (relay out) | — |
-| Right turn lamp | GPIO19 (relay out) | — |
-| Brake lamp | GPIO21 (relay out) | — |
-| Headlight lamp | GPIO22 (relay out) | — |
-| WDT toggle | GPIO23 (100 Hz RT, 20 Hz SYS) | — |
 
 **MTR MCP4725 A0 pin is tied to VCC (5 V)** to differentiate addresses — SYS at 0x60, MTR at 0x61. Both are on separate I²C buses so no functional collision, but address differentiation prevents debugging traps.
 
