@@ -14,6 +14,7 @@ import { CanalystBridge } from "./canalyst/bridge";
 import { DebugStore } from "./db/queries";
 import { MqttBridge } from "./mqtt/bridge";
 import { SerialBridge } from "./serial/reader";
+import { defaultStats } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
 /**
@@ -67,6 +68,10 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: true });
   const store = new DebugStore(config.dbPath, config.maxFrames);
   const hub = new StreamHub();
+
+  // Reset stats to defaults at startup — stale data from a previous
+  // bridge session (possibly a different transport) should not leak in.
+  store.setStats(defaultStats());
 
   await app.register(cors, {
     origin: true

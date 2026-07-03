@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import collections
 import json
 import os
 import queue
@@ -14,6 +15,8 @@ import canalystii
 BITRATE = int(os.environ.get("CANALYST_BITRATE", "500000"))
 POLL_SECONDS = max(int(os.environ.get("CANALYST_POLL_MS", "5")), 1) / 1000.0
 DEVICE_INDEX = int(os.environ.get("CANALYST_DEVICE_INDEX", "0"))
+ACTIVE_TIMEOUT_S = 1.0   # bus goes inactive after 1s without a frame (was 5s)
+FPS_WINDOW_S = 3          # sliding window for instantaneous FPS calculation
 CHANNEL_TO_BUS = {
     0: os.environ.get("CANALYST_CH0_BUS", "low"),
     1: os.environ.get("CANALYST_CH1_BUS", "high"),
@@ -36,6 +39,11 @@ class PeriodicTask:
 running = True
 command_q: queue.Queue[dict] = queue.Queue()
 periodic: dict[tuple[str, int], PeriodicTask] = {}
+# Sliding-window frame counts for true instantaneous FPS
+_frame_history: dict[str, collections.deque[tuple[float, int]]] = {
+    "high": collections.deque(),
+    "low": collections.deque(),
+}
 stats = {
     "high": {"total": 0, "tx_total": 0, "by_id": {}, "last_rx": 0.0},
     "low": {"total": 0, "tx_total": 0, "by_id": {}, "last_rx": 0.0},
@@ -135,16 +143,35 @@ def command_reader() -> None:
             emit({"type": "cmd_ack", "status": "error", "error": f"invalid command JSON: {exc}"})
 
 
+def _prune_frame_history(now: float) -> None:
+    """Remove entries older than FPS_WINDOW_S from the sliding window."""
+    cutoff = now - FPS_WINDOW_S
+    for q in _frame_history.values():
+        while q and q[0][0] < cutoff:
+            q.popleft()
+
+
+def _instantaneous_fps(bus: str, now: float) -> float:
+    """Compute true frames-per-second over the last FPS_WINDOW_S seconds."""
+    q = _frame_history[bus]
+    if not q:
+        return 0.0
+    window_s = max(now - q[0][0], 0.001)
+    total_in_window = sum(count for _, count in q)
+    return total_in_window / window_s
+
+
 def emit_stats(started_at: float) -> None:
     now = time.time()
     uptime = max(now - started_at, 0.001)
+    _prune_frame_history(now)
     buses = {}
     for bus, bus_stats in stats.items():
         by_id = bus_stats["by_id"]
         buses[bus] = {
-            "active": now - bus_stats["last_rx"] < 5.0,
+            "active": now - bus_stats["last_rx"] < ACTIVE_TIMEOUT_S,
             "total": bus_stats["total"],
-            "fps": bus_stats["total"] / uptime,
+            "fps": round(_instantaneous_fps(bus, now), 1),
             "load_pct": 0,
             "tec": 0,
             "rec": 0,
@@ -155,15 +182,20 @@ def emit_stats(started_at: float) -> None:
 
 def receive_channel(dev: canalystii.CanalystDevice, channel: int) -> None:
     bus = CHANNEL_TO_BUS[channel]
-    for message in dev.receive(channel):
+    frames = list(dev.receive(channel))
+    if not frames:
+        return
+    now = time.time()
+    count = len(frames)
+    bus_stats = stats[bus]
+    bus_stats["total"] += count
+    bus_stats["last_rx"] = now
+    _frame_history[bus].append((now, count))
+    for message in frames:
         can_id = int(message.can_id)
         can_id_text = f"0x{can_id:03X}"
         dlc = int(message.data_len)
         data = [int(byte) for byte in message.data[:dlc]]
-        now = time.time()
-        bus_stats = stats[bus]
-        bus_stats["total"] += 1
-        bus_stats["last_rx"] = now
         bus_stats["by_id"][can_id_text] = bus_stats["by_id"].get(can_id_text, 0) + 1
         emit({"ts": now, "bus": bus, "id": can_id_text, "dlc": dlc, "data": data, "extended": message.extended})
 
@@ -189,6 +221,22 @@ def main() -> int:
     except Exception as exc:
         emit({"type": "status", "adapter_connected": False, "online": False, "error": str(exc)})
         return 2
+
+    # Clear hardware RX buffers to discard any stale frames from before we started.
+    # The canalystii library notes this isn't 100% reliable but significantly reduces
+    # garbage frames that would otherwise be timestamped as "live" data.
+    for channel in (0, 1):
+        try:
+            dev.clear_rx_buffer(channel)
+        except Exception:
+            pass
+    # Drain any remaining stale frames that survived the clear (best-effort).
+    for channel in (0, 1):
+        try:
+            for _ in dev.receive(channel):
+                pass
+        except Exception:
+            pass
 
     emit({
         "type": "status",
