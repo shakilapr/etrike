@@ -17,7 +17,7 @@ Three physical CAN buses, two gateways:
 **RT bridges** selected messages between high and low buses. **PWT bridges** selected messages between low and powertrain. Both follow a three-category model: transparent forward, consumed→regenerated, bus-local.
 
 - **Actuators:** Steering (EPS-C via 0x169), brake (SEB via 0x7B9). Mode-gated dual control: RT commands both in AUTO; SYS commands SEB in MANUAL/ESTOP.
-- **Motor:** MTR STM32 drives analog throttle (MCP4725 DAC 0–5V) and gear relays (72V). CAN telemetry-only to motor controller.
+- **Motor:** MTR STM32 drives analog throttle (MCP4725 DAC 0–5V) and gear MOSFETs (72V). CAN telemetry-only to motor controller.
 - **DC-DC converter:** SYS commands enable (0x012), PWT bridges to powertrain bus.
 
 > See [`docs/wiring-harness.md`](docs/wiring-harness.md) for pin-level wiring.
@@ -37,18 +37,25 @@ Key architectural IDs:
 | High | `0x302` | HOST_LIGHT_CMD | Jetson → RT (→ SYS): lights |
 | High | `0x400` | HOST_OBSTACLE_DIST | Jetson → RT: min obstacle mm |
 | High | `0x210` | RT_STATE_RPT | RT → Jetson: mode, safety_state, reversing, rx_overflow (DLC=4) |
-| High | `0x310` | STEER_DIAG | RT → Jetson: steering telemetry |
-| High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry |
+| High | `0x220` | RT_PID_RPT | RT → Jetson: shadow PID telemetry (DLC=6) |
+| High | `0x310` | STEER_DIAG | RT → Jetson: steering telemetry (DLC=8) |
+| High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry (DLC=8) |
 | Low | `0x001` | SAFETY_ESTOP | Any → All: emergency stop (bridged) |
 | Low | `0x011` | SYS_SAFETY_STS | SYS → RT (→ Jetson): estop, hb, lights |
 | Low | `0x110` | SYS_MODE_CMD | SYS → RT: mode (Manual/Auto/Estop) |
 | Low | `0x204` | RT_DRIVE_CMD | RT → MTR, SYS: speed + gear |
 | Low | `0x205` | RT_BRAKE_CMD | RT → SYS: brake kPa |
 | Low | `0x169` | VCU_SES_REQ | RT → EPS-C: steering angle |
-| Low | `0x201` | SES_STATUS | EPS-C → RT: angle feedback |
-| Low | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL/ESTOP) → SEB: brake |
+| Low | `0x201` | SES_STATUS | EPS-C → RT: angle feedback (DLC=8, XOR checksum) |
+| Low | `0x202` | SES_ERR_INFO | EPS-C → RT: L3 fault bits → ESTOP (DLC=8) |
+| Low | `0x203` | SES_VERSION | EPS-C → RT: SW/HW version, logged once (DLC=8) |
+| Low | `0x6FA` | SES_TEST | EPS-C → RT: motor current, ECU temp, voltage (DLC=8) |
+| Low | `0x6FB` | SEB_TEST | SEB → SYS: motor current, ECU temp (DLC=8) |
+| Low | `0x741` | SEB_VERSION | SEB → SYS: SW/HW version, logged once (DLC=8) |
+| Low | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL/ESTOP) → SEB: brake (DLC=8, XOR checksum) |
 | Low | `0x721` | SEB_STATUS | SEB → SYS: stroke feedback |
-| Low | `0x206` | MTR_MOTOR_FBK | MTR → SYS, RT: speed, gear, faults |
+| Low | `0x120` | SYS_THROTTLE_STS | MTR → RT (→ Host): actual throttle speed (DLC=2) |
+| Low | `0x206` | MTR_MOTOR_FBK | MTR → SYS, RT: speed, gear, faults (DLC=4) |
 | Low | `0x7FD` | RT_HEARTBEAT | RT → SYS, Jetson: alive counter + health flags (DLC=2) |
 | Low | `0x7FE` | SYS_HEARTBEAT | SYS → RT: alive counter + health flags (DLC=2) |
 | Low | `0x7FB` | PWT_HEARTBEAT | PWT → RT, SYS: alive counter |
@@ -220,7 +227,11 @@ SYS persists reset reason and boot count to NVS flash:
 | 0x210 | TX (high+low) | 10 Hz | Mode(byte0), safety_state(byte1:0-1), reversing(byte2), rx_overflow(byte3). SYS reads safety_state for takeover. |
 | 0x310 | TX (high) | 10 Hz | Steering diag: angle(u16 BE, factor 0.1, offset -3000), fault, current, temp |
 | 0x311 | TX (high) | 10 Hz | Brake diag: pressure, fault, current, temp |
-| 0x7FD | TX (both) | 2 Hz | Independent counters per bus. Not bridged. |
+| 0x220 | TX (high) | 10 Hz | Shadow PID telemetry (setpoint, measured, output). 6 bytes. |
+| 0x6FA | RX (low) | 100 Hz | EPS-C telemetry: motor current, ECU temp, voltage. Logs warnings on thresholds. |
+| 0x6FB | RX (low) | 100 Hz | SEB telemetry: motor current, ECU temp. Used for BRAKE_DIAG rescaling. |
+| 0x203 | RX (low) | 1 Hz | EPS-C version. Logged once on first receipt. |
+| 0x7FD | TX (both) | 2 Hz | Independent counters per bus. DLC=2 (counter + health flags). Not bridged. |
 
 ### Safety State (0x210 byte 1)
 
@@ -327,7 +338,9 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | 0x110 | TX | change + 1s | Mode command. Periodic refresh prevents split-brain on frame loss. |
 | 0x600 | TX | 1 Hz | Diag: mode, brake, hb, estop, heap, TEC/REC |
 | 0x7B9 | TX | 50 Hz | SEB brake command. Suppressed in AUTO when RT is healthy and RT safety_state==Normal. |
-| 0x7FE | TX | 10 Hz | SYS heartbeat. |
+| 0x6FB | RX | 100 Hz | SEB telemetry: motor current, ECU temp. Logs warning >80°C. |
+| 0x741 | RX | 1 Hz | SEB version. Logged once on first receipt. |
+| 0x7FE | TX | 10 Hz | SYS heartbeat. DLC=2 (counter + health flags: hb_ok, estop, mode, can_ok). |
 
 ### 0x7B9 Suppression Logic
 
@@ -503,9 +516,9 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 26 | Bulb MANUAL | Mode indicator |
 | 27 | 12V relay | Accessory power relay |
 | 32 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
-| 33 | Gear D out | Relay output (72V) |
-| 34 | Gear S out | Relay output (72V) |
-| 35 | Gear R out | Relay output (72V) |
+| 33 | Gear D out | MOSFET output (72V) |
+| 34 | Gear S out | MOSFET output (72V) |
+| 35 | Gear R out | MOSFET output (72V) |
 
 ### MTR STM32
 
@@ -527,7 +540,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 
 ## 14. MTR STM32 — Motor Actuation
 
-**Role:** Motor control with EGAS L1 safety isolation on a dedicated STM32F103C8. Reads analog throttle (ADC) and gear selector (TLP281 optos). Writes throttle DAC (MCP4725 0-5V) and gear relays (72V). CAN telemetry-only to motor controller — no CAN motor control.
+**Role:** Motor control with EGAS L1 safety isolation on a dedicated STM32F103C8. Reads analog throttle (ADC) and gear selector (TLP281 optos). Writes throttle DAC (MCP4725 0-5V) and gear MOSFETs (72V). CAN telemetry-only to motor controller — no CAN motor control.
 
 **4 FreeRTOS tasks, bxCAN (500 kbit/s), I2C DAC.**
 
