@@ -3,7 +3,7 @@
 Autonomous electric tricycle with distributed CAN bus architecture, ROS 2
 perception/planning, and EGAS 3-level motor safety.
 
-**Version:** v0.3.0
+**Version:** v0.3.0-alpha
 
 ## What It Does
 
