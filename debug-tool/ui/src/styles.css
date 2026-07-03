@@ -396,15 +396,23 @@ h2 { font-size: 1rem; }
 /* Topbar v3 — two-row, fixed sizes, automotive icons                  */
 /* ═══════════════════════════════════════════════════════════════════ */
 .topbar.v3 {
+  align-items: stretch;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
 }
 .tb-row {
   align-items: center;
   display: flex;
   gap: 10px;
   flex-wrap: nowrap;
+}
+.tb-row-main {
+  justify-content: flex-start;
+  width: 100%;
+}
+.tb-row-main .tb-indicators {
+  margin-left: auto;
 }
 .tb-sep {
   background: var(--panel-border);
@@ -420,17 +428,126 @@ h2 { font-size: 1rem; }
   font-size: 0.92rem; font-weight: 800; gap: 5px; letter-spacing: 0.02em;
 }
 
-/* Health items */
-.tb-health { align-items: center; display: flex; flex-shrink: 0; gap: 6px; }
-.tbh {
-  align-items: center; color: var(--muted); cursor: default; display: flex;
-  gap: 3px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;
-  position: relative; text-transform: uppercase; line-height: 1;
+/* Health bar */
+.tb-health-row {
+  width: 100%;
 }
-.tbh[data-state="ok"]  { color: var(--ok); }
-.tbh[data-state="warn"] { color: var(--warn); }
-.tbh[data-state="bad"]  { color: var(--err); }
-.tbh em { font-style: normal; }
+.tb-health {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(190px, 0.8fr) minmax(420px, 1.6fr);
+  min-width: 0;
+  width: 100%;
+}
+.tbh-group {
+  align-items: center;
+  background: color-mix(in srgb, var(--panel) 74%, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 6px;
+}
+.tbh-group-label {
+  border-right: 1px solid var(--panel-border);
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  margin: 0;
+  min-width: 34px;
+  padding-right: 6px;
+  text-align: right;
+  text-transform: uppercase;
+}
+.tbh {
+  align-items: center;
+  background: color-mix(in srgb, var(--bg) 50%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--panel-border) 68%, transparent);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: default;
+  display: grid;
+  flex: 1 1 0;
+  gap: 5px;
+  grid-template-columns: 16px minmax(0, 1fr) 7px;
+  height: 28px;
+  min-width: 0;
+  padding: 3px 6px;
+  position: relative;
+}
+.tbh::after {
+  border-radius: 999px;
+  content: "";
+  height: 7px;
+  width: 7px;
+}
+.tbh[data-state="ok"] {
+  border-color: color-mix(in srgb, var(--ok) 34%, transparent);
+  color: var(--ok);
+}
+.tbh[data-state="warn"] {
+  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+  color: var(--warn);
+}
+.tbh[data-state="bad"] {
+  border-color: color-mix(in srgb, var(--err) 42%, transparent);
+  color: var(--err);
+}
+.tbh[data-state="ok"]::after { background: var(--ok); }
+.tbh[data-state="warn"]::after { background: var(--warn); }
+.tbh[data-state="bad"]::after { background: var(--err); }
+.tbh-icon {
+  align-items: center;
+  background: transparent;
+  border-radius: 0;
+  display: inline-flex;
+  height: 15px;
+  justify-content: center;
+  width: 15px;
+}
+.tbh-icon svg {
+  display: block;
+  fill: none;
+  height: 14px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 14px;
+}
+.tbh-copy {
+  display: block;
+  min-width: 0;
+}
+.tbh em,
+.tbh strong {
+  display: block;
+  font-style: normal;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tbh em {
+  color: var(--fg);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+.tbh strong {
+  color: var(--muted);
+  display: block;
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin-top: 1px;
+}
 
 /* Indicators */
 .tb-indicators { align-items: center; display: flex; flex-shrink: 0; gap: 2px; }
@@ -458,9 +575,41 @@ h2 { font-size: 1rem; }
   padding: 2px 6px; text-align: center;
 }
 .tvs-mode {
-  border-radius: 3px; color: var(--bg); font-size: 0.58rem; font-weight: 800;
-  letter-spacing: 0.06em; min-width: 52px; padding: 3px 6px; text-align: center;
-  text-transform: uppercase; background: var(--muted);
+  align-items: center;
+  background: color-mix(in srgb, var(--muted) 18%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--muted) 45%, var(--panel-border));
+  border-radius: 4px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.58rem;
+  font-weight: 800;
+  height: 22px;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  padding: 0 6px;
+  text-align: center;
+  text-transform: uppercase;
+  width: 64px;
+}
+.tvs-mode.manual {
+  background: color-mix(in srgb, var(--ok) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--ok) 48%, var(--panel-border));
+  color: var(--ok);
+}
+.tvs-mode.auto {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--panel-border));
+  color: var(--accent);
+}
+.tvs-mode.estop {
+  background: color-mix(in srgb, var(--err) 18%, var(--bg));
+  border-color: color-mix(in srgb, var(--err) 56%, var(--panel-border));
+  color: var(--err);
+}
+.tvs-mode.unknown {
+  background: color-mix(in srgb, var(--muted) 12%, var(--bg));
+  border-color: var(--panel-border);
+  color: var(--muted);
 }
 .tvs-safety {
   font-size: 0.58rem; font-weight: 800; letter-spacing: 0.05em;
@@ -492,8 +641,32 @@ h2 { font-size: 1rem; }
 @media (max-width: 1100px) {
   .tb-row { flex-wrap: wrap; gap: 6px; }
   .tb-sep { display: none; }
+  .tb-health {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tbh-group:last-child {
+    grid-column: 1 / -1;
+  }
 }
 @media (max-width: 700px) {
+  .tb-health {
+    grid-template-columns: 1fr;
+  }
+  .tbh-group {
+    flex-wrap: wrap;
+  }
+  .tbh-group:last-child {
+    grid-column: auto;
+  }
+  .tbh-group-label {
+    border-right: 0;
+    border-bottom: 1px solid var(--panel-border);
+    flex-basis: 100%;
+    min-width: 0;
+    padding: 0 0 5px;
+    text-align: left;
+  }
+  .tbh { flex: 1 1 86px; }
   .tb-telem { flex-wrap: wrap; gap: 6px; }
 }
 
