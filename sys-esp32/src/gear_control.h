@@ -1,5 +1,5 @@
 #pragma once
-// Gear control — TLP281 inputs + relay outputs. Architecture.md §8.6.
+// gear control — SYS_OWNS_MOTOR bench-only legacy. MTR owns all gear in vehicle.. Architecture.md §8.6.
 #include <cstdint>
 #include "driver/gpio.h"
 #include "config.h"
@@ -10,7 +10,7 @@ constexpr uint8_t kGearSenseD = 1u << 0;
 constexpr uint8_t kGearSenseS = 1u << 1;
 constexpr uint8_t kGearSenseR = 1u << 2;
 
-// Output bit for each gear (relay drive)
+// Output bit for each gear (MOSFET drive (bench-only SYS_OWNS_MOTOR legacy))
 constexpr uint8_t kGearOutD = 1u;
 constexpr uint8_t kGearOutS = 2u;
 constexpr uint8_t kGearOutR = 4u;
@@ -19,7 +19,7 @@ class GearControl {
 public:
     void init() {
         m_gear = can::Gear::N;
-        // Initialize relay output GPIOs
+        // Initialize output GPIOs (bench-only legacy)
         gpio_set_direction(static_cast<gpio_num_t>(sys::kGearDOut), GPIO_MODE_OUTPUT);
         gpio_set_direction(static_cast<gpio_num_t>(sys::kGearSOut), GPIO_MODE_OUTPUT);
         gpio_set_direction(static_cast<gpio_num_t>(sys::kGearROut), GPIO_MODE_OUTPUT);
@@ -29,7 +29,7 @@ public:
         gpio_set_level(static_cast<gpio_num_t>(sys::kGearROut), 0);
     }
     // Call @ 50 Hz. sense: 3-bit (D|S|R). mode: current. setpoint_gear: from CAN.
-    // Actuates relay GPIOs directly.
+    // Actuates output GPIOs (bench-only legacy).
     void tick(can::Mode mode, uint8_t sense_bits, uint8_t setpoint_gear) {
         if (mode == can::Mode::Estop) { m_gear = can::Gear::N; apply(); return; }
         if (mode == can::Mode::Manual) {

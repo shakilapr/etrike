@@ -570,7 +570,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         }
 #else
         // ── MTR owns motor: EGAS L2 monitoring only ─────────────
-        // SYS does NOT write the DAC or drive gear relays.
+        // SYS does NOT write the DAC or drive gear MOSFETs (bench only — MTR owns gear in vehicle).
         // EGAS L2 speed mismatch check is handled by task_safety at 20 Hz
         // (compares 0x204 setpoint vs 0x206 actual, independent of this task).
         // This task exists for the SYS_OWNS_MOTOR bench path above.
@@ -598,7 +598,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearRSense)) == 0) sense |= 0x04;
 # endif
         uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
-        g_gear.tick(mode, sense, set_gear);  // actuates relay GPIOs internally
+        g_gear.tick(mode, sense, set_gear);  // actuates MOSFET GPIOs (bench-only legacy)
 #else
         // MTR owns motor: monitor gear mismatch via CAN
         uint8_t reported  = g_mtr_gear_state.load(std::memory_order_relaxed);   // from 0x206
@@ -943,9 +943,10 @@ extern "C" void app_main() {
     g_safety.init();
     g_mode_mgr.init();
     g_throttle.init();
-    g_dac.init();
-
-    g_gear.init();
+#ifdef SYS_OWNS_MOTOR
+    g_dac.init();       // bench only — MTR owns DAC in vehicle
+    g_gear.init();      // bench only — MTR owns gear MOSFETs in vehicle
+#endif
     g_brake.init();
     g_lights.init();
     g_dcdc.init();
@@ -968,9 +969,11 @@ extern "C" void app_main() {
     xTaskCreate(task_safety,    "safety",    4096, nullptr, 5, &h_safety);
     xTaskCreate(task_dispatch,  "dispatch",  3072, nullptr, 4, &h_dispatch);
     xTaskCreate(task_mode,      "mode",      2048, nullptr, 4, &h_mode);
+#ifdef SYS_OWNS_MOTOR
     xTaskCreate(task_motor,     "motor",     3072, nullptr, 4, &h_motor);
-    xTaskCreate(task_gear,      "gear",      1536, nullptr, 3, &h_gear);
     xTaskCreate(task_throttle,  "throttle",  1536, nullptr, 3, &h_throttle);
+#endif
+    xTaskCreate(task_gear,      "gear",      1536, nullptr, 3, &h_gear);
     xTaskCreate(task_brake,     "brake",     3072, nullptr, 3, &h_brake);
     xTaskCreate(task_lights,    "lights",    2048, nullptr, 3, &h_lights);
     xTaskCreate(task_dcdc,      "dcdc",      2048, nullptr, 3, &h_dcdc);
@@ -980,6 +983,10 @@ extern "C" void app_main() {
     xTaskCreate(task_diag,      "diag",      3072, nullptr, 1, &h_diag);
     xTaskCreate(task_hb,        "hb",        2048, nullptr, 1, &h_hb);
 
-    ESP_LOGI(TAG, "Ready — 15 tasks running. Mode=%s", g_mode_mgr.name());
+#ifdef SYS_OWNS_MOTOR
+    ESP_LOGI(TAG, "Ready — 15 tasks running (bench, SYS_OWNS_MOTOR). Mode=%s", g_mode_mgr.name());
+#else
+    ESP_LOGI(TAG, "Ready — 13 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
+#endif
     vTaskDelete(nullptr);
 }

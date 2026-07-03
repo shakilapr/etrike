@@ -30,7 +30,8 @@ constexpr uint8_t  kThrottleDacI2cAddr  = 0x60; // MCP4725
 constexpr unsigned kThrottleDeadZone    =  200;
 constexpr int      kThrottleMaxSpeedMmps= 3000;
 
-// ── gear — TLP281 optoisolator input + relay output (72V) ────────
+// ── gear — bench-only SYS_OWNS_MOTOR path. MTR owns all gear in vehicle. ──
+// TLP281 optoisolator inputs (GPIO 12-14). MOSFET outputs (GPIO 33-35, bench only).
 constexpr int kGearDSense = 12, kGearSSense = 13, kGearRSense = 14;
 constexpr int kGearDOut   = 33, kGearSOut   = 34, kGearROut   = 35;
 
