@@ -40,6 +40,9 @@
   function modeClass(m: string | null): string {
     switch (m) { case "MANUAL": return "manual"; case "AUTO": return "auto"; case "ESTOP": return "estop"; default: return "unknown"; }
   }
+  function modeLabel(m: string | null): string {
+    return m ?? "No mode";
+  }
   // ── Safety color ──
   function sColor(s: string | null): string {
     switch (s) { case "Normal": return "var(--ok)"; case "InternalEstop": return "var(--warn)"; case "Fault": return "var(--err)"; default: return "var(--muted)"; }
@@ -144,7 +147,6 @@
   <div class="tb-row tb-row-main">
     <!-- Brand -->
     <div class="tb-brand">
-      <svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 12l4-8h8l4 8-8 8z" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/></svg>
       <span>E-Trike</span>
     </div>
 
@@ -152,12 +154,15 @@
     <div class="tb-indicators">
       <span class="tbi turn-l" class:on={t.leftTurn} class:flash={flash(t.leftTurn)} title="Left turn">
         <svg width="14" height="14" viewBox="0 0 20 16"><polygon points="18,3 2,8 18,13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>L</span>
       </span>
       <span class="tbi turn-r" class:on={t.rightTurn} class:flash={flash(t.rightTurn)} title="Right turn">
         <svg width="14" height="14" viewBox="0 0 20 16"><polygon points="2,3 18,8 2,13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>R</span>
       </span>
       <span class="tbi brake-i" class:on={t.brakeLight} title="Brake">
         <svg width="13" height="13" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="8" y="12" text-anchor="middle" font-size="8" font-weight="900" fill="currentColor">!</text></svg>
+        <span>BRK</span>
       </span>
       <!-- ESTOP: ISO 13850 emergency stop symbol -->
       <span class="tbi estop-i" class:on={t.estopActive} title={t.estopActive ? "ESTOP ACTIVE" : "ESTOP clear"}>
@@ -166,6 +171,7 @@
           <polygon points="12,2 21,6.5 21,17.5 12,22 3,17.5 3,6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
           <text x="12" y="16" text-anchor="middle" font-size="10" font-weight="900" fill="currentColor">!</text>
         </svg>
+        <span>STOP</span>
       </span>
     </div>
 
@@ -173,10 +179,10 @@
 
     <!-- Vehicle state: gear + mode — fixed width badges -->
     <div class="tb-vstate">
-      <span class="tvs-gear" style="color:{gColor(t.gear)};border-color:{gColor(t.gear)}">{t.gear ?? "?"}</span>
-      <span class="tvs-mode {modeClass(t.mode)}">{t.mode ?? "--"}</span>
+      <span class="tvs-gear" style="color:{gColor(t.gear)};border-color:{gColor(t.gear)}"><em>Gear</em><strong>{t.gear ?? "--"}</strong></span>
+      <span class="tvs-mode {modeClass(t.mode)}"><em>Mode</em><strong>{modeLabel(t.mode)}</strong></span>
       {#if t.safetyState && t.safetyState !== "Normal"}
-        <span class="tvs-safety" style="color:{sColor(t.safetyState)}">{t.safetyState}</span>
+        <span class="tvs-safety" style="color:{sColor(t.safetyState)}"><em>Safety</em><strong>{t.safetyState}</strong></span>
       {/if}
     </div>
   </div>
@@ -227,17 +233,18 @@
   <div class="tb-row">
     <!-- Telemetry — fixed-width readouts -->
     <div class="tb-telem">
-      <span class="tbt speed" title="Motor speed"><em>Speed</em> <strong>{t.motorSpeedKmh !== null ? t.motorSpeedKmh.toFixed(1) : "--.-"}</strong> <u>km/h</u></span>
-      <span class="tbt steer" title="Steering angle"><em>Steer</em> <strong>{t.steerAngleDeg !== null ? (t.steerAngleDeg > 0 ? "+" : "") + t.steerAngleDeg.toFixed(1) : "--.-"}</strong> <u>deg</u></span>
-      <span class="tbt brake" title="Brake pressure">
+      <span class="tbt speed" class:noData={t.motorSpeedKmh === null} title="Motor speed"><em>Speed</em> <strong>{t.motorSpeedKmh !== null ? t.motorSpeedKmh.toFixed(1) : "No data"}</strong> <u>km/h</u></span>
+      <span class="tbt steer" class:noData={t.steerAngleDeg === null} title="Steering angle"><em>Steer</em> <strong>{t.steerAngleDeg !== null ? (t.steerAngleDeg > 0 ? "+" : "") + t.steerAngleDeg.toFixed(1) : "No data"}</strong> <u>deg</u></span>
+      <span class="tbt brake" class:noData={t.brakePressureMpa === null} title="Brake pressure">
         <em>Brake</em>
         <span class="tbt-gauge"><span class="tbt-fill" style="width:{Math.min((t.brakePressureMpa ?? 0) / 20 * 100, 100)}%"></span></span>
-        <strong>{t.brakePressureMpa !== null ? t.brakePressureMpa.toFixed(1) : "--.-"}</strong> <u>MPa</u>
+        <strong>{t.brakePressureMpa !== null ? t.brakePressureMpa.toFixed(1) : "No data"}</strong> <u>MPa</u>
       </span>
     </div>
 
     <!-- Vehicle commands -->
     <div class="tb-cmds">
+      <span class="tb-group-label">Vehicle</span>
       <button class="tb-btn" disabled={sending || !online()} on:click={cycleMode} title="Toggle MANUAL/AUTO">
         <svg width="13" height="13" viewBox="0 0 16 16"><path d="M2 8a6 6 0 0110.47-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 8a6 6 0 01-10.47 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="11.5,1.5 12.5,4 10,4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
@@ -253,6 +260,7 @@
 
     <!-- Bridge actions -->
     <div class="tb-actions">
+      <span class="tb-group-label">Bridge</span>
       <button class="tb-btn" on:click={onReset} title="Clear frames">
         <svg width="13" height="13" viewBox="0 0 16 16"><path d="M2 4v2h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 6a6 6 0 111.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
