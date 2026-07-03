@@ -17,7 +17,7 @@ The system consists of four primary electronic control units (ECUs):
 - **SYS Controller (ESP32-S3):** Safety monitoring, body controls (lights, indicators, DC-DC converter), brake actuation, mode management.
 - **MTR Controller (STM32):** Motor actuation via throttle DAC and gear relays. EGAS Level 1 function controller.
 
-The vehicle operates in three modes: **MANUAL**, **AUTO**, and **ESTOP**.
+The vehicle has two operating modes — **MANUAL** and **AUTO** — selected via the mode button. **ESTOP** is a safety state triggered by the dedicated ESTOP button (or automatically by safety faults); it is not a mode and cannot be selected via the mode button.
 
 ---
 

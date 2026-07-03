@@ -228,7 +228,7 @@ describe("decodeFrame", () => {
     expect(decodeFrame("low", "0x012", [0])).toEqual({ enable: false });
   });
 
-  it("decodes 0x110 MODE_CMD (low) — ESTOP", () => {
+  it("decodes 0x110 MODE_CMD (low) — value 2 (firmware-rejected, displayed as ESTOP)", () => {
     const result = decodeFrame("low", "0x110", [2]);
     expect(result).toEqual({ mode: 2, mode_name: "ESTOP" });
   });

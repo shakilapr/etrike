@@ -70,7 +70,10 @@ bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
 void ModeManager::force_estop() { set_mode(can::Mode::Estop); }
 
 void ModeManager::set_from_can(uint8_t m) {
-    if (m <= 2) set_mode(static_cast<can::Mode>(m));
+    // Only MANUAL (0) and AUTO (1) are selectable via CAN 0x110.
+    // ESTOP is a safety state triggered exclusively by hardware button,
+    // CAN 0x001, or safety faults — never via mode command.
+    if (m <= 1) set_mode(static_cast<can::Mode>(m));
 }
 
 const char* ModeManager::name() const {
