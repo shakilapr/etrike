@@ -7,6 +7,7 @@
   import Dashboard from "./components/Dashboard.svelte";
   import PipelineView from "./components/PipelineView.svelte";
   import Stats from "./components/Stats.svelte";
+  import Topbar from "./components/Topbar.svelte";
   import UnitTest from "./components/UnitTest.svelte";
   import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
@@ -34,86 +35,7 @@
     { id: "stats", label: "Statistics" }
   ];
 
-  // ── Transport source label ──
-  function transportLabel(): string {
-    const t = $status.bridge?.transport;
-    switch (t) {
-      case "canalystii": return "CANalyst-II";
-      case "serial": return "ESP32 Serial";
-      case "mqtt": return "MQTT";
-      case "disabled": return "Disabled";
-      default: return t ?? "Unknown";
-    }
-  }
-
-  function transportShortLabel(): string {
-    const t = $status.bridge?.transport;
-    switch (t) {
-      case "canalystii": return "CANalyst";
-      case "serial": return "Serial";
-      case "mqtt": return "MQTT";
-      case "disabled": return "Disabled";
-      default: return t ?? "Unknown";
-    }
-  }
-
-  function healthState(ok: boolean, degraded = false): "ok" | "warn" | "bad" {
-    if (ok) return "ok";
-    return degraded ? "warn" : "bad";
-  }
-
-  function busDetectionLabel(): string {
-    const bd = $status.bus_detection;
-    if (!bd?.detected || bd.confidence === "none") return "Unconfirmed";
-    const suffix = bd.confidence === "low" ? " low confidence" : "";
-    return `${bd.bus.toUpperCase()}${suffix}`;
-  }
-
-  function bridgeLabel(): string {
-    const linkOpen = Boolean($status.bridge?.link_open || $status.serial?.port_open);
-    return `${transportShortLabel()} / ${linkOpen ? "Open" : "Closed"}`;
-  }
-
-  function canBusState(bus: Bus): "ok" | "warn" | "bad" {
-    if (!$status.backend_online) return "bad";
-    const linkOpen = Boolean($status.bridge?.link_open || $status.serial?.port_open);
-    const busStats = bus === "high" ? $stats.buses.high : $stats.buses.low;
-    if (busStats.active && busStats.fps > 0) return "ok";
-    if (linkOpen || busStats.total > 0) return "warn";
-    return "bad";
-  }
-
-  function canBusLabel(bus: Bus): string {
-    const busStats = bus === "high" ? $stats.buses.high : $stats.buses.low;
-    if (busStats.active && busStats.fps > 0) return `${Math.round(busStats.fps)} fps`;
-    if (busStats.total > 0) return "Quiet";
-    return "No traffic";
-  }
-
-  function bridgeTitle(): string {
-    const bridge = $status.bridge;
-    const parts = [
-      bridge?.adapter,
-      bridge?.path,
-      bridge?.bitrate ? `${bridge.bitrate} bit/s` : "",
-      bridge?.last_error ? `Last error: ${bridge.last_error}` : ""
-    ].filter(Boolean);
-    return parts.join(" / ") || "CAN bridge status";
-  }
-
-  function backendTitle(): string {
-    return $status.backend_online ? "Backend API is responding" : "Backend API is offline";
-  }
-
-  function highCanTitle(): string {
-    const bus = $stats.buses.high;
-    return `High CAN channel: ${Math.round(bus.fps)} fps, ${bus.total} frames, TEC ${bus.tec}, REC ${bus.rec}`;
-  }
-
-  function lowCanTitle(): string {
-    const bus = $stats.buses.low;
-    return `Low CAN channel: ${Math.round(bus.fps)} fps, ${bus.total} frames, TEC ${bus.tec}, REC ${bus.rec}. Detection: ${busDetectionLabel()}`;
-  }
+  // (topbar helpers moved to Topbar.svelte)
 
   // ── Keyboard controls ──
   // Layer 1: held-keys state map — raw, no input-filtering.
@@ -293,52 +215,7 @@
 </script>
 
 <div class="app-shell">
-  <header class="topbar">
-    <div class="brand-block">
-      <p class="eyebrow">Dual CAN Bus Bench Tool</p>
-      <h1>E-Trike Debug</h1>
-    </div>
-    <div class="status-strip health-strip" aria-label="System health">
-      <span class="health-item" data-state={healthState(Boolean($status.backend_online))} data-testid="health-backend" title={backendTitle()} data-tooltip={backendTitle()}>
-        <span class="health-dot"></span>
-        <span class="health-icon" aria-hidden="true">API</span>
-        <span class="health-label">Backend</span>
-        <strong>{$status.backend_online ? "Online" : "Offline"}</strong>
-      </span>
-      <span class="health-item" data-state={healthState(Boolean($status.bridge?.connected), Boolean($status.backend_online))} data-testid="health-bridge" title={bridgeTitle()} data-tooltip={bridgeTitle()}>
-        <span class="health-dot"></span>
-        <span class="health-icon" aria-hidden="true">USB</span>
-        <span class="health-label">Bridge</span>
-        <strong>{bridgeLabel()}</strong>
-      </span>
-      <span class="health-item" data-state={canBusState("high")} data-testid="health-high-can" title={highCanTitle()} data-tooltip={highCanTitle()}>
-        <span class="health-dot"></span>
-        <span class="health-icon" aria-hidden="true">H</span>
-        <span class="health-label">High CAN</span>
-        <strong>{canBusLabel("high")}</strong>
-      </span>
-      <span class="health-item" data-state={canBusState("low")} data-testid="health-low-can" title={lowCanTitle()} data-tooltip={lowCanTitle()}>
-        <span class="health-dot"></span>
-        <span class="health-icon" aria-hidden="true">L</span>
-        <span class="health-label">Low CAN</span>
-        <strong>{canBusLabel("low")}</strong>
-      </span>
-    </div>
-    <div class="action-strip" aria-label="Bridge actions">
-      <button type="button" class="action-btn" data-testid="action-reset" on:click={resetFrames} title="Clear all stored CAN frames">
-        <span aria-hidden="true">↺</span>
-        <span>Reset</span>
-      </button>
-      <button type="button" class="action-btn" data-testid="action-restart" on:click={restartBridgeHandler} title="Restart the CAN bridge connection">
-        <span aria-hidden="true">↻</span>
-        <span>Restart</span>
-      </button>
-      <button type="button" class="action-btn danger" data-testid="action-stop" on:click={stopBridgeHandler} title="Stop the CAN bridge connection">
-        <span aria-hidden="true">■</span>
-        <span>Stop</span>
-      </button>
-    </div>
-  </header>
+  <Topbar onReset={resetFrames} onRestart={restartBridgeHandler} onStop={stopBridgeHandler} />
 
   <nav class="tabs" aria-label="Debug views">
     {#each tabs as tab}

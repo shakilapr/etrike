@@ -40,6 +40,50 @@ export class CanalystBridge implements HardwareBridge {
       return;
     }
 
+    this.spawnProcess(scriptPath);
+  }
+
+  /**
+   * Returns a promise that resolves to true when the bridge reports
+   * adapter_connected, or false if the process exits with an error
+   * before connecting (e.g. device not found).  Times out after `timeoutMs`.
+   */
+  waitForConnection(timeoutMs = 3000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const done = (result: boolean) => {
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        // Timed out — bridge is still running but hasn't reported status.
+        // Treat as connected since the process is alive (device may be slow).
+        resolve(this.state.connected);
+      }, timeoutMs);
+
+      const check = () => {
+        if (this.state.connected) { done(true); return; }
+        // If the process died without connecting, it's a hard failure
+        if (this.process == null && !this.state.connected) { done(false); return; }
+      };
+
+      // Poll every 200ms until connected or process exits
+      const interval = setInterval(() => {
+        check();
+        if (this.process == null || this.state.connected) {
+          clearInterval(interval);
+        }
+      }, 200);
+    });
+  }
+
+  /** Closes the bridge and abandons reconnect — used when falling back to another transport. */
+  async abandon(): Promise<void> {
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    this.reconnectAttempt = CanalystBridge.MAX_RECONNECT_ATTEMPTS; // block future reconnects
+    await this.close();
+  }
+
+  private spawnProcess(scriptPath: string): void {
     this.process = spawn(this.config.canalystPython, [scriptPath], {
       cwd: process.cwd(),
       env: {
@@ -61,7 +105,6 @@ export class CanalystBridge implements HardwareBridge {
     createInterface({ input: this.process.stdout }).on("line", (line) => this.handleLine(line));
     createInterface({ input: this.process.stderr }).on("line", (line) => {
       const trimmed = line.trim();
-      // Filter known non-error output (Python logging, warnings, etc.)
       if (!trimmed) return;
       if (trimmed.startsWith("[INFO]") || trimmed.startsWith("[WARN]") || trimmed.startsWith("DEBUG:")) return;
       this.state.last_error = trimmed;
@@ -79,7 +122,7 @@ export class CanalystBridge implements HardwareBridge {
       this.state.link_open = false;
       this.state.last_error = code === 0 ? null : `CANalyst-II bridge exited code=${code ?? "null"} signal=${signal ?? "null"}`;
       this.broadcastStatus();
-      if (code !== 0) this.scheduleReconnect(); // respawn on crash
+      if (code !== 0) this.scheduleReconnect();
     });
   }
 
