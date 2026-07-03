@@ -73,16 +73,12 @@
   // ── Vehicle command buttons ──
   let sending = false;
 
-  const MODES = [
-    { label: "MANUAL", value: 0, next: "AUTO" },
-    { label: "AUTO", value: 1, next: "ESTOP" },
-    { label: "ESTOP", value: 2, next: "MANUAL" },
-  ] as const;
-
+  // Mode cycles between driving modes only (MANUAL ↔ AUTO).
+  // ESTOP is a safety state, triggered by the dedicated ESTOP button or faults.
   function nextMode(): { label: string; value: number } {
     const cur = t.mode ?? "MANUAL";
-    const m = MODES.find((x) => x.label === cur) ?? MODES[0];
-    return MODES.find((x) => x.label === m.next) ?? MODES[0];
+    if (cur === "AUTO") return { label: "MANUAL", value: 0 };
+    return { label: "AUTO", value: 1 };
   }
 
   async function cycleMode() {
@@ -221,7 +217,7 @@
       class="cmd-btn"
       disabled={sending || !$status.bridge?.connected}
       on:click={cycleMode}
-      title="Cycle mode ({t.mode ?? 'MANUAL'} → {nextMode().label})"
+      title="Toggle {nextMode().label} mode"
     >
       <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8a6 6 0 0110.47-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 8a6 6 0 01-10.47 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="11.5,1.5 12.5,4 10,4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>

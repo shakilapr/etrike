@@ -1,182 +1,250 @@
 import { latestById } from "./can";
 import { logError } from "./errors";
 
-// ── ESTOP reason codes (from shared/can/can_protocol.h) ──
+// ── ESTOP reason codes ──
 const ESTOP_REASONS: Record<number, string> = {
-  0: "None",
-  1: "Button",
-  2: "Heartbeat timeout",
-  3: "Following error",
-  4: "Obstacle detected",
-  5: "CAN frame (0x001)",
-  6: "CAN bus-off",
-  7: "Internal fault (L3)",
+  0: "None", 1: "Button", 2: "Heartbeat timeout", 3: "Following error",
+  4: "Obstacle detected", 5: "CAN frame (0x001)", 6: "CAN bus-off", 7: "Internal fault",
 };
-function reasonLabel(v: number): string {
-  return ESTOP_REASONS[v] ?? "code " + v;
+function rLabel(v: number): string { return ESTOP_REASONS[v] ?? "code " + v; }
+
+// ── SES fault bit names (0x202 SES_ERRINFO, bytes 0-2) ──
+const SES_FAULTS: [number, string][] = [
+  [0x01,"UnderVolt"],[0x02,"OverVolt"],[0x04,"CanComErr"],[0x08,"TempErr"],
+  [0x10,"DomainSC"],[0x20,"DomainV"],[0x40,"DomainT"],[0x80,"TempSensor"],
+  [0x100,"AngleP_OC"],[0x200,"AngleP_AF"],[0x400,"AngleS_OC"],[0x800,"AngleS_AF"],
+  [0x1000,"SensorPow"],[0x2000,"Alignment"],[0x4000,"OverAngle"],[0x8000,"MtrStall"],
+  [0x10000,"MtrCurt"],[0x20000,"SensorCL"],[0x40000,"TorqT1_OC"],[0x80000,"TorqT1_AF"],
+  [0x100000,"TorqT2_OC"],[0x200000,"TorqT2_AF"],[0x400000,"SentAngle"],[0x800000,"MtrIdling"],
+  [0x1000000,"EPROM"],
+];
+// ── SEB fault bit names (0x731 SEB_ERRINFO, bytes 0-2) ──
+const SEB_FAULTS: [number, string][] = [
+  [0x01,"UnderVolt"],[0x02,"OverVolt"],[0x04,"CanComErr"],[0x08,"TempErr"],
+  [0x10,"DomainSC"],[0x20,"DomainV"],[0x40,"DomainT"],[0x80,"AngleP_OC"],
+  [0x100,"AngleP_AF"],[0x200,"AngleS_OC"],[0x400,"AngleS_AF"],[0x800,"NoPreSensor"],
+  [0x2000,"SensorUCL"],[0x4000,"Alignment"],[0x8000,"AngleOver"],
+  [0x20000,"MtrStall"],[0x40000,"MtrDC"],[0x80000,"OilErr"],[0x100000,"InitOil"],
+  [0x200000,"SentValue"],[0x400000,"MtrNoLoad"],
+  [0x1000000,"PreSensorOver"],[0x2000000,"LowVoltCharging"],
+];
+function decodeFaults(mask: number, table: [number, string][]): string[] {
+  const active: string[] = [];
+  for (const [bit, name] of table) { if (mask & bit) active.push(name); }
+  return active;
 }
 
-// ── State ──
+// ── Heartbeat sources ──
+function missingHeartbeats($latest: Record<string, unknown>): string[] {
+  const m: string[] = [];
+  if (!$latest["high:0x7FC"]) m.push("HOST(0x7FC)");
+  if (!$latest["high:0x7FD"]) m.push("RT(0x7FD)");
+  if (!$latest["low:0x7FE"])  m.push("SYS(0x7FE)");
+  return m;
+}
+
+// ── Persistent state ──
 let lastSafetyState: number | null = null;
 let lastMotorFault = 0;
 let lastBrakeFault = false;
-let lastSesL3Fault = false;
-let lastSebL3Fault = false;
+let lastSesMask = 0;
+let lastSebMask = 0;
+let lastMode: number | null = null;
+let lastGear: number | null = null;
+let lastBlocked = false;
+let lastObstacleWarn = false;
+let lastSteerDiagFault = false;
 
-// ESTOP toggle burst tracking
 let estopActive = false;
 let estopToggleCount = 0;
 let estopToggleStart = 0;
 let estopLastReason = 0;
 let estopSummaryTimer: ReturnType<typeof setTimeout> | null = null;
-const ESTOP_QUIET_MS = 3000; // after 3s of no toggles, emit summary
+const ESTOP_QUIET_MS = 3000;
 
-const COOLDOWN_S = 10;
-const cooldowns: Record<string, number> = {};
-
-function cooldown(key: string): boolean {
-  const now = Date.now() / 1000;
-  if (now - (cooldowns[key] ?? 0) < COOLDOWN_S) return false;
-  cooldowns[key] = now;
-  return true;
+const CD_S = 10;
+const cds: Record<string, number> = {};
+function cd(k: string): boolean {
+  const n = Date.now() / 1000;
+  if (n - (cds[k] ?? 0) < CD_S) return false;
+  cds[k] = n; return true;
 }
 
-function flushEstopSummary() {
+function flushEstop() {
   if (estopSummaryTimer) { clearTimeout(estopSummaryTimer); estopSummaryTimer = null; }
   if (estopToggleCount === 0) return;
-  const count = estopToggleCount;
-  const reason = reasonLabel(estopLastReason);
-  const duration = ((Date.now() - estopToggleStart) / 1000).toFixed(1);
-  // Only log if it's actually a burst (≥3 toggles) — single cycles are
-  // already explained by the root-cause fault messages above.
-  if (count >= 3) {
-    logError("ESTOP burst: " + count + " cycles in " + duration + "s, cause=" + reason);
+  if (estopToggleCount >= 3) {
+    logError("ESTOP burst: " + estopToggleCount + " cycles in " +
+      ((Date.now() - estopToggleStart) / 1000).toFixed(1) + "s, cause=" + rLabel(estopLastReason));
   }
-  estopToggleCount = 0;
-  estopToggleStart = 0;
+  estopToggleCount = 0; estopToggleStart = 0;
 }
 
 export function initFaultWatcher(): () => void {
   return latestById.subscribe(($latest) => {
-    // ── Gather CAN data ──
-    const safetyHigh = $latest["high:0x011"]?.decoded;
-    const safetyLow  = $latest["low:0x011"]?.decoded;
-    const safety = safetyHigh ?? safetyLow;
+    // ═══ Gather all CAN data ═══
+    const sHi = $latest["high:0x011"]?.decoded;
+    const sLo = $latest["low:0x011"]?.decoded;
+    const safety = (sHi ?? sLo) as Record<string, unknown> | undefined;
     const estop = safety?.estop_active === true || safety?.estop_active === 1;
 
-    const stateRptHigh = $latest["high:0x210"]?.decoded;
-    const stateRptLow  = $latest["low:0x210"]?.decoded;
-    const stateRpt = stateRptHigh ?? stateRptLow;
-    const estopReason: number =
-      stateRpt?.estop_reason !== undefined ? Number(stateRpt.estop_reason) : 0;
+    const rHi = $latest["high:0x210"]?.decoded;
+    const rLo = $latest["low:0x210"]?.decoded;
+    const rpt = (rHi ?? rLo) as Record<string, unknown> | undefined;
+    const estopReason: number = rpt?.estop_reason !== undefined ? Number(rpt.estop_reason) : 0;
+    const safetyState: number | null = rpt?.safety_state !== undefined ? Number(rpt.safety_state) : null;
+    const mode: number | null = rpt?.mode !== undefined ? Number(rpt.mode) : null;
 
-    const diagHigh = $latest["high:0x600"]?.decoded;
-    const diagLow  = $latest["low:0x600"]?.decoded;
-    const diag = diagHigh ?? diagLow;
+    const dHi = $latest["high:0x600"]?.decoded;
+    const dLo = $latest["low:0x600"]?.decoded;
+    const diag = (dHi ?? dLo) as Record<string, unknown> | undefined;
     const brakeFault = diag?.brake_fault === true || diag?.brake_fault === 1;
+    const hbDiagOk = diag?.hb_ok !== false && diag?.hb_ok !== 0;
 
-    // ── ESTOP: track toggle bursts, don't flood ──
+    const mHi = $latest["high:0x206"]?.decoded;
+    const mLo = $latest["low:0x206"]?.decoded;
+    const motor = (mHi ?? mLo) as Record<string, unknown> | undefined;
+    const faultFlags: number = motor?.fault_flags !== undefined ? Number(motor.fault_flags) : 0;
+    const gear: number | null = motor?.gear_state !== undefined ? Number(motor.gear_state) : null;
+
+    const ses = $latest["low:0x202"]?.decoded as Record<string, unknown> | undefined;
+    const sesMask: number = ses?.fault_mask !== undefined ? Number(ses.fault_mask) : 0;
+    const sesL3 = ses?.l3_fault === true;
+
+    const seb = $latest["low:0x731"]?.decoded as Record<string, unknown> | undefined;
+    const sebMask: number = seb?.fault_mask !== undefined ? Number(seb.fault_mask) : 0;
+    const sebL3 = seb?.l3_fault === true;
+
+    const steerDiag = $latest["high:0x310"]?.decoded as Record<string, unknown> | undefined;
+    const steerDiagFault = steerDiag?.SteerDiag_Fault === true;
+
+    const obstacle = $latest["high:0x400"]?.decoded as Record<string, unknown> | undefined;
+    const distMm: number = obstacle?.distance_mm !== undefined ? Number(obstacle.distance_mm) : Infinity;
+    const obstacleWarn = distMm < 2000 && distMm !== 0xFFFFFFFF; // <2m and not "clear"
+
+    const hbMissing = missingHeartbeats($latest as Record<string, unknown>);
+    const hbOk = hbDiagOk && safety?.heartbeat_ok !== false && safety?.heartbeat_ok !== 0;
+
+    // ═══ ESTOP toggle tracking ═══
     if (estop !== estopActive) {
       estopActive = estop;
       if (estop) {
-        // ESTOP just engaged — start or continue a burst
         if (estopToggleCount === 0) estopToggleStart = Date.now();
-        estopToggleCount++;
-        estopLastReason = estopReason;
-        // Reset quiet timer
+        estopToggleCount++; estopLastReason = estopReason;
         if (estopSummaryTimer) clearTimeout(estopSummaryTimer);
       }
-      // Start/restart quiet timer: after ESTOP_QUIET_MS of stable state, emit summary
       if (!estop) {
         if (estopSummaryTimer) clearTimeout(estopSummaryTimer);
-        estopSummaryTimer = setTimeout(flushEstopSummary, ESTOP_QUIET_MS);
+        estopSummaryTimer = setTimeout(flushEstop, ESTOP_QUIET_MS);
       }
     }
 
-    // ── Root cause: brake fault ──
+    // ═══ Brake fault ═══
     if (brakeFault !== lastBrakeFault) {
       if (brakeFault) {
-        if (cooldown("brake_fault_on")) {
-          logError("BRAKE FAULT - pressure sensor or actuator fault (ESTOP will be triggered)");
-        }
+        if (cd("brake_on"))
+          logError("BRAKE FAULT — actuator or pressure sensor (triggers ESTOP)");
       } else {
-        if (cooldown("brake_fault_off")) {
-          logError("Brake fault cleared");
-          // Flush any pending ESTOP summary when brake fault clears
-          flushEstopSummary();
-        }
+        if (cd("brake_off")) { logError("Brake fault cleared"); flushEstop(); }
       }
       lastBrakeFault = brakeFault;
     }
 
-    // ── Safety state ──
-    const safetyState: number | null =
-      stateRpt?.safety_state !== undefined ? Number(stateRpt.safety_state) : null;
+    // ═══ Safety state ═══
     if (safetyState !== null && safetyState !== lastSafetyState) {
       const labels = ["Normal", "Internal ESTOP", "Fault"];
       const label = labels[safetyState] ?? "?" + safetyState;
-      if (safetyState > 0 && cooldown("safety_state")) {
-        logError("Safety state: " + label + " (reason: " + reasonLabel(estopReason) + ")");
+      if (safetyState > 0 && cd("safety")) {
+        let detail = rLabel(estopReason);
+        if (estopReason === 2 && hbMissing.length > 0)
+          detail = "heartbeat missing: " + hbMissing.join(", ");
+        logError("Safety: " + label + " — " + detail);
       }
       lastSafetyState = safetyState;
     }
 
-    // ── Motor fault ──
-    const motorHigh = $latest["high:0x206"]?.decoded;
-    const motorLow  = $latest["low:0x206"]?.decoded;
-    const motor = motorHigh ?? motorLow;
-    const faultFlags: number = motor?.fault_flags !== undefined ? Number(motor.fault_flags) : 0;
-    if (faultFlags !== lastMotorFault && cooldown("motor_fault")) {
-      if (faultFlags > 0) {
-        logError("Motor fault flags=0x" + faultFlags.toString(16).padStart(2, "0").toUpperCase());
-      } else if (lastMotorFault > 0) {
-        logError("Motor faults cleared");
-      }
+    // ═══ Mode changes ═══
+    if (mode !== null && mode !== lastMode) {
+      const labels = ["MANUAL", "AUTO", "ESTOP"];
+      const label = labels[mode] ?? "?" + mode;
+      if (cd("mode")) logError("Mode changed to " + label);
+      lastMode = mode;
+    }
+
+    // ═══ Gear changes ═══
+    if (gear !== null && gear !== lastGear) {
+      const labels = ["N", "D", "S", "R"];
+      const label = labels[gear] ?? "?" + gear;
+      if (cd("gear")) logError("Gear: " + label);
+      lastGear = gear;
+    }
+
+    // ═══ Motor fault ═══
+    if (faultFlags !== lastMotorFault && cd("motor")) {
+      if (faultFlags > 0)
+        logError("Motor fault 0x" + faultFlags.toString(16).toUpperCase().padStart(2,"0"));
+      else if (lastMotorFault > 0) logError("Motor fault cleared");
       lastMotorFault = faultFlags;
     }
 
-    // ── SES L3 fault (0x202) ──
-    const sesFault = $latest["low:0x202"]?.decoded;
-    const sesL3 = sesFault?.l3_fault === true;
-    if (sesL3 && !lastSesL3Fault && cooldown("ses_fault")) {
-      logError("SES steering L3 fault (mask=" + (sesFault?.fault_mask_hex ?? "?") + ")");
+    // ═══ SES faults (detailed) ═══
+    if (sesMask !== lastSesMask && cd("ses")) {
+      const was = decodeFaults(lastSesMask, SES_FAULTS);
+      const now = decodeFaults(sesMask, SES_FAULTS);
+      const added = now.filter(f => !was.includes(f));
+      const removed = was.filter(f => !now.includes(f));
+      if (added.length)   logError("SES fault: " + added.join(", "));
+      if (removed.length) logError("SES cleared: " + removed.join(", "));
+      lastSesMask = sesMask;
+    } else if (sesL3 && sesMask === lastSesMask && cd("ses_l3")) {
+      // L3 but no bit change — log once
     }
-    lastSesL3Fault = sesL3;
 
-    // ── SEB L3 fault (0x731) ──
-    const sebFault = $latest["low:0x731"]?.decoded;
-    const sebL3 = sebFault?.l3_fault === true;
-    if (sebL3 && !lastSebL3Fault && cooldown("seb_fault")) {
-      logError("SEB brake-by-wire L3 fault (mask=" + (sebFault?.fault_mask_hex ?? "?") + ")");
+    // ═══ SEB faults (detailed) ═══
+    if (sebMask !== lastSebMask && cd("seb")) {
+      const was = decodeFaults(lastSebMask, SEB_FAULTS);
+      const now = decodeFaults(sebMask, SEB_FAULTS);
+      const added = now.filter(f => !was.includes(f));
+      const removed = was.filter(f => !now.includes(f));
+      if (added.length)   logError("SEB fault: " + added.join(", "));
+      if (removed.length) logError("SEB cleared: " + removed.join(", "));
+      lastSebMask = sebMask;
     }
-    lastSebL3Fault = sebL3;
 
-    // ── Mobility blockers summary ──
-    // Collect all conditions that prevent the vehicle from moving.
-    const mode = stateRpt?.mode !== undefined ? Number(stateRpt.mode) : null;
-    const hbOk = diag?.hb_ok !== false && diag?.hb_ok !== 0 &&
-                 safety?.heartbeat_ok !== false && safety?.heartbeat_ok !== 0;
+    // ═══ Steering diag fault ═══
+    if (steerDiagFault !== lastSteerDiagFault && cd("steer_diag")) {
+      if (steerDiagFault) logError("Steering diagnostic fault (0x310)");
+      else logError("Steering diagnostic fault cleared");
+      lastSteerDiagFault = steerDiagFault;
+    }
+
+    // ═══ Obstacle proximity ═══
+    if (obstacleWarn !== lastObstacleWarn && cd("obstacle")) {
+      if (obstacleWarn) logError("OBSTACLE — " + distMm + "mm (<2m)");
+      else logError("Obstacle cleared");
+      lastObstacleWarn = obstacleWarn;
+    }
+
+    // ═══ Mobility blockers ═══
     const blockers: string[] = [];
-    if (estop)                       blockers.push("ESTOP active");
-    if (mode === 2)                  blockers.push("Mode=ESTOP");
-    if (safetyState === 1)           blockers.push("Safety=InternalEstop");
-    if (safetyState === 2)           blockers.push("Safety=Fault");
-    if (brakeFault)                  blockers.push("Brake fault");
-    if (faultFlags > 0)              blockers.push("Motor fault");
-    if (sesL3)                       blockers.push("SES L3 fault");
-    if (sebL3)                       blockers.push("SEB L3 fault");
-    if (!hbOk)                       blockers.push("Heartbeat lost");
+    if (estop)               blockers.push("ESTOP active");
+    if (mode === 2)          blockers.push("Mode=ESTOP");
+    if (safetyState === 1)   blockers.push("Safety=InternalEstop");
+    if (safetyState === 2)   blockers.push("Safety=Fault");
+    if (brakeFault)          blockers.push("Brake fault");
+    if (faultFlags > 0)      blockers.push("Motor fault 0x" + faultFlags.toString(16).toUpperCase().padStart(2,"0"));
+    if (sesL3)               blockers.push("SES fault");
+    if (sebL3)               blockers.push("SEB fault");
+    if (steerDiagFault)      blockers.push("Steer diag fault");
+    if (!hbOk) {
+      if (hbMissing.length) blockers.push("HB missing: " + hbMissing.join(","));
+      else blockers.push("Heartbeat lost");
+    }
     const blocked = blockers.length > 0;
-
-    if (blocked !== lastBlocked && cooldown("mobility")) {
-      if (blocked) {
-        logError("BLOCKED — vehicle cannot move: " + blockers.join(", "));
-      } else {
-        logError("CLEAR — all blocks removed, vehicle ready");
-      }
+    if (blocked !== lastBlocked && cd("mobility")) {
+      if (blocked) logError("BLOCKED: " + blockers.join("; "));
+      else logError("CLEAR — vehicle ready");
     }
     lastBlocked = blocked;
   });
 }
-
-let lastBlocked = false;

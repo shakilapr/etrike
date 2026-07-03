@@ -94,7 +94,7 @@ ESTOP → **1 (on)** — maintains 12V for MCUs, CAN transceivers, and brake lig
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
-| `SYS_Mode` | 0 | 8 | u8 | 1 | 0 | 0 | 2 | enum (0=M, 1=A, 2=ESTOP) |
+| `SYS_Mode` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | enum (0=MANUAL, 1=AUTO) |
 
 ---
 

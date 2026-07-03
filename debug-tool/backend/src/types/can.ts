@@ -75,6 +75,12 @@ export const MODE_OPTIONS = [
   { label: "ESTOP", value: 2 }
 ];
 
+// Mode command (0x110) only accepts MANUAL/AUTO — ESTOP is not selectable via mode button.
+export const MODE_CMD_OPTIONS = [
+  { label: "MANUAL", value: 0 },
+  { label: "AUTO", value: 1 }
+];
+
 export const GEAR_OPTIONS = [
   { label: "N", value: 0 },
   { label: "D", value: 1 },
@@ -93,6 +99,7 @@ const num = (key: string, label: string, unit?: string, min?: number, max?: numb
   step
 });
 const modeField: CanField = { key: "mode", label: "Mode", kind: "enum", options: MODE_OPTIONS };
+const modeCmdField: CanField = { key: "mode", label: "Mode", kind: "enum", options: MODE_CMD_OPTIONS };
 const gearField: CanField = { key: "gear", label: "Gear", kind: "enum", options: GEAR_OPTIONS };
 const SAFETY_STATE_OPTIONS = [
   { label: "Normal", value: 0 },
@@ -159,7 +166,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x001", "SAFETY_ESTOP", "any", "event", 0, true, []),
   msg("low", "0x011", "SYS_SAFETY_STS", "SYS", "5 Hz", 3, true, safetyFields),
   msg("low", "0x012", "SYS_DCDC_CMD", "SYS", "change", 1, false, [bool("enable", "Enable")]),
-  msg("low", "0x110", "SYS_MODE_CMD", "SYS", "change", 1, true, [modeField]),
+  msg("low", "0x110", "SYS_MODE_CMD", "SYS", "change", 1, true, [modeCmdField]),
   msg("low", "0x120", "SYS_THROTTLE_STS", "MTR", "100 Hz", 2, true, throttleFields),
   msg("low", "0x169", "VCU_SES_REQ", "RT", "50 Hz", 8, true, [bool("alignment_enable", "Alignment enable"), num("target_angle", "Target angle", "0.1 deg", -3000, 780), num("target_speed", "Target speed", "deg/s", 125, 1250), bool("control_enable", "Control enable"), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x201", "SES_STATUS", "EPS-C", "100 Hz", 8, true, [bool("angle_status", "Angle status"), num("control_mode_sts", "Control mode status", undefined, 0, 3), num("str_angle", "Steer angle", "0.1 deg"), num("tgt_angle_spd", "Target angle speed", "deg/s"), num("error_status", "Error status", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),

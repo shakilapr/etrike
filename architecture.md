@@ -42,7 +42,7 @@ Key architectural IDs:
 | High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry (DLC=8) |
 | Low | `0x001` | SAFETY_ESTOP | Any → All: emergency stop (bridged) |
 | Low | `0x011` | SYS_SAFETY_STS | SYS → RT (→ Jetson): estop, hb, lights |
-| Low | `0x110` | SYS_MODE_CMD | SYS → RT: mode (Manual/Auto/Estop) |
+| Low | `0x110` | SYS_MODE_CMD | SYS → RT: mode (Manual/Auto only) |
 | Low | `0x204` | RT_DRIVE_CMD | RT → MTR, SYS: speed + gear |
 | Low | `0x205` | RT_BRAKE_CMD | RT → SYS: brake kPa |
 | Low | `0x169` | VCU_SES_REQ | RT → EPS-C: steering angle |
@@ -64,15 +64,23 @@ Key architectural IDs:
 
 ---
 
-## 3. Mode State Machine
+## 3. Mode and ESTOP State
+
+The mode button toggles between two operating modes: MANUAL and AUTO.
+ESTOP is a **safety state** overlaid on the current mode, triggered exclusively
+by the hardware ESTOP button (GPIO1), CAN 0x001, or safety faults — never by
+the mode button or CAN 0x110.
 
 ```
-MANUAL ←→ AUTO ←→ ESTOP
-   ↑                 │
-   └──START button────┘
+MANUAL ←→ AUTO       (mode button)
+   ↓       ↓
+  ESTOP ←────────── (hardware button, CAN 0x001, safety faults)
+   |
+   └──START button──→ MANUAL
+   └──MODE long-press─→ MANUAL
 ```
 
-| Mode | Behavior |
+| State | Behavior |
 |------|----------|
 | **MANUAL** | Rider steers, throttle grip → MTR pass-through → motor. Brake lever → SYS → SEB. EPS-C standalone. DC-DC on. |
 | **AUTO** | Jetson 0x300 → RT kinematics → 0x204 (speed) + 0x169 (steering). Lights from Jetson via 0x302. Brake via 0x7B9. |
