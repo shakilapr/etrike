@@ -6,7 +6,9 @@
   import Controller from "./components/Controller.svelte";
   import Dashboard from "./components/Dashboard.svelte";
   import PipelineView from "./components/PipelineView.svelte";
+  import Simulator from "./components/Simulator.svelte";
   import Stats from "./components/Stats.svelte";
+  import Terminal from "./components/Terminal.svelte";
   import Topbar from "./components/Topbar.svelte";
   import UnitTest from "./components/UnitTest.svelte";
   import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
@@ -14,9 +16,10 @@
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
   import { errorLog, logError } from "./stores/errors";
+  import { initFaultWatcher } from "./stores/faults";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
-  type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats";
+  type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "simulator";
 
   let activeTab: Tab = "dashboard";
   let ids: CanMessageDef[] = [];
@@ -32,7 +35,9 @@
     { id: "controller", label: "Controller" },
     { id: "unit-test", label: "Unit Test" },
     { id: "pipeline", label: "Pipeline" },
-    { id: "stats", label: "Statistics" }
+    { id: "stats", label: "Statistics" },
+    { id: "terminal", label: "Terminal" },
+    { id: "simulator", label: "Simulator" }
   ];
 
   // (topbar helpers moved to Topbar.svelte)
@@ -99,6 +104,7 @@
   onMount(() => {
     void bootstrap();
     const timer = window.setInterval(refreshStatus, 3000);
+    const unsubFaults = initFaultWatcher();
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("keydown", handleDiscrete);
@@ -106,6 +112,7 @@
 
     return () => {
       window.clearInterval(timer);
+      unsubFaults();
       stream?.close();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -244,24 +251,13 @@
       <UnitTest {ids} />
     {:else if activeTab === "pipeline"}
       <PipelineView />
+    {:else if activeTab === "terminal"}
+      <Terminal />
+    {:else if activeTab === "simulator"}
+      <Simulator />
     {:else}
       <Stats {ids} />
     {/if}
   </main>
 
-  {#if $errorLog.length > 0}
-    <section class="error-log">
-      <details>
-        <summary>Error Log ({$errorLog.length})</summary>
-        <div class="log-entries">
-          {#each $errorLog as entry}
-            <div class="log-entry">
-              <span class="log-time">{new Date(entry.ts * 1000).toLocaleTimeString()}</span>
-              <span class="log-msg">{entry.message}</span>
-            </div>
-          {/each}
-        </div>
-      </details>
-    </section>
-  {/if}
 </div>

@@ -2,6 +2,8 @@
   import { frames, stats, status } from "../stores/can";
   import { telemetry, type Telemetry } from "../stores/telemetry";
   import type { Bus } from "../lib/can-decoder";
+  import { sendFrame } from "../lib/api";
+  import { logError } from "../stores/errors";
 
   // ── Props ──
   export let onReset: () => void;
@@ -39,17 +41,15 @@
   // ── Bulb state helpers ──
   $: t = $telemetry;
 
-  // Flash turn bulbs: blink on/off when active
   let tick = 0;
   $: {
     if (t.leftTurn || t.rightTurn) {
       const interval = setInterval(() => tick++, 500);
-      // cleanup handled by Svelte
     }
   }
   function flashOn(active: boolean): boolean {
     if (!active) return false;
-    return tick % 2 === 0; // 500ms on, 500ms off
+    return tick % 2 === 0;
   }
 
   function gearColor(g: string | null): string {
@@ -69,12 +69,69 @@
       default: return "var(--muted)";
     }
   }
+
+  // ── Vehicle command buttons ──
+  let sending = false;
+
+  const MODES = [
+    { label: "MANUAL", value: 0, next: "AUTO" },
+    { label: "AUTO", value: 1, next: "ESTOP" },
+    { label: "ESTOP", value: 2, next: "MANUAL" },
+  ] as const;
+
+  function nextMode(): { label: string; value: number } {
+    const cur = t.mode ?? "MANUAL";
+    const m = MODES.find((x) => x.label === cur) ?? MODES[0];
+    return MODES.find((x) => x.label === m.next) ?? MODES[0];
+  }
+
+  async function cycleMode() {
+    if (sending) return;
+    const nm = nextMode();
+    sending = true;
+    try {
+      await sendFrame({ bus: "low", id: "0x110", dlc: 1, data: [nm.value] });
+      logError("Mode set to " + nm.label);
+    } catch (e) {
+      logError("Mode change failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      sending = false;
+    }
+  }
+
+  async function toggleDcdc() {
+    if (sending) return;
+    sending = true;
+    try {
+      // Toggle: send enable=1 (on) — since we can't read current DCDC state from CAN,
+      // default to "power on" semantics. Double-click semantics handled by user.
+      await sendFrame({ bus: "low", id: "0x012", dlc: 1, data: [1] });
+      logError("DCDC enable sent");
+    } catch (e) {
+      logError("DCDC command failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      sending = false;
+    }
+  }
+
+  async function sendEstop() {
+    if (sending) return;
+    if (!window.confirm("Send ESTOP frame? This will trigger emergency stop on all nodes.")) return;
+    sending = true;
+    try {
+      await sendFrame({ bus: "low", id: "0x001", dlc: 0, data: [], confirm_estop: true });
+      logError("ESTOP frame sent on low bus");
+    } catch (e) {
+      logError("ESTOP send failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      sending = false;
+    }
+  }
 </script>
 
 <header class="topbar v2">
   <!-- ── Brand ── -->
   <div class="brand-compact">
-    <span class="brand-icon" aria-hidden="true">⚡</span>
     <span class="brand-name">E-Trike</span>
   </div>
 
@@ -148,8 +205,45 @@
 
   <span class="topbar-sep" aria-hidden="true"></span>
 
-  <!-- ── Action buttons ── -->
-  <div class="action-strip compact" aria-label="Actions">
+  <!-- ── Vehicle command buttons ── -->
+  <div class="cmd-strip" aria-label="Vehicle commands">
+    <button
+      type="button"
+      class="cmd-btn mode-btn"
+      disabled={sending || !$status.bridge?.connected}
+      on:click={cycleMode}
+      title="Cycle mode: {nextMode().label}"
+      data-tooltip="Next: {nextMode().label}"
+    >
+      <span class="cmd-icon">M</span>
+      <span class="cmd-label">{t.mode ?? "MANUAL"}</span>
+    </button>
+    <button
+      type="button"
+      class="cmd-btn on-btn"
+      disabled={sending || !$status.bridge?.connected}
+      on:click={toggleDcdc}
+      title="Power on / DCDC enable"
+      data-tooltip="DCDC enable"
+    >
+      <span class="cmd-icon">&#x23FB;</span>
+      <span class="cmd-label">ON</span>
+    </button>
+    <button
+      type="button"
+      class="cmd-btn estop-btn"
+      disabled={sending || !$status.bridge?.connected}
+      on:click={sendEstop}
+      title="Send ESTOP (emergency stop)"
+      data-tooltip="EMERGENCY STOP"
+    >
+      <span class="cmd-icon">&#x26D4;</span>
+      <span class="cmd-label">ESTOP</span>
+    </button>
+  </div>
+
+  <!-- ── Bridge action buttons ── -->
+  <div class="action-strip compact" aria-label="Bridge actions">
     <button type="button" class="action-btn icon-only" data-testid="action-reset" on:click={onReset} title="Clear frames">
       <span aria-hidden="true">↺</span>
     </button>
