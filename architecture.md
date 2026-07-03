@@ -841,5 +841,6 @@ SYS monitors ESTOP_ACTIVE for ACK (100ms timeout) and STARTUP_READY for MTR live
 - [`docs/architecture-reference.md`](docs/architecture-reference.md) — Detailed tables, pseudocode, processing summaries
 - [`docs/wiring-harness.md`](docs/wiring-harness.md) — Pin-level wiring
 - [`docs/hil-safety-test-plan.md`](docs/hil-safety-test-plan.md) — HIL test scenarios
+- [`tem/testing-guide.md`](tem/testing-guide.md) — Complete test suite guide (2,470+ assertions)
 - [`docs/can-bench-test.md`](docs/can-bench-test.md) — Bench test plan
 - [`shared/can/can_protocol.h`](shared/can/can_protocol.h) — C++ CAN message structs

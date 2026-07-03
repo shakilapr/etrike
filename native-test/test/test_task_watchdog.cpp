@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
+#include <initializer_list>
 
 // ── Simulated alive counters (pattern from RT + SYS) ──────────────
 static std::atomic<uint32_t> g_alive_control{0};
