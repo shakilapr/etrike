@@ -35,7 +35,7 @@ constexpr int kGearDSense = 12, kGearSSense = 13, kGearRSense = 14;
 constexpr int kGearDOut   = 33, kGearSOut   = 34, kGearROut   = 35;
 
 // ── signal lights — handlebar switch inputs ──────────────────────
-constexpr int kSwitchLeftTurn  =  3;
+constexpr int kSwitchLeftTurn  =  9;  // moved from GPIO3 (ESP32-S3 JTAG strapping pin)
 constexpr int kSwitchRightTurn =  6;
 constexpr int kSwitchHeadlight =  7;
 
