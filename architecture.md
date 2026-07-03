@@ -36,7 +36,7 @@ Key architectural IDs:
 | High | `0x301` | HOST_BRAKE_REQ | Jetson → RT: brake kPa |
 | High | `0x302` | HOST_LIGHT_CMD | Jetson → RT (→ SYS): lights |
 | High | `0x400` | HOST_OBSTACLE_DIST | Jetson → RT: min obstacle mm |
-| High | `0x210` | RT_STATE_RPT | RT → Jetson: mode, safety_state, reversing, rx_overflow (DLC=4) |
+| High | `0x210` | RT_STATE_RPT | RT → Jetson: mode, safety_state+estop_reason (packed byte 1), reversing, rx_overflow, task_health, steer_state (DLC=6) |
 | High | `0x220` | RT_PID_RPT | RT → Jetson: shadow PID telemetry (DLC=6) |
 | High | `0x310` | STEER_DIAG | RT → Jetson: steering telemetry (DLC=8) |
 | High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry (DLC=8) |
@@ -86,7 +86,7 @@ MANUAL ←→ AUTO ←→ ESTOP
 
 ```
 Throttle grip → MTR ADC → MTR DAC → Motor controller
-Gear selector → TLP281 opto → MTR GPIO → relays → ECU
+Gear selector → TLP281 opto → MTR GPIO → MOSFETs → motor controller
 Brake lever → SYS GPIO → 0x7B9 → SEB
 Steering wheel → EPS-C standalone (RT monitors 0x201)
 ```
@@ -527,9 +527,9 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | PB0 | Gear D sense | TLP281 optoisolator input (72V) |
 | PB1 | Gear S sense | TLP281 optoisolator input (72V) |
 | PB2 | Gear R sense | TLP281 optoisolator input (72V) |
-| PA3 | Gear D out | Relay output (72V) |
-| PA4 | Gear S out | Relay output (72V) |
-| PA5 | Gear R out | Relay output (72V) |
+| PA3 | Gear D out | MOSFET output (72V) |
+| PA4 | Gear S out | MOSFET output (72V) |
+| PA5 | Gear R out | MOSFET output (72V) |
 | PB1 | CAN RX | STM32 bxCAN |
 | PB0 | CAN TX | STM32 bxCAN |
 | PA4 | DAC SDA (I2C) | MCP4725 throttle DAC |
@@ -559,13 +559,13 @@ Nine lock-free atomics: `g_mode`, `g_estop_active`, `g_cmd_speed_mmps`, `g_cmd_g
 
 ### Mode-Gated Control
 
-| Mode | DAC Output | Gear Relays | CAN TX |
+| Mode | DAC Output | Gear MOSFETs | CAN TX |
 |------|-----------|-------------|--------|
 | MANUAL | ADC passthrough (0-5V → 0-4095 DAC) | Follow gear selector | 0x120 (speed=0), 0x206 |
 | AUTO | 0x204 speed → DAC value | 0x204 gear → relays* | 0x120 (actual speed), 0x206 |
-| ESTOP | DAC=0V, all relays OFF | Forced N | 0x120, 0x206 (fault flags set) |
+| ESTOP | DAC=0V, all MOSFETs OFF | Forced N | 0x120, 0x206 (fault flags set) |
 
-*Gear switching in AUTO is speed-supervised: relays only change when `abs(speed) < 50mm/s` to prevent shifting 72V contactors under load.
+*Gear switching in AUTO is speed-supervised: MOSFETs only change when `abs(speed) < 50mm/s` to prevent switching 72V under load.
 
 ### Safety Features
 
@@ -583,7 +583,7 @@ Nine lock-free atomics: `g_mode`, `g_estop_active`, `g_cmd_speed_mmps`, `g_cmd_g
 
 | Frame | Dir | Rate | Purpose |
 |-------|-----|------|---------|
-| 0x001 | RX | event | ESTOP → DAC=0, relays OFF |
+| 0x001 | RX | event | ESTOP → DAC=0, MOSFETs OFF |
 | 0x110 | RX | change | Mode from SYS |
 | 0x204 | RX | 100 Hz | Drive setpoint (speed+gear) from RT |
 | 0x120 | TX | 100 Hz | Throttle position feedback (actual speed) |
