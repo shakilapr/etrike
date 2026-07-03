@@ -156,9 +156,10 @@ def _instantaneous_fps(bus: str, now: float) -> float:
     q = _frame_history[bus]
     if not q:
         return 0.0
-    window_s = max(now - q[0][0], 0.001)
     total_in_window = sum(count for _, count in q)
-    return total_in_window / window_s
+    # Always divide by the fixed window width so FPS decays smoothly
+    # as entries age out, rather than staying high then dropping to 0 abruptly.
+    return total_in_window / FPS_WINDOW_S
 
 
 def emit_stats(started_at: float) -> None:

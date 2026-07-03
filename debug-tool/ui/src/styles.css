@@ -382,6 +382,242 @@ h2 { font-size: 1rem; }
   color: var(--ok);
 }
 
+/* ── Compact topbar v2: icons, bulbs, telemetry ── */
+.topbar.v2 {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 48px;
+  padding: 0;
+}
+
+.brand-compact {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.brand-icon {
+  font-size: 1.2rem;
+}
+.brand-name {
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Health dots (compact) */
+.health-dots {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hdot {
+  align-items: center;
+  border: 2px solid var(--panel-border);
+  border-radius: 50%;
+  cursor: default;
+  display: flex;
+  height: 22px;
+  justify-content: center;
+  position: relative;
+  width: 22px;
+}
+.hdot[data-state="ok"] { border-color: var(--ok); }
+.hdot[data-state="warn"] { border-color: var(--warn); }
+.hdot[data-state="bad"] { border-color: var(--err); }
+.hdot-label {
+  color: var(--muted);
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.hdot-svg {
+  color: var(--muted);
+  display: block;
+}
+.hdot[data-state="ok"] .hdot-svg { color: var(--ok); }
+.hdot[data-state="warn"] .hdot-svg { color: var(--warn); }
+.hdot[data-state="bad"] .hdot-svg { color: var(--err); }
+.hdot[data-state="ok"] .hdot-label { color: var(--ok); }
+.hdot[data-state="warn"] .hdot-label { color: var(--warn); }
+.hdot[data-state="bad"] .hdot-label { color: var(--err); }
+.hdot:hover::after {
+  background: #0b0d13;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--fg);
+  content: attr(data-tooltip);
+  font-size: 0.74rem;
+  left: 50%;
+  line-height: 1.3;
+  max-width: 280px;
+  padding: 6px 8px;
+  position: absolute;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  white-space: normal;
+  width: max-content;
+  z-index: 10;
+}
+
+.topbar-sep {
+  background: var(--panel-border);
+  flex-shrink: 0;
+  height: 24px;
+  width: 1px;
+}
+
+/* Indicator bulbs */
+.bulb-strip {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.bulb {
+  align-items: center;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  cursor: default;
+  display: flex;
+  height: 24px;
+  justify-content: center;
+  opacity: 0.35;
+  position: relative;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  width: 28px;
+}
+.bulb.active {
+  opacity: 1;
+}
+.bulb.flash {
+  opacity: 0.15;
+}
+.bulb-icon {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.bulb.turn-left.active,
+.bulb.turn-right.active { border-color: #22c55e; background: color-mix(in srgb, #22c55e 18%, var(--bg)); color: #22c55e; }
+.bulb.brake.active      { border-color: #ef4444; background: color-mix(in srgb, #ef4444 18%, var(--bg)); color: #ef4444; }
+.bulb.estop.active      { border-color: #ef4444; background: color-mix(in srgb, #ef4444 28%, var(--bg)); color: #ef4444; }
+.bulb:hover::after {
+  background: #0b0d13;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--fg);
+  content: attr(data-tooltip);
+  font-size: 0.74rem;
+  left: 50%;
+  line-height: 1.3;
+  padding: 4px 8px;
+  position: absolute;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* Telemetry readouts */
+.telemetry-strip {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.telem-item {
+  align-items: center;
+  color: var(--fg);
+  display: flex;
+  gap: 3px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.telem-icon {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.telem-val {
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  min-width: 2.8em;
+  text-align: right;
+}
+.telem-unit {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+/* Brake pressure gauge */
+.brake-gauge {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  display: inline-block;
+  height: 8px;
+  min-width: 36px;
+  overflow: hidden;
+  vertical-align: middle;
+  width: 36px;
+}
+.brake-fill {
+  background: var(--warn);
+  border-radius: 2px;
+  display: block;
+  height: 100%;
+  transition: width 0.3s;
+}
+/* Gear badge */
+.gear-badge {
+  border: 2px solid var(--muted);
+  border-radius: 4px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 22px;
+  padding: 1px 5px;
+  text-align: center;
+}
+
+/* Action buttons — compact icon-only */
+.action-strip.compact {
+  gap: 4px;
+  flex-shrink: 0;
+}
+.action-btn.icon-only {
+  border-radius: 6px;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+}
+
+/* ── Responsive: v2 topbar ── */
+@media (max-width: 1180px) {
+  .topbar.v2 {
+    gap: 6px;
+  }
+  .topbar-sep { display: none; }
+  .telemetry-strip { gap: 6px; }
+}
+
+@media (max-width: 780px) {
+  .topbar.v2 {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .bulb-strip { order: 3; }
+  .telemetry-strip { order: 4; }
+  .action-strip.compact { order: 5; align-self: flex-end; }
+}
+
 @media (max-width: 1180px) and (min-width: 981px) {
   .topbar {
     grid-template-columns: 1fr auto;
