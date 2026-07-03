@@ -150,5 +150,33 @@ export function initFaultWatcher(): () => void {
       logError("SEB brake-by-wire L3 fault (mask=" + (sebFault?.fault_mask_hex ?? "?") + ")");
     }
     lastSebL3Fault = sebL3;
+
+    // ── Mobility blockers summary ──
+    // Collect all conditions that prevent the vehicle from moving.
+    const mode = stateRpt?.mode !== undefined ? Number(stateRpt.mode) : null;
+    const hbOk = diag?.hb_ok !== false && diag?.hb_ok !== 0 &&
+                 safety?.heartbeat_ok !== false && safety?.heartbeat_ok !== 0;
+    const blockers: string[] = [];
+    if (estop)                       blockers.push("ESTOP active");
+    if (mode === 2)                  blockers.push("Mode=ESTOP");
+    if (safetyState === 1)           blockers.push("Safety=InternalEstop");
+    if (safetyState === 2)           blockers.push("Safety=Fault");
+    if (brakeFault)                  blockers.push("Brake fault");
+    if (faultFlags > 0)              blockers.push("Motor fault");
+    if (sesL3)                       blockers.push("SES L3 fault");
+    if (sebL3)                       blockers.push("SEB L3 fault");
+    if (!hbOk)                       blockers.push("Heartbeat lost");
+    const blocked = blockers.length > 0;
+
+    if (blocked !== lastBlocked && cooldown("mobility")) {
+      if (blocked) {
+        logError("BLOCKED — vehicle cannot move: " + blockers.join(", "));
+      } else {
+        logError("CLEAR — all blocks removed, vehicle ready");
+      }
+    }
+    lastBlocked = blocked;
   });
 }
+
+let lastBlocked = false;

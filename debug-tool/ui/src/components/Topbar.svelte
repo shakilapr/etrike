@@ -171,6 +171,25 @@
 
   <span class="topbar-sep" aria-hidden="true"></span>
 
+  <!-- ── Vehicle state: gear + mode ── -->
+  <div class="vstate-strip" aria-label="Vehicle state">
+    <span class="vstate-gear" style="color: {gearColor(t.gear)}" title="Gear position">
+      <span class="vstate-badge" style="border-color: {gearColor(t.gear)}">{t.gear ?? "?"}</span>
+    </span>
+    {#if t.mode}
+      <span class="vstate-mode {t.mode.toLowerCase()}" title="Mode: {t.mode}">
+        {t.mode}
+      </span>
+    {/if}
+    {#if t.safetyState && t.safetyState !== "Normal"}
+      <span class="vstate-safety" title="Safety: {t.safetyState}" style="color: {safetyColor(t.safetyState)}">
+        {t.safetyState}
+      </span>
+    {/if}
+  </div>
+
+  <span class="topbar-sep" aria-hidden="true"></span>
+
   <!-- ── Telemetry readouts ── -->
   <div class="telemetry-strip" aria-label="Vehicle telemetry">
     <span class="telem-item speed" title="Motor speed">
@@ -191,16 +210,6 @@
       <span class="telem-val">{t.brakePressureMpa !== null ? t.brakePressureMpa.toFixed(1) : "--.-"}</span>
       <span class="telem-unit">MPa</span>
     </span>
-    {#if t.gear}
-      <span class="telem-item gear" title="Gear: {t.gear}" style="color: {gearColor(t.gear)}">
-        <span class="gear-badge" style="border-color: {gearColor(t.gear)}">{t.gear}</span>
-      </span>
-    {/if}
-    {#if t.safetyState}
-      <span class="telem-item safety" title="Safety: {t.safetyState}" style="color: {safetyColor(t.safetyState)}">
-        <span class="telem-val">{t.safetyState}</span>
-      </span>
-    {/if}
   </div>
 
   <span class="topbar-sep" aria-hidden="true"></span>
@@ -209,36 +218,30 @@
   <div class="cmd-strip" aria-label="Vehicle commands">
     <button
       type="button"
-      class="cmd-btn mode-btn"
+      class="cmd-btn"
       disabled={sending || !$status.bridge?.connected}
       on:click={cycleMode}
-      title="Cycle mode: {nextMode().label}"
-      data-tooltip="Next: {nextMode().label}"
+      title="Cycle mode ({t.mode ?? 'MANUAL'} → {nextMode().label})"
     >
-      <span class="cmd-icon">M</span>
-      <span class="cmd-label">{t.mode ?? "MANUAL"}</span>
+      <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8a6 6 0 0110.47-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 8a6 6 0 01-10.47 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="11.5,1.5 12.5,4 10,4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button
       type="button"
-      class="cmd-btn on-btn"
+      class="cmd-btn"
       disabled={sending || !$status.bridge?.connected}
       on:click={toggleDcdc}
-      title="Power on / DCDC enable"
-      data-tooltip="DCDC enable"
+      title="Power / DCDC enable"
     >
-      <span class="cmd-icon">&#x23FB;</span>
-      <span class="cmd-label">ON</span>
+      <svg width="14" height="14" viewBox="0 0 16 16"><path d="M6 2v5H3l6 7v-5h3L6 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
     </button>
     <button
       type="button"
       class="cmd-btn estop-btn"
       disabled={sending || !$status.bridge?.connected}
       on:click={sendEstop}
-      title="Send ESTOP (emergency stop)"
-      data-tooltip="EMERGENCY STOP"
+      title="Emergency stop"
     >
-      <span class="cmd-icon">&#x26D4;</span>
-      <span class="cmd-label">ESTOP</span>
+      <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="5" x2="5" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
   </div>
 

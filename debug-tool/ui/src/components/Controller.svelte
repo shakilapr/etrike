@@ -22,8 +22,16 @@
   let speed = 0;
   let yaw = 0;
   let brake = 0;
-  let gear = 1;
+  let gear = 1;           // 0=N, 1=D, 2=S, 3=R
   let error = "";
+
+  const GEARS = [
+    { label: "N", value: 0 },
+    { label: "D", value: 1 },
+    { label: "S", value: 2 },
+    { label: "R", value: 3 },
+  ];
+  $: gearLabel = GEARS.find(g => g.value === gear)?.label ?? "?";
 
   // ── ESTOP two-phase state ──
   let estopConfirming = false;
@@ -257,6 +265,23 @@
       </div>
     </div>
 
+    <!-- Gear selector -->
+    <div class="gear-strip">
+      <span class="kb-head">Gear</span>
+      <div class="gear-btns">
+        {#each GEARS as g}
+          <button
+            class="gear-btn"
+            class:active={gear === g.value}
+            type="button"
+            on:click={() => gear = g.value}
+          >
+            {g.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+
     <!-- Active CAN IDs -->
     <div class="ctrl-frames">
       <span class="kb-head">Publishing</span>
@@ -361,7 +386,7 @@
       <div class="ctrl-log-row"><span>Speed</span><strong>{speed} mm/s</strong></div>
       <div class="ctrl-log-row"><span>{yawLabel}</span><strong>{yawDisplay} {yawUnit}</strong></div>
       <div class="ctrl-log-row"><span>Brake</span><strong>{brake > 0 ? `${brake} kPa` : "Released"}</strong></div>
-      <div class="ctrl-log-row"><span>Gear</span><strong>{gear}</strong></div>
+      <div class="ctrl-log-row"><span>Gear</span><strong>{gearLabel}</strong></div>
     </div>
   </div>
 </section>
@@ -410,6 +435,37 @@
     border: 1px solid var(--err);
   }
   .ctrl-danger strong { color: var(--err); }
+
+  .gear-strip {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .gear-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .gear-btn {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 5px;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 0.9rem;
+    font-weight: 800;
+    min-width: 36px;
+    padding: 4px 0;
+    text-align: center;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .gear-btn:hover { background: var(--bg); color: var(--fg); }
+  .gear-btn.active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg));
+    color: var(--accent);
+  }
 
   .ctrl-frames {
     border-top: 1px solid var(--panel-border);

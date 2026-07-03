@@ -164,7 +164,7 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x169", "VCU_SES_REQ", "RT", "50 Hz", 8, true, [bool("alignment_enable", "Alignment enable"), num("target_angle", "Target angle", "0.1 deg", -3000, 780), num("target_speed", "Target speed", "deg/s", 125, 1250), bool("control_enable", "Control enable"), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x201", "SES_STATUS", "EPS-C", "100 Hz", 8, true, [bool("angle_status", "Angle status"), num("control_mode_sts", "Control mode status", undefined, 0, 3), num("str_angle", "Steer angle", "0.1 deg"), num("tgt_angle_spd", "Target angle speed", "deg/s"), num("error_status", "Error status", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x202", "SES_ERRINFO", "EPS-C", "10 Hz", 8, true, [num("fault_mask", "Fault mask")]),
-  msg("low", "0x203", "SES_VERSION", "EPS-C", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
+  msg("low", "0x203", "SES_VERSION", "EPS-C", "1 Hz", 8, true, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
   msg("low", "0x204", "RT_DRIVE_CMD", "RT", "100 Hz", 5, true, [num("motor_speed_mmps", "Motor speed", "mm/s", -500, 3000, 10), gearField]),
   msg("low", "0x205", "RT_BRAKE_CMD", "RT", "50 Hz", 4, true, [num("brake_pressure_kpa", "Brake pressure", "kPa", 0, 20000, 100)]),
   msg("low", "0x206", "MTR_MOTOR_FBK", "MTR", "50 Hz", 4, true, motorFeedbackFields),
@@ -186,10 +186,10 @@ export const CAN_MESSAGES: CanMessageDef[] = [
   msg("low", "0x6FB", "SEB_TEST", "SEB", "100 Hz", 8, false, [num("motor_current", "Motor current"), num("ecu_temp", "ECU temp"), num("supply_voltage", "Supply voltage")]),
   msg("low", "0x721", "SEB_STATUS", "SEB", "100 Hz", 8, true, [bool("alignment_status", "Alignment status"), bool("control_enable_sts", "Control enable status"), num("control_mode_sts", "Control mode status", undefined, 0, 3), bool("auto_brake_sts", "Auto brake status"), num("stroke_value", "Stroke value", "raw"), num("pressure_value", "Pressure value", "raw"), num("angle_value", "Angle value", "raw"), num("error_status", "Error status", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x731", "SEB_ERRINFO", "SEB", "10 Hz", 8, true, [num("fault_mask", "Fault mask")]),
-  msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, false, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
+  msg("low", "0x741", "SEB_VERSION", "SEB", "1 Hz", 8, true, [num("sw_version", "SW version"), num("hw_version", "HW version")]),
   msg("low", "0x7B9", "VCU_SEB_REQ", "SYS", "50 Hz", 8, true, [bool("align_enable", "Align enable"), bool("control_enable", "Control enable"), num("stroke_req", "Stroke request", "raw"), num("pressure_req", "Pressure request", "raw"), bool("auto_brake", "Auto brake"), num("control_mode", "Control mode", undefined, 0, 3), num("rolling_counter", "Rolling counter", undefined, 0, 15), num("checksum", "Checksum", undefined, 0, 255)]),
   msg("low", "0x7FD", "RT_HEARTBEAT", "RT", "2 Hz", 2, false, heartbeatFields),
-  msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 2, false, heartbeatFields)
+  msg("low", "0x7FE", "SYS_HEARTBEAT", "SYS", "10 Hz", 2, true, heartbeatFields)
 ];
 
 export const CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
