@@ -142,8 +142,14 @@ export function initFaultWatcher(): () => void {
     // ═══ Brake fault ═══
     if (brakeFault !== lastBrakeFault) {
       if (brakeFault) {
-        if (cd("brake_on"))
-          logError("BRAKE FAULT — actuator or pressure sensor (triggers ESTOP)");
+        if (cd("brake_on")) {
+          const sebMissing = !$latest["low:0x721"];
+          if (sebMissing) {
+            logError("BRAKE FAULT — SEB (brake ECU) not responding (start Simulator to suppress)");
+          } else {
+            logError("BRAKE FAULT — pressure sensor or actuator failure");
+          }
+        }
       } else {
         if (cd("brake_off")) { logInfo("Brake fault cleared"); flushEstop(); }
       }
@@ -163,10 +169,10 @@ export function initFaultWatcher(): () => void {
       lastSafetyState = safetyState;
     }
 
-    // ═══ Mode changes ═══
+    // ═══ Mode changes (only log MANUAL↔AUTO; ESTOP is a symptom of faults) ═══
     if (mode !== null && mode !== lastMode) {
       const labels = ["MANUAL", "AUTO", "ESTOP"];
-      if (cd("mode")) logInfo("Mode: " + labels[mode] ?? "?" + mode);
+      if (mode !== 2 && cd("mode")) logInfo("Mode: " + (labels[mode] ?? "?" + mode));
       lastMode = mode;
     }
 

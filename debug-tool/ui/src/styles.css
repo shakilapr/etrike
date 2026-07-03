@@ -392,6 +392,119 @@ h2 { font-size: 1rem; }
   padding: 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════════ */
+/* Topbar v3 — two-row, fixed sizes, automotive icons                  */
+/* ═══════════════════════════════════════════════════════════════════ */
+.topbar.v3 {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tb-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+.tb-sep {
+  background: var(--panel-border);
+  flex-shrink: 0;
+  height: 16px;
+  width: 1px;
+  margin: 0 2px;
+}
+
+/* Brand */
+.tb-brand {
+  align-items: center; color: var(--fg); display: flex; flex-shrink: 0;
+  font-size: 0.92rem; font-weight: 800; gap: 5px; letter-spacing: 0.02em;
+}
+
+/* Health items */
+.tb-health { align-items: center; display: flex; flex-shrink: 0; gap: 6px; }
+.tbh {
+  align-items: center; color: var(--muted); cursor: default; display: flex;
+  gap: 3px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;
+  position: relative; text-transform: uppercase; line-height: 1;
+}
+.tbh[data-state="ok"]  { color: var(--ok); }
+.tbh[data-state="warn"] { color: var(--warn); }
+.tbh[data-state="bad"]  { color: var(--err); }
+.tbh em { font-style: normal; }
+
+/* Indicators */
+.tb-indicators { align-items: center; display: flex; flex-shrink: 0; gap: 2px; }
+.tbi {
+  align-items: center; border: 1px solid transparent; border-radius: 4px;
+  color: color-mix(in srgb, var(--muted) 40%, transparent);
+  cursor: default; display: flex; height: 22px; justify-content: center;
+  position: relative; transition: color 0.15s, border-color 0.15s; width: 28px;
+}
+.tbi.on { color: var(--fg); }
+.tbi.flash { color: color-mix(in srgb, var(--muted) 20%, transparent); }
+.tbi.turn-l.on, .tbi.turn-r.on { border-color: #22c55e; color: #22c55e; }
+.tbi.turn-l.flash, .tbi.turn-r.flash { border-color: transparent; color: color-mix(in srgb, #22c55e 20%, transparent); }
+.tbi.brake-i { width: 24px; }
+.tbi.brake-i.on { border-color: transparent; color: var(--err); }
+.tbi.estop-i { width: 24px; }
+.tbi.estop-i.on { border-color: transparent; color: var(--err); }
+
+/* Vehicle state */
+.tb-vstate { align-items: center; display: flex; flex-shrink: 0; gap: 5px; }
+.tvs-gear {
+  border: 2px solid var(--muted); border-radius: 4px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.95rem; font-weight: 800; line-height: 1; min-width: 24px;
+  padding: 2px 6px; text-align: center;
+}
+.tvs-mode {
+  border-radius: 3px; color: var(--bg); font-size: 0.58rem; font-weight: 800;
+  letter-spacing: 0.06em; min-width: 52px; padding: 3px 6px; text-align: center;
+  text-transform: uppercase; background: var(--muted);
+}
+.tvs-safety {
+  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.05em;
+  min-width: 36px; text-transform: uppercase;
+}
+
+/* Telemetry */
+.tb-telem { align-items: center; display: flex; flex-shrink: 0; gap: 12px; }
+.tbt { align-items: center; display: flex; gap: 3px; white-space: nowrap; }
+.tbt em  { color: var(--muted); font-size: 0.6rem; font-style: normal; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.tbt strong { font-family: "Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size: 0.82rem; font-weight: 700; min-width: 3.8em; text-align: right; }
+.tbt u { color: var(--muted); font-size: 0.58rem; font-weight: 600; text-decoration: none; text-transform: uppercase; }
+.tbt-gauge { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 2px; display: inline-block; height: 6px; width: 32px; overflow: hidden; vertical-align: middle; }
+.tbt-fill { background: var(--warn); border-radius: 1px; display: block; height: 100%; transition: width 0.3s; }
+
+/* Buttons (all icon buttons in topbar) */
+.tb-cmds, .tb-actions { align-items: center; display: flex; flex-shrink: 0; gap: 3px; }
+.tb-btn {
+  align-items: center; background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: 4px; color: var(--muted); cursor: pointer; display: flex;
+  height: 28px; justify-content: center; transition: background 0.12s, color 0.12s; width: 28px;
+}
+.tb-btn:hover:not(:disabled) { background: var(--bg); color: var(--fg); }
+.tb-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.tb-btn.estop:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 12%, var(--bg)); border-color: var(--err); color: var(--err); }
+.tb-btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 12%, var(--bg)); border-color: var(--err); color: var(--err); }
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .tb-row { flex-wrap: wrap; gap: 6px; }
+  .tb-sep { display: none; }
+}
+@media (max-width: 700px) {
+  .tb-telem { flex-wrap: wrap; gap: 6px; }
+}
+
+/* ── remove old v2 styles (kept minimal) ── */
+.brand-compact { display: none; }
+.health-strip-v2 { display: none; }
+.bulb-strip { display: none; }
+.vstate-strip { display: none; }
+.cmd-strip { display: none; }
+.telemetry-strip { display: none; }
+
 .brand-compact {
   align-items: center;
   display: flex;
