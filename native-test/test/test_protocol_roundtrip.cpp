@@ -424,7 +424,7 @@ static void test_sys_diag_rpt() {
 
     // Nominal: Auto mode, brake off, hb ok, no estop
     {
-        can::SysDiagRpt d{uint8_t(can::Mode::Auto), false, false, true, false, 128, 0, 0};
+        can::SysDiagRpt d{uint8_t(can::Mode::Auto), false, false, true, false, 0, 128, 0, 0};
         can::Frame f{}; d.to_frame(f);
         CHECK(f.id  == 0x600, "SysDiagRpt id (0x600)");
         CHECK(f.dlc == 8,     "SysDiagRpt dlc (8)");
@@ -440,7 +440,7 @@ static void test_sys_diag_rpt() {
 
     // Estop active, all indicators set, error counters non-zero
     {
-        can::SysDiagRpt d{uint8_t(can::Mode::Estop), true, false, false, true, 42, 127, 255};
+        can::SysDiagRpt d{uint8_t(can::Mode::Estop), true, false, false, true, 0, 42, 127, 255};
         can::Frame f{}; d.to_frame(f);
         auto r = can::SysDiagRpt::from_frame(f);
         CHECK(r.mode          == uint8_t(can::Mode::Estop), "SysDiagRpt mode Estop");
@@ -454,7 +454,7 @@ static void test_sys_diag_rpt() {
 
     // Boundary: max heap, max counters
     {
-        can::SysDiagRpt d{0, false, false, false, false, 65535, 255, 255};
+        can::SysDiagRpt d{0, false, false, false, false, 0, 65535, 255, 255};
         can::Frame f{}; d.to_frame(f);
         auto r = can::SysDiagRpt::from_frame(f);
         CHECK(r.free_heap_kb  == 65535, "SysDiagRpt max heap");

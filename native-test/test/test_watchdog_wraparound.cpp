@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
+#include <initializer_list>
 
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("FAIL: %s\n", msg); return 1; } } while(0)
 

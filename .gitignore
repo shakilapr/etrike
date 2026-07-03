@@ -35,6 +35,11 @@ Desktop.ini
 *.exe
 /test_physics
 /test_pid
+/native-test/build*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.rsp
 
 # ── Internal docs (not for sync) ─────────────────────────────────────
 /standards/
