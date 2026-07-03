@@ -147,9 +147,9 @@ describe("decodeFrame", () => {
     expect(result).toEqual({ actual_speed_mmps: 2000, gear_state: 1, gear_name: "D", fault_flags: 0 });
   });
 
-  it("decodes 0x210 STATE_RPT (high) — AUTO, steer valid, not reversing", () => {
-    const result = decodeFrame("high", "0x210", [1, 1, 0]);
-    expect(result).toEqual({ mode: 1, mode_name: "AUTO", steer_valid: true, reversing: false, rx_overflow: 0 });
+  it("decodes 0x210 STATE_RPT (high) — AUTO, safety_state InternalEstop, not reversing", () => {
+    const result = decodeFrame("high", "0x210", [1, 1, 0, 0, 0, 0]);
+    expect(result).toEqual({ mode: 1, mode_name: "AUTO", safety_state: 1, estop_reason: 0, reversing: false, rx_overflow: 0, task_health: 0, steer_state: 0 });
   });
 
   it("decodes 0x220 PID_RPT (high)", () => {
@@ -210,12 +210,12 @@ describe("decodeFrame", () => {
 
   it("decodes 0x7FC HOST_HEARTBEAT", () => {
     const result = decodeFrame("high", "0x7FC", [42]);
-    expect(result).toEqual({ alive_ctr: 42 });
+    expect(result).toEqual({ alive_ctr: 42, health_flags: 0 });
   });
 
   it("decodes 0x7FD RT_HEARTBEAT (high)", () => {
     const result = decodeFrame("high", "0x7FD", [255]);
-    expect(result).toEqual({ alive_ctr: 255 });
+    expect(result).toEqual({ alive_ctr: 255, health_flags: 0 });
   });
 
   // Low bus messages
@@ -380,11 +380,11 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x7FD RT_HEARTBEAT (low)", () => {
-    expect(decodeFrame("low", "0x7FD", [7])).toEqual({ alive_ctr: 7 });
+    expect(decodeFrame("low", "0x7FD", [7])).toEqual({ alive_ctr: 7, health_flags: 0 });
   });
 
   it("decodes 0x7FE SYS_HEARTBEAT (low)", () => {
-    expect(decodeFrame("low", "0x7FE", [99])).toEqual({ alive_ctr: 99 });
+    expect(decodeFrame("low", "0x7FE", [99])).toEqual({ alive_ctr: 99, health_flags: 0 });
   });
 
   // Edge cases
@@ -665,7 +665,7 @@ describe("normalizeFrame", () => {
 
   it("decodes known frames", () => {
     const frame = normalizeFrame({ bus: "high", id: "0x7FC", data: [42], ts: 1000 });
-    expect(frame.decoded).toEqual({ alive_ctr: 42 });
+    expect(frame.decoded).toEqual({ alive_ctr: 42, health_flags: 0 });
     expect(frame.name).toBe("HOST_HEARTBEAT");
   });
 });
