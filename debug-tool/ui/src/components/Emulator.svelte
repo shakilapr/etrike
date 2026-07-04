@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { sendFrame } from "../lib/api";
+  import { sendFrame, simInject, simPeriodicStart, simPeriodicStop } from "../lib/api";
   import { status } from "../stores/can";
   import { ecuPresence } from "../stores/telemetry";
   import { logError, logInfo } from "../stores/errors";
 
+  // ═══ Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) ═══
+  let simMode = false;  // false=Physical, true=Simulated
+
   // ═══ Signal definition with dynamic data generator ═══
   interface EmuSignal {
     key: string; label: string; bus: "high"|"low"; id: string; hz: number; dlc: number;
-    /** Returns the current data bytes — called before each send. Counter fields update. */
     data(): number[];
-    /** Human-readable summary of what's being sent (e.g. "alive=3, health=OK") */
     summary(data: number[]): string;
   }
 
@@ -84,6 +85,7 @@
   let running = new Set<string>();
   let sending = false;
   const connected = () => $status.bridge?.connected ?? false;
+  const canSend = () => simMode || connected();
 
   function hex(data: number[]): string {
     return data.map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
@@ -98,20 +100,31 @@
     sending = true;
     for (const sig of ecu.signals) {
       if (running.has(sig.key)) continue;
-      // Reset counters on start
       resetCounter(sig.key.replace("e_","").replace("host_","").replace("rt_","").replace("sys_","").replace("mtr_","").replace("ses_","").replace("seb_",""));
       const ms = Math.round(1000 / sig.hz);
       async function tick() {
         const data = sig.data();
-        try { await sendFrame({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data }); }
-        catch {} // silently ignore individual frame failures
+        try {
+          if (simMode) {
+            await simPeriodicStart({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data, interval_ms: ms });
+          } else {
+            await sendFrame({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data });
+          }
+        } catch {}
       }
-      tick(); // send first frame immediately
-      timers[sig.key] = setInterval(tick, ms);
-      running.add(sig.key);
+      if (simMode) {
+        // Simulated mode: backend handles the interval
+        await tick(); // first frame
+        running.add(sig.key);
+      } else {
+        // Physical mode: client-side interval
+        tick();
+        timers[sig.key] = setInterval(tick, ms);
+        running.add(sig.key);
+      }
     }
     running = new Set(running);
-    logInfo(ecu.name + " emulated — " + ecu.signals.length + " signals");
+    logInfo(ecu.name + " emulated (" + (simMode ? "sim" : "physical") + ") — " + ecu.signals.length + " signals");
     sending = false;
   }
 
@@ -120,6 +133,9 @@
     sending = true;
     for (const sig of ecu.signals) {
       if (timers[sig.key]) { clearInterval(timers[sig.key]); delete timers[sig.key]; }
+      if (simMode) {
+        try { await simPeriodicStop(sig.bus, sig.id); } catch {}
+      }
       running.delete(sig.key);
     }
     running = new Set(running);
@@ -160,9 +176,14 @@
 <div class="emu-panel">
   <div class="emu-header">
     <span class="emu-title">CAN Emulator</span>
-    <span class="emu-sub">Each ECU runs with incrementing counters — like real firmware.</span>
+    <!-- Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) -->
+    <label class="emu-mode-toggle" title="Simulated: no CAN hardware needed. Physical: requires CANalyzer/ESP32.">
+      <input type="checkbox" bind:checked={simMode} />
+      <span class="emu-mode-label">{simMode ? "Simulated" : "Physical"}</span>
+    </label>
+    <span class="emu-sub">{simMode ? "Software loopback — no CAN hardware needed." : "CAN injection via bridge — needs CANalyzer/ESP32."}</span>
     <div class="emu-actions">
-      <button class="emu-btn quick" disabled={sending || !connected() || missingEcus().length===0} on:click={emulateMissing}>
+      <button class="emu-btn quick" disabled={sending || (!simMode && !connected()) || missingEcus().length===0} on:click={emulateMissing}>
         ▶ Emulate missing ({missingEcus().length})
       </button>
       {#if running.size > 0}
@@ -171,8 +192,8 @@
     </div>
   </div>
 
-  {#if !connected()}
-    <div class="emu-warn">Bridge not connected. Connect CANalyzer or ESP32 to inject frames.</div>
+  {#if !simMode && !connected()}
+    <div class="emu-warn">Bridge not connected. Switch to <strong>Simulated</strong> mode or connect CANalyzer/ESP32.</div>
   {/if}
 
   <div class="emu-grid">
@@ -205,7 +226,7 @@
 
         <button
           class="emu-card-btn"
-          disabled={sending || !connected()}
+          disabled={sending || !canSend()}
           on:click={() => live ? stopEcu(ecu) : startEcu(ecu)}
         >
           {live ? "■ Stop" : "▶ Emulate"}

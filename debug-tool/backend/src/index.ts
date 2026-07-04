@@ -8,6 +8,7 @@ import { loadConfig, type AppConfig } from "./config";
 import { registerCanRoutes } from "./api/can";
 import { registerCommandRoutes } from "./api/cmd";
 import { registerRecordingRoutes } from "./api/recordings";
+import { registerSimRoutes } from "./api/sim";
 import { registerSystemRoutes } from "./api/system";
 import { CanalystBridge } from "./canalyst/bridge";
 import { DebugStore } from "./db/queries";
@@ -24,16 +25,15 @@ function makeShutdown(
 ) {
   return async () => {
     app.log.info("Shutting down debug backend");
+    // Clear sim timers (software injection)
+    const timers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>> | undefined;
+    if (timers) { for (const t of timers.values()) clearInterval(t); timers.clear(); }
     hub.close();
     const timeout = setTimeout(() => {
       app.log.warn("bridge.close() timed out after 5s, forcing exit");
       process.exit(1);
     }, 5000).unref();
-    try {
-      await bridge.close();
-    } catch (error) {
-      app.log.error(error, "bridge.close() failed");
-    }
+    try { await bridge.close(); } catch (error) { app.log.error(error, "bridge.close() failed"); }
     clearTimeout(timeout);
     store.close();
     await app.close();
@@ -95,6 +95,12 @@ async function main(): Promise<void> {
         : new SerialBridge(config, store, hub);
     await bridge.start();
   }
+
+  // Expose hub for sim routes (software-only injection)
+  (app as any).__hub = hub;
+  (app as any).__simTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+  registerSimRoutes(app, store);
 
   const shutdown = makeShutdown(app, bridge, hub, store);
 
