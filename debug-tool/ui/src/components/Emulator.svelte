@@ -1,141 +1,172 @@
 <script lang="ts">
-  import { startPeriodic, stopPeriodic } from "../lib/api";
+  import { sendFrame } from "../lib/api";
   import { status } from "../stores/can";
   import { ecuPresence } from "../stores/telemetry";
   import { logError, logInfo } from "../stores/errors";
 
-  interface EmuSignal { key: string; bus: "high"|"low"; id: string; hz: number; dlc: number; data: number[]; }
-  interface EmuEcu { id: string; name: string; desc: string; signals: EmuSignal[]; }
+  // ═══ Signal definition with dynamic data generator ═══
+  interface EmuSignal {
+    key: string; label: string; bus: "high"|"low"; id: string; hz: number; dlc: number;
+    /** Returns the current data bytes — called before each send. Counter fields update. */
+    data(): number[];
+    /** Human-readable summary of what's being sent (e.g. "alive=3, health=OK") */
+    summary(data: number[]): string;
+  }
 
-  // ═══ ECU definitions — essential frames each controller sends ═══
+  // ── Rolling counter helpers ──
+  const counters: Record<string, number> = {};
+  function counter(key: string, max = 255): number {
+    if (!(key in counters)) counters[key] = 1;
+    const v = counters[key];
+    counters[key] = (v + 1) > max ? 1 : v + 1;
+    return v;
+  }
+  function resetCounter(key: string) { counters[key] = 0; }
+
+  // ── ECU definitions ──
+  interface EmuEcu { id: string; name: string; signals: EmuSignal[]; }
   const ECUS: EmuEcu[] = [
     {
-      id: "host", name: "HOST", desc: "Drive-by-wire PC. Sends drive, brake, obstacle, heartbeat on high bus.",
+      id: "host", name: "HOST (Drive-by-Wire)",
       signals: [
-        { key:"e_host_hb",    bus:"high", id:"0x7FC", hz:2,   dlc:2, data:[1,0] },
-        { key:"e_host_drive", bus:"high", id:"0x300", hz:50,  dlc:8, data:[0,0,0,0,0,0,0,1] },
-        { key:"e_host_brake", bus:"high", id:"0x301", hz:10,  dlc:4, data:[0,0,0,0] },
-        { key:"e_host_obst",  bus:"high", id:"0x400", hz:10,  dlc:4, data:[0xFF,0xFF,0xFF,0xFF] },
+        { key:"e_host_hb",    label:"Heartbeat",        bus:"high", id:"0x7FC", hz:2,  dlc:2, data:()=>[counter("host_hb"),0],                         summary:(d)=>`alive=${d[0]}, health OK` },
+        { key:"e_host_drive", label:"Drive Command",     bus:"high", id:"0x300", hz:50, dlc:8, data:()=>[0,0,0,0,0,0,0,1],                          summary:()=>`speed=0, yaw=0, gear=D` },
+        { key:"e_host_brake", label:"Brake Request",     bus:"high", id:"0x301", hz:10, dlc:4, data:()=>[0,0,0,0],                                 summary:()=>`0 kPa (released)` },
+        { key:"e_host_obst",  label:"Obstacle Distance", bus:"high", id:"0x400", hz:10, dlc:4, data:()=>[0xFF,0xFF,0xFF,0xFF],                     summary:()=>`clear` },
       ]
     },
     {
-      id: "rt", name: "RT", desc: "Gateway controller. Forwards drive/brake to low bus, reports state on high bus.",
+      id: "rt", name: "RT (Gateway)",
       signals: [
-        { key:"e_rt_hb",     bus:"high", id:"0x7FD", hz:2,   dlc:2, data:[1,0] },
-        { key:"e_rt_state",  bus:"high", id:"0x210", hz:10,  dlc:6, data:[0,0,0,0,0,0] },
-        { key:"e_rt_thr",    bus:"high", id:"0x120", hz:100, dlc:2, data:[0,0] },
-        { key:"e_rt_motor",  bus:"high", id:"0x206", hz:50,  dlc:4, data:[0,0,0,0] },
+        { key:"e_rt_hb",     label:"RT Heartbeat",    bus:"high", id:"0x7FD", hz:2,   dlc:2, data:()=>[counter("rt_hb"),0],                          summary:(d)=>`alive=${d[0]}, health OK` },
+        { key:"e_rt_state",  label:"State Report",    bus:"high", id:"0x210", hz:10,  dlc:6, data:()=>[0,0,0,0,15,5],                               summary:()=>`MANUAL, Normal, task=15` },
+        { key:"e_rt_thr",    label:"Throttle Status", bus:"high", id:"0x120", hz:100, dlc:2, data:()=>[0,0],                                       summary:()=>`0 mm/s` },
+        { key:"e_rt_motor",  label:"Motor Feedback",  bus:"high", id:"0x206", hz:50,  dlc:4, data:()=>[0,0,0,0],                                  summary:()=>`0 mm/s, gear N` },
       ]
     },
     {
-      id: "sys", name: "SYS", desc: "Safety/body controller. Sends heartbeat, safety status, diagnostics on low bus.",
+      id: "sys", name: "SYS (Safety/Body)",
       signals: [
-        { key:"e_sys_hb",    bus:"low",  id:"0x7FE", hz:10,  dlc:2, data:[1,0] },
-        { key:"e_sys_safety",bus:"low",  id:"0x011", hz:5,   dlc:3, data:[0,1,0] },
-        { key:"e_sys_diag",  bus:"low",  id:"0x600", hz:1,   dlc:8, data:[0,0,1,0,0,0,0,0] },
+        { key:"e_sys_hb",     label:"SYS Heartbeat",  bus:"low", id:"0x7FE", hz:10, dlc:2, data:()=>[counter("sys_hb"),0],                           summary:(d)=>`alive=${d[0]}, health OK` },
+        { key:"e_sys_safety", label:"Safety Status",  bus:"low", id:"0x011", hz:5,  dlc:3, data:()=>[0,1,0],                                       summary:()=>`estop=0, hb_ok=1, lights=off` },
+        { key:"e_sys_diag",   label:"Diagnostics",    bus:"low", id:"0x600", hz:1,  dlc:8, data:()=>[0,0,1,0,0,0,0,0],                             summary:()=>`MANUAL, brake off, hb OK` },
       ]
     },
     {
-      id: "mtr", name: "MTR", desc: "Motor controller. Sends motor feedback and throttle status on low bus.",
+      id: "mtr", name: "MTR (Motor)",
       signals: [
-        { key:"e_mtr_fbk",   bus:"low",  id:"0x206", hz:50,  dlc:4, data:[0,0,0,0] },
-        { key:"e_mtr_thr",   bus:"low",  id:"0x120", hz:100, dlc:2, data:[0,0] },
+        { key:"e_mtr_fbk",  label:"Motor Feedback",  bus:"low", id:"0x206", hz:50,  dlc:4, data:()=>[0,0,0,0],                    summary:()=>`0 mm/s, gear N, no faults` },
+        { key:"e_mtr_thr",  label:"Throttle Status", bus:"low", id:"0x120", hz:100, dlc:2, data:()=>[0,0],                        summary:()=>`0 mm/s` },
       ]
     },
     {
-      id: "ses", name: "SES", desc: "Steering ECU (EPS-C). Sends steering status and error info on low bus.",
+      id: "ses", name: "SES (Steering EPS-C)",
       signals: [
-        { key:"e_ses_status",bus:"low",  id:"0x201", hz:100, dlc:8, data:[0x01,0,0,0,0,0,0x10,0xFF] },
-        { key:"e_ses_err",   bus:"low",  id:"0x202", hz:10,  dlc:8, data:[0,0,0,0,0,0,0,0] },
+        { key:"e_ses_status", label:"SES Status",  bus:"low", id:"0x201", hz:100, dlc:8,
+          data:()=>[0x01,0,0,0,0,0, (counter("ses_roll")<<4)|0x01, 0xFF],
+          summary:()=>`angle=0°, aligned, roll=${counters["ses_roll"]??0}` },
+        { key:"e_ses_err",    label:"SES Errors",  bus:"low", id:"0x202", hz:10,  dlc:8, data:()=>[0,0,0,0,0,0,0,0],  summary:()=>`no faults` },
       ]
     },
     {
-      id: "seb", name: "SEB", desc: "Brake-by-wire ECU. Sends brake status and error info on low bus.",
+      id: "seb", name: "SEB (Brake-by-Wire)",
       signals: [
-        { key:"e_seb_status",bus:"low",  id:"0x721", hz:100, dlc:8, data:[0x03,0,0x58,0x02,0,0,0x10,0xFF] },
-        { key:"e_seb_err",   bus:"low",  id:"0x731", hz:10,  dlc:8, data:[0,0,0,0,0,0,0,0] },
+        { key:"e_seb_status", label:"SEB Status",  bus:"low", id:"0x721", hz:100, dlc:8,
+          data:()=>[0x03,0,0x58,0x02,0,0, (counter("seb_roll")<<4)|0x01, 0xFF],
+          summary:()=>`stroke=600, aligned, roll=${counters["seb_roll"]??0}` },
+        { key:"e_seb_err",    label:"SEB Errors",  bus:"low", id:"0x731", hz:10,  dlc:8, data:()=>[0,0,0,0,0,0,0,0],  summary:()=>`no faults` },
       ]
     },
   ];
 
-  // ── State ──
-  let emulating = new Set<string>();   // ECU ids currently sending
+  // ── Interval-based sending (dynamic data) ──
+  let timers: Record<string, ReturnType<typeof setInterval>> = {};
+  let running = new Set<string>();
   let sending = false;
-  let activeEcu: string | null = null;
   const connected = () => $status.bridge?.connected ?? false;
 
-  function ecuKeys(ecu: EmuEcu): string[] { return ecu.signals.map(s => s.key); }
-  function ecuLive(ecu: EmuEcu): boolean { return ecu.signals.some(s => emulating.has(s.key)); }
-  function ecuPresent(id: string): boolean {
-    const p = $ecuPresence as Record<string,boolean>;
-    return p[id] === true;
+  function hex(data: number[]): string {
+    return data.map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
   }
-  const missingEcus = () => ECUS.filter(e => !ecuPresent(e.id));
+
+  function ecuKeys(ecu: EmuEcu): string[] { return ecu.signals.map(s=>s.key); }
+  function ecuLive(ecu: EmuEcu): boolean { return ecu.signals.some(s=>running.has(s.key)); }
+  function ecuPresent(id: string): boolean { return ($ecuPresence as Record<string,boolean>)[id] === true; }
 
   async function startEcu(ecu: EmuEcu) {
     if (sending) return;
-    sending = true; activeEcu = ecu.id;
+    sending = true;
     for (const sig of ecu.signals) {
-      try {
-        await startPeriodic({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data:[...sig.data], interval_ms:Math.round(1000/sig.hz) });
-        emulating.add(sig.key);
-      } catch(e) { logError(ecu.name+": "+(e instanceof Error?e.message:String(e))); }
+      if (running.has(sig.key)) continue;
+      // Reset counters on start
+      resetCounter(sig.key.replace("e_","").replace("host_","").replace("rt_","").replace("sys_","").replace("mtr_","").replace("ses_","").replace("seb_",""));
+      const ms = Math.round(1000 / sig.hz);
+      async function tick() {
+        const data = sig.data();
+        try { await sendFrame({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data }); }
+        catch {} // silently ignore individual frame failures
+      }
+      tick(); // send first frame immediately
+      timers[sig.key] = setInterval(tick, ms);
+      running.add(sig.key);
     }
-    emulating = new Set(emulating);
-    logInfo("Emulating " + ecu.name + " — " + ecu.signals.length + " signals");
-    sending = false; activeEcu = null;
+    running = new Set(running);
+    logInfo(ecu.name + " emulated — " + ecu.signals.length + " signals");
+    sending = false;
   }
 
   async function stopEcu(ecu: EmuEcu) {
     if (sending) return;
-    sending = true; activeEcu = ecu.id;
+    sending = true;
     for (const sig of ecu.signals) {
-      try { await stopPeriodic(sig.bus, sig.id); emulating.delete(sig.key); } catch {}
+      if (timers[sig.key]) { clearInterval(timers[sig.key]); delete timers[sig.key]; }
+      running.delete(sig.key);
     }
-    emulating = new Set(emulating);
-    logInfo(ecu.name + " emulation stopped");
-    sending = false; activeEcu = null;
+    running = new Set(running);
+    logInfo(ecu.name + " stopped");
+    sending = false;
   }
+
+  const missingEcus = () => ECUS.filter(e => !ecuPresent(e.id));
 
   async function emulateMissing() {
     if (sending) return;
-    sending = true;
     const missing = missingEcus();
-    if (missing.length === 0) { logInfo("All ECUs already present"); sending = false; return; }
-    for (const ecu of missing) {
-      for (const sig of ecu.signals) {
-        try { await startPeriodic({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data:[...sig.data], interval_ms:Math.round(1000/sig.hz) }); emulating.add(sig.key); } catch {}
-      }
-    }
-    emulating = new Set(emulating);
-    logInfo("Emulating " + missing.length + " missing ECUs: " + missing.map(e=>e.name).join(", "));
+    if (missing.length === 0) { logInfo("All ECUs already present"); return; }
+    sending = true;
+    for (const ecu of missing) await startEcu(ecu);
+    logInfo("Emulating " + missing.length + " missing ECUs");
     sending = false;
   }
 
   async function stopAll() {
     if (sending) return;
     sending = true;
-    for (const k of [...emulating]) {
-      const ecu = ECUS.find(e => e.signals.some(s => s.key === k));
-      const sig = ecu?.signals.find(s => s.key === k);
-      if (sig) try { await stopPeriodic(sig.bus, sig.id); } catch {}
+    for (const k of [...running]) {
+      if (timers[k]) { clearInterval(timers[k]); delete timers[k]; }
     }
-    emulating.clear(); emulating = new Set(emulating);
+    running.clear(); running = new Set(running);
     logInfo("All emulation stopped");
     sending = false;
+  }
+
+  // Show live data for a signal
+  function liveData(sig: EmuSignal): string {
+    if (!running.has(sig.key)) return "";
+    return hex(sig.data());
   }
 </script>
 
 <div class="emu-panel">
   <div class="emu-header">
     <span class="emu-title">CAN Emulator</span>
-    <span class="emu-sub">Injects CAN frames to replace missing ECUs on the physical bus.</span>
+    <span class="emu-sub">Each ECU runs with incrementing counters — like real firmware.</span>
     <div class="emu-actions">
       <button class="emu-btn quick" disabled={sending || !connected() || missingEcus().length===0} on:click={emulateMissing}>
         ▶ Emulate missing ({missingEcus().length})
       </button>
-      {#if emulating.size > 0}
-        <button class="emu-btn stop" disabled={sending} on:click={stopAll}>■ Stop all</button>
+      {#if running.size > 0}
+        <button class="emu-btn stop" disabled={sending} on:click={stopAll}>■ Stop all ({running.size})</button>
       {/if}
     </div>
   </div>
@@ -148,28 +179,36 @@
     {#each ECUS as ecu}
       {@const live = ecuLive(ecu)}
       {@const present = ecuPresent(ecu.id)}
-      {@const busy = sending && activeEcu === ecu.id}
       <div class="emu-card" class:live class:present>
         <div class="emu-card-head">
           <span class="emu-card-name">{ecu.name}</span>
-          {#if present}
-            <span class="emu-badge ok">detected</span>
-          {:else if live}
-            <span class="emu-badge emu">emulated</span>
-          {:else}
-            <span class="emu-badge missing">missing</span>
-          {/if}
+          <span class="emu-badge {present ? 'ok' : live ? 'emu' : 'missing'}">{present ? 'detected' : live ? 'emulated' : 'missing'}</span>
         </div>
-        <p class="emu-card-desc">{ecu.desc}</p>
-        <div class="emu-card-sigs">
-          {ecu.signals.length} signals: {ecu.signals.map(s => s.id).join(" ")} @ {ecu.signals.map(s => s.hz+"Hz").join("/")}
-        </div>
+
+        <!-- Signal table — fixed window showing what each signal sends -->
+        <table class="emu-sig-table">
+          <thead>
+            <tr><th>Signal</th><th>ID</th><th>Hz</th><th>Data</th><th>Summary</th></tr>
+          </thead>
+          <tbody>
+            {#each ecu.signals as sig}
+              <tr class:active={running.has(sig.key)}>
+                <td class="emu-sig-name">{sig.label}</td>
+                <td class="emu-sig-id">{sig.bus[0].toUpperCase()}:{sig.id}</td>
+                <td class="emu-sig-rate">{sig.hz}</td>
+                <td class="emu-sig-data">{running.has(sig.key) ? liveData(sig) : hex(sig.data())}</td>
+                <td class="emu-sig-summary">{running.has(sig.key) ? sig.summary(sig.data()) : sig.summary(sig.data())}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+
         <button
           class="emu-card-btn"
-          disabled={busy || sending || !connected()}
+          disabled={sending || !connected()}
           on:click={() => live ? stopEcu(ecu) : startEcu(ecu)}
         >
-          {busy ? "…" : live ? "■ Stop" : "▶ Emulate"}
+          {live ? "■ Stop" : "▶ Emulate"}
         </button>
       </div>
     {/each}

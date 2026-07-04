@@ -1647,6 +1647,16 @@ h2 { font-size: 1rem; }
 .emu-card-btn:hover:not(:disabled) { background:var(--accent-dim); border-color:var(--accent); }
 .emu-card-btn:disabled { opacity:0.4; cursor:not-allowed; }
 
+/* Emulator signal table */
+.emu-sig-table { width:100%; border-collapse:collapse; font-size:0.62rem; margin:4px 0; }
+.emu-sig-table th { color:var(--muted); font-weight:600; padding:3px 6px; text-align:left; text-transform:uppercase; letter-spacing:0.03em; border-bottom:1px solid var(--panel-border); }
+.emu-sig-table td { padding:3px 6px; border-bottom:1px solid color-mix(in srgb, var(--panel-border) 40%, transparent); }
+.emu-sig-table tr.active td { background:color-mix(in srgb, var(--ok) 6%, transparent); }
+.emu-sig-name { color:var(--fg); font-weight:600; }
+.emu-sig-id, .emu-sig-rate { color:var(--muted); font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace; white-space:nowrap; }
+.emu-sig-data { color:var(--accent); font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size:0.6rem; white-space:nowrap; }
+.emu-sig-summary { color:var(--muted); font-size:0.58rem; }
+
 /* ── Grids ── */
 .dashboard-grid,
 .stats-layout {
