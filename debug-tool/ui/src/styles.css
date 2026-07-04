@@ -1610,6 +1610,9 @@ h2 { font-size: 1rem; }
 .emu-panel { max-width: 780px; }
 .emu-header { align-items:center; display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px; }
 .emu-title { font-size:0.82rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); }
+.emu-mode-toggle { align-items:center; cursor:pointer; display:flex; gap:5px; user-select:none; }
+.emu-mode-toggle input { accent-color:var(--accent); cursor:pointer; height:14px; width:14px; }
+.emu-mode-label { font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size:0.66rem; font-weight:700; color:var(--accent); }
 .emu-sub { color:var(--muted); font-size:0.7rem; flex:1; min-width:200px; }
 .emu-actions { display:flex; gap:6px; flex-shrink:0; }
 .emu-btn {

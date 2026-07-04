@@ -158,3 +158,14 @@ export function stopBridge(): Promise<{ ok: boolean }> {
 export function getPipelineChains(): Promise<{ chains: unknown[] }> {
   return request("/api/can/pipeline");
 }
+
+// ── Software-only simulation (no CAN hardware) ──
+export function simInject(payload: { bus: Bus; id: string; dlc: number; data: number[] }): Promise<{ ok: boolean }> {
+  return request("/api/sim/inject", { method: "POST", body: JSON.stringify(payload) });
+}
+export function simPeriodicStart(payload: { bus: Bus; id: string; dlc: number; data: number[]; interval_ms: number }): Promise<{ ok: boolean }> {
+  return request("/api/sim/periodic/start", { method: "POST", body: JSON.stringify(payload) });
+}
+export function simPeriodicStop(bus: Bus, id: string): Promise<{ ok: boolean }> {
+  return request("/api/sim/periodic/stop", { method: "POST", body: JSON.stringify({ bus, id }) });
+}
