@@ -1561,48 +1561,50 @@ h2 { font-size: 1rem; }
 }
 
 /* ── Simulator ── */
-.sim-panel { max-width: 640px; }
-.sim-header { align-items: center; display: flex; gap: 12px; margin-bottom: 6px; }
+.sim-panel { max-width: 760px; }
+.sim-header { align-items: center; display: flex; gap: 12px; margin-bottom: 8px; }
 .sim-title { font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.sim-info { color: var(--muted); font-family: "Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size: 0.65rem; margin-left: auto; }
 .sim-master {
   background: var(--panel); border: 2px solid var(--panel-border); border-radius: 6px;
-  color: var(--fg); cursor: pointer;
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.74rem; font-weight: 800; padding: 4px 14px;
-  transition: background 0.15s, border-color 0.15s;
+  color: var(--fg); cursor: pointer; font-family: "Cascadia Mono","SFMono-Regular",Consolas,monospace;
+  font-size: 0.74rem; font-weight: 800; padding: 4px 14px; transition: background 0.15s,border-color 0.15s;
 }
 .sim-master.on  { border-color: var(--err); color: var(--err); }
 .sim-master.off { border-color: var(--ok); color: var(--ok); }
 .sim-master:disabled { opacity: 0.4; cursor: not-allowed; }
 .sim-warn { color: var(--warn); font-size: 0.7rem; font-weight: 600; }
-.sim-desc { color: var(--muted); font-size: 0.72rem; margin: 0 0 14px; line-height: 1.4; }
+.sim-desc { color: var(--muted); font-size: 0.72rem; margin: 0 0 12px; line-height: 1.4; }
 
-.sim-grid {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+/* ECU groups */
+.sim-group { background: var(--panel); border:1px solid var(--panel-border); border-radius:6px; margin-bottom:8px; overflow:hidden; }
+.sim-group.active { border-color: color-mix(in srgb, var(--ok) 40%, var(--panel-border)); }
+.sim-group-head { align-items:center; background:color-mix(in srgb, var(--bg) 40%, var(--panel)); display:flex; gap:8px; padding:6px 10px; }
+.sim-group-toggle {
+  background:transparent; border:0; border-radius:4px; color:var(--fg); cursor:pointer;
+  font-family: "Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size:0.72rem; font-weight:800; padding:3px 8px;
+  transition:background 0.12s; min-height:unset;
 }
+.sim-group-toggle:hover { background: var(--bg); }
+.sim-group-toggle:disabled { opacity:0.4; cursor:not-allowed; }
+.sim-group-signals { display:flex; flex-wrap:wrap; gap:1px; padding:4px 8px 8px; }
+
+/* Signal cards */
 .sim-card {
-  align-items: center;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  gap: 8px;
-  padding: 8px 10px;
-  transition: border-color 0.15s, background 0.15s;
-  user-select: none;
+  align-items:center; background:color-mix(in srgb, var(--bg) 60%, var(--panel));
+  border:1px solid var(--panel-border); border-radius:5px; cursor:pointer; display:flex;
+  gap:6px; padding:5px 8px; transition:border-color 0.15s,background 0.15s; user-select:none;
+  flex:1 1 280px; min-width:0;
 }
-.sim-card:hover { background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
+.sim-card:hover { background: var(--bg); }
 .sim-card.active { border-color: var(--ok); }
-.sim-card.disabled { opacity: 0.45; cursor: not-allowed; }
-.sim-card input { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; height: 14px; width: 14px; }
-.sim-card-label { color: var(--fg); font-size: 0.76rem; font-weight: 700; }
-.sim-card-meta { color: var(--muted); font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.6rem; margin-left: auto; }
-.sim-dot { border-radius: 50%; flex-shrink: 0; height: 6px; width: 6px; }
+.sim-card.disabled { opacity:0.45; cursor:not-allowed; }
+.sim-card input { accent-color:var(--accent); cursor:pointer; flex-shrink:0; height:13px; width:13px; }
+.sim-card-label { color:var(--fg); font-size:0.72rem; font-weight:700; flex-shrink:0; }
+.sim-card-meta { color:var(--muted); font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size:0.58rem; flex-shrink:0; }
+.sim-card-desc { color:var(--muted); font-size:0.62rem; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sim-dot { border-radius:50%; flex-shrink:0; height:5px; width:5px; }
 .sim-dot.on { background: var(--ok); }
-.sim-dot.pending { background: var(--warn); }
 
 /* ── Grids ── */
 .dashboard-grid,
