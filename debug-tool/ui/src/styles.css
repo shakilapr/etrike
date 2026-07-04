@@ -1606,6 +1606,47 @@ h2 { font-size: 1rem; }
 .sim-dot { border-radius:50%; flex-shrink:0; height:5px; width:5px; }
 .sim-dot.on { background: var(--ok); }
 
+/* ── Emulator ── */
+.emu-panel { max-width: 780px; }
+.emu-header { align-items:center; display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px; }
+.emu-title { font-size:0.82rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); }
+.emu-sub { color:var(--muted); font-size:0.7rem; flex:1; min-width:200px; }
+.emu-actions { display:flex; gap:6px; flex-shrink:0; }
+.emu-btn {
+  background:var(--panel); border:1px solid var(--panel-border); border-radius:5px;
+  color:var(--fg); cursor:pointer; font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace;
+  font-size:0.68rem; font-weight:700; padding:5px 12px; transition:background 0.12s,border-color 0.12s;
+}
+.emu-btn.quick { border-color:var(--ok); color:var(--ok); }
+.emu-btn.quick:hover:not(:disabled) { background:color-mix(in srgb, var(--ok) 12%, var(--bg)); }
+.emu-btn.stop { border-color:var(--err); color:var(--err); }
+.emu-btn.stop:hover:not(:disabled) { background:color-mix(in srgb, var(--err) 12%, var(--bg)); }
+.emu-btn:disabled { opacity:0.4; cursor:not-allowed; }
+.emu-warn { background:color-mix(in srgb, var(--warn) 15%, var(--bg)); border:1px solid var(--warn); border-radius:6px; color:var(--warn); font-size:0.72rem; margin-bottom:12px; padding:8px 12px; }
+
+.emu-grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); }
+.emu-card {
+  background:var(--panel); border:1px solid var(--panel-border); border-radius:6px;
+  display:flex; flex-direction:column; gap:6px; padding:10px 12px; transition:border-color 0.15s;
+}
+.emu-card.live { border-color:color-mix(in srgb, var(--accent) 50%, var(--panel-border)); }
+.emu-card.present { border-color:color-mix(in srgb, var(--ok) 40%, var(--panel-border)); }
+.emu-card-head { align-items:center; display:flex; gap:8px; }
+.emu-card-name { color:var(--fg); font-size:0.78rem; font-weight:800; }
+.emu-badge { border-radius:3px; font-size:0.56rem; font-weight:800; letter-spacing:0.04em; padding:1px 6px; text-transform:uppercase; }
+.emu-badge.ok { background:color-mix(in srgb, var(--ok) 20%, var(--bg)); color:var(--ok); }
+.emu-badge.emu { background:color-mix(in srgb, var(--accent) 20%, var(--bg)); color:var(--accent); }
+.emu-badge.missing { background:color-mix(in srgb, var(--err) 20%, var(--bg)); color:var(--err); }
+.emu-card-desc { color:var(--muted); font-size:0.66rem; line-height:1.35; margin:0; }
+.emu-card-sigs { color:var(--muted); font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace; font-size:0.58rem; }
+.emu-card-btn {
+  align-self:flex-start; background:var(--bg); border:1px solid var(--panel-border); border-radius:4px;
+  color:var(--fg); cursor:pointer; font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace;
+  font-size:0.66rem; font-weight:700; padding:4px 12px; transition:background 0.12s,border-color 0.12s;
+}
+.emu-card-btn:hover:not(:disabled) { background:var(--accent-dim); border-color:var(--accent); }
+.emu-card-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
 /* ── Grids ── */
 .dashboard-grid,
 .stats-layout {

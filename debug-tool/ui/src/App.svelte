@@ -5,6 +5,7 @@
   import CanMonitor from "./components/CanMonitor.svelte";
   import Controller from "./components/Controller.svelte";
   import Dashboard from "./components/Dashboard.svelte";
+  import Emulator from "./components/Emulator.svelte";
   import PipelineView from "./components/PipelineView.svelte";
   import Simulator from "./components/Simulator.svelte";
   import Stats from "./components/Stats.svelte";
@@ -19,7 +20,7 @@
   import { initFaultWatcher } from "./stores/faults";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
 
-  type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "simulator";
+  type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "simulator" | "emulator";
 
   let activeTab: Tab = "dashboard";
   let ids: CanMessageDef[] = [];
@@ -37,7 +38,8 @@
     { id: "pipeline", label: "Pipeline" },
     { id: "stats", label: "Statistics" },
     { id: "terminal", label: "Terminal" },
-    { id: "simulator", label: "Simulator" }
+    { id: "simulator", label: "Sim" },
+    { id: "emulator", label: "Emulator" }
   ];
 
   // (topbar helpers moved to Topbar.svelte)
@@ -255,6 +257,8 @@
       <Terminal />
     {:else if activeTab === "simulator"}
       <Simulator />
+    {:else if activeTab === "emulator"}
+      <Emulator />
     {:else}
       <Stats {ids} />
     {/if}
