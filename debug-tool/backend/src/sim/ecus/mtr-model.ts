@@ -16,9 +16,11 @@ export class MtrModel implements EcuModel {
   private tickCount = 0;
 
   config(_params: EcuConfig): void {}
-  start(): void { this.actualSpeed = 0; this.gear = 0; this.faults = 0; }
+  start(): void { this.actualSpeed = 0; this.gear = 0; this.faults = 0; this.brakeActive = false; }
   stop(): void {}
   state(): EcuState { return { ecu: this.id, healthy: this.faults === 0, faultFlags: this.faults, uptimeMs: 0 }; }
+
+  private brakeActive = false;
 
   ingest(frame: CanFrame): void {
     if (frame.id === "0x001") { this.actualSpeed = 0; this.faults |= 1; return; }
@@ -26,10 +28,27 @@ export class MtrModel implements EcuModel {
       const d = frame.decoded as Record<string, unknown>;
       const targetSpeed = (d.motor_speed_mmps as number) ?? 0;
       const targetGear = (d.gear as number) ?? 0;
-      // First-order approach to target speed
-      this.actualSpeed = this.actualSpeed + (targetSpeed - this.actualSpeed) * 0.15;
+      if (targetSpeed === 0 && this.faults & 1) {
+        this.actualSpeed = 0;
+      } else if (this.brakeActive) {
+        // Brake reduces speed regardless of drive command
+        this.actualSpeed = this.actualSpeed * 0.7;
+        if (this.actualSpeed < 10) this.actualSpeed = 0;
+      } else {
+        this.actualSpeed = this.actualSpeed + (targetSpeed - this.actualSpeed) * 0.15;
+      }
       this.gear = targetGear;
       if (Math.abs(targetSpeed - this.actualSpeed) < 1) this.actualSpeed = targetSpeed;
+    }
+    if (frame.id === "0x205") {
+      const d = frame.decoded as Record<string, unknown>;
+      const kpa = (d.brake_pressure_kpa as number) ?? 0;
+      this.brakeActive = kpa > 100;
+    }
+    if (frame.id === "0x110") {
+      const d = frame.decoded as Record<string, unknown>;
+      const m = (d.mode as number) ?? 0;
+      if (m <= 1) { this.faults &= ~1; this.brakeActive = false; }
     }
   }
 

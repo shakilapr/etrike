@@ -48,7 +48,7 @@ export class SimulationEngine {
 
   /** Start the simulation with a given config. */
   async start(config: WorkModeConfig): Promise<void> {
-    this.stop();
+    await this.stop();
     this.bus.reset();
 
     const ecuIds = config.simulatedEcus;
