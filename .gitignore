@@ -143,6 +143,10 @@ CLAUDE.md
 AGENTS.md
 GEMINI.md
 
+# ── Standalone candex protocol (developed here, published separately) ──
+/candex/
+/canspec/
+
 # ── LaTeX build artifacts ────────────────────────────────────────────
 *.aux
 *.log
