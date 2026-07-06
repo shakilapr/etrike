@@ -939,7 +939,60 @@ Since we don't have source code for purchased/vendor ECUs, the modeling approach
 
 ---
 
-## 15. Reference
+## 15. Implementation Status (v0.4.0-alpha)
+
+### Built and Verified
+
+| Component | Location | Status |
+|-----------|----------|--------|
+| FrameRouter (per-ID source routing) | `backend/src/sim/router.ts` | ✅ Built, integrated into DebugStore |
+| SimulationEngine | `backend/src/sim/engine.ts` | ✅ Built, ticks all 6 ECU models at 100Hz |
+| VirtualCanBus | `backend/src/sim/virtual-can.ts` | ✅ Built, dual-channel frame routing |
+| VirtualClock | `backend/src/sim/engine.ts` | ✅ Tick-based, supports accelerated time |
+| ECU model — HOST | `backend/src/sim/ecus/host-model.ts` | ✅ Drive, brake, heartbeat |
+| ECU model — RT | `backend/src/sim/ecus/rt-model.ts` | ✅ Gateway forwarding, ESTOP, mode, steering, heartbeat |
+| ECU model — SYS | `backend/src/sim/ecus/sys-model.ts` | ✅ Safety monitor, brake forwarding, heartbeat |
+| ECU model — MTR | `backend/src/sim/ecus/mtr-model.ts` | ✅ Speed tracking, brake response, ESTOP, gear |
+| ECU model — EPS-C | `backend/src/sim/ecus/epsc-model.ts` | ✅ Angle tracking, 25 fault bits, checksums, L1/L2/L3 |
+| ECU model — SEB | `backend/src/sim/ecus/seb-model.ts` | ✅ Stroke/pressure tracking, 23 fault bits, checksums |
+| Native C++ IPC path | `native-test/sim-engine/main_native.cpp` | ✅ Compiles firmware physics_model.cpp, JSON-Lines IPC verified |
+| IpcEngineAdapter | `backend/src/sim/ipc-adapter.ts` | ✅ Spawns native process, implements EcuModel |
+| Work mode selector | Topbar dropdown | ✅ 5 modes, config persistence |
+| Tab data preservation | `App.svelte` CSS display toggle | ✅ All 10 tabs stay mounted |
+| CAN health dashboard | `Stats.svelte` | ✅ TEC/REC with CAN error states (Warning/Passive/Bus-Off) |
+| ECU topology diagram | `EcuTopology.svelte` | ✅ SVG with real/emulated/missing indicators |
+| Emulator behavioral models | `Emulator.svelte` | ✅ Dynamic data responds to drive/brake/steer/ESTOP |
+| YAML→TS CAN catalog generator | `shared/can/generate_can_index.py` | ✅ 37 messages, single source of truth |
+| Stats staleness (BUG-01) | `queries.ts` | ✅ 5s TTL, returns zeros when stale |
+| ECU presence staleness (BUG-02) | `telemetry.ts` | ✅ 3s timeout |
+| BusDetector auto-reset (BUG-03) | `can.ts` | ✅ 10s timeout |
+| Non-blocking startup (BUG-06) | `index.ts` | ✅ Server listens before transport detection |
+| WS filter race (BUG-08) | `ws.ts` | ✅ Filter sent before onState |
+| Runtime transport switching (BUG-11) | `index.ts` | ✅ POST /api/system/switch-transport |
+| dotenv support (BUG-17) | `config.ts` | ✅ Auto-loads .env |
+| Frame rate from DB (BUG-01 partial) | `queries.ts` | ✅ Stats TTL, not yet derived from DB query |
+
+### Verified Feedback Loops
+
+| Loop | Command | Response | Status |
+|------|---------|----------|--------|
+| Drive | 0x300 → 0x204 | 0x206, 0x120 | ✅ Verified end-to-end |
+| Brake | 0x301 → 0x205 | Speed reduced | ✅ Verified end-to-end |
+| Steering | 0x169 | 0x201 (angle + checksum + roll counter) | ✅ Verified end-to-end |
+| Brake-by-wire | 0x7B9 | 0x721 (stroke + pressure + checksum) | ✅ Verified end-to-end |
+| ESTOP | 0x001 | Speed=0, safety=1, estop=1 | ✅ Verified end-to-end |
+| Mode | 0x110 | 0x210 reports new mode | ✅ Verified end-to-end |
+| Heartbeat | 0x7FD | SYS 0x011 heartbeat_ok | ✅ Verified end-to-end |
+
+### Still Needed (Hardware Required)
+
+- Full HIL test with all 5 ECUs on CAN bus
+- Capture→replay validation for EPS-C/SEB models against real hardware
+- Native C++ RT model (IPC) end-to-end test with real firmware behavior
+
+---
+
+## 16. Reference
 
 - [Main Architecture](../architecture.md) — system topology, message catalog, mode state machine
 - [CAN Dictionary](../can-dictionary.md) — full bit-level signal catalog

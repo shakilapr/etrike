@@ -26,9 +26,18 @@ async function hasOpenLink(page: import("@playwright/test").Page): Promise<boole
 }
 
 test.describe("MCP2515 High-Bus Dashboard", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    // Skip all MCP2515 tests when no CAN hardware is connected
+    const statusResp = await page.request.get(`${BASE_URL}/api/status`);
+    if (statusResp.ok()) {
+      const status = await statusResp.json();
+      const hasHardware = status.bridge?.connected || status.serial?.port_open;
+      if (!hasHardware) {
+        testInfo.skip(true, "No CAN hardware connected — skipping MCP2515 tests");
+        return;
+      }
+    }
     await page.goto(BASE_URL);
-    // Wait for the dashboard to load
     await page.waitForSelector("text=Dashboard", { timeout: 10000 });
   });
 
@@ -43,13 +52,13 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
     await page.click("text=CAN Monitor");
 
     // Switch to high bus view
-    const highBusTab = page.locator('button:has-text("High"), [role="tab"]:has-text("High")').first();
+    const highBusTab = page.locator('.monitor-panel button:has-text("High")').first();
     if (await highBusTab.isVisible()) {
       await highBusTab.click();
     }
 
-    await expect(page.locator(".monitor-cards")).toBeVisible({ timeout: 5000 });
-    await expect(page.locator(".cat-card").first()).toBeVisible();
+    await expect(page.locator(".monitor-panel")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".monitor-panel .cat-card, .monitor-panel .msg-card").first()).toBeVisible({ timeout: 5000 });
     await expect(page.locator("body")).toContainText(/0x7FD|0x210|0x220|0x310|0x311/);
   });
 
@@ -64,9 +73,9 @@ test.describe("MCP2515 High-Bus Dashboard", () => {
   test("Injector tab can send 0x300 HOST_DRIVE_CMD on high bus", async ({ page }) => {
     await page.click("text=Injector");
 
-    await page.getByRole("button", { name: "HIGH Bus" }).click();
+    await page.locator('.injector-layout button:has-text("high"), .injector-layout button:has-text("High")').first().click();
 
-    await page.locator("select").first().selectOption("0x300");
+    await page.locator(".injector-layout select").first().selectOption("0x300");
     await expect(page.locator("body")).toContainText("HOST_DRIVE_CMD");
 
     test.skip(!(await hasOpenLink(page)), "MCP2515/serial link is not open in this environment.");
