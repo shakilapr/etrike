@@ -112,8 +112,16 @@ export class SerialBridge implements HardwareBridge {
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return; // already pending
     if (this.reconnectAttempt >= SerialBridge.MAX_RECONNECT_ATTEMPTS) {
-      this.state.last_error = "max reconnection attempts reached";
+      // Cap fast backoff, switch to slow polling every 30s
+      this.state.last_error = "reconnection attempts exhausted, polling every 30s";
       this.broadcastStatus();
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        this.reconnectAttempt = 0; // reset for fresh backoff if it comes back
+        if (!this.state.connected && this.config.serialPath) {
+          this.start();
+        }
+      }, 30000);
       return;
     }
     const delay = Math.min(

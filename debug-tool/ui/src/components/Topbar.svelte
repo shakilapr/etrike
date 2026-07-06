@@ -42,9 +42,19 @@
     return [b?.adapter, b?.path, b?.bitrate ? b.bitrate + " bit/s" : "", b?.last_error ? "Err: " + b.last_error : ""].filter(Boolean).join(" / ") || "Bridge";
   }
 
+  import { onDestroy } from "svelte";
+
   $: t = $telemetry;
   let tick = 0;
-  $: { if (t.leftTurn || t.rightTurn) { const i = setInterval(() => tick++, 500); } }
+  let flashTimer: ReturnType<typeof setInterval> | null = null;
+  $: {
+    if (t.leftTurn || t.rightTurn) {
+      if (!flashTimer) flashTimer = setInterval(() => tick++, 500);
+    } else {
+      if (flashTimer) { clearInterval(flashTimer); flashTimer = null; tick = 0; }
+    }
+  }
+  onDestroy(() => { if (flashTimer) clearInterval(flashTimer); });
   function flash(a: boolean): boolean { return a && tick % 2 === 0; }
 
   // ── Gear color ──
@@ -117,7 +127,7 @@
       state: hState(Boolean($status.backend_online)), title: $status.backend_online ? "Backend online" : "Backend offline"
     },
     {
-      group: "Link", label: "USB", value: $status.bridge?.connected ? "linked" : "open", kind: "usb",
+      group: "Link", label: "USB", value: $status.bridge?.connected ? "linked" : "closed", kind: "usb",
       state: hState(Boolean($status.bridge?.connected)), title: $status.bridge?.connected ? bridgeTT() : "Bridge disconnected"
     },
     { group: "Bus", label: "High", value: busValue("high"), kind: "can", state: canState("high"), title: canTT("high") },

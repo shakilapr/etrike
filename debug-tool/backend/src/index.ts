@@ -94,7 +94,7 @@ async function main(): Promise<void> {
   (app as any).__rtModelTs = rtModelTs;
   (app as any).__rtModelNative = rtModelNative;
 
-  registerSimRoutes(app, store);
+  registerSimRoutes(app, store, hub);
   registerCanRoutes(app, store);
   registerRecordingRoutes(app, store);
 

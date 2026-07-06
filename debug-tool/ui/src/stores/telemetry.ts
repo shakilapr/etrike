@@ -1,5 +1,11 @@
-import { derived } from "svelte/store";
+import { derived, readable } from "svelte/store";
 import { latestById } from "./can";
+
+/** Ticks every 1s to force staleness re-evaluation. */
+export const now = readable(Date.now() / 1000, (set) => {
+  const timer = setInterval(() => set(Date.now() / 1000), 1000);
+  return () => clearInterval(timer);
+});
 
 /** Real-time vehicle telemetry extracted from the latest CAN frame of each ID. */
 export interface Telemetry {
@@ -69,21 +75,21 @@ export interface EcuPresence {
 
 const PRESENCE_TIMEOUT_S = 3;
 
-function recent(frame: { ts: number } | undefined): boolean {
+function recent(frame: { ts: number } | undefined, nowS: number): boolean {
   if (!frame) return false;
   const tsSeconds = frame.ts > 1_000_000_000_000 ? frame.ts / 1000 : frame.ts;
-  return (Date.now() / 1000) - tsSeconds < PRESENCE_TIMEOUT_S;
+  return nowS - tsSeconds < PRESENCE_TIMEOUT_S;
 }
 
-export const ecuPresence = derived(latestById, ($latest): EcuPresence => ({
-  rt:  recent($latest["high:0x7FD"]) || recent($latest["high:0x210"]),
-  sys: recent($latest["low:0x7FE"])  || recent($latest["low:0x011"]),
-  mtr: recent($latest["high:0x206"]) || recent($latest["low:0x206"]),
-  ses: recent($latest["low:0x201"]),
-  seb: recent($latest["low:0x721"]),
+export const ecuPresence = derived([latestById, now], ([$latest, $now]): EcuPresence => ({
+  rt:  recent($latest["high:0x7FD"], $now) || recent($latest["high:0x210"], $now),
+  sys: recent($latest["low:0x7FE"], $now)  || recent($latest["low:0x011"], $now),
+  mtr: recent($latest["high:0x206"], $now) || recent($latest["low:0x206"], $now),
+  ses: recent($latest["low:0x201"], $now),
+  seb: recent($latest["low:0x721"], $now),
 }));
 
-export const telemetry = derived(latestById, ($latest): Telemetry => {
+export const telemetry = derived([latestById, now], ([$latest, $now]): Telemetry => {
   // Lights / indicators: prefer SYS_SAFETY_STS (0x011) on high bus, fall back to low
   const safetyHigh = $latest["high:0x011"]?.decoded;
   const safetyLow  = $latest["low:0x011"]?.decoded;
@@ -122,8 +128,9 @@ export const telemetry = derived(latestById, ($latest): Telemetry => {
   const diagAngle = numField(steerDiag, "SteerDiag_Angle0_1deg"); // deg
   let rawAngle: number | null = null;
   if (sesAngle !== null) rawAngle = Math.round(sesAngle) / 10;
-  else if (diagAngle !== null) rawAngle = Math.round(diagAngle * 10) / 10;
-  if (rawAngle !== null && rawAngle > -90 && rawAngle < 90) steerAngleDeg = rawAngle;
+  else if (diagAngle !== null) rawAngle = Math.round(diagAngle) / 10;
+  // Clamp to valid steering range instead of hiding UI
+  if (rawAngle !== null) steerAngleDeg = Math.max(-90, Math.min(90, rawAngle));
 
   // Brake pressure (convert kPa → MPa) — clamp to 0..25 MPa
   let brakePressureMpa: number | null = null;

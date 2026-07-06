@@ -82,8 +82,10 @@ export class StreamHub {
 
   broadcast(event: StreamEvent): void {
     const encoded = JSON.stringify(event);
+    // Snapshot to avoid mutation during iteration (client may disconnect mid-loop)
+    const snapshot = [...this.clients];
 
-    for (const client of this.clients) {
+    for (const client of snapshot) {
       if (client.socket.readyState !== OPEN) {
         this.clients.delete(client);
         continue;

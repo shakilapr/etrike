@@ -53,7 +53,9 @@
   }
 
   function frameStamp(frame?: CanFrame): number {
-    return frame?.ts_real ?? frame?.ts ?? 0;
+    if (!frame) return 0;
+    const ts = frame.ts_real ?? frame.ts;
+    return ts > 1_000_000_000_000 ? ts / 1000 : ts;
   }
 
   function activityState(bus: Bus): SignalState {
