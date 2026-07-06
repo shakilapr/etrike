@@ -263,6 +263,28 @@ add_test(NAME dual_heartbeat      COMMAND dual_heartbeat)
 add_test(NAME estop_latch          COMMAND estop_latch)
 add_test(NAME spi_failure          COMMAND spi_failure)
 
+# ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
+add_executable(sim_engine_native
+    sim-engine/main_native.cpp
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src/physics_model.cpp
+)
+target_include_directories(sim_engine_native PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim-engine
+    ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+    ${CMAKE_SOURCE_DIR}/../sys-esp32/src
+    ${CMAKE_SOURCE_DIR}/../mtr-stm32/src
+)
+target_compile_definitions(sim_engine_native PRIVATE
+    CONFIG_BYPASS_EPS_C_SYNC
+    CONFIG_BENCH_SOLO
+)
+# Link with -static to avoid DLL dependencies
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_link_options(sim_engine_native PRIVATE -static)
+endif()
+
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
