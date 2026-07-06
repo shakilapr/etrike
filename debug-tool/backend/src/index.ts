@@ -16,6 +16,11 @@ import { MqttBridge } from "./mqtt/bridge";
 import { SerialBridge } from "./serial/reader";
 import { FrameRouter } from "./sim/router";
 import { MODE_DEFAULTS, workModeConfigSchema, type WorkModeConfig, type EcuId } from "./sim/work-mode";
+import { SimulationEngine } from "./sim/engine";
+import { HostModel } from "./sim/ecus/host-model";
+import { RtModel } from "./sim/ecus/rt-model";
+import { MtrModel } from "./sim/ecus/mtr-model";
+import { SysModel } from "./sim/ecus/sys-model";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
@@ -51,10 +56,20 @@ async function main(): Promise<void> {
   (app as any).__simTimers = new Map<string, ReturnType<typeof setInterval>>();
   const router = new FrameRouter();
   (app as any).__router = router;
-
-  // Wire router into the store — all insertFrame() calls from any source
-  // (bridges, sim routes, etc.) automatically pass through the FrameRouter.
   store.router = router;
+
+  // Simulation engine — runs ECU models in software
+  const simEngine = new SimulationEngine(store, hub);
+  const hostModel = new HostModel();
+  const rtModel = new RtModel();
+  const mtrModel = new MtrModel();
+  const sysModel = new SysModel();
+  simEngine.register(hostModel);
+  simEngine.register(rtModel);
+  simEngine.register(mtrModel);
+  simEngine.register(sysModel);
+  (app as any).__simEngine = simEngine;
+  (app as any).__hostModel = hostModel;
 
   registerSimRoutes(app, store);
   registerCanRoutes(app, store);
@@ -192,17 +207,45 @@ async function main(): Promise<void> {
       }
     }
 
-    // Start/stop ECU models based on config
-    const simTimers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>>;
-    // Clear existing sim timers
-    for (const t of simTimers.values()) clearInterval(t);
-    simTimers.clear();
+    // Start/stop simulation engine based on mode
+    const engine = (app as any).__simEngine as SimulationEngine;
+    const host = (app as any).__hostModel as HostModel;
+
+    if (newConfig.mode === "full-sim" && newConfig.simulatedEcus.length > 0) {
+      await engine.start(newConfig);
+      app.log.info(`Full Simulation started: ${newConfig.simulatedEcus.join(", ")}`);
+    } else if (engine.state.running) {
+      await engine.stop();
+    }
+
+    // Also update host model for keyboard input passthrough
+    if (host && newConfig.mode === "full-sim") {
+      (app as any).__hostForController = host;
+    }
 
     app.log.info(`Work mode: ${newConfig.mode}, simulated ECUs: ${newConfig.simulatedEcus.join(", ") || "none"}`);
     return { ok: true, mode: newConfig.mode };
   });
 
   app.get("/api/mode/defaults", async () => MODE_DEFAULTS);
+
+  // Controller input → HOST model (for Full Simulation mode)
+  app.post("/api/sim/controller", async (request, reply) => {
+    const host = (app as any).__hostModel as HostModel | undefined;
+    if (!host) return reply.code(400).send({ error: "HOST model not active — switch to Full Simulation mode" });
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    if (typeof body.speed_mmps === "number") host.speedMmps = body.speed_mmps as number;
+    if (typeof body.yaw_mrad_s === "number") host.yawMradS = body.yaw_mrad_s as number;
+    if (typeof body.gear === "number") host.gear = body.gear as number;
+    if (typeof body.brake_kpa === "number") host.brakeKpa = body.brake_kpa as number;
+    return { ok: true, speed: host.speedMmps, gear: host.gear, brake: host.brakeKpa };
+  });
+
+  app.get("/api/sim/state", async () => ({
+    running: simEngine.state.running,
+    activeEcus: simEngine.state.activeEcus,
+    physics: simEngine.state.physics,
+  }));
 }
 
 void main().catch((error) => {
