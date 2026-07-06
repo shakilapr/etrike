@@ -28,7 +28,9 @@ export class CanalystBridge implements HardwareBridge {
       baud_rate: null,
       bitrate: config.canalystBitrate,
       last_status_at: null,
-      last_error: null
+      last_error: null,
+      last_frame_at: null,
+      degraded: false
     };
   }
 
@@ -215,6 +217,8 @@ export class CanalystBridge implements HardwareBridge {
         data: message.data as number[],
         decoded: typeof message.decoded === "object" && message.decoded ? (message.decoded as Record<string, unknown>) : undefined
       });
+      this.state.last_frame_at = Date.now() / 1000;
+      this.state.degraded = false;
       this.store.insertFrame(frame);
       this.busDetector.feed(frame.id);
       this.hub.broadcast({ type: "can_frame", payload: frame });

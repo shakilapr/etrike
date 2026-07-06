@@ -129,16 +129,35 @@ export class DebugStore {
 
   setStats(stats: CanStats): void {
     const normalized = normalizeStats(stats);
+    const now = Date.now() / 1000;
     this.db
       .prepare("INSERT INTO runtime_state (key, value) VALUES ('stats', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(JSON.stringify(normalized));
+    this.db
+      .prepare("INSERT INTO runtime_state (key, value) VALUES ('stats_updated_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(String(now));
+  }
+
+  getStatsUpdatedAt(): number | null {
+    const row = this.db.prepare("SELECT value FROM runtime_state WHERE key = 'stats_updated_at'").get() as { value: string } | undefined;
+    if (!row) return null;
+    const n = Number(row.value);
+    return Number.isFinite(n) ? n : null;
   }
 
   getStats(): CanStats {
-    const row = this.db.prepare("SELECT value FROM runtime_state WHERE key = 'stats'").get() as { value: string } | undefined;
-    if (!row) return defaultStats();
+    const statsRow = this.db.prepare("SELECT value FROM runtime_state WHERE key = 'stats'").get() as { value: string } | undefined;
+    const tsRow = this.db.prepare("SELECT value FROM runtime_state WHERE key = 'stats_updated_at'").get() as { value: string } | undefined;
+    if (!statsRow) return defaultStats();
+    // Return zeroed stats if older than 5 seconds
+    if (tsRow) {
+      const updatedAt = Number(tsRow.value);
+      if (!Number.isFinite(updatedAt) || Date.now() / 1000 - updatedAt > 5) {
+        return defaultStats();
+      }
+    }
     try {
-      return normalizeStats(JSON.parse(row.value) as CanStats);
+      return normalizeStats(JSON.parse(statsRow.value) as CanStats);
     } catch {
       return defaultStats();
     }

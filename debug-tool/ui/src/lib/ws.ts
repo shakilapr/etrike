@@ -33,12 +33,13 @@ export function connectStream(
 
     socket.addEventListener("open", () => {
       attempt = 0;
-      onState(true);
 
-      // Re-apply pending filter after reconnect
-      if (pendingFilter && socket && socket.readyState === WebSocket.OPEN) {
+      // Re-apply pending filter BEFORE notifying connected state,
+      // so no unfiltered frames arrive before the server processes the filter.
+      if (pendingFilter && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "filter", ...pendingFilter }));
       }
+      onState(true);
     });
 
     socket.addEventListener("close", () => {

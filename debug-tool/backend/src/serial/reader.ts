@@ -8,6 +8,8 @@ import type { StreamHub } from "../ws/stream";
 export interface SerialState extends BridgeState {
   esp32_connected: boolean;
   port_open: boolean;
+  last_frame_at: number | null;
+  degraded: boolean;
 }
 
 export class SerialBridge implements HardwareBridge {
@@ -33,7 +35,9 @@ export class SerialBridge implements HardwareBridge {
       baud_rate: config.serialBaudRate,
       bitrate: null,
       last_status_at: null,
-      last_error: null
+      last_error: null,
+      last_frame_at: null,
+      degraded: false
     };
   }
 
@@ -159,8 +163,6 @@ export class SerialBridge implements HardwareBridge {
     }
 
     if (typeof message.id === "string" && Array.isArray(message.data)) {
-      // Auto-detect which CAN bus this controller is connected to when the
-      // producer doesn't include an explicit bus field.
       const prevDetected = this.detectedBus;
       const explicitBus = message.bus === "low" || message.bus === "high" ? message.bus : null;
       this.detectedBus = explicitBus ?? this.busDetector.feed(message.id);
@@ -174,10 +176,11 @@ export class SerialBridge implements HardwareBridge {
         data: message.data as number[],
         decoded: typeof message.decoded === "object" && message.decoded ? (message.decoded as Record<string, unknown>) : undefined
       });
+      this.state.last_frame_at = Date.now() / 1000;
+      this.state.degraded = false;
       this.store.insertFrame(frame);
       this.hub.broadcast({ type: "can_frame", payload: frame });
 
-      // Notify when bus detection locks in
       if (this.detectedBus !== prevDetected || this.busDetector.state.confidence === "high") {
         this.broadcastStatus();
       }

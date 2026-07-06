@@ -1,6 +1,8 @@
 # Debug Tool Architecture
 
-Browser-based CAN bus monitor, injector, and bench-test dashboard for the E-Trike drive-by-wire system. Four transport backends (Serial, CANalyst-II, MQTT, Simulator), TypeScript frontend (Svelte 5), SQLite frame store, REST + WebSocket API.
+> **Version:** v0.4.0-alpha — Multi-mode CAN bench-test platform
+
+Browser-based CAN bus monitor, injector, ECU emulator, and bench-test dashboard for the E-Trike drive-by-wire system. Four transport backends (Serial, CANalyst-II, MQTT, Simulator), six ECU behavioral models, TypeScript frontend (Svelte 5), SQLite frame store, REST + WebSocket API.
 
 > Full run guide: [`run.md`](run.md). Hardware setup: [`CANALYST-II-SETUP.md`](CANALYST-II-SETUP.md).
 
@@ -137,7 +139,7 @@ Backend starts with no transport. REST API is available for testing or replaying
 | `backend/src/types/can.ts` | `CAN_MESSAGES[]`, `decodeFrame()`, `normalizeFrame()`, `INJECTION_TEMPLATES[]`, `BusDetector` |
 | `ui/src/lib/can-decoder.ts` | Mirror catalog, `decodeFrame()`, `encodePayload()`, formatting helpers, `normalizeCanId()` |
 
-> ⚠️ **Sync warning**: Both files cite `shared/can/can_signals.yaml` as source of truth — but that file doesn't exist. The actual sources are `shared/can/can_low.yaml` and `shared/can/can_high.yaml`. No automated sync exists. Known mismatches documented in `../tem/issues.md`.
+> ⚠️ **Sync warning**: Currently, `can.ts` and `can-decoder.ts` are hand-maintained and out of sync with the true source (`shared/can/can_low.yaml` and `shared/can/can_high.yaml`). The upcoming architecture will use a generator script (`shared/can/generate_can_index.py`) to build a single `can-index.ts` directly from these shared YAML files, ensuring the debug tool and simulator are always perfectly aligned with the firmware.
 
 ### 3.1 High-Level CAN Bus (15 IDs)
 
@@ -341,6 +343,7 @@ runtime_state (key TEXT PK, value TEXT)  -- key-value for stats
 ```
 
 **Pruning**: When `can_frames` exceeds `MAX_FRAMES` (default 50000), oldest rows not referenced by active recordings are deleted. WAL checkpoint every 30 s.
+> ⚠️ **Pruning Bottleneck**: Currently, pruning runs synchronously on every frame insert, causing massive event loop blocking at high FPS (BUG-19). Furthermore, it fails to differentiate between active and stopped recordings, leading to indefinite WAL memory leaks (BUG-20). Fixes are pending in Phase 0.
 
 ---
 
@@ -512,6 +515,26 @@ debug-tool/
       index.ts                       CLI entry
       sim-engine.ts                  SimEngine (MQTT publisher)
       can-generator.ts               Synthetic frame generation
+                                     ⚠️ Legacy — replaced by SimulationEngine in v0.4.0
+
+  sim/                               ← NEW in v0.4.0-alpha
+    ecus/
+      host.ts                        HOST drive-by-wire model
+      rt.ts                          RT gateway + steering model
+      sys.ts                         SYS safety + body model
+      mtr.ts                         MTR motor model
+      epsc.ts                        EPS-C steering actuator model
+      seb.ts                         SEB brake actuator model
+      base.ts                        BaseEcu abstract class
+    bus/
+      virtual-can.ts                 Dual-channel virtual CAN bus
+    physics/
+      tricycle.ts                    Tricycle kinematics
+      plant.ts                       Speed/steering/brake plant model
+    engine.ts                        SimulationEngine orchestrator
+    router.ts                        FrameRouter — per-ID source routing
+    config.ts                        WorkModeConfig types + defaults
+    scenario.ts                      Scenario runner
 
   debug-esp32/
     platformio.ini                   ESP32-S3 PlatformIO project
@@ -556,7 +579,367 @@ npm start                       # serves UI from ui/dist/, SPA fallback
 
 ---
 
-## 14. Reference
+## 14. Multi-Mode Architecture (v0.4.0-alpha)
+
+The debug tool is evolving from a passive CAN monitor into a **multi-mode bench-test platform** that supports five distinct work modes. This section describes the target architecture — the patterns, components, and data flows that make each mode possible. Implementation status is noted per component.
+
+### 14.1 Work Modes
+
+Five modes, ordered by how much is running in software vs. hardware:
+
+| Mode | Hardware | Software | Use Case |
+|------|----------|----------|----------|
+| **Full Simulation** | None | All 6 ECU models + physics | CI testing, development without hardware, scenario replay |
+| **Part-by-Part Emulation** | Some ECUs detected | Missing ECUs emulated with behavioral models | Bench test with partial hardware, bring-up of individual ECUs |
+| **Hybrid** | Real CAN bus active | Emulated ECUs inject onto physical bus; real frames feed emulated models | Integration testing, mixed hardware/software validation |
+| **Bench Test** | Real CAN bus active | No emulation; bypass flags suppress listen-sync requirements | Testing what exists without faking what doesn't |
+| **Monitor Only** | Real CAN bus active (or none) | Passive decode + display; no injection, no emulation | Field debugging, bus health checks, log capture |
+
+**Mode selection** controls three orthogonal things:
+1. **Which ECU models run** (none / missing-only / all)  
+2. **Whether emulated frames inject onto the physical CAN bus** (read-only / inject)  
+3. **Which bypass flags are active** (none / auto-suggested / manual)
+
+### 14.2 Unified Frame Pipeline
+
+Every CAN frame — regardless of source — flows through the same pipeline. The Frame Router is the central junction that decides per-ID which source provides each message.
+
+```
+                         ┌───────────────────────────────┐
+                         │       Frame Router             │
+                         │  per-(bus, id) source table    │
+                         │  collision detection           │
+                         │  duplicate suppression         │
+                         └──────────────┬────────────────┘
+                                        │
+           ┌────────────────────────────┼────────────────────────────┐
+           │                            │                            │
+    ┌──────┴──────┐              ┌──────┴──────┐              ┌──────┴──────┐
+    │  Physical    │              │  Emulated    │              │  Simulated   │
+    │  Bridge      │              │  ECUs        │              │  ECUs        │
+    │              │              │              │              │              │
+    │ Serial       │              │ Per-ECU      │              │ All-ECU      │
+    │ CANalyst-II  │              │ behavioral   │              │ behavioral   │
+    │ MQTT         │              │ models       │              │ models       │
+    │              │              │ (backend)    │              │ (backend)    │
+    │ Reads from   │              │              │              │              │
+    │ physical bus │              │ Subscribes   │              │ Virtual CAN  │
+    │              │              │ to frames    │              │ bus only     │
+    └──────┬───────┘              └──────┬───────┘              └──────┬───────┘
+           │                            │                            │
+           └────────────────────────────┼────────────────────────────┘
+                                        │
+                         ┌──────────────┴──────────────┐
+                         │  Normalize → Decode → Store  │
+                         │  SQLite + WebSocket fan-out   │
+                         └──────────────┬──────────────┘
+                                        │
+                         ┌──────────────┴──────────────┐
+                         │  UI (Svelte 5)               │
+                         │  All tabs persistently       │
+                         │  mounted                     │
+                         └─────────────────────────────┘
+```
+
+**Key invariant:** A given `(bus, id)` pair has exactly one authoritative source at any time. The router enforces this — if both a physical bridge and an emulated ECU try to produce `low:0x206`, the router picks one based on mode config and logs a collision warning.
+
+**Source priority by mode:**
+
+| Mode | Physical bridge | Emulated ECU | Simulated ECU |
+|------|:---:|:---:|:---:|
+| Full Simulation | — | — | All IDs |
+| Part-by-Part Emulation | — | Missing ECUs only | — |
+| Hybrid | Detected ECUs | Missing ECUs (can inject to physical bus) | — |
+| Bench Test | All connected ECUs | — | — |
+| Monitor Only | All connected ECUs | — | — |
+
+### 14.3 ECU Behavioral Models
+
+Each ECU is modeled as a **stateful service** that subscribes to incoming CAN frames, runs its internal state machine, and emits response frames. These models are the foundation for Full Simulation, Part-by-Part Emulation, and Hybrid modes.
+
+**Models and their responsibilities:**
+
+| ECU | Model | Key State Machines | Input Frames | Output Frames |
+|-----|-------|-------------------|-------------|---------------|
+| **HOST** | Drive-by-wire commander | Drive profile (speed, yaw, gear) | — (keyboard/joystick) | 0x300, 0x301, 0x302, 0x400, 0x7FC |
+| **RT** | Gateway + steering controller | Mode (MANUAL/AUTO/ESTOP), Steering (BOOT_WAIT→LISTEN_SYNC→ACTIVE→FAULT), Command watchdog | 0x300, 0x301, 0x201, 0x7B9 feedback | 0x210, 0x220, 0x204, 0x205, 0x169, 0x7FD, 0x302(fwd), 0x310, 0x311 |
+| **SYS** | Safety + body controller | Safety monitor (HB timeout, ESTOP), Brake control (SEB takeover), Mode manager | 0x210, 0x7FD, 0x721, 0x206, 0x7FE | 0x011, 0x012, 0x110, 0x600, 0x7B9, 0x7FE |
+| **MTR** | Motor controller | Gear state, Fault flags, EGAS L2 monitoring | 0x204, 0x001 | 0x120, 0x206 |
+| **EPS-C** | Steering actuator | Angle tracking, Alignment detection, 25 fault bits, L1/L2/L3 error levels | 0x169 | 0x201, 0x202, 0x203, 0x6FA |
+| **SEB** | Brake actuator | Stroke/pressure tracking, 23 fault bits, Rolling counter validation | 0x7B9 | 0x721, 0x731, 0x741, 0x6FB |
+
+**Model contract:**
+```
+ECU Model
+  ├── config(params)          // one-time setup (bitrate, timing, bypass flags)
+  ├── start()                 // begin state machine ticks
+  ├── ingest(frame)           // receive a CAN frame → may trigger state transitions
+  ├── tick(dt)                // periodic update → may emit frames
+  ├── onFrame(callback)       // register listener for emitted frames
+  ├── state()                 // read current ECU state (mode, faults, health)
+  └── stop()                  // graceful shutdown
+```
+
+**Model provenance:** Two sources, one interface. The **authoritative** implementation is the firmware C++ source (`rt-esp32/src/`, `sys-esp32/src/`) — the same safety monitors, physics models, mode managers, and CAN dispatch that run on the ESP32, host-compilable via the HAL shadow layer. The **convenience** implementation is the TypeScript port in `simulation/src/ecus/` (355 vitest tests). Both satisfy the same `EcuModel` contract. See §14.8 for the native C++ integration strategy.
+
+### 14.4 Per-ID Frame Routing
+
+In Hybrid and Bench modes, the Frame Router maintains a **source table** that maps each `(bus, id)` pair to its authoritative source. This enables fine-grained control over which frames come from hardware and which come from software.
+
+```
+Source Table (example — Hybrid mode with EPS-C absent):
+
+  high:0x300 → physical     (real Jetson on CANalyst-II Ch1)
+  high:0x7FC → physical     (real host heartbeat)
+  high:0x210 → physical     (real RT on high bus)
+  high:0x7FD → physical     (real RT heartbeat)
+  low:0x204  → physical     (real RT forwarding to low bus)
+  low:0x201  → emulated     (EPS-C emulated — no real EPS-C detected)
+  low:0x202  → emulated     (EPS-C fault status)
+  low:0x721  → physical     (real SEB on low bus)
+  ...
+```
+
+**Collision rules:**
+- A physical frame arriving for an ID routed to "emulated" → logged as unexpected, optionally forwarded to emulated model as input
+- An emulated frame for an ID routed to "physical" → silently dropped (real hardware wins)
+- Two emulated models both claiming the same ID → configuration error, rejected at startup
+
+**Inject-to-physical flag:** When an emulated ECU owns an ID and `injectEmulatedToPhysical` is true, the emulated frame is sent to the physical CAN bridge as a one-shot injection. This lets emulated ECUs participate in the real CAN bus.
+
+### 14.5 Data Preservation Across Tabs
+
+All 10 tabs remain **persistently mounted**. Switching tabs hides/shows via CSS — no component destruction, no state loss.
+
+**Per-component state that must survive tab switches:**
+
+| Component | State preserved |
+|-----------|----------------|
+| CAN Monitor | Bus filter, search text, pause toggle, category expand/collapse, scroll position |
+| Injector | Selected bus + message, filled signal values, periodic injection timers |
+| Controller | Drive setpoints, key-held state (WASD) |
+| Emulator | Running ECU list, simMode toggle, per-signal live data |
+| Pipeline | Correlation window settings, selected chain |
+| Terminal | Command history, typed input, scroll position |
+| Dictionary | Selected message, expanded signal details |
+
+| Component | State preserved |
+|-----------|----------------|
+| CAN Monitor | Bus filter, search text, pause toggle, category expand/collapse, scroll position |
+| Injector | Selected bus + message, filled signal values, periodic injection timers |
+| Controller | Drive setpoints, key-held state (WASD) |
+| Emulator | Running ECU list, simMode toggle, per-signal live data |
+| Pipeline | Correlation window settings, selected chain |
+| Terminal | Command history, typed input, scroll position |
+| Dictionary | Selected message, expanded signal details |
+
+**Current status:** Tab switching uses `{#if}` blocks which destroy component DOM. Target: CSS `display` toggle or Svelte `{#key}` keep-alive pattern.
+
+### 14.6 Work Mode Configuration
+
+Each mode is described by a serializable configuration object. Configurations can be saved, shared, and reloaded.
+
+```typescript
+interface WorkModeConfig {
+  mode: "full-sim" | "emulator" | "hybrid" | "bench" | "monitor";
+
+  // Which ECUs run as software models
+  simulatedEcus: ("host" | "rt" | "sys" | "mtr" | "epsc" | "seb")[];
+
+  // Per-ID source routing (for hybrid/bench modes)
+  // "*" = auto-detect from ECU presence; explicit entries override
+  idSources: Record<string, "physical" | "emulated" | "simulated" | "*">;
+
+  // Whether emulated frames are injected onto the physical CAN bus
+  injectEmulatedToPhysical: boolean;
+
+  // Bench-test bypass flags (suppress listen-sync requirements)
+  bypasses: {
+    epscSync: boolean;    // Skip EPS-C steering sync → RT can drive without EPS-C
+    sebSync: boolean;     // Skip SEB brake sync → SYS can operate without SEB
+    mtrAbsent: boolean;   // Skip EGAS L2 motor monitoring
+    benchSolo: boolean;   // MCP2515 ListenOnly + skip peer heartbeat timeouts
+  };
+
+  // Scenario to run on start (optional)
+  scenario?: "drive-forward" | "estop-flow" | "mode-transition" | "heartbeat-timeout";
+}
+```
+
+**Auto-detection:** In Hybrid and Emulator modes, the system detects which ECUs are physically present via heartbeat frames (0x7FC, 0x7FD, 0x7FE) and status frames (0x210, 0x011, 0x201, 0x721). Missing ECUs are flagged for emulation. The `idSources: "*"` wildcard means "auto-detect from presence."
+
+**Bypass flags at runtime:** Currently bypass flags are compile-time only (`-D CONFIG_BYPASS_EPS_C_SYNC` in platformio.ini). The architecture supports runtime bypass via the ECU model's `config()` call — the model simply skips the listen-sync requirement when the flag is set. For real hardware, bypass flags remain compile-time until a runtime config protocol is added to the firmware.
+
+### 14.7 Simulation Engine
+
+The `SimulationEngine` class (in `debug-tool/backend/src/sim/`) orchestrates ECU models:
+
+```
+SimulationEngine
+  ├── clock: VirtualClock           // wall-clock or accelerated
+  ├── bus: VirtualCanBus            // dual-channel, routes frames between models
+  ├── models: Map<ECU, EcuModel>    // active ECU instances
+  ├── router: FrameRouter           // per-ID source table
+  ├── scenario: Scenario | null     // active scenario (or null for interactive)
+  │
+  ├── start(config)                 // initialize models per WorkModeConfig
+  ├── injectFromPhysical(frame)     // real CAN frame → route to matching model
+  ├── emitFromModel(frame)          // model output → router → store + WebSocket
+  ├── tick()                        // advance all models, process physics
+  ├── getState()                    // snapshot of all model states
+  └── stop()                        // graceful shutdown
+```
+
+**Virtual CAN bus** (`src/sim/bus/virtual-can.ts`): Routes frames between ECU models within the engine. Supports both bus channels (high/low), frame latency simulation, and bus-off injection for fault testing.
+
+**Physics model** (`src/sim/physics/`): Tricycle kinematics — converts drive commands (speed, yaw) into per-wheel speeds, steering angle, and brake force. Feeds back into actuator models (EPS-C angle, MTR load, SEB pressure).
+
+### 14.8 Model Implementation Strategy — Our ECUs vs. Third-Party Units
+
+The six ECUs fall into two categories requiring fundamentally different modeling approaches, because the **source of truth** is different for each.
+
+| | Our ECUs (RT, SYS, MTR) | Third-party (EPS-C, SEB) |
+|---|---|---|
+| **Have source code?** | ✅ C++ in `rt-esp32/src/`, `sys-esp32/src/`, `mtr-stm32/src/` | ❌ Vendor black boxes |
+| **Platform** | ESP32-S3 (RT, SYS), STM32F103C8 (MTR) | EPS-C, SEB — proprietary controllers |
+| **Source of truth** | The firmware source itself | The CAN protocol document (CSV/YAML) |
+| **Modeling approach** | Compile firmware C++ natively → bit-identical behavior | CAN-level behavioral model — what frames the ECU sends, at what rates, in response to which commands |
+| **Validation strategy** | Native tests against firmware logic | Record real hardware CAN traffic → replay → diff model output against capture |
+| **What we model** | Internal state machines, logic, decision paths | Observable CAN behavior: frame timing, command→response correlation, fault mode escalation (L1/L2/L3), checksum/rolling-counter compliance |
+
+**Protocol assets for third-party units:**
+
+| Asset | EPS-C | SEB |
+|-------|-------|-----|
+| Manufacturer CSV | `docs/by-wire - steering.csv` | `docs/by-wire - brake.csv` |
+| YAML definition | `shared/can/can_low.yaml` | `shared/can/can_low.yaml` |
+| TypeScript model | `simulation/src/ecus/epsc.ts` (130 lines) | `simulation/src/ecus/seb.ts` (144 lines) |
+| Known fault bits | 25 (L1/L2/L3 severity) | 23 (L1/L2/L3 severity) |
+| Comm timeout | 30ms (3× 100Hz frames) | 20ms (2× 100Hz frames) |
+| Security features | Rolling counter + XOR checksum | Rolling counter + XOR checksum |
+
+#### 14.8.1 Our ECUs (RT, SYS, MTR): Native C++ Compilation
+
+The firmware logic modules are host-compilable with g++. Header-only design plus a HAL shadow layer that replaces platform-specific APIs (ESP-IDF for RT/SYS, STM32 HAL for MTR) with host equivalents.
+
+```
+ESP-IDF (RT, SYS)               Host stub
+──────────────────               ─────────
+ESP_LOGI(tag, ...)          →   printf("[I] tag: ...")
+esp_timer_get_time()        →   std::chrono::steady_clock (or test-controlled time)
+twai_transmit(...)          →   virtual_can_bus.send(frame)
+gpio_set_level(...)         →   no-op
+
+STM32 HAL (MTR)                  Host stub
+───────────────                  ─────────
+HAL_ADC_GetValue(&hadc1)    →   g_adc_value (test-configurable)
+HAL_GPIO_ReadPin(GPIOA, N)  →   (g_gpio_state & mask) ? SET : RESET
+HAL_GPIO_WritePin(GPIOA, N) →   g_gpio_state |= mask / &= ~mask
+```
+
+The `native-test/` CMake project compiles firmware source directly. Three integration paths exist for loading native models into the Node.js backend:
+
+| Path | Complexity | Cross-platform | Latency | Recommendation |
+|------|-----------|---------------|---------|---------------|
+| **IPC (stdin/stdout JSON-Lines)** | Low | ✅ Recompile per platform | ~1ms per frame | **Pragmatic choice** |
+| WASM via Emscripten | Medium-High | ✅ Single .wasm binary | Sub-ms | Viable, FreeRTOS→WASM extra work |
+| Node.js napi native addon | High | ❌ Per-platform .node binary | Sub-ms | Over-engineered for 50 Hz tick rates |
+
+**Recommended: IPC child process.** The same pattern already used for the CANalyst-II Python bridge — the backend spawns a native executable, communicates via stdin/stdout JSON Lines. Zero Node.js build complexity. Zero native addon maintenance. Same lifecycle management as the existing Python bridge.
+
+```
+Backend (Node.js)                     sim-engine-native (C++)
+      │                                       │
+      │── {"type":"frame","bus":"high","id":"0x300",...}──→│  stdin
+      │── {"type":"config","bypass_epsc_sync":true}─────→│
+      │                                       │
+      │←─ {"type":"frame","bus":"low","id":"0x204",...}────│  stdout
+      │←─ {"type":"state","ecu":"rt","mode":"AUTO",...}────│
+```
+
+The `EcuModel` interface (§14.3) is the contract — the SimulationEngine doesn't care whether the implementation is an IPC child process, a WASM module, or a TypeScript class.
+
+**What compiles natively today:**
+
+| Module | File | Native test coverage |
+|--------|------|---------------------|
+| Physics model | `rt-esp32/src/physics_model.cpp` | 7 assertions |
+| Safety monitor (RT) | `rt-esp32/src/safety_monitor.h` | 21 assertions |
+| Safety monitor (SYS) | `sys-esp32/src/safety_monitor.h` + `.cpp` | Startup grace, HB, frozen counter |
+| Mode manager (SYS) | `sys-esp32/src/mode_manager.h` + `.cpp` | Toggle, ESTOP, CAN set |
+| CAN dispatch (RT) | `rt-esp32/src/can_dispatch.h` | Gateway forwarding, bus filtering |
+| CAN RX router | `rt-esp32/src/can_rx_router.h` | 19 assertions |
+| Heartbeat | `rt-esp32/src/heartbeat.h` | Dual-bus, recovery |
+| Command watchdog | `rt-esp32/src/watchdog.h` | Staleness, wraparound |
+| CAN protocol | `shared/can/can_protocol.h` | 15 struct roundtrips |
+| Throttle input (MTR) | `mtr-stm32/src/throttle_input.h` | 5 assertions — ADC dead zone, linear mapping, max speed |
+| Gear control (MTR) | `mtr-stm32/src/gear_control.h` | Init defaults, single-gear sense, conflict detection failsafe, MOSFET state |
+
+**Not host-compilable:** `main.cpp` on all three ECUs (FreeRTOS task orchestration), MCP2515 driver (SPI on RT), TWAI driver (ESP-IDF on RT/SYS), STM32 CAN driver (`mtr-stm32/src/can_driver.h`), encoder (PCNT), DAC (I2C on SYS and MTR), ADC reads, GPIO interrupts. These are the I/O layer — the logic layer above them is fully host-compilable across all three platforms.
+
+**Two-layer architecture — why this works:**
+
+The firmware source has a clean separation between logic and I/O that makes host compilation straightforward:
+
+```
+LOGIC LAYER (host-compilable)          I/O LAYER (ESP32/STM32 only)
+─────────────────────────────          ─────────────────────────────
+physics_model.h/.cpp                   main.cpp (FreeRTOS tasks)
+steering_control.h (state machine)     can_driver_mcp2515.cpp (SPI)
+safety_monitor.h (checks)              can_driver_twai.cpp (ESP-IDF)
+mode_manager.h/.cpp (state machine)    mcp4725_dac.h (I2C)
+can_dispatch.h (routing)               encoder_pcnt.cpp (PCNT)
+heartbeat.h (timing)                   throttle_input.h::read_raw() (ADC)
+watchdog.h (staleness)                 gear_control.h::read_sense_pin() (GPIO)
+throttle_input.h::tick() (math)
+gear_control.h::set_mosfets() (logic)
+```
+
+**Key architectural properties:**
+- Logic modules use `extern std::atomic<T>` globals for cross-task state — the simulation host provides these
+- FreeRTOS dependency is **type-only** in logic headers (`QueueHandle_t` → `void*`); actual queue operations live in `main.cpp`
+- `#ifdef CONFIG_BYPASS_*` compile flags are set via `-D` for simulation mode — exactly the bypasses we want active
+- MTR has inline HAL calls in I/O functions (`read_raw`, GPIO helpers), but simulation only calls the logic functions (`tick()`, `set_mosfets()`) — I/O stubs just need to exist for the linker
+
+#### 14.8.2 Third-Party ECUs (EPS-C, SEB): CAN-Level Behavioral Models
+
+Since we don't have source code for purchased/vendor ECUs, the modeling approach is fundamentally different. We model **what the ECU does on the CAN bus**, not what happens inside it.
+
+**Modeling from protocol documentation:** The manufacturer CSV files define the complete CAN contract — frame IDs, signal layouts, byte orders, scaling factors, enum values, and fault code tables. This IS the specification. The model implements that specification.
+
+**What a third-party ECU model does:**
+
+1. **Subscribes to command frames** — e.g., EPS-C listens for `0x169 VCU_SES_REQ`, SEB listens for `0x7B9 VCU_SEB_REQ`, MTR listens for `0x204 RT_DRIVE_CMD`
+2. **Runs a simple internal model** — angle tracking with rate limiting (EPS-C), stroke/pressure response with first-order lag (SEB), speed tracking (MTR)
+3. **Emits response frames at the correct rate** — `0x201` at 100Hz, `0x721` at 100Hz, `0x206` at 50Hz — matching the real ECU's timing
+4. **Implements protocol security features** — rolling counters that increment, XOR checksums (`^ 0xFF`), alignment state tracking
+5. **Models fault escalation** — comm timeout → L3 error → error_status byte → fault bit masks in ErrInfo frames
+6. **Accepts physics plant input** — `setActualAngle(deg)` for EPS-C, `setActualStroke(mm)` for SEB, `setActualSpeed(mmps)` for MTR — the physics model drives the actuator model, which reports realistic feedback
+
+**Validation strategy for third-party models:**
+
+```
+1. Record:    Connect real EPS-C/SEB/MTR to CANalyst-II, run test scenarios, capture all frames
+2. Replay:    Feed recorded command frames (0x169/0x7B9/0x204) into the TypeScript model
+3. Compare:   Diff model output against recorded response frames (0x201/0x721/0x206)
+4. Measure:   Timing accuracy (frame rate), value accuracy (angle/pressure/speed within tolerance),
+              fault behavior (correct bits set for each error condition)
+5. Iterate:   Tune model parameters until output matches real hardware within acceptable tolerance
+```
+
+**Current model fidelity (TypeScript, pre-validation):**
+
+| ECU | Frames modeled | Known gaps |
+|-----|---------------|------------|
+| EPS-C | 0x201, 0x202, 0x203, 0x6FA | Angle tracking is 0th-order (instant, no rate limit). Fault injection is binary (L3 on/off), doesn't exercise individual fault bits. No torque feedback model. |
+| SEB | 0x721, 0x731, 0x741, 0x6FB | Stroke/pressure response is 0th-order (no hydraulic dynamics). Angle sensor coupling is a placeholder. Startup grace period is modeled (500ms). |
+| MTR | 0x120, 0x206 | Delegates to `MtrMotorController` in `simulation/src/controllers/`. 4-bit fault_flags, gear state enum. Speed tracking follows plant model. |
+
+**Why TypeScript is correct for third-party units:** There is no C++ source to compile. The protocol document IS the truth. A TypeScript model that faithfully implements the documented CAN behavior is the right approach. The native C++/WASM path only makes sense for our ECUs where we have firmware source.
+
+---
+
+## 15. Reference
 
 - [Main Architecture](../architecture.md) — system topology, message catalog, mode state machine
 - [CAN Dictionary](../can-dictionary.md) — full bit-level signal catalog

@@ -19,6 +19,8 @@ export interface BridgeState {
   bitrate: number | null;
   last_status_at: number | null;
   last_error: string | null;
+  last_frame_at?: number | null;
+  degraded?: boolean;
   bus_detection?: BusDetectionState;
 }
 
