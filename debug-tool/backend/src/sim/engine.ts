@@ -85,17 +85,18 @@ export class SimulationEngine {
   }
 
   private tick(): void {
-    // 1. Feed each model with frames from the virtual bus
+    // Drain all pending frames once, then feed to all models
+    const allFrames: CanFrame[] = [];
+    for (const bus of ["high", "low"] as const) {
+      allFrames.push(...this.bus.drain(bus));
+    }
+
+    // Each model ingests all frames (models filter what they care about)
+    // and then ticks to produce output
     for (const model of this.models.values()) {
-      // Feed frames addressed to this ECU on both buses
-      const frames: CanFrame[] = [];
-      for (const bus of ["high", "low"] as const) {
-        frames.push(...this.bus.drain(bus));
-      }
-      for (const frame of frames) {
+      for (const frame of allFrames) {
         model.ingest(frame);
       }
-      // Tick the model
       model.tick(this.tickMs);
     }
   }

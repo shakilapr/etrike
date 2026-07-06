@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { HardwareBridge } from "../bridge/types";
 import type { DebugStore } from "../db/queries";
-import { findMessage, INJECTION_TEMPLATES, normalizeBus, normalizeCanId, validateDataBytes } from "../types/can";
+import { findMessage, INJECTION_TEMPLATES, normalizeBus, normalizeCanId, normalizeFrame, validateDataBytes } from "../types/can";
 
 const busSchema = z.enum(["high", "low"]);
 
@@ -55,11 +55,26 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
 
     const correlationId = crypto.randomUUID();
     store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued", correlation_id: correlationId });
+
+    // Try physical bridge first. If it fails and sim engine is running,
+    // inject into virtual CAN bus instead.
+    let sent = false;
     try {
       bridge.sendCommand({ cmd: "send", bus, id, dlc: parsed.data.dlc, data, correlation_id: correlationId });
-    } catch (error) {
+      sent = true;
+    } catch {
+      // Check for simulation engine fallback
+      const simEngine = (app as any).__simEngine as { injectExternal(f: ReturnType<typeof normalizeFrame>): void } | undefined;
+      if (simEngine) {
+        const frame = normalizeFrame({ bus, id, dlc: parsed.data.dlc, data });
+        simEngine.injectExternal(frame);
+        store.updateLatestInjectionStatus("simulated");
+        sent = true;
+      }
+    }
+    if (!sent) {
       store.updateLatestInjectionStatus("error");
-      return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
+      return reply.code(503).send({ error: "no bridge connected and simulation not running" });
     }
     return { cmd: "send", bus, id, status: "queued" };
   });
