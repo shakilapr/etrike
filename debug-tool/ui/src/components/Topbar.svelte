@@ -4,7 +4,7 @@
   import type { Bus } from "../lib/can-decoder";
   import { sendFrame, setMode as apiSetMode, type WorkModeConfig } from "../lib/api";
   import { logError } from "../stores/errors";
-  import { workMode, modeLabel } from "../stores/work-mode";
+  import { workMode, modeLabel as workModeLabel } from "../stores/work-mode";
 
   export let onReset: () => void;
   export let onRestart: () => void;
@@ -55,7 +55,7 @@
   function modeClass(m: string | null): string {
     switch (m) { case "MANUAL": return "manual"; case "AUTO": return "auto"; case "ESTOP": return "estop"; default: return "unknown"; }
   }
-  function modeLabel(m: string | null): string {
+  function vehicleModeLabel(m: string | null): string {
     return m ?? "No mode";
   }
   // ── Safety color ──
@@ -165,7 +165,7 @@
       <span>E-Trike</span>
       <select class="tb-mode-select" value={$workMode.mode} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
         {#each MODES as m}
-          <option value={m}>{modeLabel(m)}</option>
+          <option value={m}>{workModeLabel(m)}</option>
         {/each}
       </select>
     </div>
@@ -200,7 +200,7 @@
     <!-- Vehicle state: gear + mode — fixed width badges -->
     <div class="tb-vstate">
       <span class="tvs-gear" style="color:{gColor(t.gear)};border-color:{gColor(t.gear)}"><em>Gear</em><strong>{t.gear ?? "--"}</strong></span>
-      <span class="tvs-mode {modeClass(t.mode)}"><em>Mode</em><strong>{modeLabel(t.mode)}</strong></span>
+      <span class="tvs-mode {modeClass(t.mode)}"><em>Mode</em><strong>{vehicleModeLabel(t.mode)}</strong></span>
       {#if t.safetyState && t.safetyState !== "Normal"}
         <span class="tvs-safety" style="color:{sColor(t.safetyState)}"><em>Safety</em><strong>{t.safetyState}</strong></span>
       {/if}

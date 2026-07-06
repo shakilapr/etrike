@@ -15,7 +15,7 @@
   let expanded = false;
   let activeSignal = -1;
 
-  $: ageSeconds = frame ? Math.max(Date.now() / 1000 - (frame.ts_real ?? frame.ts), 0) : Number.POSITIVE_INFINITY;
+  $: ageSeconds = frame ? Math.max(Date.now() / 1000 - timestampSeconds(frame.ts_real ?? frame.ts), 0) : Number.POSITIVE_INFINITY;
   $: freshness = frame ? freshnessState(ageSeconds) : "idle";
   $: cycleLabel = message.cycle_ms > 0 ? `${message.cycle_ms} ms` : "event";
   $: decodedText = frame ? formatDecoded(frame.decoded) : "No live frame";
@@ -34,6 +34,11 @@
     if (age < 1) return "fresh";
     if (age < 3) return "stale";
     return "old";
+  }
+
+  function timestampSeconds(stamp: number | undefined): number {
+    if (!stamp) return 0;
+    return stamp > 1_000_000_000_000 ? stamp / 1000 : stamp;
   }
 
   function eventSignals(): CanSignalDef[] {

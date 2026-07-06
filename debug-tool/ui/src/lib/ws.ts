@@ -30,29 +30,30 @@ export function connectStream(
     if (closed) return;
 
     socket = new WebSocket(url);
+    const activeSocket = socket;
 
-    socket.addEventListener("open", () => {
+    activeSocket.addEventListener("open", () => {
       attempt = 0;
 
       // Re-apply pending filter BEFORE notifying connected state,
       // so no unfiltered frames arrive before the server processes the filter.
-      if (pendingFilter && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "filter", ...pendingFilter }));
+      if (pendingFilter && activeSocket.readyState === WebSocket.OPEN) {
+        activeSocket.send(JSON.stringify({ type: "filter", ...pendingFilter }));
       }
       onState(true);
     });
 
-    socket.addEventListener("close", () => {
+    activeSocket.addEventListener("close", () => {
       onState(false);
       scheduleReconnect();
     });
 
-    socket.addEventListener("error", () => {
+    activeSocket.addEventListener("error", () => {
       onState(false);
       // close event will fire after error, triggering reconnect
     });
 
-    socket.addEventListener("message", (event) => {
+    activeSocket.addEventListener("message", (event) => {
       try {
         onMessage(JSON.parse(event.data) as StreamMessage);
       } catch {

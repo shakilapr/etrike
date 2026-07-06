@@ -27,13 +27,15 @@ export type Bus = "high" | "low";
 export interface CanSignalDef {
   name: string; byte: number; bit_offset: number; size: number;
   type: "signed" | "unsigned"; factor: number; offset: number;
-  unit: string; min: number; max: number;
-  values: Record<number, string> | null; comment: string;
+  unit: string; min: number | null; max: number | null;
+  receivers: string[];
+  values: Record<string, string> | null; comment: string;
 }
 
 export interface CanMessageIndex {
   bus: Bus; id: string; name: string; dlc: number;
   sender: string; receivers: string[]; cycle_ms: number;
+  byte_order: string; protocol: string;
   comment: string; signals: CanSignalDef[];
 }
 """
@@ -45,11 +47,14 @@ def fmt_id(v):
 
 def signal_ts(s):
     vals = json.dumps(s.get("values")) if s.get("values") else "null"
-    return (f"    {{{json.dumps(s['name'])}, byte:{s['byte']}, bit_offset:{s['bit_offset']}, "
+    min_value = json.dumps(s["min"]) if "min" in s else "null"
+    max_value = json.dumps(s["max"]) if "max" in s else "null"
+    return (f"    {{name:{json.dumps(s['name'])}, byte:{s['byte']}, bit_offset:{s['bit_offset']}, "
             f"size:{s['size']}, type:{json.dumps(str(s.get('type','unsigned')))}, "
             f"factor:{s.get('factor',1)}, offset:{s.get('offset',0)}, "
-            f"unit:{json.dumps(str(s.get('unit','')))}, min:{s.get('min',0)}, max:{s.get('max',0)}, "
-            f"values:{vals}, comment:{json.dumps(s.get('comment',''))}}}")
+            f"unit:{json.dumps(str(s.get('unit','')))}, min:{min_value}, max:{max_value}, "
+            f"receivers:{json.dumps(s.get('receivers',[]))}, values:{vals}, "
+            f"comment:{json.dumps(s.get('comment',''))}}}")
 
 def msg_ts(msg, bus):
     sigs = ",\n".join(signal_ts(s) for s in msg.get("signals", []))
@@ -58,6 +63,7 @@ def msg_ts(msg, bus):
             f"name:{json.dumps(msg['name'])}, dlc:{msg['dlc']}, "
             f"sender:{json.dumps(str(msg.get('sender','Unknown')))}, "
             f"receivers:{json.dumps(msg.get('receivers',[]))}, cycle_ms:{msg.get('cycle_ms',0)}, "
+            f"byte_order:{json.dumps(str(msg.get('byte_order','motorola')))}, protocol:\"yaml\", "
             f"comment:{json.dumps(msg.get('comment',''))}, "
             f"signals:[{sig_block}]}}")
 
@@ -77,7 +83,9 @@ def main():
     for yf in YAML_FILES:
         for msg, bus in parse_yaml(yf):
             key = f"{bus}:{fmt_id(msg['id'])}"
-            if key in seen: continue
+            if key in seen:
+                print(f"Duplicate CAN message definition: {key}", file=sys.stderr)
+                sys.exit(1)
             seen.add(key)
             messages.append(msg_ts(msg, bus))
     messages.sort()
