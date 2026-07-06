@@ -3,6 +3,7 @@
   import { status } from "../stores/can";
   import { ecuPresence } from "../stores/telemetry";
   import { logError, logInfo } from "../stores/errors";
+  import EcuTopology from "./EcuTopology.svelte";
 
   // ═══ Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) ═══
   let simMode = false;  // false=Physical, true=Simulated
@@ -249,6 +250,7 @@
 </script>
 
 <div class="emu-panel">
+  <EcuTopology />
   <div class="emu-header">
     <span class="emu-title">CAN Emulator</span>
     <!-- Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) -->
