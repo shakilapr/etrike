@@ -30,6 +30,8 @@ export interface WorkModeConfig {
   };
   /** Scenario to run on start (optional). */
   scenario?: string;
+  /** Model backend: "ts" = TypeScript (always works), "native" = C++ via IPC (faster, needs sim-engine-native built). */
+  modelBackend?: "ts" | "native";
 }
 
 /** Validation schema for WorkModeConfig. */
