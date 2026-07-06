@@ -3,19 +3,18 @@ import { test, expect } from "@playwright/test";
 test.describe("Debug Tool", () => {
   test("page loads with dual-bus header", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("h1")).toContainText("E-Trike Debug");
-    await expect(page.locator(".eyebrow")).toContainText("Dual CAN Bus");
+    await expect(page.locator(".tb-brand")).toContainText("E-Trike");
   });
 
   test("status strip shows connection state", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".status-strip")).toBeVisible();
+    await expect(page.locator(".tb-health-row")).toBeVisible();
   });
 
-  test("all eight tabs are present", async ({ page }) => {
+  test("all ten tabs are present", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("nav.tabs button")).toHaveCount(8);
-    const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline"];
+    await expect(page.locator("nav.tabs button")).toHaveCount(10);
+    const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline", "Terminal", "Emulator"];
     for (const name of tabs) {
       await expect(page.locator("nav.tabs").getByText(name)).toBeVisible();
     }
@@ -24,26 +23,26 @@ test.describe("Debug Tool", () => {
   test("navigating to monitor tab works", async ({ page }) => {
     await page.goto("/");
     await page.locator("nav.tabs").getByText("CAN Monitor").click();
-    await expect(page.locator("h2")).toContainText("CAN Monitor");
+    await expect(page.locator("h2").filter({ hasText: "CAN Monitor" }).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("navigating to dictionary tab works", async ({ page }) => {
     await page.goto("/");
     await page.locator("nav.tabs").getByText("CAN Dictionary").click();
-    await expect(page.locator("h2")).toContainText("CAN Dictionary");
+    await expect(page.locator("h2").filter({ hasText: "CAN Dictionary" }).first()).toBeVisible({ timeout: 5000 });
     await expect(page.locator("[data-testid=dictionary-detail]").first()).toBeVisible();
   });
 
   test("navigating to injector shows bus selector", async ({ page }) => {
     await page.goto("/");
     await page.locator("nav.tabs").getByText("Injector").click();
-    await expect(page.locator(".bus-tabs")).toBeVisible();
+    await expect(page.locator(".bus-tabs").filter({ visible: true }).first()).toBeVisible();
   });
 
   test("navigating to stats shows bus load gauges", async ({ page }) => {
     await page.goto("/");
     await page.locator("nav.tabs").getByText("Statistics").click();
-    await expect(page.locator(".gauge-panel")).toHaveCount(2);
+    await expect(page.locator(".gauge-panel").filter({ visible: true })).toHaveCount(2);
   });
 
   test("backend API returns IDs with bus field", async ({ request }) => {
@@ -83,16 +82,14 @@ test.describe("Debug Tool", () => {
   test("navigating to Unit Test tab shows profiles", async ({ page }) => {
     await page.goto("/");
     await page.locator("nav.tabs").getByText("Unit Test").click();
-    await expect(page.locator("h2").first()).toContainText("Unit Under Test");
-    // At least one profile button should be visible
-    await expect(page.locator(".unit-buttons button").first()).toBeVisible();
+    await expect(page.locator("h2").filter({ hasText: "Unit Under Test" }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".unit-buttons button").filter({ visible: true }).first()).toBeVisible();
   });
 
   test("responsive layout at narrow viewport", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/");
-    // Page should still render the header
-    await expect(page.locator("h1")).toContainText("E-Trike Debug");
+    await expect(page.locator(".tb-brand")).toContainText("E-Trike");
     // No horizontal overflow — check body does not exceed viewport
     const bodyWidth = await page.locator("body").evaluate(
       (el) => el.scrollWidth
