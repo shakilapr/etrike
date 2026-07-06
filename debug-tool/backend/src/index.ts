@@ -14,7 +14,8 @@ import { CanalystBridge } from "./canalyst/bridge";
 import { DebugStore } from "./db/queries";
 import { MqttBridge } from "./mqtt/bridge";
 import { SerialBridge } from "./serial/reader";
-import { FrameRouter, type FrameSource } from "./sim/router";
+import { FrameRouter } from "./sim/router";
+import { MODE_DEFAULTS, workModeConfigSchema, type WorkModeConfig, type EcuId } from "./sim/work-mode";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
@@ -168,6 +169,40 @@ async function main(): Promise<void> {
       return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
     }
   });
+
+  // ── Work mode configuration ──
+  let currentConfig: WorkModeConfig = MODE_DEFAULTS.monitor;
+
+  app.get("/api/mode", async () => currentConfig);
+
+  app.post("/api/mode", async (request, reply) => {
+    const parsed = workModeConfigSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const newConfig = parsed.data as WorkModeConfig;
+    currentConfig = newConfig;
+
+    // Apply ID sources to router
+    router.clear();
+    for (const [key, source] of Object.entries(newConfig.idSources)) {
+      if (source === "*") continue;
+      const [bus, id] = key.split(":");
+      if ((bus === "high" || bus === "low") && id) {
+        router.setSource(bus, id, source as "physical" | "emulated" | "simulated");
+      }
+    }
+
+    // Start/stop ECU models based on config
+    const simTimers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>>;
+    // Clear existing sim timers
+    for (const t of simTimers.values()) clearInterval(t);
+    simTimers.clear();
+
+    app.log.info(`Work mode: ${newConfig.mode}, simulated ECUs: ${newConfig.simulatedEcus.join(", ") || "none"}`);
+    return { ok: true, mode: newConfig.mode };
+  });
+
+  app.get("/api/mode/defaults", async () => MODE_DEFAULTS);
 }
 
 void main().catch((error) => {

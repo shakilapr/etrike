@@ -2,12 +2,27 @@
   import { stats, status } from "../stores/can";
   import { telemetry, ecuPresence } from "../stores/telemetry";
   import type { Bus } from "../lib/can-decoder";
-  import { sendFrame } from "../lib/api";
+  import { sendFrame, setMode as apiSetMode, type WorkModeConfig } from "../lib/api";
   import { logError } from "../stores/errors";
+  import { workMode, modeLabel } from "../stores/work-mode";
 
   export let onReset: () => void;
   export let onRestart: () => void;
   export let onStop: () => void;
+
+  const MODES: WorkModeConfig["mode"][] = ["full-sim", "emulator", "hybrid", "bench", "monitor"];
+
+  async function switchMode(mode: WorkModeConfig["mode"]) {
+    const defaults = await import("../lib/api").then(m => m.getModeDefaults());
+    const config = (defaults as Record<string, WorkModeConfig>)[mode];
+    if (!config) return;
+    try {
+      await apiSetMode(config);
+      workMode.set(config);
+    } catch (e) {
+      logError("Mode switch: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
 
   // ── Health state helpers ──
   function hState(ok: boolean, degraded = false): "ok" | "warn" | "bad" {
@@ -145,9 +160,14 @@
 <header class="topbar v3">
   <!-- ── Row 1 ── -->
   <div class="tb-row tb-row-main">
-    <!-- Brand -->
+    <!-- Brand + mode selector -->
     <div class="tb-brand">
       <span>E-Trike</span>
+      <select class="tb-mode-select" value={$workMode.mode} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
+        {#each MODES as m}
+          <option value={m}>{modeLabel(m)}</option>
+        {/each}
+      </select>
     </div>
 
     <!-- Indicators — automotive-standard shapes, fixed size -->

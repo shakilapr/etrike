@@ -169,3 +169,26 @@ export function simPeriodicStart(payload: { bus: Bus; id: string; dlc: number; d
 export function simPeriodicStop(bus: Bus, id: string): Promise<{ ok: boolean }> {
   return request("/api/sim/periodic/stop", { method: "POST", body: JSON.stringify({ bus, id }) });
 }
+
+// ── Work mode ──
+
+export interface WorkModeConfig {
+  mode: "full-sim" | "emulator" | "hybrid" | "bench" | "monitor";
+  simulatedEcus: string[];
+  idSources: Record<string, string>;
+  injectEmulatedToPhysical: boolean;
+  bypasses: { epscSync: boolean; sebSync: boolean; mtrAbsent: boolean; benchSolo: boolean };
+  scenario?: string;
+}
+
+export function getMode(): Promise<WorkModeConfig> {
+  return request<WorkModeConfig>("/api/mode");
+}
+
+export function setMode(config: WorkModeConfig): Promise<{ ok: boolean; mode: string }> {
+  return request("/api/mode", { method: "POST", body: JSON.stringify(config) });
+}
+
+export function getModeDefaults(): Promise<Record<string, WorkModeConfig>> {
+  return request("/api/mode/defaults");
+}
