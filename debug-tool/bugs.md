@@ -10,11 +10,11 @@
 ### BUG-01: Disconnected bus still shows FPS and "active" in UI
 
 **Severity:** P0  
-**Files:** `backend/src/types/can.ts:316-318`, `backend/src/db/queries.ts:130-144`, `ui/src/components/Topbar.svelte:16-19`
+**Files:** `ui/src/App.svelte:162-184`, `ui/src/components/Topbar.svelte:16-19`
 
-**Symptom:** Unplug the physical CAN bus. The Topbar still shows "High CAN: 120 fps" and the health dot stays green. The Statistics tab still shows bus load %. The data is frozen from the last stats message before disconnect — it never clears.
+**Symptom:** Unplug the physical CAN bus (or if the bridge crashes). The Topbar still shows "High CAN: 120 fps" and the health dot stays green. The Statistics tab still shows bus load %. The data is frozen from the last stats message before disconnect — it never clears.
 
-**Root cause:** Stats are stored in SQLite via `DebugStore.setStats()` and served via `getStats()` with zero staleness checking. `BusStats.active` is a stored boolean set by the bridge's last stats message — it's never derived from "are frames actually arriving?". The bridge stops sending stats when the bus disconnects. The DB holds the last values forever.
+**Root cause:** The UI's `Stats.svelte` and `Topbar.svelte` components read directly from the `stats` store, which is ONLY updated by incoming WebSocket `type: "stats"` messages. If the bridge crashes or stops sending, the WebSocket sends nothing. While `App.svelte` DOES periodically fetch `/api/status` (which correctly returns zeroed stats after 5s of staleness), it merges that payload into the `status` store instead of the `stats` store. The `stats` store never gets the zeroed values.
 
 **How to reproduce:**
 1. Start debug tool with CAN hardware connected
@@ -22,7 +22,7 @@
 3. Unplug CAN bus or power off the ECU
 4. Topbar still shows the old FPS, health stays green
 
-**Fix direction:** Add a `received_at REAL` column to `runtime_state`, set on every `setStats()`. In `getStats()`, return `defaultStats()` (all zeros) if `Date.now()/1000 - received_at > 5`.
+**Fix direction:** In `App.svelte`'s `refreshStatus()`, if `payload.bus_stats` is present, update the `stats` store with those values instead of merging them into `status`. Or add a client-side timeout that zeros the `stats` store if no WS message arrives for 5s.
 
 ---
 
@@ -176,45 +176,6 @@
 ---
 
 ## P1 — Wrong Behavior
-
-### BUG-06: CANalyst-II Auto-Detection Blocks Startup
-
-**Severity:** P1  
-**Files:** `backend/src/index.ts:79`, `backend/src/canalyst/bridge.ts:51-77`
-
-**Symptom:** Backend pauses for 3 seconds before listening on port 3000 if no CANalyst-II is present.
-
-**Root cause:** Blocking `await canalyst.waitForConnection(3000)` in `main()`.
-
-**Fix direction:** Start `app.listen()` first, then run detection asynchronously.
-
----
-
-### BUG-08: WebSocket Reconnect Floods Unfiltered Frames
-
-**Severity:** P1  
-**Files:** `ui/src/lib/ws.ts:34-42`
-
-**Symptom:** Brief flash of all frames on reconnect before filter applies.
-
-**Root cause:** UI sets "connected" state before sending the pending filter to the server.
-
-**Fix direction:** Send filter before triggering `onState(true)`.
-
----
-
-### BUG-09: REST `/api/status` Returns Stale Stats
-
-**Severity:** P1  
-**Files:** `backend/src/api/system.ts:29`, `backend/src/db/queries.ts:136-144`
-
-**Symptom:** `/api/status` returns `active: true, fps: 120` hours after disconnect.
-
-**Root cause:** Same as BUG-01.
-
-**Fix direction:** Same as BUG-01 (add timestamp).
-
----
 
 ### BUG-10: `SERIAL_PORT` Default is Windows-Only
 
@@ -420,7 +381,6 @@
 
 - **BUG-05:** Serial port fails silently (UI shows error, just no backend console log).
 - **BUG-16:** CANalyst-II bridge abandoned after detection failure can't be reused.
-- **BUG-17:** No `.env` file loading.
 - **BUG-18:** Emulator `simMode` toggle resets when switching tabs.
 - **BUG-26:** `SerialBridge.start()` called twice on reconnect (Double open error).
 - **BUG-29:** `stopRecording()` does not prevent double-stop.
@@ -441,3 +401,7 @@
 - **`kbBus.subscribe()()` leak** (Standard Svelte idiom)
 - **Frame timestamp drift** (Fallback behavior is intentional)
 - **`latestById` update from WS**
+- **BUG-06:** CANalyst-II Auto-Detection blocks startup (False alarm — Fastify listens asynchronously)
+- **BUG-08:** WebSocket Reconnect Floods Unfiltered Frames (False alarm — fixed in `ws.ts:39`)
+- **BUG-09:** REST `/api/status` returns stale stats (False alarm — `queries.ts:155` handles staleness)
+- **BUG-17:** No `.env` loading (False alarm — `import "dotenv/config"` is at `config.ts:1`)

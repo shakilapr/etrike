@@ -62,6 +62,8 @@ interface InjectionRow {
 export class DebugStore {
   private readonly db: Database.Database;
   private walTimer: ReturnType<typeof setInterval> | null = null;
+  private activeRecordingIds = new Set<number>();
+  private activeRecordingsLoaded = false;
   /** Optional FrameRouter — when set, all insertFrame calls route through it. */
   router: { resolve(frame: CanFrame, source: FrameSource): CanFrame | null } | null = null;
 
@@ -218,15 +220,20 @@ export class DebugStore {
     const startedAt = Date.now() / 1000;
     const cleanLabel = label?.trim() || null;
     const result = this.db.prepare("INSERT INTO recordings (label, started_at, stopped_at, frame_count) VALUES (?, ?, NULL, 0)").run(cleanLabel, startedAt);
-    return { id: Number(result.lastInsertRowid), label: cleanLabel, started_at: startedAt, stopped_at: null, frame_count: 0 };
+    const id = Number(result.lastInsertRowid);
+    this.activeRecordingIds.add(id);
+    return { id, label: cleanLabel, started_at: startedAt, stopped_at: null, frame_count: 0 };
   }
 
   stopRecording(id: number): Recording | null {
+    this.activeRecordingIds.delete(id);
     this.db.prepare("UPDATE recordings SET stopped_at = COALESCE(stopped_at, ?) WHERE id = ?").run(Date.now() / 1000, id);
+    this.db.prepare("UPDATE recordings SET frame_count = (SELECT COUNT(*) FROM recording_frames WHERE recording_id = ?) WHERE id = ?").run(id, id);
     return (this.db.prepare("SELECT * FROM recordings WHERE id = ?").get(id) as Recording | undefined) ?? null;
   }
 
   deleteRecording(id: number): boolean {
+    this.activeRecordingIds.delete(id);
     this.db.prepare("DELETE FROM recording_frames WHERE recording_id = ?").run(id);
     return this.db.prepare("DELETE FROM recordings WHERE id = ?").run(id).changes > 0;
   }
@@ -259,13 +266,19 @@ export class DebugStore {
   }
 
   private attachToActiveRecordings(frameId: number): void {
-    const active = this.db.prepare("SELECT id FROM recordings WHERE stopped_at IS NULL").all() as Array<{ id: number }>;
+    if (!this.activeRecordingsLoaded) {
+      const active = this.db.prepare("SELECT id FROM recordings WHERE stopped_at IS NULL").all() as Array<{ id: number }>;
+      for (const row of active) this.activeRecordingIds.add(row.id);
+      this.activeRecordingsLoaded = true;
+    }
+    if (this.activeRecordingIds.size === 0) return;
+
     const insert = this.db.prepare("INSERT OR IGNORE INTO recording_frames (recording_id, frame_id) VALUES (?, ?)");
     const update = this.db.prepare("UPDATE recordings SET frame_count = frame_count + 1 WHERE id = ?");
     this.db.transaction(() => {
-      for (const recording of active) {
-        insert.run(recording.id, frameId);
-        update.run(recording.id);
+      for (const id of this.activeRecordingIds) {
+        insert.run(id, frameId);
+        update.run(id);
       }
     })();
   }
@@ -294,7 +307,7 @@ export class DebugStore {
   }
 
   clearFrames(): void {
-    this.db.exec("DELETE FROM can_frames; DELETE FROM recording_frames;");
+    this.db.exec("DELETE FROM can_frames; DELETE FROM recording_frames; UPDATE recordings SET frame_count = 0;");
   }
 }
 
