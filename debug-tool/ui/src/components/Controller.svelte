@@ -148,15 +148,14 @@
 
   function sendZeroFrames() {
     // Publish zero-speed to bring vehicle to neutral
-    const valsHigh = { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 };
-    const valsLow = { motor_speed_mmps: 0, gear: 1 };
-    const valsSteer = { target_angle: 0 };
+    if (selectedBus === "high") {
+      const highEnc = encodePayload("high", "0x300", { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 });
+      sendFrame({ bus: "high", id: "0x300", dlc: highEnc.dlc, data: highEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+      return;
+    }
 
-    const highEnc = encodePayload("high", "0x300", valsHigh);
-    const lowEnc = encodePayload("low", "0x204", valsLow);
-    const steerEnc = encodePayload("low", "0x169", valsSteer);
-
-    sendFrame({ bus: "high", id: "0x300", dlc: highEnc.dlc, data: highEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    const lowEnc = encodePayload("low", "0x204", { motor_speed_mmps: 0, gear: 1 });
+    const steerEnc = encodePayload("low", "0x169", { target_angle: 0 });
     sendFrame({ bus: "low", id: "0x204", dlc: lowEnc.dlc, data: lowEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
     sendFrame({ bus: "low", id: "0x169", dlc: steerEnc.dlc, data: steerEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
   }

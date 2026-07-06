@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Bus, CanFrame, CanMessageDef } from "../lib/can-decoder";
+  import type { CanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
   import { frames } from "../stores/can";
+  import { monitorAllExpanded, monitorBusFilter, monitorCollapsedCategories, monitorExpandedKey, monitorFilterText } from "../stores/monitor";
 
   export let ids: CanMessageDef[] = [];
 
@@ -22,17 +23,11 @@
     { key: "test",      label: "Test/System", color: "var(--cat-system)",    ids: ["0x012", "0x6FA", "0x6FB"] }
   ];
 
-  type BusFilter = Bus | "all";
-  let busFilter: BusFilter = "all";
   let paused = false;
   let pausedFrames: CanFrame[] = [];
-  let filterText = "";
-  let expandedKey = "";
-  let collapsed = new Set<string>();
-  let allExpanded = true;
 
   $: sourceFrames = paused ? pausedFrames : $frames;
-  $: catalog = ids.filter((message) => busFilter === "all" || message.bus === busFilter);
+  $: catalog = ids.filter((message) => $monitorBusFilter === "all" || message.bus === $monitorBusFilter);
   $: categoryIds = CATEGORIES
     .map((category) => {
       const members = catalog.filter((message) => category.ids.includes(message.id));
@@ -41,8 +36,8 @@
     .filter((category) => category.count > 0);
 
   $: filteredFrames = sourceFrames.filter((frame) => {
-    const text = filterText.trim().toLowerCase();
-    const matchesBus = busFilter === "all" || frame.bus === busFilter;
+    const text = $monitorFilterText.trim().toLowerCase();
+    const matchesBus = $monitorBusFilter === "all" || frame.bus === $monitorBusFilter;
     const matchesText = text.length === 0 ||
       frame.id.toLowerCase().includes(text) ||
       frame.name.toLowerCase().includes(text) ||
@@ -67,23 +62,26 @@
   }
 
   function toggleCat(key: string) {
-    collapsed = new Set(collapsed);
-    if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
-    allExpanded = collapsed.size === 0;
+    monitorCollapsedCategories.update((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      monitorAllExpanded.set(next.size === 0);
+      return next;
+    });
   }
 
   function toggleAll() {
-    if (allExpanded) {
-      collapsed = new Set(categoryIds.map((category) => category.key));
-      allExpanded = false;
+    if ($monitorAllExpanded) {
+      monitorCollapsedCategories.set(new Set(categoryIds.map((category) => category.key)));
+      monitorAllExpanded.set(false);
     } else {
-      collapsed = new Set();
-      allExpanded = true;
+      monitorCollapsedCategories.set(new Set());
+      monitorAllExpanded.set(true);
     }
   }
 
   function exportJson() {
-    download(`etrike-can-${busFilter}.json`, JSON.stringify(filteredFrames, null, 2), "application/json");
+    download(`etrike-can-${$monitorBusFilter}.json`, JSON.stringify(filteredFrames, null, 2), "application/json");
   }
 
   function exportCsv() {
@@ -94,7 +92,7 @@
           JSON.stringify(frame.decoded).replaceAll('"', '""')].map((cell) => `"${cell}"`).join(",")
       );
     }
-    download(`etrike-can-${busFilter}.csv`, rows.join("\n"), "text/csv");
+    download(`etrike-can-${$monitorBusFilter}.csv`, rows.join("\n"), "text/csv");
   }
 
   function download(name: string, body: string, type: string) {
@@ -112,15 +110,15 @@
     <div class="toolbar-main">
       <h2>CAN Monitor</h2>
       <div class="bus-tabs">
-        <button class:active={busFilter === "all"}  type="button" on:click={() => (busFilter = "all")}>All</button>
-        <button class:active={busFilter === "high"} type="button" on:click={() => (busFilter = "high")}>High</button>
-        <button class:active={busFilter === "low"}  type="button" on:click={() => (busFilter = "low")}>Low</button>
+        <button class:active={$monitorBusFilter === "all"}  type="button" on:click={() => monitorBusFilter.set("all")}>All</button>
+        <button class:active={$monitorBusFilter === "high"} type="button" on:click={() => monitorBusFilter.set("high")}>High</button>
+        <button class:active={$monitorBusFilter === "low"}  type="button" on:click={() => monitorBusFilter.set("low")}>Low</button>
       </div>
-      <input bind:value={filterText} placeholder="Filter frames by ID, name, or value" />
+      <input bind:value={$monitorFilterText} placeholder="Filter frames by ID, name, or value" />
     </div>
     <div class="toolbar-actions">
       <button type="button" on:click={togglePause}>{paused ? "Resume" : "Pause"}</button>
-      <button type="button" on:click={toggleAll}>{allExpanded ? "Collapse All" : "Expand All"}</button>
+      <button type="button" on:click={toggleAll}>{$monitorAllExpanded ? "Collapse All" : "Expand All"}</button>
       <button type="button" on:click={exportJson}>JSON</button>
       <button type="button" on:click={exportCsv}>CSV</button>
     </div>
@@ -129,7 +127,7 @@
   <div class="monitor-cards">
     {#each categoryIds as category}
       {@const catFrames = framesForCat(category.key)}
-      {@const isOpen = !collapsed.has(category.key)}
+      {@const isOpen = !$monitorCollapsedCategories.has(category.key)}
       <section class="cat-card" style={`--cat-color:${category.color}`}>
         <button class="cat-header" type="button" on:click={() => toggleCat(category.key)}>
           <span class="cat-arrow">{isOpen ? "v" : ">"}</span>
@@ -153,16 +151,16 @@
                     {#each catFrames.slice().reverse() as frame, index (`${category.key}-${frame.ts}-${frame.id}-${index}`)}
                       {@const rowKey = `${category.key}-${frame.ts}-${frame.id}-${index}`}
                       <tr
-                        class:expanded={expandedKey === rowKey}
+                        class:expanded={$monitorExpandedKey === rowKey}
                         data-testid="frame-row"
-                        on:click={() => (expandedKey = expandedKey === rowKey ? "" : rowKey)}
+                        on:click={() => monitorExpandedKey.set($monitorExpandedKey === rowKey ? "" : rowKey)}
                       >
                         <td class="mono">{frameTime(frame)}</td>
                         <td><span class="bus-tag">{frame.bus}</span></td>
                         <td><span class="mono">{frame.id}</span> {frame.name}</td>
                         <td>{formatDecoded(frame.decoded)}</td>
                       </tr>
-                      {#if expandedKey === rowKey}
+                      {#if $monitorExpandedKey === rowKey}
                         <tr class="detail-row">
                           <td colspan="4">
                             <div><span>Raw</span><strong class="mono">{formatBytes(frame.data)}</strong></div>

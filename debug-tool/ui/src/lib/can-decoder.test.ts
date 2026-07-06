@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BUSES,
   CAN_MESSAGES,
@@ -8,6 +8,7 @@ import {
   formatBytes,
   formatDecoded,
   frameTime,
+  frameAge,
   getMessageName,
   normalizeBus,
   normalizeCanId,
@@ -23,6 +24,10 @@ import {
 } from "./can-decoder";
 
 const makeBytes = (size: number): number[] => Array.from({ length: size }, () => 0);
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // ── normalizeCanId ──
 
@@ -296,9 +301,9 @@ describe("encodePayload", () => {
   });
 
   it("encodes 0x210 RT state (high bus)", () => {
-    const result = encodePayload("high", "0x210", { mode: 1, steer_valid: true, reversing: false });
-    expect(result.dlc).toBe(4);
-    expect(result.data).toEqual([0x01, 0x01, 0x00, 0x00]);  // byte 3 = rx_overflow
+    const result = encodePayload("high", "0x210", { mode: 1, safety_state: 1, estop_reason: 0, reversing: false, rx_overflow: 0, task_health: 15, steer_state: 5 });
+    expect(result.dlc).toBe(6);
+    expect(result.data).toEqual([0x01, 0x01, 0x00, 0x00, 0x0F, 0x05]);
   });
 
   it("encodes 0x400 obstacle distance (clear)", () => {
@@ -308,9 +313,9 @@ describe("encodePayload", () => {
   });
 
   it("encodes 0x7FC Host heartbeat (high bus)", () => {
-    const result = encodePayload("high", "0x7FC", { alive_ctr: 42 });
-    expect(result.dlc).toBe(1);
-    expect(result.data).toEqual([42]);
+    const result = encodePayload("high", "0x7FC", { alive_ctr: 42, health_flags: 0 });
+    expect(result.dlc).toBe(2);
+    expect(result.data).toEqual([42, 0]);
   });
 
   it("encodes 0x110 mode command (low bus)", () => {
@@ -442,12 +447,12 @@ describe("round-trip encode→decode", () => {
     ["high", "0x011", { estop_active: true, heartbeat_ok: false, light_left: false, light_right: false, light_brake: false, light_head: false }],
     ["high", "0x120", { speed_mmps: 2000 }],
     ["high", "0x206", { actual_speed_mmps: 2000, gear_state: 1, fault_flags: 0 }],
-    ["high", "0x210", { mode: 1, steer_valid: true, reversing: false }],
+    ["high", "0x210", { mode: 1, safety_state: 1, estop_reason: 0, reversing: false, rx_overflow: 0, task_health: 15, steer_state: 5 }],
     ["high", "0x300", { speed_mmps: 2000, yaw_rate_mrad_s: 0, gear: 1 }],
     ["high", "0x301", { brake_pressure_kpa: 5000 }],
     ["high", "0x302", { left_turn: true, right_turn: false, brake_light: true, headlight: false }],
     ["high", "0x400", { distance_mm: 1500 }],
-    ["high", "0x7FC", { alive_ctr: 42 }],
+    ["high", "0x7FC", { alive_ctr: 42, health_flags: 0 }],
     ["low", "0x011", { estop_active: false, heartbeat_ok: true, light_left: false, light_right: false, light_brake: false, light_head: false }],
     ["low", "0x110", { mode: 2 }],
     ["low", "0x120", { speed_mmps: -500 }],
@@ -558,5 +563,21 @@ describe("frameTime", () => {
     const frame = { ts: 1700000000, bus: "high" as const, id: "0x300", name: "TEST", dlc: 8, data: [], decoded: {}, ts_real: 1700000000 };
     const time = frameTime(frame);
     expect(time).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/);
+  });
+
+  it("formats millisecond timestamps", () => {
+    const frame = { ts: 1700000000000, bus: "high" as const, id: "0x300", name: "TEST", dlc: 8, data: [], decoded: {} };
+    const time = frameTime(frame);
+    expect(time).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/);
+  });
+});
+
+describe("frameAge", () => {
+  it("normalizes millisecond timestamps", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-06T00:00:00Z"));
+    const now = Date.now();
+    const age = frameAge({ ts: now - 500 });
+    expect(age).toBe("500 ms");
   });
 });

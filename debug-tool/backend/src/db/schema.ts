@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS recording_frames (
     frame_id     INTEGER NOT NULL REFERENCES can_frames(id),
     PRIMARY KEY (recording_id, frame_id)
 );
+CREATE INDEX IF NOT EXISTS idx_recording_frames_frame ON recording_frames(frame_id);
 
 CREATE TABLE IF NOT EXISTS runtime_state (
     key         TEXT PRIMARY KEY,

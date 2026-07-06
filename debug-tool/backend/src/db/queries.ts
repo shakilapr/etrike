@@ -62,10 +62,15 @@ interface InjectionRow {
 export class DebugStore {
   private readonly db: Database.Database;
   private walTimer: ReturnType<typeof setInterval> | null = null;
+  private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+  private maintenanceRunning = false;
   private activeRecordingIds = new Set<number>();
   private activeRecordingsLoaded = false;
   /** Optional FrameRouter — when set, all insertFrame calls route through it. */
   router: { resolve(frame: CanFrame, source: FrameSource): CanFrame | null } | null = null;
+
+  private static readonly MAINTENANCE_INTERVAL_MS = 5000;
+  private static readonly STOPPED_RECORDING_RETENTION = 10;
 
   constructor(dbPath: string, private readonly maxFrames = 50000) {
     const filename = dbPath === ":memory:" ? dbPath : resolve(dbPath);
@@ -78,6 +83,9 @@ export class DebugStore {
     this.walTimer = setInterval(() => {
       this.db.pragma("wal_checkpoint(TRUNCATE)");
     }, 30000).unref();
+    this.maintenanceTimer = setInterval(() => {
+      this.runMaintenance();
+    }, DebugStore.MAINTENANCE_INTERVAL_MS).unref();
   }
 
   /**
@@ -104,7 +112,6 @@ export class DebugStore {
 
       const rowId = Number(result.lastInsertRowid);
       this.attachToActiveRecordings(rowId);
-      this.pruneFrames();
       return { ...frame, row_id: rowId, ts_real: tsReal, ts_device: tsDevice };
     } catch (err) {
       console.error("insertFrame failed:", String(err));
@@ -262,7 +269,19 @@ export class DebugStore {
 
   close(): void {
     if (this.walTimer) { clearInterval(this.walTimer); this.walTimer = null; }
+    if (this.maintenanceTimer) { clearInterval(this.maintenanceTimer); this.maintenanceTimer = null; }
     this.db.close();
+  }
+
+  runMaintenance(): void {
+    if (this.maintenanceRunning) return;
+    this.maintenanceRunning = true;
+    try {
+      this.pruneStoppedRecordings();
+      this.pruneFrames();
+    } finally {
+      this.maintenanceRunning = false;
+    }
   }
 
   private attachToActiveRecordings(frameId: number): void {
@@ -286,22 +305,42 @@ export class DebugStore {
   private pruneFrames(): void {
     const count = (this.db.prepare("SELECT COUNT(*) AS n FROM can_frames").get() as { n: number }).n;
     if (count <= this.maxFrames) return;
-    // Only delete frames NOT referenced by any active recording
     const ids = this.db
       .prepare(
         `SELECT f.id FROM can_frames f
-         LEFT JOIN recording_frames rf ON rf.frame_id = f.id
-         WHERE rf.frame_id IS NULL
+         WHERE NOT EXISTS (
+           SELECT 1 FROM recording_frames rf WHERE rf.frame_id = f.id
+         )
          ORDER BY f.id ASC
          LIMIT ?`
       )
       .all(count - this.maxFrames) as Array<{ id: number }>;
-    const deleteRecordingFrame = this.db.prepare("DELETE FROM recording_frames WHERE frame_id = ?");
     const deleteFrame = this.db.prepare("DELETE FROM can_frames WHERE id = ?");
     this.db.transaction(() => {
       for (const row of ids) {
-        deleteRecordingFrame.run(row.id);
         deleteFrame.run(row.id);
+      }
+    })();
+  }
+
+  private pruneStoppedRecordings(): void {
+    const oldStopped = this.db
+      .prepare(
+        `SELECT id FROM recordings
+         WHERE stopped_at IS NOT NULL
+         ORDER BY stopped_at DESC, id DESC
+         LIMIT -1 OFFSET ?`
+      )
+      .all(DebugStore.STOPPED_RECORDING_RETENTION) as Array<{ id: number }>;
+    if (oldStopped.length === 0) return;
+
+    const deleteFrames = this.db.prepare("DELETE FROM recording_frames WHERE recording_id = ?");
+    const deleteRecording = this.db.prepare("DELETE FROM recordings WHERE id = ?");
+    this.db.transaction(() => {
+      for (const row of oldStopped) {
+        this.activeRecordingIds.delete(row.id);
+        deleteFrames.run(row.id);
+        deleteRecording.run(row.id);
       }
     })();
   }

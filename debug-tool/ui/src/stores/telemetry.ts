@@ -71,7 +71,8 @@ const PRESENCE_TIMEOUT_S = 3;
 
 function recent(frame: { ts: number } | undefined): boolean {
   if (!frame) return false;
-  return (Date.now() / 1000) - frame.ts < PRESENCE_TIMEOUT_S;
+  const tsSeconds = frame.ts > 1_000_000_000_000 ? frame.ts / 1000 : frame.ts;
+  return (Date.now() / 1000) - tsSeconds < PRESENCE_TIMEOUT_S;
 }
 
 export const ecuPresence = derived(latestById, ($latest): EcuPresence => ({

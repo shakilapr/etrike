@@ -68,12 +68,12 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
       if (simEngine) {
         const frame = normalizeFrame({ bus, id, dlc: parsed.data.dlc, data });
         simEngine.injectExternal(frame);
-        store.updateLatestInjectionStatus("simulated");
+        store.updateInjectionByCorrelation(correlationId, "simulated");
         sent = true;
       }
     }
     if (!sent) {
-      store.updateLatestInjectionStatus("error");
+      store.updateInjectionByCorrelation(correlationId, "error");
       return reply.code(503).send({ error: "no bridge connected and simulation not running" });
     }
     return { cmd: "send", bus, id, status: "queued" };
@@ -87,10 +87,6 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     const id = normalizeCanId(parsed.data.id);
     const definition = findMessage(bus, id);
     if (!definition?.injectable) return reply.code(400).send({ error: `${id} is not injectable on ${bus} bus` });
-    if (id === "0x001" && "confirm_estop" in parsed.data && parsed.data.confirm_estop !== true) {
-      return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
-    }
-
     if (parsed.data.action === "stop") {
       try {
         bridge.sendCommand({ cmd: "send_periodic", action: "stop", bus, id });
@@ -98,6 +94,10 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
         return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
       }
       return { cmd: "send_periodic", action: "stop", bus, id, status: "queued" };
+    }
+
+    if (id === "0x001" && parsed.data.confirm_estop !== true) {
+      return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
     }
 
     let data: number[];
@@ -112,7 +112,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     try {
       bridge.sendCommand({ cmd: "send_periodic", action: "start", bus, id, dlc: parsed.data.dlc, data, interval_ms: parsed.data.interval_ms, count: parsed.data.count, correlation_id: correlationId });
     } catch (error) {
-      store.updateLatestInjectionStatus("error");
+      store.updateInjectionByCorrelation(correlationId, "error");
       return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
     }
     return { cmd: "send_periodic", action: "start", bus, id, status: "queued" };

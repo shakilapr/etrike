@@ -18,6 +18,7 @@ export class SerialBridge implements HardwareBridge {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private busDetector = new BusDetector();
   private detectedBus: Bus = "high";
+  private lastBusDetectionConfidence: "none" | "low" | "high" = "none";
 
   constructor(
     private readonly config: AppConfig,
@@ -61,6 +62,7 @@ export class SerialBridge implements HardwareBridge {
       this.state.last_error = null;
       this.busDetector.reset();
       this.detectedBus = "high";
+      this.lastBusDetectionConfidence = "none";
       this.broadcastStatus();
     });
     this.port.on("close", () => {
@@ -157,15 +159,19 @@ export class SerialBridge implements HardwareBridge {
 
     if (message.type === "cmd_ack") {
       const status = typeof message.status === "string" ? message.status : "unknown";
-      this.store.updateLatestInjectionStatus(status);
+      const correlationId = typeof message.correlation_id === "string" ? message.correlation_id : null;
+      if (correlationId) this.store.updateInjectionByCorrelation(correlationId, status);
+      else this.store.updateLatestInjectionStatus(status);
       this.hub.broadcast({ type: "cmd_ack", payload: message });
       return;
     }
 
     if (typeof message.id === "string" && Array.isArray(message.data)) {
       const prevDetected = this.detectedBus;
+      const prevConfidence = this.lastBusDetectionConfidence;
       const explicitBus = message.bus === "low" || message.bus === "high" ? message.bus : null;
       this.detectedBus = explicitBus ?? this.busDetector.feed(message.id);
+      const currentConfidence = this.busDetector.state.confidence;
 
       const frame = normalizeFrame({
         ts: typeof message.ts === "number" ? message.ts : undefined,
@@ -181,9 +187,10 @@ export class SerialBridge implements HardwareBridge {
       this.store.insertFrame(frame);
       this.hub.broadcast({ type: "can_frame", payload: frame });
 
-      if (this.detectedBus !== prevDetected || this.busDetector.state.confidence === "high") {
+      if (this.detectedBus !== prevDetected || (prevConfidence !== "high" && currentConfidence === "high")) {
         this.broadcastStatus();
       }
+      this.lastBusDetectionConfidence = currentConfidence;
       return;
     }
 

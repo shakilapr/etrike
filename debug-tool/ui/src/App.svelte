@@ -26,6 +26,7 @@
   let templates: InjectionTemplate[] = [];
   let loadError = "";
   let stream: StreamHandle | null = null;
+  let streamConnected = false;
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "dashboard", label: "Dashboard" },
@@ -156,12 +157,19 @@
     }
 
     // Connect WebSocket AFTER initial REST data loads so WS frames don't get wiped
-    stream = connectStream(ingestMessage, (connected) => wsConnected.set(connected));
+    stream = connectStream(ingestMessage, (connected) => {
+      streamConnected = connected;
+      wsConnected.set(connected);
+    });
   }
 
   async function refreshStatus() {
+    if (streamConnected) return;
     try {
       const payload: BackendStatus = await getStatus();
+      if (payload.bus_stats) {
+        stats.update((current) => ({ ...current, buses: payload.bus_stats }));
+      }
       status.update((current) => ({
         ...current,
         ...payload,
