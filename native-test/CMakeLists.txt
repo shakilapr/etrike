@@ -88,6 +88,12 @@ if(WIN32)
     target_compile_definitions(freertos PRIVATE
         _WIN32_WINNT=0x0601   # Windows 7+ for CRITICAL_SECTION APIs
     )
+    # Pre-include our self-contained timeapi shim for all freertos units.
+    # Provides TIMECAPS/timeGetDevCaps/timeBeginPeriod/timeEndPeriod
+    # without requiring windows.h or mmsystem.h (GCC 14+ compatible).
+    target_compile_options(freertos BEFORE PRIVATE
+        -include "${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow/timeapi_win32.h"
+    )
 endif()
 
 target_compile_definitions(freertos PRIVATE PROJCODELOC=1)
@@ -113,6 +119,7 @@ target_include_directories(hal_stubs PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}              # for can/virtual_can_bus.h
     ${CMAKE_SOURCE_DIR}/../shared            # for can/can_protocol.h
+    ${freertos_kernel_SOURCE_DIR}/include    # for real FreeRTOS headers
 )
 target_link_libraries(hal_stubs PUBLIC freertos virtual_can)
 
@@ -187,6 +194,7 @@ add_executable(rt_can_dispatch
 )
 target_link_libraries(rt_can_dispatch PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_can_dispatch PRIVATE
+    ${freertos_kernel_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_SOURCE_DIR}/../shared
     ${CMAKE_SOURCE_DIR}/../rt-esp32/src
