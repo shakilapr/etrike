@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ecuPresence } from "../stores/telemetry";
+  import type { EcuPresence } from "../stores/telemetry";
   import { workMode } from "../stores/work-mode";
 
   interface EcuNode {
@@ -21,8 +22,12 @@
     { x1: 30, y1: 70, x2: 85, y2: 70, bus: "low" },
   ];
 
+  function isEcuId(id: string): id is keyof EcuPresence {
+    return id === "rt" || id === "sys" || id === "mtr" || id === "ses" || id === "seb";
+  }
+
   function nodeState(id: string): "real" | "emulated" | "missing" {
-    const presence = ($ecuPresence as Record<string, boolean>)[id];
+    const presence = isEcuId(id) ? $ecuPresence[id] : false;
     if (presence) return "real";
     const simEcus = $workMode.simulatedEcus;
     if (simEcus.includes(id)) return "emulated";

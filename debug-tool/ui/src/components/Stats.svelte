@@ -25,6 +25,20 @@
       }));
   }
 
+  function counterState(v: number): "bus-off" | "passive" | "warning" | "ok" {
+    if (v >= 256) return "bus-off";
+    if (v >= 128) return "passive";
+    if (v >= 96) return "warning";
+    return "ok";
+  }
+
+  function stateLabel(s: string): string {
+    if (s === "bus-off") return "BUS-OFF";
+    if (s === "passive") return "Error-Passive";
+    if (s === "warning") return "Warning";
+    return "OK";
+  }
+
   $: highBars = barsFor("high", highMax);
   $: lowBars = barsFor("low", lowMax);
 </script>
@@ -55,14 +69,11 @@
       <h2>Controller Counters</h2>
       <span>TEC / REC</span>
     </div>
-    {@const tecState = (v: number) => v >= 256 ? "bus-off" : v >= 128 ? "passive" : v >= 96 ? "warning" : "ok"}
-    {@const recState = (v: number) => v >= 256 ? "bus-off" : v >= 128 ? "passive" : v >= 96 ? "warning" : "ok"}
-    {@const stateLabel = (s: string) => s === "bus-off" ? "BUS-OFF" : s === "passive" ? "Error-Passive" : s === "warning" ? "Warning" : "OK"}
     <div class="counter-grid">
-      <div class="tec-rec" data-state={tecState(high.tec)}><span>High TEC</span><strong>{high.tec}</strong><em>{stateLabel(tecState(high.tec))}</em></div>
-      <div class="tec-rec" data-state={recState(high.rec)}><span>High REC</span><strong>{high.rec}</strong><em>{stateLabel(recState(high.rec))}</em></div>
-      <div class="tec-rec" data-state={tecState(low.tec)}><span>Low TEC</span><strong>{low.tec}</strong><em>{stateLabel(tecState(low.tec))}</em></div>
-      <div class="tec-rec" data-state={recState(low.rec)}><span>Low REC</span><strong>{low.rec}</strong><em>{stateLabel(recState(low.rec))}</em></div>
+      <div class="tec-rec" data-state={counterState(high.tec)}><span>High TEC</span><strong>{high.tec}</strong><em>{stateLabel(counterState(high.tec))}</em></div>
+      <div class="tec-rec" data-state={counterState(high.rec)}><span>High REC</span><strong>{high.rec}</strong><em>{stateLabel(counterState(high.rec))}</em></div>
+      <div class="tec-rec" data-state={counterState(low.tec)}><span>Low TEC</span><strong>{low.tec}</strong><em>{stateLabel(counterState(low.tec))}</em></div>
+      <div class="tec-rec" data-state={counterState(low.rec)}><span>Low REC</span><strong>{low.rec}</strong><em>{stateLabel(counterState(low.rec))}</em></div>
       <div><span>Uptime</span><strong>{Math.round($stats.uptime_s)} s</strong></div>
       <div><span>Total (H+L)</span><strong>{high.total + low.total}</strong></div>
     </div>
