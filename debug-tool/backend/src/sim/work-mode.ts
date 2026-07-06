@@ -7,7 +7,7 @@ import { z } from "zod";
 export const WORK_MODES = ["full-sim", "emulator", "hybrid", "bench", "monitor"] as const;
 export type WorkMode = (typeof WORK_MODES)[number];
 
-export const ECU_IDS = ["host", "rt", "sys", "mtr", "epsc", "seb"] as const;
+export const ECU_IDS = ["host", "rt", "sys", "mtr", "ses", "seb"] as const;
 export type EcuId = (typeof ECU_IDS)[number];
 
 export const FRAME_SOURCES = ["physical", "emulated", "simulated", "*"] as const;
@@ -53,7 +53,7 @@ export const workModeConfigSchema = z.object({
 export const MODE_DEFAULTS: Record<WorkMode, WorkModeConfig> = {
   "full-sim": {
     mode: "full-sim",
-    simulatedEcus: ["host", "rt", "sys", "mtr", "epsc", "seb"],
+    simulatedEcus: ["host", "rt", "sys", "mtr", "ses", "seb"],
     idSources: {},
     injectEmulatedToPhysical: false,
     bypasses: { epscSync: true, sebSync: true, mtrAbsent: false, benchSolo: false },

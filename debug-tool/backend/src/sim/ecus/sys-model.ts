@@ -13,6 +13,8 @@ export class SysModel implements EcuModel {
   private estopActive = false;
   private mode = 0;
   private hbCounter = 0;
+  private latestBrakeKpa = 0;
+  private sebRoll = 0;
   private callbacks: Array<(frame: CanFrame) => void> = [];
   private frameQueue: CanFrame[] = [];
   private tickCount = 0;
@@ -24,7 +26,11 @@ export class SysModel implements EcuModel {
 
   ingest(frame: CanFrame): void {
     if (frame.id === "0x7FD") { this.rtHbAlive = true; }
-    if (frame.id === "0x001") { this.estopActive = true; }
+    if (frame.id === "0x001") { this.estopActive = true; this.latestBrakeKpa = 5000; }
+    if (frame.id === "0x205") {
+      const d = frame.decoded as Record<string, unknown>;
+      this.latestBrakeKpa = (d.brake_pressure_kpa as number) ?? 0;
+    }
     if (frame.id === "0x110") {
       const d = frame.decoded as Record<string, unknown>;
       const m = (d.mode as number) ?? 0;
@@ -48,6 +54,19 @@ export class SysModel implements EcuModel {
     if (this.tickCount % 100 === 0) {
       this.emit("low", "0x600", 8, [this.mode, 0, this.rtHbAlive ? 1 : 0, this.estopActive ? 1 : 0, 0, 0, 0, 0],
         "SYS_DIAG_RPT", { mode: this.mode, hb_ok: this.rtHbAlive, estop_active: this.estopActive });
+    }
+
+    // Brake forwarding to SEB 0x7B9 (50 Hz) — only when braking
+    if (this.latestBrakeKpa > 0 && this.hbCounter % 2 === 0 && !this.estopActive) {
+      this.sebRoll = (this.sebRoll + 1) & 0x0F;
+      const stroke = Math.round(this.latestBrakeKpa / 10);
+      const data = [1 | (1 << 1), 0, stroke & 0xFF, (stroke >> 8) & 0xFF, 0, 0, 0, 0];
+      data[6] = 1 | (1 << 1) | (this.sebRoll << 4);
+      let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i]; data[7] = cksum ^ 0xFF;
+      this.emit("low", "0x7B9", 8, data, "VCU_SEB_REQ", {
+        align_enable: true, control_enable: true, stroke_req: stroke,
+        rolling_counter: this.sebRoll, checksum: data[7],
+      });
     }
 
     // SYS heartbeat 0x7FE (10 Hz)
