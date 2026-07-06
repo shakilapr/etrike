@@ -3,7 +3,9 @@
  *
  * The FreeRTOS MSVC-MingW port includes <timeapi.h> for
  * timeGetTime / timeBeginPeriod / timeEndPeriod.
- * On MinGW, these are declared in <mmsystem.h>.
+ * On MinGW/GCC 14+, the legacy multimedia APIs are not
+ * exposed by default. This shim provides the minimal
+ * declarations directly.
  */
 #pragma once
-#include <mmsystem.h>
+#include "timeapi_win32.h"
