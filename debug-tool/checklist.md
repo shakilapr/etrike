@@ -6,7 +6,7 @@
 ## P0 — Critical Issues
 
 - [ ] **BUG-01:** Disconnected bus still shows FPS and "active" in UI
-  - [ ] Implementation: Add `received_at` to `runtime_state` and verify staleness in `getStats()`.
+  - [ ] Implementation: In `App.svelte`, update the `stats` store when `/api/status` returns `bus_stats`.
   - [ ] Testing: Disconnect hardware, verify UI FPS drops to 0 and health dot turns gray after 5s.
 - [ ] **BUG-02:** Disconnected ECU shows "ready" in health bar
   - [ ] Implementation: Add 3-second staleness check in `ecuPresence` store.
@@ -23,11 +23,11 @@
 - [ ] **BUG-23:** WebSocket Broadcast Flood on Bus Lock-in
   - [ ] Implementation: Only broadcast status when confidence *transitions* to "high".
   - [ ] Testing: Connect bus, verify WebSocket does not receive 1000 status broadcasts per second.
-- [ ] **BUG-31:** Python Bridge Busy-Polls at 200Hz
-  - [ ] Implementation: Implement adaptive polling interval in `canalystii_bridge.py`.
+- [x] **BUG-31:** Python Bridge Busy-Polls at 200Hz
+  - [x] Implementation: Implement adaptive polling interval in `canalystii_bridge.py`.
   - [ ] Testing: Monitor Python process CPU usage on idle bus; verify it drops to near 0%.
-- [ ] **BUG-32:** Python Bridge `by_id` Dictionary Memory Leak
-  - [ ] Implementation: Cap `by_id` dictionary to the top 100 most frequent IDs inside `emit_stats`.
+- [x] **BUG-32:** Python Bridge `by_id` Dictionary Memory Leak
+  - [x] Implementation: Cap `by_id` dictionary to the top 100 most frequent IDs inside `emit_stats`.
   - [ ] Testing: Inject 500 random CAN IDs, verify `by_id` payload size is capped and memory is stable.
 - [ ] **BUG-43:** `cmd.ts` Error Path Uses `updateLatestInjectionStatus`
   - [ ] Implementation: Use `updateInjectionByCorrelation` in catch blocks.
@@ -41,12 +41,6 @@
 ## P1 — Wrong Behavior
 
 ### Backend & DB
-- [ ] **BUG-06:** CANalyst-II Auto-Detection Blocks Startup
-  - [ ] Implementation: Start Fastify server before waiting for CANalyst-II detection.
-  - [ ] Testing: Verify API is reachable immediately upon process start.
-- [ ] **BUG-09:** REST `/api/status` Returns Stale Stats
-  - [ ] Implementation: Add timestamp check to REST response.
-  - [ ] Testing: Fetch `/api/status` after disconnect, verify payload is marked stale.
 - [ ] **BUG-10:** `SERIAL_PORT` Default is Windows-Only
   - [ ] Implementation: Add OS detection for default port (COM3 vs /dev/ttyUSB0).
   - [ ] Testing: Boot on Linux/macOS without env vars, verify reasonable default is used.
@@ -59,14 +53,14 @@
 - [ ] **BUG-25:** Pipeline Correlation is O(n²)
   - [ ] Implementation: Use binary search or pre-indexed lookup for correlation.
   - [ ] Testing: Load Pipeline tab with 2000 frames, verify response time < 50ms.
-- [ ] **BUG-28:** `clearFrames()` Leaves Stale Counts
-  - [ ] Implementation: `UPDATE recordings SET frame_count = 0` on clear.
+- [x] **BUG-28:** `clearFrames()` Leaves Stale Counts
+  - [x] Implementation: `UPDATE recordings SET frame_count = 0` on clear.
   - [ ] Testing: Delete frames, verify recordings list shows 0 frames.
-- [ ] **BUG-37:** `attachToActiveRecordings` Runs 3 SQL Statements Per Frame
-  - [ ] Implementation: Cache active recording IDs in a `Set<number>`.
+- [x] **BUG-37:** `attachToActiveRecordings` Runs 3 SQL Statements Per Frame
+  - [x] Implementation: Cache active recording IDs in a `Set<number>`.
   - [ ] Testing: Profile DB inserts during active recording, verify `SELECT` count drops.
-- [ ] **BUG-40:** `stopRecording()` Returns Inaccurate Count
-  - [ ] Implementation: Compute exact `COUNT(*)` in the return query.
+- [x] **BUG-40:** `stopRecording()` Returns Inaccurate Count
+  - [x] Implementation: Compute exact `COUNT(*)` in the return query.
   - [ ] Testing: Stop recording under load, verify returned count matches actual DB rows.
 - [ ] **BUG-45:** `findMessage` Fallback Ignores Bus
   - [ ] Implementation: Remove bus-agnostic fallback in `CAN_MESSAGES.find`.
@@ -85,9 +79,6 @@
 - [ ] **BUG-04:** Tab switch destroys component state
   - [ ] Implementation: Use CSS `display` toggling or move state to stores.
   - [ ] Testing: Set a filter, switch tabs, switch back, verify filter remains active.
-- [ ] **BUG-08:** WebSocket Reconnect Floods Unfiltered Frames
-  - [ ] Implementation: Send active filter before triggering UI "connected" state.
-  - [ ] Testing: Set filter, restart backend, verify no flash of unfiltered frames.
 - [ ] **BUG-24:** `latestById` is O(n) per Frame
   - [ ] Implementation: Replace `derived` store with an incrementally updated `writable`.
   - [ ] Testing: Profile UI at 1000 FPS, verify CPU usage drops significantly.

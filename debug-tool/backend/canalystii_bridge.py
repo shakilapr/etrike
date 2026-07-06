@@ -169,6 +169,11 @@ def emit_stats(started_at: float) -> None:
     buses = {}
     for bus, bus_stats in stats.items():
         by_id = bus_stats["by_id"]
+        if len(by_id) > 100:
+            top_ids = dict(sorted(by_id.items(), key=lambda item: item[1], reverse=True)[:100])
+            bus_stats["by_id"] = top_ids
+            by_id = top_ids
+            
         buses[bus] = {
             "active": now - bus_stats["last_rx"] < ACTIVE_TIMEOUT_S,
             "total": bus_stats["total"],
@@ -181,11 +186,11 @@ def emit_stats(started_at: float) -> None:
     emit({"type": "stats", "ts": now, "uptime_s": int(uptime), "buses": buses})
 
 
-def receive_channel(dev: canalystii.CanalystDevice, channel: int) -> None:
+def receive_channel(dev: canalystii.CanalystDevice, channel: int) -> int:
     bus = CHANNEL_TO_BUS[channel]
     frames = list(dev.receive(channel))
     if not frames:
-        return
+        return 0
     now = time.time()
     count = len(frames)
     bus_stats = stats[bus]
@@ -199,6 +204,7 @@ def receive_channel(dev: canalystii.CanalystDevice, channel: int) -> None:
         data = [int(byte) for byte in message.data[:dlc]]
         bus_stats["by_id"][can_id_text] = bus_stats["by_id"].get(can_id_text, 0) + 1
         emit({"ts": now, "bus": bus, "id": can_id_text, "dlc": dlc, "data": data, "extended": message.extended})
+    return count
 
 
 def main() -> int:
@@ -252,19 +258,26 @@ def main() -> int:
     threading.Thread(target=command_reader, daemon=True).start()
     started_at = time.time()
     last_stats = 0.0
+    idle_cycles = 0
 
     while running:
+        frames_received = 0
         for channel in (0, 1):
-            receive_channel(dev, channel)
+            frames_received += receive_channel(dev, channel)
 
+        commands_processed = 0
         while True:
             try:
                 handle_command(dev, command_q.get_nowait())
+                commands_processed += 1
             except queue.Empty:
                 break
 
         now_mono = time.monotonic()
+        tasks_due = False
         for key, task in list(periodic.items()):
+            if now_mono >= task.next_due:
+                tasks_due = True
             while now_mono >= task.next_due:
                 try:
                     send_frame(dev, task.bus, task.can_id, task.dlc, task.data, task.extended)
@@ -284,7 +297,14 @@ def main() -> int:
             emit_stats(started_at)
             last_stats = now
 
-        time.sleep(POLL_SECONDS)
+        if frames_received == 0 and commands_processed == 0 and not tasks_due:
+            idle_cycles += 1
+            current_poll = min(POLL_SECONDS * (1 + idle_cycles * 0.1), 0.050)
+        else:
+            idle_cycles = 0
+            current_poll = POLL_SECONDS
+
+        time.sleep(current_poll)
 
     emit({"type": "status", "adapter_connected": False, "online": False})
     return 0
