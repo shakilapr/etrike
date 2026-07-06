@@ -135,7 +135,84 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => { patchedShutdown().then(() => process.exit(0)).catch(() => process.exit(1)); });
   process.once("SIGTERM", () => { patchedShutdown().then(() => process.exit(0)).catch(() => process.exit(1)); });
 
-  // Start HTTP + WebSocket server immediately — transport detection runs async.
+  // Register all routes BEFORE listening (Fastify doesn't allow routes after listen).
+  // These use bridgeProxy which delegates to bridgeRef.current at call time,
+  // so transport can be swapped at runtime.
+
+  // Runtime transport switching endpoint
+  app.post("/api/system/switch-transport", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const transport = String(body.transport ?? "");
+    if (!["serial", "canalystii", "mqtt", "disabled"].includes(transport)) {
+      return reply.code(400).send({ error: `invalid transport: ${transport}` });
+    }
+    try {
+      await bridgeRef.current.close();
+      if (transport === "disabled") {
+        bridgeRef.current = new SerialBridge(config, store, hub);
+      } else if (transport === "canalystii") {
+        bridgeRef.current = new CanalystBridge(config, store, hub);
+        await bridgeRef.current.start();
+      } else if (transport === "mqtt") {
+        bridgeRef.current = new MqttBridge(config, store, hub);
+        await bridgeRef.current.start();
+      } else {
+        const canalyst = new CanalystBridge(config, store, hub);
+        canalyst.start();
+        const detected = await canalyst.waitForConnection(3000);
+        if (detected) { bridgeRef.current = canalyst; }
+        else { await canalyst.abandon(); bridgeRef.current = new SerialBridge(config, store, hub); await bridgeRef.current.start(); }
+      }
+      return { ok: true, transport };
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Work mode configuration
+  let currentConfig: WorkModeConfig = MODE_DEFAULTS.monitor;
+  app.get("/api/mode", async () => currentConfig);
+  app.post("/api/mode", async (request, reply) => {
+    const parsed = workModeConfigSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const newConfig = parsed.data as WorkModeConfig;
+    currentConfig = newConfig;
+    router.clear();
+    for (const [key, source] of Object.entries(newConfig.idSources)) {
+      if (source === "*") continue;
+      const [bus, id] = key.split(":");
+      if ((bus === "high" || bus === "low") && id) {
+        router.setSource(bus, id, source as "physical" | "emulated" | "simulated");
+      }
+    }
+    const engine = (app as any).__simEngine as SimulationEngine;
+    const host = (app as any).__hostModel as HostModel;
+    const rtNative = (app as any).__rtModelNative as IpcEngineAdapter | null;
+    if (newConfig.mode === "full-sim" && newConfig.simulatedEcus.length > 0) {
+      if (newConfig.modelBackend === "native" && rtNative) { engine.register(rtNative); }
+      await engine.start(newConfig);
+    } else if (engine.state.running) { await engine.stop(); }
+    if (host && newConfig.mode === "full-sim") { (app as any).__hostForController = host; }
+    return { ok: true, mode: newConfig.mode };
+  });
+  app.get("/api/mode/defaults", async () => MODE_DEFAULTS);
+  app.post("/api/sim/controller", async (request, reply) => {
+    const host = (app as any).__hostModel as HostModel | undefined;
+    if (!host) return reply.code(400).send({ error: "HOST model not active — switch to Full Simulation mode" });
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    if (typeof body.speed_mmps === "number") host.speedMmps = body.speed_mmps as number;
+    if (typeof body.yaw_mrad_s === "number") host.yawMradS = body.yaw_mrad_s as number;
+    if (typeof body.gear === "number") host.gear = body.gear as number;
+    if (typeof body.brake_kpa === "number") host.brakeKpa = body.brake_kpa as number;
+    return { ok: true, speed: host.speedMmps, gear: host.gear, brake: host.brakeKpa };
+  });
+  app.get("/api/sim/state", async () => ({
+    running: simEngine.state.running,
+    activeEcus: simEngine.state.activeEcus,
+    physics: simEngine.state.physics,
+  }));
+
+  // Start HTTP + WebSocket server immediately — transport detection runs async after.
   await app.listen({ host: config.host, port: config.port });
 
   // Resolve transport (non-blocking — server is already listening).
@@ -165,110 +242,7 @@ async function main(): Promise<void> {
     await bridgeRef.current.start();
   }
 
-  // Runtime transport switching endpoint
-  app.post("/api/system/switch-transport", async (request, reply) => {
-    const body = (request.body ?? {}) as Record<string, unknown>;
-    const transport = String(body.transport ?? "");
-    if (!["serial", "canalystii", "mqtt", "disabled"].includes(transport)) {
-      return reply.code(400).send({ error: `invalid transport: ${transport}` });
-    }
-    try {
-      await bridgeRef.current.close();
-      if (transport === "disabled") {
-        bridgeRef.current = new SerialBridge(config, store, hub);
-        // don't start — leave disconnected
-      } else if (transport === "canalystii") {
-        bridgeRef.current = new CanalystBridge(config, store, hub);
-        await bridgeRef.current.start();
-      } else if (transport === "mqtt") {
-        bridgeRef.current = new MqttBridge(config, store, hub);
-        await bridgeRef.current.start();
-      } else {
-        // serial — run auto-detection for CANalyst-II first
-        const canalyst = new CanalystBridge(config, store, hub);
-        canalyst.start();
-        const detected = await canalyst.waitForConnection(3000);
-        if (detected) {
-          bridgeRef.current = canalyst;
-        } else {
-          await canalyst.abandon();
-          bridgeRef.current = new SerialBridge(config, store, hub);
-          await bridgeRef.current.start();
-        }
-      }
-      return { ok: true, transport };
-    } catch (error) {
-      return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
-    }
-  });
 
-  // ── Work mode configuration ──
-  let currentConfig: WorkModeConfig = MODE_DEFAULTS.monitor;
-
-  app.get("/api/mode", async () => currentConfig);
-
-  app.post("/api/mode", async (request, reply) => {
-    const parsed = workModeConfigSchema.safeParse(request.body ?? {});
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-    const newConfig = parsed.data as WorkModeConfig;
-    currentConfig = newConfig;
-
-    // Apply ID sources to router
-    router.clear();
-    for (const [key, source] of Object.entries(newConfig.idSources)) {
-      if (source === "*") continue;
-      const [bus, id] = key.split(":");
-      if ((bus === "high" || bus === "low") && id) {
-        router.setSource(bus, id, source as "physical" | "emulated" | "simulated");
-      }
-    }
-
-    // Start/stop simulation engine based on mode
-    const engine = (app as any).__simEngine as SimulationEngine;
-    const host = (app as any).__hostModel as HostModel;
-    const rtNative = (app as any).__rtModelNative as IpcEngineAdapter | null;
-
-    if (newConfig.mode === "full-sim" && newConfig.simulatedEcus.length > 0) {
-      // Use native RT model if configured and available
-      if (newConfig.modelBackend === "native" && rtNative) {
-        // Re-register with native IPC model (engine handles existing registrations)
-        engine.register(rtNative);
-        app.log.info("Using native C++ RT model via IPC");
-      }
-      await engine.start(newConfig);
-      app.log.info(`Full Simulation started: ${newConfig.simulatedEcus.join(", ")}`);
-    } else if (engine.state.running) {
-      await engine.stop();
-    }
-
-    if (host && newConfig.mode === "full-sim") {
-      (app as any).__hostForController = host;
-    }
-
-    app.log.info(`Work mode: ${newConfig.mode}, simulated ECUs: ${newConfig.simulatedEcus.join(", ") || "none"}`);
-    return { ok: true, mode: newConfig.mode };
-  });
-
-  app.get("/api/mode/defaults", async () => MODE_DEFAULTS);
-
-  // Controller input → HOST model (for Full Simulation mode)
-  app.post("/api/sim/controller", async (request, reply) => {
-    const host = (app as any).__hostModel as HostModel | undefined;
-    if (!host) return reply.code(400).send({ error: "HOST model not active — switch to Full Simulation mode" });
-    const body = (request.body ?? {}) as Record<string, unknown>;
-    if (typeof body.speed_mmps === "number") host.speedMmps = body.speed_mmps as number;
-    if (typeof body.yaw_mrad_s === "number") host.yawMradS = body.yaw_mrad_s as number;
-    if (typeof body.gear === "number") host.gear = body.gear as number;
-    if (typeof body.brake_kpa === "number") host.brakeKpa = body.brake_kpa as number;
-    return { ok: true, speed: host.speedMmps, gear: host.gear, brake: host.brakeKpa };
-  });
-
-  app.get("/api/sim/state", async () => ({
-    running: simEngine.state.running,
-    activeEcus: simEngine.state.activeEcus,
-    physics: simEngine.state.physics,
-  }));
 }
 
 void main().catch((error) => {
