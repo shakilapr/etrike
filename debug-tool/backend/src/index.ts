@@ -21,6 +21,7 @@ import { HostModel } from "./sim/ecus/host-model";
 import { RtModel } from "./sim/ecus/rt-model";
 import { MtrModel } from "./sim/ecus/mtr-model";
 import { SysModel } from "./sim/ecus/sys-model";
+import { IpcEngineAdapter } from "./sim/ipc-adapter";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
@@ -60,16 +61,32 @@ async function main(): Promise<void> {
 
   // Simulation engine — runs ECU models in software
   const simEngine = new SimulationEngine(store, hub);
+
+  // TypeScript models (always available)
   const hostModel = new HostModel();
-  const rtModel = new RtModel();
+  const rtModelTs = new RtModel();
   const mtrModel = new MtrModel();
   const sysModel = new SysModel();
+
+  // Native C++ model via IPC (requires sim-engine-native to be built)
+  let rtModelNative: IpcEngineAdapter | null = null;
+  try {
+    rtModelNative = new IpcEngineAdapter("rt");
+    app.log.info("Native RT model available via IPC");
+  } catch {
+    app.log.info("Native RT model not available — using TypeScript fallback");
+  }
+
+  // Register TypeScript models as default
   simEngine.register(hostModel);
-  simEngine.register(rtModel);
+  simEngine.register(rtModelTs);
   simEngine.register(mtrModel);
   simEngine.register(sysModel);
+
   (app as any).__simEngine = simEngine;
   (app as any).__hostModel = hostModel;
+  (app as any).__rtModelTs = rtModelTs;
+  (app as any).__rtModelNative = rtModelNative;
 
   registerSimRoutes(app, store);
   registerCanRoutes(app, store);
@@ -210,15 +227,21 @@ async function main(): Promise<void> {
     // Start/stop simulation engine based on mode
     const engine = (app as any).__simEngine as SimulationEngine;
     const host = (app as any).__hostModel as HostModel;
+    const rtNative = (app as any).__rtModelNative as IpcEngineAdapter | null;
 
     if (newConfig.mode === "full-sim" && newConfig.simulatedEcus.length > 0) {
+      // Use native RT model if configured and available
+      if (newConfig.modelBackend === "native" && rtNative) {
+        // Re-register with native IPC model (engine handles existing registrations)
+        engine.register(rtNative);
+        app.log.info("Using native C++ RT model via IPC");
+      }
       await engine.start(newConfig);
       app.log.info(`Full Simulation started: ${newConfig.simulatedEcus.join(", ")}`);
     } else if (engine.state.running) {
       await engine.stop();
     }
 
-    // Also update host model for keyboard input passthrough
     if (host && newConfig.mode === "full-sim") {
       (app as any).__hostForController = host;
     }
