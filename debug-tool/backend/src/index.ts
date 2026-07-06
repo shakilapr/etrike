@@ -18,29 +18,6 @@ import { FrameRouter, type FrameSource } from "./sim/router";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
-function makeShutdown(
-  app: ReturnType<typeof Fastify>,
-  bridge: CanalystBridge | SerialBridge | MqttBridge,
-  hub: StreamHub,
-  store: DebugStore
-) {
-  return async () => {
-    app.log.info("Shutting down debug backend");
-    // Clear sim timers (software injection)
-    const timers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>> | undefined;
-    if (timers) { for (const t of timers.values()) clearInterval(t); timers.clear(); }
-    hub.close();
-    const timeout = setTimeout(() => {
-      app.log.warn("bridge.close() timed out after 5s, forcing exit");
-      process.exit(1);
-    }, 5000).unref();
-    try { await bridge.close(); } catch (error) { app.log.error(error, "bridge.close() failed"); }
-    clearTimeout(timeout);
-    store.close();
-    await app.close();
-  };
-}
-
 async function main(): Promise<void> {
   let config: AppConfig;
   try {
