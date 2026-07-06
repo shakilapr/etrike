@@ -67,12 +67,19 @@ export interface EcuPresence {
   seb: boolean;  // Brake-by-wire SEB (0x721 low)
 }
 
+const PRESENCE_TIMEOUT_S = 3;
+
+function recent(frame: { ts: number } | undefined): boolean {
+  if (!frame) return false;
+  return (Date.now() / 1000) - frame.ts < PRESENCE_TIMEOUT_S;
+}
+
 export const ecuPresence = derived(latestById, ($latest): EcuPresence => ({
-  rt:  !!($latest["high:0x7FD"] || $latest["high:0x210"]),
-  sys: !!($latest["low:0x7FE"]  || $latest["low:0x011"]),
-  mtr: !!($latest["high:0x206"] || $latest["low:0x206"]),
-  ses: !!($latest["low:0x201"]),
-  seb: !!($latest["low:0x721"]),
+  rt:  recent($latest["high:0x7FD"]) || recent($latest["high:0x210"]),
+  sys: recent($latest["low:0x7FE"])  || recent($latest["low:0x011"]),
+  mtr: recent($latest["high:0x206"]) || recent($latest["low:0x206"]),
+  ses: recent($latest["low:0x201"]),
+  seb: recent($latest["low:0x721"]),
 }));
 
 export const telemetry = derived(latestById, ($latest): Telemetry => {

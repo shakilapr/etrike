@@ -237,27 +237,16 @@
   {/if}
 
   <main>
-    {#if activeTab === "dashboard"}
-      <Dashboard {ids} />
-    {:else if activeTab === "monitor"}
-      <CanMonitor {ids} />
-    {:else if activeTab === "dictionary"}
-      <CanDictionary {ids} />
-    {:else if activeTab === "injector"}
-      <CanInjector {ids} {templates} />
-    {:else if activeTab === "controller"}
-      <Controller />
-    {:else if activeTab === "unit-test"}
-      <UnitTest {ids} />
-    {:else if activeTab === "pipeline"}
-      <PipelineView />
-    {:else if activeTab === "terminal"}
-      <Terminal />
-    {:else if activeTab === "emulator"}
-      <Emulator />
-    {:else}
-      <Stats {ids} />
-    {/if}
+    <div style="display: {activeTab === 'dashboard' ? 'block' : 'none'}"><Dashboard {ids} /></div>
+    <div style="display: {activeTab === 'monitor' ? 'block' : 'none'}"><CanMonitor {ids} /></div>
+    <div style="display: {activeTab === 'dictionary' ? 'block' : 'none'}"><CanDictionary {ids} /></div>
+    <div style="display: {activeTab === 'injector' ? 'block' : 'none'}"><CanInjector {ids} {templates} /></div>
+    <div style="display: {activeTab === 'controller' ? 'block' : 'none'}"><Controller /></div>
+    <div style="display: {activeTab === 'unit-test' ? 'block' : 'none'}"><UnitTest {ids} /></div>
+    <div style="display: {activeTab === 'pipeline' ? 'block' : 'none'}"><PipelineView /></div>
+    <div style="display: {activeTab === 'terminal' ? 'block' : 'none'}"><Terminal /></div>
+    <div style="display: {activeTab === 'emulator' ? 'block' : 'none'}"><Emulator /></div>
+    <div style="display: {activeTab === 'stats' ? 'block' : 'none'}"><Stats {ids} /></div>
   </main>
 
 </div>

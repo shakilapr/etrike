@@ -471,9 +471,14 @@ export class BusDetector {
   private highHits = 0;
   private lowHits = 0;
   private locked: Bus | null = null;
+  private lastFeedAt = 0;
+
+  /** Auto-reset detection lock after this many seconds of silence. */
+  private static readonly STALE_TIMEOUT_S = 10;
 
   /** Feed a CAN ID to the detector. Returns the best-guess bus. */
   feed(canId: string): Bus {
+    this.lastFeedAt = Date.now() / 1000;
     if (this.locked) return this.locked;
 
     const id = normalizeCanId(canId);
@@ -490,6 +495,12 @@ export class BusDetector {
   }
 
   get state(): BusDetectorState {
+    // Auto-reset lock if no frames for STALE_TIMEOUT_S
+    if (this.locked && this.lastFeedAt > 0 && (Date.now() / 1000 - this.lastFeedAt) > BusDetector.STALE_TIMEOUT_S) {
+      this.locked = null;
+      this.highHits = 0;
+      this.lowHits = 0;
+    }
     if (this.locked) {
       return { detected: true, bus: this.locked, confidence: "high", highHits: this.highHits, lowHits: this.lowHits };
     }
@@ -510,5 +521,6 @@ export class BusDetector {
     this.highHits = 0;
     this.lowHits = 0;
     this.locked = null;
+    this.lastFeedAt = 0;
   }
 }

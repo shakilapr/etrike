@@ -27,11 +27,14 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore): void
     const data = parsed.data.data.slice(0, parsed.data.dlc);
 
     const frame = normalizeFrame({ bus, id, data, dlc: parsed.data.dlc });
-    store.insertFrame(frame);
-
-    // Broadcast to all WebSocket clients
-    const hub = (app as any).__hub;
-    if (hub) hub.broadcast({ type: "can_frame", payload: frame });
+    const routeFrame = (app as any).__routeFrame as ((f: typeof frame, s: string) => void) | undefined;
+    if (routeFrame) {
+      routeFrame(frame, "emulated");
+    } else {
+      store.insertFrame(frame);
+      const hub = (app as any).__hub;
+      if (hub) hub.broadcast({ type: "can_frame", payload: frame });
+    }
 
     return { ok: true, id, bus };
   });
@@ -52,11 +55,16 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore): void
 
     if (timers.has(key)) clearInterval(timers.get(key)!);
 
-    const hub = (app as any).__hub;
+    const routeFrame = (app as any).__routeFrame as ((f: ReturnType<typeof normalizeFrame>, s: string) => void) | undefined;
     timers.set(key, setInterval(() => {
       const frame = normalizeFrame({ bus, id, data: [...data], dlc });
-      store.insertFrame(frame);
-      if (hub) hub.broadcast({ type: "can_frame", payload: frame });
+      if (routeFrame) {
+        routeFrame(frame, "emulated");
+      } else {
+        store.insertFrame(frame);
+        const hub = (app as any).__hub;
+        if (hub) hub.broadcast({ type: "can_frame", payload: frame });
+      }
     }, interval_ms));
 
     return { ok: true, action: "start", id, bus, interval_ms };
