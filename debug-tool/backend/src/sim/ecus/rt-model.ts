@@ -20,8 +20,10 @@ export class RtModel implements EcuModel {
 
   // Latest command state — set by ingest(), consumed by tick()
   private latestSpeed = 0;
+  private latestYaw = 0;
   private latestGear = 0;
   private latestBrakeKpa = 0;
+  private steerRoll = 0;
 
   config(params: EcuConfig): void {
     this.bypassEpscSync = params.bypasses?.epscSync ?? false;
@@ -36,6 +38,7 @@ export class RtModel implements EcuModel {
     if (frame.id === "0x300" && frame.bus === "high") {
       const d = frame.decoded as Record<string, unknown>;
       this.latestSpeed = (d.speed_mmps as number) ?? 0;
+      this.latestYaw = (d.yaw_rate_mrad_s as number) ?? 0;
       this.latestGear = (d.gear as number) ?? 1;
     }
     if (frame.id === "0x301" && frame.bus === "high") {
@@ -70,6 +73,20 @@ export class RtModel implements EcuModel {
       const k = Math.round(brakeKpa);
       this.emit("low", "0x205", 4, [(k>>24)&0xFF,(k>>16)&0xFF,(k>>8)&0xFF,k&0xFF],
         "RT_BRAKE_CMD", { brake_pressure_kpa: k });
+    }
+
+    // Steering command 0x169 (50 Hz) — convert yaw rate to steer angle
+    if (this.hbCounter % 2 === 0 && !this.estopPending && this.mode !== 2) {
+      const steerAngle = Math.round(this.latestYaw * 0.05); // mrad/s -> 0.1deg approx
+      this.steerRoll = (this.steerRoll + 1) & 0x0F;
+      const data = [1 | (1 << 1), 0,
+        steerAngle & 0xFF, (steerAngle >> 8) & 0xFF,
+        328 & 0xFF, 1 | (1 << 1) | (this.steerRoll << 4), 0, 0];
+      let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i]; data[7] = cksum ^ 0xFF;
+      this.emit("low", "0x169", 8, data, "VCU_SES_REQ", {
+        alignment_enable: true, control_enable: true, target_angle: steerAngle,
+        target_speed: 328, rolling_counter: this.steerRoll, checksum: data[7],
+      });
     }
 
     // State report 0x210 (10 Hz)

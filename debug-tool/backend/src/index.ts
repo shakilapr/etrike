@@ -21,6 +21,8 @@ import { HostModel } from "./sim/ecus/host-model";
 import { RtModel } from "./sim/ecus/rt-model";
 import { MtrModel } from "./sim/ecus/mtr-model";
 import { SysModel } from "./sim/ecus/sys-model";
+import { EpscModel } from "./sim/ecus/epsc-model";
+import { SebModel } from "./sim/ecus/seb-model";
 import { IpcEngineAdapter } from "./sim/ipc-adapter";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
@@ -67,6 +69,8 @@ async function main(): Promise<void> {
   const rtModelTs = new RtModel();
   const mtrModel = new MtrModel();
   const sysModel = new SysModel();
+  const epscModel = new EpscModel();
+  const sebModel = new SebModel();
 
   // Native C++ model via IPC (requires sim-engine-native to be built)
   let rtModelNative: IpcEngineAdapter | null = null;
@@ -82,6 +86,8 @@ async function main(): Promise<void> {
   simEngine.register(rtModelTs);
   simEngine.register(mtrModel);
   simEngine.register(sysModel);
+  simEngine.register(epscModel);
+  simEngine.register(sebModel);
 
   (app as any).__simEngine = simEngine;
   (app as any).__hostModel = hostModel;

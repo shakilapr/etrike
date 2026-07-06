@@ -1,0 +1,96 @@
+/**
+ * SEB Brake-by-wire actuator model.
+ * Receives 0x7B9 VCU_SEB_REQ, generates 0x721 SEB_STATUS + 0x731/0x741/0x6FB.
+ */
+import type { CanFrame } from "../../types/can";
+import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
+
+export class SebModel implements EcuModel {
+  readonly id = "seb";
+
+  private stroke = 600;    // raw, 600 = 0mm
+  private targetStroke = 600;
+  private aligned = true;
+  private errorStatus = 0;
+  private lastCmdMs = 0;
+  private swVer = 0xC8;    // v2.00
+  private hwVer = 0x0D;
+  private roll = 0;
+  private tickMs = 0;
+  private callbacks: Array<(frame: CanFrame) => void> = [];
+  private frameQueue: CanFrame[] = [];
+
+  config(_p: EcuConfig): void {}
+  start(): void { this.stroke = 600; this.targetStroke = 600; this.aligned = true; this.errorStatus = 0; }
+  stop(): void {}
+  state(): EcuState { return { ecu: this.id, healthy: this.errorStatus < 3, faultFlags: this.errorStatus, uptimeMs: this.tickMs }; }
+
+  ingest(frame: CanFrame): void {
+    if (frame.id === "0x7B9" && frame.bus === "low") {
+      this.lastCmdMs = this.tickMs;
+      const d = frame.decoded as Record<string, unknown>;
+      this.targetStroke = (d.stroke_req as number) ?? 600;
+      this.aligned = (d.align_enable as number) === 1;
+    }
+    if (frame.id === "0x001") { this.errorStatus = 3; this.targetStroke = 600; }
+  }
+
+  tick(dtMs: number): CanFrame[] {
+    this.tickMs += dtMs;
+    this.frameQueue = [];
+
+    // Comm timeout: no 0x7B9 for >20ms -> L3
+    if (this.tickMs - this.lastCmdMs > 20) this.errorStatus = 3;
+    else if (this.errorStatus === 3) this.errorStatus = 0;
+
+    // First-order stroke tracking
+    const rate = 0.2;
+    this.stroke = Math.round(this.stroke + (this.targetStroke - this.stroke) * rate);
+
+    // 0x721 SEB_STATUS at 100Hz
+    if (this.tickMs % 10 === 0) {
+      const s16 = this.stroke & 0xFFFF;
+      const pressure = this.errorStatus === 3 ? 0 : Math.round(this.stroke / 10);
+      const statusByte = (this.aligned ? 1 : 0) | (1 << 1) | (this.errorStatus << 6);
+      this.roll = (this.roll + 1) & 0x0F;
+      const data = [statusByte, 0, s16 & 0xFF, (s16 >> 8) & 0xFF, pressure & 0xFF, 0, 0, 0];
+      data[6] = 1 | (1 << 1) | (this.roll << 4);
+      let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i];
+      data[7] = cksum ^ 0xFF;
+      this.emit("low", "0x721", 8, data, "SEB_STATUS", {
+        alignment_status: this.aligned, stroke_value: s16, pressure_value: pressure,
+        error_status: this.errorStatus, rolling_counter: this.roll, checksum: data[7],
+      });
+    }
+
+    // 0x731 SEB_ErrInfo at 10Hz
+    if (this.tickMs % 100 === 0) {
+      const isL3 = this.errorStatus === 3;
+      this.emit("low", "0x731", 8, [isL3 ? 0xFC : 0, isL3 ? 0x2F : 0, isL3 ? 0x76 : 0, 0, 0, 0, 0, 0],
+        "SEB_ErrInfo", { fault_mask: isL3 ? 0x762FFC : 0, l3_fault: isL3 });
+    }
+
+    // 0x741 SEB_Version at 1Hz
+    if (this.tickMs % 1000 === 0) {
+      this.emit("low", "0x741", 8, [this.swVer, this.hwVer, 0, 0, 0, 0, 0, 0],
+        "SEB_VERSION", { sw_version: this.swVer, hw_version: this.hwVer });
+    }
+
+    // 0x6FB SEB_Test at 100Hz
+    if (this.tickMs % 10 === 0) {
+      const mc = 0; const temp = Math.round(25 / 0.5); const volt = Math.round(12 / 0.00390625);
+      this.emit("low", "0x6FB", 8, [0, mc & 0xFF, (mc >> 8) & 0xFF, temp & 0xFF, (temp >> 8) & 0xFF, volt & 0xFF, (volt >> 8) & 0xFF, 0],
+        "SEB_TEST", { motor_current: mc, ecu_temp: 25, supply_voltage: 12 });
+    }
+
+    return [...this.frameQueue];
+  }
+
+  onFrame(cb: (f: CanFrame) => void): void { this.callbacks.push(cb); }
+
+  private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
+    const frame: CanFrame = { ts: Date.now()/1000, bus, id, name, dlc, data, decoded };
+    this.frameQueue.push(frame);
+    for (const cb of this.callbacks) cb(frame);
+  }
+}
