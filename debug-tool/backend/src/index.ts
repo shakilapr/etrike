@@ -89,17 +89,27 @@ async function main(): Promise<void> {
   registerCanRoutes(app, store);
   registerRecordingRoutes(app, store);
 
-  // Mutable bridge reference so route handlers see the resolved transport.
-  // Detection runs after the server is listening — routes use the wrapper.
+  // Mutable bridge reference so route handlers always see the active transport.
+  // Routes receive a Proxy that forwards all property access to the current bridge.
   const bridgeRef: { current: CanalystBridge | SerialBridge | MqttBridge } = {
     current: new SerialBridge(config, store, hub)
   };
-  const bridgeRefForHandlers = bridgeRef; // stable reference for closures
 
-  const shutdown = makeShutdown(app, bridgeRef.current, hub, store);
-  // Patch shutdown to use the current bridge
+  // Proxy that delegates to bridgeRef.current — route handlers always get the live bridge
+  const bridgeProxy = new Proxy({} as CanalystBridge | SerialBridge | MqttBridge, {
+    get(_target, prop) {
+      const b = bridgeRef.current;
+      return (b as any)[prop];
+    },
+    set(_target, prop, value) {
+      const b = bridgeRef.current;
+      (b as any)[prop] = value;
+      return true;
+    }
+  });
+
   const patchedShutdown = async () => {
-    const b = bridgeRefForHandlers.current;
+    const b = bridgeRef.current;
     app.log.info("Shutting down debug backend");
     const timers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>> | undefined;
     if (timers) { for (const t of timers.values()) clearInterval(t); timers.clear(); }
@@ -114,9 +124,9 @@ async function main(): Promise<void> {
     await app.close();
   };
 
-  // Routes use bridgeRefForHandlers.current so they always see the active transport
-  registerSystemRoutes(app, store, bridgeRefForHandlers.current, hub, startedAt, patchedShutdown);
-  registerCommandRoutes(app, store, bridgeRefForHandlers.current);
+  // Routes receive the proxy — always delegates to bridgeRef.current
+  registerSystemRoutes(app, store, bridgeProxy, hub, startedAt, patchedShutdown);
+  registerCommandRoutes(app, store, bridgeProxy);
   hub.registerRoutes(app);
 
   process.once("SIGINT", () => { patchedShutdown().then(() => process.exit(0)).catch(() => process.exit(1)); });
@@ -134,22 +144,22 @@ async function main(): Promise<void> {
     const detected = await canalyst.waitForConnection(3000);
     if (detected) {
       app.log.info("CANalyst-II auto-detected — using canalystii transport");
-      await bridgeRefForHandlers.current.close();
-      bridgeRefForHandlers.current = canalyst;
+      await bridgeRef.current.close();
+      bridgeRef.current = canalyst;
       effectiveTransport = "canalystii";
     } else {
       app.log.info("No CANalyst-II found, using serial transport");
       await canalyst.abandon();
-      await bridgeRefForHandlers.current.start();
+      await bridgeRef.current.start();
     }
     } else {
-    await bridgeRefForHandlers.current.close();
-    bridgeRefForHandlers.current = effectiveTransport === "canalystii"
+    await bridgeRef.current.close();
+    bridgeRef.current = effectiveTransport === "canalystii"
       ? new CanalystBridge(config, store, hub)
       : effectiveTransport === "mqtt"
         ? new MqttBridge(config, store, hub)
         : new SerialBridge(config, store, hub);
-    await bridgeRefForHandlers.current.start();
+    await bridgeRef.current.start();
   }
 
   // Runtime transport switching endpoint
@@ -160,27 +170,27 @@ async function main(): Promise<void> {
       return reply.code(400).send({ error: `invalid transport: ${transport}` });
     }
     try {
-      await bridgeRefForHandlers.current.close();
+      await bridgeRef.current.close();
       if (transport === "disabled") {
-        bridgeRefForHandlers.current = new SerialBridge(config, store, hub);
+        bridgeRef.current = new SerialBridge(config, store, hub);
         // don't start — leave disconnected
       } else if (transport === "canalystii") {
-        bridgeRefForHandlers.current = new CanalystBridge(config, store, hub);
-        await bridgeRefForHandlers.current.start();
+        bridgeRef.current = new CanalystBridge(config, store, hub);
+        await bridgeRef.current.start();
       } else if (transport === "mqtt") {
-        bridgeRefForHandlers.current = new MqttBridge(config, store, hub);
-        await bridgeRefForHandlers.current.start();
+        bridgeRef.current = new MqttBridge(config, store, hub);
+        await bridgeRef.current.start();
       } else {
         // serial — run auto-detection for CANalyst-II first
         const canalyst = new CanalystBridge(config, store, hub);
         canalyst.start();
         const detected = await canalyst.waitForConnection(3000);
         if (detected) {
-          bridgeRefForHandlers.current = canalyst;
+          bridgeRef.current = canalyst;
         } else {
           await canalyst.abandon();
-          bridgeRefForHandlers.current = new SerialBridge(config, store, hub);
-          await bridgeRefForHandlers.current.start();
+          bridgeRef.current = new SerialBridge(config, store, hub);
+          await bridgeRef.current.start();
         }
       }
       return { ok: true, transport };
