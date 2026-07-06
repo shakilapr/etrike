@@ -1,12 +1,15 @@
 import "dotenv/config";
 import { z } from "zod";
+import os from "node:os";
+
+const defaultSerialPort = os.platform() === "win32" ? "COM3" : "/dev/ttyUSB0";
 
 const envSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().positive().default(3000),
   CAN_TRANSPORT: z.enum(["serial", "canalystii", "mqtt", "disabled"]).default("serial"),
   MQTT_PORT: z.coerce.number().int().positive().default(1883),
-  SERIAL_PORT: z.string().default("COM3"),
+  SERIAL_PORT: z.string().default(defaultSerialPort),
   SERIAL_BAUD: z.coerce.number().int().positive().default(115200),
   CANALYST_PYTHON: z.string().default("python"),
   CANALYST_BITRATE: z.coerce.number().int().positive().default(500000),

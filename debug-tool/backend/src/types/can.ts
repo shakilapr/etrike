@@ -232,7 +232,7 @@ export function normalizeCanId(input: string | number): string {
 
 export function findMessage(bus: Bus, id: string): CanMessageDef | undefined {
   const normalized = normalizeCanId(id);
-  return CAN_BY_BUS_ID.get(`${bus}:${normalized}`) ?? CAN_MESSAGES.find((item) => item.id === normalized);
+  return CAN_BY_BUS_ID.get(`${bus}:${normalized}`);
 }
 
 export function getMessageName(bus: Bus, id: string): string {
@@ -259,7 +259,11 @@ export function normalizeFrame(input: Partial<CanFrame> & { id: string; data: nu
   const fullData = normalizeBytes(input.data).slice(0, 8);
   const dlc = typeof input.dlc === "number" ? input.dlc : Math.min(input.data.length, 8);
   const decoded = input.decoded && Object.keys(input.decoded).length > 0 ? input.decoded : decodeFrame(bus, id, fullData);
-  return { ts: typeof input.ts === "number" ? input.ts : Date.now(), bus, id, name: input.name ?? getMessageName(bus, id), dlc, data: fullData.slice(0, dlc), decoded };
+  // Normalize timestamp: raw ts may be milliseconds (CANalyst bridge) or seconds.
+  // If ts > 1e12 it's milliseconds, convert to seconds.
+  let ts = typeof input.ts === "number" ? input.ts : Date.now() / 1000;
+  if (ts > 1_000_000_000_000) ts = ts / 1000;
+  return { ts, bus, id, name: input.name ?? getMessageName(bus, id), dlc, data: fullData.slice(0, dlc), decoded };
 }
 
 export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string, unknown> {

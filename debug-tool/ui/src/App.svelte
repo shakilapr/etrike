@@ -185,8 +185,15 @@
         backend_online: false,
         adapter_connected: false,
         esp32_connected: false,
+        bridge: { ...(current.bridge ?? {}), connected: false, link_open: false },
         warning: msg
       }));
+      // Zero out stats so health bar reflects total failure
+      stats.set({
+        ts: Date.now() / 1000, uptime_s: 0,
+        buses: { high: { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} },
+                 low:  { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} } }
+      });
       logError("Status poll: " + msg);
     }
   }

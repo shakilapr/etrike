@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { DebugStore } from "../db/queries";
 import { normalizeCanId, normalizeBus, normalizeFrame } from "../types/can";
+import type { StreamHub } from "../ws/stream";
 
 const injectSchema = z.object({
   bus: z.enum(["high", "low"]),
@@ -10,13 +11,7 @@ const injectSchema = z.object({
   data: z.array(z.number().int().min(0).max(255)),
 });
 
-/**
- * Software-only frame injection — bypasses the CAN bridge entirely.
- * Frames are inserted directly into the store and broadcast via WebSocket,
- * simulating what the CAN hardware would do. Used by the Emulator in
- * "Simulated" mode when no physical CAN bus is present.
- */
-export function registerSimRoutes(app: FastifyInstance, store: DebugStore): void {
+export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: StreamHub): void {
   // One-shot injection
   app.post("/api/sim/inject", async (request, reply) => {
     const parsed = injectSchema.safeParse(request.body);
@@ -28,8 +23,7 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore): void
 
     const frame = normalizeFrame({ bus, id, data, dlc: parsed.data.dlc });
     store.insertFrame(frame, "emulated");
-    const hub = (app as any).__hub;
-    if (hub) hub.broadcast({ type: "can_frame", payload: frame });
+    hub.broadcast({ type: "can_frame", payload: frame });
 
     return { ok: true, id, bus };
   });
@@ -50,11 +44,10 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore): void
 
     if (timers.has(key)) clearInterval(timers.get(key)!);
 
-    const hub = (app as any).__hub;
     timers.set(key, setInterval(() => {
       const frame = normalizeFrame({ bus, id, data: [...data], dlc });
       store.insertFrame(frame, "emulated");
-      if (hub) hub.broadcast({ type: "can_frame", payload: frame });
+      hub.broadcast({ type: "can_frame", payload: frame });
     }, interval_ms));
 
     return { ok: true, action: "start", id, bus, interval_ms };

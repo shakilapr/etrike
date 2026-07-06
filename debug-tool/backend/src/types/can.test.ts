@@ -610,10 +610,9 @@ describe("findMessage", () => {
     expect(msg!.bus).toBe("high");
   });
 
-  it("falls back to id-only search across buses", () => {
-    const msg = findMessage("low", "0x300"); // 0x300 is only on high
-    expect(msg).toBeDefined();
-    expect(msg!.bus).toBe("high");
+  it("returns undefined for ID on wrong bus (no cross-bus fallback)", () => {
+    const msg = findMessage("low", "0x300"); // 0x300 is high-bus only
+    expect(msg).toBeUndefined();
   });
 
   it("returns undefined for unknown id", () => {

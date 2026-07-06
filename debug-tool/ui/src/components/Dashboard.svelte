@@ -53,7 +53,9 @@
   }
 
   function frameStamp(frame?: CanFrame): number {
-    return frame?.ts_real ?? frame?.ts ?? 0;
+    if (!frame) return 0;
+    const ts = frame.ts_real ?? frame.ts;
+    return ts > 1_000_000_000_000 ? ts / 1000 : ts;
   }
 
   function activityState(bus: Bus): SignalState {
@@ -96,7 +98,7 @@
         command: latest["low:0x169"],
         feedback: latest["low:0x201"],
         commandLabel: "VCU 0x169",
-        feedbackLabel: "EPS-C 0x201",
+        feedbackLabel: "SES 0x201",
         state: pairState(latest["low:0x169"], latest["low:0x201"])
       },
       {
