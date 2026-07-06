@@ -65,6 +65,7 @@ export interface BackendStatus {
     confidence: "none" | "low" | "high";
     highHits: number;
     lowHits: number;
+    _ts?: number;
   };
   bus_stats: CanStats["buses"];
   websocket_clients: number;

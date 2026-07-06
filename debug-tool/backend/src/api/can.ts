@@ -21,12 +21,37 @@ const SPEED_MATCH_TOLERANCE = 50;
 const ANGLE_MATCH_TOLERANCE = 50; // 0.1° units = 5°
 const PRESSURE_MATCH_TOLERANCE = 500; // kPa tolerance for brake pressure
 
-function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
-  // Pre-index frames by bus:id for O(1) lookup
+type FramePredicate = (frame: CanFrame) => boolean;
+
+function lowerBoundByTs(frames: CanFrame[], ts: number): number {
+  let lo = 0;
+  let hi = frames.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (frames[mid].ts <= ts) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function firstMatchingAfter(frames: CanFrame[], cursor: number, winSec: number, predicate: FramePredicate = () => true): CanFrame | undefined {
+  for (let i = lowerBoundByTs(frames, cursor); i < frames.length; i++) {
+    const frame = frames[i];
+    if (frame.ts - cursor >= winSec) return undefined;
+    if (predicate(frame)) return frame;
+  }
+  return undefined;
+}
+
+export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
+  // Pre-index frames by bus:id, sorted oldest-to-newest for binary search.
   const byKey: Record<string, CanFrame[]> = {};
   for (const f of frames) {
     const key = `${f.bus}:${f.id}`;
     (byKey[key] ??= []).push(f);
+  }
+  for (const list of Object.values(byKey)) {
+    list.sort((a, b) => a.ts - b.ts);
   }
 
   const driveFrames = byKey["low:0x204"] ?? [];
@@ -54,9 +79,8 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     let cursor = frame.ts;
 
     // Look for matching 0x204 (RT_DRIVE_CMD) in the window
-    const drive = driveFrames.find((f) =>
-      f.ts > cursor && f.ts - cursor < winSec &&
-      Math.abs((f.decoded.motor_speed_mmps as number ?? 0) - (frame.decoded.speed_mmps as number ?? 0)) <= SPEED_MATCH_TOLERANCE
+    const drive = firstMatchingAfter(driveFrames, cursor, winSec, (f) =>
+      Math.abs(((f.decoded.motor_speed_mmps as number) ?? 0) - ((frame.decoded.speed_mmps as number) ?? 0)) <= SPEED_MATCH_TOLERANCE
     );
     if (drive) {
       steps.push({ bus: drive.bus, id: drive.id, name: drive.name, decoded: drive.decoded, ts: drive.ts });
@@ -64,18 +88,15 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     }
 
     // Look for matching 0x169 (VCU_STEER_CMD)
-    const steer = steerFrames.find((f) =>
-      f.ts > cursor && f.ts - cursor < winSec
-    );
+    const steer = firstMatchingAfter(steerFrames, cursor, winSec);
     if (steer) {
       steps.push({ bus: steer.bus, id: steer.id, name: steer.name, decoded: steer.decoded, ts: steer.ts });
       cursor = steer.ts;
     }
 
     // Look for matching 0x201 (SES_STEER_STATUS)
-    const status = statusFrames.find((f) =>
-      f.ts > cursor && f.ts - cursor < winSec &&
-      (steer ? Math.abs((f.decoded.str_angle as number ?? 0) - (steer.decoded.target_angle as number ?? 0)) <= ANGLE_MATCH_TOLERANCE : true)
+    const status = firstMatchingAfter(statusFrames, cursor, winSec, (f) =>
+      steer ? Math.abs(((f.decoded.str_angle as number) ?? 0) - ((steer.decoded.target_angle as number) ?? 0)) <= ANGLE_MATCH_TOLERANCE : true
     );
     if (status) {
       steps.push({ bus: status.bus, id: status.id, name: status.name, decoded: status.decoded, ts: status.ts });
@@ -97,9 +118,8 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     let cursor = frame.ts;
 
     // Look for matching 0x205 (RT_BRAKE_CMD)
-    const brakeCmd = brakeCmdFrames.find((f) =>
-      f.ts > cursor && f.ts - cursor < winSec &&
-      Math.abs((f.decoded.brake_pressure_kpa as number ?? 0) - (frame.decoded.brake_pressure_kpa as number ?? 0)) <= PRESSURE_MATCH_TOLERANCE
+    const brakeCmd = firstMatchingAfter(brakeCmdFrames, cursor, winSec, (f) =>
+      Math.abs(((f.decoded.brake_pressure_kpa as number) ?? 0) - ((frame.decoded.brake_pressure_kpa as number) ?? 0)) <= PRESSURE_MATCH_TOLERANCE
     );
     if (brakeCmd) {
       steps.push({ bus: brakeCmd.bus, id: brakeCmd.id, name: brakeCmd.name, decoded: brakeCmd.decoded, ts: brakeCmd.ts });
@@ -107,18 +127,14 @@ function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     }
 
     // Look for matching 0x7B9 (VCU_SEB_REQ)
-    const sebReq = sebReqFrames.find((f) =>
-      f.ts > cursor && f.ts - cursor < winSec
-    );
+    const sebReq = firstMatchingAfter(sebReqFrames, cursor, winSec);
     if (sebReq) {
       steps.push({ bus: sebReq.bus, id: sebReq.id, name: sebReq.name, decoded: sebReq.decoded, ts: sebReq.ts });
       cursor = sebReq.ts;
     }
 
     // Look for matching 0x721 (SEB_STATUS)
-    const sebStatus = sebStatusFrames.find((f) =>
-      f.ts > cursor && f.ts - cursor < winSec
-    );
+    const sebStatus = firstMatchingAfter(sebStatusFrames, cursor, winSec);
     if (sebStatus) {
       steps.push({ bus: sebStatus.bus, id: sebStatus.id, name: sebStatus.name, decoded: sebStatus.decoded, ts: sebStatus.ts });
     }

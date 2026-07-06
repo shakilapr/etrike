@@ -6,7 +6,31 @@ const emptyBusStats = (): BusStats => ({
   active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {}
 });
 
-export const frames = writable<CanFrame[]>([]);
+export const latestById = writable<Record<string, CanFrame>>({});
+
+function buildLatestById(input: CanFrame[]): Record<string, CanFrame> {
+  const latest: Record<string, CanFrame> = {};
+  for (const frame of input) {
+    if (frame) latest[`${frame.bus}:${frame.id}`] = frame;
+  }
+  return latest;
+}
+
+const frameStore = writable<CanFrame[]>([]);
+export const frames = {
+  subscribe: frameStore.subscribe,
+  set(input: CanFrame[]): void {
+    frameStore.set(input);
+    latestById.set(buildLatestById(input));
+  },
+  update(updater: (current: CanFrame[]) => CanFrame[]): void {
+    frameStore.update((current) => {
+      const next = updater(current);
+      latestById.set(buildLatestById(next));
+      return next;
+    });
+  }
+};
 export const stats = writable<CanStats>({
   ts: Date.now() / 1000,
   uptime_s: 0,
@@ -19,14 +43,6 @@ export const status = writable<Partial<BackendStatus>>({
 });
 export const wsConnected = writable(false);
 export const commandAcks = writable<Record<string, unknown>[]>([]);
-
-export const latestById = derived(frames, ($frames) => {
-  const latest: Record<string, CanFrame> = {};
-  for (const frame of $frames) {
-    latest[`${frame.bus}:${frame.id}`] = frame;
-  }
-  return latest;
-});
 
 export const recentFrameRate = derived(frames, ($frames) => {
   if ($frames.length < 2) return 0;
@@ -41,7 +57,9 @@ export function ingestInitialFrames(input: CanFrame[]): void {
 
 export function ingestMessage(message: { type: string; payload: unknown }): void {
   if (message.type === "can_frame") {
-    frames.update((current) => [...current, message.payload as CanFrame].slice(-1000));
+    const frame = message.payload as CanFrame;
+    frameStore.update((current) => [...current, frame].slice(-1000));
+    if (frame) latestById.update((current) => ({ ...current, [`${frame.bus}:${frame.id}`]: frame }));
   } else if (message.type === "stats") {
     stats.set(message.payload as CanStats);
   } else if (message.type === "status") {

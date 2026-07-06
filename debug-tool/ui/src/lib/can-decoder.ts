@@ -402,7 +402,7 @@ export function formatDecoded(decoded: Record<string, unknown>): string {
 }
 
 export function frameTime(frame: CanFrame): string {
-  const seconds = frame.ts_real ?? frame.ts;
+  const seconds = normalizeTimestampSeconds(frame.ts_real ?? frame.ts);
   const date = new Date(seconds * 1000);
   return date.toLocaleTimeString([], {
     hour12: false,
@@ -415,12 +415,17 @@ export function frameTime(frame: CanFrame): string {
 
 export function frameAge(frame: { ts_real?: number; ts?: number } | undefined): string {
   if (!frame) return "--";
-  const stamp = frame.ts_real ?? frame.ts;
+  const stamp = normalizeTimestampSeconds(frame.ts_real ?? frame.ts);
   if (!stamp || stamp <= 0) return "--";
   const age = Math.max(Date.now() / 1000 - stamp, 0);
   if (age < 1) return `${Math.round(age * 1000)} ms`;
   if (age < 60) return `${age.toFixed(1)} s`;
   return `${Math.round(age)} s`;
+}
+
+function normalizeTimestampSeconds(stamp: number | undefined): number {
+  if (!stamp) return 0;
+  return stamp > 1_000_000_000_000 ? stamp / 1000 : stamp;
 }
 
 export function normalizeCanId(id: string): string {

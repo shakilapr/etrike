@@ -43,45 +43,46 @@ function missingHeartbeats($latest: Record<string, unknown>): string[] {
   return m;
 }
 
-// ── Persistent state ──
-let lastSafetyState: number | null = null;
-let lastMotorFault = 0;
-let lastBrakeFault = false;
-let lastSesMask = 0;
-let lastSebMask = 0;
-let lastMode: number | null = null;
-let lastGear: number | null = null;
-let lastBlocked = false;
-let lastObstacleWarn = false;
-let lastSteerDiagFault = false;
-
-let estopActive = false;
-let estopToggleCount = 0;
-let estopToggleStart = 0;
-let estopLastReason = 0;
-let estopSummaryTimer: ReturnType<typeof setTimeout> | null = null;
 const ESTOP_QUIET_MS = 3000;
 
 const CD_S = 10;
-const cds: Record<string, number> = {};
-function cd(k: string): boolean {
-  const n = Date.now() / 1000;
-  if (n - (cds[k] ?? 0) < CD_S) return false;
-  cds[k] = n; return true;
-}
-
-function flushEstop() {
-  if (estopSummaryTimer) { clearTimeout(estopSummaryTimer); estopSummaryTimer = null; }
-  if (estopToggleCount === 0) return;
-  if (estopToggleCount >= 3) {
-    logError("ESTOP burst: " + estopToggleCount + " cycles in " +
-      ((Date.now() - estopToggleStart) / 1000).toFixed(1) + "s, cause=" + rLabel(estopLastReason));
-  }
-  estopToggleCount = 0; estopToggleStart = 0;
-}
 
 export function initFaultWatcher(): () => void {
-  return latestById.subscribe(($latest) => {
+  let lastSafetyState: number | null = null;
+  let lastMotorFault = 0;
+  let lastBrakeFault = false;
+  let lastSesMask = 0;
+  let lastSebMask = 0;
+  let lastMode: number | null = null;
+  let lastGear: number | null = null;
+  let lastBlocked = false;
+  let lastObstacleWarn = false;
+  let lastSteerDiagFault = false;
+
+  let estopActive = false;
+  let estopToggleCount = 0;
+  let estopToggleStart = 0;
+  let estopLastReason = 0;
+  let estopSummaryTimer: ReturnType<typeof setTimeout> | null = null;
+  const cds: Record<string, number> = {};
+
+  function cd(k: string): boolean {
+    const n = Date.now() / 1000;
+    if (n - (cds[k] ?? 0) < CD_S) return false;
+    cds[k] = n; return true;
+  }
+
+  function flushEstop() {
+    if (estopSummaryTimer) { clearTimeout(estopSummaryTimer); estopSummaryTimer = null; }
+    if (estopToggleCount === 0) return;
+    if (estopToggleCount >= 3) {
+      logError("ESTOP burst: " + estopToggleCount + " cycles in " +
+        ((Date.now() - estopToggleStart) / 1000).toFixed(1) + "s, cause=" + rLabel(estopLastReason));
+    }
+    estopToggleCount = 0; estopToggleStart = 0;
+  }
+
+  const unsubscribe = latestById.subscribe(($latest) => {
     // ═══ Gather all CAN data ═══
     const sHi = $latest["high:0x011"]?.decoded;
     const sLo = $latest["low:0x011"]?.decoded;
@@ -256,4 +257,9 @@ export function initFaultWatcher(): () => void {
     }
     lastBlocked = blocked;
   });
+
+  return () => {
+    if (estopSummaryTimer) clearTimeout(estopSummaryTimer);
+    unsubscribe();
+  };
 }
