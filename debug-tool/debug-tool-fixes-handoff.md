@@ -168,6 +168,56 @@ npm run dev
 
 The UI dev server uses Vite on `127.0.0.1`; check the terminal output for the exact port.
 
+## Native/Firmware Test Status (2026-07-06)
+
+### Native C++ Tests (CMake + MinGW GCC 16)
+
+11 of 15 targets build and pass:
+
+| Target | Status | Tests |
+|--------|--------|-------|
+| smoke_test | ✅ PASS | 5 pass |
+| protocol_roundtrip | ✅ PASS | All pass |
+| checksum_full | ✅ PASS | All pass |
+| mcp2515_config | ✅ PASS | 11 pass |
+| sys_can_dispatch | ✅ PASS | All pass |
+| task_watchdog | ✅ PASS | All pass |
+| heartbeat_recovery | ✅ PASS | 12 pass |
+| watchdog_wraparound | ✅ PASS | All pass |
+| dual_heartbeat | ✅ PASS | 34 pass |
+| estop_latch | ✅ PASS | 20 pass |
+| spi_failure | ✅ PASS | 7 pass |
+| rt_can_rx_router | ❌ BUILD FAIL | Missing globals in test harness |
+| rt_can_dispatch | ❌ BUILD FAIL | Missing globals in test harness |
+| rt_safety_monitor | ❌ BUILD FAIL | Missing globals in test harness |
+| sim_engine_native | ✅ BUILDS | IPC via JSON-Lines verified |
+
+Build commands:
+```
+cmake -S native-test -B native-test/build4 -G "MinGW Makefiles"
+cmake --build native-test/build4 -j4
+```
+
+### Firmware Builds (PlatformIO)
+
+| Target | Status |
+|--------|--------|
+| rt-esp32 native | ✅ SUCCESS |
+| sys-esp32 native | ✅ SUCCESS |
+| mtr-stm32 native | ✅ SUCCESS |
+| rt-esp32 vehicle | ⚠️ Not tested (requires ESP-IDF) |
+| sys-esp32 vehicle | ⚠️ Not tested (requires ESP-IDF) |
+| mtr-stm32 vehicle | ⚠️ Not tested (requires STM32 toolchain) |
+| can-test twai/spi | ⚠️ Not tested (requires ESP-IDF) |
+
+### Fixes Applied
+
+- `native-test/hal/shadow/timeapi_win32.h` — Self-contained shim for TIMECAPS/timeGetDevCaps/timeBeginPeriod/timeEndPeriod
+- `native-test/CMakeLists.txt` — Pre-include shim for freertos target, add freertos include to hal_stubs, fix shadow includes
+- `sys-esp32/platformio.ini` — Added build_src_filter to exclude native_entry.cpp and test_sys_qa.cpp from vehicle/bench
+- `rt-esp32/platformio.ini` — Added build_src_filter to exclude native_entry.cpp from vehicle/bench
+- `mtr-stm32/platformio.ini` — Added build_src_filter to exclude native_entry.cpp from vehicle/bench
+
 ## Suggested Next-Agent Starting Point
 
 1. Run `git status --short` and inspect the current diff.
