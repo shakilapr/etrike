@@ -14,7 +14,7 @@
     summary(data: number[]): string;
   }
 
-  // ── Rolling counter helpers ──
+  // ── Dynamic state (shared across signals) ──
   const counters: Record<string, number> = {};
   function counter(key: string, max = 255): number {
     if (!(key in counters)) counters[key] = 1;
@@ -24,61 +24,136 @@
   }
   function resetCounter(key: string) { counters[key] = 0; }
 
+  // Behavioral state — updated by incoming frames or by signal generators
+  let simSpeed = 0;       // mm/s — responds to drive commands
+  let simGear = 0;        // 0=N, 1=D
+  let simBrakeKpa = 0;    // kPa
+  let simSteerAngle = 0;  // 0.1 deg units
+  let simEstopActive = false;
+  let simMode = 0;        // 0=MANUAL, 1=AUTO
+
   // ── ECU definitions ──
   interface EmuEcu { id: string; name: string; signals: EmuSignal[]; }
+  // ── Data helpers ──
+  function i32be(v: number): number[] { return [(v>>24)&0xFF,(v>>16)&0xFF,(v>>8)&0xFF,v&0xFF]; }
+  function i16be(v: number): number[] { return [(v>>8)&0xFF,v&0xFF]; }
+  function i16le(v: number): number[] { return [v&0xFF,(v>>8)&0xFF]; }
+
   const ECUS: EmuEcu[] = [
     {
       id: "host", name: "HOST (Drive-by-Wire)",
       signals: [
-        { key:"e_host_hb",    label:"Heartbeat",        bus:"high", id:"0x7FC", hz:2,  dlc:2, data:()=>[counter("host_hb"),0],                         summary:(d)=>`alive=${d[0]}, health OK` },
-        { key:"e_host_drive", label:"Drive Command",     bus:"high", id:"0x300", hz:50, dlc:8, data:()=>[0,0,0,0,0,0,0,1],                          summary:()=>`speed=0, yaw=0, gear=D` },
-        { key:"e_host_brake", label:"Brake Request",     bus:"high", id:"0x301", hz:10, dlc:4, data:()=>[0,0,0,0],                                 summary:()=>`0 kPa (released)` },
-        { key:"e_host_obst",  label:"Obstacle Distance", bus:"high", id:"0x400", hz:10, dlc:4, data:()=>[0xFF,0xFF,0xFF,0xFF],                     summary:()=>`clear` },
+        { key:"e_host_hb",    label:"Heartbeat",        bus:"high", id:"0x7FC", hz:2,  dlc:2,
+          data:()=>[counter("host_hb"),0], summary:(d)=>`alive=${d[0]}` },
+        { key:"e_host_drive", label:"Drive Command",     bus:"high", id:"0x300", hz:50, dlc:8,
+          data:()=>[...i32be(simSpeed),0,0,0,simGear], summary:()=>`speed=${simSpeed}mm/s, yaw=0, gear=${["N","D","S","R"][simGear]??"?"}` },
+        { key:"e_host_brake", label:"Brake Request",     bus:"high", id:"0x301", hz:10, dlc:4,
+          data:()=>i32be(simBrakeKpa), summary:()=>`${simBrakeKpa} kPa` },
+        { key:"e_host_obst",  label:"Obstacle Distance", bus:"high", id:"0x400", hz:10, dlc:4,
+          data:()=>[0xFF,0xFF,0xFF,0xFF], summary:()=>`clear` },
       ]
     },
     {
       id: "rt", name: "RT (Gateway)",
       signals: [
-        { key:"e_rt_hb",     label:"RT Heartbeat",    bus:"high", id:"0x7FD", hz:2,   dlc:2, data:()=>[counter("rt_hb"),0],                          summary:(d)=>`alive=${d[0]}, health OK` },
-        { key:"e_rt_state",  label:"State Report",    bus:"high", id:"0x210", hz:10,  dlc:6, data:()=>[0,0,0,0,15,5],                               summary:()=>`MANUAL, Normal, task=15` },
-        { key:"e_rt_thr",    label:"Throttle Status", bus:"high", id:"0x120", hz:100, dlc:2, data:()=>[0,0],                                       summary:()=>`0 mm/s` },
-        { key:"e_rt_motor",  label:"Motor Feedback",  bus:"high", id:"0x206", hz:50,  dlc:4, data:()=>[0,0,0,0],                                  summary:()=>`0 mm/s, gear N` },
+        { key:"e_rt_hb",     label:"RT Heartbeat",    bus:"high", id:"0x7FD", hz:2,   dlc:2,
+          data:()=>[counter("rt_hb"),0], summary:(d)=>`alive=${d[0]}` },
+        { key:"e_rt_state",  label:"State Report",    bus:"high", id:"0x210", hz:10,  dlc:6,
+          data:()=>[simMode,simEstopActive?1:0,0,0,15,5], summary:()=>`${["MANUAL","AUTO","ESTOP"][simMode]}, ${simEstopActive?"InternalEstop":"Normal"}` },
+        { key:"e_rt_thr",    label:"Throttle Status", bus:"high", id:"0x120", hz:100, dlc:2,
+          data:()=>i16be(simSpeed), summary:()=>`${simSpeed} mm/s` },
+        { key:"e_rt_motor",  label:"Motor Feedback",  bus:"high", id:"0x206", hz:50,  dlc:4,
+          data:()=>[...i16be(simSpeed),simGear,0], summary:()=>`${simSpeed} mm/s, gear ${["N","D","S","R"][simGear]??"?"}` },
       ]
     },
     {
       id: "sys", name: "SYS (Safety/Body)",
       signals: [
-        { key:"e_sys_hb",     label:"SYS Heartbeat",  bus:"low", id:"0x7FE", hz:10, dlc:2, data:()=>[counter("sys_hb"),0],                           summary:(d)=>`alive=${d[0]}, health OK` },
-        { key:"e_sys_safety", label:"Safety Status",  bus:"low", id:"0x011", hz:5,  dlc:3, data:()=>[0,1,0],                                       summary:()=>`estop=0, hb_ok=1, lights=off` },
-        { key:"e_sys_diag",   label:"Diagnostics",    bus:"low", id:"0x600", hz:1,  dlc:8, data:()=>[0,0,1,0,0,0,0,0],                             summary:()=>`MANUAL, brake off, hb OK` },
+        { key:"e_sys_hb",     label:"SYS Heartbeat",  bus:"low", id:"0x7FE", hz:10, dlc:2,
+          data:()=>[counter("sys_hb"),0], summary:(d)=>`alive=${d[0]}` },
+        { key:"e_sys_safety", label:"Safety Status",  bus:"low", id:"0x011", hz:5,  dlc:3,
+          data:()=>[simEstopActive?1:0,1,0], summary:()=>`estop=${simEstopActive?1:0}, hb_ok=1` },
+        { key:"e_sys_diag",   label:"Diagnostics",    bus:"low", id:"0x600", hz:1,  dlc:8,
+          data:()=>[simMode,0,1,0,0,0,0,0], summary:()=>`${["MANUAL","AUTO","ESTOP"][simMode]}, brake off` },
       ]
     },
     {
       id: "mtr", name: "MTR (Motor)",
       signals: [
-        { key:"e_mtr_fbk",  label:"Motor Feedback",  bus:"low", id:"0x206", hz:50,  dlc:4, data:()=>[0,0,0,0],                    summary:()=>`0 mm/s, gear N, no faults` },
-        { key:"e_mtr_thr",  label:"Throttle Status", bus:"low", id:"0x120", hz:100, dlc:2, data:()=>[0,0],                        summary:()=>`0 mm/s` },
+        { key:"e_mtr_fbk",  label:"Motor Feedback",  bus:"low", id:"0x206", hz:50,  dlc:4,
+          data:()=>[...i16be(simSpeed),simGear,0], summary:()=>`${simSpeed} mm/s, gear ${["N","D","S","R"][simGear]??"?"}` },
+        { key:"e_mtr_thr",  label:"Throttle Status", bus:"low", id:"0x120", hz:100, dlc:2,
+          data:()=>i16be(simSpeed), summary:()=>`${simSpeed} mm/s` },
       ]
     },
     {
       id: "ses", name: "SES (Steering EPS-C)",
       signals: [
         { key:"e_ses_status", label:"SES Status",  bus:"low", id:"0x201", hz:100, dlc:8,
-          data:()=>[0x01,0,0,0,0,0, (counter("ses_roll")<<4)|0x01, 0xFF],
-          summary:()=>`angle=0°, aligned, roll=${counters["ses_roll"]??0}` },
-        { key:"e_ses_err",    label:"SES Errors",  bus:"low", id:"0x202", hz:10,  dlc:8, data:()=>[0,0,0,0,0,0,0,0],  summary:()=>`no faults` },
+          data:()=>[0x01,0,...i16le(simSteerAngle),0,0,0,(counter("ses_roll")<<4)|0x01,0xFF],
+          summary:()=>`angle=${(simSteerAngle/10).toFixed(1)}°, roll=${counters["ses_roll"]??0}` },
+        { key:"e_ses_err",    label:"SES Errors",  bus:"low", id:"0x202", hz:10,  dlc:8,
+          data:()=>[0,0,0,0,0,0,0,0], summary:()=>`no faults` },
       ]
     },
     {
       id: "seb", name: "SEB (Brake-by-Wire)",
       signals: [
         { key:"e_seb_status", label:"SEB Status",  bus:"low", id:"0x721", hz:100, dlc:8,
-          data:()=>[0x03,0,0x58,0x02,0,0, (counter("seb_roll")<<4)|0x01, 0xFF],
-          summary:()=>`stroke=600, aligned, roll=${counters["seb_roll"]??0}` },
-        { key:"e_seb_err",    label:"SEB Errors",  bus:"low", id:"0x731", hz:10,  dlc:8, data:()=>[0,0,0,0,0,0,0,0],  summary:()=>`no faults` },
+          data:()=>[0x03,0,...i16le(600),0,0,0,(counter("seb_roll")<<4)|0x01,0xFF],
+          summary:()=>`stroke=600, roll=${counters["seb_roll"]??0}` },
+        { key:"e_seb_err",    label:"SEB Errors",  bus:"low", id:"0x731", hz:10,  dlc:8,
+          data:()=>[0,0,0,0,0,0,0,0], summary:()=>`no faults` },
       ]
     },
   ];
+
+  // ── Frame ingestion — respond to incoming CAN commands ──
+  import { frames } from "../stores/can";
+  let lastIngestTs = 0;
+  frames.subscribe(($frames) => {
+    if ($frames.length === 0) return;
+    const latest = $frames[$frames.length - 1];
+    if (latest.ts <= lastIngestTs) return;
+    lastIngestTs = latest.ts;
+
+    // Respond to drive commands: update simulated speed
+    if (latest.id === "0x300" && latest.decoded) {
+      const d = latest.decoded as Record<string, unknown>;
+      const targetSpeed = (d.speed_mmps as number) ?? 0;
+      const gear = (d.gear as number) ?? 0;
+      // Smooth approach to target speed
+      simSpeed = simSpeed + (targetSpeed - simSpeed) * 0.3;
+      simGear = gear;
+      if (targetSpeed !== 0) simBrakeKpa = 0;
+    }
+    // Respond to brake commands
+    if (latest.id === "0x301" && latest.decoded) {
+      const d = latest.decoded as Record<string, unknown>;
+      simBrakeKpa = (d.brake_pressure_kpa as number) ?? 0;
+      if (simBrakeKpa > 0) simSpeed = simSpeed * 0.5; // brake halves speed
+    }
+    // Respond to steering commands
+    if (latest.id === "0x169" && latest.decoded) {
+      const d = latest.decoded as Record<string, unknown>;
+      const targetAngle = (d.target_angle as number) ?? 0;
+      simSteerAngle = simSteerAngle + (targetAngle - simSteerAngle) * 0.5;
+    }
+    // ESTOP
+    if (latest.id === "0x001") {
+      simEstopActive = true;
+      simSpeed = 0;
+      simBrakeKpa = 5000;
+    }
+    // Mode changes
+    if (latest.id === "0x110" && latest.decoded) {
+      const d = latest.decoded as Record<string, unknown>;
+      const newMode = (d.mode as number) ?? 0;
+      if (newMode <= 1) simMode = newMode;
+      if (newMode === 2) simEstopActive = true;
+      if (simMode !== 2) simEstopActive = false;
+    }
+  });
 
   // ── Interval-based sending (dynamic data) ──
   let timers: Record<string, ReturnType<typeof setInterval>> = {};
