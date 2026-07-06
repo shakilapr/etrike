@@ -192,3 +192,11 @@ export function setMode(config: WorkModeConfig): Promise<{ ok: boolean; mode: st
 export function getModeDefaults(): Promise<Record<string, WorkModeConfig>> {
   return request("/api/mode/defaults");
 }
+
+export function simControllerInput(state: { speed_mmps: number; yaw_mrad_s: number; gear: number; brake_kpa: number }): Promise<{ ok: boolean }> {
+  return request("/api/sim/controller", { method: "POST", body: JSON.stringify(state) });
+}
+
+export function getSimState(): Promise<{ running: boolean; activeEcus: string[]; physics: { speedMmps: number; steerAngleDeg: number; brakeKpa: number } }> {
+  return request("/api/sim/state");
+}
