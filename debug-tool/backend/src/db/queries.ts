@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { SQLITE_SCHEMA } from "./schema";
 import type { Bus, CanFrame, CanStats } from "../types/can";
 import { defaultStats, normalizeBus, normalizeStats } from "../types/can";
+import type { FrameRouter, FrameSource } from "../sim/router";
 
 export interface StoredCanFrame extends CanFrame {
   row_id: number;
@@ -61,6 +62,8 @@ interface InjectionRow {
 export class DebugStore {
   private readonly db: Database.Database;
   private walTimer: ReturnType<typeof setInterval> | null = null;
+  /** Optional FrameRouter — when set, all insertFrame calls route through it. */
+  router: { resolve(frame: CanFrame, source: FrameSource): CanFrame | null } | null = null;
 
   constructor(dbPath: string, private readonly maxFrames = 50000) {
     const filename = dbPath === ":memory:" ? dbPath : resolve(dbPath);
@@ -75,7 +78,18 @@ export class DebugStore {
     }, 30000).unref();
   }
 
-  insertFrame(frame: CanFrame): StoredCanFrame {
+  /**
+   * Insert a CAN frame. If a FrameRouter is set, the frame is routed
+   * through it — if the router rejects (collision), the frame is dropped.
+   * Physical frames use source="physical", emulated use "emulated".
+   */
+  insertFrame(frame: CanFrame, source: FrameSource = "physical"): StoredCanFrame {
+    // Route through FrameRouter if available
+    if (this.router) {
+      const accepted = this.router.resolve(frame, source);
+      if (!accepted) return { ...frame, row_id: -1, ts_real: Date.now() / 1000, ts_device: Math.round(frame.ts) };
+      frame = accepted;
+    }
     const tsReal = Date.now() / 1000;
     const tsDevice = Math.round(frame.ts);
     try {

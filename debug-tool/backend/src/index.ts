@@ -51,16 +51,9 @@ async function main(): Promise<void> {
   const router = new FrameRouter();
   (app as any).__router = router;
 
-  // Central routing helper — all frame sources call this instead of
-  // store.insertFrame + hub.broadcast directly.
-  function routeFrame(frame: CanFrame, source: FrameSource): void {
-    const accepted = router.resolve(frame, source);
-    if (accepted) {
-      store.insertFrame(accepted);
-      hub.broadcast({ type: "can_frame", payload: accepted });
-    }
-  }
-  (app as any).__routeFrame = routeFrame;
+  // Wire router into the store — all insertFrame() calls from any source
+  // (bridges, sim routes, etc.) automatically pass through the FrameRouter.
+  store.router = router;
 
   registerSimRoutes(app, store);
   registerCanRoutes(app, store);
