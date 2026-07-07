@@ -15,7 +15,6 @@ No active P1 bugs currently tracked here.
 
 ## P2 — Cosmetic / Edge Cases
 
-- **BUG-36:** Controller `tick()` reads `heldNow` via Svelte reactive assignment (stale closure edge case).
 - **BUG-54:** `Topbar.svelte` reports the USB port state as "open" when disconnected instead of "closed" or "offline".
 - **BUG-55:** `Dashboard.svelte` hardcodes the obsolete `"EPS-C"` string for steering instead of the updated `"SES"`.
 

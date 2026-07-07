@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { get } from "svelte/store";
   import { sendFrame, simControllerInput } from "../lib/api";
   import type { Bus } from "../lib/can-decoder";
   import { BUSES, encodePayload } from "../lib/can-decoder";
@@ -52,8 +53,7 @@
   $: yawLabel = selectedBus === "high" ? "Yaw rate" : "Steer";
   $: yawUnit = selectedBus === "high" ? "mrad/s" : "deci°";
   $: yawDisplay = selectedBus === "high" ? yaw : (yaw / 10).toFixed(1);
-  $: heldNow = $heldKeys;
-  $: heldList = [...heldNow].join("+") || "—";
+  $: heldList = [...$heldKeys].join("+") || "—";
   $: hostSimulated = $workMode.simulatedEcus.includes("host");
 
   // ═══════════════════════════════════════════════════════════════
@@ -61,7 +61,7 @@
   // ═══════════════════════════════════════════════════════════════
 
   function tick() {
-    const keys = heldNow; // reactive — stays fresh via Svelte subscription
+    const keys = get(heldKeys);
 
     // Drive: W=forward, S=reverse, neither=neutral
     if (keys.has("w")) {
