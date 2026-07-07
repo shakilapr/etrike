@@ -10,6 +10,7 @@
   import Stats from "./components/Stats.svelte";
   import Terminal from "./components/Terminal.svelte";
   import Topbar from "./components/Topbar.svelte";
+  import TrikeViz from "./components/TrikeViz.svelte";
   import UnitTest from "./components/UnitTest.svelte";
   import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
@@ -22,6 +23,7 @@
   type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "emulator";
 
   let activeTab: Tab = "dashboard";
+  let sidebarOpen = false;
   let ids: CanMessageDef[] = [];
   let templates: InjectionTemplate[] = [];
   let loadError = "";
@@ -273,5 +275,13 @@
     <div style="display: {activeTab === 'emulator' ? 'block' : 'none'}"><Emulator /></div>
     <div style="display: {activeTab === 'stats' ? 'block' : 'none'}"><Stats {ids} /></div>
   </main>
+
+  <!-- Trike physics sidebar -->
+  <button class="trike-sidebar-toggle" class:open={sidebarOpen} on:click={() => sidebarOpen = !sidebarOpen} title="Physics View">
+    {sidebarOpen ? "▶" : "◀"}
+  </button>
+  <aside class="trike-sidebar" class:open={sidebarOpen}>
+    <TrikeViz />
+  </aside>
 
 </div>
