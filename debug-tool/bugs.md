@@ -33,22 +33,6 @@ No active P0 bugs currently tracked here.
 
 **Fix direction:** 1. Install and configure Playwright to run end-to-end tests covering critical UI workflows (like the Controller). 2. Configure Vitest in `ui/package.json` for component-level tests. 3. Enforce a strict CI pipeline that blocks merges if `npm run test` fails.
 
-### BUG-67: Severe UI Lags & CPU Thrashing from Unbatched WebSocket Frames
-
-**Severity:** P1 (Performance)  
-**Files:** `backend/src/ws/stream.ts`, `ui/src/stores/can.ts`, `ui/src/components/CanMonitor.svelte`
-
-**Symptom:** When running in Full Simulation mode (or connected to a busy live bus), the UI severely lags, drops frames, and causes high CPU usage. Inputs (like the Controller or dropdowns) become unresponsive.
-
-**Root cause:** The backend `StreamHub` forwards every single CAN frame individually over the WebSocket (up to 500+ times per second). In the frontend, `ingestMessage` processes each frame immediately by slicing the `frames` array (1000 items) and updating Svelte stores. This triggers Svelte's reactivity engine 500 times per second, causing massive cascading recalculations:
-1. `telemetry.ts` recalculates its derived object from 20 different ECUs continuously.
-2. `CanMonitor.svelte` re-runs `filteredFrames`, executing `.filter()` and string conversions across 1000 elements over and over.
-3. DOM nodes are thrashed excessively since there is no virtualization or debouncing.
-
-**Fix direction:** 
-1. **Backend Batching:** Have `stream.ts` accumulate CAN frames into a buffer and broadcast them as a single `{ type: "can_frames_batch", payload: [...] }` array at ~30Hz (every 33ms).
-2. **Frontend Throttling:** Update `ui/src/stores/can.ts` to process batched frames efficiently without spreading arrays per frame, and debounce expensive `.filter()` searches or use windowed rendering for `CanMonitor`.
-
 ### BUG-69: ECUs Rapidly Toggle On/Off Due to Tick-Based Simulation Timing and Event Loop Lag
 
 **Severity:** P1 (Wrong Behavior / Timing)  
