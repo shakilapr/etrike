@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { sendFrame } from "../lib/api";
+  import { sendFrame, simControllerInput } from "../lib/api";
   import type { Bus } from "../lib/can-decoder";
   import { BUSES, encodePayload } from "../lib/can-decoder";
   import { heldKeys, kbBus, kbEvent } from "../stores/keyboard";
+  import { workMode } from "../stores/work-mode";
 
   // ── Tunable targets ──
   const TARGET_SPEED = 2000;       // mm/s  (W = forward, S = reverse)
@@ -53,6 +54,7 @@
   $: yawDisplay = selectedBus === "high" ? yaw : (yaw / 10).toFixed(1);
   $: heldNow = $heldKeys;
   $: heldList = [...heldNow].join("+") || "—";
+  $: hostSimulated = $workMode.simulatedEcus.includes("host");
 
   // ═══════════════════════════════════════════════════════════════
   // Game loop — poll heldKeys, derive control state, send CAN
@@ -87,10 +89,13 @@
       speed = 0;
     }
 
-    // Encode & send
-    sendDriveFrame();
-    if (selectedBus === "low") sendSteerFrame();
-    if (brake > 0) sendBrakeFrame();
+    if (hostSimulated) {
+      sendSimControllerState();
+    } else {
+      sendDriveFrame();
+      if (selectedBus === "low") sendSteerFrame();
+      if (brake > 0) sendBrakeFrame();
+    }
 
     frameCount++;
   }
@@ -112,6 +117,19 @@
   function sendBrakeFrame() {
     const enc = encodePayload(selectedBus, brakeId, { brake_pressure_kpa: brake });
     sendFrame({ bus: selectedBus, id: brakeId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+  }
+
+  function simYawMradS(): number {
+    return selectedBus === "high" ? yaw : Math.round((yaw / TARGET_YAW_LOW) * TARGET_YAW_HIGH);
+  }
+
+  function sendSimControllerState() {
+    simControllerInput({
+      speed_mmps: speed,
+      yaw_mrad_s: simYawMradS(),
+      gear,
+      brake_kpa: brake
+    }).catch((e: unknown) => { error = `Sim controller update failed: ${String(e)}`; });
   }
 
   async function sendEstopFrame(bus: Bus) {
@@ -147,6 +165,12 @@
   }
 
   function sendZeroFrames() {
+    if (hostSimulated) {
+      simControllerInput({ speed_mmps: 0, yaw_mrad_s: 0, gear: 1, brake_kpa: 0 })
+        .catch((e: unknown) => { error = `Sim controller update failed: ${String(e)}`; });
+      return;
+    }
+
     // Publish zero-speed to bring vehicle to neutral
     if (selectedBus === "high") {
       const highEnc = encodePayload("high", "0x300", { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 });
