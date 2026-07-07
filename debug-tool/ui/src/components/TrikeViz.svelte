@@ -29,6 +29,9 @@
     ctx = canvas.getContext("2d")!;
     resize();
     window.addEventListener("resize", resize);
+    // Also observe parent for sidebar open/close transitions
+    const observer = new ResizeObserver(() => resize());
+    if (canvas.parentElement) observer.observe(canvas.parentElement);
 
     unsub = latestById.subscribe(($latest) => {
       // Extract speed: prefer 0x120 throttle, fall back to 0x206 motor feedback
@@ -72,9 +75,12 @@
     animId = requestAnimationFrame(loop);
   });
 
+  let observer: ResizeObserver;
+
   onDestroy(() => {
     cancelAnimationFrame(animId);
     window.removeEventListener("resize", resize);
+    observer?.disconnect();
     unsub?.();
   });
 
@@ -196,7 +202,7 @@
   }
 </script>
 
-<div class="trike-viz" bind:clientWidth bind:clientHeight>
+<div class="trike-viz">
   <canvas bind:this={canvas}></canvas>
 </div>
 
