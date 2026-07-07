@@ -1,12 +1,12 @@
 <script lang="ts">
   import { commandAcks } from "../stores/can";
+  import { injectorBus } from "../stores/injector";
   import { sendFrame, startPeriodic, stopPeriodic } from "../lib/api";
   import type { Bus, CanField, CanMessageDef, InjectionTemplate } from "../lib/can-decoder";
   import { BUSES, encodePayload, formatBytes } from "../lib/can-decoder";
   export let ids: CanMessageDef[] = [];
   export let templates: InjectionTemplate[] = [];
 
-  let selectedBus: Bus = "high";
   let selectedId = "0x300";
   let values: Record<string, number | boolean> = {
     speed_mmps: 2000,
@@ -19,13 +19,14 @@
   let error = "";
   let pending = false;
 
+  $: selectedBus = $injectorBus;
   $: busIds = ids.filter((item) => item.bus === selectedBus);
   $: injectableIds = busIds.filter((item) => item.injectable);
   $: selected = injectableIds.find((item) => item.id === selectedId) ?? injectableIds[0];
   $: encoded = selected ? encodePayload(selectedBus, selected.id, values) : { dlc: 0, data: [] };
 
   function chooseBus(bus: Bus) {
-    selectedBus = bus;
+    injectorBus.set(bus);
     const first = ids.find((item) => item.bus === bus && item.injectable);
     if (first) chooseId(first.id);
   }
@@ -38,7 +39,7 @@
   }
 
   function applyTemplate(template: InjectionTemplate) {
-    selectedBus = template.bus;
+    injectorBus.set(template.bus);
     selectedId = template.id;
     values = { ...template.values };
     confirmEstop = false;

@@ -11,16 +11,7 @@ No active P0 bugs currently tracked here.
 
 ## P1 — Wrong Behavior
 
-### BUG-66: Missing UI/E2E Testing Infrastructure (Blind Spots)
-
-**Severity:** P1 (Infrastructure / QA)  
-**Files:** `ui/package.json`, `.github/workflows/` (or equivalent CI config)
-
-**Symptom:** Critical integration bugs (like BUG-65) and UI layout bugs (like BUG-64) easily slip into the codebase without failing any checks, and existing backend tests (like those for BUG-63) can be bypassed if not strictly enforced.
-
-**Root cause:** The frontend `debug-tool/ui` has no testing framework configured (no Vitest for unit tests, no Playwright for E2E tests). There is no automated way to simulate user interactions or verify UI-to-Backend API contracts. Furthermore, backend test failures are not aggressively gating commits (CI enforcement gap).
-
-**Fix direction:** 1. Install and configure Playwright to run end-to-end tests covering critical UI workflows (like the Controller). 2. Configure Vitest in `ui/package.json` for component-level tests. 3. Enforce a strict CI pipeline that blocks merges if `npm run test` fails.
+No active P1 bugs currently tracked here.
 
 ## P2 — Cosmetic / Edge Cases
 

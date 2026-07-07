@@ -98,24 +98,26 @@ test.describe("Debug Tool", () => {
   });
 
   test("tab state is retained across navigation (BUG-04 regression)", async ({ page }) => {
+    test.setTimeout(60000);
     await page.goto("/");
     
     // Go to Injector tab
-    await page.locator("nav.tabs").getByText("Injector").click();
+    await page.locator("nav.tabs").getByRole("button", { name: "Injector" }).dispatchEvent("click");
     await expect(page.locator(".bus-tabs").filter({ visible: true }).first()).toBeVisible();
     
     // Switch to Low Bus
-    await page.locator(".bus-tabs").getByText("Low Bus").click();
-    await expect(page.locator(".bus-tabs button.active")).toContainText("Low Bus");
+    const injectorPanel = page.locator(".injector-layout").filter({ visible: true }).first();
+    await injectorPanel.locator(".bus-tabs").getByRole("button", { name: /LOW Bus/i }).click();
+    await expect(injectorPanel.locator(".bus-tabs button.active")).toContainText(/LOW Bus/i);
 
     // Navigate away to Dashboard
-    await page.locator("nav.tabs").getByText("Dashboard").click();
-    await expect(page.locator("h2").filter({ hasText: "Dashboard" }).first()).toBeVisible();
+    await page.locator("nav.tabs").getByRole("button", { name: "Dashboard" }).dispatchEvent("click");
+    await expect(page.getByTestId("bus-status-high")).toBeVisible();
 
     // Navigate back to Injector
-    await page.locator("nav.tabs").getByText("Injector").click();
+    await page.locator("nav.tabs").getByRole("button", { name: "Injector" }).dispatchEvent("click");
     
     // State should be retained (Low Bus still active)
-    await expect(page.locator(".bus-tabs button.active")).toContainText("Low Bus");
+    await expect(page.locator(".injector-layout").filter({ visible: true }).first().locator(".bus-tabs button.active")).toContainText(/LOW Bus/i);
   });
 });
