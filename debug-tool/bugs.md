@@ -39,19 +39,6 @@ No active P0 bugs currently tracked here.
 
 - **GAP-02:** Improved Trike Kinematic Model has been saved to `c:\projects\etrike\tem\improved_trike_kinematic.md` so that it faces upward by default. It can be integrated into the main `TrikeViz.svelte` UI in a future iteration.
 
-### BUG-64: Topbar Brand Title Shrinks and Wraps on Mode Selection
-
-**Severity:** P2 (Cosmetic / UI Layout)  
-**Files:** `ui/src/components/Topbar.svelte:174-175`, `ui/src/styles.css:426-429`
-
-**Symptom:** When a user clicks the Work Mode dropdown in the Topbar and selects an option with a longer character count (such as "Full Simulation" or "Monitor Only"), the main "E-Trike" brand title shrinks, and the text is forced to either wrap to a new line or get horizontally squished.
-
-**Root cause:** The `.tb-brand` container in `styles.css` is defined as a Flexbox (`display: flex`) and prevents the entire container from shrinking via `flex-shrink: 0`. However, the children inside this container (the `<span>` containing the "E-Trike" text and the `<select>` element) use the browser's default `flex-shrink: 1`. When the dropdown is populated with a longer string, its intrinsic width increases. Because there is limited horizontal space in the `.tb-row-main` flex container, the Flexbox layout algorithm compensates by forcibly shrinking the adjacent `<span>`.
-
-**Fix direction:** Add `white-space: nowrap;` and `flex-shrink: 0;` to the CSS rules for the `<span>` inside `.tb-brand`. This forces the title to retain its intrinsic text width and pushes any overflow constraints to be handled gracefully by the overall layout (or truncating the dropdown instead).
-
----
-
 ## Feature Gaps / Missing Telemetry
 
 ### GAP-01: Controller UI lacks Actual Feedback and Odometer
