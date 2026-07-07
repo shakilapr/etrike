@@ -14,6 +14,7 @@ export class CanalystBridge implements HardwareBridge {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private busDetector = new BusDetector();
   private frameCallbacks: Array<(frame: CanFrame) => void> = [];
+  private reconnectSuppressed = false;
 
   constructor(
     private readonly config: AppConfig,
@@ -40,6 +41,9 @@ export class CanalystBridge implements HardwareBridge {
   }
 
   start(): void {
+    this.reconnectSuppressed = false;
+    if (this.process || this.state.link_open) return;
+
     const scriptPath = resolve(__dirname, "../../canalystii_bridge.py");
     if (!existsSync(scriptPath)) {
       this.state.last_error = `CANalyst-II bridge script not found: ${scriptPath}`;
@@ -86,7 +90,8 @@ export class CanalystBridge implements HardwareBridge {
   /** Closes the bridge and abandons reconnect — used when falling back to another transport. */
   async abandon(): Promise<void> {
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-    this.reconnectAttempt = CanalystBridge.MAX_RECONNECT_ATTEMPTS; // block future reconnects
+    this.reconnectSuppressed = true;
+    this.reconnectAttempt = 0;
     await this.close();
   }
 
@@ -103,14 +108,15 @@ export class CanalystBridge implements HardwareBridge {
       },
       stdio: ["pipe", "pipe", "pipe"]
     });
+    const child = this.process;
 
     this.state.link_open = true;
     this.state.last_error = null;
     this.reconnectAttempt = 0;
     this.broadcastStatus();
 
-    createInterface({ input: this.process.stdout }).on("line", (line) => this.handleLine(line));
-    createInterface({ input: this.process.stderr }).on("line", (line) => {
+    createInterface({ input: child.stdout }).on("line", (line) => this.handleLine(line));
+    createInterface({ input: child.stderr }).on("line", (line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
       if (trimmed.startsWith("[INFO]") || trimmed.startsWith("[WARN]") || trimmed.startsWith("DEBUG:")) return;
@@ -118,18 +124,19 @@ export class CanalystBridge implements HardwareBridge {
       this.hub.broadcast({ type: "status", payload: { bridge: { ...this.state }, warning: "canalystii stderr", error: trimmed } });
     });
 
-    this.process.on("error", (error) => {
+    child.on("error", (error) => {
       this.state.connected = false;
       this.state.link_open = false;
       this.state.last_error = error.message;
       this.broadcastStatus();
     });
-    this.process.on("exit", (code, signal) => {
+    child.on("exit", (code, signal) => {
+      if (this.process === child) this.process = null;
       this.state.connected = false;
       this.state.link_open = false;
       this.state.last_error = code === 0 ? null : `CANalyst-II bridge exited code=${code ?? "null"} signal=${signal ?? "null"}`;
       this.broadcastStatus();
-      if (code !== 0) this.scheduleReconnect();
+      if (code !== 0 && !this.reconnectSuppressed) this.scheduleReconnect();
     });
   }
 
