@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig, loadEnv } from "vite";
 
@@ -19,6 +20,9 @@ export default defineConfig(({ mode }) => {
           ws: true
         }
       }
+    },
+    test: {
+      environment: "jsdom"
     }
   };
 });

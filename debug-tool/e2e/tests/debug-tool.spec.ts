@@ -96,4 +96,26 @@ test.describe("Debug Tool", () => {
     );
     expect(bodyWidth).toBeLessThanOrEqual(820); // tolerate small scrollbar
   });
+
+  test("tab state is retained across navigation (BUG-04 regression)", async ({ page }) => {
+    await page.goto("/");
+    
+    // Go to Injector tab
+    await page.locator("nav.tabs").getByText("Injector").click();
+    await expect(page.locator(".bus-tabs").filter({ visible: true }).first()).toBeVisible();
+    
+    // Switch to Low Bus
+    await page.locator(".bus-tabs").getByText("Low Bus").click();
+    await expect(page.locator(".bus-tabs button.active")).toContainText("Low Bus");
+
+    // Navigate away to Dashboard
+    await page.locator("nav.tabs").getByText("Dashboard").click();
+    await expect(page.locator("h2").filter({ hasText: "Dashboard" }).first()).toBeVisible();
+
+    // Navigate back to Injector
+    await page.locator("nav.tabs").getByText("Injector").click();
+    
+    // State should be retained (Low Bus still active)
+    await expect(page.locator(".bus-tabs button.active")).toContainText("Low Bus");
+  });
 });

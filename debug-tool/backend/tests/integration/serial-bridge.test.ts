@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { MockParser, MockSerialPort } from "../helpers/fake-serial";
 
-// Mock serialport BEFORE importing SerialBridge
 vi.mock("serialport", () => {
   return {
     SerialPort: MockSerialPort,
@@ -41,50 +40,61 @@ describe("SerialBridge", () => {
     const broadcastSpy = vi.spyOn(hub, "broadcast");
     bridge.start();
     
-    // Fast-forward to port opening
-    await vi.runAllTimersAsync();
+    // Fast-forward to port opening (our mock is sync, but we'll advance anyway)
+    await vi.advanceTimersByTimeAsync(10);
     expect(bridge.state.port_open).toBe(true);
 
-    // Get internal port instance
     const port = (bridge as any).port as MockSerialPort;
     
     // Simulate close
     port.close();
-    await vi.runAllTimersAsync();
+    
+    // Backoff is 1000ms for first attempt
+    await vi.advanceTimersByTimeAsync(1100);
     expect(bridge.state.port_open).toBe(true); // Should have re-opened!
     
-    // The delay should have been 1000ms for first attempt
     expect(broadcastSpy).toHaveBeenCalled();
   });
 
   it("caps backoff and switches to 30s polling when attempts exhausted", async () => {
+    // Initial start
     bridge.start();
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10);
     
-    const port = (bridge as any).port as MockSerialPort;
+    const originalOpen = MockSerialPort.prototype.open;
+    MockSerialPort.prototype.open = function(cb?: (err?: Error) => void) {
+        this.isOpen = false;
+        if (cb) cb(new Error("Simulated failure"));
+    };
     
-    // Simulate failing opens to exhaust attempts (MAX_RECONNECT_ATTEMPTS = 10)
-    for (let i = 0; i < 11; i++) {
-        port.emit("error", new Error("Simulated failure"));
-        // Move timer forward just enough for the next backoff
-        await vi.runOnlyPendingTimersAsync(); 
+    try {
+        const currentPort = (bridge as any).port as MockSerialPort;
+        currentPort.emit("error", new Error("Initial failure"));
+        
+        // Just advance time continuously in 1s increments until it hits the exhausted state
+        // It takes at most 10 attempts, with max delay 30s, so 300s is way more than enough.
+        for (let i = 0; i < 300; i++) {
+            await vi.advanceTimersByTimeAsync(1000);
+            if (bridge.state.last_error?.includes("exhausted")) {
+                break;
+            }
+        }
+        
+        expect(bridge.state.last_error).toContain("exhausted");
+    } finally {
+        MockSerialPort.prototype.open = originalOpen;
     }
-    
-    expect(bridge.state.last_error).toContain("exhausted");
   });
 
   it("processes stats frames and broadcasts via StreamHub", async () => {
     bridge.start();
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10);
     
     const port = (bridge as any).port as MockSerialPort;
     const broadcastSpy = vi.spyOn(hub, "broadcast");
     
-    // Pipe the parser so we can emit data
-    const parser = new MockParser();
-    port.pipe(parser);
-    
-    parser.emit("data", JSON.stringify({
+    // Emit directly on port so pipe forwards it to parser
+    port.emit("data", JSON.stringify({
       type: "stats",
       ts: 1000,
       uptime_s: 10,
@@ -99,15 +109,12 @@ describe("SerialBridge", () => {
 
   it("processes CAN frames, inserts to DB, broadcasts via StreamHub", async () => {
     bridge.start();
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10);
     
     const port = (bridge as any).port as MockSerialPort;
     const broadcastSpy = vi.spyOn(hub, "broadcast");
     
-    const parser = new MockParser();
-    port.pipe(parser);
-    
-    parser.emit("data", JSON.stringify({
+    port.emit("data", JSON.stringify({
       id: "0x300",
       bus: "high",
       dlc: 8,
@@ -125,22 +132,19 @@ describe("SerialBridge", () => {
 
   it("debounces WS status floods on bus detection flip-flop (BUG-23 regression)", async () => {
     bridge.start();
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10);
     
     const port = (bridge as any).port as MockSerialPort;
     const broadcastSpy = vi.spyOn(hub, "broadcast");
     broadcastSpy.mockClear();
     
-    const parser = new MockParser();
-    port.pipe(parser);
-    
     // High unique ID
-    parser.emit("data", JSON.stringify({ id: "0x300", data: [0,0,0,0,0,0,0,0] }));
-    parser.emit("data", JSON.stringify({ id: "0x300", data: [0,0,0,0,0,0,0,0] }));
-    parser.emit("data", JSON.stringify({ id: "0x300", data: [0,0,0,0,0,0,0,0] })); // Locks to high, should broadcast
+    port.emit("data", JSON.stringify({ id: "0x300", data: [0,0,0,0,0,0,0,0] }));
+    port.emit("data", JSON.stringify({ id: "0x300", data: [0,0,0,0,0,0,0,0] }));
+    port.emit("data", JSON.stringify({ id: "0x300", data: [0,0,0,0,0,0,0,0] })); // Locks to high, should broadcast
 
     // Low unique ID
-    parser.emit("data", JSON.stringify({ id: "0x201", data: [0,0,0,0,0,0,0,0] })); // Still locked to high, confidence 'none'
+    port.emit("data", JSON.stringify({ id: "0x201", data: [0,0,0,0,0,0,0,0] })); // Still locked to high, confidence 'none'
 
     // The status should only be broadcast once when it transitions to 'high' confidence
     const statusBroadcasts = broadcastSpy.mock.calls.filter(args => args[0].type === "status");
