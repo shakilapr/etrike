@@ -281,7 +281,7 @@
     {sidebarOpen ? "▶" : "◀"}
   </button>
   <aside class="trike-sidebar" class:open={sidebarOpen}>
-    <TrikeViz />
+    <TrikeViz visible={sidebarOpen} />
   </aside>
 
 </div>
