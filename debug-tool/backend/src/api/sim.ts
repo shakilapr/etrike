@@ -11,6 +11,11 @@ const injectSchema = z.object({
   data: z.array(z.number().int().min(0).max(255)),
 });
 
+const periodicStopSchema = z.object({
+  bus: z.enum(["high", "low"]).optional(),
+  id: z.string().min(1).optional()
+});
+
 export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: StreamHub): void {
   // One-shot injection
   app.post("/api/sim/inject", async (request, reply) => {
@@ -55,9 +60,10 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: 
 
   // Periodic stop
   app.post("/api/sim/periodic/stop", async (request, reply) => {
-    const body = (request.body ?? {}) as Record<string, unknown>;
-    const bus = normalizeBus(String(body.bus ?? "high"));
-    const id = normalizeCanId(String(body.id ?? "0x000"));
+    const parsed = periodicStopSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const bus = normalizeBus(parsed.data.bus);
+    const id = normalizeCanId(parsed.data.id ?? "0x000");
     const key = `sim:${bus}:${id}`;
     const timers: Map<string, ReturnType<typeof setInterval>> = (app as any).__simTimers;
     if (timers?.has(key)) { clearInterval(timers.get(key)!); timers.delete(key); }

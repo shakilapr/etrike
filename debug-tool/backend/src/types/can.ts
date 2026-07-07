@@ -220,7 +220,9 @@ export const INJECTION_TEMPLATES: InjectionTemplate[] = [
 ];
 
 export function normalizeBus(input: unknown): Bus {
-  return input === "low" ? "low" : "high";
+  if (input === undefined || input === null || input === "") return "high";
+  if (input === "high" || input === "low") return input;
+  throw new Error(`invalid CAN bus: ${String(input)}`);
 }
 
 export function normalizeCanId(input: string | number): string {

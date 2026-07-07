@@ -435,7 +435,9 @@ export function normalizeCanId(id: string): string {
 }
 
 export function normalizeBus(input: unknown): Bus {
-  return input === "low" ? "low" : "high";
+  if (input === undefined || input === null || input === "") return "high";
+  if (input === "high" || input === "low") return input;
+  throw new Error(`invalid CAN bus: ${String(input)}`);
 }
 
 // ── Internal helpers ──
