@@ -248,7 +248,7 @@
   }
 </script>
 
-<div class="app-shell">
+<div class="app-shell" class:sidebar-open={sidebarOpen}>
   <Topbar onReset={resetFrames} onRestart={restartBridgeHandler} onStop={stopBridgeHandler} />
 
   <nav class="tabs" aria-label="Debug views">

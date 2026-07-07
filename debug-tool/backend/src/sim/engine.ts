@@ -23,7 +23,8 @@ export interface SimEngineState {
 export class SimulationEngine {
   readonly bus = new VirtualCanBus();
   private models = new Map<string, EcuModel>();
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private lastTickMs: number = 0;
   private tickMs = 10; // 100 Hz default
   private _state: SimEngineState = {
     running: false, tickMs: 10, activeEcus: [],
@@ -64,13 +65,29 @@ export class SimulationEngine {
     }
 
     this._state.running = true;
-    this.timer = setInterval(() => this.tick(), this.tickMs);
+    this.lastTickMs = Date.now();
+
+    const loop = () => {
+      if (!this._state.running) return;
+      
+      const now = Date.now();
+      let dt = now - this.lastTickMs;
+      if (dt > 1000) dt = 1000; // Cap at 1s to prevent death spiral
+
+      while (dt >= this.tickMs) {
+        this.tick();
+        dt -= this.tickMs;
+        this.lastTickMs += this.tickMs;
+      }
+      this.timer = setTimeout(loop, this.tickMs);
+    };
+    loop();
   }
 
   /** Stop the simulation. */
   async stop(): Promise<void> {
     this._state.running = false;
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     for (const model of this.models.values()) {
       await model.stop();
     }
