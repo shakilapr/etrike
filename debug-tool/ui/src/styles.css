@@ -90,6 +90,11 @@ select {
   margin: 0 auto;
   padding: 24px;
   position: relative;
+  transition: padding-right 0.3s ease;
+}
+
+.app-shell.sidebar-open {
+  padding-right: 340px;
 }
 
 /* Trike physics sidebar */
@@ -444,6 +449,7 @@ h2 { font-size: 1rem; }
 .tb-brand {
   align-items: center; color: var(--fg); display: flex; flex-shrink: 0;
   font-size: 1.05rem; font-weight: 800; gap: 12px; letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* Health bar */

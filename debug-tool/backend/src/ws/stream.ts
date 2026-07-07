@@ -4,6 +4,7 @@ import type { Bus, CanFrame, CanStats } from "../types/can";
 
 export type StreamEvent =
   | { type: "can_frame"; payload: CanFrame }
+  | { type: "can_frames_batch"; payload: CanFrame[] }
   | { type: "stats"; payload: CanStats }
   | { type: "cmd_ack"; payload: object }
   | { type: "status"; payload: object }
@@ -29,6 +30,8 @@ export class StreamHub {
   private clients = new Set<ClientState>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private staleTimer: ReturnType<typeof setInterval> | null = null;
+  private batchTimer: ReturnType<typeof setInterval> | null = null;
+  private frameBuffer: CanFrame[] = [];
 
   registerRoutes(app: FastifyInstance): void {
     app.get("/ws", { websocket: true }, (socket) => {
@@ -78,11 +81,39 @@ export class StreamHub {
         }
       }
     }, 60000);
+
+    // Batch flush timer: ~30Hz
+    this.batchTimer = setInterval(() => this.flushFrames(), 33);
+  }
+
+  private flushFrames(): void {
+    if (this.frameBuffer.length === 0) return;
+    const batch = this.frameBuffer;
+    this.frameBuffer = [];
+
+    const snapshot = [...this.clients];
+    for (const client of snapshot) {
+      if (client.socket.readyState !== OPEN) continue;
+
+      const filtered = batch.filter((f) => {
+        if (client.buses && !client.buses.has(f.bus)) return false;
+        if (client.ids && !client.ids.has(String(f.id))) return false;
+        return true;
+      });
+
+      if (filtered.length > 0) {
+        client.socket.send(JSON.stringify({ type: "can_frames_batch", payload: filtered }));
+      }
+    }
   }
 
   broadcast(event: StreamEvent): void {
+    if (event.type === "can_frame") {
+      this.frameBuffer.push(event.payload);
+      return;
+    }
+
     const encoded = JSON.stringify(event);
-    // Snapshot to avoid mutation during iteration (client may disconnect mid-loop)
     const snapshot = [...this.clients];
 
     for (const client of snapshot) {
@@ -90,12 +121,6 @@ export class StreamHub {
         this.clients.delete(client);
         continue;
       }
-
-      if (event.type === "can_frame") {
-        if (client.buses && !client.buses.has(event.payload.bus)) continue;
-        if (client.ids && !client.ids.has(String(event.payload.id))) continue;
-      }
-
       client.socket.send(encoded);
     }
   }
@@ -103,6 +128,7 @@ export class StreamHub {
   close(): void {
     if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
     if (this.staleTimer) { clearInterval(this.staleTimer); this.staleTimer = null; }
+    if (this.batchTimer) { clearInterval(this.batchTimer); this.batchTimer = null; }
     for (const client of this.clients) {
       try { client.socket.close?.(); } catch { /* ignore */ }
     }

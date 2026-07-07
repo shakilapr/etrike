@@ -58,8 +58,21 @@ export function ingestInitialFrames(input: CanFrame[]): void {
 export function ingestMessage(message: { type: string; payload: unknown }): void {
   if (message.type === "can_frame") {
     const frame = message.payload as CanFrame;
+    if (!frame) return;
     frameStore.update((current) => [...current, frame].slice(-1000));
-    if (frame) latestById.update((current) => ({ ...current, [`${frame.bus}:${frame.id}`]: frame }));
+    latestById.update((current) => ({ ...current, [`${frame.bus}:${frame.id}`]: frame }));
+  } else if (message.type === "can_frames_batch") {
+    const batch = message.payload as CanFrame[];
+    if (batch.length === 0) return;
+    
+    frameStore.update((current) => [...current, ...batch].slice(-1000));
+    latestById.update((current) => {
+      const next = { ...current };
+      for (const f of batch) {
+        if (f) next[`${f.bus}:${f.id}`] = f;
+      }
+      return next;
+    });
   } else if (message.type === "stats") {
     stats.set(message.payload as CanStats);
   } else if (message.type === "status") {

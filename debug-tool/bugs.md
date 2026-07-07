@@ -33,6 +33,38 @@ No active P0 bugs currently tracked here.
 
 **Fix direction:** 1. Install and configure Playwright to run end-to-end tests covering critical UI workflows (like the Controller). 2. Configure Vitest in `ui/package.json` for component-level tests. 3. Enforce a strict CI pipeline that blocks merges if `npm run test` fails.
 
+### BUG-67: Severe UI Lags & CPU Thrashing from Unbatched WebSocket Frames
+
+**Severity:** P1 (Performance)  
+**Files:** `backend/src/ws/stream.ts`, `ui/src/stores/can.ts`, `ui/src/components/CanMonitor.svelte`
+
+**Symptom:** When running in Full Simulation mode (or connected to a busy live bus), the UI severely lags, drops frames, and causes high CPU usage. Inputs (like the Controller or dropdowns) become unresponsive.
+
+**Root cause:** The backend `StreamHub` forwards every single CAN frame individually over the WebSocket (up to 500+ times per second). In the frontend, `ingestMessage` processes each frame immediately by slicing the `frames` array (1000 items) and updating Svelte stores. This triggers Svelte's reactivity engine 500 times per second, causing massive cascading recalculations:
+1. `telemetry.ts` recalculates its derived object from 20 different ECUs continuously.
+2. `CanMonitor.svelte` re-runs `filteredFrames`, executing `.filter()` and string conversions across 1000 elements over and over.
+3. DOM nodes are thrashed excessively since there is no virtualization or debouncing.
+
+**Fix direction:** 
+1. **Backend Batching:** Have `stream.ts` accumulate CAN frames into a buffer and broadcast them as a single `{ type: "can_frames_batch", payload: [...] }` array at ~30Hz (every 33ms).
+2. **Frontend Throttling:** Update `ui/src/stores/can.ts` to process batched frames efficiently without spreading arrays per frame, and debounce expensive `.filter()` searches or use windowed rendering for `CanMonitor`.
+
+### BUG-69: ECUs Rapidly Toggle On/Off Due to Tick-Based Simulation Timing and Event Loop Lag
+
+**Severity:** P1 (Wrong Behavior / Timing)  
+**Files:** `backend/src/sim/engine.ts`, `backend/src/sim/ecus/*.ts`, `ui/src/stores/telemetry.ts`
+
+**Symptom:** In full simulation mode, the ECU presence indicators (RT, SYS, MTR, etc.) rapidly flash between active (green) and offline (grey/red).
+
+**Root cause:** This is a downstream consequence of BUG-67 (WebSocket spam) combined with flawed simulation timing logic. 
+1. The backend `engine.ts` runs a `setTimeout(loop, 10)` to tick the ECU models at 100Hz.
+2. The ECU models (like `rt-model.ts`) use iteration counting (`tickCount % 50 === 0`) instead of elapsed time (`dtMs`) to emit their 2Hz heartbeats.
+3. Because the unbatched WebSocket spam (BUG-67) heavily lags the Node.js event loop, the 10ms `setTimeout` takes much longer to fire (e.g., 60-100ms per tick).
+4. As a result, 50 ticks takes longer than 3 seconds to complete. The UI's `PRESENCE_TIMEOUT_S` (3 seconds) expires before the next heartbeat is emitted, causing the UI to mark the ECU as offline. When the 50th tick finally occurs, the heartbeat is emitted and the ECU turns back on, creating a rapid flickering effect.
+
+**Fix direction:** 
+Update the ECU models in `backend/src/sim/ecus/` to use the elapsed time parameter (`dtMs`) to accumulate timers (e.g., `this.hbTimer += dtMs; if (this.hbTimer >= 500) { ... }`) rather than relying on strict loop iteration counts. Solving BUG-67 will also resolve the underlying event loop lag.
+
 ## P2 — Cosmetic / Edge Cases
 
 - **BUG-05:** Serial port fails silently (UI shows error, just no backend console log).
@@ -45,6 +77,21 @@ No active P0 bugs currently tracked here.
 - **BUG-36:** Controller `tick()` reads `heldNow` via Svelte reactive assignment (stale closure edge case).
 - **BUG-54:** `Topbar.svelte` reports the USB port state as "open" when disconnected instead of "closed" or "offline".
 - **BUG-55:** `Dashboard.svelte` hardcodes the obsolete `"EPS-C"` string for steering instead of the updated `"SES"`.
+
+### BUG-68: Trike Physics Sidebar Overlays Main Content Instead of Shrinking It
+
+**Severity:** P2 (Cosmetic / UI Layout)  
+**Files:** `ui/src/styles.css:104-106`, `ui/src/App.svelte`
+
+**Symptom:** When clicking the "Physics View" (▶) toggle button on the right side of the screen, the TrikeViz sidebar opens but completely overlays (covers up) the right side of the main debug tool content. It does not push or shrink the main UI elements.
+
+**Root cause:** The `.trike-sidebar` CSS class is set to `position: fixed; right: 0;`. Because it uses `fixed` positioning, it is entirely removed from the normal document flow and rendered on top of the `.app-shell` and `main` layout. The main container is unaware of the sidebar's presence and thus retains its full 100vw width, leading to the overlap.
+
+**Fix direction:** Either apply a dynamic `padding-right: 340px;` to the `.app-shell` when the sidebar is open (with a matching transition), or change the layout from `fixed` overlays to a `display: flex` container where the sidebar conditionally takes up `flex-basis: 340px` and forces the main content to shrink.
+
+## Extras / Artifacts
+
+- **GAP-02:** Improved Trike Kinematic Model has been saved to `c:\projects\etrike\tem\improved_trike_kinematic.md` so that it faces upward by default. It can be integrated into the main `TrikeViz.svelte` UI in a future iteration.
 
 ### BUG-64: Topbar Brand Title Shrinks and Wraps on Mode Selection
 
