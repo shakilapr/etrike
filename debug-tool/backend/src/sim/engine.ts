@@ -93,9 +93,10 @@ export class SimulationEngine {
       allFrames.push(...this.bus.drain(bus));
     }
 
-    // Each model ingests all frames (models filter what they care about)
-    // and then ticks to produce output
-    for (const model of this.models.values()) {
+    // Only active ECU models participate in the simulation tick.
+    for (const id of this._state.activeEcus) {
+      const model = this.models.get(id);
+      if (!model) continue;
       for (const frame of allFrames) {
         model.ingest(frame);
       }
