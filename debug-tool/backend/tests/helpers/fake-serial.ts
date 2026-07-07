@@ -21,18 +21,14 @@ export class MockSerialPort extends EventEmitter {
 
   open(cb?: (err?: Error) => void) {
     this.isOpen = true;
-    setTimeout(() => {
-      this.emit("open");
-      if (cb) cb();
-    }, 0);
+    this.emit("open");
+    if (cb) cb();
   }
 
   close(cb?: (err?: Error) => void) {
     this.isOpen = false;
-    setTimeout(() => {
-      this.emit("close");
-      if (cb) cb();
-    }, 0);
+    this.emit("close");
+    if (cb) cb();
   }
 
   write(data: string) {
