@@ -22,22 +22,6 @@ No active P0 bugs currently tracked here.
 
 **Fix direction:** 1. Install and configure Playwright to run end-to-end tests covering critical UI workflows (like the Controller). 2. Configure Vitest in `ui/package.json` for component-level tests. 3. Enforce a strict CI pipeline that blocks merges if `npm run test` fails.
 
-### BUG-69: ECUs Rapidly Toggle On/Off Due to Tick-Based Simulation Timing and Event Loop Lag
-
-**Severity:** P1 (Wrong Behavior / Timing)  
-**Files:** `backend/src/sim/engine.ts`, `backend/src/sim/ecus/*.ts`, `ui/src/stores/telemetry.ts`
-
-**Symptom:** In full simulation mode, the ECU presence indicators (RT, SYS, MTR, etc.) rapidly flash between active (green) and offline (grey/red).
-
-**Root cause:** This is a downstream consequence of BUG-67 (WebSocket spam) combined with flawed simulation timing logic. 
-1. The backend `engine.ts` runs a `setTimeout(loop, 10)` to tick the ECU models at 100Hz.
-2. The ECU models (like `rt-model.ts`) use iteration counting (`tickCount % 50 === 0`) instead of elapsed time (`dtMs`) to emit their 2Hz heartbeats.
-3. Because the unbatched WebSocket spam (BUG-67) heavily lags the Node.js event loop, the 10ms `setTimeout` takes much longer to fire (e.g., 60-100ms per tick).
-4. As a result, 50 ticks takes longer than 3 seconds to complete. The UI's `PRESENCE_TIMEOUT_S` (3 seconds) expires before the next heartbeat is emitted, causing the UI to mark the ECU as offline. When the 50th tick finally occurs, the heartbeat is emitted and the ECU turns back on, creating a rapid flickering effect.
-
-**Fix direction:** 
-Update the ECU models in `backend/src/sim/ecus/` to use the elapsed time parameter (`dtMs`) to accumulate timers (e.g., `this.hbTimer += dtMs; if (this.hbTimer >= 500) { ... }`) rather than relying on strict loop iteration counts. Solving BUG-67 will also resolve the underlying event loop lag.
-
 ## P2 — Cosmetic / Edge Cases
 
 - **BUG-05:** Serial port fails silently (UI shows error, just no backend console log).
