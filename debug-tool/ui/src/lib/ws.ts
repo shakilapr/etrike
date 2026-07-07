@@ -20,7 +20,7 @@ export function connectStream(
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0;
-  let pendingFilter: { buses: Bus[]; ids: string[] } | null = null;
+  let pendingFilter: { buses: Bus[]; ids: string[]; keys: string[] } | null = null;
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const explicitBase = import.meta.env.VITE_WS_URL as string | undefined;
@@ -99,15 +99,16 @@ export function connectStream(
   };
 }
 
-function normalizeFilter(keys: string[]): { buses: Bus[]; ids: string[] } {
+export function normalizeFilter(keys: string[]): { buses: Bus[]; ids: string[]; keys: string[] } {
   const buses = new Set<Bus>();
   const ids = new Set<string>();
+  const scopedKeys = new Set<string>();
 
   for (const key of keys) {
     const [maybeBus, maybeId] = key.split(":");
     if ((maybeBus === "high" || maybeBus === "low") && maybeId) {
       buses.add(maybeBus);
-      ids.add(maybeId);
+      scopedKeys.add(`${maybeBus}:${maybeId}`);
     } else if (key) {
       ids.add(key);
     }
@@ -115,6 +116,7 @@ function normalizeFilter(keys: string[]): { buses: Bus[]; ids: string[] } {
 
   return {
     buses: [...buses],
-    ids: [...ids]
+    ids: [...ids],
+    keys: [...scopedKeys]
   };
 }

@@ -21,6 +21,7 @@ interface ClientState {
   };
   buses: Set<Bus> | null;
   ids: Set<string> | null;
+  keys: Set<string> | null;
   lastPong: number;
 }
 
@@ -39,7 +40,7 @@ export class StreamHub {
         socket.close(1013, "Too many connections");
         return;
       }
-      const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null, lastPong: Date.now() };
+      const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null, keys: null, lastPong: Date.now() };
       this.clients.add(client);
 
       client.socket.on("message", (payload) => {
@@ -96,8 +97,10 @@ export class StreamHub {
       if (client.socket.readyState !== OPEN) continue;
 
       const filtered = batch.filter((f) => {
-        if (client.buses && !client.buses.has(f.bus)) return false;
-        if (client.ids && !client.ids.has(String(f.id))) return false;
+        const hasAnyIdFilter = client.keys || client.ids;
+        const matchesScopedKey = client.keys?.has(`${f.bus}:${f.id}`) ?? false;
+        const matchesBareId = client.ids?.has(String(f.id)) ?? false;
+        if (hasAnyIdFilter && !matchesScopedKey && !matchesBareId) return false;
         return true;
       });
 
@@ -148,7 +151,7 @@ export class StreamHub {
   private handleClientMessage(client: ClientState, payload: unknown): void {
     try {
       const text = Buffer.isBuffer(payload) ? payload.toString("utf8") : String(payload ?? "");
-      const message = JSON.parse(text) as { type?: string; buses?: string[]; ids?: string[] };
+      const message = JSON.parse(text) as { type?: string; buses?: string[]; ids?: string[]; keys?: string[] };
 
       if (message.type === "filter") {
         client.buses =
@@ -156,6 +159,9 @@ export class StreamHub {
             ? new Set(message.buses.filter((bus): bus is Bus => bus === "high" || bus === "low"))
             : null;
         client.ids = message.ids && message.ids.length > 0 ? new Set(message.ids) : null;
+        client.keys = message.keys && message.keys.length > 0
+          ? new Set(message.keys.filter((key) => /^(high|low):.+$/.test(key)))
+          : null;
       }
     } catch {
       this.send(client, {
