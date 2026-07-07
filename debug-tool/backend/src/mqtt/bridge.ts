@@ -2,7 +2,7 @@ import { createServer, type Server as NetServer } from "net";
 import type { HardwareBridge, BridgeState } from "../bridge/types";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
-import { BusDetector, normalizeFrame, normalizeStats, type CanStats } from "../types/can";
+import { BusDetector, normalizeFrame, normalizeStats, type CanFrame, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
 // aedes is ESM-only; tsx (runtime) handles ESM fine, but tsc needs help.
@@ -23,6 +23,7 @@ export class MqttBridge implements HardwareBridge {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private busDetector = new BusDetector();
+  private frameCallbacks: Array<(frame: CanFrame) => void> = [];
   private static readonly MAX_RECONNECT_ATTEMPTS = 10;
   private static readonly RECONNECT_BASE_MS = 1000;
   private static readonly RECONNECT_MAX_MS = 30000;
@@ -46,6 +47,10 @@ export class MqttBridge implements HardwareBridge {
       degraded: false,
       bus_detection: { detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 },
     };
+  }
+
+  onFrame(callback: (frame: CanFrame) => void): void {
+    this.frameCallbacks.push(callback);
   }
 
   async start(): Promise<void> {
@@ -145,6 +150,7 @@ export class MqttBridge implements HardwareBridge {
     this.state.degraded = false;
     this.store.insertFrame(frame);
     this.hub.broadcast({ type: "can_frame", payload: frame });
+    for (const callback of this.frameCallbacks) callback(frame);
   }
 
   private handleStats(message: Record<string, unknown>): void {

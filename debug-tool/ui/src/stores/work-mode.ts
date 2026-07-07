@@ -6,7 +6,7 @@ export const workMode = writable<WorkModeConfig>({
   simulatedEcus: [],
   idSources: {},
   injectEmulatedToPhysical: false,
-  bypasses: { epscSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+  bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
 });
 
 const MODE_LABELS: Record<string, string> = {

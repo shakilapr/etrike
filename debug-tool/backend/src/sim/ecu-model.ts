@@ -36,7 +36,7 @@ export interface EcuConfig {
   bitrate?: number;
   /** Bypass flags — see architecture §14.6. */
   bypasses?: {
-    epscSync?: boolean;
+    sesSync?: boolean;
     sebSync?: boolean;
     mtrAbsent?: boolean;
     benchSolo?: boolean;

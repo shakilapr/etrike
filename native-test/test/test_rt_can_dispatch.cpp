@@ -5,6 +5,9 @@
 #include "esp_timer.h"
 #include "can/can_protocol.h"
 #include "rt_state.h"
+
+static std::atomic<uint32_t> g_alive_dispatch{0};
+
 #include "can_dispatch.h"
 
 rt::Mcp2515Driver g_can_high;
@@ -27,6 +30,7 @@ std::atomic<bool> g_seb_takeover{false};
 std::atomic<int64_t> g_last_sys_hb_us{0};
 std::atomic<int64_t> g_last_host_hb_us{0};
 std::atomic<int64_t> g_last_estop_sent_us{0};
+std::atomic<uint8_t> g_estop_reason{0};
 std::atomic<int16_t> g_last_cmd_angle_0_1deg{0};
 std::atomic<int16_t> g_pid_output_mmps{0};
 std::atomic<int32_t> g_last_speed_setpoint_mmps{0};

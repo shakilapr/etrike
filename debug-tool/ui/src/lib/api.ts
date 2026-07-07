@@ -178,7 +178,7 @@ export interface WorkModeConfig {
   simulatedEcus: string[];
   idSources: Record<string, string>;
   injectEmulatedToPhysical: boolean;
-  bypasses: { epscSync: boolean; sebSync: boolean; mtrAbsent: boolean; benchSolo: boolean };
+  bypasses: { sesSync: boolean; sebSync: boolean; mtrAbsent: boolean; benchSolo: boolean };
   scenario?: string;
 }
 

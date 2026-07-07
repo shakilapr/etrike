@@ -185,7 +185,17 @@
         backend_online: false,
         adapter_connected: false,
         esp32_connected: false,
-        bridge: { ...(current.bridge ?? {}), connected: false, link_open: false },
+        bridge: {
+          transport: current.bridge?.transport ?? "disabled",
+          adapter: current.bridge?.adapter ?? "offline",
+          connected: false,
+          link_open: false,
+          path: current.bridge?.path ?? null,
+          baud_rate: current.bridge?.baud_rate ?? null,
+          bitrate: current.bridge?.bitrate ?? null,
+          last_status_at: current.bridge?.last_status_at ?? null,
+          last_error: msg
+        },
         warning: msg
       }));
       // Zero out stats so health bar reflects total failure

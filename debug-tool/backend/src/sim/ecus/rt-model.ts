@@ -16,7 +16,7 @@ export class RtModel implements EcuModel {
   private hbCounter = 0;
   private callbacks: Array<(frame: CanFrame) => void> = [];
   private frameQueue: CanFrame[] = [];
-  private bypassEpscSync = false;
+  private bypassSesSync = false;
 
   // Latest command state — set by ingest(), consumed by tick()
   private latestSpeed = 0;
@@ -26,7 +26,7 @@ export class RtModel implements EcuModel {
   private steerRoll = 0;
 
   config(params: EcuConfig): void {
-    this.bypassEpscSync = params.bypasses?.epscSync ?? false;
+    this.bypassSesSync = params.bypasses?.sesSync ?? false;
   }
 
   start(): void { this.mode = 0; this.safety = 0; this.estopPending = false; this.latestSpeed = 0; this.latestGear = 0; this.latestBrakeKpa = 0; }
@@ -92,7 +92,7 @@ export class RtModel implements EcuModel {
     // State report 0x210 (10 Hz)
     if (this.hbCounter % 10 === 0) {
       this.emit("high", "0x210", 6, [this.mode, this.estopPending ? 1 : 0, 0, 0, 15, 5], "RT_STATE_RPT",
-        { mode: this.mode, safety_state: this.estopPending ? 1 : 0, steer_state: this.bypassEpscSync ? 1 : (this.estopPending ? 4 : 1) });
+        { mode: this.mode, safety_state: this.estopPending ? 1 : 0, steer_state: this.bypassSesSync ? 1 : (this.estopPending ? 4 : 1) });
     }
 
     // Heartbeat 0x7FD (2 Hz)

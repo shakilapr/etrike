@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { HardwareBridge, BridgeState } from "../bridge/types";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
-import { normalizeFrame, normalizeStats, BusDetector, type CanStats } from "../types/can";
+import { normalizeFrame, normalizeStats, BusDetector, type CanFrame, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
 export class CanalystBridge implements HardwareBridge {
@@ -13,6 +13,7 @@ export class CanalystBridge implements HardwareBridge {
   private process: ChildProcessWithoutNullStreams | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private busDetector = new BusDetector();
+  private frameCallbacks: Array<(frame: CanFrame) => void> = [];
 
   constructor(
     private readonly config: AppConfig,
@@ -32,6 +33,10 @@ export class CanalystBridge implements HardwareBridge {
       last_frame_at: null,
       degraded: false
     };
+  }
+
+  onFrame(callback: (frame: CanFrame) => void): void {
+    this.frameCallbacks.push(callback);
   }
 
   start(): void {
@@ -222,6 +227,7 @@ export class CanalystBridge implements HardwareBridge {
       this.store.insertFrame(frame);
       this.busDetector.feed(frame.id);
       this.hub.broadcast({ type: "can_frame", payload: frame });
+      for (const callback of this.frameCallbacks) callback(frame);
       return;
     }
 

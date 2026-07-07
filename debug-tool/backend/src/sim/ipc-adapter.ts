@@ -46,7 +46,7 @@ export class IpcEngineAdapter implements EcuModel {
     if (this.process && this.process.stdin.writable) {
       this.process.stdin.write(encodeIpcMessage({
         type: "config",
-        bypass_epsc_sync: _params.bypasses?.epscSync,
+        bypass_epsc_sync: _params.bypasses?.sesSync,
         bypass_seb_sync: _params.bypasses?.sebSync,
         bypass_mtr_absent: _params.bypasses?.mtrAbsent,
         bench_solo: _params.bypasses?.benchSolo,

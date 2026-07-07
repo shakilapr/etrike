@@ -3,6 +3,7 @@ import type { HardwareBridge, BridgeState } from "../bridge/types";
 import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
 import { BusDetector, normalizeFrame, normalizeStats, type Bus, type CanStats } from "../types/can";
+import type { CanFrame } from "../types/can";
 import type { StreamHub } from "../ws/stream";
 
 export interface SerialState extends BridgeState {
@@ -19,6 +20,7 @@ export class SerialBridge implements HardwareBridge {
   private busDetector = new BusDetector();
   private detectedBus: Bus = "high";
   private lastBusDetectionConfidence: "none" | "low" | "high" = "none";
+  private frameCallbacks: Array<(frame: CanFrame) => void> = [];
 
   constructor(
     private readonly config: AppConfig,
@@ -40,6 +42,10 @@ export class SerialBridge implements HardwareBridge {
       last_frame_at: null,
       degraded: false
     };
+  }
+
+  onFrame(callback: (frame: CanFrame) => void): void {
+    this.frameCallbacks.push(callback);
   }
 
   start(): void {
@@ -194,6 +200,7 @@ export class SerialBridge implements HardwareBridge {
       this.state.degraded = false;
       this.store.insertFrame(frame);
       this.hub.broadcast({ type: "can_frame", payload: frame });
+      for (const callback of this.frameCallbacks) callback(frame);
 
       if (this.detectedBus !== prevDetected || (prevConfidence !== "high" && currentConfidence === "high")) {
         this.broadcastStatus();
