@@ -64,7 +64,7 @@ export function ingestMessage(message: { type: string; payload: unknown }): void
   } else if (message.type === "can_frames_batch") {
     const batch = message.payload as CanFrame[];
     if (batch.length === 0) return;
-    
+
     frameStore.update((current) => [...current, ...batch].slice(-1000));
     latestById.update((current) => {
       const next = { ...current };

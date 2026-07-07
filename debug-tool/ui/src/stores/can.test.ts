@@ -107,6 +107,31 @@ describe("ingestMessage", () => {
     expect(() => ingestMessage({ type: "can_frame", payload: undefined as any })).not.toThrow();
   });
 
+  it("appends can_frames_batch messages and updates latestById", () => {
+    const batch = [
+      makeFrame({ id: "0x300", bus: "high", ts: 1 }),
+      makeFrame({ id: "0x301", bus: "high", ts: 2 }),
+      makeFrame({ id: "0x300", bus: "high", ts: 3 }),
+    ];
+
+    ingestMessage({ type: "can_frames_batch", payload: batch });
+
+    expect(get(frames)).toHaveLength(3);
+    expect(get(latestById)["high:0x300"].ts).toBe(3);
+    expect(get(latestById)["high:0x301"].ts).toBe(2);
+  });
+
+  it("caps can_frames_batch at 1000", () => {
+    const batch = Array.from({ length: 1100 }, (_, i) => makeFrame({ id: `0x${i.toString(16)}`, ts: i }));
+
+    ingestMessage({ type: "can_frames_batch", payload: batch });
+
+    const kept = get(frames);
+    expect(kept).toHaveLength(1000);
+    expect(kept[0].ts).toBe(100);
+    expect(kept[999].ts).toBe(1099);
+  });
+
   it("updates stats on stats message", () => {
     const statsPayload: CanStats = {
       ts: 2000,
