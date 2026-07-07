@@ -21,6 +21,7 @@ export class SerialBridge implements HardwareBridge {
   private detectedBus: Bus = "high";
   private lastBusDetectionConfidence: "none" | "low" | "high" = "none";
   private frameCallbacks: Array<(frame: CanFrame) => void> = [];
+  private opening = false;
 
   constructor(
     private readonly config: AppConfig,
@@ -49,8 +50,11 @@ export class SerialBridge implements HardwareBridge {
   }
 
   start(): void {
+    if (this.opening || this.state.port_open) return;
+
     if (!this.config.serialPath) {
       this.state.last_error = "serial disabled";
+      console.warn("[serial] serial disabled: no serial path configured");
       this.broadcastStatus();
       return;
     }
@@ -60,6 +64,7 @@ export class SerialBridge implements HardwareBridge {
     parser.on("data", (line: string) => this.handleLine(line));
 
     this.port.on("open", () => {
+      this.opening = false;
       this.reconnectAttempt = 0;
       this.state.connected = true;
       this.state.link_open = true;
@@ -72,6 +77,7 @@ export class SerialBridge implements HardwareBridge {
       this.broadcastStatus();
     });
     this.port.on("close", () => {
+      this.opening = false;
       this.state.connected = false;
       this.state.link_open = false;
       this.state.port_open = false;
@@ -80,7 +86,9 @@ export class SerialBridge implements HardwareBridge {
       this.scheduleReconnect();
     });
     this.port.on("error", (error) => {
+      this.opening = false;
       this.state.last_error = error.message;
+      console.error(`[serial] ${error.message}`);
       this.state.connected = false;
       this.state.link_open = false;
       this.state.port_open = false;
@@ -88,9 +96,12 @@ export class SerialBridge implements HardwareBridge {
       this.broadcastStatus();
       this.scheduleReconnect();
     });
+    this.opening = true;
     this.port.open((error) => {
       if (error) {
+        this.opening = false;
         this.state.last_error = error.message;
+        console.error(`[serial] ${error.message}`);
         this.broadcastStatus();
         this.scheduleReconnect();
       }

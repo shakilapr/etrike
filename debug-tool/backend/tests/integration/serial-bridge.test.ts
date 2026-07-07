@@ -56,6 +56,30 @@ describe("SerialBridge", () => {
     expect(broadcastSpy).toHaveBeenCalled();
   });
 
+  it("ignores duplicate start calls while the port is open", async () => {
+    const openSpy = vi.spyOn(MockSerialPort.prototype, "open");
+
+    bridge.start();
+    bridge.start();
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs startup failures to the backend console", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const disabled = new SerialBridge(
+      { serialPath: "", serialBaudRate: 115200 } as any,
+      store,
+      hub
+    );
+
+    disabled.start();
+
+    expect(warnSpy).toHaveBeenCalledWith("[serial] serial disabled: no serial path configured");
+    warnSpy.mockRestore();
+  });
+
   it("caps backoff and switches to 30s polling when attempts exhausted", async () => {
     // Initial start
     bridge.start();
