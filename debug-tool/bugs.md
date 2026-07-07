@@ -35,17 +35,6 @@ No active P0 bugs currently tracked here.
 - **BUG-54:** `Topbar.svelte` reports the USB port state as "open" when disconnected instead of "closed" or "offline".
 - **BUG-55:** `Dashboard.svelte` hardcodes the obsolete `"EPS-C"` string for steering instead of the updated `"SES"`.
 
-### BUG-68: Trike Physics Sidebar Overlays Main Content Instead of Shrinking It
-
-**Severity:** P2 (Cosmetic / UI Layout)  
-**Files:** `ui/src/styles.css:104-106`, `ui/src/App.svelte`
-
-**Symptom:** When clicking the "Physics View" (▶) toggle button on the right side of the screen, the TrikeViz sidebar opens but completely overlays (covers up) the right side of the main debug tool content. It does not push or shrink the main UI elements.
-
-**Root cause:** The `.trike-sidebar` CSS class is set to `position: fixed; right: 0;`. Because it uses `fixed` positioning, it is entirely removed from the normal document flow and rendered on top of the `.app-shell` and `main` layout. The main container is unaware of the sidebar's presence and thus retains its full 100vw width, leading to the overlap.
-
-**Fix direction:** Either apply a dynamic `padding-right: 340px;` to the `.app-shell` when the sidebar is open (with a matching transition), or change the layout from `fixed` overlays to a `display: flex` container where the sidebar conditionally takes up `flex-basis: 340px` and forces the main content to shrink.
-
 ## Extras / Artifacts
 
 - **GAP-02:** Improved Trike Kinematic Model has been saved to `c:\projects\etrike\tem\improved_trike_kinematic.md` so that it faces upward by default. It can be integrated into the main `TrikeViz.svelte` UI in a future iteration.
