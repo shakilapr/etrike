@@ -15,10 +15,8 @@ No active P1 bugs currently tracked here.
 
 ## P2 — Cosmetic / Edge Cases
 
-- **BUG-05:** Serial port fails silently (UI shows error, just no backend console log).
 - **BUG-16:** CANalyst-II bridge abandoned after detection failure can't be reused.
 - **BUG-18:** Emulator `simMode` toggle resets when switching tabs.
-- **BUG-26:** `SerialBridge.start()` called twice on reconnect (Double open error).
 - **BUG-29:** `stopRecording()` does not prevent double-stop.
 - **BUG-30:** `normalizeBus()` falls through to `"high"` silently.
 - **BUG-34:** `normalizeFilter` strips bus from bare IDs.
