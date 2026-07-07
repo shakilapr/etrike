@@ -77,7 +77,32 @@ jobs:
         with:
           node-version: '20'
       - run: cd debug-tool/backend && npm ci
+      - run: cd debug-tool/backend && npm run check
       - run: cd debug-tool/backend && npm test
+
+  debug-ui-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: cd debug-tool/ui && npm ci
+      - run: cd debug-tool/ui && npm run check
+      - run: cd debug-tool/ui && npm test
+
+  debug-e2e-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: cd debug-tool/backend && npm ci
+      - run: cd debug-tool/ui && npm ci
+      - run: cd debug-tool/e2e && npm ci
+      - run: cd debug-tool/e2e && npx playwright install --with-deps chromium
+      - run: cd debug-tool/e2e && npm test
 
   vehicle-build:
     runs-on: ubuntu-latest
