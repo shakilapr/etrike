@@ -399,12 +399,12 @@ h2 { font-size: 1rem; }
   align-items: stretch;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 10px;
 }
 .tb-row {
   align-items: center;
   display: flex;
-  gap: 10px;
+  gap: 14px;
   flex-wrap: nowrap;
 }
 .tb-row-main {
@@ -425,7 +425,7 @@ h2 { font-size: 1rem; }
 /* Brand */
 .tb-brand {
   align-items: center; color: var(--fg); display: flex; flex-shrink: 0;
-  font-size: 0.92rem; font-weight: 800; gap: 5px; letter-spacing: 0.02em;
+  font-size: 1.05rem; font-weight: 800; gap: 12px; letter-spacing: 0.02em;
 }
 
 /* Health bar */
