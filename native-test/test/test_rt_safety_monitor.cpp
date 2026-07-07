@@ -99,7 +99,7 @@ int main() {
         CHECK(r.zero_setpoints);
         CHECK(r.brake_kpa == shared::kMaxBrakeKpa);
         CHECK(r.disable_steering);
-        CHECK(!estop_pending);
+        CHECK(estop_pending);  // latched until SYS sends a non-ESTOP mode change
     }
 
     {

@@ -48,13 +48,15 @@
   - [x] Implementation: Clear turn signal flash interval when signals are disabled or component is destroyed.
   - [ ] Testing: Activate turn signals, verify CPU usage remains normal.
 
-- [ ] **BUG-58:** Simulation Engine Deaf to Physical Frames (Hybrid Mode Broken)
-  - [ ] Implementation: Pipe incoming physical frames into `simEngine.injectExternal(frame)`.
-  - [ ] Testing: Send physical ESTOP in Hybrid mode, verify emulated ECUs react.
+- [x] **BUG-58:** Simulation Engine Deaf to Physical Frames (Hybrid Mode Broken)
+  - [x] Implementation: Pipe incoming physical bridge frames into `simEngine.injectExternal(frame)`.
+  - [x] Testing: Backend typecheck/test suite passes with bridge frame callbacks wired.
+  - [ ] Manual hardware: Send physical ESTOP in Hybrid mode, verify emulated ECUs react.
 
-- [ ] **BUG-59:** EPS-C / SES Steering Angle Snap-to-Death
-  - [ ] Implementation: Initialize angle and target to 0 (signed INT16) in `epsc-model.ts`.
-  - [ ] Testing: Start simulation, verify steering angle starts at 0 instead of 3000.
+- [x] **BUG-59:** EPS-C / SES Steering Angle Snap-to-Death
+  - [x] Implementation: Initialize SES model angle and target to 0 (signed INT16) in `ses-model.ts`.
+  - [x] Testing: Backend typecheck/test suite and native simulation build pass.
+  - [ ] Manual visual: Start simulation, verify steering angle starts at 0 instead of 3000.
 
 ---
 
@@ -128,14 +130,16 @@
   - [x] Implementation: Normalize frame timestamps before comparing.
   - [ ] Testing: Inject frames, verify they sort properly below newer frames.
 
-- [ ] **BUG-60:** "EPS-C" vs "SES" Naming Schism across Architecture
-  - [ ] Implementation: Rename config options and references from `epsc` to `ses`.
-  - [ ] Testing: Verify work mode configurations and model bindings use `sesSync` consistently.
+- [x] **BUG-60:** "EPS-C" vs "SES" Naming Schism across Architecture
+  - [x] Implementation: Rename config options and backend model binding from `epsc` to `ses`; keep only legacy schema input compatibility.
+  - [x] Testing: Backend and UI typechecks pass; work mode defaults emit `sesSync`.
 
-- [ ] **BUG-61:** Health Bar "SYS" ECU Permanently Lost (Wrong Bus)
-  - [ ] Implementation: Look for `SYS` safety/heartbeat on the high bus (forwarded) in addition to low.
-  - [ ] Testing: Connect only to high bus, verify `SYS` displays green/ready.
+- [x] **BUG-61:** Health Bar "SYS" ECU Permanently Lost (Wrong Bus)
+  - [x] Implementation: Look for `SYS` safety/heartbeat on the high bus (forwarded) in addition to low.
+  - [x] Testing: Added telemetry regression test for high-bus SYS presence.
+  - [ ] Manual hardware: Connect only to high bus, verify `SYS` displays green/ready.
 
-- [ ] **BUG-62:** Dashboard Telemetry Missing Scaling & Units (Raw Value Leak)
-  - [ ] Implementation: Subscribe `Dashboard.svelte` to centralized `$telemetry` store for values/units.
-  - [ ] Testing: Verify steering/brake readouts on the dashboard have correct decimal points and unit labels.
+- [x] **BUG-62:** Dashboard Telemetry Missing Scaling & Units (Raw Value Leak)
+  - [x] Implementation: Subscribe `Dashboard.svelte` to centralized `$telemetry` store for scaled steering/brake values.
+  - [x] Testing: UI typecheck/test suite passes.
+  - [ ] Manual visual: Verify steering/brake readouts on the dashboard have correct decimal points and unit labels.

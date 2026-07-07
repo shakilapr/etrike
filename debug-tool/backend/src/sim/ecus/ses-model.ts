@@ -1,15 +1,15 @@
 /**
- * EPS-C Steering actuator model.
+ * SES steering actuator model.
  * Receives 0x169 VCU_SES_REQ, generates 0x201 SES_STATUS + 0x202/0x203/0x6FA.
  * Models first-order angle tracking with rate limiting.
  */
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
-export class EpscModel implements EcuModel {
+export class SesModel implements EcuModel {
   readonly id = "ses";
 
-  private angle = 0;       // 0.1 deg units, 30000 = 0 deg
+  private angle = 0;       // signed 0.1 deg units
   private targetAngle = 0;
   private aligned = true;
   private errorStatus = 0; // 0=Normal, 1=L1, 2=L2, 3=L3
@@ -22,7 +22,7 @@ export class EpscModel implements EcuModel {
   private frameQueue: CanFrame[] = [];
 
   config(_p: EcuConfig): void {}
-  start(): void { this.angle = 30000; this.targetAngle = 30000; this.aligned = true; this.errorStatus = 0; }
+  start(): void { this.angle = 0; this.targetAngle = 0; this.aligned = true; this.errorStatus = 0; }
   stop(): void {}
   state(): EcuState { return { ecu: this.id, healthy: this.errorStatus < 3, faultFlags: this.errorStatus, uptimeMs: this.tickMs }; }
 
@@ -31,7 +31,7 @@ export class EpscModel implements EcuModel {
       this.lastCmdMs = this.tickMs;
       const d = frame.decoded as Record<string, unknown>;
       this.targetAngle = (d.target_angle as number) ?? 0;
-      this.aligned = (d.alignment_enable as number) === 1;
+      this.aligned = d.alignment_enable === true || d.alignment_enable === 1;
     }
   }
 
@@ -57,7 +57,7 @@ export class EpscModel implements EcuModel {
       let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i];
       data[7] = cksum ^ 0xFF;
       this.emit("low", "0x201", 8, data, "SES_STATUS", {
-        angle_status: this.aligned, str_angle: a16, error_status: this.errorStatus,
+        angle_status: this.aligned, str_angle: this.angle, error_status: this.errorStatus,
         rolling_counter: this.roll, checksum: data[7],
       });
     }

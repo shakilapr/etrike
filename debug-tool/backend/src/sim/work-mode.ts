@@ -23,7 +23,7 @@ export interface WorkModeConfig {
   injectEmulatedToPhysical: boolean;
   /** Bench-test bypass flags. */
   bypasses: {
-    epscSync: boolean;
+    sesSync: boolean;
     sebSync: boolean;
     mtrAbsent: boolean;
     benchSolo: boolean;
@@ -41,11 +41,17 @@ export const workModeConfigSchema = z.object({
   idSources: z.record(z.enum(FRAME_SOURCES)).default({}),
   injectEmulatedToPhysical: z.boolean().default(false),
   bypasses: z.object({
-    epscSync: z.boolean().default(false),
+    sesSync: z.boolean().optional(),
+    epscSync: z.boolean().optional(),
     sebSync: z.boolean().default(false),
     mtrAbsent: z.boolean().default(false),
     benchSolo: z.boolean().default(false),
-  }).default({}),
+  }).default({}).transform((bypasses) => ({
+    sesSync: bypasses.sesSync ?? bypasses.epscSync ?? false,
+    sebSync: bypasses.sebSync,
+    mtrAbsent: bypasses.mtrAbsent,
+    benchSolo: bypasses.benchSolo,
+  })),
   scenario: z.string().optional(),
 });
 
@@ -56,34 +62,34 @@ export const MODE_DEFAULTS: Record<WorkMode, WorkModeConfig> = {
     simulatedEcus: ["host", "rt", "sys", "mtr", "ses", "seb"],
     idSources: {},
     injectEmulatedToPhysical: false,
-    bypasses: { epscSync: true, sebSync: true, mtrAbsent: false, benchSolo: false },
+    bypasses: { sesSync: true, sebSync: true, mtrAbsent: false, benchSolo: false },
   },
   "emulator": {
     mode: "emulator",
     simulatedEcus: [],
     idSources: { "*": "*" },
     injectEmulatedToPhysical: false,
-    bypasses: { epscSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+    bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
   },
   "hybrid": {
     mode: "hybrid",
     simulatedEcus: [],
     idSources: { "*": "*" },
     injectEmulatedToPhysical: true,
-    bypasses: { epscSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+    bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
   },
   "bench": {
     mode: "bench",
     simulatedEcus: [],
     idSources: {},
     injectEmulatedToPhysical: false,
-    bypasses: { epscSync: true, sebSync: true, mtrAbsent: true, benchSolo: true },
+    bypasses: { sesSync: true, sebSync: true, mtrAbsent: true, benchSolo: true },
   },
   "monitor": {
     mode: "monitor",
     simulatedEcus: [],
     idSources: {},
     injectEmulatedToPhysical: false,
-    bypasses: { epscSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+    bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
   },
 };

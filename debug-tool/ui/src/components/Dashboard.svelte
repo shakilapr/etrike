@@ -2,6 +2,7 @@
   import type { Bus, CanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameAge, frameTime } from "../lib/can-decoder";
   import { latestById, stats, status, wsConnected } from "../stores/can";
+  import { telemetry } from "../stores/telemetry";
 
   export let ids: CanMessageDef[] = [];
 
@@ -29,8 +30,6 @@
   $: rtState = $latestById["high:0x210"]?.decoded ?? {};
   $: drive = $latestById["high:0x300"]?.decoded ?? {};
   $: rtDrive = $latestById["low:0x204"]?.decoded ?? {};
-  $: steering = $latestById["low:0x201"]?.decoded ?? {};
-  $: brake = $latestById["low:0x721"]?.decoded ?? {};
   $: motor = $latestById["low:0x206"]?.decoded ?? $latestById["high:0x206"]?.decoded ?? {};
   $: obstacle = $latestById["high:0x400"]?.decoded.distance_label ?? $latestById["high:0x400"]?.decoded.distance_mm ?? "--";
 
@@ -38,8 +37,8 @@
   $: mode = String(rtState.mode_name ?? diag.mode_name ?? "--");
   $: speed = firstValue(rtDrive.motor_speed_mmps, motor.actual_speed_mmps, $latestById["high:0x120"]?.decoded.speed_mmps, "--");
   $: gear = firstValue(rtDrive.gear_name, motor.gear_name, drive.gear_name, "--");
-  $: steerAngle = firstValue(steering.str_angle, "--");
-  $: brakeState = firstValue(brake.pressure_value, $latestById["high:0x301"]?.decoded.brake_pressure_kpa, "--");
+  $: steerAngle = typeof $telemetry.steerAngleDeg === "number" ? $telemetry.steerAngleDeg.toFixed(1) : "--";
+  $: brakeState = typeof $telemetry.brakePressureMpa === "number" ? $telemetry.brakePressureMpa.toFixed(2) : "--";
 
   $: pairs = buildPairs($latestById);
   $: activeRows = ids
@@ -167,11 +166,11 @@
         </div>
         <div>
           <span>Steering</span>
-          <strong>{steerAngle} <small>0.1 deg</small></strong>
+          <strong>{steerAngle} <small>deg</small></strong>
         </div>
         <div>
           <span>Brake</span>
-          <strong>{brakeState}</strong>
+          <strong>{brakeState} <small>MPa</small></strong>
         </div>
         <div>
           <span>Obstacle</span>

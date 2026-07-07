@@ -1,6 +1,7 @@
 import type { DebugStore } from "../db/queries";
 import type { CanFrame } from "../types/can";
 import type { EcuModel, EcuConfig } from "./ecu-model";
+import type { FrameSource } from "./router";
 import type { WorkModeConfig } from "./work-mode";
 import { VirtualCanBus } from "./virtual-can";
 
@@ -76,12 +77,13 @@ export class SimulationEngine {
   }
 
   /** Inject a frame from an external source (physical bridge, controller, etc.). */
-  injectExternal(frame: CanFrame): void {
+  injectExternal(frame: CanFrame, options: { persist?: boolean; source?: FrameSource } = {}): void {
     if (!this._state.running) return;
     this.bus.send(frame);
-    // Also store physical frames so they appear in the UI
-    this.store.insertFrame(frame, "physical");
-    this.hub.broadcast({ type: "can_frame", payload: frame });
+    if (options.persist !== false) {
+      const stored = this.store.insertFrame(frame, options.source ?? "emulated");
+      if (stored.row_id >= 0) this.hub.broadcast({ type: "can_frame", payload: stored });
+    }
   }
 
   private tick(): void {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 import { frames } from "./can";
-import { ecuPresence } from "./telemetry";
+import { ecuPresence, now as telemetryNow } from "./telemetry";
 import type { CanFrame } from "../lib/can-decoder";
 
 function makeFrame(ts: number, bus: "high" | "low", id: string): CanFrame {
@@ -24,21 +24,28 @@ beforeEach(() => {
 
 describe("ecuPresence", () => {
   it("reports recent ECU frames as present", () => {
-    const now = Date.now() / 1000;
+    const now = get(telemetryNow);
     frames.set([makeFrame(now - 1, "high", "0x7FD")]);
 
     expect(get(ecuPresence).rt).toBe(true);
   });
 
+  it("reports SYS frames on the high bus as present", () => {
+    const now = get(telemetryNow);
+    frames.set([makeFrame(now - 1, "high", "0x011")]);
+
+    expect(get(ecuPresence).sys).toBe(true);
+  });
+
   it("reports stale ECU frames as absent", () => {
-    const now = Date.now() / 1000;
+    const now = get(telemetryNow);
     frames.set([makeFrame(now - 4, "high", "0x7FD")]);
 
     expect(get(ecuPresence).rt).toBe(false);
   });
 
   it("normalizes millisecond WebSocket timestamps for staleness", () => {
-    const now = Date.now();
+    const now = get(telemetryNow) * 1000;
     frames.set([makeFrame(now - 4_000, "high", "0x7FD")]);
 
     expect(get(ecuPresence).rt).toBe(false);

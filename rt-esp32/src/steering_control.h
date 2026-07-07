@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include "config.h"
+#include "esp_log.h"
 #include "can/can_protocol.h"
 #include "physics_model.h"
 namespace rt {

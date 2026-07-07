@@ -21,11 +21,15 @@ import { HostModel } from "./sim/ecus/host-model";
 import { RtModel } from "./sim/ecus/rt-model";
 import { MtrModel } from "./sim/ecus/mtr-model";
 import { SysModel } from "./sim/ecus/sys-model";
-import { EpscModel } from "./sim/ecus/epsc-model";
+import { SesModel } from "./sim/ecus/ses-model";
 import { SebModel } from "./sim/ecus/seb-model";
 import { IpcEngineAdapter } from "./sim/ipc-adapter";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
+
+type FrameObservableBridge = (CanalystBridge | SerialBridge | MqttBridge) & {
+  onFrame?: (callback: (frame: CanFrame) => void) => void;
+};
 
 async function main(): Promise<void> {
   let config: AppConfig;
@@ -63,13 +67,16 @@ async function main(): Promise<void> {
 
   // Simulation engine — runs ECU models in software
   const simEngine = new SimulationEngine(store, hub);
+  const feedPhysicalFramesToSim = (bridge: FrameObservableBridge): void => {
+    bridge.onFrame?.((frame) => simEngine.injectExternal(frame, { persist: false }));
+  };
 
   // TypeScript models (always available)
   const hostModel = new HostModel();
   const rtModelTs = new RtModel();
   const mtrModel = new MtrModel();
   const sysModel = new SysModel();
-  const epscModel = new EpscModel();
+  const sesModel = new SesModel();
   const sebModel = new SebModel();
 
   // Native C++ model via IPC (requires sim-engine-native to be built)
@@ -86,7 +93,7 @@ async function main(): Promise<void> {
   simEngine.register(rtModelTs);
   simEngine.register(mtrModel);
   simEngine.register(sysModel);
-  simEngine.register(epscModel);
+  simEngine.register(sesModel);
   simEngine.register(sebModel);
 
   (app as any).__simEngine = simEngine;
@@ -103,6 +110,7 @@ async function main(): Promise<void> {
   const bridgeRef: { current: CanalystBridge | SerialBridge | MqttBridge } = {
     current: new SerialBridge(config, store, hub)
   };
+  feedPhysicalFramesToSim(bridgeRef.current);
 
   // Proxy that delegates to bridgeRef.current — route handlers always get the live bridge
   const bridgeProxy = new Proxy({} as CanalystBridge | SerialBridge | MqttBridge, {
@@ -156,18 +164,22 @@ async function main(): Promise<void> {
       await bridgeRef.current.close();
       if (transport === "disabled") {
         bridgeRef.current = new SerialBridge(config, store, hub);
+        feedPhysicalFramesToSim(bridgeRef.current);
       } else if (transport === "canalystii") {
         bridgeRef.current = new CanalystBridge(config, store, hub);
+        feedPhysicalFramesToSim(bridgeRef.current);
         await bridgeRef.current.start();
       } else if (transport === "mqtt") {
         bridgeRef.current = new MqttBridge(config, store, hub);
+        feedPhysicalFramesToSim(bridgeRef.current);
         await bridgeRef.current.start();
       } else {
         const canalyst = new CanalystBridge(config, store, hub);
+        feedPhysicalFramesToSim(canalyst);
         canalyst.start();
         const detected = await canalyst.waitForConnection(3000);
         if (detected) { bridgeRef.current = canalyst; }
-        else { await canalyst.abandon(); bridgeRef.current = new SerialBridge(config, store, hub); await bridgeRef.current.start(); }
+        else { await canalyst.abandon(); bridgeRef.current = new SerialBridge(config, store, hub); feedPhysicalFramesToSim(bridgeRef.current); await bridgeRef.current.start(); }
       }
       return { ok: true, transport };
     } catch (error) {
@@ -226,6 +238,7 @@ async function main(): Promise<void> {
 
   if (effectiveTransport === "serial") {
     const canalyst = new CanalystBridge(config, store, hub);
+    feedPhysicalFramesToSim(canalyst);
     canalyst.start();
     const detected = await canalyst.waitForConnection(3000);
     if (detected) {
@@ -238,13 +251,14 @@ async function main(): Promise<void> {
       await canalyst.abandon();
       await bridgeRef.current.start();
     }
-    } else {
+  } else {
     await bridgeRef.current.close();
     bridgeRef.current = effectiveTransport === "canalystii"
       ? new CanalystBridge(config, store, hub)
       : effectiveTransport === "mqtt"
         ? new MqttBridge(config, store, hub)
         : new SerialBridge(config, store, hub);
+    feedPhysicalFramesToSim(bridgeRef.current);
     await bridgeRef.current.start();
   }
 

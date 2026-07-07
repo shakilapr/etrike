@@ -67,7 +67,7 @@ function safetyLabel(v: number | null): string | null {
 /** Which ECUs are present on the CAN bus (detected via heartbeat/status frames). */
 export interface EcuPresence {
   rt: boolean;   // RT controller (0x7FD high, or 0x210)
-  sys: boolean;  // SYS controller (0x7FE low, or 0x011 low)
+  sys: boolean;  // SYS controller (0x7FE or 0x011, high bus preferred)
   mtr: boolean;  // Motor (0x206 either bus)
   ses: boolean;  // Steering EPS-C (0x201 low)
   seb: boolean;  // Brake-by-wire SEB (0x721 low)
@@ -83,7 +83,7 @@ function recent(frame: { ts: number } | undefined, nowS: number): boolean {
 
 export const ecuPresence = derived([latestById, now], ([$latest, $now]): EcuPresence => ({
   rt:  recent($latest["high:0x7FD"], $now) || recent($latest["high:0x210"], $now),
-  sys: recent($latest["low:0x7FE"], $now)  || recent($latest["low:0x011"], $now),
+  sys: recent($latest["high:0x7FE"], $now) || recent($latest["high:0x011"], $now) || recent($latest["low:0x7FE"], $now) || recent($latest["low:0x011"], $now),
   mtr: recent($latest["high:0x206"], $now) || recent($latest["low:0x206"], $now),
   ses: recent($latest["low:0x201"], $now),
   seb: recent($latest["low:0x721"], $now),
