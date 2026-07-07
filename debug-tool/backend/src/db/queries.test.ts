@@ -78,6 +78,18 @@ describe("DebugStore maintenance", () => {
     expect(recordings.map((recording) => recording.label)).not.toContain("rec-1");
   });
 
+  it("does not stop an already stopped recording again", () => {
+    const store = makeStore(100);
+    const recording = store.startRecording("one-shot");
+
+    const stopped = store.stopRecording(recording.id);
+    const secondStop = store.stopRecording(recording.id);
+
+    expect(stopped?.stopped_at).toEqual(expect.any(Number));
+    expect(secondStop).toBeNull();
+    expect(store.getRecording(recording.id)?.stopped_at).toBe(stopped?.stopped_at);
+  });
+
   it("creates a reverse index for recording frame lookups", () => {
     const store = makeStore(10);
     const db = (store as unknown as { db: { prepare(sql: string): { all(): Array<{ name: string }> } } }).db;
