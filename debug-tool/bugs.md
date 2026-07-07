@@ -15,7 +15,6 @@ No active P1 bugs currently tracked here.
 
 ## P2 — Cosmetic / Edge Cases
 
-- **BUG-18:** Emulator `simMode` toggle resets when switching tabs.
 - **BUG-29:** `stopRecording()` does not prevent double-stop.
 - **BUG-30:** `normalizeBus()` falls through to `"high"` silently.
 - **BUG-34:** `normalizeFilter` strips bus from bare IDs.

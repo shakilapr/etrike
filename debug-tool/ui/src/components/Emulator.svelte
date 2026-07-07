@@ -4,10 +4,10 @@
   import { ecuPresence } from "../stores/telemetry";
   import type { EcuPresence } from "../stores/telemetry";
   import { logError, logInfo } from "../stores/errors";
+  import { softwareSimEnabled } from "../stores/emulator";
   import EcuTopology from "./EcuTopology.svelte";
 
   // ═══ Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) ═══
-  let softwareSimEnabled = false;  // false=Physical, true=Simulated
 
   // ═══ Signal definition with dynamic data generator ═══
   interface EmuSignal {
@@ -162,7 +162,7 @@
   let running = new Set<string>();
   let sending = false;
   const connected = () => $status.bridge?.connected ?? false;
-  const canSend = () => softwareSimEnabled || connected();
+  const canSend = () => $softwareSimEnabled || connected();
 
   function hex(data: number[]): string {
     return data.map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
@@ -184,14 +184,14 @@
       async function tick() {
         const data = sig.data();
         try {
-          if (softwareSimEnabled) {
+          if ($softwareSimEnabled) {
             await simPeriodicStart({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data, interval_ms: ms });
           } else {
             await sendFrame({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data });
           }
         } catch {}
       }
-      if (softwareSimEnabled) {
+      if ($softwareSimEnabled) {
         // Simulated mode: backend handles the interval
         await tick(); // first frame
         running.add(sig.key);
@@ -203,7 +203,7 @@
       }
     }
     running = new Set(running);
-    logInfo(ecu.name + " emulated (" + (softwareSimEnabled ? "sim" : "physical") + ") — " + ecu.signals.length + " signals");
+    logInfo(ecu.name + " emulated (" + ($softwareSimEnabled ? "sim" : "physical") + ") — " + ecu.signals.length + " signals");
     sending = false;
   }
 
@@ -212,7 +212,7 @@
     sending = true;
     for (const sig of ecu.signals) {
       if (timers[sig.key]) { clearInterval(timers[sig.key]); delete timers[sig.key]; }
-      if (softwareSimEnabled) {
+      if ($softwareSimEnabled) {
         try { await simPeriodicStop(sig.bus, sig.id); } catch {}
       }
       running.delete(sig.key);
@@ -258,12 +258,12 @@
     <span class="emu-title">CAN Emulator</span>
     <!-- Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) -->
     <label class="emu-mode-toggle" title="Simulated: no CAN hardware needed. Physical: requires CANalyzer/ESP32.">
-      <input type="checkbox" bind:checked={softwareSimEnabled} />
-      <span class="emu-mode-label">{softwareSimEnabled ? "Simulated" : "Physical"}</span>
+      <input type="checkbox" bind:checked={$softwareSimEnabled} />
+      <span class="emu-mode-label">{$softwareSimEnabled ? "Simulated" : "Physical"}</span>
     </label>
-    <span class="emu-sub">{softwareSimEnabled ? "Software loopback — no CAN hardware needed." : "CAN injection via bridge — needs CANalyzer/ESP32."}</span>
+    <span class="emu-sub">{$softwareSimEnabled ? "Software loopback — no CAN hardware needed." : "CAN injection via bridge — needs CANalyzer/ESP32."}</span>
     <div class="emu-actions">
-      <button class="emu-btn quick" disabled={sending || (!softwareSimEnabled && !connected()) || missingEcus().length===0} on:click={emulateMissing}>
+      <button class="emu-btn quick" disabled={sending || (!$softwareSimEnabled && !connected()) || missingEcus().length===0} on:click={emulateMissing}>
         ▶ Emulate missing ({missingEcus().length})
       </button>
       {#if running.size > 0}
@@ -272,7 +272,7 @@
     </div>
   </div>
 
-  {#if !softwareSimEnabled && !connected()}
+  {#if !$softwareSimEnabled && !connected()}
     <div class="emu-warn">Bridge not connected. Switch to <strong>Simulated</strong> mode or connect CANalyzer/ESP32.</div>
   {/if}
 

@@ -13,11 +13,11 @@ test.describe("Debug Tool", () => {
 
   test("all ten tabs are present", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("nav.tabs button")).toHaveCount(10);
+    const tabButtons = page.locator("nav.tabs button");
+    expect(await tabButtons.count()).toBe(10);
     const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline", "Terminal", "Emulator"];
-    for (const name of tabs) {
-      await expect(page.locator("nav.tabs").getByText(name)).toBeVisible();
-    }
+    const labels = await tabButtons.allTextContents();
+    expect(labels).toEqual(expect.arrayContaining(tabs));
   });
 
   test("navigating to monitor tab works", async ({ page }) => {
@@ -119,5 +119,6 @@ test.describe("Debug Tool", () => {
     
     // State should be retained (Low Bus still active)
     await expect(page.locator(".injector-layout").filter({ visible: true }).first().locator(".bus-tabs button.active")).toContainText(/LOW Bus/i);
+
   });
 });
