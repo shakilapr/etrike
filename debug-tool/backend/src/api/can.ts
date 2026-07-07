@@ -152,8 +152,13 @@ export function registerCanRoutes(app: FastifyInstance, store: DebugStore): void
 
   app.get<{
     Querystring: { bus?: string; id?: string; since?: string; limit?: string };
-  }>("/api/can/frames", async (request) => {
-    const bus = request.query.bus ? normalizeBus(request.query.bus) : undefined;
+  }>("/api/can/frames", async (request, reply) => {
+    let bus: ReturnType<typeof normalizeBus> | undefined;
+    try {
+      bus = request.query.bus ? normalizeBus(request.query.bus) : undefined;
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
     const id = request.query.id ? normalizeCanId(request.query.id) : undefined;
     const since = request.query.since ? Number(request.query.since) : undefined;
     const limit = request.query.limit ? Number(request.query.limit) : undefined;

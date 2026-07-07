@@ -15,7 +15,6 @@ No active P1 bugs currently tracked here.
 
 ## P2 — Cosmetic / Edge Cases
 
-- **BUG-30:** `normalizeBus()` falls through to `"high"` silently.
 - **BUG-34:** `normalizeFilter` strips bus from bare IDs.
 - **BUG-36:** Controller `tick()` reads `heldNow` via Svelte reactive assignment (stale closure edge case).
 - **BUG-54:** `Topbar.svelte` reports the USB port state as "open" when disconnected instead of "closed" or "offline".

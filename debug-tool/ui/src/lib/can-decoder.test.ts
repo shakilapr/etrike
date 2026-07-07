@@ -70,7 +70,10 @@ describe("normalizeBus", () => {
   it('defaults to "high"', () => {
     expect(normalizeBus("high")).toBe("high");
     expect(normalizeBus(undefined)).toBe("high");
-    expect(normalizeBus("invalid")).toBe("high");
+  });
+
+  it("rejects invalid buses", () => {
+    expect(() => normalizeBus("invalid")).toThrow("invalid CAN bus");
   });
 });
 
