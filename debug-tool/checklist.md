@@ -58,6 +58,11 @@
   - [x] Testing: Backend typecheck/test suite and native simulation build pass.
   - [ ] Manual visual: Start simulation, verify steering angle starts at 0 instead of 3000.
 
+- [x] **BUG-63:** Disabling ECUs in Full Sim Mode has no effect (Zombie Models)
+  - [x] Implementation: Restrict `SimulationEngine.tick()` to IDs in `activeEcus`.
+  - [x] Testing: Added backend regression test proving inactive ECUs neither ingest nor tick.
+  - [ ] Manual UI: Toggle ECUs off in Full Sim Mode and verify their frames stop.
+
 ---
 
 ## P1 — Wrong Behavior
