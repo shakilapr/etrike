@@ -11,17 +11,6 @@ No active P0 bugs currently tracked here.
 
 ## P1 — Wrong Behavior
 
-### BUG-65: Controller causes Speed Oscillation (Split-Brain) in Full Sim Mode
-
-**Severity:** P1 (Wrong Behavior)  
-**Files:** `ui/src/components/Controller.svelte:103-104`
-
-**Symptom:** When a user commands a continuous speed via the UI's Controller tab while in "Full Simulation" mode, the vehicle's speed oscillates repeatedly between the commanded target speed and zero.
-
-**Root cause:** The `Controller.svelte` component unconditionally calls the `sendFrame` API to directly inject raw `0x300` CAN frames onto the bus. However, in Full Simulation mode, the backend's `host-model.ts` ECU is actively running and automatically generating its own `0x300` frames at 50Hz. Because the Controller UI fails to call the `/api/sim/controller` endpoint (`simControllerInput`), the `host-model` remains entirely unaware of the user's intent and continues to broadcast its default state (speed = 0). This creates a split-brain collision on the virtual bus where the UI and the `host-model` alternate sending conflicting drive commands.
-
-**Fix direction:** Update `Controller.svelte` to subscribe to the `$workMode` store. When in `full-sim` mode (or when the `host` ECU is being simulated), route drive inputs through `simControllerInput` rather than `sendFrame`.
-
 ### BUG-66: Missing UI/E2E Testing Infrastructure (Blind Spots)
 
 **Severity:** P1 (Infrastructure / QA)  
