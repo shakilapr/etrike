@@ -19,9 +19,17 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
 
   app.put<{ Params: { id: string } }>("/api/recordings/:id/stop", async (request, reply) => {
     const id = Number(request.params.id);
+    const existing = store.getRecording(id);
+    if (!existing) {
+      return reply.code(404).send({ error: "recording not found" });
+    }
+    if (existing.stopped_at !== null) {
+      return reply.code(409).send({ error: "recording already stopped" });
+    }
+
     const recording = store.stopRecording(id);
     if (!recording) {
-      return reply.code(404).send({ error: "recording not found" });
+      return reply.code(409).send({ error: "recording already stopped" });
     }
     return { recording };
   });

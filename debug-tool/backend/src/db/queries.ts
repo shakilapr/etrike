@@ -223,6 +223,10 @@ export class DebugStore {
     return this.db.prepare("SELECT * FROM recordings ORDER BY started_at DESC").all() as Recording[];
   }
 
+  getRecording(id: number): Recording | null {
+    return (this.db.prepare("SELECT * FROM recordings WHERE id = ?").get(id) as Recording | undefined) ?? null;
+  }
+
   startRecording(label?: string): Recording {
     const startedAt = Date.now() / 1000;
     const cleanLabel = label?.trim() || null;
@@ -233,10 +237,13 @@ export class DebugStore {
   }
 
   stopRecording(id: number): Recording | null {
+    const existing = this.getRecording(id);
+    if (!existing || existing.stopped_at !== null) return null;
+
     this.activeRecordingIds.delete(id);
-    this.db.prepare("UPDATE recordings SET stopped_at = COALESCE(stopped_at, ?) WHERE id = ?").run(Date.now() / 1000, id);
+    this.db.prepare("UPDATE recordings SET stopped_at = ? WHERE id = ? AND stopped_at IS NULL").run(Date.now() / 1000, id);
     this.db.prepare("UPDATE recordings SET frame_count = (SELECT COUNT(*) FROM recording_frames WHERE recording_id = ?) WHERE id = ?").run(id, id);
-    return (this.db.prepare("SELECT * FROM recordings WHERE id = ?").get(id) as Recording | undefined) ?? null;
+    return this.getRecording(id);
   }
 
   deleteRecording(id: number): boolean {
