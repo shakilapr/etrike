@@ -46,11 +46,10 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
     bool  saturated = false;
 
     if (std::abs(v) > low_speed_mps) {
-        // Use signed velocity — std::abs(v) destroys the sign, causing
-        // inverted steering in reverse (bug 4.4). atan2(y, x) with
-        // negative x correctly produces the mirrored steering angle
-        // needed for reverse-direction turns.
-        const float requested_steer = std::atan2(L * w, v);
+        // Use the signed inverse bicycle equation. atan2(L*w, v) returns
+        // a quadrant-II positive angle when v is negative; atan((L*w)/v)
+        // preserves the reverse-drive steering sign required by the model.
+        const float requested_steer = std::atan((L * w) / v);
         saturated = std::abs(requested_steer) > steer_limit_rad;
         steer = std::clamp(requested_steer, -steer_limit_rad, steer_limit_rad);
         m_steer_hold_rad = steer;
@@ -58,7 +57,7 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
     } else if (std::abs(w) > kYawEpsilon) {
         // Tricycle cannot spin in place. Set steering to full lock in the
         // requested direction but keep speed at zero to prevent unexpected
-        // forward lurch (bug 4.3). The steering angle prepares the vehicle
+        // forward lurch (bug 4.5). The steering angle prepares the vehicle
         // for the turn when speed is later applied by the planner.
         steer = (w > 0.0f) ? steer_limit_rad : -steer_limit_rad;
         m_steer_hold_rad = steer;
