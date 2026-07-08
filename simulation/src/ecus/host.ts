@@ -134,6 +134,14 @@ export class HostEcu implements SimulatedEcu {
       });
     }
 
+    // ── 0x302 HOST_LIGHT_CMD (on change in firmware; periodic in sim) ─
+    if (nowMs % 100 === 0) {
+      out.push({
+        simTimeMs: nowMs, bus: "high", canId: "0x302", name: "HOST_LIGHT_CMD",
+        dlc: 1, data: [0], sender: "host",
+      });
+    }
+
     // ── 0x7FC HOST_HEARTBEAT (2 Hz) ───────────────────────────
     if (nowMs % 500 === 0) {
       this.heartbeatCtr = (this.heartbeatCtr + 1) & 0xFF;

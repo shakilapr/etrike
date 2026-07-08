@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import type { SimFrame, SimulationResult } from "../core/types.js";
-import { DLC, BUS } from "../../../shared/can/generated/can_ids";
-import { HOST_BRAKE_MAX_KPA, MAX_SPEED_FWD_MMPS, MAX_SPEED_REV_MMPS } from "../../../shared/can/generated/can_constants";
+import { DLC, BUS } from "../../../shared/can/generated/can_ids.js";
+import { HOST_BRAKE_MAX_KPA, MAX_SPEED_FWD_MMPS, MAX_SPEED_REV_MMPS } from "../../../shared/can/generated/can_constants.js";
 
 export interface Phase1Trace {
   result: SimulationResult;

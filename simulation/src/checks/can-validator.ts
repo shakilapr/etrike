@@ -6,7 +6,7 @@
  */
 
 import type { ValidationError, BusId } from "../core/types.js";
-import { DLC as EXPECTED_DLC } from "../../../shared/can/generated/can_ids";
+import { DLC as EXPECTED_DLC } from "../../../shared/can/generated/can_ids.js";
 
 export class CanValidator {
   private errors: ValidationError[] = [];
