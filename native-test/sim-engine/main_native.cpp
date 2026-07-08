@@ -27,7 +27,7 @@ using QueueHandle_t = QueueHandle_t_dummy*;
 #define ESP_LOGW(tag, fmt, ...)
 #define ESP_LOGI(tag, fmt, ...)
 
-extern "C" int64_t g_sim_time_us = 0;
+int64_t g_sim_time_us = 0;
 
 extern "C" {
     int64_t esp_timer_get_time() {
