@@ -391,19 +391,15 @@ Four per-task alive counters (safety, brake, dispatch, can_tx). Updated every ta
 
 ### 9.1 Bench Testing Without Full Hardware
 
-The system has hardware dependencies on peer ECUs and steer-by-wire actuators. For
-bench testing with a single ESP32-S3 and a CAN bus analyzer, compile-time
-bypass flags disable these dependencies:
+The system uses a unified 3-mode configuration via `SYSTEM_RUN_MODE` in `shared/system_mode.h`:
 
-| Flag | Effect | ECU |
-|------|--------|-----|
-| `CONFIG_BENCH_SOLO` | Disable cross-ECU heartbeat timeouts. Single board won't ESTOP. | RT, SYS |
-| `CONFIG_BYPASS_EPS_C_SYNC` | Skip EPS-C listen-sync. Steering assumes centered (0°). | RT |
-| `CONFIG_BYPASS_SEB_SYNC` | Skip SEB listen-sync. Brake operates in DEGRADED (lever-only). | SYS |
-| `CONFIG_BYPASS_MTR_ABSENT` | Skip EGAS L2 speed monitoring. No MTR feedback required. | SYS |
+| Mode | Name | Effect |
+|------|------|--------|
+| 0 | PRODUCTION | Strict safety, requires real hardware. No bypasses allowed. |
+| 1 | PROTOTYPE | Checks physical developer override pin (GPIO 35) to dynamically enable bypasses. |
+| 2 | PURE SIM | Mocks everything. Disables cross-ECU heartbeat timeouts and actuator syncs. |
 
-These flags are in `platformio.ini` `build_flags`. Remove all `CONFIG_BENCH_*`
-and `CONFIG_BYPASS_*` before vehicle deployment.
+The physical override pin allows safe lab testing on real hardware without flashing a compromised binary.
 
 ### 9.2 Debug Tool — Synthetic Peer ECUs
 
@@ -426,13 +422,13 @@ presets — the tool can inject any CAN frame via the encode API.
 ### 9.3 Bench Test Configurations
 
 **Minimal bench (1 ECU + CANalyst-II):**
-- Enable `CONFIG_BENCH_SOLO` + all `CONFIG_BYPASS_*` flags
+- Set `SYSTEM_RUN_MODE = 2`
 - CANalyst-II injects Host frames (0x300, 0x7FC) on high bus
 - No peer ECUs, no actuators
 
 **Full bench (2 ECUs + CANalyst-II):**
 - RT + SYS on low bus, CANalyst-II as Host on high bus
-- Enable `CONFIG_BENCH_SOLO`, disable actuator bypasses
+- Set `SYSTEM_RUN_MODE = 1` and jump GPIO 35 to GND.
 - CANalyst-II injects synthetic peer frames as needed
 
 ---
@@ -460,20 +456,18 @@ All firmware builds with PlatformIO. Three environments per ECU:
 
 | Environment | Purpose | Flags |
 |---|---|---|
-| `[env:vehicle]` | Production. No bypass flags. | `FW_VERSION` only |
-| `[env:bench]` | Bench testing. All bypass flags. | `BENCH_BUILD_ACKNOWLEDGED` + all bypass flags |
+| `[env:vehicle]` | Production. | `FW_VERSION` only |
+| `[env:bench]` | Bench testing convenience. | `FW_VERSION` only |
 | `[env:native]` | Host-side validation. PlatformIO `native`. | `HOST_BUILD`, `TESTING`, shadow HAL headers |
-
-**Bench build safety guard:** Both RT and SYS `main.cpp` require `BENCH_BUILD_ACKNOWLEDGED` to be defined when `CONFIG_BENCH_SOLO` is active. Compilation fails without it — prevents accidental bench firmware on a vehicle. At runtime, `BENCH_BUILD_ACKNOWLEDGED` sets bit 7 of `task_health` byte in `0x210 RT_STATE_RPT` as an in-band indicator.
 
 **Native test environment:** `[env:native]` compiles selected source files for the host OS using shadow HAL headers from `native-test/hal/shadow/`. Produces a console executable that validates physics, kinematics, mode manager, and safety monitor. No ESP32 hardware required. Run via `pio test -e native`.
 
 | ECU | Board | Framework | Vehicle Flags | Bench Flags |
 |-----|-------|-----------|--------------|-------------|
-| RT | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | + `-D BENCH_BUILD_ACKNOWLEDGED -D CONFIG_BENCH_SOLO -D CONFIG_BYPASS_EPS_C_SYNC -D CONFIG_BYPASS_SEB_SYNC -D CONFIG_BYPASS_MTR_ABSENT` |
-| SYS | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | + `-D BENCH_BUILD_ACKNOWLEDGED -D TESTING -D SYS_OWNS_MOTOR -D CONFIG_BENCH_SOLO -D CONFIG_BYPASS_SEB_SYNC -D CONFIG_BYPASS_MTR_ABSENT` |
-| MTR | genericSTM32F103C8 | stm32cube | HAL calls | `BENCH_BUILD_ACKNOWLEDGED` |
-| PWT | esp32-s3-devkitc-1 | espidf | 250k CAN | `BENCH_BUILD_ACKNOWLEDGED` |
+| RT | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | Same as Vehicle |
+| SYS | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | `TESTING SYS_OWNS_MOTOR` |
+| MTR | genericSTM32F103C8 | stm32cube | HAL calls | Same as Vehicle |
+| PWT | esp32-s3-devkitc-1 | espidf | 250k CAN | Same as Vehicle |
 
 **ESP-IDF requirement:** 5.0 or later (`#error` guard in both RT and SYS `main.cpp`).
 
@@ -493,6 +487,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 38 | MCP2515 MISO | SPI data in |
 | 39 | MCP2515 CS | SPI chip select |
 | 40 | MCP2515 INT | Interrupt (active low, pull-up, NEGEDGE) |
+| 35 | OVERRIDE | Developer override pin for Mode 1 |
 | 1-2 | Encoder rear motor | Quadrature PCNT (rear motor speed feedback) |
 | 3,6 | Encoder front wheel | Quadrature PCNT (front wheel) |
 | 9,12 | Encoder rear left | Quadrature PCNT (differential) |
@@ -526,7 +521,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 32 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
 | 33 | — | *Reserved (legacy SYS_OWNS_MOTOR bench path — MTR owns gear in vehicle)* |
 | 34 | — | *Reserved* |
-| 35 | — | *Reserved* |
+| 35 | OVERRIDE | Developer override pin for Mode 1 |
 
 ### MTR STM32 (Vehicle — owns all motor I/O)
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import type { CanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
   import { frames } from "../stores/can";
@@ -24,9 +25,20 @@
   ];
 
   let paused = false;
-  let pausedFrames: CanFrame[] = [];
+  let sourceFrames: CanFrame[] = [];
 
-  $: sourceFrames = paused ? pausedFrames : $frames;
+  let uiTimer: ReturnType<typeof setInterval>;
+  onMount(() => {
+    uiTimer = setInterval(() => {
+      if (!paused) {
+        sourceFrames = $frames;
+      }
+    }, 100);
+  });
+  
+  onDestroy(() => {
+    clearInterval(uiTimer);
+  });
   $: catalog = ids.filter((message) => $monitorBusFilter === "all" || message.bus === $monitorBusFilter);
   $: categoryIds = CATEGORIES
     .map((category) => {
@@ -57,7 +69,9 @@
   }
 
   function togglePause() {
-    if (!paused) pausedFrames = $frames.slice();
+    if (!paused) {
+      sourceFrames = $frames.slice();
+    }
     paused = !paused;
   }
 

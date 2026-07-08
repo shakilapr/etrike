@@ -4,12 +4,14 @@
 // Phases S1-S4: CAN RX, dispatch, motor, safety, mode, throttle, brake,
 //               lights, dcdc, indicator, power, can_tx, diag, heartbeat.
 
-// Bench build safety guard: bench firmware disables critical safety
-// mechanisms and must never be flashed to a vehicle. Require explicit
-// acknowledgement to compile.
-#if defined(CONFIG_BENCH_SOLO) && !defined(BENCH_BUILD_ACKNOWLEDGED)
-#error "Bench build selected. Define BENCH_BUILD_ACKNOWLEDGED to proceed. Vehicle builds must NOT define BENCH_BUILD_ACKNOWLEDGED."
-#endif
+// Runtime System Mode Configuration
+#include "system_mode.h"
+
+// Define runtime bypass flags
+bool g_bench_solo_mode = false;
+bool g_bypass_eps_sync = false;
+bool g_bypass_seb_sync = false;
+bool g_bypass_mtr_absent = false;
 
 #include <atomic>
 #include "freertos/FreeRTOS.h"
@@ -434,8 +436,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // EGAS L2: compare 0x204 setpoint vs 0x206 actual speed (arch §6.1)
         // Only in AUTO mode. Mismatch > threshold for > duration → ESTOP.
-#ifndef CONFIG_BYPASS_MTR_ABSENT
-        {
+        if (!g_bypass_mtr_absent) {
             static bool  egas_fault_active = false;
             static TickType_t egas_fault_start = 0;
             if (g_mode_mgr.mode() == can::Mode::Auto) {
@@ -465,8 +466,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 egas_fault_active = false;
             }
         }
-#endif  // CONFIG_BYPASS_MTR_ABSENT
-
         // F3: MTR ESTOP ACK check (Gap #15)
         // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags.
         {
@@ -908,6 +907,39 @@ static TaskHandle_t h_indicator, h_power, h_can_tx, h_diag, h_hb;
 
 extern "C" void app_main() {
     ESP_LOGI(TAG, "SYS ESP32-S3 initializing...");
+    
+    // Evaluate System Run Mode
+    if (SYSTEM_RUN_MODE == 2) {
+        ESP_LOGE(TAG, "***********************************");
+        ESP_LOGE(TAG, "* PURE SOFTWARE SIMULATION MODE   *");
+        ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
+        ESP_LOGE(TAG, "***********************************");
+        g_bench_solo_mode = true;
+        g_bypass_eps_sync = true;
+        g_bypass_seb_sync = true;
+        g_bypass_mtr_absent = true;
+    } else if (SYSTEM_RUN_MODE == 1) {
+        gpio_set_direction(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN), GPIO_MODE_INPUT);
+        gpio_pullup_en(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN));
+        
+        // Brief delay to let pull-up stabilize
+        vTaskDelay(pdMS_TO_TICKS(10));
+        
+        if (gpio_get_level(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN)) == 0) {
+            ESP_LOGE(TAG, "***********************************");
+            ESP_LOGE(TAG, "* HARDWARE OVERRIDE PIN DETECTED! *");
+            ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
+            ESP_LOGE(TAG, "***********************************");
+            g_bench_solo_mode = true;
+            g_bypass_eps_sync = true;
+            g_bypass_seb_sync = true;
+            g_bypass_mtr_absent = true;
+        } else {
+            ESP_LOGI(TAG, "Prototype mode: Override pin not jumped. Enforcing safety.");
+        }
+    } else {
+        ESP_LOGI(TAG, "Production mode: Safety checks enforced.");
+    }
 
     // 0. NVS init + crash persistence
     {

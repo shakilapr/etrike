@@ -13,6 +13,8 @@
 #include "esp_log.h"
 #include "can/can_protocol.h"
 #include "physics_model.h"
+#include "system_mode.h"
+#include "physics_model.h"
 namespace rt {
 enum class SteerState : uint8_t {
     STEER_BOOT_WAIT,          // 500ms power-on delay — do NOT transmit
@@ -54,13 +56,13 @@ public:
             return false;
 
         case SteerState::STEER_LISTEN_SYNC: {
-#if defined(CONFIG_BYPASS_EPS_C_SYNC) && defined(CONFIG_BENCH_SOLO)
-            // Bench mode: skip EPS-C listen-sync, assume centered
-            m_active_angle = 0;
-            m_state = SteerState::STEER_ACTIVE;
-            build_command(out);
-            return true;
-#endif
+            if (g_bypass_eps_sync && g_bench_solo_mode) {
+                // Bench mode: skip EPS-C listen-sync, assume centered
+                m_active_angle = 0;
+                m_state = SteerState::STEER_ACTIVE;
+                build_command(out);
+                return true;
+            }
             // Timeout check (gap C1): 5s without valid 0x201 → FAULT
             if (now_ms - m_sync_start_ms > static_cast<uint32_t>(kSteerSyncTimeoutMs)) {
                 m_state = SteerState::STEER_FAULT;

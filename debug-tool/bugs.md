@@ -2,6 +2,7 @@
 
 > Severity: **P0** = data loss / safety confusion, **P1** = wrong behavior, **P2** = cosmetic / edge case.
 > Note: Solved bugs have been cleaned from this list. Refer to `checklist.md` for the full historical checklist.
+> Note: For full UI testing results and automated findings, please refer to the [QA Report](ui/qa_report.md).
 
 ---
 
@@ -9,13 +10,7 @@
 
 No active P0 bugs currently tracked here.
 
-## P1 — Wrong Behavior
 
-No active P1 bugs currently tracked here.
-
-## P2 — Cosmetic / Edge Cases
-
-No active P2 bugs currently tracked here.
 
 ## Extras / Artifacts
 

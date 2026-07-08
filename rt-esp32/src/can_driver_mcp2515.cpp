@@ -7,10 +7,11 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
-#include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "system_mode.h"
 #include "freertos/semphr.h"
 
 namespace rt {
@@ -323,21 +324,21 @@ bool Mcp2515Driver::init_mcp2515_regs() {
     // receive CANalyst-II injected frames (0x300, 0x7FC) without
     // accumulating TX errors from un-ACKed outgoing frames. On a real
     // vehicle with a Host/Jetson that ACKs, use Normal mode.
-#ifdef CONFIG_BENCH_SOLO
-    constexpr Mode kStartMode = Mode::ListenOnly;
-    modify_reg(kRegCanCtrl, 0xE0, static_cast<uint8_t>(Mode::ListenOnly));
-#else
-    constexpr Mode kStartMode = Mode::Normal;
-    modify_reg(kRegCanCtrl, 0xE0, 0x00);  // REQOP[2:0]=000 = normal mode
-#endif
+    Mode start_mode = Mode::Normal;
+    if (g_bench_solo_mode) {
+        start_mode = Mode::ListenOnly;
+        modify_reg(kRegCanCtrl, 0xE0, static_cast<uint8_t>(Mode::ListenOnly));
+    } else {
+        modify_reg(kRegCanCtrl, 0xE0, 0x00);  // REQOP[2:0]=000 = normal mode
+    }
     vTaskDelay(pdMS_TO_TICKS(1));
 
     canstat = read_reg(kRegCanStat);
     uint8_t opmode = (canstat >> 5) & 0x07;
-    uint8_t expected = static_cast<uint8_t>(kStartMode) >> 5;
+    uint8_t expected = static_cast<uint8_t>(start_mode) >> 5;
     if (opmode != expected) {
         ESP_LOGE(kTag, "MCP2515 failed to enter %s mode (CANSTAT=0x%02X)",
-                 kStartMode == Mode::ListenOnly ? "listen-only" : "normal", canstat);
+                 start_mode == Mode::ListenOnly ? "listen-only" : "normal", canstat);
         return false;
     }
     return true;

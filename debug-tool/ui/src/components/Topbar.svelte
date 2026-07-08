@@ -173,12 +173,12 @@
     <!-- Brand + mode selector -->
     <div class="tb-brand">
       <span>E-Trike</span>
-      <select class="tb-mode-select" value={$workMode.mode} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
-        {#each MODES as m}
-          <option value={m}>{workModeLabel(m)}</option>
-        {/each}
-      </select>
     </div>
+    <select class="tb-mode-select" value={$workMode.mode} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
+      {#each MODES as m}
+        <option value={m}>{workModeLabel(m)}</option>
+      {/each}
+    </select>
 
     <!-- Indicators — automotive-standard shapes, fixed size -->
     <div class="tb-indicators">
