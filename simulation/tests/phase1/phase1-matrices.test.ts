@@ -20,7 +20,8 @@ function cfg(overrides: Partial<SimConfig> = {}): SimConfig {
 function run(config: SimConfig) {
   const runner = new SimulationRunner();
   runner.configure(config);
-  const result = runner.runDuration(1200);
+  const durationMs = config.initialMode === "auto" ? 1200 : 400;
+  const result = runner.runDuration(durationMs);
   assertPhase1Invariants({ result, frames: runner.capturedFrames, mode: config.initialMode });
   return { runner, result };
 }

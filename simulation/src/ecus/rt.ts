@@ -96,7 +96,7 @@ export class RtEcu implements SimulatedEcu {
         }
         case "0x001": {
           // ESTOP — forward to low bus
-          out.push({ ...f, bus: "low", sender: "rt" });
+          if (f.sender !== "rt") out.push({ ...f, bus: "low", sender: "rt" });
           break;
         }
         case "0x302": {
@@ -134,7 +134,7 @@ export class RtEcu implements SimulatedEcu {
         }
         case "0x001": {
           // ESTOP — forward to high bus
-          out.push({ ...f, bus: "high", sender: "rt" });
+          if (f.sender !== "rt") out.push({ ...f, bus: "high", sender: "rt" });
           break;
         }
         // Category 1 forward: low→high

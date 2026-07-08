@@ -36,6 +36,7 @@ export class SysEcu implements SimulatedEcu {
 
   // Gap I9a: ESTOP rate-limiting — track ESTOP CAN frame RX timestamps
   private estopTimestamps: number[] = [];
+  private lastEstopRateLimitWarningMs = -Infinity;
 
   // Gap I9b: MTR ESTOP ACK watchdog
   private estopTriggerMs = -1;     // when ESTOP was first triggered (ms)
@@ -57,7 +58,8 @@ export class SysEcu implements SimulatedEcu {
     // Prune entries older than 500ms
     const windowMs = 500;
     this.estopTimestamps = this.estopTimestamps.filter(t => nowMs - t <= windowMs);
-    if (this.estopTimestamps.length > 2) {
+    if (this.estopTimestamps.length > 2 && nowMs - this.lastEstopRateLimitWarningMs >= windowMs) {
+      this.lastEstopRateLimitWarningMs = nowMs;
       console.warn(`[SYS] ESTOP rate-limit: ${this.estopTimestamps.length} frames in ${windowMs}ms window (limit 2)`);
     }
     this.safety.setEstop(true);
@@ -67,6 +69,7 @@ export class SysEcu implements SimulatedEcu {
     this.safety.reset();
     this.brake.reset();
     this.estopTimestamps = [];
+    this.lastEstopRateLimitWarningMs = -Infinity;
     this.estopTriggerMs = -1;
     this.mtrAcked = false;
   }
