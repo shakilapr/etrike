@@ -1,0 +1,15 @@
+# Standard C/C++ Headers Allowed in Firmware
+<stdint.h>
+<stdbool.h>
+<stddef.h>
+<string.h>
+<math.h>
+
+# ESP-IDF specific headers
+<freertos/FreeRTOS.h>
+<freertos/task.h>
+<driver/twai.h>
+<driver/gpio.h>
+<esp_timer.h>
+<esp_log.h>
+<esp_err.h>
