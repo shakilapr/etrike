@@ -27,6 +27,7 @@ bool g_bypass_mtr_absent = false;
 #include "can_driver_twai.h"
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
+#include "seb_request.h"
 
 static const char* TAG = "rt";
 
@@ -323,33 +324,6 @@ static bool send_can_high(can::Frame& fr) {
     }
 }
 
-static can::VcuSebReq make_seb_takeover_req() {
-    can::VcuSebReq seb{};
-    seb.align_enable = 1;
-    seb.control_mode = 0;    // Stroke mode
-    seb.auto_brake   = 1;    // Emergency trigger
-    seb.stroke_req   = 1140; // 27mm max stroke: (27+30)/0.05
-    return seb;
-}
-
-static can::VcuSebReq make_seb_auto_req(int32_t kpa) {
-    can::VcuSebReq seb{};
-    seb.align_enable = 1;  // Required by SEB protocol — frame rejected without this bit
-    if (kpa > 0) {
-        // Pressure Mode: kPa -> SEB raw (0.05 MPa/bit, 1 kPa = 0.02 raw)
-        uint8_t pressure_raw = static_cast<uint8_t>(std::min(
-            static_cast<int32_t>(kpa * 0.02f), int32_t(shared::kSebMaxPressureRaw)));
-        seb.control_mode = 1;     // Pressure
-        seb.pressure_req = pressure_raw;
-        seb.stroke_req   = 600;   // 0mm baseline
-        seb.auto_brake   = 1;     // automated braking
-    } else {
-        seb.control_mode = 0;     // Stroke
-        seb.stroke_req   = 600;   // 0mm: (0+30)/0.05
-    }
-    return seb;
-}
-
 static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                          can::VcuSebReq seb, uint8_t& rolling_counter) {
     seb.control_enable = 1;
@@ -430,7 +404,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             static uint8_t seb_roll = 0;
             bool seb_takeover = g_seb_takeover.load(std::memory_order_relaxed);
             if (seb_takeover) {
-                send_seb_req(*drv, fr, make_seb_takeover_req(), seb_roll);
+                send_seb_req(*drv, fr, rt::make_seb_takeover_req(), seb_roll);
             }
 
             // Gap #12 completion: Option D - RT sends 0x7B9 directly in AUTO mode.
@@ -446,7 +420,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                 && g_mode_current.load() == uint8_t(can::Mode::Auto)
                 && ss == rt::SteerState::STEER_ACTIVE) {
                 int32_t brake = g_brake_kpa_to_send.load();
-                send_seb_req(*drv, fr, make_seb_auto_req(brake), seb_roll);
+                send_seb_req(*drv, fr, rt::make_seb_auto_req(brake), seb_roll);
             }
         }
 

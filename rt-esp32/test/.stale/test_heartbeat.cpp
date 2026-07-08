@@ -80,13 +80,15 @@ int main(){
 
         hb.tick_low(f);
         CHECK(f.id  == 0x7FD);
-        CHECK(f.dlc == 1);
+        CHECK(f.dlc == 2);
         CHECK(f.u8_at(0) == 1);  // first tick → counter=1
+        CHECK(f.u8_at(1) == 0);  // default health flags
 
         hb.tick_high(f);
         CHECK(f.id  == 0x7FD);
-        CHECK(f.dlc == 1);
+        CHECK(f.dlc == 2);
         CHECK(f.u8_at(0) == 1);  // first high tick → counter=1
+        CHECK(f.u8_at(1) == 0);  // default health flags
 
         // After more ticks, counters reflect independent values
         hb.tick_low(f);   // low: 2

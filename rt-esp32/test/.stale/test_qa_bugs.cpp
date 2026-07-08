@@ -4,7 +4,7 @@
 #include <cmath>
 #include "config.h"
 #include "physics_model.h"
-#include "can/can_protocol.h"
+#include "seb_request.h"
 
 static int pass=0, fail=0;
 #define CHECK(cond) do { if(cond){pass++;}else{fail++;fprintf(stderr,"FAIL %s:%d\n",__FILE__,__LINE__);} } while(0)
@@ -50,24 +50,7 @@ int main() {
     }
 
     printf("-- Bug 4.10: SEB Alignment Bit Uninitialized --\n");
-    // Extracting make_seb_auto_req from main.cpp
-    auto make_seb_auto_req = [](int32_t kpa) {
-        can::VcuSebReq seb{};
-        if (kpa > 0) {
-            uint8_t pressure_raw = static_cast<uint8_t>(std::min(
-                static_cast<int32_t>(kpa * 0.02f), int32_t(shared::kSebMaxPressureRaw)));
-            seb.control_mode = 1;
-            seb.pressure_req = pressure_raw;
-            seb.stroke_req   = 600;
-            seb.auto_brake   = 1;
-        } else {
-            seb.control_mode = 0;
-            seb.stroke_req   = 600;
-        }
-        return seb;
-    };
-    
-    can::VcuSebReq auto_req = make_seb_auto_req(2000);
+    can::VcuSebReq auto_req = rt::make_seb_auto_req(2000);
     printf("SEB auto req align_enable: %d\n", auto_req.align_enable);
     if (auto_req.align_enable == 1) {
         pass++;

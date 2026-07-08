@@ -15,6 +15,9 @@ static int pass=0, fail=0;
 
 using namespace rt;
 
+bool g_bench_solo_mode = false;
+bool g_bypass_eps_sync = false;
+
 // Helper: advance steering through boot sequence to ACTIVE.
 static void boot_to_active(SteeringControl& sc, uint32_t& now_ms, int16_t sync_angle = 0) {
     can::VcuSesReq out;
