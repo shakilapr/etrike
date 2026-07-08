@@ -24,7 +24,7 @@ export interface SimEngineState {
 export class SimulationEngine {
   readonly bus = new VirtualCanBus();
   private models = new Map<string, EcuModel>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timer: NodeJS.Timeout | null = null;
   private lastTickMs: number = 0;
   private tickMs = 10; // 100 Hz default
   private _state: SimEngineState = {
@@ -67,12 +67,12 @@ export class SimulationEngine {
     }
 
     this._state.running = true;
-    this.lastTickMs = Date.now();
+    this.lastTickMs = performance.now();
 
     const loop = () => {
       if (!this._state.running) return;
       
-      const now = Date.now();
+      const now = performance.now();
       let dt = now - this.lastTickMs;
       if (dt > 1000) dt = 1000; // Cap at 1s to prevent death spiral
 
@@ -81,15 +81,29 @@ export class SimulationEngine {
         dt -= this.tickMs;
         this.lastTickMs += this.tickMs;
       }
-      this.timer = setTimeout(loop, this.tickMs);
+      
+      if (!this._state.running) return;
+
+      const timeToNextTick = this.tickMs - (performance.now() - this.lastTickMs);
+      
+      if (timeToNextTick > 5) {
+        // Sleep most of the way, waking up a little early
+        this.timer = setTimeout(loop, Math.max(1, timeToNextTick - 2));
+      } else {
+        // Yield to the event loop for the last few milliseconds
+        this.timer = setImmediate(loop) as NodeJS.Timeout;
+      }
     };
     loop();
   }
 
-  /** Stop the simulation. */
   async stop(): Promise<void> {
     this._state.running = false;
-    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    if (this.timer) { 
+      clearTimeout(this.timer);
+      clearImmediate(this.timer as any);
+      this.timer = null; 
+    }
     for (const model of this.models.values()) {
       await model.stop();
     }
