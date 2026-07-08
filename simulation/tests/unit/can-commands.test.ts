@@ -147,7 +147,7 @@ describe("0x600 SYS_DIAG_RPT", () => {
 // ================================================================
 
 describe("0x210 RT_STATE_RPT", () => {
-  it("RT sends at 10 Hz on high bus, DLC=4", () => {
+  it("RT sends at 10 Hz on high bus, DLC=6", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(500));
     const result = runner.runDuration(200);

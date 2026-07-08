@@ -14,6 +14,9 @@ rt::SteeringControl g_steering;
 rt::DualHeartbeat g_heartbeat;
 rt::CmdWatchdog g_watchdog;
 
+bool g_bench_solo_mode = false;
+bool g_bypass_eps_sync = false;
+
 QueueHandle_t g_safety_evt_q = nullptr;
 
 std::atomic<int32_t> g_brake_request_kpa{0};

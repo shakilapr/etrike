@@ -365,8 +365,8 @@ export class RtEcu implements SimulatedEcu {
         bus: "high",
         canId: "0x210",
         name: "RT_STATE_RPT",
-        dlc: 4,
-        data: [modeByte, safetyState, 0, 0],
+        dlc: 6,
+        data: [modeByte, safetyState, 0, 0, 0x0F, this.steering.getState()],
         sender: "rt",
       });
       // Also send on low bus so SYS can read RT safety_state
@@ -375,8 +375,8 @@ export class RtEcu implements SimulatedEcu {
         bus: "low",
         canId: "0x210",
         name: "RT_STATE_RPT",
-        dlc: 4,
-        data: [modeByte, safetyState, 0, 0],
+        dlc: 6,
+        data: [modeByte, safetyState, 0, 0, 0x0F, this.steering.getState()],
         sender: "rt",
       });
 
@@ -414,11 +414,11 @@ export class RtEcu implements SimulatedEcu {
 
       out.push({
         simTimeMs: nowMs, bus: "low", canId: "0x7FD", name: "RT_HEARTBEAT",
-        dlc: 1, data: [this.rtHbCtrLow], sender: "rt",
+        dlc: 2, data: [this.rtHbCtrLow, this.healthFlags(ctx, shouldEstop)], sender: "rt",
       });
       out.push({
         simTimeMs: nowMs, bus: "high", canId: "0x7FD", name: "RT_HEARTBEAT",
-        dlc: 1, data: [this.rtHbCtrHigh], sender: "rt",
+        dlc: 2, data: [this.rtHbCtrHigh, this.healthFlags(ctx, shouldEstop)], sender: "rt",
       });
     }
 
@@ -431,6 +431,13 @@ export class RtEcu implements SimulatedEcu {
     if (this.obstacleDistanceMm >= 3000) return 0;
     const t = (this.obstacleDistanceMm - 300) / (3000 - 300);
     return Math.round(OBSTACLE_MAX_KPA * (1 - t));
+  }
+
+  private healthFlags(ctx: SimulationContext, estop: boolean): number {
+    return 0x01
+      | (estop || ctx.estopActive ? 0x02 : 0)
+      | (ctx.mode === "auto" ? 0x04 : 0)
+      | 0x08;
   }
 
   /** Set obstacle distance (from 0x400, called by simulation runner). */

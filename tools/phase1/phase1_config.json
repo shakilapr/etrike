@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "phase": "phase1-software-only",
+  "minimumGeneratedScenarioCases": 504,
+  "requiredSuites": [
+    "rt-native-build",
+    "sys-native-build",
+    "rt-native-unity",
+    "sys-native-unity",
+    "native-test",
+    "simulation-tests",
+    "protocol-drift-checks"
+  ],
+  "optionalSuites": [
+    "rt-vehicle-build",
+    "sys-vehicle-build"
+  ],
+  "knownMissingCoverage": [
+    "generated-scenario-matrix",
+    "static-analysis-gate",
+    "coverage-report"
+  ]
+}

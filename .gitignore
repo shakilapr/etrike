@@ -64,6 +64,9 @@ CMakeLists.txt
 *.gcov
 coverage/
 
+# ── Validation artifacts ─────────────────────────────────────────────
+artifacts/
+
 # ── Build artifacts ──────────────────────────────────────────────────
 *.o
 *.out
