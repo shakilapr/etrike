@@ -1,28 +1,26 @@
 <script lang="ts">
   import { commandAcks } from "../stores/can";
-  import { injectorBus } from "../stores/injector";
+  import {
+    injectorBus,
+    injectorConfirmEstop,
+    injectorCount,
+    injectorIntervalMs,
+    injectorSelectedId,
+    injectorValues
+  } from "../stores/injector";
   import { sendFrame, startPeriodic, stopPeriodic } from "../lib/api";
   import type { Bus, CanField, CanMessageDef, InjectionTemplate } from "../lib/can-decoder";
   import { BUSES, encodePayload, formatBytes } from "../lib/can-decoder";
   export let ids: CanMessageDef[] = [];
   export let templates: InjectionTemplate[] = [];
 
-  let selectedId = "0x300";
-  let values: Record<string, number | boolean> = {
-    speed_mmps: 2000,
-    yaw_rate_mrad_s: 0,
-    gear: 1
-  };
-  let confirmEstop = false;
-  let intervalMs = 20;
-  let count = 500;
   let error = "";
   let pending = false;
 
   $: busIds = ids.filter((item) => item.bus === $injectorBus);
   $: injectableIds = busIds.filter((item) => item.injectable);
-  $: selected = injectableIds.find((item) => item.id === selectedId) ?? injectableIds[0];
-  $: encoded = selected ? encodePayload($injectorBus, selected.id, values) : { dlc: 0, data: [] };
+  $: selected = injectableIds.find((item) => item.id === $injectorSelectedId) ?? injectableIds[0];
+  $: encoded = selected ? encodePayload($injectorBus, selected.id, $injectorValues) : { dlc: 0, data: [] };
 
   function chooseBus(bus: Bus) {
     injectorBus.set(bus);
@@ -31,24 +29,24 @@
   }
 
   function chooseId(id: string) {
-    selectedId = id;
+    injectorSelectedId.set(id);
     const next = injectableIds.find((item) => item.id === id);
-    values = defaultsFor(next);
-    confirmEstop = false;
+    injectorValues.set(defaultsFor(next));
+    injectorConfirmEstop.set(false);
   }
 
   function applyTemplate(template: InjectionTemplate) {
     injectorBus.set(template.bus);
-    selectedId = template.id;
-    values = { ...template.values };
-    confirmEstop = false;
+    injectorSelectedId.set(template.id);
+    injectorValues.set({ ...template.values });
+    injectorConfirmEstop.set(false);
   }
 
   function updateField(field: CanField, value: string | boolean) {
-    values = {
-      ...values,
+    injectorValues.set({
+      ...$injectorValues,
       [field.key]: field.kind === "boolean" ? Boolean(value) : Number(value)
-    };
+    });
   }
 
   async function sendOnce() {
@@ -58,7 +56,7 @@
         id: selected.id,
         dlc: encoded.dlc,
         data: encoded.data,
-        confirm_estop: confirmEstop
+        confirm_estop: $injectorConfirmEstop
       })
     );
   }
@@ -70,9 +68,9 @@
         id: selected.id,
         dlc: encoded.dlc,
         data: encoded.data,
-        interval_ms: intervalMs,
-        count,
-        confirm_estop: confirmEstop
+        interval_ms: $injectorIntervalMs,
+        count: $injectorCount,
+        confirm_estop: $injectorConfirmEstop
       })
     );
   }
@@ -129,7 +127,7 @@
 
     <label class="field">
       <span>CAN ID</span>
-      <select bind:value={selectedId} on:change={(event) => chooseId(event.currentTarget.value)}>
+      <select value={$injectorSelectedId} on:change={(event) => chooseId(event.currentTarget.value)}>
         {#each injectableIds as item}
           <option value={item.id}>{item.id} {item.name}</option>
         {/each}
@@ -143,12 +141,12 @@
             <span>{field.label}{field.unit ? ` (${field.unit})` : ""}</span>
             {#if field.kind === "boolean"}
               <input
-                checked={Boolean(values[field.key])}
+                checked={Boolean($injectorValues[field.key])}
                 type="checkbox"
                 on:change={(event) => updateField(field, event.currentTarget.checked)}
               />
             {:else if field.kind === "enum"}
-              <select value={String(values[field.key] ?? field.options?.[0]?.value ?? 0)} on:change={(event) => updateField(field, event.currentTarget.value)}>
+              <select value={String($injectorValues[field.key] ?? field.options?.[0]?.value ?? 0)} on:change={(event) => updateField(field, event.currentTarget.value)}>
                 {#each field.options ?? [] as option}
                   <option value={option.value}>{option.label}</option>
                 {/each}
@@ -159,7 +157,7 @@
                 min={field.min}
                 step={field.step ?? 1}
                 type="number"
-                value={String(values[field.key] ?? 0)}
+                value={String($injectorValues[field.key] ?? 0)}
                 on:input={(event) => updateField(field, event.currentTarget.value)}
               />
             {/if}
@@ -170,7 +168,7 @@
 
     {#if selected?.id === "0x001"}
       <label class="confirm-row">
-        <input bind:checked={confirmEstop} type="checkbox" />
+        <input bind:checked={$injectorConfirmEstop} type="checkbox" />
         <span>Confirm ESTOP injection</span>
       </label>
     {/if}
@@ -178,11 +176,11 @@
     <div class="periodic-controls">
       <label class="field">
         <span>Interval (ms)</span>
-        <input bind:value={intervalMs} min="1" max="60000" type="number" />
+        <input bind:value={$injectorIntervalMs} min="1" max="60000" type="number" />
       </label>
       <label class="field">
         <span>Count</span>
-        <input bind:value={count} min="1" max="50000" type="number" />
+        <input bind:value={$injectorCount} min="1" max="50000" type="number" />
       </label>
     </div>
 

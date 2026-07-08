@@ -132,6 +132,23 @@ describe("ingestMessage", () => {
     expect(kept[999].ts).toBe(1099);
   });
 
+  it("keeps the newest batch frames and latestById values for oversized batches", () => {
+    const batch = Array.from({ length: 1500 }, (_, i) => makeFrame({ id: "0x300", ts: i }));
+
+    ingestMessage({ type: "can_frames_batch", payload: batch });
+
+    const kept = get(frames);
+    expect(kept).toHaveLength(1000);
+    expect(kept[0].ts).toBe(500);
+    expect(kept[999].ts).toBe(1499);
+    expect(get(latestById)["high:0x300"].ts).toBe(1499);
+  });
+
+  it("ignores malformed batch payloads", () => {
+    expect(() => ingestMessage({ type: "can_frames_batch", payload: undefined as any })).not.toThrow();
+    expect(get(frames)).toHaveLength(0);
+  });
+
   it("updates stats on stats message", () => {
     const statsPayload: CanStats = {
       ts: 2000,

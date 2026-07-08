@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { sendFrame, simPeriodicStart, simPeriodicStop } from "../lib/api";
   import { status } from "../stores/can";
   import { ecuPresence } from "../stores/telemetry";
@@ -113,7 +114,7 @@
   // ── Frame ingestion — respond to incoming CAN commands ──
   import { frames } from "../stores/can";
   let lastIngestTs = 0;
-  frames.subscribe(($frames) => {
+  const unsubscribeFrames = frames.subscribe(($frames) => {
     if ($frames.length === 0) return;
     const latest = $frames[$frames.length - 1];
     if (latest.ts <= lastIngestTs) return;
@@ -250,6 +251,17 @@
     if (!running.has(sig.key)) return "";
     return hex(sig.data());
   }
+
+  onDestroy(() => {
+    unsubscribeFrames();
+    for (const key of running) {
+      const sig = ECUS.flatMap((ecu) => ecu.signals).find((item) => item.key === key);
+      if (sig && $softwareSimEnabled) void simPeriodicStop(sig.bus, sig.id);
+    }
+    for (const timer of Object.values(timers)) clearInterval(timer);
+    timers = {};
+    running.clear();
+  });
 </script>
 
 <div class="emu-panel">
