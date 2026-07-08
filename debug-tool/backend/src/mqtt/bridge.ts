@@ -4,6 +4,7 @@ import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
 import { BusDetector, normalizeFrame, normalizeStats, type CanFrame, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
+import type { WriteQueue } from "../db/write-queue";
 
 // aedes is ESM-only; tsx (runtime) handles ESM fine, but tsc needs help.
 // We use require() at runtime via eval to keep tsc happy.
@@ -31,7 +32,8 @@ export class MqttBridge implements HardwareBridge {
   constructor(
     private readonly config: AppConfig,
     private readonly store: DebugStore,
-    private readonly hub: StreamHub
+    private readonly hub: StreamHub,
+    private readonly writeQueue: WriteQueue
   ) {
     this.state = {
       transport: "mqtt",
@@ -148,7 +150,7 @@ export class MqttBridge implements HardwareBridge {
     });
     this.state.last_frame_at = Date.now() / 1000;
     this.state.degraded = false;
-    this.store.insertFrame(frame);
+    this.writeQueue.enqueue(frame);
     this.hub.broadcast({ type: "can_frame", payload: frame });
     for (const callback of this.frameCallbacks) callback(frame);
   }

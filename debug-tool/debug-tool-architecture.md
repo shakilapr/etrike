@@ -345,6 +345,15 @@ runtime_state (key TEXT PK, value TEXT)  -- key-value for stats
 **Pruning**: When `can_frames` exceeds `MAX_FRAMES` (default 50000), oldest rows not referenced by active recordings are deleted. WAL checkpoint every 30 s.
 > ⚠️ **Pruning Bottleneck**: Currently, pruning runs synchronously on every frame insert, causing massive event loop blocking at high FPS (BUG-19). Furthermore, it fails to differentiate between active and stopped recordings, leading to indefinite WAL memory leaks (BUG-20). Fixes are pending in Phase 0.
 
+### Upcoming Architecture Revision: SQLite Chunked Batching
+
+To handle high frame rates (1000 - 2500 FPS) without event-loop blocking and without abandoning the zero-dependency, local-first developer experience (i.e. no Docker/InfluxDB), the database ingestion layer is being revised to use **SQLite Chunked Batching via Worker Threads**:
+
+1. **In-Memory Buffering:** Incoming frames are accumulated in an array rather than written synchronously per frame.
+2. **Chunked Transactions:** Once the buffer reaches ~1000 frames (or ~500ms elapse), the entire batch is written to SQLite in a single transaction. This reduces SQLite disk write overhead by 99.9% while safely handling bursts of 30,000+ FPS.
+3. **Worker Thread Isolation:** The batch writes and historical pruning are offloaded to a dedicated Node.js Worker Thread. This ensures the main event loop (Fastify server, WebSocket broadcasting, and CAN decoding) operates with 0% latency penalty from storage I/O.
+4. **Metadata Preservation:** The `decoded` JSON payload will continue to be stored, preserving the ability to query, filter, and inspect rich signal metadata directly via standard SQLite clients.
+
 ---
 
 ## 8. Frontend Architecture

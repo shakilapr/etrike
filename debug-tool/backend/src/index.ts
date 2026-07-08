@@ -13,7 +13,8 @@ import { registerRecordingRoutes } from "./api/recordings";
 import { registerSimRoutes } from "./api/sim";
 import { registerSystemRoutes } from "./api/system";
 import { CanalystBridge } from "./canalyst/bridge";
-import { DebugStore } from "./db/queries";
+import { WorkerClient } from "./db/worker-client";
+import { WriteQueue } from "./db/write-queue";
 import { MqttBridge } from "./mqtt/bridge";
 import { SerialBridge } from "./serial/reader";
 import { FrameRouter } from "./sim/router";
@@ -45,8 +46,10 @@ async function main(): Promise<void> {
 
   const startedAt = Date.now() / 1000;
   const app = Fastify({ logger: true });
-  const store = new DebugStore(config.dbPath, config.maxFrames);
+  const store = new WorkerClient(config.dbPath, config.maxFrames);
+  const writeQueue = new WriteQueue(store);
   const hub = new StreamHub();
+  store.init().catch(console.error);
   store.setStats(defaultStats());
 
   await app.register(cors, { origin: true });
@@ -64,9 +67,9 @@ async function main(): Promise<void> {
 
   // ── Simulation engine & ECU models ────────────────────────────────────
   const router = new FrameRouter();
-  store.router = router;
+  writeQueue.router = router;
 
-  const simEngine = new SimulationEngine(store, hub);
+  const simEngine = new SimulationEngine(store, hub, writeQueue);
 
   const hostModel = new HostModel();
   const rtModelTs = new RtModel();
@@ -109,7 +112,7 @@ async function main(): Promise<void> {
   };
 
   const bridgeRef: { current: AnyBridge } = {
-    current: new SerialBridge(config, store, hub),
+    current: new SerialBridge(config, store, hub, writeQueue),
   };
   feedPhysicalFramesToSim(bridgeRef.current as FrameObservableBridge);
 
@@ -131,7 +134,7 @@ async function main(): Promise<void> {
   registerRecordingRoutes(app, store);
   registerSystemRoutes(app, store, bridgeProxy, hub, startedAt, patchedShutdown);
   registerCommandRoutes(app, store, bridgeProxy);
-  registerModeRoutes(app, { config, store, bridgeRef, feedPhysicalFramesToSim, getCurrentConfig, setCurrentConfig });
+  registerModeRoutes(app, { config, store, bridgeRef, feedPhysicalFramesToSim, getCurrentConfig, setCurrentConfig, writeQueue });
   hub.registerRoutes(app);
 
   // ── Graceful shutdown ─────────────────────────────────────────────────
@@ -146,7 +149,8 @@ async function main(): Promise<void> {
     }, 5000).unref();
     try { await bridgeRef.current.close(); } catch (error) { app.log.error(error, "bridge.close() failed"); }
     clearTimeout(timeout);
-    store.close();
+    await writeQueue.drain();
+    await store.close();
     await app.close();
   }
 
@@ -160,7 +164,7 @@ async function main(): Promise<void> {
   let effectiveTransport = config.canTransport;
 
   if (effectiveTransport === "serial") {
-    const canalyst = new CanalystBridge(config, store, hub);
+    const canalyst = new CanalystBridge(config, store, hub, writeQueue);
     feedPhysicalFramesToSim(canalyst as FrameObservableBridge);
     await canalyst.start();
     const detected = await canalyst.waitForConnection(3000);
@@ -177,11 +181,11 @@ async function main(): Promise<void> {
   } else {
     await bridgeRef.current.close();
     if (effectiveTransport === "canalystii") {
-      bridgeRef.current = new CanalystBridge(config, store, hub);
+      bridgeRef.current = new CanalystBridge(config, store, hub, writeQueue);
     } else if (effectiveTransport === "mqtt") {
-      bridgeRef.current = new MqttBridge(config, store, hub);
+      bridgeRef.current = new MqttBridge(config, store, hub, writeQueue);
     } else {
-      bridgeRef.current = new SerialBridge(config, store, hub);
+      bridgeRef.current = new SerialBridge(config, store, hub, writeQueue);
     }
     feedPhysicalFramesToSim(bridgeRef.current as FrameObservableBridge);
     await bridgeRef.current.start();

@@ -26,10 +26,10 @@ export function registerSystemRoutes(
         last_error: bridge.state.last_error
       },
       bus_detection: bridge.state.bus_detection ?? { detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 },
-      bus_stats: store.getStats().buses,
-      stats_updated_at: store.getStatsUpdatedAt(),
+      bus_stats: (await store.getStats()).buses,
+      stats_updated_at: await store.getStatsUpdatedAt(),
       websocket_clients: hub.clientCount(),
-      storage: store.counts()
+      storage: await store.counts()
   }));
 
   app.post("/api/system/stop", async () => {

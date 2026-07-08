@@ -1,0 +1,10 @@
+{
+  "name": "etrike-debug-tool-workspace",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "ui",
+    "shared",
+    "simulator"
+  ]
+}

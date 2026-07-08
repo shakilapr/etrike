@@ -5,6 +5,7 @@ import { RtModel } from "../../src/sim/ecus/rt-model";
 import { MtrModel } from "../../src/sim/ecus/mtr-model";
 import { SesModel } from "../../src/sim/ecus/ses-model";
 import type { DebugStore } from "../../src/db/queries";
+import type { WriteQueue } from "../../src/db/write-queue";
 
 describe("SIL Physics & Dynamics", () => {
   let engine: SimulationEngine;
@@ -20,7 +21,8 @@ describe("SIL Physics & Dynamics", () => {
     const hub = { broadcast: (ev: any) => hubEvents.push(ev) };
     
     host = new HostModel();
-    engine = new SimulationEngine(store, hub);
+    const writeQueue = { enqueue: vi.fn((f) => store.insertFrame(f)), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
+    engine = new SimulationEngine(store, hub, writeQueue);
     engine.register(host);
     engine.register(new RtModel());
     engine.register(new MtrModel());

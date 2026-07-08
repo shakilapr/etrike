@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS recordings (
     stopped_at  REAL,
     frame_count INTEGER DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_recordings_stopped ON recordings(stopped_at);
 
 CREATE TABLE IF NOT EXISTS recording_frames (
     recording_id INTEGER NOT NULL REFERENCES recordings(id),

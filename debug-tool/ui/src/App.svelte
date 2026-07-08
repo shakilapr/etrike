@@ -18,9 +18,8 @@
   import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
   import { logError } from "./stores/errors";
   import { initFaultWatcher } from "./stores/faults";
-  import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
+  import { initKeyboard } from "./stores/keyboard";
   import { initWorkMode } from "./stores/work-mode";
-  import type { Bus } from "./lib/can-decoder";
 
   type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "emulator";
 
@@ -33,95 +32,29 @@
   let streamConnected = false;
 
   const tabs: Array<{ id: Tab; label: string }> = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "monitor", label: "CAN Monitor" },
+    { id: "dashboard",  label: "Dashboard" },
+    { id: "monitor",    label: "CAN Monitor" },
     { id: "dictionary", label: "CAN Dictionary" },
-    { id: "injector", label: "Injector" },
+    { id: "injector",   label: "Injector" },
     { id: "controller", label: "Controller" },
-    { id: "unit-test", label: "Unit Test" },
-    { id: "pipeline", label: "Pipeline" },
-    { id: "stats", label: "Statistics" },
-    { id: "terminal", label: "Terminal" },
-    { id: "emulator", label: "Work Mode" },
+    { id: "unit-test",  label: "Unit Test" },
+    { id: "pipeline",   label: "Pipeline" },
+    { id: "stats",      label: "Statistics" },
+    { id: "terminal",   label: "Terminal" },
+    { id: "emulator",   label: "Work Mode" },
   ];
-
-  // ── Keyboard controls ──
-  // Layer 1: held-keys state map — raw, no input-filtering.
-  // Tracks which physical keys are down so the Controller can
-  // poll them each tick (game-loop pattern).
-  function trackKey(e: KeyboardEvent, down: boolean) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-    const k = e.key.toLowerCase();
-    if (["w","s","a","d","b"].includes(k)) {
-      e.preventDefault();
-      heldKeys.update(set => {
-        const next = new Set(set);
-        down ? next.add(k) : next.delete(k);
-        return next;
-      });
-    }
-  }
-
-  function onKeyDown(e: KeyboardEvent) { trackKey(e, true); }
-  function onKeyUp(e: KeyboardEvent)   { trackKey(e, false); }
-
-  // Safety: if the window loses focus while keys are held, clear everything.
-  function onBlur() {
-    heldKeys.set(new Set());
-  }
-
-  // Layer 2: discrete actions (Tab / Esc / Space×2). Filter input elements
-  // so typing in forms doesn't trigger vehicle commands.
-  let lastSpaceTs = 0;
-
-  function handleDiscrete(e: KeyboardEvent) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-
-    let action: KbAction | null = null;
-    let bus: Bus | null = null;
-
-    switch (e.key) {
-      case "Escape": action = { type: "zero_all" }; break;
-      case "Tab":
-        e.preventDefault();
-        kbBus.update((b) => b === "high" ? "low" : "high");
-        return;
-      case " ":
-        e.preventDefault();
-        const now = Date.now();
-        if (now - lastSpaceTs < 1000) {
-          action = { type: "estop_send" };
-          lastSpaceTs = 0;
-        } else {
-          action = { type: "estop_confirm" };
-          lastSpaceTs = now;
-        }
-        break;
-    }
-
-    if (action) {
-      kbBus.subscribe((b) => bus = b)();
-      kbEvent.set({ action, bus: bus!, ts: Date.now() });
-    }
-  }
 
   onMount(() => {
     void bootstrap();
-    const timer = window.setInterval(refreshStatus, 3000);
+    const cleanupKeyboard = initKeyboard();          // Phase 4: consolidated listener
     const unsubFaults = initFaultWatcher();
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("keydown", handleDiscrete);
-    window.addEventListener("blur", onBlur);
+    const statusTimer = window.setInterval(refreshStatus, 3000);
 
     return () => {
-      window.clearInterval(timer);
+      cleanupKeyboard();
       unsubFaults();
       stream?.close();
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("keydown", handleDiscrete);
-      window.removeEventListener("blur", onBlur);
+      window.clearInterval(statusTimer);
     };
   });
 
@@ -133,7 +66,7 @@
         getCanIds(),
         getFrames(),
         getStats(),
-        getTemplates()
+        getTemplates(),
       ]);
 
       if (statusR.status === "fulfilled") status.set(statusR.value);
@@ -159,10 +92,10 @@
       logError(msg);
     }
 
-    // Sync work mode store with backend (sets workModeReady = true when done)
+    // Fetch real work mode config from backend and mark store as ready
     await initWorkMode();
 
-    // Connect WebSocket AFTER initial REST data loads so WS frames don't get wiped
+    // Connect WebSocket after initial REST snapshot so WS frames don't overwrite the initial load
     stream = connectStream(ingestMessage, (connected) => {
       streamConnected = connected;
       wsConnected.set(connected);
@@ -179,10 +112,11 @@
       status.update((current) => ({
         ...current,
         ...payload,
-        // Preserve WebSocket-derived bus_detection if fresh (<30s old),
-        // otherwise allow REST to update (handles bridge restart).
-        bus_detection: (current.bus_detection && (!current.bus_detection._ts || Date.now() - current.bus_detection._ts < 30_000))
-          ? current.bus_detection : payload.bus_detection,
+        bus_detection:
+          current.bus_detection &&
+          (!current.bus_detection._ts || Date.now() - current.bus_detection._ts < 30_000)
+            ? current.bus_detection
+            : payload.bus_detection,
       }));
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -200,15 +134,17 @@
           baud_rate: current.bridge?.baud_rate ?? null,
           bitrate: current.bridge?.bitrate ?? null,
           last_status_at: current.bridge?.last_status_at ?? null,
-          last_error: msg
+          last_error: msg,
         },
-        warning: msg
+        warning: msg,
       }));
-      // Zero out stats so health bar reflects total failure
       stats.set({
-        ts: Date.now() / 1000, uptime_s: 0,
-        buses: { high: { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} },
-                 low:  { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} } }
+        ts: Date.now() / 1000,
+        uptime_s: 0,
+        buses: {
+          high: { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} },
+          low:  { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} },
+        },
       });
       logError("Status poll: " + msg);
     }
@@ -268,7 +204,7 @@
   {/if}
 
   <main class="content">
-    <!-- Heavy tabs are unmounted when inactive — eliminates hidden DOM update cost -->
+    <!-- Heavy tabs are conditionally rendered — unmounting eliminates hidden DOM update cost -->
     {#if activeTab === 'dashboard'}<Dashboard {ids} />{/if}
     {#if activeTab === 'monitor'}<CanMonitor {ids} />{/if}
     {#if activeTab === 'dictionary'}<CanDictionary {ids} />{/if}
@@ -283,11 +219,15 @@
   </main>
 
   <!-- Trike physics sidebar -->
-  <button class="trike-sidebar-toggle" class:open={sidebarOpen} on:click={() => sidebarOpen = !sidebarOpen} title="Physics View">
+  <button
+    class="trike-sidebar-toggle"
+    class:open={sidebarOpen}
+    on:click={() => (sidebarOpen = !sidebarOpen)}
+    title="Physics View"
+  >
     {sidebarOpen ? "◀" : "▶"}
   </button>
   <aside class="trike-sidebar" class:open={sidebarOpen}>
     <TrikeViz visible={sidebarOpen} />
   </aside>
-
 </div>

@@ -13,6 +13,7 @@ import { CanalystBridge as CanalystBridgeClass } from "../canalyst/bridge";
 import { SerialBridge as SerialBridgeClass } from "../serial/reader";
 import { MqttBridge as MqttBridgeClass } from "../mqtt/bridge";
 import { MODE_DEFAULTS, workModeConfigSchema, type WorkModeConfig } from "../sim/work-mode";
+import type { WriteQueue } from "../db/write-queue";
 
 type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
 type FrameObservableBridge = AnyBridge & {
@@ -26,10 +27,11 @@ export interface ModeRouteOptions {
   feedPhysicalFramesToSim: (bridge: FrameObservableBridge) => void;
   getCurrentConfig: () => WorkModeConfig;
   setCurrentConfig: (c: WorkModeConfig) => void;
+  writeQueue: WriteQueue;
 }
 
 export function registerModeRoutes(app: FastifyInstance, opts: ModeRouteOptions): void {
-  const { config, store, bridgeRef, feedPhysicalFramesToSim, getCurrentConfig, setCurrentConfig } = opts;
+  const { config, store, bridgeRef, feedPhysicalFramesToSim, getCurrentConfig, setCurrentConfig, writeQueue } = opts;
 
   // ── GET /api/mode ──────────────────────────────────────────────────────
   app.get("/api/mode", async () => getCurrentConfig());
@@ -115,22 +117,22 @@ export function registerModeRoutes(app: FastifyInstance, opts: ModeRouteOptions)
       await bridgeRef.current.close();
 
       if (transport === "disabled") {
-        const b = new SerialBridgeClass(config, store, app.ctx.hub);
+        const b = new SerialBridgeClass(config, store, app.ctx.hub, writeQueue);
         feedPhysicalFramesToSim(b as FrameObservableBridge);
         bridgeRef.current = b;
       } else if (transport === "canalystii") {
-        const b = new CanalystBridgeClass(config, store, app.ctx.hub);
+        const b = new CanalystBridgeClass(config, store, app.ctx.hub, writeQueue);
         feedPhysicalFramesToSim(b as FrameObservableBridge);
         await b.start();
         bridgeRef.current = b;
       } else if (transport === "mqtt") {
-        const b = new MqttBridgeClass(config, store, app.ctx.hub);
+        const b = new MqttBridgeClass(config, store, app.ctx.hub, writeQueue);
         feedPhysicalFramesToSim(b as FrameObservableBridge);
         await b.start();
         bridgeRef.current = b;
       } else {
         // "serial" — auto-detect canalyst first, fall back to serial
-        const canalyst = new CanalystBridgeClass(config, store, app.ctx.hub);
+        const canalyst = new CanalystBridgeClass(config, store, app.ctx.hub, writeQueue);
         feedPhysicalFramesToSim(canalyst as FrameObservableBridge);
         await canalyst.start();
         const detected = await canalyst.waitForConnection(3000);
@@ -138,7 +140,7 @@ export function registerModeRoutes(app: FastifyInstance, opts: ModeRouteOptions)
           bridgeRef.current = canalyst;
         } else {
           await canalyst.abandon();
-          const serial = new SerialBridgeClass(config, store, app.ctx.hub);
+          const serial = new SerialBridgeClass(config, store, app.ctx.hub, writeQueue);
           feedPhysicalFramesToSim(serial as FrameObservableBridge);
           await serial.start();
           bridgeRef.current = serial;

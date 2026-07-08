@@ -5,6 +5,7 @@ import type { DebugStore } from "../db/queries";
 import { BusDetector, normalizeFrame, normalizeStats, type Bus, type CanStats } from "../types/can";
 import type { CanFrame } from "../types/can";
 import type { StreamHub } from "../ws/stream";
+import type { WriteQueue } from "../db/write-queue";
 
 export interface SerialState extends BridgeState {
   esp32_connected: boolean;
@@ -26,7 +27,8 @@ export class SerialBridge implements HardwareBridge {
   constructor(
     private readonly config: AppConfig,
     private readonly store: DebugStore,
-    private readonly hub: StreamHub
+    private readonly hub: StreamHub,
+    private readonly writeQueue: WriteQueue
   ) {
     this.state = {
       transport: "serial",
@@ -209,7 +211,7 @@ export class SerialBridge implements HardwareBridge {
       });
       this.state.last_frame_at = Date.now() / 1000;
       this.state.degraded = false;
-      this.store.insertFrame(frame);
+      this.writeQueue.enqueue(frame);
       this.hub.broadcast({ type: "can_frame", payload: frame });
       for (const callback of this.frameCallbacks) callback(frame);
 

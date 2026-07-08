@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SimulationEngine } from "./engine";
 import type { DebugStore, StoredCanFrame } from "../db/queries";
 import type { CanFrame } from "../types/can";
+import type { WriteQueue } from "../db/write-queue";
 import type { EcuConfig, EcuModel, EcuState } from "./ecu-model";
 import type { WorkModeConfig } from "./work-mode";
 
@@ -83,7 +84,8 @@ describe("SimulationEngine", () => {
       }),
     } as Pick<DebugStore, "insertFrame"> as DebugStore;
     const hub = { broadcast: vi.fn() };
-    const engine = new SimulationEngine(store, hub);
+    const writeQueue = { enqueue: vi.fn(), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
+    const engine = new SimulationEngine(store, hub, writeQueue);
     const active = new TestModel("host");
     const inactive = new TestModel("rt");
 
