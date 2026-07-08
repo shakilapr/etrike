@@ -11,6 +11,7 @@ vi.mock("serialport", () => {
 import { SerialBridge } from "../../src/serial/reader";
 import { DebugStore } from "../../src/db/queries";
 import { StreamHub } from "../../src/ws/stream";
+import type { WriteQueue } from "../../src/db/write-queue";
 
 describe("SerialBridge", () => {
   let store: DebugStore;
@@ -21,10 +22,12 @@ describe("SerialBridge", () => {
     vi.useFakeTimers();
     store = new DebugStore(":memory:", 5000);
     hub = new StreamHub();
+    const writeQueue = { enqueue: vi.fn((f) => store.insertFrame(f)), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
     bridge = new SerialBridge(
       { serialPath: "/dev/ttyUSB0", serialBaudRate: 115200 } as any,
       store,
-      hub
+      hub,
+      writeQueue
     );
   });
 
@@ -68,10 +71,12 @@ describe("SerialBridge", () => {
 
   it("logs startup failures to the backend console", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const writeQueue = { enqueue: vi.fn(), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
     const disabled = new SerialBridge(
       { serialPath: "", serialBaudRate: 115200 } as any,
       store,
-      hub
+      hub,
+      writeQueue
     );
 
     disabled.start();

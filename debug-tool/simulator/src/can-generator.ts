@@ -1,18 +1,10 @@
 // CAN frame generator — produces realistic synthetic CAN traffic
 // Message definitions match shared/can/can_signals.yaml
 
-export interface SimCanFrame {
-  ts: number;
-  bus: "high" | "low";
-  id: string;
-  name: string;
-  dlc: number;
-  data: number[];
-  decoded: Record<string, unknown>;
-}
+import type { CanFrame, Bus } from "@etrike/debug-shared";
 
 export interface ProfileEntry {
-  bus: "high" | "low";
+  bus: Bus;
   id: string;
   name: string;
   interval_ms: number; // how often to generate this frame
@@ -87,7 +79,7 @@ function yawRate(): number {
   return Math.round(500 * Math.sin(simTime * 0.3));
 }
 
-export function generateFrame(entry: ProfileEntry): SimCanFrame {
+export function generateFrame(entry: ProfileEntry): CanFrame {
   const id = entry.id;
   const now = Date.now() / 1000;
   const data = new Array(entry.dlc).fill(0);

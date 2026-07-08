@@ -4,6 +4,7 @@ import type { EcuModel, EcuConfig } from "./ecu-model";
 import type { FrameSource } from "./router";
 import type { WorkModeConfig } from "./work-mode";
 import { VirtualCanBus } from "./virtual-can";
+import type { WriteQueue } from "../db/write-queue";
 
 export interface SimEngineState {
   running: boolean;
@@ -34,6 +35,7 @@ export class SimulationEngine {
   constructor(
     private store: DebugStore,
     private hub: { broadcast(event: { type: string; payload: unknown }): void },
+    private writeQueue: WriteQueue
   ) {}
 
   get state(): SimEngineState { return { ...this._state }; }
@@ -43,7 +45,7 @@ export class SimulationEngine {
     this.models.set(model.id, model);
     model.onFrame((frame) => {
       this.bus.send(frame);
-      this.store.insertFrame(frame, "simulated");
+      this.writeQueue.enqueue(frame, "simulated");
       this.hub.broadcast({ type: "can_frame", payload: frame });
     });
   }
@@ -100,8 +102,8 @@ export class SimulationEngine {
     if (!this._state.running) return;
     this.bus.send(frame);
     if (options.persist !== false) {
-      const stored = this.store.insertFrame(frame, options.source ?? "emulated");
-      if (stored.row_id >= 0) this.hub.broadcast({ type: "can_frame", payload: stored });
+      this.writeQueue.enqueue(frame, options.source ?? "emulated");
+      this.hub.broadcast({ type: "can_frame", payload: frame });
     }
   }
 

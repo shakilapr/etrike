@@ -27,7 +27,7 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: 
     const data = parsed.data.data.slice(0, parsed.data.dlc);
 
     const frame = normalizeFrame({ bus, id, data, dlc: parsed.data.dlc });
-    store.insertFrame(frame, "emulated");
+    store.insertFrames([{ frame, source: "emulated" }]);
     hub.broadcast({ type: "can_frame", payload: frame });
 
     return { ok: true, id, bus };
@@ -50,7 +50,7 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: 
 
     timers.set(key, setInterval(() => {
       const frame = normalizeFrame({ bus, id, data: [...data], dlc });
-      store.insertFrame(frame, "emulated");
+      store.insertFrames([{ frame, source: "emulated" }]);
       hub.broadcast({ type: "can_frame", payload: frame });
     }, interval_ms));
 

@@ -164,24 +164,24 @@ export function registerCanRoutes(app: FastifyInstance, store: DebugStore): void
     const limit = request.query.limit ? Number(request.query.limit) : undefined;
 
     return {
-      frames: store.queryFrames({ bus, id, since, limit })
+      frames: await store.queryFrames({ bus, id, since, limit })
     };
   });
 
-  app.get("/api/can/latest", async () => ({ latest: store.latestById() }));
+  app.get("/api/can/latest", async () => ({ latest: await store.latestById() }));
 
   app.get("/api/can/stats", async () => ({
-    stats: store.getStats() ?? defaultStats()
+    stats: (await store.getStats()) ?? defaultStats()
   }));
 
   app.get("/api/can/pipeline", async () => {
-    const recent = store.queryFrames({ limit: 2000 });
+    const recent = await store.queryFrames({ limit: 2000 });
     const chains = correlatePipeline(recent);
     return { chains };
   });
 
   app.delete("/api/can/frames", async () => {
-    store.clearFrames();
+    await store.clearFrames();
     return { cleared: true };
   });
 }

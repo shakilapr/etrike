@@ -34,7 +34,7 @@ const periodicSchema = z.discriminatedUnion("action", [
 
 export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, bridge: HardwareBridge): void {
   app.get("/api/templates", async () => ({ templates: INJECTION_TEMPLATES }));
-  app.get("/api/cmd/history", async () => ({ injections: store.listInjections() }));
+  app.get("/api/cmd/history", async () => ({ injections: await store.listInjections() }));
 
   app.post("/api/cmd/send", async (request, reply) => {
     const parsed = sendSchema.safeParse(request.body);
@@ -54,7 +54,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     }
 
     const correlationId = crypto.randomUUID();
-    store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued", correlation_id: correlationId });
+    await store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued", correlation_id: correlationId });
 
     // Try physical bridge first. If it fails and sim engine is running,
     // inject into virtual CAN bus instead.
@@ -64,16 +64,16 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
       sent = true;
     } catch {
       // Check for simulation engine fallback
-      const simEngine = (app as any).__simEngine as { injectExternal(f: ReturnType<typeof normalizeFrame>): void } | undefined;
-      if (simEngine) {
+      const simEngine = app.ctx.simEngine;
+      if (simEngine?.state?.running) {
         const frame = normalizeFrame({ bus, id, dlc: parsed.data.dlc, data });
         simEngine.injectExternal(frame);
-        store.updateInjectionByCorrelation(correlationId, "simulated");
+        await store.updateInjectionByCorrelation(correlationId, "simulated");
         sent = true;
       }
     }
     if (!sent) {
-      store.updateInjectionByCorrelation(correlationId, "error");
+      await store.updateInjectionByCorrelation(correlationId, "error");
       return reply.code(503).send({ error: "no bridge connected and simulation not running" });
     }
     return { cmd: "send", bus, id, status: "queued" };
@@ -108,11 +108,11 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     }
 
     const correlationId = crypto.randomUUID();
-    store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued", correlation_id: correlationId });
+    await store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued", correlation_id: correlationId });
     try {
       bridge.sendCommand({ cmd: "send_periodic", action: "start", bus, id, dlc: parsed.data.dlc, data, interval_ms: parsed.data.interval_ms, count: parsed.data.count, correlation_id: correlationId });
     } catch (error) {
-      store.updateInjectionByCorrelation(correlationId, "error");
+      await store.updateInjectionByCorrelation(correlationId, "error");
       return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) });
     }
     return { cmd: "send_periodic", action: "start", bus, id, status: "queued" };

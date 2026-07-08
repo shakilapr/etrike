@@ -7,19 +7,19 @@ const startRecordingSchema = z.object({
 });
 
 export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore): void {
-  app.get("/api/recordings", async () => ({ recordings: store.listRecordings() }));
+  app.get("/api/recordings", async () => ({ recordings: await store.listRecordings() }));
 
   app.post("/api/recordings", async (request, reply) => {
     const parsed = startRecordingSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
-    return { recording: store.startRecording(parsed.data.label) };
+    return { recording: await store.startRecording(parsed.data.label) };
   });
 
   app.put<{ Params: { id: string } }>("/api/recordings/:id/stop", async (request, reply) => {
     const id = Number(request.params.id);
-    const existing = store.getRecording(id);
+    const existing = await store.getRecording(id);
     if (!existing) {
       return reply.code(404).send({ error: "recording not found" });
     }
@@ -27,7 +27,7 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
       return reply.code(409).send({ error: "recording already stopped" });
     }
 
-    const recording = store.stopRecording(id);
+    const recording = await store.stopRecording(id);
     if (!recording) {
       return reply.code(409).send({ error: "recording already stopped" });
     }
@@ -39,7 +39,7 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
     async (request, reply) => {
       const id = Number(request.params.id);
       const limit = request.query.limit ? Number(request.query.limit) : undefined;
-      const frames = store.recordingFramesById(id, limit);
+      const frames = await store.recordingFramesById(id, limit);
       if (!frames) {
         return reply.code(404).send({ error: "recording not found" });
       }
@@ -49,7 +49,7 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
 
   app.delete<{ Params: { id: string } }>("/api/recordings/:id", async (request, reply) => {
     const id = Number(request.params.id);
-    if (!store.deleteRecording(id)) {
+    if (!(await store.deleteRecording(id))) {
       return reply.code(404).send({ error: "recording not found" });
     }
     return { ok: true };

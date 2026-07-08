@@ -1,0 +1,14 @@
+{
+  "name": "@etrike/debug-shared",
+  "version": "1.0.0",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "js-yaml": "^4.1.0"
+  }
+}

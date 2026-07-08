@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DebugStore } from "./queries";
+import { DebugStoreImpl } from "./queries";
 import type { CanFrame } from "../types/can";
 
-let stores: DebugStore[] = [];
+let stores: DebugStoreImpl[] = [];
 
 function makeFrame(ts: number, id = "0x300"): CanFrame {
   return {
@@ -16,8 +16,8 @@ function makeFrame(ts: number, id = "0x300"): CanFrame {
   };
 }
 
-function makeStore(maxFrames: number): DebugStore {
-  const store = new DebugStore(":memory:", maxFrames);
+function makeStore(maxFrames: number): DebugStoreImpl {
+  const store = new DebugStoreImpl(":memory:", maxFrames);
   stores.push(store);
   return store;
 }

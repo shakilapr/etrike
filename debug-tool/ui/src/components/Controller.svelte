@@ -60,6 +60,9 @@
   // Game loop — poll heldKeys, derive control state, send CAN
   // ═══════════════════════════════════════════════════════════════
 
+  // ── Per-tick send: batch all frames into a single Promise.all to cap concurrency ──
+  let tickInFlight = false;
+
   function tick() {
     const keys = get(heldKeys);
 
@@ -91,34 +94,48 @@
       speed = 0;
     }
 
+    // Skip this tick if the previous one is still in-flight (backpressure)
+    if (tickInFlight) return;
+    tickInFlight = true;
+
+    const sends: Promise<unknown>[] = [];
     if (hostSimulated) {
-      sendSimControllerState();
+      sends.push(simControllerInput({
+        speed_mmps: speed,
+        yaw_mrad_s: simYawMradS(),
+        gear,
+        brake_kpa: brake,
+      }));
     } else {
-      sendDriveFrame();
-      if (selectedBus === "low") sendSteerFrame();
-      if (brake > 0) sendBrakeFrame();
+      sends.push(buildDriveFrame());
+      if (selectedBus === "low") sends.push(buildSteerFrame());
+      if (brake > 0) sends.push(buildBrakeFrame());
     }
+
+    Promise.all(sends)
+      .catch((e: unknown) => { error = `Send failed: ${String(e)}`; })
+      .finally(() => { tickInFlight = false; });
 
     frameCount++;
   }
 
-  function sendDriveFrame() {
+  function buildDriveFrame(): Promise<unknown> {
     const vals: Record<string, number | boolean> =
       selectedBus === "high"
         ? { speed_mmps: speed, yaw_rate_mrad_s: yaw, gear }
         : { motor_speed_mmps: speed, gear };
     const enc = encodePayload(selectedBus, driveId, vals);
-    sendFrame({ bus: selectedBus, id: driveId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Drive send failed: ${String(e)}`; });
+    return sendFrame({ bus: selectedBus, id: driveId, dlc: enc.dlc, data: enc.data });
   }
 
-  function sendSteerFrame() {
+  function buildSteerFrame(): Promise<unknown> {
     const enc = encodePayload("low", steerId, { target_angle: yaw });
-    sendFrame({ bus: "low", id: steerId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    return sendFrame({ bus: "low", id: steerId, dlc: enc.dlc, data: enc.data });
   }
 
-  function sendBrakeFrame() {
+  function buildBrakeFrame(): Promise<unknown> {
     const enc = encodePayload(selectedBus, brakeId, { brake_pressure_kpa: brake });
-    sendFrame({ bus: selectedBus, id: brakeId, dlc: enc.dlc, data: enc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    return sendFrame({ bus: selectedBus, id: brakeId, dlc: enc.dlc, data: enc.data });
   }
 
   function simYawMradS(): number {
@@ -126,12 +143,16 @@
   }
 
   function sendSimControllerState() {
+    if (tickInFlight) return;
+    tickInFlight = true;
     simControllerInput({
       speed_mmps: speed,
       yaw_mrad_s: simYawMradS(),
       gear,
-      brake_kpa: brake
-    }).catch((e: unknown) => { error = `Sim controller update failed: ${String(e)}`; });
+      brake_kpa: brake,
+    })
+      .catch((e: unknown) => { error = `Sim controller update failed: ${String(e)}`; })
+      .finally(() => { tickInFlight = false; });
   }
 
   async function sendEstopFrame(bus: Bus) {
@@ -211,9 +232,19 @@
       handleDiscrete(evt.bus, evt.action);
     });
 
+    // Dead-man's switch: send zero-speed immediately when tab is backgrounded.
+    // Prevents the vehicle holding speed after the browser throttles setInterval.
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden" && active) {
+        sendZeroFrames();
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       unsubBus();
       unsubEvent();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       stopLoop();
     };
   });

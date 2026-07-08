@@ -7,6 +7,7 @@ import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
 import { normalizeFrame, normalizeStats, BusDetector, type CanFrame, type CanStats } from "../types/can";
 import type { StreamHub } from "../ws/stream";
+import type { WriteQueue } from "../db/write-queue";
 
 export class CanalystBridge implements HardwareBridge {
   readonly state: BridgeState;
@@ -19,7 +20,8 @@ export class CanalystBridge implements HardwareBridge {
   constructor(
     private readonly config: AppConfig,
     private readonly store: DebugStore,
-    private readonly hub: StreamHub
+    private readonly hub: StreamHub,
+    private readonly writeQueue: WriteQueue
   ) {
     this.state = {
       transport: "canalystii",
@@ -231,7 +233,7 @@ export class CanalystBridge implements HardwareBridge {
       });
       this.state.last_frame_at = Date.now() / 1000;
       this.state.degraded = false;
-      this.store.insertFrame(frame);
+      this.writeQueue.enqueue(frame);
       this.busDetector.feed(frame.id);
       this.hub.broadcast({ type: "can_frame", payload: frame });
       for (const callback of this.frameCallbacks) callback(frame);

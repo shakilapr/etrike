@@ -11,6 +11,7 @@ describe("POST /api/cmd/send", () => {
 
   beforeEach(() => {
     app = Fastify();
+    app.decorate("ctx", { simEngine: null });
     store = new DebugStore(":memory:", 5000);
     
     mockBridge = {

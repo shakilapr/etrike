@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig, loadEnv } from "vite";
+import path from "path";
 
 declare const process: { cwd(): string };
 
@@ -11,6 +12,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [svelte({ preprocess: vitePreprocess({ script: true }) })],
+    resolve: {
+      alias: {
+        "@etrike/debug-shared": path.resolve(process.cwd(), "../shared/src/index.ts")
+      }
+    },
     server: {
       port: 5173,
       proxy: {
