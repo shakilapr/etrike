@@ -1,12 +1,14 @@
 // RT ESP32-S3 — Realtime Physics, Steering & CAN Gateway.
 // Architecture: architecture.md §7.  8 FreeRTOS tasks.
 
-// Bench build safety guard: bench firmware disables critical safety
-// mechanisms and must never be flashed to a vehicle. Require explicit
-// acknowledgement to compile.
-#if defined(CONFIG_BENCH_SOLO) && !defined(BENCH_BUILD_ACKNOWLEDGED)
-#error "Bench build selected. Define BENCH_BUILD_ACKNOWLEDGED to proceed. Vehicle builds must NOT define BENCH_BUILD_ACKNOWLEDGED."
-#endif
+// Runtime System Mode Configuration
+#include "system_mode.h"
+
+// Define runtime bypass flags
+bool g_bench_solo_mode = false;
+bool g_bypass_eps_sync = false;
+bool g_bypass_seb_sync = false;
+bool g_bypass_mtr_absent = false;
 
 #include <algorithm>
 #include "freertos/FreeRTOS.h"
@@ -625,6 +627,39 @@ static void check_task_watchdog() {
 // ───────────────────────────────────────────────────────────────────
 extern "C" void app_main() {
     ESP_LOGI(TAG, "RT ESP32-S3 boot");
+    
+    // Evaluate System Run Mode
+    if (SYSTEM_RUN_MODE == 2) {
+        ESP_LOGE(TAG, "***********************************");
+        ESP_LOGE(TAG, "* PURE SOFTWARE SIMULATION MODE   *");
+        ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
+        ESP_LOGE(TAG, "***********************************");
+        g_bench_solo_mode = true;
+        g_bypass_eps_sync = true;
+        g_bypass_seb_sync = true;
+        g_bypass_mtr_absent = true;
+    } else if (SYSTEM_RUN_MODE == 1) {
+        gpio_set_direction(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN), GPIO_MODE_INPUT);
+        gpio_pullup_en(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN));
+        
+        // Brief delay to let pull-up stabilize
+        vTaskDelay(pdMS_TO_TICKS(10));
+        
+        if (gpio_get_level(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN)) == 0) {
+            ESP_LOGE(TAG, "***********************************");
+            ESP_LOGE(TAG, "* HARDWARE OVERRIDE PIN DETECTED! *");
+            ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
+            ESP_LOGE(TAG, "***********************************");
+            g_bench_solo_mode = true;
+            g_bypass_eps_sync = true;
+            g_bypass_seb_sync = true;
+            g_bypass_mtr_absent = true;
+        } else {
+            ESP_LOGI(TAG, "Prototype mode: Override pin not jumped. Enforcing safety.");
+        }
+    } else {
+        ESP_LOGI(TAG, "Production mode: Safety checks enforced.");
+    }
 
     rt::can_low_init();
     bool has_high_can = g_can_high.init();

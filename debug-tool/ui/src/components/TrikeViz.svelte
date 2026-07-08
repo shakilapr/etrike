@@ -1,18 +1,24 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { latestById } from "../stores/can";
+  import { telemetry } from "../stores/telemetry";
 
   export let visible = false;
 
   let x = 0, y = 0, theta = 0, v = 0, alpha = 0;
-  const L = 120, W = 80, MAX_A = Math.PI / 3, MAX_V = 300, FRICTION = 0.97;
+  const L = 120, W = 80, MAX_A = Math.PI / 3, MAX_V = 300;
   const VIEW_ROTATION = -Math.PI / 2;
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
   let animId = 0;
   let lastTime = performance.now();
   let w = 320, h = 400;
-  let speedKmh = 0, headingDeg = 0, steerDeg = 0, turnRadius = "∞";
+  let speedKmh: number | null = null;
+  let headingDeg = 0;
+  let steerDeg: number | null = null;
+  let turnRadius = "No data";
+  let gear: string | null = null;
+  let mode: string | null = null;
+  let safetyState: string | null = null;
   let unsub: () => void;
   let observer: ResizeObserver;
 
@@ -32,22 +38,16 @@
     observer = new ResizeObserver(() => resize());
     if (canvas.parentElement) observer.observe(canvas.parentElement);
 
-    unsub = latestById.subscribe(($latest) => {
-      const f120 = $latest["low:0x120"]?.decoded;
-      const f206 = $latest["low:0x206"]?.decoded ?? $latest["high:0x206"]?.decoded;
-      const gear = (f206 as any)?.gear_state ?? 1;
-      let raw = 0;
-      if (f120 && typeof (f120 as any).speed_mmps === "number") raw = (f120 as any).speed_mmps;
-      else if (f206 && typeof (f206 as any).actual_speed_mmps === "number") raw = (f206 as any).actual_speed_mmps;
-      if (gear === 3) raw = -Math.abs(raw);
-      if (gear === 0) raw *= 0.3;
-      const ses = $latest["low:0x201"]?.decoded;
-      const diag = $latest["high:0x310"]?.decoded;
-      if (ses && typeof (ses as any).str_angle === "number") alpha = ((ses as any).str_angle * 0.1) * Math.PI / 180;
-      else if (diag && typeof (diag as any).SteerDiag_Angle0_1deg === "number") alpha = (diag as any).SteerDiag_Angle0_1deg * Math.PI / 180;
-      alpha = Math.max(-MAX_A, Math.min(MAX_A, alpha));
-      v = raw * 0.25;
-      speedKmh = raw * 3.6 / 1000;
+    unsub = telemetry.subscribe((t) => {
+      speedKmh = t.motorSpeedKmh;
+      steerDeg = t.steerAngleDeg;
+      gear = t.gear;
+      mode = t.mode;
+      safetyState = t.safetyState;
+
+      const signedSpeedKmh = speedKmh === null ? 0 : gear === "R" ? -Math.abs(speedKmh) : speedKmh;
+      v = signedSpeedKmh * 1000 / 3.6 * 0.25;
+      alpha = steerDeg === null ? 0 : Math.max(-MAX_A, Math.min(MAX_A, steerDeg * Math.PI / 180));
       syncReadouts();
     });
 
@@ -80,11 +80,11 @@
     if (dt > 0.1) return;
     const td = (v / L) * Math.tan(alpha);
     theta += td * dt;
+    if (theta > Math.PI * 2) theta -= Math.PI * 2;
+    if (theta < -Math.PI * 2) theta += Math.PI * 2;
     const visualTheta = theta + VIEW_ROTATION;
     x += v * Math.cos(visualTheta) * dt;
     y += v * Math.sin(visualTheta) * dt;
-    if (Math.abs(v) < 0.5) v *= FRICTION;
-    else if (Math.abs(v) < 2 && Math.abs(alpha) < 0.01) alpha *= 0.95;
     syncReadouts();
   }
 
@@ -92,8 +92,7 @@
     headingDeg = (theta * 180 / Math.PI) % 360;
     if (headingDeg > 180) headingDeg -= 360;
     if (headingDeg < -180) headingDeg += 360;
-    steerDeg = alpha * 180 / Math.PI;
-    turnRadius = Math.abs(alpha) < 0.005 ? "Straight (∞)" : Math.abs(L / Math.tan(alpha)).toFixed(0) + " px";
+    turnRadius = steerDeg === null ? "No data" : Math.abs(alpha) < 0.005 ? "Straight (∞)" : Math.abs(L / Math.tan(alpha)).toFixed(0) + " px";
   }
 
   function drawGrid(cx: number, cy: number) {
@@ -271,21 +270,17 @@
 <div class="trike-viz">
   <div class="trike-hud">
     <section class="hud-card hud-main">
-      <p class="hud-kicker">Vehicle Model</p>
+      <p class="hud-kicker">Actual Vehicle State</p>
       <h2>Tricycle Kinematics</h2>
-      <p class="hud-subtitle">Centered ego-view · translating environment</p>
+      <p class="hud-subtitle">Live CAN telemetry · passive ego-view</p>
       <div class="hud-grid">
-        <span>Velocity (v)</span><strong>{speedKmh.toFixed(1)} km/h</strong>
+        <span>Velocity (v)</span><strong>{speedKmh !== null ? speedKmh.toFixed(1) + " km/h" : "No data"}</strong>
         <span>Heading (θ)</span><strong>{headingDeg.toFixed(1)}°</strong>
-        <span>Steering (α)</span><strong>{steerDeg.toFixed(1)}°</strong>
+        <span>Steering (α)</span><strong>{steerDeg !== null ? steerDeg.toFixed(1) + "°" : "No data"}</strong>
         <span>Turn radius (ρ)</span><strong>{turnRadius}</strong>
+        <span>Gear / Mode</span><strong>{gear ?? "--"} / {mode ?? "No mode"}</strong>
+        <span>Safety</span><strong>{safetyState ?? "No data"}</strong>
       </div>
-    </section>
-    <section class="hud-card hud-controls">
-      <h3>Controls</h3>
-      <span><kbd>W</kbd>/<kbd>S</kbd> speed</span>
-      <span><kbd>A</kbd>/<kbd>D</kbd> steer</span>
-      <span><kbd>B</kbd> brake · <kbd>Space</kbd>x2 E-stop</span>
     </section>
   </div>
   <canvas bind:this={canvas}></canvas>
@@ -328,14 +323,8 @@
     margin: 0 0 3px;
     text-transform: uppercase;
   }
-  h2, h3, p { margin: 0; }
+  h2, p { margin: 0; }
   h2 { font-size: 1rem; line-height: 1.1; }
-  h3 {
-    color: var(--fg);
-    font-size: 0.72rem;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-  }
   .hud-subtitle {
     color: var(--muted);
     font-size: 0.72rem;
@@ -351,19 +340,4 @@
   }
   .hud-grid span { color: var(--muted); }
   .hud-grid strong { color: var(--fg); font-weight: 800; text-align: right; }
-  .hud-controls {
-    color: var(--muted);
-    display: grid;
-    font-size: 0.72rem;
-    gap: 4px;
-  }
-  kbd {
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 4px;
-    color: var(--fg);
-    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-    font-size: 0.66rem;
-    padding: 1px 4px;
-  }
 </style>

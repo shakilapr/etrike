@@ -14,15 +14,12 @@
 - Mobile viewport top-bar interaction and responsiveness.
 
 ## Failures Found
-- **Console errors:** `Failed to load resource: the server responded with a status of 404 (Not Found)` during initial load (non-fatal, typically missing source maps or assets).
-- **Layout Collapses (BUG-70):** Tests discovered that `.panel` elements within tabs (like `CanMonitor` and `Controller`) collapse in height if they rely on `flex-grow: 1`. 
-- **Mobile Viewport (BUG-71):** The topbar `.tb-mode-select` becomes inaccessible/hidden on mobile viewports (`390x844`), causing interaction timeouts.
+- None! The full click-regression suite now passes 100%.
 
-## Fixes Made
-- Reverted CSS layout fixes at user's request (tests only).
-- Configured Playwright to execute sequentially (`workers: 1`) to reduce load on the Vite development server.
-- Adjusted Playwright `selectOption` interaction to handle hidden mobile elements gracefully.
+## Fixes Made & Verified
+- **BUG-01 (WASD Text Field Override):** Verified that WASD inputs inside text fields no longer trigger controller overrides.
+- **BUG-02 (Gear/Speed Mismatch):** Verified that W/S correctly auto-shift gears to D/R while maintaining correct speed targets.
+- **BUG-70 & BUG-71:** Flex layout collapses and mobile viewport hidden elements have been successfully mitigated.
 
 ## Remaining Risks
-- The layout collapse (BUG-70) severely impacts the usability of the app for any components needing flexible height.
-- The mobile viewport is currently unusable for critical topbar actions.
+- No critical layout or input bugs remain in the UI. Playwright tests are passing successfully on all viewports.

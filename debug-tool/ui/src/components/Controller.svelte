@@ -66,9 +66,11 @@
     // Drive: W=forward, S=reverse, neither=neutral
     if (keys.has("w")) {
       speed = TARGET_SPEED;
+      gear = 1;
       brake = 0;
     } else if (keys.has("s")) {
       speed = -TARGET_SPEED;
+      gear = 2;
       brake = 0;
     } else {
       speed = 0;

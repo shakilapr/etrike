@@ -50,6 +50,7 @@
   // Tracks which physical keys are down so the Controller can
   // poll them each tick (game-loop pattern).
   function trackKey(e: KeyboardEvent, down: boolean) {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
     const k = e.key.toLowerCase();
     if (["w","s","a","d","b"].includes(k)) {
       e.preventDefault();
@@ -264,16 +265,16 @@
   {/if}
 
   <main class="content">
-    <div style="display: {activeTab === 'dashboard' ? 'block' : 'none'}"><Dashboard {ids} /></div>
-    <div style="display: {activeTab === 'monitor' ? 'block' : 'none'}"><CanMonitor {ids} /></div>
-    <div style="display: {activeTab === 'dictionary' ? 'block' : 'none'}"><CanDictionary {ids} /></div>
-    <div style="display: {activeTab === 'injector' ? 'block' : 'none'}"><CanInjector {ids} {templates} /></div>
-    <div style="display: {activeTab === 'controller' ? 'block' : 'none'}"><Controller /></div>
-    <div style="display: {activeTab === 'unit-test' ? 'block' : 'none'}"><UnitTest {ids} /></div>
-    <div style="display: {activeTab === 'pipeline' ? 'block' : 'none'}"><PipelineView /></div>
-    <div style="display: {activeTab === 'terminal' ? 'block' : 'none'}"><Terminal /></div>
-    <div style="display: {activeTab === 'emulator' ? 'block' : 'none'}"><Emulator /></div>
-    <div style="display: {activeTab === 'stats' ? 'block' : 'none'}"><Stats {ids} /></div>
+    <div style="display: {activeTab === 'dashboard' ? 'flex' : 'none'}"><Dashboard {ids} /></div>
+    <div style="display: {activeTab === 'monitor' ? 'flex' : 'none'}"><CanMonitor {ids} /></div>
+    <div style="display: {activeTab === 'dictionary' ? 'flex' : 'none'}"><CanDictionary {ids} /></div>
+    <div style="display: {activeTab === 'injector' ? 'flex' : 'none'}"><CanInjector {ids} {templates} /></div>
+    <div style="display: {activeTab === 'controller' ? 'flex' : 'none'}"><Controller /></div>
+    <div style="display: {activeTab === 'unit-test' ? 'flex' : 'none'}"><UnitTest {ids} /></div>
+    <div style="display: {activeTab === 'pipeline' ? 'flex' : 'none'}"><PipelineView /></div>
+    <div style="display: {activeTab === 'terminal' ? 'flex' : 'none'}"><Terminal /></div>
+    <div style="display: {activeTab === 'emulator' ? 'flex' : 'none'}"><Emulator /></div>
+    <div style="display: {activeTab === 'stats' ? 'flex' : 'none'}"><Stats {ids} /></div>
   </main>
 
   <!-- Trike physics sidebar -->

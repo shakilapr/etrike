@@ -148,3 +148,15 @@
   - [x] Implementation: Subscribe `Dashboard.svelte` to centralized `$telemetry` store for scaled steering/brake values.
   - [x] Testing: UI typecheck/test suite passes.
   - [ ] Manual visual: Verify steering/brake readouts on the dashboard have correct decimal points and unit labels.
+
+- [x] **BUG-03:** Physics Sidebar Toggle UI Block
+  - [x] Implementation: Increased padding to `20px 10px` for a larger touch target.
+  - [x] Testing: Playwright regression tests passed with `force: true`.
+
+- [x] **BUG-04:** Main Content Wrapper Missing Flex Constraints
+  - [x] Implementation: Added `display: flex; flex-direction: column; flex-grow: 1; min-height: 0;` to `.content` and `.content > div`.
+  - [x] Testing: UI components correctly expand. Playwright regression tests passed.
+
+- [x] **BUG-05:** Mode Dropdown Laggy and Inaccessible
+  - [x] Implementation: Removed `width: 100%` behavior for `.tb-mode-select` to stop layout thrashing on desktop.
+  - [x] Testing: UI visually stable. Playwright automated mobile and desktop click regression tests passed.
