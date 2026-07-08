@@ -23,7 +23,7 @@
   type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "emulator";
 
   let activeTab: Tab = "dashboard";
-  let sidebarOpen = false;
+  let sidebarOpen = true;
   let ids: CanMessageDef[] = [];
   let templates: InjectionTemplate[] = [];
   let loadError = "";
@@ -278,7 +278,7 @@
 
   <!-- Trike physics sidebar -->
   <button class="trike-sidebar-toggle" class:open={sidebarOpen} on:click={() => sidebarOpen = !sidebarOpen} title="Physics View">
-    {sidebarOpen ? "▶" : "◀"}
+    {sidebarOpen ? "◀" : "▶"}
   </button>
   <aside class="trike-sidebar" class:open={sidebarOpen}>
     <TrikeViz visible={sidebarOpen} />
