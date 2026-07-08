@@ -19,7 +19,7 @@ test.describe("Debug Tool", () => {
     await page.goto("/");
     const tabButtons = page.locator("nav.tabs button");
     expect(await tabButtons.count()).toBe(10);
-    const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline", "Terminal", "Emulator"];
+    const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline", "Terminal", "Work Mode"];
     const labels = await tabButtons.allTextContents();
     expect(labels).toEqual(expect.arrayContaining(tabs));
   });
@@ -93,8 +93,9 @@ test.describe("Debug Tool", () => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/");
     await expect(page.locator(".tb-brand")).toContainText("E-Trike");
-    await expect(page.locator(".tb-mode-select")).toBeVisible();
-    await expect(page.locator(".tb-mode-select")).toBeEnabled();
+    await expect(page.locator(".tb-mode-badge")).toBeVisible();
+    await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+    await expect(page.getByText("Work Mode Configurator")).toBeVisible();
     // No horizontal overflow — check body does not exceed viewport
     const bodyWidth = await page.locator("body").evaluate(
       (el) => el.scrollWidth

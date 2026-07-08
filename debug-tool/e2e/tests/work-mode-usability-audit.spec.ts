@@ -11,12 +11,13 @@ const TABS = [
   "Pipeline",
   "Statistics",
   "Terminal",
-  "Emulator",
+  "Work Mode",
 ] as const;
 
 test.describe("No-hardware work mode usability audit", () => {
   test.beforeEach(async ({ request }) => {
     await request.delete("http://127.0.0.1:3000/api/can/frames").catch(() => undefined);
+    await request.post("http://127.0.0.1:3000/api/mode", { data: modeConfig("bench") }).catch(() => undefined);
   });
 
   test("modes, tabs, commands, and health bar remain usable without hardware", async ({ page, request }) => {
@@ -28,23 +29,18 @@ test.describe("No-hardware work mode usability audit", () => {
     });
 
     await page.goto("/");
-    await expect(page.locator(".tb-mode-select")).toBeVisible();
-    await expect(page.locator(".tb-mode-select")).toBeEnabled();
+    await expect(page.locator(".tb-mode-badge")).toBeVisible();
+    await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+    await expect(page.getByText("Work Mode Configurator")).toBeVisible();
     await expect.poll(async () => {
       const apiMode = await request.get("http://127.0.0.1:3000/api/mode");
       if (!apiMode.ok()) return "api-unavailable";
-      return `${await page.locator(".tb-mode-select").inputValue()}:${(await apiMode.json()).mode}`;
-    }).toMatch(/^(full-sim|emulator|hybrid|bench|monitor):\1$/);
+      return (await apiMode.json()).mode;
+    }).toBe("bench");
     await expect(page.locator(".tb-health-row")).toBeVisible();
 
     for (const mode of MODES) {
-      const responsePromise = page.waitForResponse((response) =>
-        response.url().endsWith("/api/mode") && response.request().method() === "POST"
-      );
-      await page.locator(".tb-mode-select").selectOption(mode);
-      const response = await responsePromise;
-      expect(response.ok(), `${mode} POST /api/mode should succeed`).toBe(true);
-      await expect(page.locator(".tb-mode-select")).toHaveValue(mode);
+      await applyMode(page, mode);
 
       await page.waitForTimeout(mode === "full-sim" ? 1200 : 3600);
       const apiMode = await request.get("http://127.0.0.1:3000/api/mode");
@@ -67,13 +63,12 @@ test.describe("No-hardware work mode usability audit", () => {
       const started = Date.now();
       await page.locator("nav.tabs").getByRole("button", { name: tab }).click();
       await expect(page.locator("nav.tabs button.active")).toHaveText(tab);
-      await expect(page.locator(".content > div")).toHaveCount(1);
       const elapsed = Date.now() - started;
       console.log(`[tab] ${tab} ${elapsed}ms`);
       expect(elapsed, `${tab} should switch promptly`).toBeLessThan(1000);
     }
 
-    await page.locator(".tb-mode-select").selectOption("full-sim");
+    await applyMode(page, "full-sim");
     await page.locator("nav.tabs").getByRole("button", { name: "Controller" }).click();
     const controller = page.locator(".injector-layout").filter({ has: page.locator("h2", { hasText: "Controller" }) });
     await expect(controller).toBeVisible();
@@ -103,6 +98,37 @@ test.describe("No-hardware work mode usability audit", () => {
     expect(browserErrors).toEqual([]);
   });
 });
+
+function modeConfig(mode: (typeof MODES)[number]) {
+  return {
+    mode,
+    simulatedEcus: mode === "full-sim" ? ["host", "rt", "sys", "mtr", "ses", "seb"] : [],
+    idSources: {},
+    injectEmulatedToPhysical: false,
+    bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+  };
+}
+
+async function applyMode(page: import("@playwright/test").Page, mode: (typeof MODES)[number]) {
+  const labels: Record<(typeof MODES)[number], string> = {
+    "full-sim": "Full Simulation",
+    emulator: "Emulator",
+    hybrid: "Hybrid",
+    bench: "Bench Test",
+    monitor: "Monitor Only",
+  };
+  await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+  await page.getByRole("button", { name: labels[mode], exact: true }).click();
+  const applyButton = page.getByRole("button", { name: /Apply/i });
+  await expect(applyButton, `${mode} should become dirty before applying`).toBeEnabled();
+  const responsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/mode") && response.request().method() === "POST"
+  );
+  await applyButton.click();
+  const response = await responsePromise;
+  expect(response.ok(), `${mode} POST /api/mode should succeed`).toBe(true);
+  await expect(page.locator(".tb-mode-badge")).toContainText(labels[mode]);
+}
 
 async function readHeaderSnapshot(page: import("@playwright/test").Page) {
   return page.evaluate(() => {
