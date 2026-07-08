@@ -263,7 +263,7 @@
     <section class="alert">{loadError}</section>
   {/if}
 
-  <main>
+  <main class="content">
     <div style="display: {activeTab === 'dashboard' ? 'block' : 'none'}"><Dashboard {ids} /></div>
     <div style="display: {activeTab === 'monitor' ? 'block' : 'none'}"><CanMonitor {ids} /></div>
     <div style="display: {activeTab === 'dictionary' ? 'block' : 'none'}"><CanDictionary {ids} /></div>

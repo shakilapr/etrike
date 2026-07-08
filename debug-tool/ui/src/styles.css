@@ -36,9 +36,17 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
+  height: 100%;
   margin: 0;
   min-width: 320px;
+  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
 }
@@ -86,8 +94,12 @@ select {
 
 /* ── Shell ── */
 .app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   max-width: 1440px;
   margin: 0 auto;
+  min-height: 0;
   padding: 24px;
   position: relative;
   transition: padding-right 0.3s ease;
@@ -95,6 +107,18 @@ select {
 
 .app-shell.sidebar-open {
   padding-right: 340px;
+}
+
+.content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.content > div {
+  min-height: 0;
 }
 
 /* Trike physics sidebar */
@@ -1023,6 +1047,21 @@ h2 { font-size: 1rem; }
   }
 }
 @media (max-width: 700px) {
+  .tb-row-main {
+    align-items: stretch;
+  }
+  .tb-brand {
+    flex: 1 1 100%;
+    min-width: 0;
+    width: 100%;
+  }
+  .tb-brand > span {
+    flex: 0 0 auto;
+  }
+  .tb-mode-select {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
   .tb-health {
     grid-template-columns: 1fr;
   }
