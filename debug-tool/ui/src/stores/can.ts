@@ -16,6 +16,11 @@ class RingBuffer<T> {
     this.buf = new Array(cap);
   }
 
+  clear(): void {
+    this.head = 0;
+    this.count = 0;
+  }
+
   push(item: T): void {
     this.buf[this.head] = item;
     this.head = (this.head + 1) % this.cap;
@@ -55,14 +60,25 @@ const frameStore = writable<CanFrame[]>([]);
 export const frames = {
   subscribe: frameStore.subscribe,
   set(input: CanFrame[]): void {
+    frameBuffer.clear();
     frameBuffer.pushMany(input);
     frameStore.set(frameBuffer.toArray());
-    latestById.set(buildLatestById(input));
+    
+    // Also clear _latestById so we don't carry over old frames across sets
+    for (const key in _latestById) delete _latestById[key];
+    
+    for (const f of input) {
+      if (f) _latestById[`${f.bus}:${f.id}`] = f;
+    }
+    latestById.set({ ..._latestById });
   },
   update(updater: (current: CanFrame[]) => CanFrame[]): void {
     frameStore.update((current) => {
       const next = updater(current);
-      latestById.set(buildLatestById(next));
+      for (const f of next) {
+        if (f) _latestById[`${f.bus}:${f.id}`] = f;
+      }
+      latestById.set({ ..._latestById });
       return next;
     });
   }
@@ -83,41 +99,52 @@ export const status = writable<Partial<BackendStatus>>({
 export const wsConnected = writable(false);
 export const commandAcks = writable<Record<string, unknown>[]>([]);
 
-export const recentFrameRate = derived(frames, ($frames) => {
-  if ($frames.length < 2) return 0;
-  const newest = $frames.at(-1)?.ts ?? 0;
-  const since = newest - 5;
-  return $frames.filter((frame) => frame.ts >= since).length / 5;
-});
-
 export function ingestInitialFrames(input: CanFrame[]): void {
   // Reset the buffer on initial load
+  frameBuffer.clear();
+  for (const key in _latestById) delete _latestById[key];
+  
   const limited = input.slice(-FRAME_BUFFER_SIZE);
   limited.forEach((f) => frameBuffer.push(f));
   frameStore.set(frameBuffer.toArray());
-  latestById.set(buildLatestById(limited));
+  for (const f of limited) {
+    if (f) _latestById[`${f.bus}:${f.id}`] = f;
+  }
+  latestById.set({ ..._latestById });
+}
+
+const _latestById: Record<string, CanFrame> = {};
+let pendingFrames = false;
+
+function flushFrames() {
+  frameStore.set(frameBuffer.toArray());
+  latestById.set({ ..._latestById });
+  pendingFrames = false;
 }
 
 export function ingestMessage(message: { type: string; payload: unknown }): void {
   if (message.type === "can_frame") {
     const frame = message.payload as CanFrame;
     if (!frame) return;
-    // Ring buffer push — no spread, no slice, no GC pressure
     frameBuffer.push(frame);
-    frameStore.set(frameBuffer.toArray());
-    latestById.update((current) => ({ ...current, [`${frame.bus}:${frame.id}`]: frame }));
+    _latestById[`${frame.bus}:${frame.id}`] = frame;
+    
+    if (!pendingFrames) {
+      pendingFrames = true;
+      requestAnimationFrame(flushFrames);
+    }
   } else if (message.type === "can_frames_batch") {
     const batch = message.payload as CanFrame[];
-    if (batch.length === 0) return;
+    if (!batch || !Array.isArray(batch) || batch.length === 0) return;
     frameBuffer.pushMany(batch);
-    frameStore.set(frameBuffer.toArray());
-    latestById.update((current) => {
-      const next = { ...current };
-      for (const f of batch) {
-        if (f) next[`${f.bus}:${f.id}`] = f;
-      }
-      return next;
-    });
+    for (const f of batch) {
+      if (f) _latestById[`${f.bus}:${f.id}`] = f;
+    }
+    
+    if (!pendingFrames) {
+      pendingFrames = true;
+      requestAnimationFrame(flushFrames);
+    }
   } else if (message.type === "stats") {
     stats.set(message.payload as CanStats);
   } else if (message.type === "status") {

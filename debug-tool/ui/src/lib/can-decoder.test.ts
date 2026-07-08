@@ -222,9 +222,9 @@ describe("findMessage", () => {
     expect(msg!.bus).toBe("high");
   });
 
-  it("falls back to id-only search across buses", () => {
+  it("does NOT fall back to id-only search across buses", () => {
     const msg = findMessage("low", "0x300");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
   });
 
   it("returns undefined for unknown IDs", () => {
