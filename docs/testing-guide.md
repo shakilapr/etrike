@@ -6,6 +6,11 @@ How to run every test suite in the project.
 
 ## Quick Reference
 
+Before flashing RT or SYS firmware onto a real vehicle, use
+[`rt-sys-pre-vehicle-validation.md`](rt-sys-pre-vehicle-validation.md) as the
+release gate. The commands below are useful test inputs, but they are not enough
+by themselves to prove vehicle readiness.
+
 | Suite | Command | Location |
 |-------|---------|----------|
 | Native C++ | `g++` + run | `native-test/test/` |
