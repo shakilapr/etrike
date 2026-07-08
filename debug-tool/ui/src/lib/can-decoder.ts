@@ -1,5 +1,6 @@
 export * from "@etrike/debug-shared";
-import { Bus, CanFrame, normalizeCanId } from "@etrike/debug-shared";
+import { normalizeCanId } from "@etrike/debug-shared";
+import type { Bus, CanFrame } from "@etrike/debug-shared";
 
 export function encodePayload(bus: Bus, id: string, values: Record<string, number | boolean>): { dlc: number; data: number[] } {
   const bytes = Array.from({ length: 8 }, () => 0);

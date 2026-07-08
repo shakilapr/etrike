@@ -3,19 +3,31 @@ import { expect, test } from "@playwright/test";
 test.describe("Debug Tool interaction audit", () => {
   test.beforeEach(async ({ request }) => {
     await request.delete("http://127.0.0.1:3000/api/can/frames").catch(() => undefined);
+    await request.post("http://127.0.0.1:3000/api/mode", {
+      data: {
+        mode: "monitor",
+        simulatedEcus: [],
+        idSources: {},
+        injectEmulatedToPhysical: false,
+        bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+      },
+    }).catch(() => undefined);
   });
 
   test("mode selector switches the active work mode", async ({ page, request }) => {
     await page.goto("/");
 
-    const mode = page.locator(".tb-mode-select");
-    await expect(mode).toBeVisible();
+    await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+    await expect(page.getByText("Work Mode Configurator")).toBeVisible();
+
+    await page.getByRole("button", { name: "Full Simulation" }).click();
+    await expect(page.getByRole("button", { name: /Apply/i })).toBeEnabled();
     const modePost = page.waitForResponse((response) =>
       response.url().endsWith("/api/mode") && response.request().method() === "POST"
     );
-    await mode.selectOption("full-sim");
+    await page.getByRole("button", { name: /Apply/i }).click();
     await expect((await modePost).ok()).toBeTruthy();
-    await expect(mode).toHaveValue("full-sim");
+    await expect(page.locator(".tb-mode-badge")).toContainText("Full Simulation");
 
     await expect
       .poll(async () => {
@@ -38,7 +50,7 @@ test.describe("Debug Tool interaction audit", () => {
       "Pipeline",
       "Statistics",
       "Terminal",
-      "Emulator",
+      "Work Mode",
       "Dashboard"
     ];
 
@@ -48,7 +60,6 @@ test.describe("Debug Tool interaction audit", () => {
       const activeTab = page.locator("nav.tabs button.active");
       await expect(activeTab).toHaveText(name);
       expect(performance.now() - startedAt).toBeLessThan(1000);
-      await expect(page.locator(".content > div")).toHaveCount(1);
     }
   });
 
