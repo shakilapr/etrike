@@ -1,6 +1,7 @@
 import { writable } from "svelte/store";
 import type { WorkModeConfig } from "../lib/api";
 
+export const workModeReady = writable(false);
 export const workMode = writable<WorkModeConfig>({
   mode: "monitor",
   simulatedEcus: [],

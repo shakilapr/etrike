@@ -4,7 +4,7 @@
   import type { Bus } from "../lib/can-decoder";
   import { sendFrame, setMode as apiSetMode, type WorkModeConfig } from "../lib/api";
   import { logError } from "../stores/errors";
-  import { workMode, modeLabel as workModeLabel } from "../stores/work-mode";
+  import { workMode, workModeReady, modeLabel as workModeLabel } from "../stores/work-mode";
 
   export let onReset: () => void;
   export let onRestart: () => void;
@@ -161,6 +161,7 @@
 
   $: ecuHealth = healthBar.filter((item) => item.group === "ECU");
   $: ecuReady = ecuHealth.filter((item) => item.state === "ok").length;
+  $: ecuRollupLabel = ecuReady === ecuHealth.length ? "ready" : ecuReady > 0 ? "partial" : "lost";
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -174,7 +175,7 @@
     <div class="tb-brand">
       <span>E-Trike</span>
     </div>
-    <select class="tb-mode-select" value={$workMode.mode} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
+      <select class="tb-mode-select" value={$workMode.mode} disabled={!$workModeReady} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
       {#each MODES as m}
         <option value={m}>{workModeLabel(m)}</option>
       {/each}
@@ -226,7 +227,7 @@
           {#if section.group === "ECU"}
             <span class="tbh-rollup" data-state={ecuReady === ecuHealth.length ? "ok" : ecuReady > 0 ? "warn" : "bad"} title="ECU presence summary">
               <span>{ecuReady}/{ecuHealth.length}</span>
-              <strong>ready</strong>
+              <strong>{ecuRollupLabel}</strong>
             </span>
             <span class="ecu-dots" aria-label="ECU detail">
               {#each section.items as h}

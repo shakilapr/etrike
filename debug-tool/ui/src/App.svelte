@@ -12,13 +12,14 @@
   import Topbar from "./components/Topbar.svelte";
   import TrikeViz from "./components/TrikeViz.svelte";
   import UnitTest from "./components/UnitTest.svelte";
-  import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
+  import { clearFrames, getCanIds, getFrames, getMode, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
   import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
   import { errorLog, logError } from "./stores/errors";
   import { initFaultWatcher } from "./stores/faults";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
+  import { workMode, workModeReady } from "./stores/work-mode";
 
   type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "emulator";
 
@@ -128,14 +129,16 @@
   });
 
   async function bootstrap() {
+    workModeReady.set(false);
     const errors: string[] = [];
     try {
-      const [statusR, idsR, framesR, statsR, templatesR] = await Promise.allSettled([
+      const [statusR, idsR, framesR, statsR, templatesR, modeR] = await Promise.allSettled([
         getStatus(),
         getCanIds(),
         getFrames(),
         getStats(),
-        getTemplates()
+        getTemplates(),
+        getMode()
       ]);
 
       if (statusR.status === "fulfilled") status.set(statusR.value);
@@ -152,6 +155,10 @@
 
       if (templatesR.status === "fulfilled") templates = templatesR.value;
       else errors.push(`templates: ${String(templatesR.reason)}`);
+
+      if (modeR.status === "fulfilled") workMode.set(modeR.value);
+      else errors.push(`mode: ${String(modeR.reason)}`);
+      workModeReady.set(true);
 
       loadError = errors.length > 0 ? errors.join("; ") : "";
       for (const e of errors) logError(e);

@@ -353,7 +353,7 @@ export class DebugStore {
   }
 
   clearFrames(): void {
-    this.db.exec("DELETE FROM can_frames; DELETE FROM recording_frames; UPDATE recordings SET frame_count = 0;");
+    this.db.exec("DELETE FROM recording_frames; DELETE FROM can_frames; UPDATE recordings SET frame_count = 0;");
   }
 }
 

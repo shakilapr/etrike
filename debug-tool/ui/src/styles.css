@@ -141,6 +141,32 @@ select {
 }
 .trike-sidebar.open { transform: translateX(0); }
 
+.app-shell.sidebar-open .tb-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-shell.sidebar-open .tb-row-main .tb-indicators {
+  margin-left: 0;
+}
+
+.app-shell.sidebar-open .tb-sep {
+  display: none;
+}
+
+.app-shell.sidebar-open .tb-health {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.app-shell.sidebar-open .tbh-group:last-child {
+  grid-column: 1 / -1;
+}
+
+.app-shell.sidebar-open .tb-telem {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+}
+
 .topbar {
   align-items: center;
   display: grid;
