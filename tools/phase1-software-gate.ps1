@@ -53,12 +53,16 @@ function Invoke-LoggedStep {
 
     Push-Location -LiteralPath $WorkDir
     try {
+        $oldError = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         & $Command @Arguments 2>&1 | Tee-Object -FilePath $logPath -Append | Out-Null
+        $ErrorActionPreference = $oldError
         $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
     } catch {
         $_ | Tee-Object -FilePath $logPath -Append | Out-Null
         $exitCode = 1
     } finally {
+        $ErrorActionPreference = "Stop"
         Pop-Location
     }
 
