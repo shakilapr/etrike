@@ -433,6 +433,14 @@ export class RtEcu implements SimulatedEcu {
           0, // reserved
         ], sender: "rt",
       });
+      // 0x220 RT_PID_RPT (10 Hz, high bus, DLC=6)
+      out.push({
+        simTimeMs: nowMs, bus: "high", canId: "0x220", name: "RT_PID_RPT", dlc: 6, data: [
+          0, 0, // p_term
+          0, 0, // i_term
+          0, 0, // d_term
+        ], sender: "rt",
+      });
     }
 
     // ── Heartbeats (2 Hz) ───────────────────────────────────

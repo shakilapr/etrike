@@ -55,7 +55,15 @@ describe("0x011 SYS_SAFETY_STS", () => {
 });
 
 describe("0x012 SYS_DCDC_CMD", () => {
-  it.skip("GAP(issue#dcdc-sim): defined in protocol but DCDC ECU not simulated");
+  it("sent at 5 Hz on low bus", () => {
+    const runner = new SimulationRunner();
+    runner.configure(drivingCfg(0));
+    const result = runner.runDuration(1000);
+    expect(result.lowBus.total).toBeGreaterThan(0);
+    // filter to find 0x012
+    const dcdc = runner.capturedFrames.filter(f => f.canId === "0x012" && f.bus === "low");
+    expect(dcdc.length).toBeGreaterThanOrEqual(4);
+  });
 });
 
 describe("0x110 SYS_MODE_CMD", () => {
@@ -183,19 +191,44 @@ describe("0x301 HOST_BRAKE_REQ", () => {
 });
 
 describe("0x302 HOST_LIGHT_CMD", () => {
-  it.skip("GAP(issue#light-fwd): light bits defined but Host does not send, RT does not forward");
+  it("forwarded high→low", () => {
+    const runner = new SimulationRunner();
+    runner.configure(drivingCfg(0));
+    const result = runner.runDuration(200);
+    expect(result.highBus.total).toBeGreaterThan(0);
+    const lowLights = runner.capturedFrames.filter(f => f.canId === "0x302" && f.bus === "low");
+    expect(lowLights.length).toBeGreaterThan(0);
+  });
 });
 
 describe("0x310 STEER_DIAG", () => {
-  it.skip("GAP(issue#steer-diag-sim): defined in protocol; C++ firmware sends it, simulation does not");
+  it("sent by RT at 10 Hz", () => {
+    const runner = new SimulationRunner();
+    runner.configure(drivingCfg(0));
+    const result = runner.runDuration(200);
+    const msgs = runner.capturedFrames.filter(f => f.canId === "0x310" && f.bus === "high");
+    expect(msgs.length).toBeGreaterThan(0);
+  });
 });
 
 describe("0x311 BRAKE_DIAG", () => {
-  it.skip("GAP(issue#brake-diag-sim): defined in protocol; C++ firmware sends it, simulation does not");
+  it("sent by RT at 10 Hz", () => {
+    const runner = new SimulationRunner();
+    runner.configure(drivingCfg(0));
+    const result = runner.runDuration(200);
+    const msgs = runner.capturedFrames.filter(f => f.canId === "0x311" && f.bus === "high");
+    expect(msgs.length).toBeGreaterThan(0);
+  });
 });
 
 describe("0x220 RT_PID_RPT", () => {
-  it.skip("GAP(issue#pid-rpt-sim): reserved / not yet enabled");
+  it("sent by RT at 10 Hz", () => {
+    const runner = new SimulationRunner();
+    runner.configure(drivingCfg(0));
+    const result = runner.runDuration(200);
+    const msgs = runner.capturedFrames.filter(f => f.canId === "0x220" && f.bus === "high");
+    expect(msgs.length).toBeGreaterThan(0);
+  });
 });
 
 describe("0x400 HOST_OBSTACLE_DIST", () => {

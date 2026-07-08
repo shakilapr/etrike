@@ -448,10 +448,12 @@ describe("CAN forwarding rules", () => {
     expect(getFirst(runner, "0x120", "high")).toBeDefined();
   });
 
-  it.skip("0x302 light command forwarded high→low (NEW — was missing)", () => {
-    // Host sends 0x302, RT should forward high→low
-    // Note: HostEcu doesn't originate 0x302 yet (future gap),
-    // so this cannot be tested until the Host drives 0x302.
+  it("0x302 light command forwarded high→low", () => {
+    const runner = new SimulationRunner();
+    runner.configure({ hostDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }] });
+    runner.runDuration(200);
+    const lowLights = runner.capturedFrames.filter(f => f.canId === "0x302" && f.bus === "low");
+    expect(lowLights.length).toBeGreaterThan(0);
   });
 });
 
