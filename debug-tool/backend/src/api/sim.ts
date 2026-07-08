@@ -44,8 +44,7 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: 
     const bus = normalizeBus(rawBus);
     const id = normalizeCanId(rawId);
     const key = `sim:${bus}:${id}`;
-    const timers: Map<string, ReturnType<typeof setInterval>> = (app as any).__simTimers;
-    if (!timers) return reply.code(500).send({ error: "sim subsystem not initialized" });
+    const timers = app.ctx.simTimers;
 
     if (timers.has(key)) clearInterval(timers.get(key)!);
 
@@ -65,8 +64,8 @@ export function registerSimRoutes(app: FastifyInstance, store: DebugStore, hub: 
     const bus = normalizeBus(parsed.data.bus);
     const id = normalizeCanId(parsed.data.id ?? "0x000");
     const key = `sim:${bus}:${id}`;
-    const timers: Map<string, ReturnType<typeof setInterval>> = (app as any).__simTimers;
-    if (timers?.has(key)) { clearInterval(timers.get(key)!); timers.delete(key); }
+    const timers = app.ctx.simTimers;
+    if (timers.has(key)) { clearInterval(timers.get(key)!); timers.delete(key); }
     return { ok: true, action: "stop", id, bus };
   });
 }

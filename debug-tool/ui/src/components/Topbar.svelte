@@ -2,27 +2,17 @@
   import { stats, status } from "../stores/can";
   import { telemetry, ecuPresence } from "../stores/telemetry";
   import type { Bus } from "../lib/can-decoder";
-  import { sendFrame, setMode as apiSetMode, type WorkModeConfig } from "../lib/api";
-  import { logError } from "../stores/errors";
+  import { sendFrame } from "../lib/api";
+  import { logError, logInfo } from "../stores/errors";
   import { workMode, workModeReady, modeLabel as workModeLabel } from "../stores/work-mode";
 
   export let onReset: () => void;
   export let onRestart: () => void;
   export let onStop: () => void;
 
-  const MODES: WorkModeConfig["mode"][] = ["full-sim", "emulator", "hybrid", "bench", "monitor"];
+  // Mode is now managed in the Emulator (Work Mode Configurator) tab.
+  // The Topbar shows the current mode as a read-only badge.
 
-  async function switchMode(mode: WorkModeConfig["mode"]) {
-    const defaults = await import("../lib/api").then(m => m.getModeDefaults());
-    const config = (defaults as Record<string, WorkModeConfig>)[mode];
-    if (!config) return;
-    try {
-      await apiSetMode(config);
-      workMode.set(config);
-    } catch (e) {
-      logError("Mode switch: " + (e instanceof Error ? e.message : String(e)));
-    }
-  }
 
   // ── Health state helpers ──
   function hState(ok: boolean, degraded = false): "ok" | "warn" | "bad" {
@@ -81,13 +71,13 @@
   async function cycleMode() {
     if (sending) return; sending = true;
     const nm = nextMode();
-    try { await sendFrame({ bus: "low", id: "0x110", dlc: 1, data: [nm.value] }); logError("Mode → " + nm.label); }
+    try { await sendFrame({ bus: "low", id: "0x110", dlc: 1, data: [nm.value] }); logInfo("Mode → " + nm.label); }
     catch (e) { logError("Mode fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }
   async function toggleDcdc() {
     if (sending) return; sending = true;
-    try { await sendFrame({ bus: "low", id: "0x012", dlc: 1, data: [1] }); logError("DCDC ON"); }
+    try { await sendFrame({ bus: "low", id: "0x012", dlc: 1, data: [1] }); logInfo("DCDC ON"); }
     catch (e) { logError("DCDC fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }
@@ -95,7 +85,7 @@
     if (sending) return;
     if (!window.confirm("Send ESTOP? Emergency stop on all nodes.")) return;
     sending = true;
-    try { await sendFrame({ bus: "low", id: "0x001", dlc: 0, data: [], confirm_estop: true }); logError("ESTOP sent"); }
+    try { await sendFrame({ bus: "low", id: "0x001", dlc: 0, data: [], confirm_estop: true }); logInfo("ESTOP sent"); }
     catch (e) { logError("ESTOP fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }
@@ -175,11 +165,9 @@
     <div class="tb-brand">
       <span>E-Trike</span>
     </div>
-      <select class="tb-mode-select" value={$workMode.mode} disabled={!$workModeReady} on:change={(e) => switchMode(e.currentTarget.value as WorkModeConfig["mode"])}>
-      {#each MODES as m}
-        <option value={m}>{workModeLabel(m)}</option>
-      {/each}
-    </select>
+    <span class="tb-mode-badge" class:ready={$workModeReady} title="Current work mode">
+      {$workModeReady ? workModeLabel($workMode.mode) : "…"}
+    </span>
 
     <!-- Indicators — automotive-standard shapes, fixed size -->
     <div class="tb-indicators">

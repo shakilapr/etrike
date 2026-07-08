@@ -5,8 +5,10 @@ import Fastify from "fastify";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, type AppConfig } from "./config";
+import { registerAppContext } from "./app-context";
 import { registerCanRoutes } from "./api/can";
 import { registerCommandRoutes } from "./api/cmd";
+import { registerModeRoutes } from "./api/mode";
 import { registerRecordingRoutes } from "./api/recordings";
 import { registerSimRoutes } from "./api/sim";
 import { registerSystemRoutes } from "./api/system";
@@ -15,7 +17,7 @@ import { DebugStore } from "./db/queries";
 import { MqttBridge } from "./mqtt/bridge";
 import { SerialBridge } from "./serial/reader";
 import { FrameRouter } from "./sim/router";
-import { MODE_DEFAULTS, workModeConfigSchema, type WorkModeConfig, type EcuId } from "./sim/work-mode";
+import { MODE_DEFAULTS, type WorkModeConfig } from "./sim/work-mode";
 import { SimulationEngine } from "./sim/engine";
 import { HostModel } from "./sim/ecus/host-model";
 import { RtModel } from "./sim/ecus/rt-model";
@@ -27,7 +29,8 @@ import { IpcEngineAdapter } from "./sim/ipc-adapter";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
-type FrameObservableBridge = (CanalystBridge | SerialBridge | MqttBridge) & {
+type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
+type FrameObservableBridge = AnyBridge & {
   onFrame?: (callback: (frame: CanFrame) => void) => void;
 };
 
@@ -39,6 +42,7 @@ async function main(): Promise<void> {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+
   const startedAt = Date.now() / 1000;
   const app = Fastify({ logger: true });
   const store = new DebugStore(config.dbPath, config.maxFrames);
@@ -58,20 +62,12 @@ async function main(): Promise<void> {
     app.log.info(`Serving UI from ${uiDist}`);
   }
 
-  // Expose hub and router for sim routes + bridge frame handlers
-  (app as any).__hub = hub;
-  (app as any).__simTimers = new Map<string, ReturnType<typeof setInterval>>();
+  // ── Simulation engine & ECU models ────────────────────────────────────
   const router = new FrameRouter();
-  (app as any).__router = router;
   store.router = router;
 
-  // Simulation engine — runs ECU models in software
   const simEngine = new SimulationEngine(store, hub);
-  const feedPhysicalFramesToSim = (bridge: FrameObservableBridge): void => {
-    bridge.onFrame?.((frame) => simEngine.injectExternal(frame, { persist: false }));
-  };
 
-  // TypeScript models (always available)
   const hostModel = new HostModel();
   const rtModelTs = new RtModel();
   const mtrModel = new MtrModel();
@@ -79,7 +75,6 @@ async function main(): Promise<void> {
   const sesModel = new SesModel();
   const sebModel = new SebModel();
 
-  // Native C++ model via IPC (requires sim-engine-native to be built)
   let rtModelNative: IpcEngineAdapter | null = null;
   try {
     rtModelNative = new IpcEngineAdapter("rt");
@@ -88,7 +83,7 @@ async function main(): Promise<void> {
     app.log.info("Native RT model not available — using TypeScript fallback");
   }
 
-  // Register TypeScript models as default
+  // Register TypeScript models
   simEngine.register(hostModel);
   simEngine.register(rtModelTs);
   simEngine.register(mtrModel);
@@ -96,152 +91,78 @@ async function main(): Promise<void> {
   simEngine.register(sesModel);
   simEngine.register(sebModel);
 
-  (app as any).__simEngine = simEngine;
-  (app as any).__hostModel = hostModel;
-  (app as any).__rtModelTs = rtModelTs;
-  (app as any).__rtModelNative = rtModelNative;
+  // ── Typed app context — replaces all (app as any).__xxx ───────────────
+  const simTimers = new Map<string, ReturnType<typeof setInterval>>();
+  registerAppContext(app, {
+    hub,
+    simTimers,
+    router,
+    simEngine,
+    hostModel,
+    rtModelTs,
+    rtModelNative,
+  });
 
+  // ── Bridge setup ──────────────────────────────────────────────────────
+  const feedPhysicalFramesToSim = (bridge: FrameObservableBridge): void => {
+    bridge.onFrame?.((frame) => simEngine.injectExternal(frame, { persist: false }));
+  };
+
+  const bridgeRef: { current: AnyBridge } = {
+    current: new SerialBridge(config, store, hub),
+  };
+  feedPhysicalFramesToSim(bridgeRef.current as FrameObservableBridge);
+
+  // Proxy that delegates all property access to bridgeRef.current so route
+  // handlers always see the live transport without needing to be re-registered.
+  const bridgeProxy = new Proxy({} as AnyBridge, {
+    get(_target, prop) { return (bridgeRef.current as any)[prop]; },
+    set(_target, prop, value) { (bridgeRef.current as any)[prop] = value; return true; },
+  });
+
+  // ── Current work mode (closure state, access via getModeConfig/setModeConfig) ──
+  let currentConfig: WorkModeConfig = MODE_DEFAULTS.monitor;
+  const getCurrentConfig = () => currentConfig;
+  const setCurrentConfig = (c: WorkModeConfig) => { currentConfig = c; };
+
+  // ── Route registration ────────────────────────────────────────────────
   registerSimRoutes(app, store, hub);
   registerCanRoutes(app, store);
   registerRecordingRoutes(app, store);
+  registerSystemRoutes(app, store, bridgeProxy, hub, startedAt, patchedShutdown);
+  registerCommandRoutes(app, store, bridgeProxy);
+  registerModeRoutes(app, { config, store, bridgeRef, feedPhysicalFramesToSim, getCurrentConfig, setCurrentConfig });
+  hub.registerRoutes(app);
 
-  // Mutable bridge reference so route handlers always see the active transport.
-  // Routes receive a Proxy that forwards all property access to the current bridge.
-  const bridgeRef: { current: CanalystBridge | SerialBridge | MqttBridge } = {
-    current: new SerialBridge(config, store, hub)
-  };
-  feedPhysicalFramesToSim(bridgeRef.current);
-
-  // Proxy that delegates to bridgeRef.current — route handlers always get the live bridge
-  const bridgeProxy = new Proxy({} as CanalystBridge | SerialBridge | MqttBridge, {
-    get(_target, prop) {
-      const b = bridgeRef.current;
-      return (b as any)[prop];
-    },
-    set(_target, prop, value) {
-      const b = bridgeRef.current;
-      (b as any)[prop] = value;
-      return true;
-    }
-  });
-
-  const patchedShutdown = async () => {
-    const b = bridgeRef.current;
+  // ── Graceful shutdown ─────────────────────────────────────────────────
+  async function patchedShutdown() {
     app.log.info("Shutting down debug backend");
-    const timers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>> | undefined;
-    if (timers) { for (const t of timers.values()) clearInterval(t); timers.clear(); }
+    for (const t of simTimers.values()) clearInterval(t);
+    simTimers.clear();
     hub.close();
     const timeout = setTimeout(() => {
       app.log.warn("bridge.close() timed out after 5s, forcing exit");
       process.exit(1);
     }, 5000).unref();
-    try { await b.close(); } catch (error) { app.log.error(error, "bridge.close() failed"); }
+    try { await bridgeRef.current.close(); } catch (error) { app.log.error(error, "bridge.close() failed"); }
     clearTimeout(timeout);
     store.close();
     await app.close();
-  };
-
-  // Routes receive the proxy — always delegates to bridgeRef.current
-  registerSystemRoutes(app, store, bridgeProxy, hub, startedAt, patchedShutdown);
-  registerCommandRoutes(app, store, bridgeProxy);
-  hub.registerRoutes(app);
+  }
 
   process.once("SIGINT", () => { patchedShutdown().then(() => process.exit(0)).catch(() => process.exit(1)); });
   process.once("SIGTERM", () => { patchedShutdown().then(() => process.exit(0)).catch(() => process.exit(1)); });
 
-  // Register all routes BEFORE listening (Fastify doesn't allow routes after listen).
-  // These use bridgeProxy which delegates to bridgeRef.current at call time,
-  // so transport can be swapped at runtime.
-
-  // Runtime transport switching endpoint
-  app.post("/api/system/switch-transport", async (request, reply) => {
-    const body = (request.body ?? {}) as Record<string, unknown>;
-    const transport = String(body.transport ?? "");
-    if (!["serial", "canalystii", "mqtt", "disabled"].includes(transport)) {
-      return reply.code(400).send({ error: `invalid transport: ${transport}` });
-    }
-    try {
-      await bridgeRef.current.close();
-      if (transport === "disabled") {
-        bridgeRef.current = new SerialBridge(config, store, hub);
-        feedPhysicalFramesToSim(bridgeRef.current);
-      } else if (transport === "canalystii") {
-        bridgeRef.current = new CanalystBridge(config, store, hub);
-        feedPhysicalFramesToSim(bridgeRef.current);
-        await bridgeRef.current.start();
-      } else if (transport === "mqtt") {
-        bridgeRef.current = new MqttBridge(config, store, hub);
-        feedPhysicalFramesToSim(bridgeRef.current);
-        await bridgeRef.current.start();
-      } else {
-        const canalyst = new CanalystBridge(config, store, hub);
-        feedPhysicalFramesToSim(canalyst);
-        canalyst.start();
-        const detected = await canalyst.waitForConnection(3000);
-        if (detected) { bridgeRef.current = canalyst; }
-        else { await canalyst.abandon(); bridgeRef.current = new SerialBridge(config, store, hub); feedPhysicalFramesToSim(bridgeRef.current); await bridgeRef.current.start(); }
-      }
-      return { ok: true, transport };
-    } catch (error) {
-      return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  // Work mode configuration
-  let currentConfig: WorkModeConfig = MODE_DEFAULTS.monitor;
-  app.get("/api/mode", async () => currentConfig);
-  app.post("/api/mode", async (request, reply) => {
-    const parsed = workModeConfigSchema.safeParse(request.body ?? {});
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    const newConfig = parsed.data as WorkModeConfig;
-    currentConfig = newConfig;
-    const timers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>> | undefined;
-    if (timers) { for (const timer of timers.values()) clearInterval(timer); timers.clear(); }
-    router.clear();
-    for (const [key, source] of Object.entries(newConfig.idSources)) {
-      if (source === "*") continue;
-      const [bus, id] = key.split(":");
-      if ((bus === "high" || bus === "low") && id) {
-        router.setSource(bus, id, source as "physical" | "emulated" | "simulated");
-      }
-    }
-    const engine = (app as any).__simEngine as SimulationEngine;
-    const host = (app as any).__hostModel as HostModel;
-    const rtNative = (app as any).__rtModelNative as IpcEngineAdapter | null;
-    if (newConfig.mode === "full-sim" && newConfig.simulatedEcus.length > 0) {
-      if (newConfig.modelBackend === "native" && rtNative) { engine.register(rtNative); }
-      await engine.start(newConfig);
-    } else if (engine.state.running) { await engine.stop(); }
-    if (host && newConfig.mode === "full-sim") { (app as any).__hostForController = host; }
-    return { ok: true, mode: newConfig.mode };
-  });
-  app.get("/api/mode/defaults", async () => MODE_DEFAULTS);
-  app.post("/api/sim/controller", async (request, reply) => {
-    const host = (app as any).__hostModel as HostModel | undefined;
-    if (!host) return reply.code(400).send({ error: "HOST model not active — switch to Full Simulation mode" });
-    const body = (request.body ?? {}) as Record<string, unknown>;
-    if (typeof body.speed_mmps === "number") host.speedMmps = body.speed_mmps as number;
-    if (typeof body.yaw_mrad_s === "number") host.yawMradS = body.yaw_mrad_s as number;
-    if (typeof body.gear === "number") host.gear = body.gear as number;
-    if (typeof body.brake_kpa === "number") host.brakeKpa = body.brake_kpa as number;
-    return { ok: true, speed: host.speedMmps, gear: host.gear, brake: host.brakeKpa };
-  });
-  app.get("/api/sim/state", async () => ({
-    running: simEngine.state.running,
-    activeEcus: simEngine.state.activeEcus,
-    physics: simEngine.state.physics,
-  }));
-
-  // Start HTTP + WebSocket server immediately — transport detection runs async after.
+  // ── Start listening ───────────────────────────────────────────────────
   await app.listen({ host: config.host, port: config.port });
 
-  // Resolve transport (non-blocking — server is already listening).
+  // ── Transport auto-detection (non-blocking — server already listening) ──
   let effectiveTransport = config.canTransport;
 
   if (effectiveTransport === "serial") {
     const canalyst = new CanalystBridge(config, store, hub);
-    feedPhysicalFramesToSim(canalyst);
-    canalyst.start();
+    feedPhysicalFramesToSim(canalyst as FrameObservableBridge);
+    await canalyst.start();
     const detected = await canalyst.waitForConnection(3000);
     if (detected) {
       app.log.info("CANalyst-II auto-detected — using canalystii transport");
@@ -255,16 +176,16 @@ async function main(): Promise<void> {
     }
   } else {
     await bridgeRef.current.close();
-    bridgeRef.current = effectiveTransport === "canalystii"
-      ? new CanalystBridge(config, store, hub)
-      : effectiveTransport === "mqtt"
-        ? new MqttBridge(config, store, hub)
-        : new SerialBridge(config, store, hub);
-    feedPhysicalFramesToSim(bridgeRef.current);
+    if (effectiveTransport === "canalystii") {
+      bridgeRef.current = new CanalystBridge(config, store, hub);
+    } else if (effectiveTransport === "mqtt") {
+      bridgeRef.current = new MqttBridge(config, store, hub);
+    } else {
+      bridgeRef.current = new SerialBridge(config, store, hub);
+    }
+    feedPhysicalFramesToSim(bridgeRef.current as FrameObservableBridge);
     await bridgeRef.current.start();
   }
-
-
 }
 
 void main().catch((error) => {

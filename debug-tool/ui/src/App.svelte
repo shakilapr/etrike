@@ -12,14 +12,15 @@
   import Topbar from "./components/Topbar.svelte";
   import TrikeViz from "./components/TrikeViz.svelte";
   import UnitTest from "./components/UnitTest.svelte";
-  import { clearFrames, getCanIds, getFrames, getMode, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
-  import type { Bus, CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
+  import { clearFrames, getCanIds, getFrames, getStats, getStatus, getTemplates, restartBridge, stopBridge, type BackendStatus } from "./lib/api";
+  import type { CanMessageDef, InjectionTemplate } from "./lib/can-decoder";
   import { connectStream, type StreamHandle } from "./lib/ws";
   import { frames, ingestInitialFrames, ingestMessage, stats, status, wsConnected } from "./stores/can";
-  import { errorLog, logError } from "./stores/errors";
+  import { logError } from "./stores/errors";
   import { initFaultWatcher } from "./stores/faults";
   import { heldKeys, kbBus, kbEvent, type KbAction } from "./stores/keyboard";
-  import { workMode, workModeReady } from "./stores/work-mode";
+  import { initWorkMode } from "./stores/work-mode";
+  import type { Bus } from "./lib/can-decoder";
 
   type Tab = "dashboard" | "monitor" | "dictionary" | "injector" | "controller" | "unit-test" | "pipeline" | "stats" | "terminal" | "emulator";
 
@@ -41,10 +42,8 @@
     { id: "pipeline", label: "Pipeline" },
     { id: "stats", label: "Statistics" },
     { id: "terminal", label: "Terminal" },
-    { id: "emulator", label: "Emulator" }
+    { id: "emulator", label: "Work Mode" },
   ];
-
-  // (topbar helpers moved to Topbar.svelte)
 
   // ── Keyboard controls ──
   // Layer 1: held-keys state map — raw, no input-filtering.
@@ -56,8 +55,6 @@
     if (["w","s","a","d","b"].includes(k)) {
       e.preventDefault();
       heldKeys.update(set => {
-        if (down && set.has(k)) return set;
-        if (!down && !set.has(k)) return set;
         const next = new Set(set);
         down ? next.add(k) : next.delete(k);
         return next;
@@ -73,7 +70,7 @@
     heldKeys.set(new Set());
   }
 
-  // Layer 2: discrete actions (Tab / Esc / Space×2).  Filter input elements
+  // Layer 2: discrete actions (Tab / Esc / Space×2). Filter input elements
   // so typing in forms doesn't trigger vehicle commands.
   let lastSpaceTs = 0;
 
@@ -129,16 +126,14 @@
   });
 
   async function bootstrap() {
-    workModeReady.set(false);
     const errors: string[] = [];
     try {
-      const [statusR, idsR, framesR, statsR, templatesR, modeR] = await Promise.allSettled([
+      const [statusR, idsR, framesR, statsR, templatesR] = await Promise.allSettled([
         getStatus(),
         getCanIds(),
         getFrames(),
         getStats(),
-        getTemplates(),
-        getMode()
+        getTemplates()
       ]);
 
       if (statusR.status === "fulfilled") status.set(statusR.value);
@@ -156,10 +151,6 @@
       if (templatesR.status === "fulfilled") templates = templatesR.value;
       else errors.push(`templates: ${String(templatesR.reason)}`);
 
-      if (modeR.status === "fulfilled") workMode.set(modeR.value);
-      else errors.push(`mode: ${String(modeR.reason)}`);
-      workModeReady.set(true);
-
       loadError = errors.length > 0 ? errors.join("; ") : "";
       for (const e of errors) logError(e);
     } catch (error) {
@@ -167,6 +158,9 @@
       loadError = msg;
       logError(msg);
     }
+
+    // Sync work mode store with backend (sets workModeReady = true when done)
+    await initWorkMode();
 
     // Connect WebSocket AFTER initial REST data loads so WS frames don't get wiped
     stream = connectStream(ingestMessage, (connected) => {
@@ -274,29 +268,18 @@
   {/if}
 
   <main class="content">
-    <div>
-      {#if activeTab === "dashboard"}
-        <Dashboard {ids} />
-      {:else if activeTab === "monitor"}
-        <CanMonitor {ids} />
-      {:else if activeTab === "dictionary"}
-        <CanDictionary {ids} />
-      {:else if activeTab === "injector"}
-        <CanInjector {ids} {templates} />
-      {:else if activeTab === "controller"}
-        <Controller />
-      {:else if activeTab === "unit-test"}
-        <UnitTest {ids} />
-      {:else if activeTab === "pipeline"}
-        <PipelineView />
-      {:else if activeTab === "terminal"}
-        <Terminal />
-      {:else if activeTab === "emulator"}
-        <Emulator />
-      {:else if activeTab === "stats"}
-        <Stats {ids} />
-      {/if}
-    </div>
+    <!-- Heavy tabs are unmounted when inactive — eliminates hidden DOM update cost -->
+    {#if activeTab === 'dashboard'}<Dashboard {ids} />{/if}
+    {#if activeTab === 'monitor'}<CanMonitor {ids} />{/if}
+    {#if activeTab === 'dictionary'}<CanDictionary {ids} />{/if}
+    {#if activeTab === 'injector'}<CanInjector {ids} {templates} />{/if}
+    {#if activeTab === 'controller'}<Controller />{/if}
+    {#if activeTab === 'unit-test'}<UnitTest {ids} />{/if}
+    {#if activeTab === 'pipeline'}<PipelineView />{/if}
+    <!-- Terminal stays always-mounted to preserve scroll history and command input state -->
+    <div style="display: {activeTab === 'terminal' ? 'flex' : 'none'}"><Terminal /></div>
+    {#if activeTab === 'emulator'}<Emulator />{/if}
+    {#if activeTab === 'stats'}<Stats {ids} />{/if}
   </main>
 
   <!-- Trike physics sidebar -->
