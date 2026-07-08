@@ -2174,6 +2174,9 @@ kbd {
 
 /* ── Responsive ── */
 @media (max-width: 980px) {
+  .app-shell.sidebar-open {
+    padding-left: 24px;
+  }
   .dashboard-grid, .stats-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2309,7 +2312,14 @@ kbd {
 }
 
 @media (max-width: 680px) {
-  .app-shell { padding: 14px; }
+  .app-shell,
+  .app-shell.sidebar-open { padding: 14px; }
+  .trike-sidebar {
+    width: min(340px, calc(100vw - 42px));
+  }
+  .trike-sidebar-toggle.open {
+    left: min(340px, calc(100vw - 42px));
+  }
   h1 { font-size: 1.7rem; }
   .tabs {
     display: grid !important;
