@@ -93,6 +93,8 @@ test.describe("Debug Tool", () => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/");
     await expect(page.locator(".tb-brand")).toContainText("E-Trike");
+    await expect(page.locator(".tb-mode-select")).toBeVisible();
+    await expect(page.locator(".tb-mode-select")).toBeEnabled();
     // No horizontal overflow — check body does not exceed viewport
     const bodyWidth = await page.locator("body").evaluate(
       (el) => el.scrollWidth
