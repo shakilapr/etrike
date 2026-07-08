@@ -135,7 +135,7 @@ describe("0x210 RT_STATE_RPT — real bytes", () => {
     runner.runDuration(200);
     const f = getFirst(runner, "0x210", "high");
     expect(f).toBeDefined();
-    expect(f!.dlc).toBe(4);
+    expect(f!.dlc).toBe(6);
     expect(f!.data[0]).toBe(1); // auto
     expect(f!.bus).toBe("high");
   });

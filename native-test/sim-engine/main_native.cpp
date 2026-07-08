@@ -27,19 +27,16 @@ using QueueHandle_t = QueueHandle_t_dummy*;
 #define ESP_LOGW(tag, fmt, ...)
 #define ESP_LOGI(tag, fmt, ...)
 
+extern "C" int64_t g_sim_time_us = 0;
+
 extern "C" {
     int64_t esp_timer_get_time() {
-        static int64_t t = 0;
-        return t;
+        return g_sim_time_us;
     }
     void set_sim_time_us(int64_t us) {
-        // hack: the extern function references a global we set before calling
-        extern int64_t g_sim_time_us;
         g_sim_time_us = us;
     }
 }
-
-int64_t g_sim_time_us = 0;
 
 // Override esp_timer_get_time to return our simulated time
 #undef esp_timer_get_time

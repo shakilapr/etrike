@@ -72,7 +72,7 @@ struct PidController {
 
         // Integral anti-windup: trial-integrate, but do not accept growth
         // that pushes farther into output saturation.
-        float max_integral = (output_max - output_min) / std::max(ki * 2.0f, 0.001f);
+        float max_integral = (output_max - output_min) / (std::max)(ki * 2.0f, 0.001f);
         float candidate_integral = integral + ki * error * dt;
         candidate_integral = std::clamp(candidate_integral, -max_integral, max_integral);
 
