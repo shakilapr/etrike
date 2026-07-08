@@ -26,6 +26,32 @@ test.describe("Debug Tool interaction audit", () => {
       .toBe("full-sim");
   });
 
+  test("primary tabs switch without keeping hidden panels active", async ({ page }) => {
+    await page.goto("/");
+
+    const tabNames = [
+      "CAN Monitor",
+      "CAN Dictionary",
+      "Injector",
+      "Controller",
+      "Unit Test",
+      "Pipeline",
+      "Statistics",
+      "Terminal",
+      "Emulator",
+      "Dashboard"
+    ];
+
+    for (const name of tabNames) {
+      const startedAt = performance.now();
+      await page.locator("nav.tabs").getByRole("button", { name }).click();
+      const activeTab = page.locator("nav.tabs button.active");
+      await expect(activeTab).toHaveText(name);
+      expect(performance.now() - startedAt).toBeLessThan(1000);
+      await expect(page.locator(".content > div")).toHaveCount(1);
+    }
+  });
+
   test("controller keyboard commands update the visible command state", async ({ page }) => {
     await page.goto("/");
     await page.locator("nav.tabs").getByRole("button", { name: "Controller" }).dispatchEvent("click");

@@ -55,6 +55,8 @@
     if (["w","s","a","d","b"].includes(k)) {
       e.preventDefault();
       heldKeys.update(set => {
+        if (down && set.has(k)) return set;
+        if (!down && !set.has(k)) return set;
         const next = new Set(set);
         down ? next.add(k) : next.delete(k);
         return next;
@@ -265,16 +267,29 @@
   {/if}
 
   <main class="content">
-    <div style="display: {activeTab === 'dashboard' ? 'flex' : 'none'}"><Dashboard {ids} /></div>
-    <div style="display: {activeTab === 'monitor' ? 'flex' : 'none'}"><CanMonitor {ids} /></div>
-    <div style="display: {activeTab === 'dictionary' ? 'flex' : 'none'}"><CanDictionary {ids} /></div>
-    <div style="display: {activeTab === 'injector' ? 'flex' : 'none'}"><CanInjector {ids} {templates} /></div>
-    <div style="display: {activeTab === 'controller' ? 'flex' : 'none'}"><Controller /></div>
-    <div style="display: {activeTab === 'unit-test' ? 'flex' : 'none'}"><UnitTest {ids} /></div>
-    <div style="display: {activeTab === 'pipeline' ? 'flex' : 'none'}"><PipelineView /></div>
-    <div style="display: {activeTab === 'terminal' ? 'flex' : 'none'}"><Terminal /></div>
-    <div style="display: {activeTab === 'emulator' ? 'flex' : 'none'}"><Emulator /></div>
-    <div style="display: {activeTab === 'stats' ? 'flex' : 'none'}"><Stats {ids} /></div>
+    <div>
+      {#if activeTab === "dashboard"}
+        <Dashboard {ids} />
+      {:else if activeTab === "monitor"}
+        <CanMonitor {ids} />
+      {:else if activeTab === "dictionary"}
+        <CanDictionary {ids} />
+      {:else if activeTab === "injector"}
+        <CanInjector {ids} {templates} />
+      {:else if activeTab === "controller"}
+        <Controller />
+      {:else if activeTab === "unit-test"}
+        <UnitTest {ids} />
+      {:else if activeTab === "pipeline"}
+        <PipelineView />
+      {:else if activeTab === "terminal"}
+        <Terminal />
+      {:else if activeTab === "emulator"}
+        <Emulator />
+      {:else if activeTab === "stats"}
+        <Stats {ids} />
+      {/if}
+    </div>
   </main>
 
   <!-- Trike physics sidebar -->

@@ -2,6 +2,9 @@ import { derived, writable } from "svelte/store";
 import type { BackendStatus } from "../lib/api";
 import type { CanFrame, CanStats, BusStats } from "../lib/can-decoder";
 
+const INITIAL_FRAME_LIMIT = 800;
+const STREAM_FRAME_LIMIT = 1000;
+
 const emptyBusStats = (): BusStats => ({
   active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {}
 });
@@ -14,6 +17,39 @@ function buildLatestById(input: CanFrame[]): Record<string, CanFrame> {
     if (frame) latest[`${frame.bus}:${frame.id}`] = frame;
   }
   return latest;
+}
+
+function appendFrameBounded(current: CanFrame[], frame: CanFrame, limit = STREAM_FRAME_LIMIT): CanFrame[] {
+  const overflow = current.length - limit + 1;
+  if (overflow > 0) current.splice(0, overflow);
+  current.push(frame);
+  return current;
+}
+
+function appendBatchBounded(current: CanFrame[], batch: CanFrame[], limit = STREAM_FRAME_LIMIT): CanFrame[] {
+  const valid = batch.filter(Boolean);
+  if (valid.length >= limit) return valid.slice(-limit);
+
+  const overflow = current.length + valid.length - limit;
+  if (overflow > 0) current.splice(0, overflow);
+  current.push(...valid);
+  return current;
+}
+
+function setLatestFrame(frame: CanFrame): void {
+  latestById.update((current) => {
+    current[`${frame.bus}:${frame.id}`] = frame;
+    return current;
+  });
+}
+
+function setLatestBatch(batch: CanFrame[]): void {
+  latestById.update((current) => {
+    for (const frame of batch) {
+      if (frame) current[`${frame.bus}:${frame.id}`] = frame;
+    }
+    return current;
+  });
 }
 
 const frameStore = writable<CanFrame[]>([]);
@@ -52,27 +88,21 @@ export const recentFrameRate = derived(frames, ($frames) => {
 });
 
 export function ingestInitialFrames(input: CanFrame[]): void {
-  frames.set(input.slice(-800));
+  frames.set(input.slice(-INITIAL_FRAME_LIMIT));
 }
 
 export function ingestMessage(message: { type: string; payload: unknown }): void {
   if (message.type === "can_frame") {
     const frame = message.payload as CanFrame;
     if (!frame) return;
-    frameStore.update((current) => [...current, frame].slice(-1000));
-    latestById.update((current) => ({ ...current, [`${frame.bus}:${frame.id}`]: frame }));
+    frameStore.update((current) => appendFrameBounded(current, frame));
+    setLatestFrame(frame);
   } else if (message.type === "can_frames_batch") {
     const batch = message.payload as CanFrame[];
-    if (batch.length === 0) return;
+    if (!Array.isArray(batch) || batch.length === 0) return;
 
-    frameStore.update((current) => [...current, ...batch].slice(-1000));
-    latestById.update((current) => {
-      const next = { ...current };
-      for (const f of batch) {
-        if (f) next[`${f.bus}:${f.id}`] = f;
-      }
-      return next;
-    });
+    frameStore.update((current) => appendBatchBounded(current, batch));
+    setLatestBatch(batch);
   } else if (message.type === "stats") {
     stats.set(message.payload as CanStats);
   } else if (message.type === "status") {
