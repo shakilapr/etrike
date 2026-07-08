@@ -1,10 +1,16 @@
 # RT/SYS Pre-Vehicle Validation Gate
 
-This document defines the minimum validation required before flashing RT and SYS
-firmware onto a real vehicle. Passing host tests or compiling firmware is not
+This document defines the minimum validation required before using RT and SYS
+firmware on a real vehicle. Passing host tests or compiling firmware is not
 enough by itself. RT and SYS control steering, braking, mode authority, ESTOP,
-and CAN gateway behavior, so validation must be staged from software-only tests
-to bench hardware before any powered vehicle test.
+and CAN gateway behavior, so validation is split into four phases:
+
+| Phase | Scope | Hardware connected |
+|-------|-------|--------------------|
+| 1 | Software-only validation | None |
+| 2 | Controller-only validation | RT and/or SYS controller boards only |
+| 3 | Unit-by-unit validation | One external unit at a time |
+| 4 | Full hardware integration | Complete vehicle hardware stack |
 
 This is an engineering release gate, not a safety certification.
 
@@ -21,9 +27,16 @@ The current RT checks validate only a subset of behavior:
 | SYS framework | Native build target exists | Needs explicit SYS host, CAN, and HIL validation before vehicle upload |
 | RT/SYS integration | Existing docs describe bench procedures | Needs execution with recorded CAN logs and pass/fail evidence |
 
-No real vehicle upload should happen until the required gates below pass.
+No full vehicle integration should happen until Phases 1 through 3 pass.
 
-## Gate 1: Software And Firmware Build
+## Phase 1: Software-Only Validation
+
+All framework logic and CAN behavior must be tested with no hardware connected.
+This phase proves code-level behavior, CAN contracts, checksums, rolling counters,
+state machines, timeout logic, and fault handling before any controller board is
+flashed or wired.
+
+### Builds And Host Tests
 
 Run from a clean worktree or record the exact git hash and local diff used.
 
@@ -72,7 +85,7 @@ Pass criteria:
 | SYS host tests | 0 failures or documented missing coverage before proceeding |
 | CAN signal tests | 0 failures |
 
-## Gate 2: CAN Contract And Simulation
+### CAN Contract And Simulation
 
 Validate RT/SYS frame contracts against `shared/can/can_protocol.h` and the CAN
 dictionary before hardware is connected.
@@ -112,10 +125,23 @@ Pass criteria:
 | All fault injections | deterministic safe state within documented timeout |
 | Logs | CAN trace saved with git hash and firmware version |
 
-## Gate 3: Bench HIL Without Vehicle Actuation
+Phase 1 exit criteria:
 
-Flash RT and SYS onto real ESP32 boards on a bench CAN network. Do not connect
-vehicle steering, brake, or motor actuators yet.
+| Check | Required result |
+|-------|-----------------|
+| RT framework logic | All available host/native tests pass |
+| SYS framework logic | All available host/native tests pass, or missing tests are explicitly listed as blockers |
+| CAN encode/decode | All RT/SYS command, status, heartbeat, ESTOP, SES, and SEB frames validated |
+| State machines | Manual, Auto, ESTOP, recovery, stale-command, heartbeat-loss paths tested |
+| Fault injection | Missing, frozen, malformed, stale, and delayed frames produce safe behavior |
+| Evidence | Test logs saved with commit hash |
+
+## Phase 2: Controller-Only Validation
+
+Flash RT and SYS onto real ESP32 boards on a bench CAN network. No external unit
+is connected in this phase: no brake-by-wire, no steering unit, no motor unit,
+no powertrain unit, and no vehicle actuator harness. CAN analyzers or simulators
+may inject and observe frames.
 
 Required setup:
 
@@ -127,6 +153,40 @@ Required setup:
 | 12 V bench supply | MCU and CAN transceiver power |
 | Oscilloscope or logic analyzer | ESTOP GPIO and CAN timing |
 | Terminated CAN harness | 60 ohm measured between CANH and CANL |
+
+### RT Only
+
+Power and test the RT controller alone.
+
+| Test | Required result |
+|------|-----------------|
+| RT boot | Serial log normal, no watchdog reset, no brownout |
+| RT low-bus heartbeat | `0x7FD` present with expected DLC, rate, counter, and health flags |
+| RT high-bus heartbeat | `0x7FD` present on high bus if high bus is enabled |
+| RT state report | `0x210` reports safe default mode and state |
+| Host command injection | Simulated host frames are decoded and bounded correctly |
+| Stale host command | RT suppresses unsafe output after command timeout |
+| High-side ESTOP injection | RT forwards or reacts according to contract without duplicates |
+| CAN bus load | RT keeps required rates without reset or bus-off |
+
+### SYS Only
+
+Power and test the SYS controller alone.
+
+| Test | Required result |
+|------|-----------------|
+| SYS boot | Serial log normal, no watchdog reset, no brownout |
+| SYS heartbeat | `0x7FE` present with expected DLC, rate, and counter |
+| SYS safety status | `0x011` reports safe default state |
+| Mode input | Mode button or simulated input produces correct `0x110` |
+| ESTOP input | ESTOP button produces `0x001` within required latency |
+| RT heartbeat missing | SYS detects missing RT and enters safe state as designed |
+| Brake command generation | Any simulated brake command is bounded and safe |
+| CAN bus load | SYS keeps required rates without reset or bus-off |
+
+### RT And SYS Together
+
+Connect RT and SYS only. Do not connect any other unit.
 
 Required tests:
 
@@ -144,24 +204,36 @@ Required tests:
 | Heartbeat loss | Opposite node enters safe state within timeout |
 | Bus load | Required frames still meet rate and latency under injected traffic |
 
-Pass criteria:
+Phase 2 exit criteria:
 
-All bench HIL tests must pass with CAN logs attached before connecting physical
-actuators. Any unexpected reset, watchdog event, bus-off, duplicated ESTOP frame,
-or unsafe actuator request is a stop condition.
+All RT-only, SYS-only, and RT+SYS controller-only tests must pass with CAN logs
+attached before connecting any external unit. Any unexpected reset, watchdog
+event, bus-off, duplicated ESTOP frame, or unsafe actuator request is a stop
+condition.
 
-## Gate 4: Actuator Bench
+## Phase 3: Unit-By-Unit Validation
 
-Connect actuators only on a bench setup where motion and hydraulic pressure can
-be safely constrained and measured.
+Connect one external unit at a time on a bench setup where motion and hydraulic
+pressure can be safely constrained and measured. Do not connect the full vehicle
+stack yet. Each unit must be validated independently before combined operation.
 
 Required tests:
 
-| Actuator | Required validation |
-|----------|---------------------|
+| Unit | Required validation |
+|------|---------------------|
 | EPS-C / SES | Align, zero angle, positive/negative angle, clamp, following-error fault |
 | SEB | Align, zero stroke, pressure mode, stroke takeover, CAN-loss behavior |
 | MTR or motor mimic | Zero torque on ESTOP, gear behavior, stale speed behavior |
+| PWT if used | Gateway behavior, heartbeat behavior, powertrain command bounds |
+
+Unit test order:
+
+| Step | Connected hardware | Required focus |
+|------|--------------------|----------------|
+| 1 | RT + SES only | Steering CAN contract, alignment, limits, ESTOP steering behavior |
+| 2 | RT/SYS + SEB only | Brake command contract, alignment, pressure/stroke behavior, brake takeover |
+| 3 | SYS/MTR or SYS + motor mimic only | Throttle cut, gear behavior, ESTOP motor behavior |
+| 4 | RT/SYS + PWT only if applicable | Gateway forwarding, heartbeat loss, powertrain fault isolation |
 
 Required safety checks:
 
@@ -174,15 +246,19 @@ Required safety checks:
 | RT reset during AUTO | Outputs go safe and SYS detects loss |
 | SYS reset during AUTO | RT brake takeover behavior verified |
 
-Pass criteria:
+Phase 3 exit criteria:
 
 Actuator motion and pressure must match command bounds. Any uncontrolled motion,
 unexpected brake release, checksum rejection, alignment failure, or CAN-loss
 behavior that contradicts the safety assumptions blocks vehicle upload.
 
-## Gate 5: Vehicle Dry Run
+## Phase 4: Full Hardware Integration
 
-Only start after Gates 1 through 4 pass.
+Only start after Phases 1 through 3 pass. This phase connects the complete
+hardware stack and then proceeds from constrained vehicle dry run to low-speed
+field test.
+
+### Vehicle Dry Run
 
 Required conditions:
 
@@ -210,7 +286,7 @@ Pass criteria:
 No unexpected actuator command, no mode surprise, no stale command reuse, and no
 CAN fault can remain unresolved before low-speed field testing.
 
-## Gate 6: Low-Speed Field Test
+### Low-Speed Field Test
 
 Only start after vehicle dry run passes.
 
@@ -241,9 +317,9 @@ Before uploading to the real vehicle, collect:
 | Artifact | Required content |
 |----------|------------------|
 | Git reference | Commit hash and dirty diff status |
-| Build logs | RT and SYS native plus vehicle builds |
+| Build logs | RT and SYS native plus vehicle builds from Phase 1 |
 | Host test logs | RT and SYS test outputs |
-| CAN traces | Bench HIL and actuator bench traces |
+| CAN traces | Controller-only, unit-by-unit, and full-integration traces |
 | Timing measurements | ESTOP, heartbeat timeout, gateway propagation |
 | Fault-injection results | Pass/fail for each injected failure |
 | Known limitations | Anything not tested or intentionally bypassed |
