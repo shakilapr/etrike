@@ -1,329 +1,212 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
-  import { sendFrame, simPeriodicStart, simPeriodicStop } from "../lib/api";
-  import { status } from "../stores/can";
-  import { ecuPresence } from "../stores/telemetry";
-  import type { EcuPresence } from "../stores/telemetry";
+  import { onMount } from "svelte";
+  import { setMode, getModeDefaults } from "../lib/api";
+  import type { WorkModeConfig } from "../lib/api";
+  import { workMode, workModeReady, modeLabel } from "../stores/work-mode";
   import { logError, logInfo } from "../stores/errors";
-  import { softwareSimEnabled } from "../stores/emulator";
   import EcuTopology from "./EcuTopology.svelte";
 
-  // ═══ Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) ═══
+  const MODES: WorkModeConfig["mode"][] = ["full-sim", "emulator", "hybrid", "bench", "monitor"];
 
-  // ═══ Signal definition with dynamic data generator ═══
-  interface EmuSignal {
-    key: string; label: string; bus: "high"|"low"; id: string; hz: number; dlc: number;
-    data(): number[];
-    summary(data: number[]): string;
-  }
-
-  // ── Dynamic state (shared across signals) ──
-  const counters: Record<string, number> = {};
-  function counter(key: string, max = 255): number {
-    if (!(key in counters)) counters[key] = 1;
-    const v = counters[key];
-    counters[key] = (v + 1) > max ? 1 : v + 1;
-    return v;
-  }
-  function resetCounter(key: string) { counters[key] = 0; }
-
-  // Behavioral state — updated by incoming frames or by signal generators
-  let simSpeed = 0;       // mm/s — responds to drive commands
-  let simGear = 0;        // 0=N, 1=D
-  let simBrakeKpa = 0;    // kPa
-  let simSteerAngle = 0;  // 0.1 deg units
-  let simEstopActive = false;
-  let simVehicleMode = 0;        // 0=MANUAL, 1=AUTO
-
-  // ── ECU definitions ──
-  interface EmuEcu { id: string; name: string; signals: EmuSignal[]; }
-  // ── Data helpers ──
-  function i32be(v: number): number[] { return [(v>>24)&0xFF,(v>>16)&0xFF,(v>>8)&0xFF,v&0xFF]; }
-  function i16be(v: number): number[] { return [(v>>8)&0xFF,v&0xFF]; }
-  function i16le(v: number): number[] { return [v&0xFF,(v>>8)&0xFF]; }
-
-  const ECUS: EmuEcu[] = [
-    {
-      id: "host", name: "HOST (Drive-by-Wire)",
-      signals: [
-        { key:"e_host_hb",    label:"Heartbeat",        bus:"high", id:"0x7FC", hz:2,  dlc:2,
-          data:()=>[counter("host_hb"),0], summary:(d)=>`alive=${d[0]}` },
-        { key:"e_host_drive", label:"Drive Command",     bus:"high", id:"0x300", hz:50, dlc:8,
-          data:()=>[...i32be(simSpeed),0,0,0,simGear], summary:()=>`speed=${simSpeed}mm/s, yaw=0, gear=${["N","D","S","R"][simGear]??"?"}` },
-        { key:"e_host_brake", label:"Brake Request",     bus:"high", id:"0x301", hz:10, dlc:4,
-          data:()=>i32be(simBrakeKpa), summary:()=>`${simBrakeKpa} kPa` },
-        { key:"e_host_obst",  label:"Obstacle Distance", bus:"high", id:"0x400", hz:10, dlc:4,
-          data:()=>[0xFF,0xFF,0xFF,0xFF], summary:()=>`clear` },
-      ]
-    },
-    {
-      id: "rt", name: "RT (Gateway)",
-      signals: [
-        { key:"e_rt_hb",     label:"RT Heartbeat",    bus:"high", id:"0x7FD", hz:2,   dlc:2,
-          data:()=>[counter("rt_hb"),0], summary:(d)=>`alive=${d[0]}` },
-        { key:"e_rt_state",  label:"State Report",    bus:"high", id:"0x210", hz:10,  dlc:6,
-          data:()=>[simVehicleMode,simEstopActive?1:0,0,0,15,5], summary:()=>`${["MANUAL","AUTO","ESTOP"][simVehicleMode]}, ${simEstopActive?"InternalEstop":"Normal"}` },
-        { key:"e_rt_thr",    label:"Throttle Status", bus:"high", id:"0x120", hz:100, dlc:2,
-          data:()=>i16be(simSpeed), summary:()=>`${simSpeed} mm/s` },
-        { key:"e_rt_motor",  label:"Motor Feedback",  bus:"high", id:"0x206", hz:50,  dlc:4,
-          data:()=>[...i16be(simSpeed),simGear,0], summary:()=>`${simSpeed} mm/s, gear ${["N","D","S","R"][simGear]??"?"}` },
-      ]
-    },
-    {
-      id: "sys", name: "SYS (Safety/Body)",
-      signals: [
-        { key:"e_sys_hb",     label:"SYS Heartbeat",  bus:"low", id:"0x7FE", hz:10, dlc:2,
-          data:()=>[counter("sys_hb"),0], summary:(d)=>`alive=${d[0]}` },
-        { key:"e_sys_safety", label:"Safety Status",  bus:"low", id:"0x011", hz:5,  dlc:3,
-          data:()=>[simEstopActive?1:0,1,0], summary:()=>`estop=${simEstopActive?1:0}, hb_ok=1` },
-        { key:"e_sys_diag",   label:"Diagnostics",    bus:"low", id:"0x600", hz:1,  dlc:8,
-          data:()=>[simVehicleMode,0,1,0,0,0,0,0], summary:()=>`${["MANUAL","AUTO","ESTOP"][simVehicleMode]}, brake off` },
-      ]
-    },
-    {
-      id: "mtr", name: "MTR (Motor)",
-      signals: [
-        { key:"e_mtr_fbk",  label:"Motor Feedback",  bus:"low", id:"0x206", hz:50,  dlc:4,
-          data:()=>[...i16be(simSpeed),simGear,0], summary:()=>`${simSpeed} mm/s, gear ${["N","D","S","R"][simGear]??"?"}` },
-        { key:"e_mtr_thr",  label:"Throttle Status", bus:"low", id:"0x120", hz:100, dlc:2,
-          data:()=>i16be(simSpeed), summary:()=>`${simSpeed} mm/s` },
-      ]
-    },
-    {
-      id: "ses", name: "SES (Steering EPS-C)",
-      signals: [
-        { key:"e_ses_status", label:"SES Status",  bus:"low", id:"0x201", hz:100, dlc:8,
-          data:()=>[0x01,0,...i16le(simSteerAngle),0,0,0,(counter("ses_roll")<<4)|0x01,0xFF],
-          summary:()=>`angle=${(simSteerAngle/10).toFixed(1)}°, roll=${counters["ses_roll"]??0}` },
-        { key:"e_ses_err",    label:"SES Errors",  bus:"low", id:"0x202", hz:10,  dlc:8,
-          data:()=>[0,0,0,0,0,0,0,0], summary:()=>`no faults` },
-      ]
-    },
-    {
-      id: "seb", name: "SEB (Brake-by-Wire)",
-      signals: [
-        { key:"e_seb_status", label:"SEB Status",  bus:"low", id:"0x721", hz:100, dlc:8,
-          data:()=>[0x03,0,...i16le(600),0,0,0,(counter("seb_roll")<<4)|0x01,0xFF],
-          summary:()=>`stroke=600, roll=${counters["seb_roll"]??0}` },
-        { key:"e_seb_err",    label:"SEB Errors",  bus:"low", id:"0x731", hz:10,  dlc:8,
-          data:()=>[0,0,0,0,0,0,0,0], summary:()=>`no faults` },
-      ]
-    },
+  const ECU_IDS: Array<{ id: string; label: string; description: string }> = [
+    { id: "host", label: "HOST",  description: "Drive-by-Wire controller (speed, yaw, gear)" },
+    { id: "rt",   label: "RT",   description: "Gateway / safety arbiter" },
+    { id: "sys",  label: "SYS",  description: "Safety & body controller" },
+    { id: "mtr",  label: "MTR",  description: "Motor controller" },
+    { id: "ses",  label: "SES",  description: "Steering EPS-C (SES)" },
+    { id: "seb",  label: "SEB",  description: "Brake-by-Wire (SEB)" },
   ];
 
-  // ── Frame ingestion — respond to incoming CAN commands ──
-  import { frames } from "../stores/can";
-  let lastIngestTs = 0;
-  const unsubscribeFrames = frames.subscribe(($frames) => {
-    if ($frames.length === 0) return;
-    const latest = $frames[$frames.length - 1];
-    if (latest.ts <= lastIngestTs) return;
-    lastIngestTs = latest.ts;
+  const BYPASS_LABELS: Array<{ key: keyof WorkModeConfig["bypasses"]; label: string; description: string }> = [
+    { key: "sesSync",   label: "SES Sync",    description: "Bypass SES rolling counter & checksum validation" },
+    { key: "sebSync",   label: "SEB Sync",    description: "Bypass SEB rolling counter & checksum validation" },
+    { key: "mtrAbsent", label: "MTR Absent",  description: "Treat motor controller as intentionally missing" },
+    { key: "benchSolo", label: "Bench Solo",  description: "Single-ECU bench mode — suppress missing-ECU faults" },
+  ];
 
-    // Respond to drive commands: update simulated speed
-    if (latest.id === "0x300" && latest.decoded) {
-      const d = latest.decoded as Record<string, unknown>;
-      const targetSpeed = (d.speed_mmps as number) ?? 0;
-      const gear = (d.gear as number) ?? 0;
-      // Smooth approach to target speed
-      simSpeed = simSpeed + (targetSpeed - simSpeed) * 0.3;
-      simGear = gear;
-      if (targetSpeed !== 0) simBrakeKpa = 0;
-    }
-    // Respond to brake commands
-    if (latest.id === "0x301" && latest.decoded) {
-      const d = latest.decoded as Record<string, unknown>;
-      simBrakeKpa = (d.brake_pressure_kpa as number) ?? 0;
-      if (simBrakeKpa > 0) simSpeed = simSpeed * 0.5; // brake halves speed
-    }
-    // Respond to steering commands
-    if (latest.id === "0x169" && latest.decoded) {
-      const d = latest.decoded as Record<string, unknown>;
-      const targetAngle = (d.target_angle as number) ?? 0;
-      simSteerAngle = simSteerAngle + (targetAngle - simSteerAngle) * 0.5;
-    }
-    // ESTOP
-    if (latest.id === "0x001") {
-      simEstopActive = true;
-      simSpeed = 0;
-      simBrakeKpa = 5000;
-    }
-    // Mode changes
-    if (latest.id === "0x110" && latest.decoded) {
-      const d = latest.decoded as Record<string, unknown>;
-      const newMode = (d.mode as number) ?? 0;
-      if (newMode <= 1) simVehicleMode = newMode;
-      if (newMode === 2) simEstopActive = true;
-      if (simVehicleMode !== 2) simEstopActive = false;
+  let applying = false;
+  let modeDefaults: Record<string, WorkModeConfig> = {};
+
+  onMount(async () => {
+    try {
+      modeDefaults = await getModeDefaults();
+    } catch {
+      // Defaults will be empty — user can still manually configure
     }
   });
 
-  // ── Interval-based sending (dynamic data) ──
-  let timers: Record<string, ReturnType<typeof setInterval>> = {};
-  let running = new Set<string>();
-  let sending = false;
-  const connected = () => $status.bridge?.connected ?? false;
-  const canSend = () => $softwareSimEnabled || connected();
+  // Local editable copy that the user manipulates before applying
+  let draft: WorkModeConfig = { ...$workMode, bypasses: { ...$workMode.bypasses } };
 
-  function hex(data: number[]): string {
-    return data.map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
+  // Keep draft in sync when store updates externally (e.g., Topbar sets it)
+  $: {
+    draft = { ...$workMode, bypasses: { ...$workMode.bypasses } };
   }
 
-  function ecuLive(ecu: EmuEcu): boolean { return ecu.signals.some(s=>running.has(s.key)); }
-  function isEcuId(id: string): id is keyof EcuPresence {
-    return id === "rt" || id === "sys" || id === "mtr" || id === "ses" || id === "seb";
-  }
-  function ecuPresent(id: string): boolean { return isEcuId(id) && $ecuPresence[id] === true; }
-
-  async function startEcu(ecu: EmuEcu) {
-    if (sending) return;
-    sending = true;
-    for (const sig of ecu.signals) {
-      if (running.has(sig.key)) continue;
-      resetCounter(sig.key.replace("e_","").replace("host_","").replace("rt_","").replace("sys_","").replace("mtr_","").replace("ses_","").replace("seb_",""));
-      const ms = Math.round(1000 / sig.hz);
-      async function tick() {
-        const data = sig.data();
-        try {
-          if ($softwareSimEnabled) {
-            await simPeriodicStart({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data, interval_ms: ms });
-          } else {
-            await sendFrame({ bus:sig.bus, id:sig.id, dlc:sig.dlc, data });
-          }
-        } catch {}
-      }
-      if ($softwareSimEnabled) {
-        // Simulated mode: backend handles the interval
-        await tick(); // first frame
-        running.add(sig.key);
-      } else {
-        // Physical mode: client-side interval
-        tick();
-        timers[sig.key] = setInterval(tick, ms);
-        running.add(sig.key);
-      }
+  function selectPreset(mode: WorkModeConfig["mode"]) {
+    const preset = modeDefaults[mode];
+    if (preset) {
+      draft = { ...preset, bypasses: { ...preset.bypasses } };
+    } else {
+      draft = { ...draft, mode };
     }
-    running = new Set(running);
-    logInfo(ecu.name + " emulated (" + ($softwareSimEnabled ? "sim" : "physical") + ") — " + ecu.signals.length + " signals");
-    sending = false;
   }
 
-  async function stopEcu(ecu: EmuEcu) {
-    if (sending) return;
-    sending = true;
-    for (const sig of ecu.signals) {
-      if (timers[sig.key]) { clearInterval(timers[sig.key]); delete timers[sig.key]; }
-      if ($softwareSimEnabled) {
-        try { await simPeriodicStop(sig.bus, sig.id); } catch {}
-      }
-      running.delete(sig.key);
+  function toggleEcu(ecuId: string) {
+    const current = draft.simulatedEcus;
+    if (current.includes(ecuId)) {
+      draft = { ...draft, simulatedEcus: current.filter((e) => e !== ecuId) };
+    } else {
+      draft = { ...draft, simulatedEcus: [...current, ecuId] };
     }
-    running = new Set(running);
-    logInfo(ecu.name + " stopped");
-    sending = false;
   }
 
-  const missingEcus = () => ECUS.filter(e => !ecuPresent(e.id));
-
-  async function emulateMissing() {
-    if (sending) return;
-    const missing = missingEcus();
-    if (missing.length === 0) { logInfo("All ECUs already present"); return; }
-    sending = true;
-    for (const ecu of missing) await startEcu(ecu);
-    logInfo("Emulating " + missing.length + " missing ECUs");
-    sending = false;
+  function toggleBypass(key: keyof WorkModeConfig["bypasses"]) {
+    draft = { ...draft, bypasses: { ...draft.bypasses, [key]: !draft.bypasses[key] } };
   }
 
-  async function stopAll() {
-    if (sending) return;
-    sending = true;
-    for (const k of [...running]) {
-      if (timers[k]) { clearInterval(timers[k]); delete timers[k]; }
+  async function applyConfig() {
+    if (applying) return;
+    applying = true;
+    try {
+      await setMode(draft);
+      workMode.set(draft);
+      logInfo(`Work mode set: ${modeLabel(draft.mode)}`);
+    } catch (e) {
+      logError("Mode apply failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      applying = false;
     }
-    running.clear(); running = new Set(running);
-    logInfo("All emulation stopped");
-    sending = false;
   }
 
-  // Show live data for a signal
-  function liveData(sig: EmuSignal): string {
-    if (!running.has(sig.key)) return "";
-    return hex(sig.data());
-  }
-
-  onDestroy(() => {
-    unsubscribeFrames();
-    for (const key of running) {
-      const sig = ECUS.flatMap((ecu) => ecu.signals).find((item) => item.key === key);
-      if (sig && $softwareSimEnabled) void simPeriodicStop(sig.bus, sig.id);
-    }
-    for (const timer of Object.values(timers)) clearInterval(timer);
-    timers = {};
-    running.clear();
-  });
+  $: isDirty = JSON.stringify(draft) !== JSON.stringify($workMode);
+  $: isFullSim = draft.mode === "full-sim";
 </script>
 
-<div class="emu-panel">
+<div class="wmc-panel">
   <EcuTopology />
-  <div class="emu-header">
-    <span class="emu-title">CAN Emulator</span>
-    <!-- Mode toggle: Physical (CAN hardware) vs Simulated (software loopback) -->
-    <label class="emu-mode-toggle" title="Simulated: no CAN hardware needed. Physical: requires CANalyzer/ESP32.">
-      <input type="checkbox" bind:checked={$softwareSimEnabled} />
-      <span class="emu-mode-label">{$softwareSimEnabled ? "Simulated" : "Physical"}</span>
-    </label>
-    <span class="emu-sub">{$softwareSimEnabled ? "Software loopback — no CAN hardware needed." : "CAN injection via bridge — needs CANalyzer/ESP32."}</span>
-    <div class="emu-actions">
-      <button class="emu-btn quick" disabled={sending || (!$softwareSimEnabled && !connected()) || missingEcus().length===0} on:click={emulateMissing}>
-        ▶ Emulate missing ({missingEcus().length})
-      </button>
-      {#if running.size > 0}
-        <button class="emu-btn stop" disabled={sending} on:click={stopAll}>■ Stop all ({running.size})</button>
+
+  <div class="wmc-header">
+    <span class="wmc-title">Work Mode Configurator</span>
+    <span class="wmc-sub">Configure simulation mode and ECU participation</span>
+  </div>
+
+  <div class="wmc-body">
+
+    <!-- ── Mode selector ── -->
+    <section class="wmc-section">
+      <h3 class="wmc-section-title">Mode Preset</h3>
+      <div class="wmc-mode-grid">
+        {#each MODES as m}
+          <button
+            class="wmc-mode-btn"
+            class:active={draft.mode === m}
+            on:click={() => selectPreset(m)}
+            title={modeLabel(m)}
+          >
+            <span class="wmc-mode-name">{modeLabel(m)}</span>
+          </button>
+        {/each}
+      </div>
+    </section>
+
+    <!-- ── Simulated ECUs (only relevant for full-sim / hybrid) ── -->
+    <section class="wmc-section">
+      <h3 class="wmc-section-title">
+        Simulated ECUs
+        <span class="wmc-badge">{draft.simulatedEcus.length} / {ECU_IDS.length}</span>
+      </h3>
+      <p class="wmc-hint">Which ECUs are replaced by software models in the backend engine.</p>
+      <div class="wmc-ecu-grid">
+        {#each ECU_IDS as ecu}
+          {@const active = draft.simulatedEcus.includes(ecu.id)}
+          <label class="wmc-ecu-row" title={ecu.description}>
+            <input type="checkbox" checked={active} on:change={() => toggleEcu(ecu.id)} />
+            <span class="wmc-ecu-label">{ecu.label}</span>
+            <span class="wmc-ecu-desc">{ecu.description}</span>
+          </label>
+        {/each}
+      </div>
+    </section>
+
+    <!-- ── Bypasses ── -->
+    <section class="wmc-section">
+      <h3 class="wmc-section-title">Bypasses</h3>
+      <p class="wmc-hint">Protocol enforcement flags. Enable to suppress specific validations during bench testing.</p>
+      <div class="wmc-bypass-grid">
+        {#each BYPASS_LABELS as bp}
+          {@const active = draft.bypasses[bp.key]}
+          <label class="wmc-bypass-row" title={bp.description}>
+            <input type="checkbox" checked={active} on:change={() => toggleBypass(bp.key)} />
+            <span class="wmc-bypass-label">{bp.label}</span>
+            <span class="wmc-bypass-desc">{bp.description}</span>
+          </label>
+        {/each}
+      </div>
+    </section>
+
+    <!-- ── Inject to physical ── -->
+    <section class="wmc-section">
+      <h3 class="wmc-section-title">Physical Injection</h3>
+      <label class="wmc-bypass-row" title="Forward emulated frames onto the physical CAN bus">
+        <input type="checkbox" bind:checked={draft.injectEmulatedToPhysical} />
+        <span class="wmc-bypass-label">Inject emulated frames to physical CAN</span>
+        <span class="wmc-bypass-desc">Required for hybrid mode — hardware ECUs see software-generated frames.</span>
+      </label>
+    </section>
+
+    <!-- ── Apply button ── -->
+    <div class="wmc-footer">
+      {#if isDirty}
+        <span class="wmc-dirty-badge">Unsaved changes</span>
       {/if}
+      <button
+        class="wmc-apply-btn"
+        disabled={applying || !$workModeReady}
+        class:dirty={isDirty}
+        on:click={applyConfig}
+      >
+        {applying ? "Applying…" : isDirty ? "▶ Apply" : "✓ Applied"}
+      </button>
     </div>
   </div>
-
-  {#if !$softwareSimEnabled && !connected()}
-    <div class="emu-warn">Bridge not connected. Switch to <strong>Simulated</strong> mode or connect CANalyzer/ESP32.</div>
-  {/if}
-
-  <div class="emu-grid">
-    {#each ECUS as ecu}
-      {@const live = ecuLive(ecu)}
-      {@const present = ecuPresent(ecu.id)}
-      <div class="emu-card" class:live class:present>
-        <div class="emu-card-head">
-          <span class="emu-card-name">{ecu.name}</span>
-          <span class="emu-badge {present ? 'ok' : live ? 'emu' : 'missing'}">{present ? 'detected' : live ? 'emulated' : 'missing'}</span>
-        </div>
-
-        <!-- Signal table — fixed window showing what each signal sends -->
-        <table class="emu-sig-table">
-          <thead>
-            <tr><th>Signal</th><th>ID</th><th>Hz</th><th>Data</th><th>Summary</th></tr>
-          </thead>
-          <tbody>
-            {#each ecu.signals as sig}
-              <tr class:active={running.has(sig.key)}>
-                <td class="emu-sig-name">{sig.label}</td>
-                <td class="emu-sig-id">{sig.bus[0].toUpperCase()}:{sig.id}</td>
-                <td class="emu-sig-rate">{sig.hz}</td>
-                <td class="emu-sig-data">{running.has(sig.key) ? liveData(sig) : hex(sig.data())}</td>
-                <td class="emu-sig-summary">{running.has(sig.key) ? sig.summary(sig.data()) : sig.summary(sig.data())}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-
-        <button
-          class="emu-card-btn"
-          disabled={sending || !canSend()}
-          on:click={() => live ? stopEcu(ecu) : startEcu(ecu)}
-        >
-          {live ? "■ Stop" : "▶ Emulate"}
-        </button>
-      </div>
-    {/each}
-  </div>
 </div>
+
+<style>
+  .wmc-panel { display: flex; flex-direction: column; gap: 0; height: 100%; overflow-y: auto; }
+  .wmc-header { padding: 12px 16px 8px; border-bottom: 1px solid var(--border, #333); }
+  .wmc-title { font-weight: 700; font-size: 0.95rem; letter-spacing: 0.02em; }
+  .wmc-sub { display: block; font-size: 0.75rem; color: var(--muted, #888); margin-top: 2px; }
+  .wmc-body { display: flex; flex-direction: column; gap: 0; padding: 0 0 16px; }
+  .wmc-section { padding: 12px 16px; border-bottom: 1px solid var(--border, #333); }
+  .wmc-section-title { font-size: 0.8rem; font-weight: 600; color: var(--accent, #7eb8f7); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+  .wmc-badge { background: var(--accent, #7eb8f7); color: #000; font-size: 0.7rem; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
+  .wmc-hint { font-size: 0.73rem; color: var(--muted, #888); margin: 0 0 8px; }
+
+  /* Mode buttons */
+  .wmc-mode-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .wmc-mode-btn { background: var(--surface2, #1e1e2e); border: 1px solid var(--border, #333); color: var(--text, #ccc); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; transition: border-color 0.15s, background 0.15s; }
+  .wmc-mode-btn:hover { border-color: var(--accent, #7eb8f7); }
+  .wmc-mode-btn.active { background: var(--accent, #7eb8f7); color: #000; border-color: var(--accent, #7eb8f7); font-weight: 700; }
+
+  /* ECU grid */
+  .wmc-ecu-grid { display: flex; flex-direction: column; gap: 4px; }
+  .wmc-ecu-row { display: grid; grid-template-columns: 20px 52px 1fr; align-items: center; gap: 8px; cursor: pointer; padding: 4px 6px; border-radius: 5px; font-size: 0.8rem; transition: background 0.1s; }
+  .wmc-ecu-row:hover { background: var(--surface2, #1e1e2e); }
+  .wmc-ecu-label { font-weight: 600; font-family: monospace; color: var(--text, #eee); }
+  .wmc-ecu-desc { color: var(--muted, #888); font-size: 0.73rem; }
+
+  /* Bypass grid */
+  .wmc-bypass-grid { display: flex; flex-direction: column; gap: 4px; }
+  .wmc-bypass-row { display: grid; grid-template-columns: 20px 90px 1fr; align-items: center; gap: 8px; cursor: pointer; padding: 4px 6px; border-radius: 5px; font-size: 0.8rem; transition: background 0.1s; }
+  .wmc-bypass-row:hover { background: var(--surface2, #1e1e2e); }
+  .wmc-bypass-label { font-weight: 600; color: var(--text, #eee); }
+  .wmc-bypass-desc { color: var(--muted, #888); font-size: 0.73rem; }
+
+  /* Footer */
+  .wmc-footer { display: flex; align-items: center; gap: 12px; padding: 12px 16px 0; }
+  .wmc-dirty-badge { font-size: 0.72rem; color: var(--warn, #f5a623); font-weight: 600; }
+  .wmc-apply-btn { padding: 6px 20px; border-radius: 6px; border: 1px solid var(--border, #444); background: var(--surface2, #1e1e2e); color: var(--muted, #888); cursor: pointer; font-size: 0.82rem; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+  .wmc-apply-btn.dirty { background: var(--accent, #7eb8f7); color: #000; border-color: var(--accent, #7eb8f7); font-weight: 700; }
+  .wmc-apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
