@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerCommandRoutes } from "../../src/api/cmd";
-import { DebugStore } from "../../src/db/queries";
+import { type DebugStore, DebugStoreImpl } from "../../src/db/queries";
 import type { HardwareBridge } from "../../src/bridge/types";
 
 describe("POST /api/cmd/send", () => {
@@ -12,7 +12,7 @@ describe("POST /api/cmd/send", () => {
   beforeEach(() => {
     app = Fastify();
     app.decorate("ctx", { simEngine: null });
-    store = new DebugStore(":memory:", 5000);
+    store = new DebugStoreImpl(":memory:", 5000);
     
     mockBridge = {
       sendCommand: vi.fn(),

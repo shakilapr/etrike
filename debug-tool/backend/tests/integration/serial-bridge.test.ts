@@ -9,7 +9,7 @@ vi.mock("serialport", () => {
 });
 
 import { SerialBridge } from "../../src/serial/reader";
-import { DebugStore } from "../../src/db/queries";
+import { type DebugStore, DebugStoreImpl } from "../../src/db/queries";
 import { StreamHub } from "../../src/ws/stream";
 import type { WriteQueue } from "../../src/db/write-queue";
 
@@ -20,7 +20,7 @@ describe("SerialBridge", () => {
   
   beforeEach(() => {
     vi.useFakeTimers();
-    store = new DebugStore(":memory:", 5000);
+    store = new DebugStoreImpl(":memory:", 5000);
     hub = new StreamHub();
     const writeQueue = { enqueue: vi.fn((f) => store.insertFrame(f)), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
     bridge = new SerialBridge(

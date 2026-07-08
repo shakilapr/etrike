@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { DebugStore } from "../../src/db/queries";
+import { type DebugStore, DebugStoreImpl } from "../../src/db/queries";
 import { StreamHub } from "../../src/ws/stream";
 
 const childProcess = vi.hoisted(() => {
@@ -30,7 +30,7 @@ describe("CanalystBridge", () => {
   beforeEach(() => {
     childProcess.children.length = 0;
     childProcess.spawn.mockClear();
-    store = new DebugStore(":memory:", 5000);
+    store = new DebugStoreImpl(":memory:", 5000);
     hub = new StreamHub();
   });
 
