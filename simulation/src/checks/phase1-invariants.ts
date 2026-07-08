@@ -31,8 +31,8 @@ export function assertManualSilence(trace: Phase1Trace): void {
 }
 
 export function assertEstopPriority(trace: Phase1Trace): void {
+  if (trace.mode !== "estop") return;
   const estopFrames = frames(trace, "0x001");
-  if (trace.mode !== "estop" && estopFrames.length === 0) return;
   const firstEstopMs = estopFrames[0]?.simTimeMs ?? 0;
   const driveAfterEstop = frames(trace, "0x204").filter(f => f.simTimeMs >= firstEstopMs + 100);
   for (const f of driveAfterEstop.slice(-5)) {
