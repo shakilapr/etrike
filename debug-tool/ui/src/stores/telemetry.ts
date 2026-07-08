@@ -81,6 +81,11 @@ function recent(frame: { ts: number } | undefined, nowS: number): boolean {
   return nowS - tsSeconds < PRESENCE_TIMEOUT_S;
 }
 
+function recentDecoded(frame: { ts: number; decoded?: unknown } | undefined, nowS: number): Record<string, unknown> | undefined {
+  if (!recent(frame, nowS)) return undefined;
+  return frame?.decoded as Record<string, unknown> | undefined;
+}
+
 export const ecuPresence = derived([latestById, now], ([$latest, $now]): EcuPresence => ({
   rt:  recent($latest["high:0x7FD"], $now) || recent($latest["high:0x210"], $now),
   sys: recent($latest["high:0x7FE"], $now) || recent($latest["high:0x011"], $now) || recent($latest["low:0x7FE"], $now) || recent($latest["low:0x011"], $now),
@@ -91,31 +96,31 @@ export const ecuPresence = derived([latestById, now], ([$latest, $now]): EcuPres
 
 export const telemetry = derived([latestById, now], ([$latest, $now]): Telemetry => {
   // Lights / indicators: prefer SYS_SAFETY_STS (0x011) on high bus, fall back to low
-  const safetyHigh = $latest["high:0x011"]?.decoded;
-  const safetyLow  = $latest["low:0x011"]?.decoded;
+  const safetyHigh = recentDecoded($latest["high:0x011"], $now);
+  const safetyLow  = recentDecoded($latest["low:0x011"], $now);
   const safety = safetyHigh ?? safetyLow;
 
   // Throttle speed: prefer high bus, fall back to low
-  const throttleHigh = $latest["high:0x120"]?.decoded;
-  const throttleLow  = $latest["low:0x120"]?.decoded;
+  const throttleHigh = recentDecoded($latest["high:0x120"], $now);
+  const throttleLow  = recentDecoded($latest["low:0x120"], $now);
   const throttle = throttleHigh ?? throttleLow;
 
   // Motor feedback (gear, backup speed)
-  const motorHigh = $latest["high:0x206"]?.decoded;
-  const motorLow  = $latest["low:0x206"]?.decoded;
+  const motorHigh = recentDecoded($latest["high:0x206"], $now);
+  const motorLow  = recentDecoded($latest["low:0x206"], $now);
   const motor = motorHigh ?? motorLow;
 
   // Steering angle: try SES_STATUS (0x201, low bus), fall back to STEER_DIAG (0x310, high)
-  const ses = $latest["low:0x201"]?.decoded;
-  const steerDiag = $latest["high:0x310"]?.decoded;
+  const ses = recentDecoded($latest["low:0x201"], $now);
+  const steerDiag = recentDecoded($latest["high:0x310"], $now);
 
   // Brake: prefer RT_BRAKE_CMD (0x205, low), fall back to HOST_BRAKE_REQ (0x301, high), then BRAKE_DIAG (0x311)
-  const brakeCmd = $latest["low:0x205"]?.decoded;
-  const brakeReq = $latest["high:0x301"]?.decoded;
-  const brakeDiag = $latest["high:0x311"]?.decoded;
+  const brakeCmd = recentDecoded($latest["low:0x205"], $now);
+  const brakeReq = recentDecoded($latest["high:0x301"], $now);
+  const brakeDiag = recentDecoded($latest["high:0x311"], $now);
 
   // State report (mode, safety)
-  const stateRpt = $latest["high:0x210"]?.decoded;
+  const stateRpt = recentDecoded($latest["high:0x210"], $now);
 
   // Speed: prefer throttle, fall back to motor feedback
   let motorSpeedKmh: number | null = null;

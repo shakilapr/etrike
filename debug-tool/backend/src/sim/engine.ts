@@ -91,6 +91,8 @@ export class SimulationEngine {
     for (const model of this.models.values()) {
       await model.stop();
     }
+    this._state.activeEcus = [];
+    this._state.physics = { speedMmps: 0, steerAngleDeg: 0, brakeKpa: 0 };
   }
 
   /** Inject a frame from an external source (physical bridge, controller, etc.). */

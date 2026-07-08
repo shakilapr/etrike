@@ -195,6 +195,8 @@ async function main(): Promise<void> {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const newConfig = parsed.data as WorkModeConfig;
     currentConfig = newConfig;
+    const timers = (app as any).__simTimers as Map<string, ReturnType<typeof setInterval>> | undefined;
+    if (timers) { for (const timer of timers.values()) clearInterval(timer); timers.clear(); }
     router.clear();
     for (const [key, source] of Object.entries(newConfig.idSources)) {
       if (source === "*") continue;
