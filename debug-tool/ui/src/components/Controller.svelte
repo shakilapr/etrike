@@ -16,9 +16,11 @@
   // ── Loop state ──
   let selectedBus: Bus = "high";
   let active = false;
-  let loopHandle: ReturnType<typeof setInterval> | null = null;
+  let loopHandle: number | null = null;
   let intervalMs = 20;               // ~50 Hz, like Autoware
   let frameCount = 0;
+  let lastTime = 0;
+  let accumulator = 0;
 
   // ── Derived each tick from heldKeys ──
   let speed = 0;
@@ -164,17 +166,37 @@
   // Loop control
   // ═══════════════════════════════════════════════════════════════
 
+  function loop(time: number) {
+    if (!active) return;
+    if (lastTime === 0) lastTime = time;
+    
+    let dt = time - lastTime;
+    if (dt > 1000) dt = 1000;
+    
+    accumulator += dt;
+    lastTime = time;
+
+    while (accumulator >= intervalMs) {
+      tick();
+      accumulator -= intervalMs;
+    }
+    
+    loopHandle = requestAnimationFrame(loop);
+  }
+
   function startLoop() {
     if (loopHandle) return;
     error = "";
     frameCount = 0;
     active = true;
-    loopHandle = setInterval(tick, intervalMs);
+    lastTime = 0;
+    accumulator = 0;
+    loopHandle = requestAnimationFrame(loop);
   }
 
   function stopLoop() {
     if (loopHandle) {
-      clearInterval(loopHandle);
+      cancelAnimationFrame(loopHandle);
       loopHandle = null;
     }
     // Send one final zero-speed frame so the vehicle stops
