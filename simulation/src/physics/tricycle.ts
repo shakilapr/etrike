@@ -13,7 +13,7 @@ import {
   MAX_SPEED_REV_MMPS,
   LOW_SPEED_THRESH_MMPS,
   CMD_STALE_TIMEOUT_MS,
-  HOST_HEARTBEAT_TIMEOUT_MS,
+  HEARTBEAT_TIMEOUT_HOST_MS,
   STARTUP_GRACE_PERIOD_MS,
   OBSTACLE_MAX_KPA,
   ASSIST_STOP_KPA,
@@ -22,7 +22,7 @@ import {
   STEER_FOLLOWING_ERR_MIN_DEG,
   STEER_FOLLOWING_ERR_FACTOR,
   STEER_FOLLOWING_ERR_MS,
-} from "../../../shared/can/generated/can_constants";
+} from "../../../shared/can/generated/can_constants.js";
 
 // ── Re-export (keep existing API for other files) ────────────────────
 export {
@@ -33,7 +33,6 @@ export {
   MAX_SPEED_REV_MMPS,
   LOW_SPEED_THRESH_MMPS,
   CMD_STALE_TIMEOUT_MS,
-  HOST_HEARTBEAT_TIMEOUT_MS,
   STARTUP_GRACE_PERIOD_MS,
   OBSTACLE_MAX_KPA,
   ASSIST_STOP_KPA,
@@ -43,6 +42,7 @@ export {
   STEER_FOLLOWING_ERR_MS,
 };
 export const MAX_BRAKE_KPA = HOST_BRAKE_MAX_KPA;
+export const HOST_HEARTBEAT_TIMEOUT_MS = HEARTBEAT_TIMEOUT_HOST_MS;
 export const STEER_CMD_RATE_HZ = 50;
 export const STEER_BOOT_WAIT_MS = 500;
 export const ANGLE_CLAMP_BASE_DEG = 40.0;

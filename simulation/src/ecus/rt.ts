@@ -19,6 +19,7 @@ import {
   OBSTACLE_MAX_KPA,
   MAX_BRAKE_KPA,
   CMD_STALE_TIMEOUT_MS,
+  STARTUP_GRACE_PERIOD_MS,
   computeFollowingErrorThreshold,
 } from "../physics/tricycle.js";
 
@@ -31,6 +32,8 @@ export class RtEcu implements SimulatedEcu {
   private sebRollCounter = 0;  // Gap #12: rolling counter for RT→0x7B9
 
   private lastHostCmdMs = -Infinity;
+  private hostCmdEverSeen = false;
+  private startupMs: number | null = null;
   private lastSysHbMs = -Infinity;
   private lastSysHbCtr = -1;
   private lastHostHbCtr = -1;
@@ -51,6 +54,24 @@ export class RtEcu implements SimulatedEcu {
   init(): void {
     this.kinematics.reset();
     this.steering.reset();
+    this.lastHostCmdMs = -Infinity;
+    this.hostCmdEverSeen = false;
+    this.startupMs = null;
+    this.lastSysHbMs = -Infinity;
+    this.lastSysHbCtr = -1;
+    this.lastHostHbCtr = -1;
+    this.sysHbEverSeen = false;
+    this.lastHostHbMs = -Infinity;
+    this.currentMode = "manual";
+    this.hostDriveCmd = { speedMmps: 0, yawRateMradS: 0, gear: 0 };
+    this.hostBrakeKpa = 0;
+    this.rtHbCtrLow = 0;
+    this.rtHbCtrHigh = 0;
+    this.lastSpeedMmps = 0;
+    this.sesAngleRaw = null;
+    this.sesAngleStatus = 0;
+    this.steerFollowErrTicks = 0;
+    this.lastCmdAngleRaw = null;
   }
 
   shutdown(): void {
@@ -72,6 +93,7 @@ export class RtEcu implements SimulatedEcu {
         case "0x300": {
           // HOST_DRIVE_CMD — Host → RT
           this.lastHostCmdMs = nowMs;
+          this.hostCmdEverSeen = true;
           if (ctx.mode === "auto" && !ctx.estopActive) {
             this.hostDriveCmd = {
               speedMmps: (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0,
@@ -149,8 +171,14 @@ export class RtEcu implements SimulatedEcu {
 
     // ── Check safety conditions ─────────────────────────────
 
+    if (this.startupMs === null) {
+      this.startupMs = nowMs;
+    }
+    const timeSinceStartup = nowMs - this.startupMs;
+
     // Command staleness
-    const cmdStale = nowMs - this.lastHostCmdMs > CMD_STALE_TIMEOUT_MS;
+    const cmdStale = nowMs - this.lastHostCmdMs > CMD_STALE_TIMEOUT_MS
+      && (this.hostCmdEverSeen || timeSinceStartup > STARTUP_GRACE_PERIOD_MS);
     // SYS heartbeat timeout (200ms)
     const sysHbTimeout = this.sysHbEverSeen && nowMs - this.lastSysHbMs > 200;
     // Host heartbeat timeout (1500ms)
@@ -249,8 +277,8 @@ export class RtEcu implements SimulatedEcu {
       if (ctx.mode === "auto" && this.steering.state === SteerState.ACTIVE && !shouldEstop && !sysHbTimeout) {
         const pressureRaw = Math.min(Math.round(brakeKpa / 50), 100);
         const autoRaw = [0, 0, 0, 0, 0, 0, 0, 0];
-        // Byte 0: align=0, control_enable=1, mode=1(Pressure), auto_brake=1
-        autoRaw[0] = (0 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+        // Byte 0: align=0, control_enable=1, mode=1(Pressure), auto_brake only when pressure is requested.
+        autoRaw[0] = (0 << 0) | (1 << 1) | (1 << 2) | ((pressureRaw > 0 ? 1 : 0) << 3);
         // Byte 3: pressure_req (pressure mode uses byte 3)
         autoRaw[3] = pressureRaw & 0xFF;
         // Byte 6: roll_cnt_enable=1, checksum_enable=1, rolling_counter

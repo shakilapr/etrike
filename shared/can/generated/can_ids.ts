@@ -212,9 +212,9 @@ export const GEAR_VALUES: Record<number, string> = {0:"N", 1:"D", 2:"S", 3:"R"};
 
 // ── Gateway forwarding rules (hand-maintained, matches can_protocol.h) ─
 // Messages forwarded low→high by RT (transparent copy)
-export const FWD_LOW_TO_HIGH: number[] = ['0x001', '0x011', '0x120', '0x206', '0x600'];
+export const FWD_LOW_TO_HIGH: string[] = ['0x001', '0x011', '0x120', '0x206', '0x600'];
 // Messages forwarded high→low by RT
-export const FWD_HIGH_TO_LOW: number[] = ['0x001', '0x302'];
+export const FWD_HIGH_TO_LOW: string[] = ['0x001', '0x302'];
 
 // ── Signal byte layouts ─────────────────────────────────────
 export interface SignalDef { byte: number; bit_offset: number; size: number;

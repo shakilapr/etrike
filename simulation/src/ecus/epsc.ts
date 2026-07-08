@@ -18,6 +18,11 @@ export class Sbwc implements SimulatedEcu {
   private errorStatus = 0;      // 0=Normal, 1=L1, 2=L2, 3=L3
   private swVersion = 0x64;     // 1.00
   private hwVersion = 0x0D;     // 1.3
+  private startupMs: number | null = null;
+  private hasSeenCommand = false;
+
+  /** Startup grace: tolerate missing 0x169 while RT completes boot/sync. */
+  private static readonly EPSC_STARTUP_GRACE_MS = 1000;
 
   /** Set the actual steering angle from the plant. */
   setActualAngle(deg: number): void {
@@ -28,7 +33,10 @@ export class Sbwc implements SimulatedEcu {
   init(): void {
     this.actualAngle = 30000;
     this.aligned = true;
+    this.lastCmdMs = -Infinity;
     this.errorStatus = 0;
+    this.startupMs = null;
+    this.hasSeenCommand = false;
   }
 
   shutdown(): void {
@@ -47,11 +55,17 @@ export class Sbwc implements SimulatedEcu {
     for (const f of lowBusRx) {
       if (f.canId === "0x169") {
         this.lastCmdMs = nowMs;
+        this.hasSeenCommand = true;
       }
     }
 
-    // Comm timeout: no 0x169 for >30ms → L3 error (3 missed 100Hz frames)
-    if (nowMs - this.lastCmdMs > 30) {
+    if (this.startupMs === null) {
+      this.startupMs = nowMs;
+    }
+    const timeSinceStartup = nowMs - this.startupMs;
+
+    // Comm timeout: no 0x169 for >20ms → L3 error.
+    if (nowMs - this.lastCmdMs > 20 && (this.hasSeenCommand || timeSinceStartup > Sbwc.EPSC_STARTUP_GRACE_MS)) {
       this.errorStatus = 3;
     } else {
       this.errorStatus = 0;

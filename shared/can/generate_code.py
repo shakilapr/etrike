@@ -178,9 +178,9 @@ def generate_can_ids_ts(db) -> str:
     # and some frames (0x302) are asymmetric (high→low only).
     lines.append("// ── Gateway forwarding rules (hand-maintained, matches can_protocol.h) ─")
     lines.append("// Messages forwarded low→high by RT (transparent copy)")
-    lines.append("export const FWD_LOW_TO_HIGH: number[] = ['0x001', '0x011', '0x120', '0x206', '0x600'];")
+    lines.append("export const FWD_LOW_TO_HIGH: string[] = ['0x001', '0x011', '0x120', '0x206', '0x600'];")
     lines.append("// Messages forwarded high→low by RT")
-    lines.append("export const FWD_HIGH_TO_LOW: number[] = ['0x001', '0x302'];")
+    lines.append("export const FWD_HIGH_TO_LOW: string[] = ['0x001', '0x302'];")
     lines.append("")
 
     # ── Signal definitions (compact) ────────────────────────────
