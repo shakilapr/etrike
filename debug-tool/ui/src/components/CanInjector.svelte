@@ -19,11 +19,10 @@
   let error = "";
   let pending = false;
 
-  $: selectedBus = $injectorBus;
-  $: busIds = ids.filter((item) => item.bus === selectedBus);
+  $: busIds = ids.filter((item) => item.bus === $injectorBus);
   $: injectableIds = busIds.filter((item) => item.injectable);
   $: selected = injectableIds.find((item) => item.id === selectedId) ?? injectableIds[0];
-  $: encoded = selected ? encodePayload(selectedBus, selected.id, values) : { dlc: 0, data: [] };
+  $: encoded = selected ? encodePayload($injectorBus, selected.id, values) : { dlc: 0, data: [] };
 
   function chooseBus(bus: Bus) {
     injectorBus.set(bus);
@@ -55,7 +54,7 @@
   async function sendOnce() {
     await command(() =>
       sendFrame({
-        bus: selectedBus,
+        bus: $injectorBus,
         id: selected.id,
         dlc: encoded.dlc,
         data: encoded.data,
@@ -67,7 +66,7 @@
   async function startLoop() {
     await command(() =>
       startPeriodic({
-        bus: selectedBus,
+        bus: $injectorBus,
         id: selected.id,
         dlc: encoded.dlc,
         data: encoded.data,
@@ -79,7 +78,7 @@
   }
 
   async function stopLoop() {
-    await command(() => stopPeriodic(selectedBus, selected.id));
+    await command(() => stopPeriodic($injectorBus, selected.id));
   }
 
   async function command(run: () => Promise<unknown>) {
@@ -113,7 +112,7 @@
   }
 </script>
 
-<section class="injector-layout">
+<section class="injector-layout" data-testid="can-injector">
   <div class="panel">
     <div class="panel-title">
       <h2>CAN Injector</h2>
@@ -122,7 +121,7 @@
 
     <div class="bus-tabs">
       {#each BUSES as bus}
-        <button class:active={selectedBus === bus} type="button" on:click={() => chooseBus(bus)}>
+        <button class:active={$injectorBus === bus} type="button" on:click={() => chooseBus(bus)}>
           {bus.toUpperCase()} Bus
         </button>
       {/each}
