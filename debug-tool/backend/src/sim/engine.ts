@@ -10,7 +10,7 @@ export interface SimEngineState {
   running: boolean;
   tickMs: number;
   activeEcus: string[];
-  physics: { speedMmps: number; steerAngleDeg: number; brakeKpa: number };
+  physics: { speedMmps: number; steerAngleDeg: number; brakeKpa: number; odometer_m: number };
 }
 
 /**
@@ -29,7 +29,7 @@ export class SimulationEngine {
   private tickMs = 10; // 100 Hz default
   private _state: SimEngineState = {
     running: false, tickMs: 10, activeEcus: [],
-    physics: { speedMmps: 0, steerAngleDeg: 0, brakeKpa: 0 },
+    physics: { speedMmps: 0, steerAngleDeg: 0, brakeKpa: 0, odometer_m: 0 },
   };
 
   constructor(
@@ -108,7 +108,7 @@ export class SimulationEngine {
       await model.stop();
     }
     this._state.activeEcus = [];
-    this._state.physics = { speedMmps: 0, steerAngleDeg: 0, brakeKpa: 0 };
+    this._state.physics = { speedMmps: 0, steerAngleDeg: 0, brakeKpa: 0, odometer_m: 0 };
   }
 
   /** Inject a frame from an external source (physical bridge, controller, etc.). */
@@ -127,6 +127,22 @@ export class SimulationEngine {
     for (const bus of ["high", "low"] as const) {
       allFrames.push(...this.bus.drain(bus));
     }
+
+    // Snoop frames to update telemetry state
+    for (const frame of allFrames) {
+      if (frame.decoded) {
+        if (frame.id === "0x206" && typeof frame.decoded.motor_speed_mmps === "number") {
+          this._state.physics.speedMmps = frame.decoded.motor_speed_mmps;
+        } else if (frame.id === "0x201" && typeof frame.decoded.str_angle === "number") {
+          this._state.physics.steerAngleDeg = frame.decoded.str_angle / 10;
+        } else if (frame.id === "0x721" && typeof frame.decoded.act_pressure_kpa === "number") {
+          this._state.physics.brakeKpa = frame.decoded.act_pressure_kpa;
+        }
+      }
+    }
+    
+    // Integrate speed for odometer
+    this._state.physics.odometer_m += (this._state.physics.speedMmps / 1000) * (this.tickMs / 1000);
 
     // Only active ECU models participate in the simulation tick.
     for (const id of this._state.activeEcus) {
