@@ -42,6 +42,7 @@ class SignalDef(BaseModel):
     """
     name: str = Field(..., min_length=1, max_length=64,
                       pattern=r'^[A-Z][A-Za-z0-9_]*$')
+    key: Optional[str] = Field(None, description="Legacy string key mapping for dynamic decoders/UI tests")
     byte: int = Field(..., ge=0, le=63,
                       description="Byte index within the CAN payload (0-based)")
     bit_offset: int = Field(..., ge=0, le=7,

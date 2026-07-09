@@ -11,10 +11,10 @@ BU_: SYS SEB
 BO_ 1977 VCU_SEB_REQ: 8 SYS
  SG_ SEB_AlignEnable : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_CtrlEnable : 1|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SEB_CtrlMode : 2|1@1+ (1,0) [0|1] "enum" Vector__XXX
+ SG_ SEB_CtrlMode : 2|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_AutoBrake : 3|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SEB_StrokeReq : 16|16@1+ (0.05,-30) [-5|27] "mm" Vector__XXX
- SG_ SEB_PressureReq : 24|8@1+ (0.05,0) [0|5] "MPa" Vector__XXX
+ SG_ SEB_StrokeReq : 16|16@1+ (1,0) [0|65535] "raw" Vector__XXX
+ SG_ SEB_PressureReq : 24|8@1+ (1,0) [0|100] "raw" Vector__XXX
  SG_ SEB_RollCntEnable : 48|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_ChecksumEnable : 49|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_RollCnt : 52|4@1+ (1,0) [0|15] "" Vector__XXX
@@ -25,10 +25,10 @@ BO_ 1825 SEB_STATUS: 8 SEB
  SG_ SEB_CtrlEnStatus : 1|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_CtrlModeStatus : 2|2@1+ (1,0) [0|3] "" Vector__XXX
  SG_ SEB_AutoBrakeStatus : 4|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SEB_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" Vector__XXX
- SG_ SEB_StrokeValue : 16|16@1+ (0.05,-30) [-5|27] "mm" Vector__XXX
- SG_ SEB_PressureValue : 24|8@1+ (0.05,0) [0|5] "MPa" Vector__XXX
- SG_ SEB_AngleValue : 40|16@1- (0.5,0) [-150|840] "" Vector__XXX
+ SG_ SEB_ErrorStatus : 6|2@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ SEB_StrokeValue : 16|16@1+ (1,0) [0|65535] "raw" Vector__XXX
+ SG_ SEB_PressureValue : 24|8@1+ (1,0) [0|100] "raw" Vector__XXX
+ SG_ SEB_AngleValue : 40|16@1- (1,0) [-32768|32767] "" Vector__XXX
  SG_ SEB_RollCntEnStatus : 48|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_ChecksumEnStatus : 49|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SEB_RollCntStatus : 52|4@1+ (1,0) [0|15] "" Vector__XXX
@@ -79,20 +79,20 @@ CM_ SG_ 1977 SEB_AlignEnable "Calibration enable.";
 CM_ SG_ 1977 SEB_CtrlEnable "Active control enable.";
 CM_ SG_ 1977 SEB_CtrlMode "0=Stroke (position), 1=Pressure (hydraulic).";
 CM_ SG_ 1977 SEB_AutoBrake "Auto-brake / emergency trigger.";
-CM_ SG_ 1977 SEB_StrokeReq "Stroke position. Full 16-bit in Stroke mode. Overlaps with PressureReq at byte 3.";
-CM_ SG_ 1977 SEB_PressureReq "Pressure in Mode 1. Overlaps Stroke[15:8]  mode-dependent.";
+CM_ SG_ 1977 SEB_StrokeReq "Stroke position raw counts.";
+CM_ SG_ 1977 SEB_PressureReq "Pressure raw counts.";
 CM_ SG_ 1977 SEB_RollCntEnable "Life Signal Validity  MUST be 1.";
 CM_ SG_ 1977 SEB_ChecksumEnable "Checksum Validity  MUST be 1.";
-CM_ SG_ 1977 SEB_RollCnt "Life Signal rolling counter. Increment every frame.";
+CM_ SG_ 1977 SEB_RollCnt "Life Signal rolling counter.";
 CM_ SG_ 1977 SEB_Checksum "Checksum = XOR(bytes 0-6) ^ 0xFF.";
 CM_ SG_ 1825 SEB_AlignStatus "Alignment Info Feedback. 1=aligned.";
 CM_ SG_ 1825 SEB_CtrlEnStatus "Control Enable Feedback.";
 CM_ SG_ 1825 SEB_CtrlModeStatus "Control Mode Feedback.";
 CM_ SG_ 1825 SEB_AutoBrakeStatus "Auto Brake Status Feedback.";
 CM_ SG_ 1825 SEB_ErrorStatus "Error Status.";
-CM_ SG_ 1825 SEB_StrokeValue "Stroke Value Feedback.";
-CM_ SG_ 1825 SEB_PressureValue "Pressure Feedback. Overlaps Stroke[15:8]  mode-dependent.";
-CM_ SG_ 1825 SEB_AngleValue "Angle Feedback. Overlaps security echo at byte 6.";
+CM_ SG_ 1825 SEB_StrokeValue "Stroke Value raw counts.";
+CM_ SG_ 1825 SEB_PressureValue "Pressure raw counts.";
+CM_ SG_ 1825 SEB_AngleValue "Angle raw counts.";
 CM_ SG_ 1825 SEB_RollCntEnStatus "Life Signal Status Feedback.";
 CM_ SG_ 1825 SEB_ChecksumEnStatus "Checksum Status Feedback.";
 CM_ SG_ 1825 SEB_RollCntStatus "Life Signal Feedback  echoes rolling counter.";
@@ -140,6 +140,3 @@ BA_ "GenMsgCycleTime" BO_ 1857 1000;
 BA_ "GenMsgCycleTime" BO_ 1787 10;
 
 
-VAL_ 1977 SEB_CtrlMode 0 "Stroke" 1 "Pressure";
-VAL_ 1825 SEB_CtrlModeStatus 0 "None" 1 "Stroke" 2 "Pressure";
-VAL_ 1825 SEB_ErrorStatus 0 "Normal" 1 "L1_Warning" 2 "L2_General" 3 "L3_Severe";

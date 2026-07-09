@@ -22,7 +22,7 @@ BO_ 361 VCU_SES_REQ: 8 RT
 BO_ 513 SES_STATUS: 8 EPS_C
  SG_ SES_AngleStatus : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SES_CtrlModeStatus : 1|2@1+ (1,0) [0|3] "" Vector__XXX
- SG_ SES_ErrorStatus : 6|2@1+ (1,0) [0|3] "enum" Vector__XXX
+ SG_ SES_ErrorStatus : 6|2@1+ (1,0) [0|3] "" Vector__XXX
  SG_ SES_StrAngle : 16|16@1+ (0.1,-3000) [-700|700] "deg" Vector__XXX
  SG_ SES_TgtStrAngleSpd_FB : 32|16@1- (0.5,0) [0|1480] "deg/s" Vector__XXX
  SG_ SES_SteeringTorq : 40|8@1+ (0.1,-12.1) [-12|12] "Nm" Vector__XXX
@@ -78,8 +78,8 @@ CM_ BO_ 1786  "steer-by-wire unit telemetry. 100 Hz. Bytes 0,7 reserved. Narrowe
 CM_ SG_ 361 SES_AlignEnable "Angle Initial Alignment Enable. 0=disabled, 1=centering.";
 CM_ SG_ 361 SES_CtrlEnable "Direction Control Enable. 0=Disabled, 1=Enable (Angle Control).";
 CM_ SG_ 361 SES_TgtStrAngle "Target Steering Angle. Negative=left. Offset=-3000 per mfr CSV.";
-CM_ SG_ 361 SES_TgtStrAngleSpd "Target Angle Speed. Overlaps security signals at byte 5 per CSV. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3. Bits 10-15 overlaid.";
-CM_ SG_ 361 SES_RollCntEnable "Life Signal Enable  MUST be 1. Overlaps Speed[15:8].";
+CM_ SG_ 361 SES_TgtStrAngleSpd "Target Angle Speed. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3.";
+CM_ SG_ 361 SES_RollCntEnable "Life Signal Enable  MUST be 1.";
 CM_ SG_ 361 SES_ChecksumEnable "Checksum Enable  MUST be 1.";
 CM_ SG_ 361 SES_RollCnt "Life Signal rolling counter. Increment every frame.";
 CM_ SG_ 361 SES_VehSpd "Vehicle speed populated by RT.";
@@ -87,13 +87,13 @@ CM_ SG_ 361 SES_Checksum "Checksum = XOR(bytes 0-6) ^ 0xFF.";
 CM_ SG_ 513 SES_AngleStatus "Center Finding Status. 0=Finding, 1=Found.";
 CM_ SG_ 513 SES_CtrlModeStatus "Control Mode Feedback. 0=Manual, 1=Automatic.";
 CM_ SG_ 513 SES_ErrorStatus "Error Status.";
-CM_ SG_ 513 SES_StrAngle "Steering Angle. Raw 30000->0deg, 23000->-700deg, 37000->700deg.";
-CM_ SG_ 513 SES_TgtStrAngleSpd_FB "Angle Speed feedback. 16-bit signed. Overlaps Torq at byte 5.";
-CM_ SG_ 513 SES_SteeringTorq "Steering Torque. Init 0x79 (121 raw = 0 Nm). Overlaps Speed[15:8].";
+CM_ SG_ 513 SES_StrAngle "Steering Angle.";
+CM_ SG_ 513 SES_TgtStrAngleSpd_FB "Angle Speed feedback.";
+CM_ SG_ 513 SES_SteeringTorq "Steering Torque.";
 CM_ SG_ 513 SES_RollCntEnStatus "Life Signal Enable Feedback.";
 CM_ SG_ 513 SES_ChecksumEnStatus "Checksum Enable Feedback.";
 CM_ SG_ 513 SES_RollCntStatus "Life Signal Feedback  echoes rolling counter.";
-CM_ SG_ 513 SES_ChecksumStatus "Checksum Feedback = XOR(bytes 0-6) ^ 0xFF.";
+CM_ SG_ 513 SES_ChecksumStatus "Checksum Feedback.";
 CM_ SG_ 514 SES_ECUUnderVolt "Controller Under Voltage [L2]";
 CM_ SG_ 514 SES_ECUOverVolt "Controller Over Voltage [L2]";
 CM_ SG_ 514 SES_CanComErr "CAN Communication Fault [L1]";
@@ -140,4 +140,3 @@ BA_ "GenMsgCycleTime" BO_ 515 1000;
 BA_ "GenMsgCycleTime" BO_ 1786 10;
 
 
-VAL_ 513 SES_ErrorStatus 0 "Normal" 1 "L1_Warning" 2 "L2_General" 3 "L3_Severe";

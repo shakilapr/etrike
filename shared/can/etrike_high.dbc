@@ -13,24 +13,27 @@ BO_ 1 SAFETY_ESTOP: 0 Any
 BO_ 17 SYS_SAFETY_STS: 3 SYS
  SG_ SYS_EstopActive : 7|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SYS_HeartbeatOk : 15|8@0+ (1,0) [0|1] "" Vector__XXX
- SG_ SYS_LightState : 23|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ SYS_LightLeft : 23|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_LightRight : 22|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_LightBrake : 21|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_LightHead : 20|1@0+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 288 SYS_THROTTLE_STS: 2 MTR
  SG_ SYS_ThrottleSpeed : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
 
 BO_ 518 MTR_MOTOR_FBK: 4 MTR
  SG_ MTR_ActualSpeed : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
- SG_ MTR_GearState : 23|8@0+ (1,0) [0|3] "enum" Vector__XXX
+ SG_ MTR_GearState : 23|8@0+ (1,0) [0|3] "" Vector__XXX
  SG_ MTR_FaultFlags : 31|8@0+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 528 RT_STATE_RPT: 6 RT
- SG_ RT_Mode : 7|8@0+ (1,0) [0|2] "enum" Vector__XXX
- SG_ RT_SafetyState : 15|2@0+ (1,0) [0|2] "enum" Vector__XXX
- SG_ RT_EstopReason : 13|4@0+ (1,0) [0|7] "enum" Vector__XXX
- SG_ RT_Reversing : 23|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ RT_Mode : 7|8@0+ (1,0) [0|2] "" Vector__XXX
+ SG_ RT_SafetyState : 15|2@0+ (1,0) [0|2] "" Vector__XXX
+ SG_ RT_EstopReason : 11|4@0+ (1,0) [0|7] "" Vector__XXX
+ SG_ RT_Reversing : 23|1@0+ (1,0) [0|1] "" Vector__XXX
  SG_ RT_RxOverflow : 31|8@0+ (1,0) [0|255] "" Vector__XXX
  SG_ RT_TaskHealth : 39|8@0+ (1,0) [0|255] "" Vector__XXX
- SG_ RT_SteerState : 47|8@0+ (1,0) [0|5] "enum" Vector__XXX
+ SG_ RT_SteerState : 47|8@0+ (1,0) [0|5] "" Vector__XXX
 
 BO_ 544 RT_PID_RPT: 6 RT
  SG_ RT_PidSetpoint : 7|16@0- (1,0) [-32768|32767] "mm/s" Vector__XXX
@@ -78,11 +81,13 @@ BO_ 1536 SYS_DIAG_RPT: 8 SYS
  SG_ SYS_DiagTec : 55|8@0+ (1,0) [0|255] "" Vector__XXX
  SG_ SYS_DiagRec : 63|8@0+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 2044 HOST_HEARTBEAT: 1 Host
+BO_ 2044 HOST_HEARTBEAT: 2 Host
  SG_ Host_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ Host_HealthFlags : 15|8@0+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 2045 RT_HEARTBEAT: 1 RT
+BO_ 2045 RT_HEARTBEAT: 2 RT
  SG_ RT_AliveCtr : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ RT_HealthFlags : 15|8@0+ (1,0) [0|255] "" Vector__XXX
 
 
 CM_ BO_ 1  "DLC=0  the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.";
@@ -102,10 +107,12 @@ CM_ BO_ 2044  "Not bridged, high bus only. Loss triggers controlled stop, not ES
 CM_ BO_ 2045  "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the high-bus instance.";
 
 CM_ SG_ 17 SYS_HeartbeatOk "0=RT alive counter frozen >1000ms, 1=incrementing";
-CM_ SG_ 17 SYS_LightState "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active";
 CM_ SG_ 518 MTR_FaultFlags "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready";
 CM_ SG_ 528 RT_SafetyState "RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault";
+CM_ SG_ 528 RT_EstopReason "Reason for ESTOP state, packed in byte 1 bits 4-7";
 CM_ SG_ 528 RT_RxOverflow "MCP2515 RX overflow counter  telemetry for CAN bus health monitoring";
+CM_ SG_ 528 RT_TaskHealth "Bitmask of alive tasks (bits 0-3: control/dispatch/tx_low/tx_high)";
+CM_ SG_ 528 RT_SteerState "Steering state machine value";
 CM_ SG_ 768 HOST_DriveSpeed "ROS 2: linear.x * 1000";
 CM_ SG_ 768 HOST_YawRate "ROS 2: angular.z * 1000. i24 big-endian at bytes 4-6.";
 CM_ SG_ 784 SteerDiag_Angle0_1deg "Actual steering angle. physical_deg = raw * 0.1 - 3000. Raw 30000 -> 0deg.";
@@ -119,7 +126,9 @@ CM_ SG_ 785 BrakeDiag_ECUTemp "SEB ECU temperature, 0.1degC/bit";
 CM_ SG_ 1024 HOST_ObstacleDistance "UINT32_MAX = no reading / timeout";
 CM_ SG_ 1536 SYS_DiagBrakeFault "SEB L3 fault or brake following-error active";
 CM_ SG_ 2044 Host_AliveCtr "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical.";
-CM_ SG_ 2045 RT_AliveCtr "High bus timeout 1500ms->Host stops /cmd_vel. Health flags: bit0=int_fault, bit1=can_warn, bit2=can_passive, bit3=peer_hb_lost, bit4=degraded";
+CM_ SG_ 2044 Host_HealthFlags "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved";
+CM_ SG_ 2045 RT_AliveCtr "High bus timeout 1500ms->Host stops /cmd_vel";
+CM_ SG_ 2045 RT_HealthFlags "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved";
 
 CM_ BU_ Host "Orin NX, Linux + ROS 2, perception/planning";
 CM_ BU_ RT "ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway";
@@ -145,8 +154,7 @@ BA_ "GenMsgCycleTime" BO_ 2044 500;
 BA_ "GenMsgCycleTime" BO_ 2045 500;
 
 
-VAL_ 518 MTR_GearState 0 "N" 1 "D" 2 "S" 3 "R";
-VAL_ 518 MTR_FaultFlags 1 "EstopActive" 2 "CmdTimeout" 4 "AdcFault" 8 "GearConflict" 16 "StartupReady";
-VAL_ 528 RT_Mode 0 "Manual" 1 "Auto" 2 "ESTOP";
-VAL_ 528 RT_SafetyState 0 "Normal" 1 "InternalEstop" 2 "Fault";
+VAL_ 528 RT_Mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
+VAL_ 528 RT_SafetyState 0 "Normal" 1 "Warning" 2 "Fault";
 VAL_ 768 HOST_Gear 0 "N" 1 "D" 2 "S" 3 "R";
+VAL_ 1024 HOST_ObstacleDistance 4294967295 "clear";
