@@ -96,8 +96,8 @@ export class DynamicCanDecoder {
       let raw = Number(rawBig);
 
       if (_type === "signed") {
-        if (raw & (1 << (_size - 1))) {
-          raw -= (1 << _size);
+        if (rawBig & (1n << BigInt(_size - 1))) {
+          raw = Number(rawBig - (1n << BigInt(_size)));
         }
       }
 

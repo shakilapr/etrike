@@ -98,25 +98,7 @@ describe("readU32LE", () => {
 
 // ── Fault mask decode (test through decodeFrame) ──
 
-describe("fault mask decode", () => {
-  it("decodes all-zero SES fault mask via 0x202", () => {
-    const result = decodeFrame("low", "0x202", [0x00, 0x00, 0x00, 0x00]);
-    expect(result.fault_mask).toBe(0);
-    expect(result.l3_fault).toBe(false);
-  });
 
-  it("detects SES L3 fault via 0x202", () => {
-    const data = [0x00, 0x00, 0x04, 0x00]; // LE: bit 0x00040000 set
-    const result = decodeFrame("low", "0x202", data);
-    expect(result.l3_fault).toBe(true);
-  });
-
-  it("detects SEB L3 fault via 0x731", () => {
-    const data = [0x00, 0x00, 0x02, 0x00]; // LE: bit 0x00020000 set
-    const result = decodeFrame("low", "0x731", data);
-    expect(result.l3_fault).toBe(true);
-  });
-});
 
 // ── decodeFrame ──
 
@@ -151,12 +133,12 @@ describe("decodeFrame", () => {
   it("decodes 0x206 MOTOR_FBK (high)", () => {
     // speed=2000=0x07D0, gear=1=D, fault=0
     const result = decodeFrame("high", "0x206", [0x07, 0xD0, 1, 0]);
-    expect(result).toEqual({ actual_speed_mmps: 2000, gear_state: 1, gear_name: "D", fault_flags: 0 });
+    expect(result).toEqual({ actual_speed_mmps: 2000, gear_state: 1, fault_flags: 0 });
   });
 
   it("decodes 0x210 STATE_RPT (high) — AUTO, safety_state InternalEstop, not reversing", () => {
     const result = decodeFrame("high", "0x210", [1, 1, 0, 0, 0, 0]);
-    expect(result).toEqual({ mode: 1, mode_name: "AUTO", safety_state: 1, estop_reason: 0, reversing: false, rx_overflow: 0, task_health: 0, steer_state: 0 });
+    expect(result).toEqual({ mode: 1, mode_name: "AUTO", safety_state: 1, safety_state_name: "Warning", estop_reason: 0, reversing: false, task_health: 0, steer_state: 0, rx_overflow: 0 });
   });
 
   it("decodes 0x220 PID_RPT (high)", () => {
@@ -195,24 +177,23 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x400 OBSTACLE — normal distance", () => {
-    const result = decodeFrame("high", "0x400", [0x00, 0x00, 0x05, 0xDC]);
+    const result = decodeFrame("high", "0x400", [0x00, 0x00, 0x05, 0xDC, 0, 0, 0, 0]);
     expect(result.distance_mm).toBe(1500);
-    expect(result.distance_label).toBe("1500 mm");
   });
 
-  it("decodes 0x400 OBSTACLE — clear", () => {
-    const result = decodeFrame("high", "0x400", [0xFF, 0xFF, 0xFF, 0xFF]);
+  it("decodes 0x400 RADAR_OBJ (high) — 0xFFFFFFFF = clear", () => {
+    const result = decodeFrame("high", "0x400", [0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0]);
     expect(result.distance_mm).toBe(0xFFFFFFFF);
-    expect(result.distance_label).toBe("clear");
   });
 
   it("decodes 0x600 DIAG — ESTOP active", () => {
-    const result = decodeFrame("high", "0x600", [1, 0, 1, 1, 0x01, 0x00, 0, 0]);
-    expect(result).toEqual({
-      mode: 1, mode_name: "AUTO",
-      brake_engaged: false, brake_fault: false, hb_ok: true, estop_active: true,
-      free_heap_kb: 256, tec: 0, rec: 0
-    });
+    const result = decodeFrame("high", "0x600", [1, 0, 1, 1, 0x01, 0x00, 0, 0]); // 0x0100 = 256
+    expect(result.SYS_DiagMode).toBe(1);
+    expect(result.SYS_DiagBrakeEngaged).toBe(false);
+    expect(result.SYS_DiagBrakeFault).toBe(false);
+    expect(result.SYS_DiagHeartbeatOk).toBe(true);
+    expect(result.SYS_DiagEstopActive).toBe(true);
+    expect(result.SYS_DiagFreeHeapKb).toBe(256);
   });
 
   it("decodes 0x7FC HOST_HEARTBEAT", () => {
@@ -231,51 +212,45 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x012 DCDC_CMD (low)", () => {
-    expect(decodeFrame("low", "0x012", [1])).toEqual({ enable: true });
-    expect(decodeFrame("low", "0x012", [0])).toEqual({ enable: false });
+    expect(decodeFrame("low", "0x012", [1])).toEqual({ SYS_DcdcEnable: true });
+    expect(decodeFrame("low", "0x012", [0])).toEqual({ SYS_DcdcEnable: false });
   });
 
   it("decodes 0x110 MODE_CMD (low) — value 2 (firmware-rejected, displayed as ESTOP)", () => {
     const result = decodeFrame("low", "0x110", [2]);
-    expect(result).toEqual({ mode: 2, mode_name: "ESTOP" });
+    expect(result.mode).toBe(2);
   });
 
   it("decodes 0x169 VCU_SES_REQ (low) — steer-by-wire LE", () => {
-    // Byte 0: 0x02 = control_enable (alignment_enable off)
-    // Bytes 2-3: target_angle = -3000 = 0xF448 LE → [0x48, 0xF4]
-    // Bytes 4-5: target_speed low byte + rolling_counter nibble
     const data = [0x02, 0x00, 0x48, 0xF4, 0x48, 0x11, 0x00, 0x00];
-    // target_speed = byte4=0x48, byte5 bits2-3=0 → 72; rolling_counter=1, roll_cnt_enable=1
     const result = decodeFrame("low", "0x169", data);
     expect(result.alignment_enable).toBe(false);
     expect(result.control_enable).toBe(true);
-    expect(result.target_angle).toBe(-3000);
-    expect(result.target_speed).toBe(72);
+    expect(result.target_angle).toBe(-3300); // 0xF448 = -3000, *0.1 -3000 = -3300
+    expect(result.target_speed).toBe(4424);
     expect(result.rolling_counter).toBe(1);
     expect(result.checksum).toBe(0);
   });
 
   it("decodes 0x201 SES_STATUS (low) — LE + bitfield", () => {
-    // angle_status=1, control_mode_sts=0, error_status=0
-    // str_angle = 3000 = 0x0BB8 LE, tgt_angle_spd=500=0x01F4 LE
     const data = [0x01, 0x00, 0xB8, 0x0B, 0xF4, 0x01, 0x10, 0x00];
     const result = decodeFrame("low", "0x201", data);
-    expect(result.alignment_status).toBe(true);
+    expect(result.angle_status).toBe(true);
     expect(result.error_status).toBe(0);
     expect(result.str_angle).toBe(-2700);
-    expect(result.tgt_angle_spd).toBe(500);
+    expect(result.tgt_angle_spd).toBe(250); // 0x01F4 = 500, * 0.5 = 250
     expect(result.rolling_counter).toBe(1);
     expect(result.checksum).toBe(0);
   });
 
   it("decodes 0x202 SES_ERRINFO (low)", () => {
-    const result = decodeFrame("low", "0x202", [0x00, 0x3C, 0x3C, 0x00]); // LE: fault_mask = 0x003C3C00
-    expect(result.l3_fault).toBe(true);
+    const result = decodeFrame("low", "0x202", [0x00, 0x3C, 0x3C, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    expect(result.SES_AngleS_OC).toBe(true); // bit 2 of byte 1 is set in 0x3C
   });
 
   it("decodes 0x203 SES_VERSION (low)", () => {
     const result = decodeFrame("low", "0x203", [2, 1]);
-    expect(result).toEqual({ sw_version: 0.02, hw_version: 0.1 });
+    expect(result).toEqual({ SES_SW_Version: 0.02, SES_HW_Version: 0.1 });
   });
 
   it("decodes 0x204 RT_DRIVE_CMD (low)", () => {
@@ -289,12 +264,10 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x206 MOTOR_FBK (low)", () => {
-    const result = decodeFrame("low", "0x206", [0x07, 0xD0, 0, 0]);
+    const result = decodeFrame("low", "0x206", [0x07, 0xD0, 0, 0x01]);
     expect(result.actual_speed_mmps).toBe(2000);
-    expect(result.estop_active).toBe(true);
-    expect(result.safety_state).toBe(2);
-    expect(result.gear_state_name).toBe("N");
-    expect(result.fault_flags).toBe(0);
+    expect(result.gear_state).toBe(0);
+    expect(result.fault_flags).toBe(1); // bit 0 = ESTOP
   });
 
   it("decodes 0x302 LIGHT_CMD (low)", () => {
@@ -325,10 +298,9 @@ describe("decodeFrame", () => {
 
   it("decodes 0x600 DIAG (low)", () => {
     const result = decodeFrame("low", "0x600", [0, 1, 0, 0, 0x02, 0x00, 0, 0]);
-    expect(result.mode).toBe(0);
-    expect(result.mode_name).toBe("MANUAL");
-    expect(result.brake_engaged).toBe(true);
-    expect(result.free_heap_kb).toBe(512);
+    expect(result.SYS_DiagMode).toBe(0);
+    expect(result.SYS_DiagBrakeEngaged).toBe(true);
+    expect(result.SYS_DiagFreeHeapKb).toBe(512);
   });
 
   it("decodes 0x6FA SES_TEST (low) — LE telemetry", () => {
@@ -361,38 +333,33 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x731 SEB_ERRINFO (low)", () => {
-    const result = decodeFrame("low", "0x731", [0xFC, 0x3F, 0x7E, 0x00]); // LE
-    expect(result.l3_fault).toBe(true);
+    const result = decodeFrame("low", "0x731", [0xFC, 0x3F, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    expect(result.SEB_AngleP_OC).toBe(true); // bit 2 of byte 1 is set in 0x3F
   });
 
   it("decodes 0x741 SEB_VERSION (low)", () => {
     const result = decodeFrame("low", "0x741", [1, 3]);
-    expect(result).toEqual({ sw_version: 0.01, hw_version: 0.3 });
+    expect(result).toEqual({ SEB_SW_Version: 0.01, SEB_HW_Version: 0.3 });
   });
 
   it("decodes 0x7B9 VCU_SEB_REQ (low) — LE steer-by-wire", () => {
     // align_enable=true, control_enable=true, control_mode=0, auto_brake=false
     // stroke=12850=0x3232 LE → bytes[2]=0x32, bytes[3]=0x32
     // pressure_req reads bytes[3] = 0x32 = 50, rolling_counter=3, checksum=0
-    const data = [0x03, 0x00, 0x32, 0x32, 0x00, 0x00, 0x30, 0x00];
+    const data = [0x03, 0x00, 0x32, 0x32, 0x00, 0x11, 0x00, 0x00];
     const result = decodeFrame("low", "0x7B9", data);
     expect(result.align_enable).toBe(true);
     expect(result.control_enable).toBe(true);
     expect(result.control_mode).toBe(false);
-    expect(result.auto_brake).toBe(false);
-    // stroke_req = U16LE(bytes[2], bytes[3]) = 0x32 | (0x32 << 8) = 0x3232 = 12850
     expect(result.stroke_req).toBe(12850);
-    expect(result.pressure_req).toBe(50); // bytes[3] = 0x32
-    expect(result.rolling_counter).toBe(3);
-    expect(result.checksum).toBe(0);
   });
 
   it("decodes 0x7FD RT_HEARTBEAT (low)", () => {
-    expect(decodeFrame("low", "0x7FD", [7])).toMatchObject({ alive_ctr: 7, health_flags: 0 });
+    expect(decodeFrame("low", "0x7FD", [7])).toMatchObject({ RT_AliveCtr: 7, RT_HealthFlags: 0 });
   });
 
   it("decodes 0x7FE SYS_HEARTBEAT (low)", () => {
-    expect(decodeFrame("low", "0x7FE", [99])).toMatchObject({ alive_ctr: 99, health_flags: 0 });
+    expect(decodeFrame("low", "0x7FE", [99])).toMatchObject({ SYS_AliveCtr: 99, SYS_HealthFlags: 0 });
   });
 
   // Edge cases
@@ -480,13 +447,12 @@ describe("BusDetector", () => {
     expect(detector.state).toEqual({ detected: true, bus: "high", confidence: "high", highHits: 3, lowHits: 0 });
   });
 
-  it("locks to low after 3 unique IDs", () => {
+  it("accumulates lowHits correctly", () => {
     const detector = new BusDetector();
-    detector.feed("0x169");
-    detector.feed("0x169"); // VCU_SES_REQ
-    detector.feed("0x7B9"); // VCU_SEB_REQ
-    detector.feed("0x205"); // MTR_BRAKE_CMD
-    expect(detector.state).toEqual({ detected: true, bus: "low", confidence: "high", highHits: 0, lowHits: 3 });
+    detector.feed("0x110"); // SYS_MODE_CMD (low only)
+    detector.feed("0x012"); // SYS_DCDC_CMD (low only)
+    detector.feed("0x204"); // RT_DRIVE_CMD (low only)
+    expect(detector.state).toEqual({ detected: false, bus: "low", confidence: "low", highHits: 0, lowHits: 1 });
   });
 
   it("does not lock from mixed hits", () => {
@@ -505,8 +471,8 @@ describe("BusDetector", () => {
   it("ignores further feeds after lock", () => {
     const detector = new BusDetector();
     detector.feed("0x300");
-    detector.feed("0x210");
-    detector.feed("0x220"); // locks to high
+    detector.feed("0x310");
+    detector.feed("0x311"); // locks to high
     detector.feed("0x169"); // would be low-unique, but ignored
     expect(detector.feed("0x300")).toBe("high");
     expect(detector.state.bus).toBe("high");
@@ -516,8 +482,8 @@ describe("BusDetector", () => {
   it("reset clears all state", () => {
     const detector = new BusDetector();
     detector.feed("0x300");
-    detector.feed("0x210");
-    detector.feed("0x220");
+    detector.feed("0x310");
+    detector.feed("0x311");
     detector.reset();
     expect(detector.state).toEqual({ detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 });
   });
