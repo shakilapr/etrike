@@ -91,7 +91,7 @@ export class SimulationEngine {
         this.timer = setTimeout(loop, Math.max(1, timeToNextTick - 2));
       } else {
         // Yield to the event loop for the last few milliseconds
-        this.timer = setImmediate(loop) as NodeJS.Timeout;
+        this.timer = setImmediate(loop) as unknown as NodeJS.Timeout;
       }
     };
     loop();

@@ -27,7 +27,8 @@ import { SysModel } from "./sim/ecus/sys-model";
 import { SesModel } from "./sim/ecus/ses-model";
 import { SebModel } from "./sim/ecus/seb-model";
 import { IpcEngineAdapter } from "./sim/ipc-adapter";
-import { defaultStats, initCanDatabase, type CanFrame } from "./types/can";
+import { defaultStats, type CanFrame } from "./types/can";
+import { initCanDatabase } from "@etrike/debug-shared";
 import { StreamHub } from "./ws/stream";
 
 type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
