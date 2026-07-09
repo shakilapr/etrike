@@ -12,6 +12,9 @@ const sendSchema = z.object({
   dlc: z.number().int().min(0).max(8),
   data: z.array(z.number().int().min(0).max(255)),
   confirm_estop: z.boolean().optional()
+}).refine(data => data.data.length === data.dlc, {
+  message: "data array length must match dlc",
+  path: ["data"]
 });
 
 const periodicSchema = z.discriminatedUnion("action", [
@@ -30,7 +33,10 @@ const periodicSchema = z.discriminatedUnion("action", [
     bus: busSchema,
     id: z.string().min(1)
   })
-]);
+]).refine(val => val.action === "stop" || val.data.length === val.dlc, {
+  message: "data array length must match dlc",
+  path: ["data"]
+});
 
 export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, bridge: HardwareBridge): void {
   app.get("/api/templates", async () => ({ templates: INJECTION_TEMPLATES }));

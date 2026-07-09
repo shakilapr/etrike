@@ -46,7 +46,7 @@ export class DynamicCanDecoder {
           sender: msg.sender || "Unknown",
           dlc: typeof msg.dlc === "number" ? msg.dlc : 8,
           period: msg.cycle_ms ? `${msg.cycle_ms}ms` : "event",
-          injectable: !!msg.receivers?.includes("Host") || true, // Rough heuristic
+          injectable: msg.sender === "Host" || msg.sender === "Any",
           fields,
           // @ts-ignore: storing byteOrder internally
           _byteOrder: byteOrder
