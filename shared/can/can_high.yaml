@@ -103,11 +103,13 @@ protocols:
         cycle_ms: 200
         comment: "Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5)."
         signals:
-          - {name: SYS_EstopActive, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1}
-          - {name: SYS_HeartbeatOk, byte: 1, bit_offset: 0, size: 8, min: 0, max: 1,
+          - {name: SYS_EstopActive,  key: estop_active,  byte: 0, bit_offset: 0, size: 8, min: 0, max: 1}
+          - {name: SYS_HeartbeatOk,  key: heartbeat_ok,  byte: 1, bit_offset: 0, size: 8, min: 0, max: 1,
              comment: "0=RT alive counter frozen >1000ms, 1=incrementing"}
-          - {name: SYS_LightState, byte: 2, bit_offset: 0, size: 4,
-             comment: "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active"}
+          - {name: SYS_LightLeft,   key: light_left,   byte: 2, bit_offset: 0, size: 1}
+          - {name: SYS_LightRight,  key: light_right,  byte: 2, bit_offset: 1, size: 1}
+          - {name: SYS_LightBrake,  key: light_brake,  byte: 2, bit_offset: 2, size: 1}
+          - {name: SYS_LightHead,   key: light_head,   byte: 2, bit_offset: 3, size: 1}
 
       # 0x120 — SYS_THROTTLE_STS (MTR→RT, forwarded low→high)
       # Historical note: SYS_ prefix is legacy — physical sender is MTR (STM32).
@@ -119,7 +121,7 @@ protocols:
         cycle_ms: 10
         comment: "Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical."
         signals:
-          - {name: SYS_ThrottleSpeed, byte: 0, bit_offset: 0, size: 16,
+          - {name: SYS_ThrottleSpeed, key: speed_mmps, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
 
@@ -132,13 +134,11 @@ protocols:
         cycle_ms: 20
         comment: "Motor feedback from STM32. Forwarded low→high by RT per gateway rules."
         signals:
-          - {name: MTR_ActualSpeed, byte: 0, bit_offset: 0, size: 16,
+          - {name: MTR_ActualSpeed, key: actual_speed_mmps, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
-          - {name: MTR_GearState, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
-             values: {0: N, 1: D, 2: S, 3: R}}
-          - {name: MTR_FaultFlags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
-             values: {1: EstopActive, 2: CmdTimeout, 4: AdcFault, 8: GearConflict, 16: StartupReady},
+          - {name: MTR_GearState, key: gear_state, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3}
+          - {name: MTR_FaultFlags, key: fault_flags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready"}
 
       # 0x210 — RT_STATE_RPT (RT→Host on high bus, also sent on low bus for SYS)
@@ -150,21 +150,17 @@ protocols:
         cycle_ms: 100
         comment: "RT state report to Host (high bus) and SYS (low bus). SYS monitors safety_state for takeover detection and RT health."
         signals:
-          - {name: RT_Mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2, unit: enum,
-             values: {0: Manual, 1: Auto, 2: ESTOP}}
-          - {name: RT_SafetyState, byte: 1, bit_offset: 0, size: 2, min: 0, max: 2, unit: enum,
-             values: {0: Normal, 1: InternalEstop, 2: Fault},
+          - {name: RT_Mode, key: mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2}
+          - {name: RT_SafetyState, key: safety_state, byte: 1, bit_offset: 0, size: 2, min: 0, max: 2,
              comment: "RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault"}
-          - {name: RT_EstopReason, byte: 1, bit_offset: 4, size: 4, min: 0, max: 7, unit: enum,
-             values: {0: None, 1: Button, 2: Heartbeat, 3: FollowingError, 4: Obstacle, 5: CanEstop, 6: BusOff, 7: Internal},
+          - {name: RT_EstopReason, key: estop_reason, byte: 1, bit_offset: 4, size: 4, min: 0, max: 7,
              comment: "Reason for ESTOP state, packed in byte 1 bits 4-7"}
-          - {name: RT_Reversing, byte: 2, bit_offset: 0, size: 8, min: 0, max: 1}
-          - {name: RT_RxOverflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_Reversing, key: reversing, byte: 2, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: RT_RxOverflow, key: rx_overflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "MCP2515 RX overflow counter — telemetry for CAN bus health monitoring"}
-          - {name: RT_TaskHealth, byte: 4, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_TaskHealth, key: task_health, byte: 4, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Bitmask of alive tasks (bits 0-3: control/dispatch/tx_low/tx_high)"}
-          - {name: RT_SteerState, byte: 5, bit_offset: 0, size: 8, min: 0, max: 5, unit: enum,
-             values: {0: BootWait, 1: ListenSync, 2: Active, 3: EstopRamp, 4: EstopHold, 5: Fault},
+          - {name: RT_SteerState, key: steer_state, byte: 5, bit_offset: 0, size: 8, min: 0, max: 5,
              comment: "Steering state machine value"}
 
       # 0x220 — RT_PID_RPT (reserved, inactive)
@@ -189,15 +185,15 @@ protocols:
         cycle_ms: 10
         comment: "Host (Jetson Orin) Autoware.Auto drive command -> RT. High bus only."
         signals:
-          - {name: HOST_DriveSpeed, byte: 0, bit_offset: 0, size: 32,
+          - {name: HOST_DriveSpeed, key: speed_mmps, byte: 0, bit_offset: 0, size: 32,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s,
              comment: "ROS 2: linear.x * 1000"}
-          - {name: HOST_YawRate, byte: 4, bit_offset: 0, size: 24,
+          - {name: HOST_YawRate, key: yaw_rate_mrad_s, byte: 4, bit_offset: 0, size: 24,
              type: signed, factor: 1, offset: 0,
              min: -3000, max: 3000, unit: mrad/s,
              comment: "ROS 2: angular.z * 1000. i24 big-endian at bytes 4-6."}
-          - {name: HOST_Gear, byte: 7, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
+          - {name: HOST_Gear, key: gear, byte: 7, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
              values: {0: N, 1: D, 2: S, 3: R}}
 
       # 0x301 — HOST_BRAKE_REQ (Host→RT on high bus)
@@ -209,7 +205,7 @@ protocols:
         cycle_ms: 0
         comment: "On demand. RT arbitrates: max(RT_computed, HOST_request) -> 0x205."
         signals:
-          - {name: HOST_BrakePressure, byte: 0, bit_offset: 0, size: 32,
+          - {name: HOST_BrakePressure, key: brake_pressure_kpa, byte: 0, bit_offset: 0, size: 32,
              type: signed, factor: 1, offset: 0,
              min: 0, max: 20000, unit: kPa}
 
@@ -222,10 +218,10 @@ protocols:
         cycle_ms: 0
         comment: "Forwarded transparently high→low by RT."
         signals:
-          - {name: HOST_LeftTurn,   byte: 0, bit_offset: 0, size: 1, min: 0, max: 1}
-          - {name: HOST_RightTurn,  byte: 0, bit_offset: 1, size: 1, min: 0, max: 1}
-          - {name: HOST_BrakeLight, byte: 0, bit_offset: 2, size: 1, min: 0, max: 1}
-          - {name: HOST_Headlight,  byte: 0, bit_offset: 3, size: 1, min: 0, max: 1}
+          - {name: HOST_LeftTurn,   key: left_turn,   byte: 0, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: HOST_RightTurn,  key: right_turn,  byte: 0, bit_offset: 1, size: 1, min: 0, max: 1}
+          - {name: HOST_BrakeLight, key: brake_light, byte: 0, bit_offset: 2, size: 1, min: 0, max: 1}
+          - {name: HOST_Headlight,  key: headlight,   byte: 0, bit_offset: 3, size: 1, min: 0, max: 1}
 
       # 0x310 — STEER_DIAG (RT→Host, steering telemetry @10Hz, v0.0.4)
       - id: 0x310
@@ -280,8 +276,9 @@ protocols:
         cycle_ms: 100
         comment: "Host sends min obstacle distance (from LiDAR/camera perception) to RT at 10 Hz. High bus only."
         signals:
-          - {name: HOST_ObstacleDistance, byte: 0, bit_offset: 0, size: 32,
+          - {name: HOST_ObstacleDistance, key: distance_mm, byte: 0, bit_offset: 0, size: 32,
              min: 0, max: 4294967295, unit: mm,
+             values: {4294967295: clear},
              comment: "UINT32_MAX = no reading / timeout"}
 
       # 0x600 — SYS_DIAG_RPT (SYS→RT, forwarded low→high)
@@ -305,14 +302,16 @@ protocols:
       # 0x7FC — HOST_HEARTBEAT (Host→RT, high bus only)
       - id: 0x7FC
         name: HOST_HEARTBEAT
-        dlc: 1
+        dlc: 2
         sender: Host
         receivers: [RT]
         cycle_ms: 500
         comment: "Not bridged, high bus only. Loss triggers controlled stop, not ESTOP."
         signals:
-          - {name: Host_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: Host_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical."}
+          - {name: Host_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}
 
       # 0x7FD — RT_HEARTBEAT (both buses, independent counters)
       # High-bus instance — independent counter from low bus.
@@ -324,7 +323,7 @@ protocols:
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the high-bus instance."
         signals:
-          - {name: RT_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "High bus timeout 1500ms->Host stops /cmd_vel"}
-          - {name: RT_HealthFlags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}

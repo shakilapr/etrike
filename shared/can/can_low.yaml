@@ -48,11 +48,13 @@ protocols:
         cycle_ms: 200
         comment: "Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5)."
         signals:
-          - {name: SYS_EstopActive, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1}
-          - {name: SYS_HeartbeatOk, byte: 1, bit_offset: 0, size: 8, min: 0, max: 1,
+          - {name: SYS_EstopActive,  key: estop_active,  byte: 0, bit_offset: 0, size: 8, min: 0, max: 1}
+          - {name: SYS_HeartbeatOk,  key: heartbeat_ok,  byte: 1, bit_offset: 0, size: 8, min: 0, max: 1,
              comment: "0=RT alive counter frozen >1000ms, 1=incrementing"}
-          - {name: SYS_LightState, byte: 2, bit_offset: 0, size: 4,
-             comment: "bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active"}
+          - {name: SYS_LightLeft,   key: light_left,   byte: 2, bit_offset: 0, size: 1}
+          - {name: SYS_LightRight,  key: light_right,  byte: 2, bit_offset: 1, size: 1}
+          - {name: SYS_LightBrake,  key: light_brake,  byte: 2, bit_offset: 2, size: 1}
+          - {name: SYS_LightHead,   key: light_head,   byte: 2, bit_offset: 3, size: 1}
 
       # 0x012 — SYS_DCDC_CMD (low bus only)
       - id: 0x012
@@ -75,8 +77,7 @@ protocols:
         cycle_ms: 0
         comment: "0=Manual, 1=Auto, 2=ESTOP. Low bus only. MTR needs mode for pass-through vs CAN control."
         signals:
-          - {name: SYS_Mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2, unit: enum,
-             values: {0: Manual, 1: Auto, 2: ESTOP}}
+          - {name: SYS_Mode, key: mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2}
 
       # 0x120 — SYS_THROTTLE_STS (MTR→RT, forwarded low→high)
       # Historical note: SYS_ prefix is legacy — physical sender is MTR (STM32).
@@ -88,7 +89,7 @@ protocols:
         cycle_ms: 10
         comment: "Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical."
         signals:
-          - {name: SYS_ThrottleSpeed, byte: 0, bit_offset: 0, size: 16,
+          - {name: SYS_ThrottleSpeed, key: speed_mmps, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
 
@@ -101,10 +102,10 @@ protocols:
         cycle_ms: 10
         comment: "MTR receives for motor actuation. SYS receives for EGAS L2 monitoring. ID 0x204 avoids collision with EPS-C 0x202."
         signals:
-          - {name: RT_MotorSpeed, byte: 0, bit_offset: 0, size: 32,
+          - {name: RT_MotorSpeed, key: motor_speed_mmps, byte: 0, bit_offset: 0, size: 32,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
-          - {name: RT_Gear, byte: 4, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
+          - {name: RT_Gear, key: gear, byte: 4, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
              values: {0: N, 1: D, 2: S, 3: R}}
 
       # 0x205 — RT_BRAKE_CMD (RT→SYS on low bus)
@@ -116,7 +117,7 @@ protocols:
         cycle_ms: 20
         comment: "RT max-select: max(rt_obstacle, host_0x301) -> SYS SEB cmd."
         signals:
-          - {name: RT_BrakePressure, byte: 0, bit_offset: 0, size: 32,
+          - {name: RT_BrakePressure, key: brake_pressure_kpa, byte: 0, bit_offset: 0, size: 32,
              type: signed, factor: 1, offset: 0,
              min: 0, max: 20000, unit: kPa}
 
@@ -129,13 +130,11 @@ protocols:
         cycle_ms: 20
         comment: "Motor feedback from STM32. Forwarded low→high by RT per gateway rules."
         signals:
-          - {name: MTR_ActualSpeed, byte: 0, bit_offset: 0, size: 16,
+          - {name: MTR_ActualSpeed, key: actual_speed_mmps, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
-          - {name: MTR_GearState, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
-             values: {0: N, 1: D, 2: S, 3: R}}
-          - {name: MTR_FaultFlags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
-             values: {1: EstopActive, 2: CmdTimeout, 4: AdcFault, 8: GearConflict, 16: StartupReady},
+          - {name: MTR_GearState, key: gear_state, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3}
+          - {name: MTR_FaultFlags, key: fault_flags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict"}
 
       # 0x302 — HOST_LIGHT_CMD (Host→RT, forwarded high→low)
@@ -147,10 +146,10 @@ protocols:
         cycle_ms: 0
         comment: "Forwarded transparently high→low by RT."
         signals:
-          - {name: HOST_LeftTurn,   byte: 0, bit_offset: 0, size: 1, min: 0, max: 1}
-          - {name: HOST_RightTurn,  byte: 0, bit_offset: 1, size: 1, min: 0, max: 1}
-          - {name: HOST_BrakeLight, byte: 0, bit_offset: 2, size: 1, min: 0, max: 1}
-          - {name: HOST_Headlight,  byte: 0, bit_offset: 3, size: 1, min: 0, max: 1}
+          - {name: HOST_LeftTurn,   key: left_turn,   byte: 0, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: HOST_RightTurn,  key: right_turn,  byte: 0, bit_offset: 1, size: 1, min: 0, max: 1}
+          - {name: HOST_BrakeLight, key: brake_light, byte: 0, bit_offset: 2, size: 1, min: 0, max: 1}
+          - {name: HOST_Headlight,  key: headlight,   byte: 0, bit_offset: 3, size: 1, min: 0, max: 1}
 
       # 0x600 — SYS_DIAG_RPT (SYS→RT, forwarded low→high)
       - id: 0x600
@@ -215,25 +214,25 @@ protocols:
         cycle_ms: 20
         comment: "steer-by-wire unit command. 50 Hz continuous. Byte 5 overlap: Speed[15:8] shares with security nibble per CSV."
         signals:
-          - {name: SES_AlignEnable,    byte: 0, bit_offset: 0, size: 1,
+          - {name: SES_AlignEnable,    key: alignment_enable, byte: 0, bit_offset: 0, size: 1,
              comment: "Angle Initial Alignment Enable. 0=disabled, 1=centering."}
-          - {name: SES_CtrlEnable,     byte: 0, bit_offset: 1, size: 1,
+          - {name: SES_CtrlEnable,     key: control_enable,   byte: 0, bit_offset: 1, size: 1,
              comment: "Direction Control Enable. 0=Disabled, 1=Enable (Angle Control)."}
-          - {name: SES_TgtStrAngle,    byte: 2, bit_offset: 0, size: 16,
+          - {name: SES_TgtStrAngle,    key: target_angle, byte: 2, bit_offset: 0, size: 16,
              type: signed, factor: 0.1, offset: -3000, min: -700, max: 700, unit: deg,
              comment: "Target Steering Angle. Negative=left. Offset=-3000 per mfr CSV."}
-          - {name: SES_TgtStrAngleSpd, byte: 4, bit_offset: 0, size: 16,
+          - {name: SES_TgtStrAngleSpd, key: target_speed, byte: 4, bit_offset: 0, size: 16,
              min: 125, max: 525, unit: deg/s,
-             comment: "Target Angle Speed. Overlaps security signals at byte 5 per CSV. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3. Bits 10-15 overlaid."}
+             comment: "Target Angle Speed. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3."}
           - {name: SES_RollCntEnable,  byte: 5, bit_offset: 0, size: 1,
-             comment: "Life Signal Enable — MUST be 1. Overlaps Speed[15:8]."}
+             comment: "Life Signal Enable — MUST be 1."}
           - {name: SES_ChecksumEnable, byte: 5, bit_offset: 1, size: 1,
              comment: "Checksum Enable — MUST be 1."}
-          - {name: SES_RollCnt,        byte: 5, bit_offset: 4, size: 4, min: 0, max: 15,
+          - {name: SES_RollCnt,        key: rolling_counter, byte: 5, bit_offset: 4, size: 4, min: 0, max: 15,
              comment: "Life Signal rolling counter. Increment every frame."}
           - {name: SES_VehSpd,         byte: 6, bit_offset: 0, size: 8, min: 0, max: 255, unit: km/h,
              comment: "Vehicle speed populated by RT."}
-          - {name: SES_Checksum,       byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: SES_Checksum,       key: checksum, byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum = XOR(bytes 0-6) ^ 0xFF."}
 
       # 0x201 — SES_STATUS (EPS_C -> RT, 100 Hz)
@@ -245,30 +244,29 @@ protocols:
         cycle_ms: 10
         comment: "steer-by-wire unit status feedback. 100 Hz. Byte 5 overlap: StrAngleSpd[15:8] / Torq share byte 5 per CSV."
         signals:
-          - {name: SES_AngleStatus,        byte: 0, bit_offset: 0, size: 1,
+          - {name: SES_AngleStatus,        key: angle_status,    byte: 0, bit_offset: 0, size: 1,
              comment: "Center Finding Status. 0=Finding, 1=Found."}
-          - {name: SES_CtrlModeStatus,      byte: 0, bit_offset: 1, size: 2, min: 0, max: 3,
+          - {name: SES_CtrlModeStatus,     byte: 0, bit_offset: 1, size: 2, min: 0, max: 3,
              comment: "Control Mode Feedback. 0=Manual, 1=Automatic."}
-          - {name: SES_ErrorStatus,         byte: 0, bit_offset: 6, size: 2, min: 0, max: 3, unit: enum,
-             values: {0: Normal, 1: L1_Warning, 2: L2_General, 3: L3_Severe},
+          - {name: SES_ErrorStatus,        key: error_status,    byte: 0, bit_offset: 6, size: 2, min: 0, max: 3,
              comment: "Error Status."}
-          - {name: SES_StrAngle,            byte: 2, bit_offset: 0, size: 16,
+          - {name: SES_StrAngle,           key: str_angle,       byte: 2, bit_offset: 0, size: 16,
              factor: 0.1, offset: -3000, min: -700, max: 700, unit: deg,
-             comment: "Steering Angle. Raw 30000->0deg, 23000->-700deg, 37000->700deg."}
-          - {name: SES_TgtStrAngleSpd_FB,   byte: 4, bit_offset: 0, size: 16,
+             comment: "Steering Angle."}
+          - {name: SES_TgtStrAngleSpd_FB,  key: tgt_angle_spd,   byte: 4, bit_offset: 0, size: 16,
              type: signed, factor: 0.5, offset: 0, min: 0, max: 1480, unit: deg/s,
-             comment: "Angle Speed feedback. 16-bit signed. Overlaps Torq at byte 5."}
+             comment: "Angle Speed feedback."}
           - {name: SES_SteeringTorq,        byte: 5, bit_offset: 0, size: 8,
              factor: 0.1, offset: -12.1, min: -12, max: 12, unit: Nm,
-             comment: "Steering Torque. Init 0x79 (121 raw = 0 Nm). Overlaps Speed[15:8]."}
+             comment: "Steering Torque."}
           - {name: SES_RollCntEnStatus,    byte: 6, bit_offset: 0, size: 1,
              comment: "Life Signal Enable Feedback."}
           - {name: SES_ChecksumEnStatus,   byte: 6, bit_offset: 1, size: 1,
              comment: "Checksum Enable Feedback."}
-          - {name: SES_RollCntStatus,      byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
+          - {name: SES_RollCntStatus,      key: rolling_counter,  byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
              comment: "Life Signal Feedback — echoes rolling counter."}
-          - {name: SES_ChecksumStatus,     byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "Checksum Feedback = XOR(bytes 0-6) ^ 0xFF."}
+          - {name: SES_ChecksumStatus,     key: checksum,         byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Checksum Feedback."}
 
       # 0x202 — SES_ErrInfo (EPS_C -> RT, 10 Hz)
       - id: 0x202
@@ -358,23 +356,21 @@ protocols:
         cycle_ms: 20
         comment: "brake-by-wire unit brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1."
         signals:
-          - {name: SEB_AlignEnable,    byte: 0, bit_offset: 0, size: 1, comment: "Calibration enable."}
-          - {name: SEB_CtrlEnable,     byte: 0, bit_offset: 1, size: 1, comment: "Active control enable."}
-          - {name: SEB_CtrlMode,       byte: 0, bit_offset: 2, size: 1, unit: enum,
-             values: {0: Stroke, 1: Pressure},
-             comment: "0=Stroke (position), 1=Pressure (hydraulic)."}
-          - {name: SEB_AutoBrake,      byte: 0, bit_offset: 3, size: 1, comment: "Auto-brake / emergency trigger."}
-          - {name: SEB_StrokeReq,      byte: 2, bit_offset: 0, size: 16,
-             factor: 0.05, offset: -30, min: -5, max: 27, unit: mm,
-             comment: "Stroke position. Full 16-bit in Stroke mode. Overlaps with PressureReq at byte 3."}
-          - {name: SEB_PressureReq,    byte: 3, bit_offset: 0, size: 8,
-             factor: 0.05, offset: 0, min: 0, max: 5, unit: MPa,
-             comment: "Pressure in Mode 1. Overlaps Stroke[15:8] — mode-dependent."}
+          - {name: SEB_AlignEnable,    key: align_enable,    byte: 0, bit_offset: 0, size: 1, comment: "Calibration enable."}
+          - {name: SEB_CtrlEnable,     key: control_enable,  byte: 0, bit_offset: 1, size: 1, comment: "Active control enable."}
+          - {name: SEB_CtrlMode,       key: control_mode,    byte: 0, bit_offset: 2, size: 1, comment: "0=Stroke (position), 1=Pressure (hydraulic)."}
+          - {name: SEB_AutoBrake,      key: auto_brake,      byte: 0, bit_offset: 3, size: 1, comment: "Auto-brake / emergency trigger."}
+          - {name: SEB_StrokeReq,      key: stroke_req,      byte: 2, bit_offset: 0, size: 16,
+             min: 0, max: 65535, unit: raw,
+             comment: "Stroke position raw counts."}
+          - {name: SEB_PressureReq,    key: pressure_req,    byte: 3, bit_offset: 0, size: 8,
+             min: 0, max: 100, unit: raw,
+             comment: "Pressure raw counts."}
           - {name: SEB_RollCntEnable,  byte: 6, bit_offset: 0, size: 1, comment: "Life Signal Validity — MUST be 1."}
           - {name: SEB_ChecksumEnable, byte: 6, bit_offset: 1, size: 1, comment: "Checksum Validity — MUST be 1."}
-          - {name: SEB_RollCnt,        byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
-             comment: "Life Signal rolling counter. Increment every frame."}
-          - {name: SEB_Checksum,       byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: SEB_RollCnt,        key: rolling_counter, byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
+             comment: "Life Signal rolling counter."}
+          - {name: SEB_Checksum,       key: checksum,        byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum = XOR(bytes 0-6) ^ 0xFF."}
 
       # 0x721 — SEB_STATUS (SEB -> SYS, 100 Hz)
@@ -386,26 +382,22 @@ protocols:
         cycle_ms: 10
         comment: "brake-by-wire unit status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1."
         signals:
-          - {name: SEB_AlignStatus,        byte: 0, bit_offset: 0, size: 1, comment: "Alignment Info Feedback. 1=aligned."}
-          - {name: SEB_CtrlEnStatus,       byte: 0, bit_offset: 1, size: 1, comment: "Control Enable Feedback."}
-          - {name: SEB_CtrlModeStatus,     byte: 0, bit_offset: 2, size: 2, min: 0, max: 3,
-             values: {0: None, 1: Stroke, 2: Pressure}, comment: "Control Mode Feedback."}
+          - {name: SEB_AlignStatus,        key: alignment_status,   byte: 0, bit_offset: 0, size: 1, comment: "Alignment Info Feedback. 1=aligned."}
+          - {name: SEB_CtrlEnStatus,       key: control_enable_sts, byte: 0, bit_offset: 1, size: 1, comment: "Control Enable Feedback."}
+          - {name: SEB_CtrlModeStatus,     key: control_mode_sts,   byte: 0, bit_offset: 2, size: 2, min: 0, max: 3, comment: "Control Mode Feedback."}
           - {name: SEB_AutoBrakeStatus,    byte: 0, bit_offset: 4, size: 1, comment: "Auto Brake Status Feedback."}
-          - {name: SEB_ErrorStatus,        byte: 0, bit_offset: 6, size: 2, min: 0, max: 3, unit: enum,
-             values: {0: Normal, 1: L1_Warning, 2: L2_General, 3: L3_Severe}, comment: "Error Status."}
-          - {name: SEB_StrokeValue,        byte: 2, bit_offset: 0, size: 16,
-             factor: 0.05, offset: -30, min: -5, max: 27, unit: mm, comment: "Stroke Value Feedback."}
-          - {name: SEB_PressureValue,      byte: 3, bit_offset: 0, size: 8,
-             factor: 0.05, offset: 0, min: 0, max: 5, unit: MPa,
-             comment: "Pressure Feedback. Overlaps Stroke[15:8] — mode-dependent."}
-          - {name: SEB_AngleValue,         byte: 5, bit_offset: 0, size: 16, type: signed,
-             factor: 0.5, offset: 0, min: -150, max: 840,
-             comment: "Angle Feedback. Overlaps security echo at byte 6."}
+          - {name: SEB_ErrorStatus,        key: error_status,       byte: 0, bit_offset: 6, size: 2, min: 0, max: 3, comment: "Error Status."}
+          - {name: SEB_StrokeValue,        key: stroke_value,       byte: 2, bit_offset: 0, size: 16,
+             min: 0, max: 65535, unit: raw, comment: "Stroke Value raw counts."}
+          - {name: SEB_PressureValue,      key: pressure_value,     byte: 3, bit_offset: 0, size: 8,
+             min: 0, max: 100, unit: raw, comment: "Pressure raw counts."}
+          - {name: SEB_AngleValue,         key: angle_value,        byte: 5, bit_offset: 0, size: 16, type: signed,
+             min: -32768, max: 32767, comment: "Angle raw counts."}
           - {name: SEB_RollCntEnStatus,   byte: 6, bit_offset: 0, size: 1, comment: "Life Signal Status Feedback."}
           - {name: SEB_ChecksumEnStatus,  byte: 6, bit_offset: 1, size: 1, comment: "Checksum Status Feedback."}
-          - {name: SEB_RollCntStatus,     byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
+          - {name: SEB_RollCntStatus,     key: rolling_counter,    byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
              comment: "Life Signal Feedback — echoes rolling counter."}
-          - {name: SEB_ChecksumStatus,    byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: SEB_ChecksumStatus,    key: checksum,           byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum Feedback."}
 
       # 0x731 — SEB_ErrInfo (SEB -> SYS, 10 Hz)
