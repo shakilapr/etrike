@@ -447,12 +447,12 @@ describe("BusDetector", () => {
     expect(detector.state).toEqual({ detected: true, bus: "high", confidence: "high", highHits: 3, lowHits: 0 });
   });
 
-  it("accumulates lowHits correctly", () => {
+  it("locks to low after 3 unique IDs", () => {
     const detector = new BusDetector();
     detector.feed("0x110"); // SYS_MODE_CMD (low only)
     detector.feed("0x012"); // SYS_DCDC_CMD (low only)
     detector.feed("0x204"); // RT_DRIVE_CMD (low only)
-    expect(detector.state).toEqual({ detected: false, bus: "low", confidence: "low", highHits: 0, lowHits: 1 });
+    expect(detector.state).toEqual({ detected: true, bus: "low", confidence: "high", highHits: 0, lowHits: 3 });
   });
 
   it("does not lock from mixed hits", () => {

@@ -203,12 +203,17 @@ export class BusDetector {
 
     const id = normalizeCanId(canId);
     
-    // Fallback detection (will be correctly overriden by specific frames)
-    if (id.startsWith("0x3")) this.highHits += 1;
-    else if (id === "0x169" || id === "0x204") this.lowHits += 1;
+    // Check if ID uniquely appears on high or low bus
+    const inHigh = CAN_MESSAGES.some((m) => m.bus === "high" && m.id === id);
+    const inLow = CAN_MESSAGES.some((m) => m.bus === "low" && m.id === id);
 
-    if (this.highHits >= 3) this.locked = "high";
-    else if (this.lowHits >= 3) this.locked = "low";
+    if (inHigh && !inLow) {
+      this.highHits += 1;
+      if (this.highHits >= 3) this.locked = "high";
+    } else if (inLow && !inHigh) {
+      this.lowHits += 1;
+      if (this.lowHits >= 3) this.locked = "low";
+    }
 
     return this.locked ?? "high";
   }
