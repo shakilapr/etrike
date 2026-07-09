@@ -12,6 +12,13 @@ import { SerialBridge } from "../../src/serial/reader";
 import { type DebugStore, DebugStoreImpl } from "../../src/db/queries";
 import { StreamHub } from "../../src/ws/stream";
 import type { WriteQueue } from "../../src/db/write-queue";
+import { initCanDatabase } from "@etrike/debug-shared";
+import fs from "fs";
+import path from "path";
+
+const highYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_high.yaml"), "utf-8");
+const lowYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_low.yaml"), "utf-8");
+initCanDatabase(highYaml, lowYaml);
 
 describe("SerialBridge", () => {
   let store: DebugStore;
