@@ -56,13 +56,13 @@ void test_heartbeat_frame_encoding(void) {
     can::Frame f;
 
     hb.tick_low(f);
-    TEST_ASSERT_EQUAL(0x7FD, f.id);
+    TEST_ASSERT_EQUAL(can::kIdRtHeartbeatLow, f.id);
     TEST_ASSERT_EQUAL(2, f.dlc);
     TEST_ASSERT_EQUAL(1, f.u8_at(0));
     TEST_ASSERT_EQUAL(0, f.u8_at(1));
 
     hb.tick_high(f);
-    TEST_ASSERT_EQUAL(0x7FD, f.id);
+    TEST_ASSERT_EQUAL(can::kIdRtHeartbeatHigh, f.id);
     TEST_ASSERT_EQUAL(2, f.dlc);
     TEST_ASSERT_EQUAL(1, f.u8_at(0));
     TEST_ASSERT_EQUAL(0, f.u8_at(1));

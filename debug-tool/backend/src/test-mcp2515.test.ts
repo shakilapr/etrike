@@ -116,12 +116,12 @@ describe("MCP2515 high-bus CAN frame decode", () => {
       expect(result.SteerDiag_Fault).toBe(true);
     });
 
-    it("max angle (raw 7000 → decoded 7000*0.1-3000 = -2300)", () => {
+    it("max left angle (raw 26000 → decoded 26000*0.1-3000 = -400)", () => {
       const result = decodeFrame("high", "0x310", [
-        0x1B, 0x58,  // raw = 7000
+        0x65, 0x90,  // raw = 26000
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       ]);
-      expect(result.SteerDiag_Angle0_1deg).toBeCloseTo(-2300, 0);
+      expect(result.SteerDiag_Angle0_1deg).toBeCloseTo(-400, 0);
     });
 
     it("DLC is 8 bytes", () => {

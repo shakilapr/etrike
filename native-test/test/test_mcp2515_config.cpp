@@ -45,12 +45,10 @@ static int bit_tq(uint8_t cnf1, uint8_t cnf2, uint8_t cnf3) {
 int main() {
     printf("\n=== MCP2515 CNF Bit-Timing Test ===\n\n");
 
-    // Access the driver's private CNF constants via the public class API?
-    // No — they're private. We import them via config.h / the source.
-    // Instead, we use copies of the values from the driver source:
-    constexpr uint8_t cnf1 = 0x00;   // BRP=0
-    constexpr uint8_t cnf2 = 0x91;   // PHSEG1=2→3TQ, PRSEG=1→2TQ
-    constexpr uint8_t cnf3 = 0x08;   // PHSEG2=1→2TQ (was 0x01 → 1TQ bug)
+    // Access the driver's CNF constants via the public class API
+    constexpr uint8_t cnf1 = rt::Mcp2515Driver::kCnf1_500k;
+    constexpr uint8_t cnf2 = rt::Mcp2515Driver::kCnf2_500k;
+    constexpr uint8_t cnf3 = rt::Mcp2515Driver::kCnf3_500k;
 
     // ── Test 1: decode CNF register fields ─────────────────────────
     printf("-- Test 1: CNF register decode --\n");

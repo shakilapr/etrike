@@ -45,7 +45,7 @@ public:
     // Returns true if `out` should be transmitted on CAN.
     bool tick(int16_t ses_angle_raw, uint8_t ses_angle_status,
               uint32_t now_ms, can::VcuSesReq& out) {
-        constexpr int kBootWaitTicks = 25;  // 50 Hz × 500 ms
+        constexpr int kBootWaitTicks = (kSteerBootWaitMs * kSteerCmdRateHz) / 1000;
         switch (m_state) {
         case SteerState::STEER_BOOT_WAIT:
             if (++m_timer >= kBootWaitTicks) {

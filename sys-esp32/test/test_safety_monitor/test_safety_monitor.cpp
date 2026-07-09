@@ -36,13 +36,16 @@ void test_safety_heartbeat_ok_with_data(void) {
     sm.init();
     g_sys_test_time_us = 0;
 
-    g_sys_test_time_us = 1000000;
+    int64_t t0 = 1000000;
+    g_sys_test_time_us = t0;
     sm.feed_heartbeat_rt(42);
 
-    g_sys_test_time_us = 1500000;
+    int64_t timeout_us = sys::kHeartbeatTimeoutMsRt * 1000LL;
+
+    g_sys_test_time_us = t0 + timeout_us / 2;
     TEST_ASSERT_TRUE(sm.heartbeat_ok());
 
-    g_sys_test_time_us = 2500000;
+    g_sys_test_time_us = t0 + timeout_us + 100000; // timeout + 100ms
     TEST_ASSERT_FALSE(sm.heartbeat_ok());
 }
 
@@ -51,13 +54,16 @@ void test_safety_frozen_counter_treated_as_missed(void) {
     sm.init();
     g_sys_test_time_us = 0;
 
-    g_sys_test_time_us = 1000000;
+    int64_t t0 = 1000000;
+    g_sys_test_time_us = t0;
     sm.feed_heartbeat_rt(42);
 
-    g_sys_test_time_us = 1200000;
+    int64_t timeout_us = sys::kHeartbeatTimeoutMsRt * 1000LL;
+
+    g_sys_test_time_us = t0 + timeout_us / 2;
     sm.feed_heartbeat_rt(42);
 
-    g_sys_test_time_us = 2500000;
+    g_sys_test_time_us = t0 + timeout_us + 100000;
     TEST_ASSERT_FALSE(sm.heartbeat_ok());
 }
 
