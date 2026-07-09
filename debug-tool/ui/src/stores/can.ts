@@ -40,10 +40,17 @@ class RingBuffer<T> {
 
   get length(): number { return this.count; }
   get latest(): T | undefined { return this.buf[(this.head - 1 + this.cap) % this.cap]; }
+
+  *[Symbol.iterator]() {
+    for (let i = 0; i < this.count; i++) {
+      const idx = this.count < this.cap ? i : (this.head + i) % this.cap;
+      yield this.buf[idx] as T;
+    }
+  }
 }
 
 const FRAME_BUFFER_SIZE = 1000;
-const frameBuffer = new RingBuffer<CanFrame>(FRAME_BUFFER_SIZE);
+export const frameBuffer = new RingBuffer<CanFrame>(FRAME_BUFFER_SIZE);
 
 // ── Stores ───────────────────────────────────────────────────────────────────
 export const latestById = writable<Record<string, CanFrame>>({});
@@ -56,13 +63,17 @@ function buildLatestById(input: CanFrame[]): Record<string, CanFrame> {
   return latest;
 }
 
+export const frameVersion = writable(0);
+
+// We keep a dummy `frames` export for compatibility, but recommend subscribing to frameVersion
+// and iterating `frameBuffer` directly to avoid allocations.
 const frameStore = writable<CanFrame[]>([]);
 export const frames = {
   subscribe: frameStore.subscribe,
   set(input: CanFrame[]): void {
     frameBuffer.clear();
     frameBuffer.pushMany(input);
-    frameStore.set(frameBuffer.toArray());
+    frameVersion.update(v => v + 1);
     
     // Also clear _latestById so we don't carry over old frames across sets
     for (const key in _latestById) delete _latestById[key];
@@ -73,14 +84,10 @@ export const frames = {
     latestById.set({ ..._latestById });
   },
   update(updater: (current: CanFrame[]) => CanFrame[]): void {
-    frameStore.update((current) => {
-      const next = updater(current);
-      for (const f of next) {
-        if (f) _latestById[`${f.bus}:${f.id}`] = f;
-      }
-      latestById.set({ ..._latestById });
-      return next;
-    });
+    // Deprecated: avoiding usage of full array updates
+    const current = frameBuffer.toArray();
+    const next = updater(current);
+    this.set(next);
   }
 };
 
@@ -106,7 +113,7 @@ export function ingestInitialFrames(input: CanFrame[]): void {
   
   const limited = input.slice(-FRAME_BUFFER_SIZE);
   limited.forEach((f) => frameBuffer.push(f));
-  frameStore.set(frameBuffer.toArray());
+  frameVersion.update(v => v + 1);
   for (const f of limited) {
     if (f) _latestById[`${f.bus}:${f.id}`] = f;
   }
@@ -117,7 +124,7 @@ const _latestById: Record<string, CanFrame> = {};
 let pendingFrames = false;
 
 function flushFrames() {
-  frameStore.set(frameBuffer.toArray());
+  frameVersion.update(v => v + 1);
   latestById.set({ ..._latestById });
   pendingFrames = false;
 }

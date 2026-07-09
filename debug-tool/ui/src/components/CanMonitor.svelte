@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { CanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
-  import { frames } from "../stores/can";
+  import { frameBuffer } from "../stores/can";
   import { monitorAllExpanded, monitorBusFilter, monitorCollapsedCategories, monitorExpandedKey, monitorFilterText } from "../stores/monitor";
 
   export let ids: CanMessageDef[] = [];
@@ -31,7 +31,7 @@
   onMount(() => {
     uiTimer = setInterval(() => {
       if (!paused) {
-        sourceFrames = $frames;
+        sourceFrames = frameBuffer.toArray();
       }
     }, 100);
   });
@@ -70,7 +70,7 @@
 
   function togglePause() {
     if (!paused) {
-      sourceFrames = $frames.slice();
+      sourceFrames = frameBuffer.toArray();
     }
     paused = !paused;
   }
