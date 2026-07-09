@@ -19,18 +19,7 @@ namespace {
 
 constexpr const char* kTag = "mcp2515";
 
-// ── CNF timing for 500 kbit/s with 8 MHz crystal ──────────────────
-// TQ = 2 * (BRP+1) / Fosc. BRP=0 → TQ=0.25µs.
-// 500 kbit/s → bit time = 2µs = 8 TQ (8 MHz crystal default).
-// Sync=1, PropSeg=2, PS1=3, PS2=2, SJW=1 → total = 8 TQ.
-// If your module has a 16 MHz crystal, build with: -D MCP2515_16MHZ
-#ifdef MCP2515_16MHZ
-constexpr uint8_t kCnf1_500k = 0x01;  // SJW=1, BRP=1 (TQ=250ns at 16 MHz)
-#else
-constexpr uint8_t kCnf1_500k = 0x00;  // SJW=1, BRP=0 (TQ=250ns at 8 MHz)
-#endif
-constexpr uint8_t kCnf2_500k = 0x91;  // BTLMODE=1, PS1=3, PropSeg=2
-constexpr uint8_t kCnf3_500k = 0x01;  // PS2=2 (PHSEG2=1 → 1+1=2 TQ, total 8 TQ)
+    // CNF timing for 500 kbit/s is defined in can_driver_mcp2515.h
 
 spi_device_handle_t g_spi_handle = nullptr;
 

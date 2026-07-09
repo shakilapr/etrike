@@ -83,6 +83,17 @@ private:
     void read_frame_burst(can::Frame& out, uint8_t base_addr);
 
     // ── MCP2515 register addresses ─────────────────────────────────
+public:
+    // CNF timing for 500 kbit/s with 8 MHz crystal
+#ifdef MCP2515_16MHZ
+    static constexpr uint8_t kCnf1_500k = 0x01;  // SJW=1, BRP=1 (TQ=250ns at 16 MHz)
+#else
+    static constexpr uint8_t kCnf1_500k = 0x00;  // SJW=1, BRP=0 (TQ=250ns at 8 MHz)
+#endif
+    static constexpr uint8_t kCnf2_500k = 0x91;  // BTLMODE=1, PS1=3, PropSeg=2
+    static constexpr uint8_t kCnf3_500k = 0x08;  // PS2=2 (PHSEG2=1 → 1+1=2 TQ, total 8 TQ)
+
+private:
     static constexpr uint8_t kCmdReset      = 0xC0;
     static constexpr uint8_t kCmdRead       = 0x03;
     static constexpr uint8_t kCmdWrite      = 0x02;
@@ -92,7 +103,6 @@ private:
     static constexpr uint8_t kCmdRtsTx1     = 0x82;
     static constexpr uint8_t kCmdRtsTx2     = 0x84;
 
-    // CNF registers for 500 kbit/s @ 8 MHz crystal
     static constexpr uint8_t kRegCnf1 = 0x2A;
     static constexpr uint8_t kRegCnf2 = 0x29;
     static constexpr uint8_t kRegCnf3 = 0x28;

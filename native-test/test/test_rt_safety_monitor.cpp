@@ -82,10 +82,12 @@ static void reset_state() {
 static void boot_steering_to_active() {
     can::VcuSesReq out;
     int64_t now_ms = 0;
-    for (int i = 0; i < 25; ++i) {
-        g_steering.tick(INT16_MIN, 0, now_ms += 20, out);
+    int ticks = (rt::kSteerBootWaitMs * rt::kSteerCmdRateHz) / 1000;
+    int dt_ms = 1000 / rt::kSteerCmdRateHz;
+    for (int i = 0; i < ticks; ++i) {
+        g_steering.tick(INT16_MIN, 0, now_ms += dt_ms, out);
     }
-    g_steering.tick(0, 1, now_ms += 20, out);
+    g_steering.tick(0, 1, now_ms += dt_ms, out);
     CHECK(g_steering.state() == rt::SteerState::STEER_ACTIVE);
 }
 
@@ -119,17 +121,19 @@ int main() {
 
     {
         reset_state();
-        g_last_sys_hb_us.store(1'000'000);
+        int64_t hb_us = 1'000'000;
+        g_last_sys_hb_us.store(hb_us);
         bool estop_pending = false;
         bool seb_takeover = false;
-        auto r = run_safety_checks(1'250'001, false, UINT32_MAX,
+        int64_t timeout_us = rt::kHeartbeatTimeoutMsSys * 1000LL;
+        auto r = run_safety_checks(hb_us + timeout_us + 1, false, UINT32_MAX,
                                    estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
 
         CHECK(r.zero_setpoints);
         CHECK(seb_takeover);
 
-        g_last_sys_hb_us.store(1'250'001);
-        r = run_safety_checks(1'260'000, false, UINT32_MAX,
+        g_last_sys_hb_us.store(hb_us + timeout_us + 1);
+        r = run_safety_checks(hb_us + timeout_us + 10'000, false, UINT32_MAX,
                               estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
 
         CHECK(!r.zero_setpoints);
@@ -138,10 +142,12 @@ int main() {
 
     {
         reset_state();
-        g_last_host_hb_us.store(1'000'000);
+        int64_t hb_us = 1'000'000;
+        g_last_host_hb_us.store(hb_us);
         bool estop_pending = false;
         bool seb_takeover = false;
-        auto r = run_safety_checks(2'600'001, false, UINT32_MAX,
+        int64_t host_timeout_us = shared::kHeartbeatTimeoutMsHost * 1000LL;
+        auto r = run_safety_checks(hb_us + host_timeout_us + 1, false, UINT32_MAX,
                                    estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
 
         CHECK(r.zero_setpoints);

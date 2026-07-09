@@ -11,8 +11,10 @@ bool g_bypass_eps_sync = false;
 
 static void boot_to_active(SteeringControl& sc, uint32_t& now_ms, int16_t sync_angle = 0) {
     can::VcuSesReq out;
-    for (int i = 0; i < 25; ++i) {
-        sc.tick(INT16_MIN, 0, now_ms += 20, out);
+    int ticks = (kSteerBootWaitMs * kSteerCmdRateHz) / 1000;
+    int dt_ms = 1000 / kSteerCmdRateHz;
+    for (int i = 0; i < ticks; ++i) {
+        sc.tick(INT16_MIN, 0, now_ms += dt_ms, out);
     }
     TEST_ASSERT_EQUAL(SteerState::STEER_LISTEN_SYNC, sc.state());
     sc.tick(sync_angle, 1, now_ms += 20, out);
@@ -29,7 +31,7 @@ void test_steering_obstacle_estop_hold_angle_clamp(void) {
     boot_to_active(sc, now_ms);
 
     int32_t angle_30deg_mdeg = 30 * 1000;
-    int32_t speed_25kmh_mmps = 6944;
+    int32_t speed_25kmh_mmps = (25 * 1000000) / 3600; // 6944 mm/s
     sc.set_target(angle_30deg_mdeg, speed_25kmh_mmps);
 
     sc.start_estop(true);
@@ -182,8 +184,10 @@ void test_steering_fault_recovery(void) {
     uint32_t now_ms = 0;
 
     can::VcuSesReq dummy;
-    for (int i = 0; i < 25; ++i)
-        sc.tick(INT16_MIN, 0, now_ms += 20, dummy);
+    int ticks = (kSteerBootWaitMs * kSteerCmdRateHz) / 1000;
+    int dt_ms = 1000 / kSteerCmdRateHz;
+    for (int i = 0; i < ticks; ++i)
+        sc.tick(INT16_MIN, 0, now_ms += dt_ms, dummy);
     TEST_ASSERT_EQUAL(SteerState::STEER_LISTEN_SYNC, sc.state());
     now_ms += 5001;
     sc.tick(INT16_MIN, 0, now_ms, dummy);
