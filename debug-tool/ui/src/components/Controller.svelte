@@ -6,6 +6,7 @@
   import { BUSES, encodePayload } from "../lib/can-decoder";
   import { heldKeys, kbBus, kbEvent } from "../stores/keyboard";
   import { workMode } from "../stores/work-mode";
+  import { telemetry } from "../stores/telemetry";
 
   // ── Tunable targets ──
   const TARGET_SPEED = 2000;       // mm/s  (W = forward, S = reverse)
@@ -57,6 +58,7 @@
   $: yawDisplay = selectedBus === "high" ? yaw : (yaw / 10).toFixed(1);
   $: heldList = [...$heldKeys].join("+") || "—";
   $: hostSimulated = $workMode.simulatedEcus.includes("host");
+  let odometer_m = 0;
 
   // ═══════════════════════════════════════════════════════════════
   // Game loop — poll heldKeys, derive control state, send CAN
@@ -254,6 +256,14 @@
       handleDiscrete(evt.bus, evt.action);
     });
 
+    const stateTimer = setInterval(async () => {
+      try {
+        const res = await fetch("/api/sim/state");
+        const json = await res.json();
+        odometer_m = json.physics?.odometer_m ?? 0;
+      } catch (err) {}
+    }, 500);
+
     // Dead-man's switch: send zero-speed immediately when tab is backgrounded.
     // Prevents the vehicle holding speed after the browser throttles setInterval.
     function onVisibilityChange() {
@@ -266,6 +276,7 @@
     return () => {
       unsubBus();
       unsubEvent();
+      clearInterval(stateTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       stopLoop();
     };
@@ -326,16 +337,23 @@
     <!-- Control state — mirrors what the loop is sending -->
     <div class="ctrl-state">
       <div class="ctrl-metric">
-        <span>Speed</span>
+        <span>Tgt Speed</span>
         <strong>{speed} <small>mm/s</small></strong>
+        <div class="actual-feedback">Act: {$telemetry.motorSpeedKmh !== null ? ($telemetry.motorSpeedKmh * 1000 / 3.6).toFixed(0) : "0"} mm/s</div>
       </div>
       <div class="ctrl-metric" class:ctrl-active={yaw !== 0}>
-        <span>{yawLabel}</span>
+        <span>Tgt {yawLabel}</span>
         <strong>{yawDisplay} <small>{yawUnit}</small></strong>
+        <div class="actual-feedback">Act: {$telemetry.steerAngleDeg !== null ? $telemetry.steerAngleDeg.toFixed(1) : "0"} °</div>
       </div>
       <div class="ctrl-metric" class:ctrl-danger={brake > 0}>
-        <span>Brake</span>
+        <span>Tgt Brake</span>
         <strong>{brake > 0 ? "ON" : "OFF"}</strong>
+        <div class="actual-feedback">Act: {$telemetry.brakePressureMpa !== null ? ($telemetry.brakePressureMpa * 1000).toFixed(0) : "0"} kPa</div>
+      </div>
+      <div class="ctrl-metric">
+        <span>Odometer</span>
+        <strong>{odometer_m.toFixed(2)} <small>m</small></strong>
       </div>
       <div class="ctrl-metric">
         <span>Keys held</span>
@@ -473,7 +491,7 @@
   .ctrl-state {
     display: grid;
     gap: 10px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     margin-bottom: 16px;
   }
 
@@ -503,6 +521,14 @@
     color: var(--muted);
     font-size: 0.72rem;
     font-weight: 400;
+  }
+
+  .actual-feedback {
+    color: var(--ok);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-top: 6px;
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   }
 
   .ctrl-active {
