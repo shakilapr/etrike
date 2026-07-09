@@ -24,7 +24,9 @@ export {
   decodeFrame,
   validateDataBytes,
   type BusDetectorState,
-  BusDetector
+  BusDetector,
+  initCanDatabase,
+  decoder
 } from "./can";
 
 export {

@@ -388,7 +388,8 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x310 STEER_DIAG", () => {
-    const result = decodeFrame("high", "0x310", [0x01, 0xC2, 0x00, 0x00, 0x14, 0x00, 0x28, 0x00]);
+    const result = decodeFrame("high", "0x310", [0x76, 0xF2, 0x00, 0x00, 0x14, 0x00, 0x28, 0x00]);
+    expect(result.SteerDiag_Angle0_1deg).toBeCloseTo(45.0, 1);
     expect(result.SteerDiag_Fault).toBe(false);
     expect(result.SteerDiag_MotorCurrent).toBeCloseTo(0.20, 2);
     expect(result.SteerDiag_ECUTemp).toBeCloseTo(4.0, 1);

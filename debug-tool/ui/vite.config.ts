@@ -19,6 +19,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      fs: {
+        allow: [
+          // Allow serving files from one level up to the project root
+          "../../.."
+        ]
+      },
       proxy: {
         "/api": `http://${apiHost}:${apiPort}`,
         "/ws": {

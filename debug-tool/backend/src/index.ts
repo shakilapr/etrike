@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, type AppConfig } from "./config";
 import { registerAppContext } from "./app-context";
@@ -27,7 +27,7 @@ import { SysModel } from "./sim/ecus/sys-model";
 import { SesModel } from "./sim/ecus/ses-model";
 import { SebModel } from "./sim/ecus/seb-model";
 import { IpcEngineAdapter } from "./sim/ipc-adapter";
-import { defaultStats, type CanFrame } from "./types/can";
+import { defaultStats, initCanDatabase, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
 type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
@@ -36,6 +36,15 @@ type FrameObservableBridge = AnyBridge & {
 };
 
 async function main(): Promise<void> {
+  try {
+    const yamlHigh = readFileSync(resolve(__dirname, "../../../shared/can/can_high.yaml"), "utf-8");
+    const yamlLow = readFileSync(resolve(__dirname, "../../../shared/can/can_low.yaml"), "utf-8");
+    initCanDatabase(yamlHigh, yamlLow);
+  } catch (err) {
+    console.error("Failed to load CAN YAML files:", err);
+    process.exit(1);
+  }
+
   let config: AppConfig;
   try {
     config = loadConfig();

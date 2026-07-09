@@ -295,11 +295,11 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x310 STEER_DIAG (high)", () => {
-    // Angle = 450 = 0x01C2 BE, Fault=0, MotorCurrent=20A=0x0014 BE, ECUTemp=40°C=0x0028 BE
-    const data = [0x01, 0xC2, 0x00, 0x00, 0x14, 0x00, 0x28, 0x00];
+    // Angle = 45.0° (30450 raw) = 0x76F2 BE, Fault=0, MotorCurrent=20A=0x0014 BE, ECUTemp=40°C=0x0028 BE
+    const data = [0x76, 0xF2, 0x00, 0x00, 0x14, 0x00, 0x28, 0x00];
     const result = decodeFrame("high", "0x310", data);
-    // SteerDiag_Angle0_1deg = readI16BE(bytes, 0) * 0.1 - 3000 = 450 * 0.1 - 3000 = 45 - 3000 = -2955
-    expect(result.SteerDiag_Angle0_1deg).toBeCloseTo(-2955, 1);
+    // SteerDiag_Angle0_1deg = readU16BE(bytes, 0) * 0.1 - 3000 = 30450 * 0.1 - 3000 = 3045 - 3000 = 45
+    expect(result.SteerDiag_Angle0_1deg).toBeCloseTo(45, 1);
     expect(result.SteerDiag_Fault).toBe(false);
     expect(result.SteerDiag_MotorCurrent).toBeCloseTo(0.20, 2); // 20 * 0.01
     expect(result.SteerDiag_ECUTemp).toBeCloseTo(4.0, 1); // 40 * 0.1
