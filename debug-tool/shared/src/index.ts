@@ -8,9 +8,6 @@ export {
   type BusStats,
   type CanStats,
   type InjectionTemplate,
-  MODE_OPTIONS,
-  MODE_CMD_OPTIONS,
-  GEAR_OPTIONS,
   CAN_MESSAGES,
   CAN_BY_BUS_ID,
   INJECTION_TEMPLATES,
@@ -41,5 +38,8 @@ export {
   writeI16BE,
   writeI16LE,
   writeI24BE,
-  writeI32BE
+  writeI32BE,
+  writeU32BE,
+  writeU16LE,
+  numberValue
 } from "./read-helpers";

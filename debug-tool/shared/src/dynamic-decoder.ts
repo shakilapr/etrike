@@ -18,16 +18,16 @@ export class DynamicCanDecoder {
         const canIdStr = typeof msg.id === "number" ? `0x${msg.id.toString(16).padStart(3, "0").toUpperCase()}` : msg.id;
 
         const fields: CanField[] = (msg.signals || []).map((sig: any) => ({
-          key: sig.name,
+          key: sig.key ?? sig.name,
           label: sig.name,
-          kind: sig.type === "enum" ? "enum" : (sig.size === 1 ? "boolean" : "number"),
+          kind: sig.unit === "enum" || sig.type === "enum" ? "enum" : (sig.size === 1 ? "boolean" : "number"),
           unit: sig.unit,
           min: sig.min,
           max: sig.max,
-          options: sig.options,
+          options: sig.values ?? sig.options,
           // Internal decoding fields not exported in CanField interface but needed here:
           _byte: sig.byte,
-          _bit_offset: sig.bit_offset,
+          _bit_offset: sig.bit_offset ?? 0,
           _size: sig.size,
           _type: sig.type || "unsigned",
           _factor: sig.factor ?? 1.0,
@@ -99,7 +99,7 @@ export class DynamicCanDecoder {
       let finalVal: number | boolean = raw * _factor + _offset;
 
       // Handle precision issues with floats
-      if (_factor % 1 !== 0 || _offset % 1 !== 0) {
+      if (typeof finalVal === "number" && (_factor % 1 !== 0 || _offset % 1 !== 0)) {
         finalVal = Math.round(finalVal * 1000000) / 1000000;
       }
 

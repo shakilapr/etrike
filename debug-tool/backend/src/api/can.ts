@@ -5,13 +5,6 @@ import { CAN_MESSAGES, defaultStats, normalizeBus, normalizeCanId, type CanFrame
 // ── Pipeline correlation ──
 interface PipelineNode {
   bus: string;
-import type { FastifyInstance } from "fastify";
-import type { DebugStore } from "../db/queries";
-import { CAN_MESSAGES, defaultStats, normalizeBus, normalizeCanId, type CanFrame } from "../types/can";
-
-// ── Pipeline correlation ──
-interface PipelineNode {
-  bus: string;
   id: string;
   name: string;
   decoded: Record<string, unknown>;

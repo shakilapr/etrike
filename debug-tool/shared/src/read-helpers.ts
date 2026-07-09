@@ -45,3 +45,21 @@ export function writeI32BE(bytes: number[], offset: number, value: number): void
   bytes[offset + 2] = (value >> 8) & 0xff;
   bytes[offset + 3] = value & 0xff;
 }
+export function writeU32BE(bytes: number[], offset: number, value: number): void {
+  const v = value >>> 0;
+  bytes[offset] = (v >>> 24) & 0xff;
+  bytes[offset + 1] = (v >>> 16) & 0xff;
+  bytes[offset + 2] = (v >>> 8) & 0xff;
+  bytes[offset + 3] = v & 0xff;
+}
+export function writeU16LE(bytes: number[], offset: number, value: number): void {
+  const v = value & 0xffff;
+  bytes[offset] = v & 0xff;
+  bytes[offset + 1] = (v >>> 8) & 0xff;
+}
+
+/** Coerce any value to a finite number; returns 0 for NaN / Infinity / null / undefined. */
+export function numberValue(v: unknown): number {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
+}

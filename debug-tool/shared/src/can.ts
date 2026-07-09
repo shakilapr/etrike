@@ -174,9 +174,10 @@ export function validateDataBytes(data: unknown, dlc: number): number[] {
   return normalized.slice(0, dlc);
 }
 
-function normalizeBytes(input: unknown): number[] {
+function normalizeBytes(input: any): number[] {
   if (Array.isArray(input)) return input.map((v) => Number(v) || 0);
-  if (input instanceof Uint8Array || Buffer.isBuffer(input)) return Array.from(input);
+  if (input instanceof Uint8Array || (typeof globalThis !== 'undefined' && (globalThis as any).Buffer?.isBuffer?.(input))) return Array.from(input);
+  if (input && typeof input === 'object' && 'length' in input && typeof input[0] === 'number') return Array.from(input);
   return [];
 }
 

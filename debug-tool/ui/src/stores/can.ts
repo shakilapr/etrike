@@ -65,26 +65,22 @@ function buildLatestById(input: CanFrame[]): Record<string, CanFrame> {
 
 export const frameVersion = writable(0);
 
-// We keep a dummy `frames` export for compatibility, but recommend subscribing to frameVersion
-// and iterating `frameBuffer` directly to avoid allocations.
+// frameStore is the backing Svelte writable – kept in sync so that get(frames) works.
 const frameStore = writable<CanFrame[]>([]);
 export const frames = {
   subscribe: frameStore.subscribe,
   set(input: CanFrame[]): void {
     frameBuffer.clear();
     frameBuffer.pushMany(input);
-    frameVersion.update(v => v + 1);
-    
-    // Also clear _latestById so we don't carry over old frames across sets
     for (const key in _latestById) delete _latestById[key];
-    
     for (const f of input) {
       if (f) _latestById[`${f.bus}:${f.id}`] = f;
     }
+    frameStore.set(frameBuffer.toArray());
+    frameVersion.update(v => v + 1);
     latestById.set({ ..._latestById });
   },
   update(updater: (current: CanFrame[]) => CanFrame[]): void {
-    // Deprecated: avoiding usage of full array updates
     const current = frameBuffer.toArray();
     const next = updater(current);
     this.set(next);
@@ -107,16 +103,15 @@ export const wsConnected = writable(false);
 export const commandAcks = writable<Record<string, unknown>[]>([]);
 
 export function ingestInitialFrames(input: CanFrame[]): void {
-  // Reset the buffer on initial load
   frameBuffer.clear();
   for (const key in _latestById) delete _latestById[key];
-  
   const limited = input.slice(-FRAME_BUFFER_SIZE);
-  limited.forEach((f) => frameBuffer.push(f));
-  frameVersion.update(v => v + 1);
   for (const f of limited) {
+    frameBuffer.push(f);
     if (f) _latestById[`${f.bus}:${f.id}`] = f;
   }
+  frameStore.set(frameBuffer.toArray());
+  frameVersion.update(v => v + 1);
   latestById.set({ ..._latestById });
 }
 
@@ -124,6 +119,7 @@ const _latestById: Record<string, CanFrame> = {};
 let pendingFrames = false;
 
 function flushFrames() {
+  frameStore.set(frameBuffer.toArray());
   frameVersion.update(v => v + 1);
   latestById.set({ ..._latestById });
   pendingFrames = false;
@@ -135,7 +131,6 @@ export function ingestMessage(message: { type: string; payload: unknown }): void
     if (!frame) return;
     frameBuffer.push(frame);
     _latestById[`${frame.bus}:${frame.id}`] = frame;
-    
     if (!pendingFrames) {
       pendingFrames = true;
       requestAnimationFrame(flushFrames);
@@ -147,7 +142,6 @@ export function ingestMessage(message: { type: string; payload: unknown }): void
     for (const f of batch) {
       if (f) _latestById[`${f.bus}:${f.id}`] = f;
     }
-    
     if (!pendingFrames) {
       pendingFrames = true;
       requestAnimationFrame(flushFrames);
