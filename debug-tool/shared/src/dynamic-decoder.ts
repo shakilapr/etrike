@@ -17,29 +17,34 @@ export class DynamicCanDecoder {
       for (const msg of proto.messages || []) {
         const canIdStr = typeof msg.id === "number" ? `0x${msg.id.toString(16).padStart(3, "0").toUpperCase()}` : msg.id;
 
-        const fields: CanField[] = (msg.signals || []).map((sig: any) => ({
-          key: sig.key ?? sig.name,
-          label: sig.name,
-          kind: sig.unit === "enum" || sig.type === "enum" ? "enum" : (sig.size === 1 ? "boolean" : "number"),
-          unit: sig.unit,
-          min: sig.min,
-          max: sig.max,
-          options: sig.values ?? sig.options,
-          // Internal decoding fields not exported in CanField interface but needed here:
-          _byte: sig.byte,
-          _bit_offset: sig.bit_offset ?? 0,
-          _size: sig.size,
-          _type: sig.type || "unsigned",
-          _factor: sig.factor ?? 1.0,
-          _offset: sig.offset ?? 0.0,
-        }));
+        const fields: CanField[] = (msg.signals || []).map((sig: any) => {
+          const hasEnum = (sig.unit === "enum") || (sig.values && Object.keys(sig.values).length > 0);
+          const isBoolean = !hasEnum && (sig.size === 1 || (sig.min === 0 && sig.max === 1 && !sig.factor && !sig.offset));
+          const kind: "boolean" | "enum" | "number" = hasEnum ? "enum" : (isBoolean ? "boolean" : "number");
+          return {
+            key: sig.key ?? sig.name,
+            label: sig.name,
+            kind,
+            unit: sig.unit,
+            min: sig.min,
+            max: sig.max,
+            options: sig.values ?? sig.options,
+            // Internal decoding fields not exported in CanField interface but needed here:
+            _byte: sig.byte,
+            _bit_offset: sig.bit_offset ?? 0,
+            _size: sig.size,
+            _type: sig.type || "unsigned",
+            _factor: sig.factor ?? 1.0,
+            _offset: sig.offset ?? 0.0,
+          };
+        });
 
         this.messages.set(`${bus}:${canIdStr}`, {
           bus,
           id: canIdStr,
           name: msg.name,
           sender: msg.sender || "Unknown",
-          dlc: msg.dlc || 8,
+          dlc: typeof msg.dlc === "number" ? msg.dlc : 8,
           period: msg.cycle_ms ? `${msg.cycle_ms}ms` : "event",
           injectable: !!msg.receivers?.includes("Host") || true, // Rough heuristic
           fields,
@@ -60,7 +65,7 @@ export class DynamicCanDecoder {
 
   decode(bus: string, id: string, data: number[]): Record<string, unknown> {
     const def = this.getDef(bus, id);
-    if (!def) return {};
+    if (!def) return { bus }; // unknown message: return bus context
 
     const buf = new Uint8Array(8);
     for (let i = 0; i < Math.min(data.length, 8); i++) buf[i] = data[i];
@@ -103,11 +108,19 @@ export class DynamicCanDecoder {
         finalVal = Math.round(finalVal * 1000000) / 1000000;
       }
 
-      if (_size === 1 || f.kind === "boolean") {
+      if (f.kind === "boolean") {
         finalVal = Boolean(raw);
       }
 
       decoded[key] = finalVal;
+
+      // Emit enum label as {key}_name if this field has options
+      if (f.options && typeof finalVal === "number") {
+        const label = f.options[raw] ?? f.options[String(raw)];
+        if (label !== undefined) {
+          decoded[`${key}_name`] = String(label);
+        }
+      }
     }
 
     return decoded;
