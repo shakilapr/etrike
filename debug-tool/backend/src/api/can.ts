@@ -5,6 +5,13 @@ import { CAN_MESSAGES, defaultStats, normalizeBus, normalizeCanId, type CanFrame
 // ── Pipeline correlation ──
 interface PipelineNode {
   bus: string;
+import type { FastifyInstance } from "fastify";
+import type { DebugStore } from "../db/queries";
+import { CAN_MESSAGES, defaultStats, normalizeBus, normalizeCanId, type CanFrame } from "../types/can";
+
+// ── Pipeline correlation ──
+interface PipelineNode {
+  bus: string;
   id: string;
   name: string;
   decoded: Record<string, unknown>;
@@ -15,6 +22,9 @@ interface PipelineChain {
   trigger: PipelineNode;
   steps: PipelineNode[];
 }
+
+let cachedChains: PipelineChain[] | null = null;
+let cacheInvalidated = false;
 
 const CORRELATION_WINDOW_MS = 200;
 const SPEED_MATCH_TOLERANCE = 50;
@@ -147,7 +157,14 @@ export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
   return chains.slice(-10);
 }
 
-export function registerCanRoutes(app: FastifyInstance, store: DebugStore): void {
+import type { WriteQueue } from "../db/write-queue";
+
+export function registerCanRoutes(app: FastifyInstance, store: DebugStore, writeQueue: WriteQueue): void {
+  // Setup cache invalidation on write flush
+  writeQueue.onFlush = () => {
+    cacheInvalidated = true;
+  };
+
   app.get("/api/can/ids", async () => ({ ids: CAN_MESSAGES }));
 
   app.get<{
@@ -175,9 +192,15 @@ export function registerCanRoutes(app: FastifyInstance, store: DebugStore): void
   }));
 
   app.get("/api/can/pipeline", async () => {
+    if (cachedChains && !cacheInvalidated) {
+      return { chains: cachedChains };
+    }
+    
     const recent = await store.queryFrames({ limit: 2000 });
-    const chains = correlatePipeline(recent);
-    return { chains };
+    cachedChains = correlatePipeline(recent);
+    cacheInvalidated = false;
+    
+    return { chains: cachedChains };
   });
 
   app.delete("/api/can/frames", async () => {

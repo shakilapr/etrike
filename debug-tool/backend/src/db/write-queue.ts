@@ -7,6 +7,7 @@ export class WriteQueue {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isDraining = false;
   public router: { resolve(frame: CanFrame, source: FrameSource): CanFrame | null } | null = null;
+  public onFlush?: () => void;
 
   constructor(
     private readonly store: DebugStore,
@@ -39,6 +40,7 @@ export class WriteQueue {
     const batch = this.queue;
     this.queue = [];
     this.store.insertFrames(batch);
+    if (this.onFlush) this.onFlush();
   }
 
   async drain(): Promise<void> {

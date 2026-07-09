@@ -139,7 +139,7 @@ async function main(): Promise<void> {
 
   // ── Route registration ────────────────────────────────────────────────
   registerSimRoutes(app, store, hub);
-  registerCanRoutes(app, store);
+  registerCanRoutes(app, store, writeQueue);
   registerRecordingRoutes(app, store);
   registerSystemRoutes(app, store, bridgeProxy, hub, startedAt, patchedShutdown);
   registerCommandRoutes(app, store, bridgeProxy);
