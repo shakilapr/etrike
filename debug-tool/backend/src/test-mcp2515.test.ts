@@ -10,7 +10,13 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { decodeFrame, CAN_MESSAGES, BUSES } from "./types/can.js";
+import { decodeFrame, CAN_MESSAGES, BUSES, initCanDatabase } from "./types/can.js";
+import fs from "fs";
+import path from "path";
+
+const highYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_high.yaml"), "utf-8");
+const lowYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_low.yaml"), "utf-8");
+initCanDatabase(highYaml, lowYaml);
 
 // ── Helper: get message definition by bus + hex ID ──────────────────
 function findMsg(bus: "high" | "low", id: string) {
@@ -44,9 +50,9 @@ describe("MCP2515 high-bus CAN frame decode", () => {
       expect(msg?.sender).toContain("RT");
     });
 
-    it("period is 2 Hz (500ms)", () => {
+    it("period is 500ms", () => {
       const msg = findMsg("high", "0x7FD");
-      expect(msg?.period).toContain("2 Hz");
+      expect(msg?.period).toContain("500ms");
     });
   });
 

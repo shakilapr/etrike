@@ -3,6 +3,13 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { registerCommandRoutes } from "../../src/api/cmd";
 import { type DebugStore, DebugStoreImpl } from "../../src/db/queries";
 import type { HardwareBridge } from "../../src/bridge/types";
+import { initCanDatabase } from "@etrike/debug-shared";
+import fs from "fs";
+import path from "path";
+
+const highYaml = fs.readFileSync(path.resolve(__dirname, "../../../../shared/can/can_high.yaml"), "utf-8");
+const lowYaml = fs.readFileSync(path.resolve(__dirname, "../../../../shared/can/can_low.yaml"), "utf-8");
+initCanDatabase(highYaml, lowYaml);
 
 describe("POST /api/cmd/send", () => {
   let app: FastifyInstance;
@@ -46,7 +53,7 @@ describe("POST /api/cmd/send", () => {
       payload: { bus: "high", id: "0x300", dlc: 8, data: [1, 2, 3] } // dlc 8, but array has 3 elements
     });
     expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.payload).error).toMatch(/length must match dlc/i);
+    expect(JSON.stringify(JSON.parse(res.payload).error)).toMatch(/length must match dlc/i);
   });
 
   it("400 when data byte > 255", async () => {
