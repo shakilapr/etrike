@@ -70,7 +70,7 @@
             <div class="pipe-id">{chain.trigger.id}</div>
             <div class="pipe-name">{chain.trigger.name}</div>
             <div class="pipe-val">{nodeLabel(chain.trigger)}</div>
-            <div class="pipe-ts">{frameTime({ ts: 0, bus: "high", id: "", name: "", dlc: 0, data: [], decoded: {}, ts_real: chain.trigger.ts })}</div>
+            <div class="pipe-ts">{frameTime({ ts: chain.trigger.ts })}</div>
           </div>
 
           {#each chain.steps as step, si (`step-${ci}-${si}`)}
@@ -84,7 +84,7 @@
               <div class="pipe-id">{step.id}</div>
               <div class="pipe-name">{step.name}</div>
               <div class="pipe-val">{nodeLabel(step)}</div>
-              <div class="pipe-ts">{frameTime({ ts: 0, bus: "low", id: "", name: "", dlc: 0, data: [], decoded: {}, ts_real: step.ts })}</div>
+              <div class="pipe-ts">{frameTime({ ts: step.ts })}</div>
             </div>
           {/each}
         </div>
