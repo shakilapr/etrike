@@ -1,3 +1,4 @@
+import { ID_HOST_DRIVE_CMD, ID_SAFETY_ESTOP, ID_HOST_HEARTBEAT, ID_VCU_SES_REQ } from "@etrike/debug-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BUSES,
@@ -33,13 +34,13 @@ afterEach(() => {
 
 describe("normalizeCanId", () => {
   it("formats numeric hex strings", () => {
-    expect(normalizeCanId("0x300")).toBe("0x300");
-    expect(normalizeCanId("300")).toBe("0x300");
-    expect(normalizeCanId("0x001")).toBe("0x001");
+    expect(normalizeCanId(ID_HOST_DRIVE_CMD)).toBe(ID_HOST_DRIVE_CMD);
+    expect(normalizeCanId("300")).toBe(ID_HOST_DRIVE_CMD);
+    expect(normalizeCanId(ID_SAFETY_ESTOP)).toBe(ID_SAFETY_ESTOP);
   });
 
   it("handles lowercase input", () => {
-    expect(normalizeCanId("0x7fc")).toBe("0x7FC");
+    expect(normalizeCanId(ID_HOST_HEARTBEAT)).toBe(ID_HOST_HEARTBEAT);
   });
 
   it("handles non-hex pass-through", () => {
@@ -168,22 +169,21 @@ describe("writeU32BE", () => {
 // ── CAN_MESSAGES catalog ──
 
 describe("CAN_MESSAGES catalog", () => {
-  it("has 37 messages (15 high + 22 low)", () => {
-    expect(CAN_MESSAGES).toHaveLength(37);
+  it("has 41 messages (17 high + 24 low)", () => {
+    expect(CAN_MESSAGES).toHaveLength(41);
   });
 
   it("every message has a valid bus field", () => {
-    for (const msg of CAN_MESSAGES) {
-      expect(BUSES).toContain(msg.bus);
-    }
+    const buses = CAN_MESSAGES.map((m) => m.bus);
+    expect(buses.every((b) => b === "high" || b === "low")).toBe(true);
   });
 
-  it("high bus has 15 messages", () => {
-    expect(CAN_MESSAGES.filter((m) => m.bus === "high")).toHaveLength(15);
+  it("high bus has 17 messages", () => {
+    expect(CAN_MESSAGES.filter((m) => m.bus === "high")).toHaveLength(17);
   });
 
-  it("low bus has 22 messages", () => {
-    expect(CAN_MESSAGES.filter((m) => m.bus === "low")).toHaveLength(22);
+  it("low bus has 24 messages", () => {
+    expect(CAN_MESSAGES.filter((m) => m.bus === "low")).toHaveLength(24);
   });
 
   it("has no duplicate (bus, id) pairs", () => {
@@ -216,14 +216,14 @@ describe("CAN_MESSAGES catalog", () => {
 
 describe("findMessage", () => {
   it("finds a message by bus + id", () => {
-    const msg = findMessage("high", "0x300");
+    const msg = findMessage("high", ID_HOST_DRIVE_CMD);
     expect(msg).toBeDefined();
     expect(msg!.name).toBe("HOST_DRIVE_CMD");
     expect(msg!.bus).toBe("high");
   });
 
   it("does NOT fall back to id-only search across buses", () => {
-    const msg = findMessage("low", "0x300");
+    const msg = findMessage("low", ID_HOST_DRIVE_CMD);
     expect(msg).toBeUndefined();
   });
 
@@ -236,7 +236,7 @@ describe("findMessage", () => {
 
 describe("getMessageName", () => {
   it("returns the name for known IDs", () => {
-    expect(getMessageName("low", "0x169")).toBe("VCU_SES_REQ");
+    expect(getMessageName("low", ID_VCU_SES_REQ)).toBe("VCU_SES_REQ");
   });
 
   it("returns UNKNOWN_ prefix for unknown IDs", () => {
@@ -282,13 +282,13 @@ describe("formatDecoded", () => {
 
 describe("frameTime", () => {
   it("formats a valid timestamp", () => {
-    const frame = { ts: 1700000000, bus: "high" as const, id: "0x300", name: "TEST", dlc: 8, data: [], decoded: {}, ts_real: 1700000000 };
+    const frame = { ts: 1700000000, bus: "high" as const, id: ID_HOST_DRIVE_CMD, name: "TEST", dlc: 8, data: [], decoded: {}, ts_real: 1700000000 };
     const time = frameTime(frame);
     expect(time).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/);
   });
 
   it("formats millisecond timestamps", () => {
-    const frame = { ts: 1700000000000, bus: "high" as const, id: "0x300", name: "TEST", dlc: 8, data: [], decoded: {} };
+    const frame = { ts: 1700000000000, bus: "high" as const, id: ID_HOST_DRIVE_CMD, name: "TEST", dlc: 8, data: [], decoded: {} };
     const time = frameTime(frame);
     expect(time).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/);
   });

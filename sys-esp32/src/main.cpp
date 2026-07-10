@@ -200,6 +200,23 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
         }
+        case can::kIdHmiModeReq: {   // 0x111 — HMI mode heartbeat (1Hz)
+            if (g_mode_mgr.parse_hmi_mode(fr.u8_at(0))) {
+                // If mode actually changed due to this request, log it.
+                // The main 10Hz control loop will naturally pick up the new mode 
+                // and broadcast 0x110 SYS_MODE_CMD on its next tick.
+                ESP_LOGI(TAG, "HMI changed mode to %s", g_mode_mgr.name());
+            }
+            break;
+        }
+        case can::kIdHmiPwrReq: {    // 0x112 — HMI power heartbeat (1Hz)
+#if ENABLE_CAN_HMI
+            // Phase 0/1: Just log it for now. Ignition control will be wired later
+            // to a specific GPIO or power manager task.
+            // uint8_t req_start = fr.u8_at(0);
+#endif
+            break;
+        }
         case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
             auto fbk = can::MtrMotorFbk::from_frame(fr);
             g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);

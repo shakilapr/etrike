@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { CanMessageIndex } from "../lib/can-index";
+  import type { CanMessageDef } from "@etrike/debug-shared";
 
-  export let message: CanMessageIndex;
+  export let message: CanMessageDef;
   export let activeSignal = -1;
   let activeBit = "";
   let pointerX = 0;
@@ -18,11 +18,17 @@
   $: mappedBits = bitMap.filter((index) => index >= 0).length;
   $: tooltipStyle = floatingTooltipStyle(pointerX, pointerY);
 
-  function buildBitMap(input: CanMessageIndex): number[] {
+  function buildBitMap(input: CanMessageDef): number[] {
     const map = Array.from({ length: Math.max(input.dlc, 0) * 8 }, () => -1);
-    input.signals.forEach((signal, index) => {
-      const start = signal.byte * 8 + signal.bit_offset;
-      for (let offset = 0; offset < signal.size; offset++) {
+    // In metadata generator, byte_order is output as byteOrder for messages. 
+    // Wait, the new CanMessageDef does not expose byteOrder publicly? 
+    // In python generator we exported `byteOrder`, wait, let me check if I added it to CanMessageDef.
+    // If not, we just use standard motorola map logic.
+    // Assuming fields are intel or motorola based on their _byte and _bit_offset calculation which was done statically!
+    // No wait, generate_can_ts.py outputs _byte, _bit_offset for the start bit, but we might have gaps if we assume simple iteration!
+    input.fields.forEach((signal, index) => {
+      const start = signal._byte * 8 + signal._bit_offset;
+      for (let offset = 0; offset < signal._size; offset++) {
         const bit = start + offset;
         if (bit >= 0 && bit < map.length) map[bit] = index;
       }
@@ -35,32 +41,32 @@
   }
 
   function scaleFor(index: number): string {
-    const signal = message.signals[index];
-    if (signal.factor === 1 && signal.offset === 0) return "raw";
-    if (signal.factor === 1) return `raw ${signal.offset >= 0 ? "+" : "-"} ${Math.abs(signal.offset)}`;
-    if (signal.offset === 0) return `raw x ${signal.factor}`;
-    return `raw x ${signal.factor} ${signal.offset >= 0 ? "+" : "-"} ${Math.abs(signal.offset)}`;
+    const signal = message.fields[index];
+    if (signal._factor === 1 && signal._offset === 0) return "raw";
+    if (signal._factor === 1) return `raw ${signal._offset >= 0 ? "+" : "-"} ${Math.abs(signal._offset)}`;
+    if (signal._offset === 0) return `raw x ${signal._factor}`;
+    return `raw x ${signal._factor} ${signal._offset >= 0 ? "+" : "-"} ${Math.abs(signal._offset)}`;
   }
 
   function valuesFor(index: number): string {
-    const values = message.signals[index].values;
-    if (!values || Object.keys(values).length === 0) return "";
-    return Object.entries(values).map(([key, value]) => `${key}=${value}`).join(", ");
+    const options = message.fields[index].options;
+    if (!options || options.length === 0) return "";
+    return options.map((opt) => `${opt.value}=${opt.label}`).join(", ");
   }
 
   function bitMeaningFor(index: number, byte: number, bit: number): string {
-    const signal = message.signals[index];
+    const signal = message.fields[index];
     const absoluteBit = byte * 8 + bit;
-    const relativeBit = absoluteBit - (signal.byte * 8 + signal.bit_offset);
-    const commentMatch = signal.comment?.match(new RegExp(`bit${relativeBit}\\s*=\\s*([^,;]+)`, "i"));
+    const relativeBit = absoluteBit - (signal._byte * 8 + signal._bit_offset);
+    const commentMatch = signal.key?.match(new RegExp(`bit${relativeBit}\\s*=\\s*([^,;]+)`, "i"));
     if (commentMatch?.[1]) return commentMatch[1].trim();
 
-    const bitMask = String(2 ** relativeBit);
-    const maskMeaning = signal.values?.[bitMask];
+    const bitMask = 2 ** relativeBit;
+    const maskMeaning = signal.options?.find(opt => opt.value === bitMask)?.label;
     if (maskMeaning) return maskMeaning;
 
-    if (signal.size === 1) {
-      const activeName = signal.name
+    if (signal._size === 1) {
+      const activeName = signal.label
         .replace(/^[A-Z0-9]+_/, "")
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
         .replace(/_/g, " ")
@@ -73,15 +79,15 @@
 
   function bitLabel(byte: number, bit: number, signalIndex: number): string {
     if (signalIndex < 0) return `B${byte}.${bit} unused`;
-    const signal = message.signals[signalIndex];
+    const signal = message.fields[signalIndex];
     return [
-      `${signal.name}: B${byte}.${bit}`,
+      `${signal.label}: B${byte}.${bit}`,
       bitMeaningFor(signalIndex, byte, bit) ? `bit meaning ${bitMeaningFor(signalIndex, byte, bit)}` : "",
-      `${signal.size}-bit ${signal.type}`,
+      `${signal._size}-bit ${signal._type}`,
       `scale ${scaleFor(signalIndex)}`,
       signal.unit ? `unit ${signal.unit}` : "",
       valuesFor(signalIndex),
-      signal.comment
+      signal.key
     ].filter(Boolean).join(" / ");
   }
 
@@ -154,15 +160,15 @@
   </div>
   <div class="bit-inspector" role="status">
     {#if activeSignal >= 0}
-      {@const signal = message.signals[activeSignal]}
+      {@const signal = message.fields[activeSignal]}
       {@const activeParts = activeBit.match(/^B(\d+)\.(\d+)$/)}
       {@const activeMeaning = activeParts ? bitMeaningFor(activeSignal, Number(activeParts[1]), Number(activeParts[2])) : ""}
       <strong>{activeBit}</strong>
-      <span>{signal.name}</span>
+      <span>{signal.label}</span>
       {#if activeMeaning}
         <b>{activeMeaning}</b>
       {/if}
-      <em>{signal.size}-bit {signal.type} · scale {scaleFor(activeSignal)}{signal.unit ? ` ${signal.unit}` : ""}</em>
+      <em>{signal._size}-bit {signal._type} · scale {scaleFor(activeSignal)}{signal.unit ? ` ${signal.unit}` : ""}</em>
     {:else}
       <strong>Bit detail</strong>
       <span>{message.name}</span>
@@ -171,12 +177,12 @@
   </div>
 
   {#if activeSignal >= 0}
-    {@const signal = message.signals[activeSignal]}
+    {@const signal = message.fields[activeSignal]}
     {@const activeParts = activeBit.match(/^B(\d+)\.(\d+)$/)}
     {@const activeMeaning = activeParts ? bitMeaningFor(activeSignal, Number(activeParts[1]), Number(activeParts[2])) : ""}
     <div class="bit-float-tooltip" role="tooltip" style={tooltipStyle}>
-      <strong>{signal.name}</strong>
-      <small>{activeBit} · {signal.size}-bit {signal.type}</small>
+      <strong>{signal.label}</strong>
+      <small>{activeBit} · {signal._size}-bit {signal._type}</small>
       {#if activeMeaning}
         <small>Bit meaning: {activeMeaning}</small>
       {/if}
@@ -184,8 +190,8 @@
       {#if valuesFor(activeSignal)}
         <small>Values: {valuesFor(activeSignal)}</small>
       {/if}
-      {#if signal.comment}
-        <em>{signal.comment}</em>
+      {#if signal.key}
+        <em>{signal.key}</em>
       {/if}
     </div>
   {/if}

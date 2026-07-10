@@ -1,3 +1,4 @@
+import { ID_RT_HEARTBEAT, ID_SYS_SAFETY_STS, ID_SYS_THROTTLE_STS, ID_SES_STATUS, ID_HOST_BRAKE_REQ, ID_MTR_MOTOR_FBK, ID_RT_STATE_RPT } from "@etrike/debug-shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 import { frames } from "./can";
@@ -37,28 +38,28 @@ beforeEach(() => {
 describe("ecuPresence", () => {
   it("reports recent ECU frames as present", () => {
     const now = get(telemetryNow);
-    frames.set([makeFrame(now - 1, "high", "0x7FD")]);
+    frames.set([makeFrame(now - 1, "high", ID_RT_HEARTBEAT)]);
 
     expect(get(ecuPresence).rt).toBe(true);
   });
 
   it("reports SYS frames on the high bus as present", () => {
     const now = get(telemetryNow);
-    frames.set([makeFrame(now - 1, "high", "0x011")]);
+    frames.set([makeFrame(now - 1, "high", ID_SYS_SAFETY_STS)]);
 
     expect(get(ecuPresence).sys).toBe(true);
   });
 
   it("reports stale ECU frames as absent", () => {
     const now = get(telemetryNow);
-    frames.set([makeFrame(now - 4, "high", "0x7FD")]);
+    frames.set([makeFrame(now - 4, "high", ID_RT_HEARTBEAT)]);
 
     expect(get(ecuPresence).rt).toBe(false);
   });
 
   it("normalizes millisecond WebSocket timestamps for staleness", () => {
     const now = get(telemetryNow) * 1000;
-    frames.set([makeFrame(now - 4_000, "high", "0x7FD")]);
+    frames.set([makeFrame(now - 4_000, "high", ID_RT_HEARTBEAT)]);
 
     expect(get(ecuPresence).rt).toBe(false);
   });
@@ -68,11 +69,11 @@ describe("telemetry staleness", () => {
   it("reports recent actual values", () => {
     const now = get(telemetryNow);
     frames.set([
-      makeDecodedFrame(now - 1, "high", "0x120", { speed_mmps: 2000 }),
-      makeDecodedFrame(now - 1, "low", "0x201", { str_angle: 125 }),
-      makeDecodedFrame(now - 1, "high", "0x301", { brake_pressure_kpa: 5000 }),
-      makeDecodedFrame(now - 1, "high", "0x206", { gear_state: 1 }),
-      makeDecodedFrame(now - 1, "high", "0x210", { mode: 1, safety_state: 0 }),
+      makeDecodedFrame(now - 1, "high", ID_SYS_THROTTLE_STS, { speed_mmps: 2000 }),
+      makeDecodedFrame(now - 1, "low", ID_SES_STATUS, { str_angle: 125 }),
+      makeDecodedFrame(now - 1, "high", ID_HOST_BRAKE_REQ, { brake_pressure_kpa: 5000 }),
+      makeDecodedFrame(now - 1, "high", ID_MTR_MOTOR_FBK, { gear_state: 1 }),
+      makeDecodedFrame(now - 1, "high", ID_RT_STATE_RPT, { mode: 1, safety_state: 0 }),
     ]);
 
     expect(get(telemetry)).toMatchObject({
@@ -88,11 +89,11 @@ describe("telemetry staleness", () => {
   it("hides stale actual values instead of showing old data", () => {
     const now = get(telemetryNow);
     frames.set([
-      makeDecodedFrame(now - 4, "high", "0x120", { speed_mmps: 2000 }),
-      makeDecodedFrame(now - 4, "low", "0x201", { str_angle: 125 }),
-      makeDecodedFrame(now - 4, "high", "0x301", { brake_pressure_kpa: 5000 }),
-      makeDecodedFrame(now - 4, "high", "0x206", { gear_state: 1 }),
-      makeDecodedFrame(now - 4, "high", "0x210", { mode: 1, safety_state: 0 }),
+      makeDecodedFrame(now - 4, "high", ID_SYS_THROTTLE_STS, { speed_mmps: 2000 }),
+      makeDecodedFrame(now - 4, "low", ID_SES_STATUS, { str_angle: 125 }),
+      makeDecodedFrame(now - 4, "high", ID_HOST_BRAKE_REQ, { brake_pressure_kpa: 5000 }),
+      makeDecodedFrame(now - 4, "high", ID_MTR_MOTOR_FBK, { gear_state: 1 }),
+      makeDecodedFrame(now - 4, "high", ID_RT_STATE_RPT, { mode: 1, safety_state: 0 }),
     ]);
 
     expect(get(telemetry)).toMatchObject({

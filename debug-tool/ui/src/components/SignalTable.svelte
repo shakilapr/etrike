@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { CanMessageIndex, CanSignalDef } from "../lib/can-index";
+  import type { CanMessageDef, CanField } from "@etrike/debug-shared";
 
-  export let message: CanMessageIndex;
+  export let message: CanMessageDef;
   export let activeSignal = -1;
 
   const COLORS = [
@@ -13,21 +13,20 @@
     return COLORS[index % COLORS.length];
   }
 
-  function scaleFor(signal: CanSignalDef): string {
-    if (signal.factor === 1 && signal.offset === 0) return "raw";
-    if (signal.factor === 1) return `raw ${signal.offset >= 0 ? "+" : "-"} ${Math.abs(signal.offset)}`;
-    if (signal.offset === 0) return `raw x ${signal.factor}`;
-    return `raw x ${signal.factor} ${signal.offset >= 0 ? "+" : "-"} ${Math.abs(signal.offset)}`;
+  function scaleFor(signal: CanField): string {
+    if (signal._factor === 1 && signal._offset === 0) return "raw";
+    if (signal._factor === 1) return `raw ${signal._offset >= 0 ? "+" : "-"} ${Math.abs(signal._offset)}`;
+    if (signal._offset === 0) return `raw x ${signal._factor}`;
+    return `raw x ${signal._factor} ${signal._offset >= 0 ? "+" : "-"} ${Math.abs(signal._offset)}`;
   }
 
-  function valuesFor(signal: CanSignalDef): string {
-    if (!signal.values || Object.keys(signal.values).length === 0) return "--";
-    return Object.entries(signal.values).map(([key, value]) => `${key}=${value}`).join(", ");
+  function valuesFor(signal: CanField): string {
+    if (!signal.options || signal.options.length === 0) return "--";
+    return signal.options.map((opt) => `${opt.value}=${opt.label}`).join(", ");
   }
 
-  function receiversFor(signal: CanSignalDef): string {
-    if (signal.receivers.length > 0) return signal.receivers.join(", ");
-    if (message.receivers.length > 0) return message.receivers.join(", ");
+  function receiversFor(signal: CanField): string {
+    if (message.receivers && message.receivers.length > 0) return message.receivers.join(", ");
     return "--";
   }
 
@@ -37,7 +36,7 @@
   }
 </script>
 
-{#if message.signals.length === 0}
+{#if message.fields.length === 0}
   <div class="signal-empty">No payload signals.</div>
 {:else}
   <div class="signal-table-wrap">
@@ -60,24 +59,24 @@
         </tr>
       </thead>
       <tbody>
-        {#each message.signals as signal, index}
+        {#each message.fields as signal, index}
           <tr class:highlight={activeSignal === index}>
             <td data-label="Signal">
               <span class="sig-color" style={`--sig-color:${colorFor(index)}`}></span>
-              <strong>{signal.name}</strong>
+              <strong>{signal.label}</strong>
             </td>
-            <td data-label="Start">B{signal.byte}.{signal.bit_offset}</td>
-            <td data-label="Byte">{signal.byte}</td>
-            <td data-label="Bit">{signal.bit_offset}</td>
-            <td data-label="Len">{signal.size}</td>
-            <td data-label="Type">{signal.type}</td>
+            <td data-label="Start">B{signal._byte}.{signal._bit_offset}</td>
+            <td data-label="Byte">{signal._byte}</td>
+            <td data-label="Bit">{signal._bit_offset}</td>
+            <td data-label="Len">{signal._size}</td>
+            <td data-label="Type">{signal._type}</td>
             <td data-label="Scale">{scaleFor(signal)}</td>
             <td data-label="Min">{dash(signal.min)}</td>
             <td data-label="Max">{dash(signal.max)}</td>
             <td data-label="Unit">{dash(signal.unit)}</td>
             <td data-label="Rx">{receiversFor(signal)}</td>
             <td data-label="Values">{valuesFor(signal)}</td>
-            <td data-label="Description">{dash(signal.comment)}</td>
+            <td data-label="Description">{dash(signal.key)}</td>
           </tr>
         {/each}
       </tbody>

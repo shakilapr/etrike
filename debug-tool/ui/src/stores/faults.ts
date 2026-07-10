@@ -1,45 +1,16 @@
+import { ID_HOST_HEARTBEAT, ID_RT_HEARTBEAT, ID_SYS_HEARTBEAT, ID_SYS_SAFETY_STS, ID_RT_STATE_RPT, ID_SYS_DIAG_RPT, ID_MTR_MOTOR_FBK, ID_STEER_DIAG, ID_HOST_OBSTACLE_DIST, ID_SEB_STATUS, ID_SES_ErrInfo, ID_SEB_ErrInfo, SIG_SYS_MODE_CMD_MODE, SIG_RT_DRIVE_CMD_GEAR, ESTOP_REASONS, SES_FAULTS, SEB_FAULTS, decodeFaults } from "@etrike/debug-shared";
 import { latestById } from "./can";
 import { logError, logWarn, logInfo } from "./errors";
 
-// ── ESTOP reason codes ──
-const ESTOP_REASONS: Record<number, string> = {
-  0: "None", 1: "Button", 2: "Heartbeat timeout", 3: "Following error",
-  4: "Obstacle detected", 5: "CAN frame (0x001)", 6: "CAN bus-off", 7: "Internal fault",
-};
-function rLabel(v: number): string { return ESTOP_REASONS[v] ?? "code " + v; }
 
-// ── SES fault bit names (0x202 SES_ERRINFO, bytes 0-2) ──
-const SES_FAULTS: [number, string][] = [
-  [0x01,"UnderVolt"],[0x02,"OverVolt"],[0x04,"CanComErr"],[0x08,"TempErr"],
-  [0x10,"DomainSC"],[0x20,"DomainV"],[0x40,"DomainT"],[0x80,"TempSensor"],
-  [0x100,"AngleP_OC"],[0x200,"AngleP_AF"],[0x400,"AngleS_OC"],[0x800,"AngleS_AF"],
-  [0x1000,"SensorPow"],[0x2000,"Alignment"],[0x4000,"OverAngle"],[0x8000,"MtrStall"],
-  [0x10000,"MtrCurt"],[0x20000,"SensorCL"],[0x40000,"TorqT1_OC"],[0x80000,"TorqT1_AF"],
-  [0x100000,"TorqT2_OC"],[0x200000,"TorqT2_AF"],[0x400000,"SentAngle"],[0x800000,"MtrIdling"],
-  [0x1000000,"EPROM"],
-];
-// ── SEB fault bit names (0x731 SEB_ERRINFO, bytes 0-2) ──
-const SEB_FAULTS: [number, string][] = [
-  [0x01,"UnderVolt"],[0x02,"OverVolt"],[0x04,"CanComErr"],[0x08,"TempErr"],
-  [0x10,"DomainSC"],[0x20,"DomainV"],[0x40,"DomainT"],[0x80,"AngleP_OC"],
-  [0x100,"AngleP_AF"],[0x200,"AngleS_OC"],[0x400,"AngleS_AF"],[0x800,"NoPreSensor"],
-  [0x2000,"SensorUCL"],[0x4000,"Alignment"],[0x8000,"AngleOver"],
-  [0x20000,"MtrStall"],[0x40000,"MtrDC"],[0x80000,"OilErr"],[0x100000,"InitOil"],
-  [0x200000,"SentValue"],[0x400000,"MtrNoLoad"],
-  [0x1000000,"PreSensorOver"],[0x2000000,"LowVoltCharging"],
-];
-function decodeFaults(mask: number, table: [number, string][]): string[] {
-  const active: string[] = [];
-  for (const [bit, name] of table) { if (mask & bit) active.push(name); }
-  return active;
-}
+function rLabel(v: number): string { return ESTOP_REASONS[v] ?? "code " + v; }
 
 // ── Heartbeat sources ──
 function missingHeartbeats($latest: Record<string, unknown>): string[] {
   const m: string[] = [];
-  if (!$latest["high:0x7FC"]) m.push("HOST(0x7FC)");
-  if (!$latest["high:0x7FD"]) m.push("RT(0x7FD)");
-  if (!$latest["low:0x7FE"])  m.push("SYS(0x7FE)");
+  if (!$latest[`high:${ID_HOST_HEARTBEAT}`]) m.push("HOST(0x7FC)");
+  if (!$latest[`high:${ID_RT_HEARTBEAT}`]) m.push("RT(0x7FD)");
+  if (!$latest[`low:${ID_SYS_HEARTBEAT}`])  m.push("SYS(0x7FE)");
   return m;
 }
 
@@ -84,42 +55,42 @@ export function initFaultWatcher(): () => void {
 
   const unsubscribe = latestById.subscribe(($latest) => {
     // ═══ Gather all CAN data ═══
-    const sHi = $latest["high:0x011"]?.decoded;
-    const sLo = $latest["low:0x011"]?.decoded;
+    const sHi = $latest[`high:${ID_SYS_SAFETY_STS}`]?.decoded;
+    const sLo = $latest[`low:${ID_SYS_SAFETY_STS}`]?.decoded;
     const safety = (sHi ?? sLo) as Record<string, unknown> | undefined;
     const estop = safety?.estop_active === true || safety?.estop_active === 1;
 
-    const rHi = $latest["high:0x210"]?.decoded;
-    const rLo = $latest["low:0x210"]?.decoded;
+    const rHi = $latest[`high:${ID_RT_STATE_RPT}`]?.decoded;
+    const rLo = $latest[`low:${ID_RT_STATE_RPT}`]?.decoded;
     const rpt = (rHi ?? rLo) as Record<string, unknown> | undefined;
     const estopReason: number = rpt?.estop_reason !== undefined ? Number(rpt.estop_reason) : 0;
     const safetyState: number | null = rpt?.safety_state !== undefined ? Number(rpt.safety_state) : null;
     const mode: number | null = rpt?.mode !== undefined ? Number(rpt.mode) : null;
 
-    const dHi = $latest["high:0x600"]?.decoded;
-    const dLo = $latest["low:0x600"]?.decoded;
+    const dHi = $latest[`high:${ID_SYS_DIAG_RPT}`]?.decoded;
+    const dLo = $latest[`low:${ID_SYS_DIAG_RPT}`]?.decoded;
     const diag = (dHi ?? dLo) as Record<string, unknown> | undefined;
     const brakeFault = diag?.brake_fault === true || diag?.brake_fault === 1;
     const hbDiagOk = diag?.hb_ok !== false && diag?.hb_ok !== 0;
 
-    const mHi = $latest["high:0x206"]?.decoded;
-    const mLo = $latest["low:0x206"]?.decoded;
+    const mHi = $latest[`high:${ID_MTR_MOTOR_FBK}`]?.decoded;
+    const mLo = $latest[`low:${ID_MTR_MOTOR_FBK}`]?.decoded;
     const motor = (mHi ?? mLo) as Record<string, unknown> | undefined;
     const faultFlags: number = motor?.fault_flags !== undefined ? Number(motor.fault_flags) : 0;
     const gear: number | null = motor?.gear_state !== undefined ? Number(motor.gear_state) : null;
 
-    const ses = $latest["low:0x202"]?.decoded as Record<string, unknown> | undefined;
+    const ses = $latest[`low:${ID_SES_ErrInfo}`]?.decoded as Record<string, unknown> | undefined;
     const sesMask: number = ses?.fault_mask !== undefined ? Number(ses.fault_mask) : 0;
     const sesL3 = ses?.l3_fault === true;
 
-    const seb = $latest["low:0x731"]?.decoded as Record<string, unknown> | undefined;
+    const seb = $latest[`low:${ID_SEB_ErrInfo}`]?.decoded as Record<string, unknown> | undefined;
     const sebMask: number = seb?.fault_mask !== undefined ? Number(seb.fault_mask) : 0;
     const sebL3 = seb?.l3_fault === true;
 
-    const steerDiag = $latest["high:0x310"]?.decoded as Record<string, unknown> | undefined;
+    const steerDiag = $latest[`high:${ID_STEER_DIAG}`]?.decoded as Record<string, unknown> | undefined;
     const steerDiagFault = steerDiag?.SteerDiag_Fault === true;
 
-    const obstacle = $latest["high:0x400"]?.decoded as Record<string, unknown> | undefined;
+    const obstacle = $latest[`high:${ID_HOST_OBSTACLE_DIST}`]?.decoded as Record<string, unknown> | undefined;
     const distMm: number = obstacle?.distance_mm !== undefined ? Number(obstacle.distance_mm) : Infinity;
     const obstacleWarn = distMm < 2000 && distMm !== 0xFFFFFFFF; // <2m and not "clear"
 
@@ -144,7 +115,7 @@ export function initFaultWatcher(): () => void {
     if (brakeFault !== lastBrakeFault) {
       if (brakeFault) {
         if (cd("brake_on")) {
-          const sebMissing = !$latest["low:0x721"];
+          const sebMissing = !$latest[`low:${ID_SEB_STATUS}`];
           if (sebMissing) {
             logError("BRAKE FAULT — SEB (brake ECU) not responding (start Simulator to suppress)");
           } else {
@@ -173,14 +144,14 @@ export function initFaultWatcher(): () => void {
     // ═══ Mode changes (only log MANUAL↔AUTO; ESTOP is a symptom of faults) ═══
     if (mode !== null && mode !== lastMode) {
       const labels = ["MANUAL", "AUTO", "ESTOP"];
-      if (mode !== 2 && cd("mode")) logInfo("Mode: " + (labels[mode] ?? "?" + mode));
+      if (mode !== 2 && cd(SIG_SYS_MODE_CMD_MODE)) logInfo("Mode: " + (labels[mode] ?? "?" + mode));
       lastMode = mode;
     }
 
     // ═══ Gear changes ═══
     if (gear !== null && gear !== lastGear) {
       const labels = ["N", "D", "S", "R"];
-      if (cd("gear")) logInfo("Gear: " + (labels[gear] ?? "?" + gear));
+      if (cd(SIG_RT_DRIVE_CMD_GEAR)) logInfo("Gear: " + (labels[gear] ?? "?" + gear));
       lastGear = gear;
     }
 

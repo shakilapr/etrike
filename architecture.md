@@ -40,6 +40,8 @@ Key architectural IDs:
 | High | `0x220` | RT_PID_RPT | RT → Jetson: shadow PID telemetry (DLC=6) |
 | High | `0x310` | STEER_DIAG | RT → Jetson: steering telemetry (DLC=8) |
 | High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry (DLC=8) |
+| High | `0x111` | HMI_MODE_REQ | HMI → SYS, Host: mode request (bridged to low, 1 Hz) |
+| High | `0x112` | HMI_PWR_REQ | HMI → SYS: power request (bridged to low, 1 Hz) |
 | Low | `0x001` | SAFETY_ESTOP | Any → All: emergency stop (bridged) |
 | Low | `0x011` | SYS_SAFETY_STS | SYS → RT (→ Jetson): estop, hb, lights |
 | Low | `0x110` | SYS_MODE_CMD | SYS → RT: mode (Manual/Auto only) |
@@ -344,6 +346,8 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | 0x011 | TX | 5 Hz | Safety status: estop(byte0), hb_ok(byte1), light_state(byte2:0-3) |
 | 0x012 | TX | 5 Hz + change | DC-DC enable. Periodic refresh every 5s. Always ON during ESTOP. |
 | 0x110 | TX | change + 1s | Mode command. Periodic refresh prevents split-brain on frame loss. |
+| 0x111 | RX | 1 Hz | HMI Mode Request. Evaluated by mode manager (ignored in ESTOP). |
+| 0x112 | RX | 1 Hz | HMI Power Request. |
 | 0x600 | TX | 1 Hz | Diag: mode, brake, hb, estop, heap, TEC/REC |
 | 0x7B9 | TX | 50 Hz | SEB brake command. Suppressed in AUTO when RT is healthy and RT safety_state==Normal. |
 | 0x6FB | RX | 100 Hz | SEB telemetry: motor current, ECU temp. Logs warning >80°C. |

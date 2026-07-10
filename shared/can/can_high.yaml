@@ -72,6 +72,7 @@ ecus:
   - {name: DCDC,   comment: "DC-DC converter (72V->12V), CAN 0x012 control"}
   - {name: EPS_C,  comment: "steer-by-wire unit, steer-by-wire module, preprogrammed CAN IDs"}
   - {name: SEB,    comment: "brake-by-wire unit, electro-hydraulic brake module, preprogrammed CAN IDs"}
+  - {name: HMI,    comment: "CAN Controller UI / Dashboard, mode and power requests"}
   - {name: Any,    comment: "Wildcard — any node may send (e.g., ESTOP frames)"}
 
 protocols:
@@ -110,6 +111,34 @@ protocols:
           - {name: SYS_LightRight,  key: light_right,  byte: 2, bit_offset: 1, size: 1}
           - {name: SYS_LightBrake,  key: light_brake,  byte: 2, bit_offset: 2, size: 1}
           - {name: SYS_LightHead,   key: light_head,   byte: 2, bit_offset: 3, size: 1}
+
+      # 0x111 — HMI_MODE_REQ (HMI→SYS,Host)
+      - id: 0x111
+        name: HMI_MODE_REQ
+        dlc: 2
+        sender: HMI
+        receivers: [SYS, Host]
+        cycle_ms: 1000
+        comment: "HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT."
+        signals:
+          - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2,
+             values: {0: MANUAL, 1: AUTO, 2: PURE_SIM}}
+          - {name: HMI_ModeAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Rolling counter for UI health"}
+
+      # 0x112 — HMI_PWR_REQ (HMI→SYS)
+      - id: 0x112
+        name: HMI_PWR_REQ
+        dlc: 2
+        sender: HMI
+        receivers: [SYS]
+        cycle_ms: 1000
+        comment: "HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT."
+        signals:
+          - {name: HMI_ReqStart, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
+             values: {0: OFF, 1: ON}}
+          - {name: HMI_PwrAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Rolling counter for UI health"}
 
       # 0x120 — SYS_THROTTLE_STS (MTR→RT, forwarded low→high)
       # Historical note: SYS_ prefix is legacy — physical sender is MTR (STM32).

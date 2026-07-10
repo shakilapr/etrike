@@ -3,13 +3,11 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { registerCommandRoutes } from "../../src/api/cmd";
 import { type DebugStore, DebugStoreImpl } from "../../src/db/queries";
 import type { HardwareBridge } from "../../src/bridge/types";
-import { initCanDatabase } from "@etrike/debug-shared";
+import { initCanDatabase, ID_HOST_DRIVE_CMD, ID_RT_PID_RPT, ID_SAFETY_ESTOP } from "@etrike/debug-shared";
 import fs from "fs";
 import path from "path";
 
-const highYaml = fs.readFileSync(path.resolve(__dirname, "../../../../shared/can/can_high.yaml"), "utf-8");
-const lowYaml = fs.readFileSync(path.resolve(__dirname, "../../../../shared/can/can_low.yaml"), "utf-8");
-initCanDatabase(highYaml, lowYaml);
+initCanDatabase();
 
 describe("POST /api/cmd/send", () => {
   let app: FastifyInstance;
@@ -50,7 +48,7 @@ describe("POST /api/cmd/send", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/cmd/send",
-      payload: { bus: "high", id: "0x300", dlc: 8, data: [1, 2, 3] } // dlc 8, but array has 3 elements
+      payload: { bus: "high", id: ID_HOST_DRIVE_CMD, dlc: 8, data: [1, 2, 3] } // dlc 8, but array has 3 elements
     });
     expect(res.statusCode).toBe(400);
     expect(JSON.stringify(JSON.parse(res.payload).error)).toMatch(/length must match dlc/i);
@@ -60,7 +58,7 @@ describe("POST /api/cmd/send", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/cmd/send",
-      payload: { bus: "high", id: "0x300", dlc: 1, data: [256] }
+      payload: { bus: "high", id: ID_HOST_DRIVE_CMD, dlc: 1, data: [256] }
     });
     expect(res.statusCode).toBe(400);
     // Could fail Zod validation or validateDataBytes validation
@@ -72,7 +70,7 @@ describe("POST /api/cmd/send", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/cmd/send",
-      payload: { bus: "high", id: "0x220", dlc: 6, data: [0, 0, 0, 0, 0, 0] }
+      payload: { bus: "high", id: ID_RT_PID_RPT, dlc: 6, data: [0, 0, 0, 0, 0, 0] }
     });
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.payload).error).toMatch(/not injectable/i);
@@ -82,7 +80,7 @@ describe("POST /api/cmd/send", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/cmd/send",
-      payload: { bus: "high", id: "0x001", dlc: 0, data: [] } // missing confirm_estop
+      payload: { bus: "high", id: ID_SAFETY_ESTOP, dlc: 0, data: [] } // missing confirm_estop
     });
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.payload).error).toMatch(/confirm_estop/i);
@@ -92,7 +90,7 @@ describe("POST /api/cmd/send", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/cmd/send",
-      payload: { bus: "high", id: "0x300", dlc: 8, data: [0,0,0,0,0,0,0,0] }
+      payload: { bus: "high", id: ID_HOST_DRIVE_CMD, dlc: 8, data: [0,0,0,0,0,0,0,0] }
     });
     
     expect(res.statusCode).toBe(200);
@@ -116,7 +114,7 @@ describe("POST /api/cmd/send", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/cmd/send",
-      payload: { bus: "high", id: "0x300", dlc: 8, data: [0,0,0,0,0,0,0,0] }
+      payload: { bus: "high", id: ID_HOST_DRIVE_CMD, dlc: 8, data: [0,0,0,0,0,0,0,0] }
     });
     
     expect(res.statusCode).toBe(503);

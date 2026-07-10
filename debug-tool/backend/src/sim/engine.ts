@@ -1,3 +1,4 @@
+import { ID_MTR_MOTOR_FBK, ID_SES_STATUS, ID_SEB_STATUS } from "@etrike/debug-shared";
 import type { DebugStore } from "../db/queries";
 import type { CanFrame } from "../types/can";
 import type { EcuModel, EcuConfig } from "./ecu-model";
@@ -131,11 +132,11 @@ export class SimulationEngine {
     // Snoop frames to update telemetry state
     for (const frame of allFrames) {
       if (frame.decoded) {
-        if (frame.id === "0x206" && typeof frame.decoded.motor_speed_mmps === "number") {
+        if (frame.id === ID_MTR_MOTOR_FBK && typeof frame.decoded.motor_speed_mmps === "number") {
           this._state.physics.speedMmps = frame.decoded.motor_speed_mmps;
-        } else if (frame.id === "0x201" && typeof frame.decoded.str_angle === "number") {
+        } else if (frame.id === ID_SES_STATUS && typeof frame.decoded.str_angle === "number") {
           this._state.physics.steerAngleDeg = frame.decoded.str_angle / 10;
-        } else if (frame.id === "0x721" && typeof frame.decoded.act_pressure_kpa === "number") {
+        } else if (frame.id === ID_SEB_STATUS && typeof frame.decoded.act_pressure_kpa === "number") {
           this._state.physics.brakeKpa = frame.decoded.act_pressure_kpa;
         }
       }

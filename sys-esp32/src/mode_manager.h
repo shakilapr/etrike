@@ -9,6 +9,8 @@
 #include "config.h"
 #include "can/can_protocol.h"
 
+#define ENABLE_CAN_HMI true
+
 namespace sys {
 
 class ModeManager {
@@ -20,6 +22,9 @@ public:
 
     void force_estop();
     void set_from_can(uint8_t m);
+    
+    // Parses incoming 0x111 HMI_MODE_REQ. Returns true if mode changed.
+    bool parse_hmi_mode(uint8_t requested_mode);
 
     can::Mode mode() const { return m_mode.load(std::memory_order_relaxed); }
     uint8_t mode_u8() const { return uint8_t(m_mode.load(std::memory_order_relaxed)); }

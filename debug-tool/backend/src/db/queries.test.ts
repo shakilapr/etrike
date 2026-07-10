@@ -1,10 +1,11 @@
+import { ID_HOST_DRIVE_CMD } from "@etrike/debug-shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { DebugStoreImpl } from "./queries";
 import type { CanFrame } from "../types/can";
 
 let stores: DebugStoreImpl[] = [];
 
-function makeFrame(ts: number, id = "0x300"): CanFrame {
+function makeFrame(ts: number, id = ID_HOST_DRIVE_CMD): CanFrame {
   return {
     ts,
     bus: "high",

@@ -5,11 +5,11 @@
 *(Note: This file is fully auto-generated from the YAML configurations. Do not edit manually.)*
 
 ## Summary Statistics
-- **Unique CAN Message IDs:** 30
-- **Total Signal Definitions:** 182
-- **Unique Signal Names:** 158
+- **Unique CAN Message IDs:** 32
+- **Total Signal Definitions:** 190
+- **Unique Signal Names:** 162
 - **Protocols/Buses:** 4
-- **ECUs Defined:** 8
+- **ECUs Defined:** 9
 
 ---
 
@@ -55,6 +55,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | **DCDC** | DC-DC converter (72V->12V), CAN 0x012 control |
 | **EPS_C** | steer-by-wire unit, steer-by-wire module, preprogrammed CAN IDs |
 | **SEB** | brake-by-wire unit, electro-hydraulic brake module, preprogrammed CAN IDs |
+| **HMI** | CAN Controller UI / Dashboard, mode and power requests |
 | **Any** | Wildcard — any node may send (e.g., ESTOP frames) |
 
 ---
@@ -122,6 +123,30 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SYS_LightRight` | 2 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `SYS_LightBrake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `SYS_LightHead` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
+
+#### 0x111 — HMI_MODE_REQ
+- **Sender:** HMI
+- **Receivers:** SYS, Host
+- **DLC:** 2 bytes
+- **Cycle:** 1000 ms (0 = event-based)
+- **Description:** HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `HMI_ReqMode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  (Values: 0=MANUAL, 1=AUTO, 2=PURE_SIM) |
+| `HMI_ModeAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
+
+#### 0x112 — HMI_PWR_REQ
+- **Sender:** HMI
+- **Receivers:** SYS
+- **DLC:** 2 bytes
+- **Cycle:** 1000 ms (0 = event-based)
+- **Description:** HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `HMI_ReqStart` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=False, 1=True) |
+| `HMI_PwrAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
 
 #### 0x120 — SYS_THROTTLE_STS
 - **Sender:** MTR
@@ -349,6 +374,30 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `SYS_Mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  |
+
+#### 0x111 — HMI_MODE_REQ
+- **Sender:** HMI
+- **Receivers:** SYS, Host
+- **DLC:** 2 bytes
+- **Cycle:** 1000 ms (0 = event-based)
+- **Description:** HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `HMI_ReqMode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  (Values: 0=MANUAL, 1=AUTO, 2=PURE_SIM) |
+| `HMI_ModeAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
+
+#### 0x112 — HMI_PWR_REQ
+- **Sender:** HMI
+- **Receivers:** SYS
+- **DLC:** 2 bytes
+- **Cycle:** 1000 ms (0 = event-based)
+- **Description:** HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `HMI_ReqStart` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=False, 1=True) |
+| `HMI_PwrAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
 
 #### 0x120 — SYS_THROTTLE_STS
 - **Sender:** MTR

@@ -1,3 +1,4 @@
+import { ID_HOST_DRIVE_CMD, ID_HOST_BRAKE_REQ } from "@etrike/debug-shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { get } from "svelte/store";
 import {
@@ -15,7 +16,7 @@ import type { CanFrame, CanStats } from "../lib/can-decoder";
 const makeFrame = (overrides: Partial<CanFrame> = {}): CanFrame => ({
   ts: 1000,
   bus: "high",
-  id: "0x300",
+  id: ID_HOST_DRIVE_CMD,
   name: "HOST_DRIVE_CMD",
   dlc: 8,
   data: [0, 0, 0, 0, 0, 0, 0, 1],
@@ -69,8 +70,8 @@ describe("wsConnected store", () => {
 
 describe("ingestInitialFrames", () => {
   it("loads initial frames", () => {
-    const f1 = makeFrame({ id: "0x300" });
-    const f2 = makeFrame({ id: "0x301", bus: "low" });
+    const f1 = makeFrame({ id: ID_HOST_DRIVE_CMD });
+    const f2 = makeFrame({ id: ID_HOST_BRAKE_REQ, bus: "low" });
     ingestInitialFrames([f1, f2]);
     expect(get(frames)).toHaveLength(2);
   });
@@ -91,7 +92,7 @@ describe("ingestMessage", () => {
     const frame = makeFrame();
     ingestMessage({ type: "can_frame", payload: frame });
     expect(get(frames)).toHaveLength(1);
-    expect(get(frames)[0].id).toBe("0x300");
+    expect(get(frames)[0].id).toBe(ID_HOST_DRIVE_CMD);
   });
 
   it("caps can_frame at 1000", () => {
@@ -112,16 +113,16 @@ describe("ingestMessage", () => {
 
   it("appends can_frames_batch messages and updates latestById", () => {
     const batch = [
-      makeFrame({ id: "0x300", bus: "high", ts: 1 }),
-      makeFrame({ id: "0x301", bus: "high", ts: 2 }),
-      makeFrame({ id: "0x300", bus: "high", ts: 3 }),
+      makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "high", ts: 1 }),
+      makeFrame({ id: ID_HOST_BRAKE_REQ, bus: "high", ts: 2 }),
+      makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "high", ts: 3 }),
     ];
 
     ingestMessage({ type: "can_frames_batch", payload: batch });
 
     expect(get(frames)).toHaveLength(3);
-    expect(get(latestById)["high:0x300"].ts).toBe(3);
-    expect(get(latestById)["high:0x301"].ts).toBe(2);
+    expect(get(latestById)[`high:${ID_HOST_DRIVE_CMD}`].ts).toBe(3);
+    expect(get(latestById)[`high:${ID_HOST_BRAKE_REQ}`].ts).toBe(2);
   });
 
   it("caps can_frames_batch at 1000", () => {
@@ -136,7 +137,7 @@ describe("ingestMessage", () => {
   });
 
   it("keeps the newest batch frames and latestById values for oversized batches", () => {
-    const batch = Array.from({ length: 1500 }, (_, i) => makeFrame({ id: "0x300", ts: i }));
+    const batch = Array.from({ length: 1500 }, (_, i) => makeFrame({ id: ID_HOST_DRIVE_CMD, ts: i }));
 
     ingestMessage({ type: "can_frames_batch", payload: batch });
 
@@ -144,7 +145,7 @@ describe("ingestMessage", () => {
     expect(kept).toHaveLength(1000);
     expect(kept[0].ts).toBe(500);
     expect(kept[999].ts).toBe(1499);
-    expect(get(latestById)["high:0x300"].ts).toBe(1499);
+    expect(get(latestById)[`high:${ID_HOST_DRIVE_CMD}`].ts).toBe(1499);
   });
 
   it("ignores malformed batch payloads", () => {
@@ -157,7 +158,7 @@ describe("ingestMessage", () => {
       ts: 2000,
       uptime_s: 3600,
       buses: {
-        high: { active: true, total: 100, fps: 50, load_pct: 10, tec: 0, rec: 0, by_id: { "0x300": 50 } },
+        high: { active: true, total: 100, fps: 50, load_pct: 10, tec: 0, rec: 0, by_id: { ID_HOST_DRIVE_CMD: 50 } },
         low: { active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {} }
       }
     };
@@ -194,20 +195,20 @@ describe("ingestMessage", () => {
 
 describe("latestById", () => {
   it("keys latest frame by bus:id", () => {
-    const f1 = makeFrame({ id: "0x300", bus: "high" });
-    const f2 = makeFrame({ id: "0x300", bus: "low" });
+    const f1 = makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "high" });
+    const f2 = makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "low" });
     frames.set([f1, f2]);
     const latest = get(latestById);
-    expect(latest["high:0x300"]).toBeDefined();
-    expect(latest["low:0x300"]).toBeDefined();
+    expect(latest[`high:${ID_HOST_DRIVE_CMD}`]).toBeDefined();
+    expect(latest[`low:${ID_HOST_DRIVE_CMD}`]).toBeDefined();
   });
 
   it("same bus:id uses last (latest) frame", () => {
-    const f1 = makeFrame({ id: "0x300", bus: "high", ts: 1000 });
-    const f2 = makeFrame({ id: "0x300", bus: "high", ts: 2000 });
+    const f1 = makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "high", ts: 1000 });
+    const f2 = makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "high", ts: 2000 });
     frames.set([f1, f2]);
     const latest = get(latestById);
-    expect(latest["high:0x300"].ts).toBe(2000);
+    expect(latest[`high:${ID_HOST_DRIVE_CMD}`].ts).toBe(2000);
   });
 
   it("returns empty after reset", () => {

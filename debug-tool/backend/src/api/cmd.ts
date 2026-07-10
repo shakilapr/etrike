@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { HardwareBridge } from "../bridge/types";
 import type { DebugStore } from "../db/queries";
-import { findMessage, INJECTION_TEMPLATES, normalizeBus, normalizeCanId, normalizeFrame, validateDataBytes } from "../types/can";
+import { findMessage, INJECTION_TEMPLATES, normalizeBus, normalizeCanId, validateDataBytes, ID_SAFETY_ESTOP, normalizeFrame } from "../types/can";
 
 const busSchema = z.enum(["high", "low"]);
 
@@ -50,7 +50,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     const id = normalizeCanId(parsed.data.id);
     const definition = findMessage(bus, id);
     if (!definition?.injectable) return reply.code(400).send({ error: `${id} is not injectable on ${bus} bus` });
-    if (id === "0x001" && parsed.data.confirm_estop !== true) return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
+    if (id === ID_SAFETY_ESTOP && parsed.data.confirm_estop !== true) return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
 
     let data: number[];
     try {
@@ -102,7 +102,7 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
       return { cmd: "send_periodic", action: "stop", bus, id, status: "queued" };
     }
 
-    if (id === "0x001" && parsed.data.confirm_estop !== true) {
+    if (id === ID_SAFETY_ESTOP && parsed.data.confirm_estop !== true) {
       return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
     }
 

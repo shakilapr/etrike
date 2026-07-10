@@ -79,6 +79,34 @@ protocols:
         signals:
           - {name: SYS_Mode, key: mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2}
 
+      # 0x111 — HMI_MODE_REQ (HMI→SYS,Host)
+      - id: 0x111
+        name: HMI_MODE_REQ
+        dlc: 2
+        sender: HMI
+        receivers: [SYS, Host]
+        cycle_ms: 1000
+        comment: "HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT."
+        signals:
+          - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2,
+             values: {0: MANUAL, 1: AUTO, 2: PURE_SIM}}
+          - {name: HMI_ModeAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Rolling counter for UI health"}
+
+      # 0x112 — HMI_PWR_REQ (HMI→SYS)
+      - id: 0x112
+        name: HMI_PWR_REQ
+        dlc: 2
+        sender: HMI
+        receivers: [SYS]
+        cycle_ms: 1000
+        comment: "HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT."
+        signals:
+          - {name: HMI_ReqStart, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
+             values: {0: OFF, 1: ON}}
+          - {name: HMI_PwrAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Rolling counter for UI health"}
+
       # 0x120 — SYS_THROTTLE_STS (MTR→RT, forwarded low→high)
       # Historical note: SYS_ prefix is legacy — physical sender is MTR (STM32).
       - id: 0x120
@@ -222,13 +250,13 @@ protocols:
              type: signed, factor: 0.1, offset: -3000, min: -700, max: 700, unit: deg,
              comment: "Target Steering Angle. Negative=left. Offset=-3000 per mfr CSV."}
           - {name: SES_TgtStrAngleSpd, key: target_speed, byte: 4, bit_offset: 0, size: 16,
-             min: 125, max: 525, unit: deg/s,
+             min: 125, max: 525, unit: deg/s, multiplexed: true,
              comment: "Target Angle Speed. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3."}
-          - {name: SES_RollCntEnable,  byte: 5, bit_offset: 0, size: 1,
+          - {name: SES_RollCntEnable,  byte: 5, bit_offset: 0, size: 1, multiplexed: true,
              comment: "Life Signal Enable — MUST be 1."}
-          - {name: SES_ChecksumEnable, byte: 5, bit_offset: 1, size: 1,
+          - {name: SES_ChecksumEnable, byte: 5, bit_offset: 1, size: 1, multiplexed: true,
              comment: "Checksum Enable — MUST be 1."}
-          - {name: SES_RollCnt,        key: rolling_counter, byte: 5, bit_offset: 4, size: 4, min: 0, max: 15,
+          - {name: SES_RollCnt,        key: rolling_counter, byte: 5, bit_offset: 4, size: 4, min: 0, max: 15, multiplexed: true,
              comment: "Life Signal rolling counter. Increment every frame."}
           - {name: SES_VehSpd,         byte: 6, bit_offset: 0, size: 8, min: 0, max: 255, unit: km/h,
              comment: "Vehicle speed populated by RT."}
@@ -254,10 +282,10 @@ protocols:
              factor: 0.1, offset: -3000, min: -700, max: 700, unit: deg,
              comment: "Steering Angle."}
           - {name: SES_TgtStrAngleSpd_FB,  key: tgt_angle_spd,   byte: 4, bit_offset: 0, size: 16,
-             type: signed, factor: 0.5, offset: 0, min: 0, max: 1480, unit: deg/s,
+             type: signed, factor: 0.5, offset: 0, min: 0, max: 1480, unit: deg/s, multiplexed: true,
              comment: "Angle Speed feedback."}
           - {name: SES_SteeringTorq,        byte: 5, bit_offset: 0, size: 8,
-             factor: 0.1, offset: -12.1, min: -12, max: 12, unit: Nm,
+             factor: 0.1, offset: -12.1, min: -12, max: 12, unit: Nm, multiplexed: true,
              comment: "Steering Torque."}
           - {name: SES_RollCntEnStatus,    byte: 6, bit_offset: 0, size: 1,
              comment: "Life Signal Enable Feedback."}
@@ -361,10 +389,10 @@ protocols:
           - {name: SEB_CtrlMode,       key: control_mode,    byte: 0, bit_offset: 2, size: 1, comment: "0=Stroke (position), 1=Pressure (hydraulic)."}
           - {name: SEB_AutoBrake,      key: auto_brake,      byte: 0, bit_offset: 3, size: 1, comment: "Auto-brake / emergency trigger."}
           - {name: SEB_StrokeReq,      key: stroke_req,      byte: 2, bit_offset: 0, size: 16,
-             min: 0, max: 65535, unit: raw,
+             min: 0, max: 65535, unit: raw, multiplexed: true,
              comment: "Stroke position raw counts."}
           - {name: SEB_PressureReq,    key: pressure_req,    byte: 3, bit_offset: 0, size: 8,
-             min: 0, max: 100, unit: raw,
+             min: 0, max: 100, unit: raw, multiplexed: true,
              comment: "Pressure raw counts."}
           - {name: SEB_RollCntEnable,  byte: 6, bit_offset: 0, size: 1, comment: "Life Signal Validity — MUST be 1."}
           - {name: SEB_ChecksumEnable, byte: 6, bit_offset: 1, size: 1, comment: "Checksum Validity — MUST be 1."}
@@ -388,14 +416,14 @@ protocols:
           - {name: SEB_AutoBrakeStatus,    byte: 0, bit_offset: 4, size: 1, comment: "Auto Brake Status Feedback."}
           - {name: SEB_ErrorStatus,        key: error_status,       byte: 0, bit_offset: 6, size: 2, min: 0, max: 3, comment: "Error Status."}
           - {name: SEB_StrokeValue,        key: stroke_value,       byte: 2, bit_offset: 0, size: 16,
-             min: 0, max: 65535, unit: raw, comment: "Stroke Value raw counts."}
+             min: 0, max: 65535, unit: raw, multiplexed: true, comment: "Stroke Value raw counts."}
           - {name: SEB_PressureValue,      key: pressure_value,     byte: 3, bit_offset: 0, size: 8,
-             min: 0, max: 100, unit: raw, comment: "Pressure raw counts."}
+             min: 0, max: 100, unit: raw, multiplexed: true, comment: "Pressure raw counts."}
           - {name: SEB_AngleValue,         key: angle_value,        byte: 5, bit_offset: 0, size: 16, type: signed,
-             min: -32768, max: 32767, comment: "Angle raw counts."}
-          - {name: SEB_RollCntEnStatus,   byte: 6, bit_offset: 0, size: 1, comment: "Life Signal Status Feedback."}
-          - {name: SEB_ChecksumEnStatus,  byte: 6, bit_offset: 1, size: 1, comment: "Checksum Status Feedback."}
-          - {name: SEB_RollCntStatus,     key: rolling_counter,    byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
+             min: -32768, max: 32767, multiplexed: true, comment: "Angle raw counts."}
+          - {name: SEB_RollCntEnStatus,   byte: 6, bit_offset: 0, size: 1, multiplexed: true, comment: "Life Signal Status Feedback."}
+          - {name: SEB_ChecksumEnStatus,  byte: 6, bit_offset: 1, size: 1, multiplexed: true, comment: "Checksum Status Feedback."}
+          - {name: SEB_RollCntStatus,     key: rolling_counter,    byte: 6, bit_offset: 4, size: 4, min: 0, max: 15, multiplexed: true,
              comment: "Life Signal Feedback — echoes rolling counter."}
           - {name: SEB_ChecksumStatus,    key: checksum,           byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum Feedback."}

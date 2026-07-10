@@ -76,6 +76,23 @@ void ModeManager::set_from_can(uint8_t m) {
     if (m <= 1) set_mode(static_cast<can::Mode>(m));
 }
 
+bool ModeManager::parse_hmi_mode(uint8_t requested_mode) {
+#if ENABLE_CAN_HMI
+    // Ignore HMI requests if we are in ESTOP (hardware overrides software)
+    if (m_mode == can::Mode::Estop) return false;
+    
+    // Only allow Manual (0) or Auto (1). Pure Sim (2) is not handled by SYS directly.
+    if (requested_mode > 1) return false;
+    
+    can::Mode new_mode = static_cast<can::Mode>(requested_mode);
+    if (m_mode.load() != new_mode) {
+        set_mode(new_mode);
+        return true; // Mode changed, caller should broadcast updated state
+    }
+#endif
+    return false;
+}
+
 const char* ModeManager::name() const {
     switch (m_mode) {
         case can::Mode::Manual: return "MANUAL";

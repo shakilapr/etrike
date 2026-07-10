@@ -1,3 +1,4 @@
+import { ID_HOST_DRIVE_CMD } from "@etrike/debug-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SimulationEngine } from "./engine";
 import type { DebugStore, StoredCanFrame } from "../db/queries";
@@ -50,7 +51,7 @@ function makeFrame(): CanFrame {
   return {
     ts: Date.now() / 1000,
     bus: "high",
-    id: "0x300",
+    id: ID_HOST_DRIVE_CMD,
     name: "HOST_DRIVE_CMD",
     dlc: 8,
     data: [0, 0, 0, 0, 0, 0, 0, 1],

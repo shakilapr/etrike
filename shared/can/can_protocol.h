@@ -33,6 +33,9 @@ constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 10 
 
 // ── High-level bus (our IDs) ──────────────────────────────────────
 
+constexpr uint32_t kIdHmiModeReq        = 0x111;  // HMI→SYS/Host, 1 Hz
+constexpr uint32_t kIdHmiPwrReq         = 0x112;  // HMI→SYS, 1 Hz
+
 constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Host, 10 Hz
 constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Host, reserved (future PID)
 constexpr uint32_t kIdHostDriveCmd      = 0x300;  // Host→RT, ≤100 Hz
@@ -90,7 +93,8 @@ inline bool is_forwarded_low_to_high(uint32_t id) {
 }
 
 inline bool is_forwarded_high_to_low(uint32_t id) {
-    return id == kIdSafetyEstop || id == kIdHostLightCmd;
+    return id == kIdSafetyEstop || id == kIdHostLightCmd
+        || id == kIdHmiModeReq || id == kIdHmiPwrReq;
 }
 
 // ───────────────────────────────────────────────────────────────────

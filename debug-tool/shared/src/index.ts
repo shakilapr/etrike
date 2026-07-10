@@ -43,3 +43,5 @@ export {
   writeU16LE,
   numberValue
 } from "./read-helpers";
+export * from "./faults";
+export * from "./generated/can-metadata";

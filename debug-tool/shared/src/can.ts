@@ -39,6 +39,12 @@ export interface CanField {
   max?: number;
   step?: number;
   options?: Array<{ label: string; value: number }>;
+  _byte: number;
+  _bit_offset: number;
+  _size: number;
+  _type: string;
+  _factor: number;
+  _offset: number;
 }
 
 export interface CanMessageDef {
@@ -47,8 +53,11 @@ export interface CanMessageDef {
   name: string;
   sender: string;
   dlc: number;
-  period: string;
+  period: string; // "100ms" or "event"
   injectable: boolean;
+  receivers?: string[];
+  comment?: string;
+  byteOrder: string;
   fields: CanField[];
 }
 
@@ -93,13 +102,13 @@ export interface InjectionTemplate {
 
 export const decoder = new DynamicCanDecoder();
 
-export let CAN_MESSAGES: CanMessageDef[] = [];
+import { CAN_MESSAGES as GENERATED_MESSAGES } from "./generated/can-metadata";
+
+export let CAN_MESSAGES: CanMessageDef[] = GENERATED_MESSAGES;
 export let CAN_BY_BUS_ID = new Map<string, CanMessageDef>();
 
-export function initCanDatabase(yamlHigh: string, yamlLow: string) {
-  decoder.loadYaml(yamlHigh);
-  decoder.loadYaml(yamlLow);
-  CAN_MESSAGES = decoder.getMessages();
+export function initCanDatabase() {
+  decoder.loadMessages(CAN_MESSAGES);
   CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
 
   // Register checksum hooks
