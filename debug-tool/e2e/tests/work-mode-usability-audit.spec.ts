@@ -29,15 +29,15 @@ test.describe("No-hardware work mode usability audit", () => {
     });
 
     await page.goto("/");
-    await expect(page.locator(".tb-mode-badge")).toBeVisible();
-    await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+    await expect(page.getByTestId("topbar-mode-badge")).toBeVisible();
+    await page.getByTestId("main-tabs").getByRole("button", { name: "Work Mode" }).click();
     await expect(page.getByText("Work Mode Configurator")).toBeVisible();
     await expect.poll(async () => {
       const apiMode = await request.get("http://127.0.0.1:3000/api/mode");
       if (!apiMode.ok()) return "api-unavailable";
       return (await apiMode.json()).mode;
     }).toBe("bench");
-    await expect(page.locator(".tb-health-row")).toBeVisible();
+    await expect(page.getByTestId("topbar-health-row")).toBeVisible();
 
     for (const mode of MODES) {
       await applyMode(page, mode);
@@ -61,15 +61,15 @@ test.describe("No-hardware work mode usability audit", () => {
 
     for (const tab of TABS) {
       const started = Date.now();
-      await page.locator("nav.tabs").getByRole("button", { name: tab }).click();
-      await expect(page.locator("nav.tabs button.active")).toHaveText(tab);
+      await page.getByTestId("main-tabs").getByRole("button", { name: tab }).click();
+      await expect(page.getByTestId("main-tabs").locator("button.active")).toHaveText(tab);
       const elapsed = Date.now() - started;
       console.log(`[tab] ${tab} ${elapsed}ms`);
       expect(elapsed, `${tab} should switch promptly`).toBeLessThan(1000);
     }
 
     await applyMode(page, "full-sim");
-    await page.locator("nav.tabs").getByRole("button", { name: "Controller" }).click();
+    await page.getByTestId("main-tabs").getByRole("button", { name: "Controller" }).click();
     const controller = page.locator(".injector-layout").filter({ has: page.locator("h2", { hasText: "Controller" }) });
     await expect(controller).toBeVisible();
     await controller.getByRole("button", { name: "Start" }).click();
@@ -117,7 +117,7 @@ async function applyMode(page: import("@playwright/test").Page, mode: (typeof MO
     bench: "Bench Test",
     monitor: "Monitor Only",
   };
-  await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+  await page.getByTestId("main-tabs").getByRole("button", { name: "Work Mode" }).click();
   await page.getByRole("button", { name: labels[mode], exact: true }).click();
   const applyButton = page.getByRole("button", { name: /Apply/i });
   await expect(applyButton, `${mode} should become dirty before applying`).toBeEnabled();
@@ -127,7 +127,7 @@ async function applyMode(page: import("@playwright/test").Page, mode: (typeof MO
   await applyButton.click();
   const response = await responsePromise;
   expect(response.ok(), `${mode} POST /api/mode should succeed`).toBe(true);
-  await expect(page.locator(".tb-mode-badge")).toContainText(labels[mode]);
+  await expect(page.getByTestId("topbar-mode-badge")).toContainText(labels[mode]);
 }
 
 async function readHeaderSnapshot(page: import("@playwright/test").Page) {

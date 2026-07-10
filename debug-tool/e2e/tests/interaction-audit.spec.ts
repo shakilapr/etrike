@@ -17,7 +17,7 @@ test.describe("Debug Tool interaction audit", () => {
   test("mode selector switches the active work mode", async ({ page, request }) => {
     await page.goto("/");
 
-    await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+    await page.getByTestId("main-tabs").getByRole("button", { name: "Work Mode" }).click();
     await expect(page.getByText("Work Mode Configurator")).toBeVisible();
 
     await page.getByRole("button", { name: "Full Simulation" }).click();
@@ -27,7 +27,7 @@ test.describe("Debug Tool interaction audit", () => {
     );
     await page.getByRole("button", { name: /Apply/i }).click();
     await expect((await modePost).ok()).toBeTruthy();
-    await expect(page.locator(".tb-mode-badge")).toContainText("Full Simulation");
+    await expect(page.getByTestId("topbar-mode-badge")).toContainText("Full Simulation");
 
     await expect
       .poll(async () => {
@@ -56,8 +56,8 @@ test.describe("Debug Tool interaction audit", () => {
 
     for (const name of tabNames) {
       const startedAt = performance.now();
-      await page.locator("nav.tabs").getByRole("button", { name }).click();
-      const activeTab = page.locator("nav.tabs button.active");
+      await page.getByTestId("main-tabs").getByRole("button", { name }).click();
+      const activeTab = page.getByTestId("main-tabs").locator("button.active");
       await expect(activeTab).toHaveText(name);
       expect(performance.now() - startedAt).toBeLessThan(1000);
     }
@@ -65,7 +65,7 @@ test.describe("Debug Tool interaction audit", () => {
 
   test("controller keyboard commands update the visible command state", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByRole("button", { name: "Controller" }).dispatchEvent("click");
+    await page.getByTestId("main-tabs").getByRole("button", { name: "Controller" }).dispatchEvent("click");
     const controller = page.locator(".injector-layout").filter({ has: page.locator("h2", { hasText: "Controller" }) });
     await expect(controller).toBeVisible();
 

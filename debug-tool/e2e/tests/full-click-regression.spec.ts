@@ -34,11 +34,7 @@ test.describe('Full UI click regression', () => {
   });
 
   test('clicks all primary navigation and action controls', async ({ page }) => {
-    // Topbar mode select check
-    const modeSelect = page.locator('.tb-mode-select');
-    if (await modeSelect.isVisible()) {
-      await modeSelect.selectOption('full-sim');
-    }
+    // Topbar mode select check is obsolete, replaced by Work Mode Configurator
 
     // Toggle physics sidebar
     const sidebarToggle = page.locator('.trike-sidebar-toggle');
@@ -49,7 +45,7 @@ test.describe('Full UI click regression', () => {
     }
 
     // Click all main tabs
-    const tabs = page.locator('.tabs button');
+    const tabs = page.locator('[data-testid="main-tabs"] button');
     const tabCount = await tabs.count();
     
     for (let i = 0; i < tabCount; i++) {
@@ -74,7 +70,7 @@ test.describe('Full UI click regression', () => {
 
   test('explores Controller and Emulator specific flows', async ({ page }) => {
     // Go to Controller
-    await page.locator('.tabs button', { hasText: 'Controller' }).click();
+    await page.locator('[data-testid="main-tabs"] button', { hasText: 'Controller' }).click();
     await page.waitForTimeout(500);
     
     const wasdDiv = page.locator('.d-pad');
@@ -84,12 +80,12 @@ test.describe('Full UI click regression', () => {
       await page.keyboard.press('a');
     }
 
-    // Go to Emulator
-    await page.locator('.tabs button', { hasText: 'Emulator' }).click();
+    // Go to Work Mode Configurator
+    await page.locator('[data-testid="main-tabs"] button', { hasText: 'Work Mode' }).click();
     await page.waitForTimeout(500);
     
     // Toggle some ECUs
-    const ecuToggles = page.locator('.ecu-grid .card');
+    const ecuToggles = page.locator('.wmc-ecu-row input');
     const ecuCount = await ecuToggles.count();
     
     // Just toggle the first one to test interactivity
@@ -107,14 +103,6 @@ test.describe('Full UI click regression', () => {
     await page.waitForFunction(() => document.querySelector('.app-shell') !== null);
     await expect(page.locator('.app-shell')).toBeVisible();
 
-    // The topbar mode select might be hidden on mobile
-    const modeSelect = page.locator('.tb-mode-select');
-    if (await modeSelect.isVisible().catch(() => false)) {
-       try {
-         await modeSelect.selectOption('hybrid', { timeout: 2000 });
-       } catch (e) {
-         console.warn("Could not select mode on mobile viewport");
-       }
-    }
+    // The topbar mode select might be hidden on mobile (obsolete)
   });
 });

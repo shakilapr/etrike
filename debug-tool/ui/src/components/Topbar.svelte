@@ -162,10 +162,10 @@
   <!-- ── Row 1 ── -->
   <div class="tb-row tb-row-main">
     <!-- Brand + mode selector -->
-    <div class="tb-brand">
+    <div class="tb-brand" data-testid="topbar-brand">
       <span>E-Trike</span>
     </div>
-    <span class="tb-mode-badge" class:ready={$workModeReady} title="Current work mode">
+    <span class="tb-mode-badge" data-testid="topbar-mode-badge" class:ready={$workModeReady} title="Current work mode">
       {$workModeReady ? workModeLabel($workMode.mode) : "…"}
     </span>
 
@@ -207,7 +207,7 @@
   </div>
 
   <!-- Health bar: diagnostic groups mirror vehicle bring-up checks. -->
-  <div class="tb-health-row">
+  <div class="tb-health-row" data-testid="topbar-health-row">
     <div class="tb-health" aria-label="System health">
       {#each healthByGroup as section}
         <span class="tbh-group" class:tbh-group-ecu={section.group === "ECU"} aria-label={section.group + " health"}>

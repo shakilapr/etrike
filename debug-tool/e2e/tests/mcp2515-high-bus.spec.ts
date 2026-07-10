@@ -25,7 +25,7 @@ async function hasOpenLink(page: import("@playwright/test").Page): Promise<boole
   return Boolean(status.bridge?.link_open || status.serial?.port_open);
 }
 
-test.describe("MCP2515 High-Bus Dashboard", () => {
+test.describe("MCP2515 High-Bus Dashboard @hardware", () => {
   test.beforeEach(async ({ page }, testInfo) => {
     // Skip all MCP2515 tests when no CAN hardware is connected
     const statusResp = await page.request.get(`${BASE_URL}/api/status`);
