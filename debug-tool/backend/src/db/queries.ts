@@ -8,12 +8,16 @@ import type { FrameRouter, FrameSource } from "../sim/router";
 
 export interface StoredCanFrame extends CanFrame {
   row_id: number;
+  ts_us: string;
+  seq: number;
   ts_real: number;
   ts_device: number;
 }
 
 export interface InjectedFrame {
   row_id: number;
+  ts_us: string;
+  seq: number;
   ts_real: number;
   bus: Bus;
   can_id: string;
@@ -39,6 +43,8 @@ export interface FrameQuery {
 
 interface FrameRow {
   id: number;
+  ts_us: bigint;
+  seq: number;
   ts_real: number;
   ts_device: number;
   bus: Bus;
@@ -51,6 +57,8 @@ interface FrameRow {
 
 interface InjectionRow {
   id: number;
+  ts_us: bigint;
+  seq: number;
   ts_real: number;
   bus: Bus;
   can_id: string;
@@ -136,7 +144,7 @@ export class DebugStoreImpl {
 
     // Prepare all statements
     this.stmtInsertFrame = this.db.prepare(
-      `INSERT INTO can_frames (ts_real, ts_device, bus, can_id, can_name, dlc, data, decoded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO can_frames (ts_real, ts_us, seq, ts_device, bus, can_id, can_name, dlc, data, decoded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     this.stmtActiveRecordings = this.db.prepare(`SELECT id FROM recordings WHERE stopped_at IS NULL`);
     this.stmtInsertRecordingFrame = this.db.prepare(`INSERT OR IGNORE INTO recording_frames (recording_id, frame_id) VALUES (?, ?)`);
@@ -152,7 +160,7 @@ export class DebugStoreImpl {
     );
     this.stmtGetStatsAll = this.db.prepare(`SELECT key, value FROM runtime_state WHERE key IN ('stats', 'stats_updated_at')`);
     this.stmtInsertInjection = this.db.prepare(
-      `INSERT INTO injected_frames (ts_real, bus, can_id, dlc, data, status, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO injected_frames (ts_real, ts_us, seq, bus, can_id, dlc, data, status, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     this.stmtUpdateInjectionCorr = this.db.prepare(`UPDATE injected_frames SET status = ? WHERE id = ?`);
     this.stmtSelectInjectionCorr = this.db.prepare(`SELECT id FROM injected_frames WHERE correlation_id = ?`);
@@ -198,7 +206,7 @@ export class DebugStoreImpl {
    */
   insertFrame(frame: CanFrame, source: FrameSource = "physical"): StoredCanFrame {
     const res = this.insertFrames([{ frame, source }]);
-    return res[0] ?? { ...frame, row_id: -1, ts_real: Date.now() / 1000, ts_device: Math.round(frame.ts) };
+    return res[0] ?? { ...frame, row_id: -1, ts_real: Date.now() / 1000, ts_device: Math.round(frame.ts), ts_us: frame.ts_us, seq: frame.seq };
   }
 
   /**
@@ -222,24 +230,28 @@ export class DebugStoreImpl {
 
         const tsReal = Date.now() / 1000;
         const tsDevice = Math.round(frame.ts);
+        const tsUs = frame.ts_us ? BigInt(frame.ts_us) : BigInt(Math.floor(tsReal * 1_000_000));
+        const seq = frame.seq ?? 0;
         
         try {
           const res = this.stmtInsertFrame.run(
             tsReal,
+            tsUs,
+            seq,
             tsDevice,
             frame.bus,
             frame.id,
             frame.name,
             frame.dlc,
-            Buffer.from(frame.data.slice(0, frame.dlc)),
+            Buffer.from(frame.data),
             JSON.stringify(frame.decoded)
           );
           const rowId = Number(res.lastInsertRowid);
           insertedIds.push(rowId);
-          results.push({ ...frame, row_id: rowId, ts_real: tsReal, ts_device: tsDevice });
+          results.push({ ...frame, row_id: rowId, ts_real: tsReal, ts_device: tsDevice, ts_us: tsUs.toString(), seq });
         } catch (err) {
           console.error("insertFrame failed:", String(err));
-          results.push({ ...frame, row_id: -1, ts_real: tsReal, ts_device: tsDevice });
+          results.push({ ...frame, row_id: -1, ts_real: tsReal, ts_device: tsDevice, ts_us: tsUs.toString(), seq });
         }
       }
 
@@ -323,12 +335,14 @@ export class DebugStoreImpl {
     }
   }
 
-  insertInjection(input: Omit<InjectedFrame, "row_id" | "ts_real" | "status"> & { status?: string; correlation_id?: string }): InjectedFrame {
+  insertInjection(input: Omit<InjectedFrame, "row_id" | "ts_real" | "status" | "ts_us" | "seq"> & { status?: string; correlation_id?: string; ts_us?: string; seq?: number }): InjectedFrame {
     const tsReal = Date.now() / 1000;
+    const tsUs = input.ts_us ?? (BigInt(Date.now()) * 1000n).toString();
+    const seq = input.seq ?? 0;
     const status = input.status ?? "queued";
     const correlationId = input.correlation_id ?? null;
-    const result = this.stmtInsertInjection.run(tsReal, input.bus, input.can_id, input.dlc, Buffer.from(input.data), status, correlationId);
-    return { row_id: Number(result.lastInsertRowid), ts_real: tsReal, bus: input.bus, can_id: input.can_id, dlc: input.dlc, data: input.data, status };
+    const result = this.stmtInsertInjection.run(tsReal, BigInt(tsUs), seq, input.bus, input.can_id, input.dlc, Buffer.from(input.data), status, correlationId);
+    return { row_id: Number(result.lastInsertRowid), ts_real: tsReal, ts_us: tsUs, seq: seq, bus: input.bus, can_id: input.can_id, dlc: input.dlc, data: input.data, status };
   }
 
   updateInjectionByCorrelation(correlationId: string, status: string): InjectedFrame | null {
@@ -457,6 +471,8 @@ function rowToFrame(row: FrameRow): StoredCanFrame {
   return {
     row_id: row.id,
     ts_real: row.ts_real,
+    ts_us: row.ts_us != null ? row.ts_us.toString() : "",
+    seq: row.seq != null ? row.seq : 0,
     ts_device: row.ts_device,
     ts: row.ts_device,
     bus: normalizeBus(row.bus),
@@ -469,7 +485,7 @@ function rowToFrame(row: FrameRow): StoredCanFrame {
 }
 
 function rowToInjection(row: InjectionRow): InjectedFrame {
-  return { row_id: row.id, ts_real: row.ts_real, bus: normalizeBus(row.bus), can_id: row.can_id, dlc: row.dlc, data: [...row.data], status: row.status };
+  return { row_id: row.id, ts_real: row.ts_real, ts_us: row.ts_us != null ? row.ts_us.toString() : "", seq: row.seq != null ? row.seq : 0, bus: normalizeBus(row.bus), can_id: row.can_id, dlc: row.dlc, data: [...row.data], status: row.status };
 }
 
 function safeJson(input: string): Record<string, unknown> {

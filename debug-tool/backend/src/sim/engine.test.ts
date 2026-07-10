@@ -80,10 +80,12 @@ describe("SimulationEngine", () => {
       insertFrame: (frame: CanFrame): StoredCanFrame => ({
         ...frame,
         row_id: 1,
-        ts_real: frame.ts,
-        ts_device: Math.round(frame.ts),
+        ts_real: Date.now() / 1000,
+        ts_device: frame.ts,
+        ts_us: frame.ts_us ?? "0",
+        seq: frame.seq ?? 0,
       }),
-    } as Pick<DebugStore, "insertFrame"> as DebugStore;
+    } as unknown as DebugStore;
     const hub = { broadcast: vi.fn() };
     const writeQueue = { enqueue: vi.fn(), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
     const engine = new SimulationEngine(store, hub, writeQueue);

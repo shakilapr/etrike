@@ -1,4 +1,5 @@
 import { DynamicCanDecoder } from "./dynamic-decoder";
+import { defaultTimebase } from "./timebase";
 
 export const BUSES = ["high", "low"] as const;
 export type Bus = (typeof BUSES)[number];
@@ -63,6 +64,8 @@ export interface CanMessageDef {
 
 export interface CanFrame {
   ts: number;
+  ts_us?: string;
+  seq?: number;
   bus: Bus;
   id: string;
   name: string;
@@ -187,7 +190,16 @@ export function normalizeFrame(input: Partial<CanFrame> & { id: string; data: nu
   const decoded = input.decoded && Object.keys(input.decoded).length > 0 ? input.decoded : decodeFrame(bus, id, fullData);
   let ts = typeof input.ts === "number" ? input.ts : Date.now() / 1000;
   if (ts > 1_000_000_000_000) ts = ts / 1000;
-  return { ts, bus, id, name: input.name ?? getMessageName(bus, id), dlc, data: fullData.slice(0, dlc), decoded };
+  
+  let ts_us = input.ts_us;
+  let seq = input.seq;
+  if (!ts_us || typeof seq !== "number") {
+    const fallback = defaultTimebase.now();
+    if (!ts_us) ts_us = fallback.ts_us;
+    if (typeof seq !== "number") seq = fallback.seq;
+  }
+  
+  return { ts, ts_us, seq, bus, id, name: input.name ?? getMessageName(bus, id), dlc, data: fullData.slice(0, dlc), decoded };
 }
 
 export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string, unknown> {
