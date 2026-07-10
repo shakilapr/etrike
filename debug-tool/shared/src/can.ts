@@ -5,6 +5,31 @@ export type Bus = (typeof BUSES)[number];
 
 export type FieldKind = "number" | "boolean" | "enum";
 
+export class CodecError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+export class UnknownMessageError extends CodecError {
+  constructor(public readonly bus: string, public readonly id: string) {
+    super(`Unknown message: bus=${bus}, id=${id}`);
+  }
+}
+
+export class ValidationError extends CodecError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class SchemaError extends CodecError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export interface CanField {
   key: string;
   label: string;
@@ -76,6 +101,19 @@ export function initCanDatabase(yamlHigh: string, yamlLow: string) {
   decoder.loadYaml(yamlLow);
   CAN_MESSAGES = decoder.getMessages();
   CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
+
+  // Register checksum hooks
+  const computeXor = (data: number[]) => {
+    if (data.length < 8) return;
+    let chk = 0;
+    for (let i = 0; i < 7; i++) {
+      chk ^= data[i];
+    }
+    data[7] = chk ^ 0xFF;
+  };
+  
+  decoder.registerEncoderHook("low", "0x169", computeXor);
+  decoder.registerEncoderHook("low", "0x7B9", computeXor);
 }
 
 export const INJECTION_TEMPLATES: InjectionTemplate[] = [
