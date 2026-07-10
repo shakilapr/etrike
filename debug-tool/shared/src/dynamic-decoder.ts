@@ -1,8 +1,13 @@
 import yaml from "js-yaml";
-import { Bus, CanFrame, CanField, CanMessageDef, FieldKind } from "./can";
+import { Bus, CanFrame, CanField, CanMessageDef, FieldKind, SchemaError, UnknownMessageError, ValidationError } from "./can";
 
 export class DynamicCanDecoder {
   private messages: Map<string, CanMessageDef> = new Map();
+  private encoderHooks: Map<string, (data: number[]) => void> = new Map();
+
+  registerEncoderHook(bus: string, id: string, hook: (data: number[]) => void): void {
+    this.encoderHooks.set(`${bus}:${id}`, hook);
+  }
 
   /** Load a YAML file string into the database. */
   loadYaml(yamlString: string): void {
@@ -16,8 +21,24 @@ export class DynamicCanDecoder {
 
       for (const msg of proto.messages || []) {
         const canIdStr = typeof msg.id === "number" ? `0x${msg.id.toString(16).padStart(3, "0").toUpperCase()}` : msg.id;
+        const bitmask = new Set<number>();
 
         const fields: CanField[] = (msg.signals || []).map((sig: any) => {
+          if (!sig.multiplexed) {
+             let startBit = 0;
+             if (byteOrder === "intel") {
+               startBit = sig.byte * 8 + (sig.bit_offset ?? 0);
+             } else {
+               const byteLsb = sig.byte + Math.floor((sig.size - 1) / 8);
+               startBit = (7 - byteLsb) * 8 + (sig.bit_offset ?? 0);
+             }
+             for(let i = 0; i < sig.size; i++) {
+                 if (bitmask.has(startBit + i)) {
+                     throw new SchemaError(`Overlap detected in ${canIdStr} signal ${sig.name || sig.key}`);
+                 }
+                 bitmask.add(startBit + i);
+             }
+          }
           const rawOptions = sig.values ?? sig.options;
           const hasEnum = (sig.unit === "enum") || (rawOptions && Object.keys(rawOptions).length > 0);
           const isBoolean = !hasEnum && (sig.size === 1 || (sig.min === 0 && sig.max === 1 && !sig.factor && !sig.offset));
@@ -138,25 +159,45 @@ export class DynamicCanDecoder {
 
   encode(bus: string, id: string, values: Record<string, number | boolean>): { dlc: number; data: number[] } {
     const def = this.getDef(bus, id);
-    if (!def) return { dlc: 0, data: [] };
+    if (!def) throw new UnknownMessageError(bus, id);
 
     let val_le = 0n;
     let val_be = 0n;
     const byteOrder = (def as any)._byteOrder;
 
     for (const f of def.fields as any[]) {
-      const { key, _byte, _bit_offset, _size, _type, _factor, _offset } = f;
+      const { key, _byte, _bit_offset, _size, _type, _factor, _offset, min, max, options } = f;
       if (values[key] === undefined) continue;
 
       let val = Number(values[key]);
+      if (!Number.isFinite(val)) {
+        throw new ValidationError(`Signal ${key} must be finite`);
+      }
+
+      if (typeof min === "number" && typeof max === "number") {
+        if (val < min || val > max) {
+          throw new ValidationError(`Signal ${key} value ${val} out of range [${min}, ${max}]`);
+        }
+      }
       
-      // Inverse factor/offset
-      val = Math.round((val - _offset) / _factor);
+      const rawVal = Math.round((val - _offset) / _factor);
+      
+      if (options && f.unit === "enum") {
+        if (!options.some((o: any) => o.value === rawVal)) {
+          throw new ValidationError(`Signal ${key} value ${rawVal} not in allowed options`);
+        }
+      }
+
+      const minRaw = _type === "signed" ? -(2 ** (_size - 1)) : 0;
+      const maxRaw = _type === "signed" ? (2 ** (_size - 1)) - 1 : (2 ** _size) - 1;
+      if (rawVal < minRaw || rawVal > maxRaw) {
+        throw new ValidationError(`Signal ${key} raw value ${rawVal} overflows bit-width ${_size}`);
+      }
 
       // Handle signed
-      let rawBig = BigInt(val);
-      if (_type === "signed" && val < 0) {
-        rawBig = (1n << BigInt(_size)) + BigInt(val);
+      let rawBig = BigInt(rawVal);
+      if (_type === "signed" && rawVal < 0) {
+        rawBig = (1n << BigInt(_size)) + BigInt(rawVal);
       }
 
       rawBig = rawBig & ((1n << BigInt(_size)) - 1n);
@@ -179,6 +220,12 @@ export class DynamicCanDecoder {
       view.setBigUint64(0, val_be, false);
     }
 
-    return { dlc: def.dlc, data: Array.from(buf.subarray(0, def.dlc)) };
+    const finalData = Array.from(buf.subarray(0, def.dlc));
+    const hook = this.encoderHooks.get(`${bus}:${def.id}`);
+    if (hook) {
+      hook(finalData);
+    }
+
+    return { dlc: def.dlc, data: finalData };
   }
 }
