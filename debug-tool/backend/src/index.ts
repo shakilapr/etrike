@@ -1,3 +1,4 @@
+import { initCanDatabase } from "@etrike/debug-shared";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
@@ -28,7 +29,6 @@ import { SesModel } from "./sim/ecus/ses-model";
 import { SebModel } from "./sim/ecus/seb-model";
 import { IpcEngineAdapter } from "./sim/ipc-adapter";
 import { defaultStats, type CanFrame } from "./types/can";
-import { initCanDatabase } from "@etrike/debug-shared";
 import { StreamHub } from "./ws/stream";
 
 type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
@@ -38,11 +38,9 @@ type FrameObservableBridge = AnyBridge & {
 
 async function main(): Promise<void> {
   try {
-    const yamlHigh = readFileSync(resolve(__dirname, "../../../shared/can/can_high.yaml"), "utf-8");
-    const yamlLow = readFileSync(resolve(__dirname, "../../../shared/can/can_low.yaml"), "utf-8");
-    initCanDatabase(yamlHigh, yamlLow);
+    initCanDatabase();
   } catch (err) {
-    console.error("Failed to load CAN YAML files:", err);
+    console.error("Failed to initialize CAN database:", err);
     process.exit(1);
   }
 

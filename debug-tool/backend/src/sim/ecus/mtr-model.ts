@@ -1,3 +1,4 @@
+import { ID_SAFETY_ESTOP, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_SYS_MODE_CMD, ID_MTR_MOTOR_FBK, ID_SYS_THROTTLE_STS } from "@etrike/debug-shared";
 /**
  * MTR Motor model — TypeScript implementation.
  * Receives 0x204 drive commands, generates 0x206 feedback + 0x120 throttle.
@@ -23,8 +24,8 @@ export class MtrModel implements EcuModel {
   private brakeActive = false;
 
   ingest(frame: CanFrame): void {
-    if (frame.id === "0x001") { this.actualSpeed = 0; this.faults |= 1; return; }
-    if (frame.id === "0x204") {
+    if (frame.id === ID_SAFETY_ESTOP) { this.actualSpeed = 0; this.faults |= 1; return; }
+    if (frame.id === ID_RT_DRIVE_CMD) {
       const d = frame.decoded as Record<string, unknown>;
       const targetSpeed = (d.motor_speed_mmps as number) ?? 0;
       const targetGear = (d.gear as number) ?? 0;
@@ -40,12 +41,12 @@ export class MtrModel implements EcuModel {
       this.gear = targetGear;
       if (Math.abs(targetSpeed - this.actualSpeed) < 1) this.actualSpeed = targetSpeed;
     }
-    if (frame.id === "0x205") {
+    if (frame.id === ID_RT_BRAKE_CMD) {
       const d = frame.decoded as Record<string, unknown>;
       const kpa = (d.brake_pressure_kpa as number) ?? 0;
       this.brakeActive = kpa > 100;
     }
-    if (frame.id === "0x110") {
+    if (frame.id === ID_SYS_MODE_CMD) {
       const d = frame.decoded as Record<string, unknown>;
       const m = (d.mode as number) ?? 0;
       if (m <= 1) { this.faults &= ~1; this.brakeActive = false; }
@@ -59,16 +60,16 @@ export class MtrModel implements EcuModel {
     // Motor feedback 0x206 (50 Hz)
     if (this.tickCount % 2 === 0) {
       const spd = Math.round(this.actualSpeed);
-      this.emit("low", "0x206", 4, [(spd>>8)&0xFF, spd&0xFF, this.gear, this.faults],
+      this.emit("low", ID_MTR_MOTOR_FBK, 4, [(spd>>8)&0xFF, spd&0xFF, this.gear, this.faults],
         "MTR_MOTOR_FBK", { actual_speed_mmps: spd, gear_state: this.gear, fault_flags: this.faults });
       // Also forward to high bus (gateway function)
-      this.emit("high", "0x206", 4, [(spd>>8)&0xFF, spd&0xFF, this.gear, this.faults],
+      this.emit("high", ID_MTR_MOTOR_FBK, 4, [(spd>>8)&0xFF, spd&0xFF, this.gear, this.faults],
         "MTR_MOTOR_FBK", { actual_speed_mmps: spd, gear_state: this.gear, fault_flags: this.faults });
     }
 
     // Throttle status 0x120 (100 Hz)
     const spd = Math.round(this.actualSpeed);
-    this.emit("low", "0x120", 2, [(spd>>8)&0xFF, spd&0xFF], "SYS_THROTTLE_STS", { speed_mmps: spd });
+    this.emit("low", ID_SYS_THROTTLE_STS, 2, [(spd>>8)&0xFF, spd&0xFF], "SYS_THROTTLE_STS", { speed_mmps: spd });
 
     return [...this.frameQueue];
   }

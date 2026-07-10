@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ID_SYS_MODE_CMD, ID_SYS_DCDC_CMD, ID_SAFETY_ESTOP } from "@etrike/debug-shared";
+
   import { stats, status } from "../stores/can";
   import { telemetry, ecuPresence } from "../stores/telemetry";
   import type { Bus } from "../lib/can-decoder";
@@ -71,13 +73,13 @@
   async function cycleMode() {
     if (sending) return; sending = true;
     const nm = nextMode();
-    try { await sendFrame({ bus: "low", id: "0x110", dlc: 1, data: [nm.value] }); logInfo("Mode → " + nm.label); }
+    try { await sendFrame({ bus: "low", id: ID_SYS_MODE_CMD, dlc: 1, data: [nm.value] }); logInfo("Mode → " + nm.label); }
     catch (e) { logError("Mode fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }
   async function toggleDcdc() {
     if (sending) return; sending = true;
-    try { await sendFrame({ bus: "low", id: "0x012", dlc: 1, data: [1] }); logInfo("DCDC ON"); }
+    try { await sendFrame({ bus: "low", id: ID_SYS_DCDC_CMD, dlc: 1, data: [1] }); logInfo("DCDC ON"); }
     catch (e) { logError("DCDC fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }
@@ -85,7 +87,7 @@
     if (sending) return;
     if (!window.confirm("Send ESTOP? Emergency stop on all nodes.")) return;
     sending = true;
-    try { await sendFrame({ bus: "low", id: "0x001", dlc: 0, data: [], confirm_estop: true }); logInfo("ESTOP sent"); }
+    try { await sendFrame({ bus: "low", id: ID_SAFETY_ESTOP, dlc: 0, data: [], confirm_estop: true }); logInfo("ESTOP sent"); }
     catch (e) { logError("ESTOP fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }

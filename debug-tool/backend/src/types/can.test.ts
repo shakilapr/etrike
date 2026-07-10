@@ -1,3 +1,4 @@
+import { ID_SAFETY_ESTOP, ID_HOST_DRIVE_CMD, ID_STEER_DIAG, ID_BRAKE_DIAG, ID_SYS_MODE_CMD, ID_SYS_DCDC_CMD, ID_RT_DRIVE_CMD, ID_VCU_SES_REQ, ID_HOST_HEARTBEAT } from "@etrike/debug-shared";
 import { describe, expect, it } from "vitest";
 import {
   CAN_MESSAGES,
@@ -25,9 +26,7 @@ import {
 import fs from "fs";
 import path from "path";
 
-const highYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_high.yaml"), "utf-8");
-const lowYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_low.yaml"), "utf-8");
-initCanDatabase(highYaml, lowYaml);
+initCanDatabase();
 
 // ── Helpers ──
 
@@ -142,13 +141,13 @@ describe("validateDataBytes", () => {
 describe("BusDetector", () => {
   it("defaults to high when no unique IDs seen", () => {
     const detector = new BusDetector();
-    expect(detector.feed("0x001")).toBe("high"); // 0x001 exists on both buses
+    expect(detector.feed(ID_SAFETY_ESTOP)).toBe("high"); // 0x001 exists on both buses
     expect(detector.state).toEqual({ detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 });
   });
 
   it("increments high hits on high-unique ID", () => {
     const detector = new BusDetector();
-    expect(detector.feed("0x300")).toBe("high"); // 0x300 is high-only
+    expect(detector.feed(ID_HOST_DRIVE_CMD)).toBe("high"); // 0x300 is high-only
     expect(detector.state.highHits).toBe(1);
     expect(detector.state.lowHits).toBe(0);
     expect(detector.state.confidence).toBe("low");
@@ -156,28 +155,28 @@ describe("BusDetector", () => {
 
   it("locks to high after 3 unique IDs", () => {
     const detector = new BusDetector();
-    detector.feed("0x300"); // HOST_DRIVE_CMD
+    detector.feed(ID_HOST_DRIVE_CMD); // HOST_DRIVE_CMD
     expect(detector.state.bus).toBe("high");
     expect(detector.state.confidence).toBe("low");
 
-    detector.feed("0x310"); // STEER_DIAG
-    detector.feed("0x311"); // BRAKE_DIAG
+    detector.feed(ID_STEER_DIAG); // STEER_DIAG
+    detector.feed(ID_BRAKE_DIAG); // BRAKE_DIAG
     expect(detector.state).toEqual({ detected: true, bus: "high", confidence: "high", highHits: 3, lowHits: 0 });
   });
 
   it("locks to low after 3 unique IDs", () => {
     const detector = new BusDetector();
-    detector.feed("0x110"); // SYS_MODE_CMD (low only)
-    detector.feed("0x012"); // SYS_DCDC_CMD (low only)
-    detector.feed("0x204"); // RT_DRIVE_CMD (low only)
+    detector.feed(ID_SYS_MODE_CMD); // SYS_MODE_CMD (low only)
+    detector.feed(ID_SYS_DCDC_CMD); // SYS_DCDC_CMD (low only)
+    detector.feed(ID_RT_DRIVE_CMD); // RT_DRIVE_CMD (low only)
     expect(detector.state).toEqual({ detected: true, bus: "low", confidence: "high", highHits: 0, lowHits: 3 });
   });
 
   it("does not lock from mixed hits", () => {
     const detector = new BusDetector();
-    detector.feed("0x300"); // high
-    detector.feed("0x169"); // low
-    detector.feed("0x001"); // both buses — not unique
+    detector.feed(ID_HOST_DRIVE_CMD); // high
+    detector.feed(ID_VCU_SES_REQ); // low
+    detector.feed(ID_SAFETY_ESTOP); // both buses — not unique
     // After mixed hits (both high and low unique IDs seen), the state
     // reports actual counts with no confidence (no lock)
     expect(detector.state.detected).toBe(false);
@@ -188,27 +187,27 @@ describe("BusDetector", () => {
 
   it("ignores further feeds after lock", () => {
     const detector = new BusDetector();
-    detector.feed("0x300");
-    detector.feed("0x310");
-    detector.feed("0x311"); // locks to high
-    detector.feed("0x169"); // would be low-unique, but ignored
-    expect(detector.feed("0x300")).toBe("high");
+    detector.feed(ID_HOST_DRIVE_CMD);
+    detector.feed(ID_STEER_DIAG);
+    detector.feed(ID_BRAKE_DIAG); // locks to high
+    detector.feed(ID_VCU_SES_REQ); // would be low-unique, but ignored
+    expect(detector.feed(ID_HOST_DRIVE_CMD)).toBe("high");
     expect(detector.state.bus).toBe("high");
     expect(detector.state.detected).toBe(true);
   });
 
   it("reset clears all state", () => {
     const detector = new BusDetector();
-    detector.feed("0x300");
-    detector.feed("0x310");
-    detector.feed("0x311");
+    detector.feed(ID_HOST_DRIVE_CMD);
+    detector.feed(ID_STEER_DIAG);
+    detector.feed(ID_BRAKE_DIAG);
     detector.reset();
     expect(detector.state).toEqual({ detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 });
   });
 
   it("lowHits > 0 and highHits === 0 gives low confidence low", () => {
     const detector = new BusDetector();
-    detector.feed("0x169");
+    detector.feed(ID_VCU_SES_REQ);
     expect(detector.state).toEqual({ detected: false, bus: "low", confidence: "low", highHits: 0, lowHits: 1 });
   });
 });
@@ -216,13 +215,13 @@ describe("BusDetector", () => {
 // ── normalizeCanId / normalizeBus ──
 
 describe("normalizeCanId (backend)", () => {
-  it("keeps formatted hex unchanged", () => expect(normalizeCanId("0x300")).toBe("0x300"));
-  it("formats numeric string without prefix", () => expect(normalizeCanId("300")).toBe("0x300"));
-  it("handles lowercase", () => expect(normalizeCanId("0x7fc")).toBe("0x7FC"));
+  it("keeps formatted hex unchanged", () => expect(normalizeCanId(ID_HOST_DRIVE_CMD)).toBe(ID_HOST_DRIVE_CMD));
+  it("formats numeric string without prefix", () => expect(normalizeCanId("300")).toBe(ID_HOST_DRIVE_CMD));
+  it("handles lowercase", () => expect(normalizeCanId(ID_HOST_HEARTBEAT)).toBe(ID_HOST_HEARTBEAT));
   it("handles empty string", () => expect(normalizeCanId("")).toBe(""));
   it("handles non-hex pass-through", () => expect(normalizeCanId("0xGGG")).toBe("0XGGG"));
-  it("handles string with whitespace", () => expect(normalizeCanId(" 0x300 ")).toBe("0x300"));
-  it("accepts number input", () => expect(normalizeCanId(0x300)).toBe("0x300"));
+  it("handles string with whitespace", () => expect(normalizeCanId(" 0x300 ")).toBe(ID_HOST_DRIVE_CMD));
+  it("accepts number input", () => expect(normalizeCanId(0x300)).toBe(ID_HOST_DRIVE_CMD));
 });
 
 describe("normalizeBus", () => {
@@ -294,14 +293,14 @@ describe("CAN_MESSAGES catalog", () => {
 
 describe("findMessage", () => {
   it("finds known message by bus + id", () => {
-    const msg = findMessage("high", "0x300");
+    const msg = findMessage("high", ID_HOST_DRIVE_CMD);
     expect(msg).toBeDefined();
     expect(msg!.name).toBe("HOST_DRIVE_CMD");
     expect(msg!.bus).toBe("high");
   });
 
   it("returns undefined for ID on wrong bus (no cross-bus fallback)", () => {
-    const msg = findMessage("low", "0x300"); // 0x300 is high-bus only
+    const msg = findMessage("low", ID_HOST_DRIVE_CMD); // 0x300 is high-bus only
     expect(msg).toBeUndefined();
   });
 
@@ -310,8 +309,8 @@ describe("findMessage", () => {
   });
 
   it("finds messages that appear on both buses", () => {
-    const highMsg = findMessage("high", "0x001");
-    const lowMsg = findMessage("low", "0x001");
+    const highMsg = findMessage("high", ID_SAFETY_ESTOP);
+    const lowMsg = findMessage("low", ID_SAFETY_ESTOP);
     expect(highMsg).toBeDefined();
     expect(lowMsg).toBeDefined();
     expect(highMsg!.bus).toBe("high");
@@ -321,7 +320,7 @@ describe("findMessage", () => {
 
 describe("getMessageName", () => {
   it("returns name for known id", () => {
-    expect(getMessageName("low", "0x169")).toBe("VCU_SES_REQ");
+    expect(getMessageName("low", ID_VCU_SES_REQ)).toBe("VCU_SES_REQ");
   });
 
   it("returns UNKNOWN_ prefix for unknown id", () => {
@@ -335,25 +334,25 @@ describe("getMessageName", () => {
 
 describe("normalizeFrame", () => {
   it("normalizes bus field", () => {
-    const frame = normalizeFrame({ id: "0x300", data: [0, 0, 0, 0, 0, 0, 0, 1], ts: 1000 });
+    const frame = normalizeFrame({ id: ID_HOST_DRIVE_CMD, data: [0, 0, 0, 0, 0, 0, 0, 1], ts: 1000 });
     expect(frame.bus).toBe("high"); // default
-    expect(frame.id).toBe("0x300");
+    expect(frame.id).toBe(ID_HOST_DRIVE_CMD);
   });
 
   it("preserves explicit bus", () => {
-    const frame = normalizeFrame({ bus: "low", id: "0x204", data: [0, 0, 0x07, 0xD0, 1], ts: 1000 });
+    const frame = normalizeFrame({ bus: "low", id: ID_RT_DRIVE_CMD, data: [0, 0, 0x07, 0xD0, 1], ts: 1000 });
     expect(frame.bus).toBe("low");
-    expect(frame.id).toBe("0x204");
+    expect(frame.id).toBe(ID_RT_DRIVE_CMD);
   });
 
   it("pads data to 8 bytes and truncates", () => {
-    const frame = normalizeFrame({ id: "0x300", data: [1, 2], ts: 1000 });
+    const frame = normalizeFrame({ id: ID_HOST_DRIVE_CMD, data: [1, 2], ts: 1000 });
     expect(frame.data).toHaveLength(2); // dlc inferred from data length
     // normalizeBytes pads to 8 but data is sliced to dlc
   });
 
   it("decodes known frames", () => {
-    const frame = normalizeFrame({ bus: "high", id: "0x7FC", data: [42], ts: 1000 });
+    const frame = normalizeFrame({ bus: "high", id: ID_HOST_HEARTBEAT, data: [42], ts: 1000 });
     expect(frame.decoded).toEqual({ alive_ctr: 42, health_flags: 0 });
     expect(frame.name).toBe("HOST_HEARTBEAT");
   });
@@ -375,7 +374,7 @@ describe("normalizeStats", () => {
       ts: 5000,
       uptime_s: 3600,
       buses: {
-        high: { active: true, total: 100, fps: 50, load_pct: 10, tec: 0, rec: 0, by_id: { "0x300": 50 } },
+        high: { active: true, total: 100, fps: 50, load_pct: 10, tec: 0, rec: 0, by_id: { ID_HOST_DRIVE_CMD: 50 } },
         low: {}
       }
     });

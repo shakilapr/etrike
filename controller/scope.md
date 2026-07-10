@@ -7,11 +7,17 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
 - **Control & Mimic:** Ability to inject specific frames to spoof ECUs or control actuators.
 - **Simplicity:** Absolute minimal lines of code. No legacy simulators, no complex recording pipelines, no routing "spaghetti."
 
-## 2. Hardware Requirements
-- Must interface directly with the **CANalyst-II Dual-Channel USB Analyzer**.
-- Must connect simultaneously to:
+## 2. Supported Work Modes
+- **Mode 1: Full Vehicle (Monitor & Inject):** When connected to the fully assembled E-Trike, the tool passively monitors all traffic for the dashboard and only transmits when an operator explicitly injects a command (e.g., an ESTOP override).
+- **Mode 2: Bench Test (Synthetic Peer):** When connected to an isolated physical ECU (e.g., testing just the RT module on a desk), the tool actively acts as a "Virtual Vehicle" by automatically broadcasting all missing heartbeats and synthetic statuses to prevent the physical ECU from entering a fault state.
+- **Mode 3: Hardware-Free (Pure Software):** When the USB adapter is unplugged, the tool falls back to an internal RAM-based CAN bus interface, allowing full simulation and UI development without requiring any physical hardware.
+
+## 3. Hardware Requirements
+- **Primary Interface:** Must interface directly with the **CANalyst-II Dual-Channel USB Analyzer**.
+- **Dual-Bus Support:** Must connect simultaneously to:
   - **Channel 0:** High-Level CAN Bus (500 kbit/s).
   - **Channel 1:** Low-Level CAN Bus (500 kbit/s).
+- **Hardware-Free Virtual Mode:** If the CANalyst-II is unplugged, the tool must fall back to a purely software-based `virtual` CAN interface. This allows developers to boot the UI, run the dashboards, and simulate the entire vehicle network entirely in RAM without needing physical hardware.
 
 ## 3. Data Processing Requirements
 - **Single Source of Truth:** Must use the existing YAML files (`can_high.yaml`, `can_low.yaml`) via their derived DBCs to decode/encode data.
@@ -28,6 +34,7 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
   - CANalyst-II USB adapter status (Connected/Disconnected).
   - High-Level Bus status (Active/Offline).
   - Low-Level Bus status (Active/Offline).
+- **Network Topology Map (Connected Items):** The UI must include a visual map showing which hardware items are currently connected and talking to the network, updating in real-time as components are plugged in or unplugged.
 - **Node Heartbeat Indicators:** Must visually indicate the liveness of all key ECUs by monitoring their specific heartbeat frames:
   - **Host (Orin NX):** High Bus `0x7FC`
   - **RT (Real-Time Gateway):** High & Low Bus `0x7FD`
@@ -57,7 +64,10 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
   - **Kinematics Mode (High Bus):** Injecting `0x300` (Drive Cmd) to mimic the Jetson Host, allowing the physical RT ECU to compute the inverse bicycle kinematics and safety limits.
   - **Direct Actuator Mode (Low Bus):** Injecting `0x204` (Motor) and `0x169`/`0x7B9` (Steer/Brake) directly on the Low bus to test actuators in isolation, bypassing RT kinematics.
 
-- **Virtual Hardware Overrides (Disconnected Pins):** Since bench hardware often lacks physical buttons (Mode, Start, ESTOP) and encoders, the tool must be capable of acting as a full "Virtual SYS" and "Virtual MTR" node. By injecting `0x110` (Mode Command), `0x011` (Safety Status), and `0x206` (Motor Feedback), the UI tool allows the operator to switch the system into AUTO mode and simulate rolling wheels entirely via software, completely bypassing the floating hardware GPIO pins.
+- **HMI & Virtual Hardware Overrides:** To eliminate reliance on physical GPIO buttons (which are often disconnected on test benches), the controller UI natively acts as the vehicle's **HMI (Human-Machine Interface)** node. 
+  - **Mode & Power:** The UI natively commands the vehicle's state machine by broadcasting `0x111 HMI_MODE_REQ` and `0x112 HMI_PWR_REQ`, bypassing the need for physical switches.
+  - **Emergencies:** Software ESTOPs are injected directly via `0x001 SAFETY_ESTOP`.
+  - **Virtual Encoders:** The tool spoofs `0x206 MTR_MOTOR_FBK` to simulate rolling wheels, satisfying the EGAS L2 safety monitor even if physical encoders are absent.
 
 ## 7. Diagnostic & Logging Requirements
 - **Diagnostic Message Identification:** The tool must automatically identify diagnostic and telemetry frames (e.g., `SYS_DIAG_RPT`, `STEER_DIAG`, `BRAKE_DIAG`) as distinct from critical command frames.

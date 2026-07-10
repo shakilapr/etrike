@@ -129,6 +129,38 @@ void test_mode_manager_start_ignored_in_non_estop(void) {
     TEST_ASSERT_EQUAL(Mode::Auto, mm.mode());
 }
 
+void test_parse_hmi_mode_changes_mode(void) {
+    ModeManager mm;
+    mm.init();
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+    
+    bool changed = mm.parse_hmi_mode(uint8_t(Mode::Auto));
+    TEST_ASSERT_TRUE(changed);
+    TEST_ASSERT_EQUAL(Mode::Auto, mm.mode());
+
+    changed = mm.parse_hmi_mode(uint8_t(Mode::Auto));
+    TEST_ASSERT_FALSE(changed);
+}
+
+void test_parse_hmi_mode_ignored_in_estop(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    
+    bool changed = mm.parse_hmi_mode(uint8_t(Mode::Auto));
+    TEST_ASSERT_FALSE(changed);
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
+void test_parse_hmi_mode_rejects_invalid(void) {
+    ModeManager mm;
+    mm.init();
+    
+    bool changed = mm.parse_hmi_mode(2); // PURE_SIM or invalid
+    TEST_ASSERT_FALSE(changed);
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_mode_manager_manual_to_auto);
@@ -138,6 +170,9 @@ extern "C" void app_main() {
     RUN_TEST(test_mode_manager_mode_long_press_early_release);
     RUN_TEST(test_mode_manager_debounce_blocks_rapid_retrigger);
     RUN_TEST(test_mode_manager_start_ignored_in_non_estop);
+    RUN_TEST(test_parse_hmi_mode_changes_mode);
+    RUN_TEST(test_parse_hmi_mode_ignored_in_estop);
+    RUN_TEST(test_parse_hmi_mode_rejects_invalid);
     UNITY_END();
 }
 

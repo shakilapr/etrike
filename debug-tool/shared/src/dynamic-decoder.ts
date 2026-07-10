@@ -1,4 +1,3 @@
-import yaml from "js-yaml";
 import { Bus, CanFrame, CanField, CanMessageDef, FieldKind, SchemaError, UnknownMessageError, ValidationError } from "./can";
 
 export class DynamicCanDecoder {
@@ -9,80 +8,10 @@ export class DynamicCanDecoder {
     this.encoderHooks.set(`${bus}:${id}`, hook);
   }
 
-  /** Load a YAML file string into the database. */
-  loadYaml(yamlString: string): void {
-    const doc = yaml.load(yamlString) as any;
-    if (!doc || !doc.protocols) return;
-
-    for (const protoName of Object.keys(doc.protocols)) {
-      const proto = doc.protocols[protoName];
-      const bus = proto.bus || "low";
-      const byteOrder = proto.byte_order || "motorola";
-
-      for (const msg of proto.messages || []) {
-        const canIdStr = typeof msg.id === "number" ? `0x${msg.id.toString(16).padStart(3, "0").toUpperCase()}` : msg.id;
-        const bitmask = new Set<number>();
-
-        const fields: CanField[] = (msg.signals || []).map((sig: any) => {
-          if (!sig.multiplexed) {
-             let startBit = 0;
-             if (byteOrder === "intel") {
-               startBit = sig.byte * 8 + (sig.bit_offset ?? 0);
-             } else {
-               const byteLsb = sig.byte + Math.floor((sig.size - 1) / 8);
-               startBit = (7 - byteLsb) * 8 + (sig.bit_offset ?? 0);
-             }
-             for(let i = 0; i < sig.size; i++) {
-                 if (bitmask.has(startBit + i)) {
-                     throw new SchemaError(`Overlap detected in ${canIdStr} signal ${sig.name || sig.key}`);
-                 }
-                 bitmask.add(startBit + i);
-             }
-          }
-          const rawOptions = sig.values ?? sig.options;
-          const hasEnum = (sig.unit === "enum") || (rawOptions && Object.keys(rawOptions).length > 0);
-          const isBoolean = !hasEnum && (sig.size === 1 || (sig.min === 0 && sig.max === 1 && !sig.factor && !sig.offset));
-          const kind: "boolean" | "enum" | "number" = hasEnum ? "enum" : (isBoolean ? "boolean" : "number");
-          
-          let options: Array<{ label: string; value: number }> | undefined = undefined;
-          if (rawOptions) {
-            options = Object.entries(rawOptions).map(([k, v]) => ({
-              value: Number(k),
-              label: String(v)
-            }));
-          }
-
-          return {
-            key: sig.key ?? sig.name,
-            label: sig.name,
-            kind,
-            unit: sig.unit,
-            min: sig.min,
-            max: sig.max,
-            options,
-            // Internal decoding fields not exported in CanField interface but needed here:
-            _byte: sig.byte,
-            _bit_offset: sig.bit_offset ?? 0,
-            _size: sig.size,
-            _type: sig.type || "unsigned",
-            _factor: sig.factor ?? 1.0,
-            _offset: sig.offset ?? 0.0,
-          };
-        });
-
-        this.messages.set(`${bus}:${canIdStr}`, {
-          bus,
-          id: canIdStr,
-          name: msg.name,
-          sender: msg.sender || "Unknown",
-          dlc: typeof msg.dlc === "number" ? msg.dlc : 8,
-          period: msg.cycle_ms ? `${msg.cycle_ms}ms` : "event",
-          injectable: msg.sender === "Host" || msg.sender === "Any",
-          fields,
-          // @ts-ignore: storing byteOrder internally
-          _byteOrder: byteOrder
-        });
-      }
+  /** Load pre-generated messages into the database. */
+  loadMessages(messages: CanMessageDef[]): void {
+    for (const msg of messages) {
+      this.messages.set(`${msg.bus}:${msg.id}`, msg);
     }
   }
 
@@ -102,7 +31,7 @@ export class DynamicCanDecoder {
     for (let i = 0; i < Math.min(data.length, 8); i++) buf[i] = data[i];
     const view = new DataView(buf.buffer);
 
-    const byteOrder = (def as any)._byteOrder;
+    const byteOrder = (def as any).byteOrder;
     
     const val_le = view.getBigUint64(0, true);
     const val_be = view.getBigUint64(0, false);
@@ -163,7 +92,7 @@ export class DynamicCanDecoder {
 
     let val_le = 0n;
     let val_be = 0n;
-    const byteOrder = (def as any)._byteOrder;
+    const byteOrder = (def as any).byteOrder;
 
     for (const f of def.fields as any[]) {
       const { key, _byte, _bit_offset, _size, _type, _factor, _offset, min, max, options } = f;

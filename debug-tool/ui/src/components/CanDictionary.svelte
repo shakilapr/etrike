@@ -1,7 +1,6 @@
 <script lang="ts">
   import MessageCard from "./MessageCard.svelte";
-  import { CAN_INDEX, type CanMessageIndex } from "../lib/can-index";
-  import type { Bus, CanField, CanMessageDef } from "../lib/can-decoder";
+  import { CAN_MESSAGES, type Bus, type CanField, type CanMessageDef } from "@etrike/debug-shared";
 
   export let ids: CanMessageDef[] = [];
 
@@ -17,68 +16,23 @@
       message.id.toLowerCase().includes(text) ||
       message.name.toLowerCase().includes(text) ||
       message.sender.toLowerCase().includes(text) ||
-      message.receivers.join(" ").toLowerCase().includes(text) ||
-      message.comment.toLowerCase().includes(text) ||
-      message.signals.some((signal) =>
-        signal.name.toLowerCase().includes(text) ||
-        signal.comment.toLowerCase().includes(text)
+      message.fields.some((signal) =>
+        signal.label.toLowerCase().includes(text) ||
+        (signal.key || "").toLowerCase().includes(text)
       );
     return matchesBus && matchesText;
   });
-  $: visibleSignals = filteredCatalog.reduce((total, message) => total + message.signals.length, 0);
-  $: fallbackMessages = filteredCatalog.filter((message) => message.protocol === "debug_api_fallback").length;
-  $: generatedMessages = filteredCatalog.length - fallbackMessages;
+  $: visibleSignals = filteredCatalog.reduce((total, message) => total + message.fields.length, 0);
+  $: fallbackMessages = 0;
+  $: generatedMessages = filteredCatalog.length;
 
-  function mergedCatalog(apiIds: CanMessageDef[]): CanMessageIndex[] {
-    const generated = new Map(CAN_INDEX.map((message) => [`${message.bus}:${message.id}`, message]));
+  function mergedCatalog(apiIds: CanMessageDef[]): CanMessageDef[] {
+    const generated = new Map(CAN_MESSAGES.map((message) => [`${message.bus}:${message.id}`, message]));
     const fallback = apiIds
-      .filter((item) => !generated.has(`${item.bus}:${item.id}`))
-      .map(toIndexMessage);
-    return [...CAN_INDEX, ...fallback].sort((a, b) =>
+      .filter((item) => !generated.has(`${item.bus}:${item.id}`));
+    return [...CAN_MESSAGES, ...fallback].sort((a, b) =>
       a.bus.localeCompare(b.bus) || Number.parseInt(a.id.slice(2), 16) - Number.parseInt(b.id.slice(2), 16)
     );
-  }
-
-  function toIndexMessage(item: CanMessageDef): CanMessageIndex {
-    return {
-      bus: item.bus,
-      id: item.id,
-      name: item.name,
-      dlc: item.dlc,
-      sender: item.sender,
-      receivers: [],
-      cycle_ms: periodToMs(item.period),
-      comment: "Fallback entry from the debug-tool API catalog. Add this message to shared/can/can_*.yaml for byte-level metadata.",
-      byte_order: "motorola",
-      protocol: "debug_api_fallback",
-      signals: item.fields.map((field, index) => fieldToSignal(field, index))
-    };
-  }
-
-  function fieldToSignal(field: CanField, index: number) {
-    return {
-      name: field.label.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") || field.key,
-      byte: Math.min(index, 7),
-      bit_offset: 0,
-      size: field.kind === "boolean" ? 1 : 8,
-      type: "unsigned" as const,
-      factor: 1,
-      offset: 0,
-      min: field.min ?? null,
-      max: field.max ?? null,
-      unit: field.unit ?? "",
-      receivers: [],
-      values: field.options ? Object.fromEntries(field.options.map((option) => [String(option.value), option.label])) : null,
-      comment: field.key
-    };
-  }
-
-  function periodToMs(period: string): number {
-    const hz = period.match(/(\d+(?:\.\d+)?)\s*Hz/i);
-    if (hz) return Math.round(1000 / Number(hz[1]));
-    const ms = period.match(/(\d+)\s*ms/i);
-    if (ms) return Number(ms[1]);
-    return 0;
   }
 </script>
 

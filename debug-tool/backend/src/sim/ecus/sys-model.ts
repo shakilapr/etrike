@@ -1,3 +1,4 @@
+import { ID_RT_HEARTBEAT, ID_SAFETY_ESTOP, ID_RT_BRAKE_CMD, ID_SYS_MODE_CMD, ID_SYS_SAFETY_STS, ID_SYS_DIAG_RPT, ID_VCU_SEB_REQ, ID_SYS_HEARTBEAT } from "@etrike/debug-shared";
 /**
  * SYS Safety/Body model — TypeScript implementation.
  * Monitors heartbeats, generates safety status (0x011), diagnostics (0x600),
@@ -25,13 +26,13 @@ export class SysModel implements EcuModel {
   state(): EcuState { return { ecu: this.id, mode: ["MANUAL","AUTO","ESTOP"][this.mode], healthy: true, uptimeMs: 0 }; }
 
   ingest(frame: CanFrame): void {
-    if (frame.id === "0x7FD") { this.rtHbAlive = true; }
-    if (frame.id === "0x001") { this.estopActive = true; this.latestBrakeKpa = 5000; }
-    if (frame.id === "0x205") {
+    if (frame.id === ID_RT_HEARTBEAT) { this.rtHbAlive = true; }
+    if (frame.id === ID_SAFETY_ESTOP) { this.estopActive = true; this.latestBrakeKpa = 5000; }
+    if (frame.id === ID_RT_BRAKE_CMD) {
       const d = frame.decoded as Record<string, unknown>;
       this.latestBrakeKpa = (d.brake_pressure_kpa as number) ?? 0;
     }
-    if (frame.id === "0x110") {
+    if (frame.id === ID_SYS_MODE_CMD) {
       const d = frame.decoded as Record<string, unknown>;
       const m = (d.mode as number) ?? 0;
       if (m <= 1) { this.mode = m; this.estopActive = false; }
@@ -45,14 +46,14 @@ export class SysModel implements EcuModel {
 
     // Safety status 0x011 (5 Hz)
     if (this.tickCount % 20 === 0) {
-      this.emit("low", "0x011", 3, [this.estopActive ? 1 : 0, this.rtHbAlive ? 1 : 0, 0],
+      this.emit("low", ID_SYS_SAFETY_STS, 3, [this.estopActive ? 1 : 0, this.rtHbAlive ? 1 : 0, 0],
         "SYS_SAFETY_STS", { estop_active: this.estopActive, heartbeat_ok: this.rtHbAlive });
       this.rtHbAlive = false; // reset each cycle
     }
 
     // Diagnostics 0x600 (1 Hz)
     if (this.tickCount % 100 === 0) {
-      this.emit("low", "0x600", 8, [this.mode, 0, this.rtHbAlive ? 1 : 0, this.estopActive ? 1 : 0, 0, 0, 0, 0],
+      this.emit("low", ID_SYS_DIAG_RPT, 8, [this.mode, 0, this.rtHbAlive ? 1 : 0, this.estopActive ? 1 : 0, 0, 0, 0, 0],
         "SYS_DIAG_RPT", { mode: this.mode, hb_ok: this.rtHbAlive, estop_active: this.estopActive });
     }
 
@@ -63,7 +64,7 @@ export class SysModel implements EcuModel {
       const data = [1 | (1 << 1), 0, stroke & 0xFF, (stroke >> 8) & 0xFF, 0, 0, 0, 0];
       data[6] = 1 | (1 << 1) | (this.sebRoll << 4);
       let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i]; data[7] = cksum ^ 0xFF;
-      this.emit("low", "0x7B9", 8, data, "VCU_SEB_REQ", {
+      this.emit("low", ID_VCU_SEB_REQ, 8, data, "VCU_SEB_REQ", {
         align_enable: true, control_enable: true, stroke_req: stroke,
         rolling_counter: this.sebRoll, checksum: data[7],
       });
@@ -71,7 +72,7 @@ export class SysModel implements EcuModel {
 
     // SYS heartbeat 0x7FE (10 Hz)
     if (this.tickCount % 10 === 0) {
-      this.emit("low", "0x7FE", 2, [this.hbCounter, 0], "SYS_HEARTBEAT",
+      this.emit("low", ID_SYS_HEARTBEAT, 2, [this.hbCounter, 0], "SYS_HEARTBEAT",
         { alive_ctr: this.hbCounter, health_flags: 0 });
     }
 

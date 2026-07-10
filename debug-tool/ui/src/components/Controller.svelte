@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ID_HOST_DRIVE_CMD, ID_RT_DRIVE_CMD, ID_VCU_SES_REQ, ID_HOST_BRAKE_REQ, ID_RT_BRAKE_CMD, ID_SAFETY_ESTOP } from "@etrike/debug-shared";
+
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { sendFrame, simControllerInput } from "../lib/api";
@@ -43,9 +45,9 @@
   let estopTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── CAN IDs per bus ──
-  $: driveId = selectedBus === "high" ? "0x300" : "0x204";
-  $: steerId = "0x169";  // low bus only
-  $: brakeId = selectedBus === "high" ? "0x301" : "0x205";
+  $: driveId = selectedBus === "high" ? ID_HOST_DRIVE_CMD : ID_RT_DRIVE_CMD;
+  $: steerId = ID_VCU_SES_REQ;  // low bus only
+  $: brakeId = selectedBus === "high" ? ID_HOST_BRAKE_REQ : ID_RT_BRAKE_CMD;
   $: publishFrames = [
     { label: "Drive", bus: selectedBus, id: driveId, rate: `${Math.round(1000 / intervalMs)} Hz`, active: active },
     ...(selectedBus === "low" ? [{ label: "Steer", bus: "low" as Bus, id: steerId, rate: `${Math.round(1000 / intervalMs)} Hz`, active: active }] : []),
@@ -160,8 +162,8 @@
   }
 
   async function sendEstopFrame(bus: Bus) {
-    const enc = encodePayload(bus, "0x001", { estop: true });
-    await sendFrame({ bus, id: "0x001", dlc: enc.dlc, data: enc.data, confirm_estop: true });
+    const enc = encodePayload(bus, ID_SAFETY_ESTOP, { estop: true });
+    await sendFrame({ bus, id: ID_SAFETY_ESTOP, dlc: enc.dlc, data: enc.data, confirm_estop: true });
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -220,15 +222,15 @@
 
     // Publish zero-speed to bring vehicle to neutral
     if (selectedBus === "high") {
-      const highEnc = encodePayload("high", "0x300", { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 });
-      sendFrame({ bus: "high", id: "0x300", dlc: highEnc.dlc, data: highEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+      const highEnc = encodePayload("high", ID_HOST_DRIVE_CMD, { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 });
+      sendFrame({ bus: "high", id: ID_HOST_DRIVE_CMD, dlc: highEnc.dlc, data: highEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
       return;
     }
 
-    const lowEnc = encodePayload("low", "0x204", { motor_speed_mmps: 0, gear: 1 });
-    const steerEnc = encodePayload("low", "0x169", { target_angle: 0 });
-    sendFrame({ bus: "low", id: "0x204", dlc: lowEnc.dlc, data: lowEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
-    sendFrame({ bus: "low", id: "0x169", dlc: steerEnc.dlc, data: steerEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    const lowEnc = encodePayload("low", ID_RT_DRIVE_CMD, { motor_speed_mmps: 0, gear: 1 });
+    const steerEnc = encodePayload("low", ID_VCU_SES_REQ, { target_angle: 0 });
+    sendFrame({ bus: "low", id: ID_RT_DRIVE_CMD, dlc: lowEnc.dlc, data: lowEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
+    sendFrame({ bus: "low", id: ID_VCU_SES_REQ, dlc: steerEnc.dlc, data: steerEnc.data }).catch((e: unknown) => { error = `Send failed: ${String(e)}`; });
   }
 
   function chooseBus(bus: Bus) {

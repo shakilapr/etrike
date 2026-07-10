@@ -2,11 +2,10 @@
   import BitGrid from "./BitGrid.svelte";
   import SignalBox from "./SignalBox.svelte";
   import SignalTable from "./SignalTable.svelte";
-  import type { CanMessageIndex, CanSignalDef } from "../lib/can-index";
-  import type { CanFrame, CanMessageDef } from "../lib/can-decoder";
+  import type { CanField, CanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameAge } from "../lib/can-decoder";
 
-  export let message: CanMessageIndex;
+  export let message: CanMessageDef;
   export let frame: CanFrame | undefined = undefined;
   export let legacy: CanMessageDef | undefined = undefined;
   export let categoryColor = "var(--muted)";
@@ -17,15 +16,15 @@
 
   $: ageSeconds = frame ? Math.max(Date.now() / 1000 - timestampSeconds(frame.ts_real ?? frame.ts), 0) : Number.POSITIVE_INFINITY;
   $: freshness = frame ? freshnessState(ageSeconds) : "idle";
-  $: cycleLabel = message.cycle_ms > 0 ? `${message.cycle_ms} ms` : "event";
+  $: cycleLabel = message.period;
   $: decodedText = frame ? formatDecoded(frame.decoded) : "No live frame";
-  $: visibleSignals = message.signals.length > 0 ? message.signals : eventSignals();
+  $: visibleSignals = message.fields.length > 0 ? message.fields : eventSignals();
   $: showLiveSummary = mode === "monitor";
   $: showDictionary = mode === "dictionary";
-  $: isFallback = message.protocol === "debug_api_fallback";
-  $: receiverLabel = (message.receivers.length ? message.receivers : ["all"]).join(", ");
-  $: receivers = message.receivers.length ? message.receivers : ["all"];
-  $: signalCountLabel = message.signals.length === 1 ? "1 signal" : `${message.signals.length} signals`;
+  $: isFallback = false;
+  $: receiverLabel = (message.receivers?.length ? message.receivers : ["all"]).join(", ");
+  $: receivers = message.receivers?.length ? message.receivers : ["all"];
+  $: signalCountLabel = message.fields.length === 1 ? "1 signal" : `${message.fields.length} signals`;
   $: canExpandRaw = mode === "monitor" && Boolean(frame);
   $: expandLabel = canExpandRaw ? (expanded ? "Hide raw frame detail" : "Show raw frame detail") : "No live raw frame to expand";
 
@@ -41,33 +40,33 @@
     return stamp > 1_000_000_000_000 ? stamp / 1000 : stamp;
   }
 
-  function eventSignals(): CanSignalDef[] {
+  function eventSignals(): CanField[] {
     return [{
-      name: "EVENT_FRAME",
-      byte: 0,
-      bit_offset: 0,
-      size: 0,
-      type: "unsigned",
-      factor: 1,
-      offset: 0,
-      min: null,
-      max: null,
+      key: "EVENT_FRAME",
+      label: "EVENT_FRAME",
+      kind: "number",
+      _byte: 0,
+      _bit_offset: 0,
+      _size: 0,
+      _type: "unsigned",
+      _factor: 1,
+      _offset: 0,
+      min: undefined,
+      max: undefined,
       unit: "",
-      receivers: message.receivers,
-      values: null,
-      comment: message.comment || "DLC=0 event frame"
+      options: undefined,
     }];
   }
 
-  function valueFor(signal: CanSignalDef, index: number): unknown {
+  function valueFor(signal: CanField, index: number): unknown {
     if (!frame) return undefined;
     const decoded = frame.decoded;
-    if (signal.name in decoded) return decoded[signal.name];
+    if (signal.key in decoded) return decoded[signal.key];
 
     const legacyKey = legacy?.fields[index]?.key;
     if (legacyKey && legacyKey in decoded) return decoded[legacyKey];
 
-    const target = normalizeName(signal.name);
+    const target = normalizeName(signal.key);
     const match = Object.entries(decoded).find(([key]) => normalizeName(key) === target);
     return match?.[1];
   }
@@ -101,7 +100,7 @@
     <span class="badge receiver" title="Receiver ECU(s)">RX {receiverLabel}</span>
     <span class="badge" title="CAN payload length">DLC {message.dlc}</span>
     <span class="badge" title="Transmit period">{cycleLabel}</span>
-    <span class="badge" title="Signal byte order">{message.byte_order}</span>
+    <span class="badge" title="Signal byte order">{message.byteOrder}</span>
     <span class="badge" title="Signal count">{signalCountLabel}</span>
     <span class="badge source" class:fallback={isFallback} title={isFallback ? "Fallback entry from the debug-tool API catalog" : "Generated from shared/can/can_*.yaml"}>
       {isFallback ? "API fallback" : "YAML"}

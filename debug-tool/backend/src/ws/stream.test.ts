@@ -1,3 +1,4 @@
+import { ID_HOST_DRIVE_CMD } from "@etrike/debug-shared";
 import { describe, expect, it, vi } from "vitest";
 import { StreamHub } from "./stream";
 import type { CanFrame } from "../types/can";
@@ -38,13 +39,13 @@ describe("StreamHub filters", () => {
 
     (hub as unknown as { clients: Set<TestClient> }).clients.add(client);
     (hub as unknown as { handleClientMessage(client: TestClient, payload: string): void })
-      .handleClientMessage(client, JSON.stringify({ type: "filter", keys: ["high:0x300"] }));
-    hub.broadcast({ type: "can_frame", payload: makeFrame("high", "0x300") });
-    hub.broadcast({ type: "can_frame", payload: makeFrame("low", "0x300") });
+      .handleClientMessage(client, JSON.stringify({ type: "filter", keys: [`high:${ID_HOST_DRIVE_CMD}`] }));
+    hub.broadcast({ type: "can_frame", payload: makeFrame("high", ID_HOST_DRIVE_CMD) });
+    hub.broadcast({ type: "can_frame", payload: makeFrame("low", ID_HOST_DRIVE_CMD) });
     (hub as unknown as { flushFrames(): void }).flushFrames();
 
     expect(socket.send).toHaveBeenCalledTimes(1);
     const message = JSON.parse(socket.send.mock.calls[0][0]);
-    expect(message.payload).toEqual([expect.objectContaining({ bus: "high", id: "0x300" })]);
+    expect(message.payload).toEqual([expect.objectContaining({ bus: "high", id: ID_HOST_DRIVE_CMD })]);
   });
 });

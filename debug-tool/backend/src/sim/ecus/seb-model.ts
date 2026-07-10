@@ -1,3 +1,4 @@
+import { ID_VCU_SEB_REQ, ID_SAFETY_ESTOP, ID_SEB_STATUS, ID_SEB_ErrInfo, ID_SEB_Version, ID_SEB_Test } from "@etrike/debug-shared";
 /**
  * SEB Brake-by-wire actuator model.
  * Receives 0x7B9 VCU_SEB_REQ, generates 0x721 SEB_STATUS + 0x731/0x741/0x6FB.
@@ -26,13 +27,13 @@ export class SebModel implements EcuModel {
   state(): EcuState { return { ecu: this.id, healthy: this.errorStatus < 3, faultFlags: this.errorStatus, uptimeMs: this.tickMs }; }
 
   ingest(frame: CanFrame): void {
-    if (frame.id === "0x7B9" && frame.bus === "low") {
+    if (frame.id === ID_VCU_SEB_REQ && frame.bus === "low") {
       this.lastCmdMs = this.tickMs;
       const d = frame.decoded as Record<string, unknown>;
       this.targetStroke = (d.stroke_req as number) ?? 600;
       this.aligned = (d.align_enable as number) === 1;
     }
-    if (frame.id === "0x001") { this.errorStatus = 3; this.targetStroke = 600; }
+    if (frame.id === ID_SAFETY_ESTOP) { this.errorStatus = 3; this.targetStroke = 600; }
   }
 
   tick(dtMs: number): CanFrame[] {
@@ -57,7 +58,7 @@ export class SebModel implements EcuModel {
       data[6] = 1 | (1 << 1) | (this.roll << 4);
       let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i];
       data[7] = cksum ^ 0xFF;
-      this.emit("low", "0x721", 8, data, "SEB_STATUS", {
+      this.emit("low", ID_SEB_STATUS, 8, data, "SEB_STATUS", {
         alignment_status: this.aligned, stroke_value: s16, pressure_value: pressure,
         error_status: this.errorStatus, rolling_counter: this.roll, checksum: data[7],
       });
@@ -66,20 +67,20 @@ export class SebModel implements EcuModel {
     // 0x731 SEB_ErrInfo at 10Hz
     if (this.tickMs % 100 === 0) {
       const isL3 = this.errorStatus === 3;
-      this.emit("low", "0x731", 8, [isL3 ? 0xFC : 0, isL3 ? 0x2F : 0, isL3 ? 0x76 : 0, 0, 0, 0, 0, 0],
+      this.emit("low", ID_SEB_ErrInfo, 8, [isL3 ? 0xFC : 0, isL3 ? 0x2F : 0, isL3 ? 0x76 : 0, 0, 0, 0, 0, 0],
         "SEB_ErrInfo", { fault_mask: isL3 ? 0x762FFC : 0, l3_fault: isL3 });
     }
 
     // 0x741 SEB_Version at 1Hz
     if (this.tickMs % 1000 === 0) {
-      this.emit("low", "0x741", 8, [this.swVer, this.hwVer, 0, 0, 0, 0, 0, 0],
+      this.emit("low", ID_SEB_Version, 8, [this.swVer, this.hwVer, 0, 0, 0, 0, 0, 0],
         "SEB_VERSION", { sw_version: this.swVer, hw_version: this.hwVer });
     }
 
     // 0x6FB SEB_Test at 100Hz
     if (this.tickMs % 10 === 0) {
       const mc = 0; const temp = Math.round(25 / 0.5); const volt = Math.round(12 / 0.00390625);
-      this.emit("low", "0x6FB", 8, [0, mc & 0xFF, (mc >> 8) & 0xFF, temp & 0xFF, (temp >> 8) & 0xFF, volt & 0xFF, (volt >> 8) & 0xFF, 0],
+      this.emit("low", ID_SEB_Test, 8, [0, mc & 0xFF, (mc >> 8) & 0xFF, temp & 0xFF, (temp >> 8) & 0xFF, volt & 0xFF, (volt >> 8) & 0xFF, 0],
         "SEB_TEST", { motor_current: mc, ecu_temp: 25, supply_voltage: 12 });
     }
 

@@ -1,3 +1,4 @@
+import { ID_RT_HEARTBEAT, ID_RT_STATE_RPT, ID_SYS_HEARTBEAT, ID_SYS_SAFETY_STS, ID_MTR_MOTOR_FBK, ID_SES_STATUS, ID_SEB_STATUS, ID_SYS_THROTTLE_STS, ID_STEER_DIAG, ID_RT_BRAKE_CMD, ID_HOST_BRAKE_REQ, ID_BRAKE_DIAG, SIG_HOST_DRIVE_CMD_SPEED_MMPS, SIG_MTR_MOTOR_FBK_ACTUAL_SPEED_MMPS, SIG_SES_STATUS_STR_ANGLE, SIG_STEER_DIAG_STEERDIAG_ANGLE0_1DEG, SIG_RT_BRAKE_CMD_BRAKE_PRESSURE_KPA, SIG_BRAKE_DIAG_BRAKEDIAG_PRESSURERAW, SIG_SYS_SAFETY_STS_LIGHT_LEFT, SIG_SYS_SAFETY_STS_LIGHT_RIGHT, SIG_SYS_SAFETY_STS_LIGHT_HEAD, SIG_SYS_SAFETY_STS_LIGHT_BRAKE, SIG_SYS_SAFETY_STS_ESTOP_ACTIVE, SIG_SYS_SAFETY_STS_HEARTBEAT_OK, SIG_MTR_MOTOR_FBK_GEAR_STATE, SIG_SYS_MODE_CMD_MODE, SIG_RT_STATE_RPT_SAFETY_STATE } from "@etrike/debug-shared";
 import { derived, readable } from "svelte/store";
 import { latestById } from "./can";
 
@@ -87,50 +88,50 @@ function recentDecoded(frame: { ts: number; decoded?: unknown } | undefined, now
 }
 
 export const ecuPresence = derived([latestById, now], ([$latest, $now]): EcuPresence => ({
-  rt:  recent($latest["high:0x7FD"], $now) || recent($latest["high:0x210"], $now),
-  sys: recent($latest["high:0x7FE"], $now) || recent($latest["high:0x011"], $now) || recent($latest["low:0x7FE"], $now) || recent($latest["low:0x011"], $now),
-  mtr: recent($latest["high:0x206"], $now) || recent($latest["low:0x206"], $now),
-  ses: recent($latest["low:0x201"], $now),
-  seb: recent($latest["low:0x721"], $now),
+  rt:  recent($latest[`high:${ID_RT_HEARTBEAT}`], $now) || recent($latest[`high:${ID_RT_STATE_RPT}`], $now),
+  sys: recent($latest[`high:${ID_SYS_HEARTBEAT}`], $now) || recent($latest[`high:${ID_SYS_SAFETY_STS}`], $now) || recent($latest[`low:${ID_SYS_HEARTBEAT}`], $now) || recent($latest[`low:${ID_SYS_SAFETY_STS}`], $now),
+  mtr: recent($latest[`high:${ID_MTR_MOTOR_FBK}`], $now) || recent($latest[`low:${ID_MTR_MOTOR_FBK}`], $now),
+  ses: recent($latest[`low:${ID_SES_STATUS}`], $now),
+  seb: recent($latest[`low:${ID_SEB_STATUS}`], $now),
 }));
 
 export const telemetry = derived([latestById, now], ([$latest, $now]): Telemetry => {
   // Lights / indicators: prefer SYS_SAFETY_STS (0x011) on high bus, fall back to low
-  const safetyHigh = recentDecoded($latest["high:0x011"], $now);
-  const safetyLow  = recentDecoded($latest["low:0x011"], $now);
+  const safetyHigh = recentDecoded($latest[`high:${ID_SYS_SAFETY_STS}`], $now);
+  const safetyLow  = recentDecoded($latest[`low:${ID_SYS_SAFETY_STS}`], $now);
   const safety = safetyHigh ?? safetyLow;
 
   // Throttle speed: prefer high bus, fall back to low
-  const throttleHigh = recentDecoded($latest["high:0x120"], $now);
-  const throttleLow  = recentDecoded($latest["low:0x120"], $now);
+  const throttleHigh = recentDecoded($latest[`high:${ID_SYS_THROTTLE_STS}`], $now);
+  const throttleLow  = recentDecoded($latest[`low:${ID_SYS_THROTTLE_STS}`], $now);
   const throttle = throttleHigh ?? throttleLow;
 
   // Motor feedback (gear, backup speed)
-  const motorHigh = recentDecoded($latest["high:0x206"], $now);
-  const motorLow  = recentDecoded($latest["low:0x206"], $now);
+  const motorHigh = recentDecoded($latest[`high:${ID_MTR_MOTOR_FBK}`], $now);
+  const motorLow  = recentDecoded($latest[`low:${ID_MTR_MOTOR_FBK}`], $now);
   const motor = motorHigh ?? motorLow;
 
   // Steering angle: try SES_STATUS (0x201, low bus), fall back to STEER_DIAG (0x310, high)
-  const ses = recentDecoded($latest["low:0x201"], $now);
-  const steerDiag = recentDecoded($latest["high:0x310"], $now);
+  const ses = recentDecoded($latest[`low:${ID_SES_STATUS}`], $now);
+  const steerDiag = recentDecoded($latest[`high:${ID_STEER_DIAG}`], $now);
 
   // Brake: prefer RT_BRAKE_CMD (0x205, low), fall back to HOST_BRAKE_REQ (0x301, high), then BRAKE_DIAG (0x311)
-  const brakeCmd = recentDecoded($latest["low:0x205"], $now);
-  const brakeReq = recentDecoded($latest["high:0x301"], $now);
-  const brakeDiag = recentDecoded($latest["high:0x311"], $now);
+  const brakeCmd = recentDecoded($latest[`low:${ID_RT_BRAKE_CMD}`], $now);
+  const brakeReq = recentDecoded($latest[`high:${ID_HOST_BRAKE_REQ}`], $now);
+  const brakeDiag = recentDecoded($latest[`high:${ID_BRAKE_DIAG}`], $now);
 
   // State report (mode, safety)
-  const stateRpt = recentDecoded($latest["high:0x210"], $now);
+  const stateRpt = recentDecoded($latest[`high:${ID_RT_STATE_RPT}`], $now);
 
   // Speed: prefer throttle, fall back to motor feedback
   let motorSpeedKmh: number | null = null;
-  const speedMmps = numField(throttle, "speed_mmps") ?? numField(motor, "actual_speed_mmps");
+  const speedMmps = numField(throttle, SIG_HOST_DRIVE_CMD_SPEED_MMPS) ?? numField(motor, SIG_MTR_MOTOR_FBK_ACTUAL_SPEED_MMPS);
   if (speedMmps !== null) motorSpeedKmh = Math.round((speedMmps * 3.6) / 10) / 100; // mm/s → km/h, 2 decimals
 
   // Steering angle — clamp to sane range (±90° for a steering column)
   let steerAngleDeg: number | null = null;
-  const sesAngle = numField(ses, "str_angle");               // 0.1 deg
-  const diagAngle = numField(steerDiag, "SteerDiag_Angle0_1deg"); // deg
+  const sesAngle = numField(ses, SIG_SES_STATUS_STR_ANGLE);               // 0.1 deg
+  const diagAngle = numField(steerDiag, SIG_STEER_DIAG_STEERDIAG_ANGLE0_1DEG); // deg
   let rawAngle: number | null = null;
   if (sesAngle !== null) rawAngle = Math.round(sesAngle) / 10;
   else if (diagAngle !== null) rawAngle = Math.round(diagAngle) / 10;
@@ -139,25 +140,25 @@ export const telemetry = derived([latestById, now], ([$latest, $now]): Telemetry
 
   // Brake pressure (convert kPa → MPa) — clamp to 0..25 MPa
   let brakePressureMpa: number | null = null;
-  const kpa = numField(brakeCmd, "brake_pressure_kpa") ?? numField(brakeReq, "brake_pressure_kpa");
+  const kpa = numField(brakeCmd, SIG_RT_BRAKE_CMD_BRAKE_PRESSURE_KPA) ?? numField(brakeReq, SIG_RT_BRAKE_CMD_BRAKE_PRESSURE_KPA);
   if (kpa !== null && kpa >= 0 && kpa <= 25000) brakePressureMpa = Math.round(kpa / 10) / 100;
   else {
-    const rawMpa = numField(brakeDiag, "BrakeDiag_PressureRaw");
+    const rawMpa = numField(brakeDiag, SIG_BRAKE_DIAG_BRAKEDIAG_PRESSURERAW);
     if (rawMpa !== null && rawMpa >= 0 && rawMpa < 25) brakePressureMpa = Math.round(rawMpa * 100) / 100;
   }
 
   return {
-    leftTurn: boolField(safety, "light_left"),
-    rightTurn: boolField(safety, "light_right"),
-    headlight: boolField(safety, "light_head"),
-    brakeLight: boolField(safety, "light_brake"),
-    estopActive: boolField(safety, "estop_active"),
-    heartbeatOk: boolField(safety, "heartbeat_ok"),
+    leftTurn: boolField(safety, SIG_SYS_SAFETY_STS_LIGHT_LEFT),
+    rightTurn: boolField(safety, SIG_SYS_SAFETY_STS_LIGHT_RIGHT),
+    headlight: boolField(safety, SIG_SYS_SAFETY_STS_LIGHT_HEAD),
+    brakeLight: boolField(safety, SIG_SYS_SAFETY_STS_LIGHT_BRAKE),
+    estopActive: boolField(safety, SIG_SYS_SAFETY_STS_ESTOP_ACTIVE),
+    heartbeatOk: boolField(safety, SIG_SYS_SAFETY_STS_HEARTBEAT_OK),
     motorSpeedKmh,
     steerAngleDeg,
     brakePressureMpa,
-    gear: gearLabel(numField(motor, "gear_state")),
-    mode: modeLabel(numField(stateRpt, "mode")),
-    safetyState: safetyLabel(numField(stateRpt, "safety_state")),
+    gear: gearLabel(numField(motor, SIG_MTR_MOTOR_FBK_GEAR_STATE)),
+    mode: modeLabel(numField(stateRpt, SIG_SYS_MODE_CMD_MODE)),
+    safetyState: safetyLabel(numField(stateRpt, SIG_RT_STATE_RPT_SAFETY_STATE)),
   };
 });

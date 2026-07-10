@@ -1,3 +1,4 @@
+import { ID_RT_DRIVE_CMD, ID_VCU_SES_REQ, ID_SES_STATUS, ID_HOST_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_VCU_SEB_REQ, ID_SEB_STATUS, ID_HOST_BRAKE_REQ } from "@etrike/debug-shared";
 import type { FastifyInstance } from "fastify";
 import type { DebugStore } from "../db/queries";
 import { CAN_MESSAGES, defaultStats, normalizeBus, normalizeCanId, type CanFrame } from "../types/can";
@@ -57,16 +58,16 @@ export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
     list.sort((a, b) => a.ts - b.ts);
   }
 
-  const driveFrames = byKey["low:0x204"] ?? [];
-  const steerFrames = byKey["low:0x169"] ?? [];
-  const statusFrames = byKey["low:0x201"] ?? [];
-  const triggerFrames = byKey["high:0x300"] ?? [];
+  const driveFrames = byKey[`low:${ID_RT_DRIVE_CMD}`] ?? [];
+  const steerFrames = byKey[`low:${ID_VCU_SES_REQ}`] ?? [];
+  const statusFrames = byKey[`low:${ID_SES_STATUS}`] ?? [];
+  const triggerFrames = byKey[`high:${ID_HOST_DRIVE_CMD}`] ?? [];
 
   // Brake pipeline frames
-  const brakeCmdFrames = byKey["low:0x205"] ?? [];
-  const sebReqFrames = byKey["low:0x7B9"] ?? [];
-  const sebStatusFrames = byKey["low:0x721"] ?? [];
-  const brakeTriggerFrames = byKey["high:0x301"] ?? [];
+  const brakeCmdFrames = byKey[`low:${ID_RT_BRAKE_CMD}`] ?? [];
+  const sebReqFrames = byKey[`low:${ID_VCU_SEB_REQ}`] ?? [];
+  const sebStatusFrames = byKey[`low:${ID_SEB_STATUS}`] ?? [];
+  const brakeTriggerFrames = byKey[`high:${ID_HOST_BRAKE_REQ}`] ?? [];
 
   const chains: PipelineChain[] = [];
   const winSec = CORRELATION_WINDOW_MS / 1000;

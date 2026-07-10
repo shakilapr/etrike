@@ -1,19 +1,19 @@
 <script lang="ts">
-  import type { CanSignalDef } from "../lib/can-index";
+  import type { CanField } from "@etrike/debug-shared";
 
-  export let signal: CanSignalDef;
+  export let signal: CanField;
   export let value: unknown = undefined;
   export let stale = false;
 
   $: hasValue = value !== undefined && value !== null && value !== "";
   $: valueText = formatValue(value);
-  $: unitText = signal.unit && signal.unit !== "enum" ? signal.unit : "";
-  $: typeText = `${signal.type} ${signal.size}-bit`;
-  $: scaleText = scaleFormula(signal.factor, signal.offset);
-  $: layoutText = `B${signal.byte}.${signal.bit_offset}`;
-  $: enumText = signal.values ? Object.entries(signal.values).map(([key, label]) => `${key}=${label}`).join(", ") : "";
+  $: unitText = signal.unit && signal.kind !== "enum" ? signal.unit : "";
+  $: typeText = `${signal._type} ${signal._size}-bit`;
+  $: scaleText = scaleFormula(signal._factor, signal._offset);
+  $: layoutText = `B${signal._byte}.${signal._bit_offset}`;
+  $: enumText = signal.options ? signal.options.map((opt) => `${opt.value}=${opt.label}`).join(", ") : "";
   $: title = [
-    signal.comment,
+    signal.key,
     `${layoutText}, ${typeText}`,
     `scale: ${scaleText}`,
     enumText ? `values: ${enumText}` : ""
@@ -35,7 +35,7 @@
 </script>
 
 <div class="signal-box" class:is-stale={stale} class:is-empty={!hasValue} title={title}>
-  <span>{signal.name}</span>
+  <span>{signal.label}</span>
   <strong>{valueText}</strong>
   <small>{unitText || typeText}</small>
   <em>{layoutText}</em>
