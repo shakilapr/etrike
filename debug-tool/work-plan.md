@@ -8,6 +8,65 @@ Phases are sequential. Do not start phase N+1 until all code, tests, documentati
 
 Each phase should be a small reviewable change. Preserve unrelated user work. Add regression tests with correctness fixes. Hardware tests remain opt-in and run only on a controlled bench.
 
+## Cleanup rule for every phase
+
+Cleanup is part of implementation, not a final sweep. Every phase must:
+
+1. identify the legacy files, exports, routes, types, configuration, dependencies, tests, generated artifacts, and documentation replaced by that phase;
+2. migrate every required consumer before deleting the legacy provider;
+3. remove the superseded path in the same phase unless a documented compatibility window is required;
+4. search the repository for stale imports, names, environment variables, scripts, and documentation references;
+5. run dependency/static analysis relevant to the changed workspaces;
+6. prove through tests that the replacement works without the removed path.
+
+Temporary adapters must be named `legacy-*`, have an owner phase and deletion gate, and must not receive new features. Commented-out implementations, duplicate tests, unused screenshots, generated runtime logs, and backup copies are deleted rather than retained in source control.
+
+### Recovered legacy audit candidates
+
+The deleted historical `update.md` named the following cleanup candidates. They are inputs to phase-level static analysis, not proof that deletion is safe:
+
+- `shared/generate.js`, `shared/src/fix.js`;
+- `test_record.js`, `test_simulator.js`;
+- `ui/debug-browser.mjs`, `ui/screenshot.mjs`;
+- `shared/generated/can-catalog.ts`, `shared/generated/can-decode.ts`;
+- unused UI simulation API exports such as `simInject`, `simPeriodicStart`, `simPeriodicStop`, and `getSimState` after their callers are migrated;
+- redundant direct dependencies on `js-yaml`, `@types/js-yaml`, `mqtt`, and `@testing-library/svelte` in workspaces that no longer import them;
+- stale types and exports in `bridge/types.ts`, `ipc-protocol.ts`, and work-mode modules after their replacement contracts land.
+
+Do **not** blindly delete `backend/src/db/worker.ts`: `WorkerClient` actively launches its compiled `worker.js`, so the worker is part of the current non-blocking SQLite boundary. Do **not** blindly delete `e2e/`: its useful scenarios must be migrated into the single maintained Playwright suite in phase 2 before the duplicate location is removed.
+
+### Phase-specific cleanup targets
+
+| Phase | Legacy material removed after replacement passes |
+|---:|---|
+| 1 | Broken checks, obsolete test commands, stale build scripts, committed runtime/test output |
+| 2 | Duplicate Playwright configuration, duplicate E2E cases, obsolete selectors and screenshots |
+| 3 | Duplicate bit-extraction helpers and signed-shift workarounds |
+| 4 | Silent codec fallbacks, permissive validators, obsolete checksum helpers |
+| 5 | Stale generated artifacts and hand-maintained generation scripts superseded by the canonical generator |
+| 6 | `ui/src/lib/can-index.ts`, duplicated generic catalogs, unused catalog types |
+| 7 | Raw-ID semantic maps, duplicated fault arrays, manual ordinary-message packers |
+| 8 | Ambiguous `ts`, `ts_real`, `ts_device` conversions and obsolete timestamp helpers after migration |
+| 9 | Mutable legacy frame types, embedded decoded payload fields, fake frame-shaped transport errors |
+| 10 | Old `WorkModeConfig` transition behavior, unsafe forwarding flags, stale mode aliases after compatibility migration |
+| 11 | Direct producer-to-store/WebSocket paths and source auto-claim behavior that bypass routing rules |
+| 12 | Unbounded arrays/queues, unused counters, obsolete retention configuration |
+| 13 | Scattered periodic ownership/timer state replaced by the control-session/lease mechanism |
+| 14 | Duplicate injection endpoints/policy branches and implicit physical-to-simulation fallback |
+| 15 | Bridge proxy globals, duplicated adapter lifecycle code, obsolete transport settings |
+| 16 | Standalone simulator workspace, Aedes/MQTT bridge, dependencies, scripts, topics and tests |
+| 17 | Ad-hoc timer replay code and replay-specific routing bypasses |
+| 18 | Obsolete recording schema/query paths, redundant pruning logic, unsupported export stubs |
+| 19 | Hidden mounted heavy components, duplicate input listeners, unbounded UI stores, obsolete styles |
+| 20 | Remaining proven dead exports/files/dependencies, benchmark artifacts not intended as fixtures, stale documentation |
+
+For every phase, the exit gate additionally requires:
+
+- no stale reference to anything deleted in that phase;
+- no newly orphaned production file or dependency in the affected workspace;
+- a clean production build using only the replacement path;
+- a short note for anything intentionally retained, including exactly which later phase removes it.
+
 ## Baseline observed on 2026-07-10
 
 - Backend Vitest: 201 tests pass.
@@ -66,6 +125,7 @@ Each phase should be a small reviewable change. Preserve unrelated user work. Ad
 - Build golden vectors from the repository generator/DBC/firmware-compatible source.
 - Fix signed encoding to use BigInt throughout, including 32-bit negative values.
 - Normalize enum option representation.
+- Consolidate duplicated backend/UI decoder tests into shared codec tests while retaining UI-specific presentation tests.
 
 ### Tests and exit gate
 
@@ -83,6 +143,7 @@ Each phase should be a small reviewable change. Preserve unrelated user work. Ad
 - Validate signal overlap during generation/load; represent intentional multiplexing explicitly.
 - Return typed actionable codec errors rather than empty payloads or silent masks.
 - Define checksum and rolling-counter extension hooks.
+- Add explicit regression coverage for the `0x169` steering XOR checksum and schema-derived `0x210` safety-state field naming.
 
 ### Tests and exit gate
 
@@ -234,19 +295,19 @@ Each phase should be a small reviewable change. Preserve unrelated user work. Ad
 
 ### Work
 
-- Assign authenticated connection/session owner identities.
+- Assign backend-generated connection/session owner identities for local UI, REST jobs, tests, and future automation. These are coordination identities, not accounts or authentication.
 - Implement atomic acquire, renew, release, expiry, and revocation for steering, motor, brake, and scoped periodic resources.
 - Bind leases to operational-state revision and conceal lease secrets from status output.
 - Revoke on disconnect, transition, disarm, adapter/interlock failure, and heartbeat expiry.
-- Keep ESTOP independent of conflicting leases.
+- Keep Vehicle ESTOP commands and Software Stop independent of conflicting actuator leases.
 
 ### Tests and exit gate
 
 - Two owners cannot acquire the same resource concurrently.
-- The wrong owner/token cannot renew, command, or release a lease.
+- A different connection/session owner or lease ID cannot accidentally renew, command, or release a lease.
 - Expiry and every revocation trigger stop affected periodic/actuator output.
 - REST and WebSocket disconnect identity behavior is covered.
-- ESTOP succeeds while another client owns all actuator leases.
+- Vehicle ESTOP and Software Stop tests succeed while another client owns all actuator leases; neither is labeled as a Physical E-stop.
 - Earlier phase gates remain green.
 
 ## Phase 14 — Centralize injection policy and physical arm
@@ -275,6 +336,7 @@ Each phase should be a small reviewable change. Preserve unrelated user work. Ad
 - Put serial, CANalyst-II, and disabled/test adapters behind `ActiveTransportManager`.
 - Make adapter lifecycle, capabilities, identity, timestamps, events, and physical TX gate consistent.
 - Ensure only configured listeners claim a bus and prevent ambiguous multi-adapter transmit ownership.
+- Retain and test YAML-driven bus detection; remove any remaining hardcoded high/low uniqueness lists.
 - Update `CANALYST-II-SETUP.md` only if verified commands or behavior change.
 
 ### Tests and exit gate
@@ -348,6 +410,7 @@ Each phase should be a small reviewable change. Preserve unrelated user work. Ad
 - Display mode, physical arm, leases, queue health, event loss, and recording integrity.
 - Centralize keyboard/gamepad behavior in a typed `InputController`.
 - Separate commanded from measured values; integrate `TrikeViz` math only for presentation.
+- Audit `tem/improved_trike_kinematic.md`; either integrate the validated display-only calculations with configured dimensions or delete the stale artifact with a documented reason.
 - Profile before introducing Web Workers; do not require SharedArrayBuffer/Atomics.
 
 ### Tests and exit gate
@@ -355,17 +418,17 @@ Each phase should be a small reviewable change. Preserve unrelated user work. Ad
 - Inactive heavy tabs have no component timers/render work.
 - Thirty-minute UI stress test has bounded heap and responsive controls at the declared workload.
 - Slow/disconnected state, arm expiry, lease conflict, queue loss, bus-off, and incomplete recording are visible and actionable.
-- Input tests cover repeat, focus, blur, Tab, Escape, ESTOP gesture, disconnect, and teardown.
+- Input tests cover repeat, focus, blur, Tab, Escape, the configured Software Stop or Vehicle ESTOP gesture, disconnect, teardown, and correct labeling distinct from the Physical E-stop.
 - Earlier phase gates remain green.
 
-## Phase 20 — Performance qualification, cleanup, and release
+## Phase 20 — Performance qualification and release cleanup
 
 ### Work
 
 - Define reproducible physical-rate and accelerated-simulation workloads with frame sizes, buses, bitrate/multiplier, clients, and recording state.
 - Measure CPU, heap, event-loop delay, all queues, drops/coalescing, UI cadence, and recording integrity.
 - Optimize JSON batching/filtering first. Design a versioned binary batch protocol only if agreed targets still fail.
-- Run static analysis and remove dead files/exports/dependencies only after reference and workflow checks.
+- Run final repository-wide static analysis and remove only residual dead material not already owned and removed by phases 1–19.
 - Add CI gates for generation, checks/builds, unit/integration, software E2E, and performance smoke thresholds.
 - Update README, architecture, work plan, hardware setup, and release notes.
 

@@ -290,16 +290,16 @@ interface ControlLease {
 }
 ```
 
-Owners are authenticated connection/session identities, not user-supplied display names. Acquisition is atomic. Renewal requires the lease token and same owner. A lease is revoked on owner disconnect, mode transition, disarm, adapter failure, interlock loss, or expiry. Physical actuator leases require a heartbeat; simulation leases may use longer bounded durations for deterministic tests.
+Owners are backend-assigned connection/session identities, not user-supplied display names. They distinguish the local UI, REST jobs, tests, and future local automation; they are not user accounts or a security boundary. Acquisition is atomic. Renewal requires the lease ID and same connection/session owner. A lease is revoked on owner disconnect, mode transition, disarm, adapter failure, interlock loss, or expiry. Physical actuator leases require a heartbeat; simulation leases may use longer bounded durations for deterministic tests.
 
-Leases are visible in the status API and UI without exposing secret tokens. ESTOP is not blocked by another client's lease. Non-hazardous passive actions such as filtering or starting a recording do not require actuator leases.
+Leases are visible in the status API and UI. Lease IDs are correlation handles, not authentication secrets. A Vehicle ESTOP command or Software Stop is not blocked by another client's lease. Non-hazardous passive actions such as filtering or starting a recording do not require actuator leases.
 
 ### 5.9 Frame router
 
 All producers submit data frames and transport events to one router. For a data frame, the router performs, in order:
 
 1. immutable envelope validation;
-2. source-instance and operational-state authorization;
+2. trusted producer attribution and operational-state validation;
 3. timebase mapping and sequence assignment;
 4. loop/source-claim checks against the routing matrix;
 5. protocol lookup and separate decoding when known;
@@ -324,7 +324,7 @@ Injection follows a single backend path regardless of whether the request comes 
 
 Policy layers are:
 
-1. authenticated owner and request origin;
+1. backend-assigned local owner and trusted producer context;
 2. execution mode and route permission;
 3. control-lease ownership where required;
 4. protocol/DLC/signal validation;
@@ -332,7 +332,7 @@ Policy layers are:
 6. per-message rate, freshness, and command expiry;
 7. physical arm, adapter health, and interlock permission.
 
-There is no implicit fallback from failed physical transmission to simulation. The caller selects a permitted destination and receives its actual disposition. Physical transmit defaults to disabled. Enabling it requires explicit operator action and, for hazardous commands, a hardware or independently implemented bench interlock. AI/MCP access, if ever added, remains disabled for physical transmission unless a separately reviewed safety design is implemented.
+There is no implicit fallback from failed physical transmission to simulation. The caller selects a permitted destination and receives its actual disposition. Physical transmit defaults to disabled. Enabling it requires explicit operator action and, for hazardous commands, a hardware or independently implemented bench interlock. Local CLI or MCP clients, if ever added, use the same services and receive no direct adapter bypass; physical automation remains out of scope unless separately designed.
 
 ### 5.12 Storage and recordings
 
@@ -410,15 +410,19 @@ Application logs contain state transitions and errors, not every CAN frame. Raw 
 
 Failures are explicit: unknown encodings return errors, queue overflow increments visible counters, recording overload stops or marks the session incomplete, and a disconnected physical adapter cannot silently fall back to simulation.
 
-## 9. Security and safety boundaries
+## 9. Trusted-local deployment and bench-safety boundaries
 
-- The backend binds to loopback by default.
-- CORS and WebSocket origins are restricted in non-development use.
-- Injection endpoints validate bodies and enforce size/rate limits.
-- ESTOP and hazardous commands require explicit confirmation semantics.
+This is a single-developer engineering tool running in a trusted local lab environment. It has no login, user accounts, roles, bearer tokens, or authorization layer. The supported deployment binds to loopback; remote or multi-user deployment is outside scope.
+
+- Producer identity is assigned by backend construction/context so frames cannot be accidentally mislabeled, but it is not an adversarial security boundary.
+- Injection endpoints validate bodies and enforce size/rate limits for correctness and resource protection.
+- A **Physical E-stop** is an independent hardware device and is never implemented by this software.
+- A **Vehicle ESTOP command** is a specific CAN protocol request and must be labeled as such.
+- A **Software Stop** cancels local periodic jobs, revokes leases, disarms physical TX, and requests a safe software state; it is not a Physical E-stop.
+- Vehicle ESTOP commands and hazardous commands require explicit confirmation semantics.
 - Physical forwarding is visibly armed, expires automatically, and is cleared on disconnect or mode change.
-- Recording/export paths are server-selected; user input cannot choose arbitrary filesystem paths.
-- Automation clients receive no stronger authority than the authenticated policy grants.
+- Recording/export paths are server-selected to prevent accidental writes outside the configured data directory.
+- Future local CLI/MCP clients must use the same state machine, leases, injection policy, and audit path as the UI.
 
 This tool assists bench testing. It is not a certified safety mechanism and must never be the sole protection against vehicle motion.
 
