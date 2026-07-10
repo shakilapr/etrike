@@ -6,5 +6,11 @@
     "ui",
     "shared",
     "simulator"
-  ]
+  ],
+  "scripts": {
+    "verify:shared": "npm run build -w shared",
+    "verify:backend": "npm run check -w backend && npm run test -w backend && npm run build -w backend",
+    "verify:ui": "npm run check -w ui && npm run test -w ui && npm run build -w ui",
+    "verify": "npm run verify:shared && npm run verify:backend && npm run verify:ui"
+  }
 }
