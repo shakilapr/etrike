@@ -83,22 +83,61 @@ For every phase, the exit gate additionally requires:
 - SQLite writes already use a queue and worker; do not discard that boundary without evidence.
 - MQTT and the standalone simulator remain legacy paths.
 
-## Phase 1 — Restore a green software baseline
+## Phase 1 — Restore a Green Software Baseline
 
-### Work
+### Summary
 
-- Fix both `PipelineView.svelte` type errors deliberately; do not suppress them.
-- Identify canonical shared/backend/UI check, build, and test commands.
-- Add one root software-verification command that runs them in dependency order.
-- Capture current failures in tests before fixing any behavioral regression discovered here.
+Implement Phase 1 only, then stop for review. First preserve the current architecture/work-plan
+refinements in a docs-only commit. Leave the unrelated generated CAN documentation files
+untouched.
 
-### Tests and exit gate
+### Changes
 
-- Shared build passes.
-- Backend typecheck, build, and all tests pass.
-- UI typecheck, build, and all tests pass.
-- The root verification command returns zero twice consecutively.
-- Commit/merge only after the full gate is green.
+1. Commit documentation separately
+    - Commit only `debug-tool/debug-tool-architecture.md` and `debug-tool/work-plan.md`.
+    - Exclude `docs/generated_can_dictionary.md`, `docs/generated_can_documentation.md`, and `shared/can/generate_can_docs.py`.
+
+2. Fix pipeline timestamps
+    - In `PipelineView.svelte`, replace both fabricated frame objects with `frameTime({ ts: actualTimestamp })`.
+    - Use `chain.trigger.ts` and `step.ts` respectively.
+    - Do not change `frameTime`; its seconds/milliseconds normalization is already covered by unit tests.
+    - This fixes both TypeScript errors and the behavior bug where timestamps currently use `ts: 0`.
+
+3. Add the canonical root verification command
+    - Add root `package.json` scripts under `debug-tool`:
+        - `verify:shared`: build shared.
+        - `verify:backend`: check, test, then build backend.
+        - `verify:ui`: check, test, then build UI.
+        - `verify`: run the three workspace verification scripts in dependency order.
+    - Use npm workspace commands so the script works on Windows and CI shells.
+    - Fail immediately when any command fails.
+
+4. Phase cleanup
+    - Confirm build, runtime, test-result, and Playwright-output directories remain ignored and untracked.
+    - Do not delete `test_record.js`, `test_simulator.js`, MQTT, E2E, or other later-phase legacy paths during Phase 1.
+    - Record the non-fatal `CanMonitor.svelte` Rollup sourcemap annotation warning for Phase 19; do not expand Phase 1 for generated Svelte output.
+
+### Test and Acceptance Gate
+
+Run from `debug-tool`:
+
+1. `npm run verify`
+2. `npm run verify` again
+
+Both runs must pass with:
+
+- Shared TypeScript build green.
+- Backend typecheck and build green.
+- All 201 backend tests green, allowing counts to increase.
+- UI `svelte-check` reports zero errors.
+- UI production build green.
+- All 129 UI tests green, allowing counts to increase.
+- Unrelated generated CAN documentation remains unmodified and unstaged.
+
+Commit the Phase 1 implementation separately with a baseline-focused message, then stop before Phase 2.
+
+- The current static-check failure is sufficient regression evidence for the pipeline call-site bug; Phase 2 Playwright coverage will verify rendered pipeline behavior.
+- No security/authentication work is included.
 
 ## Phase 2 — Consolidate the Playwright baseline
 
