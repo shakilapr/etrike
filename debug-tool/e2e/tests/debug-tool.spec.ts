@@ -7,17 +7,17 @@ test.describe("Debug Tool", () => {
 
   test("page loads with dual-bus header", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".tb-brand")).toContainText("E-Trike");
+    await expect(page.getByTestId("topbar-brand")).toContainText("E-Trike");
   });
 
   test("status strip shows connection state", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".tb-health-row")).toBeVisible();
+    await expect(page.getByTestId("topbar-health-row")).toBeVisible();
   });
 
   test("all ten tabs are present", async ({ page }) => {
     await page.goto("/");
-    const tabButtons = page.locator("nav.tabs button");
+    const tabButtons = page.getByTestId("main-tabs").locator("button");
     expect(await tabButtons.count()).toBe(10);
     const tabs = ["Dashboard", "CAN Monitor", "CAN Dictionary", "Injector", "Statistics", "Controller", "Unit Test", "Pipeline", "Terminal", "Work Mode"];
     const labels = await tabButtons.allTextContents();
@@ -26,25 +26,25 @@ test.describe("Debug Tool", () => {
 
   test("navigating to monitor tab works", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByText("CAN Monitor").click();
+    await page.getByTestId("main-tabs").getByText("CAN Monitor").click();
     await expect(page.locator("h2").filter({ hasText: "CAN Monitor" }).first()).toBeVisible({ timeout: 5000 });
   });
 
   test("navigating to dictionary tab works", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByRole("button", { name: "CAN Dictionary" }).dispatchEvent("click");
+    await page.getByTestId("main-tabs").getByRole("button", { name: "CAN Dictionary" }).dispatchEvent("click");
     await expect(page.locator("h2").filter({ hasText: "CAN Dictionary" }).first()).toBeVisible({ timeout: 15000 });
   });
 
   test("navigating to injector shows bus selector", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByText("Injector").click();
+    await page.getByTestId("main-tabs").getByText("Injector").click();
     await expect(page.locator(".bus-tabs").filter({ visible: true }).first()).toBeVisible();
   });
 
   test("navigating to stats shows bus load gauges", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByText("Statistics").click();
+    await page.getByTestId("main-tabs").getByText("Statistics").click();
     await expect(page.locator(".gauge-panel").filter({ visible: true })).toHaveCount(2);
   });
 
@@ -84,7 +84,7 @@ test.describe("Debug Tool", () => {
 
   test("navigating to Unit Test tab shows profiles", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByText("Unit Test").click();
+    await page.getByTestId("main-tabs").getByText("Unit Test").click();
     await expect(page.locator("h2").filter({ hasText: "Unit Under Test" }).first()).toBeVisible({ timeout: 5000 });
     await expect(page.locator(".unit-buttons button").filter({ visible: true }).first()).toBeVisible();
   });
@@ -92,9 +92,9 @@ test.describe("Debug Tool", () => {
   test("responsive layout at narrow viewport", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/");
-    await expect(page.locator(".tb-brand")).toContainText("E-Trike");
-    await expect(page.locator(".tb-mode-badge")).toBeVisible();
-    await page.locator("nav.tabs").getByRole("button", { name: "Work Mode" }).click();
+    await expect(page.getByTestId("topbar-brand")).toContainText("E-Trike");
+    await expect(page.getByTestId("topbar-mode-badge")).toBeVisible();
+    await page.getByTestId("main-tabs").getByRole("button", { name: "Work Mode" }).click();
     await expect(page.getByText("Work Mode Configurator")).toBeVisible();
     // No horizontal overflow — check body does not exceed viewport
     const bodyWidth = await page.locator("body").evaluate(
@@ -108,7 +108,7 @@ test.describe("Debug Tool", () => {
     await page.goto("/");
     
     // Go to Injector tab
-    await page.locator("nav.tabs").getByRole("button", { name: "Injector" }).dispatchEvent("click");
+    await page.getByTestId("main-tabs").getByRole("button", { name: "Injector" }).dispatchEvent("click");
     const injectorPanel = page.getByTestId("can-injector");
     await expect(injectorPanel.locator(".bus-tabs")).toBeVisible();
     

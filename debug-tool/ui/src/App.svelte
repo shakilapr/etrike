@@ -191,7 +191,7 @@
 <div class="app-shell" class:sidebar-open={sidebarOpen}>
   <Topbar onReset={resetFrames} onRestart={restartBridgeHandler} onStop={stopBridgeHandler} />
 
-  <nav class="tabs" aria-label="Debug views">
+  <nav class="tabs" data-testid="main-tabs" aria-label="Debug views">
     {#each tabs as tab}
       <button class:active={activeTab === tab.id} type="button" on:click={() => (activeTab = tab.id)}>
         {tab.label}
