@@ -1,112 +1,439 @@
-# E-Trike Debug Tool — Advanced Architecture Blueprint
+# E-Trike Debug Tool Architecture
 
-**Version:** 1.0.0 (Optimal Architecture)
+**Status:** Target architecture grounded in the current implementation
 
-This document serves as the absolute engineering blueprint for the `debug-tool` platform. It outlines a high-performance, deterministic, zero-allocation architecture designed to function as both a human-driven CAN inspection UI and a headless Software-In-the-Loop (SIL) Rig for AI autonomous development.
+**Scope:** CAN monitoring, controlled injection, recording/replay, behavioral simulation, and automated testing
 
----
+**Protocol source of truth:** `../shared/can/can_high.yaml` and `../shared/can/can_low.yaml`
 
-## 1. Core Architectural Principles
+## 1. Goals and non-goals
 
-1. **Single Source of Truth**: `can_high.yaml` and `can_low.yaml` govern the entire system. No hardcoded CAN IDs (`0x300`), static dictionaries, or manual bit-shifting are permitted anywhere in the UI or backend.
-2. **Zero-Allocation Frontend**: The UI is a stateless rendering engine. It relies on Binary WebSockets, Web Workers, and `SharedArrayBuffer` ring-buffers to process 30,000+ FPS without Javascript Garbage Collection (GC) pauses.
-3. **Native C++ Firmware Integration**: We do not rewrite first-party firmware logic (RT, SYS, MTR) into TypeScript. We compile the real C++ code natively and run it via IPC.
-4. **Deterministic Virtual Time**: The simulation does not use the host computer's system clock. Time is explicitly stepped via IPC, ensuring bit-perfect reproducibility for automated tests and accelerated AI training.
+The debug tool must help an engineer observe and test the E-Trike CAN system without becoming another implementation of the vehicle firmware. It must remain useful with no hardware attached, with one or more physical ECUs attached, and as a passive monitor.
 
----
+The design optimizes for correctness, safety, diagnosability, and maintainability. Performance work is driven by measurements against declared workloads, not by a zero-allocation requirement.
 
-## 2. Backend Simulation Engine
+The following are deliberately outside the core architecture until a separate, tested requirement justifies them:
 
-The backend (Node.js/Fastify) acts as a high-speed router and orchestrator. It manages the flow of CAN frames between the physical Serial bridges, the Web UI, and the Native C++ IPC binaries.
+- compiling embedded production firmware as a desktop-native process;
+- reinforcement-learning or AI-training infrastructure;
+- direct LLM control of physical CAN hardware;
+- Vector CANalyzer automation;
+- a second CLI implementation in Go or Rust;
+- a high-fidelity vehicle dynamics model.
 
-### 2.1 Native IPC: Strict Controller vs. Plant Separation
-To guarantee that the simulation behaves exactly like the physical E-Trike, the architecture enforces a strict decoupling between the **Controller (Firmware)** and the **Plant (Physics Environment)**. Mashing them into the same routine prevents independent validation.
-- **The Controller (Firmware Binary)**: Fastify spawns the compiled production firmware (`firmware-native`). This binary contains *only* the control logic and safety monitors.
-- **The Plant (Physics Binary/Model)**: Fastify separately manages the physics environment (`plant-model`). It takes the actuator commands from the firmware, calculates the real-world kinematics (inertia, friction, gravity), and generates the resulting sensor feedback.
-- **Zero-Copy Shared Memory IPC**: JSON over stdin/stdout introduces unacceptable allocation, UTF-8 parsing, and backpressure bottlenecks. Instead, the Node.js backend routes data between the Controller and the Plant using **POSIX Shared Memory (mmap)** or highly optimized raw binary pipes. This ensures zero-allocation, microsecond-latency communication.
+These may be added later behind stable interfaces. They must not complicate the core monitor and test tool now.
 
-### 2.2 Third-Party Behavioral Models
-Since we do not have access to vendor source code, third-party actuators (EPS-C, SEB) are the *only* units mimicked in TypeScript. They are implemented as simple state machines within `backend/src/sim/ecus/` and rely on `encodePayload()` to serialize data dynamically.
+## 2. Design principles
 
-### 2.3 Pluggable Clock Semantics (Time Domains)
-A critical architectural constraint is that Physical, SIL, Replay, and HIL execution modes use fundamentally incompatible clock semantics. A single monolithic execution model fails because `Date.now()` is meaningless in a replay or virtual simulation. 
-To resolve this, the backend architecture relies on a **Pluggable Clock Provider** injected into the `SimulationEngine`:
-- **Physical Mode (Wall Clock)**: Uses standard Node.js `performance.now()`. Driven by real hardware serial ports.
-- **SIL Mode (Virtual Clock)**: The backend owns time. It steps the C++ IPC binary explicitly via `{"type":"tick"}` commands, enabling pause, determinism, and accelerated AI training.
-- **Replay Mode (Log Clock)**: Driven by timestamps stored in SQLite or Vector `.asc` files. Time progresses strictly based on the relative deltas between logged frames.
-- **HIL Mode (CANalyzer Clock)**: Time is enslaved to the Vector CANalyzer COM measurement clock to guarantee synchronization with the physical VN1630 hardware.
-All TS models, Ring Buffers, and Web Workers MUST query the injected `ClockProvider.now()` instead of system time.
+1. **One protocol authority.** CAN IDs, buses, DLCs, signal layouts, scaling, limits, enums, and cycle times originate in the two YAML databases.
+2. **Typed semantics where behavior is fixed.** Generic dictionary and injector views iterate runtime metadata. Vehicle-specific workflows use generated message and signal constants so protocol drift fails at build time.
+3. **One frame path.** Physical, simulated, replayed, and user-injected frames enter the same router and leave through the same stream and recording interfaces.
+4. **Explicit sources and modes.** Every frame carries its source. Mode controls which sources may transmit and whether a frame may reach physical hardware.
+5. **Safety is layered.** Schema validation is necessary but is not a vehicle safety controller. Physical transmission requires independent policy and an operator-controlled interlock.
+6. **Bounded resources.** Queues, history, recordings, reconnect buffers, and UI collections have declared limits and observable drop behavior.
+7. **Measure before optimizing.** JSON WebSockets and SQLite remain acceptable until repeatable benchmarks show they miss an agreed service level.
+8. **Current versus proposed is explicit.** This document marks components that exist today and components introduced by the work plan.
 
----
+## 3. System context
 
-## 3. High-Performance Transport Layer
-
-MQTT (`Aedes`) is fully deprecated due to overhead and dependency bloat. The system uses strict WebSockets and ArrayBuffers.
-
-### 3.1 Binary WebSockets (Strict 16-Byte Alignment)
-Instead of heavy `JSON.stringify` overhead, CAN frames are packed into dense, strictly 16-byte aligned binary arrays to prevent unaligned memory penalties during Web Worker chunking:
-```c
-struct __attribute__((packed)) WsFrame {
-    uint32_t timestamp_ms; // 4 bytes
-    uint16_t bus_and_id;   // 2 bytes (bit 15: bus, bits 0-11: CAN ID)
-    uint8_t  dlc;          // 1 byte
-    uint8_t  flags;        // 1 byte (e.g., 0x01: injected, 0x02: error frame)
-    uint8_t  data[8];      // 8 bytes
-}; // Total: exactly 16 bytes
+```mermaid
+flowchart LR
+    HW[CAN adapters / ESP32 bridge] --> BR[Transport adapters]
+    SIM[Behavioral simulation] --> R[Frame router]
+    REP[Replay source] --> R
+    API[REST injection] --> P[Injection policy]
+    BR --> R
+    P --> R
+    R --> H[Bounded live history]
+    R --> WS[WebSocket stream]
+    R --> DB[SQLite worker]
+    R --> TX[Physical transmit gate]
+    TX --> BR
+    WS --> UI[Svelte UI]
+    H --> APIQ[REST queries]
+    DB --> REC[Recording and export APIs]
 ```
 
-### 3.2 Data Persistence & Automotive Exports
-Every frame is piped to an asynchronous Worker Thread that executes Chunked Batching (e.g., flushing 5,000 frames per 500ms into an in-memory SQLite buffer). 
-To prevent vendor lock-in, the backend API (`/api/export`) converts SQLite sessions into standard Vector `.asc` or `.blf` formats, allowing engineers to analyze captures in CANalyzer or Wireshark.
+The backend is the authority for routing, mode, injection policy, timestamps, simulation, and recording. The browser renders state and issues commands; it does not generate an independent CAN universe.
 
----
+## 4. Protocol model and codec
 
-## 4. Zero-Allocation Frontend (Svelte 5)
+### 4.1 Authoritative input
 
-The frontend is built to handle maximum CAN bus saturation without dropping frames or staggering.
+`can_high.yaml` and `can_low.yaml` define the protocol. A build-time generator validates them and emits:
 
-### 4.1 Web Worker Static Decoder (AOT Generation)
-Runtime dynamic decoding (looping through a JSON schema, executing `BigInt` bit-shifts, and allocating dictionary objects) completely destroys zero-allocation objectives at 30,000 FPS. Instead, the architecture mandates **Ahead-of-Time (AOT) Code Generation**. The `generate_code.py` toolchain generates a hardcoded, static TypeScript decoder (`decoder.gen.ts`). When a 16-byte frame arrives, the Web Worker executes a single `switch(id)` statement and uses direct bitwise masks to extract values, writing them straight into fixed memory addresses. Zero `BigInt` usage, zero object instantiation, zero garbage collection.
+- a normalized runtime catalog for dictionary-driven screens;
+- typed TypeScript message names, buses, IDs, DLCs, and signal keys;
+- encoder/decoder metadata or generated codec functions;
+- firmware and DBC artifacts already required elsewhere in the repository.
 
-### 4.2 SharedArrayBuffer & Atomics (Lock-Free Synchronization)
-A raw `SharedArrayBuffer` lacks synchronization; a concurrent read/write between the Main Thread and Web Worker can result in "torn" values or inconsistent signal sets. To resolve this:
-- **Atomics & SeqLocks**: The Web Worker utilizes `Atomics.store` and a Sequence Lock (seqlock) pattern when updating the buffer. It increments an atomic sequence counter (odd = writing), writes the signals, and increments again (even = done). 
-- **Torn-Read Prevention**: The Svelte 5 UI reads the sequence counter before and after fetching data. If the counter is odd or has changed, it retries, guaranteeing memory consistency without blocking the writer.
-- **Svelte Runes**: The UI utilizes `$state` and `$derived` runes to pull this guaranteed-consistent data directly from memory for zero-overhead, 60 FPS reactivity.
+Generated files are reproducible artifacts. Hand-edited copies of the catalog are forbidden. CI runs the generator in check mode and fails on stale output.
 
----
+### 4.2 Codec contract
 
-## 5. Headless SIL & AI Development Integration
+Encoding and decoding live in `@etrike/debug-shared` and have one public implementation. The codec must:
 
-This architecture scales beyond a visual debug tool into a headless Software-In-the-Loop (SIL) training rig.
+- support signed and unsigned fields up to the declared classic-CAN payload width without JavaScript 32-bit shift truncation;
+- implement Motorola and Intel layouts according to documented, tested bit numbering;
+- validate DLC, numeric range, enum membership, bit width, representable factor/offset values, and overlapping fields;
+- keep raw numeric values and provide enum labels as presentation metadata;
+- reject unknown message encoding rather than returning an empty frame;
+- expose explicit checksum and rolling-counter hooks for messages whose rules cannot be represented as ordinary signals.
 
-### 5.1 Python RL Interface
-The Fastify backend exposes a dedicated gRPC/WebSocket endpoint for Python (PyTorch/TensorFlow). An OpenAI Gym agent can connect to the backend, receive physical sensor feedback, and send steering/throttle commands natively.
+Golden vectors generated from the YAML/compiler toolchain verify TypeScript and firmware-compatible encoding in both directions.
 
-### 5.2 Scenario Fuzzing & The Optimal CLI / MCP Integration
-Instead of a slow, Node-based CLI (`npm run cli`), the architecture employs a lightning-fast, AI-optimized tooling suite:
-- **Model Context Protocol (MCP) Server (Sandboxed Omniscience)**: The backend natively exposes an MCP server to AI assistants. While the AI has total visibility into the system, **physical injection is strictly sandboxed**:
-  - **Execution Mode Enforcement**: By default, AI-driven CAN injection is *only* permitted in `SIL` (Virtual) mode. If the engine is in `PHYSICAL` or `HIL` mode, the MCP server outright rejects all drive/steer injection requests to prevent physical harm from AI hallucinations.
-  - **Hardware Deadman Override**: Physical injection by the AI can only be unlocked via a physical hardware deadman switch (e.g., a physical button held by an engineer on the test bench).
-  - **Firmware-in-the-Loop (FIL) Safety**: A static YAML dictionary cannot describe dynamic safety behaviors (e.g., preventing a 40-degree steer at 30km/h). Therefore, the MCP Sandbox does not rely on YAML limits. All AI-injected commands are routed *through* the native C++ `firmware-native` binary. The production firmware's internal `safety_monitor.cpp` serves as the ultimate arbiter, naturally rejecting or clamping unsafe AI commands exactly as it would on the real vehicle.
+### 4.3 Semantic consumers
 
-### 5.4 Vector CANalyzer Bridge (Hardware-in-the-Loop)
-To bridge the gap between the virtual Node.js environment and physical hardware testing, the Fastify backend includes a **Vector CANalyzer COM Bridge**:
-- **Windows COM Integration**: The debug tool uses Windows COM (`win32com`) to remotely control a running instance of Vector CANalyzer. 
-- **LLM-Driven HIL Testing**: Because the LLM has total access to the debug tool via MCP, the LLM gains the unprecedented ability to command the physical Vector hardware (VN1630). The AI can instruct the debug tool to trigger CANalyzer measurements, inject physical CAN signals onto the real E-Trike bus, and read physical hardware telemetry—giving the LLM complete, scriptable control over industry-standard HIL test benches.
+Protocol-generic features use catalog iteration. Protocol-specific features such as ESTOP, mode selection, drive/brake correlation, ECU health, and unit-test presets use generated semantic constants. Raw ID strings are permitted only in protocol fixtures, adapter boundaries, and tests that intentionally verify an exact wire value.
 
----
+## 5. Backend architecture
 
-## 6. Smart Logging: Lossless Capture vs. Filtered Application Logs
-Because the simulation and physical bus operate at extreme frequencies (e.g., 30,000 CAN frames/sec, 100Hz IPC ticks), the logging architecture separates forensic data capture from human-readable application logs to prevent noise without destroying evidence.
-- **Lossless Raw CAN Capture**: Forensic information is sacred. The debug tool includes a dedicated, low-level asynchronous thread that dumps the raw 16-byte binary WebSocket frames straight to disk (or memory-mapped SQLite blob) with zero deadband filtering. This ensures that every single microsecond oscillation and exact transmission frequency is preserved for regulatory analysis or Vector `.asc` export.
-- **Filtered Application Logger**: For the human-readable text logs (e.g., `pino`), writing every CAN frame would create terabytes of noise. The Application Logger applies Delta Deadband filtering. High-frequency signals only trigger an `INFO` text log if they cross a configured threshold, reducing log spam for engineers debugging AI state transitions.
-- **In-Memory "Flight Recorder"**: `TRACE` level application logs (like IPC pipeline heartbeats) are kept in a rolling 10,000-line in-memory ring buffer. If a `FAULT` occurs, the backend instantly dumps this text buffer to disk to provide context alongside the lossless raw CAN data.
-- **Statically Compiled CLI**: For CI/CD and shell scripting, we will provide a lightweight, statically compiled binary (e.g., Go or Rust) that executes in <5ms (avoiding the Node.js V8 boot overhead). 
-- **Machine-Readable Outputs**: The CLI natively supports `--json` flags on every command, ensuring that automated scripts and AI tools receive structured, deterministic responses rather than unstructured terminal text.
-- **Example Usage**: `etrike-cli inject HOST_DRIVE_CMD --speed=500 --json`
+### 5.1 Application composition
 
-### 5.3 Continuous Feedback & Progressive Updates
-To support advanced AI training and dynamic debugging, the test framework is not a simple "fire-and-forget" binary outcome. It supports **Progressive Updates** while tests are actively running:
-- **Streaming Telemetry via MCP**: AI tools can subscribe to continuous telemetry streams via the MCP server (using JSON-RPC notifications) rather than polling. This allows an AI agent to monitor a scenario (like a steering maneuver) in real-time and react to anomalies instantly.
-- **Hot-Reloading & Parameter Tuning**: The AI can issue parameter updates (e.g., `etrike-cli set-param --kp=1.5`) while the Virtual Clock is actively ticking. The Fastify backend forwards these progressive updates down the IPC pipe to the C++ binary's HAL, dynamically altering the physics or control logic without requiring a full simulation reboot. This enables rapid, continuous feedback loops for Reinforcement Learning (RL) agents or automated hyperparameter tuning.
+Fastify is assembled around an explicit `AppContext` containing:
+
+- protocol catalog and codec;
+- current work mode;
+- frame router;
+- active transport manager;
+- injection policy;
+- bounded live-history service;
+- stream hub;
+- recording store client;
+- optional simulation and replay controllers;
+- clock interfaces needed by simulation and replay.
+
+Routes receive these services through typed registration or Fastify decorators. Mutable module globals and route-local transport ownership are avoided.
+
+### 5.2 Timestamp and ordering contract
+
+Every run creates a session timebase. Canonical timestamps are elapsed microseconds from that session's monotonic origin, never Unix time and never an ambiguous mixture of seconds and milliseconds.
+
+```ts
+interface SessionTimebase {
+  sessionId: string;
+  startedAtUtc: string; // ISO 8601 metadata for display and correlation
+  sourceClock: "adapter-hardware" | "host-monotonic" | "simulation" | "recording";
+  sourceInstance: string;
+}
+```
+
+The session origin is defined as canonical `timestampUs = 0`; an arbitrary host monotonic counter is not persisted as though it were portable. A `TimebaseMapper` maps adapter, host, simulation, or recording timestamps into session-relative microseconds. Adapter timestamp resets produce events and start a new mapping segment without moving canonical time backward.
+
+Every accepted frame and transport event receives a monotonically increasing session `sequence`. Ordering is `(timestampUs, sequence)`, so equal timestamps are deterministic. `bigint` values are stored as SQLite integers where safe and serialized over JSON as decimal strings; APIs never rely on JSON encoding native `bigint`.
+
+### 5.3 Canonical data-frame and decoded-message model
+
+Raw observation and derived interpretation are separate and immutable:
+
+```ts
+type FrameSource = "physical" | "simulation" | "replay" | "user" | "test";
+
+interface CanDataFrame {
+  timestampUs: bigint;
+  sequence: bigint;
+  bus: "high" | "low";
+  id: number;
+  extended: boolean;
+  remote: boolean;
+  dlc: number;
+  data: Uint8Array;
+  source: FrameSource;
+  sourceInstance: string;
+  direction: "rx" | "tx";
+}
+
+interface DecodedMessage {
+  definitionKey: string;
+  values: Readonly<Record<string, number | boolean>>;
+  enumLabels: Readonly<Record<string, string>>;
+  warnings: readonly string[];
+}
+
+interface RoutedFrame {
+  frame: Readonly<CanDataFrame>;
+  message?: Readonly<DecodedMessage>;
+}
+```
+
+For classic CAN, standard IDs are `0..0x7ff`, extended IDs are `0..0x1fffffff`, and DLC is `0..8`. A remote frame has no payload bytes; a data frame has `data.length === dlc`. CAN FD requires a future versioned extension rather than weakening these invariants.
+
+`decoded` is not stored inside the raw frame. Recordings preserve wire observations even if the YAML interpretation later changes. A recording may store the protocol artifact hash and an optional decoded projection for query performance, but that projection is disposable and reproducible.
+
+### 5.4 Transport and bus events
+
+Bus failures are first-class observations, not fake CAN frames:
+
+```ts
+type TransportEvent =
+  | { type: "error-frame"; bus: "high" | "low"; timestampUs: bigint; sequence: bigint; sourceInstance: string; details: string }
+  | { type: "bus-off"; bus: "high" | "low"; timestampUs: bigint; sequence: bigint; sourceInstance: string }
+  | { type: "bus-recovered"; bus: "high" | "low"; timestampUs: bigint; sequence: bigint; sourceInstance: string }
+  | { type: "rx-overflow"; bus: "high" | "low"; timestampUs: bigint; sequence: bigint; sourceInstance: string; dropped: number }
+  | { type: "adapter-disconnected"; timestampUs: bigint; sequence: bigint; adapterId: string; reason?: string }
+  | { type: "timestamp-reset"; timestampUs: bigint; sequence: bigint; adapterId: string };
+```
+
+Events have their own routing and recording channel and appear in UI diagnostics. Adapter capability metadata states which events and timestamp quality it can actually provide.
+
+### 5.5 Operational state machine and physical arm
+
+Execution mode and permission to transmit physically are orthogonal. Treating `physical-armed` as an ordinary work mode would mix observation behavior with a short-lived safety capability.
+
+```ts
+type ExecutionMode = "offline" | "monitor" | "simulation" | "replay";
+type PhysicalArmState = "disarmed" | "arming" | "armed";
+
+interface OperationalState {
+  mode: ExecutionMode;
+  arm: PhysicalArmState;
+  profile?: string; // named bench/model configuration, not a safety state
+  revision: bigint;
+}
+```
+
+Existing labels such as `full-sim`, `bench`, and `hybrid` become validated profiles or migration aliases. There is no profile flag equivalent to `injectEmulatedToPhysical`; simulation/replay-to-hardware forwarding is prohibited.
+
+| Current mode | Requested mode | Allowed | Required action |
+|---|---|---:|---|
+| offline | monitor | yes | Start selected adapter; remain disarmed |
+| offline | simulation | yes | Start simulation with isolated physical transmit gate |
+| offline | replay | yes | Open recording; isolate physical transmit gate |
+| monitor | simulation | yes | Disarm, stop periodic TX, revoke leases, disconnect or transmit-isolate adapter, clear source claims and queues |
+| monitor | replay | yes | Disarm, stop periodic TX, revoke leases, isolate adapter, clear queues |
+| simulation | monitor | yes | Stop simulation, clear simulated source claims/queues, then connect adapter |
+| simulation | replay | yes | Stop simulation and clear queues before opening replay |
+| replay | simulation | yes | Stop replay and clear queues before starting simulation |
+| replay | monitor | yes | Stop replay and clear queues before connecting adapter |
+| any | offline | yes | Disarm, revoke leases, stop all producers/transmitters, drain or cancel queues, close adapter |
+| same mode | same mode | yes | Idempotent no-op unless a profile change requires a controlled restart |
+
+Arming is permitted only while mode is `monitor`, a transmit-capable adapter is healthy, operator confirmation is fresh, and any configured hardware interlock is asserted. Arming is a lease with a short expiry and heartbeat renewal; reconnection never restores it.
+
+State invariants:
+
+- physical TX is impossible unless `mode === "monitor" && arm === "armed"`;
+- adapter disconnect, bus-off, interlock loss, heartbeat expiry, backend shutdown, or mode change synchronously disarms before other cleanup;
+- reconnect always returns disarmed;
+- simulation and replay can never reach physical TX;
+- every mode transition revokes control leases, stops periodic jobs, rejects stale commands, and clears source-specific queues;
+- transitions are serialized, revisioned, and either complete or leave the system in safe `offline/disarmed` state.
+
+### 5.6 Routing matrix
+
+“One frame path” means one enforcement point, not indiscriminate fan-out. `yes` below means the router may deliver after validation; `policy` means an additional explicit rule applies.
+
+| Source | UI/live history | Recording | Simulation input | Physical TX |
+|---|---:|---:|---:|---:|
+| physical RX | yes | active session | profile opt-in for sensor input only | never echo |
+| simulation | yes | active session | internal model routing | never |
+| replay | yes | off by default; explicit derived recording only | never | never |
+| user | yes after acceptance | audit plus active session | simulation mode only | policy + arm + lease |
+| test | test UI only | test opt-in | isolated test engine only | never in production process |
+
+Additional invariants:
+
+- a routed observation is assigned one sequence and processed once;
+- internally produced simulation frames are not fed back to their producer unless the model graph explicitly declares that edge;
+- replay preserves original provenance in metadata while its current routing source remains `replay`;
+- physical RX never becomes physical TX through default routing;
+- tests cannot select a production hardware transport through a source label.
+
+### 5.7 Queue and overload contracts
+
+Every asynchronous boundary exposes the same metric shape:
+
+```ts
+interface QueueMetrics {
+  depth: number;
+  capacity: number;
+  highWaterMark: number;
+  accepted: bigint;
+  dropped: bigint;
+  rejected: bigint;
+  oldestItemAgeMs: number;
+}
+```
+
+| Boundary | Capacity unit | Overload policy |
+|---|---|---|
+| router → UI latest state | unique bus/ID keys | Coalesce by key; intermediate values may be replaced and counted |
+| router → UI monitor history | frames/bytes | Overwrite oldest; expose overwritten count |
+| router → live history | time + bytes | Overwrite oldest atomically |
+| router → recording | frames/bytes | Never silently drop; apply bounded backpressure, then stop and mark recording incomplete if deadline is exceeded |
+| router → physical TX | commands | Reject when full or stale; actuator commands are latest-value with explicit expiry, never an indefinite FIFO |
+| replay → router | frames | Pause replay until downstream recovers or user cancels |
+| simulation → router | frames per step | The step completes only when outputs are accepted; otherwise fail/pause deterministically |
+| stream hub → WebSocket client | batches/bytes | Coalesce latest state, discard old monitor batches with counters, then disconnect persistently slow clients |
+| transport RX → router | frames | Adapter-specific bounded buffer; report overflow event and count, never hide loss |
+
+Capacities and deadlines are configuration values with safe defaults and upper bounds. Queue metrics appear in status APIs and diagnostics. Tests use deliberately tiny capacities to prove each overload behavior.
+
+### 5.8 Command ownership and leases
+
+Last-write-wins is forbidden for actuator or periodic-command ownership.
+
+```ts
+type ControlResource =
+  | "actuator:steering"
+  | "actuator:motor"
+  | "actuator:brake"
+  | `periodic:${"high" | "low"}:${string}`;
+
+interface ControlLease {
+  leaseId: string;
+  resource: ControlResource;
+  ownerId: string;
+  modeRevision: bigint;
+  acquiredAtUs: bigint;
+  expiresAtUs: bigint;
+}
+```
+
+Owners are authenticated connection/session identities, not user-supplied display names. Acquisition is atomic. Renewal requires the lease token and same owner. A lease is revoked on owner disconnect, mode transition, disarm, adapter failure, interlock loss, or expiry. Physical actuator leases require a heartbeat; simulation leases may use longer bounded durations for deterministic tests.
+
+Leases are visible in the status API and UI without exposing secret tokens. ESTOP is not blocked by another client's lease. Non-hazardous passive actions such as filtering or starting a recording do not require actuator leases.
+
+### 5.9 Frame router
+
+All producers submit data frames and transport events to one router. For a data frame, the router performs, in order:
+
+1. immutable envelope validation;
+2. source-instance and operational-state authorization;
+3. timebase mapping and sequence assignment;
+4. loop/source-claim checks against the routing matrix;
+5. protocol lookup and separate decoding when known;
+6. bounded live-history publication;
+7. UI stream publication;
+8. recording enqueue when active;
+9. explicitly requested simulation delivery or physical TX through policy.
+
+The router never performs synchronous disk I/O. It returns a structured disposition describing accepted destinations, coalescing, rejection, or failure. Transport events follow the relevant UI, recording, safety-state, and diagnostics routes without being decoded as CAN messages.
+
+### 5.10 Transports
+
+Transport adapters implement a small interface: start, stop, receive, transmit, status, capabilities, and events. Serial, CANalyst-II, and any future SocketCAN or TCP bridge remain independent adapters managed by one `ActiveTransportManager`.
+
+The manager owns adapter identity and timestamp mapping. It disarms before publishing disconnect/bus-off state and prevents more than one adapter from claiming the same configured physical bus unless an explicit listen-only aggregation design is selected.
+
+The embedded MQTT broker and standalone MQTT simulator are legacy paths. They are removed after equivalent backend simulation and hardware workflows pass acceptance tests. WebSocket remains a browser-facing stream, not a hardware transport requirement.
+
+### 5.11 Injection policy
+
+Injection follows a single backend path regardless of whether the request comes from the UI, REST, a test, or a future automation client.
+
+Policy layers are:
+
+1. authenticated owner and request origin;
+2. execution mode and route permission;
+3. control-lease ownership where required;
+4. protocol/DLC/signal validation;
+5. checksum and rolling-counter preparation;
+6. per-message rate, freshness, and command expiry;
+7. physical arm, adapter health, and interlock permission.
+
+There is no implicit fallback from failed physical transmission to simulation. The caller selects a permitted destination and receives its actual disposition. Physical transmit defaults to disabled. Enabling it requires explicit operator action and, for hazardous commands, a hardware or independently implemented bench interlock. AI/MCP access, if ever added, remains disabled for physical transmission unless a separately reviewed safety design is implemented.
+
+### 5.12 Storage and recordings
+
+The existing SQLite worker-thread boundary is retained. SQLite provides metadata, indexed queries, and portable recording sessions without blocking Fastify.
+
+Two retention concepts are separate:
+
+- **Live history:** bounded in memory by time and bytes for dashboard, monitor, and recent correlation.
+- **Recording session:** opt-in durable capture with start/stop state, integrity status, frame count, and source metadata.
+
+Whether non-recorded frames also retain a small durable diagnostic window is a configuration decision verified by benchmarks. The system does not promise lossless capture unless a recording session is active and storage throughput has been validated.
+
+ASC export is the first supported interchange format. BLF is added only through a maintained library with compatibility tests; implementing BLF from scratch is out of scope.
+
+### 5.13 Streaming
+
+The current JSON WebSocket protocol remains the compatibility baseline. The server sends bounded batches and supports server-side bus/ID filtering. UI state is updated at a controlled cadence rather than once per received frame.
+
+A binary protocol is introduced only if benchmark gates fail. If required, it must be versioned and support batches, integer timestamps, standard and extended IDs, source, direction, flags, and future CAN FD extension. Binary transport is an optimization, not a redesign of the domain model.
+
+## 6. Simulation and replay
+
+### 6.1 Behavioral simulation
+
+The backend owns one behavioral simulation engine. ECU models emulate externally observable protocol behavior needed for UI, integration, and bench tests. They use the shared codec and generated constants; manual payload packing is limited to a tested protocol-specialization helper when checksum or multiplexing rules require it.
+
+The models are not claimed to be production firmware or a safety proof. Each model documents its fidelity and known omissions.
+
+### 6.2 Plant boundary
+
+The core tool does not require a high-fidelity physics plant. Simple deterministic sensor/actuator behavior may live behind a `Plant` interface so it can later be replaced. Display kinematics in `TrikeViz` are presentation only and never feed simulated sensors implicitly.
+
+If future testing needs native firmware or MATLAB/Simulink, it integrates as another controller or plant adapter through the same frame and clock interfaces. That work requires its own design and acceptance criteria.
+
+### 6.3 Clock and replay
+
+The tool distinguishes two clocks:
+
+- wall/monotonic clock for physical operation and visual replay;
+- controllable simulation clock for deterministic backend tests.
+
+Visual replay supports pause, seek, and speed control and may schedule against a monotonic timer. Deterministic tests step ordered frames without relying on host timer accuracy. Equal timestamps retain recorded sequence order.
+
+## 7. Frontend architecture
+
+The Svelte UI is organized around bounded stores:
+
+- connection and backend status;
+- work mode and transport capabilities;
+- latest frame by bus/ID;
+- bounded monitor history;
+- decoded telemetry view models;
+- recording and replay state;
+- typed input actions and fault notifications.
+
+Only the active heavy tab is mounted. Background data required across tabs lives in stores, not hidden component trees. Monitor rows are capped or virtualized. High-rate incoming batches are coalesced and committed at a configurable UI cadence, normally no faster than the display refresh rate.
+
+The generic injector and dictionary are catalog-driven. Controller and top-bar workflows use generated semantic constants. Keyboard/gamepad behavior is centralized in an `InputController` with explicit focus, blur, repeat, ESTOP, and teardown rules.
+
+Web Workers are optional optimization boundaries for parsing or aggregation after profiling. `SharedArrayBuffer`, Atomics, and Svelte runes are not architectural requirements.
+
+## 8. Observability and failure behavior
+
+The backend exposes structured status for:
+
+- adapter connection and errors;
+- frames received/transmitted by bus and source;
+- decode and validation failures;
+- queue depth, coalesced frames, and dropped frames;
+- recording throughput and integrity;
+- WebSocket clients and backpressure;
+- simulation and replay state.
+
+Application logs contain state transitions and errors, not every CAN frame. Raw frames belong in recording sessions. A bounded diagnostic event buffer may be dumped when a fatal fault occurs, but it is not a substitute for capture.
+
+Failures are explicit: unknown encodings return errors, queue overflow increments visible counters, recording overload stops or marks the session incomplete, and a disconnected physical adapter cannot silently fall back to simulation.
+
+## 9. Security and safety boundaries
+
+- The backend binds to loopback by default.
+- CORS and WebSocket origins are restricted in non-development use.
+- Injection endpoints validate bodies and enforce size/rate limits.
+- ESTOP and hazardous commands require explicit confirmation semantics.
+- Physical forwarding is visibly armed, expires automatically, and is cleared on disconnect or mode change.
+- Recording/export paths are server-selected; user input cannot choose arbitrary filesystem paths.
+- Automation clients receive no stronger authority than the authenticated policy grants.
+
+This tool assists bench testing. It is not a certified safety mechanism and must never be the sole protection against vehicle motion.
+
+## 10. Verification strategy
+
+The architecture is accepted through tests and measurements:
+
+- codec golden vectors, round trips, invalid-input and property tests;
+- router and injection-policy unit tests;
+- fake-adapter integration tests;
+- SQLite worker, retention, overload, and recording-integrity tests;
+- deterministic simulation and replay tests;
+- Svelte store/component tests;
+- one maintained Playwright suite for primary user workflows;
+- opt-in hardware tests for CANalyst-II and ESP32 bridges;
+- reproducible performance scenarios reporting input FPS, CPU, heap, queue depth, UI cadence, drops, and recording integrity.
+
+The detailed sequence and exit gates are defined in `work-plan.md`.

@@ -1,414 +1,383 @@
-# Debug Tool v0.4.0 — Remaining Work Plan
+# Debug Tool Work Plan
 
-> **Status:** Phases 1–4 (backend cleanup, emulator kill, frontend perf, store/input cleanup) are COMPLETE.  
-> This document covers everything that remains to bring the tool to production quality.
+**Purpose:** Incrementally bring the existing debug tool to `debug-tool-architecture.md` without a rewrite.
 
----
+## Non-negotiable phase rule
 
-## Phase 5 — Database Performance Overhaul
+Phases are sequential. Do not start phase N+1 until all code, tests, documentation, and the exit gate for phase N pass. If a later phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun every gate from there forward.
 
-The single biggest bottleneck. Every CAN frame (1,000–2,500 FPS from hardware) triggers a synchronous, unprepared `INSERT` that blocks the Node.js event loop. During active recordings, each frame also triggers an additional transaction (`attachToActiveRecordings`). Pruning runs row-by-row deletes. This phase eliminates all of it.
+Each phase should be a small reviewable change. Preserve unrelated user work. Add regression tests with correctness fixes. Hardware tests remain opt-in and run only on a controlled bench.
 
-### 5A. Cache All Prepared Statements
+## Baseline observed on 2026-07-10
 
-**File:** `backend/src/db/queries.ts`
+- Backend Vitest: 201 tests pass.
+- UI Vitest: 129 tests pass.
+- UI `svelte-check`: two errors in `PipelineView.svelte`.
+- The shared decoder loads YAML, but protocol definitions and packing remain duplicated.
+- Modes are mutable configurations, not a serialized state machine.
+- Failed physical commands may fall back implicitly to simulation.
+- Some simulation routes bypass the frame router.
+- Write and WebSocket frame buffers have no hard capacity or overload metrics.
+- There is no command ownership or lease mechanism.
+- Timestamps mix wall/device clocks and seconds/milliseconds; equal timestamps have no sequence.
+- Transport faults are not routed and recorded as first-class events.
+- SQLite writes already use a queue and worker; do not discard that boundary without evidence.
+- MQTT and the standalone simulator remain legacy paths.
 
-**Problem:** Every method calls `this.db.prepare()` on every invocation. `insertFrame()` alone re-parses the INSERT SQL string 2,000+ times per second. `better-sqlite3` has internal statement caching, but the repeated API call overhead and object allocation is measurable on the hot path.
+## Phase 1 — Restore a green software baseline
 
-**Changes:**
-- Move all `this.db.prepare(...)` calls from method bodies into the `DebugStore` constructor
-- Store them as private class fields (e.g., `private readonly stmtInsertFrame: Statement`)
-- Reference the cached statements in each method
+### Work
 
-**Test:**
-- Existing `can.test.ts` (711 lines) must still pass — `npm run test:unit`
-- Add a micro-benchmark: insert 10,000 frames, compare wall-clock time before/after
+- Fix both `PipelineView.svelte` type errors deliberately; do not suppress them.
+- Identify canonical shared/backend/UI check, build, and test commands.
+- Add one root software-verification command that runs them in dependency order.
+- Capture current failures in tests before fixing any behavioral regression discovered here.
 
----
+### Tests and exit gate
 
-### 5B. Batch Frame Insertion
+- Shared build passes.
+- Backend typecheck, build, and all tests pass.
+- UI typecheck, build, and all tests pass.
+- The root verification command returns zero twice consecutively.
+- Commit/merge only after the full gate is green.
 
-**File:** `backend/src/db/queries.ts`
+## Phase 2 — Consolidate the Playwright baseline
 
-**Problem:** Each bridge calls `insertFrame()` individually per CAN frame. SQLite wraps each call in an implicit transaction (fsync per frame). At 2,000 FPS this means 2,000 fsyncs/second — the main bottleneck.
+### Work
 
-**Changes:**
-- Add `insertFrames(frames: NormalizedFrame[]): void` method that wraps the loop in a single `this.db.transaction()`
-- The transaction uses the cached prepared statement from 5A
-- `attachToActiveRecordings()` is also batched inside the same transaction (one query for all frames, not one transaction per frame)
+- Inventory both Playwright suites and map unique scenarios.
+- Select one maintained directory/configuration.
+- Replace brittle structural selectors with scoped roles or stable `data-testid` values.
+- Migrate unique useful cases, then remove the duplicate suite.
+- Keep hardware scenarios tagged and excluded from software-only runs.
 
-**Test:**
-- Insert 5,000 frames via `insertFrames()` — verify all rows present, decoded JSON intact
-- Insert batch with active recording — verify all `recording_frames` rows created
-- Benchmark: 10,000 frames via old `insertFrame()` loop vs new `insertFrames()` batch
+### Tests and exit gate
 
----
+- Primary workflows cover startup, tab navigation, monitor, injector validation, mode display, recording controls, and disconnect state.
+- Software-only E2E passes twice without retries hiding failures.
+- A test intentionally using a stale selector fails, proving the suite is actually executing.
+- Phase 1 gate remains green.
 
-### 5C. In-Memory Write Queue
+## Phase 3 — Specify and test CAN bit semantics
 
-**Files:** `backend/src/canalyst/bridge.ts`, `backend/src/serial/reader.ts`, `backend/src/mqtt/bridge.ts`, `backend/src/sim/engine.ts`
+### Work
 
-**Problem:** All four frame sources call `store.insertFrame()` synchronously on every frame. There is no buffering layer between the hot ingestion path and the database.
+- Document Motorola and Intel bit numbering used by YAML and generated artifacts.
+- Build golden vectors from the repository generator/DBC/firmware-compatible source.
+- Fix signed encoding to use BigInt throughout, including 32-bit negative values.
+- Normalize enum option representation.
 
-**Changes:**
-- Create `backend/src/db/write-queue.ts`:
-  - Exposes `enqueue(frame: NormalizedFrame): void` — O(1) array push
-  - Internal `flush()` runs on a `setInterval` (every 100ms or when buffer hits 500 frames, whichever comes first)
-  - `flush()` calls `store.insertFrames(batch)` with the buffered array, then clears it
-  - Exposes `drain(): Promise<void>` for graceful shutdown
-- Update all four bridges and `SimulationEngine` to call `writeQueue.enqueue(frame)` instead of `store.insertFrame(frame)`
-- Wire the write queue in `index.ts`
+### Tests and exit gate
 
-**Test:**
-- Unit test: enqueue 1,000 frames rapidly → verify all flushed to DB after drain
-- Unit test: verify flush triggers at both the count threshold and the time threshold
-- Integration: run sim engine at 100Hz with 6 ECUs → verify no frames lost
+- Golden decode vectors exist for every YAML message.
+- Injectable messages have encode/decode round trips.
+- Signed 32-bit min, max, `-1`, and zero pass.
+- Cross-byte, non-byte-aligned, both-endian, factor, offset, and enum cases pass.
+- Earlier phase gates remain green.
 
----
+## Phase 4 — Make codec validation fail closed
 
-### 5D. Fix Bulk Pruning
+### Work
 
-**File:** `backend/src/db/queries.ts`
+- Reject unknown-message encoding, invalid bus/ID/DLC, non-finite values, range violations, invalid enums, bit-width overflow, and unrepresentable scaled values.
+- Validate signal overlap during generation/load; represent intentional multiplexing explicitly.
+- Return typed actionable codec errors rather than empty payloads or silent masks.
+- Define checksum and rolling-counter extension hooks.
 
-**Problem:** `pruneFrames()` selects candidate rows then deletes them one-by-one in a loop. `pruneStoppedRecordings()` also deletes row-by-row.
+### Tests and exit gate
 
-**Changes:**
-- Replace the delete loop in `pruneFrames()` with:
-  ```sql
-  DELETE FROM can_frames WHERE id IN (
-    SELECT f.id FROM can_frames f
-    WHERE NOT EXISTS (SELECT 1 FROM recording_frames rf WHERE rf.frame_id = f.id)
-    ORDER BY f.id ASC LIMIT ?
-  )
-  ```
-- Replace row-by-row recording prune with a similar bulk `DELETE WHERE id IN (...)` pattern
-- Add missing index: `CREATE INDEX IF NOT EXISTS idx_recordings_stopped ON recordings(stopped_at)`
+- Boundary and one-beyond-boundary tests exist for every signal kind.
+- Unknown and malformed inputs cannot produce a transmit-ready frame.
+- Fuzz/property tests never crash, hang, or silently wrap invalid values.
+- Steering and brake checksum fixtures pass.
+- Earlier phase gates remain green.
 
-**Test:**
-- Seed 60,000 frames → run prune → verify count drops to MAX_FRAMES
-- Seed frames with active recording references → verify those frames are NOT pruned
-- Benchmark: old prune (10,000 rows) vs new prune
+## Phase 5 — Generate normalized and typed protocol artifacts
 
----
+### Work
 
-### 5E. Fix `latestById()` Query
+- Extend the CAN generator to emit normalized runtime metadata and typed TypeScript message/signal constants.
+- Include bus, numeric/formatted ID, DLC, sender, cycle, enums, and checksum/counter metadata.
+- Make generation deterministic and add `--check`/stale-output verification.
+- Record a protocol artifact hash for recording metadata.
 
-**File:** `backend/src/db/queries.ts`
+### Tests and exit gate
 
-**Problem:** Fetches 5,000 rows ordered by timestamp, then deduplicates in JavaScript to find the latest frame per `(bus, can_id)`. Wasteful — SQLite can do this natively.
+- Two generator runs produce byte-identical output.
+- Check mode fails after intentional generated-file drift and passes after regeneration.
+- Generated artifacts typecheck in shared, backend, and UI.
+- YAML schema and generated catalog consistency tests pass.
+- Earlier phase gates remain green.
 
-**Changes:**
-- Replace the JS dedup with a proper SQL query:
-  ```sql
-  SELECT * FROM can_frames
-  WHERE id IN (
-    SELECT MAX(id) FROM can_frames GROUP BY bus, can_id
-  )
-  ```
-- This returns at most ~37 rows (one per unique CAN ID) instead of 5,000
+## Phase 6 — Migrate protocol-generic consumers
 
-**Test:**
-- Seed 10,000 frames across all 37 CAN IDs → verify `latestById()` returns exactly 37 rows, each the most recent
-- Benchmark: old (5,000 row fetch + JS dedup) vs new (37 row fetch)
+### Work
 
----
+- Move dictionary, generic injector, message cards, signal tables, and shared injection templates to generated/runtime metadata.
+- Migrate consumers of `ui/src/lib/can-index.ts` before deleting it.
+- Remove obsolete generated catalogs only after import search is clean.
 
-### 5F. Combine Stats Queries
+### Tests and exit gate
 
-**File:** `backend/src/db/queries.ts`
+- Dictionary renders all generated messages and fields on both buses.
+- Generic injection encodes representative boolean, enum, signed, scaled, and checksum messages.
+- No production generic screen imports a hand-maintained catalog.
+- Deleted files have no imports, scripts, or documented regeneration path remaining.
+- Earlier phase gates remain green.
 
-**Problem:** `setStats()` does 2 separate INSERT/UPDATE calls. `getStats()` does 2 separate SELECT calls. Neither is wrapped in a transaction.
+## Phase 7 — Migrate semantic protocol consumers
 
-**Changes:**
-- Wrap `setStats()` in a single `db.transaction()`
-- Combine `getStats()` into a single query:
-  ```sql
-  SELECT key, value FROM runtime_state WHERE key IN ('stats', 'stats_updated_at')
-  ```
+### Work
 
-**Test:**
-- Existing stats tests must pass
-- Verify stats round-trip: set → get → compare
+- Replace raw IDs and signal-key strings in telemetry, faults, Topbar, Controller, UnitTest, pipeline correlation, API commands, and ECU models with generated semantic constants.
+- Keep raw IDs only in wire fixtures, adapter parsing, and tests intentionally asserting protocol bytes.
+- Generate or centralize fault metadata rather than maintaining duplicate bit arrays.
 
----
+### Tests and exit gate
 
-### Phase 5 Verification
+- Renaming a required YAML semantic key causes the relevant consumer build/test to fail.
+- `rg` finds no unexplained raw CAN IDs in production semantic workflows.
+- Telemetry, fault, correlation, controller, and command regression tests pass.
+- Earlier phase gates remain green.
 
-```bash
-cd debug-tool/backend
-npm run test:unit          # All existing tests pass
-npx tsc --noEmit           # Clean compile
-```
+## Phase 8 — Introduce session timebase and sequence contracts
 
-Manual: Run with simulator at max throughput for 5 minutes. Monitor:
-- Node.js event loop lag (should be < 10ms)
-- SQLite WAL file size (should stay bounded)
-- WebSocket frame delivery latency (should be < 50ms)
+### Work
 
----
+- Add `SessionTimebase`, `TimebaseMapper`, canonical microsecond timestamps, and monotonic session sequences.
+- Map host, adapter, simulation, and replay clocks without moving canonical time backward.
+- Serialize bigint values as decimal strings at JSON boundaries and store safe integers in SQLite.
+- Retain migration readers for existing timestamps until stored data is handled explicitly.
 
-## Phase 6 — Worker Thread Isolation
+### Tests and exit gate
 
-Move the entire SQLite database into a dedicated Node.js Worker Thread so that disk I/O can never block the Fastify event loop, WebSocket broadcasting, or CAN decoding.
+- Seconds/milliseconds/microseconds cannot be confused by API types or validation.
+- Equal timestamps order by sequence deterministically.
+- Adapter timestamp reset creates an event and a new mapping segment without time reversal.
+- JSON and SQLite round trips preserve large timestamps/sequences exactly.
+- Earlier phase gates remain green.
 
-### 6A. Create the DB Worker
+## Phase 9 — Introduce immutable raw frames and transport events
 
-**Files:**
-- `[NEW] backend/src/db/worker.ts` — the worker thread script
-- `[NEW] backend/src/db/worker-client.ts` — main-thread proxy that mirrors the `DebugStore` API
+### Work
 
-**Changes:**
-- `worker.ts`:
-  - Instantiates `DebugStore` inside the worker
-  - Listens for `parentPort` messages: `{ type: "insertFrames", frames }`, `{ type: "queryFrames", query, requestId }`, etc.
-  - Sends results back via `parentPort.postMessage({ requestId, result })`
-- `worker-client.ts`:
-  - Creates a `Worker` pointing to `worker.ts`
-  - Exposes the same interface as `DebugStore` but async
-  - Fire-and-forget for writes (`insertFrames`, `setStats`)
-  - Request-response with `Promise` for reads (`queryFrames`, `latestById`, `getStats`, etc.)
-  - Uses a `Map<requestId, { resolve, reject }>` to correlate responses
+- Implement `CanDataFrame`, `DecodedMessage`, and `RoutedFrame` separation.
+- Enforce standard/extended ID, remote-frame, DLC, and payload invariants.
+- Add typed bus-off, recovery, overflow, adapter disconnect, error-frame, and timestamp-reset events.
+- Publish adapter event/timestamp capabilities.
 
-### 6B. Migrate Consumers to Async DB
+### Tests and exit gate
 
-**Files:** `backend/src/api/can.ts`, `backend/src/api/recordings.ts`, `backend/src/api/cmd.ts`, `backend/src/api/system.ts`, `backend/src/index.ts`
+- Raw frame bytes cannot be mutated by decoding or downstream consumers.
+- Re-decoding a recorded raw frame with the same protocol artifact yields the same interpretation.
+- Remote, standard, extended, invalid DLC, and invalid payload combinations are covered.
+- Every supported fake adapter event reaches diagnostics and recording paths.
+- Earlier phase gates remain green.
 
-**Changes:**
-- Replace `store.queryFrames(...)` (sync) with `await workerClient.queryFrames(...)` (async)
-- Fastify route handlers are already async — no structural change needed
-- Write queue (`write-queue.ts`) now sends batches to the worker instead of calling `store.insertFrames()` directly
+## Phase 10 — Build the operational state machine
 
-### 6C. Graceful Shutdown
+### Work
 
-**File:** `backend/src/index.ts`
+- Implement serialized `offline`, `monitor`, `simulation`, and `replay` transitions with revision numbers.
+- Make physical arming an orthogonal `disarmed/arming/armed` state.
+- Convert existing `full-sim`, `bench`, and related labels to profiles or migration aliases.
+- On every transition, disarm first, revoke leases, stop periodic jobs/producers, and clear source queues.
+- On partial failure, land in `offline/disarmed`.
 
-**Changes:**
-- On shutdown: `writeQueue.drain()` → `workerClient.close()` → `worker.terminate()`
-- Ensures all buffered frames are written before the worker exits
+### Tests and exit gate
 
-**Test:**
-- Start backend, ingest 1,000 frames, immediately shutdown → verify all 1,000 frames in the SQLite file
-- Run full sim for 60 seconds → verify zero frame loss
-- Verify event loop lag is < 2ms with worker (vs current 10–50ms)
+- Table-driven tests cover every allowed and rejected transition.
+- Concurrent transition requests serialize or return conflict without mixed state.
+- Disconnect, bus-off, interlock loss, shutdown, and transition immediately disarm.
+- Reconnect never restores arming.
+- Failure injection at each transition step ends `offline/disarmed` with no active timers.
+- Earlier phase gates remain green.
 
----
+## Phase 11 — Implement routing matrix enforcement
 
-## Phase 7 — CAN Catalog Unification (Phase 0 Debt)
+### Work
 
-The most fragile technical debt. Two hand-maintained 600-line files (`backend/src/types/can.ts` and `ui/src/lib/can-decoder.ts`) contain near-identical CAN message catalogs, decode switch statements, and encode switch statements. Any CAN message change requires editing both files. The YAML source of truth (`shared/can/can_high.yaml`, `shared/can/can_low.yaml`) already exists but is not used for decode/encode generation.
+- Make all physical, simulation, replay, user, and test producers enter one router.
+- Encode destination permissions from the architecture routing matrix.
+- Assign source instance and exactly one sequence per accepted observation.
+- Prevent physical echo, simulation feedback loops, replay-to-hardware, and test access to production transports.
+- Remove direct store/WebSocket calls from simulation routes.
 
-### 7A. Extend the Code Generator
+### Tests and exit gate
 
-**File:** `shared/can/generate_can_index.py` (currently 112 lines)
+- A table-driven test covers every source/destination matrix cell.
+- Physical RX cannot produce physical TX.
+- Simulation and replay cannot reach physical TX under any profile.
+- Each input is processed once and produces one audit disposition.
+- Loop detection tests cover explicit and accidental model edges.
+- Earlier phase gates remain green.
 
-**Problem:** The existing generator produces `can-index.ts` (a signal metadata index), but does NOT generate the decode/encode logic. The hand-maintained switch statements are the actual bug-prone code.
+## Phase 12 — Bound every queue and expose overload metrics
 
-**Changes:**
-- Extend (or create a new companion script) to generate:
-  1. **`can-catalog.ts`** — the `CAN_MESSAGES[]` array with all field definitions, replacing the hand-maintained arrays in both files
-  2. **`can-decode.ts`** — a data-driven `decodeFrame(bus, canId, data)` function that reads signal definitions from the catalog and unpacks bytes generically (using `readI16BE`, `readU32LE`, etc. based on signal type/endianness), replacing the 30-case switch statement
-  3. **`can-encode.ts`** — a data-driven `encodePayload(bus, canId, values)` function that packs values into bytes generically, replacing the 25-case switch statement in `can-decoder.ts`
-- Output directory: `debug-tool/shared/generated/`
-- Add `--check` mode for CI (exit 1 if generated output differs from committed files)
+### Work
 
-### 7B. Create Shared Package
+- Implement shared queue metrics: depth, capacity, high-water mark, accepted, dropped, rejected, and oldest age.
+- Bound UI latest state, monitor history, live history, recording, physical TX, replay, simulation-step, WebSocket-client, and transport-RX boundaries.
+- Implement the architecture's distinct overload policy for each boundary.
+- Add safe configuration defaults, maximums, and status API output.
 
-**Files:**
-- `[NEW] debug-tool/shared/package.json` — `@etrike/debug-shared`
-- `[NEW] debug-tool/shared/generated/can-catalog.ts`
-- `[NEW] debug-tool/shared/generated/can-decode.ts`
-- `[NEW] debug-tool/shared/generated/can-encode.ts`
-- `[NEW] debug-tool/shared/src/read-helpers.ts` — byte read/write utilities (extracted from current files)
-- `[NEW] debug-tool/shared/src/fault-decoders.ts` — `decodeSesFaults()`, `decodeSebFaults()` (extracted)
+### Tests and exit gate
 
-### 7C. Migrate Backend
+- Tiny-capacity tests force every queue into overload and assert its exact policy.
+- Recording never silently drops; it backpressures or becomes visibly incomplete.
+- Physical commands expire/reject rather than waiting indefinitely.
+- Replay pauses and simulation step fails/pauses deterministically.
+- Slow WebSocket clients cannot grow backend memory without bound.
+- Earlier phase gates remain green.
 
-**File:** `backend/src/types/can.ts` (533 lines → ~80 lines)
+## Phase 13 — Implement identities and control leases
 
-**Changes:**
-- Remove `CAN_MESSAGES[]` array, `decodeFrame()` switch statement
-- Import from `@etrike/debug-shared`
-- Keep backend-only code: `BusDetector`, `INJECTION_TEMPLATES`, `normalizeFrame()`, `validateDataBytes()`
+### Work
 
-### 7D. Migrate Frontend
+- Assign authenticated connection/session owner identities.
+- Implement atomic acquire, renew, release, expiry, and revocation for steering, motor, brake, and scoped periodic resources.
+- Bind leases to operational-state revision and conceal lease secrets from status output.
+- Revoke on disconnect, transition, disarm, adapter/interlock failure, and heartbeat expiry.
+- Keep ESTOP independent of conflicting leases.
 
-**File:** `ui/src/lib/can-decoder.ts` (645 lines → ~60 lines)
+### Tests and exit gate
 
-**Changes:**
-- Remove `CAN_MESSAGES[]` array, `decodeFrame()` switch, `encodePayload()` switch
-- Import from `@etrike/debug-shared`
-- Keep frontend-only code: `formatDecoded()`, `frameTime()`, `frameAge()`
+- Two owners cannot acquire the same resource concurrently.
+- The wrong owner/token cannot renew, command, or release a lease.
+- Expiry and every revocation trigger stop affected periodic/actuator output.
+- REST and WebSocket disconnect identity behavior is covered.
+- ESTOP succeeds while another client owns all actuator leases.
+- Earlier phase gates remain green.
 
-### 7E. Migrate Simulator
+## Phase 14 — Centralize injection policy and physical arm
 
-**File:** `simulator/src/can-generator.ts`
+### Work
 
-**Changes:**
-- Import CAN definitions from `@etrike/debug-shared` instead of hard-coding signal shapes
+- Route UI, REST, periodic, simulation-control, tests, and future automation through one injection service.
+- Separate decoded-signal injection from explicitly authorized raw-byte injection.
+- Enforce owner, mode, route, lease, codec, checksum/counter, rate, freshness, arm, adapter health, and interlock checks.
+- Remove implicit hardware-to-simulation fallback; callers select an allowed destination.
+- Make physical arm short-lived, operator-confirmed, heartbeat-renewed, and visibly reported.
 
-**Test:**
-- Run generator → diff output against committed files → must match (`--check` mode)
-- Run `backend/src/types/can.test.ts` (711 lines of decode/encode tests) → all pass against the generated decoder
-- Run `ui/src/lib/can-decoder.test.ts` → all pass
-- Manually add a fake CAN message to `can_low.yaml` → re-run generator → verify it appears in catalog, decode, and encode without any manual code changes
+### Tests and exit gate
 
----
+- A policy decision-table test covers source, mode, destination, lease, arm, and adapter/interlock combinations.
+- Startup and reconnect are disarmed.
+- Stale commands and counters are rejected.
+- No endpoint or periodic path bypasses policy.
+- Hardware-send failure reports failure and never injects into simulation implicitly.
+- Earlier phase gates remain green.
 
-## Phase 8 — Simulation Engine Timing
+## Phase 15 — Complete transport-manager isolation
 
-### 8A. High-Resolution Tick Loop
+### Work
 
-**File:** `backend/src/sim/engine.ts`
+- Put serial, CANalyst-II, and disabled/test adapters behind `ActiveTransportManager`.
+- Make adapter lifecycle, capabilities, identity, timestamps, events, and physical TX gate consistent.
+- Ensure only configured listeners claim a bus and prevent ambiguous multi-adapter transmit ownership.
+- Update `CANALYST-II-SETUP.md` only if verified commands or behavior change.
 
-**Problem:** The simulation engine uses `setTimeout(loop, 10)` for its 100Hz tick. Node.js `setTimeout` has ~1–4ms jitter depending on OS and GC pressure. For accurate ECU simulation (especially heartbeat timeout detection at 100ms resolution), this jitter causes false timeout triggers and inconsistent physics.
+### Tests and exit gate
 
-**Changes:**
-- Replace `setTimeout` with a `setImmediate` + `performance.now()` polling loop:
-  ```typescript
-  const loop = () => {
-    if (!this._state.running) return;
-    const now = performance.now();
-    if (now - this.lastTickHr >= this.tickMs) {
-      this.tick();
-      this.lastTickHr += this.tickMs;
-    }
-    setImmediate(loop);
-  };
-  ```
-- Add a `tickJitter` diagnostic counter that tracks the delta between expected and actual tick times
-- Expose jitter stats via `getState()` so the UI can display simulation fidelity
+- Fake serial and CANalyst adapters pass the same transport contract suite.
+- Connect/disconnect/reconnect, bus-off/recovery, timestamp reset, RX overflow, and send failure pass.
+- Switching adapters leaves no handlers, timers, leases, or arm state behind.
+- Hardware smoke test passes on the controlled CANalyst-II bench when available; absence of hardware does not block software CI.
+- Earlier phase gates remain green.
 
-**Trade-off:** `setImmediate` polling uses more CPU than `setTimeout` when idle. Add a `sleepWhenIdle` flag: if no ECU models are active, fall back to `setTimeout(loop, 100)`.
+## Phase 16 — Consolidate deterministic simulation and remove MQTT legacy
 
-**Test:**
-- Run sim for 10 seconds at 100Hz → collect tick timestamps → verify standard deviation < 1ms (vs current ~3–4ms)
-- Run sim with 6 ECUs for 60 seconds → verify zero heartbeat false-timeout events
-- Verify CPU usage is acceptable (< 5% on modern hardware when ECUs are active)
+### Work
 
----
+- Migrate standalone simulator scenarios to backend models and tests.
+- Make models use generated constants, the shared codec, router, and injected simulation clock.
+- Define a minimal deterministic plant interface; keep `TrikeViz` presentation-only.
+- Document fidelity and omissions per model/profile.
+- Remove standalone simulator, Aedes bridge, MQTT dependencies/scripts/topics only after parity.
 
-## Phase 9 — Frontend Performance Polish
+### Tests and exit gate
 
-### 9A. Eliminate Per-Frame Array Allocation in Stores
+- Required simulation, bench-profile, hybrid-observation, monitor, and unit-test workflows pass without MQTT.
+- Repeating a scenario produces identical ordered frames/state.
+- Model outputs are codec-valid and no model manually duplicates ordinary YAML packing.
+- Fresh workspace install/build contains no obsolete MQTT dependencies.
+- Earlier phase gates remain green.
 
-**File:** `ui/src/stores/can.ts`
+## Phase 17 — Implement safe replay
 
-**Problem:** On every incoming CAN frame, `ingestMessage()` calls `frameBuffer.push()` then `frameStore.set(frameBuffer.toArray())`. `toArray()` allocates a new 1,000-element array on every call. At 100+ frames/sec from the WebSocket, this creates significant GC pressure.
+### Work
 
-**Changes:**
-- Change the store to use a **version counter** pattern instead of allocating a new array:
-  - The `RingBuffer` itself becomes the store's backing data
-  - Instead of `set(newArray)`, increment a version number to trigger Svelte reactivity
-  - Components read directly from the RingBuffer (via a `$derived` or reactive getter) instead of subscribing to a full array copy
-- Alternative (simpler): keep `toArray()` but throttle store updates to ~30Hz max (matching the WebSocket batch flush rate in `stream.ts`), so `toArray()` is called 30 times/sec instead of 2,000 times/sec
+- Implement recording open, pause, seek, speed, stop, and stable equal-time ordering.
+- Make replay downstream-aware: pause on pressure and resume without reordering.
+- Preserve original provenance as metadata while current source remains `replay`.
+- Keep derived re-recording explicit and off by default.
+- Enforce replay isolation from simulation and physical TX.
 
-**Test:**
-- Open CAN Monitor tab with sim running at 2,000 FPS for 60 seconds
-- Monitor browser DevTools Performance tab: GC events should drop by 90%+
-- Verify CAN Monitor still displays frames smoothly with no visible lag
+### Tests and exit gate
 
----
+- Golden recording replays in exact `(timestampUs, sequence)` order.
+- Pause/resume/seek/speed and downstream-pressure cases pass under a fake clock.
+- Replay cannot arm or transmit physically even through malformed/API-forged requests.
+- Derived recording clearly identifies replay provenance and new session timebase.
+- Earlier phase gates remain green.
 
-### 9B. Replace `recentFrameRate` with Sliding Window Counter
+## Phase 18 — Harden live history, recording, and export
 
-**File:** `ui/src/stores/can.ts`
+### Work
 
-**Problem:** The `recentFrameRate` derived store runs `.filter()` over all 1,000 frames on every store update to count frames within the last 5 seconds. This is O(n) on every frame.
+- Define live-history retention in time and bytes.
+- Benchmark the existing SQLite worker/queue before altering its architecture.
+- Make recording integrity, overload, recovery, source/event capture, and protocol hash explicit.
+- Add ASC export with compatibility fixtures; defer BLF unless a maintained library is selected.
+- Bound/index correlation queries and retention maintenance.
 
-**Changes:**
-- Replace with a simple counter: `let frameCount = 0` + `setInterval(() => { recentFps.set(frameCount); frameCount = 0; }, 1000)`
-- Increment `frameCount` in `ingestMessage()` — O(1) per frame
+### Tests and exit gate
 
-**Test:**
-- Verify FPS display matches actual WebSocket message rate (within ±5%)
-- No performance regression on CAN Monitor tab
+- Live-history memory remains bounded for a 30-minute stress scenario.
+- Recording contains expected frames/events in order or is marked incomplete with reason.
+- Start/stop/delete/restart recovery, worker failure, disk full, pruning, and active-session retention pass.
+- Exported ASC is accepted by the chosen independent reader and round-trips representative frames/events where format permits.
+- Earlier phase gates remain green.
 
----
+## Phase 19 — Bound and simplify the frontend
 
-### 9C. Controller Game Loop Precision (Optional)
+### Work
 
-**File:** `ui/src/components/Controller.svelte`
+- Mount only the active heavy tab; keep cross-tab state in bounded stores.
+- Coalesce latest-by-ID telemetry and cap/virtualize monitor history.
+- Display mode, physical arm, leases, queue health, event loss, and recording integrity.
+- Centralize keyboard/gamepad behavior in a typed `InputController`.
+- Separate commanded from measured values; integrate `TrikeViz` math only for presentation.
+- Profile before introducing Web Workers; do not require SharedArrayBuffer/Atomics.
 
-**Problem:** Uses `setInterval(tick, 20)` for 50Hz CAN command transmission. Browsers throttle `setInterval` to 1Hz when the tab is backgrounded. The `visibilitychange` dead-man's switch mitigates the safety risk, but the timing is still imprecise when the tab IS focused (browser can batch setTimeout/setInterval calls).
+### Tests and exit gate
 
-**Changes:**
-- Switch to `requestAnimationFrame` with `performance.now()` delta calculation:
-  ```typescript
-  let lastTick = performance.now();
-  const loop = (now: number) => {
-    if (!running) return;
-    if (now - lastTick >= intervalMs) {
-      tick();
-      lastTick += intervalMs;
-    }
-    rafHandle = requestAnimationFrame(loop);
-  };
-  ```
-- Scale speed/yaw ramp rates by actual `dt` instead of assuming a fixed 20ms interval
+- Inactive heavy tabs have no component timers/render work.
+- Thirty-minute UI stress test has bounded heap and responsive controls at the declared workload.
+- Slow/disconnected state, arm expiry, lease conflict, queue loss, bus-off, and incomplete recording are visible and actionable.
+- Input tests cover repeat, focus, blur, Tab, Escape, ESTOP gesture, disconnect, and teardown.
+- Earlier phase gates remain green.
 
-> **Note:** This is marked optional because `setInterval` at 50Hz for CAN injection is functionally adequate — the CAN bus itself runs at much higher rates. The main benefit of rAF is smoother keyboard response when the user is actively driving via the Controller tab.
+## Phase 20 — Performance qualification, cleanup, and release
 
-**Test:**
-- Drive via WASD for 30 seconds → verify speed ramps are smooth
-- Switch to another tab and back → verify controller resumes correctly
-- Verify dead-man's switch still fires (zeros all outputs) when tab is backgrounded
+### Work
 
----
+- Define reproducible physical-rate and accelerated-simulation workloads with frame sizes, buses, bitrate/multiplier, clients, and recording state.
+- Measure CPU, heap, event-loop delay, all queues, drops/coalescing, UI cadence, and recording integrity.
+- Optimize JSON batching/filtering first. Design a versioned binary batch protocol only if agreed targets still fail.
+- Run static analysis and remove dead files/exports/dependencies only after reference and workflow checks.
+- Add CI gates for generation, checks/builds, unit/integration, software E2E, and performance smoke thresholds.
+- Update README, architecture, work plan, hardware setup, and release notes.
 
-## Phase 10 — API & Query Optimizations
+### Tests and exit gate
 
-### 10A. Pipeline Correlation Caching
+- All phase 1–19 gates pass from a clean checkout.
+- Fresh install and documented quick start work.
+- Benchmarked targets pass without unbounded memory or silent recording loss.
+- If binary transport exists, wire spec, negotiation, golden vectors, malformed-input, and mixed-version tests pass; otherwise JSON remains documented.
+- Static-analysis findings are resolved or justified.
+- Software CI is green and controlled hardware verification results are recorded separately.
 
-**File:** `backend/src/api/can.ts`
+## Deferred extensions
 
-**Problem:** `GET /api/can/pipeline` fetches 2,000 frames from SQLite and runs a JS-side correlation algorithm on every request. This is called on a polling interval by the Pipeline tab.
-
-**Changes:**
-- Cache the correlation result in memory with a 500ms TTL
-- Invalidate cache when new frames are inserted (via write queue flush callback)
-- Return cached result if within TTL
-
-**Test:**
-- Hit `/api/can/pipeline` 10 times in 500ms → verify only 1 actual DB query
-- Verify cached result updates within 1 second of new frames arriving
-
----
-
-### 10B. Missing Indexes
-
-**File:** `backend/src/db/schema.ts`
-
-**Changes:**
-- Add `CREATE INDEX IF NOT EXISTS idx_recordings_stopped ON recordings(stopped_at)`
-- Verify existing indexes cover the query patterns from Phase 5E
-
-**Test:**
-- Run `EXPLAIN QUERY PLAN` on all major queries → verify index usage
-
----
-
-## Summary
-
-| Phase | Scope | Key Deliverable | Risk |
-|-------|-------|----------------|------|
-| **5** | Database Performance | Prepared stmt cache, batch inserts, write queue, bulk prune | Medium — touches hot path |
-| **6** | Worker Thread | SQLite in worker thread, async API layer | Medium — architectural change |
-| **7** | CAN Catalog Unification | Auto-generated decode/encode from YAML, shared package | High — touches 2 critical 600-line files |
-| **8** | Sim Engine Timing | High-resolution tick loop | Low — isolated to sim module |
-| **9** | Frontend Polish | Store allocation fix, FPS counter, optional rAF | Low — UI only |
-| **10** | API Optimization | Pipeline cache, indexes | Low — isolated queries |
-
-### Execution Order
-
-Phases 5 → 6 are sequential (6 depends on 5).  
-Phase 7 is independent — can run in parallel with 5/6.  
-Phases 8, 9, 10 are independent of each other and can run in any order after 5.
-
-### Version Targets
-
-| Milestone | Version |
-|-----------|---------|
-| Phase 5 complete | v0.4.0-beta.2 |
-| Phase 6 complete | v0.4.0-beta.3 |
-| Phase 7 complete | v0.4.0-rc.1 |
-| Phases 8–10 complete | v0.4.0 |
+Native firmware-in-the-loop, high-fidelity dynamics, CANalyzer automation, MCP/AI control, RL/gRPC integration, an alternate compiled CLI, BLF without a maintained library, and CAN FD are separate projects. None may bypass the state machine, routing matrix, queue contracts, leases, injection policy, timebase, transport manager, or recording-integrity rules.
