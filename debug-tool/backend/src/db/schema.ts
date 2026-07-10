@@ -2,6 +2,8 @@ export const SQLITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS can_frames (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts_real     REAL NOT NULL,
+    ts_us       INTEGER NOT NULL,
+    seq         INTEGER NOT NULL,
     ts_device   INTEGER NOT NULL,
     bus         TEXT NOT NULL CHECK(bus IN ('high','low')),
     can_id      TEXT NOT NULL,
@@ -10,12 +12,14 @@ CREATE TABLE IF NOT EXISTS can_frames (
     data        BLOB NOT NULL,
     decoded     TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_frames_bus_id_ts ON can_frames(bus, can_id, ts_real);
-CREATE INDEX IF NOT EXISTS idx_frames_ts ON can_frames(ts_real);
+CREATE INDEX IF NOT EXISTS idx_frames_bus_id_ts ON can_frames(bus, can_id, ts_us);
+CREATE INDEX IF NOT EXISTS idx_frames_ts_us ON can_frames(ts_us);
 
 CREATE TABLE IF NOT EXISTS injected_frames (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts_real     REAL NOT NULL,
+    ts_us       INTEGER NOT NULL,
+    seq         INTEGER NOT NULL,
     bus         TEXT NOT NULL CHECK(bus IN ('high','low')),
     can_id      TEXT NOT NULL,
     dlc         INTEGER NOT NULL,
@@ -23,7 +27,7 @@ CREATE TABLE IF NOT EXISTS injected_frames (
     status      TEXT,
     correlation_id TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_injected_ts ON injected_frames(ts_real);
+CREATE INDEX IF NOT EXISTS idx_injected_ts_us ON injected_frames(ts_us);
 CREATE INDEX IF NOT EXISTS idx_injected_correlation ON injected_frames(correlation_id);
 
 CREATE TABLE IF NOT EXISTS recordings (

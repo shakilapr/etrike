@@ -45,3 +45,4 @@ export {
 } from "./read-helpers";
 export * from "./faults";
 export * from "./generated/can-metadata";
+export * from "./timebase";

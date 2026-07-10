@@ -5,6 +5,7 @@ import type { EcuModel, EcuConfig } from "./ecu-model";
 import type { FrameSource } from "./router";
 import type { WorkModeConfig } from "./work-mode";
 import { VirtualCanBus } from "./virtual-can";
+import { SessionTimebase, defaultTimebase } from "@etrike/debug-shared";
 import type { WriteQueue } from "../db/write-queue";
 
 export interface SimEngineState {
@@ -36,7 +37,8 @@ export class SimulationEngine {
   constructor(
     private store: DebugStore,
     private hub: { broadcast(event: { type: string; payload: unknown }): void },
-    private writeQueue: WriteQueue
+    private writeQueue: WriteQueue,
+    private timebase: SessionTimebase = defaultTimebase
   ) {}
 
   get state(): SimEngineState { return { ...this._state }; }
@@ -45,6 +47,9 @@ export class SimulationEngine {
   register(model: EcuModel): void {
     this.models.set(model.id, model);
     model.onFrame((frame) => {
+      const canonical = this.timebase.now();
+      frame.ts_us = canonical.ts_us;
+      frame.seq = canonical.seq;
       this.bus.send(frame);
       this.writeQueue.enqueue(frame, "simulated");
       this.hub.broadcast({ type: "can_frame", payload: frame });
