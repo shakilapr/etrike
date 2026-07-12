@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { AppContext } from "../app-context";
 import type { DebugStore } from "../db/queries";
 
 const startRecordingSchema = z.object({

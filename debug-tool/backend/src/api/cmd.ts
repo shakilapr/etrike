@@ -11,7 +11,8 @@ const sendSchema = z.object({
   id: z.string().min(1),
   dlc: z.number().int().min(0).max(8),
   data: z.array(z.number().int().min(0).max(255)),
-  confirm_estop: z.boolean().optional()
+  confirm_estop: z.boolean().optional(),
+  owner_id: z.string().optional()
 }).refine(data => data.data.length === data.dlc, {
   message: "data array length must match dlc",
   path: ["data"]
@@ -26,7 +27,8 @@ const periodicSchema = z.discriminatedUnion("action", [
     data: z.array(z.number().int().min(0).max(255)),
     interval_ms: z.number().int().min(1).max(10000),
     count: z.number().int().min(1).max(50000).optional(),
-    confirm_estop: z.boolean().optional()
+    confirm_estop: z.boolean().optional(),
+    owner_id: z.string().optional()
   }),
   z.object({
     action: z.literal("stop"),
@@ -50,7 +52,6 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     const id = normalizeCanId(parsed.data.id);
     const definition = findMessage(bus, id);
     if (!definition?.injectable) return reply.code(400).send({ error: `${id} is not injectable on ${bus} bus` });
-    if (id === ID_SAFETY_ESTOP && parsed.data.confirm_estop !== true) return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
 
     let data: number[];
     try {
@@ -62,26 +63,38 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
     const correlationId = crypto.randomUUID();
     await store.insertInjection({ bus, can_id: id, dlc: parsed.data.dlc, data, status: "queued", correlation_id: correlationId });
 
-    // Try physical bridge first. If it fails and sim engine is running,
-    // inject into virtual CAN bus instead.
-    let sent = false;
-    try {
-      bridge.sendCommand({ cmd: "send", bus, id, dlc: parsed.data.dlc, data, correlation_id: correlationId });
-      sent = true;
-    } catch {
-      // Check for simulation engine fallback
-      const simEngine = app.ctx.simEngine;
-      if (simEngine?.state?.running) {
-        const frame = normalizeFrame({ bus, id, dlc: parsed.data.dlc, data });
-        simEngine.injectExternal(frame);
-        await store.updateInjectionByCorrelation(correlationId, "simulated");
-        sent = true;
+    const frame = normalizeFrame({ bus, id, dlc: parsed.data.dlc, data });
+    const validation = app.ctx.injectionService.validate(frame, { ownerId: parsed.data.owner_id, confirmEstop: parsed.data.confirm_estop });
+    if (!validation.allowed) {
+      await store.updateInjectionByCorrelation(correlationId, "error");
+      return reply.code(403).send({ error: validation.error });
+    }
+
+    const disp = app.ctx.router.route(frame, { producer: "user" });
+
+    if (!disp.accepted || !disp.frame) {
+      await store.updateInjectionByCorrelation(correlationId, "error");
+      return reply.code(403).send({ error: "Routing policy rejected user injection" });
+    }
+
+    if (disp.sim_input && app.ctx.simEngine?.state?.running) {
+      app.ctx.simEngine.injectExternal(disp.frame);
+      await store.updateInjectionByCorrelation(correlationId, "simulated");
+      return { cmd: "send", bus, id, status: "queued" };
+    }
+
+    if (disp.physical_tx) {
+      try {
+        bridge.sendCommand({ cmd: "send", bus, id, dlc: parsed.data.dlc, data, correlation_id: correlationId });
+        return { cmd: "send", bus, id, status: "queued" };
+      } catch {
+        await store.updateInjectionByCorrelation(correlationId, "error");
+        return reply.code(503).send({ error: "bridge not connected" });
       }
     }
-    if (!sent) {
-      await store.updateInjectionByCorrelation(correlationId, "error");
-      return reply.code(503).send({ error: "no bridge connected and simulation not running" });
-    }
+
+    await store.updateInjectionByCorrelation(correlationId, "error");
+    return reply.code(503).send({ error: "no destination allowed by router" });
     return { cmd: "send", bus, id, status: "queued" };
   });
 
@@ -102,15 +115,17 @@ export function registerCommandRoutes(app: FastifyInstance, store: DebugStore, b
       return { cmd: "send_periodic", action: "stop", bus, id, status: "queued" };
     }
 
-    if (id === ID_SAFETY_ESTOP && parsed.data.confirm_estop !== true) {
-      return reply.code(400).send({ error: "ESTOP injection requires confirm_estop=true" });
-    }
-
     let data: number[];
     try {
       data = validateDataBytes(parsed.data.data, parsed.data.dlc);
     } catch (error) {
       return reply.code(400).send({ error: String(error) });
+    }
+
+    const frame = normalizeFrame({ bus, id, dlc: parsed.data.dlc, data });
+    const validation = app.ctx.injectionService.validate(frame, { ownerId: parsed.data.owner_id, confirmEstop: parsed.data.confirm_estop });
+    if (!validation.allowed) {
+      return reply.code(403).send({ error: validation.error });
     }
 
     const correlationId = crypto.randomUUID();

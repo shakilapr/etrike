@@ -1,6 +1,7 @@
 import type { Bus, CanFrame } from "../types/can";
 
 export type FrameSource = "physical" | "emulated" | "simulated";
+export type ProducerType = "physical_rx" | "simulation" | "replay" | "user" | "test";
 
 export interface FrameRouterEvent {
   type: "collision";
@@ -10,76 +11,132 @@ export interface FrameRouterEvent {
   frame: CanFrame;
 }
 
-/**
- * Per-(bus,id) source routing table.
- * Enforces the invariant that each (bus, id) pair has exactly one
- * authoritative source. Collisions (same ID from two different sources)
- * are logged and the existing source wins.
- */
+export interface RoutingContext {
+  producer: ProducerType;
+}
+
+export interface RoutingDisposition {
+  accepted: boolean;
+  ui: boolean;
+  recording: boolean;
+  sim_input: boolean;
+  physical_tx: boolean;
+  reason?: string;
+  frame?: CanFrame;
+}
+
 export class FrameRouter {
   private sources = new Map<string, FrameSource>();
   private listeners: Array<(event: FrameRouterEvent) => void> = [];
+  private sequenceCounter = 0; // Exactly one sequence per accepted observation
 
   private key(bus: Bus, id: string): string {
     return `${bus}:${id}`;
   }
 
-  /** Set the authoritative source for a given CAN ID. */
   setSource(bus: Bus, id: string, source: FrameSource): void {
     this.sources.set(this.key(bus, id), source);
   }
 
-  /** Remove a source entry. */
   removeSource(bus: Bus, id: string): void {
     this.sources.delete(this.key(bus, id));
   }
 
-  /** Bulk-set sources from a partial mapping. "*" entries are skipped (auto-detect). */
   setSources(entries: Record<string, FrameSource | "*">): void {
     for (const [rawKey, source] of Object.entries(entries)) {
       if (source === "*") continue;
       const [bus, id] = rawKey.split(":");
       if ((bus === "high" || bus === "low") && id) {
-        this.setSource(bus, id, source);
+        this.setSource(bus as Bus, id, source as FrameSource);
       }
     }
   }
 
-  /** Clear all source entries. */
   clear(): void {
     this.sources.clear();
   }
 
-  /**
-   * Resolve which source a frame should come from.
-   * Returns the frame with source metadata if accepted, or null if the
-   * frame should be dropped (silent collision loss).
-   */
-  resolve(frame: CanFrame, incomingSource: FrameSource): CanFrame | null {
+  route(frame: CanFrame, ctx: RoutingContext): RoutingDisposition {
     const k = this.key(frame.bus, frame.frame.id);
-    const existing = this.sources.get(k);
+    const existingSource = this.sources.get(k);
 
-    if (!existing) {
-      // No rule — auto-accept and auto-register the source
-      this.sources.set(k, incomingSource);
-      return frame;
+    // Map producer to the FrameSource concept used for collision checks
+    let mappedIncomingSource: FrameSource = "simulated";
+    if (ctx.producer === "physical_rx") mappedIncomingSource = "physical";
+    if (ctx.producer === "user") mappedIncomingSource = "emulated"; // Usually user is emulated
+
+    // Collision check logic for sim_input claiming
+    let ownsSource = false;
+    if (!existingSource) {
+      this.sources.set(k, mappedIncomingSource);
+      ownsSource = true;
+    } else if (existingSource === mappedIncomingSource) {
+      ownsSource = true;
+    } else {
+      this.emitCollision(k, existingSource, mappedIncomingSource, frame);
     }
 
-    if (existing === incomingSource) {
-      return frame; // same source — accept
+    const disp: RoutingDisposition = {
+      accepted: false,
+      ui: false,
+      recording: false,
+      sim_input: false,
+      physical_tx: false,
+    };
+
+    // Assign sequence
+    const seq = ++this.sequenceCounter;
+    const seqFrame = { ...frame, seq };
+    disp.frame = seqFrame;
+    disp.accepted = true;
+
+    // Apply Architecture Routing Matrix
+    switch (ctx.producer) {
+      case "physical_rx":
+        disp.ui = true;
+        disp.recording = true;
+        disp.sim_input = ownsSource; // profile opt-in for sensor input only
+        disp.physical_tx = false; // never echo
+        break;
+
+      case "simulation":
+        disp.ui = true;
+        disp.recording = true;
+        disp.sim_input = ownsSource; // internal model routing
+        disp.physical_tx = false; // never
+        break;
+
+      case "replay":
+        disp.ui = true;
+        disp.recording = false; // derived recording is explicit only, not default
+        disp.sim_input = false; // never
+        disp.physical_tx = false; // never
+        break;
+
+      case "user":
+        disp.ui = true;
+        disp.recording = true;
+        disp.sim_input = ownsSource; 
+        // Note: physical_tx true means it *can* go to physical TX, but InjectionService 
+        // must first approve lease and arm. We allow it here in the router.
+        disp.physical_tx = true; 
+        break;
+
+      case "test":
+        disp.ui = false; // test UI only
+        disp.recording = false;
+        disp.sim_input = true; // isolated test engine only
+        disp.physical_tx = false; // never in production
+        break;
     }
 
-    // Collision: different source claims same ID
-    this.emitCollision(k, existing, incomingSource, frame);
-    return null; // existing source wins — drop incoming frame
+    return disp;
   }
 
-  /** Register a collision listener. */
   onCollision(listener: (event: FrameRouterEvent) => void): void {
     this.listeners.push(listener);
   }
 
-  /** Get the current source table (for debugging). */
   getSourceTable(): Record<string, FrameSource> {
     const result: Record<string, FrameSource> = {};
     for (const [key, source] of this.sources) {

@@ -96,7 +96,7 @@ describe("SimulationEngine", () => {
     } as unknown as DebugStore;
     const hub = { broadcast: vi.fn() };
     const writeQueue = { enqueue: vi.fn(), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
-    const engine = new SimulationEngine(store, hub, writeQueue);
+    const engine = new SimulationEngine(store);
     const active = new TestModel("host");
     const inactive = new TestModel("rt");
 

@@ -16,7 +16,22 @@ describe("POST /api/cmd/send", () => {
 
   beforeEach(() => {
     app = Fastify();
-    app.decorate("ctx", { simEngine: null });
+    app.decorate("ctx", {
+      simEngine: null,
+      router: {
+        route: vi.fn().mockImplementation((frame) => {
+          return { accepted: true, physical_tx: true, sim_input: false, frame: { ...frame, seq: 1 } };
+        })
+      },
+      injectionService: {
+        validate: vi.fn((frame, options) => {
+          if (frame.frame.id === ID_SAFETY_ESTOP && !options.confirmEstop) {
+            return { allowed: false, error: "ESTOP injection requires confirm_estop=true" };
+          }
+          return { allowed: true };
+        })
+      }
+    });
     store = new DebugStoreImpl(":memory:", 5000);
     
     mockBridge = {
@@ -82,7 +97,7 @@ describe("POST /api/cmd/send", () => {
       url: "/api/cmd/send",
       payload: { bus: "high", id: ID_SAFETY_ESTOP, dlc: 0, data: [] } // missing confirm_estop
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.payload).error).toMatch(/confirm_estop/i);
   });
 

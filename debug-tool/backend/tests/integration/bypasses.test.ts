@@ -30,7 +30,8 @@ describe("Safety Bypasses (Bench Mode)", () => {
   });
 
   it("reports steer_state=4 during ESTOP without bypasses", async () => {
-    engine = new SimulationEngine(store, hub, writeQueue);
+    engine = new SimulationEngine(store);
+    engine.onProducedFrame = (frame) => { hubEvents.push({ type: "can_frame", payload: frame }); };
     engine.register(new HostModel());
     engine.register(new RtModel());
     engine.register(new SysModel());
@@ -60,7 +61,8 @@ describe("Safety Bypasses (Bench Mode)", () => {
   });
 
   it("reports steer_state=1 during ESTOP with sesSync bypass (Bench Mode)", async () => {
-    engine = new SimulationEngine(store, hub, writeQueue);
+    engine = new SimulationEngine(store);
+    engine.onProducedFrame = (frame) => { hubEvents.push({ type: "can_frame", payload: frame }); };
     engine.register(new HostModel());
     engine.register(new RtModel());
     engine.register(new SysModel());

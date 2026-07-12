@@ -1,6 +1,6 @@
 import { writable } from "svelte/store";
-import { getMode } from "../lib/api";
-import type { WorkModeConfig } from "../lib/api";
+import { getMode, getOperationalState } from "../lib/api";
+import type { WorkModeConfig, OperationalState } from "../lib/api";
 
 export const workModeReady = writable(false);
 export const workMode = writable<WorkModeConfig>({
@@ -9,6 +9,12 @@ export const workMode = writable<WorkModeConfig>({
   idSources: {},
   injectEmulatedToPhysical: false,
   bypasses: { sesSync: false, sebSync: false, mtrAbsent: false, benchSolo: false },
+});
+
+export const operationalState = writable<OperationalState>({
+  mode: "offline",
+  arm: "disarmed",
+  revision: "0",
 });
 
 const MODE_LABELS: Record<string, string> = {
@@ -26,8 +32,14 @@ export function modeLabel(mode: string): string {
 /** Fetch the current work mode from the backend and sync the store. */
 export async function initWorkMode(): Promise<void> {
   try {
-    const config = await getMode();
+    const [config, opState] = await Promise.all([
+      getMode(),
+      getOperationalState().catch(() => null)
+    ]);
     workMode.set(config);
+    if (opState) {
+      operationalState.set(opState);
+    }
   } catch {
     // Backend not yet ready; store keeps its default (monitor)
   } finally {

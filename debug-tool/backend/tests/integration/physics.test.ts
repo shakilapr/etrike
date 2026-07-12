@@ -23,7 +23,8 @@ describe("SIL Physics & Dynamics", () => {
     
     host = new HostModel();
     const writeQueue = { enqueue: vi.fn((f) => store.insertFrame(f)), flush: vi.fn(), drain: vi.fn() } as unknown as WriteQueue;
-    engine = new SimulationEngine(store, hub, writeQueue);
+    engine = new SimulationEngine(store);
+    engine.onProducedFrame = (frame) => { hubEvents.push({ type: "can_frame", payload: frame }); };
     engine.register(host);
     engine.register(new RtModel());
     engine.register(new MtrModel());

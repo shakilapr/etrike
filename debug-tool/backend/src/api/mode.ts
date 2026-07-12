@@ -40,45 +40,49 @@ export function registerModeRoutes(app: FastifyInstance, opts: ModeRouteOptions)
   app.get("/api/mode/defaults", async () => MODE_DEFAULTS);
 
   // ── POST /api/mode ─────────────────────────────────────────────────────
-  let modeSwitching = false;
   app.post("/api/mode", async (request, reply) => {
-    if (modeSwitching) return reply.code(409).send({ error: "mode switch already in progress" });
-    modeSwitching = true;
+    const parsed = workModeConfigSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    
+    const newConfig = parsed.data as WorkModeConfig;
+    setCurrentConfig(newConfig);
+
+    const { stateMachine } = app.ctx;
+    
+    // Map legacy WorkMode string to Operational ExecutionMode
+    let execMode: "offline" | "monitor" | "simulation" | "replay" = "monitor";
+    if (newConfig.mode === "full-sim" || newConfig.mode === "hybrid" || newConfig.mode === "bench" || newConfig.mode === "emulator") {
+      execMode = "simulation";
+    }
+
     try {
-      const parsed = workModeConfigSchema.safeParse(request.body ?? {});
-      if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-      const newConfig = parsed.data as WorkModeConfig;
-      setCurrentConfig(newConfig);
-
-      const { simTimers, router, simEngine, rtModelNative } = app.ctx;
-
-      // Clear all backend periodic sim timers
-      for (const timer of simTimers.values()) clearInterval(timer);
-      simTimers.clear();
-
-      // Reset router and re-populate from config
-      router.clear();
-      for (const [key, source] of Object.entries(newConfig.idSources)) {
-        if (source === "*") continue;
-        const [bus, id] = key.split(":");
-        if ((bus === "high" || bus === "low") && id) {
-          router.setSource(bus, id, source as "physical" | "emulated" | "simulated");
-        }
-      }
-
-      // Start/stop simulation engine
-      if (newConfig.mode === "full-sim" && newConfig.simulatedEcus.length > 0) {
-        if (newConfig.modelBackend === "native" && rtModelNative) {
-          simEngine.register(rtModelNative);
-        }
-        await simEngine.start(newConfig);
-      } else if (simEngine.state.running) {
-        await simEngine.stop();
-      }
-
+      await stateMachine.transitionMode(execMode, newConfig.mode);
       return { ok: true, mode: newConfig.mode };
-    } finally {
-      modeSwitching = false;
+    } catch (err) {
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── GET /api/state ──────────────────────────────────────────────────────
+  app.get("/api/state", async () => {
+    const { stateMachine } = app.ctx;
+    const state = stateMachine.state;
+    return {
+      mode: state.mode,
+      arm: state.arm,
+      profile: state.profile,
+      revision: state.revision.toString(),
+    };
+  });
+
+  // ── POST /api/state/arm ─────────────────────────────────────────────────
+  app.post("/api/state/arm", async (request, reply) => {
+    const { stateMachine } = app.ctx;
+    try {
+      const state = await stateMachine.arm();
+      return { ok: true, arm: state.arm };
+    } catch (err) {
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 

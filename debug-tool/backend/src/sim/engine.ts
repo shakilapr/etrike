@@ -34,10 +34,10 @@ export class SimulationEngine {
     physics: { speedMmps: 0, steerAngleDeg: 0, brakeKpa: 0, odometer_m: 0 },
   };
 
+  public onProducedFrame?: (frame: CanFrame) => void;
+
   constructor(
     private store: DebugStore,
-    private hub: { broadcast(event: { type: string; payload: unknown }): void },
-    private writeQueue: WriteQueue,
     private timebase: SessionTimebase = defaultTimebase
   ) {}
 
@@ -50,8 +50,7 @@ export class SimulationEngine {
         const canonical = this.timebase.now();
         const routed = { ...frame, ts_us: canonical.ts_us, seq: canonical.seq };
         this.bus.send(routed);
-        this.writeQueue.enqueue(routed, "simulated");
-        this.hub.broadcast({ type: "can_frame", payload: routed });
+        this.onProducedFrame?.(routed);
       });
   }
 
@@ -117,13 +116,10 @@ export class SimulationEngine {
   }
 
   /** Inject a frame from an external source (physical bridge, controller, etc.). */
-  injectExternal(frame: CanFrame, options: { persist?: boolean; source?: FrameSource } = {}): void {
+  injectExternal(frame: CanFrame, _options: { persist?: boolean; source?: FrameSource } = {}): void {
     if (!this._state.running) return;
     this.bus.send(frame);
-    if (options.persist !== false) {
-      this.writeQueue.enqueue(frame, options.source ?? "emulated");
-      this.hub.broadcast({ type: "can_frame", payload: frame });
-    }
+    // Persist and broadcast are now handled by the Router in index.ts
   }
 
   private tick(): void {
