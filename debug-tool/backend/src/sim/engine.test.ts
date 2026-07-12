@@ -50,12 +50,20 @@ class TestModel implements EcuModel {
 function makeFrame(): CanFrame {
   return {
     ts: Date.now() / 1000,
+    ts_us: "",
+    seq: 0,
     bus: "high",
-    id: ID_HOST_DRIVE_CMD,
-    name: "HOST_DRIVE_CMD",
-    dlc: 8,
-    data: [0, 0, 0, 0, 0, 0, 0, 1],
-    decoded: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 },
+    frame: {
+      id: ID_HOST_DRIVE_CMD,
+      dlc: 8,
+      data: [0, 0, 0, 0, 0, 0, 0, 1],
+      ext: false,
+      rtr: false
+    },
+    decoded: {
+      name: "HOST_DRIVE_CMD",
+      signals: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 }
+    }
   };
 }
 
@@ -80,10 +88,10 @@ describe("SimulationEngine", () => {
       insertFrame: (frame: CanFrame): StoredCanFrame => ({
         ...frame,
         row_id: 1,
-        ts_real: Date.now() / 1000,
-        ts_device: frame.ts,
-        ts_us: frame.ts_us ?? "0",
-        seq: frame.seq ?? 0,
+        ts_real: frame.ts ?? 0,
+        ts_device: Math.round(frame.ts ?? 0),
+        ts_us: frame.ts_us,
+        seq: frame.seq,
       }),
     } as unknown as DebugStore;
     const hub = { broadcast: vi.fn() };

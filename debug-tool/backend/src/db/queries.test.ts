@@ -8,12 +8,20 @@ let stores: DebugStoreImpl[] = [];
 function makeFrame(ts: number, id = ID_HOST_DRIVE_CMD): CanFrame {
   return {
     ts,
+    ts_us: "1000",
+    seq: 0,
     bus: "high",
-    id,
-    name: "HOST_DRIVE_CMD",
-    dlc: 8,
-    data: [0, 0, 0, 0, 0, 0, 0, 1],
-    decoded: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 }
+    frame: {
+      id,
+      dlc: 8,
+      data: [0, 0, 0, 0, 0, 0, 0, 1],
+      ext: false,
+      rtr: false
+    },
+    decoded: {
+      name: "HOST_DRIVE_CMD",
+      signals: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 }
+    }
   };
 }
 

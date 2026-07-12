@@ -73,12 +73,17 @@ export class IpcEngineAdapter implements EcuModel {
       if (msg.type === "frame") {
         const frame: CanFrame = {
           ts: msg.ts ?? Date.now() / 1000,
+          ts_us: "",
+          seq: 0,
           bus: msg.bus,
-          id: msg.id,
-          name: msg.name ?? "UNKNOWN",
-          dlc: msg.dlc,
-          data: msg.data,
-          decoded: {},
+          frame: {
+            id: msg.id,
+            dlc: msg.dlc,
+            data: msg.data,
+            ext: false,
+            rtr: false
+          },
+          decoded: { name: msg.name ?? "UNKNOWN", signals: {} },
         };
         for (const cb of this.frameCallbacks) {
           try { cb(frame); } catch { /* don't let one broken callback break the adapter */ }
@@ -123,9 +128,9 @@ export class IpcEngineAdapter implements EcuModel {
     const msg: IpcToNative = {
       type: "frame",
       bus: frame.bus,
-      id: frame.id,
-      dlc: frame.dlc,
-      data: frame.data,
+      id: frame.frame.id,
+      dlc: frame.frame.dlc,
+      data: [...frame.frame.data],
       ts: frame.ts,
     };
     this.process.stdin.write(encodeIpcMessage(msg));

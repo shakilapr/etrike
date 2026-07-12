@@ -159,7 +159,7 @@ describe("SerialBridge", () => {
     
     const frames = store.queryFrames();
     expect(frames.length).toBe(1);
-    expect(frames[0].id).toBe("0x300");
+    expect(frames[0].frame.id).toBe("0x300");
     
     expect(broadcastSpy).toHaveBeenCalledWith(expect.objectContaining({
       type: "can_frame"

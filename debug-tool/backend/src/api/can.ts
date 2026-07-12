@@ -32,7 +32,7 @@ function lowerBoundByTs(frames: CanFrame[], ts: number): number {
   let hi = frames.length;
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
-    if (frames[mid].ts <= ts) lo = mid + 1;
+    if ((frames[mid].ts ?? 0) <= ts) lo = mid + 1;
     else hi = mid;
   }
   return lo;
@@ -41,7 +41,7 @@ function lowerBoundByTs(frames: CanFrame[], ts: number): number {
 function firstMatchingAfter(frames: CanFrame[], cursor: number, winSec: number, predicate: FramePredicate = () => true): CanFrame | undefined {
   for (let i = lowerBoundByTs(frames, cursor); i < frames.length; i++) {
     const frame = frames[i];
-    if (frame.ts - cursor >= winSec) return undefined;
+    if ((frame.ts ?? 0) - cursor >= winSec) return undefined;
     if (predicate(frame)) return frame;
   }
   return undefined;
@@ -51,11 +51,11 @@ export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
   // Pre-index frames by bus:id, sorted oldest-to-newest for binary search.
   const byKey: Record<string, CanFrame[]> = {};
   for (const f of frames) {
-    const key = `${f.bus}:${f.id}`;
+    const key = `${f.bus}:${f.frame.id}`;
     (byKey[key] ??= []).push(f);
   }
   for (const list of Object.values(byKey)) {
-    list.sort((a, b) => a.ts - b.ts);
+    list.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
   }
 
   const driveFrames = byKey[`low:${ID_RT_DRIVE_CMD}`] ?? [];
@@ -75,35 +75,34 @@ export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
   // ── Steering pipeline: 0x300 -> 0x204 -> 0x169 -> 0x201 ──────────
   for (const frame of triggerFrames) {
     const trigger: PipelineNode = {
-      bus: frame.bus, id: frame.id, name: frame.name,
-      decoded: frame.decoded, ts: frame.ts
+      bus: frame.bus, id: frame.frame.id, name: frame.decoded?.name ?? "",
+      decoded: frame.decoded?.signals ?? {}, ts: frame.ts ?? 0
     };
 
     const steps: PipelineNode[] = [];
-    let cursor = frame.ts;
+    let cursor = frame.ts ?? 0;
 
     // Look for matching 0x204 (RT_DRIVE_CMD) in the window
     const drive = firstMatchingAfter(driveFrames, cursor, winSec, (f) =>
-      Math.abs(((f.decoded.motor_speed_mmps as number) ?? 0) - ((frame.decoded.speed_mmps as number) ?? 0)) <= SPEED_MATCH_TOLERANCE
+      Math.abs(((f.decoded?.signals.motor_speed_mmps as number) ?? 0) - ((frame.decoded?.signals.speed_mmps as number) ?? 0)) <= Math.abs(SPEED_MATCH_TOLERANCE)
     );
     if (drive) {
-      steps.push({ bus: drive.bus, id: drive.id, name: drive.name, decoded: drive.decoded, ts: drive.ts });
-      cursor = drive.ts;
+      steps.push({ bus: drive.bus, id: drive.frame.id, name: drive.decoded?.name ?? "", decoded: drive.decoded?.signals ?? {}, ts: drive.ts ?? 0 });
     }
 
     // Look for matching 0x169 (VCU_STEER_CMD)
     const steer = firstMatchingAfter(steerFrames, cursor, winSec);
     if (steer) {
-      steps.push({ bus: steer.bus, id: steer.id, name: steer.name, decoded: steer.decoded, ts: steer.ts });
-      cursor = steer.ts;
+      steps.push({ bus: steer.bus, id: steer.frame.id, name: steer.decoded?.name ?? "", decoded: steer.decoded?.signals ?? {}, ts: steer.ts ?? 0 });
+      cursor = steer.ts ?? 0;
     }
 
     // Look for matching 0x201 (SES_STEER_STATUS)
     const status = firstMatchingAfter(statusFrames, cursor, winSec, (f) =>
-      steer ? Math.abs(((f.decoded.str_angle as number) ?? 0) - ((steer.decoded.target_angle as number) ?? 0)) <= ANGLE_MATCH_TOLERANCE : true
+      steer ? Math.abs(((f.decoded?.signals.str_angle as number) ?? 0) - ((steer.decoded?.signals.target_angle as number) ?? 0)) <= Math.abs(ANGLE_MATCH_TOLERANCE) : true
     );
     if (status) {
-      steps.push({ bus: status.bus, id: status.id, name: status.name, decoded: status.decoded, ts: status.ts });
+      steps.push({ bus: status.bus, id: status.frame.id, name: status.decoded?.name ?? "", decoded: status.decoded?.signals ?? {}, ts: status.ts ?? 0 });
     }
 
     if (steps.length > 0) {
@@ -114,33 +113,32 @@ export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
   // ── Brake pipeline: 0x301 -> 0x205 -> 0x7B9 -> 0x721 ────────────
   for (const frame of brakeTriggerFrames) {
     const trigger: PipelineNode = {
-      bus: frame.bus, id: frame.id, name: frame.name,
-      decoded: frame.decoded, ts: frame.ts
+      bus: frame.bus, id: frame.frame.id, name: frame.decoded?.name ?? "",
+      decoded: frame.decoded?.signals ?? {}, ts: frame.ts ?? 0
     };
 
     const steps: PipelineNode[] = [];
-    let cursor = frame.ts;
+    let cursor = frame.ts ?? 0;
 
     // Look for matching 0x205 (RT_BRAKE_CMD)
     const brakeCmd = firstMatchingAfter(brakeCmdFrames, cursor, winSec, (f) =>
-      Math.abs(((f.decoded.brake_pressure_kpa as number) ?? 0) - ((frame.decoded.brake_pressure_kpa as number) ?? 0)) <= PRESSURE_MATCH_TOLERANCE
+      Math.abs(((f.decoded?.signals.brake_pressure_kpa as number) ?? 0) - ((frame.decoded?.signals.brake_pressure_kpa as number) ?? 0)) <= Math.abs(PRESSURE_MATCH_TOLERANCE)
     );
     if (brakeCmd) {
-      steps.push({ bus: brakeCmd.bus, id: brakeCmd.id, name: brakeCmd.name, decoded: brakeCmd.decoded, ts: brakeCmd.ts });
-      cursor = brakeCmd.ts;
+      steps.push({ bus: brakeCmd.bus, id: brakeCmd.frame.id, name: brakeCmd.decoded?.name ?? "", decoded: brakeCmd.decoded?.signals ?? {}, ts: brakeCmd.ts ?? 0 });
     }
 
     // Look for matching 0x7B9 (VCU_SEB_REQ)
     const sebReq = firstMatchingAfter(sebReqFrames, cursor, winSec);
     if (sebReq) {
-      steps.push({ bus: sebReq.bus, id: sebReq.id, name: sebReq.name, decoded: sebReq.decoded, ts: sebReq.ts });
-      cursor = sebReq.ts;
+      steps.push({ bus: sebReq.bus, id: sebReq.frame.id, name: sebReq.decoded?.name ?? "", decoded: sebReq.decoded?.signals ?? {}, ts: sebReq.ts ?? 0 });
+      cursor = sebReq.ts ?? 0;
     }
 
     // Look for matching 0x721 (SEB_STATUS)
     const sebStatus = firstMatchingAfter(sebStatusFrames, cursor, winSec);
     if (sebStatus) {
-      steps.push({ bus: sebStatus.bus, id: sebStatus.id, name: sebStatus.name, decoded: sebStatus.decoded, ts: sebStatus.ts });
+      steps.push({ bus: sebStatus.bus, id: sebStatus.frame.id, name: sebStatus.decoded?.name ?? "", decoded: sebStatus.decoded?.signals ?? {}, ts: sebStatus.ts ?? 0 });
     }
 
     if (steps.length > 0) {

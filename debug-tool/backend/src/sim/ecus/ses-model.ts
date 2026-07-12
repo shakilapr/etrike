@@ -28,9 +28,9 @@ export class SesModel implements EcuModel {
   state(): EcuState { return { ecu: this.id, healthy: this.errorStatus < 3, faultFlags: this.errorStatus, uptimeMs: this.tickMs }; }
 
   ingest(frame: CanFrame): void {
-    if (frame.id === ID_VCU_SES_REQ && frame.bus === "low") {
+    if (frame.frame.id === ID_VCU_SES_REQ && frame.bus === "low") {
       this.lastCmdMs = this.tickMs;
-      const d = frame.decoded as Record<string, unknown>;
+      const d = (frame.decoded?.signals ?? {}) as Record<string, unknown>;
       this.targetAngle = (d.target_angle as number) ?? 0;
       this.aligned = d.alignment_enable === true || d.alignment_enable === 1;
     }
@@ -89,7 +89,14 @@ export class SesModel implements EcuModel {
   onFrame(cb: (f: CanFrame) => void): void { this.callbacks.push(cb); }
 
   private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
-    const frame: CanFrame = { ts: Date.now()/1000, bus, id, name, dlc, data, decoded };
+    const frame: CanFrame = {
+      ts: Date.now()/1000,
+      ts_us: "",
+      seq: 0,
+      bus,
+      frame: { id, dlc, data, ext: false, rtr: false },
+      decoded: { name, signals: decoded }
+    };
     this.frameQueue.push(frame);
     for (const cb of this.callbacks) cb(frame);
   }

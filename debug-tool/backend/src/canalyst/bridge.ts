@@ -234,7 +234,7 @@ export class CanalystBridge implements HardwareBridge {
       this.state.last_frame_at = Date.now() / 1000;
       this.state.degraded = false;
       this.writeQueue.enqueue(frame);
-      this.busDetector.feed(frame.id);
+      this.busDetector.feed(frame.frame.id);
       this.hub.broadcast({ type: "can_frame", payload: frame });
       for (const callback of this.frameCallbacks) callback(frame);
       return;

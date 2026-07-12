@@ -336,25 +336,25 @@ describe("normalizeFrame", () => {
   it("normalizes bus field", () => {
     const frame = normalizeFrame({ id: ID_HOST_DRIVE_CMD, data: [0, 0, 0, 0, 0, 0, 0, 1], ts: 1000 });
     expect(frame.bus).toBe("high"); // default
-    expect(frame.id).toBe(ID_HOST_DRIVE_CMD);
+    expect(frame.frame.id).toBe(ID_HOST_DRIVE_CMD);
   });
 
   it("preserves explicit bus", () => {
     const frame = normalizeFrame({ bus: "low", id: ID_RT_DRIVE_CMD, data: [0, 0, 0x07, 0xD0, 1], ts: 1000 });
     expect(frame.bus).toBe("low");
-    expect(frame.id).toBe(ID_RT_DRIVE_CMD);
+    expect(frame.frame.id).toBe(ID_RT_DRIVE_CMD);
   });
 
   it("pads data to 8 bytes and truncates", () => {
     const frame = normalizeFrame({ id: ID_HOST_DRIVE_CMD, data: [1, 2], ts: 1000 });
-    expect(frame.data).toHaveLength(2); // dlc inferred from data length
+    expect(frame.frame.data).toHaveLength(2); // dlc inferred from data length
     // normalizeBytes pads to 8 but data is sliced to dlc
   });
 
   it("decodes known frames", () => {
     const frame = normalizeFrame({ bus: "high", id: ID_HOST_HEARTBEAT, data: [42], ts: 1000 });
-    expect(frame.decoded).toEqual({ alive_ctr: 42, health_flags: 0 });
-    expect(frame.name).toBe("HOST_HEARTBEAT");
+    expect(frame.decoded?.signals).toEqual({ alive_ctr: 42, health_flags: 0 });
+    expect(frame.decoded?.name).toBe("HOST_HEARTBEAT");
   });
 });
 
