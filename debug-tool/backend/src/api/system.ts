@@ -29,11 +29,16 @@ export function registerSystemRoutes(
       bus_stats: (await store.getStats()).buses,
       stats_updated_at: await store.getStatsUpdatedAt(),
       websocket_clients: hub.clientCount(),
-      storage: await store.counts()
+      storage: await store.counts(),
+      queues: {
+        ui: hub.getMetrics(),
+        db: app.ctx.writeQueue.getMetrics()
+      }
   }));
 
   app.post("/api/system/stop", async () => {
     try {
+      await app.ctx.stateMachine.disarm();
       await bridge.close();
       return { ok: true, action: "bridge closed" };
     } catch (error) {
@@ -43,6 +48,7 @@ export function registerSystemRoutes(
 
   app.post("/api/system/restart", async () => {
     try {
+      await app.ctx.stateMachine.disarm();
       await bridge.close();
       await bridge.start();
       return { ok: true, action: "bridge restarted" };
@@ -52,6 +58,7 @@ export function registerSystemRoutes(
   });
 
   app.post("/api/system/shutdown", async () => {
+    await app.ctx.stateMachine.disarm();
     if (shutdown) {
       setTimeout(() => { void shutdown(); }, 200);
     }

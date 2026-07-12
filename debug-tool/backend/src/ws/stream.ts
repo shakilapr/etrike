@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { CAN_MESSAGES } from "../types/can";
 import type { Bus, CanFrame, CanStats } from "../types/can";
+import { BoundedQueue } from "../utils/bounded-queue";
 
 export type StreamEvent =
   | { type: "can_frame"; payload: CanFrame }
@@ -27,6 +28,7 @@ interface ClientState {
 
 const OPEN = 1;
 
+import type { LeaseManager } from "../state/leases";
 export class StreamHub {
   private clients = new Set<ClientState>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -40,7 +42,9 @@ export class StreamHub {
         socket.close(1013, "Too many connections");
         return;
       }
-      const client: ClientState = { socket: socket as ClientState["socket"], buses: null, ids: null, keys: null, lastPong: Date.now() };
+      const clientId = request.headers["sec-websocket-key"] || crypto.randomUUID();
+      const client: ClientState & { id: string } = { id: clientId, socket: socket as ClientState["socket"], buses: null, ids: null, keys: null, lastPong: Date.now() };
+      this.send(client, { type: "status", payload: { connected: true, client_id: clientId } });
       this.clients.add(client);
 
       client.socket.on("message", (payload) => {

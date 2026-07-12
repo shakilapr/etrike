@@ -1,12 +1,15 @@
 import { CanFrame } from "../types/can";
 import { FrameSource } from "../sim/router";
 import { DebugStore } from "./queries";
+import { BoundedQueue } from "../utils/bounded-queue";
 
 export class WriteQueue {
-  private queue: Array<{ frame: CanFrame; source: FrameSource }> = [];
+  private queue = new BoundedQueue<{ frame: CanFrame; source: FrameSource }>(50000, "drop_newest", (dropped) => {
+    // If DB is backlogged, we log an error once per batch
+    console.error(`WriteQueue full, dropped ${dropped.length} newest frames. DB recording is incomplete.`);
+  });
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isDraining = false;
-  public router: { resolve(frame: CanFrame, source: FrameSource): CanFrame | null } | null = null;
   public onFlush?: () => void;
 
   constructor(
@@ -22,25 +25,21 @@ export class WriteQueue {
   enqueue(frame: CanFrame, source: FrameSource = "physical"): void {
     if (this.isDraining) return;
     
-    let finalFrame = frame;
-    if (this.router) {
-      const accepted = this.router.resolve(frame, source);
-      if (!accepted) return;
-      finalFrame = accepted;
-    }
-    
-    this.queue.push({ frame: finalFrame, source });
-    if (this.queue.length >= this.maxBatchSize) {
+    this.queue.enqueue({ frame, source });
+    if (this.queue.size >= this.maxBatchSize) {
       this.flush();
     }
   }
 
   flush(): void {
-    if (this.queue.length === 0) return;
-    const batch = this.queue;
-    this.queue = [];
+    if (this.queue.size === 0) return;
+    const batch = this.queue.drain();
     this.store.insertFrames(batch);
     if (this.onFlush) this.onFlush();
+  }
+
+  getMetrics() {
+    return this.queue.getMetrics();
   }
 
   async drain(): Promise<void> {

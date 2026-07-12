@@ -201,3 +201,19 @@ export function simControllerInput(state: { speed_mmps: number; yaw_mrad_s: numb
 export function getSimState(): Promise<{ running: boolean; activeEcus: string[]; physics: { speedMmps: number; steerAngleDeg: number; brakeKpa: number } }> {
   return request("/api/sim/state");
 }
+
+
+export interface OperationalState {
+  mode: "offline" | "monitor" | "simulation" | "replay";
+  arm: "disarmed" | "arming" | "armed";
+  profile?: string;
+  revision: string;
+}
+
+export function getOperationalState(): Promise<OperationalState> {
+  return request<OperationalState>("/api/state");
+}
+
+export function armPhysical(): Promise<{ ok: boolean, arm: string }> {
+  return request("/api/state/arm", { method: "POST" });
+}

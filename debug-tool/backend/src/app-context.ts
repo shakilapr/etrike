@@ -10,9 +10,15 @@ import type { RtModel } from "./sim/ecus/rt-model";
 import type { IpcEngineAdapter } from "./sim/ipc-adapter";
 import type { FrameRouter } from "./sim/router";
 import type { StreamHub } from "./ws/stream";
+import type { OperationalStateMachine } from "./state/machine";
+import type { WriteQueue } from "./db/write-queue";
+import type { LeaseManager } from "./state/leases";
 
 export interface AppContext {
   hub: StreamHub;
+  stateMachine: OperationalStateMachine;
+  writeQueue: WriteQueue;
+  leaseManager: LeaseManager;
   /** Backend-managed periodic sim timers (keyed by `sim:bus:id`). */
   simTimers: Map<string, ReturnType<typeof setInterval>>;
   router: FrameRouter;

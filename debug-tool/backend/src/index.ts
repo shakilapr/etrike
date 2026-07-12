@@ -7,8 +7,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig, type AppConfig } from "./config";
 import { registerAppContext } from "./app-context";
+import { OperationalStateMachine, type ExecutionMode } from "./state/machine";
 import { registerCanRoutes } from "./api/can";
 import { registerCommandRoutes } from "./api/cmd";
+import { registerLeaseRoutes } from "./api/leases";
+import { LeaseManager } from "./state/leases";
 import { registerModeRoutes } from "./api/mode";
 import { registerRecordingRoutes } from "./api/recordings";
 import { registerSimRoutes } from "./api/sim";
@@ -16,7 +19,7 @@ import { registerSystemRoutes } from "./api/system";
 import { CanalystBridge } from "./canalyst/bridge";
 import { WorkerClient } from "./db/worker-client";
 import { WriteQueue } from "./db/write-queue";
-import { MqttBridge } from "./mqtt/bridge";
+
 import { SerialBridge } from "./serial/reader";
 import { FrameRouter } from "./sim/router";
 import { MODE_DEFAULTS, type WorkModeConfig } from "./sim/work-mode";
@@ -74,10 +77,18 @@ async function main(): Promise<void> {
   }
 
   // ── Simulation engine & ECU models ────────────────────────────────────
+  const leaseManager = new LeaseManager();
   const router = new FrameRouter();
-  writeQueue.router = router;
 
-  const simEngine = new SimulationEngine(store, hub, writeQueue);
+  const simEngine = new SimulationEngine(store);
+  simEngine.onProducedFrame = (frame) => {
+    const disp = router.route(frame, { producer: "simulation" });
+    if (disp.accepted && disp.frame) {
+      if (disp.ui) hub.broadcast({ type: "can_frame", payload: disp.frame });
+      if (disp.recording) writeQueue.enqueue(disp.frame, "simulated");
+      if (disp.sim_input) simEngine.injectExternal(disp.frame, { persist: false });
+    }
+  };
 
   const hostModel = new HostModel();
   const rtModelTs = new RtModel();
@@ -104,7 +115,42 @@ async function main(): Promise<void> {
 
   // ── Typed app context — replaces all (app as any).__xxx ───────────────
   const simTimers = new Map<string, ReturnType<typeof setInterval>>();
+  
+  const stateMachine = new OperationalStateMachine({
+    onDisarm: async () => {
+      // Future: revoke leases, physical arm drops
+      // Currently, the physical transport ignores this, but it's recorded in state.
+    },
+    onModeSwitch: async (mode: ExecutionMode, profile?: string) => {
+      // This is called sequentially by the state machine
+      const currentConf = getCurrentConfig();
+      
+      for (const timer of simTimers.values()) clearInterval(timer);
+      simTimers.clear();
+
+      router.clear();
+      for (const [key, source] of Object.entries(currentConf.idSources)) {
+        if (source === "*") continue;
+        const [bus, id] = key.split(":");
+        if ((bus === "high" || bus === "low") && id) {
+          router.setSource(bus as any, id, source as any);
+        }
+      }
+
+      if (currentConf.mode === "full-sim" && currentConf.simulatedEcus.length > 0) {
+        if (currentConf.modelBackend === "native" && rtModelNative) {
+          simEngine.register(rtModelNative);
+        }
+        await simEngine.start(currentConf);
+      } else if (simEngine.state.running) {
+        await simEngine.stop();
+      }
+    }
+  });
   registerAppContext(app, {
+    stateMachine,
+    writeQueue,
+    leaseManager,
     hub,
     simTimers,
     router,
@@ -115,21 +161,19 @@ async function main(): Promise<void> {
   });
 
   // ── Bridge setup ──────────────────────────────────────────────────────
-  const feedPhysicalFramesToSim = (bridge: FrameObservableBridge): void => {
-    bridge.onFrame?.((frame) => simEngine.injectExternal(frame, { persist: false }));
+  const setupBridgeRouting = (bridge: FrameObservableBridge): void => {
+    bridge.onFrame?.((frame) => {
+      const disp = router.route(frame, { producer: "physical_rx" });
+      if (disp.accepted && disp.frame) {
+        if (disp.ui) hub.broadcast({ type: "can_frame", payload: disp.frame });
+        if (disp.recording) writeQueue.enqueue(disp.frame, "physical");
+        if (disp.sim_input) simEngine.injectExternal(disp.frame, { persist: false });
+      }
+    });
   };
 
-  const bridgeRef: { current: AnyBridge } = {
-    current: new SerialBridge(config, store, hub, writeQueue),
-  };
-  feedPhysicalFramesToSim(bridgeRef.current as FrameObservableBridge);
-
-  // Proxy that delegates all property access to bridgeRef.current so route
-  // handlers always see the live transport without needing to be re-registered.
-  const bridgeProxy = new Proxy({} as AnyBridge, {
-    get(_target, prop) { return (bridgeRef.current as any)[prop]; },
-    set(_target, prop, value) { (bridgeRef.current as any)[prop] = value; return true; },
-  });
+  const transportManager = new ActiveTransportManager(config, store, hub, writeQueue);
+  setupBridgeRouting(transportManager);
 
   // ── Current work mode (closure state, access via getModeConfig/setModeConfig) ──
   let currentConfig: WorkModeConfig = MODE_DEFAULTS.monitor;
@@ -140,9 +184,9 @@ async function main(): Promise<void> {
   registerSimRoutes(app, store, hub);
   registerCanRoutes(app, store, writeQueue);
   registerRecordingRoutes(app, store);
-  registerSystemRoutes(app, store, bridgeProxy, hub, startedAt, patchedShutdown);
-  registerCommandRoutes(app, store, bridgeProxy);
-  registerModeRoutes(app, { config, store, bridgeRef, feedPhysicalFramesToSim, getCurrentConfig, setCurrentConfig, writeQueue });
+  registerSystemRoutes(app, store, transportManager, hub, startedAt, patchedShutdown);
+  registerCommandRoutes(app, store, transportManager);
+  registerModeRoutes(app, { config, store, bridgeRef: { current: transportManager as any }, feedPhysicalFramesToSim: setupBridgeRouting, getCurrentConfig, setCurrentConfig, writeQueue });
   hub.registerRoutes(app);
 
   // ── Graceful shutdown ─────────────────────────────────────────────────
@@ -155,7 +199,7 @@ async function main(): Promise<void> {
       app.log.warn("bridge.close() timed out after 5s, forcing exit");
       process.exit(1);
     }, 5000).unref();
-    try { await bridgeRef.current.close(); } catch (error) { app.log.error(error, "bridge.close() failed"); }
+    try { await transportManager.close(); } catch (error) { app.log.error(error, "transportManager.close() failed"); }
     clearTimeout(timeout);
     await writeQueue.drain();
     await store.close();
@@ -168,36 +212,8 @@ async function main(): Promise<void> {
   // ── Start listening ───────────────────────────────────────────────────
   await app.listen({ host: config.host, port: config.port });
 
-  // ── Transport auto-detection (non-blocking — server already listening) ──
-  let effectiveTransport = config.canTransport;
-
-  if (effectiveTransport === "serial") {
-    const canalyst = new CanalystBridge(config, store, hub, writeQueue);
-    feedPhysicalFramesToSim(canalyst as FrameObservableBridge);
-    await canalyst.start();
-    const detected = await canalyst.waitForConnection(3000);
-    if (detected) {
-      app.log.info("CANalyst-II auto-detected — using canalystii transport");
-      await bridgeRef.current.close();
-      bridgeRef.current = canalyst;
-      effectiveTransport = "canalystii";
-    } else {
-      app.log.info("No CANalyst-II found, using serial transport");
-      await canalyst.abandon();
-      await bridgeRef.current.start();
-    }
-  } else {
-    await bridgeRef.current.close();
-    if (effectiveTransport === "canalystii") {
-      bridgeRef.current = new CanalystBridge(config, store, hub, writeQueue);
-    } else if (effectiveTransport === "mqtt") {
-      bridgeRef.current = new MqttBridge(config, store, hub, writeQueue);
-    } else {
-      bridgeRef.current = new SerialBridge(config, store, hub, writeQueue);
-    }
-    feedPhysicalFramesToSim(bridgeRef.current as FrameObservableBridge);
-    await bridgeRef.current.start();
-  }
+  // Start transport manager (handles auto-detection internally)
+  await transportManager.start();
 }
 
 void main().catch((error) => {
