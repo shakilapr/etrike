@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import type { CanFrame, CanMessageDef } from "../lib/can-decoder";
+  import type { UiCanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
   import { frameBuffer } from "../stores/can";
   import { monitorAllExpanded, monitorBusFilter, monitorCollapsedCategories, monitorExpandedKey, monitorFilterText } from "../stores/monitor";
@@ -25,7 +25,7 @@
   ];
 
   let paused = false;
-  let sourceFrames: CanFrame[] = [];
+  let sourceFrames: UiCanFrame[] = [];
 
   let uiTimer: ReturnType<typeof setInterval>;
   onMount(() => {
@@ -57,7 +57,7 @@
     return matchesBus && matchesText;
   });
 
-  function framesForCat(catId: string): CanFrame[] {
+  function framesForCat(catId: string): UiCanFrame[] {
     const category = CATEGORIES.find((item) => item.key === catId);
     if (!category) return [];
     return filteredFrames.filter((frame) => category.ids.includes(frame.id)).slice(-10);

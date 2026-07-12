@@ -2,11 +2,11 @@
   import BitGrid from "./BitGrid.svelte";
   import SignalBox from "./SignalBox.svelte";
   import SignalTable from "./SignalTable.svelte";
-  import type { CanField, CanFrame, CanMessageDef } from "../lib/can-decoder";
+  import type { CanField, UiCanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameAge } from "../lib/can-decoder";
 
   export let message: CanMessageDef;
-  export let frame: CanFrame | undefined = undefined;
+  export let frame: UiCanFrame | undefined = undefined;
   export let legacy: CanMessageDef | undefined = undefined;
   export let categoryColor = "var(--muted)";
   export let mode: "monitor" | "dictionary" = "monitor";

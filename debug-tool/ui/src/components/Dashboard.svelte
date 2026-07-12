@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Bus, CanFrame, CanMessageDef } from "../lib/can-decoder";
+  import type { Bus, UiCanFrame, CanMessageDef } from "../lib/can-decoder";
   import { formatBytes, formatDecoded, frameAge, frameTime } from "../lib/can-decoder";
   import { latestById, stats, status, wsConnected } from "../stores/can";
   import { telemetry } from "../stores/telemetry";
@@ -10,8 +10,8 @@
 
   interface PairRow {
     label: string;
-    command?: CanFrame;
-    feedback?: CanFrame;
+    command?: UiCanFrame;
+    feedback?: UiCanFrame;
     commandLabel: string;
     feedbackLabel: string;
     state: SignalState;
@@ -43,7 +43,7 @@
   $: pairs = buildPairs($latestById);
   $: activeRows = ids
     .map((item) => ({ item, frame: $latestById[`${item.bus}:${item.id}`] }))
-    .filter((row): row is { item: CanMessageDef; frame: CanFrame } => Boolean(row.frame))
+    .filter((row): row is { item: CanMessageDef; frame: UiCanFrame } => Boolean(row.frame))
     .sort((a, b) => frameStamp(b.frame) - frameStamp(a.frame))
     .slice(0, 16);
 
@@ -51,7 +51,7 @@
     return values.find((value) => value !== undefined && value !== null && value !== "");
   }
 
-  function frameStamp(frame?: CanFrame): number {
+  function frameStamp(frame?: UiCanFrame): number {
     if (!frame) return 0;
     const ts = frame.ts_real ?? frame.ts;
     return ts > 1_000_000_000_000 ? ts / 1000 : ts;
@@ -75,14 +75,14 @@
     return `${Math.floor(value / 3600)}h ${Math.round((value % 3600) / 60)}m`;
   }
 
-  function pairState(command?: CanFrame, feedback?: CanFrame): SignalState {
+  function pairState(command?: UiCanFrame, feedback?: UiCanFrame): SignalState {
     if (command && feedback) return "ok";
     if (command && !feedback) return "warn";
     if (!command && feedback) return "idle";
     return "idle";
   }
 
-  function buildPairs(latest: Record<string, CanFrame>): PairRow[] {
+  function buildPairs(latest: Record<string, UiCanFrame>): PairRow[] {
     const rows: PairRow[] = [
       {
         label: "Drive pipeline",
@@ -191,7 +191,7 @@
         <div><span>Path</span><strong>{$status.bridge?.path ?? $status.serial?.path ?? "--"}</strong></div>
         <div><span>Uptime</span><strong>{formatSeconds(backendUptime)}</strong></div>
         <div><span>WS clients</span><strong>{$status.websocket_clients ?? "--"}</strong></div>
-        <div><span>Last status</span><strong>{$status.last_status_at ? frameAge({ ts_real: $status.last_status_at } as CanFrame) : "--"}</strong></div>
+        <div><span>Last status</span><strong>{$status.last_status_at ? frameAge({ ts_real: $status.last_status_at } as UiCanFrame) : "--"}</strong></div>
         <div><span>Last error</span><strong>{$status.bridge?.last_error ?? $status.serial?.last_error ?? "--"}</strong></div>
       </div>
     </section>
