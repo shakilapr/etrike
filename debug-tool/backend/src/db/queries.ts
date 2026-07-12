@@ -86,6 +86,8 @@ export interface DebugStore {
   stopRecording(id: number): Promise<Recording | null>;
   deleteRecording(id: number): Promise<boolean>;
   recordingFramesById(id: number, limit?: number): Promise<StoredCanFrame[] | null>;
+  recordingFramesIterator(id: number): IterableIterator<StoredCanFrame> | null;
+  recentFramesIterator(limit?: number): IterableIterator<StoredCanFrame>;
   counts(): Promise<{ frames: number; injected: number; recordings: number }>;
   clearFrames(): Promise<void>;
   close(): Promise<void>;
@@ -408,6 +410,31 @@ export class DebugStoreImpl {
     if (!this.stmtCheckRecording.get(id)) return null;
     const rows = this.stmtRecordingFrames.all(id, limit) as FrameRow[];
     return rows.map(rowToFrame);
+  }
+
+  recentFramesIterator(limit = 10000): IterableIterator<StoredCanFrame> {
+    const stmt = this.db.prepare(
+      `SELECT * FROM can_frames ORDER BY ts_real DESC, id DESC LIMIT ?`
+    );
+    const iterator = stmt.iterate(limit) as IterableIterator<FrameRow>;
+    return (function* () {
+      for (const row of iterator) {
+        yield rowToFrame(row);
+      }
+    })();
+  }
+
+  recordingFramesIterator(id: number): IterableIterator<StoredCanFrame> | null {
+    if (!this.stmtCheckRecording.get(id)) return null;
+    const stmt = this.db.prepare(
+      `SELECT f.* FROM recording_frames rf JOIN can_frames f ON f.id = rf.frame_id WHERE rf.recording_id = ? ORDER BY f.ts_real ASC, f.id ASC`
+    );
+    const iterator = stmt.iterate(id) as IterableIterator<FrameRow>;
+    return (function* () {
+      for (const row of iterator) {
+        yield rowToFrame(row);
+      }
+    })();
   }
 
   counts(): { frames: number; injected: number; recordings: number } {

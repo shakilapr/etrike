@@ -151,6 +151,8 @@ export function correlatePipeline(frames: CanFrame[]): PipelineChain[] {
 
 import type { WriteQueue } from "../db/write-queue";
 
+import { Readable } from "node:stream";
+
 export function registerCanRoutes(app: FastifyInstance, store: DebugStore, writeQueue: WriteQueue): void {
   // Setup cache invalidation on write flush
   writeQueue.onFlush = () => {
@@ -194,6 +196,69 @@ export function registerCanRoutes(app: FastifyInstance, store: DebugStore, write
     
     return { chains: cachedChains };
   });
+
+  app.get<{ Querystring: { format?: string; limit?: string } }>(
+    "/api/can/export",
+    async (request, reply) => {
+      const format = request.query.format === "csv" ? "csv" : "json";
+      const limit = request.query.limit ? Number(request.query.limit) : 10000;
+      const iter = store.recentFramesIterator?.(limit);
+      if (!iter) {
+        return reply.code(500).send({ error: "Iterator not available" });
+      }
+
+      if (format === "csv") {
+        reply.header("Content-Disposition", `attachment; filename="recent-frames.csv"`);
+        reply.type("text/csv");
+      } else {
+        reply.header("Content-Disposition", `attachment; filename="recent-frames.json"`);
+        reply.type("application/json");
+      }
+
+      const stream = new Readable({
+        read() {}
+      });
+
+      let first = true;
+      if (format === "csv") {
+        stream.push("ts_real,ts_us,ts_device,bus,can_id,can_name,dlc,data\n");
+      } else {
+        stream.push("[\n");
+      }
+
+      const produce = () => {
+        let count = 0;
+        while (count < 100) {
+          const { value, done } = iter.next();
+          if (done) {
+            if (format === "json") stream.push("\n]\n");
+            stream.push(null);
+            return;
+          }
+
+          let chunk = "";
+          if (format === "csv") {
+            const dataHex = Buffer.from(value.frame.data).toString("hex");
+            chunk = `${value.ts_real},${value.ts_us},${value.ts_device},${value.bus},${value.frame.id},${value.decoded.name || ""},${value.frame.dlc},${dataHex}\n`;
+          } else {
+            chunk = (first ? "" : ",\n") + JSON.stringify(value);
+            first = false;
+          }
+          
+          const keepGoing = stream.push(chunk);
+          count++;
+          if (!keepGoing) {
+            stream.once("drain", produce);
+            return;
+          }
+        }
+        setImmediate(produce);
+      };
+
+      setImmediate(produce);
+      return reply.send(stream);
+    }
+  );
 
   app.delete("/api/can/frames", async () => {
     await store.clearFrames();

@@ -14,15 +14,15 @@ export class InjectionService {
     const resource = this.getRequiredResource(frame.frame.id);
     if (resource) {
       if (!options.ownerId) {
-        return { allowed: false, error: \`Injecting \${frame.frame.id} requires \${resource} lease, but no owner_id provided\` };
+        return { allowed: false, error: `Injecting ${frame.frame.id} requires ${resource} lease, but no owner_id provided` };
       }
       if (!this.ctx.leaseManager.checkAccess(resource, options.ownerId)) {
-        return { allowed: false, error: \`Injecting \${frame.frame.id} requires \${resource} lease. You don't hold it.\` };
+        return { allowed: false, error: `Injecting ${frame.frame.id} requires ${resource} lease. You don't hold it.` };
       }
     }
 
     if (this.requiresArming(frame.frame.id) && this.ctx.stateMachine.state.arm !== "armed") {
-      return { allowed: false, error: \`Injecting \${frame.frame.id} requires physical arming state to be 'armed'\` };
+      return { allowed: false, error: `Injecting ${frame.frame.id} requires physical arming state to be 'armed'` };
     }
 
     if (frame.frame.id === ID_SAFETY_ESTOP && !options.confirmEstop) {
