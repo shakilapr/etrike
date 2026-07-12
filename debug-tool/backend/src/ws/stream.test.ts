@@ -5,12 +5,20 @@ import type { CanFrame } from "../types/can";
 
 const makeFrame = (bus: "high" | "low", id: string): CanFrame => ({
   ts: 1,
+  ts_us: "1000000",
+  seq: 1,
   bus,
-  id,
-  name: "TEST",
-  dlc: 1,
-  data: [0],
-  decoded: {}
+  frame: {
+    id,
+    dlc: 1,
+    data: [0],
+    ext: false,
+    rtr: false
+  },
+  decoded: {
+    name: "TEST",
+    signals: {}
+  }
 });
 
 function makeSocket() {
@@ -46,6 +54,6 @@ describe("StreamHub filters", () => {
 
     expect(socket.send).toHaveBeenCalledTimes(1);
     const message = JSON.parse(socket.send.mock.calls[0][0]);
-    expect(message.payload).toEqual([expect.objectContaining({ bus: "high", id: ID_HOST_DRIVE_CMD })]);
+    expect(message.payload).toEqual([expect.objectContaining({ bus: "high", frame: expect.objectContaining({ id: ID_HOST_DRIVE_CMD }) })]);
   });
 });

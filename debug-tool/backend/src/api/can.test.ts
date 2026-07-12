@@ -6,12 +6,20 @@ import type { CanFrame } from "../types/can";
 function frame(ts: number, bus: "high" | "low", id: string, decoded: Record<string, unknown> = {}): CanFrame {
   return {
     ts,
+    ts_us: "",
+    seq: 0,
     bus,
-    id,
-    name: id,
-    dlc: 8,
-    data: [],
-    decoded
+    frame: {
+      id,
+      dlc: 8,
+      data: [],
+      ext: false,
+      rtr: false
+    },
+    decoded: {
+      name: id,
+      signals: decoded
+    }
   };
 }
 

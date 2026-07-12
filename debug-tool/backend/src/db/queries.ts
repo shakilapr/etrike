@@ -206,7 +206,7 @@ export class DebugStoreImpl {
    */
   insertFrame(frame: CanFrame, source: FrameSource = "physical"): StoredCanFrame {
     const res = this.insertFrames([{ frame, source }]);
-    return res[0] ?? { ...frame, row_id: -1, ts_real: Date.now() / 1000, ts_device: Math.round(frame.ts), ts_us: frame.ts_us, seq: frame.seq };
+    return res[0] ?? { ...frame, row_id: -1, ts_real: Date.now() / 1000, ts_device: Math.round(frame.ts ?? 0), ts_us: frame.ts_us, seq: frame.seq };
   }
 
   /**
@@ -229,7 +229,7 @@ export class DebugStoreImpl {
         let frame = item.frame;
 
         const tsReal = Date.now() / 1000;
-        const tsDevice = Math.round(frame.ts);
+        const tsDevice = Math.round(frame.ts ?? 0);
         const tsUs = frame.ts_us ? BigInt(frame.ts_us) : BigInt(Math.floor(tsReal * 1_000_000));
         const seq = frame.seq ?? 0;
         
@@ -240,11 +240,11 @@ export class DebugStoreImpl {
             seq,
             tsDevice,
             frame.bus,
-            frame.id,
-            frame.name,
-            frame.dlc,
-            Buffer.from(frame.data),
-            JSON.stringify(frame.decoded)
+            frame.frame.id,
+            frame.decoded?.name ?? "",
+            frame.frame.dlc,
+            Buffer.from(frame.frame.data),
+            JSON.stringify(frame.decoded?.signals)
           );
           const rowId = Number(res.lastInsertRowid);
           insertedIds.push(rowId);
@@ -476,11 +476,17 @@ function rowToFrame(row: FrameRow): StoredCanFrame {
     ts_device: row.ts_device,
     ts: row.ts_device,
     bus: normalizeBus(row.bus),
-    id: row.can_id,
-    name: row.can_name,
-    dlc: row.dlc,
-    data: [...row.data],
-    decoded: safeJson(row.decoded)
+    frame: {
+      id: row.can_id,
+      dlc: row.dlc,
+      data: [...row.data],
+      ext: false,
+      rtr: false
+    },
+    decoded: {
+      name: row.can_name,
+      signals: safeJson(row.decoded)
+    }
   };
 }
 

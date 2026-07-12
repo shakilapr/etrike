@@ -46,14 +46,13 @@ export class SimulationEngine {
   /** Register an ECU model with the engine. */
   register(model: EcuModel): void {
     this.models.set(model.id, model);
-    model.onFrame((frame) => {
-      const canonical = this.timebase.now();
-      frame.ts_us = canonical.ts_us;
-      frame.seq = canonical.seq;
-      this.bus.send(frame);
-      this.writeQueue.enqueue(frame, "simulated");
-      this.hub.broadcast({ type: "can_frame", payload: frame });
-    });
+      model.onFrame((frame) => {
+        const canonical = this.timebase.now();
+        const routed = { ...frame, ts_us: canonical.ts_us, seq: canonical.seq };
+        this.bus.send(routed);
+        this.writeQueue.enqueue(routed, "simulated");
+        this.hub.broadcast({ type: "can_frame", payload: routed });
+      });
   }
 
   /** Start the simulation with a given config. */
@@ -136,13 +135,13 @@ export class SimulationEngine {
 
     // Snoop frames to update telemetry state
     for (const frame of allFrames) {
-      if (frame.decoded) {
-        if (frame.id === ID_MTR_MOTOR_FBK && typeof frame.decoded.motor_speed_mmps === "number") {
-          this._state.physics.speedMmps = frame.decoded.motor_speed_mmps;
-        } else if (frame.id === ID_SES_STATUS && typeof frame.decoded.str_angle === "number") {
-          this._state.physics.steerAngleDeg = frame.decoded.str_angle / 10;
-        } else if (frame.id === ID_SEB_STATUS && typeof frame.decoded.act_pressure_kpa === "number") {
-          this._state.physics.brakeKpa = frame.decoded.act_pressure_kpa;
+      if (frame.decoded?.signals) {
+        if (frame.frame.id === ID_MTR_MOTOR_FBK && typeof frame.decoded?.signals.motor_speed_mmps === "number") {
+          this._state.physics.speedMmps = frame.decoded?.signals.motor_speed_mmps;
+        } else if (frame.frame.id === ID_SES_STATUS && typeof frame.decoded?.signals.str_angle === "number") {
+          this._state.physics.steerAngleDeg = frame.decoded?.signals.str_angle / 10;
+        } else if (frame.frame.id === ID_SEB_STATUS && typeof frame.decoded?.signals.act_pressure_kpa === "number") {
+          this._state.physics.brakeKpa = frame.decoded?.signals.act_pressure_kpa;
         }
       }
     }

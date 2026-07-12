@@ -1,3 +1,4 @@
+import { normalizeFrame } from "@etrike/debug-shared";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SimulationEngine } from "../../src/sim/engine";
 import type { CanFrame } from "../../types/can";
@@ -45,17 +46,17 @@ describe("Safety Bypasses (Bench Mode)", () => {
     vi.advanceTimersByTime(100);
     
     // Trigger ESTOP
-    engine.injectExternal({ ts: 0, bus: "high", id: "0x001", name: "SAFETY_ESTOP", dlc: 0, data: [], decoded: {} });
+    engine.injectExternal(normalizeFrame({ ts: 0, bus: "high", id: "0x001", name: "SAFETY_ESTOP", dlc: 0, data: [], decoded: {} }));
     vi.advanceTimersByTime(200);
 
     // Look for RT_STATE_RPT (0x210) on high bus
-    const stateRpt = hubEvents.filter(e => e.payload.id === "0x210").pop();
+    const stateRpt = hubEvents.filter(e => e.payload.frame.id === "0x210").pop();
     expect(stateRpt).toBeDefined();
     
     // steer_state is in the decoded payload
-    expect(stateRpt!.payload.decoded.steer_state).toBe(4); 
+    expect(stateRpt!.payload.decoded.signals.steer_state).toBe(4); 
     // safety_state is 1 (InternalEstop)
-    expect(stateRpt!.payload.decoded.safety_state).toBe(1);
+    expect(stateRpt!.payload.decoded.signals.safety_state).toBe(1);
   });
 
   it("reports steer_state=1 during ESTOP with sesSync bypass (Bench Mode)", async () => {
@@ -75,16 +76,16 @@ describe("Safety Bypasses (Bench Mode)", () => {
     vi.advanceTimersByTime(100);
     
     // Trigger ESTOP
-    engine.injectExternal({ ts: 0, bus: "high", id: "0x001", name: "SAFETY_ESTOP", dlc: 0, data: [], decoded: {} });
+    engine.injectExternal(normalizeFrame({ ts: 0, bus: "high", id: "0x001", name: "SAFETY_ESTOP", dlc: 0, data: [], decoded: {} }));
     vi.advanceTimersByTime(200);
 
     // Look for RT_STATE_RPT (0x210) on high bus
-    const stateRpt = hubEvents.filter(e => e.payload.id === "0x210").pop();
+    const stateRpt = hubEvents.filter(e => e.payload.frame.id === "0x210").pop();
     expect(stateRpt).toBeDefined();
     
     // steer_state remains 1 due to bypass!
-    expect(stateRpt!.payload.decoded.steer_state).toBe(1); 
+    expect(stateRpt!.payload.decoded.signals.steer_state).toBe(1); 
     // safety_state is still 1 (InternalEstop)
-    expect(stateRpt!.payload.decoded.safety_state).toBe(1);
+    expect(stateRpt!.payload.decoded.signals.safety_state).toBe(1);
   });
 });

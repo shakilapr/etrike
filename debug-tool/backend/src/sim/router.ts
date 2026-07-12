@@ -56,7 +56,7 @@ export class FrameRouter {
    * frame should be dropped (silent collision loss).
    */
   resolve(frame: CanFrame, incomingSource: FrameSource): CanFrame | null {
-    const k = this.key(frame.bus, frame.id);
+    const k = this.key(frame.bus, frame.frame.id);
     const existing = this.sources.get(k);
 
     if (!existing) {

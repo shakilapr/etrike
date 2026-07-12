@@ -60,7 +60,14 @@ export class HostModel implements EcuModel {
   onFrame(callback: (frame: CanFrame) => void): void { this.callbacks.push(callback); }
 
   private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
-    const frame: CanFrame = { ts: Date.now()/1000, bus, id, name, dlc, data, decoded };
+    const frame: CanFrame = {
+      ts: Date.now()/1000,
+      ts_us: "",
+      seq: 0,
+      bus,
+      frame: { id, dlc, data, ext: false, rtr: false },
+      decoded: { name, signals: decoded }
+    };
     this.frameQueue.push(frame);
     for (const cb of this.callbacks) cb(frame);
   }

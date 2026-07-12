@@ -50,4 +50,13 @@ CREATE TABLE IF NOT EXISTS runtime_state (
     key         TEXT PRIMARY KEY,
     value       TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS adapter_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          REAL NOT NULL,
+    bus         TEXT NOT NULL CHECK(bus IN ('high','low')),
+    event_type  TEXT NOT NULL,
+    details     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_adapter_events_ts ON adapter_events(ts);
 `;

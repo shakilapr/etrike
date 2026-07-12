@@ -98,8 +98,8 @@ export class StreamHub {
 
       const filtered = batch.filter((f) => {
         const hasAnyIdFilter = client.keys || client.ids;
-        const matchesScopedKey = client.keys?.has(`${f.bus}:${f.id}`) ?? false;
-        const matchesBareId = client.ids?.has(String(f.id)) ?? false;
+        const matchesScopedKey = client.keys?.has(`${f.bus}:${f.frame.id}`) ?? false;
+        const matchesBareId = client.ids?.has(String(f.frame.id)) ?? false;
         if (hasAnyIdFilter && !matchesScopedKey && !matchesBareId) return false;
         return true;
       });

@@ -62,19 +62,48 @@ export interface CanMessageDef {
   fields: CanField[];
 }
 
-export interface CanFrame {
-  ts: number;
-  ts_us?: string;
-  seq?: number;
-  bus: Bus;
-  id: string;
-  name: string;
-  dlc: number;
-  data: number[];
-  decoded: Record<string, unknown>;
-  row_id?: number;
-  ts_real?: number;
-  ts_device?: number;
+export interface CanDataFrame {
+  readonly id: string;
+  readonly dlc: number;
+  readonly data: readonly number[];
+  readonly ext?: boolean;
+  readonly rtr?: boolean;
+}
+
+export interface DecodedMessage {
+  readonly name: string;
+  readonly signals: Record<string, unknown>;
+}
+
+export interface RoutedFrame {
+  readonly ts_us: string;
+  readonly seq: number;
+  readonly bus: Bus;
+  readonly frame: CanDataFrame;
+  readonly decoded?: DecodedMessage;
+  readonly row_id?: number;
+  readonly ts?: number;
+  readonly ts_real?: number;
+  readonly ts_device?: number;
+}
+
+export type CanFrame = RoutedFrame;
+
+export type AdapterEventType = 
+  | "bus_off" 
+  | "recovery" 
+  | "overflow" 
+  | "disconnect" 
+  | "error_frame" 
+  | "timestamp_reset";
+
+export interface AdapterEvent {
+  readonly type: "adapter_event";
+  readonly event_type: AdapterEventType;
+  readonly ts_us: string;
+  readonly seq: number;
+  readonly bus?: Bus;
+  readonly details?: Record<string, unknown>;
 }
 
 export interface BusStats {
@@ -182,12 +211,21 @@ export function normalizeStats(input: Partial<CanStats> | Record<string, unknown
   };
 }
 
-export function normalizeFrame(input: Partial<CanFrame> & { id: string; data: number[] }): CanFrame {
-  const bus = normalizeBus(input.bus);
-  const id = normalizeCanId(input.id);
-  const fullData = normalizeBytes(input.data).slice(0, 8);
-  const dlc = typeof input.dlc === "number" ? input.dlc : Math.min(input.data.length, 8);
-  const decoded = input.decoded && Object.keys(input.decoded).length > 0 ? input.decoded : decodeFrame(bus, id, fullData);
+// Accepts both legacy flat frames and new nested frames to ease migration
+export function normalizeFrame(input: any): RoutedFrame {
+  const isNested = input.frame !== undefined;
+  const legacyInput = isNested ? {} : input;
+  
+  const bus = normalizeBus(input.bus ?? legacyInput.bus);
+  const id = normalizeCanId(input.frame?.id ?? legacyInput.id);
+  const rawData = input.frame?.data ?? legacyInput.data ?? [];
+  const fullData = normalizeBytes(rawData).slice(0, 8);
+  const dlc = typeof (input.frame?.dlc ?? legacyInput.dlc) === "number" ? (input.frame?.dlc ?? legacyInput.dlc) : Math.min(rawData.length, 8);
+  
+  const decodedMap = input.decoded?.signals ?? legacyInput.decoded;
+  const decoded = decodedMap && Object.keys(decodedMap).length > 0 ? decodedMap : decodeFrame(bus, id, fullData);
+  const name = input.decoded?.name ?? legacyInput.name ?? getMessageName(bus, id);
+  
   let ts = typeof input.ts === "number" ? input.ts : Date.now() / 1000;
   if (ts > 1_000_000_000_000) ts = ts / 1000;
   
@@ -199,7 +237,23 @@ export function normalizeFrame(input: Partial<CanFrame> & { id: string; data: nu
     if (typeof seq !== "number") seq = fallback.seq;
   }
   
-  return { ts, ts_us, seq, bus, id, name: input.name ?? getMessageName(bus, id), dlc, data: fullData.slice(0, dlc), decoded };
+  return { 
+    ts, 
+    ts_us, 
+    seq, 
+    bus, 
+    frame: {
+      id,
+      dlc,
+      data: fullData.slice(0, dlc),
+      ext: input.frame?.ext ?? legacyInput.ext ?? false,
+      rtr: input.frame?.rtr ?? legacyInput.rtr ?? false,
+    },
+    decoded: {
+      name,
+      signals: decoded
+    }
+  };
 }
 
 export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string, unknown> {

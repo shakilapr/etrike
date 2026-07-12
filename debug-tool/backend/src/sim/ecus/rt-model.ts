@@ -35,19 +35,19 @@ export class RtModel implements EcuModel {
   state(): EcuState { return { ecu: this.id, mode: ["MANUAL","AUTO","ESTOP"][this.mode], safety: ["Normal","InternalEstop","Fault"][this.safety], healthy: true, uptimeMs: 0 }; }
 
   ingest(frame: CanFrame): void {
-    if (frame.id === ID_SAFETY_ESTOP) { this.estopPending = true; this.latestSpeed = 0; return; }
-    if (frame.id === ID_HOST_DRIVE_CMD && frame.bus === "high") {
-      const d = frame.decoded as Record<string, unknown>;
+    if (frame.frame.id === ID_SAFETY_ESTOP) { this.estopPending = true; this.latestSpeed = 0; return; }
+    if (frame.frame.id === ID_HOST_DRIVE_CMD && frame.bus === "high") {
+      const d = (frame.decoded?.signals ?? {}) as Record<string, unknown>;
       this.latestSpeed = (d.speed_mmps as number) ?? 0;
       this.latestYaw = (d.yaw_rate_mrad_s as number) ?? 0;
       this.latestGear = (d.gear as number) ?? 1;
     }
-    if (frame.id === ID_HOST_BRAKE_REQ && frame.bus === "high") {
-      const d = frame.decoded as Record<string, unknown>;
+    if (frame.frame.id === ID_HOST_BRAKE_REQ && frame.bus === "high") {
+      const d = (frame.decoded?.signals ?? {}) as Record<string, unknown>;
       this.latestBrakeKpa = (d.brake_pressure_kpa as number) ?? 0;
     }
-    if (frame.id === ID_SYS_MODE_CMD) {
-      const d = frame.decoded as Record<string, unknown>;
+    if (frame.frame.id === ID_SYS_MODE_CMD) {
+      const d = (frame.decoded?.signals ?? {}) as Record<string, unknown>;
       const m = (d.mode as number) ?? 0;
       if (m <= 1) { this.mode = m; this.estopPending = false; }
     }
@@ -107,7 +107,14 @@ export class RtModel implements EcuModel {
   onFrame(callback: (frame: CanFrame) => void): void { this.callbacks.push(callback); }
 
   private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
-    const frame: CanFrame = { ts: Date.now()/1000, bus, id, name, dlc, data, decoded };
+    const frame: CanFrame = {
+      ts: Date.now()/1000,
+      ts_us: "",
+      seq: 0,
+      bus,
+      frame: { id, dlc, data, ext: false, rtr: false },
+      decoded: { name, signals: decoded }
+    };
     this.frameQueue.push(frame);
     for (const cb of this.callbacks) cb(frame);
   }

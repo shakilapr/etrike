@@ -15,7 +15,7 @@ export class VirtualCanBus {
     const bus = frame.bus === "low" ? this.lowBus : this.highBus;
     bus.push(frame);
     // Notify subscribers
-    const key = `${frame.bus}:${frame.id}`;
+    const key = `${frame.bus}:${frame.frame.id}`;
     const subs = this.subscribers.get(key);
     if (subs) for (const cb of subs) cb(frame);
   }
