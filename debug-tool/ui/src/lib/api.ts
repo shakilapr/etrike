@@ -1,4 +1,4 @@
-import type { Bus, CanFrame, CanMessageDef, CanStats, InjectionTemplate } from "./can-decoder";
+import type { Bus, UiCanFrame, CanMessageDef, CanStats, InjectionTemplate } from "./can-decoder";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const FETCH_TIMEOUT_MS = 10_000;
@@ -92,10 +92,10 @@ export async function getCanIds(): Promise<CanMessageDef[]> {
   return payload.ids;
 }
 
-export async function getFrames(limit = 300, bus?: Bus): Promise<CanFrame[]> {
+export async function getFrames(limit = 300, bus?: Bus): Promise<UiCanFrame[]> {
   const query = new URLSearchParams({ limit: String(limit) });
   if (bus) query.set("bus", bus);
-  const payload = await request<{ frames: CanFrame[] }>(`/api/can/frames?${query.toString()}`);
+  const payload = await request<{ frames: UiCanFrame[] }>(`/api/can/frames?${query.toString()}`);
   return payload.frames.reverse();
 }
 

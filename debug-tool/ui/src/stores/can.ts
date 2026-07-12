@@ -1,6 +1,6 @@
 import { derived, writable } from "svelte/store";
 import type { BackendStatus } from "../lib/api";
-import type { CanFrame, CanStats, BusStats } from "../lib/can-decoder";
+import type { UiCanFrame, CanStats, BusStats } from "../lib/can-decoder";
 
 const emptyBusStats = (): BusStats => ({
   active: false, total: 0, fps: 0, load_pct: 0, tec: 0, rec: 0, by_id: {}
@@ -50,13 +50,13 @@ class RingBuffer<T> {
 }
 
 const FRAME_BUFFER_SIZE = 1000;
-export const frameBuffer = new RingBuffer<CanFrame>(FRAME_BUFFER_SIZE);
+export const frameBuffer = new RingBuffer<UiCanFrame>(FRAME_BUFFER_SIZE);
 
 // ── Stores ───────────────────────────────────────────────────────────────────
-export const latestById = writable<Record<string, CanFrame>>({});
+export const latestById = writable<Record<string, UiCanFrame>>({});
 
-function buildLatestById(input: CanFrame[]): Record<string, CanFrame> {
-  const latest: Record<string, CanFrame> = {};
+function buildLatestById(input: UiCanFrame[]): Record<string, UiCanFrame> {
+  const latest: Record<string, UiCanFrame> = {};
   for (const frame of input) {
     if (frame) latest[`${frame.bus}:${frame.id}`] = frame;
   }
@@ -66,10 +66,10 @@ function buildLatestById(input: CanFrame[]): Record<string, CanFrame> {
 export const frameVersion = writable(0);
 
 // frameStore is the backing Svelte writable – kept in sync so that get(frames) works.
-const frameStore = writable<CanFrame[]>([]);
+const frameStore = writable<UiCanFrame[]>([]);
 export const frames = {
   subscribe: frameStore.subscribe,
-  set(input: CanFrame[]): void {
+  set(input: UiCanFrame[]): void {
     frameBuffer.clear();
     frameBuffer.pushMany(input);
     for (const key in _latestById) delete _latestById[key];
@@ -80,7 +80,7 @@ export const frames = {
     frameVersion.update(v => v + 1);
     latestById.set({ ..._latestById });
   },
-  update(updater: (current: CanFrame[]) => CanFrame[]): void {
+  update(updater: (current: UiCanFrame[]) => UiCanFrame[]): void {
     const current = frameBuffer.toArray();
     const next = updater(current);
     this.set(next);
@@ -102,7 +102,7 @@ export const status = writable<Partial<BackendStatus>>({
 export const wsConnected = writable(false);
 export const commandAcks = writable<Record<string, unknown>[]>([]);
 
-export function ingestInitialFrames(input: CanFrame[]): void {
+export function ingestInitialFrames(input: UiCanFrame[]): void {
   frameBuffer.clear();
   for (const key in _latestById) delete _latestById[key];
   const limited = input.slice(-FRAME_BUFFER_SIZE);
@@ -115,7 +115,7 @@ export function ingestInitialFrames(input: CanFrame[]): void {
   latestById.set({ ..._latestById });
 }
 
-const _latestById: Record<string, CanFrame> = {};
+const _latestById: Record<string, UiCanFrame> = {};
 let pendingFrames = false;
 
 function flushFrames() {
@@ -127,8 +127,18 @@ function flushFrames() {
 
 export function ingestMessage(message: { type: string; payload: unknown }): void {
   if (message.type === "can_frame") {
-    const frame = message.payload as CanFrame;
-    if (!frame) return;
+    const routed = message.payload as any;
+    if (!routed || !routed.frame) return;
+    const frame: UiCanFrame = {
+      ts: Number(routed.ts_us) / 1000,
+      ts_real: routed.ts_real,
+      bus: routed.bus,
+      id: routed.frame.id,
+      name: routed.decoded?.name || "unknown",
+      dlc: routed.frame.dlc,
+      data: Array.from(routed.frame.data),
+      decoded: routed.decoded?.signals || {}
+    };
     frameBuffer.push(frame);
     _latestById[`${frame.bus}:${frame.id}`] = frame;
     if (!pendingFrames) {
@@ -136,8 +146,25 @@ export function ingestMessage(message: { type: string; payload: unknown }): void
       requestAnimationFrame(flushFrames);
     }
   } else if (message.type === "can_frames_batch") {
-    const batch = message.payload as CanFrame[];
-    if (!batch || !Array.isArray(batch) || batch.length === 0) return;
+    const routedBatch = message.payload as any[];
+    if (!routedBatch || !Array.isArray(routedBatch) || routedBatch.length === 0) return;
+    
+    const batch: UiCanFrame[] = [];
+    for (const routed of routedBatch) {
+      if (!routed || !routed.frame) continue;
+      batch.push({
+        ts: Number(routed.ts_us) / 1000,
+        ts_real: routed.ts_real,
+        bus: routed.bus,
+        id: routed.frame.id,
+        name: routed.decoded?.name || "unknown",
+        dlc: routed.frame.dlc,
+        data: Array.from(routed.frame.data),
+        decoded: routed.decoded?.signals || {}
+      });
+    }
+    
+    if (batch.length === 0) return;
     frameBuffer.pushMany(batch);
     for (const f of batch) {
       if (f) _latestById[`${f.bus}:${f.id}`] = f;

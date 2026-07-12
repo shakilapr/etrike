@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 import { frames } from "./can";
 import { ecuPresence, now as telemetryNow, telemetry } from "./telemetry";
-import type { CanFrame } from "../lib/can-decoder";
+import type { UiCanFrame } from "../lib/can-decoder";
 
-function makeFrame(ts: number, bus: "high" | "low", id: string): CanFrame {
+function makeFrame(ts: number, bus: "high" | "low", id: string): UiCanFrame {
   return {
-    ts,
+    ts, ts_real: ts,
     bus,
     id,
     name: id,
@@ -17,9 +17,9 @@ function makeFrame(ts: number, bus: "high" | "low", id: string): CanFrame {
   };
 }
 
-function makeDecodedFrame(ts: number, bus: "high" | "low", id: string, decoded: Record<string, unknown>): CanFrame {
+function makeDecodedFrame(ts: number, bus: "high" | "low", id: string, decoded: Record<string, unknown>): UiCanFrame {
   return {
-    ts,
+    ts, ts_real: ts,
     bus,
     id,
     name: id,

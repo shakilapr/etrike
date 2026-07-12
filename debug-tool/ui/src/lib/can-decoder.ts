@@ -34,3 +34,14 @@ export function frameAge(frame: { ts: number }): string {
   return `${Math.floor(Date.now() - ts)} ms`;
 }
 
+
+export interface UiCanFrame {
+  ts: number;
+  ts_real: number;
+  bus: Bus;
+  id: string;
+  name: string;
+  dlc: number;
+  data: number[];
+  decoded: Record<string, unknown>;
+}

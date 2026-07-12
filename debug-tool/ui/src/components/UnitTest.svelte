@@ -1,6 +1,6 @@
 <script lang="ts">
   import { sendFrame, startPeriodic, stopPeriodic } from "../lib/api";
-  import type { Bus, CanField, CanFrame, CanMessageDef } from "../lib/can-decoder";
+  import type { Bus, CanField, UiCanFrame, CanMessageDef } from "../lib/can-decoder";
   import { encodePayload, findMessage, formatBytes, formatDecoded, frameTime } from "../lib/can-decoder";
   import { commandAcks, latestById } from "../stores/can";
 
@@ -170,7 +170,7 @@
     };
   }
 
-  function frameAge(frame?: CanFrame): string {
+  function frameAge(frame?: UiCanFrame): string {
     if (!frame) return "--";
     const stamp = frame.ts_real ?? frame.ts;
     const age = Math.max(Date.now() / 1000 - stamp, 0);

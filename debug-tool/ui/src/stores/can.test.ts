@@ -11,10 +11,10 @@ import {
   ingestInitialFrames,
   ingestMessage
 } from "./can";
-import type { CanFrame, CanStats } from "../lib/can-decoder";
+import type { UiCanFrame, CanStats } from "../lib/can-decoder";
 
-const makeFrame = (overrides: Partial<CanFrame> = {}): CanFrame => ({
-  ts: 1000,
+const makeFrame = (overrides: Partial<UiCanFrame> = {}): UiCanFrame => ({
+  ts: 1000, ts_real: 1000,
   bus: "high",
   id: ID_HOST_DRIVE_CMD,
   name: "HOST_DRIVE_CMD",
@@ -90,7 +90,13 @@ describe("ingestInitialFrames", () => {
 describe("ingestMessage", () => {
   it("appends can_frame messages", () => {
     const frame = makeFrame();
-    ingestMessage({ type: "can_frame", payload: frame });
+    ingestMessage({ type: "can_frame", payload: {
+      ts_us: (frame.ts * 1000).toString(),
+      ts_real: frame.ts_real,
+      bus: frame.bus,
+      frame: { id: frame.id, dlc: frame.dlc, data: frame.data, ext: false, rtr: false },
+      decoded: { name: frame.name, signals: frame.decoded }
+    } });
     expect(get(frames)).toHaveLength(1);
     expect(get(frames)[0].id).toBe(ID_HOST_DRIVE_CMD);
   });
@@ -98,7 +104,13 @@ describe("ingestMessage", () => {
   it("caps can_frame at 1000", () => {
     const many = Array.from({ length: 1100 }, (_, i) => makeFrame({ id: `0x${i.toString(16)}`, ts: i }));
     for (const f of many) {
-      ingestMessage({ type: "can_frame", payload: f });
+      ingestMessage({ type: "can_frame", payload: {
+        ts_us: (f.ts * 1000).toString(),
+        ts_real: f.ts_real,
+        bus: f.bus,
+        frame: { id: f.id, dlc: f.dlc, data: f.data, ext: false, rtr: false },
+        decoded: { name: f.name, signals: f.decoded }
+      } });
     }
     const kept = get(frames);
     expect(kept.length).toBe(1000);
@@ -118,7 +130,13 @@ describe("ingestMessage", () => {
       makeFrame({ id: ID_HOST_DRIVE_CMD, bus: "high", ts: 3 }),
     ];
 
-    ingestMessage({ type: "can_frames_batch", payload: batch });
+    ingestMessage({ type: "can_frames_batch", payload: batch.map(b => ({
+      ts_us: (b.ts * 1000).toString(),
+      ts_real: b.ts_real,
+      bus: b.bus,
+      frame: { id: b.id, dlc: b.dlc, data: b.data, ext: false, rtr: false },
+      decoded: { name: b.name, signals: b.decoded }
+    })) });
 
     expect(get(frames)).toHaveLength(3);
     expect(get(latestById)[`high:${ID_HOST_DRIVE_CMD}`].ts).toBe(3);
@@ -128,7 +146,13 @@ describe("ingestMessage", () => {
   it("caps can_frames_batch at 1000", () => {
     const batch = Array.from({ length: 1100 }, (_, i) => makeFrame({ id: `0x${i.toString(16)}`, ts: i }));
 
-    ingestMessage({ type: "can_frames_batch", payload: batch });
+    ingestMessage({ type: "can_frames_batch", payload: batch.map(b => ({
+      ts_us: (b.ts * 1000).toString(),
+      ts_real: b.ts_real,
+      bus: b.bus,
+      frame: { id: b.id, dlc: b.dlc, data: b.data, ext: false, rtr: false },
+      decoded: { name: b.name, signals: b.decoded }
+    })) });
 
     const kept = get(frames);
     expect(kept).toHaveLength(1000);
@@ -139,7 +163,13 @@ describe("ingestMessage", () => {
   it("keeps the newest batch frames and latestById values for oversized batches", () => {
     const batch = Array.from({ length: 1500 }, (_, i) => makeFrame({ id: ID_HOST_DRIVE_CMD, ts: i }));
 
-    ingestMessage({ type: "can_frames_batch", payload: batch });
+    ingestMessage({ type: "can_frames_batch", payload: batch.map(b => ({
+      ts_us: (b.ts * 1000).toString(),
+      ts_real: b.ts_real,
+      bus: b.bus,
+      frame: { id: b.id, dlc: b.dlc, data: b.data, ext: false, rtr: false },
+      decoded: { name: b.name, signals: b.decoded }
+    })) });
 
     const kept = get(frames);
     expect(kept).toHaveLength(1000);
