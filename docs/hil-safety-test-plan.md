@@ -410,7 +410,7 @@ Tests that require all nodes and at least one physical actuator (EPS-C or SEB) o
   - t_escalate_721: < 200 ms (SYS dispatch processes 0x721 at 100 Hz, 10 ms period; safety task at 20 Hz = 50 ms; target < 150 ms).
   - t_escalate_731: < 200 ms (0x731 at 10 Hz max period 100 ms + SYS processing).
   - L2 faults: SYS 0x600 records fault details (hex flags), no ESTOP within 3 s, mode unchanged.
-  - Once ESTOP triggered, 0x110 mode = 2 (ESTOP) persists until START button (GPIO38) pressed.
+  - Once ESTOP triggered, 0x110 mode = 2 (ESTOP) persists until START button (GPIO41) pressed.
   - 0x7B9 stroke = max (1140 = 27 mm) during ESTOP.
   - 0x012 DCDC enable stays 1 (ESTOP does NOT kill 12V per gap #17 fix).
 - **Result**: Not tested.
@@ -475,11 +475,11 @@ Tests that require the full vehicle (or a full-bench integration with all actuat
 
 ### T4.3 — ESTOP Exit Race Condition (gap #6)
 - **Objective**: Verify pressing START during non-obstacle ESTOP centering ramp does NOT interrupt 0x169 transmission before ramp completes, preventing off-center steering lock.
-- **Equipment**: RT board, EPS-C unit, CAN analyzer, START button (SYS GPIO38), 12V power.
+- **Equipment**: RT board, EPS-C unit, CAN analyzer, START button (SYS GPIO41), 12V power.
 - **Procedure**:
   1. Boot all nodes in AUTO mode at 555 mm/s (2 km/h). Command 30 deg steering angle. Establish steady state.
   2. Trigger non-obstacle ESTOP (e.g., stop 0x7FC heartbeats per T2.5, or inject command staleness per T2.6). Verify steering enters ESTOP_RAMP_TO_ZERO.
-  3. **Race condition test**: Within 100 ms of ESTOP trigger, press START button (GPIO38) to attempt exit.
+  3. **Race condition test**: Within 100 ms of ESTOP trigger, press START button (GPIO41) to attempt exit.
      a) Monitor 0x169 continuously during ramp.
      b) Verify 0x169 continues transmitting at 50 Hz throughout the ramp (architecture: "RT defers ESTOP->MANUAL steering transition until ramp completes").
      c) Measure ramp duration from trigger to target_angle = 0. At 20 deg/s from 30 deg, ramp = 1.5 s.

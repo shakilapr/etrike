@@ -76,9 +76,9 @@ Used by RT for the high bus. Standalone SPI-to-CAN controller.
 |----------------|-------------|-------|
 | VCC | **5 V** from ESP32 dev board | TJA1050 transceiver needs 5 V for proper CAN levels |
 | GND | ESP32 GND | Common ground |
-| SCK | ESP32 GPIO36 | SPI clock, up to 10 MHz |
-| SI (MOSI) | ESP32 GPIO37 | SPI data: MCU → MCP2515 |
-| SO (MISO) | ESP32 GPIO38 | SPI data: MCP2515 → MCU |
+| SCK | ESP32 GPIO39 | SPI clock, up to 10 MHz |
+| SI (MOSI) | ESP32 GPIO40 | SPI data: MCU → MCP2515 |
+| SO (MISO) | ESP32 GPIO41 | SPI data: MCP2515 → MCU |
 | CS | ESP32 GPIO39 | Chip select, active low |
 | INT | ESP32 GPIO40 | Interrupt: RX buffer ready, active low |
 | CAN_H | Bus CAN_H (screw terminal) | High bus backbone |
@@ -168,7 +168,7 @@ Dual-channel passive CAN monitor/injector.
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
 | 1 | CAN TX (low bus) | 5 | TWAI TX | SN65HVD230 CTX | 0x204, 0x205, 0x169, 0x001, 0x302, 0x7FD on low bus |
-| 2 | SPI SCK | 36 | SPI out | MCP2515 SCK | 10 MHz max |
+| 2 | SPI SCK | 15 | SPI out | MCP2515 SCK | 10 MHz max |
 | 3 | SPI MOSI | 37 | SPI out | MCP2515 SI | High bus TX data |
 | 4 | SPI CS | 39 | Digital out | MCP2515 CS | Active low |
 | 5 | WDT Toggle | 21 | Digital out | TPS3850 WDI pin | Toggled at 100 Hz by control_task |
@@ -193,9 +193,9 @@ GPIO 14 : Encoder B — rear right (TBD, disabled)
 GPIO 15–20: (unused)
 GPIO 21 : WDT toggle → TPS3850 WDI
 GPIO 10–35: (unused)
-GPIO 36 : SPI SCK → MCP2515
-GPIO 37 : SPI MOSI → MCP2515
-GPIO 38 : SPI MISO ← MCP2515
+GPIO 39 : SPI SCK → MCP2515
+GPIO 40 : SPI MOSI → MCP2515
+GPIO 41 : SPI MISO ← MCP2515
 GPIO 39 : SPI CS → MCP2515
 GPIO 40 : INT ← MCP2515
 ```
@@ -309,10 +309,10 @@ GPIO 10 : Headlight — relay output
 GPIO 47 : WDT toggle → TPS3850 WDI (20 Hz)
 GPIO 24 : (unused)
 GPIO 48 : AUTO mode bulb — relay output
-GPIO 36 : MANUAL mode bulb — relay output
-GPIO 37 : 12V power relay — opens in ESTOP
+GPIO 39 : MANUAL mode bulb — relay output
+GPIO 40 : 12V power relay — opens in ESTOP
 GPIO 28–31: (unused)
-GPIO 38 : START button (active-low)
+GPIO 41 : START button (active-low)
 GPIO 33 : Gear D relay out → 4-ch relay module IN1
 GPIO 34 : Gear S relay out → 4-ch relay module IN2
 GPIO 35 : Gear R relay out → 4-ch relay module IN3
@@ -675,7 +675,7 @@ TPS3850 GND → GND
 
 - **72V Traction Battery** → Main fuse/contactor → Motor Controller (72V) → Motor (3-phase BLDC)
 - **72V** → DC-DC Converter (72V → 12V, CAN 0x012) → 12V Fuse Block (ATO/ATC, 12 circuits)
-- **12V Fuse Block** → 12V Relay (SYS GPIO37) → 12V Accessory Bus (signal lamps via relays 18/19/21/22, mode bulbs via relays 48/36, headlight via relay 10)
+- **12V Fuse Block** → 12V Relay (SYS GPIO40) → 12V Accessory Bus (signal lamps via relays 18/19/21/22, mode bulbs via relays 48/39, headlight via relay 10)
 - **12V Fuse Block** → ESP32-S3 Dev Boards (×4), STM32 Board, EPS-C, SEB, Jetson Orin NX (via separate 19V DC-DC)
 - **12V Fuse Block** → M6 Ground Bus Bar (nickel-plated brass, ≥6 studs)
 - **72V Gear Lines** (via 1A fuse → MTR relay COM terminals) → Relay D/S/R COM → NO → ECU Gear D/S/R
@@ -686,7 +686,7 @@ TPS3850 GND → GND
 | Domain | Source | Used By | Isolation |
 |--------|--------|---------|-----------|
 | 72 V DC | Traction battery | Motor controller, gear relays (COM), DC-DC input | Fuse + contactor |
-| 12 V DC | DC-DC converter | Lamps, bulbs, relay coils, EPS-C, SEB, ECU boards (via onboard regulators) | 12V relay (SYS GPIO37) |
+| 12 V DC | DC-DC converter | Lamps, bulbs, relay coils, EPS-C, SEB, ECU boards (via onboard regulators) | 12V relay (SYS GPIO40) |
 | 5 V DC | Onboard regulators (from 12 V or USB) | MCP4725 DACs, MCP2515 module (TJA1050), gear relay coils | — |
 | 3.3 V DC | Onboard regulators | ESP32-S3 MCUs, STM32 MCU, WCMCU-230 transceivers, TLP281 output side | — |
 | 72 V gear signals | Traction battery (via 1A fuse) | Gear selector → TLP281 input → GPIO | **Galvanic isolation** via TLP281 optoisolator (2500 Vrms) |
@@ -776,7 +776,7 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 - [ ] WCMCU-230 (low bus): VCC → 3V3 (J1-1), GND → GND (J1-22), CTX → GPIO5, CRX → GPIO4
 - [ ] WCMCU-230: 120 Ω terminator jumper **ON**
 - [ ] MCP2515 (high bus): VCC → 5V (J1-21), GND → GND (J1-22)
-- [ ] MCP2515: SCK → GPIO36, MOSI → GPIO37, MISO → GPIO38, CS → GPIO39, INT → GPIO40
+- [ ] MCP2515: SCK → GPIO39, MOSI → GPIO40, MISO → GPIO41, CS → GPIO39, INT → GPIO40
 - [ ] MCP2515: CAN_H/CAN_L to high bus backbone
 - [ ] WDT: GPIO21 → TPS3850 WDI
 
@@ -786,7 +786,7 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 - [ ] WCMCU-230: 120 Ω terminator jumper **ON**
 - [ ] ESTOP button: GPIO1 → NC button → GND. 10k pull-up to 3.3V.
 - [ ] Brake lever: GPIO2 → NO switch → GND. Internal pull-up.
-- [ ] START button: GPIO38 → NO momentary → GND. Internal pull-up.
+- [ ] START button: GPIO41 → NO momentary → GND. Internal pull-up.
 - [ ] MODE button: GPIO11 → NO momentary → GND. Internal pull-up.
 - [ ] Throttle ADC: GPIO10 → voltage divider midpoint (0–5V grip)
 - [ ] MCP4725 DAC: SDA → GPIO15, SCL → GPIO16, VCC → 5V, GND → GND
@@ -794,7 +794,7 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 - [ ] Gear relays: GPIO33/34/35 → relay module IN1/IN2/IN3
 - [ ] Signal switches: GPIO3 (left turn), GPIO6 (right turn), GPIO7 (headlight) → GND
 - [ ] Lamp relays: GPIO18/19/21/22 → relay coils → 12V
-- [ ] Indicator relays: GPIO48 (AUTO), GPIO36 (MANUAL), GPIO37 (12V power) → relay coils → 12V
+- [ ] Indicator relays: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO40 (12V power) → relay coils → 12V
 - [ ] WDT: GPIO47 → TPS3850 WDI
 
 ### 17.3 MTR STM32
@@ -865,9 +865,9 @@ GPIO 14 : Encoder B — rear right (TBD)              [IN, PCNT, disabled]
 GPIO 15–20: —                                       [unused]
 GPIO 21 : WDT toggle → TPS3850 WDI                  [OUT, 100 Hz]
 GPIO 10–35: —                                       [unused]
-GPIO 36 : SPI SCK → MCP2515                         [OUT, ≤10 MHz]
-GPIO 37 : SPI MOSI → MCP2515 SI                     [OUT]
-GPIO 38 : SPI MISO ← MCP2515 SO                     [IN]
+GPIO 39 : SPI SCK → MCP2515                         [OUT, ≤10 MHz]
+GPIO 40 : SPI MOSI → MCP2515 SI                     [OUT]
+GPIO 41 : SPI MISO ← MCP2515 SO                     [IN]
 GPIO 39 : SPI CS → MCP2515                          [OUT, active-low]
 GPIO 40 : INT ← MCP2515                             [IN, falling edge]
 GPIO 41–48: —                                       [PSRAM / unavailable]
@@ -901,14 +901,14 @@ GPIO 10 : Headlight relay                           [OUT, active-high]
 GPIO 47 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]
 GPIO 24 : —                                         [unused]
 GPIO 48 : AUTO mode bulb relay                      [OUT, active-high]
-GPIO 36 : MANUAL mode bulb relay                    [OUT, active-high]
-GPIO 37 : 12V power relay                           [OUT, active-high]
+GPIO 39 : MANUAL mode bulb relay                    [OUT, active-high]
+GPIO 40 : 12V power relay                           [OUT, active-high]
 GPIO 28–31: —                                       [unused]
-GPIO 38 : START button (NO, active-low)             [IN, internal pull-up]
+GPIO 41 : START button (NO, active-low)             [IN, internal pull-up]
 GPIO 33 : Gear D relay out → relay module IN1       [OUT, active-high]
 GPIO 34 : Gear S relay out → relay module IN2       [OUT, active-high]
 GPIO 35 : Gear R relay out → relay module IN3       [OUT, active-high]
-GPIO 36–48: —                                       [PSRAM / unavailable]
+GPIO 39–48: —                                       [PSRAM / unavailable]
 ```
 
 ### 18.3 MTR STM32
@@ -946,9 +946,9 @@ GPIO 21 : WDT toggle → TPS3850 WDI                   [OUT, 20 Hz]
 
 GPIO 4  : CAN RX — TWAI (bus A, 500 kbit/s)          [IN]
 GPIO 5  : CAN TX — TWAI (bus A, 500 kbit/s)          [OUT]
-GPIO 36 : SPI SCK → MCP2515 (optional, bus B)        [OUT]
-GPIO 37 : SPI MOSI → MCP2515 SI (optional)           [OUT]
-GPIO 38 : SPI MISO ← MCP2515 SO (optional)           [IN]
+GPIO 39 : SPI SCK → MCP2515 (optional, bus B)        [OUT]
+GPIO 40 : SPI MOSI → MCP2515 SI (optional)           [OUT]
+GPIO 41 : SPI MISO ← MCP2515 SO (optional)           [IN]
 GPIO 39 : SPI CS → MCP2515 (optional)                [OUT]
 GPIO 40 : INT ← MCP2515 (optional)                   [IN]
 

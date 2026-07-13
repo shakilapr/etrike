@@ -138,7 +138,7 @@ Optional CAN override: if `g_light_state.position_lights` (new bit in `0x302`) i
 
 ## 7. Mode indicator bulbs — GPIO48/26
 
-| Mode | AUTO bulb (GPIO48) | MANUAL bulb (GPIO36) |
+| Mode | AUTO bulb (GPIO48) | MANUAL bulb (GPIO39) |
 |------|-------------------|---------------------|
 | MANUAL | OFF | ON |
 | AUTO | ON | OFF |
@@ -209,4 +209,4 @@ SYS receives `0x302` on low bus. It cannot tell whether the bits came from Jetso
 | AUTO bulb | OFF |
 | MANUAL bulb | OFF |
 
-All lamps except brake go dark. The 12V accessory relay (GPIO37) is cut on ESTOP, so all relay-driven lights lose power at the source regardless of MCU GPIO state.
+All lamps except brake go dark. The 12V accessory relay (GPIO40) is cut on ESTOP, so all relay-driven lights lose power at the source regardless of MCU GPIO state.

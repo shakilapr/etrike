@@ -152,9 +152,9 @@ CANalyst-II sends as a normal CAN node would, with arbitration and ACK).
   │  ┌──────────────────┐                     ┌──────────────┐   │
   │  │   RT ESP32-S3    │                     │ CANalyst-II  │   │
   │  │  MCP2515 (SPI)   │◄───────────────────►│ Ch1          │   │
-  │  │  SCK=36 MOSI=37  │    inject 0x300,     │ terminator   │   │
-  │  │  MISO=38 CS=39   │    0x301, 0x7FC      │ 120Ω ON      │   │
-  │  │  INT=40          │                     └──────────────┘   │
+  │  │  SCK=15 MOSI=16  │    inject 0x300,     │ terminator   │   │
+  │  │  MISO=17 CS=18   │    0x301, 0x7FC      │ 120Ω ON      │   │
+  │  │  INT=47          │                     └──────────────┘   │
   │  └──────┬───────────┘                                        │
   │         │                                                    │
   └─────────┼────────────────────────────────────────────────────┘
@@ -226,7 +226,7 @@ RT is the CAN gateway — it has **two** CAN modules:
 | Module | Interface | CAN Bus | This Test |
 |--------|----------|---------|-----------|
 | **WCMCU-230** (SN65HVD230) | TWAI controller (built-in) | **Low** | ✅ Active — RT↔SYS traffic |
-| **MCP2515 SPI** (MCP2515 + TJA1050) | SPI (GPIO36–40) | **High** | ✅ Active — injected Host commands |
+| **MCP2515 SPI** (MCP2515 + TJA1050) | SPI (GPIO39–40) | **High** | ✅ Active — injected Host commands |
 
 The ESP32-S3-DevKitC-1 has two 22-pin headers. Hold the board with the USB port
 pointing **down**. The left strip is **J1**, the right strip is **J3**.
@@ -241,9 +241,9 @@ pointing **down**. The left strip is **J1**, the right strip is **J3**.
        │  │ 4  GPIO4  (4)  ● │  │ ● GPIO1  (1)       4  │ │
        │  │ 5  GPIO5  (5)  ● │  │ ● GPIO2  (2)       5  │ │
        │  │ 6  GPIO6  (6)  ● │  │ ...                    │ │
-       │  │ ...              │  │ ● GPIO36 (36)          │ │  ← MCP2515 SCK
-       │  │ ...              │  │ ● GPIO37 (37)          │ │  ← MCP2515 MOSI
-       │  │ ...              │  │ ● GPIO38 (38)          │ │  ← MCP2515 MISO
+       │  │ ...              │  │ ● GPIO39 (36)          │ │  ← MCP2515 SCK
+       │  │ ...              │  │ ● GPIO40 (37)          │ │  ← MCP2515 MOSI
+       │  │ ...              │  │ ● GPIO41 (38)          │ │  ← MCP2515 MISO
        │  │ ...              │  │ ● GPIO39 (39)          │ │  ← MCP2515 CS
        │  │ ...              │  │ ● GPIO40 (40)          │ │  ← MCP2515 INT
        │  │ 21  5V         ● │  │ ● GND              21  │ │
@@ -293,9 +293,9 @@ and watch RT forward `0x204`/`0x205`/`0x169` to the low bus.
 
 | Connection | GPIO | Silkscreen | Wire | MCP2515 Pin |
 |-----------|------|-----------|------|------------|
-| SPI clock | **GPIO36** | **36** | Dupont F-F | **SCK** |
-| SPI MOSI | **GPIO37** | **37** | Dupont F-F | **MOSI** (SI) |
-| SPI MISO | **GPIO38** | **38** | Dupont F-F | **MISO** (SO) |
+| SPI clock | **GPIO39** | **36** | Dupont F-F | **SCK** |
+| SPI MOSI | **GPIO40** | **37** | Dupont F-F | **MOSI** (SI) |
+| SPI MISO | **GPIO41** | **38** | Dupont F-F | **MISO** (SO) |
 | SPI chip select | **GPIO39** | **39** | Dupont F-F | **CS** |
 | Interrupt | **GPIO40** | **40** | Dupont F-F | **INT** |
 | Power | — | **5V** (J1-21) | Dupont F-F, red | **VCC** |
@@ -419,9 +419,9 @@ Before plugging in USB:
 - [ ] 120Ω termination jumper **ON**
 
 **RT — MCP2515 (high bus):**
-- [ ] **GPIO36** (silkscreen "36") → MCP2515 **SCK** (Dupont)
-- [ ] **GPIO37** (silkscreen "37") → MCP2515 **MOSI** (Dupont)
-- [ ] **GPIO38** (silkscreen "38") → MCP2515 **MISO** (Dupont)
+- [ ] **GPIO39** (silkscreen "36") → MCP2515 **SCK** (Dupont)
+- [ ] **GPIO40** (silkscreen "37") → MCP2515 **MOSI** (Dupont)
+- [ ] **GPIO41** (silkscreen "38") → MCP2515 **MISO** (Dupont)
 - [ ] **GPIO39** (silkscreen "39") → MCP2515 **CS** (Dupont)
 - [ ] **GPIO40** (silkscreen "40") → MCP2515 **INT** (Dupont)
 - [ ] MCP2515 **VCC** → J1-21 **"5V"** (TJA1050 transceiver needs 5V)

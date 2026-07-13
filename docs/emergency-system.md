@@ -17,7 +17,7 @@ ESTOP is the system's **absorbing safety state**. When entered, all actuators re
 | **Brake (SEB)** | Stroke = max (~27 mm) | Full hydraulic brake pressure, 50 Hz CAN 0x7B9 |
 | **Steering (EPS-C)** | Obstacle trigger: hold angle, silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active 0x169. Fallback to silent-stop if following error persists >1s (mechanical jam). | Two-tier response — see §2.5 |
 | **DC-DC converter** | CAN 0x012 enable = **1** (maintains 12V for MCUs, CAN transceivers, and brake light — MCUs need power to run safety tasks) |
-| **12V accessory relay** | GPIO37 OFF (cuts headlight, turn signals, mode bulbs — non-safety loads) |
+| **12V accessory relay** | GPIO40 OFF (cuts headlight, turn signals, mode bulbs — non-safety loads) |
 | **Signal lights** | Brake light **ON** (powered from always-on DC-DC rail, not through accessory relay), all others OFF |
 | **Mode indicators** | Both AUTO and MANUAL bulbs OFF | Dark dashboard = ESTOP |
 | **Throttle pass-through** | Ignored | ADC reads ignored, DAC forced to 0 |
@@ -25,9 +25,9 @@ ESTOP is the system's **absorbing safety state**. When entered, all actuators re
 
 ### 1.2 ESTOP exit — START button with deferred steering ramp completion
 
-ESTOP can only be exited by pressing the **START button** (green, GPIO38 on SYS) or via **MODE button long-press** (GPIO11, 3-second hold). Both exit to **MANUAL mode** — the rider is always in direct control after an ESTOP, never in AUTO.
+ESTOP can only be exited by pressing the **START button** (green, GPIO41 on SYS) or via **MODE button long-press** (GPIO11, 3-second hold). Both exit to **MANUAL mode** — the rider is always in direct control after an ESTOP, never in AUTO.
 
-- **START button (GPIO38):** Short press exits ESTOP → MANUAL immediately (subject to steering ramp completion, see below).
+- **START button (GPIO41):** Short press exits ESTOP → MANUAL immediately (subject to steering ramp completion, see below).
 - **MODE button (GPIO11):** Long-press (3 seconds) exits ESTOP → MANUAL. This is the secondary exit path — two independent GPIOs on separate physical buttons ensure no single button failure locks the rider in ESTOP.
 - MODE button short-press is ignored in ESTOP (prevents accidental exit).
 - CAN commands cannot exit ESTOP.
@@ -410,7 +410,7 @@ Level 1: Function Controller — MTR STM32
 1. **Stay seated and hold the handlebars.** The steering will either center itself or hold position.
 2. **The brake will engage automatically** — the vehicle will decelerate.
 3. **Do NOT press the MODE button** — it is ignored in ESTOP.
-4. **To recover:** Press the **green START button** (GPIO38). The vehicle will enter MANUAL mode.
+4. **To recover:** Press the **green START button** (GPIO41). The vehicle will enter MANUAL mode.
 5. **Check surroundings** before releasing the brake lever and riding.
 6. **If START button doesn't work:** Power-cycle the vehicle (key switch). This always starts in MANUAL mode.
 
