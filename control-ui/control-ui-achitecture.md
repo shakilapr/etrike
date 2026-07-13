@@ -2,21 +2,27 @@
 
 **Status:** Product and system design concept (no implementation code)
 
-**Purpose:** Define how the E-Trike CAN control application should be structured, what each screen must communicate, and how live CAN data should move from the vehicle to the operator.
+**Detailed behavior:** See `control-ui-logic.md` for state machines, decisions, timers, failure handling, test execution, and evidence rules.
+
+**Analyzer comparison:** See `can-analyzer-research.md` for the local `python-can`, SavvyCAN, CANgaroo, and CANviz source audit and the connection-loss conclusions.
+
+**Purpose:** Define how the E-Trike CAN bench controller should observe, emulate, stimulate, and verify RT, SYS, MTR, and related hardware while fulfilling the complete requirements in `scope.md`.
 
 **Protocol source of truth:** `shared/can/can_high.yaml` and `shared/can/can_low.yaml`, consumed through generated runtime catalogs, codecs, validators, documentation, and firmware definitions. DBC is an optional export for third-party tools, not an application dependency.
 
 ## 1. Product role
 
-The Control UI is a focused operator and bench-engineering application for the E-Trike. It combines five jobs in one coherent interface:
+The Control UI is a bench-engineering application for the E-Trike. It combines five jobs in one coherent interface:
 
 1. Observe both vehicle CAN buses in real time.
 2. Understand the vehicle state without reading raw frames.
-3. Command HMI state, teleoperate the vehicle, or inject individual messages when explicitly requested.
+3. Generate HMI, keyboard/gamepad, kinematics, direct-actuator, ESTOP, and individual-message stimuli required to exercise ECU code paths.
 4. Replace missing ECUs with controlled synthetic peers during bench testing.
 5. Diagnose, verify, and record CAN behavior.
 
-The application is not a replacement for the safety logic in SYS or RT. Physical switches, ECU limits, watchdogs, and hardwired safety systems remain authoritative. The UI is an operator tool and CAN participant, not the final safety controller.
+All features exist for testing. The application is not an in-vehicle controller, driver interface, autonomous-driving component, or production safety system, and it is not used to drive the E-Trike. “Teleoperation,” “control,” “mode,” “power,” “brake,” and “ESTOP” in this document describe CAN stimuli used on a controlled bench or stationary integration setup to verify that RT, SYS, MTR, and connected units behave as implemented.
+
+This boundary does not remove any requirement from `scope.md`. Full Vehicle, Bench Test, Pure Software, HMI, keyboard/gamepad input, kinematics commands, direct actuator commands, synthetic peers, virtual encoders, ESTOP injection, logging, and sequential message verification all remain required as test capabilities.
 
 ## 2. Design priorities
 
@@ -35,8 +41,8 @@ The selected profile is permanently visible in the application header.
 
 | Profile | Physical buses | Synthetic traffic | Operator transmission | Primary use |
 |---|---|---|---|---|
-| Full Vehicle | High and Low | Off by default | Explicit commands only | Monitor and control an assembled vehicle |
-| Bench Test | Selected bus/ECU | Missing peers only | Enabled for the selected target | Test one or a few physical ECUs |
+| Full Vehicle | High and Low | Off by default | Explicit test stimuli only | Stationary integration test with the complete network/harness |
+| Bench Test | Selected bus/ECU | Missing peers only | Enabled for the selected target | Test one or a few physical ECUs in isolation |
 | Pure Software | Virtual High and Low | Full virtual vehicle | Virtual bus only | UI development and hardware-free testing |
 
 Changing profile is a controlled transition. Periodic transmissions stop, active controls return to neutral, and the destination is shown for confirmation before the new profile becomes active. Loss of the adapter never silently changes a physical session into a virtual one; the UI reports the loss and offers an explicit move to Pure Software.
@@ -60,7 +66,7 @@ flowchart LR
     WS --> UI[React Control UI]
     UI --> P[Command policy]
     E[Synthetic peer scheduler] --> P
-    P --> A[Arm, lease, watchdog and source ownership]
+    P --> A[Bench TX, stimulus lease, deadline and source ownership]
     A --> ENC[YAML-generated encoder]
     ENC --> TX[Physical or virtual TX gate]
     TX --> HB
@@ -78,35 +84,35 @@ The hardware bridge, protocol interpretation, periodic transmission, and present
 - **Latest-value state:** Keeps the newest value and timing health for every bus/message/signal combination.
 - **Bounded history:** Keeps a recent, limited frame window for the monitor. Recording is a separate opt-in durable stream.
 - **Synthetic peer scheduler:** Owns periodic bench traffic and rolling counters. It is separate from the transparent transport bridge.
-- **Command policy and TX gate:** Validates destination, operating state, arm, ownership, freshness, source conflicts, and signal values before encoding and transmission.
-- **Frontend:** Visualizes state and expresses operator intent. It does not independently construct unsafe raw frames.
+- **Command policy and TX gate:** Validates destination, test session, Bench TX state, stimulus ownership, deadline, source conflicts, and signal values before encoding and transmission.
+- **Frontend:** Visualizes state and expresses engineer test intent. It does not independently construct protocol frames.
 
 This separation resolves the apparent conflict between a stateless CAN bridge and stateful emulation: the bridge remains a pipe, while the scheduler and protocol services own the state required for periodic peers, counters, and checksums.
 
-## 4.1 Operational safety state
+## 4.1 Test-session and transmission state
 
-Operating profile, physical transmission authority, and control ownership are separate states:
+Operating profile, test transmission state, and stimulus ownership are separate so results remain reproducible:
 
 - **Profile:** Full Vehicle, Bench Test, or Pure Software.
-- **Physical arm:** Disarmed, Arming, or Armed. Connecting hardware never arms transmission.
-- **Control lease:** Exclusive, expiring ownership of a resource such as steering, motor, brake, HMI, or a periodic CAN ID.
+- **Bench TX:** Disabled or Enabled for an explicitly started test session. Connecting hardware never starts transmission.
+- **Stimulus lease:** Exclusive, expiring ownership of a resource such as steering, motor, brake, HMI, or a periodic CAN ID.
 - **Source ownership:** One permitted producer for each `bus + CAN ID` during a session.
 
-Physical transmission is possible only when the selected profile permits it, the adapter/channel is healthy, the system is Armed, the caller owns the required lease, the command is fresh, the source owns the target ID, and all YAML-generated protocol validation passes.
+Physical transmission is possible only when the selected profile permits it, the adapter/channel is healthy, Bench TX is Enabled, the test source owns the required lease and CAN ID, the stimulus is current, and YAML-generated protocol validation passes. Explicit negative tests may override selected validation rules only when the test definition names the intended violation.
 
-Arming is a short-lived backend lease. It expires and synchronously disarms on adapter loss, bus-off, backend restart, profile change, hardware-interlock loss, or operator heartbeat expiry. Reconnection always returns Disarmed. Steering, motor, brake, and periodic transmitters use backend-assigned session identities so two tabs or automation clients cannot silently overwrite one another.
+Bench TX and stimulus leases belong to one test session and adapter epoch. Adapter loss, backend restart, profile change, session stop, or browser control-heartbeat expiry disables active stimulus jobs. Reconnection returns with Bench TX Disabled. These rules protect test integrity and prevent stale traffic; they are not a vehicle safety authorization system.
 
-The ESTOP command bypasses ordinary actuator ownership, but not the physical limits of the communication path. The UI labels it **CAN ESTOP** and never presents it as a replacement for the hardwired emergency stop.
+ESTOP injection is a named test action that bypasses ordinary stimulus ownership so its RT/SYS behavior can be verified. It is labeled **Inject ESTOP Frame** and is not presented as the physical emergency stop for the bench.
 
-## 4.2 Backend-owned command watchdog
+## 4.2 Backend-owned stimulus scheduler
 
-The browser expresses control intent; it does not own command timing. A dedicated backend worker owns periodic transmission, rolling counters, checksum calculation, deadlines, and jitter measurements.
+The browser expresses test intent; it does not own CAN timing. A dedicated backend worker owns periodic transmission, rolling counters, checksum calculation, deadlines, and jitter measurements.
 
-Interactive control commands have a short validity deadline and renew an exclusive backend lease. If focus, gamepad, WebSocket, or lease renewal is lost, the backend applies the message-specific YAML-defined loss behavior: stop transmitting, transmit a bounded neutral sequence, or request braking. There is no universal guessed “neutral” behavior. RT and SYS remain responsible for hard real-time deadlines and vehicle safety; the desktop stack is explicitly soft real-time.
+Interactive keyboard/gamepad tests have a short validity deadline and renew an exclusive stimulus lease. If focus, controller, WebSocket, or lease renewal is lost, the backend stops that stimulus or applies the test definition’s declared end sequence. This avoids an uncontrolled stale test input and makes timeout behavior measurable. The desktop stack is soft real-time; RT and SYS behavior under missed or late stimuli is part of the result being tested.
 
 ## 4.3 Local control security
 
-The control API is not an unauthenticated LAN endpoint. By default it binds to loopback only. Desktop packaging uses a per-session capability token delivered directly to the local UI, validates WebSocket origin, rejects cross-site requests, and keeps arm/lease ownership server-side. Any future remote access requires a separately reviewed authenticated and encrypted design; changing the bind address alone is not sufficient.
+The control API binds to loopback by default. Desktop packaging uses a per-session capability token delivered directly to the local UI, validates WebSocket origin, rejects cross-site requests, and keeps test-session/TX ownership server-side. Remote multi-user operation is not required for this bench tool.
 
 ## 4.4 CANalyst-II communication architecture
 
@@ -190,7 +196,7 @@ The adapter distinguishes these results:
 - submitted to USB library;
 - library reported failure;
 - expired before submission;
-- canceled by disarm/profile change;
+- canceled by Bench TX disable, test stop, or profile change;
 - optionally observed through loopback/feedback if the hardware exposes reliable confirmation.
 
 A normal CANalyst-II `send()` return or lack of exception is not proof that another ECU received the frame. UI acknowledgments use the precise state `submitted`, not `delivered`.
@@ -217,7 +223,7 @@ Silence is not adapter disconnection. Channel traffic freshness, expected messag
 
 ### 4.4.6 Failure and reconnection sequence
 
-On adapter exception, device removal, worker death, or supported bus-off evidence, the backend first disarms physical TX, revokes physical control leases, cancels periodic physical jobs, and marks affected values stale. It then closes the transport and begins bounded exponential reconnect attempts with jitter.
+On adapter exception, device removal, worker death, or supported bus-off evidence, the backend first disables Bench TX, ends stimulus leases, cancels periodic physical jobs, and marks affected values stale. It then closes the transport and begins bounded exponential reconnect attempts with jitter.
 
 Reconnect never restores arm, leases, periodic TX, or prior command state. After reopening, the adapter clears/drains stale hardware buffers as a best effort, starts in receive-only behavior, creates a new adapter epoch, resets timestamp mapping, and observes a stability window. Only then does it become `Recovered`; the operator must explicitly arm and restart transmission.
 
@@ -249,7 +255,7 @@ Within that process:
 - the ASGI event loop owns HTTP/WebSocket work and reads immutable snapshots/events from backend services;
 - per-client sender tasks isolate slow WebSocket clients.
 
-Mutable operational state has one owner service and is changed through serialized commands. Threads never directly mutate React-facing dictionaries. Shutdown order is: disarm → revoke leases → stop scheduler → stop RX notifier → drain/close recording → close CAN bus → close clients.
+Mutable operational state has one owner service and is changed through serialized commands. Threads never directly mutate React-facing dictionaries. Shutdown order is: disable Bench TX → end stimulus leases → stop scheduler → stop RX notifier → drain/close recording → close CAN bus → close clients.
 
 This is a local single-machine tool, so Redis, Kafka, and a distributed event bus add failure modes without benefit. If hardware isolation later requires a second process, only the adapter boundary moves; one supervisor remains the authority for arm, leases, and routing.
 
@@ -330,7 +336,7 @@ Recording has a stricter contract than visual presentation. If lossless recordin
 
 ## 5.4 Backend-to-UI communication protocol
 
-REST handles configuration, snapshots, recordings, dictionary queries, arm/lease operations, and deliberate commands. WebSocket carries subscribed live state and events. Command success is returned by REST/WebSocket correlation acknowledgment and is never inferred from seeing a similar CAN frame later.
+REST handles configuration, snapshots, recordings, dictionary queries, Bench TX/stimulus-lease operations, and deliberate commands. WebSocket carries subscribed live state and events. Command success is returned by REST/WebSocket correlation acknowledgment and is never inferred from seeing a similar CAN frame later.
 
 WebSocket startup follows a defined sequence:
 
@@ -344,7 +350,7 @@ WebSocket startup follows a defined sequence:
 
 Without an atomic snapshot boundary, frames arriving during initial page load can be lost or applied out of order. If a gap occurs, the UI marks affected subscriptions degraded and requests a fresh snapshot; it does not pretend that later deltas repaired missing state.
 
-The always-on event subscription carries stream heartbeat, adapter/channel transition, ECU liveness transition, corruption transition, arm/lease change, source conflict, recording failure, and CAN ESTOP disposition. Latest-state and raw-monitor subscriptions can be added or removed without reconnecting the socket.
+The always-on event subscription carries stream heartbeat, adapter/channel transition, ECU liveness transition, corruption transition, Bench TX/lease change, source conflict, recording failure, and ESTOP-stimulus disposition. Latest-state and raw-monitor subscriptions can be added or removed without reconnecting the socket.
 
 Each client has independent bounded queues. A slow diagnostic browser cannot delay adapter RX, command scheduling, recording, or other clients. The server first coalesces latest state, then drops old raw-monitor batches with explicit gap counts, and finally disconnects persistently slow clients with a reason.
 
@@ -352,7 +358,7 @@ Use batched JSON for control, status, events, snapshots, and latest-state update
 
 ## 5.5 Data handling and state ownership
 
-The backend is authoritative for adapter state, timestamps, frame validation, latest-good values, liveness, integrity counters, arm state, leases, source ownership, periodic jobs, and recording integrity. The frontend may cache and format these values but cannot create a competing operational state machine.
+The backend is authoritative for adapter state, timestamps, frame validation, latest-good values, liveness, integrity counters, Bench TX state, stimulus leases, source ownership, periodic jobs, and recording integrity. The frontend may cache and format these values but cannot create a competing operational state machine.
 
 Data is separated into four stores:
 
@@ -367,7 +373,7 @@ On protocol metadata change, raw recordings remain valid evidence and can be re-
 
 Configuration has typed schema, defaults, validation, and provenance. Safety-relevant runtime configuration—channel mapping, bitrate, physical profile, interlock requirement, rate bounds, command-loss behavior, and adapter selection—is shown in the session review and stored with recordings.
 
-Environment variables may provide development defaults, but the application does not silently accept contradictory channel mappings or arbitrary unsafe rates. YAML protocol values remain authoritative unless the YAML explicitly marks a setting bench-configurable. Configuration changes that affect transport or transmission require a disarmed controlled restart and create an audit event.
+Environment variables may provide development defaults, but the application does not silently accept contradictory channel mappings or invalid rates. YAML protocol values remain authoritative unless the YAML explicitly marks a setting bench-configurable. Configuration changes that affect transport or transmission require Bench TX Disabled, a controlled restart, and an audit event.
 
 ## 6. Application shell and navigation
 
@@ -632,7 +638,7 @@ The UI acts as the HMI node and broadcasts:
 
 The panel shows request, transmission status, last transmitted counter, and independently observed SYS/RT state. A request is never displayed as confirmed merely because the frame was sent.
 
-ESTOP is separate from routine HMI controls and transmits the DLC=0 `0x001 SAFETY_ESTOP` event. The **CAN ESTOP** action remains immediately reachable from every workspace when its transmission path is healthy. If the adapter, backend, or bus is unavailable, it visibly reports that CAN ESTOP is unavailable; the hardwired physical ESTOP remains the authoritative emergency control. Clearing a latched stop follows the vehicle’s defined recovery process and cannot be implied by a normal mode request.
+ESTOP testing is separate from routine HMI controls and transmits the DLC=0 `0x001 SAFETY_ESTOP` event. **Inject ESTOP Frame** remains reachable from every test workspace when Bench TX is enabled. The UI records submission, RT/SYS observations, propagation, latch, and recovery behavior. It is a protocol test action, not the bench’s physical emergency control.
 
 ### 11.2 Kinematics control
 
@@ -691,7 +697,7 @@ Show each scheduled message as a row:
 | Yes | Host | `0x300 HOST_DRIVE_CMD` | High | 100 ms | neutral | On time |
 | Yes | Host | `0x7FC HOST_HEARTBEAT` | High | 500 ms | healthy/default | On time |
 
-The system prevents duplicate ownership with an initial listen-before-speak window and a `bus + CAN ID` source-ownership table. Synthetic output starts only after required physical IDs remain absent for their YAML-defined detection window. If conflicting physical traffic appears, synthetic transmission for that ID stops immediately, the control session disarms where appropriate, and a source-conflict event requires operator review. RT heartbeat instances on High and Low remain distinct and use independent counters.
+The system prevents duplicate ownership with an initial listen-before-speak window and a `bus + CAN ID` source-ownership table. Synthetic output starts only after required physical IDs remain absent for their YAML-defined detection window. If conflicting physical traffic appears, synthetic transmission for that ID stops immediately, the affected test becomes Inconclusive or Failed according to its rule, and a source-conflict event requires engineer review. RT heartbeat instances on High and Low remain distinct and use independent counters.
 
 ### 12.3 Virtual encoders
 
@@ -816,19 +822,19 @@ Corruption must be visible without overwhelming normal operation:
 
 Warnings are severity-ranked: informational timing variation, degraded/missed cycles, corrupt frame, and safety-relevant plausibility fault. The source YAML should carry severity where the protocol knows it; UI styling must not infer safety criticality from CAN ID alone.
 
-## 16. Safety and interaction boundaries
+## 16. Test-integrity and interaction boundaries
 
-- Physical transmission is unmistakably labeled and requires an unexpired backend arm lease; connecting the adapter alone never arms it.
+- Physical transmission is unmistakably labeled and requires Bench TX Enabled for the current test session; connecting the adapter alone never transmits.
 - Simulation and physical traffic use different visual source badges.
 - A control action always shows its target bus and message.
 - HMI mode/power requests transmit only at their defined 1 Hz rate.
 - Periodic jobs stop on profile change, disconnect, application shutdown, or explicit Stop.
 - Motion commands have backend-enforced freshness timeouts and YAML-defined loss behavior.
 - Direct actuator and kinematics control cannot simultaneously own the same control path.
-- CAN ESTOP bypasses ordinary command ownership when the CAN transmission path is available; the hardwired ESTOP remains independent and authoritative.
+- ESTOP test injection bypasses ordinary stimulus ownership so the event can be tested from any active test workspace.
 - Every physical `bus + CAN ID` has at most one active backend source owner.
 - Simulation and replay can never reach physical TX unless a separately reviewed hardware-in-the-loop policy explicitly permits a bounded case.
-- The UI enforces YAML limits but clearly states that firmware and hardware safety remain authoritative.
+- The UI enforces YAML limits for ordinary positive tests; explicit negative tests can name and record an intentional violation.
 - Failed transmission never falls back silently to a different bus or virtual destination.
 
 ## 17. Visual language
@@ -928,7 +934,7 @@ Reuse is selective and test-driven:
 | `backend/canalystii_bridge.py` | Characterization vectors for DLC, IDs, channels, RX/TX, buffer cleanup, and observed failures | Replace runtime path with `python-can` CANalyst-II; retain tests and measured behavior; no JSON stdout |
 | `backend/src/canalyst/bridge.ts` | Reconnect concepts and command correlation | Replace Node child-process wrapper with Python supervisor/adapter service |
 | `backend/src/bridge/manager.ts` | Single active transport concept | Explicit profile transitions; no silent physical-to-virtual or CANalyst-to-serial fallback |
-| Bridge/unit tests | Fake process/device cases and reconnect scenarios | Add dual-channel order, overflow, epoch, disarm-before-reconnect, scheduler jitter, and disconnect-under-TX tests |
+| Bridge/unit tests | Fake process/device cases and reconnect scenarios | Add dual-channel order, overflow, epoch, disable-TX-before-reconnect, scheduler jitter, and disconnect-under-TX tests |
 
 The existing implementation should first be preserved behind characterization tests. Migration occurs only after tests capture current device-open, RX conversion, DLC=0, extended-ID, dual-channel, and shutdown behavior and prove equivalent or better behavior through `python-can`. Hardware-in-the-loop tests remain separately marked and never run against an armed vehicle by default.
 
@@ -952,8 +958,8 @@ Delivery is staged so physical control is added only after the observation and s
 1. **Protocol foundation:** YAML schema/compiler, cross-language golden vectors, semantic hashes, checksum/counter rules, and drift checks.
 2. **Read-only transport:** dual-bus CANalyst-II/virtual transport, canonical timestamps, queue metrics, recording, and connection-loss evidence.
 3. **Read-only UI:** Overview, topology, latest CAN, chronological monitor, dictionary, freshness, and corruption presentation.
-4. **Virtual control:** command policy, arm/lease/watchdog model, injection, HMI, and synthetic peers restricted to virtual buses.
-5. **Physical HMI and bench:** hardware interlock, source ownership, CAN ESTOP labeling, HMI requests, and bounded isolated-ECU workflows.
+4. **Virtual control tests:** command policy, Bench TX/stimulus lease model, injection, HMI, keyboard/gamepad, and synthetic peers restricted to virtual buses.
+5. **Physical HMI and bench:** Bench TX session control, source ownership, ESTOP test labeling, HMI requests, and bounded isolated-ECU workflows.
 6. **Physical actuator control:** kinematics and direct-actuator modes only after latency, jitter, watchdog, conflict, disconnect, and corruption tests pass.
 7. **Later capabilities:** replay, configurable verification suites, richer charts, and Tauri packaging.
 
@@ -971,12 +977,12 @@ The architecture is successful when an engineer can answer these questions witho
 - Where did a frame come from, when did it arrive, and is it valid?
 - How is a signal packed into the CAN payload?
 - Which frames will the tool transmit before a bench session starts?
-- Is physical TX armed, who owns each control lease and CAN ID, and when do those permissions expire?
+- Is Bench TX enabled, which test source owns each stimulus lease and CAN ID, and when do those jobs expire?
 - Are counters, checksums, enable bits, and safety limits being handled?
 - Did an injection actually transmit, and what response followed?
 - Is the diagnostic or full-bus recording complete and trustworthy?
 
-If these answers are immediately visible, the Control UI provides both a safe operator overview and the depth required for CAN engineering.
+If these answers are immediately visible, the Control UI provides a trustworthy bench-testing overview and the depth required for CAN engineering.
 
 ## 21. Research basis and decisions
 
@@ -990,3 +996,225 @@ The transport decisions above were checked against primary project documentation
 - [libusb API documentation](https://libusb.sourceforge.io/api-1.0/): asynchronous USB transfers are available but add a lower-level event and recovery implementation; they remain a measured fallback, not the initial path.
 
 Dependency versions used for hardware validation are pinned. Upgrades rerun protocol golden vectors, transport characterization, disconnect/reconnect tests, and the full-load dual-channel soak benchmark before release.
+
+## 22. Scope-fulfillment matrix for bench testing
+
+This matrix is authoritative for interpreting `scope.md`: every capability remains, but its purpose is hardware/code verification rather than vehicle operation.
+
+| Scope capability | Bench implementation | What it verifies |
+|---|---|---|
+| Full Vehicle mode | Connect both CANalyst-II channels to the complete stationary network; monitor by default and permit explicit test injections | End-to-end RT/SYS/MTR routing, coexistence, timing, heartbeats, and integration behavior |
+| Bench Test mode | Connect selected physical ECUs and synthesize only their absent peers | Isolated ECU startup, watchdog, state-machine, routing, command, and fault behavior |
+| Pure Software mode | Use two named `python-can` virtual buses with the same router, codec, scheduler, and UI | UI/test development, protocol regression, and dry-run test definitions without hardware |
+| Dual-channel CANalyst-II | Channel 0 High and Channel 1 Low at 500 kbit/s, captured simultaneously | Gateway forwarding, per-bus RT heartbeat, bus-specific IDs, and cross-bus timing |
+| Real-time decoding | YAML-generated Python codec produces engineering values immediately after RX | Firmware wire representation and live physical outputs |
+| Motorola + Intel layouts | Generated codec and golden vectors cover both orders and canonical bit mapping | Custom ECU messages plus SES/SEB external actuator protocols |
+| Checksums and rolling counters | Scheduler regenerates automatic fields for every transmitted instance; validator checks received instances | RT/SYS/MTR and external-unit integrity handling, duplicate/gap/frozen behavior |
+| Mandatory enable flags | Generated test templates lock required bits for positive tests; negative tests can deliberately violate them | Firmware acceptance/rejection behavior and diagnostic reporting |
+| Overlapping/multiplexed bits | YAML compiler generates explicit active conditions and golden payload vectors | Correct encoding/decoding of shared Intel byte/nibble layouts |
+| DLC=0 events | Raw envelope and codec permit empty data with DLC 0 | `0x001 SAFETY_ESTOP` reception, propagation, latch, and recovery code paths |
+| YAML constants/limits | Inputs show generated bounds; positive tests remain within them; named boundary/negative cases are explicit | Limit enforcement at UI encoding and ECU behavior at/beyond boundaries |
+| Hardware/bus status | Separate USB, channel-open, traffic, protocol, ECU, and message freshness indicators | Cable/device loss, silent channel, missing ECU, frozen heartbeat, and UI-stream failure |
+| Topology map | Physical and synthetic nodes use distinct provenance and YAML-derived expected routes | Which bench components are actually present and which are emulated |
+| Live dashboard | Latest valid command/status/feedback values with timestamp, age, source, and validity | Whether RT/SYS/MTR reacts correctly in real time |
+| CAN dictionary | Searchable YAML-generated message cards, byte grid, signal table, comments, and optional live overlay | Exact protocol meaning without depending on DBC or source-code reading |
+| Generic injection | Select message and signals, preview bytes, send once or for bounded/continuous test duration | Individual message handling and rapid exploratory diagnosis |
+| Keyboard/gamepad | Browser captures test intent; backend shapes and schedules `0x300` or selected test commands with a visible Stop | Continuous RT response, command timeout, ramps, reversals, and limits on the bench |
+| Hard Brake hotkey | Sends the defined brake test stimulus and correlates expected SYS/RT/SEB response | Brake arbitration and urgent-command code paths |
+| ESTOP hotkey/action | Injects `0x001`, records exact submission, propagation, ECU state, and recovery sequence | Distributed ESTOP code paths; it is not the application’s own safety mechanism |
+| Kinematics mode | Generate High-bus `0x300 HOST_DRIVE_CMD`; observe RT Low-bus actuator requests | RT inverse kinematics, limits, routing, counter/checksum generation, and timing |
+| Direct actuator mode | Generate selected Low-bus motor/steer/brake commands in isolated tests | Unit protocol and feedback independent of RT kinematics |
+| Target individual ECU | Test manifest selects physical targets and synthetic missing peers | One ECU’s behavior without unrelated network traffic |
+| Sequential verification | Execute one defined stimulus/assertion step at a time with timeout and evidence | Every YAML message’s implemented behavior and regression status |
+| Heartbeat emulation | Scheduler emits selected node heartbeat at the YAML-defined period and counter behavior | Watchdog satisfaction, heartbeat-loss transitions, and recovery |
+| Synthetic peer status | Named templates emit required SES, SEB, MTR, SYS, RT, and Host frames with defined startup values | RT/SYS/MTR boot and operation when real peer hardware is absent |
+| HMI mode/power | Emit `0x111`/`0x112` at 1 Hz and compare requested versus observed state | SYS mode/power state machine and RT-observed state |
+| Virtual encoder | Emit controlled `0x206 MTR_MOTOR_FBK` trajectories | RT/SYS speed plausibility and EGAS-related code with no rotating hardware |
+| Diagnostics | Classify diagnostic IDs/signals, preserve fault transitions, and link them to stimuli | Whether tested code reports the expected fault and diagnostic evidence |
+| Persistent logging | Record immutable raw RX/TX observations and transport events in the backend; export decoded views | Reproducible post-test analysis without tying evidence to UI refresh rate |
+| Stateless bridge separation | CANalyst transport only moves frames; router/codec/scheduler/test runner are separate | Simple hardware I/O plus stateful testing without routing spaghetti |
+
+### 22.1 Test case model
+
+Every repeatable test declares:
+
+- test ID, purpose, and target ECU/code path;
+- required hardware, bus wiring, and protocol semantic hash;
+- physical nodes present and synthetic roles enabled;
+- preconditions and startup grace period;
+- exact TX manifest with bus, ID, values, period/count, and source role;
+- automatic counters/checksums/enable fields;
+- expected observations with timing tolerances;
+- validity, sequence, checksum, and plausibility assertions;
+- stop conditions and cleanup jobs;
+- Pass, Fail, or Inconclusive rules;
+- captured raw evidence and software/firmware versions.
+
+Exploratory controls and keyboard/gamepad inputs use the same observation and recording pipeline, but only defined test cases produce a formal Pass/Fail result.
+
+### 22.2 Meaning of “safety is not needed”
+
+The application does not need production driving authorization, road-safe fail-operational behavior, driver authentication, redundant emergency control, or responsibility for keeping an occupied vehicle safe. It still needs deterministic test handling: stale jobs, duplicate CAN producers, wrong-bus frames, hidden drops, and false acknowledgments would invalidate RT/SYS/MTR results. Bench TX enable, stimulus ownership, deadlines, provenance, and Stop All exist for repeatability and equipment protection, not as a vehicle safety case.
+
+## 23. Analyzer-derived improvements
+
+The reviewed analyzers are strongest when they help an engineer move from “traffic exists” to “this exact behavior changed.” The following capabilities close that workflow gap without turning the product into a general-purpose DBC editor.
+
+### 23.1 Triggered evidence capture
+
+Maintain a bounded backend pre-trigger ring containing raw frames and transport events. A trigger may be a message/signal predicate, checksum or counter failure, freshness transition, adapter event, test-step boundary, or manual bookmark. When it fires, freeze the configured pre-trigger interval and continue for a configured post-trigger interval. Trigger evaluation occurs on decoded backend events, never on visually coalesced browser data.
+
+The capture identifies its trigger, protocol hash, adapter epoch, capture gaps, and evidence-quality result. This makes intermittent RT/SYS/MTR failures diagnosable without recording every bench session indefinitely.
+
+### 23.2 Baseline and session comparison
+
+Allow a completed recording or approved test run to become a named baseline. Compare runs using semantic identities (`bus + message + signal`) rather than table row position. Report new/missing messages, period and jitter changes, value/range changes, diagnostic transitions, response-latency changes, integrity failures, and protocol-hash differences.
+
+A comparison does not claim a firmware regression when either side has incomplete evidence, incompatible protocol semantics, different required topology, or different test inputs. Those cases are `Not comparable` or `Inconclusive`.
+
+### 23.3 Deterministic offline replay
+
+Replay feeds recorded envelopes into the same router, decoder, validator, freshness engine, dashboard projection, and assertion engine using a virtual clock. It supports pause, step, speed control, and seek from indexed checkpoints. Replay is observation-only by default and cannot enter the physical TX path. Its purpose is reproducing UI/verdict behavior and investigating evidence, not pretending that replayed traffic is live hardware.
+
+### 23.4 Server-side filter and trigger language
+
+Use one small, versioned predicate model for monitor filters, triggers, and test assertions. It addresses YAML semantic names and typed engineering values, with explicit operators, units, validity, bus, direction, provenance, and time windows. The backend validates and compiles predicates; the frontend only builds them. Arbitrary Python/JavaScript expressions are not accepted.
+
+The UI shows the evaluated predicate, match count, last match, and compile errors. Saved predicates include the protocol semantic hash so renamed or changed signals fail visibly instead of silently matching the wrong data.
+
+### 23.5 Evidence-quality gate
+
+Every formal test and capture receives an evidence-quality state independent of the ECU verdict:
+
+- `Complete`: no relevant capture, timestamp, adapter-epoch, storage, or assertion-evaluation gap;
+- `Degraded`: presentation loss only, or an explicitly tolerated limitation that does not affect assertions;
+- `Incomplete`: relevant raw loss, recording failure, clock discontinuity, adapter change, or unknown interval;
+- `Not comparable`: baseline/replay semantics or topology are incompatible.
+
+Formal `Pass` is permitted only with `Complete` evidence. Presentation coalescing does not degrade evidence because assertions and recording run before WebSocket delivery.
+
+### 23.6 Adapter conformance and calibration wizard
+
+Before trusting a new adapter, driver, dependency version, USB port, or poll configuration, run a guided characterization suite: channel mapping, bitrate, standard/extended IDs, DLC 0–8, timestamp resolution/wrap/reset, RX ordering, echo behavior, queue overflow visibility, unplug/replug, shutdown/reopen, sustained dual-channel load, and TX submission jitter. Store the resulting capability record and measured limits against the hardware/software fingerprint.
+
+Runtime status uses measured capabilities. A dependency or adapter fingerprint change marks characterization `Outdated`; it never silently assumes earlier results still apply.
+
+### 23.7 Workload budgets and graceful degradation
+
+Define a tested workload envelope: frames/second per channel, number of decoded signals, active plots, raw subscribers, recording throughput, and scheduled TX jobs. Report current utilization against that envelope.
+
+Under pressure, shed work in this order: hidden visual projections, plot history density, latest-state visual intermediates, then raw-monitor delivery. Never shed adapter supervision, RX integrity accounting, active assertions, scheduled test stimuli, critical events, or lossless recording without declaring evidence `Incomplete`. This ordering is deterministic and testable.
+
+### 23.8 Engineer workflow additions
+
+Add bookmarks/annotations tied to mapped time, bus sequences, and active test step; saved workspace layouts and filters; copy/export of a selected time window; and deep links from a failed assertion or diagnostic transition to the surrounding raw and decoded evidence. These are session metadata and never modify the immutable raw capture.
+
+### 23.9 Priorities
+
+| Priority | Improvement | Reason |
+|---|---|---|
+| P0 | Evidence-quality gate, adapter conformance, workload metrics | Prevent false confidence in every other feature |
+| P0 | Triggered pre/post capture and unified predicates | Makes intermittent failures observable and repeatable |
+| P1 | Deterministic replay through the production analysis path | Enables hardware-free debugging and regression of the tool itself |
+| P1 | Baseline/session comparison | Turns recordings into actionable RT/SYS/MTR regression evidence |
+| P2 | Bookmarks, saved workspaces, time-window export, evidence deep links | Improves bench investigation speed without changing core correctness |
+
+## 24. Vehicle visual preview
+
+The debug tool’s `TrikeViz` and the Leadmate robot-control dashboard confirm that a top-down visual model is valuable: engineers notice reversed steering, wrong gear, implausible turn radius, actuator disagreement, and stale feedback faster in a vehicle picture than in separate numeric cards. The preview belongs in Overview and Control, with a larger synchronized investigation view available from a failed test.
+
+It is a diagnostic schematic, not a driving display, physics authority, or proof that the bench vehicle physically moved.
+
+### 24.1 What the preview shows
+
+Use a responsive SVG or Canvas top-down tricycle with:
+
+- rear wheel/motor state and front steering wheel angle;
+- requested command and observed feedback as distinct layers;
+- speed/gear direction arrow;
+- brake request and measured brake feedback;
+- headlight, brake light, left/right indicator, ESTOP, and relevant fault state;
+- predicted instantaneous center of rotation, turn radius, and curvature when inputs are valid;
+- short optional predicted path, clearly labelled `Model projection`;
+- a compact HUD with value, unit, source, age, and validity;
+- optional per-component CAN activity/fault highlighting for RT, SYS, MTR, SES, and SEB.
+
+Command uses a dashed/outlined ghost layer; valid feedback uses a solid layer. A visible disagreement band and numeric delta replace ambiguous animation. Synthetic and replay data retain their normal provenance styling.
+
+### 24.2 Source selection and honesty
+
+The Leadmate dashboard explicitly selects `EKF`, `ODOM`, or `SIM`. Adopt that principle, but generate the E-Trike selectors from named YAML/dashboard projections. Each visual property has one visible source policy, for example:
+
+| Property | Requested layer | Observed layer | Derived layer |
+|---|---|---|---|
+| Speed | Host/RT command | MTR feedback | acceleration and predicted path |
+| Steering | RT/SES command | SES status/diagnostic | curvature, ICR, turn radius |
+| Brake | Host/RT request | SEB status/diagnostic | request-feedback error |
+| Gear | requested gear | reported MTR/RT gear | signed display direction |
+| Lamps/ESTOP | requested test stimulus | SYS/RT status | none |
+
+Fallback is never silent. If the primary observed source is missing and a declared fallback is used, show `Fallback: <source>` and its provenance. The operator may pin a source for comparison. Values from different adapter epochs are never combined.
+
+### 24.3 Projection versus observation
+
+The existing debug preview integrates speed and steering in the browser to invent `x`, `y`, and heading, uses pixel-scale wheelbase, and labels the result as actual vehicle state. That animation is useful aesthetically but is not observed pose. The new preview separates:
+
+- `Observed`: directly decoded CAN feedback;
+- `Requested`: tool/ECU command;
+- `Derived`: deterministic calculation from valid inputs;
+- `Projected`: virtual pose/path integrated from a model;
+- `Synthetic`, `Replay`, or `Unavailable` provenance.
+
+Without an actual pose source, the vehicle remains centered and the grid/path moves only in an explicitly enabled `Model projection` mode. Heading then starts at zero or a user reset boundary and is labelled relative/projected. Wheelbase, track width, steering convention, limits, and unit conversions come from generated YAML/configuration in physical units—not Canvas pixels or magic scale factors.
+
+### 24.4 Freshness and corrupt-data behavior
+
+The preview consumes the backend’s atomic vehicle projection; it does not reconstruct telemetry by independently selecting latest frames in the browser. Every contributing signal carries source, sample time, age, validity, and adapter epoch.
+
+- stale input freezes its affected geometry and fades/hatches it with the age shown;
+- missing input removes the affected derived geometry and displays `No data`, never zero;
+- corrupt input keeps the last valid geometry but adds `Corrupt input` and the failed rule;
+- source disagreement displays both layers and the delta;
+- an incomplete WebSocket snapshot marks the entire preview `Degraded` until resynchronized;
+- replay, synthetic, requested, and physical observations remain visually distinguishable.
+
+Clamping is presentation-only and is always disclosed. An out-of-range observation remains invalid evidence; it must not be silently turned into an apparently valid maximum-angle wheel.
+
+### 24.5 Rendering model
+
+Borrow the useful scheduling separation from both dashboards:
+
+- backend capture/model/assertions remain event-driven and independent of rendering;
+- the browser stores one immutable atomic projection snapshot;
+- numeric/status changes render with the latest-state batch;
+- geometry interpolates only between two valid samples and never extrapolates beyond a small declared visual horizon;
+- `requestAnimationFrame` runs only while the preview is visible;
+- `ResizeObserver` handles responsive high-DPI sizing;
+- background tabs and hidden workspaces stop animation without stopping capture, tests, or recording.
+
+The preview must remain understandable with animation disabled and support a reduced-motion mode.
+
+### 24.6 Useful lessons from Leadmate robot-control
+
+Adopt these concepts:
+
+- separate communication callbacks from UI repainting;
+- copy an internally consistent telemetry snapshot before drawing;
+- make the pose/data source explicit rather than merging it invisibly;
+- render fast-changing pose, slow-changing maps, and controls at different rates;
+- isolate reusable painters/visual primitives;
+- show multiple estimates together when disagreement itself is diagnostic;
+- preserve pan/zoom/reset and source switching for investigation views.
+
+Do not copy these implementation weaknesses:
+
+- shared mutable public fields as the UI data contract;
+- wall-clock `time.time()` for freshness;
+- one heartbeat timestamp standing in for all topics/messages;
+- global fixed signal-loss timeouts unrelated to expected message period;
+- GUI code publishing directly from many widgets;
+- simulation updating the same fields as physical telemetry without provenance;
+- duplicate subscriptions/publishers and broad monolithic UI modules;
+- rendering while holding communication locks.
+
+The Control UI’s backend projection service, generated source rules, monotonic timing, immutable snapshots, scheduler/TX gate, and provenance model already provide the safer equivalents.
