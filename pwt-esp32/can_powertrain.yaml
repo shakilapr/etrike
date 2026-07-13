@@ -1,0 +1,17 @@
+version: "1.0"
+bus:
+  name: powertrain
+  bitrate_hz: 250000
+messages:
+  - id: 0x10262B27
+    extended: true
+    name: PWT_DCDC_CMD
+    dlc: 8
+    sender: PWT
+    receivers: [DCDC]
+    cycle_ms: 100
+    fields:
+      - {name: control, byte: 0, size: 8, values: {0: disabled, 1: enabled}}
+      - {name: reserved, byte: 1, size: 48, constant: 0xFFFFFFFFFFFF}
+      - {name: reset_control, byte: 7, size: 8, values: {0: no_reset, 1: reset}}
+

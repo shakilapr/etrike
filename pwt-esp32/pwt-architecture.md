@@ -3,7 +3,7 @@
 ## Status
 
 The current PWT firmware operates **one 250 kbit/s powertrain CAN bus only**.
-It sends the DC-DC converter command defined in `src/config.h` and toggles an
+It sends the DC-DC converter command defined in `can_powertrain.yaml` and toggles an
 external watchdog. It is not a gateway and has no low-level CAN interface.
 
 ESP32-S3 has one built-in TWAI controller. It cannot connect the 500 kbit/s
@@ -30,12 +30,19 @@ the physical bus ends.
 |---|---|
 | CAN controller | Built-in TWAI0 on GPIO7 TX and GPIO6 RX at 250 kbit/s |
 | DC-DC command | Extended ID `0x10262B27`, DLC 8, transmitted every 100 ms |
-| DC-DC state | Enabled by default in `DcdcControl::init()` |
+| DC-DC state | Local build owner; `PWT_DCDC_DEFAULT_ENABLED` selects boot state (default enabled) |
 | Watchdog | GPIO21 toggled at 20 Hz |
 | Low CAN forwarding | Not implemented |
 | ESTOP forwarding | Not implemented |
 | PWT heartbeat | Not implemented |
 | Motor telemetry forwarding | Not implemented |
+
+The nonexistent low-bus `0x012` command has been retired. PWT does not wait for
+SYS input: loss of the powertrain connection is detected through consecutive
+transmit failures and TWAI TEC/REC state. The first failure and each 50-failure
+aggregate are logged, followed by one recovery event, so a 100 ms failure cannot
+flood the log. The configured local state is transmitted every 100 ms when the
+bus is available.
 
 ## Required Hardware For A Gateway
 

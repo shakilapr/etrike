@@ -20,8 +20,9 @@ public:
 
     void init(CanDriver* can) {
         m_can  = can;
-        m_state = State::ON;  // DC-DC ON by default (per architecture §3: ON in all modes)
-        ESP_LOGI("dcdc", "init: state=ON, can_id=0x%08lX", kDcdcCmdId);
+        m_state = kDcdcDefaultEnabled ? State::ON : State::OFF;
+        ESP_LOGI("dcdc", "init: state=%s, can_id=0x%08lX (local build config)",
+                 is_on() ? "ON" : "OFF", kDcdcCmdId);
     }
 
     void tick() {
@@ -43,8 +44,23 @@ public:
             m_reset_requested = false;
         }
 
-        if (!m_can->send(f)) {
-            ESP_LOGW("dcdc", "TX fail");
+        if (m_can->send(f)) {
+            if (m_consecutive_tx_failures != 0) {
+                ESP_LOGI("dcdc", "CAN TX recovered after %lu failures",
+                         static_cast<unsigned long>(m_consecutive_tx_failures));
+            }
+            m_consecutive_tx_failures = 0;
+        } else {
+            ++m_consecutive_tx_failures;
+            ++m_total_tx_failures;
+            if (m_consecutive_tx_failures == 1 ||
+                (m_consecutive_tx_failures % 50) == 0) {
+                uint8_t tec = 0, rec = 0;
+                m_can->get_error_counters(tec, rec);
+                ESP_LOGW("dcdc", "CAN TX unavailable: streak=%lu total=%lu TEC=%u REC=%u",
+                         static_cast<unsigned long>(m_consecutive_tx_failures),
+                         static_cast<unsigned long>(m_total_tx_failures), tec, rec);
+            }
         }
     }
 
@@ -52,11 +68,15 @@ public:
     void disable()       { m_state = State::OFF; }
     void request_reset() { m_reset_requested = true; }
     bool is_on() const   { return m_state == State::ON; }
+    uint32_t consecutive_tx_failures() const { return m_consecutive_tx_failures; }
+    uint32_t total_tx_failures() const { return m_total_tx_failures; }
 
 private:
     CanDriver* m_can            = nullptr;
     State      m_state          = State::ON;
     bool       m_reset_requested = false;
+    uint32_t   m_consecutive_tx_failures = 0;
+    uint32_t   m_total_tx_failures = 0;
 };
 
 } // namespace pwt

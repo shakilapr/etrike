@@ -69,7 +69,7 @@ ecus:
   - {name: RT,     comment: "ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway"}
   - {name: SYS,    comment: "ESP32-S3, FreeRTOS, safety + motor + body control"}
   - {name: MTR,    comment: "STM32, bare metal, motor DAC + gear relays (EGAS L1)"}
-  - {name: DCDC,   comment: "DC-DC converter (72V->12V), CAN 0x012 control"}
+  - {name: DCDC,   comment: "DC-DC converter (72V->12V), direct PWT powertrain command"}
   - {name: EPS_C,  comment: "steer-by-wire unit, steer-by-wire module, preprogrammed CAN IDs"}
   - {name: SEB,    comment: "brake-by-wire unit, electro-hydraulic brake module, preprogrammed CAN IDs"}
   - {name: HMI,    comment: "CAN Controller UI / Dashboard, mode and power requests"}

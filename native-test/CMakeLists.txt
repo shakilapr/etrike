@@ -249,6 +249,13 @@ add_executable(estop_latch
 add_executable(spi_failure
     test/test_spi_failure.cpp
 )
+
+# ── Generated production contract checks ───────────────────────────
+add_executable(dlc_consistency test/test_dlc_consistency.cpp)
+target_include_directories(dlc_consistency PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
+
+add_executable(gateway_forwarding test/test_gateway_forwarding.cpp)
+target_include_directories(gateway_forwarding PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
 target_include_directories(dual_heartbeat PRIVATE
     ${CMAKE_SOURCE_DIR}/../shared
     ${CMAKE_SOURCE_DIR}/../rt-esp32/src
@@ -270,6 +277,8 @@ add_test(NAME watchdog_wraparound COMMAND watchdog_wraparound)
 add_test(NAME dual_heartbeat      COMMAND dual_heartbeat)
 add_test(NAME estop_latch          COMMAND estop_latch)
 add_test(NAME spi_failure          COMMAND spi_failure)
+add_test(NAME dlc_consistency      COMMAND dlc_consistency)
+add_test(NAME gateway_forwarding   COMMAND gateway_forwarding)
 
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
