@@ -25,8 +25,9 @@ FastAPI provides an asynchronous HTTP and WebSocket foundation for streaming CAN
 
 ## 5. Shared API Clients
 
-- **Pydantic + OpenAPI:** Pydantic models are the single request/response definition. FastAPI publishes OpenAPI for generated React types/clients and LLM tool schemas.
-- **LLM tool adapter:** A small MCP/native tool adapter may translate typed tool calls to the same REST/WebSocket operations. It contains no domain or CAN logic.
+- **Pydantic + OpenAPI:** Pydantic models are the single request/response definition. FastAPI publishes OpenAPI for generated React clients and as the source contract for optional LLM/CLI translations. OpenAPI describes the API; it does not execute calls.
+- **Direct Claude Code/Python:** Claude Code and tests may use a small HTTPX client or permitted terminal HTTP calls directly against FastAPI; no MCP layer is required.
+- **Optional LLM tool adapter:** Anthropic API applications can expose selected API operations as client tools. Claude Desktop/Claude.ai may use a small MCP adapter. Either adapter only translates to REST/WebSocket and contains no domain or CAN logic.
 - **Optional thin CLI:** Typer + HTTPX may provide terminal convenience over the same API. It is not a separate backend or service owner.
 - **Headless browser:** Playwright exercises React against the same backend with deterministic virtual fixtures and captures traces/screenshots on failure.
 - **Shared streaming:** React, LLM, and CLI clients use the same versioned WebSocket subscription protocol and independent bounded client queues.

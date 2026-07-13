@@ -50,7 +50,7 @@ ESTOP is the system's **absorbing safety state**. When entered, all actuators re
 | Control | GPIO | Type | Function |
 |---------|------|------|----------|
 | **ESTOP button** | SYS GPIO1, MTR kEstopGpio (TBD STM32 pin) | NC (normally-closed), active-low, red mushroom | Press → ESTOP. Dual-path to independent MCUs. |
-| **START button** | SYS GPIO32 | Momentary, green | ESTOP → MANUAL. Short press in STEER_FAULT resets steering SM. Long press (3s) + throttle zero → force-activate steering at 0° (MANUAL only). |
+| **START button** | SYS GPIO38 | Momentary, green | ESTOP → MANUAL. Short press in STEER_FAULT resets steering SM. Long press (3s) + throttle zero → force-activate steering at 0° (MANUAL only). |
 | **MODE button** | SYS GPIO11 | Momentary | Toggle MANUAL↔AUTO. Short press ignored in ESTOP. Long press (3s) in ESTOP → MANUAL (secondary exit path). |
 | **Brake lever** | SYS GPIO2 | Digital input | Always works. SYS → CAN 0x7B9 → SEB. Has priority over Jetson brake commands in AUTO. |
 
@@ -66,7 +66,7 @@ MANUAL ←──→ AUTO          (MODE button toggle)
  │    ESTOP     │  ◀── absorbing state
  └──────┬───────┘
         │
-        │ START button (GPIO32) or MODE long-press 3s (GPIO11)
+        │ START button (GPIO38) or MODE long-press 3s (GPIO11)
         │ → always goes to MANUAL, never AUTO
         │ Power-cycle → MANUAL (ultimate fallback)
         ▼
@@ -86,7 +86,7 @@ Cannot exit ESTOP via: CAN command, MODE button short-press, automatic timeout.
 | **Brake (SEB)** | Stroke = max (~27 mm, raw=1140) | Full hydraulic brake pressure via CAN 0x7B9 at 50 Hz. `kBrakeMaxStroke = 27.0f` mm. |
 | **Steering (EPS-C)** | Obstacle: hold angle (dyn-clamped) → silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active 0x169. | Two-tier response. Fallback to silent-stop if following error persists >1s (mechanical jam). |
 | **DC-DC converter** | CAN 0x012 enable = **1** (maintains 12V) | Keeps MCUs, CAN transceivers, and brake light powered. Safety tasks must run. |
-| **12V accessory relay** | GPIO27 OFF | Cuts headlight, turn signals, mode bulbs — non-safety loads only. |
+| **12V accessory relay** | GPIO37 OFF | Cuts headlight, turn signals, mode bulbs — non-safety loads only. |
 | **Brake light** | **ON** | Powered from always-on DC-DC rail (independent of accessory relay). |
 | **Mode indicator bulbs** | Both AUTO and MANUAL OFF | Dark dashboard = ESTOP. Dedicated ESTOP red bulb on GPIO20. |
 | **Ready bulb** | OFF | Green ready bulb (GPIO17) OFF. |
@@ -194,7 +194,7 @@ Each ESP32-S3 has a dedicated external watchdog IC (TPS3850) on a separate chip.
 | Node | Toggle GPIO | Toggled by | Period | Timeout |
 |------|------------|-----------|--------|---------|
 | RT | GPIO21 | `control_task` | 100 Hz (every 10ms) | ~100ms |
-| SYS | GPIO23 | `safety_task` | 20 Hz (every 50ms) | ~100ms |
+| SYS | GPIO47 | `safety_task` | 20 Hz (every 50ms) | ~100ms |
 
 ### Layer 9: Brake Following-Error Monitor — Actuator Feedback Verification
 
@@ -234,7 +234,7 @@ TWAI TEC > 255 (bus-off condition) → log, auto-recover. ESTOP if persistent. D
 
 | Path | Trigger | Result |
 |------|---------|--------|
-| **Primary** | START button (GPIO32) short press | ESTOP → MANUAL |
+| **Primary** | START button (GPIO38) short press | ESTOP → MANUAL |
 | **Secondary** | MODE button (GPIO11) long-press 3 seconds | ESTOP → MANUAL |
 | **Ultimate fallback** | Power-cycle (key OFF → ON) | Boot → MANUAL |
 
@@ -250,7 +250,7 @@ Ensures no single button failure locks the rider in ESTOP.
 ### ESTOP Exit Sequence (detailed)
 
 ```
-1. Rider presses START button (GPIO32) or holds MODE button 3s (GPIO11).
+1. Rider presses START button (GPIO38) or holds MODE button 3s (GPIO11).
 2. Brake transitions from max stroke to lever-controlled immediately.
    (Rider can release brake lever — brake follows lever position.)
 3. Motor and gear transition to MANUAL pass-through immediately.
@@ -703,7 +703,7 @@ Each ESP32-S3 has a dedicated external watchdog IC (TPS3850) on a separate chip.
 | Node | Toggle GPIO | Toggled by | Period | Timeout | Travel at 25km/h |
 |------|------------|-----------|--------|---------|-------------------|
 | RT | GPIO21 | `control_task` | 100 Hz (10ms) | ~100ms | ~0.7m |
-| SYS | GPIO23 | `safety_task` | 20 Hz (50ms) | ~100ms | ~0.7m |
+| SYS | GPIO47 | `safety_task` | 20 Hz (50ms) | ~100ms | ~0.7m |
 
 ### On Watchdog Reset
 

@@ -1249,7 +1249,7 @@ LLM tool adapter ─┼→ same REST/WebSocket API → same application services
 Thin CLI / CI ────┘
 ```
 
-Pydantic models generate FastAPI validation and OpenAPI. OpenAPI generates the React TypeScript client and provides the source schema for LLM tools and any optional thin CLI. There is no separately maintained UI API, LLM API, or terminal command schema.
+Pydantic models generate FastAPI validation and OpenAPI. OpenAPI generates the React TypeScript client and provides source schemas for any optional LLM/MCP adapter or thin CLI. OpenAPI describes the normal API; it does not itself execute requests or automatically grant Claude network access. Claude Code may use the shared Python/HTTP client through terminal permissions; an Anthropic API host executes client tools; Claude Desktop/Claude.ai can use a thin MCP translation when required. There is no separately maintained UI API, LLM API, or terminal domain contract.
 
 Caller type is audit metadata only. Domain logic must never contain behavior such as `if client is LLM`. All behavior depends on capabilities, session/profile state, protocol semantic hash, adapter epoch, source ownership, current revision, and the requested operation. Equivalent requests from React and an LLM produce the same validation, job, state transition, evidence, and result.
 
@@ -1258,3 +1258,17 @@ REST handles snapshots, queries, deliberate commands, and jobs. The shared WebSo
 Full LLM access means all supported application capabilities, including physical bench operations when explicitly granted. It does not expose internal Python objects, USB handles, queues, arbitrary code execution, or domain-validation bypasses. Backend jobs own timing, assertions, leases, recording, and cleanup even when the requesting client disconnects.
 
 Pure Software remains the default unattended profile. Physical mutation requires the same explicit session capability and finite Bench TX state used by React; it is not governed by a separate AI approval path.
+
+The API exposes the data clients need to diagnose behavior: compatibility/capabilities, adapter and per-channel status, queue/storage metrics, atomic raw/decoded state with age/validity/provenance, session/lease/job state, resolved TX manifests, scheduler timing/jitter, test verdict/evidence quality, causal error events, and bounded raw evidence. REST snapshot/query/wait/job/event endpoints cover LLM environments without WebSocket support.
+
+## 26. Error coding and structured logging
+
+The backend, React, LLM tools, and optional CLI use the single stable catalog in `error-codes.md`. Errors are structured events with code, severity, raised/updated/recovered state, monotonic and wall timestamps, request/session/job/test correlation, adapter epoch, CAN identity, expected/actual context, and evidence references.
+
+Operational logs do not duplicate the raw high-rate CAN recording. They record lifecycle, degradation, integrity, ownership, test, storage, stream, and recovery transitions and link to bounded raw evidence. Repeated failures emit an immediate first event, bounded summaries, and one recovery event rather than console spam.
+
+Control UI infrastructure errors remain distinct from ECU-reported RT/SYS/MTR/PWT/EPS-C/SEB diagnostic flags. ECU faults are logged as observed diagnostic events with their original YAML-defined code/name/raw value; they are not relabelled as backend failures.
+
+Codes originate in backend ownership boundaries: API middleware, adapter supervisor/wrapper, instrumented queues, protocol validator, freshness/topology service, scheduler, test runner, recorder/replay, subscription hub, and projection service. A central event factory adds common fields and persists them but does not guess the domain result. Clients never derive backend error codes from display text.
+
+The backend event store is part of the shared API. React, LLMs, Python tests, and CI use identical code-registry, event query/detail/wait/summary/export, and WebSocket event-subscription resources. An LLM therefore has direct structured access to backend failures and causal/evidence context without filesystem or shell access. Capability-based redaction controls internal diagnostics; client type does not.

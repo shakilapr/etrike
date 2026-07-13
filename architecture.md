@@ -493,7 +493,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 40 | MCP2515 INT | Interrupt (active low, pull-up, NEGEDGE) |
 | 35 | OVERRIDE | Developer override pin for Mode 1 |
 | 1-2 | Encoder rear motor | Quadrature PCNT (rear motor speed feedback) |
-| 3,6 | Encoder front wheel | Quadrature PCNT (front wheel) |
+| 10,6 | Encoder front wheel | Quadrature PCNT (front wheel) |
 | 9,12 | Encoder rear left | Quadrature PCNT (differential) |
 | 13,14 | Encoder rear right | Quadrature PCNT (differential) |
 
@@ -517,12 +517,12 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 19 | Light right turn | Relay output |
 | 20 | Bulb ESTOP | Red indicator — dedicated ESTOP indicator |
 | 21 | Light brake | Relay output |
-| 22 | Light head | Relay output |
-| 23 | WDT toggle | TPS3850 external watchdog, toggled at 20 Hz by task_safety |
-| 25 | Bulb AUTO | Mode indicator |
-| 26 | Bulb MANUAL | Mode indicator |
-| 27 | 12V relay | Accessory power relay |
-| 32 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
+| 10 | Light head | Relay output |
+| 47 | WDT toggle | TPS3850 external watchdog, toggled at 20 Hz by task_safety |
+| 48 | Bulb AUTO | Mode indicator |
+| 36 | Bulb MANUAL | Mode indicator |
+| 37 | 12V relay | Accessory power relay |
+| 38 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
 | 33 | — | *Reserved (legacy SYS_OWNS_MOTOR bench path — MTR owns gear in vehicle)* |
 | 34 | — | *Reserved* |
 | 35 | OVERRIDE | Developer override pin for Mode 1 |

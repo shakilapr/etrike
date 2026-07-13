@@ -408,14 +408,14 @@ motor_task @ 100 Hz, prio 4:
 
 | Task | Rate | What it does |
 |------|------|-------------|
-| `safety` | 20 Hz | Poll GPIO1 (ESTOP), GPIO2 (brake lever). Check `SafetyMonitor::heartbeat_ok()`. If ESTOP or HB timeout → `mode_manager.force_estop()`. Toggle WDT GPIO23. |
-| `mode` | 10 Hz | Read GPIO11 (MODE btn), GPIO32 (START btn). Call `ModeManager::tick()`. On change → send `0x110 SYS_MODE_CMD`. |
+| `safety` | 20 Hz | Poll GPIO1 (ESTOP), GPIO2 (brake lever). Check `SafetyMonitor::heartbeat_ok()`. If ESTOP or HB timeout → `mode_manager.force_estop()`. Toggle WDT GPIO47. |
+| `mode` | 10 Hz | Read GPIO11 (MODE btn), GPIO38 (START btn). Call `ModeManager::tick()`. On change → send `0x110 SYS_MODE_CMD`. |
 | `throttle` | 100 Hz | ADC read → `ThrottleInput::poll()`. Send `0x120 SYS_THROTTLE_STS`. |
 | `brake` | 50 Hz | Run `BrakeControl::tick()`. Build `0x7B9 VCU_SEB_REQ` with rolling counter + checksum. Send on CAN. |
 | `lights` | 20 Hz | Read handlebar switches GPIO3/6/7. `LightControl::tick()` → update GPIO18-22. Handle blink timing. |
 | `dcdc` | 5 Hz | `DcdcControl::tick(estop)` → send `0x012` on state change. |
-| `indicator` | 5 Hz | `IndicatorControl::tick(mode)` → AUTO/MANUAL bulbs (GPIO25/26). |
-| `power` | 5 Hz | 12V relay GPIO27: ON in MANUAL/AUTO, OFF in ESTOP. |
+| `indicator` | 5 Hz | `IndicatorControl::tick(mode)` → AUTO/MANUAL bulbs (GPIO48/26). |
+| `power` | 5 Hz | 12V relay GPIO37: ON in MANUAL/AUTO, OFF in ESTOP. |
 | `can_tx` | 5 Hz | Send `0x011 SYS_SAFETY_STS` (estop + hb_ok). |
 | `diag` | 1 Hz | Collect TEC/REC, heap, mode, estop. Send `0x600 SYS_DIAG_RPT`. |
 | `hb` | 2 Hz | Send `0x7FE SYS_HEARTBEAT`: DLC=2, `alive_ctr++ & 0xFF, health_flags`. |

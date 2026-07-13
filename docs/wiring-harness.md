@@ -224,7 +224,7 @@ All voltages drops are one-way (positive wire only). Chassis is the return path;
 | Color | Domain | Usage |
 |-------|--------|-------|
 | **Orange** | 72 V traction | All battery circuits, gear lines |
-| **Red** | 12 V switched | Accessory rail (via GPIO27 relay) |
+| **Red** | 12 V switched | Accessory rail (via GPIO37 relay) |
 | **Red/White** | 12 V always-on | Brake light, MCU power, CAN transceivers |
 | **Black** | Ground | All 12 V / 5 V / 3.3 V returns |
 | **Black/Orange** | 72 V ground | 72 V gear line returns |
@@ -378,7 +378,7 @@ Fuses protect the **wire**, so they go at the **source end** of every wire run �
 | F_rt | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG to RT ESP32 (0.3 m) | 12 V bus → RT → chassis |
 | F_sys | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG to SYS ESP32 (1 m) | 12 V bus → SYS → chassis |
 | F_mtr | Rear fuse block, rear | ATO | 3 A | 18 AWG to MTR STM32 (0.3 m) | 12 V bus → MTR → chassis |
-| F_lights | Forward fuse block (JP2), center | ATO | 15 A | 14 AWG lighting bus (1.5 m) | 12 V bus → GPIO27 relay → lamps → chassis |
+| F_lights | Forward fuse block (JP2), center | ATO | 15 A | 14 AWG lighting bus (1.5 m) | 12 V bus → GPIO37 relay → lamps → chassis |
 | F_brake | Forward fuse block (JP2), center | ATO slow-blow | 5 A | 16 AWG, brake light only | 12 V bus → brake light → chassis |
 | F_can_mcu | Forward fuse block (JP2), center | ATO | 3 A | 18 AWG, CAN xcvrs + MCU keep-alive | 12 V bus → CAN, MCU → chassis |
 
@@ -401,12 +401,12 @@ With chassis as the ground return, only the positive wire length matters. Chassi
 
 All drops well under 3%. DC-DC at the front eliminates the heavy 8 AWG forward 12 V run — 72 V runs forward at 5 A on 14 AWG instead of 12 V at 35 A on 8 AWG.
 
-### 5.5 12 V Accessory Relay (GPIO27)
+### 5.5 12 V Accessory Relay (GPIO37)
 
-SYS GPIO27 controls a 40 A automotive relay:
+SYS GPIO37 controls a 40 A automotive relay:
 
 ```
-GPIO27 ── 1 kΩ base R ── NPN (2N2222) ── relay coil ── 12 V
+GPIO37 ── 1 kΩ base R ── NPN (2N2222) ── relay coil ── 12 V
                                  │
                                  └── 1N4007 flyback (cathode to +12 V)
 
@@ -416,7 +416,7 @@ Relay NC   → not connected
 Relay coil return → chassis (local)
 ```
 
-ESTOP behavior: GPIO27 goes high-impedance → NPN off → relay opens → accessory bus dead. Brake light is on its own dedicated fuse (F_brake, 5 A slow-blow, always-on, before this relay) and stays powered in ESTOP. CAN transceivers and MCU keep-alive are on F_can_mcu (3 A, always-on), independent of both the brake light and the accessory relay.
+ESTOP behavior: GPIO37 goes high-impedance → NPN off → relay opens → accessory bus dead. Brake light is on its own dedicated fuse (F_brake, 5 A slow-blow, always-on, before this relay) and stays powered in ESTOP. CAN transceivers and MCU keep-alive are on F_can_mcu (3 A, always-on), independent of both the brake light and the accessory relay.
 
 ---
 
@@ -502,7 +502,7 @@ Every relay coil MUST have a flyback diode soldered directly across the coil ter
 | MTR gear output | 3 | D, S, R relay drivers (PA3/4/5) |
 | SYS gear output | 3 | D, S, R relay drivers (GPIO33/34/35) |
 | SYS lighting | 6 | Left turn, Right turn, Brake, Headlight, AUTO bulb, MANUAL bulb |
-| SYS 12 V accessory | 1 | GPIO27 main accessory relay |
+| SYS 12 V accessory | 1 | GPIO37 main accessory relay |
 
 ### 7.5 Lamp Circuit TVS Protection
 
@@ -611,7 +611,7 @@ Wire lengths include 150–200 mm service loop at each connector plus 5–10% ro
 | Wire, 18 AWG black (GXL) | 0.5 m | SYS (−) → chassis strap (0.2 m); bulb ground straps (×2, 0.15 m) |
 | Wire, 22 AWG blue | 4 m | Switch signals (×5) |
 | Wire, 22 AWG brown | 2 m | Switch common/return |
-| Wire, 22 AWG yellow | 3 m | Relay coil drives (×6 + GPIO27) |
+| Wire, 22 AWG yellow | 3 m | Relay coil drives (×6 + GPIO37) |
 | Wire, 22 AWG white shielded | 1.5 m | Belden 8451 | Throttle grip signal |
 | Wire, 20 AWG orange (×3) | 4 m | Gear sense TLP281 inputs (D/S/R) |
 | Wire, 18 AWG orange (×3) | 2 m | Gear relay outputs to motor controller |
@@ -625,7 +625,7 @@ Wire lengths include 150–200 mm service loop at each connector plus 5–10% ro
 | ESTOP button NC loop | 2-conductor 22 AWG, twisted, 1.5 m | Y-splice: button → SYS GPIO1 AND MTR PA1 | Solder + adhesive heat-shrink on splice. 10k pull-up to 3.3V at each MCU. Button other terminal → chassis GND |
 | SMBJ5.0A TVS | 1 | Littelfuse | Throttle signal protection (at SYS ADC) |
 | NUP2105L TVS | 1 | CAN protection | SYS CAN node |
-| 1N4007 flyback diode | 7 | — | SYS relay coils (gear×3, lights×3, GPIO27) |
+| 1N4007 flyback diode | 7 | — | SYS relay coils (gear×3, lights×3, GPIO37) |
 | TLP281 optoisolator | 3 | Toshiba | SYS gear sense (D/S/R) |
 | SMCJ90CA TVS | 3 | Littelfuse | SYS gear line TVS (72 V) |
 | 3AG 1A fuse + FHAC0001ZXJ | 3 | Littelfuse | SYS gear output fuses |

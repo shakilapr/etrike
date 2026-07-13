@@ -72,7 +72,7 @@ proceeding to the next. Stop on first failure — debug before continuing.
 - Verify 0x001 on low bus within 10ms
 - Verify 0x001 on high bus within 10ms
 - Verify 0x011 byte 0 = 1 (ESTOP active)
-- Release ESTOP → press START (GPIO32 to GND)
+- Release ESTOP → press START (GPIO38 to GND)
 - Verify mode returns to Manual
 
 ## Phase 4 — Autonomous Drive Path

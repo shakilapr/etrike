@@ -34,7 +34,7 @@ The vehicle has two operating modes — **MANUAL** and **AUTO** — selected via
 ### 2.2 START Button
 
 - **Location:** Handlebar, right side, green
-- **GPIO:** SYS GPIO32
+- **GPIO:** SYS GPIO38
 - **Action (ESTOP):** Exits ESTOP and enters MANUAL mode
 - **Action (STEER_FAULT):** Short press resets steering state machine
 - **Action (STEER_FAULT, long 3s + throttle zero):** Force-activates steering at 0 deg target (MANUAL only)

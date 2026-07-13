@@ -192,7 +192,7 @@ GPIO 13 : Encoder A — rear right (TBD, disabled)
 GPIO 14 : Encoder B — rear right (TBD, disabled)
 GPIO 15–20: (unused)
 GPIO 21 : WDT toggle → TPS3850 WDI
-GPIO 22–35: (unused)
+GPIO 10–35: (unused)
 GPIO 36 : SPI SCK → MCP2515
 GPIO 37 : SPI MOSI → MCP2515
 GPIO 38 : SPI MISO ← MCP2515
@@ -305,14 +305,14 @@ GPIO 18 : Left turn lamp — relay output
 GPIO 19 : Right turn lamp — relay output
 GPIO 20 : ESTOP bulb (red) — relay output
 GPIO 21 : Brake light — relay output
-GPIO 22 : Headlight — relay output
-GPIO 23 : WDT toggle → TPS3850 WDI (20 Hz)
+GPIO 10 : Headlight — relay output
+GPIO 47 : WDT toggle → TPS3850 WDI (20 Hz)
 GPIO 24 : (unused)
-GPIO 25 : AUTO mode bulb — relay output
-GPIO 26 : MANUAL mode bulb — relay output
-GPIO 27 : 12V power relay — opens in ESTOP
+GPIO 48 : AUTO mode bulb — relay output
+GPIO 36 : MANUAL mode bulb — relay output
+GPIO 37 : 12V power relay — opens in ESTOP
 GPIO 28–31: (unused)
-GPIO 32 : START button (active-low)
+GPIO 38 : START button (active-low)
 GPIO 33 : Gear D relay out → 4-ch relay module IN1
 GPIO 34 : Gear S relay out → 4-ch relay module IN2
 GPIO 35 : Gear R relay out → 4-ch relay module IN3
@@ -675,7 +675,7 @@ TPS3850 GND → GND
 
 - **72V Traction Battery** → Main fuse/contactor → Motor Controller (72V) → Motor (3-phase BLDC)
 - **72V** → DC-DC Converter (72V → 12V, CAN 0x012) → 12V Fuse Block (ATO/ATC, 12 circuits)
-- **12V Fuse Block** → 12V Relay (SYS GPIO27) → 12V Accessory Bus (signal lamps via relays 18/19/21/22, mode bulbs via relays 25/26, headlight via relay 22)
+- **12V Fuse Block** → 12V Relay (SYS GPIO37) → 12V Accessory Bus (signal lamps via relays 18/19/21/22, mode bulbs via relays 48/36, headlight via relay 10)
 - **12V Fuse Block** → ESP32-S3 Dev Boards (×4), STM32 Board, EPS-C, SEB, Jetson Orin NX (via separate 19V DC-DC)
 - **12V Fuse Block** → M6 Ground Bus Bar (nickel-plated brass, ≥6 studs)
 - **72V Gear Lines** (via 1A fuse → MTR relay COM terminals) → Relay D/S/R COM → NO → ECU Gear D/S/R
@@ -686,7 +686,7 @@ TPS3850 GND → GND
 | Domain | Source | Used By | Isolation |
 |--------|--------|---------|-----------|
 | 72 V DC | Traction battery | Motor controller, gear relays (COM), DC-DC input | Fuse + contactor |
-| 12 V DC | DC-DC converter | Lamps, bulbs, relay coils, EPS-C, SEB, ECU boards (via onboard regulators) | 12V relay (SYS GPIO27) |
+| 12 V DC | DC-DC converter | Lamps, bulbs, relay coils, EPS-C, SEB, ECU boards (via onboard regulators) | 12V relay (SYS GPIO37) |
 | 5 V DC | Onboard regulators (from 12 V or USB) | MCP4725 DACs, MCP2515 module (TJA1050), gear relay coils | — |
 | 3.3 V DC | Onboard regulators | ESP32-S3 MCUs, STM32 MCU, WCMCU-230 transceivers, TLP281 output side | — |
 | 72 V gear signals | Traction battery (via 1A fuse) | Gear selector → TLP281 input → GPIO | **Galvanic isolation** via TLP281 optoisolator (2500 Vrms) |
@@ -786,7 +786,7 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 - [ ] WCMCU-230: 120 Ω terminator jumper **ON**
 - [ ] ESTOP button: GPIO1 → NC button → GND. 10k pull-up to 3.3V.
 - [ ] Brake lever: GPIO2 → NO switch → GND. Internal pull-up.
-- [ ] START button: GPIO32 → NO momentary → GND. Internal pull-up.
+- [ ] START button: GPIO38 → NO momentary → GND. Internal pull-up.
 - [ ] MODE button: GPIO11 → NO momentary → GND. Internal pull-up.
 - [ ] Throttle ADC: GPIO10 → voltage divider midpoint (0–5V grip)
 - [ ] MCP4725 DAC: SDA → GPIO15, SCL → GPIO16, VCC → 5V, GND → GND
@@ -794,8 +794,8 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 - [ ] Gear relays: GPIO33/34/35 → relay module IN1/IN2/IN3
 - [ ] Signal switches: GPIO3 (left turn), GPIO6 (right turn), GPIO7 (headlight) → GND
 - [ ] Lamp relays: GPIO18/19/21/22 → relay coils → 12V
-- [ ] Indicator relays: GPIO25 (AUTO), GPIO26 (MANUAL), GPIO27 (12V power) → relay coils → 12V
-- [ ] WDT: GPIO23 → TPS3850 WDI
+- [ ] Indicator relays: GPIO48 (AUTO), GPIO36 (MANUAL), GPIO37 (12V power) → relay coils → 12V
+- [ ] WDT: GPIO47 → TPS3850 WDI
 
 ### 17.3 MTR STM32
 
@@ -864,7 +864,7 @@ GPIO 13 : Encoder A — rear right (TBD)              [IN, PCNT, disabled]
 GPIO 14 : Encoder B — rear right (TBD)              [IN, PCNT, disabled]
 GPIO 15–20: —                                       [unused]
 GPIO 21 : WDT toggle → TPS3850 WDI                  [OUT, 100 Hz]
-GPIO 22–35: —                                       [unused]
+GPIO 10–35: —                                       [unused]
 GPIO 36 : SPI SCK → MCP2515                         [OUT, ≤10 MHz]
 GPIO 37 : SPI MOSI → MCP2515 SI                     [OUT]
 GPIO 38 : SPI MISO ← MCP2515 SO                     [IN]
@@ -897,14 +897,14 @@ GPIO 18 : Left turn lamp relay                      [OUT, active-high]
 GPIO 19 : Right turn lamp relay                     [OUT, active-high]
 GPIO 20 : ESTOP bulb (red) relay                    [OUT, active-high]
 GPIO 21 : Brake light relay                         [OUT, active-high]
-GPIO 22 : Headlight relay                           [OUT, active-high]
-GPIO 23 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]
+GPIO 10 : Headlight relay                           [OUT, active-high]
+GPIO 47 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]
 GPIO 24 : —                                         [unused]
-GPIO 25 : AUTO mode bulb relay                      [OUT, active-high]
-GPIO 26 : MANUAL mode bulb relay                    [OUT, active-high]
-GPIO 27 : 12V power relay                           [OUT, active-high]
+GPIO 48 : AUTO mode bulb relay                      [OUT, active-high]
+GPIO 36 : MANUAL mode bulb relay                    [OUT, active-high]
+GPIO 37 : 12V power relay                           [OUT, active-high]
 GPIO 28–31: —                                       [unused]
-GPIO 32 : START button (NO, active-low)             [IN, internal pull-up]
+GPIO 38 : START button (NO, active-low)             [IN, internal pull-up]
 GPIO 33 : Gear D relay out → relay module IN1       [OUT, active-high]
 GPIO 34 : Gear S relay out → relay module IN2       [OUT, active-high]
 GPIO 35 : Gear R relay out → relay module IN3       [OUT, active-high]

@@ -235,7 +235,7 @@ Devices: PWT (gateway), DC-DC converter, motor controller. PWT bridges `0x012` a
     │    ┌─────▼────┐    │
     │    │  ESTOP   │────┘
     │    └─────┬────┘
-    │         │ START button (GPIO32)
+    │         │ START button (GPIO38)
     │         ▼
     └──────── MANUAL
 ```
@@ -952,7 +952,7 @@ hardware simplicity). In production these would be separate MCUs:
 | **Signal lights** | Left/right turn (500ms blink), brake light OR logic (lever + CAN 0x302 brake bit), headlight | Prio 3 |
 | **DC-DC converter** | CAN 0x012 enable. Always ON during ESTOP (keeps 12V for MCUs + brake light). Periodic refresh every 5s. | Prio 3 |
 | **Mode indicators** | Bulbs showing current mode (MANUAL/AUTO/ESTOP) | Prio 2 |
-| **12V accessory relay** | GPIO27. Cuts headlight, turn signals, mode bulbs during ESTOP. Brake light is on always-on DC-DC rail — not through this relay. | Prio 2 |
+| **12V accessory relay** | GPIO37. Cuts headlight, turn signals, mode bulbs during ESTOP. Brake light is on always-on DC-DC rail — not through this relay. | Prio 2 |
 | **Diagnostics** | 0x600 SYS_DIAG_RPT at 1 Hz: mode, brake state, heartbeat, ESTOP, free heap, TEC/REC | Prio 1 |
 
 #### Ignition — dual-path (hardware + CAN)
@@ -962,7 +962,7 @@ the same principle as ESTOP:
 
 | Path | Mechanism | Action |
 |------|-----------|--------|
-| **Hardware** | Ignition GPIO (GPIO26) → main 12V relay | HIGH = 12V rail ON. LOW = all ECUs + actuators power down. Direct GPIO — no CAN, no software dependency. |
+| **Hardware** | Ignition GPIO (GPIO36) → main 12V relay | HIGH = 12V rail ON. LOW = all ECUs + actuators power down. Direct GPIO — no CAN, no software dependency. |
 | **CAN** | 0x012 SYS_DCDC_CMD `enable` byte | `enable=0` → DC-DC converter OFF → 12V rail drops → CAN transceivers and actuators lose power. Software path, redundant to hardware relay. |
 
 **START button controls ignition:**
@@ -1098,12 +1098,12 @@ Direction via gear lines — MCP4725 outputs 0–5V proportional to speed magnit
 
 #### DC-DC converter — CAN `0x012`
 
-| Condition | CAN `0x012` | 12V accessory relay (GPIO27) |
+| Condition | CAN `0x012` | 12V accessory relay (GPIO37) |
 |-----------|------------|------------------------------|
 | MANUAL or AUTO | `enable = 1` | ON (all accessories powered) |
 | ESTOP | **`enable = 1`** (maintains 12V for MCUs, CAN transceivers, and brake light) | OFF (cuts headlight, turn signals, mode bulbs) |
 
-Sent on state change. **DC-DC stays ON during ESTOP** — MCUs need 12V→3.3V to run, CAN transceivers need 5V, and the brake light must illuminate during ESTOP (fail-visible). The 12V accessory relay (GPIO27) provides the secondary cut for non-safety loads. The brake light is wired to the always-on DC-DC output, not through the accessory relay, so it remains powered during ESTOP.
+Sent on state change. **DC-DC stays ON during ESTOP** — MCUs need 12V→3.3V to run, CAN transceivers need 5V, and the brake light must illuminate during ESTOP (fail-visible). The 12V accessory relay (GPIO37) provides the secondary cut for non-safety loads. The brake light is wired to the always-on DC-DC output, not through the accessory relay, so it remains powered during ESTOP.
 
 #### Signal lights
 
@@ -1137,7 +1137,7 @@ All four sources are local to SYS. `g_light_state.brake_light` from Jetson is a 
 
 | Mode | Turn signals | Headlight | Brake light |
 |------|-------------|-----------|-------------|
-| MANUAL | Handlebar switches → `lights_task` | Handlebar switch → GPIO22 | **OR logic** — lever + Jetson bit |
+| MANUAL | Handlebar switches → `lights_task` | Handlebar switch → GPIO10 | **OR logic** — lever + Jetson bit |
 | AUTO | `g_light_state` from CAN `0x302` | `g_light_state.headlight` | **OR logic** — lever + ESTOP + Jetson bit |
 | ESTOP | OFF | OFF | **ON** (forced, overrides all) |
 
@@ -1153,7 +1153,7 @@ All four sources are local to SYS. `g_light_state.brake_light` from Jetson is a 
 
 #### Mode switch — push button toggle
 
-A momentary push button on GPIO11 (active-low, internal pull-up, debounced). Each press toggles the mode: MANUAL → AUTO → MANUAL. ESTOP cannot be exited via the MODE button — use the START button (GPIO32) or power-cycle.
+A momentary push button on GPIO11 (active-low, internal pull-up, debounced). Each press toggles the mode: MANUAL → AUTO → MANUAL. ESTOP cannot be exited via the MODE button — use the START button (GPIO38) or power-cycle.
 
 ```
 mode_task @ 10 Hz:
@@ -1164,14 +1164,14 @@ mode_task @ 10 Hz:
       elif current mode == AUTO  → mode_set(Manual)
       debounce = kDebounceMs / 100
 
-  // Start button (GPIO32) — exit ESTOP
-  read GPIO32
+  // Start button (GPIO38) — exit ESTOP
+  read GPIO38
   if falling edge (prev_start==HIGH, now==LOW) and debounce == 0:
       if current mode == ESTOP → mode_set(Manual)
       debounce = kDebounceMs / 100
 
   if debounce > 0: debounce--
-  prev_mode = GPIO11; prev_start = GPIO32
+  prev_mode = GPIO11; prev_start = GPIO38
 ```
 
 > A toggle switch would require the rider to physically change switch position. A push button is simpler to operate while riding — one tap to switch modes.
@@ -1190,7 +1190,7 @@ Two relay-driven bulbs (visible in sunlight, not just PCB LEDs):
 
 #### 12V relay — unchanged
 
-GPIO27 (HIGH=ON, ESTOP→OFF).
+GPIO37 (HIGH=ON, ESTOP→OFF).
 
 #### Heartbeat — automotive liveness supervision
 
@@ -1515,12 +1515,12 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 
 ```
  1. can_driver_init()     → TWAI, low-level CAN
- 2. mode_manager_init()   → GPIO11 (MODE), GPIO32 (START)
- 3. safety_monitor_init() → GPIO1 (ESTOP), GPIO2 (brake lever), WDT GPIO23
+ 2. mode_manager_init()   → GPIO11 (MODE), GPIO38 (START)
+ 3. safety_monitor_init() → GPIO1 (ESTOP), GPIO2 (brake lever), WDT GPIO47
  4. throttle_init()       → ADC1_CH5 + I2C + MCP4725 (output=0)
  5. gear_init()           → GPIO12-14 (IN), GPIO33-35 (OUT, LOW)
  6. lights_init()         → GPIO3,6,7 (IN, switches) + GPIO18-22,25-26 (OUT)
- 7. power_init()          → GPIO27 (OUT, LOW)
+ 7. power_init()          → GPIO37 (OUT, LOW)
  8. brake_init()          → BRAKE_BOOT_WAIT (500ms) → LISTEN_SYNC (await 0x721) → ACTIVE
  9. dcdc_init()           → CAN 0x012 enable=0
 10. Create queues         → can_rx(16), setpoint(4)
@@ -1546,7 +1546,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 actual_speed, u8 gear_state, u8 fault_flags}` | EGAS L2: compare 0x204 setpoint vs 0x206 actual. Mismatch → ESTOP. `ESTOP_ACTIVE` bit (0x01) → force ESTOP. | `0x001` SAFETY_ESTOP — DLC=0 if mismatch | Motor safety (EGAS L2) |
 | `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | 1000ms timeout (2 missed at 2 Hz) → ESTOP. Faster: 0x204 staleness at 200ms catches RT crash first. | `0x001` SAFETY_ESTOP — DLC=0 if timeout | RT liveness |
 | GPIO11 MODE button (active-low, debounced) | Toggle MANUAL ↔ AUTO on falling edge. Ignored in ESTOP. | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` → RT + MTR | Mode control |
-| GPIO32 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. Long-press (3s) secondary ESTOP exit (gap #11). | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode}` → RT + MTR | ESTOP exit |
+| GPIO38 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. Long-press (3s) secondary ESTOP exit (gap #11). | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode}` → RT + MTR | ESTOP exit |
 | `0x302` HOST_LIGHT_CMD — DLC=1, `{u8 lights bitfield}` (fwd from RT) | Lights bitfield → GPIO relay outputs. AUTO: from CAN. MANUAL: handlebar switches (GPIO 3/6/7). ESTOP: all OFF except brake. | GPIO 18 (L turn), 19 (R turn), 21 (brake), 22 (head) | Signal lights |
 | `0x721` SEB_STATUS — DLC=8, `{u8 status, u16 stroke, u16 angle, u8 press, …}` | Brake SM: boot sync stroke, check `SEB_Alignment_Status==1`, following error >3 mm for >100 ms → fault log. `SEB_Error_Status≥3` (L3 fault) → ESTOP. | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (50 Hz, rolling counter + checksum) | Brake actuator |
 | `0x731` SEB_ErrInfo — DLC=8, `{23 fault flags (16× L3)}` | L3 fault → ESTOP via `0x001` | — (consumed locally) | Brake health |
@@ -1581,7 +1581,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 
 **What SYS manipulates:** ESTOP state (from GPIO1, CAN 0x001, or RT heartbeat loss), mode state (from MODE button or START button), brake command (stroke from lever or pressure from 0x205), motor setpoint (from 0x204 or ADC pass-through), light state (from 0x302 or handlebar switches), gear state (from 0x204 or TLP281 mirroring), DC-DC enable (always ON).
 
-**What SYS controls:** SEB brake actuator via `0x7B9` (Stroke Mode for lever/ESTOP, Pressure Mode for AUTO 0x205), motor throttle via MCP4725 DAC (0–5V analog), motor gear via relay module (72V D/S/R lines), DC-DC converter via `0x012`, 12V accessory relay via GPIO27 (OFF on ESTOP), signal lights via GPIO 18/19/21/22, mode indicator bulbs via GPIO 25/26.
+**What SYS controls:** SEB brake actuator via `0x7B9` (Stroke Mode for lever/ESTOP, Pressure Mode for AUTO 0x205), motor throttle via MCP4725 DAC (0–5V analog), motor gear via relay module (72V D/S/R lines), DC-DC converter via `0x012`, 12V accessory relay via GPIO37 (OFF on ESTOP), signal lights via GPIO 18/19/21/22, mode indicator bulbs via GPIO 48/26.
 
 ---
 
@@ -1641,7 +1641,7 @@ remains unset for more than 100 ms after ESTOP assertion
 (`g_last_estop_trigger_tick` check in `sys-esp32/src/main.cpp` lines 343-370).
 
 **ESTOP exit:** ESTOP persists until SYS mode clears it. The START button
-(GPIO32) or MODE long-press (3 s) transitions SYS to MANUAL mode, which
+(GPIO38) or MODE long-press (3 s) transitions SYS to MANUAL mode, which
 broadcasts `0x110` with mode=Manual, releasing all nodes from ESTOP. RT
 defers its steering exit until the centering ramp completes
 (`m_estop_exit_pending` flag in `rt-esp32/src/steering_control.h` line 245).
@@ -2364,13 +2364,13 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 | 8 | **Watchdog reset unbraked window — SEB comm-fault behavior unverified** | When SYS watchdog resets, SEB enters comm-fault after 20ms. If SEB releases on timeout, the vehicle coasts without brake for ~2.5s (SYS reboot + brake LBS). If SEB holds, the window is only 20ms. Behavior is empirically unverified. | **Test SEB comm-fault behavior** (stroke=27mm, stop CAN, measure pressure over 5s). If release: add NC brake-hold relay gated by TPS3850 RST line. If hold: document as verified safety property. **Also mitigated by gap #11 — RT brake takeover closes most of the window.** See `issues/emergency-safety-analysis.md` §3. |
 | 9 | **Obstacle ESTOP "hold angle" can cause rollover during cornering** | Obstacle-triggered ESTOP holds current steering angle regardless of vehicle speed. A cornering vehicle under hard braking experiences lateral load transfer that the dynamic angle clamp was designed to prevent — but the clamp is only applied to commanded angles, not to the ESTOP hold angle. Physics model §8 defines the rollover threshold: a_y = v²/L·tan(δ) > g·w/(2h). | **Software fix:** During obstacle-triggered ESTOP, clamp the hold angle to the dynamic angle clamp limit for the current speed. If current angle exceeds the limit, ramp down to the limit at 20°/s. Straight-line cases unchanged. See `issues/emergency-safety-analysis.md` §4. |
 | 10 | **Jetson heartbeat loss → pure coast is insufficient for perception failure** | Jetson runs obstacle detection. When it dies, the vehicle coasts with no active brake, no perception, and no steering. At 25 km/h, >50m coast-to-stop. The rider must recognize the failure and manually brake. The heartbeat timeout (1500ms) is long enough that false positives from Linux CAN jitter are unlikely. | **Software fix:** On Jetson heartbeat loss, RT commands 0x205 = 2000 kPa (~2 MPa moderate brake) + transitions SYS to MANUAL. Brake light ON. Rider can override with lever. DC-DC stays on (lights work). This is "assisted stop" — between coast and full ESTOP. See `issues/emergency-safety-analysis.md` §5. |
-| 11 | **No secondary ESTOP exit path — START button is a single point of failure** | GPIO32 is the only ESTOP exit. Stuck HIGH (broken wire) = can never exit ESTOP. The only backup is power-cycle, which restarts all nodes and requires brake/steering LBS at roadside. | **Software fix:** MODE button (GPIO11) long-press (3s) exits ESTOP → MANUAL as secondary path. Two independent GPIOs on separate physical buttons. Add START button health monitoring in diag_task. See `issues/emergency-safety-analysis.md` §6. |
+| 11 | **No secondary ESTOP exit path — START button is a single point of failure** | GPIO38 is the only ESTOP exit. Stuck HIGH (broken wire) = can never exit ESTOP. The only backup is power-cycle, which restarts all nodes and requires brake/steering LBS at roadside. | **Software fix:** MODE button (GPIO11) long-press (3s) exits ESTOP → MANUAL as secondary path. Two independent GPIOs on separate physical buttons. Add START button health monitoring in diag_task. See `issues/emergency-safety-analysis.md` §6. |
 | 12 | ~~SYS crash — 1000ms brake gap before RT responds~~ | ~~Architecture §6.2 Option D claims RT takes over brake but only 0x001 was sent, which SEB ignores.~~ | **RESOLVED:** (1) SYS heartbeat 2→10 Hz; RT timeout 200ms. (2) RT takes over 0x7B9 with stroke=max on SYS loss (emergency). (3) In normal AUTO, SYS suppresses its 0x7B9 — RT sends directly (1-hop). SYS resumes on lever press, ESTOP, or RT heartbeat loss. `0x205` becomes monitoring-only for EGAS L2. Brake gap: 220ms worst case. |
 | 13 | **No independent brake monitor — ESTOP could silently have no brakes** | All 8 safety layers protect motor+steering; none verify SEB actually applied braking force. If SEB's CAN receiver is faulted, ESTOP `0x7B9 stroke=max` is never received and the system never knows. SEB_STATUS (`0x721`, 100 Hz) already provides SEB_Stroke_Value, SEB_Pressure_Value, and SEB_Error_Status (Level 3 = severe/shutdown). This is sufficient for a brake following-error monitor with zero new sensors. | **Software fix:** Add brake following-error check in SYS `dispatch`: compare 0x7B9 cmd stroke vs 0x721 actual stroke (threshold 3mm, debounce 100ms). Monitor SEB_Error_Status for Level 3 faults. Add 0x721 staleness check (100ms timeout). Faults logged via 0x600 diagnostic — cannot escalate beyond ESTOP (already max brake) but essential for incident analysis. See `issues/emergency-safety-analysis.md` §8. |
 | 14 | ~~CAN 0x001 spoofable — no authentication, DoS-vulnerable~~ | ~~0x001 DLC=0 with no rate limiting. Corrupted node could flood ESTOP frames.~~ | **RESOLVED:** 250ms minimum interval between 0x001 broadcasts on both RT and SYS (`can_send_estop()` rate limiter). Max 2 frames per 500ms window per node. DLC=1 with sender-ID byte deferred to future protocol change. |
 | 15 | ~~No ESTOP acknowledgment from MTR STM32~~ | ~~SYS/RT have no confirmation that MTR received and acted on ESTOP.~~ | **RESOLVED:** MTR sets `ESTOP_ACTIVE` bit (0x01) in 0x206 fault_flags. SYS dispatch checks bit on receipt → force_estop if set. Fault flag constants centralized in `shared/shared_config.h` (`kMtrFault*`). MTR 0x206 staleness check already implemented (>200ms). |
 | 16 | ~~Startup grace period masks heartbeat but not 0x204 staleness~~ | ~~SYS 0x204 staleness check triggered on cold boot before RT online.~~ | **RESOLVED:** SYS `task_motor` now gates 0x204 staleness check with 3s startup grace (`startup_grace` flag). MTR already had this guard. Both nodes now consistent. |
-| 17 | **ESTOP HMI ambiguous — "both bulbs OFF" identical to powered-off vehicle** | During ESTOP, DC-DC is OFF → 12V rail dead → brake light, mode bulbs, and indicators all dark. A rider returning to the vehicle cannot distinguish ESTOP from power-off. The OR logic claim "brake light ON during ESTOP" is physically impossible with DC-DC off. | **Software + wiring fix:** Keep DC-DC ON during ESTOP (needed for MCU power anyway). Cut only the 12V accessory relay (GPIO27). Rewire brake light to always-on DC-DC rail (not accessory relay output). Result: ESTOP = brake light ON + mode bulbs OFF. Power-off = everything OFF. See `issues/emergency-safety-analysis.md` §12. |
+| 17 | **ESTOP HMI ambiguous — "both bulbs OFF" identical to powered-off vehicle** | During ESTOP, DC-DC is OFF → 12V rail dead → brake light, mode bulbs, and indicators all dark. A rider returning to the vehicle cannot distinguish ESTOP from power-off. The OR logic claim "brake light ON during ESTOP" is physically impossible with DC-DC off. | **Software + wiring fix:** Keep DC-DC ON during ESTOP (needed for MCU power anyway). Cut only the 12V accessory relay (GPIO37). Rewire brake light to always-on DC-DC rail (not accessory relay output). Result: ESTOP = brake light ON + mode bulbs OFF. Power-off = everything OFF. See `issues/emergency-safety-analysis.md` §12. |
 | 18 | **EPS-C mechanical jam silent-stop recovery path unclear** | When mechanical jam triggers silent-stop during ESTOP centering, the architecture says "fall back to silent-stop" without specifying steer SM state transition. It's unclear whether the jam is recoverable via START short-press (STEER_FAULT path) or requires power-cycle. | **Documentation fix:** Explicitly transition to STEER_FAULT on mechanical jam during ESTOP centering. Existing STEER_FAULT recovery paths apply: START short-press → LISTEN_SYNC retry; START long-press 3s + throttle=0 → force-activate at 0° (MANUAL only). See `issues/emergency-safety-analysis.md` §13. |
 | 19 | **Fixed 5° steering following error threshold wrong at high speed** | At 25 km/h, dynamic clamp limits steering to ~5°. A fixed 5° threshold represents a 100% error — the EPS-C must have ZERO response to trigger. A 4° error at speed (80% authority loss) would NOT trigger ESTOP. At 2 km/h (40° limit), 5° is only 12.5% — potentially too sensitive for parking maneuvers. | **Software fix:** Speed-scaled threshold: `max(2°, 0.25 × dynamic_limit)`. Result: 2° at 25 km/h (tight), 4.5° at 10 km/h, 10° at 2 km/h (tolerant). One-line change in RT following-error check. See `issues/emergency-safety-analysis.md` §14. |
 | 20 | **Motor controller CAN protocol undocumented** | Motor controller outputs telemetry on the 250k powertrain CAN bus (speed, current, temperature, fault flags). Specific CAN IDs, signal layouts, and update rates are unknown — depends on motor controller model selection. Until documented, PWT cannot parse or forward motor telemetry to the 500k bus. | 1) Identify motor controller model and obtain CAN protocol documentation. 2) Define CAN IDs and signal layouts in `shared/can/can_signals.yaml`. 3) Implement PWT motor telemetry parsing and forwarding. 4) Update `pwt-esp32/pwt-architecture.md` with confirmed IDs. |

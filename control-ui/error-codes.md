@@ -1,0 +1,483 @@
+# Control UI Error Codes and Logging Contract
+
+**Purpose:** Provide one stable error/event vocabulary for backend logs, API responses, recordings, test evidence, React, LLM tools, and optional terminal clients.
+
+These codes describe the Control UI and its test infrastructure. RT, SYS, MTR, PWT, EPS-C, and SEB diagnostic flags remain ECU-reported data and are not remapped into fake Control UI failures.
+
+## 1. Code format
+
+```text
+CUI-<DOMAIN>-<NUMBER>
+```
+
+Examples:
+
+```text
+CUI-ADP-007  selected USB adapter was removed
+CUI-PRO-007  application checksum failed
+CUI-TST-008  test evidence became incomplete
+```
+
+Rules:
+
+- Codes are stable and never reused for a different meaning.
+- Dynamic values do not appear inside the code; they belong in structured fields.
+- The same condition uses the same code in logs, API errors, UI notices, and evidence.
+- Each condition has an `event_state`: `raised`, `updated`, or `recovered`.
+- Recovery normally uses the original code with `event_state=recovered`, not a second recovery code.
+- Severity and test verdict are separate. An infrastructure `ERROR` may make a test `Inconclusive`, while valid contradictory ECU evidence may make a test `Fail`.
+- Unsupported adapter evidence is `unknown`, not an invented success or zero-valued metric.
+- Every error reports the condition the backend observed. It must not claim an unobserved electrical cause, physical sender identity, frame delivery, or ECU acceptance.
+
+### 1.1 Evidence basis and certainty
+
+`evidence_basis` describes certainty about the reported condition, not certainty about its root cause.
+
+| Basis | Backend guarantee | Examples |
+|---|---|---|
+| `observed` | The backend directly observed the application, OS, USB driver, adapter, queue, or stream condition. | An adapter open call failed; the router queue overflowed; a WebSocket sequence gap occurred. |
+| `derived` | The backend deterministically evaluated retained evidence against the active configuration, YAML contract, and monotonic deadlines. | A received DLC differs from YAML; a periodic message missed its deadline; a checksum does not validate. |
+| `reported` | The adapter or ECU reported the condition. The backend preserves the report but does not independently prove the physical cause. | Adapter-reported bus-off; ECU-reported diagnostic fault. |
+| `inferred` | Evidence indicates a possible cause but cannot prove it. These conditions use names such as `*_SUSPECT`; they never use a definitive physical-failure name. | Bus-specific IDs conflict with the configured channel mapping. |
+| `unknown` | The required evidence is unavailable or unsupported. | CANalyst-II does not expose TEC/REC, bus-off, or hardware-overflow evidence. |
+
+The backend can be certain that `CHANNEL_QUIET` means no raw frames arrived during the configured window. It cannot conclude that a CAN wire is broken. A quiet channel can also result from an unpowered ECU, wrong bitrate, missing termination, incorrect mapping, or an intentionally silent bus.
+
+### 1.2 Conditions the backend must not diagnose as facts
+
+The following physical causes require an electrical measurement or controlled external test. The backend may show the supporting evidence and a guided check, but must not emit a definitive error code for the cause:
+
+| Do not diagnose as fact | Backend may report instead |
+|---|---|
+| Broken, open, shorted, or swapped CANH/CANL wire | `CUI-CAN-010 CHANNEL_QUIET`, USB/adapter errors, or a mapping suspect |
+| Missing/incorrect termination or common-ground fault | Quiet/invalid traffic or adapter-reported error evidence when available |
+| Actual electrical sender of an ordinary CAN ID | YAML expected sender and observed bus/ID only |
+| Physical ECU absent, unpowered, or defective | Required heartbeat/message evidence missing |
+| Frame delivered to or accepted by an ECU | Adapter submission and separately observed expected response |
+| Wire CRC error for a discarded frame | Adapter error evidence only when the adapter exposes it |
+| Healthy bus state from unsupported TEC/REC, bus-off, or overflow metrics | `CUI-ADP-011 CAPABILITY_UNKNOWN` |
+
+## 2. Severity
+
+| Level | Meaning | Default behavior |
+|---|---|---|
+| `DEBUG` | Detailed trace useful during development | Not shown by default; rate-limited |
+| `INFO` | Expected lifecycle or state transition | Persist important transitions |
+| `WARN` | Degraded behavior that may recover or may not affect evidence | Visible diagnostic event |
+| `ERROR` | Operation failed or evidence may be invalid | API/test operation reports failure or Inconclusive as appropriate |
+| `CRITICAL` | Backend cannot safely continue the current test/session | Stop affected jobs, preserve evidence, require intervention |
+
+`CRITICAL` means critical to bench-test integrity, not a production vehicle safety classification.
+
+## 3. Required structured fields
+
+Every persisted event contains:
+
+```text
+schema_version
+event_id
+code
+severity
+event_state
+evidence_basis             observed, derived, reported, inferred, or unknown
+message
+wall_time_utc
+monotonic_time_us
+process_instance_id
+protocol_hash
+request_id                when caused by an API request
+client_id / actor_id      when known
+session_id / session_revision
+job_id / test_id / test_step
+adapter_id / adapter_epoch
+channel / bus
+can_id / message / signal when applicable
+source / provenance
+expected / actual
+queue_depth / high_water / dropped_count when applicable
+exception_type
+evidence_refs
+context                   bounded structured object
+```
+
+Events also carry `origin_service`, `detector`, and optional `cause_event_id`/`root_event_id`. These fields let clients distinguish the primary failure from downstream consequences.
+
+Secrets, capability tokens, USB handles, and unrestricted payload dumps are never logged. Raw CAN bytes may be linked as evidence or included in bounded CAN-specific context.
+
+## 4. General and configuration
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-GEN-001` | CRITICAL | `UNHANDLED_EXCEPTION` | An exception escaped its owning service boundary |
+| `CUI-GEN-002` | ERROR | `CONFIG_INVALID` | Application/bench configuration failed validation |
+| `CUI-GEN-003` | ERROR | `DEPENDENCY_UNAVAILABLE` | Required library, driver, or external executable is unavailable |
+| `CUI-GEN-004` | ERROR | `STARTUP_FAILED` | Backend startup could not reach ready state |
+| `CUI-GEN-005` | ERROR | `SHUTDOWN_INCOMPLETE` | Shutdown timed out or left an owned resource unresolved |
+| `CUI-GEN-006` | WARN | `CLOCK_DISCONTINUITY` | Host monotonic/session time mapping became discontinuous |
+| `CUI-GEN-007` | WARN | `RESOURCE_EXHAUSTED` | Memory, worker, file descriptor, or other bounded resource was exhausted |
+| `CUI-GEN-008` | ERROR | `INVARIANT_VIOLATION` | Internal state violated a condition that should be impossible |
+
+## 5. API, contract, and capabilities
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-API-001` | WARN | `REQUEST_INVALID` | Request failed schema or semantic validation |
+| `CUI-API-002` | ERROR | `API_VERSION_UNSUPPORTED` | Client and backend API versions are incompatible |
+| `CUI-API-003` | ERROR | `PROTOCOL_HASH_MISMATCH` | Client/backend/generated protocol semantics differ |
+| `CUI-API-004` | WARN | `CAPABILITY_DENIED` | Session/client lacks the required supported capability |
+| `CUI-API-005` | WARN | `REQUEST_CONFLICT` | Request conflicts with current resource state |
+| `CUI-API-006` | WARN | `IDEMPOTENCY_CONFLICT` | An idempotency key was reused with different request content |
+| `CUI-API-007` | WARN | `SESSION_REVISION_CONFLICT` | Request used a stale expected session revision |
+| `CUI-API-008` | WARN | `REQUEST_DEADLINE_EXCEEDED` | Request deadline expired before acceptance/completion |
+| `CUI-API-009` | WARN | `RATE_LIMITED` | Client exceeded a bounded API operation rate |
+| `CUI-API-010` | INFO | `CLIENT_DISCONNECTED` | API/WebSocket client disconnected |
+| `CUI-API-011` | ERROR | `RESPONSE_SERIALIZATION_FAILED` | Valid result could not be encoded into the API contract |
+| `CUI-API-012` | ERROR | `GENERATED_CLIENT_DRIFT` | Generated client/tool schema is stale relative to OpenAPI |
+
+## 6. Adapter and USB transport
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-ADP-001` | WARN | `DEVICE_NOT_FOUND` | Configured CANalyst-II was not discovered |
+| `CUI-ADP-002` | ERROR | `OPEN_FAILED` | Adapter open/claim operation failed |
+| `CUI-ADP-003` | ERROR | `CONFIGURATION_FAILED` | Adapter could not apply requested channels/bitrates/mode |
+| `CUI-ADP-004` | ERROR | `RECEIVE_WORKER_FAILED` | Receive worker exited or raised unexpectedly |
+| `CUI-ADP-005` | WARN | `WORKER_HEARTBEAT_MISSED` | Adapter worker supervision heartbeat exceeded its deadline |
+| `CUI-ADP-006` | ERROR | `USB_IO_FAILED` | USB read/write/control operation failed |
+| `CUI-ADP-007` | ERROR | `DEVICE_REMOVED` | Selected physical adapter disappeared during an active epoch |
+| `CUI-ADP-008` | WARN | `CLOSE_FAILED` | Best-effort adapter close/shutdown failed |
+| `CUI-ADP-009` | WARN | `RECONNECT_FAILED` | A visible reconnect attempt failed |
+| `CUI-ADP-010` | WARN | `IDENTITY_CHANGED` | Reopened device identity does not match the selected adapter |
+| `CUI-ADP-011` | WARN | `CAPABILITY_UNKNOWN` | A requested adapter metric/capability is unsupported or unverified |
+| `CUI-ADP-012` | ERROR | `CHARACTERIZATION_OUTDATED` | Driver/adapter/USB fingerprint changed since validation |
+| `CUI-ADP-013` | INFO | `TIMESTAMP_WRAP` | Device timestamp wrapped and was mapped into a new segment |
+| `CUI-ADP-014` | WARN | `TIMESTAMP_RESET` | Device timestamp reset unexpectedly within an adapter session |
+| `CUI-ADP-015` | WARN | `RX_POLL_DELAY_EXCEEDED` | Measured adapter polling delay exceeded the characterized limit |
+
+## 7. CAN channel and transport evidence
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-CAN-001` | ERROR | `CHANNEL_OPEN_FAILED` | High or Low channel failed to open |
+| `CUI-CAN-002` | WARN | `CHANNEL_MAPPING_SUSPECT` | Bus-specific traffic conflicts with configured mapping; this does not prove wiring or channel assignment |
+| `CUI-CAN-003` | ERROR | `BITRATE_CONFIGURATION_FAILED` | Requested channel bitrate was not applied |
+| `CUI-CAN-004` | ERROR | `RX_FAILED` | Channel receive operation failed |
+| `CUI-CAN-005` | ERROR | `TX_SUBMIT_FAILED` | Frame could not be submitted to the adapter library |
+| `CUI-CAN-006` | WARN | `TX_BACKLOG_TIMEOUT` | Adapter TX queue did not accept work within deadline |
+| `CUI-CAN-007` | ERROR | `BUS_OFF_REPORTED` | Adapter reported bus-off where supported |
+| `CUI-CAN-008` | WARN | `ERROR_PASSIVE_REPORTED` | Adapter reported error-passive where supported |
+| `CUI-CAN-009` | ERROR | `HARDWARE_RX_OVERFLOW` | Adapter reported hardware receive overflow |
+| `CUI-CAN-010` | INFO | `CHANNEL_QUIET` | No raw traffic observed for the activity window; this is not adapter loss or proof of a wiring fault |
+| `CUI-CAN-011` | WARN | `WRONG_BUS_FRAME` | Known message was observed on a bus disallowed by YAML; this does not prove the physical sender or wiring cause |
+| `CUI-CAN-012` | INFO | `CROSS_CHANNEL_ORDER_UNCERTAIN` | Cross-bus arrival order cannot be treated as wire order |
+| `CUI-CAN-013` | WARN | `UNEXPECTED_ERROR_FRAME` | Adapter exposed a CAN error frame/event |
+| `CUI-CAN-014` | WARN | `TX_ECHO_UNAVAILABLE` | Adapter cannot distinguish bus-observed TX from submitted TX |
+
+Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evidence. Report the capability as unknown instead.
+
+`CUI-CAN-002` is `inferred`. Codes `001` through `006` and `010` through `014` are `observed` or `derived` according to their retained context. Codes `007` through `009` are `reported` because the adapter, rather than the backend, supplies the controller-state evidence.
+
+## 8. Receive pipeline and overload
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-RX-001` | ERROR | `ROUTER_QUEUE_OVERFLOW` | Raw router queue dropped or rejected an envelope |
+| `CUI-RX-002` | ERROR | `DECODE_QUEUE_OVERFLOW` | Decode/validation input could not retain all frames |
+| `CUI-RX-003` | WARN | `FRAME_SEQUENCE_GAP` | Internal/channel sequence proves one or more envelopes missing |
+| `CUI-RX-004` | WARN | `DUPLICATE_ENVELOPE` | Same transport envelope sequence was received twice |
+| `CUI-RX-005` | WARN | `TIMESTAMP_NON_MONOTONIC` | Timestamp moved backward inside a channel/mapping segment |
+| `CUI-RX-006` | INFO | `STALE_EPOCH_FRAME` | Buffered frame from an obsolete adapter epoch was rejected |
+| `CUI-RX-007` | ERROR | `ASSERTION_INPUT_LOSS` | Active assertions did not receive complete relevant observations |
+| `CUI-RX-008` | WARN | `WORKLOAD_BUDGET_EXCEEDED` | Declared tested frame/processing workload was exceeded |
+| `CUI-RX-009` | ERROR | `CRITICAL_EVENT_LOSS` | Critical internal event could not be retained/delivered |
+
+## 9. Protocol, decode, and integrity
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-PRO-001` | INFO | `UNKNOWN_MESSAGE` | CAN ID is not defined for the observed bus |
+| `CUI-PRO-002` | WARN | `DLC_INVALID` | Received DLC differs from the YAML definition |
+| `CUI-PRO-003` | WARN | `DECODE_FAILED` | Raw frame could not be decoded into declared signals |
+| `CUI-PRO-004` | ERROR | `ENCODE_FAILED` | Requested semantic values could not be encoded |
+| `CUI-PRO-005` | WARN | `SIGNAL_OUT_OF_RANGE` | Received/requested signal exceeds declared bounds |
+| `CUI-PRO-006` | WARN | `ENUM_INVALID` | Raw value is not a declared enum member |
+| `CUI-PRO-007` | WARN | `CHECKSUM_INVALID` | Application checksum/XOR/CRC validation failed |
+| `CUI-PRO-008` | WARN | `COUNTER_DISCONTINUITY` | Rolling/alive counter skipped, repeated, or moved unexpectedly; this does not attribute the cause to the sender because capture loss or reordering can produce the same evidence |
+| `CUI-PRO-009` | WARN | `COUNTER_FROZEN` | Frames arrive while the required alive counter does not advance |
+| `CUI-PRO-010` | WARN | `REQUIRED_FLAG_INVALID` | Mandatory enable/security flag has an invalid value |
+| `CUI-PRO-011` | WARN | `MULTIPLEXOR_INVALID` | Multiplexer/overlap conditions are inconsistent or unknown |
+| `CUI-PRO-012` | ERROR | `ENCODE_ROUNDTRIP_FAILED` | Encoded payload does not self-decode to requested semantics |
+| `CUI-PRO-013` | ERROR | `YAML_SCHEMA_INVALID` | Protocol YAML failed compiler/schema validation |
+| `CUI-PRO-014` | ERROR | `GENERATED_ARTIFACT_DRIFT` | Checked-in/generated artifact differs from YAML output |
+| `CUI-PRO-015` | WARN | `ROUTE_INVALID` | Message route/sender/receiver expectation was violated |
+| `CUI-PRO-016` | WARN | `PLAUSIBILITY_FAILED` | Cross-signal or test-specific plausibility rule failed |
+
+## 10. Sessions, ownership, and transmission
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-TX-001` | WARN | `BENCH_TX_DISABLED` | Mutating physical request was rejected because Bench TX is off |
+| `CUI-TX-002` | WARN | `SOURCE_NOT_OWNED` | Session/job does not own the requested bus and CAN ID |
+| `CUI-TX-003` | ERROR | `SOURCE_CONFLICT` | Physical or other producer conflicts with active source ownership |
+| `CUI-TX-004` | WARN | `LEASE_EXPIRED` | Stimulus/source lease expired before or during work |
+| `CUI-TX-005` | WARN | `MANIFEST_EXPIRED` | Resolved TX/test manifest passed its validity deadline |
+| `CUI-TX-006` | ERROR | `MANIFEST_MISMATCH` | Requested operation differs from the enabled manifest |
+| `CUI-TX-007` | WARN | `SCHEDULER_DEADLINE_MISSED` | Job instance missed its permitted execution deadline |
+| `CUI-TX-008` | WARN | `PERIOD_MISSED` | Periodic instance was skipped rather than burst late |
+| `CUI-TX-009` | WARN | `JITTER_EXCEEDED` | Submission jitter exceeded test/config tolerance |
+| `CUI-TX-010` | ERROR | `JOB_CANCEL_FAILED` | Owned scheduled job did not terminate cleanly |
+| `CUI-TX-011` | WARN | `COMMAND_INTENT_STALE` | Interactive intent expired or arrived out of order |
+| `CUI-TX-012` | WARN | `PROFILE_DISALLOWS_TX` | Current profile does not permit the requested destination |
+| `CUI-TX-013` | WARN | `RAW_TX_NOT_ALLOWED` | Raw/negative injection lacks explicit capability/policy |
+| `CUI-TX-014` | ERROR | `AUTOMATIC_FIELD_FAILED` | Counter/checksum/forced field could not be generated |
+| `CUI-TX-015` | INFO | `TX_SUBMITTED_DELIVERY_UNKNOWN` | Adapter-library submission succeeded; ECU delivery and acceptance remain unknown unless separately evidenced |
+| `CUI-TX-016` | CRITICAL | `STOP_ALL_INCOMPLETE` | One or more owned TX jobs/leases survived Stop All |
+
+## 11. ECU and message health
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-ECU-001` | WARN | `MESSAGE_LATE` | YAML-defined periodic message missed its live deadline |
+| `CUI-ECU-002` | ERROR | `MESSAGE_MISSING` | Message exceeded its YAML-defined offline deadline |
+| `CUI-ECU-003` | ERROR | `REQUIRED_ECU_EVIDENCE_MISSING` | Required ECU-defining messages are missing for the test/profile; this does not prove that the ECU is absent, unpowered, or faulty |
+| `CUI-ECU-004` | ERROR | `HEARTBEAT_FROZEN` | Heartbeat frames arrive without alive-counter advancement |
+| `CUI-ECU-005` | WARN | `ECU_DATA_INVALID` | ECU traffic is present but fails current validity requirements |
+| `CUI-ECU-006` | INFO | `ECU_RECOVERING` | Valid advancing data resumed but stability window is incomplete |
+| `CUI-ECU-007` | ERROR | `PHYSICAL_SYNTHETIC_CONFLICT` | Adapter-received traffic appeared for a synthetically owned ID; ordinary CAN traffic cannot prove the electrical sender identity |
+| `CUI-ECU-008` | WARN | `UNEXPECTED_MESSAGE_PRESENT` | Message expected to be absent appeared during a test window |
+| `CUI-ECU-009` | WARN | `DIAGNOSTIC_ACTIVE` | ECU-reported diagnostic/fault became active |
+| `CUI-ECU-010` | INFO | `DIAGNOSTIC_CLEARED` | ECU-reported diagnostic/fault cleared |
+
+For `CUI-ECU-009/010`, include `ecu`, `ecu_fault_code`, `fault_name`, `raw_value`, and YAML definition reference. Do not claim physical sender identity beyond the expected sender associated with the CAN ID.
+
+## 12. Test runner and assertions
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-TST-001` | ERROR | `DEFINITION_INVALID` | Test definition failed schema/semantic validation |
+| `CUI-TST-002` | WARN | `PRECONDITION_NOT_MET` | Test could not start because a required state/topology was absent |
+| `CUI-TST-003` | ERROR | `ASSERTION_FAILED` | Valid contradictory evidence proved expected behavior false |
+| `CUI-TST-004` | ERROR | `ASSERTION_TIMEOUT` | Required evidence did not arrive within the assertion window |
+| `CUI-TST-005` | WARN | `ASSERTION_UNKNOWN` | Predicate result remained Unknown because required data was unavailable |
+| `CUI-TST-006` | ERROR | `CLEANUP_FAILED` | Test cleanup did not complete as declared |
+| `CUI-TST-007` | INFO | `TEST_CANCELED` | User/client/backend canceled the test with a recorded reason |
+| `CUI-TST-008` | ERROR | `EVIDENCE_INCOMPLETE` | Relevant capture/timestamp/storage/assertion evidence has a gap |
+| `CUI-TST-009` | ERROR | `INFRASTRUCTURE_LOSS` | Adapter/backend infrastructure failed during the test |
+| `CUI-TST-010` | WARN | `TOPOLOGY_MISMATCH` | Present physical/synthetic roles differ from test requirements |
+| `CUI-TST-011` | WARN | `PROTOCOL_NOT_COMPARABLE` | Protocol/topology prevents baseline comparison |
+| `CUI-TST-012` | ERROR | `TEST_RUNNER_FAILED` | Runner service failed independently of ECU behavior |
+
+`CUI-TST-003` normally produces `Fail`. Codes `004`, `005`, `008`, `009`, and infrastructure-caused `006` normally produce `Inconclusive`, according to the assertion/evidence dependency.
+
+## 13. Recording, evidence, and replay
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-REC-001` | ERROR | `RECORDING_START_FAILED` | Recording could not be initialized before stimulus |
+| `CUI-REC-002` | ERROR | `RECORDING_WRITE_FAILED` | Raw/event data could not be persisted |
+| `CUI-REC-003` | ERROR | `RECORDING_QUEUE_OVERFLOW` | Lossless recording queue could not retain all evidence |
+| `CUI-REC-004` | CRITICAL | `STORAGE_FULL` | Target storage has no safe remaining capacity |
+| `CUI-REC-005` | ERROR | `FINALIZE_FAILED` | Recording metadata/index could not be finalized |
+| `CUI-REC-006` | ERROR | `INTEGRITY_CHECK_FAILED` | Recording checksum/index/sequence verification failed |
+| `CUI-REC-007` | WARN | `EXPORT_FAILED` | Requested evidence export could not be produced |
+| `CUI-REC-008` | ERROR | `TRIGGER_BUFFER_LOSS` | Protected pre/post-trigger data was evicted or unavailable |
+| `CUI-REP-001` | ERROR | `REPLAY_OPEN_FAILED` | Capture could not be opened or validated for replay |
+| `CUI-REP-002` | ERROR | `REPLAY_PROTOCOL_MISMATCH` | Required protocol semantics are unavailable/incompatible |
+| `CUI-REP-003` | WARN | `REPLAY_SEEK_FAILED` | Replay could not restore/advance to requested position |
+| `CUI-REP-004` | ERROR | `REPLAY_CLOCK_FAILED` | Virtual replay time became inconsistent |
+| `CUI-REP-005` | WARN | `REPLAY_INDEX_INCOMPLETE` | Seek/index data is incomplete; sequential replay may remain possible |
+
+## 14. WebSocket and presentation
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-STR-001` | ERROR | `HANDSHAKE_FAILED` | Stream version/protocol/capability handshake failed |
+| `CUI-STR-002` | WARN | `STREAM_SEQUENCE_GAP` | Client detected missing WebSocket batch sequence |
+| `CUI-STR-003` | WARN | `CLIENT_QUEUE_OVERFLOW` | One client’s outbound queue dropped/coalesced beyond policy |
+| `CUI-STR-004` | ERROR | `SNAPSHOT_FAILED` | Atomic initial/recovery snapshot could not be built/delivered |
+| `CUI-STR-005` | WARN | `STREAM_STALLED` | WebSocket exists but heartbeat/batch progress stopped |
+| `CUI-STR-006` | WARN | `SLOW_CLIENT` | Client consumption latency exceeded its budget |
+| `CUI-STR-007` | ERROR | `STREAM_SCHEMA_UNSUPPORTED` | Event/batch schema version is incompatible |
+| `CUI-UI-001` | WARN | `PRESENTATION_DELAYED` | Receive-to-visible age exceeded presentation budget |
+| `CUI-UI-002` | WARN | `PRESENTATION_DROPPING` | Browser intentionally skipped/coalesced visual updates |
+| `CUI-UI-003` | ERROR | `CLIENT_STATE_DESYNCHRONIZED` | UI/client local projection cannot be reconciled without snapshot |
+| `CUI-UI-004` | ERROR | `RENDER_EXCEPTION` | React/rendering component raised an uncaught error |
+
+Presentation-only errors do not make backend evidence incomplete unless the test explicitly requires visual evidence.
+
+## 15. Vehicle projection
+
+| Code | Default | Name | Meaning |
+|---|---:|---|---|
+| `CUI-PRJ-001` | INFO | `SOURCE_MISSING` | Required actuation/sensor projection source is unavailable |
+| `CUI-PRJ-002` | WARN | `SOURCE_STALE` | Projection source exceeded its YAML deadline |
+| `CUI-PRJ-003` | ERROR | `EPOCH_MISMATCH` | Projection attempted to combine different adapter/replay epochs |
+| `CUI-PRJ-004` | WARN | `INTEGRATION_DISCONTINUITY` | Center-locked projected pose required a new segment/reset |
+| `CUI-PRJ-005` | WARN | `ACTUATION_SENSOR_DIVERGENCE` | Command and feedback differ beyond configured tolerance/window |
+| `CUI-PRJ-006` | ERROR | `GEOMETRY_INVALID` | Dimensions/units/steering convention cannot produce valid geometry |
+
+## 16. Logging behavior
+
+### 16.0 How codes are produced
+
+Codes are emitted by the backend service that owns the relevant fact. React, an LLM adapter, and the CLI do not derive codes from text or independently decide that a backend condition occurred.
+
+| Detector boundary | Evidence used | Codes produced |
+|---|---|---|
+| FastAPI middleware and Pydantic handlers | request/schema/version/deadline/idempotency result | `CUI-API-*` |
+| Capability/session service | granted capabilities, revision, expiry, current profile | `CUI-API-004/007`, `CUI-TX-001/004/012/013` |
+| Adapter supervisor | worker lifecycle heartbeat, selected USB identity, receive exceptions, reconnect result | `CUI-ADP-*` |
+| CAN adapter wrapper | per-channel open/configuration, supported controller evidence, submit result | `CUI-CAN-*` |
+| Instrumented queues/router | sequence, capacity, depth, dropped count, epoch | `CUI-RX-*` |
+| Generated protocol runtime | bus/ID/DLC/decode/encode/range/checksum/counter/route rules | `CUI-PRO-*` |
+| Freshness/ECU topology service | YAML deadlines, alive-counter advancement, defining messages, provenance | `CUI-ECU-*` |
+| Ownership/TX scheduler | Bench TX, owner/lease, deadlines, periods, jitter, cancel result | `CUI-TX-*` |
+| Test runner | definition, preconditions, assertions, infrastructure dependencies, cleanup | `CUI-TST-*` |
+| Recording/replay service | queue/write/storage/index/hash/virtual-clock outcomes | `CUI-REC-*`, `CUI-REP-*` |
+| Subscription hub/client heartbeat | handshake, per-client sequence/queue/age | `CUI-STR-*` |
+| React error boundary and render telemetry | render exception and measured visible age/drop | `CUI-UI-*` |
+| Projection service | source dependency state, epoch, geometry and command/feedback tolerances | `CUI-PRJ-*` |
+| Top-level service supervisor | otherwise unhandled exception or invariant | `CUI-GEN-001/008` |
+
+Domain services return typed outcomes/violations. A central event factory validates the code against the registry, supplies common correlation/timestamp/version fields, enforces bounded/redacted context, and appends the event. It does not reinterpret the owning service’s decision.
+
+Do not map exception-message substrings throughout the codebase. Adapter-specific low-level exceptions are normalized once in the adapter wrapper using exception type and structured driver/USB status. Unknown exceptions become `CUI-GEN-001` with a redacted server-side stack trace.
+
+### 16.0.1 State transitions, not polling guesses
+
+Persistent conditions use explicit state machines:
+
+```text
+inactive → raised → updated → recovered
+```
+
+The detector emits only on a transition or bounded summary interval. For example, message freshness emits `CUI-ECU-001` when entering Late, `CUI-ECU-002` when entering Missing, and a recovered transition when valid advancing data stabilizes. The UI and LLM read these backend events; they do not apply their own timeout logic.
+
+### 16.0.2 Causal chains
+
+One root failure can produce legitimate consequences without pretending they are independent causes:
+
+```text
+CUI-ADP-007 DEVICE_REMOVED                 root
+  ├→ CUI-TX-004 LEASE_EXPIRED              caused consequence
+  ├→ CUI-TST-009 INFRASTRUCTURE_LOSS       test disposition cause
+  └→ CUI-TST-008 EVIDENCE_INCOMPLETE       evidence consequence
+```
+
+Consequences reference `cause_event_id` and the shared `root_event_id`. Message/ECU freshness may transition after adapter loss, but the topology service marks it `transport_unknown` and suppresses misleading independent `ECU_MISSING` claims until transport evidence is healthy again.
+
+### 16.1 Destinations
+
+- Structured JSON Lines operational log for application events.
+- Human console rendering for local development.
+- Immutable recording event stream for events relevant to a test/session.
+- API/WebSocket event delivery using the same code and fields.
+- Metrics derived from events/counters, not parsed from log text.
+
+The authoritative recent/persisted event store is backend-owned and queryable through the shared API. Direct filesystem access to log files is not required for React, LLMs, tests, or CI.
+
+Raw CAN recording remains separate from the operational log. Logs reference raw evidence by sequence/time rather than duplicating every high-rate frame.
+
+### 16.2 Deduplication and recovery
+
+For repeated conditions:
+
+1. Log the first `raised` event immediately.
+2. Increment count and update last occurrence without repeating identical console lines.
+3. Periodically emit a bounded `updated` summary when useful.
+4. Emit one `recovered` transition with duration and total count.
+
+Never rate-limit away the first failure, severity escalation, adapter epoch change, evidence-quality transition, or recovery.
+
+### 16.3 Exception handling
+
+Expected domain failures return their specific codes without Python stack traces in normal API responses. Unexpected exceptions emit `CUI-GEN-001` with a server-side stack trace, request/session context, and redacted response error ID. The stack trace is not exposed to ordinary clients.
+
+### 16.4 Retention
+
+- Rotate operational logs by bounded size/time.
+- Retain logs referenced by a test report with that report’s evidence policy.
+- Store firmware/software/protocol versions with recordings.
+- Redact tokens and environment secrets at the logging boundary.
+- Make storage failure visible through `CUI-REC-*`; never silently stop logging evidence.
+
+## 17. API error example
+
+```json
+{
+  "schema_version": 1,
+  "request_id": "req_123",
+  "ok": false,
+  "data": null,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "CUI-TX-003",
+      "name": "SOURCE_CONFLICT",
+      "message": "Low-bus VCU_SES_REQ is already produced by a physical source",
+      "retryable": false,
+      "context": {
+        "bus": "low",
+        "can_id": "0x169",
+        "message": "VCU_SES_REQ",
+        "current_owner": "physical_expected_source"
+      },
+      "evidence_refs": ["evt_456"]
+    }
+  ],
+  "evidence": ["evt_456"]
+}
+```
+
+## 18. Initial implementation priority
+
+Implement these groups first because they protect result correctness:
+
+1. `CUI-GEN-*`, `CUI-API-*`, and structured fields.
+2. `CUI-ADP-*`, `CUI-CAN-*`, and `CUI-RX-*` for connection/loss evidence.
+3. `CUI-PRO-*` for corruption and protocol validation.
+4. `CUI-TX-*` for scheduler, ownership, and Stop All.
+5. `CUI-TST-*` and `CUI-REC-*` for trustworthy verdicts/evidence.
+6. `CUI-STR-*`, `CUI-UI-*`, and `CUI-PRJ-*` for client/presentation diagnosis.
+
+## 19. Machine-readable registry and API access
+
+Maintain one registry containing code, symbolic name, domain, default severity, retryability, description, allowed context schema, and documentation link. Generate or validate from it:
+
+- Python enum/Pydantic event models;
+- OpenAPI error/event schemas;
+- TypeScript constants/types for React;
+- LLM tool result schemas;
+- documentation tables and contract fixtures.
+
+The shared backend API exposes:
+
+```text
+GET  /api/v1/error-codes
+GET  /api/v1/events
+GET  /api/v1/events/{event_id}
+POST /api/v1/events/query
+POST /api/v1/events/wait
+GET  /api/v1/events/summary
+GET  /api/v1/events/export
+WS   /api/v1/stream  subscription: events
+```
+
+Filters include time/sequence range, code/domain/severity/state, request/session/job/test, adapter epoch, bus, CAN ID/message/signal, ECU, source/provenance, root cause, and whether the event affected evidence.
+
+`events/summary` is deterministic backend aggregation: counts, first/last occurrence, active/recovered state, duration, affected sessions/tests, root causes, and evidence links. It does not ask an LLM to infer counts from raw text.
+
+LLM tools are thin mappings over these same endpoints:
+
+```text
+list_error_codes
+query_events
+get_event
+wait_for_event
+summarize_session_events
+export_event_evidence
+```
+
+React uses the same resources for diagnostics and timelines. Access is capability-based (`observe_events`, `export_events`, optional `view_internal_diagnostics`), never granted or denied merely because the client is an LLM.
+
+API event results exclude secrets and unrestricted stack traces. The `view_internal_diagnostics` capability may reveal bounded server diagnostic fields locally, while raw secrets remain redacted unconditionally.
