@@ -351,3 +351,4 @@ export class BusDetector {
     this.lastFeedAt = 0;
   }
 }
+initCanDatabase();

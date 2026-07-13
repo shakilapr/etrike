@@ -734,6 +734,8 @@ Diagnostic and transport events appear in a focused timeline separate from the h
 
 Each entry links to its raw frame and decoded signals.
 
+High-frequency faults are represented as condition episodes, not one timeline row per failed frame. The first failure is emitted immediately; repeated observations update exact counters and bounded samples; periodic summary records report count/rate; recovery emits the final duration and count. Aggregation is keyed per code and bounded scope, so one noisy CAN message cannot suppress unrelated errors. Recovery hysteresis prevents valid/invalid alternation from flooding the timeline. Raw recordings retain frame-level evidence independently from operational logging.
+
 ### 14.2 Sequential message verification
 
 Provide a guided verification workspace where an engineer selects a CAN message and defines or selects an expected response. Each step displays:

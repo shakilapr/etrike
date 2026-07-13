@@ -96,18 +96,18 @@ describe("SIL Physics & Dynamics", () => {
     expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBe(0);
   });
 
-  it("handles high-level braking (0x301) at 30km/h and decays speed over ~380ms", async () => {
+  it("handles high-level braking (0x301) at 10km/h and decays speed over ~380ms", async () => {
     engine.injectExternal(normalizeFrame({ ts: 0, bus: "low", id: "0x110", name: "SYS_MODE_CMD", dlc: 1, data: [1], decoded: { mode: 1 } }));
     
-    // 30 km/h = 8333 mm/s, turning 20 deg/min = ~5.8 mrad/s
-    host.speedMmps = 8333;
+    // 10.8 km/h = 3000 mm/s, turning 20 deg/min = ~5.8 mrad/s
+    host.speedMmps = 3000;
     host.yawMradS = 6;
     
     // Reach steady state
     vi.advanceTimersByTime(2000);
     
     let mtrFb = hubEvents.filter(e => e.payload.frame.id === "0x206").pop();
-    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeGreaterThan(8300);
+    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeGreaterThan(2950);
     
     // Trigger High-Level Brake (5000 kPa)
     host.brakeKpa = 5000;
@@ -116,7 +116,7 @@ describe("SIL Physics & Dynamics", () => {
     vi.advanceTimersByTime(300);
     mtrFb = hubEvents.filter(e => e.payload.frame.id === "0x206").pop();
     expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeGreaterThan(0);
-    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeLessThan(8300);
+    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeLessThan(2950);
 
     // Fast forward enough for decay to finish (380ms decay + propagation)
     vi.advanceTimersByTime(500);
@@ -124,18 +124,18 @@ describe("SIL Physics & Dynamics", () => {
     expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBe(0);
   });
 
-  it("handles ESTOP braking at 30km/h and stops instantly", async () => {
+  it("handles ESTOP braking at 10km/h and stops instantly", async () => {
     engine.injectExternal(normalizeFrame({ ts: 0, bus: "low", id: "0x110", name: "SYS_MODE_CMD", dlc: 1, data: [1], decoded: { mode: 1 } }));
     
-    // 30 km/h = 8333 mm/s, turning 20 deg/min = ~5.8 mrad/s
-    host.speedMmps = 8333;
+    // 10.8 km/h = 3000 mm/s, turning 20 deg/min = ~5.8 mrad/s
+    host.speedMmps = 3000;
     host.yawMradS = 6;
     
     // Reach steady state
     vi.advanceTimersByTime(2000);
     
     let mtrFb = hubEvents.filter(e => e.payload.frame.id === "0x206").pop();
-    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeGreaterThan(8300);
+    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeGreaterThan(2950);
     
     // Trigger ESTOP!
     engine.injectExternal(normalizeFrame({ ts: 0, bus: "high", id: "0x001", name: "SAFETY_ESTOP", dlc: 0, data: [], decoded: {} }));
