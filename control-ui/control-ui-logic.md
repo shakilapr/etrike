@@ -705,3 +705,42 @@ Model projection has its own epoch and reset boundary. Browser tab suspension, a
 Golden snapshot and behavior tests cover straight, left, right, reverse, neutral, braking, indicators, ESTOP, command-feedback disagreement, source fallback, stale/missing/corrupt inputs, replay/synthetic provenance, adapter epoch change, resize/high-DPI behavior, hidden-tab resume, and reduced motion. They also prove that the vehicle anchor remains fixed while the background translates, that heading rotates about that anchor, and that command-only data cannot move a sensor-driven background.
 
 Numeric checks prove steering sign, unit conversion, curvature, ICR side, turn radius, and projected path against the shared E-Trike kinematics vectors. A visual test must also prove that invalid/out-of-range data is disclosed rather than silently clamped into a healthy-looking vehicle.
+
+## 43. Shared API request logic
+
+1. React, LLM tools, or a thin CLI creates the same versioned Pydantic request.
+2. FastAPI authenticates the client capability and records caller identity for audit.
+3. The shared application service validates profile, protocol hash, adapter epoch, session revision, ownership, values, and state.
+4. A query returns an atomic snapshot; a mutation returns disposition and new session revision, plus job ID when asynchronous.
+5. Backend-owned jobs execute timing, waits, assertions, recording, and cleanup independently of client connection lifetime.
+6. Every client receives the same structured warnings, errors, evidence references, and final disposition.
+
+No domain decision examines whether the caller is UI, LLM, or CLI. A client timeout does not imply job cancellation; explicit cancel and Stop All remain idempotent.
+
+## 44. Shared session and physical TX logic
+
+A session records caller/run audit identity, capabilities, profile, protocol hash, adapter epoch, revision, leases, jobs, evidence, and expiry. Pure Software sessions may be created unattended. A physical session uses the same flow for all clients:
+
+1. Verify adapter and channel mapping.
+2. Grant the session the required supported capabilities.
+3. Explicitly enable Bench TX for a finite TTL.
+4. Resolve and preview semantic traffic through the normal encoder/validator.
+5. Revalidate protocol, adapter epoch, topology, ownership, revision, and TTL immediately before starting.
+6. Bind created jobs to session, adapter epoch, source ownership, and finite leases.
+7. Disable/cancel on mismatch, reconnect, expiry, Stop All, or session close.
+
+Full LLM API access does not bypass these invariants, just as full React access does not. Client termination cannot own cleanup; backend leases and the test runner do.
+
+## 45. Headless test logic
+
+1. Allocate isolated loopback ports and artifact directory.
+2. Start backend in virtual mode and wait on structured readiness.
+3. Start frontend and verify protocol hash/stream handshake.
+4. Load the declared deterministic fixture and reset the test clock/session state.
+5. Run API/WebSocket tests or Playwright interactions.
+6. Continuously collect browser console errors, failed requests, backend exceptions, stream gaps, and evidence quality.
+7. On failure, capture screenshot, trace, DOM/accessibility snapshot, backend state, and relevant CAN window.
+8. Run Stop All, close sessions, stop child processes, and detect leaked jobs/ports.
+9. Return structured Pass, Fail, or Inconclusive with artifact paths.
+
+Headless tests never depend on fixed startup sleeps, pixel coordinates, or keyboard state as vehicle feedback. They wait on readiness/predicates and verify the same actuation/sensor projections and test verdicts used by the UI.

@@ -1,24 +1,34 @@
 # Controller Tech Stack
 
-This document defines the exact technology stack chosen for the CAN Controller, optimized for the absolute lowest latency, minimal lines of code, and a premium reactive user interface.
+This document defines the technology stack for the CAN Controller. It prioritizes maintainability, responsive live updates, and a clear engineering UI without treating latency, line count, or visual quality as guarantees from a framework.
 
 ## 1. Frontend: React + TypeScript (The UI)
 This stack provides a heavily typed, production-ready frontend that can scale into a desktop application.
-- **React + Vite + TypeScript:** Industry standard for maintainable, fast interfaces. Strict mode ensures type safety when handling complex CAN data.
+- **React + Vite + TypeScript:** Industry-standard tooling for maintainable, fast interfaces. TypeScript provides static type checking; React Strict Mode helps expose unsafe lifecycle behavior during development.
 - **Zustand:** Ultra-fast, boilerplate-free state management to hold the live vehicle state.
-- **TanStack Table:** The absolute best headless table library, perfect for rendering a live, scrollable CAN diagnostic log.
-- **Tailwind CSS + shadcn/ui:** Guarantees a stunning, premium aesthetic out-of-the-box with highly customizable, accessible components.
+- **TanStack Table:** Headless table composition for the latest-message view. The chronological CAN monitor also requires a virtualized row renderer.
+- **Tailwind CSS + shadcn/ui:** Utility styling and accessible component primitives. Application design and accessibility review remain required.
 
 ## 2. Backend: Python + FastAPI (The Engine)
-FastAPI provides a incredibly robust asynchronous foundation for streaming CAN data.
-- **FastAPI:** Handles the WebSocket connections natively and asynchronously, ensuring zero blocking between the web clients and the CAN bus.
+FastAPI provides an asynchronous HTTP and WebSocket foundation for streaming CAN data.
+- **FastAPI:** Handles HTTP and WebSocket connections. Blocking CAN-driver and disk work must remain in dedicated workers so it cannot block API handling.
 - **`python-can`:** Used to interface with the physical CANalyst-II USB adapter or the `virtual` software interface.
-- **`cantools`:** Parses the DBC files to instantly decode binary payloads into human-readable JSON dictionaries.
+- **Generated YAML protocol runtime:** Generated codecs, validators, and UI metadata decode and encode application traffic. `cantools` and DBC files are optional development interoperability tools, not runtime dependencies.
 
 ## 3. Desktop Packaging (Future-Proofing)
-- **Tauri:** By building with Vite and React, the web app can easily be wrapped in Tauri later. This allows the controller to be shipped as a native desktop application with a tiny memory footprint (unlike Electron).
+- **Tauri:** A possible later packaging option. Python sidecar lifecycle, USB-driver access, signing, and distribution must be evaluated before adoption.
 
 ## 4. Communication Flow
 1. **Physical CAN Bus** <--(USB)--> **python-can** (Background Thread)
-2. **Python Backend** <--(FastAPI Async WebSockets)--> **React UI**
-3. **React UI** <--(Zustand)--> **shadcn/ui Dials & TanStack Tables**
+2. **Python Backend** <--(FastAPI REST/WebSockets)--> **React, LLM tools, CI, optional CLI**
+3. **React UI** <--(generated TypeScript API client + Zustand)--> **shadcn/ui Dials & TanStack Tables**
+
+## 5. Shared API Clients
+
+- **Pydantic + OpenAPI:** Pydantic models are the single request/response definition. FastAPI publishes OpenAPI for generated React types/clients and LLM tool schemas.
+- **LLM tool adapter:** A small MCP/native tool adapter may translate typed tool calls to the same REST/WebSocket operations. It contains no domain or CAN logic.
+- **Optional thin CLI:** Typer + HTTPX may provide terminal convenience over the same API. It is not a separate backend or service owner.
+- **Headless browser:** Playwright exercises React against the same backend with deterministic virtual fixtures and captures traces/screenshots on failure.
+- **Shared streaming:** React, LLM, and CLI clients use the same versioned WebSocket subscription protocol and independent bounded client queues.
+
+The detailed contract is in `control-ui-api.md`.

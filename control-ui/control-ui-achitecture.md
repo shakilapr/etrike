@@ -225,7 +225,7 @@ Silence is not adapter disconnection. Channel traffic freshness, expected messag
 
 On adapter exception, device removal, worker death, or supported bus-off evidence, the backend first disables Bench TX, ends stimulus leases, cancels periodic physical jobs, and marks affected values stale. It then closes the transport and begins bounded exponential reconnect attempts with jitter.
 
-Reconnect never restores arm, leases, periodic TX, or prior command state. After reopening, the adapter clears/drains stale hardware buffers as a best effort, starts in receive-only behavior, creates a new adapter epoch, resets timestamp mapping, and observes a stability window. Only then does it become `Recovered`; the operator must explicitly arm and restart transmission.
+Reconnect never restores Bench TX, leases, periodic TX, or prior command state. After reopening, the adapter clears/drains stale hardware buffers as a best effort, starts in receive-only behavior, creates a new adapter epoch, resets timestamp mapping, and observes a stability window. Only then does it become `Recovered`; the operator must explicitly enable Bench TX and restart transmission.
 
 After fast retries are exhausted, slow discovery continues indefinitely while the application is open. Retry count, next attempt time, and last error remain visible. A user can cancel retries or select another adapter.
 
@@ -243,7 +243,7 @@ These records are versioned at any process or WebSocket boundary. Unknown messag
 
 ## 4.5 Runtime and concurrency model
 
-Run exactly one backend hardware-owner process. Do not start FastAPI/Uvicorn with multiple worker processes: each process would have separate in-memory arm, leases, subscriptions, and adapter state and could contend for the same USB device. FastAPI’s own WebSocket guidance notes that an in-memory connection manager is single-process state.
+Run exactly one backend hardware-owner process. Do not start FastAPI/Uvicorn with multiple worker processes: each process would have separate in-memory Bench TX, leases, subscriptions, and adapter state and could contend for the same USB device. FastAPI’s own WebSocket guidance notes that an in-memory connection manager is single-process state.
 
 Within that process:
 
@@ -257,7 +257,7 @@ Within that process:
 
 Mutable operational state has one owner service and is changed through serialized commands. Threads never directly mutate React-facing dictionaries. Shutdown order is: disable Bench TX → end stimulus leases → stop scheduler → stop RX notifier → drain/close recording → close CAN bus → close clients.
 
-This is a local single-machine tool, so Redis, Kafka, and a distributed event bus add failure modes without benefit. If hardware isolation later requires a second process, only the adapter boundary moves; one supervisor remains the authority for arm, leases, and routing.
+This is a local single-machine tool, so Redis, Kafka, and a distributed event bus add failure modes without benefit. If hardware isolation later requires a second process, only the adapter boundary moves; one supervisor remains the authority for Bench TX, leases, and routing.
 
 ## 5. Canonical data presented to the UI
 
@@ -717,7 +717,7 @@ Generic injection is an engineering tool, not the main driving interface.
 
 The injector should preserve the useful debug-tool concepts of templates, raw preview, periodic interval/count, stop controls, and command acknowledgments. It should add clearer physical/virtual destination labeling and prevent arbitrary rates from violating message-specific minimum periods.
 
-Transmission permission is not a single `injectable` boolean and is never inferred from sender name. YAML policy classifies messages as monitor-only, HMI-periodic, synthetic-peer, manual-bench, kinematics-control, direct-actuator, or safety-event, with allowed profiles, buses, rate bounds, arm requirements, lease resource, and automatic fields.
+Transmission permission is not a single `injectable` boolean and is never inferred from sender name. YAML policy classifies messages as monitor-only, HMI-periodic, synthetic-peer, manual-bench, kinematics-control, direct-actuator, or safety-event, with allowed profiles, buses, rate bounds, Bench TX requirements, lease resource, and automatic fields.
 
 ## 14. Diagnostics, message verification, and logging
 
@@ -936,7 +936,7 @@ Reuse is selective and test-driven:
 | `backend/src/bridge/manager.ts` | Single active transport concept | Explicit profile transitions; no silent physical-to-virtual or CANalyst-to-serial fallback |
 | Bridge/unit tests | Fake process/device cases and reconnect scenarios | Add dual-channel order, overflow, epoch, disable-TX-before-reconnect, scheduler jitter, and disconnect-under-TX tests |
 
-The existing implementation should first be preserved behind characterization tests. Migration occurs only after tests capture current device-open, RX conversion, DLC=0, extended-ID, dual-channel, and shutdown behavior and prove equivalent or better behavior through `python-can`. Hardware-in-the-loop tests remain separately marked and never run against an armed vehicle by default.
+The existing implementation should first be preserved behind characterization tests. Migration occurs only after tests capture current device-open, RX conversion, DLC=0, extended-ID, dual-channel, and shutdown behavior and prove equivalent or better behavior through `python-can`. Hardware-in-the-loop tests remain separately marked and never run against a vehicle with Bench TX enabled by default.
 
 Known debug-tool behaviors that must not carry forward:
 
@@ -1238,3 +1238,23 @@ Do not copy these implementation weaknesses:
 - rendering while holding communication locks.
 
 The Control UI’s backend projection service, generated source rules, monotonic timing, immutable snapshots, scheduler/TX gate, and provenance model already provide the safer equivalents.
+
+## 25. Shared API for React, LLMs, and automation
+
+The Control UI exposes one client-neutral FastAPI contract described in `control-ui-api.md`.
+
+```text
+React UI ─────────┐
+LLM tool adapter ─┼→ same REST/WebSocket API → same application services → CAN
+Thin CLI / CI ────┘
+```
+
+Pydantic models generate FastAPI validation and OpenAPI. OpenAPI generates the React TypeScript client and provides the source schema for LLM tools and any optional thin CLI. There is no separately maintained UI API, LLM API, or terminal command schema.
+
+Caller type is audit metadata only. Domain logic must never contain behavior such as `if client is LLM`. All behavior depends on capabilities, session/profile state, protocol semantic hash, adapter epoch, source ownership, current revision, and the requested operation. Equivalent requests from React and an LLM produce the same validation, job, state transition, evidence, and result.
+
+REST handles snapshots, queries, deliberate commands, and jobs. The shared WebSocket carries critical events, coalesced state, test progress, projection, and optional raw batches using per-client bounded queues and sequence/gap recovery. LLMs normally use snapshot/query/wait/test operations rather than consuming every frame, but authorized clients have the same supported subscriptions.
+
+Full LLM access means all supported application capabilities, including physical bench operations when explicitly granted. It does not expose internal Python objects, USB handles, queues, arbitrary code execution, or domain-validation bypasses. Backend jobs own timing, assertions, leases, recording, and cleanup even when the requesting client disconnects.
+
+Pure Software remains the default unattended profile. Physical mutation requires the same explicit session capability and finite Bench TX state used by React; it is not governed by a separate AI approval path.
