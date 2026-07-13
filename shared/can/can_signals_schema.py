@@ -8,6 +8,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
+import hashlib
+import json
 import yaml
 from pathlib import Path
 
@@ -243,7 +245,6 @@ class CanDatabase(BaseModel):
                                 f"receiver '{recv}' not in declared ECUs: {ecu_names}"
                             )
         return self
-
     @staticmethod
     def _wire_signature(msg: MessageDef) -> dict:
         """Semantic payload signature for a message duplicated across buses."""
@@ -295,6 +296,16 @@ class CanDatabase(BaseModel):
                         f"message is not defined on both {source} and {destination} buses"
                     )
         return self
+
+
+def semantic_protocol_hash(db: CanDatabase) -> str:
+    """Return a stable hash of normalized protocol semantics."""
+    normalized = json.dumps(
+        db.model_dump(mode="json", exclude={"description"}),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(normalized).hexdigest()
 
 
 # ── Loader ────────────────────────────────────────────────────────────

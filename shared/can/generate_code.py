@@ -16,10 +16,8 @@ from __future__ import annotations
 
 import sys
 import os
-import json
-import hashlib
 from pathlib import Path
-from can_signals_schema import load_can_database_dir
+from can_signals_schema import load_can_database_dir, semantic_protocol_hash
 
 CAN_DIR = Path(__file__).resolve().parent
 GEN_DIR = CAN_DIR / "generated"
@@ -51,20 +49,10 @@ def cpp_const_name(can_id: int, name: str) -> str:
     return f"kId{name.replace('_', '')}"
 
 
-def protocol_hash(db) -> str:
-    """Hash normalized protocol semantics, independent of YAML formatting."""
-    normalized = json.dumps(
-        db.model_dump(mode="json", exclude={"description"}),
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(normalized).hexdigest()
-
-
 def generate_can_ids_ts(db) -> str:
     """Generate TypeScript CAN IDs, DLCs, bus, names, signals, forwarding."""
     lines = [HEADER_TS]
-    lines.append(f'export const PROTOCOL_HASH = "{protocol_hash(db)}";')
+    lines.append(f'export const PROTOCOL_HASH = "{semantic_protocol_hash(db)}";')
     lines.append("")
 
     # Build message catalog
@@ -243,7 +231,7 @@ def generate_can_data_h(db) -> str:
     lines = [HEADER_CPP]
     lines.append("namespace can::data {")
     lines.append("")
-    lines.append(f'constexpr char kProtocolHash[] = "{protocol_hash(db)}";')
+    lines.append(f'constexpr char kProtocolHash[] = "{semantic_protocol_hash(db)}";')
     lines.append("")
 
     # CAN ID constants

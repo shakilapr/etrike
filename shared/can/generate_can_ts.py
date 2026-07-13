@@ -6,7 +6,7 @@ This replaces the runtime YAML parsing in dynamic-decoder.ts.
 import sys
 import os
 import json
-import hashlib
+from can_signals_schema import load_can_database_dir, semantic_protocol_hash
 
 try:
     import yaml
@@ -137,13 +137,6 @@ def parse_yaml(fp):
             out.append((msg, bus, byte_order))
     return out
 
-def compute_hash(files):
-    hasher = hashlib.sha256()
-    for fp in files:
-        with open(fp, 'rb') as f:
-            hasher.update(f.read())
-    return hasher.hexdigest()
-
 def main():
     messages = []
     seen = set()
@@ -160,7 +153,7 @@ def main():
     # Sort for determinism
     messages.sort(key=lambda x: f"{x['bus']}:{x['id']}")
 
-    protocol_hash = compute_hash(YAML_FILES)
+    protocol_hash = semantic_protocol_hash(load_can_database_dir(SCRIPT_DIR))
 
     out = HEADER.replace("{hash}", protocol_hash) + "\n"
     
