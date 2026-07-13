@@ -7,7 +7,7 @@
 
 namespace pwt {
 
-// ── Powertrain CAN (TWAI1, 250 kbit/s) ─────────────────────────────
+// ── Powertrain CAN (the ESP32-S3's only TWAI controller, 250 kbit/s) ─
 constexpr int kCanPwtBitrateHz = 250'000;
 constexpr int kCanPwtTxGpio    = 7;
 constexpr int kCanPwtRxGpio    = 6;

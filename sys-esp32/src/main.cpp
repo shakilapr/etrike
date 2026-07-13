@@ -14,6 +14,7 @@ bool g_bypass_seb_sync = false;
 bool g_bypass_mtr_absent = false;
 
 #include <atomic>
+#include <initializer_list>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -22,6 +23,7 @@ bool g_bypass_mtr_absent = false;
 #include "esp_idf_version.h"
 #include "nvs_flash.h"
 #include "esp_system.h"
+#include "driver/gpio.h"
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
 #error "ESP-IDF 5.0 or later required"
 #endif
@@ -920,10 +922,73 @@ static TaskHandle_t h_can_rx, h_safety, h_dispatch, h_mode, h_motor;
 static TaskHandle_t h_throttle, h_gear, h_brake, h_lights, h_dcdc;
 static TaskHandle_t h_indicator, h_power, h_can_tx, h_diag, h_hb;
 
+// Put every connected SYS GPIO in a deterministic, non-actuating state before
+// starting CAN or tasks. GPIO reset defaults leave button inputs floating.
+static void init_board_gpio() {
+    constexpr uint64_t kOutputPins = (1ULL << sys::kLightLeftTurn)
+                                  | (1ULL << sys::kLightRightTurn)
+                                  | (1ULL << sys::kLightBrake)
+                                  | (1ULL << sys::kLightHead)
+                                  | (1ULL << sys::kBulbAuto)
+                                  | (1ULL << sys::kBulbManual)
+                                  | (1ULL << sys::kBulbReady)
+                                  | (1ULL << sys::kBulbEstop)
+                                  | (1ULL << sys::kPower12vRelay)
+                                  | (1ULL << sys::kWdtToggleGpio);
+    constexpr uint64_t kPullupInputs = (1ULL << sys::kBrakeLeverGpio)
+                                    | (1ULL << sys::kStartBtnGpio)
+                                    | (1ULL << sys::kModeBtnGpio)
+                                    | (1ULL << sys::kSwitchLeftTurn)
+                                    | (1ULL << sys::kSwitchRightTurn)
+                                    | (1ULL << sys::kSwitchHeadlight);
+
+    // Latch LOW before enabling output drivers so relay and lamp drivers do
+    // not receive an indeterminate boot pulse.
+    for (int pin : {sys::kLightLeftTurn, sys::kLightRightTurn, sys::kLightBrake,
+                    sys::kLightHead, sys::kBulbAuto, sys::kBulbManual,
+                    sys::kBulbReady, sys::kBulbEstop, sys::kPower12vRelay,
+                    sys::kWdtToggleGpio}) {
+        ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(pin), 0));
+    }
+
+    gpio_config_t outputs = {};
+    outputs.pin_bit_mask = kOutputPins;
+    outputs.mode = GPIO_MODE_OUTPUT;
+    outputs.pull_up_en = GPIO_PULLUP_DISABLE;
+    outputs.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    outputs.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&outputs));
+
+    gpio_config_t estop = {};
+    estop.pin_bit_mask = 1ULL << sys::kEstopGpio;
+    estop.mode = GPIO_MODE_INPUT;
+    estop.pull_up_en = GPIO_PULLUP_DISABLE;
+    estop.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    estop.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&estop));
+
+    gpio_config_t inputs = {};
+    inputs.pin_bit_mask = kPullupInputs;
+    inputs.mode = GPIO_MODE_INPUT;
+    inputs.pull_up_en = GPIO_PULLUP_ENABLE;
+    inputs.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    inputs.intr_type = GPIO_INTR_DISABLE;
+    ESP_ERROR_CHECK(gpio_config(&inputs));
+
+#ifdef SYS_OWNS_MOTOR
+    gpio_config_t gear_sense = inputs;
+    gear_sense.pin_bit_mask = (1ULL << sys::kGearDSense)
+                            | (1ULL << sys::kGearSSense)
+                            | (1ULL << sys::kGearRSense);
+    ESP_ERROR_CHECK(gpio_config(&gear_sense));
+#endif
+}
+
 // ── app_main ────────────────────────────────────────────────────────
 
 extern "C" void app_main() {
     ESP_LOGI(TAG, "SYS ESP32-S3 initializing...");
+    init_board_gpio();
     
     // Evaluate System Run Mode
     if (SYSTEM_RUN_MODE == 2) {
@@ -994,6 +1059,9 @@ extern "C" void app_main() {
     g_throttle.init();
 #ifdef SYS_OWNS_MOTOR
     g_dac.init();       // bench only — MTR owns DAC in vehicle
+    if (!g_dac.write(0)) {
+        ESP_LOGE(TAG, "Initial DAC zero write failed");
+    }
     g_gear.init();      // bench only — MTR owns gear MOSFETs in vehicle
 #endif
     g_brake.init();

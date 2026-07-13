@@ -3,6 +3,7 @@ import { ID_SAFETY_ESTOP, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_SYS_MODE_CMD, ID_
  * MTR Motor model — TypeScript implementation.
  * Receives 0x204 drive commands, generates 0x206 feedback + 0x120 throttle.
  */
+import { getDecoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -60,16 +61,14 @@ export class MtrModel implements EcuModel {
     // Motor feedback 0x206 (50 Hz)
     if (this.tickCount % 2 === 0) {
       const spd = Math.round(this.actualSpeed);
-      this.emit("low", ID_MTR_MOTOR_FBK, 4, [(spd>>8)&0xFF, spd&0xFF, this.gear, this.faults],
-        "MTR_MOTOR_FBK", { actual_speed_mmps: spd, gear_state: this.gear, fault_flags: this.faults });
+      this.emit("low", ID_MTR_MOTOR_FBK, "MTR_MOTOR_FBK", { actual_speed_mmps: spd, gear_state: this.gear, fault_flags: this.faults });
       // Also forward to high bus (gateway function)
-      this.emit("high", ID_MTR_MOTOR_FBK, 4, [(spd>>8)&0xFF, spd&0xFF, this.gear, this.faults],
-        "MTR_MOTOR_FBK", { actual_speed_mmps: spd, gear_state: this.gear, fault_flags: this.faults });
+      this.emit("high", ID_MTR_MOTOR_FBK, "MTR_MOTOR_FBK", { actual_speed_mmps: spd, gear_state: this.gear, fault_flags: this.faults });
     }
 
     // Throttle status 0x120 (100 Hz)
     const spd = Math.round(this.actualSpeed);
-    this.emit("low", ID_SYS_THROTTLE_STS, 2, [(spd>>8)&0xFF, spd&0xFF], "SYS_THROTTLE_STS", { speed_mmps: spd });
+    this.emit("low", ID_SYS_THROTTLE_STS, "SYS_THROTTLE_STS", { speed_mmps: spd });
 
     return [...this.frameQueue];
   }

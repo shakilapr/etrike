@@ -4,6 +4,7 @@ import { ID_RT_HEARTBEAT, ID_SAFETY_ESTOP, ID_RT_BRAKE_CMD, ID_SYS_MODE_CMD, ID_
  * Monitors heartbeats, generates safety status (0x011), diagnostics (0x600),
  * heartbeat (0x7FE), and mode commands.
  */
+import { getDecoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -46,15 +47,13 @@ export class SysModel implements EcuModel {
 
     // Safety status 0x011 (5 Hz)
     if (this.tickCount % 20 === 0) {
-      this.emit("low", ID_SYS_SAFETY_STS, 3, [this.estopActive ? 1 : 0, this.rtHbAlive ? 1 : 0, 0],
-        "SYS_SAFETY_STS", { estop_active: this.estopActive, heartbeat_ok: this.rtHbAlive });
+      this.emit("low", ID_SYS_SAFETY_STS, "SYS_SAFETY_STS", { estop_active: this.estopActive, heartbeat_ok: this.rtHbAlive });
       this.rtHbAlive = false; // reset each cycle
     }
 
     // Diagnostics 0x600 (1 Hz)
     if (this.tickCount % 100 === 0) {
-      this.emit("low", ID_SYS_DIAG_RPT, 8, [this.mode, 0, this.rtHbAlive ? 1 : 0, this.estopActive ? 1 : 0, 0, 0, 0, 0],
-        "SYS_DIAG_RPT", { mode: this.mode, hb_ok: this.rtHbAlive, estop_active: this.estopActive });
+      this.emit("low", ID_SYS_DIAG_RPT, "SYS_DIAG_RPT", { mode: this.mode, hb_ok: this.rtHbAlive, estop_active: this.estopActive });
     }
 
     // Brake forwarding to SEB 0x7B9 (50 Hz) — only when braking
@@ -64,7 +63,7 @@ export class SysModel implements EcuModel {
       const data = [1 | (1 << 1), 0, stroke & 0xFF, (stroke >> 8) & 0xFF, 0, 0, 0, 0];
       data[6] = 1 | (1 << 1) | (this.sebRoll << 4);
       let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i]; data[7] = cksum ^ 0xFF;
-      this.emit("low", ID_VCU_SEB_REQ, 8, data, "VCU_SEB_REQ", {
+      this.emit("low", ID_VCU_SEB_REQ, "VCU_SEB_REQ", {
         align_enable: true, control_enable: true, stroke_req: stroke,
         rolling_counter: this.sebRoll, checksum: data[7],
       });
@@ -72,8 +71,7 @@ export class SysModel implements EcuModel {
 
     // SYS heartbeat 0x7FE (10 Hz)
     if (this.tickCount % 10 === 0) {
-      this.emit("low", ID_SYS_HEARTBEAT, 2, [this.hbCounter, 0], "SYS_HEARTBEAT",
-        { alive_ctr: this.hbCounter, health_flags: 0 });
+      this.emit("low", ID_SYS_HEARTBEAT, "SYS_HEARTBEAT", { alive_ctr: this.hbCounter, health_flags: 0 });
     }
 
     return [...this.frameQueue];

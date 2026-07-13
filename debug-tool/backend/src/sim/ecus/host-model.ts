@@ -4,6 +4,7 @@ import { ID_HOST_DRIVE_CMD, ID_HOST_BRAKE_REQ, ID_HOST_HEARTBEAT } from "@etrike
  * Generates 0x300 (drive), 0x301 (brake), 0x7FC (heartbeat).
  * Speed/brake/gear/yaw are set externally (keyboard/controller/scenario).
  */
+import { getDecoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -35,23 +36,18 @@ export class HostModel implements EcuModel {
     if (this.tickCount % 2 === 0) {
       const s = Math.round(this.speedMmps);
       const y = Math.round(this.yawMradS);
-      this.emit("high", ID_HOST_DRIVE_CMD, 8,
-        [(s>>24)&0xFF,(s>>16)&0xFF,(s>>8)&0xFF,s&0xFF,
-         (y>>16)&0xFF,(y>>8)&0xFF,y&0xFF,this.gear],
-        "HOST_DRIVE_CMD", { speed_mmps: s, yaw_rate_mrad_s: y, gear: this.gear });
+      this.emit("high", ID_HOST_DRIVE_CMD, "HOST_DRIVE_CMD", { speed_mmps: s, yaw_rate_mrad_s: y, gear: this.gear });
     }
 
     // Brake request 0x301 (10 Hz) — only when braking
     if (this.brakeKpa > 0 && this.tickCount % 10 === 0) {
       const k = Math.round(this.brakeKpa);
-      this.emit("high", ID_HOST_BRAKE_REQ, 4, [(k>>24)&0xFF,(k>>16)&0xFF,(k>>8)&0xFF,k&0xFF],
-        "HOST_BRAKE_REQ", { brake_pressure_kpa: k });
+      this.emit("high", ID_HOST_BRAKE_REQ, "HOST_BRAKE_REQ", { brake_pressure_kpa: k });
     }
 
     // Heartbeat 0x7FC (2 Hz)
     if (this.tickCount % 50 === 0) {
-      this.emit("high", ID_HOST_HEARTBEAT, 2, [this.hbCounter, 0], "HOST_HEARTBEAT",
-        { alive_ctr: this.hbCounter, health_flags: 0 });
+      this.emit("high", ID_HOST_HEARTBEAT, "HOST_HEARTBEAT", { alive_ctr: this.hbCounter, health_flags: 0 });
     }
 
     return [...this.frameQueue];

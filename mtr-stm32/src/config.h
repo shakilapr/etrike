@@ -20,7 +20,7 @@ namespace mtr {
 // ── Throttle — MCP4725 I2C DAC (0-5V) + ADC read ─────────────────
 constexpr int      kThrottleI2cSda      = 23;   // PB7 (1*16+7) — I2C1 SDA
 constexpr int      kThrottleI2cScl      = 22;   // PB6 (1*16+6) — I2C1 SCL
-constexpr uint8_t  kThrottleDacI2cAddr  = 0x60; // MCP4725
+constexpr uint8_t  kThrottleDacI2cAddr  = 0x61; // MCP4725, A0 tied to VCC
 constexpr unsigned kThrottleDeadZone    = 200;   // raw ADC counts
 constexpr int      kThrottleMaxSpeedMmps= 3000;
 constexpr int      kThrottleDacMaxVal   = 4095;  // 12-bit DAC

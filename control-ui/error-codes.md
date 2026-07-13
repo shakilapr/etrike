@@ -4,23 +4,71 @@
 
 These codes describe the Control UI and its test infrastructure. RT, SYS, MTR, PWT, EPS-C, and SEB diagnostic flags remain ECU-reported data and are not remapped into fake Control UI failures.
 
-## 1. Code format
+## 1. Error identity and standards
 
 ```text
-CUI-<DOMAIN>-<NUMBER>
+<domain>.<condition>
 ```
 
 Examples:
 
 ```text
-CUI-ADP-007  selected USB adapter was removed
-CUI-PRO-007  application checksum failed
-CUI-TST-008  test evidence became incomplete
+adapter.device_removed
+protocol.checksum_invalid
+test.evidence_incomplete
 ```
+
+Every condition has both a fixed catalog ID and a readable symbolic code. Both are mandatory in APIs, logs, recordings, tests, and UI. The catalog ID is short and immutable; the symbolic code is directly understandable and searchable.
+
+```text
+catalog_id   CUI-ADP-007
+code         adapter.device_removed
+message      CANalyst-II disappeared during adapter epoch 4.
+event_id     evt_01J...   unique occurrence of this condition
+```
+
+`catalog_id` and `code` describe the condition and never change meaning. `message` describes this occurrence and may include safe contextual values. `event_id` identifies one raised/updated/recovered event occurrence and links it to evidence.
+
+The catalog tables retain the uppercase condition beside the catalog ID for reviewability. The registry stores the full symbolic code explicitly; it is not reconstructed by clients. Domain names are `system`, `api`, `adapter`, `can`, `pipeline`, `protocol`, `tx`, `ecu`, `test`, `recording`, `replay`, `stream`, `ui`, and `projection`.
+
+Use established identifiers at the boundary where they apply instead of inventing replacements:
+
+| Boundary | Standard representation |
+|---|---|
+| HTTP request failure | HTTP status plus RFC 9457 `application/problem+json` |
+| Logs/traces | OpenTelemetry-compatible `error.type`; exception logs also use `exception.type`, `exception.message`, and `exception.stacktrace` |
+| CAN controller | Preserve reported states such as `error_active`, `error_warning`, `error_passive`, and `bus_off`, and native SocketCAN error classes where available |
+| UDS ECU diagnostic | Preserve the ECU's DTC and negative-response code; only use these when the ECU actually implements UDS |
+| J1939 diagnostic | Preserve SPN/FMI; only use these on a J1939 network |
+| Driver/OS/library | Preserve the native error number/type in `native_error`, while also assigning one stable Control UI `error.type` |
+
+Custom E-Trike YAML faults are not converted into invented DTCs, SPN/FMIs, or generic CAN controller errors. A CANalyst-II limitation also must not be presented as a standard controller state that it did not report.
+
+For an HTTP failure, the symbolic code is both the `code` extension and the final portion of a stable problem-type URI. For non-HTTP events, the same value is used as `code` and `error.type`.
+
+```json
+{
+  "type": "https://etrike.local/problems/adapter/device-removed",
+  "title": "CAN adapter removed",
+  "status": 503,
+  "detail": "The selected CANalyst-II disappeared during adapter epoch 4.",
+  "instance": "/api/v1/events/evt_456",
+  "code": "adapter.device_removed",
+  "catalog_id": "CUI-ADP-007",
+  "severity": "ERROR",
+  "retryable": true,
+  "event_id": "evt_456",
+  "adapter_epoch": 4,
+  "evidence_refs": ["evt_456"]
+}
+```
+
+The problem-type base URI is configuration, not an assumption that the bench is Internet-connected. It should resolve to local documentation when practical.
 
 Rules:
 
-- Codes are stable and never reused for a different meaning.
+- Symbolic codes are stable and never reused for a different meaning.
+- Names follow `lowercase_domain.lowercase_condition`; words inside either part use underscores.
 - Dynamic values do not appear inside the code; they belong in structured fields.
 - The same condition uses the same code in logs, API errors, UI notices, and evidence.
 - Each condition has an `event_state`: `raised`, `updated`, or `recovered`.
@@ -69,6 +117,19 @@ The following physical causes require an electrical measurement or controlled ex
 
 `CRITICAL` means critical to bench-test integrity, not a production vehicle safety classification.
 
+### 2.1 HTTP status is not the test verdict
+
+HTTP status describes whether the API request was accepted and processed. A completed bench test with verdict `Fail` or `Inconclusive` is still a successful resource operation and normally returns `200` (or `202` while running). Do not turn an expected test outcome into a `4xx` or `5xx` response.
+
+Recommended request-failure mappings are `400` malformed request, `401` unauthenticated, `403` capability denied, `404` resource not found, `409` ownership/revision conflict, `412` protocol or manifest precondition failed, `422` semantically invalid values, `429` rate limited, `503` adapter/backend unavailable, and `504` an infrastructure deadline failure. A normal bounded wait that expires returns `200` with `disposition: timeout`; it is not a gateway error.
+
+### 2.2 Standards references
+
+- [RFC 9457: Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457.html)
+- [OpenTelemetry: Recording errors](https://opentelemetry.io/docs/specs/semconv/general/recording-errors/)
+- [OpenTelemetry: Exception logs](https://opentelemetry.io/docs/specs/semconv/exceptions/exceptions-logs/)
+- [Linux SocketCAN error-message frames](https://docs.kernel.org/networking/can.html#error-message-frames)
+
 ## 3. Required structured fields
 
 Every persisted event contains:
@@ -76,11 +137,12 @@ Every persisted event contains:
 ```text
 schema_version
 event_id
-code
+catalog_id               fixed condition ID, for example CUI-ADP-007
+code                     readable condition name, for example adapter.device_removed
 severity
 event_state
 evidence_basis             observed, derived, reported, inferred, or unknown
-message
+message                  contextual human explanation for this occurrence
 wall_time_utc
 monotonic_time_us
 process_instance_id
@@ -96,6 +158,8 @@ source / provenance
 expected / actual
 queue_depth / high_water / dropped_count when applicable
 exception_type
+error.type               same value as code for an error condition
+native_error             bounded native driver/OS/library details when present
 evidence_refs
 context                   bounded structured object
 ```
@@ -106,7 +170,7 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 
 ## 4. General and configuration
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-GEN-001` | CRITICAL | `UNHANDLED_EXCEPTION` | An exception escaped its owning service boundary |
 | `CUI-GEN-002` | ERROR | `CONFIG_INVALID` | Application/bench configuration failed validation |
@@ -119,7 +183,7 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 
 ## 5. API, contract, and capabilities
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-API-001` | WARN | `REQUEST_INVALID` | Request failed schema or semantic validation |
 | `CUI-API-002` | ERROR | `API_VERSION_UNSUPPORTED` | Client and backend API versions are incompatible |
@@ -136,7 +200,7 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 
 ## 6. Adapter and USB transport
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-ADP-001` | WARN | `DEVICE_NOT_FOUND` | Configured CANalyst-II was not discovered |
 | `CUI-ADP-002` | ERROR | `OPEN_FAILED` | Adapter open/claim operation failed |
@@ -156,7 +220,7 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 
 ## 7. CAN channel and transport evidence
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-CAN-001` | ERROR | `CHANNEL_OPEN_FAILED` | High or Low channel failed to open |
 | `CUI-CAN-002` | WARN | `CHANNEL_MAPPING_SUSPECT` | Bus-specific traffic conflicts with configured mapping; this does not prove wiring or channel assignment |
@@ -179,7 +243,7 @@ Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evi
 
 ## 8. Receive pipeline and overload
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-RX-001` | ERROR | `ROUTER_QUEUE_OVERFLOW` | Raw router queue dropped or rejected an envelope |
 | `CUI-RX-002` | ERROR | `DECODE_QUEUE_OVERFLOW` | Decode/validation input could not retain all frames |
@@ -193,7 +257,7 @@ Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evi
 
 ## 9. Protocol, decode, and integrity
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-PRO-001` | INFO | `UNKNOWN_MESSAGE` | CAN ID is not defined for the observed bus |
 | `CUI-PRO-002` | WARN | `DLC_INVALID` | Received DLC differs from the YAML definition |
@@ -214,7 +278,7 @@ Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evi
 
 ## 10. Sessions, ownership, and transmission
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-TX-001` | WARN | `BENCH_TX_DISABLED` | Mutating physical request was rejected because Bench TX is off |
 | `CUI-TX-002` | WARN | `SOURCE_NOT_OWNED` | Session/job does not own the requested bus and CAN ID |
@@ -235,7 +299,7 @@ Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evi
 
 ## 11. ECU and message health
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-ECU-001` | WARN | `MESSAGE_LATE` | YAML-defined periodic message missed its live deadline |
 | `CUI-ECU-002` | ERROR | `MESSAGE_MISSING` | Message exceeded its YAML-defined offline deadline |
@@ -252,7 +316,7 @@ For `CUI-ECU-009/010`, include `ecu`, `ecu_fault_code`, `fault_name`, `raw_value
 
 ## 12. Test runner and assertions
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-TST-001` | ERROR | `DEFINITION_INVALID` | Test definition failed schema/semantic validation |
 | `CUI-TST-002` | WARN | `PRECONDITION_NOT_MET` | Test could not start because a required state/topology was absent |
@@ -271,7 +335,7 @@ For `CUI-ECU-009/010`, include `ecu`, `ecu_fault_code`, `fault_name`, `raw_value
 
 ## 13. Recording, evidence, and replay
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-REC-001` | ERROR | `RECORDING_START_FAILED` | Recording could not be initialized before stimulus |
 | `CUI-REC-002` | ERROR | `RECORDING_WRITE_FAILED` | Raw/event data could not be persisted |
@@ -289,7 +353,7 @@ For `CUI-ECU-009/010`, include `ecu`, `ecu_fault_code`, `fault_name`, `raw_value
 
 ## 14. WebSocket and presentation
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-STR-001` | ERROR | `HANDSHAKE_FAILED` | Stream version/protocol/capability handshake failed |
 | `CUI-STR-002` | WARN | `STREAM_SEQUENCE_GAP` | Client detected missing WebSocket batch sequence |
@@ -307,7 +371,7 @@ Presentation-only errors do not make backend evidence incomplete unless the test
 
 ## 15. Vehicle projection
 
-| Code | Default | Name | Meaning |
+| Catalog ID | Default | Symbolic condition | Meaning |
 |---|---:|---|---|
 | `CUI-PRJ-001` | INFO | `SOURCE_MISSING` | Required actuation/sensor projection source is unavailable |
 | `CUI-PRJ-002` | WARN | `SOURCE_STALE` | Projection source exceeded its YAML deadline |
@@ -391,7 +455,7 @@ Never rate-limit away the first failure, severity escalation, adapter epoch chan
 
 ### 16.3 Exception handling
 
-Expected domain failures return their specific codes without Python stack traces in normal API responses. Unexpected exceptions emit `CUI-GEN-001` with a server-side stack trace, request/session context, and redacted response error ID. The stack trace is not exposed to ordinary clients.
+Expected domain failures return their specific symbolic codes without Python stack traces in normal API responses. Unexpected exceptions emit `system.unhandled_exception` (`catalog_id: CUI-GEN-001`) with a server-side stack trace, request/session context, and redacted response error ID. The stack trace is not exposed to ordinary clients.
 
 ### 16.4 Retention
 
@@ -405,27 +469,22 @@ Expected domain failures return their specific codes without Python stack traces
 
 ```json
 {
-  "schema_version": 1,
+  "type": "https://etrike.local/problems/tx/source-conflict",
+  "title": "CAN source conflict",
+  "status": 409,
+  "detail": "Low-bus VCU_SES_REQ is already produced by a physical source.",
+  "instance": "/api/v1/events/evt_456",
+  "code": "tx.source_conflict",
+  "catalog_id": "CUI-TX-003",
   "request_id": "req_123",
-  "ok": false,
-  "data": null,
-  "warnings": [],
-  "errors": [
-    {
-      "code": "CUI-TX-003",
-      "name": "SOURCE_CONFLICT",
-      "message": "Low-bus VCU_SES_REQ is already produced by a physical source",
-      "retryable": false,
-      "context": {
-        "bus": "low",
-        "can_id": "0x169",
-        "message": "VCU_SES_REQ",
-        "current_owner": "physical_expected_source"
-      },
-      "evidence_refs": ["evt_456"]
-    }
-  ],
-  "evidence": ["evt_456"]
+  "retryable": false,
+  "context": {
+    "bus": "low",
+    "can_id": "0x169",
+    "message": "VCU_SES_REQ",
+    "current_owner": "physical_expected_source"
+  },
+  "evidence_refs": ["evt_456"]
 }
 ```
 
@@ -442,7 +501,7 @@ Implement these groups first because they protect result correctness:
 
 ## 19. Machine-readable registry and API access
 
-Maintain one registry containing code, symbolic name, domain, default severity, retryability, description, allowed context schema, and documentation link. Generate or validate from it:
+Maintain one registry containing mandatory symbolic `code`, mandatory `catalog_id`, domain, default severity, retryability, description, message template, allowed context schema, problem-type URI, HTTP status where applicable, and documentation link. Generate or validate from it:
 
 - Python enum/Pydantic event models;
 - OpenAPI error/event schemas;

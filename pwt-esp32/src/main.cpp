@@ -46,12 +46,12 @@ static pwt::WdtToggle   g_wdt;
 extern "C" void app_main() {
     ESP_LOGI("pwt", "── PWT ESP32-S3 starting ──");
 
-    // 1. Initialize powertrain CAN bus (TWAI1, 250 kbit/s)
+    // 1. Initialize powertrain CAN bus (the S3 has one TWAI controller).
     if (!g_can.init(pwt::kCanPwtTxGpio, pwt::kCanPwtRxGpio, pwt::kCanPwtBitrateHz)) {
         ESP_LOGE("pwt", "CAN init failed — aborting");
         return;
     }
-    ESP_LOGI("pwt", "CAN init OK: TWAI1, %d kbit/s, TX=GPIO%d RX=GPIO%d",
+    ESP_LOGI("pwt", "CAN init OK: TWAI0, %d kbit/s, TX=GPIO%d RX=GPIO%d",
              pwt::kCanPwtBitrateHz / 1000, pwt::kCanPwtTxGpio, pwt::kCanPwtRxGpio);
 
     // 2. Initialize DC-DC control (enabled by default)
