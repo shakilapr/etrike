@@ -13,7 +13,7 @@ Pin-to-pin wiring for all five ECUs, three CAN buses, power distribution, and ev
 
 - **High bus:** Jetson ↔ RT MCP2515. 120 Ω at both ends.
 - **Low bus:** RT TWAI ↔ SYS TWAI ↔ MTR ↔ PWT TWAI0 ↔ EPS-C ↔ SEB ↔ DC-DC. 120 Ω at both physical ends.
-- **Powertrain bus:** PWT TWAI1 ↔ DC-DC ↔ Motor Controller. 120 Ω at both ends.
+- **Powertrain bus:** PWT TWAI0 ↔ DC-DC ↔ Motor Controller at 250 kbit/s. 120 Ω at both ends. PWT is not connected to the low bus in current firmware.
 
 ---
 
@@ -396,77 +396,57 @@ GPIO 33–35 : Bench-only gear relay outputs
 
 ---
 
-## 6. PWT ESP32-S3 — Powertrain CAN Gateway
+## 6. PWT ESP32-S3 — Powertrain CAN Node
 
-**Role:** Bridge low bus (500 kbit/s) ↔ powertrain bus (250 kbit/s). DC-DC converter control.
+**Role:** Direct 250 kbit/s powertrain CAN node for DC-DC control. Current firmware is not a low↔powertrain gateway.
 **Board:** ESP32-S3-DevKitC-1
-**CAN modules:** 2 — TWAI0 (built-in, low bus) + TWAI1 (built-in, powertrain bus)
+**CAN modules:** 1 — built-in TWAI0 on the powertrain bus
 
 ### 6.1 PWT — CAN Module Wiring
 
-#### Module A: WCMCU-230 (Low Bus via TWAI0, 500 kbit/s)
+#### Module: WCMCU-230 (Powertrain Bus via TWAI0, 250 kbit/s)
 
 | GPIO | Signal | Connected To | Wire |
 |------|--------|-------------|------|
-| — (3V3) | 3.3 V power | WCMCU-230 #1 VCC | Dupont F-F, red |
-| — (GND) | Ground | WCMCU-230 #1 GND | Dupont F-F, black |
-| 5 | CAN TX (TWAI0) | WCMCU-230 #1 CTX | Dupont F-F, blue |
-| 4 | CAN RX (TWAI0) | WCMCU-230 #1 CRX | Dupont F-F, green |
-| — | CAN_H | Low bus backbone | 22 AWG, yellow |
-| — | CAN_L | Low bus backbone | 22 AWG, green |
-| — | GND | Low bus backbone | 22 AWG, black |
-
-#### Module B: WCMCU-230 (Powertrain Bus via TWAI1, 250 kbit/s)
-
-| GPIO | Signal | Connected To | Wire |
-|------|--------|-------------|------|
-| — (3V3) | 3.3 V power | WCMCU-230 #2 VCC | Dupont F-F, red |
-| — (GND) | Ground | WCMCU-230 #2 GND | Dupont F-F, black |
-| 7 | CAN TX (TWAI1) | WCMCU-230 #2 CTX | Dupont F-F, blue |
-| 6 | CAN RX (TWAI1) | WCMCU-230 #2 CRX | Dupont F-F, green |
+| — (3V3) | 3.3 V power | WCMCU-230 VCC | Dupont F-F, red |
+| — (GND) | Ground | WCMCU-230 GND | Dupont F-F, black |
+| 7 | CAN TX (TWAI0) | WCMCU-230 CTX | Dupont F-F, blue |
+| 6 | CAN RX (TWAI0) | WCMCU-230 CRX | Dupont F-F, green |
 | — | CAN_H | Powertrain bus backbone | 22 AWG, blue |
 | — | CAN_L | Powertrain bus backbone | 22 AWG, white |
 | — | GND | Powertrain bus backbone | 22 AWG, black |
 
-- Source: `pwt::kCanLowTxGpio=5`, `pwt::kCanLowRxGpio=4` (TWAI0), `pwt::kCanPwtTxGpio=7`, `pwt::kCanPwtRxGpio=6` (TWAI1)
-- Both TWAI controllers built into ESP32-S3 — no external MCP2515 needed
-- Both use SN65HVD230 3.3 V CAN transceivers
-- Termination: depends on bus position — enable 120 Ω if PWT is at physical end of either bus
+- Source: `pwt::kCanPwtTxGpio=7`, `pwt::kCanPwtRxGpio=6`, bitrate 250 kbit/s
+- ESP32-S3 has one built-in TWAI controller. A future low-bus gateway requires an external CAN controller or a different MCU.
+- Use a SN65HVD230 3.3 V CAN transceiver.
+- Termination: enable 120 Ω only when PWT is at a physical bus end.
 
 ### 6.2 PWT — Inputs
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | CAN RX (low bus) | 4 | TWAI0 RX | WCMCU-230 #1 CRX | 0x012, 0x001, 0x7FD, 0x7FE from low bus |
-| 2 | CAN RX (pwt bus) | 6 | TWAI1 RX | WCMCU-230 #2 CRX | Motor controller telemetry, 0x001 from pwt bus |
+| 1 | CAN RX (powertrain bus) | 6 | TWAI0 RX | WCMCU-230 CRX | DC-DC/motor-controller traffic, 250 kbit/s |
 
 ### 6.3 PWT — Outputs
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | CAN TX (low bus) | 5 | TWAI0 TX | WCMCU-230 #1 CTX | 0x001 forward, PWT heartbeat (0x7FB), motor telemetry |
-| 2 | CAN TX (pwt bus) | 7 | TWAI1 TX | WCMCU-230 #2 CTX | 0x012 DC-DC cmd forward, 0x001 forward |
+| 1 | CAN TX (powertrain bus) | 7 | TWAI0 TX | WCMCU-230 CTX | DC-DC extended command `0x10262B27` every 100 ms |
 | 3 | WDT Toggle | 21 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz |
 
 ### 6.4 PWT — GPIO Quick Reference
 
 ```
-GPIO 4  : CAN RX — low bus TWAI0 (500 kbit/s)
-GPIO 5  : CAN TX — low bus TWAI0 (500 kbit/s)
-GPIO 6  : CAN RX — powertrain bus TWAI1 (250 kbit/s)
-GPIO 7  : CAN TX — powertrain bus TWAI1 (250 kbit/s)
+GPIO 6  : CAN RX — powertrain bus TWAI0 (250 kbit/s)
+GPIO 7  : CAN TX — powertrain bus TWAI0 (250 kbit/s)
 GPIO 21 : WDT toggle → TPS3850 WDI (20 Hz)
 ```
 
-### 6.5 PWT — CAN Gateway Forwarding
+### 6.5 PWT — Gateway Status
 
-| Direction | CAN ID | Action |
-|-----------|--------|--------|
-| Low → Pwt | 0x012 (SYS_DCDC_CMD) | Transparent forward — same ID, same payload, on change |
-| Low → Pwt | 0x001 (SAFETY_ESTOP) | Transparent forward — rate-limited (max 2 per 500ms) |
-| Pwt → Low | 0x001 (SAFETY_ESTOP) | Transparent forward — rate-limited |
-| Pwt → Low | Motor telemetry (TBD IDs) | Parse and republish as new IDs (TBD) on low bus |
-| Low only | 0x7FB (PWT_HEARTBEAT) | 2 Hz heartbeat to RT/SYS on low bus |
+Gateway forwarding, ESTOP forwarding, PWT heartbeat, and motor telemetry
+republishing are not implemented. They require a second CAN controller before
+they can be developed or wired.
 
 ### 6.6 PWT — DC-DC Converter Protocol
 
@@ -483,8 +463,8 @@ GPIO 21 : WDT toggle → TPS3850 WDI (20 Hz)
 
 | Rail | Source | Used For |
 |------|--------|----------|
-| 3.3 V | USB or dev board regulator | ESP32-S3, both WCMCU-230 transceivers |
-| GND | USB or dev board | Common ground — shared with both CAN modules |
+| 3.3 V | USB or dev board regulator | ESP32-S3 and one WCMCU-230 transceiver |
+| GND | USB or dev board | Common ground for the PWT node and powertrain bus |
 
 ---
 
@@ -794,9 +774,9 @@ hardware paths are implemented and validated.
 
 ### 17.4 PWT ESP32-S3
 
-- [ ] WCMCU-230 #1 (low bus): VCC → 3V3, GND → GND, CTX → GPIO5, CRX → GPIO4
-- [ ] WCMCU-230 #2 (pwt bus): VCC → 3V3, GND → GND, CTX → GPIO7, CRX → GPIO6
-- [ ] Terminators: enable on modules that are bus endpoints
+- [ ] WCMCU-230 (powertrain bus): VCC → 3V3, GND → GND, CTX → GPIO7, CRX → GPIO6
+- [ ] Terminator: enable only when PWT is a physical powertrain-bus endpoint
+- [ ] Do not connect PWT to the low bus without adding a second CAN controller.
 - [ ] WDT: GPIO21 → TPS3850 WDI
 
 ### 17.5 Multimeter Checks (All Power OFF)
@@ -908,10 +888,8 @@ GPIO 33–35 : Bench-only gear relay outputs          [OUT, active-high]
 
 ### 18.4 PWT ESP32-S3
 
-GPIO 4  : CAN RX — low bus TWAI0 (500 kbit/s)        [IN]
-GPIO 5  : CAN TX — low bus TWAI0 (500 kbit/s)        [OUT]
-GPIO 6  : CAN RX — powertrain bus TWAI1 (250 kbit/s) [IN]
-GPIO 7  : CAN TX — powertrain bus TWAI1 (250 kbit/s) [OUT]
+GPIO 6  : CAN RX — powertrain bus TWAI0 (250 kbit/s) [IN]
+GPIO 7  : CAN TX — powertrain bus TWAI0 (250 kbit/s) [OUT]
 GPIO 21 : WDT toggle → TPS3850 WDI                   [OUT, 20 Hz]
 
 ### 18.5 Debug ESP32-S3
