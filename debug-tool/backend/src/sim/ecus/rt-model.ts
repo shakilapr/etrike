@@ -5,7 +5,7 @@ import { ID_SAFETY_ESTOP, ID_HOST_DRIVE_CMD, ID_HOST_BRAKE_REQ, ID_SYS_MODE_CMD,
  * This ensures ESTOP takes effect even if injected after a drive command
  * in the same tick cycle.
  */
-import { getDecoder } from "@etrike/debug-shared";
+import { decoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -104,14 +104,15 @@ export class RtModel implements EcuModel {
 
   onFrame(callback: (frame: CanFrame) => void): void { this.callbacks.push(callback); }
 
-  private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
+  private emit(bus: "high"|"low", id: string, name: string, signals: Record<string, unknown>): void {
+    const encoded = decoder.encode(bus, id, signals as Record<string, number|boolean>);
     const frame: CanFrame = {
       ts: Date.now()/1000,
       ts_us: "",
       seq: 0,
       bus,
-      frame: { id, dlc, data, ext: false, rtr: false },
-      decoded: { name, signals: decoded }
+      frame: { id, dlc: encoded.dlc, data: encoded.data, ext: false, rtr: false },
+      decoded: { name, signals }
     };
     this.frameQueue.push(frame);
     for (const cb of this.callbacks) cb(frame);

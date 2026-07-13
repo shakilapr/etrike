@@ -4,7 +4,7 @@ import { ID_VCU_SES_REQ, ID_SES_STATUS, ID_SES_ErrInfo, ID_SES_Version, ID_SES_T
  * Receives 0x169 VCU_SES_REQ, generates 0x201 SES_STATUS + 0x202/0x203/0x6FA.
  * Models first-order angle tracking with rate limiting.
  */
-import { getDecoder } from "@etrike/debug-shared";
+import { decoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -86,14 +86,15 @@ export class SesModel implements EcuModel {
 
   onFrame(cb: (f: CanFrame) => void): void { this.callbacks.push(cb); }
 
-  private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
+  private emit(bus: "high"|"low", id: string, name: string, signals: Record<string, unknown>): void {
+    const encoded = decoder.encode(bus, id, signals as Record<string, number|boolean>);
     const frame: CanFrame = {
       ts: Date.now()/1000,
       ts_us: "",
       seq: 0,
       bus,
-      frame: { id, dlc, data, ext: false, rtr: false },
-      decoded: { name, signals: decoded }
+      frame: { id, dlc: encoded.dlc, data: encoded.data, ext: false, rtr: false },
+      decoded: { name, signals }
     };
     this.frameQueue.push(frame);
     for (const cb of this.callbacks) cb(frame);

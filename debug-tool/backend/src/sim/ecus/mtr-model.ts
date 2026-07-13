@@ -3,7 +3,7 @@ import { ID_SAFETY_ESTOP, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_SYS_MODE_CMD, ID_
  * MTR Motor model — TypeScript implementation.
  * Receives 0x204 drive commands, generates 0x206 feedback + 0x120 throttle.
  */
-import { getDecoder } from "@etrike/debug-shared";
+import { decoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -75,14 +75,15 @@ export class MtrModel implements EcuModel {
 
   onFrame(callback: (frame: CanFrame) => void): void { this.callbacks.push(callback); }
 
-  private emit(bus: "high"|"low", id: string, dlc: number, data: number[], name: string, decoded: Record<string, unknown>): void {
+  private emit(bus: "high"|"low", id: string, name: string, signals: Record<string, unknown>): void {
+    const encoded = decoder.encode(bus, id, signals as Record<string, number|boolean>);
     const frame: CanFrame = {
       ts: Date.now()/1000,
       ts_us: "",
       seq: 0,
       bus,
-      frame: { id, dlc, data, ext: false, rtr: false },
-      decoded: { name, signals: decoded }
+      frame: { id, dlc: encoded.dlc, data: encoded.data, ext: false, rtr: false },
+      decoded: { name, signals }
     };
     this.frameQueue.push(frame);
     for (const cb of this.callbacks) cb(frame);

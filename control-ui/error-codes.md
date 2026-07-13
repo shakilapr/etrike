@@ -29,7 +29,7 @@ event_id     evt_01J...   unique occurrence of this condition
 
 `catalog_id` and `code` describe the condition and never change meaning. `message` describes this occurrence and may include safe contextual values. `event_id` identifies one raised/updated/recovered event occurrence and links it to evidence.
 
-The catalog tables retain the uppercase condition beside the catalog ID for reviewability. The registry stores the full symbolic code explicitly; it is not reconstructed by clients. Domain names are `system`, `api`, `adapter`, `can`, `pipeline`, `protocol`, `tx`, `ecu`, `test`, `recording`, `replay`, `stream`, `ui`, and `projection`.
+The catalog tables retain the uppercase condition beside the catalog ID for reviewability. The registry stores the full symbolic code explicitly; it is not reconstructed by clients. Domain names are `system`, `logging`, `api`, `adapter`, `can`, `pipeline`, `protocol`, `tx`, `ecu`, `test`, `recording`, `replay`, `stream`, `ui`, and `projection`.
 
 Use established identifiers at the boundary where they apply instead of inventing replacements:
 
@@ -160,6 +160,14 @@ queue_depth / high_water / dropped_count when applicable
 exception_type
 error.type               same value as code for an error condition
 native_error             bounded native driver/OS/library details when present
+condition_instance_id    one active fault episode from raise through recovery
+occurrence_count         exact count within this episode
+first_occurrence_time
+last_occurrence_time
+summary_window_ms        for an aggregated update
+aggregated_count         occurrences represented by this emitted record
+representative_samples   bounded first/last/worst evidence references
+aggregation_key          registry-approved low-cardinality condition scope
 evidence_refs
 context                   bounded structured object
 ```
@@ -180,6 +188,14 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 | `CUI-GEN-006` | WARN | `CLOCK_DISCONTINUITY` | Host monotonic/session time mapping became discontinuous |
 | `CUI-GEN-007` | WARN | `RESOURCE_EXHAUSTED` | Memory, worker, file descriptor, or other bounded resource was exhausted |
 | `CUI-GEN-008` | ERROR | `INVARIANT_VIOLATION` | Internal state violated a condition that should be impossible |
+
+### 4.1 Logging infrastructure
+
+| Catalog ID | Default | Symbolic code | Meaning |
+|---|---:|---|---|
+| `CUI-LOG-001` | ERROR | `logging.pipeline_overloaded` | The bounded operational-log pipeline exhausted its reserved capacity and aggregated or dropped output records |
+| `CUI-LOG-002` | ERROR | `logging.sink_write_failed` | A console, file, export, or telemetry sink failed to accept a log record |
+| `CUI-LOG-003` | WARN | `logging.cardinality_limit_reached` | A detector exceeded its bounded active aggregation keys and collapsed excess keys into an overflow group |
 
 ## 5. API, contract, and capabilities
 
@@ -401,6 +417,7 @@ Codes are emitted by the backend service that owns the relevant fact. React, an 
 | Subscription hub/client heartbeat | handshake, per-client sequence/queue/age | `CUI-STR-*` |
 | React error boundary and render telemetry | render exception and measured visible age/drop | `CUI-UI-*` |
 | Projection service | source dependency state, epoch, geometry and command/feedback tolerances | `CUI-PRJ-*` |
+| Logging pipeline supervisor | queue capacity, writer/sink result, aggregation-key bounds | `CUI-LOG-*` |
 | Top-level service supervisor | otherwise unhandled exception or invariant | `CUI-GEN-001/008` |
 
 Domain services return typed outcomes/violations. A central event factory validates the code against the registry, supplies common correlation/timestamp/version fields, enforces bounded/redacted context, and appends the event. It does not reinterpret the owning service’s decision.
@@ -444,14 +461,78 @@ Raw CAN recording remains separate from the operational log. Logs reference raw 
 
 ### 16.2 Deduplication and recovery
 
-For repeated conditions:
+Logging is not the high-rate evidence channel. Every detector evaluates every applicable frame and updates exact counters, but repeated observations of one active condition do not each become log lines.
 
-1. Log the first `raised` event immediately.
-2. Increment count and update last occurrence without repeating identical console lines.
-3. Periodically emit a bounded `updated` summary when useful.
-4. Emit one `recovered` transition with duration and total count.
+#### 16.2.1 Per-condition episode state
 
-Never rate-limit away the first failure, severity escalation, adapter epoch change, evidence-quality transition, or recovery.
+The registry defines a bounded `aggregation_key` for each code, normally `code + session + adapter_epoch + bus + CAN ID/message + detector`. Dynamic values such as payload, exception text, expected/actual value, request ID, and signal value are never key fields. This prevents a changing bad value from manufacturing a new log stream every millisecond.
+
+For each key, maintain one condition episode:
+
+```text
+healthy
+  └─ first failure ─→ active(condition_instance_id, count=1)
+                         ├─ repeat ─→ count++, update last/worst/sample
+                         ├─ reminder deadline ─→ one aggregated update
+                         └─ clear policy satisfied ─→ recovered(final count/duration)
+```
+
+The write policy is:
+
+1. Emit the first `raised` record immediately.
+2. Count every repeat exactly in memory/metrics and preserve relevant raw evidence; do not enqueue another identical log record.
+3. Emit an `updated` summary after 1 second, then at most every 10 seconds while active by default. Each summary contains the interval count/rate, cumulative count, first/last time, and bounded representative evidence.
+4. Emit `recovered` immediately when the code-specific clear policy is satisfied, with final count and duration.
+5. A later recurrence starts a new `condition_instance_id`.
+
+Thus a checksum failure observed every 1 ms for 10 seconds produces about three durable diagnostic records—raised, summaries, and recovery as applicable—not 10,000 lines, while its exact `occurrence_count=10000` remains queryable.
+
+The 1-second/10-second defaults are operational logging policy, configurable per code in the machine-readable error registry. They are not CAN protocol timing. Critical state transitions may use shorter reminders; low-value warnings may use longer ones.
+
+#### 16.2.2 Flapping and recovery hysteresis
+
+Recovery must be based on detector evidence, not silence or a generic timer. The registry declares its clear policy:
+
+- frame validation may require a YAML-defined number of consecutive valid frames;
+- message freshness clears only after valid advancing traffic stabilizes;
+- adapter removal clears only after successful reopen/configuration and a new adapter epoch;
+- queue overload clears only after depth remains below its low-water mark;
+- one-shot operation failures recover when a later operation succeeds or the owning job ends.
+
+An alternating valid/invalid frame therefore remains one active episode rather than producing a raised/recovered pair every 2 ms. Per-frame validity and raw evidence remain available separately, so hysteresis does not falsify the data.
+
+#### 16.2.3 Noisy-neighbor and overload protection
+
+Rate limiting is applied per aggregation key, not as one global error limiter. Each severity has a reserved output budget, so a checksum storm cannot consume all capacity and hide adapter removal, storage failure, or an unrelated ECU fault. First raise, severity escalation, adapter epoch change, evidence-quality transition, and recovery bypass normal reminder suppression.
+
+A global token-bucket limit exists only as a final sink-protection layer. When it activates:
+
+- discard `DEBUG`, then repetitive `INFO`, before higher severities;
+- never block the CAN RX/router/control path on console, disk, network, or WebSocket logging;
+- increment exact `log_records_dropped_total{sink,severity}` and expose queue depth/high-water;
+- update one reserved `logging.pipeline_overloaded` health condition without recursively flooding that same pipeline;
+- include dropped/aggregated counts in the next successful summary and test evidence quality.
+
+Logging uses a bounded non-blocking producer queue and a dedicated writer/listener. Raw CAN recording has its own bounded queue and health state; operational logs and UI delivery cannot consume its capacity.
+
+#### 16.2.4 Metrics, logs, and raw evidence have different jobs
+
+| Signal | Purpose | High-rate behavior |
+|---|---|---|
+| Counter/metric | Exact frequency, rate, ratios, capacity, and alert thresholds | Increment every occurrence using bounded low-cardinality labels |
+| Condition/event log | Explain first failure, important changes, causal chain, and recovery | State transitions plus periodic aggregate summaries |
+| Raw CAN recording | Reproduce frame-level timing and payload evidence | Lossless when recording is enabled, or explicitly marked incomplete |
+| Debug trace | Temporary deep investigation | Opt-in, time/size bounded, never the default bench mode |
+
+Required low-cardinality metrics include `error_occurrences_total{code,domain,severity,bus}`, `error_records_emitted_total`, `error_occurrences_aggregated_total`, `active_conditions`, log queue depth/high-water, and dropped records by sink/severity. CAN ID, message name, session, request, event, raw value, and exception text are query fields in events/evidence, not unrestricted metric labels.
+
+#### 16.2.5 Cardinality guard
+
+The registry specifies allowed aggregation fields and a maximum number of active keys per detector. If malformed or unknown traffic exceeds that bound, excess values collapse into a visible overflow group with total count and bounded representative samples. The backend emits `logging.cardinality_limit_reached` once for the episode. It does not allocate unbounded state or silently discard the fact that distinct conditions were collapsed.
+
+The UI displays active condition rows—not repeated lines—with ID, readable code, latest message, count, rate, first seen, last seen, severity, and state. A separate event timeline shows the raised/summary/recovered records. LLM/API queries return the same aggregation fields.
+
+This policy follows the common operational split between structured events, metrics, and rate-limited hot-path logging: OpenTelemetry defines structured log/event fields and `error.type`; Prometheus recommends a counter corresponding to failures/log sites; Linux recommends rate-limited or one-time logging in hot paths; syslog defines interoperable severity levels.
 
 ### 16.3 Exception handling
 
@@ -464,6 +545,15 @@ Expected domain failures return their specific symbolic codes without Python sta
 - Store firmware/software/protocol versions with recordings.
 - Redact tokens and environment secrets at the logging boundary.
 - Make storage failure visible through `CUI-REC-*`; never silently stop logging evidence.
+
+### 16.5 Logging standards references
+
+- [OpenTelemetry Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
+- [OpenTelemetry semantic conventions for events](https://opentelemetry.io/docs/specs/semconv/general/events/)
+- [RFC 5424 syslog severity and structured data](https://datatracker.ietf.org/doc/html/rfc5424)
+- [Prometheus instrumentation practices](https://prometheus.io/docs/practices/instrumentation/)
+- [Linux kernel hot-path logging guidance](https://docs.kernel.org/core-api/printk-basics.html#avoiding-lockups-from-excessive-printk-use)
+- [systemd-journald rate limiting and storage bounds](https://www.freedesktop.org/software/systemd/man/journald.conf.html)
 
 ## 17. API error example
 
@@ -492,7 +582,7 @@ Expected domain failures return their specific symbolic codes without Python sta
 
 Implement these groups first because they protect result correctness:
 
-1. `CUI-GEN-*`, `CUI-API-*`, and structured fields.
+1. `CUI-GEN-*`, `CUI-LOG-*`, `CUI-API-*`, and structured fields.
 2. `CUI-ADP-*`, `CUI-CAN-*`, and `CUI-RX-*` for connection/loss evidence.
 3. `CUI-PRO-*` for corruption and protocol validation.
 4. `CUI-TX-*` for scheduler, ownership, and Stop All.
