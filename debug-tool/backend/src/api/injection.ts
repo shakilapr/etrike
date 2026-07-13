@@ -1,4 +1,4 @@
-import { ID_HOST_DRIVE_CMD, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_HOST_LIGHT_CMD, ID_SYS_DCDC_CMD, ID_SYS_MODE_CMD, ID_SAFETY_ESTOP, type CanFrame } from "../types/can";
+import { ID_HOST_DRIVE_CMD, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_HOST_LIGHT_CMD, ID_SYS_MODE_CMD, ID_SAFETY_ESTOP, type CanFrame } from "../types/can";
 import type { AppContext } from "../app-context";
 import type { LeaseResource } from "../state/leases";
 
@@ -35,7 +35,7 @@ export class InjectionService {
   private getRequiredResource(id: string): LeaseResource | null {
     if (id === ID_HOST_DRIVE_CMD || id === ID_RT_DRIVE_CMD) return "motor";
     if (id === ID_RT_BRAKE_CMD) return "brake";
-    if (id === ID_HOST_LIGHT_CMD || id === ID_SYS_DCDC_CMD || id === ID_SYS_MODE_CMD) return "sys";
+    if (id === ID_HOST_LIGHT_CMD || id === ID_SYS_MODE_CMD) return "sys";
     return null;
   }
 

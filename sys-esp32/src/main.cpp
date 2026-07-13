@@ -2,7 +2,7 @@
 // Architecture: architecture.md §8.
 // 15 FreeRTOS tasks, all wired to real implementation modules.
 // Phases S1-S4: CAN RX, dispatch, motor, safety, mode, throttle, brake,
-//               lights, dcdc, indicator, power, can_tx, diag, heartbeat.
+//               lights, indicator, power, can_tx, diag, heartbeat.
 
 // Runtime System Mode Configuration
 #include "system_mode.h"
@@ -39,7 +39,6 @@ bool g_bypass_mtr_absent = false;
 #include "gear_control.h"
 #include "brake_control.h"
 #include "light_control.h"
-#include "dcdc_control.h"
 #include "indicator_control.h"
 #include "wdt_toggle.h"
 
@@ -101,7 +100,6 @@ static sys::Mcp4725Dac     g_dac;
 static sys::GearControl    g_gear;
 static sys::BrakeControl   g_brake;
 static sys::LightControl   g_lights;
-static sys::DcdcControl    g_dcdc;
 static sys::IndicatorControl g_indicator;
 static sys::WdtToggle      g_wdt;
 
@@ -765,22 +763,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     }
 }
 
-// ── DCDC task (prio 3, 5 Hz) ──────────────────────────────────────
-
-[[noreturn]] static void task_dcdc(void*) {
-    TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
-    TickType_t last   = xTaskGetTickCount();
-    while (1) {
-        bool estop = (g_mode_mgr.mode() == can::Mode::Estop);
-        if (g_dcdc.tick(estop)) {
-            can::Frame fr;
-            g_dcdc.build_frame(fr);
-            send_can(fr, "dcdc"); // 0x012 SYS_DCDC_CMD
-        }
-        vTaskDelayUntil(&last, period);
-    }
-}
-
 // ── Indicator task (prio 2, 5 Hz) ──────────────────────────────────
 
 [[noreturn]] static void task_indicator(void*) {
@@ -946,7 +928,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 // ── Task handles ────────────────────────────────────────────────────
 
 static TaskHandle_t h_can_rx, h_safety, h_dispatch, h_mode, h_motor;
-static TaskHandle_t h_throttle, h_gear, h_brake, h_lights, h_dcdc;
+static TaskHandle_t h_throttle, h_gear, h_brake, h_lights;
 static TaskHandle_t h_indicator, h_power, h_can_tx, h_diag, h_hb;
 
 // Put every connected SYS GPIO in a deterministic, non-actuating state before
@@ -1093,7 +1075,6 @@ extern "C" void app_main() {
 #endif
     g_brake.init();
     g_lights.init();
-    g_dcdc.init();
     g_indicator.init();
     g_wdt.init();
 
@@ -1120,7 +1101,6 @@ extern "C" void app_main() {
     xTaskCreate(task_gear,      "gear",      2048, nullptr, 3, &h_gear);
     xTaskCreate(task_brake,     "brake",     3584, nullptr, 3, &h_brake);
     xTaskCreate(task_lights,    "lights",    2560, nullptr, 3, &h_lights);
-    xTaskCreate(task_dcdc,      "dcdc",      2560, nullptr, 3, &h_dcdc);
     xTaskCreate(task_indicator, "indicator", 2560, nullptr, 2, &h_indicator);
     xTaskCreate(task_power,     "power",     2560, nullptr, 2, &h_power);
     xTaskCreate(task_can_tx,    "can_tx",    3584, nullptr, 2, &h_can_tx);
@@ -1128,9 +1108,9 @@ extern "C" void app_main() {
     xTaskCreate(task_hb,        "hb",        2560, nullptr, 1, &h_hb);
 
 #ifdef SYS_OWNS_MOTOR
-    ESP_LOGI(TAG, "Ready — 15 tasks running (bench, SYS_OWNS_MOTOR). Mode=%s", g_mode_mgr.name());
+    ESP_LOGI(TAG, "Ready — 14 tasks running (bench, SYS_OWNS_MOTOR). Mode=%s", g_mode_mgr.name());
 #else
-    ESP_LOGI(TAG, "Ready — 13 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
+    ESP_LOGI(TAG, "Ready — 12 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
 #endif
     vTaskDelete(nullptr);
 }

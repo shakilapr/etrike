@@ -21,7 +21,6 @@ namespace can {
 
 constexpr uint32_t kIdSafetyEstop       = data::kIdSAFETYESTOP;
 constexpr uint32_t kIdSysSafetySts      = data::kIdSYSSAFETYSTS;
-constexpr uint32_t kIdSysDcdcCmd        = data::kIdSYSDCDCCMD;
 constexpr uint32_t kIdSysModeCmd        = data::kIdSYSMODECMD;
 constexpr uint32_t kIdSysThrottleSts    = data::kIdSYSTHROTTLESTS;
 constexpr uint32_t kIdRtDriveCmd        = data::kIdRTDRIVECMD;

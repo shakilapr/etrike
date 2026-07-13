@@ -57,18 +57,6 @@ protocols:
           - {name: SYS_LightBrake,  key: light_brake,  byte: 2, bit_offset: 2, size: 1}
           - {name: SYS_LightHead,   key: light_head,   byte: 2, bit_offset: 3, size: 1}
 
-      # 0x012 — SYS_DCDC_CMD (low bus only)
-      - id: 0x012
-        name: SYS_DCDC_CMD
-        dlc: 1
-        sender: SYS
-        receivers: [DCDC]
-        cycle_ms: 0
-        comment: "DC-DC converter control. Low bus only."
-        signals:
-          - {name: SYS_DcdcEnable, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
-             comment: "ESTOP->1(on); maintains 12V for MCUs, CAN transceivers, brake light"}
-
       # 0x110 — SYS_MODE_CMD (low bus only)
       - id: 0x110
         name: SYS_MODE_CMD
