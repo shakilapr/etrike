@@ -1127,10 +1127,17 @@ It is a diagnostic schematic, not a driving display, physics authority, or proof
 
 ### 24.1 What the preview shows
 
-Use a responsive SVG or Canvas top-down tricycle with:
+Use a responsive SVG or Canvas top-down tricycle with two independent layers drawn on the same vehicle:
+
+1. **Actuation layer:** what RT, SYS, Host, or another active producer is commanding the hardware to do—motor request, steering target, brake request, gear request, lamps, and other actuator outputs.
+2. **Sensor layer:** what the hardware reports it is doing—motor speed/encoder feedback, steering-angle feedback, brake pressure/status, reported gear, lamp/status feedback, and faults.
+
+Neither layer is tied to keyboard controls. Keyboard, gamepad, HMI, scripted tests, synthetic peers, physical Host, RT, SYS, and replay are merely possible producers of CAN messages. The preview consumes the resulting normalized CAN projections and therefore works in receive-only Full Vehicle mode with no Control workspace open.
+
+The picture includes:
 
 - rear wheel/motor state and front steering wheel angle;
-- requested command and observed feedback as distinct layers;
+- actuation command and sensor feedback as distinct simultaneous layers;
 - speed/gear direction arrow;
 - brake request and measured brake feedback;
 - headlight, brake light, left/right indicator, ESTOP, and relevant fault state;
@@ -1139,7 +1146,9 @@ Use a responsive SVG or Canvas top-down tricycle with:
 - a compact HUD with value, unit, source, age, and validity;
 - optional per-component CAN activity/fault highlighting for RT, SYS, MTR, SES, and SEB.
 
-Command uses a dashed/outlined ghost layer; valid feedback uses a solid layer. A visible disagreement band and numeric delta replace ambiguous animation. Synthetic and replay data retain their normal provenance styling.
+Actuation uses a dashed/outlined ghost layer; valid sensor feedback uses a solid layer. For example, commanded front-wheel angle appears as a translucent outline while measured wheel angle is solid, and requested versus measured speed use aligned arrows. A visible disagreement band and numeric delta replace ambiguous animation. Synthetic and replay data retain their normal provenance styling.
+
+The default is `Overlay`, showing both on one vehicle. Engineers may temporarily choose `Actuation only` or `Sensors only` to remove clutter, but both data pipelines continue independently. If one side is unavailable, the other still renders and the missing side is labelled rather than inferred.
 
 ### 24.2 Source selection and honesty
 
@@ -1153,7 +1162,7 @@ The Leadmate dashboard explicitly selects `EKF`, `ODOM`, or `SIM`. Adopt that pr
 | Gear | requested gear | reported MTR/RT gear | signed display direction |
 | Lamps/ESTOP | requested test stimulus | SYS/RT status | none |
 
-Fallback is never silent. If the primary observed source is missing and a declared fallback is used, show `Fallback: <source>` and its provenance. The operator may pin a source for comparison. Values from different adapter epochs are never combined.
+Fallback is never silent. If the primary observed source is missing and a declared fallback is used, show `Fallback: <source>` and its provenance. The operator may pin a source for comparison. Values from different adapter epochs are never combined. Actuation and sensor source selection are independent: a command frame cannot be used as sensor feedback, and feedback cannot be presented as the commanded target.
 
 ### 24.3 Projection versus observation
 
@@ -1165,16 +1174,27 @@ The existing debug preview integrates speed and steering in the browser to inven
 - `Projected`: virtual pose/path integrated from a model;
 - `Synthetic`, `Replay`, or `Unavailable` provenance.
 
-Without an actual pose source, the vehicle remains centered and the grid/path moves only in an explicitly enabled `Model projection` mode. Heading then starts at zero or a user reset boundary and is labelled relative/projected. Wheelbase, track width, steering convention, limits, and unit conversions come from generated YAML/configuration in physical units—not Canvas pixels or magic scale factors.
+### 24.3.1 Center-locked ego view
+
+The vehicle reference point is permanently anchored at the center of the preview. Projected travel never moves the tricycle toward an edge of the Canvas. Instead, the background grid, origin, path marks, and other world-relative references translate in the opposite direction, matching the debug tool’s useful ego-view behavior. Projected heading may rotate the tricycle around its fixed center; an optional heading-locked presentation rotates the background instead. In both cases, the center anchor never moves.
+
+The sensor layer drives the default background projection from measured speed/encoder and measured steering. The actuation layer can simultaneously draw a dashed predicted path from commanded speed and steering. This gives one picture containing actual-response projection and commanded projection without connecting the visual to keyboard state. If sensor inputs are unavailable, the measured background projection freezes while the command path may remain visible; it does not silently switch to command data.
+
+Background movement is a visual integration from a declared reset boundary, not measured global position. A fixed `Projection origin` marker, elapsed projected distance, source badge, and Reset Projection action make this clear. Adapter epoch changes, replay seek, projection-source changes, or timestamp discontinuities start a new projection segment rather than joining unrelated motion.
+
+Without an actual pose source, the vehicle remains center-locked and the moving background/path appears only in explicitly labelled `Model projection` mode. Heading starts at zero or a user reset boundary and is labelled relative/projected. Wheelbase, track width, steering convention, limits, and unit conversions come from generated YAML/configuration in physical units—not Canvas pixels or magic scale factors.
+
+`Requested` means a command observed on CAN or owned by an active backend test job. It does not mean the current keyboard key position. Browser input intent may appear in a separate input widget, but it reaches the vehicle picture only after the backend has shaped and encoded it into the actuation projection. The picture therefore works identically for scripts, physical controllers, Host commands, RT outputs, replay, and passive monitoring.
 
 ### 24.4 Freshness and corrupt-data behavior
 
-The preview consumes the backend’s atomic vehicle projection; it does not reconstruct telemetry by independently selecting latest frames in the browser. Every contributing signal carries source, sample time, age, validity, and adapter epoch.
+The preview consumes the backend’s atomic vehicle projection; it does not reconstruct telemetry by independently selecting latest frames in the browser. Actuation and sensor halves update independently inside that atomic projection. Every contributing signal carries source, sample time, age, validity, and adapter epoch.
 
 - stale input freezes its affected geometry and fades/hatches it with the age shown;
 - missing input removes the affected derived geometry and displays `No data`, never zero;
 - corrupt input keeps the last valid geometry but adds `Corrupt input` and the failed rule;
 - source disagreement displays both layers and the delta;
+- actuation staleness never makes fresh sensor feedback disappear, and sensor staleness never hides a fresh actuation command;
 - an incomplete WebSocket snapshot marks the entire preview `Degraded` until resynchronized;
 - replay, synthetic, requested, and physical observations remain visually distinguishable.
 

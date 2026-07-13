@@ -654,21 +654,41 @@ Manual bookmarks and notes bind to session/replay epoch, mapped timestamp, per-c
 
 ## 40. Vehicle projection logic
 
-The backend creates one atomic `VehicleProjection` from the latest valid source records. Each field contains value, unit, semantic source, bus/ID/signal, provenance, sample time, age/deadline, validity, adapter/replay epoch, and whether it is requested, observed, derived, or projected.
+The backend creates one atomic `VehicleProjection` from the latest valid source records. It contains two parallel state trees:
 
-1. Resolve the configured primary source for every visual property.
+- `actuation`: commands actually observed on CAN or emitted by an active backend job toward motor, steering, brake, gear, lamps, and other hardware;
+- `sensors`: feedback/status actually observed from motor, encoder, steering, brake, SYS/RT state, and other sensors/actuators.
+
+Each field contains value, unit, semantic source, bus/ID/signal, provenance, sample time, age/deadline, validity, adapter/replay epoch, and whether it is actuation, sensor, derived, or projected. No field is populated directly from a keyboard or gamepad event.
+
+1. Resolve the configured primary actuation source and primary sensor source for every visual property independently.
 2. Use a declared fallback only if its compatibility rule permits it; report fallback use explicitly.
 3. Refuse to combine epochs or incompatible timestamps.
-4. Calculate command-feedback deltas from time-aligned valid samples within the declared alignment window.
+4. Calculate actuation-sensor deltas from time-aligned valid samples within the declared alignment window.
 5. Calculate curvature and turn radius from physical wheelbase and observed steering convention.
 6. Calculate a path only when speed, steering, dimensions, and direction are valid.
 7. Publish the projection as one versioned snapshot/delta so the browser cannot draw a half-old, half-new vehicle state.
 
-Derived fields retain dependency references. If a dependency becomes stale, invalid, missing, or changes epoch, the dependent result transitions immediately and is not recomputed from a fabricated zero.
+Derived fields retain dependency references. If a dependency becomes stale, invalid, missing, or changes epoch, the dependent result transitions immediately and is not recomputed from a fabricated zero. Loss of one state tree does not invalidate independent fields in the other tree.
+
+Browser input follows a separate path: input intent → backend shaping/scheduler → encoded or observed CAN command → actuation projection. A raw key press is never vehicle state and is never painted as actuator motion.
 
 ## 41. Vehicle preview rendering logic
 
-The browser renders requested and observed layers independently. It may interpolate geometry between consecutive valid projection samples for smoothness, but interpolation cannot alter numeric values or test evidence. It must not extrapolate past the declared visual horizon.
+The browser renders actuation and sensor layers independently on the same vehicle. The default overlay uses outlined/translucent actuation geometry and solid sensor geometry, with selectable `Overlay`, `Actuation only`, and `Sensors only` presentation modes. These modes affect drawing only, not subscription, capture, or projection state.
+
+It may interpolate geometry between consecutive valid projection samples for smoothness, but interpolation cannot alter numeric values or test evidence. It must not extrapolate past the declared visual horizon.
+
+The render transform obeys a center-lock invariant:
+
+1. Define a fixed vehicle anchor at the Canvas center.
+2. Integrate the selected valid sensor speed and steering over mapped monotonic time into a relative projected pose.
+3. Draw the grid, projection origin, sensor trail, and world-relative marks using the inverse projected translation.
+4. Rotate the vehicle around the fixed anchor for projected heading; in heading-locked mode, apply the inverse rotation to the background instead.
+5. Draw the actuation-derived predicted path as a dashed layer from the same center without using it to move the measured background.
+6. Never modify the vehicle anchor during resize, zoom, source changes, or motion.
+
+Only a declared sensor projection source moves the default background. Command/keyboard intent cannot substitute for missing sensor feedback. A separate explicitly selected `Actuation projection` diagnostic mode may animate from commands, but it is visibly labelled and never described as measured response.
 
 When data ages out:
 
@@ -676,12 +696,12 @@ When data ages out:
 2. Freeze the last valid geometry.
 3. Fade/hatch it and show its age and state.
 4. Remove dependent ICR/path geometry.
-5. Preserve requested-versus-observed distinction.
+5. Preserve actuation-versus-sensor distinction and continue rendering whichever side remains valid.
 
-Model projection has its own epoch and reset boundary. Browser tab suspension, a large animation `dt`, source change, adapter epoch change, replay seek, or stream resnapshot resets its integrator rather than jumping the vehicle. Projected distance/heading are never labelled observed unless a future CAN pose source supplies them directly.
+Model projection has its own epoch and reset boundary. Browser tab suspension, a large animation `dt`, source change, adapter epoch change, replay seek, or stream resnapshot starts or restores a deterministic projection segment rather than jumping the vehicle. The UI provides Reset Projection without resetting CAN state. Projected distance/heading are never labelled observed unless a future CAN pose source supplies them directly.
 
 ## 42. Visual preview verification
 
-Golden snapshot and behavior tests cover straight, left, right, reverse, neutral, braking, indicators, ESTOP, command-feedback disagreement, source fallback, stale/missing/corrupt inputs, replay/synthetic provenance, adapter epoch change, resize/high-DPI behavior, hidden-tab resume, and reduced motion.
+Golden snapshot and behavior tests cover straight, left, right, reverse, neutral, braking, indicators, ESTOP, command-feedback disagreement, source fallback, stale/missing/corrupt inputs, replay/synthetic provenance, adapter epoch change, resize/high-DPI behavior, hidden-tab resume, and reduced motion. They also prove that the vehicle anchor remains fixed while the background translates, that heading rotates about that anchor, and that command-only data cannot move a sensor-driven background.
 
 Numeric checks prove steering sign, unit conversion, curvature, ICR side, turn radius, and projected path against the shared E-Trike kinematics vectors. A visual test must also prove that invalid/out-of-range data is disclosed rather than silently clamped into a healthy-looking vehicle.
