@@ -86,8 +86,8 @@ export interface DebugStore {
   stopRecording(id: number): Promise<Recording | null>;
   deleteRecording(id: number): Promise<boolean>;
   recordingFramesById(id: number, limit?: number): Promise<StoredCanFrame[] | null>;
-  recordingFramesIterator(id: number): IterableIterator<StoredCanFrame> | null;
-  recentFramesIterator(limit?: number): IterableIterator<StoredCanFrame>;
+  recordingFramesIterator(id: number): IterableIterator<StoredCanFrame> | AsyncIterableIterator<StoredCanFrame>;
+  recentFramesIterator(limit?: number): IterableIterator<StoredCanFrame> | AsyncIterableIterator<StoredCanFrame>;
   counts(): Promise<{ frames: number; injected: number; recordings: number }>;
   clearFrames(): Promise<void>;
   close(): Promise<void>;

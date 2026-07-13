@@ -91,10 +91,10 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
 
       // We read from the synchronous sqlite iterator asynchronously using setImmediate 
       // to avoid blocking the event loop on huge exports.
-      const produce = () => {
+      const produce = async () => {
         let count = 0;
         while (count < 100) {
-          const { value, done } = iter.next();
+          const { value, done } = await iter.next();
           if (done) {
             if (format === "json") stream.push("\n]\n");
             stream.push(null);
@@ -104,7 +104,7 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
           let chunk = "";
           if (format === "csv") {
             const dataHex = Buffer.from(value.frame.data).toString("hex");
-            chunk = `${value.ts_real},${value.ts_us},${value.ts_device},${value.bus},${value.frame.id},${value.decoded.name || ""},${value.frame.dlc},${dataHex}\n`;
+            chunk = `${value.ts_real},${value.ts_us},${value.ts_device},${value.bus},${value.frame.id},${value.decoded?.name || ""},${value.frame.dlc},${dataHex}\n`;
           } else {
             chunk = (first ? "" : ",\n") + JSON.stringify(value);
             first = false;

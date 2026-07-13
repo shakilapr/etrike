@@ -31,7 +31,7 @@ export function registerSystemRoutes(
       websocket_clients: hub.clientCount(),
       storage: await store.counts(),
       queues: {
-        ui: hub.getMetrics(),
+        
         db: app.ctx.writeQueue.getMetrics()
       }
   }));

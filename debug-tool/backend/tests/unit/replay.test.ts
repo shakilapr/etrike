@@ -11,10 +11,10 @@ describe("ReplayEngine", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockStore = {
-      getRecentFrames: vi.fn().mockResolvedValue([
-        { bus: "high", id: "0x123", dlc: 8, data: [1,2,3,4,5,6,7,8], ts_us: "100" } as CanFrame,
-        { bus: "high", id: "0x456", dlc: 8, data: [8,7,6,5,4,3,2,1], ts_us: "200" } as CanFrame,
-      ])
+      recentFramesIterator: vi.fn().mockImplementation(async function* () {
+        yield { bus: "high", id: "0x123", dlc: 8, data: [1,2,3,4,5,6,7,8], ts_us: "100" } as CanFrame;
+        yield { bus: "high", id: "0x456", dlc: 8, data: [8,7,6,5,4,3,2,1], ts_us: "200" } as CanFrame;
+      })
     } as unknown as DebugStore;
     onFrame = vi.fn();
     engine = new ReplayEngine(mockStore, onFrame);

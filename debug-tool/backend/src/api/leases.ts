@@ -24,7 +24,7 @@ export function registerLeaseRoutes(
 
     const success = leaseManager.acquire(parsed.data.resource, parsed.data.ownerId, parsed.data.ttlMs);
     if (!success) {
-      return reply.code(409).send({ error: \`Resource \${parsed.data.resource} is already leased to someone else\` });
+      return reply.code(409).send({ error: `Resource ${parsed.data.resource} is already leased to someone else` });
     }
     return { ok: true, action: "acquired" };
   });
@@ -35,7 +35,7 @@ export function registerLeaseRoutes(
 
     const success = leaseManager.renew(parsed.data.resource, parsed.data.ownerId, parsed.data.ttlMs);
     if (!success) {
-      return reply.code(403).send({ error: \`Cannot renew lease for \${parsed.data.resource} (not held or expired)\` });
+      return reply.code(403).send({ error: `Cannot renew lease for ${parsed.data.resource} (not held or expired)` });
     }
     return { ok: true, action: "renewed" };
   });

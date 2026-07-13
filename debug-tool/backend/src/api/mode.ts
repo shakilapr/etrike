@@ -7,15 +7,15 @@ import type { AppConfig } from "../config";
 import type { DebugStore } from "../db/queries";
 import type { CanalystBridge } from "../canalyst/bridge";
 import type { SerialBridge } from "../serial/reader";
-import type { MqttBridge } from "../mqtt/bridge";
+import type { ActiveTransportManager } from "../bridge/manager";
 import type { CanFrame } from "../types/can";
 import { CanalystBridge as CanalystBridgeClass } from "../canalyst/bridge";
 import { SerialBridge as SerialBridgeClass } from "../serial/reader";
-import { MqttBridge as MqttBridgeClass } from "../mqtt/bridge";
+import { ActiveTransportManager as ActiveTransportManagerClass } from "../bridge/manager";
 import { MODE_DEFAULTS, workModeConfigSchema, type WorkModeConfig } from "../sim/work-mode";
 import type { WriteQueue } from "../db/write-queue";
 
-type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
+type AnyBridge = CanalystBridge | SerialBridge | ActiveTransportManager;
 type FrameObservableBridge = AnyBridge & {
   onFrame?: (callback: (frame: CanFrame) => void) => void;
 };
@@ -130,7 +130,7 @@ export function registerModeRoutes(app: FastifyInstance, opts: ModeRouteOptions)
         await b.start();
         bridgeRef.current = b;
       } else if (transport === "mqtt") {
-        const b = new MqttBridgeClass(config, store, app.ctx.hub, writeQueue);
+        const b = new ActiveTransportManagerClass(config, store, app.ctx.hub, writeQueue);
         feedPhysicalFramesToSim(b as FrameObservableBridge);
         await b.start();
         bridgeRef.current = b;

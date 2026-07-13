@@ -91,6 +91,18 @@ export class WorkerClient implements DebugStore {
   async stopRecording(id: number): Promise<any | null> { return this.request("stopRecording", [id]); }
   async deleteRecording(id: number): Promise<boolean> { return this.request("deleteRecording", [id]); }
   async recordingFramesById(id: number, limit?: number): Promise<any[] | null> { return this.request("recordingFramesById", [id, limit]); }
+  
+  async *recentFramesIterator(limit = 10000): AsyncIterableIterator<StoredCanFrame> {
+    const frames = await this.queryFrames({ limit });
+    for (const frame of frames) yield frame;
+  }
+
+  async *recordingFramesIterator(id: number): AsyncIterableIterator<StoredCanFrame> {
+    const frames = await this.recordingFramesById(id);
+    if (!frames) return;
+    for (const frame of frames) yield frame;
+  }
+
   async counts(): Promise<any> { return this.request("counts"); }
   async runMaintenance(): Promise<void> { return this.request("runMaintenance"); }
 
