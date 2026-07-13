@@ -5,7 +5,7 @@
 
 import type { CanMessageDef, CanField, Bus, FieldKind } from "../can";
 
-export const PROTOCOL_HASH = "ae0c37f0f234dd774049410d014be3af544affb656356b3496e48438523ef72f";
+export const PROTOCOL_HASH = "748590d8a5a59dfc60eeea199d7c98707687a05554de2dc74247e7f839922cac";
 
 export interface InternalCanField extends CanField {
   _byte: number;
@@ -83,7 +83,8 @@ export const ID_SYS_DIAG_RPT = "0x600";
 export const SIG_SYS_DIAG_RPT_SYS_DIAGMODE = "SYS_DiagMode";
 export const SIG_SYS_DIAG_RPT_SYS_DIAGBRAKEENGAGED = "SYS_DiagBrakeEngaged";
 export const SIG_SYS_DIAG_RPT_SYS_DIAGBRAKEFAULT = "SYS_DiagBrakeFault";
-export const SIG_SYS_DIAG_RPT_SYS_DIAGHEARTBEATOK = "SYS_DiagHeartbeatOk";
+export const SIG_SYS_DIAG_RPT_HEARTBEAT_OK = "heartbeat_ok";
+export const SIG_SYS_DIAG_RPT_RX_OVERFLOW = "rx_overflow";
 export const SIG_SYS_DIAG_RPT_SYS_DIAGESTOPACTIVE = "SYS_DiagEstopActive";
 export const SIG_SYS_DIAG_RPT_SYS_DIAGFREEHEAPKB = "SYS_DiagFreeHeapKb";
 export const SIG_SYS_DIAG_RPT_SYS_DIAGTEC = "SYS_DiagTec";
@@ -213,11 +214,16 @@ export const SIG_VCU_SEB_REQ_SEB_ROLLCNTENABLE = "SEB_RollCntEnable";
 export const SIG_VCU_SEB_REQ_SEB_CHECKSUMENABLE = "SEB_ChecksumEnable";
 export const SIG_VCU_SEB_REQ_ROLLING_COUNTER = "rolling_counter";
 export const SIG_VCU_SEB_REQ_CHECKSUM = "checksum";
-export const SIG_RT_HEARTBEAT_RT_ALIVECTR = "RT_AliveCtr";
-export const SIG_RT_HEARTBEAT_RT_HEALTHFLAGS = "RT_HealthFlags";
 export const ID_SYS_HEARTBEAT = "0x7FE";
 export const SIG_SYS_HEARTBEAT_SYS_ALIVECTR = "SYS_AliveCtr";
-export const SIG_SYS_HEARTBEAT_SYS_HEALTHFLAGS = "SYS_HealthFlags";
+export const SIG_SYS_HEARTBEAT_HEARTBEAT_OK = "heartbeat_ok";
+export const SIG_SYS_HEARTBEAT_ESTOP_ACTIVE = "estop_active";
+export const SIG_SYS_HEARTBEAT_MODE_AUTO = "mode_auto";
+export const SIG_SYS_HEARTBEAT_CAN_OK = "can_ok";
+export const SIG_SYS_HEARTBEAT_TASK_SAFETY_OK = "task_safety_ok";
+export const SIG_SYS_HEARTBEAT_TASK_BRAKE_OK = "task_brake_ok";
+export const SIG_SYS_HEARTBEAT_TASK_DISPATCH_OK = "task_dispatch_ok";
+export const SIG_SYS_HEARTBEAT_TASK_CAN_TX_OK = "task_can_tx_ok";
 
 export const CAN_MESSAGES: InternalCanMessageDef[] = [
   {
@@ -351,7 +357,7 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "_factor": 1.0,
         "_offset": 0.0,
         "min": 0,
-        "max": 2,
+        "max": 1,
         "options": [
           {
             "value": 0,
@@ -360,10 +366,6 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
           {
             "value": 1,
             "label": "AUTO"
-          },
-          {
-            "value": 2,
-            "label": "PURE_SIM"
           }
         ]
       },
@@ -1132,17 +1134,30 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "max": 1
       },
       {
-        "key": "SYS_DiagHeartbeatOk",
+        "key": "heartbeat_ok",
         "label": "SYS_DiagHeartbeatOk",
         "kind": "boolean",
         "_byte": 2,
         "_bit_offset": 0,
-        "_size": 8,
+        "_size": 1,
         "_type": "unsigned",
         "_factor": 1.0,
         "_offset": 0.0,
         "min": 0,
         "max": 1
+      },
+      {
+        "key": "rx_overflow",
+        "label": "SYS_DiagRxOverflow",
+        "kind": "number",
+        "_byte": 2,
+        "_bit_offset": 1,
+        "_size": 6,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 63
       },
       {
         "key": "SYS_DiagEstopActive",
@@ -1474,7 +1489,7 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "_factor": 1.0,
         "_offset": 0.0,
         "min": 0,
-        "max": 2,
+        "max": 1,
         "options": [
           {
             "value": 0,
@@ -1483,10 +1498,6 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
           {
             "value": 1,
             "label": "AUTO"
-          },
-          {
-            "value": 2,
-            "label": "PURE_SIM"
           }
         ]
       },
@@ -2365,6 +2376,142 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
   },
   {
     "bus": "low",
+    "id": "0x210",
+    "name": "RT_STATE_RPT",
+    "sender": "RT",
+    "receivers": [
+      "Host",
+      "SYS"
+    ],
+    "comment": "RT state report to Host (high bus) and SYS (low bus). SYS monitors safety_state for takeover detection and RT health.",
+    "dlc": 6,
+    "period": "100ms",
+    "injectable": false,
+    "byteOrder": "motorola",
+    "fields": [
+      {
+        "key": "mode",
+        "label": "RT_Mode",
+        "kind": "enum",
+        "_byte": 0,
+        "_bit_offset": 0,
+        "_size": 8,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 2,
+        "options": [
+          {
+            "value": 0,
+            "label": "MANUAL"
+          },
+          {
+            "value": 1,
+            "label": "AUTO"
+          },
+          {
+            "value": 2,
+            "label": "ESTOP"
+          }
+        ]
+      },
+      {
+        "key": "safety_state",
+        "label": "RT_SafetyState",
+        "kind": "enum",
+        "_byte": 1,
+        "_bit_offset": 0,
+        "_size": 2,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 2,
+        "options": [
+          {
+            "value": 0,
+            "label": "Normal"
+          },
+          {
+            "value": 1,
+            "label": "Warning"
+          },
+          {
+            "value": 2,
+            "label": "Fault"
+          }
+        ]
+      },
+      {
+        "key": "estop_reason",
+        "label": "RT_EstopReason",
+        "kind": "number",
+        "_byte": 1,
+        "_bit_offset": 4,
+        "_size": 4,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 7
+      },
+      {
+        "key": "reversing",
+        "label": "RT_Reversing",
+        "kind": "boolean",
+        "_byte": 2,
+        "_bit_offset": 0,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "rx_overflow",
+        "label": "RT_RxOverflow",
+        "kind": "number",
+        "_byte": 3,
+        "_bit_offset": 0,
+        "_size": 8,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 255
+      },
+      {
+        "key": "task_health",
+        "label": "RT_TaskHealth",
+        "kind": "number",
+        "_byte": 4,
+        "_bit_offset": 0,
+        "_size": 8,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 255
+      },
+      {
+        "key": "steer_state",
+        "label": "RT_SteerState",
+        "kind": "number",
+        "_byte": 5,
+        "_bit_offset": 0,
+        "_size": 8,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 5
+      }
+    ]
+  },
+  {
+    "bus": "low",
     "id": "0x302",
     "name": "HOST_LIGHT_CMD",
     "sender": "Host",
@@ -2487,17 +2634,30 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "max": 1
       },
       {
-        "key": "SYS_DiagHeartbeatOk",
+        "key": "heartbeat_ok",
         "label": "SYS_DiagHeartbeatOk",
         "kind": "boolean",
         "_byte": 2,
         "_bit_offset": 0,
-        "_size": 8,
+        "_size": 1,
         "_type": "unsigned",
         "_factor": 1.0,
         "_offset": 0.0,
         "min": 0,
         "max": 1
+      },
+      {
+        "key": "rx_overflow",
+        "label": "SYS_DiagRxOverflow",
+        "kind": "number",
+        "_byte": 2,
+        "_bit_offset": 1,
+        "_size": 6,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 63
       },
       {
         "key": "SYS_DiagEstopActive",
@@ -3307,7 +3467,7 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
     "byteOrder": "motorola",
     "fields": [
       {
-        "key": "RT_AliveCtr",
+        "key": "alive_ctr",
         "label": "RT_AliveCtr",
         "kind": "number",
         "_byte": 0,
@@ -3320,7 +3480,7 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "max": 255
       },
       {
-        "key": "RT_HealthFlags",
+        "key": "health_flags",
         "label": "RT_HealthFlags",
         "kind": "number",
         "_byte": 1,
@@ -3362,17 +3522,108 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "max": 255
       },
       {
-        "key": "SYS_HealthFlags",
-        "label": "SYS_HealthFlags",
-        "kind": "number",
+        "key": "heartbeat_ok",
+        "label": "SYS_HeartbeatOk",
+        "kind": "boolean",
         "_byte": 1,
         "_bit_offset": 0,
-        "_size": 8,
+        "_size": 1,
         "_type": "unsigned",
         "_factor": 1.0,
         "_offset": 0.0,
         "min": 0,
-        "max": 255
+        "max": 1
+      },
+      {
+        "key": "estop_active",
+        "label": "SYS_EstopActive",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 1,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "mode_auto",
+        "label": "SYS_ModeAuto",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 2,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "can_ok",
+        "label": "SYS_CanOk",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 3,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "task_safety_ok",
+        "label": "SYS_TaskSafetyOk",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 4,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "task_brake_ok",
+        "label": "SYS_TaskBrakeOk",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 5,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "task_dispatch_ok",
+        "label": "SYS_TaskDispatchOk",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 6,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
+      },
+      {
+        "key": "task_can_tx_ok",
+        "label": "SYS_TaskCanTxOk",
+        "kind": "boolean",
+        "_byte": 1,
+        "_bit_offset": 7,
+        "_size": 1,
+        "_type": "unsigned",
+        "_factor": 1.0,
+        "_offset": 0.0,
+        "min": 0,
+        "max": 1
       }
     ]
   }

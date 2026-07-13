@@ -2,7 +2,7 @@
 // Source: shared/can/can_high.yaml + shared/can/can_low.yaml
 
 
-export const PROTOCOL_HASH = "778c318ae4aaf568094d4a896a780f746bba990ecbb7306a4016d9b6e32898cf";
+export const PROTOCOL_HASH = "80dcf540772ab3e4bc56a37f14f2a2851de74ed081732effc34ca445065b2e9f";
 
 // ── CAN ID constants ─────────────────────────────────────
 export const ID_SAFETY_ESTOP = 0x001;
@@ -457,5 +457,9 @@ export const SIG: Record<string, Record<string, SignalDef>> = {
     SYS_EstopActive: {byte:1, bit_offset:1, size:1},
     SYS_ModeAuto: {byte:1, bit_offset:2, size:1},
     SYS_CanOk: {byte:1, bit_offset:3, size:1},
+    SYS_TaskSafetyOk: {byte:1, bit_offset:4, size:1},
+    SYS_TaskBrakeOk: {byte:1, bit_offset:5, size:1},
+    SYS_TaskDispatchOk: {byte:1, bit_offset:6, size:1},
+    SYS_TaskCanTxOk: {byte:1, bit_offset:7, size:1},
   },
 };
