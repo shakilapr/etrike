@@ -20,7 +20,7 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
 - **Hardware-Free Virtual Mode:** If the CANalyst-II is unplugged, the tool must fall back to a purely software-based `virtual` CAN interface. This allows developers to boot the UI, run the dashboards, and simulate the entire vehicle network entirely in RAM without needing physical hardware.
 
 ## 3. Data Processing Requirements
-- **Single Source of Truth:** Must use the existing YAML files (`can_high.yaml`, `can_low.yaml`) via their derived DBCs to decode/encode data.
+- **Single Source of Truth:** Must use the existing YAML files (`can_high.yaml`, `can_low.yaml`) through generated runtime codecs, validators, constants, and UI metadata. DBC may be generated for third-party tools but is not an application runtime dependency.
 - **Real-Time Decoding:** Must translate raw hexadecimal payloads into human-readable engineering values (e.g., `mm/s`, `kPa`, boolean flags) immediately upon reception.
 - **Mixed-Endianness Support:** Must seamlessly handle both `motorola` (Big-Endian, for custom protocols) and `intel` (Little-Endian, for `sbw_unit` and `bbw_unit` actuators) concurrently.
 - **Dynamic Checksums & Counters:** When spoofing actuator commands (e.g., `VCU_SES_REQ`, `VCU_SEB_REQ`), the controller must automatically compute and append rolling counters (0-15) and XOR checksums (e.g., `Checksum = XOR(bytes 0-6) ^ 0xFF`) dynamically, as required by the actuator specifications.
