@@ -19,6 +19,9 @@ import { registerSystemRoutes } from "./api/system";
 import { CanalystBridge } from "./canalyst/bridge";
 import { WorkerClient } from "./db/worker-client";
 import { WriteQueue } from "./db/write-queue";
+import { InjectionService } from "./api/injection";
+import { ReplayEngine } from "./sim/replay";
+import { ActiveTransportManager } from "./bridge/manager";
 
 import { SerialBridge } from "./serial/reader";
 import { FrameRouter } from "./sim/router";
@@ -34,7 +37,7 @@ import { IpcEngineAdapter } from "./sim/ipc-adapter";
 import { defaultStats, type CanFrame } from "./types/can";
 import { StreamHub } from "./ws/stream";
 
-type AnyBridge = CanalystBridge | SerialBridge | MqttBridge;
+type AnyBridge = CanalystBridge | SerialBridge | ActiveTransportManager;
 type FrameObservableBridge = AnyBridge & {
   onFrame?: (callback: (frame: CanFrame) => void) => void;
 };
@@ -147,7 +150,8 @@ async function main(): Promise<void> {
       }
     }
   });
-  registerAppContext(app, {
+
+  const ctx = {
     stateMachine,
     writeQueue,
     leaseManager,
@@ -158,7 +162,16 @@ async function main(): Promise<void> {
     hostModel,
     rtModelTs,
     rtModelNative,
+  } as any;
+  ctx.injectionService = new InjectionService(ctx);
+  ctx.replayEngine = new ReplayEngine(store, (frame) => {
+    const disp = router.route(frame, { producer: "replay" });
+    if (disp.accepted && disp.frame) {
+      if (disp.ui) hub.broadcast({ type: "can_frame", payload: disp.frame });
+    }
   });
+  registerAppContext(app, ctx);
+
 
   // ── Bridge setup ──────────────────────────────────────────────────────
   const setupBridgeRouting = (bridge: FrameObservableBridge): void => {

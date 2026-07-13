@@ -82,7 +82,9 @@ export class ReplayEngine {
   private async fetchNextBatch(): Promise<void> {
     // In reality this would query by time, but for the mock we use limits
     if (!this.state.recordingId) return;
-    const frames = await this.store.getRecentFrames(100);
+    const iter = this.store.recentFramesIterator(100);
+    const frames = [];
+    for await (const frame of iter) frames.push(frame);
     this.cachedFrames = frames;
     this.currentCursor = 0;
   }

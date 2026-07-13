@@ -13,12 +13,16 @@ import type { StreamHub } from "./ws/stream";
 import type { OperationalStateMachine } from "./state/machine";
 import type { WriteQueue } from "./db/write-queue";
 import type { LeaseManager } from "./state/leases";
+import type { InjectionService } from "./api/injection";
+import type { ReplayEngine } from "./sim/replay";
 
 export interface AppContext {
   hub: StreamHub;
   stateMachine: OperationalStateMachine;
   writeQueue: WriteQueue;
   leaseManager: LeaseManager;
+  injectionService: InjectionService;
+  replayEngine: ReplayEngine;
   /** Backend-managed periodic sim timers (keyed by `sim:bus:id`). */
   simTimers: Map<string, ReturnType<typeof setInterval>>;
   router: FrameRouter;

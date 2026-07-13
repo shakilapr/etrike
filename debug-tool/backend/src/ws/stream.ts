@@ -37,7 +37,7 @@ export class StreamHub {
   private frameBuffer: CanFrame[] = [];
 
   registerRoutes(app: FastifyInstance): void {
-    app.get("/ws", { websocket: true }, (socket) => {
+    app.get("/ws", { websocket: true }, (socket, request) => {
       if (this.clients.size >= 100) {
         socket.close(1013, "Too many connections");
         return;
