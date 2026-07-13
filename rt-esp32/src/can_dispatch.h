@@ -65,12 +65,13 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             g_last_sys_hb_us.store(esp_timer_get_time());
         }
     } else if (fr.id == can::kIdHostHeartbeat && from_high) {
+        auto hb = can::HostHeartbeat::from_frame(fr);
         static uint8_t last_host_ctr = 0;
         static bool host_first = true;
-        uint8_t delta = fr.data[0] - last_host_ctr;
+        uint8_t delta = hb.alive_ctr - last_host_ctr;
         if (host_first || delta != 0) {
             host_first = false;
-            last_host_ctr = fr.data[0];
+            last_host_ctr = hb.alive_ctr;
             g_last_host_hb_us.store(esp_timer_get_time());
         }
     }

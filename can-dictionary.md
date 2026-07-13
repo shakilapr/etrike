@@ -169,7 +169,7 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `MTR_ActualSpeed` | 0 | 16 | i16 | 1 | 0 | -500 | 3000 | mm/s |
 | `MTR_GearState` | 16 | 8 | u8 enum | 1 | 0 | 0 | 3 | {0=N,1=D,2=S,3=R} |
-| `MTR_FaultFlags` | 24 | 8 | u8 bitmask | — | — | — | — | bit0=ESTOP active, bit1=CMD timeout (0x204 stale), bit2=ADC fault, bit3=gear conflict |
+| `MTR_FaultFlags` | 24 | 8 | u8 bitmask | — | — | — | — | bit0=ESTOP active, bit1=CMD timeout (0x204 stale), bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready |
 
 Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
@@ -387,14 +387,16 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 | Signal | Start bit | Len | Type |
 |--------|-----------|-----|------|
 | `SYS_DiagMode` | 0 | 8 | u8 |
-| `SYS_DiagBrakeEngaged` | 8 | 8 | u8 |
-| `SYS_DiagHeartbeatOk` | 16 | 8 | u8 |
+| `SYS_DiagBrakeEngaged` | 8 | 1 | u8 bool |
+| `SYS_DiagBrakeFault` | 9 | 1 | u8 bool |
+| `SYS_DiagHeartbeatOk` | 16 | 1 | u8 bool |
+| `SYS_DiagRxOverflow` | 17 | 6 | u8 |
 | `SYS_DiagEstopActive` | 24 | 8 | u8 |
 | `SYS_DiagFreeHeapKb` | 32 | 16 | u16 |
 | `SYS_DiagTec` | 48 | 8 | u8 |
 | `SYS_DiagRec` | 56 | 8 | u8 |
 
-Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok, 3=estop, 4-5=heap, 6=tec, 7=rec.
+Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok/rx_overflow, 3=estop, 4-5=heap, 6=tec, 7=rec.
 
 ---
 
@@ -797,13 +799,16 @@ RT sends `0x7FD` independently on both buses (per-bus, NOT bridged).
 |----------|-------|
 | **Sender** | Jetson |
 | **Receiver(s)** | RT |
-| **DLC** | 1 |
+| **DLC** | 2 |
 | **Period** | 2 Hz (500 ms) |
 | **Timeout** | 1500ms (3 missed frames) → RT zeroes `0x204` + stops `0x169` (controlled stop) |
 
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
-| `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung Jetson. |
+| Signal | Start bit | Len | Type | Description |
+|--------|-----------|-----|------|-------------|
+| `Host_AliveCtr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung Jetson. |
+| `Host_HealthFlags` | 8 | 8 | u8 | bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok |
 
 Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not ESTOP.
 
