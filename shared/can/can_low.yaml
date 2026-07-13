@@ -254,6 +254,10 @@ protocols:
           - {name: SYS_EstopActive, key: estop_active, byte: 1, bit_offset: 1, size: 1, min: 0, max: 1}
           - {name: SYS_ModeAuto, key: mode_auto, byte: 1, bit_offset: 2, size: 1, min: 0, max: 1}
           - {name: SYS_CanOk, key: can_ok, byte: 1, bit_offset: 3, size: 1, min: 0, max: 1}
+          - {name: SYS_TaskSafetyOk, key: task_safety_ok, byte: 1, bit_offset: 4, size: 1, min: 0, max: 1}
+          - {name: SYS_TaskBrakeOk, key: task_brake_ok, byte: 1, bit_offset: 5, size: 1, min: 0, max: 1}
+          - {name: SYS_TaskDispatchOk, key: task_dispatch_ok, byte: 1, bit_offset: 6, size: 1, min: 0, max: 1}
+          - {name: SYS_TaskCanTxOk, key: task_can_tx_ok, byte: 1, bit_offset: 7, size: 1, min: 0, max: 1}
 
   # ── steer-by-wire unit (Intel/little-endian) ────────────────────────────
   sbw_unit:

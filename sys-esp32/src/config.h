@@ -86,6 +86,7 @@ constexpr int   kBrakeFollowingErrMs  = 100;   // persist 100ms → log error
 
 // ── SEB status staleness (architecture §8.10) ───────────────────────
 constexpr int kSebStatusTimeoutMs     = 100;   // no 0x721 for 100ms → log warning
+constexpr int kSebRollingTimeoutMs    = 100;   // 0x721 rolling counter may repeat at 100Hz; must advance within 100ms
 
 // ── mode button long-press ESTOP exit (gap #11) ─────────────────────
 constexpr int kEstopLongPressMs       = 3000;  // held 3s → MANUAL

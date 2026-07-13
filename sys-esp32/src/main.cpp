@@ -51,6 +51,7 @@ static std::atomic<uint32_t> g_alive_safety{0};
 static std::atomic<uint32_t> g_alive_brake{0};
 static std::atomic<uint32_t> g_alive_dispatch{0};
 static std::atomic<uint32_t> g_alive_can_tx{0};
+static std::atomic<uint8_t>  g_task_health_bits{0};
 static std::atomic<uint32_t> g_can_rx_overflow{0};
 
 static can::CanDriver g_can(can::CanDriver::Config{sys::kCanTxGpio,
@@ -140,6 +141,7 @@ static std::atomic<uint16_t> g_seb_actual_stroke_raw{600};
 static std::atomic<uint32_t> g_last_seb_status_tick{0};
 // SEB rolling counter incrementing (H1: true = SEB is acknowledging commands)
 static std::atomic<bool>     g_seb_rolling{true};
+static std::atomic<uint32_t> g_last_seb_roll_change_tick{0};
 
 // ── Brake commanded stroke (set by brake task after build_command) ──
 static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
@@ -185,7 +187,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     can::Frame fr;
     while (1) {
         g_alive_dispatch.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        if (xQueueReceive(g_can_rx_queue, &fr, portMAX_DELAY) != pdTRUE) continue;
+        if (xQueueReceive(g_can_rx_queue, &fr, pdMS_TO_TICKS(100)) != pdTRUE) continue;
 
         // Manual dispatch into atomic state (struct-based dispatch_frame not used
         // because some targets are std::atomic<T> rather than plain T*)
@@ -315,10 +317,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (!seb_roll_init || seb_roll != last_seb_roll) {
                 seb_roll_init = true;
                 last_seb_roll = seb_roll;
+                g_last_seb_roll_change_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
                 g_seb_rolling.store(true, std::memory_order_relaxed);  // SEB is acknowledging
-            } else {
-                // Frozen rolling counter — SEB may not be receiving commands
-                g_seb_rolling.store(false, std::memory_order_relaxed);
             }
             // Brake following error monitor (§8.10): cmp cmd vs actual stroke.
             // Only in Stroke mode — in Pressure mode cmd_stroke is fixed at 600
@@ -671,12 +671,17 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // 0x7B9 is failing, SEB stops acknowledging and SYS resumes sending.
         bool rt_alive     = g_safety.heartbeat_ok();
         bool rt_normal    = (g_rt_safety_state.load(std::memory_order_relaxed) == 0);
-        bool seb_ack      = g_seb_rolling.load(std::memory_order_relaxed);
+        TickType_t now_ticks = xTaskGetTickCount();
+        TickType_t last_roll_change = g_last_seb_roll_change_tick.load(std::memory_order_relaxed);
+        bool seb_ack = g_seb_rolling.load(std::memory_order_relaxed)
+                    && last_roll_change != 0
+                    && (now_ticks - last_roll_change) <= pdMS_TO_TICKS(sys::kSebRollingTimeoutMs);
+        g_seb_rolling.store(seb_ack, std::memory_order_relaxed);
 
         // Fast-path deadman (gap C4): if RT 0x204 setpoint is stale (>200ms),
         // RT has likely crashed — resume direct brake control immediately.
         // This is faster than waiting for the 1000ms heartbeat timeout.
-        bool rt_setpoint_fresh = (xTaskGetTickCount() - g_last_setpoint_tick.load(std::memory_order_relaxed))
+        bool rt_setpoint_fresh = (now_ticks - g_last_setpoint_tick.load(std::memory_order_relaxed))
                                  < pdMS_TO_TICKS(sys::kSetpointStaleMs);
         bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal
                            && seb_ack && !lever && !estop && rt_setpoint_fresh;
@@ -844,7 +849,28 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(1000);  // 1 Hz
     TickType_t last   = xTaskGetTickCount();
     static int bus_off_count = 0;
+    static uint8_t previous_task_health = 0xFF;
     while (1) {
+        const TickType_t now_ticks = xTaskGetTickCount();
+        const TickType_t task_deadline = pdMS_TO_TICKS(1500);
+        auto fresh = [now_ticks, task_deadline](const std::atomic<uint32_t>& alive) {
+            const TickType_t last_alive = alive.load(std::memory_order_relaxed);
+            return last_alive != 0 && (now_ticks - last_alive) <= task_deadline;
+        };
+        uint8_t task_health = (fresh(g_alive_safety)   ? 0x01 : 0)
+                            | (fresh(g_alive_brake)    ? 0x02 : 0)
+                            | (fresh(g_alive_dispatch) ? 0x04 : 0)
+                            | (fresh(g_alive_can_tx)   ? 0x08 : 0);
+        g_task_health_bits.store(task_health, std::memory_order_relaxed);
+        if (task_health != previous_task_health) {
+            if (task_health == 0x0F) {
+                ESP_LOGI(TAG, "SYS task health recovered: mask=0x%X", task_health);
+            } else {
+                ESP_LOGE(TAG, "SYS task deadline missed: mask=0x%X expected=0xF", task_health);
+            }
+            previous_task_health = task_health;
+        }
+
         // Send 0x600 with real TEC/REC
         uint8_t tec = 0, rec = 0;
         g_can.get_error_counters(tec, rec);
@@ -902,12 +928,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok
         uint8_t health = (g_safety.heartbeat_ok() ? can::kHbHealthBitHeartbeatOk : 0)
                        | (g_safety.estop_active() ? can::kHbHealthBitEstopActive : 0)
-                       | (g_mode_mgr.mode() == can::Mode::Auto ? can::kHbHealthBitModeAuto : 0);
-        // can_ok: set if not in bus-off (TEC < 255) and not error-passive (TEC <= 128)
+                       | (g_mode_mgr.mode() == can::Mode::Auto ? can::kHbHealthBitModeAuto : 0)
+                       | static_cast<uint8_t>(g_task_health_bits.load(std::memory_order_relaxed) << 4);
+        // can_ok: set only while below the CAN error-passive threshold.
         {
             uint8_t tec = 0, rec = 0;
             g_can.get_error_counters(tec, rec);
-            if (tec < 255) health |= can::kHbHealthBitCanOk;
+            if (tec < 128) health |= can::kHbHealthBitCanOk;
         }
         fr.put_u8(1, health);
         send_can(fr);
