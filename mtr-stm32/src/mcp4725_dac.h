@@ -1,7 +1,7 @@
 #pragma once
 // MCP4725 I2C DAC — 12-bit, VCC=5V → 0-5V output.
 // Adapted from sys-esp32/src/mcp4725_dac.h for STM32 HAL.
-// Datasheet: MCP4725, I2C addr 0x60, write command 0x40.
+// Datasheet: MCP4725, I2C addr 0x61 (A0=VCC), write command 0x40.
 //
 // Protocol (I2C):
 //   START + dev_addr(0x60) + W + ACK
@@ -10,7 +10,7 @@
 //   D[3:0] << 4 + ACK               // Lower nibble shifted to upper nibble
 //   STOP
 //
-// STM32 HAL: HAL_I2C_Mem_Write(&hi2c1, (0x60 << 1), 0x40,
+// STM32 HAL: HAL_I2C_Mem_Write(&hi2c1, (0x61 << 1), 0x40,
 //                              I2C_MEMADD_SIZE_8BIT, data, 2, timeout)
 
 #include <cstdint>
@@ -20,9 +20,9 @@ namespace mtr {
 
 class Mcp4725Dac {
 public:
-    /// Initialise the DAC (no-op on this class; I2C peripheral init is
-    /// handled by STM32CubeMX MX_I2C1_Init()).
-    void init() {}
+    /// Initialise the DAC and explicitly command zero so a retained DAC
+    /// output cannot survive an MCU reset into the control loop.
+    void init() { (void)write(0); }
 
     /// Write a 12-bit value directly to the DAC (0-4095 → 0-5V).
     /// Returns true on success, false if I2C write failed after retry.

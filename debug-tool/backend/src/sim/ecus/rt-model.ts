@@ -5,6 +5,7 @@ import { ID_SAFETY_ESTOP, ID_HOST_DRIVE_CMD, ID_HOST_BRAKE_REQ, ID_SYS_MODE_CMD,
  * This ensures ESTOP takes effect even if injected after a drive command
  * in the same tick cycle.
  */
+import { getDecoder } from "@etrike/debug-shared";
 import type { CanFrame } from "../../types/can";
 import type { EcuModel, EcuConfig, EcuState } from "../ecu-model";
 
@@ -65,15 +66,13 @@ export class RtModel implements EcuModel {
     // Drive command 0x204 (50 Hz)
     if (this.hbCounter % 2 === 0) {
       const s = Math.round(speed);
-      this.emit("low", ID_RT_DRIVE_CMD, 5, [(s>>24)&0xFF,(s>>16)&0xFF,(s>>8)&0xFF,s&0xFF,gear],
-        "RT_DRIVE_CMD", { motor_speed_mmps: s, gear });
+      this.emit("low", ID_RT_DRIVE_CMD, "RT_DRIVE_CMD", { motor_speed_mmps: s, gear });
     }
 
     // Brake command 0x205 (10 Hz) — only when braking
     if (brakeKpa > 0 && this.hbCounter % 10 === 0) {
       const k = Math.round(brakeKpa);
-      this.emit("low", ID_RT_BRAKE_CMD, 4, [(k>>24)&0xFF,(k>>16)&0xFF,(k>>8)&0xFF,k&0xFF],
-        "RT_BRAKE_CMD", { brake_pressure_kpa: k });
+      this.emit("low", ID_RT_BRAKE_CMD, "RT_BRAKE_CMD", { brake_pressure_kpa: k });
     }
 
     // Steering command 0x169 (50 Hz) — convert yaw rate to steer angle
@@ -84,7 +83,7 @@ export class RtModel implements EcuModel {
         steerAngle & 0xFF, (steerAngle >> 8) & 0xFF,
         328 & 0xFF, 1 | (1 << 1) | (this.steerRoll << 4), 0, 0];
       let cksum = 0; for (let i = 0; i < 7; i++) cksum ^= data[i]; data[7] = cksum ^ 0xFF;
-      this.emit("low", ID_VCU_SES_REQ, 8, data, "VCU_SES_REQ", {
+      this.emit("low", ID_VCU_SES_REQ, "VCU_SES_REQ", {
         alignment_enable: true, control_enable: true, target_angle: steerAngle,
         target_speed: 328, rolling_counter: this.steerRoll, checksum: data[7],
       });
@@ -92,13 +91,12 @@ export class RtModel implements EcuModel {
 
     // State report 0x210 (10 Hz)
     if (this.hbCounter % 10 === 0) {
-      this.emit("high", ID_RT_STATE_RPT, 6, [this.mode, this.estopPending ? 1 : 0, 0, 0, 15, 5], "RT_STATE_RPT",
-        { mode: this.mode, safety_state: this.estopPending ? 1 : 0, steer_state: this.bypassSesSync ? 1 : (this.estopPending ? 4 : 1) });
+      this.emit("high", ID_RT_STATE_RPT, "RT_STATE_RPT", { mode: this.mode, safety_state: this.estopPending ? 1 : 0, steer_state: this.bypassSesSync ? 1 : (this.estopPending ? 4 : 1) });
     }
 
     // Heartbeat 0x7FD (2 Hz)
     if (this.hbCounter % 50 === 0) {
-      this.emit("high", ID_RT_HEARTBEAT, 2, [this.hbCounter, 0], "RT_HEARTBEAT", { alive_ctr: this.hbCounter, health_flags: 0 });
+      this.emit("high", ID_RT_HEARTBEAT, "RT_HEARTBEAT", { alive_ctr: this.hbCounter, health_flags: 0 });
     }
 
     return [...this.frameQueue];

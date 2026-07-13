@@ -98,7 +98,7 @@ Resource names describe the domain rather than a particular client screen. React
 
 ## 4. Response and error model
 
-Every REST response uses the same versioned envelope:
+Successful REST responses use the versioned envelope:
 
 ```json
 {
@@ -112,11 +112,15 @@ Every REST response uses the same versioned envelope:
 }
 ```
 
-Accepted mutations additionally return session ID/revision and, when asynchronous, a job ID. Errors have stable codes and structured details; no client must parse English strings.
+Accepted mutations additionally return session ID/revision and, when asynchronous, a job ID.
+
+HTTP request failures use RFC 9457 `application/problem+json`, the appropriate HTTP status, and extensions from the shared event contract. Every error includes a fixed catalog ID such as `CUI-ADP-007`, a readable symbolic code such as `adapter.device_removed`, a contextual message/detail, and a unique event ID. Clients can display the ID and message, filter reliably by either stable identifier, and never need to parse English strings.
+
+Test verdicts and other expected domain outcomes are resource data, not HTTP failures. A successfully executed test that returns `Fail` or `Inconclusive` normally returns `200`; an accepted asynchronous test returns `202` and a job resource. A bounded wait that simply reaches its requested duration returns `200` with `disposition: timeout`.
 
 Mutations accept a request ID and idempotency key where retry could duplicate work. Commands that modify a session accept an expected revision when concurrent changes matter.
 
-All errors and significant recoveries use the shared catalog in `error-codes.md`. The same stable code and structured context appear in operational logs, API responses, WebSocket events, recordings, React, LLM tools, and test evidence.
+All errors and significant recoveries use the shared catalog in `error-codes.md`. The same symbolic `code`/OpenTelemetry `error.type` and structured context appear in operational logs, API responses, WebSocket events, recordings, React, LLM access, and test evidence. HTTP failures additionally expose a stable problem `type` URI. Native driver, SocketCAN, UDS, or J1939 identifiers are preserved only when those layers actually report them.
 
 ### 4.1 Minimum data clients need
 
