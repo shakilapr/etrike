@@ -6,7 +6,7 @@
 // Every task module includes this header to see the wiring.
 //
 // Sensor data uses atomics (latest-value semantics — 10ms staleness OK).
-// Events use queues (guaranteed delivery — no missed transitions).
+// Events use a bounded queue with atomic latest-state fallbacks on overflow.
 
 #include <atomic>
 #include <cstdint>
@@ -29,7 +29,10 @@ extern rt::DualHeartbeat   g_heartbeat;
 extern rt::CmdWatchdog     g_watchdog;
 
 // ── Safety event queue (replaces g_estop_flag, g_mode_from_sys) ─
-extern QueueHandle_t g_safety_evt_q;  // depth 8, SafetyEvent
+extern QueueHandle_t g_safety_evt_q;  // depth 16, SafetyEvent
+extern std::atomic<bool>     g_pending_estop_event;
+extern std::atomic<int16_t>  g_pending_mode_event;  // -1 when no fallback is pending
+extern std::atomic<uint32_t> g_safety_event_drops;
 
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 extern std::atomic<int32_t>  g_brake_request_kpa;

@@ -6,7 +6,7 @@ Validates can_signals.yaml before it's passed to canmatrix for DBC generation.
 
 from __future__ import annotations
 from enum import Enum
-from typing import Optional, Literal
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 from pathlib import Path
@@ -21,6 +21,28 @@ class ByteOrder(str, Enum):
 class SignalType(str, Enum):
     signed = "signed"
     unsigned = "unsigned"
+
+
+class ForwardingDef(BaseModel):
+    """Transparent RT gateway routes between the two 500 kbit/s buses."""
+    low_to_high: list[int] = Field(default_factory=list)
+    high_to_low: list[int] = Field(default_factory=list)
+
+    @field_validator("low_to_high", "high_to_low", mode="before")
+    @classmethod
+    def coerce_hex_ids(cls, values):
+        if values is None:
+            return []
+        return [int(v, 16) if isinstance(v, str) and v.startswith("0x") else int(v)
+                for v in values]
+
+    @model_validator(mode="after")
+    def check_unique_routes(self):
+        for name, values in (("low_to_high", self.low_to_high),
+                             ("high_to_low", self.high_to_low)):
+            if len(values) != len(set(values)):
+                raise ValueError(f"Duplicate CAN ID in forwarding.{name}")
+        return self
 
 
 # ── Models ────────────────────────────────────────────────────────────
@@ -198,6 +220,7 @@ class CanDatabase(BaseModel):
     description: str = ""
     constants: dict[str, float | int | str] = Field(default_factory=dict)
     ecus: list[EcuDef] = Field(default_factory=list)
+    forwarding: ForwardingDef = Field(default_factory=ForwardingDef)
     protocols: dict[str, ProtocolDef]
 
     @model_validator(mode="after")
@@ -219,6 +242,58 @@ class CanDatabase(BaseModel):
                                 f"signal '{sig.name}': "
                                 f"receiver '{recv}' not in declared ECUs: {ecu_names}"
                             )
+        return self
+
+    @staticmethod
+    def _wire_signature(msg: MessageDef) -> dict:
+        """Semantic payload signature for a message duplicated across buses."""
+        return {
+            "id": msg.id,
+            "name": msg.name,
+            "dlc": msg.dlc,
+            "sender": msg.sender,
+            "signals": [
+                sig.model_dump(
+                    mode="json",
+                    exclude={"comment", "receivers"},
+                    exclude_none=True,
+                )
+                for sig in msg.signals
+            ],
+        }
+
+    @model_validator(mode="after")
+    def validate_cross_bus_contracts_and_routes(self):
+        """Reject semantic drift for duplicated messages and invalid routes."""
+        by_name: dict[str, tuple[str, MessageDef]] = {}
+        ids_by_bus: dict[str, set[int]] = {"high": set(), "low": set()}
+
+        for pname, proto in self.protocols.items():
+            if proto.bus in ids_by_bus:
+                ids_by_bus[proto.bus].update(msg.id for msg in proto.messages)
+            for msg in proto.messages:
+                previous = by_name.get(msg.name)
+                if previous is None:
+                    by_name[msg.name] = (pname, msg)
+                    continue
+                previous_protocol, previous_msg = previous
+                if self._wire_signature(previous_msg) != self._wire_signature(msg):
+                    raise ValueError(
+                        f"Message '{msg.name}' differs between "
+                        f"'{previous_protocol}' and '{pname}'. Duplicated bus "
+                        "definitions must have identical wire semantics."
+                    )
+
+        for direction, source, destination, route_ids in (
+            ("low_to_high", "low", "high", self.forwarding.low_to_high),
+            ("high_to_low", "high", "low", self.forwarding.high_to_low),
+        ):
+            for can_id in route_ids:
+                if can_id not in ids_by_bus[source] or can_id not in ids_by_bus[destination]:
+                    raise ValueError(
+                        f"forwarding.{direction} contains 0x{can_id:03X}, but the "
+                        f"message is not defined on both {source} and {destination} buses"
+                    )
         return self
 
 
@@ -292,6 +367,7 @@ def load_can_database_dir(path: str | Path) -> CanDatabase:
         "description": primary_data.get("description", ""),
         "constants": primary_data.get("constants", {}),
         "ecus": primary_data.get("ecus", []),
+        "forwarding": primary_data.get("forwarding", {}),
         "protocols": all_protocols,
     }
     return CanDatabase.model_validate(merged)

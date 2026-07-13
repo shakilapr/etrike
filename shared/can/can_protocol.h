@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include "endian.h"
+#include "generated/can_data.h"
 
 namespace can {
 
@@ -18,33 +19,33 @@ namespace can {
 
 // ── Low-level bus (our IDs) ───────────────────────────────────────
 
-constexpr uint32_t kIdSafetyEstop       = 0x001;  // any→all, bridged to high
-constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Host), 5 Hz
-constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS low-bus command; PWT forwarding is not implemented.
-constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
-constexpr uint32_t kIdSysThrottleSts    = 0x120;  // MTR(STM32)→RT (→Host), 100 Hz (SYS_ prefix is historical)
-constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz
-constexpr uint32_t kIdRtBrakeCmd        = 0x205;  // RT→SYS brake pressure kPa, 50 Hz
-constexpr uint32_t kIdMtrMotorFbk       = 0x206;  // MTR(STM32)→SYS+RT (→Host via RT forwarding), 50 Hz
-constexpr uint32_t kIdHostLightCmd      = 0x302;  // RT(fwd)→SYS light bitfield, on change
-constexpr uint32_t kIdSysDiagRpt        = 0x600;  // SYS→RT (→Host via RT forwarding), 1 Hz
-constexpr uint32_t kIdRtHeartbeatLow    = 0x7FD;  // RT→SYS alive counter, 2 Hz
-constexpr uint32_t kIdSysHeartbeat      = 0x7FE;  // SYS→RT alive counter, 10 Hz
+constexpr uint32_t kIdSafetyEstop       = data::kIdSAFETYESTOP;
+constexpr uint32_t kIdSysSafetySts      = data::kIdSYSSAFETYSTS;
+constexpr uint32_t kIdSysDcdcCmd        = data::kIdSYSDCDCCMD;
+constexpr uint32_t kIdSysModeCmd        = data::kIdSYSMODECMD;
+constexpr uint32_t kIdSysThrottleSts    = data::kIdSYSTHROTTLESTS;
+constexpr uint32_t kIdRtDriveCmd        = data::kIdRTDRIVECMD;
+constexpr uint32_t kIdRtBrakeCmd        = data::kIdRTBRAKECMD;
+constexpr uint32_t kIdMtrMotorFbk       = data::kIdMTRMOTORFBK;
+constexpr uint32_t kIdHostLightCmd      = data::kIdHOSTLIGHTCMD;
+constexpr uint32_t kIdSysDiagRpt        = data::kIdSYSDIAGRPT;
+constexpr uint32_t kIdRtHeartbeatLow    = data::kIdRTHEARTBEAT;
+constexpr uint32_t kIdSysHeartbeat      = data::kIdSYSHEARTBEAT;
 
 // ── High-level bus (our IDs) ──────────────────────────────────────
 
-constexpr uint32_t kIdHmiModeReq        = 0x111;  // HMI→SYS/Host, 1 Hz
-constexpr uint32_t kIdHmiPwrReq         = 0x112;  // HMI→SYS, 1 Hz
+constexpr uint32_t kIdHmiModeReq        = data::kIdHMIMODEREQ;
+constexpr uint32_t kIdHmiPwrReq         = data::kIdHMIPWRREQ;
 
-constexpr uint32_t kIdRtStateRpt        = 0x210;  // RT→Host, 10 Hz
-constexpr uint32_t kIdRtPidRpt          = 0x220;  // RT→Host, reserved (future PID)
-constexpr uint32_t kIdHostDriveCmd      = 0x300;  // Host→RT, ≤100 Hz
-constexpr uint32_t kIdHostBrakeReq      = 0x301;  // Host→RT, on demand
-constexpr uint32_t kIdHostObstacleDist  = 0x400;  // Host→RT, 10 Hz
-constexpr uint32_t kIdRtHeartbeatHigh   = 0x7FD;  // RT→Host alive counter, 2 Hz
-constexpr uint32_t kIdHostHeartbeat     = 0x7FC;  // Host→RT alive counter, 2 Hz
-constexpr uint32_t kIdSteerDiag         = 0x310;  // RT→Host steering telemetry, 10 Hz
-constexpr uint32_t kIdBrakeDiag         = 0x311;  // RT→Host brake telemetry, 10 Hz
+constexpr uint32_t kIdRtStateRpt        = data::kIdRTSTATERPT;
+constexpr uint32_t kIdRtPidRpt          = data::kIdRTPIDRPT;
+constexpr uint32_t kIdHostDriveCmd      = data::kIdHOSTDRIVECMD;
+constexpr uint32_t kIdHostBrakeReq      = data::kIdHOSTBRAKEREQ;
+constexpr uint32_t kIdHostObstacleDist  = data::kIdHOSTOBSTACLEDIST;
+constexpr uint32_t kIdRtHeartbeatHigh   = data::kIdRTHEARTBEAT;
+constexpr uint32_t kIdHostHeartbeat     = data::kIdHOSTHEARTBEAT;
+constexpr uint32_t kIdSteerDiag         = data::kIdSTEERDIAG;
+constexpr uint32_t kIdBrakeDiag         = data::kIdBRAKEDIAG;
 
 // ╔══════════════════════════════════════════════════════════════════════╗
 // ║  steer-by-wire CAN IDs — factory-programmed, CANNOT be changed          ║
@@ -53,19 +54,19 @@ constexpr uint32_t kIdBrakeDiag         = 0x311;  // RT→Host brake telemetry, 
 
 // ── steer-by-wire unit (steering) ──────────────────────────────────────
 
-constexpr uint32_t kIdSbwCmd      = 0x169;  // RT→EPS-C: VCU_SES_Req, 50 Hz (factory default)
-constexpr uint32_t kIdSbwStatus   = 0x201;  // EPS-C→RT: SES_Status, 100 Hz (factory default)
-constexpr uint32_t kIdSbwErrInfo  = 0x202;  // EPS-C→RT: SES_ErrInfo, 100 ms (factory default)
-constexpr uint32_t kIdSbwVersion  = 0x203;  // EPS-C→RT: SES_Version, 1000 ms (factory default)
-constexpr uint32_t kIdSbwTest     = 0x6FA;  // EPS-C→RT: SES_Test, 100 Hz (factory default)
+constexpr uint32_t kIdSbwCmd      = data::kIdVCUSESREQ;
+constexpr uint32_t kIdSbwStatus   = data::kIdSESSTATUS;
+constexpr uint32_t kIdSbwErrInfo  = data::kIdSESErrInfo;
+constexpr uint32_t kIdSbwVersion  = data::kIdSESVersion;
+constexpr uint32_t kIdSbwTest     = data::kIdSESTest;
 
 // ── brake-by-wire unit (brake) ───────────────────────────────────────────
 
-constexpr uint32_t kIdBbwCmd      = 0x7B9;  // SYS→SEB: VCU_SEB_Req, 50 Hz (factory default)
-constexpr uint32_t kIdBbwStatus   = 0x721;  // SEB→SYS: SEB_Status, 100 Hz (factory default)
-constexpr uint32_t kIdBbwErrInfo  = 0x731;  // SEB→SYS: SEB_ErrInfo, 100 ms (factory default)
-constexpr uint32_t kIdBbwTest     = 0x6FB;  // SEB→SYS: SEB_Test, 100 Hz (factory default)
-constexpr uint32_t kIdBbwVersion  = 0x741;  // SEB→SYS: SEB_Version, 1000 ms (factory default)
+constexpr uint32_t kIdBbwCmd      = data::kIdVCUSEBREQ;
+constexpr uint32_t kIdBbwStatus   = data::kIdSEBSTATUS;
+constexpr uint32_t kIdBbwErrInfo  = data::kIdSEBErrInfo;
+constexpr uint32_t kIdBbwTest     = data::kIdSEBTest;
+constexpr uint32_t kIdBbwVersion  = data::kIdSEBVersion;
 
 // ───────────────────────────────────────────────────────────────────
 // Aliases — codebase migration compatibility.
@@ -79,22 +80,16 @@ constexpr uint32_t kIdBbwVersion  = 0x741;  // SEB→SYS: SEB_Version, 1000 ms (
 // Forwarded IDs (same ID on both buses, transparent)
 // ───────────────────────────────────────────────────────────────────
 
-// Low→High: kIdSafetyEstop, kIdSysSafetySts, kIdSysThrottleSts, kIdMtrMotorFbk, kIdSysDiagRpt
-// High→Low: kIdSafetyEstop, kIdHostLightCmd
-//
-// Used by RT CAN router (can_rx_router.h). Keep in sync with the router dispatch.
+// Generated from forwarding in can_high.yaml.
 
 inline bool is_estop_id(uint32_t id) { return id == kIdSafetyEstop; }
 
 inline bool is_forwarded_low_to_high(uint32_t id) {
-    return id == kIdSafetyEstop || id == kIdSysSafetySts
-        || id == kIdSysThrottleSts || id == kIdMtrMotorFbk
-        || id == kIdSysDiagRpt;
+    return data::is_forwarded_low_to_high(id);
 }
 
 inline bool is_forwarded_high_to_low(uint32_t id) {
-    return id == kIdSafetyEstop || id == kIdHostLightCmd
-        || id == kIdHmiModeReq || id == kIdHmiPwrReq;
+    return data::is_forwarded_high_to_low(id);
 }
 
 // ───────────────────────────────────────────────────────────────────

@@ -6,7 +6,8 @@
 # identically in can_high.yaml — each DBC must be self-contained.
 #
 # RT is the only dual-bus node. SYS, MTR, EPS-C, SEB are low-bus only.
-# PWT bridges 0x012 and 0x001 to the powertrain CAN (250 kbit/s).
+# PWT currently has only the 250 kbit/s powertrain interface; it is not on
+# this bus and does not bridge low-bus frames.
 #
 # Generates these files:
 #   -> shared/can/etrike_low.dbc   (custom protocol, Motorola/big-endian)
@@ -88,8 +89,8 @@ protocols:
         cycle_ms: 1000
         comment: "HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT."
         signals:
-          - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2,
-             values: {0: MANUAL, 1: AUTO, 2: PURE_SIM}}
+          - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
+             values: {0: MANUAL, 1: AUTO}}
           - {name: HMI_ModeAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Rolling counter for UI health"}
 
@@ -163,7 +164,31 @@ protocols:
              min: -500, max: 3000, unit: mm/s}
           - {name: MTR_GearState, key: gear_state, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3}
           - {name: MTR_FaultFlags, key: fault_flags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict"}
+             comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready"}
+
+      # 0x210 — RT_STATE_RPT (independently transmitted by RT on both buses)
+      - id: 0x210
+        name: RT_STATE_RPT
+        dlc: 6
+        sender: RT
+        receivers: [Host, SYS]
+        cycle_ms: 100
+        comment: "RT state report to Host (high bus) and SYS (low bus). SYS monitors safety_state for takeover detection and RT health."
+        signals:
+          - {name: RT_Mode, key: mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2,
+             values: {0: MANUAL, 1: AUTO, 2: ESTOP}}
+          - {name: RT_SafetyState, key: safety_state, byte: 1, bit_offset: 0, size: 2, min: 0, max: 2,
+             values: {0: Normal, 1: Warning, 2: Fault},
+             comment: "RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault"}
+          - {name: RT_EstopReason, key: estop_reason, byte: 1, bit_offset: 4, size: 4, min: 0, max: 7,
+             comment: "Reason for ESTOP state, packed in byte 1 bits 4-7"}
+          - {name: RT_Reversing, key: reversing, byte: 2, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: RT_RxOverflow, key: rx_overflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "MCP2515 RX overflow counter — telemetry for CAN bus health monitoring"}
+          - {name: RT_TaskHealth, key: task_health, byte: 4, bit_offset: 0, size: 8, min: 0, max: 255,
+             comment: "Bitmask of alive tasks (bits 0-3: control/dispatch/tx_low/tx_high)"}
+          - {name: RT_SteerState, key: steer_state, byte: 5, bit_offset: 0, size: 8, min: 0, max: 5,
+             comment: "Steering state machine value"}
 
       # 0x302 — HOST_LIGHT_CMD (Host→RT, forwarded high→low)
       - id: 0x302
@@ -191,7 +216,9 @@ protocols:
           - {name: SYS_DiagMode,          byte: 0, bit_offset: 0, size: 8,  min: 0, max: 2}
           - {name: SYS_DiagBrakeEngaged,  byte: 1, bit_offset: 0, size: 1,  min: 0, max: 1}
           - {name: SYS_DiagBrakeFault,    byte: 1, bit_offset: 1, size: 1,  min: 0, max: 1, comment: "SEB L3 fault or brake following-error active"}
-          - {name: SYS_DiagHeartbeatOk,   byte: 2, bit_offset: 0, size: 8,  min: 0, max: 1}
+          - {name: SYS_DiagHeartbeatOk,   key: heartbeat_ok, byte: 2, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: SYS_DiagRxOverflow,    key: rx_overflow,  byte: 2, bit_offset: 1, size: 6, min: 0, max: 63,
+             comment: "Saturating SYS TWAI RX overflow count"}
           - {name: SYS_DiagEstopActive,   byte: 3, bit_offset: 0, size: 8,  min: 0, max: 1}
           - {name: SYS_DiagFreeHeapKb,    byte: 4, bit_offset: 0, size: 16, min: 0, max: 65535, unit: KB}
           - {name: SYS_DiagTec,           byte: 6, bit_offset: 0, size: 8,  min: 0, max: 255}
@@ -207,9 +234,9 @@ protocols:
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the low-bus instance."
         signals:
-          - {name: RT_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Low bus timeout 1000ms->SYS ESTOP"}
-          - {name: RT_HealthFlags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}
 
       # 0x7FE — SYS_HEARTBEAT (SYS→RT, low bus only)
@@ -223,8 +250,10 @@ protocols:
         signals:
           - {name: SYS_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "10 Hz / 200ms timeout -> RT brake takeover + ESTOP"}
-          - {name: SYS_HealthFlags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "bit0=heartbeat_ok, bit1=estop_active, bits2-3=reserved"}
+          - {name: SYS_HeartbeatOk, key: heartbeat_ok, byte: 1, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: SYS_EstopActive, key: estop_active, byte: 1, bit_offset: 1, size: 1, min: 0, max: 1}
+          - {name: SYS_ModeAuto, key: mode_auto, byte: 1, bit_offset: 2, size: 1, min: 0, max: 1}
+          - {name: SYS_CanOk, key: can_ok, byte: 1, bit_offset: 3, size: 1, min: 0, max: 1}
 
   # ── steer-by-wire unit (Intel/little-endian) ────────────────────────────
   sbw_unit:

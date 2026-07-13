@@ -1,4 +1,4 @@
-"""PlatformIO pre-build script — regenerates can_data.h from YAML before each build."""
+"""PlatformIO pre-build script — verifies committed CAN artifacts before build."""
 Import("env")
 import subprocess, sys
 from pathlib import Path
@@ -10,8 +10,8 @@ except NameError:
     base_dir = project_dir.parent / "shared" / "can"
 
 script = base_dir / "generate_code.py"
-print(f"[can] Regenerating CAN data from YAML...")
-result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True)
+print(f"[can] Verifying generated CAN data against YAML...")
+result = subprocess.run([sys.executable, str(script), "--verify"], capture_output=True, text=True)
 if result.returncode != 0:
     print(f"[can] ERROR: {result.stderr}")
     env.Exit(1)
