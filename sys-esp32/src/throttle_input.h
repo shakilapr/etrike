@@ -1,6 +1,6 @@
 #pragma once
-// Throttle ADC — 0-5V via voltage divider on GPIO10 (ADC1_CH5).
-// Architecture.md §8.6: 12-bit, dead zone 200, maps to 0-3000 mm/s.
+// Retired SYS throttle ADC path. Its legacy ADC channel conflicts with body I/O;
+// SYS_OWNS_MOTOR is compile-time disabled. Kept only for source compatibility.
 #include <cstdint>
 #include "config.h"
 #ifndef TESTING

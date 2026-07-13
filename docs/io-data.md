@@ -209,11 +209,11 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 | Variable | GPIO | Type | Electrical | Notes |
 |----------|------|------|-----------|-------|
 | `CAN_RX` | 4 | TWAI | SN65HVD230 RXD | Low-side CAN bus |
-| `ESTOP_BTN` | 1 | Digital NC | 10k pull-up to 3.3V, LOW = estop | Red mushroom button. Shared with MTR — only signal wired to both MCUs. |
+| `ESTOP_BTN` | 1 | Digital NC | NC contact from 3.3 V with 10k external pull-down; LOW/open = ESTOP | MTR sharing is planned only until its ESTOP hardware exists. |
 | `BRAKE_LEVER` | 2 | Digital | Internal pull-up, LOW = pressed | Physical brake lever → SEB via CAN 0x7B9 |
-| `START_BTN` | 32 | Digital | Internal pull-up, LOW = pressed | Green button, exits ESTOP |
+| `START_BTN` | 41 | Digital | Internal pull-up, LOW = pressed | Green button, exits ESTOP |
 | `MODE_BTN` | 11 | Digital | Internal pull-up, LOW = pressed | Manual/Auto toggle → publishes CAN 0x110 |
-| `SW_LEFT_TURN` | 3 | Digital | Internal pull-up, LOW = pressed | Handlebar switch |
+| `SW_LEFT_TURN` | 9 | Digital | Internal pull-up, LOW = pressed | Handlebar switch |
 | `SW_RIGHT_TURN` | 6 | Digital | Internal pull-up, LOW = pressed | Handlebar switch |
 | `SW_HEADLIGHT` | 7 | Digital | Internal pull-up, LOW = pressed | Handlebar switch |
 

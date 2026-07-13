@@ -226,7 +226,7 @@ RT is the CAN gateway — it has **two** CAN modules:
 | Module | Interface | CAN Bus | This Test |
 |--------|----------|---------|-----------|
 | **WCMCU-230** (SN65HVD230) | TWAI controller (built-in) | **Low** | ✅ Active — RT↔SYS traffic |
-| **MCP2515 SPI** (MCP2515 + TJA1050) | SPI (GPIO39–40) | **High** | ✅ Active — injected Host commands |
+| **MCP2515 SPI** | SPI (GPIO15/16/17/18/47) | **High** | ✅ Active — injected Host commands, only with 3.3 V-safe level translation |
 
 The ESP32-S3-DevKitC-1 has two 22-pin headers. Hold the board with the USB port
 pointing **down**. The left strip is **J1**, the right strip is **J3**.
@@ -241,11 +241,11 @@ pointing **down**. The left strip is **J1**, the right strip is **J3**.
        │  │ 4  GPIO4  (4)  ● │  │ ● GPIO1  (1)       4  │ │
        │  │ 5  GPIO5  (5)  ● │  │ ● GPIO2  (2)       5  │ │
        │  │ 6  GPIO6  (6)  ● │  │ ...                    │ │
-       │  │ ...              │  │ ● GPIO39 (36)          │ │  ← MCP2515 SCK
-       │  │ ...              │  │ ● GPIO40 (37)          │ │  ← MCP2515 MOSI
-       │  │ ...              │  │ ● GPIO41 (38)          │ │  ← MCP2515 MISO
-       │  │ ...              │  │ ● GPIO39 (39)          │ │  ← MCP2515 CS
-       │  │ ...              │  │ ● GPIO40 (40)          │ │  ← MCP2515 INT
+        │  │ ...              │  │ ● GPIO15               │ │  ← MCP2515 SCK
+        │  │ ...              │  │ ● GPIO16               │ │  ← MCP2515 MOSI
+        │  │ ...              │  │ ● GPIO17               │ │  ← MCP2515 MISO
+        │  │ ...              │  │ ● GPIO18               │ │  ← MCP2515 CS
+        │  │ ...              │  │ ● GPIO47               │ │  ← MCP2515 INT
        │  │ 21  5V         ● │  │ ● GND              21  │ │
        │  │ 22  GND        ● │  │ ● GND              22  │ │
        │  └─────────────────┘  └───────────────────────┘ │
@@ -280,11 +280,11 @@ serial console). CAN uses GPIO4 and GPIO5 on J1.**
 
 Config in `rt-esp32/src/config.h`:
 ```cpp
-constexpr int kSpiSckGpio  = 36;
-constexpr int kSpiMosiGpio = 37;
-constexpr int kSpiMisoGpio = 38;
-constexpr int kSpiCsGpio   = 39;
-constexpr int kMcpIntGpio  = 40;
+constexpr int kSpiSckGpio  = 15;
+constexpr int kSpiMosiGpio = 16;
+constexpr int kSpiMisoGpio = 17;
+constexpr int kSpiCsGpio   = 18;
+constexpr int kMcpIntGpio  = 47;
 ```
 
 The MCP2515 module is RT's second CAN interface. In this test we inject `0x300`
@@ -293,19 +293,18 @@ and watch RT forward `0x204`/`0x205`/`0x169` to the low bus.
 
 | Connection | GPIO | Silkscreen | Wire | MCP2515 Pin |
 |-----------|------|-----------|------|------------|
-| SPI clock | **GPIO39** | **36** | Dupont F-F | **SCK** |
-| SPI MOSI | **GPIO40** | **37** | Dupont F-F | **MOSI** (SI) |
-| SPI MISO | **GPIO41** | **38** | Dupont F-F | **MISO** (SO) |
-| SPI chip select | **GPIO39** | **39** | Dupont F-F | **CS** |
-| Interrupt | **GPIO40** | **40** | Dupont F-F | **INT** |
-| Power | — | **5V** (J1-21) | Dupont F-F, red | **VCC** |
+| SPI clock | **GPIO15** | board GPIO15 | Dupont F-F | **SCK** |
+| SPI MOSI | **GPIO16** | board GPIO16 | Dupont F-F | **MOSI** (SI) |
+| SPI MISO | **GPIO17** | board GPIO17 | Dupont F-F | **MISO** (SO) |
+| SPI chip select | **GPIO18** | board GPIO18 | Dupont F-F | **CS** |
+| Interrupt | **GPIO47** | board GPIO47 | Dupont F-F | **INT** |
+| Power | — | module-specific | Dupont F-F, red | **VCC** |
 | Ground | — | **GND** (J1-22) | Dupont F-F, black | **GND** |
 | Bus high | — | — | 22 AWG, yellow | **CAN_H** (screw term) |
 | Bus low | — | — | 22 AWG, green | **CAN_L** (screw term) |
 
-- The 3.3V and GND can share the J1-1/J1-22 header pins with the WCMCU-230 Dupont wires.
 - **MCP2515 CAN_H/CAN_L connect to the high bus backbone** — this is a separate physical pair from the low bus.
-- The MCP2515 module uses a TJA1050 transceiver (5V-tolerant but works at 3.3V logic levels). Its CAN_H/CAN_L operate at standard CAN voltage levels.
+- **ESP32-S3 GPIOs are not 5 V tolerant.** A 5 V MCP2515/TJA1050 module must use level translation for every MCU-facing SPI/INT signal. A 3.3 V controller/transceiver design is the alternative.
 - **No termination needed on the MCP2515 module** — the CANalyst-II Ch1 provides the 120Ω terminator for the high bus (software-enabled via the backend).
 
 ### 3.3 Controller Wiring — SYS ESP32-S3
@@ -419,12 +418,12 @@ Before plugging in USB:
 - [ ] 120Ω termination jumper **ON**
 
 **RT — MCP2515 (high bus):**
-- [ ] **GPIO39** (silkscreen "36") → MCP2515 **SCK** (Dupont)
-- [ ] **GPIO40** (silkscreen "37") → MCP2515 **MOSI** (Dupont)
-- [ ] **GPIO41** (silkscreen "38") → MCP2515 **MISO** (Dupont)
-- [ ] **GPIO39** (silkscreen "39") → MCP2515 **CS** (Dupont)
-- [ ] **GPIO40** (silkscreen "40") → MCP2515 **INT** (Dupont)
-- [ ] MCP2515 **VCC** → J1-21 **"5V"** (TJA1050 transceiver needs 5V)
+- [ ] **GPIO15** → MCP2515 **SCK** (through level translation if module is 5 V)
+- [ ] **GPIO16** → MCP2515 **MOSI** (through level translation if module is 5 V)
+- [ ] **GPIO17** ← MCP2515 **MISO** (through level translation if module is 5 V)
+- [ ] **GPIO18** → MCP2515 **CS** (through level translation if module is 5 V)
+- [ ] **GPIO47** ← MCP2515 **INT** (through level translation if module is 5 V)
+- [ ] MCP2515 **VCC** matches the selected module and level-translation design
 - [ ] MCP2515 **GND** → J1-22 "GND"
 
 **SYS — WCMCU-230 (low bus):**
