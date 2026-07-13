@@ -5,19 +5,20 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
 ## 1. Primary Objectives
 - **Monitor:** Real-time visibility into all CAN traffic on the vehicle.
 - **Control & Mimic:** Ability to inject specific frames to spoof ECUs or control actuators.
-- **Simplicity:** Absolute minimal lines of code. No legacy simulators, no complex recording pipelines, no routing "spaghetti."
+- **Simplicity:** Minimize duplicated protocol logic, independent state owners, runtime processes, and unnecessary abstractions. Do not introduce a hidden full-vehicle simulator, complex recording pipeline, or routing "spaghetti."
 
 ## 2. Supported Work Modes
 - **Mode 1: Full Vehicle (Monitor & Inject):** When connected to the fully assembled E-Trike, the tool passively monitors all traffic for the dashboard and only transmits when an operator explicitly injects a command (e.g., an ESTOP override).
 - **Mode 2: Bench Test (Synthetic Peer):** When connected to an isolated physical ECU (e.g., testing just the RT module on a desk), the tool actively acts as a "Virtual Vehicle" by automatically broadcasting all missing heartbeats and synthetic statuses to prevent the physical ECU from entering a fault state.
-- **Mode 3: Hardware-Free (Pure Software):** When the USB adapter is unplugged, the tool falls back to an internal RAM-based CAN bus interface, allowing full simulation and UI development without requiring any physical hardware.
+- **Mode 3: Hardware-Free (Pure Software):** The operator explicitly selects an internal RAM-based CAN bus interface for simulation and UI development without physical hardware. Adapter loss during a physical session never silently changes to this mode.
 
 ## 3. Hardware Requirements
 - **Primary Interface:** Must interface directly with the **CANalyst-II Dual-Channel USB Analyzer**.
 - **Dual-Bus Support:** Must connect simultaneously to:
   - **Channel 0:** High-Level CAN Bus (500 kbit/s).
   - **Channel 1:** Low-Level CAN Bus (500 kbit/s).
-- **Hardware-Free Virtual Mode:** If the CANalyst-II is unplugged, the tool must fall back to a purely software-based `virtual` CAN interface. This allows developers to boot the UI, run the dashboards, and simulate the entire vehicle network entirely in RAM without needing physical hardware.
+- **Channel Mapping Verification:** The default mapping must be verified on the physical bench before transmission is enabled. The active mapping must remain explicit, be shown in the UI, and be stored in recording metadata. A custom mapping is permitted only through an explicit bench configuration.
+- **Hardware-Free Virtual Mode:** Pure Software uses a purely software-based `virtual` CAN interface. It is selected explicitly for development and simulation; physical adapter loss disables physical TX and reports the disconnected state.
 
 ## 3. Data Processing Requirements
 - **Single Source of Truth:** Must use the existing YAML files (`can_high.yaml`, `can_low.yaml`) through generated runtime codecs, validators, constants, and UI metadata. DBC may be generated for third-party tools but is not an application runtime dependency.
@@ -74,6 +75,21 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
 - **Persistent Logging:** Must provide a mechanism to log these identified diagnostic messages to a file for post-test analysis and fault tracing, without bogging down the live UI.
 
 ## 8. Architectural Requirements
-- **Absolute Minimum Code:** The architecture must prioritize brevity. 
+- **Minimum Implementation Complexity:** The architecture must prioritize clear ownership, minimal duplicated logic, and few runtime processes over raw line count.
 - **Strict Separation:** The hardware bridging logic must be entirely separate from the UI visualization layer.
-- **Stateless Bridge:** The backend must act as a transparent, stateless pipe between the CANalyst-II and the UI. It must not attempt to maintain simulated vehicle state or gatekeep messages.
+- **Thin Transport and Explicit State Ownership:** The transport adapter must remain protocol-agnostic and behaviorally transparent: it opens CAN interfaces, preserves raw frame evidence, submits authorized frames, and reports transport status. Stateful behavior needed for observation freshness, scheduled test traffic, counters/checksums, command expiry, source ownership, and verification belongs to small backend services with one owner for each mutable state. The backend must not maintain an independent authoritative vehicle model or duplicate RT/SYS control logic.
+
+## 9. Shared API and Automation Requirements
+
+- **One Client-Neutral API:** React, LLM tools, CI, and an optional thin CLI must use the same versioned FastAPI REST/WebSocket contract and backend services.
+- **No Client-Specific Domain Logic:** Validation and behavior depend on capabilities, session/profile state, protocol hash, adapter epoch, and ownership—not whether the caller is UI, LLM, or CLI.
+- **One Generated Contract:** Pydantic models generate FastAPI validation, OpenAPI, the React TypeScript client, and LLM tool schemas. Separate UI and LLM schemas are not maintained.
+- **Complete Supported Access:** Every important supported observation, session, injection, synthetic-peer, test, recording, replay, projection, evidence, and Stop All operation must be available through the shared API.
+- **Structured State:** Commands and queries return versioned JSON with stable errors. Streams use sequenced WebSocket batches with explicit epochs and gaps.
+- **Backend Real-Time Ownership:** Clients request work; the backend owns CAN timing, waits, assertions, leases, evidence, and cleanup. LLM or browser connection lifetime must not control periodic timing.
+- **Safe Retries and Concurrency:** Mutations use request IDs, idempotency where applicable, session revisions, finite leases, and backend-owned cleanup.
+- **Capability-Based Access:** A trusted LLM may receive the same full supported API capabilities as React. Full access never means access to internal Python objects, USB handles, queues, arbitrary code execution, or validation bypasses.
+- **Virtual-First Automation:** Pure Software is the default unattended profile. Physical TX requires explicit session capability and finite Bench TX enablement.
+- **Headless Testability:** The same backend must operate without React and support deterministic virtual fixtures, predicate waits, test execution, evidence, and Playwright UI testing.
+
+Detailed behavior is defined in `control-ui-api.md`.

@@ -43,7 +43,7 @@ Currently, the SYS ECU reads physical buttons and broadcasts `0x110 Mode Command
 ## 5. Phase 0 Implementation
 Before the Python backend is written, this `HMI` node and the new `0x111`/`0x112` messages must be formally added to `can_high.yaml` and `can_low.yaml`. 
 Once added, the entire CAN ecosystem must be regenerated using the scripts in `shared/can/`:
-- `generate_all_dbc.py` (DBC files for cantools UI)
+- `generate_all_dbc.py` (optional DBC export for third-party tooling)
 - `generate_code.py` (C/C++ headers for SYS and RT firmware)
 - `generate_can_ts.py` (TypeScript typings for the frontend UI)
 - `generate_can_docs.py` (and related doc generators for documentation)
