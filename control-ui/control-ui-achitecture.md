@@ -736,6 +736,64 @@ Each entry links to its raw frame and decoded signals.
 
 High-frequency faults are represented as condition episodes, not one timeline row per failed frame. The first failure is emitted immediately; repeated observations update exact counters and bounded samples; periodic summary records report count/rate; recovery emits the final duration and count. Aggregation is keyed per code and bounded scope, so one noisy CAN message cannot suppress unrelated errors. Recovery hysteresis prevents valid/invalid alternation from flooding the timeline. Raw recordings retain frame-level evidence independently from operational logging.
 
+### 14.1.1 Alignment with RT, SYS, MTR, and connected components
+
+The backend must distinguish what it observes directly from what firmware knows internally. Existing `ESP_LOG*` output from RT/SYS is normally UART/console text; it is not transported in ordinary CAN frames. A CAN-only Control UI therefore cannot claim that RT or SYS emitted an internal log entry. It can report the corresponding externally visible CAN evidence, or `Unknown` when firmware does not expose the internal state.
+
+| Component | Directly observable by the Control UI | Episode/aggregation rule | Important limitation |
+|---|---|---|---|
+| Control UI backend and CANalyst-II | adapter calls, worker health, backend queues, raw RX/TX, decoder results | Backend owns exact counters and condition transitions | CANalyst-II may not expose TEC/REC, bus-off, or hardware overflow; unsupported remains `Unknown` |
+| RT | per-bus `0x7FD` heartbeat/counter/health, `0x210 RT_STATE_RPT`, `0x310/0x311` diagnostics, RT-originated and forwarded traffic | Heartbeat health and task/fault fields are level states; raise on state/bit transition, summarize repeats, recover after valid advancing reports | Internal `ESP_LOG`, low-level retry counts, and reset reason are not available over CAN unless separately exported |
+| SYS | `0x7FE SYS_HEARTBEAT`, `0x600 SYS_DIAG_RPT`, `0x011 SYS_SAFETY_STS`, outputs and actuator requests | Treat heartbeat, brake fault, ESTOP, TEC/REC thresholds, and overflow as separate episodes | SYS task-watchdog failures and NVS boot count/reset reason are serial-only in the current design |
+| MTR | `0x206 MTR_MOTOR_FBK` at 50 Hz, including gear/speed and reported flag bits | Maintain one episode per defined bit; never create 50 identical log records per second | The byte named `fault_flags` also carries `STARTUP_READY`, which is status, not a fault; firmware currently also reuses the ADC-fault bit for a DAC-write failure, so the UI must not assert the physical cause |
+| EPS-C/SES and SEB | vendor status/error frames, checksum/counter fields, measured feedback | Validate each frame, but create episodes per reported fault/status field and canonical source bus | Reported vendor error bits are ECU reports, not proof of wiring or physical root cause |
+| PWT | `0x7FB` and motor telemetry only when the planned implementation actually transmits them | Apply the generated YAML policy after implementation is characterized | Current PWT architecture contains TBD/unimplemented functions; do not show them as supported |
+
+`first_occurrence_time` for an ECU-reported flag means first observed by the adapter, not the time the ECU internally detected it. The event carries `evidence_basis=reported` and both adapter arrival/device time where available.
+
+#### Forwarded frames versus independent instances
+
+RT forwards several Low-bus messages to High, including MTR `0x206` and SYS `0x600`. Those two observations must not become two logical ECU-fault occurrences. YAML must declare an `origin_bus` and route/forwarding metadata. The diagnostic service evaluates ECU-reported flags on the canonical origin observation; the forwarded copy remains visible as transport evidence.
+
+RT `0x7FD` is the opposite case: High- and Low-bus heartbeats are independently generated with separate counters and are never bridged. Their liveness and counter episodes must therefore be keyed by bus and never deduplicated together. Transport counts always remain per physical bus even when a logical diagnostic is deduplicated.
+
+#### Counter semantics
+
+Do not assume every ECU counter is an unbounded exact total:
+
+- RT `RT_RxOverflow` is currently a wider internal counter cast to 8 bits and can wrap.
+- SYS packs `rx_overflow` into six bits and saturates it at 63; the current CAN YAML omits this packed field.
+- Heartbeat counters wrap modulo 256 and only prove liveness when they advance.
+- A discontinuity may be wrap, reboot, missed frames, replay, or corruption; without a boot/session identifier it is not definitive reset evidence.
+
+Generated metadata must declare `counter_kind` (`modulo`, `saturating`, or `monotonic`), width/modulus, reset evidence, and whether a value is an exact total or a lower bound. The UI shows `63+` for the saturated SYS overflow value and never derives an exact loss total after saturation. Adapter/backend drop counters remain separate and exact within their own process epoch.
+
+#### Firmware logging compatibility findings
+
+The root architecture already defines the correct first-failure/count/recovery pattern for ordinary RT/SYS CAN TX paths, and the Control UI episode model matches it. The implementation is not uniform, however:
+
+- RT command-stale and task-stall checks can emit on every 10 Hz watchdog poll while active.
+- RT CAN-health warning/bus-off checks can emit on every 10 Hz health poll, and several SES fault/limit handlers log on every matching frame.
+- Some RT diagnostic/heartbeat TX paths use first failure plus every 100th failure, then recovery.
+- SYS ordinary TX uses first failure and recovery, but critical TX failure can log on every failed retry.
+- SYS CAN-health output can repeat at 1 Hz; RX overflow logs only its first occurrence and has no firmware recovery record.
+- SYS gear mismatch emits approximately every 500 ms while the mismatch persists.
+
+These firmware logs can flood a serial collector, but they do not directly flood the CAN-only backend. If UART logs are later ingested, do not parse English strings into Control UI errors. Add a versioned structured firmware-event envelope or a small debug telemetry protocol, preserve ECU/component identity, and apply per-ECU episode aggregation before merging with backend events.
+
+#### Protocol-source corrections required before generation
+
+The YAML/compiler work must resolve these observed contract gaps before the generated Control UI treats the fields as authoritative:
+
+1. Add the packed SYS `rx_overflow` field in `SYS_DIAG_RPT` byte 2 bits 1–6 with saturating semantics.
+2. Define all MTR flag bits identically in High and Low catalogs; High currently documents `STARTUP_READY` while Low does not.
+3. Separate MTR status bits from fault bits, and assign distinct diagnostic meaning for DAC-write versus ADC-input failure instead of sharing one bit.
+4. Declare canonical `origin_bus`, forwarded routes, and independent-per-bus instances so `0x206`/`0x600` are deduplicated logically while RT `0x7FD` is not.
+5. Declare health-bit semantics precisely. SYS code currently sets heartbeat `can_ok` for `TEC < 255`, although its comment says error-passive should not be OK; code, YAML, tests, and generated display must agree.
+6. Declare counter wrap/saturation/reset semantics and recovery thresholds in machine-readable fields rather than comments.
+
+Until those items are resolved, the backend exposes the raw value and a `contract_uncertain`/`capability_unknown` diagnostic rather than assigning a stronger interpretation.
+
 ### 14.2 Sequential message verification
 
 Provide a guided verification workspace where an engineer selects a CAN message and defines or selects an expected response. Each step displays:

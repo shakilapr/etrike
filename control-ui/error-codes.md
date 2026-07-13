@@ -233,6 +233,9 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 | `CUI-ADP-013` | INFO | `TIMESTAMP_WRAP` | Device timestamp wrapped and was mapped into a new segment |
 | `CUI-ADP-014` | WARN | `TIMESTAMP_RESET` | Device timestamp reset unexpectedly within an adapter session |
 | `CUI-ADP-015` | WARN | `RX_POLL_DELAY_EXCEEDED` | Measured adapter polling delay exceeded the characterized limit |
+| `CUI-ADP-016` | ERROR | `CHARACTERIZATION_REQUIRED` | No approved characterization record exists for the current adapter/driver/OS/USB fingerprint; physical formal tests are blocked |
+| `CUI-ADP-017` | WARN | `PRESENCE_PROBE_UNRELIABLE` | Device-presence probing failed or could not be proven safe for the open adapter; I/O and worker evidence remain the loss detectors |
+| `CUI-ADP-018` | INFO | `ADAPTER_EPOCH_CHANGED` | Adapter reopen created a new epoch and invalidated prior adapter-bound state |
 
 ## 7. CAN channel and transport evidence
 
@@ -252,10 +255,11 @@ Secrets, capability tokens, USB handles, and unrestricted payload dumps are neve
 | `CUI-CAN-012` | INFO | `CROSS_CHANNEL_ORDER_UNCERTAIN` | Cross-bus arrival order cannot be treated as wire order |
 | `CUI-CAN-013` | WARN | `UNEXPECTED_ERROR_FRAME` | Adapter exposed a CAN error frame/event |
 | `CUI-CAN-014` | WARN | `TX_ECHO_UNAVAILABLE` | Adapter cannot distinguish bus-observed TX from submitted TX |
+| `CUI-CAN-015` | ERROR | `CHANNEL_MAPPING_UNVERIFIED` | No current characterization record verifies the configured channel-to-bus mapping; physical TX is blocked |
 
 Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evidence. Report the capability as unknown instead.
 
-`CUI-CAN-002` is `inferred`. Codes `001` through `006` and `010` through `014` are `observed` or `derived` according to their retained context. Codes `007` through `009` are `reported` because the adapter, rather than the backend, supplies the controller-state evidence.
+`CUI-CAN-002` is `inferred`. Codes `001` through `006` and `010` through `015` are `observed` or `derived` according to their retained context. Codes `007` through `009` are `reported` because the adapter, rather than the backend, supplies the controller-state evidence. `CUI-ADP-016` and `CUI-CAN-015` are `derived` from the current characterization registry; `CUI-ADP-017` and `018` are `observed`.
 
 ## 8. Receive pipeline and overload
 
@@ -270,6 +274,8 @@ Do not emit `CUI-CAN-007` through `009` when CANalyst-II cannot provide that evi
 | `CUI-RX-007` | ERROR | `ASSERTION_INPUT_LOSS` | Active assertions did not receive complete relevant observations |
 | `CUI-RX-008` | WARN | `WORKLOAD_BUDGET_EXCEEDED` | Declared tested frame/processing workload was exceeded |
 | `CUI-RX-009` | ERROR | `CRITICAL_EVENT_LOSS` | Critical internal event could not be retained/delivered |
+| `CUI-RX-010` | ERROR | `ROUTER_WORKER_FAILED` | The router task exited or raised unexpectedly |
+| `CUI-RX-011` | WARN | `ROUTER_LATENCY_EXCEEDED` | Measured RX queue age or router processing latency exceeded its configured budget |
 
 ## 9. Protocol, decode, and integrity
 
@@ -445,7 +451,7 @@ CUI-ADP-007 DEVICE_REMOVED                 root
   └→ CUI-TST-008 EVIDENCE_INCOMPLETE       evidence consequence
 ```
 
-Consequences reference `cause_event_id` and the shared `root_event_id`. Message/ECU freshness may transition after adapter loss, but the topology service marks it `transport_unknown` and suppresses misleading independent `ECU_MISSING` claims until transport evidence is healthy again.
+Consequences reference `cause_event_id` and the shared `root_event_id`. Message/ECU freshness may transition after adapter loss, but the topology service marks it `transport_unknown` and suppresses misleading independent `REQUIRED_ECU_EVIDENCE_MISSING` claims until transport evidence is healthy again.
 
 ### 16.1 Destinations
 
@@ -525,6 +531,10 @@ Logging uses a bounded non-blocking producer queue and a dedicated writer/listen
 | Debug trace | Temporary deep investigation | Opt-in, time/size bounded, never the default bench mode |
 
 Required low-cardinality metrics include `error_occurrences_total{code,domain,severity,bus}`, `error_records_emitted_total`, `error_occurrences_aggregated_total`, `active_conditions`, log queue depth/high-water, and dropped records by sink/severity. CAN ID, message name, session, request, event, raw value, and exception text are query fields in events/evidence, not unrestricted metric labels.
+
+ECU-reported periodic flags follow the same rule. A fault bit repeated in MTR `0x206` at 50 Hz is one active reported condition with observation count/rate, not 50 new error events per second. Non-fault status bits such as `STARTUP_READY`, mode, ESTOP active, or brake engaged remain state transitions and are not automatically assigned error severity. TEC/REC samples and wrapping/saturating firmware counters are gauges/reported counters with declared semantics, not log messages.
+
+Backend operational events and ECU-reported conditions remain separate namespaces and evidence bases. Existing RT/SYS `ESP_LOG*` console text is not visible over CAN and must not be invented from related frames. If a future serial collector ingests firmware events, it records `source_transport=uart`, firmware identity/version, and the original structured firmware code; plain English matching is prohibited.
 
 #### 16.2.5 Cardinality guard
 
