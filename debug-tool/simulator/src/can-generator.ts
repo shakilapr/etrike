@@ -33,7 +33,6 @@ export const DEFAULT_PROFILE: Profile = [
   // ── Low bus (RT ↔ actuators) ──
   { bus: "low", id: "0x001", name: "ESTOP_CMD", interval_ms: 100, dlc: 0 },
   { bus: "low", id: "0x011", name: "SYS_SAFETY_STS", interval_ms: 100, dlc: 3 },
-  { bus: "low", id: "0x012", name: "SYS_CTRL_CMD", interval_ms: 100, dlc: 1 },
   { bus: "low", id: "0x110", name: "SYS_MODE_CMD", interval_ms: 0, dlc: 1 },
   { bus: "low", id: "0x120", name: "HOST_SPEED_OPS", interval_ms: 50, dlc: 2 },
   { bus: "low", id: "0x169", name: "VCU_STEER_CMD", interval_ms: 50, dlc: 8 },
