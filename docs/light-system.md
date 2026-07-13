@@ -100,7 +100,7 @@ All turn signals OFF regardless of mode, switches, or CAN state.
 
 ---
 
-## 4. Headlight — GPIO22
+## 4. Headlight — GPIO10
 
 | Mode | Control |
 |------|---------|
@@ -136,9 +136,9 @@ Optional CAN override: if `g_light_state.position_lights` (new bit in `0x302`) i
 
 ---
 
-## 7. Mode indicator bulbs — GPIO25/26
+## 7. Mode indicator bulbs — GPIO48/26
 
-| Mode | AUTO bulb (GPIO25) | MANUAL bulb (GPIO26) |
+| Mode | AUTO bulb (GPIO48) | MANUAL bulb (GPIO36) |
 |------|-------------------|---------------------|
 | MANUAL | OFF | ON |
 | AUTO | ON | OFF |
@@ -209,4 +209,4 @@ SYS receives `0x302` on low bus. It cannot tell whether the bits came from Jetso
 | AUTO bulb | OFF |
 | MANUAL bulb | OFF |
 
-All lamps except brake go dark. The 12V accessory relay (GPIO27) is cut on ESTOP, so all relay-driven lights lose power at the source regardless of MCU GPIO state.
+All lamps except brake go dark. The 12V accessory relay (GPIO37) is cut on ESTOP, so all relay-driven lights lose power at the source regardless of MCU GPIO state.

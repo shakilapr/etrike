@@ -79,7 +79,7 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `SYS_DcdcEnable` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | — |
 
-ESTOP → **1 (on)** — maintains 12V for MCUs, CAN transceivers, and brake light. The 12V accessory relay (GPIO27) provides the secondary cut for non-safety loads (see architecture §8.6). All other modes → 1 (on).
+ESTOP → **1 (on)** — maintains 12V for MCUs, CAN transceivers, and brake light. The 12V accessory relay (GPIO37) provides the secondary cut for non-safety loads (see architecture §8.6). All other modes → 1 (on).
 
 ---
 

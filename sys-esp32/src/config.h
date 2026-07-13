@@ -18,7 +18,7 @@ constexpr int kCanRxGpio    =       4;
 // ── safety inputs ─────────────────────────────────────────────────
 constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-low, pull-up
 constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
-constexpr int kStartBtnGpio   = 32;   // green momentary — press=ignition ON, hold 3s=OFF
+constexpr int kStartBtnGpio   = 38;   // green momentary — press=ignition ON, hold 3s=OFF
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
 constexpr int kIgnitionGpio   =  8;   // main 12V relay — HIGH=vehicle ON, LOW=all ECUs dead
                                        // Wired in parallel with CAN 0x012 DC-DC enable for dual-path ignition
@@ -44,17 +44,17 @@ constexpr int kSwitchHeadlight =  7;
 constexpr int kLightLeftTurn  = 18;
 constexpr int kLightRightTurn = 19;
 constexpr int kLightBrake     = 21;
-constexpr int kLightHead      = 22;
+constexpr int kLightHead      = 10;
 
 // ── mode indicator bulbs + 12V relay ─────────────────────────────
-constexpr int kBulbAuto       = 25;
-constexpr int kBulbManual     = 26;
+constexpr int kBulbAuto       = 48;
+constexpr int kBulbManual     = 36;
 constexpr int kBulbReady      = 17;  // green — system ready (AUTO/MANUAL, RT alive, no faults)
 constexpr int kBulbEstop      = 20;  // red — dedicated ESTOP indicator
-constexpr int kPower12vRelay  = 27;
+constexpr int kPower12vRelay  = 37;
 
 // ── watchdog ──────────────────────────────────────────────────────
-constexpr int kWdtToggleGpio = 23;
+constexpr int kWdtToggleGpio = 47;
 
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;

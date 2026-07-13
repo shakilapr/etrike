@@ -34,11 +34,38 @@ Pydantic models
   ├→ FastAPI validation
   ├→ OpenAPI document
   ├→ generated TypeScript client for React
-  ├→ generated/translated LLM tool schemas
+  ├→ source schemas for an optional LLM tool adapter
   └→ optional thin CLI client
 ```
 
-OpenAPI is the machine-readable discovery contract. Do not maintain a second command-schema format for LLMs or the CLI. API and generated-client compatibility is checked in CI.
+OpenAPI is the machine-readable description of the normal API. It does not execute requests and does not automatically give an LLM network access. Do not maintain a second domain contract for LLMs or the CLI; when a client platform requires tool schemas, derive the thin translation from OpenAPI and test it against the same API. API and generated-client compatibility is checked in CI.
+
+### 2.1 What OpenAPI compatibility means
+
+FastAPI serves the working REST endpoints and also publishes their description, normally at `/openapi.json` (this project may version it as `/api/v1/openapi.json`). The description contains paths, methods, parameters, JSON schemas, responses, errors, and authentication requirements.
+
+```text
+FastAPI routes       = operations clients actually call
+OpenAPI JSON         = machine-readable description of those operations
+Swagger/ReDoc        = human interfaces generated from that description
+```
+
+There is no behavior difference between a request from React, Python, or Claude integration software. The only difference is which client transports the same HTTP request.
+
+Every operation must provide OpenAPI with:
+
+- stable unique `operationId`;
+- concise summary and precise behavioral description;
+- side effects and whether the operation creates a job;
+- required capability and valid session/profile states;
+- complete request/response/error schemas;
+- units, enums, bounds, defaults, and examples;
+- idempotency and expected-revision requirements;
+- timeout/deadline behavior;
+- evidence and cleanup behavior;
+- all relevant HTTP status responses.
+
+Descriptions must state that `accepted`, `scheduled`, `submitted`, and `observed/accepted by ECU` are different dispositions.
 
 ## 3. API responsibilities
 
@@ -62,6 +89,8 @@ Initial resource groups:
 /api/v1/replays
 /api/v1/projection
 /api/v1/evidence
+/api/v1/error-codes
+/api/v1/events
 /api/v1/stream
 ```
 
@@ -87,6 +116,73 @@ Accepted mutations additionally return session ID/revision and, when asynchronou
 
 Mutations accept a request ID and idempotency key where retry could duplicate work. Commands that modify a session accept an expected revision when concurrent changes matter.
 
+All errors and significant recoveries use the shared catalog in `error-codes.md`. The same stable code and structured context appear in operational logs, API responses, WebSocket events, recordings, React, LLM tools, and test evidence.
+
+### 4.1 Minimum data clients need
+
+The API must expose enough structured data for a client to reason without reading source code or parsing display text.
+
+**Capabilities and compatibility:**
+
+```text
+api_version
+backend_version / process_instance_id
+protocol_semantic_hash / exact_source_hash
+error_registry_version
+supported profiles and operations
+granted capabilities
+adapter-supported/unknown metrics
+stream schema version
+```
+
+**Backend and adapter status:**
+
+```text
+readiness and startup blockers
+USB presence and selected adapter identity
+adapter worker state, epoch and last error
+High/Low channel configured state and bitrate
+channel Active/Quiet state and last RX age
+per-channel RX/TX/error/loss counters where supported
+queue depth, high-water, dropped count and oldest age
+storage/recording health
+active session, Bench TX, leases and jobs
+```
+
+**Atomic CAN/state snapshot:**
+
+```text
+snapshot sequence and mapped timestamp
+adapter/replay epoch
+bus, CAN ID, message and expected source
+raw payload and DLC
+decoded engineering signals with units
+latest observation and latest valid value separately
+sample/arrival timestamps and age/deadline
+validity and failed rules
+counter/checksum state
+count, observed period/rate and changed-byte mask
+physical/synthetic/replay/requested provenance
+ECU liveness/topology state
+actuation and sensor vehicle projections
+```
+
+**Mutation and asynchronous job result:**
+
+```text
+request/session IDs and new session revision
+disposition: rejected/accepted/queued/submitted/canceled/failed
+job ID, owner, adapter epoch and expiry
+resolved semantic values and TX manifest hash
+bus/ID/rate/count/duration and automatic fields
+requested deadline and actual submission/jitter metrics
+progress, test step and cleanup state
+Pass/Fail/Inconclusive verdict and evidence quality
+error events and evidence references
+```
+
+Large raw histories are returned by bounded query/export resources, not embedded in ordinary snapshots.
+
 ## 5. Live stream
 
 Clients connect to the same versioned WebSocket and request subscriptions:
@@ -101,9 +197,22 @@ Every batch carries adapter/replay epoch and sequence boundaries. Each client ha
 
 An LLM normally uses snapshot, query, wait, and test endpoints instead of consuming every CAN frame. The option to subscribe to raw batches remains the same for all authorized clients.
 
+Backend operational/error events are also first-class shared resources. React, LLMs, Python tests, and CI can query, wait for, summarize, export, or subscribe to the same structured events. They do not read server console text or duplicate error-detection logic. Event access and redaction follow capabilities, not client type; see `error-codes.md`.
+
 ## 6. LLM integration
 
-The LLM receives typed tools generated or wrapped from OpenAPI. A small MCP/native-tool adapter may improve tool names and descriptions, but it only translates calls:
+OpenAPI alone does not make Claude call the backend. The Claude host must have a way to execute HTTP requests. Supported integration choices are:
+
+| Claude environment | Simplest connection |
+|---|---|
+| Claude Code | Run the shared Python HTTP client or `curl` through its permitted terminal tools |
+| Application using Anthropic Messages API | Application defines client-side tool schemas, executes the corresponding FastAPI request, and returns the result to Claude |
+| Claude Desktop/Claude.ai or another MCP client | Optional thin MCP server translates MCP operations to FastAPI requests |
+| Custom agent runtime with OpenAPI import | Runtime imports selected OpenAPI operations and performs HTTP calls |
+
+Claude itself does not directly execute arbitrary network calls in the Messages API; the hosting application executes requested client tools. Claude Code may call the local API through terminal commands when permissions allow. Claude products also support MCP as an external-tool integration mechanism.
+
+When an LLM tool adapter is needed, its schemas are generated or translated from selected OpenAPI operations. It may improve operation names and descriptions, but it only translates calls:
 
 ```text
 LLM tool call → API request → shared backend service → API result
@@ -125,9 +234,54 @@ run_test
 get_test_result
 stop_all
 get_evidence
+list_error_codes
+query_events
+wait_for_event
+summarize_session_events
 ```
 
 These are not privileged alternatives to the UI. React can issue the equivalent requests and receives identical results.
+
+### 6.1 Direct HTTP requirements
+
+A direct client needs only:
+
+```text
+base URL, normally loopback
+API version
+session capability token
+client/request identity
+JSON request body
+bounded timeout
+```
+
+For local direct access:
+
+```http
+Authorization: Bearer <session-capability>
+X-Request-ID: req_123
+X-Client-Instance: claude-code-run-123
+Idempotency-Key: idem_456
+```
+
+`X-Client-Instance` is audit/correlation data and never changes domain behavior. Tokens are not placed in prompts, logs, URLs, or error context.
+
+### 6.2 LLM-friendly operations without WebSocket
+
+Some Claude hosts can call HTTP but cannot maintain WebSockets. Therefore every important diagnostic/test workflow must be possible using bounded REST operations:
+
+```text
+atomic state snapshot
+structured query
+wait for typed condition with deadline
+start job/test
+poll or long-wait for job disposition
+query/wait/summarize error events
+fetch bounded evidence window
+Stop All
+```
+
+WebSocket remains the efficient live path for React and capable clients; it is not mandatory for an LLM to test the backend correctly.
 
 ## 7. Optional thin terminal client
 
@@ -193,9 +347,18 @@ Headless tests:
 The shared-client design is correct when:
 
 1. The same operation made by React and an LLM produces the same validated request, state transition, job, evidence, and result.
-2. Generated React and LLM schemas come from the same OpenAPI version.
+2. The generated React client and any optional LLM/MCP schemas reference the same OpenAPI version and pass parity fixtures.
 3. No domain service checks the client type to choose behavior.
 4. A client disconnect does not orphan scheduled traffic.
 5. A slow live-stream client cannot affect other clients or backend real-time work.
 6. Pure Software tests run without the React UI.
 7. Full authorized API access still cannot bypass application invariants by reaching internal implementation objects.
+8. Claude Code can complete a virtual test using the shared Python/HTTP client without MCP.
+9. An optional MCP/client-tool call produces the same backend request/result as direct HTTP.
+
+## 12. Integration references
+
+- [FastAPI OpenAPI metadata and schema URL](https://fastapi.tiangolo.com/tutorial/metadata/)
+- [FastAPI automatic OpenAPI and client-generation features](https://fastapi.tiangolo.com/features/)
+- [Anthropic Model Context Protocol overview](https://docs.anthropic.com/en/docs/mcp)
+- [Anthropic Claude Code CLI and MCP entry point](https://docs.anthropic.com/en/docs/claude-code/cli-usage)

@@ -54,7 +54,7 @@ constexpr int kWdtToggleGpio = 21;
 // ── encoders (quadrature PCNT, sensor TBD for wheels) ──────────────
 constexpr int kEncRearMotorA   =  1;  // rear motor speed feedback
 constexpr int kEncRearMotorB   =  2;
-constexpr int kEncFrontWheelA  =  3;  // front wheel speed/angle
+constexpr int kEncFrontWheelA  = 10;  // front wheel speed/angle
 constexpr int kEncFrontWheelB  =  6;
 constexpr int kEncRearLeftA    =  9;  // rear left wheel differential
 constexpr int kEncRearLeftB    = 12;

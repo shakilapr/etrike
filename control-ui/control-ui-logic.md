@@ -744,3 +744,30 @@ Full LLM API access does not bypass these invariants, just as full React access 
 9. Return structured Pass, Fail, or Inconclusive with artifact paths.
 
 Headless tests never depend on fixed startup sleeps, pixel coordinates, or keyboard state as vehicle feedback. They wait on readiness/predicates and verify the same actuation/sensor projections and test verdicts used by the UI.
+
+## 46. Error event generation logic
+
+1. The service owning a fact produces a typed outcome or state transition with a catalog code and bounded domain context.
+2. The event factory validates that the code/context are registered.
+3. It adds event ID, monotonic/wall timestamps, process/protocol versions, request/session/job/test correlation, adapter epoch, and provenance.
+4. It attaches cause/root event IDs when the condition follows another failure.
+5. It redacts secrets and stores the structured event before client publication.
+6. Deduplication records the first raised event immediately, bounded updates/counts, severity escalation, and one recovery transition.
+7. The subscription hub publishes the same persisted event schema to authorized clients.
+
+Unknown exceptions at a service boundary emit `CUI-GEN-001`; expected domain failures never collapse into that generic code. Error codes are never parsed from human log strings.
+
+## 47. Event query and LLM access logic
+
+The backend owns indexed event queries by time/sequence, code/domain/severity/state, correlation IDs, adapter epoch, bus/message/signal, ECU/source, root cause, and evidence impact.
+
+React, LLM tools, Python scripts, and CI call the same operations:
+
+1. List the machine-readable code registry.
+2. Query or subscribe to events.
+3. Fetch one event with cause chain and evidence references.
+4. Wait for a typed event predicate with a deadline.
+5. Request deterministic counts/active-duration/root-cause summaries.
+6. Export a bounded event/evidence window.
+
+The API returns structured fields, not console text. Client-side summaries cannot change backend severity, causal links, evidence quality, or test verdicts. A client that lacks internal-diagnostic capability receives the same event identity and disposition with sensitive diagnostic fields redacted.
