@@ -68,26 +68,28 @@ The standard CAN transceiver module used by RT, SYS, and PWT. Contains a TI SN65
 - **Current draw:** ~30 mA at 3.3 V
 - **Counterfeit warning:** Some modules ship with fake SN65HVD230 chips that receive but cannot transmit. If one node's frames never appear, swap modules between boards — if the problem follows the module, replace it.
 
-### 2.5 CAN Controller Module — MCP2515 SPI (MCP2515 + TJA1050)
+### 2.5 CAN Controller Module — MCP2515 SPI
 
 Used by RT for the high bus. Standalone SPI-to-CAN controller.
 
 | Label on Module | Connects To | Notes |
 |----------------|-------------|-------|
-| VCC | **5 V** from ESP32 dev board | TJA1050 transceiver needs 5 V for proper CAN levels |
+| VCC | Per module design | A 5 V TJA1050 module requires level translation on every MCU-facing signal |
 | GND | ESP32 GND | Common ground |
-| SCK | ESP32 GPIO39 | SPI clock, up to 10 MHz |
-| SI (MOSI) | ESP32 GPIO40 | SPI data: MCU → MCP2515 |
-| SO (MISO) | ESP32 GPIO41 | SPI data: MCP2515 → MCU |
-| CS | ESP32 GPIO39 | Chip select, active low |
-| INT | ESP32 GPIO40 | Interrupt: RX buffer ready, active low |
+| SCK | ESP32 GPIO15 | SPI clock, 8 MHz firmware setting |
+| SI (MOSI) | ESP32 GPIO16 | SPI data: MCU → MCP2515 |
+| SO (MISO) | ESP32 GPIO17 | SPI data: MCP2515 → MCU |
+| CS | ESP32 GPIO18 | Chip select, active low |
+| INT | ESP32 GPIO47 | Interrupt: RX buffer ready, active low |
 | CAN_H | Bus CAN_H (screw terminal) | High bus backbone |
 | CAN_L | Bus CAN_L (screw terminal) | High bus backbone |
 
 - **SPI Mode:** 0 or 1 (CPOL=0, CPHA=0 or CPOL=1, CPHA=1)
 - **Clock:** 8 MHz safe default, 10 MHz max
 - **Crystal:** Either 8 MHz or 16 MHz — check laser etching. BRP must match.
-- **5 V power required** — the TJA1050 transceiver produces marginal CAN levels at 3.3 V
+- **ESP32-S3 GPIOs are not 5 V tolerant.** Do not directly connect a 5 V module's
+  MISO or INT output to the ESP32. Use bidirectional level translation for all SPI
+  and interrupt signals, or use a 3.3 V MCP2515 plus 3.3 V CAN transceiver design.
 - **No onboard termination** — rely on CANalyst-II Ch1 or add external 120 Ω
 
 ### 2.6 CANalyst-II USB Analyzer
@@ -132,36 +134,34 @@ Dual-channel passive CAN monitor/injector.
 
 | GPIO | Signal | Connected To | Wire |
 |------|--------|-------------|------|
-| 36 | SPI SCK | MCP2515 SCK | Dupont F-F |
-| 37 | SPI MOSI | MCP2515 SI | Dupont F-F |
-| 38 | SPI MISO | MCP2515 SO | Dupont F-F |
-| 39 | SPI CS | MCP2515 CS | Dupont F-F |
-| 40 | INT | MCP2515 INT | Dupont F-F |
-| — (J1-21, 5V) | 5 V power | MCP2515 VCC | Dupont F-F, red |
+| 15 | SPI SCK | MCP2515 SCK | Dupont F-F |
+| 16 | SPI MOSI | MCP2515 SI | Dupont F-F |
+| 17 | SPI MISO | MCP2515 SO | Dupont F-F |
+| 18 | SPI CS | MCP2515 CS | Dupont F-F |
+| 47 | INT | MCP2515 INT | Dupont F-F |
+| — | Module supply | MCP2515 VCC | Per module, with required 3.3 V logic translation |
 | — (J1-22, GND) | Ground | MCP2515 GND | Dupont F-F, black |
 | — | CAN_H | High bus backbone | 22 AWG, orange |
 | — | CAN_L | High bus backbone | 22 AWG, blue |
 
 - No onboard termination — CANalyst-II Ch1 provides 120 Ω for the high bus
-- Source: `rt::kSpiSckGpio=36`, `rt::kSpiMosiGpio=37`, `rt::kSpiMisoGpio=38`, `rt::kSpiCsGpio=39`, `rt::kMcpIntGpio=40`, bitrate 500 kbit/s
+- Source: `rt::kSpiSckGpio=15`, `rt::kSpiMosiGpio=16`, `rt::kSpiMisoGpio=17`, `rt::kSpiCsGpio=18`, `rt::kMcpIntGpio=47`, bitrate 500 kbit/s
 
 ### 3.2 RT — Inputs
 
 | # | Signal | GPIO | Type | Connected To | Status | Notes |
 |---|--------|------|------|-------------|--------|-------|
 | 1 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | **Active** | Low bus frames from SYS, MTR, EPS-C, SEB |
-| 2 | MCP2515 MISO | 38 | SPI | MCP2515 SO | **Active** | High bus RX data (Host commands) |
-| 3 | MCP2515 INT | 40 | Digital, falling | MCP2515 INT | **Active** | RX buffer ready interrupt |
+| 2 | MCP2515 MISO | 17 | SPI | MCP2515 SO | **Active** | High bus RX data (Host commands) |
+| 3 | MCP2515 INT | 47 | Digital, falling | MCP2515 INT | **Active** | RX buffer ready interrupt |
 | 4 | Encoder A (rear motor) | 1 | PCNT quadrature | Motor encoder | **Active** | Speed feedback |
 | 5 | Encoder B (rear motor) | 2 | PCNT quadrature | Motor encoder | **Active** | Quadrature phase B |
-| 6 | Encoder A (front wheel) | 3 | PCNT quadrature | TBD sensor | Compile-disabled | `CONFIG_ENABLE_ENCODERS` off |
+| 6 | Encoder A (front wheel) | 10 | PCNT quadrature | TBD sensor | Compile-disabled | `CONFIG_ENABLE_ENCODERS` off |
 | 7 | Encoder B (front wheel) | 6 | PCNT quadrature | TBD sensor | Compile-disabled | `CONFIG_ENABLE_ENCODERS` off |
 | 8 | Encoder A (rear left) | 9 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 9 | Encoder B (rear left) | 12 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 10 | Encoder A (rear right) | 13 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 11 | Encoder B (rear right) | 14 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
-| 12 | I2C SDA (IMU) | 10 | I2C | Optional IMU | Optional | Pull-up to 3.3 V |
-| 13 | I2C SCL (IMU) | 11 | I2C | Optional IMU | Optional | — |
 
 ### 3.3 RT — Outputs
 
@@ -169,8 +169,8 @@ Dual-channel passive CAN monitor/injector.
 |---|--------|------|------|-------------|-------|
 | 1 | CAN TX (low bus) | 5 | TWAI TX | SN65HVD230 CTX | 0x204, 0x205, 0x169, 0x001, 0x302, 0x7FD on low bus |
 | 2 | SPI SCK | 15 | SPI out | MCP2515 SCK | 10 MHz max |
-| 3 | SPI MOSI | 37 | SPI out | MCP2515 SI | High bus TX data |
-| 4 | SPI CS | 39 | Digital out | MCP2515 CS | Active low |
+| 3 | SPI MOSI | 16 | SPI out | MCP2515 SI | High bus TX data |
+| 4 | SPI CS | 18 | Digital out | MCP2515 CS | Active low |
 | 5 | WDT Toggle | 21 | Digital out | TPS3850 WDI pin | Toggled at 100 Hz by control_task |
 
 ### 3.4 RT — GPIO Quick Reference
@@ -178,26 +178,23 @@ Dual-channel passive CAN monitor/injector.
 ```
 GPIO 1  : Encoder A — rear motor (active)
 GPIO 2  : Encoder B — rear motor (active)
-GPIO 3  : Encoder A — front wheel (TBD, disabled)
 GPIO 4  : CAN RX — low bus TWAI
 GPIO 5  : CAN TX — low bus TWAI
 GPIO 6  : Encoder B — front wheel (TBD, disabled)
 GPIO 7  : (unused)
 GPIO 8  : (unused)
 GPIO 9  : Encoder A — rear left (TBD, disabled)
-GPIO 10 : I2C SDA — IMU (optional)
-GPIO 11 : I2C SCL — IMU (optional)
+GPIO 10 : Encoder A — front wheel (TBD, disabled)
+GPIO 11 : (unused)
 GPIO 12 : Encoder B — rear left (TBD, disabled)
 GPIO 13 : Encoder A — rear right (TBD, disabled)
 GPIO 14 : Encoder B — rear right (TBD, disabled)
-GPIO 15–20: (unused)
+GPIO 15 : MCP2515 SCK
+GPIO 16 : MCP2515 MOSI
+GPIO 17 : MCP2515 MISO
+GPIO 18 : MCP2515 CS
 GPIO 21 : WDT toggle → TPS3850 WDI
-GPIO 10–35: (unused)
-GPIO 39 : SPI SCK → MCP2515
-GPIO 40 : SPI MOSI → MCP2515
-GPIO 41 : SPI MISO ← MCP2515
-GPIO 39 : SPI CS → MCP2515
-GPIO 40 : INT ← MCP2515
+GPIO 47 : MCP2515 INT
 ```
 
 ### 3.5 RT — Power
@@ -205,14 +202,15 @@ GPIO 40 : INT ← MCP2515
 | Rail | Source | Used For |
 |------|--------|----------|
 | 3.3 V | USB or dev board regulator | ESP32-S3, WCMCU-230 transceiver |
-| 5 V | USB or dev board regulator (J1-21) | MCP2515 module (TJA1050 transceiver needs 5 V) |
+| 5 V | Module-dependent | Only through a 3.3 V-safe SPI/INT interface |
 | GND | USB or dev board | Common ground — shared with both CAN modules |
 
 ---
 
 ## 4. SYS ESP32-S3 — Safety & Body Controller
 
-**Role:** Safety monitor (EGAS Level 2), body control (lights, gear, indicators), throttle pass-through (MANUAL mode), brake-by-wire interface
+**Role:** Safety monitor (EGAS Level 2), body control, and brake-by-wire interface.
+Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path is approved until MTR hardware is implemented and validated.
 **Board:** ESP32-S3-DevKitC-1
 **CAN modules:** 1 — TWAI (built-in, low bus only)
 
@@ -237,20 +235,23 @@ GPIO 40 : INT ← MCP2515
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | ESTOP Button | 1 | Digital, NC, active-low | Red mushroom button → GND | 10k pull-up to 3.3 V. LOW = ESTOP. Shared with MTR STM32 (separate MCU, same button). |
+| 1 | ESTOP Button | 1 | Digital, NC, active-low | NC contact from 3.3 V to GPIO1 | 10k external pull-down at GPIO1. LOW = ESTOP, including an open wire. Shared with MTR only after its ESTOP hardware is implemented. |
 | 2 | Brake Lever | 2 | Digital, NO, active-low | Lever switch → GND | Internal pull-up. LOW = pressed → SEB via CAN 0x7B9 |
-| 3 | START Button | 32 | Digital, NO, active-low | Green momentary → GND | Internal pull-up. Press = ignition ON, hold 3s = OFF |
+| 3 | START Button | 41 | Digital, NO, active-low | Green momentary → GND | Internal pull-up. Press exits ESTOP to MANUAL. |
 | 4 | MODE Button | 11 | Digital, NO, active-low | Momentary → GND | Internal pull-up. Toggles MANUAL ↔ AUTO. Long-press 3s exits ESTOP. |
-| 5 | Ignition Relay | 8 | Digital out | 12V relay coil driver | HIGH = vehicle ON, LOW = all ECUs dead. Dual-path with CAN 0x012. |
-| 6 | Throttle ADC | 10 (ADC1_CH5) | Analog (12-bit) | 0–5V grip via voltage divider | 5V → 3.3V resistive divider. Dead zone: 200 counts. Max: 3000 mm/s. |
+| 5 | Ignition relay | 8 | Reserved output | Not implemented by production firmware | Do not wire as a vehicle power-control path. |
 | 7 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | RT commands, MTR feedback (0x206), SEB feedback (0x721) |
 
-### 4.3 SYS — Throttle / Gear I/O (currently on SYS, migrating to MTR per gap #5)
+### 4.3 SYS — Bench-Only Throttle / Gear I/O
+
+`SYS_OWNS_MOTOR` is a bench-only legacy configuration. Do not connect its DAC or
+gear outputs to a vehicle motor controller. The current ADC mapping conflicts
+with body I/O and requires a dedicated, validated ADC pin before use.
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | MCP4725 DAC SDA | 15 | I2C data | MCP4725 DAC | I2C addr 0x60, VCC = 5 V. Output: 0–5 V → motor controller throttle |
-| 2 | MCP4725 DAC SCL | 16 | I2C clock | MCP4725 DAC | 100 kHz standard mode |
+| 1 | MCP4725 DAC SDA | 15 | I2C data | MCP4725 DAC | Bench only. Use a 3.3 V-safe I2C interface. |
+| 2 | MCP4725 DAC SCL | 16 | I2C clock | MCP4725 DAC | Bench only, 100 kHz. |
 | 3 | Gear D Sense | 12 | Digital, active-low | TLP281 opto ch1 output | 72V gear line → optoisolator → GPIO. 10k pull-up to 3.3V. |
 | 4 | Gear S Sense | 13 | Digital, active-low | TLP281 opto ch2 output | Same circuit as D Sense |
 | 5 | Gear R Sense | 14 | Digital, active-low | TLP281 opto ch3 output | Same circuit as D Sense |
@@ -262,60 +263,51 @@ GPIO 40 : INT ← MCP2515
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | Left Turn Switch | 3 | Digital, NO, active-low | Handlebar momentary → GND | Internal pull-up |
+| 1 | Left Turn Switch | 9 | Digital, NO, active-low | Handlebar momentary → GND | Internal pull-up |
 | 2 | Right Turn Switch | 6 | Digital, NO, active-low | Handlebar momentary → GND | Internal pull-up |
 | 3 | Headlight Switch | 7 | Digital, NO, active-low | Handlebar toggle → GND | Internal pull-up |
 | 4 | Left Turn Lamp | 18 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
 | 5 | Right Turn Lamp | 19 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
 | 6 | Brake Light | 21 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
-| 7 | Headlight | 22 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
+| 7 | Headlight | 10 | Digital out | Relay coil driver → 12 V | ESP GPIO must not drive the relay coil directly. |
 
 ### 4.5 SYS — Indicators & Power Control
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | AUTO Mode Bulb | 25 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = bulb |
-| 2 | MANUAL Mode Bulb | 26 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = bulb |
+| 1 | AUTO Mode Bulb | 48 | Digital out | Lamp driver → 12 V | ESP GPIO must not drive the lamp directly. |
+| 2 | MANUAL Mode Bulb | 39 | Digital out | Lamp driver → 12 V | Conflicts with external JTAG use. |
 | 3 | READY Bulb | 17 | Digital out | Relay coil → 12 V | Green — system ready (AUTO/MANUAL, RT alive, no faults) |
 | 4 | ESTOP Bulb | 20 | Digital out | Relay coil → 12 V | Red — dedicated ESTOP indicator |
-| 5 | 12V Power Relay | 27 | Digital out | Relay coil → 12 V | Relay COM = 12 V bus, NO = accessories. Opens in ESTOP. |
-| 6 | WDT Toggle | 23 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety_task |
+| 5 | 12V Power Relay | 40 | Digital out | Relay driver → 12 V | Accessory relay, opens in ESTOP. Conflicts with external JTAG use. |
+| 6 | WDT Toggle | 47 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety task. |
 
 ### 4.6 SYS — GPIO Quick Reference
 
 ```
-GPIO 1  : ESTOP button (NC, active-low) — shared with MTR STM32
+GPIO 1  : ESTOP button (NC from 3.3 V, external pull-down, active-low)
 GPIO 2  : Brake lever (active-low) → SEB via CAN 0x7B9
-GPIO 3  : Left turn switch (active-low)
 GPIO 4  : CAN RX — low bus TWAI
 GPIO 5  : CAN TX — low bus TWAI
 GPIO 6  : Right turn switch (active-low)
 GPIO 7  : Headlight switch (active-low)
-GPIO 8  : Ignition relay — HIGH = vehicle ON
-GPIO 9  : (unused)
-GPIO 10 : Throttle ADC (ADC1_CH5) — 0–5V via voltage divider
+GPIO 8  : Reserved ignition output — not implemented
+GPIO 9  : Left turn switch (active-low)
+GPIO 10 : Headlight relay driver
 GPIO 11 : MODE button (active-low) — publishes CAN 0x110
-GPIO 12 : Gear D sense — TLP281 opto ch1 input
-GPIO 13 : Gear S sense — TLP281 opto ch2 input
-GPIO 14 : Gear R sense — TLP281 opto ch3 input
-GPIO 15 : MCP4725 DAC SDA (I2C addr 0x60)
-GPIO 16 : MCP4725 DAC SCL
+GPIO 12–14 : Bench-only gear sense
+GPIO 15–16 : Bench-only MCP4725 I2C
 GPIO 17 : READY bulb (green) — relay output
 GPIO 18 : Left turn lamp — relay output
 GPIO 19 : Right turn lamp — relay output
 GPIO 20 : ESTOP bulb (red) — relay output
 GPIO 21 : Brake light — relay output
-GPIO 10 : Headlight — relay output
+GPIO 39 : MANUAL mode bulb — external JTAG conflict
+GPIO 40 : 12V accessory relay — external JTAG conflict
+GPIO 41 : START button (active-low) — external JTAG conflict
 GPIO 47 : WDT toggle → TPS3850 WDI (20 Hz)
-GPIO 24 : (unused)
 GPIO 48 : AUTO mode bulb — relay output
-GPIO 39 : MANUAL mode bulb — relay output
-GPIO 40 : 12V power relay — opens in ESTOP
-GPIO 28–31: (unused)
-GPIO 41 : START button (active-low)
-GPIO 33 : Gear D relay out → 4-ch relay module IN1
-GPIO 34 : Gear S relay out → 4-ch relay module IN2
-GPIO 35 : Gear R relay out → 4-ch relay module IN3
+GPIO 33–35 : Bench-only gear relay outputs
 ```
 
 ### 4.7 SYS — Power
@@ -775,8 +767,8 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 
 - [ ] WCMCU-230 (low bus): VCC → 3V3 (J1-1), GND → GND (J1-22), CTX → GPIO5, CRX → GPIO4
 - [ ] WCMCU-230: 120 Ω terminator jumper **ON**
-- [ ] MCP2515 (high bus): VCC → 5V (J1-21), GND → GND (J1-22)
-- [ ] MCP2515: SCK → GPIO39, MOSI → GPIO40, MISO → GPIO41, CS → GPIO39, INT → GPIO40
+- [ ] MCP2515: verify the module's supply and install 3.3 V-safe level translation before connecting it to RT
+- [ ] MCP2515: SCK → GPIO15, MOSI → GPIO16, MISO → GPIO17, CS → GPIO18, INT → GPIO47
 - [ ] MCP2515: CAN_H/CAN_L to high bus backbone
 - [ ] WDT: GPIO21 → TPS3850 WDI
 
@@ -784,27 +776,21 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 
 - [ ] WCMCU-230 (low bus): VCC → 3V3 (J1-1), GND → GND (J1-22), CTX → GPIO5, CRX → GPIO4
 - [ ] WCMCU-230: 120 Ω terminator jumper **ON**
-- [ ] ESTOP button: GPIO1 → NC button → GND. 10k pull-up to 3.3V.
+- [ ] ESTOP button: NC contact from 3.3 V → GPIO1, with 10k external pull-down at GPIO1.
 - [ ] Brake lever: GPIO2 → NO switch → GND. Internal pull-up.
 - [ ] START button: GPIO41 → NO momentary → GND. Internal pull-up.
 - [ ] MODE button: GPIO11 → NO momentary → GND. Internal pull-up.
-- [ ] Throttle ADC: GPIO10 → voltage divider midpoint (0–5V grip)
-- [ ] MCP4725 DAC: SDA → GPIO15, SCL → GPIO16, VCC → 5V, GND → GND
-- [ ] Gear sense: GPIO12/13/14 → TLP281 ch1/ch2/ch3 collectors (with 10k pull-ups to 3.3V)
-- [ ] Gear relays: GPIO33/34/35 → relay module IN1/IN2/IN3
-- [ ] Signal switches: GPIO3 (left turn), GPIO6 (right turn), GPIO7 (headlight) → GND
-- [ ] Lamp relays: GPIO18/19/21/22 → relay coils → 12V
-- [ ] Indicator relays: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO40 (12V power) → relay coils → 12V
+- [ ] Do not connect SYS throttle DAC, ADC, or gear I/O to a vehicle motor controller.
+- [ ] Signal switches: GPIO9 (left turn), GPIO6 (right turn), GPIO7 (headlight) → GND
+- [ ] Lamp drivers: GPIO18/19/21/10 → relay or lamp-driver inputs; add coil suppression.
+- [ ] Indicator/accessory drivers: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO40 (accessory) → driver inputs; add coil suppression.
 - [ ] WDT: GPIO47 → TPS3850 WDI
 
 ### 17.3 MTR STM32
 
-- [ ] CAN transceiver: TX/RX → STM32 CAN pins (TBD)
-- [ ] ESTOP: shared hardwire with SYS GPIO1
-- [ ] Throttle ADC: PA0 → voltage divider (0–5V grip)
-- [ ] Gear sense: PB0/PB1/PB2 → TLP281 ch1/ch2/ch3 outputs
-- [ ] Gear relays: PA3/PA4/PA5 → relay module IN1/IN2/IN3
-- [ ] MCP4725 DAC #2: SDA → PB7, SCL → PB6, A0 → VCC (addr 0x61)
+**Blocked:** MTR CubeMX initialization, ESTOP input, and CAN pins are not
+implemented. Do not wire MTR DAC or gear outputs to a vehicle until those
+hardware paths are implemented and validated.
 
 ### 17.4 PWT ESP32-S3
 
@@ -850,68 +836,54 @@ After applying USB/12V power, before starting CAN traffic:
 ```
 GPIO 1  : Encoder A — rear motor                    [IN, PCNT]
 GPIO 2  : Encoder B — rear motor                    [IN, PCNT]
-GPIO 3  : Encoder A — front wheel (TBD)             [IN, PCNT, disabled]
 GPIO 4  : CAN RX — low bus TWAI                     [IN]
 GPIO 5  : CAN TX — low bus TWAI                     [OUT]
 GPIO 6  : Encoder B — front wheel (TBD)             [IN, PCNT, disabled]
 GPIO 7  : —                                         [unused]
 GPIO 8  : —                                         [unused]
 GPIO 9  : Encoder A — rear left (TBD)               [IN, PCNT, disabled]
-GPIO 10 : I2C SDA — IMU (optional)                  [I/O, I2C]
-GPIO 11 : I2C SCL — IMU (optional)                  [OUT, I2C]
+GPIO 10 : Encoder A — front wheel (TBD)             [IN, PCNT, disabled]
+GPIO 11 : —                                         [unused]
 GPIO 12 : Encoder B — rear left (TBD)               [IN, PCNT, disabled]
 GPIO 13 : Encoder A — rear right (TBD)              [IN, PCNT, disabled]
 GPIO 14 : Encoder B — rear right (TBD)              [IN, PCNT, disabled]
-GPIO 15–20: —                                       [unused]
+GPIO 15 : MCP2515 SCK                               [OUT, 8 MHz]
+GPIO 16 : MCP2515 MOSI                              [OUT]
+GPIO 17 : MCP2515 MISO                              [IN]
+GPIO 18 : MCP2515 CS                                [OUT, active-low]
 GPIO 21 : WDT toggle → TPS3850 WDI                  [OUT, 100 Hz]
-GPIO 10–35: —                                       [unused]
-GPIO 39 : SPI SCK → MCP2515                         [OUT, ≤10 MHz]
-GPIO 40 : SPI MOSI → MCP2515 SI                     [OUT]
-GPIO 41 : SPI MISO ← MCP2515 SO                     [IN]
-GPIO 39 : SPI CS → MCP2515                          [OUT, active-low]
-GPIO 40 : INT ← MCP2515                             [IN, falling edge]
-GPIO 41–48: —                                       [PSRAM / unavailable]
+GPIO 47 : MCP2515 INT                               [IN, falling edge]
 ```
 
 ### 18.2 SYS ESP32-S3
 
 ```
-GPIO 1  : ESTOP button (NC, active-low)             [IN, 10k pull-up]
+GPIO 1  : ESTOP button (NC from 3.3 V, active-low)  [IN, 10k external pull-down]
 GPIO 2  : Brake lever (NO, active-low)              [IN, internal pull-up]
-GPIO 3  : Left turn switch (NO, active-low)         [IN, internal pull-up]
 GPIO 4  : CAN RX — low bus TWAI                     [IN]
 GPIO 5  : CAN TX — low bus TWAI                     [OUT]
 GPIO 6  : Right turn switch (NO, active-low)        [IN, internal pull-up]
 GPIO 7  : Headlight switch (active-low)             [IN, internal pull-up]
-GPIO 8  : Ignition relay (HIGH = ON)                [OUT]
-GPIO 9  : —                                         [unused]
-GPIO 10 : Throttle ADC (ADC1_CH5)                   [IN, analog, 0–3.3V via divider]
+GPIO 8  : Reserved ignition output                   [not implemented]
+GPIO 9  : Left turn switch (NO, active-low)         [IN, internal pull-up]
+GPIO 10 : Headlight relay driver                     [OUT, active-high]
 GPIO 11 : MODE button (NO, active-low)              [IN, internal pull-up]
-GPIO 12 : Gear D sense ← TLP281 ch1                 [IN, 10k pull-up]
-GPIO 13 : Gear S sense ← TLP281 ch2                 [IN, 10k pull-up]
-GPIO 14 : Gear R sense ← TLP281 ch3                 [IN, 10k pull-up]
-GPIO 15 : MCP4725 DAC SDA                           [I/O, I2C addr 0x60]
-GPIO 16 : MCP4725 DAC SCL                           [OUT, I2C]
+GPIO 12–14 : Bench-only gear sense                  [IN, pull-up]
+GPIO 15–16 : Bench-only MCP4725 I2C                 [I/O]
 GPIO 17 : READY bulb (green) relay                  [OUT, active-high]
 GPIO 18 : Left turn lamp relay                      [OUT, active-high]
 GPIO 19 : Right turn lamp relay                     [OUT, active-high]
 GPIO 20 : ESTOP bulb (red) relay                    [OUT, active-high]
 GPIO 21 : Brake light relay                         [OUT, active-high]
-GPIO 10 : Headlight relay                           [OUT, active-high]
 GPIO 47 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]
-GPIO 24 : —                                         [unused]
 GPIO 48 : AUTO mode bulb relay                      [OUT, active-high]
 GPIO 39 : MANUAL mode bulb relay                    [OUT, active-high]
 GPIO 40 : 12V power relay                           [OUT, active-high]
-GPIO 28–31: —                                       [unused]
 GPIO 41 : START button (NO, active-low)             [IN, internal pull-up]
-GPIO 33 : Gear D relay out → relay module IN1       [OUT, active-high]
-GPIO 34 : Gear S relay out → relay module IN2       [OUT, active-high]
-GPIO 35 : Gear R relay out → relay module IN3       [OUT, active-high]
-GPIO 39–48: —                                       [PSRAM / unavailable]
+GPIO 33–35 : Bench-only gear relay outputs          [OUT, active-high]
 ```
 
-### 18.3 MTR STM32
+### 18.3 MTR STM32 (planned only; not approved for vehicle wiring)
 
 | Pin | Encoded | Signal | Direction |
 |-----|---------|--------|-----------|
