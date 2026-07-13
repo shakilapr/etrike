@@ -128,7 +128,7 @@ The schema must represent:
 - Reject duplicate names/IDs/routes, overlapping fields, out-of-DLC fields, invalid enum/range combinations, incomplete routes, semantic conflicts, and unsupported constructs.
 - Keep all protocol data out of generator Python logic. Forwarding tables must come from the normalized model.
 - Produce deterministic output. No wall-clock timestamp in generated content.
-- Implement a genuinely read-only `--check`/`--verify` mode that exits nonzero on drift and never modifies files.
+- Keep `--check`/`--verify` read-only, compare deterministic output byte-for-byte, and make ordinary firmware builds check committed artifacts instead of rewriting timestamp-only content.
 - Compute the protocol hash from canonical normalized semantics, not raw YAML formatting or comments.
 - Generate:
 
