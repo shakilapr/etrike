@@ -42,11 +42,11 @@ constexpr int kCanLowRxGpio    =      4;
 
 // ── CAN — high-level (external MCP2515 via SPI) ───────────────────
 constexpr int kCanHighBitrateHz = 500'000;
-constexpr int kSpiSckGpio       =      36;
-constexpr int kSpiMosiGpio      =      37;
-constexpr int kSpiMisoGpio      =      38;
-constexpr int kSpiCsGpio        =      39;
-constexpr int kMcpIntGpio       =      40;
+constexpr int kSpiSckGpio       =      15;
+constexpr int kSpiMosiGpio      =      16;
+constexpr int kSpiMisoGpio      =      17;
+constexpr int kSpiCsGpio        =      18;
+constexpr int kMcpIntGpio       =      47;
 
 // ── watchdog ──────────────────────────────────────────────────────
 constexpr int kWdtToggleGpio = 21;

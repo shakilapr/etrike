@@ -486,11 +486,11 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 4 | TWAI RX | Low CAN bus |
 | 5 | TWAI TX | Low CAN bus |
 | 21 | WDT toggle | TPS3850 external watchdog, toggled at 100 Hz by t_control |
-| 36 | MCP2515 SCK | SPI clock, 8 MHz |
-| 37 | MCP2515 MOSI | SPI data out |
-| 38 | MCP2515 MISO | SPI data in |
-| 39 | MCP2515 CS | SPI chip select |
-| 40 | MCP2515 INT | Interrupt (active low, pull-up, NEGEDGE) |
+| 15 | MCP2515 SCK | SPI clock, 8 MHz |
+| 16 | MCP2515 MOSI | SPI data out |
+| 17 | MCP2515 MISO | SPI data in |
+| 18 | MCP2515 CS | SPI chip select |
+| 47 | MCP2515 INT | Interrupt (active low, pull-up, NEGEDGE) |
 | 35 | OVERRIDE | Developer override pin for Mode 1 |
 | 1-2 | Encoder rear motor | Quadrature PCNT (rear motor speed feedback) |
 | 10,6 | Encoder front wheel | Quadrature PCNT (front wheel) |
@@ -520,9 +520,9 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 10 | Light head | Relay output |
 | 47 | WDT toggle | TPS3850 external watchdog, toggled at 20 Hz by task_safety |
 | 48 | Bulb AUTO | Mode indicator |
-| 36 | Bulb MANUAL | Mode indicator |
-| 37 | 12V relay | Accessory power relay |
-| 38 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
+| 39 | Bulb MANUAL | Mode indicator |
+| 40 | 12V relay | Accessory power relay |
+| 41 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
 | 33 | — | *Reserved (legacy SYS_OWNS_MOTOR bench path — MTR owns gear in vehicle)* |
 | 34 | — | *Reserved* |
 | 35 | OVERRIDE | Developer override pin for Mode 1 |

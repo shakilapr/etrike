@@ -108,7 +108,7 @@ RT is the only node with two CAN interfaces. It uses two different controllers:
 | Bus | Controller | Interface | Pins | Transceiver |
 |-----|-----------|-----------|------|-------------|
 | Low-level | Built-in TWAI | Direct GPIO | TX=5, RX=4 | SN65HVD230 |
-| High-level | MCP2515 | SPI | SCK=36, MOSI=37, MISO=38, CS=39, INT=40 | SN65HVD230 |
+| High-level | MCP2515 | SPI | SCK=15, MOSI=16, MISO=17, CS=18, INT=47 | SN65HVD230 |
 
 ### Why two different controllers?
 
