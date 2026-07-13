@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ID_SYS_MODE_CMD, ID_SYS_DCDC_CMD, ID_SAFETY_ESTOP } from "@etrike/debug-shared";
+  import { ID_SYS_MODE_CMD, ID_SAFETY_ESTOP } from "@etrike/debug-shared";
 
   import { stats, status } from "../stores/can";
   import { telemetry, ecuPresence } from "../stores/telemetry";
@@ -75,12 +75,6 @@
     const nm = nextMode();
     try { await sendFrame({ bus: "low", id: ID_SYS_MODE_CMD, dlc: 1, data: [nm.value] }); logInfo("Mode → " + nm.label); }
     catch (e) { logError("Mode fail: " + (e instanceof Error ? e.message : String(e))); }
-    finally { sending = false; }
-  }
-  async function toggleDcdc() {
-    if (sending) return; sending = true;
-    try { await sendFrame({ bus: "low", id: ID_SYS_DCDC_CMD, dlc: 1, data: [1] }); logInfo("DCDC ON"); }
-    catch (e) { logError("DCDC fail: " + (e instanceof Error ? e.message : String(e))); }
     finally { sending = false; }
   }
   async function sendEstop() {
@@ -268,9 +262,6 @@
       <span class="tb-group-label">Vehicle</span>
       <button class="tb-btn" disabled={sending || !online()} on:click={cycleMode} title="Toggle MANUAL/AUTO">
         <svg width="13" height="13" viewBox="0 0 16 16"><path d="M2 8a6 6 0 0110.47-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 8a6 6 0 01-10.47 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="11.5,1.5 12.5,4 10,4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <button class="tb-btn" disabled={sending || !online()} on:click={toggleDcdc} title="DCDC power">
-        <svg width="13" height="13" viewBox="0 0 16 16"><path d="M6 2v5H3l6 7v-5h3L6 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
       </button>
       <button class="tb-btn estop" disabled={sending || !online()} on:click={sendEstop} title="Emergency stop">
         <svg width="13" height="13" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="11" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="11" y1="5" x2="5" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>

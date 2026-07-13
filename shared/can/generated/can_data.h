@@ -7,7 +7,7 @@
 
 namespace can::data {
 
-constexpr char kProtocolHash[] = "80dcf540772ab3e4bc56a37f14f2a2851de74ed081732effc34ca445065b2e9f";
+constexpr char kProtocolHash[] = "775c30b7a69fdf64bab4d7c67921a3a67bf6c455a118d0285c5915576767286b";
 
 // ── CAN ID constants ────────────────────────────────────
 constexpr uint16_t kIdSAFETYESTOP = 0x001;  // SAFETY_ESTOP
@@ -27,7 +27,6 @@ constexpr uint16_t kIdHOSTOBSTACLEDIST = 0x400;  // HOST_OBSTACLE_DIST
 constexpr uint16_t kIdSYSDIAGRPT = 0x600;  // SYS_DIAG_RPT
 constexpr uint16_t kIdHOSTHEARTBEAT = 0x7FC;  // HOST_HEARTBEAT
 constexpr uint16_t kIdRTHEARTBEAT = 0x7FD;  // RT_HEARTBEAT
-constexpr uint16_t kIdSYSDCDCCMD = 0x012;  // SYS_DCDC_CMD
 constexpr uint16_t kIdSYSMODECMD = 0x110;  // SYS_MODE_CMD
 constexpr uint16_t kIdRTDRIVECMD = 0x204;  // RT_DRIVE_CMD
 constexpr uint16_t kIdRTBRAKECMD = 0x205;  // RT_BRAKE_CMD
@@ -46,7 +45,6 @@ constexpr uint16_t kIdSEBTest = 0x6FB;  // SEB_Test
 // ── DLC values (per CAN ID) ─────────────────────────────
 constexpr uint8_t kDlc_SAFETY_ESTOP = 0;
 constexpr uint8_t kDlc_SYS_SAFETY_STS = 3;
-constexpr uint8_t kDlc_SYS_DCDC_CMD = 1;
 constexpr uint8_t kDlc_SYS_MODE_CMD = 1;
 constexpr uint8_t kDlc_HMI_MODE_REQ = 2;
 constexpr uint8_t kDlc_HMI_PWR_REQ = 2;

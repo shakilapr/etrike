@@ -5,7 +5,7 @@
 
 import type { CanMessageDef, CanField, Bus, FieldKind } from "../can";
 
-export const PROTOCOL_HASH = "80dcf540772ab3e4bc56a37f14f2a2851de74ed081732effc34ca445065b2e9f";
+export const PROTOCOL_HASH = "775c30b7a69fdf64bab4d7c67921a3a67bf6c455a118d0285c5915576767286b";
 
 export interface InternalCanField extends CanField {
   _byte: number;
@@ -95,8 +95,6 @@ export const SIG_HOST_HEARTBEAT_HEALTH_FLAGS = "health_flags";
 export const ID_RT_HEARTBEAT = "0x7FD";
 export const SIG_RT_HEARTBEAT_ALIVE_CTR = "alive_ctr";
 export const SIG_RT_HEARTBEAT_HEALTH_FLAGS = "health_flags";
-export const ID_SYS_DCDC_CMD = "0x012";
-export const SIG_SYS_DCDC_CMD_SYS_DCDCENABLE = "SYS_DcdcEnable";
 export const ID_SYS_MODE_CMD = "0x110";
 export const SIG_SYS_MODE_CMD_MODE = "mode";
 export const ID_VCU_SES_REQ = "0x169";
@@ -1401,35 +1399,6 @@ export const CAN_MESSAGES: InternalCanMessageDef[] = [
         "_type": "unsigned",
         "_factor": 1.0,
         "_offset": 0.0
-      }
-    ]
-  },
-  {
-    "bus": "low",
-    "id": "0x012",
-    "name": "SYS_DCDC_CMD",
-    "sender": "SYS",
-    "receivers": [
-      "DCDC"
-    ],
-    "comment": "DC-DC converter control. Low bus only.",
-    "dlc": 1,
-    "period": "0ms",
-    "injectable": false,
-    "byteOrder": "motorola",
-    "fields": [
-      {
-        "key": "SYS_DcdcEnable",
-        "label": "SYS_DcdcEnable",
-        "kind": "boolean",
-        "_byte": 0,
-        "_bit_offset": 0,
-        "_size": 8,
-        "_type": "unsigned",
-        "_factor": 1.0,
-        "_offset": 0.0,
-        "min": 0,
-        "max": 1
       }
     ]
   },

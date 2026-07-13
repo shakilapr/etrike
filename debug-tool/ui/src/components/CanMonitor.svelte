@@ -21,7 +21,7 @@
     { key: "brake",     label: "Brake",       color: "var(--cat-brake)",     ids: ["0x205", "0x301", "0x721", "0x731", "0x741", "0x7B9"] },
     { key: "diag",      label: "Diagnostics", color: "var(--cat-diag)",      ids: ["0x110", "0x220", "0x302", "0x310", "0x311", "0x400", "0x600"] },
     { key: "heartbeat", label: "Heartbeat",   color: "var(--cat-heartbeat)", ids: ["0x7FC", "0x7FD", "0x7FE"] },
-    { key: "test",      label: "Test/System", color: "var(--cat-system)",    ids: ["0x012", "0x6FA", "0x6FB"] }
+    { key: "test",      label: "Test/System", color: "var(--cat-system)",    ids: ["0x6FA", "0x6FB"] }
   ];
 
   let paused = false;

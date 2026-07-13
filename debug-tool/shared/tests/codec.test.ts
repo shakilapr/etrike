@@ -126,11 +126,6 @@ describe("decodeFrame", () => {
     expect(decodeFrame("low", "0x001", [])).toEqual({});
   });
 
-  it("decodes 0x012 DCDC_CMD (low)", () => {
-    expect(decodeFrame("low", "0x012", [1])).toEqual({ SYS_DcdcEnable: true });
-    expect(decodeFrame("low", "0x012", [0])).toEqual({ SYS_DcdcEnable: false });
-  });
-
   it("decodes 0x110 MODE_CMD (low) — value 2 (firmware-rejected, displayed as ESTOP)", () => {
     const result = decodeFrame("low", "0x110", [2]);
     expect(result.mode).toBe(2);

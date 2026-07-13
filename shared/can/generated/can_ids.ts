@@ -2,12 +2,11 @@
 // Source: shared/can/can_high.yaml + shared/can/can_low.yaml
 
 
-export const PROTOCOL_HASH = "80dcf540772ab3e4bc56a37f14f2a2851de74ed081732effc34ca445065b2e9f";
+export const PROTOCOL_HASH = "775c30b7a69fdf64bab4d7c67921a3a67bf6c455a118d0285c5915576767286b";
 
 // ── CAN ID constants ─────────────────────────────────────
 export const ID_SAFETY_ESTOP = 0x001;
 export const ID_SYS_SAFETY_STS = 0x011;
-export const ID_SYS_DCDC_CMD = 0x012;
 export const ID_SYS_MODE_CMD = 0x110;
 export const ID_HMI_MODE_REQ = 0x111;
 export const ID_HMI_PWR_REQ = 0x112;
@@ -37,13 +36,12 @@ export const ID_VCU_SEB_REQ = 0x7B9;
 export const ID_HOST_HEARTBEAT = 0x7FC;
 export const ID_RT_HEARTBEAT = 0x7FD;
 export const ID_SYS_HEARTBEAT = 0x7FE;
-// 32 unique IDs
+// 31 unique IDs
 
 // ── DLC table (CAN ID → expected byte count) ──────────────
 export const DLC: Record<string, number> = {
   "0x001": 0,  // SAFETY_ESTOP
   "0x011": 3,  // SYS_SAFETY_STS
-  "0x012": 1,  // SYS_DCDC_CMD
   "0x110": 1,  // SYS_MODE_CMD
   "0x111": 2,  // HMI_MODE_REQ
   "0x112": 2,  // HMI_PWR_REQ
@@ -79,7 +77,6 @@ export const DLC: Record<string, number> = {
 export const BUS: Record<string, "high" | "low" | "both"> = {
   "0x001": "both",
   "0x011": "both",
-  "0x012": "low",
   "0x110": "low",
   "0x111": "both",
   "0x112": "both",
@@ -115,7 +112,6 @@ export const BUS: Record<string, "high" | "low" | "both"> = {
 export const NAME: Record<string, string> = {
   "0x001": "SAFETY_ESTOP",
   "0x011": "SYS_SAFETY_STS",
-  "0x012": "SYS_DCDC_CMD",
   "0x110": "SYS_MODE_CMD",
   "0x111": "HMI_MODE_REQ",
   "0x112": "HMI_PWR_REQ",
@@ -151,7 +147,6 @@ export const NAME: Record<string, string> = {
 export const SENDER: Record<string, string> = {
   "0x001": "Any",
   "0x011": "SYS",
-  "0x012": "SYS",
   "0x110": "SYS",
   "0x111": "HMI",
   "0x112": "HMI",
@@ -187,7 +182,6 @@ export const SENDER: Record<string, string> = {
 export const CYCLE_MS: Record<string, number> = {
   "0x001": 0,  // SAFETY_ESTOP
   "0x011": 200,  // SYS_SAFETY_STS
-  "0x012": 0,  // SYS_DCDC_CMD
   "0x110": 0,  // SYS_MODE_CMD
   "0x111": 1000,  // HMI_MODE_REQ
   "0x112": 1000,  // HMI_PWR_REQ
@@ -237,9 +231,6 @@ export const SIG: Record<string, Record<string, SignalDef>> = {
     SYS_LightRight: {byte:2, bit_offset:1, size:1},
     SYS_LightBrake: {byte:2, bit_offset:2, size:1},
     SYS_LightHead: {byte:2, bit_offset:3, size:1},
-  },
-  "0x012": {  // SYS_DCDC_CMD (low bus)
-    SYS_DcdcEnable: {byte:0, bit_offset:0, size:8},
   },
   "0x110": {  // SYS_MODE_CMD (low bus)
     SYS_Mode: {byte:0, bit_offset:0, size:8},

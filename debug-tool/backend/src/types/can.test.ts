@@ -1,4 +1,4 @@
-import { ID_SAFETY_ESTOP, ID_HOST_DRIVE_CMD, ID_STEER_DIAG, ID_BRAKE_DIAG, ID_SYS_MODE_CMD, ID_SYS_DCDC_CMD, ID_RT_DRIVE_CMD, ID_VCU_SES_REQ, ID_HOST_HEARTBEAT } from "@etrike/debug-shared";
+import { ID_SAFETY_ESTOP, ID_HOST_DRIVE_CMD, ID_STEER_DIAG, ID_BRAKE_DIAG, ID_SYS_MODE_CMD, ID_RT_DRIVE_CMD, ID_VCU_SES_REQ, ID_HOST_HEARTBEAT } from "@etrike/debug-shared";
 import { describe, expect, it } from "vitest";
 import {
   CAN_MESSAGES,
@@ -167,7 +167,7 @@ describe("BusDetector", () => {
   it("locks to low after 3 unique IDs", () => {
     const detector = new BusDetector();
     detector.feed(ID_SYS_MODE_CMD); // SYS_MODE_CMD (low only)
-    detector.feed(ID_SYS_DCDC_CMD); // SYS_DCDC_CMD (low only)
+    detector.feed(ID_VCU_SES_REQ); // VCU_SES_REQ (low only)
     detector.feed(ID_RT_DRIVE_CMD); // RT_DRIVE_CMD (low only)
     expect(detector.state).toEqual({ detected: true, bus: "low", confidence: "high", highHits: 0, lowHits: 3 });
   });

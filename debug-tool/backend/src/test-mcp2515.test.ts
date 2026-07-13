@@ -1,4 +1,4 @@
-import { ID_RT_HEARTBEAT, ID_RT_STATE_RPT, ID_STEER_DIAG, ID_BRAKE_DIAG, ID_RT_PID_RPT, ID_HOST_HEARTBEAT, ID_VCU_SES_REQ, ID_VCU_SEB_REQ, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_SYS_DCDC_CMD } from "@etrike/debug-shared";
+import { ID_RT_HEARTBEAT, ID_RT_STATE_RPT, ID_STEER_DIAG, ID_BRAKE_DIAG, ID_RT_PID_RPT, ID_HOST_HEARTBEAT, ID_VCU_SES_REQ, ID_VCU_SEB_REQ, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD } from "@etrike/debug-shared";
 /**
  * MCP2515 CAN frame decode + bus routing tests.
  *
@@ -246,7 +246,7 @@ describe("MCP2515 high-bus CAN ID routing", () => {
   });
 
   // Verify low-only IDs don't leak to high bus
-  const lowOnlyIds = [ID_VCU_SES_REQ, ID_VCU_SEB_REQ, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD, ID_SYS_DCDC_CMD];
+  const lowOnlyIds = [ID_VCU_SES_REQ, ID_VCU_SEB_REQ, ID_RT_DRIVE_CMD, ID_RT_BRAKE_CMD];
   for (const id of lowOnlyIds) {
     it(`${id} does NOT exist on high bus (low-only ID)`, () => {
       const hi = CAN_MESSAGES.filter((m) => m.bus === "high" && m.id === id);

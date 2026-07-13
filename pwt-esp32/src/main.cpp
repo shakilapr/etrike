@@ -1,10 +1,5 @@
-// PWT ESP32-S3 — Powertrain CAN Gateway
-// STUB: Phase 1 — DC-DC converter control on 250 kbit/s powertrain bus.
-// CAN gateway (bridging 0x012, 0x001) and heartbeat (0x7FB) not yet
-// implemented. Architecture specifies 5 tasks; currently 2 are active.
-// See pwt-esp32/pwt-architecture.md for target architecture.
-//
-// Standalone unit — does not depend on shared/.
+// PWT ESP32-S3 — standalone 250 kbit/s powertrain node.
+// It owns the direct manufacturer DC-DC command and has no low-bus interface.
 
 #include "config.h"
 #include "can_driver.h"
