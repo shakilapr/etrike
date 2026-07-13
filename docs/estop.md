@@ -109,24 +109,25 @@ All sources are **local to SYS** — no CAN round-trip needed for physical lever
 
 ### Layer 1: Physical ESTOP Button (fastest path)
 
-Big red mushroom button wired **normally-closed (NC)** to SYS GPIO1 and MTR kEstopGpio.
+Big red mushroom button wired **normally-closed (NC)** from 3.3 V to SYS GPIO1.
+MTR connection remains blocked until its direct ESTOP hardware exists.
 
 | Property | Value |
 |----------|-------|
-| GPIO | SYS: GPIO1, MTR: kEstopGpio (TBD STM32 pin) |
+| GPIO | SYS: GPIO1; MTR: planned, not implemented |
 | Type | NC (normally-closed), active-low |
-| Detection | SYS `safety_task` @ 20 Hz, MTR direct ISR |
+| Detection | SYS `safety_task` @ 20 Hz; MTR direct ISR is planned only |
 | CAN redundancy | Also broadcasts CAN `0x001` on low bus |
 
 **Fail-safe by construction:**
 ```
-Normal operation: GPIO reads HIGH (10k pull-up to 3.3V) → system runs
-Button pressed:   GPIO reads LOW (switch connects to GND) → ESTOP
-Wire cut/broken:  GPIO reads LOW (pull-up defeated) → ESTOP
+Normal operation: GPIO reads HIGH (NC contact supplies 3.3 V) → system runs
+Button pressed:   GPIO reads LOW (NC contact opens; external pull-down) → ESTOP
+Wire cut/broken:  GPIO reads LOW (external pull-down) → ESTOP
 Power loss:       GPIO reads LOW → ESTOP
 ```
 
-**MTR STM32 direct path:** ESTOP button wired directly to MTR STM32 board. On ESTOP, MTR cuts throttle (MCP4725 = 0V) and gear (all relays OFF) locally — **zero CAN dependency, zero software stack dependency**. This is the EGAS Level 3 hardware path.
+**MTR STM32 direct path:** Not implemented. It is a release blocker for vehicle motor actuation, not an available EGAS Level 3 path.
 
 ### Layer 2: CAN `0x001` SAFETY_ESTOP
 

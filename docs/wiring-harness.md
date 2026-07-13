@@ -1,6 +1,6 @@
 # E-Trike Wiring Harness Specification
 
-Buildable wiring harness for the 4-node distributed electric trike. Two CAN buses (500 kbit/s), four compute nodes, five actuators, full lighting and control system.
+Target wiring-harness design for the distributed electric trike. It is **not approved for vehicle construction**: MTR motor hardware is incomplete, PWT cannot bridge two buses on an ESP32-S3 alone, and the MCP2515 interface requires 3.3 V-safe level translation. See [`gpio-esp32-audit.md`](gpio-esp32-audit.md) and use [`wiring.md`](wiring.md) as the current executable pin map.
 
 **References:** `architecture.md`, `can-dictionary.md`, `docs/wiring.md`, `docs/high-voltage-isolation.md`
 **Vehicle:** ~2.0 m wheelbase, ~0.8 m track, ~2.5 m overall length
@@ -84,13 +84,17 @@ JP3 — Handlebar Junction
   └─────────────────────┴─────────────────────────────────┘
 ```
 
-### 1.4 EGAS Dual-Redundant Note
+### 1.4 Planned EGAS Dual-Redundant Design
+
+The following is a target design only. SYS motor I/O is compile-time disabled
+and MTR hardware is not implemented; do not construct these throttle or gear
+paths until the release blockers in `gpio-esp32-audit.md` are closed.
 
 Both **SYS ESP32-S3** (Level 2 monitor) and **MTR STM32** (Level 1 primary) have complete throttle + gear hardware:
 
 | Function | SYS (Level 2) | MTR (Level 1) |
 |----------|--------------|---------------|
-| Throttle ADC | GPIO10 (ADC1_CH5) | PA0 (ADC1_IN0) |
+| Throttle ADC | Retired on SYS (conflicts with body I/O) | Planned PA0 (ADC1_IN0), unimplemented |
 | MCP4725 DAC | I²C addr 0x60, SDA=GPIO15, SCL=GPIO16 | I²C addr 0x61, SDA=PB7, SCL=PB6 |
 | Gear sense (TLP281) | D=GPIO12, S=GPIO13, R=GPIO14 | D=PB0, S=PB1, R=PB2 |
 | Gear relay out | D=GPIO33, S=GPIO34, R=GPIO35 | D=PA3, S=PA4, R=PA5 |
@@ -622,7 +626,7 @@ Wire lengths include 150–200 mm service loop at each connector plus 5–10% ro
 | Molex 39-01-2060 + 44476-1111 | 2 | Mini-Fit Jr 6-pin | SYS board I/O breakout J1a, J1b |
 | Molex 39-01-2040 + 44476-1111 | 1 | Mini-Fit Jr 4-pin | SYS board power J1c |
 | TE Superseal 1-967628-1 (3-pin) | 1 | Superseal 1.5 | Throttle grip connector J15 |
-| ESTOP button NC loop | 2-conductor 22 AWG, twisted, 1.5 m | Y-splice: button → SYS GPIO1 AND MTR PA1 | Solder + adhesive heat-shrink on splice. 10k pull-up to 3.3V at each MCU. Button other terminal → chassis GND |
+| ESTOP button NC loop | 2-conductor 22 AWG, twisted, 1.5 m | NC contact from 3.3 V → SYS GPIO1; MTR branch only after its ESTOP hardware is implemented | Solder + adhesive heat-shrink. 10k external pull-down at each MCU input. An open wire must read LOW. |
 | SMBJ5.0A TVS | 1 | Littelfuse | Throttle signal protection (at SYS ADC) |
 | NUP2105L TVS | 1 | CAN protection | SYS CAN node |
 | 1N4007 flyback diode | 7 | — | SYS relay coils (gear×3, lights×3, GPIO40) |

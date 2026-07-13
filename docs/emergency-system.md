@@ -61,25 +61,25 @@ ESTOP exit: START button → MANUAL mode
 
 ### Layer 1: Physical ESTOP Button (fastest)
 
-A **big red mushroom button** wired **normally-closed (NC)** to SYS GPIO1 and MTR STM32 kEstopGpio.
+A **big red mushroom button** wired **normally-closed (NC)** from 3.3 V to SYS GPIO1. MTR wiring is blocked until its direct ESTOP hardware is implemented.
 
 | Property | Value |
 |----------|-------|
-| GPIO | SYS: GPIO1, MTR: kEstopGpio (TBD STM32 pin) |
+| GPIO | SYS: GPIO1; MTR: planned, not implemented |
 | Type | NC (normally-closed), active-low |
-| Detection | SYS `safety_task` @ 20 Hz, MTR direct ISR |
+| Detection | SYS `safety_task` @ 20 Hz; MTR direct ISR is planned only |
 | CAN redundancy | Also broadcasts CAN `0x001` on low bus |
 
 **Fail-safe by construction:** A cut wire, disconnected plug, or power loss pulls the GPIO LOW — all of which trigger ESTOP. There is no failure mode where the button is broken but the system thinks it's fine.
 
 ```
-Normal operation: GPIO reads HIGH (10k pull-up to 3.3V) → system runs
-Button pressed:   GPIO reads LOW (switch connects to GND) → ESTOP
-Wire cut/broken:  GPIO reads LOW (pull-up defeated) → ESTOP
+Normal operation: GPIO reads HIGH (NC contact supplies 3.3 V) → system runs
+Button pressed:   GPIO reads LOW (NC contact opens; external pull-down) → ESTOP
+Wire cut/broken:  GPIO reads LOW (external pull-down) → ESTOP
 Power loss:       GPIO reads LOW → ESTOP
 ```
 
-**MTR STM32 direct path:** The ESTOP button is also wired directly to the MTR STM32 board. On ESTOP, MTR cuts throttle (MCP4725 = 0V) and gear (all relays OFF) locally — zero CAN dependency, zero software stack dependency. This is the EGAS Level 3 hardware path.
+**MTR STM32 direct path:** Not implemented. It is a release blocker for vehicle motor actuation.
 
 ### Layer 2: CAN `0x001` SAFETY_ESTOP
 

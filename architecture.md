@@ -1,6 +1,8 @@
 # E-Trike System Architecture
 
-Five ECUs on three CAN buses: Jetson Orin (ROS 2 perception), RT ESP32-S3 (realtime physics + steering + CAN gateway), SYS ESP32-S3 (safety + body), MTR STM32 (motor actuation), PWT ESP32-S3 (powertrain gateway).
+Five ECUs are planned on three CAN buses: Jetson Orin (ROS 2 perception), RT ESP32-S3 (realtime physics + steering + CAN gateway), SYS ESP32-S3 (safety + body), MTR STM32 (planned motor actuation), and PWT ESP32-S3 (standalone powertrain node).
+
+> **Deployment status:** RT high-to-low CAN is implemented. MTR hardware initialization and ESTOP are incomplete, so no vehicle motor-actuation path is approved. PWT has one 250 kbit/s CAN interface; it is not a low-to-powertrain gateway. See [`docs/gpio-esp32-audit.md`](docs/gpio-esp32-audit.md).
 
 > Full CAN catalog, processing summaries, pseudocode, and ASCII topology preserved in [`docs/architecture-reference.md`](docs/architecture-reference.md).
 
@@ -8,17 +10,17 @@ Five ECUs on three CAN buses: Jetson Orin (ROS 2 perception), RT ESP32-S3 (realt
 
 ## 1. Topology
 
-Three physical CAN buses, two gateways:
+Three physical CAN buses, with one implemented gateway:
 
 - **High-level CAN (500 kbit/s):** Jetson ↔ RT. Planning commands (0x300), telemetry (0x210, 0x310, 0x311), heartbeat (0x7FC/0x7FD).
-- **Low-level CAN (500 kbit/s):** RT, SYS, PWT, EPS-C (steering), SEB (brake). Actuator commands, safety status, mode control, motor feedback.
+- **Low-level CAN (500 kbit/s):** RT, SYS, EPS-C (steering), SEB (brake). Actuator commands, safety status, and mode control.
 - **Powertrain CAN (250 kbit/s):** PWT, DC-DC converter, motor controller. Power control, motor telemetry.
 
-**RT bridges** selected messages between high and low buses. **PWT bridges** selected messages between low and powertrain. Both follow a three-category model: transparent forward, consumed→regenerated, bus-local.
+**RT bridges** selected messages between high and low buses. A future low-to-powertrain bridge requires a second CAN controller on PWT or a different MCU.
 
 - **Actuators:** Steering (EPS-C via 0x169), brake (SEB via 0x7B9). Mode-gated dual control: RT commands both in AUTO; SYS commands SEB in MANUAL/ESTOP.
-- **Motor:** MTR STM32 drives analog throttle (MCP4725 DAC 0–5V) and gear MOSFETs (72V). CAN telemetry-only to motor controller.
-- **DC-DC converter:** SYS commands enable (0x012), PWT bridges to powertrain bus.
+- **Motor:** The planned MTR STM32 path is not hardware-complete. SYS direct motor I/O is compile-time disabled because its ADC map conflicts with body I/O.
+- **DC-DC converter:** PWT currently sends its direct powertrain command only; SYS-to-PWT command forwarding is not implemented.
 
 > See [`docs/wiring-harness.md`](docs/wiring-harness.md) for pin-level wiring.
 
@@ -84,9 +86,9 @@ MANUAL ←→ AUTO       (mode button)
 
 | State | Behavior |
 |------|----------|
-| **MANUAL** | Rider steers, throttle grip → MTR pass-through → motor. Brake lever → SYS → SEB. EPS-C standalone. DC-DC on. |
-| **AUTO** | Jetson 0x300 → RT kinematics → 0x204 (speed) + 0x169 (steering). Lights from Jetson via 0x302. Brake via 0x7B9. |
-| **ESTOP** | DAC=0V, gear OFF, steering ramps to 0° at 20°/s, brake=max. DC-DC stays ON. Exit: START button or mode long-press (3s). |
+| **MANUAL** | Rider steers. Brake lever → SYS → SEB. EPS-C standalone. Vehicle motor actuation remains blocked pending MTR hardware completion. |
+| **AUTO** | Jetson 0x300 → RT kinematics → 0x204 (planned motor command) + 0x169 (steering). Lights from Jetson via 0x302. Brake via 0x7B9. |
+| **ESTOP** | Steering ramps to 0° at 20°/s and brake=max. Motor hardware kill behavior is a release blocker until MTR ESTOP hardware exists. Exit: START button or mode long-press (3s). |
 
 ---
 
@@ -95,8 +97,7 @@ MANUAL ←→ AUTO       (mode button)
 ### Manual Mode
 
 ```
-Throttle grip → MTR ADC → MTR DAC → Motor controller
-Gear selector → TLP281 opto → MTR GPIO → MOSFETs → motor controller
+Throttle/gear motor path → **blocked pending MTR hardware implementation**
 Brake lever → SYS GPIO → 0x7B9 → SEB
 Steering wheel → EPS-C standalone (RT monitors 0x201)
 ```
@@ -104,7 +105,7 @@ Steering wheel → EPS-C standalone (RT monitors 0x201)
 ### Auto Mode
 
 ```
-Jetson 0x300 → RT kinematics → 0x204 {speed,gear} → MTR → Motor
+Jetson 0x300 → RT kinematics → 0x204 {speed,gear} → planned MTR → Motor
                               → 0x169 {angle} → EPS-C
 Jetson 0x301 → RT brake arbitration → 0x205 → SYS → 0x7B9 → SEB
 Jetson 0x302 → RT forward → 0x302 → SYS → lights
@@ -119,23 +120,23 @@ Jetson 0x302 → RT forward → 0x302 → SYS → lights
 | Perception / planning | ✓ | | | | |
 | ROS 2 → CAN bridge | ✓ | | | | |
 | CAN gateway (high ↔ low) | | ✓ | | | |
-| CAN gateway (low ↔ powertrain) | | | | | ✓ |
+| CAN gateway (low ↔ powertrain) | | | | | planned |
 | Tricycle kinematics | | ✓ | | | |
 | Steering compute + CAN TX | | ✓ | | | |
 | Steering safety (clamp, following error) | | ✓ | | | |
 | Obstacle speed limit | | ✓ | | | |
 | Command staleness watchdog | | ✓ | | | |
-| ESTOP GPIO + button | | | ✓ | ✓ | |
+| ESTOP GPIO + button | | | ✓ | planned | |
 | Brake lever → CAN | | | ✓ | | |
-| DC-DC converter control | | | ✓ | | ✓ |
-| Heartbeat monitoring | | ✓ | ✓ | | ✓ |
+| DC-DC converter control | | | planned | | ✓ |
+| Heartbeat monitoring | | ✓ | ✓ | | planned |
 | Mode switch | | | ✓ | | |
-| Throttle ADC / DAC / gear I/O * | | | | ✓ | |
-| Motor feedback CAN TX | | | | ✓ | |
+| Throttle ADC / DAC / gear I/O | | | retired | planned | |
+| Motor feedback CAN TX | | | | planned | |
 | Lights / indicators / 12V relay | | | ✓ | | |
 | System diagnostics | | | ✓ | | |
 
-> * Motor I/O currently on SYS; target is MTR STM32 (migration pending hardware).
+> Motor I/O is not approved on SYS or MTR until the MTR HAL, CAN, ADC, DAC, and direct ESTOP hardware have been implemented and tested.
 
 ---
 
@@ -503,15 +504,12 @@ All firmware builds with PlatformIO. Three environments per ECU:
 |------|----------|-------|
 | 4 | TWAI RX | Low CAN bus |
 | 5 | TWAI TX | Low CAN bus |
-| 1 | ESTOP button | NC, active-low, pull-up. Hardware ESTOP (Level 3). |
+| 1 | ESTOP button | NC contact from 3.3 V with external pull-down; LOW/open circuit = ESTOP. |
 | 2 | Brake lever | Active-low, pull-up. Rider brake input for MANUAL mode. |
-| 8 | Ignition relay | HIGH=vehicle ON, LOW=all ECUs dead. Dual-path with CAN 0x012. |
+| 8 | Ignition relay | Reserved; production firmware does not drive this pin. |
 | 11 | Mode button | Momentary, toggles MANUAL↔AUTO |
-| 12 | Gear D sense | TLP281 optoisolator input (72V) |
-| 13 | Gear S sense | TLP281 optoisolator input (72V) |
-| 14 | Gear R sense | TLP281 optoisolator input (72V) |
-| 15 | Throttle I2C SDA | MCP4725 DAC (migrating to MTR) |
-| 16 | Throttle I2C SCL | MCP4725 DAC |
+| 12-14 | Gear sense | Retired SYS motor-I/O reservation; do not wire to vehicle. |
+| 15-16 | Throttle I2C | Retired SYS motor-I/O reservation; do not wire to vehicle. |
 | 17 | Bulb READY | Green indicator — system ready (AUTO/MANUAL, RT alive, no faults) |
 | 18 | Light left turn | Relay output |
 | 19 | Light right turn | Relay output |
@@ -523,33 +521,21 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 39 | Bulb MANUAL | Mode indicator |
 | 40 | 12V relay | Accessory power relay |
 | 41 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
-| 33 | — | *Reserved (legacy SYS_OWNS_MOTOR bench path — MTR owns gear in vehicle)* |
-| 34 | — | *Reserved* |
-| 35 | OVERRIDE | Developer override pin for Mode 1 |
+| 33-35 | Gear outputs | Retired SYS motor-I/O reservation; do not wire to vehicle. |
 
-### MTR STM32 (Vehicle — owns all motor I/O)
+### MTR STM32 (planned - not approved for vehicle wiring)
 
 | Pin | Function | Notes |
 |-----|----------|-------|
-| PB0 | Gear D sense | TLP281 optoisolator input (72V) |
-| PB1 | Gear S sense | TLP281 optoisolator input (72V) |
-| PB2 | Gear R sense | TLP281 optoisolator input (72V) |
-| PA3 | Gear D out | MOSFET output (72V) |
-| PA4 | Gear S out | MOSFET output (72V) |
-| PA5 | Gear R out | MOSFET output (72V) |
-| PB1 | CAN RX | STM32 bxCAN |
-| PB0 | CAN TX | STM32 bxCAN |
-| PA4 | DAC SDA (I2C) | MCP4725 throttle DAC |
-| PA5 | DAC SCL (I2C) | MCP4725 throttle DAC |
-| PA0 | ADC throttle | 0-5V via voltage divider |
+| TBD | CAN / ESTOP / ADC / DAC / gear I/O | No CubeMX hardware configuration or validated pin assignment exists. |
 
 ---
 
-## 14. MTR STM32 — Motor Actuation
+## 14. MTR STM32 — Planned Motor Actuation
 
-**Role:** Motor control with EGAS L1 safety isolation on a dedicated STM32F103C8. Reads analog throttle (ADC) and gear selector (TLP281 optos). Writes throttle DAC (MCP4725 0-5V) and gear MOSFETs (72V). CAN telemetry-only to motor controller — no CAN motor control.
+**Status:** Source-level control logic exists, but the CubeMX GPIO, ADC, I2C, CAN, and ESTOP hardware layers are not implemented. This section is a target design, not a vehicle-ready implementation.
 
-**4 FreeRTOS tasks, bxCAN (500 kbit/s), I2C DAC.**
+The following task and safety details are design targets only. They do not make the MTR ECU deployable until its peripheral initialization and direct ESTOP path exist.
 
 ### Task Architecture
 

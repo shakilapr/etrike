@@ -9,9 +9,9 @@ perception/planning, and EGAS 3-level motor safety.
 
 - Steer-by-wire and brake-by-wire via CAN-connected actuator modules
 - **Autonomous mode** — Jetson Orin ROS 2 + Autoware.Auto → CAN commands → RT kinematics → actuators
-- **Manual mode** — rider throttle, gear selector, and brake lever pass-through
+- **Manual mode** — rider brake lever pass-through; motor actuation remains blocked pending MTR hardware completion
 - **Emergency stop** — hardwired GPIO + CAN 0x001 with steering ramp-to-zero
-- **EGAS 3-level motor safety** — dedicated STM32 isolates motor actuation from body control
+- **EGAS motor safety target** — MTR hardware implementation is incomplete; no vehicle motor-actuation path is approved
 
 ## Responsibility Split
 
@@ -20,25 +20,25 @@ perception/planning, and EGAS 3-level motor safety.
 | Perception / planning | ✓ | | | | |
 | ROS 2 → CAN bridge | ✓ | | | | |
 | CAN gateway (low ↔ high) | | ✓ | | | |
-| CAN gateway (low ↔ powertrain) | | | | | ✓ |
+| CAN gateway (low ↔ powertrain) | | | | | planned |
 | Tricycle kinematics | | ✓ | | | |
 | Steering angle compute + CAN TX | | ✓ | | | |
 | Steering boot sync | | ✓ | | | |
 | Steering safety (clamp, hard-stops, following error) | | ✓ | | | |
 | Obstacle speed limit | | ✓ | | | |
 | Command staleness watchdog | | ✓ | | | |
-| E-stop GPIO + button | | | ✓ | ✓ | |
+| E-stop GPIO + button | | | ✓ | planned | |
 | Brake lever → CAN | | | ✓ | | |
 | Brake boot sync + rolling counter | | | ✓ | | |
-| DC-DC converter CAN control | | | ✓ | | ✓ |
-| Heartbeat monitoring | | ✓ | ✓ | | ✓ |
+| DC-DC converter CAN control | | | planned | | ✓ |
+| Heartbeat monitoring | | ✓ | ✓ | | planned |
 | Mode switch reading | | | ✓ | | |
-| Throttle ADC / DAC / gear I/O * | | | ✓ | ✓ | |
-| Motor feedback CAN TX | | | ✓ | ✓ | |
+| Throttle ADC / DAC / gear I/O | | | retired | planned | |
+| Motor feedback CAN TX | | | | planned | |
 | 12V accessory / lights / indicators | | | ✓ | | |
 | System diagnostics | | | ✓ | | |
 
-> * Motor I/O currently on SYS; target is MTR STM32 (migration pending).
+> Motor I/O is blocked until MTR GPIO, ADC, I2C, CAN, and ESTOP hardware are implemented and validated.
 
 Three CAN buses: high-level (500k), low-level (500k), powertrain (250k).
 Full architecture: [`architecture.md`](architecture.md) · CAN IDs: [`can-dictionary.md`](can-dictionary.md)
@@ -48,8 +48,8 @@ Full architecture: [`architecture.md`](architecture.md) · CAN IDs: [`can-dictio
 ```
 rt-esp32/       Realtime physics + steering firmware (PlatformIO)
 sys-esp32/      Safety + body control firmware (PlatformIO)
-mtr-stm32/      Motor control firmware (PlatformIO, STM32 HAL stubs)
-pwt-esp32/      Powertrain gateway firmware (PlatformIO)
+mtr-stm32/      Planned motor-control firmware (STM32 hardware layer incomplete)
+pwt-esp32/      Standalone 250 kbit/s powertrain node firmware (PlatformIO)
 jetson/         ROS 2 Autoware.Auto bridge (autoware_vehicle_bridge)
 shared/         CAN protocol, endian helpers, shared config
 simulation/     TypeScript dual-bus simulation (Vitest, 332 tests)
@@ -80,6 +80,6 @@ cd debug-tool/ui && npm run dev     # → http://127.0.0.1:5173
 
 ## Status
 
-Alpha-stage prototype. Bench-tested with CANalyst-II analyzer. Motor actuation
-currently on SYS ESP32-S3 (MTR STM32 migration pending hardware). HIL testing
-and on-vehicle validation not yet performed.
+Alpha-stage prototype. Bench-tested with CANalyst-II analyzer. No motor
+actuation path is approved: SYS direct motor I/O is disabled and MTR hardware
+is incomplete. HIL testing and on-vehicle validation have not been performed.

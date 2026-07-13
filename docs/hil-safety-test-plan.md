@@ -84,22 +84,22 @@ Tests that verify fundamental hardware behavior of the steer-by-wire actuators. 
 
 ## Tier 2 — Bench Power + CAN Analyzer Tests
 
-Tests that require all MCUs (RT, SYS, MTR) on a bench CAN bus with CAN analyzer. No physical actuators needed for the core timing measurements (though SEB/EPS-C may be connected for end-to-end verification).
+Tests that require RT and SYS on a bench CAN bus with CAN analyzer. MTR-dependent tests remain blocked until its GPIO, CAN, ADC, I2C, and ESTOP hardware layers are implemented.
 
 ---
 
 ### T2.1 — ESTOP Button Hardware Path Latency
 - **Objective**: Measure end-to-end latency from ESTOP button press (SYS GPIO1) to each downstream actuator effect.
-- **Equipment**: RT board, SYS board, MTR board, CAN analyzer, oscilloscope (4 channels), 12V power supply.
+- **Equipment**: RT board, SYS board, CAN analyzer, oscilloscope (3 channels), 12V power supply.
 - **Procedure**:
-  1. Connect scope probes: Ch1 = SYS GPIO1 (ESTOP button input, pull-up to 3.3V), Ch2 = CAN_H (low bus), Ch3 = MTR MCP4725 DAC output, Ch4 = SYS GPIO21 (brake light output).
+   1. Connect scope probes: Ch1 = SYS GPIO1 (NC contact to 3.3 V with external pull-down), Ch2 = CAN_H (low bus), Ch3 = SYS GPIO21 (brake light output).
   2. All boards powered and running production firmware in MANUAL mode. Verify heartbeats established.
   3. Press and hold ESTOP button (pull GPIO1 LOW). Capture rising/falling edges on all 4 channels.
   4. Measure:
      a) t_gpio_to_can: time from GPIO1 falling edge to CAN 0x001 DLC=0 frame appearing on bus (first bit of SOF).
-     b) t_can_to_mtr_dac: time from CAN 0x001 to MTR DAC output reaching <0.1V (0V target).
-     c) t_can_to_brake_light: time from CAN 0x001 to SYS GPIO21 going HIGH.
-     d) t_can_to_sys_mode: time from CAN 0x001 to SYS sending 0x110 with mode=2 (ESTOP).
+      b) t_can_to_brake_light: time from CAN 0x001 to SYS GPIO21 going HIGH.
+      c) t_can_to_sys_mode: time from CAN 0x001 to SYS sending 0x110 with mode=2 (ESTOP).
+   5. Do not claim MTR DAC kill latency until MTR hardware implementation is available.
   5. Repeat 10 times. Record min, max, mean for each measurement.
   6. Run the same test in AUTO mode (Jetson simulator sending 0x300 continuously).
 - **Pass/Fail**:

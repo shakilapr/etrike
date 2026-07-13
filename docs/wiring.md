@@ -594,7 +594,7 @@ they can be developed or wired.
 ## 11. DC-DC Converter (72 V → 12 V)
 
 **Role:** Converts traction battery 72 V to 12 V accessory bus
-**CAN buses:** Low bus (500 kbit/s, receives 0x012) AND Powertrain bus (250 kbit/s, receives forwarded 0x012 from PWT)
+**CAN bus:** Powertrain bus (250 kbit/s) only in the current PWT deployment.
 
 ### 11.1 DC-DC — Connections
 
@@ -604,11 +604,13 @@ they can be developed or wired.
 | 72 V GND | Traction battery (−) | — |
 | 12 V output | 12 V accessory bus (via fuse block) | Powers lamps, relays, bulbs, ECU boards |
 | 12 V GND | Chassis ground | — |
-| CAN_H | Low bus backbone + Powertrain bus backbone | Two separate CAN interfaces or one with PWT forwarding |
-| CAN_L | Low bus backbone + Powertrain bus backbone | — |
+| CAN_H | Powertrain bus backbone | Do not join to low bus. |
+| CAN_L | Powertrain bus backbone | Do not join to low bus. |
 | CAN GND | Bus ground reference | — |
 
-**Note:** The DC-DC converter's CAN connection topology depends on the specific unit. If it has a single CAN interface, connect to the powertrain bus (250 kbit/s) and PWT bridges the 0x012 command from the low bus. If it has dual CAN, it can sit on both buses.
+**Note:** A single CAN interface must connect only to the 250 kbit/s powertrain
+bus. SYS `0x012` forwarding is not implemented. A future bridge requires a
+second PWT CAN controller and explicit gateway firmware.
 
 ---
 
@@ -621,7 +623,7 @@ Each ESP32 has a TPS3850 (or equivalent) window watchdog IC. If the firmware sto
 | Controller | WDI GPIO | Toggle Rate | Timeout | TPS3850 MR → |
 |------------|----------|-------------|---------|---------------|
 | RT ESP32-S3 | 21 | 100 Hz (control task) | ~100 ms | ESP32 EN pin |
-| SYS ESP32-S3 | 23 | 20 Hz (safety task) | ~100 ms | ESP32 EN pin |
+| SYS ESP32-S3 | 47 | 20 Hz (safety task) | ~100 ms | ESP32 EN pin |
 | PWT ESP32-S3 | 21 | 20 Hz | ~100 ms | ESP32 EN pin |
 
 **Wiring per controller:**

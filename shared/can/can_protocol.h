@@ -1,11 +1,11 @@
 #pragma once
 // CAN protocol definitions — five-node distributed architecture.
-// Low-level CAN (500 kbit/s): RT, SYS, PWT, EPS-C, SEB.
+// Low-level CAN (500 kbit/s): RT, SYS, EPS-C, SEB.
 // High-level CAN (500 kbit/s): RT, Host.
 // Powertrain CAN (250 kbit/s): PWT, DC-DC converter, motor controller.
 // RT bridges selected IDs between high and low buses (§2.3 architecture.md).
-// PWT bridges selected IDs between low and powertrain buses (pwt-esp32/pwt-architecture.md).
-// PWT bridges selected IDs between low and powertrain buses (pwt-esp32/pwt-architecture.md).
+// PWT currently operates only the powertrain bus; low-to-powertrain bridging
+// requires additional CAN hardware and is not implemented.
 
 #include <cstdint>
 #include "endian.h"
@@ -20,7 +20,7 @@ namespace can {
 
 constexpr uint32_t kIdSafetyEstop       = 0x001;  // any→all, bridged to high
 constexpr uint32_t kIdSysSafetySts      = 0x011;  // SYS→RT (→Host), 5 Hz
-constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS→PWT→DC-DC converter, on change. PWT bridges 500k→250k.
+constexpr uint32_t kIdSysDcdcCmd        = 0x012;  // SYS low-bus command; PWT forwarding is not implemented.
 constexpr uint32_t kIdSysModeCmd        = 0x110;  // SYS→RT, on change
 constexpr uint32_t kIdSysThrottleSts    = 0x120;  // MTR(STM32)→RT (→Host), 100 Hz (SYS_ prefix is historical)
 constexpr uint32_t kIdRtDriveCmd        = 0x204;  // RT→SYS motor speed+gear, 100 Hz

@@ -1,10 +1,12 @@
 # E-Trike System Architecture
 
-Five-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering, brake & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (motor actuation), **PWT ESP32-S3** (powertrain CAN gateway).
+Five-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering, brake & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (planned motor actuation), **PWT ESP32-S3** (standalone powertrain CAN node).
+
+> **Deployment status takes precedence over target-design sections below:** RT is the only implemented gateway. MTR hardware initialization and ESTOP are incomplete, so no vehicle motor-actuation path is approved. PWT has one 250 kbit/s CAN interface and is not a low-to-powertrain gateway. See [`gpio-esp32-audit.md`](gpio-esp32-audit.md).
 
 > **Variant:** A consolidated single-controller version exists at [`rt-aurix-lite/`](rt-aurix-lite/) — combines RT+SYS into one AURIX TC3xx on a single CAN bus. This document describes the distributed reference architecture. Both variants share the same CAN protocol and actuator interfaces.
 
-Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one at 250 kbit/s (powertrain). RT bridges selected messages between high and low buses. PWT bridges selected messages between low and powertrain buses. Actuators are CAN bus modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. This ensures no single MCU failure takes both actuators, and AUTO-mode brake+steer are 1-hop from the kinematics engine. Motor control is on a dedicated STM32 board (MTR) for safety isolation per ISO 26262 EGAS 3-level concept.
+Three physical CAN buses are planned: two at 500 kbit/s (high-level and low-level) and one at 250 kbit/s (powertrain). RT bridges selected messages between high and low buses. PWT low-to-powertrain bridging is a target design requiring additional CAN hardware. Actuators are CAN bus modules: EPS-C (steer-by-wire) and SEB (electro-hydraulic brake). **Mode-gated dual control (Option D):** RT directly commands both EPS-C and SEB in AUTO mode; SYS commands SEB in MANUAL mode (lever pass-through) and on ESTOP. Motor control remains blocked pending a complete MTR hardware implementation.
 
 > **Autoware.Auto v0.0.4-alpha:** A new ROS 2 node on the Jetson (`autoware_vehicle_bridge`) provides Autoware.Auto topic compatibility (`AckermannControlCommand` in, `VelocityReport`/`SteeringReport` out). The CAN protocol across both buses is unchanged. See §5.1.
 >
@@ -85,7 +87,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
   └──────────────────────────────────────────────────────────────────┘
 ```
 
-> **Motor controller:** Still accepts analog throttle (0–5V via MCP4725) and gear (72V relays) from MTR STM32. CAN interface on the 250k bus is **telemetry-only** (speed, current, temp, faults). Specific CAN IDs TBD. PWT bridges `0x012` transparently (same ID/payload) from 500k low bus to 250k powertrain bus. PWT heartbeat `0x7FB` on 500k low bus only — PWT does not appear on high CAN. Full PWT architecture: [`pwt-esp32/pwt-architecture.md`](pwt-esp32/pwt-architecture.md).
+> **Motor controller and PWT:** Analog motor actuation through MTR is blocked until MTR hardware is complete. PWT currently owns one 250 kbit/s CAN interface and sends its DC-DC command directly; SYS-to-PWT forwarding, PWT heartbeat, ESTOP forwarding, and motor telemetry relay are not implemented. See [`../pwt-esp32/pwt-architecture.md`](../pwt-esp32/pwt-architecture.md).
 
 ---
 
@@ -97,7 +99,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 |----|------|--------|-------------|-----|---------|--------|------|
 | `0x001` | SAFETY_ESTOP | Any | All (bridged to high) | 0 | (none) | Event | Highest |
 | `0x011` | SYS_SAFETY_STS | SYS | RT (→ Jetson) | 3 | u8 estop, u8 hb_ok, u4 light_state | 5 Hz | V.High |
-| `0x012` | SYS_DCDC_CMD | SYS | PWT (→ DC-DC on 250k bus) | 1 | u8 enable | Change | V.High |
+| `0x012` | SYS_DCDC_CMD | SYS | low bus only | 1 | u8 enable | Change | V.High |
 | `0x110` | SYS_MODE_CMD | SYS | RT | 1 | u8 mode (0=M, 1=A, 2=ESTOP) | Change | High |
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→ Jetson) | 2 | i16 speed_mmps | 100 Hz | Medium |
 | `0x169` | VCU_SES_REQ | RT | EPS-C (steering) | 8 | Angle cmd + security bytes | 50 Hz | Medium |
@@ -115,7 +117,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 | `0x731` | SEB_ErrInfo | SEB | SYS | 8 | 23 fault flags (16× L3) | 10 Hz | Lowest |
 | `0x741` | SEB_Version | SEB | SYS | 8 | SW + HW version | 1 Hz | Lowest |
 | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL, ESTOP) † | SEB (brake) | 8 | Stroke/pressure cmd + security | 50 Hz | Lowest |
-| `0x7FB` | PWT_HEARTBEAT | PWT | RT, SYS | 1 | u8 alive_ctr | 2 Hz | Lowest |
+| `0x7FB` | PWT_HEARTBEAT | planned | planned | 1 | u8 alive_ctr | 2 Hz | Lowest |
 | `0x7FD` | RT_HEARTBEAT | RT | SYS | 2 | u8 alive_ctr, u8 health_flags | 2 Hz | Lowest |
 | `0x7FE` | SYS_HEARTBEAT | SYS | RT | 2 | u8 alive_ctr, u8 health_flags | 10 Hz | Lowest |
 
@@ -147,7 +149,7 @@ Three physical CAN buses: two at 500 kbit/s (high-level and low-level) and one a
 
 ### 2.3 CAN gateways — message handling by category
 
-Two nodes bridge CAN buses: **RT** (high ↔ low) and **PWT** (low ↔ powertrain). Each gateway follows the same three-category model.
+RT is the only implemented CAN gateway (high ↔ low). PWT low ↔ powertrain bridging is a future design requiring a second CAN controller.
 
 #### 2.3.1 RT gateway (high ↔ low, 500k both sides)
 
@@ -180,39 +182,28 @@ These messages serve only nodes on a single bus. RT neither forwards nor transla
 | Bus | IDs | Reason |
 |-----|-----|--------|
 | Low only | `0x110`, `0x169`, `0x204`, `0x205`, `0x7B9` | Mode, steering, drive, brake, and SEB commands. RT-generated or SYS-generated — never leave low bus. |
-| Low only | `0x012` | DC-DC command. SYS sends on low; PWT bridges transparently to powertrain bus. RT ignores. |
+| Low only | `0x012` | SYS command. Current PWT firmware does not receive or forward this frame. |
 | Low only | `0x201`, `0x202`, `0x203`, `0x6FA` | EPS-C status and diagnostics — RT consumes locally for boot sync, monitoring, and fault handling |
 | Low only | `0x721`, `0x731`, `0x741`, `0x6FB` | SEB status and diagnostics — SYS consumes locally for boot sync, monitoring, and fault handling |
 | High only | `0x210`, `0x220`, `0x400` | RT telemetry — generated by RT for Jetson consumption only |
 | Both (independent) | `0x7FD`, `0x7FE`, `0x7FC` | Per-node heartbeat with alive counter — MUST NOT be bridged (see §8.6). Each bus has its own liveness domain. |
 
-#### 2.3.2 PWT gateway (low ↔ powertrain, 500k ↔ 250k)
+#### 2.3.2 PWT gateway (planned, not implemented)
 
-PWT bridges selected messages between the 500k low bus and the 250k powertrain bus. Same three-category model:
-
-**Category 1: Transparent forward**
-PWT copies the frame unchanged — same CAN ID, same payload, same DLC.
-
-| Direction | IDs forwarded | Example |
-|-----------|--------------|---------|
-| Low → Powertrain | `0x012`, `0x001` | SYS→0x012 on low → PWT→0x012 on powertrain → DC-DC receives |
-| Powertrain → Low | `0x001` | Motor controller sends 0x001 on powertrain → PWT→0x001 on low → all nodes |
-
-**Category 2: Rewrite (consume, generate different ID on other bus)**
-Motor controller telemetry on the 250k bus is parsed by PWT and republished as different CAN IDs on the 500k low bus. Specific IDs TBD — depends on motor controller CAN protocol.
-
-**Category 3: Bus-local (never forwarded)**
-PWT heartbeat (`0x7FB`) stays on the 500k low bus — never forwarded to powertrain or high CAN. PWT is invisible to high CAN.
+ESP32-S3 has one built-in TWAI controller. PWT must gain an external CAN
+controller/transceiver or be replaced before it can bridge the 500 kbit/s low
+bus and 250 kbit/s powertrain bus. No forwarding behavior in this section is
+deployed.
 
 ### 2.4 Powertrain CAN (250 kbit/s)
 
-Devices: PWT (gateway), DC-DC converter, motor controller. PWT bridges `0x012` and `0x001` from the 500k low bus.
+Devices: PWT, DC-DC converter, motor controller. Current PWT firmware is a standalone 250 kbit/s node.
 
 | ID | Name | Sender | Receiver(s) | DLC | Payload | Period | Notes |
 |----|------|--------|-------------|-----|---------|--------|-------|
-| `0x001` | SAFETY_ESTOP | PWT (fwd), any | DC-DC, motor controller | 0 | (none) | Event | Forwarded from low bus |
-| `0x012` | SYS_DCDC_CMD | PWT (fwd) | DC-DC converter | 1 | u8 enable | Change | Transparent forward from SYS on low bus |
-| TBD | Motor controller telemetry | Motor controller | PWT | TBD | Speed, current, temp, faults | TBD | CAN IDs TBD — depends on motor controller model |
+| `0x001` | SAFETY_ESTOP | planned | planned | 0 | (none) | Event | Forwarding not implemented |
+| `0x012` | SYS_DCDC_CMD | planned | DC-DC converter | 1 | u8 enable | Change | Forwarding not implemented |
+| TBD | Motor controller telemetry | Motor controller | PWT | TBD | Speed, current, temp, faults | TBD | Reception and forwarding not implemented |
 
 > **Motor controller note:** The motor controller outputs telemetry on the 250k bus but still accepts analog throttle (0–5V via MCP4725) and gear (72V relays) from the MTR STM32. Its CAN interface is telemetry-only. Specific CAN IDs and signal layouts are TBD.
 
@@ -1053,22 +1044,23 @@ struct ActuatorSetpoint {
 
 ### 8.6 Control mechanisms
 
-#### Throttle — MCP4725 I2C DAC (0–5V)
+#### Throttle — Retired SYS MCP4725 Design
+
+This SYS design is compile-time disabled because its ADC mapping conflicts with
+body I/O. Do not use it for vehicle actuation.
 
 | Parameter | Value |
 |-----------|-------|
 | DAC device | MCP4725, I2C addr 0x60, SDA=GPIO15, SCL=GPIO16 |
 | Resolution | 12-bit (0–4095), VCC=5V → 0–5V output (no op-amp) |
-| ADC read | ADC1_CH5, GPIO10, 12-bit, voltage divider 5V→3.3V |
+| ADC read | Not assigned; the legacy ADC channel conflicts with GPIO6 body I/O |
 | Dead zone | 200 (raw ADC) |
 | Max speed | 3000 mm/s |
 | Update rate | 100 Hz |
 
 | Mode | Behavior |
 |------|----------|
-| MANUAL | ADC read → MCP4725 write (pass-through) |
-| AUTO | `setpoint.speed` → `abs(speed)/3000 × 4095` → MCP4725 |
-| ESTOP | MCP4725 = 0 |
+| All modes | Vehicle actuation disabled pending MTR hardware completion |
 
 Direction via gear lines — MCP4725 outputs 0–5V proportional to speed magnitude only.
 
@@ -1517,17 +1509,16 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
  1. can_driver_init()     → TWAI, low-level CAN
  2. mode_manager_init()   → GPIO11 (MODE), GPIO41 (START)
  3. safety_monitor_init() → GPIO1 (ESTOP), GPIO2 (brake lever), WDT GPIO47
- 4. throttle_init()       → ADC1_CH5 + I2C + MCP4725 (output=0)
- 5. gear_init()           → GPIO12-14 (IN), GPIO33-35 (OUT, LOW)
- 6. lights_init()         → GPIO3,6,7 (IN, switches) + GPIO18-22,25-26 (OUT)
+ 4. retired motor I/O     → not initialized or connected in production
+ 5. lights_init()         → GPIO9,6,7 (IN, switches) + GPIO18,19,21,10 (OUT)
  7. power_init()          → GPIO40 (OUT, LOW)
- 8. brake_init()          → BRAKE_BOOT_WAIT (500ms) → LISTEN_SYNC (await 0x721) → ACTIVE
- 9. dcdc_init()           → CAN 0x012 enable=0
-10. Create queues         → can_rx(16), setpoint(4)
-11. Create 15 tasks
-12. power_task → 12V relay ON (if not ESTOP)
-13. dcdc_task → CAN 0x012 enable=1 (if not ESTOP)
-14. safety_task starts WDT toggle → external watchdog armed
+ 6. brake_init()          → BRAKE_BOOT_WAIT (500ms) → LISTEN_SYNC (await 0x721) → ACTIVE
+ 7. dcdc_init()           → CAN 0x012 enable=0
+ 8. Create queues         → can_rx(16), setpoint(4)
+ 9. Create production tasks
+10. power_task → 12V relay ON (if not ESTOP)
+11. dcdc_task → CAN 0x012 enable=1 (if not ESTOP)
+12. safety_task starts WDT toggle → external watchdog armed
 15. ESP_LOGI("Ready")
 ```
 
@@ -2311,10 +2302,10 @@ CAN telemetry alone.
 
 ```
  Powertrain CAN (250 kbit/s)
-  ├── PWT ESP32-S3 (TWAI1)      TX: 0x012,0x001
-  │                              RX: 0x001, TBD (motor controller)
+  ├── PWT ESP32-S3 (TWAI0)      TX: 0x10262B27 direct DC-DC command
+  │                              RX: currently unused
   ├── DC-DC converter (72→12V)  RX: 0x012
-  └── Motor controller           TX: TBD (telemetry) | Analog in: 0-5V throttle, 72V gear (from MTR)
+  └── Motor controller           TX: TBD (telemetry) | Analog motor input blocked pending MTR hardware
 ```
 
 ---
@@ -2326,7 +2317,7 @@ CAN telemetry alone.
 | Jetson | Orin | — | ROS 2 | 1× CAN (high) |
 | RT | ESP32-S3 @ 240 MHz | Xtensa LX7 | ESP-IDF + FreeRTOS | TWAI (low) + MCP2515 SPI (high) |
 | SYS | ESP32-S3 @ 240 MHz | Xtensa LX7 | ESP-IDF + FreeRTOS | TWAI (low only) |
-| PWT | ESP32-S3 @ 240 MHz | Xtensa LX7 | ESP-IDF + FreeRTOS | TWAI0 (low) + TWAI1 (powertrain) |
+| PWT | ESP32-S3 @ 240 MHz | Xtensa LX7 | ESP-IDF + FreeRTOS | TWAI0 (powertrain only) |
 
 | Parameter | Value |
 |-----------|-------|
