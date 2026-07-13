@@ -62,7 +62,10 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
 | `SYS_EstopActive` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | — |
 | `SYS_HeartbeatOk` | 8 | 8 | u8 | 1 | 0 | 0 | 1 | — | 0 = RT alive counter frozen >1000ms, 1 = alive counter incrementing |
-| `SYS_LightState` | 16 | 4 | u8 bitmask | — | — | — | — | — | bit0=left_turn_active, bit1=right_turn_active, bit2=brake_light_active, bit3=headlight_active |
+| `SYS_LightLeft` | 16 | 1 | bool | 1 | 0 | 0 | 1 | — | Left turn indicator |
+| `SYS_LightRight` | 17 | 1 | bool | 1 | 0 | 0 | 1 | — | Right turn indicator |
+| `SYS_LightBrake` | 18 | 1 | bool | 1 | 0 | 0 | 1 | — | Brake light |
+| `SYS_LightHead` | 19 | 1 | bool | 1 | 0 | 0 | 1 | — | Headlight |
 
 ---
 
