@@ -227,8 +227,9 @@ describe("MCP2515 high-bus CAN ID routing", () => {
       expect(hi?.bus).toBe("high");
     });
 
-    // 0x7FD appears on BOTH buses (one per bus domain, NOT bridged)
-    if (id !== ID_RT_HEARTBEAT) {
+    // 0x7FD heartbeat and 0x210 state report are transmitted independently
+    // on both buses; neither is transparently bridged.
+    if (id !== ID_RT_HEARTBEAT && id !== ID_RT_STATE_RPT) {
       it(`${id} does NOT exist on low bus`, () => {
         const lo = CAN_MESSAGES.filter((m) => m.bus === "low" && m.id === id);
         expect(lo).toHaveLength(0);
@@ -243,6 +244,11 @@ describe("MCP2515 high-bus CAN ID routing", () => {
     expect(lo).toBeDefined();
     expect(hi?.bus).toBe("high");
     expect(lo?.bus).toBe("low");
+  });
+
+  it("0x210 appears on BOTH buses (independent reports, not bridged)", () => {
+    expect(findMsg("high", ID_RT_STATE_RPT)).toBeDefined();
+    expect(findMsg("low", ID_RT_STATE_RPT)).toBeDefined();
   });
 
   // Verify low-only IDs don't leak to high bus

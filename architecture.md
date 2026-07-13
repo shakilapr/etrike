@@ -62,7 +62,6 @@ Key architectural IDs:
 | Low | `0x206` | MTR_MOTOR_FBK | MTR → SYS, RT: speed, gear, faults (DLC=4) |
 | Low | `0x7FD` | RT_HEARTBEAT | RT → SYS, Jetson: alive counter + health flags (DLC=2) |
 | Low | `0x7FE` | SYS_HEARTBEAT | SYS → RT: alive counter + health flags (DLC=2) |
-| Low | `0x7FB` | PWT_HEARTBEAT | PWT → RT, SYS: alive counter |
 
 > Full forwarding rules, per-ECU receive/send tables, and ID-to-bus mapping in [`docs/architecture-reference.md`](docs/architecture-reference.md).
 
@@ -169,7 +168,7 @@ FreeRTOS priorities reflect the safety criticality and data-flow order:
 |----------|----------|-----------|-----------|
 | 5 | rx_low, rx_high | can_rx, safety | CAN RX must never be delayed. Safety is highest-app priority. |
 | 4 | dispatch, control | dispatch, mode, motor | Data processing and control. Mode authority. |
-| 3 | tx_low, tx_high | throttle, gear, brake, lights, dcdc | CAN TX and actuation. |
+| 3 | tx_low, tx_high | throttle, gear, brake, lights | CAN TX and actuation. |
 | 2 | — | indicator, power, can_tx | Body control and TX. |
 | 1 | watchdog, heartbeat | diag, heartbeat | Lowest — background monitoring. |
 
@@ -329,7 +328,7 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | A — Safety (ASIL) | 5–4 | ESTOP, mode, RT heartbeat, EGAS L2, brake control, CAN TX |
 | B — Body (QM) | 3–1 | Lights, DCDC, indicators, 12V relay, diagnostics, heartbeat |
 
-**13–15 FreeRTOS tasks (vehicle=13, bench=15 with SYS_OWNS_MOTOR). TWAI GPIO5/4 (low bus only). I2C DAC + gear MOSFETs are bench-only; MTR owns all motor I/O in vehicle.**
+**12–14 FreeRTOS tasks (vehicle=12, bench=14 with SYS_OWNS_MOTOR). TWAI GPIO5/4 (low bus only). I2C DAC + gear MOSFETs are bench-only; MTR owns all motor I/O in vehicle.**
 
 ### CAN I/O
 
@@ -345,7 +344,6 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | 0x731 | RX | 10 Hz | SEB L3 fault bits → ESTOP |
 | 0x7FD | RX | 2 Hz | RT heartbeat. Frozen-counter detection. Timeout 1000ms → ESTOP. |
 | 0x011 | TX | 5 Hz | Safety status: estop(byte0), hb_ok(byte1), light_state(byte2:0-3) |
-| 0x012 | TX | 5 Hz + change | DC-DC enable. Periodic refresh every 5s. Always ON during ESTOP. |
 | 0x110 | TX | change + 1s | Mode command. Periodic refresh prevents split-brain on frame loss. |
 | 0x111 | RX | 1 Hz | HMI Mode Request. Evaluated by mode manager (ignored in ESTOP). |
 | 0x112 | RX | 1 Hz | HMI Power Request. |
@@ -440,7 +438,7 @@ presets — the tool can inject any CAN frame via the encode API.
 
 ## 10. CAN Bus Device Maps
 
-**Low-level (500 kbit/s):** RT, SYS, PWT, EPS-C, SEB
+**Low-level (500 kbit/s):** RT, SYS, MTR, EPS-C, SEB
 **High-level (500 kbit/s):** Jetson, RT
 **Powertrain (250 kbit/s):** PWT, DC-DC converter, motor controller (telemetry-only)
 
@@ -449,7 +447,7 @@ presets — the tool can inject any CAN frame via the encode API.
 - **Motor controller:** Analog throttle 0–5V (MCP4725), gear 72V relays, CAN telemetry-only
 - **EPS-C:** Steer-by-wire, 0x169 command @ 50 Hz, 0x201 feedback @ 100 Hz
 - **SEB:** Electro-hydraulic brake, 0x7B9 command @ 50 Hz, 0x721 feedback @ 100 Hz
-- **DC-DC converter:** 72V→12V, CAN enable via 0x012
+- **DC-DC converter:** 72V→12V, direct PWT extended command `0x10262B27` on the 250 kbit/s powertrain bus
 - **Power:** 72V traction battery, 12V rail from DC-DC for MCUs + transceivers
 - **Watchdog:** TPS3850 external on each MCU, toggled at 20–100 Hz
 
@@ -682,7 +680,7 @@ For steering (0x201) and brake (0x721) status frames, the L3 error check happens
 app_main:
   0. NVS init: read esp_reset_reason(), store reset_count + reset_reason in "sys_diag" namespace
   1. CAN init (g_can.init)
-  2. Sequential module init: safety → mode_mgr → throttle → dac → gear → brake → lights → dcdc → indicator → wdt
+  2. Sequential module init: safety → mode_mgr → throttle → dac → gear → brake → lights → indicator → wdt
   3. GPIO init: status bulbs (AUTO/MANUAL/READY/ESTOP)
   4. Create CAN RX queue (depth 16)
   5. Create 15 tasks in priority order

@@ -19,7 +19,7 @@ BO_ 17 SYS_SAFETY_STS: 3 SYS
  SG_ SYS_LightHead : 20|1@0+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 273 HMI_MODE_REQ: 2 HMI
- SG_ HMI_ReqMode : 7|8@0+ (1,0) [0|2] "" Vector__XXX
+ SG_ HMI_ReqMode : 7|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ HMI_ModeAlive : 15|8@0+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 274 HMI_PWR_REQ: 2 HMI
@@ -83,7 +83,8 @@ BO_ 1536 SYS_DIAG_RPT: 8 SYS
  SG_ SYS_DiagMode : 7|8@0+ (1,0) [0|2] "" Vector__XXX
  SG_ SYS_DiagBrakeEngaged : 15|1@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SYS_DiagBrakeFault : 14|1@0+ (1,0) [0|1] "" Vector__XXX
- SG_ SYS_DiagHeartbeatOk : 23|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_DiagHeartbeatOk : 23|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ SYS_DiagRxOverflow : 22|6@0+ (1,0) [0|63] "" Vector__XXX
  SG_ SYS_DiagEstopActive : 31|8@0+ (1,0) [0|1] "" Vector__XXX
  SG_ SYS_DiagFreeHeapKb : 39|16@0+ (1,0) [0|65535] "KB" Vector__XXX
  SG_ SYS_DiagTec : 55|8@0+ (1,0) [0|255] "" Vector__XXX
@@ -137,6 +138,7 @@ CM_ SG_ 785 BrakeDiag_MotorCurrent "SEB motor current, 0.01A/bit";
 CM_ SG_ 785 BrakeDiag_ECUTemp "SEB ECU temperature, 0.1degC/bit";
 CM_ SG_ 1024 HOST_ObstacleDistance "UINT32_MAX = no reading / timeout";
 CM_ SG_ 1536 SYS_DiagBrakeFault "SEB L3 fault or brake following-error active";
+CM_ SG_ 1536 SYS_DiagRxOverflow "Saturating SYS TWAI RX overflow count";
 CM_ SG_ 2044 Host_AliveCtr "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical.";
 CM_ SG_ 2044 Host_HealthFlags "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved";
 CM_ SG_ 2045 RT_AliveCtr "High bus timeout 1500ms->Host stops /cmd_vel";
@@ -169,7 +171,7 @@ BA_ "GenMsgCycleTime" BO_ 2044 500;
 BA_ "GenMsgCycleTime" BO_ 2045 500;
 
 
-VAL_ 273 HMI_ReqMode 0 "MANUAL" 1 "AUTO" 2 "PURE_SIM";
+VAL_ 273 HMI_ReqMode 0 "MANUAL" 1 "AUTO";
 VAL_ 274 HMI_ReqStart 0 "False" 1 "True";
 VAL_ 528 RT_Mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
 VAL_ 528 RT_SafetyState 0 "Normal" 1 "Warning" 2 "Fault";
