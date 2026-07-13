@@ -8,6 +8,10 @@
 #include <cstdint>
 #include "shared_config.h"
 
+#ifdef SYS_OWNS_MOTOR
+#error "SYS_OWNS_MOTOR is retired: its throttle ADC conflicts with body I/O. Implement and validate a dedicated ADC hardware map on MTR instead."
+#endif
+
 namespace sys {
 
 // ── CAN — low-level only (built-in TWAI) ──────────────────────────
@@ -20,20 +24,19 @@ constexpr int kCanRxGpio    =       4;
 // pull-down makes an open wire or pressed button read LOW (ESTOP active).
 constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-low, pull-down
 constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
-constexpr int kStartBtnGpio   = 41;   // green momentary — press=ignition ON, hold 3s=OFF
+constexpr int kStartBtnGpio   = 41;   // green momentary — ESTOP exit to MANUAL
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
-constexpr int kIgnitionGpio   =  8;   // main 12V relay — HIGH=vehicle ON, LOW=all ECUs dead
-                                       // Wired in parallel with CAN 0x012 DC-DC enable for dual-path ignition
+constexpr int kIgnitionGpio   =  8;   // reserved; production firmware does not drive it
 
-// ── throttle/gear I/O — currently on SYS ESP32-S3 (migration to MTR STM32 is Gap #5) ──
+// ── retired motor-I/O pin reservation — do not connect to a vehicle ──────────
 constexpr int      kThrottleI2cSda      = 15;
 constexpr int      kThrottleI2cScl      = 16;
 constexpr uint8_t  kThrottleDacI2cAddr  = 0x60; // MCP4725
 constexpr unsigned kThrottleDeadZone    =  200;
 constexpr int      kThrottleMaxSpeedMmps= 3000;
 
-// ── gear — bench-only SYS_OWNS_MOTOR path. MTR owns all gear in vehicle. ──
-// TLP281 optoisolator inputs (GPIO 12-14). MOSFET outputs (GPIO 33-35, bench only).
+// TLP281 optoisolator inputs (GPIO 12-14). MOSFET outputs (GPIO 33-35).
+// Retained only to keep the legacy source buildable without actuation enabled.
 constexpr int kGearDSense = 12, kGearSSense = 13, kGearRSense = 14;
 constexpr int kGearDOut   = 33, kGearSOut   = 34, kGearROut   = 35;
 

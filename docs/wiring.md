@@ -242,11 +242,11 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 | 5 | Ignition relay | 8 | Reserved output | Not implemented by production firmware | Do not wire as a vehicle power-control path. |
 | 7 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | RT commands, MTR feedback (0x206), SEB feedback (0x721) |
 
-### 4.3 SYS — Bench-Only Throttle / Gear I/O
+### 4.3 SYS — Retired Throttle / Gear I/O
 
-`SYS_OWNS_MOTOR` is a bench-only legacy configuration. Do not connect its DAC or
-gear outputs to a vehicle motor controller. The current ADC mapping conflicts
-with body I/O and requires a dedicated, validated ADC pin before use.
+`SYS_OWNS_MOTOR` is compile-time disabled. Do not connect these pins to a motor
+controller. The legacy ADC mapping conflicts with body I/O; a future motor path
+requires a dedicated, validated ADC pin and a completed MTR hardware layer.
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
