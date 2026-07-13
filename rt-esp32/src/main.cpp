@@ -48,6 +48,9 @@ rt::CmdWatchdog     g_watchdog;
 
 // ── Safety event queue ─────────────────────────────────────────────
 QueueHandle_t g_safety_evt_q = nullptr;  // depth 16, SafetyEvent
+std::atomic<bool>     g_pending_estop_event{false};
+std::atomic<int16_t>  g_pending_mode_event{-1};
+std::atomic<uint32_t> g_safety_event_drops{0};
 
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 std::atomic<int32_t>  g_brake_request_kpa{0};
@@ -179,9 +182,19 @@ static bool send_can_high(can::Frame& fr) {
 
     while (1) {
         g_alive_control.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        // ── Drain safety event queue (guaranteed delivery, no missed events) ─
+        // ── Drain bounded safety events and their overflow fallbacks ─
         rt::SafetyEvent evt;
-        bool had_estop_this_cycle = false;
+        bool had_estop_this_cycle = g_pending_estop_event.exchange(false);
+        if (had_estop_this_cycle) {
+            m_estop_pending = true;
+        }
+        int16_t pending_mode = g_pending_mode_event.exchange(-1);
+        if (pending_mode >= 0) {
+            m_current_mode = static_cast<uint8_t>(pending_mode);
+            if (pending_mode != int16_t(can::Mode::Estop) && !had_estop_this_cycle) {
+                m_estop_pending = false;
+            }
+        }
         while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
             switch (evt.type) {
             case rt::SafetyEvent::ESTOP:

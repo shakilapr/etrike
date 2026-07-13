@@ -21,6 +21,18 @@
 
 static const char* TAG_DISP = "rt-dispatch";
 
+inline bool enqueue_safety_event(const rt::SafetyEvent& evt, TickType_t timeout) {
+    if (xQueueSend(g_safety_evt_q, &evt, timeout) == pdTRUE) return true;
+
+    g_safety_event_drops.fetch_add(1, std::memory_order_relaxed);
+    if (evt.type == rt::SafetyEvent::ESTOP) {
+        g_pending_estop_event.store(true, std::memory_order_release);
+    } else {
+        g_pending_mode_event.store(evt.payload, std::memory_order_release);
+    }
+    return false;
+}
+
 // ── Per-frame dispatch context ──────────────────────────────────────
 
 struct DispatchContext {
@@ -81,10 +93,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         g_estop_reason.store(can::kEstopReasonCanEstop);
         // Enqueue ESTOP event with 10ms timeout (blocking — safety critical)
         rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
-        if (xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
-            // Queue full — overwrite latest ESTOP to avoid loss
-            xQueueOverwrite(g_safety_evt_q, &evt);
-        }
+        enqueue_safety_event(evt, pdMS_TO_TICKS(10));
     }
     if (fr.id == can::kIdSbwStatus) {
         // steer-by-wire checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
@@ -118,17 +127,16 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             g_estop_reason.store(can::kEstopReasonInternal);
             rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
             // Use timeout to avoid silent ESTOP drop when queue is full (bug B4)
-            if (xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
-                xQueueOverwrite(g_safety_evt_q, &evt);
-            }
+            enqueue_safety_event(evt, pdMS_TO_TICKS(10));
         }
     }
     // 0x203 SES_Version — log SW/HW once (arch §7.3)
-    if (fr.id == can::kIdSbwVersion && !from_high && fr.dlc >= 4) {
+    if (fr.id == can::kIdSbwVersion && !from_high && fr.dlc >= 2) {
         static bool ses_version_logged = false;
         if (!ses_version_logged) {
-            ESP_LOGI(TAG_DISP, "SES_Version: SW=%02X.%02X HW=%02X.%02X",
-                     fr.data[0], fr.data[1], fr.data[2], fr.data[3]);
+            ESP_LOGI(TAG_DISP, "SES_Version: SW=%u.%02u HW=%u.%u",
+                     unsigned(fr.data[0] / 100), unsigned(fr.data[0] % 100),
+                     unsigned(fr.data[1] / 10), unsigned(fr.data[1] % 10));
             ses_version_logged = true;
         }
     }
@@ -170,7 +178,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (seb_err == 3) {
             g_estop_reason.store(can::kEstopReasonInternal);
             rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
-            xQueueSend(g_safety_evt_q, &evt, pdMS_TO_TICKS(10));
+            enqueue_safety_event(evt, pdMS_TO_TICKS(10));
         }
 
         // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
@@ -254,7 +262,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         // Mode change → safety event queue (guaranteed delivery)
         if (ctx.has_mode) {
             rt::SafetyEvent evt{rt::SafetyEvent::MODE_CHANGE, ctx.mode_from_sys};
-            xQueueSend(g_safety_evt_q, &evt, 0);
+            enqueue_safety_event(evt, 0);
             // Also clear ESTOP if exiting ESTOP mode
             if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
                 g_steering.exit_estop();

@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 #include "autoware_vehicle_bridge/vehicle_bridge_node.hpp"
+#include "can/generated/can_data.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -23,17 +24,17 @@ namespace autoware_vehicle_bridge
 // =====================================================================
 //  CAN ID constants
 // =====================================================================
-constexpr canid_t CAN_ESTOP        = 0x001;
-constexpr canid_t CAN_SAFETY_STS   = 0x011;
-constexpr canid_t CAN_THROTTLE_STS = 0x120;
-constexpr canid_t CAN_STATE_RPT    = 0x210;
-constexpr canid_t CAN_DRIVE_CMD    = 0x300;
-constexpr canid_t CAN_BRAKE_REQ    = 0x301;
-constexpr canid_t CAN_LIGHT_CMD    = 0x302;
-constexpr canid_t CAN_DIAG_RPT     = 0x600;
-constexpr canid_t CAN_MOTOR_FBK   = 0x206;
-constexpr canid_t CAN_HOST_HB     = 0x7FC;
-constexpr canid_t CAN_RT_HB        = 0x7FD;
+constexpr canid_t CAN_ESTOP        = can::data::kIdSAFETYESTOP;
+constexpr canid_t CAN_SAFETY_STS   = can::data::kIdSYSSAFETYSTS;
+constexpr canid_t CAN_THROTTLE_STS = can::data::kIdSYSTHROTTLESTS;
+constexpr canid_t CAN_STATE_RPT    = can::data::kIdRTSTATERPT;
+constexpr canid_t CAN_DRIVE_CMD    = can::data::kIdHOSTDRIVECMD;
+constexpr canid_t CAN_BRAKE_REQ    = can::data::kIdHOSTBRAKEREQ;
+constexpr canid_t CAN_LIGHT_CMD    = can::data::kIdHOSTLIGHTCMD;
+constexpr canid_t CAN_DIAG_RPT     = can::data::kIdSYSDIAGRPT;
+constexpr canid_t CAN_MOTOR_FBK    = can::data::kIdMTRMOTORFBK;
+constexpr canid_t CAN_HOST_HB      = can::data::kIdHOSTHEARTBEAT;
+constexpr canid_t CAN_RT_HB        = can::data::kIdRTHEARTBEAT;
 
 // =====================================================================
 //  Gear constants (Autoware.Auto <-> CAN)
@@ -237,8 +238,9 @@ bool CanEncoder::encode_heartbeat(struct can_frame & frame)
 {
   std::memset(&frame, 0, sizeof(frame));
   frame.can_id = CAN_HOST_HB;
-  frame.len = 1;
+  frame.len = can::data::kDlc_HOST_HEARTBEAT;
   frame.data[0] = host_alive_ctr_++;
+  frame.data[1] = 0;  // reserved host health flags
   return true;
 }
 
@@ -296,24 +298,53 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   msg.header.stamp = now;
   msg.status.clear();
 
-  auto add = [&](const std::string & name, uint8_t value, uint8_t warn, uint8_t err) {
+  auto add = [&](const std::string & name, uint32_t value, uint8_t level,
+                 const std::string & message) {
     diagnostic_msgs::msg::DiagnosticStatus s;
     s.name = name;
     s.hardware_id = "etrike";
     s.values = {{"raw", std::to_string(value)}};
-    s.level = (value >= err) ? diagnostic_msgs::msg::DiagnosticStatus::ERROR
-            : (value >= warn) ? diagnostic_msgs::msg::DiagnosticStatus::WARN
-            : diagnostic_msgs::msg::DiagnosticStatus::OK;
-    s.message = s.level == diagnostic_msgs::msg::DiagnosticStatus::OK ? "OK" : "WARNING";
+    s.level = level;
+    s.message = message;
     msg.status.push_back(s);
   };
 
-  add("mode", frame.data[0], 0, 0);
-  add("brake_engaged", frame.data[1], 0, 0);
-  add("heartbeat_ok", frame.data[2], 1, 1);
-  add("estop_active", frame.data[3], 1, 1);
-  add("tec", frame.data[6], 96, 128);
-  add("rec", frame.data[7], 96, 128);
+  using DiagnosticStatus = diagnostic_msgs::msg::DiagnosticStatus;
+  const uint8_t mode = frame.data[0];
+  const bool brake_engaged = (frame.data[1] & 0x01u) != 0;
+  const bool brake_fault = (frame.data[1] & 0x02u) != 0;
+  const bool heartbeat_ok = (frame.data[2] & 0x01u) != 0;
+  const uint8_t rx_overflow = static_cast<uint8_t>((frame.data[2] >> 1) & 0x3Fu);
+  const bool estop_active = frame.data[3] != 0;
+  const uint16_t free_heap_kb = static_cast<uint16_t>(frame.data[4] << 8) | frame.data[5];
+  const uint8_t tec = frame.data[6];
+  const uint8_t rec = frame.data[7];
+
+  add("mode", mode,
+      mode <= 2 ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
+      mode <= 2 ? "valid" : "invalid mode value");
+  add("brake_engaged", brake_engaged, DiagnosticStatus::OK,
+      brake_engaged ? "engaged" : "released");
+  add("brake_fault", brake_fault,
+      brake_fault ? DiagnosticStatus::ERROR : DiagnosticStatus::OK,
+      brake_fault ? "active" : "clear");
+  add("heartbeat_ok", heartbeat_ok,
+      heartbeat_ok ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
+      heartbeat_ok ? "fresh" : "missing or frozen");
+  add("rx_overflow", rx_overflow,
+      rx_overflow == 0 ? DiagnosticStatus::OK
+      : (rx_overflow == 63 ? DiagnosticStatus::ERROR : DiagnosticStatus::WARN),
+      rx_overflow == 0 ? "none" : (rx_overflow == 63 ? "counter saturated" : "observed"));
+  add("estop_active", estop_active,
+      estop_active ? DiagnosticStatus::ERROR : DiagnosticStatus::OK,
+      estop_active ? "active" : "clear");
+  add("free_heap_kb", free_heap_kb, DiagnosticStatus::OK, "reported");
+  add("tec", tec,
+      tec >= 128 ? DiagnosticStatus::ERROR : (tec >= 96 ? DiagnosticStatus::WARN : DiagnosticStatus::OK),
+      tec >= 128 ? "error-passive threshold" : (tec >= 96 ? "elevated" : "OK"));
+  add("rec", rec,
+      rec >= 128 ? DiagnosticStatus::ERROR : (rec >= 96 ? DiagnosticStatus::WARN : DiagnosticStatus::OK),
+      rec >= 128 ? "error-passive threshold" : (rec >= 96 ? "elevated" : "OK"));
   return true;
 }
 

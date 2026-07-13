@@ -20,6 +20,10 @@ add_executable(vehicle_bridge_node
   src/vehicle_bridge_node.cpp
 )
 
+target_include_directories(vehicle_bridge_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../shared
+)
+
 ament_target_dependencies(vehicle_bridge_node
   rclcpp
   rclcpp_lifecycle

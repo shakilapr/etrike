@@ -67,7 +67,7 @@ Remove ambiguity before generating production code. The result is an approved co
 | `0x7FE SYS_HEARTBEAT` | Health bits | Declare heartbeat, ESTOP, AUTO mode, and CAN state bits already transmitted by SYS; correct CAN-state meaning separately. |
 | `0x7FC HOST_HEARTBEAT` | DLC | Keep YAML/shared DLC 2 and fix the host sender. |
 | `0x111 HMI_ReqMode` | Value 2 | Prefer removing `PURE_SIM` from the physical wire unless SYS intentionally implements it; keep simulation profile selection in test-tool configuration. |
-| [`candex/examples/etrike/candex.yaml`](candex/examples/etrike/candex.yaml) and generated forwarding | Missing HMI routes | Generate high-to-low `0x111` and `0x112` routes from the approved canonical routing model so Candex, firmware, docs, and tests agree. |
+| Generated forwarding and copied forwarding tests | Missing HMI routes | Generate high-to-low `0x111` and `0x112` routes from the approved canonical routing model so firmware, generated metadata, docs, and tests agree. |
 | `0x206 MTR_MOTOR_FBK` | Readiness and faults | Use one layout on both routes; separate readiness status from fault meaning where possible. |
 | SES version | Vendor byte layout | Confirm from vendor data or a known hardware response before choosing YAML or RT parsing. |
 | `0x012` to powertrain | Forward versus translate | Specify consumed-and-regenerated translation to extended `0x10262B27`, including timeout and disabled default. |

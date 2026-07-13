@@ -75,6 +75,12 @@ ecus:
   - {name: HMI,    comment: "CAN Controller UI / Dashboard, mode and power requests"}
   - {name: Any,    comment: "Wildcard — any node may send (e.g., ESTOP frames)"}
 
+# Transparent RT gateway routes. Messages present on both buses but absent
+# from these lists are independent transmissions, not forwarded copies.
+forwarding:
+  low_to_high: [0x001, 0x011, 0x120, 0x206, 0x600]
+  high_to_low: [0x001, 0x111, 0x112, 0x302]
+
 protocols:
 
   # ── Custom Protocol — High Bus (Motorola/big-endian) ────────────────
@@ -121,8 +127,8 @@ protocols:
         cycle_ms: 1000
         comment: "HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT."
         signals:
-          - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2,
-             values: {0: MANUAL, 1: AUTO, 2: PURE_SIM}}
+          - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
+             values: {0: MANUAL, 1: AUTO}}
           - {name: HMI_ModeAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Rolling counter for UI health"}
 
@@ -324,7 +330,9 @@ protocols:
           - {name: SYS_DiagMode,          byte: 0, bit_offset: 0, size: 8,  min: 0, max: 2}
           - {name: SYS_DiagBrakeEngaged,  byte: 1, bit_offset: 0, size: 1,  min: 0, max: 1}
           - {name: SYS_DiagBrakeFault,    byte: 1, bit_offset: 1, size: 1,  min: 0, max: 1, comment: "SEB L3 fault or brake following-error active"}
-          - {name: SYS_DiagHeartbeatOk,   byte: 2, bit_offset: 0, size: 8,  min: 0, max: 1}
+          - {name: SYS_DiagHeartbeatOk,   key: heartbeat_ok, byte: 2, bit_offset: 0, size: 1, min: 0, max: 1}
+          - {name: SYS_DiagRxOverflow,    key: rx_overflow,  byte: 2, bit_offset: 1, size: 6, min: 0, max: 63,
+             comment: "Saturating SYS TWAI RX overflow count"}
           - {name: SYS_DiagEstopActive,   byte: 3, bit_offset: 0, size: 8,  min: 0, max: 1}
           - {name: SYS_DiagFreeHeapKb,    byte: 4, bit_offset: 0, size: 16, min: 0, max: 65535, unit: KB}
           - {name: SYS_DiagTec,           byte: 6, bit_offset: 0, size: 8,  min: 0, max: 255}
