@@ -157,7 +157,7 @@ struct SysSafetySts {
 struct SysModeCmd {
     uint8_t mode = 0;   // Mode enum
 
-    static SysModeCmd from_frame(const Frame& f) { return { f.u8_at(0) }; }
+    static SysModeCmd from_frame(const Frame& f) { if (f.dlc < 1) return {}; return { f.u8_at(0) }; }
     void to_frame(Frame& f) const {
         f.id = kIdSysModeCmd; f.dlc = 1;
         f.put_u8(0, mode);
@@ -464,7 +464,7 @@ struct HostBrakeReq {
 struct HostObstacleDist {
     uint32_t distance_mm = 0;   // UINT32_MAX = no reading
 
-    static HostObstacleDist from_frame(const Frame& f) { return { f.u32_at(0) }; }
+    static HostObstacleDist from_frame(const Frame& f) { if (f.dlc < 4) return {UINT32_MAX}; return { f.u32_at(0) }; }
     void to_frame(Frame& f) const {
         f.id = kIdHostObstacleDist; f.dlc = 4;
         f.put_u32(0, distance_mm);
