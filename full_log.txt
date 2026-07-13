@@ -1,0 +1,480 @@
+2ee4007 feat: Update CAN protocol definitions and system run mode configurations
+be4cb3d feat: Enhance safety event handling and CAN protocol definitions
+16385b5 docs: correct codebase remediation audit findings
+8df2007 Add comprehensive Codebase Remediation Plan outlining objectives, workstreams, and completion gates
+fedf531 docs: update generated timestamps in CAN constants and data files
+f0f7688 docs: mark unfinished hardware paths as blocked
+1f4616f fix(sys): disable unsafe legacy motor path
+5bd3d25 docs: remove unsupported PWT gateway design
+1b5e412 docs: correct RT and SYS wiring maps
+c1fff0d feat: update CAN message handling and logging standards; add GPIO and ESP hardware audit documentation
+abd3f0d feat: enhance error handling and logging standards across the Control UI and backend components
+8fd490d Refactor GPIO assignments for MCP2515 and related components
+be8b5db Update work plan and configuration files; add error codes documentation
+4f99e70 fix(backend): resolve TypeScript regressions and stabilize test suite
+622d14f docs(git-workflow): add comprehensive notes on safe Git usage and commit message renaming
+b810bd9 docs: refine control UI vehicle visualization
+6b5b937 Refactor Control UI documentation and logic for enhanced clarity and functionality
+348c2c4 feat: Add backend streaming export and E2E tests
+56be538 feat: Add HMI specification and new CAN messages for vehicle control
+9661964 chore(ui): migrate ui stores to map incoming RoutedFrame to flat UiCanFrame
+84a066a Introduce immutable raw frames and transport events
+d6ad95c Introduce session timebase and sequence contracts
+21194cf chore: migrate raw hex strings to semantic ID_* constants across all workspaces
+c0d5a98 feat(can): generate normalized typed protocol metadata
+3303122 Phase 4: Make codec validation fail closed
+d1e3c0d test(can): consolidate codec coverage and golden-vector extraction
+77ed8f8 feat: enhance shared package with testing and build scripts
+8b8cbfc chore: consolidate playwright baseline (Phase 2)
+9c5a7aa chore: implement Phase 1 baseline fixes
+da08fda docs: preserve current architecture and work-plan refinements
+cf9cd52 feat: add script to generate comprehensive Markdown documentation for E-Trike CAN network
+c755fb9 docs(debug-tool): consolidate architecture and work plan
+33af4a5 docs(debug-tool): finalize pragmatic zero-allocation roadmap and UI audit
+ba5d210 Create update.md outlining refactoring details and simplification roadmap
+92df399 Fix BusDetector dynamic unique ID check and initialize CAN database in serial-bridge tests
+1a00bd7 Fix dynamic decoder 32-bit signed math and backend static assertions
+0c97629 Update can_signals_schema.py to officially support 'key' metadata
+f520a45 Fix dynamic decoder injectable logic, test setup, and Zod error formatting
+829a87f fix: align CAN decoder test keys with dynamic decoder
+ed94146 fix: resolve build errors and sync frames store with ring buffer
+e270a79 debug-tool: UI - Display actual telemetry feedback and odometer on Controller
+ab42b07 debug-tool: added odometer calculation to sim engine
+58ec306 debug-tool: Phase 10 - API optimization (Pipeline caching)
+6699535 debug-tool: Phase 9 - frontend perf polish (RingBuffer iterators)
+cbb259d debug-tool: partial Phase 5-8 implementations and CAN shared package
+dd2f3b6 feat(tests): add new safety bypass tests and brake simulation scripts
+8e2c7dc test(sim): implement missing CAN frame routing and unskip tests
+3ca566f docs: add testing guide and remove empty native test suites
+e454a7c feat(tools): add all remaining CI and coverage scripts for Phase 1 gate
+c4324d9 fix(tools): ignore stderr outputs in phase1-software-gate.ps1
+e4fdf53 test: Add concurrency and integration mock skeletons (Subphase 1D)
+8689e04 test: Add mock scenarios and schema drift test skeletons (Subphase 1C)
+eae955c feat: Implement invariant-checker and stateful CAN mimics (Subphase 1B)
+3646b17 test: Add mock tests for storage and virtual CAN faults (Subphase 1B)
+859a5be fix: Update platformio.ini to include src in native test builds
+1208a81 test: Complete Subphase 1A - PIO Test Migration & Baseline Fixes
+886a1bb Restore simulation AUTO baseline
+2d57b84 Stabilize Phase 1 simulation invariants
+7c51f72 feat: Enhance simulation framework and testing infrastructure
+75e596f Add RT/SYS Pre-Vehicle Validation Gate documentation
+0d211b5 fix(sim): update timer handling and improve performance measurement
+49a1273 docs: add RT SYS validation gate
+fd4be34 fix(rt): resolve QA regressions
+15f0789 test: align work mode browser audits
+7c41e24 fix(backend): resolve test regressions from DebugStore refactoring
+c2feaf4 refactor(ui): optimize can store allocations and game loop (Phase 9)
+97020cd refactor(debug-tool): overhaul DB worker and unify CAN catalog
+709d1e9 refactor: streamline work mode management and enhance error logging
+893aa67 feat: enhance work mode functionality and add usability tests for no-hardware scenarios
+4be69d1 feat: enhance injector functionality and add automated test recording scripts
+4654087 Implement 3-mode runtime toggle for vehicle testing
+90ee637 feat(debug-tool): Enhance UI and performance with multiple bug fixes and optimizations
+d3be06a test: cover mode and controller interactions
+4fc1639 feat: integrate Playwright for end-to-end testing and enhance UI responsiveness
+51c2492 fix: constrain debug content layout on mobile
+02501e9 test: stabilize debug UI navigation checks
+8e453e1 docs: retire stale UI status notes
+3c2e773 fix: read controller keys directly during ticks
+9bb2d6e fix: preserve scoped WebSocket frame filters
+db3b891 fix: reject invalid CAN bus values
+58dce59 fix: reject repeated recording stops
+5a9d765 fix: preserve emulator simulation mode
+fbb4bec fix: let CANalyst detection fallback be reused
+45fb9e0 fix: guard serial reconnects and log startup failures
+191a4f4 fix: enforce debug UI checks and retain injector state
+804568c docs: retire fixed topbar wrapping note
+d210f66 docs: retire fixed trike sidebar overlap note
+43e2bc7 docs: retire fixed simulation heartbeat flicker note
+29414c9 docs: retire fixed simulated controller conflict note
+3417edb test: cover batched frame ingestion for UI throughput
+b07b7bf fix: improve simulation timing and batch WebSocket frames to enhance performance
+e55364d fix: pause trike animation when sidebar closed, fix visibility
+3fbbaf7 fix: remove invalid bind:clientWidth/bind:clientHeight, use ResizeObserver
+9e59ac1 feat: add tricycle kinematic visualization sidebar
+e2951f0 fix: streamline mock serial port methods and enhance test coverage for telemetry store
+25ef385 fix: controller split-brain routing + topology type safety
+32f1881 fix: add testMatch to playwright config to exclude vitest files
+aa6e827 fix: gate sim ticks to active ECUs
+29a138f fix: Topbar spacing and ECU topology plot layout
+d05cfac fix: resolve remaining debug tool bugs
+ac7ee45 fix: update bug checklist and documentation for known issues; add implementation details for critical bugs
+3f530d3 fix: 11 backend and UI bugs (P0/P1)
+20a4f0a chore: commit remaining changes from native test and doc fixes
+8abad88 docs: add native/firmware test status to handoff doc
+403a7c5 fix: native C++ tests build and pass on Windows MinGW GCC 16
+3a6c179 fix: update E2E tests for CSS display toggle DOM, add impl status to arch
+7c543ee docs: add handoff summary and E2E test root issues analysis
+f97b854 feat: add EPS-C and SEB models, complete all feedback loops
+2a9cccc fix: improve WebSocket handling and update CAN index generation
+3f599df Refactor command injection status updates to use correlation ID
+b5ccfdc fix: implement adaptive polling and cap `by_id` dictionary size in canalystii_bridge; update stats handling in App.svelte
+ef78fb3 fix: ESTOP, brake, reverse all working in Full Simulation
+bc92ad6 fix: ESTOP and brake now work in Full Simulation, routes before listen
+e5e8c95 feat: wire native C++ models via IPC as alternative backend
+bd8bdd3 feat: add ECU topology diagram to Emulator tab
+1a4fb88 feat: add SimulationEngine with TypeScript ECU models for Full Simulation mode
+39df78a feat: add YAML→TypeScript CAN catalog generator
+1c0567f feat: add behavioral model feedback loop to CAN emulator
+d0b1bdc feat: add CAN health dashboard with TEC/REC error state indicators
+66f9f7f feat: add work mode selector with config persistence
+6b0ef77 fix: integrate FrameRouter into DebugStore so all frame sources route through it
+ad26cc3 chore: remove dead makeShutdown function, replaced by patchedShutdown
+8057dda fix: use Proxy for bridge reference so route handlers always see active transport
+5807e9a docs: add testing plan and checklist for debug tool
+414e64d feat: add IpcEngineAdapter — Node.js side of native ECU model IPC
+8123900 feat: sim-engine-native — compile RT physics model as IPC child process
+afd24c8 fix: tab data preservation, stale stats/ECU detection, transport auto-detect
+5f1bfdd Implement structural updates and optimizations across multiple modules
+468cd61 feat: implement software-only simulation for CAN frames; add simulation routes and integrate with emulator
+142b4bb feat: enhance CAN Emulator with dynamic signal management and improved UI; add signal table styles
+c8cc859 feat: add CAN Emulator component with signal management and emulation controls; update styles for emulator layout
+f1ddb3d feat: enhance ECU simulation with structured groups and improved signal management; update styles for better layout and responsiveness
+535fd76 feat: add native test entry points for MTR throttle math and RT physics model; implement gear control and throttle input tests refactor: enhance Topbar component with improved telemetry display and responsive styles; update styles for better layout and readability chore: update platformio.ini for native environment support; add build flags for native testing
+cac5159 chore: update version to v0.3.0-alpha across all relevant files
+ba51863 chore: update version to v0.3.0; enhance changelog with firmware details and fixes
+b1fb339 feat: enhance ECU health representation in Topbar; update styles for improved layout and responsiveness
+666f0f2 feat: implement v3 layout for Topbar with enhanced health diagnostics and mode state representation
+f005282 refactor: update Topbar component to v3 layout with improved telemetry and command structure
+2ef3064 feat: enhance error logging and severity handling; update terminal display for error states
+8024dfb feat: refine mode management and documentation; clarify mode states and CAN command handling
+9905b20 feat: enhance CAN message definitions and UI components
+4f1721c feat: add terminal and simulator components; implement vehicle command buttons and fault watcher
+c63b8c7 feat: implement CANalyst-II connection handling; add telemetry data management and UI components
+907743a feat: enhance FPS tracking and stats initialization; add frame history management
+dc7bafb feat: implement CANalyst-II detection and update transport handling; add hardware verification results to documentation
+e6cd190 feat: add firmware bring-up progress documentation and new test files for CAN and SPI verification
+c6bc383 fix: resolve RT and SYS firmware boot crashes
+4f71be8 Update CAN constants generation timestamps; add firmware flashing guide
+63e7433 Update generated CAN constants, data, and IDs files; add QA report and recovery documentation
+21eaa7c Add test running guide with commands for all test suites
+aad1f45 Update backend heartbeat and 0x210 test expectations for PCR4/PCR5 fixes
+d4960bf Lint sync: reformatting, generated code, and stray file cleanup
+63ee494 Revert MCU pin details from wiring doc — belongs in config.h
+880a3b5 Add switch, lamp, ESTOP and brake lever pin assignments to wiring doc
+324d6ed Fix GPIO3 JTAG strapping pin conflict and update architecture doc
+c22918c Fix architecture.md 0x210 DLC=4 to DLC=6 with all current fields
+0b575f2 Refactor code structure for improved readability and maintainability
+cc1dfd0 Add detailed MTR STM32 motor actuation documentation and safety features
+cd2bad1 Clean up stray files
+6e01743 Add PCR2 PCR3 PCR7 verification tests - all passing
+43e6d7f Add ESTOP latch unit test for PCR3 safety state machine verification
+cab2aa9 Add comprehensive safety architecture reference documentation
+489ebaa PCR7: Add DLC conflict detection to CAN code generator
+bb3d5fb PCR3: Make CAN 0x001 ESTOP a latch instead of one-shot event
+e0824da Sync generated code and lint after PCR fixes
+cc1d1cb Fix PCR4, PCR5, PCR10: update debug tool CAN protocol definitions
+44a5b2e PCR9: Fix REST status merge preserving stale bus detection forever
+91e4dcc chore: bump version to v0.2.0-alpha
+603c4d9 PCR6: Fix heartbeat health flag YAML comments to match C++ constants
+122d7a2 fix(mcp2515): replace hardcoded TXB1 busy bit and propagate SPI failures to send()
+440bec8 PCR8: Fix Host simulation misreading packed RT_STATE_RPT byte 1
+35939c5 Sync generated CAN code with latest YAML and protocol changes
+e140424 Final lint and generated code sync after all Phase 18-29 changes
+2410b2f Add steering state CAN output test — per-state frame verification
+226139c Add mode transition CAN output test — per-mode frame verification
+b2a5c4a Add dual heartbeat independence test — per-bus counters
+4c5824b Add requirements traceability matrix, operator manual, and v1.0.0-alpha release notes
+7f663e6 Add watchdog wraparound test — UINT32_MAX boundary
+2ee8dfd Add heartbeat recovery test — SYS timeout/seb_takeover recovery
+e3b447a Add RT 0x7B9 in AUTO mode and bus routing integration test
+f70d0ba Update architecture documentation to reflect current CAN protocol state
+4725ca3 fix: simulation fidelity — EPS-C timeout, health_flags, brake pipeline, Host RX
+98e8266 Skip 0x302 forwarding test until HostEcu originates light commands
+4176025 Fix soak test description to 18s and correct STEER_DIAG angle decode test to use raw=30000 (0 degrees)
+b1dc188 Replace hardcoded grace period values with shared::kStartupGracePeriodMs in safety monitor test
+85ce29b Replace hardcoded grace period values with config constants in safety monitor test
+a44dfe4 fix(sim): add MTR ESTOP ACK watchdog, ESTOP RX rate limiting, and 0x721 checksum validation
+5d256da feat(ci): add backend-test, vehicle-build, and bypass-audit jobs
+8cbd467 Fix EPS-C comm timeout and soak test duration
+d109e61 Add ESP-IDF version check and NVS crash persistence to SYS
+7b19b80 Fix UI-backend API mismatches in debug-tool
+f0c25a7 Gap I2: add 6-condition brake suppression to SYS simulation
+06b61b7 Update generated CAN code with latest heartbeat DLC and signal definitions
+a5d2b3e Add heartbeat health flags with standard bit layout to RT and SYS
+2b78194 Regenerate CAN code with corrected DLC values from YAML fix
+9965a92 Add frozen rolling-counter guard for EPS-C 0x201 feedback
+725cdfc Complete ESTOP reason codes tracking and MTR/PWT vehicle profiles
+cc56112 Add ESTOP reason codes and steering state to 0x210 telemetry
+b908438 Communication stack hardening: bus-off recovery, TXB1, retry
+e8933de Create vehicle production build profiles with zero safety bypasses
+dad535a Enable framework safety hardening in sdkconfig and add FreeRTOS hooks
+35b67c2 Add task health and CAN RX overflow to diagnostic telemetry
+2e298ab Fix CAN DLC generation to respect explicit dlc: fields in YAML (bug D2)
+f0209ae Replace warned-once patterns with persistent failure counters
+2ca5287 Add DLC guards to remaining unguarded dispatch paths
+439b114 Add DLC guards to from_frame() methods and clean up endian.h
+a5fe9b1 fix(jetson/bridge): fix reverse kinematics and watchdog-liveness bugs
+d6829dd Fix 4 fatal bugs in debug tool backend (QA bugs 9.1-9.4)
+8d56208 Fix ESTOP queue timeouts, ECU temp underflow, and frozen heartbeat detection
+c8fd9e6 Fix seven FATAL SYS and MTR bugs
+f5865ba Fix five FATAL physics, SPI, bus-off and checksum bugs in RT firmware
+3e3e227 Fix six FATAL brake and ESTOP bugs in RT firmware
+1825354 Add QA reports for E-Trike RT Subsystem and recovery analysis
+688fc62 Add unit tests for various components including heartbeat, physics model, PID controller, QA bugs, and steering control
+412b4fa Add unit tests for various components in the rt-esp32 project
+b0a4c24 Add signal definitions and comprehensive tests for CAN protocol
+d95b173 Add CAN Signal Catalog with detailed message and signal specifications
+835fc2c chore: bump version to v0.1.0-alpha, add CHANGELOG.md
+b2896ef feat: Add DLC consistency check and gateway forwarding rules tests
+43c4774 fix: Correct CAN channel bus assignments and enhance CAN TX error handling
+e2ead1e feat: Implement MCP2515 CAN driver and integrate into RT CAN Test
+da63452 Add MCP2515 CAN controller driver and related configurations
+7ea9484 fix: update wiring documentation for consistency and clarity
+36aa863 feat: add READY and ESTOP bulb indicators with GPIO configuration and logic
+7234afe Refactor code structure for improved readability and maintainability
+a0a736c Fix hover panel positioning in generate_can_tables.py
+b913880 feat: enhance BitInspector component with improved bit detail display and tooltip functionality
+b3064cc feat: enhance BitGrid, CanDictionary, MessageCard, and SignalTable components with improved signal handling and UI features
+1751899 feat: add CanDictionary component for enhanced CAN message reference and filtering
+b6955d4 feat: refactor CanMonitor and MessageCard components for improved surface handling and UI consistency
+e8998b5 feat: enhance BitGrid and SignalTable components with improved signal mapping and display features
+6de11bb feat: add BitGrid and SignalTable components for enhanced CAN message visualization
+90a85e9 feat: enhance health status display and improve button UI with icons and tooltips
+0832e5c feat: implement message card component and enhance CAN monitor with improved filtering and display
+13e731a feat: health strip header, transport badge, error log, CAN index generator
+74b628f feat: enhance dashboard and controller UI with runtime inventory and bus status updates
+a25e39a fix: stop button 400, add transport badge and error log to UI
+6d8f33f feat: add setup and installation scripts for E-Trike debug tool
+b908a48 fix: restart/stop buttons control bridge connection, fix bus_detection undefined crash
+8f11e48 fix: debug tool architecture overhaul — state bugs, reconnect backoff, action buttons, simulator
+59d997c fix: enhance CAN frame handling — added overflow tracking and improved logging
+2717afc feat: CAN table generators — interactive HTML viewer, A3 LaTeX PDF, CSV fixes
+556e224 fix: bridge audit — tier4 dep, DLC drift, dead code, steering clamp, thread safety
+ae6423a feat: Autoware bridge — standard global topic names, GAP-1 resolved
+7b7fdbe docs: update io-autoware.md — reflect all resolved gaps, current CAN state
+9af0518 refactor: optimize CAN table columns — 9 cols covering all YAML data
+1491fd4 feat: replace CSV with Markdown CAN signal tables
+afcb38c feat: per-bus CAN database CSV generator
+3bef08e fix: YAML syntax error from heartbeat DLC update
+6f6794d feat: heartbeat DLC 1→2 — health byte for field debugging
+405dba6 docs: remove Known Design Gaps section — all gaps resolved
+08b7d11 docs: architecture §7+§8+§12 fully updated with all session changes
+730e3ba feat: debug tool bench templates + architecture §9 bench bypass section
+46fd8e5 test: bench bypass verification — 10 tests across 5 bypass scenarios
+3115a5a feat: bench bypass flags — CONFIG_BENCH_SOLO, BYPASS_EPS_C_SYNC, BYPASS_SEB_SYNC, BYPASS_MTR_ABSENT
+6d2c0c2 test: T1+T6 — SYS dispatch native test + multi-task watchdog native test
+9e43103 test: T2-T5 — CAN saturation, ignition sequence, MTR handshake, mode transition
+3606161 docs: Phase 4 — integration test procedure + FMEA light
+0b5d7f0 feat: Phase 3+4 — MTR startup ready flag, PWT heartbeat YAML
+44eb143 feat: Phase 2 — SYS per-task alive counters, fault injection tests
+766ceeb refactor: extract RT monitor_can_bus_off to can_health.h
+9dd6fb3 feat: S2 fix — 0x210 on both buses, SYS reads RT safety_state for takeover detection
+1bc37e2 Refactor documentation and code for clarity and organization
+7edf10c fix: RT TX jitter — vTaskDelay(5) → vTaskDelayUntil for precise 5ms period
+838f4b0 feat: Gap 2+3 — RT safety_state on 0x210, gate actuator TX on MANUAL mode
+e273eec feat: add dual-path ignition (GPIO + CAN) to SYS architecture and config
+7f95bd3 docs: rewrite SYS architecture §8.1 — define safety vs QM boundaries
+506bba0 fix: remove Diagnostics dead code, fix brake test UB
+7303660 fix: SYS issues 1-5, 10 — remove dead code, DCDC refresh, DAC ESTOP check
+a18c5c9 feat: P2+P5 — ESTOP timing verification via simulation + remaining fixes
+6f1a038 docs: mark work-plan phases R5-R8 completed, S1 confirmed fixed by TWAI ss=0
+a5b114c fix: P3 S3 S4 S5 S7 — steering rate, checksum, pressure mode, periodic 0x110, SEB keepalive
+8e4ddcc fix: dispatch alive counter, heartbeat test un-skip (protocol check only)
+5dc9a88 fix: C11 — multi-task watchdog with alive counters for critical RT tasks
+0ae0bf0 fix: C11 C14 C15 C16 — task watchdog, docs, README update
+a058c10 fix: C9 C12 C13 — steering startup check, gateway ESTOP priority, startup grace doc
+d266e1d feat: complete remaining items — B2 doc, B5 test note, D2 MTR drivers un-stubbed
+76eebb9 feat: SYS CAN TX retry for critical frames (0x7B9 brake, 0x001 ESTOP)
+baf2dc7 fix: MTR CAN driver — uncomment STM32 HAL calls, add CubeMX stubs
+050dc84 feat: Phase C — static analysis CI job + timing budget documentation
+117ecf2 feat: Phase A+B fixes — DLC validation, RT TX helper, bus-off 10Hz, MCP2515 crystal opt, SYS motor gate, gateway latency, CI sequential pool
+54c442a feat(tests): add RT CAN dispatch test for heartbeat and command processing
+cbfc0a1 fix: debounce CAN bus-off reinitialization to prevent excessive resets
+c1df3b6 feat(can): enhance MCP2515 driver with mode switching and bus-off detection
+4d1ba29 fix: correct moduleResolution casing in tsconfig and remove duplicate CanDriver declaration in main.cpp
+66d431f Refactor PID controller for improved anti-windup handling and update safety monitor to streamline event processing
+bd0e5d2 Refactor CAN driver and safety monitoring
+0b811d0 feat: enhance CI workflow with code generation verification and improve test timeout handling
+3a4e617 feat(can): Add generated CAN constants, data structures, and IDs
+fbfcd5d feat: add API endpoint to clear CAN frames and improve error handling in frame insertion
+399fda3 feat: implement reconnect logic for CAN and Serial bridges, enhance error handling in Controller
+9bb4e0c feat: enhance CAN message handling and update system architecture documentation
+7c3b552 feat: update CAN payload encoding and fault flag definitions for improved communication
+58ed505 Refactor CAN signal definitions and update ECU communication
+9d23ace chore: remove deprecated E-Trike CAN shared definitions file
+aea56c5 Add CAN definitions and DBC files for E-Trike
+35b2058 Remove deprecated DBC file for eTrike CAN communication
+c92b629 feat(can): add MCP2515 CNF config test and validate bit timing for 500 kbit/s
+7a72687 feat(can): Implement ISR-driven RX with overflow telemetry
+ca5b8ec fix: resolve final 3 gap tests — all 316 simulation tests now pass
+5510f18 feat: align simulation with firmware — 5 of 9 gap tests now pass
+a099240 fix: enhance PID controller with first-call seeding to prevent D-term spikes
+e2431e9 docs: fix 9 remaining documentation errors across 4 files
+4a89170 fix: ESTOP queue blocking, kMaxBrakeKpa consistency, linter additions
+c613f41 fix: commit pending cleanups from linter + manual edits
+1c2586d test: add native CAN protocol roundtrip + checksum test suite
+d71a727 test: add gap coverage tests for simulation (4 pending implementation)
+0c0c060 feat: close architecture gaps, add CI pipeline, HIL test plan, MTR migration docs
+d1a7249 fix: resolve critical audit findings — diag rescaling, steering offset, heartbeats, safety
+36fc909 fix(simulation): add missing autoBrake bit, CSV row-by-row compliance tests
+91144d4 fix: align implementation with manufacturer CSV specifications
+3a04f56 docs: fix 18 documentation mismatches from comprehensive audit
+4c33afd fix(simulation): 6 encoding bugs found by deep audit, real byte-content tests
+2bb88ce feat: update SYS_SAFETY_STS message to include light states and adjust DLC across the codebase
+8c1a955 fix(simulation): fix steering setTarget, SEB byte 6 encoding, add diag frames, real CAN content tests
+393c0bb refactor: rename Jetson to Host across codebase
+202af20 feat(vehicle_bridge): enhance vehicle bridge functionality with new subscriptions and kinematic state publishing
+97b814a feat: enhance architecture documentation and add new HAL stubs for testing
+76e6075 Implement virtual CAN bus and HAL stubs for testing
+caf3b4d docs: add Autoware.Auto Vehicle Interface I/O documentation
+e1fb4ad fix(can): consolidate DBC outputs to shared/can/
+0f4fe9e test(rt): fix steering_control ESTOP test timing
+8d8af4c fix(can): add speed bits 8-9 to VcuSesReq byte 5, fix unpack, add tests
+43eb99a Add E-Trike Architecture & CAN Dictionary documentation and test suite for ESP32
+08b850e Revert "chore: untrack local run.md, add to gitignore"
+3f4b96a chore: untrack local run.md, add to gitignore
+654e81f fix(sys): correct kSetpointStaleMs comment — 20 frames not 2
+82bead1 fix(rt): clamp obstacle ESTOP hold angle to dynamic limit
+00cac5e docs(debug-tool): update architecture to 37 IDs and add E2E tests
+8cc45ee test(debug-tool): expand frontend tests from 21 to 117
+81263aa feat(debug-tool): sync frontend CAN catalog to 37 IDs and add decodeFrame
+6e992e9 test(backend): add vitest infrastructure and 128 type/catalog tests
+23ee6d4 fix(mtr,jetson): correct stale timeout comment + remove spurious can_msgs dependency
+973a813 fix(rt,sys): steering ESTOP safety gaps + SYS config constant
+8e2ff35 feat(rt,sys): add CAN bus-off detection and auto-recovery
+a056bd5 fix(rt): allow 0x169 steering transmission during ESTOP centering ramp
+115f1b7 fix(rt): use independent heartbeat counters per CAN bus
+6f0134a fix(rt): add external watchdog GPIO toggle in control_task
+1577ad0 feat(debug-tool): update CAN message catalog to reflect 37 IDs and clarify frontend sync requirements
+49cc454 fix(can): correct YAML signal dictionary — sender, naming, scaling, collisions
+1a81078 feat(dashboard): enhance layout responsiveness and add min-width constraints
+152eed9 feat(unit-test): add UnitTest component and integrate into App.svelte
+f4365b2 feat(debug-tool): redesign engineering dashboard
+4c02045 refactor(can): replace 3 procedural DBC generators with single YAML-driven generator
+3cd8001 feat(debug-tool): add CANALYST_DEVICE_INDEX config, fix script path and serialPath
+48c34ab feat(debug-tool): extract continuous keyboard controller from injector
+122a8d4 simulation: add build artifacts to gitignore
+40f233e simulation: add simulation harness, validation, scenarios, and CLI
+5f21485 simulation: add ECU models for all six vehicle nodes
+45f1807 simulation: add physics models and RT control algorithms
+ff16d6c simulation: add project skeleton with core modules and bus model
+d89903f refactor(dbc): replace hand-written monolithic DBC with canmatrix-generated per-component DBCs
+8a6de52 docs(debug-tool): add CANalyst-II run instructions and quick-start
+b71c78d feat(debug-tool): show transport-agnostic adapter labels in UI
+d20daa8 feat(debug-tool): wire backend to select bridge by CAN_TRANSPORT
+f03a1da refactor(debug-tool): make SerialBridge implement HardwareBridge
+9af29e6 feat(debug-tool): add CANalyst-II process bridge (Python + TypeScript)
+e65e4d9 feat(debug-tool): add HardwareBridge interface and CANalyst-II config
+cfd4aa3 fix(debug-tool): integrate keyboard hints as subtle divider, not floating card
+b2e7e94 fix(debug-tool): move keyboard controls from floating HUD into Injector card
+cd76101 feat(debug-tool): add Pipeline tab — visualize high→low bus causal chain
+52daae2 fix(debug-tool): add encodePayload for 0x201/0x721, fix pause to freeze, remove dead code
+9cc2e86 feat(debug-tool): implement keyboard controls with HUD overlay
+941924d feat(debug-tool): redesign CAN Monitor as grouped category cards
+c4085e6 fix(debug-tool): CSS layout bugs — latest-row 4-col, stats full-width, CSS variables
+46285f5 chore: add e2e package-lock.json
+29eb636 chore: gitignore audit scripts, screenshots, and runtime artifacts
+b963ea1 feat(debug-tool): auto-detect CAN bus from frame IDs
+26f9c1c fix(debug-tool): apply dark theme background to body element
+ade1136 refactor(debug-tool): switch transport from MQTT to serial, update gitignore
+c03c83e feat(debug-tool): adopt test-bench patterns — reconnect, dark theme, zod config, tests
+d0be356 fix(debug-tool): resolve architecture mismatches, upgrade to full dual-bus MQTT stack
+c5a165d chore: add AURIX TC275 build patterns to .gitignore
+70127fe chore: add CODEOWNERS — shakilapr owns all files (#1)
+9e06c42 feat(debug-tool): separate bus tabs, auto-detect connection status
+cdc6619 feat(can): add STEER_DIAG (0x310) and BRAKE_DIAG (0x311) telemetry frames
+8f92ab9 fix(debug-tool): correct ESP32-S3 TWAI count — one controller, not two
+b01f8fd fix(can): correct SYNTREE checksum algorithm and SES_StrAngle type to match CSV
+b2c56ab docs(arch): document 0x7B9 dual-sender gap, fix topology RX lists
+4901f9c refactor(sys): wire gear control GPIOs directly, deprecate UART pins
+93dfd3e docs(debug-tool): add dual-bus diagnostic tool architecture
+7551434 docs(arch): sync architecture.md with code reality
+87dc986 fix(rt): correct 0x6FA SES_Test byte layout, add supply voltage monitoring
+6ee9ccf fix(can): correct EPS-C checksum from SUM to XOR
+bb043a1 fix(arch): correct SYS task descriptions to match actual code
+7921d15 fix(arch): sync architecture.md with actual code — remove phantom constants, fix namespaces
+fd77b05 fix: stale comments, dead aliases, missing constant, hardcoded hex
+864730c fix: correct heartbeat rate comments and naming conventions
+b3f7279 chore: delete dead code, completed analysis artifacts, unused test mocks
+acc8121 docs: replace issues.md with open items only, delete resolved fixes.md
+d06ae1d chore: delete legacy code, dead files, sys test mocks; update .gitignore
+e48b929 chore: delete test files, add DBC and physics test
+a5ea91a fix(jetson): add missing CMakeLists.txt for bridge node
+9f9487e feat(jetson): add autoware_vehicle_bridge ROS 2 lifecycle node
+b206c22 docs: v0.0.4 Autoware.Auto integration architecture and upgrade spec
+52a8dbf fix(sys): heartbeat timeout, real I2C DAC, WDT init, ESTOP long-press fix
+7b37ecd fix(rt): fix zero-speed cmd drop, 0x400 dead code, obstacle brake, gear priority, TOCTOU race
+b63e3bd feat(rt): implement dynamic angle clamp, speed-scaled following error, and dynamic steering slew rate
+1bab9f5 fix(shared): add kObstacleMaxKpa, fix can-dictionary 6 documentation errors
+6944ca2 fix: correct AURIX Lite topology to use two CAN buses
+b523473 docs: add AURIX Lite consolidated architecture variant
+5d21fdc feat: enhance RT firmware upgrade plan with feedback translation functions and gating mechanism
+2d3def4 Add Autoware.Auto Integration documentation for E-Trike v0.0.4-alpha
+b8751d1 fix: correct CAN wire protocol encoding errors and add missing safety checks
+f7e9c56 feat: implement MTR motor controller firmware and complete architecture feature coverage
+0ad0184 Add optimal upgrade strategy document for E-Trike implementation
+6d46b1e refactor: extract large functions, consolidate shared configuration, add GPIO safety guards
+133794f style: normalize coding conventions, replace magic numbers, improve const correctness
+67d9afe fix: correct RTOS task synchronization, heartbeat monitoring, and ESTOP propagation
+ca1e461 chore: audit codebase for dead code and stale references
+e867828 Refactor CAN signal definitions in brake and steering CSV files; add Autoware communication architecture documentation
+e83769e fix: correct documentation inconsistencies across architecture and subsystem docs
+1ff6677 fix: align CAN signal definitions with manufacturer DBC specification
+c453977 Refactor documentation for I/O data and wiring
+19eada0 feat: add comprehensive I/O data documentation for all system components
+967838b Add comprehensive documentation for system components
+f97d28a fix: resolve ESTOP behavior inconsistencies and enhance safety measures
+69bf133 docs: add Option D analysis, design principle #11, comparison table
+9346d29 feat: implement Option D — mode-gated dual control of SYNTREE actuators
+4c2e26d docs: add EGAS 3-level safety rationale for MTR STM32 separation
+7c9e69b fix: clean up MtrMotorFbk struct placement (linter will resolve)
+76b4ecd feat: add MTR STM32 config + 0x206 protocol struct + wiring update
+fb33550 feat: add STM32 motor controller as 4th node (MTR)
+b1185ed docs: add wiring.md with input/output tables for both ESP32s
+51e12df refactor: clearly separate OUR CAN IDs from SYNTREE CAN IDs
+d2a6de2 fix: all 18 tests pass after CSV protocol field fixes
+3378d48 fix: update architecture.md CAN IDs to match CSV factory defaults
+ae330c8 fix: update can-dictionary.md with CSV-matching CAN IDs
+51362b1 fix: SYNTREE protocol fields match CSV specs (row-by-row audit)
+83440be fix: CAN IDs to match SYNTREE CSV factory defaults
+59d1d85 fix: add ESP_PLATFORM guard to can_driver.h with host stubs for IntelliSense
+a6e1d87 chore: linter updates to can_driver.h, physics_model.cpp, tests
+b942a35 fix: rename 0x400 to HostObstacleDist (Jetson->RT, matches architecture)
+4db9b41 fix: both projects build SUCCESS on ESP-IDF 6.12.0
+31fac58 fix: add -Wno-error + build_unflags for ESP-IDF 6.x wpa_supplicant warnings
+ac92070 fix: ESP-IDF 6.x TWAI API migration, disable WiFi, throttle cast
+d875a8b fix: update architecture and CAN dictionary to reflect Jetson Orin naming
+80e1c02 fix: build errors - watchdog.cpp dup, diagnostics cstdint, gpio_num_t cast
+79f572f fix: remove all deprecated constants from RT and SYS config
+ab563de fix: consolidate shared/ - remove dead code, unify CAN headers
+cc03c1d fix: structural issues - RT main.cpp, queue guard, throttle test
+739e093 fix: restore physics_model.cpp, update tests for new API, all 17 tests pass
+f9dc236 fix: remove 16 stale source files, 4 stale tests to legacy
+8504735 fix: move speed_pid to legacy - dead code until encoders fitted
+d13e087 fix: restore speed_pid, update architecture with honest PID status
+c701853 fix: move speed_pid.cpp/.h to legacy (PID deferred, no encoders)
+30fbb78 fix: remove stale PID labels from signal flow, mode desc, task layout, error handling
+ca8e3d2 fix: remove HC-SR04 ultrasonic sensor, use Jetson perception for obstacle detection
+686c6ae chore: delete all .exe build artifacts, add *.exe to .gitignore
+99667e7 feat: Phases 38-44 - Full integration + Jetson + validation (10 tests, 0 failures)
+76c6404 feat: Phases 35-37 - RT watchdog + full pipeline test (7 tests, 0 failures)
+0f6c2d1 feat: Phases 29-34 - RT kinematics, steering SM, obstacle, brake arbitration (11 tests, 0 failures)
+06e227e feat: Phases 23-28 - RT CAN drivers, heartbeat, gateway router (10 tests, 0 failures)
+bf8f47b feat: Phase 17 - SYS brake SEB control (boot SM, stroke/pressure, roll ctr, 10 tests)
+72d9401 feat: Phases 16-20 - SYS DCDC, lights, indicators, WDT (10 tests, 0 failures)
+8332881 feat: Phases 13-15 - SYS gear control + CAN dispatch (12 tests, 0 failures)
+754fe03 feat: Phase 12 - SYS motor driver (3 tests, 0 failures)
+018c60f feat: Phase 11 - SYS MCP4725 I2C DAC (7 tests, 0 failures)
+ee746b6 feat: Phase 10 - SYS throttle ADC (6 tests, 0 failures)
+7dd8b82 feat: Phase 8+9 - SYS safety monitor + mode integration (13 tests, 0 failures)
+69c42bd feat: Phase 7 - SYS mode manager (button debounce + transitions)
+df7be4e feat: Phase 6 - SYS heartbeat (0x7FE, alive counter, wrap at 255)
+7857f44 feat: Phase 5 - SYS main.cpp skeleton (15 tasks, 2 queues)
+e326fa8 feat: Phase 4 - SYS CAN driver wrapper + test
+8fd2672 feat: Phase 3 - SYS config header
+f6691ed feat: Phase 2 RT config header, move inter-MCU to legacy
+51159cf feat: rewrite CAN protocol header for 3-node architecture (Phase 1)
+aa9b845 feat: add comprehensive issues and resolution analysis for CAN architecture discrepancies
+ee720f5 fix: resolve brake pressure mapping (C3), GPIO labeling (L2), I2C mutex (L3)
+b831c7f fix: close brake arbitration gap with 0x203 RT_BRAKE_CMD
+1cf92ce fix: topology SYS RX 0x200->0x202, split heartbeat into dedicated IDs per sender
+a65409e fix: standardize CAN message naming, add 3-category forwarding, fix heartbeat liveness matrix
+3568cef chore: move legacy files to legacy/ folder
+04e9b03 fix: resolve 10 cross-document conflicts and stale references
+4b82a10 docs: add cross-references to theory notes and reference docs in architecture
+acba218 docs: merge architecture into single unified document
+145efbc docs: split CAN into low-level and high-level buses, add CAN dictionary
+3bb8e60 docs: update architecture for CAN steering, bidirectional throttle/gear, body control
+baed44b back to old achitecture
+c1731e7 first commit
