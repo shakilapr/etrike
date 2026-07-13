@@ -5,7 +5,7 @@
 
 import type { CanMessageDef, CanField, Bus, FieldKind } from "../can";
 
-export const PROTOCOL_HASH = "775c30b7a69fdf64bab4d7c67921a3a67bf6c455a118d0285c5915576767286b";
+export const PROTOCOL_HASH = "ec1352e88365a8aa150550033b0614b12385156cf72eaa873d26115be731282f";
 
 export interface InternalCanField extends CanField {
   _byte: number;

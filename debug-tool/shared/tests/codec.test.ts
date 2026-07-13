@@ -106,7 +106,7 @@ describe("decodeFrame", () => {
     expect(result.SYS_DiagMode).toBe(1);
     expect(result.SYS_DiagBrakeEngaged).toBe(false);
     expect(result.SYS_DiagBrakeFault).toBe(false);
-    expect(result.SYS_DiagHeartbeatOk).toBe(true);
+    expect(result.heartbeat_ok).toBe(true);
     expect(result.SYS_DiagEstopActive).toBe(true);
     expect(result.SYS_DiagFreeHeapKb).toBe(256);
   });
@@ -265,11 +265,17 @@ describe("decodeFrame", () => {
   });
 
   it("decodes 0x7FD RT_HEARTBEAT (low)", () => {
-    expect(decodeFrame("low", "0x7FD", [7])).toMatchObject({ RT_AliveCtr: 7, RT_HealthFlags: 0 });
+    expect(decodeFrame("low", "0x7FD", [7, 0])).toEqual({ alive_ctr: 7, health_flags: 0 });
   });
 
   it("decodes 0x7FE SYS_HEARTBEAT (low)", () => {
-    expect(decodeFrame("low", "0x7FE", [99])).toMatchObject({ SYS_AliveCtr: 99, SYS_HealthFlags: 0 });
+    expect(decodeFrame("low", "0x7FE", [99, 0])).toMatchObject({
+      SYS_AliveCtr: 99,
+      heartbeat_ok: false,
+      estop_active: false,
+      can_ok: false,
+      task_safety_ok: false,
+    });
   });
 
   // Edge cases

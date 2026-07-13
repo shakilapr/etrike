@@ -10,14 +10,25 @@ This is a codebase traceability and test-readiness document. It does not specify
 
 ## 1. Audit result
 
+> **Remediation update (2026-07-13):** The original findings below remain as
+> traceability records. CAN IDs/DLCs/routes and protocol hashes are now generated
+> and consumed by production interfaces; the `0x600`, `0x7FE`, `0x7FC`, `0x210`,
+> HMI mode, forwarding, build-profile, and bounded RT event-queue mismatches have
+> been corrected. PWT is now explicitly standalone, owns generated
+> `0x10262B27`, and the nonexistent low-bus `0x012` route is retired. Native
+> software verification can therefore cover RT/SYS protocol behaviour. Full
+> RT/SYS/MTR hardware conformance remains open because MTR board initialization,
+> direct ESTOP wiring, and hardware-in-loop evidence cannot be completed in
+> repository-only remediation.
+
 The current repository is **not yet contract-consistent enough to support a conclusive end-to-end RT/SYS/MTR conformance result**. Raw CAN capture and many individual tests remain useful, but the following blockers can make a correct diagnostic consumer report incorrect values or make an apparently passing test prove the wrong implementation:
 
-1. YAML-generated C++ is not compiled by RT, SYS, or MTR. Production firmware uses the separately maintained [`can_protocol.h`](shared/can/can_protocol.h).
-2. Several live frame layouts disagree with YAML, notably `0x600`, `0x7FE`, and host heartbeat `0x7FC`.
-3. `0x210` is transmitted on both buses, but exists only in the high-bus YAML.
-4. The shared run mode is hard-coded to Pure Simulation, so a nominal vehicle build can enable bypass behaviour.
-5. Architecture claims a SYS task watchdog that the implementation does not perform.
-6. MTR is a partially scaffolded target and PWT is explicitly a stub; neither can currently satisfy the full architecture.
+1. Generated IDs, DLCs, routes, and protocol hashes are compiled by production interfaces; payload structs remain hand-written compatibility wrappers pending generated codecs.
+2. Live `0x600`, `0x7FE`, `0x7FC`, and `0x210` definitions now agree with the canonical YAML and generated consumers.
+3. Vehicle builds default to production mode; explicit hardware-bench and software-bench profiles select their intended bypass level.
+4. SYS now reports task freshness bits and transition-based diagnostics, but hardware reset/NVS evidence remains bench work.
+5. MTR remains a hardware-incomplete scaffold and is explicitly unavailable for vehicle actuation.
+6. PWT is a supported standalone powertrain node, not a gateway; a future gateway still requires different or additional CAN hardware.
 
 `python shared/can/generate_code.py --verify` passes. That proves the committed generated files match the YAML input; it does **not** prove the firmware, host bridge, simulators, or documentation implement that contract.
 

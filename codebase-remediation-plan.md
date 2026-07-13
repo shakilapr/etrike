@@ -70,7 +70,7 @@ Remove ambiguity before generating production code. The result is an approved co
 | Generated forwarding and copied forwarding tests | Missing HMI routes | Generate high-to-low `0x111` and `0x112` routes from the approved canonical routing model so firmware, generated metadata, docs, and tests agree. |
 | `0x206 MTR_MOTOR_FBK` | Readiness and faults | Use one layout on both routes; separate readiness status from fault meaning where possible. |
 | SES version | Vendor byte layout | Confirm from vendor data or a known hardware response before choosing YAML or RT parsing. |
-| `0x012` to powertrain | Forward versus translate | Specify consumed-and-regenerated translation to extended `0x10262B27`, including timeout and disabled default. |
+| DC-DC powertrain command | Ownership | Standalone PWT owns generated extended `0x10262B27`; the nonexistent low-bus `0x012` route is retired. |
 | `0x169` | Rate | Use 50 Hz unless a measured control requirement justifies changing firmware and YAML together. |
 
 - Define an explicit compatibility policy. Because this is an internal bench network, prefer one coordinated contract cutover over indefinite dual decoding. Replays of old captures may select their recorded protocol hash.
