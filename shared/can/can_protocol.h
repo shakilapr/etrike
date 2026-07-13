@@ -499,6 +499,22 @@ struct HostObstacleDist {
     }
 };
 
+// 0x7FC HOST_HEARTBEAT — Host→RT
+struct HostHeartbeat {
+    uint8_t alive_ctr = 0;
+    uint8_t health_flags = 0;
+
+    static HostHeartbeat from_frame(const Frame& f) {
+        if (f.dlc < 2) return {};
+        return { f.u8_at(0), f.u8_at(1) };
+    }
+    void to_frame(Frame& f) const {
+        f.id = kIdHostHeartbeat; f.dlc = 2;
+        f.put_u8(0, alive_ctr);
+        f.put_u8(1, health_flags);
+    }
+};
+
 // ───────────────────────────────────────────────────────────────────
 // steer-by-wire little-endian pack/unpack (Motorola LSB)
 // ───────────────────────────────────────────────────────────────────
