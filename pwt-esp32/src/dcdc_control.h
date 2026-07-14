@@ -28,18 +28,11 @@ public:
     void tick() {
         if (!m_can || !m_can->initialized()) return;
 
-        PwtFrame f = PwtFrame::make_ext(kDcdcCmdId, 8);
-
-        // Byte 0: Control
-        f.set_u8(0, (m_state == State::ON) ? kDcdcEnable : kDcdcDisable);
-
-        // Bytes 1-6: Reserved
-        for (int i = 1; i <= 6; ++i) {
-            f.set_u8(i, kDcdcReserved);
-        }
-
-        // Byte 7: Reset Control
-        f.set_u8(7, m_reset_requested ? kDcdcReset : kDcdcNoReset);
+        PwtFrame f = PwtFrame::make_ext(can_data::DcdcCmd::kId, can_data::DcdcCmd::kDlc);
+        can_data::DcdcCmd message{};
+        message.enabled = m_state == State::ON;
+        message.reset = m_reset_requested;
+        if (message.pack(f.data, f.dlc) != can_data::CodecStatus::Ok) return;
         if (m_reset_requested) {
             m_reset_requested = false;
         }

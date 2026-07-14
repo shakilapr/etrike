@@ -510,7 +510,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             message.steer_diag_angle0_1deg = angle;
             message.steer_diag_fault = fault;
             message.steer_diag_motor_current = mtr_curr;
-            message.steer_diag_ecu_temp = ecu_tmp;
+            message.steer_diag_ecutemp = ecu_tmp;
             if (can::encode_frame(message, fr) != can::gen::CodecStatus::Ok) continue;
             static uint32_t diag_fail_count = 0;
             if (!g_can_high.send(fr)) {
@@ -538,7 +538,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             message.brake_diag_pressure_raw = seb_pressure;
             message.brake_diag_fault = seb_fault;
             message.brake_diag_motor_current = mtr_curr;
-            message.brake_diag_ecu_temp = ecu_tmp;
+            message.brake_diag_ecutemp = ecu_tmp;
             if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
         }
 

@@ -32,6 +32,7 @@
 
 /* Shared protocol headers */
 #include "can/can_protocol.h"
+#include "can/codec_transport.h"
 
 /* MTR module headers */
 #include "config.h"
@@ -112,7 +113,8 @@ static void process_can_frame(const can::Frame& frame) {
 
     } else if (frame.id == can::kIdSysModeCmd) {
         /* 0x110 SYS_MODE_CMD — u8 mode */
-        can::SysModeCmd cmd = can::SysModeCmd::from_frame(frame);
+        can::gen::SysModeCmd cmd{};
+        if (can::decode_frame(frame, cmd) != can::gen::CodecStatus::Ok) return;
         can::Mode new_mode = static_cast<can::Mode>(cmd.mode & 0x03);
         if (new_mode == can::Mode::Manual ||
             new_mode == can::Mode::Auto ||
@@ -122,7 +124,8 @@ static void process_can_frame(const can::Frame& frame) {
 
     } else if (frame.id == can::kIdRtDriveCmd) {
         /* 0x204 RT_DRIVE_CMD — i32 speed + u8 gear */
-        can::RtDriveCmd cmd = can::RtDriveCmd::from_frame(frame);
+        can::gen::RtDriveCmd cmd{};
+        if (can::decode_frame(frame, cmd) != can::gen::CodecStatus::Ok) return;
         g_cmd_speed_mmps.store(cmd.motor_speed_mmps, std::memory_order_relaxed);
         g_cmd_gear.store(cmd.gear, std::memory_order_relaxed);
         g_last_cmd_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -374,19 +377,19 @@ void task_can_tx(void* pvParameters) {
         can::Frame tx;
 
         /* ── 0x120 SYS_THROTTLE_STS @ 100 Hz (every cycle) ── */
-        can::SysThrottleSts throttle_sts;
+        can::gen::SysThrottleSts throttle_sts{};
         throttle_sts.speed_mmps = actual_speed;
-        throttle_sts.to_frame(tx);
-        mtr::g_can.send(tx);
+        if (can::encode_frame(throttle_sts, tx) == can::gen::CodecStatus::Ok)
+            mtr::g_can.send(tx);
 
         /* ── 0x206 MTR_MOTOR_FBK @ 50 Hz (every 2nd cycle) ── */
         if ((cycle & 1) == 0) {
-            can::MtrMotorFbk fbk;
+            can::gen::MtrMotorFbk fbk{};
             fbk.actual_speed_mmps = actual_speed;
             fbk.gear_state        = gear_state;
             fbk.fault_flags       = fault_flags;
-            fbk.to_frame(tx);
-            mtr::g_can.send(tx);
+            if (can::encode_frame(fbk, tx) == can::gen::CodecStatus::Ok)
+                mtr::g_can.send(tx);
         }
 
         cycle++;
