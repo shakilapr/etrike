@@ -103,7 +103,7 @@ This section cross-references the standard Autoware.Auto interface (§1–2) aga
 | **Gear selection** | `GearCommand` NONE/DRIVE/LOW/REVERSE/PARK | `0x300` gear byte → RT → `0x204` → MTR relays. PARK not supported (no mechanical parking pawl). | ⚠️ PARK unsupported |
 | **Steering actuation** | CAN command → steering ECU | `0x169` VCU_SES_REQ → steer-by-wire unit (Angle Mode, 50 Hz, rolling counter + checksum) | ✅ Proprietary but validated |
 | **Brake actuation** | CAN command → brake ECU | `0x7B9` VCU_SEB_REQ (Pressure/Stroke, 50 Hz). RT sends directly in AUTO (Option D). SYS sends in MANUAL/ESTOP. SYS reads RT safety_state from 0x210 to avoid dual-send. | ✅ Mode-gated dual sender |
-| **Throttle actuation** | Analog/CAN → motor controller | MCP4725 DAC 0–5V via MTR STM32 (open-loop). Motor I/O being migrated to MTR (SYS_OWNS_MOTOR flag). | ⚠️ Open-loop, migration in progress |
+| **Throttle actuation** | Analog/CAN → motor controller | Motor I/O owned by MTR STM32 (open-loop). | ⚠️ Open-loop |
 | **Safety architecture** | EGAS / ISO 26262 | EGAS 3-level: MTR L1 (STM32), SYS L2 (ESP32-S3), hardware ESTOP L3. RT+SYS per-task WDT. MCP2515 error interrupts. | ✅ ASIL-C decomposition |
 | **Heartbeat/liveness** | Per-node alive counter | `0x7FD` (RT, DLC=2), `0x7FE` (SYS, DLC=2), `0x7FC` (Host, DLC=1). Health byte on RT+SYS. Frozen-counter detection. | ✅ Automotive-grade |
 

@@ -357,14 +357,14 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | A — Safety (ASIL) | 5–4 | ESTOP, mode, RT heartbeat, EGAS L2, brake control, CAN TX |
 | B — Body (QM) | 3–1 | Lights, DCDC, indicators, 12V relay, diagnostics, heartbeat |
 
-**12–14 FreeRTOS tasks (vehicle=12, bench=14 with SYS_OWNS_MOTOR). TWAI GPIO5/4 (low bus only). I2C DAC + gear MOSFETs are bench-only; MTR owns all motor I/O in vehicle.**
+**12 FreeRTOS tasks. TWAI GPIO5/4 (low bus only). MTR owns all motor I/O in vehicle.**
 
 ### CAN I/O
 
 | Frame | Dir | Rate | Purpose |
 |-------|-----|------|---------|
 | 0x001 | RX+TX | event | ESTOP. Rate-limited: max 2 per 500ms window. |
-| 0x204 | RX | 100 Hz | RT drive setpoint → motor DAC (SYS_OWNS_MOTOR) + EGAS L2 monitor |
+| 0x204 | RX | 100 Hz | RT drive setpoint → EGAS L2 monitor |
 | 0x205 | RX | 50 Hz | RT brake kPa → SYS converts to 0x7B9 SEB pressure mode |
 | 0x206 | RX | 50 Hz | MTR actual speed. EGAS L2: compare vs 0x204 setpoint. Fault flags (ESTOP_ACTIVE, StartupReady). |
 | 0x210 | RX | 10 Hz | RT safety_state (byte1:0-1). Used for takeover detection. |
@@ -390,11 +390,7 @@ suppress = (mode == AUTO) && rt_heartbeat_ok && rt_safety_state == Normal && !le
 ```
 When RT safety_state != Normal (InternalEstop or Fault), SYS does NOT suppress — it continues sending brake commands. This resolves the triple-sender issue (S2).
 
-### Motor Ownership Gate
 
-Motor actuation is gated by `#ifdef SYS_OWNS_MOTOR`:
-- **Defined (current bench):** SYS writes DAC + drives gear relays. MTR is monitoring-only.
-- **Undefined (future):** SYS is EGAS L2 monitor only. MTR owns all motor I/O.
 
 ### Error Responses
 
@@ -497,7 +493,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | ECU | Board | Framework | Vehicle Flags | Bench Flags |
 |-----|-------|-----------|--------------|-------------|
 | RT | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | Same as Vehicle |
-| SYS | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | `TESTING SYS_OWNS_MOTOR` |
+| SYS | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | `TESTING` |
 | MTR | genericSTM32F103C8 | stm32cube | HAL calls | Same as Vehicle |
 | PWT | esp32-s3-devkitc-1 | espidf | 250k CAN | Same as Vehicle |
 

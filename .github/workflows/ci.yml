@@ -124,14 +124,14 @@ jobs:
             cd "$dir"
             pio run -e vehicle 2>&1 | tee build.log
             # Check build log for bypass flags in compiler commands
-            if grep -Eq '\-D\s*(CONFIG_BENCH_SOLO|TESTING|SYS_OWNS_MOTOR|CONFIG_BYPASS)' build.log; then
+            if grep -Eq '\-D\s*(CONFIG_BENCH_SOLO|TESTING|CONFIG_BYPASS)' build.log; then
               echo "FAIL: bypass flag found in build output for $dir"
               failed=1
             fi
             # Check generated sdkconfig.h for bypass defines
             sdk=".pio/build/vehicle/config/sdkconfig.h"
             if [ -f "$sdk" ]; then
-              if grep -qE '(CONFIG_BENCH_SOLO|TESTING|SYS_OWNS_MOTOR|CONFIG_BYPASS)' "$sdk"; then
+              if grep -qE '(CONFIG_BENCH_SOLO|TESTING|CONFIG_BYPASS)' "$sdk"; then
                 echo "FAIL: bypass flag found in $dir sdkconfig.h"
                 failed=1
               fi
@@ -163,7 +163,7 @@ jobs:
                 "[env:"*) test "$line" = "[env:vehicle]" || in_vehicle=false ;;
               esac
               if $in_vehicle; then
-                if echo "$line" | grep -qE '(CONFIG_BENCH_SOLO|TESTING|SYS_OWNS_MOTOR|CONFIG_BYPASS)'; then
+                if echo "$line" | grep -qE '(CONFIG_BENCH_SOLO|TESTING|CONFIG_BYPASS)'; then
                   echo "FAIL: $dir vehicle profile contains bypass flag: $line"
                   failed=1
                 fi

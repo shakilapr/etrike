@@ -29,16 +29,18 @@ bool g_bypass_mtr_absent = false;
 #endif
 
 #include "config.h"
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+#error "ESP-IDF 5.0 or later required"
+#endif
+
+#include "config.h"
 #include "can/can_protocol.h"
 #include "can/codec_transport.h"
 #include "can/manual/vendor_protocol.h"
 #include "can/can_driver.h"
 #include "safety_monitor.h"
 #include "mode_manager.h"
-#include "throttle_input.h"
-#include "mcp4725_dac.h"
 
-#include "gear_control.h"
 #include "brake_control.h"
 #include "light_control.h"
 #include "indicator_control.h"
@@ -96,10 +98,7 @@ static bool send_can(can::Frame& fr, const char* caller = "?") {
 
 static sys::SafetyMonitor  g_safety;
 static sys::ModeManager    g_mode_mgr;
-static sys::ThrottleInput  g_throttle;
-static sys::Mcp4725Dac     g_dac;
 
-static sys::GearControl    g_gear;
 static sys::BrakeControl   g_brake;
 static sys::LightControl   g_lights;
 static sys::IndicatorControl g_indicator;
@@ -558,55 +557,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     }
 }
 
-// ── Motor task (prio 4, 100 Hz) ────────────────────────────────────
-
-[[noreturn]] static void task_motor(void*) {
-    TickType_t period = pdMS_TO_TICKS(1000 / sys::kControlLoopHz);
-    TickType_t last   = xTaskGetTickCount();
-    // Gap #16: 3s startup grace period — mask staleness check during boot.
-    // RT sends 0x204 at 100 Hz once online, but during cold boot it isn't
-    // sending yet. Without this, SYS would false-trigger staleness at 200ms.
-    TickType_t startup_end = xTaskGetTickCount() + pdMS_TO_TICKS(shared::kStartupGracePeriodMs);
-    bool startup_grace = true;
-    while (1) {
-        if (startup_grace && xTaskGetTickCount() >= startup_end)
-            startup_grace = false;
-
-        can::Mode mode = g_mode_mgr.mode();
-        TickType_t now = xTaskGetTickCount();
-
-#ifdef SYS_OWNS_MOTOR
-        // ── SYS owns motor: direct DAC + gear actuation ──────────
-        if (mode == can::Mode::Estop) {
-            if (!g_dac.write(0)) {  // MCP4725 = 0V
-                ESP_LOGE(TAG, "ESTOP: DAC write failed — relying on HW ESTOP GPIO (Level 3)");
-            }
-        } else if (mode == can::Mode::Manual) {
-            g_throttle.poll();
-            g_dac.set_speed_mmps(g_throttle.read_mmps());
-        } else {
-            TickType_t last_sp = g_last_setpoint_tick.load(std::memory_order_relaxed);
-            if (!startup_grace && last_sp != 0
-                && (now - last_sp) >= pdMS_TO_TICKS(sys::kSetpointStaleMs)) {
-                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
-                g_setpoint_gear.store(0, std::memory_order_relaxed);
-            }
-            int32_t speed = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
-            g_dac.set_speed_mmps(speed);
-        }
-#else
-        // ── MTR owns motor: EGAS L2 monitoring only ─────────────
-        // SYS does NOT write the DAC or drive gear MOSFETs (bench only — MTR owns gear in vehicle).
-        // EGAS L2 speed mismatch check is handled by task_safety at 20 Hz
-        // (compares 0x204 setpoint vs 0x206 actual, independent of this task).
-        // This task exists for the SYS_OWNS_MOTOR bench path above.
-        (void)mode; (void)now; (void)startup_grace; // unused in production path
-#endif
-
-        vTaskDelayUntil(&last, period);
-    }
-}
-
 // ── Gear task (prio 3, 50 Hz) ──────────────────────────────────────
 
 [[noreturn]] static void task_gear(void*) {
@@ -614,18 +564,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     while (1) {
         can::Mode mode = g_mode_mgr.mode();
-#ifdef SYS_OWNS_MOTOR
-# ifdef TESTING
-        uint8_t sense = 0;
-# else
-        uint8_t sense = 0;
-        if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearDSense)) == 0) sense |= 0x01;
-        if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearSSense)) == 0) sense |= 0x02;
-        if (gpio_get_level(static_cast<gpio_num_t>(sys::kGearRSense)) == 0) sense |= 0x04;
-# endif
-        uint8_t set_gear = g_setpoint_gear.load(std::memory_order_relaxed);
-        g_gear.tick(mode, sense, set_gear);  // actuates MOSFET GPIOs (bench-only legacy)
-#else
         // MTR owns motor: monitor gear mismatch via CAN
         uint8_t reported  = g_mtr_gear_state.load(std::memory_order_relaxed);   // from 0x206
         uint8_t commanded = g_setpoint_gear.load(std::memory_order_relaxed);    // from 0x204
@@ -636,23 +574,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 mismatch_ticks = 0;
             }
         } else { mismatch_ticks = 0; }
-#endif
-        vTaskDelayUntil(&last, period);
-    }
-}
-
-// ── Throttle task (prio 3, 100 Hz) ─────────────────────────────────
-
-[[noreturn]] static void task_throttle(void*) {
-    TickType_t period = pdMS_TO_TICKS(10);  // 100 Hz
-    TickType_t last   = xTaskGetTickCount();
-    while (1) {
-        g_throttle.poll();
-
-        // TODO(arch): throttle migrated to MTR per architecture §2.1 (fix #4, #8).
-        // 0x120 SYS_THROTTLE_STS removed — MTR is the designated sender.
-        // Keep SYS-local throttle read for task_motor fallback until MTR migration complete.
-
         vTaskDelayUntil(&last, period);
     }
 }
@@ -946,8 +867,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
 // ── Task handles ────────────────────────────────────────────────────
 
-static TaskHandle_t h_can_rx, h_safety, h_dispatch, h_mode, h_motor;
-static TaskHandle_t h_throttle, h_gear, h_brake, h_lights;
+static TaskHandle_t h_can_rx, h_safety, h_dispatch, h_mode;
+static TaskHandle_t h_gear, h_brake, h_lights;
 static TaskHandle_t h_indicator, h_power, h_can_tx, h_diag, h_hb;
 
 // Put every connected SYS GPIO in a deterministic, non-actuating state before
@@ -1003,13 +924,6 @@ static void init_board_gpio() {
     inputs.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&inputs));
 
-#ifdef SYS_OWNS_MOTOR
-    gpio_config_t gear_sense = inputs;
-    gear_sense.pin_bit_mask = (1ULL << sys::kGearDSense)
-                            | (1ULL << sys::kGearSSense)
-                            | (1ULL << sys::kGearRSense);
-    ESP_ERROR_CHECK(gpio_config(&gear_sense));
-#endif
 }
 
 // ── app_main ────────────────────────────────────────────────────────
@@ -1084,14 +998,6 @@ extern "C" void app_main() {
     // 2. Init modules
     g_safety.init();
     g_mode_mgr.init();
-    g_throttle.init();
-#ifdef SYS_OWNS_MOTOR
-    g_dac.init();       // bench only — MTR owns DAC in vehicle
-    if (!g_dac.write(0)) {
-        ESP_LOGE(TAG, "Initial DAC zero write failed");
-    }
-    g_gear.init();      // bench only — MTR owns gear MOSFETs in vehicle
-#endif
     g_brake.init();
     g_lights.init();
     g_indicator.init();
@@ -1113,10 +1019,6 @@ extern "C" void app_main() {
     xTaskCreate(task_safety,    "safety",    4608, nullptr, 5, &h_safety);
     xTaskCreate(task_dispatch,  "dispatch",  3584, nullptr, 4, &h_dispatch);
     xTaskCreate(task_mode,      "mode",      2560, nullptr, 4, &h_mode);
-#ifdef SYS_OWNS_MOTOR
-    xTaskCreate(task_motor,     "motor",     3584, nullptr, 4, &h_motor);
-    xTaskCreate(task_throttle,  "throttle",  2048, nullptr, 3, &h_throttle);
-#endif
     xTaskCreate(task_gear,      "gear",      2048, nullptr, 3, &h_gear);
     xTaskCreate(task_brake,     "brake",     3584, nullptr, 3, &h_brake);
     xTaskCreate(task_lights,    "lights",    2560, nullptr, 3, &h_lights);
@@ -1126,10 +1028,6 @@ extern "C" void app_main() {
     xTaskCreate(task_diag,      "diag",      3584, nullptr, 1, &h_diag);
     xTaskCreate(task_hb,        "hb",        2560, nullptr, 1, &h_hb);
 
-#ifdef SYS_OWNS_MOTOR
-    ESP_LOGI(TAG, "Ready — 14 tasks running (bench, SYS_OWNS_MOTOR). Mode=%s", g_mode_mgr.name());
-#else
     ESP_LOGI(TAG, "Ready — 12 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
-#endif
     vTaskDelete(nullptr);
 }

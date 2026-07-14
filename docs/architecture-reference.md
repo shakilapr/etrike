@@ -248,7 +248,7 @@ Throttle grip (0–5V) ──► MTR ADC ──► MTR MCP4725 (0–5V) ──�
 Gear selector (72V)  ──► TLP281 opto → MTR GPIO ──► relay module → 72V → ECU
 Brake lever           ──► SYS GPIO ──► CAN 0x7B9 → SEB (stroke=MAX if pressed)
 Steering wheel        ──► EPS-C standalone (RT idle, monitors 0x201)
-Signal lights         ──► Turn: handlebar switches (SYS GPIO3/6). Head: toggle (SYS GPIO7). Brake: OR logic → SYS GPIO21
+Signal lights         ──► Turn: handlebar switches (SYS GPIO9/6). Head: toggle (SYS GPIO7). Brake: OR logic → SYS GPIO21
 DC-DC converter       ──► SYS CAN 0x012 → PWT (fwd to 250k) → DC-DC → 12V rail on
 SYS → CAN 0x110       ──► MTR receives mode=Manual → ADC pass-through
 ```
@@ -1419,7 +1419,7 @@ Pri 1  diag        ── System health @ 1 Hz → CAN 0x600
 
 > ⚠️ **Board identity:** This is the **SYS** ESP32-S3 (safety, brake control, body control). Motor actuation is on the dedicated **MTR** STM32 board (§5.0). Do not confuse with RT ESP32-S3 pin assignments in §7.8. Same GPIO numbers on different boards are different physical pins — connect to the board labeled "SYS," not the one labeled "RT."
 >
-> **Shared GPIO numbers (safe — different chips):** ESTOP button is shared between SYS GPIO1 and MTR (hardwired to both MCUs for Level 3 kill). No other signals are split. GPIO 3,6,7 appear in both RT and SYS tables but are physically separate pins on separate ESP32-S3 packages — no electrical conflict. Throttle ADC, gear sense, MCP4725 I2C, and gear outputs are on MTR only (§5.0).
+> **Shared GPIO numbers (safe — different chips):** ESTOP button is shared between SYS GPIO1 and MTR (hardwired to both MCUs for Level 3 kill). No other signals are split. GPIO 6,7 appear in both RT and SYS tables but are physically separate pins on separate ESP32-S3 packages — no electrical conflict. Throttle ADC, gear sense, MCP4725 I2C, and gear outputs are on MTR only (§5.0).
 
 | Signal | GPIO | Direction | Conditioning |
 |--------|------|-----------|-------------|
@@ -1538,7 +1538,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | 1000ms timeout (2 missed at 2 Hz) → ESTOP. Faster: 0x204 staleness at 200ms catches RT crash first. | `0x001` SAFETY_ESTOP — DLC=0 if timeout | RT liveness |
 | GPIO11 MODE button (active-low, debounced) | Toggle MANUAL ↔ AUTO on falling edge. Ignored in ESTOP. | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` → RT + MTR | Mode control |
 | GPIO41 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. Long-press (3s) secondary ESTOP exit (gap #11). | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode}` → RT + MTR | ESTOP exit |
-| `0x302` HOST_LIGHT_CMD — DLC=1, `{u8 lights bitfield}` (fwd from RT) | Lights bitfield → GPIO relay outputs. AUTO: from CAN. MANUAL: handlebar switches (GPIO 3/6/7). ESTOP: all OFF except brake. | GPIO 18 (L turn), 19 (R turn), 21 (brake), 22 (head) | Signal lights |
+| `0x302` HOST_LIGHT_CMD — DLC=1, `{u8 lights bitfield}` (fwd from RT) | Lights bitfield → GPIO relay outputs. AUTO: from CAN. MANUAL: handlebar switches (GPIO 9/6/7). ESTOP: all OFF except brake. | GPIO 18 (L turn), 19 (R turn), 21 (brake), 22 (head) | Signal lights |
 | `0x721` SEB_STATUS — DLC=8, `{u8 status, u16 stroke, u16 angle, u8 press, …}` | Brake SM: boot sync stroke, check `SEB_Alignment_Status==1`, following error >3 mm for >100 ms → fault log. `SEB_Error_Status≥3` (L3 fault) → ESTOP. | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (50 Hz, rolling counter + checksum) | Brake actuator |
 | `0x731` SEB_ErrInfo — DLC=8, `{23 fault flags (16× L3)}` | L3 fault → ESTOP via `0x001` | — (consumed locally) | Brake health |
 | `0x741` SEB_Version — DLC=8, `{u8 sw_ver, u8 hw_ver}` | Log on boot for compatibility check | — (consumed locally) | Brake health |
@@ -1547,7 +1547,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | — | Diagnostics aggregation: system health, faults | `0x600` SYS_DIAG_RPT — DLC=8, `{diag struct}` → RT (fwd to Jetson), 1 Hz | System diagnostics |
 | — | Heartbeat generation: alive_ctr++, 10 Hz (fast path for brake loss detection) | `0x7FE` SYS_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` → RT, 10 Hz | Liveness |
 | `0x011` SYS_SAFETY_STS generation | Pack estop state, heartbeat OK, light state | `0x011` SYS_SAFETY_STS — DLC=3, `{u8 estop, u8 hb_ok, u4 light_state}` → RT (fwd to Jetson), 5 Hz | Safety status |
-| GPIO3 L-turn switch, GPIO6 R-turn switch, GPIO7 headlight switch (MANUAL) | Turn L/R toggle, headlight toggle, both→hazard. Blink 500ms on/off pattern. Pressing opposite cancels. | GPIO 18 (L), 19 (R), 22 (head) relay outputs | Manual lights |
+| GPIO9 L-turn switch, GPIO6 R-turn switch, GPIO7 headlight switch (MANUAL) | Turn L/R toggle, headlight toggle, both→hazard. Blink 500ms on/off pattern. Pressing opposite cancels. | GPIO 18 (L), 19 (R), 22 (head) relay outputs | Manual lights |
 
 **Physical I/O (SYS board):**
 

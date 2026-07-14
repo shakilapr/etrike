@@ -412,7 +412,7 @@ motor_task @ 100 Hz, prio 4:
 | `mode` | 10 Hz | Read GPIO11 (MODE btn), GPIO41 (START btn). Call `ModeManager::tick()`. On change → send `0x110 SYS_MODE_CMD`. |
 | `throttle` | 100 Hz | ADC read → `ThrottleInput::poll()`. Send `0x120 SYS_THROTTLE_STS`. |
 | `brake` | 50 Hz | Run `BrakeControl::tick()`. Build `0x7B9 VCU_SEB_REQ` with rolling counter + checksum. Send on CAN. |
-| `lights` | 20 Hz | Read handlebar switches GPIO3/6/7. `LightControl::tick()` → update GPIO18-22. Handle blink timing. |
+| `lights` | 20 Hz | Read handlebar switches GPIO9/6/7. `LightControl::tick()` → update GPIO18-22. Handle blink timing. |
 | `dcdc` | 5 Hz | `DcdcControl::tick(estop)` → send `0x012` on state change. |
 | `indicator` | 5 Hz | `IndicatorControl::tick(mode)` → AUTO/MANUAL bulbs (GPIO48/26). |
 | `power` | 5 Hz | 12V relay GPIO40: ON in MANUAL/AUTO, OFF in ESTOP. |

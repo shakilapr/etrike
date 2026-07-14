@@ -67,7 +67,7 @@ The ESTOP button is fail-safe by construction: a cut wire or disconnected plug r
 ### 2.6 Turn Signal Switches
 
 - **Location:** Handlebar, left/right toggle
-- **GPIO:** SYS GPIO3 (left), GPIO6 (right)
+- **GPIO:** SYS GPIO9 (left), GPIO6 (right)
 - **Action:** Momentary press toggles blinker on/off for each side
 - **Press both simultaneously:** Hazard flashers
 
