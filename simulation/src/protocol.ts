@@ -53,6 +53,34 @@ export function decodeAs(input: SimFrame, key: MessageKey): Record<string, unkno
   return decoded?.key === key && decoded.status === "ok" ? decoded.values : undefined;
 }
 
+function fieldLimits(field: any): [number, number] {
+  const rawMinimum = field.signed ? -(2 ** (field.bits - 1)) : 0;
+  const rawMaximum = field.signed ? 2 ** (field.bits - 1) - 1 : 2 ** field.bits - 1;
+  const factor = field.factor ?? 1;
+  const offset = field.offset ?? 0;
+  return [field.min ?? rawMinimum * factor + offset, field.max ?? rawMaximum * factor + offset];
+}
+
+function preprocessValues(key: MessageKey, values: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const message = METADATA[key];
+  if (message.codec.strategy !== "generated") {
+    return { ...values };
+  }
+  const processed = { ...values };
+  for (const field of message.layout.fields ?? []) {
+    const value = values[field.key];
+    if (typeof value === "number") {
+      const [minimum, maximum] = fieldLimits(field);
+      const clamped = Math.max(minimum, Math.min(maximum, value));
+      const factor = field.factor ?? 1;
+      const offset = field.offset ?? 0;
+      const rounded = Math.round((clamped - offset) / factor) * factor + offset;
+      processed[field.key] = rounded;
+    }
+  }
+  return processed;
+}
+
 export function encodeSimFrame(
   key: MessageKey,
   values: Readonly<Record<string, unknown>>,
@@ -60,7 +88,8 @@ export function encodeSimFrame(
   sender: SimNodeId,
   simTimeMs: number,
 ): SimFrame {
-  const [status, encoded] = encode(key, values, bus);
+  const processedValues = preprocessValues(key, values);
+  const [status, encoded] = encode(key, processedValues, bus);
   if (status !== "ok" || encoded === undefined) {
     throw new RangeError(`cannot encode ${key} on ${bus}: ${status}`);
   }
@@ -72,7 +101,7 @@ export function encodeSimFrame(
     dlc: encoded.dlc,
     data: Array.from(encoded.data),
     sender,
-    decoded: { ...values },
+    decoded: { ...processedValues },
   };
 }
 
