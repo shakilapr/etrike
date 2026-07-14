@@ -10,8 +10,8 @@ Browser-based tooling for monitoring, decoding, recording, replaying, simulating
 
 The CAN protocol authority is outside this directory:
 
-- `../shared/can/can_high.yaml`
-- `../shared/can/can_low.yaml`
+- `../protocol/contracts/can_high.yaml`
+- `../protocol/contracts/can_low.yaml`
 
 ## Components
 

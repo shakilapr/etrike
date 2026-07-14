@@ -1003,8 +1003,8 @@ From `native-test/test/test_dual_heartbeat.cpp`:
 | `architecture.md` §7.6 | Steering safety mechanisms |
 | `architecture.md` §8.6 | Brake control, heartbeats, watchdog, physical controls |
 | `can-dictionary.md` | Full CAN signal catalog (all IDs, bit layouts, period, type) |
-| `shared/can/can_high.yaml` | High-bus CAN definitions (single source of truth) |
-| `shared/can/can_low.yaml` | Low-bus CAN definitions (single source of truth) |
+| `protocol/contracts/can_high.yaml` | High-bus CAN definitions (single source of truth) |
+| `protocol/contracts/can_low.yaml` | Low-bus CAN definitions (single source of truth) |
 | `shared/shared_config.h` | Shared constants (safety timeouts, brake limits, vehicle geometry) |
 | `sys-esp32/src/config.h` | SYS config (GPIOs, safety thresholds, timing) |
 | `rt-esp32/src/config.h` | RT config (steering clamps, rates, watchdog GPIO) |

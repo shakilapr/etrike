@@ -12,10 +12,10 @@ Each phase delivers compilable code with a runnable test. Phases are ordered by 
 
 ## Phase R1 — Fix shared CAN protocol (no regressions)
 
-**Goal:** Resolve every type-name mismatch and missing constant in `shared/can/can_protocol.h`. All existing tests must pass with zero changes. New tests must pass.
+**Goal:** Resolve every type-name mismatch and missing constant in `protocol/generated/cpp/protocol.h`. All existing tests must pass with zero changes. New tests must pass.
 
 **Files:**
-- `shared/can/can_protocol.h`
+- `protocol/generated/cpp/protocol.h`
 
 **Changes:**
 
@@ -155,7 +155,7 @@ g++ -std=c++17 -I../../shared -I../src test_control_logic.cpp ../src/control_log
 **Goal:** RT has two working CAN interfaces: built-in TWAI (low bus) and MCP2515 via SPI (high bus). Matches architecture §7.2.
 
 **Files:**
-- `rt-esp32/src/can_driver_twai.cpp` — replace empty stub with real TWAI init from `shared/can/can_driver.h`
+- `rt-esp32/src/can_driver_twai.cpp` — replace empty stub with real TWAI init from `protocol/contracts/can_driver.h`
 - `rt-esp32/src/can_driver_mcp2515.cpp` — implement MCP2515 init/read/write over SPI
 - `rt-esp32/src/can_driver_mcp2515.h` — keep the MCP2515 class interface
 - `rt-esp32/src/main.cpp` — create two `CanDriver` instances (or one TWAI + one MCP2515)
@@ -548,7 +548,7 @@ All above ────────────────┤                   
 
 | File | Phase | Action |
 |------|-------|--------|
-| `shared/can/can_protocol.h` | R1 | Add aliases, add gear to HostDriveCmd |
+| `protocol/generated/cpp/protocol.h` | R1 | Add aliases, add gear to HostDriveCmd |
 | `rt-esp32/src/config.h` | R2 | Add missing constants |
 | `sys-esp32/src/config.h` | R3 | Add missing constants |
 | `rt-esp32/src/main.cpp` | R4,R5,R6,R7,R8 | Rewrite — remove UART, add dual CAN, gateway, TX tasks, steering, heartbeat |

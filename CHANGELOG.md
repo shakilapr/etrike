@@ -12,7 +12,7 @@ ESTOP is a separate safety state triggered by hardware button or safety faults.
 
 ### Added
 - `can-test/` minimal test project (TWAI send/receive + MCP2515 SPI verification)
-- `shared/can/patch_sdkconfig.py` pre-build script to patch CONFIG_FREERTOS_HZ
+- `protocol/patch_sdkconfig.py` pre-build script to patch CONFIG_FREERTOS_HZ
 - `sdkconfig.defaults` for RT and SYS projects
 
 ### Fixed
@@ -307,7 +307,7 @@ SYS and MTR builds follow the same pattern. See individual `config.h` files for 
 - Architecture documentation for dual-bus diagnostic tool
 
 ### CAN Database
-- DBC outputs consolidated to `shared/can/`
+- DBC outputs consolidated to `protocol/`
 - Per-component DBCs via canmatrix
 - YAML signal dictionary with sender, naming, scaling corrections
 

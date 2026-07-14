@@ -27,12 +27,12 @@ The governing rule is: every protocol value is generated, centrally named, or re
 
 ## Manual mapping register and adapters
 
-- [x] Add and schema-validate `shared/can/manual-mappings.yaml`.
+- [x] Add and schema-validate `protocol/manual-mappings.yaml`.
 - [x] Register SES status/test/error/version and command mappings.
 - [x] Register SEB status/test/error/version and command mappings.
 - [ ] Register manufacturer-specific PWT behavior where applicable.
 - [x] Reject duplicate IDs, missing files, stale hashes and mappings without tests.
-- [ ] Isolate checksum and handwritten payload manipulation in `shared/can/manual/` adapters.
+- [ ] Isolate checksum and handwritten payload manipulation in `protocol/manual/` adapters.
 - [x] Require exact ID, frame type and DLC; leave output unchanged on failure.
 - [x] Validate checksum/constants before application fault processing.
 - [ ] Replace inline RT/SYS vendor parsing with adapters.
@@ -87,10 +87,10 @@ The governing rule is: every protocol value is generated, centrally named, or re
 
 ## Standard change workflow
 
-1. Run `python tools/can_change.py inspect MESSAGE_NAME`.
+1. Run `python protocol/tools/protocol.py inspect MESSAGE_NAME`.
 2. Edit the authoritative YAML or the explicitly owned runtime/hardware configuration.
-3. Run `python shared/can/generate_code.py`.
+3. Run `python protocol/tools/protocol.py`.
 4. Review every manual mapping reported by the inspection tool.
 5. Update independent vectors if wire bytes changed.
-6. Run `python tools/can_change.py verify MESSAGE_NAME`.
+6. Run `python protocol/tools/protocol.py validate MESSAGE_NAME`.
 7. Build the affected targets listed by the tool.

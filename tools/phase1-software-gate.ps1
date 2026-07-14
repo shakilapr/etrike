@@ -104,9 +104,7 @@ if (-not $SkipSimulation) {
     Invoke-LoggedStep "simulation-npm-test" "$repoRoot/simulation" "npm" @("test") $true
 }
 
-Invoke-LoggedStep "can-protocol-version" "$repoRoot" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$repoRoot/tools/can/check_protocol_version.ps1") $true
-Invoke-LoggedStep "can-generated-no-drift" "$repoRoot" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$repoRoot/tools/can/check_generated_no_drift.ps1") $true
-
+Invoke-LoggedStep "can-protocol-verify" "$repoRoot" "python" @("protocol/tools/protocol.py", "validate") $true
 $missingCoverage = @($config.knownMissingCoverage)
 $blockedRequired = @($results | Where-Object { $_.required -and $_.status -eq "BLOCKED" })
 $failedRequired = @($results | Where-Object { $_.required -and $_.status -eq "FAIL" })

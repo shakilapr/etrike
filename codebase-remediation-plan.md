@@ -83,7 +83,7 @@ Remove ambiguity before generating production code. The result is an approved co
 
 ### Deliverables
 
-- `shared/can/contract-decisions.md` containing the approved choices and rationale.
+- `protocol/contract-decisions.md` containing the approved choices and rationale.
 - Versioned raw baseline captures plus a machine-readable capture manifest under `test-results/` or the repository's chosen artifact store.
 - Golden input/output vectors covering the affected frames.
 
@@ -149,7 +149,7 @@ The schema must represent:
 
 ### Migration mechanism
 
-- Initially generate a compatibility interface with the names currently used from [`shared/can/can_protocol.h`](shared/can/can_protocol.h).
+- Initially generate a compatibility interface with the names currently used from [`protocol/generated/cpp/protocol.h`](protocol/generated/cpp/protocol.h).
 - Replace the implementation behind those names with generated codecs so RT/SYS/MTR changes remain reviewable.
 - Move handwritten state/control helpers into a separate non-generated header.
 - Migrate direct field packing and hard-coded host IDs.

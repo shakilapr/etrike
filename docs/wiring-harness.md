@@ -829,7 +829,7 @@ Short local straps from each device's negative terminal to the nearest clean fra
 
 **Forwarding rules — bridged messages (RT gateway):** Messages forwarded from low bus → high bus (0x001, 0x011, 0x120, 0x206, 0x600) and high bus → low bus (0x001, 0x302) — only transparent forwards; 0x300/0x301/0x400 are consumed by RT, not forwarded are **one-way only.** RT must NOT re-forward a message back onto the bus it was received from — this creates a forwarding loop.
 
-For the complete CAN message catalog including DLC, payload layout, periods, and priorities, see `architecture.md` §2 and `shared/can/can_signals.yaml`.
+For the complete CAN message catalog including DLC, payload layout, periods, and priorities, see `architecture.md` §2 and `protocol/contracts/can_high.yaml`.
 
 ---
 

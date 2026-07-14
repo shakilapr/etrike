@@ -8,7 +8,7 @@ Each scenario specifies concrete CAN IDs, payload values, timing tolerances, and
 
 **References:**
 - Architecture: `architecture.md`
-- CAN protocol: `shared/can/can_protocol.h`, `shared/can/can_signals.yaml`
+- CAN protocol: `protocol/generated/cpp/protocol.h`, `protocol/contracts/can_high.yaml`
 - RT config: `rt-esp32/src/config.h`
 - SYS config: `sys-esp32/src/config.h` (constants in `architecture.md` section 8.9)
 - Emergency safety analysis: `issues/emergency-safety-analysis.md`

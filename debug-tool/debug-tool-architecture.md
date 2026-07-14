@@ -4,7 +4,7 @@
 
 **Scope:** CAN monitoring, controlled injection, recording/replay, behavioral simulation, and automated testing
 
-**Protocol source of truth:** `../shared/can/can_high.yaml` and `../shared/can/can_low.yaml`
+**Protocol source of truth:** `../protocol/contracts/can_high.yaml` and `../protocol/contracts/can_low.yaml`
 
 ## 1. Goals and non-goals
 

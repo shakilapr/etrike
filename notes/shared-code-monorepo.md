@@ -52,7 +52,7 @@ project/
 
 1. **No `.cpp` files in `shared/`.** Everything is `inline`, `constexpr`, or `template`. The shared code compiles directly into each consumer's translation units — no shared object, no library to link.
 
-2. **Include via path, not symlink.** Each `platformio.ini` adds `-I ../shared` to `build_flags`. When the compiler sees `#include "can/can_protocol.h"`, it searches the include path and finds `../shared/can/can_protocol.h`.
+2. **Include via path, not symlink.** Each `platformio.ini` adds `-I ../shared` to `build_flags`. When the compiler sees `#include "can/can_protocol.h"`, it searches the include path and finds `../protocol/generated/cpp/protocol.h`.
 
 3. **Each MCU gets its own copy.** The shared code is compiled into `rt-esp32.bin` and into `sys-esp32.bin` independently. There's no runtime sharing — the CAN bus is the only communication channel between them.
 
@@ -86,7 +86,7 @@ This tells GCC/Clang: *"when resolving `#include` directives, also look in `../s
 The include chain works like this:
 
 ```
-main.cpp                           shared/can/can_protocol.h
+main.cpp                           protocol/generated/cpp/protocol.h
 ┌──────────────────────────┐       ┌──────────────────────────┐
 │ #include "can/can_protocol.h"────►│ #include "os/endian.h"──┼──► shared/os/endian.h
 │                          │       │                          │
