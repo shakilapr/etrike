@@ -14,6 +14,8 @@
 #include "freertos/queue.h"
 #include "protocol/compat/can.hpp"
 #include "physics_model.h"
+#include "resolver_config.h"   // rt::ActiveResolver
+#include "calculated_speed.h"  // rt::CalculatedSpeedEstimator
 #include "steering_control.h"
 #include "speed_controller.h"
 #include "heartbeat.h"
@@ -21,12 +23,13 @@
 #include "can_driver_mcp2515.h"
 
 // ── Global objects ──────────────────────────────────────────────────
-extern rt::Mcp2515Driver g_can_high;
-extern rt::PhysicsModel    g_physics;
-extern rt::SpeedController g_speed_ctrl;
-extern rt::SteeringControl g_steering;
-extern rt::DualHeartbeat   g_heartbeat;
-extern rt::CmdWatchdog     g_watchdog;
+extern rt::Mcp2515Driver             g_can_high;
+extern rt::ActiveResolver            g_resolver;    // compile-time type: PhysicsModel or DirectResolver
+extern rt::SpeedController           g_speed_ctrl;
+extern rt::CalculatedSpeedEstimator  g_calc_speed;  // SpeedFeedbackSource::Calculated
+extern rt::SteeringControl           g_steering;
+extern rt::DualHeartbeat             g_heartbeat;
+extern rt::CmdWatchdog               g_watchdog;
 
 // ── Safety event queue (replaces g_estop_flag, g_mode_from_sys) ─
 extern QueueHandle_t g_safety_evt_q;  // depth 16, SafetyEvent
