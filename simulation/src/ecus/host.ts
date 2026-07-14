@@ -7,6 +7,7 @@
 
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId, DriveCycleStep } from "../core/types.js";
+import { decodeAs, encodeSimFrame } from "../protocol.js";
 
 export class HostEcu implements SimulatedEcu {
   readonly id = "Host";
@@ -60,24 +61,25 @@ export class HostEcu implements SimulatedEcu {
 
     // ── Process incoming high-bus telemetry (I11) ───────────────
     for (const f of highBusRx) {
-      switch (f.canId) {
-        case "0x210": {
-          // RT_STATE_RPT — store latest mode + safety_state (mask byte 1 bits 0-1)
-          this.lastRtStateRpt = { mode: f.data[0], safetyState: f.data[1] & 0x03 };
-          break;
-        }
-        case "0x310": {
-          // STEER_DIAG — angle i16 BE bytes 0-1, fault byte 2
-          const angle = ((f.data[0] << 8) | f.data[1]) << 16 >> 16; // i16 sign-extend
-          this.lastSteerDiag = { angle, fault: f.data[2] ?? 0 };
-          break;
-        }
-        case "0x311": {
-          // BRAKE_DIAG — pressure u16 BE bytes 0-1, fault byte 2
-          const pressureRaw = ((f.data[0] << 8) | f.data[1]) & 0xFFFF;
-          this.lastBrakeDiag = { pressureRaw, fault: f.data[2] ?? 0 };
-          break;
-        }
+      const state = decodeAs(f, "rt:rt_state_rpt");
+      if (state !== undefined) {
+        this.lastRtStateRpt = {
+          mode: Number(state.mode),
+          safetyState: Number(state.safety_state),
+        };
+        continue;
+      }
+      const steer = decodeAs(f, "rt:steer_diag");
+      if (steer !== undefined) {
+        this.lastSteerDiag = { angle: Number(steer.angle_0_1deg), fault: Number(steer.fault) };
+        continue;
+      }
+      const brake = decodeAs(f, "rt:brake_diag");
+      if (brake !== undefined) {
+        this.lastBrakeDiag = {
+          pressureRaw: Math.round(Number(brake.pressure_raw) / 0.05),
+          fault: Number(brake.fault),
+        };
       }
     }
 
@@ -103,52 +105,42 @@ export class HostEcu implements SimulatedEcu {
 
     // ── 0x300 HOST_DRIVE_CMD (100 Hz) ───────────────────────────
     if (nowMs % 10 === 0 && ctx.mode === "auto") {
-      const s32 = speed | 0;
-      const y24 = yaw & 0xFFFFFF;
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x300", name: "HOST_DRIVE_CMD",
-        dlc: 8, data: [
-          (s32 >> 24) & 0xFF, (s32 >> 16) & 0xFF, (s32 >> 8) & 0xFF, s32 & 0xFF,
-          (y24 >> 16) & 0xFF, (y24 >> 8) & 0xFF, y24 & 0xFF,
-          gear & 0xFF,
-        ], sender: "host",
-      });
+      out.push(encodeSimFrame("host:host_drive_cmd", {
+        speed_mmps: speed,
+        yaw_rate_mrad_s: yaw,
+        gear,
+      }, "high", "host", nowMs));
     }
 
     // ── 0x301 HOST_BRAKE_REQ (on demand, sent at 50Hz here) ────
     if (nowMs % 20 === 0) {
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x301", name: "HOST_BRAKE_REQ",
-        dlc: 4, data: [0, 0, 0, 0], sender: "host",
-      });
+      out.push(encodeSimFrame("host:host_brake_req", { brake_pressure_kpa: 0 }, "high", "host", nowMs));
     }
 
     // ── 0x400 HOST_OBSTACLE_DIST (10 Hz) ────────────────────────
     if (nowMs % 100 === 0) {
-      const mm = this.obstacleDistanceMm >>> 0;
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x400", name: "HOST_OBSTACLE_DIST",
-        dlc: 4, data: [
-          (mm >> 24) & 0xFF, (mm >> 16) & 0xFF, (mm >> 8) & 0xFF, mm & 0xFF,
-        ], sender: "host",
-      });
+      out.push(encodeSimFrame("host:host_obstacle_dist", {
+        distance_mm: this.obstacleDistanceMm >>> 0,
+      }, "high", "host", nowMs));
     }
 
     // ── 0x302 HOST_LIGHT_CMD (on change in firmware; periodic in sim) ─
     if (nowMs % 100 === 0) {
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x302", name: "HOST_LIGHT_CMD",
-        dlc: 1, data: [0], sender: "host",
-      });
+      out.push(encodeSimFrame("host:host_light_cmd", {
+        left_turn: 0,
+        right_turn: 0,
+        brake_light: 0,
+        headlight: 0,
+      }, "high", "host", nowMs));
     }
 
     // ── 0x7FC HOST_HEARTBEAT (2 Hz) ───────────────────────────
     if (nowMs % 500 === 0) {
       this.heartbeatCtr = (this.heartbeatCtr + 1) & 0xFF;
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x7FC", name: "HOST_HEARTBEAT",
-        dlc: 2, data: [this.heartbeatCtr, 0], sender: "host",
-      });
+      out.push(encodeSimFrame("host:host_heartbeat", {
+        alive_ctr: this.heartbeatCtr,
+        health_flags: 0,
+      }, "high", "host", nowMs));
     }
 
     return out;

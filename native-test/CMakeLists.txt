@@ -5,6 +5,10 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(ETRIKE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+add_library(protocol_headers INTERFACE)
+target_include_directories(protocol_headers INTERFACE ${ETRIKE_ROOT})
+
 # Static linking — avoids runtime DLL dependencies (libgcc_s_seh-1.dll etc.)
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
@@ -118,10 +122,9 @@ add_library(hal_stubs STATIC
 target_include_directories(hal_stubs PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}              # for can/virtual_can_bus.h
-    ${CMAKE_SOURCE_DIR}/../shared            # for can/can_protocol.h
     ${freertos_kernel_SOURCE_DIR}/include    # for real FreeRTOS headers
 )
-target_link_libraries(hal_stubs PUBLIC freertos virtual_can)
+target_link_libraries(hal_stubs PUBLIC freertos virtual_can protocol_headers)
 
 # ── Virtual CAN bus library ──────────────────────────────────────────
 add_library(virtual_can STATIC
@@ -129,9 +132,8 @@ add_library(virtual_can STATIC
 )
 target_include_directories(virtual_can PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/../shared
 )
-target_link_libraries(virtual_can PUBLIC freertos)
+target_link_libraries(virtual_can PUBLIC freertos protocol_headers)
 
 # ── Smoke test ───────────────────────────────────────────────────────
 add_executable(smoke_test
@@ -140,28 +142,18 @@ add_executable(smoke_test
 target_link_libraries(smoke_test PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
 )
 
-# ── Protocol roundtrip test (all structs with to_frame / from_frame) ──
-add_executable(protocol_roundtrip
-    test/test_protocol_roundtrip.cpp
+# ── Canonical root protocol tests ───────────────────────────────────
+add_executable(protocol_core_custom_supervision
+    ${ETRIKE_ROOT}/protocol/tests/cpp/test_protocol.cpp
 )
-target_link_libraries(protocol_roundtrip PRIVATE freertos hal_stubs virtual_can)
-target_include_directories(protocol_roundtrip PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
-)
+target_link_libraries(protocol_core_custom_supervision PRIVATE protocol_headers)
 
-# ── SYNTREE checksum full test ──────────────────────────────────────
-add_executable(checksum_full
-    test/test_checksum_full.cpp
+add_executable(protocol_generated_vectors
+    ${ETRIKE_ROOT}/protocol/tests/cpp/test_generated_vectors.cpp
 )
-target_link_libraries(checksum_full PRIVATE freertos hal_stubs virtual_can)
-target_include_directories(checksum_full PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
-)
+target_link_libraries(protocol_generated_vectors PRIVATE protocol_headers)
 
 # ── MCP2515 CNF config test ──────────────────────────────────────────
 add_executable(mcp2515_config
@@ -169,12 +161,11 @@ add_executable(mcp2515_config
 )
 target_include_directories(mcp2515_config PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
 )
-# The MCP2515 driver header needs the CAN protocol header from shared/
-# and the config.h from rt-esp32/src. No FreeRTOS or HAL stubs needed
-# since we only import the CNF constants.
+# The driver needs RT configuration headers, but no FreeRTOS or HAL library.
 
 # ── RT CAN router test ──────────────────────────────────────────────
 add_executable(rt_can_rx_router
@@ -183,33 +174,36 @@ add_executable(rt_can_rx_router
 target_link_libraries(rt_can_rx_router PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_can_rx_router PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
 )
 
 # ── RT CAN dispatch test ─────────────────────────────────────────────
 add_executable(rt_can_dispatch
     test/test_rt_can_dispatch.cpp
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src/physics_model.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
 )
 target_link_libraries(rt_can_dispatch PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_can_dispatch PRIVATE
     ${freertos_kernel_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
 )
 
 # ── RT safety monitor test ──────────────────────────────────────────
 add_executable(rt_safety_monitor
     test/test_rt_safety_monitor.cpp
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src/physics_model.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
 )
 target_link_libraries(rt_safety_monitor PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_safety_monitor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_SOURCE_DIR}/../shared
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
 )
 
 # ── SYS CAN dispatch test ────────────────────────────────────────────
@@ -217,7 +211,7 @@ add_executable(sys_can_dispatch
     test/test_sys_can_dispatch.cpp
 )
 target_include_directories(sys_can_dispatch PRIVATE
-    ${CMAKE_SOURCE_DIR}/../shared
+    ${ETRIKE_ROOT}
 )
 
 # ── Task watchdog test ───────────────────────────────────────────────
@@ -250,27 +244,35 @@ add_executable(spi_failure
     test/test_spi_failure.cpp
 )
 
-# ── Generated production contract checks ───────────────────────────
+# ── Component, safety, and generated contract checks ───────────────
+add_executable(components test/test_components.cpp)
+add_executable(component_io test/test_component_io.cpp)
+target_link_libraries(component_io PRIVATE protocol_headers)
+add_executable(safety_features test/test_safety_features.cpp)
+target_link_libraries(safety_features PRIVATE protocol_headers)
+add_executable(signal_chains test/test_signal_chains.cpp)
+target_link_libraries(signal_chains PRIVATE protocol_headers)
+add_executable(all_signals test/test_all_signals.cpp)
+
 add_executable(dlc_consistency test/test_dlc_consistency.cpp)
-target_include_directories(dlc_consistency PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
+target_link_libraries(dlc_consistency PRIVATE protocol_headers)
 
 add_executable(gateway_forwarding test/test_gateway_forwarding.cpp)
-target_include_directories(gateway_forwarding PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
+target_link_libraries(gateway_forwarding PRIVATE protocol_headers)
 
 add_executable(generated_codecs test/test_generated_codecs.cpp)
-target_include_directories(generated_codecs PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
-add_executable(vendor_protocol test/test_vendor_protocol.cpp)
-target_include_directories(vendor_protocol PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
+target_link_libraries(generated_codecs PRIVATE protocol_headers)
 target_include_directories(dual_heartbeat PRIVATE
-    ${CMAKE_SOURCE_DIR}/../shared
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
 )
 
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME smoke               COMMAND smoke_test)
-add_test(NAME protocol_roundtrip   COMMAND protocol_roundtrip)
-add_test(NAME checksum_full       COMMAND checksum_full)
+add_test(NAME protocol_core_custom_supervision COMMAND protocol_core_custom_supervision)
+add_test(NAME protocol_generated_vectors COMMAND protocol_generated_vectors)
 add_test(NAME mcp2515_config      COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
 add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
@@ -282,23 +284,28 @@ add_test(NAME watchdog_wraparound COMMAND watchdog_wraparound)
 add_test(NAME dual_heartbeat      COMMAND dual_heartbeat)
 add_test(NAME estop_latch          COMMAND estop_latch)
 add_test(NAME spi_failure          COMMAND spi_failure)
+add_test(NAME components           COMMAND components)
+add_test(NAME component_io         COMMAND component_io)
+add_test(NAME safety_features      COMMAND safety_features)
+add_test(NAME signal_chains        COMMAND signal_chains)
+add_test(NAME all_signals          COMMAND all_signals)
 add_test(NAME dlc_consistency      COMMAND dlc_consistency)
 add_test(NAME gateway_forwarding   COMMAND gateway_forwarding)
 add_test(NAME generated_codecs     COMMAND generated_codecs)
-add_test(NAME vendor_protocol      COMMAND vendor_protocol)
 
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
     sim-engine/main_native.cpp
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src/physics_model.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
 )
 target_include_directories(sim_engine_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}/sim-engine
-    ${CMAKE_SOURCE_DIR}/../shared
-    ${CMAKE_SOURCE_DIR}/../rt-esp32/src
-    ${CMAKE_SOURCE_DIR}/../sys-esp32/src
-    ${CMAKE_SOURCE_DIR}/../mtr-stm32/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/sys-esp32/src
+    ${ETRIKE_ROOT}/mtr-stm32/src
 )
 target_compile_definitions(sim_engine_native PRIVATE
     CONFIG_BYPASS_EPS_C_SYNC

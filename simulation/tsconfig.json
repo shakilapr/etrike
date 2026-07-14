@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "lib": ["ES2022"],
     "rootDir": "..",
     "outDir": "dist",
@@ -14,5 +14,11 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["src/**/*.ts", "../shared/can/generated/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "../protocol/codecs/typescript/**/*.ts",
+    "../protocol/generated/typescript/**/*.ts",
+    "../protocol/profiles/**/*.ts"
+  ]
 }

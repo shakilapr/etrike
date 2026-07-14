@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUS, DLC, NAME } from "../../../shared/can/generated/can_ids";
+import { routeFor } from "../../src/protocol.js";
 
 const requiredFrames = [
   ["0x001", "SAFETY_ESTOP", 0, "both"],
@@ -22,9 +22,13 @@ const requiredFrames = [
 describe("generated CAN contract drift", () => {
   for (const [id, name, dlc, bus] of requiredFrames) {
     it(`${id} ${name}`, () => {
-      expect(NAME[id]).toBe(name);
-      expect(DLC[id]).toBe(dlc);
-      expect(BUS[id]).toBe(bus);
+      const numericId = Number.parseInt(id.replace("0x", ""), 16);
+      const buses = bus === "both" ? ["high", "low"] : [bus];
+      for (const selectedBus of buses) {
+        const route = routeFor(selectedBus, numericId);
+        expect(route?.message.name).toBe(name);
+        expect(route?.message.dlc).toBe(dlc);
+      }
     });
   }
 });

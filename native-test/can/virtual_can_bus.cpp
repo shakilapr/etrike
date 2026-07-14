@@ -10,8 +10,8 @@
 namespace can {
 namespace sim {
 
-bool VirtualCanBus::send(const can::Frame& frame, uint32_t timeout_ms) {
-    can::Frame f = frame;  // copy before fault injection
+bool VirtualCanBus::send(const etrike::protocol::Frame& frame, uint32_t timeout_ms) {
+    etrike::protocol::Frame f = frame;  // copy before fault injection
 
     std::unique_lock<std::mutex> lock(m_mutex, std::defer_lock);
     auto deadline = std::chrono::steady_clock::now()
@@ -40,7 +40,7 @@ bool VirtualCanBus::send(const can::Frame& frame, uint32_t timeout_ms) {
     return false;  // buffer full
 }
 
-bool VirtualCanBus::receive(can::Frame& out, uint32_t timeout_ms) {
+bool VirtualCanBus::receive(etrike::protocol::Frame& out, uint32_t timeout_ms) {
     std::unique_lock<std::mutex> lock(m_mutex, std::defer_lock);
     auto deadline = std::chrono::steady_clock::now()
                   + std::chrono::milliseconds(timeout_ms);
@@ -69,7 +69,7 @@ bool VirtualCanBus::has_pending() const {
     return m_count > 0;
 }
 
-bool VirtualCanBus::apply_fault(can::Frame& frame) {
+bool VirtualCanBus::apply_fault(etrike::protocol::Frame& frame) {
     if (m_fault == FaultType::NONE) return false;
 
     if (m_fault_can_id != 0 && frame.id != m_fault_can_id)

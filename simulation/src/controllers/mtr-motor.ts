@@ -6,7 +6,8 @@
  */
 
 import { MAX_SPEED_FWD_MMPS, CMD_STALE_TIMEOUT_MS, STARTUP_GRACE_PERIOD_MS } from "../physics/tricycle.js";
-import type { SimFrame, BusId } from "../core/types.js";
+import type { SimFrame } from "../core/types.js";
+import { decodeAs, encodeSimFrame } from "../protocol.js";
 
 export interface MtrState {
   dacValue: number;
@@ -30,15 +31,16 @@ export class MtrMotorController {
 
     // Process incoming 0x204 (RT_DRIVE_CMD)
     for (const f of rxFrames) {
-      if (f.canId === "0x204") {
+      const drive = decodeAs(f, "rt:rt_drive_cmd");
+      if (drive !== undefined) {
         this.lastCmdMs = nowMs;
         if (!estop) {
-          this.gear = f.data[4] ?? 0;
-          const speed = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
+          this.gear = Number(drive.gear);
+          const speed = Number(drive.motor_speed_mmps);
           this.dacValue = Math.round((Math.abs(speed) / MAX_SPEED_FWD_MMPS) * 4095);
         }
       }
-      if (f.canId === "0x001") {
+      if (decodeAs(f, "safety:safety_estop") !== undefined) {
         this.estopActive = true;
       }
     }
@@ -63,38 +65,18 @@ export class MtrMotorController {
 
     // 0x120 SYS_THROTTLE_STS at 100Hz (every 10ms)
     if (nowMs % 10 === 0) {
-      const speedBuf = new Array<number>(2);
-      const speed16 = Math.round(actualSpeedMmps) & 0xFFFF;
-      speedBuf[0] = (speed16 >> 8) & 0xFF;
-      speedBuf[1] = speed16 & 0xFF;
-      out.push({
-        simTimeMs: nowMs,
-        bus: "low",
-        canId: "0x120",
-        name: "SYS_THROTTLE_STS",
-        dlc: 2,
-        data: speedBuf,
-        sender: "mtr",
-      });
+      out.push(encodeSimFrame("mtr:sys_throttle_sts", {
+        speed_mmps: Math.round(actualSpeedMmps),
+      }, "low", "mtr", nowMs));
     }
 
     // 0x206 MTR_MOTOR_FBK at 50Hz (every 20ms)
     if (nowMs % 20 === 0) {
-      const actual16 = Math.round(actualSpeedMmps) & 0xFFFF;
-      out.push({
-        simTimeMs: nowMs,
-        bus: "low",
-        canId: "0x206",
-        name: "MTR_MOTOR_FBK",
-        dlc: 4,
-        data: [
-          (actual16 >> 8) & 0xFF,
-          actual16 & 0xFF,
-          this.gear & 0xFF,
-          this.faultFlags & 0xFF,
-        ],
-        sender: "mtr",
-      });
+      out.push(encodeSimFrame("mtr:mtr_motor_fbk", {
+        actual_speed_mmps: Math.round(actualSpeedMmps),
+        gear_state: this.gear,
+        fault_flags: this.faultFlags,
+      }, "low", "mtr", nowMs));
     }
 
     return out;
