@@ -15,7 +15,7 @@ namespace rt {
 constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
 constexpr float kSteerFollowingErrFactor=  0.25f;   // × dynamic_limit → threshold
 constexpr int   kSteerFollowingErrMs    =   300;    // must persist
-constexpr int   kSteerCmdRateHz         =   100;    // steer-by-wire 10 ms period (was 50Hz — 20ms margin too tight with ±5ms TX jitter)
+constexpr int   kSteerCmdRateHz         =    50;    // 0x169 contract and active TX schedule: 20 ms
 constexpr int   kSteerBootWaitMs        =   500;
 // Dynamic angle clamp: limit_deg = 40.0 − (speed_kmh − 2.0) × (35.0/23.0), clamped [5.0, 40.0]
 constexpr float kAngleClampBaseDeg      =  40.0f;   // max at 2 km/h
@@ -47,10 +47,10 @@ constexpr int kSpiSckGpio       =      15;
 constexpr int kSpiMosiGpio      =      16;
 constexpr int kSpiMisoGpio      =      17;
 constexpr int kSpiCsGpio        =      18;
-constexpr int kMcpIntGpio       =      47;
+constexpr int kMcpIntGpio       =       7; // Was 47. Strapped pins (0, 3, 45, 46) must not be used.
 
 // ── watchdog ──────────────────────────────────────────────────────
-constexpr int kWdtToggleGpio = 21;
+// constexpr int kWdtToggleGpio = 21; // Temporarily disabled
 
 // ── encoders (quadrature PCNT, sensor TBD for wheels) ──────────────
 constexpr int kEncRearMotorA   =  1;  // rear motor speed feedback

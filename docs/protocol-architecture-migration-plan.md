@@ -1,5 +1,34 @@
 # Protocol Architecture Migration Plan
 
+> **Authoritative live checklist.** This is the only repository-wide protocol
+> remediation task list. [`protocol-testing-plan.md`](protocol-testing-plan.md)
+> defines verification and evidence. `codebase-remediation-plan.md` and
+> `can-maintainability-work-plan.md` are retained as historical planning records.
+
+## Checklist rules
+
+- A box is checked only when implementation, automated verification, applicable
+  builds, documentation, and evidence references are committed.
+- Findings use `Open`, `In progress`, `Software closed`, `Blocked on vendor
+  evidence`, `Blocked on hardware evidence`, or `Closed`.
+- `Software closed` never substitutes for a required capture or physical-I/O
+  result. Unsupported capability is explicit, not treated as passing.
+- Each implementation commit names the completed outcome rather than a phase.
+- Wire changes update contract, generated outputs, producers, consumers,
+  vectors, hashes, and documentation atomically.
+
+## Current baseline (2026-07-14)
+
+- [x] `BASE-001` Generated artifacts match the current YAML.
+- [x] `BASE-002` Contract/change-discovery validation passes.
+- [x] `BASE-003` Current schema and change-tool unit suites pass.
+- [x] `BASE-004` The active `0x169` schedule and its configuration constant are
+  aligned at 50 Hz; changing this rate later is a reviewed timing change.
+- [ ] `BASE-005` Export and commit the normalized `bus + ID` baseline manifest
+  and complete language-neutral vectors before contract files move.
+- [ ] `BASE-006` Run and record the full native, simulation, firmware, host, and
+  compatibility baseline defined by the testing plan.
+
 ## Objective
 
 Move from the transitional `shared/can` plus `manual-mappings.yaml` design to one static message definition, one explicit codec strategy and shared conformance vectors—without changing wire bytes or deleting useful target behavior prematurely.
@@ -30,7 +59,9 @@ Do not reorganize definitions until current behavior is pinned.
 - [ ] Add dedicated vectors for SEB command/status/error/version/test.
 - [ ] Add PWT extended-frame vectors.
 - [ ] Add counter sequence vectors independently from payload vectors.
-- [ ] Confirm the unresolved 0x169 50/100 Hz requirement before changing timing metadata or firmware.
+- [x] Use the current implemented/YAML `0x169` rate of 50 Hz and remove the stale
+  100 Hz configuration claim. Any later change must update timing metadata,
+  scheduler, vectors, and measured acceptance limits together.
 - [ ] Require all current native and firmware builds to pass before structural migration begins.
 
 Exit gate: current bytes and known algorithms can be reproduced without relying on the implementation being migrated.
@@ -213,3 +244,17 @@ For each family:
 - [ ] Stateful supervision and component policy remain separate.
 - [ ] PWT appears in repository-wide inspection and verification.
 - [ ] No production code depends on transitional manual mappings or legacy DTOs.
+
+## Evidence index
+
+When work is completed, append a row rather than placing evidence only in a
+commit message.
+
+| Task or gap | Status | Implementation | Automated evidence | External evidence |
+|---|---|---|---|---|
+| `BASE-001`–`BASE-003` | Closed | Current generator and discovery tools | `generate_code.py --verify`; `can_change.py verify`; 7 Python tests | Not applicable |
+| `TIM-001` / `BASE-004` | Software closed | YAML, RT 50 Hz TX block, `config.h` | Contract generation and RT/native build gates | Physical period capture remains part of bench acceptance |
+| `FRM-007` | Blocked on vendor evidence | Raw frame support only is trustworthy | Raw identity/DLC tests | Vendor definition or known-response vector required |
+
+The detailed case matrix, CI tiers, evidence schema, verdicts, and hardware
+procedures are maintained in [`protocol-testing-plan.md`](protocol-testing-plan.md).

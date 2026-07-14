@@ -154,7 +154,7 @@ CANalyst-II sends as a normal CAN node would, with arbitration and ACK).
   │  │  MCP2515 (SPI)   │◄───────────────────►│ Ch1          │   │
   │  │  SCK=15 MOSI=16  │    inject 0x300,     │ terminator   │   │
   │  │  MISO=17 CS=18   │    0x301, 0x7FC      │ 120Ω ON      │   │
-  │  │  INT=47          │                     └──────────────┘   │
+  │  │  INT=7           │                     └──────────────┘   │
   │  └──────┬───────────┘                                        │
   │         │                                                    │
   └─────────┼────────────────────────────────────────────────────┘
@@ -226,7 +226,7 @@ RT is the CAN gateway — it has **two** CAN modules:
 | Module | Interface | CAN Bus | This Test |
 |--------|----------|---------|-----------|
 | **WCMCU-230** (SN65HVD230) | TWAI controller (built-in) | **Low** | ✅ Active — RT↔SYS traffic |
-| **MCP2515 SPI** | SPI (GPIO15/16/17/18/47) | **High** | ✅ Active — injected Host commands, only with 3.3 V-safe level translation |
+| **MCP2515 SPI** | SPI (GPIO15/16/17/18/7) | **High** | ✅ Active — injected Host commands, only with 3.3 V-safe level translation |
 
 The ESP32-S3-DevKitC-1 has two 22-pin headers. Hold the board with the USB port
 pointing **down**. The left strip is **J1**, the right strip is **J3**.
@@ -245,7 +245,7 @@ pointing **down**. The left strip is **J1**, the right strip is **J3**.
         │  │ ...              │  │ ● GPIO16               │ │  ← MCP2515 MOSI
         │  │ ...              │  │ ● GPIO17               │ │  ← MCP2515 MISO
         │  │ ...              │  │ ● GPIO18               │ │  ← MCP2515 CS
-        │  │ ...              │  │ ● GPIO47               │ │  ← MCP2515 INT
+        │  │ ...              │  │ ● GPIO7                │ │  ← MCP2515 INT
        │  │ 21  5V         ● │  │ ● GND              21  │ │
        │  │ 22  GND        ● │  │ ● GND              22  │ │
        │  └─────────────────┘  └───────────────────────┘ │

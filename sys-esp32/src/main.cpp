@@ -44,7 +44,7 @@ bool g_bypass_mtr_absent = false;
 #include "brake_control.h"
 #include "light_control.h"
 #include "indicator_control.h"
-#include "wdt_toggle.h"
+// #include "wdt_toggle.h"
 
 
 static const char* TAG = "sys";
@@ -102,7 +102,7 @@ static sys::ModeManager    g_mode_mgr;
 static sys::BrakeControl   g_brake;
 static sys::LightControl   g_lights;
 static sys::IndicatorControl g_indicator;
-static sys::WdtToggle      g_wdt;
+// static sys::WdtToggle      g_wdt;
 
 
 // Shared state (written by dispatch, read by actuators).
@@ -458,7 +458,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Toggle external watchdog + per-task alive counter
         g_alive_safety.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        g_wdt.tick();  // GPIO23 toggle
+        // g_wdt.tick();  // GPIO23 toggle
 
         // EGAS L2: compare 0x204 setpoint vs 0x206 actual speed (arch §6.1)
         // Only in AUTO mode. Mismatch > threshold for > duration → ESTOP.
@@ -882,8 +882,8 @@ static void init_board_gpio() {
                                   | (1ULL << sys::kBulbManual)
                                   | (1ULL << sys::kBulbReady)
                                   | (1ULL << sys::kBulbEstop)
-                                  | (1ULL << sys::kPower12vRelay)
-                                  | (1ULL << sys::kWdtToggleGpio);
+                                  | (1ULL << sys::kPower12vRelay);
+                                  // | (1ULL << sys::kWdtToggleGpio);
     constexpr uint64_t kPullupInputs = (1ULL << sys::kBrakeLeverGpio)
                                     | (1ULL << sys::kStartBtnGpio)
                                     | (1ULL << sys::kModeBtnGpio)
@@ -895,8 +895,8 @@ static void init_board_gpio() {
     // not receive an indeterminate boot pulse.
     for (int pin : {sys::kLightLeftTurn, sys::kLightRightTurn, sys::kLightBrake,
                     sys::kLightHead, sys::kBulbAuto, sys::kBulbManual,
-                    sys::kBulbReady, sys::kBulbEstop, sys::kPower12vRelay,
-                    sys::kWdtToggleGpio}) {
+                    sys::kBulbReady, sys::kBulbEstop, sys::kPower12vRelay/*,
+                    sys::kWdtToggleGpio*/}) {
         ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(pin), 0));
     }
 
@@ -1001,7 +1001,7 @@ extern "C" void app_main() {
     g_brake.init();
     g_lights.init();
     g_indicator.init();
-    g_wdt.init();
+    // g_wdt.init();
 
     // Init status bulbs (green=ready, red=ESTOP) — start both OFF
     gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbReady), GPIO_MODE_OUTPUT);

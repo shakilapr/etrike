@@ -534,7 +534,7 @@ Bridges selected CAN messages (§2.3). Listens to `0x201 SES_STATUS` for steerin
 | Bus | Controller | Interface | GPIO | Transceiver |
 |-----|-----------|-----------|------|-------------|
 | Low-level | Built-in TWAI | Direct | TX=5, RX=4 | SN65HVD230 |
-| High-level | MCP2515 | SPI | SCK=15, MOSI=16, MISO=17, CS=18, INT=47 | SN65HVD230 |
+| High-level | MCP2515 | SPI | SCK=15, MOSI=16, MISO=17, CS=18, INT=7 | SN65HVD230 |
 
 ### 7.3 CAN messages received
 
@@ -900,7 +900,7 @@ RT converts ROS 2 motion commands into motor speed + gear and steering angle com
 | Signal | GPIO | Type | Purpose |
 |--------|------|------|---------|
 | CAN (low) | TX=5, RX=4 | TWAI | Low-level CAN bus |
-| CAN (high) | SCK=15, MOSI=16, MISO=17, CS=18, INT=47 | SPI → MCP2515 | High-level CAN bus |
+| CAN (high) | SCK=15, MOSI=16, MISO=17, CS=18, INT=7 | SPI → MCP2515 | High-level CAN bus |
 | Encoder (rear motor) | A=1, B=2 | PCNT quadrature | Speed feedback (future PID) |
 | Encoder (front wheel) | A=3, B=6 | PCNT quadrature | Sensor TBD |
 | Encoder (rear wheels) | L:9/12, R:13/14 | PCNT quadrature | Differential speed (sensor TBD) |
@@ -1508,7 +1508,7 @@ constexpr float kBrakeManualStroke = 15.0f, kBrakeMaxStroke = 27.0f;
 ```
  1. can_driver_init()     → TWAI, low-level CAN
  2. mode_manager_init()   → GPIO11 (MODE), GPIO41 (START)
- 3. safety_monitor_init() → GPIO1 (ESTOP), GPIO2 (brake lever), WDT GPIO47
+ 3. safety_monitor_init() → GPIO1 (ESTOP), GPIO2 (brake lever) (Note: External WDT temporarily disabled for future implementation)
  4. retired motor I/O     → not initialized or connected in production
  5. lights_init()         → GPIO9,6,7 (IN, switches) + GPIO18,19,21,10 (OUT)
  7. power_init()          → GPIO40 (OUT, LOW)

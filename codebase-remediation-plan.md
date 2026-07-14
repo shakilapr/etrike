@@ -1,11 +1,16 @@
 # Codebase Remediation Plan
 
-- **Status:** Ready for execution; remediation work is not yet complete
+- **Status:** Historical planning record; superseded by the live protocol migration checklist
 - **Created:** 2026-07-13
 - **Scope:** CAN contract, generated artifacts, RT, SYS, MTR, PWT, host bridge, existing debug/simulation compatibility, firmware observability, and codebase tests
 - **Input audit:** [`architecture-yaml-code-gaps.md`](architecture-yaml-code-gaps.md)
 
 **Out of scope:** implementation of the new Control UI frontend, its backend/API, adapter service, LLM access, and UI-specific logging. Those consume the verified codebase handoff defined here and remain specified in [`control-ui/control-ui-achitecture.md`](control-ui/control-ui-achitecture.md).
+
+> Do not mark tasks in this document. Execution status is maintained only in
+> [`docs/protocol-architecture-migration-plan.md`](docs/protocol-architecture-migration-plan.md),
+> with test and evidence requirements in
+> [`docs/protocol-testing-plan.md`](docs/protocol-testing-plan.md).
 
 ## 1. Outcome
 
