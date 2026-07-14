@@ -45,7 +45,8 @@ constexpr int kBulbEstop      = 20;  // red — dedicated ESTOP indicator
 constexpr int kPower12vRelay  = 40;
 
 // ── watchdog ──────────────────────────────────────────────────────
-constexpr int kWdtToggleGpio = 47;
+// constexpr int kWdtToggleGpio = 47; // Temporarily disabled
+
 
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;
