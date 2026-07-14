@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import type { SimFrame, SimulationResult } from "../core/types.js";
-import { DLC, BUS } from "../../../shared/can/generated/can_ids.js";
-import { HOST_BRAKE_MAX_KPA, MAX_SPEED_FWD_MMPS, MAX_SPEED_REV_MMPS } from "../../../shared/can/generated/can_constants.js";
+import { routeForSimFrame } from "../protocol.js";
+import { MAX_BRAKE_KPA, MAX_SPEED_FWD_MMPS, MAX_SPEED_REV_MMPS } from "../physics/tricycle.js";
 
 export interface Phase1Trace {
   result: SimulationResult;
@@ -56,7 +56,7 @@ export function assertOutputBounds(trace: Phase1Trace): void {
   for (const f of frames(trace, "0x205")) {
     const brake = i32be(f.data);
     expect(brake).toBeGreaterThanOrEqual(0);
-    expect(brake).toBeLessThanOrEqual(HOST_BRAKE_MAX_KPA);
+    expect(brake).toBeLessThanOrEqual(MAX_BRAKE_KPA);
   }
 }
 
@@ -64,10 +64,9 @@ export function assertCanValidity(trace: Phase1Trace): void {
   expect(trace.result.validationErrors).toEqual([]);
   for (const f of trace.frames) {
     expect(f.dlc).toBe(f.data.length);
-    expect(DLC[f.canId], `${f.canId} generated DLC`).toBe(f.dlc);
-    const expectedBus = BUS[f.canId];
-    const simulatorLowRtStateReport = f.canId === "0x210" && f.bus === "low";
-    expect(expectedBus === "both" || expectedBus === f.bus || simulatorLowRtStateReport, `${f.canId} bus`).toBe(true);
+    const route = routeForSimFrame(f);
+    expect(route, `${f.canId} route on ${f.bus}`).toBeDefined();
+    expect(route?.message.dlc, `${f.canId} generated DLC`).toBe(f.dlc);
   }
 }
 

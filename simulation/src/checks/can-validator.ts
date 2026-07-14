@@ -6,14 +6,15 @@
  */
 
 import type { ValidationError, BusId } from "../core/types.js";
-import { DLC as EXPECTED_DLC } from "../../../shared/can/generated/can_ids.js";
+import { routeFor } from "../protocol.js";
 
 export class CanValidator {
   private errors: ValidationError[] = [];
 
   /** Validate a single outgoing frame. */
   validate(nowMs: number, canId: string, bus: BusId, dlc: number, dataLength: number, sender: string): void {
-    const expected = EXPECTED_DLC[canId];
+    const route = routeFor(bus, Number.parseInt(canId.replace(/^0x/i, ""), 16));
+    const expected = route?.message.dlc;
 
     if (expected !== undefined && dlc !== expected) {
       // Some IDs have variable DLC, skip

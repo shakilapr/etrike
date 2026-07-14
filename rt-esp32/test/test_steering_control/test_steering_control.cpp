@@ -196,6 +196,23 @@ void test_steering_fault_recovery(void) {
     TEST_ASSERT_EQUAL(SteerState::STEER_LISTEN_SYNC, sc.state());
 }
 
+void test_steering_command_wire_format(void) {
+    SteeringControl sc;
+    sc.init();
+    uint32_t now_ms = 0;
+    etrike::protocol::codecs::ses::Command command;
+    boot_to_active(sc, now_ms);
+    TEST_ASSERT_TRUE(sc.tick(0, 1, now_ms += 20, command));
+
+    can::Frame frame;
+    TEST_ASSERT_EQUAL(
+        can::gen::CodecStatus::Ok,
+        etrike::protocol::codecs::ses::encode_command(command, frame));
+    const uint8_t expected[] = {0x03, 0x00, 0x30, 0x75, 0x7D, 0x13, 0x00, 0xD7};
+    TEST_ASSERT_EQUAL(can::kIdSbwCmd, frame.id);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_steering_obstacle_estop_hold_angle_clamp);
@@ -207,6 +224,7 @@ extern "C" void app_main() {
     RUN_TEST(test_steering_exit_estop_deferred_ramp);
     RUN_TEST(test_steering_exit_estop_deferred_hold);
     RUN_TEST(test_steering_fault_recovery);
+    RUN_TEST(test_steering_command_wire_format);
     UNITY_END();
 }
 

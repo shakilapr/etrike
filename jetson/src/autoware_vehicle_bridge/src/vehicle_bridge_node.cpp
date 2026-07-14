@@ -26,6 +26,10 @@ namespace messages = etrike::protocol::generated;
 
 static protocol::FrameView protocol_view(const struct can_frame & frame)
 {
+  if ((frame.can_id & (CAN_ERR_FLAG | CAN_RTR_FLAG)) != 0) {
+    return protocol::FrameView(protocol::kExtendedCanIdMax + 1u, false, frame.len,
+      frame.data, sizeof(frame.data));
+  }
   const bool extended = (frame.can_id & CAN_EFF_FLAG) != 0;
   const canid_t mask = extended ? CAN_EFF_MASK : CAN_SFF_MASK;
   return protocol::FrameView(frame.can_id & mask, extended, frame.len, frame.data, sizeof(frame.data));
@@ -725,9 +729,12 @@ void VehicleBridgeNode::run_can_receive()
 void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
 {
   switch (protocol_view(frame).id()) {
-    case CAN_ESTOP:
+    case CAN_ESTOP: {
+      messages::SafetyEstop value{};
+      if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
       RCLCPP_WARN(get_logger(), "ESTOP received (DLC=%d)", frame.len);
       break;
+    }
 
     case CAN_THROTTLE_STS: {
       autoware_auto_vehicle_msgs::msg::VelocityReport vel;

@@ -6,6 +6,7 @@
  */
 #include "driver/twai.h"
 #include "can/virtual_can_bus.h"
+#include "protocol/core/frame.hpp"
 #include <cstdio>
 #include <mutex>
 
@@ -59,7 +60,7 @@ int twai_stop(void) {
 int twai_transmit(const twai_message_t* msg, int timeout_ms) {
     if (!msg) return ESP_ERR_INVALID_ARG;
 
-    can::Frame frame;
+    etrike::protocol::Frame frame;
     frame.id       = msg->identifier;
     frame.extended = msg->extd;
     frame.dlc      = msg->data_length_code;
@@ -79,7 +80,7 @@ int twai_receive(twai_message_t* msg, int timeout_ms) {
     auto* bus = active_bus();
     if (!bus) return ESP_ERR_TIMEOUT;
 
-    can::Frame frame;
+    etrike::protocol::Frame frame;
     if (!bus->receive(frame, (uint32_t)timeout_ms))
         return ESP_ERR_TIMEOUT;
 

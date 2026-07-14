@@ -54,7 +54,7 @@ public:
         frame.id       = rx.IDE == CAN_ID_EXT ? rx.ExtId : rx.StdId;
         frame.extended = (rx.IDE == CAN_ID_EXT);
         frame.dlc      = rx.DLC;
-        for (int i = 0; i < rx.DLC && i < 8; ++i) frame.data[i] = data[i];
+        for (std::size_t i = 0; i < rx.DLC && i < frame.data.size(); ++i) frame.data[i] = data[i];
         return true;
     }
 

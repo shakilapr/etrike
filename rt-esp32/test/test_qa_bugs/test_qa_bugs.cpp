@@ -39,11 +39,24 @@ void test_bug_4_10_seb_alignment_bit_uninitialized(void) {
     TEST_ASSERT_TRUE(auto_req.alignment_enable);
 }
 
+void test_seb_auto_request_wire_format(void) {
+    auto command = rt::make_seb_auto_req(2000);
+    command.control_enable = true;
+    can::Frame frame;
+    TEST_ASSERT_EQUAL(
+        can::gen::CodecStatus::Ok,
+        etrike::protocol::codecs::seb::encode_command(command, frame));
+    const uint8_t expected[] = {0x0F, 0x00, 0x58, 0x28, 0x00, 0x00, 0x03, 0x83};
+    TEST_ASSERT_EQUAL(can::kIdBbwCmd, frame.id);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_bug_4_4_reverse_steer_inversion);
     RUN_TEST(test_bug_4_5_spontaneous_forward_lurch);
     RUN_TEST(test_bug_4_10_seb_alignment_bit_uninitialized);
+    RUN_TEST(test_seb_auto_request_wire_format);
     UNITY_END();
 }
 

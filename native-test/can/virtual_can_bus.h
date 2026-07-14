@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <mutex>
 #include <array>
-#include "can/can_protocol.h"
+#include "protocol/core/frame.hpp"
 
 namespace can {
 namespace sim {
@@ -34,10 +34,10 @@ public:
     /* ── CAN operations ──────────────────────────────────── */
 
     // Send a frame. Returns true if queued.
-    bool send(const can::Frame& frame, uint32_t timeout_ms = 0);
+    bool send(const etrike::protocol::Frame& frame, uint32_t timeout_ms = 0);
 
     // Receive a frame (non-blocking). Returns true if a frame was available.
-    bool receive(can::Frame& out, uint32_t timeout_ms = 0);
+    bool receive(etrike::protocol::Frame& out, uint32_t timeout_ms = 0);
 
     // Check if any frames are waiting.
     bool has_pending() const;
@@ -74,10 +74,10 @@ public:
     }
 
 private:
-    bool apply_fault(can::Frame& frame);
+    bool apply_fault(etrike::protocol::Frame& frame);
 
     mutable std::mutex m_mutex;
-    std::array<can::Frame, kQueueDepth> m_queue;
+    std::array<etrike::protocol::Frame, kQueueDepth> m_queue;
     size_t m_head, m_tail, m_count;
     uint8_t m_tec, m_rec;
     FaultType m_fault;

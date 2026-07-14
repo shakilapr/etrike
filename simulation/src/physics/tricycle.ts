@@ -4,45 +4,23 @@
  * Delta trike inverse bicycle model: delta = atan2(L * w, |v|)
  */
 
-// ── Import from generated YAML constants ─────────────────────────────
-import {
-  WHEELBASE_MM,
-  OBSTACLE_STOP_MM,
-  OBSTACLE_CLEAR_MM,
-  MAX_SPEED_FWD_MMPS,
-  MAX_SPEED_REV_MMPS,
-  LOW_SPEED_THRESH_MMPS,
-  CMD_STALE_TIMEOUT_MS,
-  HEARTBEAT_TIMEOUT_HOST_MS,
-  STARTUP_GRACE_PERIOD_MS,
-  OBSTACLE_MAX_KPA,
-  ASSIST_STOP_KPA,
-  HOST_BRAKE_MAX_KPA,
-  STEER_HARD_LIMIT_DEG,
-  STEER_FOLLOWING_ERR_MIN_DEG,
-  STEER_FOLLOWING_ERR_FACTOR,
-  STEER_FOLLOWING_ERR_MS,
-} from "../../../shared/can/generated/can_constants.js";
-
-// ── Re-export (keep existing API for other files) ────────────────────
-export {
-  WHEELBASE_MM,
-  OBSTACLE_STOP_MM,
-  OBSTACLE_CLEAR_MM,
-  MAX_SPEED_FWD_MMPS,
-  MAX_SPEED_REV_MMPS,
-  LOW_SPEED_THRESH_MMPS,
-  CMD_STALE_TIMEOUT_MS,
-  STARTUP_GRACE_PERIOD_MS,
-  OBSTACLE_MAX_KPA,
-  ASSIST_STOP_KPA,
-  STEER_HARD_LIMIT_DEG,
-  STEER_FOLLOWING_ERR_MIN_DEG,
-  STEER_FOLLOWING_ERR_FACTOR,
-  STEER_FOLLOWING_ERR_MS,
-};
-export const MAX_BRAKE_KPA = HOST_BRAKE_MAX_KPA;
-export const HOST_HEARTBEAT_TIMEOUT_MS = HEARTBEAT_TIMEOUT_HOST_MS;
+// Vehicle and controller policy belongs to the simulation, not the wire contract.
+export const WHEELBASE_MM = 1500;
+export const OBSTACLE_STOP_MM = 300;
+export const OBSTACLE_CLEAR_MM = 3000;
+export const MAX_SPEED_FWD_MMPS = 3000;
+export const MAX_SPEED_REV_MMPS = 500;
+export const LOW_SPEED_THRESH_MMPS = 50;
+export const CMD_STALE_TIMEOUT_MS = 500;
+export const STARTUP_GRACE_PERIOD_MS = 3000;
+export const OBSTACLE_MAX_KPA = 5000;
+export const ASSIST_STOP_KPA = 2000;
+export const MAX_BRAKE_KPA = 20000;
+export const HOST_HEARTBEAT_TIMEOUT_MS = 1500;
+export const STEER_HARD_LIMIT_DEG = 40;
+export const STEER_FOLLOWING_ERR_MIN_DEG = 2;
+export const STEER_FOLLOWING_ERR_FACTOR = 0.25;
+export const STEER_FOLLOWING_ERR_MS = 300;
 export const STEER_CMD_RATE_HZ = 50;
 export const STEER_BOOT_WAIT_MS = 500;
 export const ANGLE_CLAMP_BASE_DEG = 40.0;
