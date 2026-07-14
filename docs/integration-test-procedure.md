@@ -82,7 +82,7 @@ proceeding to the next. Stop on first failure — debug before continuing.
 - CANalyst-II Ch1: inject 0x300 on high bus (speed=1000, yaw=0, gear=D)
 - CANalyst-II Ch2: verify on low bus:
   - 0x204 RT_DRIVE_CMD at 100 Hz (speed=1000, gear=D)
-  - 0x169 VCU_SES_REQ at 100 Hz (DLC=8, checksum valid)
+  - 0x169 VCU_SES_REQ at 50 Hz (DLC=8, checksum valid)
 
 ### T4.2 — Brake injection
 - CANalyst-II Ch1: inject 0x301 on high bus (brake_kpa=2000)

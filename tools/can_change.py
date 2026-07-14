@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 import yaml
@@ -57,6 +58,16 @@ def validate(messages, mappings):
                 if not (ROOT / path).is_file(): errors.append(f"{item['id']}: missing {path}")
     for finding in unregistered(mappings):
         errors.append(f"unregistered wire access: {finding['file']}:{finding['line']}")
+    debug_metadata = subprocess.run(
+        [sys.executable, str(ROOT / "shared/can/generate_can_ts.py"), "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if debug_metadata.returncode:
+        detail = (debug_metadata.stdout + debug_metadata.stderr).strip()
+        errors.append(f"stale debug-tool CAN metadata: {detail}")
     return errors
 
 

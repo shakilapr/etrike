@@ -973,7 +973,7 @@ From `native-test/test/test_dual_heartbeat.cpp`:
 | `kSteerFollowingErrMinDeg` | 2.0 | Floor for following error threshold |
 | `kSteerFollowingErrFactor` | 0.25 | × dynamic_limit → threshold |
 | `kSteerFollowingErrMs` | 300 | Must persist before ESTOP |
-| `kSteerCmdRateHz` | 100 | Steering command rate |
+| `kSteerCmdRateHz` | 50 | Steering command rate (20 ms contract period) |
 | `kAngleClampBaseDeg` | 40.0 | Max steering at 2 km/h |
 | `kAngleClampMinDeg` | 5.0 | Min steering at 25 km/h |
 | `kSteerEstopRampDegS` | 20.0 | ESTOP ramp-to-zero rate |

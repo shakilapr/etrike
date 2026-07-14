@@ -54,15 +54,15 @@ describe("0x011 SYS_SAFETY_STS", () => {
   });
 });
 
-describe("0x012 SYS_DCDC_CMD", () => {
-  it("sent at 5 Hz on low bus", () => {
+describe("retired 0x012 SYS_DCDC_CMD route", () => {
+  it("is not emitted by SYS because PWT owns the standalone manufacturer command", () => {
     const runner = new SimulationRunner();
     runner.configure(drivingCfg(0));
     const result = runner.runDuration(1000);
     expect(result.lowBus.total).toBeGreaterThan(0);
     // filter to find 0x012
     const dcdc = runner.capturedFrames.filter(f => f.canId === "0x012" && f.bus === "low");
-    expect(dcdc.length).toBeGreaterThanOrEqual(4);
+    expect(dcdc.length).toBe(0);
   });
 });
 

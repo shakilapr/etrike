@@ -328,7 +328,7 @@ SYS persists reset reason and boot count to NVS flash:
 | 0x721 | RX (low) | 100 Hz | SEB status. Pressure stored only in Pressure mode. |
 | 0x204 | TX (low) | 100 Hz | Motor speed+gear. Gated: only in AUTO/ESTOP. |
 | 0x205 | TX (low) | 50 Hz | Brake kPa → SYS. Gated: only in AUTO/ESTOP. |
-| 0x169 | TX (low) | 50 Hz current wire schedule; state-machine timing still assumes 100 Hz | Steering angle → EPS-C. Checksum XOR^0xFF. Gated: only in AUTO/ESTOP. Open timing decision described in §15. |
+| 0x169 | TX (low) | 50 Hz | Steering angle → EPS-C. Checksum XOR^0xFF. Gated: only in AUTO/ESTOP. YAML, scheduler, and steering state-machine timing agree. |
 | 0x210 | TX (high+low) | 10 Hz | Mode(byte0), safety_state(byte1:0-1), reversing(byte2), rx_overflow(byte3). SYS reads safety_state for takeover. |
 | 0x310 | TX (high) | 10 Hz | Steering diag: angle(u16 BE, factor 0.1, offset -3000), fault, current, temp |
 | 0x311 | TX (high) | 10 Hz | Brake diag: pressure, fault, current, temp |
@@ -691,12 +691,14 @@ BOOT_WAIT(500ms) → LISTEN_SYNC → ACTIVE
 |-------|----------|------------|
 | BOOT_WAIT | No | Suppressed |
 | LISTEN_SYNC | No | Suppressed |
-| ACTIVE | **Open timing decision:** current bus scheduler/YAML use 50 Hz; steering state-machine configuration still assumes 100 Hz | Allowed |
+| ACTIVE | 0x169 at the contract rate of 50 Hz | Allowed |
 | ESTOP_RAMP | Ramping to 0° | Allowed |
 | ESTOP_HOLD/SILENT | Hold/stop | Allowed |
 | FAULT | No | Suppressed |
 
-The timing mismatch is intentionally not resolved by documentation alone. `can_low.yaml` and the current RT transmit schedule specify 20 ms/50 Hz, while `kSteerCmdRateHz` is 100 and is used for state-machine tick calculations. Firmware, YAML, golden timing tests and this table must be changed together after the required EPS-C rate is confirmed.
+`can_low.yaml`, generated timing metadata, the RT transmit schedule, and
+`kSteerCmdRateHz` specify 20 ms/50 Hz. A later rate change is a reviewed timing
+contract change and must update all four plus timing tests and bench limits.
 
 ### 0x7B9 Suppression (6 Conditions)
 
