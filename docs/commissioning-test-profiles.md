@@ -170,6 +170,10 @@ PID execution and PID output authority are independently observable.
 | `ENABLED_LIMITED` | PID affects actuation with commissioning limits and additional abort conditions |
 | `ENABLED_NORMAL` | PID affects actuation with the approved vehicle limits |
 
+`ENABLED_LIMITED` and `ENABLED_NORMAL` both use the build-time `Active` PID
+mode. The immutable firmware profile and versioned limits distinguish limited
+commissioning authority from approved vehicle authority.
+
 The full system must support a documented encoder-subsystem-disabled, PID-disabled,
 open-loop operating configuration. It must also support encoder-enabled,
 PID-disabled operation for acquisition, telemetry, and open-loop supervision.
@@ -333,19 +337,21 @@ The open-loop configuration is a first-class supported configuration, not a
 temporary accidental fallback. It must have its own tests, capability manifest,
 limits, diagnostics, and acceptance evidence.
 
-### Reconfiguration Rules
+### Artifact Selection Rules
 
-- Encoder and PID settings are versioned configuration, not hidden compile-time
-  side effects.
+- Encoder and PID settings are immutable, versioned build configuration, not
+  hidden compile-time side effects or runtime session controls.
 - An artifact may omit an unsupported hardware driver, but it must still expose
   the resulting disabled capability in its manifest.
-- Changing encoder acquisition, encoder use, or PID authority is permitted only
-  while drive output is at its safe value, gear is safe, and the controller is
-  in an approved non-driving state.
-- Enabling PID requires an enabled, healthy, fresh, scaled, and direction-checked
-  encoder plus accepted gains and output limits.
-- Disabling PID immediately removes PID output authority and resets integral,
-  derivative, filter, saturation, and previous-error state.
+- Selecting a different encoder acquisition, encoder use, or PID artifact
+  requires a full rebuild, software approval, verified flash, and startup
+  identity check while drive output is safe and the controller is in an
+  approved non-driving state.
+- Building an active-PID artifact requires an enabled, healthy, fresh, scaled,
+  and direction-checked encoder definition plus accepted gains and output
+  limits.
+- A PID-disabled artifact never calculates or applies PID and initializes all
+  integral, derivative, filter, saturation, and previous-error state as reset.
 - Moving from open loop to closed loop requires a bumpless transfer check so the
   first PID output cannot create a command step.
 - A runtime encoder fault while PID is active removes PID authority immediately.
@@ -353,8 +359,10 @@ limits, diagnostics, and acceptance evidence.
   separately reviewed safety requirement and test suite explicitly permit it.
 - An intentionally disabled encoder does not generate encoder-failure alarms,
   but diagnostics report the associated capabilities as unavailable.
-- Configuration changes are logged with old/new state, reason, authority,
-  timestamp, and artifact/configuration identity.
+- Every runtime request to change encoder or PID build state is rejected and
+  recorded, including requests made while stopped.
+- Build, approval, flash, and startup evidence records the prior and selected
+  artifact/configuration identities.
 
 | Stage | Actuation | Encoder | PID | Exit evidence |
 |---|---|---|---|---|
@@ -871,8 +879,8 @@ The design is ready for physical commissioning only when:
 - native tests cover every authorization transition and forbidden combination;
 - native, SIL, controller, and HIL tests prove complete supported operation with
   optional encoders disabled and PID disabled;
-- tests prove encoder enable/disable and PID enable/disable transitions are
-  rejected outside the approved safe state;
+- tests prove every runtime encoder/PID configuration transition is rejected,
+  including requests made in an otherwise safe stopped state;
 - the manifest distinguishes intentionally disabled, unavailable, valid,
   stale, and faulted sensors and reports every unavailable dependent capability;
 - controller-bench evidence passes before any physical-actuation session is
@@ -880,6 +888,7 @@ The design is ready for physical commissioning only when:
 
 ## Related Documents
 
+- [`rt-sys-configuration-implementation-work-plan.md`](rt-sys-configuration-implementation-work-plan.md)
 - [`rt-sys-feature-configuration-and-test-plan.md`](rt-sys-feature-configuration-and-test-plan.md)
 - [`validation/rt-sys-pre-vehicle-validation.md`](validation/rt-sys-pre-vehicle-validation.md)
 - [`hil-safety-test-plan.md`](hil-safety-test-plan.md)

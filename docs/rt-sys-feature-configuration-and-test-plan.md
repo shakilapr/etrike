@@ -28,6 +28,27 @@ features deliberately enabled or disabled. A selected configuration must be:
 The first required configuration is the complete open-loop vehicle with the RT
 encoder subsystem disabled and speed PID disabled.
 
+## Dependency Order and Hard Gates
+
+Implementation is firmware-first. Do not begin Control UI synthetic-peer/HIL
+work or physical-unit execution while the enable/disable foundation and its
+software verification are incomplete.
+
+| Foundation stage | Scope | Hardware/CAN transmission |
+|---:|---|---|
+| 1 | Configuration types, unit policies, output permissions, encoder/PID settings, validation | None |
+| 2 | RT/SYS production-code integration and safe disabled behavior | None |
+| 3 | Host/native unit, component, state-machine, and configuration-matrix tests | None |
+| 4 | Deterministic artifacts, manifest, hashes, and CI enforcement | None |
+| 5 | Pure software/SIL integration and fault scenarios | Virtual buses only |
+| 6 | Controller-only and HIL through future Control UI backend | Isolated CAN bench, no physical actuators |
+| 7 | One-unit-at-a-time physical integration | Only the approved physical unit |
+| 8 | Constrained full physical integration | All earlier gates must pass |
+
+Foundation Stage 6 is blocked until Stages 1-5 pass. Stage 7 is blocked until the
+applicable Stage 6 controller/HIL evidence passes. No passing later test may
+compensate for a missing or failed earlier stage.
+
 ## Scope
 
 This document covers:
@@ -453,11 +474,12 @@ The build must reject:
 
 ## Build Integration
 
-### Central configuration header
+### Generated central configuration header
 
-Add `rt-esp32/src/build_config.h`. It should:
+Generate `rt-esp32/src/build_config.h` from the canonical system configuration.
+It should:
 
-- define safe defaults for non-PlatformIO tooling;
+- define safe defaults only for explicitly identified non-vehicle tooling;
 - convert numeric macros to typed enums/constants;
 - validate ranges with `static_assert`;
 - validate dependencies with `static_assert`;
@@ -529,8 +551,9 @@ Error messages should be added to production assertions.
 
 ### PlatformIO configuration
 
-Create one reusable RT feature section in
-[`rt-esp32/platformio.ini`](../rt-esp32/platformio.ini):
+PlatformIO must consume values generated from the canonical system
+configuration rather than becoming another editable source of truth. A resolved
+generated RT feature section may look like:
 
 ```ini
 [rt_features]
@@ -540,18 +563,17 @@ build_flags =
     -D ETRIKE_RT_PID_MODE=0
 ```
 
-Unit policies and output permissions should come from the same canonical
-configuration. During the initial PlatformIO-only phase, RT and SYS may receive
-explicit numeric unit settings in their reusable build-flag sections. CI must
-compare the resolved RT and SYS values and fail on disagreement.
+Unit policies and output permissions come from the same canonical
+configuration. RT and SYS receive generated numeric values, and CI compares the
+resolved RT and SYS values and fails on disagreement.
 
 Both `vehicle` and `native` must include `${rt_features.build_flags}`. Any HIL
 or controller-test environment that claims the same configuration must include
 the same settings.
 
-Store shared unit policies in one imported PlatformIO configuration rather than
-copying them independently into RT and SYS. A planned file such as
-`shared/build/system_units.ini` can contain:
+Generate shared unit policies into one imported PlatformIO configuration rather
+than copying them independently into RT and SYS. A generated file such as
+`build/generated/system_units.ini` can contain:
 
 ```ini
 [system_units]
@@ -567,9 +589,10 @@ build_flags =
     -D ETRIKE_UNIT_MOTOR_CONTROLLER=0
 ```
 
-This example is controller/HIL-only because it contains simulated units. RT and
-SYS import the same section and add their own output permissions. A vehicle
-artifact must use physical or disabled values only.
+This resolved example is controller/HIL-only because it contains simulated
+units. RT and SYS import the same generated section and add their generated
+output permissions. A vehicle artifact must use physical or disabled values
+only.
 
 Example RT controller-only output settings:
 
@@ -612,11 +635,12 @@ environment must set all safety-relevant configuration values explicitly.
 
 ### Canonical configuration file
 
-PlatformIO flags are sufficient for the first implementation. When the number
-of supported configurations grows, move the values into a version-controlled
-canonical file and generate both the flags/header and manifest.
+The first implementation uses a version-controlled canonical configuration file
+and deterministically generates the PlatformIO values, typed header, test
+parameters, and manifest. Hand-editing generated PlatformIO flags is not an
+approved configuration workflow.
 
-Possible future location:
+Initial locations may be:
 
 ```text
 config/system/vehicle-open-loop.yaml
@@ -625,9 +649,9 @@ config/system/vehicle-pid-shadow.yaml
 config/system/vehicle-pid-active.yaml
 ```
 
-Do not build a second independent source of truth. The generated header,
-manifest, native tests, simulation, and target firmware must all consume the
-same resolved configuration.
+Do not build a second independent source of truth. The generated PlatformIO
+values, header, manifest, native tests, simulation, and target firmware must all
+consume the same resolved configuration.
 
 ## Required RT Code Changes
 
@@ -1591,9 +1615,14 @@ Each approved configuration must retain:
 
 ## Implementation Work Packages
 
-### WP1: Build configuration
+Work packages are dependency ordered. Complete each exit gate before starting
+the next package.
 
-- Add `build_config.h`.
+### WP1: Build configuration foundation
+
+- Add the canonical configuration schema and deterministic compiler.
+- Generate `build_config.h`, PlatformIO values, test parameters, and the
+  normalized manifest input.
 - Add explicit unit policies, output permissions, encoder-subsystem state,
   feedback source, and PID state to target and native builds.
 - Add compile-time validation.
@@ -1603,7 +1632,55 @@ Each approved configuration must retain:
 Exit: target and native builds resolve identical unit, output, encoder, feedback,
 and PID configuration; open-loop/no-encoder/PID-disabled behavior is explicit.
 
-### WP2: Manifest and CI
+### WP2: Unit and output policy integration
+
+- Replace broad bypass behavior with explicit per-unit policy.
+- Enforce disabled, required-physical, and simulated semantics in production
+  core logic.
+- Add the central output-policy boundary for RT, SYS, MTR, and PWT output
+  classes.
+- Keep vehicle mode separate from build configuration.
+- Prove disabled units are neither required nor commanded.
+- Prove unit presence does not grant output without an allowlist.
+
+Exit: every relevant RT/SYS path consumes typed configuration; all disabled
+paths fail closed and all actuator output reaches one testable policy boundary.
+
+### WP3: Encoder and speed-control implementation
+
+- Add one encoder-subsystem feature switch and a reviewed installed-channel
+  hardware map.
+- Initialize all and only installed channels when the subsystem is enabled.
+- Replace zero/no-op stubs with typed state.
+- Correct delta, wrap, timing, direction, and decode multiplier.
+- Add calibration and health.
+- Add explicit PID disabled/shadow/active behavior.
+- Add feedback source selection.
+- Correct control-loop ordering.
+- Add typed control result and feedback-fault response.
+
+Exit: encoder-disabled/PID-disabled is a complete supported path; shadow PID
+cannot affect output; active PID cannot build or run without approved feedback.
+
+### WP4: Complete software-level verification
+
+- Add configuration success/failure tests for all supported and forbidden
+  combinations.
+- Add unit-policy and output-allowlist tests for every unit.
+- Add encoder-core and PID tests.
+- Refactor RT/SYS calculations into host-testable production modules rather
+  than copied test logic.
+- Add complete RT control-output tests through encoded CAN frames.
+- Add RT/SYS ownership, timeout, reset, reconnect, and safety-invariant tests.
+- Replace placeholder bypass/reset/integration tests.
+- Run static analysis, sanitizers, generated-codec tests, and deterministic
+  fault/state sequences.
+
+Exit: the complete host/native software matrix passes with zero placeholders and
+proves the open-loop no-encoder baseline plus every declared configuration
+invariant. No physical CAN adapter is required or permitted for this gate.
+
+### WP5: Manifest, artifacts, and CI
 
 - Generate build manifest and configuration hash.
 - Add all supported configurations to CI.
@@ -1613,44 +1690,35 @@ and PID configuration; open-loop/no-encoder/PID-disabled behavior is explicit.
 
 Exit: a software-tested artifact can be identified and flashed without rebuild.
 
-### WP3: Encoder acquisition
+### WP6: Pure software/SIL integration
 
-- Add one encoder-subsystem feature switch and a reviewed installed-channel
-  hardware map.
-- Initialize all and only installed channels when the subsystem is enabled.
-- Replace zero/no-op stubs with typed state.
-- Correct delta, wrap, timing, direction, and decode multiplier.
-- Add calibration and health.
-- Add native and target tests.
-
-Exit: the encoder subsystem can be enabled or disabled as one feature; every
-installed channel can be measured and faulted independently without actuator
-power, and uninstalled channels are never initialized.
-
-### WP4: Speed-control strategy
-
-- Add explicit PID disabled/shadow/active behavior.
-- Add feedback source selection.
-- Correct control-loop ordering.
-- Add typed control result and fault response.
-- Expand PID and RT integration tests.
-
-Exit: disabled and shadow PID provably cannot affect `RT_DRIVE_CMD`; active PID
-affects it only with approved valid feedback.
-
-### WP5: Simulation and controller/HIL
-
-- Add every unit policy and output permission to simulation.
+- Add every unit policy and output permission to software simulation.
 - Add feedback fault models.
 - Run unit-disabled, unit-simulated, isolated-unit, open-loop, and shadow
   matrices.
-- Add output-inhibited controller tests.
 - Add configuration mismatch diagnostics.
+- Use virtual buses only; no CANalyst-II physical TX.
+- Cross-check simulation results against host-tested production invariants and
+  generated CAN vectors.
+
+Exit: all pure software and SIL scenarios pass without a physical adapter. The
+simulation is not allowed to redefine firmware truth or hide missing production
+coverage.
+
+### WP7: Control UI controller tests and HIL
+
+- Implement the future Control UI FastAPI backend foundation.
+- Add generated Python codecs, virtual and CANalyst-II adapters, bounded routing,
+  session state, Bench TX gate, leases, and source ownership.
+- Add synthetic peers only after their production contracts have passed WP4/WP6.
+- Add output-inhibited real RT/SYS controller tests.
+- Add closed-loop behavioral plant models and fault scenarios.
+- Record exact firmware/configuration hashes and complete evidence.
 
 Exit: all software/controller gates pass before physical encoder or actuator
-testing.
+testing; HIL runs on an isolated CAN bench with physical actuators disconnected.
 
-### WP6: Isolated hardware acceptance
+### WP8: Isolated physical hardware acceptance
 
 - Execute Host and HMI interface tests.
 - Execute EPS-C-only steering tests.
@@ -1694,6 +1762,7 @@ This work is complete when:
 
 ## Related Documents
 
+- [`rt-sys-configuration-implementation-work-plan.md`](rt-sys-configuration-implementation-work-plan.md)
 - [`commissioning-test-profiles.md`](commissioning-test-profiles.md)
 - [`validation/rt-sys-pre-vehicle-validation.md`](validation/rt-sys-pre-vehicle-validation.md)
 - [`hil-safety-test-plan.md`](hil-safety-test-plan.md)

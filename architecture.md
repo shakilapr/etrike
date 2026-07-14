@@ -823,6 +823,17 @@ BOOT_WAIT(500ms) ──→ LISTEN_SYNC ──→ ACTIVE ←── DEGRADED
 - **Pressure mode:** `raw = kPa / 50`. 5000kPa→100, 20000kPa→400.
 - All multi-byte fields are LE per vendor protocol. XOR checksum over bytes 0-6 ^ 0xFF.
 
+### Continuous Communication & Arbitration Logic (0x7B9)
+
+A single message is not sufficient to activate or maintain brake control; the system utilizes a continuous, redundant state machine:
+
+1. **Continuous 50 Hz Transmission**: The `0x7B9` command must be sent at precisely 50 Hz (20ms intervals). If the SEB goes >20ms without a command, it enters an internal communication fault and acts accordingly as a safety mechanism.
+2. **Rolling Counters & Checksums**: Every `0x7B9` frame must include an incrementing 4-bit rolling counter (0-15) and a valid XOR checksum over bytes 0-6 ^ 0xFF.
+3. **Listen Before Speaking**: Before transmitting `0x7B9`, the controller waits in `LISTEN_SYNC` for a valid SEB feedback frame (`0x721`) to ensure the actuator is aligned and ready.
+4. **Arbitration and Deadman Monitoring**: 
+   - **RT Authority**: In AUTO mode, the RT controller transmits `0x7B9`. SYS suppresses its own transmission.
+   - **SYS Deadman**: The SYS controller continuously monitors the RT's heartbeat, RT's safety state, and the SEB's `0x721` rolling counter. If RT fails, or if the SEB stops acknowledging RT's commands (frozen rolling counter), SYS immediately breaks suppression and resumes transmitting its own `0x7B9` commands as a redundant backup.
+
 ---
 
 ## 20. ESTOP Rate Limiting Architecture

@@ -10,6 +10,16 @@
 
 **Protocol source of truth:** `shared/can/can_high.yaml` and `shared/can/can_low.yaml`, consumed through generated runtime catalogs, codecs, validators, documentation, and firmware definitions. DBC is an optional export for third-party tools, not an application dependency.
 
+**Implementation dependency:** Control UI synthetic peers, controller/HIL
+sessions, and physical Bench TX are late integration stages. They are blocked
+until RT/SYS unit enable/disable policy, output permissions, encoder/PID
+configuration, production-core host tests, configuration matrices, manifests,
+and pure-software safety scenarios pass as defined in
+`../docs/rt-sys-feature-configuration-and-test-plan.md` and its dependency-ordered
+[`implementation work plan`](../docs/rt-sys-configuration-implementation-work-plan.md).
+The Control UI must not be used to compensate for missing firmware configuration
+or software tests.
+
 ## 1. Product role
 
 The Control UI is a bench-engineering application for the E-Trike. It combines five jobs in one coherent interface:
