@@ -2,16 +2,21 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Sbwc } from "../../src/ecus/epsc.js";
 import type { SimFrame } from "../../src/core/types.js";
 import type { SimulationContext } from "../../src/ecus/base.js";
+import { encodeSimFrame } from "../../src/protocol.js";
 
 function ctx(): SimulationContext {
   return { nowMs: 0, ticks: 0, mode: "auto", estopActive: false, brakeLeverPressed: false };
 }
 
 function make0x169(nowMs: number): SimFrame {
-  return {
-    simTimeMs: nowMs, bus: "low", canId: "0x169", name: "VCU_SES_REQ",
-    dlc: 8, data: [3, 0, 0, 0, 0, 0, 0, 0], sender: "rt",
-  };
+  return encodeSimFrame("ses:vcu_ses_req", {
+    alignment_enable: true,
+    control_enable: true,
+    target_angle_raw: 0,
+    target_speed_raw: 328,
+    rolling_counter: 0,
+    vehicle_speed_raw: 0,
+  }, "low", "rt", nowMs);
 }
 
 describe("Sbwc", () => {

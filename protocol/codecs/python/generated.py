@@ -41,6 +41,23 @@ def _limits(field: Mapping[str, Any]) -> tuple[float, float]:
     )
 
 
+def _is_exhaustive_enum(field: Mapping[str, Any]) -> bool:
+    if "enum" not in field:
+        return False
+    bits = field["bits"]
+    if field.get("signed"):
+        raw_minimum, raw_maximum = -(1 << (bits - 1)), (1 << (bits - 1)) - 1
+    else:
+        raw_minimum, raw_maximum = 0, (1 << bits) - 1
+    factor, offset = field.get("factor", 1), field.get("offset", 0)
+    min_val = field.get("min", raw_minimum * factor + offset)
+    max_val = field.get("max", raw_maximum * factor + offset)
+    raw_min_val = int(round((min_val - offset) / factor))
+    raw_max_val = int(round((max_val - offset) / factor))
+    range_val = raw_max_val - raw_min_val + 1
+    return len(field["enum"]) >= range_val
+
+
 def _encode_payload(metadata: Mapping[str, Any], values: Mapping[str, object]) -> tuple[CodecStatus, bytes | None]:
     payload = bytearray(metadata["dlc"])
     for field in metadata["layout"]["fields"]:
@@ -55,7 +72,7 @@ def _encode_payload(metadata: Mapping[str, Any], values: Mapping[str, object]) -
         raw = round(unrounded)
         if not math.isclose(unrounded, raw, rel_tol=0, abs_tol=1e-9):
             return "value_out_of_range", None
-        if "enum" in field and str(raw) not in field["enum"]:
+        if _is_exhaustive_enum(field) and str(raw) not in field["enum"]:
             return "invalid_enum", None
         if field.get("signed") and raw < 0:
             raw += 1 << field["bits"]
@@ -119,7 +136,7 @@ def decode(message: str, frame: Frame) -> tuple[CodecStatus, dict[str, int | flo
                 raw |= ((frame.data[position // 8] >> (position % 8)) & 1) << offset_index
         if field.get("signed") and raw & (1 << (bits - 1)):
             raw -= 1 << bits
-        if "enum" in field and str(raw) not in field["enum"]:
+        if _is_exhaustive_enum(field) and str(raw) not in field["enum"]:
             return "invalid_enum", None
         value = raw * field.get("factor", 1) + field.get("offset", 0)
         minimum, maximum = _limits(field)

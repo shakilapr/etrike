@@ -72,6 +72,18 @@ function limits(field: FieldMetadata): readonly [number, number] {
   return [field.min ?? rawMinimum * factor + offset, field.max ?? rawMaximum * factor + offset];
 }
 
+function isExhaustiveEnum(field: FieldMetadata): boolean {
+  if (field.enum === undefined) return false;
+  const rawMinimum = field.signed ? -(2 ** (field.bits - 1)) : 0;
+  const rawMaximum = field.signed ? 2 ** (field.bits - 1) - 1 : 2 ** field.bits - 1;
+  const factor = field.factor ?? 1;
+  const offset = field.offset ?? 0;
+  const rawMinVal = field.min !== undefined ? Math.round((field.min - offset) / factor) : rawMinimum;
+  const rawMaxVal = field.max !== undefined ? Math.round((field.max - offset) / factor) : rawMaximum;
+  const range = rawMaxVal - rawMinVal + 1;
+  return Object.keys(field.enum).length >= range;
+}
+
 function encodePayload(message: MessageMetadata, values: Readonly<Record<string, unknown>>): DecodeResult<Uint8Array> {
   const payload = new Uint8Array(message.dlc);
   for (const field of message.layout.fields ?? []) {
@@ -82,7 +94,7 @@ function encodePayload(message: MessageMetadata, values: Readonly<Record<string,
     const unrounded = (value - (field.offset ?? 0)) / (field.factor ?? 1);
     let raw = Math.round(unrounded);
     if (Math.abs(unrounded - raw) > 1e-9) return ["value_out_of_range"];
-    if (field.enum !== undefined && !(String(raw) in field.enum)) return ["invalid_enum"];
+    if (field.enum !== undefined && isExhaustiveEnum(field) && !(String(raw) in field.enum)) return ["invalid_enum"];
     if (field.signed && raw < 0) raw += 2 ** field.bits;
 
     if (field.bit === 0 && field.bits % 8 === 0) {
@@ -156,7 +168,7 @@ export function decodeGenerated(messageKey: string, input: CanFrame): DecodeResu
       }
     }
     if (field.signed && raw >= 2 ** (field.bits - 1)) raw -= 2 ** field.bits;
-    if (field.enum !== undefined && !(String(raw) in field.enum)) return ["invalid_enum"];
+    if (field.enum !== undefined && isExhaustiveEnum(field) && !(String(raw) in field.enum)) return ["invalid_enum"];
     const value = raw * (field.factor ?? 1) + (field.offset ?? 0);
     const [minimum, maximum] = limits(field);
     if (value < minimum || value > maximum) return ["value_out_of_range"];
