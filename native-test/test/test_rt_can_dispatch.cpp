@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #include "esp_timer.h"
-#include "can/can_protocol.h"
+#include "protocol/compat/can_protocol.hpp"
 #include "rt_state.h"
 
 static std::atomic<uint32_t> g_alive_dispatch{0};
@@ -76,8 +76,8 @@ int main() {
         can::Frame fr{};
         fr.id = can::kIdSysHeartbeat;
         fr.dlc = 2;
-        fr.put_u8(0, 1);
-        fr.put_u8(1, 1);
+        fr.data[0] = 1;
+        fr.data[1] = 1;
 
         DispatchContext ctx{};
         esp_timer_test_advance(1000);
@@ -94,8 +94,8 @@ int main() {
         can::Frame fr{};
         fr.id = can::kIdHostHeartbeat;
         fr.dlc = 2;
-        fr.put_u8(0, 1);
-        fr.put_u8(1, 1);
+        fr.data[0] = 1;
+        fr.data[1] = 1;
 
         DispatchContext ctx{};
         esp_timer_test_advance(1000);
@@ -109,35 +109,38 @@ int main() {
 
     {
         can::Frame fr{};
-        can::HostDriveCmd{500, 100, uint8_t(can::Gear::D)}.to_frame(fr);
-
-        DispatchContext low_ctx{};
-        process_frame(fr, false, low_ctx);
-        CHECK(!low_ctx.has_cmd);
-
-        DispatchContext high_ctx{};
-        process_frame(fr, true, high_ctx);
-        CHECK(high_ctx.has_cmd);
-        CHECK(high_ctx.cmd.speed_mmps == 500);
-    }
-
-    {
-        can::Frame fr{};
-        can::SysModeCmd{uint8_t(can::Mode::Auto)}.to_frame(fr);
-
-        DispatchContext high_ctx{};
-        process_frame(fr, true, high_ctx);
-        CHECK(!high_ctx.has_mode);
-
-        DispatchContext low_ctx{};
-        process_frame(fr, false, low_ctx);
-        CHECK(low_ctx.has_mode);
-        CHECK(low_ctx.mode_from_sys == uint8_t(can::Mode::Auto));
-    }
-
-    {
-        can::Frame fr{};
-        can::HostBrakeReq{1234}.to_frame(fr);
+        can::gen::HostDriveCmd val_drive{500, 100, uint8_t(can::Gear::D)};
+        can::encode_frame(val_drive, fr);
+ 
+         DispatchContext low_ctx{};
+         process_frame(fr, false, low_ctx);
+         CHECK(!low_ctx.has_cmd);
+ 
+         DispatchContext high_ctx{};
+         process_frame(fr, true, high_ctx);
+         CHECK(high_ctx.has_cmd);
+         CHECK(high_ctx.cmd.speed_mmps == 500);
+     }
+ 
+     {
+         can::Frame fr{};
+         can::gen::SysModeCmd val_mode{uint8_t(can::Mode::Auto)};
+         can::encode_frame(val_mode, fr);
+ 
+         DispatchContext high_ctx{};
+         process_frame(fr, true, high_ctx);
+         CHECK(!high_ctx.has_mode);
+ 
+         DispatchContext low_ctx{};
+         process_frame(fr, false, low_ctx);
+         CHECK(low_ctx.has_mode);
+         CHECK(low_ctx.mode_from_sys == uint8_t(can::Mode::Auto));
+     }
+ 
+     {
+         can::Frame fr{};
+         can::gen::HostBrakeReq val_brake{1234};
+         can::encode_frame(val_brake, fr);
 
         DispatchContext low_ctx{};
         process_frame(fr, false, low_ctx);

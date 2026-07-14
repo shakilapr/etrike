@@ -35,7 +35,7 @@ CHECK(L(2)>=39.9f&&L(2)<=40.1f,"limit@2=40");CHECK(L(25)>=4.9f&&L(25)<=5.1f,"lim
 float p=L(2);for(float s=3;s<=25;s++){float c=L(s);CHECK(c<=p,"monotonic");p=c;}}
 
 static void t5(){printf("\n=== Chain 5: Mode ===\n");
-CHECK_EQ((int)generated::SysModeCmd::kModeManual,0,"Manual=0");CHECK_EQ((int)generated::SysModeCmd::kModeAuto,1,"Auto=1");
+CHECK_EQ((int)generated::RtStateRpt::kModeManual,0,"Manual=0");CHECK_EQ((int)generated::RtStateRpt::kModeAuto,1,"Auto=1");
 generated::SysModeCmd m;protocol::Frame f;m.mode=0;generated::encode(m,f);CHECK_EQ(f.data[0],0,"Manual");
 m.mode=1;generated::encode(m,f);CHECK_EQ(f.data[0],1,"Auto");}
 

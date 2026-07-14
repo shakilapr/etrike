@@ -25,7 +25,7 @@ interface CanonicalField {
 
 interface CanonicalInstance {
   readonly bus: string;
-  readonly id: number;
+  readonly id: string | number;
   readonly frame_format: "standard" | "extended";
   readonly cycle_ms: number;
   readonly sender: string;
@@ -253,7 +253,7 @@ function fieldDefinition(messageKey: string, field: CanonicalField): CanField {
   const options = field.enum === undefined
     ? undefined
     : Object.entries(field.enum).map(([value, label]) => ({ value: Number(value), label }));
-  const boolean = field.bits === 1 && options === undefined;
+  const boolean = (field.bits === 1 || field.max === 1) && options === undefined;
   return {
     key,
     label: key,
@@ -275,7 +275,7 @@ export const CAN_MESSAGES: CanMessageDef[] = CANONICAL_MESSAGES
   .flatMap((message) => message.instances
     .filter((instance): instance is CanonicalInstance & { bus: Bus } => instance.bus === "high" || instance.bus === "low")
     .map((instance) => {
-      const id = formatCanId(instance.id);
+      const id = normalizeCanId(instance.id);
       const generated = message.codec.strategy === "generated";
       return {
         bus: instance.bus,
@@ -357,6 +357,10 @@ export function decodeFrameResult(bus: Bus, id: string, data: readonly number[],
 }
 
 class CanonicalCanCodec {
+  get messages() {
+    return CAN_BY_BUS_ID;
+  }
+
   getMessages(): CanMessageDef[] {
     return CAN_MESSAGES;
   }
