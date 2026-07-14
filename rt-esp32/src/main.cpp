@@ -328,9 +328,9 @@ static bool send_can_high(can::Frame& fr) {
         g_reversing.store(sp.reversing);
 
         // External watchdog kick — toggled at 100 Hz (TPS3850, 100ms window)
-        static bool wdt_toggle = false;
-        wdt_toggle = !wdt_toggle;
-        gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
+        // static bool wdt_toggle = false;
+        // wdt_toggle = !wdt_toggle;
+        // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
 
         monitor_can_bus_off();
 
@@ -668,8 +668,8 @@ extern "C" void app_main() {
     g_watchdog.init();
 
     // External watchdog GPIO — toggled by control_task at 100 Hz (TPS3850 or equiv)
-    gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
+    // gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
+    // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));

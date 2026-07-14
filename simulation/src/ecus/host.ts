@@ -147,7 +147,7 @@ export class HostEcu implements SimulatedEcu {
       this.heartbeatCtr = (this.heartbeatCtr + 1) & 0xFF;
       out.push({
         simTimeMs: nowMs, bus: "high", canId: "0x7FC", name: "HOST_HEARTBEAT",
-        dlc: 1, data: [this.heartbeatCtr], sender: "host",
+        dlc: 2, data: [this.heartbeatCtr, 0], sender: "host",
       });
     }
 

@@ -5,7 +5,7 @@ const requiredFrames = [
   ["0x001", "SAFETY_ESTOP", 0, "both"],
   ["0x110", "SYS_MODE_CMD", 1, "low"],
   ["0x011", "SYS_SAFETY_STS", 3, "both"],
-  ["0x210", "RT_STATE_RPT", 6, "high"],
+  ["0x210", "RT_STATE_RPT", 6, "both"],
   ["0x204", "RT_DRIVE_CMD", 5, "low"],
   ["0x205", "RT_BRAKE_CMD", 4, "low"],
   ["0x300", "HOST_DRIVE_CMD", 8, "high"],
@@ -16,7 +16,7 @@ const requiredFrames = [
   ["0x721", "SEB_STATUS", 8, "low"],
   ["0x7FD", "RT_HEARTBEAT", 2, "both"],
   ["0x7FE", "SYS_HEARTBEAT", 2, "low"],
-  ["0x7FC", "HOST_HEARTBEAT", 1, "high"],
+  ["0x7FC", "HOST_HEARTBEAT", 2, "high"],
 ] as const;
 
 describe("generated CAN contract drift", () => {

@@ -260,7 +260,7 @@ describe("0x311 BRAKE_DIAG encoding", () => {
 // ═══════════════════════════════════════════════════════════
 
 describe("0x7FC HOST_HEARTBEAT encoding", () => {
-  it("DLC=1, 2 Hz, high bus only, counter wraps at 256", () => {
+  it("DLC=2, 2 Hz, high bus only, counter wraps at 256", () => {
     const runner = new SimulationRunner();
     runner.configure(cfg({
       hostDriveCycle: [{ durationMs: 99999, speedMmps: 0, yawRateMradS: 0, gear: 0 }],

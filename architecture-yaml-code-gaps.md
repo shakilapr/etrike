@@ -24,7 +24,19 @@ This is a codebase traceability and test-readiness document. It does not specify
 > direct ESTOP wiring, and hardware-in-loop evidence cannot be completed in
 > repository-only remediation.
 
-The current repository is **not yet contract-consistent enough to support a conclusive end-to-end RT/SYS/MTR conformance result**. Raw CAN capture and many individual tests remain useful, but the following blockers can make a correct diagnostic consumer report incorrect values or make an apparently passing test prove the wrong implementation:
+The repository now has a verified generated contract path for ordinary CAN
+messages and controlled transitional paths for vendor protocols. It is
+**software-testable but not yet sufficient for a conclusive end-to-end
+RT/SYS/MTR hardware verdict**. Remaining software migration, vendor evidence,
+and physical-board evidence are tracked by the authoritative checklist in
+[`docs/protocol-architecture-migration-plan.md`](docs/protocol-architecture-migration-plan.md)
+and the evidence rules in
+[`docs/protocol-testing-plan.md`](docs/protocol-testing-plan.md).
+
+The original rows below are retained as audit history. The remediation status
+register, not the historical “Actual code” wording, states current disposition.
+Use only these status values: `Open`, `In progress`, `Software closed`, `Blocked
+on vendor evidence`, `Blocked on hardware evidence`, and `Closed`.
 
 1. Generated IDs, DLCs, routes, protocol hashes, metadata and ordinary payload codecs are compiled by production interfaces. Legacy compatibility wrappers remain pending retirement; registered vendor adapters remain intentionally handwritten and tested.
 2. Live `0x600`, `0x7FE`, `0x7FC`, and `0x210` definitions now agree with the canonical YAML and generated consumers.
@@ -53,11 +65,13 @@ Rows below preserve the evidence captured during the original audit. They are no
 | CAN-001, CAN-004, CAN-005, CAN-006 | **Partially resolved:** generated codecs/hashes/bus instances/counter metadata exist; legacy retirement, on-bus hash exposure, complete topology semantics and non-heartbeat counter policy remain open. |
 | CAN-002, CAN-003, CAN-007, CAN-008 | **Resolved in current tree:** routes are YAML-derived, cross-bus semantic conflicts fail generation, output is deterministic, and CI verifies it. |
 | FRM-002, FRM-003, FRM-004, FRM-005, FRM-006 | **Resolved in current tree:** YAML, generated codecs and migrated consumers agree. |
-| FRM-007 | **Open:** vendor version interpretation still requires confirmation and a definitive vector. |
+| FRM-007 | **Blocked on vendor evidence:** raw identity/DLC can be tested, but semantic version decoding requires a trusted definition or definitive hardware vector. |
 | FRM-008 | **Resolved topology; partially resolved tooling:** PWT is standalone and its manufacturer codec is generated from its own YAML; integration into the shared normalized model remains optional target work. |
 | MTR-004, TST-001, TST-007 | **Resolved or superseded:** production targets and Jetson consume generated codecs, and current native/schema vectors cover the corrected layouts. |
-| TST-004 | **Partially resolved:** DLC assertions consume generated definitions, while the forwarding test still contains a hand-copied expected route list and should be generated or data-driven. |
+| TST-004 | **In progress:** DLC assertions consume generated definitions; the forwarding expectation must still be emitted from the normalized route model rather than copied. |
 | PWT-003 | **Partially resolved:** deterministic PWT generation exists, but it remains a deliberately separate manufacturer contract. |
+| TIM-001 | **Software closed:** YAML, active transmitter, generated timing metadata, and RT configuration agree on 50 Hz. A measured bench capture is still required for hardware timing acceptance. |
+| MTR-001, MTR-005 | **Blocked on hardware evidence after software preparation:** board initialization, direct ESTOP wiring, and physical peripheral behavior require the actual board/harness. |
 | Other findings | **Open unless a later row or referenced test demonstrates closure.** Hardware/HIL findings cannot be closed by generation or native tests. |
 
 ## 2. Source-of-truth chain

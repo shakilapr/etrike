@@ -1,6 +1,10 @@
 # CAN Maintainability Work Plan and Checklist
 
-> **Superseded target:** This checklist records work completed around the transitional mapping registry. Do not extend the registry into the final architecture. The replacement target and staged migration are defined in [`protocol-architecture-migration-plan.md`](protocol-architecture-migration-plan.md).
+> **Historical snapshot — do not update as a live checklist.** This records work
+> completed around the transitional mapping registry. The authoritative task
+> list is [`protocol-architecture-migration-plan.md`](protocol-architecture-migration-plan.md),
+> and its verification rules are in
+> [`protocol-testing-plan.md`](protocol-testing-plan.md).
 
 Goal: every CAN change must be automatically discoverable even when its implementation cannot be fully generated.
 
