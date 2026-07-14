@@ -323,140 +323,14 @@ static bool send_can_high(can::Frame& fr) {
 #endif // CONFIG_ENABLE_ACTIVE_PID
         }
 
-            switch (evt.type) {
-            case rt::SafetyEvent::ESTOP:
-                m_estop_pending = true;
-                had_estop_this_cycle = true;
-                break;
-            case rt::SafetyEvent::MODE_CHANGE:
-                m_current_mode = evt.payload;
-                // Only clear ESTOP on mode change if no ESTOP arrived in this
-                // drain cycle. Prevents periodic Auto broadcasts from cancelling
-                // a valid ESTOP that arrived in the same queue window (bug 4.9).
-                if (evt.payload != uint8_t(can::Mode::Estop) && !had_estop_this_cycle) {
-                    m_estop_pending = false;
-                }
-                break;
-            }
-        }
-        // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
-        // SEB takeover is published immediately after safety checks below.
-        g_mode_current.store(m_current_mode);
-
-        if (xQueueReceive(g_cmd_q, &cmd, 0) != pdTRUE)
-            cmd = {0, 0};
-
-        rt::ResolvedSetpoint sp;
-        g_physics.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
-        sp.cmd_gear = cmd.gear;  // propagate CAN gear override
-
-        uint32_t obs = g_obstacle_mm.load();
-        sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
-
-        // ── Dynamic angle clamp (arch §7.6, fix #6) ─────────────────
-        {
-            float max_deg = rt::compute_dynamic_limit(static_cast<float>(std::abs(sp.motor_speed_mmps)));
-            int32_t limit_mdeg = static_cast<int32_t>(max_deg * 1000.0f);
-            sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
-        }
-
-        int32_t obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
-        int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
-
-        // ── Safety checks ──────────────────────────────────────────
-        int64_t const now = esp_timer_get_time();
-        bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
-
-        rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
-                                                  m_estop_pending, m_current_mode, m_seb_takeover);
-        g_seb_takeover.store(m_seb_takeover);
-
-        // Propagate ESTOP reason from safety checks to telemetry atomic.
-        // Internal checks (heartbeat, following-error, obstacle) set it in
-        // SafetyResult. External triggers (0x001, L3 faults, bus-off) were
-        // already set by dispatch/can_health directly on g_estop_reason.
-        // Reset to None when no ESTOP condition is active (mode != Estop
-        // and no safety check triggered zero_setpoints/disable_steering).
-        if (sr.estop_reason != 0) {
-            g_estop_reason.store(sr.estop_reason);
-        } else if (!sr.zero_setpoints && !sr.disable_steering
-                   && m_current_mode != uint8_t(can::Mode::Estop)) {
-            g_estop_reason.store(can::kEstopReasonNone);
-        }
-
-        if (sr.zero_setpoints) {
-            cmd = {0, 0};
-            xQueueOverwrite(g_cmd_q, &cmd);
-            sp = {};
-
-            // Originate 0x001 ESTOP on internal fault detection (fix #5)
-            // Send on both buses — SYS, EPS-C, SEB, Host all listen for 0x001
-            // Gap #14: rate-limited to prevent bus flooding
-            if (can_send_estop()) {
-                can::Frame estop_frame;
-                estop_frame.id = can::kIdSafetyEstop;
-                estop_frame.dlc = 0;
-                xQueueSendToFront(g_gw_tx_low_q, &estop_frame, pdMS_TO_TICKS(10));
-                xQueueSendToFront(g_gw_tx_high_q, &estop_frame, pdMS_TO_TICKS(10));
-            }
-        }
-        if (sr.brake_kpa) bk = sr.brake_kpa;
-        // Steering ESTOP: state machine handles ramp-to-zero (gap C3).
-        // Obstacle-triggered → hold-then-silent (arch §7.6, gap #9).
-        // Non-obstacle triggers → ramp to 0° at 20°/s.
-        if (sr.disable_steering) {
-            g_steering.start_estop(sr.obstacle_triggered);
-            if (sr.obstacle_triggered) {
-                g_steering.set_estop_hold_time(esp_timer_get_time() / 1000);
-            }
-        }
-
-        g_brake_kpa_to_send.store(bk);  // consumed by can_tx_low → 0x205 at 50 Hz (fix C7)
-        xQueueOverwrite(g_setpoint_q, &sp);
-
-        // ── Shadow PID (telemetry only — arch §7.6, gap #5) ───────
-        {
-            int16_t pid_out = 0;
-            g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps,
-                                        g_mtr_actual_speed_mmps.load(),
-                                        0.01f, pid_out);
-            g_pid_output_mmps.store(pid_out);
-            g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
-
-#ifdef CONFIG_ENABLE_ACTIVE_PID
-            // ── ACTIVE PID CONTROL ────────────────────────────────
-            // ENABLED: PID correction injected into motor setpoint.
-            // PREREQUISITES BEFORE ENABLING (all must be true):
-            //   1. Rear motor encoder physically installed on GPIO 1/2
-            //   2. Quadrature phasing verified (swap A/B if reversed)
-            //   3. CONFIG_ENABLE_ENCODERS defined (enables PCNT hardware)
-            //   4. Speed reading validated on 0x220 RT_PID_RPT telemetry
-            //   5. No-load bench test: PID tracks setpoint without oscillation
-            //   6. THEN define CONFIG_ENABLE_ACTIVE_PID
-            //
-            // SAFETY: measured==0 guard in update_shadow_pid() prevents
-            // runaway if encoder fails (wire break → zero reading).
-            // Additional guards needed before production:
-            //   - RPM plausibility: measured cannot jump > X mm/s per tick
-            //   - Zero-speed timeout: if measured==0 for >500ms while
-            //     setpoint>0 → fault (encoder failure, not stationary)
-            //   - Encoder fault output monitoring (if encoder has FLT pin)
-            if (g_mtr_actual_speed_mmps.load() != 0) {
-                sp.motor_speed_mmps += pid_out;
-                sp.motor_speed_mmps = std::clamp(sp.motor_speed_mmps,
-                    -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
-            }
-#endif // CONFIG_ENABLE_ACTIVE_PID
-        }
-
         // ── Capture state for telemetry (fix #1, #5) ──────────────
         g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
         g_reversing.store(sp.reversing);
 
         // External watchdog kick — toggled at 100 Hz (TPS3850, 100ms window)
-        // static bool wdt_toggle = false;
-        // wdt_toggle = !wdt_toggle;
-        // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
+        static bool wdt_toggle = false;
+        wdt_toggle = !wdt_toggle;
+        gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
 
         monitor_can_bus_off();
 
@@ -794,12 +668,14 @@ extern "C" void app_main() {
     g_watchdog.init();
 
     // External watchdog GPIO — toggled by control_task at 100 Hz (TPS3850 or equiv)
-    // gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
-    // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
+    gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
     g_cmd_q         = xQueueCreate( 1, sizeof(can::gen::HostDriveCmd));  // overwrite queue — only latest value matters
+    g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
+    g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
     g_safety_evt_q  = xQueueCreate(16, sizeof(rt::SafetyEvent));
 
