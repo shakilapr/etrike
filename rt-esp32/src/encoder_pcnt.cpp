@@ -11,7 +11,7 @@
 //
 // This implementation uses 4 units (one per encoder):
 //   Unit 0: rear motor    (GPIO 1/2)
-//   Unit 1: front wheel   (GPIO 3/6)
+//   Unit 1: front wheel   (GPIO 10/6)
 //   Unit 2: rear left     (GPIO 9/12)
 //   Unit 3: rear right    (GPIO 13/14)
 //
@@ -33,7 +33,7 @@ namespace {
 
 // PCNT unit assignments
 constexpr pcnt_unit_t kPcntRearMotor  = PCNT_UNIT_0;  // GPIO 1,2
-constexpr pcnt_unit_t kPcntFrontWheel = PCNT_UNIT_1;  // GPIO 3,6
+constexpr pcnt_unit_t kPcntFrontWheel = PCNT_UNIT_1;  // GPIO 10,6
 constexpr pcnt_unit_t kPcntRearLeft   = PCNT_UNIT_2;  // GPIO 9,12
 constexpr pcnt_unit_t kPcntRearRight  = PCNT_UNIT_3;  // GPIO 13,14
 

@@ -12,7 +12,7 @@
 //
 // Four encoders planned (gap #5):
 //   0 = rear motor    (GPIO 1=A, 2=B)   — fitted, quadrature
-//   1 = front wheel   (GPIO 3=A, 6=B)   — sensor TBD
+//   1 = front wheel   (GPIO 10=A, 6=B)   — sensor TBD
 //   2 = rear left     (GPIO 9=A, 12=B)  — sensor TBD
 //   3 = rear right    (GPIO 13=A, 14=B) — sensor TBD
 //

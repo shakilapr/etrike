@@ -221,7 +221,7 @@ Ensure the selected build profile describes what the binary actually reads, bypa
 - Remove the global hard-coded `SYSTEM_RUN_MODE` decision from [`shared/system_mode.h`](shared/system_mode.h).
 - Generate a compile-time build manifest containing firmware version, protocol hash, profile, feature flags, hardware revision, and declared capabilities.
 - Expose that manifest through a version/diagnostic frame or a documented startup diagnostic source.
-- Remove retired `SYS_OWNS_MOTOR` claims and flags from architecture/CI.
+- ~~Remove retired `SYS_OWNS_MOTOR` claims and flags from architecture/CI.~~ (Completed)
 - Make bypass audits evaluate resolved compiler definitions and generated manifests, not only text in `platformio.ini`.
 - Build every supported profile explicitly in CI. A profile that cannot yet build must be marked unsupported rather than silently omitted.
 

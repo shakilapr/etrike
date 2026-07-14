@@ -242,24 +242,7 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 | 5 | Ignition relay | 8 | Reserved output | Not implemented by production firmware | Do not wire as a vehicle power-control path. |
 | 7 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | RT commands, MTR feedback (0x206), SEB feedback (0x721) |
 
-### 4.3 SYS — Retired Throttle / Gear I/O
-
-`SYS_OWNS_MOTOR` is compile-time disabled. Do not connect these pins to a motor
-controller. The legacy ADC mapping conflicts with body I/O; a future motor path
-requires a dedicated, validated ADC pin and a completed MTR hardware layer.
-
-| # | Signal | GPIO | Type | Connected To | Notes |
-|---|--------|------|------|-------------|-------|
-| 1 | MCP4725 DAC SDA | 15 | I2C data | MCP4725 DAC | Bench only. Use a 3.3 V-safe I2C interface. |
-| 2 | MCP4725 DAC SCL | 16 | I2C clock | MCP4725 DAC | Bench only, 100 kHz. |
-| 3 | Gear D Sense | 12 | Digital, active-low | TLP281 opto ch1 output | 72V gear line → optoisolator → GPIO. 10k pull-up to 3.3V. |
-| 4 | Gear S Sense | 13 | Digital, active-low | TLP281 opto ch2 output | Same circuit as D Sense |
-| 5 | Gear R Sense | 14 | Digital, active-low | TLP281 opto ch3 output | Same circuit as D Sense |
-| 6 | Gear D Out | 33 | Digital out | 4-ch relay module IN1 | HIGH = relay energized → 72V passed to ECU Gear D |
-| 7 | Gear S Out | 34 | Digital out | 4-ch relay module IN2 | HIGH = relay energized → 72V passed to ECU Gear S |
-| 8 | Gear R Out | 35 | Digital out | 4-ch relay module IN3 | HIGH = relay energized → 72V passed to ECU Gear R |
-
-### 4.4 SYS — Signal Lights & Switches
+### 4.3 SYS — Signal Lights & Switches
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|

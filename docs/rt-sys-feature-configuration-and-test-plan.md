@@ -42,8 +42,7 @@ This document covers:
 - software, CI, controller, HIL, and isolated hardware tests;
 - artifact approval and flashing.
 
-This document does not make SYS an encoder or PID owner. It does not re-enable
-the retired `SYS_OWNS_MOTOR` path. It does not define PID gains or approve
+This document does not make SYS an encoder or PID owner. It does not define PID gains or approve
 closed-loop vehicle operation.
 
 ## Actual Code Baseline
@@ -118,8 +117,6 @@ SYS currently:
 
 SYS does not currently own speed PID or the RT PCNT encoders.
 
-`SYS_OWNS_MOTOR` is intentionally rejected at compile time in
-[`sys-esp32/src/config.h`](../sys-esp32/src/config.h).
 
 ### MTR responsibilities
 
@@ -136,7 +133,7 @@ RT declares four planned channels:
 | Index | Name | GPIO A | GPIO B | Current status |
 |---:|---|---:|---:|---|
 | 0 | Rear motor | 1 | 2 | Planned speed-control feedback |
-| 1 | Front wheel | 10 | 6 | Sensor TBD; header comment currently says GPIO3 and must be corrected |
+| 1 | Front wheel | 10 | 6 | Sensor TBD; header comment currently says GPIO10 |
 | 2 | Rear left | 9 | 12 | Sensor TBD |
 | 3 | Rear right | 13 | 14 | Sensor TBD |
 
@@ -786,7 +783,6 @@ SYS changes are limited to truthful capability consumption and test safety:
 - eventually consume a configuration/capability hash for diagnostics;
 - provide a real output inhibit for controller-only/HIL builds, including SEB
   CAN output;
-- preserve the compile-time rejection of `SYS_OWNS_MOTOR`.
 
 The existing SEB owner arbitration between RT and SYS requires a separate
 design and test effort. Encoder/PID feature flags must not silently modify SEB

@@ -1236,7 +1236,7 @@ Known bypass and test flags:
 | `g_bypass_seb_sync` | RT/SYS globals | Skip SEB sync path where implemented | Must only work with bench/software mode, never production |
 | `g_bypass_mtr_absent` | RT/SYS globals | Treat missing MTR as allowed | Must not disable EGAS/motor absence checks in production |
 | `TESTING` | SYS/native build flags | Host/native test stubs and deterministic time | Must not be present in vehicle builds |
-| `SYS_OWNS_MOTOR` | SYS bench/native path | Legacy bench motor I/O on SYS | Must not be active in vehicle path unless intentionally configured |
+
 | `CONFIG_ENABLE_ACTIVE_PID` | RT build flag | Active speed PID injection | Must be off unless encoder prerequisites are met |
 | `CONFIG_ENABLE_ENCODERS` | RT build flag | Encoder PCNT support | Must be paired correctly with active PID tests |
 
@@ -1291,7 +1291,7 @@ Compile/build flag tests:
 | RT vehicle | Does not define test-only or unintended bypass flags |
 | SYS vehicle | Does not define `TESTING` or unintended bench-only motor ownership flags |
 | RT bench/native | Test/bypass flags are explicit in build output/report |
-| SYS bench/native | `TESTING`/`SYS_OWNS_MOTOR` presence is explicit in build output/report |
+| SYS bench/native | `TESTING` presence is explicit in build output/report |
 | Active PID build | Fails or is blocked unless encoder prerequisites are intentionally enabled and tested |
 | Encoder-disabled build | PID/encoder paths compile out cleanly and do not read fake encoder data |
 
@@ -1315,7 +1315,7 @@ Bypass matrix minimum cases:
 | EPS bypass matrix | 20 | Steering sync bypass combinations and ESTOP interaction |
 | SEB bypass matrix | 20 | Brake sync bypass, command validity, reconnect, ESTOP |
 | MTR absence matrix | 20 | Missing motor feedback with bypass on/off and reconnect |
-| Build flag matrix | 12 | Vehicle, bench, native, TESTING, SYS_OWNS_MOTOR, encoder/PID flags |
+| Build flag matrix | 12 | Vehicle, bench, native, TESTING, encoder/PID flags |
 
 Minimum additional bypass target: 84 Phase 1 cases.
 
@@ -1473,7 +1473,7 @@ Existing SYS local tests should be rebuilt and then expanded. Proposed new files
 | File | Type | Purpose | How it should work |
 |------|------|---------|--------------------|
 | `sys-esp32/test/test_sys_host_all.ps1` | Runner | Build and run all SYS host tests | Compiles `test_mode_manager.cpp`, `test_safety_monitor.cpp`, `test_brake_priority.cpp`, and new tests |
-| `sys-esp32/test/test_sys_build_profiles.ps1` | Runner | Build native/vehicle/bench variants | Confirms `TESTING`/`SYS_OWNS_MOTOR` are absent/present only where intended |
+| `sys-esp32/test/test_sys_build_profiles.ps1` | Runner | Build native/vehicle/bench variants | Confirms `TESTING` is absent/present only where intended |
 | `sys-esp32/test/test_sys_bypass_modes.cpp` | C++ host test | Runtime bypass flag behavior | Tests production/prototype/software run-mode helper logic once extracted into testable function |
 | `sys-esp32/test/test_sys_mode_matrix.cpp` | C++ host test | Full mode transition matrix | Tests Manual/Auto/Estop/invalid/stale/repeated/out-of-order transitions |
 | `sys-esp32/test/test_sys_rt_loss_behavior.cpp` | C++ host test | SYS response to RT loss | Fake time + RT heartbeat frames; asserts timeout and safe output behavior |
