@@ -1,0 +1,316 @@
+{
+  "wire_protocol_hash": "0aac020b01ee311d382ee19d8a13dde1759f0b0cd6a4fcd07deebfd3342164d7",
+  "network_contract_hash": "d65c630621446c8cf2f6c64a40250581ba6142f8c56813aece3bc687a0132ae7",
+  "messages": [
+    {
+      "key": "safety_estop",
+      "type": "SafetyEstop",
+      "id": "0x1",
+      "bus": "high",
+      "dlc": 0,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "event"
+    },
+    {
+      "key": "sys_safety_sts",
+      "type": "SysSafetySts",
+      "id": "0x11",
+      "bus": "high",
+      "dlc": 3,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "packed"
+    },
+    {
+      "key": "hmi_mode_req",
+      "type": "HmiModeReq",
+      "id": "0x111",
+      "bus": "high",
+      "dlc": 2,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "stateful"
+    },
+    {
+      "key": "hmi_pwr_req",
+      "type": "HmiPwrReq",
+      "id": "0x112",
+      "bus": "high",
+      "dlc": 2,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "stateful"
+    },
+    {
+      "key": "sys_throttle_sts",
+      "type": "SysThrottleSts",
+      "id": "0x120",
+      "bus": "high",
+      "dlc": 2,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "mtr_motor_fbk",
+      "type": "MtrMotorFbk",
+      "id": "0x206",
+      "bus": "high",
+      "dlc": 4,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "rt_state_rpt",
+      "type": "RtStateRpt",
+      "id": "0x210",
+      "bus": "high",
+      "dlc": 6,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "packed"
+    },
+    {
+      "key": "rt_pid_rpt",
+      "type": "RtPidRpt",
+      "id": "0x220",
+      "bus": "high",
+      "dlc": 6,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "host_drive_cmd",
+      "type": "HostDriveCmd",
+      "id": "0x300",
+      "bus": "high",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "host_brake_req",
+      "type": "HostBrakeReq",
+      "id": "0x301",
+      "bus": "high",
+      "dlc": 4,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "host_light_cmd",
+      "type": "HostLightCmd",
+      "id": "0x302",
+      "bus": "high",
+      "dlc": 1,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "packed"
+    },
+    {
+      "key": "steer_diag",
+      "type": "SteerDiag",
+      "id": "0x310",
+      "bus": "high",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "brake_diag",
+      "type": "BrakeDiag",
+      "id": "0x311",
+      "bus": "high",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "host_obstacle_dist",
+      "type": "HostObstacleDist",
+      "id": "0x400",
+      "bus": "high",
+      "dlc": 4,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "sys_diag_rpt",
+      "type": "SysDiagRpt",
+      "id": "0x600",
+      "bus": "high",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "packed"
+    },
+    {
+      "key": "host_heartbeat",
+      "type": "HostHeartbeat",
+      "id": "0x7FC",
+      "bus": "high",
+      "dlc": 2,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "stateful"
+    },
+    {
+      "key": "rt_heartbeat",
+      "type": "RtHeartbeat",
+      "id": "0x7FD",
+      "bus": "high",
+      "dlc": 2,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "stateful"
+    },
+    {
+      "key": "sys_mode_cmd",
+      "type": "SysModeCmd",
+      "id": "0x110",
+      "bus": "low",
+      "dlc": 1,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "rt_drive_cmd",
+      "type": "RtDriveCmd",
+      "id": "0x204",
+      "bus": "low",
+      "dlc": 5,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "rt_brake_cmd",
+      "type": "RtBrakeCmd",
+      "id": "0x205",
+      "bus": "low",
+      "dlc": 4,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "simple"
+    },
+    {
+      "key": "sys_heartbeat",
+      "type": "SysHeartbeat",
+      "id": "0x7FE",
+      "bus": "low",
+      "dlc": 2,
+      "extended": false,
+      "byte_order": "motorola",
+      "class": "packed"
+    },
+    {
+      "key": "vcu_ses_req",
+      "type": "VcuSesReq",
+      "id": "0x169",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "stateful"
+    },
+    {
+      "key": "ses_status",
+      "type": "SesStatus",
+      "id": "0x201",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "stateful"
+    },
+    {
+      "key": "ses_err_info",
+      "type": "SesErrinfo",
+      "id": "0x202",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "packed"
+    },
+    {
+      "key": "ses_version",
+      "type": "SesVersion",
+      "id": "0x203",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "simple"
+    },
+    {
+      "key": "ses_test",
+      "type": "SesTest",
+      "id": "0x6FA",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "simple"
+    },
+    {
+      "key": "vcu_seb_req",
+      "type": "VcuSebReq",
+      "id": "0x7B9",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "stateful"
+    },
+    {
+      "key": "seb_status",
+      "type": "SebStatus",
+      "id": "0x721",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "stateful"
+    },
+    {
+      "key": "seb_err_info",
+      "type": "SebErrinfo",
+      "id": "0x731",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "packed"
+    },
+    {
+      "key": "seb_version",
+      "type": "SebVersion",
+      "id": "0x741",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "simple"
+    },
+    {
+      "key": "seb_test",
+      "type": "SebTest",
+      "id": "0x6FB",
+      "bus": "low",
+      "dlc": 8,
+      "extended": false,
+      "byte_order": "intel",
+      "class": "simple"
+    }
+  ]
+}

@@ -173,7 +173,7 @@ static bool send_can_high(can::Frame& fr) {
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_control(void*) {
     TickType_t per = pdMS_TO_TICKS(10), last = xTaskGetTickCount();
-    can::HostDriveCmd cmd{};
+    can::gen::HostDriveCmd cmd{};
 
     // Local state drained from safety event queue (architecture principle #1).
     bool     m_estop_pending = false;
@@ -385,8 +385,8 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                 } else {
                     gear_out = uint8_t(can::Gear::N);
                 }
-                can::RtDriveCmd{speed_out, gear_out}.to_frame(fr);
-                send_can_low(fr);
+                can::gen::RtDriveCmd message{speed_out, gear_out};
+                if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
             }
         }
         if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
@@ -395,8 +395,8 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             // Architecture §2.3: RT→SYS, AUTO only. Suppress in MANUAL — SYS handles brake directly.
             uint8_t mode_now = g_mode_current.load();
             if (mode_now != uint8_t(can::Mode::Manual)) {
-                can::RtBrakeCmd{g_brake_kpa_to_send.load()}.to_frame(fr);
-                send_can_low(fr);
+                can::gen::RtBrakeCmd message{g_brake_kpa_to_send.load()};
+                if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
             }
             // 0x169 VCU_SES_REQ at 50 Hz — steering state machine gates transmission.
             // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
@@ -459,7 +459,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         }
 
         // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4)
-        can::RtStateRpt rpt;
+        can::gen::RtStateRpt rpt;
         rpt.mode         = g_mode_current.load();
         auto ss = g_steering.state();
         rpt.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
@@ -481,7 +481,10 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             rpt.task_health |= 0x80;  // bit 7: bench build indicator
 #endif
         }
-        rpt.to_frame(fr);
+        if (can::encode_frame(rpt, fr) != can::gen::CodecStatus::Ok) {
+            ESP_LOGE(TAG, "RT_STATE_RPT codec rejected local values");
+            continue;
+        }
         static uint32_t rpt_fail_count = 0;
         if (!g_can_high.send(fr)) {
             rpt_fail_count++;
@@ -503,7 +506,12 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
-            can::SteerDiag{angle, fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
+            can::gen::SteerDiag message{};
+            message.steer_diag_angle0_1deg = angle;
+            message.steer_diag_fault = fault;
+            message.steer_diag_motor_current = mtr_curr;
+            message.steer_diag_ecu_temp = ecu_tmp;
+            if (can::encode_frame(message, fr) != can::gen::CodecStatus::Ok) continue;
             static uint32_t diag_fail_count = 0;
             if (!g_can_high.send(fr)) {
                 diag_fail_count++;
@@ -526,8 +534,12 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             // Use signed intermediate to prevent wrap on sub-zero temps (bug B3).
             int32_t ecu_tmp_raw = int32_t(g_seb_ecu_temp_c.load()) * 5 - 400;
             uint16_t ecu_tmp = ecu_tmp_raw < 0 ? 0 : uint16_t(ecu_tmp_raw);
-            can::BrakeDiag{seb_pressure, seb_fault, mtr_curr, ecu_tmp, 0}.to_frame(fr);
-            send_can_high(fr);
+            can::gen::BrakeDiag message{};
+            message.brake_diag_pressure_raw = seb_pressure;
+            message.brake_diag_fault = seb_fault;
+            message.brake_diag_motor_current = mtr_curr;
+            message.brake_diag_ecu_temp = ecu_tmp;
+            if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
         }
 
         // 0x220 RT_PID_RPT — 10 Hz (shadow PID telemetry, arch §7.6, gap #5)
@@ -536,8 +548,8 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                 g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
             int16_t measured = g_mtr_actual_speed_mmps.load();
             int16_t pid      = g_pid_output_mmps.load();
-            can::RtPidRpt{setpoint, measured, pid}.to_frame(fr);
-            send_can_high(fr);
+            can::gen::RtPidRpt message{setpoint, measured, pid};
+            if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
         }
 
     }
@@ -550,7 +562,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         check_task_watchdog();
         if (g_watchdog.is_stale(esp_timer_get_time())) {
             ESP_LOGW(TAG, "Command stale");
-            can::HostDriveCmd zero{};
+            can::gen::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
             g_steering.start_estop(false);  // ramp to 0° (gap C3, replaces disable flag)
         }
@@ -660,7 +672,7 @@ extern "C" void app_main() {
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
-    g_cmd_q         = xQueueCreate( 1, sizeof(can::HostDriveCmd));       // overwrite queue — only latest value matters
+    g_cmd_q         = xQueueCreate( 1, sizeof(can::gen::HostDriveCmd));  // overwrite queue — only latest value matters
     g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
     g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));

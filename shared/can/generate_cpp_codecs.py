@@ -164,12 +164,13 @@ inline int64_t sign_extend(uint64_t value, uint8_t bits) noexcept {
             members.append((member, sig))
             lines.append(f"    {cpp_type(sig)} {member}{{}};")
         lines += ["", "    CodecStatus pack(uint8_t* dst, size_t len) const noexcept {",
-                  "        if (!dst) return CodecStatus::NullBuffer;",
+                  "        if (!dst && kDlc != 0) return CodecStatus::NullBuffer;",
                   "        if (len < kDlc) return CodecStatus::BufferTooSmall;"]
         for member, sig in members:
             lo, hi = raw_bounds(sig)
             if cpp_type(sig) != "bool":
-                lines.append(f"        if ({member} < {lo} || {member} > {hi}) return CodecStatus::ValueOutOfRange;")
+                condition = f"{member} > {hi}" if lo == 0 and cpp_type(sig).startswith("uint") else f"{member} < {lo} || {member} > {hi}"
+                lines.append(f"        if ({condition}) return CodecStatus::ValueOutOfRange;")
             lines += _enum_check(member, sig, "        ")
         lines += ["        for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;",
                   f"        constexpr bool little = {'true' if entry.byte_order == 'intel' else 'false'};"]
@@ -178,14 +179,16 @@ inline int64_t sign_extend(uint64_t value, uint8_t bits) noexcept {
             lines.append(f"        detail::insert(dst, {sig.byte}u, {sig.bit_offset}u, {sig.size}u, little, {value});")
         lines += ["        return CodecStatus::Ok;", "    }", "",
                   f"    static CodecStatus unpack(const uint8_t* src, size_t len, {type_name}& out) noexcept {{",
-                  "        if (!src) return CodecStatus::NullBuffer;",
+                  "        if (!src && kDlc != 0) return CodecStatus::NullBuffer;",
                   "        if (len < kDlc) return CodecStatus::BufferTooSmall;",
                   f"        {type_name} value{{}};",
                   f"        constexpr bool little = {'true' if entry.byte_order == 'intel' else 'false'};"]
         for member, sig in members:
             raw = f"detail::extract(src, {sig.byte}u, {sig.bit_offset}u, {sig.size}u, little)"
             if cpp_type(sig) == "bool":
-                expression = f"({raw} != 0)"
+                lines.append(f"        const auto raw_{member} = {raw};")
+                lines.append(f"        if (raw_{member} > 1u) return CodecStatus::ValueOutOfRange;")
+                expression = f"(raw_{member} != 0)"
             elif sig.type.value == "signed":
                 expression = f"static_cast<{cpp_type(sig)}>(detail::sign_extend({raw}, {sig.size}u))"
             else:
@@ -193,7 +196,8 @@ inline int64_t sign_extend(uint64_t value, uint8_t bits) noexcept {
             lines.append(f"        value.{member} = {expression};")
             lo, hi = raw_bounds(sig)
             if cpp_type(sig) != "bool":
-                lines.append(f"        if (value.{member} < {lo} || value.{member} > {hi}) return CodecStatus::ValueOutOfRange;")
+                condition = f"value.{member} > {hi}" if lo == 0 and cpp_type(sig).startswith("uint") else f"value.{member} < {lo} || value.{member} > {hi}"
+                lines.append(f"        if ({condition}) return CodecStatus::ValueOutOfRange;")
             lines += _enum_check(f"value.{member}", sig, "        ")
         lines += ["        out = value;", "        return CodecStatus::Ok;", "    }"]
         for member, sig in members:

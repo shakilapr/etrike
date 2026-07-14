@@ -38,7 +38,7 @@ inline bool enqueue_safety_event(const rt::SafetyEvent& evt, TickType_t timeout)
 struct DispatchContext {
     can::Frame        gw_lo;
     can::Frame        gw_hi;
-    can::HostDriveCmd cmd;
+    can::gen::HostDriveCmd cmd;
     int32_t           brake_req_kpa = 0;
     bool              estop_flag    = false;
     uint8_t           mode_from_sys = 0;
@@ -56,16 +56,19 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     // rollover correctly. Equality check (new != old) false-positives
     // when counter wraps from 0xFF back to a previously-seen value (bug M8).
     if (fr.id == can::kIdSysHeartbeat && !from_high) {
+        can::gen::SysHeartbeat heartbeat{};
+        if (can::decode_frame(fr, heartbeat) != can::gen::CodecStatus::Ok) return;
         static uint8_t last_sys_ctr = 0;
         static bool sys_first = true;
-        uint8_t delta = fr.data[0] - last_sys_ctr;  // unsigned wrap-safe delta
+        uint8_t delta = heartbeat.sys_alive_ctr - last_sys_ctr;
         if (sys_first || delta != 0) {
             sys_first = false;
-            last_sys_ctr = fr.data[0];
+            last_sys_ctr = heartbeat.sys_alive_ctr;
             g_last_sys_hb_us.store(esp_timer_get_time());
         }
     } else if (fr.id == can::kIdHostHeartbeat && from_high) {
-        auto hb = can::HostHeartbeat::from_frame(fr);
+        can::gen::HostHeartbeat hb{};
+        if (can::decode_frame(fr, hb) != can::gen::CodecStatus::Ok) return;
         static uint8_t last_host_ctr = 0;
         static bool host_first = true;
         uint8_t delta = hb.alive_ctr - last_host_ctr;
@@ -85,7 +88,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     q.mode_from_sys = &ctx.mode_from_sys;
     q.steer_feedback_angle = &ctx.steer_feedback_angle;
     q.steer_angle_status   = &ctx.steer_angle_status;
-    rt::route_frame(fr, from_high, q);
+    const auto route_status = rt::route_frame(fr, from_high, q);
+    if (route_status != can::gen::CodecStatus::Ok) return;
 
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) {
@@ -116,8 +120,14 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
         }
     }
-    if (fr.id == can::kIdHostObstacleDist && from_high) { if (fr.dlc >= 4) g_obstacle_mm.store(fr.u32_at(0)); }
-    if (fr.id == can::kIdMtrMotorFbk && !from_high) { if (fr.dlc >= 2) g_mtr_actual_speed_mmps.store(fr.i16_at(0)); }
+    if (fr.id == can::kIdHostObstacleDist && from_high) {
+        can::gen::HostObstacleDist value{};
+        if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) g_obstacle_mm.store(value.distance_mm);
+    }
+    if (fr.id == can::kIdMtrMotorFbk && !from_high) {
+        can::gen::MtrMotorFbk value{};
+        if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) g_mtr_actual_speed_mmps.store(value.actual_speed_mmps);
+    }
 
     // 0x202 SES_ErrInfo — L3 fault bits → ESTOP (arch §7.3)
     if (fr.id == can::kIdSbwErrInfo && !from_high) {

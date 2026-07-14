@@ -71,7 +71,7 @@ extern std::atomic<uint16_t> g_seb_ecu_temp_c;
 // ── Queues ──────────────────────────────────────────────────────────
 extern QueueHandle_t g_can_rx_low_q;   // 16 deep, can::Frame
 extern QueueHandle_t g_can_rx_high_q;  // 16 deep
-extern QueueHandle_t g_cmd_q;          //  4 deep, can::HostDriveCmd (overwrite)
+extern QueueHandle_t g_cmd_q;          // latest can::gen::HostDriveCmd (overwrite)
 extern QueueHandle_t g_setpoint_q;     //  4 deep, rt::ResolvedSetpoint (overwrite)
 extern QueueHandle_t g_gw_tx_low_q;    //  8 deep, can::Frame
 extern QueueHandle_t g_gw_tx_high_q;   //  8 deep

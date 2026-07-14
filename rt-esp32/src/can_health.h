@@ -69,7 +69,7 @@ static void monitor_can_bus_off() {
                 if (bus_off_count_high >= 5) {
                     ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
                     g_estop_reason.store(can::kEstopReasonBusOff);
-                    can::HostDriveCmd zero{};
+                    can::gen::HostDriveCmd zero{};
                     xQueueOverwrite(g_cmd_q, &zero);
                     g_steering.start_estop(false);
                 }
