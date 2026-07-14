@@ -2,7 +2,7 @@
 // Source: shared/can/can_high.yaml + shared/can/can_low.yaml
 
 
-export const PROTOCOL_HASH = "d65c630621446c8cf2f6c64a40250581ba6142f8c56813aece3bc687a0132ae7";
+export const PROTOCOL_HASH = "defe8bb0fc3fe29745b277225cf4c18f779567f08299f8cf7b9090eb9d770b76";
 
 // ── CAN ID constants ─────────────────────────────────────
 export const ID_SAFETY_ESTOP = 0x001;

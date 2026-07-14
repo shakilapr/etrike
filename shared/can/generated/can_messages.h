@@ -91,7 +91,6 @@ struct SafetyEstop {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
-        constexpr bool little = false;
         return CodecStatus::Ok;
     }
 
@@ -99,7 +98,6 @@ struct SafetyEstop {
         if (!src && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         SafetyEstop value{};
-        constexpr bool little = false;
         out = value;
         return CodecStatus::Ok;
     }
@@ -168,7 +166,6 @@ struct HmiModeReq {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (rolling_counter > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(hmi_req_mode));
@@ -185,7 +182,6 @@ struct HmiModeReq {
         if (raw_hmi_req_mode > 1u) return CodecStatus::ValueOutOfRange;
         value.hmi_req_mode = (raw_hmi_req_mode != 0);
         value.rolling_counter = static_cast<uint8_t>(detail::extract(src, 1u, 0u, 8u, little));
-        if (value.rolling_counter > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -201,7 +197,6 @@ struct HmiPwrReq {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (rolling_counter > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(hmi_req_start));
@@ -218,7 +213,6 @@ struct HmiPwrReq {
         if (raw_hmi_req_start > 1u) return CodecStatus::ValueOutOfRange;
         value.hmi_req_start = (raw_hmi_req_start != 0);
         value.rolling_counter = static_cast<uint8_t>(detail::extract(src, 1u, 0u, 8u, little));
-        if (value.rolling_counter > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -265,7 +259,6 @@ struct MtrMotorFbk {
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         if (actual_speed_mmps < -500 || actual_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
         if (gear_state > 3) return CodecStatus::ValueOutOfRange;
-        if (fault_flags > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 16u, little, static_cast<uint64_t>(actual_speed_mmps));
@@ -284,7 +277,6 @@ struct MtrMotorFbk {
         value.gear_state = static_cast<uint8_t>(detail::extract(src, 2u, 0u, 8u, little));
         if (value.gear_state > 3) return CodecStatus::ValueOutOfRange;
         value.fault_flags = static_cast<uint8_t>(detail::extract(src, 3u, 0u, 8u, little));
-        if (value.fault_flags > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -308,8 +300,6 @@ struct RtStateRpt {
         if (mode > 2) return CodecStatus::ValueOutOfRange;
         if (safety_state > 2) return CodecStatus::ValueOutOfRange;
         if (estop_reason > 7) return CodecStatus::ValueOutOfRange;
-        if (rx_overflow > 255) return CodecStatus::ValueOutOfRange;
-        if (task_health > 255) return CodecStatus::ValueOutOfRange;
         if (steer_state > 5) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
@@ -338,9 +328,7 @@ struct RtStateRpt {
         if (raw_reversing > 1u) return CodecStatus::ValueOutOfRange;
         value.reversing = (raw_reversing != 0);
         value.rx_overflow = static_cast<uint8_t>(detail::extract(src, 3u, 0u, 8u, little));
-        if (value.rx_overflow > 255) return CodecStatus::ValueOutOfRange;
         value.task_health = static_cast<uint8_t>(detail::extract(src, 4u, 0u, 8u, little));
-        if (value.task_health > 255) return CodecStatus::ValueOutOfRange;
         value.steer_state = static_cast<uint8_t>(detail::extract(src, 5u, 0u, 8u, little));
         if (value.steer_state > 5) return CodecStatus::ValueOutOfRange;
         out = value;
@@ -359,9 +347,6 @@ struct RtPidRpt {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (speed_setpoint < -32768 || speed_setpoint > 32767) return CodecStatus::ValueOutOfRange;
-        if (speed_measured < -32768 || speed_measured > 32767) return CodecStatus::ValueOutOfRange;
-        if (pid_output < -32768 || pid_output > 32767) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 16u, little, static_cast<uint64_t>(speed_setpoint));
@@ -376,11 +361,8 @@ struct RtPidRpt {
         RtPidRpt value{};
         constexpr bool little = false;
         value.speed_setpoint = static_cast<int16_t>(detail::sign_extend(detail::extract(src, 0u, 0u, 16u, little), 16u));
-        if (value.speed_setpoint < -32768 || value.speed_setpoint > 32767) return CodecStatus::ValueOutOfRange;
         value.speed_measured = static_cast<int16_t>(detail::sign_extend(detail::extract(src, 2u, 0u, 16u, little), 16u));
-        if (value.speed_measured < -32768 || value.speed_measured > 32767) return CodecStatus::ValueOutOfRange;
         value.pid_output = static_cast<int16_t>(detail::sign_extend(detail::extract(src, 4u, 0u, 16u, little), 16u));
-        if (value.pid_output < -32768 || value.pid_output > 32767) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -510,9 +492,7 @@ struct SteerDiag {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (steer_diag_angle0_1deg < 30000 || steer_diag_angle0_1deg > 65535) return CodecStatus::ValueOutOfRange;
-        if (steer_diag_motor_current > 65535) return CodecStatus::ValueOutOfRange;
-        if (steer_diag_ecutemp > 65535) return CodecStatus::ValueOutOfRange;
+        if (steer_diag_angle0_1deg < 30000) return CodecStatus::ValueOutOfRange;
         if (steer_diag_reserved > 0) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
@@ -530,14 +510,12 @@ struct SteerDiag {
         SteerDiag value{};
         constexpr bool little = false;
         value.steer_diag_angle0_1deg = static_cast<uint16_t>(detail::extract(src, 0u, 0u, 16u, little));
-        if (value.steer_diag_angle0_1deg < 30000 || value.steer_diag_angle0_1deg > 65535) return CodecStatus::ValueOutOfRange;
+        if (value.steer_diag_angle0_1deg < 30000) return CodecStatus::ValueOutOfRange;
         const auto raw_steer_diag_fault = detail::extract(src, 2u, 0u, 8u, little);
         if (raw_steer_diag_fault > 1u) return CodecStatus::ValueOutOfRange;
         value.steer_diag_fault = (raw_steer_diag_fault != 0);
         value.steer_diag_motor_current = static_cast<uint16_t>(detail::extract(src, 3u, 0u, 16u, little));
-        if (value.steer_diag_motor_current > 65535) return CodecStatus::ValueOutOfRange;
         value.steer_diag_ecutemp = static_cast<uint16_t>(detail::extract(src, 5u, 0u, 16u, little));
-        if (value.steer_diag_ecutemp > 65535) return CodecStatus::ValueOutOfRange;
         value.steer_diag_reserved = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
         if (value.steer_diag_reserved > 0) return CodecStatus::ValueOutOfRange;
         out = value;
@@ -585,9 +563,6 @@ struct BrakeDiag {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (brake_diag_pressure_raw > 65535) return CodecStatus::ValueOutOfRange;
-        if (brake_diag_motor_current > 65535) return CodecStatus::ValueOutOfRange;
-        if (brake_diag_ecutemp > 65535) return CodecStatus::ValueOutOfRange;
         if (brake_diag_reserved > 0) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
@@ -605,14 +580,11 @@ struct BrakeDiag {
         BrakeDiag value{};
         constexpr bool little = false;
         value.brake_diag_pressure_raw = static_cast<uint16_t>(detail::extract(src, 0u, 0u, 16u, little));
-        if (value.brake_diag_pressure_raw > 65535) return CodecStatus::ValueOutOfRange;
         const auto raw_brake_diag_fault = detail::extract(src, 2u, 0u, 8u, little);
         if (raw_brake_diag_fault > 1u) return CodecStatus::ValueOutOfRange;
         value.brake_diag_fault = (raw_brake_diag_fault != 0);
         value.brake_diag_motor_current = static_cast<uint16_t>(detail::extract(src, 3u, 0u, 16u, little));
-        if (value.brake_diag_motor_current > 65535) return CodecStatus::ValueOutOfRange;
         value.brake_diag_ecutemp = static_cast<uint16_t>(detail::extract(src, 5u, 0u, 16u, little));
-        if (value.brake_diag_ecutemp > 65535) return CodecStatus::ValueOutOfRange;
         value.brake_diag_reserved = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
         if (value.brake_diag_reserved > 0) return CodecStatus::ValueOutOfRange;
         out = value;
@@ -656,7 +628,6 @@ struct HostObstacleDist {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (distance_mm > 4294967295) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 32u, little, static_cast<uint64_t>(distance_mm));
@@ -669,7 +640,6 @@ struct HostObstacleDist {
         HostObstacleDist value{};
         constexpr bool little = false;
         value.distance_mm = static_cast<uint32_t>(detail::extract(src, 0u, 0u, 32u, little));
-        if (value.distance_mm > 4294967295) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -694,9 +664,6 @@ struct SysDiagRpt {
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         if (sys_diag_mode > 2) return CodecStatus::ValueOutOfRange;
         if (rx_overflow > 63) return CodecStatus::ValueOutOfRange;
-        if (sys_diag_free_heap_kb > 65535) return CodecStatus::ValueOutOfRange;
-        if (sys_diag_tec > 255) return CodecStatus::ValueOutOfRange;
-        if (sys_diag_rec > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(sys_diag_mode));
@@ -733,11 +700,8 @@ struct SysDiagRpt {
         if (raw_sys_diag_estop_active > 1u) return CodecStatus::ValueOutOfRange;
         value.sys_diag_estop_active = (raw_sys_diag_estop_active != 0);
         value.sys_diag_free_heap_kb = static_cast<uint16_t>(detail::extract(src, 4u, 0u, 16u, little));
-        if (value.sys_diag_free_heap_kb > 65535) return CodecStatus::ValueOutOfRange;
         value.sys_diag_tec = static_cast<uint8_t>(detail::extract(src, 6u, 0u, 8u, little));
-        if (value.sys_diag_tec > 255) return CodecStatus::ValueOutOfRange;
         value.sys_diag_rec = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
-        if (value.sys_diag_rec > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -753,8 +717,6 @@ struct HostHeartbeat {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (alive_ctr > 255) return CodecStatus::ValueOutOfRange;
-        if (health_flags > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(alive_ctr));
@@ -768,9 +730,7 @@ struct HostHeartbeat {
         HostHeartbeat value{};
         constexpr bool little = false;
         value.alive_ctr = static_cast<uint8_t>(detail::extract(src, 0u, 0u, 8u, little));
-        if (value.alive_ctr > 255) return CodecStatus::ValueOutOfRange;
         value.health_flags = static_cast<uint8_t>(detail::extract(src, 1u, 0u, 8u, little));
-        if (value.health_flags > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -786,8 +746,6 @@ struct RtHeartbeat {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (alive_ctr > 255) return CodecStatus::ValueOutOfRange;
-        if (health_flags > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(alive_ctr));
@@ -801,9 +759,7 @@ struct RtHeartbeat {
         RtHeartbeat value{};
         constexpr bool little = false;
         value.alive_ctr = static_cast<uint8_t>(detail::extract(src, 0u, 0u, 8u, little));
-        if (value.alive_ctr > 255) return CodecStatus::ValueOutOfRange;
         value.health_flags = static_cast<uint8_t>(detail::extract(src, 1u, 0u, 8u, little));
-        if (value.health_flags > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -917,7 +873,6 @@ struct SysHeartbeat {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (sys_alive_ctr > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = false;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(sys_alive_ctr));
@@ -938,7 +893,6 @@ struct SysHeartbeat {
         SysHeartbeat value{};
         constexpr bool little = false;
         value.sys_alive_ctr = static_cast<uint8_t>(detail::extract(src, 0u, 0u, 8u, little));
-        if (value.sys_alive_ctr > 255) return CodecStatus::ValueOutOfRange;
         const auto raw_heartbeat_ok = detail::extract(src, 1u, 0u, 1u, little);
         if (raw_heartbeat_ok > 1u) return CodecStatus::ValueOutOfRange;
         value.heartbeat_ok = (raw_heartbeat_ok != 0);
@@ -985,11 +939,9 @@ struct VcuSesReq {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (target_angle < 23000 || target_angle > 32767) return CodecStatus::ValueOutOfRange;
+        if (target_angle < 23000) return CodecStatus::ValueOutOfRange;
         if (target_speed < 125 || target_speed > 525) return CodecStatus::ValueOutOfRange;
         if (rolling_counter > 15) return CodecStatus::ValueOutOfRange;
-        if (ses_veh_spd > 255) return CodecStatus::ValueOutOfRange;
-        if (checksum > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 1u, little, static_cast<uint64_t>(alignment_enable));
@@ -1016,7 +968,7 @@ struct VcuSesReq {
         if (raw_control_enable > 1u) return CodecStatus::ValueOutOfRange;
         value.control_enable = (raw_control_enable != 0);
         value.target_angle = static_cast<int16_t>(detail::sign_extend(detail::extract(src, 2u, 0u, 16u, little), 16u));
-        if (value.target_angle < 23000 || value.target_angle > 32767) return CodecStatus::ValueOutOfRange;
+        if (value.target_angle < 23000) return CodecStatus::ValueOutOfRange;
         value.target_speed = static_cast<uint16_t>(detail::extract(src, 4u, 0u, 16u, little));
         if (value.target_speed < 125 || value.target_speed > 525) return CodecStatus::ValueOutOfRange;
         const auto raw_ses_roll_cnt_enable = detail::extract(src, 5u, 0u, 1u, little);
@@ -1028,9 +980,7 @@ struct VcuSesReq {
         value.rolling_counter = static_cast<uint8_t>(detail::extract(src, 5u, 4u, 4u, little));
         if (value.rolling_counter > 15) return CodecStatus::ValueOutOfRange;
         value.ses_veh_spd = static_cast<uint8_t>(detail::extract(src, 6u, 0u, 8u, little));
-        if (value.ses_veh_spd > 255) return CodecStatus::ValueOutOfRange;
         value.checksum = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
-        if (value.checksum > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1069,7 +1019,6 @@ struct SesStatus {
         if (tgt_angle_spd < 0 || tgt_angle_spd > 2960) return CodecStatus::ValueOutOfRange;
         if (ses_steering_torq < 1 || ses_steering_torq > 241) return CodecStatus::ValueOutOfRange;
         if (rolling_counter > 15) return CodecStatus::ValueOutOfRange;
-        if (checksum > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 1u, little, static_cast<uint64_t>(angle_status));
@@ -1112,7 +1061,6 @@ struct SesStatus {
         value.rolling_counter = static_cast<uint8_t>(detail::extract(src, 6u, 4u, 4u, little));
         if (value.rolling_counter > 15) return CodecStatus::ValueOutOfRange;
         value.checksum = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
-        if (value.checksum > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1179,7 +1127,6 @@ struct SesErrinfo {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (ses_veh_spd_snapshot > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 1u, little, static_cast<uint64_t>(ses_ecuunder_volt));
@@ -1292,7 +1239,6 @@ struct SesErrinfo {
         if (raw_ses_eprom > 1u) return CodecStatus::ValueOutOfRange;
         value.ses_eprom = (raw_ses_eprom != 0);
         value.ses_veh_spd_snapshot = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
-        if (value.ses_veh_spd_snapshot > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1309,7 +1255,6 @@ struct SesVersion {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         if (ses_sw_version > 254) return CodecStatus::ValueOutOfRange;
-        if (ses_hw_version > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(ses_sw_version));
@@ -1325,7 +1270,6 @@ struct SesVersion {
         value.ses_sw_version = static_cast<uint8_t>(detail::extract(src, 0u, 0u, 8u, little));
         if (value.ses_sw_version > 254) return CodecStatus::ValueOutOfRange;
         value.ses_hw_version = static_cast<uint8_t>(detail::extract(src, 1u, 0u, 8u, little));
-        if (value.ses_hw_version > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1432,10 +1376,8 @@ struct VcuSebReq {
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
-        if (stroke_req > 65535) return CodecStatus::ValueOutOfRange;
         if (pressure_req > 100) return CodecStatus::ValueOutOfRange;
         if (rolling_counter > 15) return CodecStatus::ValueOutOfRange;
-        if (checksum > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 1u, little, static_cast<uint64_t>(align_enable));
@@ -1469,7 +1411,6 @@ struct VcuSebReq {
         if (raw_auto_brake > 1u) return CodecStatus::ValueOutOfRange;
         value.auto_brake = (raw_auto_brake != 0);
         value.stroke_req = static_cast<uint16_t>(detail::extract(src, 2u, 0u, 16u, little));
-        if (value.stroke_req > 65535) return CodecStatus::ValueOutOfRange;
         value.pressure_req = static_cast<uint8_t>(detail::extract(src, 3u, 0u, 8u, little));
         if (value.pressure_req > 100) return CodecStatus::ValueOutOfRange;
         const auto raw_seb_roll_cnt_enable = detail::extract(src, 6u, 0u, 1u, little);
@@ -1481,7 +1422,6 @@ struct VcuSebReq {
         value.rolling_counter = static_cast<uint8_t>(detail::extract(src, 6u, 4u, 4u, little));
         if (value.rolling_counter > 15) return CodecStatus::ValueOutOfRange;
         value.checksum = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
-        if (value.checksum > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1509,11 +1449,8 @@ struct SebStatus {
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         if (control_mode_sts > 3) return CodecStatus::ValueOutOfRange;
         if (error_status > 3) return CodecStatus::ValueOutOfRange;
-        if (stroke_value > 65535) return CodecStatus::ValueOutOfRange;
         if (pressure_value > 100) return CodecStatus::ValueOutOfRange;
-        if (angle_value < -32768 || angle_value > 32767) return CodecStatus::ValueOutOfRange;
         if (rolling_counter > 15) return CodecStatus::ValueOutOfRange;
-        if (checksum > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 1u, little, static_cast<uint64_t>(alignment_status));
@@ -1550,11 +1487,9 @@ struct SebStatus {
         value.error_status = static_cast<uint8_t>(detail::extract(src, 0u, 6u, 2u, little));
         if (value.error_status > 3) return CodecStatus::ValueOutOfRange;
         value.stroke_value = static_cast<uint16_t>(detail::extract(src, 2u, 0u, 16u, little));
-        if (value.stroke_value > 65535) return CodecStatus::ValueOutOfRange;
         value.pressure_value = static_cast<uint8_t>(detail::extract(src, 3u, 0u, 8u, little));
         if (value.pressure_value > 100) return CodecStatus::ValueOutOfRange;
         value.angle_value = static_cast<int16_t>(detail::sign_extend(detail::extract(src, 5u, 0u, 16u, little), 16u));
-        if (value.angle_value < -32768 || value.angle_value > 32767) return CodecStatus::ValueOutOfRange;
         const auto raw_seb_roll_cnt_en_status = detail::extract(src, 6u, 0u, 1u, little);
         if (raw_seb_roll_cnt_en_status > 1u) return CodecStatus::ValueOutOfRange;
         value.seb_roll_cnt_en_status = (raw_seb_roll_cnt_en_status != 0);
@@ -1564,7 +1499,6 @@ struct SebStatus {
         value.rolling_counter = static_cast<uint8_t>(detail::extract(src, 6u, 4u, 4u, little));
         if (value.rolling_counter > 15) return CodecStatus::ValueOutOfRange;
         value.checksum = static_cast<uint8_t>(detail::extract(src, 7u, 0u, 8u, little));
-        if (value.checksum > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1719,7 +1653,6 @@ struct SebVersion {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
         if (len < kDlc) return CodecStatus::BufferTooSmall;
         if (seb_sw_version > 254) return CodecStatus::ValueOutOfRange;
-        if (seb_hw_version > 255) return CodecStatus::ValueOutOfRange;
         for (size_t i = 0; i < kDlc; ++i) dst[i] = 0;
         constexpr bool little = true;
         detail::insert(dst, 0u, 0u, 8u, little, static_cast<uint64_t>(seb_sw_version));
@@ -1735,7 +1668,6 @@ struct SebVersion {
         value.seb_sw_version = static_cast<uint8_t>(detail::extract(src, 0u, 0u, 8u, little));
         if (value.seb_sw_version > 254) return CodecStatus::ValueOutOfRange;
         value.seb_hw_version = static_cast<uint8_t>(detail::extract(src, 1u, 0u, 8u, little));
-        if (value.seb_hw_version > 255) return CodecStatus::ValueOutOfRange;
         out = value;
         return CodecStatus::Ok;
     }
@@ -1824,7 +1756,7 @@ struct SebTest {
     }
 };
 
-inline constexpr char kWireProtocolHash[] = "0aac020b01ee311d382ee19d8a13dde1759f0b0cd6a4fcd07deebfd3342164d7";
-inline constexpr char kNetworkContractHash[] = "d65c630621446c8cf2f6c64a40250581ba6142f8c56813aece3bc687a0132ae7";
+inline constexpr char kWireProtocolHash[] = "7ce88a25154864436a08d9ee486685b611c032319b174b34bf0491bde708f210";
+inline constexpr char kNetworkContractHash[] = "defe8bb0fc3fe29745b277225cf4c18f779567f08299f8cf7b9090eb9d770b76";
 
 } // namespace can::gen

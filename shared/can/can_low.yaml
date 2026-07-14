@@ -222,7 +222,7 @@ protocols:
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the low-bus instance."
         signals:
-          - {name: RT_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255, counter_kind: wrapping, reset_scope: ecu_restart, expected_increment: 1,
              comment: "Low bus timeout 1000ms->SYS ESTOP"}
           - {name: RT_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}
@@ -236,7 +236,7 @@ protocols:
         cycle_ms: 100
         comment: "Low bus only, never leaves low bus."
         signals:
-          - {name: SYS_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: SYS_AliveCtr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255, counter_kind: wrapping, reset_scope: ecu_restart, expected_increment: 1,
              comment: "10 Hz / 200ms timeout -> RT brake takeover + ESTOP"}
           - {name: SYS_HeartbeatOk, key: heartbeat_ok, byte: 1, bit_offset: 0, size: 1, min: 0, max: 1}
           - {name: SYS_EstopActive, key: estop_active, byte: 1, bit_offset: 1, size: 1, min: 0, max: 1}
