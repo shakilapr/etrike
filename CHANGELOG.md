@@ -2,6 +2,43 @@
 
 All notable changes to the E-Trike Drive-by-Wire Control System.
 
+## [0.4.0-alpha] — 2026-07-14
+
+### Summary
+
+This release introduces the complete migration to a single-source YAML protocol catalog and generator pipeline, deprecating classic DBC generation. It also implements compile-time feature profiling (kinematics resolvers, speed feedback sources, and PID modes) using a single-point Policy Pattern (`rt::ActiveResolver`) to eliminate branching runtime overhead. Hardware configuration boundaries are hardened with compile-time assertions and GPIO pins are reassigned for reliability.
+
+### Added
+
+**YAML CAN Protocol Migration**:
+- Switched to single-source YAML configuration (`network.yaml`, `baseline-manifest.json`, `capabilities.json`, `errors.json`, `discovery.json`) for protocol normalization and validation.
+- Auto-generation of type-safe C++ (`etrike_protocol.hpp`), Python (`etrike_protocol.py`), and TypeScript (`etrike-protocol.ts`) codecs.
+- Integrated testing vectors covering payload codecs and sequence wrapping.
+- Switched to semantic constants (`ID_*`) instead of raw hex values across workspaces.
+- Added HMI light telemetry signals (headlight, brake, left/right turn indicators).
+
+**RT / SYS Firmware Feature Profiling**:
+- Added PlatformIO compile-time feature flags: `ETRIKE_RT_KINEMATICS_RESOLVER`, `ETRIKE_RT_SPEED_FEEDBACK_SOURCE`, `ETRIKE_RT_PID_MODE`, and `ETRIKE_RT_ENCODERS`.
+- Implemented single-point Policy Pattern (`resolver_config.h` and `rt::ActiveResolver`) to alias kinematics solvers (`PhysicsModel` or `DirectResolver`) at compile time.
+- Added stateless `DirectResolver` kinematics implementation.
+- Added lag-based `CalculatedSpeedEstimator` speed estimation for SIL hardware-less bench testing.
+- Added compiler-enforced feature assertion gate (`build_config.h`).
+
+**Hardware & Safety Hardening**:
+- Audited and updated GPIO assignments for MCP2515 interrupts and TPS3850 watchdogs.
+- Disabled unsafe legacy motor drive path in SYS node.
+- Implemented mode-gated control safety rules and stateful CAN mimics.
+
+**Testing & Validation**:
+- Integrated native test framework setup for Windows C++ builds, achieving 44/44 passing tests.
+- Formally defined the `RT/SYS Pre-Vehicle Validation Gate`.
+
+### Fixed
+- Removed deprecated custom generator scripts.
+- Retired legacy transitional `shared/can` infrastructure.
+- Purged legacy DCDC command references (`SYS_DCDC_CMD`).
+- Fixed dynamic angle clamp values in test schemas to respect CAN protocol limit (3000 mm/s).
+
 ## [0.3.0] — 2026-07-03
 
 ### Summary
