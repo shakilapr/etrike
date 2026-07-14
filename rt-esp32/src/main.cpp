@@ -24,6 +24,9 @@ bool g_bypass_mtr_absent = false;
 
 #include "config.h"
 #include "rt_state.h"
+#include "build_config.h"      // compile-time feature flags (validated)
+#include "resolver_config.h"   // rt::ActiveResolver (type alias, zero overhead)
+#include "calculated_speed.h"  // CalculatedSpeedEstimator (SpeedFeedbackSource::Calculated)
 #include "can_driver_twai.h"
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
@@ -40,8 +43,11 @@ static const char* TAG = "rt";
 rt::Mcp2515Driver g_can_high;
 
 // ── Application objects ────────────────────────────────────────────
-rt::PhysicsModel    g_physics;
+// g_resolver is typed as rt::ActiveResolver — resolved at compile time from
+// ETRIKE_RT_KINEMATICS_RESOLVER via resolver_config.h. Zero runtime overhead.
+rt::ActiveResolver  g_resolver;
 rt::SpeedController g_speed_ctrl;
+rt::CalculatedSpeedEstimator g_calc_speed;  // used when SpeedFeedbackSource::Calculated
 rt::SteeringControl g_steering;
 rt::DualHeartbeat   g_heartbeat;
 rt::CmdWatchdog     g_watchdog;
@@ -220,11 +226,15 @@ static bool send_can_high(can::Frame& fr) {
             cmd = {0, 0};
 
         rt::ResolvedSetpoint sp;
-        g_physics.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
+        g_resolver.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
         sp.cmd_gear = cmd.gear;  // propagate CAN gear override
 
         uint32_t obs = g_obstacle_mm.load();
         sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
+
+        // Update calculated speed estimator with the commanded setpoint
+        // (runs always; is only consumed when SpeedFeedbackSource::Calculated).
+        g_calc_speed.update(sp.motor_speed_mmps, 0.01f);
 
         // ── Dynamic angle clamp (arch §7.6, fix #6) ─────────────────
         {
@@ -245,26 +255,19 @@ static bool send_can_high(can::Frame& fr) {
         g_seb_takeover.store(m_seb_takeover);
 
         // Propagate ESTOP reason from safety checks to telemetry atomic.
-        // Internal checks (heartbeat, following-error, obstacle) set it in
-        // SafetyResult. External triggers (0x001, L3 faults, bus-off) were
-        // already set by dispatch/can_health directly on g_estop_reason.
-        // Reset to None when no ESTOP condition is active (mode != Estop
-        // and no safety check triggered zero_setpoints/disable_steering).
         if (sr.estop_reason != 0) {
             g_estop_reason.store(sr.estop_reason);
         } else if (!sr.zero_setpoints && !sr.disable_steering
                    && m_current_mode != uint8_t(can::Mode::Estop)) {
-            g_estop_reason.store(rt::kEstopReasonNone);
+              g_estop_reason.store(rt::kEstopReasonNone);
         }
 
         if (sr.zero_setpoints) {
             cmd = {0, 0};
             xQueueOverwrite(g_cmd_q, &cmd);
             sp = {};
+            g_calc_speed.reset();
 
-            // Originate 0x001 ESTOP on internal fault detection (fix #5)
-            // Send on both buses — SYS, EPS-C, SEB, Host all listen for 0x001
-            // Gap #14: rate-limited to prevent bus flooding
             if (can_send_estop()) {
                 can::Frame estop_frame;
                 estop_frame.id = can::kIdSafetyEstop;
@@ -274,9 +277,6 @@ static bool send_can_high(can::Frame& fr) {
             }
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;
-        // Steering ESTOP: state machine handles ramp-to-zero (gap C3).
-        // Obstacle-triggered → hold-then-silent (arch §7.6, gap #9).
-        // Non-obstacle triggers → ramp to 0° at 20°/s.
         if (sr.disable_steering) {
             g_steering.start_estop(sr.obstacle_triggered);
             if (sr.obstacle_triggered) {
@@ -284,52 +284,37 @@ static bool send_can_high(can::Frame& fr) {
             }
         }
 
-        g_brake_kpa_to_send.store(bk);  // consumed by can_tx_low → 0x205 at 50 Hz (fix C7)
+        g_brake_kpa_to_send.store(bk);
         xQueueOverwrite(g_setpoint_q, &sp);
 
-        // ── Shadow PID (telemetry only — arch §7.6, gap #5) ───────
+        // ── Speed feedback selection (build_config.h §SpeedFeedbackSource) ─
+        int32_t measured_speed_mmps = 0;
+        if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Mtr) {
+            measured_speed_mmps = g_mtr_actual_speed_mmps.load();
+        } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::RtEncoder) {
+            measured_speed_mmps = g_mtr_actual_speed_mmps.load();
+        } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Calculated) {
+            measured_speed_mmps = g_calc_speed.get();
+        }
+
+        // ── PID controller (build_config.h §PidMode) ──────────────
         {
             int16_t pid_out = 0;
-            g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps,
-                                        g_mtr_actual_speed_mmps.load(),
-                                        0.01f, pid_out);
+            g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps, measured_speed_mmps, 0.01f, pid_out);
             g_pid_output_mmps.store(pid_out);
             g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
 
-#ifdef CONFIG_ENABLE_ACTIVE_PID
-            // ── ACTIVE PID CONTROL ────────────────────────────────
-            // ENABLED: PID correction injected into motor setpoint.
-            // PREREQUISITES BEFORE ENABLING (all must be true):
-            //   1. Rear motor encoder physically installed on GPIO 1/2
-            //   2. Quadrature phasing verified (swap A/B if reversed)
-            //   3. CONFIG_ENABLE_ENCODERS defined (enables PCNT hardware)
-            //   4. Speed reading validated on 0x220 RT_PID_RPT telemetry
-            //   5. No-load bench test: PID tracks setpoint without oscillation
-            //   6. THEN define CONFIG_ENABLE_ACTIVE_PID
-            //
-            // SAFETY: measured==0 guard in update_shadow_pid() prevents
-            // runaway if encoder fails (wire break → zero reading).
-            // Additional guards needed before production:
-            //   - RPM plausibility: measured cannot jump > X mm/s per tick
-            //   - Zero-speed timeout: if measured==0 for >500ms while
-            //     setpoint>0 → fault (encoder failure, not stationary)
-            //   - Encoder fault output monitoring (if encoder has FLT pin)
-            if (g_mtr_actual_speed_mmps.load() != 0) {
-                sp.motor_speed_mmps += pid_out;
-                sp.motor_speed_mmps = std::clamp(sp.motor_speed_mmps,
-                    -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
+            if constexpr (rt::build::kPidMode == rt::build::PidMode::Active) {
+                if (measured_speed_mmps != 0) {
+                    sp.motor_speed_mmps += pid_out;
+                    sp.motor_speed_mmps = std::clamp(sp.motor_speed_mmps,
+                        -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
+                }
             }
-#endif // CONFIG_ENABLE_ACTIVE_PID
         }
 
-        // ── Capture state for telemetry (fix #1, #5) ──────────────
         g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
         g_reversing.store(sp.reversing);
-
-        // External watchdog kick — toggled at 100 Hz (TPS3850, 100ms window)
-        // static bool wdt_toggle = false;
-        // wdt_toggle = !wdt_toggle;
-        // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), wdt_toggle ? 1 : 0);
 
         monitor_can_bus_off();
 
