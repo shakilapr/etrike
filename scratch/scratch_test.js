@@ -1,0 +1,11 @@
+const data = [0x02, 0x00, 0x1C, 0xF3, 0x48, 0x11, 0x10, 0x14];
+const buf = new Uint8Array(8);
+for (let i = 0; i < Math.min(data.length, 8); i++) buf[i] = data[i];
+const view = new DataView(buf.buffer);
+const val_le = view.getBigUint64(0, true);
+console.log("val_le hex:", val_le.toString(16));
+const startBit = BigInt(6 * 8 + 4);
+const mask = (1n << 4n) - 1n;
+const rawBig = (val_le >> startBit) & mask;
+console.log("startBit:", startBit);
+console.log("rawBig:", rawBig.toString());

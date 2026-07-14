@@ -411,6 +411,43 @@ Add `ETRIKE_RT_PID_MODE`:
 | `1` | Shadow | PID calculates telemetry but cannot affect output |
 | `2` | Active | PID correction affects the bounded drive setpoint |
 
+### Kinematics resolver strategy
+
+Add `ETRIKE_RT_KINEMATICS_RESOLVER` (implemented in a separate file):
+
+| Value | Strategy | Meaning |
+|---:|---|---|
+| `0` | Bicycle Kinematics | Resolves commands via standard tricycle bicycle model kinematics (`physics_model.cpp`) |
+| `1` | Direct Passthrough | Bypasses kinematics solver, directly mapping/scaling commands (`direct_resolver.cpp`) |
+
+**Implementation Requirement: Compile-Time Type Aliasing**
+To prevent `#ifdef` spaghetti code in the core control loop, the selection of the active kinematics resolver must use **Compile-Time Type Aliasing** (the Policy Pattern). 
+
+What to do for each:
+1. **Centralize Macro Logic in a Header**: Create a single configuration header (e.g., `resolver_config.h`) that evaluates the `ETRIKE_RT_KINEMATICS_RESOLVER` macro and defines a static type alias (`ActiveResolver`):
+   ```cpp
+   #pragma once
+   #if ETRIKE_RT_KINEMATICS_RESOLVER == 1
+       #include "direct_resolver.h"
+       namespace rt { using ActiveResolver = DirectResolver; }
+   #else
+       #include "physics_model.h"
+       namespace rt { using ActiveResolver = PhysicsModel; }
+   #endif
+   ```
+
+2. **Keep the Control Loop Branch-Free**: In `main.cpp`, statically allocate and use the aliased type. Do not use `#if` blocks in the execution path.
+   ```cpp
+   #include "resolver_config.h"
+   
+   rt::ActiveResolver g_resolver;
+   
+   // Inside t_control loop:
+   rt::ResolvedSetpoint sp;
+   g_resolver.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
+   ```
+   This approach guarantees zero runtime overhead (no dynamic allocation or virtual functions) and ensures the control loop code remains clean and universally readable regardless of the active configuration.
+
 ### First required configuration
 
 The complete no-encoder open-loop system uses:
@@ -419,6 +456,7 @@ The complete no-encoder open-loop system uses:
 -D ETRIKE_RT_ENCODERS=0
 -D ETRIKE_RT_SPEED_FEEDBACK_SOURCE=0
 -D ETRIKE_RT_PID_MODE=0
+-D ETRIKE_RT_KINEMATICS_RESOLVER=0
 ```
 
 Its unit settings are selected separately. A full release eventually requires
@@ -561,6 +599,7 @@ build_flags =
     -D ETRIKE_RT_ENCODERS=0
     -D ETRIKE_RT_SPEED_FEEDBACK_SOURCE=0
     -D ETRIKE_RT_PID_MODE=0
+    -D ETRIKE_RT_KINEMATICS_RESOLVER=0
 ```
 
 Unit policies and output permissions come from the same canonical
@@ -1012,6 +1051,14 @@ Minimum feature matrix:
 | Any | MTR | Active | Fail until MTR physical feedback is accepted |
 | Any invalid value | Any | Any | Fail |
 
+Minimum kinematics resolver matrix:
+
+| Kinematics resolver (`ETRIKE_RT_KINEMATICS_RESOLVER`) | Expected build | Expected resolved type (`rt::ActiveResolver`) |
+|---:|---|---|
+| `0` (Bicycle) | Pass | `rt::PhysicsModel` |
+| `1` (Direct) | Pass | `rt::DirectResolver` |
+| Any invalid value | Fail compilation | N/A |
+
 Minimum unit-policy matrix for each external unit:
 
 | Unit policy | Output permission | Expected result |
@@ -1063,6 +1110,18 @@ traction motor controller wherever applicable:
 - output remains inhibited unless the explicit output allowlist permits it;
 - RT/SYS disagreeing unit policies produce a deterministic configuration error;
 - diagnostics report configured policy separately from detected runtime state.
+
+### Kinematics resolver unit tests
+
+Tests must verify that the Compile-Time Type Aliasing is fully deterministic and mathematical calculations are robust under all situations:
+
+- **Type Enforcement**: Both `rt::PhysicsModel` and `rt::DirectResolver` conform to the exact same implicit signature (e.g., `resolve(const DriveCmd&, ResolvedSetpoint&)`) without runtime inheritance (vtables).
+- **Zero-Command Clamping**: Pure zero input (`speed_mmps = 0`, `yaw_rate_mrad_s = 0`) must deterministically produce pure zero actuator outputs for both traction and steering.
+- **Saturation and Bounds**: Mathematical outputs exceeding actuator mechanical limits (e.g., `±45°` steering, `V_max` motor speed) are safely clamped without wrapping, overflowing, or panicking.
+- **Singularity Handling**: The Bicycle kinematics resolver must safely handle `yaw_rate_mrad_s = 0` (infinite turning radius straight-line travel) without division-by-zero exceptions.
+- **Direction Reversal**: Reverse speed requests with positive/negative yaw correctly resolve the left/right motor speed differentials and wheel-slip constraints.
+- **Compile-time Isolation**: Native tests compiled with `ETRIKE_RT_KINEMATICS_RESOLVER=1` must cleanly fail if they attempt to access stateful decay properties of `rt::PhysicsModel` that do not exist in `rt::DirectResolver`.
+- **Latency Guarantee**: Execution time of the resolver remains strictly bounded and deterministic within the 10ms (100Hz) control loop budget.
 
 ### Encoder unit tests
 

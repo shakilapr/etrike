@@ -217,9 +217,9 @@ void test_validation_and_unchanged_outputs() {
 
     generated::HostObstacleDist distance{};
     distance.distance_mm = generated::HostObstacleDist::kDistanceMmClear;
-    Frame invalid_enum = Frame::standard(generated::HostObstacleDist::kId, 4);
-    CHECK(generated::decode(invalid_enum.view(), distance) == CodecStatus::InvalidEnum);
-    CHECK(distance.distance_mm == generated::HostObstacleDist::kDistanceMmClear);
+    Frame valid_zero = Frame::standard(generated::HostObstacleDist::kId, 4);
+    CHECK(generated::decode(valid_zero.view(), distance) == CodecStatus::Ok);
+    CHECK(distance.distance_mm == 0);
 
     generated::HmiModeReq request{};
     request.req_mode = true;

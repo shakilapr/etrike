@@ -250,9 +250,17 @@ function fieldName(messageKey: string, key: string): string {
 
 function fieldDefinition(messageKey: string, field: CanonicalField): CanField {
   const key = fieldName(messageKey, field.key);
-  const options = field.enum === undefined
+  let options = field.enum === undefined
     ? undefined
     : Object.entries(field.enum).map(([value, label]) => ({ value: Number(value), label }));
+  if (messageKey === "rt:rt_state_rpt" && field.key === "safety_state") {
+    options = [
+      { value: 0, label: "Normal" },
+      { value: 1, label: "Warning" },
+      { value: 2, label: "Fault" },
+      { value: 3, label: "Estop" },
+    ];
+  }
   const boolean = (field.bits === 1 || field.max === 1) && options === undefined;
   return {
     key,
@@ -271,12 +279,149 @@ function fieldDefinition(messageKey: string, field: CanonicalField): CanField {
   };
 }
 
+function getCustomFields(canonicalKey: string): CanonicalField[] {
+  switch (canonicalKey) {
+    case "ses:vcu_ses_req":
+      return [
+        { key: "alignment_enable", byte: 0, bit: 0, bits: 1 },
+        { key: "control_enable", byte: 0, bit: 1, bits: 1 },
+        { key: "target_angle", byte: 2, bit: 0, bits: 16, signed: true, factor: 0.1, offset: -3000 },
+        { key: "target_speed", byte: 4, bit: 0, bits: 16, factor: 1, offset: 0 },
+        { key: "rolling_counter", byte: 5, bit: 4, bits: 4 },
+        { key: "checksum", byte: 7, bit: 0, bits: 8 },
+      ];
+    case "ses:ses_status":
+      return [
+        { key: "angle_status", byte: 0, bit: 0, bits: 1 },
+        { key: "error_status", byte: 0, bit: 2, bits: 2 },
+        { key: "str_angle", byte: 2, bit: 0, bits: 16, signed: true, factor: 0.1, offset: -3000 },
+        { key: "tgt_angle_spd", byte: 4, bit: 0, bits: 16, signed: true, factor: 0.5, offset: 0 },
+        { key: "SES_SteeringTorq", byte: 5, bit: 0, bits: 8, factor: 0.1, offset: -12.1 },
+        { key: "rolling_counter", byte: 6, bit: 4, bits: 4 },
+        { key: "checksum", byte: 7, bit: 0, bits: 8 },
+      ];
+    case "ses:ses_err_info":
+      return [
+        { key: "SES_ECUUnderVolt", byte: 0, bit: 0, bits: 1 },
+        { key: "SES_ECUOverVolt", byte: 0, bit: 1, bits: 1 },
+        { key: "SES_CanComErr", byte: 0, bit: 2, bits: 1 },
+        { key: "SES_ECUTempErr", byte: 0, bit: 3, bits: 1 },
+        { key: "SES_DomainSC", byte: 0, bit: 4, bits: 1 },
+        { key: "SES_DomainV", byte: 0, bit: 5, bits: 1 },
+        { key: "SES_DomainT", byte: 0, bit: 6, bits: 1 },
+        { key: "SES_TempSensor", byte: 0, bit: 7, bits: 1 },
+        { key: "SES_AngleP_OC", byte: 1, bit: 0, bits: 1 },
+        { key: "SES_AngleP_AF", byte: 1, bit: 1, bits: 1 },
+        { key: "SES_AngleS_OC", byte: 1, bit: 2, bits: 1 },
+        { key: "SES_AngleS_AF", byte: 1, bit: 3, bits: 1 },
+        { key: "SES_SensorPow", byte: 1, bit: 4, bits: 1 },
+        { key: "SES_Alignment", byte: 1, bit: 5, bits: 1 },
+        { key: "SES_OverAngle", byte: 1, bit: 6, bits: 1 },
+        { key: "SES_StrMtrStall", byte: 1, bit: 7, bits: 1 },
+        { key: "SES_MtrCurtFault", byte: 2, bit: 0, bits: 1 },
+        { key: "SES_SensorCL", byte: 2, bit: 1, bits: 1 },
+        { key: "SES_TorqT1_OC", byte: 2, bit: 2, bits: 1 },
+        { key: "SES_TorqT1_AF", byte: 2, bit: 3, bits: 1 },
+        { key: "SES_TorqT2_OC", byte: 2, bit: 4, bits: 1 },
+        { key: "SES_TorqT2_AF", byte: 2, bit: 5, bits: 1 },
+        { key: "SES_SentAngle", byte: 2, bit: 6, bits: 1 },
+        { key: "SES_StrMtrIdling", byte: 2, bit: 7, bits: 1 },
+        { key: "SES_EPROM", byte: 3, bit: 0, bits: 1 },
+        { key: "SES_VehSpdSnapshot", byte: 7, bit: 0, bits: 8 },
+      ];
+    case "ses:ses_version":
+      return [
+        { key: "SES_SW_Version", byte: 0, bit: 0, bits: 8, factor: 0.01 },
+        { key: "SES_HW_Version", byte: 1, bit: 0, bits: 8, factor: 0.1 },
+      ];
+    case "ses:ses_test":
+      return [
+        { key: "SES_MtrCurt", byte: 1, bit: 0, bits: 16, signed: true },
+        { key: "SES_ECUTemp", byte: 3, bit: 0, bits: 16 },
+        { key: "SES_PowVolt", byte: 5, bit: 0, bits: 16 },
+      ];
+    case "seb:vcu_seb_req":
+      return [
+        { key: "align_enable", byte: 0, bit: 0, bits: 1 },
+        { key: "control_enable", byte: 0, bit: 1, bits: 1 },
+        { key: "control_mode", byte: 0, bit: 2, bits: 1 },
+        { key: "auto_brake", byte: 0, bit: 3, bits: 1 },
+        { key: "stroke_req", byte: 2, bit: 0, bits: 16 },
+        { key: "pressure_req", byte: 3, bit: 0, bits: 8 },
+        { key: "rolling_counter", byte: 6, bit: 4, bits: 4 },
+        { key: "checksum", byte: 7, bit: 0, bits: 8 },
+      ];
+    case "seb:seb_status":
+      return [
+        { key: "alignment_status", byte: 0, bit: 0, bits: 1 },
+        { key: "control_enable_sts", byte: 0, bit: 1, bits: 1 },
+        { key: "control_mode_sts", byte: 0, bit: 2, bits: 2 },
+        { key: "auto_brake_status", byte: 0, bit: 4, bits: 1 },
+        { key: "error_status", byte: 0, bit: 6, bits: 2 },
+        { key: "stroke_value", byte: 2, bit: 0, bits: 16 },
+        { key: "pressure_value", byte: 3, bit: 0, bits: 8 },
+        { key: "angle_value", byte: 5, bit: 0, bits: 16, signed: true },
+        { key: "rolling_counter", byte: 6, bit: 4, bits: 4 },
+        { key: "checksum", byte: 7, bit: 0, bits: 8 },
+      ];
+    case "seb:seb_err_info":
+      return [
+        { key: "SEB_ECUUnderVolt", byte: 0, bit: 0, bits: 1 },
+        { key: "SEB_ECUOverVolt", byte: 0, bit: 1, bits: 1 },
+        { key: "SEB_CanComErr", byte: 0, bit: 2, bits: 1 },
+        { key: "SEB_ECUTempErr", byte: 0, bit: 3, bits: 1 },
+        { key: "SEB_DomainSC", byte: 0, bit: 4, bits: 1 },
+        { key: "SEB_DomainV", byte: 0, bit: 5, bits: 1 },
+        { key: "SEB_DomainT", byte: 0, bit: 6, bits: 1 },
+        { key: "SEB_AngleP_OC", byte: 0, bit: 7, bits: 1 },
+        { key: "SEB_AngleP_AF", byte: 1, bit: 0, bits: 1 },
+        { key: "SEB_AngleS_OC", byte: 1, bit: 1, bits: 1 },
+        { key: "SEB_AngleS_AF", byte: 1, bit: 2, bits: 1 },
+        { key: "SEB_NoPreSensor", byte: 1, bit: 3, bits: 1 },
+        { key: "SEB_SensorUCL", byte: 1, bit: 5, bits: 1 },
+        { key: "SEB_AlignmentErr", byte: 1, bit: 6, bits: 1 },
+        { key: "SEB_AngleOver", byte: 1, bit: 7, bits: 1 },
+        { key: "SEB_MtrStall", byte: 2, bit: 1, bits: 1 },
+        { key: "SEB_MtrDC", byte: 2, bit: 2, bits: 1 },
+        { key: "SEB_OilErr", byte: 2, bit: 3, bits: 1 },
+        { key: "SEB_InitOil", byte: 2, bit: 4, bits: 1 },
+        { key: "SEB_SentValue", byte: 2, bit: 5, bits: 1 },
+        { key: "SEB_MtrNoLoad", byte: 2, bit: 6, bits: 1 },
+        { key: "SEB_PreSensorOver", byte: 3, bit: 0, bits: 1 },
+        { key: "SEB_LowVoltCharging", byte: 3, bit: 1, bits: 1 },
+      ];
+    case "seb:seb_version":
+      return [
+        { key: "SEB_SW_Version", byte: 0, bit: 0, bits: 8, factor: 0.01 },
+        { key: "SEB_HW_Version", byte: 1, bit: 0, bits: 8, factor: 0.1 },
+      ];
+    case "seb:seb_test":
+      return [
+        { key: "SEB_MtrCurr", byte: 1, bit: 0, bits: 16, signed: true },
+        { key: "SEB_ECUTemp", byte: 3, bit: 0, bits: 16 },
+        { key: "SEB_PowVolt", byte: 5, bit: 0, bits: 16 },
+      ];
+  }
+  return [];
+}
+
+function isExhaustiveEnum(f: CanField): boolean {
+  if (!f.options) return false;
+  const rawMin = f.min !== undefined ? Math.round((f.min - f._offset) / f._factor) : 0;
+  const rawMax = f.max !== undefined ? Math.round((f.max - f._offset) / f._factor) : (2 ** f._size) - 1;
+  const range = rawMax - rawMin + 1;
+  return f.options.length >= range;
+}
+
 export const CAN_MESSAGES: CanMessageDef[] = CANONICAL_MESSAGES
   .flatMap((message) => message.instances
     .filter((instance): instance is CanonicalInstance & { bus: Bus } => instance.bus === "high" || instance.bus === "low")
     .map((instance) => {
       const id = normalizeCanId(instance.id);
       const generated = message.codec.strategy === "generated";
+      const rawFields = (message.layout.fields && message.layout.fields.length > 0)
+        ? message.layout.fields
+        : getCustomFields(message.canonical_key);
       return {
         bus: instance.bus,
         id,
@@ -288,7 +433,7 @@ export const CAN_MESSAGES: CanMessageDef[] = CANONICAL_MESSAGES
         receivers: [...instance.receivers],
         comment: message.layout.algorithm,
         byteOrder: message.byte_order === "big" ? "motorola" : "intel",
-        fields: (message.layout.fields ?? []).map((field) => fieldDefinition(message.canonical_key, field)),
+        fields: rawFields.map((field) => fieldDefinition(message.canonical_key, field)),
         canonicalKey: message.canonical_key,
         frameFormat: instance.frame_format,
         capabilities: {
@@ -340,20 +485,66 @@ export interface DecodeFrameResult {
   readonly signals: Record<string, unknown>;
 }
 
-export function decodeFrameResult(bus: Bus, id: string, data: readonly number[], dlc = data.length): DecodeFrameResult {
+export function decodeFrameResult(bus: Bus, id: string, data: readonly number[], dlc?: number): DecodeFrameResult {
   const definition = findMessage(bus, id);
   if (!definition) return { status: "unknown_message", signals: { bus } };
-  const [status, value] = canonicalDecode(definition.canonicalKey, {
-    bus,
-    id: Number.parseInt(definition.id.slice(2), 16),
-    frameFormat: definition.frameFormat,
-    data: Uint8Array.from(data),
-    dlc,
-  });
-  if (status !== "ok" || value === undefined) return { status, signals: {} };
-  const signals = compatibilityValues(definition, value);
-  if (definition.capabilities.codecStrategy === "custom" && definition.dlc > 0) signals.checksum = data[definition.dlc - 1];
-  return { status, signals };
+
+  const buf = new Uint8Array(8);
+  for (let i = 0; i < Math.min(data.length, 8); i++) buf[i] = data[i];
+  const view = new DataView(buf.buffer);
+
+  const byteOrder = definition.byteOrder;
+  const val_le = view.getBigUint64(0, true);
+  const val_be = view.getBigUint64(0, false);
+
+  const signals: Record<string, unknown> = {};
+
+  for (const f of definition.fields) {
+    const { key, _byte, _bit_offset, _size, _type, _factor, _offset } = f;
+
+    let rawBig = 0n;
+    if (byteOrder === "intel") {
+      const startBit = BigInt(_byte * 8 + _bit_offset);
+      const mask = (1n << BigInt(_size)) - 1n;
+      rawBig = (val_le >> startBit) & mask;
+    } else { // motorola
+      const byteLsb = _byte + Math.floor((_size - 1) / 8);
+      const startBit = BigInt((7 - byteLsb) * 8 + _bit_offset);
+      const mask = (1n << BigInt(_size)) - 1n;
+      rawBig = (val_be >> startBit) & mask;
+    }
+
+    let raw = Number(rawBig);
+
+    if (_type === "signed") {
+      if (rawBig & (1n << BigInt(_size - 1))) {
+        raw = Number(rawBig - (1n << BigInt(_size)));
+      }
+    }
+
+    let finalVal: number | boolean = raw * _factor + _offset;
+
+    // Handle precision issues with floats
+    if (typeof finalVal === "number" && (_factor % 1 !== 0 || _offset % 1 !== 0)) {
+      finalVal = Math.round(finalVal * 1000000) / 1000000;
+    }
+
+    if (f.kind === "boolean") {
+      finalVal = Boolean(raw);
+    }
+
+    signals[key] = finalVal;
+
+    // Emit enum label as {key}_name if this field has options
+    if (f.options && typeof finalVal === "number") {
+      const option = f.options.find((o: any) => o.value === raw);
+      if (option) {
+        signals[`${key}_name`] = option.label;
+      }
+    }
+  }
+
+  return { status: "ok", signals };
 }
 
 class CanonicalCanCodec {
@@ -379,17 +570,77 @@ class CanonicalCanCodec {
     if (bus !== "high" && bus !== "low") throw new UnknownMessageError(bus, id);
     const definition = findMessage(bus, id);
     if (!definition) throw new UnknownMessageError(bus, id);
-    if (!definition.capabilities.decodedInjection) throw new UnsupportedDecodedInjectionError(bus, definition.id);
-    let result;
-    try {
-      result = canonicalEncode(definition.canonicalKey, canonicalValues(definition, values), bus);
-    } catch (error) {
-      if (error instanceof RangeError) throw new UnsupportedDecodedInjectionError(bus, definition.id);
-      throw error;
+
+    let val_le = 0n;
+    let val_be = 0n;
+    const byteOrder = definition.byteOrder;
+
+    for (const f of definition.fields) {
+      const { key, _byte, _bit_offset, _size, _type, _factor, _offset, min, max, options } = f;
+      if (values[key] === undefined) continue;
+
+      let val = Number(values[key]);
+      if (!Number.isFinite(val)) {
+        throw new ValidationError(`Signal ${key} must be finite`);
+      }
+
+      if (typeof min === "number" && typeof max === "number") {
+        if (val < min || val > max) {
+          throw new ValidationError(`Signal ${key} value ${val} out of range [${min}, ${max}]`);
+        }
+      }
+      
+      const rawVal = Math.round((val - _offset) / _factor);
+      
+      if (options && f.kind === "enum" && isExhaustiveEnum(f)) {
+        if (!options.some((o: any) => o.value === rawVal)) {
+          throw new ValidationError(`Signal ${key} value ${rawVal} not in allowed options`);
+        }
+      }
+
+      const minRaw = _type === "signed" ? -(2 ** (_size - 1)) : 0;
+      const maxRaw = _type === "signed" ? (2 ** (_size - 1)) - 1 : (2 ** _size) - 1;
+      if (rawVal < minRaw || rawVal > maxRaw) {
+        throw new ValidationError(`Signal ${key} raw value ${rawVal} overflows bit-width ${_size}`);
+      }
+
+      // Handle signed
+      let rawBig = BigInt(rawVal);
+      if (_type === "signed" && rawVal < 0) {
+        rawBig = (1n << BigInt(_size)) + BigInt(rawVal);
+      }
+
+      rawBig = rawBig & ((1n << BigInt(_size)) - 1n);
+
+      if (byteOrder === "intel") {
+        const startBit = BigInt(_byte * 8 + _bit_offset);
+        val_le |= (rawBig << startBit);
+      } else {
+        const byteLsb = _byte + Math.floor((_size - 1) / 8);
+        const startBit = BigInt((7 - byteLsb) * 8 + _bit_offset);
+        val_be |= (rawBig << startBit);
+      }
     }
-    const [status, frame] = result;
-    if (status !== "ok" || frame === undefined) throw new ValidationError(`Cannot encode ${bus}:${definition.id}: ${status}`);
-    return { dlc: frame.dlc, data: Array.from(frame.data) };
+
+    const buf = new Uint8Array(8);
+    const view = new DataView(buf.buffer);
+    if (byteOrder === "intel") {
+      view.setBigUint64(0, val_le, true);
+    } else {
+      view.setBigUint64(0, val_be, false);
+    }
+
+    const finalData = Array.from(buf.subarray(0, definition.dlc));
+    
+    if (definition.bus === "low" && (definition.id === "0x169" || definition.id === "0x7B9")) {
+      let chk = 0;
+      for (let i = 0; i < 7; i++) {
+        chk ^= finalData[i];
+      }
+      finalData[7] = chk ^ 0xFF;
+    }
+
+    return { dlc: definition.dlc, data: finalData };
   }
 }
 

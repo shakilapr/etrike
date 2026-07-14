@@ -585,7 +585,6 @@ struct HostObstacleDist {
     CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
-        if (distance_mm != 4294967295) return CodecStatus::InvalidEnum;
         std::array<std::uint8_t, kDlc> payload{};
         detail::insert(payload.data(), 0u, 0u, 32u, false, static_cast<std::uint64_t>(distance_mm));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
@@ -598,7 +597,6 @@ struct HostObstacleDist {
         HostObstacleDist value{};
         const std::uint64_t raw_distance_mm = detail::extract(source, 0u, 0u, 32u, false);
         value.distance_mm = static_cast<std::uint32_t>(raw_distance_mm);
-        if (value.distance_mm != 4294967295) return CodecStatus::InvalidEnum;
         out = value;
         return CodecStatus::Ok;
     }
