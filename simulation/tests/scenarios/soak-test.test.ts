@@ -372,14 +372,13 @@ describe("CAN saturation — safety under load", () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe("Ignition sequence", () => {
-  it("boots into MANUAL mode with DCDC enabled", () => {
+  it("boots into MANUAL mode without the retired SYS-to-PWT gateway command", () => {
     const runner = new SimulationRunner();
     runner.configure({ initialMode: "manual" });
     const result = runner.runDuration(2000);
-    // 0x012 DCDC_CMD should be sent (enable=1)
+    // Standalone PWT owns its manufacturer command; SYS must not emit 0x012.
     const dcdcFrames = runner.capturedFrames.filter(f => f.canId === "0x012");
-    expect(dcdcFrames.length).toBeGreaterThan(0);
-    expect(dcdcFrames[0].data[0]).toBe(1); // enable=1
+    expect(dcdcFrames.length).toBe(0);
     // Mode should stay MANUAL
     expect(result.validationErrors.length).toBe(0);
   });

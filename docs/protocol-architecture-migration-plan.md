@@ -26,8 +26,10 @@
   aligned at 50 Hz; changing this rate later is a reviewed timing change.
 - [ ] `BASE-005` Export and commit the normalized `bus + ID` baseline manifest
   and complete language-neutral vectors before contract files move.
-- [ ] `BASE-006` Run and record the full native, simulation, firmware, host, and
-  compatibility baseline defined by the testing plan.
+- [x] `BASE-006` Run the repository-local native, simulation, RT/SYS/MTR/PWT,
+  and debug-tool compatibility baseline defined by the testing plan.
+- [ ] `BASE-007` Run the Jetson build in Linux/ROS CI and attach its result; it
+  is not representatively buildable in the current Windows environment.
 
 ## Objective
 
@@ -253,6 +255,7 @@ commit message.
 | Task or gap | Status | Implementation | Automated evidence | External evidence |
 |---|---|---|---|---|
 | `BASE-001`–`BASE-003` | Closed | Current generator and discovery tools | `generate_code.py --verify`; `can_change.py verify`; 7 Python tests | Not applicable |
+| `BASE-006` | Closed | Current repository consumers | 18/18 native; 435/435 simulation; RT/SYS/MTR/PWT vehicle builds; debug shared 102, backend 175, UI 78 | Jetson is tracked separately by `BASE-007` |
 | `TIM-001` / `BASE-004` | Software closed | YAML, RT 50 Hz TX block, `config.h` | Contract generation and RT/native build gates | Physical period capture remains part of bench acceptance |
 | `FRM-007` | Blocked on vendor evidence | Raw frame support only is trustworthy | Raw identity/DLC tests | Vendor definition or known-response vector required |
 
