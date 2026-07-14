@@ -397,6 +397,7 @@ Add `ETRIKE_RT_SPEED_FEEDBACK_SOURCE`:
 | `0` | None | Open-loop control has no speed feedback dependency |
 | `1` | MTR report | Use `MTR_MOTOR_FBK` for telemetry/supervision only until proven physical |
 | `2` | RT rear motor encoder | Use validated RT PCNT rear-motor encoder samples |
+| `3` | Calculated | Use estimated speed calculated from executed motor commands and plant model |
 
 MTR report must not be accepted as active closed-loop feedback until an
 independent physical measurement path is implemented and validated.
@@ -573,14 +574,14 @@ constexpr auto kPidMode = static_cast<PidMode>(ETRIKE_RT_PID_MODE);
 
 static_assert(ETRIKE_RT_ENCODERS == 0 || ETRIKE_RT_ENCODERS == 1);
 static_assert(ETRIKE_RT_SPEED_FEEDBACK_SOURCE >= 0 &&
-              ETRIKE_RT_SPEED_FEEDBACK_SOURCE <= 2);
+              ETRIKE_RT_SPEED_FEEDBACK_SOURCE <= 3);
 static_assert(ETRIKE_RT_PID_MODE >= 0 && ETRIKE_RT_PID_MODE <= 2);
 static_assert(ETRIKE_RT_SPEED_FEEDBACK_SOURCE != 2 ||
               ETRIKE_RT_ENCODERS == 1);
 static_assert(ETRIKE_RT_PID_MODE == 0 ||
               ETRIKE_RT_SPEED_FEEDBACK_SOURCE != 0);
 static_assert(ETRIKE_RT_PID_MODE != 2 ||
-              ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 2);
+              ETRIKE_RT_SPEED_FEEDBACK_SOURCE >= 2);
 
 }  // namespace rt::build
 ```
@@ -1049,6 +1050,7 @@ Minimum feature matrix:
 | Any | None | Shadow | Fail |
 | Any | None | Active | Fail |
 | Any | MTR | Active | Fail until MTR physical feedback is accepted |
+| Any | Calculated | Active | Pass for SIL/testing only |
 | Any invalid value | Any | Any | Fail |
 
 Minimum kinematics resolver matrix:
