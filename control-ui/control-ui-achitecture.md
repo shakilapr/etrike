@@ -845,7 +845,7 @@ Messages may be categorized for navigation and filtering as Safety, HMI, Drive C
 
 ### 15.5 Corruption and plausibility detection
 
-The Control UI validates every frame against the same generated protocol contract used by RT and SYS. Validation produces structured flags rather than a single generic decode error.
+The Control UI validates every frame against the same normalized wire facts used by RT and SYS. Ordinary messages use generated codecs. Registered vendor exceptions use adapters identified by `manual-mappings.yaml`, with reviewed per-message hashes and independent golden vectors. Validation produces structured flags rather than a single generic decode error. The current firmware-side generated and manual-adapter boundary is implemented; equivalent Python backend adapters remain implementation work.
 
 CAN-layer corruption and application-layer corruption are different. The CAN controller normally rejects frames that fail the wire CRC, so their corrupted payload may never reach the backend. Adapter-reported error frames, error counters, overflow, bus-off, and controller state are transport evidence. Payload checksum/XOR, rolling counter, DLC, range, and plausibility checks are application-protocol evidence. The UI reports them separately and never claims to show wire corruption that the adapter did not expose.
 
@@ -952,7 +952,9 @@ These are initial engineering budgets, not hard-real-time guarantees. CANalyst-I
 
 ## 18.2 YAML protocol compiler
 
-The application does not use DBC as its internal model. A single YAML protocol compiler parses and validates both source files into one normalized intermediate representation. From that representation it generates the artifacts used by RT, SYS, the Python backend, the React frontend, tests, and documentation. DBC may still be exported for CANalyzer, cantools interoperability, or other external tools, but no Control UI behavior depends on it.
+The application does not use DBC as its internal model. The YAML compiler parses and validates the source contracts into normalized wire metadata. It generates the facts and ordinary codecs that can be generated reliably. Unsupported vendor algorithms remain explicit, registered adapters rather than being hidden in application code. DBC may still be exported for CANalyzer, cantools interoperability, or other external tools, but no Control UI behavior depends on it.
+
+Current implementation produces C++ codecs, TypeScript catalogs, stable error definitions, per-message hashes, `codec_manifest.json`, and `change_impact.json`. Python backend codecs, React integration, documentation exports, and complete checksum/counter algorithm generation below are target outputs unless their implementation and tests are present.
 
 The compiler should replace the current debug-tool-specific assumptions in `shared/can/generate_can_ts.py` with shared schema validation and deterministic targets:
 
@@ -978,7 +980,7 @@ The generated Control UI artifact should contain:
 
 Frontend and backend expose their normalized semantic hash during connection setup. A semantic hash is calculated from canonical parsed content, so whitespace and comment-only edits do not break compatibility; the exact-source hash remains available for traceability. If semantic hashes differ, the UI enters `PROTOCOL MISMATCH`: raw monitoring may continue, but decoded control and physical injection are disabled until artifacts match.
 
-The current YAML contains some checksum, counter, and safety meaning only in comments. Comments are useful to people but insufficient for deterministic validation. These rules must become machine-readable YAML fields—for example algorithm, checksum byte, covered bytes, seed/final XOR, counter signal, modulo, required enable bits, timeout, command-loss behavior, ownership class, and validation severity. RT, SYS, the Python backend, generated firmware code, tests, and the Control UI then consume the same rule without duplicating it.
+The current YAML contains some checksum, counter, and safety meaning only in comments. Comments are useful to people but insufficient for deterministic validation. Rules should become machine-readable where the model is stable and the generator can implement them safely—for example algorithm, checksum byte, covered bytes, seed/final XOR, counter signal, modulo, required enable bits, timeout, command-loss behavior, ownership class, and validation severity. Until then, the behavior must be registered in `manual-mappings.yaml`, localized in a named adapter, protected by a reviewed wire hash, and covered by independent vectors. RT, SYS, the Python backend, tests, and the Control UI consume either the generated fact or that registered adapter contract; they do not silently duplicate it.
 
 Wire layout, integrity/liveness rules, and system plausibility rules are separate validated YAML sections. This keeps the CAN message format portable while allowing stateful rules such as command-feedback deadlines to share the same source-controlled compiler pipeline.
 

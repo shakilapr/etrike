@@ -10,9 +10,12 @@ This is a codebase traceability and test-readiness document. It does not specify
 
 ## 1. Audit result
 
-> **Remediation update (2026-07-13):** The original findings below remain as
+> **Remediation update (2026-07-14):** The original findings below remain as
 > traceability records. CAN IDs/DLCs/routes and protocol hashes are now generated
-> and consumed by production interfaces; the `0x600`, `0x7FE`, `0x7FC`, `0x210`,
+> and consumed by production interfaces. Checked typed codecs now cover ordinary
+> RT/SYS/MTR/Jetson messages; registered SES/SEB adapters cover vendor checksum
+> and overlay behavior. Per-message hashes, change-impact metadata, mapping review,
+> and unregistered-wire-access checks are enforced by CI. The `0x600`, `0x7FE`, `0x7FC`, `0x210`,
 > HMI mode, forwarding, build-profile, and bounded RT event-queue mismatches have
 > been corrected. PWT is now explicitly standalone, owns generated
 > `0x10262B27`, and the nonexistent low-bus `0x012` route is retired. Native
@@ -23,7 +26,7 @@ This is a codebase traceability and test-readiness document. It does not specify
 
 The current repository is **not yet contract-consistent enough to support a conclusive end-to-end RT/SYS/MTR conformance result**. Raw CAN capture and many individual tests remain useful, but the following blockers can make a correct diagnostic consumer report incorrect values or make an apparently passing test prove the wrong implementation:
 
-1. Generated IDs, DLCs, routes, and protocol hashes are compiled by production interfaces; payload structs remain hand-written compatibility wrappers pending generated codecs.
+1. Generated IDs, DLCs, routes, protocol hashes, metadata and ordinary payload codecs are compiled by production interfaces. Legacy compatibility wrappers remain pending retirement; registered vendor adapters remain intentionally handwritten and tested.
 2. Live `0x600`, `0x7FE`, `0x7FC`, and `0x210` definitions now agree with the canonical YAML and generated consumers.
 3. Vehicle builds default to production mode; explicit hardware-bench and software-bench profiles select their intended bypass level.
 4. SYS now reports task freshness bits and transition-based diagnostics, but hardware reset/NVS evidence remains bench work.
@@ -41,11 +44,25 @@ The current repository is **not yet contract-consistent enough to support a conc
 | Medium | Causes misleading timing, diagnostics, recovery, or test coverage. |
 | Documentation | Implementation may be valid, but the written claim is stale or ambiguous. |
 
-All rows below are **confirmed** from the repository unless marked **Target/TBD**. “Resolution” describes the intended closure, not work already completed.
+Rows below preserve the evidence captured during the original audit. They are not all statements about the current tree. Consult the status register before treating a row as open; “Required resolution” remains useful target design even when only part of it has been implemented.
+
+### Remediation status register
+
+| Findings | Current status |
+|---|---|
+| CAN-001, CAN-004, CAN-005, CAN-006 | **Partially resolved:** generated codecs/hashes/bus instances/counter metadata exist; legacy retirement, on-bus hash exposure, complete topology semantics and non-heartbeat counter policy remain open. |
+| CAN-002, CAN-003, CAN-007, CAN-008 | **Resolved in current tree:** routes are YAML-derived, cross-bus semantic conflicts fail generation, output is deterministic, and CI verifies it. |
+| FRM-002, FRM-003, FRM-004, FRM-005, FRM-006 | **Resolved in current tree:** YAML, generated codecs and migrated consumers agree. |
+| FRM-007 | **Open:** vendor version interpretation still requires confirmation and a definitive vector. |
+| FRM-008 | **Resolved topology; partially resolved tooling:** PWT is standalone and its manufacturer codec is generated from its own YAML; integration into the shared normalized model remains optional target work. |
+| MTR-004, TST-001, TST-007 | **Resolved or superseded:** production targets and Jetson consume generated codecs, and current native/schema vectors cover the corrected layouts. |
+| TST-004 | **Partially resolved:** DLC assertions consume generated definitions, while the forwarding test still contains a hand-copied expected route list and should be generated or data-driven. |
+| PWT-003 | **Partially resolved:** deterministic PWT generation exists, but it remains a deliberately separate manufacturer contract. |
+| Other findings | **Open unless a later row or referenced test demonstrates closure.** Hardware/HIL findings cannot be closed by generation or native tests. |
 
 ## 2. Source-of-truth chain
 
-### 2.1 Intended chain
+### 2.1 Target chain
 
 ```text
 can_high.yaml + can_low.yaml
@@ -58,21 +75,26 @@ firmware   tool codecs  golden tests  docs
  codecs    and metadata   and traces
 ```
 
-The same normalized model should define IDs, buses, origin and forwarding, DLC, signals, enumerations, counter behaviour, expected periods, checksums, and protocol version. Firmware and host code should consume generated codecs or constants from this model. CI should reject divergence.
+The normalized model should define stable wire facts. Algorithms should be generated where reliable; otherwise they must be registered, localized, hashed and independently tested manual adapters. Firmware and host code consume one of those two explicit paths. CI rejects unregistered divergence.
 
-### 2.2 Current chain
+### 2.2 Current implemented chain
 
 ```text
-YAML --> generate_code.py --> generated/can_data.h  (not used by firmware)
-                         +--> TypeScript metadata   (used by tools)
+YAML --> schema/generate_code.py --> generated C++ checked codecs --> RT / SYS / MTR / Jetson
+                                +--> TypeScript catalogs
+                                +--> codec_manifest.json
+                                +--> per-message hashes + change_impact.json
 
-can_protocol.h -------------------------------> RT / SYS / MTR firmware
-hard-coded IDs and layouts -------------------> host bridge
-manual schedules and behaviour ---------------> debug simulator
-standalone constants -------------------------> PWT stub
+manual-mappings.yaml --> registered SES/SEB adapter --> RT / SYS
+                      --> reviewed hashes, consumers, tests and builds
+
+PWT manufacturer YAML --> deterministic extended-frame PWT codec
+
+can_protocol.h --> legacy compatibility structs and common frame/enums (retirement pending)
+manual schedules/behaviour --> debug simulator (target: consume generated periods/policy)
 ```
 
-This split is the largest architectural gap. A downstream tool can faithfully decode the YAML while the ECUs faithfully transmit a different hand-written layout.
+The former untracked split is closed for ordinary application messages and explicitly controlled for registered vendor exceptions. Remaining risk is concentrated in legacy compatibility use, simulator behavior, incomplete algorithm metadata and hardware/HIL evidence rather than hidden payload ownership.
 
 ## 3. CAN contract and generation gaps
 

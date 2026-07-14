@@ -4,6 +4,35 @@ Five ECUs are planned on three CAN buses: Jetson Orin (ROS 2 perception), RT ESP
 
 > **Deployment status:** RT high-to-low CAN is implemented. MTR hardware initialization and ESTOP are incomplete, so no vehicle motor-actuation path is approved. PWT has one 250 kbit/s CAN interface; it is not a low-to-powertrain gateway. See [`docs/gpio-esp32-audit.md`](docs/gpio-esp32-audit.md).
 
+> **Current versus target:** Statements marked as implemented describe the checked-in code. Planned or target behavior remains architectural intent and must not be treated as bench evidence until its referenced implementation and tests exist.
+
+## CAN contract ownership and change impact
+
+The CAN architecture uses controlled ownership rather than assuming every behavior can be generated.
+
+| Concern | Authority |
+|---|---|
+| Wire facts | `shared/can/can_high.yaml`, `can_low.yaml`, and the standalone PWT manufacturer YAML |
+| Ordinary payload codecs and metadata | Deterministic generated artifacts under `shared/can/generated/` |
+| Vendor algorithms that cannot yet be generated safely | `shared/can/manual-mappings.yaml` plus adapters under `shared/can/manual/` |
+| Runtime policy | Named component configuration: allowed misses, retries, escalation and logging policy |
+| Hardware facts | Component board/driver configuration: GPIO, I2C/SPI, oscillator and calibration |
+
+Every wire value must be generated, centrally named, or registered as a tested manual mapping. Generated files are never edited manually. A manual mapping records a stable ID, source message, reviewed per-message wire hash, adapter, consumers, tests and affected build targets. This preserves traceability without pretending that vendor checksums, overlapping layouts or stateful interpretation are automatically generated.
+
+The normal change workflow is:
+
+```text
+python tools/can_change.py inspect MESSAGE_OR_ID
+edit the authoritative YAML or explicitly owned policy/hardware configuration
+python shared/can/generate_code.py
+review every reported manual mapping and independent vector
+python tools/can_change.py verify MESSAGE_OR_ID
+build the targets reported by the inspection result
+```
+
+`codec_manifest.json` contains bus-instance and signal metadata. `change_impact.json` links each message to its source, wire hash, generated type, manual exception, consumers, tests and builds. Both have structured JSON suitable for developer tools, the Control UI backend and LLM clients. This metadata is implemented; automatic backend exposure remains Control UI target work.
+
 > Full CAN catalog, processing summaries, pseudocode, and ASCII topology preserved in [`docs/architecture-reference.md`](docs/architecture-reference.md).
 
 ---
@@ -233,7 +262,7 @@ SYS persists reset reason and boot count to NVS flash:
 | 0x721 | RX (low) | 100 Hz | SEB status. Pressure stored only in Pressure mode. |
 | 0x204 | TX (low) | 100 Hz | Motor speed+gear. Gated: only in AUTO/ESTOP. |
 | 0x205 | TX (low) | 50 Hz | Brake kPa → SYS. Gated: only in AUTO/ESTOP. |
-| 0x169 | TX (low) | 100 Hz | Steering angle → EPS-C. Checksum XOR^0xFF. Gated: only in AUTO/ESTOP. |
+| 0x169 | TX (low) | 50 Hz current wire schedule; state-machine timing still assumes 100 Hz | Steering angle → EPS-C. Checksum XOR^0xFF. Gated: only in AUTO/ESTOP. Open timing decision described in §15. |
 | 0x210 | TX (high+low) | 10 Hz | Mode(byte0), safety_state(byte1:0-1), reversing(byte2), rx_overflow(byte3). SYS reads safety_state for takeover. |
 | 0x310 | TX (high) | 10 Hz | Steering diag: angle(u16 BE, factor 0.1, offset -3000), fault, current, temp |
 | 0x311 | TX (high) | 10 Hz | Brake diag: pressure, fault, current, temp |
@@ -600,10 +629,12 @@ BOOT_WAIT(500ms) → LISTEN_SYNC → ACTIVE
 |-------|----------|------------|
 | BOOT_WAIT | No | Suppressed |
 | LISTEN_SYNC | No | Suppressed |
-| ACTIVE | 100 Hz | Allowed |
+| ACTIVE | **Open timing decision:** current bus scheduler/YAML use 50 Hz; steering state-machine configuration still assumes 100 Hz | Allowed |
 | ESTOP_RAMP | Ramping to 0° | Allowed |
 | ESTOP_HOLD/SILENT | Hold/stop | Allowed |
 | FAULT | No | Suppressed |
+
+The timing mismatch is intentionally not resolved by documentation alone. `can_low.yaml` and the current RT transmit schedule specify 20 ms/50 Hz, while `kSteerCmdRateHz` is 100 and is used for state-machine tick calculations. Firmware, YAML, golden timing tests and this table must be changed together after the required EPS-C rate is confirmed.
 
 ### 0x7B9 Suppression (6 Conditions)
 
@@ -652,11 +683,11 @@ Bus-off recovery uses a fast-path (MCP2515 ISR at ~100µs) plus polled fallback 
 
 ### Frozen Counter Heartbeat Detection
 
-Instead of timestamp-delta, RT uses frozen-counter detection: the heartbeat timestamp is only updated when `fr.data[0]` (alive counter byte) differs from the last received value. Uses unsigned delta comparison (`uint8_t delta = current - last`) to correctly handle 8-bit rollover. Applied to SYS heartbeat (0x7FE, timeout 200ms) and Host heartbeat (0x7FC, timeout 1500ms).
+RT first validates the exact ID, frame type, DLC and payload using the generated heartbeat DTO. Frozen-counter detection then updates the heartbeat timestamp only when the decoded alive counter advances. Unsigned delta comparison handles 8-bit rollover. This is applied independently to SYS heartbeat (0x7FE, timeout 200ms) and Host heartbeat (0x7FC, timeout 1500ms); invalid frames do not refresh liveness.
 
 ### Heartbeat Health Flags
 
-RT 0x7FD byte 1 carries four health bits (defined in `can_protocol.h`):
+RT 0x7FD byte 1 carries four health bits whose wire locations are defined in YAML and emitted through generated metadata/codecs:
 - bit 0: `heartbeat_ok` — both SYS and Host heartbeats alive
 - bit 1: `estop_active` — steering in ramp/hold OR mode is ESTOP
 - bit 2: `mode_auto` — mode is AUTO
@@ -834,4 +865,7 @@ SYS monitors ESTOP_ACTIVE for ACK (100ms timeout) and STARTUP_READY for MTR live
 - [`docs/hil-safety-test-plan.md`](docs/hil-safety-test-plan.md) — HIL test scenarios
 - [`tem/testing-guide.md`](tem/testing-guide.md) — Complete test suite guide (2,470+ assertions)
 - [`docs/can-bench-test.md`](docs/can-bench-test.md) — Bench test plan
-- [`shared/can/can_protocol.h`](shared/can/can_protocol.h) — C++ CAN message structs
+- [`shared/can/generated/can_messages.h`](shared/can/generated/can_messages.h) — generated C++ payload DTOs, metadata and checked codecs
+- [`shared/can/manual-mappings.yaml`](shared/can/manual-mappings.yaml) — registered handwritten vendor behavior and reviewed wire hashes
+- [`shared/can/manual/vendor_protocol.h`](shared/can/manual/vendor_protocol.h) — current SES/SEB checksum and overlay adapter boundary
+- [`shared/can/can_protocol.h`](shared/can/can_protocol.h) — legacy compatibility structs plus shared frame/enums; new application codecs must not be added here
