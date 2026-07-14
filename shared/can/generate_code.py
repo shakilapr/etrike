@@ -20,6 +20,7 @@ from pathlib import Path
 from can_signals_schema import load_can_database_dir, semantic_protocol_hash
 from generate_cpp_codecs import (
     generate_codec_manifest,
+    generate_change_impact,
     generate_cpp_codecs,
     generate_error_registry,
 )
@@ -306,6 +307,7 @@ def main():
     cpp_codecs = generate_cpp_codecs(db)
     codec_manifest = generate_codec_manifest(db)
     error_registry = generate_error_registry()
+    change_impact = generate_change_impact(db, CAN_DIR / "manual-mappings.yaml")
 
     if do_verify:
         # Compare generated with existing files
@@ -317,6 +319,7 @@ def main():
             ("can_messages.h", cpp_codecs),
             ("codec_manifest.json", codec_manifest),
             ("codec_errors.json", error_registry),
+            ("change_impact.json", change_impact),
         ]:
             fpath = GEN_DIR / fname
             if not fpath.exists():
@@ -355,12 +358,13 @@ def main():
         ("can_messages.h", cpp_codecs),
         ("codec_manifest.json", codec_manifest),
         ("codec_errors.json", error_registry),
+        ("change_impact.json", change_impact),
     ]:
         fpath = GEN_DIR / fname
         fpath.write_text(content, encoding="utf-8")
         print(f"  Wrote {fpath} ({len(content)} bytes)")
 
-    print(f"\nDone: 6 files generated in {GEN_DIR}")
+    print(f"\nDone: 7 files generated in {GEN_DIR}")
 
 
 if __name__ == "__main__":

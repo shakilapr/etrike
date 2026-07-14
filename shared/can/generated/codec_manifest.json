@@ -11,6 +11,8 @@
       "dlc": 0,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 0,
+      "wire_hash": "8394b7f5521e6b6663879ec0fc0caad498760358ed61e89a382520534a8954ca",
       "class": "event",
       "signals": []
     },
@@ -23,6 +25,8 @@
       "dlc": 3,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 200,
+      "wire_hash": "d1d13e1359723c9ccfb678bb2c32e69f44f68a9ab68ef02ee09c6dff25e0cb9f",
       "class": "packed",
       "signals": [
         {
@@ -138,6 +142,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 1000,
+      "wire_hash": "9ad494f18654d2426bb159b93767741a2f6160ebdae8148d6bd8c6ca92ae2458",
       "class": "stateful",
       "signals": [
         {
@@ -188,6 +194,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 1000,
+      "wire_hash": "7ec0e3db8681b7565c2f74441b43e0fc1e33d50ca32ba9294c59b16698020dd3",
       "class": "stateful",
       "signals": [
         {
@@ -238,6 +246,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 10,
+      "wire_hash": "a58040a0a220fa0403f5482ddef7b40a8575d777fb89ee5af2ad746e258f29df",
       "class": "simple",
       "signals": [
         {
@@ -268,6 +278,8 @@
       "dlc": 4,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 20,
+      "wire_hash": "16cfa9f7a8d5460e7eaddabf3f38f493f763d50341ac907b4a67784e7c66d0a8",
       "class": "simple",
       "signals": [
         {
@@ -332,6 +344,8 @@
       "dlc": 6,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "a0311353ec0bc7c7f8627d3d12004a916c3514e5e69c361fcad849e076257185",
       "class": "packed",
       "signals": [
         {
@@ -472,6 +486,8 @@
       "dlc": 6,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "d0154cf3257e891d270ba697450a2761926ae00823b7e2e1bbe2f9e7553cb2d7",
       "class": "simple",
       "signals": [
         {
@@ -536,6 +552,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 10,
+      "wire_hash": "afe5f690855b5222992634f48ceff9b5bbf7517f84481f7716e458f914a4b643",
       "class": "simple",
       "signals": [
         {
@@ -605,6 +623,8 @@
       "dlc": 4,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 0,
+      "wire_hash": "4f62fdff2831ff869e9f7d3e1d1d53a27646c98b58dc1c90cdc16fdb944c4fd8",
       "class": "simple",
       "signals": [
         {
@@ -635,6 +655,8 @@
       "dlc": 1,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 0,
+      "wire_hash": "05afbfd987b42ea9e0befa0b121bd1c1e4d0253976c72a1a268c4ad34efefcc8",
       "class": "packed",
       "signals": [
         {
@@ -716,6 +738,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "de659a6965699c2a2753b859a76391b7db1f23f30e2ce608098be263a16f7643",
       "class": "simple",
       "signals": [
         {
@@ -814,6 +838,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "e1880e94cf01db57e0ca460b60c6c8bbdb4a80753b17affd127a86a0b36a10c9",
       "class": "simple",
       "signals": [
         {
@@ -912,6 +938,8 @@
       "dlc": 4,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "be4477b66152efb05c604aae9514344d93228086efe342a7676a847515cdaa41",
       "class": "simple",
       "signals": [
         {
@@ -944,6 +972,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 1000,
+      "wire_hash": "099354462cd6730ffb5b504650fd2ffc5542f071171e19df98ced9e5199156f1",
       "class": "packed",
       "signals": [
         {
@@ -1110,6 +1140,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 500,
+      "wire_hash": "11dce8c39bcaee16333a4ddc2fe1411744b72c40c4665be40dce1b3ccc4f7659",
       "class": "stateful",
       "signals": [
         {
@@ -1157,6 +1189,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 500,
+      "wire_hash": "be83e0690160b71b60cc8967f9501c6dc7006abe07e5f9a82ea96ee52ee0fd2b",
       "class": "stateful",
       "signals": [
         {
@@ -1204,6 +1238,8 @@
       "dlc": 0,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 0,
+      "wire_hash": "1790087d45ae1793879f959ed4e5624a2c4571a32cba37bc7ef972ed607506b8",
       "class": "event",
       "signals": []
     },
@@ -1216,6 +1252,8 @@
       "dlc": 3,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 200,
+      "wire_hash": "ff1550b9d120c4f60c557824bf228933d0de01e3d4b0d4998045672cbc68eacd",
       "class": "packed",
       "signals": [
         {
@@ -1331,6 +1369,8 @@
       "dlc": 1,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 0,
+      "wire_hash": "343d03c635d3e9815db5cc2ac40ed10536deeabf29e914b77e3bb4dcff5a7c01",
       "class": "simple",
       "signals": [
         {
@@ -1361,6 +1401,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 1000,
+      "wire_hash": "5ef3c9818589d83c7e0bc5f830b7319c890cb3cf5ce5e473487cb50abe45202e",
       "class": "stateful",
       "signals": [
         {
@@ -1411,6 +1453,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 1000,
+      "wire_hash": "28fe4f9bdbec5a9b3bc247cb8e199767e04dfc35bd904103aca0b95196c1f7fe",
       "class": "stateful",
       "signals": [
         {
@@ -1461,6 +1505,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 10,
+      "wire_hash": "84715bb089301f19017bd8900fccf93e5f44467f8d3c9ba01addbb26b4a90414",
       "class": "simple",
       "signals": [
         {
@@ -1491,6 +1537,8 @@
       "dlc": 5,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 10,
+      "wire_hash": "0383859b41897445b665d85059681f27bde2f938c990e868271f9226572c33b5",
       "class": "simple",
       "signals": [
         {
@@ -1543,6 +1591,8 @@
       "dlc": 4,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 20,
+      "wire_hash": "de89e63bd732b294c275875ad677ce92c551bc6af9f09b862854050ec007f6df",
       "class": "simple",
       "signals": [
         {
@@ -1573,6 +1623,8 @@
       "dlc": 4,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 20,
+      "wire_hash": "202a2acf85b685bd24bf00f26e5abddd9383f8c807190820f5be7666fd8ac934",
       "class": "simple",
       "signals": [
         {
@@ -1637,6 +1689,8 @@
       "dlc": 6,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "1a5e5d7ab9c0fd9f0fab916e4d4a8661601562e450b4e037ed6141f51d02ebdc",
       "class": "packed",
       "signals": [
         {
@@ -1777,6 +1831,8 @@
       "dlc": 1,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 0,
+      "wire_hash": "a94e4886ea303f19accd09f5b5191072ad925f770b1dbed934b9e2a8051de531",
       "class": "packed",
       "signals": [
         {
@@ -1858,6 +1914,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 1000,
+      "wire_hash": "7a8c4ab420f9f3a0fd5110d4272f03e0b595ce0e5fb467bb401bc8e5fbb1d9f9",
       "class": "packed",
       "signals": [
         {
@@ -2024,6 +2082,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 500,
+      "wire_hash": "0e501c8d81cdf9863a86fe99cebd846a9c211cc337a3f206dc2c839fc0088aca",
       "class": "stateful",
       "signals": [
         {
@@ -2071,6 +2131,8 @@
       "dlc": 2,
       "extended": false,
       "byte_order": "motorola",
+      "cycle_ms": 100,
+      "wire_hash": "38c306abebcd9bcf859857c64e4b658b52a46a811f21f09b5779923fc90602ca",
       "class": "packed",
       "signals": [
         {
@@ -2237,6 +2299,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 20,
+      "wire_hash": "9551d686b3e371cdd77d183829b6efa057b225abeeb48f0c3bacaef1829c9371",
       "class": "stateful",
       "signals": [
         {
@@ -2403,6 +2467,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 10,
+      "wire_hash": "36b655886878907a9356c8b6068a5d6ff546a5aa82c700019bd250453c5c27be",
       "class": "stateful",
       "signals": [
         {
@@ -2586,6 +2652,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 100,
+      "wire_hash": "d1ae58b4c528184cae334107b4c265c168adbdacabf00dfbb0390ad0a1a9a859",
       "class": "packed",
       "signals": [
         {
@@ -3041,6 +3109,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 1000,
+      "wire_hash": "8cfa18a934d9de7810543f3f95ff687138df50c2d972e437c68fab21b3cac926",
       "class": "simple",
       "signals": [
         {
@@ -3088,6 +3158,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 10,
+      "wire_hash": "b00490b5abe3cdb5cb2a198d567cac0fa90b4eb3d559479b664f29f7f355f093",
       "class": "simple",
       "signals": [
         {
@@ -3152,6 +3224,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 20,
+      "wire_hash": "fb3ed8bd44df1fad9d563085bf4a6ab38bfa0dc02fbc8c9997c46628d6b75dc2",
       "class": "stateful",
       "signals": [
         {
@@ -3335,6 +3409,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 10,
+      "wire_hash": "333f3b4392e25e2a26e2abfa9df79490962ac1471b36b7db777889e37799720f",
       "class": "stateful",
       "signals": [
         {
@@ -3552,6 +3628,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 100,
+      "wire_hash": "96606ecb51cf0f5bc59a89a6a2dd9b74a9e760c9ca665ef8481b5042ba91e743",
       "class": "packed",
       "signals": [
         {
@@ -3956,6 +4034,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 1000,
+      "wire_hash": "d763d32fb48346b51865393420acebde5977930d345a18d93f07c12e8a3e553e",
       "class": "simple",
       "signals": [
         {
@@ -4003,6 +4083,8 @@
       "dlc": 8,
       "extended": false,
       "byte_order": "intel",
+      "cycle_ms": 10,
+      "wire_hash": "202ad2e35f89265d57f88f62f9b5acd45e62e3d79e50cccb121bf3dda9a0f9fa",
       "class": "simple",
       "signals": [
         {
