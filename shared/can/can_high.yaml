@@ -347,7 +347,7 @@ protocols:
         cycle_ms: 500
         comment: "Not bridged, high bus only. Loss triggers controlled stop, not ESTOP."
         signals:
-          - {name: Host_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: Host_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255, counter_kind: wrapping, reset_scope: ecu_restart, expected_increment: 1,
              comment: "Timeout 1500ms -> controlled stop. Host is QM, not safety-critical."}
           - {name: Host_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}
@@ -362,7 +362,7 @@ protocols:
         cycle_ms: 500
         comment: "RT sends independently on both buses (per-bus, NOT bridged). Separate counters. This is the high-bus instance."
         signals:
-          - {name: RT_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255,
+          - {name: RT_AliveCtr, key: alive_ctr, byte: 0, bit_offset: 0, size: 8, min: 0, max: 255, counter_kind: wrapping, reset_scope: ecu_restart, expected_increment: 1,
              comment: "High bus timeout 1500ms->Host stops /cmd_vel"}
           - {name: RT_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}

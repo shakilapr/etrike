@@ -18,6 +18,8 @@ jobs:
       - run: pip install canmatrix pydantic PyYAML
       - run: cd shared/can && python generate_all_dbc.py --check --smoke
       - run: cd shared/can && python generate_code.py --verify
+      - run: python -m unittest shared/can/test_codegen_contract.py
+      - run: cd pwt-esp32 && python generate_can.py --verify
 
   simulation:
     runs-on: ubuntu-latest
