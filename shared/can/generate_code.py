@@ -18,6 +18,11 @@ import sys
 import os
 from pathlib import Path
 from can_signals_schema import load_can_database_dir, semantic_protocol_hash
+from generate_cpp_codecs import (
+    generate_codec_manifest,
+    generate_cpp_codecs,
+    generate_error_registry,
+)
 
 CAN_DIR = Path(__file__).resolve().parent
 GEN_DIR = CAN_DIR / "generated"
@@ -77,8 +82,7 @@ def generate_can_ids_ts(db) -> str:
     # ── DLC table ────────────────────────────────────────────────
     lines.append("// ── DLC table (CAN ID → expected byte count) ──────────────")
     lines.append("export const DLC: Record<string, number> = {")
-    # Collect DLC across all protocol definitions. For forwarded CAN IDs
-    # appearing on multiple buses, detect conflicts and use the maximum.
+    # Cross-bus semantic validation has already rejected conflicting duplicates.
     dlc_by_id: dict[str, tuple[int, str, list[tuple[str,int]]]] = {}  # id -> (max_dlc, name, [(proto, dlc)])
     for bus, msg, pname in all_msgs:
         key = to_hex(msg.id)
@@ -87,17 +91,8 @@ def generate_can_ids_ts(db) -> str:
         else:
             prev_dlc, prev_name, sources = dlc_by_id[key]
             sources.append((pname, msg.dlc))
-            if msg.dlc > prev_dlc:
-                dlc_by_id[key] = (msg.dlc, msg.name, sources)
-            elif msg.dlc != prev_dlc:
-                # PCR7: Same CAN ID with different DLC on different buses is a spec
-                # conflict. Max-DLC hides the inconsistency — warn so the developer
-                # can reconcile the protocol definitions.
-                print(f"WARNING: CAN ID {key} ({msg.name}) has DLC={msg.dlc} in "
-                      f"{pname} but DLC={prev_dlc} in other protocols. "
-                      f"Using max DLC={max(msg.dlc, prev_dlc)}. "
-                      f"Verify both protocol YAMLs agree on DLC.",
-                      file=sys.stderr)
+            if msg.dlc != prev_dlc:
+                raise ValueError(f"Conflicting DLC for {key}: {prev_dlc} versus {msg.dlc}")
     for key in sorted(dlc_by_id.keys(), key=lambda k: int(k, 16)):
         dlc, name, _ = dlc_by_id[key]
         lines.append(f'  "{key}": {dlc},  // {name}')
@@ -256,14 +251,10 @@ def generate_can_data_h(db) -> str:
             else:
                 prev_dlc, prev_name, sources = dlc_by_id[msg.id]
                 sources.append((pname, msg.dlc))
-                if msg.dlc > prev_dlc:
-                    dlc_by_id[msg.id] = (msg.dlc, msg.name, sources)
-                elif msg.dlc != prev_dlc:
-                    print(f"WARNING: CAN ID 0x{msg.id:03X} ({msg.name}) has DLC={msg.dlc} in "
-                          f"{pname} but DLC={prev_dlc} in other protocols. "
-                          f"Using max DLC={max(msg.dlc, prev_dlc)}. "
-                          f"Verify both protocol YAMLs agree on DLC.",
-                          file=sys.stderr)
+                if msg.dlc != prev_dlc:
+                    raise ValueError(
+                        f"Conflicting DLC for 0x{msg.id:03X}: {prev_dlc} versus {msg.dlc}"
+                    )
     for mid in sorted(dlc_by_id.keys()):
         dlc, name, _ = dlc_by_id[mid]
         lines.append(f"constexpr uint8_t kDlc_{name} = {dlc};")
@@ -312,6 +303,9 @@ def main():
     ts_ids = generate_can_ids_ts(db)
     ts_consts = generate_can_constants_ts(db)
     cpp_h = generate_can_data_h(db)
+    cpp_codecs = generate_cpp_codecs(db)
+    codec_manifest = generate_codec_manifest(db)
+    error_registry = generate_error_registry()
 
     if do_verify:
         # Compare generated with existing files
@@ -320,6 +314,9 @@ def main():
             ("can_ids.ts", ts_ids),
             ("can_constants.ts", ts_consts),
             ("can_data.h", cpp_h),
+            ("can_messages.h", cpp_codecs),
+            ("codec_manifest.json", codec_manifest),
+            ("codec_errors.json", error_registry),
         ]:
             fpath = GEN_DIR / fname
             if not fpath.exists():
@@ -355,12 +352,15 @@ def main():
         ("can_ids.ts", ts_ids),
         ("can_constants.ts", ts_consts),
         ("can_data.h", cpp_h),
+        ("can_messages.h", cpp_codecs),
+        ("codec_manifest.json", codec_manifest),
+        ("codec_errors.json", error_registry),
     ]:
         fpath = GEN_DIR / fname
         fpath.write_text(content, encoding="utf-8")
         print(f"  Wrote {fpath} ({len(content)} bytes)")
 
-    print(f"\nDone: 3 files generated in {GEN_DIR}")
+    print(f"\nDone: 6 files generated in {GEN_DIR}")
 
 
 if __name__ == "__main__":
