@@ -156,8 +156,8 @@ Dual-channel passive CAN monitor/injector.
 | 3 | MCP2515 INT | 47 | Digital, falling | MCP2515 INT | **Active** | RX buffer ready interrupt |
 | 4 | Encoder A (rear motor) | 1 | PCNT quadrature | Motor encoder | **Active** | Speed feedback |
 | 5 | Encoder B (rear motor) | 2 | PCNT quadrature | Motor encoder | **Active** | Quadrature phase B |
-| 6 | Encoder A (front wheel) | 10 | PCNT quadrature | TBD sensor | Compile-disabled | `CONFIG_ENABLE_ENCODERS` off |
-| 7 | Encoder B (front wheel) | 6 | PCNT quadrature | TBD sensor | Compile-disabled | `CONFIG_ENABLE_ENCODERS` off |
+| 6 | Encoder A (front wheel) | 10 | PCNT quadrature | TBD sensor | Compile-disabled | `ETRIKE_RT_ENCODERS` off |
+| 7 | Encoder B (front wheel) | 6 | PCNT quadrature | TBD sensor | Compile-disabled | `ETRIKE_RT_ENCODERS` off |
 | 8 | Encoder A (rear left) | 9 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 9 | Encoder B (rear left) | 12 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 10 | Encoder A (rear right) | 13 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |

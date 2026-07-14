@@ -1237,8 +1237,8 @@ Known bypass and test flags:
 | `g_bypass_mtr_absent` | RT/SYS globals | Treat missing MTR as allowed | Must not disable EGAS/motor absence checks in production |
 | `TESTING` | SYS/native build flags | Host/native test stubs and deterministic time | Must not be present in vehicle builds |
 
-| `CONFIG_ENABLE_ACTIVE_PID` | RT build flag | Active speed PID injection | Must be off unless encoder prerequisites are met |
-| `CONFIG_ENABLE_ENCODERS` | RT build flag | Encoder PCNT support | Must be paired correctly with active PID tests |
+| `ETRIKE_RT_PID_MODE` | RT build flag | Active speed PID injection | Must be 0 (off) unless encoder prerequisites are met and speed feedback source is set to 2 |
+| `ETRIKE_RT_ENCODERS` | RT build flag | Encoder PCNT support | Must be paired correctly with active PID tests |
 
 Runtime bypass initialization tests:
 
