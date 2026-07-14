@@ -964,9 +964,7 @@ These are initial engineering budgets, not hard-real-time guarantees. CANalyst-I
 
 The application does not use DBC as its internal model. YAML is used as a DBC-like static dictionary, divided by message origin/protocol family with bus instances represented explicitly. A message layout appears once; sender and receivers consume the same normalized definition. The compiler generates metadata for every message and complete codecs only for messages whose selected strategy supports generation. Unsupported vendor algorithms remain explicit named profiles or custom codecs rather than being hidden in application code. DBC may still be exported for CANalyzer, cantools interoperability, or other external tools, but no Control UI behavior depends on it.
 
-Current implementation produces C++ codecs, TypeScript catalogs, stable error definitions, per-message hashes, `codec_manifest.json`, and `change_impact.json`. Python backend codecs, React integration, documentation exports, and complete checksum/counter algorithm generation below are target outputs unless their implementation and tests are present.
-
-The compiler should replace the current debug-tool-specific assumptions in `protocol/generate_can_ts.py` with shared schema validation and deterministic targets:
+The unified compiler (`protocol/tools/protocol.py`) uses shared schema validation to produce deterministic targets for the entire CAN ecosystem:
 
 - Python runtime catalog, encoder, decoder, and validator metadata for FastAPI;
 - TypeScript runtime catalog and presentation metadata for React;

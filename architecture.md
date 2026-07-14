@@ -891,6 +891,7 @@ BOOT_WAIT(500ms) ──→ LISTEN_SYNC ──→ ACTIVE ←── DEGRADED
 
 - **Stroke mode:** `raw = (mm + 30) / 0.05`. 0mm→600, 15mm→900, 27mm→1140.
 - **Pressure mode:** `raw = kPa / 50`. 5000kPa→100, 20000kPa→400.
+  > **Note on Pressure Limits:** The internal CAN protocol (`0x205 RT_BRAKE_CMD`) supports up to 20,000 kPa (20 MPa) to remain hardware-agnostic for future actuator upgrades. The current SEB actuator is physically limited to 5 MPa. The SYS gateway explicitly clamps the converted raw request to 100 (5 MPa) prior to transmission, ensuring safety (defense-in-depth) and preventing codec validation errors.
 - All multi-byte fields are LE per vendor protocol. XOR checksum over bytes 0-6 ^ 0xFF.
 
 ### Continuous Communication & Arbitration Logic (0x7B9)

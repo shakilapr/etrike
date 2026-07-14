@@ -1,0 +1,185 @@
+VERSION "created by canmatrix"
+
+
+NS_ :
+
+BS_:
+
+BU_: Host RT SYS MTR PWT DCDC EPS_C SEB HMI Any 
+
+
+BO_ 1 SAFETY_ESTOP_high: 0 Any
+
+BO_ 1 SAFETY_ESTOP_low: 0 Any
+
+BO_ 273 HMI_MODE_REQ_high: 2 HMI
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" SYS,Host
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS,Host
+
+BO_ 273 HMI_MODE_REQ_low: 2 HMI
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" SYS,Host
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS,Host
+
+BO_ 274 HMI_PWR_REQ_high: 2 HMI
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" SYS
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS
+
+BO_ 274 HMI_PWR_REQ_low: 2 HMI
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" SYS
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS
+
+BO_ 770 HOST_LIGHT_CMD_high: 1 Host
+ SG_ left_turn : 7|1@0+ (1,0) [0|1] "" RT,SYS
+ SG_ right_turn : 6|1@0+ (1,0) [0|1] "" RT,SYS
+ SG_ brake_light : 5|1@0+ (1,0) [0|1] "" RT,SYS
+ SG_ headlight : 4|1@0+ (1,0) [0|1] "" RT,SYS
+
+BO_ 770 HOST_LIGHT_CMD_low: 1 Host
+ SG_ left_turn : 7|1@0+ (1,0) [0|1] "" RT,SYS
+ SG_ right_turn : 6|1@0+ (1,0) [0|1] "" RT,SYS
+ SG_ brake_light : 5|1@0+ (1,0) [0|1] "" RT,SYS
+ SG_ headlight : 4|1@0+ (1,0) [0|1] "" RT,SYS
+
+BO_ 518 MTR_MOTOR_FBK_low: 4 MTR
+ SG_ actual_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
+ SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT,SYS,Host
+ SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT,SYS,Host
+
+BO_ 518 MTR_MOTOR_FBK_high: 4 MTR
+ SG_ actual_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
+ SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT,SYS,Host
+ SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT,SYS,Host
+
+BO_ 516 RT_DRIVE_CMD_low: 5 RT
+ SG_ motor_speed_mmps : 7|32@0- (1,0) [-500|3000] "" SYS,MTR
+ SG_ gear : 39|8@0+ (1,0) [0|3] "" SYS,MTR
+
+BO_ 517 RT_BRAKE_CMD_low: 4 RT
+ SG_ brake_pressure_kpa : 7|32@0- (1,0) [0|20000] "" SYS
+
+BO_ 528 RT_STATE_RPT_high: 6 RT
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" Host,SYS
+ SG_ safety_state : 15|2@0+ (1,0) [0|2] "" Host,SYS
+ SG_ estop_reason : 11|4@0+ (1,0) [0|7] "" Host,SYS
+ SG_ reversing : 23|1@0+ (1,0) [0|1] "" Host,SYS
+ SG_ rx_overflow : 31|8@0+ (1,0) [0|255] "" Host,SYS
+ SG_ task_health : 39|8@0+ (1,0) [0|255] "" Host,SYS
+ SG_ steer_state : 47|8@0+ (1,0) [0|5] "" Host,SYS
+
+BO_ 528 RT_STATE_RPT_low: 6 RT
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" Host,SYS
+ SG_ safety_state : 15|2@0+ (1,0) [0|2] "" Host,SYS
+ SG_ estop_reason : 11|4@0+ (1,0) [0|7] "" Host,SYS
+ SG_ reversing : 23|1@0+ (1,0) [0|1] "" Host,SYS
+ SG_ rx_overflow : 31|8@0+ (1,0) [0|255] "" Host,SYS
+ SG_ task_health : 39|8@0+ (1,0) [0|255] "" Host,SYS
+ SG_ steer_state : 47|8@0+ (1,0) [0|5] "" Host,SYS
+
+BO_ 2045 RT_HEARTBEAT_high: 2 RT
+ SG_ alive_ctr : 7|8@0+ (1,0) [0|255] "" Host,SYS
+ SG_ health_flags : 15|8@0+ (1,0) [0|255] "" Host,SYS
+
+BO_ 2045 RT_HEARTBEAT_low: 2 RT
+ SG_ alive_ctr : 7|8@0+ (1,0) [0|255] "" Host,SYS
+ SG_ health_flags : 15|8@0+ (1,0) [0|255] "" Host,SYS
+
+BO_ 1977 VCU_SEB_REQ_low: 8 SYS
+
+BO_ 1825 SEB_STATUS_low: 8 SEB
+
+BO_ 1841 SEB_ERR_INFO_low: 8 SEB
+
+BO_ 1857 SEB_VERSION_low: 8 SEB
+
+BO_ 1787 SEB_TEST_low: 8 SEB
+
+BO_ 17 SYS_SAFETY_STS_low: 3 SYS
+ SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,Host
+
+BO_ 17 SYS_SAFETY_STS_high: 3 SYS
+ SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,Host
+
+BO_ 272 SYS_MODE_CMD_low: 1 SYS
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,MTR
+
+BO_ 1536 SYS_DIAG_RPT_low: 8 SYS
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,Host
+ SG_ brake_engaged : 15|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ brake_fault : 14|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ heartbeat_ok : 23|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ rx_overflow : 22|6@0+ (1,0) [0|63] "" RT,Host
+ SG_ estop_active : 31|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ free_heap_kb : 39|16@0+ (1,0) [0|65535] "" RT,Host
+ SG_ tec : 55|8@0+ (1,0) [0|255] "" RT,Host
+ SG_ rec : 63|8@0+ (1,0) [0|255] "" RT,Host
+
+BO_ 1536 SYS_DIAG_RPT_high: 8 SYS
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,Host
+ SG_ brake_engaged : 15|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ brake_fault : 14|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ heartbeat_ok : 23|1@0+ (1,0) [0|1] "" RT,Host
+ SG_ rx_overflow : 22|6@0+ (1,0) [0|63] "" RT,Host
+ SG_ estop_active : 31|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ free_heap_kb : 39|16@0+ (1,0) [0|65535] "" RT,Host
+ SG_ tec : 55|8@0+ (1,0) [0|255] "" RT,Host
+ SG_ rec : 63|8@0+ (1,0) [0|255] "" RT,Host
+
+BO_ 2046 SYS_HEARTBEAT_low: 2 SYS
+ SG_ alive_ctr : 7|8@0+ (1,0) [0|255] "" RT
+ SG_ heartbeat_ok : 15|1@0+ (1,0) [0|1] "" RT
+ SG_ estop_active : 14|1@0+ (1,0) [0|1] "" RT
+ SG_ mode_auto : 13|1@0+ (1,0) [0|1] "" RT
+ SG_ can_ok : 12|1@0+ (1,0) [0|1] "" RT
+ SG_ task_safety_ok : 11|1@0+ (1,0) [0|1] "" RT
+ SG_ task_brake_ok : 10|1@0+ (1,0) [0|1] "" RT
+ SG_ task_dispatch_ok : 9|1@0+ (1,0) [0|1] "" RT
+ SG_ task_can_tx_ok : 8|1@0+ (1,0) [0|1] "" RT
+
+
+
+
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+
+
+BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
+BA_ "GenMsgCycleTime" BO_ 518 20;
+BA_ "GenMsgCycleTime" BO_ 518 20;
+BA_ "GenMsgCycleTime" BO_ 516 10;
+BA_ "GenMsgCycleTime" BO_ 517 20;
+BA_ "GenMsgCycleTime" BO_ 528 100;
+BA_ "GenMsgCycleTime" BO_ 528 100;
+BA_ "GenMsgCycleTime" BO_ 2045 500;
+BA_ "GenMsgCycleTime" BO_ 2045 500;
+BA_ "GenMsgCycleTime" BO_ 1977 20;
+BA_ "GenMsgCycleTime" BO_ 1825 10;
+BA_ "GenMsgCycleTime" BO_ 1841 100;
+BA_ "GenMsgCycleTime" BO_ 1857 1000;
+BA_ "GenMsgCycleTime" BO_ 1787 10;
+BA_ "GenMsgCycleTime" BO_ 17 200;
+BA_ "GenMsgCycleTime" BO_ 17 200;
+BA_ "GenMsgCycleTime" BO_ 1536 1000;
+BA_ "GenMsgCycleTime" BO_ 1536 1000;
+BA_ "GenMsgCycleTime" BO_ 2046 100;
+
+
+VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
+VAL_ 516 gear 0 "N" 1 "D" 2 "S" 3 "R";
+VAL_ 528 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
+VAL_ 528 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";

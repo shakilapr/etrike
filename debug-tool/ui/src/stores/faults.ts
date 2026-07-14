@@ -79,13 +79,13 @@ export function initFaultWatcher(): () => void {
     const faultFlags: number = motor?.fault_flags !== undefined ? Number(motor.fault_flags) : 0;
     const gear: number | null = motor?.gear_state !== undefined ? Number(motor.gear_state) : null;
 
-    const ses = $latest[`low:${ID_SES_ErrInfo}`]?.decoded as Record<string, unknown> | undefined;
-    const sesMask: number = ses?.fault_mask !== undefined ? Number(ses.fault_mask) : 0;
-    const sesL3 = ses?.l3_fault === true;
+    const sesFrame = $latest[`low:${ID_SES_ErrInfo}`];
+    const sesMask = sesFrame ? (sesFrame.data[0] | (sesFrame.data[1] << 8) | (sesFrame.data[2] << 16) | (sesFrame.data[3] << 24)) : 0;
+    const sesL3 = sesMask !== 0;
 
-    const seb = $latest[`low:${ID_SEB_ErrInfo}`]?.decoded as Record<string, unknown> | undefined;
-    const sebMask: number = seb?.fault_mask !== undefined ? Number(seb.fault_mask) : 0;
-    const sebL3 = seb?.l3_fault === true;
+    const sebFrame = $latest[`low:${ID_SEB_ErrInfo}`];
+    const sebMask = sebFrame ? (sebFrame.data[0] | (sebFrame.data[1] << 8) | (sebFrame.data[2] << 16) | (sebFrame.data[3] << 24)) : 0;
+    const sebL3 = sebMask !== 0;
 
     const steerDiag = $latest[`high:${ID_STEER_DIAG}`]?.decoded as Record<string, unknown> | undefined;
     const steerDiagFault = steerDiag?.SteerDiag_Fault === true;

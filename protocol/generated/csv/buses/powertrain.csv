@@ -1,0 +1,9 @@
+Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,Bit,Size,Type,Scale,Range,Unit,Description
+0x10262B27,PWT_DCDC_CMD,PWT,DCDC,8,100,control,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=disabled, 1=enabled)"
+,,,,,,reserved_1,1,0,8,unsigned,1,"[0, 255]",,
+,,,,,,reserved_2,2,0,8,unsigned,1,"[0, 255]",,
+,,,,,,reserved_3,3,0,8,unsigned,1,"[0, 255]",,
+,,,,,,reserved_4,4,0,8,unsigned,1,"[0, 255]",,
+,,,,,,reserved_5,5,0,8,unsigned,1,"[0, 255]",,
+,,,,,,reserved_6,6,0,8,unsigned,1,"[0, 255]",,
+,,,,,,reset_control,7,0,8,unsigned,1,"[0, 1]",," (Values: 0=no_reset, 1=reset)"

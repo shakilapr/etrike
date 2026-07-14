@@ -1,0 +1,6 @@
+Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,Bit,Size,Type,Scale,Range,Unit,Description
+0x169,VCU_SES_REQ_low,RT,EPS_C,8,20,(No signals/Opaque),,,,,,,,
+0x201,SES_STATUS_low,EPS_C,RT,8,10,(No signals/Opaque),,,,,,,,
+0x202,SES_ERR_INFO_low,EPS_C,RT,8,100,(No signals/Opaque),,,,,,,,
+0x203,SES_VERSION_low,EPS_C,RT,8,1000,(No signals/Opaque),,,,,,,,
+0x6FA,SES_TEST_low,EPS_C,RT,8,10,(No signals/Opaque),,,,,,,,

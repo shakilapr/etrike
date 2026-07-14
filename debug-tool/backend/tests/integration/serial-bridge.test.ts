@@ -16,9 +16,7 @@ import { initCanDatabase } from "@etrike/debug-shared";
 import fs from "fs";
 import path from "path";
 
-const highYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_high.yaml"), "utf-8");
-const lowYaml = fs.readFileSync(path.resolve(process.cwd(), "../../shared/can/can_low.yaml"), "utf-8");
-initCanDatabase(highYaml, lowYaml);
+initCanDatabase();
 
 describe("SerialBridge", () => {
   let store: DebugStore;

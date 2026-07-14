@@ -1,0 +1,52 @@
+VERSION "created by canmatrix"
+
+
+NS_ :
+
+BS_:
+
+BU_: Host RT SYS MTR PWT DCDC EPS_C SEB HMI Any 
+
+
+BO_ 1 SAFETY_ESTOP_high: 0 Any
+
+BO_ 1 SAFETY_ESTOP_low: 0 Any
+
+BO_ 288 SYS_THROTTLE_STS_low: 2 MTR
+ SG_ speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,Host
+
+BO_ 288 SYS_THROTTLE_STS_high: 2 MTR
+ SG_ speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,Host
+
+BO_ 518 MTR_MOTOR_FBK_low: 4 MTR
+ SG_ actual_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
+ SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT,SYS,Host
+ SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT,SYS,Host
+
+BO_ 518 MTR_MOTOR_FBK_high: 4 MTR
+ SG_ actual_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
+ SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT,SYS,Host
+ SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT,SYS,Host
+
+BO_ 516 RT_DRIVE_CMD_low: 5 RT
+ SG_ motor_speed_mmps : 7|32@0- (1,0) [-500|3000] "" SYS,MTR
+ SG_ gear : 39|8@0+ (1,0) [0|3] "" SYS,MTR
+
+BO_ 272 SYS_MODE_CMD_low: 1 SYS
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,MTR
+
+
+
+
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+
+
+BA_ "GenMsgCycleTime" BO_ 288 10;
+BA_ "GenMsgCycleTime" BO_ 288 10;
+BA_ "GenMsgCycleTime" BO_ 518 20;
+BA_ "GenMsgCycleTime" BO_ 518 20;
+BA_ "GenMsgCycleTime" BO_ 516 10;
+
+
+VAL_ 516 gear 0 "N" 1 "D" 2 "S" 3 "R";

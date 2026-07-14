@@ -4,9 +4,7 @@ import fs from "fs";
 import path from "path";
 
 beforeAll(() => {
-  const high = fs.readFileSync(path.join(__dirname, "../../../shared/can/can_high.yaml"), "utf8");
-  const low = fs.readFileSync(path.join(__dirname, "../../../shared/can/can_low.yaml"), "utf8");
-  initCanDatabase(high, low);
+  initCanDatabase();
 });
 
 function decodeFrame(bus: "high" | "low", id: string, data: number[]) {

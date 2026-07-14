@@ -4,7 +4,7 @@
 
 **Purpose:** Define how every major part of the bench controller behaves: what it receives, what state it owns, what decisions it makes, what it outputs, and how its result is verified.
 
-**Related documents:** `scope.md`, `control-ui-achitecture.md`, `hmi.md`, and the shared CAN YAML files.
+**Related documents:** `scope.md`, `control-ui-achitecture.md`, `hmi.md`, and the protocol CAN YAML files.
 
 ## 1. System boundary
 

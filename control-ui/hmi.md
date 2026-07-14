@@ -32,7 +32,7 @@ Because these commands dictate the state of the vehicle, they *do* require high 
 - **Anti-Spam (Transmission Rate):** These frames must NOT be blasted at high frequencies. The UI will transmit them continuously at **1 Hz (every 1000ms)**. This periodic heartbeat auto-syncs the SYS ECU in case of a reboot and eliminates the need for complex acknowledgment (ACK) logic in the UI, while using negligible bus bandwidth (<0.02%).
 - **ESTOP Separation:** Emergency stops are separated entirely from these routine HMI requests. The HMI will directly blast the universal `0x001 SAFETY_ESTOP` frame for emergencies.
 - **Physical Override:** Hardwired physical safety switches always override HMI software requests in the SYS state machine.
-- **Software Kill-Switch (`ENABLE_CAN_HMI`):** The HMI control must be toggleable via software within the SYS ECU (e.g., via `#define ENABLE_CAN_HMI` or a runtime variable). When disabled, the SYS ECU completely ignores `0x111` and `0x112` frames and relies only on physical buttons, ensuring safe local bench testing.
+- **Software Kill-Switch (`ETRIKE_SYS_ENABLE_CAN_HMI`):** The HMI control must be toggleable via software within the SYS ECU (e.g., via `#define ETRIKE_SYS_ENABLE_CAN_HMI` or a runtime variable). When disabled, the SYS ECU completely ignores `0x111` and `0x112` frames and relies only on physical buttons, ensuring safe local bench testing.
 
 ## 4. Interaction with SYS ECU
 Currently, the SYS ECU reads physical buttons and broadcasts `0x110 Mode Command`. By introducing `0x111` and `0x112`:
@@ -40,10 +40,10 @@ Currently, the SYS ECU reads physical buttons and broadcasts `0x110 Mode Command
 - When the user clicks "AUTO", the UI transmits `0x111 HMI_MODE_REQ` with `HMI_ReqMode = 0x01`.
 - The SYS ECU (once updated) reads `0x111` and updates its internal state machine exactly as if the physical Mode button was pressed.
 
-## 5. Phase 0 Implementation
-Before the Python backend is written, this `HMI` node and the new `0x111`/`0x112` messages must be formally added to `can_high.yaml` and `can_low.yaml`. 
-Once added, the entire CAN ecosystem must be regenerated using the scripts in `protocol/`:
-- `generate_all_dbc.py` (optional DBC export for third-party tooling)
-- `generate_code.py` (C/C++ headers for SYS and RT firmware)
-- `generate_can_ts.py` (TypeScript typings for the frontend UI)
-- `generate_can_docs.py` (and related doc generators for documentation)
+## 5. Implementation
+This `HMI` node and the `0x111`/`0x112` messages are formally defined in `can_high.yaml` and `can_low.yaml`. 
+The entire CAN ecosystem is generated using the unified CLI tool in `protocol/tools/protocol.py`:
+- `protocol.py generate dbc` (optional DBC export for third-party tooling)
+- `protocol.py generate headers` (C/C++ headers for SYS and RT firmware)
+- `protocol.py generate ts` (TypeScript typings for the frontend UI)
+- `protocol.py generate docs` (and related doc generators for documentation)

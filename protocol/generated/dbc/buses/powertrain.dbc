@@ -1,0 +1,32 @@
+VERSION "created by canmatrix"
+
+
+NS_ :
+
+BS_:
+
+BU_: Host RT SYS MTR PWT DCDC EPS_C SEB HMI Any 
+
+
+BO_ 2418420519 PWT_DCDC_CMD: 8 PWT
+ SG_ control : 7|8@0+ (1,0) [0|1] "" DCDC
+ SG_ reserved_1 : 15|8@0+ (1,0) [0|255] "" DCDC
+ SG_ reserved_2 : 23|8@0+ (1,0) [0|255] "" DCDC
+ SG_ reserved_3 : 31|8@0+ (1,0) [0|255] "" DCDC
+ SG_ reserved_4 : 39|8@0+ (1,0) [0|255] "" DCDC
+ SG_ reserved_5 : 47|8@0+ (1,0) [0|255] "" DCDC
+ SG_ reserved_6 : 55|8@0+ (1,0) [0|255] "" DCDC
+ SG_ reset_control : 63|8@0+ (1,0) [0|1] "" DCDC
+
+
+
+
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+
+
+BA_ "GenMsgCycleTime" BO_ 2418420519 100;
+
+
+VAL_ 2418420519 control 0 "disabled" 1 "enabled";
+VAL_ 2418420519 reset_control 0 "no_reset" 1 "reset";
