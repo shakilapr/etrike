@@ -166,7 +166,7 @@ Sources:
 
 Current limitations:
 
-- `CONFIG_ENABLE_ENCODERS` enables all four channels together.
+- `ETRIKE_RT_ENCODERS` enables all four channels together.
 - `app_main()` does not call `encoder_init()`.
 - The control task does not read PCNT encoder data.
 - Disabled stubs return numeric zero and do not distinguish disabled from valid
@@ -182,19 +182,13 @@ Current limitations:
 
 ### Current PID implementation
 
-RT currently runs shadow PID whenever MTR reported speed is nonzero. It does so
-regardless of `CONFIG_ENABLE_ENCODERS`.
+RT runs shadow or active PID depending on `ETRIKE_RT_PID_MODE` and the selected `ETRIKE_RT_SPEED_FEEDBACK_SOURCE` (which provides the measured speed).
 
-`CONFIG_ENABLE_ACTIVE_PID` conditionally changes the local setpoint after the
-uncorrected setpoint has already been written to `g_setpoint_q`. Therefore the
-PID correction does not currently affect transmitted `RT_DRIVE_CMD` frames.
+`ETRIKE_RT_PID_MODE=2` (active) conditionally adds the PID correction to the local setpoint.
 
 Additional limitations:
 
-- PID disabled is not an explicit state.
 - A zero measurement is treated as both stationary and missing feedback.
-- PID uses MTR reported speed, not RT PCNT feedback.
-- Active PID can be compiled without encoder support.
 - Gains are placeholders and saturate against raw mm/s errors.
 - No feedback freshness, direction, plausibility, or bumpless-transfer gate
   exists.

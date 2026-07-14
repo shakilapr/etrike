@@ -363,7 +363,9 @@ SYS reads this at 10 Hz. If `safety_state != 0`, SYS does NOT suppress its own 0
 
 ### Kinematics (Inverse Bicycle Model)
 
-`PhysicsModel::resolve()` converts Host drive command (speed, yaw) to motor speed + steer angle. Standard inverse bicycle model with three speed regimes:
+`rt::ActiveResolver::resolve()` converts Host drive command (speed, yaw) to motor speed + steer angle. This is aliased at compile time via `resolver_config.h` to either:
+- **PhysicsModel**: Standard inverse bicycle model with three speed regimes.
+- **DirectResolver**: Stateless passthrough kinematics.
 
 | Regime | Condition | Behavior |
 |--------|-----------|----------|
@@ -385,7 +387,7 @@ Shadow PID (`SpeedController::update_shadow_pid()`) computes correction for tele
 | I-reset | On setpoint change >500mm/s | Prevents integral windup |
 | Encoder guard | `measured==0 → output=0, PID reset` | Prevents spurious correction |
 
-Active PID (`CONFIG_ENABLE_ACTIVE_PID`): correction injected into motor setpoint. Disabled by default — requires physical encoder installed, quadrature verified, PCNT enabled, speed validated on 0x220 telemetry, and no-load bench test passed.
+Active PID (`ETRIKE_RT_PID_MODE=2`): correction injected into motor setpoint. Disabled by default (`ETRIKE_RT_PID_MODE=0`). Requires encoder hardware enabled (`ETRIKE_RT_ENCODERS=1`), speed feedback source set to encoders (`ETRIKE_RT_SPEED_FEEDBACK_SOURCE=2`), physical encoder installed, quadrature verified, speed validated on 0x220 telemetry, and no-load bench test passed.
 
 ### Gateway Forwarding
 
