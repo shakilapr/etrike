@@ -85,6 +85,7 @@ inline int64_t sign_extend(uint64_t value, uint8_t bits) noexcept {
 struct SafetyEstop {
     static constexpr uint32_t kId = 0x1u;
     static constexpr size_t kDlc = 0u;
+    static constexpr uint32_t kCycleMs = 0u;
     static constexpr bool kExtended = false;
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
@@ -106,6 +107,7 @@ struct SafetyEstop {
 struct SysSafetySts {
     static constexpr uint32_t kId = 0x11u;
     static constexpr size_t kDlc = 3u;
+    static constexpr uint32_t kCycleMs = 200u;
     static constexpr bool kExtended = false;
     bool estop_active{};
     bool heartbeat_ok{};
@@ -113,6 +115,42 @@ struct SysSafetySts {
     bool light_right{};
     bool light_brake{};
     bool light_head{};
+    struct EstopActiveMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct HeartbeatOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct LightLeftMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct LightRightMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct LightBrakeMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct LightHeadMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -159,9 +197,22 @@ struct SysSafetySts {
 struct HmiModeReq {
     static constexpr uint32_t kId = 0x111u;
     static constexpr size_t kDlc = 2u;
+    static constexpr uint32_t kCycleMs = 1000u;
     static constexpr bool kExtended = false;
     bool hmi_req_mode{};
     uint8_t rolling_counter{};
+    struct HmiReqModeMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -190,9 +241,22 @@ struct HmiModeReq {
 struct HmiPwrReq {
     static constexpr uint32_t kId = 0x112u;
     static constexpr size_t kDlc = 2u;
+    static constexpr uint32_t kCycleMs = 1000u;
     static constexpr bool kExtended = false;
     bool hmi_req_start{};
     uint8_t rolling_counter{};
+    struct HmiReqStartMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -221,8 +285,15 @@ struct HmiPwrReq {
 struct SysThrottleSts {
     static constexpr uint32_t kId = 0x120u;
     static constexpr size_t kDlc = 2u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     int16_t speed_mmps{};
+    struct SpeedMmpsMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -249,10 +320,29 @@ struct SysThrottleSts {
 struct MtrMotorFbk {
     static constexpr uint32_t kId = 0x206u;
     static constexpr size_t kDlc = 4u;
+    static constexpr uint32_t kCycleMs = 20u;
     static constexpr bool kExtended = false;
     int16_t actual_speed_mmps{};
     uint8_t gear_state{};
     uint8_t fault_flags{};
+    struct ActualSpeedMmpsMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct GearStateMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct FaultFlagsMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -285,6 +375,7 @@ struct MtrMotorFbk {
 struct RtStateRpt {
     static constexpr uint32_t kId = 0x210u;
     static constexpr size_t kDlc = 6u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     uint8_t mode{};
     uint8_t safety_state{};
@@ -293,6 +384,48 @@ struct RtStateRpt {
     uint8_t rx_overflow{};
     uint8_t task_health{};
     uint8_t steer_state{};
+    struct ModeMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SafetyStateMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 2u;
+        static constexpr uint64_t kMask = 0x3ull;
+    };
+    struct EstopReasonMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 4u;
+        static constexpr uint64_t kMask = 0xFull;
+    };
+    struct ReversingMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RxOverflowMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct TaskHealthMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SteerStateMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -339,10 +472,29 @@ struct RtStateRpt {
 struct RtPidRpt {
     static constexpr uint32_t kId = 0x220u;
     static constexpr size_t kDlc = 6u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     int16_t speed_setpoint{};
     int16_t speed_measured{};
     int16_t pid_output{};
+    struct SpeedSetpointMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SpeedMeasuredMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct PidOutputMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -371,10 +523,29 @@ struct RtPidRpt {
 struct HostDriveCmd {
     static constexpr uint32_t kId = 0x300u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     int32_t speed_mmps{};
     int32_t yaw_rate_mrad_s{};
     uint8_t gear{};
+    struct SpeedMmpsMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 32u;
+        static constexpr uint64_t kMask = 0xFFFFFFFFull;
+    };
+    struct YawRateMradSMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 24u;
+        static constexpr uint64_t kMask = 0xFFFFFFull;
+    };
+    struct GearMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -411,8 +582,15 @@ struct HostDriveCmd {
 struct HostBrakeReq {
     static constexpr uint32_t kId = 0x301u;
     static constexpr size_t kDlc = 4u;
+    static constexpr uint32_t kCycleMs = 0u;
     static constexpr bool kExtended = false;
     int32_t brake_pressure_kpa{};
+    struct BrakePressureKpaMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 32u;
+        static constexpr uint64_t kMask = 0xFFFFFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -439,11 +617,36 @@ struct HostBrakeReq {
 struct HostLightCmd {
     static constexpr uint32_t kId = 0x302u;
     static constexpr size_t kDlc = 1u;
+    static constexpr uint32_t kCycleMs = 0u;
     static constexpr bool kExtended = false;
     bool left_turn{};
     bool right_turn{};
     bool brake_light{};
     bool headlight{};
+    struct LeftTurnMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RightTurnMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct BrakeLightMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct HeadlightMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -482,12 +685,43 @@ struct HostLightCmd {
 struct SteerDiag {
     static constexpr uint32_t kId = 0x310u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     uint16_t steer_diag_angle0_1deg{};
     bool steer_diag_fault{};
     uint16_t steer_diag_motor_current{};
     uint16_t steer_diag_ecutemp{};
     uint8_t steer_diag_reserved{};
+    struct SteerDiagAngle01degMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SteerDiagFaultMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SteerDiagMotorCurrentMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SteerDiagEcutempMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SteerDiagReservedMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -553,12 +787,43 @@ struct SteerDiag {
 struct BrakeDiag {
     static constexpr uint32_t kId = 0x311u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     uint16_t brake_diag_pressure_raw{};
     bool brake_diag_fault{};
     uint16_t brake_diag_motor_current{};
     uint16_t brake_diag_ecutemp{};
     uint8_t brake_diag_reserved{};
+    struct BrakeDiagPressureRawMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct BrakeDiagFaultMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct BrakeDiagMotorCurrentMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct BrakeDiagEcutempMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct BrakeDiagReservedMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -622,8 +887,15 @@ struct BrakeDiag {
 struct HostObstacleDist {
     static constexpr uint32_t kId = 0x400u;
     static constexpr size_t kDlc = 4u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     uint32_t distance_mm{};
+    struct DistanceMmMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 32u;
+        static constexpr uint64_t kMask = 0xFFFFFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -648,6 +920,7 @@ struct HostObstacleDist {
 struct SysDiagRpt {
     static constexpr uint32_t kId = 0x600u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 1000u;
     static constexpr bool kExtended = false;
     uint8_t sys_diag_mode{};
     bool sys_diag_brake_engaged{};
@@ -658,6 +931,60 @@ struct SysDiagRpt {
     uint16_t sys_diag_free_heap_kb{};
     uint8_t sys_diag_tec{};
     uint8_t sys_diag_rec{};
+    struct SysDiagModeMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SysDiagBrakeEngagedMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SysDiagBrakeFaultMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct HeartbeatOkMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RxOverflowMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 6u;
+        static constexpr uint64_t kMask = 0x3Full;
+    };
+    struct SysDiagEstopActiveMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SysDiagFreeHeapKbMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SysDiagTecMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SysDiagRecMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -710,9 +1037,22 @@ struct SysDiagRpt {
 struct HostHeartbeat {
     static constexpr uint32_t kId = 0x7FCu;
     static constexpr size_t kDlc = 2u;
+    static constexpr uint32_t kCycleMs = 500u;
     static constexpr bool kExtended = false;
     uint8_t alive_ctr{};
     uint8_t health_flags{};
+    struct AliveCtrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct HealthFlagsMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -739,9 +1079,22 @@ struct HostHeartbeat {
 struct RtHeartbeat {
     static constexpr uint32_t kId = 0x7FDu;
     static constexpr size_t kDlc = 2u;
+    static constexpr uint32_t kCycleMs = 500u;
     static constexpr bool kExtended = false;
     uint8_t alive_ctr{};
     uint8_t health_flags{};
+    struct AliveCtrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct HealthFlagsMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -768,8 +1121,15 @@ struct RtHeartbeat {
 struct SysModeCmd {
     static constexpr uint32_t kId = 0x110u;
     static constexpr size_t kDlc = 1u;
+    static constexpr uint32_t kCycleMs = 0u;
     static constexpr bool kExtended = false;
     uint8_t mode{};
+    struct ModeMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -796,9 +1156,22 @@ struct SysModeCmd {
 struct RtDriveCmd {
     static constexpr uint32_t kId = 0x204u;
     static constexpr size_t kDlc = 5u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     int32_t motor_speed_mmps{};
     uint8_t gear{};
+    struct MotorSpeedMmpsMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 32u;
+        static constexpr uint64_t kMask = 0xFFFFFFFFull;
+    };
+    struct GearMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -831,8 +1204,15 @@ struct RtDriveCmd {
 struct RtBrakeCmd {
     static constexpr uint32_t kId = 0x205u;
     static constexpr size_t kDlc = 4u;
+    static constexpr uint32_t kCycleMs = 20u;
     static constexpr bool kExtended = false;
     int32_t brake_pressure_kpa{};
+    struct BrakePressureKpaMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 32u;
+        static constexpr uint64_t kMask = 0xFFFFFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -859,6 +1239,7 @@ struct RtBrakeCmd {
 struct SysHeartbeat {
     static constexpr uint32_t kId = 0x7FEu;
     static constexpr size_t kDlc = 2u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     uint8_t sys_alive_ctr{};
     bool heartbeat_ok{};
@@ -869,6 +1250,60 @@ struct SysHeartbeat {
     bool task_brake_ok{};
     bool task_dispatch_ok{};
     bool task_can_tx_ok{};
+    struct SysAliveCtrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct HeartbeatOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct EstopActiveMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ModeAutoMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct CanOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct TaskSafetyOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct TaskBrakeOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct TaskDispatchOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct TaskCanTxOkMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 7u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -925,6 +1360,7 @@ struct SysHeartbeat {
 struct VcuSesReq {
     static constexpr uint32_t kId = 0x169u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 20u;
     static constexpr bool kExtended = false;
     bool alignment_enable{};
     bool control_enable{};
@@ -935,6 +1371,60 @@ struct VcuSesReq {
     uint8_t rolling_counter{};
     uint8_t ses_veh_spd{};
     uint8_t checksum{};
+    struct AlignmentEnableMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ControlEnableMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct TargetAngleMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct TargetSpeedMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SesRollCntEnableMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesChecksumEnableMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RollingCounterMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 4u;
+        static constexpr uint64_t kMask = 0xFull;
+    };
+    struct SesVehSpdMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct ChecksumMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -998,6 +1488,7 @@ struct VcuSesReq {
 struct SesStatus {
     static constexpr uint32_t kId = 0x201u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     bool angle_status{};
     uint8_t ses_ctrl_mode_status{};
@@ -1009,6 +1500,66 @@ struct SesStatus {
     bool ses_checksum_en_status{};
     uint8_t rolling_counter{};
     uint8_t checksum{};
+    struct AngleStatusMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesCtrlModeStatusMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 2u;
+        static constexpr uint64_t kMask = 0x3ull;
+    };
+    struct ErrorStatusMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 2u;
+        static constexpr uint64_t kMask = 0x3ull;
+    };
+    struct StrAngleMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct TgtAngleSpdMeta {
+        static constexpr size_t kByte = 4u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SesSteeringTorqMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SesRollCntEnStatusMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesChecksumEnStatusMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RollingCounterMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 4u;
+        static constexpr uint64_t kMask = 0xFull;
+    };
+    struct ChecksumMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1096,6 +1647,7 @@ struct SesStatus {
 struct SesErrinfo {
     static constexpr uint32_t kId = 0x202u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     bool ses_ecuunder_volt{};
     bool ses_ecuover_volt{};
@@ -1123,6 +1675,162 @@ struct SesErrinfo {
     bool ses_str_mtr_idling{};
     bool ses_eprom{};
     uint8_t ses_veh_spd_snapshot{};
+    struct SesEcuunderVoltMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesEcuoverVoltMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesCanComErrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesEcutempErrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesDomainScMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesDomainVMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesDomainTMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesTempSensorMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 7u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesAnglePOcMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesAnglePAfMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesAngleSOcMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesAngleSAfMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesSensorPowMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesAlignmentMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesOverAngleMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesStrMtrStallMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 7u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesMtrCurtFaultMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesSensorClMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesTorqT1OcMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesTorqT1AfMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesTorqT2OcMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesTorqT2AfMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesSentAngleMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesStrMtrIdlingMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 7u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesEpromMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SesVehSpdSnapshotMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1247,9 +1955,22 @@ struct SesErrinfo {
 struct SesVersion {
     static constexpr uint32_t kId = 0x203u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 1000u;
     static constexpr bool kExtended = false;
     uint8_t ses_sw_version{};
     uint8_t ses_hw_version{};
+    struct SesSwVersionMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SesHwVersionMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1296,10 +2017,29 @@ struct SesVersion {
 struct SesTest {
     static constexpr uint32_t kId = 0x6FAu;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     int16_t ses_mtr_curt{};
     uint16_t ses_ecutemp{};
     uint16_t ses_pow_volt{};
+    struct SesMtrCurtMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SesEcutempMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SesPowVoltMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1361,6 +2101,7 @@ struct SesTest {
 struct VcuSebReq {
     static constexpr uint32_t kId = 0x7B9u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 20u;
     static constexpr bool kExtended = false;
     bool align_enable{};
     bool control_enable{};
@@ -1372,6 +2113,66 @@ struct VcuSebReq {
     bool seb_checksum_enable{};
     uint8_t rolling_counter{};
     uint8_t checksum{};
+    struct AlignEnableMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ControlEnableMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ControlModeMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct AutoBrakeMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct StrokeReqMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct PressureReqMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SebRollCntEnableMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebChecksumEnableMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RollingCounterMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 4u;
+        static constexpr uint64_t kMask = 0xFull;
+    };
+    struct ChecksumMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1430,6 +2231,7 @@ struct VcuSebReq {
 struct SebStatus {
     static constexpr uint32_t kId = 0x721u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     bool alignment_status{};
     bool control_enable_sts{};
@@ -1443,6 +2245,78 @@ struct SebStatus {
     bool seb_checksum_en_status{};
     uint8_t rolling_counter{};
     uint8_t checksum{};
+    struct AlignmentStatusMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ControlEnableStsMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ControlModeStsMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 2u;
+        static constexpr uint64_t kMask = 0x3ull;
+    };
+    struct SebAutoBrakeStatusMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct ErrorStatusMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 2u;
+        static constexpr uint64_t kMask = 0x3ull;
+    };
+    struct StrokeValueMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct PressureValueMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct AngleValueMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SebRollCntEnStatusMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebChecksumEnStatusMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct RollingCounterMeta {
+        static constexpr size_t kByte = 6u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 4u;
+        static constexpr uint64_t kMask = 0xFull;
+    };
+    struct ChecksumMeta {
+        static constexpr size_t kByte = 7u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1507,6 +2381,7 @@ struct SebStatus {
 struct SebErrinfo {
     static constexpr uint32_t kId = 0x731u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     bool seb_ecuunder_volt{};
     bool seb_ecuover_volt{};
@@ -1531,6 +2406,144 @@ struct SebErrinfo {
     bool seb_mtr_no_load{};
     bool seb_pre_sensor_over{};
     bool seb_low_volt_charging{};
+    struct SebEcuunderVoltMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebEcuoverVoltMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebCanComErrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebEcutempErrMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebDomainScMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebDomainVMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebDomainTMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebAnglePOcMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 7u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebAnglePAfMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebAngleSOcMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebAngleSAfMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebNoPreSensorMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebSensorUclMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebAlignmentErrMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebAngleOverMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 7u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebMtrStallMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebMtrDcMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 2u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebOilErrMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 3u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebInitOilMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 4u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebSentValueMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 5u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebMtrNoLoadMeta {
+        static constexpr size_t kByte = 2u;
+        static constexpr uint8_t kBitOffset = 6u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebPreSensorOverMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
+    struct SebLowVoltChargingMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 1u;
+        static constexpr uint8_t kWidth = 1u;
+        static constexpr uint64_t kMask = 0x1ull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1645,9 +2658,22 @@ struct SebErrinfo {
 struct SebVersion {
     static constexpr uint32_t kId = 0x741u;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 1000u;
     static constexpr bool kExtended = false;
     uint8_t seb_sw_version{};
     uint8_t seb_hw_version{};
+    struct SebSwVersionMeta {
+        static constexpr size_t kByte = 0u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
+    struct SebHwVersionMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 8u;
+        static constexpr uint64_t kMask = 0xFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;
@@ -1694,10 +2720,29 @@ struct SebVersion {
 struct SebTest {
     static constexpr uint32_t kId = 0x6FBu;
     static constexpr size_t kDlc = 8u;
+    static constexpr uint32_t kCycleMs = 10u;
     static constexpr bool kExtended = false;
     int16_t seb_mtr_curr{};
     uint16_t seb_ecutemp{};
     uint16_t seb_pow_volt{};
+    struct SebMtrCurrMeta {
+        static constexpr size_t kByte = 1u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SebEcutempMeta {
+        static constexpr size_t kByte = 3u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
+    struct SebPowVoltMeta {
+        static constexpr size_t kByte = 5u;
+        static constexpr uint8_t kBitOffset = 0u;
+        static constexpr uint8_t kWidth = 16u;
+        static constexpr uint64_t kMask = 0xFFFFull;
+    };
 
     CodecStatus pack(uint8_t* dst, size_t len) const noexcept {
         if (!dst && kDlc != 0) return CodecStatus::NullBuffer;

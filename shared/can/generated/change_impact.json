@@ -1,0 +1,900 @@
+{
+  "messages": [
+    {
+      "instance": "high:safety_estop",
+      "message": "SAFETY_ESTOP",
+      "id": "0x1",
+      "bus": "high",
+      "dlc": 0,
+      "cycle_ms": 0,
+      "wire_hash": "8394b7f5521e6b6663879ec0fc0caad498760358ed61e89a382520534a8954ca",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::SafetyEstop",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SAFETY_ESTOP"
+    },
+    {
+      "instance": "high:sys_safety_sts",
+      "message": "SYS_SAFETY_STS",
+      "id": "0x11",
+      "bus": "high",
+      "dlc": 3,
+      "cycle_ms": 200,
+      "wire_hash": "d1d13e1359723c9ccfb678bb2c32e69f44f68a9ab68ef02ee09c6dff25e0cb9f",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::SysSafetySts",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_SAFETY_STS"
+    },
+    {
+      "instance": "high:hmi_mode_req",
+      "message": "HMI_MODE_REQ",
+      "id": "0x111",
+      "bus": "high",
+      "dlc": 2,
+      "cycle_ms": 1000,
+      "wire_hash": "9ad494f18654d2426bb159b93767741a2f6160ebdae8148d6bd8c6ca92ae2458",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HmiModeReq",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HMI_MODE_REQ"
+    },
+    {
+      "instance": "high:hmi_pwr_req",
+      "message": "HMI_PWR_REQ",
+      "id": "0x112",
+      "bus": "high",
+      "dlc": 2,
+      "cycle_ms": 1000,
+      "wire_hash": "7ec0e3db8681b7565c2f74441b43e0fc1e33d50ca32ba9294c59b16698020dd3",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HmiPwrReq",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HMI_PWR_REQ"
+    },
+    {
+      "instance": "high:sys_throttle_sts",
+      "message": "SYS_THROTTLE_STS",
+      "id": "0x120",
+      "bus": "high",
+      "dlc": 2,
+      "cycle_ms": 10,
+      "wire_hash": "a58040a0a220fa0403f5482ddef7b40a8575d777fb89ee5af2ad746e258f29df",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::SysThrottleSts",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_THROTTLE_STS"
+    },
+    {
+      "instance": "high:mtr_motor_fbk",
+      "message": "MTR_MOTOR_FBK",
+      "id": "0x206",
+      "bus": "high",
+      "dlc": 4,
+      "cycle_ms": 20,
+      "wire_hash": "16cfa9f7a8d5460e7eaddabf3f38f493f763d50341ac907b4a67784e7c66d0a8",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::MtrMotorFbk",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify MTR_MOTOR_FBK"
+    },
+    {
+      "instance": "high:rt_state_rpt",
+      "message": "RT_STATE_RPT",
+      "id": "0x210",
+      "bus": "high",
+      "dlc": 6,
+      "cycle_ms": 100,
+      "wire_hash": "a0311353ec0bc7c7f8627d3d12004a916c3514e5e69c361fcad849e076257185",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::RtStateRpt",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_STATE_RPT"
+    },
+    {
+      "instance": "high:rt_pid_rpt",
+      "message": "RT_PID_RPT",
+      "id": "0x220",
+      "bus": "high",
+      "dlc": 6,
+      "cycle_ms": 100,
+      "wire_hash": "d0154cf3257e891d270ba697450a2761926ae00823b7e2e1bbe2f9e7553cb2d7",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::RtPidRpt",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_PID_RPT"
+    },
+    {
+      "instance": "high:host_drive_cmd",
+      "message": "HOST_DRIVE_CMD",
+      "id": "0x300",
+      "bus": "high",
+      "dlc": 8,
+      "cycle_ms": 10,
+      "wire_hash": "afe5f690855b5222992634f48ceff9b5bbf7517f84481f7716e458f914a4b643",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HostDriveCmd",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HOST_DRIVE_CMD"
+    },
+    {
+      "instance": "high:host_brake_req",
+      "message": "HOST_BRAKE_REQ",
+      "id": "0x301",
+      "bus": "high",
+      "dlc": 4,
+      "cycle_ms": 0,
+      "wire_hash": "4f62fdff2831ff869e9f7d3e1d1d53a27646c98b58dc1c90cdc16fdb944c4fd8",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HostBrakeReq",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HOST_BRAKE_REQ"
+    },
+    {
+      "instance": "high:host_light_cmd",
+      "message": "HOST_LIGHT_CMD",
+      "id": "0x302",
+      "bus": "high",
+      "dlc": 1,
+      "cycle_ms": 0,
+      "wire_hash": "05afbfd987b42ea9e0befa0b121bd1c1e4d0253976c72a1a268c4ad34efefcc8",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HostLightCmd",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HOST_LIGHT_CMD"
+    },
+    {
+      "instance": "high:steer_diag",
+      "message": "STEER_DIAG",
+      "id": "0x310",
+      "bus": "high",
+      "dlc": 8,
+      "cycle_ms": 100,
+      "wire_hash": "de659a6965699c2a2753b859a76391b7db1f23f30e2ce608098be263a16f7643",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::SteerDiag",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify STEER_DIAG"
+    },
+    {
+      "instance": "high:brake_diag",
+      "message": "BRAKE_DIAG",
+      "id": "0x311",
+      "bus": "high",
+      "dlc": 8,
+      "cycle_ms": 100,
+      "wire_hash": "e1880e94cf01db57e0ca460b60c6c8bbdb4a80753b17affd127a86a0b36a10c9",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::BrakeDiag",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify BRAKE_DIAG"
+    },
+    {
+      "instance": "high:host_obstacle_dist",
+      "message": "HOST_OBSTACLE_DIST",
+      "id": "0x400",
+      "bus": "high",
+      "dlc": 4,
+      "cycle_ms": 100,
+      "wire_hash": "be4477b66152efb05c604aae9514344d93228086efe342a7676a847515cdaa41",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HostObstacleDist",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HOST_OBSTACLE_DIST"
+    },
+    {
+      "instance": "high:sys_diag_rpt",
+      "message": "SYS_DIAG_RPT",
+      "id": "0x600",
+      "bus": "high",
+      "dlc": 8,
+      "cycle_ms": 1000,
+      "wire_hash": "099354462cd6730ffb5b504650fd2ffc5542f071171e19df98ced9e5199156f1",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::SysDiagRpt",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_DIAG_RPT"
+    },
+    {
+      "instance": "high:host_heartbeat",
+      "message": "HOST_HEARTBEAT",
+      "id": "0x7FC",
+      "bus": "high",
+      "dlc": 2,
+      "cycle_ms": 500,
+      "wire_hash": "11dce8c39bcaee16333a4ddc2fe1411744b72c40c4665be40dce1b3ccc4f7659",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::HostHeartbeat",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HOST_HEARTBEAT"
+    },
+    {
+      "instance": "high:rt_heartbeat",
+      "message": "RT_HEARTBEAT",
+      "id": "0x7FD",
+      "bus": "high",
+      "dlc": 2,
+      "cycle_ms": 500,
+      "wire_hash": "be83e0690160b71b60cc8967f9501c6dc7006abe07e5f9a82ea96ee52ee0fd2b",
+      "source": "shared/can/can_high.yaml",
+      "generated_type": "can::gen::RtHeartbeat",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_HEARTBEAT"
+    },
+    {
+      "instance": "low:safety_estop",
+      "message": "SAFETY_ESTOP",
+      "id": "0x1",
+      "bus": "low",
+      "dlc": 0,
+      "cycle_ms": 0,
+      "wire_hash": "1790087d45ae1793879f959ed4e5624a2c4571a32cba37bc7ef972ed607506b8",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SafetyEstop",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SAFETY_ESTOP"
+    },
+    {
+      "instance": "low:sys_safety_sts",
+      "message": "SYS_SAFETY_STS",
+      "id": "0x11",
+      "bus": "low",
+      "dlc": 3,
+      "cycle_ms": 200,
+      "wire_hash": "ff1550b9d120c4f60c557824bf228933d0de01e3d4b0d4998045672cbc68eacd",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SysSafetySts",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_SAFETY_STS"
+    },
+    {
+      "instance": "low:sys_mode_cmd",
+      "message": "SYS_MODE_CMD",
+      "id": "0x110",
+      "bus": "low",
+      "dlc": 1,
+      "cycle_ms": 0,
+      "wire_hash": "343d03c635d3e9815db5cc2ac40ed10536deeabf29e914b77e3bb4dcff5a7c01",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SysModeCmd",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_MODE_CMD"
+    },
+    {
+      "instance": "low:hmi_mode_req",
+      "message": "HMI_MODE_REQ",
+      "id": "0x111",
+      "bus": "low",
+      "dlc": 2,
+      "cycle_ms": 1000,
+      "wire_hash": "5ef3c9818589d83c7e0bc5f830b7319c890cb3cf5ce5e473487cb50abe45202e",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::HmiModeReq",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HMI_MODE_REQ"
+    },
+    {
+      "instance": "low:hmi_pwr_req",
+      "message": "HMI_PWR_REQ",
+      "id": "0x112",
+      "bus": "low",
+      "dlc": 2,
+      "cycle_ms": 1000,
+      "wire_hash": "28fe4f9bdbec5a9b3bc247cb8e199767e04dfc35bd904103aca0b95196c1f7fe",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::HmiPwrReq",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HMI_PWR_REQ"
+    },
+    {
+      "instance": "low:sys_throttle_sts",
+      "message": "SYS_THROTTLE_STS",
+      "id": "0x120",
+      "bus": "low",
+      "dlc": 2,
+      "cycle_ms": 10,
+      "wire_hash": "84715bb089301f19017bd8900fccf93e5f44467f8d3c9ba01addbb26b4a90414",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SysThrottleSts",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_THROTTLE_STS"
+    },
+    {
+      "instance": "low:rt_drive_cmd",
+      "message": "RT_DRIVE_CMD",
+      "id": "0x204",
+      "bus": "low",
+      "dlc": 5,
+      "cycle_ms": 10,
+      "wire_hash": "0383859b41897445b665d85059681f27bde2f938c990e868271f9226572c33b5",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::RtDriveCmd",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_DRIVE_CMD"
+    },
+    {
+      "instance": "low:rt_brake_cmd",
+      "message": "RT_BRAKE_CMD",
+      "id": "0x205",
+      "bus": "low",
+      "dlc": 4,
+      "cycle_ms": 20,
+      "wire_hash": "de89e63bd732b294c275875ad677ce92c551bc6af9f09b862854050ec007f6df",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::RtBrakeCmd",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_BRAKE_CMD"
+    },
+    {
+      "instance": "low:mtr_motor_fbk",
+      "message": "MTR_MOTOR_FBK",
+      "id": "0x206",
+      "bus": "low",
+      "dlc": 4,
+      "cycle_ms": 20,
+      "wire_hash": "202a2acf85b685bd24bf00f26e5abddd9383f8c807190820f5be7666fd8ac934",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::MtrMotorFbk",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify MTR_MOTOR_FBK"
+    },
+    {
+      "instance": "low:rt_state_rpt",
+      "message": "RT_STATE_RPT",
+      "id": "0x210",
+      "bus": "low",
+      "dlc": 6,
+      "cycle_ms": 100,
+      "wire_hash": "1a5e5d7ab9c0fd9f0fab916e4d4a8661601562e450b4e037ed6141f51d02ebdc",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::RtStateRpt",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_STATE_RPT"
+    },
+    {
+      "instance": "low:host_light_cmd",
+      "message": "HOST_LIGHT_CMD",
+      "id": "0x302",
+      "bus": "low",
+      "dlc": 1,
+      "cycle_ms": 0,
+      "wire_hash": "a94e4886ea303f19accd09f5b5191072ad925f770b1dbed934b9e2a8051de531",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::HostLightCmd",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify HOST_LIGHT_CMD"
+    },
+    {
+      "instance": "low:sys_diag_rpt",
+      "message": "SYS_DIAG_RPT",
+      "id": "0x600",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 1000,
+      "wire_hash": "7a8c4ab420f9f3a0fd5110d4272f03e0b595ce0e5fb467bb401bc8e5fbb1d9f9",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SysDiagRpt",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_DIAG_RPT"
+    },
+    {
+      "instance": "low:rt_heartbeat",
+      "message": "RT_HEARTBEAT",
+      "id": "0x7FD",
+      "bus": "low",
+      "dlc": 2,
+      "cycle_ms": 500,
+      "wire_hash": "0e501c8d81cdf9863a86fe99cebd846a9c211cc337a3f206dc2c839fc0088aca",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::RtHeartbeat",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify RT_HEARTBEAT"
+    },
+    {
+      "instance": "low:sys_heartbeat",
+      "message": "SYS_HEARTBEAT",
+      "id": "0x7FE",
+      "bus": "low",
+      "dlc": 2,
+      "cycle_ms": 100,
+      "wire_hash": "38c306abebcd9bcf859857c64e4b658b52a46a811f21f09b5779923fc90602ca",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SysHeartbeat",
+      "manual_mapping": null,
+      "manual_behavior": [],
+      "consumers": [],
+      "tests": [
+        "native-test/test/test_generated_codecs.cpp"
+      ],
+      "build_targets": [],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SYS_HEARTBEAT"
+    },
+    {
+      "instance": "low:vcu_ses_req",
+      "message": "VCU_SES_REQ",
+      "id": "0x169",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 20,
+      "wire_hash": "9551d686b3e371cdd77d183829b6efa057b225abeeb48f0c3bacaef1829c9371",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::VcuSesReq",
+      "manual_mapping": "CAN-MANUAL-SES-COMMAND",
+      "manual_behavior": [
+        "checksum",
+        "rolling_counter",
+        "vendor_enable_bits"
+      ],
+      "consumers": [
+        "rt-esp32/src/main.cpp"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify VCU_SES_REQ"
+    },
+    {
+      "instance": "low:ses_status",
+      "message": "SES_STATUS",
+      "id": "0x201",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 10,
+      "wire_hash": "36b655886878907a9356c8b6068a5d6ff546a5aa82c700019bd250453c5c27be",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SesStatus",
+      "manual_mapping": "CAN-MANUAL-SES-STATUS",
+      "manual_behavior": [
+        "checksum",
+        "rolling_counter",
+        "overlapping_vendor_layout"
+      ],
+      "consumers": [
+        "rt-esp32/src/can_dispatch.h",
+        "rt-esp32/src/can_rx_router.h"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SES_STATUS"
+    },
+    {
+      "instance": "low:ses_err_info",
+      "message": "SES_ERR_INFO",
+      "id": "0x202",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 100,
+      "wire_hash": "d1ae58b4c528184cae334107b4c265c168adbdacabf00dfbb0390ad0a1a9a859",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SesErrinfo",
+      "manual_mapping": "CAN-MANUAL-SES-ERRINFO",
+      "manual_behavior": [
+        "fault_severity_mapping"
+      ],
+      "consumers": [
+        "rt-esp32/src/can_dispatch.h"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SES_ERR_INFO"
+    },
+    {
+      "instance": "low:ses_version",
+      "message": "SES_VERSION",
+      "id": "0x203",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 1000,
+      "wire_hash": "8cfa18a934d9de7810543f3f95ff687138df50c2d972e437c68fab21b3cac926",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SesVersion",
+      "manual_mapping": "CAN-MANUAL-SES-VERSION",
+      "manual_behavior": [
+        "vendor_version_format"
+      ],
+      "consumers": [
+        "rt-esp32/src/can_dispatch.h"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SES_VERSION"
+    },
+    {
+      "instance": "low:ses_test",
+      "message": "SES_TEST",
+      "id": "0x6FA",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 10,
+      "wire_hash": "b00490b5abe3cdb5cb2a198d567cac0fa90b4eb3d559479b664f29f7f355f093",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SesTest",
+      "manual_mapping": "CAN-MANUAL-SES-TEST",
+      "manual_behavior": [
+        "vendor_little_endian_telemetry"
+      ],
+      "consumers": [
+        "rt-esp32/src/can_dispatch.h"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SES_TEST"
+    },
+    {
+      "instance": "low:vcu_seb_req",
+      "message": "VCU_SEB_REQ",
+      "id": "0x7B9",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 20,
+      "wire_hash": "fb3ed8bd44df1fad9d563085bf4a6ab38bfa0dc02fbc8c9997c46628d6b75dc2",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::VcuSebReq",
+      "manual_mapping": "CAN-MANUAL-SEB-COMMAND",
+      "manual_behavior": [
+        "checksum",
+        "rolling_counter",
+        "pressure_stroke_modes"
+      ],
+      "consumers": [
+        "rt-esp32/src/main.cpp",
+        "sys-esp32/src/main.cpp"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32",
+        "sys-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify VCU_SEB_REQ"
+    },
+    {
+      "instance": "low:seb_status",
+      "message": "SEB_STATUS",
+      "id": "0x721",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 10,
+      "wire_hash": "333f3b4392e25e2a26e2abfa9df79490962ac1471b36b7db777889e37799720f",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SebStatus",
+      "manual_mapping": "CAN-MANUAL-SEB-STATUS",
+      "manual_behavior": [
+        "checksum",
+        "rolling_counter",
+        "pressure_stroke_modes",
+        "overlapping_vendor_layout"
+      ],
+      "consumers": [
+        "rt-esp32/src/can_dispatch.h",
+        "sys-esp32/src/main.cpp"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32",
+        "sys-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SEB_STATUS"
+    },
+    {
+      "instance": "low:seb_err_info",
+      "message": "SEB_ERR_INFO",
+      "id": "0x731",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 100,
+      "wire_hash": "96606ecb51cf0f5bc59a89a6a2dd9b74a9e760c9ca665ef8481b5042ba91e743",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SebErrinfo",
+      "manual_mapping": "CAN-MANUAL-SEB-ERRINFO",
+      "manual_behavior": [
+        "fault_severity_mapping"
+      ],
+      "consumers": [
+        "sys-esp32/src/main.cpp"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "sys-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SEB_ERR_INFO"
+    },
+    {
+      "instance": "low:seb_version",
+      "message": "SEB_VERSION",
+      "id": "0x741",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 1000,
+      "wire_hash": "d763d32fb48346b51865393420acebde5977930d345a18d93f07c12e8a3e553e",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SebVersion",
+      "manual_mapping": "CAN-MANUAL-SEB-VERSION",
+      "manual_behavior": [
+        "vendor_version_format"
+      ],
+      "consumers": [
+        "sys-esp32/src/main.cpp"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "sys-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SEB_VERSION"
+    },
+    {
+      "instance": "low:seb_test",
+      "message": "SEB_TEST",
+      "id": "0x6FB",
+      "bus": "low",
+      "dlc": 8,
+      "cycle_ms": 10,
+      "wire_hash": "202ad2e35f89265d57f88f62f9b5acd45e62e3d79e50cccb121bf3dda9a0f9fa",
+      "source": "shared/can/can_low.yaml",
+      "generated_type": "can::gen::SebTest",
+      "manual_mapping": "CAN-MANUAL-SEB-TEST",
+      "manual_behavior": [
+        "vendor_little_endian_telemetry"
+      ],
+      "consumers": [
+        "rt-esp32/src/can_dispatch.h",
+        "sys-esp32/src/main.cpp"
+      ],
+      "tests": [
+        "native-test/test/test_vendor_protocol.cpp"
+      ],
+      "build_targets": [
+        "rt-esp32",
+        "sys-esp32"
+      ],
+      "regenerate": "python shared/can/generate_code.py",
+      "verify": "python tools/can_change.py verify SEB_TEST"
+    }
+  ]
+}

@@ -259,6 +259,8 @@ target_include_directories(gateway_forwarding PRIVATE ${CMAKE_SOURCE_DIR}/../sha
 
 add_executable(generated_codecs test/test_generated_codecs.cpp)
 target_include_directories(generated_codecs PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
+add_executable(vendor_protocol test/test_vendor_protocol.cpp)
+target_include_directories(vendor_protocol PRIVATE ${CMAKE_SOURCE_DIR}/../shared)
 target_include_directories(dual_heartbeat PRIVATE
     ${CMAKE_SOURCE_DIR}/../shared
     ${CMAKE_SOURCE_DIR}/../rt-esp32/src
@@ -283,6 +285,7 @@ add_test(NAME spi_failure          COMMAND spi_failure)
 add_test(NAME dlc_consistency      COMMAND dlc_consistency)
 add_test(NAME gateway_forwarding   COMMAND gateway_forwarding)
 add_test(NAME generated_codecs     COMMAND generated_codecs)
+add_test(NAME vendor_protocol      COMMAND vendor_protocol)
 
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native

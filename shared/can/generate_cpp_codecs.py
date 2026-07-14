@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import re
 from dataclasses import dataclass
+from pathlib import Path
+import yaml
 
 from can_signals_schema import network_contract_hash, wire_protocol_hash
 
@@ -76,6 +79,22 @@ def _range_condition(member: str, lo: int, hi: int, limits: tuple[int, int]) -> 
     if hi < limits[1]:
         checks.append(f"{member} > {hi}")
     return " || ".join(checks)
+
+
+def message_wire_hash(entry: Entry) -> str:
+    msg = entry.message
+    payload = {
+        "bus": entry.bus, "byte_order": entry.byte_order, "id": msg.id,
+        "name": msg.name, "dlc": msg.dlc,
+        "signals": [{
+            "name": s.name, "key": s.key, "byte": s.byte,
+            "bit_offset": s.bit_offset, "size": s.size, "type": s.type.value,
+            "factor": s.factor, "offset": s.offset, "min": s.min, "max": s.max,
+            "values": s.values, "counter_kind": s.counter_kind,
+            "reset_scope": s.reset_scope, "expected_increment": s.expected_increment,
+        } for s in msg.signals],
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def generate_cpp_codecs(db) -> str:
@@ -175,6 +194,7 @@ inline int64_t sign_extend(uint64_t value, uint8_t bits) noexcept {
         lines += [f"\nstruct {type_name} {{",
                   f"    static constexpr uint32_t kId = 0x{msg.id:X}u;",
                   f"    static constexpr size_t kDlc = {msg.dlc}u;",
+                  f"    static constexpr uint32_t kCycleMs = {msg.cycle_ms}u;",
                   "    static constexpr bool kExtended = false;"]
         member_names: set[str] = set()
         members: list[tuple[str, object]] = []
@@ -185,6 +205,14 @@ inline int64_t sign_extend(uint64_t value, uint8_t bits) noexcept {
             member_names.add(member)
             members.append((member, sig))
             lines.append(f"    {cpp_type(sig)} {member}{{}};")
+        for member, sig in members:
+            mask = (1 << sig.size) - 1
+            lines += [f"    struct {pascal(member)}Meta {{",
+                      f"        static constexpr size_t kByte = {sig.byte}u;",
+                      f"        static constexpr uint8_t kBitOffset = {sig.bit_offset}u;",
+                      f"        static constexpr uint8_t kWidth = {sig.size}u;",
+                      f"        static constexpr uint64_t kMask = 0x{mask:X}ull;",
+                      "    };"]
         lines += ["", "    CodecStatus pack(uint8_t* dst, size_t len) const noexcept {",
                   "        if (!dst && kDlc != 0) return CodecStatus::NullBuffer;",
                   "        if (len < kDlc) return CodecStatus::BufferTooSmall;"]
@@ -250,7 +278,8 @@ def generate_codec_manifest(db) -> str:
             "instance": f"{entry.bus}:{snake(msg.name)}", "key": snake(msg.name),
             "type": pascal(msg.name), "id": f"0x{msg.id:X}",
             "bus": entry.bus, "dlc": msg.dlc, "extended": False,
-            "byte_order": entry.byte_order,
+            "byte_order": entry.byte_order, "cycle_ms": msg.cycle_ms,
+            "wire_hash": message_wire_hash(entry),
             "class": "event" if not msg.signals else
                      "stateful" if any((s.key or "").endswith("counter") or "alive" in (s.key or "") for s in msg.signals) else
                      "packed" if any(s.size == 1 or s.bit_offset for s in msg.signals) else "simple",
@@ -267,6 +296,30 @@ def generate_codec_manifest(db) -> str:
     return json.dumps({"wire_protocol_hash": wire_protocol_hash(db),
                        "network_contract_hash": network_contract_hash(db),
                        "messages": messages}, indent=2) + "\n"
+
+
+def generate_change_impact(db, mapping_path: Path) -> str:
+    manifest = json.loads(generate_codec_manifest(db))
+    mapping_doc = yaml.safe_load(mapping_path.read_text(encoding="utf-8")) if mapping_path.exists() else {}
+    mappings = {item["message"]: item for item in mapping_doc.get("mappings", [])}
+    result = []
+    for message in manifest["messages"]:
+        manual = mappings.get(message["key"].upper())
+        result.append({
+            "instance": message["instance"], "message": message["key"].upper(),
+            "id": message["id"], "bus": message["bus"], "dlc": message["dlc"],
+            "cycle_ms": message["cycle_ms"], "wire_hash": message["wire_hash"],
+            "source": f"shared/can/can_{message['bus']}.yaml",
+            "generated_type": f"can::gen::{message['type']}",
+            "manual_mapping": manual["id"] if manual else None,
+            "manual_behavior": manual.get("manual_behavior", []) if manual else [],
+            "consumers": manual.get("consumers", []) if manual else [],
+            "tests": manual.get("tests", []) if manual else ["native-test/test/test_generated_codecs.cpp"],
+            "build_targets": manual.get("build_targets", []) if manual else [],
+            "regenerate": "python shared/can/generate_code.py",
+            "verify": f"python tools/can_change.py verify {message['key'].upper()}",
+        })
+    return json.dumps({"messages": result}, indent=2) + "\n"
 
 
 def generate_error_registry() -> str:
