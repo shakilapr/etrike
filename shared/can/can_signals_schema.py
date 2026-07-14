@@ -82,6 +82,10 @@ class SignalDef(BaseModel):
     receivers: list[str] = Field(default_factory=list)
     comment: str = ""
     values: Optional[dict[int, str]] = Field(None, description="Value table for enums")
+    multiplexed: bool = False
+    counter_kind: Optional[str] = Field(None, pattern=r"^(wrapping|saturating|monotonic)$")
+    reset_scope: Optional[str] = Field(None, pattern=r"^(message|bus|ecu_restart|power_cycle)$")
+    expected_increment: int = Field(1, ge=0)
 
     @field_validator("values", mode="before")
     @classmethod
@@ -183,14 +187,12 @@ class ProtocolDef(BaseModel):
 
     @model_validator(mode="after")
     def check_unique_message_ids(self):
-        """Warn on duplicate IDs (forwarded frames intentionally share IDs)."""
-        from warnings import warn
+        """Reject duplicate IDs inside one bus protocol."""
         ids_seen: dict[int, str] = {}
         for msg in self.messages:
             if msg.id in ids_seen:
-                warn(f"Duplicate CAN ID 0x{msg.id:03X}: "
-                     f"'{ids_seen[msg.id]}' and '{msg.name}' "
-                     f"(may be intentional for forwarded frames)")
+                raise ValueError(f"Duplicate CAN ID 0x{msg.id:03X}: "
+                                 f"'{ids_seen[msg.id]}' and '{msg.name}'")
             ids_seen[msg.id] = msg.name
         return self
 
@@ -213,6 +215,23 @@ class ProtocolDef(BaseModel):
                 raise ValueError(
                     f"Duplicate signal names in message '{msg.name}': {dupes}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_signal_overlaps(self):
+        """Reject accidental overlaps; vendor multiplexed fields opt in explicitly."""
+        for msg in self.messages:
+            occupied: dict[int, SignalDef] = {}
+            for sig in msg.signals:
+                for bit in range(sig.byte * 8 + sig.bit_offset,
+                                 sig.byte * 8 + sig.bit_offset + sig.size):
+                    previous = occupied.get(bit)
+                    if previous and not (previous.multiplexed or sig.multiplexed):
+                        raise ValueError(
+                            f"Signals '{previous.name}' and '{sig.name}' overlap at "
+                            f"bit {bit} in message '{msg.name}' without multiplexed=true"
+                        )
+                    occupied[bit] = sig
         return self
 
 
@@ -245,6 +264,7 @@ class CanDatabase(BaseModel):
                                 f"receiver '{recv}' not in declared ECUs: {ecu_names}"
                             )
         return self
+
     @staticmethod
     def _wire_signature(msg: MessageDef) -> dict:
         """Semantic payload signature for a message duplicated across buses."""
@@ -298,14 +318,41 @@ class CanDatabase(BaseModel):
         return self
 
 
-def semantic_protocol_hash(db: CanDatabase) -> str:
-    """Return a stable hash of normalized protocol semantics."""
-    normalized = json.dumps(
-        db.model_dump(mode="json", exclude={"description"}),
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+def _without_documentation(value):
+    if isinstance(value, dict):
+        return {k: _without_documentation(v) for k, v in value.items()
+                if k not in {"description", "comment", "output"}}
+    if isinstance(value, list):
+        return [_without_documentation(v) for v in value]
+    return value
+
+
+def wire_protocol_hash(db: CanDatabase) -> str:
+    """Hash only payload semantics; comments, routes and timing cannot churn it."""
+    protocols = []
+    seen: set[str] = set()
+    for proto in db.protocols.values():
+        for msg in proto.messages:
+            if msg.name in seen:
+                continue
+            seen.add(msg.name)
+            protocols.append({"byte_order": proto.byte_order.value,
+                              "message": CanDatabase._wire_signature(msg)})
+    normalized = json.dumps(_without_documentation(protocols), sort_keys=True,
+                            separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(normalized).hexdigest()
+
+
+def network_contract_hash(db: CanDatabase) -> str:
+    """Hash wire semantics plus topology, routing and cycle-time behavior."""
+    normalized = json.dumps(_without_documentation(db.model_dump(mode="json")),
+                            sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(normalized).hexdigest()
+
+
+def semantic_protocol_hash(db: CanDatabase) -> str:
+    """Compatibility alias for consumers that currently expose one contract hash."""
+    return network_contract_hash(db)
 
 
 # ── Loader ────────────────────────────────────────────────────────────
