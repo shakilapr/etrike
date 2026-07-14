@@ -1,7 +1,7 @@
 #pragma once
 // Quadrature encoder interface using ESP32-S3 PCNT (Pulse Counter) peripheral.
 //
-// COMPILE-DISABLED by default: #ifdef CONFIG_ENABLE_ENCODERS
+// COMPILE-DISABLED by default: ETRIKE_RT_ENCODERS=0 (set in platformio.ini)
 // Encoders are NOT physically fitted to the vehicle. The PCNT peripheral
 // would configure floating inputs that count noise pulses if enabled without
 // hardware. Enable only after:
@@ -24,7 +24,7 @@
 
 namespace rt {
 
-#ifdef CONFIG_ENABLE_ENCODERS
+#if ETRIKE_RT_ENCODERS
 
 // ── Active implementation (compiled only when encoders fitted) ───────
 
@@ -54,7 +54,7 @@ void encoder_reset(int index);
 //       Default assumes 1024 PPR with 4x decoding = 4096 pulses/rev.
 float encoder_read_speed_mmps(int index, float dt_s);
 
-#else  // !CONFIG_ENABLE_ENCODERS
+#else  // !ETRIKE_RT_ENCODERS
 
 // ── Stub implementations — compiled when encoders not fitted ─────────
 // All functions return 0 / no-op. No PCNT hardware is configured.
@@ -66,6 +66,6 @@ inline void encoder_reset_all() {}
 inline void encoder_reset(int) {}
 inline float encoder_read_speed_mmps(int, float) { return 0.0f; }
 
-#endif // CONFIG_ENABLE_ENCODERS
+#endif // ETRIKE_RT_ENCODERS
 
 } // namespace rt

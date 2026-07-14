@@ -21,7 +21,7 @@
 
 #include "encoder_pcnt.h"
 
-#ifdef CONFIG_ENABLE_ENCODERS
+#if ETRIKE_RT_ENCODERS
 
 #include "driver/pcnt.h"
 #include "driver/gpio.h"
@@ -169,4 +169,4 @@ float encoder_read_speed_mmps(int index, float dt_s) {
 
 } // namespace rt
 
-#endif // CONFIG_ENABLE_ENCODERS
+#endif // ETRIKE_RT_ENCODERS
