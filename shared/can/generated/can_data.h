@@ -7,7 +7,7 @@
 
 namespace can::data {
 
-constexpr char kProtocolHash[] = "ec1352e88365a8aa150550033b0614b12385156cf72eaa873d26115be731282f";
+constexpr char kProtocolHash[] = "d65c630621446c8cf2f6c64a40250581ba6142f8c56813aece3bc687a0132ae7";
 
 // ── CAN ID constants ────────────────────────────────────
 constexpr uint16_t kIdSAFETYESTOP = 0x001;  // SAFETY_ESTOP
