@@ -155,14 +155,25 @@ add_executable(protocol_generated_vectors
 )
 target_link_libraries(protocol_generated_vectors PRIVATE protocol_headers)
 
+add_executable(protocol_compat
+    ${ETRIKE_ROOT}/protocol/tests/cpp/test_compat.cpp
+)
+target_link_libraries(protocol_compat PRIVATE protocol_headers)
+
+add_executable(protocol_compat_cpp11
+    ${ETRIKE_ROOT}/protocol/tests/cpp/test_compat_cpp11.cpp
+)
+set_property(TARGET protocol_compat_cpp11 PROPERTY CXX_STANDARD 11)
+target_link_libraries(protocol_compat_cpp11 PRIVATE protocol_headers)
+
 # ── MCP2515 CNF config test ──────────────────────────────────────────
 add_executable(mcp2515_config
     test/test_mcp2515_config.cpp
 )
 target_include_directories(mcp2515_config PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 # The driver needs RT configuration headers, but no FreeRTOS or HAL library.
@@ -174,8 +185,8 @@ add_executable(rt_can_rx_router
 target_link_libraries(rt_can_rx_router PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_can_rx_router PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -188,8 +199,8 @@ target_link_libraries(rt_can_dispatch PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_can_dispatch PRIVATE
     ${freertos_kernel_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -201,8 +212,8 @@ add_executable(rt_safety_monitor
 target_link_libraries(rt_safety_monitor PRIVATE freertos hal_stubs virtual_can)
 target_include_directories(rt_safety_monitor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -259,12 +270,10 @@ target_link_libraries(dlc_consistency PRIVATE protocol_headers)
 
 add_executable(gateway_forwarding test/test_gateway_forwarding.cpp)
 target_link_libraries(gateway_forwarding PRIVATE protocol_headers)
-
-add_executable(generated_codecs test/test_generated_codecs.cpp)
-target_link_libraries(generated_codecs PRIVATE protocol_headers)
+target_link_libraries(dual_heartbeat PRIVATE protocol_headers)
 target_include_directories(dual_heartbeat PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -273,6 +282,8 @@ enable_testing()
 add_test(NAME smoke               COMMAND smoke_test)
 add_test(NAME protocol_core_custom_supervision COMMAND protocol_core_custom_supervision)
 add_test(NAME protocol_generated_vectors COMMAND protocol_generated_vectors)
+add_test(NAME protocol_compat      COMMAND protocol_compat)
+add_test(NAME protocol_compat_cpp11 COMMAND protocol_compat_cpp11)
 add_test(NAME mcp2515_config      COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
 add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
@@ -291,7 +302,6 @@ add_test(NAME signal_chains        COMMAND signal_chains)
 add_test(NAME all_signals          COMMAND all_signals)
 add_test(NAME dlc_consistency      COMMAND dlc_consistency)
 add_test(NAME gateway_forwarding   COMMAND gateway_forwarding)
-add_test(NAME generated_codecs     COMMAND generated_codecs)
 
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
@@ -300,9 +310,9 @@ add_executable(sim_engine_native
 )
 target_include_directories(sim_engine_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/sim-engine
     ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
     ${ETRIKE_ROOT}/sys-esp32/src
     ${ETRIKE_ROOT}/mtr-stm32/src

@@ -9,6 +9,7 @@ import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId } from "../core/types.js";
 import { SysSafetyMonitor } from "../controllers/sys-safety.js";
 import { SysBrakeController, BrakeState } from "../controllers/sys-brake.js";
+import { decodeAs, encodeSimFrame } from "../protocol.js";
 
 export class SysEcu implements SimulatedEcu {
   readonly id = "SYS ESP32-S3";
@@ -90,77 +91,59 @@ export class SysEcu implements SimulatedEcu {
 
     // ── Process low-bus frames ──────────────────────────────────
     for (const f of lowBusRx) {
-      switch (f.canId) {
-        case "0x7FD": {
-          // RT_HEARTBEAT
-          this.safety.feedHeartbeatRt(nowMs, f.data[0]);
-          break;
-        }
-        case "0x204": {
-          // RT_DRIVE_CMD
-          this.cmdSpeedMmps = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
-          this.lastSetpointTickMs = nowMs;
-          break;
-        }
-        case "0x205": {
-          // RT_BRAKE_CMD
-          this.brakeKpa = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
-          break;
-        }
-        case "0x206": {
-          // MTR_MOTOR_FBK — for EGAS L2, ESTOP ACK (I9b)
-          // i16 BE with sign extension: shift to bit 31 then arithmetic shift right
-          this.actualSpeedMmps = (f.data[0] << 24 | f.data[1] << 16) >> 16;
-          // byte 2 = gearState, byte 3 = faultFlags (bit0=ESTOP_ACTIVE)
-          if (f.data.length >= 4) {
-            const faultFlags = f.data[3] & 0xFF;
-            const gearState = f.data[2] & 0xFF;
-            this.safety.feedMtrFeedback(
-              { actualSpeed: this.actualSpeedMmps, gearState, faultFlags },
-              nowMs,
-            );
-          }
-          break;
-        }
-        case "0x001": {
-          // ESTOP CAN message (I9a) — rate-limited ESTOP trigger
-          this.trackEstopEvent(nowMs);
-          break;
-        }
-        case "0x210": {
-          // RT_STATE_RPT — RT safety_state byte 1 bits 0-1 (0=Normal, 1=InternalEstop, 2=Fault)
-          this.rtSafetyState = f.data[1] & 0x03;
-          break;
-        }
-        case "0x731": {
-          // SEB_ERR_INFO — L3 fault bits trigger ESTOP
-          // Byte 0 bits 2-7, Byte 1 bits 0-3,5, Byte 2 bits 1,2,4,5,6
+      const heartbeat = decodeAs(f, "rt:rt_heartbeat");
+      if (heartbeat !== undefined) {
+        this.safety.feedHeartbeatRt(nowMs, Number(heartbeat.alive_ctr));
+        continue;
+      }
+      const drive = decodeAs(f, "rt:rt_drive_cmd");
+      if (drive !== undefined) {
+        this.cmdSpeedMmps = Number(drive.motor_speed_mmps);
+        this.lastSetpointTickMs = nowMs;
+        continue;
+      }
+      const brake = decodeAs(f, "rt:rt_brake_cmd");
+      if (brake !== undefined) {
+        this.brakeKpa = Number(brake.brake_pressure_kpa);
+        continue;
+      }
+      const motor = decodeAs(f, "mtr:mtr_motor_fbk");
+      if (motor !== undefined) {
+        this.actualSpeedMmps = Number(motor.actual_speed_mmps);
+        this.safety.feedMtrFeedback({
+          actualSpeed: this.actualSpeedMmps,
+          gearState: Number(motor.gear_state),
+          faultFlags: Number(motor.fault_flags),
+        }, nowMs);
+        continue;
+      }
+      if (decodeAs(f, "safety:safety_estop") !== undefined) {
+        this.trackEstopEvent(nowMs);
+        continue;
+      }
+      const rtState = decodeAs(f, "rt:rt_state_rpt");
+      if (rtState !== undefined) {
+        this.rtSafetyState = Number(rtState.safety_state);
+        continue;
+      }
+      const errorInfo = decodeAs(f, "seb:seb_err_info");
+      if (errorInfo !== undefined) {
+          const raw = errorInfo.raw as Uint8Array;
           const l3Active =
-            (f.data[0] & 0xFC) !== 0 ||
-            (f.data[1] & 0x2F) !== 0 ||
-            (f.data[2] & 0x76) !== 0;
+            (raw[0] & 0xFC) !== 0 ||
+            (raw[1] & 0x2F) !== 0 ||
+            (raw[2] & 0x76) !== 0;
           if (l3Active) {
             this.trackEstopEvent(nowMs);
           }
-          break;
-        }
-        case "0x721": {
-          // SEB_STATUS — for brake sync + rolling counter tracking (Gap I2)
-          // I9a: Validate checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
-          if (f.data.length >= 8) {
-            let cksum = 0;
-            for (let i = 0; i < 7; i++) cksum ^= f.data[i];
-            if ((cksum ^ 0xFF) !== f.data[7]) {
-              console.warn(`[SYS] 0x721 checksum mismatch — dropping frame`);
-              break;
-            }
-          }
-          // Extract stroke feedback bytes 2-3 (u16 LE) for following-error monitor
-          const strokeRaw = f.data.length >= 4 ? ((f.data[3] << 8 | f.data[2]) & 0xFFFF) : undefined;
-          this.brake.feedSebStatus(f.data[0], strokeRaw);
+        continue;
+      }
+      const sebStatus = decodeAs(f, "seb:seb_status");
+      if (sebStatus !== undefined) {
+          this.brake.feedSebStatus(Number(sebStatus.status_byte), Number(sebStatus.stroke_value_raw));
           // H1: Track SEB rolling counter (byte 6 bits 4-7). Frozen counter
           // means SEB isn't receiving commands — SYS must resume sending 0x7B9.
-          const sebRoll = (f.data[6] >> 4) & 0x0F;
+          const sebRoll = Number(sebStatus.rolling_counter);
           if (!this.sebRollInit || sebRoll !== this.lastSebRoll) {
             this.sebRollInit = true;
             this.lastSebRoll = sebRoll;
@@ -168,13 +151,14 @@ export class SysEcu implements SimulatedEcu {
           } else {
             this.sebRolling = false;
           }
-          break;
-        }
-        case "0x302": {
-          // HOST_LIGHT_CMD (forwarded from Host via RT)
-          this.lights = f.data[0];
-          break;
-        }
+        continue;
+      }
+      const lights = decodeAs(f, "host:host_light_cmd");
+      if (lights !== undefined) {
+        this.lights = Number(lights.left_turn)
+          | (Number(lights.right_turn) << 1)
+          | (Number(lights.brake_light) << 2)
+          | (Number(lights.headlight) << 3);
       }
     }
 
@@ -232,70 +216,50 @@ export class SysEcu implements SimulatedEcu {
                        && sebAck && !this.safety.brakeLever && !effectiveEstop && rtSetpointFresh;
 
       if (cmd && !suppressSeb) {
-        // Build 0x7B9 VCU_SEB_REQ (steer-by-wire LE encoding)
-        const stroke16 = cmd.strokeReq & 0xFFFF;
-        const data = [
-          ((cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1) | (cmd.controlMode << 2) | ((cmd.autoBrake & 1) << 3)),
-          0,
-          stroke16 & 0xFF,
-          // Byte 3: Stroke mode → stroke high byte; Pressure mode → pressure_req
-          cmd.controlMode === 1 ? (cmd.pressureReq & 0xFF) : ((stroke16 >> 8) & 0xFF),
-          cmd.controlMode === 1 ? 0 : (cmd.pressureReq & 0xFF),
-          0,
-          (cmd.rollCntEnable ? 0x01 : 0)    // bit 0: RollCntEnable (was WRONG at 0x10=bit4)
-          | (cmd.checksumEnable ? 0x02 : 0)   // bit 1: ChecksumEnable (was WRONG at 0x20=bit5)
-          | (cmd.rollingCounter << 4),          // bits 4-7: rolling counter
-          0, // checksum placeholder
-        ];
-        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per steer-by-wire CSV spec)
-        let cksum = 0;
-        for (let i = 0; i < 7; i++) cksum ^= data[i];
-        data[7] = cksum ^ 0xFF;
-
-        out.push({
-          simTimeMs: nowMs, bus: "low", canId: "0x7B9", name: "VCU_SEB_REQ",
-          dlc: 8, data, sender: "sys",
-        });
+        out.push(encodeSimFrame("seb:vcu_seb_req", {
+          alignment_enable: cmd.alignEnable === 1,
+          control_enable: cmd.controlEnable === 1,
+          control_mode: cmd.controlMode,
+          auto_brake: cmd.autoBrake === 1,
+          stroke_request_raw: cmd.strokeReq,
+          pressure_request_raw: cmd.pressureReq,
+          rolling_counter: cmd.rollingCounter,
+        }, "low", "sys", nowMs));
       }
     }
 
     // ── 0x011 SYS_SAFETY_STS (5 Hz) ─────────────────────────────
     if (nowMs % 200 === 0) {
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x011", name: "SYS_SAFETY_STS",
-        dlc: 3, data: [
-          effectiveEstop ? 1 : 0,
-          this.safety.heartbeatOk(nowMs) ? 1 : 0,
-          this.lights & 0x0F,  // v0.0.5: SYS_LightState (low 4 bits)
-        ], sender: "sys",
-      });
+      out.push(encodeSimFrame("sys:sys_safety_sts", {
+        estop_active: effectiveEstop ? 1 : 0,
+        heartbeat_ok: this.safety.heartbeatOk(nowMs) ? 1 : 0,
+        light_left: this.lights & 1,
+        light_right: (this.lights >> 1) & 1,
+        light_brake: (this.lights >> 2) & 1,
+        light_head: (this.lights >> 3) & 1,
+      }, "low", "sys", nowMs));
     }
 
     // ── 0x110 SYS_MODE_CMD (on change only) ──────────────────────
     const modeByte = ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0;
     if (modeByte !== this.lastSentMode) {
       this.lastSentMode = modeByte;
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x110", name: "SYS_MODE_CMD",
-        dlc: 1, data: [modeByte], sender: "sys",
-      });
+      out.push(encodeSimFrame("sys:sys_mode_cmd", { mode: modeByte }, "low", "sys", nowMs));
     }
 
     // ── 0x600 SYS_DIAG_RPT (1 Hz) ───────────────────────────────
     if (nowMs % 1000 === 0) {
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x600", name: "SYS_DIAG_RPT",
-        dlc: 8, data: [
-          ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0,
-          (this.brake.state === BrakeState.ACTIVE ? 1 : 0) | (this.brake.getDiagnostics().brakeFollowingError ? 2 : 0),
-          this.safety.heartbeatOk(nowMs) ? 1 : 0,
-          effectiveEstop ? 1 : 0,
-          (this.diagHeapKb >> 8) & 0xFF,
-          this.diagHeapKb & 0xFF,
-          this.tec,
-          this.rec,
-        ], sender: "sys",
-      });
+      out.push(encodeSimFrame("sys:sys_diag_rpt", {
+        mode: ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0,
+        brake_engaged: this.brake.state === BrakeState.ACTIVE ? 1 : 0,
+        brake_fault: this.brake.getDiagnostics().brakeFollowingError ? 1 : 0,
+        heartbeat_ok: this.safety.heartbeatOk(nowMs) ? 1 : 0,
+        rx_overflow: 0,
+        estop_active: effectiveEstop ? 1 : 0,
+        free_heap_kb: this.diagHeapKb,
+        tec: this.tec,
+        rec: this.rec,
+      }, "low", "sys", nowMs));
     }
 
     // ── 0x7FE SYS_HEARTBEAT (10 Hz) ─────────────────────────────
@@ -307,10 +271,17 @@ export class SysEcu implements SimulatedEcu {
         | (effectiveEstop ? 0x02 : 0)
         | (ctx.mode === "auto" ? 0x04 : 0)
         | 0x08; // can_ok always asserted in simulation
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x7FE", name: "SYS_HEARTBEAT",
-        dlc: 2, data: [this.sysHbCtr, healthFlags], sender: "sys",
-      });
+      out.push(encodeSimFrame("sys:sys_heartbeat", {
+        alive_ctr: this.sysHbCtr,
+        heartbeat_ok: healthFlags & 1,
+        estop_active: (healthFlags >> 1) & 1,
+        mode_auto: (healthFlags >> 2) & 1,
+        can_ok: (healthFlags >> 3) & 1,
+        task_safety_ok: 0,
+        task_brake_ok: 0,
+        task_dispatch_ok: 0,
+        task_can_tx_ok: 0,
+      }, "low", "sys", nowMs));
     }
 
     return out;

@@ -7,6 +7,7 @@
 
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId } from "../core/types.js";
+import { customRawSimFrame, decodeAs } from "../protocol.js";
 
 export class Sbwc implements SimulatedEcu {
   readonly id = "steer-by-wire unit";
@@ -53,7 +54,7 @@ export class Sbwc implements SimulatedEcu {
 
     // Process incoming 0x169
     for (const f of lowBusRx) {
-      if (f.canId === "0x169") {
+      if (decodeAs(f, "ses:vcu_ses_req") !== undefined) {
         this.lastCmdMs = nowMs;
         this.hasSeenCommand = true;
       }
@@ -91,10 +92,7 @@ export class Sbwc implements SimulatedEcu {
       for (let i = 0; i < 7; i++) cksum ^= data[i];
       data[7] = cksum ^ 0xFF;
 
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x201", name: "SES_STATUS",
-        dlc: 8, data, sender: "epsc",
-      });
+      out.push(customRawSimFrame("ses:ses_status", data, "low", "epsc", nowMs));
     }
 
     // 0x202 SES_ErrInfo at 10Hz (24 fault bits in LE byte order)
@@ -103,22 +101,20 @@ export class Sbwc implements SimulatedEcu {
       // When errorStatus===L3, set critical fault bits:
       //   byte1 bit0: AngleP_OC (L3), byte1 bit1: AngleP_AF (L3)
       const isL3 = this.errorStatus === 3;
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x202", name: "SES_ErrInfo",
-        dlc: 8, data: [
+      out.push(customRawSimFrame("ses:ses_err_info", [
           isL3 ? 0x03 : 0,  // byte0: ECU_UnderVolt|ECU_OverVolt if L3
           isL3 ? 0x03 : 0,  // byte1: AngleP_OC|AngleP_AF if L3
           0, 0, 0, 0, 0, 0,
-        ], sender: "epsc",
-      });
+        ], "low", "epsc", nowMs));
     }
 
     // 0x203 SES_Version at 1Hz (DLC=8, padded)
     if (nowMs % 1000 === 0) {
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x203", name: "SES_Version",
-        dlc: 8, data: [this.swVersion, this.hwVersion, 0, 0, 0, 0, 0, 0], sender: "epsc",
-      });
+      out.push(customRawSimFrame(
+        "ses:ses_version",
+        [this.swVersion, this.hwVersion, 0, 0, 0, 0, 0, 0],
+        "low", "epsc", nowMs,
+      ));
     }
 
     // 0x6FA SES_Test at 100Hz (telemetry: motor current, ECU temp, voltage)
@@ -127,16 +123,13 @@ export class Sbwc implements SimulatedEcu {
       const motorCurrent = 0; // A, scaled: 0 / 0.0078125 = 0
       const ecuTemp = Math.round(25 / 0.5); // 25°C, scaled: 25/0.5 = 50 = 0x32
       const powVolt = Math.round(12 / 0.00390625); // 12V, scaled: 12/0.00390625 = 3072 = 0x0C00
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x6FA", name: "SES_Test",
-        dlc: 8, data: [
+      out.push(customRawSimFrame("ses:ses_test", [
           0,  // byte 0: reserved
           motorCurrent & 0xFF, (motorCurrent >> 8) & 0xFF,  // bytes 1-2: motor_current i16 LE
           ecuTemp & 0xFF, (ecuTemp >> 8) & 0xFF,  // bytes 3-4: ecu_temp u16 LE
           powVolt & 0xFF, (powVolt >> 8) & 0xFF,  // bytes 5-6: power_voltage u16 LE
           0,  // byte 7: reserved
-        ], sender: "epsc",
-      });
+        ], "low", "epsc", nowMs));
     }
 
     return out;

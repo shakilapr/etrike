@@ -7,6 +7,7 @@
 
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId } from "../core/types.js";
+import { customRawSimFrame, decodeAs } from "../protocol.js";
 
 export class Bbw implements SimulatedEcu {
   readonly id = "brake-by-wire unit";
@@ -49,7 +50,7 @@ export class Bbw implements SimulatedEcu {
     const out: SimFrame[] = [];
 
     for (const f of lowBusRx) {
-      if (f.canId === "0x7B9") {
+      if (decodeAs(f, "seb:vcu_seb_req") !== undefined) {
         this.lastCmdMs = nowMs;
       }
     }
@@ -94,32 +95,27 @@ export class Bbw implements SimulatedEcu {
       for (let i = 0; i < 7; i++) cksum ^= data[i];
       data[7] = cksum ^ 0xFF;
 
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x721", name: "SEB_STATUS",
-        dlc: 8, data, sender: "seb",
-      });
+      out.push(customRawSimFrame("seb:seb_status", data, "low", "seb", nowMs));
     }
 
     // 0x731 SEB_ErrInfo at 10Hz (23 fault bits in LE byte order)
     if (nowMs % 100 === 0) {
       const isL3 = this.errorStatus === 3;
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x731", name: "SEB_ErrInfo",
-        dlc: 8, data: [
+      out.push(customRawSimFrame("seb:seb_err_info", [
           isL3 ? 0xFC : 0,  // byte0: ECU errors + domain faults if L3
           isL3 ? 0x2F : 0,  // byte1: angle/sensor L3 errors (bits 0,1,2,3,5)
           isL3 ? 0x76 : 0,  // byte2: motor/oil L3 errors (bits 1,2,4,5,6)
           0, 0, 0, 0, 0,
-        ], sender: "seb",
-      });
+        ], "low", "seb", nowMs));
     }
 
     // 0x741 SEB_Version at 1Hz (DLC=8, padded)
     if (nowMs % 1000 === 0) {
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x741", name: "SEB_Version",
-        dlc: 8, data: [this.swVersion, this.hwVersion, 0, 0, 0, 0, 0, 0], sender: "seb",
-      });
+      out.push(customRawSimFrame(
+        "seb:seb_version",
+        [this.swVersion, this.hwVersion, 0, 0, 0, 0, 0, 0],
+        "low", "seb", nowMs,
+      ));
     }
 
     // 0x6FB SEB_Test at 100Hz (telemetry: motor current, ECU temp, voltage)
@@ -127,16 +123,13 @@ export class Bbw implements SimulatedEcu {
       const motorCurrent = 0; // A
       const ecuTemp = Math.round(25 / 0.5); // 25°C
       const powVolt = Math.round(12 / 0.00390625); // 12V
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x6FB", name: "SEB_Test",
-        dlc: 8, data: [
+      out.push(customRawSimFrame("seb:seb_test", [
           0,  // byte 0: reserved
           motorCurrent & 0xFF, (motorCurrent >> 8) & 0xFF,  // bytes 1-2: motor current
           ecuTemp & 0xFF, (ecuTemp >> 8) & 0xFF,  // bytes 3-4: ecu temp
           powVolt & 0xFF, (powVolt >> 8) & 0xFF,  // bytes 5-6: power voltage
           0,  // byte 7: reserved
-        ], sender: "seb",
-      });
+        ], "low", "seb", nowMs));
     }
 
     return out;

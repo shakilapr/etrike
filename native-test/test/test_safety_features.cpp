@@ -1,12 +1,17 @@
 // Stage 5 — Safety Feature Tests (ESTOP, Heartbeat, Brake, Watchdog, Bus-off)
 // Tests all safety-critical paths: timeout→ESTOP, takeover, ramp, deadman, rate limit.
-// g++ -std=c++17 -I/c/projects/etrike/shared test_safety_features.cpp -o test_safety
+// Built by the native CMake test suite.
 
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
-#include <cstring>
-#include "can/can_protocol.h"
+#include "protocol/codecs/seb.hpp"
+#include "protocol/core/frame.hpp"
+#include "protocol/generated/cpp/etrike_protocol.hpp"
+
+namespace protocol = etrike::protocol;
+namespace generated = etrike::protocol::generated;
+namespace seb = etrike::protocol::codecs::seb;
 
 static int P=0,F=0;
 #define T(m) printf("  %s\n",m)
@@ -24,7 +29,7 @@ static uint32_t tick(uint32_t ms){g_now+=ms;return g_now;}
 static void s1_estop_propagation(){
     T("=== S1: ESTOP Propagation ===");
     // ESTOP frame
-    can::Frame e;e.id=0x001;e.dlc=0;
+    protocol::Frame e;e.id=0x001;e.dlc=0;
     EQ(e.id,0x001,"ESTOP ID=0x001");
     EQ(e.dlc,0,"ESTOP DLC=0 event frame");
 
@@ -36,7 +41,7 @@ static void s1_estop_propagation(){
     e.dlc=8;EQ(e.id,0x001,"ESTOP still 0x001 regardless of DLC");
 
     // Post-ESTOP: speed must be 0, gear must be N
-    can::RtDriveCmd z;z.motor_speed_mmps=0;z.gear=0;
+    generated::RtDriveCmd z;z.motor_speed_mmps=0;z.gear=0;
     EQ(z.motor_speed_mmps,0,"post-ESTOP speed=0");
     EQ(z.gear,0,"post-ESTOP gear=N");
 
@@ -87,8 +92,8 @@ static void s3_brake_takeover(){
     OK(takeover,"SYS hb lost → RT brake takeover active");
 
     // RT sends 0x7B9 with auto_brake=1 (emergency trigger)
-    can::VcuSebReq req;req.align_enable=1;req.control_enable=1;
-    req.control_mode=0;req.auto_brake=1;req.stroke_req=1140; // 27mm max
+    seb::Command req;req.alignment_enable=1;req.control_enable=1;
+    req.control_mode=seb::ControlMode::Stroke;req.auto_brake=1;req.stroke_request_raw=1140; // 27mm max
     OK(req.auto_brake==1,"takeover 0x7B9: auto_brake=1, stroke=27mm ESTOP");
 
     // Takeover clears when SYS heartbeat recovers
@@ -262,7 +267,7 @@ static void s11_steering_estop_types(){
 static void s12_seb_checksum(){
     T("=== S12: SEB Checksum Validation ===");
     // 0x721 SEB_STATUS with valid checksum
-    can::Frame f;f.id=0x721;f.dlc=8;memset(f.data,0,8);
+    protocol::Frame f;f.id=0x721;f.dlc=8;f.data.fill(0);
     f.data[0]=1;f.data[2]=0x84;f.data[3]=0x03; // stroke=900
     uint8_t cs=0;for(int i=0;i<7;i++)cs^=f.data[i];f.data[7]=cs^0xFF;
     uint8_t vfy=0;for(int i=0;i<8;i++)vfy^=f.data[i];
@@ -272,10 +277,10 @@ static void s12_seb_checksum(){
     OK(vfy!=0xFF,"corrupted checksum: frame REJECTED");
 
     // Same for 0x7B9 (SEB command)
-    can::Frame f2;f2.id=0x7B9;f2.dlc=8;memset(f2.data,0,8);
-    can::VcuSebReq r;r.align_enable=1;r.control_enable=1;r.stroke_req=900;
-    r.roll_cnt_enable=1;r.checksum_enable=1;
-    r.pack(f2.data);cs=0;for(int i=0;i<7;i++)cs^=f2.data[i];f2.data[7]=cs^0xFF;
+    protocol::Frame f2;
+    seb::Command r;r.alignment_enable=1;r.control_enable=1;r.stroke_request_raw=900;
+    (void)seb::encode_command(r, f2);
+    cs=0;for(int i=0;i<7;i++)cs^=f2.data[i];
     vfy=0;for(int i=0;i<8;i++)vfy^=f2.data[i];
     EQ(vfy,0xFF,"0x7B9 valid checksum");
     f2.data[5]^=1;vfy=0;for(int i=0;i<8;i++)vfy^=f2.data[i];

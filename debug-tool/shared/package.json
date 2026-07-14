@@ -1,16 +1,14 @@
 {
   "name": "@etrike/debug-shared",
   "version": "1.0.0",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/debug-tool/shared/src/index.js",
+  "types": "dist/debug-tool/shared/src/index.d.ts",
   "scripts": {
     "test": "vitest run",
     "build": "tsc"
   },
   "devDependencies": {
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
-    "js-yaml": "^4.3.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.10"
   }

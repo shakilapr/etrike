@@ -1,18 +1,21 @@
 // Golden checks compile the same generated contract consumed by firmware.
-#include "can/generated/can_data.h"
+#include "protocol/generated/cpp/etrike_protocol.hpp"
 
 #include <cstdio>
 
-static_assert(can::data::kDlc_SAFETY_ESTOP == 0);
-static_assert(can::data::kDlc_SYS_SAFETY_STS == 3);
-static_assert(can::data::kDlc_RT_STATE_RPT == 6);
-static_assert(can::data::kDlc_HOST_LIGHT_CMD == 1);
-static_assert(can::data::kDlc_HOST_HEARTBEAT == 2);
-static_assert(can::data::kDlc_RT_HEARTBEAT == 2);
-static_assert(can::data::kDlc_SYS_HEARTBEAT == 2);
+namespace generated = etrike::protocol::generated;
+
+static_assert(generated::SafetyEstop::kDlc == 0);
+static_assert(generated::SysSafetySts::kDlc == 3);
+static_assert(generated::RtStateRpt::kDlc == 6);
+static_assert(generated::HostLightCmd::kDlc == 1);
+static_assert(generated::HostHeartbeat::kDlc == 2);
+static_assert(generated::RtHeartbeat::kDlc == 2);
+static_assert(generated::SysHeartbeat::kDlc == 2);
 
 int main() {
-    std::printf("PASS: generated production DLC contract (%s)\n", can::data::kProtocolHash);
+    std::printf("PASS: generated production DLC contract (%.*s)\n",
+                static_cast<int>(etrike::protocol::kWireHash.size()),
+                etrike::protocol::kWireHash.data());
     return 0;
 }
-
