@@ -8,7 +8,7 @@ Five ECUs are planned on three CAN buses: Jetson Orin (ROS 2 perception), RT ESP
 
 ## CAN contract ownership and change impact
 
-The CAN architecture uses controlled ownership rather than assuming every behavior can be generated.
+The CAN architecture uses controlled ownership rather than assuming every behavior can be generated. The checked-in `shared/can` layout and `manual-mappings.yaml` are transitional; the target organization below removes duplicated bus definitions and the coarse manual consumer registry.
 
 | Concern | Authority |
 |---|---|
@@ -19,6 +19,72 @@ The CAN architecture uses controlled ownership rather than assuming every behavi
 | Hardware facts | Component board/driver configuration: GPIO, I2C/SPI, oscillator and calibration |
 
 Every wire value must be generated, centrally named, or registered as a tested manual mapping. Generated files are never edited manually. A manual mapping records a stable ID, source message, reviewed per-message wire hash, adapter, consumers, tests and affected build targets. This preserves traceability without pretending that vendor checksums, overlapping layouts or stateful interpretation are automatically generated.
+
+### Target protocol model
+
+Each message layout is defined exactly once. Project-owned messages are grouped by the ECU that originates them; externally owned or multi-sender interfaces are grouped by protocol/device family. A receiver never maintains a second YAML copy of a message it consumes.
+
+```text
+protocol/contracts/
+├── network.yaml       buses, nodes, routes and forwarding only
+├── host.yaml          Host-originated message definitions
+├── rt.yaml            RT-originated message definitions
+├── sys.yaml           SYS-originated message definitions
+├── mtr.yaml           MTR-originated message definitions
+├── ses.yaml           externally owned steering protocol
+├── seb.yaml           externally owned braking protocol
+└── pwt.yaml           PWT/DC-DC manufacturer protocol
+```
+
+The filename improves navigation and ownership; it does not imply a private ECU view of the bus. For example, `HOST_DRIVE_CMD` is defined only in `host.yaml`. Host encoding and RT decoding both consume artifacts derived from that one definition. `RT_DRIVE_CMD` is defined only in `rt.yaml`; MTR and SYS do not redefine it.
+
+Every physical occurrence has an explicit bus instance. Runtime identity is `bus + CAN ID`; contract identity is `owner/protocol + message + bus`. A layout can be reused by several instances without merging their runtime state:
+
+```yaml
+name: RT_HEARTBEAT
+sender: RT
+instances:
+  - {bus: high, id: 0x7FD, receivers: [Host], state_scope: independent}
+  - {bus: low,  id: 0x7FD, receivers: [SYS],  state_scope: independent}
+```
+
+Forwarded messages are also defined once at their origin. `network.yaml` references the definition and records `via`, destination bus and whether the route is the same physical frame or an independently regenerated instance.
+
+### Static dictionary, codecs and policy
+
+YAML is a DBC-like static wire dictionary, not an algorithm or state-machine language. It owns ID, bus instance, frame format, DLC, byte order, signal layout, scaling, enums, nominal cycle and the locations of checksum/counter fields.
+
+Every message selects exactly one payload strategy:
+
+- `generated`: an ordinary codec is generated from the static layout;
+- `profile`: a small named and versioned integrity implementation is applied, such as a repeated XOR or E2E profile;
+- `custom`: one explicit handwritten codec owns the exceptional layout and algorithm.
+
+Metadata is generated for every strategy. A public ordinary payload codec is generated only for `generated` messages. `profile` and `custom` messages cannot bypass their selected implementation. Stateful supervision—counter continuity, freshness, connection loss and recovery—is separate from stateless payload decoding. ESTOP, takeover, retries, logging severity and UI presentation remain component-local policy.
+
+The complete conformance authority for complex messages is:
+
+```text
+static wire definition + codec/profile implementation ID + language-neutral vectors
+```
+
+The same vectors must run against each supported C++ or Python implementation. Per-message hashes trigger review; changing a stored hash is not proof that an algorithm remains correct.
+
+### Target dependency structure
+
+```text
+protocol/
+├── core/          Frame/View, CodecStatus and bit helpers; no RTOS/ROS/logging
+├── contracts/     single definitions and network topology
+├── generated/     C++, Python, TypeScript and manifests
+├── profiles/      small reusable integrity implementations
+├── codecs/        complete SES/SEB/PWT custom codecs
+├── vectors/       language-neutral payload and sequence vectors
+├── tools/         inspect, generate and verify
+└── tests/
+```
+
+Component policy stays in RT, SYS, MTR, Host or Control UI. The protocol package never depends on those components. The legacy `can_protocol.h` and current manual mapping registry remain migration aids only and are retired after all consumers use the selected strategy APIs.
 
 The normal change workflow is:
 
