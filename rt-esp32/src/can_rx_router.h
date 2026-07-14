@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "can/can_protocol.h"
 #include "can/codec_transport.h"
+#include "can/manual/vendor_protocol.h"
 namespace rt {
 struct GatewayQueues {
     can::Frame* gw_tx_low=nullptr;
@@ -45,12 +46,11 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
         return can::gen::CodecStatus::Ok;
     case can::kIdSbwStatus:  // SES_STATUS — consumed by RT (steering feedback)
         if (!is_high_bus) {
-            if (q.steer_feedback_angle) {
-                *q.steer_feedback_angle = uint16_t(f.data[2] | (f.data[3] << 8));
-            }
-            if (q.steer_angle_status) {
-                *q.steer_angle_status = f.data[0] & 1;  // byte0 bit0: angle_status
-            }
+            can::manual::SesStatusValue value{};
+            auto status = can::manual::decode_ses_status(f, value);
+            if (status != can::gen::CodecStatus::Ok) return status;
+            if (q.steer_feedback_angle) *q.steer_feedback_angle = value.steering_angle;
+            if (q.steer_angle_status) *q.steer_angle_status = value.angle_status;
         }
         return can::gen::CodecStatus::Ok;
     case can::kIdBbwStatus:  // SEB_STATUS — L3 errors checked after checksum validation in dispatch

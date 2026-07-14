@@ -234,10 +234,11 @@ bool CanEncoder::encode_heartbeat(struct can_frame & frame)
 
 bool CanEncoder::encode_estop(struct can_frame & frame)
 {
+  can::gen::SafetyEstop message{};
   std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = CAN_ESTOP;
-  frame.len = 0;
-  return true;
+  frame.can_id = message.kId;
+  frame.len = message.kDlc;
+  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
 }
 
 // =====================================================================
@@ -246,9 +247,9 @@ bool CanEncoder::encode_estop(struct can_frame & frame)
 bool CanDecoder::decode_velocity(const struct can_frame & frame,
                                  autoware_auto_vehicle_msgs::msg::VelocityReport & msg) const
 {
-  if (frame.len < 2) return false;
-  int16_t mmps = static_cast<int16_t>((static_cast<uint16_t>(frame.data[0]) << 8) | frame.data[1]);
-  msg.longitudinal_velocity = mmps / 1000.0f;
+  can::gen::SysThrottleSts value{};
+  if (frame.len != value.kDlc || can::gen::SysThrottleSts::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) return false;
+  msg.longitudinal_velocity = value.speed_mmps / 1000.0f;
   msg.lateral_velocity = 0.0f;
   msg.heading_rate = 0.0f;
   return true;
@@ -258,9 +259,10 @@ bool CanDecoder::decode_state(const struct can_frame & frame,
                               autoware_auto_vehicle_msgs::msg::ControlModeReport & mode_msg,
                               autoware_auto_vehicle_msgs::msg::GearReport & gear_msg) const
 {
-  if (frame.len < 3) return false;
-  uint8_t trike_mode = frame.data[0];
-  bool reversing = (frame.data[2] != 0);
+  can::gen::RtStateRpt value{};
+  if (frame.len != value.kDlc || can::gen::RtStateRpt::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) return false;
+  uint8_t trike_mode = value.mode;
+  bool reversing = value.reversing;
 
   switch (trike_mode) {
     case 0: mode_msg.mode = mode::MANUAL;     break;
@@ -282,7 +284,8 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
                                     diagnostic_msgs::msg::DiagnosticArray & msg,
                                     const rclcpp::Time & now) const
 {
-  if (frame.len < 8) return false;
+  can::gen::SysDiagRpt value{};
+  if (frame.len != value.kDlc || can::gen::SysDiagRpt::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) return false;
   msg.header.stamp = now;
   msg.status.clear();
 
@@ -298,15 +301,15 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   };
 
   using DiagnosticStatus = diagnostic_msgs::msg::DiagnosticStatus;
-  const uint8_t mode = frame.data[0];
-  const bool brake_engaged = (frame.data[1] & 0x01u) != 0;
-  const bool brake_fault = (frame.data[1] & 0x02u) != 0;
-  const bool heartbeat_ok = (frame.data[2] & 0x01u) != 0;
-  const uint8_t rx_overflow = static_cast<uint8_t>((frame.data[2] >> 1) & 0x3Fu);
-  const bool estop_active = frame.data[3] != 0;
-  const uint16_t free_heap_kb = static_cast<uint16_t>(frame.data[4] << 8) | frame.data[5];
-  const uint8_t tec = frame.data[6];
-  const uint8_t rec = frame.data[7];
+  const uint8_t mode = value.sys_diag_mode;
+  const bool brake_engaged = value.sys_diag_brake_engaged;
+  const bool brake_fault = value.sys_diag_brake_fault;
+  const bool heartbeat_ok = value.heartbeat_ok;
+  const uint8_t rx_overflow = value.rx_overflow;
+  const bool estop_active = value.sys_diag_estop_active;
+  const uint16_t free_heap_kb = value.sys_diag_free_heap_kb;
+  const uint8_t tec = value.sys_diag_tec;
+  const uint8_t rec = value.sys_diag_rec;
 
   add("mode", mode,
       mode <= 2 ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
@@ -601,9 +604,9 @@ void VehicleBridgeNode::tick_control()
     // Send zero-speed frame so RT's staleness watchdog doesn't need to wait 500ms
     struct can_frame z;
     std::memset(&z, 0, sizeof(z));
-    z.can_id = CAN_DRIVE_CMD; z.len = 8;
-    z.data[7] = gear::CAN_N;  // all zeros = speed 0, yaw 0, gear N
-    can_->send(z);
+    can::gen::HostDriveCmd stop{0, 0, gear::CAN_N};
+    z.can_id = stop.kId; z.len = stop.kDlc;
+    if (stop.pack(z.data, z.len) == can::gen::CodecStatus::Ok) can_->send(z);
     return;
   }
   if (!engaged_) return;
@@ -747,9 +750,10 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     }
 
     case CAN_MOTOR_FBK: {  // 0x206 — actual gear state from MTR (forwarded low→high)
-      if (frame.len < 3) break;
+      can::gen::MtrMotorFbk value{};
+      if (frame.len != value.kDlc || can::gen::MtrMotorFbk::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) break;
       autoware_auto_vehicle_msgs::msg::GearReport gear;
-      switch (frame.data[2]) {  // MTR_GearState
+      switch (value.gear_state) {
         case gear::CAN_N: gear.report = gear::NONE;    break;
         case gear::CAN_D: gear.report = gear::DRIVE;   break;
         case gear::CAN_S: gear.report = gear::LOW;     break;
@@ -761,13 +765,15 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     }
 
     case CAN_SAFETY_STS: {  // 0x011 — SYS liveness + light state (forwarded low→high)
-      if (frame.len < 2) break;
-      sys_estop_active_.store(frame.data[0], std::memory_order_relaxed);
-      sys_heartbeat_ok_.store(frame.data[1], std::memory_order_relaxed);
+      can::gen::SysSafetySts value{};
+      if (frame.len != value.kDlc || can::gen::SysSafetySts::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) break;
+      sys_estop_active_.store(value.estop_active, std::memory_order_relaxed);
+      sys_heartbeat_ok_.store(value.heartbeat_ok, std::memory_order_relaxed);
 
       // Light state feedback (present when DLC ≥ 3, v0.0.5)
-      if (frame.len >= 3) {
-        uint8_t lights = frame.data[2];
+      {
+        uint8_t lights = (value.light_left ? 1u : 0u) | (value.light_right ? 2u : 0u) |
+                         (value.light_brake ? 4u : 0u) | (value.light_head ? 8u : 0u);
         autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport turn;
         if ((lights & 0x03) == 0x03)
           turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
@@ -843,9 +849,12 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case CAN_RT_HB:
-      rt_heartbeat_.feed(frame.data[0], now());
+    case CAN_RT_HB: {
+      can::gen::RtHeartbeat value{};
+      if (frame.len == value.kDlc && can::gen::RtHeartbeat::unpack(frame.data, frame.len, value) == can::gen::CodecStatus::Ok)
+        rt_heartbeat_.feed(value.alive_ctr, now());
       break;
+    }
 
     default:
       break;

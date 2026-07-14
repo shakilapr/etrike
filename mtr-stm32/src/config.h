@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include "shared_config.h"
+#include "can/generated/can_messages.h"
 
 namespace mtr {
 
@@ -46,7 +47,7 @@ constexpr int kSafetyCheckHz       = 20;    // ESTOP GPIO + staleness
 constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 
 // ── Timeouts ──────────────────────────────────────────────────────
-constexpr int kCmdStaleTimeoutMs   = 200;   // 0x204 staleness (20 missed frames at 100 Hz → 200ms)
+constexpr int kCmdStaleTimeoutMs   = can::gen::RtDriveCmd::kCycleMs * 20;
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 
 // ── Gear safety ───────────────────────────────────────────────────

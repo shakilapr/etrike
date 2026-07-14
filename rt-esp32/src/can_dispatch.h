@@ -101,15 +101,13 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         enqueue_safety_event(evt, pdMS_TO_TICKS(10));
     }
     if (fr.id == can::kIdSbwStatus) {
-        // steer-by-wire checksum: XOR(bytes 0-6) ^ 0xFF must equal byte 7
-        uint8_t cksum = 0;
-        for (int i = 0; i < 7 && i < fr.dlc; ++i) cksum ^= fr.data[i];
-        if (fr.dlc >= 8 && (cksum ^ 0xFF) == fr.data[7]) {
+        can::manual::SesStatusValue value{};
+        if (can::manual::decode_ses_status(fr, value) == can::gen::CodecStatus::Ok) {
             // Frozen rolling counter guard (D4): skip update if EPS-C counter
             // hasn't incremented, preventing stuck-CAN from masking actuator fault.
             static uint8_t last_eps_roll = 0;
             static bool eps_first = true;
-            uint8_t roll = (fr.data[6] >> 4) & 0x0F;
+            uint8_t roll = value.rolling_counter;
             uint8_t delta = roll - last_eps_roll;
             if (eps_first || delta != 0) {
                 eps_first = false;
@@ -117,7 +115,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                 g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSbwAngleOffset);
                 g_ses_angle_status.store(ctx.steer_angle_status);
             }
-            g_ses_error_status.store((fr.data[0] >> 6) & 0x03);
+            g_ses_error_status.store(value.error_status);
         }
     }
     if (fr.id == can::kIdHostObstacleDist && from_high) {
@@ -153,9 +151,11 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     // 0x6FA SES_Test — motor current + ECU temp + supply voltage
     if (fr.id == can::kIdSbwTest && !from_high && fr.dlc >= 7) {
-        int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
-        uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
-        uint16_t pv_raw = (uint16_t(fr.data[6]) << 8) | fr.data[5];
+        can::manual::TestTelemetry telemetry{};
+        if (can::manual::decode_test<can::gen::SesTest>(fr, telemetry) != can::gen::CodecStatus::Ok) return;
+        int16_t mc_raw = telemetry.motor_current;
+        uint16_t et_raw = telemetry.ecu_temperature;
+        uint16_t pv_raw = telemetry.supply_voltage;
         g_ses_motor_current.store(mc_raw);
         g_ses_ecu_temp.store(et_raw);
         g_ses_pow_volt.store(pv_raw);
@@ -168,24 +168,22 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     // 0x6FB SEB_Test — motor current + ECU temp (for 0x311 BRAKE_DIAG)
     if (fr.id == can::kIdBbwTest && !from_high && fr.dlc >= 5) {
-        int16_t  mc_raw = int16_t((uint16_t(fr.data[2]) << 8) | fr.data[1]);
-        uint16_t et_raw = (uint16_t(fr.data[4]) << 8) | fr.data[3];
+        can::manual::TestTelemetry telemetry{};
+        if (can::manual::decode_test<can::gen::SebTest>(fr, telemetry) != can::gen::CodecStatus::Ok) return;
+        int16_t mc_raw = telemetry.motor_current;
+        uint16_t et_raw = telemetry.ecu_temperature;
         g_seb_motor_current.store(mc_raw);
         g_seb_ecu_temp_c.store(et_raw);
     }
     // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
     if (fr.id == can::kIdBbwStatus && !from_high) {
-        // Validate checksum before using data (matching SYS pattern).
-        // DLC < 8 → reject immediately — can't validate checksum.
-        if (fr.dlc < 8) return;
-        uint8_t cksum = 0;
-        for (int i = 0; i < 7; ++i) cksum ^= fr.data[i];
-        if ((cksum ^ 0xFF) != fr.data[7]) return;  // drop corrupt frame
+        can::manual::SebStatusValue value{};
+        if (can::manual::decode_seb_status(fr, value) != can::gen::CodecStatus::Ok) return;
 
         // L3 error check AFTER checksum validation (bug 4.8).
         // Previously evaluated in route_frame() BEFORE checksum, so bus noise
         // flipping error bits to 3 would trigger spurious ESTOP on corrupt frames.
-        uint8_t seb_err = (fr.data[0] >> 6) & 0x03;
+        uint8_t seb_err = value.error_status;
         if (seb_err == 3) {
             g_estop_reason.store(can::kEstopReasonInternal);
             rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
@@ -194,8 +192,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
 
         // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
         // In Stroke mode it's Stroke[15:8] — not pressure data.
-        uint8_t seb_mode = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure
-        g_seb_pressure_raw.store(seb_mode == 1 ? fr.data[3] : 0);
+        g_seb_pressure_raw.store(value.control_mode == 1 ? value.pressure_value : 0);
         g_seb_error_status.store(seb_err);
     }
     // Track reception flags (fix #3: 0=Manual/0=release are valid values)
