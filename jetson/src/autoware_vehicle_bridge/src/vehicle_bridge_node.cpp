@@ -3,6 +3,7 @@
 
 #include "autoware_vehicle_bridge/vehicle_bridge_node.hpp"
 #include "can/generated/can_data.h"
+#include "can/generated/can_messages.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -162,10 +163,6 @@ bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannCo
                               uint8_t gear_override, bool has_override,
                               struct can_frame & frame)
 {
-  std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = CAN_DRIVE_CMD;
-  frame.len = 8;
-
   float speed_ms = cmd.longitudinal.is_defined_speed ? cmd.longitudinal.speed : 0.0f;
   int32_t speed_mmps = speed_to_mmps(speed_ms);
 
@@ -178,16 +175,11 @@ bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannCo
 
   uint8_t gear = derive_gear(speed_mmps, gear_override, has_override);
 
-  // big-endian
-  frame.data[0] = (speed_mmps >> 24) & 0xFF;
-  frame.data[1] = (speed_mmps >> 16) & 0xFF;
-  frame.data[2] = (speed_mmps >> 8)  & 0xFF;
-  frame.data[3] = speed_mmps & 0xFF;
-  frame.data[4] = (yaw_mrad >> 16) & 0xFF;
-  frame.data[5] = (yaw_mrad >> 8)  & 0xFF;
-  frame.data[6] = yaw_mrad & 0xFF;
-  frame.data[7] = gear;
-  return true;
+  can::gen::HostDriveCmd message{speed_mmps, yaw_mrad, gear};
+  std::memset(&frame, 0, sizeof(frame));
+  frame.can_id = message.kId;
+  frame.len = message.kDlc;
+  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
 }
 
 bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannControlCommand & cmd,
@@ -203,14 +195,11 @@ bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannCo
     kpa = std::clamp(kpa, 0, static_cast<int32_t>(params_.max_brake_pressure_kpa));
   }
 
+  can::gen::HostBrakeReq message{kpa};
   std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = CAN_BRAKE_REQ;
-  frame.len = 4;
-  frame.data[0] = (kpa >> 24) & 0xFF;
-  frame.data[1] = (kpa >> 16) & 0xFF;
-  frame.data[2] = (kpa >> 8)  & 0xFF;
-  frame.data[3] = kpa & 0xFF;
-  return true;
+  frame.can_id = message.kId;
+  frame.len = message.kDlc;
+  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
 }
 
 bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
@@ -218,30 +207,29 @@ bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndica
                                bool is_braking,
                                struct can_frame & frame)
 {
-  uint8_t bits = 0;
+  can::gen::HostLightCmd message{};
   if (turn) {
-    if (turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_LEFT)  bits |= 0x01;
-    if (turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_RIGHT) bits |= 0x02;
+    message.left_turn = turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_LEFT;
+    message.right_turn = turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_RIGHT;
   }
-  if (hazard && hazard->command == autoware_auto_vehicle_msgs::msg::HazardLightsCommand::ENABLE) bits |= 0x03;
-  if (is_braking) bits |= 0x04;
+  if (hazard && hazard->command == autoware_auto_vehicle_msgs::msg::HazardLightsCommand::ENABLE)
+    message.left_turn = message.right_turn = true;
+  message.brake_light = is_braking;
   // bit3=headlight reserved for future
 
   std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = CAN_LIGHT_CMD;
-  frame.len = 1;
-  frame.data[0] = bits;
-  return true;
+  frame.can_id = message.kId;
+  frame.len = message.kDlc;
+  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
 }
 
 bool CanEncoder::encode_heartbeat(struct can_frame & frame)
 {
   std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = CAN_HOST_HB;
-  frame.len = can::data::kDlc_HOST_HEARTBEAT;
-  frame.data[0] = host_alive_ctr_++;
-  frame.data[1] = 0;  // reserved host health flags
-  return true;
+  can::gen::HostHeartbeat message{host_alive_ctr_++, 0};
+  frame.can_id = message.kId;
+  frame.len = message.kDlc;
+  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
 }
 
 bool CanEncoder::encode_estop(struct can_frame & frame)
@@ -817,9 +805,10 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case 0x310: {  // STEER_DIAG — v0.0.4 EPS-C telemetry
-      if (frame.len < 8) break;
-      uint16_t angle_raw = (uint16_t)frame.data[0] << 8 | frame.data[1];
+    case can::gen::SteerDiag::kId: {
+      can::gen::SteerDiag message{};
+      if (frame.len != message.kDlc || message.unpack(frame.data, frame.len, message) != can::gen::CodecStatus::Ok) break;
+      uint16_t angle_raw = message.steer_diag_angle0_1deg;
       float steer_deg = (angle_raw - 30000) * 0.1f;  // offset=-3000, 0.1°/bit
       steer_angle_rad_.store(steer_deg * M_PI / 180.0f, std::memory_order_relaxed);  // cache for odometry
       last_steer_time_ = now();
@@ -829,8 +818,9 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case 0x311: {  // BRAKE_DIAG — v0.0.4 SEB telemetry
-      if (frame.len < 8) break;
+    case can::gen::BrakeDiag::kId: {
+      can::gen::BrakeDiag message{};
+      if (frame.len != message.kDlc || message.unpack(frame.data, frame.len, message) != can::gen::CodecStatus::Ok) break;
       // Publish brake telemetry to diagnostics
       diagnostic_msgs::msg::DiagnosticArray diag;
       diag.header.stamp = now();
@@ -842,12 +832,12 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
         s.values = {{"value", std::to_string(val)}, {"unit", unit}};
         diag.status.push_back(s);
       };
-      uint16_t press_raw = (uint16_t)((uint16_t)frame.data[0] << 8 | frame.data[1]);
+      uint16_t press_raw = message.brake_diag_pressure_raw;
       add_kv("pressure", press_raw * 0.05, "MPa");
-      add_kv("fault", static_cast<double>(frame.data[2]), "bool");
-      int16_t mtr_curr = (int16_t)((uint16_t)frame.data[3] << 8 | frame.data[4]);
+      add_kv("fault", static_cast<double>(message.brake_diag_fault), "bool");
+      int16_t mtr_curr = static_cast<int16_t>(message.brake_diag_motor_current);
       add_kv("motor_current", mtr_curr * 0.01, "A");
-      uint16_t ecu_temp = (uint16_t)((uint16_t)frame.data[5] << 8 | frame.data[6]);
+      uint16_t ecu_temp = message.brake_diag_ecutemp;
       add_kv("ecu_temp", ecu_temp * 0.1, "degC");
       if (pub_diag_->is_activated()) pub_diag_->publish(diag);
       break;

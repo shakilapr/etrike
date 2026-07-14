@@ -30,6 +30,7 @@ bool g_bypass_mtr_absent = false;
 
 #include "config.h"
 #include "can/can_protocol.h"
+#include "can/codec_transport.h"
 #include "can/can_driver.h"
 #include "safety_monitor.h"
 #include "mode_manager.h"
@@ -191,19 +192,23 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // because some targets are std::atomic<T> rather than plain T*)
         switch (fr.id) {
         case can::kIdRtDriveCmd: {   // 0x204
-            auto sp = can::RtDriveCmd::from_frame(fr);
+            can::gen::RtDriveCmd sp{};
+            if (can::decode_frame(fr, sp) != can::gen::CodecStatus::Ok) break;
             g_setpoint_speed_mmps.store(sp.motor_speed_mmps, std::memory_order_relaxed);
             g_setpoint_gear.store(sp.gear, std::memory_order_relaxed);
             g_last_setpoint_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
         case can::kIdRtBrakeCmd: {   // 0x205
-            auto brk = can::RtBrakeCmd::from_frame(fr);
+            can::gen::RtBrakeCmd brk{};
+            if (can::decode_frame(fr, brk) != can::gen::CodecStatus::Ok) break;
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
         }
         case can::kIdHmiModeReq: {   // 0x111 — HMI mode heartbeat (1Hz)
-            if (g_mode_mgr.parse_hmi_mode(fr.u8_at(0))) {
+            can::gen::HmiModeReq request{};
+            if (can::decode_frame(fr, request) != can::gen::CodecStatus::Ok) break;
+            if (g_mode_mgr.parse_hmi_mode(request.hmi_req_mode ? 1 : 0)) {
                 // If mode actually changed due to this request, log it.
                 // The main 10Hz control loop will naturally pick up the new mode 
                 // and broadcast 0x110 SYS_MODE_CMD on its next tick.
@@ -220,7 +225,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             break;
         }
         case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
-            auto fbk = can::MtrMotorFbk::from_frame(fr);
+            can::gen::MtrMotorFbk fbk{};
+            if (can::decode_frame(fr, fbk) != can::gen::CodecStatus::Ok) break;
             g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
@@ -240,9 +246,16 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdHostLightCmd:   // 0x302
-            g_light_bits.store(fr.u8_at(0), std::memory_order_relaxed);
+        case can::kIdHostLightCmd: { // 0x302
+            can::gen::HostLightCmd lights{};
+            if (can::decode_frame(fr, lights) != can::gen::CodecStatus::Ok) break;
+            uint8_t bits = (lights.left_turn ? 1u : 0u)
+                         | (lights.right_turn ? 2u : 0u)
+                         | (lights.brake_light ? 4u : 0u)
+                         | (lights.headlight ? 8u : 0u);
+            g_light_bits.store(bits, std::memory_order_relaxed);
             break;
+        }
         case can::kIdSafetyEstop: {  // 0x001 — rate-limited RX (Gap #14)
             // Always process the safety state change — rate-limiting must
             // never suppress safety override processing (bug 6.3).
@@ -400,14 +413,18 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdRtStateRpt:    // 0x210 — RT safety state for takeover detection
-            if (fr.dlc >= 2) {
-                g_rt_safety_state.store(fr.u8_at(1) & 0x03, std::memory_order_relaxed);
-            }
+        case can::kIdRtStateRpt: {  // 0x210 — RT safety state for takeover detection
+            can::gen::RtStateRpt state{};
+            if (can::decode_frame(fr, state) == can::gen::CodecStatus::Ok)
+                g_rt_safety_state.store(state.safety_state, std::memory_order_relaxed);
             break;
-        case can::kIdRtHeartbeatLow:    // 0x7FD
-            g_safety.feed_heartbeat_rt(fr.u8_at(0));
+        }
+        case can::kIdRtHeartbeatLow: {  // 0x7FD
+            can::gen::RtHeartbeat heartbeat{};
+            if (can::decode_frame(fr, heartbeat) == can::gen::CodecStatus::Ok)
+                g_safety.feed_heartbeat_rt(heartbeat.alive_ctr);
             break;
+        }
         }
     }
 }
@@ -540,8 +557,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (changed || ++refresh_ctr >= 10) {  // on-change OR every 1s
             refresh_ctr = 0;
             can::Frame fr;
-            can::SysModeCmd{g_mode_mgr.mode_u8()}.to_frame(fr);
-            send_can(fr);
+            can::gen::SysModeCmd message{g_mode_mgr.mode_u8()};
+            if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
         }
 
         vTaskDelayUntil(&last, period);
@@ -815,12 +832,16 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     while (1) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Frame fr;
-        can::SysSafetySts{
-            g_mode_mgr.mode() == can::Mode::Estop,
-            g_safety.heartbeat_ok(),
-            g_light_state.load(std::memory_order_relaxed)
-        }.to_frame(fr);
-        send_can(fr, "safety"); // 0x011 SYS_SAFETY_STS (DLC=3, v0.0.5)
+        const uint8_t lights = g_light_state.load(std::memory_order_relaxed);
+        can::gen::SysSafetySts message{};
+        message.estop_active = g_mode_mgr.mode() == can::Mode::Estop;
+        message.heartbeat_ok = g_safety.heartbeat_ok();
+        message.light_left = lights & 0x01;
+        message.light_right = lights & 0x02;
+        message.light_brake = lights & 0x04;
+        message.light_head = lights & 0x08;
+        if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok)
+            send_can(fr, "safety");
 
         vTaskDelayUntil(&last, period);
     }
@@ -857,22 +878,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         uint8_t tec = 0, rec = 0;
         g_can.get_error_counters(tec, rec);
 
-        can::SysDiagRpt rpt;
-        rpt.mode          = g_mode_mgr.mode_u8();
-        rpt.brake_engaged = g_safety.brake_lever_pressed();
-        rpt.brake_fault   = g_brake_fault_active.load(std::memory_order_relaxed);
+        can::gen::SysDiagRpt rpt;
+        rpt.sys_diag_mode = g_mode_mgr.mode_u8();
+        rpt.sys_diag_brake_engaged = g_safety.brake_lever_pressed();
+        rpt.sys_diag_brake_fault = g_brake_fault_active.load(std::memory_order_relaxed);
         rpt.heartbeat_ok  = g_safety.heartbeat_ok();
-        rpt.estop_active  = (g_mode_mgr.mode() == can::Mode::Estop);
-        rpt.free_heap_kb  = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
-        rpt.tec = tec; rpt.rec = rec;
+        rpt.sys_diag_estop_active = (g_mode_mgr.mode() == can::Mode::Estop);
+        rpt.sys_diag_free_heap_kb = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
+        rpt.sys_diag_tec = tec; rpt.sys_diag_rec = rec;
         // Report CAN RX overflow count (6-bit, saturated at 63)
         {
             uint32_t ov = g_can_rx_overflow.load(std::memory_order_relaxed);
             rpt.rx_overflow = ov > 63 ? 63 : static_cast<uint8_t>(ov);
         }
         can::Frame fr;
-        rpt.to_frame(fr);
-        send_can(fr);
+        if (can::encode_frame(rpt, fr) == can::gen::CodecStatus::Ok) send_can(fr);
 
         // CAN bus-off monitoring (architecture §8.10)
         if (tec > 128)
@@ -902,10 +922,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     uint8_t alive_ctr = 0;
     while (1) {
-        can::Frame fr;
-        fr.id  = can::kIdSysHeartbeat;
-        fr.dlc = 2;
-        fr.put_u8(0, ++alive_ctr);
+        can::gen::SysHeartbeat message{};
+        message.sys_alive_ctr = ++alive_ctr;
         // byte 1: health_flags using shared constants from can_protocol.h
         // bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok
         uint8_t health = (g_safety.heartbeat_ok() ? can::kHbHealthBitHeartbeatOk : 0)
@@ -918,8 +936,16 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_can.get_error_counters(tec, rec);
             if (tec < 128) health |= can::kHbHealthBitCanOk;
         }
-        fr.put_u8(1, health);
-        send_can(fr);
+        message.heartbeat_ok = health & can::kHbHealthBitHeartbeatOk;
+        message.estop_active = health & can::kHbHealthBitEstopActive;
+        message.mode_auto = health & can::kHbHealthBitModeAuto;
+        message.can_ok = health & can::kHbHealthBitCanOk;
+        message.task_safety_ok = health & 0x10;
+        message.task_brake_ok = health & 0x20;
+        message.task_dispatch_ok = health & 0x40;
+        message.task_can_tx_ok = health & 0x80;
+        can::Frame fr;
+        if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
 
         vTaskDelayUntil(&last, period);
     }

@@ -75,8 +75,9 @@ int main() {
         reset_state();
         can::Frame fr{};
         fr.id = can::kIdSysHeartbeat;
-        fr.dlc = 1;
+        fr.dlc = 2;
         fr.put_u8(0, 1);
+        fr.put_u8(1, 1);
 
         DispatchContext ctx{};
         esp_timer_test_advance(1000);
@@ -92,8 +93,9 @@ int main() {
         reset_state();
         can::Frame fr{};
         fr.id = can::kIdHostHeartbeat;
-        fr.dlc = 1;
+        fr.dlc = 2;
         fr.put_u8(0, 1);
+        fr.put_u8(1, 1);
 
         DispatchContext ctx{};
         esp_timer_test_advance(1000);

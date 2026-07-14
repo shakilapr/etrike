@@ -13,7 +13,7 @@ static int fail = 0;
 } while (0)
 
 static rt::GatewayQueues make_queues(can::Frame& low, can::Frame& high,
-                                     can::HostDriveCmd& cmd,
+                                     can::gen::HostDriveCmd& cmd,
                                      int32_t& brake_kpa,
                                      bool& estop,
                                      uint8_t& mode,
@@ -36,7 +36,7 @@ int main() {
 
     {
         can::Frame low{}, high{}, fr{};
-        can::HostDriveCmd cmd{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;
@@ -53,7 +53,7 @@ int main() {
 
     {
         can::Frame low{}, high{}, fr{};
-        can::HostDriveCmd cmd{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;
@@ -72,7 +72,7 @@ int main() {
 
     {
         can::Frame low{}, high{}, fr{};
-        can::HostDriveCmd cmd{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;
@@ -91,7 +91,7 @@ int main() {
 
     {
         can::Frame low{}, high{}, fr{};
-        can::HostDriveCmd cmd{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;
@@ -113,7 +113,7 @@ int main() {
 
     {
         can::Frame low{}, high{}, fr{};
-        can::HostDriveCmd cmd{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;
@@ -130,7 +130,7 @@ int main() {
 
     {
         can::Frame low{}, high{}, fr{};
-        can::HostDriveCmd cmd{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;
