@@ -176,14 +176,15 @@ describe("Steering", () => {
   });
 
   it("dynamic angle clamp: high speed limits steering", () => {
-    // At 25 km/h, steering limit = 5° (dynamic clamp)
+    // With CAN speed limited to 3000 mm/s (10.8 km/h), the dynamic clamp only reduces
+    // steering to ~26.6 degrees (40.0 - (10.8 - 2.0) * (35/23)).
     const runner = new SimulationRunner();
     runner.configure(cfg({
       hostDriveCycle: [{ durationMs: 99999, speedMmps: 6944, yawRateMradS: 1000, gear: 1 }],
     }));
     const result = runner.runDuration(3000);
-    // Steering should be present but modestly limited at high speed
-    expect(result.plantMaxSteerDeg).toBeLessThan(15);
+    // Steering should be present but modestly limited at 10.8 km/h
+    expect(result.plantMaxSteerDeg).toBeLessThan(27);
     expect(result.validationErrors.length).toBe(0);
   });
 });
