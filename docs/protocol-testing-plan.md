@@ -47,10 +47,10 @@ The suite must cover:
 Required commands:
 
 ```text
-python shared/can/generate_code.py --verify
-python tools/can_change.py verify
-python -m unittest shared/can/test_codegen_contract.py
-python -m unittest shared/can/test_change_tool.py
+python protocol/tools/protocol.py validate
+python protocol/tools/protocol.py validate
+python -m unittest protocol/test_codegen_contract.py
+python -m unittest protocol/test_change_tool.py
 ```
 
 During the directory migration these commands remain compatibility entrypoints.

@@ -95,7 +95,7 @@ untouched.
 
 1. Commit documentation separately
     - Commit only `debug-tool/debug-tool-architecture.md` and `debug-tool/work-plan.md`.
-    - Exclude `docs/generated_can_dictionary.md`, `docs/generated_can_documentation.md`, and `shared/can/generate_can_docs.py`.
+    - Exclude `docs/generated_can_dictionary.md`, `docs/generated_can_documentation.md`, and `protocol/generate_can_docs.py`.
 
 2. Fix pipeline timestamps
     - In `PipelineView.svelte`, replace both fabricated frame objects with `frameTime({ ts: actualTimestamp })`.

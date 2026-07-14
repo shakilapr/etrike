@@ -12,9 +12,9 @@ The CAN architecture uses controlled ownership rather than assuming every behavi
 
 | Concern | Authority |
 |---|---|
-| Wire facts | `shared/can/can_high.yaml`, `can_low.yaml`, and the standalone PWT manufacturer YAML |
-| Ordinary payload codecs and metadata | Deterministic generated artifacts under `shared/can/generated/` |
-| Vendor algorithms that cannot yet be generated safely | `shared/can/manual-mappings.yaml` plus adapters under `shared/can/manual/` |
+| Wire facts | `protocol/contracts/can_high.yaml`, `can_low.yaml`, and the standalone PWT manufacturer YAML |
+| Ordinary payload codecs and metadata | Deterministic generated artifacts under `protocol/generated/` |
+| Vendor algorithms that cannot yet be generated safely | `protocol/manual-mappings.yaml` plus adapters under `protocol/manual/` |
 | Runtime policy | Named component configuration: allowed misses, retries, escalation and logging policy |
 | Hardware facts | Component board/driver configuration: GPIO, I2C/SPI, oscillator and calibration |
 
@@ -89,11 +89,11 @@ Component policy stays in RT, SYS, MTR, Host or Control UI. The protocol package
 The normal change workflow is:
 
 ```text
-python tools/can_change.py inspect MESSAGE_OR_ID
+python protocol/tools/protocol.py inspect MESSAGE_OR_ID
 edit the authoritative YAML or explicitly owned policy/hardware configuration
-python shared/can/generate_code.py
+python protocol/tools/protocol.py
 review every reported manual mapping and independent vector
-python tools/can_change.py verify MESSAGE_OR_ID
+python protocol/tools/protocol.py validate MESSAGE_OR_ID
 build the targets reported by the inspection result
 ```
 
@@ -940,7 +940,7 @@ SYS monitors ESTOP_ACTIVE for ACK (100ms timeout) and STARTUP_READY for MTR live
 - [`docs/hil-safety-test-plan.md`](docs/hil-safety-test-plan.md) — HIL test scenarios
 - [`tem/testing-guide.md`](tem/testing-guide.md) — Complete test suite guide (2,470+ assertions)
 - [`docs/can-bench-test.md`](docs/can-bench-test.md) — Bench test plan
-- [`shared/can/generated/can_messages.h`](shared/can/generated/can_messages.h) — generated C++ payload DTOs, metadata and checked codecs
-- [`shared/can/manual-mappings.yaml`](shared/can/manual-mappings.yaml) — registered handwritten vendor behavior and reviewed wire hashes
-- [`shared/can/manual/vendor_protocol.h`](shared/can/manual/vendor_protocol.h) — current SES/SEB checksum and overlay adapter boundary
-- [`shared/can/can_protocol.h`](shared/can/can_protocol.h) — legacy compatibility structs plus shared frame/enums; new application codecs must not be added here
+- [`protocol/generated/can_messages.h`](protocol/generated/can_messages.h) — generated C++ payload DTOs, metadata and checked codecs
+- [`protocol/manual-mappings.yaml`](protocol/manual-mappings.yaml) — registered handwritten vendor behavior and reviewed wire hashes
+- [`protocol/manual/vendor_protocol.h`](protocol/manual/vendor_protocol.h) — current SES/SEB checksum and overlay adapter boundary
+- [`protocol/generated/cpp/protocol.h`](protocol/generated/cpp/protocol.h) — legacy compatibility structs plus shared frame/enums; new application codecs must not be added here

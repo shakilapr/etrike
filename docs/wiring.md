@@ -946,7 +946,7 @@ GPIO 40 : INT ← MCP2515 (optional)                   [IN]
 | Document | Path | Content |
 |----------|------|---------|
 | Architecture Overview | `architecture.md` | System topology, CAN message catalog, mode state machine |
-| CAN Protocol Definitions | `shared/can/can_protocol.h` | All CAN ID constants and struct layouts |
+| CAN Protocol Definitions | `protocol/generated/cpp/protocol.h` | All CAN ID constants and struct layouts |
 | CAN Signal Dictionary | `can-dictionary.md` | Bit-level CAN signal definitions |
 | CAN Bench Test Plan | `docs/can-bench-test.md` | Bench test wiring, injection scripts, test scenarios |
 | Wiring Harness Spec | `docs/wiring-harness.md` | Buildable harness, connectors, BOM per sub-harness |

@@ -48,7 +48,7 @@ Known current Phase 1 blockers or gaps observed:
 | Simulation suite | `npm test` in `simulation` fails and timed out; failures include CAN encoding expectations for `0x204`, `0x205`, `0x300`, `0x600`, `0x169`, `0x7B9`, and an 18s diagnostic soak case |
 | RT/SYS vehicle builds | Need clean confirmed pass with sufficient timeout and stable build environment |
 | PlatformIO cleanup | `.pio/build/vehicle` cleanup sometimes reports locked `sdkconfig.h`; native builds still succeeded but the lock should be investigated |
-| Generated CAN files | `shared/can/generated/*` timestamp-only diffs can appear after prebuild scripts; this creates noisy worktree changes |
+| Generated CAN files | `protocol/generated/*` timestamp-only diffs can appear after prebuild scripts; this creates noisy worktree changes |
 | Phase 1 automation | No single command currently runs the entire Phase 1 gate and produces a report |
 | Scenario matrix | Existing simulation scenarios are example-based; no full generated hundreds-case matrix yet |
 
@@ -723,7 +723,7 @@ The full PR gate is required for changes touching:
 |--------------|------------------------------|
 | `rt-esp32/**` | RT controls gateway, physics, steering, safety outputs |
 | `sys-esp32/**` | SYS controls mode, safety, body/brake/motor paths |
-| `shared/can/**` | CAN contract affects every ECU and simulator |
+| `protocol/**` | CAN contract affects every ECU and simulator |
 | `simulation/**` | Phase 1 scenario evidence depends on it |
 | `native-test/**` | Native safety/integration test coverage depends on it |
 | `docs/validation/**` | Changes release gate expectations |
@@ -929,7 +929,7 @@ Suggested invariant checker outputs:
 
 ## Modes To Test
 
-Vehicle modes from `shared/can/can_protocol.h`:
+Vehicle modes from `protocol/generated/cpp/protocol.h`:
 
 | Mode | Value | Meaning |
 |------|-------|---------|
@@ -1657,7 +1657,7 @@ Safety-critical files that should have explicit coverage tracking:
 | RT heartbeat/safety | `rt-esp32/src/heartbeat.h`, `safety_monitor.h` |
 | SYS mode/safety | `sys-esp32/src/mode_manager.*`, `safety_monitor.*` |
 | SYS brake | Brake arbitration/priority helpers, SEB request construction |
-| Shared protocol | `shared/can/can_protocol.h`, generated CAN data |
+| Shared protocol | `protocol/generated/cpp/protocol.h`, generated CAN data |
 | Simulation invariants | `simulation/src/phase1/invariants.ts` |
 
 ### Traceability File Design
@@ -1714,7 +1714,7 @@ Based on recent tool runs:
 |-------|----------------------|
 | MSVC compile error in `pid_controller.h` around `std::max` | Avoid Windows `max` macro conflict, e.g. parenthesized `(std::max)(...)` or define `NOMINMAX` in native build |
 | `sim_engine_native` unresolved `g_sim_time_us` | Align symbol declaration/definition linkage and type in native-test sim engine |
-| Simulation CAN encoding failures | Reconcile test expectations with current `shared/can/can_protocol.h` and generated CAN data |
+| Simulation CAN encoding failures | Reconcile test expectations with current `protocol/generated/cpp/protocol.h` and generated CAN data |
 | Simulation timeout | Split slow soak tests or increase timeout after failures are fixed |
 | PlatformIO locked `.pio/build/vehicle` cleanup warnings | Identify process holding file or clean when no PlatformIO process is active |
 | Generated CAN timestamp diffs | Avoid timestamp-only regeneration diffs or exclude from docs-only commits |

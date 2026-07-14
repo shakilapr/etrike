@@ -825,7 +825,7 @@ constexpr int kControlLoopHz = 100, kCmdStaleTimeoutMs = 500;
 constexpr int kHeartbeatIntervalMs = 500;
 constexpr int kHeartbeatTimeoutMsSys = 200;       // SYS heartbeat loss (2 missed at 10 Hz). RT takes over 0x7B9.
 constexpr int kHeartbeatTimeoutMsJetson = 1500;  // Jetson heartbeat loss (3 missed frames) → assisted stop
-// CAN IDs are in shared/can/can_protocol.h (namespace can):
+// CAN IDs are in protocol/generated/cpp/protocol.h (namespace can):
 //   kIdRtHeartbeatLow (0x7FD), kIdSysHeartbeat (0x7FE), kIdJetsonHeartbeat (0x7FC),
 //   kIdRtBrakeCmd (0x205), kIdSbwCmd (0x169), kIdBbwCmd (0x7B9), etc.
 constexpr int kWdtToggleGpio = 21;
@@ -1468,7 +1468,7 @@ constexpr int kTurnBlinkOnMs = 500, kTurnBlinkOffMs = 500;
 constexpr int kControlLoopHz = 100;
 constexpr int kHeartbeatIntervalMs    = 100;   // SYS sends 0x7FE at 10 Hz (fast path for brake loss detection)
 constexpr int kHeartbeatTimeoutMsRt   = 1000;  // RT heartbeat loss (0x7FD at 2 Hz, 2 missed frames = 1000ms). Faster 0x204 staleness (200ms) catches RT crash first.
-// CAN IDs are in shared/can/can_protocol.h (namespace can):
+// CAN IDs are in protocol/generated/cpp/protocol.h (namespace can):
 //   kIdRtHeartbeatLow (0x7FD), kIdSysHeartbeat (0x7FE), kIdRtBrakeCmd (0x205),
 //   kIdBbwCmd (0x7B9), etc.
 // Shared constants are in shared/shared_config.h (namespace shared):
@@ -1582,7 +1582,7 @@ Comprehensive reference for all safety mechanisms in the e-trike distributed con
 system. Each subsection describes a specific safety function: its trigger conditions,
 timing parameters, CAN interaction, and fallback paths. CAN IDs and constants
 cross-reference with the message catalog in SS2 and configuration headers in
-`shared/can/can_protocol.h`, `rt-esp32/src/config.h`, `sys-esp32/src/config.h`,
+`protocol/generated/cpp/protocol.h`, `rt-esp32/src/config.h`, `sys-esp32/src/config.h`,
 and `shared/shared_config.h`.
 
 ---
@@ -1640,7 +1640,7 @@ defers its steering exit until the centering ramp completes
 **Source files:** `rt-esp32/src/main.cpp` (lines 116-120, 253-258), `rt-esp32/src/can_dispatch.h`
 (lines 229, 247), `rt-esp32/src/can_driver_mcp2515.cpp` (lines 373-385),
 `sys-esp32/src/mode_manager.cpp` (line 70), `sys-esp32/src/main.cpp` (lines 343-370),
-`shared/can/can_protocol.h` (line 21: `kIdSafetyEstop`).
+`protocol/generated/cpp/protocol.h` (line 21: `kIdSafetyEstop`).
 
 ---
 
@@ -1715,7 +1715,7 @@ after boot. `safety_heartbeat_ok()` returns `true` when
 period expires, real heartbeat monitoring begins.
 
 **Source files:** `rt-esp32/src/heartbeat.h`, `rt-esp32/src/main.cpp` (lines 486-492),
-`sys-esp32/src/main.cpp` (lines 654-664), `shared/can/can_protocol.h` (lines 21-42,
+`sys-esp32/src/main.cpp` (lines 654-664), `protocol/generated/cpp/protocol.h` (lines 21-42,
 346-378, 406-434), `can-dictionary.md` (health_flags layout).
 
 ---
@@ -1810,7 +1810,7 @@ DAC=0 V, relays OFF, EPS-C centering, SEB idle.
 **Source files:** `sys-esp32/src/main.cpp` (lines 654-664 for setpoint stale
 gating), `rt-esp32/src/main.cpp` (watchdog task), `shared/shared_config.h`
 (`kStartupGracePeriodMs = 3000`, `kSetpointStaleMs = 200`),
-`shared/can/generated/can_data.h` (`kCmdStaleTimeoutMs = 500`).
+`protocol/generated/can_data.h` (`kCmdStaleTimeoutMs = 500`).
 
 ---
 
@@ -1898,7 +1898,7 @@ monitor escalates to ESTOP.
 **Source files:** `rt-esp32/src/steering_control.h` (full state machine + ESTOP
 behavior), `rt-esp32/src/main.cpp` (control task + following error check),
 `rt-esp32/src/config.h` (angle clamp and following error constants),
-`shared/can/can_protocol.h` (SesStatus struct with rolling counter).
+`protocol/generated/cpp/protocol.h` (SesStatus struct with rolling counter).
 
 ---
 
@@ -1992,7 +1992,7 @@ goes stale during this window, MTR communication is declared lost.
 **Source files:** `sys-esp32/src/main.cpp` (lines 248-279 for 0x721 checksum +
 parsing, lines 654-664 for brake suppression, lines 342-371 for L3 fault
 handling), `sys-esp32/src/brake_control.h`,
-`shared/can/can_protocol.h` (VcuSebReq struct, SebStatus struct),
+`protocol/generated/cpp/protocol.h` (VcuSebReq struct, SebStatus struct),
 `rt-esp32/src/steering_control.h` (STEER_ACTIVE gate for 0x7B9).
 
 ---
@@ -2006,7 +2006,7 @@ producing false actuation commands.
 
 **DLC guards on every dispatch path:**
 The CAN protocol decoders (`from_frame()` static methods in
-`shared/can/can_protocol.h`) reject frames with insufficient DLC by returning
+`protocol/generated/cpp/protocol.h`) reject frames with insufficient DLC by returning
 a safe default (zero-initialized struct):
 
 | Frame | Expected DLC | Default on short frame |
@@ -2074,7 +2074,7 @@ frame) that must be validated by the receiver:
 - Heartbeat frames (0x7FD, 0x7FE, 0x7FC, 0x7FB): the 8-bit alive counter
   serves the same freshness function. Frozen counter = missed heartbeat.
 
-**Source files:** `shared/can/can_protocol.h` (all from_frame() DLC guards,
+**Source files:** `protocol/generated/cpp/protocol.h` (all from_frame() DLC guards,
 VcuSesReq::pack checksum at lines 523-526, VcuSebReq::pack checksum at lines
 562-565), `sys-esp32/src/main.cpp` (lines 248-279 for 0x721 checksum + L3
 evaluation), `rt-esp32/src/can_dispatch.h` (ESTOP checksum validation),
@@ -2130,7 +2130,7 @@ DLC=6, reserved for future closed-loop PID telemetry. Currently not transmitted.
 When activated, planned fields: speed setpoint (i32, bytes 0-3), measured speed
 (i16, bytes 4-5), PID output (i16, bytes 6-7) -- requires DLC increase to 8.
 
-**Source files:** `shared/can/can_protocol.h` (RtStateRpt struct at lines 406-434,
+**Source files:** `protocol/generated/cpp/protocol.h` (RtStateRpt struct at lines 406-434,
 SysDiagRpt struct at lines 346-378, RtPidRpt struct at lines 436-446),
 `rt-esp32/src/main.cpp` (lines 478-492 for 0x210 packing),
 `sys-esp32/src/main.cpp` (lines 873-883 for 0x600 packing).
@@ -2364,7 +2364,7 @@ cd pwt-esp32 && pio run && pio run -t upload && pio device monitor
 | 17 | **ESTOP HMI ambiguous — "both bulbs OFF" identical to powered-off vehicle** | During ESTOP, DC-DC is OFF → 12V rail dead → brake light, mode bulbs, and indicators all dark. A rider returning to the vehicle cannot distinguish ESTOP from power-off. The OR logic claim "brake light ON during ESTOP" is physically impossible with DC-DC off. | **Software + wiring fix:** Keep DC-DC ON during ESTOP (needed for MCU power anyway). Cut only the 12V accessory relay (GPIO40). Rewire brake light to always-on DC-DC rail (not accessory relay output). Result: ESTOP = brake light ON + mode bulbs OFF. Power-off = everything OFF. See `issues/emergency-safety-analysis.md` §12. |
 | 18 | **EPS-C mechanical jam silent-stop recovery path unclear** | When mechanical jam triggers silent-stop during ESTOP centering, the architecture says "fall back to silent-stop" without specifying steer SM state transition. It's unclear whether the jam is recoverable via START short-press (STEER_FAULT path) or requires power-cycle. | **Documentation fix:** Explicitly transition to STEER_FAULT on mechanical jam during ESTOP centering. Existing STEER_FAULT recovery paths apply: START short-press → LISTEN_SYNC retry; START long-press 3s + throttle=0 → force-activate at 0° (MANUAL only). See `issues/emergency-safety-analysis.md` §13. |
 | 19 | **Fixed 5° steering following error threshold wrong at high speed** | At 25 km/h, dynamic clamp limits steering to ~5°. A fixed 5° threshold represents a 100% error — the EPS-C must have ZERO response to trigger. A 4° error at speed (80% authority loss) would NOT trigger ESTOP. At 2 km/h (40° limit), 5° is only 12.5% — potentially too sensitive for parking maneuvers. | **Software fix:** Speed-scaled threshold: `max(2°, 0.25 × dynamic_limit)`. Result: 2° at 25 km/h (tight), 4.5° at 10 km/h, 10° at 2 km/h (tolerant). One-line change in RT following-error check. See `issues/emergency-safety-analysis.md` §14. |
-| 20 | **Motor controller CAN protocol undocumented** | Motor controller outputs telemetry on the 250k powertrain CAN bus (speed, current, temperature, fault flags). Specific CAN IDs, signal layouts, and update rates are unknown — depends on motor controller model selection. Until documented, PWT cannot parse or forward motor telemetry to the 500k bus. | 1) Identify motor controller model and obtain CAN protocol documentation. 2) Define CAN IDs and signal layouts in `shared/can/can_signals.yaml`. 3) Implement PWT motor telemetry parsing and forwarding. 4) Update `pwt-esp32/pwt-architecture.md` with confirmed IDs. |
+| 20 | **Motor controller CAN protocol undocumented** | Motor controller outputs telemetry on the 250k powertrain CAN bus (speed, current, temperature, fault flags). Specific CAN IDs, signal layouts, and update rates are unknown — depends on motor controller model selection. Until documented, PWT cannot parse or forward motor telemetry to the 500k bus. | 1) Identify motor controller model and obtain CAN protocol documentation. 2) Define CAN IDs and signal layouts in `protocol/contracts/can_high.yaml`. 3) Implement PWT motor telemetry parsing and forwarding. 4) Update `pwt-esp32/pwt-architecture.md` with confirmed IDs. |
 
 ---
 

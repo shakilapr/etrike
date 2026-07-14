@@ -314,7 +314,7 @@ Ranked by (target RL × severity × test-phase proximity):
 | `mtr-stm32/src/main.cpp` | MTR control with ESTOP GPIO, 200ms staleness |
 | `mtr-stm32/src/gear_control.h` | Gear MOSFET control with conflict detection |
 | `mtr-stm32/src/mcp4725_dac.h` | DAC driver with finite I2C timeout |
-| `shared/can/can_protocol.h` | DLC guards, XOR checksums, rolling counters |
+| `protocol/generated/cpp/protocol.h` | DLC guards, XOR checksums, rolling counters |
 | `native-test/test_safety_features.cpp` | 20 safety feature tests (S1–S20) |
 | `native-test/test_estop_latch.cpp` | ESTOP latch behavior tests |
 

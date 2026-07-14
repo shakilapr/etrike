@@ -91,7 +91,7 @@ Pass criteria:
 
 ### CAN Contract And Simulation
 
-Validate RT/SYS frame contracts against `shared/can/can_protocol.h` and the CAN
+Validate RT/SYS frame contracts against `protocol/generated/cpp/protocol.h` and the CAN
 dictionary before hardware is connected.
 
 Required coverage:
@@ -125,7 +125,7 @@ Fault injection required before bench hardware:
 Phase 1 must test every vehicle mode explicitly. A test that passes only in the
 default startup mode does not prove the framework is safe in other modes.
 
-Vehicle modes from `shared/can/can_protocol.h`:
+Vehicle modes from `protocol/generated/cpp/protocol.h`:
 
 | Mode | Value | Authority meaning |
 |------|-------|-------------------|

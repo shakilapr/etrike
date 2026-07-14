@@ -995,7 +995,7 @@ unconditional `#define` overrides compiler `-D` flags. This caused:
 - `pdMS_TO_TICKS(1)` = 0 → MCP2515 SPI continuous polling → bus lockup + watchdog
 - Stack corruption on SYS from incorrect timing (GPIO 308/238 errors)
 
-**Fix:** `shared/can/patch_sdkconfig.py` — PlatformIO pre-build script that
+**Fix:** `protocol/patch_sdkconfig.py` — PlatformIO pre-build script that
 patches generated `sdkconfig.h` after CMake configure. Sets `CONFIG_FREERTOS_HZ=1000`
 and `CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144`.
 
@@ -1036,7 +1036,7 @@ pio device monitor --port COM6
 ## 14. References
 
 - [Architecture Overview](../architecture.md) — system topology and message catalog
-- [CAN Protocol](../shared/can/can_protocol.h) — message ID constants and struct layouts
+- [CAN Protocol](../protocol/generated/cpp/protocol.h) — message ID constants and struct layouts
 - [Debug Tool Architecture](../debug-tool/debug-tool-architecture.md) — tool design and API
 - [RT Config](../rt-esp32/src/config.h) — RT timing and GPIO constants
 - [SYS Config](../sys-esp32/src/config.h) — SYS timing and GPIO constants

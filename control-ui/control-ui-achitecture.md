@@ -8,7 +8,7 @@
 
 **Purpose:** Define how the E-Trike CAN bench controller should observe, emulate, stimulate, and verify RT, SYS, MTR, and related hardware while fulfilling the complete requirements in `scope.md`.
 
-**Protocol source of truth:** `shared/can/can_high.yaml` and `shared/can/can_low.yaml`, consumed through generated runtime catalogs, codecs, validators, documentation, and firmware definitions. DBC is an optional export for third-party tools, not an application dependency.
+**Protocol source of truth:** `protocol/contracts/can_high.yaml` and `protocol/contracts/can_low.yaml`, consumed through generated runtime catalogs, codecs, validators, documentation, and firmware definitions. DBC is an optional export for third-party tools, not an application dependency.
 
 **Implementation dependency:** Control UI synthetic peers, controller/HIL
 sessions, and physical Bench TX are late integration stages. They are blocked
@@ -966,7 +966,7 @@ The application does not use DBC as its internal model. YAML is used as a DBC-li
 
 Current implementation produces C++ codecs, TypeScript catalogs, stable error definitions, per-message hashes, `codec_manifest.json`, and `change_impact.json`. Python backend codecs, React integration, documentation exports, and complete checksum/counter algorithm generation below are target outputs unless their implementation and tests are present.
 
-The compiler should replace the current debug-tool-specific assumptions in `shared/can/generate_can_ts.py` with shared schema validation and deterministic targets:
+The compiler should replace the current debug-tool-specific assumptions in `protocol/generate_can_ts.py` with shared schema validation and deterministic targets:
 
 - Python runtime catalog, encoder, decoder, and validator metadata for FastAPI;
 - TypeScript runtime catalog and presentation metadata for React;

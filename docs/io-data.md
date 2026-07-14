@@ -6,7 +6,7 @@ This document catalogs every input and output variable across all four system co
 - **SYS** (ESP32-S3) — safety (EGAS Level 2), brake control, body control
 - **MTR** (STM32) — dedicated motor controller (EGAS Level 1)
 
-All CAN IDs and frame layouts are defined in `shared/can/can_protocol.h`. Physical pin mappings are in `docs/wiring.md`.
+All CAN IDs and frame layouts are defined in `protocol/generated/cpp/protocol.h`. Physical pin mappings are in `docs/wiring.md`.
 
 ### Type Notation
 

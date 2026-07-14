@@ -118,16 +118,16 @@ Traceability from HARA hazards through safety goals, functional and technical re
 
 | Safety Goal | Functional Req | Technical Req | Implementation | Test | Verification Evidence | Status |
 |-------------|---------------|---------------|---------------|------|---------------------|--------|
-| SG-04 (shared) | FR-33: SEB status (0x721) must be validated with DLC and checksum | TR-33: DLC<8 drop, XOR checksum validation | `shared/can/can_protocol.h:653` — SebStatus DLC guard | `test_dlc_consistency.cpp:1-109` — DLC tests | Unit test | Verified |
+| SG-04 (shared) | FR-33: SEB status (0x721) must be validated with DLC and checksum | TR-33: DLC<8 drop, XOR checksum validation | `protocol/generated/cpp/protocol.h:653` — SebStatus DLC guard | `test_dlc_consistency.cpp:1-109` — DLC tests | Unit test | Verified |
 | SG-04 | FR-34: 0x7B9 command must include rolling counter and checksum | TR-34: Rolling counter increment + XOR checksum | `sys-esp32/src/brake_control.h:134-135` — rolling counter implementation | `test_protocol_roundtrip.cpp:692-725` | Unit test | Verified |
-| SG-02 (shared) | FR-35: SEB status includes alignment and error status | TR-35: `SebStatus` parses alignment_status and SEB_Error_Status | `shared/can/can_protocol.h:656` — frame parsing | `test_protocol_roundtrip.cpp` — roundtrip test | Unit test | Verified |
+| SG-02 (shared) | FR-35: SEB status includes alignment and error status | TR-35: `SebStatus` parses alignment_status and SEB_Error_Status | `protocol/generated/cpp/protocol.h:656` — frame parsing | `test_protocol_roundtrip.cpp` — roundtrip test | Unit test | Verified |
 
 ### HAZ-11: CAN Frame Corruption
 
 | Safety Goal | Functional Req | Technical Req | Implementation | Test | Verification Evidence | Status |
 |-------------|---------------|---------------|---------------|------|---------------------|--------|
-| SG-06: Corrupted CAN frames must be rejected | FR-36: XOR checksum on steer-by-wire frames (0x169, 0x201, 0x721, 0x7B9) | TR-36: XOR(bytes[0..6]) ^ 0xFF, validated on RX | `shared/can/can_protocol.h` — checksum fields | `test_checksum_full.cpp:397-420` — corruption detection | Unit test | Verified |
-| SG-06 | FR-37: DLC must match protocol expectation for every frame | TR-37: DLC guard in every `from_frame()` method | `shared/can/can_protocol.h` — DLC guards on all frame types | `test_dlc_consistency.cpp:1-109` | Unit test | Verified |
+| SG-06: Corrupted CAN frames must be rejected | FR-36: XOR checksum on steer-by-wire frames (0x169, 0x201, 0x721, 0x7B9) | TR-36: XOR(bytes[0..6]) ^ 0xFF, validated on RX | `protocol/generated/cpp/protocol.h` — checksum fields | `test_checksum_full.cpp:397-420` — corruption detection | Unit test | Verified |
+| SG-06 | FR-37: DLC must match protocol expectation for every frame | TR-37: DLC guard in every `from_frame()` method | `protocol/generated/cpp/protocol.h` — DLC guards on all frame types | `test_dlc_consistency.cpp:1-109` | Unit test | Verified |
 | SG-06 | FR-38: Rolling counter must increment monotonically | TR-38: `(prev + 1) & 0x0F`, frozen counter = comms failure | `sys-esp32/src/brake_control.h:134-135` — counter increment | `test_protocol_roundtrip.cpp:676-687` | Unit test | Verified |
 
 ### HAZ-12: Debug Tool Zombie Connections
@@ -155,10 +155,10 @@ Traceability from HARA hazards through safety goals, functional and technical re
 | **Command staleness** | Timestamp-based timeout on drive commands | 0x204 (200ms), 0x300 (500ms) | `rt-esp32/src/watchdog.h`, `mtr-stm32/src/main.cpp:189-195` | `test_safety_features.cpp:174-186` (S7) |
 | **Steering following error** | Speed-scaled error threshold with 300ms persistence | 0x169 (cmd), 0x201 (actual) | `rt-esp32/src/safety_monitor.h:112-128` | `test_safety_features.cpp:128-140` (S5) |
 | **ESTOP propagation** | CAN 0x001 with priority forwarding across both buses | 0x001 | `rt-esp32/src/can_dispatch.h:78`, `rt-esp32/src/can_dispatch.h:214-236` | `test_gateway_forwarding.cpp:81-83` |
-| **Checksum validation** | XOR checksum on all steer-by-wire frames | 0x169, 0x201, 0x721, 0x7B9 | `shared/can/can_protocol.h` DLC guards + XOR fields | `test_checksum_full.cpp:397-420` |
+| **Checksum validation** | XOR checksum on all steer-by-wire frames | 0x169, 0x201, 0x721, 0x7B9 | `protocol/generated/cpp/protocol.h` DLC guards + XOR fields | `test_checksum_full.cpp:397-420` |
 | **Rolling counter** | 4-bit counter guards against replay/stale frames | 0x169, 0x201, 0x721, 0x7B9 | `sys-esp32/src/brake_control.h:134-135` | `test_protocol_roundtrip.cpp:676-687` |
 | **EGAS L2 speed monitoring** | SYS compares 0x204 setpoint vs 0x206 actual speed | 0x204, 0x206 | `sys-esp32/src/main.cpp:428-457` | `test_safety_features.cpp:154-170` (S6) |
-| **DLC validation guards** | All `from_frame()` methods reject wrong DLC | All frames | `shared/can/can_protocol.h` (all frame types) | `test_dlc_consistency.cpp:1-109` |
+| **DLC validation guards** | All `from_frame()` methods reject wrong DLC | All frames | `protocol/generated/cpp/protocol.h` (all frame types) | `test_dlc_consistency.cpp:1-109` |
 | **External watchdog** | TPS3850 IC, independent RC oscillator, 100ms timeout | N/A (GPIO) | `rt-esp32/src/main.cpp:313-316`, `sys-esp32/src/wdt_toggle.h` | `test_task_watchdog.cpp:1-81` |
 | **Internal task watchdog** | Per-task alive counters, task stall detection | N/A | `sys-esp32/src/main.cpp:815-819` | `test_safety_features.cpp:358-375` (S17) |
 | **Dynamic angle clamp** | Speed-inverse proportional steering limit | 0x169 (target angle) | `rt-esp32/src/physics_model.cpp:31` | `test_components.cpp:90-93` |
@@ -192,7 +192,7 @@ Traceability from HARA hazards through safety goals, functional and technical re
 | 9.2 | WebSocket close handler leaks client references | `debug-tool/backend/src/ws/stream.ts:50-52` | HAZ-12 | SG-QM | Verified |
 | 9.3 | API allows ESTOP injection without confirmation | `debug-tool/backend/src/api/cmd.ts:47` | HAZ-12 | SG-QM | Verified |
 | 9.4 | Stream broadcast crashes on undefined readyState | `debug-tool/backend/src/ws/stream.ts:87-89` | HAZ-12 | SG-QM | Verified |
-| D2 | CAN DLC generation ignoring explicit dlc: fields | `shared/can/can_protocol.h` DLC values fix | HAZ-11 | SG-06 | Verified |
+| D2 | CAN DLC generation ignoring explicit dlc: fields | `protocol/generated/cpp/protocol.h` DLC values fix | HAZ-11 | SG-06 | Verified |
 
 ---
 
@@ -207,7 +207,7 @@ Traceability from HARA hazards through safety goals, functional and technical re
 | 7.5 | N/A — frozen rolling counter guard added per commit `cd9209b` | `Add frozen rolling-counter guard for EPS-C 0x201 feedback` |
 | 8.2 | `mtr-stm32/src/mcp4725_dac.h:29-30` | `// HAL_MAX_DELAY would block forever on I2C bus disruption, defeating hardware ESTOP (bug 8.2)` |
 | 9.1 | `debug-tool/backend/src/ws/stream.ts:70` | `// Evict clients with no pong response within 60s (zombie connection guard)` |
-| D2 | `shared/can/can_protocol.h` | CAN DLC generation fix per YAML explicit dlc field |
+| D2 | `protocol/generated/cpp/protocol.h` | CAN DLC generation fix per YAML explicit dlc field |
 
 ---
 
