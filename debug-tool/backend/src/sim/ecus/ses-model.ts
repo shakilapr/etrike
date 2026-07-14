@@ -67,18 +67,20 @@ export class SesModel implements EcuModel {
     // 0x202 SES_ErrInfo at 10Hz
     if (this.tickMs % 100 === 0) {
       const isL3 = this.errorStatus === 3;
-      this.emit("low", ID_SES_ErrInfo, "SES_ErrInfo", { fault_mask: isL3 ? 0x303 : 0, l3_fault: isL3 });
+      const mask = isL3 ? 0x303 : 0;
+      this.emitRaw("low", ID_SES_ErrInfo, "SES_ErrInfo", 
+        [mask & 0xFF, (mask >> 8) & 0xFF, (mask >> 16) & 0xFF, (mask >> 24) & 0xFF, 0, 0, 0, 0]);
     }
 
     // 0x203 SES_Version at 1Hz
     if (this.tickMs % 1000 === 0) {
-      this.emit("low", ID_SES_Version, "SES_Version", { sw_version: this.swVer, hw_version: this.hwVer });
+      this.emit("low", ID_SES_Version, "SES_Version", { SES_SW_Version: this.swVer * 0.01, SES_HW_Version: this.hwVer * 0.1 });
     }
 
     // 0x6FA SES_Test at 100Hz
     if (this.tickMs % 10 === 0) {
       const mc = 0; const temp = Math.round(25 / 0.5); const volt = Math.round(12 / 0.00390625);
-      this.emit("low", ID_SES_Test, "SES_TEST", { motor_current: mc, ecu_temp: 25, supply_voltage: 12 });
+      this.emit("low", ID_SES_Test, "SES_TEST", { SES_MtrCurt: mc, SES_ECUTemp: temp, SES_PowVolt: volt });
     }
 
     return [...this.frameQueue];
@@ -94,6 +96,20 @@ export class SesModel implements EcuModel {
       seq: 0,
       bus,
       frame: { id, dlc: encoded.dlc, data: encoded.data, ext: false, rtr: false },
+      decoded: { name, signals }
+    };
+    this.frameQueue.push(frame);
+    for (const cb of this.callbacks) cb(frame);
+  }
+
+  private emitRaw(bus: "high"|"low", id: string, name: string, data: number[]): void {
+    const signals = decoder.decode(bus, id, data);
+    const frame: CanFrame = {
+      ts: Date.now()/1000,
+      ts_us: "",
+      seq: 0,
+      bus,
+      frame: { id, dlc: data.length, data, ext: false, rtr: false },
       decoded: { name, signals }
     };
     this.frameQueue.push(frame);

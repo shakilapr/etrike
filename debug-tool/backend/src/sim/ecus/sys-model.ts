@@ -53,7 +53,7 @@ export class SysModel implements EcuModel {
 
     // Diagnostics 0x600 (1 Hz)
     if (this.tickCount % 100 === 0) {
-      this.emit("low", ID_SYS_DIAG_RPT, "SYS_DIAG_RPT", { mode: this.mode, hb_ok: this.rtHbAlive, estop_active: this.estopActive });
+      this.emit("low", ID_SYS_DIAG_RPT, "SYS_DIAG_RPT", { SYS_DiagMode: this.mode, hb_ok: this.rtHbAlive, SYS_DiagEstopActive: this.estopActive });
     }
 
     // Brake forwarding to SEB 0x7B9 (50 Hz) — only when braking
@@ -71,7 +71,7 @@ export class SysModel implements EcuModel {
 
     // SYS heartbeat 0x7FE (10 Hz)
     if (this.tickCount % 10 === 0) {
-      this.emit("low", ID_SYS_HEARTBEAT, "SYS_HEARTBEAT", { alive_ctr: this.hbCounter, health_flags: 0 });
+      this.emit("low", ID_SYS_HEARTBEAT, "SYS_HEARTBEAT", { SYS_AliveCtr: this.hbCounter, health_flags: 0 });
     }
 
     return [...this.frameQueue];

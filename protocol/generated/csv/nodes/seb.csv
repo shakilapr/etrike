@@ -1,0 +1,6 @@
+Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,Bit,Size,Type,Scale,Range,Unit,Description
+0x6FB,SEB_TEST_low,SEB,"SYS, RT",8,10,(No signals/Opaque),,,,,,,,
+0x721,SEB_STATUS_low,SEB,"SYS, RT",8,10,(No signals/Opaque),,,,,,,,
+0x731,SEB_ERR_INFO_low,SEB,SYS,8,100,(No signals/Opaque),,,,,,,,
+0x741,SEB_VERSION_low,SEB,SYS,8,1000,(No signals/Opaque),,,,,,,,
+0x7B9,VCU_SEB_REQ_low,SYS,SEB,8,20,(No signals/Opaque),,,,,,,,
