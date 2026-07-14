@@ -1580,8 +1580,7 @@ export const METADATA = {
     },
     "name": "SYS_SAFETY_STS"
   }
-}
- as const;
+} as const;
 export type CodecStatus = "ok" | "wrong_message_id" | "wrong_frame_format" | "unexpected_length" | "value_out_of_range" | "constant_mismatch" | "checksum_mismatch" | "unsupported_semantics";
 export function lookup(bus: string, id: number) {
   return Object.entries(METADATA).flatMap(([key, message]) => message.instances.filter(instance => instance.bus === bus && instance.id === id).map(instance => ({ key, message, instance })))[0];

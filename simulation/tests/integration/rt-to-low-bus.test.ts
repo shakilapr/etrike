@@ -66,7 +66,7 @@ describe("RT to low-bus pipeline", () => {
 
   it("RT forwards low-bus category 1 messages to high", () => {
     // 0x011 SYS_SAFETY_STS should be forwarded low→high
-    const safetyFrame = makeFrame("0x011", "low", [0, 1]);
+    const safetyFrame = makeFrame("0x011", "low", [0, 1, 0]);
     const frames = rt.tick(1, [], [safetyFrame], autoCtx(1));
 
     const forwarded = frames.find(f => f.canId === "0x011" && f.bus === "high");
