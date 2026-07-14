@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdint>
 
-#include "can/can_protocol.h"
+#include "protocol/compat/can_protocol.hpp"
 #include "can_rx_router.h"
 
 static int pass = 0;
@@ -60,7 +60,8 @@ int main() {
         uint16_t steer_angle = 0;
         auto q = make_queues(low, high, cmd, brake_kpa, estop, mode, steer_angle, steer_status);
 
-        can::HostDriveCmd{1234, -321, uint8_t(can::Gear::D)}.to_frame(fr);
+        can::gen::HostDriveCmd val{1234, -321, uint8_t(can::Gear::D)};
+        can::encode_frame(val, fr);
         rt::route_frame(fr, true, q);
 
         CHECK(cmd.speed_mmps == 1234);
@@ -81,7 +82,7 @@ int main() {
 
         fr.id = can::kIdSysModeCmd;
         fr.dlc = 1;
-        fr.put_u8(0, uint8_t(can::Mode::Auto));
+        fr.data[0] = uint8_t(can::Mode::Auto);
         rt::route_frame(fr, false, q);
 
         CHECK(mode == uint8_t(can::Mode::Auto));
@@ -138,7 +139,8 @@ int main() {
         uint16_t steer_angle = 0;
         auto q = make_queues(low, high, cmd, brake_kpa, estop, mode, steer_angle, steer_status);
 
-        can::HostLightCmd{true, false, true, false}.to_frame(fr);
+        can::gen::HostLightCmd val{true, false, true, false};
+        can::encode_frame(val, fr);
         rt::route_frame(fr, true, q);
 
         CHECK(low.id == can::kIdHostLightCmd);

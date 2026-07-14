@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstdint>
 
-#include "can/can_protocol.h"
+#include "protocol/compat/can_protocol.hpp"
 #include "rt_state.h"
 #include "safety_monitor.h"
 
@@ -80,7 +80,7 @@ static void reset_state() {
 }
 
 static void boot_steering_to_active() {
-    can::VcuSesReq out;
+    can::custom::ses::Command out;
     int64_t now_ms = 0;
     int ticks = (rt::kSteerBootWaitMs * rt::kSteerCmdRateHz) / 1000;
     int dt_ms = 1000 / rt::kSteerCmdRateHz;

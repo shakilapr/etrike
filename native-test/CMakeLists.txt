@@ -174,6 +174,7 @@ target_include_directories(mcp2515_config PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 # The driver needs RT configuration headers, but no FreeRTOS or HAL library.
@@ -187,6 +188,7 @@ target_include_directories(rt_can_rx_router PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -201,6 +203,7 @@ target_include_directories(rt_can_dispatch PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -214,6 +217,7 @@ target_include_directories(rt_safety_monitor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -274,6 +278,7 @@ target_link_libraries(dual_heartbeat PRIVATE protocol_headers)
 target_include_directories(dual_heartbeat PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
@@ -313,6 +318,7 @@ target_include_directories(sim_engine_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/sim-engine
     ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
     ${ETRIKE_ROOT}/sys-esp32/src
     ${ETRIKE_ROOT}/mtr-stm32/src
