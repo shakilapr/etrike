@@ -1,0 +1,684 @@
+{
+  "languages": {
+    "cpp": [
+      {
+        "implementation": "generated-v1",
+        "message": "hmi:hmi_mode_req",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "hmi:hmi_pwr_req",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_brake_req",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_drive_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_light_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_obstacle_dist",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "mtr:mtr_motor_fbk",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "mtr:sys_throttle_sts",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "pwt:pwt_dcdc_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:brake_diag",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_brake_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_drive_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_pid_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_state_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:steer_diag",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "safety:safety_estop",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "seb-error-v1",
+        "message": "seb:seb_err_info",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-status-v1",
+        "message": "seb:seb_status",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-test-v1",
+        "message": "seb:seb_test",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-version-v1",
+        "message": "seb:seb_version",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-command-v1",
+        "message": "seb:vcu_seb_req",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-error-v1",
+        "message": "ses:ses_err_info",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-status-v1",
+        "message": "ses:ses_status",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-test-v1",
+        "message": "ses:ses_test",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-version-raw-v1",
+        "message": "ses:ses_version",
+        "payload": "raw_unsupported",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-command-v1",
+        "message": "ses:vcu_ses_req",
+        "payload": "metadata_only",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_diag_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_mode_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_safety_sts",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      }
+    ],
+    "python": [
+      {
+        "implementation": "generated-v1",
+        "message": "hmi:hmi_mode_req",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "hmi:hmi_pwr_req",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_brake_req",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_drive_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_light_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_obstacle_dist",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "mtr:mtr_motor_fbk",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "mtr:sys_throttle_sts",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "pwt:pwt_dcdc_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:brake_diag",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_brake_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_drive_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_pid_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_state_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:steer_diag",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "safety:safety_estop",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "seb-error-v1",
+        "message": "seb:seb_err_info",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-status-v1",
+        "message": "seb:seb_status",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-test-v1",
+        "message": "seb:seb_test",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-version-v1",
+        "message": "seb:seb_version",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-command-v1",
+        "message": "seb:vcu_seb_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-error-v1",
+        "message": "ses:ses_err_info",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-status-v1",
+        "message": "ses:ses_status",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-test-v1",
+        "message": "ses:ses_test",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-version-raw-v1",
+        "message": "ses:ses_version",
+        "payload": "raw_unsupported",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-command-v1",
+        "message": "ses:vcu_ses_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_diag_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_mode_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_safety_sts",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      }
+    ],
+    "typescript": [
+      {
+        "implementation": "generated-v1",
+        "message": "hmi:hmi_mode_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "hmi:hmi_pwr_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_brake_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_drive_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_heartbeat",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_light_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "host:host_obstacle_dist",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "mtr:mtr_motor_fbk",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "mtr:sys_throttle_sts",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "pwt:pwt_dcdc_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:brake_diag",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_brake_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_drive_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_heartbeat",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_pid_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_state_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:steer_diag",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "safety:safety_estop",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "seb-error-v1",
+        "message": "seb:seb_err_info",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-status-v1",
+        "message": "seb:seb_status",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-test-v1",
+        "message": "seb:seb_test",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-version-v1",
+        "message": "seb:seb_version",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "seb-command-v1",
+        "message": "seb:vcu_seb_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-error-v1",
+        "message": "ses:ses_err_info",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-status-v1",
+        "message": "ses:ses_status",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-test-v1",
+        "message": "ses:ses_test",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-version-raw-v1",
+        "message": "ses:ses_version",
+        "payload": "raw_unsupported",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "ses-command-v1",
+        "message": "ses:vcu_ses_req",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "custom"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_diag_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_heartbeat",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_mode_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_safety_sts",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      }
+    ]
+  },
+  "schema_version": 1,
+  "wire_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a"
+}

@@ -35,8 +35,8 @@ void test_bug_4_5_spontaneous_forward_lurch(void) {
 }
 
 void test_bug_4_10_seb_alignment_bit_uninitialized(void) {
-    can::VcuSebReq auto_req = rt::make_seb_auto_req(2000);
-    TEST_ASSERT_EQUAL(1, auto_req.align_enable);
+    auto auto_req = rt::make_seb_auto_req(2000);
+    TEST_ASSERT_TRUE(auto_req.alignment_enable);
 }
 
 extern "C" void app_main() {

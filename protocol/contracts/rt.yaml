@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "messages": [
+    {"key":"rt_drive_cmd","owner":"rt","protocol":"etrike.application.v1","name":"RT_DRIVE_CMD","dlc":5,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"motor_speed_mmps","byte":0,"bit":0,"bits":32,"signed":true,"min":-500,"max":3000},
+      {"key":"gear","byte":4,"bit":0,"bits":8,"min":0,"max":3,"enum":{"0":"N","1":"D","2":"S","3":"R"}}
+    ]},"instances":[{"bus":"low","id":"0x204","frame_format":"standard","sender":"RT","receivers":["SYS","MTR"],"cycle_ms":10,"semantics":"independent"}]},
+    {"key":"rt_brake_cmd","owner":"rt","protocol":"etrike.application.v1","name":"RT_BRAKE_CMD","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"brake_pressure_kpa","byte":0,"bit":0,"bits":32,"signed":true,"min":0,"max":20000}
+    ]},"instances":[{"bus":"low","id":"0x205","frame_format":"standard","sender":"RT","receivers":["SYS"],"cycle_ms":20,"semantics":"independent"}]},
+    {"key":"rt_state_rpt","owner":"rt","protocol":"etrike.application.v1","name":"RT_STATE_RPT","dlc":6,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2,"enum":{"0":"MANUAL","1":"AUTO","2":"ESTOP"}},
+      {"key":"safety_state","byte":1,"bit":0,"bits":2,"min":0,"max":2},{"key":"estop_reason","byte":1,"bit":4,"bits":4,"min":0,"max":7},
+      {"key":"reversing","byte":2,"bit":0,"bits":1},{"key":"rx_overflow","byte":3,"bit":0,"bits":8},{"key":"task_health","byte":4,"bit":0,"bits":8},{"key":"steer_state","byte":5,"bit":0,"bits":8,"max":5}
+    ]},"instances":[
+      {"bus":"high","id":"0x210","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":100,"semantics":"independent"},
+      {"bus":"low","id":"0x210","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":100,"semantics":"independent"}
+    ]},
+    {"key":"rt_pid_rpt","owner":"rt","protocol":"etrike.application.v1","name":"RT_PID_RPT","dlc":6,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"speed_setpoint","byte":0,"bit":0,"bits":16,"signed":true},{"key":"speed_measured","byte":2,"bit":0,"bits":16,"signed":true},{"key":"pid_output","byte":4,"bit":0,"bits":16,"signed":true}
+    ]},"instances":[{"bus":"high","id":"0x220","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":100,"semantics":"independent","availability":"reserved"}]},
+    {"key":"steer_diag","owner":"rt","protocol":"etrike.application.v1","name":"STEER_DIAG","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"angle_0_1deg","byte":0,"bit":0,"bits":16,"factor":0.1,"offset":-3000},
+      {"key":"fault","byte":2,"bit":0,"bits":8,"max":1},{"key":"motor_current","byte":3,"bit":0,"bits":16,"factor":0.01},
+      {"key":"ecu_temp","byte":5,"bit":0,"bits":16,"factor":0.1},{"key":"reserved","byte":7,"bit":0,"bits":8,"constant":0}
+    ]},"instances":[{"bus":"high","id":"0x310","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":100,"semantics":"independent"}]},
+    {"key":"brake_diag","owner":"rt","protocol":"etrike.application.v1","name":"BRAKE_DIAG","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"pressure_raw","byte":0,"bit":0,"bits":16,"factor":0.05},{"key":"fault","byte":2,"bit":0,"bits":8,"max":1},
+      {"key":"motor_current","byte":3,"bit":0,"bits":16,"factor":0.01},{"key":"ecu_temp","byte":5,"bit":0,"bits":16,"factor":0.1},{"key":"reserved","byte":7,"bit":0,"bits":8,"constant":0}
+    ]},"instances":[{"bus":"high","id":"0x311","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":100,"semantics":"independent"}]},
+    {"key":"rt_heartbeat","owner":"rt","protocol":"etrike.application.v1","name":"RT_HEARTBEAT","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"alive_ctr","byte":0,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},
+      {"key":"health_flags","byte":1,"bit":0,"bits":8}
+    ]},"instances":[
+      {"bus":"high","id":"0x7FD","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":500,"semantics":"independent"},
+      {"bus":"low","id":"0x7FD","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":500,"semantics":"independent"}
+    ]}
+  ]
+}

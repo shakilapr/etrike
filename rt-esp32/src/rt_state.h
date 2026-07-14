@@ -12,7 +12,7 @@
 #include <cstdint>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-#include "can/can_protocol.h"
+#include "protocol/compat/can.hpp"
 #include "physics_model.h"
 #include "steering_control.h"
 #include "speed_controller.h"

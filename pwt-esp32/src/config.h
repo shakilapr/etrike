@@ -3,7 +3,7 @@
 // See pwt-esp32/pwt-architecture.md.
 
 #include <cstdint>
-#include "generated/pwt_can_data.h"
+#include "protocol/generated/cpp/etrike_protocol.hpp"
 
 namespace pwt {
 
@@ -15,7 +15,7 @@ static_assert(PWT_DCDC_DEFAULT_ENABLED == 0 || PWT_DCDC_DEFAULT_ENABLED == 1,
 constexpr bool kDcdcDefaultEnabled = PWT_DCDC_DEFAULT_ENABLED != 0;
 
 // ── Powertrain CAN (the ESP32-S3's only TWAI controller, 250 kbit/s) ─
-constexpr int kCanPwtBitrateHz = can_data::kBitrateHz;
+constexpr int kCanPwtBitrateHz = 250000;
 constexpr int kCanPwtTxGpio    = 7;
 constexpr int kCanPwtRxGpio    = 6;
 
@@ -25,13 +25,10 @@ constexpr int kCanPwtRxGpio    = 6;
 // Byte 0: Control   (00=Disable, 01=Enable)
 // Byte 7: Reset Ctrl (00=No reset, 01=Reset)
 // Bytes 1-6: Reserved (0xFF)
-constexpr uint32_t kDcdcCmdId      = can_data::kIdDcdcCmd;
-constexpr int      kDcdcCycleMs    = can_data::kDcdcCmdCycleMs;
-constexpr uint8_t  kDcdcEnable     = can_data::kDcdcEnable;
-constexpr uint8_t  kDcdcDisable    = can_data::kDcdcDisable;
-constexpr uint8_t  kDcdcNoReset    = can_data::kDcdcNoReset;
-constexpr uint8_t  kDcdcReset      = can_data::kDcdcReset;
-constexpr uint8_t  kDcdcReserved   = can_data::kDcdcReserved;
+using DcdcCommand = etrike::protocol::generated::PwtDcdcCmd;
+constexpr uint32_t kDcdcCmdId   = DcdcCommand::kPowertrainId;
+constexpr int      kDcdcCycleMs = DcdcCommand::kPowertrainCycleMs;
+static_assert(DcdcCommand::kPowertrainExtended, "PWT DC-DC command must remain extended");
 
 // ── External Watchdog ───────────────────────────────────────────────
 constexpr int kWdtToggleGpio  = 21;

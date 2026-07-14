@@ -1,6 +1,6 @@
 #include <unity.h>
 #include <cstdint>
-#include "can/can_protocol.h"
+#include "protocol/compat/can.hpp"
 #include "shared_config.h"
 #include "config.h"
 
@@ -11,16 +11,21 @@ void test_sys_qa_brake_following_error_and_0x721_corruption(void) {
     uint16_t g_cmd_stroke_raw = 0;
     int32_t brake_kpa = 2000;
     
-    can::VcuSebReq out{};
+    can::custom::seb::Command out{};
     if (brake_kpa > 0) {
-        out.control_mode  = 1;  
+        out.control_mode = can::custom::seb::ControlMode::Pressure;
         uint16_t kStrokeRawZero = static_cast<uint16_t>((0.0f - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-        out.stroke_req    = kStrokeRawZero; // 600
-        g_cmd_stroke_raw  = out.stroke_req;
+        out.stroke_request_raw = kStrokeRawZero; // 600
+        g_cmd_stroke_raw = out.stroke_request_raw;
     }
     
-    uint8_t fr_data[8] = {0x01, 0x00, 0x20, 0x28, 0x00, 0x00, 0x00, 0x00};
-    uint16_t actual_raw = uint16_t(fr_data[2] | (fr_data[3] << 8));
+    can::Frame frame = can::Frame::standard(can::kIdSebStatus, 8);
+    frame.data = {0x05, 0x00, 0x20, 0x28, 0x00, 0x00, 0x00, 0xF2};
+    can::custom::seb::Status status{};
+    TEST_ASSERT_EQUAL_UINT8(uint8_t(can::gen::CodecStatus::Ok),
+                            uint8_t(can::custom::seb::decode_status(frame.view(), status)));
+    TEST_ASSERT_EQUAL_UINT8(1, status.control_mode);
+    uint16_t actual_raw = status.stroke_value_raw;
     
     uint16_t cmd = g_cmd_stroke_raw;
     uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);

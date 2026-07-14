@@ -7,7 +7,6 @@
 #include <atomic>
 #include <cstdint>
 #include "config.h"
-#include "can/can_protocol.h"
 
 #define ENABLE_CAN_HMI true
 

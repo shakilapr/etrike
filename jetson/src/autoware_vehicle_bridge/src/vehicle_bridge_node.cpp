@@ -2,8 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 #include "autoware_vehicle_bridge/vehicle_bridge_node.hpp"
-#include "can/generated/can_data.h"
-#include "can/generated/can_messages.h"
+#include "protocol/generated/cpp/etrike_protocol.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -22,20 +21,40 @@
 namespace autoware_vehicle_bridge
 {
 
+namespace protocol = etrike::protocol;
+namespace messages = etrike::protocol::generated;
+
+static protocol::FrameView protocol_view(const struct can_frame & frame)
+{
+  const bool extended = (frame.can_id & CAN_EFF_FLAG) != 0;
+  const canid_t mask = extended ? CAN_EFF_MASK : CAN_SFF_MASK;
+  return protocol::FrameView(frame.can_id & mask, extended, frame.len, frame.data, sizeof(frame.data));
+}
+
+static bool to_socket_frame(const protocol::Frame & source, struct can_frame & destination)
+{
+  if (!protocol::is_valid_frame(source.view())) return false;
+  std::memset(&destination, 0, sizeof(destination));
+  destination.can_id = source.id | (source.extended ? CAN_EFF_FLAG : 0);
+  destination.len = source.dlc;
+  std::copy_n(source.data.begin(), source.dlc, destination.data);
+  return true;
+}
+
 // =====================================================================
 //  CAN ID constants
 // =====================================================================
-constexpr canid_t CAN_ESTOP        = can::data::kIdSAFETYESTOP;
-constexpr canid_t CAN_SAFETY_STS   = can::data::kIdSYSSAFETYSTS;
-constexpr canid_t CAN_THROTTLE_STS = can::data::kIdSYSTHROTTLESTS;
-constexpr canid_t CAN_STATE_RPT    = can::data::kIdRTSTATERPT;
-constexpr canid_t CAN_DRIVE_CMD    = can::data::kIdHOSTDRIVECMD;
-constexpr canid_t CAN_BRAKE_REQ    = can::data::kIdHOSTBRAKEREQ;
-constexpr canid_t CAN_LIGHT_CMD    = can::data::kIdHOSTLIGHTCMD;
-constexpr canid_t CAN_DIAG_RPT     = can::data::kIdSYSDIAGRPT;
-constexpr canid_t CAN_MOTOR_FBK    = can::data::kIdMTRMOTORFBK;
-constexpr canid_t CAN_HOST_HB      = can::data::kIdHOSTHEARTBEAT;
-constexpr canid_t CAN_RT_HB        = can::data::kIdRTHEARTBEAT;
+constexpr canid_t CAN_ESTOP        = messages::SafetyEstop::kHighId;
+constexpr canid_t CAN_SAFETY_STS   = messages::SysSafetySts::kHighId;
+constexpr canid_t CAN_THROTTLE_STS = messages::SysThrottleSts::kHighId;
+constexpr canid_t CAN_STATE_RPT    = messages::RtStateRpt::kHighId;
+constexpr canid_t CAN_DRIVE_CMD    = messages::HostDriveCmd::kHighId;
+constexpr canid_t CAN_BRAKE_REQ    = messages::HostBrakeReq::kHighId;
+constexpr canid_t CAN_LIGHT_CMD    = messages::HostLightCmd::kHighId;
+constexpr canid_t CAN_DIAG_RPT     = messages::SysDiagRpt::kHighId;
+constexpr canid_t CAN_MOTOR_FBK    = messages::MtrMotorFbk::kHighId;
+constexpr canid_t CAN_HOST_HB      = messages::HostHeartbeat::kHighId;
+constexpr canid_t CAN_RT_HB        = messages::RtHeartbeat::kHighId;
 
 // =====================================================================
 //  Gear constants (Autoware.Auto <-> CAN)
@@ -175,11 +194,10 @@ bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannCo
 
   uint8_t gear = derive_gear(speed_mmps, gear_override, has_override);
 
-  can::gen::HostDriveCmd message{speed_mmps, yaw_mrad, gear};
-  std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = message.kId;
-  frame.len = message.kDlc;
-  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
+  messages::HostDriveCmd message{speed_mmps, yaw_mrad, gear};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
 }
 
 bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannControlCommand & cmd,
@@ -195,11 +213,10 @@ bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannCo
     kpa = std::clamp(kpa, 0, static_cast<int32_t>(params_.max_brake_pressure_kpa));
   }
 
-  can::gen::HostBrakeReq message{kpa};
-  std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = message.kId;
-  frame.len = message.kDlc;
-  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
+  messages::HostBrakeReq message{kpa};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
 }
 
 bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
@@ -207,7 +224,7 @@ bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndica
                                bool is_braking,
                                struct can_frame & frame)
 {
-  can::gen::HostLightCmd message{};
+  messages::HostLightCmd message{};
   if (turn) {
     message.left_turn = turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_LEFT;
     message.right_turn = turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_RIGHT;
@@ -217,28 +234,25 @@ bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndica
   message.brake_light = is_braking;
   // bit3=headlight reserved for future
 
-  std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = message.kId;
-  frame.len = message.kDlc;
-  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
 }
 
 bool CanEncoder::encode_heartbeat(struct can_frame & frame)
 {
-  std::memset(&frame, 0, sizeof(frame));
-  can::gen::HostHeartbeat message{host_alive_ctr_++, 0};
-  frame.can_id = message.kId;
-  frame.len = message.kDlc;
-  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
+  messages::HostHeartbeat message{host_alive_ctr_++, 0};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
 }
 
 bool CanEncoder::encode_estop(struct can_frame & frame)
 {
-  can::gen::SafetyEstop message{};
-  std::memset(&frame, 0, sizeof(frame));
-  frame.can_id = message.kId;
-  frame.len = message.kDlc;
-  return message.pack(frame.data, frame.len) == can::gen::CodecStatus::Ok;
+  messages::SafetyEstop message{};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
 }
 
 // =====================================================================
@@ -247,8 +261,8 @@ bool CanEncoder::encode_estop(struct can_frame & frame)
 bool CanDecoder::decode_velocity(const struct can_frame & frame,
                                  autoware_auto_vehicle_msgs::msg::VelocityReport & msg) const
 {
-  can::gen::SysThrottleSts value{};
-  if (frame.len != value.kDlc || can::gen::SysThrottleSts::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) return false;
+  messages::SysThrottleSts value{};
+  if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) return false;
   msg.longitudinal_velocity = value.speed_mmps / 1000.0f;
   msg.lateral_velocity = 0.0f;
   msg.heading_rate = 0.0f;
@@ -259,8 +273,8 @@ bool CanDecoder::decode_state(const struct can_frame & frame,
                               autoware_auto_vehicle_msgs::msg::ControlModeReport & mode_msg,
                               autoware_auto_vehicle_msgs::msg::GearReport & gear_msg) const
 {
-  can::gen::RtStateRpt value{};
-  if (frame.len != value.kDlc || can::gen::RtStateRpt::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) return false;
+  messages::RtStateRpt value{};
+  if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) return false;
   uint8_t trike_mode = value.mode;
   bool reversing = value.reversing;
 
@@ -284,8 +298,8 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
                                     diagnostic_msgs::msg::DiagnosticArray & msg,
                                     const rclcpp::Time & now) const
 {
-  can::gen::SysDiagRpt value{};
-  if (frame.len != value.kDlc || can::gen::SysDiagRpt::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) return false;
+  messages::SysDiagRpt value{};
+  if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) return false;
   msg.header.stamp = now;
   msg.status.clear();
 
@@ -301,15 +315,15 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   };
 
   using DiagnosticStatus = diagnostic_msgs::msg::DiagnosticStatus;
-  const uint8_t mode = value.sys_diag_mode;
-  const bool brake_engaged = value.sys_diag_brake_engaged;
-  const bool brake_fault = value.sys_diag_brake_fault;
+  const uint8_t mode = value.mode;
+  const bool brake_engaged = value.brake_engaged;
+  const bool brake_fault = value.brake_fault;
   const bool heartbeat_ok = value.heartbeat_ok;
   const uint8_t rx_overflow = value.rx_overflow;
-  const bool estop_active = value.sys_diag_estop_active;
-  const uint16_t free_heap_kb = value.sys_diag_free_heap_kb;
-  const uint8_t tec = value.sys_diag_tec;
-  const uint8_t rec = value.sys_diag_rec;
+  const bool estop_active = value.estop_active;
+  const uint16_t free_heap_kb = value.free_heap_kb;
+  const uint8_t tec = value.tec;
+  const uint8_t rec = value.rec;
 
   add("mode", mode,
       mode <= 2 ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
@@ -604,9 +618,10 @@ void VehicleBridgeNode::tick_control()
     // Send zero-speed frame so RT's staleness watchdog doesn't need to wait 500ms
     struct can_frame z;
     std::memset(&z, 0, sizeof(z));
-    can::gen::HostDriveCmd stop{0, 0, gear::CAN_N};
-    z.can_id = stop.kId; z.len = stop.kDlc;
-    if (stop.pack(z.data, z.len) == can::gen::CodecStatus::Ok) can_->send(z);
+    messages::HostDriveCmd stop{0, 0, gear::CAN_N};
+    protocol::Frame encoded;
+    if (messages::encode(stop, encoded) == protocol::CodecStatus::Ok &&
+        to_socket_frame(encoded, z)) can_->send(z);
     return;
   }
   if (!engaged_) return;
@@ -709,7 +724,7 @@ void VehicleBridgeNode::run_can_receive()
 
 void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
 {
-  switch (frame.can_id) {
+  switch (protocol_view(frame).id()) {
     case CAN_ESTOP:
       RCLCPP_WARN(get_logger(), "ESTOP received (DLC=%d)", frame.len);
       break;
@@ -750,8 +765,8 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     }
 
     case CAN_MOTOR_FBK: {  // 0x206 — actual gear state from MTR (forwarded low→high)
-      can::gen::MtrMotorFbk value{};
-      if (frame.len != value.kDlc || can::gen::MtrMotorFbk::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) break;
+      messages::MtrMotorFbk value{};
+      if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
       autoware_auto_vehicle_msgs::msg::GearReport gear;
       switch (value.gear_state) {
         case gear::CAN_N: gear.report = gear::NONE;    break;
@@ -765,8 +780,8 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     }
 
     case CAN_SAFETY_STS: {  // 0x011 — SYS liveness + light state (forwarded low→high)
-      can::gen::SysSafetySts value{};
-      if (frame.len != value.kDlc || can::gen::SysSafetySts::unpack(frame.data, frame.len, value) != can::gen::CodecStatus::Ok) break;
+      messages::SysSafetySts value{};
+      if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
       sys_estop_active_.store(value.estop_active, std::memory_order_relaxed);
       sys_heartbeat_ok_.store(value.heartbeat_ok, std::memory_order_relaxed);
 
@@ -811,11 +826,10 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case can::gen::SteerDiag::kId: {
-      can::gen::SteerDiag message{};
-      if (frame.len != message.kDlc || message.unpack(frame.data, frame.len, message) != can::gen::CodecStatus::Ok) break;
-      uint16_t angle_raw = message.steer_diag_angle0_1deg;
-      float steer_deg = (angle_raw - 30000) * 0.1f;  // offset=-3000, 0.1°/bit
+    case messages::SteerDiag::kId: {
+      messages::SteerDiag message{};
+      if (messages::decode(protocol_view(frame), message) != protocol::CodecStatus::Ok) break;
+      float steer_deg = static_cast<float>(message.angle_0_1deg);
       steer_angle_rad_.store(steer_deg * M_PI / 180.0f, std::memory_order_relaxed);  // cache for odometry
       last_steer_time_ = now();
       autoware_auto_vehicle_msgs::msg::SteeringReport steer;
@@ -824,9 +838,9 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case can::gen::BrakeDiag::kId: {
-      can::gen::BrakeDiag message{};
-      if (frame.len != message.kDlc || message.unpack(frame.data, frame.len, message) != can::gen::CodecStatus::Ok) break;
+    case messages::BrakeDiag::kId: {
+      messages::BrakeDiag message{};
+      if (messages::decode(protocol_view(frame), message) != protocol::CodecStatus::Ok) break;
       // Publish brake telemetry to diagnostics
       diagnostic_msgs::msg::DiagnosticArray diag;
       diag.header.stamp = now();
@@ -838,20 +852,17 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
         s.values = {{"value", std::to_string(val)}, {"unit", unit}};
         diag.status.push_back(s);
       };
-      uint16_t press_raw = message.brake_diag_pressure_raw;
-      add_kv("pressure", press_raw * 0.05, "MPa");
-      add_kv("fault", static_cast<double>(message.brake_diag_fault), "bool");
-      int16_t mtr_curr = static_cast<int16_t>(message.brake_diag_motor_current);
-      add_kv("motor_current", mtr_curr * 0.01, "A");
-      uint16_t ecu_temp = message.brake_diag_ecutemp;
-      add_kv("ecu_temp", ecu_temp * 0.1, "degC");
+      add_kv("pressure", message.pressure_raw, "MPa");
+      add_kv("fault", static_cast<double>(message.fault), "bool");
+      add_kv("motor_current", message.motor_current, "A");
+      add_kv("ecu_temp", message.ecu_temp, "degC");
       if (pub_diag_->is_activated()) pub_diag_->publish(diag);
       break;
     }
 
     case CAN_RT_HB: {
-      can::gen::RtHeartbeat value{};
-      if (frame.len == value.kDlc && can::gen::RtHeartbeat::unpack(frame.data, frame.len, value) == can::gen::CodecStatus::Ok)
+      messages::RtHeartbeat value{};
+      if (messages::decode(protocol_view(frame), value) == protocol::CodecStatus::Ok)
         rt_heartbeat_.feed(value.alive_ctr, now());
       break;
     }

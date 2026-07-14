@@ -3,7 +3,6 @@
 // Architecture.md §8.6. CAN 0x7B9 command, 0x721 status.
 #include <cstdint>
 #include "config.h"
-#include "can/can_protocol.h"
 namespace sys {
 // Architecture.md §8.5: BRAKE_BOOT_WAIT, BRAKE_LISTEN_SYNC, BRAKE_ACTIVE, BRAKE_DEGRADED
 enum class BrakeState : uint8_t { BOOT_WAIT, LISTEN_SYNC, ACTIVE, DEGRADED };
@@ -27,7 +26,8 @@ public:
     // stroke_raw: LE u16 from 0x721 bytes 2-3 (raw stroke value).
     // Returns true if a 0x7B9 frame should be transmitted. Fills out_frame.
     bool tick(bool lever, bool estop, int32_t brake_kpa, can::Mode mode,
-              uint8_t status_byte0, uint16_t stroke_raw, can::VcuSebReq& out) {
+              uint8_t status_byte0, uint16_t stroke_raw,
+              can::custom::seb::Command& out) {
         bool has_status = (status_byte0 != 0xFF);  // valid 0x721 received
 
         switch (m_state) {
@@ -88,47 +88,46 @@ private:
     //   3. brake_kpa > 0 → Pressure Mode (automated braking from Jetson via 0x205)
     //   4. Released → 0mm stroke
     void build_command(bool lever, bool estop, int32_t brake_kpa, can::Mode mode,
-                       can::VcuSebReq& out) {
-        out.align_enable    = 1;
-        out.control_enable  = 1;
-        out.roll_cnt_enable = 1;  // required by steer-by-wire spec
-        out.checksum_enable = 1;  // required by steer-by-wire spec
+                       can::custom::seb::Command& out) {
+        (void)mode;
+        out.alignment_enable = true;
+        out.control_enable = true;
 
         // Boot-sync hold: on first ACTIVE frame, command the captured stroke
         if (m_use_sync_stroke && m_sync_stroke_raw > 0) {
-            out.control_mode  = 0;  // Stroke Mode
-            out.stroke_req    = m_sync_stroke_raw;
-            out.pressure_req  = 0;
-            out.auto_brake    = 0;
+            out.control_mode = can::custom::seb::ControlMode::Stroke;
+            out.stroke_request_raw = m_sync_stroke_raw;
+            out.pressure_request_raw = 0;
+            out.auto_brake = false;
         } else if (estop) {
             // ESTOP: Stroke Mode (0), max stroke 27mm → raw = (27+30)/0.05 = 1140
             // Architecture §8.6: ESTOP uses Stroke Mode, not Pressure Mode
-            out.control_mode  = 0;
-            out.stroke_req    = uint16_t((kBrakeMaxStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-            out.pressure_req  = 0;
-            out.auto_brake    = 0;  // emergency braking — not automated driving
+            out.control_mode = can::custom::seb::ControlMode::Stroke;
+            out.stroke_request_raw = uint16_t((kBrakeMaxStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+            out.pressure_request_raw = 0;
+            out.auto_brake = false;  // emergency braking — not automated driving
         } else if (lever) {
             // DRIVER OVERRIDE: lever always wins — architecture §8.6
             // "Lever pressed → kBrakeManualStroke (driver override always wins)"
-            out.control_mode  = 0;  // Stroke Mode
-            out.stroke_req    = uint16_t((kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-            out.pressure_req  = 0;
-            out.auto_brake    = 0;  // manual braking
+            out.control_mode = can::custom::seb::ControlMode::Stroke;
+            out.stroke_request_raw = uint16_t((kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+            out.pressure_request_raw = 0;
+            out.auto_brake = false;  // manual braking
         } else if (brake_kpa > 0) {
             // Pressure Mode from 0x205 — verified kPa→raw conversion
             // Scale: 0.05 MPa/bit, range 0–5 MPa → raw = kPa * 0.02, clamp to kSebMaxPressureRaw
-            out.control_mode  = 1;  // Pressure mode (1-bit: 0=Stroke, 1=Pressure)
-            out.stroke_req    = kStrokeRawZero; // hold at 0mm
+            out.control_mode = can::custom::seb::ControlMode::Pressure;
+            out.stroke_request_raw = kStrokeRawZero; // hold at 0mm
             // kPa * 0.02 = kPa / 50. Round to nearest integer.
             int32_t raw = (brake_kpa + 25) / 50;
-            out.pressure_req  = uint8_t(raw > shared::kSebMaxPressureRaw ? shared::kSebMaxPressureRaw : raw);
-            out.auto_brake    = 1;  // automated braking (Jetson commanded via CAN 0x205)
+            out.pressure_request_raw = uint8_t(raw > shared::kSebMaxPressureRaw ? shared::kSebMaxPressureRaw : raw);
+            out.auto_brake = true;  // automated braking (Jetson commanded via CAN 0x205)
         } else {
             // Released: Stroke Mode (0), 0mm → raw = (0+30)/0.05 = 600
-            out.control_mode  = 0;
-            out.stroke_req    = kStrokeRawZero;
-            out.pressure_req  = 0;
-            out.auto_brake    = 0;
+            out.control_mode = can::custom::seb::ControlMode::Stroke;
+            out.stroke_request_raw = kStrokeRawZero;
+            out.pressure_request_raw = 0;
+            out.auto_brake = false;
         }
 
         out.rolling_counter = m_roll;

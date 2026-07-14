@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "messages": [
+    {"key":"sys_throttle_sts","owner":"mtr","protocol":"etrike.application.v1","name":"SYS_THROTTLE_STS","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"speed_mmps","byte":0,"bit":0,"bits":16,"signed":true,"min":-500,"max":3000}
+    ]},"instances":[
+      {"bus":"low","id":"0x120","frame_format":"standard","sender":"MTR","receivers":["RT","Host"],"cycle_ms":10,"semantics":"independent"},
+      {"bus":"high","id":"0x120","frame_format":"standard","sender":"MTR","receivers":["RT","Host"],"cycle_ms":10,"semantics":"same_frame"}
+    ]},
+    {"key":"mtr_motor_fbk","owner":"mtr","protocol":"etrike.application.v1","name":"MTR_MOTOR_FBK","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"actual_speed_mmps","byte":0,"bit":0,"bits":16,"signed":true,"min":-500,"max":3000},
+      {"key":"gear_state","byte":2,"bit":0,"bits":8,"min":0,"max":3},
+      {"key":"fault_flags","byte":3,"bit":0,"bits":8}
+    ]},"instances":[
+      {"bus":"low","id":"0x206","frame_format":"standard","sender":"MTR","receivers":["RT","SYS","Host"],"cycle_ms":20,"semantics":"independent"},
+      {"bus":"high","id":"0x206","frame_format":"standard","sender":"MTR","receivers":["RT","SYS","Host"],"cycle_ms":20,"semantics":"same_frame"}
+    ]}
+  ]
+}

@@ -1,6 +1,6 @@
 #include <unity.h>
 #include <cstdint>
-#include "can/can_protocol.h"
+#include "protocol/compat/can.hpp"
 #include "mode_manager.h"
 
 using namespace sys;

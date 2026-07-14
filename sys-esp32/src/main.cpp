@@ -29,15 +29,7 @@ bool g_bypass_mtr_absent = false;
 #endif
 
 #include "config.h"
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-#error "ESP-IDF 5.0 or later required"
-#endif
-
-#include "config.h"
-#include "can/can_protocol.h"
-#include "can/codec_transport.h"
-#include "can/manual/vendor_protocol.h"
-#include "can/can_driver.h"
+#include "can_driver.h"
 #include "safety_monitor.h"
 #include "mode_manager.h"
 
@@ -68,7 +60,8 @@ static bool g_can_tx_had_failure = false;  // tracks if we've seen a TX failure
 static bool send_can(can::Frame& fr, const char* caller = "?") {
     if (!g_can.send(fr)) {
         // Retry once for safety-critical frames
-        if (fr.id == 0x7B9 || fr.id == 0x001 || fr.id == 0x011) {
+        if (fr.id == can::kIdVcuSebReq || fr.id == can::kIdSafetyEstop ||
+            fr.id == can::kIdSysSafetySts) {
             vTaskDelay(pdMS_TO_TICKS(1));
             if (!g_can.send(fr, 20)) {  // longer timeout on retry
                 g_can_tx_fail_count++;
@@ -92,6 +85,14 @@ static bool send_can(can::Frame& fr, const char* caller = "?") {
     }
     g_can_tx_ok_count++;
     return true;
+}
+
+static bool send_estop_frame(const char* caller) {
+    can::Frame frame;
+    can::gen::SafetyEstop message{};
+    if (can::gen::encode_safety_estop(message, frame) != can::gen::CodecStatus::Ok)
+        return false;
+    return send_can(frame, caller);
 }
 
 // ── Application state ──────────────────────────────────────────────
@@ -193,7 +194,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         switch (fr.id) {
         case can::kIdRtDriveCmd: {   // 0x204
             can::gen::RtDriveCmd sp{};
-            if (can::decode_frame(fr, sp) != can::gen::CodecStatus::Ok) break;
+            if (can::gen::decode_rt_drive_cmd(fr.view(), sp) != can::gen::CodecStatus::Ok) break;
             g_setpoint_speed_mmps.store(sp.motor_speed_mmps, std::memory_order_relaxed);
             g_setpoint_gear.store(sp.gear, std::memory_order_relaxed);
             g_last_setpoint_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -201,14 +202,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         }
         case can::kIdRtBrakeCmd: {   // 0x205
             can::gen::RtBrakeCmd brk{};
-            if (can::decode_frame(fr, brk) != can::gen::CodecStatus::Ok) break;
+            if (can::gen::decode_rt_brake_cmd(fr.view(), brk) != can::gen::CodecStatus::Ok) break;
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
             break;
         }
         case can::kIdHmiModeReq: {   // 0x111 — HMI mode heartbeat (1Hz)
             can::gen::HmiModeReq request{};
-            if (can::decode_frame(fr, request) != can::gen::CodecStatus::Ok) break;
-            if (g_mode_mgr.parse_hmi_mode(request.hmi_req_mode ? 1 : 0)) {
+            if (can::gen::decode_hmi_mode_req(fr.view(), request) != can::gen::CodecStatus::Ok) break;
+            if (g_mode_mgr.parse_hmi_mode(request.req_mode ? 1 : 0)) {
                 // If mode actually changed due to this request, log it.
                 // The main 10Hz control loop will naturally pick up the new mode 
                 // and broadcast 0x110 SYS_MODE_CMD on its next tick.
@@ -226,7 +227,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         }
         case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
             can::gen::MtrMotorFbk fbk{};
-            if (can::decode_frame(fr, fbk) != can::gen::CodecStatus::Ok) break;
+            if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
             g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
@@ -240,15 +241,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
                 g_mode_mgr.force_estop();
                 if (can_send_estop()) {
-                    can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    send_can(ef, "ESTOP");
+                    send_estop_frame("ESTOP");
                 }
             }
             break;
         }
         case can::kIdHostLightCmd: { // 0x302
             can::gen::HostLightCmd lights{};
-            if (can::decode_frame(fr, lights) != can::gen::CodecStatus::Ok) break;
+            if (can::gen::decode_host_light_cmd(fr.view(), lights) != can::gen::CodecStatus::Ok) break;
             uint8_t bits = (lights.left_turn ? 1u : 0u)
                          | (lights.right_turn ? 2u : 0u)
                          | (lights.brake_light ? 4u : 0u)
@@ -279,9 +279,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdBbwStatus: {  // 0x721
-            can::manual::SebStatusValue value{};
-            if (can::manual::decode_seb_status(fr, value) != can::gen::CodecStatus::Ok) break;
+        case can::kIdSebStatus: {  // 0x721
+            can::custom::seb::Status value{};
+            if (can::custom::seb::decode_status(fr.view(), value) != can::gen::CodecStatus::Ok) break;
             // Store byte 0 atomically (alignment, error_status, control_mode) —
             // eliminates data race with brake task reading raw byte array (H3).
             g_seb_status_byte0.store(value.status_byte, std::memory_order_relaxed);
@@ -302,7 +302,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 uint8_t seb_ctrl = value.control_mode;
                 uint16_t actual_raw;
                 if (seb_ctrl == 0) {
-                    actual_raw = value.stroke_value;
+                    actual_raw = value.stroke_value_raw;
                 } else {
                     actual_raw = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
                 }
@@ -329,7 +329,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 uint8_t seb_ctrl = value.control_mode;
                 if (seb_ctrl == 0) {  // Stroke mode only
                     uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
-                    uint16_t actual_raw = value.stroke_value;
+                    uint16_t actual_raw = value.stroke_value_raw;
                     uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
                     static bool  brake_follow_active = false;
                     static TickType_t brake_follow_start = 0;
@@ -351,19 +351,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
             break;
         }
-        case can::kIdBbwTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
+        case can::kIdSebTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
             // Motor current: Byte1-2 i16 LE, scale 0.0078125 A/bit
             // ECU temp: Byte3-4 u16 LE, scale 0.5 C/bit, offset -40
-            can::manual::TestTelemetry telemetry{};
-            if (can::manual::decode_test<can::gen::SebTest>(fr, telemetry) != can::gen::CodecStatus::Ok) break;
-            uint16_t ecu_raw = telemetry.ecu_temperature;
+            can::custom::seb::TestTelemetry telemetry{};
+            if (can::custom::seb::decode_test(fr.view(), telemetry) != can::gen::CodecStatus::Ok) break;
+            uint16_t ecu_raw = telemetry.ecu_temperature_raw;
             int16_t  ecu_temp = int16_t(ecu_raw * 0.5f - 40.0f);
             if (ecu_temp > 80) {
                 ESP_LOGW(TAG, "SEB_Test: ECU temp %d C exceeds 80 C threshold", ecu_temp);
             }
             break;
         }
-        case can::kIdBbwErrInfo: {  // 0x731 — SEB_ErrInfo (arch §8.3)
+        case can::kIdSebErrInfo: {  // 0x731 — SEB_ErrInfo (arch §8.3)
+            can::custom::seb::ErrorInfo error_info{};
+            if (can::custom::seb::decode_error_info(fr.view(), error_info) != can::gen::CodecStatus::Ok) break;
             // Check all 16 L3 fault bits per can-dictionary. Any L3 → force_estop.
             // L3 bit positions: 2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22
             static const int kL3Bits[] = {2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22};
@@ -376,7 +378,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             bool l3_found = false;
             for (int i = 0; i < 16; ++i) {
                 int byte_idx = kL3Bits[i] / 8;
-                if (byte_idx < fr.dlc && (fr.data[byte_idx] & (1 << (kL3Bits[i] % 8)))) {
+                if (error_info.raw[byte_idx] & (1 << (kL3Bits[i] % 8))) {
                     ESP_LOGE(TAG, "SEB L3 fault: bit %d = %s", kL3Bits[i], kL3Names[i]);
                     l3_found = true;
                 }
@@ -388,32 +390,31 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 // is permanently bypassed for SEB-triggered ESTOPs.
                 g_last_estop_trigger_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
                 if (can_send_estop()) {
-                    can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    send_can(ef, "ESTOP");
+                    send_estop_frame("ESTOP");
                 }
                 ESP_LOGW(TAG, "ESTOP triggered by SEB 0x731 L3 fault(s)");
             }
             break;
         }
-        case can::kIdBbwVersion: {  // 0x741 — SEB_Version (arch §8.3)
+        case can::kIdSebVersion: {  // 0x741 — SEB_Version (arch §8.3)
             if (!g_seb_version_logged.load(std::memory_order_relaxed)) {
-                uint8_t sw_raw = fr.data[0];
-                uint8_t hw_raw = fr.data[1];
+                can::custom::seb::Version version{};
+                if (can::custom::seb::decode_version(fr.view(), version) != can::gen::CodecStatus::Ok) break;
                 ESP_LOGI(TAG, "SEB_Version: SW=%.2f HW=%.1f",
-                         sw_raw * 0.01f, hw_raw * 0.1f);
+                         version.software_raw * 0.01f, version.hardware_raw * 0.1f);
                 g_seb_version_logged.store(true, std::memory_order_relaxed);
             }
             break;
         }
         case can::kIdRtStateRpt: {  // 0x210 — RT safety state for takeover detection
             can::gen::RtStateRpt state{};
-            if (can::decode_frame(fr, state) == can::gen::CodecStatus::Ok)
+            if (can::gen::decode_rt_state_rpt(fr.view(), state) == can::gen::CodecStatus::Ok)
                 g_rt_safety_state.store(state.safety_state, std::memory_order_relaxed);
             break;
         }
         case can::kIdRtHeartbeatLow: {  // 0x7FD
             can::gen::RtHeartbeat heartbeat{};
-            if (can::decode_frame(fr, heartbeat) == can::gen::CodecStatus::Ok)
+            if (can::gen::decode_rt_heartbeat(fr.view(), heartbeat) == can::gen::CodecStatus::Ok)
                 g_safety.feed_heartbeat_rt(heartbeat.alive_ctr);
             break;
         }
@@ -447,10 +448,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
                 // Gap #14: rate-limited to prevent bus flooding
                 if (can_send_estop()) {
-                    can::Frame estop_fr;
-                    estop_fr.id = can::kIdSafetyEstop;
-                    estop_fr.dlc = 0;
-                    send_can(estop_fr, "ESTOP");
+                    send_estop_frame("ESTOP");
                     ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
                 }
             }
@@ -478,8 +476,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                         if (g_mode_mgr.mode() != can::Mode::Estop) {
                             g_mode_mgr.force_estop();
                             if (can_send_estop()) {
-                                can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                                send_can(ef, "ESTOP");
+                                send_estop_frame("ESTOP");
                             }
                             ESP_LOGW(TAG, "EGAS L2: speed mismatch %ld mm/s > %d — ESTOP",
                                      (long)diff, sys::kEgasSpeedThresholdMmps);
@@ -503,8 +500,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     ESP_LOGE(TAG, "MTR ESTOP ACK timeout — retriggering ESTOP");
                     g_mode_mgr.force_estop();
                     if (can_send_estop()) {
-                        can::Frame ef{}; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                        send_can(ef, "ESTOP");
+                        send_estop_frame("ESTOP");
                     }
                     g_brake_fault_active.store(true, std::memory_order_relaxed);
                 }
@@ -550,7 +546,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             refresh_ctr = 0;
             can::Frame fr;
             can::gen::SysModeCmd message{g_mode_mgr.mode_u8()};
-            if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
+            if (can::gen::encode_sys_mode_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
         }
 
         vTaskDelayUntil(&last, period);
@@ -615,18 +611,18 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal
                            && seb_ack && !lever && !estop && rt_setpoint_fresh;
 
-        can::VcuSebReq seb_cmd;
+        can::custom::seb::Command seb_cmd;
         uint8_t  seb_b0 = g_seb_status_byte0.load(std::memory_order_relaxed);
         uint16_t seb_stroke = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
         bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode,
                                       seb_b0, seb_stroke, seb_cmd);
         // Store commanded stroke for following-error monitor even when suppressed
         if (should_tx) {
-            g_cmd_stroke_raw.store(seb_cmd.stroke_req, std::memory_order_relaxed);
+            g_cmd_stroke_raw.store(seb_cmd.stroke_request_raw, std::memory_order_relaxed);
         }
         if (should_tx && !suppress_seb) {
             can::Frame fr;
-            if (can::manual::encode(seb_cmd, fr) == can::gen::CodecStatus::Ok)
+            if (can::custom::seb::encode_command(seb_cmd, fr) == can::gen::CodecStatus::Ok)
                 send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
         }
 
@@ -754,7 +750,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         message.light_right = lights & 0x02;
         message.light_brake = lights & 0x04;
         message.light_head = lights & 0x08;
-        if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok)
+        if (can::gen::encode_sys_safety_sts(message, fr) == can::gen::CodecStatus::Ok)
             send_can(fr, "safety");
 
         vTaskDelayUntil(&last, period);
@@ -793,20 +789,20 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_can.get_error_counters(tec, rec);
 
         can::gen::SysDiagRpt rpt;
-        rpt.sys_diag_mode = g_mode_mgr.mode_u8();
-        rpt.sys_diag_brake_engaged = g_safety.brake_lever_pressed();
-        rpt.sys_diag_brake_fault = g_brake_fault_active.load(std::memory_order_relaxed);
+        rpt.mode = g_mode_mgr.mode_u8();
+        rpt.brake_engaged = g_safety.brake_lever_pressed();
+        rpt.brake_fault = g_brake_fault_active.load(std::memory_order_relaxed);
         rpt.heartbeat_ok  = g_safety.heartbeat_ok();
-        rpt.sys_diag_estop_active = (g_mode_mgr.mode() == can::Mode::Estop);
-        rpt.sys_diag_free_heap_kb = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
-        rpt.sys_diag_tec = tec; rpt.sys_diag_rec = rec;
+        rpt.estop_active = (g_mode_mgr.mode() == can::Mode::Estop);
+        rpt.free_heap_kb = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
+        rpt.tec = tec; rpt.rec = rec;
         // Report CAN RX overflow count (6-bit, saturated at 63)
         {
             uint32_t ov = g_can_rx_overflow.load(std::memory_order_relaxed);
             rpt.rx_overflow = ov > 63 ? 63 : static_cast<uint8_t>(ov);
         }
         can::Frame fr;
-        if (can::encode_frame(rpt, fr) == can::gen::CodecStatus::Ok) send_can(fr);
+        if (can::gen::encode_sys_diag_rpt(rpt, fr) == can::gen::CodecStatus::Ok) send_can(fr);
 
         // CAN bus-off monitoring (architecture §8.10)
         if (tec > 128)
@@ -818,8 +814,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 ESP_LOGE(TAG, "CAN bus-off persistent — forcing ESTOP");
                 g_mode_mgr.force_estop();
                 if (can_send_estop()) {
-                    can::Frame ef; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    send_can(ef, "ESTOP");
+                    send_estop_frame("ESTOP");
                 }
             }
             g_can.recovery();  // lightweight bus-off recovery via twai_initiate_recovery
@@ -837,29 +832,23 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     uint8_t alive_ctr = 0;
     while (1) {
         can::gen::SysHeartbeat message{};
-        message.sys_alive_ctr = ++alive_ctr;
-        // byte 1: health_flags using shared constants from can_protocol.h
-        // bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok
-        uint8_t health = (g_safety.heartbeat_ok() ? can::kHbHealthBitHeartbeatOk : 0)
-                       | (g_safety.estop_active() ? can::kHbHealthBitEstopActive : 0)
-                       | (g_mode_mgr.mode() == can::Mode::Auto ? can::kHbHealthBitModeAuto : 0)
-                       | static_cast<uint8_t>(g_task_health_bits.load(std::memory_order_relaxed) << 4);
+        message.alive_ctr = ++alive_ctr;
+        message.heartbeat_ok = g_safety.heartbeat_ok();
+        message.estop_active = g_safety.estop_active();
+        message.mode_auto = g_mode_mgr.mode() == can::Mode::Auto;
+        const uint8_t task_health = g_task_health_bits.load(std::memory_order_relaxed);
+        message.task_safety_ok = task_health & 0x01;
+        message.task_brake_ok = task_health & 0x02;
+        message.task_dispatch_ok = task_health & 0x04;
+        message.task_can_tx_ok = task_health & 0x08;
         // can_ok: set only while below the CAN error-passive threshold.
         {
             uint8_t tec = 0, rec = 0;
             g_can.get_error_counters(tec, rec);
-            if (tec < 128) health |= can::kHbHealthBitCanOk;
+            message.can_ok = tec < 128;
         }
-        message.heartbeat_ok = health & can::kHbHealthBitHeartbeatOk;
-        message.estop_active = health & can::kHbHealthBitEstopActive;
-        message.mode_auto = health & can::kHbHealthBitModeAuto;
-        message.can_ok = health & can::kHbHealthBitCanOk;
-        message.task_safety_ok = health & 0x10;
-        message.task_brake_ok = health & 0x20;
-        message.task_dispatch_ok = health & 0x40;
-        message.task_can_tx_ok = health & 0x80;
         can::Frame fr;
-        if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
+        if (can::gen::encode_sys_heartbeat(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
 
         vTaskDelayUntil(&last, period);
     }

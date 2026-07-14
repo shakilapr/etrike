@@ -10,7 +10,6 @@
 #include "can_driver.h"
 #include "config.h"
 #include "esp_log.h"
-#include <cstring>
 
 namespace pwt {
 
@@ -28,16 +27,17 @@ public:
     void tick() {
         if (!m_can || !m_can->initialized()) return;
 
-        PwtFrame f = PwtFrame::make_ext(can_data::DcdcCmd::kId, can_data::DcdcCmd::kDlc);
-        can_data::DcdcCmd message{};
-        message.enabled = m_state == State::ON;
-        message.reset = m_reset_requested;
-        if (message.pack(f.data, f.dlc) != can_data::CodecStatus::Ok) return;
+        etrike::protocol::Frame frame;
+        DcdcCommand message{};
+        message.control = m_state == State::ON;
+        message.reset_control = m_reset_requested;
+        if (etrike::protocol::generated::encode(message, frame) !=
+            etrike::protocol::CodecStatus::Ok) return;
         if (m_reset_requested) {
             m_reset_requested = false;
         }
 
-        if (m_can->send(f)) {
+        if (m_can->send(frame)) {
             if (m_consecutive_tx_failures != 0) {
                 ESP_LOGI("dcdc", "CAN TX recovered after %lu failures",
                          static_cast<unsigned long>(m_consecutive_tx_failures));

@@ -15,7 +15,6 @@
 
 #include <cstdint>
 #include "config.h"
-#include "can/can_protocol.h"
 
 namespace mtr {
 
@@ -26,7 +25,7 @@ public:
     /// internal pull-up (handled by CubeMX MX_GPIO_Init()).
     void init() {
         all_off();
-        m_current_gear = can::Gear::N;
+        m_current_gear = Gear::N;
     }
 
     /// Read TLP281 optoisolator inputs.
@@ -34,7 +33,7 @@ public:
     /// If multiple lines are active, returns N (fail-safe) and sets
     /// the conflict-detected flag (query via gear_conflict_detected()).
     /// If no line is active, returns N.
-    can::Gear read_sense() {
+    Gear read_sense() {
         bool d = read_sense_pin(kGearDSense);
         bool s = read_sense_pin(kGearSSense);
         bool r = read_sense_pin(kGearRSense);
@@ -43,13 +42,13 @@ public:
         if (count > 1) {
             // Conflict — multiple gears selected. Fail-safe to N.
             m_gear_conflict = true;
-            return can::Gear::N;
+            return Gear::N;
         }
         m_gear_conflict = false;
-        if (d) return can::Gear::D;
-        if (s) return can::Gear::S;
-        if (r) return can::Gear::R;
-        return can::Gear::N;
+        if (d) return Gear::D;
+        if (s) return Gear::S;
+        if (r) return Gear::R;
+        return Gear::N;
     }
 
     /// Returns true if the last read_sense() detected a gear conflict
@@ -60,26 +59,26 @@ public:
     /// Set MOSFET outputs to match the given gear.
     /// WARNING: Shifting 72V contactors under load can damage hardware.
     /// Caller must ensure vehicle speed < 50 mm/s before calling.
-    void set_mosfets(can::Gear gear) {
-        set_mosfet_pin(kGearDOut, gear == can::Gear::D);
-        set_mosfet_pin(kGearSOut, gear == can::Gear::S);
-        set_mosfet_pin(kGearROut, gear == can::Gear::R);
+    void set_mosfets(Gear gear) {
+        set_mosfet_pin(kGearDOut, gear == Gear::D);
+        set_mosfet_pin(kGearSOut, gear == Gear::S);
+        set_mosfet_pin(kGearROut, gear == Gear::R);
         m_current_gear = gear;
     }
 
     /// Pass-through: read TLP281 sense lines, mirror to MOSFET outputs.
     void pass_through() {
-        can::Gear g = read_sense();
+        Gear g = read_sense();
         set_mosfets(g);
     }
 
     /// All MOSFETs OFF (neutral / ESTOP).
     void all_off() {
-        set_mosfets(can::Gear::N);
+        set_mosfets(Gear::N);
     }
 
     /// Currently selected gear (last written).
-    can::Gear current_gear() const { return m_current_gear; }
+    Gear current_gear() const { return m_current_gear; }
 
 private:
     /// Read a single TLP281 sense pin (active-low).
@@ -97,7 +96,7 @@ private:
         HAL_GPIO_WritePin(port, mask, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 
-    can::Gear m_current_gear = can::Gear::N;
+    Gear m_current_gear = Gear::N;
     bool       m_gear_conflict = false;
 };
 

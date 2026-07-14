@@ -1,0 +1,1 @@
+"""Deterministically generated protocol artifacts."""

@@ -2,14 +2,23 @@
 // RT ESP32-S3 — configuration constants (architecture.md §7.9).
 // Change values here, not in source files.
 //
-// CAN protocol IDs are in shared/can/can_protocol.h (namespace can).
+// CAN protocol IDs and generated message contracts are in protocol/.
 // Vehicle-wide constants are in shared/shared_config.h (namespace shared).
 
 #include <cstdint>
 #include "shared_config.h"
-#include "can/generated/can_messages.h"
+#include "protocol/compat/can.hpp"
 
 namespace rt {
+
+// RT policy values carried by RtStateRpt::estop_reason.
+constexpr uint8_t kEstopReasonNone           = 0;
+constexpr uint8_t kEstopReasonHeartbeat      = 2;
+constexpr uint8_t kEstopReasonFollowingError = 3;
+constexpr uint8_t kEstopReasonObstacle       = 4;
+constexpr uint8_t kEstopReasonCanEstop       = 5;
+constexpr uint8_t kEstopReasonBusOff         = 6;
+constexpr uint8_t kEstopReasonInternal       = 7;
 
 // ── steering — steer-by-wire unit via CAN 0x169 ───────────────────────
 constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
