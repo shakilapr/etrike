@@ -1,5 +1,7 @@
 # CAN Maintainability Work Plan and Checklist
 
+> **Superseded target:** This checklist records work completed around the transitional mapping registry. Do not extend the registry into the final architecture. The replacement target and staged migration are defined in [`protocol-architecture-migration-plan.md`](protocol-architecture-migration-plan.md).
+
 Goal: every CAN change must be automatically discoverable even when its implementation cannot be fully generated.
 
 The governing rule is: every protocol value is generated, centrally named, or registered as a tested manual mapping. Generated files are never edited manually.

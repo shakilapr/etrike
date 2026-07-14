@@ -96,6 +96,19 @@ manual schedules/behaviour --> debug simulator (target: consume generated period
 
 The former untracked split is closed for ordinary application messages and explicitly controlled for registered vendor exceptions. Remaining risk is concentrated in legacy compatibility use, simulator behavior, incomplete algorithm metadata and hardware/HIL evidence rather than hidden payload ownership.
 
+### 2.3 Simplified target after transition
+
+The current `manual-mappings.yaml` registry is not the final architecture. It is too coarse to prove behavior-specific coverage and can hide direct access when whole consumer files are exempted. The target defines each message layout once, gives every bus occurrence an explicit instance, and selects exactly one codec strategy beside that definition:
+
+```text
+owner/protocol contract definition
+        + explicit bus instance(s)
+        + generated | named profile | custom codec strategy
+        + language-neutral conformance vectors
+```
+
+Project messages are grouped by originating ECU for navigation; SES, SEB and PWT are grouped by externally owned protocol family. Receivers never duplicate the sender's layout. Static metadata is always generated, while exceptional algorithms remain ordinary code behind one selected codec interface. Component fault and recovery policy remains outside the protocol package. The migration plan is tracked in `docs/protocol-architecture-migration-plan.md`.
+
 ## 3. CAN contract and generation gaps
 
 | ID | Severity | Gap and evidence | Consequence | Required resolution |

@@ -1,5 +1,7 @@
 # CAN Contract Ownership
 
+> **Transition notice:** This directory and `manual-mappings.yaml` describe the current implementation, not the final package boundary. The target uses one definition per originating ECU/protocol family, explicit bus instances, and exactly one generated/profile/custom codec strategy. See [`../../docs/protocol-architecture-migration-plan.md`](../../docs/protocol-architecture-migration-plan.md).
+
 The project uses controlled ownership, not the assumption that every behavior can be generated.
 
 | Kind | Authority | Examples |
