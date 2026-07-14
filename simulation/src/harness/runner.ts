@@ -19,6 +19,7 @@ import { SysEcu } from "../ecus/sys.js";
 import { MtrEcu } from "../ecus/mtr.js";
 import { Sbwc } from "../ecus/epsc.js";
 import { Bbw } from "../ecus/seb.js";
+import { decodeAs, decodeSimFrame } from "../protocol.js";
 
 export class SimulationRunner {
   readonly clock = new SimulationClock(0);
@@ -144,6 +145,8 @@ export class SimulationRunner {
         data = this.faultInjector.corrupt(f.canId, f.bus, data);
 
         const frame: SimFrame = { ...f, data, simTimeMs: nowMs };
+        const decoded = decodeSimFrame(frame);
+        if (decoded?.status === "ok") frame.decoded = decoded.values;
         allTx.push(frame);
 
         // Validate
@@ -175,24 +178,21 @@ export class SimulationRunner {
     let cmdBrakeMm = this.lastCmdBrakeMm;
 
     for (const f of allTx) {
-      if (f.canId === "0x204" && f.dlc >= 5) {
-        // RT_DRIVE_CMD: speed i32 BE bytes 0-3, gear byte 4
-        cmdSpeedMmps = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
+      const drive = decodeAs(f, "rt:rt_drive_cmd");
+      if (drive !== undefined) {
+        cmdSpeedMmps = Number(drive.motor_speed_mmps);
       }
-      if (f.canId === "0x169" && f.dlc >= 8) {
-        // VCU_SES_REQ: target angle u16 LE bytes 2-3, 0.1°/bit, offset -3000
-        const angleRaw = (f.data[3] << 8 | f.data[2]) & 0xFFFF;
-        cmdSteerDeg = (angleRaw - 30000) / 10;
+      const steering = decodeAs(f, "ses:vcu_ses_req");
+      if (steering !== undefined) {
+        cmdSteerDeg = (Number(steering.target_angle_raw) - 30000) / 10;
       }
-      if (f.canId === "0x7B9" && f.dlc >= 8) {
-        const isPressureMode = (f.data[0] & 0x04) !== 0;
-        if (isPressureMode) {
-          // Pressure mode: byte 3 is SEB_PressureReq (0.05 MPa/bit = 50 kPa/bit)
-          const pressureRaw = f.data[3] & 0xFF;
+      const brake = decodeAs(f, "seb:vcu_seb_req");
+      if (brake !== undefined) {
+        if (Number(brake.control_mode) === 1) {
+          const pressureRaw = Number(brake.pressure_request_raw);
           cmdBrakeMm = (pressureRaw / 100) * 27;  // proportional to 27mm max stroke
         } else {
-          // Stroke mode: u16 LE bytes 2-3, raw=(mm+30)/0.05
-          const strokeRaw = (f.data[3] << 8 | f.data[2]) & 0xFFFF;
+          const strokeRaw = Number(brake.stroke_request_raw);
           cmdBrakeMm = Math.max(0, strokeRaw * 0.05 - 30);
         }
       }

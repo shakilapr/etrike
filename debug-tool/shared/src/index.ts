@@ -19,11 +19,20 @@ export {
   normalizeStats,
   normalizeFrame,
   decodeFrame,
+  decodeFrameResult,
   validateDataBytes,
   type BusDetectorState,
   BusDetector,
   initCanDatabase,
-  decoder
+  decoder,
+  PROTOCOL_HASH,
+  PROTOCOL_CAPABILITIES,
+  type CodecStatus,
+  type MessageCapabilities,
+  UnsupportedDecodedInjectionError,
+  UnknownMessageError,
+  ValidationError,
+  SchemaError
 } from "./can";
 
 export {
@@ -44,5 +53,5 @@ export {
   numberValue
 } from "./read-helpers";
 export * from "./faults";
-export * from "./generated/can-metadata";
+export * from "./protocol-compat";
 export * from "./timebase";

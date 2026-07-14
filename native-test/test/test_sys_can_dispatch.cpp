@@ -2,7 +2,10 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
-#include "can/can_protocol.h"
+#include "protocol/generated/cpp/etrike_protocol.hpp"
+
+namespace generated = etrike::protocol::generated;
+using etrike::protocol::Frame;
 
 // ── Stubs for SYS globals (dispatch writes these) ─────────────────
 static std::atomic<int32_t>  g_setpoint_speed_mmps{0};
@@ -21,12 +24,12 @@ static uint32_t g_tick = 0;
 // ── Simulated dispatch: process one frame, verify one atomic ──────
 
 static int test_0x204_drive_cmd() {
-    can::Frame fr;
-    fr.id = can::kIdRtDriveCmd; fr.dlc = 5;
-    fr.put_i32(0, 1500);  // speed = 1500 mm/s
-    fr.put_u8(4, 1);      // gear = D
+    Frame fr;
+    generated::RtDriveCmd encoded{1500, 1};
+    (void)generated::encode(encoded, fr);
 
-    auto sp = can::RtDriveCmd::from_frame(fr);
+    generated::RtDriveCmd sp{};
+    (void)generated::decode(fr.view(), sp);
     g_setpoint_speed_mmps.store(sp.motor_speed_mmps, std::memory_order_relaxed);
     g_setpoint_gear.store(sp.gear, std::memory_order_relaxed);
     g_last_setpoint_tick.store(++g_tick, std::memory_order_relaxed);
@@ -38,10 +41,10 @@ static int test_0x204_drive_cmd() {
 }
 
 static int test_0x204_dlc_guard() {
-    can::Frame fr;
-    fr.id = can::kIdRtDriveCmd; fr.dlc = 2;  // corrupt: DLC < 5
+    Frame fr = Frame::standard(generated::RtDriveCmd::kId, 2);  // corrupt: DLC < 5
 
-    auto sp = can::RtDriveCmd::from_frame(fr);
+    generated::RtDriveCmd sp{};
+    (void)generated::decode(fr.view(), sp);
     CHECK(sp.motor_speed_mmps == 0, "0x204 corrupt DLC: speed should default to 0");
     CHECK(sp.gear == 0, "0x204 corrupt DLC: gear should default to N(0)");
     std::printf("  PASS: 0x204 DLC guard (corrupt frame)\n");
@@ -49,11 +52,12 @@ static int test_0x204_dlc_guard() {
 }
 
 static int test_0x205_brake_cmd() {
-    can::Frame fr;
-    fr.id = can::kIdRtBrakeCmd; fr.dlc = 4;
-    fr.put_i32(0, 3000);  // 3000 kPa
+    Frame fr;
+    generated::RtBrakeCmd encoded{3000};
+    (void)generated::encode(encoded, fr);
 
-    auto brk = can::RtBrakeCmd::from_frame(fr);
+    generated::RtBrakeCmd brk{};
+    (void)generated::decode(fr.view(), brk);
     g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
 
     CHECK(g_brake_pressure_kpa.load() == 3000, "0x205: brake kPa should be 3000");
@@ -62,13 +66,12 @@ static int test_0x205_brake_cmd() {
 }
 
 static int test_0x206_motor_fbk() {
-    can::Frame fr;
-    fr.id = can::kIdMtrMotorFbk; fr.dlc = 4;
-    fr.put_i16(0, 1200);   // actual speed
-    fr.put_u8(2, 1);       // gear = D
-    fr.put_u8(3, 0x11);    // fault_flags: EstopActive + StartupReady
+    Frame fr;
+    generated::MtrMotorFbk encoded{1200, 1, 0x11};
+    (void)generated::encode(encoded, fr);
 
-    auto fbk = can::MtrMotorFbk::from_frame(fr);
+    generated::MtrMotorFbk fbk{};
+    (void)generated::decode(fr.view(), fbk);
     g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
     g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
 
@@ -80,24 +83,24 @@ static int test_0x206_motor_fbk() {
 }
 
 static int test_0x302_light_cmd() {
-    can::Frame fr;
-    fr.id = can::kIdHostLightCmd; fr.dlc = 1;
+    Frame fr = Frame::standard(generated::HostLightCmd::kId, 1);
     fr.data[0] = 0x05;  // left_turn + brake_light
 
-    g_light_bits.store(fr.u8_at(0), std::memory_order_relaxed);
+    g_light_bits.store(fr.data[0], std::memory_order_relaxed);
     CHECK(g_light_bits.load() == 0x05, "0x302: light bits should be 0x05");
     std::printf("  PASS: 0x302 HOST_LIGHT_CMD dispatch\n");
     return 0;
 }
 
 static int test_0x210_rt_state() {
-    can::Frame fr;
-    fr.id = can::kIdRtStateRpt; fr.dlc = 4;
-    fr.put_u8(0, 1);       // mode = Auto
-    fr.put_u8(1, 0x01);    // safety_state = InternalEstop
+    Frame fr;
+    generated::RtStateRpt encoded{};
+    encoded.mode = generated::RtStateRpt::kModeAuto;
+    encoded.safety_state = 1;
+    (void)generated::encode(encoded, fr);
 
     if (fr.dlc >= 2) {
-        g_rt_safety_state.store(fr.u8_at(1) & 0x03, std::memory_order_relaxed);
+        g_rt_safety_state.store(fr.data[1] & 0x03, std::memory_order_relaxed);
     }
     CHECK(g_rt_safety_state.load() == 1, "0x210: safety_state should be InternalEstop(1)");
     std::printf("  PASS: 0x210 RT_STATE_RPT safety_state dispatch\n");
@@ -105,8 +108,8 @@ static int test_0x210_rt_state() {
 }
 
 static int test_0x001_estop() {
-    can::Frame fr;
-    fr.id = can::kIdSafetyEstop; fr.dlc = 0;
+    Frame fr;
+    (void)generated::encode(generated::SafetyEstop{}, fr);
     // ESTOP is DLC=0 — just the ID matters
     CHECK(fr.id == 0x001, "0x001: ESTOP ID should be 0x001");
     CHECK(fr.dlc == 0, "0x001: ESTOP DLC should be 0");

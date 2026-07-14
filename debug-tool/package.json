@@ -9,9 +9,8 @@
     "e2e"
   ],
   "scripts": {
-    "generate:shared": "python ../shared/can/generate_can_ts.py",
     "test:e2e": "npm run test -w e2e",
-    "verify:shared": "python ../shared/can/generate_can_ts.py --check && npm run test -w shared && npm run build -w shared",
+    "verify:shared": "npm run test -w shared && npm run build -w shared",
     "verify:backend": "npm run check -w backend && npm run test -w backend && npm run build -w backend",
     "verify:ui": "npm run check -w ui && npm run test -w ui && npm run build -w ui",
     "verify": "npm run verify:shared && npm run verify:backend && npm run verify:ui"

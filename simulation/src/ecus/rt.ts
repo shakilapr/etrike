@@ -22,6 +22,7 @@ import {
   STARTUP_GRACE_PERIOD_MS,
   computeFollowingErrorThreshold,
 } from "../physics/tricycle.js";
+import { decodeAs, encodeSimFrame } from "../protocol.js";
 
 export class RtEcu implements SimulatedEcu {
   readonly id = "RT ESP32-S3";
@@ -89,83 +90,76 @@ export class RtEcu implements SimulatedEcu {
 
     // ── Process high-bus frames ──────────────────────────────
     for (const f of highBusRx) {
-      switch (f.canId) {
-        case "0x300": {
-          // HOST_DRIVE_CMD — Host → RT
-          this.lastHostCmdMs = nowMs;
-          this.hostCmdEverSeen = true;
-          if (ctx.mode === "auto" && !ctx.estopActive) {
-            this.hostDriveCmd = {
-              speedMmps: (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0,
-              yawRateMradS: ((f.data[4] << 16 | f.data[5] << 8 | f.data[6]) << 8) >> 8, // i24 BE sign-extend
-              gear: f.data[7] ?? 0,
-            };
-          }
-          break;
+      const drive = decodeAs(f, "host:host_drive_cmd");
+      if (drive !== undefined) {
+        this.lastHostCmdMs = nowMs;
+        this.hostCmdEverSeen = true;
+        if (ctx.mode === "auto" && !ctx.estopActive) {
+          this.hostDriveCmd = {
+            speedMmps: Number(drive.speed_mmps),
+            yawRateMradS: Number(drive.yaw_rate_mrad_s),
+            gear: Number(drive.gear),
+          };
         }
-        case "0x301": {
-          // HOST_BRAKE_REQ
-          this.hostBrakeKpa = (f.data[0] << 24 | f.data[1] << 16 | f.data[2] << 8 | f.data[3]) >> 0;
-          break;
-        }
-        case "0x7FC": {
-          // HOST_HEARTBEAT
-          if (f.data[0] !== this.lastHostHbCtr) {
+        continue;
+      }
+      const brake = decodeAs(f, "host:host_brake_req");
+      if (brake !== undefined) {
+        this.hostBrakeKpa = Number(brake.brake_pressure_kpa);
+        continue;
+      }
+      const heartbeat = decodeAs(f, "host:host_heartbeat");
+      if (heartbeat !== undefined) {
+          const counter = Number(heartbeat.alive_ctr);
+          if (counter !== this.lastHostHbCtr) {
             this.lastHostHbMs = nowMs;
-            this.lastHostHbCtr = f.data[0];
+            this.lastHostHbCtr = counter;
           }
-          break;
-        }
-        case "0x001": {
-          // ESTOP — forward to low bus
-          if (f.sender !== "rt") out.push({ ...f, bus: "low", sender: "rt" });
-          break;
-        }
-        case "0x302": {
-          // HOST_LIGHT_CMD — forward high→low to SYS
-          out.push({ ...f, bus: "low", sender: "rt" });
-          break;
-        }
-        case "0x400": {
-          // HOST_OBSTACLE_DIST — u32 BE mm, consumed by RT for obstacle braking
-          this.obstacleDistanceMm = ((f.data[0] << 24) | (f.data[1] << 16) | (f.data[2] << 8) | f.data[3]) >>> 0;
-          break;
-        }
+        continue;
+      }
+      if (decodeAs(f, "safety:safety_estop") !== undefined) {
+        if (f.sender !== "rt") out.push({ ...f, bus: "low", sender: "rt" });
+        continue;
+      }
+      if (decodeAs(f, "host:host_light_cmd") !== undefined) {
+        out.push({ ...f, bus: "low", sender: "rt" });
+        continue;
+      }
+      const obstacle = decodeAs(f, "host:host_obstacle_dist");
+      if (obstacle !== undefined) {
+        this.obstacleDistanceMm = Number(obstacle.distance_mm);
       }
     }
 
     // ── Process low-bus frames ──────────────────────────────
     for (const f of lowBusRx) {
-      switch (f.canId) {
-        case "0x7FE": {
-          // SYS_HEARTBEAT — monitor for 200ms timeout
-          if (f.data[0] !== this.lastSysHbCtr) {
+      const heartbeat = decodeAs(f, "sys:sys_heartbeat");
+      if (heartbeat !== undefined) {
+          const counter = Number(heartbeat.alive_ctr);
+          if (counter !== this.lastSysHbCtr) {
             this.lastSysHbMs = nowMs;
-            this.lastSysHbCtr = f.data[0];
+            this.lastSysHbCtr = counter;
           }
           this.sysHbEverSeen = true;
-          break;
-        }
-        case "0x201": {
-          // SES_STATUS — EPS-C steering feedback
-          // Extract angle (bytes 2-3, u16 LE, 0.1°/bit, offset -3000)
-          const angleRaw = (f.data[3] << 8 | f.data[2]) & 0xFFFF; // u16 LE
-          this.sesAngleRaw = angleRaw;
-          this.sesAngleStatus = f.data[0] & 1;
-          break;
-        }
-        case "0x001": {
-          // ESTOP — forward to high bus
-          if (f.sender !== "rt") out.push({ ...f, bus: "high", sender: "rt" });
-          break;
-        }
-        // Category 1 forward: low→high
-        case "0x011":
-        case "0x120":
-        case "0x206":
-        case "0x600":
-          out.push({ ...f, bus: "high", sender: "rt" });
-          break;
+        continue;
+      }
+      const steering = decodeAs(f, "ses:ses_status");
+      if (steering !== undefined) {
+        this.sesAngleRaw = Number(steering.steering_angle_raw);
+        this.sesAngleStatus = steering.angle_aligned === true ? 1 : 0;
+        continue;
+      }
+      if (decodeAs(f, "safety:safety_estop") !== undefined) {
+        if (f.sender !== "rt") out.push({ ...f, bus: "high", sender: "rt" });
+        continue;
+      }
+      if (
+        decodeAs(f, "sys:sys_safety_sts") !== undefined ||
+        decodeAs(f, "mtr:sys_throttle_sts") !== undefined ||
+        decodeAs(f, "mtr:mtr_motor_fbk") !== undefined ||
+        decodeAs(f, "sys:sys_diag_rpt") !== undefined
+      ) {
+        out.push({ ...f, bus: "high", sender: "rt" });
       }
     }
 
@@ -203,21 +197,10 @@ export class RtEcu implements SimulatedEcu {
 
       // 0x204 RT_DRIVE_CMD on low bus (100 Hz)
       const speed = resolved.motorSpeedMmps;
-      out.push({
-        simTimeMs: nowMs,
-        bus: "low",
-        canId: "0x204",
-        name: "RT_DRIVE_CMD",
-        dlc: 5,
-        data: [
-          (speed >> 24) & 0xFF,
-          (speed >> 16) & 0xFF,
-          (speed >> 8) & 0xFF,
-          speed & 0xFF,
-          resolved.gear & 0xFF,
-        ],
-        sender: "rt",
-      });
+      out.push(encodeSimFrame("rt:rt_drive_cmd", {
+        motor_speed_mmps: speed,
+        gear: resolved.gear,
+      }, "low", "rt", nowMs));
 
       this.lastSpeedMmps = speed;
 
@@ -250,81 +233,47 @@ export class RtEcu implements SimulatedEcu {
       // Fix 2: Originate 0x001 ESTOP on both buses on internal fault detection
       // Matches firmware run_safety_checks() — DLC=0, no data
       if (shouldEstop) {
-        out.push({ simTimeMs: nowMs, bus: "low", canId: "0x001", name: "ESTOP", dlc: 0, data: [], sender: "rt" });
-        out.push({ simTimeMs: nowMs, bus: "high", canId: "0x001", name: "ESTOP", dlc: 0, data: [], sender: "rt" });
+        out.push(encodeSimFrame("safety:safety_estop", {}, "low", "rt", nowMs));
+        out.push(encodeSimFrame("safety:safety_estop", {}, "high", "rt", nowMs));
       }
 
       // 0x205 RT_BRAKE_CMD on low bus (50 Hz) — suppressed in MANUAL mode (EPS-C standalone, SYS handles brake)
       if (ctx.mode !== "manual") {
-        out.push({
-          simTimeMs: nowMs,
-          bus: "low",
-          canId: "0x205",
-          name: "RT_BRAKE_CMD",
-          dlc: 4,
-          data: [
-            (brakeKpa >> 24) & 0xFF,
-            (brakeKpa >> 16) & 0xFF,
-            (brakeKpa >> 8) & 0xFF,
-            brakeKpa & 0xFF,
-          ],
-          sender: "rt",
-        });
+        out.push(encodeSimFrame("rt:rt_brake_cmd", {
+          brake_pressure_kpa: brakeKpa,
+        }, "low", "rt", nowMs));
       }
 
       // CMP3: RT sends 0x7B9 in AUTO mode as 1-hop brake (steering ACTIVE, not ESTOP)
       // Matches real firmware: forwards g_brake_kpa_to_send as pressure-mode VCU_SEB_REQ
       if (ctx.mode === "auto" && this.steering.state === SteerState.ACTIVE && !shouldEstop && !sysHbTimeout) {
         const pressureRaw = Math.min(Math.round(brakeKpa / 50), 100);
-        const autoRaw = [0, 0, 0, 0, 0, 0, 0, 0];
-        // Byte 0: align=0, control_enable=1, mode=1(Pressure), auto_brake only when pressure is requested.
-        autoRaw[0] = (0 << 0) | (1 << 1) | (1 << 2) | ((pressureRaw > 0 ? 1 : 0) << 3);
-        // Byte 3: pressure_req (pressure mode uses byte 3)
-        autoRaw[3] = pressureRaw & 0xFF;
-        // Byte 6: roll_cnt_enable=1, checksum_enable=1, rolling_counter
-        autoRaw[6] = 0x03 | ((this.sebRollCounter & 0x0F) << 4);
-        // Checksum: XOR(raw[0..6]) ^ 0xFF
-        let cksum = 0;
-        for (let i = 0; i < 7; i++) cksum ^= autoRaw[i];
-        autoRaw[7] = cksum ^ 0xFF;
+        out.push(encodeSimFrame("seb:vcu_seb_req", {
+          alignment_enable: false,
+          control_enable: true,
+          control_mode: 1,
+          auto_brake: pressureRaw > 0,
+          stroke_request_raw: 0,
+          pressure_request_raw: pressureRaw,
+          rolling_counter: this.sebRollCounter,
+        }, "low", "rt", nowMs));
         this.sebRollCounter = (this.sebRollCounter + 1) & 0x0F;
-        out.push({
-          simTimeMs: nowMs,
-          bus: "low",
-          canId: "0x7B9",
-          name: "VCU_SEB_REQ",
-          dlc: 8,
-          data: autoRaw,
-          sender: "rt",
-        });
       }
 
       // Gap #12: RT takes over 0x7B9 on SYS heartbeat loss (stroke=max)
       // Matches firmware VcuSebReq::pack() — per steer-by-wire CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
       if (sysHbTimeout) {
         const strokeRaw = 1140;  // 27mm max: (27+30)/0.05
-        const raw = [0, 0, 0, 0, 0, 0, 0, 0];
-        // Byte 0: align=0, control_enable=1, mode=0(Stroke), auto_brake=1
-        raw[0] = (0 << 0) | (1 << 1) | (0 << 2) | (1 << 3);
-        // Bytes 2-3: stroke_req LE (full 16-bit in Stroke mode)
-        raw[2] = strokeRaw & 0xFF;
-        raw[3] = (strokeRaw >> 8) & 0xFF;
-        // Byte 6: roll_cnt_enable=1, checksum_enable=1, rolling_counter(bits 4-7)
-        raw[6] = 0x03 | ((this.sebRollCounter & 0x0F) << 4);
-        // Checksum: XOR(raw[0..6]) ^ 0xFF
-        let cksum = 0;
-        for (let i = 0; i < 7; i++) cksum ^= raw[i];
-        raw[7] = cksum ^ 0xFF;
+        out.push(encodeSimFrame("seb:vcu_seb_req", {
+          alignment_enable: false,
+          control_enable: true,
+          control_mode: 0,
+          auto_brake: true,
+          stroke_request_raw: strokeRaw,
+          pressure_request_raw: 0,
+          rolling_counter: this.sebRollCounter,
+        }, "low", "rt", nowMs));
         this.sebRollCounter = (this.sebRollCounter + 1) & 0x0F;
-        out.push({
-          simTimeMs: nowMs,
-          bus: "low",
-          canId: "0x7B9",
-          name: "VCU_SEB_REQ",
-          dlc: 8,
-          data: raw,
-          sender: "rt",
-        });
       }
     }
 
@@ -343,40 +292,15 @@ export class RtEcu implements SimulatedEcu {
       const cmd = this.steering.tick(this.sesAngleRaw, this.sesAngleStatus, nowMs);
       if (cmd) {
         this.lastCmdAngleRaw = cmd.targetAngle;
-        // Build 0x169 VCU_SES_REQ (steer-by-wire LE encoding)
-        const angle16 = cmd.targetAngle & 0xFFFF;
-        const speedRaw = cmd.targetSpeed & 0xFFFF;
-        const rollCnt = cmd.rollingCounter;  // steering's own 50 Hz counter (0-15)
-        const data = [
-          (cmd.alignEnable & 1) | ((cmd.controlEnable & 1) << 1),
-          0,
-          angle16 & 0xFF,
-          (angle16 >> 8) & 0xFF,
-          speedRaw & 0xFF,
-          // Byte 5: speed[11:8] in bits 2-3, security signals overlay bits 0-1 and 4-7.
-          // RollCntEnable(bit0)=1, ChecksumEnable(bit1)=1, RollCnt(bits 4-7), speed[11:8] in bits 2-3.
-          1                          // bit 0: RollCntEnable = 1 (MUST be 1)
-          | (1 << 1)                  // bit 1: ChecksumEnable = 1 (MUST be 1)
-          | (((speedRaw >> 8) & 0x3) << 2)  // bits 2-3: speed bits 9-8
-          | ((rollCnt & 0xF) << 4),   // bits 4-7: Rolling counter
-          cmd.vehicleSpeed & 0xFF,
-          0, // checksum placeholder
-        ];
-        // Compute checksum: XOR(bytes 0-6) ^ 0xFF (per steer-by-wire CSV spec)
-        let cksum = 0;
-        for (let i = 0; i < 7; i++) cksum ^= data[i];
-        data[7] = cksum ^ 0xFF;
-
         if (ctx.mode !== "manual") {
-          out.push({
-            simTimeMs: nowMs,
-            bus: "low",
-            canId: "0x169",
-            name: "VCU_SES_REQ",
-            dlc: 8,
-            data,
-            sender: "rt",
-          });
+          out.push(encodeSimFrame("ses:vcu_ses_req", {
+            alignment_enable: cmd.alignEnable === 1,
+            control_enable: cmd.controlEnable === 1,
+            target_angle_raw: cmd.targetAngle,
+            target_speed_raw: cmd.targetSpeed,
+            rolling_counter: cmd.rollingCounter,
+            vehicle_speed_raw: cmd.vehicleSpeed,
+          }, "low", "rt", nowMs));
         }
       }
     }
@@ -388,59 +312,43 @@ export class RtEcu implements SimulatedEcu {
       const ss = this.steering.getState();
       const safetyState = ss === SteerState.ACTIVE ? 0 :
                           ss === SteerState.FAULT ? 2 : 1;
-      out.push({
-        simTimeMs: nowMs,
-        bus: "high",
-        canId: "0x210",
-        name: "RT_STATE_RPT",
-        dlc: 6,
-        data: [modeByte, safetyState, 0, 0, 0x0F, this.steering.getState()],
-        sender: "rt",
-      });
+      const state = {
+        mode: modeByte,
+        safety_state: safetyState,
+        estop_reason: 0,
+        reversing: 0,
+        rx_overflow: 0,
+        task_health: 0x0F,
+        steer_state: this.steering.getState(),
+      };
+      out.push(encodeSimFrame("rt:rt_state_rpt", state, "high", "rt", nowMs));
       // Also send on low bus so SYS can read RT safety_state
-      out.push({
-        simTimeMs: nowMs,
-        bus: "low",
-        canId: "0x210",
-        name: "RT_STATE_RPT",
-        dlc: 6,
-        data: [modeByte, safetyState, 0, 0, 0x0F, this.steering.getState()],
-        sender: "rt",
-      });
+      out.push(encodeSimFrame("rt:rt_state_rpt", state, "low", "rt", nowMs));
 
       // 0x310 STEER_DIAG (10 Hz, high bus, DLC=8)
       // angle in 0.1°/bit signed i16 BE, NO OFFSET (unlike 0x169 encoding)
       const sesAngle01deg = this.sesAngleRaw !== null ? (this.sesAngleRaw - 30000) : 0;
       const steerDiagAngle = Math.max(-32768, Math.min(32767, sesAngle01deg));
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x310", name: "STEER_DIAG", dlc: 8, data: [
-          (steerDiagAngle >> 8) & 0xFF, steerDiagAngle & 0xFF,  // angle 0.1° i16 BE
-          0, // fault=0 (EPS-C ok)
-          0, 0, // motor_current=0 (stub)
-          0, 0, // ecu_temp=0 (stub)
-          0, // reserved
-        ], sender: "rt",
-      });
+      out.push(encodeSimFrame("rt:steer_diag", {
+        angle_0_1deg: steerDiagAngle / 10,
+        fault: 0,
+        motor_current: 0,
+        ecu_temp: 0,
+      }, "high", "rt", nowMs));
 
       // 0x311 BRAKE_DIAG (10 Hz, high bus, DLC=8)
-      const brakePressureRaw = Math.round((this.computeObstacleKpa() / 1000) / 0.05) & 0xFFFF;
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x311", name: "BRAKE_DIAG", dlc: 8, data: [
-          (brakePressureRaw >> 8) & 0xFF, brakePressureRaw & 0xFF, // pressure raw
-          0, // fault=0 (SEB ok)
-          0, 0, // motor_current=0 (stub)
-          0, 0, // ecu_temp=0 (stub)
-          0, // reserved
-        ], sender: "rt",
-      });
+      out.push(encodeSimFrame("rt:brake_diag", {
+        pressure_raw: this.computeObstacleKpa() / 1000,
+        fault: 0,
+        motor_current: 0,
+        ecu_temp: 0,
+      }, "high", "rt", nowMs));
       // 0x220 RT_PID_RPT (10 Hz, high bus, DLC=6)
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x220", name: "RT_PID_RPT", dlc: 6, data: [
-          0, 0, // p_term
-          0, 0, // i_term
-          0, 0, // d_term
-        ], sender: "rt",
-      });
+      out.push(encodeSimFrame("rt:rt_pid_rpt", {
+        speed_setpoint: 0,
+        speed_measured: 0,
+        pid_output: 0,
+      }, "high", "rt", nowMs));
     }
 
     // ── Heartbeats (2 Hz) ───────────────────────────────────
@@ -448,14 +356,14 @@ export class RtEcu implements SimulatedEcu {
       this.rtHbCtrLow = (this.rtHbCtrLow + 1) & 0xFF;
       this.rtHbCtrHigh = (this.rtHbCtrHigh + 1) & 0xFF;
 
-      out.push({
-        simTimeMs: nowMs, bus: "low", canId: "0x7FD", name: "RT_HEARTBEAT",
-        dlc: 2, data: [this.rtHbCtrLow, this.healthFlags(ctx, shouldEstop)], sender: "rt",
-      });
-      out.push({
-        simTimeMs: nowMs, bus: "high", canId: "0x7FD", name: "RT_HEARTBEAT",
-        dlc: 2, data: [this.rtHbCtrHigh, this.healthFlags(ctx, shouldEstop)], sender: "rt",
-      });
+      out.push(encodeSimFrame("rt:rt_heartbeat", {
+        alive_ctr: this.rtHbCtrLow,
+        health_flags: this.healthFlags(ctx, shouldEstop),
+      }, "low", "rt", nowMs));
+      out.push(encodeSimFrame("rt:rt_heartbeat", {
+        alive_ctr: this.rtHbCtrHigh,
+        health_flags: this.healthFlags(ctx, shouldEstop),
+      }, "high", "rt", nowMs));
     }
 
     return out;

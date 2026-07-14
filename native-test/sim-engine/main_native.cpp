@@ -20,6 +20,8 @@
 #include <cmath>
 #include <string>
 
+#include "protocol/generated/cpp/etrike_protocol.hpp"
+
 // ── Stub the minimal ESP-IDF / FreeRTOS types needed ──
 struct QueueHandle_t_dummy {};
 using QueueHandle_t = QueueHandle_t_dummy*;
@@ -155,14 +157,18 @@ int main() {
 
             // Motor command frame (0x204)
             if (ok) {
+                etrike::protocol::generated::RtDriveCmd command{};
+                command.motor_speed_mmps = sp.motor_speed_mmps;
+                command.gear = sp.cmd_gear;
+                etrike::protocol::Frame frame{};
+                if (etrike::protocol::generated::encode(command, frame) !=
+                    etrike::protocol::CodecStatus::Ok) {
+                    continue;
+                }
                 snprintf(buf, sizeof(buf),
                     "{\"type\":\"frame\",\"bus\":\"low\",\"id\":\"0x204\",\"dlc\":5,"
                     "\"data\":[%d,%d,%d,%d,%d],\"name\":\"RT_DRIVE_CMD\"}",
-                    (sp.motor_speed_mmps >> 24) & 0xFF,
-                    (sp.motor_speed_mmps >> 16) & 0xFF,
-                    (sp.motor_speed_mmps >> 8) & 0xFF,
-                    sp.motor_speed_mmps & 0xFF,
-                    sp.cmd_gear);
+                    frame.data[0], frame.data[1], frame.data[2], frame.data[3], frame.data[4]);
                 write_json(buf);
             }
         }

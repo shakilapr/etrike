@@ -57,7 +57,7 @@
   </div>
 
   <div class="dictionary-summary">
-    <span>{generatedMessages} generated from shared/can/can_*.yaml</span>
+      <span>{generatedMessages} canonical protocol messages</span>
     {#if fallbackMessages > 0}
       <span class="warn">{fallbackMessages} API fallback</span>
     {/if}

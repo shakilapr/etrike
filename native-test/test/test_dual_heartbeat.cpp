@@ -9,8 +9,10 @@
 
 #include <cstdio>
 #include <cstdint>
-#include "can/can_protocol.h"
+#include "protocol/core/frame.hpp"
 #include "heartbeat.h"
+
+using etrike::protocol::Frame;
 
 static int pass = 0, fail = 0;
 #define CHECK(cond) do { if(cond){pass++;}else{fail++;fprintf(stderr,"  FAIL %s:%d\n",__FILE__,__LINE__);} } while(0)
@@ -24,7 +26,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
         CHECK(hb.ctr_low()  == 0);
         CHECK(hb.ctr_high() == 0);
         std::printf("  low=%u high=%u\n", hb.ctr_low(), hb.ctr_high());
@@ -35,7 +37,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f_low, f_high;
+        Frame f_low, f_high;
 
         hb.tick_low(f_low);
         hb.tick_low(f_low);
@@ -54,7 +56,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         hb.tick_low(f);
         CHECK(hb.ctr_low()  == 1);
@@ -73,7 +75,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         hb.tick_high(f);
         CHECK(hb.ctr_low()  == 0);
@@ -92,7 +94,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         for (int i = 0; i < 100; ++i) hb.tick_low(f);
         for (int i = 0; i < 50;  ++i) hb.tick_high(f);
@@ -108,7 +110,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         // Advance low to 254, high stays at 0
         for (int i = 0; i < 254; ++i) hb.tick_low(f);
@@ -131,7 +133,7 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         // Advance both: low to 255, high to 255
         for (int i = 0; i < 255; ++i) { hb.tick_low(f); hb.tick_high(f); }
@@ -151,20 +153,20 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         hb.tick_low(f);
         CHECK(f.id  == 0x7FD);
         CHECK(f.dlc == 2);
-        CHECK(f.u8_at(0) == 1);  // first tick → low counter=1
+        CHECK(f.data[0] == 1);  // first tick → low counter=1
 
         hb.tick_high(f);
         CHECK(f.id  == 0x7FD);
         CHECK(f.dlc == 2);
-        CHECK(f.u8_at(0) == 1);  // first high tick → high counter=1
+        CHECK(f.data[0] == 1);  // first high tick → high counter=1
 
         std::printf("  low frame: ID=0x%03X DLC=%u ctr=%u\n",
-                    f.id, f.dlc, f.u8_at(0));
+                    f.id, f.dlc, f.data[0]);
     }
 
     // ── Test 9: Health flags can be set independently per bus ───
@@ -172,16 +174,16 @@ int main() {
     {
         DualHeartbeat hb;
         hb.init();
-        can::Frame f;
+        Frame f;
 
         // Low bus with estop flag, high bus with mode_auto flag
         hb.tick_low(f, 0x02);  // bit1 = estop_active
-        CHECK((f.u8_at(1) & 0x02) != 0);
-        CHECK((f.u8_at(1) & 0x04) == 0);  // mode_auto NOT set
+        CHECK((f.data[1] & 0x02) != 0);
+        CHECK((f.data[1] & 0x04) == 0);  // mode_auto NOT set
 
         hb.tick_high(f, 0x04); // bit2 = mode_auto
-        CHECK((f.u8_at(1) & 0x04) != 0);
-        CHECK((f.u8_at(1) & 0x02) == 0);  // estop NOT set
+        CHECK((f.data[1] & 0x04) != 0);
+        CHECK((f.data[1] & 0x02) == 0);  // estop NOT set
 
         std::printf("  health flags independent per bus\n");
     }

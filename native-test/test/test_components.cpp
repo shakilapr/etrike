@@ -1,7 +1,6 @@
 // Stage 3 — Algorithmic Component Tests (PID, Physics, Steering, Safety, Brake, etc.)
 // Tests the non-trivial math/logic of each firmware component.
-// g++ -std=c++17 -I/c/projects/etrike/shared -I/c/projects/etrike/rt-esp32/src
-//      -I/c/projects/etrike/sys-esp32/src test_components.cpp -o test_comp
+// Built by the native CMake test suite.
 
 #include <cstdio>
 #include <cstdint>
@@ -14,10 +13,6 @@
 #define pdMS_TO_TICKS(ms) (ms)
 typedef uint32_t TickType_t;
 inline TickType_t xTaskGetTickCount() { static TickType_t t=0; return t+=10; }
-
-// ── Include firmware headers ───────────────────────────────────────
-#include "can/can_protocol.h"
-#include "shared_config.h"
 
 static int g_pass=0,g_fail=0;
 #define CHECK(c,m) do{if(c){g_pass++;}else{fprintf(stderr,"  FAIL %s\n",m);g_fail++;}}while(0)

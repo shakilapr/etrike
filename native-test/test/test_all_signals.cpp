@@ -1,5 +1,5 @@
 // Per-signal CAN protocol test — ALL 169 signals from YAML protocol definitions.
-// Compile: g++ -std=c++17 -I../../shared test_all_signals.cpp -o test_all_signals
+// Built by the native CMake test suite.
 // Each signal: encode/decode roundtrip (zero, min, max, mid), bit isolation, DLC guard.
 
 #include <cstdint>

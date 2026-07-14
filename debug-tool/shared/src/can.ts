@@ -1,34 +1,60 @@
-import { DynamicCanDecoder } from "./dynamic-decoder";
+import CAPABILITIES from "../../../protocol/generated/capabilities.json";
+import DISCOVERY from "../../../protocol/generated/discovery.json";
+import { decode as canonicalDecode, encode as canonicalEncode } from "../../../protocol/codecs/typescript/codec";
+import type { CodecStatus as CanonicalCodecStatus } from "../../../protocol/codecs/typescript/types";
 import { defaultTimebase } from "./timebase";
 
 export const BUSES = ["high", "low"] as const;
 export type Bus = (typeof BUSES)[number];
-
 export type FieldKind = "number" | "boolean" | "enum";
+export type CodecStatus = CanonicalCodecStatus;
 
-export class CodecError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
+interface CanonicalField {
+  readonly key: string;
+  readonly byte: number;
+  readonly bit: number;
+  readonly bits: number;
+  readonly signed?: boolean;
+  readonly min?: number;
+  readonly max?: number;
+  readonly factor?: number;
+  readonly offset?: number;
+  readonly constant?: number;
+  readonly enum?: Readonly<Record<string, string>>;
 }
 
-export class UnknownMessageError extends CodecError {
-  constructor(public readonly bus: string, public readonly id: string) {
-    super(`Unknown message: bus=${bus}, id=${id}`);
-  }
+interface CanonicalInstance {
+  readonly bus: string;
+  readonly id: number;
+  readonly frame_format: "standard" | "extended";
+  readonly cycle_ms: number;
+  readonly sender: string;
+  readonly receivers: readonly string[];
 }
 
-export class ValidationError extends CodecError {
-  constructor(message: string) {
-    super(message);
-  }
+interface CanonicalMessage {
+  readonly canonical_key: string;
+  readonly name: string;
+  readonly dlc: number;
+  readonly byte_order: "big" | "little";
+  readonly codec: { readonly strategy: "generated" | "custom"; readonly implementation_id?: string };
+  readonly instances: readonly CanonicalInstance[];
+  readonly layout: {
+    readonly kind: string;
+    readonly fields?: readonly CanonicalField[];
+    readonly algorithm?: string;
+    readonly semantic_support?: string;
+  };
 }
 
-export class SchemaError extends CodecError {
-  constructor(message: string) {
-    super(message);
-  }
+const CANONICAL_MESSAGES = DISCOVERY.messages as unknown as readonly CanonicalMessage[];
+
+export interface MessageCapabilities {
+  readonly rawMonitoring: boolean;
+  readonly semanticDecode: boolean;
+  readonly decodedInjection: boolean;
+  readonly codecStrategy: "generated" | "custom";
+  readonly implementation?: string;
 }
 
 export interface CanField {
@@ -54,12 +80,15 @@ export interface CanMessageDef {
   name: string;
   sender: string;
   dlc: number;
-  period: string; // "100ms" or "event"
+  period: string;
   injectable: boolean;
   receivers?: string[];
   comment?: string;
   byteOrder: string;
   fields: CanField[];
+  canonicalKey: string;
+  frameFormat: "standard" | "extended";
+  capabilities: MessageCapabilities;
 }
 
 export interface CanDataFrame {
@@ -73,6 +102,7 @@ export interface CanDataFrame {
 export interface DecodedMessage {
   readonly name: string;
   readonly signals: Record<string, unknown>;
+  readonly codec_status?: CodecStatus;
 }
 
 export interface RoutedFrame {
@@ -89,13 +119,7 @@ export interface RoutedFrame {
 
 export type CanFrame = RoutedFrame;
 
-export type AdapterEventType = 
-  | "bus_off" 
-  | "recovery" 
-  | "overflow" 
-  | "disconnect" 
-  | "error_frame" 
-  | "timestamp_reset";
+export type AdapterEventType = "bus_off" | "recovery" | "overflow" | "disconnect" | "error_frame" | "timestamp_reset";
 
 export interface AdapterEvent {
   readonly type: "adapter_event";
@@ -132,47 +156,250 @@ export interface InjectionTemplate {
   values: Record<string, number | boolean>;
 }
 
-export const decoder = new DynamicCanDecoder();
+export class CodecError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
 
-import { CAN_MESSAGES as GENERATED_MESSAGES } from "./generated/can-metadata";
+export class UnknownMessageError extends CodecError {
+  constructor(public readonly bus: string, public readonly id: string) {
+    super(`Unknown message: bus=${bus}, id=${id}`);
+  }
+}
 
-export let CAN_MESSAGES: CanMessageDef[] = GENERATED_MESSAGES;
-export let CAN_BY_BUS_ID = new Map<string, CanMessageDef>();
+export class ValidationError extends CodecError {}
+export class SchemaError extends CodecError {}
 
-export function initCanDatabase() {
-  decoder.loadMessages(CAN_MESSAGES);
-  CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
+export class UnsupportedDecodedInjectionError extends CodecError {
+  constructor(public readonly bus: string, public readonly id: string) {
+    super(`Decoded injection is unsupported: bus=${bus}, id=${id}`);
+  }
+}
 
-  // Register checksum hooks
-  const computeXor = (data: number[]) => {
-    if (data.length < 8) return;
-    let chk = 0;
-    for (let i = 0; i < 7; i++) {
-      chk ^= data[i];
-    }
-    data[7] = chk ^ 0xFF;
+export const PROTOCOL_HASH = CAPABILITIES.wire_hash;
+export const PROTOCOL_CAPABILITIES = CAPABILITIES;
+
+const INJECTABLE_IDENTITIES = new Set([
+  "high:0x001",
+  "high:0x300",
+  "high:0x301",
+  "high:0x302",
+  "high:0x400",
+  "high:0x7FC",
+  "low:0x001",
+  "low:0x302",
+]);
+
+const CUSTOM_DECODERS = new Set([
+  "ses:vcu_ses_req", "ses:ses_status", "ses:ses_test",
+  "seb:vcu_seb_req", "seb:seb_status", "seb:seb_test", "seb:seb_version",
+]);
+
+const CUSTOM_ENCODERS = new Set(["ses:vcu_ses_req", "seb:vcu_seb_req"]);
+
+const FIELD_ALIASES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "hmi:hmi_mode_req": { req_mode: "HMI_ReqMode" },
+  "hmi:hmi_pwr_req": { req_start: "HMI_ReqStart" },
+  "rt:steer_diag": {
+    angle_0_1deg: "SteerDiag_Angle0_1deg", fault: "SteerDiag_Fault",
+    motor_current: "SteerDiag_MotorCurrent", ecu_temp: "SteerDiag_ECUTemp", reserved: "SteerDiag_Reserved",
+  },
+  "rt:brake_diag": {
+    pressure_raw: "BrakeDiag_PressureRaw", fault: "BrakeDiag_Fault",
+    motor_current: "BrakeDiag_MotorCurrent", ecu_temp: "BrakeDiag_ECUTemp", reserved: "BrakeDiag_Reserved",
+  },
+  "sys:sys_diag_rpt": {
+    mode: "SYS_DiagMode", brake_engaged: "SYS_DiagBrakeEngaged", brake_fault: "SYS_DiagBrakeFault",
+    estop_active: "SYS_DiagEstopActive", free_heap_kb: "SYS_DiagFreeHeapKb", tec: "SYS_DiagTec", rec: "SYS_DiagRec",
+  },
+  "sys:sys_heartbeat": { alive_ctr: "SYS_AliveCtr" },
+  "ses:vcu_ses_req": {
+    target_angle_raw: "target_angle", target_speed_raw: "target_speed", vehicle_speed_raw: "SES_VehSpd",
+  },
+  "ses:ses_status": {
+    angle_aligned: "angle_status", steering_angle_raw: "str_angle", target_angle_speed_raw: "tgt_angle_spd",
+    steering_torque_raw: "SES_SteeringTorq", rolling_counter_enabled: "SES_RollCntEnStatus",
+    checksum_enabled: "SES_ChecksumEnStatus",
+  },
+  "ses:ses_test": {
+    motor_current_raw: "SES_MtrCurt", ecu_temperature_raw: "SES_ECUTemp", supply_voltage_raw: "SES_PowVolt",
+  },
+  "seb:vcu_seb_req": {
+    alignment_enable: "align_enable", stroke_request_raw: "stroke_req", pressure_request_raw: "pressure_req",
+  },
+  "seb:seb_status": {
+    control_enabled: "control_enable_sts", control_mode: "control_mode_sts", auto_brake_status: "SEB_AutoBrakeStatus",
+    stroke_value_raw: "stroke_value", pressure_value_raw: "pressure_value", angle_value_raw: "angle_value",
+    rolling_counter_enabled: "SEB_RollCntEnStatus", checksum_enabled: "SEB_ChecksumEnStatus",
+  },
+  "seb:seb_test": {
+    motor_current_raw: "SEB_MtrCurr", ecu_temperature_raw: "SEB_ECUTemp", supply_voltage_raw: "SEB_PowVolt",
+  },
+  "seb:seb_version": { software_raw: "SEB_SW_Version", hardware_raw: "SEB_HW_Version" },
+};
+
+function formatCanId(id: number): string {
+  return `0x${id.toString(16).toUpperCase().padStart(3, "0")}`;
+}
+
+function fieldName(messageKey: string, key: string): string {
+  return FIELD_ALIASES[messageKey]?.[key] ?? key;
+}
+
+function fieldDefinition(messageKey: string, field: CanonicalField): CanField {
+  const key = fieldName(messageKey, field.key);
+  const options = field.enum === undefined
+    ? undefined
+    : Object.entries(field.enum).map(([value, label]) => ({ value: Number(value), label }));
+  const boolean = field.bits === 1 && options === undefined;
+  return {
+    key,
+    label: key,
+    kind: options ? "enum" : boolean ? "boolean" : "number",
+    min: field.min,
+    max: field.max,
+    step: field.factor,
+    options,
+    _byte: field.byte,
+    _bit_offset: field.bit,
+    _size: field.bits,
+    _type: field.signed ? "signed" : "unsigned",
+    _factor: field.factor ?? 1,
+    _offset: field.offset ?? 0,
   };
-  
-  decoder.registerEncoderHook("low", "0x169", computeXor);
-  decoder.registerEncoderHook("low", "0x7B9", computeXor);
+}
+
+export const CAN_MESSAGES: CanMessageDef[] = CANONICAL_MESSAGES
+  .flatMap((message) => message.instances
+    .filter((instance): instance is CanonicalInstance & { bus: Bus } => instance.bus === "high" || instance.bus === "low")
+    .map((instance) => {
+      const id = formatCanId(instance.id);
+      const generated = message.codec.strategy === "generated";
+      return {
+        bus: instance.bus,
+        id,
+        name: message.name,
+        sender: instance.sender,
+        dlc: message.dlc,
+        period: instance.cycle_ms === 0 ? "event" : `${instance.cycle_ms}ms`,
+        injectable: INJECTABLE_IDENTITIES.has(`${instance.bus}:${id}`),
+        receivers: [...instance.receivers],
+        comment: message.layout.algorithm,
+        byteOrder: message.byte_order === "big" ? "motorola" : "intel",
+        fields: (message.layout.fields ?? []).map((field) => fieldDefinition(message.canonical_key, field)),
+        canonicalKey: message.canonical_key,
+        frameFormat: instance.frame_format,
+        capabilities: {
+          rawMonitoring: true,
+          semanticDecode: generated || CUSTOM_DECODERS.has(message.canonical_key),
+          decodedInjection: generated || CUSTOM_ENCODERS.has(message.canonical_key),
+          codecStrategy: message.codec.strategy,
+          implementation: message.codec.implementation_id,
+        },
+      };
+    }))
+  .sort((left, right) => left.bus.localeCompare(right.bus) || Number.parseInt(left.id.slice(2), 16) - Number.parseInt(right.id.slice(2), 16));
+
+export let CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
+
+function compatibilityValues(definition: CanMessageDef, values: Record<string, unknown>): Record<string, unknown> {
+  const aliases = FIELD_ALIASES[definition.canonicalKey] ?? {};
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "raw") continue;
+    output[aliases[key] ?? key] = value;
+  }
+  for (const field of definition.fields) {
+    if (field.kind === "boolean" && typeof output[field.key] === "number") output[field.key] = output[field.key] !== 0;
+    if (field.options && typeof output[field.key] === "number") {
+      const option = field.options.find((candidate) => candidate.value === output[field.key]);
+      if (option) output[`${field.key}_name`] = option.label;
+    }
+  }
+  return output;
+}
+
+function canonicalValues(definition: CanMessageDef, values: Readonly<Record<string, number | boolean>>): Record<string, unknown> {
+  const aliases = FIELD_ALIASES[definition.canonicalKey] ?? {};
+  const reverseAliases = new Map(Object.entries(aliases).map(([canonical, legacy]) => [legacy, canonical]));
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) output[reverseAliases.get(key) ?? key] = value;
+  for (const field of definition.fields) {
+    const canonicalKey = reverseAliases.get(field.key) ?? field.key;
+    if (typeof output[canonicalKey] === "boolean" && definition.capabilities.codecStrategy === "generated") {
+      output[canonicalKey] = output[canonicalKey] ? 1 : 0;
+    }
+  }
+  return output;
+}
+
+export interface DecodeFrameResult {
+  readonly status: CodecStatus | "unknown_message";
+  readonly signals: Record<string, unknown>;
+}
+
+export function decodeFrameResult(bus: Bus, id: string, data: readonly number[], dlc = data.length): DecodeFrameResult {
+  const definition = findMessage(bus, id);
+  if (!definition) return { status: "unknown_message", signals: { bus } };
+  const [status, value] = canonicalDecode(definition.canonicalKey, {
+    bus,
+    id: Number.parseInt(definition.id.slice(2), 16),
+    frameFormat: definition.frameFormat,
+    data: Uint8Array.from(data),
+    dlc,
+  });
+  if (status !== "ok" || value === undefined) return { status, signals: {} };
+  const signals = compatibilityValues(definition, value);
+  if (definition.capabilities.codecStrategy === "custom" && definition.dlc > 0) signals.checksum = data[definition.dlc - 1];
+  return { status, signals };
+}
+
+class CanonicalCanCodec {
+  getMessages(): CanMessageDef[] {
+    return CAN_MESSAGES;
+  }
+
+  getDef(bus: string, id: string): CanMessageDef | undefined {
+    if (bus !== "high" && bus !== "low") return undefined;
+    return findMessage(bus, id);
+  }
+
+  decode(bus: string, id: string, data: number[]): Record<string, unknown> {
+    if (bus !== "high" && bus !== "low") return { bus };
+    return decodeFrameResult(bus, id, data).signals;
+  }
+
+  encode(bus: string, id: string, values: Record<string, number | boolean>): { dlc: number; data: number[] } {
+    if (bus !== "high" && bus !== "low") throw new UnknownMessageError(bus, id);
+    const definition = findMessage(bus, id);
+    if (!definition) throw new UnknownMessageError(bus, id);
+    if (!definition.capabilities.decodedInjection) throw new UnsupportedDecodedInjectionError(bus, definition.id);
+    let result;
+    try {
+      result = canonicalEncode(definition.canonicalKey, canonicalValues(definition, values), bus);
+    } catch (error) {
+      if (error instanceof RangeError) throw new UnsupportedDecodedInjectionError(bus, definition.id);
+      throw error;
+    }
+    const [status, frame] = result;
+    if (status !== "ok" || frame === undefined) throw new ValidationError(`Cannot encode ${bus}:${definition.id}: ${status}`);
+    return { dlc: frame.dlc, data: Array.from(frame.data) };
+  }
+}
+
+export const decoder = new CanonicalCanCodec();
+
+export function initCanDatabase(): void {
+  CAN_BY_BUS_ID = new Map(CAN_MESSAGES.map((item) => [`${item.bus}:${item.id}`, item]));
 }
 
 export const INJECTION_TEMPLATES: InjectionTemplate[] = [
-  // ── Host simulation (high bus) ──────────────────────────────
   { bus: "high", id: "0x300", name: "Host drive 2.0 m/s", description: "Host drive command in D gear.", dlc: 8, values: { speed_mmps: 2000, yaw_rate_mrad_s: 0, gear: 1 } },
   { bus: "high", id: "0x301", name: "Host brake 5 MPa", description: "Host brake request.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
   { bus: "high", id: "0x7FC", name: "Host heartbeat", description: "Host heartbeat. Inject every 500ms.", dlc: 2, values: { alive_ctr: 1, health_flags: 0 } },
-  // ── RT simulation (low bus) ─────────────────────────────────
-  { bus: "low", id: "0x204", name: "RT drive 2.0 m/s", description: "RT to MTR drive command.", dlc: 5, values: { motor_speed_mmps: 2000, gear: 1 } },
-  { bus: "low", id: "0x205", name: "RT brake 5 MPa", description: "RT to SYS brake command.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
-  { bus: "low", id: "0x169", name: "RT steer center", description: "RT to EPS-C steering command.", dlc: 8, values: { target_angle: 0, target_speed: 328, control_enable: true, rolling_counter: 1, checksum: 0 } },
-  { bus: "low", id: "0x7FD", name: "RT heartbeat", description: "RT heartbeat on low bus. Inject every 500ms.", dlc: 2, values: { alive_ctr: 1, health_flags: 0 } },
-  // ── Bench bypass: simulate absent peer ECUs ─────────────────
-  { bus: "low", id: "0x201", name: "EPS-C status (bypass)", description: "Synthetic EPS-C status: 0° centered, aligned. Inject every 100ms.", dlc: 8, values: { angle_status: true, str_angle: 0, tgt_angle_spd: 0, error_status: 0, rolling_counter: 1, checksum: 0 } },
-  { bus: "low", id: "0x721", name: "SEB status (bypass)", description: "Synthetic SEB status: aligned, 0mm stroke. Inject every 100ms.", dlc: 8, values: { alignment_status: true, stroke_value: 600, pressure_value: 0, error_status: 0, rolling_counter: 1, checksum: 0 } },
-  { bus: "low", id: "0x206", name: "MTR feedback (bypass)", description: "Synthetic MTR feedback: 500 mm/s, D gear, no faults. Inject every 50ms.", dlc: 4, values: { actual_speed_mmps: 500, gear_state: 1, fault_flags: 0 } },
-  { bus: "low", id: "0x7FE", name: "SYS heartbeat (bypass)", description: "Synthetic SYS heartbeat for RT bench. Inject every 100ms.", dlc: 2, values: { alive_ctr: 1, health_flags: 0 } },
-  { bus: "low", id: "0x001", name: "ESTOP trigger", description: "DLC=0 ESTOP frame. Triggers emergency stop on all nodes.", dlc: 0, values: {} },
+  { bus: "low", id: "0x001", name: "ESTOP trigger", description: "DLC=0 ESTOP frame.", dlc: 0, values: {} },
 ];
 
 export function normalizeBus(input: unknown): Bus {
@@ -182,19 +409,22 @@ export function normalizeBus(input: unknown): Bus {
 }
 
 export function normalizeCanId(input: string | number): string {
-  if (typeof input === "number") return `0x${input.toString(16).toUpperCase().padStart(3, "0")}`;
+  if (typeof input === "number") return formatCanId(input);
   const trimmed = input.trim();
   const value = trimmed.toLowerCase().startsWith("0x") ? Number.parseInt(trimmed.slice(2), 16) : Number.parseInt(trimmed, 16);
-  return Number.isFinite(value) ? `0x${value.toString(16).toUpperCase().padStart(3, "0")}` : trimmed.toUpperCase();
+  return Number.isFinite(value) ? formatCanId(value) : trimmed.toUpperCase();
 }
 
 export function findMessage(bus: Bus, id: string): CanMessageDef | undefined {
-  const normalized = normalizeCanId(id);
-  return CAN_BY_BUS_ID.get(`${bus}:${normalized}`);
+  return CAN_BY_BUS_ID.get(`${bus}:${normalizeCanId(id)}`);
 }
 
 export function getMessageName(bus: Bus, id: string): string {
   return findMessage(bus, id)?.name ?? `UNKNOWN_${normalizeCanId(id)}`;
+}
+
+export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string, unknown> {
+  return decodeFrameResult(bus, id, data).signals;
 }
 
 export function defaultStats(): CanStats {
@@ -202,46 +432,42 @@ export function defaultStats(): CanStats {
 }
 
 export function normalizeStats(input: Partial<CanStats> | Record<string, unknown>): CanStats {
-  const buses = input.buses && typeof input.buses === "object" ? (input.buses as Partial<Record<Bus, Partial<BusStats>>>) : {};
+  const buses = input.buses && typeof input.buses === "object" ? input.buses as Partial<Record<Bus, Partial<BusStats>>> : {};
   return {
     type: "stats",
     ts: typeof input.ts === "number" ? input.ts : Date.now() / 1000,
     uptime_s: typeof input.uptime_s === "number" ? input.uptime_s : 0,
-    buses: { high: normalizeBusStats(buses.high), low: normalizeBusStats(buses.low) }
+    buses: { high: normalizeBusStats(buses.high), low: normalizeBusStats(buses.low) },
   };
 }
 
-// Accepts both legacy flat frames and new nested frames to ease migration
 export function normalizeFrame(input: any): RoutedFrame {
-  const isNested = input.frame !== undefined;
-  const legacyInput = isNested ? {} : input;
-  
+  const legacyInput = input.frame === undefined ? input : {};
   const bus = normalizeBus(input.bus ?? legacyInput.bus);
   const id = normalizeCanId(input.frame?.id ?? legacyInput.id);
   const rawData = input.frame?.data ?? legacyInput.data ?? [];
   const fullData = normalizeBytes(rawData).slice(0, 8);
-  const dlc = typeof (input.frame?.dlc ?? legacyInput.dlc) === "number" ? (input.frame?.dlc ?? legacyInput.dlc) : Math.min(rawData.length, 8);
-  
-  const decodedMap = input.decoded?.signals ?? legacyInput.decoded;
-  const decoded = decodedMap && Object.keys(decodedMap).length > 0 ? decodedMap : decodeFrame(bus, id, fullData);
+  const requestedDlc = input.frame?.dlc ?? legacyInput.dlc;
+  const dlc = typeof requestedDlc === "number" ? requestedDlc : Math.min(fullData.length, 8);
+  const suppliedSignals = input.decoded?.signals ?? legacyInput.decoded;
+  const decodedResult = suppliedSignals && Object.keys(suppliedSignals).length > 0
+    ? { status: input.decoded?.codec_status ?? "ok", signals: suppliedSignals }
+    : decodeFrameResult(bus, id, fullData.slice(0, dlc), dlc);
   const name = input.decoded?.name ?? legacyInput.name ?? getMessageName(bus, id);
-  
   let ts = typeof input.ts === "number" ? input.ts : Date.now() / 1000;
-  if (ts > 1_000_000_000_000) ts = ts / 1000;
-  
+  if (ts > 1_000_000_000_000) ts /= 1000;
   let ts_us = input.ts_us;
   let seq = input.seq;
   if (!ts_us || typeof seq !== "number") {
     const fallback = defaultTimebase.now();
-    if (!ts_us) ts_us = fallback.ts_us;
+    ts_us ||= fallback.ts_us;
     if (typeof seq !== "number") seq = fallback.seq;
   }
-  
-  return { 
-    ts, 
-    ts_us, 
-    seq, 
-    bus, 
+  return {
+    ts,
+    ts_us,
+    seq,
+    bus,
     frame: {
       id,
       dlc,
@@ -249,15 +475,8 @@ export function normalizeFrame(input: any): RoutedFrame {
       ext: input.frame?.ext ?? legacyInput.ext ?? false,
       rtr: input.frame?.rtr ?? legacyInput.rtr ?? false,
     },
-    decoded: {
-      name,
-      signals: decoded
-    }
+    decoded: { name, signals: decodedResult.signals, codec_status: decodedResult.status === "unknown_message" ? "wrong_message_id" : decodedResult.status },
   };
-}
-
-export function decodeFrame(bus: Bus, id: string, data: number[]): Record<string, unknown> {
-  return decoder.decode(bus, id, data);
 }
 
 function emptyBusStats(): BusStats {
@@ -273,24 +492,23 @@ function normalizeBusStats(input?: Partial<BusStats>): BusStats {
     load_pct: typeof input.load_pct === "number" ? input.load_pct : 0,
     tec: typeof input.tec === "number" ? input.tec : 0,
     rec: typeof input.rec === "number" ? input.rec : 0,
-    by_id: input.by_id && typeof input.by_id === "object" ? (input.by_id as Record<string, number>) : {}
+    by_id: input.by_id && typeof input.by_id === "object" ? input.by_id : {},
   };
 }
 
 export function validateDataBytes(data: unknown, dlc: number): number[] {
-  const arr = Array.isArray(data) ? data : [];
-  const normalized = arr.map((v) => {
-    const num = Number(v);
-    return isNaN(num) ? 0 : Math.max(0, Math.min(255, Math.floor(num)));
+  const normalized = (Array.isArray(data) ? data : []).map((value) => {
+    const number = Number(value);
+    return Number.isNaN(number) ? 0 : Math.max(0, Math.min(255, Math.floor(number)));
   });
   while (normalized.length < dlc) normalized.push(0);
   return normalized.slice(0, dlc);
 }
 
 function normalizeBytes(input: any): number[] {
-  if (Array.isArray(input)) return input.map((v) => Number(v) || 0);
-  if (input instanceof Uint8Array || (typeof globalThis !== 'undefined' && (globalThis as any).Buffer?.isBuffer?.(input))) return Array.from(input);
-  if (input && typeof input === 'object' && 'length' in input && typeof input[0] === 'number') return Array.from(input);
+  if (Array.isArray(input)) return input.map((value) => Number(value) || 0);
+  if (input instanceof Uint8Array || (typeof globalThis !== "undefined" && (globalThis as any).Buffer?.isBuffer?.(input))) return Array.from(input);
+  if (input && typeof input === "object" && "length" in input && typeof input[0] === "number") return Array.from(input);
   return [];
 }
 
@@ -307,19 +525,14 @@ export class BusDetector {
   private lowHits = 0;
   private locked: Bus | null = null;
   private lastFeedAt = 0;
-
   private static readonly STALE_TIMEOUT_S = 10;
 
   feed(canId: string): Bus {
     this.lastFeedAt = Date.now() / 1000;
     if (this.locked) return this.locked;
-
     const id = normalizeCanId(canId);
-    
-    // Check if ID uniquely appears on high or low bus
-    const inHigh = CAN_MESSAGES.some((m) => m.bus === "high" && m.id === id);
-    const inLow = CAN_MESSAGES.some((m) => m.bus === "low" && m.id === id);
-
+    const inHigh = CAN_BY_BUS_ID.has(`high:${id}`);
+    const inLow = CAN_BY_BUS_ID.has(`low:${id}`);
     if (inHigh && !inLow) {
       this.highHits += 1;
       if (this.highHits >= 3) this.locked = "high";
@@ -327,16 +540,11 @@ export class BusDetector {
       this.lowHits += 1;
       if (this.lowHits >= 3) this.locked = "low";
     }
-
-    return this.locked ?? "high";
+    return this.locked ?? (this.lowHits > 0 && this.highHits === 0 ? "low" : "high");
   }
 
   get state(): BusDetectorState {
-    if (this.locked && this.lastFeedAt > 0 && (Date.now() / 1000 - this.lastFeedAt) > BusDetector.STALE_TIMEOUT_S) {
-      this.locked = null;
-      this.highHits = 0;
-      this.lowHits = 0;
-    }
+    if (this.locked && this.lastFeedAt > 0 && Date.now() / 1000 - this.lastFeedAt > BusDetector.STALE_TIMEOUT_S) this.reset();
     if (this.locked) return { detected: true, bus: this.locked, confidence: "high", highHits: this.highHits, lowHits: this.lowHits };
     if (this.highHits > 0 && this.lowHits > 0) return { detected: false, bus: "high", confidence: "none", highHits: this.highHits, lowHits: this.lowHits };
     if (this.highHits > 0) return { detected: false, bus: "high", confidence: "low", highHits: this.highHits, lowHits: this.lowHits };
@@ -351,4 +559,5 @@ export class BusDetector {
     this.lastFeedAt = 0;
   }
 }
+
 initCanDatabase();
