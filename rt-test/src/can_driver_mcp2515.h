@@ -6,7 +6,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstddef>
-#include "can/can_protocol.h"
+#include "protocol/compat/can.hpp"
 #include "config.h"
 
 namespace rt {
@@ -51,7 +51,7 @@ public:
     /// the requested mode within 1ms. ListenOnly is safe for bus monitoring.
     bool set_mode(Mode mode);
 
-    // ── Frame I/O (same API as can::CanDriver) ─────────────────────
+    // ── Frame I/O ──────────────────────────────────────────────────
 
     bool send(const can::Frame& frame, uint32_t timeout_ms = 2);
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);

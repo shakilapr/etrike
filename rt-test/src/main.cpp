@@ -7,15 +7,14 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
-#include "can/can_driver.h"
-#include "can/can_protocol.h"
+#include "can_driver_twai.h"
 #include "can_driver_mcp2515.h"
 
 static const char* TAG = "rt-test";
 
 // ── CAN instances ────────────────────────────────────────────────────
-alignas(can::CanDriver) static unsigned char g_can_low_storage[sizeof(can::CanDriver)];
-static can::CanDriver* g_can_low = nullptr;
+alignas(rt::TwaiDriver) static unsigned char g_can_low_storage[sizeof(rt::TwaiDriver)];
+static rt::TwaiDriver* g_can_low = nullptr;
 static rt::Mcp2515Driver g_can_high;
 
 // ── Stats ────────────────────────────────────────────────────────────
@@ -96,7 +95,7 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "=== RT CAN Test ===");
 
     g_can_low = new (static_cast<void*>(g_can_low_storage))
-        can::CanDriver(can::CanDriver::Config{5, 4, 500'000});
+        rt::TwaiDriver(rt::TwaiDriver::Config{5, 4, 500'000});
     if (g_can_low->init()) {
         ESP_LOGI(TAG, "TWAI OK — TX=5 RX=4 @ 500k");
     } else {

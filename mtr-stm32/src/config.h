@@ -1,6 +1,6 @@
 #pragma once
 // MTR STM32 — Motor controller configuration.
-// CAN protocol IDs are in shared/can/can_protocol.h (namespace can).
+// CAN protocol definitions come from the canonical root protocol.
 // Vehicle-wide constants are in shared/shared_config.h (namespace shared).
 // Dedicated motor actuation: throttle DAC, gear MOSFETs, ADC, TLP281 sense.
 // ESTOP wired direct — cuts throttle/gear locally, no CAN dependency.
@@ -14,9 +14,24 @@
 
 #include <cstdint>
 #include "shared_config.h"
-#include "can/generated/can_messages.h"
+#include "protocol/generated/cpp/etrike_protocol.hpp"
 
 namespace mtr {
+
+namespace messages = etrike::protocol::generated;
+
+enum class Mode : uint8_t {
+    Manual = messages::RtStateRpt::kModeManual,
+    Auto = messages::RtStateRpt::kModeAuto,
+    Estop = messages::RtStateRpt::kModeEstop,
+};
+
+enum class Gear : uint8_t {
+    N = messages::RtDriveCmd::kGearN,
+    D = messages::RtDriveCmd::kGearD,
+    S = messages::RtDriveCmd::kGearS,
+    R = messages::RtDriveCmd::kGearR,
+};
 
 // ── Throttle — MCP4725 I2C DAC (0-5V) + ADC read ─────────────────
 constexpr int      kThrottleI2cSda      = 23;   // PB7 (1*16+7) — I2C1 SDA
@@ -47,7 +62,7 @@ constexpr int kSafetyCheckHz       = 20;    // ESTOP GPIO + staleness
 constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 
 // ── Timeouts ──────────────────────────────────────────────────────
-constexpr int kCmdStaleTimeoutMs   = can::gen::RtDriveCmd::kCycleMs * 20;
+constexpr int kCmdStaleTimeoutMs   = messages::RtDriveCmd::kCycleMs * 20;
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 
 // ── Gear safety ───────────────────────────────────────────────────

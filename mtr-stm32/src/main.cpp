@@ -30,9 +30,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-/* Shared protocol headers */
-#include "can/can_protocol.h"
-#include "can/codec_transport.h"
+/* Canonical protocol */
+#include "protocol/generated/cpp/etrike_protocol.hpp"
 
 /* MTR module headers */
 #include "config.h"
@@ -53,7 +52,7 @@ ADC_HandleTypeDef  hadc1 = {};
 /* ── Cross-task state (std::atomic, lock-free) ────────────────────── */
 
 /// Current system mode (written by task_can_rx from 0x110).
-std::atomic<can::Mode> g_mode{can::Mode::Manual};
+std::atomic<mtr::Mode> g_mode{mtr::Mode::Manual};
 
 /// ESTOP active flag: set by task_can_rx (0x001) or task_safety (GPIO).
 std::atomic<bool> g_estop_active{false};
@@ -106,26 +105,31 @@ extern "C" {
 
 /// Dispatch a received CAN frame to the appropriate atomic state.
 /// Called from task_can_rx.
-static void process_can_frame(const can::Frame& frame) {
-    if (frame.id == can::kIdSafetyEstop) {
+static void process_can_frame(const etrike::protocol::Frame& frame) {
+    using etrike::protocol::CodecStatus;
+    namespace messages = etrike::protocol::generated;
+
+    if (frame.id == messages::SafetyEstop::kId) {
         /* 0x001 SAFETY_ESTOP — DLC=0, no payload */
+        messages::SafetyEstop estop{};
+        if (messages::decode(frame.view(), estop) != CodecStatus::Ok) return;
         g_estop_active.store(true, std::memory_order_relaxed);
 
-    } else if (frame.id == can::kIdSysModeCmd) {
+    } else if (frame.id == messages::SysModeCmd::kId) {
         /* 0x110 SYS_MODE_CMD — u8 mode */
-        can::gen::SysModeCmd cmd{};
-        if (can::decode_frame(frame, cmd) != can::gen::CodecStatus::Ok) return;
-        can::Mode new_mode = static_cast<can::Mode>(cmd.mode & 0x03);
-        if (new_mode == can::Mode::Manual ||
-            new_mode == can::Mode::Auto ||
-            new_mode == can::Mode::Estop) {
+        messages::SysModeCmd cmd{};
+        if (messages::decode(frame.view(), cmd) != CodecStatus::Ok) return;
+        mtr::Mode new_mode = static_cast<mtr::Mode>(cmd.mode);
+        if (new_mode == mtr::Mode::Manual ||
+            new_mode == mtr::Mode::Auto ||
+            new_mode == mtr::Mode::Estop) {
             g_mode.store(new_mode, std::memory_order_relaxed);
         }
 
-    } else if (frame.id == can::kIdRtDriveCmd) {
+    } else if (frame.id == messages::RtDriveCmd::kId) {
         /* 0x204 RT_DRIVE_CMD — i32 speed + u8 gear */
-        can::gen::RtDriveCmd cmd{};
-        if (can::decode_frame(frame, cmd) != can::gen::CodecStatus::Ok) return;
+        messages::RtDriveCmd cmd{};
+        if (messages::decode(frame.view(), cmd) != CodecStatus::Ok) return;
         g_cmd_speed_mmps.store(cmd.motor_speed_mmps, std::memory_order_relaxed);
         g_cmd_gear.store(cmd.gear, std::memory_order_relaxed);
         g_last_cmd_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -147,7 +151,7 @@ static void process_can_frame(const can::Frame& frame) {
  */
 void task_can_rx(void* pvParameters) {
     (void)pvParameters;
-    can::Frame frame;
+    etrike::protocol::Frame frame;
 
     for (;;) {
         if (mtr::g_can.receive(frame, 0)) {
@@ -193,9 +197,9 @@ void task_safety(void* pvParameters) {
         }
 
         /* ── 2. CAN 0x204 staleness check ── */
-        can::Mode mode = g_mode.load(std::memory_order_relaxed);
+        mtr::Mode mode = g_mode.load(std::memory_order_relaxed);
         if (!g_startup_grace.load(std::memory_order_relaxed) &&
-            mode == can::Mode::Auto) {
+            mode == mtr::Mode::Auto) {
             uint32_t last_tick = g_last_cmd_tick.load(std::memory_order_relaxed);
             uint32_t elapsed = now - last_tick;
             if (elapsed > pdMS_TO_TICKS(mtr::kCmdStaleTimeoutMs)) {
@@ -241,7 +245,7 @@ void task_control(void* pvParameters) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000 / mtr::kControlLoopHz));
 
         bool     estop   = g_estop_active.load(std::memory_order_relaxed);
-        can::Mode mode   = g_mode.load(std::memory_order_relaxed);
+        mtr::Mode mode   = g_mode.load(std::memory_order_relaxed);
         TickType_t now   = xTaskGetTickCount();
 
         /* ── Startup grace expiry ── */
@@ -254,7 +258,7 @@ void task_control(void* pvParameters) {
         }
 
         /* ── Handle ESTOP ── */
-        if (estop || mode == can::Mode::Estop) {
+        if (estop || mode == mtr::Mode::Estop) {
             if (!mtr::g_dac.write(0)) {
                 // I2C write failed — throttle may still be at previous voltage.
                 // Hardware ESTOP GPIO (Level 3) is the backstop.
@@ -263,7 +267,7 @@ void task_control(void* pvParameters) {
             mtr::g_gear.all_off();                // All MOSFETs off → N
 
             g_actual_speed_mmps.store(0, std::memory_order_relaxed);
-            g_current_gear.store(static_cast<uint8_t>(can::Gear::N),
+            g_current_gear.store(static_cast<uint8_t>(mtr::Gear::N),
                                  std::memory_order_relaxed);
 
             /* Set ESTOP_ACTIVE fault flag — atomic RMW to avoid race with task_safety */
@@ -276,7 +280,7 @@ void task_control(void* pvParameters) {
         g_fault_flags.fetch_and(~shared::kMtrFaultEstopActive, std::memory_order_relaxed);
 
         /* ── Manual mode: pass-through ── */
-        if (mode == can::Mode::Manual) {
+        if (mode == mtr::Mode::Manual) {
             /* Read throttle ADC → compute speed */
             uint16_t raw_adc = mtr::g_throttle.read_raw();
             int16_t speed = mtr::g_throttle.tick(raw_adc);
@@ -311,7 +315,7 @@ void task_control(void* pvParameters) {
         }
 
         /* ── Auto mode: follow CAN 0x204 ── */
-        if (mode == can::Mode::Auto) {
+        if (mode == mtr::Mode::Auto) {
             int32_t  cmd_speed = g_cmd_speed_mmps.load(std::memory_order_relaxed);
             uint8_t  cmd_gear  = g_cmd_gear.load(std::memory_order_relaxed);
             uint32_t last_tick = g_last_cmd_tick.load(std::memory_order_relaxed);
@@ -320,7 +324,7 @@ void task_control(void* pvParameters) {
 
             if (stale) {
                 cmd_speed = 0;
-                cmd_gear  = static_cast<uint8_t>(can::Gear::N);
+                cmd_gear  = static_cast<uint8_t>(mtr::Gear::N);
             }
 
             /* Clamp speed to valid range before DAC write (C5).
@@ -336,7 +340,7 @@ void task_control(void* pvParameters) {
             int16_t current_speed = g_actual_speed_mmps.load(std::memory_order_relaxed);
             int16_t abs_speed = current_speed >= 0 ? current_speed : int16_t(-current_speed);
             if (abs_speed <= mtr::kGearSwitchMaxSpeedMmps) {
-                mtr::g_gear.set_mosfets(static_cast<can::Gear>(cmd_gear & 0x03));
+                mtr::g_gear.set_mosfets(static_cast<mtr::Gear>(cmd_gear));
             }
             /* else: defer gear change — keep current gear until speed drops */
 
@@ -374,21 +378,23 @@ void task_can_tx(void* pvParameters) {
         uint8_t gear_state   = g_current_gear.load(std::memory_order_relaxed);
         uint8_t fault_flags  = g_fault_flags.load(std::memory_order_relaxed);
 
-        can::Frame tx;
+        etrike::protocol::Frame tx;
 
         /* ── 0x120 SYS_THROTTLE_STS @ 100 Hz (every cycle) ── */
-        can::gen::SysThrottleSts throttle_sts{};
+        etrike::protocol::generated::SysThrottleSts throttle_sts{};
         throttle_sts.speed_mmps = actual_speed;
-        if (can::encode_frame(throttle_sts, tx) == can::gen::CodecStatus::Ok)
+        if (etrike::protocol::generated::encode(throttle_sts, tx) ==
+            etrike::protocol::CodecStatus::Ok)
             mtr::g_can.send(tx);
 
         /* ── 0x206 MTR_MOTOR_FBK @ 50 Hz (every 2nd cycle) ── */
         if ((cycle & 1) == 0) {
-            can::gen::MtrMotorFbk fbk{};
+            etrike::protocol::generated::MtrMotorFbk fbk{};
             fbk.actual_speed_mmps = actual_speed;
             fbk.gear_state        = gear_state;
             fbk.fault_flags       = fault_flags;
-            if (can::encode_frame(fbk, tx) == can::gen::CodecStatus::Ok)
+            if (etrike::protocol::generated::encode(fbk, tx) ==
+                etrike::protocol::CodecStatus::Ok)
                 mtr::g_can.send(tx);
         }
 

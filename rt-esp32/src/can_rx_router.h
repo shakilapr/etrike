@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "can/can_protocol.h"
-#include "can/codec_transport.h"
-#include "can/manual/vendor_protocol.h"
+#include "protocol/compat/can.hpp"
 namespace rt {
 struct GatewayQueues {
     can::Frame* gw_tx_low=nullptr;
@@ -46,18 +44,18 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
         return can::gen::CodecStatus::Ok;
     case can::kIdSbwStatus:  // SES_STATUS — consumed by RT (steering feedback)
         if (!is_high_bus) {
-            can::manual::SesStatusValue value{};
-            auto status = can::manual::decode_ses_status(f, value);
+            can::custom::ses::Status value{};
+            auto status = can::custom::ses::decode_status(f.view(), value);
             if (status != can::gen::CodecStatus::Ok) return status;
-            if (q.steer_feedback_angle) *q.steer_feedback_angle = value.steering_angle;
-            if (q.steer_angle_status) *q.steer_angle_status = value.angle_status;
+            if (q.steer_feedback_angle) *q.steer_feedback_angle = value.steering_angle_raw;
+            if (q.steer_angle_status) *q.steer_angle_status = value.angle_aligned;
         }
         return can::gen::CodecStatus::Ok;
     case can::kIdBbwStatus:  // SEB_STATUS — L3 errors checked after checksum validation in dispatch
         return can::gen::CodecStatus::Ok;
     }
     // ── Transparent forwarding (all remaining IDs) ───────────────────
-    // Uses the shared forwarding rules from can_protocol.h.
+    // Uses the canonical protocol forwarding rules.
     // Low→High: 0x001,0x011,0x120,0x206,0x600.  High→Low: 0x001,0x302.
     // 0x001 is handled above; the rest fall through to here.
     if (can::is_forwarded_low_to_high(f.id) && !is_high_bus && q.gw_tx_high) {

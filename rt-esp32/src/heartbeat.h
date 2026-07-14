@@ -1,7 +1,15 @@
 #pragma once
 #include <cstdint>
-#include "can/codec_transport.h"
+#include "protocol/compat/can.hpp"
 namespace rt {
+constexpr uint8_t kHbHealthBitHeartbeatOk =
+    uint8_t{1u} << can::gen::SysHeartbeat::HeartbeatOkMeta::kBitOffset;
+constexpr uint8_t kHbHealthBitEstopActive =
+    uint8_t{1u} << can::gen::SysHeartbeat::EstopActiveMeta::kBitOffset;
+constexpr uint8_t kHbHealthBitModeAuto =
+    uint8_t{1u} << can::gen::SysHeartbeat::ModeAutoMeta::kBitOffset;
+constexpr uint8_t kHbHealthBitCanOk =
+    uint8_t{1u} << can::gen::SysHeartbeat::CanOkMeta::kBitOffset;
 class DualHeartbeat {
 public:
     void init() { m_ctr_low=0; m_ctr_high=0; }

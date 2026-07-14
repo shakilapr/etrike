@@ -2,7 +2,6 @@
 // Signal lights + handlebar switches + brake OR logic. Architecture.md §8.6.
 #include <cstdint>
 #include "config.h"
-#include "can/can_protocol.h"
 namespace sys {
 // CAN 0x302 light command bit positions
 constexpr uint8_t kLightBitLeftTurn  = 1u << 0;

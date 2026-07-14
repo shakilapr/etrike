@@ -2,12 +2,12 @@
 // SYS ESP32-S3 — safety & actuator configuration (architecture.md §8.9).
 // Change values here, not in source files.
 //
-// CAN protocol IDs are in shared/can/can_protocol.h (namespace can).
+// CAN protocol definitions are provided by the canonical root protocol.
 // Vehicle-wide constants are in shared/shared_config.h (namespace shared).
 
 #include <cstdint>
 #include "shared_config.h"
-#include "can/generated/can_messages.h"
+#include "protocol/compat/can.hpp"
 
 
 namespace sys {

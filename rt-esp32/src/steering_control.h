@@ -11,7 +11,7 @@
 #include <cmath>
 #include "config.h"
 #include "esp_log.h"
-#include "can/can_protocol.h"
+#include "protocol/codecs/ses.hpp"
 #include "physics_model.h"
 #include "system_mode.h"
 #include "physics_model.h"
@@ -44,7 +44,7 @@ public:
     // now_ms = monotonic millisecond counter for timeouts.
     // Returns true if `out` should be transmitted on CAN.
     bool tick(int16_t ses_angle_raw, uint8_t ses_angle_status,
-              uint32_t now_ms, can::VcuSesReq& out) {
+              uint32_t now_ms, etrike::protocol::codecs::ses::Command& out) {
         constexpr int kBootWaitTicks = (kSteerBootWaitMs * kSteerCmdRateHz) / 1000;
         switch (m_state) {
         case SteerState::STEER_BOOT_WAIT:
@@ -219,20 +219,18 @@ public:
     }
 
 private:
-    void build_command(can::VcuSesReq& out) {
-        out.align_enable = 1;
+    void build_command(etrike::protocol::codecs::ses::Command& out) {
+        out.alignment_enable = true;
         out.control_enable = 1;
-        out.target_angle = m_active_angle + kSbwAngleOffset;  // 0.1° → CAN raw (steer-by-wire offset)
+        out.target_angle_raw = m_active_angle + kSbwAngleOffset;  // 0.1° → CAN raw (steer-by-wire offset)
         // Dynamic slew rate: 125°/s at low speed, 525°/s at high speed
         float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
         float rate_deg_s = kSteerRateMinDegS
             + (speed_kmh - 2.0f) * (kSteerRateRangeDegS / kAngleClampSpeedRange);
-        out.target_speed = static_cast<int>(std::clamp(rate_deg_s, kSteerRateMinDegS, kSteerRateMaxDegS));
-        out.roll_cnt_enable = 1;
-        out.checksum_enable = 1;
+        out.target_speed_raw = static_cast<uint16_t>(std::clamp(rate_deg_s, kSteerRateMinDegS, kSteerRateMaxDegS));
         out.rolling_counter = m_roll;
         m_roll = (m_roll + 1) & kRollCounterMask;
-        out.vehicle_speed = static_cast<uint8_t>(std::clamp(speed_kmh, 0.0f, 255.0f));
+        out.vehicle_speed_raw = static_cast<uint8_t>(std::clamp(speed_kmh, 0.0f, 255.0f));
     }
 
     static constexpr int kRollCounterMask = 0x0F;

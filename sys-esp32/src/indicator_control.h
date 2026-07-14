@@ -1,6 +1,6 @@
 #pragma once
 // Mode indicator bulbs + 12V relay. Architecture.md §8.6.
-#include "can/can_protocol.h"
+#include "config.h"
 namespace sys {
 struct IndicatorOutputs { bool auto_bulb, manual_bulb; };
 class IndicatorControl {

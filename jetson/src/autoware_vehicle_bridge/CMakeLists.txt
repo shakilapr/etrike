@@ -21,7 +21,7 @@ add_executable(vehicle_bridge_node
 )
 
 target_include_directories(vehicle_bridge_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../shared
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../..
 )
 
 ament_target_dependencies(vehicle_bridge_node

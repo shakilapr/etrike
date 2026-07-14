@@ -1,6 +1,5 @@
 #include <unity.h>
 #include <cstdint>
-#include "can/can_protocol.h"
 #include "heartbeat.h"
 
 using namespace rt;
@@ -58,14 +57,14 @@ void test_heartbeat_frame_encoding(void) {
     hb.tick_low(f);
     TEST_ASSERT_EQUAL(can::kIdRtHeartbeatLow, f.id);
     TEST_ASSERT_EQUAL(2, f.dlc);
-    TEST_ASSERT_EQUAL(1, f.u8_at(0));
-    TEST_ASSERT_EQUAL(0, f.u8_at(1));
+    TEST_ASSERT_EQUAL(1, f.data[0]);
+    TEST_ASSERT_EQUAL(0, f.data[1]);
 
     hb.tick_high(f);
     TEST_ASSERT_EQUAL(can::kIdRtHeartbeatHigh, f.id);
     TEST_ASSERT_EQUAL(2, f.dlc);
-    TEST_ASSERT_EQUAL(1, f.u8_at(0));
-    TEST_ASSERT_EQUAL(0, f.u8_at(1));
+    TEST_ASSERT_EQUAL(1, f.data[0]);
+    TEST_ASSERT_EQUAL(0, f.data[1]);
 
     hb.tick_low(f);
     hb.tick_low(f);
@@ -73,10 +72,10 @@ void test_heartbeat_frame_encoding(void) {
     hb.tick_low(f);
 
     hb.tick_low(f);
-    TEST_ASSERT_EQUAL(5, f.u8_at(0));
+    TEST_ASSERT_EQUAL(5, f.data[0]);
 
     hb.tick_high(f);
-    TEST_ASSERT_EQUAL(3, f.u8_at(0));
+    TEST_ASSERT_EQUAL(3, f.data[0]);
 }
 
 void test_heartbeat_reinit_resets_counters(void) {

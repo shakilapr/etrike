@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "messages": [
+    {"key":"pwt_dcdc_cmd","owner":"pwt","protocol":"pwt.dcdc.manufacturer.v1","name":"PWT_DCDC_CMD","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"control","byte":0,"bit":0,"bits":8,"min":0,"max":1,"enum":{"0":"disabled","1":"enabled"}},
+      {"key":"reserved_1","byte":1,"bit":0,"bits":8,"constant":255},{"key":"reserved_2","byte":2,"bit":0,"bits":8,"constant":255},
+      {"key":"reserved_3","byte":3,"bit":0,"bits":8,"constant":255},{"key":"reserved_4","byte":4,"bit":0,"bits":8,"constant":255},
+      {"key":"reserved_5","byte":5,"bit":0,"bits":8,"constant":255},{"key":"reserved_6","byte":6,"bit":0,"bits":8,"constant":255},
+      {"key":"reset_control","byte":7,"bit":0,"bits":8,"min":0,"max":1,"enum":{"0":"no_reset","1":"reset"}}
+    ]},"instances":[{"bus":"powertrain","id":"0x10262B27","frame_format":"extended","sender":"PWT","receivers":["DCDC"],"cycle_ms":100,"semantics":"independent"}]}
+  ]
+}

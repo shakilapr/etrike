@@ -28,7 +28,6 @@ bool g_bypass_mtr_absent = false;
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
-#include "can/manual/vendor_protocol.h"
 
 static const char* TAG = "rt";
 
@@ -255,7 +254,7 @@ static bool send_can_high(can::Frame& fr) {
             g_estop_reason.store(sr.estop_reason);
         } else if (!sr.zero_setpoints && !sr.disable_steering
                    && m_current_mode != uint8_t(can::Mode::Estop)) {
-            g_estop_reason.store(can::kEstopReasonNone);
+            g_estop_reason.store(rt::kEstopReasonNone);
         }
 
         if (sr.zero_setpoints) {
@@ -338,14 +337,12 @@ static bool send_can_high(can::Frame& fr) {
     }
 }
 
-static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
-                         can::VcuSebReq seb, uint8_t& rolling_counter) {
+static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
+                         can::custom::seb::Command seb, uint8_t& rolling_counter) {
     seb.control_enable = 1;
-    seb.roll_cnt_enable = 1;
-    seb.checksum_enable = 1;
     seb.rolling_counter = rolling_counter;
     rolling_counter = (rolling_counter + 1) & 0x0F;
-    if (can::manual::encode(seb, fr) != can::gen::CodecStatus::Ok) return;
+    if (can::custom::seb::encode_command(seb, fr) != can::gen::CodecStatus::Ok) return;
     drv.send(fr);
 }
 
@@ -405,11 +402,11 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             // Allow in AUTO (active steering) and ESTOP (centering ramp per §7.6 gap #3).
             // Only block in MANUAL — EPS-C runs standalone, RT must not command.
             if (g_mode_current.load() != uint8_t(can::Mode::Manual)) {
-                can::VcuSesReq ses;
+                can::custom::ses::Command ses;
                 int64_t now_ms = esp_timer_get_time() / 1000;
                 if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
                                     now_ms, ses)) {
-                    if (can::manual::encode(ses, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
+                    if (can::custom::ses::encode_command(ses, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
                 }
             }
 
@@ -503,15 +500,15 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
-            int16_t angle = g_ses_angle_0_1deg.load() + rt::kSbwAngleOffset;
+            int16_t angle = g_ses_angle_0_1deg.load();
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
             uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
             uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
             can::gen::SteerDiag message{};
-            message.steer_diag_angle0_1deg = angle;
-            message.steer_diag_fault = fault;
-            message.steer_diag_motor_current = mtr_curr;
-            message.steer_diag_ecutemp = ecu_tmp;
+            message.angle_0_1deg = angle * 0.1;
+            message.fault = fault;
+            message.motor_current = mtr_curr * 0.01;
+            message.ecu_temp = ecu_tmp * 0.1;
             if (can::encode_frame(message, fr) != can::gen::CodecStatus::Ok) continue;
             static uint32_t diag_fail_count = 0;
             if (!g_can_high.send(fr)) {
@@ -536,10 +533,10 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
             int32_t ecu_tmp_raw = int32_t(g_seb_ecu_temp_c.load()) * 5 - 400;
             uint16_t ecu_tmp = ecu_tmp_raw < 0 ? 0 : uint16_t(ecu_tmp_raw);
             can::gen::BrakeDiag message{};
-            message.brake_diag_pressure_raw = seb_pressure;
-            message.brake_diag_fault = seb_fault;
-            message.brake_diag_motor_current = mtr_curr;
-            message.brake_diag_ecutemp = ecu_tmp;
+            message.pressure_raw = seb_pressure * 0.05;
+            message.fault = seb_fault;
+            message.motor_current = mtr_curr * 0.01;
+            message.ecu_temp = ecu_tmp * 0.1;
             if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
         }
 
@@ -596,15 +593,15 @@ static void check_task_watchdog() {
                 && (now_us - g_last_sys_hb_us.load()) <= int64_t(rt::kHeartbeatTimeoutMsSys) * 1000);
             bool host_alive = (g_last_host_hb_us.load() > 0
                 && (now_us - g_last_host_hb_us.load()) <= int64_t(shared::kHeartbeatTimeoutMsHost) * 1000);
-            if (sys_alive && host_alive) hf |= can::kHbHealthBitHeartbeatOk;
+            if (sys_alive && host_alive) hf |= rt::kHbHealthBitHeartbeatOk;
             if (g_steering.state() == rt::SteerState::ESTOP_RAMP_TO_ZERO
                 || g_steering.state() == rt::SteerState::ESTOP_HOLD_THEN_SILENT
                 || g_mode_current.load() == uint8_t(can::Mode::Estop))
-                hf |= can::kHbHealthBitEstopActive;
+                hf |= rt::kHbHealthBitEstopActive;
             if (g_mode_current.load() == uint8_t(can::Mode::Auto))
-                hf |= can::kHbHealthBitModeAuto;
+                hf |= rt::kHbHealthBitModeAuto;
             if (!g_can_high.bus_off())
-                hf |= can::kHbHealthBitCanOk;
+                hf |= rt::kHbHealthBitCanOk;
         }
         g_heartbeat.tick_low(fr, hf);
         auto* drv = rt::can_low_driver();

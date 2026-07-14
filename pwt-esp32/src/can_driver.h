@@ -1,34 +1,17 @@
 #pragma once
 // Standalone TWAI CAN driver for PWT — extended frame support.
-// Does NOT depend on shared/ — self-contained like a third-party ECU.
+// Uses the canonical hardware-independent protocol Frame.
 
 #include "driver/twai.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "protocol/core/frame.hpp"
 #include <cstdint>
 #include <cstring>
 
 namespace pwt {
 
-// ── CAN frame (extended-capable) ────────────────────────────────────
-
-struct PwtFrame {
-    uint32_t id       = 0;
-    bool     extended = false;
-    uint8_t  dlc      = 0;
-    uint8_t  data[8]  = {};
-
-    static PwtFrame make_ext(uint32_t id, uint8_t dlc) {
-        PwtFrame f;
-        f.id       = id;
-        f.extended = true;
-        f.dlc      = dlc;
-        return f;
-    }
-
-    void set_u8(int offset, uint8_t v)  { if (offset < 8) data[offset] = v; }
-    uint8_t u8_at(int offset) const     { return (offset < 8) ? data[offset] : 0; }
-};
+using etrike::protocol::Frame;
 
 // ── CAN driver ──────────────────────────────────────────────────────
 
@@ -65,8 +48,8 @@ public:
         return true;
     }
 
-    bool send(const PwtFrame& frame, TickType_t timeout_ms = 10) {
-        if (!m_initialized) return false;
+    bool send(const Frame& frame, TickType_t timeout_ms = 10) {
+        if (!m_initialized || !etrike::protocol::is_valid_frame(frame.view())) return false;
 
         twai_message_t msg = {};
         if (frame.extended) {
@@ -79,23 +62,22 @@ public:
             msg.data_length_code    = frame.dlc;
         }
         msg.ss = 0;  // normal mode — hardware auto-retransmit on arbitration loss
-        std::memcpy(msg.data, frame.data, frame.dlc);
+        std::memcpy(msg.data, frame.data.data(), frame.dlc);
 
         esp_err_t err = twai_transmit(&msg, pdMS_TO_TICKS(timeout_ms));
         return err == ESP_OK;
     }
 
-    bool receive(PwtFrame& out, TickType_t timeout_ms = 100) {
+    bool receive(Frame& out, TickType_t timeout_ms = 100) {
         if (!m_initialized) return false;
 
         twai_message_t msg = {};
         esp_err_t err = twai_receive(&msg, pdMS_TO_TICKS(timeout_ms));
         if (err != ESP_OK) return false;
 
-        out.id       = msg.identifier;
-        out.extended = msg.extd != 0;
-        out.dlc      = msg.data_length_code;
-        std::memcpy(out.data, msg.data, out.dlc);
+        if (msg.data_length_code > etrike::protocol::kClassicCanPayloadSize) return false;
+        out = Frame(msg.identifier, msg.extd != 0, msg.data_length_code);
+        std::memcpy(out.data.data(), msg.data, out.dlc);
         return true;
     }
 

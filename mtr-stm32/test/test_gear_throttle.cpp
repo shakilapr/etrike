@@ -1,4 +1,4 @@
-// g++ -std=c++17 -DTESTING -I. -I../src -I../../shared -I../../shared/can test_gear_throttle.cpp -o test_gt && ./test_gt
+// g++ -std=c++17 -DTESTING -I. -I../src -I../.. -I../../shared test_gear_throttle.cpp -o test_gt && ./test_gt
 //
 // Verifies: gear_control.h (conflict detection, pass-through) and
 //           throttle_input.h (dead zone, linear mapping).
@@ -51,7 +51,7 @@ int main() {
     printf("-- GearControl: init defaults to N --\n");
     {
         mtr::GearControl gc; gc.init();
-        CHECK(gc.current_gear() == can::Gear::N, "init → N");
+        CHECK(gc.current_gear() == Gear::N, "init → N");
     }
 
     printf("-- GearControl: single gear sense --\n");
@@ -71,8 +71,8 @@ int main() {
         g_gpio_state |= 1u << (kGearSSense & 0x0F);  // S not active
         g_gpio_state |= 1u << (kGearRSense & 0x0F);  // R not active
         // D bit = 0 → RESET → active
-        can::Gear g = gc.read_sense();
-        CHECK(g == can::Gear::D, "D active → D gear");
+        Gear g = gc.read_sense();
+        CHECK(g == Gear::D, "D active → D gear");
         CHECK(!gc.gear_conflict_detected(), "no conflict");
     }
 
@@ -81,19 +81,19 @@ int main() {
         mtr::GearControl gc; gc.init();
         // Multiple gears active → conflict → N
         g_gpio_state = 0;  // all pins LOW → D, S, R all "active"
-        can::Gear g = gc.read_sense();
-        CHECK(g == can::Gear::N, "conflict → N (fail-safe)");
+        Gear g = gc.read_sense();
+        CHECK(g == Gear::N, "conflict → N (fail-safe)");
         CHECK(gc.gear_conflict_detected(), "conflict detected");
     }
 
     printf("-- GearControl: set_mosfets and all_off --\n");
     {
         mtr::GearControl gc; gc.init();
-        gc.set_mosfets(can::Gear::D);
-        CHECK(gc.current_gear() == can::Gear::D, "set to D");
+        gc.set_mosfets(Gear::D);
+        CHECK(gc.current_gear() == Gear::D, "set to D");
         CHECK(g_gpio_state != 0, "output pins set");
         gc.all_off();
-        CHECK(gc.current_gear() == can::Gear::N, "all_off → N");
+        CHECK(gc.current_gear() == Gear::N, "all_off → N");
     }
 
     // ═══ ThrottleInput ═══
