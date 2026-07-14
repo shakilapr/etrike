@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include "shared_config.h"
+#include "can/generated/can_messages.h"
 
 namespace rt {
 
@@ -32,8 +33,8 @@ constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then
 
 // ── timing (ms / Hz) ──────────────────────────────────────────────
 constexpr int kControlLoopHz           =  100;
-constexpr int kHeartbeatIntervalMs     =  500;  // RT sends 0x7FD at 2 Hz
-constexpr int kHeartbeatTimeoutMsSys   = 200;  // monitors SYS 0x7FE at 10 Hz, 2 missed frames = 200ms → brake takeover
+constexpr int kHeartbeatIntervalMs     = can::gen::RtHeartbeat::kCycleMs;
+constexpr int kHeartbeatTimeoutMsSys   = can::gen::SysHeartbeat::kCycleMs * 2; // policy: two missed frames
 
 // ── CAN — low-level (built-in TWAI) ───────────────────────────────
 constexpr int kCanLowBitrateHz = 500'000;

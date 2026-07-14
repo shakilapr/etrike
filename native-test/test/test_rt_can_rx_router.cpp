@@ -103,6 +103,7 @@ int main() {
         fr.data[0] = 0x01;
         fr.data[2] = 0x30;
         fr.data[3] = 0x75;  // 30000 little-endian
+        fr.data[7] = 0xBB;  // XOR(bytes 0-6) ^ 0xFF
         rt::route_frame(fr, false, q);
 
         CHECK(steer_angle == 30000);

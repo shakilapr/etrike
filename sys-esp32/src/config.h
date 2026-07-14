@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include "shared_config.h"
+#include "can/generated/can_messages.h"
 
 #ifdef SYS_OWNS_MOTOR
 #error "SYS_OWNS_MOTOR is retired: its throttle ADC conflicts with body I/O. Implement and validate a dedicated ADC hardware map on MTR instead."
@@ -63,9 +64,9 @@ constexpr int kWdtToggleGpio = 47;
 
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;
-constexpr int kHeartbeatIntervalMs  =  100;   // 10 Hz SYS heartbeat (fast path for brake loss detection, gap #12)
-constexpr int kHeartbeatTimeoutMsRt = 1000;   // RT heartbeat loss (0x7FD at 2 Hz, 2 missed frames = 1000ms). Faster 0x204 staleness (200ms) catches RT crash first.
-constexpr int kSetpointStaleMs      =  200;   // 0x204 staleness (20 missed frames at 100 Hz → 200ms)
+constexpr int kHeartbeatIntervalMs  = can::gen::SysHeartbeat::kCycleMs;
+constexpr int kHeartbeatTimeoutMsRt = can::gen::RtHeartbeat::kCycleMs * 2; // policy: two missed frames
+constexpr int kSetpointStaleMs      = can::gen::RtDriveCmd::kCycleMs * 20; // policy: twenty missed frames
 constexpr int kSafetyCheckHz        =   20;
 constexpr int kGearCheckHz          =   50;
 constexpr int kDebounceMs           =  500;   // push button debounce

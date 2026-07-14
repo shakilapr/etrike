@@ -28,6 +28,7 @@ bool g_bypass_mtr_absent = false;
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
+#include "can/manual/vendor_protocol.h"
 
 static const char* TAG = "rt";
 
@@ -344,7 +345,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
     seb.checksum_enable = 1;
     seb.rolling_counter = rolling_counter;
     rolling_counter = (rolling_counter + 1) & 0x0F;
-    seb.to_frame(fr);
+    if (can::manual::encode(seb, fr) != can::gen::CodecStatus::Ok) return;
     drv.send(fr);
 }
 
@@ -408,7 +409,7 @@ static void send_seb_req(can::CanDriver& drv, can::Frame& fr,
                 int64_t now_ms = esp_timer_get_time() / 1000;
                 if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
                                     now_ms, ses)) {
-                    ses.to_frame(fr); send_can_low(fr);
+                    if (can::manual::encode(ses, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
                 }
             }
 

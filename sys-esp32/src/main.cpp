@@ -31,6 +31,7 @@ bool g_bypass_mtr_absent = false;
 #include "config.h"
 #include "can/can_protocol.h"
 #include "can/codec_transport.h"
+#include "can/manual/vendor_protocol.h"
 #include "can/can_driver.h"
 #include "safety_monitor.h"
 #include "mode_manager.h"
@@ -280,27 +281,17 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             break;
         }
         case can::kIdBbwStatus: {  // 0x721
-            // Reject short frames before checksum check (bug B1 in SYS).
-            // DLC < 8 means we cannot validate checksum — drop immediately.
-            if (fr.dlc < 8) break;
-            // F13: Validate checksum before using data (XOR bytes 0-6 ^ 0xFF == byte 7)
-            {
-                uint8_t cksum = 0;
-                for (int i = 0; i < 7; ++i) cksum ^= fr.data[i];
-                if ((cksum ^ 0xFF) != fr.data[7]) {
-                    ESP_LOGW(TAG, "0x721 checksum fail — dropping frame");
-                    break;
-                }
-            }
+            can::manual::SebStatusValue value{};
+            if (can::manual::decode_seb_status(fr, value) != can::gen::CodecStatus::Ok) break;
             // Store byte 0 atomically (alignment, error_status, control_mode) —
             // eliminates data race with brake task reading raw byte array (H3).
-            g_seb_status_byte0.store(fr.data[0], std::memory_order_relaxed);
+            g_seb_status_byte0.store(value.status_byte, std::memory_order_relaxed);
             // F7: Extract SEB error_status from byte 0 bits 6-7 (architecture §8.10)
             {
-                uint8_t es = (fr.data[0] >> 6) & 0x3;
+                uint8_t es = value.error_status;
                 g_seb_error_status.store(es, std::memory_order_relaxed);
                 if (es >= 3) {
-                    ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x)", fr.data[0]);
+                    ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x)", value.status_byte);
                     g_brake_fault_active.store(true, std::memory_order_relaxed);
                 }
             }
@@ -309,10 +300,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // data — using it as Stroke[15:8] produces corrupted astronomical values.
             // Use last valid stroke when in Pressure mode (bug 6.2).
             {
-                uint8_t seb_ctrl = (fr.data[0] >> 2) & 1;  // 0=Stroke, 1=Pressure
+                uint8_t seb_ctrl = value.control_mode;
                 uint16_t actual_raw;
                 if (seb_ctrl == 0) {
-                    actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
+                    actual_raw = value.stroke_value;
                 } else {
                     actual_raw = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
                 }
@@ -324,7 +315,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // acknowledging. SYS detects stale status and resumes sending 0x7B9.
             static uint8_t  last_seb_roll = 0xFF;
             static bool     seb_roll_init = false;
-            uint8_t seb_roll = (fr.data[6] >> 4) & 0x0F;
+            uint8_t seb_roll = value.rolling_counter;
             if (!seb_roll_init || seb_roll != last_seb_roll) {
                 seb_roll_init = true;
                 last_seb_roll = seb_roll;
@@ -336,10 +327,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // (0mm baseline) while the SEB physically moves to build pressure,
             // which would false-trigger the following error (bug 6.1).
             {
-                uint8_t seb_ctrl = (fr.data[0] >> 2) & 1;
+                uint8_t seb_ctrl = value.control_mode;
                 if (seb_ctrl == 0) {  // Stroke mode only
                     uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
-                    uint16_t actual_raw = uint16_t(fr.data[2] | (fr.data[3] << 8));
+                    uint16_t actual_raw = value.stroke_value;
                     uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
                     static bool  brake_follow_active = false;
                     static TickType_t brake_follow_start = 0;
@@ -364,7 +355,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         case can::kIdBbwTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
             // Motor current: Byte1-2 i16 LE, scale 0.0078125 A/bit
             // ECU temp: Byte3-4 u16 LE, scale 0.5 C/bit, offset -40
-            uint16_t ecu_raw  = uint16_t(fr.data[3] | (fr.data[4] << 8));
+            can::manual::TestTelemetry telemetry{};
+            if (can::manual::decode_test<can::gen::SebTest>(fr, telemetry) != can::gen::CodecStatus::Ok) break;
+            uint16_t ecu_raw = telemetry.ecu_temperature;
             int16_t  ecu_temp = int16_t(ecu_raw * 0.5f - 40.0f);
             if (ecu_temp > 80) {
                 ESP_LOGW(TAG, "SEB_Test: ECU temp %d C exceeds 80 C threshold", ecu_temp);
@@ -712,8 +705,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         }
         if (should_tx && !suppress_seb) {
             can::Frame fr;
-            seb_cmd.to_frame(fr);
-            send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
+            if (can::manual::encode(seb_cmd, fr) == can::gen::CodecStatus::Ok)
+                send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
         }
 
         // 0x721 staleness check (architecture §8.10): warn if no status for >100ms
