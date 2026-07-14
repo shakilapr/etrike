@@ -47,10 +47,10 @@ constexpr int kSpiSckGpio       =      15;
 constexpr int kSpiMosiGpio      =      16;
 constexpr int kSpiMisoGpio      =      17;
 constexpr int kSpiCsGpio        =      18;
-constexpr int kMcpIntGpio       =      47;
+constexpr int kMcpIntGpio       =       7; // Was 47. Strapped pins (0, 3, 45, 46) must not be used.
 
 // ── watchdog ──────────────────────────────────────────────────────
-constexpr int kWdtToggleGpio = 21;
+// constexpr int kWdtToggleGpio = 21; // Temporarily disabled
 
 // ── encoders (quadrature PCNT, sensor TBD for wheels) ──────────────
 constexpr int kEncRearMotorA   =  1;  // rear motor speed feedback
