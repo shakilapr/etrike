@@ -100,28 +100,46 @@ Detailed behavior is defined in `vt-console-api.md`.
 
 This document defines the technology stack for the CAN Controller. It prioritizes maintainability, responsive live updates, and a clear engineering UI without treating latency, line count, or visual quality as guarantees from a framework.
 
-## 1. Frontend: React + TypeScript (The UI)
-This stack provides a heavily typed, production-ready frontend that can scale into a desktop application.
-- **React + Vite + TypeScript:** Industry-standard tooling for maintainable, fast interfaces. TypeScript provides static type checking; React Strict Mode helps expose unsafe lifecycle behavior during development.
-- **Zustand:** Ultra-fast, boilerplate-free state management to hold the live vehicle state.
-- **TanStack Table:** Headless table composition for the latest-message view. The chronological CAN monitor also requires a virtualized row renderer.
-- **Tailwind CSS + shadcn/ui:** Utility styling and accessible component primitives. Application design and accessibility review remain required.
+## 1. Frontend
+- **React + Vite + TypeScript:** Industry-standard tooling for maintainable, fast interfaces.
+- **Zustand:** Ultra-fast state management for the latest state, session projection, and view preferences only.
+- **TanStack Table:** Headless table composition for the latest-by-message view.
+- **TanStack Virtual:** (Or purpose-built virtual list) Essential for the chronological raw frame monitor to prevent DOM overload.
+- **Tailwind CSS + shadcn/ui:** Utility styling and accessible component primitives.
 
-## 2. Backend: Python + FastAPI (The Engine)
-FastAPI provides an asynchronous HTTP and WebSocket foundation for streaming CAN data.
-- **FastAPI:** Handles HTTP and WebSocket connections. Blocking CAN-driver and disk work must remain in dedicated workers so it cannot block API handling.
-- **`python-can`:** Used to interface with the physical CANalyst-II USB adapter or the `virtual` software interface.
-- **Generated YAML protocol runtime:** Generated codecs, validators, and UI metadata decode and encode application traffic. `cantools` and DBC files are optional development interoperability tools, not runtime dependencies.
+## 2. Backend
+- **Python + FastAPI:** Provides the asynchronous HTTP and WebSocket foundation.
+- **Exactly one Uvicorn process:** Multi-processing is forbidden to ensure a single in-memory hardware owner and safe USB lease management.
+- **`python-can`, version-pinned:** Standard transport, with a locked dependency version to prevent behavioral drift.
+- **Project-owned CANalyst-II wrapper:** A custom wrapper around the adapter to manage exact timestamping, polling, and health.
+- **Generated YAML codecs and validators:** Used for runtime encoding/decoding, bypassing cantools/DBC in production.
+- **Compact internal frame records:** Memory-efficient structure for high-frequency traffic.
+- **Pydantic:** Used strictly at the API and configuration boundaries for schema validation.
 
-## 3. Desktop Packaging (Future-Proofing)
-- **Tauri:** A possible later packaging option. Python sidecar lifecycle, USB-driver access, signing, and distribution must be evaluated before adoption.
+## 3. Streaming
+- **REST:** Used for commands, configuration, and mutations.
+- **WebSocket:** Used for versioned batches of live traffic.
+- **Bounded per-client queues:** Prevents memory exhaustion from slow consumers.
+- **Latest-state coalescing:** The backend projection coalesces state to prevent WebSocket flooding.
+- **Sequence/gap reporting:** Ensures dropped frames are explicitly tracked and reported.
+- **Slow-client isolation:** Ensures one hanging UI tab does not crash the backend.
 
-## 4. Communication Flow
+## 4. Storage
+- **SQLite WAL:** Used for metadata, tests, diagnostic episodes, and indexing. WAL mode ensures concurrent read/write stability.
+- **Pluggable raw recording sink:** Separates metadata from high-throughput binary frame data.
+- **BLF + sidecar:** Binary Logging Format (BLF) is the first interoperability candidate for lossless raw recordings, ensuring compatibility with industry tools like Vector CANalyzer. Custom canonical formats are only considered if benchmarks justify them.
+
+## 5. Packaging
+- **Browser during development:** Standard Vite dev server workflow.
+- **Tauri later:** The planned packaging option for a desktop executable.
+- **Retain FastAPI REST/WebSocket data path:** The frontend must continue communicating over HTTP/WS even when packaged inside Tauri.
+
+## 6. Communication Flow
 1. **Physical CAN Bus** <--(USB)--> **python-can** (Background Thread)
 2. **Python Backend** <--(FastAPI REST/WebSockets)--> **React, LLM tools, CI, optional CLI**
 3. **React UI** <--(generated TypeScript API client + Zustand)--> **shadcn/ui Dials & TanStack Tables**
 
-## 5. Shared API Clients
+## 7. Shared API Clients
 
 - **Pydantic + OpenAPI:** Pydantic models are the single request/response definition. FastAPI publishes OpenAPI for generated React clients and as the source contract for optional LLM/CLI translations. OpenAPI describes the API; it does not execute calls.
 - **Direct Claude Code/Python:** Claude Code and tests may use a small HTTPX client or permitted terminal HTTP calls directly against FastAPI; no MCP layer is required.
@@ -551,8 +569,15 @@ Requested state and observed state must not be collapsed into one label. For exa
 5. **Bench** — synthetic peers and isolated ECU setup.
 6. **CAN Dictionary** — protocol reference derived from YAML.
 7. **Diagnostics** — faults, verification sequences, and recordings.
+8. **Settings** — operational configuration and profiles.
 
 The CAN Dictionary is a reference workspace; Live CAN is an observation workspace. They may share visual components, but their purpose and default density are different.
+
+**Workspace memory and state persistence:** 
+Moving between workspaces does not reset user view preferences. This is implemented by separating view routing from global state:
+- Route changes via React Router unmount the active workspace component to release DOM resources and stop local `requestAnimationFrame` rendering loops.
+- State that must survive navigation (e.g., active filters, selected search terms, expanded diagnostic episodes) is hoisted into a global Zustand store rather than kept in component-local `useState`.
+- **Safety invariant:** Navigating away from the **Control** workspace intentionally clears active control intent (like keyboard input) and revokes stimulus leases. This is enforced technically by tying the lease-renewal heartbeat to a React `useEffect` cleanup function in the Control workspace component, guaranteeing that unmounting the view explicitly drops the physical control lease.
 
 ## 7. Overview workspace
 
@@ -958,6 +983,25 @@ Only one verification step is active at a time. Results can be exported as a tes
 ### 14.3 Recording
 
 Recording is opt-in and visibly active. A recording stores raw frames with timestamps, bus, direction, and source so it can be decoded again against a known protocol version. The UI shows duration, frame count, dropped-frame status, filename/session label, and storage health. Diagnostic-only logging may run with a lower data volume, but must never pretend to be a lossless full-bus recording.
+
+### 14.4 Settings workspace
+
+The Settings workspace exposes operational configuration that is expected to change during testing. It does not expose configuration that is fixed by the bench design.
+
+**Fixed defaults (not exposed for editing):**
+- Hardware channel mapping (Channel 0 → High, Channel 1 → Low) and nominal bitrates (500kbit/s) are fixed by the project definition.
+- Fundamental architectural constraints (like counter behaviors and checksum types) are defined in YAML and cannot be overridden by the UI.
+
+**Configurable operational settings:**
+- **Operating Profile Selection:** Explicit transitions between Full Vehicle, Bench Test, and Pure Software.
+- **Hardware & Adapter Config:** Selecting a specific USB device (if multiple exist) and initiating an adapter characterization run.
+- **Workload Limits:** Tuning the backend poll delay (e.g., 1ms) and setting performance degradation thresholds for rendering vs. logging under heavy load.
+- **Appearance & Presentation:** Global dark/light theme (if supported) and preferences for the vehicle visual preview (Overlay, Actuation-only, Sensors-only modes).
+
+**Technical state persistence for settings:**
+- **Local/UI Preferences:** Settings like theme or visual preview mode are persisted locally in the browser (e.g., via Zustand persist middleware wrapping `localStorage`). They do not sync to the backend.
+- **Backend/Operational Settings:** Settings like operating profile, adapter selection, and workload limits are persisted via FastAPI REST endpoints (`PUT /api/v1/sessions/current/config`). The backend is the single source of truth for these values. The UI acts as a stateless viewer reading these values from the backend session state.
+- **Safety invariant:** Changing settings that impact physical transport (e.g., adapter selection) requires Bench TX to be disabled, triggers a controlled connection restart via the backend lifecycle manager, and produces an immutable audit event in the recording stream.
 
 ## 15. Live data presentation rules
 
