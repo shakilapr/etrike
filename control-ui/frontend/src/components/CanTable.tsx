@@ -1,135 +1,166 @@
-import React from 'react';
-import { useCanStore, CanFrameState } from '../store/useCanStore';
-import { AlertCircle, Clock, Zap } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import React, { useState, useMemo } from 'react';
+import { useCanStore, type CanFrameState } from '../store/useCanStore';
 
-function cn(...inputs: (string | undefined | null | false)[]) {
-  return twMerge(clsx(inputs));
+interface CanTableProps {
+  onSelectFrame: (frame: CanFrameState & { channel: string }) => void;
+  selectedId: string | null;
 }
 
-function formatHex(data: string, dlc: number) {
-  // Add spaces between bytes
-  const bytes = [];
-  for (let i = 0; i < data.length; i += 2) {
-    if (i / 2 < dlc) {
-      bytes.push(data.substring(i, i + 2).toUpperCase());
+const BUS_NAMES: Record<string, string> = {
+  '0': 'high', '1': 'low'
+};
+
+function formatAge(ms: number): string {
+  if (ms < 1000) return `${ms.toFixed(0)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatBytes(hex: string): string {
+  return hex.replace(/(.{2})/g, '$1 ').trim().toUpperCase();
+}
+
+export function CanTable({ onSelectFrame, selectedId }: CanTableProps) {
+  const channels = useCanStore(s => s.channels);
+  const [search, setSearch] = useState('');
+
+  // Flatten all channels into a single sorted array
+  const allFrames = useMemo(() => {
+    const rows: (CanFrameState & { channel: string; compositeKey: string })[] = [];
+    for (const [ch, frames] of Object.entries(channels)) {
+      for (const [id, frame] of Object.entries(frames)) {
+        rows.push({ ...frame, channel: ch, compositeKey: `${ch}:${id}` });
+      }
     }
-  }
-  return bytes.join(' ');
-}
+    return rows.sort((a, b) => {
+      // Sort by channel then by CAN ID numerically
+      if (a.channel !== b.channel) return a.channel.localeCompare(b.channel);
+      return parseInt(a.id, 16) - parseInt(b.id, 16);
+    });
+  }, [channels]);
 
-function SignalDisplay({ signals }: { signals?: any }) {
-  if (!signals) return <span className="text-text-dim text-sm italic">Raw</span>;
-  
-  return (
-    <div className="flex flex-wrap gap-2">
-      {Object.entries(signals).map(([key, value]) => (
-        <span key={key} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-          <span className="opacity-75 mr-1">{key}:</span> {String(value)}
-        </span>
-      ))}
-    </div>
-  );
-}
+  const filtered = useMemo(() => {
+    if (!search.trim()) return allFrames;
+    const q = search.toLowerCase();
+    return allFrames.filter(f =>
+      f.id.toLowerCase().includes(q) ||
+      f.message_key?.toLowerCase().includes(q) ||
+      f.data.toLowerCase().includes(q) ||
+      BUS_NAMES[f.channel]?.includes(q)
+    );
+  }, [allFrames, search]);
 
-const FrameRow = React.memo(({ channel, can_id, frame }: { channel: string, can_id: string, frame: CanFrameState }) => {
-  const isStale = frame.age_ms > 2000;
-  
   return (
-    <tr className={cn(
-      "border-b border-white/5 transition-colors duration-300",
-      frame.is_error && "bg-error/10 hover:bg-error/20",
-      frame._just_changed && !frame.is_error && "bg-primary/20",
-      !frame._just_changed && !frame.is_error && "hover:bg-white/5",
-      isStale && "opacity-50"
-    )}>
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-2 font-mono text-sm">
-          {frame.is_error ? <AlertCircle size={14} className="text-error" /> : <Zap size={14} className="text-accent" />}
-          <span className={frame.is_error ? "text-error font-bold" : ""}>
-            {can_id.toUpperCase()}
-          </span>
+    <div className="workspace-panel" id="can-table-panel">
+      <div className="table-toolbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 className="panel-title" style={{ margin: 0 }}>CAN Frame Monitor</h2>
+          <span className="status-badge info">{filtered.length} IDs</span>
         </div>
-      </td>
-      <td className="py-3 px-4 font-mono text-sm text-text-dim">
-        {frame.message_key || 'Unknown'}
-      </td>
-      <td className="py-3 px-4 font-mono text-xs text-text-dim">
-        {frame.dlc}
-      </td>
-      <td className="py-3 px-4 font-mono text-sm tracking-widest min-w-[140px]">
-        {formatHex(frame.data, frame.dlc)}
-      </td>
-      <td className="py-3 px-4">
-        <SignalDisplay signals={frame.signals} />
-      </td>
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-1.5 text-xs text-text-dim">
-          <Clock size={12} />
-          {frame.age_ms.toFixed(0)}ms
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label className="table-search" htmlFor="can-search">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="1.8" fill="none">
+              <circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>
+            </svg>
+            <input
+              id="can-search"
+              type="search"
+              placeholder="Filter by ID, name, bus…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </label>
         </div>
-      </td>
-      <td className="py-3 px-4 text-xs font-mono text-text-dim text-right">
-        {frame.count}
-      </td>
-    </tr>
-  );
-});
+      </div>
 
-export function CanTable() {
-  const channels = useCanStore(state => state.channels);
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Bus</th>
+              <th>Message</th>
+              <th>DLC</th>
+              <th>Data (hex)</th>
+              <th>Status</th>
+              <th style={{ textAlign: 'right' }}>Age</th>
+              <th style={{ textAlign: 'right' }}>Count</th>
+              <th style={{ textAlign: 'right' }}>Δt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: '32px 0' }}>
+                  {search ? 'No frames match your filter' : 'Waiting for CAN frames…'}
+                </td>
+              </tr>
+            )}
+            {filtered.map(frame => {
+              const isSelected = selectedId === frame.compositeKey;
+              const isError = frame.is_error;
+              const isChanged = frame._just_changed;
+              const isStale = frame.age_ms > 2000;
 
-  return (
-    <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto p-4">
-      {Object.entries(channels).map(([channel, frames]) => {
-        const frameEntries = Object.entries(frames).sort(([idA], [idB]) => {
-          return parseInt(idA, 16) - parseInt(idB, 16);
-        });
+              return (
+                <tr
+                  key={frame.compositeKey}
+                  id={`row-${frame.compositeKey.replace(':', '-')}`}
+                  className={[
+                    isSelected ? 'selected' : '',
+                    isError ? 'error' : '',
+                    isChanged && !isSelected ? 'just-changed' : '',
+                  ].filter(Boolean).join(' ')}
+                  onClick={() => onSelectFrame({ ...frame })}
+                >
+                  <td>
+                    <span className="mono" style={{ fontWeight: 600, color: isError ? 'var(--danger)' : 'var(--text)' }}>
+                      {frame.id.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`bus-badge ${BUS_NAMES[frame.channel] || 'high'}`}>
+                      {BUS_NAMES[frame.channel] ?? `ch${frame.channel}`}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                    {frame.message_key ?? <span style={{ color: 'var(--text-tertiary)' }}>unknown</span>}
+                  </td>
+                  <td className="mono" style={{ color: 'var(--text-secondary)' }}>{frame.dlc}</td>
+                  <td>
+                    <span className="mono" style={{ fontSize: 11.5, letterSpacing: '.04em' }}>
+                      {formatBytes(frame.data)}
+                    </span>
+                  </td>
+                  <td>
+                    {isError
+                      ? <span className="status-badge danger">Error</span>
+                      : isStale
+                      ? <span className="status-badge warning">Stale</span>
+                      : frame.decode_status === 'ok'
+                      ? <span className="status-badge success">OK</span>
+                      : <span className="status-badge info">{frame.decode_status ?? 'raw'}</span>
+                    }
+                  </td>
+                  <td className="mono" style={{ textAlign: 'right', color: isStale ? 'var(--warning)' : 'var(--text-secondary)', fontSize: 12 }}>
+                    {formatAge(frame.age_ms)}
+                  </td>
+                  <td className="mono" style={{ textAlign: 'right', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    {frame.count.toLocaleString()}
+                  </td>
+                  <td className="mono" style={{ textAlign: 'right', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    {frame.delta_t_ms > 0 ? `${frame.delta_t_ms.toFixed(0)}ms` : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
-        const busName = channel === "0" ? "High Bus" : channel === "1" ? "Low Bus" : `Channel ${channel}`;
-        
-        return (
-          <div key={channel} className="glass-panel overflow-hidden">
-            <div className="bg-surface/50 border-b border-white/10 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <div className={cn("w-2 h-2 rounded-full", frameEntries.length > 0 ? "bg-success animate-pulse" : "bg-text-dim")} />
-                {busName}
-              </h2>
-              <span className="text-sm text-text-dim font-mono">{frameEntries.length} Unique IDs</span>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-white/10 text-xs uppercase tracking-wider text-text-dim bg-surface/30">
-                    <th className="py-3 px-4 font-medium">CAN ID</th>
-                    <th className="py-3 px-4 font-medium">Protocol Key</th>
-                    <th className="py-3 px-4 font-medium">DLC</th>
-                    <th className="py-3 px-4 font-medium">Raw Payload (Hex)</th>
-                    <th className="py-3 px-4 font-medium">Decoded Signals</th>
-                    <th className="py-3 px-4 font-medium">Age</th>
-                    <th className="py-3 px-4 font-medium text-right">Count</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {frameEntries.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-12 text-center text-text-dim">
-                        No traffic detected on this bus.
-                      </td>
-                    </tr>
-                  ) : (
-                    frameEntries.map(([can_id, frame]) => (
-                      <FrameRow key={can_id} channel={channel} can_id={can_id} frame={frame} />
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
+      <div className="table-footer">
+        <span>{allFrames.length} unique CAN IDs across {Object.keys(channels).length} channels</span>
+        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Click a row to inspect signals</span>
+      </div>
     </div>
   );
 }

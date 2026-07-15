@@ -1,114 +1,168 @@
-import React, { useMemo } from 'react';
-import { useCanStore, CanFrameState } from '../store/useCanStore';
-import { Scan } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import React, { useRef, useEffect } from 'react';
+import { useCanStore } from '../store/useCanStore';
+import { globalRobotState, drawWorldGrid, drawVehicle, setRobotTargets } from '../utils/robotDrawing';
 
-function cn(...inputs: (string | undefined | null | false)[]) {
-  return twMerge(clsx(inputs));
+interface TricyclePreviewProps {
+  keyboardEnabled: boolean;
+  pressedKeys: { forward: boolean; backward: boolean; left: boolean; right: boolean };
+  onToggleKeyboard: () => void;
 }
 
-function findFrameByMessageKey(channels: Record<string, Record<string, CanFrameState>>, messageKey: string): CanFrameState | null {
-  for (const ch in channels) {
-    for (const id in channels[ch]) {
-      if (channels[ch][id].message_key === messageKey) {
-        return channels[ch][id];
-      }
-    }
-  }
-  return null;
-}
+export function TricyclePreview({ keyboardEnabled, pressedKeys, onToggleKeyboard }: TricyclePreviewProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const channels = useCanStore(s => s.channels);
 
-export function TricyclePreview() {
-  const channels = useCanStore(state => state.channels);
+  // Read from actual decoded telemetry frames
+  const sesFrame = channels['0']?.['0x201'] || channels['1']?.['0x201'];
+  const mtrFrame = channels['0']?.['0x206'] || channels['1']?.['0x206'];
 
-  // Derive hardware feedback states
-  const sesStatus = findFrameByMessageKey(channels, 'ses:ses_status');
-  const mtrStatus = findFrameByMessageKey(channels, 'mtr:mtr_motor_fbk');
+  const steerDeg = (sesFrame?.signals?.['angle_deg'] as number) ?? 0;
+  const speedMmps = (mtrFrame?.signals?.['actual_speed_mmps'] as number) ?? 0;
+  const gearState = (mtrFrame?.signals?.['gear_state'] as number) ?? 0;
 
-  const steeringAngleRad = (sesStatus?.signals?.steering_angle_mrad as number | undefined) ? (sesStatus.signals.steering_angle_mrad as number) / 1000 : 0;
-  
-  // Just for visual spinning of the wheels based on speed
-  const speedMmps = (mtrStatus?.signals?.speed_mmps as number | undefined) || 0;
-  
-  // Map steering angle (-0.5 to 0.5 rad roughly) to degrees for CSS rotation
-  const steeringDeg = steeringAngleRad * (180 / Math.PI);
+  const gearNames = ['N', 'D', 'S', 'R'];
 
-  // Neon glowing wireframe aesthetic
-  return (
-    <div className="glass-panel w-full max-w-md mx-auto aspect-square flex flex-col relative overflow-hidden">
-      <div className="bg-surface/50 border-b border-white/10 px-6 py-4 z-10">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Scan className="text-primary" size={20} />
-          Telemetry Preview
-        </h2>
-      </div>
+  useEffect(() => {
+    setRobotTargets(speedMmps, steerDeg);
+  }, [speedMmps, steerDeg]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animFrame: number;
+
+    function draw() {
+      if (!ctx || !canvas) return;
+
+      const W = canvas.width;
+      const H = canvas.height;
+
+      // Background
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, W, H);
+
+      const egoScreenY = H * 0.72;
+      const scale = Math.max(0.72, Math.min(1.0, W / 900, H / 480));
       
-      <div className="flex-1 flex items-center justify-center relative p-8">
-        {/* Background grid for context */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px]" />
-        
-        {/* SVG Drawing */}
-        <svg viewBox="-100 -100 200 200" className="w-full h-full drop-shadow-[0_0_8px_rgba(56,189,248,0.5)] z-10" style={{ filter: "drop-shadow(0px 0px 8px rgba(56,189,248,0.5))" }}>
-          <defs>
-            <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#38bdf8" />
-              <stop offset="100%" stopColor="#818cf8" />
-            </linearGradient>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
+      if (Math.random() < 0.05) {
+        console.log(`Main Canvas - W: ${W}, H: ${H}, egoY: ${egoScreenY}, scale: ${scale}, x: ${globalRobotState.x}, y: ${globalRobotState.y}`);
+      }
 
-          {/* Chassis */}
-          <g transform="translate(0, -20)">
-            <path 
-              d="M 0 -50 L 40 40 L -40 40 Z" 
-              fill="none" 
-              stroke="url(#neonGradient)" 
-              strokeWidth="3" 
-              filter="url(#glow)"
-              className="opacity-80"
-            />
-            {/* Front Axle */}
-            <line x1="0" y1="-50" x2="0" y2="-70" stroke="url(#neonGradient)" strokeWidth="3" filter="url(#glow)" />
-            {/* Rear Axle */}
-            <line x1="-40" y1="40" x2="40" y2="40" stroke="url(#neonGradient)" strokeWidth="3" filter="url(#glow)" />
-          </g>
+      drawWorldGrid(ctx, W, H, globalRobotState.x, globalRobotState.y, egoScreenY, 50, false);
+      drawVehicle(ctx, globalRobotState, W / 2, egoScreenY, scale, { compact: false });
 
-          {/* Wheels */}
-          {/* Front Wheel (Steerable) */}
-          <g transform={`translate(0, -90) rotate(${steeringDeg})`}>
-            <rect x="-6" y="-15" width="12" height="30" rx="3" fill="none" stroke="#38bdf8" strokeWidth="2" filter="url(#glow)" />
-            {/* Spin indicator based on speed */}
-            <line x1="0" y1="-15" x2="0" y2="15" stroke="#818cf8" strokeWidth="1" strokeDasharray={speedMmps !== 0 ? "4 4" : "0"} className={speedMmps !== 0 ? "animate-pulse" : ""} />
-          </g>
+      // Update HUD directly
+      const elV = document.getElementById('tel-v');
+      const elTheta = document.getElementById('tel-theta');
+      const elAlpha = document.getElementById('tel-alpha');
+      const elRadius = document.getElementById('tel-radius');
+      const elPosition = document.getElementById('tel-position');
 
-          {/* Left Rear Wheel */}
-          <g transform="translate(-45, 20)">
-            <rect x="-6" y="-15" width="12" height="30" rx="3" fill="none" stroke="#38bdf8" strokeWidth="2" filter="url(#glow)" />
-          </g>
+      if (elV) elV.textContent = `${globalRobotState.v.toFixed(1)} px/s`;
+      if (elAlpha) elAlpha.textContent = `${(globalRobotState.alpha * 180 / Math.PI).toFixed(1)}°`;
+      if (elTheta) {
+        let heading = globalRobotState.theta * 180 / Math.PI;
+        if (heading > 180) heading -= 360;
+        if (heading < -180) heading += 360;
+        elTheta.textContent = `${heading.toFixed(1)}°`;
+      }
+      if (elPosition) elPosition.textContent = `${globalRobotState.x.toFixed(1)}, ${globalRobotState.y.toFixed(1)}`;
+      if (elRadius) {
+        elRadius.textContent = Math.abs(globalRobotState.alpha) < 0.01
+          ? 'Straight (∞)'
+          : `${Math.abs(120 / Math.tan(globalRobotState.alpha)).toFixed(1)} px`;
+      }
 
-          {/* Right Rear Wheel */}
-          <g transform="translate(45, 20)">
-            <rect x="-6" y="-15" width="12" height="30" rx="3" fill="none" stroke="#38bdf8" strokeWidth="2" filter="url(#glow)" />
-          </g>
-        </svg>
+      animFrame = requestAnimationFrame(draw);
+    }
 
-        {/* Data Overlays */}
-        <div className="absolute bottom-4 left-4 flex flex-col gap-1 text-xs font-mono">
-          <div className="flex gap-2">
-            <span className="text-text-dim">Steering:</span>
-            <span className={steeringAngleRad === 0 ? "text-text" : "text-primary font-bold"}>{(steeringAngleRad * 1000).toFixed(1)} mrad</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="text-text-dim">Speed:</span>
-            <span className={speedMmps === 0 ? "text-text" : "text-accent font-bold"}>{speedMmps.toFixed(0)} mm/s</span>
-          </div>
+    animFrame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(animFrame);
+  }, []);
+
+  // Handle canvas resize
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    });
+    ro.observe(canvas);
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div className="robot-workspace" id="robot-preview">
+      <div className="robot-workspace-header">
+        <div className="robot-workspace-title">
+          <h2>Tricycle Kinematic Preview</h2>
+          <p>Ego-centric view — driven by decoded CAN telemetry (SES_STATUS 0x201 + MTR_MOTOR_FBK 0x206)</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {keyboardEnabled && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success)', fontSize: 11.5, fontWeight: 600 }}>
+              <span className="status-dot live" />
+              WASD Active
+            </span>
+          )}
+          <button
+            className={`send-btn ${keyboardEnabled ? 'secondary' : ''}`}
+            id="kb-toggle"
+            style={{ height: 32, fontSize: 12 }}
+            onClick={onToggleKeyboard}
+          >
+            {keyboardEnabled ? '⌨ Disable KB' : '⌨ Enable KB'}
+          </button>
+        </div>
+      </div>
+
+      <div className="robot-preview-stage" tabIndex={0} id="preview-stage" aria-label="Tricycle preview">
+        <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+
+        <div className="robot-hud" aria-hidden="true">
+          <section className="robot-hud-card" id="telemetry-hud">
+            <h3>Live Telemetry</h3>
+            <dl className="robot-telemetry-grid telemetry-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '7px 18px', padding: '11px 12px 12px', font: '11px/1.25 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
+              <dt style={{ color: 'var(--text-tertiary)', fontWeight: 650 }}>Velocity (v)</dt>
+              <dd id="tel-v" style={{ margin: 0, textAlign: 'right' }}>0.0 px/s</dd>
+              <dt style={{ color: 'var(--text-tertiary)', fontWeight: 650 }}>Heading (θ)</dt>
+              <dd id="tel-theta" style={{ margin: 0, textAlign: 'right' }}>-90.0°</dd>
+              <dt style={{ color: 'var(--text-tertiary)', fontWeight: 650 }}>Steering (α)</dt>
+              <dd id="tel-alpha" style={{ margin: 0, textAlign: 'right' }}>0.0°</dd>
+              <dt style={{ color: 'var(--text-tertiary)', fontWeight: 650 }}>Turn radius (ρ)</dt>
+              <dd id="tel-radius" style={{ margin: 0, textAlign: 'right' }}>Straight (∞)</dd>
+              <dt style={{ color: 'var(--text-tertiary)', fontWeight: 650 }}>Position</dt>
+              <dd id="tel-position" style={{ margin: 0, textAlign: 'right' }}>0.0, 0.0</dd>
+              <dt style={{ color: 'var(--text-tertiary)', fontWeight: 650, marginTop: 4 }}>Gear State</dt>
+              <dd id="tel-gear" style={{ margin: 0, textAlign: 'right', marginTop: 4 }}>{gearNames[gearState] ?? '–'}</dd>
+            </dl>
+          </section>
+
+          <section className="robot-hud-card controls-help" id="controls-hud">
+            <h3>Keyboard</h3>
+            <ul>
+              <li><span className="kbd">W</span><span className="kbd">S</span> Speed</li>
+              <li><span className="kbd">A</span><span className="kbd">D</span> Steer</li>
+              <li><span className="kbd">Space</span> Stop</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+
+      <div className="robot-preview-footer">
+        <span>Source: SES_STATUS 0x201 · MTR_MOTOR_FBK 0x206</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {pressedKeys.forward && <span className="kbd">W↑</span>}
+          {pressedKeys.backward && <span className="kbd">S↓</span>}
+          {pressedKeys.left && <span className="kbd">A←</span>}
+          {pressedKeys.right && <span className="kbd">D→</span>}
         </div>
       </div>
     </div>

@@ -1,88 +1,143 @@
-import React from 'react';
-import { Activity, AlertTriangle } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
-import { useCanStore } from './store/useCanStore';
+import { useTeleoperation } from './hooks/useTeleoperation';
+import { useCanStore, type CanFrameState } from './store/useCanStore';
+import { sendHostDriveCmd } from './api/inject';
+
+import { Topbar } from './components/Topbar';
+import { Sidebar } from './components/Sidebar';
+import { MetricStrip } from './components/MetricStrip';
+
+import { CommandPanel } from './components/CommandPanel';
 import { CanTable } from './components/CanTable';
-import { ControlSidebar } from './components/ControlSidebar';
-import { TricyclePreview } from './components/TricyclePreview';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { DetailsPanel } from './components/DetailsPanel';
+import { SettingsPanel } from './components/SettingsPanel';
 
-function cn(...inputs: (string | undefined | null | false)[]) {
-  return twMerge(clsx(inputs));
+import './index.css';
+
+type NavPage = 'monitor' | 'control' | 'settings';
+
+function useFrameRate(): number {
+  const [fps, setFps] = useState(0);
+  const channels = useCanStore(s => s.channels);
+  const prevCountRef = useRef(0);
+
+  useEffect(() => {
+    const totalFrames = Object.values(channels).reduce(
+      (sum, ch) => Object.values(ch).reduce((s, f) => s + f.count, 0) + sum, 0
+    );
+    const id = setInterval(() => {
+      const now = Object.values(channels).reduce(
+        (sum, ch) => Object.values(ch).reduce((s, f) => s + f.count, 0) + sum, 0
+      );
+      setFps((now - prevCountRef.current));
+      prevCountRef.current = now;
+    }, 1000);
+    return () => clearInterval(id);
+  }, [channels]);
+
+  return fps;
 }
 
-function TopBar({ status }: { status: string }) {
-  const connected = useCanStore(state => state.connected);
-  const systemError = useCanStore(state => state.systemError);
-  const dropped = useCanStore(state => state.droppedFrames);
-  const errCount = useCanStore(state => state.errorFrameCount);
-
-  return (
-    <header className="sticky top-0 z-50 glass-panel rounded-none border-t-0 border-l-0 border-r-0 px-6 py-4 flex items-center justify-between mb-8">
-      <div className="flex items-center gap-3">
-        <Activity className="text-primary" />
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">CANalyzer <span className="text-primary font-light">Control-UI</span></h1>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-6">
-        {systemError && (
-          <div className="flex items-center gap-2 text-error text-sm font-medium bg-error/10 px-3 py-1.5 rounded-full border border-error/20">
-            <AlertTriangle size={16} />
-            <span>{systemError}</span>
-          </div>
-        )}
-        
-        <div className="flex gap-4 text-sm text-text-dim">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-text">{dropped}</span> Drops
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-error">{errCount}</span> Errors
-          </div>
-        </div>
-
-        <div className="h-6 w-px bg-white/10" />
-
-        <div className="flex items-center gap-2">
-          <div className="relative flex h-3 w-3">
-            {status === 'connected' && connected && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-            )}
-            <span className={cn(
-              "relative inline-flex rounded-full h-3 w-3",
-              status === 'connected' && connected ? "bg-success" :
-              status === 'connecting' ? "bg-accent" : "bg-error"
-            )}></span>
-          </div>
-          <span className="text-sm font-medium text-text-dim capitalize">
-            {status === 'connected' && connected ? 'Live' : status}
-          </span>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function App() {
+export default function App() {
   const wsStatus = useWebSocket('ws://localhost:8000/api/stream');
+  const frameRate = useFrameRate();
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activePage, setActivePage] = useState<NavPage>('control');
+  const [kbEnabled, setKbEnabled] = useState(false);
+  const [selectedFrame, setSelectedFrame] = useState<(CanFrameState & { channel: string }) | null>(null);
+
+  // Teleoperation
+  const keys = useTeleoperation(kbEnabled);
+
+  // Quick drive from sidebar buttons
+  const [activeDir, setActiveDir] = useState<Set<string>>(new Set());
+  const activeDirRef = useRef<Set<string>>(new Set());
+
+  const handleQuickDrive = useCallback((dir: 'forward' | 'backward' | 'left' | 'right' | 'stop') => {
+    if (dir === 'stop') {
+      activeDirRef.current = new Set();
+      setActiveDir(new Set());
+      sendHostDriveCmd(0, 0, 1);
+      return;
+    }
+    const next = new Set(activeDirRef.current);
+    next.add(dir);
+    activeDirRef.current = next;
+    setActiveDir(new Set(next));
+
+    const speed = next.has('forward') ? 1500 : next.has('backward') ? -800 : 0;
+    const yaw = next.has('left') ? 600 : next.has('right') ? -600 : 0;
+    sendHostDriveCmd(speed, yaw, 1);
+  }, []);
+
+  const handleSelectFrame = useCallback((frame: CanFrameState & { channel: string }) => {
+    setSelectedFrame(frame);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setSelectedFrame(null);
+  }, []);
+
+  const selectedId = selectedFrame
+    ? `${selectedFrame.channel}:${selectedFrame.id}`
+    : null;
 
   return (
-    <div className="min-h-screen bg-background text-text selection:bg-primary/30">
-      <TopBar status={wsStatus} />
-      
-      <main className="max-w-[1600px] mx-auto px-4 pb-20 flex gap-8 items-start">
-        <ControlSidebar />
-        
-        <div className="flex-1 flex flex-col gap-8">
-          <TricyclePreview />
-          <CanTable />
-        </div>
+    <div
+      className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${!selectedFrame ? 'details-hidden' : ''}`}
+      id="app-shell"
+    >
+      <Topbar
+        wsStatus={wsStatus}
+        frameRate={frameRate}
+        onToggleSidebar={() => setSidebarCollapsed(c => !c)}
+      />
+
+      <Sidebar
+        activePage={activePage}
+        onNavigate={setActivePage}
+        onQuickDrive={handleQuickDrive}
+        activeDir={activeDir}
+        keyboardEnabled={kbEnabled}
+        pressedKeys={keys}
+        onToggleKeyboard={() => setKbEnabled(e => !e)}
+      />
+
+      <main className="main-content" id="main-content">
+        <MetricStrip />
+
+        {activePage === 'control' && (
+          <>
+            <CommandPanel />
+          </>
+        )}
+
+        {activePage === 'monitor' && (
+          <CanTable
+            onSelectFrame={handleSelectFrame}
+            selectedId={selectedId}
+          />
+        )}
+
+        {activePage === 'settings' && (
+          <SettingsPanel />
+        )}
+
+        {/* Always show table on control page below command panel */}
+        {activePage === 'control' && (
+          <CanTable
+            onSelectFrame={handleSelectFrame}
+            selectedId={selectedId}
+          />
+        )}
       </main>
+
+      <DetailsPanel
+        frame={selectedFrame}
+        onClose={handleCloseDetails}
+      />
     </div>
   );
 }
-
-export default App;
