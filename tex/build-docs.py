@@ -34,9 +34,10 @@ OUTPUT_DIR = DOC_DIR / "output"
 # Source files grouped by template placeholder
 ARCH_SOURCES = [
     REPO_ROOT / "architecture.md",
-    REPO_ROOT / "can-dictionary.md",
+    REPO_ROOT / "docs" / "generated_can_documentation.md",
+    REPO_ROOT / "docs" / "generated_can_dictionary.md",
 ]
-DOC_SOURCES = sorted((REPO_ROOT / "docs").glob("*.md"))
+DOC_SOURCES = [f for f in sorted((REPO_ROOT / "docs").glob("*.md")) if f.name not in ("generated_can_dictionary.md", "generated_can_documentation.md")]
 NOTE_SOURCES = sorted((REPO_ROOT / "notes").glob("*.md"))
 STD_SOURCES = sorted((REPO_ROOT / "standards").glob("*.md"))
 
@@ -228,8 +229,8 @@ def main() -> None:
         description="Build E-Trike LaTeX documentation from markdown sources."
     )
     parser.add_argument(
-        "--version", default="v0.0.6-alpha",
-        help="Version string for the documentation (default: v0.0.6-alpha)"
+        "--version", default="v0.4.0-alpha",
+        help="Version string for the documentation (default: v0.4.0-alpha)"
     )
     parser.add_argument(
         "--date", default=today,
