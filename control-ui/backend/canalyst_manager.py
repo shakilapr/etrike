@@ -2,10 +2,19 @@ import time
 import threading
 import logging
 import collections
+import asyncio
+import os
+import sys
 from typing import Optional, Dict, List, Tuple
 import can
 from can.interfaces.canalystii import CANalystIIBus
 from can import Message
+
+# Import protocol artifacts
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+from protocol.generated.python.etrike_protocol import METADATA
+from protocol.codecs.python.codec import decode
+from protocol.codecs.python.types import Frame
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +65,18 @@ class EnhancedCANalystIIBus(CANalystIIBus):
         dlc = raw_msg.data_len
         sliced_data = bytes(raw_msg.data)[:dlc]
 
+        # 3. Handle error frames
+        # SocketCAN uses bit 29 to indicate error frame
+        is_error_frame = bool(raw_msg.can_id & 0x20000000)
+        arb_id = raw_msg.can_id & 0x1FFFFFFF if is_error_frame else raw_msg.can_id
+
         msg = Message(
             channel=channel,
             timestamp=mapped_timestamp,
-            arbitration_id=raw_msg.can_id,
+            arbitration_id=arb_id,
             is_extended_id=raw_msg.extended,
             is_remote_frame=raw_msg.remote,
+            is_error_frame=is_error_frame,
             dlc=dlc,
             data=sliced_data,
         )
@@ -110,10 +125,12 @@ class CANalystManager:
     Manager that encapsulates the thread boundary and UI batching logic.
     Implements immediate failure propagation and latest-ID overwrite.
     """
-    def __init__(self, channels=[0, 1], bitrate=500000):
+    def __init__(self, channels=[0, 1], bitrate=500000, db=None, loop=None):
         self.channels = channels
         self.bitrate = bitrate
         self.bus: Optional[EnhancedCANalystIIBus] = None
+        self.db = db
+        self.loop = loop
         
         # System State
         self.is_connected = False
@@ -123,13 +140,23 @@ class CANalystManager:
         self.error_frame_count = 0
         self.last_bus_error = None
         
-        # Latest-ID overwrite map (channel -> id -> CANState)
-        self.latest_state_map: Dict[int, Dict[int, CANState]] = {ch: {} for ch in channels}
+        # Latest-ID overwrite map (channel -> id -> dict)
+        self.latest_state_map: Dict[int, Dict[int, dict]] = {ch: {} for ch in channels}
         
+        # Build protocol lookup map: (bus, can_id, frame_format) -> message_key
+        self.id_to_message_key = {}
+        for key, meta in METADATA.items():
+            for inst in meta.get("instances", []):
+                bus_name = inst.get("bus")
+                can_id = inst.get("id")
+                frame_format = inst.get("frame_format")
+                if bus_name and can_id is not None:
+                    self.id_to_message_key[(bus_name, can_id, frame_format)] = key
+                    
         # Threading
         self._reader_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def start(self):
         try:
@@ -199,12 +226,67 @@ class CANalystManager:
                             self.last_bus_error = self._decode_error_frame(msg)
                             error_names = [e["name"] for e in self.last_bus_error["errors"]]
                             logger.warning(f"Bus Error Frame: {' | '.join(error_names)} (Raw ID: {self.last_bus_error['raw_id']})")
-                        else:
-                            channel_map = self.latest_state_map[msg.channel]
-                            if msg.arbitration_id in channel_map:
-                                channel_map[msg.arbitration_id].update(msg)
-                            else:
-                                channel_map[msg.arbitration_id] = CANState(msg)
+                        
+                        # 5. Decode payload (if not an error frame)
+                        bus_name = {0: "high", 1: "low"}.get(msg.channel, "unknown")
+                        frame_format = "extended" if msg.is_extended_id else "standard"
+                        message_key = self.id_to_message_key.get((bus_name, msg.arbitration_id, frame_format))
+                        
+                        decode_status = None
+                        signals = None
+                        if message_key and not msg.is_error_frame:
+                            frame_obj = Frame(
+                                bus=bus_name,
+                                id=msg.arbitration_id,
+                                frame_format=frame_format,
+                                data=msg.data,
+                                dlc=msg.dlc
+                            )
+                            decode_status, signals = decode(message_key, frame_obj)
+                            
+                        # 6. Database Persistence
+                        if self.db:
+                            loop_to_use = self.loop
+                            if not loop_to_use:
+                                try:
+                                    loop_to_use = asyncio.get_running_loop()
+                                except RuntimeError:
+                                    # Fallback if no running loop
+                                    pass
+                                    
+                            if loop_to_use:
+                                asyncio.run_coroutine_threadsafe(
+                                    self.db.insert_frame(
+                                        timestamp_ms=msg.timestamp * 1000.0,
+                                        bus=bus_name,
+                                        can_id=msg.arbitration_id,
+                                        is_error=msg.is_error_frame,
+                                        dlc=msg.dlc,
+                                        data_hex=msg.data.hex(),
+                                        decode_status=decode_status if decode_status else None
+                                    ),
+                                    loop_to_use
+                                )
+
+                        # 7. Thread-safe state update
+                        with self._lock:
+                            current = self.latest_state_map[msg.channel].get(msg.arbitration_id)
+                            current_count = current["count"] + 1 if current else 1
+                            delta = msg.timestamp - current["timestamp"] if current else 0
+                            
+                            self.latest_state_map[msg.channel][msg.arbitration_id] = {
+                                "id": hex(msg.arbitration_id),
+                                "dlc": msg.dlc,
+                                "data": msg.data.hex(),
+                                "is_error": msg.is_error_frame,
+                                "timestamp": msg.timestamp,
+                                "count": current_count,
+                                "age_ms": 0,
+                                "delta_t_ms": delta,
+                                "decode_status": decode_status,
+                                "signals": signals,
+                                "message_key": message_key,
+                            }
             except can.CanError as e:
                 # Immediate loss evidence (Not relying on Bus.state)
                 self._handle_failure(f"Bus read error: {str(e)}")
@@ -242,7 +324,9 @@ class CANalystManager:
             for ch in self.channels:
                 ch_state = {}
                 for can_id, can_state in self.latest_state_map[ch].items():
-                    ch_state[hex(can_id)] = can_state.to_dict()
+                    # Age is calculated on the fly
+                    can_state["age_ms"] = (time.monotonic() - (can_state["timestamp"] - (self.bus._host_epoch_s if self.bus else 0))) * 1000.0
+                    ch_state[hex(can_id)] = can_state
                 state["channels"][ch] = ch_state
                 
             return state
