@@ -18,6 +18,7 @@ Invariants (workplan §1.4):
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 
 from vtc import protocol_bridge as proto
 from vtc.models.frames import RawFrameEnvelope
@@ -25,6 +26,9 @@ from vtc.models.state import FreshnessState, MessageState, SignalValue
 from vtc.pipeline.decoder import decode_envelope
 from vtc.state.latest import LatestStore
 from vtc.transport.interface import Transport
+
+#: Number of recent arrivals kept per message for observed-rate estimation.
+_RATE_WINDOW = 16
 
 
 def _coerce_value(v: object) -> int | float | str | None:
@@ -35,12 +39,38 @@ def _coerce_value(v: object) -> int | float | str | None:
     return str(v)
 
 
+def _raw_value(field: dict, value: object) -> int | None:
+    """Reverse the codec scaling to the on-wire raw integer.
+
+    Codec convention: ``engineering = raw * factor + offset`` (generated.py), so
+    ``raw = round((engineering - offset) / factor)``. Only meaningful for numeric
+    signal fields; enum/plain fields (factor 1, offset 0) give raw == value.
+    """
+    if not isinstance(value, (int, float)):
+        return None
+    factor = field.get("factor", 1)
+    offset = field.get("offset", 0)
+    return round((value - offset) / factor)
+
+
 class Router:
     def __init__(self, transport: Transport, latest: LatestStore) -> None:
         self._transport = transport
         self._latest = latest
         self._seq = 0
         self._running = False
+        # Recent arrival timestamps per (bus, can_id) for observed-rate estimation.
+        self._arrivals: dict[tuple[str, int], deque[int]] = {}
+
+    def _observed_rate(self, key_id: tuple[str, int], arrival_ns: int) -> float | None:
+        dq = self._arrivals.setdefault(key_id, deque(maxlen=_RATE_WINDOW))
+        dq.append(arrival_ns)
+        if len(dq) < 2:
+            return None
+        span_s = (dq[-1] - dq[0]) / 1_000_000_000
+        if span_s <= 0:
+            return None
+        return (len(dq) - 1) / span_s
 
     @property
     def sequence(self) -> int:
@@ -53,6 +83,7 @@ class Router:
         self._seq += 1
         env = env.model_copy(update={"global_sequence": self._seq})
         bus = env.channel.value
+        observed_rate = self._observed_rate((bus, env.can_id), env.backend_arrival_ns)
         result = decode_envelope(env)
 
         if not result.is_known:
@@ -64,6 +95,7 @@ class Router:
                     key=None,
                     name="UNKNOWN",
                     last_seen_ns=env.backend_arrival_ns,
+                    observed_rate_hz=observed_rate,
                     freshness=FreshnessState.LIVE,
                     validation_status="unknown_id",
                 )
@@ -80,7 +112,11 @@ class Router:
                 meta = fields.get(name, {})
                 enum = meta.get("enum") if isinstance(meta.get("enum"), dict) else None
                 enum_label = enum.get(str(val)) if enum else None
+                # raw_value only for generated signal fields (present in `fields`);
+                # opaque/custom messages carry no per-field scaling metadata.
+                raw = _raw_value(meta, val) if name in fields else None
                 signals[name] = SignalValue(
+                    raw_value=raw,
                     engineering_value=_coerce_value(val),
                     unit=meta.get("unit"),
                     enum_label=enum_label,
@@ -103,6 +139,7 @@ class Router:
                 key=result.key,
                 name=result.name,
                 last_seen_ns=env.backend_arrival_ns,
+                observed_rate_hz=observed_rate,
                 expected_rate_hz=expected_rate,
                 freshness=freshness,
                 validation_status=result.status,

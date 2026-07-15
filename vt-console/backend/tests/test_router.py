@@ -8,11 +8,24 @@ from __future__ import annotations
 
 import pytest
 
-from vtc.models.frames import ChannelId
+from vtc import protocol_bridge as proto
+from vtc.models.frames import ChannelId, RawFrameEnvelope
 from vtc.models.state import FreshnessState
 from vtc.pipeline.router import Router
 from vtc.state.latest import LatestStore
 from vtc.transport.virtual import VirtualTransportAdapter
+
+
+def _envelope(channel: ChannelId, can_id: int, data: bytes, arrival_ns: int, seq: int):
+    return RawFrameEnvelope(
+        adapter_epoch=1,
+        channel=channel,
+        backend_arrival_ns=arrival_ns,
+        can_id=can_id,
+        dlc=len(data),
+        data=data,
+        channel_sequence=seq,
+    )
 
 
 @pytest.fixture()
@@ -51,8 +64,46 @@ def test_router_populates_latest_state(rig):
     assert m.validation_status == "ok"
     assert m.expected_rate_hz == pytest.approx(10.0)  # 100ms cycle -> 10 Hz
     assert m.signals["alive_ctr"].engineering_value == 255
+    assert m.signals["alive_ctr"].raw_value == 255  # unscaled: raw == engineering
     assert m.signals["can_ok"].engineering_value == 1
     assert router.sequence >= 1
+
+
+def test_observed_rate_from_arrival_spacing():
+    # Feed the router hand-built envelopes 100ms apart -> 10 Hz observed.
+    latest = LatestStore()
+    router = Router(transport=None, latest=latest)
+    for i in range(3):
+        router.process(
+            _envelope(ChannelId.LOW, 0x7FE, bytes.fromhex("ffff"), i * 100_000_000, i)
+        )
+    m = {(x.bus, x.can_id): x for x in latest.snapshot().messages}[("low", 0x7FE)]
+    assert m.observed_rate_hz == pytest.approx(10.0)
+
+
+def test_raw_value_reverses_scaling():
+    # STEER_DIAG angle_0_1deg: factor 0.1, offset -3000 -> engineering 0.0 == raw 30000.
+    latest = LatestStore()
+    router = Router(transport=None, latest=latest)
+    status, frame = proto.encode(
+        "rt:steer_diag",
+        {
+            "angle_0_1deg": 0.0,
+            "fault": 0,
+            "motor_current": 0.0,
+            "ecu_temp": 0.0,
+            "reserved": 0,
+        },
+        bus="high",
+    )
+    assert status == "ok"
+    router.process(_envelope(ChannelId.HIGH, 0x310, frame.data, 0, 0))
+
+    m = {(x.bus, x.can_id): x for x in latest.snapshot().messages}[("high", 0x310)]
+    angle = m.signals["angle_0_1deg"]
+    assert angle.engineering_value == pytest.approx(0.0)
+    assert angle.raw_value == 30000
+    assert m.signals["fault"].raw_value == 0  # unscaled field
 
 
 def test_unknown_frame_stays_visible_without_values(rig):

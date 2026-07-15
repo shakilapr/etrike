@@ -273,8 +273,8 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
 ### 1.5 Latest-value state — ✅ core done (2026-07-15, freshness aging live, 10 tests); two enrichments remain
 
 - [x] Keyed by `(bus, can_id)`; `LatestStore` is thread-safe with a monotonic snapshot sequence; snapshots deep-copy to avoid races with the ager
-- [x] Per-message: last_seen, expected_rate (from YAML cycle), freshness_state, validation_result — [ ] observed_rate (rate buckets) remaining
-- [x] Per-signal: engineering_value, unit, enum_label, validity — [ ] raw_value (pre-scale) remaining
+- [x] Per-message: last_seen, **observed_rate** (sliding 16-arrival window), expected_rate (from YAML cycle), freshness_state, validation_result
+- [x] Per-signal: **raw_value** (reversed from scaling: `round((eng − offset)/factor)`, generated signal fields only), engineering_value, unit, enum_label, validity
 - [x] **Freshness aging** — Unseen → Live → Late → Missing (+ Invalid) on its own clock via `FreshnessAger` background task; thresholds derive from each message's YAML cycle (Late > max(150ms, 2×cycle), Missing > max(500ms, 5×cycle)); event messages never age. Verified Live→Missing through the API.
   - [ ] Frozen (counter stall) and Recovering (post-Missing hysteresis) — deferred; need counter-advance tracking added in §5/§6.
 
