@@ -43,7 +43,10 @@ pytest
 | `vtc/pipeline/` | `decoder` (done), `router`/`validator`/`freshness` (§1.4–1.5) | 1 |
 | `vtc/state/` | `latest` (done), `topology`/`history` (§1.5) | 1 |
 | `vtc/api/` | `status`/`state`/`protocol`/`stream` | 1 |
-| `vtc/services/` | `lifecycle` (done), `event_bus` (§1.6) | 1 |
+| `vtc/services/` | `lifecycle` + `event_bus` (done) | 1 |
 
 Working endpoints today: `GET /api/v1/status`, `GET /api/v1/state`,
-`GET /api/v1/protocol/messages[/{bus}/{id}]`, `WS /api/v1/stream` (handshake).
+`GET /api/v1/protocol/messages[/{bus}/{id}]`, and `WS /api/v1/stream` — a live
+subscription (`hello` → initial `state` → coalesced `state` batches → `heartbeat`
+when idle → critical `event` fan-out; `batch_seq` for gap detection, `resync` to
+force a fresh snapshot).

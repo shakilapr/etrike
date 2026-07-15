@@ -40,10 +40,14 @@ def test_protocol_message_detail_hex_and_404(client):
     assert missing.status_code == 404
 
 
-def test_stream_handshake(client):
+def test_stream_hello_then_initial_state(client):
     with client.websocket_connect("/api/v1/stream") as ws:
         hello = ws.receive_json()
         assert hello["type"] == "hello"
         assert hello["wire_hash"] == proto.WIRE_HASH
-        ws.send_text("ping")
-        assert ws.receive_json() == {"type": "ack", "echo": "ping"}
+        assert "server_time_ns" in hello
+
+        first = ws.receive_json()
+        assert first["type"] == "state"
+        assert first["batch_seq"] == 1
+        assert "messages" in first

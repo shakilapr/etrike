@@ -18,6 +18,7 @@ import contextlib
 from vtc.config import Profile, VtcConfig
 from vtc.pipeline.freshness import FreshnessAger
 from vtc.pipeline.router import Router
+from vtc.services.event_bus import EventBus
 from vtc.state.latest import LatestStore
 from vtc.transport.virtual import VirtualTransportAdapter
 
@@ -26,6 +27,7 @@ class Lifecycle:
     def __init__(self, config: VtcConfig) -> None:
         self.config = config
         self.latest = LatestStore()
+        self.event_bus = EventBus()
         self.transport: VirtualTransportAdapter | None = None
         self.router: Router | None = None
         self.ager: FreshnessAger | None = None
