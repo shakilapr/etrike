@@ -12,7 +12,7 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
 ## 2. Supported Work Modes
 - **Mode 1: Full Vehicle (Monitor & Inject):** When connected to the fully assembled E-Trike, the tool passively monitors all traffic for the dashboard and only transmits when an operator explicitly injects a command (e.g., an ESTOP override).
 - **Mode 2: Bench Test (Synthetic Peer):** When connected to an isolated physical ECU (e.g., testing just the RT module on a desk), the tool actively acts as a "Virtual Vehicle" by automatically broadcasting all missing heartbeats and synthetic statuses to prevent the physical ECU from entering a fault state.
-- **Mode 3: Hardware-Free (Pure Software):** The operator explicitly selects an internal RAM-based CAN bus interface for simulation and UI development without physical hardware. Adapter loss during a physical session never silently changes to this mode.
+- **Mode 3: Hardware-Free (Pure Software):** The operator explicitly selects an internal RAM-based CAN bus interface for basic UI development without physical hardware. *Note: Complete ECU simulation (e.g., full vehicle physics and complex state machine emulation) is deferred to Future Work.*
 
 ## 3. Hardware Requirements
 - **Primary Interface:** Must interface directly with the **CANalyst-II Dual-Channel USB Analyzer**.
@@ -54,8 +54,9 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
 - **Message Verification:** Must include a mechanism to trigger and verify the behavior of individual CAN messages sequentially to confirm each frame functions as defined in the YAML.
 
 ## 6. System Emulation & Behaviors
+*(Note: Complete ECU simulation detailing how units dynamically behave internally is deferred to Future Work. The current implementation only connects real controllers and mimics basic signals to prevent fault states).*
 - **Heartbeat Emulation:** When spoofing a node, the tool must automatically transmit that node's required heartbeat at the correct frequency (e.g., sending `0x7FC` at 2 Hz when spoofing the Host) to prevent the RT/SYS watchdogs from triggering an immediate ESTOP.
-- **Synthetic Peer Injection:** To support 'PROTOTYPE' bench testing mode (Mode 1), the controller must be able to act as a synthetic peer for absent hardware by broadcasting mandatory status frames at precise rates to the correct bus:
+- **Synthetic Peer Injection:** To support 'PROTOTYPE' bench testing mode (Mode 1), the controller must be able to act as a basic synthetic peer for absent hardware by broadcasting mandatory static status frames at precise rates to the correct bus:
   - `0x201 SES_STATUS` @ 10 ms → **Low Bus** (Fakes EPS-C). *Startup Constraint: Must boot with `angle=0` and `angle_status=1` (Aligned), otherwise the Gateway will trigger an implausibility fault.*
   - `0x721 SEB_STATUS` @ 10 ms → **Low Bus** (Fakes SEB)
   - `0x206 MTR_MOTOR_FBK` @ 20 ms → **Low Bus** (Fakes MTR)
@@ -63,14 +64,10 @@ This document defines the strict, non-negotiable requirements for the CAN Contro
   - `0x7FD RT_HEARTBEAT` @ 500 ms → **Both Buses** (Fakes RT Gateway)
   - `0x300 HOST_DRIVE_CMD` @ 10 ms → **High Bus** (Fakes Host)
   - `0x7FC HOST_HEARTBEAT` @ 500 ms → **High Bus** (Fakes Host)
-- **Mode-Aware Injection:** Must support two distinct control modalities:
-  - **Kinematics Mode (High Bus):** Injecting `0x300` (Drive Cmd) to mimic the Jetson Host, allowing the physical RT ECU to compute the inverse bicycle kinematics and safety limits.
-  - **Direct Actuator Mode (Low Bus):** Injecting `0x204` (Motor) and `0x169`/`0x7B9` (Steer/Brake) directly on the Low bus to test actuators in isolation, bypassing RT kinematics.
 
-- **HMI & Virtual Hardware Overrides:** To eliminate reliance on physical GPIO buttons (which are often disconnected on test benches), the controller UI requires a mechanism to command the vehicle's state machine.
+- **HMI Overrides:** To eliminate reliance on physical GPIO buttons (which are often disconnected on test benches), the controller UI requires a mechanism to command the vehicle's state machine.
   - **Mode & Power:** Since the vehicle strictly uses GPIOs for mode and power, bench control must be achieved either by a physical HMI simulator board (e.g., relays) or by updating the RT/SYS firmware to accept virtual CAN HMI messages when placed into `PROTOTYPE` mode.
   - **Emergencies:** Software ESTOPs are injected directly via `0x001 SAFETY_ESTOP`.
-  - **Virtual Encoders:** The tool spoofs `0x206 MTR_MOTOR_FBK` to simulate rolling wheels, satisfying the EGAS L2 safety monitor even if physical encoders are absent.
 
 ## 7. Diagnostic & Logging Requirements
 - **Diagnostic Message Identification:** The tool must automatically identify diagnostic and telemetry frames (e.g., `SYS_DIAG_RPT`, `STEER_DIAG`, `BRAKE_DIAG`) as distinct from critical command frames.
@@ -172,7 +169,7 @@ The Control UI is a bench-engineering application for the E-Trike. It combines f
 
 All features exist for testing. The application is not an in-vehicle controller, driver interface, autonomous-driving component, or production safety system, and it is not used to drive the E-Trike. “Teleoperation,” “control,” “mode,” “power,” “brake,” and “ESTOP” in this document describe CAN stimuli used on a controlled bench or stationary integration setup to verify that RT, SYS, MTR, and connected units behave as implemented.
 
-This boundary does not remove any requirement from `scope.md`. Full Vehicle, Bench Test, Pure Software, HMI, keyboard/gamepad input, kinematics commands, direct actuator commands, synthetic peers, virtual encoders, ESTOP injection, logging, and sequential message verification all remain required as test capabilities.
+This boundary does not remove any requirement from `scope.md`. Full Vehicle, Bench Test, Pure Software, HMI, keyboard/gamepad input, direct actuator commands, synthetic peers, ESTOP injection, logging, and sequential message verification all remain required as test capabilities.
 
 ## 2. Design priorities
 
@@ -2684,5 +2681,15 @@ The entire CAN ecosystem is generated using the unified CLI tool in `protocol/to
 - `protocol.py generate headers` (C/C++ headers for SYS and RT firmware)
 - `protocol.py generate ts` (TypeScript typings for the frontend UI)
 - `protocol.py generate docs` (and related doc generators for documentation)
+
+## Future Work: Complete ECU Simulation
+The current architecture focuses on connecting physical controllers and mimicking basic signals (such as heartbeats and static status frames) to satisfy bench testing constraints. 
+
+**Complete ECU Simulation** is deferred to future work. This includes, but is not limited to:
+- A full-vehicle physics simulator that dynamically responds to motor and steering inputs.
+- Complex ECU state machine emulation in software.
+- Realistic sensor feedback loops based on simulated environmental conditions.
+- **Mode-Aware Injection (Kinematics Mode):** Emulating Jetson Host inputs (e.g. `0x300` Drive Cmd) to compute inverse bicycle kinematics and safety limits.
+- **Virtual Encoders:** Spoofing `0x206 MTR_MOTOR_FBK` to simulate rolling wheels, satisfying the EGAS L2 safety monitor even if physical encoders are absent.
 
 
