@@ -218,7 +218,7 @@ There are already terminology remnants such as both **“arm”** and **“Bench
 | ------------------------------ | -------------------------------------------------------------- |
 | `scope.md`                     | Required capabilities, exclusions, acceptance criteria         |
 | `architecture.md`              | Components, ownership boundaries, data flow, major ADRs        |
-| `control-ui-logic.md`          | Normative state machines, timers, algorithms, failure behavior |
+| `vt-console-logic.md`          | Normative state machines, timers, algorithms, failure behavior |
 | `stack.md`                     | Dependencies, deployment choices, version constraints          |
 | Separate traceability document | Scope-to-implementation matrix                                 |
 
