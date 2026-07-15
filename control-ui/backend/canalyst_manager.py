@@ -115,9 +115,13 @@ class CANalystManager:
         self.bitrate = bitrate
         self.bus: Optional[EnhancedCANalystIIBus] = None
         
-        # State management
+        # System State
         self.is_connected = False
         self.last_error = None
+        
+        # Bus Error State
+        self.error_frame_count = 0
+        self.last_bus_error = None
         
         # Latest-ID overwrite map (channel -> id -> CANState)
         self.latest_state_map: Dict[int, Dict[int, CANState]] = {ch: {} for ch in channels}
@@ -159,6 +163,30 @@ class CANalystManager:
         logger.error(f"CANalyst-II Failure: {error_msg}")
         # Note: We do NOT auto-resume Bench TX on reconnect for safety.
 
+    def _decode_error_frame(self, msg: Message) -> dict:
+        """Decode a CAN error frame into a structured dictionary with standard SocketCAN error codes."""
+        errors = []
+        
+        # Standard Linux SocketCAN error masks
+        if msg.arbitration_id & 0x001: errors.append({"code": "ERR-001", "name": "TX Timeout"})
+        if msg.arbitration_id & 0x002: errors.append({"code": "ERR-002", "name": "Lost Arbitration"})
+        if msg.arbitration_id & 0x004: errors.append({"code": "ERR-004", "name": "Controller Error"})
+        if msg.arbitration_id & 0x008: errors.append({"code": "ERR-008", "name": "Protocol Violation"})
+        if msg.arbitration_id & 0x010: errors.append({"code": "ERR-010", "name": "Transceiver Error"})
+        if msg.arbitration_id & 0x020: errors.append({"code": "ERR-020", "name": "No ACK"})
+        if msg.arbitration_id & 0x040: errors.append({"code": "ERR-040", "name": "Bus Off"})
+        if msg.arbitration_id & 0x080: errors.append({"code": "ERR-080", "name": "Bus Error"})
+        if msg.arbitration_id & 0x100: errors.append({"code": "ERR-100", "name": "Restarted"})
+
+        if not errors:
+            errors.append({"code": "ERR-UNK", "name": "Unknown Error"})
+
+        return {
+            "errors": errors,
+            "raw_id": hex(msg.arbitration_id),
+            "data_hex": msg.data.hex() if len(msg.data) > 0 else None
+        }
+
     def _read_loop(self):
         """Dedicated reader thread strictly separated from async event loops."""
         while not self._stop_event.is_set():
@@ -166,11 +194,17 @@ class CANalystManager:
                 msg = self.bus.recv(timeout=0.1)
                 if msg:
                     with self._lock:
-                        channel_map = self.latest_state_map[msg.channel]
-                        if msg.arbitration_id in channel_map:
-                            channel_map[msg.arbitration_id].update(msg)
+                        if getattr(msg, "is_error_frame", False):
+                            self.error_frame_count += 1
+                            self.last_bus_error = self._decode_error_frame(msg)
+                            error_names = [e["name"] for e in self.last_bus_error["errors"]]
+                            logger.warning(f"Bus Error Frame: {' | '.join(error_names)} (Raw ID: {self.last_bus_error['raw_id']})")
                         else:
-                            channel_map[msg.arbitration_id] = CANState(msg)
+                            channel_map = self.latest_state_map[msg.channel]
+                            if msg.arbitration_id in channel_map:
+                                channel_map[msg.arbitration_id].update(msg)
+                            else:
+                                channel_map[msg.arbitration_id] = CANState(msg)
             except can.CanError as e:
                 # Immediate loss evidence (Not relying on Bus.state)
                 self._handle_failure(f"Bus read error: {str(e)}")
@@ -198,7 +232,9 @@ class CANalystManager:
         with self._lock:
             state = {
                 "connected": self.is_connected,
-                "error": self.last_error,
+                "system_error": self.last_error,
+                "bus_error": self.last_bus_error,
+                "error_frame_count": self.error_frame_count,
                 "dropped_frames": self.bus.drop_count if self.bus else 0,
                 "channels": {}
             }
@@ -222,9 +258,12 @@ if __name__ == "__main__":
         for _ in range(20):
             time.sleep(0.05)
             batch = manager.get_ui_batch()
-            if batch["error"]:
-                print(f"Error: {batch['error']}")
+            if batch["system_error"]:
+                print(f"System Error: {batch['system_error']}")
                 break
+            if batch["bus_error"]:
+                error_names = [e["name"] for e in batch["bus_error"]["errors"]]
+                print(f"Bus Error: {' | '.join(error_names)}")
             print(f"Dropped frames: {batch['dropped_frames']}")
     finally:
         manager.stop()
