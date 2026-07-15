@@ -1,6 +1,7 @@
 # Vehicle Test Console (VTC) — Work Plan
 
-**Source:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md)
+**Source of truth:** `protocol/contracts/*.yaml` (message IDs, names, buses, DLC, cycles, byte order, codec strategy). RT/SYS firmware compiles against `can::gen::*` generated from these YAML files, so the YAML — not any prose doc — is authoritative.
+**Design reference:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md) — authoritative for tool behavior/UX only. **Where its §12.2/§22 bench tables disagree with the YAML (e.g. synthetic-peer periods), the YAML wins.**
 **Status:** Design-only — no implementation code exists yet
 **Last updated:** 2026-07-15
 
@@ -56,6 +57,40 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 ---
 
+## RT/SYS Bench Compatibility Contract
+
+The VTC is only useful if a physically-present RT or SYS controller behaves on the bench exactly as it would in the full vehicle. That requires the VTC's synthetic peers to keep every DUT RX watchdog fed. These constants are read directly from firmware (`rt-esp32/src/`, `sys-esp32/src/`, `shared/shared_config.h`) — treat them as the acceptance criteria for Phase 5.4 and the Phase 2/10 hardware tests.
+
+### RT device-under-test — watchdogs the VTC must satisfy
+
+| RT watchdog | Constant | Timeout | Synthetic frame required | Failure if unfed |
+|---|---|---|---|---|
+| Host drive-cmd staleness | `kHostCmdStaleTimeoutMs` | 500 ms | `0x300 HOST_DRIVE_CMD` @ 10 ms | drive command treated stale |
+| Host heartbeat | `kHeartbeatTimeoutMsHost` | 1500 ms | `0x7FC HOST_HEARTBEAT` @ 500 ms | assisted stop (brake 2000 kPa) |
+| SYS heartbeat | `kHeartbeatTimeoutMsSys` (2× `SysHeartbeat.cycle`) | 200 ms | `0x7FE SYS_HEARTBEAT` @ 100 ms | zero setpoints + RT brake takeover via `0x7B9` |
+| Steering following-error | `kSteerFollowingErrMs` vs `0x201` angle | — | `0x201 SES_STATUS` @ 10 ms, **angle 0 + aligned** | ESTOP (`kEstopReasonFollowingError`) |
+| Mode source | `0x110 SYS_MODE_CMD` consumed by RX router | — | `0x110 SYS_MODE_CMD` | RT cannot leave ESTOP / enter AUTO |
+
+### SYS device-under-test — watchdogs the VTC must satisfy
+
+| SYS watchdog | Constant | Timeout | Synthetic frame required | Notes |
+|---|---|---|---|---|
+| RT heartbeat | `kHeartbeatTimeoutMsRt` (2× `RtHeartbeat.cycle`) | 1000 ms | `0x7FD RT_HEARTBEAT` @ 500 ms, both buses | SYS validates advancing alive counter |
+| RT setpoint staleness | `kSetpointStaleMs` (20× `RtDriveCmd.cycle`) | 200 ms | `0x204 RT_DRIVE_CMD` @ 10 ms | speed 0, gear N |
+| SEB status staleness | `kSebStatusTimeoutMs` | 100 ms | `0x721 SEB_STATUS` @ 10 ms | — |
+| SEB rolling counter | `kSebRollingTimeoutMs` | 100 ms | `0x721` rolling counter | must **advance** within 100 ms (per-frame regen) |
+| MTR feedback staleness | `kMtrFbkStaleMs` | 200 ms | `0x206 MTR_MOTOR_FBK` @ 20 ms | — |
+| MTR ESTOP-ack | `kMtrEstopAckTimeoutMs` | 100 ms | `0x206` ESTOP-active bit | on ESTOP tests |
+
+### Compatibility invariants (enforced across phases)
+
+1. **Custom vendor codecs** — SES (`0x169/0x201/0x202/0x203/0x6FA`) and SEB (`0x7B9/0x721/0x731/0x741/0x6FB`) are little-endian, XOR8-complement, overlapping-bit vendor layouts. The VTC must use the versioned `protocol/codecs/` custom implementations (`ses-*-v1`, `seb-*-v1`), **never** a generated codec or `cantools`, or RT/SYS will reject the checksum.
+2. **RT `0x7FD` is never bridged** — High and Low heartbeats carry independent counters (`semantics: independent`). Synthetic RT heartbeat, freshness, counter validation, and diagnostics must key on `(bus, id)` and never deduplicate the two.
+3. **Forwarded frames are logically one ECU event** — RT transparently forwards `0x206`, `0x600`, `0x011`, `0x120`, `0x001` Low→High (`same_frame`). Diagnostics dedupe on canonical `origin_bus`; transport counters stay per physical bus.
+4. **Neutral start values** — every synthetic peer boots to the safe/neutral value in the tables above (speed 0, angle 0 aligned, no ESTOP, no fault) so activating a bench profile never induces a DUT fault.
+
+---
+
 ## Phase 0 — Protocol Foundation
 
 **Goal:** Ensure the YAML contracts, Python compiler, generated runtime codecs, golden vectors, and semantic hashes are complete and deterministic enough for the VTC backend.
@@ -64,8 +99,15 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 ### 0.1 Audit and complete YAML contracts
 
-- [ ] Verify all messages from `architecture-vtc.md` §6 / §22 exist in YAML:
-  - `0x001 SAFETY_ESTOP`, `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x201 SES_STATUS`, `0x206 MTR_MOTOR_FBK`, `0x300 HOST_DRIVE_CMD`, `0x310/0x311 RT_DIAG`, `0x600 SYS_DIAG_RPT`, `0x7FC HOST_HEARTBEAT`, `0x7FD RT_HEARTBEAT`, `0x7FE SYS_HEARTBEAT`, `0x721 SEB_STATUS`, `0x7B9 VCU_SEB_REQ`, `VCU_SES_REQ`
+- [ ] Verify every message the RT and SYS controllers produce or consume exists in `protocol/contracts/` YAML. **The YAML contracts are the canonical source of truth** — RT/SYS firmware compiles against `can::gen::*` generated from them, so message name, ID, bus, DLC, and cycle must match the contracts exactly (not the older debug-tool names):
+  - **safety** (`network.yaml`): `0x001 SAFETY_ESTOP` (DLC=0, High+Low, `same_frame`)
+  - **hmi** (`hmi.yaml`): `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ` (High+Low, 1000 ms, `rolling_counter` byte 1)
+  - **host** (`host.yaml`): `0x300 HOST_DRIVE_CMD` (High, **10 ms**), `0x301 HOST_BRAKE_REQ`, `0x302 HOST_LIGHT_CMD`, `0x400 HOST_OBSTACLE_DIST`, `0x7FC HOST_HEARTBEAT` (High, 500 ms)
+  - **rt** (`rt.yaml`): `0x204 RT_DRIVE_CMD` (Low, 10 ms), `0x205 RT_BRAKE_CMD` (Low, 20 ms), `0x210 RT_STATE_RPT` (High+Low, 100 ms), `0x220 RT_PID_RPT` (reserved), `0x310 STEER_DIAG`, `0x311 BRAKE_DIAG` (High, 100 ms — **canonical names are `STEER_DIAG`/`BRAKE_DIAG`, not `RT_DIAG`**), `0x7FD RT_HEARTBEAT` (High+Low, 500 ms, **independent** per-bus counters)
+  - **sys** (`sys.yaml`): `0x011 SYS_SAFETY_STS` (Low+High, 200 ms), `0x110 SYS_MODE_CMD` (Low, event/`cycle_ms:0`), `0x600 SYS_DIAG_RPT` (Low+High, 1000 ms; `rx_overflow` byte 2 bits 1–6 already present), `0x7FE SYS_HEARTBEAT` (**Low only**, 100 ms)
+  - **mtr** (`mtr.yaml`): `0x120 SYS_THROTTLE_STS` (Low+High, 10 ms), `0x206 MTR_MOTOR_FBK` (Low+High, **20 ms**)
+  - **ses** (`ses.yaml`, custom vendor codec, little-endian, XOR8-complement): `0x169 VCU_SES_REQ` (RT→EPS_C, 20 ms), `0x201 SES_STATUS` (EPS_C→RT, **10 ms**), `0x202 SES_ERR_INFO`, `0x203 SES_VERSION` (raw-only), `0x6FA SES_TEST`
+  - **seb** (`seb.yaml`, custom vendor codec, little-endian, XOR8-complement): `0x7B9 VCU_SEB_REQ` (SYS→SEB, 20 ms), `0x721 SEB_STATUS` (SEB→SYS/RT, **10 ms**), `0x731 SEB_ERR_INFO`, `0x741 SEB_VERSION`, `0x6FB SEB_TEST`
 - [ ] Add missing fields per `architecture-vtc.md` §14.1.1:
   - SYS `rx_overflow` in `SYS_DIAG_RPT` byte 2 bits 1–6, saturating semantics
   - MTR `STARTUP_READY` vs fault-bit separation
@@ -563,14 +605,30 @@ npx playwright test tests/e2e/live-can.spec.ts
 - [ ] Listen-before-speak: detection window per claimed ID
 - [ ] Refuse/flag if physical traffic already present
 - [ ] Source-conflict detection: stop synthetic TX immediately on conflict
-- [ ] Required synthetic peers from architecture §6:
-  - `0x201 SES_STATUS` @ 100ms → Low (angle=0, aligned at startup)
-  - `0x721 SEB_STATUS` @ 100ms → Low
-  - `0x206 MTR_MOTOR_FBK` @ 50ms → Low (speed 0)
-  - `0x7FE SYS_HEARTBEAT` @ 100ms → Low
-  - `0x7FD RT_HEARTBEAT` @ 500ms → Both (independent counters)
-  - `0x300 HOST_DRIVE_CMD` @ 100ms → High
-  - `0x7FC HOST_HEARTBEAT` @ 500ms → High
+- [ ] Synthetic-peer periods **must equal the contract `cycle_ms`** and each period **must be shorter than the DUT watchdog timeout it satisfies** (see the RT/SYS Bench Compatibility Contract below). Every synthetic frame regenerates its rolling counter / checksum per period (no static payloads).
+
+> **Implementation order:** build the shared synthetic-peer engine first, then bring up the **SYS device-under-test set first** (RT/HMI/SEB/MTR fakes) as the first bench-compatibility proof point. The RT-DUT set follows and reuses the overlapping peers (SEB, MTR, heartbeats).
+
+**Synthetic set — RT is the Device-Under-Test** (VTC fakes Host, SYS, EPS-C, SEB, MTR so RT's RX watchdogs stay satisfied):
+  - `0x300 HOST_DRIVE_CMD` @ **10 ms** → High (neutral: speed 0, gear N) — RT stale watchdog `kHostCmdStaleTimeoutMs` = 500 ms
+  - `0x7FC HOST_HEARTBEAT` @ 500 ms → High (advancing counter) — RT `kHeartbeatTimeoutMsHost` = 1500 ms
+  - `0x7FE SYS_HEARTBEAT` @ 100 ms → Low (advancing counter, healthy bits) — RT `kHeartbeatTimeoutMsSys` = 200 ms
+  - `0x110 SYS_MODE_CMD` → Low (mode per test; RT latches mode from SYS, incl. ESTOP clear)
+  - `0x011 SYS_SAFETY_STS` @ 200 ms → Low (no ESTOP)
+  - `0x201 SES_STATUS` @ **10 ms** → Low (**angle 0, `angle_status` = aligned** — else RT following-error ESTOP)
+  - `0x721 SEB_STATUS` @ **10 ms** → Low (safe/default, advancing rolling counter)
+  - `0x206 MTR_MOTOR_FBK` @ **20 ms** → Low (speed 0, no fault); `0x120 SYS_THROTTLE_STS` @ 10 ms → Low (speed 0)
+
+**Synthetic set — SYS is the Device-Under-Test** (VTC fakes RT, HMI, SEB, MTR so SYS's RX watchdogs stay satisfied):
+  - `0x7FD RT_HEARTBEAT` @ 500 ms → Both, **independent per-bus counters** — SYS `kHeartbeatTimeoutMsRt` = 1000 ms; alive counter must advance (SYS validates it)
+  - `0x204 RT_DRIVE_CMD` @ **10 ms** → Low (speed 0, gear N) — SYS `kSetpointStaleMs` = 200 ms
+  - `0x205 RT_BRAKE_CMD` @ 20 ms → Low (0 kPa)
+  - `0x210 RT_STATE_RPT` @ 100 ms → High+Low (MANUAL, safe)
+  - `0x111 HMI_MODE_REQ` @ 1000 ms → High+Low (advancing `rolling_counter`); `0x112 HMI_PWR_REQ` @ 1000 ms → High+Low
+  - `0x721 SEB_STATUS` @ **10 ms** → Low — SYS `kSebStatusTimeoutMs` = 100 ms **and** `kSebRollingTimeoutMs` = 100 ms (rolling counter must advance within 100 ms)
+  - `0x206 MTR_MOTOR_FBK` @ **20 ms** → Low — SYS `kMtrFbkStaleMs` = 200 ms; ESTOP-ack bit within `kMtrEstopAckTimeoutMs` = 100 ms
+
+> **Full Vehicle profile** synthesizes neither set — both RT and SYS are physically present. Synthetic peers are a Bench-Test-profile capability, activated per missing node after listen-before-speak confirms the ID is absent.
 
 ### 5.5 Generic injection API
 
