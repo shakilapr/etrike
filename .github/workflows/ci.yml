@@ -28,17 +28,34 @@ jobs:
         with:
           node-version: '20'
       - run: cd simulation && npm ci && npx vitest run --pool=forks --poolOptions.forks.singleFork=true
+      - name: Export TS Traces
+        run: cd simulation && npx vitest run tests/export_traces.test.ts
+      - name: Upload TS Traces
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-traces
+          path: simulation/traces/*.jsonl
 
   native-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Configure
         run: cd native-test && mkdir -p build && cd build && cmake ..
       - name: Build
         run: cd native-test/build && make -j$(nproc)
       - name: Test
         run: cd native-test/build && ctest --output-on-failure
+      - name: Export Native Traces
+        run: cd native-test && python scripts/export_traces.py
+      - name: Upload Native Traces
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-traces
+          path: native-test/traces/*.jsonl
 
   pio-rt:
     runs-on: ubuntu-latest
@@ -104,6 +121,60 @@ jobs:
       - run: cd debug-tool/e2e && npm ci
       - run: cd debug-tool/e2e && npx playwright install --with-deps chromium
       - run: cd debug-tool/e2e && npm test
+
+  cui-backend-test:
+    needs: [simulation, native-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download Native Traces
+        uses: actions/download-artifact@v4
+        with:
+          name: native-traces
+          path: native-test/traces
+      - name: Download TS Traces
+        uses: actions/download-artifact@v4
+        with:
+          name: ts-traces
+          path: simulation/traces
+      - run: cd control-ui/backend && pip install -r requirements.txt
+      - run: cd control-ui/backend && pip install pytest pytest-asyncio pytest-cov
+      - run: cd control-ui/backend && pytest tests/ -v
+      - name: Upload Backend Logs and DB
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-artifacts
+          path: |
+            control-ui/backend/tests/*.db
+            control-ui/backend/tests/*.log
+
+  cui-frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Backend Dependencies
+        run: cd control-ui/backend && pip install -r requirements.txt uvicorn fastapi
+      - run: cd control-ui/frontend && npm ci
+      - run: cd control-ui/frontend && npx tsc --noEmit
+      - run: cd control-ui/frontend && npx vitest run --coverage
+      - run: cd control-ui/frontend && npx playwright install --with-deps chromium
+      - run: cd control-ui/frontend && npx playwright test
+      - name: Upload Playwright Traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: control-ui/frontend/playwright-report/
 
   vehicle-build:
     runs-on: ubuntu-latest
