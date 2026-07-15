@@ -1,6 +1,6 @@
 # Vehicle Test Console (VTC) — Work Plan
 
-**Source:** [`architecture-cui.md`](file:///c:/projects/etrike/vt-console/architecture-cui.md)
+**Source:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md)
 **Status:** Design-only — no implementation code exists yet
 **Last updated:** 2026-07-15
 
@@ -18,7 +18,7 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 | Area | Status |
 |---|---|
-| Architecture / design docs | ✅ Complete (scope, architecture, logic, API, HMI, error-codes — 2696 lines consolidated in `architecture-cui.md`) |
+| Architecture / design docs | ✅ Complete (scope, architecture, logic, API, HMI, error-codes — 2696 lines consolidated in `architecture-vtc.md`) |
 | Protocol YAML contracts | ✅ Exist (`protocol/contracts/` — per-ECU YAML files) |
 | Protocol compiler (`protocol.py`) | ✅ Exists — generates C++, DBC, docs, CSV, tables |
 | Protocol Python runtime codecs | ✅ Exist — `protocol/generated/python/etrike_protocol.py` (23.7KB) + `protocol/codecs/` (codec.py, generated.py, ses.py, seb.py, pwt.py) + XOR profiles |
@@ -64,9 +64,9 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 ### 0.1 Audit and complete YAML contracts
 
-- [ ] Verify all messages from `architecture-cui.md` §6 / §22 exist in YAML:
+- [ ] Verify all messages from `architecture-vtc.md` §6 / §22 exist in YAML:
   - `0x001 SAFETY_ESTOP`, `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x201 SES_STATUS`, `0x206 MTR_MOTOR_FBK`, `0x300 HOST_DRIVE_CMD`, `0x310/0x311 RT_DIAG`, `0x600 SYS_DIAG_RPT`, `0x7FC HOST_HEARTBEAT`, `0x7FD RT_HEARTBEAT`, `0x7FE SYS_HEARTBEAT`, `0x721 SEB_STATUS`, `0x7B9 VCU_SEB_REQ`, `VCU_SES_REQ`
-- [ ] Add missing fields per `architecture-cui.md` §14.1.1:
+- [ ] Add missing fields per `architecture-vtc.md` §14.1.1:
   - SYS `rx_overflow` in `SYS_DIAG_RPT` byte 2 bits 1–6, saturating semantics
   - MTR `STARTUP_READY` vs fault-bit separation
   - `origin_bus` and forwarding route metadata
