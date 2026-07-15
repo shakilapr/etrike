@@ -173,12 +173,17 @@ python protocol/tools/protocol.py generate typescript --check
 python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; print(SEMANTIC_HASH)"
 ```
 
-**Exit gate:**
-- [ ] All YAML messages from architecture §22 exist and parse
-- [ ] Python codec round-trips all golden vectors
-- [ ] TypeScript metadata generates without errors
-- [ ] CI drift check passes
-- [ ] Semantic hashes match between Python and TypeScript
+**Exit gate:** *(verified 2026-07-15 with `py -m protocol.tools.protocol …` and `py -m unittest discover -s protocol/tests/python`)*
+- [x] All YAML messages exist and parse — `validate`: **32 messages, 42 instances**; all RT/SYS/MTR/SES/SEB messages resolve at the corrected §0.1 IDs/cycles
+- [x] Python codec round-trips all golden vectors — `test_all_payload_vectors` + `test_every_message_has_an_independent_success_vector` **pass**; `payload-v1.json` covers **32/32 messages** (36 rows incl. edge cases)
+- [x] TypeScript metadata generates without errors — `etrike-protocol.ts` present and current
+- [x] CI drift check passes — `generate --check`: *generated output is current*
+- [x] Semantic hashes match between Python and TypeScript — both `WIRE_HASH = d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a`
+
+**Environment gaps to close (not contract defects):**
+- [ ] **Host C++17 compiler** — `test_cpp_generated.py` (2 tests) fails locally: the `g++` on PATH is MinGW.org GCC 6.3.0 (no `<string_view>`). CI's Ubuntu runner passes these. Install a modern g++ (≥7, e.g. MSYS2 `mingw-w64-x86_64-gcc`) or clang for local firmware-codec cross-validation.
+- [ ] **TS vector-test runner** — `protocol/tests/typescript/payload-v1.test.ts` has no local runner wired (Node native TS stripping can't resolve `.json`/`.ts` imports). Add a `tsx`/`vitest` invocation (Node 24 available) so TS round-trips run alongside the Python suite.
+- [ ] **pytest** not installed on this host Python 3.14 — used `unittest` (equivalent); install `pytest` to match the CI command exactly.
 
 ---
 
@@ -238,44 +243,48 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
 - [ ] Define `TransportEvent` with severity, channel, evidence, monotonic timestamp
 - [ ] Define `AdapterStatus` with identity, capabilities, per-channel state, queue metrics
 
-### 1.3 Virtual transport adapter
+### 1.3 Virtual transport adapter — ✅ done (2026-07-15, `vtc/transport/virtual.py`, 7 tests)
 
-- [ ] Implement `VirtualTransportAdapter` using `python-can` virtual interface:
-  - Create named High and Low virtual buses
-  - Blocking receive in dedicated thread via `can.Notifier`
-  - Constant-time callback → bounded queue (no decode in callback)
-  - Overflow detection with lost-count evidence
-  - Clean shutdown with `can.Notifier` stop
-- [ ] Capability record: no HW timestamps, no TX echo, no bus-off, no TEC/REC (all `Unknown`)
+- [x] Implement `VirtualTransportAdapter` using `python-can` virtual interface:
+  - [x] Named High and Low virtual buses (unique per-instance channel suffix; python-can shares virtual buses by channel name)
+  - [x] Blocking receive in dedicated thread via `can.Notifier` + `can.Listener`
+  - [x] Constant-time listener → bounded `queue.Queue` (raw copy, no decode); router drains via `poll(max_items, timeout)`
+  - [x] Overflow counted with lost-frame evidence in `AdapterStatus` (never silent `deque(maxlen)`)
+  - [x] Idempotent `close()` stops the Notifier and shuts down buses
+- [x] Capability record: HW timestamps / TX echo / bus-off / TEC-REC all `False`, `listen_only` `Unknown` (None) — never faked
+- Separate per-channel emitter bus provides the `inject()` seam (tests, injection API §5.5, synthetic peers §5.4) so frames are observed as RX; the adapter's own bus uses `receive_own_messages=False`, so the virtual adapter has no TX echo (matches capability).
 
-### 1.4 Receive pipeline
+> **Interface refinement:** `Transport` moved from a `subscribe(callback)` model to a `poll(max_items, timeout)` queue-drain model, which matches §1.4's "router drains RX queue" and the research doc's thread→queue→async boundary. Updated in `vtc/transport/interface.py`.
 
-- [ ] Router task drains RX queue:
-  1. Validate raw envelope (CAN ID membership, DLC)
-  2. Assign global frame sequence
-  3. Decode via generated Python codec
-  4. Run integrity/validation checks
-  5. Update latest-value store
-  6. Update freshness state
-  7. Enqueue for recording (if active)
-  8. Publish to subscription hub
-- [ ] Unknown frames remain visible (no guessed decoding)
-- [ ] Decode failure preserves raw frame, produces no fabricated values
+### 1.4 Receive pipeline — ✅ done (2026-07-15, `vtc/pipeline/router.py`, wired into lifespan, 4+2 tests)
 
-### 1.5 Latest-value state
+- [x] Router task drains RX queue (async `run()` uses `asyncio.to_thread(poll)` off the ASGI loop; sync `drain_once()` for deterministic tests):
+  1. [x] Resolve `(bus, can_id)` membership via the bridge (DLC enforced at the envelope)
+  2. [x] Assign monotonic global frame sequence
+  3. [x] Decode via generated Python codec (through `protocol_bridge`)
+  4. [x] Record codec validation status (`ok` → Live; codec error → Invalid, still visible)
+  5. [x] Update latest-value store (`MessageState` per `(bus, can_id)`, expected-rate from YAML cycle, enum labels)
+  6. [~] First-cut freshness (Live/Invalid on receipt); full aging in §1.5
+  7. [ ] Enqueue for recording — deferred to Phase 6
+  8. [ ] Publish to subscription hub — deferred to §1.6 (WebSocket/event bus)
+- [x] Unknown frames remain visible as `UNKNOWN` with raw identity (no guessed decoding)
+- [x] Decode failure preserves the raw frame and produces no fabricated values
 
-- [ ] Keyed by `(bus, can_id)` → latest raw + latest valid observation
-- [ ] Per-message: last_seen, observed_rate, expected_rate, freshness_state, validation_result
-- [ ] Per-signal: raw_value, engineering_value, unit, enum_label, validity
-- [ ] Freshness states: Unseen → Live → Late → Missing → Invalid → Frozen → Recovering
+### 1.5 Latest-value state — ✅ core done (2026-07-15, freshness aging live, 10 tests); two enrichments remain
 
-### 1.6 Basic API endpoints
+- [x] Keyed by `(bus, can_id)`; `LatestStore` is thread-safe with a monotonic snapshot sequence; snapshots deep-copy to avoid races with the ager
+- [x] Per-message: last_seen, expected_rate (from YAML cycle), freshness_state, validation_result — [ ] observed_rate (rate buckets) remaining
+- [x] Per-signal: engineering_value, unit, enum_label, validity — [ ] raw_value (pre-scale) remaining
+- [x] **Freshness aging** — Unseen → Live → Late → Missing (+ Invalid) on its own clock via `FreshnessAger` background task; thresholds derive from each message's YAML cycle (Late > max(150ms, 2×cycle), Missing > max(500ms, 5×cycle)); event messages never age. Verified Live→Missing through the API.
+  - [ ] Frozen (counter stall) and Recovering (post-Missing hysteresis) — deferred; need counter-advance tracking added in §5/§6.
 
-- [ ] `GET /api/v1/status` — backend readiness, adapter state, protocol hash
-- [ ] `GET /api/v1/state` — atomic latest-state snapshot with sequence
-- [ ] `GET /api/v1/protocol/messages` — generated catalog browse
-- [ ] `GET /api/v1/protocol/messages/{bus}/{id}` — single message detail
-- [ ] WebSocket `/api/v1/stream` — critical events + coalesced latest-state subscription
+### 1.6 Basic API endpoints — 🟡 REST done; WebSocket handshake only
+
+- [x] `GET /api/v1/status` — readiness, live adapter state, protocol hash, catalog counts
+- [x] `GET /api/v1/state` — atomic latest-state snapshot with sequence (now populated by the router)
+- [x] `GET /api/v1/protocol/messages` — generated catalog browse
+- [x] `GET /api/v1/protocol/messages/{bus}/{id}` — single message detail (hex/dec ids, 404s)
+- [~] WebSocket `/api/v1/stream` — handshake + hash exchange done; coalesced latest-state + critical-event subscription lands with the event bus (§1.6 cont.)
 
 **Tests:**
 ```bash
@@ -298,14 +307,14 @@ pytest vt-console/backend/tests/test_api_protocol.py -v
 pytest vt-console/backend/tests/test_websocket_stream.py -v
 ```
 
-**Exit gate:**
-- [ ] Backend starts in Pure Software mode without hardware
-- [ ] Injected virtual frames appear decoded in `GET /api/v1/state`
-- [ ] WebSocket delivers coalesced latest-state updates
-- [ ] Freshness transitions work (Live → Late → Missing on timeout)
-- [ ] Unknown frames preserved with raw data
-- [ ] All generated codec golden vectors pass through the pipeline
-- [ ] Zero decode in receive callback (measured)
+**Exit gate:** *(38 backend tests passing, 2026-07-15)*
+- [x] Backend starts in Pure Software mode without hardware
+- [x] Injected virtual frames appear decoded in `GET /api/v1/state`
+- [~] WebSocket delivers coalesced latest-state updates — handshake + hash exchange done; coalesced batches pending the event bus (§1.6 cont.)
+- [x] Freshness transitions work (Live → Late → Missing on timeout)
+- [x] Unknown frames preserved with raw data
+- [~] All generated codec golden vectors pass through the pipeline — decode path proven for representative messages; a parametrized "drive all 32 vectors through inject→router→state" sweep is the remaining task
+- [x] Zero decode in receive callback (by design: listener does a raw copy only; decode happens in the router)
 
 ---
 
