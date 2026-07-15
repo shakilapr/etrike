@@ -278,13 +278,13 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
 - [x] **Freshness aging** — Unseen → Live → Late → Missing (+ Invalid) on its own clock via `FreshnessAger` background task; thresholds derive from each message's YAML cycle (Late > max(150ms, 2×cycle), Missing > max(500ms, 5×cycle)); event messages never age. Verified Live→Missing through the API.
   - [ ] Frozen (counter stall) and Recovering (post-Missing hysteresis) — deferred; need counter-advance tracking added in §5/§6.
 
-### 1.6 Basic API endpoints — 🟡 REST done; WebSocket handshake only
+### 1.6 Basic API endpoints — ✅ done (2026-07-15, WebSocket subscription live, 6 tests)
 
 - [x] `GET /api/v1/status` — readiness, live adapter state, protocol hash, catalog counts
 - [x] `GET /api/v1/state` — atomic latest-state snapshot with sequence (now populated by the router)
 - [x] `GET /api/v1/protocol/messages` — generated catalog browse
 - [x] `GET /api/v1/protocol/messages/{bus}/{id}` — single message detail (hex/dec ids, 404s)
-- [~] WebSocket `/api/v1/stream` — handshake + hash exchange done; coalesced latest-state + critical-event subscription lands with the event bus (§1.6 cont.)
+- [x] WebSocket `/api/v1/stream` — full subscription: `hello` (hash + server clock) → initial `state` → **coalesced** `state` batches at `latest_state_batch_hz` (sent only when the store data-version advances) → `heartbeat` every `stream_heartbeat_ms` when idle → critical `event` fan-out via the thread-safe `EventBus`. Every frame carries a monotonic `batch_seq` for gap detection; client `resync` forces a fresh snapshot. Sender-only writes; receiver-only reads.
 
 **Tests:**
 ```bash
@@ -307,13 +307,13 @@ pytest vt-console/backend/tests/test_api_protocol.py -v
 pytest vt-console/backend/tests/test_websocket_stream.py -v
 ```
 
-**Exit gate:** *(38 backend tests passing, 2026-07-15)*
+**Exit gate:** ✅ **Phase 1 complete** *(78 backend tests passing, 2026-07-15)*
 - [x] Backend starts in Pure Software mode without hardware
 - [x] Injected virtual frames appear decoded in `GET /api/v1/state`
-- [~] WebSocket delivers coalesced latest-state updates — handshake + hash exchange done; coalesced batches pending the event bus (§1.6 cont.)
+- [x] WebSocket delivers coalesced latest-state updates (batch on version change, heartbeat when idle, critical-event fan-out, `resync`)
 - [x] Freshness transitions work (Live → Late → Missing on timeout)
 - [x] Unknown frames preserved with raw data
-- [~] All generated codec golden vectors pass through the pipeline — decode path proven for representative messages; a parametrized "drive all 32 vectors through inject→router→state" sweep is the remaining task
+- [x] All golden vectors pass through the pipeline — `test_vector_sweep.py` drives **every** High/Low message (33 vectors, generated + custom SES/SEB) through inject→router→state, with full value round-trips for generated messages and correct error handling (checksum/length/unsupported stay visible, no fabricated values). A coverage test guarantees no High/Low catalog message is left undriven. *(PWT/powertrain is out of scope — the VTC adapter is two-channel High/Low per architecture §4.4.)*
 - [x] Zero decode in receive callback (by design: listener does a raw copy only; decode happens in the router)
 
 ---

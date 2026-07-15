@@ -47,8 +47,14 @@ class MessageState(BaseModel):
 
 
 class LatestStateSnapshot(BaseModel):
-    """Atomic snapshot of latest state with a monotonic sequence for gap detection."""
+    """Atomic snapshot of latest state.
+
+    ``sequence`` increments per snapshot read (batch/gap detection). ``version``
+    is the data-mutation counter — the stream sends a new state batch only when
+    ``version`` changes, and heartbeats otherwise (coalescing).
+    """
 
     sequence: int
+    version: int = 0
     wire_hash: str
     messages: list[MessageState] = Field(default_factory=list)
