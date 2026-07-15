@@ -4,7 +4,7 @@
 
 **Local source location:** `tem/canalyzer/`
 
-**Question:** Which proven patterns should the E-Trike bench Control UI reuse, and how can it reliably distinguish adapter loss, quiet buses, missing ECUs, corrupt frames, backend-stream loss, and overloaded presentation?
+**Question:** Which proven patterns should the E-Trike bench Vehicle Test Console reuse, and how can it reliably distinguish adapter loss, quiet buses, missing ECUs, corrupt frames, backend-stream loss, and overloaded presentation?
 
 ## 1. Codebases inspected
 
@@ -13,7 +13,7 @@
 | `python-can` | `b4f82abede25ff83376be793a2935c41f81c3869` | Actual transport foundation; CANalyst-II implementation, notifier, periodic sender, log formats, and terminal viewer |
 | SavvyCAN | `2f683fd59bf3dfd8753f542554964fb971e39094` | Mature Qt analyzer with multiple connection types, connection validation, frame overwrite mode, capture, sending, and bulk UI refresh |
 | CANgaroo | `ed3088d5393e02a01afe867af2ee8ab0e12db039` | Driver/interface abstraction, per-interface statistics, error frames, shared multi-channel readers, and hardware timestamp conversion |
-| CANviz | `bbddde95ad874abce5b5952afc1c6d2a3baee252` | FastAPI + React + `python-can`, closest to the proposed Control UI stack |
+| CANviz | `bbddde95ad874abce5b5952afc1c6d2a3baee252` | FastAPI + React + `python-can`, closest to the proposed Vehicle Test Console stack |
 
 These repositories are reference material only. No source is copied into the product without checking license compatibility and whether the code solves the CANalyst-II-specific problem.
 
@@ -261,7 +261,7 @@ Capture rate and display rate are deliberately different. The backend processes 
 
 Chronological raw view uses bounded batches and virtualization. A paused UI stops rendering, not capture or recording.
 
-## 9. Changes recommended for the Control UI documents
+## 9. Changes recommended for the Vehicle Test Console documents
 
 The current architecture already includes most strong patterns. The research confirms and sharpens these requirements:
 
@@ -297,7 +297,7 @@ These fields must be Unknown or derived with an explicit label. ECU response, ro
 
 ## 11. Adoption decision
 
-No complete analyzer codebase should be embedded into the Control UI.
+No complete analyzer codebase should be embedded into the Vehicle Test Console.
 
 - Use `python-can` as the transport API.
 - Port the debug tool’s CANalyst setup and hardware characterization tests.
