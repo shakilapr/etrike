@@ -28,33 +28,76 @@ def get_sessions(request: Request) -> dict:
 
 @router.get("/profiles")
 def list_profiles(request: Request) -> dict:
+    """List operating profiles.
+
+    Two transport modes share the same backend code:
+    - **computer** (``pure_software``): dual virtual CAN buses on this PC
+    - **real** (``bench_test`` / ``full_vehicle``): CANalyst-II CH0=High, CH1=Low
+    """
     life = request.app.state.lifecycle
     ok, reason = (False, "probe unavailable")
     if hasattr(life, "physical_available"):
         ok, reason = life.physical_available()
     return {
+        "transport_modes": [
+            {
+                "id": "computer",
+                "label": "Computer (virtual)",
+                "description": (
+                    "Same Control Toolkit code on this PC. Dual virtual High/Low "
+                    "buses — no USB adapter required."
+                ),
+                "destination": "virtual",
+                "profile": "pure_software",
+                "available": True,
+                "adapter": "none",
+            },
+            {
+                "id": "real",
+                "label": "Real (CANalyst-II)",
+                "description": (
+                    "Physical vehicle/bench buses via CANalyst-II "
+                    "(CH0 = High, CH1 = Low @ 500 kbit/s). Refuses without the adapter."
+                ),
+                "destination": "physical",
+                "profiles": ["bench_test", "full_vehicle"],
+                "available": ok,
+                "reason": None if ok else reason,
+                "adapter": "canalystii",
+            },
+        ],
         "profiles": [
             {
                 "id": "pure_software",
-                "label": "Pure Software",
+                "label": "Computer · Virtual buses",
                 "destination": "virtual",
+                "mode": "computer",
                 "available": True,
             },
             {
                 "id": "bench_test",
-                "label": "Bench Test",
+                "label": "Real · Bench Test (CANalyst-II)",
                 "destination": "physical",
+                "mode": "real",
                 "available": ok,
                 "reason": None if ok else reason,
             },
             {
                 "id": "full_vehicle",
-                "label": "Full Vehicle",
+                "label": "Real · Full Vehicle (CANalyst-II)",
                 "destination": "physical",
+                "mode": "real",
                 "available": ok,
                 "reason": None if ok else reason,
             },
-        ]
+        ],
+        "physical_adapter": {
+            "kind": "canalystii",
+            "available": ok,
+            "reason": None if ok else reason,
+            "channels": {"high": "CH0", "low": "CH1"},
+            "bitrate": 500_000,
+        },
     }
 
 

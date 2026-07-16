@@ -135,10 +135,11 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
   test('settings lists profiles and Pure Software starts', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('nav-settings').click()
-    await expect(page.getByTestId('profile-list')).toContainText(/Pure Software/i)
-    await expect(page.getByTestId('profile-list')).toContainText(/Bench Test|Full Vehicle/i)
+    await expect(page.getByTestId('transport-toggle')).toBeVisible()
+    await expect(page.getByTestId('profile-list')).toContainText(/Computer|Virtual/i)
+    await expect(page.getByTestId('profile-list')).toContainText(/CANalyst|Real|Bench Test|Full Vehicle/i)
     await page.getByTestId('btn-start-pure').click()
-    await expect(page.getByTestId('settings-log')).toContainText(/Session ses_|phase running/i, {
+    await expect(page.getByTestId('settings-log')).toContainText(/Session ses_|phase running|Computer|Active/i, {
       timeout: 10_000,
     })
   })

@@ -1387,7 +1387,7 @@ button.seg-btn:focus-visible {
  */
 button.btn,
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
 ) {
   background: var(--primary);
   color: #fff;
@@ -1405,10 +1405,10 @@ button:where(
 button.btn:hover:not(:disabled),
 button.btn:active:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
 ):hover:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
 ):active:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
@@ -2563,6 +2563,137 @@ button.bit-cell.filled:active:not(:disabled) {
   gap: 8px;
   font-weight: 650;
   margin-bottom: 4px;
+}
+
+/* Transport mode: Computer (virtual) vs Real (CANalyst-II) */
+.transport-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+button.transport-btn,
+button.transport-btn:hover:not(:disabled),
+button.transport-btn:focus:not(:disabled),
+button.transport-btn:active:not(:disabled) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 64px;
+  height: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  text-align: left;
+  box-shadow: inset 3px 0 0 transparent;
+  transform: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+button.transport-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  color: var(--text);
+  border-color: #9bb9e8;
+}
+
+button.transport-btn.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+button.transport-btn.active.real {
+  background: color-mix(in srgb, var(--warning) 10%, #fff);
+  border-color: #e0b84a;
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+button.transport-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.transport-btn-title {
+  font-size: 15px;
+  font-weight: 750;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.transport-btn-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.transport-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .transport-cards,
+  .transport-toggle {
+    grid-template-columns: 1fr;
+  }
+}
+
+.transport-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface-subtle);
+}
+
+.transport-card.active {
+  background: var(--surface);
+  border-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.transport-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.transport-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.transport-bullets {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.transport-bullets li {
+  margin-bottom: 3px;
+}
+
+.ok-text {
+  color: var(--success);
+  font-weight: 650;
+}
+
+.chip.tiny {
+  font-size: 10px;
+  min-height: 20px;
+  padding: 1px 7px;
 }
 
 .setup-list {
