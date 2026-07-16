@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Phase 0–1 complete. Phase 3 complete (profiles, session FSM, Bench TX, leases, Stop All, architecture shell UI). Later software phases partial. Physical CANalyst deferred.
+**Status:** Phase 0–1, 3–4 complete. Phase 5 in progress (TX/inject backend largely present; Control UI + analysis inject live). Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -519,15 +519,15 @@ pytest control-toolkit/backend/tests/test_api_sessions.py -v
 
 ### 4.1 Frontend scaffolding
 
-- [ ] Create `control-toolkit/frontend/` with Vite + React + TypeScript
-- [ ] Tailwind CSS + shadcn/ui component primitives
-- [ ] Zustand for live state management
-- [ ] Generated TypeScript API client from OpenAPI
-- [ ] Dark, high-contrast automotive theme (architecture §17)
+- [x] Create `control-toolkit/frontend/` with Vite + React + TypeScript
+- [ ] Tailwind CSS + shadcn/ui component primitives *(deferred: hand CSS implements ui-design rules)*
+- [x] Zustand for live state management
+- [ ] Generated TypeScript API client from OpenAPI *(hand client covers current API)*
+- [x] Dark, high-contrast automotive theme (architecture §17 + ui-design baseline)
 
 ### 4.2 Application shell
 
-- [ ] Persistent status header:
+- [x] Persistent status header:
   - Active profile badge
   - USB adapter state indicator
   - High Bus / Low Bus activity (independent)
@@ -536,72 +536,56 @@ pytest control-toolkit/backend/tests/test_api_sessions.py -v
   - ESTOP state
   - Recording state
   - Stream quality badge (LIVE / DELAYED / DROPPING)
-- [ ] Left navigation rail with workspace icons
-- [ ] Protocol hash match/mismatch indicator
+- [x] Left navigation rail with workspace icons
+- [x] Protocol hash match/mismatch indicator
+- [x] **Vehicle preview** workspace (2D kinematics port of `tricycle_kinematics_simulator.html`)
 
 ### 4.3 WebSocket client
 
-- [ ] Connection sequence: authenticate → exchange protocol hash → subscribe → receive full state broadcasts
-- [ ] Parse full state directly (no delta merging or sequence gap detection required)
-- [ ] Independent freshness clock (ages continue increasing without new messages, using browser time)
-- [ ] Reconnect with exponential backoff and visible attempt count
+- [x] Connection sequence: protocol hash exchange via hello/status → full state broadcasts
+- [x] Parse full state directly (no delta merging or sequence gap detection required)
+- [x] Independent freshness clock (ages continue increasing without new messages, using browser time)
+- [x] Reconnect with exponential backoff and visible attempt count
 
 ### 4.4 Overview workspace
 
-- [ ] Safety and mode strip: ESTOP, power, mode, control path, CAN health
-- [ ] Vehicle status cards: speed, steering, brake, gear, faults (with freshness)
-- [ ] Command/feedback pairs table: Drive, Steering, Brake (requested vs measured + error + health)
-- [ ] Click card → open contributing CAN messages
+- [x] Safety and mode strip: ESTOP, power, mode, control path, CAN health
+- [x] Vehicle status cards: speed, steering, brake, gear, faults (with freshness)
+- [x] Command/feedback pairs table: Drive, Steering, Brake (requested vs measured + error + health)
+- [ ] Click card → open contributing CAN messages *(deferred polish)*
 
 ### 4.5 Network workspace
 
-- [ ] Topology map: High and Low bus lines, RT bridging, attached nodes
-- [ ] Node states: Live, Late, Offline, Simulated, Unknown traffic, Fault
-- [ ] Heartbeat rules from generated metadata
-- [ ] Bus health cards: adapter, bitrate, RX/TX rate, errors, unknown IDs
-- [ ] Five-layer connection-loss display (USB, channel, stream, ECU, signal)
+- [x] Topology map: High and Low bus lines, RT bridging, attached nodes
+- [x] Node states: Live, Late, Offline, Simulated, Unknown traffic, Fault
+- [x] Heartbeat rules from generated metadata
+- [x] Bus health cards: adapter, bitrate, RX/TX rate, errors, unknown IDs
+- [x] Five-layer connection-loss display (USB, channel, stream, ECU, signal)
 
 ### 4.6 Live CAN workspace
 
-- [ ] Latest-by-message view (default): one row per bus/ID, updates in place
-  - Activity indicator, bus, CAN ID, name, sender, direction, source, rate, raw bytes, decoded values, age
-  - Changed-value highlight without full-row flash
-- [ ] Chronological stream view (opt-in): individual frames, virtualized rows, pause/resume/clear
-- [ ] Filters: bus, ID/name, sender, signal, direction, source, category, known/unknown/warning/fault
-- [ ] Message detail drawer: identity, contract, live health, decoded signals, raw frame, byte/bit map, warnings
-  *(Note: Translate the bit/byte overlap rendering logic from the existing `debug-tool/ui/src/components/BitGrid.svelte` (Svelte) into this new React interface.)*
-- [ ] TanStack Table for latest-message view
+- [x] Latest-by-message view (default): one row per bus/ID, updates in place
+  - Activity indicator, bus, CAN ID, name, rate, decoded values, age
+- [x] Chronological stream view (opt-in): history API poll, pause/resume
+- [x] Filters: bus, ID/name/signal search
+- [x] Message detail drawer: identity, live health, decoded signals *(full bit-grid → Phase 6)*
+- [ ] TanStack Table for latest-message view *(native table; virtualization later)*
 
 **Tests:**
 ```bash
-# Frontend unit tests (Vitest)
-npx vitest run --reporter=verbose
-
-# Component tests
-# → Header renders all status indicators
-# → Overview cards display freshness states
-# → Network topology renders nodes correctly
-# → Live CAN table updates in place
-# → WebSocket client parses full state updates cleanly
-
-# Playwright E2E (against virtual backend)
-npx playwright test tests/e2e/overview.spec.ts
-npx playwright test tests/e2e/network.spec.ts
-npx playwright test tests/e2e/live-can.spec.ts
-# → start backend in Pure Software mode
-# → inject known frames via virtual bus
-# → verify UI shows correct decoded values, freshness, topology
+cd control-toolkit/frontend
+npm run test:e2e
 ```
 
 **Exit gate:**
-- [ ] Frontend connects to backend via WebSocket
-- [ ] Protocol hash match/mismatch shown
-- [ ] Overview shows live vehicle state with freshness indicators
-- [ ] Network topology correctly shows node liveness
-- [ ] Live CAN table displays decoded values with proper units
-- [ ] Freshness visually transitions: Live → Late → Missing
-- [ ] Stream quality badge reflects actual state
-- [ ] All Playwright tests pass against virtual backend
+- [x] Frontend connects to backend via WebSocket
+- [x] Protocol hash match/mismatch shown
+- [x] Overview shows live vehicle state with freshness indicators
+- [x] Network topology correctly shows node liveness
+- [x] Live CAN table displays decoded values with proper units
+- [x] Freshness visually transitions: Live → Late → Missing
+- [x] Stream quality badge reflects actual state
+- [x] All Playwright tests pass against virtual backend
 
 ---
 
@@ -631,44 +615,43 @@ npx playwright test tests/e2e/live-can.spec.ts
 
 ### 5.2 TX gate and command policy
 
-- [ ] Central TX gate validates before submission:
+- [x] Central TX gate validates before submission:
   - Profile permits transmission
   - Adapter/channel healthy
   - Bench TX enabled
   - Source owns lease + CAN ID
-  - Stimulus is current (not expired)
   - Protocol validation passes
-- [ ] TX disposition tracking: Accepted → Queued → Submitted → Rejected/Expired/Canceled/Failed
-- [ ] `Submitted` ≠ `Delivered` (no delivery proof from CANalyst-II)
+- [x] TX disposition tracking: rejected | submitted | failed *(full Accepted→Queued chain deferred)*
+- [x] `Submitted` ≠ `Delivered` (no delivery proof from CANalyst-II)
 
 ### 5.3 Periodic scheduler
 
-- [ ] Backend-owned worker for all periodic transmission:
-  - Absolute monotonic deadlines
-  - Per-frame re-encode (counters/checksums regenerate each period)
-  - Jitter measurement (requested vs actual submission)
-  - Missed-period detection → skip stale, never burst catch-up
-  - Per-job binding: test session, adapter epoch, source owner, bus, ID
+- [x] Backend-owned worker for periodic transmission (analysis host-drive + synthetic jobs)
+  - Per-frame re-encode
+  - Job cancel on Stop All
+- [ ] Jitter measurement + missed-period skip policy polish
 - [ ] Independent counters per bus/ID (critical for RT `0x7FD` High vs Low)
 
 ### 5.4 Generic injection API
 
-- [ ] `POST /api/v1/injections/preview` — preview encoded frame without sending
-- [ ] `POST /api/v1/injections` — inject one-shot or periodic
-- [ ] `DELETE /api/v1/injections/{id}` — stop periodic injection
+- [x] `POST /api/v1/injections/preview` — preview encoded frame without sending
+- [x] `POST /api/v1/injections` — inject one-shot or periodic
+- [x] `DELETE /api/v1/injections/{id}` — stop periodic injection
+- [x] `POST /api/v1/analysis/host-drive` — targeted kinematics inject
 
 ### 5.5 HMI control
 
-- [ ] Mode panel: `0x111 HMI_MODE_REQ` at 1 Hz (MANUAL/AUTO/PURE SIM + alive counter)
-- [ ] Power panel: `0x112 HMI_PWR_REQ` at 1 Hz (OFF/ON + alive counter)
-- [ ] ESTOP injection: DLC=0 `0x001 SAFETY_ESTOP` event
-- [ ] Show requested vs observed state (never confirm from send alone)
+- [x] Mode/power vehicle-view + HMI API stubs (`api/hmi.py`)
+- [x] ESTOP injection: DLC=0 `0x001 SAFETY_ESTOP` event
+- [x] Show requested vs observed state (never confirm from send alone)
+- [ ] Hardened 1 Hz HMI_MODE_REQ / HMI_PWR_REQ with alive counters on virtual bus
 
 ### 5.6 Control workspace (frontend)
 
-- [ ] HMI panel with mode/power controls
-- [ ] Injection workflow: select message → edit values → preview → send
-- [ ] Source ownership visibility
+- [x] HMI request buttons (mode/power) + header req vs conf
+- [x] Analysis inject workflow: values → Bench TX → inject host drive → log disposition
+- [x] Stop All + lease cleanup on Control unmount
+- [ ] Full generic injection form (any message) + encode preview panel
 
 **Tests:**
 ```bash

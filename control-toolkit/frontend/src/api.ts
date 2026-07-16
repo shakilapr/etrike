@@ -46,6 +46,23 @@ export const api = {
     json<{ sequence: number; messages: import('./store').MessageState[] }>('/state'),
   topology: () =>
     json<{ nodes: import('./store').TopologyNode[] }>('/topology'),
+  history: (limit = 200) =>
+    json<{
+      metrics: Record<string, unknown>
+      frames: Array<{
+        global_sequence: number
+        channel_sequence: number
+        bus: string
+        can_id: number
+        dlc: number
+        data_hex: string
+        is_extended: boolean
+        direction: string
+        source: string
+        backend_arrival_ns: number
+        adapter_epoch: number
+      }>
+    }>(`/history?limit=${limit}`),
   protocolMessages: () =>
     json<{
       count: number
