@@ -4,14 +4,15 @@ import { api } from './api'
 
 function wsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const host = window.location.host
-  return `${proto}://${host}/api/v1/stream`
+  return `${proto}://${window.location.host}/api/v1/stream`
 }
 
 export function useBackendStream() {
   const setStatus = useAppStore((s) => s.setStatus)
   const setMessages = useAppStore((s) => s.setMessages)
+  const setTopology = useAppStore((s) => s.setTopology)
   const setStreamQuality = useAppStore((s) => s.setStreamQuality)
+  const setReconnectAttempts = useAppStore((s) => s.setReconnectAttempts)
   const setProtocolMismatch = useAppStore((s) => s.setProtocolMismatch)
   const statusWireHash = useRef<string | null>(null)
 
@@ -23,12 +24,13 @@ export function useBackendStream() {
     let lastMsg = Date.now()
     let watch: number | undefined
 
-    async function refreshStatus() {
+    async function refresh() {
       try {
-        const st = await api.status()
+        const [st, topo] = await Promise.all([api.status(), api.topology()])
         if (closed) return
         statusWireHash.current = st.wire_hash
         setStatus(st)
+        setTopology(topo.nodes || [])
       } catch {
         /* ignore */
       }
@@ -36,12 +38,14 @@ export function useBackendStream() {
 
     function connect() {
       setStreamQuality(retry === 0 ? 'connecting' : 'delayed')
+      setReconnectAttempts(retry)
       ws = new WebSocket(wsUrl())
       ws.onopen = () => {
         retry = 0
+        setReconnectAttempts(0)
         setStreamQuality('live')
         lastMsg = Date.now()
-        void refreshStatus()
+        void refresh()
       }
       ws.onmessage = (ev) => {
         lastMsg = Date.now()
@@ -56,8 +60,8 @@ export function useBackendStream() {
           if (msg.wire_hash && statusWireHash.current) {
             setProtocolMismatch(msg.wire_hash !== statusWireHash.current)
           }
-          if (msg.type === 'hello' && msg.wire_hash) {
-            if (!statusWireHash.current) statusWireHash.current = msg.wire_hash
+          if (msg.type === 'hello' && msg.wire_hash && !statusWireHash.current) {
+            statusWireHash.current = msg.wire_hash
           }
           if (msg.type === 'state' && Array.isArray(msg.messages)) {
             setMessages(msg.messages as never[], msg.sequence ?? 0)
@@ -71,29 +75,34 @@ export function useBackendStream() {
         setStreamQuality('lost')
         const delay = Math.min(8000, 500 * 2 ** retry)
         retry += 1
+        setReconnectAttempts(retry)
         timer = window.setTimeout(connect, delay)
       }
       ws.onerror = () => ws?.close()
     }
 
-    void refreshStatus()
+    void refresh()
     connect()
     watch = window.setInterval(() => {
       const age = Date.now() - lastMsg
       if (age > 1500) setStreamQuality('lost')
       else if (age > 750) setStreamQuality('delayed')
     }, 250)
-
-    const statusPoll = window.setInterval(() => {
-      void refreshStatus()
-    }, 2000)
+    const poll = window.setInterval(() => void refresh(), 2000)
 
     return () => {
       closed = true
       if (timer) window.clearTimeout(timer)
       if (watch) window.clearInterval(watch)
-      window.clearInterval(statusPoll)
+      window.clearInterval(poll)
       ws?.close()
     }
-  }, [setMessages, setProtocolMismatch, setStatus, setStreamQuality])
+  }, [
+    setMessages,
+    setProtocolMismatch,
+    setReconnectAttempts,
+    setStatus,
+    setStreamQuality,
+    setTopology,
+  ])
 }

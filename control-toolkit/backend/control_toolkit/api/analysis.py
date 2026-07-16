@@ -67,6 +67,7 @@ def host_drive(request: Request, body: HostDriveBody) -> dict:
         "mode": "oneshot",
         "disposition": result.disposition,
         "request_id": result.request_id,
+        "lease_id": result.lease_id,
         "can_id": enc.can_id if enc else 0x300,
         "data_hex": enc.data.hex() if enc else "",
         "values": values,

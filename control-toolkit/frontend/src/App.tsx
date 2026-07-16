@@ -1,8 +1,25 @@
-import { useCallback, useState } from 'react'
-import { useAppStore, type MessageState } from './store'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useAppStore, type MessageState, type TopologyNode, type Workspace } from './store'
 import { useBackendStream } from './useStream'
-import { api } from './api'
+import { api, type ProfileInfo } from './api'
 import './App.css'
+
+const WORKSPACES: { id: Workspace; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'network', label: 'Network' },
+  { id: 'live', label: 'Live CAN' },
+  { id: 'control', label: 'Control' },
+  { id: 'bench', label: 'Bench' },
+  { id: 'dictionary', label: 'CAN Dictionary' },
+  { id: 'diagnostics', label: 'Diagnostics' },
+  { id: 'settings', label: 'Settings' },
+]
+
+const PROFILE_LABELS: Record<string, string> = {
+  pure_software: 'Pure Software',
+  bench_test: 'Bench Test',
+  full_vehicle: 'Full Vehicle',
+}
 
 function FreshnessBadge({ value }: { value: string }) {
   return (
@@ -12,38 +29,122 @@ function FreshnessBadge({ value }: { value: string }) {
   )
 }
 
+function LivenessBadge({ value }: { value: string }) {
+  return (
+    <span className={`live-badge live-${value.toLowerCase()}`}>{value}</span>
+  )
+}
+
 function signalText(m: MessageState | undefined, key: string): string {
   if (!m?.signals?.[key]) return '—'
   const s = m.signals[key]
   return String(s.enum_label ?? s.engineering_value ?? '—')
 }
 
+function findMsg(messages: MessageState[], name: string, bus?: string) {
+  return messages.find((m) => m.name === name && (bus == null || m.bus === bus))
+}
+
+function ageMs(lastSeenNs?: number | null): string {
+  if (lastSeenNs == null) return '—'
+  const ms = Math.max(0, Date.now() - lastSeenNs / 1e6)
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(1)} s`
+}
+
+function hexId(id: number) {
+  return `0x${id.toString(16).toUpperCase()}`
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────── */
+
 function Topbar() {
   const status = useAppStore((s) => s.status)
   const quality = useAppStore((s) => s.streamQuality)
   const mismatch = useAppStore((s) => s.protocolMismatch)
+  const reconnect = useAppStore((s) => s.reconnectAttempts)
+  const ses = status?.session
   const high = status?.adapter?.channels?.high
   const low = status?.adapter?.channels?.low
+  const profileId = ses?.profile ?? status?.profile ?? '—'
+  const profileLabel = PROFILE_LABELS[profileId] ?? profileId
+
+  async function injectEstop() {
+    try {
+      await api.injectEstop()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   return (
     <header className="topbar" data-testid="topbar">
       <div className="brand">Control Toolkit</div>
-      <div className="chip" data-testid="chip-profile">
-        profile: {status?.session?.profile ?? status?.profile ?? '—'}
+
+      <div className="chip" data-testid="chip-profile" title="Active operating profile">
+        <span className="chip-k">Profile</span>
+        <span className="chip-v">{profileLabel}</span>
+      </div>
+      <div className="chip" data-testid="chip-destination">
+        <span className="chip-k">Dest</span>
+        <span className="chip-v">{ses?.destination ?? '—'}</span>
       </div>
       <div className="chip" data-testid="chip-adapter">
-        adapter: {status?.adapter?.health ?? '—'}
+        <span className="chip-k">Adapter</span>
+        <span className="chip-v">{status?.adapter?.health ?? '—'}</span>
       </div>
       <div className="chip" data-testid="chip-high">
-        high: {high?.activity ?? '—'} ({high?.rx_count ?? 0})
+        <span className="chip-k">High</span>
+        <span className="chip-v">
+          {high?.activity ?? '—'} · rx {high?.rx_count ?? 0}
+        </span>
       </div>
       <div className="chip" data-testid="chip-low">
-        low: {low?.activity ?? '—'} ({low?.rx_count ?? 0})
+        <span className="chip-k">Low</span>
+        <span className="chip-v">
+          {low?.activity ?? '—'} · rx {low?.rx_count ?? 0}
+        </span>
+      </div>
+      <div className="chip" data-testid="chip-mode" title="Requested vs confirmed vehicle mode">
+        <span className="chip-k">Mode</span>
+        <span className="chip-v">
+          Req {ses?.requested_mode ?? '—'} · Veh {ses?.confirmed_mode ?? '—'}
+        </span>
+      </div>
+      <div className="chip" data-testid="chip-power" title="Requested vs confirmed power">
+        <span className="chip-k">Power</span>
+        <span className="chip-v">
+          Req {ses?.requested_power ?? '—'} · Veh {ses?.confirmed_power ?? '—'}
+        </span>
+      </div>
+      <div
+        className={`chip ${ses?.estop_active ? 'danger' : ''}`}
+        data-testid="chip-estop"
+      >
+        <span className="chip-k">ESTOP</span>
+        <span className="chip-v">{ses?.estop_active ? 'ACTIVE' : 'clear'}</span>
+      </div>
+      <div className="chip" data-testid="chip-record">
+        <span className="chip-k">Rec</span>
+        <span className="chip-v">{ses?.recording ? 'on' : 'off'}</span>
       </div>
       <div className="chip" data-testid="chip-bench-tx">
-        bench TX: {status?.session?.bench_tx ?? 'disabled'}
+        <span className="chip-k">Bench TX</span>
+        <span className="chip-v">{ses?.bench_tx ?? 'disabled'}</span>
+      </div>
+      <div className="chip" data-testid="chip-phase">
+        <span className="chip-k">Session</span>
+        <span className="chip-v">
+          {ses?.phase ?? 'stopped'}
+          {ses?.session_id ? ` · ${ses.session_id.slice(0, 10)}` : ''}
+        </span>
       </div>
       <div className={`chip quality-${quality}`} data-testid="chip-stream">
-        stream: {quality.toUpperCase()}
+        <span className="chip-k">Stream</span>
+        <span className="chip-v">
+          {quality.toUpperCase()}
+          {reconnect > 0 ? ` · retry ${reconnect}` : ''}
+        </span>
       </div>
       {mismatch && (
         <div className="chip danger" data-testid="chip-mismatch">
@@ -51,8 +152,18 @@ function Topbar() {
         </div>
       )}
       <div className="chip mono muted" data-testid="chip-hash">
-        hash: {(status?.wire_hash ?? '').slice(0, 12)}…
+        {(status?.wire_hash ?? '').slice(0, 12) || '—'}…
       </div>
+
+      <button
+        type="button"
+        className="btn-estop"
+        data-testid="btn-header-estop"
+        title="Inject SAFETY_ESTOP (DLC=0) test frame — requires Bench TX"
+        onClick={() => void injectEstop()}
+      >
+        Inject ESTOP
+      </button>
     </header>
   )
 }
@@ -61,50 +172,100 @@ function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
   return (
-    <nav className="sidebar" data-testid="sidebar">
-      {(['overview', 'live', 'control'] as const).map((w) => (
+    <nav className="sidebar" data-testid="sidebar" aria-label="Primary workspaces">
+      {WORKSPACES.map((w) => (
         <button
-          key={w}
+          key={w.id}
           type="button"
-          data-testid={`nav-${w}`}
-          className={workspace === w ? 'nav active' : 'nav'}
-          onClick={() => setWorkspace(w)}
+          data-testid={`nav-${w.id}`}
+          className={workspace === w.id ? 'nav active' : 'nav'}
+          onClick={() => setWorkspace(w.id)}
         >
-          {w}
+          {w.label}
         </button>
       ))}
     </nav>
   )
 }
 
+/* ── Overview ──────────────────────────────────────────────────────── */
+
 function Overview() {
   const messages = useAppStore((s) => s.messages)
   const status = useAppStore((s) => s.status)
-  const drive = messages.find((m) => m.name === 'HOST_DRIVE_CMD')
+  const quality = useAppStore((s) => s.streamQuality)
+  const drive = findMsg(messages, 'HOST_DRIVE_CMD')
+  const motor = findMsg(messages, 'MTR_MOTOR_FBK')
+  const sesStatus = findMsg(messages, 'SES_STATUS')
+  const sebStatus = findMsg(messages, 'SEB_STATUS')
+  const ses = status?.session
+
+  const canHealth =
+    quality === 'live'
+      ? 'healthy'
+      : quality === 'delayed'
+        ? 'degraded'
+        : quality === 'lost'
+          ? 'lost'
+          : 'unknown'
+
   return (
     <div className="workspace" data-testid="workspace-overview">
-      <h1>Overview</h1>
-      <p className="muted">
-        Analysis mode (safety-bypass style): inject only signals under study — not a full
-        synthetic vehicle. Session {status?.session?.session_id ?? 'none'} · frames{' '}
-        {messages.length}
-      </p>
+      <header className="ws-header">
+        <h1>Overview</h1>
+        <p className="muted">
+          Vehicle state and immediate health · session {ses?.session_id ?? 'none'} ·{' '}
+          {messages.length} live messages
+        </p>
+      </header>
+
+      <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
+        <div className={`strip-item ${ses?.estop_active ? 'hazard' : 'ok'}`}>
+          <span className="strip-k">ESTOP</span>
+          <span className="strip-v">{ses?.estop_active ? 'ACTIVE' : 'Clear'}</span>
+        </div>
+        <div className="strip-item">
+          <span className="strip-k">Power</span>
+          <span className="strip-v">
+            Req {ses?.requested_power ?? '—'} / Conf {ses?.confirmed_power ?? '—'}
+          </span>
+        </div>
+        <div className="strip-item">
+          <span className="strip-k">Mode</span>
+          <span className="strip-v">
+            Req {ses?.requested_mode ?? '—'} / Conf {ses?.confirmed_mode ?? '—'}
+          </span>
+        </div>
+        <div className="strip-item">
+          <span className="strip-k">Control path</span>
+          <span className="strip-v">
+            {ses?.bench_tx === 'enabled' ? 'analysis inject' : 'none'}
+          </span>
+        </div>
+        <div className={`strip-item health-${canHealth}`}>
+          <span className="strip-k">CAN health</span>
+          <span className="strip-v">{canHealth}</span>
+        </div>
+      </section>
+
       <div className="cards">
         <div className="card" data-testid="card-yaw">
-          <div className="card-title">Yaw rate (HOST_DRIVE_CMD)</div>
+          <div className="card-title">Yaw rate</div>
           {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           <div className="metric" data-testid="metric-yaw">
             {signalText(drive, 'yaw_rate_mrad_s')}
             <span className="unit"> mrad/s</span>
           </div>
+          <div className="card-sub muted">HOST_DRIVE_CMD</div>
         </div>
         <div className="card" data-testid="card-speed">
-          <div className="card-title">Speed (HOST_DRIVE_CMD)</div>
+          <div className="card-title">Speed request</div>
           {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           <div className="metric" data-testid="metric-speed">
             {signalText(drive, 'speed_mmps')}
             <span className="unit"> mm/s</span>
           </div>
+          <div className="card-sub muted">HOST_DRIVE_CMD</div>
         </div>
         <div className="card" data-testid="card-gear">
           <div className="card-title">Gear</div>
@@ -113,67 +274,365 @@ function Overview() {
             {signalText(drive, 'gear')}
           </div>
         </div>
+        <div className="card" data-testid="card-motor">
+          <div className="card-title">Motor feedback</div>
+          {motor ? <FreshnessBadge value={motor.freshness} /> : null}
+          <div className="metric">{motor ? signalText(motor, 'speed_mmps') : '—'}</div>
+          <div className="card-sub muted">MTR_MOTOR_FBK</div>
+        </div>
         <div className="card" data-testid="card-ready">
           <div className="card-title">Backend</div>
           <div className="metric">{status?.ready ? 'ready' : 'not ready'}</div>
           <div className="mono muted">{status?.adapter?.health ?? '—'}</div>
         </div>
       </div>
+
+      <section className="panel" data-testid="cmd-feedback">
+        <h2>Command / feedback</h2>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Command</th>
+              <th>Feedback</th>
+              <th>Difference</th>
+              <th>Health</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Drive</td>
+              <td className="mono">
+                {signalText(drive, 'speed_mmps')} mm/s
+              </td>
+              <td className="mono">
+                {motor ? `${signalText(motor, 'speed_mmps')} mm/s` : '—'}
+              </td>
+              <td className="muted">—</td>
+              <td>{drive ? <FreshnessBadge value={drive.freshness} /> : '—'}</td>
+            </tr>
+            <tr>
+              <td>Steering</td>
+              <td className="mono">
+                {signalText(drive, 'yaw_rate_mrad_s')} mrad/s
+              </td>
+              <td className="mono">{sesStatus ? 'SES_STATUS' : '—'}</td>
+              <td className="muted">—</td>
+              <td>
+                {sesStatus ? <FreshnessBadge value={sesStatus.freshness} /> : '—'}
+              </td>
+            </tr>
+            <tr>
+              <td>Brake</td>
+              <td className="muted">—</td>
+              <td className="mono">{sebStatus ? 'SEB_STATUS' : '—'}</td>
+              <td className="muted">—</td>
+              <td>
+                {sebStatus ? <FreshnessBadge value={sebStatus.freshness} /> : '—'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
     </div>
   )
 }
+
+/* ── Network ───────────────────────────────────────────────────────── */
+
+function busNodes(nodes: TopologyNode[], bus: string) {
+  return nodes.filter((n) => n.bus === bus)
+}
+
+function Network() {
+  const topology = useAppStore((s) => s.topology)
+  const status = useAppStore((s) => s.status)
+  const quality = useAppStore((s) => s.streamQuality)
+  const high = status?.adapter?.channels?.high
+  const low = status?.adapter?.channels?.low
+  const highNodes = busNodes(topology, 'high')
+  const lowNodes = busNodes(topology, 'low')
+
+  return (
+    <div className="workspace" data-testid="workspace-network">
+      <header className="ws-header">
+        <h1>Network</h1>
+        <p className="muted">
+          ECU topology and bus health · High and Low never collapsed into one lamp
+        </p>
+      </header>
+
+      <section className="bus-health" data-testid="bus-health">
+        <div className="health-card">
+          <h3>High bus</h3>
+          <dl className="kv">
+            <dt>Activity</dt>
+            <dd>{high?.activity ?? '—'}</dd>
+            <dt>RX frames</dt>
+            <dd className="mono">{high?.rx_count ?? 0}</dd>
+            <dt>TX frames</dt>
+            <dd className="mono">{high?.tx_count ?? 0}</dd>
+            <dt>Overflow</dt>
+            <dd className="mono">{high?.rx_overflow ?? 0}</dd>
+          </dl>
+        </div>
+        <div className="health-card">
+          <h3>Low bus</h3>
+          <dl className="kv">
+            <dt>Activity</dt>
+            <dd>{low?.activity ?? '—'}</dd>
+            <dt>RX frames</dt>
+            <dd className="mono">{low?.rx_count ?? 0}</dd>
+            <dt>TX frames</dt>
+            <dd className="mono">{low?.tx_count ?? 0}</dd>
+            <dt>Overflow</dt>
+            <dd className="mono">{low?.rx_overflow ?? 0}</dd>
+          </dl>
+        </div>
+        <div className="health-card">
+          <h3>Connection layers</h3>
+          <dl className="kv">
+            <dt>USB adapter</dt>
+            <dd>{status?.adapter?.health ?? '—'}</dd>
+            <dt>Backend stream</dt>
+            <dd>{quality}</dd>
+            <dt>Destination</dt>
+            <dd>{status?.session?.destination ?? '—'}</dd>
+            <dt>Adapter epoch</dt>
+            <dd className="mono">{status?.adapter?.adapter_epoch ?? '—'}</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section className="topology" data-testid="topology-map">
+        <h2>Topology map</h2>
+        <div className="bus-row">
+          <div className="bus-label">High</div>
+          <div className="bus-line high">
+            {(highNodes.length ? highNodes : [
+              { node: 'Host', bus: 'high', can_id: 0x7fc, liveness: 'offline', freshness: 'unseen' },
+              { node: 'RT_high', bus: 'high', can_id: 0x7fd, liveness: 'offline', freshness: 'unseen' },
+            ]).map((n) => (
+              <div
+                key={`${n.bus}-${n.node}`}
+                className={`topo-node liveness-${n.liveness}`}
+                data-testid={`node-${n.node}`}
+                title={`${n.node} ${hexId(n.can_id)} · ${n.liveness}`}
+              >
+                <div className="topo-name">{n.node}</div>
+                <div className="mono muted">{hexId(n.can_id)}</div>
+                <LivenessBadge value={n.liveness} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bus-bridge muted">RT gateway bridges High ↔ Low domains</div>
+        <div className="bus-row">
+          <div className="bus-label">Low</div>
+          <div className="bus-line low">
+            {(lowNodes.length ? lowNodes : [
+              { node: 'RT_low', bus: 'low', can_id: 0x7fd, liveness: 'offline', freshness: 'unseen' },
+              { node: 'SYS', bus: 'low', can_id: 0x7fe, liveness: 'offline', freshness: 'unseen' },
+              { node: 'MTR', bus: 'low', can_id: 0x206, liveness: 'offline', freshness: 'unseen' },
+            ]).map((n) => (
+              <div
+                key={`${n.bus}-${n.node}`}
+                className={`topo-node liveness-${n.liveness}`}
+                data-testid={`node-${n.node}`}
+                title={`${n.node} ${hexId(n.can_id)} · ${n.liveness}`}
+              >
+                <div className="topo-name">{n.node}</div>
+                <div className="mono muted">{hexId(n.can_id)}</div>
+                <LivenessBadge value={n.liveness} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+/* ── Live CAN ──────────────────────────────────────────────────────── */
 
 function LiveCan() {
   const messages = useAppStore((s) => s.messages)
-  const sorted = [...messages].sort(
-    (a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id,
+  const liveFilter = useAppStore((s) => s.liveFilter)
+  const setLiveFilter = useAppStore((s) => s.setLiveFilter)
+  const selected = useAppStore((s) => s.selectedMessageKey)
+  const setSelected = useAppStore((s) => s.setSelectedMessageKey)
+  const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
+
+  const filtered = useMemo(() => {
+    const q = liveFilter.trim().toLowerCase()
+    return [...messages]
+      .filter((m) => (busFilter === 'both' ? true : m.bus === busFilter))
+      .filter((m) => {
+        if (!q) return true
+        const id = hexId(m.can_id).toLowerCase()
+        const name = (m.name || '').toLowerCase()
+        const sigs = Object.keys(m.signals || {}).join(' ').toLowerCase()
+        return id.includes(q) || name.includes(q) || sigs.includes(q) || m.bus.includes(q)
+      })
+      .sort((a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id)
+  }, [messages, liveFilter, busFilter])
+
+  const detail = filtered.find(
+    (m) => `${m.bus}-${m.can_id}` === selected || m.key === selected,
   )
+
   return (
-    <div className="workspace" data-testid="workspace-live">
-      <h1>Live CAN</h1>
-      <table className="can-table" data-testid="live-can-table">
-        <thead>
-          <tr>
-            <th>Fresh</th>
-            <th>Bus</th>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Valid</th>
-            <th>Signals</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((m) => (
-            <tr key={`${m.bus}-${m.can_id}`} data-testid={`row-${m.bus}-${m.can_id}`}>
-              <td>
-                <FreshnessBadge value={m.freshness} />
-              </td>
-              <td>{m.bus}</td>
-              <td className="mono">0x{m.can_id.toString(16).toUpperCase()}</td>
-              <td>{m.name}</td>
-              <td>{m.validation_status}</td>
-              <td className="signals-cell">
-                {Object.entries(m.signals || {})
-                  .map(([k, v]) => `${k}=${v.enum_label ?? v.engineering_value}`)
-                  .join(' · ')}
-              </td>
-            </tr>
+    <div className="workspace live-layout" data-testid="workspace-live">
+      <header className="ws-header">
+        <h1>Live CAN</h1>
+        <p className="muted">Latest-by-message · updates in place · {filtered.length} rows</p>
+      </header>
+
+      <div className="toolbar">
+        <input
+          data-testid="live-filter"
+          className="search"
+          placeholder="Filter ID, name, signal…"
+          value={liveFilter}
+          onChange={(e) => setLiveFilter(e.target.value)}
+        />
+        <div className="seg">
+          {(['both', 'high', 'low'] as const).map((b) => (
+            <button
+              key={b}
+              type="button"
+              className={busFilter === b ? 'seg-btn active' : 'seg-btn'}
+              data-testid={`filter-bus-${b}`}
+              onClick={() => setBusFilter(b)}
+            >
+              {b === 'both' ? 'Both buses' : b}
+            </button>
           ))}
-          {sorted.length === 0 && (
-            <tr>
-              <td colSpan={6} className="muted">
-                No frames yet — use Control to enable Bench TX and inject host drive (yaw/speed).
-              </td>
-            </tr>
+        </div>
+      </div>
+
+      <div className="live-split">
+        <div className="table-wrap">
+          <table className="can-table" data-testid="live-can-table">
+            <thead>
+              <tr>
+                <th>Fresh</th>
+                <th>Bus</th>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Rate, Hz</th>
+                <th>Valid</th>
+                <th>Age</th>
+                <th>Signals</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((m) => {
+                const key = m.key || `${m.bus}-${m.can_id}`
+                return (
+                  <tr
+                    key={key}
+                    data-testid={`row-${m.bus}-${m.can_id}`}
+                    className={selected === key ? 'selected' : undefined}
+                    onClick={() => setSelected(key)}
+                  >
+                    <td>
+                      <FreshnessBadge value={m.freshness} />
+                    </td>
+                    <td>{m.bus}</td>
+                    <td className="mono">{hexId(m.can_id)}</td>
+                    <td>{m.name}</td>
+                    <td className="num mono">
+                      {m.observed_rate_hz != null
+                        ? m.observed_rate_hz.toFixed(1)
+                        : '—'}
+                      {m.expected_rate_hz != null
+                        ? ` / ${m.expected_rate_hz}`
+                        : ''}
+                    </td>
+                    <td>{m.validation_status}</td>
+                    <td className="mono muted">{ageMs(m.last_seen_ns)}</td>
+                    <td className="signals-cell">
+                      {Object.entries(m.signals || {})
+                        .map(([k, v]) => `${k}=${v.enum_label ?? v.engineering_value}`)
+                        .join(' · ')}
+                    </td>
+                  </tr>
+                )
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    No frames yet — open Control, enable Bench TX, inject host drive.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <aside className="detail-drawer" data-testid="live-detail">
+          <h2>Message detail</h2>
+          {!detail && <p className="muted">Select a row to inspect identity, health, and signals.</p>}
+          {detail && (
+            <>
+              <dl className="kv">
+                <dt>Identity</dt>
+                <dd className="mono">
+                  {detail.bus} {hexId(detail.can_id)} · {detail.name}
+                </dd>
+                <dt>Freshness</dt>
+                <dd>
+                  <FreshnessBadge value={detail.freshness} />
+                </dd>
+                <dt>Validation</dt>
+                <dd>{detail.validation_status}</dd>
+                <dt>Observed rate</dt>
+                <dd className="mono">
+                  {detail.observed_rate_hz?.toFixed(2) ?? '—'} Hz
+                  {detail.expected_rate_hz != null
+                    ? ` (expected ${detail.expected_rate_hz})`
+                    : ''}
+                </dd>
+                <dt>Last seen</dt>
+                <dd className="mono">{ageMs(detail.last_seen_ns)} ago</dd>
+              </dl>
+              <h3>Signals</h3>
+              <table className="data-table compact">
+                <thead>
+                  <tr>
+                    <th>Signal</th>
+                    <th>Value</th>
+                    <th>Raw</th>
+                    <th>Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(detail.signals || {}).map(([k, v]) => (
+                    <tr key={k}>
+                      <td>{k}</td>
+                      <td className="mono">
+                        {String(v.enum_label ?? v.engineering_value ?? '—')}
+                      </td>
+                      <td className="mono muted">{v.raw_value ?? '—'}</td>
+                      <td className="muted">{v.unit ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
-        </tbody>
-      </table>
+        </aside>
+      </div>
     </div>
   )
 }
 
+/* ── Control ───────────────────────────────────────────────────────── */
+
 function Control() {
   const setStatus = useAppStore((s) => s.setStatus)
+  const status = useAppStore((s) => s.status)
   const [log, setLog] = useState('')
   const [busy, setBusy] = useState(false)
   const [speed, setSpeed] = useState(500)
@@ -181,6 +640,21 @@ function Control() {
   const [gear, setGear] = useState(1)
   const [periodMs, setPeriodMs] = useState(100)
   const [periodic, setPeriodic] = useState(true)
+  const [leaseId, setLeaseId] = useState<string | null>(null)
+  const leaseRef = useRef<string | null>(null)
+  leaseRef.current = leaseId
+
+  // Clear control intent / lease on unmount (architecture safety invariant).
+  useEffect(() => {
+    return () => {
+      const st = useAppStore.getState().status
+      const lid = leaseRef.current
+      if (lid && st?.session?.session_id) {
+        void api.releaseLease(st.session.session_id, lid).catch(() => undefined)
+      }
+      void api.stopAnalysis().catch(() => undefined)
+    }
+  }, [])
 
   const refresh = useCallback(async () => {
     const st = await api.status()
@@ -218,12 +692,16 @@ function Control() {
     setBusy(true)
     try {
       await ensureSessionReady()
+      // TX gate claims ownership as analysis:host_drive — do not pre-claim
+      // under a different owner (would conflict on bus+ID).
       const res = await api.hostDrive({
         speed_mmps: speed,
         yaw_rate_mrad_s: yaw,
         gear,
         period_ms: periodic ? periodMs : null,
       })
+      const lid = (res as { lease_id?: string }).lease_id
+      if (typeof lid === 'string') setLeaseId(lid)
       setLog(`host-drive: ${JSON.stringify(res)}`)
       await refresh()
     } catch (e) {
@@ -241,7 +719,36 @@ function Control() {
         await api.stopAll(st.session.session_id, st.session.revision)
       }
       await api.stopAnalysis().catch(() => undefined)
+      setLeaseId(null)
       setLog('Stop All / analysis stopped')
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setMode(mode: string) {
+    setBusy(true)
+    try {
+      const st = await ensureSessionReady()
+      await api.vehicleView(st.session.session_id!, { requested_mode: mode })
+      setLog(`Requested mode: ${mode} (confirmed remains independent)`)
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setPower(power: string) {
+    setBusy(true)
+    try {
+      const st = await ensureSessionReady()
+      await api.vehicleView(st.session.session_id!, { requested_power: power })
+      setLog(`Requested power: ${power}`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -252,91 +759,417 @@ function Control() {
 
   return (
     <div className="workspace" data-testid="workspace-control">
-      <h1>Control</h1>
-      <p className="muted">
-        Safety-bypass style: do not fake the whole network. Inject only the host drive
-        command under analysis (yaw rate, speed, gear) on the virtual high bus.
-      </p>
+      <header className="ws-header">
+        <h1>Control</h1>
+        <p className="muted">
+          HMI requests, kinematics inject (HOST_DRIVE_CMD), and Stop All. Leaving this
+          workspace releases control leases.
+        </p>
+      </header>
 
-      <div className="form-grid">
-        <label>
-          Speed (mm/s)
-          <input
-            data-testid="input-speed"
-            type="number"
-            value={speed}
-            onChange={(e) => setSpeed(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Yaw rate (mrad/s)
-          <input
-            data-testid="input-yaw"
-            type="number"
-            value={yaw}
-            onChange={(e) => setYaw(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Gear (0–3)
-          <input
-            data-testid="input-gear"
-            type="number"
-            min={0}
-            max={3}
-            value={gear}
-            onChange={(e) => setGear(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Period (ms)
-          <input
-            data-testid="input-period"
-            type="number"
-            value={periodMs}
-            disabled={!periodic}
-            onChange={(e) => setPeriodMs(Number(e.target.value))}
-          />
-        </label>
-        <label className="check">
-          <input
-            data-testid="check-periodic"
-            type="checkbox"
-            checked={periodic}
-            onChange={(e) => setPeriodic(e.target.checked)}
-          />
-          Periodic (re-encode each period)
-        </label>
-      </div>
+      <section className="panel">
+        <h2>HMI requests</h2>
+        <p className="muted small">
+          Requested vs confirmed stay separate in the header until feedback arrives.
+        </p>
+        <div className="actions">
+          {(['MANUAL', 'AUTO', 'PURE_SIM'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              data-testid={`btn-mode-${m.toLowerCase()}`}
+              disabled={busy}
+              className="secondary"
+              onClick={() => void setMode(m)}
+            >
+              Request {m.replace('_', ' ')}
+            </button>
+          ))}
+          <button
+            type="button"
+            data-testid="btn-power-on"
+            disabled={busy}
+            className="secondary"
+            onClick={() => void setPower('ON')}
+          >
+            Request power ON
+          </button>
+          <button
+            type="button"
+            data-testid="btn-power-off"
+            disabled={busy}
+            className="secondary"
+            onClick={() => void setPower('OFF')}
+          >
+            Request power OFF
+          </button>
+        </div>
+        <div className="muted small">
+          Current: mode req {status?.session?.requested_mode ?? '—'} / conf{' '}
+          {status?.session?.confirmed_mode ?? '—'} · power req{' '}
+          {status?.session?.requested_power ?? '—'} / conf{' '}
+          {status?.session?.confirmed_power ?? '—'}
+        </div>
+      </section>
 
-      <div className="actions">
-        <button type="button" data-testid="btn-enable-tx" disabled={busy} onClick={() => void enableTx()}>
-          Enable Bench TX
-        </button>
-        <button
-          type="button"
-          data-testid="btn-inject-drive"
-          disabled={busy}
-          onClick={() => void injectHostDrive()}
-        >
-          Inject host drive
-        </button>
-        <button
-          type="button"
-          data-testid="btn-stop-all"
-          disabled={busy}
-          className="danger"
-          onClick={() => void stopAll()}
-        >
-          Stop All
-        </button>
-      </div>
+      <section className="panel">
+        <h2>Kinematics inject (analysis)</h2>
+        <p className="muted small">
+          Safety-bypass style: inject only host drive under study — not a full synthetic
+          vehicle.
+        </p>
+        <div className="form-grid">
+          <label>
+            Speed (mm/s)
+            <input
+              data-testid="input-speed"
+              type="number"
+              value={speed}
+              onChange={(e) => setSpeed(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Yaw rate (mrad/s)
+            <input
+              data-testid="input-yaw"
+              type="number"
+              value={yaw}
+              onChange={(e) => setYaw(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Gear (0–3)
+            <input
+              data-testid="input-gear"
+              type="number"
+              min={0}
+              max={3}
+              value={gear}
+              onChange={(e) => setGear(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Period (ms)
+            <input
+              data-testid="input-period"
+              type="number"
+              value={periodMs}
+              disabled={!periodic}
+              onChange={(e) => setPeriodMs(Number(e.target.value))}
+            />
+          </label>
+          <label className="check">
+            <input
+              data-testid="check-periodic"
+              type="checkbox"
+              checked={periodic}
+              onChange={(e) => setPeriodic(e.target.checked)}
+            />
+            Periodic (re-encode each period)
+          </label>
+        </div>
+
+        <div className="actions">
+          <button
+            type="button"
+            data-testid="btn-enable-tx"
+            disabled={busy}
+            onClick={() => void enableTx()}
+          >
+            Enable Bench TX
+          </button>
+          <button
+            type="button"
+            data-testid="btn-inject-drive"
+            disabled={busy}
+            onClick={() => void injectHostDrive()}
+          >
+            Inject host drive
+          </button>
+          <button
+            type="button"
+            data-testid="btn-stop-all"
+            disabled={busy}
+            className="danger"
+            onClick={() => void stopAll()}
+          >
+            Stop All
+          </button>
+        </div>
+      </section>
+
       <pre className="log" data-testid="control-log">
         {log || 'Ready.'}
       </pre>
     </div>
   )
 }
+
+/* ── Bench ─────────────────────────────────────────────────────────── */
+
+function Bench() {
+  const status = useAppStore((s) => s.status)
+  return (
+    <div className="workspace" data-testid="workspace-bench">
+      <header className="ws-header">
+        <h1>Bench</h1>
+        <p className="muted">
+          Physical ECU under test and synthetic peers. Physical Bench Test profile is
+          hardware-track; Pure Software uses virtual buses only.
+        </p>
+      </header>
+      <section className="panel">
+        <h2>Bench setup</h2>
+        <ol className="setup-list">
+          <li>Physical target ECU(s) — deferred (hardware track)</li>
+          <li>Connected bus/channel — virtual high/low active</li>
+          <li>Peers present — none (analysis inject only)</li>
+          <li>Missing peers to emulate — not full synthetic vehicle</li>
+          <li>Control path — kinematics (HOST_DRIVE_CMD) or direct actuator</li>
+          <li>Review periodic TX before enable</li>
+        </ol>
+        <dl className="kv">
+          <dt>Active profile</dt>
+          <dd>{status?.session?.profile ?? status?.profile ?? '—'}</dd>
+          <dt>Destination</dt>
+          <dd>{status?.session?.destination ?? '—'}</dd>
+          <dt>Bench TX</dt>
+          <dd>{status?.session?.bench_tx ?? 'disabled'}</dd>
+          <dt>Leases</dt>
+          <dd className="mono">
+            {(status?.session?.leases || []).join(', ') || 'none'}
+          </dd>
+          <dt>Jobs</dt>
+          <dd className="mono">{(status?.session?.jobs || []).join(', ') || 'none'}</dd>
+        </dl>
+      </section>
+    </div>
+  )
+}
+
+/* ── Dictionary ────────────────────────────────────────────────────── */
+
+function Dictionary() {
+  const [instances, setInstances] = useState<Array<Record<string, unknown>>>([])
+  const [hash, setHash] = useState('')
+  const [q, setQ] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    void api
+      .protocolMessages()
+      .then((r) => {
+        setInstances(r.instances || [])
+        setHash(r.semantic_hash || '')
+      })
+      .catch((e) => setErr(String(e)))
+  }, [])
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return instances
+    return instances.filter((inst) => {
+      const name = String(inst.name ?? inst.message ?? inst.key ?? '').toLowerCase()
+      const bus = String(inst.bus ?? '').toLowerCase()
+      const id = String(inst.can_id ?? inst.id ?? '')
+      return name.includes(needle) || bus.includes(needle) || id.includes(needle)
+    })
+  }, [instances, q])
+
+  return (
+    <div className="workspace" data-testid="workspace-dictionary">
+      <header className="ws-header">
+        <h1>CAN Dictionary</h1>
+        <p className="muted">
+          Protocol reference from YAML · semantic hash {hash.slice(0, 12) || '—'}…
+        </p>
+      </header>
+      <div className="toolbar">
+        <input
+          className="search"
+          data-testid="dict-filter"
+          placeholder="Search messages…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <span className="muted small">{filtered.length} messages</span>
+      </div>
+      {err && <p className="danger-text">{err}</p>}
+      <div className="dict-grid" data-testid="dict-grid">
+        {filtered.slice(0, 200).map((inst, i) => {
+          const name = String(inst.name ?? inst.message ?? inst.key ?? `msg-${i}`)
+          const bus = String(inst.bus ?? '—')
+          const canId = Number(inst.can_id ?? inst.id ?? 0)
+          return (
+            <div key={`${bus}-${canId}-${name}`} className="dict-card">
+              <div className="dict-head">
+                <span className="mono">{canId ? hexId(canId) : '—'}</span>
+                <span className="chip tiny">{bus}</span>
+              </div>
+              <div className="dict-name">{name}</div>
+              <div className="muted small mono">
+                {inst.sender ? `${String(inst.sender)} → …` : ''}
+                {inst.dlc != null ? ` · DLC ${String(inst.dlc)}` : ''}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ── Diagnostics ───────────────────────────────────────────────────── */
+
+function Diagnostics() {
+  const status = useAppStore((s) => s.status)
+  const quality = useAppStore((s) => s.streamQuality)
+  return (
+    <div className="workspace" data-testid="workspace-diagnostics">
+      <header className="ws-header">
+        <h1>Diagnostics</h1>
+        <p className="muted">
+          Faults, verification sequences, and recordings (full pipeline in later phases).
+        </p>
+      </header>
+      <section className="panel">
+        <h2>Session evidence snapshot</h2>
+        <dl className="kv">
+          <dt>Phase</dt>
+          <dd>{status?.session?.phase ?? '—'}</dd>
+          <dt>Stream</dt>
+          <dd>{quality}</dd>
+          <dt>Wire hash</dt>
+          <dd className="mono">{status?.wire_hash ?? '—'}</dd>
+          <dt>Recording</dt>
+          <dd>{status?.session?.recording ? 'on' : 'off'}</dd>
+          <dt>Mismatch</dt>
+          <dd>{useAppStore.getState().protocolMismatch ? 'yes' : 'no'}</dd>
+        </dl>
+        <p className="muted small">
+          Timeline, sequential verification, and evidence quality land in the diagnostics
+          phase. Stop All and lease state already feed session outcome.
+        </p>
+      </section>
+    </div>
+  )
+}
+
+/* ── Settings ──────────────────────────────────────────────────────── */
+
+function Settings() {
+  const setStatus = useAppStore((s) => s.setStatus)
+  const status = useAppStore((s) => s.status)
+  const [profiles, setProfiles] = useState<ProfileInfo[]>([])
+  const [log, setLog] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    void api.profiles().then((r) => setProfiles(r.profiles || []))
+  }, [])
+
+  async function startPureSoftware() {
+    setBusy(true)
+    try {
+      const st = await api.status()
+      if (st.session?.session_id) {
+        await api.closeSession(st.session.session_id, st.session.revision)
+      }
+      const created = await api.createSession('pure_software')
+      setStatus(await api.status())
+      setLog(`Session ${created.session.session_id} · phase ${created.session.phase}`)
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function tryProfile(id: string) {
+    setBusy(true)
+    try {
+      let st = await api.status()
+      if (!st.session?.session_id) {
+        await api.createSession('pure_software')
+        st = await api.status()
+      }
+      await api.changeProfile(st.session!.session_id!, id, st.session!.revision, true)
+      setLog(`Switched to ${id}`)
+      setStatus(await api.status())
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="workspace" data-testid="workspace-settings">
+      <header className="ws-header">
+        <h1>Settings</h1>
+        <p className="muted">
+          Operating profiles and session controls. Physical profiles refuse without an
+          adapter (no silent virtual fallback).
+        </p>
+      </header>
+
+      <section className="panel">
+        <h2>Operating profiles</h2>
+        <div className="profile-list" data-testid="profile-list">
+          {profiles.map((p) => (
+            <div key={p.id} className="profile-card">
+              <div className="profile-title">
+                {p.label}
+                <span className={`chip tiny ${p.available ? 'ok' : ''}`}>
+                  {p.available ? 'available' : 'blocked'}
+                </span>
+              </div>
+              <div className="muted small">
+                Destination: {p.destination}
+                {p.reason ? ` · ${p.reason}` : ''}
+              </div>
+              <div className="actions tight">
+                {p.id === 'pure_software' ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    data-testid="btn-start-pure"
+                    onClick={() => void startPureSoftware()}
+                  >
+                    Start Pure Software session
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || !p.available}
+                    className="secondary"
+                    data-testid={`btn-profile-${p.id}`}
+                    onClick={() => void tryProfile(p.id)}
+                  >
+                    Activate (will refuse if no adapter)
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <dl className="kv" style={{ marginTop: 16 }}>
+          <dt>Active</dt>
+          <dd>{status?.session?.profile ?? status?.profile ?? '—'}</dd>
+          <dt>Revision</dt>
+          <dd className="mono">{status?.session?.revision ?? 0}</dd>
+          <dt>Session ID</dt>
+          <dd className="mono">{status?.session?.session_id ?? 'none'}</dd>
+        </dl>
+        <pre className="log" data-testid="settings-log">
+          {log || 'Select a profile action.'}
+        </pre>
+      </section>
+    </div>
+  )
+}
+
+/* ── App ───────────────────────────────────────────────────────────── */
 
 export default function App() {
   useBackendStream()
@@ -348,8 +1181,13 @@ export default function App() {
         <Sidebar />
         <main>
           {workspace === 'overview' && <Overview />}
+          {workspace === 'network' && <Network />}
           {workspace === 'live' && <LiveCan />}
           {workspace === 'control' && <Control />}
+          {workspace === 'bench' && <Bench />}
+          {workspace === 'dictionary' && <Dictionary />}
+          {workspace === 'diagnostics' && <Diagnostics />}
+          {workspace === 'settings' && <Settings />}
         </main>
       </div>
     </div>

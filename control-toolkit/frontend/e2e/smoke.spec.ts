@@ -6,25 +6,62 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await expect(page.getByTestId('app')).toBeVisible()
     await expect(page.getByTestId('topbar')).toBeVisible()
     await expect(page.getByTestId('workspace-overview')).toBeVisible()
+    await expect(page.getByTestId('safety-strip')).toBeVisible()
+    await expect(page.getByTestId('sidebar')).toBeVisible()
+
+    // Full nav rail from architecture §6.2
+    for (const id of [
+      'overview',
+      'network',
+      'live',
+      'control',
+      'bench',
+      'dictionary',
+      'diagnostics',
+      'settings',
+    ]) {
+      await expect(page.getByTestId(`nav-${id}`)).toBeVisible()
+    }
 
     // Stream should leave connecting state once backend is up.
     await expect(page.getByTestId('chip-stream')).not.toHaveText(/CONNECTING/i, {
       timeout: 20_000,
     })
     await expect(page.getByTestId('chip-stream')).toContainText(/LIVE|DELAYED|LOST/i)
-    await expect(page.getByTestId('chip-profile')).toContainText(/pure_software|—/i)
+    await expect(page.getByTestId('chip-profile')).toContainText(
+      /Pure Software|pure_software|—/i,
+    )
   })
 
   test('navigates workspaces', async ({ page }) => {
     await page.goto('/')
+
+    await page.getByTestId('nav-network').click()
+    await expect(page.getByTestId('workspace-network')).toBeVisible()
+    await expect(page.getByTestId('topology-map')).toBeVisible()
+
     await page.getByTestId('nav-live').click()
     await expect(page.getByTestId('workspace-live')).toBeVisible()
     await expect(page.getByTestId('live-can-table')).toBeVisible()
+    await expect(page.getByTestId('live-filter')).toBeVisible()
 
     await page.getByTestId('nav-control').click()
     await expect(page.getByTestId('workspace-control')).toBeVisible()
     await expect(page.getByTestId('input-yaw')).toBeVisible()
     await expect(page.getByTestId('btn-inject-drive')).toBeVisible()
+
+    await page.getByTestId('nav-bench').click()
+    await expect(page.getByTestId('workspace-bench')).toBeVisible()
+
+    await page.getByTestId('nav-dictionary').click()
+    await expect(page.getByTestId('workspace-dictionary')).toBeVisible()
+
+    await page.getByTestId('nav-diagnostics').click()
+    await expect(page.getByTestId('workspace-diagnostics')).toBeVisible()
+
+    await page.getByTestId('nav-settings').click()
+    await expect(page.getByTestId('workspace-settings')).toBeVisible()
+    await expect(page.getByTestId('profile-list')).toBeVisible()
   })
 
   test('analysis inject: yaw/speed appear on Overview and Live CAN', async ({
@@ -71,5 +108,16 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
       timeout: 10_000,
     })
     await expect(page.getByTestId('app')).toBeVisible()
+  })
+
+  test('settings lists profiles and Pure Software starts', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('nav-settings').click()
+    await expect(page.getByTestId('profile-list')).toContainText(/Pure Software/i)
+    await expect(page.getByTestId('profile-list')).toContainText(/Bench Test|Full Vehicle/i)
+    await page.getByTestId('btn-start-pure').click()
+    await expect(page.getByTestId('settings-log')).toContainText(/Session ses_|phase running/i, {
+      timeout: 10_000,
+    })
   })
 })
