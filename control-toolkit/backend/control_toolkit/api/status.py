@@ -11,7 +11,6 @@ from fastapi import APIRouter, Request
 
 from control_toolkit import __version__, protocol_bridge as proto
 from control_toolkit.models.adapter import AdapterStatus
-from control_toolkit.models.session import SessionState
 
 router = APIRouter(tags=["status"])
 
@@ -38,5 +37,5 @@ def get_status(request: Request) -> dict:
             "instances": proto.instance_count(),
         },
         "adapter": adapter.model_dump(),
-        "session": SessionState(profile=config.default_profile).model_dump(),
+        "session": lifecycle.sessions.snapshot().model_dump(),
     }
