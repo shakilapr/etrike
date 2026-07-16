@@ -153,11 +153,11 @@ The detailed contract is in `control-toolkit-api.md`.
 
 <!-- Source: control-toolkit-achitecture.md -->
 
-# E-Trike Vehicle Test Console Architecture
+# E-Trike Control Toolkit Architecture
 
-**Status:** Product and system design concept (no implementation code)
+**Status:** Product and system design concept (no runnable implementation yet; empty backend scaffold only). Delivery tiers (core / backlog / later / future work) are defined in [`workplan.md`](workplan.md).
 
-**Detailed behavior:** See `control-toolkit-logic.md` for state machines, decisions, timers, failure handling, test execution, and evidence rules.
+**Detailed behavior:** See the Logic Specification sections below for state machines, decisions, timers, failure handling, test execution, and evidence rules.
 
 **Analyzer comparison:** See `can-analyzer-research.md` for the local `python-can`, SavvyCAN, CANgaroo, and CANviz source audit and the connection-loss conclusions.
 
@@ -165,14 +165,14 @@ The detailed contract is in `control-toolkit-api.md`.
 
 **Protocol source of truth:** Distributed ECU-specific YAML contracts (`protocol/contracts/rt.yaml`, `sys.yaml`, `host.yaml`, `network.yaml`, etc.), consumed through generated runtime catalogs, codecs, validators, documentation, and firmware definitions. DBC is an optional export for third-party tools, not an application dependency.
 
-**Implementation dependency:** Vehicle Test Console synthetic peers, controller/HIL
+**Implementation dependency:** Control Toolkit synthetic peers, controller/HIL
 sessions, and physical Bench TX are late integration stages. They are blocked
 until RT/SYS unit enable/disable policy, output permissions, encoder/PID
 configuration, production-core host tests, configuration matrices, manifests,
 and pure-software safety scenarios pass as defined in
 `../docs/rt-sys-feature-configuration-and-test-plan.md` and its dependency-ordered
 [`implementation work plan`](../docs/rt-sys-configuration-implementation-work-plan.md).
-The Vehicle Test Console must not be used to compensate for missing firmware configuration
+The Control Toolkit must not be used to compensate for missing firmware configuration
 or software tests.
 
 **Learning from Existing Implementations:** 
@@ -180,7 +180,7 @@ The architecture draws heavily from lessons learned in the `debug-tool`. We will
 
 ## 1. Product role
 
-The Vehicle Test Console is a bench-engineering application for the E-Trike. It combines five jobs in one coherent interface:
+The Control Toolkit is a bench-engineering application for the E-Trike. It combines five jobs in one coherent interface:
 
 1. Observe both vehicle CAN buses in real time.
 2. Understand the vehicle state without reading raw frames.
@@ -231,7 +231,7 @@ flowchart LR
     R --> G[Recording and diagnostics]
     L --> WS[Subscription stream]
     H --> WS
-    WS --> UI[React Vehicle Test Console]
+    WS --> UI[React Control Toolkit]
     UI --> P[Command policy]
     E[Synthetic peer scheduler] --> P
     P --> A[Bench TX, stimulus lease, deadline and source ownership]
@@ -286,7 +286,7 @@ The control API binds to loopback by default. Desktop packaging uses a per-sessi
 
 The existing debug-tool CANalyst-II implementation is a characterization and setup baseline, not the new low-level driver. The preferred transport is the maintained `python-can` CANalyst-II interface (`CANalystIIBus`) configured for both channels. It already wraps the same unofficial reverse-engineered `canalystii`/PyUSB backend, exposes the standard `python-can` message model, provides device receive timestamps, and allows the virtual interface to use the same application-facing API.
 
-Do not accept all `python-can` defaults unchanged. The current backend uses a 20 ms receive poll delay and stores its optional bounded RX queue in `deque(maxlen=...)` where old entries can disappear without an exposed counter. The Vehicle Test Console adapter wrapper must configure or patch these behaviors and lock the validated dependency version.
+Do not accept all `python-can` defaults unchanged. The current backend uses a 20 ms receive poll delay and stores its optional bounded RX queue in `deque(maxlen=...)` where old entries can disappear without an exposed counter. The Control Toolkit adapter wrapper must configure or patch these behaviors and lock the validated dependency version.
 
 Reuse the debug tool’s proven Windows driver procedure, USB identification, wiring/setup guidance, failure examples, and hardware tests. Reuse its low-level frame behavior only as characterization vectors against `python-can`; do not fork or copy the reverse-engineered USB protocol unless a measured blocker in `python-can` cannot be fixed upstream.
 
@@ -623,7 +623,7 @@ The Network view explains what is physically or virtually participating.
 
 Display two horizontal bus lines, High and Low, with the RT gateway bridging their domains. Attach nodes to their actual bus:
 
-- High: Host, RT, HMI/Vehicle Test Console;
+- High: Host, RT, HMI/Control Toolkit;
 - Low: RT, SYS, MTR, steering unit, brake unit, and other defined nodes.
 
 Each node has a state:
@@ -904,11 +904,11 @@ High-frequency faults are represented as condition episodes, not one timeline ro
 
 ### 14.1.1 Alignment with RT, SYS, MTR, and connected components
 
-The backend must distinguish what it observes directly from what firmware knows internally. Existing `ESP_LOG*` output from RT/SYS is normally UART/console text; it is not transported in ordinary CAN frames. A CAN-only Vehicle Test Console therefore cannot claim that RT or SYS emitted an internal log entry. It can report the corresponding externally visible CAN evidence, or `Unknown` when firmware does not expose the internal state.
+The backend must distinguish what it observes directly from what firmware knows internally. Existing `ESP_LOG*` output from RT/SYS is normally UART/console text; it is not transported in ordinary CAN frames. A CAN-only Control Toolkit therefore cannot claim that RT or SYS emitted an internal log entry. It can report the corresponding externally visible CAN evidence, or `Unknown` when firmware does not expose the internal state.
 
-| Component | Directly observable by the Vehicle Test Console | Episode/aggregation rule | Important limitation |
+| Component | Directly observable by the Control Toolkit | Episode/aggregation rule | Important limitation |
 |---|---|---|---|
-| Vehicle Test Console backend and CANalyst-II | adapter calls, worker health, backend queues, raw RX/TX, decoder results | Backend owns exact counters and condition transitions | CANalyst-II may not expose TEC/REC, bus-off, or hardware overflow; unsupported remains `Unknown` |
+| Control Toolkit backend and CANalyst-II | adapter calls, worker health, backend queues, raw RX/TX, decoder results | Backend owns exact counters and condition transitions | CANalyst-II may not expose TEC/REC, bus-off, or hardware overflow; unsupported remains `Unknown` |
 | RT | per-bus `0x7FD` heartbeat/counter/health, `0x210 RT_STATE_RPT`, `0x310/0x311` diagnostics, RT-originated and forwarded traffic | Heartbeat health and task/fault fields are level states; raise on state/bit transition, summarize repeats, recover after valid advancing reports | Internal `ESP_LOG`, low-level retry counts, and reset reason are not available over CAN unless separately exported |
 | SYS | `0x7FE SYS_HEARTBEAT`, `0x600 SYS_DIAG_RPT`, `0x011 SYS_SAFETY_STS`, outputs and actuator requests | Treat heartbeat, brake fault, ESTOP, TEC/REC thresholds, and overflow as separate episodes | SYS task-watchdog failures and NVS boot count/reset reason are serial-only in the current design |
 | MTR | `0x206 MTR_MOTOR_FBK` at 50 Hz, including gear/speed and reported flag bits | Maintain one episode per defined bit; never create 50 identical log records per second | The byte named `fault_flags` also carries `STARTUP_READY`, which is status, not a fault; firmware currently also reuses the ADC-fault bit for a DAC-write failure, so the UI must not assert the physical cause |
@@ -936,7 +936,7 @@ Generated metadata must declare `counter_kind` (`modulo`, `saturating`, or `mono
 
 #### Firmware logging compatibility findings
 
-The root architecture already defines the correct first-failure/count/recovery pattern for ordinary RT/SYS CAN TX paths, and the Vehicle Test Console episode model matches it. The implementation is not uniform, however:
+The root architecture already defines the correct first-failure/count/recovery pattern for ordinary RT/SYS CAN TX paths, and the Control Toolkit episode model matches it. The implementation is not uniform, however:
 
 - RT command-stale and task-stall checks can emit on every 10 Hz watchdog poll while active.
 - RT CAN-health warning/bus-off checks can emit on every 10 Hz health poll, and several SES fault/limit handlers log on every matching frame.
@@ -945,11 +945,11 @@ The root architecture already defines the correct first-failure/count/recovery p
 - SYS CAN-health output can repeat at 1 Hz; RX overflow logs only its first occurrence and has no firmware recovery record.
 - SYS gear mismatch emits approximately every 500 ms while the mismatch persists.
 
-These firmware logs can flood a serial collector, but they do not directly flood the CAN-only backend. If UART logs are later ingested, do not parse English strings into Vehicle Test Console errors. Add a versioned structured firmware-event envelope or a small debug telemetry protocol, preserve ECU/component identity, and apply per-ECU episode aggregation before merging with backend events.
+These firmware logs can flood a serial collector, but they do not directly flood the CAN-only backend. If UART logs are later ingested, do not parse English strings into Control Toolkit errors. Add a versioned structured firmware-event envelope or a small debug telemetry protocol, preserve ECU/component identity, and apply per-ECU episode aggregation before merging with backend events.
 
 #### Protocol-source corrections required before generation
 
-The YAML/compiler work must resolve these observed contract gaps before the generated Vehicle Test Console treats the fields as authoritative:
+The YAML/compiler work must resolve these observed contract gaps before the generated Control Toolkit treats the fields as authoritative:
 
 1. Add the packed SYS `rx_overflow` field in `SYS_DIAG_RPT` byte 2 bits 1–6 with saturating semantics.
 2. Define all MTR flag bits identically in High and Low catalogs; High currently documents `STARTUP_READY` while Low does not.
@@ -1030,7 +1030,7 @@ Messages may be categorized for navigation and filtering as Safety, HMI, Drive C
 
 ### 15.5 Corruption and plausibility detection
 
-The Vehicle Test Console validates every frame against the same normalized wire facts used by RT and SYS. Each message definition selects exactly one codec strategy: generated, named profile, or custom. Ordinary messages use generated codecs; exceptional vendor messages use their selected profile/custom implementation and shared conformance vectors. Validation produces structured flags rather than a single generic decode error. The current `manual-mappings.yaml` mechanism is transitional and must not become the backend plugin architecture.
+The Control Toolkit validates every frame against the same normalized wire facts used by RT and SYS. Each message definition selects exactly one codec strategy: generated, named profile, or custom. Ordinary messages use generated codecs; exceptional vendor messages use their selected profile/custom implementation and shared conformance vectors. Validation produces structured flags rather than a single generic decode error. The current `manual-mappings.yaml` mechanism is transitional and must not become the backend plugin architecture.
 
 CAN-layer corruption and application-layer corruption are different. The CAN controller normally rejects frames that fail the wire CRC, so their corrupted payload may never reach the backend. Adapter-reported error frames, error counters, overflow, bus-off, and controller state are transport evidence. Payload checksum/XOR, rolling counter, DLC, range, and plausibility checks are application-protocol evidence. The UI reports them separately and never claims to show wire corruption that the adapter did not expose.
 
@@ -1137,37 +1137,66 @@ These are initial engineering budgets, not hard-real-time guarantees. CANalyst-I
 
 ## 18.2 YAML protocol compiler
 
-The application does not use DBC as its internal model. YAML is used as a DBC-like static dictionary, divided by message origin/protocol family with bus instances represented explicitly. A message layout appears once; sender and receivers consume the same normalized definition. The compiler generates metadata for every message and complete codecs only for messages whose selected strategy supports generation. Unsupported vendor algorithms remain explicit named profiles or custom codecs rather than being hidden in application code. DBC may still be exported for CANalyzer, cantools interoperability, or other external tools, but no Vehicle Test Console behavior depends on it.
+**Authority:** Root vehicle architecture [`architecture.md`](../architecture.md) ("CAN contract ownership", "Static dictionary, codecs and policy"). Contracts live under `protocol/contracts/` (`network`, `host`, `rt`, `sys`, `mtr`, `ses`, `seb`, `pwt`, `hmi` — not the obsolete dual `can_high.yaml` / `can_low.yaml` layout as the long-term model).
+
+The application does not use DBC as its internal model. YAML is a **DBC-like static wire dictionary**, divided by message origin/protocol family with bus instances represented explicitly. A message layout appears once; sender and receivers consume the same normalized definition. The compiler generates metadata for every message and complete codecs only for messages whose selected strategy supports generation. Unsupported vendor algorithms remain explicit named profiles or custom codecs rather than being hidden in application code. DBC may still be exported for CANalyzer, cantools interoperability, or other external tools, but no Control Toolkit behavior depends on it.
+
+### 18.2.1 What YAML gives you (and what it does not)
+
+YAML and the compiler **do not** grant magical powers. They remove duplicated *wire layout* knowledge. They do **not** implement the vehicle, the bench tool, or RT/SYS policy.
+
+| Owned by YAML / generated artifacts | Still hand-written application code |
+|---|---|
+| Bus instance, CAN ID, DLC, byte order, signal packing | FreeRTOS tasks, drivers, queues (RT/SYS) |
+| Scale/offset, enums, nominal cycle times | Gateway routing decisions (`rt-esp32` `can_rx_router`) |
+| Ordinary encode/decode (`generated` strategy) | Safety / mode / ESTOP policy (`sys-esp32` monitors) |
+| Field locations for checksums/counters | PID, kinematics, brake arbitration (RT) |
+| Named constants (e.g. cycle ms) for policy *inputs* | Freshness state machines, Bench TX, leases (Control Toolkit) |
+| Semantic / source hashes for drift detection | Injection scheduler, UI, evidence, sessions |
+
+**Firmware already follows this split:** RT and SYS decode with `can::gen::*` and `can::custom::ses` / `seb`, then apply component policy in C++. Control Toolkit must do the same in Python: import generated codecs, then write transport, observation services, command policy, and UI.
+
+Payload strategy (from vehicle architecture):
+
+- `generated` — ordinary codec from static layout;
+- `profile` — small named integrity implementation (e.g. XOR/E2E profile);
+- `custom` — one explicit handwritten codec (SES/SEB/PWT exceptional layouts).
+
+Conformance authority for complex messages:
+
+```text
+static wire definition + codec/profile implementation ID + language-neutral vectors
+```
+
+The same vectors should run against C++ and Python. Changing a stored hash is not proof the algorithm is correct.
+
+### 18.2.2 Compiler outputs
 
 The unified compiler (`protocol/tools/protocol.py`) uses shared schema validation to produce deterministic targets for the entire CAN ecosystem:
 
 - Python runtime catalog, encoder, decoder, and validator metadata for FastAPI;
 - TypeScript runtime catalog and presentation metadata for React;
-- C/C++ constants and codec/validation definitions for firmware;
+- C/C++ constants and codec/validation definitions for firmware (already used by RT/SYS);
 - golden encode/decode/integrity vectors consumed by all languages;
 - Markdown/CSV/optional DBC documentation exports.
 
-The generated Vehicle Test Console artifact should contain:
+The generated Control Toolkit **import** should include at least:
 
 - protocol version, normalized semantic hash, and exact-source artifact hash;
 - bus, ID, name, DLC, sender, receivers, cycle/event timing, and byte order;
 - complete canonical bit mapping for Intel and Motorola signals;
-- signal key/name, type, scale, offset, unit, enum values, min/max, and comments;
-- constants and safety bounds from the YAML `constants` block;
-- heartbeat/alive-counter signal identity and timeout rules;
-- checksum/counter algorithm metadata and protected byte ranges;
-- multiplexing/overlap conditions;
-- mandatory enable values and automatically managed fields;
-- message category, diagnostic severity, and structured transmission policy;
-- generated lookup indexes for `bus + ID`, node, category, and signal search.
+- signal key/name, type, scale, offset, unit, enum values, min/max;
+- constants and safety bounds from YAML `constants` where present;
+- checksum/counter algorithm metadata and protected byte ranges where strategy requires it;
+- lookup indexes for `bus + ID`.
+
+**Backlog / presentation-only metadata** (categories, transmission_policy tags, full Dictionary polish) may lag the first working decode path; they must not block Phase 0–1 of the work plan.
 
 Frontend and backend expose their normalized semantic hash during connection setup. A semantic hash is calculated from canonical parsed content, so whitespace and comment-only edits do not break compatibility; the exact-source hash remains available for traceability. If semantic hashes differ, the UI enters `PROTOCOL MISMATCH`: raw monitoring may continue, but decoded control and physical injection are disabled until artifacts match.
 
-The current YAML contains some checksum, counter, and safety meaning only in comments. Comments are useful to people but insufficient for deterministic validation. Stable repeated behavior may select a small versioned profile implementation; unique behavior selects a custom codec. YAML records the strategy and implementation ID but does not attempt to express arbitrary algorithms or component state machines. The current mapping registry is used only during migration. The target proof is a static definition plus one selected implementation/profile plus language-neutral vectors executed by C++ and Python.
+YAML records the strategy and implementation ID but does **not** express arbitrary algorithms or component state machines. ESTOP, takeover, retries, logging severity, and UI presentation remain component-local policy. The current mapping registry is migration-only. Generator output is reproducible and never hand-edited. CI runs generation in check mode and fails when generated artifacts drift from YAML.
 
-Wire layout, integrity/liveness rules, and system plausibility rules are separate validated YAML sections. This keeps the CAN message format portable while allowing stateful rules such as command-feedback deadlines to share the same source-controlled compiler pipeline.
-
-Generator output is reproducible and never hand-edited. CI runs generation in check mode and fails when generated artifacts drift from YAML.
+**Delivery prioritization** for toolkit features (core vs backlog vs later vs future work) is owned by [`workplan.md`](workplan.md). Architecture sections for vehicle preview, replay, predicates, LLM adapters, and full simulation remain design references; they are not required for the first shippable observe/inject console.
 
 ## 18.3 Debug-tool bridge migration
 
@@ -1198,17 +1227,18 @@ Known debug-tool behaviors that must not carry forward:
 
 ## 19. Delivery sequence
 
-Delivery is staged so physical control is added only after the observation and safety foundations are measurable:
+Delivery is staged so physical control is added only after the observation and safety foundations are measurable. **Core sequence** (work plan Phases 0–7):
 
-1. **Protocol foundation:** YAML schema/compiler, cross-language golden vectors, semantic hashes, checksum/counter rules, and drift checks.
-2. **Read-only transport:** dual-bus CANalyst-II/virtual transport, canonical timestamps, queue metrics, recording, and connection-loss evidence.
+1. **Protocol foundation:** Audit existing YAML/compiler/codecs, golden vectors, semantic hashes, and drift checks — then **still write** toolkit services that import those codecs (YAML is not the product).
+2. **Read-only transport:** dual-bus CANalyst-II/virtual transport, canonical timestamps, queue metrics, and connection-loss evidence.
 3. **Read-only UI:** Overview, topology, latest CAN, chronological monitor, dictionary, freshness, and corruption presentation.
 4. **Virtual control tests:** command policy, Bench TX/stimulus lease model, injection, HMI, keyboard/gamepad, and synthetic peers restricted to virtual buses.
 5. **Physical HMI and bench:** Bench TX session control, source ownership, ESTOP test labeling, HMI requests, and bounded isolated-ECU workflows.
 6. **Physical actuator control:** kinematics and direct-actuator modes only after latency, jitter, watchdog, conflict, disconnect, and corruption tests pass.
-7. **Later capabilities:** replay, configurable verification suites, richer charts, and Tauri packaging.
 
-Each stage has a usable acceptance test and does not require enabling the hazards of the next stage.
+**Not core** (see work plan Backlog / Later / Future Work): vehicle visual preview depth, full error-event product, conformance wizard/soak budgets, LLM/MCP adapters, replay/baseline/predicates/triggered capture, Tauri packaging, and full ECU simulation beyond static synthetic peers.
+
+Each core stage has a usable acceptance test and does not require enabling the hazards of the next stage.
 
 ## 20. Acceptance questions
 
@@ -1227,7 +1257,7 @@ The architecture is successful when an engineer can answer these questions witho
 - Did an injection actually transmit, and what response followed?
 - Is the diagnostic or full-bus recording complete and trustworthy?
 
-If these answers are immediately visible, the Vehicle Test Console provides a trustworthy bench-testing overview and the depth required for CAN engineering.
+If these answers are immediately visible, the Control Toolkit provides a trustworthy bench-testing overview and the depth required for CAN engineering.
 
 ## 21. Research basis and decisions
 
@@ -1482,11 +1512,11 @@ Do not copy these implementation weaknesses:
 - duplicate subscriptions/publishers and broad monolithic UI modules;
 - rendering while holding communication locks.
 
-The Vehicle Test Console’s backend projection service, generated source rules, monotonic timing, immutable snapshots, scheduler/TX gate, and provenance model already provide the safer equivalents.
+The Control Toolkit’s backend projection service, generated source rules, monotonic timing, immutable snapshots, scheduler/TX gate, and provenance model already provide the safer equivalents.
 
 ## 25. Shared API for React, LLMs, and automation
 
-The Vehicle Test Console exposes one client-neutral FastAPI contract described in `control-toolkit-api.md`.
+The Control Toolkit exposes one client-neutral FastAPI contract described in `control-toolkit-api.md`.
 
 ```text
 React UI ─────────┐
@@ -1512,7 +1542,7 @@ The backend, React, LLM tools, and optional CLI use the single stable catalog in
 
 Operational logs do not duplicate the raw high-rate CAN recording. They record lifecycle, degradation, integrity, ownership, test, storage, stream, and recovery transitions and link to bounded raw evidence. Repeated failures emit an immediate first event, bounded summaries, and one recovery event rather than console spam.
 
-Vehicle Test Console infrastructure errors remain distinct from ECU-reported RT/SYS/MTR/EPS-C/SEB diagnostic flags. ECU faults are logged as observed diagnostic events with their original YAML-defined code/name/raw value; they are not relabelled as backend failures.
+Control Toolkit infrastructure errors remain distinct from ECU-reported RT/SYS/MTR/EPS-C/SEB diagnostic flags. ECU faults are logged as observed diagnostic events with their original YAML-defined code/name/raw value; they are not relabelled as backend failures.
 
 Codes originate in backend ownership boundaries: API middleware, adapter supervisor/wrapper, instrumented queues, protocol validator, freshness/topology service, scheduler, test runner, recorder/replay, subscription hub, and projection service. A central event factory adds common fields and persists them but does not guess the domain result. Clients never derive backend error codes from display text. Every condition has a mandatory fixed catalog ID such as `CUI-ADP-007`, a mandatory readable code such as `adapter.device_removed`, a contextual message, and a unique `event_id` for the occurrence. HTTP failures use RFC 9457 Problem Details, logs use the same code as OpenTelemetry `error.type`, and native CAN/UDS/J1939 identifiers are preserved only when the relevant layer actually reports them.
 
@@ -1521,7 +1551,7 @@ The backend event store is part of the shared API. React, LLMs, Python tests, an
 
 <!-- Source: control-toolkit-api.md -->
 
-# Vehicle Test Console Shared API and Client Contract
+# Control Toolkit Shared API and Client Contract
 
 **Purpose:** Define one backend contract that serves the React UI, LLM tool clients, engineers, CI, and an optional thin terminal client without duplicating behavior.
 
@@ -1857,7 +1887,7 @@ The LLM does not have to remain connected for periodic timing, assertions, or cl
 
 ## 10. UI and automation testing
 
-The API supports deterministic virtual fixtures and a controllable test clock where required. Standard project commands run backend tests and Playwright directly; they do not need to be hidden behind a large Vehicle Test Console CLI.
+The API supports deterministic virtual fixtures and a controllable test clock where required. Standard project commands run backend tests and Playwright directly; they do not need to be hidden behind a large Control Toolkit CLI.
 
 Headless tests:
 
@@ -1893,7 +1923,7 @@ The shared-client design is correct when:
 
 <!-- Source: control-toolkit-logic.md -->
 
-# E-Trike Vehicle Test Console Logic Specification
+# E-Trike Control Toolkit Logic Specification
 
 **Status:** Behavioral design for implementation
 
@@ -1903,7 +1933,7 @@ The shared-client design is correct when:
 
 ## 1. System boundary
 
-The Vehicle Test Console is a CAN bench-testing system for RT, SYS, MTR, and supporting units. Driving-like inputs exist to exercise firmware code paths on a controlled bench or stationary integration setup. The application is not used to drive the E-Trike.
+The Control Toolkit is a CAN bench-testing system for RT, SYS, MTR, and supporting units. Driving-like inputs exist to exercise firmware code paths on a controlled bench or stationary integration setup. The application is not used to drive the E-Trike.
 
 The backend is authoritative for CAN communication, protocol interpretation, timing, test state, scheduled transmission, validation, and recording. The browser displays backend state and sends test intent.
 
@@ -2714,21 +2744,65 @@ Currently, the SYS ECU reads physical buttons and broadcasts `0x110 Mode Command
 - The SYS ECU (once updated) reads `0x111` and updates its internal state machine exactly as if the physical Mode button was pressed.
 
 ## 5. Implementation
-This `HMI` node and the `0x111`/`0x112` messages are formally defined in `can_high.yaml` and `can_low.yaml`. 
+This `HMI` node and the `0x111`/`0x112` messages are formally defined in `protocol/contracts/hmi.yaml` (and network routing as applicable). 
 The entire CAN ecosystem is generated using the unified CLI tool in `protocol/tools/protocol.py`:
 - `protocol.py generate dbc` (optional DBC export for third-party tooling)
 - `protocol.py generate headers` (C/C++ headers for SYS and RT firmware)
 - `protocol.py generate ts` (TypeScript typings for the frontend UI)
 - `protocol.py generate docs` (and related doc generators for documentation)
 
-## Future Work: Complete ECU Simulation
-The current architecture focuses on connecting physical controllers and mimicking basic signals (such as heartbeats and static status frames) to satisfy bench testing constraints. 
+## Future Work, backlog, and later
 
-**Complete ECU Simulation** is deferred to future work. This includes, but is not limited to:
+Product prioritization for the Control Toolkit is owned by [`workplan.md`](workplan.md). Architecture sections remain valid design references. They are **not** a mandate to build every described feature before a usable observe/inject bench console exists.
+
+### Delivery tiers (summary)
+
+| Tier | Intent |
+|---|---|
+| **Core** | Dual-bus observe, decode/validate, CANalyst + virtual transport, profiles/sessions/Bench TX, read-only UI, injection, synthetic peers, basic diagnostics/recording, keyboard/actuator stimuli (work plan Phases 0–7) |
+| **Backlog** | Vehicle visual preview depth; full error catalog / event store; conformance wizard + workload budgets; LLM/MCP adapters; presentation metadata polish |
+| **Later** | Triggered capture; offline replay; baseline/session comparison; server-side predicate language; Tauri packaging |
+| **Future Work** | Thin `simulation/` ECU adapter; full-vehicle physics / deep ECU emulation (prefer `simulation/`, not toolkit core) |
+
+### Core non-negotiables (do not demote)
+
+Thin transport + stateful services; explicit profiles with no silent physical→virtual fallback; Bench TX off by default and not restored on reconnect; capability honesty (`Unknown` never fake hardware counters); YAML-generated wire codecs; one client-neutral FastAPI API; Stop All and source ownership; Pass vs Fail vs Inconclusive with evidence quality; physical actuator TX only after observation and virtual TX foundations work.
+
+### YAML is not enough by itself
+
+See §18.2.1. Generated codecs remove duplicated wire layouts. RT, SYS, and the Control Toolkit still require substantial hand-written policy, transport, and UI code. Protocol work is Phase 0 of the work plan, not a substitute for implementation.
+
+---
+
+## Future Work: Complete ECU Simulation
+
+The current architecture focuses on connecting physical controllers and mimicking basic signals (such as heartbeats and static status frames) to satisfy bench testing constraints.
+
+**Complete ECU Simulation** is deferred to future work (and preferably lives in `simulation/`, integrated via a thin adapter — see work plan FW-A / FW-B). This includes, but is not limited to:
+
 - A full-vehicle physics simulator that dynamically responds to motor and steering inputs.
 - Complex ECU state machine emulation in software.
 - Realistic sensor feedback loops based on simulated environmental conditions.
-- **Mode-Aware Injection (Kinematics Mode):** Emulating Jetson Host inputs (e.g. `0x300` Drive Cmd) to compute inverse bicycle kinematics and safety limits.
-- **Virtual Encoders:** Spoofing `0x206 MTR_MOTOR_FBK` to simulate rolling wheels, satisfying the EGAS L2 safety monitor even if physical encoders are absent.
+- **Mode-Aware Injection (Kinematics Mode):** Emulating Jetson Host inputs (e.g. `0x300` Drive Cmd) to compute inverse bicycle kinematics and safety limits — as a productized simulation feature, not a prerequisite for basic injection.
+- **Virtual Encoders:** Spoofing `0x206 MTR_MOTOR_FBK` to simulate rolling wheels, satisfying the EGAS L2 safety monitor even if physical encoders are absent — beyond simple static synthetic peer frames.
 
+### Future Work: thin simulation adapter (preferred path)
+
+Do **not** re-implement RT/SYS/MTR behavior inside the Control Toolkit backend. Wire existing `simulation/src/ecus/` onto virtual buses with explicit `Simulated <ECU>` provenance, listen-before-speak, and source-conflict → Inconclusive. Details and checklists: work plan FW-A.
+
+### Backlog (design exists; not core)
+
+- **Vehicle visual preview** (§24, logic §40–42): dual actuation/sensor projection, center-locked ego view.
+- **Error catalog polish** (§26): full registry, event factory, query/wait APIs.
+- **Adapter conformance wizard and workload budgets** (§18.1, §23.6–23.7).
+- **LLM/MCP adapters** (API §6): optional translations of the same REST/WebSocket contract — no second domain backend.
+- **Presentation metadata** on protocol artifacts (categories, transmission_policy tags).
+
+### Later (explicitly deferred)
+
+- Triggered pre/post capture (§23.1)
+- Deterministic offline replay (§23.3)
+- Baseline/session comparison (§23.2)
+- Server-side predicate language (§23.4)
+- Tauri desktop packaging (stack §5)
 

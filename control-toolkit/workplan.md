@@ -1,16 +1,100 @@
 # Control Toolkit — Work Plan
 
-**Source:** [`architecture-control-toolkit.md`](file:///c:/projects/etrike/control-toolkit/architecture-control-toolkit.md)
-**Status:** Design-only — no implementation code exists yet
+**Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
+**Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
+**Status:** Design-only — no runnable backend/frontend yet (empty `backend/vtc/` scaffold only)  
 **Last updated:** 2026-07-15
 
 ---
 
 ## Non-negotiable phase rule
 
-Phases are sequential. Do not start phase N+1 until all code, tests, and the exit gate for phase N pass. If a later phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun every gate from there forward.
+**Core phases (0–7)** are sequential for the shippable spine. Do not start core phase N+1 until all code, tests, and the exit gate for phase N pass. If a later core phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun every gate from there forward.
 
-Each phase delivers working, tested code. Hardware tests remain opt-in and run only on a controlled bench with Bench TX explicitly disabled by default.
+**Backlog / Later / Future Work** are *not* core phases. They must not block the spine (observe → decode → inject → synthetic peers → basic evidence). Pull them in only after the core is boring and solid.
+
+Each active phase delivers working, tested code. Hardware tests remain opt-in and run only on a controlled bench with Bench TX explicitly disabled by default.
+
+---
+
+## Delivery tiers
+
+| Tier | What | Phases / sections |
+|---|---|---|
+| **Core (ship first)** | Dual-bus observe, generated decode/validate, virtual + CANalyst transport, profiles/sessions/Bench TX, read-only UI, injection, synthetic peers, basic diagnostics/recording, keyboard/actuator test stimuli | Phases **0–7** |
+| **Backlog** | Valuable after core is stable; design already sketched; not required for first bench usability | Vehicle preview depth, full error-catalog polish, adapter conformance wizard, workload budgets, LLM/MCP client surface |
+| **Later** | Explicitly deferred product surface | Replay, baseline/session compare, server-side predicate language, triggered capture, Tauri packaging |
+| **Future Work** | Outside control-toolkit ownership or full product expansion | ECU simulation adapter (`simulation/`), full vehicle physics/state-machine sim, kinematics-mode host emulation as a product feature |
+
+### Core non-negotiables (do not demote)
+
+- Thin transport + stateful services (not a second vehicle brain)
+- Profiles + explicit transitions; **no silent physical→virtual fallback**
+- Bench TX off by default; reconnect never restores TX
+- Capability honesty (`Unknown`, never fake TEC/REC/load zeros)
+- YAML-generated wire codecs + one client-neutral FastAPI contract
+- Stop All; source ownership for TX; Pass vs Inconclusive vs Fail (evidence quality)
+- Physical actuator TX only after observation + virtual TX gates pass
+
+### Explicitly not core (was over-specified for v1)
+
+| Item | Was | Now |
+|---|---|---|
+| Vehicle visual preview (center-lock, dual actuation/sensor layers, projection epochs) | Phase 8 | **Backlog** |
+| Full error catalog + event query/LLM event API polish | Phase 9 (full) | **Backlog** (minimal structured errors stay in core API) |
+| Adapter conformance wizard + soak budgets | Phase 10 | **Backlog** (basic CANalyst characterization stays in Phase 2) |
+| Triggered capture, replay, baseline compare, predicate language, Tauri | Phase 11 | **Later** |
+| LLM/MCP as first-class product surface | API §6 | **Backlog** (same REST API is enough; adapters later) |
+| Full `simulation/` ECU plug-in | Future Work | **Future Work** (unchanged; thin adapter only) |
+
+---
+
+## YAML / protocol architecture — what it does and does not do
+
+Aligned with root [`architecture.md`](../architecture.md) (“Static dictionary, codecs and policy”) and how **RT** / **SYS** already use the protocol package.
+
+### Authority (wire facts only)
+
+Contracts live under `protocol/contracts/` (not the obsolete dual `can_high.yaml` / `can_low.yaml` story):
+
+```text
+network.yaml, host.yaml, rt.yaml, sys.yaml, mtr.yaml,
+ses.yaml, seb.yaml, pwt.yaml, hmi.yaml
+```
+
+YAML is a **DBC-like static wire dictionary**. It owns ID, bus instance, DLC, byte order, signal layout, scale/offset, enums, nominal cycle, and *where* checksum/counter fields sit. Every message picks one codec strategy: `generated` | `profile` | `custom`.
+
+The compiler (`protocol/tools/protocol.py`) produces metadata and ordinary codecs under `protocol/generated/`. SES/SEB/PWT exceptional layouts stay as **handwritten** codecs under `protocol/codecs/` / `protocol/profiles/`. Language-neutral vectors under `protocol/vectors/` are the multi-language proof.
+
+### What YAML and generation already give you
+
+- One definition per message layout; RT and Control Toolkit must not invent a second layout
+- Encode/decode helpers for ordinary messages (`can::gen::*` in C++, Python/TS catalogs)
+- Named constants such as cycle times consumed by firmware policy code
+- Optional DBC/docs for humans and third-party tools
+
+### What they do **not** give (no magical powers)
+
+YAML is **not** an algorithm language, RTOS design, or vehicle state machine. You still write real code for:
+
+| Still hand-written | Where it lives today (examples) |
+|---|---|
+| FreeRTOS tasks, queues, drivers | `rt-esp32/src/main.cpp`, `sys-esp32/src/main.cpp` |
+| Gateway / RX routing policy | `rt-esp32/src/can_rx_router.h`, `can_dispatch.h` |
+| Safety / mode / ESTOP policy | `sys-esp32/src/safety_monitor.*`, `mode_manager.*`; RT `safety_monitor.h`, watchdogs |
+| PID, kinematics, steering, brake arbitration | `rt-esp32` physics / speed / steering modules |
+| Freshness, Bench TX, leases, UI, injection scheduler | **Control Toolkit backend** (to implement) |
+| Vendor integrity algorithms | `protocol/codecs/` SES/SEB custom path (already) |
+| “Is this frame allowed to TX right now?” | Toolkit command policy — not generated from YAML alone |
+
+Firmware already shows the pattern: decode with `can::gen` / `can::custom::*`, then **component policy** decides what to do. Control Toolkit must do the same: import generated Python codecs, then write transport, state, policy, and UI.
+
+### Phase 0 in that light
+
+Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors** — not invent a new protocol stack, and not wait for every architecture wish-list metadata field before a virtual RX loop can decode existing messages.
+
+**Do:** use existing `protocol/` packages; extend YAML only when a missing wire fact or strategy breaks encode/decode/validation.  
+**Do not:** re-parse YAML in the toolkit; reimplement SES/SEB algorithms; embed RT/SYS state machines in the backend.
 
 ---
 
@@ -18,26 +102,26 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 | Area | Status |
 |---|---|
-| Architecture / design docs | ✅ Complete (scope, architecture, logic, API, HMI, error-codes — 2696 lines consolidated in `architecture-control-toolkit.md`) |
-| Protocol YAML contracts | ✅ Exist (`protocol/contracts/` — per-ECU YAML files) |
+| Architecture / design docs | ✅ Complete (consolidated in `architecture-control-toolkit.md`) |
+| Protocol YAML contracts | ✅ Exist (`protocol/contracts/*.yaml`, including `hmi.yaml`) |
 | Protocol compiler (`protocol.py`) | ✅ Exists — generates C++, DBC, docs, CSV, tables |
-| Protocol Python runtime codecs | ✅ Exist — `protocol/generated/python/etrike_protocol.py` (23.7KB) + `protocol/codecs/` (codec.py, generated.py, ses.py, seb.py, pwt.py) + XOR profiles |
-| Protocol TypeScript catalog | ✅ Exist — `protocol/generated/typescript/etrike-protocol.ts` (32.3KB) + `protocol/codecs/` TS equivalents |
-| Protocol golden vectors | ⚠️ `protocol/vectors/` exists but coverage unknown |
-| Python backend (FastAPI) | ❌ Does not exist |
+| Protocol Python runtime codecs | ✅ Exist — consume from `protocol/`; audit for toolkit needs in Phase 0 |
+| Protocol TypeScript catalog | ✅ Exist — audit for frontend presentation metadata in Phase 0/4 |
+| Protocol golden vectors | ⚠️ Present; coverage must be verified (Phase 0) |
+| RT / SYS firmware | ✅ Use generated + custom codecs; policy remains hand-written (pattern to follow) |
+| Python backend (FastAPI) | ❌ Empty scaffold only (`backend/vtc/**` zero-byte files) |
 | React frontend | ❌ Does not exist |
-| Backend tests | ❌ Do not exist |
-| Frontend tests | ❌ Do not exist |
-| Debug-tool (predecessor) | ✅ Exists — Node/Svelte/SQLite, 201+129 tests, reusable characterization |
+| Backend / frontend tests | ❌ Do not exist |
+| Debug-tool / control-ui | ✅ Predecessors with reusable characterization — not the target product |
 
-### Key gaps identified from `issues.md`
+### Key gaps (updated)
 
-1. **Scope/architecture tension** — "stateless backend" language contradicts stateful requirements (resolved in architecture: thin transport, stateful services)
-2. **Protocol compiler gaps** — missing SYS `rx_overflow` packed field, MTR flag bit consistency, counter semantics metadata, `origin_bus` declarations
-3. **No Python runtime codecs for Control Toolkit** — architecture requires YAML-generated Python encoder/decoder/validator, not DBC/cantools at runtime
-4. **No TypeScript runtime catalog for Control Toolkit** — generated React metadata needed
-5. **Debug-tool channel mapping** — Channel 0/1 defaults are reversed from the project scope
-6. **No test infrastructure** — no pytest, no Playwright, no virtual-bus fixtures
+1. **No toolkit runtime** — architecture resolved thin transport + stateful services; code not written
+2. **Protocol gaps (fill as needed)** — e.g. counter semantics metadata, transmission-policy presentation fields, any missing wire fields used by diag/UI; do not block Phase 1 on non-wire wish-list
+3. **Golden vector / drift-check coverage** — unknown completeness vs RT/SYS language pair
+4. **Debug-tool channel mapping** — Ch0/Ch1 reversed vs project scope; fix in toolkit Phase 2
+5. **No pytest / Playwright / virtual-bus fixtures** for control-toolkit
+6. **control-ui parallel path** — stop growing as the long-term tool; port only proven pieces
 
 ### Experience-driven improvements over debug-tool
 
@@ -45,62 +129,52 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 |---|---|
 | Per-frame JSON+stdout parsing | Phase 2: native `python-can` integration, no child process |
 | 20ms poll delay with 10ms messages | Phase 2: configurable 1–2ms poll, measured soak test |
-| `time.time()` batch timestamps | Phase 2: device timestamp preservation + monotonic mapping |
-| Channel 0/1 reversed | Phase 2: correct mapping, tested in adapter conformance |
+| `time.time()` batch timestamps | Phase 2: monotonic arrival time; no fake HW timestamp story |
+| Channel 0/1 reversed | Phase 2: correct mapping, tested in characterization |
 | Silent physical→virtual fallback | Phase 3: explicit profile transitions, no silent fallback |
 | Static periodic payloads (no counter/checksum regen) | Phase 5: per-frame regeneration in scheduler |
 | No source ownership / duplicate producers | Phase 5: source-ownership table + conflict detection |
 | Placeholder bus load/TEC/REC = 0 | Phase 2: `Unknown` for unsupported, never fake-zero |
-| Mutable frame types + decoded payload embedded | Phase 2: immutable `RawFrameEnvelope` + separate decode |
+| Mutable frame types + decoded payload embedded | Phase 1–2: immutable `RawFrameEnvelope` + separate decode |
 | No evidence quality tracking | Phase 6: evidence-quality gate on every test/capture |
 
 ---
 
 ## Phase 0 — Protocol Foundation
 
-**Goal:** Ensure the YAML contracts, Python compiler, generated runtime codecs, golden vectors, and semantic hashes are complete and deterministic enough for the Control Toolkit backend.
+**Goal:** Confirm the existing YAML contracts, compiler, generated codecs, golden vectors, and semantic hashes are **good enough to import** into the Control Toolkit. Fix only gaps that block correct encode/decode/validate. This does not replace toolkit, RT, or SYS application code.
 
-**Depends on:** Protocol YAML contracts, `protocol/tools/protocol.py`
+**Depends on:** `protocol/contracts/`, `protocol/tools/protocol.py`, existing generated artifacts (same stack RT/SYS already consume)
 
-### 0.1 Audit and complete YAML contracts
+**Out of scope for Phase 0:** vehicle preview metadata, LLM schemas, full transmission-policy product UI, perfect comment-to-machine migration of every YAML comment.
 
-- [ ] Verify all messages from `architecture-control-toolkit.md` §6 / §22 exist in YAML:
-  - `0x001 SAFETY_ESTOP`, `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x201 SES_STATUS`, `0x206 MTR_MOTOR_FBK`, `0x300 HOST_DRIVE_CMD`, `0x310/0x311 RT_DIAG`, `0x600 SYS_DIAG_RPT`, `0x7FC HOST_HEARTBEAT`, `0x7FD RT_HEARTBEAT`, `0x7FE SYS_HEARTBEAT`, `0x721 SEB_STATUS`, `0x7B9 VCU_SEB_REQ`, `VCU_SES_REQ`
-- [ ] Add missing fields per `architecture-control-toolkit.md` §14.1.1:
-  - SYS `rx_overflow` in `SYS_DIAG_RPT` byte 2 bits 1–6, saturating semantics
-  - MTR `STARTUP_READY` vs fault-bit separation
-  - `origin_bus` and forwarding route metadata
-  - `counter_kind` (`modulo`/`saturating`/`monotonic`) per counter signal
-  - Health-bit precise semantics (SYS `can_ok` = TEC < 255 vs error-passive)
-- [ ] Add `transmission_policy` metadata per message (monitor-only, HMI-periodic, synthetic-peer, manual-bench, kinematics-control, direct-actuator, safety-event)
+### 0.1 Audit YAML contracts (wire facts)
 
-### 0.2 Audit and extend Python runtime codecs
+- [ ] Verify toolkit-critical messages exist in `protocol/contracts/` (not legacy dual-file names):
+  - `0x001 SAFETY_ESTOP`, `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x201 SES_STATUS`, `0x206 MTR_MOTOR_FBK`, `0x300 HOST_DRIVE_CMD`, `0x310`/`0x311` diag, `0x600 SYS_DIAG_RPT`, heartbeats `0x7FC`/`0x7FD`/`0x7FE`, `0x721 SEB_STATUS`, `0x7B9 VCU_SEB_REQ`, `VCU_SES_REQ`
+- [ ] Confirm `network.yaml` forwarding matches RT gateway behavior (`can_rx_router` / architecture)
+- [ ] Add missing **wire** fields only when decode/encode or firmware already depends on them (e.g. packed diag bits if present on the bus)
+- [ ] Record `counter_kind` / integrity strategy where the codec already needs it; leave pure presentation metadata for later if not required to decode
+- [ ] Optional later (backlog): rich `transmission_policy` presentation tags per message
 
-*(Note: Directly import and rely on the existing Python package from `protocol/` to parse the distributed ECU definitions in `protocol/contracts/`. Do not attempt to salvage the obsolete monolithic YAML parser from `debug-tool`.)*
+### 0.2 Audit and use Python runtime codecs
 
-- [ ] Audit existing `protocol/generated/python/etrike_protocol.py` and `protocol/codecs/` against Control Toolkit requirements:
-  - Message catalog completeness: bus, ID, name, DLC, sender, receivers, period, byte order, signals
-  - Encode/decode coverage for all messages (Intel + Motorola, mixed endianness)
-  - Validator functions: DLC, range, enum, checksum, counter (use existing XOR profiles)
-  - Constants and safety bounds from YAML `constants` blocks
-- [ ] Add missing Control Toolkit-specific metadata if needed:
-  - Transmission policy per message
-  - Freshness/liveness configuration
-  - Counter semantics (modulo/saturating/monotonic)
-  - Origin bus and forwarding route metadata
-- [ ] Implement semantic hash computation (content-based, whitespace-insensitive) if not present
+*(Import the existing Python package from `protocol/`. Do not re-parse contracts in the toolkit. Do not salvage the obsolete monolithic YAML parser from `debug-tool`.)*
 
-### 0.3 Audit and extend TypeScript runtime catalog
+- [ ] Audit `protocol/generated/python/` and `protocol/codecs/` as **consumers**, same idea as RT/SYS:
+  - Catalog: bus, ID, name, DLC, sender, receivers, period, byte order, signals
+  - Encode/decode for ordinary + custom (SES/SEB/PWT) messages
+  - Validators: DLC, range, enum, checksum/counter via existing profiles
+  - Constants / safety bounds used for injection limits
+- [ ] Confirm toolkit can import and round-trip without forking generated sources
+- [ ] Fill only gaps that block import/validate (not a full “toolkit metadata product”)
+- [ ] Semantic hash: implement or expose if missing; must match TS when both exist
 
-- [ ] Audit existing `protocol/generated/typescript/etrike-protocol.ts` against Control Toolkit frontend requirements:
-  - Message/signal catalog with all UI-relevant metadata
-  - Semantic hash matching the Python version
-  - Enum value maps, unit strings, signal labels
-  - Byte/bit layout metadata for the CAN Dictionary bit grid
-- [ ] Add missing Control Toolkit-specific presentation metadata if needed:
-  - Message categories for navigation/filtering
-  - Signal-to-bit-cell mapping for canonical bit visualization
-  - Freshness configuration for frontend display
+### 0.3 Audit TypeScript runtime catalog (for later Phase 4)
+
+- [ ] Audit `protocol/generated/typescript/` for catalog + enum/unit labels + bit layout enough for Dictionary
+- [ ] Semantic hash must match Python
+- [ ] Presentation niceties (categories, bit-grid polish) may wait for Phase 4 / backlog if decode works
 
 ### 0.4 Golden encode/decode vectors
 
@@ -152,9 +226,9 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
 
 - [ ] Create `control-toolkit/backend/` with:
   - `pyproject.toml` (FastAPI, uvicorn, python-can, pydantic, httpx, pytest, pytest-asyncio)
-  - `vtc/` package structure:
+  - `toolkit/` package structure:
     ```
-    vtc/
+    toolkit/
     ├── __init__.py
     ├── main.py              # FastAPI app factory
     ├── config.py             # typed configuration with defaults
@@ -823,208 +897,69 @@ npx playwright test tests/e2e/actuator-control.spec.ts
 
 ---
 
-## Phase 8 — Vehicle Visual Preview
+## Phase 8 — (moved) Vehicle Visual Preview → Backlog
 
-**Goal:** Implement the top-down vehicle preview with dual actuation/sensor layers, center-locked ego view, and proper provenance separation.
+**Status:** **Backlog** — not on the core 0–7 critical path.  
+Architecture detail remains in `architecture-control-toolkit.md` §24 and logic §40–42 for when this is pulled in.
 
-**Depends on:** Phase 7
+A minimal numeric command/feedback strip on Overview (Phase 4/7) is enough for first bench use. Full center-locked dual-layer projection is optional product depth.
 
-### 8.1 Backend projection service
-
-- [ ] `VehicleProjection` with parallel `actuation` and `sensors` state trees
-- [ ] Per-field: value, unit, source, bus/ID/signal, provenance, sample_time, age, validity, epoch
-- [ ] Source selection: primary actuation + primary sensor resolved independently per property
-- [ ] Fallback rules: declared fallback only, explicitly reported
-- [ ] Actuation-sensor deltas from time-aligned valid samples
-- [ ] Curvature/turn radius from physical wheelbase + steering convention
-- [ ] Path only when speed + steering + dimensions + direction all valid
-- [ ] Published as one versioned atomic snapshot/delta
-
-### 8.2 Frontend preview
-
-- [ ] Responsive SVG/Canvas top-down tricycle
-- [ ] Dual layers: outlined actuation (ghost) + solid sensor
-- [ ] Overlay / Actuation-only / Sensors-only modes
-- [ ] Center-locked ego view: vehicle at center, background translates
-- [ ] Speed/gear direction arrow, brake, lights, ESTOP state
-- [ ] Compact HUD: value, unit, source, age, validity
-- [ ] Stale → freeze + fade + age shown
-- [ ] Missing → remove geometry + "No data" (never zero)
-- [ ] Corrupt → last valid + "Corrupt input" badge
-- [ ] `requestAnimationFrame` only while visible
-
-### 8.3 Projection REST endpoint
-
-- [ ] `GET /api/v1/projection` — current vehicle projection snapshot
-- [ ] WebSocket projection subscription (in stream)
-
-**Tests:**
-```bash
-# Projection service
-pytest control-toolkit/backend/tests/test_projection.py -v
-# → actuation vs sensor independence
-# → stale/missing/corrupt handling
-# → epoch boundary
-# → curvature/ICR calculation (golden kinematics vectors)
-
-# Visual preview (Playwright snapshot tests)
-npx playwright test tests/e2e/preview.spec.ts
-# → straight, left, right, reverse, neutral, braking, indicators, ESTOP
-# → command/feedback disagreement
-# → stale/missing/corrupt inputs
-# → center-lock invariant
-# → reduced-motion mode
-```
-
-**Exit gate:**
-- [ ] Vehicle preview shows actuation and sensor layers independently
-- [ ] Stale/missing/corrupt inputs handled correctly (never fabricated zero)
-- [ ] Center-lock invariant holds under all conditions
-- [ ] Kinematics calculations match golden vectors
-- [ ] Preview works identically in monitoring mode (no control required)
+See [Backlog B1](#backlog-b1--vehicle-visual-preview).
 
 ---
 
-## Phase 9 — Error Coding and Structured Logging
+## Phase 9 — Error Coding (core minimum vs backlog polish)
 
-**Goal:** Implement the full error catalog, structured event system, and shared event API from `error-codes.md`.
+**Goal (core):** Stable error codes and problem details on the shared API so clients are not string-scraping.  
+**Goal (backlog):** Full machine-readable catalog, event store, wait-by-predicate, LLM-oriented event queries.
 
-**Depends on:** Phase 6 (but can be started earlier incrementally)
+**Depends on:** Phase 1+ incrementally; finish a **minimum** by Phase 6.
 
-### 9.1 Error catalog registry
+### 9.1 Core (in spine)
 
-- [ ] Machine-readable catalog from `error-codes.md`
-- [ ] Every condition: catalog_id + symbolic code + severity + retryable + event_state
-- [ ] Domain boundaries: system, api, adapter, can, pipeline, protocol, tx, ecu, test, recording, replay, stream, ui, projection
+- [ ] Stable symbolic codes + catalog IDs on API failures
+- [ ] RFC 9457 `application/problem+json` for HTTP failures
+- [ ] Log structured fields (code, request/session, adapter epoch) without a full event database
 
-### 9.2 Event factory
+### 9.2 Backlog polish
 
-- [ ] Central event creation with: event_id, timestamps, versions, correlation IDs, adapter epoch, provenance
-- [ ] Cause/root event linking
-- [ ] Deduplication: first → bounded updates → recovery
-- [ ] Secret redaction
-- [ ] Persistence before client publication
+Full registry, event factory, cause chains, event query API, wait predicates — see [Backlog B2](#backlog-b2--error-catalog-and-event-system-polish).
 
-### 9.3 Event API
+### 9.3 (historical detail kept for backlog)
 
-- [ ] `GET /api/v1/error-codes` — machine-readable catalog
-- [ ] `GET /api/v1/events` — query by time/code/severity/correlation
-- [ ] `GET /api/v1/events/{id}` — single event with cause chain
-- [ ] `POST /api/v1/wait` — wait for typed event predicate with deadline
+When implementing B2:
+
+- [ ] Machine-readable catalog from error-codes section
+- [ ] Event factory: event_id, timestamps, correlation, dedup, redaction
+- [ ] `GET /api/v1/error-codes`, `/events`, `/events/{id}`, wait helpers
 - [ ] WebSocket event subscription
 
-### 9.4 RFC 9457 Problem Details
-
-- [ ] HTTP failures return `application/problem+json`
-- [ ] Contains: type URI, title, status, detail, code, catalog_id, severity, event_id
-
-**Tests:**
+**Tests (core):**
 ```bash
-pytest control-toolkit/backend/tests/test_error_catalog.py -v
-pytest control-toolkit/backend/tests/test_event_factory.py -v
-pytest control-toolkit/backend/tests/test_event_api.py -v
 pytest control-toolkit/backend/tests/test_problem_details.py -v
 ```
 
-**Exit gate:**
-- [ ] Every error condition uses the catalog (no ad-hoc strings)
-- [ ] Events are structured and queryable
-- [ ] RFC 9457 format for HTTP errors
-- [ ] Same event structure in logs, API, WebSocket, and recordings
+**Exit gate (core):**
+- [ ] API failures use stable codes + problem+json (not ad-hoc English-only errors)
+- [ ] Logs carry the same codes as API responses
+
+**Exit gate (backlog B2 only):** full catalog, queryable events, shared event schema everywhere
 
 ---
 
-## Phase 10 — Adapter Conformance and Performance Validation
+## Phase 10 — (moved) Conformance wizard & performance budgets → Backlog
 
-**Goal:** Build the adapter conformance suite, workload budget system, and measurable real-time service levels.
+**Status:** **Backlog** — Phase 2 still does basic CANalyst characterization (channel map, DLC=0, poll delay). Full fingerprint suite, workload envelopes, and formal service-level soak are not core.
 
-**Depends on:** Phase 7
-
-### 10.1 Adapter conformance suite
-
-- [ ] Guided characterization: channel mapping, bitrate, IDs, DLC 0–8, timestamps, RX ordering, echo, overflow, unplug/replug, sustained load, TX jitter
-- [ ] Results bound to adapter/driver/OS fingerprint
-- [ ] Fingerprint change → `Characterization outdated`
-- [ ] Store measured capability record
-
-### 10.2 Workload budget system
-
-- [ ] Define tested envelope: frames/sec per channel, decoded signals, active plots, raw subscribers, recording throughput, scheduled TX jobs
-- [ ] Report current utilization vs envelope
-- [ ] Graceful degradation order: hidden visuals → plot density → display intermediates → raw monitor delivery
-- [ ] Never shed: adapter supervision, RX integrity, active assertions, scheduler, critical events, lossless recording
-
-### 10.3 Service-level validation
-
-- [ ] Measure against architecture §18.1 targets:
-  - Backend stream heartbeat: 250ms
-  - Browser degraded after 750ms, lost after 1500ms
-  - Dashboard repaint: 20–30 Hz under load
-  - Maximum visual age while LIVE: max(150ms, 2× message period)
-  - Control-intent lease: shorter than ECU watchdog
-- [ ] Soak test under dual-bus worst-case load
-
-**Tests:**
-```bash
-# Adapter conformance (hardware, opt-in)
-pytest control-toolkit/backend/tests/test_adapter_conformance.py -v -m hardware
-
-# Workload budget (virtual)
-pytest control-toolkit/backend/tests/test_workload_budget.py -v
-# → measure degradation under increasing load
-# → verify shedding order
-
-# Service-level benchmarks (virtual)
-pytest control-toolkit/backend/tests/test_service_levels.py -v
-# → latency measurements
-# → freshness timing accuracy
-```
-
-**Exit gate:**
-- [ ] Adapter conformance suite passes on target hardware
-- [ ] Workload budget accurately reports utilization
-- [ ] Degradation follows defined shedding order
-- [ ] Service-level targets met under virtual worst-case
+See [Backlog B3](#backlog-b3--adapter-conformance-wizard-and-workload-budgets).
 
 ---
 
-## Phase 11 — Advanced Capabilities (Later)
+## Phase 11 — (moved) Advanced analyzer capabilities → Later
 
-**Goal:** Implement deferred capabilities after the core platform is stable and validated.
+**Status:** **Later** — after core 0–7 is stable. Includes triggered capture, offline replay, baseline compare, predicate language, Tauri.
 
-**Depends on:** Phase 10
-
-### 11.1 Triggered pre/post capture
-
-- [ ] Bounded backend pre-trigger ring
-- [ ] Predicate-based triggers (message/signal, checksum failure, freshness transition, etc.)
-- [ ] Configurable pre/post trigger windows
-- [ ] Evidence quality on every capture
-
-### 11.2 Deterministic offline replay
-
-- [ ] Replay epoch (distinct from adapter epochs)
-- [ ] Virtual clock drives router/decoder/validator/freshness
-- [ ] Pause/step/speed/seek from indexed checkpoints
-- [ ] Observation-only (no physical TX path)
-
-### 11.3 Baseline/session comparison
-
-- [ ] Semantic identity alignment (`bus + message + signal`)
-- [ ] Compare: presence, period, jitter, values, diagnostics, latency, integrity
-- [ ] Incompatible → `Not comparable`; gaps → `Inconclusive`
-
-### 11.4 Server-side predicate language
-
-- [ ] Shared typed predicate model for filters, triggers, assertions
-- [ ] Address YAML semantic names + engineering values
-- [ ] Protocol hash binding (renamed signals fail visibly)
-
-### 11.5 Tauri desktop packaging
-
-- [ ] Python sidecar lifecycle
-- [ ] USB driver access
-- [ ] Per-session capability token
+See [Later L1–L5](#later--deferred-product-surface).
 
 ---
 
@@ -1032,122 +967,193 @@ pytest control-toolkit/backend/tests/test_service_levels.py -v
 
 | Level | What | Where | When |
 |---|---|---|---|
-| **Unit** | Generated vectors, fake clock/queue, no hardware | `pytest backend/tests/test_*.py` | Every phase |
-| **Virtual integration** | Two virtual buses, full pipeline, `simulation/` ECU plug-in | `pytest backend/tests/test_*_integration.py` | Every phase |
-| **API integration** | FastAPI TestClient against virtual backend | `pytest backend/tests/test_api_*.py` | Phase 1+ |
-| **WebSocket integration** | Full stream lifecycle with virtual fixtures | `pytest backend/tests/test_websocket_*.py` | Phase 1+ |
-| **Playwright E2E** | React against virtual backend, deterministic fixtures | `npx playwright test` | Phase 4+ |
-| **Hardware characterization** | CANalyst-II + loopback or bench ECU | `pytest -m hardware` | Phase 2+, opt-in |
-| **Soak/benchmark** | Sustained dual-channel load measurement | `pytest -m benchmark` | Phase 10 |
+| **Unit** | Generated vectors, fake clock/queue, no hardware | `pytest backend/tests/test_*.py` | Every core phase |
+| **Virtual integration** | Two virtual buses, full pipeline | `pytest backend/tests/test_*_integration.py` | Every core phase |
+| **API / WebSocket** | FastAPI TestClient + stream fixtures | `pytest backend/tests/test_api_*.py` etc. | Phase 1+ |
+| **Playwright E2E** | React against virtual backend | `npx playwright test` | Phase 4+ |
+| **Hardware characterization** | CANalyst-II loopback / bench | `pytest -m hardware` | Phase 2+, opt-in |
+| **Soak / conformance wizard** | Full budgets + fingerprint suite | Backlog B3 | After core |
 
-### Critical scenario coverage
+### Critical scenario coverage (core)
 
 | Scenario | Phase | Test type |
 |---|---|---|
 | Silent bus vs disconnected USB | 2 | Unit |
 | WebSocket loss during keyboard stimulus | 7 | Integration |
-| Source conflict after simulation adapter start | 5 | Integration |
+| Source conflict on synthetic peer IDs | 5 | Integration |
 | Checksum/counter positive + negative | 0+5 | Unit (golden vectors) |
-| Queue/storage overload → Inconclusive | 6+10 | Integration |
+| Queue/storage overload → Inconclusive | 6 | Integration |
 | Reconnect new epoch without resuming TX | 2+3 | Integration |
 | DLC=0 ESTOP event | 0+5 | Unit + Integration |
-| HMI mode/power transition | 5 | Integration |
-| Host command to RT output correlation | 7 | Integration |
-| Stop All during every active workflow | 3+5+7 | Integration |
+| HMI mode/power transition (when firmware accepts CAN HMI) | 5 | Integration |
+| Stop All during active workflows | 3+5+7 | Integration |
 
 ---
 
-## Dependency graph
+## Dependency graph (core only)
 
 ```mermaid
 flowchart TD
-    P0[Phase 0: Protocol Foundation] --> P1[Phase 1: Backend Skeleton + Virtual Transport]
-    P1 --> P2[Phase 2: CANalyst-II Transport]
-    P2 --> P3[Phase 3: Profiles + Sessions]
-    P3 --> P4[Phase 4: Read-Only Frontend]
-    P4 --> P5[Phase 5: Command Pipeline + Injection]
-    P5 --> P6[Phase 6: Diagnostics + Recording + Evidence]
-    P6 --> P7[Phase 7: Keyboard/Gamepad + Actuator Control]
-    P7 --> P8[Phase 8: Vehicle Preview]
-    P6 --> P9[Phase 9: Error Coding]
-    P7 --> P10[Phase 10: Conformance + Performance]
-    P10 --> P11[Phase 11: Advanced Capabilities]
-    P8 --> P11
-    P9 --> P11
+    P0[Phase 0: Protocol audit + vectors] --> P1[Phase 1: Backend + virtual transport]
+    P1 --> P2[Phase 2: CANalyst-II]
+    P2 --> P3[Phase 3: Profiles + sessions]
+    P3 --> P4[Phase 4: Read-only frontend]
+    P4 --> P5[Phase 5: Injection + synthetic peers]
+    P5 --> P6[Phase 6: Diagnostics + recording]
+    P6 --> P7[Phase 7: Keyboard + actuator stimuli]
+    P1 --> P9min[Phase 9 min: problem+json codes]
+    P6 --> P9min
 ```
+
+Backlog / Later / Future Work attach **after** P7 (or earlier as optional spikes) and never block the core gate sequence.
 
 ---
 
 ## Architecture document cross-reference
 
-| Work plan phase | Architecture sections |
+| Work plan | Architecture sections |
 |---|---|
-| Phase 0 | §18.2 Protocol compiler, §3 Data processing, §22 Scope matrix |
-| Phase 1 | §4 System architecture, §4.5 Concurrency, §5 Canonical data, §5.1 RT contract |
-| Phase 2 | §4.4 CANalyst-II, §4.4.1–4.4.7 Transport, §8.4 Connection loss |
-| Phase 3 | §3 Profiles, §4.1 Test session, §4.2 Scheduler, §4.3 Security |
-| Phase 4 | §6 Shell, §7 Overview, §8 Network, §9 Live CAN, §10 Dictionary, §17 Visual, §5.2–5.4 Updates |
-| Phase 5 | §11 Control, §13 Injection, §4.2 Scheduler, §16 Boundaries |
-| Phase 6 | §14 Diagnostics/verification/logging, §15 Data rules, §22.1 Test model |
-| Phase 7 | §11.2 Kinematics, §11.3 Direct actuator, §11.4 Keyboard/gamepad |
-| Phase 8 | §24 Vehicle preview, §24.1–24.6 Rendering |
-| Phase 9 | §26 Error coding, `error-codes.md` |
-| Phase 10 | §18.1 Service levels, §23.6 Conformance, §23.7 Workload |
-| Phase 11 | §23 Analyzer improvements, §23.1–23.5 |
+| Phase 0 | §18.2 Protocol, root `architecture.md` codec model, RT/SYS consumption pattern |
+| Phase 1 | §4 System architecture, §4.5 Concurrency, §5 Canonical data |
+| Phase 2 | §4.4 CANalyst-II, §8.4 Connection loss |
+| Phase 3 | §3 Profiles, §4.1 Session, §4.2 Scheduler |
+| Phase 4 | §6–10 Shell / Overview / Network / Live CAN / Dictionary |
+| Phase 5 | §11 Control, §13 Injection, §16 Boundaries |
+| Phase 6 | §14 Diagnostics, §15 Data rules |
+| Phase 7 | §11.2–11.4 Kinematics / actuator / keyboard |
+| Phase 9 min | §26 Error coding (subset) |
+| Backlog B1 | §24 Vehicle preview |
+| Backlog B2–B4 | §26 full, §18.1, §23.6–23.7, API §6 LLM |
+| Later L1–L5 | §23.1–23.5, §23.3, packaging |
+| Future Work | ECU simulation, full physics sim |
 
 ---
 
-## Future Work — ECU Simulation Integration
+## Backlog
 
-**Prerequisite:** Phases 1–5 complete and stable.
+Pull these only when core Phases 0–7 are usable on the bench. Design text in the architecture doc remains valid reference — it is not a v1 build mandate.
 
-ECU simulation code fully exists in `simulation/src/ecus/` (RT, SYS, SEB, EPS-C, MTR, Host — all implemented with kinematics, safety state machines, rolling counters, XOR checksums, and startup constraints). This work integrates it into the control-toolkit backend as a plug-in adapter for Bench Test and Pure Software profiles.
+### Backlog B1 — Vehicle visual preview
 
-**Do not re-implement ECU logic inside control-toolkit.** All behavior, timing, counters, and checksums remain owned by `simulation/`. The adapter only wires transport.
+Formerly Phase 8. Dual actuation/sensor `VehicleProjection`, center-locked ego canvas, path/ICR, Playwright visual goldens.
 
-### FW.1 Simulation adapter
+- [ ] Backend projection service (`GET /api/v1/projection`, stream subscription)
+- [ ] Frontend SVG/Canvas dual-layer preview with honesty rules (no fabricated zeros)
+- [ ] Kinematics vectors shared with E-Trike physics notes
 
-- [ ] Write a thin Python adapter that bridges `simulation/` ECUs onto the control-toolkit virtual buses
-- [ ] Adapter accepts a bench configuration specifying which ECUs to start
-- [ ] Each simulated ECU runs as a subprocess driven by `simulation/`; adapter converts its CAN output to backend `RawFrameEnvelope` with `source = Simulated <ECU>`
-- [ ] Clean shutdown: stop all simulated jobs on profile change, session end, or Stop All
+### Backlog B2 — Error catalog and event system polish
 
-### FW.2 Source conflict and listen-before-speak
+Formerly full Phase 9.
 
-- [ ] Detection window per claimed CAN ID before first simulated TX
-- [ ] If physical traffic already present for a claimed ID, refuse to start that ECU and flag conflict
-- [ ] If physical traffic appears after simulated TX starts, stop the simulated job immediately and mark the test Inconclusive
-- [ ] Conflict event logged with evidence (physical frame that caused conflict)
+- [ ] Machine-readable catalog for all domains
+- [ ] Event factory, cause chains, dedup, persistence
+- [ ] Query/wait APIs and WebSocket event feed
+- [ ] Same schema in logs, recordings, and UI
 
-### FW.3 API endpoints
+### Backlog B3 — Adapter conformance wizard and workload budgets
 
-- [ ] `POST /api/v1/simulation/start` — start simulation adapter with bench configuration (Bench Test / Pure Software profiles only)
-- [ ] `DELETE /api/v1/simulation` — stop all simulated ECUs
-- [ ] `GET /api/v1/simulation/status` — running ECUs, per-ECU TX health, source-conflict events
+Formerly Phase 10.
 
-### FW.4 Bench workspace (frontend)
+- [ ] Guided characterization suite bound to adapter fingerprint
+- [ ] Workload envelope + utilization reporting
+- [ ] Graceful degradation order under overload
+- [ ] Soak vs §18.1 service levels
 
-- [ ] Simulation status panel: which ECUs are running, source provenance badge per ECU, TX health indicator
-- [ ] Source-conflict alert: which ID conflicted and which physical frame caused it
-- [ ] Start/stop controls per ECU or as a set
+### Backlog B4 — LLM / MCP client adapters
 
-### FW.5 Tests
+The **core product** is one FastAPI contract for React, CI, and scripts. LLM tool schemas and MCP adapters are optional translations of that contract — no second domain backend.
+
+- [ ] Optional OpenAPI → tool schema generator
+- [ ] Optional MCP adapter that only maps tools → REST/WS
+- [ ] Docs for headless automation via HTTPX (preferred over MCP for CI)
+
+### Backlog B5 — Presentation metadata on protocol artifacts
+
+Nice-to-have after decode works:
+
+- [ ] Message categories for filters
+- [ ] Richer Dictionary bit-grid metadata
+- [ ] `transmission_policy` tags for Control/Bench UX
+
+---
+
+## Later — deferred product surface
+
+Formerly Phase 11. Do not schedule against first bench bring-up.
+
+### Later L1 — Triggered pre/post capture
+
+- [ ] Backend ring buffer + predicate triggers + pre/post windows + evidence quality
+
+### Later L2 — Deterministic offline replay
+
+- [ ] Replay epoch, virtual clock through router/freshness, pause/step/seek, observation-only
+
+### Later L3 — Baseline / session comparison
+
+- [ ] Semantic alignment, period/jitter/value diffs, Not comparable / Inconclusive rules
+
+### Later L4 — Server-side predicate language
+
+- [ ] Shared typed predicates for filters, triggers, assertions; protocol-hash bound
+
+### Later L5 — Tauri desktop packaging
+
+- [ ] Python sidecar, USB access, per-session capability token; still HTTP/WS to backend
+
+---
+
+## Future Work
+
+### FW-A — ECU simulation integration (`simulation/`)
+
+**Prerequisite:** Core Phases 1–5 complete and stable.
+
+ECU simulation already exists in `simulation/src/ecus/` (RT, SYS, SEB, EPS-C, MTR, Host). Integrate as a **thin transport plug-in** for Bench Test / Pure Software.
+
+**Do not re-implement ECU logic inside control-toolkit.** Behavior, timing, counters, and checksums stay in `simulation/`. The adapter only wires buses and provenance.
+
+#### FW-A.1 Simulation adapter
+
+- [ ] Bridge `simulation/` ECUs onto toolkit virtual buses
+- [ ] Bench config selects which ECUs to start
+- [ ] Provenance `Simulated <ECU>` on envelopes
+- [ ] Clean shutdown on profile change / session end / Stop All
+
+#### FW-A.2 Source conflict and listen-before-speak
+
+- [ ] Refuse simulated TX if physical ID already present
+- [ ] Stop simulated job + Inconclusive if physical traffic appears later
+- [ ] Log conflicting physical frame as evidence
+
+#### FW-A.3 API + Bench UI
+
+- [ ] `POST/DELETE/GET /api/v1/simulation...`
+- [ ] Bench workspace panel for running ECUs and conflicts
+
+#### FW-A.4 Tests
 
 ```bash
 pytest control-toolkit/backend/tests/test_simulation_adapter.py -v
-# → simulation/ ECUs start on virtual buses with correct provenance
-# → listen-before-speak: physical ID present → refuse to start
-# → physical traffic after start → stop simulated job, mark Inconclusive
-# → Stop All terminates all simulated jobs
-
 npx playwright test tests/e2e/bench.spec.ts
-# → bench workspace shows running ECUs with provenance
-# → source conflict shown in UI
 ```
 
-**Exit gate:**
-- [ ] `simulation/` ECUs appear on virtual buses with `Simulated <ECU>` provenance
-- [ ] Listen-before-speak prevents simulated TX when physical ID already present
-- [ ] Source conflict stops simulated TX and marks test Inconclusive
-- [ ] Stop All terminates all simulated jobs cleanly
-- [ ] Bench workspace displays simulation status and conflict events
+### FW-B — Complete ECU / vehicle simulation (product scope)
+
+Same spirit as architecture Future Work: full physics, complex state machines, environmental sensors — **not** required for control-toolkit core. Prefer extending `simulation/` rather than growing toolkit backend logic.
+
+- [ ] Full-vehicle physics response to motor/steering
+- [ ] Deep ECU state-machine emulation
+- [ ] Sensor feedback loops from simulated environment
+- [ ] Advanced kinematics-mode host emulation as a product feature
+- [ ] Virtual encoder richness beyond simple synthetic peer frames
+
+### FW-C — Firmware / protocol work outside toolkit (context)
+
+Control Toolkit assumes RT/SYS continue to own vehicle policy. Related work stays in those trees:
+
+- [ ] RT/SYS configuration and pure-software safety gates per `docs/rt-sys-feature-configuration-and-test-plan.md`
+- [ ] Any remaining wire-field gaps in `protocol/contracts/` discovered while aligning firmware diag
+- [ ] HMI CAN acceptance already partially present on SYS (`HMI_MODE_REQ`); keep firmware flag/policy explicit
+
+These are **not** control-toolkit phases; they are dependencies when testing physical ECUs.
