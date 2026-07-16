@@ -2565,6 +2565,36 @@ button.bit-cell.filled:active:not(:disabled) {
   font-weight: 750;
 }
 
+.dict-sig-doc {
+  margin-top: 4px;
+}
+
+.dict-sig-doc dt {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  margin-top: 8px;
+}
+
+.dict-sig-doc dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.dict-sig-examples {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.dict-sig-examples li {
+  margin: 0 0 2px;
+}
+
 .signal-table tr.row-open {
   background: var(--primary-soft);
 }

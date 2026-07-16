@@ -213,13 +213,17 @@ const TABS: Array<{
             })
           }
         }
-        // Click signal row expands "how bits work"
+        // Expand row: meaning / why / type / examples — not packing waffle
         const sigRow = page.locator('[data-testid^="dict-sig-row-"]').first()
         if (await sigRow.count()) {
           await sigRow.click()
-          await expect(page.locator('[data-testid^="dict-sig-expand-"]').first()).toBeVisible({
-            timeout: 5_000,
-          })
+          const exp = page.locator('[data-testid^="dict-sig-expand-"]').first()
+          await expect(exp).toBeVisible({ timeout: 5_000 })
+          await expect(exp.getByTestId('dict-expand-what')).toBeVisible()
+          await expect(exp.getByTestId('dict-expand-why')).toBeVisible()
+          await expect(exp.getByTestId('dict-expand-type')).toBeVisible()
+          await expect(exp.getByTestId('dict-expand-examples')).toBeVisible()
+          await expect(exp).not.toContainText(/Multi-bit field|same-color cells|Bits pack contiguously/i)
         }
       }
 
