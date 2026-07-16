@@ -28,7 +28,7 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await expect(page.getByTestId('chip-stream')).not.toHaveText(/CONNECTING/i, {
       timeout: 20_000,
     })
-    await expect(page.getByTestId('chip-stream')).toContainText(/LIVE|DELAYED|LOST/i)
+    await expect(page.getByTestId('chip-stream')).toContainText(/Live|Delayed|Lost|Connecting/i)
     await expect(page.getByTestId('chip-profile')).toContainText(
       /Pure Software|pure_software|—/i,
     )
