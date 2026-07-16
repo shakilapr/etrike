@@ -52,6 +52,7 @@ def test_openapi_lists_core_paths(client):
         "/api/v1/evidence/{evidence_id}",
         "/api/v1/protocol/messages/{bus}/{can_id}/layout",
         "/api/v1/protocol/dictionary",
+        "/api/v1/logs",
     ]
     for p in required:
         assert p in paths, f"missing OpenAPI path {p}"

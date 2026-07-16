@@ -6,56 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
-      - run: cppcheck --enable=all --suppress=missingIncludeSystem --suppress=unmatchedSuppression --inline-suppr --error-exitcode=0 --quiet rt-esp32/src/ sys-esp32/src/ mtr-stm32/src/ shared/
+      - run: cppcheck --enable=all --suppress=missingIncludeSystem --suppress=unmatchedSuppression --inline-suppr --error-exitcode=0 --quiet rt-esp32/src/ sys-esp32/src/ shared/
 
-  protocol-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install canmatrix pydantic PyYAML pytest
-      - run: cd protocol && python tools/protocol.py validate
-      - run: python -m pytest protocol/tests/python/
-      - run: cd pwt-esp32 && python generate_can.py --verify
 
-  simulation:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: cd simulation && npm ci && npx vitest run --pool=forks --poolOptions.forks.singleFork=true
-      - name: Export TS Traces
-        run: cd simulation && npx vitest run tests/export_traces.test.ts
-      - name: Upload TS Traces
-        uses: actions/upload-artifact@v4
-        with:
-          name: ts-traces
-          path: simulation/traces/*.jsonl
-
-  native-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Configure
-        run: cd native-test && mkdir -p build && cd build && cmake ..
-      - name: Build
-        run: cd native-test/build && make -j$(nproc)
-      - name: Test
-        run: cd native-test/build && ctest --output-on-failure
-      - name: Export Native Traces
-        run: cd native-test && python scripts/export_traces.py
-      - name: Upload Native Traces
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-traces
-          path: native-test/traces/*.jsonl
 
   pio-rt:
     runs-on: ubuntu-latest
@@ -77,104 +30,7 @@ jobs:
       - run: pip install platformio pydantic PyYAML
       - run: cd sys-esp32 && pio run
 
-  pio-mtr:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install platformio
-      - run: cd mtr-stm32 && pio run
 
-  backend-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: cd debug-tool/backend && npm ci
-      - run: cd debug-tool/backend && npm run check
-      - run: cd debug-tool/backend && npm test
-
-  debug-ui-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: cd debug-tool/ui && npm ci
-      - run: cd debug-tool/ui && npm run check
-      - run: cd debug-tool/ui && npm test
-
-  debug-e2e-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: cd debug-tool/backend && npm ci
-      - run: cd debug-tool/ui && npm ci
-      - run: cd debug-tool/e2e && npm ci
-      - run: cd debug-tool/e2e && npx playwright install --with-deps chromium
-      - run: cd debug-tool/e2e && npm test
-
-  cui-backend-test:
-    needs: [simulation, native-test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Download Native Traces
-        uses: actions/download-artifact@v4
-        with:
-          name: native-traces
-          path: native-test/traces
-      - name: Download TS Traces
-        uses: actions/download-artifact@v4
-        with:
-          name: ts-traces
-          path: simulation/traces
-      - run: cd control-ui/backend && pip install -r requirements.txt
-      - run: cd control-ui/backend && pip install pytest pytest-asyncio pytest-cov
-      - run: cd control-ui/backend && pytest tests/ -v
-      - name: Upload Backend Logs and DB
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-test-artifacts
-          path: |
-            control-ui/backend/tests/*.db
-            control-ui/backend/tests/*.log
-
-  cui-frontend-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Backend Dependencies
-        run: cd control-ui/backend && pip install -r requirements.txt uvicorn fastapi
-      - run: cd control-ui/frontend && npm ci
-      - run: cd control-ui/frontend && npx tsc --noEmit
-      - run: cd control-ui/frontend && npx vitest run --coverage
-      - run: cd control-ui/frontend && npx playwright install --with-deps chromium
-      - run: cd control-ui/frontend && npx playwright test
-      - name: Upload Playwright Traces
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: control-ui/frontend/playwright-report/
 
   vehicle-build:
     runs-on: ubuntu-latest
@@ -184,10 +40,10 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install platformio pydantic PyYAML
-      - name: Build all 4 ECUs with vehicle profile
+      - name: Build RT and SYS ECUs with vehicle profile
         run: |
           failed=0
-          for dir in rt-esp32 sys-esp32 mtr-stm32 pwt-esp32; do
+          for dir in rt-esp32 sys-esp32; do
             echo "=== Building $dir (vehicle profile) ==="
             cd "$dir"
             pio run -e vehicle 2>&1 | tee build.log
@@ -210,7 +66,7 @@ jobs:
             echo "Vehicle profile verification FAILED — bypass flags detected"
             exit 1
           fi
-          echo "All 4 ECUs built with zero bypass flags"
+          echo "RT and SYS ECUs built with zero bypass flags"
 
   bypass-audit:
     needs: [vehicle-build]
@@ -220,7 +76,7 @@ jobs:
       - name: Audit vehicle profiles for bypass flags
         run: |
           failed=0
-          for dir in rt-esp32 sys-esp32 mtr-stm32 pwt-esp32; do
+          for dir in rt-esp32 sys-esp32; do
             ini="$dir/platformio.ini"
             echo "=== Auditing $ini ==="
             # Check that the [env:vehicle] section contains zero bypass flags

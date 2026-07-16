@@ -82,23 +82,54 @@ def control_intent(request: Request, body: IntentBody) -> dict:
         )
     except SessionError:
         raise
+    # Log sparse samples only (not every 50 ms key tick) — first arm + hard brake.
+    if body.hard_brake or body.sequence <= 2:
+        life.audit.log(
+            category="control",
+            code="control.intent",
+            title="Host intent",
+            detail=(
+                f"src={body.source} thr={body.throttle:.2f} str={body.steer:.2f} "
+                f"gear={snap.get('gear')} shaped={snap.get('shaped_speed_mmps')}"
+            ),
+            severity="info",
+            data={"sequence": body.sequence, "method": snap.get("method")},
+        )
     return {"control": snap}
 
 
 @router.post("/release")
 def control_release(request: Request, body: ReleaseBody | None = None) -> dict:
     reason = body.reason if body else "client_release"
-    snap = request.app.state.lifecycle.control.release(reason=reason)
+    life = request.app.state.lifecycle
+    snap = life.control.release(reason=reason)
+    life.audit.log(
+        category="control",
+        code="control.release",
+        title="Control released",
+        detail=reason,
+        severity="info",
+    )
     return {"control": snap}
 
 
 @router.post("/direct")
 def control_direct(request: Request, body: DirectBody) -> dict:
     """Direct actuator TX on Low bus (exclusive with kinematics)."""
-    snap = request.app.state.lifecycle.control.set_direct(
+    life = request.app.state.lifecycle
+    snap = life.control.set_direct(
         channel=body.channel,
         enabled=body.enabled,
         values=body.values,
         period_ms=body.period_ms,
+    )
+    life.audit.log(
+        category="control",
+        code="control.direct." + ("start" if body.enabled else "stop"),
+        title=f"Direct {body.channel} {'start' if body.enabled else 'stop'}",
+        detail=str(body.values or {}),
+        severity="info",
+        bus="low",
+        data={"channel": body.channel, "enabled": body.enabled},
     )
     return {"control": snap}

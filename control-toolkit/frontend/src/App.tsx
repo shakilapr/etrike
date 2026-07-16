@@ -134,6 +134,15 @@ function IconSearch() {
   )
 }
 
+/** Lucide scroll-text (logs) */
+function IconLogs() {
+  return (
+    <NavIcon>
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </NavIcon>
+  )
+}
+
 /** Lucide settings (gear) */
 function IconSettings() {
   return (
@@ -177,6 +186,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'bench', label: 'Bench', icon: <IconTerminal /> },
       { id: 'dictionary', label: 'Dictionary', icon: <IconBook /> },
       { id: 'diagnostics', label: 'Diagnostics', icon: <IconSearch /> },
+      { id: 'logs', label: 'Logging', icon: <IconLogs /> },
     ],
   },
   {
@@ -209,6 +219,122 @@ function signalText(m: MessageState | undefined, key: string): string {
   if (!m?.signals?.[key]) return '—'
   const s = m.signals[key]
   return String(s.enum_label ?? s.engineering_value ?? '—')
+}
+
+function signalNum(m: MessageState | undefined, key: string): number | null {
+  const v = m?.signals?.[key]?.engineering_value
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v)
+  return null
+}
+
+/** Compact horizontal meter for health / continuous signals. */
+function MeterBar({
+  value,
+  max,
+  min = 0,
+  tone,
+  label,
+  testId,
+}: {
+  value: number | null
+  max: number
+  min?: number
+  /** auto: green→amber→red by fill; high-bad: red when high (brake); low-bad: red when low */
+  tone?: 'auto' | 'high-bad' | 'low-bad' | 'accent' | 'ok' | 'warn' | 'danger'
+  label?: string
+  testId?: string
+}) {
+  const span = Math.max(1e-6, max - min)
+  const raw = value == null ? 0 : Math.abs(value - min) / span
+  const pct = Math.max(0, Math.min(100, raw * 100))
+  let t = tone ?? 'auto'
+  if (t === 'auto' || t === 'high-bad' || t === 'low-bad') {
+    if (t === 'high-bad') {
+      t = pct >= 70 ? 'danger' : pct >= 40 ? 'warn' : 'ok'
+    } else if (t === 'low-bad') {
+      t = pct <= 15 ? 'danger' : pct <= 35 ? 'warn' : 'ok'
+    } else {
+      t = pct >= 90 ? 'warn' : 'accent'
+    }
+  }
+  return (
+    <div
+      className={`meter-bar tone-${t}`}
+      data-testid={testId}
+      title={label}
+      role="meter"
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value ?? undefined}
+      aria-label={label}
+    >
+      <div className="meter-bar-track">
+        <div className="meter-bar-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function MetricCard({
+  title,
+  valueText,
+  unit,
+  sub,
+  freshness,
+  value,
+  max,
+  min,
+  tone,
+  testId,
+  meterTestId,
+}: {
+  title: string
+  valueText: string
+  unit?: string
+  sub?: string
+  freshness?: string
+  value: number | null
+  max: number
+  min?: number
+  tone?: 'auto' | 'high-bad' | 'low-bad' | 'accent' | 'ok' | 'warn' | 'danger'
+  testId?: string
+  meterTestId?: string
+}) {
+  return (
+    <div className="card metric-card" data-testid={testId}>
+      <div className="card-head">
+        <div className="card-title">{title}</div>
+        {freshness ? <FreshnessBadge value={freshness} /> : null}
+      </div>
+      <div
+        className="metric"
+        data-testid={
+          testId === 'card-speed'
+            ? 'metric-speed'
+            : testId === 'card-yaw'
+              ? 'metric-yaw'
+              : testId === 'card-gear'
+                ? 'metric-gear'
+                : testId
+                  ? `${testId}-value`
+                  : undefined
+        }
+      >
+        {valueText}
+        {unit ? <span className="unit"> {unit}</span> : null}
+      </div>
+      <MeterBar
+        value={value}
+        max={max}
+        min={min}
+        tone={tone}
+        label={title}
+        testId={meterTestId}
+      />
+      {sub ? <div className="card-sub muted">{sub}</div> : null}
+    </div>
+  )
 }
 
 function findMsg(messages: MessageState[], name: string, bus?: string) {
@@ -560,6 +686,10 @@ function Overview() {
   const motor = findMsg(messages, 'MTR_MOTOR_FBK')
   const sesStatus = findMsg(messages, 'SES_STATUS')
   const sebStatus = findMsg(messages, 'SEB_STATUS')
+  const hostBrake = findMsg(messages, 'HOST_BRAKE_REQ')
+  const rtBrake = findMsg(messages, 'RT_BRAKE_CMD')
+  const brakeDiag = findMsg(messages, 'BRAKE_DIAG')
+  const safety = findMsg(messages, 'SYS_SAFETY_STS')
   const ses = status?.session
 
   const canHealth =
@@ -570,6 +700,25 @@ function Overview() {
         : quality === 'lost'
           ? 'lost'
           : 'unknown'
+
+  const cmdSpeed = signalNum(drive, 'speed_mmps')
+  const cmdYaw = signalNum(drive, 'yaw_rate_mrad_s')
+  const fbkSpeed =
+    signalNum(motor, 'actual_speed_mmps') ?? signalNum(motor, 'speed_mmps')
+  const steerDeg =
+    signalNum(sesStatus, 'angle_deg') ??
+    signalNum(sesStatus, 'steer_angle_deg') ??
+    signalNum(sesStatus, 'angle')
+  const brakeKpa =
+    signalNum(hostBrake, 'brake_pressure_kpa') ??
+    signalNum(rtBrake, 'brake_pressure_kpa') ??
+    signalNum(brakeDiag, 'pressure_raw') ??
+    signalNum(sebStatus, 'pressure_kpa')
+  const speedDelta =
+    cmdSpeed != null && fbkSpeed != null ? fbkSpeed - cmdSpeed : null
+
+  const streamPct =
+    quality === 'live' ? 100 : quality === 'delayed' ? 55 : quality === 'dropping' ? 30 : 8
 
   return (
     <div className="workspace" data-testid="workspace-overview">
@@ -584,7 +733,14 @@ function Overview() {
       <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
         <div className={`strip-item ${ses?.estop_active ? 'hazard' : 'ok'}`}>
           <span className="strip-k">ESTOP</span>
-          <span className="strip-v">{ses?.estop_active ? '● Active' : '● Clear'}</span>
+          <span className="strip-v">{ses?.estop_active ? 'Active' : 'Clear'}</span>
+          <MeterBar
+            value={ses?.estop_active ? 100 : 0}
+            max={100}
+            tone={ses?.estop_active ? 'danger' : 'ok'}
+            label="ESTOP"
+            testId="meter-estop"
+          />
         </div>
         <div className="strip-item">
           <span className="strip-k">Power</span>
@@ -599,53 +755,135 @@ function Overview() {
           </span>
         </div>
         <div className="strip-item">
-          <span className="strip-k">Control path</span>
-          <span className="strip-v">
-            {ses?.bench_tx === 'enabled' ? 'analysis inject' : 'none'}
-          </span>
+          <span className="strip-k">Bench TX</span>
+          <span className="strip-v">{ses?.bench_tx ?? 'disabled'}</span>
+          <MeterBar
+            value={ses?.bench_tx === 'enabled' ? 100 : 0}
+            max={100}
+            tone={ses?.bench_tx === 'enabled' ? 'warn' : 'ok'}
+            label="Bench TX"
+            testId="meter-bench-tx"
+          />
         </div>
         <div className={`strip-item health-${canHealth}`}>
           <span className="strip-k">CAN health</span>
           <span className="strip-v">{canHealth}</span>
+          <MeterBar
+            value={streamPct}
+            max={100}
+            tone={
+              canHealth === 'healthy' ? 'ok' : canHealth === 'degraded' ? 'warn' : 'danger'
+            }
+            label="CAN stream health"
+            testId="meter-can-health"
+          />
+        </div>
+        <div
+          className={`strip-item ${
+            brakeKpa != null && brakeKpa >= 0.7 * 5000 ? 'hazard' : ''
+          }`}
+          data-testid="strip-brake"
+        >
+          <span className="strip-k">Brake pressure</span>
+          <span className="strip-v mono">
+            {brakeKpa != null ? `${brakeKpa.toFixed(0)} kPa` : '—'}
+          </span>
+          <MeterBar
+            value={brakeKpa}
+            max={5000}
+            tone="high-bad"
+            label="Brake pressure"
+            testId="meter-brake"
+          />
         </div>
       </section>
 
-      <div className="cards">
-        <div className="card" data-testid="card-yaw">
-          <div className="card-title">Yaw rate</div>
-          {drive ? <FreshnessBadge value={drive.freshness} /> : null}
-          <div className="metric" data-testid="metric-yaw">
-            {signalText(drive, 'yaw_rate_mrad_s')}
-            <span className="unit"> mrad/s</span>
+      <div className="cards metric-cards" data-testid="overview-meters">
+        <MetricCard
+          title="Speed request"
+          valueText={cmdSpeed != null ? cmdSpeed.toFixed(0) : '—'}
+          unit="mm/s"
+          sub="HOST_DRIVE_CMD 0x300"
+          freshness={drive?.freshness}
+          value={cmdSpeed}
+          max={3000}
+          tone="auto"
+          testId="card-speed"
+          meterTestId="meter-speed-cmd"
+        />
+        <MetricCard
+          title="Motor feedback"
+          valueText={fbkSpeed != null ? fbkSpeed.toFixed(0) : '—'}
+          unit="mm/s"
+          sub="MTR_MOTOR_FBK 0x206"
+          freshness={motor?.freshness}
+          value={fbkSpeed}
+          max={3000}
+          tone="auto"
+          testId="card-motor"
+          meterTestId="meter-speed-fbk"
+        />
+        <MetricCard
+          title="Yaw rate"
+          valueText={cmdYaw != null ? cmdYaw.toFixed(0) : '—'}
+          unit="mrad/s"
+          sub="HOST_DRIVE_CMD"
+          freshness={drive?.freshness}
+          value={cmdYaw}
+          max={3000}
+          tone="auto"
+          testId="card-yaw"
+          meterTestId="meter-yaw"
+        />
+        <MetricCard
+          title="Steering angle"
+          valueText={steerDeg != null ? steerDeg.toFixed(1) : '—'}
+          unit="°"
+          sub="SES_STATUS 0x201"
+          freshness={sesStatus?.freshness}
+          value={steerDeg}
+          max={45}
+          min={-45}
+          tone="auto"
+          testId="card-steer"
+          meterTestId="meter-steer"
+        />
+        <MetricCard
+          title="Brake pressure"
+          valueText={brakeKpa != null ? brakeKpa.toFixed(0) : '—'}
+          unit="kPa"
+          sub="HOST/RT brake · high → red"
+          freshness={
+            hostBrake?.freshness ?? rtBrake?.freshness ?? brakeDiag?.freshness
+          }
+          value={brakeKpa}
+          max={5000}
+          tone="high-bad"
+          testId="card-brake"
+          meterTestId="meter-brake-card"
+        />
+        <div className="card metric-card" data-testid="card-gear">
+          <div className="card-head">
+            <div className="card-title">Gear</div>
+            {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           </div>
-          <div className="card-sub muted">HOST_DRIVE_CMD</div>
-        </div>
-        <div className="card" data-testid="card-speed">
-          <div className="card-title">Speed request</div>
-          {drive ? <FreshnessBadge value={drive.freshness} /> : null}
-          <div className="metric" data-testid="metric-speed">
-            {signalText(drive, 'speed_mmps')}
-            <span className="unit"> mm/s</span>
-          </div>
-          <div className="card-sub muted">HOST_DRIVE_CMD</div>
-        </div>
-        <div className="card" data-testid="card-gear">
-          <div className="card-title">Gear</div>
-          {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           <div className="metric" data-testid="metric-gear">
-            {signalText(drive, 'gear')}
+            {signalText(drive, 'gear') || signalText(motor, 'gear_state') || '—'}
           </div>
+          <div className="card-sub muted">N/D/S/R · host + motor</div>
         </div>
-        <div className="card" data-testid="card-motor">
-          <div className="card-title">Motor feedback</div>
-          {motor ? <FreshnessBadge value={motor.freshness} /> : null}
-          <div className="metric">{motor ? signalText(motor, 'speed_mmps') : '—'}</div>
-          <div className="card-sub muted">MTR_MOTOR_FBK</div>
-        </div>
-        <div className="card" data-testid="card-ready">
-          <div className="card-title">Backend</div>
+        <div className="card metric-card" data-testid="card-ready">
+          <div className="card-head">
+            <div className="card-title">Backend</div>
+          </div>
           <div className="metric">{status?.ready ? 'ready' : 'not ready'}</div>
-          <div className="mono muted">{status?.adapter?.health ?? '—'}</div>
+          <MeterBar
+            value={status?.ready ? 100 : 0}
+            max={100}
+            tone={status?.ready ? 'ok' : 'danger'}
+            label="Backend ready"
+          />
+          <div className="card-sub mono muted">{status?.adapter?.health ?? '—'}</div>
         </div>
       </div>
 
@@ -658,6 +896,7 @@ function Overview() {
               <th>Command</th>
               <th>Feedback</th>
               <th>Difference</th>
+              <th>Meter</th>
               <th>Health</th>
             </tr>
           </thead>
@@ -665,32 +904,98 @@ function Overview() {
             <tr>
               <td>Drive</td>
               <td className="mono">
-                {signalText(drive, 'speed_mmps')} mm/s
+                {cmdSpeed != null ? `${cmdSpeed.toFixed(0)} mm/s` : '—'}
               </td>
               <td className="mono">
-                {motor ? `${signalText(motor, 'speed_mmps')} mm/s` : '—'}
+                {fbkSpeed != null ? `${fbkSpeed.toFixed(0)} mm/s` : '—'}
               </td>
-              <td className="muted">—</td>
+              <td className="mono">
+                {speedDelta != null ? `${speedDelta.toFixed(0)} mm/s` : '—'}
+              </td>
+              <td className="meter-cell">
+                <MeterBar value={Math.abs(fbkSpeed ?? 0)} max={3000} tone="auto" />
+              </td>
               <td>{drive ? <FreshnessBadge value={drive.freshness} /> : '—'}</td>
             </tr>
             <tr>
               <td>Steering</td>
               <td className="mono">
-                {signalText(drive, 'yaw_rate_mrad_s')} mrad/s
+                {cmdYaw != null ? `${cmdYaw.toFixed(0)} mrad/s` : '—'}
               </td>
-              <td className="mono">{sesStatus ? 'SES_STATUS' : '—'}</td>
+              <td className="mono">
+                {steerDeg != null ? `${steerDeg.toFixed(1)}°` : sesStatus ? 'SES_STATUS' : '—'}
+              </td>
               <td className="muted">—</td>
+              <td className="meter-cell">
+                <MeterBar value={steerDeg} max={45} min={-45} tone="auto" />
+              </td>
               <td>
                 {sesStatus ? <FreshnessBadge value={sesStatus.freshness} /> : '—'}
               </td>
             </tr>
             <tr>
               <td>Brake</td>
+              <td className="mono">
+                {signalNum(hostBrake, 'brake_pressure_kpa') != null
+                  ? `${signalNum(hostBrake, 'brake_pressure_kpa')!.toFixed(0)} kPa`
+                  : signalNum(rtBrake, 'brake_pressure_kpa') != null
+                    ? `${signalNum(rtBrake, 'brake_pressure_kpa')!.toFixed(0)} kPa`
+                    : '—'}
+              </td>
+              <td className="mono">
+                {brakeKpa != null
+                  ? `${brakeKpa.toFixed(0)} kPa`
+                  : sebStatus
+                    ? 'SEB_STATUS'
+                    : '—'}
+              </td>
               <td className="muted">—</td>
-              <td className="mono">{sebStatus ? 'SEB_STATUS' : '—'}</td>
-              <td className="muted">—</td>
+              <td className="meter-cell">
+                <MeterBar
+                  value={brakeKpa}
+                  max={5000}
+                  tone="high-bad"
+                  testId="meter-brake-row"
+                />
+              </td>
               <td>
-                {sebStatus ? <FreshnessBadge value={sebStatus.freshness} /> : '—'}
+                {hostBrake || rtBrake || sebStatus ? (
+                  <FreshnessBadge
+                    value={
+                      hostBrake?.freshness ??
+                      rtBrake?.freshness ??
+                      sebStatus?.freshness ??
+                      'unseen'
+                    }
+                  />
+                ) : (
+                  '—'
+                )}
+              </td>
+            </tr>
+            <tr>
+              <td>Safety STS</td>
+              <td className="muted">—</td>
+              <td className="mono">
+                {safety
+                  ? `estop=${signalText(safety, 'estop_active')} brake_lt=${signalText(safety, 'light_brake')}`
+                  : '—'}
+              </td>
+              <td className="muted">—</td>
+              <td className="meter-cell">
+                <MeterBar
+                  value={
+                    String(signalText(safety, 'estop_active')).toLowerCase().includes('1') ||
+                    String(signalText(safety, 'estop_active')).toLowerCase() === 'true'
+                      ? 100
+                      : 0
+                  }
+                  max={100}
+                  tone="high-bad"
+                />
+              </td>
+              <td>
+                {safety ? <FreshnessBadge value={safety.freshness} /> : '—'}
               </td>
             </tr>
           </tbody>
@@ -2271,6 +2576,264 @@ function Diagnostics() {
   )
 }
 
+/* ── Logging (architecture §7 / §14 operational audit trail) ───────── */
+
+const LOG_CATEGORIES = [
+  'all',
+  'system',
+  'session',
+  'transport',
+  'control',
+  'inject',
+  'safety',
+  'recording',
+  'test',
+  'protocol',
+  'hmi',
+  'api',
+] as const
+
+function Logs() {
+  const [logs, setLogs] = useState<Array<Record<string, unknown>>>([])
+  const [stats, setStats] = useState<Record<string, unknown> | null>(null)
+  const [category, setCategory] = useState<string>('all')
+  const [severity, setSeverity] = useState<string>('all')
+  const [q, setQ] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState<Record<string, unknown> | null>(null)
+  const [auto, setAuto] = useState(true)
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await api.logs({
+        limit: 400,
+        category: category === 'all' ? undefined : category,
+        severity: severity === 'all' ? undefined : severity,
+        q: q.trim() || undefined,
+      })
+      setLogs(r.logs || [])
+      setStats(r.stats || null)
+      setErr('')
+    } catch (e) {
+      setErr(String(e))
+    }
+  }, [category, severity, q])
+
+  useEffect(() => {
+    void refresh()
+    if (!auto) return
+    const id = window.setInterval(() => void refresh(), 1500)
+    return () => window.clearInterval(id)
+  }, [refresh, auto])
+
+  async function clearAll() {
+    setBusy(true)
+    try {
+      await api.clearLogs()
+      await refresh()
+    } catch (e) {
+      setErr(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify({ stats, logs }, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `control-toolkit-logs-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="workspace" data-testid="workspace-logs">
+      <header className="ws-header">
+        <h1>Logging</h1>
+        <p className="muted">
+          Operational audit trail (architecture §7 / §14). Session, transport, control,
+          inject, safety, recording, and tests — separate from Live CAN frames and raw
+          recording evidence.
+        </p>
+      </header>
+
+      <section className="panel">
+        <div className="toolbar logs-toolbar">
+          <select
+            data-testid="logs-category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            aria-label="Log category"
+          >
+            {LOG_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c === 'all' ? 'All categories' : c}
+              </option>
+            ))}
+          </select>
+          <select
+            data-testid="logs-severity"
+            value={severity}
+            onChange={(e) => setSeverity(e.target.value)}
+            aria-label="Log severity"
+          >
+            {['all', 'debug', 'info', 'warning', 'error', 'critical'].map((s) => (
+              <option key={s} value={s}>
+                {s === 'all' ? 'All severities' : s}
+              </option>
+            ))}
+          </select>
+          <input
+            className="search"
+            data-testid="logs-filter"
+            placeholder="Search code, title, detail…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <label className="check">
+            <input
+              type="checkbox"
+              data-testid="logs-auto"
+              checked={auto}
+              onChange={(e) => setAuto(e.target.checked)}
+            />
+            Auto-refresh
+          </label>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="logs-refresh"
+            disabled={busy}
+            onClick={() => void refresh()}
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="logs-export"
+            onClick={() => exportJson()}
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            className="danger"
+            data-testid="logs-clear"
+            disabled={busy}
+            onClick={() => void clearAll()}
+          >
+            Clear
+          </button>
+        </div>
+        {stats && (
+          <p className="muted small" data-testid="logs-stats">
+            {String(stats.count ?? 0)} / {String(stats.capacity ?? '—')} entries · seq{' '}
+            {String(stats.sequence ?? '—')}
+          </p>
+        )}
+        {err && <p className="danger-text">{err}</p>}
+      </section>
+
+      <div className="logs-split">
+        <section className="panel" data-testid="logs-table-panel">
+          <div className="table-wrap logs-table-wrap">
+            <table className="can-table" data-testid="logs-table">
+              <thead>
+                <tr>
+                  <th>Age</th>
+                  <th>Sev</th>
+                  <th>Cat</th>
+                  <th>Code</th>
+                  <th>Title</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((e) => (
+                  <tr
+                    key={String(e.log_id)}
+                    className={
+                      selected?.log_id === e.log_id ? 'selected' : undefined
+                    }
+                    data-testid={`log-row-${String(e.log_id)}`}
+                    onClick={() => setSelected(e)}
+                  >
+                    <td className="mono num">
+                      {typeof e.age_s === 'number'
+                        ? `${(e.age_s as number).toFixed(1)}s`
+                        : '—'}
+                    </td>
+                    <td>
+                      <span className={`log-sev log-sev-${String(e.severity)}`}>
+                        {String(e.severity)}
+                      </span>
+                    </td>
+                    <td className="mono">{String(e.category)}</td>
+                    <td className="mono">{String(e.code)}</td>
+                    <td>{String(e.title)}</td>
+                    <td className="muted small">{String(e.detail || '')}</td>
+                  </tr>
+                ))}
+                {logs.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      No log entries match filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside className="panel" data-testid="logs-detail">
+          <h2>Entry detail</h2>
+          {!selected && (
+            <p className="muted small">Select a row to inspect full payload.</p>
+          )}
+          {selected && (
+            <dl className="kv">
+              <dt>ID</dt>
+              <dd className="mono">{String(selected.log_id)}</dd>
+              <dt>Code</dt>
+              <dd className="mono">{String(selected.code)}</dd>
+              <dt>Category</dt>
+              <dd>{String(selected.category)}</dd>
+              <dt>Severity</dt>
+              <dd>{String(selected.severity)}</dd>
+              <dt>Title</dt>
+              <dd>{String(selected.title)}</dd>
+              <dt>Detail</dt>
+              <dd>{String(selected.detail || '—')}</dd>
+              <dt>Bus / ID</dt>
+              <dd className="mono">
+                {String(selected.bus ?? '—')} ·{' '}
+                {selected.can_id != null
+                  ? `0x${Number(selected.can_id).toString(16).toUpperCase()}`
+                  : '—'}
+              </dd>
+              <dt>Session</dt>
+              <dd className="mono">{String(selected.session_id ?? '—')}</dd>
+              <dt>Data</dt>
+              <dd>
+                <pre className="log" data-testid="logs-detail-data">
+                  {JSON.stringify(selected.data ?? {}, null, 2)}
+                </pre>
+              </dd>
+            </dl>
+          )}
+        </aside>
+      </div>
+    </div>
+  )
+}
+
 /* ── Settings ──────────────────────────────────────────────────────── */
 
 function Settings() {
@@ -2404,6 +2967,7 @@ export default function App() {
           {workspace === 'bench' && <Bench />}
           {workspace === 'dictionary' && <CanDictionary />}
           {workspace === 'diagnostics' && <Diagnostics />}
+          {workspace === 'logs' && <Logs />}
           {workspace === 'settings' && <Settings />}
         </main>
       </div>

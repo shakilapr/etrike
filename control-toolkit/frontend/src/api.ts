@@ -294,6 +294,25 @@ export const api = {
     ),
   episodes: () =>
     json<{ count: number; episodes: Array<Record<string, unknown>> }>('/episodes'),
+  logs: (opts?: {
+    limit?: number
+    category?: string
+    severity?: string
+    q?: string
+  }) => {
+    const p = new URLSearchParams()
+    p.set('limit', String(opts?.limit ?? 200))
+    if (opts?.category) p.set('category', opts.category)
+    if (opts?.severity) p.set('severity', opts.severity)
+    if (opts?.q) p.set('q', opts.q)
+    return json<{
+      count: number
+      stats: Record<string, unknown>
+      logs: Array<Record<string, unknown>>
+    }>(`/logs?${p.toString()}`)
+  },
+  clearLogs: () =>
+    json<{ cleared: number }>('/logs', { method: 'DELETE' }),
   recordings: () =>
     json<{
       active: Record<string, unknown> | null

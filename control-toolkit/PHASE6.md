@@ -18,7 +18,10 @@
 | Protocol layout | `GET /api/v1/protocol/messages/{bus}/{id}`, `…/layout` + live overlay |
 | Dictionary UI | bit-grid + signal table + live values |
 | Diagnostics UI | timeline, episodes, recording, evidence window |
-| Tests | `test_recording`, `test_diagnostics`, `test_verification`, `test_evidence_quality`, `test_bit_layout` |
+| Audit log service | `services/audit_log.py` — operational trail for Logging tab |
+| Logging API | `GET/DELETE /api/v1/logs` |
+| Logging UI | filterable table + detail + export |
+| Tests | `test_recording`, `test_diagnostics`, `test_verification`, `test_evidence_quality`, `test_bit_layout`, `test_audit_log` |
 
 ## Exit gate
 
