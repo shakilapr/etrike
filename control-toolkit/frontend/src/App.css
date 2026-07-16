@@ -3074,11 +3074,22 @@ button.transport-btn:disabled {
   max-width: none;
   min-height: calc(100vh - var(--topbar-h));
   padding-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.drive-console.drive-armed .preview-canvas-wrap {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+}
+
+.drive-console.drive-focused .preview-canvas-wrap {
+  border-color: var(--primary);
 }
 
 .drive-layout {
   display: grid;
-  grid-template-columns: 1fr minmax(300px, 340px);
+  grid-template-columns: 1fr minmax(300px, 360px);
   gap: 14px;
   flex: 1;
   min-height: 0;
@@ -3091,8 +3102,8 @@ button.transport-btn:disabled {
 
   /* Single-column: don't let canvas eat the whole viewport and hide keycaps/gears */
   .preview-canvas-wrap {
-    min-height: 280px;
-    height: min(52vh, 420px);
+    min-height: 260px;
+    height: min(48vh, 400px);
   }
 
   .drive-side {
@@ -3107,6 +3118,11 @@ button.transport-btn:disabled {
   gap: 12px 16px;
 }
 
+.drive-top-title {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
 .drive-topbar h1 {
   margin: 0 0 2px;
   font-size: 22px;
@@ -3118,12 +3134,13 @@ button.transport-btn:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  flex: 1 1 200px;
+  flex: 1 1 240px;
   align-items: center;
   min-width: 0;
 }
 
-.drive-topbar .actions {
+.drive-topbar .actions,
+.drive-top-actions {
   margin: 0;
   flex-shrink: 0;
 }
@@ -3132,6 +3149,40 @@ button.transport-btn:disabled {
   margin-top: 0;
   overflow: auto;
   max-height: calc(100vh - var(--topbar-h) - 100px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drive-section {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.drive-section:last-of-type {
+  border-bottom: none;
+}
+
+.drive-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.drive-section-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.drive-section .field {
+  margin-bottom: 8px;
 }
 
 .drive-gauges {
@@ -3329,49 +3380,68 @@ button.gear-btn.active:hover:not(:disabled) {
   margin-bottom: 6px;
 }
 
-.keycap {
+/* Keycaps are real buttons (hold-to-drive) — exclude from primary button chrome */
+button.keycap,
+button.keycap:hover:not(:disabled),
+button.keycap:focus:not(:disabled),
+button.keycap:active:not(:disabled) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 0 10px;
+  min-width: 40px;
+  min-height: 40px;
+  height: auto;
+  padding: 0 12px;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--surface);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   box-shadow: 0 1px 0 var(--border);
+  transform: none;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
-.keycap.wide {
+button.keycap:hover:not(:disabled) {
+  border-color: #9bb9e8;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+button.keycap.wide {
   flex: 1;
   min-width: 120px;
   font-size: 11px;
 }
 
-.keycap.active {
+button.keycap.active,
+button.keycap.active:hover:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
   box-shadow: none;
 }
 
-.keycap-lock {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(245, 247, 249, 0.82);
-  color: var(--text-secondary);
+.keycap-banner {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11px;
   font-weight: 650;
-  font-size: 12px;
-  border-radius: var(--radius);
-  pointer-events: none;
-  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed var(--border-strong);
+}
+
+/* legacy class name kept for any leftover markup */
+.keycap-lock {
+  display: none;
 }
 
 .drive-lock-hint {
