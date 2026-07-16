@@ -173,7 +173,7 @@ const TABS: Array<{
       await expect(page.getByTestId('dict-bus-high')).toBeVisible()
       await expect(page.getByTestId('dict-bus-low')).toBeVisible()
 
-      // Wait for message rows from YAML catalog
+      // Message cards from YAML catalog (old layout)
       await expect(page.locator('[data-testid="frame-row"]').first()).toBeVisible({
         timeout: 15_000,
       })
@@ -182,7 +182,7 @@ const TABS: Array<{
         issues.push({
           severity: 'error',
           tab: 'dictionary',
-          message: `Expected many dictionary rows from YAML, got ${count}`,
+          message: `Expected many dictionary cards from YAML, got ${count}`,
         })
       }
 
@@ -191,11 +191,37 @@ const TABS: Array<{
       await expect(page.locator('[data-testid="frame-row"]').first()).toBeVisible({
         timeout: 8_000,
       })
-      // Expand row → signal table (no duplicate MessageCard / bit-grid stack)
-      await page.locator('[data-testid="frame-row"]').first().click()
-      await expect(page.getByTestId('dict-signal-table').first()).toBeVisible({
-        timeout: 5_000,
-      })
+      // Bit grid + signal table always present on card
+      await expect(page.getByTestId('dict-bit-grid').first()).toBeVisible()
+      await expect(page.getByTestId('dict-signal-table').first()).toBeVisible()
+      await expect(page.getByTestId('dict-bit-inspector').first()).toBeVisible()
+
+      // Hover a bit cell — inspector stays fixed height (layout stability)
+      const bit = page.locator('button.bit-cell.filled').first()
+      if (await bit.count()) {
+        const boxBefore = await page.getByTestId('dict-bit-inspector').first().boundingBox()
+        await bit.hover()
+        await page.waitForTimeout(80)
+        const boxAfter = await page.getByTestId('dict-bit-inspector').first().boundingBox()
+        if (boxBefore && boxAfter) {
+          const dh = Math.abs(boxAfter.height - boxBefore.height)
+          if (dh > 2) {
+            issues.push({
+              severity: 'error',
+              tab: 'dictionary',
+              message: `bit inspector height jumped on hover: ${boxBefore.height} → ${boxAfter.height}`,
+            })
+          }
+        }
+        // Click signal row expands "how bits work"
+        const sigRow = page.locator('[data-testid^="dict-sig-row-"]').first()
+        if (await sigRow.count()) {
+          await sigRow.click()
+          await expect(page.locator('[data-testid^="dict-sig-expand-"]').first()).toBeVisible({
+            timeout: 5_000,
+          })
+        }
+      }
 
       await page.getByTestId('dict-filter').fill('')
       await page.getByTestId('dict-bus-all').click()

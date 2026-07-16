@@ -186,6 +186,8 @@ test.describe('Hover / click geometry stability', () => {
         { loc: page.getByTestId('btn-stop-all'), label: 'btn-stop-all' },
         { loc: page.getByTestId('btn-enable-tx'), label: 'btn-enable-tx' },
         { loc: page.getByTestId('dict-refresh'), label: 'dict-refresh' },
+        { loc: page.locator('button.bit-cell.filled').first(), label: 'bit-cell.filled' },
+        { loc: page.locator('button.bit-cell.empty').first(), label: 'bit-cell.empty' },
         { loc: page.getByTestId('filter-bus-high'), label: 'filter-bus-high' },
         { loc: page.getByTestId('live-mode-chrono'), label: 'live-mode-chrono' },
       ]

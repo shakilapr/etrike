@@ -25,6 +25,7 @@ from control_toolkit.api import (
     protocol_api,
     recordings,
     sessions,
+    settings,
     state,
     status,
     stream,
@@ -58,6 +59,7 @@ def create_app(config: ToolkitConfig | None = None) -> FastAPI:
     app.include_router(state.router, prefix=prefix)
     app.include_router(protocol_api.router, prefix=prefix)
     app.include_router(sessions.router, prefix=prefix)
+    app.include_router(settings.router, prefix=prefix)
     app.include_router(injections.router, prefix=prefix)
     app.include_router(synthetic.router, prefix=prefix)
     app.include_router(hmi.router, prefix=prefix)
