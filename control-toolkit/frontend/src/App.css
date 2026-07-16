@@ -1000,8 +1000,9 @@ h3 {
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
   min-height: 64px;
+  justify-content: flex-start;
 }
 
 .strip-item:last-child {
@@ -1045,8 +1046,30 @@ h3 {
   color: var(--text);
 }
 
+/* Req/Conf lines — compact single block, not paired with a second chip */
+.strip-v-detail {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.strip-sep {
+  margin: 0 4px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
 .strip-item .meter-bar {
-  margin-top: 6px;
+  margin-top: 2px;
+}
+
+/* Status pill is the primary value in the strip (no duplicate .strip-v) */
+.strip-item > .status-pill {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 4px 10px;
 }
 
 /* ── Graphical meters ────────────────────────────────────────────── */
@@ -1137,13 +1160,22 @@ h3 {
   color: var(--text-tertiary);
 }
 
-.strip-item .status-pill {
-  margin-top: 6px;
-  align-self: flex-start;
+.metric-card .status-pill {
+  margin-top: 0;
 }
 
-.metric-card .status-pill {
-  margin-top: 8px;
+/* Discrete metric cards: pill is the value (Gear, Backend ready) */
+.metric-card .metric-discrete {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.metric-card .metric-discrete .status-pill {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 6px 12px;
+  letter-spacing: 0.01em;
 }
 
 .meter-cell .status-pill {

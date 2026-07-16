@@ -202,8 +202,8 @@ test.describe('Full system — tabs, buttons, CAN side-effects', () => {
       timeout: 15_000,
     })
 
+    // Leaving Drive unmounts and disarms (safety) — expect Arm again, not Disarm.
     await go(page, 'preview')
-    await page.getByTestId('btn-drive-disarm').click()
     await expect(page.getByTestId('btn-drive-arm')).toBeVisible({ timeout: 10_000 })
 
     // ── Bench ──────────────────────────────────────────────────────
