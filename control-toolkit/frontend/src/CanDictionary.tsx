@@ -255,16 +255,19 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     examples: ['0 = nominal', 'non-zero = degraded flags set by Host software'],
   },
   target_angle_raw: {
-    meaning: 'Steering target angle in vendor raw units.',
-    why: 'SES vendor codec — not SI degrees until scaled by vendor factor.',
-    dataType: 'Vendor raw integer (see SES codec / scale).',
-    examples: ['0 ≈ center (vendor)', 'positive/negative = left/right in raw ticks'],
+    meaning: 'Commanded SES target angle (vendor raw i16 on VCU_SES_REQ 0x169).',
+    why: 'RT / Control Low bus writes this; not SI degrees until vendor scale applied.',
+    dataType: 'Signed 16-bit little-endian raw at B2–B3.',
+    examples: [
+      '0 ≈ center in internal RT mapping',
+      'positive/negative = left/right in raw ticks',
+    ],
   },
   pressure_request_raw: {
-    meaning: 'Brake pressure request in vendor raw units.',
-    why: 'SEB vendor path; engineering kPa needs vendor scale.',
-    dataType: 'Vendor raw integer pressure request.',
-    examples: ['0 = no pressure request', 'higher raw → higher request (vendor map)'],
+    meaning: 'Brake pressure request (raw) in SEB pressure mode (VCU_SEB_REQ).',
+    why: 'Mode 1 SEB PID holds hydraulic pressure; engineering needs vendor scale.',
+    dataType: 'Unsigned 8-bit raw on B3 when mode=Pressure (muxed with stroke).',
+    examples: ['0 = no pressure request', 'up to vendor max (~100 raw)'],
   },
   rolling_counter: {
     meaning: 'Rolling counter for frame freshness.',
@@ -411,12 +414,6 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     dataType: 'Flag bit — must be 1 for active control.',
     examples: ['0 = disabled', '1 = control enabled'],
   },
-  target_angle_raw: {
-    meaning: 'Commanded SES target angle (vendor raw i16).',
-    why: 'RT / Control Low bus writes this on VCU_SES_REQ 0x169.',
-    dataType: 'Signed 16-bit little-endian raw at B2–B3.',
-    examples: ['0 ≈ center in internal RT mapping', 'sign = left/right'],
-  },
   target_speed_raw: {
     meaning: 'Commanded SES slew rate (deg/s band).',
     why: 'Limits how fast the EPS racks toward the target angle.',
@@ -458,12 +455,6 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     why: 'Mode 0 path for pushrod position commands (ESTOP full brake etc.).',
     dataType: 'Unsigned 16-bit raw @ B2–B3 (muxed with pressure on B3).',
     examples: ['600 ≈ released (typical)', 'higher raw → more stroke'],
-  },
-  pressure_request_raw: {
-    meaning: 'Brake pressure request (raw) in pressure mode.',
-    why: 'Mode 1 SEB PID holds hydraulic pressure.',
-    dataType: 'Unsigned 8-bit raw on B3 when mode=Pressure.',
-    examples: ['0 = no pressure', 'up to vendor max (~100 raw)'],
   },
   stroke_value_raw: {
     meaning: 'Measured SEB stroke feedback (raw).',
