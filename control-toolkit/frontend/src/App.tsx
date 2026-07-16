@@ -2010,6 +2010,31 @@ function Control() {
     }
   }
 
+  async function disableTx() {
+    setBusy(true)
+    try {
+      const st = await refresh()
+      const sid = st.session?.session_id
+      if (!sid) {
+        setLog('No session — Bench TX already off')
+        return
+      }
+      if (String(st.session?.bench_tx ?? '').toLowerCase() !== 'enabled') {
+        setLog('Bench TX already disabled')
+        return
+      }
+      setKbEnabled(false)
+      await api.controlRelease('bench_tx_off').catch(() => undefined)
+      await api.setBenchTx(sid, false, st.session.revision)
+      setLog('Bench TX disabled — inject / keyboard TX gated off')
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function injectHostDrive() {
     setBusy(true)
     try {
@@ -2172,18 +2197,56 @@ function Control() {
             <span className="muted small"> · {activeLabel}</span>
           </dd>
           <dt>Bench TX</dt>
-          <dd>{status?.session?.bench_tx ?? '—'}</dd>
+          <dd data-testid="control-bench-tx">
+            <span
+              className={
+                String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled'
+                  ? 'ok-text'
+                  : 'muted'
+              }
+            >
+              {status?.session?.bench_tx ?? 'disabled'}
+            </span>
+            <span className="muted small">
+              {' '}
+              · gate for inject / keyboard / direct TX
+            </span>
+          </dd>
         </dl>
         <div className="actions tight">
-          <button
-            type="button"
-            className="secondary"
-            data-testid="btn-enable-tx"
-            disabled={busy}
-            onClick={() => void enableTx()}
-          >
-            Enable Bench TX
-          </button>
+          {String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled' ? (
+            <button
+              type="button"
+              className="secondary"
+              data-testid="btn-disable-tx"
+              disabled={busy}
+              onClick={() => void disableTx()}
+            >
+              Disable Bench TX
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="btn-enable-tx"
+              disabled={busy}
+              onClick={() => void enableTx()}
+            >
+              Enable Bench TX
+            </button>
+          )}
+          {/* Keep enable test id present for e2e when already on (hidden control for restart) */}
+          {String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled' ? (
+            <button
+              type="button"
+              className="secondary"
+              data-testid="btn-enable-tx"
+              disabled={busy}
+              title="Re-assert Bench TX (session already enabled)"
+              onClick={() => void enableTx()}
+            >
+              Re-arm Bench TX
+            </button>
+          ) : null}
           <button
             type="button"
             className="danger"
