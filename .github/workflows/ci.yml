@@ -1,5 +1,19 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'rt-esp32/**'
+      - 'sys-esp32/**'
+      - 'shared/**'
+      - 'protocol/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'rt-esp32/**'
+      - 'sys-esp32/**'
+      - 'shared/**'
+      - 'protocol/**'
+      - '.github/workflows/ci.yml'
 jobs:
   static-analysis:
     runs-on: ubuntu-latest
