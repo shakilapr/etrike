@@ -1282,12 +1282,13 @@ function LiveCan() {
             </thead>
             <tbody>
               {filtered.map((m) => {
-                const key = m.key || `${m.bus}-${m.can_id}`
+                // Prefer bus+can_id — canonical keys like safety:safety_estop collide on high+low
+                const key = `${m.bus}-${m.can_id}`
                 return (
                   <tr
                     key={key}
                     data-testid={`row-${m.bus}-${m.can_id}`}
-                    className={selected === key ? 'selected' : undefined}
+                    className={selected === key || selected === m.key ? 'selected' : undefined}
                     onClick={() => setSelected(key)}
                   >
                     <td>

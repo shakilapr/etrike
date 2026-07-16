@@ -173,7 +173,7 @@ const TABS: Array<{
       await expect(page.getByTestId('dict-bus-high')).toBeVisible()
       await expect(page.getByTestId('dict-bus-low')).toBeVisible()
 
-      // Wait for cards to load from YAML catalog
+      // Wait for message rows from YAML catalog
       await expect(page.locator('[data-testid="frame-row"]').first()).toBeVisible({
         timeout: 15_000,
       })
@@ -182,7 +182,7 @@ const TABS: Array<{
         issues.push({
           severity: 'error',
           tab: 'dictionary',
-          message: `Expected many dictionary cards from YAML, got ${count}`,
+          message: `Expected many dictionary rows from YAML, got ${count}`,
         })
       }
 
@@ -191,9 +191,11 @@ const TABS: Array<{
       await expect(page.locator('[data-testid="frame-row"]').first()).toBeVisible({
         timeout: 8_000,
       })
-      // Bit grid + signal table on first card
-      await expect(page.getByTestId('dict-bit-grid').first()).toBeVisible()
-      await expect(page.getByTestId('dict-signal-table').first()).toBeVisible()
+      // Expand row → signal table (no duplicate MessageCard / bit-grid stack)
+      await page.locator('[data-testid="frame-row"]').first().click()
+      await expect(page.getByTestId('dict-signal-table').first()).toBeVisible({
+        timeout: 5_000,
+      })
 
       await page.getByTestId('dict-filter').fill('')
       await page.getByTestId('dict-bus-all').click()
