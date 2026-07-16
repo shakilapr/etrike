@@ -912,25 +912,191 @@ button.secondary:hover:not(:disabled) {
 
 /* ── Vehicle preview ─────────────────────────────────────────────── */
 
-.preview-ws {
+.preview-ws,
+.drive-console {
   max-width: none;
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - var(--topbar-h) - 16px);
+  padding-bottom: 16px;
 }
 
-.preview-layout {
+.preview-layout,
+.drive-layout {
   display: grid;
-  grid-template-columns: 1fr minmax(280px, 320px);
+  grid-template-columns: 1fr minmax(300px, 340px);
   gap: 16px;
   flex: 1;
   min-height: 0;
 }
 
 @media (max-width: 1100px) {
-  .preview-layout {
+  .preview-layout,
+  .drive-layout {
     grid-template-columns: 1fr;
   }
+}
+
+.drive-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.drive-topbar h1 {
+  margin: 0 0 2px;
+  font-size: 24px;
+}
+
+.drive-top-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  align-items: center;
+}
+
+.chip.ok {
+  border-color: #166534;
+}
+
+.drive-side {
+  margin-top: 0;
+  overflow: auto;
+  max-height: calc(100vh - var(--topbar-h) - 120px);
+}
+
+.drive-gauges {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.drive-gauge {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: #0b0e12;
+}
+
+.drive-gauge-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.drive-gauge-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.drive-gauge-value .unit {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.drive-gauge-bar {
+  margin-top: 8px;
+  height: 4px;
+  background: #1f2937;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.drive-gauge-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.drive-gauge.tone-warn .drive-gauge-fill {
+  background: var(--late);
+}
+
+.drive-gauge.tone-ok .drive-gauge-fill {
+  background: var(--live);
+}
+
+.drive-gauge.tone-danger .drive-gauge-fill {
+  background: var(--danger);
+}
+
+.keycap-pad {
+  position: relative;
+  background: #0b0e12;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.keycap-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.keycap.wide {
+  flex: 1;
+  min-width: 120px;
+  font-size: 11px;
+}
+
+.keycap.active {
+  background: #1d4ed8;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.keycap-lock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 18, 22, 0.55);
+  color: #e7ecf2;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.drive-lock-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.drive-lock-hint.armed {
+  color: #bbf7d0;
 }
 
 .preview-canvas-wrap {

@@ -10,7 +10,7 @@ const WORKSPACES: { id: Workspace; label: string }[] = [
   { id: 'network', label: 'Network' },
   { id: 'live', label: 'Live CAN' },
   { id: 'control', label: 'Control' },
-  { id: 'preview', label: 'Vehicle preview' },
+  { id: 'preview', label: 'Drive' },
   { id: 'bench', label: 'Bench' },
   { id: 'dictionary', label: 'CAN Dictionary' },
   { id: 'diagnostics', label: 'Diagnostics' },
