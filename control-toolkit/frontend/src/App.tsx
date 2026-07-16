@@ -1611,19 +1611,50 @@ function DirectActuatorCards({
   const messages = useAppStore((s) => s.messages)
   const [motorSpeed, setMotorSpeed] = useState(300)
   const [motorGear, setMotorGear] = useState(1)
-  const [steerAngle, setSteerAngle] = useState(0)
-  const [brakePressure, setBrakePressure] = useState(20)
+  const [steerAngle, setSteerAngle] = useState(50)
+  const [brakePressure, setBrakePressure] = useState(40)
   const [active, setActive] = useState<Record<string, boolean>>({})
+  const [lastCtrl, setLastCtrl] = useState<Record<string, unknown> | null>(null)
 
-  const mtr = findMsg(messages, 'MTR_MOTOR_FBK')
-  const ses = findMsg(messages, 'SES_STATUS')
-  const seb = findMsg(messages, 'SEB_STATUS')
+  // TX commands we send (not only ECU feedback — pure software often has no FBK peers)
+  const txMotor = findMsg(messages, 'RT_DRIVE_CMD', 'low')
+  const txSteer = findMsg(messages, 'VCU_SES_REQ', 'low')
+  const txBrake = findMsg(messages, 'VCU_SEB_REQ', 'low')
+  const fbkMtr = findMsg(messages, 'MTR_MOTOR_FBK')
+  const fbkSes = findMsg(messages, 'SES_STATUS')
+  const fbkSeb = findMsg(messages, 'SEB_STATUS')
+
+  // Sync active chips from backend control status
+  useEffect(() => {
+    let cancel = false
+    const tick = async () => {
+      try {
+        const c = await api.controlStatus()
+        if (cancel) return
+        setLastCtrl(c.control)
+        const ch = (c.control?.direct_channels as string[] | undefined) || []
+        setActive({
+          motor: ch.includes('motor'),
+          steering: ch.includes('steering'),
+          brake: ch.includes('brake'),
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+    void tick()
+    const id = window.setInterval(() => void tick(), 1000)
+    return () => {
+      cancel = true
+      window.clearInterval(id)
+    }
+  }, [])
 
   async function start(channel: 'motor' | 'steering' | 'brake') {
     setBusy(true)
     try {
       await ensureSessionReady()
-      // Starting any low-bus channel clears high-bus kinematics (backend exclusive).
+      // Safety bypass: control_enable + alignment_enable always forced ON in backend.
       const values =
         channel === 'motor'
           ? { motor_speed_mmps: motorSpeed, gear: motorGear }
@@ -1639,10 +1670,21 @@ function DirectActuatorCards({
                 alignment_enable: true,
                 control_mode: 1,
               }
-      const r = await api.controlDirect({ channel, enabled: true, values })
-      setActive((a) => ({ ...a, [channel]: true }))
+      const r = await api.controlDirect({
+        channel,
+        enabled: true,
+        values,
+        period_ms: channel === 'motor' ? 10 : 20,
+      })
+      setLastCtrl(r.control)
+      const ch = (r.control?.direct_channels as string[] | undefined) || []
+      setActive({
+        motor: ch.includes('motor'),
+        steering: ch.includes('steering'),
+        brake: ch.includes('brake'),
+      })
       setLog(
-        `Low-bus direct ${channel} · method=${String(r.control.method)} · channels=${JSON.stringify(r.control.direct_channels)}`,
+        `Low TX ${channel} · method=${String(r.control.method)} · active=${String(r.control.active)} · channels=${JSON.stringify(ch)} · safety bypass ON`,
       )
       await refresh()
     } catch (e) {
@@ -1655,9 +1697,15 @@ function DirectActuatorCards({
   async function stop(channel: 'motor' | 'steering' | 'brake') {
     setBusy(true)
     try {
-      await api.controlDirect({ channel, enabled: false })
-      setActive((a) => ({ ...a, [channel]: false }))
-      setLog(`Stopped low-bus direct ${channel}`)
+      const r = await api.controlDirect({ channel, enabled: false })
+      setLastCtrl(r.control)
+      const ch = (r.control?.direct_channels as string[] | undefined) || []
+      setActive({
+        motor: ch.includes('motor'),
+        steering: ch.includes('steering'),
+        brake: ch.includes('brake'),
+      })
+      setLog(`Stopped low TX ${channel} · remaining=${JSON.stringify(ch)}`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -1667,12 +1715,31 @@ function DirectActuatorCards({
   }
 
   const locked = busy || !!disabled
+  const channels = (lastCtrl?.direct_channels as string[] | undefined) || []
 
   return (
-    <div className="direct-grid">
-      <div className="direct-card" data-testid="direct-motor">
-        <h3>Motor · Low · RT_DRIVE_CMD 0x204</h3>
-        <p className="muted small">Commands motor path on Low bus — not Host 0x300.</p>
+    <div className="direct-grid" data-testid="direct-grid">
+      <p className="control-callout" data-testid="direct-safety-banner" style={{ gridColumn: '1 / -1' }}>
+        <strong>Safety bypass ON</strong> for toolkit Low-bus unit tests: SES/SEB{' '}
+        <span className="mono">control_enable</span> + <span className="mono">alignment_enable</span>{' '}
+        are forced true on every TX. Watch <strong>TX</strong> lines below (command on bus); FBK
+        only appears if a peer/ECU answers.
+      </p>
+      <p className="muted small mono" data-testid="direct-channels-live" style={{ gridColumn: '1 / -1' }}>
+        Backend direct channels: {channels.length ? channels.join(', ') : 'none'} · method{' '}
+        {String(lastCtrl?.method ?? '—')}
+      </p>
+
+      <div className={`direct-card${active.motor ? ' streaming' : ''}`} data-testid="direct-motor">
+        <div className="direct-card-head">
+          <h3>Motor · Low · 0x204</h3>
+          <span className={`chip tiny ${active.motor ? 'ok' : ''}`}>
+            {active.motor ? 'streaming' : 'idle'}
+          </span>
+        </div>
+        <p className="muted small">
+          <span className="mono">RT_DRIVE_CMD</span> — not Host 0x300
+        </p>
         <label className="field">
           <span className="field-label">Speed, mm/s</span>
           <input
@@ -1684,23 +1751,28 @@ function DirectActuatorCards({
             disabled={locked}
             onChange={(e) => setMotorSpeed(Number(e.target.value))}
           />
-          <span className="field-hint">Allowed −500…3000</span>
         </label>
         <label className="field">
-          <span className="field-label">Gear 0–3 (N/D/S/R)</span>
-          <input
-            type="number"
+          <span className="field-label">Gear</span>
+          <select
             data-testid="direct-motor-gear"
             value={motorGear}
-            min={0}
-            max={3}
             disabled={locked}
             onChange={(e) => setMotorGear(Number(e.target.value))}
-          />
+          >
+            <option value={0}>0 = N</option>
+            <option value={1}>1 = D</option>
+            <option value={2}>2 = S</option>
+            <option value={3}>3 = R</option>
+          </select>
         </label>
+        <div className="tx-line mono small" data-testid="direct-motor-tx">
+          TX 0x204 · speed={signalText(txMotor, 'motor_speed_mmps')} · gear=
+          {signalText(txMotor, 'gear')} · {txMotor?.freshness ?? 'no frame yet'}
+        </div>
         <div className="fbk-line muted small mono">
-          FBK MTR 0x206 · speed {signalText(mtr, 'actual_speed_mmps')} · gear{' '}
-          {signalText(mtr, 'gear')}
+          FBK 0x206 · {signalText(fbkMtr, 'actual_speed_mmps') || '—'} · gear{' '}
+          {signalText(fbkMtr, 'gear_state') || signalText(fbkMtr, 'gear') || '—'}
         </div>
         <div className="actions tight">
           <button
@@ -1723,9 +1795,16 @@ function DirectActuatorCards({
         </div>
       </div>
 
-      <div className="direct-card" data-testid="direct-steering">
-        <h3>Steering · Low · VCU_SES_REQ 0x169</h3>
-        <p className="muted small">Vendor SES request — counter/checksum automatic.</p>
+      <div className={`direct-card${active.steering ? ' streaming' : ''}`} data-testid="direct-steering">
+        <div className="direct-card-head">
+          <h3>Steering · Low · 0x169</h3>
+          <span className={`chip tiny ${active.steering ? 'ok' : ''}`}>
+            {active.steering ? 'streaming' : 'idle'}
+          </span>
+        </div>
+        <p className="muted small">
+          <span className="mono">VCU_SES_REQ</span> · safety bypass forced ON
+        </p>
         <label className="field">
           <span className="field-label">Target angle raw (0.1°)</span>
           <input
@@ -1737,10 +1816,15 @@ function DirectActuatorCards({
             disabled={locked}
             onChange={(e) => setSteerAngle(Number(e.target.value))}
           />
-          <span className="field-hint">±450 · enable bits locked on</span>
+          <span className="field-hint">±450 · control_enable=1 · alignment_enable=1</span>
         </label>
+        <div className="tx-line mono small" data-testid="direct-steer-tx">
+          TX 0x169 · angle={signalText(txSteer, 'target_angle_raw')} · en=
+          {signalText(txSteer, 'control_enable')}/{signalText(txSteer, 'alignment_enable')} ·{' '}
+          {txSteer?.freshness ?? 'no frame yet'}
+        </div>
         <div className="fbk-line muted small mono">
-          FBK SES 0x201 · angle {signalText(ses, 'angle_deg')}
+          FBK SES · {signalText(fbkSes, 'angle_deg') || signalText(fbkSes, 'target_angle_raw') || '—'}
         </div>
         <div className="actions tight">
           <button
@@ -1763,9 +1847,16 @@ function DirectActuatorCards({
         </div>
       </div>
 
-      <div className="direct-card" data-testid="direct-brake">
-        <h3>Brake · Low · VCU_SEB_REQ 0x7B9</h3>
-        <p className="muted small">Vendor SEB request — independent of Host kinematics.</p>
+      <div className={`direct-card${active.brake ? ' streaming' : ''}`} data-testid="direct-brake">
+        <div className="direct-card-head">
+          <h3>Brake · Low · 0x7B9</h3>
+          <span className={`chip tiny ${active.brake ? 'ok' : ''}`}>
+            {active.brake ? 'streaming' : 'idle'}
+          </span>
+        </div>
+        <p className="muted small">
+          <span className="mono">VCU_SEB_REQ</span> · safety bypass forced ON
+        </p>
         <label className="field">
           <span className="field-label">Pressure request raw 0–100</span>
           <input
@@ -1777,10 +1868,15 @@ function DirectActuatorCards({
             disabled={locked}
             onChange={(e) => setBrakePressure(Number(e.target.value))}
           />
-          <span className="field-hint">Vendor scale · enable bits locked on</span>
+          <span className="field-hint">control_enable=1 · alignment_enable=1</span>
         </label>
+        <div className="tx-line mono small" data-testid="direct-brake-tx">
+          TX 0x7B9 · pressure={signalText(txBrake, 'pressure_request_raw')} · en=
+          {signalText(txBrake, 'control_enable')}/{signalText(txBrake, 'alignment_enable')} ·{' '}
+          {txBrake?.freshness ?? 'no frame yet'}
+        </div>
         <div className="fbk-line muted small mono">
-          FBK SEB 0x721 · {signalText(seb, 'pressure_kpa') || signalText(seb, 'status') || '—'}
+          FBK SEB · {signalText(fbkSeb, 'pressure_kpa') || signalText(fbkSeb, 'status') || '—'}
         </div>
         <div className="actions tight">
           <button
