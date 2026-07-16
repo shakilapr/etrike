@@ -93,7 +93,7 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
 
     await page.getByTestId('input-speed').fill('800')
     await page.getByTestId('input-yaw').fill('420')
-    await page.getByTestId('input-gear').fill('1')
+    await page.getByTestId('input-gear').selectOption('1')
     await page.getByTestId('check-periodic').uncheck()
 
     await page.getByTestId('btn-inject-drive').click()

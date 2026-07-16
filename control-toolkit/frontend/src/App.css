@@ -3635,8 +3635,60 @@ button.keycap.active:hover:not(:disabled) {
   background: var(--success-soft);
 }
 
-.control-method-panel .seg {
+.control-method-panel .seg,
+.control-method-seg {
   margin-bottom: 12px;
+}
+
+.control-session-panel .actions {
+  margin-top: 10px;
+}
+
+.control-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.control-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.control-status-item strong {
+  font-size: 13px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.control-callout {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, #fff);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.hmi-request-block {
+  margin-bottom: 12px;
+}
+
+.hmi-request-block .field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
+.small {
+  font-size: 12px;
 }
 
 .method-compare {
