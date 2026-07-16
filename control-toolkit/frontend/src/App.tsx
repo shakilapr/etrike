@@ -234,7 +234,10 @@ function signalNum(m: MessageState | undefined, key: string): number | null {
   return null
 }
 
-/** Compact horizontal meter for health / continuous signals. */
+/**
+ * Progress bar only for continuous engineering quantities (pressure, speed, angle…).
+ * Do not use for binary flags, enums, or few-state status — use StatusPill instead.
+ */
 function MeterBar({
   value,
   max,
@@ -282,6 +285,23 @@ function MeterBar({
   )
 }
 
+/** Discrete state (binary / enum / few values) — never a progress bar. */
+function StatusPill({
+  label,
+  tone = 'muted',
+  testId,
+}: {
+  label: string
+  tone?: 'ok' | 'warn' | 'danger' | 'muted' | 'accent'
+  testId?: string
+}) {
+  return (
+    <span className={`status-pill tone-${tone}`} data-testid={testId}>
+      {label}
+    </span>
+  )
+}
+
 function MetricCard({
   title,
   valueText,
@@ -294,18 +314,21 @@ function MetricCard({
   tone,
   testId,
   meterTestId,
+  /** Continuous metrics only. Binary/enum cards pass showMeter={false}. */
+  showMeter = true,
 }: {
   title: string
   valueText: string
   unit?: string
   sub?: string
   freshness?: string
-  value: number | null
-  max: number
+  value?: number | null
+  max?: number
   min?: number
   tone?: 'auto' | 'high-bad' | 'low-bad' | 'accent' | 'ok' | 'warn' | 'danger'
   testId?: string
   meterTestId?: string
+  showMeter?: boolean
 }) {
   return (
     <div className="card metric-card" data-testid={testId}>
@@ -330,14 +353,16 @@ function MetricCard({
         {valueText}
         {unit ? <span className="unit"> {unit}</span> : null}
       </div>
-      <MeterBar
-        value={value}
-        max={max}
-        min={min}
-        tone={tone}
-        label={title}
-        testId={meterTestId}
-      />
+      {showMeter && max != null ? (
+        <MeterBar
+          value={value ?? null}
+          max={max}
+          min={min}
+          tone={tone}
+          label={title}
+          testId={meterTestId}
+        />
+      ) : null}
       {sub ? <div className="card-sub muted">{sub}</div> : null}
     </div>
   )
@@ -834,8 +859,16 @@ function Overview() {
   const speedDelta =
     cmdSpeed != null && fbkSpeed != null ? fbkSpeed - cmdSpeed : null
 
-  const streamPct =
-    quality === 'live' ? 100 : quality === 'delayed' ? 55 : quality === 'dropping' ? 30 : 8
+  const gearLabel =
+    signalText(drive, 'gear') || signalText(motor, 'gear_state') || '—'
+  const estopOn = !!ses?.estop_active
+  const benchOn = ses?.bench_tx === 'enabled'
+  const canHealthTone: 'ok' | 'warn' | 'danger' | 'muted' =
+    canHealth === 'healthy' ? 'ok' : canHealth === 'degraded' ? 'warn' : 'danger'
+  const safetyEstopOn =
+    String(signalText(safety, 'estop_active')).toLowerCase().includes('1') ||
+    String(signalText(safety, 'estop_active')).toLowerCase() === 'true' ||
+    String(signalText(safety, 'estop_active')).toLowerCase() === 'active'
 
   return (
     <div className="workspace" data-testid="workspace-overview">
@@ -848,14 +881,12 @@ function Overview() {
       </header>
 
       <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
-        <div className={`strip-item ${ses?.estop_active ? 'hazard' : 'ok'}`}>
+        <div className={`strip-item ${estopOn ? 'hazard' : 'ok'}`}>
           <span className="strip-k">ESTOP</span>
-          <span className="strip-v">{ses?.estop_active ? 'Active' : 'Clear'}</span>
-          <MeterBar
-            value={ses?.estop_active ? 100 : 0}
-            max={100}
-            tone={ses?.estop_active ? 'danger' : 'ok'}
-            label="ESTOP"
+          <span className="strip-v">{estopOn ? 'Active' : 'Clear'}</span>
+          <StatusPill
+            label={estopOn ? 'Active' : 'Clear'}
+            tone={estopOn ? 'danger' : 'ok'}
             testId="meter-estop"
           />
         </div>
@@ -864,34 +895,38 @@ function Overview() {
           <span className="strip-v">
             Req {ses?.requested_power ?? '—'} / Conf {ses?.confirmed_power ?? '—'}
           </span>
+          <StatusPill
+            label={String(ses?.confirmed_power ?? ses?.requested_power ?? '—')}
+            tone="muted"
+            testId="status-power"
+          />
         </div>
         <div className="strip-item">
           <span className="strip-k">Mode</span>
           <span className="strip-v">
             Req {ses?.requested_mode ?? '—'} / Conf {ses?.confirmed_mode ?? '—'}
           </span>
+          <StatusPill
+            label={String(ses?.confirmed_mode ?? ses?.requested_mode ?? '—')}
+            tone="muted"
+            testId="status-mode"
+          />
         </div>
         <div className="strip-item">
           <span className="strip-k">Bench TX</span>
           <span className="strip-v">{ses?.bench_tx ?? 'disabled'}</span>
-          <MeterBar
-            value={ses?.bench_tx === 'enabled' ? 100 : 0}
-            max={100}
-            tone={ses?.bench_tx === 'enabled' ? 'warn' : 'ok'}
-            label="Bench TX"
+          <StatusPill
+            label={benchOn ? 'Enabled' : 'Disabled'}
+            tone={benchOn ? 'warn' : 'muted'}
             testId="meter-bench-tx"
           />
         </div>
         <div className={`strip-item health-${canHealth}`}>
           <span className="strip-k">CAN health</span>
           <span className="strip-v">{canHealth}</span>
-          <MeterBar
-            value={streamPct}
-            max={100}
-            tone={
-              canHealth === 'healthy' ? 'ok' : canHealth === 'degraded' ? 'warn' : 'danger'
-            }
-            label="CAN stream health"
+          <StatusPill
+            label={`${canHealth} · ${quality}`}
+            tone={canHealthTone}
             testId="meter-can-health"
           />
         </div>
@@ -905,6 +940,7 @@ function Overview() {
           <span className="strip-v mono">
             {brakeKpa != null ? `${brakeKpa.toFixed(0)} kPa` : '—'}
           </span>
+          {/* Continuous quantity — progress bar is appropriate */}
           <MeterBar
             value={brakeKpa}
             max={5000}
@@ -969,7 +1005,7 @@ function Overview() {
           title="Brake pressure"
           valueText={brakeKpa != null ? brakeKpa.toFixed(0) : '—'}
           unit="kPa"
-          sub="HOST/RT brake · high → red"
+          sub="HOST/RT brake · continuous · high → red"
           freshness={
             hostBrake?.freshness ?? rtBrake?.freshness ?? brakeDiag?.freshness
           }
@@ -985,20 +1021,24 @@ function Overview() {
             {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           </div>
           <div className="metric" data-testid="metric-gear">
-            {signalText(drive, 'gear') || signalText(motor, 'gear_state') || '—'}
+            {gearLabel}
           </div>
-          <div className="card-sub muted">N/D/S/R · host + motor</div>
+          <StatusPill
+            label={gearLabel}
+            tone={gearLabel === 'N' || gearLabel === '—' ? 'muted' : 'accent'}
+            testId="status-gear"
+          />
+          <div className="card-sub muted">N/D/S/R enum — not a bar</div>
         </div>
         <div className="card metric-card" data-testid="card-ready">
           <div className="card-head">
             <div className="card-title">Backend</div>
           </div>
           <div className="metric">{status?.ready ? 'ready' : 'not ready'}</div>
-          <MeterBar
-            value={status?.ready ? 100 : 0}
-            max={100}
+          <StatusPill
+            label={status?.ready ? 'Ready' : 'Not ready'}
             tone={status?.ready ? 'ok' : 'danger'}
-            label="Backend ready"
+            testId="status-backend-ready"
           />
           <div className="card-sub mono muted">{status?.adapter?.health ?? '—'}</div>
         </div>
@@ -1013,7 +1053,7 @@ function Overview() {
               <th>Command</th>
               <th>Feedback</th>
               <th>Difference</th>
-              <th>Meter</th>
+              <th>Level</th>
               <th>Health</th>
             </tr>
           </thead>
@@ -1100,15 +1140,17 @@ function Overview() {
               </td>
               <td className="muted">—</td>
               <td className="meter-cell">
-                <MeterBar
-                  value={
-                    String(signalText(safety, 'estop_active')).toLowerCase().includes('1') ||
-                    String(signalText(safety, 'estop_active')).toLowerCase() === 'true'
-                      ? 100
-                      : 0
+                {/* Binary ESTOP — pill, not a 0/100 progress bar */}
+                <StatusPill
+                  label={
+                    safety
+                      ? safetyEstopOn
+                        ? 'ESTOP on'
+                        : 'ESTOP clear'
+                      : '—'
                   }
-                  max={100}
-                  tone="high-bad"
+                  tone={safety ? (safetyEstopOn ? 'danger' : 'ok') : 'muted'}
+                  testId="status-safety-estop"
                 />
               </td>
               <td>
