@@ -3,12 +3,85 @@
 Local bench UI for eTrike: **FastAPI** backend + **React/Vite** frontend.  
 Use **two dedicated terminals** you leave open. Do not rely on short-lived agent shells (they can kill processes on timeout).
 
-| Service | Port | Role |
-|---------|------|------|
-| Backend (uvicorn) | **8001** | REST + WebSocket `/api/v1/*` |
-| Frontend (Vite) | **5173** | UI; proxies `/api` → `127.0.0.1:8001` |
+| Service | Address | Role |
+|---------|---------|------|
+| Backend (uvicorn) | **http://127.0.0.1:8001** | REST + WebSocket `/api/v1/*` |
+| Frontend (Vite) | **http://127.0.0.1:5173** | UI; proxies `/api` → `http://127.0.0.1:8001` |
+
+Always bind with an **explicit host** (`127.0.0.1`), not an omitted host / ambiguous `localhost` only.
 
 Open the app at: **http://127.0.0.1:5173/**
+
+---
+
+## Run from monorepo root (recommended)
+
+Repo root: `C:\projects\etrike` (or your clone path).
+
+### Terminal 1 — API
+
+```powershell
+cd C:\projects\etrike
+npm run toolkit:api
+```
+
+Same thing without npm:
+
+```powershell
+cd C:\projects\etrike
+pwsh -File .\control-toolkit\scripts\start-api.ps1
+```
+
+Listens on **`127.0.0.1:8001`**.
+
+- Status: http://127.0.0.1:8001/api/v1/status  
+- Docs: http://127.0.0.1:8001/docs  
+- Stream: ws://127.0.0.1:8001/api/v1/stream  
+
+Leave this window open.
+
+### Terminal 2 — UI
+
+```powershell
+cd C:\projects\etrike
+npm run toolkit:ui
+```
+
+Or:
+
+```powershell
+cd C:\projects\etrike
+pwsh -File .\control-toolkit\scripts\start-ui.ps1
+```
+
+Listens on **`127.0.0.1:5173`**, proxies to **`http://127.0.0.1:8001`**.
+
+Open: **http://127.0.0.1:5173/**
+
+### Optional address overrides
+
+| Variable | Default | Used by |
+|----------|---------|---------|
+| `CTK_HOST` | `127.0.0.1` | API bind host |
+| `CTK_PORT` | `8001` | API bind port |
+| `CTK_E2E_API` | `http://127.0.0.1:8001` | Vite proxy target (full URL) |
+| `CTK_UI_HOST` | `127.0.0.1` | Vite bind host |
+| `CTK_UI_PORT` | `5173` | Vite bind port |
+
+Example (custom API port — keep proxy in sync):
+
+```powershell
+# Terminal 1
+$env:CTK_PORT = "8001"
+$env:CTK_HOST = "127.0.0.1"
+npm run toolkit:api
+
+# Terminal 2
+$env:CTK_E2E_API = "http://127.0.0.1:8001"
+$env:CTK_UI_HOST = "127.0.0.1"
+$env:CTK_UI_PORT = "5173"
+npm run toolkit:ui
+```
 
 ---
 
@@ -16,7 +89,7 @@ Open the app at: **http://127.0.0.1:5173/**
 
 - Python **≥ 3.11**
 - Node.js + npm
-- Repo root on disk so the monorepo `protocol/` package resolves (backend imports it via path fix-up)
+- Monorepo root present so the generated `protocol/` package resolves
 
 ### Backend install (once)
 
@@ -36,27 +109,14 @@ npm install
 
 ---
 
-## Run (daily)
+## Run from package folders (equivalent)
 
 ### Terminal 1 — backend
 
 ```powershell
 cd C:\projects\etrike\control-toolkit\backend
-# optional: activate venv if you use one
-# .\.venv\Scripts\activate
 python -m uvicorn control_toolkit.main:app --host 127.0.0.1 --port 8001
 ```
-
-Leave this window open. Closing it stops the API → UI shows **Offline / Lost** or **502**.
-
-Optional helper (Windows, logs under `backend/`):
-
-```powershell
-# From backend folder
-.\ _start_uvicorn8001.cmd
-```
-
-(Or: `cmd /c C:\projects\etrike\control-toolkit\backend\_start_uvicorn8001.cmd`)
 
 ### Terminal 2 — frontend
 
@@ -66,34 +126,52 @@ $env:CTK_E2E_API = "http://127.0.0.1:8001"
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-- `CTK_E2E_API` must point at the toolkit backend (**8001**).
-- `--strictPort` fails if something else already owns 5173 (often **control-ui**).
+`npm run dev` alone is **not** enough: it only starts Vite. The API must already be on **127.0.0.1:8001**.
 
-### Browser
+---
+
+## Browser
 
 1. Open **http://127.0.0.1:5173/**
-2. Confirm top bar: Stream **Live**, health not **Offline**
-3. **Computer** (blue) = dual virtual CAN; **Real** (amber) = CANalyst-II (needs adapter)
+2. Top bar: Stream **Live**, not **Offline**
+3. **Computer** (blue) = dual virtual CAN; **Real** (amber) = CANalyst-II
 
 ---
 
 ## Health checks
 
 ```powershell
-# API
+# API (direct address)
 Invoke-WebRequest http://127.0.0.1:8001/api/v1/status -UseBasicParsing
 
-# Vite proxy to API (must be 200 if both are up)
+# Same API via Vite proxy
 Invoke-WebRequest http://127.0.0.1:5173/api/v1/status -UseBasicParsing
 ```
 
 | Result | Meaning |
 |--------|---------|
-| `:8001` fails | Start uvicorn (Terminal 1) |
-| `:8001` OK, `:5173/api` 502 | Vite proxy target wrong or Vite down |
-| Both OK, UI Offline | Hard refresh (`Ctrl+Shift+R`); confirm URL is toolkit on 5173 |
+| `127.0.0.1:8001` fails | Start API (`npm run toolkit:api`) |
+| API OK, `5173/api` 502 | UI not running or `CTK_E2E_API` wrong |
+| Both OK, UI Offline | Hard refresh; confirm URL is **127.0.0.1:5173** |
 
-OpenAPI docs: **http://127.0.0.1:8001/docs**
+---
+
+## Stop (no terminal window needed)
+
+```powershell
+foreach ($port in 8001, 5173) {
+  $pids = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess |
+    Select-Object -Unique
+  foreach ($id in $pids) {
+    if ($id) {
+      Write-Host "Stopping PID $id (port $port)"
+      Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+```
+
+Or **Ctrl+C** in each terminal if you still have them.
 
 ---
 
@@ -101,50 +179,27 @@ OpenAPI docs: **http://127.0.0.1:8001/docs**
 
 | Mode | Profile | Bus |
 |------|---------|-----|
-| **Computer** | `pure_software` | Dual **virtual** High/Low (no USB) |
-| **Real** | `bench_test` (or `full_vehicle`) | **CANalyst-II** CH0=High, CH1=Low @ 500 kbit/s |
+| **Computer** | `pure_software` | Dual **virtual** High/Low |
+| **Real** | `bench_test` / `full_vehicle` | **CANalyst-II** |
 
-- Toggle in the **top bar** or **Settings**.
-- No silent physical → virtual fallback. Real without adapter fails honestly.
-- Env overrides (optional): `CTK_HOST`, `CTK_PORT`, `CTK_PROFILE`.
-
----
-
-## Quick operate checklist
-
-1. Start backend + frontend (above).
-2. Open UI → Stream **Live**.
-3. **Control** or **Drive**: turn **Bench TX ON** before inject / keyboard / low-bus streams.
-4. High path: Host kinematics `HOST_DRIVE_CMD` 0x300.  
-   Low path: direct motor / steer / brake (exclusive with high).
-5. Second Chrome tab can **observe** (Overview / Live CAN) while the first **controls** — keep the operator tab on Drive/Control so TX is not released on leave.
+No silent physical → virtual fallback.
 
 ---
 
 ## Tests
 
-### Backend unit / integration
-
 ```powershell
+# From monorepo root — backend tests
 cd C:\projects\etrike\control-toolkit\backend
 pytest -q
-```
 
-### Live API probe (backend already running)
+# Live API probe (API must be up at 127.0.0.1:8001)
+python scripts\control_drive_probe.py
 
-```powershell
-cd C:\projects\etrike\control-toolkit\backend
-python scripts/control_drive_probe.py
-```
-
-### Frontend e2e (Playwright)
-
-```powershell
+# Playwright (API + UI should be up, or Playwright may start its own API)
 cd C:\projects\etrike\control-toolkit\frontend
 $env:CTK_E2E_API = "http://127.0.0.1:8001"
 npx playwright test e2e/smoke.spec.ts --reporter=list
-# broader:
-npx playwright test e2e/control-drive.spec.ts e2e/ui-issues-audit.spec.ts --reporter=list
 ```
 
 ---
@@ -153,12 +208,10 @@ npx playwright test e2e/control-drive.spec.ts e2e/ui-issues-audit.spec.ts --repo
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
-| **Offline** / **Lost** + **502** | Nothing on 8001 | Start Terminal 1 (uvicorn) |
-| **502** with Vite up | Proxy cannot reach API | Check `CTK_E2E_API` / port 8001 |
-| Wrong UI / weird API | **control-ui** on same ports | Kill other Vite; use toolkit only on 5173 |
-| Real mode fails | No CANalyst | Stay on **Computer** or plug adapter |
-| Inject / keyboard 409 | Bench TX off, or ownership | Enable Bench TX; Stop all / re-arm |
-| Drive TX stops when leaving tab | Safety: unmount releases control | Keep Drive tab open while operating |
+| Offline / 502 | Nothing on **127.0.0.1:8001** | `npm run toolkit:api` from root |
+| `npm run dev` only | UI without API | Always start API first |
+| Port in use | control-ui or old Vite on 5173 | Free port or use stop snippet above |
+| Real mode fails | No CANalyst | Stay on **Computer** |
 
 ---
 
@@ -166,16 +219,17 @@ npx playwright test e2e/control-drive.spec.ts e2e/ui-issues-audit.spec.ts --repo
 
 | Path | Notes |
 |------|--------|
-| `control-ui/` | Sibling product — different ports; **do not** share **5173** with toolkit |
-| Backend README port **8000** | Older default; **this UI expects 8001** via Vite proxy |
+| `control-ui/` | Sibling app; different ports; do not share **5173** with toolkit |
+| Backend default config port **8000** | Toolkit UI + scripts use **8001** |
 
 ---
 
-## Useful URLs
+## Address quick reference
 
-| URL | Description |
-|-----|-------------|
-| http://127.0.0.1:5173/ | Control Toolkit UI |
-| http://127.0.0.1:8001/api/v1/status | Backend health |
-| http://127.0.0.1:8001/docs | OpenAPI |
-| ws://127.0.0.1:8001/api/v1/stream | Live state (browser uses proxied path via Vite) |
+| What | URL |
+|------|-----|
+| UI | http://127.0.0.1:5173/ |
+| API status | http://127.0.0.1:8001/api/v1/status |
+| API docs | http://127.0.0.1:8001/docs |
+| API stream | ws://127.0.0.1:8001/api/v1/stream |
+| Proxied API (via Vite) | http://127.0.0.1:5173/api/v1/status |
