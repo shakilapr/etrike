@@ -169,7 +169,11 @@ button {
 .chip.ok {
   background: var(--success-soft);
   border-color: #c5e4d2;
-  color: var(--success);
+  color: var(--text-secondary);
+}
+
+.chip.ok .chip-k {
+  color: var(--text-tertiary);
 }
 
 .chip.ok .chip-v {
@@ -179,11 +183,32 @@ button {
 .chip.danger {
   background: var(--danger-soft);
   border-color: #e4aeb2;
-  color: var(--danger);
+  color: var(--text-secondary);
+}
+
+.chip.danger .chip-k {
+  color: var(--text-tertiary);
 }
 
 .chip.danger .chip-v {
   color: var(--danger);
+  font-weight: 700;
+}
+
+.quality-live .chip-v,
+.chip.quality-live .chip-v {
+  color: var(--success);
+}
+
+.quality-delayed .chip-v,
+.chip.quality-delayed .chip-v {
+  color: var(--warning);
+}
+
+.quality-lost .chip-v,
+.quality-connecting .chip-v,
+.quality-dropping .chip-v {
+  color: var(--text);
 }
 
 .chip.muted,
@@ -252,7 +277,11 @@ button {
   overflow-y: auto;
 }
 
-.nav {
+/* Nav is a <button> — must beat generic button primary styles (specificity). */
+button.nav,
+button.nav:hover:not(:disabled),
+button.nav:focus:not(:disabled),
+button.nav:active:not(:disabled) {
   min-height: 34px;
   display: flex;
   align-items: center;
@@ -268,22 +297,27 @@ button {
   background: transparent;
   width: 100%;
   text-align: left;
+  box-shadow: none;
   transition: background var(--transition), color var(--transition);
 }
 
-.nav:hover {
-  background: rgba(255, 255, 255, 0.72);
+button.nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.85);
   color: var(--text);
+  border: none;
 }
 
-.nav.active {
+button.nav.active,
+button.nav.active:hover:not(:disabled),
+button.nav.active:focus:not(:disabled) {
   background: var(--surface);
   color: #174a88;
+  border: none;
   box-shadow: inset 3px 0 0 var(--primary);
   font-weight: 600;
 }
 
-.nav:focus-visible {
+button.nav:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
@@ -528,6 +562,18 @@ h3 {
 .can-table tbody tr.selected {
   background: var(--primary-soft);
   box-shadow: inset 3px 0 0 var(--primary);
+  color: var(--text);
+}
+
+.can-table tbody tr.selected td {
+  color: var(--text);
+  background: transparent;
+}
+
+.can-table tbody tr.selected .signals-cell,
+.can-table tbody tr.selected .mono,
+.can-table tbody tr.selected .muted {
+  color: var(--text-secondary);
 }
 
 .signals-cell {
@@ -808,7 +854,9 @@ h3 {
   background: var(--surface);
 }
 
-.seg-btn {
+button.seg-btn,
+button.seg-btn:hover:not(:disabled),
+button.seg-btn:focus:not(:disabled) {
   background: transparent;
   color: var(--text-secondary);
   border: none;
@@ -818,25 +866,29 @@ h3 {
   font-weight: 500;
   font-size: 12.5px;
   cursor: pointer;
+  box-shadow: none;
   transition: all var(--transition);
 }
 
-.seg-btn + .seg-btn {
+button.seg-btn + button.seg-btn {
   border-left: 1px solid var(--border);
 }
 
-.seg-btn.active {
+button.seg-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  color: var(--text);
+  border: none;
+}
+
+button.seg-btn.active,
+button.seg-btn.active:hover:not(:disabled) {
   background: var(--primary-soft);
   color: var(--primary);
   font-weight: 600;
+  border: none;
 }
 
-.seg-btn:hover {
-  background: #f8fafc;
-  color: var(--text);
-}
-
-.seg-btn:focus-visible {
+button.seg-btn:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
   z-index: 1;
@@ -899,7 +951,9 @@ h3 {
   margin: 8px 0 0;
 }
 
-button {
+/* Primary actions only — never style nav / segment / gear as filled primary. */
+button.btn,
+button:not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger) {
   background: var(--primary);
   color: #fff;
   border: 1px solid var(--primary);
@@ -911,9 +965,11 @@ button {
   transition: background var(--transition), border-color var(--transition);
 }
 
-button:hover:not(:disabled) {
+button.btn:hover:not(:disabled),
+button:not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):hover:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
+  color: #fff;
 }
 
 button:disabled {
@@ -932,16 +988,22 @@ button.dense {
   font-size: 12px;
 }
 
-button.danger {
+button.danger,
+button.danger:hover:not(:disabled),
+button.danger:focus:not(:disabled) {
   background: var(--danger);
-  border-color: #9f1f28;
+  border: 1px solid #9f1f28;
+  color: #fff;
 }
 
 button.danger:hover:not(:disabled) {
   background: #9f1f28;
+  color: #fff;
 }
 
-button.secondary {
+button.secondary,
+button.secondary:hover:not(:disabled),
+button.secondary:focus:not(:disabled) {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   color: var(--text-secondary);
@@ -1295,7 +1357,9 @@ button.secondary:hover:not(:disabled) {
   gap: 6px;
 }
 
-.gear-btn {
+button.gear-btn,
+button.gear-btn:hover:not(:disabled),
+button.gear-btn:focus:not(:disabled) {
   flex: 1;
   min-height: 36px;
   background: var(--surface);
@@ -1305,16 +1369,18 @@ button.secondary:hover:not(:disabled) {
   font-weight: 650;
   font-size: 14px;
   border-radius: var(--radius);
+  box-shadow: none;
   transition: all var(--transition);
 }
 
-.gear-btn:hover {
+button.gear-btn:hover:not(:disabled) {
   border-color: #9bb9e8;
   color: var(--primary);
   background: var(--primary-soft);
 }
 
-.gear-btn.active {
+button.gear-btn.active,
+button.gear-btn.active:hover:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
