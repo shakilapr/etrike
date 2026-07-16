@@ -18,6 +18,8 @@ router = APIRouter(prefix="/protocol", tags=["protocol"])
 def list_messages() -> dict:
     return {
         "wire_hash": proto.WIRE_HASH,
+        "semantic_hash": proto.SEMANTIC_HASH,
+        "network_hash": proto.NETWORK_HASH,
         "count": proto.message_count(),
         "instances": proto.instances(),
     }

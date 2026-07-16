@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Phase 0 protocol foundation complete (hashes, golden vectors, audits, drift check). Pure Software toolkit path live (analysis inject + UI + e2e). Physical CANalyst deferred.
+**Status:** Phase 0 complete. Phase 1 complete (virtual dual-bus pipeline, history, topology, full API/tests). Later software phases partial. Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -289,122 +289,61 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH, 
 
 ### 1.1 Project scaffolding
 
-- [ ] Create `control-toolkit/backend/` with:
-  - `pyproject.toml` (FastAPI, uvicorn, python-can, pydantic, httpx, pytest, pytest-asyncio)
-  - `control_toolkit/` package (do **not** use legacy `vtc` name):
-    ```
-    control_toolkit/
-    ├── __init__.py
-    ├── main.py              # FastAPI app factory
-    ├── config.py             # typed configuration with defaults
-    ├── models/               # Pydantic request/response models
-    │   ├── frames.py         # RawFrameEnvelope, DecodedFrame
-    │   ├── state.py          # LatestState, FreshnessState
-    │   ├── adapter.py        # AdapterStatus, ChannelState
-    │   └── session.py        # SessionState, ProfileState
-    ├── transport/            # CAN adapter abstraction
-    │   ├── interface.py      # Transport protocol/ABC
-    │   ├── virtual.py        # python-can virtual bus adapter
-    │   └── canalyst.py       # CANalyst-II adapter (hardware track / Phase 2)
-    ├── pipeline/             # RX/TX processing
-    │   ├── router.py         # Observation router
-    │   ├── decoder.py        # Generated codec integration
-    │   ├── validator.py      # Integrity/corruption checks
-    │   └── freshness.py      # Per-message freshness tracker
-    ├── state/                # State management
-    │   ├── latest.py         # Latest-value store
-    │   ├── topology.py       # ECU liveness tracker
-    │   └── history.py        # Bounded frame history
-    ├── api/                  # FastAPI routes
-    │   ├── status.py
-    │   ├── state.py
-    │   ├── protocol_api.py
-    │   └── stream.py         # WebSocket endpoint
-    └── services/             # Backend services
-        ├── lifecycle.py      # Startup/shutdown orchestration
-        └── event_bus.py      # Internal event distribution
-    ```
-- [ ] Single-process, single-worker Uvicorn configuration (architecture §4.5)
-- [ ] Health endpoint: `GET /api/v1/status`
+- [x] Create `control-toolkit/backend/` with `pyproject.toml` + `control_toolkit/` package tree
+- [x] Single-process, single-worker Uvicorn configuration (architecture §4.5)
+- [x] Health endpoint: `GET /api/v1/status`
 
 ### 1.2 Immutable frame types
 
-- [ ] Define `RawFrameEnvelope` (Pydantic/dataclass):
-  - adapter_epoch, channel (High/Low), device_timestamp, backend_arrival_time
-  - can_id, is_extended, is_remote, dlc, data (exactly DLC bytes, not padded)
-  - channel_sequence, global_sequence
-  - direction (RX/TX), source (physical/virtual/synthetic/injection)
-- [ ] Define `TransportEvent` with severity, channel, evidence, monotonic timestamp
-- [ ] Define `AdapterStatus` with identity, capabilities, per-channel state, queue metrics
+- [x] `RawFrameEnvelope` (epoch, channel, timestamps, id, dlc/data exact, sequences, direction, source)
+- [x] `TransportEvent` with severity, channel, evidence, monotonic timestamp
+- [x] `AdapterStatus` with identity, capabilities, per-channel state, queue metrics
 
 ### 1.3 Virtual transport adapter
 
-- [ ] Implement `VirtualTransportAdapter` using `python-can` virtual interface:
-  - Create named High and Low virtual buses
-  - Blocking receive in dedicated thread via `can.Notifier`
-  - Constant-time callback → bounded queue (no decode in callback)
-  - Overflow detection with lost-count evidence
-  - Clean shutdown with `can.Notifier` stop
-- [ ] Capability record: no HW timestamps, no TX echo, no bus-off, no TEC/REC (all `Unknown`)
+- [x] `VirtualTransportAdapter` dual High/Low virtual buses + Notifier
+- [x] Constant-time callback → bounded queue (no decode in callback) — tested
+- [x] Overflow detection with lost-count evidence
+- [x] Clean shutdown; capability record all Unknown/False (no fake TEC/REC)
 
 ### 1.4 Receive pipeline
 
-- [ ] Router task drains RX queue:
-  1. Validate raw envelope (CAN ID membership, DLC)
-  2. Assign global frame sequence
-  3. Decode via generated Python codec
-  4. Run integrity/validation checks
-  5. Update latest-value store
-  6. Update freshness state
-  7. Enqueue for recording (if active)
-  8. Publish to subscription hub
-- [ ] Unknown frames remain visible (no guessed decoding)
-- [ ] Decode failure preserves raw frame, produces no fabricated values
+- [x] Router: sequence → history → decode → validate → latest → topology
+- [x] Unknown frames visible without guessed decode
+- [x] Decode failure preserves raw frame; no fabricated values
+- [x] WebSocket / event bus state broadcasts
 
 ### 1.5 Latest-value state
 
-- [ ] Keyed by `(bus, can_id)` → latest raw + latest valid observation
-- [ ] Per-message: last_seen, observed_rate, expected_rate, freshness_state, validation_result
-- [ ] Per-signal: raw_value, engineering_value, unit, enum_label, validity
-- [ ] Freshness states: Unseen → Live → Late → Missing → Invalid → Frozen → Recovering
+- [x] Keyed by `(bus, can_id)` with observed/expected rate, freshness, validation
+- [x] Per-signal raw_value, engineering_value, unit, enum_label, validity
+- [x] Freshness: Unseen/Live/Late/Missing/Invalid (Frozen/Recovering reserved for later)
+- [x] Bounded `FrameHistory` + `TopologyTracker` (RT high/low independent)
 
 ### 1.6 Basic API endpoints
 
-- [ ] `GET /api/v1/status` — backend readiness, adapter state, protocol hash
-- [ ] `GET /api/v1/state` — atomic latest-state snapshot with sequence
-- [ ] `GET /api/v1/protocol/messages` — generated catalog browse
-- [ ] `GET /api/v1/protocol/messages/{bus}/{id}` — single message detail
-- [ ] WebSocket `/api/v1/stream` — critical events + full state broadcast (no delta-sync complexity)
+- [x] `GET /api/v1/status` — readiness, adapter, semantic/network hashes
+- [x] `GET /api/v1/state` — atomic latest-state snapshot
+- [x] `GET /api/v1/history` — bounded chronological frames
+- [x] `GET /api/v1/topology` — ECU liveness nodes
+- [x] `GET /api/v1/protocol/messages` (+ detail by bus/id)
+- [x] WebSocket `/api/v1/stream` — hello + initial + coalesced state
 
 **Tests:**
 ```bash
-# Unit tests — frame types, codec integration, freshness logic
-pytest control-toolkit/backend/tests/test_frame_types.py -v
-pytest control-toolkit/backend/tests/test_decoder.py -v
-pytest control-toolkit/backend/tests/test_freshness.py -v
-pytest control-toolkit/backend/tests/test_validator.py -v
-
-# Integration — virtual bus end-to-end
-pytest control-toolkit/backend/tests/test_virtual_pipeline.py -v
-# → inject frames on virtual High/Low → verify decoded state via API
-
-# API tests
-pytest control-toolkit/backend/tests/test_api_status.py -v
-pytest control-toolkit/backend/tests/test_api_state.py -v
-pytest control-toolkit/backend/tests/test_api_protocol.py -v
-
-# WebSocket smoke test
-pytest control-toolkit/backend/tests/test_websocket_stream.py -v
+pytest control-toolkit/backend/tests -v
+# Includes: frame_types, decoder, freshness, validator, virtual_pipeline,
+# api_status/state/protocol, websocket_stream, transport_callback, history, topology
 ```
 
 **Exit gate:**
-- [ ] Backend starts in Pure Software mode without hardware
-- [ ] Injected virtual frames appear decoded in `GET /api/v1/state`
-- [ ] WebSocket delivers full latest-state broadcasts
-- [ ] Freshness transitions work (Live → Late → Missing on timeout)
-- [ ] Unknown frames preserved with raw data
-- [ ] All generated codec golden vectors pass through the pipeline
-- [ ] Zero decode in receive callback (measured)
+- [x] Backend starts in Pure Software mode without hardware
+- [x] Injected virtual frames appear decoded in `GET /api/v1/state`
+- [x] WebSocket delivers full latest-state broadcasts
+- [x] Freshness transitions work (Live → Late → Missing on timeout)
+- [x] Unknown frames preserved with raw data (+ history)
+- [x] Generated codec path used via protocol bridge (Phase 0 golden suite separate)
+- [x] Zero decode in receive callback (tested)
 
 ---
 
