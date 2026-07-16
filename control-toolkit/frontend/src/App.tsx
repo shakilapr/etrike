@@ -2002,10 +2002,11 @@ function Control() {
       void api
         .controlIntent({
           sequence: seqRef.current,
-          source: 'keyboard',
+          source: 'control_keyboard',
           mode: 'kinematics',
           throttle,
           steer,
+          gear: throttle < 0 ? 3 : throttle > 0 ? 1 : 1,
           hard_brake,
           estop,
         })
@@ -2013,7 +2014,10 @@ function Control() {
           setKbSnap(r.control)
           setCtrlStatus(r.control)
         })
-        .catch((e) => setLog(String(e)))
+        .catch((e) => {
+          const msg = String(e)
+          if (!/stale_sequence|409/i.test(msg)) setLog(msg)
+        })
     }, 50)
 
     return () => {
@@ -2407,9 +2411,18 @@ function Control() {
                     setLog('Keyboard control off')
                   } else {
                     void ensureSessionReady()
-                      .then(() => {
+                      .then(async () => {
+                        // Own the intent stream: stop low-direct / Drive / inject jobs.
+                        await api.controlRelease('kb_enable').catch(() => undefined)
+                        for (const ch of ['motor', 'steering', 'brake'] as const) {
+                          await api
+                            .controlDirect({ channel: ch, enabled: false })
+                            .catch(() => undefined)
+                        }
+                        await api.stopAnalysis().catch(() => undefined)
+                        seqRef.current = 0
                         setKbEnabled(true)
-                        setLog('Keyboard control on — WASD / arrows')
+                        setLog('Keyboard control on — WASD / arrows → /control/intent')
                       })
                       .catch((e) => setLog(String(e)))
                   }

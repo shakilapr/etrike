@@ -111,7 +111,15 @@ class ControlIntentService:
         now = time.monotonic()
         with self._lock:
             st = self._state
-            if st.active and sequence < st.sequence:
+            # Stale-sequence guard only applies to the *same* continuous producer
+            # (e.g. Drive tab remount must not 409 against Control keyboard seq).
+            same_stream = (
+                st.active
+                and st.mode == "kinematics"
+                and st.source == source
+                and mode == "kinematics"
+            )
+            if same_stream and sequence < st.sequence:
                 raise SessionError(
                     "control.stale_sequence",
                     f"intent sequence {sequence} < current {st.sequence}",
@@ -178,11 +186,14 @@ class ControlIntentService:
             if enabled and self._state.job_id:
                 self._cancel_job_locked()
                 self._state.active = False
+                self._state.sequence = 0
             self._state.mode = "direct" if enabled else (
                 "direct" if self._state.direct_jobs else "none"
             )
             self._state.loss_reason = None
             self._state.last_mono = time.monotonic()
+            if enabled:
+                self._state.source = "direct"
 
             spec = DIRECT_CHANNELS[channel]
             existing = self._state.direct_jobs.get(channel)
@@ -222,12 +233,24 @@ class ControlIntentService:
         with self._lock:
             self._zero_locked()
             self._cancel_job_locked()
+            owners = [self._state.lease_owner] + [
+                str(DIRECT_CHANNELS[ch]["owner"]) for ch in list(self._state.direct_jobs)
+            ]
+            # Also drop leases for all known direct owners (may have been stopped already).
+            owners.extend(str(spec["owner"]) for spec in DIRECT_CHANNELS.values())
             self._cancel_direct_locked()
             self._state.active = False
             self._state.mode = "none"
             self._state.loss_reason = reason
             self._state.throttle = 0.0
             self._state.steer = 0.0
+            self._state.sequence = 0
+            self._state.source = "none"
+            for owner in dict.fromkeys(owners):
+                try:
+                    self._tx.release_owner(owner)
+                except Exception:  # noqa: BLE001
+                    pass
             return self._snap_unlocked()
 
     def tick_watchdog(self) -> None:

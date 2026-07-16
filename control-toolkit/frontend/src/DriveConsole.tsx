@@ -229,13 +229,22 @@ export function DriveConsole() {
     setBusy(true)
     try {
       await ensureArmedPath()
+      // Free Control-tab keyboard / low-direct / analysis so this tab owns intent seq.
+      await api.controlRelease('drive_arm').catch(() => undefined)
+      await api.stopAnalysis().catch(() => undefined)
+      for (const ch of ['motor', 'steering', 'brake'] as const) {
+        await api.controlDirect({ channel: ch, enabled: false }).catch(() => undefined)
+      }
+      seqRef.current = 0
       // Usable default: leave Adaptive free; in Direct start in Drive gear.
       if (shiftRef.current === 'direct' && gearRef.current === 'N') {
         applyGear('D')
       }
       setArmed(true)
       focusDrive()
-      setLog('Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Canvas follows bus.')
+      setLog(
+        'Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Leaving this tab disarms. Canvas follows bus.',
+      )
     } catch (e) {
       setLog(String(e))
       setArmed(false)
@@ -348,7 +357,8 @@ export function DriveConsole() {
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
       document.removeEventListener('visibilitychange', onVis)
-      void api.controlRelease('unmount').catch(() => undefined)
+      // Leaving Drive tab always disarms High-bus intent (safety).
+      void api.controlRelease('left_drive_tab').catch(() => undefined)
     }
   }, [applyGear, clearKeys, focused])
 
@@ -388,7 +398,7 @@ export function DriveConsole() {
       void api
         .controlIntent({
           sequence: seq,
-          source: 'keyboard',
+          source: 'drive_console',
           mode: 'kinematics',
           throttle,
           steer,
