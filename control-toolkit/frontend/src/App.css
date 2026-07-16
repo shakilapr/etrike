@@ -91,6 +91,22 @@ textarea {
 
 button {
   cursor: pointer;
+  box-sizing: border-box;
+  /* Kill UA inset/outset press chrome that reflows layout on :active */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/*
+ * Global geometry lock: hover / focus / active / selected must only change
+ * color, background, border-color, and box-shadow — never padding, border
+ * width, font-weight, font-size, line-height, or transform scale.
+ */
+button:hover,
+button:focus,
+button:active,
+button.active {
+  transform: none !important;
 }
 
 .app {
@@ -442,24 +458,32 @@ button {
   border-color: var(--border);
 }
 
-.btn-estop {
+.btn-estop,
+.btn-estop:hover:not(:disabled),
+.btn-estop:focus:not(:disabled),
+.btn-estop:active:not(:disabled) {
   margin-left: 0;
   flex-shrink: 0;
   background: var(--danger);
   color: #fff;
   border: 1px solid #9f1f28;
+  border-width: 1px;
   border-radius: var(--radius);
   min-height: 32px;
   height: 32px;
+  max-height: 32px;
   padding: 0 14px;
   font-weight: 700;
   font-size: 12px;
+  line-height: 1.2;
   letter-spacing: 0.01em;
+  box-shadow: none;
   transition: background var(--transition);
   transform: none;
 }
 
-.btn-estop:hover:not(:disabled) {
+.btn-estop:hover:not(:disabled),
+.btn-estop:active:not(:disabled) {
   background: #9f1f28;
 }
 
@@ -534,7 +558,11 @@ button {
 button.nav,
 button.nav:hover:not(:disabled),
 button.nav:focus:not(:disabled),
-button.nav:active:not(:disabled) {
+button.nav:active:not(:disabled),
+button.nav.active,
+button.nav.active:hover:not(:disabled),
+button.nav.active:focus:not(:disabled),
+button.nav.active:active:not(:disabled) {
   min-height: 34px;
   height: 34px;
   display: flex;
@@ -546,19 +574,15 @@ button.nav:active:not(:disabled) {
   border-radius: 5px;
   white-space: nowrap;
   font-size: 13.5px;
-  font-weight: 500;
+  /* Constant weight — selected state must not fatten glyphs and widen row */
+  font-weight: 600;
   border: none;
   background: transparent;
   width: 100%;
   text-align: left;
-  box-shadow: none;
-  transform: none;
-  transition: background var(--transition), color var(--transition);
-}
-
-/* Reserve active rail so selection does not reflow label */
-button.nav {
   box-shadow: inset 3px 0 0 transparent;
+  transform: none;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
 }
 
 button.nav svg {
@@ -762,9 +786,12 @@ button.nav:focus-visible {
 
 button.vehicle-open-drive,
 button.vehicle-open-drive:hover:not(:disabled),
-button.vehicle-open-drive:focus:not(:disabled) {
+button.vehicle-open-drive:focus:not(:disabled),
+button.vehicle-open-drive:active:not(:disabled) {
   width: 100%;
   min-height: 34px;
+  height: 34px;
+  max-height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -778,7 +805,9 @@ button.vehicle-open-drive:focus:not(:disabled) {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
   box-shadow: none;
+  transform: none;
 }
 
 button.vehicle-open-drive:hover:not(:disabled) {
@@ -1554,7 +1583,11 @@ h3 {
 button.seg-btn,
 button.seg-btn:hover:not(:disabled),
 button.seg-btn:focus:not(:disabled),
-button.seg-btn:active:not(:disabled) {
+button.seg-btn:active:not(:disabled),
+button.seg-btn.active,
+button.seg-btn.active:hover:not(:disabled),
+button.seg-btn.active:focus:not(:disabled),
+button.seg-btn.active:active:not(:disabled) {
   background: transparent;
   color: var(--text-secondary);
   border: none;
@@ -1562,8 +1595,10 @@ button.seg-btn:active:not(:disabled) {
   padding: 0 12px;
   min-height: 32px;
   height: 32px;
-  font-weight: 500;
+  /* Same weight rest/selected — only color/background mark selection */
+  font-weight: 600;
   font-size: 12.5px;
+  line-height: 1.2;
   cursor: pointer;
   box-shadow: none;
   transform: none;
@@ -1586,6 +1621,9 @@ button.seg-btn.active:hover:not(:disabled) {
   color: var(--primary);
   font-weight: 600;
   border: none;
+  padding: 0 12px;
+  min-height: 32px;
+  height: 32px;
 }
 
 button.seg-btn:focus-visible {
@@ -1662,18 +1700,34 @@ button.seg-btn:focus-visible {
  * Never paint those controls as filled primary.
  */
 button.btn,
+button.btn:hover:not(:disabled),
+button.btn:focus:not(:disabled),
+button.btn:active:not(:disabled),
 button:where(
   :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
-) {
+),
+button:where(
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+):hover:not(:disabled),
+button:where(
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+):focus:not(:disabled),
+button:where(
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+):active:not(:disabled) {
   background: var(--primary);
   color: #fff;
   border: 1px solid var(--primary);
+  border-width: 1px;
   border-radius: var(--radius);
   padding: 0 14px;
   min-height: var(--control-h);
   height: var(--control-h);
+  max-height: var(--control-h);
   font-weight: 600;
   font-size: 13px;
+  line-height: 1.2;
+  box-shadow: none;
   transform: none;
   transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
@@ -1689,27 +1743,29 @@ button:where(
   background: var(--primary-hover);
   border-color: var(--primary-hover);
   color: #fff;
-  transform: none;
-  /* lock size — no padding/border changes on press */
-  padding: 0 14px;
-  min-height: var(--control-h);
-  height: var(--control-h);
-  border-width: 1px;
 }
 
 /* Bus filter tabs must never inherit filled primary. */
 .bus-tabs button,
 .bus-tabs button:hover:not(:disabled),
-.bus-tabs button:focus:not(:disabled) {
+.bus-tabs button:focus:not(:disabled),
+.bus-tabs button:active:not(:disabled),
+.bus-tabs button.active,
+.bus-tabs button.active:hover:not(:disabled),
+.bus-tabs button.active:active:not(:disabled) {
   background: transparent;
   color: var(--text-secondary);
   border: none;
   border-radius: 0;
   min-height: 32px;
+  height: 32px;
+  max-height: 32px;
   padding: 0 12px;
   font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.2;
   box-shadow: none;
+  transform: none;
 }
 
 .bus-tabs button + button {
@@ -1725,6 +1781,7 @@ button:where(
 .bus-tabs button.active:hover:not(:disabled) {
   background: var(--primary-soft);
   color: var(--primary);
+  font-weight: 600;
 }
 
 button:disabled {
@@ -1737,15 +1794,18 @@ button:focus-visible {
   outline-offset: 2px; /* outline does not affect layout */
 }
 
-/* Global: never let UA active/focus reflow button chrome */
-button:active {
-  transform: none;
-}
-
-button.dense {
+button.dense,
+button.dense:hover:not(:disabled),
+button.dense:focus:not(:disabled),
+button.dense:active:not(:disabled) {
   min-height: var(--control-h-dense);
+  height: var(--control-h-dense);
+  max-height: var(--control-h-dense);
   padding: 0 12px;
   font-size: 12px;
+  font-weight: 600;
+  border-width: 1px;
+  transform: none;
 }
 
 button.danger,
@@ -1756,10 +1816,19 @@ button.danger:active:not(:disabled) {
   border: 1px solid #9f1f28;
   border-width: 1px;
   color: #fff;
+  padding: 0 14px;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+  box-shadow: none;
   transform: none;
 }
 
-button.danger:hover:not(:disabled) {
+button.danger:hover:not(:disabled),
+button.danger:active:not(:disabled) {
   background: #9f1f28;
   color: #fff;
   border-width: 1px;
@@ -1773,10 +1842,19 @@ button.secondary:active:not(:disabled) {
   border: 1px solid var(--border-strong);
   border-width: 1px;
   color: var(--text-secondary);
+  padding: 0 14px;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+  box-shadow: none;
   transform: none;
 }
 
-button.secondary:hover:not(:disabled) {
+button.secondary:hover:not(:disabled),
+button.secondary:active:not(:disabled) {
   background: var(--primary-soft);
   border-color: #9bb9e8;
   border-width: 1px;
@@ -3017,7 +3095,10 @@ button.dict-exp-btn:hover:not(:disabled) {
 button.transport-btn,
 button.transport-btn:hover:not(:disabled),
 button.transport-btn:focus:not(:disabled),
-button.transport-btn:active:not(:disabled) {
+button.transport-btn:active:not(:disabled),
+button.transport-btn.active,
+button.transport-btn.active:hover:not(:disabled),
+button.transport-btn.active:active:not(:disabled) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -3026,6 +3107,7 @@ button.transport-btn:active:not(:disabled) {
   height: auto;
   padding: 12px 14px;
   border: 1px solid var(--border-strong);
+  border-width: 1px;
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text-secondary);
@@ -3034,20 +3116,25 @@ button.transport-btn:active:not(:disabled) {
   transform: none;
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  transition: background var(--transition), border-color var(--transition), color var(--transition),
+    box-shadow var(--transition);
 }
 
 button.transport-btn:hover:not(:disabled) {
   background: #f8fafc;
   color: var(--text);
   border-color: #9bb9e8;
+  border-width: 1px;
 }
 
 button.transport-btn.active {
   background: var(--primary-soft);
   border-color: var(--primary);
+  border-width: 1px;
   color: var(--text);
   box-shadow: inset 3px 0 0 var(--primary);
+  padding: 12px 14px;
+  font-weight: 500;
 }
 
 button.transport-btn.active.real {
@@ -3483,16 +3570,22 @@ button.transport-btn:disabled {
 button.gear-btn,
 button.gear-btn:hover:not(:disabled),
 button.gear-btn:focus:not(:disabled),
-button.gear-btn:active:not(:disabled) {
+button.gear-btn:active:not(:disabled),
+button.gear-btn.active,
+button.gear-btn.active:hover:not(:disabled),
+button.gear-btn.active:active:not(:disabled) {
   flex: 1;
   min-height: 36px;
   height: 36px;
+  max-height: 36px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
+  border-width: 1px;
   color: var(--text-secondary);
   font-family: var(--font-ui);
   font-weight: 650;
   font-size: 14px;
+  line-height: 1.2;
   border-radius: var(--radius);
   box-shadow: none;
   transform: none;
@@ -3504,7 +3597,6 @@ button.gear-btn:hover:not(:disabled) {
   border-color: #9bb9e8;
   color: var(--primary);
   background: var(--primary-soft);
-  /* keep 1px border — never thicken */
   border-width: 1px;
 }
 
@@ -3513,6 +3605,8 @@ button.gear-btn.active:hover:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
+  border-width: 1px;
+  font-weight: 650;
 }
 
 .controls-legend {
@@ -3556,27 +3650,35 @@ button.gear-btn.active:hover:not(:disabled) {
 button.keycap,
 button.keycap:hover:not(:disabled),
 button.keycap:focus:not(:disabled),
-button.keycap:active:not(:disabled) {
+button.keycap:active:not(:disabled),
+button.keycap.active,
+button.keycap.active:hover:not(:disabled),
+button.keycap.active:active:not(:disabled) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 40px;
   min-height: 40px;
-  height: auto;
+  height: 40px;
+  max-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--border-strong);
+  border-width: 1px;
   border-radius: 6px;
   background: var(--surface);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
+  /* Keep 1px lift always so press/active does not change outer box */
   box-shadow: 0 1px 0 var(--border);
   transform: none;
   cursor: pointer;
   user-select: none;
   touch-action: none;
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  transition: background var(--transition), color var(--transition), border-color var(--transition),
+    box-shadow var(--transition);
 }
 
 button.keycap:hover:not(:disabled) {
@@ -3592,11 +3694,13 @@ button.keycap.wide {
 }
 
 button.keycap.active,
-button.keycap.active:hover:not(:disabled) {
+button.keycap.active:hover:not(:disabled),
+button.keycap:active:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
-  box-shadow: none;
+  /* Same footprint as rest — dim the lift instead of removing it */
+  box-shadow: 0 1px 0 transparent;
 }
 
 .keycap-banner {
