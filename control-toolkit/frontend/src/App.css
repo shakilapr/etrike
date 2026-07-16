@@ -772,6 +772,52 @@ h3 {
   color: var(--text);
 }
 
+.strip-item .meter-bar {
+  margin-top: 6px;
+}
+
+/* ── Graphical meters ────────────────────────────────────────────── */
+
+.meter-bar {
+  width: 100%;
+}
+
+.meter-bar-track {
+  height: 5px;
+  background: #e6ebf0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.meter-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 160ms ease, background 160ms ease;
+  min-width: 0;
+}
+
+.meter-bar.tone-accent .meter-bar-fill {
+  background: var(--primary);
+}
+
+.meter-bar.tone-ok .meter-bar-fill {
+  background: var(--success);
+}
+
+.meter-bar.tone-warn .meter-bar-fill {
+  background: var(--warning);
+}
+
+.meter-bar.tone-danger .meter-bar-fill {
+  background: var(--danger);
+}
+
+.meter-cell {
+  min-width: 88px;
+  vertical-align: middle !important;
+}
+
 /* ── Metric cards ────────────────────────────────────────────────── */
 
 .cards {
@@ -785,31 +831,52 @@ h3 {
   margin-top: 0;
 }
 
+.cards.metric-cards {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+}
+
 .card {
   background: transparent;
   border: none;
   border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   border-radius: 0;
   padding: 14px 16px;
-  min-height: 88px;
+  min-height: 108px;
   box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .card:last-child {
   border-right: none;
 }
 
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
 .card-title {
   font-size: 11.5px;
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 0;
   font-weight: 500;
 }
 
 .card-sub {
-  margin-top: 6px;
+  margin-top: auto;
+  padding-top: 6px;
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+.metric-card .metric {
+  margin-bottom: 4px;
 }
 
 .metric {
@@ -1972,6 +2039,70 @@ button.bit-cell:focus-visible {
 
 .setup-list li {
   margin-bottom: 6px;
+}
+
+/* ── Logging workspace ───────────────────────────────────────────── */
+
+.logs-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.logs-toolbar select {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.logs-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .logs-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.logs-table-wrap {
+  max-height: calc(100vh - var(--topbar-h) - 220px);
+  overflow: auto;
+}
+
+.log-sev {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.log-sev-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.log-sev-error,
+.log-sev-critical {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.log-sev-info,
+.log-sev-debug {
+  background: var(--info-soft);
+  color: var(--info);
 }
 
 /* ── Drive console ───────────────────────────────────────────────── */

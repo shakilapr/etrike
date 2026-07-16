@@ -60,7 +60,16 @@ def list_profiles(request: Request) -> dict:
 
 @router.post("")
 def create_session(request: Request, body: CreateSessionRequest) -> dict:
-    st = request.app.state.lifecycle.sessions.create(body)
+    life = request.app.state.lifecycle
+    st = life.sessions.create(body)
+    life.audit.log(
+        category="session",
+        code="session.created",
+        title="Session created",
+        detail=f"profile={st.profile} id={st.session_id}",
+        session_id=st.session_id,
+        data={"profile": str(st.profile), "destination": st.destination},
+    )
     return {"session": st.model_dump()}
 
 
@@ -76,8 +85,16 @@ def change_profile(
 @router.post("/{session_id}/bench-tx")
 def set_bench_tx(session_id: str, request: Request, body: BenchTxRequest) -> dict:
     _check_id(request, session_id)
-    st = request.app.state.lifecycle.sessions.set_bench_tx(
-        body.enabled, body.expected_revision
+    life = request.app.state.lifecycle
+    st = life.sessions.set_bench_tx(body.enabled, body.expected_revision)
+    life.audit.log(
+        category="session",
+        code="session.bench_tx",
+        title="Bench TX " + ("enabled" if body.enabled else "disabled"),
+        detail=f"session={session_id}",
+        session_id=session_id,
+        severity="warning" if body.enabled else "info",
+        data={"enabled": body.enabled},
     )
     return {"session": st.model_dump()}
 

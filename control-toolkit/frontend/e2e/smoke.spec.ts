@@ -19,6 +19,7 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
       'bench',
       'dictionary',
       'diagnostics',
+      'logs',
       'settings',
     ]) {
       await expect(page.getByTestId(`nav-${id}`)).toBeVisible()
@@ -70,6 +71,11 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
 
     await page.getByTestId('nav-diagnostics').click()
     await expect(page.getByTestId('workspace-diagnostics')).toBeVisible()
+
+    await page.getByTestId('nav-logs').click()
+    await expect(page.getByTestId('workspace-logs')).toBeVisible()
+    await expect(page.getByTestId('logs-table')).toBeVisible()
+    await expect(page.getByTestId('logs-filter')).toBeVisible()
 
     await page.getByTestId('nav-settings').click()
     await expect(page.getByTestId('workspace-settings')).toBeVisible()

@@ -121,8 +121,13 @@ function Gauge({
   tone?: 'accent' | 'warn' | 'ok' | 'danger'
 }) {
   const pct = Math.min(100, (Math.abs(value) / Math.max(1, max)) * 100)
+  // Brake (and similar): high fill → danger red; mid → warn
+  let t = tone
+  if (tone === 'danger') {
+    t = pct >= 70 ? 'danger' : pct >= 35 ? 'warn' : 'ok'
+  }
   return (
-    <div className={`drive-gauge tone-${tone}`} data-testid={`gauge-${label}`}>
+    <div className={`drive-gauge tone-${t}`} data-testid={`gauge-${label}`}>
       <div className="drive-gauge-label">{label}</div>
       <div className="drive-gauge-value mono">
         {Number.isFinite(value) ? value.toFixed(0) : '—'}

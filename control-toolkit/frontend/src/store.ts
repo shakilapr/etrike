@@ -80,6 +80,7 @@ export type Workspace =
   | 'bench'
   | 'dictionary'
   | 'diagnostics'
+  | 'logs'
   | 'settings'
 
 type AppState = {

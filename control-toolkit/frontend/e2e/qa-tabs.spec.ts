@@ -223,6 +223,20 @@ const TABS: Array<{
     },
   },
   {
+    id: 'logs',
+    nav: 'nav-logs',
+    workspace: 'workspace-logs',
+    mustSee: ['logs-table', 'logs-filter', 'logs-category'],
+    interact: async (page) => {
+      await expect(page.getByTestId('logs-refresh')).toBeVisible()
+      await expect(page.getByTestId('logs-export')).toBeVisible()
+      await page.getByTestId('logs-category').selectOption('system')
+      await page.getByTestId('logs-refresh').click()
+      await expect(page.getByTestId('logs-table')).toBeVisible()
+      await page.getByTestId('logs-category').selectOption('all')
+    },
+  },
+  {
     id: 'settings',
     nav: 'nav-settings',
     workspace: 'workspace-settings',

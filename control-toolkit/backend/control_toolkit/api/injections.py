@@ -59,6 +59,15 @@ def inject(request: Request, body: InjectBody) -> dict:
             source=FrameSource.INJECTION,
             counter_field=body.counter_field,
         )
+        life.audit.log(
+            category="inject",
+            code="inject.scheduled",
+            title="Periodic inject scheduled",
+            detail=f"{body.key or body.can_id} @ {body.period_ms} ms",
+            bus=body.bus,
+            can_id=body.can_id,
+            data={"job_id": job_id, "owner": body.owner, "values": body.values},
+        )
         return {
             "ok": True,
             "disposition": "scheduled",
@@ -75,12 +84,34 @@ def inject(request: Request, body: InjectBody) -> dict:
         source=FrameSource.INJECTION,
     )
     if result.disposition == "rejected":
+        life.audit.log(
+            category="inject",
+            code="inject.rejected",
+            title="Inject rejected",
+            detail=result.reason or "rejected",
+            severity="warning",
+            bus=body.bus,
+            can_id=body.can_id,
+        )
         raise SessionError(
             "injection.rejected",
             result.reason or "rejected",
             status=409,
         )
     enc = result.encode
+    life.audit.log(
+        category="inject",
+        code="inject.submitted",
+        title="Inject submitted",
+        detail=f"{enc.name if enc else body.key} 0x{(enc.can_id if enc else body.can_id or 0):X}",
+        bus=enc.bus if enc else body.bus,
+        can_id=enc.can_id if enc else body.can_id,
+        data={
+            "data_hex": enc.data.hex() if enc else "",
+            "owner": body.owner,
+            "request_id": result.request_id,
+        },
+    )
     return {
         "ok": True,
         "disposition": result.disposition,
