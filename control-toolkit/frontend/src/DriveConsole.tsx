@@ -517,13 +517,14 @@ export function DriveConsole() {
 
     function draw(w: number, h: number) {
       const state = stateRef.current
-      ctx!.fillStyle = '#0f1216'
+      // Light stage matching control-ui robot-preview-stage (#f8fafc)
+      ctx!.fillStyle = '#f8fafc'
       ctx!.fillRect(0, 0, w, h)
       const egoY = h * 0.75
       const grid = 50
       const ox = w / 2 - state.x
       const oy = egoY - state.y
-      ctx!.strokeStyle = '#2a313b'
+      ctx!.strokeStyle = '#e2e8f0'
       ctx!.lineWidth = 1
       ctx!.beginPath()
       for (let x = (ox % grid) - grid; x < w; x += grid) {
@@ -541,7 +542,7 @@ export function DriveConsole() {
       ctx!.rotate(state.theta)
       if (Math.abs(state.alpha) > 0.01) {
         const R = L / Math.tan(state.alpha)
-        ctx!.strokeStyle = 'rgba(168,85,247,0.45)'
+        ctx!.strokeStyle = 'rgba(124, 58, 237, 0.4)'
         ctx!.setLineDash([8, 4])
         ctx!.beginPath()
         ctx!.moveTo(0, 0)
@@ -550,32 +551,32 @@ export function DriveConsole() {
         ctx!.lineTo(0, R)
         ctx!.stroke()
         ctx!.setLineDash([])
-        ctx!.fillStyle = '#a855f7'
+        ctx!.fillStyle = '#7c3aed'
         ctx!.beginPath()
         ctx!.arc(0, R, 4, 0, Math.PI * 2)
         ctx!.fill()
       }
-      ctx!.fillStyle = 'rgba(23,27,33,0.9)'
-      ctx!.strokeStyle = '#94a3b8'
+      ctx!.fillStyle = 'rgba(255, 255, 255, 0.92)'
+      ctx!.strokeStyle = '#64748b'
       ctx!.lineWidth = 2
       if (typeof ctx!.roundRect === 'function') {
         ctx!.beginPath()
-        ctx!.roundRect(-30, -(W + 40) / 2, L + 40, W + 40, 12)
+        ctx!.roundRect(-30, -(W + 40) / 2, L + 40, W + 40, 10)
         ctx!.fill()
         ctx!.stroke()
       } else {
         ctx!.fillRect(-30, -(W + 40) / 2, L + 40, W + 40)
       }
-      ctx!.fillStyle = state.isBraking ? '#ef4444' : '#475569'
+      ctx!.fillStyle = state.isBraking ? '#ba2d36' : '#94a3b8'
       ctx!.fillRect(-32, -(W + 40) / 2 + 10, 6, 20)
       ctx!.fillRect(-32, (W + 40) / 2 - 30, 6, 20)
-      ctx!.fillStyle = '#34d399'
+      ctx!.fillStyle = '#21845a'
       ctx!.fillRect(-17, -W / 2 - 7, 34, 14)
       ctx!.fillRect(-17, W / 2 - 7, 34, 14)
       ctx!.save()
       ctx!.translate(L, 0)
       ctx!.rotate(state.alpha)
-      ctx!.fillStyle = '#ef4444'
+      ctx!.fillStyle = '#ba2d36'
       ctx!.fillRect(-17, -7, 34, 14)
       ctx!.restore()
       ctx!.restore()
