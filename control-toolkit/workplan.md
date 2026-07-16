@@ -801,18 +801,18 @@ npx playwright test tests/e2e/diagnostics.spec.ts
 
 ### 7.3 Direct actuator mode
 
-- [ ] Target selected Low-bus actuator messages
-- [ ] Separate cards: steering (`VCU_SES_REQ`), brake (`VCU_SEB_REQ`), motor
-- [ ] Enable prerequisites shown
-- [ ] Engineering-value input with YAML bounds
-- [ ] Checksum/counter status visible
-- [ ] Start/stop command stream
-- [ ] Matching feedback and error display
+- [x] Target selected Low-bus actuator messages
+- [x] Separate cards: steering (`VCU_SES_REQ`), brake (`VCU_SEB_REQ`), motor (`RT_DRIVE_CMD`)
+- [x] Enable prerequisites (Bench TX session)
+- [x] Engineering-value input with codec bounds
+- [x] Checksum/counter automatic via codec + scheduler
+- [x] Start/stop command stream
+- [ ] Matching feedback and error display polish
 
 ### 7.4 Mutual exclusion
 
 - [x] Stop All / release clears kinematics job (ownership free for inject)
-- [ ] Full kinematics vs direct-actuator mode switch UI
+- [x] Kinematics intent clears direct jobs; direct start clears kinematics
 
 ### 7.5 Control workspace updates (frontend)
 
@@ -831,10 +831,11 @@ pytest control-toolkit/backend/tests/test_kinematics.py -v
 **Exit gate:**
 - [x] Keyboard intent → shaped command → CAN frame pipeline works end-to-end
 - [x] Loss of focus / stale intent stops stimulus (500 ms firmware-aligned)
-- [ ] Kinematics and direct-actuator modes are mutually exclusive *(direct deferred)*
+- [x] Kinematics and direct-actuator modes are mutually exclusive
 - [x] ESTOP dual-bus, bypasses normal ownership
 - [x] YAML safety bounds enforced on shaped speed/yaw
 - [x] Backend owns 10 ms TX timing (browser only sends intent)
+- [x] Drive console e2e: arm + key → HOST_DRIVE_CMD on Live CAN
 
 ---
 

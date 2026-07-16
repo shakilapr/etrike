@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
@@ -24,6 +26,15 @@ class IntentBody(BaseModel):
 
 class ReleaseBody(BaseModel):
     reason: str = "client_release"
+
+
+class DirectBody(BaseModel):
+    """Low-bus actuator stream: motor (0x204), steering (0x169), brake (0x7B9)."""
+
+    channel: str  # motor | steering | brake
+    enabled: bool = True
+    values: dict[str, Any] = Field(default_factory=dict)
+    period_ms: float | None = None
 
 
 @router.get("/status")
@@ -78,4 +89,16 @@ def control_intent(request: Request, body: IntentBody) -> dict:
 def control_release(request: Request, body: ReleaseBody | None = None) -> dict:
     reason = body.reason if body else "client_release"
     snap = request.app.state.lifecycle.control.release(reason=reason)
+    return {"control": snap}
+
+
+@router.post("/direct")
+def control_direct(request: Request, body: DirectBody) -> dict:
+    """Direct actuator TX on Low bus (exclusive with kinematics)."""
+    snap = request.app.state.lifecycle.control.set_direct(
+        channel=body.channel,
+        enabled=body.enabled,
+        values=body.values,
+        period_ms=body.period_ms,
+    )
     return {"control": snap}
