@@ -902,40 +902,33 @@ function Overview() {
       </header>
 
       <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
-        <div className={`strip-item ${estopOn ? 'hazard' : 'ok'}`}>
+        {/* Discrete states: label + one StatusPill only (never value text + same pill). */}
+        <div className={`strip-item ${estopOn || safetyEstopOn ? 'hazard' : 'ok'}`}>
           <span className="strip-k">ESTOP</span>
-          <span className="strip-v">{estopOn ? 'Active' : 'Clear'}</span>
           <StatusPill
-            label={estopOn ? 'Active' : 'Clear'}
-            tone={estopOn ? 'danger' : 'ok'}
+            label={estopOn || safetyEstopOn ? 'Active' : 'Clear'}
+            tone={estopOn || safetyEstopOn ? 'danger' : 'ok'}
             testId="meter-estop"
           />
         </div>
         <div className="strip-item">
           <span className="strip-k">Power</span>
-          <span className="strip-v">
-            Req {dash(ses?.requested_power)} / Conf {dash(ses?.confirmed_power)}
+          <span className="strip-v strip-v-detail" data-testid="status-power">
+            Req {dash(ses?.requested_power)}
+            <span className="strip-sep">·</span>
+            Conf {dash(ses?.confirmed_power)}
           </span>
-          <StatusPill
-            label={dash(ses?.confirmed_power ?? ses?.requested_power)}
-            tone="muted"
-            testId="status-power"
-          />
         </div>
         <div className="strip-item">
           <span className="strip-k">Mode</span>
-          <span className="strip-v">
-            Req {dash(ses?.requested_mode)} / Conf {dash(ses?.confirmed_mode)}
+          <span className="strip-v strip-v-detail" data-testid="status-mode">
+            Req {dash(ses?.requested_mode)}
+            <span className="strip-sep">·</span>
+            Conf {dash(ses?.confirmed_mode)}
           </span>
-          <StatusPill
-            label={dash(ses?.confirmed_mode ?? ses?.requested_mode)}
-            tone="muted"
-            testId="status-mode"
-          />
         </div>
         <div className="strip-item">
           <span className="strip-k">Bench TX</span>
-          <span className="strip-v">{ses?.bench_tx ?? 'disabled'}</span>
           <StatusPill
             label={benchOn ? 'Enabled' : 'Disabled'}
             tone={benchOn ? 'warn' : 'muted'}
@@ -944,7 +937,6 @@ function Overview() {
         </div>
         <div className={`strip-item health-${canHealth}`}>
           <span className="strip-k">CAN health</span>
-          <span className="strip-v">{canHealth}</span>
           <StatusPill
             label={`${canHealth} · ${quality}`}
             tone={canHealthTone}
@@ -961,7 +953,7 @@ function Overview() {
           <span className="strip-v mono">
             {brakeKpa != null ? `${brakeKpa.toFixed(0)} kPa` : '—'}
           </span>
-          {/* Continuous quantity — progress bar is appropriate */}
+          {/* Continuous quantity — progress bar only (no second text chip). */}
           <MeterBar
             value={brakeKpa}
             max={5000}
@@ -1041,26 +1033,27 @@ function Overview() {
             <div className="card-title">Gear</div>
             {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           </div>
-          <div className="metric" data-testid="metric-gear">
-            {gearLabel}
+          {/* Single discrete value — no big text + pill with the same label. */}
+          <div className="metric metric-discrete" data-testid="metric-gear">
+            <StatusPill
+              label={gearLabel}
+              tone={gearLabel === 'N' || gearLabel === '—' ? 'muted' : 'accent'}
+              testId="status-gear"
+            />
           </div>
-          <StatusPill
-            label={gearLabel}
-            tone={gearLabel === 'N' || gearLabel === '—' ? 'muted' : 'accent'}
-            testId="status-gear"
-          />
           <div className="card-sub muted">N/D/S/R enum — not a bar</div>
         </div>
         <div className="card metric-card" data-testid="card-ready">
           <div className="card-head">
             <div className="card-title">Backend</div>
           </div>
-          <div className="metric">{status?.ready ? 'ready' : 'not ready'}</div>
-          <StatusPill
-            label={status?.ready ? 'Ready' : 'Not ready'}
-            tone={status?.ready ? 'ok' : 'danger'}
-            testId="status-backend-ready"
-          />
+          <div className="metric metric-discrete">
+            <StatusPill
+              label={status?.ready ? 'Ready' : 'Not ready'}
+              tone={status?.ready ? 'ok' : 'danger'}
+              testId="status-backend-ready"
+            />
+          </div>
           <div className="card-sub mono muted">{status?.adapter?.health ?? '—'}</div>
         </div>
       </div>
