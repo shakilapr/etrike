@@ -15,6 +15,9 @@ def test_wire_hash_is_the_phase0_hash():
     assert proto.WIRE_HASH == (
         "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a"
     )
+    assert proto.SEMANTIC_HASH == proto.WIRE_HASH
+    assert len(proto.NETWORK_HASH) == 64
+    assert all(c in "0123456789abcdef" for c in proto.NETWORK_HASH)
 
 
 def test_rt_sys_runtime_identities_resolve():

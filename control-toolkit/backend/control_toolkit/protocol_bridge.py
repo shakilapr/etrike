@@ -31,13 +31,18 @@ from protocol.generated.python import etrike_protocol  # noqa: E402
 
 #: Content hash of the wire contract. RT/SYS firmware is generated from the same
 #: YAML; a mismatch between this and the frontend/firmware means drift.
+#: SEMANTIC_HASH is the canonical name; WIRE_HASH is an alias.
+SEMANTIC_HASH: str = etrike_protocol.SEMANTIC_HASH
 WIRE_HASH: str = etrike_protocol.WIRE_HASH
+NETWORK_HASH: str = etrike_protocol.NETWORK_HASH
 
 #: Canonical catalog keyed by ``"owner:key"`` (e.g. ``"rt:rt_heartbeat"``).
 CATALOG: dict[str, dict] = etrike_protocol.METADATA
 
 __all__ = [
+    "SEMANTIC_HASH",
     "WIRE_HASH",
+    "NETWORK_HASH",
     "CATALOG",
     "CodecStatus",
     "Frame",
