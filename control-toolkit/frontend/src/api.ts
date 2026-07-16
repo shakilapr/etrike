@@ -1,15 +1,27 @@
 const BASE = '/api/v1'
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
-    ...init,
-  })
+  let r: Response
+  try {
+    r = await fetch(`${BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      ...init,
+    })
+  } catch {
+    throw new Error(
+      'Backend unreachable (network error). Start control-toolkit on port 8001 and ensure Vite proxies CTK_E2E_API.',
+    )
+  }
   if (!r.ok) {
     const body = (await r.json().catch(() => ({}))) as {
       detail?: string
       title?: string
       code?: string
+    }
+    if (r.status === 502 || r.status === 503 || r.status === 504) {
+      throw new Error(
+        `Backend unavailable (${r.status} ${r.statusText}). Vite proxy cannot reach the API — start uvicorn on 127.0.0.1:8001.`,
+      )
     }
     throw new Error(body.detail || body.title || body.code || r.statusText)
   }
