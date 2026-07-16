@@ -26,8 +26,17 @@
 | Preview gear firmware map | `VehiclePreview.tsx` |
 | Tests | `test_firmware_alignment.py`, `test_keyboard_input.py`, `test_kinematics.py` |
 
+## Direct actuators (added)
+
+| Channel | CAN | Key |
+|---------|-----|-----|
+| Motor | Low 0x204 | `rt:rt_drive_cmd` |
+| Steering | Low 0x169 | `ses:vcu_ses_req` |
+| Brake | Low 0x7B9 | `seb:vcu_seb_req` |
+
+`POST /api/v1/control/direct` — exclusive with kinematics intent. Control workspace cards start/stop streams.
+
 ## Deferred
 
 - Gamepad HID mapping
-- Direct actuator cards (SES/SEB/motor Low-bus)
-- Full mutual-exclusion UI for multi-modality
+- Full SES/SEB live feedback pairing polish

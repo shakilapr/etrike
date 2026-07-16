@@ -785,7 +785,7 @@ export function DriveConsole() {
               Direct
             </button>
           </div>
-          <p className="muted small preview-mode-blurb">
+          <p className="muted small preview-mode-blurb" data-testid="preview-mode-blurb">
             {shiftMode === 'smart' ? (
               <>
                 <strong>Adaptive:</strong> auto D/S/R from pedals (HTML sim). When armed, throttle

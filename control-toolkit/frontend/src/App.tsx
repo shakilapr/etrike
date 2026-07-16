@@ -754,6 +754,190 @@ function LiveCan() {
 
 /* ── Control ───────────────────────────────────────────────────────── */
 
+function DirectActuatorCards({
+  busy,
+  setBusy,
+  setLog,
+  ensureSessionReady,
+  refresh,
+}: {
+  busy: boolean
+  setBusy: (b: boolean) => void
+  setLog: (s: string) => void
+  ensureSessionReady: () => Promise<import('./store').Status>
+  refresh: () => Promise<import('./store').Status>
+}) {
+  const [motorSpeed, setMotorSpeed] = useState(300)
+  const [motorGear, setMotorGear] = useState(1)
+  const [steerAngle, setSteerAngle] = useState(0)
+  const [brakePressure, setBrakePressure] = useState(20)
+  const [active, setActive] = useState<Record<string, boolean>>({})
+
+  async function start(channel: 'motor' | 'steering' | 'brake') {
+    setBusy(true)
+    try {
+      await ensureSessionReady()
+      const values =
+        channel === 'motor'
+          ? { motor_speed_mmps: motorSpeed, gear: motorGear }
+          : channel === 'steering'
+            ? {
+                target_angle_raw: steerAngle,
+                control_enable: true,
+                alignment_enable: true,
+              }
+            : {
+                pressure_request_raw: brakePressure,
+                control_enable: true,
+                alignment_enable: true,
+                control_mode: 1,
+              }
+      const r = await api.controlDirect({ channel, enabled: true, values })
+      setActive((a) => ({ ...a, [channel]: true }))
+      setLog(`Direct ${channel}: ${JSON.stringify(r.control.direct_channels)}`)
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function stop(channel: 'motor' | 'steering' | 'brake') {
+    setBusy(true)
+    try {
+      await api.controlDirect({ channel, enabled: false })
+      setActive((a) => ({ ...a, [channel]: false }))
+      setLog(`Stopped direct ${channel}`)
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="direct-grid">
+      <div className="direct-card" data-testid="direct-motor">
+        <h3>Motor · RT_DRIVE_CMD 0x204</h3>
+        <label className="field">
+          <span className="field-label">Speed, mm/s</span>
+          <input
+            type="number"
+            data-testid="direct-motor-speed"
+            value={motorSpeed}
+            min={-500}
+            max={3000}
+            onChange={(e) => setMotorSpeed(Number(e.target.value))}
+          />
+          <span className="field-hint">Allowed −500…3000</span>
+        </label>
+        <label className="field">
+          <span className="field-label">Gear 0–3 (N/D/S/R)</span>
+          <input
+            type="number"
+            data-testid="direct-motor-gear"
+            value={motorGear}
+            min={0}
+            max={3}
+            onChange={(e) => setMotorGear(Number(e.target.value))}
+          />
+        </label>
+        <div className="actions tight">
+          <button
+            type="button"
+            data-testid="btn-direct-motor-start"
+            disabled={busy}
+            onClick={() => void start('motor')}
+          >
+            {active.motor ? 'Update stream' : 'Start stream'}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-direct-motor-stop"
+            disabled={busy || !active.motor}
+            onClick={() => void stop('motor')}
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <div className="direct-card" data-testid="direct-steering">
+        <h3>Steering · VCU_SES_REQ 0x169</h3>
+        <label className="field">
+          <span className="field-label">Target angle raw (0.1°)</span>
+          <input
+            type="number"
+            data-testid="direct-steer-angle"
+            value={steerAngle}
+            min={-450}
+            max={450}
+            onChange={(e) => setSteerAngle(Number(e.target.value))}
+          />
+          <span className="field-hint">±450 · enable bits locked on</span>
+        </label>
+        <div className="actions tight">
+          <button
+            type="button"
+            data-testid="btn-direct-steer-start"
+            disabled={busy}
+            onClick={() => void start('steering')}
+          >
+            {active.steering ? 'Update stream' : 'Start stream'}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-direct-steer-stop"
+            disabled={busy || !active.steering}
+            onClick={() => void stop('steering')}
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <div className="direct-card" data-testid="direct-brake">
+        <h3>Brake · VCU_SEB_REQ 0x7B9</h3>
+        <label className="field">
+          <span className="field-label">Pressure request raw 0–100</span>
+          <input
+            type="number"
+            data-testid="direct-brake-pressure"
+            value={brakePressure}
+            min={0}
+            max={100}
+            onChange={(e) => setBrakePressure(Number(e.target.value))}
+          />
+          <span className="field-hint">Vendor scale · enable bits locked on</span>
+        </label>
+        <div className="actions tight">
+          <button
+            type="button"
+            data-testid="btn-direct-brake-start"
+            disabled={busy}
+            onClick={() => void start('brake')}
+          >
+            {active.brake ? 'Update stream' : 'Start stream'}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-direct-brake-stop"
+            disabled={busy || !active.brake}
+            onClick={() => void stop('brake')}
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Control() {
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
@@ -1064,6 +1248,15 @@ function Control() {
           {status?.session?.requested_power ?? '—'} / conf{' '}
           {status?.session?.confirmed_power ?? '—'}
         </div>
+      </section>
+
+      <section className="panel" data-testid="direct-actuators">
+        <h2>Direct actuators (Low bus)</h2>
+        <p className="muted small">
+          Exclusive with kinematics Drive arm. Motor 0x204 · steering VCU_SES_REQ 0x169 · brake
+          VCU_SEB_REQ 0x7B9. Counters/checksums automatic via codec.
+        </p>
+        <DirectActuatorCards busy={busy} setBusy={setBusy} setLog={setLog} ensureSessionReady={ensureSessionReady} refresh={refresh} />
       </section>
 
       <section className="panel">

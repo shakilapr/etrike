@@ -144,6 +144,38 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await expect(page.getByTestId('preview-mode-blurb')).toContainText(/Direct/i)
   })
 
+  test('drive arm + W key publishes HOST_DRIVE_CMD on Live CAN', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('nav-preview').click()
+    await page.getByTestId('preview-canvas-wrap').click()
+    await page.getByTestId('btn-drive-arm').click()
+    await expect(page.getByTestId('btn-drive-disarm')).toBeVisible({ timeout: 15_000 })
+
+    await page.getByTestId('preview-canvas-wrap').focus()
+    await page.keyboard.down('KeyW')
+    await page.waitForTimeout(400)
+    await page.keyboard.up('KeyW')
+
+    await page.getByTestId('nav-live').click()
+    await expect(page.getByTestId('live-can-table')).toContainText('HOST_DRIVE_CMD', {
+      timeout: 15_000,
+    })
+  })
+
+  test('direct actuator motor stream from Control', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('nav-control').click()
+    await page.getByTestId('direct-motor-speed').fill('350')
+    await page.getByTestId('btn-direct-motor-start').click()
+    await expect(page.getByTestId('control-log')).toContainText(/Direct motor|motor/i, {
+      timeout: 15_000,
+    })
+    await page.getByTestId('nav-live').click()
+    await expect(page.getByTestId('live-can-table')).toContainText(/RT_DRIVE_CMD|0x204/i, {
+      timeout: 15_000,
+    })
+  })
+
   test('live CAN stream view toggles chronological history', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('nav-live').click()

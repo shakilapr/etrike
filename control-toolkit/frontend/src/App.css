@@ -1099,6 +1099,41 @@ button.secondary:hover:not(:disabled) {
   color: #bbf7d0;
 }
 
+.direct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.direct-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: #12161c;
+}
+
+.direct-card h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.direct-card .field {
+  margin-top: 8px;
+}
+
+.direct-card input[type='number'] {
+  background: #0b0e12;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 0 10px;
+  min-height: 36px;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+
 .preview-canvas-wrap {
   position: relative;
   background: #0b0e12;

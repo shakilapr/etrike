@@ -200,6 +200,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  controlDirect: (body: {
+    channel: 'motor' | 'steering' | 'brake'
+    enabled: boolean
+    values?: Record<string, unknown>
+    period_ms?: number | null
+  }) =>
+    json<{ control: Record<string, unknown> }>('/control/direct', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   events: (limit = 50) =>
     json<{ count: number; events: Array<Record<string, unknown>> }>(
       `/events?limit=${limit}`,
