@@ -627,25 +627,34 @@ export function DriveConsole() {
         <div>
           <h1>Drive</h1>
           <p className="muted small">
-            See + control on CAN · like robot_control dashboard, bus is CAN not ROS
+            Vehicle view and kinematics control over the dual CAN buses (virtual or physical).
           </p>
         </div>
         <div className="drive-top-chips">
-          <span className="chip">
+          <span className={`chip quality-${quality}`}>
             <span className="chip-k">Stream</span>
-            <span className="chip-v">{quality}</span>
+            <span className="chip-v">
+              ●{' '}
+              {quality === 'live'
+                ? 'Live'
+                : quality === 'delayed'
+                  ? 'Delayed'
+                  : quality === 'lost'
+                    ? 'Lost'
+                    : 'Connecting'}
+            </span>
           </span>
-          <span className={`chip ${benchOn ? '' : 'muted'}`}>
+          <span className={`chip ${benchOn ? 'ok' : 'muted'}`}>
             <span className="chip-k">Bench TX</span>
-            <span className="chip-v">{benchOn ? 'enabled' : 'disabled'}</span>
+            <span className="chip-v">{benchOn ? '● Enabled' : '● Disabled'}</span>
           </span>
           <span className={`chip ${armed ? 'ok' : ''}`}>
             <span className="chip-k">Control</span>
-            <span className="chip-v">{armed ? 'ARMED' : 'local sim'}</span>
+            <span className="chip-v">{armed ? '● Armed' : '● Local sim'}</span>
           </span>
-          <span className={`chip ${canLive ? '' : 'muted'}`}>
+          <span className={`chip ${canLive ? 'ok' : 'muted'}`}>
             <span className="chip-k">0x300</span>
-            <span className="chip-v">{canLive ? 'live' : 'missing'}</span>
+            <span className="chip-v">{canLive ? '● Live' : '● Missing'}</span>
           </span>
         </div>
         <div className="actions tight">
@@ -666,7 +675,7 @@ export function DriveConsole() {
               disabled={busy}
               onClick={() => void disarmControl('disarm')}
             >
-              Disarm
+              Disarm control
             </button>
           )}
           <button
@@ -676,7 +685,7 @@ export function DriveConsole() {
             disabled={busy}
             onClick={() => void fireEstop()}
           >
-            ESTOP
+            Inject ESTOP
           </button>
         </div>
       </header>
@@ -692,12 +701,12 @@ export function DriveConsole() {
           <canvas ref={canvasRef} data-testid="preview-canvas" />
           {!armed && (
             <div className="drive-lock-hint muted">
-              Local sim · click canvas · Arm CAN control to publish HOST_DRIVE_CMD
+              Local simulation — click canvas, then arm CAN control to publish HOST_DRIVE_CMD
             </div>
           )}
           {armed && (
             <div className="drive-lock-hint armed">
-              Armed · following CAN 0x300 · keys send intent @ 20 Hz
+              ● Armed — following CAN 0x300; keys send intent at 20 Hz
             </div>
           )}
         </div>
@@ -763,7 +772,7 @@ export function DriveConsole() {
               <KeyCap label="Shift" active={!!(k.ShiftLeft || k.ShiftRight)} />
               <KeyCap label="Space ESTOP" active={!!k.Space} wide />
             </div>
-            {!armed && <div className="keycap-lock">LOCAL — not on bus</div>}
+            {!armed && <div className="keycap-lock">Local only — not on bus</div>}
           </div>
 
           <h2 className="mt-section">Shift mode</h2>
@@ -853,7 +862,7 @@ export function DriveConsole() {
           </ul>
 
           <pre className="log" data-testid="drive-log">
-            {log || 'Click canvas. Local sim free. Arm CAN control to drive over the bus.'}
+            {log || 'Click canvas for focus. Local sim is free. Arm CAN control to transmit on the bus.'}
           </pre>
         </aside>
       </div>

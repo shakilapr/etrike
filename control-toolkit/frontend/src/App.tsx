@@ -124,11 +124,11 @@ function Topbar() {
         data-testid="chip-estop"
       >
         <span className="chip-k">ESTOP</span>
-        <span className="chip-v">{ses?.estop_active ? 'ACTIVE' : 'clear'}</span>
+        <span className="chip-v">{ses?.estop_active ? '● Active' : '● Clear'}</span>
       </div>
       <div className="chip" data-testid="chip-record">
-        <span className="chip-k">Rec</span>
-        <span className="chip-v">{ses?.recording ? 'on' : 'off'}</span>
+        <span className="chip-k">Recording</span>
+        <span className="chip-v">{ses?.recording ? '● On' : '● Off'}</span>
       </div>
       <div className="chip" data-testid="chip-bench-tx">
         <span className="chip-k">Bench TX</span>
@@ -144,16 +144,16 @@ function Topbar() {
       <div className={`chip quality-${quality}`} data-testid="chip-stream">
         <span className="chip-k">Stream</span>
         <span className="chip-v">
-          {quality.toUpperCase()}
+          ● {quality === 'live' ? 'Live' : quality === 'delayed' ? 'Delayed' : quality === 'dropping' ? 'Dropping' : quality === 'lost' ? 'Lost' : 'Connecting'}
           {reconnect > 0 ? ` · retry ${reconnect}` : ''}
         </span>
       </div>
       {mismatch && (
         <div className="chip danger" data-testid="chip-mismatch">
-          PROTOCOL MISMATCH
+          ● Protocol mismatch
         </div>
       )}
-      <div className="chip mono muted" data-testid="chip-hash">
+      <div className="chip mono muted" data-testid="chip-hash" title={status?.wire_hash ?? ''}>
         {(status?.wire_hash ?? '').slice(0, 12) || '—'}…
       </div>
 
@@ -161,7 +161,7 @@ function Topbar() {
         type="button"
         className="btn-estop"
         data-testid="btn-header-estop"
-        title="Inject SAFETY_ESTOP (DLC=0) test frame — requires Bench TX"
+        title="Inject SAFETY_ESTOP (DLC=0) on high and low — requires Bench TX"
         onClick={() => void injectEstop()}
       >
         Inject ESTOP
@@ -224,7 +224,7 @@ function Overview() {
       <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
         <div className={`strip-item ${ses?.estop_active ? 'hazard' : 'ok'}`}>
           <span className="strip-k">ESTOP</span>
-          <span className="strip-v">{ses?.estop_active ? 'ACTIVE' : 'Clear'}</span>
+          <span className="strip-v">{ses?.estop_active ? '● Active' : '● Clear'}</span>
         </div>
         <div className="strip-item">
           <span className="strip-k">Power</span>
