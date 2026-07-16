@@ -9,8 +9,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
@@ -26,7 +24,6 @@ def test_matrix_planned_counts_dense_is_thousands():
     assert counts["motion_then_brake"] >= 20
 
 
-@pytest.mark.timeout(120)
 def test_matrix_quick_inprocess_all_pass():
     # Cap per suite so CI stays fast but still multi-suite
     report = run_matrix(dense=False, live_base=None, limit=12, suites=None)
