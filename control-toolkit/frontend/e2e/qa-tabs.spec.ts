@@ -268,13 +268,21 @@ const TABS: Array<{
     id: 'settings',
     nav: 'nav-settings',
     workspace: 'workspace-settings',
-    mustSee: ['profile-list'],
+    mustSee: [
+      'profile-list',
+      'settings-runtime-panel',
+      'settings-protocol-panel',
+      'settings-session-panel',
+      'settings-adapter-panel',
+    ],
     interact: async (page) => {
       await expect(page.getByTestId('transport-toggle')).toBeVisible()
       await expect(page.getByTestId('mode-computer')).toBeVisible()
       await expect(page.getByTestId('mode-real')).toBeVisible()
       await expect(page.getByTestId('profile-list')).toContainText(/Computer|Virtual/i)
       await expect(page.getByTestId('profile-list')).toContainText(/CANalyst|Real|Bench Test|Full Vehicle/i)
+      await expect(page.getByTestId('settings-runtime-kv')).toContainText(/ms|Hz|pure_software/i)
+      await expect(page.getByTestId('settings-msg-count')).not.toHaveText('—')
       await page.getByTestId('btn-start-pure').click()
       await expect(page.getByTestId('settings-log')).toContainText(
         /Session ses_|phase running|running|Computer|Active/i,

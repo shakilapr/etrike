@@ -3399,7 +3399,7 @@ function Settings() {
             type="button"
             className="danger"
             disabled={busy || !session.session_id}
-            data-testid="btn-stop-all"
+            data-testid="btn-settings-stop-all"
             onClick={() => void doStopAll()}
           >
             Stop all
