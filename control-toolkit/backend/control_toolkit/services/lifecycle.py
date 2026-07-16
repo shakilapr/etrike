@@ -1,0 +1,105 @@
+"""Startup/shutdown orchestration.
+
+Owns the singletons shared across requests: latest-value store, transport,
+router, event bus, and background tasks. Attached to ``app.state`` by the app
+factory and driven by the FastAPI lifespan.
+
+In the Pure Software profile, startup opens a virtual dual-bus transport and
+starts the router drain loop so injected frames reach the latest-value store
+with no hardware. Physical profiles open CANalyst-II only when that adapter is
+implemented (stub raises today).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import time
+
+from control_toolkit.config import Profile, ToolkitConfig
+from control_toolkit.pipeline.freshness import FreshnessAger
+from control_toolkit.pipeline.router import Router
+from control_toolkit.services.event_bus import EventBus
+from control_toolkit.state.latest import LatestStore
+from control_toolkit.transport.virtual import VirtualTransportAdapter
+
+
+class Lifecycle:
+    def __init__(self, config: ToolkitConfig) -> None:
+        self.config = config
+        self.latest = LatestStore()
+        self.events = EventBus()
+        self.transport: VirtualTransportAdapter | None = None
+        self.router: Router | None = None
+        self.ager: FreshnessAger | None = None
+        self._tasks: list[asyncio.Task] = []
+        self._ready = False
+
+    async def startup(self) -> None:
+        # Freshness aging runs in every profile so state ages even without frames.
+        self.ager = FreshnessAger(self.latest)
+        self._tasks.append(asyncio.create_task(self.ager.run()))
+
+        if self.config.default_profile is Profile.PURE_SOFTWARE:
+            self.transport = VirtualTransportAdapter(
+                rx_queue_maxsize=self.config.rx_queue_maxsize
+            )
+            self.transport.open()
+            self.router = Router(self.transport, self.latest)
+            self._tasks.append(asyncio.create_task(self.router.run()))
+
+        self._tasks.append(asyncio.create_task(self._broadcast_loop()))
+        self._ready = True
+
+    async def _broadcast_loop(self) -> None:
+        """Publish coalesced latest-state batches and stream heartbeats."""
+        interval = 1.0 / max(1, self.config.latest_state_batch_hz)
+        heartbeat_s = self.config.stream_heartbeat_ms / 1000.0
+        last_heartbeat = 0.0
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                if not self._ready:
+                    continue
+                snap = self.latest.snapshot()
+                await self.events.publish(
+                    {
+                        "type": "state",
+                        "sequence": snap.sequence,
+                        "wire_hash": snap.wire_hash,
+                        "messages": [m.model_dump(mode="json") for m in snap.messages],
+                    }
+                )
+                now = time.monotonic()
+                if now - last_heartbeat >= heartbeat_s:
+                    last_heartbeat = now
+                    await self.events.publish(
+                        {
+                            "type": "heartbeat",
+                            "monotonic_ns": time.monotonic_ns(),
+                            "wire_hash": snap.wire_hash,
+                        }
+                    )
+        except asyncio.CancelledError:
+            return
+
+    async def shutdown(self) -> None:
+        self._ready = False
+        if self.router is not None:
+            self.router.stop()
+        if self.ager is not None:
+            self.ager.stop()
+        for task in self._tasks:
+            task.cancel()
+            with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=2.0)
+        self._tasks.clear()
+        if self.transport is not None:
+            self.transport.close()
+            self.transport = None
+        self.router = None
+        self.ager = None
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
