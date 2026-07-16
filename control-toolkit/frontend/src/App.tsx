@@ -430,20 +430,31 @@ function Topbar() {
             ? 'Lost'
             : 'Connecting'
 
+  // Fault = safety/protocol problem (ESTOP, mismatch, adapter hard-fail).
+  // Lost stream alone is Offline/Degraded — usually backend/proxy down, not "vehicle fault".
   const overall: OverallHealth = (() => {
-    if (estopOn || mismatch || quality === 'lost') return 'fault'
+    if (estopOn || mismatch) return 'fault'
+    if (adapterHealth === 'failed' || adapterHealth === 'error') return 'fault'
+    if (!status && (quality === 'lost' || quality === 'connecting')) return 'offline'
+    if (quality === 'lost') return 'offline'
     if (quality === 'connecting' && !status?.ready) return 'offline'
     if (
       quality === 'delayed' ||
       quality === 'dropping' ||
       quality === 'connecting' ||
       adapterHealth === 'absent' ||
-      adapterHealth === 'failed' ||
       adapterHealth === 'degraded'
     ) {
       return 'degraded'
     }
-    if (quality === 'live' && (adapterHealth === 'open' || adapterHealth === 'ok' || adapterHealth === 'healthy' || adapterHealth === 'active' || status?.ready)) {
+    if (
+      quality === 'live' &&
+      (adapterHealth === 'open' ||
+        adapterHealth === 'ok' ||
+        adapterHealth === 'healthy' ||
+        adapterHealth === 'active' ||
+        status?.ready)
+    ) {
       return 'healthy'
     }
     return 'degraded'
@@ -2466,31 +2477,47 @@ function Diagnostics() {
   )
   const [evidenceMeta, setEvidenceMeta] = useState('')
 
+  const [diagErr, setDiagErr] = useState('')
+
   const refreshDiag = useCallback(async () => {
-    const [ev, ep, rec, st] = await Promise.all([
-      api.events(40),
-      api.episodes(),
-      api.recordings(),
-      api.status(),
-    ])
-    setEvents(ev.events || [])
-    setEpisodes(ep.episodes || [])
-    setActiveRec(rec.active)
-    setRecordings(rec.recordings || [])
-    setStatus(st)
+    try {
+      const [ev, ep, rec, st] = await Promise.all([
+        api.events(40),
+        api.episodes(),
+        api.recordings(),
+        api.status(),
+      ])
+      setEvents(ev.events || [])
+      setEpisodes(ep.episodes || [])
+      setActiveRec(rec.active && typeof rec.active === 'object' ? rec.active : null)
+      setRecordings(rec.recordings || [])
+      setStatus(st)
+      setDiagErr('')
+    } catch (e) {
+      setDiagErr(String(e))
+    }
   }, [setStatus])
 
   useEffect(() => {
-    void refreshDiag().catch(() => undefined)
-    const id = window.setInterval(() => void refreshDiag().catch(() => undefined), 2000)
+    void refreshDiag()
+    const id = window.setInterval(() => void refreshDiag(), 2000)
     return () => window.clearInterval(id)
   }, [refreshDiag])
 
   async function startRec() {
     setBusy(true)
     try {
+      // Ensure a session exists so vehicle_view recording flag has a home
+      let st = await api.status()
+      if (!st.session?.session_id) {
+        await api.createSession('pure_software')
+        st = await api.status()
+      }
       const r = await api.startRecording()
-      setRecLog(`Started ${String(r.recording.recording_id)}`)
+      const rid =
+        r.recording?.recording_id ??
+        (r.recording as { id?: string } | undefined)?.id
+      setRecLog(`Started ${String(rid)}`)
       await refreshDiag()
     } catch (e) {
       setRecLog(String(e))
@@ -2548,31 +2575,49 @@ function Diagnostics() {
 
       <section className="panel">
         <h2>Session evidence snapshot</h2>
+        {diagErr ? (
+          <p className="danger-text" data-testid="diagnostics-error">
+            {diagErr}
+          </p>
+        ) : null}
         <dl className="kv">
           <dt>Phase</dt>
-          <dd>{status?.session?.phase ?? '—'}</dd>
+          <dd data-testid="diag-phase">{status?.session?.phase ?? '—'}</dd>
           <dt>Stream</dt>
-          <dd>{quality}</dd>
+          <dd data-testid="diag-stream">{quality}</dd>
           <dt>Wire hash</dt>
           <dd className="mono">{status?.wire_hash ?? '—'}</dd>
           <dt>Recording</dt>
-          <dd>{status?.session?.recording || activeRec ? 'on' : 'off'}</dd>
+          <dd data-testid="diag-recording">
+            {status?.session?.recording || activeRec ? 'on' : 'off'}
+          </dd>
           <dt>Mismatch</dt>
           <dd>{mismatch ? 'yes' : 'no'}</dd>
         </dl>
+        <div className="actions tight">
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-diag-refresh"
+            disabled={busy}
+            onClick={() => void refreshDiag()}
+          >
+            Refresh diagnostics
+          </button>
+        </div>
       </section>
 
       <section className="panel" data-testid="recording-panel">
         <h2>Recording</h2>
         <p className="muted small">
           Opt-in capture of RX/TX frames. Evidence quality is Complete unless frames are
-          dropped.
+          dropped. Requires a reachable backend (API on :8001).
         </p>
         <div className="actions">
           <button
             type="button"
             data-testid="btn-rec-start"
-            disabled={busy || !!activeRec}
+            disabled={busy || !!activeRec || !!diagErr}
             onClick={() => void startRec()}
           >
             Start recording
@@ -2772,10 +2817,11 @@ function Logs() {
         severity: severity === 'all' ? undefined : severity,
         q: q.trim() || undefined,
       })
-      setLogs(r.logs || [])
-      setStats(r.stats || null)
+      setLogs(Array.isArray(r.logs) ? r.logs : [])
+      setStats(r.stats && typeof r.stats === 'object' ? r.stats : null)
       setErr('')
     } catch (e) {
+      setLogs([])
       setErr(String(e))
     }
   }, [category, severity, q])

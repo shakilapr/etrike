@@ -31,15 +31,30 @@ export function useBackendStream() {
         statusWireHash.current = st.wire_hash
         setStatus(st)
         setTopology(topo.nodes || [])
+        // HTTP OK even if WS is reconnecting — don't leave UI stuck on Fault forever
+        if (ws?.readyState === WebSocket.OPEN) {
+          lastMsg = Date.now()
+        }
       } catch {
-        /* ignore */
+        /* backend down; keep last status, stream watch will mark lost */
       }
     }
 
     function connect() {
       setStreamQuality(retry === 0 ? 'connecting' : 'delayed')
       setReconnectAttempts(retry)
-      ws = new WebSocket(wsUrl())
+      try {
+        ws = new WebSocket(wsUrl())
+      } catch {
+        ws = null
+        if (!closed) {
+          setStreamQuality('lost')
+          retry += 1
+          setReconnectAttempts(retry)
+          timer = window.setTimeout(connect, Math.min(8000, 500 * 2 ** retry))
+        }
+        return
+      }
       ws.onopen = () => {
         retry = 0
         setReconnectAttempts(0)
@@ -63,6 +78,10 @@ export function useBackendStream() {
           if (msg.type === 'hello' && msg.wire_hash && !statusWireHash.current) {
             statusWireHash.current = msg.wire_hash
           }
+          // Heartbeat / hello keep the stream alive even with no CAN traffic
+          if (msg.type === 'hello' || msg.type === 'heartbeat' || msg.type === 'ping') {
+            lastMsg = Date.now()
+          }
           if (msg.type === 'state' && Array.isArray(msg.messages)) {
             setMessages(msg.messages as never[], msg.sequence ?? 0)
           }
@@ -72,7 +91,7 @@ export function useBackendStream() {
       }
       ws.onclose = () => {
         if (closed) return
-        setStreamQuality('lost')
+        setStreamQuality(retry === 0 ? 'delayed' : 'lost')
         const delay = Math.min(8000, 500 * 2 ** retry)
         retry += 1
         setReconnectAttempts(retry)
@@ -85,8 +104,15 @@ export function useBackendStream() {
     connect()
     watch = window.setInterval(() => {
       const age = Date.now() - lastMsg
-      if (age > 1500) setStreamQuality('lost')
-      else if (age > 750) setStreamQuality('delayed')
+      // Only mark lost when socket is not open and quiet for a while
+      if (ws?.readyState === WebSocket.OPEN) {
+        if (age > 3000) setStreamQuality('delayed')
+        else setStreamQuality('live')
+      } else if (age > 1500) {
+        setStreamQuality('lost')
+      } else if (age > 750) {
+        setStreamQuality('delayed')
+      }
     }, 250)
     const poll = window.setInterval(() => void refresh(), 2000)
 
