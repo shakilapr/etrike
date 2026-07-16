@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Design-only — no runnable backend/frontend yet (empty `vtc` scaffold removed; Phase 1 creates `control_toolkit/` package)  
+**Status:** Backend Pure Software path implemented under `backend/control_toolkit/` (virtual dual-bus, REST/WS, tests). Frontend not started.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -141,9 +141,10 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 | Protocol TypeScript catalog | ✅ Exist — audit for frontend presentation metadata in Phase 0/4 |
 | Protocol golden vectors | ⚠️ Present; coverage must be verified (Phase 0) |
 | RT / SYS firmware | ✅ Use generated + custom codecs; policy remains hand-written (pattern to follow) |
-| Python backend (FastAPI) | ❌ Not started (create `control_toolkit/` package in Phase 1) |
+| Python backend (FastAPI) | ✅ Pure Software skeleton — `backend/control_toolkit/` |
 | React frontend | ❌ Does not exist |
-| Backend / frontend tests | ❌ Do not exist |
+| Backend tests | ✅ pytest suite under `backend/tests/` (virtual only) |
+| Frontend tests | ❌ Do not exist |
 | Debug-tool / control-ui | ✅ Predecessors with reusable characterization — not the target product |
 
 ### Key gaps (updated)
