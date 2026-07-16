@@ -278,6 +278,15 @@ function dash(v: unknown): string {
   return s === '' ? '—' : s
 }
 
+/** Req/Conf line without "— · —" style doubling when both empty. */
+function formatReqConf(req: unknown, conf: unknown): string {
+  const r = dash(req)
+  const c = dash(conf)
+  if (r === '—' && c === '—') return '—'
+  if (r === c) return r
+  return `Req ${r} · Conf ${c}`
+}
+
 function signalNum(m: MessageState | undefined, key: string): number | null {
   const v = m?.signals?.[key]?.engineering_value
   if (typeof v === 'number' && Number.isFinite(v)) return v
@@ -960,10 +969,31 @@ function Overview() {
   const safety = findMsg(messages, 'SYS_SAFETY_STS')
   const ses = status?.session
 
-  const canHealth =
+  // Single stream/CAN label — never join two synonyms (was "lost · lost").
+  const streamHealthLabel =
+    quality === 'live'
+      ? 'Healthy'
+      : quality === 'delayed'
+        ? 'Degraded'
+        : quality === 'dropping'
+          ? 'Dropping'
+          : quality === 'lost'
+            ? 'Lost'
+            : quality === 'connecting'
+              ? 'Connecting'
+              : 'Unknown'
+  const canHealthTone: 'ok' | 'warn' | 'danger' | 'muted' =
+    quality === 'live'
+      ? 'ok'
+      : quality === 'delayed' || quality === 'dropping' || quality === 'connecting'
+        ? 'warn'
+        : quality === 'lost'
+          ? 'danger'
+          : 'muted'
+  const canHealthClass =
     quality === 'live'
       ? 'healthy'
-      : quality === 'delayed'
+      : quality === 'delayed' || quality === 'dropping'
         ? 'degraded'
         : quality === 'lost'
           ? 'lost'
@@ -989,8 +1019,6 @@ function Overview() {
     signalText(drive, 'gear') || signalText(motor, 'gear_state') || '—'
   const estopOn = !!ses?.estop_active
   const benchOn = ses?.bench_tx === 'enabled'
-  const canHealthTone: 'ok' | 'warn' | 'danger' | 'muted' =
-    canHealth === 'healthy' ? 'ok' : canHealth === 'degraded' ? 'warn' : 'danger'
   const safetyEstopOn =
     String(signalText(safety, 'estop_active')).toLowerCase().includes('1') ||
     String(signalText(safety, 'estop_active')).toLowerCase() === 'true' ||
@@ -1019,17 +1047,13 @@ function Overview() {
         <div className="strip-item">
           <span className="strip-k">Power</span>
           <span className="strip-v strip-v-detail" data-testid="status-power">
-            Req {dash(ses?.requested_power)}
-            <span className="strip-sep">·</span>
-            Conf {dash(ses?.confirmed_power)}
+            {formatReqConf(ses?.requested_power, ses?.confirmed_power)}
           </span>
         </div>
         <div className="strip-item">
           <span className="strip-k">Mode</span>
           <span className="strip-v strip-v-detail" data-testid="status-mode">
-            Req {dash(ses?.requested_mode)}
-            <span className="strip-sep">·</span>
-            Conf {dash(ses?.confirmed_mode)}
+            {formatReqConf(ses?.requested_mode, ses?.confirmed_mode)}
           </span>
         </div>
         <div className="strip-item">
@@ -1040,10 +1064,10 @@ function Overview() {
             testId="meter-bench-tx"
           />
         </div>
-        <div className={`strip-item health-${canHealth}`}>
+        <div className={`strip-item health-${canHealthClass}`}>
           <span className="strip-k">CAN health</span>
           <StatusPill
-            label={`${canHealth} · ${quality}`}
+            label={streamHealthLabel}
             tone={canHealthTone}
             testId="meter-can-health"
           />
