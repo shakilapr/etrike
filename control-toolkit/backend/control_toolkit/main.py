@@ -18,8 +18,10 @@ from control_toolkit.api import (
     analysis,
     control,
     events,
+    evidence,
     hmi,
     injections,
+    logs,
     protocol_api,
     recordings,
     sessions,
@@ -27,6 +29,7 @@ from control_toolkit.api import (
     status,
     stream,
     synthetic,
+    tests_api,
 )
 from control_toolkit.api.errors import register_exception_handlers
 from control_toolkit.config import ToolkitConfig
@@ -62,6 +65,9 @@ def create_app(config: ToolkitConfig | None = None) -> FastAPI:
     app.include_router(control.router, prefix=prefix)
     app.include_router(recordings.router, prefix=prefix)
     app.include_router(events.router, prefix=prefix)
+    app.include_router(evidence.router, prefix=prefix)
+    app.include_router(tests_api.router, prefix=prefix)
+    app.include_router(logs.router, prefix=prefix)
     app.include_router(stream.router, prefix=prefix)
     return app
 

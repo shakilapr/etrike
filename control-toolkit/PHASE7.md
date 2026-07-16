@@ -1,7 +1,7 @@
 # Phase 7 — Interactive control (keyboard kinematics)
 
-**Status:** Complete for kinematics path (software / virtual)  
-**Depends on:** Phase 5 TX pipeline  
+**Status:** Complete (software / virtual) — gamepad HID deferred  
+**Depends on:** Phase 5 TX pipeline; Phase 6 evidence  
 **Firmware alignment:** verified against `host.yaml`, `shared_config.h`, MTR gear enum, SYS mode manager
 
 ## Firmware cross-check (fixes applied)

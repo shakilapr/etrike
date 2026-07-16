@@ -11,11 +11,7 @@ import { Readable } from "node:stream";
 
 export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore): void {
   // Replay endpoints
-  app.post("/api/replay/load", {
-    schema: {
-      body: z.object({ recording_id: z.string() })
-    }
-  }, async (request, reply) => {
+  app.post("/api/replay/load", async (request, reply) => {
     const { recording_id } = request.body as any;
     try {
       await app.ctx.replayEngine.load(recording_id);
@@ -25,11 +21,7 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
     }
   });
 
-  app.post("/api/replay/play", {
-    schema: {
-      body: z.object({ speed: z.number().optional() }).optional()
-    }
-  }, async (request, reply) => {
+  app.post("/api/replay/play", async (request, reply) => {
     const body = (request.body || {}) as any;
     try {
       app.ctx.replayEngine.play(body.speed || 1.0);
@@ -49,11 +41,7 @@ export function registerRecordingRoutes(app: FastifyInstance, store: DebugStore)
     return reply.send(app.ctx.replayEngine.getState());
   });
 
-  app.post("/api/replay/seek", {
-    schema: {
-      body: z.object({ time_us: z.string() })
-    }
-  }, async (request, reply) => {
+  app.post("/api/replay/seek", async (request, reply) => {
     const { time_us } = request.body as any;
     await app.ctx.replayEngine.seek(time_us);
     return reply.send(app.ctx.replayEngine.getState());

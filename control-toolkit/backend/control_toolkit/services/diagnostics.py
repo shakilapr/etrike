@@ -7,7 +7,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass
@@ -38,10 +38,20 @@ class Episode:
 
 
 class DiagnosticsService:
-    def __init__(self, capacity: int = 2000) -> None:
+    def __init__(
+        self,
+        capacity: int = 2000,
+        *,
+        recovery_hysteresis_s: float = 0.5,
+        on_emit: Callable[[DiagnosticEvent], None] | None = None,
+    ) -> None:
         self._lock = threading.Lock()
         self._events: deque[DiagnosticEvent] = deque(maxlen=capacity)
         self._episodes: dict[str, Episode] = {}
+        # Pending recoveries: key -> first recovery request mono
+        self._pending_recover: dict[str, float] = {}
+        self._recovery_hysteresis_s = recovery_hysteresis_s
+        self._on_emit = on_emit
 
     def emit(
         self,
@@ -71,16 +81,47 @@ class DiagnosticsService:
         with self._lock:
             self._events.appendleft(ev)
             if severity in ("warning", "error", "critical"):
+                # Re-fault cancels pending recovery hysteresis.
+                scope = bus or "global"
+                self._pending_recover.pop(f"{code}|{scope}", None)
                 self._touch_episode_locked(ev, now)
+        if self._on_emit is not None:
+            try:
+                self._on_emit(ev)
+            except Exception:
+                pass
         return ev
 
-    def recover(self, code: str, scope: str = "global") -> None:
+    def recover(
+        self, code: str, scope: str = "global", *, force: bool = False
+    ) -> bool:
+        """Mark episode recovered after recovery hysteresis (anti-chatter).
+
+        Returns True when recovery is committed. Pass ``force=True`` to skip
+        hysteresis (tests / explicit clear).
+        """
         key = f"{code}|{scope}"
+        now = time.monotonic()
         with self._lock:
             ep = self._episodes.get(key)
-            if ep is not None:
+            if ep is None or ep.recovered:
+                self._pending_recover.pop(key, None)
+                return bool(ep and ep.recovered)
+            if force:
                 ep.recovered = True
-                ep.last_mono = time.monotonic()
+                ep.last_mono = now
+                self._pending_recover.pop(key, None)
+                return True
+            pending = self._pending_recover.get(key)
+            if pending is None:
+                self._pending_recover[key] = now
+                return False
+            if now - pending < self._recovery_hysteresis_s:
+                return False
+            ep.recovered = True
+            ep.last_mono = now
+            self._pending_recover.pop(key, None)
+            return True
 
     def list_events(
         self,

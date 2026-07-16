@@ -115,19 +115,57 @@ class RecordingService:
             return out
 
     def get(self, recording_id: str) -> dict[str, Any] | None:
+        return self.get_window(recording_id, offset=0, limit=500)
+
+    def get_window(
+        self,
+        recording_id: str,
+        *,
+        offset: int = 0,
+        limit: int = 500,
+    ) -> dict[str, Any] | None:
         with self._lock:
-            if self._active and self._active.recording_id == recording_id:
-                return {
-                    **self._active.to_summary(),
-                    "frames": [self._frame_dict(f) for f in list(self._active.frames)[-500:]],
-                }
-            for r in reversed(self._history):
-                if r.recording_id == recording_id:
-                    return {
-                        **r.to_summary(),
-                        "frames": [self._frame_dict(f) for f in list(r.frames)[-500:]],
-                    }
-            return None
+            rec = self._find_locked(recording_id)
+            if rec is None:
+                return None
+            frames = list(rec.frames)
+            total = len(frames)
+            slice_ = frames[offset : offset + limit]
+            return {
+                **rec.to_summary(),
+                "frame_total": total,
+                "offset": offset,
+                "limit": limit,
+                "frames": [self._frame_dict(f) for f in slice_],
+            }
+
+    def export_json(self, recording_id: str) -> dict[str, Any] | None:
+        """Full in-memory export for disk write / headless tooling."""
+        with self._lock:
+            rec = self._find_locked(recording_id)
+            if rec is None:
+                return None
+            return {
+                **rec.to_summary(),
+                "export_format": "control_toolkit.recording.v1",
+                "frames": [self._frame_dict(f) for f in list(rec.frames)],
+            }
+
+    def mark_degraded(self, reason: str) -> None:
+        with self._lock:
+            if self._active is None:
+                return
+            if self._active.evidence_quality is EvidenceQuality.COMPLETE:
+                self._active.evidence_quality = EvidenceQuality.DEGRADED
+            self._active.notes.append(reason)
+
+    def _find_locked(self, recording_id: str) -> RecordingSession | None:
+        if self._active and self._active.recording_id == recording_id:
+            return self._active
+        for r in reversed(self._history):
+            if r.recording_id == recording_id:
+                return r
+        return None
 
     def observe_frame(
         self,

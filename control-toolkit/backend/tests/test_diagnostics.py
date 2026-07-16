@@ -45,7 +45,9 @@ def test_episode_aggregation_for_repeated_warnings(client):
     assert inv[0]["count"] >= 5
     assert inv[0]["recovered"] is False
 
-    diag.recover("frame.invalid", scope="high")
+    # Hysteresis: first recover arms; force commits immediately for test.
+    assert diag.recover("frame.invalid", scope="high") is False
+    assert diag.recover("frame.invalid", scope="high", force=True) is True
     episodes = client.get("/api/v1/episodes").json()["episodes"]
     inv = [e for e in episodes if e["code"] == "frame.invalid"]
     assert inv[0]["recovered"] is True

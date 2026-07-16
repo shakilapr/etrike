@@ -57,14 +57,24 @@ class TxGate:
         if profile not in (Profile.PURE_SOFTWARE, Profile.BENCH_TEST, Profile.FULL_VEHICLE):
             return TxResult("rejected", request_id, reason="unknown_profile")
 
-        # Physical profiles without a real adapter stay blocked (no silent virtual).
-        transport: VirtualTransportAdapter | None = self._get_transport()
+        # Physical profiles require a real adapter (no silent virtual).
+        transport = self._get_transport()
         if transport is None:
             return TxResult("rejected", request_id, reason="no_transport")
 
         if profile is not Profile.PURE_SOFTWARE:
-            # Hardware track not available yet — refuse rather than virtualize.
-            return TxResult("rejected", request_id, reason="physical_profile_unavailable")
+            # Allow TX only when transport is physical canalyst (not virtual).
+            identity = ""
+            try:
+                identity = str(transport.status().identity)
+            except Exception:
+                identity = ""
+            if "canalyst" not in identity.lower():
+                return TxResult(
+                    "rejected",
+                    request_id,
+                    reason="physical_profile_unavailable",
+                )
 
         if self._get_bench_tx() is not BenchTxState.ENABLED:
             return TxResult("rejected", request_id, reason="bench_tx_disabled")

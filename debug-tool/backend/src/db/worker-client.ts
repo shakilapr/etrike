@@ -14,8 +14,8 @@ export class WorkerClient implements DebugStore {
       ? path.join(__dirname, "worker.ts")
       : path.join(__dirname, "worker.js");
       
-    // ts-node requires execArgv to be passed to worker
-    const execArgv = __filename.endsWith(".ts") ? ["-r", "ts-node/register"] : [];
+    // In development, inherit the tsx loader used by the parent process.
+    const execArgv = __filename.endsWith(".ts") ? process.execArgv : [];
 
     this.worker = new Worker(workerFile, { execArgv });
 

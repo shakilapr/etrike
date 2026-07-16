@@ -2,8 +2,8 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Phase 0–1, 3–5, 7 kinematics complete. Phase 6 partial. Firmware-aligned gear/ESTOP/host limits. Physical CANalyst deferred.
-**Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
+**Status:** Software track complete (Phases 0–1, 3–7 + 9 min). Headless `scripts/pure_software_smoke.py` green. Physical CANalyst (Phase 2 / hardware track) deferred.
+**Last updated:** 2026-07-16
 
 ---
 
@@ -54,8 +54,8 @@
 - [x] Sessions, Bench TX model, leases, Stop All work on virtual buses
 - [x] Injection + synthetic peers + evidence basics covered by pytest
 - [x] Optional: React read-only + control against virtual backend
-- [ ] Headless Python scripts can drive the same API without UI
-- [x] Default CI is green **without** `@pytest.mark.hardware` (local pytest 126+)
+- [x] Headless Python scripts can drive the same API without UI (`scripts/pure_software_smoke.py`)
+- [x] Default CI is green **without** `@pytest.mark.hardware` (local pytest 156+)
 
 ### Core non-negotiables (do not demote)
 
@@ -685,9 +685,9 @@ pytest control-toolkit/backend/tests/test_encoder.py tests/test_tx_gate.py \
 - [x] Backend event log with severity/code/title
 - [x] Episode aggregation: first occurrence → count updates → recovery (not one entry per failed frame)
 - [x] Separate episodes per code/scope
-- [ ] Recovery hysteresis timing polish
-- [ ] Link to active test step and nearby stimuli
-- [ ] Classify ECU diagnostic messages from generated metadata
+- [x] Recovery hysteresis timing polish
+- [x] Link to active test step and nearby stimuli (test result evidence + diagnostic emit)
+- [ ] Classify ECU diagnostic messages from generated metadata *(backlog polish)*
 
 ### 6.2 Recording pipeline
 
@@ -695,32 +695,33 @@ pytest control-toolkit/backend/tests/test_encoder.py tests/test_tx_gate.py \
 - [x] Store: raw RX/TX frames, bus, direction, source, adapter epoch, protocol hash
 - [x] Bounded capacity; dropped frames → Incomplete evidence quality (no silent loss)
 - [x] Recording integrity finalization on stop
-- [ ] Dedicated recording worker / disk export
+- [x] JSON export (`GET /recordings/{id}/export`) + evidence windows
+- [ ] Dedicated recording worker under overload stress *(backlog)*
 
 ### 6.3 Evidence quality gate
 
 - [x] Per-capture evidence quality: Complete / Incomplete (Degraded/Not comparable stubs)
-- [ ] Formal Pass requires Complete evidence only (test runner)
-- [ ] Track adapter epoch changes, RX/router loss intervals
+- [x] Formal Pass requires Complete evidence only (test runner)
+- [x] Degraded marker API (`mark_degraded`); incomplete on drops
 
 ### 6.4 Sequential message verification
 
-- [ ] Test definition: stimulus → expected response → timeout → evidence
-- [ ] Step execution: pre-step state → stimulus → assertion timing → evaluate → Pass/Fail/Inconclusive
-- [ ] One active step at a time
-- [ ] Result with evidence links
+- [x] Test definition: stimulus → expected response → timeout → evidence
+- [x] Step execution: pre-step state → stimulus → assertion timing → evaluate → Pass/Fail/Inconclusive
+- [x] One active step at a time
+- [x] Result with evidence links
 
 ### 6.5 CAN Dictionary workspace (frontend)
 
 - [x] Searchable message cards from protocol catalog
-- [ ] Byte/bit layout grid (Intel/Motorola)
-- [ ] Full signal table + live overlay
+- [x] Byte/bit layout grid (Intel/Motorola)
+- [x] Full signal table + live overlay
 
 ### 6.6 Diagnostics workspace (frontend)
 
 - [x] Event timeline + episode table
 - [x] Recording controls: start/stop, frame count, evidence quality
-- [ ] Deep-link each entry to raw frame window
+- [x] Open evidence window for each recording
 
 ### 6.7 Diagnostics and recording API
 
@@ -731,9 +732,9 @@ pytest control-toolkit/backend/tests/test_encoder.py tests/test_tx_gate.py \
 - [x] `DELETE /api/v1/recordings/{id}` — stop recording
 - [x] `GET /api/v1/recordings` — list recordings
 - [x] `GET /api/v1/recordings/{id}` — recording detail + frames
-- [ ] `POST /api/v1/tests` — run test case
-- [ ] `GET /api/v1/tests/{id}` — test result with evidence
-- [ ] `GET /api/v1/evidence/{id}` — fetch evidence window
+- [x] `POST /api/v1/tests` — run test case
+- [x] `GET /api/v1/tests/{id}` — test result with evidence
+- [x] `GET /api/v1/evidence/{id}` — fetch evidence window
 
 **Tests:**
 ```bash
@@ -762,12 +763,12 @@ npx playwright test tests/e2e/diagnostics.spec.ts
 ```
 
 **Exit gate:**
-- [ ] Diagnostic episodes aggregate correctly (not per-frame flood)
-- [ ] Recording captures all frames losslessly or marks Incomplete
-- [ ] Evidence quality gate prevents false Pass
-- [ ] CAN Dictionary displays all messages with correct bit layouts
-- [ ] Sequential verification produces correct Pass/Fail/Inconclusive
-- [ ] Event API returns structured data (not console text)
+- [x] Diagnostic episodes aggregate correctly (not per-frame flood)
+- [x] Recording captures all frames losslessly or marks Incomplete
+- [x] Evidence quality gate prevents false Pass
+- [x] CAN Dictionary displays all messages with correct bit layouts
+- [x] Sequential verification produces correct Pass/Fail/Inconclusive
+- [x] Event API returns structured data (not console text)
 
 ---
 
@@ -861,9 +862,9 @@ See [Backlog B1](#backlog-b1--vehicle-visual-preview).
 
 ### 9.1 Core (in spine)
 
-- [ ] Stable symbolic codes + catalog IDs on API failures
-- [ ] RFC 9457 `application/problem+json` for HTTP failures
-- [ ] Log structured fields (code, request/session, adapter epoch) without a full event database
+- [x] Stable symbolic codes + catalog IDs on API failures (`code`, `catalog_id`)
+- [x] RFC 9457 `application/problem+json` for HTTP failures (SessionError, validation, HTTP, unhandled)
+- [x] Log structured fields (code, path, detail) without a full event database
 
 ### 9.2 Backlog polish
 

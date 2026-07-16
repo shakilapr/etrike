@@ -95,9 +95,25 @@ class ControlIntentService:
         with self._lock:
             s = self._state
             age = (time.monotonic() - s.last_mono) if s.last_mono else None
+            # Two completely different control methods (architecture §11.2 / §11.3).
+            if s.mode == "kinematics" or s.job_id:
+                method = "high_kinematics"
+                bus = "high"
+                method_label = "High bus · Host kinematics (HOST_DRIVE_CMD)"
+            elif s.mode == "direct" or s.direct_jobs:
+                method = "low_direct"
+                bus = "low"
+                method_label = "Low bus · Direct actuators (motor / steer / brake)"
+            else:
+                method = "none"
+                bus = None
+                method_label = "No active motion method"
             return {
-                "active": s.active,
+                "active": s.active or bool(s.direct_jobs),
                 "mode": s.mode,
+                "method": method,
+                "bus": bus,
+                "method_label": method_label,
                 "source": s.source,
                 "sequence": s.sequence,
                 "throttle": s.throttle,
@@ -114,6 +130,27 @@ class ControlIntentService:
                 "loss_reason": s.loss_reason,
                 "direct_channels": list(s.direct_jobs.keys()),
                 "direct_jobs": dict(s.direct_jobs),
+                "paths": {
+                    "high_kinematics": {
+                        "bus": "high",
+                        "message": "HOST_DRIVE_CMD",
+                        "can_id": 0x300,
+                        "owner_role": "Host intent; RT runs kinematics",
+                        "period_ms": HOST_DRIVE_PERIOD_MS,
+                        "stale_s": HOST_CMD_STALE_S,
+                    },
+                    "low_direct": {
+                        "bus": "low",
+                        "channels": {
+                            ch: {
+                                "key": spec["key"],
+                                "period_ms": spec["period_ms"],
+                            }
+                            for ch, spec in DIRECT_CHANNELS.items()
+                        },
+                        "owner_role": "Bypass RT kinematics; talk to actuators",
+                    },
+                },
             }
 
     def apply_intent(
@@ -185,16 +222,18 @@ class ControlIntentService:
         period_ms: float | None = None,
     ) -> dict[str, Any]:
         """Start/stop/update a low-bus actuator stream (SES / SEB / RT_DRIVE)."""
-        self._require_bench_tx()
         if channel not in DIRECT_CHANNELS:
             raise SessionError(
                 "control.unknown_channel",
                 f"channel must be one of {list(DIRECT_CHANNELS)}",
                 status=400,
             )
+        # Allow stop without Bench TX (cleanup / method switch); start requires it.
+        if enabled:
+            self._require_bench_tx()
         with self._lock:
             # Mutual exclusion: direct preempts kinematics.
-            if self._state.job_id:
+            if enabled and self._state.job_id:
                 self._cancel_job_locked()
                 self._state.active = False
             self._state.mode = "direct" if enabled else (

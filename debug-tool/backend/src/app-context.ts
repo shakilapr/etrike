@@ -15,8 +15,10 @@ import type { WriteQueue } from "./db/write-queue";
 import type { LeaseManager } from "./state/leases";
 import type { InjectionService } from "./api/injection";
 import type { ReplayEngine } from "./sim/replay";
+import type { DebugStore } from "./db/queries";
 
 export interface AppContext {
+  store: DebugStore;
   hub: StreamHub;
   stateMachine: OperationalStateMachine;
   writeQueue: WriteQueue;

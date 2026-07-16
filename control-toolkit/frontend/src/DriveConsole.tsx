@@ -628,7 +628,8 @@ export function DriveConsole() {
         <div>
           <h1>Drive</h1>
           <p className="muted small">
-            Vehicle view and kinematics control over the dual CAN buses (virtual or physical).
+            High-bus Host kinematics only (HOST_DRIVE_CMD 0x300). Not Low-bus direct
+            actuators — use Control → Low bus for motor/steer/brake unit tests.
           </p>
         </div>
         <div className="drive-top-chips">
@@ -702,12 +703,12 @@ export function DriveConsole() {
           <canvas ref={canvasRef} data-testid="preview-canvas" />
           {!armed && (
             <div className="drive-lock-hint muted">
-              Local simulation — click canvas, then arm CAN control to publish HOST_DRIVE_CMD
+              Local sim — arm to publish Host intent on High bus (0x300)
             </div>
           )}
           {armed && (
             <div className="drive-lock-hint armed">
-              ● Armed — following CAN 0x300; keys send intent at 20 Hz
+              Armed — High bus HOST_DRIVE_CMD @ 10 ms; keys send Host intent
             </div>
           )}
         </div>
