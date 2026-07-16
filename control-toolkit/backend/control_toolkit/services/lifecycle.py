@@ -15,7 +15,9 @@ from control_toolkit.services.scheduler import Scheduler
 from control_toolkit.services.session_manager import SessionManager
 from control_toolkit.services.synthetic_peers import SyntheticPeerService
 from control_toolkit.services.tx_gate import TxGate
+from control_toolkit.state.history import FrameHistory
 from control_toolkit.state.latest import LatestStore
+from control_toolkit.state.topology import TopologyTracker
 from control_toolkit.transport.virtual import VirtualTransportAdapter
 
 
@@ -23,6 +25,8 @@ class Lifecycle:
     def __init__(self, config: ToolkitConfig) -> None:
         self.config = config
         self.latest = LatestStore()
+        self.history = FrameHistory(capacity=getattr(config, "history_capacity", 4096))
+        self.topology = TopologyTracker()
         self.events = EventBus()
         self.ownership = OwnershipTable()
         self.transport: VirtualTransportAdapter | None = None
@@ -52,18 +56,36 @@ class Lifecycle:
     async def startup(self) -> None:
         self.ager = FreshnessAger(self.latest)
         self._tasks.append(asyncio.create_task(self.ager.run()))
+        self._tasks.append(asyncio.create_task(self._topology_loop()))
 
         if self.config.default_profile is Profile.PURE_SOFTWARE:
             self.transport = VirtualTransportAdapter(
                 rx_queue_maxsize=self.config.rx_queue_maxsize
             )
             self.transport.open()
-            self.router = Router(self.transport, self.latest)
+            self.router = Router(
+                self.transport,
+                self.latest,
+                history=self.history,
+                topology=self.topology,
+            )
             self._tasks.append(asyncio.create_task(self.router.run()))
 
         self.scheduler.start()
         self._tasks.append(asyncio.create_task(self._broadcast_loop()))
         self._ready = True
+
+    async def _topology_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(0.1)
+                if not self._ready:
+                    continue
+                self.topology.reclassify(
+                    self.latest.get_messages_map(), time.monotonic_ns()
+                )
+        except asyncio.CancelledError:
+            return
 
     async def _broadcast_loop(self) -> None:
         interval = 1.0 / max(1, self.config.latest_state_batch_hz)

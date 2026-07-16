@@ -41,6 +41,8 @@ class ToolkitConfig(BaseModel):
 
     # RX queue bound; overflow is counted and surfaced, never silently evicted.
     rx_queue_maxsize: int = 65536
+    # Chronological frame history capacity (bounded ring).
+    history_capacity: int = 4096
 
     title: str = "E-Trike Control Toolkit"
     api_prefix: str = "/api/v1"
