@@ -307,7 +307,7 @@ static bool send_can_high(can::Frame& fr) {
             if constexpr (rt::build::kPidMode == rt::build::PidMode::Active) {
                 if (measured_speed_mmps != 0) {
                     sp.motor_speed_mmps += pid_out;
-                    sp.motor_speed_mmps = std::clamp(sp.motor_speed_mmps,
+                    sp.motor_speed_mmps = std::clamp<int32_t>(sp.motor_speed_mmps,
                         -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
                 }
             }

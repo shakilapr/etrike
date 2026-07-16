@@ -155,7 +155,7 @@ The detailed contract is in `control-toolkit-api.md`.
 
 # E-Trike Control Toolkit Architecture
 
-**Status:** Product and system design concept (no runnable implementation yet; empty backend scaffold only). Delivery tiers (core / backlog / later / future work) are defined in [`workplan.md`](workplan.md).
+**Status:** Product and system design concept (no runnable implementation yet; legacy empty `vtc` scaffold removed). Delivery tiers (core / backlog / later / future work) are defined in [`workplan.md`](workplan.md).
 
 **Detailed behavior:** See the Logic Specification sections below for state machines, decisions, timers, failure handling, test execution, and evidence rules.
 
@@ -1227,18 +1227,24 @@ Known debug-tool behaviors that must not carry forward:
 
 ## 19. Delivery sequence
 
-Delivery is staged so physical control is added only after the observation and safety foundations are measurable. **Core sequence** (work plan Phases 0–7):
+Delivery is **software first, hardware later**. Detail and exit gates live in [`workplan.md`](workplan.md).
 
-1. **Protocol foundation:** Audit existing YAML/compiler/codecs, golden vectors, semantic hashes, and drift checks — then **still write** toolkit services that import those codecs (YAML is not the product).
-2. **Read-only transport:** dual-bus CANalyst-II/virtual transport, canonical timestamps, queue metrics, and connection-loss evidence.
-3. **Read-only UI:** Overview, topology, latest CAN, chronological monitor, dictionary, freshness, and corruption presentation.
-4. **Virtual control tests:** command policy, Bench TX/stimulus lease model, injection, HMI, keyboard/gamepad, and synthetic peers restricted to virtual buses.
-5. **Physical HMI and bench:** Bench TX session control, source ownership, ESTOP test labeling, HMI requests, and bounded isolated-ECU workflows.
-6. **Physical actuator control:** kinematics and direct-actuator modes only after latency, jitter, watchdog, conflict, disconnect, and corruption tests pass.
+**Software track (no CANalyst / no ECU required):**
 
-**Not core** (see work plan Backlog / Later / Future Work): vehicle visual preview depth, full error-event product, conformance wizard/soak budgets, LLM/MCP adapters, replay/baseline/predicates/triggered capture, Tauri packaging, and full ECU simulation beyond static synthetic peers.
+1. **Protocol foundation:** Audit YAML/compiler/codecs, golden vectors, hashes — then write toolkit services that import codecs.
+2. **Virtual transport + API:** dual virtual High/Low, decode, latest state, REST/WebSocket; headless pytest and Python scripts.
+3. **Pure Software sessions:** Bench TX model, leases, Stop All on virtual buses only.
+4. **Read-only UI** against virtual backend (optional for script-only teams, still in plan).
+5. **Virtual control:** injection, synthetic peers, HMI, keyboard/actuator *stimuli* on virtual buses; diagnostics/evidence basics.
 
-Each core stage has a usable acceptance test and does not require enabling the hazards of the next stage.
+**Hardware track (after software track exit):**
+
+6. **CANalyst-II transport**, physical Full Vehicle / Bench Test profiles, reconnect/epoch rules.
+7. **Physical isolation benches:** firmware bypass/run modes + 1–2 real messages against RT/SYS; Bench TX explicit only.
+
+**Not software-track** (Backlog / Later / Future Work): vehicle visual preview depth, full error-event product, conformance wizard/soak budgets, LLM/MCP adapters, replay/baseline/predicates/triggered capture, Tauri packaging, and full ECU simulation beyond static synthetic peers.
+
+Each software stage has a usable acceptance test on virtual buses and does not require physical hazards of the hardware track.
 
 ## 20. Acceptance questions
 

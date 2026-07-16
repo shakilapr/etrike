@@ -2,18 +2,38 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Design-only — no runnable backend/frontend yet (empty `backend/vtc/` scaffold only)  
-**Last updated:** 2026-07-15
+**Status:** Design-only — no runnable backend/frontend yet (empty `vtc` scaffold removed; Phase 1 creates `control_toolkit/` package)  
+**Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
+
+---
+
+## Software first, hardware later (delivery policy)
+
+**Default path is Pure Software + internal tests.** No CANalyst, no RT/SYS board, and no physical Bench TX are required to complete the software spine.
+
+| Track | Goal | Phases | Hardware |
+|---|---|---|---|
+| **Software track (do first)** | Protocol → backend → virtual dual bus → sessions (Pure Software) → UI → inject/peers → diagnostics → keyboard/actuator *stimuli on virtual buses* → pytest / Python scripts / API | **0 → 1 → 3 → 4 → 5 → 6 → 7** (+ Phase 9 min) | **None** |
+| **Hardware track (do after software track exit)** | CANalyst-II transport, physical Full Vehicle / Bench Test, real ECU isolation (bypass modes, 1–2 msgs) | **Phase 2**, then physical profile completion + opt-in HW tests | CANalyst + optional RT/SYS |
+| **Backlog / Later / Future Work** | Preview, replay, full sim, LLM, Tauri, … | B / L / FW sections | As needed |
+
+**Rules:**
+
+1. Do **not** block Phases 3–7 on Phase 2 (CANalyst). Phase 3+ implement and gate against **virtual buses** and **Pure Software**.
+2. Phase 2 may be stubbed early (empty `canalyst.py` / “not implemented”) so imports stay clean; **real adapter work waits** until the software track exit gate passes.
+3. All software-track tests run on host: `pytest`, FastAPI TestClient, optional headless Playwright against virtual fixtures. Mark physical tests `@pytest.mark.hardware` and keep them out of the default CI job.
+4. “Software complete” means the **tool + protocol + policies** work end-to-end on virtual buses. It does **not** claim RT/SYS firmware proven on a real CAN bus — that is the hardware track.
+5. Physical Bench TX remains off by default forever; reconnect never restores TX.
 
 ---
 
 ## Non-negotiable phase rule
 
-**Core phases (0–7)** are sequential for the shippable spine. Do not start core phase N+1 until all code, tests, and the exit gate for phase N pass. If a later core phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun every gate from there forward.
+**Within the software track**, phases are sequential: do not start the next software phase until the previous phase’s code, tests, and exit gate pass. If a later phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun gates from there forward on the software track.
 
-**Backlog / Later / Future Work** are *not* core phases. They must not block the spine (observe → decode → inject → synthetic peers → basic evidence). Pull them in only after the core is boring and solid.
+**Hardware track** starts only after the **software track exit gate** (below). It does not interleave as a hard dependency of Phase 3–7.
 
-Each active phase delivers working, tested code. Hardware tests remain opt-in and run only on a controlled bench with Bench TX explicitly disabled by default.
+**Backlog / Later / Future Work** are not software-track phases. They must not block observe → decode → inject → synthetic peers → basic evidence on virtual buses.
 
 ---
 
@@ -21,10 +41,21 @@ Each active phase delivers working, tested code. Hardware tests remain opt-in an
 
 | Tier | What | Phases / sections |
 |---|---|---|
-| **Core (ship first)** | Dual-bus observe, generated decode/validate, virtual + CANalyst transport, profiles/sessions/Bench TX, read-only UI, injection, synthetic peers, basic diagnostics/recording, keyboard/actuator test stimuli | Phases **0–7** |
-| **Backlog** | Valuable after core is stable; design already sketched; not required for first bench usability | Vehicle preview depth, full error-catalog polish, adapter conformance wizard, workload budgets, LLM/MCP client surface |
-| **Later** | Explicitly deferred product surface | Replay, baseline/session compare, server-side predicate language, triggered capture, Tauri packaging |
-| **Future Work** | Outside control-toolkit ownership or full product expansion | ECU simulation adapter (`simulation/`), full vehicle physics/state-machine sim, kinematics-mode host emulation as a product feature |
+| **Software track (ship first)** | Dual-bus **virtual** observe, generated decode/validate, Pure Software sessions, API + scripts, read-only UI, injection, synthetic peers, basic diagnostics/recording, keyboard/actuator stimuli **on virtual buses** | **0, 1, 3–7** (+ 9 min) |
+| **Hardware track (after software)** | CANalyst-II, physical profiles, real ECU bench (bypass/isolation), opt-in HW characterization | **Phase 2** + physical integration notes |
+| **Backlog** | After both tracks or when software is solid | Vehicle preview, error-catalog polish, conformance wizard, workload budgets, LLM/MCP |
+| **Later** | Explicitly deferred product surface | Replay, baseline compare, predicates, triggered capture, Tauri |
+| **Future Work** | Outside toolkit ownership / full sim | `simulation/` adapter, full physics, deep ECU emulation |
+
+### Software track exit gate (before any hardware track work)
+
+- [ ] Backend runs Pure Software with no USB adapter
+- [ ] Virtual High + Low inject → decode → `GET /state` + WebSocket
+- [ ] Sessions, Bench TX model, leases, Stop All work on virtual buses
+- [ ] Injection + synthetic peers + evidence basics covered by pytest
+- [ ] Optional: React read-only + control against virtual backend
+- [ ] Headless Python scripts can drive the same API without UI
+- [ ] Default CI is green **without** `@pytest.mark.hardware`
 
 ### Core non-negotiables (do not demote)
 
@@ -34,18 +65,19 @@ Each active phase delivers working, tested code. Hardware tests remain opt-in an
 - Capability honesty (`Unknown`, never fake TEC/REC/load zeros)
 - YAML-generated wire codecs + one client-neutral FastAPI contract
 - Stop All; source ownership for TX; Pass vs Inconclusive vs Fail (evidence quality)
-- Physical actuator TX only after observation + virtual TX gates pass
+- **Physical** actuator TX only after software-track virtual TX gates pass **and** hardware track enables it deliberately
 
-### Explicitly not core (was over-specified for v1)
+### Explicitly not software-track (deferred)
 
 | Item | Was | Now |
 |---|---|---|
-| Vehicle visual preview (center-lock, dual actuation/sensor layers, projection epochs) | Phase 8 | **Backlog** |
-| Full error catalog + event query/LLM event API polish | Phase 9 (full) | **Backlog** (minimal structured errors stay in core API) |
-| Adapter conformance wizard + soak budgets | Phase 10 | **Backlog** (basic CANalyst characterization stays in Phase 2) |
-| Triggered capture, replay, baseline compare, predicate language, Tauri | Phase 11 | **Later** |
-| LLM/MCP as first-class product surface | API §6 | **Backlog** (same REST API is enough; adapters later) |
-| Full `simulation/` ECU plug-in | Future Work | **Future Work** (unchanged; thin adapter only) |
+| CANalyst-II real transport + physical soak | Phase 2 in middle of spine | **Hardware track** (after software 0–7) |
+| Vehicle visual preview | Phase 8 | **Backlog** |
+| Full error catalog / event query polish | Phase 9 full | **Backlog** (min structured errors in software track) |
+| Adapter conformance wizard + soak budgets | Phase 10 | **Backlog** (after hardware track basics) |
+| Triggered capture, replay, baseline, predicates, Tauri | Phase 11 | **Later** |
+| LLM/MCP as first-class product | API §6 | **Backlog** |
+| Full `simulation/` ECU plug-in | Future Work | **Future Work** |
 
 ---
 
@@ -109,7 +141,7 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 | Protocol TypeScript catalog | ✅ Exist — audit for frontend presentation metadata in Phase 0/4 |
 | Protocol golden vectors | ⚠️ Present; coverage must be verified (Phase 0) |
 | RT / SYS firmware | ✅ Use generated + custom codecs; policy remains hand-written (pattern to follow) |
-| Python backend (FastAPI) | ❌ Empty scaffold only (`backend/vtc/**` zero-byte files) |
+| Python backend (FastAPI) | ❌ Not started (create `control_toolkit/` package in Phase 1) |
 | React frontend | ❌ Does not exist |
 | Backend / frontend tests | ❌ Do not exist |
 | Debug-tool / control-ui | ✅ Predecessors with reusable characterization — not the target product |
@@ -119,7 +151,7 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 1. **No toolkit runtime** — architecture resolved thin transport + stateful services; code not written
 2. **Protocol gaps (fill as needed)** — e.g. counter semantics metadata, transmission-policy presentation fields, any missing wire fields used by diag/UI; do not block Phase 1 on non-wire wish-list
 3. **Golden vector / drift-check coverage** — unknown completeness vs RT/SYS language pair
-4. **Debug-tool channel mapping** — Ch0/Ch1 reversed vs project scope; fix in toolkit Phase 2
+4. **Debug-tool channel mapping** — Ch0/Ch1 reversed vs project scope; fix in **hardware track** Phase 2
 5. **No pytest / Playwright / virtual-bus fixtures** for control-toolkit
 6. **control-ui parallel path** — stop growing as the long-term tool; port only proven pieces
 
@@ -127,16 +159,44 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 
 | Debug-tool weakness | Work plan improvement |
 |---|---|
-| Per-frame JSON+stdout parsing | Phase 2: native `python-can` integration, no child process |
-| 20ms poll delay with 10ms messages | Phase 2: configurable 1–2ms poll, measured soak test |
-| `time.time()` batch timestamps | Phase 2: monotonic arrival time; no fake HW timestamp story |
-| Channel 0/1 reversed | Phase 2: correct mapping, tested in characterization |
-| Silent physical→virtual fallback | Phase 3: explicit profile transitions, no silent fallback |
-| Static periodic payloads (no counter/checksum regen) | Phase 5: per-frame regeneration in scheduler |
-| No source ownership / duplicate producers | Phase 5: source-ownership table + conflict detection |
-| Placeholder bus load/TEC/REC = 0 | Phase 2: `Unknown` for unsupported, never fake-zero |
-| Mutable frame types + decoded payload embedded | Phase 1–2: immutable `RawFrameEnvelope` + separate decode |
-| No evidence quality tracking | Phase 6: evidence-quality gate on every test/capture |
+| Per-frame JSON+stdout parsing | **Hardware track / Phase 2:** native `python-can`, no child process |
+| 20ms poll delay with 10ms messages | **Hardware track:** configurable 1–2ms poll, measured soak |
+| `time.time()` batch timestamps | Phase 1 virtual + hardware track: monotonic arrival time |
+| Channel 0/1 reversed | **Hardware track:** correct mapping, characterization |
+| Silent physical→virtual fallback | Phase 3: explicit profile transitions (virtual-first) |
+| Static periodic payloads (no counter/checksum regen) | Phase 5: per-frame regeneration in scheduler (virtual first) |
+| No source ownership / duplicate producers | Phase 5: ownership table on virtual TX first |
+| Placeholder bus load/TEC/REC = 0 | Phase 1+ / hardware: `Unknown`, never fake-zero |
+| Mutable frame types + decoded payload embedded | Phase 1: immutable `RawFrameEnvelope` + separate decode |
+| No evidence quality tracking | Phase 6: evidence-quality gate (virtual first) |
+
+---
+
+## Architecture reading map (exact lines)
+
+**Primary file:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
+**Line numbers as of 2026-07-16** (file length ~2809 lines). If the architecture file is edited, re-scan headings or search by section title — numbers drift.
+
+Also read vehicle protocol model: [`../architecture.md`](../architecture.md) **L9–100** (CAN contract ownership, static dictionary, codecs/policy).
+
+| Phase / track | Read these lines in `architecture-control-toolkit.md` | Why |
+|---|---|---|
+| **Always (orientation)** | **L3–94** scope; **L99–151** stack; **L156–216** product + profiles; **L1228–1247** delivery sequence | What we are building and software-first order |
+| **Phase 0** | **L1138–1199** §18.2 YAML (incl. 18.2.1 no magic); **L25–33** data processing; **L905–961** §14.1.1 RT/SYS/MTR alignment + protocol gaps; **L2710–2758** HMI `0x111`/`0x112`; root **architecture.md L9–100** | Wire dictionary, codecs, what not to invent |
+| **Phase 1** | **L218–258** system architecture diagram; **L409–425** concurrency; **L427–516** canonical data + real-time contract + WS; **L2019–2122** receive/decode/freshness logic; **L1560–1759** API core + stream; **L1946–1961** core identities | Virtual backend, envelopes, state, API |
+| **Phase 3** | **L206–216** operating profiles; **L260–273** session/TX; **L1963–2000** work profile / Bench TX / session states; **L2467–2479** Stop All; **L2652–2664** shared session TX; **L1880–1892** physical bench API notes | Pure Software first; physical stubs |
+| **Phase 4** | **L537–738** shell, Overview, Network, Live CAN, Dictionary; **L1000–1068** presentation/freshness/corruption UI; **L1085–1096** visual language; **L2191–2215** WS visual update logic; plus full [`ui-design-control-toolkit.md`](ui-design-control-toolkit.md) | Read-only UI |
+| **Phase 5** | **L794–886** Control + injection; **L852–866** synthetic peer matrix; **L1070–1083** test-integrity boundaries; **L2230–2297** encode/inject/periodic/synthetic logic; **L2299–2322** HMI logic; **L2710–2758** HMI spec | Inject + peers + HMI on virtual |
+| **Phase 6** | **L888–998** diagnostics/recording/settings; **L1031–1068** corruption; **L1366–1375** evidence-quality gate; **L2407–2465** recording/diagnostic/dashboard logic; **L2559–2569** evidence-quality logic | Evidence + dictionary |
+| **Phase 7** | **L809–833** kinematics/direct/keyboard; **L2324–2370** keyboard/kinematics/actuator/virtual-encoder logic | Virtual stimuli only |
+| **Phase 9 min** | **L1545–1557** error coding intro; **L1658–1682** response/error model; **L2680–2690** error event generation (minimum: problem+json + codes) | Stable API errors |
+| **Phase 2 (hardware)** | **L285–407** CANalyst §4.4 full; **L656–683** layered connection-loss; **L2124–2174** adapter disconnect/reconnect logic; **L1201–1226** debug-tool migration “do not carry forward”; [`can-analyzer-research.md`](can-analyzer-research.md) full | Physical adapter |
+| **Hardware track H4–H5** | **L12–23** work modes; **L56–70** synthetic peers; vehicle **architecture.md §9** bench bypass (~L485–528); commissioning isolation → [`../docs/commissioning-test-profiles.md`](../docs/commissioning-test-profiles.md) | Real RT isolation / bypass |
+| **Backlog B1 preview** | **L1403–1521** §24; **L2587–2639** projection/preview logic | Later UI depth |
+| **Backlog B3 / L*** | **L1340–1401** §23 analyzer improvements; **L1112–1136** service levels; **L2521–2581** trigger/replay/predicate/conformance logic | Later product |
+| **API / scripts anytime** | **L81–94** shared API requirements; **L1523–1543** §25; **L1560–1920** full API contract; **L2641–2708** API/session/headless/event logic | One contract for UI + Python |
+
+**How to use:** Before coding a phase, open the architecture file at the listed lines (or jump to the section heading). Prefer **logic** sections for behavior; **product** sections for UX; **API** sections for endpoints. Do not implement backlog line ranges during the software track.
 
 ---
 
@@ -145,6 +205,8 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 **Goal:** Confirm the existing YAML contracts, compiler, generated codecs, golden vectors, and semantic hashes are **good enough to import** into the Control Toolkit. Fix only gaps that block correct encode/decode/validate. This does not replace toolkit, RT, or SYS application code.
 
 **Depends on:** `protocol/contracts/`, `protocol/tools/protocol.py`, existing generated artifacts (same stack RT/SYS already consume)
+
+**Read first:** Architecture map row **Phase 0** — especially `architecture-control-toolkit.md` **L1138–1199**, **L905–961**; root `architecture.md` **L9–100**.
 
 **Out of scope for Phase 0:** vehicle preview metadata, LLM schemas, full transmission-policy product UI, perfect comment-to-machine migration of every YAML comment.
 
@@ -222,13 +284,15 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
 
 **Depends on:** Phase 0
 
+**Read first:** Architecture map **Phase 1** — `architecture-control-toolkit.md` **L218–258**, **L409–425**, **L427–516**, **L2019–2122**, **L1560–1759**.
+
 ### 1.1 Project scaffolding
 
 - [ ] Create `control-toolkit/backend/` with:
   - `pyproject.toml` (FastAPI, uvicorn, python-can, pydantic, httpx, pytest, pytest-asyncio)
-  - `toolkit/` package structure:
+  - `control_toolkit/` package (do **not** use legacy `vtc` name):
     ```
-    toolkit/
+    control_toolkit/
     ├── __init__.py
     ├── main.py              # FastAPI app factory
     ├── config.py             # typed configuration with defaults
@@ -240,7 +304,7 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
     ├── transport/            # CAN adapter abstraction
     │   ├── interface.py      # Transport protocol/ABC
     │   ├── virtual.py        # python-can virtual bus adapter
-    │   └── canalyst.py       # CANalyst-II adapter (Phase 2)
+    │   └── canalyst.py       # CANalyst-II adapter (hardware track / Phase 2)
     ├── pipeline/             # RX/TX processing
     │   ├── router.py         # Observation router
     │   ├── decoder.py        # Generated codec integration
@@ -343,11 +407,20 @@ pytest control-toolkit/backend/tests/test_websocket_stream.py -v
 
 ---
 
-## Phase 2 — CANalyst-II Transport and Timestamp Architecture
+## Phase 2 — CANalyst-II Transport (**hardware track — deferred**)
 
-**Goal:** Add physical CAN transport via `python-can` CANalyst-II, with correct channel mapping, device timestamps, adapter health, and connection lifecycle.
+**Status:** **After software track** (complete Phases 0 → 1 → 3 → 4 → 5 → 6 → 7 exit gates first).  
+Not a dependency of Phases 3–7. During the software track, leave a stub adapter module or “unsupported profile” so physical open is refused cleanly.
 
-**Depends on:** Phase 1
+**Goal:** Add physical CAN transport via `python-can` CANalyst-II, with correct channel mapping, arrival timestamps, adapter health, and connection lifecycle.
+
+**Depends on:** Phase 1 **and** software track exit gate (Phases 3–7 Pure Software path green)
+
+**Read first:** Architecture map **Phase 2 (hardware)** — `architecture-control-toolkit.md` **L285–407**, **L656–683**, **L2124–2174**, **L1201–1226**; [`can-analyzer-research.md`](can-analyzer-research.md).
+
+**During software track only:**
+- [ ] `transport/canalyst.py` stub: discover/open raise clear `not available until hardware track` (or omit registration)
+- [ ] Selecting Full Vehicle / Bench Test without adapter reports explicit error — never silent virtual fallback
 
 ### 2.1 CANalyst-II adapter wrapper
 
@@ -407,32 +480,36 @@ pytest control-toolkit/backend/tests/test_hw_characterization.py -v -m hardware
 # → channel mapping, DLC=0, poll delay measurement
 ```
 
-**Exit gate:**
-- [ ] Virtual dual-channel pipeline passes all Phase 1 tests
-- [ ] Channel mapping: Ch0=High, Ch1=Low (opposite of debug-tool — tested)
+**Exit gate (hardware track only — not required for software 3–7):**
+- [ ] Software track still green (virtual path regression-free)
+- [ ] Channel mapping: Ch0=High, Ch1=Low (opposite of debug-tool — tested on hardware)
 - [ ] Arrival timestamps applied correctly at transport layer
 - [ ] Overflow counter exposed (never silent eviction)
-- [ ] Adapter health FSM transitions verified in simulation
+- [ ] Adapter health FSM transitions verified (sim + hardware where possible)
 - [ ] Reconnect creates new epoch, never restores TX state
-- [ ] Hardware characterization tests pass on physical adapter (when available)
+- [ ] `pytest -m hardware` characterization passes when adapter present
+- [ ] Full Vehicle / Bench Test profiles can open physical adapter without silent virtual fallback
 
 ---
 
-## Phase 3 — Operating Profiles and Session Management
+## Phase 3 — Operating Profiles and Session Management (**software track**)
 
-**Goal:** Implement the three operating profiles (Full Vehicle, Bench Test, Pure Software) with explicit transitions, session state machine, and Bench TX controls.
+**Goal:** Implement session state and profiles with **Pure Software fully working**. Physical profiles (Full Vehicle, Bench Test) may be present as **declared but not executable** until Phase 2 (hardware track).
 
-**Depends on:** Phase 2
+**Depends on:** Phase 1 only (not Phase 2)
+
+**Read first:** Architecture map **Phase 3** — **L206–216**, **L260–273**, **L1963–2000**, **L2467–2479**, **L2652–2664**.
 
 ### 3.1 Profile state machine
 
-- [ ] Three profiles with explicit transition rules:
-  - Full Vehicle: both physical buses, passive by default
-  - Bench Test: selected physical ECUs only — ECU simulation is Future Work (see end of document)
-  - Pure Software: two virtual buses, no physical TX, no ECU simulation
+- [ ] **Pure Software (required for this phase exit):** two virtual High/Low buses, full session lifecycle, TX allowed only on virtual, no physical adapter
+- [ ] **Full Vehicle / Bench Test (stub until hardware track):**
+  - Names and transition rules exist in API/models
+  - Activating them without a physical adapter → clear error / blocked state
+  - Never silently fall back to virtual
 - [ ] Controlled transition: stop periodic TX → neutral controls → confirm → activate
-- [ ] Adapter loss never silently switches to Pure Software (explicit operator action required)
 - [ ] Profile visible in API status and WebSocket events
+- [ ] After Phase 2: flesh out Full Vehicle (passive physical) and Bench Test (selected ECU + synthetic peers) for real hardware
 
 ### 3.2 Test-session state machine
 
@@ -463,45 +540,37 @@ pytest control-toolkit/backend/tests/test_hw_characterization.py -v -m hardware
 - [ ] `POST /api/v1/sessions/{id}/stop-all` — Stop All
 - [ ] `DELETE /api/v1/sessions/{id}` — close session
 
-**Tests:**
+**Tests (software track — virtual only):**
 ```bash
-# Profile transitions
 pytest control-toolkit/backend/tests/test_profiles.py -v
-# → Full Vehicle ↔ Bench Test ↔ Pure Software transitions
-# → adapter loss during physical profile
-# → no silent virtual fallback
+# → Pure Software create/activate/stop
+# → Full Vehicle / Bench Test refused without physical adapter (no silent virtual)
+# → profile transitions that stay on Pure Software
 
-# Session state machine
 pytest control-toolkit/backend/tests/test_session_state.py -v
-
-# Bench TX guards
 pytest control-toolkit/backend/tests/test_bench_tx.py -v
-# → enable requires session + adapter
-# → auto-disable on disconnect/profile change/shutdown
-
-# Source ownership
+# → enable on Pure Software virtual session
+# → auto-disable on session stop / shutdown
 pytest control-toolkit/backend/tests/test_source_ownership.py -v
-# → exclusive ownership, conflict detection, lease expiry
-
-# Session API endpoints
 pytest control-toolkit/backend/tests/test_api_sessions.py -v
 ```
 
-**Exit gate:**
-- [ ] Profile transitions are explicit and tested
-- [ ] Bench TX cannot be enabled without proper session
-- [ ] Source ownership prevents duplicate producers
-- [ ] Adapter loss disables Bench TX and marks stale (never silent fallback)
-- [ ] Stop All cancels all jobs and disables TX
+**Exit gate (software track):**
+- [ ] Pure Software sessions fully work on virtual buses
+- [ ] Physical profiles cannot silently become virtual
+- [ ] Bench TX / leases / Stop All correct for virtual TX
 - [ ] Session revision prevents concurrent conflicts
+- [ ] **Deferred to hardware track:** adapter-loss → disable TX, physical profile smoke tests
 
 ---
 
-## Phase 4 — Read-Only Frontend Foundation
+## Phase 4 — Read-Only Frontend Foundation (**software track**)
 
-**Goal:** Create the React + TypeScript frontend with Overview, Network, and Live CAN workspaces in read-only (monitoring) mode. Connect to the backend WebSocket for live state updates.
+**Goal:** Create the React + TypeScript frontend with Overview, Network, and Live CAN workspaces in read-only mode against **Pure Software / virtual** backend. No physical adapter required.
 
 **Depends on:** Phase 3
+
+**Read first:** Architecture map **Phase 4** — **L537–738**, **L1000–1068**, **L1085–1096**, **L2191–2215**; full [`ui-design-control-toolkit.md`](ui-design-control-toolkit.md).
 
 ### 4.1 Frontend scaffolding
 
@@ -591,11 +660,15 @@ npx playwright test tests/e2e/live-can.spec.ts
 
 ---
 
-## Phase 5 — Command Pipeline and Injection
+## Phase 5 — Command Pipeline and Injection (**software track**)
 
 **Goal:** Implement the TX pipeline: command policy, encoder, TX gate, periodic scheduler, source ownership, injection API, and HMI controls.
 
-**Depends on:** Phase 4
+**Depends on:** Phase 4 (software track; virtual TX only until hardware track)
+
+**Read first:** Architecture map **Phase 5** — **L794–886**, **L852–866**, **L1070–1083**, **L2230–2322**, **L2710–2758**.
+
+**Hardware note:** All inject/scheduler tests in this phase use **virtual buses**. Physical TX validation is Phase 2 + post–software-track bench scripts.
 
 ### 5.1 Encode pipeline
 
@@ -701,11 +774,13 @@ npx playwright test tests/e2e/injection.spec.ts
 
 ---
 
-## Phase 6 — Diagnostics, Recording, and Evidence
+## Phase 6 — Diagnostics, Recording, and Evidence (**software track**)
 
-**Goal:** Implement the diagnostic timeline, recording pipeline, evidence quality tracking, sequential message verification, and CAN Dictionary workspace.
+**Goal:** Implement the diagnostic timeline, recording pipeline, evidence quality tracking, sequential message verification, and CAN Dictionary workspace — all on **virtual** traffic and fixtures first.
 
 **Depends on:** Phase 5
+
+**Read first:** Architecture map **Phase 6** — **L888–998**, **L1031–1068**, **L1366–1375**, **L2407–2465**, **L2559–2569**.
 
 ### 6.1 Diagnostic service
 
@@ -806,11 +881,15 @@ npx playwright test tests/e2e/diagnostics.spec.ts
 
 ---
 
-## Phase 7 — Interactive Control: Keyboard/Gamepad and Actuator Commands
+## Phase 7 — Interactive Control: Keyboard/Gamepad and Actuator Commands (**software track**)
 
-**Goal:** Add keyboard/gamepad teleoperation, kinematics mode, and direct actuator control. These are the highest-risk features requiring careful stimulus lease and watchdog behavior.
+**Goal:** Add keyboard/gamepad teleoperation, kinematics mode, and direct actuator control as **test stimuli on virtual buses**. Lease/watchdog/Stop All behavior is proven without physical actuators. Real RT/SYS isolation benches come in the **hardware track**.
 
 **Depends on:** Phase 6
+
+**Read first:** Architecture map **Phase 7** — **L809–833**, **L2324–2370**.
+
+**Hardware note:** Do not require a real vehicle or CANalyst for this phase exit. Optional later: same controls against physical Bench Test after Phase 2.
 
 ### 7.1 Keyboard/gamepad input
 
@@ -915,6 +994,8 @@ See [Backlog B1](#backlog-b1--vehicle-visual-preview).
 
 **Depends on:** Phase 1+ incrementally; finish a **minimum** by Phase 6.
 
+**Read first:** Architecture map **Phase 9 min** — **L1545–1557**, **L1658–1682**, **L2680–2690**.
+
 ### 9.1 Core (in spine)
 
 - [ ] Stable symbolic codes + catalog IDs on API failures
@@ -949,7 +1030,7 @@ pytest control-toolkit/backend/tests/test_problem_details.py -v
 
 ## Phase 10 — (moved) Conformance wizard & performance budgets → Backlog
 
-**Status:** **Backlog** — Phase 2 still does basic CANalyst characterization (channel map, DLC=0, poll delay). Full fingerprint suite, workload envelopes, and formal service-level soak are not core.
+**Status:** **Backlog** — after hardware track Phase 2 basics (channel map, DLC=0, poll delay). Full fingerprint suite and soak budgets are not software-track.
 
 See [Backlog B3](#backlog-b3--adapter-conformance-wizard-and-workload-budgets).
 
@@ -967,71 +1048,98 @@ See [Later L1–L5](#later--deferred-product-surface).
 
 | Level | What | Where | When |
 |---|---|---|---|
-| **Unit** | Generated vectors, fake clock/queue, no hardware | `pytest backend/tests/test_*.py` | Every core phase |
-| **Virtual integration** | Two virtual buses, full pipeline | `pytest backend/tests/test_*_integration.py` | Every core phase |
+| **Unit** | Generated vectors, fake clock/queue | `pytest backend/tests/test_*.py` | Every software-track phase |
+| **Virtual integration** | Two virtual buses, full pipeline | `pytest backend/tests/test_*_integration.py` | Every software-track phase |
 | **API / WebSocket** | FastAPI TestClient + stream fixtures | `pytest backend/tests/test_api_*.py` etc. | Phase 1+ |
+| **Headless scripts** | Python httpx against running Pure Software backend | `scripts/` or tests | Phase 3+ |
 | **Playwright E2E** | React against virtual backend | `npx playwright test` | Phase 4+ |
-| **Hardware characterization** | CANalyst-II loopback / bench | `pytest -m hardware` | Phase 2+, opt-in |
-| **Soak / conformance wizard** | Full budgets + fingerprint suite | Backlog B3 | After core |
+| **Default CI** | All of the above **except** hardware | CI job without `-m hardware` | Continuous |
+| **Hardware characterization** | CANalyst loopback / real RT-SYS | `pytest -m hardware` | **Hardware track only**, opt-in |
+| **Soak / conformance wizard** | Full budgets + fingerprint suite | Backlog B3 | After hardware track basics |
 
-### Critical scenario coverage (core)
+### Critical scenario coverage
 
-| Scenario | Phase | Test type |
+| Scenario | Track / phase | Test type |
 |---|---|---|
-| Silent bus vs disconnected USB | 2 | Unit |
-| WebSocket loss during keyboard stimulus | 7 | Integration |
-| Source conflict on synthetic peer IDs | 5 | Integration |
-| Checksum/counter positive + negative | 0+5 | Unit (golden vectors) |
-| Queue/storage overload → Inconclusive | 6 | Integration |
-| Reconnect new epoch without resuming TX | 2+3 | Integration |
-| DLC=0 ESTOP event | 0+5 | Unit + Integration |
-| HMI mode/power transition (when firmware accepts CAN HMI) | 5 | Integration |
-| Stop All during active workflows | 3+5+7 | Integration |
+| Virtual inject → decode → state | Software 1+5 | Integration |
+| WebSocket loss during keyboard stimulus | Software 7 | Integration |
+| Source conflict on synthetic peer IDs | Software 5 | Integration |
+| Checksum/counter positive + negative | Software 0+5 | Unit |
+| Queue/storage overload → Inconclusive | Software 6 | Integration |
+| DLC=0 ESTOP event (virtual) | Software 0+5 | Unit + Integration |
+| HMI mode/power on virtual bus | Software 5 | Integration |
+| Stop All during active workflows | Software 3+5+7 | Integration |
+| Silent bus vs disconnected USB | **Hardware** Phase 2 | Unit / HW |
+| Reconnect new epoch without resuming TX | **Hardware** Phase 2 | Integration / HW |
+| Real RT 1–2 msg isolation (bypass firmware) | **Hardware** after Phase 2 | Manual + scripts |
 
 ---
 
-## Dependency graph (core only)
+## Dependency graph
 
 ```mermaid
 flowchart TD
-    P0[Phase 0: Protocol audit + vectors] --> P1[Phase 1: Backend + virtual transport]
-    P1 --> P2[Phase 2: CANalyst-II]
-    P2 --> P3[Phase 3: Profiles + sessions]
-    P3 --> P4[Phase 4: Read-only frontend]
-    P4 --> P5[Phase 5: Injection + synthetic peers]
-    P5 --> P6[Phase 6: Diagnostics + recording]
-    P6 --> P7[Phase 7: Keyboard + actuator stimuli]
-    P1 --> P9min[Phase 9 min: problem+json codes]
+    P0[Phase 0: Protocol audit] --> P1[Phase 1: Backend + virtual buses]
+    P1 --> P3[Phase 3: Sessions Pure Software]
+    P3 --> P4[Phase 4: Read-only UI virtual]
+    P4 --> P5[Phase 5: Inject + peers virtual]
+    P5 --> P6[Phase 6: Diagnostics virtual]
+    P6 --> P7[Phase 7: Keyboard/actuator virtual]
+    P1 --> P9min[Phase 9 min: problem+json]
     P6 --> P9min
+    P7 --> SWDONE[Software track exit gate]
+    P9min --> SWDONE
+    SWDONE --> P2[Phase 2: CANalyst hardware track]
+    P2 --> HWBENCH[Physical profiles + RT/SYS bench scripts]
 ```
 
-Backlog / Later / Future Work attach **after** P7 (or earlier as optional spikes) and never block the core gate sequence.
+**Order of work:** 0 → 1 → 3 → 4 → 5 → 6 → 7 (software). **Then** Phase 2 and physical bench. Backlog / Later attach after software exit (or after hardware as needed) and never block the software track.
+
+---
+
+## Hardware track — after software exit
+
+Complete when software track exit gate is green. Builds on Phase 2 content above.
+
+**Read first:** Architecture map **Phase 2 (hardware)** + **Hardware track H4–H5** — toolkit **L285–407**, **L656–683**, **L12–23**, **L56–70**; vehicle `architecture.md` §9 bench bypass; [`../docs/commissioning-test-profiles.md`](../docs/commissioning-test-profiles.md) for isolation sessions.
+
+| Step | Work |
+|---|---|
+| **H1** | Implement real `CanalystTransportAdapter` (Phase 2.1–2.5) |
+| **H2** | Enable Full Vehicle + Bench Test profiles for real adapter; still no silent virtual fallback |
+| **H3** | Opt-in `@pytest.mark.hardware` characterization (channel map Ch0=High/Ch1=Low, DLC=0, reconnect epoch) |
+| **H4** | Headless scripts: session + inject against physical RT (firmware mode 2 / bypass as needed; 1–2 msgs) |
+| **H5** | Optional UI against physical buses; Bench TX explicit only |
+
+Firmware run modes / isolation sessions remain RT/SYS ownership (`system_mode.h`, commissioning docs). Toolkit only provides profile, TX policy, inject, and observe.
 
 ---
 
 ## Architecture document cross-reference
 
-| Work plan | Architecture sections |
-|---|---|
-| Phase 0 | §18.2 Protocol, root `architecture.md` codec model, RT/SYS consumption pattern |
-| Phase 1 | §4 System architecture, §4.5 Concurrency, §5 Canonical data |
-| Phase 2 | §4.4 CANalyst-II, §8.4 Connection loss |
-| Phase 3 | §3 Profiles, §4.1 Session, §4.2 Scheduler |
-| Phase 4 | §6–10 Shell / Overview / Network / Live CAN / Dictionary |
-| Phase 5 | §11 Control, §13 Injection, §16 Boundaries |
-| Phase 6 | §14 Diagnostics, §15 Data rules |
-| Phase 7 | §11.2–11.4 Kinematics / actuator / keyboard |
-| Phase 9 min | §26 Error coding (subset) |
-| Backlog B1 | §24 Vehicle preview |
-| Backlog B2–B4 | §26 full, §18.1, §23.6–23.7, API §6 LLM |
-| Later L1–L5 | §23.1–23.5, §23.3, packaging |
-| Future Work | ECU simulation, full physics sim |
+Section titles alone are not enough for implementers. **Use the [Architecture reading map](#architecture-reading-map-exact-lines)** for exact line ranges in `architecture-control-toolkit.md` (and root `architecture.md` where noted). Summary:
+
+| Work plan | Lines (primary file) | Section anchors |
+|---|---|---|
+| Phase 0 | L1138–1199, L905–961; + `architecture.md` L9–100 | §18.2, §14.1.1 |
+| Phase 1 | L218–258, L409–516, L2019–2122, L1560–1759 | §4–5, logic §5–9, API |
+| Phase 3 | L206–216, L260–273, L1963–2000, L2467–2479 | §3, §4.1, logic §3, §28 |
+| Phase 4 | L537–738, L1000–1068, L2191–2215 | §6–10, §15, logic §12 |
+| Phase 5 | L794–886, L2230–2322, L2710–2758 | §11–13, logic §14–18, HMI |
+| Phase 6 | L888–998, L1366–1375, L2407–2465 | §14, §23.5, logic §25–27 |
+| Phase 7 | L809–833, L2324–2370 | §11.2–11.4, logic §19–22 |
+| Phase 9 min | L1545–1557, L1658–1682, L2680–2690 | §26, API §4, logic §46 |
+| Phase 2 hardware | L285–407, L656–683, L2124–2174 | §4.4, §8.4, logic §10 |
+| Backlog B1 | L1403–1521, L2587–2639 | §24, logic §40–42 |
+| Later / B3 | L1340–1401, L1112–1136, L2521–2581 | §23, §18.1, logic §32–38 |
 
 ---
 
 ## Backlog
 
-Pull these only when core Phases 0–7 are usable on the bench. Design text in the architecture doc remains valid reference — it is not a v1 build mandate.
+Pull these only when the **software track** is solid (prefer after software exit gate; hardware track optional depending on item). Design text in the architecture doc remains reference — not a v1 mandate.
+
+**Read first (when pulling an item):** map rows **Backlog B1**, **Backlog B3 / L***, or **API / scripts** as applicable.
 
 ### Backlog B1 — Vehicle visual preview
 
