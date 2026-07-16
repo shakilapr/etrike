@@ -93,65 +93,7 @@ class ControlIntentService:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            s = self._state
-            age = (time.monotonic() - s.last_mono) if s.last_mono else None
-            # Two completely different control methods (architecture §11.2 / §11.3).
-            if s.mode == "kinematics" or s.job_id:
-                method = "high_kinematics"
-                bus = "high"
-                method_label = "High bus · Host kinematics (HOST_DRIVE_CMD)"
-            elif s.mode == "direct" or s.direct_jobs:
-                method = "low_direct"
-                bus = "low"
-                method_label = "Low bus · Direct actuators (motor / steer / brake)"
-            else:
-                method = "none"
-                bus = None
-                method_label = "No active motion method"
-            return {
-                "active": s.active or bool(s.direct_jobs),
-                "mode": s.mode,
-                "method": method,
-                "bus": bus,
-                "method_label": method_label,
-                "source": s.source,
-                "sequence": s.sequence,
-                "throttle": s.throttle,
-                "steer": s.steer,
-                "gear": s.gear,
-                "gear_label": {0: "N", 1: "D", 2: "S", 3: "R"}.get(s.gear, "?"),
-                "hard_brake": s.hard_brake,
-                "estop": s.estop,
-                "shaped_speed_mmps": s.shaped_speed,
-                "shaped_yaw_mrad_s": s.shaped_yaw,
-                "command_age_s": age,
-                "stale_timeout_s": HOST_CMD_STALE_S,
-                "job_id": s.job_id,
-                "loss_reason": s.loss_reason,
-                "direct_channels": list(s.direct_jobs.keys()),
-                "direct_jobs": dict(s.direct_jobs),
-                "paths": {
-                    "high_kinematics": {
-                        "bus": "high",
-                        "message": "HOST_DRIVE_CMD",
-                        "can_id": 0x300,
-                        "owner_role": "Host intent; RT runs kinematics",
-                        "period_ms": HOST_DRIVE_PERIOD_MS,
-                        "stale_s": HOST_CMD_STALE_S,
-                    },
-                    "low_direct": {
-                        "bus": "low",
-                        "channels": {
-                            ch: {
-                                "key": spec["key"],
-                                "period_ms": spec["period_ms"],
-                            }
-                            for ch, spec in DIRECT_CHANNELS.items()
-                        },
-                        "owner_role": "Bypass RT kinematics; talk to actuators",
-                    },
-                },
-            }
+            return self._snap_unlocked()
 
     def apply_intent(
         self,
@@ -250,10 +192,12 @@ class ControlIntentService:
                     del self._state.direct_jobs[channel]
                 if not self._state.direct_jobs:
                     self._state.mode = "none"
+                    self._state.active = False
                 return self._snap_unlocked()
 
             vals = self._normalize_direct_values(channel, values or {})
             if existing and self._scheduler.update_values(existing, vals):
+                self._state.active = True
                 return self._snap_unlocked()
             if existing:
                 self._scheduler.cancel(existing)
@@ -270,6 +214,8 @@ class ControlIntentService:
             )
             self._state.direct_jobs[channel] = job_id
             self._state.mode = "direct"
+            self._state.active = True
+            self._state.source = "direct"
             return self._snap_unlocked()
 
     def release(self, reason: str = "client_release") -> dict[str, Any]:
@@ -392,19 +338,21 @@ class ControlIntentService:
             return {"motor_speed_mmps": speed, "gear": gear}
         if channel == "steering":
             # target_angle_raw: signed 0.1° units, clamp ±450 (45°)
+            # Safety bypass for toolkit direct path: control + alignment always ON.
             angle = int(values.get("target_angle_raw", values.get("angle_raw", 0)))
             angle = int(_clamp(angle, -450, 450))
             speed = int(values.get("target_speed_raw", 328))
             speed = int(_clamp(speed, 125, 525))
             return {
-                "alignment_enable": bool(values.get("alignment_enable", True)),
-                "control_enable": bool(values.get("control_enable", True)),
+                "alignment_enable": True,
+                "control_enable": True,
                 "target_angle_raw": angle,
                 "target_speed_raw": speed,
                 "rolling_counter": int(values.get("rolling_counter", 0)) & 0xF,
                 "vehicle_speed_raw": int(values.get("vehicle_speed_raw", 0)) & 0xFF,
             }
         if channel == "brake":
+            # Safety bypass for toolkit direct path: control + alignment always ON.
             pressure = int(values.get("pressure_request_raw", values.get("pressure", 0)))
             pressure = int(_clamp(pressure, 0, 100))
             stroke = int(values.get("stroke_request_raw", 600))
@@ -413,8 +361,8 @@ class ControlIntentService:
             if mode not in (0, 1):
                 mode = 1
             return {
-                "alignment_enable": bool(values.get("alignment_enable", True)),
-                "control_enable": bool(values.get("control_enable", True)),
+                "alignment_enable": True,
+                "control_enable": True,
                 "auto_brake": bool(values.get("auto_brake", False)),
                 "control_mode": mode,
                 "stroke_request_raw": stroke,
@@ -424,11 +372,27 @@ class ControlIntentService:
         return dict(values)
 
     def _snap_unlocked(self) -> dict[str, Any]:
+        """Full control snapshot; caller must hold ``self._lock``."""
         s = self._state
         age = (time.monotonic() - s.last_mono) if s.last_mono else None
+        if s.mode == "kinematics" or s.job_id:
+            method = "high_kinematics"
+            bus: str | None = "high"
+            method_label = "High bus · Host kinematics (HOST_DRIVE_CMD)"
+        elif s.mode == "direct" or s.direct_jobs:
+            method = "low_direct"
+            bus = "low"
+            method_label = "Low bus · Direct actuators (motor / steer / brake)"
+        else:
+            method = "none"
+            bus = None
+            method_label = "No active motion method"
         return {
-            "active": s.active,
+            "active": bool(s.active or s.direct_jobs),
             "mode": s.mode,
+            "method": method,
+            "bus": bus,
+            "method_label": method_label,
             "source": s.source,
             "sequence": s.sequence,
             "throttle": s.throttle,
@@ -445,6 +409,27 @@ class ControlIntentService:
             "loss_reason": s.loss_reason,
             "direct_channels": list(s.direct_jobs.keys()),
             "direct_jobs": dict(s.direct_jobs),
+            "paths": {
+                "high_kinematics": {
+                    "bus": "high",
+                    "message": "HOST_DRIVE_CMD",
+                    "can_id": 0x300,
+                    "owner_role": "Host intent; RT runs kinematics",
+                    "period_ms": HOST_DRIVE_PERIOD_MS,
+                    "stale_s": HOST_CMD_STALE_S,
+                },
+                "low_direct": {
+                    "bus": "low",
+                    "channels": {
+                        ch: {
+                            "key": spec["key"],
+                            "period_ms": spec["period_ms"],
+                        }
+                        for ch, spec in DIRECT_CHANNELS.items()
+                    },
+                    "owner_role": "Bypass RT kinematics; control_enable+alignment forced ON",
+                },
+            },
         }
 
 
