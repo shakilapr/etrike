@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Backend Pure Software path implemented under `backend/control_toolkit/` (virtual dual-bus, REST/WS, tests). Frontend not started.
+**Status:** Backend Pure Software path live (`sessions`, inject, synthetic peers, HMI, virtual dual-bus). Frontend read-only/control shell under `frontend/`. Physical CANalyst still deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -141,10 +141,10 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 | Protocol TypeScript catalog | ✅ Exist — audit for frontend presentation metadata in Phase 0/4 |
 | Protocol golden vectors | ⚠️ Present; coverage must be verified (Phase 0) |
 | RT / SYS firmware | ✅ Use generated + custom codecs; policy remains hand-written (pattern to follow) |
-| Python backend (FastAPI) | ✅ Pure Software skeleton — `backend/control_toolkit/` |
-| React frontend | ❌ Does not exist |
+| Python backend (FastAPI) | ✅ Pure Software — sessions, inject, peers, HMI, stream |
+| React frontend | ✅ Vite/React shell — Overview / Live CAN / Control |
 | Backend tests | ✅ pytest suite under `backend/tests/` (virtual only) |
-| Frontend tests | ❌ Do not exist |
+| Frontend tests | ⚠️ Production build verified; Playwright/Vitest not yet |
 | Debug-tool / control-ui | ✅ Predecessors with reusable characterization — not the target product |
 
 ### Key gaps (updated)

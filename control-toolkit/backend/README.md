@@ -22,15 +22,19 @@ pip install -e ".[dev]"
 
 ```bash
 uvicorn control_toolkit.main:app --host 127.0.0.1 --port 8000
-# → GET  http://127.0.0.1:8000/api/v1/status
-# → GET  http://127.0.0.1:8000/api/v1/state
-# → GET  http://127.0.0.1:8000/api/v1/protocol/messages
-# → WS   ws://127.0.0.1:8000/api/v1/stream
+# → GET  /api/v1/status | /state | /protocol/messages
+# → POST /api/v1/sessions | …/bench-tx | …/stop-all
+# → POST /api/v1/injections/preview | /injections
+# → POST /api/v1/synthetic-peers/start
+# → POST /api/v1/hmi/mode | /hmi/power
+# → WS   /api/v1/stream
 # → docs http://127.0.0.1:8000/docs
 ```
 
 Environment overrides: `CTK_HOST`, `CTK_PORT`, `CTK_PROFILE`
 (`pure_software` | `bench_test` | `full_vehicle`).
+
+Physical profiles return **503** until CANalyst is implemented (no silent virtual fallback).
 
 ## Test
 
@@ -42,12 +46,11 @@ pytest -v
 
 | Package | Responsibility |
 |---|---|
-| `control_toolkit/protocol_bridge.py` | Only seam to generated `protocol` package |
-| `control_toolkit/config.py` | Typed config (single-worker, profiles, service levels) |
-| `control_toolkit/main.py` | App factory + lifespan |
-| `control_toolkit/models/` | Immutable frames, state, adapter, session |
-| `control_toolkit/transport/` | `interface`, `virtual`; `canalyst` stub for later |
-| `control_toolkit/pipeline/` | decoder, router, validator, freshness |
-| `control_toolkit/state/` | latest, topology, history |
-| `control_toolkit/api/` | status, state, protocol, stream |
-| `control_toolkit/services/` | lifecycle, event_bus |
+| `protocol_bridge.py` | Seam to generated `protocol` package |
+| `config.py` / `main.py` | Config + app factory |
+| `models/` | Frames, state, adapter, session |
+| `transport/` | Virtual dual-bus; CANalyst stub |
+| `pipeline/` | Decode, validate, freshness, router |
+| `state/` | Latest store |
+| `services/` | Lifecycle, sessions, TX gate, scheduler, peers, ownership |
+| `api/` | REST + WebSocket |
