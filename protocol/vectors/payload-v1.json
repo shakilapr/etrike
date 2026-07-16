@@ -38,6 +38,13 @@
     {"id":"pwt-constant-mismatch","message":"pwt:pwt_dcdc_cmd","bus":"powertrain","frame_format":"extended","payload":"0100ffffffffff00","status":"constant_mismatch"},
     {"id":"ses-status-bad-checksum","message":"ses:ses_status","bus":"low","frame_format":"standard","payload":"410030751000a349","status":"checksum_mismatch"},
     {"id":"pwt-wrong-format","message":"pwt:pwt_dcdc_cmd","bus":"powertrain","frame_format":"standard","payload":"01ffffffffffff00","status":"wrong_frame_format"},
-    {"id":"host-drive-short","message":"host:host_drive_cmd","bus":"high","frame_format":"standard","payload":"000003e8","status":"unexpected_length"}
+    {"id":"host-drive-short","message":"host:host_drive_cmd","bus":"high","frame_format":"standard","payload":"000003e8","status":"unexpected_length"},
+    {"id":"host-drive-min-speed","message":"host:host_drive_cmd","bus":"high","frame_format":"standard","payload":"fffffe0c00000000","values":{"speed_mmps":-500,"yaw_rate_mrad_s":0,"gear":0},"status":"ok"},
+    {"id":"host-drive-max-yaw","message":"host:host_drive_cmd","bus":"high","frame_format":"standard","payload":"00000000000bb801","values":{"speed_mmps":0,"yaw_rate_mrad_s":3000,"gear":1},"status":"ok"},
+    {"id":"host-drive-min-yaw","message":"host:host_drive_cmd","bus":"high","frame_format":"standard","payload":"00000000fff44802","values":{"speed_mmps":0,"yaw_rate_mrad_s":-3000,"gear":2},"status":"ok"},
+    {"id":"safety-estop-low","message":"safety:safety_estop","bus":"low","frame_format":"standard","payload":"","values":{},"status":"ok"},
+    {"id":"rt-heartbeat-high","message":"rt:rt_heartbeat","bus":"high","frame_format":"standard","payload":"0a01","values":{"alive_ctr":10,"health_flags":1},"status":"ok"},
+    {"id":"hmi-mode-manual","message":"hmi:hmi_mode_req","bus":"high","frame_format":"standard","payload":"0000","values":{"req_mode":0,"rolling_counter":0},"status":"ok"},
+    {"id":"sys-diag-rx-overflow-max","message":"sys:sys_diag_rpt","bus":"low","frame_format":"standard","payload":"00007e0000000000","values":{"mode":0,"brake_engaged":0,"brake_fault":0,"heartbeat_ok":0,"rx_overflow":63,"estop_active":0,"free_heap_kb":0,"tec":0,"rec":0},"status":"ok"}
   ]
 }
