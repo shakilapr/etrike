@@ -140,6 +140,11 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await expect(page.getByTestId('transport-toggle')).toBeVisible()
     await expect(page.getByTestId('profile-list')).toContainText(/Computer|Virtual/i)
     await expect(page.getByTestId('profile-list')).toContainText(/CANalyst|Real|Bench Test|Full Vehicle/i)
+    // Live aggregate settings (not hardcoded-only transport)
+    await expect(page.getByTestId('settings-runtime-panel')).toBeVisible()
+    await expect(page.getByTestId('settings-protocol-panel')).toBeVisible()
+    await expect(page.getByTestId('settings-session-panel')).toBeVisible()
+    await expect(page.getByTestId('settings-runtime-kv')).toContainText(/ms|Hz|pure_software/i)
     await page.getByTestId('btn-start-pure').click()
     await expect(page.getByTestId('settings-log')).toContainText(/Session ses_|phase running|Computer|Active/i, {
       timeout: 10_000,
@@ -149,14 +154,24 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
   test('drive console arms CAN control and shows keycaps', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('nav-preview').click()
+    await expect(page.getByTestId('drive-status-chips')).toBeVisible()
+    await expect(page.getByTestId('drive-keycaps')).toBeVisible()
+    await expect(page.getByTestId('keycap-W')).toBeVisible()
     await page.getByTestId('btn-drive-arm').click()
     await expect(page.getByTestId('drive-log')).toContainText(/Armed|HOST_DRIVE|CAN/i, {
       timeout: 15_000,
     })
     await expect(page.getByTestId('btn-drive-disarm')).toBeVisible()
     await expect(page.getByTestId('drive-gauges')).toBeVisible()
+    await expect(page.getByTestId('drive-arm-chip')).toContainText(/Armed/i)
     await page.getByTestId('preview-mode-direct').click()
     await expect(page.getByTestId('preview-mode-blurb')).toContainText(/Direct/i)
+    // Hold W keycap → intent path (shaped telemetry or bus)
+    await page.getByTestId('keycap-W').dispatchEvent('pointerdown')
+    await expect(page.getByTestId('drive-shaped')).toContainText(/mm\/s|waiting/i, {
+      timeout: 5_000,
+    })
+    await page.getByTestId('keycap-W').dispatchEvent('pointerup')
   })
 
   test('drive arm + W key publishes HOST_DRIVE_CMD on Live CAN', async ({ page }) => {
