@@ -27,6 +27,15 @@ npm run dev
 
 ## Workspaces
 
-- **Overview** — status cards for key messages + freshness
+- **Overview** — analysis cards (yaw, speed, gear) + freshness
 - **Live CAN** — latest-by-message table
-- **Control** — enable Bench TX, synthetic peers, inject Host drive, Stop All
+- **Control** — enable Bench TX, inject host drive (yaw/speed) only — not a full synthetic vehicle
+
+Safety-bypass style: inject only the signals under study. Full multi-ECU peer mesh is not the default.
+
+## E2E tests
+
+```bash
+# starts backend :8010 + frontend :5174 automatically
+npm run test:e2e
+```

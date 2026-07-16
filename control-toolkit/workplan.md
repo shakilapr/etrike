@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Backend Pure Software path live (`sessions`, inject, synthetic peers, HMI, virtual dual-bus). Frontend read-only/control shell under `frontend/`. Physical CANalyst still deferred.
+**Status:** Pure Software analysis path live — sessions, targeted host-drive inject (yaw/speed), UI + Playwright e2e. Full synthetic peers not used. Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -144,7 +144,7 @@ Phase 0 is **audit, fill gaps that block the toolkit, and prove golden vectors**
 | Python backend (FastAPI) | ✅ Pure Software — sessions, inject, peers, HMI, stream |
 | React frontend | ✅ Vite/React shell — Overview / Live CAN / Control |
 | Backend tests | ✅ pytest suite under `backend/tests/` (virtual only) |
-| Frontend tests | ⚠️ Production build verified; Playwright/Vitest not yet |
+| Frontend tests | ✅ Playwright e2e (`frontend/e2e`) + production build |
 | Debug-tool / control-ui | ✅ Predecessors with reusable characterization — not the target product |
 
 ### Key gaps (updated)

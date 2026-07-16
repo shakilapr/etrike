@@ -36,17 +36,23 @@ def list_peers(request: Request) -> dict:
 
 @router.post("/start")
 def start_peers(request: Request, body: StartPeersBody | None = None) -> dict:
+    """Start named analysis stimuli only — never a full peer set by default."""
     request.app.state.lifecycle.sessions.require_bench_tx_enabled()
     names = body.names if body else None
-    if names:
-        known = {p.name for p in DEFAULT_PEERS}
-        unknown = [n for n in names if n not in known]
-        if unknown:
-            raise SessionError(
-                "synthetic.unknown",
-                f"unknown peers: {unknown}",
-                status=400,
-            )
+    if not names:
+        raise SessionError(
+            "synthetic.names_required",
+            "pass explicit stimulus names (no full-vehicle peer auto-start)",
+            status=400,
+        )
+    known = {p.name for p in DEFAULT_PEERS}
+    unknown = [n for n in names if n not in known]
+    if unknown:
+        raise SessionError(
+            "synthetic.unknown",
+            f"unknown stimuli: {unknown}",
+            status=400,
+        )
     started = request.app.state.lifecycle.synthetic.start(names)
     return {"started": started}
 

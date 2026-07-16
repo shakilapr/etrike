@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useAppStore } from './store'
 import { api } from './api'
 
@@ -13,7 +13,7 @@ export function useBackendStream() {
   const setMessages = useAppStore((s) => s.setMessages)
   const setStreamQuality = useAppStore((s) => s.setStreamQuality)
   const setProtocolMismatch = useAppStore((s) => s.setProtocolMismatch)
-  const status = useAppStore((s) => s.status)
+  const statusWireHash = useRef<string | null>(null)
 
   useEffect(() => {
     let closed = false
@@ -26,7 +26,9 @@ export function useBackendStream() {
     async function refreshStatus() {
       try {
         const st = await api.status()
-        if (!closed) setStatus(st)
+        if (closed) return
+        statusWireHash.current = st.wire_hash
+        setStatus(st)
       } catch {
         /* ignore */
       }
@@ -45,15 +47,20 @@ export function useBackendStream() {
         lastMsg = Date.now()
         setStreamQuality('live')
         try {
-          const msg = JSON.parse(ev.data as string)
-          if (msg.type === 'hello' && status?.wire_hash) {
-            setProtocolMismatch(msg.wire_hash !== status.wire_hash)
+          const msg = JSON.parse(ev.data as string) as {
+            type: string
+            wire_hash?: string
+            messages?: unknown[]
+            sequence?: number
+          }
+          if (msg.wire_hash && statusWireHash.current) {
+            setProtocolMismatch(msg.wire_hash !== statusWireHash.current)
+          }
+          if (msg.type === 'hello' && msg.wire_hash) {
+            if (!statusWireHash.current) statusWireHash.current = msg.wire_hash
           }
           if (msg.type === 'state' && Array.isArray(msg.messages)) {
-            setMessages(msg.messages, msg.sequence ?? 0)
-            if (msg.wire_hash && status?.wire_hash) {
-              setProtocolMismatch(msg.wire_hash !== status.wire_hash)
-            }
+            setMessages(msg.messages as never[], msg.sequence ?? 0)
           }
         } catch {
           /* ignore */
@@ -77,11 +84,16 @@ export function useBackendStream() {
       else if (age > 750) setStreamQuality('delayed')
     }, 250)
 
+    const statusPoll = window.setInterval(() => {
+      void refreshStatus()
+    }, 2000)
+
     return () => {
       closed = true
       if (timer) window.clearTimeout(timer)
       if (watch) window.clearInterval(watch)
+      window.clearInterval(statusPoll)
       ws?.close()
     }
-  }, [setMessages, setProtocolMismatch, setStatus, setStreamQuality, status?.wire_hash])
+  }, [setMessages, setProtocolMismatch, setStatus, setStreamQuality])
 }
