@@ -24,6 +24,7 @@ from control_toolkit.models.frames import RawFrameEnvelope
 from control_toolkit.models.state import FreshnessState, MessageState, SignalValue
 from control_toolkit.pipeline.decoder import decode_envelope
 from control_toolkit.pipeline.validator import validate_codec_status
+from control_toolkit.services.vendor_field_layouts import field_meta_map
 from control_toolkit.state.latest import LatestStore
 from control_toolkit.transport.interface import Transport
 
@@ -99,11 +100,12 @@ class Router:
 
         signals: dict[str, SignalValue] = {}
         if result.status == "ok" and result.signals:
-            fields = {
-                f["key"]: f
-                for f in proto.CATALOG[result.key]["layout"].get("fields", [])
-            }
+            layout = proto.CATALOG[result.key].get("layout") or {}
+            fields = field_meta_map(result.key, layout)
             for name, val in result.signals.items():
+                # Opaque codecs may return a single "raw" blob — skip for signals UI
+                if name == "raw" and isinstance(val, (bytes, bytearray)):
+                    continue
                 meta = fields.get(name, {})
                 enum = meta.get("enum") if isinstance(meta.get("enum"), dict) else None
                 raw: int | float | None = None
@@ -111,16 +113,62 @@ class Router:
                     raw = int(val)
                 elif isinstance(val, (int, float)) and not isinstance(val, bool):
                     raw = val
-                enum_label = enum.get(str(int(val) if isinstance(val, float) and val == int(val) else val)) if enum else None
+                enum_label = (
+                    enum.get(
+                        str(
+                            int(val)
+                            if isinstance(val, float) and val == int(val)
+                            else val
+                        )
+                    )
+                    if enum
+                    else None
+                )
                 if enum and enum_label is None and isinstance(val, (int, float)):
                     enum_label = enum.get(str(int(val)))
+                eng = _coerce_value(val)
+                # Apply catalog scale/offset when codec only returns raw integers
+                factor = meta.get("factor")
+                offset = meta.get("offset")
+                if (
+                    isinstance(raw, (int, float))
+                    and not isinstance(val, bool)
+                    and (factor is not None or offset is not None)
+                    and meta.get("unit") not in (None, "", "raw")
+                ):
+                    f = float(factor if factor is not None else 1)
+                    o = float(offset if offset is not None else 0)
+                    eng = raw * f + o
+                unit = meta.get("unit")
+                if unit == "raw":
+                    unit = None
                 signals[name] = SignalValue(
                     raw_value=raw,
-                    engineering_value=_coerce_value(val),
-                    unit=meta.get("unit"),
+                    engineering_value=eng,
+                    unit=unit,
                     enum_label=enum_label,
                     valid=True,
                 )
+            # Convenience aliases for UI meters (same scale as can-dictionary)
+            if result.name == "SES_STATUS":
+                ang = signals.get("steering_angle_raw")
+                if ang is not None and isinstance(ang.raw_value, (int, float)):
+                    deg = float(ang.raw_value) * 0.1 - 3000.0
+                    signals["angle_deg"] = SignalValue(
+                        raw_value=ang.raw_value,
+                        engineering_value=deg,
+                        unit="deg",
+                        valid=True,
+                    )
+                tq = signals.get("steering_torque_raw")
+                if tq is not None and isinstance(tq.raw_value, (int, float)):
+                    nm = float(tq.raw_value) * 0.1 - 12.1
+                    signals["torque_nm"] = SignalValue(
+                        raw_value=tq.raw_value,
+                        engineering_value=nm,
+                        unit="Nm",
+                        valid=True,
+                    )
 
         validation = validate_codec_status(result.status)
         freshness = (

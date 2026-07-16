@@ -38,6 +38,7 @@ export type DictField = {
   min?: number | null
   max?: number | null
   options?: Array<{ value: number | string; label: string }> | null
+  comment?: string
   _byte: number
   _bit_offset: number
   _size: number
@@ -349,6 +350,169 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     dataType: 'Signed 16-bit loop quantity.',
     examples: ['0 ≈ no effort', 'large magnitude = strong correction'],
   },
+  // ── SES / SEB vendor (opaque codec keys) ──────────────────────────
+  angle_aligned: {
+    meaning: 'EPS-C center-finding complete (1 = aligned / found).',
+    why: 'RT boot steers only after alignment; missing 0x201 aligned → FAULT path.',
+    dataType: 'Flag bit (0/1).',
+    examples: ['0 = still finding center', '1 = aligned — safe to command angle'],
+  },
+  control_mode: {
+    meaning: 'Vendor control-mode feedback or request (SES/SEB).',
+    why: 'Distinguishes manual vs automatic steer, or stroke vs pressure brake.',
+    dataType: 'Small unsigned enum field.',
+    examples: ['SES: 0=Manual 1=Automatic', 'SEB: 0=Stroke 1=Pressure'],
+  },
+  error_status: {
+    meaning: 'Aggregated vendor fault level on status frames.',
+    why: 'L3 severe on SES/SEB escalates to ESTOP / freeze motion.',
+    dataType: '2-bit enum (0…3).',
+    examples: ['0 = Normal', '1 = L1 warning', '2 = L2 general', '3 = L3 severe'],
+  },
+  steering_angle_raw: {
+    meaning: 'EPS-C measured steer angle in vendor raw units (SES_STATUS 0x201).',
+    why: 'Primary feedback for RT following-error and Host steering display.',
+    dataType: 'Unsigned 16-bit raw; ° = raw×0.1 − 3000 (0° ≈ raw 30000).',
+    examples: ['30000 ≈ 0° straight', '23000 ≈ −700° full left', '37000 ≈ +700° full right'],
+  },
+  target_angle_speed_raw: {
+    meaning: 'Steering angle-speed feedback from EPS-C.',
+    why: 'Shows how fast the rack is moving toward the target.',
+    dataType: 'Signed 16-bit raw (overlaps torque on B5); scale 0.5 °/s.',
+    examples: ['0 = not slewing', 'positive/negative = direction of motion'],
+  },
+  steering_torque_raw: {
+    meaning: 'Steering-wheel torque feedback (muxed on B5 with speed high byte).',
+    why: 'Hands-on detection / assist diagnostics.',
+    dataType: 'Unsigned 8-bit raw; Nm = raw×0.1 − 12.1 (0 Nm ≈ raw 121).',
+    examples: ['121 ≈ 0 Nm', '0 ≈ −12.1 Nm', '241 ≈ +12.0 Nm'],
+  },
+  rolling_counter_enabled: {
+    meaning: 'Vendor life-signal enable feedback (1 = counter path valid).',
+    why: 'EPS/SEB may reject frames when enable is 0.',
+    dataType: 'Flag bit.',
+    examples: ['1 = life signal on', '0 = life signal disabled / invalid'],
+  },
+  checksum_enabled: {
+    meaning: 'Vendor checksum-enable feedback (1 = checksum path valid).',
+    why: 'Mirrors whether the unit is enforcing XOR checksum.',
+    dataType: 'Flag bit.',
+    examples: ['1 = checksum enforced', '0 = checksum path off'],
+  },
+  alignment_enable: {
+    meaning: 'Command: request vendor alignment / centering.',
+    why: 'Starts SES/SEB calibration so angle/stroke zero is trusted.',
+    dataType: 'Flag bit on command frame.',
+    examples: ['0 = no alignment request', '1 = run alignment'],
+  },
+  control_enable: {
+    meaning: 'Command: enable active vendor control (angle or brake).',
+    why: 'Without enable, unit stays in default assist / inactive path.',
+    dataType: 'Flag bit — must be 1 for active control.',
+    examples: ['0 = disabled', '1 = control enabled'],
+  },
+  target_angle_raw: {
+    meaning: 'Commanded SES target angle (vendor raw i16).',
+    why: 'RT / Control Low bus writes this on VCU_SES_REQ 0x169.',
+    dataType: 'Signed 16-bit little-endian raw at B2–B3.',
+    examples: ['0 ≈ center in internal RT mapping', 'sign = left/right'],
+  },
+  target_speed_raw: {
+    meaning: 'Commanded SES slew rate (deg/s band).',
+    why: 'Limits how fast the EPS racks toward the target angle.',
+    dataType: 'Unsigned; valid band typically 125…525 °/s (muxed with B5 enables).',
+    examples: ['200 = moderate slew', 'below 125 may be rejected by unit'],
+  },
+  vehicle_speed_raw: {
+    meaning: 'Vehicle speed byte RT populates for EPS assist.',
+    why: 'EPS uses road speed for assist / safety tables.',
+    dataType: 'Unsigned 8-bit km/h (vendor).',
+    examples: ['0 = stopped', 'higher = assist tables change'],
+  },
+  alignment_status: {
+    meaning: 'SEB alignment feedback (1 = aligned).',
+    why: 'Brake path only trusted after alignment.',
+    dataType: 'Flag bit.',
+    examples: ['0 = not aligned', '1 = aligned'],
+  },
+  control_enabled: {
+    meaning: 'SEB reports whether control enable is active.',
+    why: 'Confirms the command enable bit was accepted.',
+    dataType: 'Flag bit.',
+    examples: ['0 = control off', '1 = control on'],
+  },
+  auto_brake: {
+    meaning: 'Command: auto-brake / emergency brake request bit.',
+    why: 'Triggers SEB emergency apply path independent of stroke creep.',
+    dataType: 'Flag bit on VCU_SEB_REQ.',
+    examples: ['0 = normal', '1 = auto-brake request'],
+  },
+  auto_brake_status: {
+    meaning: 'SEB auto-brake status feedback.',
+    why: 'Confirms emergency/auto path state.',
+    dataType: 'Flag bit.',
+    examples: ['0 = not in auto-brake', '1 = auto-brake active'],
+  },
+  stroke_request_raw: {
+    meaning: 'Brake stroke position request (raw).',
+    why: 'Mode 0 path for pushrod position commands (ESTOP full brake etc.).',
+    dataType: 'Unsigned 16-bit raw @ B2–B3 (muxed with pressure on B3).',
+    examples: ['600 ≈ released (typical)', 'higher raw → more stroke'],
+  },
+  pressure_request_raw: {
+    meaning: 'Brake pressure request (raw) in pressure mode.',
+    why: 'Mode 1 SEB PID holds hydraulic pressure.',
+    dataType: 'Unsigned 8-bit raw on B3 when mode=Pressure.',
+    examples: ['0 = no pressure', 'up to vendor max (~100 raw)'],
+  },
+  stroke_value_raw: {
+    meaning: 'Measured SEB stroke feedback (raw).',
+    why: 'Closed-loop observation of brake actuator position.',
+    dataType: 'Unsigned 16-bit raw (muxed with pressure).',
+    examples: ['Tracks stroke request when healthy'],
+  },
+  pressure_value_raw: {
+    meaning: 'Measured SEB pressure feedback (raw).',
+    why: 'Closed-loop observation of hydraulic pressure.',
+    dataType: 'Unsigned 8-bit raw on B3 (mode-dependent).',
+    examples: ['0 = released', 'rising with apply'],
+  },
+  angle_value_raw: {
+    meaning: 'SEB angle feedback raw (vendor).',
+    why: 'Secondary SEB mechanical angle channel.',
+    dataType: 'Signed 16-bit @ B5–B6 (overlaps security bits).',
+    examples: ['See SEB vendor map for scale 0.5'],
+  },
+  motor_current_raw: {
+    meaning: 'Vendor motor current telemetry (SES_TEST / SEB_TEST).',
+    why: 'Detect binding / stall via elevated current.',
+    dataType: 'Signed 16-bit raw at B1–B2.',
+    examples: ['0 ≈ no load', 'large magnitude = high effort'],
+  },
+  ecu_temperature_raw: {
+    meaning: 'Vendor ECU temperature telemetry.',
+    why: 'Thermal protection / derate decisions.',
+    dataType: 'Unsigned 16-bit raw at B3–B4.',
+    examples: ['Rising value = warmer ECU'],
+  },
+  supply_voltage_raw: {
+    meaning: 'Vendor supply voltage telemetry.',
+    why: 'Under/over voltage diagnostics.',
+    dataType: 'Unsigned 16-bit raw at B5–B6.',
+    examples: ['Nominal band depends on 12 V system scale'],
+  },
+  software_raw: {
+    meaning: 'Vendor software version byte.',
+    why: 'Boot compatibility logging.',
+    dataType: 'Unsigned 8-bit raw @ B0.',
+    examples: ['Log on connect; compare to expected SW'],
+  },
+  hardware_raw: {
+    meaning: 'Vendor hardware version byte.',
+    why: 'Boot compatibility logging.',
+    dataType: 'Unsigned 8-bit raw @ B1.',
+    examples: ['Log on connect; compare to expected HW'],
+  },
 }
 
 function dataTypeLabel(signal: DictField): string {
@@ -374,6 +538,7 @@ function dataTypeLabel(signal: DictField): string {
 
 function meaningFor(signal: DictField): string {
   if (SIGNAL_DOCS[signal.key]?.meaning) return SIGNAL_DOCS[signal.key].meaning
+  if (signal.comment?.trim()) return signal.comment.trim()
   if (signal.kind === 'boolean' || signal._size === 1) {
     return `${titleFor(signal)}: single flag bit (0 = off/false, 1 = on/true).`
   }
@@ -399,6 +564,9 @@ function whyFor(signal: DictField): string {
   }
   if (/checksum|crc/i.test(signal.key)) {
     return 'Protects the frame against bit errors on the wire.'
+  }
+  if (signal.comment?.trim()) {
+    return 'Documented on the vendor codec map for this message.'
   }
   return 'Carries engineering intent or feedback between ECUs on this message.'
 }
@@ -780,7 +948,7 @@ function SignalTable({
   if (fields.length === 0) {
     return (
       <div className="signal-empty" data-testid="dict-signal-table">
-        No payload signals (opaque / event layout).
+        No payload signals defined (event-only or unresolved opaque layout).
       </div>
     )
   }

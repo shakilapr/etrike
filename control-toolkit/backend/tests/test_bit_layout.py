@@ -37,3 +37,16 @@ def test_protocol_layout_endpoint(client):
     assert len(body["bit_grid"]["fields"]) >= 3
     detail = client.get("/api/v1/protocol/messages/high/0x300")
     assert "bit_grid" in detail.json()
+
+
+def test_ses_status_bit_grid_from_vendor_map():
+    msg = proto.CATALOG["ses:ses_status"]
+    assert not (msg.get("layout") or {}).get("fields"), "catalog should stay opaque"
+    grid = build_bit_grid(msg, catalog_key="ses:ses_status")
+    keys = {f["key"] for f in grid["fields"]}
+    assert "steering_angle_raw" in keys
+    assert "angle_aligned" in keys
+    # angle u16 owns B2 and B3
+    for by in (2, 3):
+        owners = {cell["field"] for cell in grid["rows"][by]["bits"]}
+        assert "steering_angle_raw" in owners
