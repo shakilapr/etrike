@@ -692,10 +692,15 @@ export function VehiclePreview() {
           </div>
 
           <h2 className="mt-section">Shift mode</h2>
-          <div className="seg">
+          <p className="muted small" style={{ marginBottom: 8 }}>
+            Same two modes as the kinematics HTML: Adaptive auto-selects N/D/S/R from pedals;
+            Direct uses the selected gear only (manual Q/E or buttons).
+          </p>
+          <div className="seg" data-testid="preview-shift-mode">
             <button
               type="button"
               className={shiftMode === 'smart' ? 'seg-btn active' : 'seg-btn'}
+              data-testid="preview-mode-adaptive"
               disabled={driveSource === 'can'}
               onClick={() => setShiftMode('smart')}
             >
@@ -704,11 +709,25 @@ export function VehiclePreview() {
             <button
               type="button"
               className={shiftMode === 'direct' ? 'seg-btn active' : 'seg-btn'}
+              data-testid="preview-mode-direct"
               disabled={driveSource === 'can'}
               onClick={() => setShiftMode('direct')}
             >
               Direct
             </button>
+          </div>
+          <div className="preview-mode-blurb muted small" data-testid="preview-mode-blurb">
+            {shiftMode === 'smart' ? (
+              <>
+                <strong>Adaptive:</strong> W at standstill → D (then S above half max speed). S at
+                standstill → R. Opposite pedal brakes. Space → N + hard brake. Q/E override gear.
+              </>
+            ) : (
+              <>
+                <strong>Direct:</strong> Gear is only what you set (buttons or Q/E). W = accelerator
+                in that gear (in R, W drives reverse). S = brake pedal. Space → N + hard brake.
+              </>
+            )}
           </div>
 
           <label className="field mt-section">
@@ -752,23 +771,29 @@ export function VehiclePreview() {
           </label>
 
           <h2 className="mt-section">Controls</h2>
-          <ul className="controls-legend muted small">
+          <ul className="controls-legend muted small" data-testid="preview-controls-legend">
             {shiftMode === 'smart' ? (
               <>
                 <li>
-                  <kbd>W</kbd>/<kbd>↑</kbd> Gas (auto D/S)
+                  <kbd>W</kbd>/<kbd>↑</kbd> Gas (auto D / S)
                 </li>
                 <li>
-                  <kbd>S</kbd>/<kbd>↓</kbd> Brake (auto R)
+                  <kbd>S</kbd>/<kbd>↓</kbd> Brake (auto R when stopped)
+                </li>
+                <li>
+                  <kbd>Q</kbd>/<kbd>E</kbd> Manual gear override
                 </li>
               </>
             ) : (
               <>
                 <li>
-                  <kbd>W</kbd>/<kbd>↑</kbd> Accelerator
+                  <kbd>W</kbd>/<kbd>↑</kbd> Accelerator pedal
                 </li>
                 <li>
                   <kbd>S</kbd>/<kbd>↓</kbd> Brake pedal
+                </li>
+                <li>
+                  <kbd>Q</kbd>/<kbd>E</kbd> Shift gears N → D → S → R
                 </li>
               </>
             )}
@@ -776,10 +801,7 @@ export function VehiclePreview() {
               <kbd>A</kbd>/<kbd>D</kbd> or arrows · steer
             </li>
             <li>
-              <kbd>Space</kbd> E-stop (auto N)
-            </li>
-            <li>
-              <kbd>Q</kbd>/<kbd>E</kbd> gear N→D→S→R
+              <kbd>Space</kbd> E-stop (forces N)
             </li>
           </ul>
 
