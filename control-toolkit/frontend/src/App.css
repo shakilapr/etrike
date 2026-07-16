@@ -2516,6 +2516,63 @@ button.bit-cell.filled:active:not(:disabled) {
   padding: 12px 14px;
 }
 
+/* Reserved height so hover never reflows the card */
+.bit-inspector-fixed {
+  min-height: 96px;
+  height: 96px;
+  max-height: 96px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.bit-inspector-fixed .bit-inspector-body {
+  height: 100%;
+  overflow: hidden;
+}
+
+.bit-inspector-cell {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  align-self: center;
+}
+
+.dict-sig-expand td {
+  padding: 0 10px 12px !important;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.dict-sig-expand-body {
+  border: 1px solid color-mix(in srgb, var(--bit-color, var(--primary)) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bit-color, var(--primary)) 8%, #fff);
+  box-shadow: inset 3px 0 0 var(--bit-color, var(--primary));
+  padding: 12px 14px;
+  margin-top: 2px;
+}
+
+.dict-sig-expand-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.dict-sig-expand-head strong {
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.signal-table tr.row-open {
+  background: var(--primary-soft);
+}
+
+.signal-table tbody tr {
+  cursor: pointer;
+}
+
 .bit-inspector[data-active='1'] {
   background: color-mix(in srgb, var(--bit-color, var(--primary)) 10%, #fff);
   border-color: color-mix(in srgb, var(--bit-color, var(--primary)) 45%, var(--border));
@@ -2900,6 +2957,34 @@ button.transport-btn:disabled {
 .ok-text {
   color: var(--success);
   font-weight: 650;
+}
+
+/* Settings: multi-section layout driven by GET /settings */
+.settings-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.settings-channel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.settings-channel-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface-subtle);
+}
+
+@media (max-width: 900px) {
+  .settings-grid-2,
+  .settings-channel-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .chip.tiny {

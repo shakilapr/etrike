@@ -52,6 +52,68 @@ export type PhysicalAdapterInfo = {
   bitrate?: number
 }
 
+export type SettingsSnapshot = {
+  service: {
+    title: string
+    version: string
+    ready: boolean
+    api_prefix: string
+    host: string
+    port: number
+    workers: number
+  }
+  transport: {
+    modes: TransportModeInfo[]
+    profiles: ProfileInfo[]
+    physical_adapter: PhysicalAdapterInfo
+    channel_map: Record<
+      string,
+      { logical: string; physical: string; bitrate: number; role: string }
+    >
+    active: {
+      profile?: string | null
+      destination?: string | null
+      mode?: 'computer' | 'real' | string
+    }
+  }
+  session: Record<string, unknown>
+  adapter: {
+    identity?: string
+    health?: string
+    adapter_epoch?: number
+    capability?: Record<string, unknown>
+    channels?: Record<string, unknown>
+    [key: string]: unknown
+  }
+  protocol: {
+    wire_hash: string
+    semantic_hash: string
+    network_hash: string
+    catalog: { messages: number; instances: number }
+  }
+  runtime: {
+    default_profile: string
+    stream_heartbeat_ms: number
+    latest_state_batch_hz: number
+    browser_degraded_ms: number
+    browser_lost_ms: number
+    rx_queue_maxsize: number
+    history_capacity: number
+    host?: string
+    port?: number
+    env_prefix?: string
+    notes?: string
+  }
+  history: Record<string, number | unknown>
+  control: Record<string, unknown>
+  synthetic_peers: Array<Record<string, string> | string>
+  diagnostics: {
+    episode_count: number
+    episodes: Array<Record<string, unknown>>
+  }
+  recording: { active: Record<string, unknown> | null }
+}
+
 export type VehicleViewBody = {
   requested_mode?: string | null
   confirmed_mode?: string | null
@@ -174,6 +236,8 @@ export const api = {
       transport_modes?: TransportModeInfo[]
       physical_adapter?: PhysicalAdapterInfo
     }>('/sessions/profiles'),
+  /** Aggregated live settings: transport, session, adapter, protocol, runtime, … */
+  settings: () => json<SettingsSnapshot>('/settings'),
   session: () =>
     json<{ session: import('./store').SessionState }>('/sessions'),
   createSession: (profile = 'pure_software') =>
