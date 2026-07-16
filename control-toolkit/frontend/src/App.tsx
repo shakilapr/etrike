@@ -82,6 +82,9 @@ function Topbar() {
   return (
     <header className="topbar" data-testid="topbar">
       <div className="brand">Control Toolkit</div>
+      <span className="chip" style={{ borderRadius: 999 }}>
+        CAN bench
+      </span>
 
       <div className="chip" data-testid="chip-profile" title="Active operating profile">
         <span className="chip-k">Profile</span>
