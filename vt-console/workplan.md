@@ -1,6 +1,7 @@
 # Vehicle Test Console (VTC) — Work Plan
 
-**Source:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md)
+**Source of truth:** `protocol/contracts/*.yaml` (message IDs, names, buses, DLC, cycles, byte order, codec strategy). RT/SYS firmware compiles against `can::gen::*` generated from these YAML files, so the YAML — not any prose doc — is authoritative.
+**Design reference:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md) — authoritative for tool behavior/UX only. **Where its §12.2/§22 bench tables disagree with the YAML (e.g. synthetic-peer periods), the YAML wins.**
 **Status:** Design-only — no implementation code exists yet
 **Last updated:** 2026-07-15
 
@@ -56,6 +57,40 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 ---
 
+## RT/SYS Bench Compatibility Contract
+
+The VTC is only useful if a physically-present RT or SYS controller behaves on the bench exactly as it would in the full vehicle. That requires the VTC's synthetic peers to keep every DUT RX watchdog fed. These constants are read directly from firmware (`rt-esp32/src/`, `sys-esp32/src/`, `shared/shared_config.h`) — treat them as the acceptance criteria for Phase 5.4 and the Phase 2/10 hardware tests.
+
+### RT device-under-test — watchdogs the VTC must satisfy
+
+| RT watchdog | Constant | Timeout | Synthetic frame required | Failure if unfed |
+|---|---|---|---|---|
+| Host drive-cmd staleness | `kHostCmdStaleTimeoutMs` | 500 ms | `0x300 HOST_DRIVE_CMD` @ 10 ms | drive command treated stale |
+| Host heartbeat | `kHeartbeatTimeoutMsHost` | 1500 ms | `0x7FC HOST_HEARTBEAT` @ 500 ms | assisted stop (brake 2000 kPa) |
+| SYS heartbeat | `kHeartbeatTimeoutMsSys` (2× `SysHeartbeat.cycle`) | 200 ms | `0x7FE SYS_HEARTBEAT` @ 100 ms | zero setpoints + RT brake takeover via `0x7B9` |
+| Steering following-error | `kSteerFollowingErrMs` vs `0x201` angle | — | `0x201 SES_STATUS` @ 10 ms, **angle 0 + aligned** | ESTOP (`kEstopReasonFollowingError`) |
+| Mode source | `0x110 SYS_MODE_CMD` consumed by RX router | — | `0x110 SYS_MODE_CMD` | RT cannot leave ESTOP / enter AUTO |
+
+### SYS device-under-test — watchdogs the VTC must satisfy
+
+| SYS watchdog | Constant | Timeout | Synthetic frame required | Notes |
+|---|---|---|---|---|
+| RT heartbeat | `kHeartbeatTimeoutMsRt` (2× `RtHeartbeat.cycle`) | 1000 ms | `0x7FD RT_HEARTBEAT` @ 500 ms, both buses | SYS validates advancing alive counter |
+| RT setpoint staleness | `kSetpointStaleMs` (20× `RtDriveCmd.cycle`) | 200 ms | `0x204 RT_DRIVE_CMD` @ 10 ms | speed 0, gear N |
+| SEB status staleness | `kSebStatusTimeoutMs` | 100 ms | `0x721 SEB_STATUS` @ 10 ms | — |
+| SEB rolling counter | `kSebRollingTimeoutMs` | 100 ms | `0x721` rolling counter | must **advance** within 100 ms (per-frame regen) |
+| MTR feedback staleness | `kMtrFbkStaleMs` | 200 ms | `0x206 MTR_MOTOR_FBK` @ 20 ms | — |
+| MTR ESTOP-ack | `kMtrEstopAckTimeoutMs` | 100 ms | `0x206` ESTOP-active bit | on ESTOP tests |
+
+### Compatibility invariants (enforced across phases)
+
+1. **Custom vendor codecs** — SES (`0x169/0x201/0x202/0x203/0x6FA`) and SEB (`0x7B9/0x721/0x731/0x741/0x6FB`) are little-endian, XOR8-complement, overlapping-bit vendor layouts. The VTC must use the versioned `protocol/codecs/` custom implementations (`ses-*-v1`, `seb-*-v1`), **never** a generated codec or `cantools`, or RT/SYS will reject the checksum.
+2. **RT `0x7FD` is never bridged** — High and Low heartbeats carry independent counters (`semantics: independent`). Synthetic RT heartbeat, freshness, counter validation, and diagnostics must key on `(bus, id)` and never deduplicate the two.
+3. **Forwarded frames are logically one ECU event** — RT transparently forwards `0x206`, `0x600`, `0x011`, `0x120`, `0x001` Low→High (`same_frame`). Diagnostics dedupe on canonical `origin_bus`; transport counters stay per physical bus.
+4. **Neutral start values** — every synthetic peer boots to the safe/neutral value in the tables above (speed 0, angle 0 aligned, no ESTOP, no fault) so activating a bench profile never induces a DUT fault.
+
+---
+
 ## Phase 0 — Protocol Foundation
 
 **Goal:** Ensure the YAML contracts, Python compiler, generated runtime codecs, golden vectors, and semantic hashes are complete and deterministic enough for the VTC backend.
@@ -64,8 +99,15 @@ Each phase delivers working, tested code. Hardware tests remain opt-in and run o
 
 ### 0.1 Audit and complete YAML contracts
 
-- [ ] Verify all messages from `architecture-vtc.md` §6 / §22 exist in YAML:
-  - `0x001 SAFETY_ESTOP`, `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x201 SES_STATUS`, `0x206 MTR_MOTOR_FBK`, `0x300 HOST_DRIVE_CMD`, `0x310/0x311 RT_DIAG`, `0x600 SYS_DIAG_RPT`, `0x7FC HOST_HEARTBEAT`, `0x7FD RT_HEARTBEAT`, `0x7FE SYS_HEARTBEAT`, `0x721 SEB_STATUS`, `0x7B9 VCU_SEB_REQ`, `VCU_SES_REQ`
+- [ ] Verify every message the RT and SYS controllers produce or consume exists in `protocol/contracts/` YAML. **The YAML contracts are the canonical source of truth** — RT/SYS firmware compiles against `can::gen::*` generated from them, so message name, ID, bus, DLC, and cycle must match the contracts exactly (not the older debug-tool names):
+  - **safety** (`network.yaml`): `0x001 SAFETY_ESTOP` (DLC=0, High+Low, `same_frame`)
+  - **hmi** (`hmi.yaml`): `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ` (High+Low, 1000 ms, `rolling_counter` byte 1)
+  - **host** (`host.yaml`): `0x300 HOST_DRIVE_CMD` (High, **10 ms**), `0x301 HOST_BRAKE_REQ`, `0x302 HOST_LIGHT_CMD`, `0x400 HOST_OBSTACLE_DIST`, `0x7FC HOST_HEARTBEAT` (High, 500 ms)
+  - **rt** (`rt.yaml`): `0x204 RT_DRIVE_CMD` (Low, 10 ms), `0x205 RT_BRAKE_CMD` (Low, 20 ms), `0x210 RT_STATE_RPT` (High+Low, 100 ms), `0x220 RT_PID_RPT` (reserved), `0x310 STEER_DIAG`, `0x311 BRAKE_DIAG` (High, 100 ms — **canonical names are `STEER_DIAG`/`BRAKE_DIAG`, not `RT_DIAG`**), `0x7FD RT_HEARTBEAT` (High+Low, 500 ms, **independent** per-bus counters)
+  - **sys** (`sys.yaml`): `0x011 SYS_SAFETY_STS` (Low+High, 200 ms), `0x110 SYS_MODE_CMD` (Low, event/`cycle_ms:0`), `0x600 SYS_DIAG_RPT` (Low+High, 1000 ms; `rx_overflow` byte 2 bits 1–6 already present), `0x7FE SYS_HEARTBEAT` (**Low only**, 100 ms)
+  - **mtr** (`mtr.yaml`): `0x120 SYS_THROTTLE_STS` (Low+High, 10 ms), `0x206 MTR_MOTOR_FBK` (Low+High, **20 ms**)
+  - **ses** (`ses.yaml`, custom vendor codec, little-endian, XOR8-complement): `0x169 VCU_SES_REQ` (RT→EPS_C, 20 ms), `0x201 SES_STATUS` (EPS_C→RT, **10 ms**), `0x202 SES_ERR_INFO`, `0x203 SES_VERSION` (raw-only), `0x6FA SES_TEST`
+  - **seb** (`seb.yaml`, custom vendor codec, little-endian, XOR8-complement): `0x7B9 VCU_SEB_REQ` (SYS→SEB, 20 ms), `0x721 SEB_STATUS` (SEB→SYS/RT, **10 ms**), `0x731 SEB_ERR_INFO`, `0x741 SEB_VERSION`, `0x6FB SEB_TEST`
 - [ ] Add missing fields per `architecture-vtc.md` §14.1.1:
   - SYS `rx_overflow` in `SYS_DIAG_RPT` byte 2 bits 1–6, saturating semantics
   - MTR `STARTUP_READY` vs fault-bit separation
@@ -131,12 +173,17 @@ python protocol/tools/protocol.py generate typescript --check
 python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; print(SEMANTIC_HASH)"
 ```
 
-**Exit gate:**
-- [ ] All YAML messages from architecture §22 exist and parse
-- [ ] Python codec round-trips all golden vectors
-- [ ] TypeScript metadata generates without errors
-- [ ] CI drift check passes
-- [ ] Semantic hashes match between Python and TypeScript
+**Exit gate:** *(verified 2026-07-15 with `py -m protocol.tools.protocol …` and `py -m unittest discover -s protocol/tests/python`)*
+- [x] All YAML messages exist and parse — `validate`: **32 messages, 42 instances**; all RT/SYS/MTR/SES/SEB messages resolve at the corrected §0.1 IDs/cycles
+- [x] Python codec round-trips all golden vectors — `test_all_payload_vectors` + `test_every_message_has_an_independent_success_vector` **pass**; `payload-v1.json` covers **32/32 messages** (36 rows incl. edge cases)
+- [x] TypeScript metadata generates without errors — `etrike-protocol.ts` present and current
+- [x] CI drift check passes — `generate --check`: *generated output is current*
+- [x] Semantic hashes match between Python and TypeScript — both `WIRE_HASH = d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a`
+
+**Environment gaps to close (not contract defects):**
+- [ ] **Host C++17 compiler** — `test_cpp_generated.py` (2 tests) fails locally: the `g++` on PATH is MinGW.org GCC 6.3.0 (no `<string_view>`). CI's Ubuntu runner passes these. Install a modern g++ (≥7, e.g. MSYS2 `mingw-w64-x86_64-gcc`) or clang for local firmware-codec cross-validation.
+- [ ] **TS vector-test runner** — `protocol/tests/typescript/payload-v1.test.ts` has no local runner wired (Node native TS stripping can't resolve `.json`/`.ts` imports). Add a `tsx`/`vitest` invocation (Node 24 available) so TS round-trips run alongside the Python suite.
+- [ ] **pytest** not installed on this host Python 3.14 — used `unittest` (equivalent); install `pytest` to match the CI command exactly.
 
 ---
 
@@ -196,44 +243,48 @@ python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; 
 - [ ] Define `TransportEvent` with severity, channel, evidence, monotonic timestamp
 - [ ] Define `AdapterStatus` with identity, capabilities, per-channel state, queue metrics
 
-### 1.3 Virtual transport adapter
+### 1.3 Virtual transport adapter — ✅ done (2026-07-15, `vtc/transport/virtual.py`, 7 tests)
 
-- [ ] Implement `VirtualTransportAdapter` using `python-can` virtual interface:
-  - Create named High and Low virtual buses
-  - Blocking receive in dedicated thread via `can.Notifier`
-  - Constant-time callback → bounded queue (no decode in callback)
-  - Overflow detection with lost-count evidence
-  - Clean shutdown with `can.Notifier` stop
-- [ ] Capability record: no HW timestamps, no TX echo, no bus-off, no TEC/REC (all `Unknown`)
+- [x] Implement `VirtualTransportAdapter` using `python-can` virtual interface:
+  - [x] Named High and Low virtual buses (unique per-instance channel suffix; python-can shares virtual buses by channel name)
+  - [x] Blocking receive in dedicated thread via `can.Notifier` + `can.Listener`
+  - [x] Constant-time listener → bounded `queue.Queue` (raw copy, no decode); router drains via `poll(max_items, timeout)`
+  - [x] Overflow counted with lost-frame evidence in `AdapterStatus` (never silent `deque(maxlen)`)
+  - [x] Idempotent `close()` stops the Notifier and shuts down buses
+- [x] Capability record: HW timestamps / TX echo / bus-off / TEC-REC all `False`, `listen_only` `Unknown` (None) — never faked
+- Separate per-channel emitter bus provides the `inject()` seam (tests, injection API §5.5, synthetic peers §5.4) so frames are observed as RX; the adapter's own bus uses `receive_own_messages=False`, so the virtual adapter has no TX echo (matches capability).
 
-### 1.4 Receive pipeline
+> **Interface refinement:** `Transport` moved from a `subscribe(callback)` model to a `poll(max_items, timeout)` queue-drain model, which matches §1.4's "router drains RX queue" and the research doc's thread→queue→async boundary. Updated in `vtc/transport/interface.py`.
 
-- [ ] Router task drains RX queue:
-  1. Validate raw envelope (CAN ID membership, DLC)
-  2. Assign global frame sequence
-  3. Decode via generated Python codec
-  4. Run integrity/validation checks
-  5. Update latest-value store
-  6. Update freshness state
-  7. Enqueue for recording (if active)
-  8. Publish to subscription hub
-- [ ] Unknown frames remain visible (no guessed decoding)
-- [ ] Decode failure preserves raw frame, produces no fabricated values
+### 1.4 Receive pipeline — ✅ done (2026-07-15, `vtc/pipeline/router.py`, wired into lifespan, 4+2 tests)
 
-### 1.5 Latest-value state
+- [x] Router task drains RX queue (async `run()` uses `asyncio.to_thread(poll)` off the ASGI loop; sync `drain_once()` for deterministic tests):
+  1. [x] Resolve `(bus, can_id)` membership via the bridge (DLC enforced at the envelope)
+  2. [x] Assign monotonic global frame sequence
+  3. [x] Decode via generated Python codec (through `protocol_bridge`)
+  4. [x] Record codec validation status (`ok` → Live; codec error → Invalid, still visible)
+  5. [x] Update latest-value store (`MessageState` per `(bus, can_id)`, expected-rate from YAML cycle, enum labels)
+  6. [~] First-cut freshness (Live/Invalid on receipt); full aging in §1.5
+  7. [ ] Enqueue for recording — deferred to Phase 6
+  8. [ ] Publish to subscription hub — deferred to §1.6 (WebSocket/event bus)
+- [x] Unknown frames remain visible as `UNKNOWN` with raw identity (no guessed decoding)
+- [x] Decode failure preserves the raw frame and produces no fabricated values
 
-- [ ] Keyed by `(bus, can_id)` → latest raw + latest valid observation
-- [ ] Per-message: last_seen, observed_rate, expected_rate, freshness_state, validation_result
-- [ ] Per-signal: raw_value, engineering_value, unit, enum_label, validity
-- [ ] Freshness states: Unseen → Live → Late → Missing → Invalid → Frozen → Recovering
+### 1.5 Latest-value state — ✅ core done (2026-07-15, freshness aging live, 10 tests); two enrichments remain
 
-### 1.6 Basic API endpoints
+- [x] Keyed by `(bus, can_id)`; `LatestStore` is thread-safe with a monotonic snapshot sequence; snapshots deep-copy to avoid races with the ager
+- [x] Per-message: last_seen, **observed_rate** (sliding 16-arrival window), expected_rate (from YAML cycle), freshness_state, validation_result
+- [x] Per-signal: **raw_value** (reversed from scaling: `round((eng − offset)/factor)`, generated signal fields only), engineering_value, unit, enum_label, validity
+- [x] **Freshness aging** — Unseen → Live → Late → Missing (+ Invalid) on its own clock via `FreshnessAger` background task; thresholds derive from each message's YAML cycle (Late > max(150ms, 2×cycle), Missing > max(500ms, 5×cycle)); event messages never age. Verified Live→Missing through the API.
+  - [ ] Frozen (counter stall) and Recovering (post-Missing hysteresis) — deferred; need counter-advance tracking added in §5/§6.
 
-- [ ] `GET /api/v1/status` — backend readiness, adapter state, protocol hash
-- [ ] `GET /api/v1/state` — atomic latest-state snapshot with sequence
-- [ ] `GET /api/v1/protocol/messages` — generated catalog browse
-- [ ] `GET /api/v1/protocol/messages/{bus}/{id}` — single message detail
-- [ ] WebSocket `/api/v1/stream` — critical events + coalesced latest-state subscription
+### 1.6 Basic API endpoints — ✅ done (2026-07-15, WebSocket subscription live, 6 tests)
+
+- [x] `GET /api/v1/status` — readiness, live adapter state, protocol hash, catalog counts
+- [x] `GET /api/v1/state` — atomic latest-state snapshot with sequence (now populated by the router)
+- [x] `GET /api/v1/protocol/messages` — generated catalog browse
+- [x] `GET /api/v1/protocol/messages/{bus}/{id}` — single message detail (hex/dec ids, 404s)
+- [x] WebSocket `/api/v1/stream` — full subscription: `hello` (hash + server clock) → initial `state` → **coalesced** `state` batches at `latest_state_batch_hz` (sent only when the store data-version advances) → `heartbeat` every `stream_heartbeat_ms` when idle → critical `event` fan-out via the thread-safe `EventBus`. Every frame carries a monotonic `batch_seq` for gap detection; client `resync` forces a fresh snapshot. Sender-only writes; receiver-only reads.
 
 **Tests:**
 ```bash
@@ -256,14 +307,14 @@ pytest vt-console/backend/tests/test_api_protocol.py -v
 pytest vt-console/backend/tests/test_websocket_stream.py -v
 ```
 
-**Exit gate:**
-- [ ] Backend starts in Pure Software mode without hardware
-- [ ] Injected virtual frames appear decoded in `GET /api/v1/state`
-- [ ] WebSocket delivers coalesced latest-state updates
-- [ ] Freshness transitions work (Live → Late → Missing on timeout)
-- [ ] Unknown frames preserved with raw data
-- [ ] All generated codec golden vectors pass through the pipeline
-- [ ] Zero decode in receive callback (measured)
+**Exit gate:** ✅ **Phase 1 complete** *(78 backend tests passing, 2026-07-15)*
+- [x] Backend starts in Pure Software mode without hardware
+- [x] Injected virtual frames appear decoded in `GET /api/v1/state`
+- [x] WebSocket delivers coalesced latest-state updates (batch on version change, heartbeat when idle, critical-event fan-out, `resync`)
+- [x] Freshness transitions work (Live → Late → Missing on timeout)
+- [x] Unknown frames preserved with raw data
+- [x] All golden vectors pass through the pipeline — `test_vector_sweep.py` drives **every** High/Low message (33 vectors, generated + custom SES/SEB) through inject→router→state, with full value round-trips for generated messages and correct error handling (checksum/length/unsupported stay visible, no fabricated values). A coverage test guarantees no High/Low catalog message is left undriven. *(PWT/powertrain is out of scope — the VTC adapter is two-channel High/Low per architecture §4.4.)*
+- [x] Zero decode in receive callback (by design: listener does a raw copy only; decode happens in the router)
 
 ---
 
@@ -563,14 +614,30 @@ npx playwright test tests/e2e/live-can.spec.ts
 - [ ] Listen-before-speak: detection window per claimed ID
 - [ ] Refuse/flag if physical traffic already present
 - [ ] Source-conflict detection: stop synthetic TX immediately on conflict
-- [ ] Required synthetic peers from architecture §6:
-  - `0x201 SES_STATUS` @ 100ms → Low (angle=0, aligned at startup)
-  - `0x721 SEB_STATUS` @ 100ms → Low
-  - `0x206 MTR_MOTOR_FBK` @ 50ms → Low (speed 0)
-  - `0x7FE SYS_HEARTBEAT` @ 100ms → Low
-  - `0x7FD RT_HEARTBEAT` @ 500ms → Both (independent counters)
-  - `0x300 HOST_DRIVE_CMD` @ 100ms → High
-  - `0x7FC HOST_HEARTBEAT` @ 500ms → High
+- [ ] Synthetic-peer periods **must equal the contract `cycle_ms`** and each period **must be shorter than the DUT watchdog timeout it satisfies** (see the RT/SYS Bench Compatibility Contract below). Every synthetic frame regenerates its rolling counter / checksum per period (no static payloads).
+
+> **Implementation order:** build the shared synthetic-peer engine first, then bring up the **SYS device-under-test set first** (RT/HMI/SEB/MTR fakes) as the first bench-compatibility proof point. The RT-DUT set follows and reuses the overlapping peers (SEB, MTR, heartbeats).
+
+**Synthetic set — RT is the Device-Under-Test** (VTC fakes Host, SYS, EPS-C, SEB, MTR so RT's RX watchdogs stay satisfied):
+  - `0x300 HOST_DRIVE_CMD` @ **10 ms** → High (neutral: speed 0, gear N) — RT stale watchdog `kHostCmdStaleTimeoutMs` = 500 ms
+  - `0x7FC HOST_HEARTBEAT` @ 500 ms → High (advancing counter) — RT `kHeartbeatTimeoutMsHost` = 1500 ms
+  - `0x7FE SYS_HEARTBEAT` @ 100 ms → Low (advancing counter, healthy bits) — RT `kHeartbeatTimeoutMsSys` = 200 ms
+  - `0x110 SYS_MODE_CMD` → Low (mode per test; RT latches mode from SYS, incl. ESTOP clear)
+  - `0x011 SYS_SAFETY_STS` @ 200 ms → Low (no ESTOP)
+  - `0x201 SES_STATUS` @ **10 ms** → Low (**angle 0, `angle_status` = aligned** — else RT following-error ESTOP)
+  - `0x721 SEB_STATUS` @ **10 ms** → Low (safe/default, advancing rolling counter)
+  - `0x206 MTR_MOTOR_FBK` @ **20 ms** → Low (speed 0, no fault); `0x120 SYS_THROTTLE_STS` @ 10 ms → Low (speed 0)
+
+**Synthetic set — SYS is the Device-Under-Test** (VTC fakes RT, HMI, SEB, MTR so SYS's RX watchdogs stay satisfied):
+  - `0x7FD RT_HEARTBEAT` @ 500 ms → Both, **independent per-bus counters** — SYS `kHeartbeatTimeoutMsRt` = 1000 ms; alive counter must advance (SYS validates it)
+  - `0x204 RT_DRIVE_CMD` @ **10 ms** → Low (speed 0, gear N) — SYS `kSetpointStaleMs` = 200 ms
+  - `0x205 RT_BRAKE_CMD` @ 20 ms → Low (0 kPa)
+  - `0x210 RT_STATE_RPT` @ 100 ms → High+Low (MANUAL, safe)
+  - `0x111 HMI_MODE_REQ` @ 1000 ms → High+Low (advancing `rolling_counter`); `0x112 HMI_PWR_REQ` @ 1000 ms → High+Low
+  - `0x721 SEB_STATUS` @ **10 ms** → Low — SYS `kSebStatusTimeoutMs` = 100 ms **and** `kSebRollingTimeoutMs` = 100 ms (rolling counter must advance within 100 ms)
+  - `0x206 MTR_MOTOR_FBK` @ **20 ms** → Low — SYS `kMtrFbkStaleMs` = 200 ms; ESTOP-ack bit within `kMtrEstopAckTimeoutMs` = 100 ms
+
+> **Full Vehicle profile** synthesizes neither set — both RT and SYS are physically present. Synthetic peers are a Bench-Test-profile capability, activated per missing node after listen-before-speak confirms the ID is absent.
 
 ### 5.5 Generic injection API
 
