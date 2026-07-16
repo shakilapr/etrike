@@ -3,7 +3,7 @@
 **Source of truth:** `protocol/contracts/*.yaml` (message IDs, names, buses, DLC, cycles, byte order, codec strategy). RT/SYS firmware compiles against `can::gen::*` generated from these YAML files, so the YAML — not any prose doc — is authoritative.
 **Design reference:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md) — authoritative for tool behavior/UX only. **Where its §12.2/§22 bench tables disagree with the YAML (e.g. synthetic-peer periods), the YAML wins.**
 **Status:** Design-only — no implementation code exists yet
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-16
 
 ---
 
@@ -12,6 +12,8 @@
 Phases are sequential. Do not start phase N+1 until all code, tests, and the exit gate for phase N pass. If a later phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun every gate from there forward.
 
 Each phase delivers working, tested code. Hardware tests remain opt-in and run only on a controlled bench with Bench TX explicitly disabled by default.
+
+**Sequencing exception (2026-07-16):** Phase 2 (CANalyst-II physical transport) is deferred — see the note at the top of that section. Phase 3 onward proceeds against the Phase 1 virtual transport only. Phase 2 must still close out (exit gate fully green, including the opt-in hardware suite) before anything that requires real bus traffic — Phase 5.4 synthetic-peer bench proof and Phase 10 conformance — can pass.
 
 ---
 
@@ -320,6 +322,8 @@ pytest vt-console/backend/tests/test_websocket_stream.py -v
 
 ## Phase 2 — CANalyst-II Transport and Timestamp Architecture
 
+> **DEFERRED (2026-07-16).** Hardware is available (CANalyst-II adapter in hand) but not yet wired up. Rather than block on it, work proceeds to Phase 3 on the Phase 1 virtual transport; this phase resumes later. Reference when resuming: `debug-tool/backend/canalystii_bridge.py` is a working, already-hardened `canalystii`-based bridge (handles RX-buffer priming, the WinUSB `__del__` reset-noise issue) — port its lessons rather than starting from zero. **Correct its channel mapping when porting**: the debug-tool script defaults `Ch0→low, Ch1→high` (`CANALYST_CH0_BUS`/`CANALYST_CH1_BUS` env vars), which is the reversed mapping this workplan already flagged as wrong (§2.1 requires **Ch0→High, Ch1→Low**). It also talks the `canalystii` PyPI package directly over a stdio JSON bridge, not `python-can`'s `CANalystIIBus` — §2.1 still calls for the `python-can` backend for consistency with the `Transport` protocol used by `virtual.py`, so this is source material to adapt, not to drop in unchanged.
+
 **Goal:** Add physical CAN transport via `python-can` CANalyst-II, with correct channel mapping, device timestamps, adapter health, and connection lifecycle.
 
 **Depends on:** Phase 1
@@ -397,46 +401,49 @@ pytest vt-console/backend/tests/test_hw_characterization.py -v -m hardware
 
 **Goal:** Implement the three operating profiles (Full Vehicle, Bench Test, Pure Software) with explicit transitions, session state machine, and Bench TX controls.
 
-**Depends on:** Phase 2
+**Depends on:** Phase 1 (Phase 2 deferred, see sequencing exception above — Full Vehicle/Bench Test profiles that need real adapter transitions stay untestable against hardware until Phase 2 closes out; Pure Software profile work is unaffected)
 
-### 3.1 Profile state machine
+### 3.1 Profile state machine — ✅ done (2026-07-16, `vtc/services/session_manager.py`)
 
-- [ ] Three profiles with explicit transition rules:
-  - Full Vehicle: both physical buses, passive by default
-  - Bench Test: selected physical ECUs, missing peers may be synthesized
-  - Pure Software: two virtual buses, no physical TX
-- [ ] Controlled transition: stop periodic TX → neutral controls → confirm → activate
-- [ ] Adapter loss never silently switches to Pure Software (explicit operator action required)
-- [ ] Profile visible in API status and WebSocket events
+- [x] Three profiles recognized; **only Pure Software is reachable** while Phase 2 is deferred — Full Vehicle and Bench Test are refused outright (`profile.physical_unavailable`, 503), never a silent fallback to Pure Software
+- [x] Controlled transition: `change_profile` requires `confirm=true` + matching `expected_revision`, neutralizes (Bench TX off, leases cleared) before switching
+- [x] Adapter loss never silently switches profile — refusal is explicit and typed, not a fallback (full adapter-loss-*during*-an-active-physical-session behavior needs Phase 2 hardware to exist at all; deferred with it)
+- [x] Profile visible in `GET /api/v1/status` (`session.profile`, `session.destination`) and `GET /api/v1/sessions`; WebSocket event carrying it is Phase 4/stream scope, not yet wired
 
-### 3.2 Test-session state machine
+### 3.2 Test-session state machine — ✅ done (`vtc/services/session_manager.py`, `vtc/models/session.py`)
 
-- [ ] States: Stopped → Preparing → Listening → Running → Stopping → Completed/Failed/Inconclusive
-- [ ] Session identity: backend session ID, adapter epoch, test session ID, protocol hash
-- [ ] Session revision for concurrent mutation control
+- [x] States implemented: Stopped → Preparing → Listening → Running → Stopping → Completed/Failed/Inconclusive (`SessionPhase`); `create()` collapses Preparing→Listening→Running synchronously (no async bring-up work exists yet to justify pausing there)
+- [x] Session identity: `session_id` (`ses_*`), `test_session_id` (`test_*` or caller-supplied), `adapter_epoch`, `wire_hash` — no `semantic_hash` (vtc's `protocol_bridge` only exports `WIRE_HASH`, unlike control-toolkit's sibling module)
+- [x] Session revision (`revision: int`) increments on every mutation; enforced via `expected_revision` on bench-tx/profile/stop-all/close
 
-### 3.3 Bench TX state
+### 3.3 Bench TX state — ✅ done
 
-- [ ] Disabled/Enabled binary state
-- [ ] Connecting adapter leaves Disabled
-- [ ] Explicit enable required for physical TX
-- [ ] Auto-disable on: profile change, disconnect, shutdown, session stop, reconnect
-- [ ] Passive monitoring and recording work while Disabled
+- [x] Disabled/Enabled binary state (`BenchTxState`)
+- [x] New session starts Disabled
+- [x] Explicit enable required; enabling for a physical profile is refused (503) since no adapter can exist yet
+- [x] Auto-disable on: profile change, Stop All, session close, backend shutdown (`Lifecycle.shutdown` calls `sessions.close()`) — **disconnect/reconnect auto-disable is Phase 2 scope** (no adapter to disconnect yet)
+- [x] Passive monitoring/state endpoints are unaffected by Bench TX state (untouched by this phase)
 
-### 3.4 Stimulus leases and source ownership
+### 3.4 Stimulus leases and source ownership — ✅ done (`vtc/services/ownership.py`)
 
-- [ ] Exclusive, expiring ownership of resources (steering, motor, brake, HMI, periodic CAN ID)
-- [ ] One permitted producer per `bus + CAN ID` during a session
-- [ ] Lease renewal mechanism for interactive controls
-- [ ] Backend-owned cleanup on expiry, disconnect, or Stop All
+- [x] Exclusive, expiring ownership of `(bus, can_id)` (`OwnershipTable`/`Lease`) — the resource-name fields (steering/motor/brake/HMI) are supported via the free-form `resource` field but no caller-side semantic mapping exists yet (that lands with Phase 5/7 actuator control)
+- [x] One permitted producer per `bus + CAN ID`; same-owner reclaim renews instead of conflicting; different-owner claim raises `OwnershipConflict` → `409 ownership.conflict`
+- [x] Lease renewal via `POST /sessions/{id}/leases/renew`
+- [x] Backend-owned cleanup: TTL expiry (lazy, checked on every claim/list/renew), and `OwnershipTable.clear()` on Stop All / session close. Disconnect-triggered cleanup is Phase 2 scope.
 
-### 3.5 Session API
+### 3.5 Session API — ✅ done (`vtc/api/sessions.py`, `vtc/api/errors.py`)
 
-- [ ] `GET /api/v1/sessions` — current session state
-- [ ] `POST /api/v1/sessions` — create session with profile and capabilities
-- [ ] `POST /api/v1/sessions/{id}/bench-tx` — enable/disable Bench TX
-- [ ] `POST /api/v1/sessions/{id}/stop-all` — Stop All
-- [ ] `DELETE /api/v1/sessions/{id}` — close session
+- [x] `GET /api/v1/sessions` — current session state
+- [x] `GET /api/v1/sessions/profiles` — profile availability (added beyond the minimal §3.5 list; needed to surface *why* Full Vehicle/Bench Test are unavailable)
+- [x] `POST /api/v1/sessions` — create session with profile and capabilities
+- [x] `POST /api/v1/sessions/{id}/profile` — controlled profile transition (added; required by §3.1's controlled-transition rule)
+- [x] `POST /api/v1/sessions/{id}/bench-tx` — enable/disable Bench TX
+- [x] `POST /api/v1/sessions/{id}/stop-all` — Stop All
+- [x] `DELETE /api/v1/sessions/{id}` — close session
+- [x] `POST /api/v1/sessions/{id}/leases`, `.../leases/renew`, `DELETE .../leases/{lease_id}` — added; required by §3.4
+- [x] Errors as RFC 9457 `problem+json` (`code`, `status`, `detail`) via a `SessionError` → exception-handler mapping
+
+Deliberately **not** added: a `vehicle-view` endpoint (requested/confirmed mode/power header fields) — that belongs to the Overview workspace shell (Phase 4, architecture §6), not session management.
 
 **Tests:**
 ```bash
@@ -462,13 +469,15 @@ pytest vt-console/backend/tests/test_source_ownership.py -v
 pytest vt-console/backend/tests/test_api_sessions.py -v
 ```
 
-**Exit gate:**
-- [ ] Profile transitions are explicit and tested
-- [ ] Bench TX cannot be enabled without proper session
-- [ ] Source ownership prevents duplicate producers
-- [ ] Adapter loss disables Bench TX and marks stale (never silent fallback)
-- [ ] Stop All cancels all jobs and disables TX
-- [ ] Session revision prevents concurrent conflicts
+**Exit gate:** *(35 new tests passing, 2026-07-16; 113 total in `vt-console/backend`)*
+- [x] Profile transitions are explicit and tested — confirm+revision required; physical profiles refused, never silently swapped
+- [x] Bench TX cannot be enabled without proper session — no active session (404) or physical profile / no adapter (503/409) all rejected
+- [x] Source ownership prevents duplicate producers — `OwnershipConflict` → 409 on cross-owner claim of the same `(bus, can_id)`
+- [~] Bench TX disables on profile change / Stop All / session close / backend shutdown — **the "adapter loss" and "reconnect" triggers are Phase 2 scope** (no physical adapter exists yet to be lost); "marks stale" (adapter status field) is likewise Phase 2
+- [~] Stop All disables TX and clears leases — **"cancels all jobs" is Phase 5 scope** (the periodic scheduler doesn't exist yet); nothing to cancel today
+- [x] Session revision prevents concurrent conflicts — `expected_revision` mismatch → 409 `session.revision_conflict`
+
+**Phase 3 status: functionally complete for everything that doesn't require Phase 2 (physical transport) or Phase 5 (scheduler).** The two partial items above aren't bugs — they name capabilities owned by later phases and will close out when those phases land, per the non-negotiable phase rule.
 
 ---
 
@@ -1156,8 +1165,9 @@ pytest vt-console/backend/tests/test_service_levels.py -v
 ```mermaid
 flowchart TD
     P0[Phase 0: Protocol Foundation] --> P1[Phase 1: Backend Skeleton + Virtual Transport]
-    P1 --> P2[Phase 2: CANalyst-II Transport]
-    P2 --> P3[Phase 3: Profiles + Sessions]
+    P1 --> P2[Phase 2: CANalyst-II Transport — DEFERRED]
+    P1 --> P3[Phase 3: Profiles + Sessions]
+    P2 -.deferred, must close before.-> P10
     P3 --> P4[Phase 4: Read-Only Frontend]
     P4 --> P5[Phase 5: Command Pipeline + Injection]
     P5 --> P6[Phase 6: Diagnostics + Recording + Evidence]

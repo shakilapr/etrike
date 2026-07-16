@@ -11,7 +11,6 @@ from fastapi import APIRouter, Request
 
 from vtc import __version__, protocol_bridge as proto
 from vtc.models.adapter import AdapterStatus
-from vtc.models.session import SessionState
 
 router = APIRouter(tags=["status"])
 
@@ -21,7 +20,7 @@ def get_status(request: Request) -> dict:
     lifecycle = request.app.state.lifecycle
     config = request.app.state.config
     # Real adapter status when a transport is open (Pure Software opens one at
-    # startup); otherwise Absent. Session state machine lands in Phase 3.
+    # startup); otherwise Absent.
     adapter = (
         lifecycle.transport.status()
         if lifecycle.transport is not None
@@ -38,5 +37,5 @@ def get_status(request: Request) -> dict:
             "instances": proto.instance_count(),
         },
         "adapter": adapter.model_dump(),
-        "session": SessionState(profile=config.default_profile).model_dump(),
+        "session": lifecycle.sessions.snapshot().model_dump(),
     }
