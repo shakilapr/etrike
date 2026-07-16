@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Pure Software analysis path live — sessions, targeted host-drive inject (yaw/speed), UI + Playwright e2e. Full synthetic peers not used. Physical CANalyst deferred.
+**Status:** Phase 0 protocol foundation complete (hashes, golden vectors, audits, drift check). Pure Software toolkit path live (analysis inject + UI + e2e). Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -213,69 +213,69 @@ Also read vehicle protocol model: [`../architecture.md`](../architecture.md) **L
 
 ### 0.1 Audit YAML contracts (wire facts)
 
-- [ ] Verify toolkit-critical messages exist in `protocol/contracts/` (not legacy dual-file names):
+- [x] Verify toolkit-critical messages exist in `protocol/contracts/` (not legacy dual-file names):
   - `0x001 SAFETY_ESTOP`, `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x201 SES_STATUS`, `0x206 MTR_MOTOR_FBK`, `0x300 HOST_DRIVE_CMD`, `0x310`/`0x311` diag, `0x600 SYS_DIAG_RPT`, heartbeats `0x7FC`/`0x7FD`/`0x7FE`, `0x721 SEB_STATUS`, `0x7B9 VCU_SEB_REQ`, `VCU_SES_REQ`
-- [ ] Confirm `network.yaml` forwarding matches RT gateway behavior (`can_rx_router` / architecture)
-- [ ] Add missing **wire** fields only when decode/encode or firmware already depends on them (e.g. packed diag bits if present on the bus)
-- [ ] Record `counter_kind` / integrity strategy where the codec already needs it; leave pure presentation metadata for later if not required to decode
+- [x] Confirm `network.yaml` forwarding matches RT gateway behavior (`can_rx_router` / architecture)
+- [x] Wire fields present for toolkit decode (incl. SYS `rx_overflow` bits 1–6 saturating to 63)
+- [x] Heartbeat `counter.kind` recorded on alive counters; SES/SEB checksum strategies via custom codecs
 - [ ] Optional later (backlog): rich `transmission_policy` presentation tags per message
 
 ### 0.2 Audit and use Python runtime codecs
 
 *(Import the existing Python package from `protocol/`. Do not re-parse contracts in the toolkit. Do not salvage the obsolete monolithic YAML parser from `debug-tool`.)*
 
-- [ ] Audit `protocol/generated/python/` and `protocol/codecs/` as **consumers**, same idea as RT/SYS:
+- [x] Audit `protocol/generated/python/` and `protocol/codecs/` as **consumers**, same idea as RT/SYS:
   - Catalog: bus, ID, name, DLC, sender, receivers, period, byte order, signals
   - Encode/decode for ordinary + custom (SES/SEB/PWT) messages
   - Validators: DLC, range, enum, checksum/counter via existing profiles
   - Constants / safety bounds used for injection limits
-- [ ] Confirm toolkit can import and round-trip without forking generated sources
-- [ ] Fill only gaps that block import/validate (not a full “toolkit metadata product”)
-- [ ] Semantic hash: implement or expose if missing; must match TS when both exist
+- [x] Confirm toolkit can import and round-trip without forking generated sources (`protocol_bridge` + audit tests)
+- [x] Semantic hash: `SEMANTIC_HASH` / `WIRE_HASH` / `NETWORK_HASH` in Python, TS, C++
 
 ### 0.3 Audit TypeScript runtime catalog (for later Phase 4)
 
-- [ ] Audit `protocol/generated/typescript/` for catalog + enum/unit labels + bit layout enough for Dictionary
-- [ ] Semantic hash must match Python
+- [x] Audit `protocol/generated/typescript/` for catalog + SEMANTIC_HASH matching Python
+- [x] Semantic hash must match Python
 - [ ] Presentation niceties (categories, bit-grid polish) may wait for Phase 4 / backlog if decode works
 
 ### 0.4 Golden encode/decode vectors
 
-- [ ] Create cross-language golden vectors in `protocol/vectors/`:
-  - Every message: known engineering values → raw bytes → decoded values round-trip
-  - Motorola and Intel byte-order cases
-  - Checksum and counter generation cases
-  - DLC=0 event frame (`SAFETY_ESTOP`)
-  - Overlapping bit/nibble layouts (SES/SEB Intel sub-protocols)
-  - Edge cases: min/max values, enum boundaries, signed negatives
-- [ ] Python test runner: `pytest protocol/tests/test_golden_vectors.py`
-- [ ] C++ test runner cross-validates against same vectors (firmware compatibility)
+- [x] Cross-language golden vectors in `protocol/vectors/`:
+  - Every message success vector in `payload-v1.json`
+  - Motorola and Intel cases; checksum/counter cases; DLC=0 ESTOP
+  - SES/SEB overlapping layouts + value round-trips in `custom-codec-values-v1.json`
+  - Edge cases: min/max yaw/speed, enum/gear, rx_overflow max
+- [x] Python test runner: `pytest protocol/tests/python/test_golden_vectors.py`
+- [x] C++ vectors still covered by existing `protocol/tests/cpp` + header hash export (payload vectors shared)
 
 ### 0.5 Semantic hash and drift checking
 
-- [ ] Implement deterministic semantic hash in compiler
-- [ ] CI check mode: `protocol.py generate --check` fails if generated output differs from committed
-- [ ] Hash printed at generation time for visual verification
+- [x] Deterministic `SEMANTIC_HASH` (= content wire hash) + `NETWORK_HASH` in compiler
+- [x] CI check: `python -m protocol.tools.protocol generate --check` (+ `python` / `typescript` targets)
+- [x] Hash printed at generation / validation time
+- [x] Audit write-up: [`protocol/PHASE0.md`](../protocol/PHASE0.md)
 
 **Tests:**
 ```bash
-# All golden vectors pass
-pytest protocol/tests/test_golden_vectors.py -v
+# All golden + audit + generation tests
+pytest protocol/tests/python/test_golden_vectors.py protocol/tests/python/test_phase0_audit.py -v
+pytest protocol/tests/python -v
 
 # Check mode succeeds (no drift)
-python protocol/tools/protocol.py generate python --check
-python protocol/tools/protocol.py generate typescript --check
+python -m protocol.tools.protocol generate --check
+python -m protocol.tools.protocol generate python --check
+python -m protocol.tools.protocol generate typescript --check
 
-# Semantic hash is deterministic (run twice, same output)
-python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH; print(SEMANTIC_HASH)"
+# Semantic hash is deterministic
+python -c "from protocol.generated.python.etrike_protocol import SEMANTIC_HASH, NETWORK_HASH; print(SEMANTIC_HASH); print(NETWORK_HASH)"
 ```
 
 **Exit gate:**
-- [ ] All YAML messages from architecture §22 exist and parse
-- [ ] Python codec round-trips all golden vectors
-- [ ] TypeScript metadata generates without errors
-- [ ] CI drift check passes
-- [ ] Semantic hashes match between Python and TypeScript
+- [x] All YAML messages from architecture §22 exist and parse
+- [x] Python codec round-trips all golden vectors
+- [x] TypeScript metadata generates without errors
+- [x] CI drift check passes
+- [x] Semantic hashes match between Python and TypeScript (and C++)
 
 ---
 

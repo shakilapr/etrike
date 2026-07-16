@@ -100,11 +100,15 @@ class GeneratedCppTests(unittest.TestCase):
                 )["languages"]["cpp"]
                 if item["strategy"] == "generated"
             }
-            expected = {
-                vector["message"]: vector["payload"] or "-"
-                for vector in document["vectors"]
-                if vector["message"] in generated_messages and vector["status"] == "ok"
-            }
+            # C++ harness emits one success vector per generated message (first
+            # ok entry). Keep the same selection when multiple ok vectors exist.
+            expected = {}
+            for vector in document["vectors"]:
+                if vector["message"] not in generated_messages or vector["status"] != "ok":
+                    continue
+                if vector["message"] in expected:
+                    continue
+                expected[vector["message"]] = vector["payload"] or "-"
             self.assertEqual(expected, actual)
 
 

@@ -10,7 +10,9 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kWireHash = "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a";
+inline constexpr std::string_view kSemanticHash = "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a";
+inline constexpr std::string_view kWireHash = kSemanticHash;
+inline constexpr std::string_view kNetworkHash = "b47bb9ad17c3d7108c711b48c5be9827c60f84678774e9f4d918170d3c379141";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };

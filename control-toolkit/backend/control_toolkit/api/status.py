@@ -31,6 +31,8 @@ def get_status(request: Request) -> dict:
         "version": __version__,
         "ready": lifecycle.ready,
         "wire_hash": proto.WIRE_HASH,
+        "semantic_hash": proto.SEMANTIC_HASH,
+        "network_hash": proto.NETWORK_HASH,
         "profile": config.default_profile.value,
         "catalog": {
             "messages": proto.message_count(),
