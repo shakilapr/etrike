@@ -157,10 +157,40 @@ export const api = {
     json<Record<string, unknown>>('/injections', {
       method: 'POST',
       body: JSON.stringify({
-        bus: 'low',
+        bus: 'high',
         key: 'safety:safety_estop',
         values: {},
         owner: 'ui:estop',
       }),
+    }),
+  events: (limit = 50) =>
+    json<{ count: number; events: Array<Record<string, unknown>> }>(
+      `/events?limit=${limit}`,
+    ),
+  episodes: () =>
+    json<{ count: number; episodes: Array<Record<string, unknown>> }>('/episodes'),
+  recordings: () =>
+    json<{
+      active: Record<string, unknown> | null
+      recordings: Array<Record<string, unknown>>
+    }>('/recordings'),
+  startRecording: () =>
+    json<{ recording: Record<string, unknown> }>('/recordings', {
+      method: 'POST',
+      body: '{}',
+    }),
+  stopRecording: (id: string) =>
+    json<{ recording: Record<string, unknown> }>(`/recordings/${id}`, {
+      method: 'DELETE',
+    }),
+  hmiMode: (req_mode: number, enabled = true) =>
+    json<Record<string, unknown>>('/hmi/mode', {
+      method: 'POST',
+      body: JSON.stringify({ req_mode, enabled }),
+    }),
+  hmiPower: (req_start: number, enabled = true) =>
+    json<Record<string, unknown>>('/hmi/power', {
+      method: 'POST',
+      body: JSON.stringify({ req_start, enabled }),
     }),
 }

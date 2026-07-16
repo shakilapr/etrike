@@ -38,6 +38,9 @@ def set_mode(request: Request, body: ModeBody) -> dict:
     if not body.enabled:
         life._hmi_jobs = prev
         return {"ok": True, "enabled": False}
+    # Requested mode only — never treat TX as confirmed vehicle mode.
+    mode_label = "AUTO" if body.req_mode == 1 else "MANUAL"
+    life.sessions.update_vehicle_view(requested_mode=mode_label)
     job_id = life.scheduler.schedule(
         bus="high",
         key="hmi:hmi_mode_req",
@@ -49,7 +52,13 @@ def set_mode(request: Request, body: ModeBody) -> dict:
     )
     prev[_MODE_JOB] = job_id
     life._hmi_jobs = prev
-    return {"ok": True, "enabled": True, "job_id": job_id, "req_mode": body.req_mode}
+    return {
+        "ok": True,
+        "enabled": True,
+        "job_id": job_id,
+        "req_mode": body.req_mode,
+        "requested_mode": mode_label,
+    }
 
 
 @router.post("/power")
@@ -63,6 +72,8 @@ def set_power(request: Request, body: PowerBody) -> dict:
     if not body.enabled:
         life._hmi_jobs = prev
         return {"ok": True, "enabled": False}
+    power_label = "ON" if body.req_start == 1 else "OFF"
+    life.sessions.update_vehicle_view(requested_power=power_label)
     job_id = life.scheduler.schedule(
         bus="high",
         key="hmi:hmi_pwr_req",
@@ -74,4 +85,10 @@ def set_power(request: Request, body: PowerBody) -> dict:
     )
     prev[_PWR_JOB] = job_id
     life._hmi_jobs = prev
-    return {"ok": True, "enabled": True, "job_id": job_id, "req_start": body.req_start}
+    return {
+        "ok": True,
+        "enabled": True,
+        "job_id": job_id,
+        "req_start": body.req_start,
+        "requested_power": power_label,
+    }

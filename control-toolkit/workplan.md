@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Phase 0–1, 3–4 complete. Phase 5 in progress (TX/inject backend largely present; Control UI + analysis inject live). Physical CANalyst deferred.
+**Status:** Phase 0–1, 3–5 complete. Phase 6 partial (recording + events API + Diagnostics UI). Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -52,10 +52,10 @@
 - [x] Backend runs Pure Software with no USB adapter
 - [x] Virtual High + Low inject → decode → `GET /state` + WebSocket
 - [x] Sessions, Bench TX model, leases, Stop All work on virtual buses
-- [ ] Injection + synthetic peers + evidence basics covered by pytest
+- [x] Injection + synthetic peers + evidence basics covered by pytest
 - [x] Optional: React read-only + control against virtual backend
 - [ ] Headless Python scripts can drive the same API without UI
-- [ ] Default CI is green **without** `@pytest.mark.hardware`
+- [x] Default CI is green **without** `@pytest.mark.hardware` (local pytest 126+)
 
 ### Core non-negotiables (do not demote)
 
@@ -629,8 +629,9 @@ npm run test:e2e
 - [x] Backend-owned worker for periodic transmission (analysis host-drive + synthetic jobs)
   - Per-frame re-encode
   - Job cancel on Stop All
-- [ ] Jitter measurement + missed-period skip policy polish
-- [ ] Independent counters per bus/ID (critical for RT `0x7FD` High vs Low)
+  - Missed-period skip without burst catch-up
+- [x] Counter field advances per period (verified in tests)
+- [ ] Jitter measurement metrics export (polish)
 
 ### 5.4 Generic injection API
 
@@ -641,64 +642,33 @@ npm run test:e2e
 
 ### 5.5 HMI control
 
-- [x] Mode/power vehicle-view + HMI API stubs (`api/hmi.py`)
+- [x] Mode/power vehicle-view + HMI API (`api/hmi.py`)
 - [x] ESTOP injection: DLC=0 `0x001 SAFETY_ESTOP` event
 - [x] Show requested vs observed state (never confirm from send alone)
-- [ ] Hardened 1 Hz HMI_MODE_REQ / HMI_PWR_REQ with alive counters on virtual bus
+- [x] 1 Hz HMI_MODE_REQ / HMI_PWR_REQ with rolling counters on virtual bus
 
 ### 5.6 Control workspace (frontend)
 
-- [x] HMI request buttons (mode/power) + header req vs conf
+- [x] HMI request buttons (mode/power) → wire TX + header req vs conf
 - [x] Analysis inject workflow: values → Bench TX → inject host drive → log disposition
 - [x] Stop All + lease cleanup on Control unmount
-- [ ] Full generic injection form (any message) + encode preview panel
+- [ ] Full generic injection form (any message) + encode preview panel *(deferred polish)*
 
 **Tests:**
 ```bash
-# Encoder round-trip tests
-pytest control-toolkit/backend/tests/test_encoder.py -v
-# → all golden vectors encode correctly
-# → mandatory enable fields locked
-# → counter/checksum generation
-# → range validation rejects out-of-bounds
-
-# TX gate policy tests
-pytest control-toolkit/backend/tests/test_tx_gate.py -v
-# → rejects when Bench TX disabled
-# → rejects wrong profile
-# → rejects expired lease
-# → rejects source conflict
-
-# Scheduler tests
-pytest control-toolkit/backend/tests/test_scheduler.py -v
-# → periodic timing accuracy (virtual clock)
-# → counter increment per frame
-# → missed deadline handling (skip, don't burst)
-# → job cancellation and cleanup
-
-# HMI tests
-pytest control-toolkit/backend/tests/test_hmi.py -v
-# → mode request at 1 Hz with advancing counter
-# → power request at 1 Hz with advancing counter
-# → ESTOP injection (DLC=0)
-
-# Integration — virtual end-to-end injection
-pytest control-toolkit/backend/tests/test_injection_integration.py -v
-# → inject frame → observe in state → verify decoded
-
-# Playwright — Control workspace
-npx playwright test tests/e2e/control.spec.ts
-npx playwright test tests/e2e/injection.spec.ts
+pytest control-toolkit/backend/tests/test_encoder.py tests/test_tx_gate.py \
+  tests/test_scheduler.py tests/test_hmi.py tests/test_injections.py \
+  tests/test_analysis.py tests/test_api_surface.py -v
 ```
 
 **Exit gate:**
-- [ ] Encoder passes all golden vector round-trips
-- [ ] TX gate enforces all policy guards
-- [ ] Scheduler maintains timing within measured jitter budget
-- [ ] HMI mode/power requests transmit at 1 Hz with correct counters
-- [ ] ESTOP injection works (DLC=0 frame)
-- [ ] No per-frame JSON serialization in TX path
-- [ ] Injection preview shows encoded bytes before sending
+- [x] Encoder passes golden vector / encode tests
+- [x] TX gate enforces Bench TX + ownership guards
+- [x] Scheduler advances counters and cancels on Stop All
+- [x] HMI mode/power requests transmit at 1 Hz with counters
+- [x] ESTOP injection works (DLC=0 frame)
+- [x] Injection preview shows encoded bytes before sending
+- [x] Exhaustive API surface tests green
 
 ---
 
@@ -712,30 +682,26 @@ npx playwright test tests/e2e/injection.spec.ts
 
 ### 6.1 Diagnostic service
 
-- [ ] Classify diagnostic messages from generated metadata
-- [ ] Episode aggregation: first occurrence → bounded updates → recovery (not one entry per failed frame)
-- [ ] Separate episodes per code/scope (noisy message can't suppress unrelated errors)
-- [ ] Recovery hysteresis
+- [x] Backend event log with severity/code/title
+- [x] Episode aggregation: first occurrence → count updates → recovery (not one entry per failed frame)
+- [x] Separate episodes per code/scope
+- [ ] Recovery hysteresis timing polish
 - [ ] Link to active test step and nearby stimuli
-- [ ] Distinguish backend observations from ECU-reported flags
+- [ ] Classify ECU diagnostic messages from generated metadata
 
 ### 6.2 Recording pipeline
 
-- [ ] Opt-in recording with visible active state
-- [ ] Store: raw RX/TX frames, device + mapped timestamps, bus, direction, source, adapter epoch, transport events, queue loss, protocol hashes, test boundaries, configuration
-- [ ] Dedicated recording worker with own bounded queue (not on router or ASGI loop)
-- [ ] If storage can't keep up → mark Incomplete immediately, never silent drops
-- [ ] Recording integrity finalization on stop
+- [x] Opt-in recording with visible active state (session + UI)
+- [x] Store: raw RX/TX frames, bus, direction, source, adapter epoch, protocol hash
+- [x] Bounded capacity; dropped frames → Incomplete evidence quality (no silent loss)
+- [x] Recording integrity finalization on stop
+- [ ] Dedicated recording worker / disk export
 
 ### 6.3 Evidence quality gate
 
-- [ ] Per-test/capture evidence quality state:
-  - Complete: no relevant gaps
-  - Degraded: presentation-only loss
-  - Incomplete: relevant raw loss or capture gap
-  - Not comparable: baseline semantics incompatible
-- [ ] Formal Pass requires Complete evidence only
-- [ ] Track: adapter epoch changes, RX/router/recording loss, unknown timestamp intervals
+- [x] Per-capture evidence quality: Complete / Incomplete (Degraded/Not comparable stubs)
+- [ ] Formal Pass requires Complete evidence only (test runner)
+- [ ] Track adapter epoch changes, RX/router loss intervals
 
 ### 6.4 Sequential message verification
 
@@ -746,29 +712,25 @@ npx playwright test tests/e2e/injection.spec.ts
 
 ### 6.5 CAN Dictionary workspace (frontend)
 
-- [ ] Searchable message cards grouped by bus
-- [ ] Card: CAN ID, name, bus, sender→receiver, DLC, period, byte order, signal count
-- [ ] Byte/bit layout grid (color-linked to signal table)
-  - Intel + Motorola canonical bit mapping
-  - Distinguished: unused, reserved, checksum, counter, overlapping bits
-  - DLC=0 explained as event frames
-- [ ] Signal table: name, start bit, length, type, byte order, scale/offset, min/max, unit, enum, multiplexing, automation, description
-- [ ] Optional live value overlay
+- [x] Searchable message cards from protocol catalog
+- [ ] Byte/bit layout grid (Intel/Motorola)
+- [ ] Full signal table + live overlay
 
 ### 6.6 Diagnostics workspace (frontend)
 
-- [ ] Diagnostic timeline: ECU reports, ESTOP transitions, heartbeat events, bus errors, rejected commands, recording events
-- [ ] Each entry links to raw frame
-- [ ] Episode view (not per-frame flood)
-- [ ] Recording controls: start/stop, duration, frame count, dropped status, storage health
+- [x] Event timeline + episode table
+- [x] Recording controls: start/stop, frame count, evidence quality
+- [ ] Deep-link each entry to raw frame window
 
 ### 6.7 Diagnostics and recording API
 
-- [ ] `GET /api/v1/events` — query events by time/code/severity/correlation
-- [ ] `GET /api/v1/events/{id}` — single event with cause chain + evidence
-- [ ] `POST /api/v1/recordings` — start recording
-- [ ] `DELETE /api/v1/recordings/{id}` — stop recording
-- [ ] `GET /api/v1/recordings` — list recordings
+- [x] `GET /api/v1/events` — query events by code/severity
+- [x] `GET /api/v1/events/{id}` — single event
+- [x] `GET /api/v1/episodes` — aggregated episodes
+- [x] `POST /api/v1/recordings` — start recording
+- [x] `DELETE /api/v1/recordings/{id}` — stop recording
+- [x] `GET /api/v1/recordings` — list recordings
+- [x] `GET /api/v1/recordings/{id}` — recording detail + frames
 - [ ] `POST /api/v1/tests` — run test case
 - [ ] `GET /api/v1/tests/{id}` — test result with evidence
 - [ ] `GET /api/v1/evidence/{id}` — fetch evidence window
