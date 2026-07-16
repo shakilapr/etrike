@@ -761,12 +761,18 @@ function Control() {
   const [busy, setBusy] = useState(false)
   const [speed, setSpeed] = useState(500)
   const [yaw, setYaw] = useState(250)
-  const [gear, setGear] = useState(1)
+  const [gear, setGear] = useState(1) // firmware: 0=N 1=D 2=S 3=R
   const [periodMs, setPeriodMs] = useState(100)
   const [periodic, setPeriodic] = useState(true)
   const [leaseId, setLeaseId] = useState<string | null>(null)
   const leaseRef = useRef<string | null>(null)
   leaseRef.current = leaseId
+  const [kbEnabled, setKbEnabled] = useState(false)
+  const [kbSnap, setKbSnap] = useState<Record<string, unknown> | null>(null)
+  const seqRef = useRef(0)
+  const keysRef = useRef<Record<string, boolean>>({})
+  const kbEnabledRef = useRef(false)
+  kbEnabledRef.current = kbEnabled
 
   // Clear control intent / lease on unmount (architecture safety invariant).
   useEffect(() => {
@@ -777,8 +783,73 @@ function Control() {
         void api.releaseLease(st.session.session_id, lid).catch(() => undefined)
       }
       void api.stopAnalysis().catch(() => undefined)
+      void api.controlRelease('unmount').catch(() => undefined)
     }
   }, [])
+
+  // Keyboard teleop → backend /control/intent (firmware-aligned HOST_DRIVE_CMD)
+  useEffect(() => {
+    if (!kbEnabled) return
+    const onDown = (e: KeyboardEvent) => {
+      keysRef.current[e.code] = true
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+        e.preventDefault()
+      }
+    }
+    const onUp = (e: KeyboardEvent) => {
+      keysRef.current[e.code] = false
+    }
+    const onBlur = () => {
+      keysRef.current = {}
+      void api.controlRelease('blur').catch(() => undefined)
+      setKbEnabled(false)
+    }
+    const onVis = () => {
+      if (document.hidden) {
+        void api.controlRelease('tab_hidden').catch(() => undefined)
+        setKbEnabled(false)
+      }
+    }
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVis)
+
+    const tick = window.setInterval(() => {
+      if (!kbEnabledRef.current) return
+      const k = keysRef.current
+      let throttle = 0
+      let steer = 0
+      if (k.KeyW || k.ArrowUp) throttle += 1
+      if (k.KeyS || k.ArrowDown) throttle -= 1
+      if (k.KeyA || k.ArrowLeft) steer -= 1
+      if (k.KeyD || k.ArrowRight) steer += 1
+      const hard_brake = !!k.ShiftLeft || !!k.ShiftRight
+      const estop = !!k.Space
+      seqRef.current += 1
+      void api
+        .controlIntent({
+          sequence: seqRef.current,
+          source: 'keyboard',
+          mode: 'kinematics',
+          throttle,
+          steer,
+          hard_brake,
+          estop,
+        })
+        .then((r) => setKbSnap(r.control))
+        .catch((e) => setLog(String(e)))
+    }, 50)
+
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVis)
+      window.clearInterval(tick)
+      void api.controlRelease('disable').catch(() => undefined)
+    }
+  }, [kbEnabled])
 
   const refresh = useCallback(async () => {
     const st = await api.status()
@@ -898,6 +969,58 @@ function Control() {
         </p>
       </header>
 
+      <section className="panel" data-testid="keyboard-control">
+        <h2>Keyboard kinematics</h2>
+        <p className="muted small">
+          Backend-owned 10 ms HOST_DRIVE_CMD (0x300) · gear N/D/S/R · stale stop 500 ms · blur
+          releases. Matches RT host command watchdog.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            data-testid="btn-kb-enable"
+            disabled={busy}
+            className={kbEnabled ? '' : 'secondary'}
+            onClick={() => {
+              if (kbEnabled) {
+                setKbEnabled(false)
+                void api.controlRelease('disable').catch(() => undefined)
+              } else {
+                void ensureSessionReady()
+                  .then(() => setKbEnabled(true))
+                  .catch((e) => setLog(String(e)))
+              }
+            }}
+          >
+            {kbEnabled ? 'Disable keyboard' : 'Enable keyboard control'}
+          </button>
+        </div>
+        <ul className="controls-legend muted small">
+          <li>
+            <kbd>W</kbd>/<kbd>↑</kbd> throttle · <kbd>S</kbd>/<kbd>↓</kbd> reverse
+          </li>
+          <li>
+            <kbd>A</kbd>/<kbd>D</kbd> yaw · <kbd>Shift</kbd> hard brake · <kbd>Space</kbd> ESTOP
+          </li>
+        </ul>
+        {kbSnap && (
+          <dl className="kv">
+            <dt>Active</dt>
+            <dd>{kbSnap.active ? 'yes' : 'no'}</dd>
+            <dt>Speed, mm/s</dt>
+            <dd className="mono">{String(kbSnap.shaped_speed_mmps)}</dd>
+            <dt>Yaw, mrad/s</dt>
+            <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s)}</dd>
+            <dt>Gear</dt>
+            <dd className="mono">
+              {String(kbSnap.gear_label)} ({String(kbSnap.gear)})
+            </dd>
+            <dt>Loss</dt>
+            <dd>{String(kbSnap.loss_reason ?? '—')}</dd>
+          </dl>
+        )}
+      </section>
+
       <section className="panel">
         <h2>HMI requests</h2>
         <p className="muted small">
@@ -984,7 +1107,7 @@ function Control() {
               value={gear}
               onChange={(e) => setGear(Number(e.target.value))}
             />
-            <span className="field-hint">0–3 (P/R/D/S mapping)</span>
+            <span className="field-hint">0=N 1=D 2=S 3=R (host.yaml / MTR)</span>
           </label>
           <label>
             Period, ms

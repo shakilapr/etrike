@@ -89,6 +89,14 @@ class Scheduler:
         job.cancel = True
         return True
 
+    def update_values(self, job_id: str, values: dict[str, Any]) -> bool:
+        """Hot-update engineering values for the next period (re-encode uses new dict)."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        job.values = dict(values)
+        return True
+
     def cancel_all(self) -> int:
         n = len(self._jobs)
         self._jobs.clear()

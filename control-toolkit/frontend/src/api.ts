@@ -153,8 +153,9 @@ export const api = {
       method: 'POST',
       body: '{}',
     }),
-  injectEstop: () =>
-    json<Record<string, unknown>>('/injections', {
+  injectEstop: async () => {
+    // Dual-bus ESTOP matches firmware bridge (network.yaml high↔low same_frame).
+    const high = await json<Record<string, unknown>>('/injections', {
       method: 'POST',
       body: JSON.stringify({
         bus: 'high',
@@ -162,6 +163,42 @@ export const api = {
         values: {},
         owner: 'ui:estop',
       }),
+    })
+    try {
+      await json<Record<string, unknown>>('/injections', {
+        method: 'POST',
+        body: JSON.stringify({
+          bus: 'low',
+          key: 'safety:safety_estop',
+          values: {},
+          owner: 'ui:estop',
+        }),
+      })
+    } catch {
+      /* low may conflict if ownership shared; high already sent */
+    }
+    return high
+  },
+  controlStatus: () =>
+    json<{ control: Record<string, unknown> }>('/control/status'),
+  controlIntent: (body: {
+    sequence: number
+    source?: string
+    mode?: string
+    throttle: number
+    steer: number
+    gear?: number | null
+    hard_brake?: boolean
+    estop?: boolean
+  }) =>
+    json<{ control: Record<string, unknown>; estop?: unknown }>(
+      '/control/intent',
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  controlRelease: (reason = 'client_release') =>
+    json<{ control: Record<string, unknown> }>('/control/release', {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
     }),
   events: (limit = 50) =>
     json<{ count: number; events: Array<Record<string, unknown>> }>(

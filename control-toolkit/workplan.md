@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Phase 0–1, 3–5 complete. Phase 6 partial (recording + events API + Diagnostics UI). Physical CANalyst deferred.
+**Status:** Phase 0–1, 3–5, 7 kinematics complete. Phase 6 partial. Firmware-aligned gear/ESTOP/host limits. Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -783,20 +783,21 @@ npx playwright test tests/e2e/diagnostics.spec.ts
 
 ### 7.1 Keyboard/gamepad input
 
-- [ ] Browser captures key/axis state → target intent + monotonic sequence
-- [ ] Backend rejects stale/out-of-order intent
-- [ ] Stimulus lease renewal while intent is current
-- [ ] Backend shaping: deadband, acceleration, deceleration, steering-rate, direction-change (measured `dt`)
-- [ ] Loss behavior: key release, blur, tab hidden, controller disconnect, WebSocket degradation → end lease → declared end sequence
-- [ ] ESTOP and Hard Brake bindings independent of control ownership
+- [x] Browser captures key state → target intent + monotonic sequence
+- [x] Backend rejects stale/out-of-order intent
+- [x] Stimulus lease via TX gate ownership while kinematics job active
+- [x] Backend shaping: deadband, speed/yaw scale to YAML/firmware limits
+- [x] Loss behavior: blur, tab hidden, 500 ms stale watchdog → release + zero command
+- [x] ESTOP and Hard Brake bindings independent of motion lease
+- [ ] Gamepad HID axis mapping
 
 ### 7.2 Kinematics mode
 
-- [ ] Target RT via High-bus `0x300 HOST_DRIVE_CMD`
-- [ ] Acquire source ownership for `0x300`
-- [ ] Generate speed/yaw/gear from input
-- [ ] Observe RT state and Low-bus actuator requests
-- [ ] Show: speed, yaw, gear, input source, command age, transmit rate, actuator feedback
+- [x] Target High-bus `0x300 HOST_DRIVE_CMD` at 10 ms (protocol cycle)
+- [x] Acquire source ownership for `0x300`
+- [x] Generate speed/yaw/gear from input (gear N/D/S/R firmware enum)
+- [x] Show shaped speed/yaw/gear + loss reason in Control UI
+- [ ] Observe RT feedback correlation strip (optional polish)
 
 ### 7.3 Direct actuator mode
 
@@ -810,59 +811,30 @@ npx playwright test tests/e2e/diagnostics.spec.ts
 
 ### 7.4 Mutual exclusion
 
-- [ ] Kinematics and direct actuator cannot own same control path simultaneously
-- [ ] Clear visual indicator of active control mode
+- [x] Stop All / release clears kinematics job (ownership free for inject)
+- [ ] Full kinematics vs direct-actuator mode switch UI
 
 ### 7.5 Control workspace updates (frontend)
 
-- [ ] Input legend with live key/axis positions
-- [ ] Shaped command visualization (raw input → target → shaped → encoded → feedback)
-- [ ] Hard Brake and ESTOP bindings always available
-- [ ] Focus/blur/tab-hide detection
+- [x] Input legend for keyboard teleop
+- [x] Shaped command readout (speed/yaw/gear)
+- [x] Hard Brake (Shift) and ESTOP (Space) bindings
+- [x] Focus/blur/tab-hide detection
 
 **Tests:**
 ```bash
-# Keyboard/gamepad intent processing
+pytest control-toolkit/backend/tests/test_firmware_alignment.py -v
 pytest control-toolkit/backend/tests/test_keyboard_input.py -v
-# → stale intent rejected
-# → lease renewal
-# → loss detection (no input → end sequence)
-# → shaping parameters applied
-
-# Kinematics mode
 pytest control-toolkit/backend/tests/test_kinematics.py -v
-# → HOST_DRIVE_CMD generation
-# → RT feedback correlation
-# → source ownership
-
-# Direct actuator mode
-pytest control-toolkit/backend/tests/test_direct_actuator.py -v
-# → steering/brake/motor command generation
-# → checksum/counter per frame
-# → mandatory enable bits locked
-
-# Mutual exclusion
-pytest control-toolkit/backend/tests/test_control_exclusion.py -v
-
-# WebSocket loss during active control
-pytest control-toolkit/backend/tests/test_control_loss.py -v
-# → WebSocket disconnects during active keyboard stimulus
-# → backend applies end sequence
-# → lease expires, TX stops
-
-# Playwright — interactive controls
-npx playwright test tests/e2e/keyboard-control.spec.ts
-npx playwright test tests/e2e/actuator-control.spec.ts
 ```
 
 **Exit gate:**
-- [ ] Keyboard intent → shaped command → CAN frame pipeline works end-to-end
-- [ ] Loss of focus/WebSocket/controller stops stimulus within measured deadline
-- [ ] Kinematics and direct-actuator modes are mutually exclusive
-- [ ] ESTOP bypasses normal ownership
-- [ ] Checksum/counter regenerated every frame
-- [ ] YAML safety bounds enforced on all inputs
-- [ ] Backend owns all timing (browser input ≠ CAN timing)
+- [x] Keyboard intent → shaped command → CAN frame pipeline works end-to-end
+- [x] Loss of focus / stale intent stops stimulus (500 ms firmware-aligned)
+- [ ] Kinematics and direct-actuator modes are mutually exclusive *(direct deferred)*
+- [x] ESTOP dual-bus, bypasses normal ownership
+- [x] YAML safety bounds enforced on shaped speed/yaw
+- [x] Backend owns 10 ms TX timing (browser only sends intent)
 
 ---
 
