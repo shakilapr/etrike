@@ -40,6 +40,10 @@ class TxGate:
         self._get_transport = get_transport
         self._get_adapter_epoch = get_adapter_epoch
 
+    def release_owner(self, owner: str) -> int:
+        """Drop all TX leases held by ``owner`` (e.g. control release)."""
+        return self._ownership.release_owner(owner)
+
     def submit(
         self,
         *,
