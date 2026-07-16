@@ -7,7 +7,7 @@
  *
  * Transport is CAN (virtual/physical via backend), not ROS cmd_vel.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useAppStore, type MessageState } from './store'
 import { api } from './api'
 
@@ -96,17 +96,6 @@ function computeDynamicLimits(speedPxS: number) {
   }
 }
 
-function KeyCap({ label, active, wide }: { label: string; active: boolean; wide?: boolean }) {
-  return (
-    <span
-      className={`keycap ${active ? 'active' : ''} ${wide ? 'wide' : ''}`}
-      data-active={active ? '1' : '0'}
-    >
-      {label}
-    </span>
-  )
-}
-
 function Gauge({
   label,
   value,
@@ -151,6 +140,7 @@ export function DriveConsole() {
   const setStatus = useAppStore((s) => s.setStatus)
   const quality = useAppStore((s) => s.streamQuality)
 
+  const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<SimState>({ ...INITIAL })
@@ -161,16 +151,23 @@ export function DriveConsole() {
   const armedRef = useRef(false)
   const gearRef = useRef<Gear>('N')
   const shiftRef = useRef<ShiftMode>('smart')
+  /** Coalesce intent POSTs so out-of-order 409s don't spam the log. */
+  const intentInFlightRef = useRef(false)
+  const intentQueuedRef = useRef(false)
+  /** Latest backend-shaped command for canvas fallback when bus decode is lagging. */
+  const shapedRef = useRef({ speed: 0, yaw: 0, gear: 0 as number })
 
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
   const [shiftMode, setShiftMode] = useState<ShiftMode>('smart')
   const [gear, setGear] = useState<Gear>('N')
+  // Firmware-aligned caps (shared_config / host.yaml): speed ≤ 3000, yaw ≤ 3000.
   const [maxSpeedMmps, setMaxSpeedMmps] = useState(3000)
   const [maxYawMrad, setMaxYawMrad] = useState(3000)
   const [keyUi, setKeyUi] = useState<Record<string, boolean>>({})
   const [ctrlSnap, setCtrlSnap] = useState<Record<string, unknown> | null>(null)
+  const [focused, setFocused] = useState(false)
   const [hud, setHud] = useState<Hud>({
     speedMmps: 0,
     yawMradS: 0,
@@ -195,6 +192,16 @@ export function DriveConsole() {
   const applyGear = useCallback((g: Gear) => {
     stateRef.current.gear = g
     setGear(g)
+  }, [])
+
+  const focusDrive = useCallback(() => {
+    wrapRef.current?.focus({ preventScroll: true })
+    setFocused(true)
+  }, [])
+
+  const clearKeys = useCallback(() => {
+    keysRef.current = {}
+    setKeyUi({})
   }, [])
 
   useEffect(() => {
@@ -222,8 +229,13 @@ export function DriveConsole() {
     setBusy(true)
     try {
       await ensureArmedPath()
+      // Usable default: leave Adaptive free; in Direct start in Drive gear.
+      if (shiftRef.current === 'direct' && gearRef.current === 'N') {
+        applyGear('D')
+      }
       setArmed(true)
-      setLog('Armed: keyboard → HOST_DRIVE_CMD on CAN (10 ms). Canvas follows bus.')
+      focusDrive()
+      setLog('Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Canvas follows bus.')
     } catch (e) {
       setLog(String(e))
       setArmed(false)
@@ -234,6 +246,7 @@ export function DriveConsole() {
 
   async function disarmControl(reason = 'disarm') {
     setArmed(false)
+    clearKeys()
     try {
       await api.controlRelease(reason)
     } catch {
@@ -246,14 +259,16 @@ export function DriveConsole() {
     setBusy(true)
     try {
       await ensureArmedPath()
+      seqRef.current += 1
       const r = await api.controlIntent({
-        sequence: ++seqRef.current,
+        sequence: seqRef.current,
         throttle: 0,
         steer: 0,
         estop: true,
       })
       setCtrlSnap(r.control)
       setArmed(false)
+      clearKeys()
       applyGear('N')
       setLog('ESTOP: SAFETY_ESTOP on high+low CAN')
       setStatus(await api.status())
@@ -264,21 +279,45 @@ export function DriveConsole() {
     }
   }
 
-  // Keyboard capture always when console focused
+  /** True when Drive tab owns keyboard (canvas, side panel, or buttons). */
+  function driveOwnsKeyboard() {
+    const root = rootRef.current
+    if (!root) return false
+    if (root.matches(':focus-within')) return true
+    const ae = document.activeElement
+    if (ae && root.contains(ae)) return true
+    // After click on non-focusable area, body may be active but user is on this tab.
+    return focused && (ae === document.body || ae === document.documentElement)
+  }
+
+  // Keyboard: entire Drive workspace, not only the canvas wrap.
   useEffect(() => {
+    const DRIVE_CODES = [
+      'ArrowUp',
+      'ArrowDown',
+      'ArrowLeft',
+      'ArrowRight',
+      'Space',
+      'KeyW',
+      'KeyA',
+      'KeyS',
+      'KeyD',
+      'KeyQ',
+      'KeyE',
+      'ShiftLeft',
+      'ShiftRight',
+    ]
+
     const onDown = (e: KeyboardEvent) => {
-      if (!wrapRef.current?.contains(document.activeElement) && document.activeElement !== wrapRef.current) {
-        // still allow if body focused after click on console
-        if (!wrapRef.current?.matches(':focus-within')) return
+      if (e.repeat) return
+      if (!driveOwnsKeyboard()) return
+      // Don't steal typing from inputs/selects/sliders in the side panel.
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+        return
       }
       keysRef.current[e.code] = true
-      if (
-        ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(
-          e.code,
-        )
-      ) {
-        e.preventDefault()
-      }
+      if (DRIVE_CODES.includes(e.code)) e.preventDefault()
       if (e.code === 'KeyQ') {
         const idx = GEARS.indexOf(gearRef.current)
         if (idx > 0) applyGear(GEARS[idx - 1])
@@ -290,34 +329,38 @@ export function DriveConsole() {
       setKeyUi({ ...keysRef.current })
     }
     const onUp = (e: KeyboardEvent) => {
+      if (!keysRef.current[e.code] && !driveOwnsKeyboard()) return
       keysRef.current[e.code] = false
       setKeyUi({ ...keysRef.current })
     }
-    const onBlur = () => {
-      keysRef.current = {}
-      setKeyUi({})
-      if (armedRef.current) void disarmControl('blur')
-    }
+    // Safety: leave the browser tab → disarm. Do NOT disarm on window blur alone
+    // (DevTools / multi-monitor focus was killing control mid-drive).
     const onVis = () => {
-      if (document.hidden && armedRef.current) void disarmControl('tab_hidden')
+      if (document.hidden) {
+        clearKeys()
+        if (armedRef.current) void disarmControl('tab_hidden')
+      }
     }
     window.addEventListener('keydown', onDown)
     window.addEventListener('keyup', onUp)
-    window.addEventListener('blur', onBlur)
     document.addEventListener('visibilitychange', onVis)
     return () => {
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
-      window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVis)
       void api.controlRelease('unmount').catch(() => undefined)
     }
-  }, [applyGear])
+  }, [applyGear, clearKeys, focused])
 
-  // Armed: publish intent to CAN at 20 Hz (backend shapes + 10 ms TX)
+  // Armed: publish intent at 20 Hz; coalesce so only one POST is in flight.
   useEffect(() => {
     if (!armed) return
-    const id = window.setInterval(() => {
+
+    const sendLatest = () => {
+      if (intentInFlightRef.current) {
+        intentQueuedRef.current = true
+        return
+      }
       const k = keysRef.current
       let throttle = 0
       let steer = 0
@@ -325,11 +368,11 @@ export function DriveConsole() {
       if (k.KeyS || k.ArrowDown) throttle -= 1
       if (k.KeyA || k.ArrowLeft) steer -= 1
       if (k.KeyD || k.ArrowRight) steer += 1
-      // Scale by sliders as max authority (robot_control speed sliders idea)
-      const speedFrac = maxSpeedMmps / 3000
-      const yawFrac = maxYawMrad / 3000
-      throttle *= Math.min(1, speedFrac)
-      steer *= Math.min(1, yawFrac)
+      // Scale by sliders as fraction of firmware max authority.
+      const speedFrac = Math.min(1, maxSpeedMmps / 3000)
+      const yawFrac = Math.min(1, maxYawMrad / 3000)
+      throttle *= speedFrac
+      steer *= yawFrac
 
       let gearNum = GEAR_NUM[gearRef.current]
       if (shiftRef.current === 'smart') {
@@ -339,9 +382,12 @@ export function DriveConsole() {
       const hard_brake = !!(k.ShiftLeft || k.ShiftRight)
       const estop = !!k.Space
       seqRef.current += 1
+      const seq = seqRef.current
+      intentInFlightRef.current = true
+      intentQueuedRef.current = false
       void api
         .controlIntent({
-          sequence: seqRef.current,
+          sequence: seq,
           source: 'keyboard',
           mode: 'kinematics',
           throttle,
@@ -352,18 +398,36 @@ export function DriveConsole() {
         })
         .then((r) => {
           setCtrlSnap(r.control)
+          shapedRef.current = {
+            speed: Number(r.control?.shaped_speed_mmps ?? 0) || 0,
+            yaw: Number(r.control?.shaped_yaw_mrad_s ?? 0) || 0,
+            gear: Number(r.control?.gear ?? 0) || 0,
+          }
           if (estop) {
             setArmed(false)
             applyGear('N')
+            clearKeys()
+            setLog('ESTOP via Space — control released')
           }
         })
-        .catch((e) => setLog(String(e)))
-    }, 50)
+        .catch((e) => {
+          const msg = String(e)
+          // Stale sequence from races is expected under load; don't flood the log.
+          if (!/stale_sequence|409/i.test(msg)) setLog(msg)
+        })
+        .finally(() => {
+          intentInFlightRef.current = false
+          if (intentQueuedRef.current && armedRef.current) sendLatest()
+        })
+    }
+
+    const id = window.setInterval(sendLatest, 50)
     return () => {
       window.clearInterval(id)
+      intentQueuedRef.current = false
       void api.controlRelease('disable').catch(() => undefined)
     }
-  }, [armed, maxSpeedMmps, maxYawMrad, applyGear])
+  }, [armed, maxSpeedMmps, maxYawMrad, applyGear, clearKeys])
 
   // Canvas + physics
   useEffect(() => {
@@ -495,10 +559,18 @@ export function DriveConsole() {
       const state = stateRef.current
       const msgs = useAppStore.getState().messages
       const drive = msgs.find((m) => m.name === 'HOST_DRIVE_CMD')
-      const speedMmps = numSignal(drive, 'speed_mmps') ?? 0
-      const yawMrad = numSignal(drive, 'yaw_rate_mrad_s') ?? 0
+      // Prefer live bus decode; fall back to last shaped intent so canvas moves immediately on arm+W.
+      const fromBusSpeed = numSignal(drive, 'speed_mmps')
+      const fromBusYaw = numSignal(drive, 'yaw_rate_mrad_s')
+      const speedMmps = fromBusSpeed ?? shapedRef.current.speed
+      const yawMrad = fromBusYaw ?? shapedRef.current.yaw
       const g = gearFromCan(drive)
       if (g && g !== state.gear) applyGear(g)
+      else if (!g && shapedRef.current.gear) {
+        const map: Gear[] = ['N', 'D', 'S', 'R']
+        const sg = map[shapedRef.current.gear]
+        if (sg && sg !== state.gear) applyGear(sg)
+      }
       const targetV = (speedMmps / 1000) * PIXELS_PER_METER
       const omega = yawMrad / 1000
       let targetAlpha = 0
@@ -626,22 +698,63 @@ export function DriveConsole() {
 
   const k = keyUi
   const benchOn = status?.session?.bench_tx === 'enabled'
+  const displaySpeed = armed && canSpeed != null ? canSpeed : hud.speedMmps
+  const displayYaw = armed && canYaw != null ? canYaw : hud.yawMradS
+  const displayGear = armed && canGear ? canGear : gear
+  const shapedSpeed =
+    ctrlSnap?.shaped_speed_mmps != null ? Number(ctrlSnap.shaped_speed_mmps) : null
+  const shapedYaw =
+    ctrlSnap?.shaped_yaw_mrad_s != null ? Number(ctrlSnap.shaped_yaw_mrad_s) : null
+
+  /** Hold virtual key (pointer) — works while armed or local sim. */
+  function pressVirtual(code: string, down: boolean) {
+    if (code === 'KeyQ' && down) {
+      const idx = GEARS.indexOf(gearRef.current)
+      if (idx > 0) applyGear(GEARS[idx - 1])
+      return
+    }
+    if (code === 'KeyE' && down) {
+      const idx = GEARS.indexOf(gearRef.current)
+      if (idx < GEARS.length - 1) applyGear(GEARS[idx + 1])
+      return
+    }
+    keysRef.current[code] = down
+    setKeyUi({ ...keysRef.current })
+    setFocused(true)
+  }
+
+  function keycapHandlers(code: string) {
+    return {
+      onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        e.preventDefault()
+        e.currentTarget.setPointerCapture?.(e.pointerId)
+        pressVirtual(code, true)
+      },
+      onPointerUp: () => pressVirtual(code, false),
+      onPointerCancel: () => pressVirtual(code, false),
+      onLostPointerCapture: () => pressVirtual(code, false),
+    }
+  }
 
   return (
-    <div className="workspace drive-console" data-testid="workspace-preview">
+    <div
+      className={`workspace drive-console${focused ? ' drive-focused' : ''}${armed ? ' drive-armed' : ''}`}
+      data-testid="workspace-preview"
+      ref={rootRef}
+      onPointerDownCapture={() => setFocused(true)}
+    >
       <header className="drive-topbar" data-testid="drive-topbar">
-        <div>
+        <div className="drive-top-title">
           <h1>Drive</h1>
           <p className="muted small">
-            High-bus Host kinematics only (HOST_DRIVE_CMD 0x300). Not Low-bus direct
-            actuators — use Control → Low bus for motor/steer/brake unit tests.
+            High-bus Host kinematics (<span className="mono">HOST_DRIVE_CMD 0x300</span>). For
+            Low-bus motor/steer/brake unit tests use <strong>Control → Low bus</strong>.
           </p>
         </div>
-        <div className="drive-top-chips">
-          <span className={`chip quality-${quality}`}>
+        <div className="drive-top-chips" data-testid="drive-status-chips">
+          <span className={`chip quality-${quality}`} title="WebSocket stream quality">
             <span className="chip-k">Stream</span>
             <span className="chip-v">
-              ●{' '}
               {quality === 'live'
                 ? 'Live'
                 : quality === 'delayed'
@@ -651,20 +764,24 @@ export function DriveConsole() {
                     : 'Connecting'}
             </span>
           </span>
-          <span className={`chip ${benchOn ? 'ok' : 'muted'}`}>
+          <span className={`chip ${benchOn ? 'ok' : ''}`} title="Session Bench TX gate">
             <span className="chip-k">Bench TX</span>
-            <span className="chip-v">{benchOn ? '● Enabled' : '● Disabled'}</span>
+            <span className="chip-v">{benchOn ? 'On' : 'Off'}</span>
           </span>
-          <span className={`chip ${armed ? 'ok' : ''}`}>
+          <span className={`chip ${armed ? 'ok' : ''}`} data-testid="drive-arm-chip">
             <span className="chip-k">Control</span>
-            <span className="chip-v">{armed ? '● Armed' : '● Local sim'}</span>
+            <span className="chip-v">{armed ? 'Armed' : 'Local'}</span>
           </span>
-          <span className={`chip ${canLive ? 'ok' : 'muted'}`}>
+          <span className={`chip ${canLive ? 'ok' : ''}`} title="HOST_DRIVE_CMD freshness">
             <span className="chip-k">0x300</span>
-            <span className="chip-v">{canLive ? '● Live' : '● Missing'}</span>
+            <span className="chip-v">{canLive ? 'Live' : 'Idle'}</span>
+          </span>
+          <span className={`chip ${focused ? 'ok' : ''}`} data-testid="drive-focus-chip">
+            <span className="chip-k">Keys</span>
+            <span className="chip-v">{focused ? 'Ready' : 'Click UI'}</span>
           </span>
         </div>
-        <div className="actions tight">
+        <div className="actions tight drive-top-actions">
           {!armed ? (
             <button
               type="button"
@@ -682,7 +799,7 @@ export function DriveConsole() {
               disabled={busy}
               onClick={() => void disarmControl('disarm')}
             >
-              Disarm control
+              Disarm
             </button>
           )}
           <button
@@ -692,7 +809,7 @@ export function DriveConsole() {
             disabled={busy}
             onClick={() => void fireEstop()}
           >
-            Inject ESTOP
+            ESTOP
           </button>
         </div>
       </header>
@@ -703,160 +820,223 @@ export function DriveConsole() {
           ref={wrapRef}
           tabIndex={0}
           data-testid="preview-canvas-wrap"
-          onMouseDown={() => wrapRef.current?.focus()}
+          onMouseDown={() => focusDrive()}
+          onFocus={() => setFocused(true)}
+          onBlur={(e) => {
+            // Keep focused flag if focus moves to another Drive control.
+            const next = e.relatedTarget as Node | null
+            if (next && rootRef.current?.contains(next)) return
+            // Delay: click from canvas → button may briefly clear focus.
+            window.setTimeout(() => {
+              if (!rootRef.current?.matches(':focus-within')) setFocused(false)
+            }, 0)
+          }}
         >
           <canvas ref={canvasRef} data-testid="preview-canvas" />
-          {!armed && (
-            <div className="drive-lock-hint muted">
-              Local sim — arm to publish Host intent on High bus (0x300)
-            </div>
-          )}
-          {armed && (
-            <div className="drive-lock-hint armed">
-              Armed — High bus HOST_DRIVE_CMD @ 10 ms; keys send Host intent
-            </div>
-          )}
+          <div
+            className={`drive-lock-hint ${armed ? 'armed' : 'muted'}`}
+            data-testid="drive-lock-hint"
+          >
+            {armed
+              ? 'Armed — keys & keycaps publish HOST_DRIVE_CMD @ 10 ms'
+              : focused
+                ? 'Local sim — Arm CAN control to transmit on the bus'
+                : 'Click canvas or side panel, then use WASD / keycaps'}
+          </div>
         </div>
 
-        <aside className="drive-side panel">
-          <h2>Telemetry</h2>
-          <div className="drive-gauges" data-testid="drive-gauges">
-            <Gauge
-              label="cmd speed"
-              value={armed && canSpeed != null ? canSpeed : hud.speedMmps}
-              unit="mm/s"
-              max={maxSpeedMmps}
-              tone="accent"
-            />
-            <Gauge
-              label="cmd yaw"
-              value={armed && canYaw != null ? canYaw : hud.yawMradS}
-              unit="mrad/s"
-              max={maxYawMrad}
-              tone="warn"
-            />
-            <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" />
-            <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
-          </div>
-          <dl className="kv preview-kv" data-testid="preview-telemetry">
-            <dt>HOST_DriveSpeed [0x300]</dt>
-            <dd className="mono">
-              {(armed && canSpeed != null ? canSpeed : hud.speedMmps).toFixed(0)} mm/s
-            </dd>
-            <dt>HOST_YawRate [0x300]</dt>
-            <dd className="mono">
-              {(armed && canYaw != null ? canYaw : hud.yawMradS).toFixed(0)} mrad/s
-            </dd>
-            <dt>Gear</dt>
-            <dd className="mono">
-              {armed && canGear ? canGear : gear} · θ {hud.thetaDeg.toFixed(1)}°
-            </dd>
-            <dt>Turn ρ</dt>
-            <dd className="mono">{hud.radiusText}</dd>
-            {ctrlSnap && (
-              <>
-                <dt>Backend shape</dt>
-                <dd className="mono">
-                  {String(ctrlSnap.shaped_speed_mmps)} mm/s · {String(ctrlSnap.gear_label)}
-                </dd>
-              </>
-            )}
-          </dl>
-
-          <h2 className="mt-section">Drive</h2>
-          <div className="keycap-pad" data-testid="drive-keycaps">
-            <div className="keycap-row">
-              <KeyCap label="Q" active={!!k.KeyQ} />
-              <KeyCap label="W" active={!!(k.KeyW || k.ArrowUp)} />
-              <KeyCap label="E" active={!!k.KeyE} />
+        <aside className="drive-side panel" data-testid="drive-side">
+          <section className="drive-section" data-testid="drive-telemetry-section">
+            <div className="drive-section-head">
+              <h2>Telemetry</h2>
+              <span className="muted small mono">
+                {armed ? (canLive ? 'from bus' : 'waiting 0x300') : 'local sim'}
+              </span>
             </div>
-            <div className="keycap-row">
-              <KeyCap label="A" active={!!(k.KeyA || k.ArrowLeft)} />
-              <KeyCap label="S" active={!!(k.KeyS || k.ArrowDown)} />
-              <KeyCap label="D" active={!!(k.KeyD || k.ArrowRight)} />
+            <div className="drive-gauges" data-testid="drive-gauges">
+              <Gauge
+                label="cmd speed"
+                value={displaySpeed}
+                unit="mm/s"
+                max={Math.max(1, maxSpeedMmps)}
+                tone="accent"
+              />
+              <Gauge
+                label="cmd yaw"
+                value={displayYaw}
+                unit="mrad/s"
+                max={Math.max(1, maxYawMrad)}
+                tone="warn"
+              />
+              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" />
+              <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
             </div>
-            <div className="keycap-row">
-              <KeyCap label="Shift" active={!!(k.ShiftLeft || k.ShiftRight)} />
-              <KeyCap label="Space ESTOP" active={!!k.Space} wide />
+            <dl className="kv preview-kv" data-testid="preview-telemetry">
+              <dt>HOST speed / yaw [0x300]</dt>
+              <dd className="mono">
+                {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
+              </dd>
+              <dt>Gear · heading</dt>
+              <dd className="mono">
+                {displayGear} · θ {hud.thetaDeg.toFixed(1)}°
+              </dd>
+              <dt>Turn radius</dt>
+              <dd className="mono">{hud.radiusText}</dd>
+              <dt>Backend shaped</dt>
+              <dd className="mono" data-testid="drive-shaped">
+                {shapedSpeed != null
+                  ? `${shapedSpeed} mm/s · ${String(ctrlSnap?.gear_label ?? '—')} · yaw ${shapedYaw ?? 0}`
+                  : armed
+                    ? 'waiting intent…'
+                    : '— (arm to shape)'}
+              </dd>
+            </dl>
+          </section>
+
+          <section className="drive-section" data-testid="drive-controls-section">
+            <div className="drive-section-head">
+              <h2>Controls</h2>
+              <span className="muted small">hold keycaps or use keyboard</span>
             </div>
-            {!armed && <div className="keycap-lock">Local only — not on bus</div>}
-          </div>
+            <div className="keycap-pad" data-testid="drive-keycaps">
+              <div className="keycap-row">
+                <button type="button" className={`keycap ${k.KeyQ ? 'active' : ''}`} data-testid="keycap-Q" {...keycapHandlers('KeyQ')}>
+                  Q
+                </button>
+                <button type="button" className={`keycap ${k.KeyW || k.ArrowUp ? 'active' : ''}`} data-testid="keycap-W" {...keycapHandlers('KeyW')}>
+                  W
+                </button>
+                <button type="button" className={`keycap ${k.KeyE ? 'active' : ''}`} data-testid="keycap-E" {...keycapHandlers('KeyE')}>
+                  E
+                </button>
+              </div>
+              <div className="keycap-row">
+                <button type="button" className={`keycap ${k.KeyA || k.ArrowLeft ? 'active' : ''}`} data-testid="keycap-A" {...keycapHandlers('KeyA')}>
+                  A
+                </button>
+                <button type="button" className={`keycap ${k.KeyS || k.ArrowDown ? 'active' : ''}`} data-testid="keycap-S" {...keycapHandlers('KeyS')}>
+                  S
+                </button>
+                <button type="button" className={`keycap ${k.KeyD || k.ArrowRight ? 'active' : ''}`} data-testid="keycap-D" {...keycapHandlers('KeyD')}>
+                  D
+                </button>
+              </div>
+              <div className="keycap-row">
+                <button
+                  type="button"
+                  className={`keycap ${k.ShiftLeft || k.ShiftRight ? 'active' : ''}`}
+                  data-testid="keycap-Shift"
+                  {...keycapHandlers('ShiftLeft')}
+                >
+                  Shift
+                </button>
+                <button
+                  type="button"
+                  className={`keycap wide ${k.Space ? 'active' : ''}`}
+                  data-testid="keycap-Space"
+                  {...keycapHandlers('Space')}
+                >
+                  Space ESTOP
+                </button>
+              </div>
+              {!armed && (
+                <div className="keycap-banner" data-testid="keycap-local-banner">
+                  Local sim — not on bus until Armed
+                </div>
+              )}
+            </div>
+          </section>
 
-          <h2 className="mt-section">Shift mode</h2>
-          <div className="seg" data-testid="preview-shift-mode">
-            <button
-              type="button"
-              className={shiftMode === 'smart' ? 'seg-btn active' : 'seg-btn'}
-              data-testid="preview-mode-adaptive"
-              onClick={() => setShiftMode('smart')}
-            >
-              Adaptive
-            </button>
-            <button
-              type="button"
-              className={shiftMode === 'direct' ? 'seg-btn active' : 'seg-btn'}
-              data-testid="preview-mode-direct"
-              onClick={() => setShiftMode('direct')}
-            >
-              Direct
-            </button>
-          </div>
-          <p className="muted small preview-mode-blurb" data-testid="preview-mode-blurb">
-            {shiftMode === 'smart' ? (
-              <>
-                <strong>Adaptive:</strong> auto D/S/R from pedals (HTML sim). When armed, throttle
-                maps gear toward D or R on the bus.
-              </>
-            ) : (
-              <>
-                <strong>Direct:</strong> gear only from N/D/S/R buttons or Q/E. Pedals act as
-                accelerator/brake in that gear.
-              </>
-            )}
-          </p>
-
-          <div className="gear-row" data-testid="preview-gears">
-            {GEARS.map((g) => (
+          <section className="drive-section" data-testid="drive-shift-section">
+            <div className="drive-section-head">
+              <h2>Shift mode</h2>
+            </div>
+            <div className="seg" data-testid="preview-shift-mode">
               <button
-                key={g}
                 type="button"
-                className={gear === g ? 'gear-btn active' : 'gear-btn'}
-                data-testid={`preview-gear-${g}`}
-                onClick={() => applyGear(g)}
+                className={shiftMode === 'smart' ? 'seg-btn active' : 'seg-btn'}
+                data-testid="preview-mode-adaptive"
+                onClick={() => setShiftMode('smart')}
               >
-                {g}
+                Adaptive
               </button>
-            ))}
-          </div>
+              <button
+                type="button"
+                className={shiftMode === 'direct' ? 'seg-btn active' : 'seg-btn'}
+                data-testid="preview-mode-direct"
+                onClick={() => setShiftMode('direct')}
+              >
+                Direct
+              </button>
+            </div>
+            <p className="muted small preview-mode-blurb" data-testid="preview-mode-blurb">
+              {shiftMode === 'smart' ? (
+                <>
+                  <strong>Adaptive:</strong> auto D/S/R from throttle. Armed: backend also maps
+                  throttle → D or R.
+                </>
+              ) : (
+                <>
+                  <strong>Direct:</strong> gear only from N/D/S/R or Q/E. Pedals accelerate/brake
+                  in the selected gear.
+                </>
+              )}
+            </p>
 
-          <label className="field mt-section">
-            <span className="field-label">Max drive speed, mm/s</span>
-            <div className="field-row">
-              <input
-                type="range"
-                min={0}
-                max={6000}
-                step={100}
-                value={maxSpeedMmps}
-                onChange={(e) => setMaxSpeedMmps(Number(e.target.value))}
-              />
-              <span className="mono field-val">{maxSpeedMmps}</span>
+            <div className="gear-row" data-testid="preview-gears">
+              {GEARS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  className={gear === g ? 'gear-btn active' : 'gear-btn'}
+                  data-testid={`preview-gear-${g}`}
+                  onClick={() => {
+                    applyGear(g)
+                    setFocused(true)
+                  }}
+                >
+                  {g}
+                </button>
+              ))}
             </div>
-          </label>
-          <label className="field">
-            <span className="field-label">Max yaw rate, mrad/s</span>
-            <div className="field-row">
-              <input
-                type="range"
-                min={0}
-                max={3000}
-                step={50}
-                value={maxYawMrad}
-                onChange={(e) => setMaxYawMrad(Number(e.target.value))}
-              />
-              <span className="mono field-val">{maxYawMrad}</span>
+          </section>
+
+          <section className="drive-section" data-testid="drive-limits-section">
+            <div className="drive-section-head">
+              <h2>Authority limits</h2>
+              <span className="muted small">firmware max 3000</span>
             </div>
-          </label>
+            <label className="field">
+              <span className="field-label">Max drive speed, mm/s</span>
+              <div className="field-row">
+                <input
+                  type="range"
+                  min={0}
+                  max={3000}
+                  step={50}
+                  value={maxSpeedMmps}
+                  data-testid="drive-max-speed"
+                  onChange={(e) => setMaxSpeedMmps(Number(e.target.value))}
+                />
+                <span className="mono field-val">{maxSpeedMmps}</span>
+              </div>
+            </label>
+            <label className="field">
+              <span className="field-label">Max yaw rate, mrad/s</span>
+              <div className="field-row">
+                <input
+                  type="range"
+                  min={0}
+                  max={3000}
+                  step={50}
+                  value={maxYawMrad}
+                  data-testid="drive-max-yaw"
+                  onChange={(e) => setMaxYawMrad(Number(e.target.value))}
+                />
+                <span className="mono field-val">{maxYawMrad}</span>
+              </div>
+            </label>
+          </section>
 
           <ul className="controls-legend muted small" data-testid="preview-controls-legend">
             <li>
@@ -865,11 +1045,12 @@ export function DriveConsole() {
             <li>
               <kbd>Q</kbd>/<kbd>E</kbd> gear · <kbd>Shift</kbd> hard brake · <kbd>Space</kbd> ESTOP
             </li>
-            <li>Blur / tab hide disarms CAN control (like robot_control lock)</li>
+            <li>Hide browser tab disarms CAN (safety). Click keycaps to hold inputs.</li>
           </ul>
 
           <pre className="log" data-testid="drive-log">
-            {log || 'Click canvas for focus. Local sim is free. Arm CAN control to transmit on the bus.'}
+            {log ||
+              'Click the canvas or any Drive control for keyboard focus. Local sim is free; Arm to TX on High bus.'}
           </pre>
         </aside>
       </div>
