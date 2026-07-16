@@ -31,8 +31,10 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     })
     await expect(page.getByTestId('chip-stream')).toContainText(/Live|Delayed|Lost|Connecting/i)
     await expect(page.getByTestId('chip-profile')).toContainText(
-      /Pure Software|pure_software|—/i,
+      /Computer|Virtual|Pure Software|pure_software|—/i,
     )
+    await expect(page.getByTestId('health-strip')).toBeVisible()
+    await expect(page.getByTestId('chip-health-overall')).toBeVisible()
   })
 
   test('navigates workspaces', async ({ page }) => {

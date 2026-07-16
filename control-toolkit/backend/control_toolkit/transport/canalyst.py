@@ -31,8 +31,22 @@ _HW_TO_BUS: dict[int, ChannelId] = {0: ChannelId.HIGH, 1: ChannelId.LOW}
 _BUS_TO_HW: dict[ChannelId, int] = {v: k for k, v in _HW_TO_BUS.items()}
 
 
-def canalyst_available(device_index: int = 0, bitrate: int = 500_000) -> tuple[bool, str]:
-    """Probe whether a CANalyst-II can be opened briefly."""
+_probe_cache: tuple[float, bool, str] | None = None
+_PROBE_TTL_S = 5.0
+
+
+def canalyst_available(
+    device_index: int = 0, bitrate: int = 500_000, *, force: bool = False
+) -> tuple[bool, str]:
+    """Probe whether a CANalyst-II can be opened briefly (cached ~5s)."""
+    global _probe_cache
+    import time
+
+    now = time.monotonic()
+    if not force and _probe_cache is not None:
+        ts, ok, reason = _probe_cache
+        if now - ts < _PROBE_TTL_S:
+            return ok, reason
     try:
         bus = can.Bus(
             interface="canalystii",
@@ -44,9 +58,12 @@ def canalyst_available(device_index: int = 0, bitrate: int = 500_000) -> tuple[b
             bus.shutdown()
         except Exception:
             pass
+        _probe_cache = (now, True, "CANalyst-II detected")
         return True, "CANalyst-II detected"
     except Exception as exc:  # noqa: BLE001
-        return False, str(exc)
+        reason = str(exc) or "CANalyst-II not available"
+        _probe_cache = (now, False, reason)
+        return False, reason
 
 
 class CanalystTransportAdapter:

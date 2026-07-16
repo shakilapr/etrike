@@ -366,6 +366,8 @@ async function checkShell(page: Page, issues: Issue[]) {
   for (const id of [
     'topbar',
     'sidebar',
+    'health-strip',
+    'chip-health-overall',
     'chip-stream',
     'chip-profile',
     'chip-high',
@@ -376,11 +378,9 @@ async function checkShell(page: Page, issues: Issue[]) {
       issues.push({ severity: 'error', tab, message: `missing shell element: ${id}` })
     }
   }
-  // Multi-row topbar
-  for (const id of ['topbar-row-session', 'topbar-row-vehicle']) {
-    if (!(await page.getByTestId(id).isVisible().catch(() => false))) {
-      issues.push({ severity: 'warn', tab, message: `missing topbar row: ${id}` })
-    }
+  // Compact 2-row health bar (primary strip + meta row)
+  if (!(await page.getByTestId('topbar-row-session').isVisible().catch(() => false))) {
+    issues.push({ severity: 'warn', tab, message: 'missing topbar meta row: topbar-row-session' })
   }
   // Sidebar cmd strip
   for (const id of ['sidebar-cmd-strip', 'sidebar-speed', 'sidebar-steer', 'sidebar-system-card']) {
