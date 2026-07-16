@@ -360,12 +360,16 @@ function dataTypeLabel(signal: DictField): string {
     return 'Flag bit (boolean 0/1 on the wire).'
   }
   if (signal.kind === 'enum' || signal.options?.length) {
-    return `Enumeration (${signal._size}-bit ${signal._type || 'unsigned'}${u ? `, ${u}` : ''}).`
+    return `Enumeration (${signal._size}-bit ${signal._type || 'unsigned'}${u ? `, ${u}` : ''}). One value, not ${signal._size} separate flags.`
   }
+  if (/flags?$|mask$/i.test(signal.key)) {
+    return `Bitfield (${signal._size} bits) — each bit is an independent flag.`
+  }
+  // Multi-bit numbers are ONE value; do not describe packing waffle.
   if (signed) {
-    return `Signed integer (${signal._size} bits${u ? `, ${u}` : ''}).`
+    return `Signed integer using ${signal._size} wire bits as one number${u ? ` (${u})` : ''}. Not a set of independent flags.`
   }
-  return `Unsigned integer (${signal._size} bits${u ? `, ${u}` : ''}).`
+  return `Unsigned integer using ${signal._size} wire bits as one number${u ? ` (${u})` : ''}. Not a set of independent flags.`
 }
 
 function meaningFor(signal: DictField): string {
@@ -665,6 +669,100 @@ function BitGrid({
 
 /* ── Signal table with expand-on-click ────────────────────────────── */
 
+function SignalExpandDoc({
+  signal,
+  colorIndex,
+}: {
+  signal: DictField
+  colorIndex: number
+}) {
+  const bitNotes = bitsFor(signal)
+  const examples = examplesFor(signal)
+  return (
+    <div
+      className="dict-sig-expand-body"
+      data-testid={`dict-sig-expand-body-${signal.key}`}
+      style={
+        {
+          ['--bit-color' as string]: colorFor(colorIndex),
+        } as CSSProperties
+      }
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="dict-sig-expand-head">
+        <span className="bit-inspector-swatch" aria-hidden />
+        <strong>{titleFor(signal)}</strong>
+        <span className="mono sig-key">{signal.key}</span>
+      </div>
+
+      {/* Vertical doc stack — not the multi-column hover kv grid */}
+      <div className="dict-sig-doc" data-testid={`dict-sig-doc-${signal.key}`}>
+        <section className="dict-sig-block">
+          <h4>What</h4>
+          <p data-testid="dict-expand-what">{meaningFor(signal)}</p>
+        </section>
+        <section className="dict-sig-block">
+          <h4>Why</h4>
+          <p data-testid="dict-expand-why">{whyFor(signal)}</p>
+        </section>
+        <section className="dict-sig-block">
+          <h4>Data type</h4>
+          <p data-testid="dict-expand-type">{dataTypeLabel(signal)}</p>
+        </section>
+        <section className="dict-sig-block">
+          <h4>Examples</h4>
+          <ul className="dict-sig-examples" data-testid="dict-expand-examples">
+            {examples.map((ex, i) => (
+              <li key={`${signal.key}-ex-${i}`}>{ex}</li>
+            ))}
+          </ul>
+        </section>
+        {bitNotes ? (
+          <section className="dict-sig-block">
+            <h4>Each bit</h4>
+            <ul className="dict-sig-examples" data-testid="dict-expand-bits">
+              {bitNotes.map((b, i) => (
+                <li key={`${signal.key}-bit-${i}`}>{b}</li>
+              ))}
+            </ul>
+          </section>
+        ) : signal._size > 1 && signal.kind !== 'enum' && !signal.options?.length ? (
+          <section className="dict-sig-block">
+            <h4>Bits</h4>
+            <p data-testid="dict-expand-bits-note">
+              All {signal._size} bits form <strong>one</strong> numeric value (
+              {wirePosition(signal)}). Same-color grid cells are that whole field — not
+              separate meanings per cell.
+            </p>
+          </section>
+        ) : null}
+        <section className="dict-sig-block dict-sig-meta">
+          <div>
+            <h4>Wire</h4>
+            <p className="mono">{wirePosition(signal)}</p>
+          </div>
+          <div>
+            <h4>Scale / range</h4>
+            <p className="mono">
+              {scaleFor(signal)}
+              {signal.min != null || signal.max != null
+                ? ` · ${dash(signal.min)} … ${dash(signal.max)}`
+                : ''}
+              {unitFor(signal) ? ` ${unitFor(signal)}` : ''}
+            </p>
+          </div>
+          {signal.options?.length ? (
+            <div>
+              <h4>Enum map</h4>
+              <p>{valuesFor(signal)}</p>
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  )
+}
+
 function SignalTable({
   message,
   activeSignal,
@@ -678,7 +776,8 @@ function SignalTable({
   expandedSignal: number
   setExpandedSignal: (i: number) => void
 }) {
-  if (message.fields.length === 0) {
+  const fields = Array.isArray(message.fields) ? message.fields : []
+  if (fields.length === 0) {
     return (
       <div className="signal-empty" data-testid="dict-signal-table">
         No payload signals (opaque / event layout).
@@ -704,23 +803,35 @@ function SignalTable({
           </tr>
         </thead>
         <tbody>
-          {message.fields.map((signal, index) => {
+          {fields.map((signal, index) => {
             const open = expandedSignal === index
             const hot = activeSignal === index || open
             return (
-              <Fragment key={signal.key}>
+              <Fragment key={`${signal.key}:${index}`}>
                 <tr
                   className={[hot ? 'highlight' : '', open ? 'row-open' : '']
                     .filter(Boolean)
                     .join(' ')}
                   data-testid={`dict-sig-row-${signal.key}`}
+                  aria-expanded={open}
                   onMouseEnter={() => setActiveSignal(index)}
                   onMouseLeave={() => setActiveSignal(-1)}
                   onClick={() => setExpandedSignal(open ? -1 : index)}
-                  style={{ cursor: 'pointer' }}
                 >
-                  <td className="dict-col-exp mono" aria-hidden>
-                    {open ? '▾' : '▸'}
+                  <td className="dict-col-exp mono" data-label="">
+                    <button
+                      type="button"
+                      className="dict-exp-btn"
+                      data-testid={`dict-sig-toggle-${signal.key}`}
+                      aria-label={open ? `Collapse ${signal.key}` : `Expand ${signal.key}`}
+                      aria-expanded={open}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setExpandedSignal(open ? -1 : index)
+                      }}
+                    >
+                      {open ? '▾' : '▸'}
+                    </button>
                   </td>
                   <td data-label="Signal">
                     <span
@@ -758,77 +869,8 @@ function SignalTable({
                     className="dict-sig-expand"
                     data-testid={`dict-sig-expand-${signal.key}`}
                   >
-                    <td colSpan={10}>
-                      <div
-                        className="dict-sig-expand-body"
-                        style={
-                          {
-                            ['--bit-color' as string]: colorFor(index),
-                          } as CSSProperties
-                        }
-                      >
-                        <div className="dict-sig-expand-head">
-                          <span className="bit-inspector-swatch" aria-hidden />
-                          <strong>{titleFor(signal)}</strong>
-                          <span className="mono sig-key">{signal.key}</span>
-                        </div>
-                        <dl className="bit-inspector-kv dict-sig-doc">
-                          <div>
-                            <dt>What</dt>
-                            <dd data-testid="dict-expand-what">{meaningFor(signal)}</dd>
-                          </div>
-                          <div>
-                            <dt>Why</dt>
-                            <dd data-testid="dict-expand-why">{whyFor(signal)}</dd>
-                          </div>
-                          <div>
-                            <dt>Data type</dt>
-                            <dd data-testid="dict-expand-type">{dataTypeLabel(signal)}</dd>
-                          </div>
-                          <div>
-                            <dt>Examples</dt>
-                            <dd data-testid="dict-expand-examples">
-                              <ul className="dict-sig-examples">
-                                {examplesFor(signal).map((ex) => (
-                                  <li key={ex}>{ex}</li>
-                                ))}
-                              </ul>
-                            </dd>
-                          </div>
-                          {bitsFor(signal) ? (
-                            <div>
-                              <dt>Each bit</dt>
-                              <dd data-testid="dict-expand-bits">
-                                <ul className="dict-sig-examples">
-                                  {bitsFor(signal)!.map((b) => (
-                                    <li key={b}>{b}</li>
-                                  ))}
-                                </ul>
-                              </dd>
-                            </div>
-                          ) : null}
-                          <div>
-                            <dt>Wire</dt>
-                            <dd className="mono">{wirePosition(signal)}</dd>
-                          </div>
-                          <div>
-                            <dt>Scale / range</dt>
-                            <dd className="mono">
-                              {scaleFor(signal)}
-                              {signal.min != null || signal.max != null
-                                ? ` · ${dash(signal.min)} … ${dash(signal.max)}`
-                                : ''}
-                              {unitFor(signal) ? ` ${unitFor(signal)}` : ''}
-                            </dd>
-                          </div>
-                          {signal.options?.length ? (
-                            <div>
-                              <dt>Enum map</dt>
-                              <dd>{valuesFor(signal)}</dd>
-                            </div>
-                          ) : null}
-                        </dl>
-                      </div>
+                    <td colSpan={10} data-label="">
+                      <SignalExpandDoc signal={signal} colorIndex={index} />
                     </td>
                   </tr>
                 ) : null}
@@ -942,7 +984,33 @@ export function CanDictionary() {
       const r = refresh
         ? await api.refreshDictionary()
         : await api.protocolDictionary()
-      setMessages((r.messages || []) as DictMessage[])
+      const msgs = (r.messages || []).map((raw) => {
+        const m = raw as DictMessage
+        const fields = Array.isArray(m.fields)
+          ? m.fields.map((f) => ({
+              ...f,
+              key: String(f.key || ''),
+              label: String(f.label || f.key || ''),
+              kind: String(f.kind || 'number'),
+              _byte: Number(f._byte ?? 0),
+              _bit_offset: Number(f._bit_offset ?? 0),
+              _size: Number(f._size ?? 0),
+              _type: String(f._type || 'unsigned'),
+              _factor: Number(f._factor ?? 1),
+              _offset: Number(f._offset ?? 0),
+            }))
+          : []
+        return {
+          ...m,
+          bus: String(m.bus || ''),
+          id: String(m.id || ''),
+          name: String(m.name || ''),
+          sender: String(m.sender || '—'),
+          receivers: Array.isArray(m.receivers) ? m.receivers : [],
+          fields,
+        } as DictMessage
+      })
+      setMessages(msgs)
       setHash(r.semantic_hash || r.wire_hash || '')
       setSource(r.source || 'YAML')
       setLoadedAt(new Date().toLocaleTimeString())
@@ -968,10 +1036,14 @@ export function CanDictionary() {
         message.name.toLowerCase().includes(text) ||
         message.sender.toLowerCase().includes(text) ||
         (message.comment || '').toLowerCase().includes(text) ||
-        message.fields.some(
+        (message.fields || []).some(
           (s) =>
-            s.label.toLowerCase().includes(text) ||
-            s.key.toLowerCase().includes(text),
+            String(s.label || '')
+              .toLowerCase()
+              .includes(text) ||
+            String(s.key || '')
+              .toLowerCase()
+              .includes(text),
         )
       )
     })
