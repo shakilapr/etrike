@@ -31,12 +31,15 @@ export function useBackendStream() {
         statusWireHash.current = st.wire_hash
         setStatus(st)
         setTopology(topo.nodes || [])
-        // HTTP OK even if WS is reconnecting — don't leave UI stuck on Fault forever
+        // HTTP reachable counts as liveness so we don't stick Offline when WS is flaky
+        lastMsg = Date.now()
         if (ws?.readyState === WebSocket.OPEN) {
-          lastMsg = Date.now()
+          setStreamQuality('live')
+        } else if (retry > 0) {
+          setStreamQuality('delayed')
         }
       } catch {
-        /* backend down; keep last status, stream watch will mark lost */
+        /* backend down — stream watch will mark lost */
       }
     }
 

@@ -430,14 +430,17 @@ function Topbar() {
             ? 'Lost'
             : 'Connecting'
 
-  // Fault = safety/protocol problem (ESTOP, mismatch, adapter hard-fail).
-  // Lost stream alone is Offline/Degraded — usually backend/proxy down, not "vehicle fault".
+  // Fault = safety/protocol problem. Offline = no backend/API.
+  // If HTTP status is ready but WS is reconnecting, prefer Degraded not Offline.
   const overall: OverallHealth = (() => {
     if (estopOn || mismatch) return 'fault'
     if (adapterHealth === 'failed' || adapterHealth === 'error') return 'fault'
-    if (!status && (quality === 'lost' || quality === 'connecting')) return 'offline'
-    if (quality === 'lost') return 'offline'
-    if (quality === 'connecting' && !status?.ready) return 'offline'
+    const apiUp = !!status?.ready
+    if (!apiUp && (quality === 'lost' || quality === 'connecting' || !status)) {
+      return 'offline'
+    }
+    if (quality === 'lost' && !apiUp) return 'offline'
+    if (quality === 'lost' && apiUp) return 'degraded' // HTTP ok, stream reconnecting
     if (
       quality === 'delayed' ||
       quality === 'dropping' ||
@@ -453,11 +456,11 @@ function Topbar() {
         adapterHealth === 'ok' ||
         adapterHealth === 'healthy' ||
         adapterHealth === 'active' ||
-        status?.ready)
+        apiUp)
     ) {
       return 'healthy'
     }
-    return 'degraded'
+    return apiUp ? 'degraded' : 'offline'
   })()
 
   const overallLabel =
