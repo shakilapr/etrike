@@ -76,6 +76,7 @@ export type Workspace =
   | 'network'
   | 'live'
   | 'control'
+  | 'preview'
   | 'bench'
   | 'dictionary'
   | 'diagnostics'

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore, type MessageState, type TopologyNode, type Workspace } from './store'
 import { useBackendStream } from './useStream'
 import { api, type ProfileInfo } from './api'
+import { VehiclePreview } from './VehiclePreview'
 import './App.css'
 
 const WORKSPACES: { id: Workspace; label: string }[] = [
@@ -9,6 +10,7 @@ const WORKSPACES: { id: Workspace; label: string }[] = [
   { id: 'network', label: 'Network' },
   { id: 'live', label: 'Live CAN' },
   { id: 'control', label: 'Control' },
+  { id: 'preview', label: 'Vehicle preview' },
   { id: 'bench', label: 'Bench' },
   { id: 'dictionary', label: 'CAN Dictionary' },
   { id: 'diagnostics', label: 'Diagnostics' },
@@ -455,6 +457,16 @@ function Network() {
 
 /* ── Live CAN ──────────────────────────────────────────────────────── */
 
+type HistoryFrame = {
+  global_sequence: number
+  bus: string
+  can_id: number
+  dlc: number
+  data_hex: string
+  direction: string
+  source: string
+}
+
 function LiveCan() {
   const messages = useAppStore((s) => s.messages)
   const liveFilter = useAppStore((s) => s.liveFilter)
@@ -462,6 +474,29 @@ function LiveCan() {
   const selected = useAppStore((s) => s.selectedMessageKey)
   const setSelected = useAppStore((s) => s.setSelectedMessageKey)
   const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
+  const [viewMode, setViewMode] = useState<'latest' | 'chrono'>('latest')
+  const [paused, setPaused] = useState(false)
+  const [chrono, setChrono] = useState<HistoryFrame[]>([])
+  const [chronoFrozen, setChronoFrozen] = useState<HistoryFrame[]>([])
+
+  useEffect(() => {
+    if (viewMode !== 'chrono' || paused) return
+    let cancelled = false
+    async function poll() {
+      try {
+        const r = await api.history(300)
+        if (!cancelled) setChrono(r.frames || [])
+      } catch {
+        /* ignore */
+      }
+    }
+    void poll()
+    const id = window.setInterval(() => void poll(), 500)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [viewMode, paused])
 
   const filtered = useMemo(() => {
     const q = liveFilter.trim().toLowerCase()
@@ -477,6 +512,24 @@ function LiveCan() {
       .sort((a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id)
   }, [messages, liveFilter, busFilter])
 
+  const chronoView = paused ? chronoFrozen : chrono
+  const chronoFiltered = useMemo(() => {
+    const q = liveFilter.trim().toLowerCase()
+    return chronoView
+      .filter((f) => (busFilter === 'both' ? true : f.bus === busFilter))
+      .filter((f) => {
+        if (!q) return true
+        return (
+          hexId(f.can_id).toLowerCase().includes(q) ||
+          f.bus.includes(q) ||
+          f.data_hex.includes(q) ||
+          f.source.toLowerCase().includes(q)
+        )
+      })
+      .slice()
+      .reverse()
+  }, [chronoView, liveFilter, busFilter])
+
   const detail = filtered.find(
     (m) => `${m.bus}-${m.can_id}` === selected || m.key === selected,
   )
@@ -485,7 +538,11 @@ function LiveCan() {
     <div className="workspace live-layout" data-testid="workspace-live">
       <header className="ws-header">
         <h1>Live CAN</h1>
-        <p className="muted">Latest-by-message · updates in place · {filtered.length} rows</p>
+        <p className="muted">
+          {viewMode === 'latest'
+            ? `Latest-by-message · updates in place · ${filtered.length} rows`
+            : `Chronological stream · ${chronoFiltered.length} frames (pause freezes rendering, not capture)`}
+        </p>
       </header>
 
       <div className="toolbar">
@@ -509,10 +566,42 @@ function LiveCan() {
             </button>
           ))}
         </div>
+        <div className="seg" data-testid="live-view-mode">
+          <button
+            type="button"
+            className={viewMode === 'latest' ? 'seg-btn active' : 'seg-btn'}
+            data-testid="live-mode-latest"
+            onClick={() => setViewMode('latest')}
+          >
+            Latest
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'chrono' ? 'seg-btn active' : 'seg-btn'}
+            data-testid="live-mode-chrono"
+            onClick={() => setViewMode('chrono')}
+          >
+            Stream
+          </button>
+        </div>
+        {viewMode === 'chrono' && (
+          <button
+            type="button"
+            className="secondary dense"
+            data-testid="live-pause"
+            onClick={() => {
+              if (!paused) setChronoFrozen(chrono)
+              setPaused((p) => !p)
+            }}
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
+        )}
       </div>
 
       <div className="live-split">
         <div className="table-wrap">
+          {viewMode === 'latest' ? (
           <table className="can-table" data-testid="live-can-table">
             <thead>
               <tr>
@@ -569,6 +658,41 @@ function LiveCan() {
               )}
             </tbody>
           </table>
+          ) : (
+          <table className="can-table" data-testid="live-chrono-table">
+            <thead>
+              <tr>
+                <th>Seq</th>
+                <th>Bus</th>
+                <th>ID</th>
+                <th>Dir</th>
+                <th>Src</th>
+                <th>DLC</th>
+                <th>Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chronoFiltered.map((f) => (
+                <tr key={`${f.global_sequence}-${f.bus}-${f.can_id}`}>
+                  <td className="mono num">{f.global_sequence}</td>
+                  <td>{f.bus}</td>
+                  <td className="mono">{hexId(f.can_id)}</td>
+                  <td>{f.direction}</td>
+                  <td>{f.source}</td>
+                  <td className="num">{f.dlc}</td>
+                  <td className="mono signals-cell">{f.data_hex}</td>
+                </tr>
+              ))}
+              {chronoFiltered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    No history frames yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          )}
         </div>
 
         <aside className="detail-drawer" data-testid="live-detail">
@@ -820,25 +944,31 @@ function Control() {
         </p>
         <div className="form-grid">
           <label>
-            Speed (mm/s)
+            Speed, mm/s
             <input
               data-testid="input-speed"
               type="number"
               value={speed}
+              min={-500}
+              max={3000}
               onChange={(e) => setSpeed(Number(e.target.value))}
             />
+            <span className="field-hint">Allowed range: −500 to 3000</span>
           </label>
           <label>
-            Yaw rate (mrad/s)
+            Yaw rate, mrad/s
             <input
               data-testid="input-yaw"
               type="number"
               value={yaw}
+              min={-3000}
+              max={3000}
               onChange={(e) => setYaw(Number(e.target.value))}
             />
+            <span className="field-hint">Allowed range: −3000 to 3000</span>
           </label>
           <label>
-            Gear (0–3)
+            Gear
             <input
               data-testid="input-gear"
               type="number"
@@ -847,9 +977,10 @@ function Control() {
               value={gear}
               onChange={(e) => setGear(Number(e.target.value))}
             />
+            <span className="field-hint">0–3 (P/R/D/S mapping)</span>
           </label>
           <label>
-            Period (ms)
+            Period, ms
             <input
               data-testid="input-period"
               type="number"
@@ -1184,6 +1315,7 @@ export default function App() {
           {workspace === 'network' && <Network />}
           {workspace === 'live' && <LiveCan />}
           {workspace === 'control' && <Control />}
+          {workspace === 'preview' && <VehiclePreview />}
           {workspace === 'bench' && <Bench />}
           {workspace === 'dictionary' && <Dictionary />}
           {workspace === 'diagnostics' && <Diagnostics />}
