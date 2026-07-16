@@ -29,6 +29,27 @@ export type ProfileInfo = {
   destination: string
   available: boolean
   reason?: string
+  mode?: 'computer' | 'real' | string
+}
+
+export type TransportModeInfo = {
+  id: 'computer' | 'real' | string
+  label: string
+  description: string
+  destination: string
+  available: boolean
+  reason?: string | null
+  adapter?: string
+  profile?: string
+  profiles?: string[]
+}
+
+export type PhysicalAdapterInfo = {
+  kind: string
+  available: boolean
+  reason?: string | null
+  channels?: Record<string, string>
+  bitrate?: number
 }
 
 export type VehicleViewBody = {
@@ -147,7 +168,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  profiles: () => json<{ profiles: ProfileInfo[] }>('/sessions/profiles'),
+  profiles: () =>
+    json<{
+      profiles: ProfileInfo[]
+      transport_modes?: TransportModeInfo[]
+      physical_adapter?: PhysicalAdapterInfo
+    }>('/sessions/profiles'),
   session: () =>
     json<{ session: import('./store').SessionState }>('/sessions'),
   createSession: (profile = 'pure_software') =>

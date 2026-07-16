@@ -196,9 +196,15 @@ const NAV_SECTIONS: NavSection[] = [
 ]
 
 const PROFILE_LABELS: Record<string, string> = {
-  pure_software: 'Pure Software',
-  bench_test: 'Bench Test',
-  full_vehicle: 'Full Vehicle',
+  pure_software: 'Computer · Virtual',
+  bench_test: 'Real · CANalyst Bench',
+  full_vehicle: 'Real · CANalyst Vehicle',
+}
+
+/** Session profile → transport mode shown in Settings toggle. */
+function transportModeOf(profile: string | undefined | null): 'computer' | 'real' {
+  if (profile === 'bench_test' || profile === 'full_vehicle') return 'real'
+  return 'computer'
 }
 
 function FreshnessBadge({ value }: { value: string }) {
@@ -2837,112 +2843,257 @@ function Logs() {
 
 /* ── Settings ──────────────────────────────────────────────────────── */
 
+type RealSubProfile = 'bench_test' | 'full_vehicle'
+
 function Settings() {
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
   const [profiles, setProfiles] = useState<ProfileInfo[]>([])
+  const [adapter, setAdapter] = useState<import('./api').PhysicalAdapterInfo | null>(null)
+  const [modes, setModes] = useState<import('./api').TransportModeInfo[]>([])
   const [log, setLog] = useState('')
   const [busy, setBusy] = useState(false)
+  const [realSub, setRealSub] = useState<RealSubProfile>('bench_test')
 
-  useEffect(() => {
-    void api.profiles().then((r) => setProfiles(r.profiles || []))
+  const activeProfile = status?.session?.profile ?? status?.profile ?? 'pure_software'
+  const activeMode = transportModeOf(activeProfile)
+
+  const refreshProfiles = useCallback(async () => {
+    const r = await api.profiles()
+    setProfiles(r.profiles || [])
+    setModes(r.transport_modes || [])
+    setAdapter(r.physical_adapter || null)
   }, [])
 
-  async function startPureSoftware() {
-    setBusy(true)
-    try {
-      const st = await api.status()
-      if (st.session?.session_id) {
-        await api.closeSession(st.session.session_id, st.session.revision)
-      }
-      const created = await api.createSession('pure_software')
-      setStatus(await api.status())
-      setLog(`Session ${created.session.session_id} · phase ${created.session.phase}`)
-    } catch (e) {
-      setLog(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+  useEffect(() => {
+    void refreshProfiles().catch(() => undefined)
+    const id = window.setInterval(() => void refreshProfiles().catch(() => undefined), 4000)
+    return () => window.clearInterval(id)
+  }, [refreshProfiles])
 
-  async function tryProfile(id: string) {
+  useEffect(() => {
+    if (activeProfile === 'full_vehicle') setRealSub('full_vehicle')
+    else if (activeProfile === 'bench_test') setRealSub('bench_test')
+  }, [activeProfile])
+
+  async function ensureThenSetProfile(profile: string) {
     setBusy(true)
     try {
       let st = await api.status()
-      if (!st.session?.session_id) {
-        await api.createSession('pure_software')
-        st = await api.status()
+      // Always restart session when changing transport so buses re-open cleanly.
+      if (st.session?.session_id) {
+        await api.closeSession(st.session.session_id, st.session.revision).catch(() => undefined)
       }
-      await api.changeProfile(st.session!.session_id!, id, st.session!.revision, true)
-      setLog(`Switched to ${id}`)
+      const created = await api.createSession(profile)
       setStatus(await api.status())
+      await refreshProfiles()
+      const label = PROFILE_LABELS[profile] ?? profile
+      setLog(
+        `Active: ${label} · session ${created.session.session_id} · phase ${created.session.phase}` +
+          (created.session.destination ? ` · dest ${created.session.destination}` : ''),
+      )
     } catch (e) {
       setLog(String(e))
+      try {
+        setStatus(await api.status())
+      } catch {
+        /* keep last known status */
+      }
+      await refreshProfiles().catch(() => undefined)
     } finally {
       setBusy(false)
     }
   }
+
+  async function activateComputer() {
+    await ensureThenSetProfile('pure_software')
+  }
+
+  async function activateReal() {
+    await ensureThenSetProfile(realSub)
+  }
+
+  const computerMode = modes.find((m) => m.id === 'computer')
+  const realMode = modes.find((m) => m.id === 'real')
+  const realOk = adapter?.available ?? realMode?.available ?? false
+  const realReason =
+    adapter?.reason || realMode?.reason || profiles.find((p) => p.id === realSub)?.reason
 
   return (
     <div className="workspace" data-testid="workspace-settings">
       <header className="ws-header">
         <h1>Settings</h1>
         <p className="muted">
-          Operating profiles and session controls. Physical profiles refuse without an
-          adapter (no silent virtual fallback).
+          Same Control Toolkit build — choose how it talks to the buses. Computer uses dual
+          virtual CAN on this PC; Real uses a CANalyst-II adapter (no silent fallback).
         </p>
       </header>
 
-      <section className="panel">
-        <h2>Operating profiles</h2>
-        <div className="profile-list" data-testid="profile-list">
-          {profiles.map((p) => (
-            <div key={p.id} className="profile-card">
-              <div className="profile-title">
-                {p.label}
-                <span className={`chip tiny ${p.available ? 'ok' : ''}`}>
-                  {p.available ? 'available' : 'blocked'}
-                </span>
-              </div>
-              <div className="muted small">
-                Destination: {p.destination}
-                {p.reason ? ` · ${p.reason}` : ''}
-              </div>
-              <div className="actions tight">
-                {p.id === 'pure_software' ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    data-testid="btn-start-pure"
-                    onClick={() => void startPureSoftware()}
-                  >
-                    Start Pure Software session
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={busy || !p.available}
-                    className="secondary"
-                    data-testid={`btn-profile-${p.id}`}
-                    onClick={() => void tryProfile(p.id)}
-                  >
-                    Activate (will refuse if no adapter)
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+      <section className="panel" data-testid="transport-mode-panel">
+        <h2>Transport mode</h2>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Two different runtimes of the <strong>same software</strong>: virtual buses on the
+          computer, or physical High/Low via CANalyst-II.
+        </p>
+
+        <div className="transport-toggle" data-testid="transport-toggle" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            className={activeMode === 'computer' ? 'transport-btn active' : 'transport-btn'}
+            data-testid="mode-computer"
+            aria-selected={activeMode === 'computer'}
+            disabled={busy}
+            onClick={() => void activateComputer()}
+          >
+            <span className="transport-btn-title">Computer</span>
+            <span className="transport-btn-sub">Virtual dual CAN · no USB</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={activeMode === 'real' ? 'transport-btn active real' : 'transport-btn'}
+            data-testid="mode-real"
+            aria-selected={activeMode === 'real'}
+            disabled={busy || !realOk}
+            title={realOk ? 'Connect via CANalyst-II' : String(realReason || 'Adapter not found')}
+            onClick={() => void activateReal()}
+          >
+            <span className="transport-btn-title">Real</span>
+            <span className="transport-btn-sub">CANalyst-II CH0/CH1</span>
+          </button>
         </div>
+
+        <div className="transport-cards" data-testid="profile-list">
+          <div
+            className={`transport-card${activeMode === 'computer' ? ' active' : ''}`}
+            data-testid="card-mode-computer"
+          >
+            <div className="transport-card-head">
+              <h3>Computer (virtual)</h3>
+              <span className={`chip tiny ${activeMode === 'computer' ? 'ok' : ''}`}>
+                {activeMode === 'computer' ? 'active' : 'idle'}
+              </span>
+            </div>
+            <p className="muted small">
+              {computerMode?.description ||
+                'Runs the same backend on this PC with dual virtual High/Low buses. No CANalyst required. Use for UI, inject, dictionary, and pure-software smoke.'}
+            </p>
+            <ul className="transport-bullets muted small">
+              <li>Destination: <strong>virtual</strong></li>
+              <li>Profile: <span className="mono">pure_software</span></li>
+              <li>Buses: High + Low emulated in-process</li>
+            </ul>
+            <div className="actions tight">
+              <button
+                type="button"
+                disabled={busy || activeMode === 'computer'}
+                data-testid="btn-start-pure"
+                onClick={() => void activateComputer()}
+              >
+                {activeMode === 'computer' ? 'Computer mode active' : 'Switch to Computer'}
+              </button>
+            </div>
+          </div>
+
+          <div
+            className={`transport-card${activeMode === 'real' ? ' active' : ''}`}
+            data-testid="card-mode-real"
+          >
+            <div className="transport-card-head">
+              <h3>Real (CANalyst-II)</h3>
+              <span className={`chip tiny ${realOk ? 'ok' : 'danger'}`}>
+                {realOk ? 'adapter OK' : 'no adapter'}
+              </span>
+            </div>
+            <p className="muted small">
+              {realMode?.description ||
+                'Physical High/Low CAN via CANalyst-II. CH0 = High, CH1 = Low @ 500 kbit/s. Will refuse if the USB adapter is missing.'}
+            </p>
+            <ul className="transport-bullets muted small">
+              <li>
+                Adapter:{' '}
+                <strong className="mono">{adapter?.kind || 'canalystii'}</strong>
+                {adapter?.channels
+                  ? ` · High ${adapter.channels.high || 'CH0'} · Low ${adapter.channels.low || 'CH1'}`
+                  : ' · CH0 High · CH1 Low'}
+              </li>
+              <li>
+                Status:{' '}
+                {realOk ? (
+                  <span className="ok-text">detected</span>
+                ) : (
+                  <span className="danger-text">{String(realReason || 'not detected')}</span>
+                )}
+              </li>
+            </ul>
+
+            <div className="field" style={{ marginTop: 10 }}>
+              <span className="field-label">Real sub-profile</span>
+              <div className="seg" data-testid="real-sub-profile">
+                <button
+                  type="button"
+                  className={realSub === 'bench_test' ? 'seg-btn active' : 'seg-btn'}
+                  data-testid="btn-profile-bench_test"
+                  disabled={busy}
+                  onClick={() => setRealSub('bench_test')}
+                >
+                  Bench Test
+                </button>
+                <button
+                  type="button"
+                  className={realSub === 'full_vehicle' ? 'seg-btn active' : 'seg-btn'}
+                  data-testid="btn-profile-full_vehicle"
+                  disabled={busy}
+                  onClick={() => setRealSub('full_vehicle')}
+                >
+                  Full Vehicle
+                </button>
+              </div>
+              <span className="field-hint">
+                Bench = ECU under test on CANalyst; Full Vehicle = production-like physical path.
+              </span>
+            </div>
+
+            <div className="actions tight">
+              <button
+                type="button"
+                disabled={busy || !realOk}
+                className={activeMode === 'real' ? 'secondary' : undefined}
+                data-testid="btn-connect-real"
+                onClick={() => void activateReal()}
+              >
+                {!realOk
+                  ? 'CANalyst-II required'
+                  : activeMode === 'real' && activeProfile === realSub
+                    ? 'Real mode active'
+                    : 'Connect Real (CANalyst-II)'}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <dl className="kv" style={{ marginTop: 16 }}>
-          <dt>Active</dt>
-          <dd>{status?.session?.profile ?? status?.profile ?? '—'}</dd>
+          <dt>Mode</dt>
+          <dd data-testid="settings-active-mode">
+            {activeMode === 'real' ? 'Real · CANalyst-II' : 'Computer · Virtual'}
+          </dd>
+          <dt>Profile</dt>
+          <dd data-testid="settings-active-profile">
+            {PROFILE_LABELS[activeProfile] ?? activeProfile}
+          </dd>
+          <dt>Destination</dt>
+          <dd className="mono">{status?.session?.destination ?? '—'}</dd>
           <dt>Revision</dt>
           <dd className="mono">{status?.session?.revision ?? 0}</dd>
           <dt>Session ID</dt>
           <dd className="mono">{status?.session?.session_id ?? 'none'}</dd>
+          <dt>Adapter health</dt>
+          <dd className="mono">{status?.adapter?.health ?? '—'}</dd>
         </dl>
         <pre className="log" data-testid="settings-log">
-          {log || 'Select a profile action.'}
+          {log ||
+            'Pick Computer (virtual buses on this PC) or Real (CANalyst-II). Real is blocked until the adapter is plugged in.'}
         </pre>
       </section>
     </div>

@@ -244,12 +244,18 @@ const TABS: Array<{
     workspace: 'workspace-settings',
     mustSee: ['profile-list'],
     interact: async (page) => {
-      await expect(page.getByTestId('profile-list')).toContainText(/Pure Software/i)
-      await expect(page.getByTestId('profile-list')).toContainText(/Bench Test|Full Vehicle/i)
+      await expect(page.getByTestId('transport-toggle')).toBeVisible()
+      await expect(page.getByTestId('mode-computer')).toBeVisible()
+      await expect(page.getByTestId('mode-real')).toBeVisible()
+      await expect(page.getByTestId('profile-list')).toContainText(/Computer|Virtual/i)
+      await expect(page.getByTestId('profile-list')).toContainText(/CANalyst|Real|Bench Test|Full Vehicle/i)
       await page.getByTestId('btn-start-pure').click()
-      await expect(page.getByTestId('settings-log')).toContainText(/Session ses_|phase running|running/i, {
-        timeout: 12_000,
-      })
+      await expect(page.getByTestId('settings-log')).toContainText(
+        /Session ses_|phase running|running|Computer|Active/i,
+        {
+          timeout: 12_000,
+        },
+      )
     },
   },
 ]
