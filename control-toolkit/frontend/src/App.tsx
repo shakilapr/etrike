@@ -227,6 +227,13 @@ function signalText(m: MessageState | undefined, key: string): string {
   return String(s.enum_label ?? s.engineering_value ?? '—')
 }
 
+/** Empty/null/whitespace → em dash (topbar mode/power often arrives as ""). */
+function dash(v: unknown): string {
+  if (v == null) return '—'
+  const s = String(v).trim()
+  return s === '' ? '—' : s
+}
+
 function signalNum(m: MessageState | undefined, key: string): number | null {
   const v = m?.signals?.[key]?.engineering_value
   if (typeof v === 'number' && Number.isFinite(v)) return v
@@ -617,14 +624,14 @@ function Topbar() {
         <div className="meta-group" data-testid="chip-mode" title="Requested vs confirmed vehicle mode">
           <span className="meta-k">Mode</span>
           <span className="meta-v mono">
-            {ses?.requested_mode ?? '—'}→{ses?.confirmed_mode ?? '—'}
+            {dash(ses?.requested_mode)}→{dash(ses?.confirmed_mode)}
           </span>
         </div>
 
         <div className="meta-group" data-testid="chip-power" title="Requested vs confirmed power">
           <span className="meta-k">Power</span>
           <span className="meta-v mono">
-            {ses?.requested_power ?? '—'}→{ses?.confirmed_power ?? '—'}
+            {dash(ses?.requested_power)}→{dash(ses?.confirmed_power)}
           </span>
         </div>
 
@@ -907,10 +914,10 @@ function Overview() {
         <div className="strip-item">
           <span className="strip-k">Power</span>
           <span className="strip-v">
-            Req {ses?.requested_power ?? '—'} / Conf {ses?.confirmed_power ?? '—'}
+            Req {dash(ses?.requested_power)} / Conf {dash(ses?.confirmed_power)}
           </span>
           <StatusPill
-            label={String(ses?.confirmed_power ?? ses?.requested_power ?? '—')}
+            label={dash(ses?.confirmed_power ?? ses?.requested_power)}
             tone="muted"
             testId="status-power"
           />
@@ -918,10 +925,10 @@ function Overview() {
         <div className="strip-item">
           <span className="strip-k">Mode</span>
           <span className="strip-v">
-            Req {ses?.requested_mode ?? '—'} / Conf {ses?.confirmed_mode ?? '—'}
+            Req {dash(ses?.requested_mode)} / Conf {dash(ses?.confirmed_mode)}
           </span>
           <StatusPill
-            label={String(ses?.confirmed_mode ?? ses?.requested_mode ?? '—')}
+            label={dash(ses?.confirmed_mode ?? ses?.requested_mode)}
             tone="muted"
             testId="status-mode"
           />

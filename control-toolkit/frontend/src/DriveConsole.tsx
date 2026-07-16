@@ -727,7 +727,15 @@ export function DriveConsole() {
     return {
       onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
         e.preventDefault()
-        e.currentTarget.setPointerCapture?.(e.pointerId)
+        // Real pointers support capture; Playwright dispatchEvent / some browsers throw
+        // InvalidPointerId when no active pointer exists — never block the press.
+        try {
+          if (typeof e.pointerId === 'number' && e.pointerId >= 0) {
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }
+        } catch {
+          /* ignore InvalidPointerId / NotFoundError from synthetic events */
+        }
         pressVirtual(code, true)
       },
       onPointerUp: () => pressVirtual(code, false),
@@ -846,53 +854,7 @@ export function DriveConsole() {
         </div>
 
         <aside className="drive-side panel" data-testid="drive-side">
-          <section className="drive-section" data-testid="drive-telemetry-section">
-            <div className="drive-section-head">
-              <h2>Telemetry</h2>
-              <span className="muted small mono">
-                {armed ? (canLive ? 'from bus' : 'waiting 0x300') : 'local sim'}
-              </span>
-            </div>
-            <div className="drive-gauges" data-testid="drive-gauges">
-              <Gauge
-                label="cmd speed"
-                value={displaySpeed}
-                unit="mm/s"
-                max={Math.max(1, maxSpeedMmps)}
-                tone="accent"
-              />
-              <Gauge
-                label="cmd yaw"
-                value={displayYaw}
-                unit="mrad/s"
-                max={Math.max(1, maxYawMrad)}
-                tone="warn"
-              />
-              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" />
-              <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
-            </div>
-            <dl className="kv preview-kv" data-testid="preview-telemetry">
-              <dt>HOST speed / yaw [0x300]</dt>
-              <dd className="mono">
-                {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
-              </dd>
-              <dt>Gear · heading</dt>
-              <dd className="mono">
-                {displayGear} · θ {hud.thetaDeg.toFixed(1)}°
-              </dd>
-              <dt>Turn radius</dt>
-              <dd className="mono">{hud.radiusText}</dd>
-              <dt>Backend shaped</dt>
-              <dd className="mono" data-testid="drive-shaped">
-                {shapedSpeed != null
-                  ? `${shapedSpeed} mm/s · ${String(ctrlSnap?.gear_label ?? '—')} · yaw ${shapedYaw ?? 0}`
-                  : armed
-                    ? 'waiting intent…'
-                    : '— (arm to shape)'}
-              </dd>
-            </dl>
-          </section>
-
+          {/* Controls first so keycaps/gears are visible without scrolling past gauges */}
           <section className="drive-section" data-testid="drive-controls-section">
             <div className="drive-section-head">
               <h2>Controls</h2>
@@ -999,6 +961,53 @@ export function DriveConsole() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="drive-section" data-testid="drive-telemetry-section">
+            <div className="drive-section-head">
+              <h2>Telemetry</h2>
+              <span className="muted small mono">
+                {armed ? (canLive ? 'from bus' : 'waiting 0x300') : 'local sim'}
+              </span>
+            </div>
+            <div className="drive-gauges" data-testid="drive-gauges">
+              <Gauge
+                label="cmd speed"
+                value={displaySpeed}
+                unit="mm/s"
+                max={Math.max(1, maxSpeedMmps)}
+                tone="accent"
+              />
+              <Gauge
+                label="cmd yaw"
+                value={displayYaw}
+                unit="mrad/s"
+                max={Math.max(1, maxYawMrad)}
+                tone="warn"
+              />
+              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" />
+              <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
+            </div>
+            <dl className="kv preview-kv" data-testid="preview-telemetry">
+              <dt>HOST speed / yaw [0x300]</dt>
+              <dd className="mono">
+                {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
+              </dd>
+              <dt>Gear · heading</dt>
+              <dd className="mono">
+                {displayGear} · θ {hud.thetaDeg.toFixed(1)}°
+              </dd>
+              <dt>Turn radius</dt>
+              <dd className="mono">{hud.radiusText}</dd>
+              <dt>Backend shaped</dt>
+              <dd className="mono" data-testid="drive-shaped">
+                {shapedSpeed != null
+                  ? `${shapedSpeed} mm/s · ${String(ctrlSnap?.gear_label ?? '—')} · yaw ${shapedYaw ?? 0}`
+                  : armed
+                    ? 'waiting intent…'
+                    : '— (arm to shape)'}
+              </dd>
+            </dl>
           </section>
 
           <section className="drive-section" data-testid="drive-limits-section">
