@@ -15,6 +15,11 @@ future alive after Task.cancel(), which raises::
     RuntimeError: Concurrent call to receive() is not allowed
 
 and tears down the handler — frontend Offline/Lost reconnect thrash.
+
+Also serialize all ``send_json`` calls: concurrent send from two tasks can race
+with close and log::
+
+    Unexpected ASGI message 'websocket.send', after sending 'websocket.close'
 """
 
 from __future__ import annotations
@@ -22,8 +27,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from control_toolkit import protocol_bridge as proto
 
@@ -35,10 +42,27 @@ log = logging.getLogger("control_toolkit.stream")
 async def stream(ws: WebSocket) -> None:
     await ws.accept()
     lifecycle = ws.app.state.lifecycle
-    await ws.send_json({"type": "hello", "wire_hash": proto.WIRE_HASH})
+    send_lock = asyncio.Lock()
+
+    async def safe_send(payload: dict[str, Any]) -> bool:
+        """Send JSON if socket still connected; serialize concurrent senders."""
+        if ws.client_state != WebSocketState.CONNECTED:
+            return False
+        async with send_lock:
+            if ws.client_state != WebSocketState.CONNECTED:
+                return False
+            try:
+                await ws.send_json(payload)
+                return True
+            except (WebSocketDisconnect, RuntimeError) as exc:
+                log.debug("stream send stopped: %s", exc)
+                return False
+
+    if not await safe_send({"type": "hello", "wire_hash": proto.WIRE_HASH}):
+        return
 
     snap = lifecycle.latest.snapshot()
-    await ws.send_json(
+    if not await safe_send(
         {
             "type": "state",
             "sequence": snap.sequence,
@@ -46,7 +70,8 @@ async def stream(ws: WebSocket) -> None:
             "messages": [m.model_dump(mode="json") for m in snap.messages],
             "initial": True,
         }
-    )
+    ):
+        return
 
     sid, queue = await lifecycle.events.subscribe()
 
@@ -54,7 +79,8 @@ async def stream(ws: WebSocket) -> None:
         """Push EventBus payloads to the client (state + heartbeats)."""
         while True:
             event = await queue.get()
-            await ws.send_json(event)
+            if not await safe_send(event):
+                return
 
     async def pump_client() -> None:
         """
@@ -63,7 +89,6 @@ async def stream(ws: WebSocket) -> None:
         One sequential receive loop — never cancelled mid-connection to restart.
         """
         while True:
-            # Starlette receive dict form avoids receive_text edge cases.
             message = await ws.receive()
             msg_type = message.get("type")
             if msg_type == "websocket.disconnect":
@@ -72,8 +97,8 @@ async def stream(ws: WebSocket) -> None:
                 continue
             text = message.get("text")
             if text is not None:
-                await ws.send_json({"type": "ack", "echo": text})
-            # Binary client frames ignored (not used by control-toolkit UI).
+                if not await safe_send({"type": "ack", "echo": text}):
+                    return
 
     out_task = asyncio.create_task(pump_events(), name="ws-stream-out")
     in_task = asyncio.create_task(pump_client(), name="ws-stream-in")
@@ -82,7 +107,6 @@ async def stream(ws: WebSocket) -> None:
             {out_task, in_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
-        # Surface the first failure (if any) for logs; disconnect is normal.
         for task in done:
             with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
                 exc = task.exception()
