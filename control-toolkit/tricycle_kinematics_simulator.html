@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tricycle Kinematic Model</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f8fafc; font-family: sans-serif; }
+        canvas { display: block; }
+        #hud { pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Heads Up Display -->
+    <div id="hud" class="absolute top-0 left-0 p-6 text-slate-800 w-full flex justify-between">
+        <div>
+            <h1 class="text-2xl font-bold mb-2">Tricycle Kinematic Model</h1>
+            <p class="text-sm font-semibold mb-4 text-slate-600">Centered ego-view • Translating environment</p>
+            <div class="bg-white/80 p-4 rounded-lg shadow-sm backdrop-blur-sm border border-slate-200">
+                <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm font-mono">
+                    <span class="font-bold text-slate-500">HOST_DriveSpeed <span class="text-slate-400">[0x300]</span>:</span>
+                    <span id="val-v">0.0 mm/s (0.0 km/h)</span>
+                    
+                    <span class="font-bold text-slate-500">HOST_YawRate <span class="text-slate-400">[0x300]</span>:</span>
+                    <span id="val-omega">0 mrad/s</span>
+                    
+                    <span class="font-bold text-slate-500">Heading (θ):</span>
+                    <span id="val-theta">0.0°</span>
+                    
+                    <span class="font-bold text-slate-500">VCU_SES_Tgt_StrAngle <span class="text-slate-400">[0x169]</span>:</span>
+                    <span id="val-alpha">0.0°</span>
+
+                    <span class="font-bold text-slate-500">RT_BrakePressure <span class="text-slate-400">[0x205]</span>:</span>
+                    <span id="val-brake">0 kPa</span>
+
+                    <span class="font-bold text-slate-500">Turn Radius (ρ):</span>
+                    <span id="val-radius">∞</span>
+
+                    <div class="col-span-2 text-xs text-slate-500 mt-2 font-sans bg-slate-100 p-2 rounded flex justify-between border border-slate-200" id="val-dyn-steer">
+                        <span>Dynamic Clamp: <strong>40.0°</strong></span>
+                        <span>Slew Rate: <strong>125°/s</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white/80 p-4 rounded-lg shadow-sm backdrop-blur-sm border border-slate-200 h-fit pointer-events-auto">
+            <h2 class="font-bold text-sm mb-2 text-slate-700">HOST_Gear <span class="font-mono text-slate-400 text-xs">[0x300 byte 7] → RT_Gear [0x204 byte 4]</span></h2>
+            <div class="flex gap-2 mb-4 font-mono font-bold text-sm" id="gear-selector">
+                <button id="btn-gear-N" class="px-3 py-1 rounded bg-blue-600 text-white shadow" onclick="setGear('N')">N</button>
+                <button id="btn-gear-D" class="px-3 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300" onclick="setGear('D')">D</button>
+                <button id="btn-gear-S" class="px-3 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300" onclick="setGear('S')">S</button>
+                <button id="btn-gear-R" class="px-3 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300" onclick="setGear('R')">R</button>
+            </div>
+
+            <h2 class="font-bold text-sm mb-2 text-slate-700">Settings</h2>
+            <div class="mb-4">
+                <label class="block text-xs font-semibold text-slate-600 mb-1 flex justify-between">
+                    <span>Shift mode (Adaptive / Direct):</span>
+                </label>
+                <div class="flex gap-2 text-sm font-mono font-bold mb-2">
+                    <button id="btn-mode-smart" class="px-2 py-1 rounded bg-blue-600 text-white shadow w-1/2" onclick="setShiftMode('smart')">Adaptive</button>
+                    <button id="btn-mode-direct" class="px-2 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 w-1/2" onclick="setShiftMode('direct')">Direct</button>
+                </div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1 flex justify-between mt-3">
+                    <span>Max Drive Speed <span class="font-mono text-slate-400">[HOST_DriveSpeed 0x300]</span>:</span> <span id="val-max-speed">3000 mm/s</span>
+                </label>
+                <input type="range" id="input-max-speed" min="0" max="6000" value="3000" step="100" class="w-full accent-slate-600">
+
+                <label class="block text-xs font-semibold text-slate-600 mb-1 flex justify-between mt-3">
+                    <span>Max Yaw Rate <span class="font-mono text-slate-400">[HOST_YawRate 0x300]</span>:</span> <span id="val-max-yaw">3000 mrad/s (45.0 °/s)</span>
+                </label>
+                <input type="range" id="input-max-yaw" min="0" max="3000" value="3000" step="50" class="w-full accent-slate-600">
+            </div>
+            
+            <h2 class="font-bold text-sm mb-2 text-slate-700">Controls</h2>
+            <ul class="text-sm text-slate-600 space-y-1" id="controls-list">
+                <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">↑</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">W</kbd> Gas (Auto D/S)</li>
+                <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">↓</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">S</kbd> Brake (Auto R)</li>
+                <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">←</kbd><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">→</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">A</kbd><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">D</kbd> Steer</li>
+                <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">Space</kbd> E-Stop (Auto N)</li>
+                <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">Q</kbd> / <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">E</kbd> Manual gear override (N/D/S/R)</li>
+            </ul>
+        </div>
+    </div>
+
+    <canvas id="simCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Elements
+        const elV = document.getElementById('val-v');
+        const elOmega = document.getElementById('val-omega');
+        const elMaxSpeed = document.getElementById('val-max-speed');
+        const elMaxYaw = document.getElementById('val-max-yaw');
+        const inputMaxSpeed = document.getElementById('input-max-speed');
+        const inputMaxYaw = document.getElementById('input-max-yaw');
+
+        inputMaxSpeed.addEventListener('input', (e) => {
+            // HOST_DriveSpeed max — maps to shared::kMaxSpeedFwdMmps equivalent
+            HOST_DriveSpeed_MAX = parseFloat(e.target.value);
+            elMaxSpeed.textContent = HOST_DriveSpeed_MAX.toFixed(0) + ' mm/s (' + (HOST_DriveSpeed_MAX * 3.6 / 1000).toFixed(1) + ' km/h)';
+            MAX_V_PX = (HOST_DriveSpeed_MAX / 1000) * PIXELS_PER_METER; // mm/s → m/s → px/s
+            ACCEL = MAX_V_PX / 1.5;
+        });
+        inputMaxYaw.addEventListener('input', (e) => {
+            // HOST_YawRate max — maps to yaw_rate_mrad_s limit (kSteerRateMaxDegS equivalent)
+            HOST_YawRate_MAX = parseFloat(e.target.value);
+            elMaxYaw.textContent = HOST_YawRate_MAX.toFixed(0) + ' mrad/s (' + (HOST_YawRate_MAX / 1000 * 180 / Math.PI).toFixed(1) + ' °/s)';
+            // MAX_ALPHA is derived from yaw rate: max steer angle = yaw_rate_mrad_s * kYawToSteerScale / 1000
+            // kYawToSteerScale = 15 mdeg / (mrad/s), so at 3000 mrad/s → 45000 mdeg = 45°
+            MAX_ALPHA = (HOST_YawRate_MAX / 1000) * 15 * Math.PI / 180; // convert mdeg limit to rad
+        });
+        const elTheta = document.getElementById('val-theta');
+        const elAlpha = document.getElementById('val-alpha');
+        const elRadius = document.getElementById('val-radius');
+        const elBrake = document.getElementById('val-brake');
+        const elDynSteer = document.getElementById('val-dyn-steer');
+
+        // Resize handler
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Tricycle Kinematic State
+        let state = {
+            x: 0,           // Global X position (rear axle center)
+            y: 0,           // Global Y position (rear axle center)
+            theta: -Math.PI / 2, // Heading angle (radians) - facing UP towards the top
+            v: 0,           // Forward velocity
+            alpha: 0,       // Steering angle (radians)
+            omega: 0,       // Angular velocity (rad/s)
+            isBraking: false,
+            brakePressureKpa: 0, // Simulated brake pressure [0x205]
+            isEstop: false,
+            gear: 'N',      // Current gear
+            shiftMode: 'smart' // 'smart' or 'direct'
+        };
+
+        // Constants & Parameters — named after CAN protocol signals
+        const PIXELS_PER_METER = 100;
+        const L = 120;              // Wheelbase mm (1500mm real → scaled)
+        const W = 80;               // Track width mm (scaled)
+        // HOST_DriveSpeed [0x300 bytes 0-3, i32, mm/s] — max forward speed
+        // Real: shared::kMaxSpeedFwdMmps = 3000 mm/s = 3 m/s = 10.8 km/h
+        let HOST_DriveSpeed_MAX = 3000;  // mm/s — slider range 0–6000 mm/s
+        let MAX_V_PX = (HOST_DriveSpeed_MAX / 1000) * PIXELS_PER_METER; // px/s for rendering
+        let ACCEL = MAX_V_PX / 1.5;
+        // HOST_YawRate [0x300 bytes 4-6, i24, mrad/s] — max yaw/angular rate
+        // Real: range ±3000 mrad/s → VCU_SES_Tgt_StrAngleSpd [0x169] range 125–525 °/s
+        // kYawToSteerScale=15: 3000 mrad/s → 45000 mdeg (45°) steer angle
+        let HOST_YawRate_MAX = 3000;  // mrad/s — slider range 0–3000 mrad/s
+        let MAX_ALPHA = (HOST_YawRate_MAX / 1000) * 15 * Math.PI / 180; // rad
+        
+        // RT-ESP32 Dynamic Steering Limits
+        const kAngleClampBaseDeg = 40.0;
+        const kAngleClampMinDeg = 5.0;
+        const kAngleClampRangeDeg = 35.0;
+        const kAngleClampSpeedRange = 23.0; // km/h range from 2 to 25
+        
+        const kSteerRateMinDegS = 125.0;
+        const kSteerRateMaxDegS = 525.0;
+        const kSteerRateRangeDegS = 400.0;
+        
+        function computeDynamicLimits(speedPxS) {
+            const speed_kmh = Math.abs(speedPxS / PIXELS_PER_METER) * 3.6;
+            
+            // limit_deg = 40.0 - (speed_kmh - 2.0) * (35.0/23.0) clamped [5, 40]
+            let limit_deg = kAngleClampBaseDeg - (speed_kmh - 2.0) * (kAngleClampRangeDeg / kAngleClampSpeedRange);
+            limit_deg = Math.max(kAngleClampMinDeg, Math.min(kAngleClampBaseDeg, limit_deg));
+            
+            // rate_deg_s = 125 + (speed_kmh - 2.0) * (400/23) clamped [125, 525]
+            let rate_deg_s = kSteerRateMinDegS + (speed_kmh - 2.0) * (kSteerRateRangeDegS / kAngleClampSpeedRange);
+            rate_deg_s = Math.max(kSteerRateMinDegS, Math.min(kSteerRateMaxDegS, rate_deg_s));
+            
+            return {
+                maxAlphaDeg: limit_deg,
+                maxAlphaRad: limit_deg * Math.PI / 180,
+                steerRateDegS: rate_deg_s,
+                steerRateRadS: rate_deg_s * Math.PI / 180
+            };
+        }
+
+        const FRICTION = 0.98;      // Velocity dampening
+        
+        // Input tracking
+        const keys = { 
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+            KeyW: false, KeyS: false, KeyA: false, KeyD: false,
+            Space: false 
+        };
+        const gears = ['N', 'D', 'S', 'R'];
+        function setGear(gear) {
+            state.gear = gear;
+            gears.forEach(g => {
+                const btn = document.getElementById('btn-gear-' + g);
+                if (!btn) return;
+                if (g === gear) {
+                    btn.className = "px-3 py-1 rounded bg-blue-600 text-white shadow";
+                } else {
+                    btn.className = "px-3 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300";
+                }
+            });
+        }
+
+        function setShiftMode(mode) {
+            state.shiftMode = mode;
+            const btnSmart = document.getElementById('btn-mode-smart');
+            const btnDirect = document.getElementById('btn-mode-direct');
+            if (btnSmart) btnSmart.className = (mode === 'smart') ? "px-2 py-1 rounded bg-blue-600 text-white shadow w-1/2" : "px-2 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 w-1/2";
+            if (btnDirect) btnDirect.className = (mode === 'direct') ? "px-2 py-1 rounded bg-blue-600 text-white shadow w-1/2" : "px-2 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 w-1/2";
+            
+            const controlsList = document.getElementById('controls-list');
+            if (controlsList) {
+                if (mode === 'smart') {
+                    controlsList.innerHTML = `
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">↑</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">W</kbd> Gas (Auto D/S)</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">↓</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">S</kbd> Brake (Auto R)</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">←</kbd><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">→</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">A</kbd><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">D</kbd> Steer</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">Space</kbd> E-Stop (Auto N)</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">Q</kbd> / <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">E</kbd> Manual gear override (N/D/S/R)</li>
+                    `;
+                } else {
+                    controlsList.innerHTML = `
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">↑</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">W</kbd> Accelerator Pedal</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">↓</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">S</kbd> Brake Pedal</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">←</kbd><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">→</kbd> or <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">A</kbd><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">D</kbd> Steer</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">Space</kbd> E-Stop</li>
+                        <li><kbd class="bg-slate-100 border border-slate-300 px-1 rounded">Q</kbd> / <kbd class="bg-slate-100 border border-slate-300 px-1 rounded">E</kbd> Shift gears N/D/S/R</li>
+                    `;
+                }
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.code) || e.code === 'Space') keys[e.code] = true;
+            if (e.code === 'KeyQ') {
+                const idx = gears.indexOf(state.gear);
+                if (idx > 0) setGear(gears[idx - 1]);
+            }
+            if (e.code === 'KeyE') {
+                const idx = gears.indexOf(state.gear);
+                if (idx < gears.length - 1) setGear(gears[idx + 1]);
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.code) || e.code === 'Space') keys[e.code] = false;
+        });
+
+        let lastTime = performance.now();
+
+        function update(dt) {
+            const pressingUp = keys.ArrowUp || keys.KeyW;
+            const pressingDown = keys.ArrowDown || keys.KeyS;
+
+            // Auto-Shifting Logic vs Direct Shifting
+            state.isEstop = keys.Space;
+
+            if (state.shiftMode === 'smart') {
+                if (keys.Space) {
+                    if (state.gear !== 'N') setGear('N');
+                } else if (state.v === 0) {
+                    if (pressingUp && state.gear !== 'D' && state.gear !== 'S') setGear('D');
+                    if (pressingDown && state.gear !== 'R') setGear('R');
+                } else if (state.v > 0 && (state.gear === 'D' || state.gear === 'S')) {
+                    const shiftThreshold = MAX_V_PX * 0.5;
+                    if (state.v > shiftThreshold && state.gear === 'D') {
+                        setGear('S');
+                    } else if (state.v < shiftThreshold - 20 && state.gear === 'S') {
+                        setGear('D');
+                    }
+                }
+
+                state.isBraking = keys.Space || 
+                                  (state.v > 0 && pressingDown) || 
+                                  (state.v < 0 && pressingUp);
+
+                // Handle Gears (Smart) — HOST_DriveSpeed [0x300 bytes 0-3]
+                if (state.gear === 'N') {
+                    state.v *= FRICTION;
+                    if (Math.abs(state.v) < 1) state.v = 0;
+                } else if (state.gear === 'R') {
+                    if (pressingDown) state.v -= ACCEL * dt; 
+                    if (pressingUp) {
+                        if (state.v < 0) state.v += ACCEL * dt; 
+                        if (state.v > 0) state.v = 0; 
+                    }
+                } else if (state.gear === 'D' || state.gear === 'S') {
+                    const currentAccel = (state.gear === 'S') ? ACCEL * 1.5 : ACCEL;
+                    const currentMax = (state.gear === 'S') ? MAX_V_PX * 1.5 : MAX_V_PX;
+
+                    if (pressingUp) state.v += currentAccel * dt;
+                    if (pressingDown) {
+                        if (state.v > 0) state.v -= ACCEL * dt;
+                        if (state.v < 0) state.v = 0;
+                    }
+                    if (state.v > currentMax) {
+                        state.v -= ACCEL * dt;
+                        if (state.v < currentMax) state.v = currentMax;
+                    } else if (state.v < -currentMax) {
+                        state.v += ACCEL * dt;
+                        if (state.v > -currentMax) state.v = -currentMax;
+                    }
+                }
+            } else {
+                // Direct Shifting Logic — HOST_DriveSpeed [0x300 bytes 0-3]
+                if (keys.Space) {
+                    if (state.gear !== 'N') setGear('N');
+                }
+                
+                state.isBraking = keys.Space || pressingDown;
+
+                if (state.gear === 'N') {
+                    state.v *= FRICTION;
+                    if (Math.abs(state.v) < 1) state.v = 0;
+                } else if (state.gear === 'R') {
+                    if (pressingUp) state.v -= ACCEL * dt;
+                    if (pressingDown) {
+                        if (state.v < 0) state.v += ACCEL * dt;
+                        if (state.v > 0) state.v = 0;
+                    }
+                    if (state.v < -MAX_V_PX) state.v = -MAX_V_PX;
+                } else if (state.gear === 'D' || state.gear === 'S') {
+                    const currentAccel = (state.gear === 'S') ? ACCEL * 1.5 : ACCEL;
+                    const currentMax = (state.gear === 'S') ? MAX_V_PX * 1.5 : MAX_V_PX;
+
+                    if (pressingUp) state.v += currentAccel * dt;
+                    if (pressingDown) {
+                        if (state.v > 0) state.v -= ACCEL * dt;
+                        if (state.v < 0) state.v = 0;
+                    }
+                    if (state.v > currentMax) {
+                        state.v -= ACCEL * dt;
+                        if (state.v < currentMax) state.v = currentMax;
+                    }
+                }
+            }
+
+            if (!pressingUp && !pressingDown) {
+                // Coasting friction
+                state.v *= FRICTION;
+                if (Math.abs(state.v) < 1) state.v = 0;
+            }
+
+            // Simulate brake pressure (real kMaxBrakeKpa is 5000)
+            if (keys.Space) {
+                state.v *= 0.8; // Hard brake
+                state.brakePressureKpa = Math.min(state.brakePressureKpa + 25000 * dt, 5000); // Fast ramp to max
+            } else if (state.isBraking) {
+                state.brakePressureKpa = Math.min(state.brakePressureKpa + 15000 * dt, 2000); // Normal braking limit
+            } else {
+                state.brakePressureKpa = Math.max(state.brakePressureKpa - 20000 * dt, 0); // Fast release
+            }
+
+            // Steering
+            const dynLimits = computeDynamicLimits(state.v);
+            const currentSteerRate = dynLimits.steerRateRadS;
+
+            if (keys.ArrowLeft || keys.KeyA) state.alpha -= currentSteerRate * dt;
+            if (keys.ArrowRight || keys.KeyD) state.alpha += currentSteerRate * dt;
+            
+            // Auto-center steering slightly if no input
+            if (!keys.ArrowLeft && !keys.ArrowRight && !keys.KeyA && !keys.KeyD) {
+                state.alpha *= 0.95;
+            }
+
+            // Clamp values
+            const actualMaxAlpha = Math.min(MAX_ALPHA, dynLimits.maxAlphaRad); // Minimum of user slider and dynamic physics limit
+            state.alpha = Math.max(-actualMaxAlpha, Math.min(actualMaxAlpha, state.alpha));
+            state.v = Math.max(-MAX_V_PX, Math.min(MAX_V_PX, state.v));
+            if (!keys.ArrowUp && !keys.ArrowDown && !keys.KeyW && !keys.KeyS) state.v *= FRICTION;
+
+            // Kinematic Model Equations (Tricycle / Bicycle model)
+            // omega = (v / L) * tan(alpha)
+            state.omega = (state.v / L) * Math.tan(state.alpha);
+            state.theta += state.omega * dt;
+            
+            // Normalize theta to 0 - 2PI for cleaner UI
+            if (state.theta > Math.PI * 2) state.theta -= Math.PI * 2;
+            if (state.theta < 0) state.theta += Math.PI * 2;
+
+            // Global position updates
+            state.x += state.v * Math.cos(state.theta) * dt;
+            state.y += state.v * Math.sin(state.theta) * dt;
+        }
+
+        function drawGrid(centerX, centerY) {
+            const gridSize = 50;
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 1;
+
+            // Anchor the camera so the vehicle sits in the lower half of the screen
+            const egoScreenY = canvas.height * 0.75; 
+
+            // Draw Global Origin (0,0) if it's on screen
+            const originX = canvas.width/2 - centerX;
+            const originY = egoScreenY - centerY;
+
+            // Calculate grid offsets so it aligns seamlessly with the global origin
+            const offsetX = originX % gridSize;
+            const offsetY = originY % gridSize;
+
+            ctx.beginPath();
+            for (let x = offsetX - gridSize; x < canvas.width; x += gridSize) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+            }
+            for (let y = offsetY - gridSize; y < canvas.height; y += gridSize) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+            }
+            ctx.stroke();
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.moveTo(originX - 1000, originY); ctx.lineTo(originX + 1000, originY); // X axis
+            ctx.moveTo(originX, originY - 1000); ctx.lineTo(originX, originY + 1000); // Y axis
+            ctx.stroke();
+            
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.font = '12px monospace';
+            ctx.fillText("Global Origin (0,0)", originX + 5, originY - 5);
+            ctx.fillText("Xb", originX + 200, originY - 5);
+            ctx.fillText("Yb", originX + 5, originY - 200);
+        }
+
+        function drawVehicle() {
+            ctx.save();
+            
+            // Move to anchor position on screen
+            const egoScreenY = canvas.height * 0.75;
+            ctx.translate(canvas.width / 2, egoScreenY);
+            
+            // 1. Draw Global Reference Horizontal (for Theta visualization)
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(150, 0);
+            ctx.stroke();
+            
+            // 2. Rotate to Vehicle's Heading (Theta)
+            ctx.rotate(state.theta);
+
+            // --- DRAW ICR (Instantaneous Center of Rotation) ---
+            if (Math.abs(state.alpha) > 0.01) {
+                // Radius of turn from rear axle
+                const R = L / Math.tan(state.alpha); 
+                
+                ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)'; // Purple dashed lines
+                ctx.setLineDash([8, 4]);
+                ctx.beginPath();
+                // Line extending from rear axle
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, R);
+                // Line extending from front wheel axle
+                ctx.moveTo(L, 0);
+                ctx.lineTo(0, R);
+                ctx.stroke();
+
+                // ICR Point
+                ctx.fillStyle = 'purple';
+                ctx.beginPath();
+                ctx.arc(0, R, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillText("C (ICR)", 10, R);
+                ctx.setLineDash([]);
+            }
+
+            // --- DRAW VEHICLE BODY ---
+            ctx.setLineDash([]);
+            // Chassis outline
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            
+            // Rounded rectangle for chassis
+            const cWidth = L + 40;
+            const cHeight = W + 40;
+            ctx.beginPath();
+            ctx.roundRect(-30, -cHeight/2, cWidth, cHeight, 15);
+            ctx.fill();
+            ctx.stroke();
+
+            // --- DRAW BRAKE LIGHTS ---
+            ctx.save();
+            if (state.isBraking) {
+                ctx.fillStyle = '#ef4444'; // Bright Red
+                ctx.shadowColor = '#ef4444';
+                ctx.shadowBlur = state.isEstop ? 25 : 12; // Glow harder on E-stop
+            } else {
+                ctx.fillStyle = '#94a3b8'; // Slate 400 (off)
+                ctx.shadowBlur = 0;
+            }
+            // Left tail light
+            ctx.beginPath();
+            ctx.roundRect(-32, -cHeight/2 + 10, 6, 20, 2);
+            ctx.fill();
+            // Right tail light
+            ctx.beginPath();
+            ctx.roundRect(-32, cHeight/2 - 30, 6, 20, 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Centerline (vehicle local X axis)
+            ctx.strokeStyle = '#94a3b8';
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(-40, 0);
+            ctx.lineTo(L + 60, 0);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Rear Axle line
+            ctx.beginPath();
+            ctx.moveTo(0, -W/2);
+            ctx.lineTo(0, W/2);
+            ctx.stroke();
+
+            // --- DRAW WHEELS ---
+            ctx.fillStyle = '#34d399'; // Green rear wheels
+            const wLen = 34;
+            const wThick = 14;
+            
+            // Rear Left
+            ctx.fillRect(-wLen/2, -W/2 - wThick/2, wLen, wThick);
+            ctx.strokeRect(-wLen/2, -W/2 - wThick/2, wLen, wThick);
+            
+            // Rear Right
+            ctx.fillRect(-wLen/2, W/2 - wThick/2, wLen, wThick);
+            ctx.strokeRect(-wLen/2, W/2 - wThick/2, wLen, wThick);
+
+            // Front Wheel (Steerable)
+            ctx.save();
+            ctx.translate(L, 0);
+            
+            // Draw Alpha Reference line
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(80, 0); ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.rotate(state.alpha); // Apply steering angle
+            
+            ctx.fillStyle = '#ef4444'; // Red front wheel
+            ctx.fillRect(-wLen/2, -wThick/2, wLen, wThick);
+            ctx.strokeRect(-wLen/2, -wThick/2, wLen, wThick);
+
+            // Velocity Vector at front wheel
+            if (Math.abs(state.v) > 1) {
+                const vLen = (state.v / MAX_V_PX) * 60;
+                ctx.strokeStyle = '#a855f7'; // Purple vector
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(vLen, 0);
+                // Arrowhead
+                ctx.lineTo(vLen - 6, -4);
+                ctx.moveTo(vLen, 0);
+                ctx.lineTo(vLen - 6, 4);
+                ctx.stroke();
+                ctx.fillStyle = '#a855f7';
+                ctx.fillText("Vs", vLen + 5, 5);
+            }
+            
+            ctx.restore(); // Undo front wheel rotation
+
+
+            // --- DRAW ANGLES (THETA AND ALPHA) ---
+            
+            // Draw Theta (heading angle)
+            ctx.save();
+            ctx.rotate(-state.theta); // rotate back to global horizontal to draw arc
+            if (Math.abs(state.theta) > 0.01) {
+                ctx.beginPath();
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 2;
+                // Draw arc from global 0 to vehicle theta
+                const tStart = state.theta > Math.PI ? state.theta - Math.PI*2 : 0;
+                const tEnd = state.theta > Math.PI ? 0 : state.theta;
+                // Always draw the smaller angle visually
+                let drawTheta = state.theta;
+                if(drawTheta > Math.PI) drawTheta -= Math.PI * 2;
+                
+                ctx.arc(0, 0, 60, Math.min(0, drawTheta), Math.max(0, drawTheta));
+                ctx.stroke();
+                ctx.fillStyle = '#2563eb';
+                ctx.font = '16px serif';
+                ctx.fillText("θ", 70 * Math.cos(drawTheta/2), 70 * Math.sin(drawTheta/2) + 5);
+            }
+            ctx.restore();
+
+            // Draw Alpha (steering angle)
+            ctx.save();
+            ctx.translate(L, 0);
+            if (Math.abs(state.alpha) > 0.02) {
+                ctx.beginPath();
+                ctx.strokeStyle = '#dc2626';
+                ctx.lineWidth = 2;
+                ctx.arc(0, 0, 50, Math.min(0, state.alpha), Math.max(0, state.alpha));
+                ctx.stroke();
+                ctx.fillStyle = '#dc2626';
+                ctx.font = '16px serif';
+                ctx.fillText("α", 60 * Math.cos(state.alpha/2), 60 * Math.sin(state.alpha/2) + 5);
+            }
+            ctx.restore();
+
+            // Draw d / L label (Wheelbase)
+            ctx.fillStyle = 'black';
+            ctx.font = '14px sans-serif';
+            ctx.fillText("L", L/2 - 5, -10);
+            ctx.beginPath();
+            ctx.moveTo(0, -5); ctx.lineTo(0, 5);
+            ctx.moveTo(L, -5); ctx.lineTo(L, 5);
+            ctx.moveTo(0, 0); ctx.lineTo(L, 0);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function updateHUD() {
+            // HOST_DriveSpeed [0x300 bytes 0-3, i32, mm/s]
+            const speed_mmps = (state.v / PIXELS_PER_METER) * 1000; // px/s → mm/s
+            const vKmh = speed_mmps * 3.6 / 1000;
+            elV.textContent = speed_mmps.toFixed(0) + ' mm/s (' + Math.abs(vKmh).toFixed(1) + ' km/h)';
+
+            // HOST_YawRate [0x300 bytes 4-6, i24, mrad/s] — omega (rad/s) → mrad/s
+            const yaw_mrad_s = state.omega * 1000;
+            elOmega.textContent = yaw_mrad_s.toFixed(0) + ' mrad/s (' + (state.omega * 180 / Math.PI).toFixed(1) + ' °/s)';
+            
+            let degTheta = (state.theta * 180 / Math.PI) % 360;
+            if(degTheta > 180) degTheta -= 360;
+            elTheta.textContent = degTheta.toFixed(1) + '°';
+            
+            // VCU_SES_Tgt_StrAngle [0x169 bytes 2-3, i16, 0.1°/bit] — alpha (rad) → deg
+            const steer_deg = state.alpha * 180 / Math.PI;
+            elAlpha.textContent = steer_deg.toFixed(1) + '° (raw: ' + (steer_deg * 10).toFixed(0) + ')';
+
+            // RT_BrakePressure [0x205 bytes 0-3, i32, kPa]
+            elBrake.textContent = state.brakePressureKpa.toFixed(0) + ' kPa';
+
+            if (Math.abs(state.alpha) < 0.01) {
+                elRadius.textContent = 'Straight (∞)';
+            } else {
+                const r = Math.abs(L / Math.tan(state.alpha));
+                elRadius.textContent = r.toFixed(1) + ' px';
+            }
+
+            const dynLimits = computeDynamicLimits(state.v);
+            elDynSteer.innerHTML = `<span>Dynamic Clamp: <strong>${dynLimits.maxAlphaDeg.toFixed(1)}°</strong></span><span>Slew Rate: <strong>${dynLimits.steerRateDegS.toFixed(0)}°/s</strong></span>`;
+        }
+
+        function loop(timestamp) {
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // Cap dt to prevent physics explosions when tabbing out
+            if (dt < 0.1) {
+                update(dt);
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // The environment grid is offset by the vehicle's position to keep the vehicle centered
+            drawGrid(state.x, state.y);
+            drawVehicle();
+            updateHUD();
+
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+{
+  "vector_set_id": "custom-codec-values-v1",
+  "schema_version": 1,
+  "description": "Semantic encode/decode vectors for SES/SEB custom codecs (protocol.codecs.python).",
+  "vectors": [
+    {
+      "id": "ses-command-values",
+      "codec": "ses.encode_command/decode_command",
+      "message": "ses:vcu_ses_req",
+      "bus": "low",
+      "values": {
+        "alignment_enable": true,
+        "control_enable": true,
+        "target_angle_raw": 1234,
+        "target_speed_raw": 328,
+        "rolling_counter": 5,
+        "vehicle_speed_raw": 10
+      }
+    },
+    {
+      "id": "ses-command-counter-max",
+      "codec": "ses.encode_command/decode_command",
+      "message": "ses:vcu_ses_req",
+      "bus": "low",
+      "values": {
+        "alignment_enable": false,
+        "control_enable": true,
+        "target_angle_raw": -100,
+        "target_speed_raw": 125,
+        "rolling_counter": 15,
+        "vehicle_speed_raw": 0
+      }
+    },
+    {
+      "id": "seb-command-pressure-mode",
+      "codec": "seb.encode_command/decode_command",
+      "message": "seb:vcu_seb_req",
+      "bus": "low",
+      "values": {
+        "alignment_enable": true,
+        "control_enable": true,
+        "control_mode": 1,
+        "auto_brake": false,
+        "stroke_request_raw": 0,
+        "pressure_request_raw": 50,
+        "rolling_counter": 3
+      }
+    },
+    {
+      "id": "seb-command-stroke-mode",
+      "codec": "seb.encode_command/decode_command",
+      "message": "seb:vcu_seb_req",
+      "bus": "low",
+      "values": {
+        "alignment_enable": true,
+        "control_enable": true,
+        "control_mode": 0,
+        "auto_brake": true,
+        "stroke_request_raw": 600,
+        "pressure_request_raw": 0,
+        "rolling_counter": 7
+      }
+    }
+  ]
+}

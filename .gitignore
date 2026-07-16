@@ -1,6 +1,7 @@
 # ── PDFs (large binaries — keep out of repo) ──────────────────────────
 *.pdf
 *.png
+
 # ── Python cache ─────────────────────────────────────────────────────
 __pycache__/
 *.pyc
@@ -47,7 +48,7 @@ cmake_install.cmake
 /docs-main/
 
 # ── Temporary analysis & working files ──────────────────────────────────
-/tem/
+tem/
 /issues/
 _filelist.txt
 
@@ -112,93 +113,8 @@ tools/canalystii-driver/
 # ── Simulation build artifacts ─────────────────────────────────────
 simulation/dist/
 simulation/node_modules/
-
-# ── AURIX / TC275 build artifacts ──────────────────────────────────
-*.d
-*.hex
-*.lst
-*.a
-*.src
-*.asm
-*.lsl.preprocessed
-Configurations/Debug/
-Configurations/Release/
-Debug/
-Release/
-.settings/
-.cproject
-.project
-Libraries/.ads/
-.ads/
-
-# ── AI assistant local files ─────────────────────────────────────────
-.claude/
-CLAUDE.md
-.agents/
-.codex/
-.cursor/
-.continue/
-.windsurf/
-.aider*
-.augment/
-.kiro/
-.roo/
-AGENTS.md
-GEMINI.md
-
-# ── Standalone candex protocol (developed here, published separately) ──
-/candex/
-/canspec/
-
-# ── LaTeX build artifacts ────────────────────────────────────────────
-*.aux
-*.log
-
-# ── Build artifacts ──────────────────────────────────────────────────
-*.o
-*.out
-*.old
-*.bak
-
-# ── debug-tool: Node.js / TypeScript ────────────────────────────────
-node_modules/
-dist/
-*.tsbuildinfo
-
-# ── debug-tool: Vite / Svelte ────────────────────────────────────────
-.vite/
-
-# ── debug-tool: Playwright ───────────────────────────────────────────
-test-results/
-playwright-report/
-playwright/.cache/
-.playwright-mcp/
-
-# ── debug-tool: runtime artifacts ──────────────────────────────────────
-.runtime/
-data/
-
-# ── debug-tool: local helper scripts ────────────────────────────────────
-run-*.ps1
-
-# ── debug-tool: one-off audit / screenshot scripts ─────────────────────
-debug-tool/e2e/audit-ui.ts
-debug-tool/e2e/deep-audit.ts
-debug-tool/e2e/functional-check.ts
-debug-tool/e2e/take-screenshots.ts
-debug-tool/e2e/check-prod.ts
-debug-tool/e2e/screenshots/
-
-# ── debug-tool: env files ────────────────────────────────────────────
-.env
-.env.local
-
-# ── CANalyst-II local Windows driver tooling ─────────────────────────
-tools/canalystii-driver/
-
-# ── Simulation build artifacts ─────────────────────────────────────
-simulation/dist/
-simulation/node_modules/
+simulation/traces/
+native-test/traces/
 
 # ── AURIX / TC275 build artifacts ──────────────────────────────────
 *.d
@@ -244,16 +160,17 @@ GEMINI.md
 /tex/generated/
 /tex/output/
 
-
-
 /install.cmd
 
 # ── control-ui ───────────────────────────────────────────────────────
 control-ui/backend/.venv/
 control-ui/backend/cui.db
+control-ui/backend/tests/*.db
+control-ui/backend/tests/*.log
 control-ui/frontend/node_modules/
 control-ui/frontend/dist/
 control-ui/frontend/build/
+control-ui/frontend/playwright-report/
 
 # ── Temporary files ──────────────────────────────────────────────────
 *.tem

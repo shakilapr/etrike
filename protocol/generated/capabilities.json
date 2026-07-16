@@ -679,6 +679,8 @@
       }
     ]
   },
+  "network_hash": "b47bb9ad17c3d7108c711b48c5be9827c60f84678774e9f4d918170d3c379141",
   "schema_version": 1,
+  "semantic_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a",
   "wire_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a"
 }
