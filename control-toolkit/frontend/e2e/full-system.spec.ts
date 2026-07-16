@@ -109,7 +109,8 @@ test.describe('Full system — tabs, buttons, CAN side-effects', () => {
     await expect(page.getByTestId('live-chrono-table')).toBeVisible()
     await page.getByTestId('live-mode-latest').click()
     await page.getByTestId('filter-bus-high').click()
-    await page.getByTestId('filter-bus-all').click()
+    await page.getByTestId('filter-bus-low').click()
+    await page.getByTestId('filter-bus-both').click()
     await page.getByTestId('live-filter').fill('HOST')
     await page.getByTestId('live-filter').fill('')
 
