@@ -42,8 +42,8 @@
   --invalid: var(--danger);
 
   --sidebar-w: 252px;
-  /* Multi-row header; used only as layout budget for full-height panes */
-  --topbar-h: 118px;
+  /* Compact 2-row health bar; layout budget for full-height panes */
+  --topbar-h: 96px;
   --control-h: 36px;
   --control-h-dense: 32px;
   --radius: 6px;
@@ -100,15 +100,15 @@ button {
   overflow: hidden;
 }
 
-/* ── Top bar (multi-row; no single-line chip flood) ──────────────── */
+/* ── Top health bar ──────────────────────────────────────────────── */
 
 .topbar {
   height: auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 14px 9px;
+  gap: 0;
+  padding: 0;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -119,27 +119,27 @@ button {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: 8px 10px;
   min-width: 0;
+  padding: 8px 14px;
 }
 
 .topbar-row-primary {
-  justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 2px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px 14px 7px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 1px;
-}
-
-/* Keep ESTOP on its own end edge when the row wraps; avoid stacking under brand */
-.topbar-row-primary .topbar-cluster {
-  flex: 1 1 auto;
-  min-width: 0;
+  background: linear-gradient(180deg, #fff 0%, #fafbfc 100%);
 }
 
 .topbar-row-primary .btn-estop {
   margin-left: auto;
-  align-self: flex-start;
+  align-self: center;
+}
+
+.topbar-brand-cluster {
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .topbar-cluster {
@@ -158,7 +158,6 @@ button {
   font-size: 15px;
   letter-spacing: -0.01em;
   white-space: nowrap;
-  margin-right: 2px;
   flex-shrink: 0;
 }
 
@@ -175,6 +174,178 @@ button {
   font-weight: 800;
 }
 
+.env-badge {
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.env-badge.env-computer {
+  background: var(--primary-soft);
+  border-color: #c5d7f5;
+  color: var(--primary);
+}
+
+.env-badge.env-real {
+  background: var(--warning-soft);
+  border-color: #f0d48a;
+  color: var(--warning);
+}
+
+/* Grouped critical health chips + bus meters */
+.health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  flex: 1 1 280px;
+  min-width: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.health-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 2px 2px;
+  min-height: 28px;
+}
+
+.health-overall-label {
+  font-size: 12.5px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.health-overall.tone-healthy .health-overall-label {
+  color: var(--success);
+}
+
+.health-overall.tone-degraded .health-overall-label {
+  color: var(--warning);
+}
+
+.health-overall.tone-fault .health-overall-label {
+  color: var(--danger);
+}
+
+.health-overall.tone-offline .health-overall-label {
+  color: var(--text-tertiary);
+}
+
+.health-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.health-chip {
+  min-height: 26px;
+  padding: 3px 9px;
+}
+
+/* High/Low bus state chips — discrete activity, not a level meter */
+.bus-chip {
+  align-items: center;
+  gap: 6px;
+}
+
+.bus-chip .status-dot {
+  margin: 0;
+}
+
+.bus-chip .bus-rx {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.bus-chip.tone-ok {
+  background: var(--success-soft);
+  border-color: #c5e4d2;
+}
+
+.bus-chip.tone-ok .chip-v {
+  color: var(--success);
+}
+
+.bus-chip.tone-warn {
+  background: var(--warning-soft);
+  border-color: #f0d48a;
+}
+
+.bus-chip.tone-warn .chip-v {
+  color: var(--warning);
+}
+
+.bus-chip.tone-danger {
+  background: var(--danger-soft);
+  border-color: #e4aeb2;
+}
+
+.bus-chip.tone-danger .chip-v {
+  color: var(--danger);
+}
+
+.bus-chip.tone-muted {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.bus-chip.tone-muted .chip-v {
+  color: var(--text-tertiary);
+}
+
+/* Meta row — secondary context */
+.topbar-row-meta {
+  gap: 4px 14px;
+  padding: 5px 14px 6px;
+  background: #f7f9fb;
+  border-top: none;
+}
+
+.meta-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11.5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.meta-k {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.meta-v {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta-v.muted,
+.meta-sep {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.meta-hash {
+  margin-left: auto;
+  opacity: 0.85;
+}
+
 .chip {
   display: inline-flex;
   align-items: baseline;
@@ -183,7 +354,7 @@ button {
   padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface-subtle);
+  background: var(--surface);
   color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
@@ -267,7 +438,7 @@ button {
 .quality-lost,
 .quality-connecting,
 .quality-dropping {
-  background: var(--surface-subtle);
+  background: var(--surface);
   border-color: var(--border);
 }
 
@@ -278,11 +449,14 @@ button {
   color: #fff;
   border: 1px solid #9f1f28;
   border-radius: var(--radius);
-  min-height: 30px;
-  padding: 0 12px;
-  font-weight: 600;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 14px;
+  font-weight: 700;
   font-size: 12px;
+  letter-spacing: 0.01em;
   transition: background var(--transition);
+  transform: none;
 }
 
 .btn-estop:hover:not(:disabled) {
@@ -292,6 +466,25 @@ button {
 .btn-estop:focus-visible {
   outline: 2px solid #e4aeb2;
   outline-offset: 2px;
+}
+
+.status-dot.muted {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1100px) {
+  .health-strip {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .topbar-row-primary .btn-estop {
+    margin-left: 0;
+  }
+
+  .meta-hash {
+    margin-left: 0;
+  }
 }
 
 /* ── Body / sidebar (control-ui #f1f4f7 rail) ─────────────────────── */
@@ -653,6 +846,9 @@ button.vehicle-open-drive svg {
   flex: 0 0 auto;
   border-radius: 50%;
   background: currentColor;
+}
+
+.system-card-row .status-dot {
   margin-top: 5px;
 }
 
@@ -666,6 +862,22 @@ button.vehicle-open-drive svg {
 
 .status-dot.warning {
   color: var(--warning);
+}
+
+.status-dot.live {
+  color: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--success-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(33, 132, 90, 0.12);
+  }
 }
 
 main {
