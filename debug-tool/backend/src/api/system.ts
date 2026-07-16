@@ -11,7 +11,13 @@ export function registerSystemRoutes(
   startedAt: number,
   shutdown?: () => Promise<void>
 ): void {
-  app.get("/api/status", async () => ({
+  app.get("/api/status", async () => {
+    const db = store as DebugStore | undefined;
+    const stats = db ? await db.getStats().catch(() => ({ buses: {}, total: 0 } as any)) : { buses: {}, total: 0 } as any;
+    const statsUpdatedAt = db ? await db.getStatsUpdatedAt().catch(() => null) : null;
+    const storage = db ? await db.counts().catch(() => ({})) : {};
+
+    return {
       backend_online: true,
       started_at: startedAt,
       uptime_s: Math.round(Date.now() / 1000 - startedAt),
@@ -26,15 +32,16 @@ export function registerSystemRoutes(
         last_error: bridge.state.last_error
       },
       bus_detection: bridge.state.bus_detection ?? { detected: false, bus: "high", confidence: "none", highHits: 0, lowHits: 0 },
-      bus_stats: (await store.getStats()).buses,
-      stats_updated_at: await store.getStatsUpdatedAt(),
+      bus_stats: stats.buses,
+      stats_updated_at: statsUpdatedAt,
       websocket_clients: hub.clientCount(),
-      storage: await store.counts(),
+      storage,
       queues: {
         
         db: app.ctx.writeQueue.getMetrics()
       }
-  }));
+    };
+  });
 
   app.post("/api/system/stop", async () => {
     try {

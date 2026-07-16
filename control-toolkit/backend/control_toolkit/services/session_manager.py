@@ -50,6 +50,7 @@ class SessionManager:
         get_adapter_epoch: Callable[[], int | None],
         on_stop_all: Callable[[], None] | None = None,
         on_profile_change: Callable[[Profile], None] | None = None,
+        physical_available: Callable[[], tuple[bool, str]] | None = None,
     ) -> None:
         self._lock = threading.Lock()
         self._ownership = ownership
@@ -57,6 +58,7 @@ class SessionManager:
         self._get_adapter_epoch = get_adapter_epoch
         self._on_stop_all = on_stop_all
         self._on_profile_change = on_profile_change
+        self._physical_available = physical_available
         self._state = SessionState(
             wire_hash=proto.WIRE_HASH,
             semantic_hash=proto.SEMANTIC_HASH,
@@ -110,7 +112,25 @@ class SessionManager:
             # Running: session active for commands
             self._state.phase = SessionPhase.RUNNING
             self._state.revision += 1
-            return self._snapshot_locked()
+            snap = self._snapshot_locked()
+        # Transport switch outside lock (may open CANalyst / virtual).
+        # Pure Software is usually already open from lifecycle startup — still call
+        # so physical→virtual switches work; open_* methods are idempotent.
+        if self._on_profile_change is not None:
+            try:
+                self._on_profile_change(req.profile)
+            except Exception as exc:
+                # Roll back session if transport cannot open.
+                with self._lock:
+                    self._state.phase = SessionPhase.FAILED
+                    self._state.session_id = None
+                    self._state.revision += 1
+                raise SessionError(
+                    "transport.open_failed",
+                    str(exc),
+                    status=503,
+                ) from exc
+        return snap
 
     def change_profile(self, req: ChangeProfileRequest) -> SessionState:
         """Controlled profile transition: stop TX → neutral → activate."""
@@ -140,10 +160,17 @@ class SessionManager:
             self._state.revision += 1
             self._state.phase = SessionPhase.RUNNING
             self._state.revision += 1
-
-            if self._on_profile_change is not None:
+            snap = self._snapshot_locked()
+        if self._on_profile_change is not None:
+            try:
                 self._on_profile_change(req.profile)
-            return self._snapshot_locked()
+            except Exception as exc:
+                raise SessionError(
+                    "transport.open_failed",
+                    str(exc),
+                    status=503,
+                ) from exc
+        return snap
 
     def set_bench_tx(self, enabled: bool, expected_revision: int | None = None) -> SessionState:
         with self._lock:
@@ -156,11 +183,16 @@ class SessionManager:
                     status=409,
                 )
             if enabled and self._state.profile in PHYSICAL_PROFILES:
-                raise SessionError(
-                    "bench_tx.physical_unavailable",
-                    "physical Bench TX is not available yet (hardware track)",
-                    status=503,
-                )
+                ok = True
+                reason = ""
+                if self._physical_available is not None:
+                    ok, reason = self._physical_available()
+                if not ok:
+                    raise SessionError(
+                        "bench_tx.physical_unavailable",
+                        f"physical Bench TX unavailable: {reason or 'no CANalyst'}",
+                        status=503,
+                    )
             if enabled and not self._get_transport_open():
                 raise SessionError(
                     "bench_tx.no_adapter",
@@ -271,20 +303,24 @@ class SessionManager:
 
     def _assert_profile_allowed_locked(self, profile: Profile) -> None:
         if profile is Profile.PURE_SOFTWARE:
-            if not self._get_transport_open():
+            # Virtual transport is opened by lifecycle; allow create then open.
+            return
+        if profile in PHYSICAL_PROFILES:
+            if self._physical_available is None:
                 raise SessionError(
-                    "transport.unavailable",
-                    "Pure Software requires an open virtual transport",
+                    "profile.physical_unavailable",
+                    f"{profile.value} requires a physical adapter",
+                    status=503,
+                )
+            ok, reason = self._physical_available()
+            if not ok:
+                # Never silent virtual fallback.
+                raise SessionError(
+                    "profile.physical_unavailable",
+                    f"{profile.value} requires CANalyst-II: {reason}",
                     status=503,
                 )
             return
-        if profile in PHYSICAL_PROFILES:
-            # Never silent virtual fallback.
-            raise SessionError(
-                "profile.physical_unavailable",
-                f"{profile.value} requires a physical adapter (hardware track not ready)",
-                status=503,
-            )
         raise SessionError("profile.unknown", f"unknown profile {profile}", status=400)
 
     @staticmethod

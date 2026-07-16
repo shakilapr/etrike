@@ -152,6 +152,7 @@ async function main(): Promise<void> {
   });
 
   const ctx = {
+    store,
     stateMachine,
     writeQueue,
     leaseManager,

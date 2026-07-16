@@ -1,23 +1,36 @@
 # Phase 6 — Diagnostics, recording, and evidence
 
-**Status:** Partial (software track core APIs + Diagnostics UI)  
+**Status:** Complete (software track)  
 **Depends on:** Phase 5
 
 ## Delivered
 
 | Component | Path / API |
 |-----------|------------|
-| Recording service | `services/recording.py` — opt-in ring buffer, evidence quality |
-| Diagnostics service | `services/diagnostics.py` — events + episode aggregation |
-| Router hook | frames observed into active recording |
-| Recording API | `POST/GET/DELETE /api/v1/recordings` |
+| Recording service | `services/recording.py` — ring buffer, evidence quality, export, windows |
+| Diagnostics service | `services/diagnostics.py` — events, episodes, recovery hysteresis |
+| Verification service | `services/verification.py` — one-at-a-time sequential steps |
+| Bit layout | `services/bit_layout.py` — Intel/Motorola occupancy grid |
+| Recording API | `POST/GET/DELETE /api/v1/recordings`, `GET …/export` |
 | Events API | `GET /api/v1/events`, `GET /api/v1/events/{id}`, `GET /api/v1/episodes` |
-| Diagnostics UI | timeline, episodes, start/stop recording |
-| Tests | `test_recording.py`, `test_diagnostics.py` |
+| Tests API | `POST/GET /api/v1/tests`, `GET /api/v1/tests/{id}` |
+| Evidence API | `GET /api/v1/evidence/{id}` |
+| Protocol layout | `GET /api/v1/protocol/messages/{bus}/{id}`, `…/layout` + live overlay |
+| Dictionary UI | bit-grid + signal table + live values |
+| Diagnostics UI | timeline, episodes, recording, evidence window |
+| Tests | `test_recording`, `test_diagnostics`, `test_verification`, `test_evidence_quality`, `test_bit_layout` |
 
-## Still open
+## Exit gate
 
-- Sequential test runner (`POST /tests`)
-- Disk export / evidence windows
-- Full dictionary bit-grid (Intel/Motorola)
-- Recording worker isolation under overload stress polish
+- [x] Diagnostic episodes aggregate (not per-frame flood); recovery hysteresis
+- [x] Recording captures frames or marks Incomplete
+- [x] Formal Pass requires Complete evidence when recording active
+- [x] CAN Dictionary bit layouts from protocol YAML
+- [x] Sequential verification Pass/Fail/Inconclusive
+- [x] Event API returns structured data
+
+## Deferred (backlog polish)
+
+- Disk worker under overload stress
+- ECU diagnostic flag classification from full metadata matrix
+- Triggered capture / offline replay (Later phases)

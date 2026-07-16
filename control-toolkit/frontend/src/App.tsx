@@ -1,20 +1,188 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useAppStore, type MessageState, type TopologyNode, type Workspace } from './store'
 import { useBackendStream } from './useStream'
 import { api, type ProfileInfo } from './api'
 import { VehiclePreview } from './VehiclePreview'
+import { CanDictionary } from './CanDictionary'
 import './App.css'
 
-const WORKSPACES: { id: Workspace; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'network', label: 'Network' },
-  { id: 'live', label: 'Live CAN' },
-  { id: 'control', label: 'Control' },
-  { id: 'preview', label: 'Drive' },
-  { id: 'bench', label: 'Bench' },
-  { id: 'dictionary', label: 'CAN Dictionary' },
-  { id: 'diagnostics', label: 'Diagnostics' },
-  { id: 'settings', label: 'Settings' },
+/**
+ * Nav rail icons — standard Lucide/Feather stroke set only (no emoji, no custom glyphs).
+ * Paths match common open-source icon packs used in engineering UIs.
+ */
+type NavItem = {
+  id: Workspace
+  label: string
+  icon: ReactNode
+}
+
+type NavSection = { label: string; items: NavItem[] }
+
+function NavIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {children}
+    </svg>
+  )
+}
+
+/** Lucide layout-grid */
+function IconLayoutGrid() {
+  return (
+    <NavIcon>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </NavIcon>
+  )
+}
+
+/** Lucide share-2 */
+function IconShare2() {
+  return (
+    <NavIcon>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.59 13.51 15.42 17.49" />
+      <path d="M15.41 6.51 8.59 10.49" />
+    </NavIcon>
+  )
+}
+
+/** Lucide activity */
+function IconActivity() {
+  return (
+    <NavIcon>
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </NavIcon>
+  )
+}
+
+/** Lucide sliders-horizontal */
+function IconSliders() {
+  return (
+    <NavIcon>
+      <path d="M10 5H3" />
+      <path d="M21 5h-7" />
+      <path d="M14 19H3" />
+      <path d="M21 19h-3" />
+      <path d="M12 12H3" />
+      <path d="M21 12h-5" />
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="18" cy="12" r="2" />
+      <circle cx="16" cy="19" r="2" />
+    </NavIcon>
+  )
+}
+
+/** Lucide gauge */
+function IconGauge() {
+  return (
+    <NavIcon>
+      <path d="m12 14 4-4" />
+      <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+    </NavIcon>
+  )
+}
+
+/** Lucide terminal */
+function IconTerminal() {
+  return (
+    <NavIcon>
+      <path d="M4 17 10 11 4 5" />
+      <path d="M12 19h8" />
+    </NavIcon>
+  )
+}
+
+/** Lucide book */
+function IconBook() {
+  return (
+    <NavIcon>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </NavIcon>
+  )
+}
+
+/** Lucide search */
+function IconSearch() {
+  return (
+    <NavIcon>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </NavIcon>
+  )
+}
+
+/** Lucide settings (gear) */
+function IconSettings() {
+  return (
+    <NavIcon>
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </NavIcon>
+  )
+}
+
+/** Lucide external-link */
+function IconExternalLink() {
+  return (
+    <NavIcon>
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </NavIcon>
+  )
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    label: 'Observe',
+    items: [
+      { id: 'overview', label: 'Overview', icon: <IconLayoutGrid /> },
+      { id: 'network', label: 'Network', icon: <IconShare2 /> },
+      { id: 'live', label: 'Live CAN', icon: <IconActivity /> },
+    ],
+  },
+  {
+    label: 'Operate',
+    items: [
+      { id: 'control', label: 'Control', icon: <IconSliders /> },
+      { id: 'preview', label: 'Drive', icon: <IconGauge /> },
+    ],
+  },
+  {
+    label: 'Analysis',
+    items: [
+      { id: 'bench', label: 'Bench', icon: <IconTerminal /> },
+      { id: 'dictionary', label: 'Dictionary', icon: <IconBook /> },
+      { id: 'diagnostics', label: 'Diagnostics', icon: <IconSearch /> },
+    ],
+  },
+  {
+    label: 'System',
+    items: [{ id: 'settings', label: 'Settings', icon: <IconSettings /> }],
+  },
 ]
 
 const PROFILE_LABELS: Record<string, string> = {
@@ -79,96 +247,121 @@ function Topbar() {
     }
   }
 
+  const streamText =
+    quality === 'live'
+      ? 'Live'
+      : quality === 'delayed'
+        ? 'Delayed'
+        : quality === 'dropping'
+          ? 'Dropping'
+          : quality === 'lost'
+            ? 'Lost'
+            : 'Connecting'
+
   return (
     <header className="topbar" data-testid="topbar">
-      <div className="brand">Control Toolkit</div>
-      <span className="chip" style={{ borderRadius: 999 }}>
-        CAN bench
-      </span>
-
-      <div className="chip" data-testid="chip-profile" title="Active operating profile">
-        <span className="chip-k">Profile</span>
-        <span className="chip-v">{profileLabel}</span>
-      </div>
-      <div className="chip" data-testid="chip-destination">
-        <span className="chip-k">Dest</span>
-        <span className="chip-v">{ses?.destination ?? '—'}</span>
-      </div>
-      <div className="chip" data-testid="chip-adapter">
-        <span className="chip-k">Adapter</span>
-        <span className="chip-v">{status?.adapter?.health ?? '—'}</span>
-      </div>
-      <div className="chip" data-testid="chip-high">
-        <span className="chip-k">High</span>
-        <span className="chip-v">
-          {high?.activity ?? '—'} · rx {high?.rx_count ?? 0}
-        </span>
-      </div>
-      <div className="chip" data-testid="chip-low">
-        <span className="chip-k">Low</span>
-        <span className="chip-v">
-          {low?.activity ?? '—'} · rx {low?.rx_count ?? 0}
-        </span>
-      </div>
-      <div className="chip" data-testid="chip-mode" title="Requested vs confirmed vehicle mode">
-        <span className="chip-k">Mode</span>
-        <span className="chip-v">
-          Req {ses?.requested_mode ?? '—'} · Veh {ses?.confirmed_mode ?? '—'}
-        </span>
-      </div>
-      <div className="chip" data-testid="chip-power" title="Requested vs confirmed power">
-        <span className="chip-k">Power</span>
-        <span className="chip-v">
-          Req {ses?.requested_power ?? '—'} · Veh {ses?.confirmed_power ?? '—'}
-        </span>
-      </div>
-      <div
-        className={`chip ${ses?.estop_active ? 'danger' : ''}`}
-        data-testid="chip-estop"
-      >
-        <span className="chip-k">ESTOP</span>
-        <span className="chip-v">{ses?.estop_active ? '● Active' : '● Clear'}</span>
-      </div>
-      <div className="chip" data-testid="chip-record">
-        <span className="chip-k">Recording</span>
-        <span className="chip-v">{ses?.recording ? '● On' : '● Off'}</span>
-      </div>
-      <div className="chip" data-testid="chip-bench-tx">
-        <span className="chip-k">Bench TX</span>
-        <span className="chip-v">{ses?.bench_tx ?? 'disabled'}</span>
-      </div>
-      <div className="chip" data-testid="chip-phase">
-        <span className="chip-k">Session</span>
-        <span className="chip-v">
-          {ses?.phase ?? 'stopped'}
-          {ses?.session_id ? ` · ${ses.session_id.slice(0, 10)}` : ''}
-        </span>
-      </div>
-      <div className={`chip quality-${quality}`} data-testid="chip-stream">
-        <span className="chip-k">Stream</span>
-        <span className="chip-v">
-          ● {quality === 'live' ? 'Live' : quality === 'delayed' ? 'Delayed' : quality === 'dropping' ? 'Dropping' : quality === 'lost' ? 'Lost' : 'Connecting'}
-          {reconnect > 0 ? ` · retry ${reconnect}` : ''}
-        </span>
-      </div>
-      {mismatch && (
-        <div className="chip danger" data-testid="chip-mismatch">
-          ● Protocol mismatch
+      {/* Row 1 — identity + stream health + ESTOP action */}
+      <div className="topbar-row topbar-row-primary">
+        <div className="topbar-cluster">
+          <div className="brand">Control Toolkit</div>
+          <span className="chip chip-pill">CAN bench</span>
+          <div className={`chip quality-${quality}`} data-testid="chip-stream">
+            <span className="chip-k">Stream</span>
+            <span className="chip-v">
+              {streamText}
+              {reconnect > 0 ? ` · retry ${reconnect}` : ''}
+            </span>
+          </div>
+          <div
+            className={`chip ${ses?.estop_active ? 'danger' : 'ok'}`}
+            data-testid="chip-estop"
+          >
+            <span className="chip-k">ESTOP</span>
+            <span className="chip-v">{ses?.estop_active ? 'Active' : 'Clear'}</span>
+          </div>
+          {mismatch && (
+            <div className="chip danger" data-testid="chip-mismatch">
+              Protocol mismatch
+            </div>
+          )}
         </div>
-      )}
-      <div className="chip mono muted" data-testid="chip-hash" title={status?.wire_hash ?? ''}>
-        {(status?.wire_hash ?? '').slice(0, 12) || '—'}…
+        <button
+          type="button"
+          className="btn-estop"
+          data-testid="btn-header-estop"
+          title="Inject SAFETY_ESTOP (DLC=0) on high and low — requires Bench TX"
+          onClick={() => void injectEstop()}
+        >
+          Inject ESTOP
+        </button>
       </div>
 
-      <button
-        type="button"
-        className="btn-estop"
-        data-testid="btn-header-estop"
-        title="Inject SAFETY_ESTOP (DLC=0) on high and low — requires Bench TX"
-        onClick={() => void injectEstop()}
-      >
-        Inject ESTOP
-      </button>
+      {/* Row 2 — session + transport */}
+      <div className="topbar-row" data-testid="topbar-row-session">
+        <div className="chip" data-testid="chip-profile" title="Active operating profile">
+          <span className="chip-k">Profile</span>
+          <span className="chip-v">{profileLabel}</span>
+        </div>
+        <div className="chip" data-testid="chip-destination">
+          <span className="chip-k">Dest</span>
+          <span className="chip-v">{ses?.destination ?? '—'}</span>
+        </div>
+        <div className="chip" data-testid="chip-phase">
+          <span className="chip-k">Session</span>
+          <span className="chip-v">
+            {ses?.phase ?? 'stopped'}
+            {ses?.session_id ? ` · ${ses.session_id.slice(0, 10)}` : ''}
+          </span>
+        </div>
+        <div className="chip" data-testid="chip-adapter">
+          <span className="chip-k">Adapter</span>
+          <span className="chip-v">{status?.adapter?.health ?? '—'}</span>
+        </div>
+        <div className="chip" data-testid="chip-high">
+          <span className="chip-k">High</span>
+          <span className="chip-v">
+            {high?.activity ?? '—'} · rx {high?.rx_count ?? 0}
+          </span>
+        </div>
+        <div className="chip" data-testid="chip-low">
+          <span className="chip-k">Low</span>
+          <span className="chip-v">
+            {low?.activity ?? '—'} · rx {low?.rx_count ?? 0}
+          </span>
+        </div>
+        <div className="chip" data-testid="chip-bench-tx">
+          <span className="chip-k">Bench TX</span>
+          <span className="chip-v">{ses?.bench_tx ?? 'disabled'}</span>
+        </div>
+      </div>
+
+      {/* Row 3 — vehicle view + evidence */}
+      <div className="topbar-row" data-testid="topbar-row-vehicle">
+        <div className="chip" data-testid="chip-mode" title="Requested vs confirmed vehicle mode">
+          <span className="chip-k">Mode</span>
+          <span className="chip-v">
+            Req {ses?.requested_mode ?? '—'} · Veh {ses?.confirmed_mode ?? '—'}
+          </span>
+        </div>
+        <div className="chip" data-testid="chip-power" title="Requested vs confirmed power">
+          <span className="chip-k">Power</span>
+          <span className="chip-v">
+            Req {ses?.requested_power ?? '—'} · Veh {ses?.confirmed_power ?? '—'}
+          </span>
+        </div>
+        <div className="chip" data-testid="chip-record">
+          <span className="chip-k">Recording</span>
+          <span className="chip-v">{ses?.recording ? 'On' : 'Off'}</span>
+        </div>
+        <div
+          className="chip mono muted"
+          data-testid="chip-hash"
+          title={status?.wire_hash ?? ''}
+        >
+          <span className="chip-k">Wire</span>
+          <span className="chip-v">{(status?.wire_hash ?? '').slice(0, 12) || '—'}…</span>
+        </div>
+      </div>
     </header>
   )
 }
@@ -176,20 +369,184 @@ function Topbar() {
 function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
+  const status = useAppStore((s) => s.status)
+  const quality = useAppStore((s) => s.streamQuality)
+  const messages = useAppStore((s) => s.messages)
+
+  const ses = status?.session
+  const profileId = ses?.profile ?? status?.profile ?? '—'
+  const profileLabel = PROFILE_LABELS[profileId] ?? profileId
+  const adapterHealth = status?.adapter?.health ?? '—'
+  const streamOk = quality === 'live' || quality === 'delayed'
+  const streamLabel =
+    quality === 'live'
+      ? 'Stream live'
+      : quality === 'delayed'
+        ? 'Stream delayed'
+        : quality === 'dropping'
+          ? 'Stream dropping'
+          : quality === 'lost'
+            ? 'Stream lost'
+            : 'Connecting…'
+
+  const motor = findMsg(messages, 'MTR_MOTOR_FBK')
+  const sesStatus = findMsg(messages, 'SES_STATUS')
+  const hostCmd = findMsg(messages, 'HOST_DRIVE_CMD')
+  const rtDriveCmd = findMsg(messages, 'RT_DRIVE_CMD')
+  const speedRaw = motor?.signals?.actual_speed_mmps?.engineering_value
+  const steerRaw = sesStatus?.signals?.angle_deg?.engineering_value
+  const speedText =
+    typeof speedRaw === 'number' && Number.isFinite(speedRaw)
+      ? `${speedRaw.toFixed(0)} mm/s`
+      : '—'
+  const steerText =
+    typeof steerRaw === 'number' && Number.isFinite(steerRaw)
+      ? `${steerRaw.toFixed(1)}°`
+      : '—'
+
+  // Outbound CAN commands (TX) — high Host intent and/or low RT drive
+  const hostSpeed = hostCmd?.signals?.speed_mmps?.engineering_value
+  const hostYaw = hostCmd?.signals?.yaw_rate_mrad_s?.engineering_value
+  const hostGear =
+    hostCmd?.signals?.gear?.enum_label ?? hostCmd?.signals?.gear?.engineering_value
+  const rtSpeed = rtDriveCmd?.signals?.motor_speed_mmps?.engineering_value
+  const rtGear =
+    rtDriveCmd?.signals?.gear?.enum_label ??
+    rtDriveCmd?.signals?.gear?.engineering_value
+
+  const fmtNum = (v: unknown, digits = 0, unit = '') => {
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      return `${v.toFixed(digits)}${unit ? ` ${unit}` : ''}`
+    }
+    if (v != null && v !== '') return String(v)
+    return '—'
+  }
+
+  const hostCmdSpeedText = fmtNum(hostSpeed, 0, 'mm/s')
+  const hostCmdYawText = fmtNum(hostYaw, 0, 'mrad/s')
+  const hostCmdGearText = hostGear != null && hostGear !== '' ? String(hostGear) : '—'
+  const rtCmdSpeedText = fmtNum(rtSpeed, 0, 'mm/s')
+  const rtCmdGearText = rtGear != null && rtGear !== '' ? String(rtGear) : '—'
+
+  const hostFresh = hostCmd?.freshness
+    ? String(hostCmd.freshness).toLowerCase()
+    : ''
+  const rtFresh = rtDriveCmd?.freshness
+    ? String(rtDriveCmd.freshness).toLowerCase()
+    : ''
+  const hostTxLive = hostFresh === 'live' || hostFresh === 'late'
+  const rtTxLive = rtFresh === 'live' || rtFresh === 'late'
+
   return (
-    <nav className="sidebar" data-testid="sidebar" aria-label="Primary workspaces">
-      {WORKSPACES.map((w) => (
+    <aside className="sidebar" data-testid="sidebar" aria-label="Primary navigation">
+      <nav className="sidebar-nav" aria-label="Primary workspaces">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.label} className="nav-section">
+            <p className="nav-label">{section.label}</p>
+            {section.items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                data-testid={`nav-${item.id}`}
+                className={workspace === item.id ? 'nav active' : 'nav'}
+                onClick={() => setWorkspace(item.id)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <section className="vehicle-card" aria-labelledby="side-vehicle-title">
+        <div className="vehicle-card-header">
+          <div className="vehicle-card-title">
+            <IconGauge />
+            <div>
+              <strong id="side-vehicle-title">eTrike</strong>
+              <small>Cmd TX · feedback</small>
+            </div>
+          </div>
+          {streamOk ? (
+            <span className="vehicle-live">Live</span>
+          ) : (
+            <span className="vehicle-offline">Offline</span>
+          )}
+        </div>
+        <div className="vehicle-readouts">
+          <div className="vehicle-readout">
+            <span>Speed fbk</span>
+            <strong data-testid="sidebar-speed">{speedText}</strong>
+            <small className="vehicle-cmd" data-testid="sidebar-speed-cmd">
+              {hostTxLive
+                ? `cmd ${hostCmdSpeedText}`
+                : rtTxLive
+                  ? `cmd ${rtCmdSpeedText}`
+                  : hostCmd
+                    ? `cmd ${hostCmdSpeedText}`
+                    : rtDriveCmd
+                      ? `cmd ${rtCmdSpeedText}`
+                      : 'cmd —'}
+            </small>
+          </div>
+          <div className="vehicle-readout">
+            <span>Steer fbk</span>
+            <strong data-testid="sidebar-steer">{steerText}</strong>
+            <small className="vehicle-cmd" data-testid="sidebar-steer-cmd">
+              {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw —'}
+            </small>
+          </div>
+        </div>
+        <div className="vehicle-cmd-strip" data-testid="sidebar-cmd-strip">
+          <div className="vehicle-cmd-line" data-testid="sidebar-cmd-high">
+            <span className="vehicle-cmd-tag">TX High</span>
+            <span className="mono">
+              0x300 {hostCmdSpeedText} · yaw {hostCmdYawText} · gear {hostCmdGearText}
+            </span>
+            {hostFresh ? (
+              <span className={`vehicle-cmd-fresh fresh-${hostFresh}`}>{hostFresh}</span>
+            ) : (
+              <span className="vehicle-cmd-fresh muted">—</span>
+            )}
+          </div>
+          <div className="vehicle-cmd-line" data-testid="sidebar-cmd-low">
+            <span className="vehicle-cmd-tag">TX Low</span>
+            <span className="mono">
+              0x204 {rtCmdSpeedText} · gear {rtCmdGearText}
+            </span>
+            {rtFresh ? (
+              <span className={`vehicle-cmd-fresh fresh-${rtFresh}`}>{rtFresh}</span>
+            ) : (
+              <span className="vehicle-cmd-fresh muted">—</span>
+            )}
+          </div>
+        </div>
         <button
-          key={w.id}
           type="button"
-          data-testid={`nav-${w.id}`}
-          className={workspace === w.id ? 'nav active' : 'nav'}
-          onClick={() => setWorkspace(w.id)}
+          className="vehicle-open-drive"
+          data-testid="sidebar-open-drive"
+          onClick={() => setWorkspace('preview')}
         >
-          {w.label}
+          <IconExternalLink />
+          <span>Open Drive console</span>
         </button>
-      ))}
-    </nav>
+      </section>
+
+      <div className="system-card" data-testid="sidebar-system-card">
+        <div className="system-card-row">
+          <span
+            className={`status-dot ${streamOk ? 'success' : quality === 'connecting' ? 'warning' : 'danger'}`}
+          />
+          <div>
+            <strong>{streamLabel}</strong>
+            <small>
+              {profileLabel} · adapter {adapterHealth}
+            </small>
+          </div>
+        </div>
+      </div>
+    </aside>
   )
 }
 
@@ -763,23 +1120,31 @@ function DirectActuatorCards({
   setLog,
   ensureSessionReady,
   refresh,
+  disabled,
 }: {
   busy: boolean
   setBusy: (b: boolean) => void
   setLog: (s: string) => void
   ensureSessionReady: () => Promise<import('./store').Status>
   refresh: () => Promise<import('./store').Status>
+  disabled?: boolean
 }) {
+  const messages = useAppStore((s) => s.messages)
   const [motorSpeed, setMotorSpeed] = useState(300)
   const [motorGear, setMotorGear] = useState(1)
   const [steerAngle, setSteerAngle] = useState(0)
   const [brakePressure, setBrakePressure] = useState(20)
   const [active, setActive] = useState<Record<string, boolean>>({})
 
+  const mtr = findMsg(messages, 'MTR_MOTOR_FBK')
+  const ses = findMsg(messages, 'SES_STATUS')
+  const seb = findMsg(messages, 'SEB_STATUS')
+
   async function start(channel: 'motor' | 'steering' | 'brake') {
     setBusy(true)
     try {
       await ensureSessionReady()
+      // Starting any low-bus channel clears high-bus kinematics (backend exclusive).
       const values =
         channel === 'motor'
           ? { motor_speed_mmps: motorSpeed, gear: motorGear }
@@ -797,7 +1162,9 @@ function DirectActuatorCards({
               }
       const r = await api.controlDirect({ channel, enabled: true, values })
       setActive((a) => ({ ...a, [channel]: true }))
-      setLog(`Direct ${channel}: ${JSON.stringify(r.control.direct_channels)}`)
+      setLog(
+        `Low-bus direct ${channel} · method=${String(r.control.method)} · channels=${JSON.stringify(r.control.direct_channels)}`,
+      )
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -811,7 +1178,7 @@ function DirectActuatorCards({
     try {
       await api.controlDirect({ channel, enabled: false })
       setActive((a) => ({ ...a, [channel]: false }))
-      setLog(`Stopped direct ${channel}`)
+      setLog(`Stopped low-bus direct ${channel}`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -820,10 +1187,13 @@ function DirectActuatorCards({
     }
   }
 
+  const locked = busy || !!disabled
+
   return (
     <div className="direct-grid">
       <div className="direct-card" data-testid="direct-motor">
-        <h3>Motor · RT_DRIVE_CMD 0x204</h3>
+        <h3>Motor · Low · RT_DRIVE_CMD 0x204</h3>
+        <p className="muted small">Commands motor path on Low bus — not Host 0x300.</p>
         <label className="field">
           <span className="field-label">Speed, mm/s</span>
           <input
@@ -832,6 +1202,7 @@ function DirectActuatorCards({
             value={motorSpeed}
             min={-500}
             max={3000}
+            disabled={locked}
             onChange={(e) => setMotorSpeed(Number(e.target.value))}
           />
           <span className="field-hint">Allowed −500…3000</span>
@@ -844,14 +1215,19 @@ function DirectActuatorCards({
             value={motorGear}
             min={0}
             max={3}
+            disabled={locked}
             onChange={(e) => setMotorGear(Number(e.target.value))}
           />
         </label>
+        <div className="fbk-line muted small mono">
+          FBK MTR 0x206 · speed {signalText(mtr, 'actual_speed_mmps')} · gear{' '}
+          {signalText(mtr, 'gear')}
+        </div>
         <div className="actions tight">
           <button
             type="button"
             data-testid="btn-direct-motor-start"
-            disabled={busy}
+            disabled={locked}
             onClick={() => void start('motor')}
           >
             {active.motor ? 'Update stream' : 'Start stream'}
@@ -860,7 +1236,7 @@ function DirectActuatorCards({
             type="button"
             className="secondary"
             data-testid="btn-direct-motor-stop"
-            disabled={busy || !active.motor}
+            disabled={locked || !active.motor}
             onClick={() => void stop('motor')}
           >
             Stop
@@ -869,7 +1245,8 @@ function DirectActuatorCards({
       </div>
 
       <div className="direct-card" data-testid="direct-steering">
-        <h3>Steering · VCU_SES_REQ 0x169</h3>
+        <h3>Steering · Low · VCU_SES_REQ 0x169</h3>
+        <p className="muted small">Vendor SES request — counter/checksum automatic.</p>
         <label className="field">
           <span className="field-label">Target angle raw (0.1°)</span>
           <input
@@ -878,15 +1255,19 @@ function DirectActuatorCards({
             value={steerAngle}
             min={-450}
             max={450}
+            disabled={locked}
             onChange={(e) => setSteerAngle(Number(e.target.value))}
           />
           <span className="field-hint">±450 · enable bits locked on</span>
         </label>
+        <div className="fbk-line muted small mono">
+          FBK SES 0x201 · angle {signalText(ses, 'angle_deg')}
+        </div>
         <div className="actions tight">
           <button
             type="button"
             data-testid="btn-direct-steer-start"
-            disabled={busy}
+            disabled={locked}
             onClick={() => void start('steering')}
           >
             {active.steering ? 'Update stream' : 'Start stream'}
@@ -895,7 +1276,7 @@ function DirectActuatorCards({
             type="button"
             className="secondary"
             data-testid="btn-direct-steer-stop"
-            disabled={busy || !active.steering}
+            disabled={locked || !active.steering}
             onClick={() => void stop('steering')}
           >
             Stop
@@ -904,7 +1285,8 @@ function DirectActuatorCards({
       </div>
 
       <div className="direct-card" data-testid="direct-brake">
-        <h3>Brake · VCU_SEB_REQ 0x7B9</h3>
+        <h3>Brake · Low · VCU_SEB_REQ 0x7B9</h3>
+        <p className="muted small">Vendor SEB request — independent of Host kinematics.</p>
         <label className="field">
           <span className="field-label">Pressure request raw 0–100</span>
           <input
@@ -913,15 +1295,19 @@ function DirectActuatorCards({
             value={brakePressure}
             min={0}
             max={100}
+            disabled={locked}
             onChange={(e) => setBrakePressure(Number(e.target.value))}
           />
           <span className="field-hint">Vendor scale · enable bits locked on</span>
         </label>
+        <div className="fbk-line muted small mono">
+          FBK SEB 0x721 · {signalText(seb, 'pressure_kpa') || signalText(seb, 'status') || '—'}
+        </div>
         <div className="actions tight">
           <button
             type="button"
             data-testid="btn-direct-brake-start"
-            disabled={busy}
+            disabled={locked}
             onClick={() => void start('brake')}
           >
             {active.brake ? 'Update stream' : 'Start stream'}
@@ -930,7 +1316,7 @@ function DirectActuatorCards({
             type="button"
             className="secondary"
             data-testid="btn-direct-brake-stop"
-            disabled={busy || !active.brake}
+            disabled={locked || !active.brake}
             onClick={() => void stop('brake')}
           >
             Stop
@@ -941,9 +1327,14 @@ function DirectActuatorCards({
   )
 }
 
+/** Exclusive motion-control methods — high Host vs low direct (never mixed). */
+type ControlMethod = 'high' | 'low' | 'hmi'
+
 function Control() {
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
+  const setWorkspace = useAppStore((s) => s.setWorkspace)
+  const [method, setMethod] = useState<ControlMethod>('high')
   const [log, setLog] = useState('')
   const [busy, setBusy] = useState(false)
   const [speed, setSpeed] = useState(500)
@@ -956,6 +1347,7 @@ function Control() {
   leaseRef.current = leaseId
   const [kbEnabled, setKbEnabled] = useState(false)
   const [kbSnap, setKbSnap] = useState<Record<string, unknown> | null>(null)
+  const [ctrlStatus, setCtrlStatus] = useState<Record<string, unknown> | null>(null)
   const seqRef = useRef(0)
   const keysRef = useRef<Record<string, boolean>>({})
   const kbEnabledRef = useRef(false)
@@ -974,9 +1366,20 @@ function Control() {
     }
   }, [])
 
-  // Keyboard teleop → backend /control/intent (firmware-aligned HOST_DRIVE_CMD)
+  // Poll control status so method badge stays accurate.
   useEffect(() => {
-    if (!kbEnabled) return
+    const id = window.setInterval(() => {
+      void api
+        .controlStatus()
+        .then((r) => setCtrlStatus(r.control))
+        .catch(() => undefined)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  // Keyboard teleop → backend /control/intent (high-bus Host kinematics only)
+  useEffect(() => {
+    if (!kbEnabled || method !== 'high') return
     const onDown = (e: KeyboardEvent) => {
       keysRef.current[e.code] = true
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
@@ -1024,7 +1427,10 @@ function Control() {
           hard_brake,
           estop,
         })
-        .then((r) => setKbSnap(r.control))
+        .then((r) => {
+          setKbSnap(r.control)
+          setCtrlStatus(r.control)
+        })
         .catch((e) => setLog(String(e)))
     }, 50)
 
@@ -1036,32 +1442,87 @@ function Control() {
       window.clearInterval(tick)
       void api.controlRelease('disable').catch(() => undefined)
     }
-  }, [kbEnabled])
+  }, [kbEnabled, method])
 
   const refresh = useCallback(async () => {
     const st = await api.status()
     setStatus(st)
+    try {
+      const c = await api.controlStatus()
+      setCtrlStatus(c.control)
+    } catch {
+      /* ignore */
+    }
     return st
   }, [setStatus])
 
   async function ensureSessionReady() {
     let st = await refresh()
     if (!st.session?.session_id) {
-      await api.createSession('pure_software')
+      try {
+        await api.createSession('pure_software')
+      } catch (e) {
+        // Concurrent create or leftover active session — reuse if present.
+        st = await refresh()
+        if (!st.session?.session_id) throw e
+      }
       st = await refresh()
     }
-    if (st.session.bench_tx !== 'enabled') {
-      await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+    const tx = String(st.session?.bench_tx ?? '').toLowerCase()
+    if (tx !== 'enabled' && st.session?.session_id) {
+      try {
+        await api.setBenchTx(st.session.session_id, true, st.session.revision)
+      } catch {
+        // Revision race: re-read and retry once.
+        st = await refresh()
+        if (String(st.session?.bench_tx ?? '').toLowerCase() !== 'enabled' && st.session?.session_id) {
+          await api.setBenchTx(st.session.session_id, true, st.session.revision)
+        }
+      }
       st = await refresh()
     }
     return st
+  }
+
+  /** Switch exclusive control method — release the other path first. */
+  async function selectMethod(next: ControlMethod) {
+    if (next === method) return
+    setBusy(true)
+    try {
+      if (method === 'high' || next === 'low' || next === 'hmi') {
+        setKbEnabled(false)
+        await api.controlRelease('method_switch').catch(() => undefined)
+        await api.stopAnalysis().catch(() => undefined)
+        setLeaseId(null)
+      }
+      if (method === 'low' || next === 'high') {
+        // Stop all low-bus direct streams when leaving low method.
+        for (const ch of ['motor', 'steering', 'brake'] as const) {
+          await api.controlDirect({ channel: ch, enabled: false }).catch(() => undefined)
+        }
+        await api.controlRelease('method_switch').catch(() => undefined)
+      }
+      setMethod(next)
+      setLog(
+        next === 'high'
+          ? 'Method: High bus · Host kinematics (HOST_DRIVE_CMD 0x300)'
+          : next === 'low'
+            ? 'Method: Low bus · Direct actuators (motor / steer / brake)'
+            : 'Method: HMI (mode/power requests only — not motion)',
+      )
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function enableTx() {
     setBusy(true)
     try {
       await ensureSessionReady()
-      setLog('Bench TX enabled (analysis mode — no full synthetic peers)')
+      setLog('Bench TX enabled')
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -1074,8 +1535,13 @@ function Control() {
     setBusy(true)
     try {
       await ensureSessionReady()
-      // TX gate claims ownership as analysis:host_drive — do not pre-claim
-      // under a different owner (would conflict on bus+ID).
+      // High-bus only. Free competing owners before analysis inject.
+      setKbEnabled(false)
+      await api.controlRelease('pre_inject').catch(() => undefined)
+      for (const ch of ['motor', 'steering', 'brake'] as const) {
+        await api.controlDirect({ channel: ch, enabled: false }).catch(() => undefined)
+      }
+      await api.stopAnalysis().catch(() => undefined)
       const res = await api.hostDrive({
         speed_mmps: speed,
         yaw_rate_mrad_s: yaw,
@@ -1084,7 +1550,7 @@ function Control() {
       })
       const lid = (res as { lease_id?: string }).lease_id
       if (typeof lid === 'string') setLeaseId(lid)
-      setLog(`host-drive: ${JSON.stringify(res)}`)
+      setLog(`High-bus inject HOST_DRIVE_CMD: ${JSON.stringify(res)}`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -1101,8 +1567,9 @@ function Control() {
         await api.stopAll(st.session.session_id, st.session.revision)
       }
       await api.stopAnalysis().catch(() => undefined)
+      setKbEnabled(false)
       setLeaseId(null)
-      setLog('Stop All / analysis stopped')
+      setLog('Stop All — high and low motion streams cleared')
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -1146,189 +1613,92 @@ function Control() {
     }
   }
 
+  const activeMethod = String(ctrlStatus?.method ?? 'none')
+  const activeLabel = String(ctrlStatus?.method_label ?? 'No active motion method')
+
   return (
     <div className="workspace" data-testid="workspace-control">
       <header className="ws-header">
         <h1>Control</h1>
         <p className="muted">
-          HMI requests, kinematics inject (HOST_DRIVE_CMD), and Stop All. Leaving this
-          workspace releases control leases.
+          Two exclusive motion methods: <strong>High bus</strong> Host kinematics vs{' '}
+          <strong>Low bus</strong> direct actuators. They use different messages and must not
+          run together. HMI mode/power is separate (not motion).
         </p>
       </header>
 
-      <section className="panel" data-testid="keyboard-control">
-        <h2>Keyboard kinematics</h2>
-        <p className="muted small">
-          Backend-owned 10 ms HOST_DRIVE_CMD (0x300) · gear N/D/S/R · stale stop 500 ms · blur
-          releases. Matches RT host command watchdog.
-        </p>
-        <div className="actions">
+      <section className="panel control-method-panel" data-testid="control-method-picker">
+        <h2>Control method</h2>
+        <div className="seg" role="tablist" aria-label="Control method">
           <button
             type="button"
-            data-testid="btn-kb-enable"
+            role="tab"
+            data-testid="control-method-high"
+            className={method === 'high' ? 'seg-btn active' : 'seg-btn'}
+            aria-selected={method === 'high'}
             disabled={busy}
-            className={kbEnabled ? '' : 'secondary'}
-            onClick={() => {
-              if (kbEnabled) {
-                setKbEnabled(false)
-                void api.controlRelease('disable').catch(() => undefined)
-              } else {
-                void ensureSessionReady()
-                  .then(() => setKbEnabled(true))
-                  .catch((e) => setLog(String(e)))
-              }
-            }}
+            onClick={() => void selectMethod('high')}
           >
-            {kbEnabled ? 'Disable keyboard' : 'Enable keyboard control'}
+            High bus · Host
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-testid="control-method-low"
+            className={method === 'low' ? 'seg-btn active' : 'seg-btn'}
+            aria-selected={method === 'low'}
+            disabled={busy}
+            onClick={() => void selectMethod('low')}
+          >
+            Low bus · Direct
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-testid="control-method-hmi"
+            className={method === 'hmi' ? 'seg-btn active' : 'seg-btn'}
+            aria-selected={method === 'hmi'}
+            disabled={busy}
+            onClick={() => void selectMethod('hmi')}
+          >
+            HMI (mode/power)
           </button>
         </div>
-        <ul className="controls-legend muted small">
-          <li>
-            <kbd>W</kbd>/<kbd>↑</kbd> throttle · <kbd>S</kbd>/<kbd>↓</kbd> reverse
-          </li>
-          <li>
-            <kbd>A</kbd>/<kbd>D</kbd> yaw · <kbd>Shift</kbd> hard brake · <kbd>Space</kbd> ESTOP
-          </li>
-        </ul>
-        {kbSnap && (
-          <dl className="kv">
-            <dt>Active</dt>
-            <dd>{kbSnap.active ? 'yes' : 'no'}</dd>
-            <dt>Speed, mm/s</dt>
-            <dd className="mono">{String(kbSnap.shaped_speed_mmps)}</dd>
-            <dt>Yaw, mrad/s</dt>
-            <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s)}</dd>
-            <dt>Gear</dt>
-            <dd className="mono">
-              {String(kbSnap.gear_label)} ({String(kbSnap.gear)})
-            </dd>
-            <dt>Loss</dt>
-            <dd>{String(kbSnap.loss_reason ?? '—')}</dd>
-          </dl>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2>HMI requests</h2>
-        <p className="muted small">
-          Requested vs confirmed stay separate in the header until feedback arrives.
-        </p>
-        <div className="actions">
-          {(['MANUAL', 'AUTO', 'PURE_SIM'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              data-testid={`btn-mode-${m.toLowerCase()}`}
-              disabled={busy}
-              className="secondary"
-              onClick={() => void setMode(m)}
-            >
-              Request {m.replace('_', ' ')}
-            </button>
-          ))}
+        <div className="method-compare" data-testid="method-compare">
+          <div className={method === 'high' ? 'method-card active' : 'method-card'}>
+            <strong>High-level</strong>
+            <span className="chip tiny">High bus</span>
+            <ul className="muted small">
+              <li>Message: HOST_DRIVE_CMD 0x300 @ 10 ms</li>
+              <li>You send Host intent (speed / yaw / gear)</li>
+              <li>RT runs kinematics and safety</li>
+              <li>Drive console + keyboard use this path</li>
+            </ul>
+          </div>
+          <div className={method === 'low' ? 'method-card active' : 'method-card'}>
+            <strong>Low-level</strong>
+            <span className="chip tiny">Low bus</span>
+            <ul className="muted small">
+              <li>Motor 0x204 · Steer 0x169 · Brake 0x7B9</li>
+              <li>Bypasses Host / RT kinematics stack</li>
+              <li>Isolated unit test of each actuator</li>
+              <li>Exclusive with high-bus motion</li>
+            </ul>
+          </div>
+        </div>
+        <dl className="kv compact">
+          <dt>Backend active method</dt>
+          <dd data-testid="control-active-method">
+            <span className="mono">{activeMethod}</span>
+            <span className="muted small"> · {activeLabel}</span>
+          </dd>
+          <dt>Bench TX</dt>
+          <dd>{status?.session?.bench_tx ?? '—'}</dd>
+        </dl>
+        <div className="actions tight">
           <button
             type="button"
-            data-testid="btn-power-on"
-            disabled={busy}
             className="secondary"
-            onClick={() => void setPower('ON')}
-          >
-            Request power ON
-          </button>
-          <button
-            type="button"
-            data-testid="btn-power-off"
-            disabled={busy}
-            className="secondary"
-            onClick={() => void setPower('OFF')}
-          >
-            Request power OFF
-          </button>
-        </div>
-        <div className="muted small">
-          Current: mode req {status?.session?.requested_mode ?? '—'} / conf{' '}
-          {status?.session?.confirmed_mode ?? '—'} · power req{' '}
-          {status?.session?.requested_power ?? '—'} / conf{' '}
-          {status?.session?.confirmed_power ?? '—'}
-        </div>
-      </section>
-
-      <section className="panel" data-testid="direct-actuators">
-        <h2>Direct actuators (Low bus)</h2>
-        <p className="muted small">
-          Exclusive with kinematics Drive arm. Motor 0x204 · steering VCU_SES_REQ 0x169 · brake
-          VCU_SEB_REQ 0x7B9. Counters/checksums automatic via codec.
-        </p>
-        <DirectActuatorCards busy={busy} setBusy={setBusy} setLog={setLog} ensureSessionReady={ensureSessionReady} refresh={refresh} />
-      </section>
-
-      <section className="panel">
-        <h2>Kinematics inject (analysis)</h2>
-        <p className="muted small">
-          Safety-bypass style: inject only host drive under study — not a full synthetic
-          vehicle.
-        </p>
-        <div className="form-grid">
-          <label>
-            Speed, mm/s
-            <input
-              data-testid="input-speed"
-              type="number"
-              value={speed}
-              min={-500}
-              max={3000}
-              onChange={(e) => setSpeed(Number(e.target.value))}
-            />
-            <span className="field-hint">Allowed range: −500 to 3000</span>
-          </label>
-          <label>
-            Yaw rate, mrad/s
-            <input
-              data-testid="input-yaw"
-              type="number"
-              value={yaw}
-              min={-3000}
-              max={3000}
-              onChange={(e) => setYaw(Number(e.target.value))}
-            />
-            <span className="field-hint">Allowed range: −3000 to 3000</span>
-          </label>
-          <label>
-            Gear
-            <input
-              data-testid="input-gear"
-              type="number"
-              min={0}
-              max={3}
-              value={gear}
-              onChange={(e) => setGear(Number(e.target.value))}
-            />
-            <span className="field-hint">0=N 1=D 2=S 3=R (host.yaml / MTR)</span>
-          </label>
-          <label>
-            Period, ms
-            <input
-              data-testid="input-period"
-              type="number"
-              value={periodMs}
-              disabled={!periodic}
-              onChange={(e) => setPeriodMs(Number(e.target.value))}
-            />
-          </label>
-          <label className="check">
-            <input
-              data-testid="check-periodic"
-              type="checkbox"
-              checked={periodic}
-              onChange={(e) => setPeriodic(e.target.checked)}
-            />
-            Periodic (re-encode each period)
-          </label>
-        </div>
-
-        <div className="actions">
-          <button
-            type="button"
             data-testid="btn-enable-tx"
             disabled={busy}
             onClick={() => void enableTx()}
@@ -1337,17 +1707,9 @@ function Control() {
           </button>
           <button
             type="button"
-            data-testid="btn-inject-drive"
-            disabled={busy}
-            onClick={() => void injectHostDrive()}
-          >
-            Inject host drive
-          </button>
-          <button
-            type="button"
+            className="danger"
             data-testid="btn-stop-all"
             disabled={busy}
-            className="danger"
             onClick={() => void stopAll()}
           >
             Stop All
@@ -1355,8 +1717,217 @@ function Control() {
         </div>
       </section>
 
+      {method === 'high' && (
+        <>
+          <section className="panel" data-testid="keyboard-control">
+            <h2>High bus · Keyboard Host intent</h2>
+            <p className="muted small">
+              Shapes to HOST_DRIVE_CMD on <strong>High</strong> only. Backend 10 ms TX · gear
+              N/D/S/R · 500 ms stale stop · blur releases. Does not write Low-bus SES/SEB/motor
+              commands.
+            </p>
+            <div className="actions">
+              <button
+                type="button"
+                data-testid="btn-kb-enable"
+                disabled={busy}
+                className={kbEnabled ? '' : 'secondary'}
+                onClick={() => {
+                  if (kbEnabled) {
+                    setKbEnabled(false)
+                    void api.controlRelease('disable').catch(() => undefined)
+                  } else {
+                    void ensureSessionReady()
+                      .then(() => setKbEnabled(true))
+                      .catch((e) => setLog(String(e)))
+                  }
+                }}
+              >
+                {kbEnabled ? 'Disable keyboard' : 'Enable keyboard control'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                data-testid="btn-open-drive-from-control"
+                onClick={() => setWorkspace('preview')}
+              >
+                Open Drive console
+              </button>
+            </div>
+            <ul className="controls-legend muted small">
+              <li>
+                <kbd>W</kbd>/<kbd>↑</kbd> throttle · <kbd>S</kbd>/<kbd>↓</kbd> reverse
+              </li>
+              <li>
+                <kbd>A</kbd>/<kbd>D</kbd> yaw · <kbd>Shift</kbd> hard brake · <kbd>Space</kbd>{' '}
+                ESTOP
+              </li>
+            </ul>
+            {kbSnap && (
+              <dl className="kv">
+                <dt>Method</dt>
+                <dd className="mono">{String(kbSnap.method ?? 'high_kinematics')}</dd>
+                <dt>Active</dt>
+                <dd>{kbSnap.active ? 'yes' : 'no'}</dd>
+                <dt>Speed, mm/s</dt>
+                <dd className="mono">{String(kbSnap.shaped_speed_mmps)}</dd>
+                <dt>Yaw, mrad/s</dt>
+                <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s)}</dd>
+                <dt>Gear</dt>
+                <dd className="mono">
+                  {String(kbSnap.gear_label)} ({String(kbSnap.gear)})
+                </dd>
+                <dt>Loss</dt>
+                <dd>{String(kbSnap.loss_reason ?? '—')}</dd>
+              </dl>
+            )}
+          </section>
+
+          <section className="panel" data-testid="high-analysis-inject">
+            <h2>High bus · Analysis inject (HOST_DRIVE_CMD)</h2>
+            <p className="muted small">
+              Numeric Host intent for yaw/speed study on High bus — not Low-bus actuators, not a
+              full synthetic vehicle.
+            </p>
+            <div className="form-grid">
+              <label>
+                Speed, mm/s
+                <input
+                  data-testid="input-speed"
+                  type="number"
+                  value={speed}
+                  min={-500}
+                  max={3000}
+                  onChange={(e) => setSpeed(Number(e.target.value))}
+                />
+                <span className="field-hint">Allowed range: −500 to 3000</span>
+              </label>
+              <label>
+                Yaw rate, mrad/s
+                <input
+                  data-testid="input-yaw"
+                  type="number"
+                  value={yaw}
+                  min={-3000}
+                  max={3000}
+                  onChange={(e) => setYaw(Number(e.target.value))}
+                />
+                <span className="field-hint">Allowed range: −3000 to 3000</span>
+              </label>
+              <label>
+                Gear
+                <input
+                  data-testid="input-gear"
+                  type="number"
+                  min={0}
+                  max={3}
+                  value={gear}
+                  onChange={(e) => setGear(Number(e.target.value))}
+                />
+                <span className="field-hint">0=N 1=D 2=S 3=R (host.yaml / MTR)</span>
+              </label>
+              <label>
+                Period, ms
+                <input
+                  data-testid="input-period"
+                  type="number"
+                  value={periodMs}
+                  disabled={!periodic}
+                  onChange={(e) => setPeriodMs(Number(e.target.value))}
+                />
+              </label>
+              <label className="check">
+                <input
+                  data-testid="check-periodic"
+                  type="checkbox"
+                  checked={periodic}
+                  onChange={(e) => setPeriodic(e.target.checked)}
+                />
+                Periodic (re-encode each period)
+              </label>
+            </div>
+            <div className="actions">
+              <button
+                type="button"
+                data-testid="btn-inject-drive"
+                disabled={busy}
+                onClick={() => void injectHostDrive()}
+              >
+                Inject host drive (High)
+              </button>
+            </div>
+          </section>
+        </>
+      )}
+
+      {method === 'low' && (
+        <section className="panel" data-testid="direct-actuators">
+          <h2>Low bus · Direct actuators</h2>
+          <p className="muted small">
+            Completely separate from Host kinematics. Each card streams its own Low-bus
+            message with automatic counter/checksum. Starting any channel cancels high-bus
+            HOST_DRIVE_CMD jobs.
+          </p>
+          <DirectActuatorCards
+            busy={busy}
+            setBusy={setBusy}
+            setLog={setLog}
+            ensureSessionReady={ensureSessionReady}
+            refresh={refresh}
+          />
+        </section>
+      )}
+
+      {method === 'hmi' && (
+        <section className="panel" data-testid="hmi-panel">
+          <h2>HMI requests (not a motion method)</h2>
+          <p className="muted small">
+            Mode/power requests on HMI frames. Independent of high Host intent and low
+            direct actuators. Requested vs confirmed stay separate until ECU feedback.
+          </p>
+          <div className="actions">
+            {(['MANUAL', 'AUTO', 'PURE_SIM'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                data-testid={`btn-mode-${m.toLowerCase()}`}
+                disabled={busy}
+                className="secondary"
+                onClick={() => void setMode(m)}
+              >
+                Request {m.replace('_', ' ')}
+              </button>
+            ))}
+            <button
+              type="button"
+              data-testid="btn-power-on"
+              disabled={busy}
+              className="secondary"
+              onClick={() => void setPower('ON')}
+            >
+              Request power ON
+            </button>
+            <button
+              type="button"
+              data-testid="btn-power-off"
+              disabled={busy}
+              className="secondary"
+              onClick={() => void setPower('OFF')}
+            >
+              Request power OFF
+            </button>
+          </div>
+          <div className="muted small">
+            Current: mode req {status?.session?.requested_mode ?? '—'} / conf{' '}
+            {status?.session?.confirmed_mode ?? '—'} · power req{' '}
+            {status?.session?.requested_power ?? '—'} / conf{' '}
+            {status?.session?.confirmed_power ?? '—'}
+          </div>
+        </section>
+      )}
+
       <pre className="log" data-testid="control-log">
-        {log || 'Ready.'}
+        {log || 'Ready. Pick High bus (Host) or Low bus (direct).'}
       </pre>
     </div>
   )
@@ -1382,7 +1953,9 @@ function Bench() {
           <li>Connected bus/channel — virtual high/low active</li>
           <li>Peers present — none (analysis inject only)</li>
           <li>Missing peers to emulate — not full synthetic vehicle</li>
-          <li>Control path — kinematics (HOST_DRIVE_CMD) or direct actuator</li>
+          <li>
+            Control path — High Host kinematics (0x300) or Low direct actuators (exclusive)
+          </li>
           <li>Review periodic TX before enable</li>
         </ol>
         <dl className="kv">
@@ -1406,75 +1979,8 @@ function Bench() {
 
 /* ── Dictionary ────────────────────────────────────────────────────── */
 
-function Dictionary() {
-  const [instances, setInstances] = useState<Array<Record<string, unknown>>>([])
-  const [hash, setHash] = useState('')
-  const [q, setQ] = useState('')
-  const [err, setErr] = useState('')
-
-  useEffect(() => {
-    void api
-      .protocolMessages()
-      .then((r) => {
-        setInstances(r.instances || [])
-        setHash(r.semantic_hash || '')
-      })
-      .catch((e) => setErr(String(e)))
-  }, [])
-
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return instances
-    return instances.filter((inst) => {
-      const name = String(inst.name ?? inst.message ?? inst.key ?? '').toLowerCase()
-      const bus = String(inst.bus ?? '').toLowerCase()
-      const id = String(inst.can_id ?? inst.id ?? '')
-      return name.includes(needle) || bus.includes(needle) || id.includes(needle)
-    })
-  }, [instances, q])
-
-  return (
-    <div className="workspace" data-testid="workspace-dictionary">
-      <header className="ws-header">
-        <h1>CAN Dictionary</h1>
-        <p className="muted">
-          Protocol reference from YAML · semantic hash {hash.slice(0, 12) || '—'}…
-        </p>
-      </header>
-      <div className="toolbar">
-        <input
-          className="search"
-          data-testid="dict-filter"
-          placeholder="Search messages…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <span className="muted small">{filtered.length} messages</span>
-      </div>
-      {err && <p className="danger-text">{err}</p>}
-      <div className="dict-grid" data-testid="dict-grid">
-        {filtered.slice(0, 200).map((inst, i) => {
-          const name = String(inst.name ?? inst.message ?? inst.key ?? `msg-${i}`)
-          const bus = String(inst.bus ?? '—')
-          const canId = Number(inst.can_id ?? inst.id ?? 0)
-          return (
-            <div key={`${bus}-${canId}-${name}`} className="dict-card">
-              <div className="dict-head">
-                <span className="mono">{canId ? hexId(canId) : '—'}</span>
-                <span className="chip tiny">{bus}</span>
-              </div>
-              <div className="dict-name">{name}</div>
-              <div className="muted small mono">
-                {inst.sender ? `${String(inst.sender)} → …` : ''}
-                {inst.dlc != null ? ` · DLC ${String(inst.dlc)}` : ''}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
+// Structure from debug-tool (MessageCard / BitGrid / SignalTable).
+// Data always from YAML-generated protocol catalog — see CanDictionary.tsx.
 
 /* ── Diagnostics ───────────────────────────────────────────────────── */
 
@@ -1486,8 +1992,14 @@ function Diagnostics() {
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([])
   const [episodes, setEpisodes] = useState<Array<Record<string, unknown>>>([])
   const [activeRec, setActiveRec] = useState<Record<string, unknown> | null>(null)
+  const [recordings, setRecordings] = useState<Array<Record<string, unknown>>>([])
   const [recLog, setRecLog] = useState('')
   const [busy, setBusy] = useState(false)
+  const [evidenceId, setEvidenceId] = useState<string | null>(null)
+  const [evidenceFrames, setEvidenceFrames] = useState<Array<Record<string, unknown>>>(
+    [],
+  )
+  const [evidenceMeta, setEvidenceMeta] = useState('')
 
   const refreshDiag = useCallback(async () => {
     const [ev, ep, rec, st] = await Promise.all([
@@ -1499,6 +2011,7 @@ function Diagnostics() {
     setEvents(ev.events || [])
     setEpisodes(ep.episodes || [])
     setActiveRec(rec.active)
+    setRecordings(rec.recordings || [])
     setStatus(st)
   }, [setStatus])
 
@@ -1536,6 +2049,24 @@ function Diagnostics() {
       await refreshDiag()
     } catch (e) {
       setRecLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function openEvidence(id: string) {
+    setBusy(true)
+    try {
+      const body = await api.evidence(id, 80)
+      setEvidenceId(id)
+      setEvidenceFrames(body.frames || [])
+      setEvidenceMeta(
+        `${body.frame_total} frames · quality ${body.evidence_quality || '—'}`,
+      )
+    } catch (e) {
+      setEvidenceId(id)
+      setEvidenceFrames([])
+      setEvidenceMeta(String(e))
     } finally {
       setBusy(false)
     }
@@ -1600,6 +2131,74 @@ function Diagnostics() {
             <dt>Quality</dt>
             <dd>{String(activeRec.evidence_quality)}</dd>
           </dl>
+        )}
+        {recordings.length > 0 && (
+          <div className="mt-section">
+            <h3>Recordings</h3>
+            <table className="data-table compact" data-testid="recordings-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Frames</th>
+                  <th>Quality</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {recordings.slice(0, 12).map((r) => {
+                  const id = String(r.recording_id)
+                  return (
+                    <tr key={id}>
+                      <td className="mono">{id}</td>
+                      <td className="num">{String(r.frame_count)}</td>
+                      <td>{String(r.evidence_quality)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary"
+                          data-testid={`btn-evidence-${id}`}
+                          disabled={busy}
+                          onClick={() => void openEvidence(id)}
+                        >
+                          Open evidence
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {evidenceId && (
+          <div className="mt-section" data-testid="evidence-window">
+            <h3>Evidence window · {evidenceId}</h3>
+            <p className="muted small">{evidenceMeta}</p>
+            <div className="evidence-frames table-wrap">
+              <table className="can-table">
+                <thead>
+                  <tr>
+                    <th>Seq</th>
+                    <th>Bus</th>
+                    <th>ID</th>
+                    <th>Dir</th>
+                    <th>Data</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evidenceFrames.map((f) => (
+                    <tr key={String(f.seq)}>
+                      <td className="mono">{String(f.seq)}</td>
+                      <td>{String(f.bus)}</td>
+                      <td className="mono">{hexId(Number(f.can_id))}</td>
+                      <td>{String(f.direction)}</td>
+                      <td className="mono">{String(f.data_hex)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
         <pre className="log" data-testid="recording-log">
           {recLog || 'Idle.'}
@@ -1803,7 +2402,7 @@ export default function App() {
           {workspace === 'control' && <Control />}
           {workspace === 'preview' && <VehiclePreview />}
           {workspace === 'bench' && <Bench />}
-          {workspace === 'dictionary' && <Dictionary />}
+          {workspace === 'dictionary' && <CanDictionary />}
           {workspace === 'diagnostics' && <Diagnostics />}
           {workspace === 'settings' && <Settings />}
         </main>

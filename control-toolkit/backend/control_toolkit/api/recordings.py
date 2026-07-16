@@ -73,3 +73,16 @@ def get_recording(recording_id: str, request: Request) -> dict:
             status=404,
         )
     return body
+
+
+@router.get("/{recording_id}/export")
+def export_recording(recording_id: str, request: Request) -> dict:
+    """JSON export of full recorded frame list + evidence quality."""
+    body = request.app.state.lifecycle.recording.export_json(recording_id)
+    if body is None:
+        raise SessionError(
+            "recording.not_found",
+            f"recording {recording_id} not found",
+            status=404,
+        )
+    return body

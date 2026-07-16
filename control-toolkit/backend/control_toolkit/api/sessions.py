@@ -27,7 +27,11 @@ def get_sessions(request: Request) -> dict:
 
 
 @router.get("/profiles")
-def list_profiles() -> dict:
+def list_profiles(request: Request) -> dict:
+    life = request.app.state.lifecycle
+    ok, reason = (False, "probe unavailable")
+    if hasattr(life, "physical_available"):
+        ok, reason = life.physical_available()
     return {
         "profiles": [
             {
@@ -40,15 +44,15 @@ def list_profiles() -> dict:
                 "id": "bench_test",
                 "label": "Bench Test",
                 "destination": "physical",
-                "available": False,
-                "reason": "physical adapter not available (hardware track)",
+                "available": ok,
+                "reason": None if ok else reason,
             },
             {
                 "id": "full_vehicle",
                 "label": "Full Vehicle",
                 "destination": "physical",
-                "available": False,
-                "reason": "physical adapter not available (hardware track)",
+                "available": ok,
+                "reason": None if ok else reason,
             },
         ]
     }

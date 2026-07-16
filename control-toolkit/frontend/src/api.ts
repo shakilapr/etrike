@@ -69,6 +69,84 @@ export const api = {
       semantic_hash: string
       instances: Array<Record<string, unknown>>
     }>('/protocol/messages'),
+  protocolDictionary: () =>
+    json<{
+      count: number
+      signal_count: number
+      wire_hash: string
+      semantic_hash: string
+      source: string
+      messages: Array<Record<string, unknown>>
+    }>('/protocol/dictionary'),
+  refreshDictionary: () =>
+    json<{
+      count: number
+      signal_count: number
+      wire_hash: string
+      semantic_hash: string
+      source: string
+      refreshed?: boolean
+      messages: Array<Record<string, unknown>>
+    }>('/protocol/dictionary/refresh', {
+      method: 'POST',
+      body: '{}',
+    }),
+  protocolLayout: (bus: string, canId: number | string) =>
+    json<{
+      key: string
+      name: string
+      bus: string
+      can_id: number
+      bit_grid: {
+        dlc: number
+        byte_order: string
+        endian_label: string
+        fields: Array<{
+          key: string
+          byte: number
+          bit: number
+          bits: number
+          min?: number | null
+          max?: number | null
+          unit?: string | null
+          enum?: Record<string, string> | null
+        }>
+        rows: Array<{
+          byte: number
+          bits: Array<{ bit: number; field: string | null }>
+        }>
+      }
+      live: {
+        freshness: string
+        validation_status?: string | null
+        signals: Record<
+          string,
+          {
+            engineering_value: unknown
+            enum_label?: string | null
+            unit?: string | null
+            valid?: boolean
+          }
+        >
+      } | null
+    }>(`/protocol/messages/${bus}/${typeof canId === 'number' ? `0x${canId.toString(16)}` : canId}/layout`),
+  evidence: (id: string, limit = 100) =>
+    json<{
+      evidence_id: string
+      kind: string
+      frame_total: number
+      evidence_quality: string
+      frames: Array<Record<string, unknown>>
+    }>(`/evidence/${id}?limit=${limit}`),
+  runTest: (body: {
+    name: string
+    stimulus: Record<string, unknown>
+    expect: Record<string, unknown>
+  }) =>
+    json<{ test: Record<string, unknown> }>('/tests', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   profiles: () => json<{ profiles: ProfileInfo[] }>('/sessions/profiles'),
   session: () =>
     json<{ session: import('./store').SessionState }>('/sessions'),

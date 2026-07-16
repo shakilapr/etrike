@@ -48,6 +48,8 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
 
     await page.getByTestId('nav-control').click()
     await expect(page.getByTestId('workspace-control')).toBeVisible()
+    await expect(page.getByTestId('control-method-picker')).toBeVisible()
+    await page.getByTestId('control-method-high').click()
     await expect(page.getByTestId('input-yaw')).toBeVisible()
     await expect(page.getByTestId('btn-inject-drive')).toBeVisible()
 
@@ -79,6 +81,7 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
   }) => {
     await page.goto('/')
     await page.getByTestId('nav-control').click()
+    await page.getByTestId('control-method-high').click()
 
     await page.getByTestId('input-speed').fill('800')
     await page.getByTestId('input-yaw').fill('420')
@@ -87,9 +90,12 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
 
     await page.getByTestId('btn-inject-drive').click()
 
-    await expect(page.getByTestId('control-log')).toContainText(/host-drive|oneshot|submitted/i, {
-      timeout: 15_000,
-    })
+    await expect(page.getByTestId('control-log')).toContainText(
+      /HOST_DRIVE|host-drive|oneshot|submitted|High-bus/i,
+      {
+        timeout: 15_000,
+      },
+    )
 
     // Overview metrics
     await page.getByTestId('nav-overview').click()
@@ -165,11 +171,16 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
   test('direct actuator motor stream from Control', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('nav-control').click()
+    await page.getByTestId('control-method-low').click()
+    await expect(page.getByTestId('direct-actuators')).toBeVisible()
     await page.getByTestId('direct-motor-speed').fill('350')
     await page.getByTestId('btn-direct-motor-start').click()
-    await expect(page.getByTestId('control-log')).toContainText(/Direct motor|motor/i, {
-      timeout: 15_000,
-    })
+    await expect(page.getByTestId('control-log')).toContainText(
+      /Low-bus|direct motor|motor/i,
+      {
+        timeout: 15_000,
+      },
+    )
     await page.getByTestId('nav-live').click()
     await expect(page.getByTestId('live-can-table')).toContainText(/RT_DRIVE_CMD|0x204/i, {
       timeout: 15_000,

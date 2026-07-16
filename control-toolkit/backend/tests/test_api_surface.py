@@ -48,6 +48,10 @@ def test_openapi_lists_core_paths(client):
         "/api/v1/recordings",
         "/api/v1/events",
         "/api/v1/episodes",
+        "/api/v1/tests",
+        "/api/v1/evidence/{evidence_id}",
+        "/api/v1/protocol/messages/{bus}/{can_id}/layout",
+        "/api/v1/protocol/dictionary",
     ]
     for p in required:
         assert p in paths, f"missing OpenAPI path {p}"
@@ -80,7 +84,14 @@ def test_protocol_catalog(client):
     detail = client.get("/api/v1/protocol/messages/high/0x300")
     assert detail.status_code == 200
     assert detail.json()["name"] == "HOST_DRIVE_CMD"
-    assert client.get("/api/v1/protocol/messages/high/0xDEAD").status_code == 404
+    assert "bit_grid" in detail.json()
+    layout = client.get("/api/v1/protocol/messages/high/0x300/layout")
+    assert layout.status_code == 200
+    assert layout.json()["bit_grid"]["dlc"] == 8
+    missing = client.get("/api/v1/protocol/messages/high/0xDEAD")
+    assert missing.status_code == 404
+    assert missing.headers.get("content-type", "").startswith("application/problem+json")
+    assert missing.json()["code"] == "protocol.message_not_found"
 
 
 def test_sessions_full_lifecycle_api(client):
