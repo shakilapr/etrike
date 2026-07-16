@@ -96,7 +96,7 @@ def get_message(bus: str, can_id: str) -> dict:
         "wire_hash": proto.WIRE_HASH,
         "semantic_hash": proto.SEMANTIC_HASH,
         **msg,
-        "bit_grid": build_bit_grid(msg),
+        "bit_grid": build_bit_grid(msg, catalog_key=key),
     }
 
 
@@ -108,7 +108,7 @@ def get_message_layout(bus: str, can_id: str, request: Request) -> dict:
         cid = int(can_id, 0)
     except ValueError:
         cid = 0
-    grid = build_bit_grid(msg)
+    grid = build_bit_grid(msg, catalog_key=key)
     live = None
     life = request.app.state.lifecycle
     snap = life.latest.snapshot()

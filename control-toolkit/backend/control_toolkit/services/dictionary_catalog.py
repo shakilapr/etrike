@@ -1,8 +1,11 @@
-"""CAN Dictionary catalog built only from YAML-generated protocol metadata.
+"""CAN Dictionary catalog built from YAML-generated protocol metadata.
 
 Shape mirrors debug-tool MessageCard / BitGrid / SignalTable consumers:
 one entry per physical bus instance, fields with byte/bit/size layout.
-No hand-maintained message tables.
+
+Generated ``layout.fields`` are preferred. Vendor opaque SES/SEB frames have no
+generated fields — those use :mod:`vendor_field_layouts` keyed to custom codec
+signal names so the dictionary is complete for 0x201 SES_STATUS and peers.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from control_toolkit import protocol_bridge as proto
+from control_toolkit.services.vendor_field_layouts import resolve_layout_fields
 
 
 def _hex_id(can_id: int | str) -> str:
@@ -54,6 +58,7 @@ def _field_def(field: dict[str, Any]) -> dict[str, Any]:
         "min": field.get("min"),
         "max": field.get("max"),
         "options": options,
+        "comment": field.get("comment") or "",
         "_byte": int(field.get("byte") or 0),
         "_bit_offset": int(field.get("bit") or field.get("bit_offset") or 0),
         "_size": bits,
@@ -68,8 +73,9 @@ def build_dictionary_messages() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for key, msg in proto.CATALOG.items():
         layout = msg.get("layout") or {}
-        raw_fields = layout.get("fields") or []
-        fields = [_field_def(f) for f in raw_fields if isinstance(f, dict)]
+        raw_fields = resolve_layout_fields(key, layout)
+        fields = [_field_def(f) for f in raw_fields]
+        vendor_fill = not (layout.get("fields") or []) and bool(fields)
         comment = layout.get("algorithm") or msg.get("comment") or ""
         codec = msg.get("codec") or {}
         strategy = codec.get("strategy") or "generated"
@@ -107,10 +113,12 @@ def build_dictionary_messages() -> list[dict[str, Any]]:
                     "canonicalKey": key,
                     "frameFormat": inst.get("frame_format") or "standard",
                     "layout_kind": layout.get("kind") or "signals",
-                    "source": "yaml",
+                    "source": "vendor_codec_map" if vendor_fill else "yaml",
                     "capabilities": {
                         "rawMonitoring": True,
-                        "semanticDecode": strategy == "generated" or bool(fields),
+                        "semanticDecode": strategy == "generated"
+                        or strategy == "custom"
+                        or bool(fields),
                         "decodedInjection": strategy == "generated",
                         "codecStrategy": strategy,
                         "implementation": codec.get("implementation_id"),
@@ -129,7 +137,7 @@ def dictionary_payload() -> dict[str, Any]:
         "wire_hash": proto.WIRE_HASH,
         "semantic_hash": proto.SEMANTIC_HASH,
         "network_hash": proto.NETWORK_HASH,
-        "source": "protocol/contracts YAML → generated catalog",
+        "source": "protocol/contracts YAML → generated catalog (+ vendor field maps)",
         "count": len(messages),
         "signal_count": signal_count,
         "messages": messages,

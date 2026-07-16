@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from control_toolkit.services.vendor_field_layouts import resolve_layout_fields
+
 
 def field_cells(byte: int, bit: int, bits: int) -> list[dict[str, int]]:
     """Return ordered cells ``{byte, bit, abs_bit}`` for a field extent."""
@@ -28,14 +30,21 @@ def field_cells(byte: int, bit: int, bits: int) -> list[dict[str, int]]:
     return cells
 
 
-def build_bit_grid(message: dict[str, Any]) -> dict[str, Any]:
-    """Build a DLC × 8 bit grid with field ownership for one catalog message."""
+def build_bit_grid(message: dict[str, Any], catalog_key: str | None = None) -> dict[str, Any]:
+    """Build a DLC × 8 bit grid with field ownership for one catalog message.
+
+    ``catalog_key`` (e.g. ``ses:ses_status``) enables vendor field maps when the
+    YAML layout is opaque / field-less.
+    """
     dlc = int(message.get("dlc") or 0)
     byte_order = str(message.get("byte_order") or "big")
     # Map catalog labels to Intel/Motorola for UI.
     endian_label = "Motorola (big-endian)" if byte_order in ("big", "motorola") else "Intel (little-endian)"
 
-    fields = message.get("layout", {}).get("fields") or []
+    layout = message.get("layout") or {}
+    fields = layout.get("fields") or []
+    if not fields and catalog_key:
+        fields = resolve_layout_fields(catalog_key, layout)
     field_meta: list[dict[str, Any]] = []
     # grid[byte][bit] = field key or None
     ownership: list[list[str | None]] = [[None for _ in range(8)] for _ in range(max(dlc, 1))]
