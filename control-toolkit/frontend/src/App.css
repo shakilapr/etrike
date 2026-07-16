@@ -213,6 +213,103 @@ button.active {
   color: var(--warning);
 }
 
+/* Top bar Computer (blue) / Real (amber) transport toggle */
+.topbar-mode-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+button.topbar-mode-btn,
+button.topbar-mode-btn:hover:not(:disabled),
+button.topbar-mode-btn:focus:not(:disabled),
+button.topbar-mode-btn:active:not(:disabled),
+button.topbar-mode-btn.active,
+button.topbar-mode-btn.active:hover:not(:disabled) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0 10px;
+  min-height: 30px;
+  height: 30px;
+  max-height: 30px;
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+button.topbar-mode-btn:last-child {
+  border-right: none;
+}
+
+button.topbar-mode-btn svg {
+  flex-shrink: 0;
+}
+
+/* Computer — blue */
+button.topbar-mode-btn.mode-computer:hover:not(:disabled) {
+  background: #eef4ff;
+  color: var(--primary);
+}
+
+button.topbar-mode-btn.mode-computer.active,
+button.topbar-mode-btn.mode-computer.active:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* Real — amber */
+button.topbar-mode-btn.mode-real:hover:not(:disabled) {
+  background: #fff8e8;
+  color: var(--warning);
+}
+
+button.topbar-mode-btn.mode-real.active,
+button.topbar-mode-btn.mode-real.active:hover:not(:disabled) {
+  background: #c98900;
+  color: #fff;
+  border-color: #c98900;
+}
+
+button.topbar-mode-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+button.topbar-mode-btn:focus-visible {
+  outline: 2px solid #9bb9e8;
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+/* Exclude from primary filled-button chrome */
+button.topbar-mode-btn.btn {
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  border: none;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
 /* Grouped critical health chips + bus meters */
 .health-strip {
   display: flex;
@@ -1736,16 +1833,16 @@ button.btn:hover:not(:disabled),
 button.btn:focus:not(:disabled),
 button.btn:active:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn):not(.topbar-mode-btn)
 ),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn):not(.topbar-mode-btn)
 ):hover:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn):not(.topbar-mode-btn)
 ):focus:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn):not(.topbar-mode-btn)
 ):active:not(:disabled) {
   background: var(--primary);
   color: #fff;
@@ -1767,10 +1864,10 @@ button:where(
 button.btn:hover:not(:disabled),
 button.btn:active:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn):not(.topbar-mode-btn)
 ):hover:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.dict-exp-btn):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive):not(.transport-btn):not(.topbar-mode-btn)
 ):active:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover);

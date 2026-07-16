@@ -164,6 +164,50 @@ function IconExternalLink() {
   )
 }
 
+/** Lucide monitor — Computer / virtual */
+function IconMonitor() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+    </svg>
+  )
+}
+
+/** Lucide cable — Real / CANalyst */
+function IconCable() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1" />
+      <path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9" />
+      <path d="M21 21v-2h-4" />
+      <path d="M3 5h4V3" />
+      <path d="M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3" />
+    </svg>
+  )
+}
+
 const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Observe',
@@ -404,9 +448,12 @@ function busActivityTone(activity?: string): 'ok' | 'warn' | 'muted' | 'danger' 
 
 function Topbar() {
   const status = useAppStore((s) => s.status)
+  const setStatus = useAppStore((s) => s.setStatus)
   const quality = useAppStore((s) => s.streamQuality)
   const mismatch = useAppStore((s) => s.protocolMismatch)
   const reconnect = useAppStore((s) => s.reconnectAttempts)
+  const [modeBusy, setModeBusy] = useState(false)
+  const [modeErr, setModeErr] = useState<string | null>(null)
   const ses = status?.session
   const high = status?.adapter?.channels?.high
   const low = status?.adapter?.channels?.low
@@ -423,6 +470,34 @@ function Topbar() {
       await api.injectEstop()
     } catch (e) {
       console.error(e)
+    }
+  }
+
+  /** Same session restart path as Settings Computer / Real. */
+  async function switchTransportMode(next: 'computer' | 'real') {
+    if (modeBusy) return
+    if (next === mode) return
+    setModeBusy(true)
+    setModeErr(null)
+    try {
+      const st = await api.status()
+      if (st.session?.session_id) {
+        await api
+          .closeSession(st.session.session_id, st.session.revision)
+          .catch(() => undefined)
+      }
+      const profile = next === 'computer' ? 'pure_software' : 'bench_test'
+      await api.createSession(profile)
+      setStatus(await api.status())
+    } catch (e) {
+      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 120))
+      try {
+        setStatus(await api.status())
+      } catch {
+        /* keep last */
+      }
+    } finally {
+      setModeBusy(false)
     }
   }
 
@@ -488,12 +563,42 @@ function Topbar() {
       <div className="topbar-row topbar-row-primary">
         <div className="topbar-cluster topbar-brand-cluster">
           <div className="brand">Control Toolkit</div>
-          <span
-            className={`env-badge ${mode === 'real' ? 'env-real' : 'env-computer'}`}
-            title={mode === 'real' ? 'Physical CANalyst-II path' : 'Virtual dual-bus on this PC'}
+          <div
+            className="topbar-mode-toggle"
+            data-testid="topbar-mode-toggle"
+            role="group"
+            aria-label="Transport mode"
+            title={
+              modeErr
+                ? modeErr
+                : mode === 'real'
+                  ? 'Real · physical CANalyst-II (CH0 High / CH1 Low)'
+                  : 'Computer · dual virtual CAN on this PC'
+            }
           >
-            {mode === 'real' ? 'Real · CANalyst' : 'Computer · Virtual'}
-          </span>
+            <button
+              type="button"
+              className={`topbar-mode-btn mode-computer${mode === 'computer' ? ' active' : ''}`}
+              data-testid="topbar-mode-computer"
+              aria-pressed={mode === 'computer'}
+              disabled={modeBusy}
+              onClick={() => void switchTransportMode('computer')}
+            >
+              <IconMonitor />
+              <span>Computer</span>
+            </button>
+            <button
+              type="button"
+              className={`topbar-mode-btn mode-real${mode === 'real' ? ' active' : ''}`}
+              data-testid="topbar-mode-real"
+              aria-pressed={mode === 'real'}
+              disabled={modeBusy}
+              onClick={() => void switchTransportMode('real')}
+            >
+              <IconCable />
+              <span>Real</span>
+            </button>
+          </div>
         </div>
 
         <div className="health-strip" data-testid="health-strip" aria-label="System health">
