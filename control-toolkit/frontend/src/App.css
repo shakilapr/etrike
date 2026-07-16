@@ -343,6 +343,7 @@ button.nav:hover:not(:disabled),
 button.nav:focus:not(:disabled),
 button.nav:active:not(:disabled) {
   min-height: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -358,7 +359,13 @@ button.nav:active:not(:disabled) {
   width: 100%;
   text-align: left;
   box-shadow: none;
+  transform: none;
   transition: background var(--transition), color var(--transition);
+}
+
+/* Reserve active rail so selection does not reflow label */
+button.nav {
+  box-shadow: inset 3px 0 0 transparent;
 }
 
 button.nav svg {
@@ -381,6 +388,10 @@ button.nav.active:focus:not(:disabled) {
   border: none;
   box-shadow: inset 3px 0 0 var(--primary);
   font-weight: 600;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  transform: none;
 }
 
 button.nav:focus-visible {
@@ -1266,18 +1277,21 @@ h3 {
 
 button.seg-btn,
 button.seg-btn:hover:not(:disabled),
-button.seg-btn:focus:not(:disabled) {
+button.seg-btn:focus:not(:disabled),
+button.seg-btn:active:not(:disabled) {
   background: transparent;
   color: var(--text-secondary);
   border: none;
   border-radius: 0;
   padding: 0 12px;
   min-height: 32px;
+  height: 32px;
   font-weight: 500;
   font-size: 12.5px;
   cursor: pointer;
   box-shadow: none;
-  transition: all var(--transition);
+  transform: none;
+  transition: background var(--transition), color var(--transition);
 }
 
 button.seg-btn + button.seg-btn {
@@ -1373,7 +1387,7 @@ button.seg-btn:focus-visible {
  */
 button.btn,
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.vehicle-open-drive)
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive)
 ) {
   background: var(--primary);
   color: #fff;
@@ -1381,18 +1395,30 @@ button:where(
   border-radius: var(--radius);
   padding: 0 14px;
   min-height: var(--control-h);
+  height: var(--control-h);
   font-weight: 600;
   font-size: 13px;
-  transition: background var(--transition), border-color var(--transition);
+  transform: none;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 
 button.btn:hover:not(:disabled),
+button.btn:active:not(:disabled),
 button:where(
-  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.vehicle-open-drive)
-):hover:not(:disabled) {
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive)
+):hover:not(:disabled),
+button:where(
+  :not(.nav):not(.seg-btn):not(.gear-btn):not(.keycap):not(.btn-estop):not(.secondary):not(.danger):not(.bit-cell):not(.bit-legend-item):not(.bit-legend-card):not(.vehicle-open-drive)
+):active:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
   color: #fff;
+  transform: none;
+  /* lock size — no padding/border changes on press */
+  padding: 0 14px;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  border-width: 1px;
 }
 
 /* Bus filter tabs must never inherit filled primary. */
@@ -1432,7 +1458,12 @@ button:disabled {
 
 button:focus-visible {
   outline: 2px solid #9bb9e8;
-  outline-offset: 2px;
+  outline-offset: 2px; /* outline does not affect layout */
+}
+
+/* Global: never let UA active/focus reflow button chrome */
+button:active {
+  transform: none;
 }
 
 button.dense {
@@ -1443,28 +1474,36 @@ button.dense {
 
 button.danger,
 button.danger:hover:not(:disabled),
-button.danger:focus:not(:disabled) {
+button.danger:focus:not(:disabled),
+button.danger:active:not(:disabled) {
   background: var(--danger);
   border: 1px solid #9f1f28;
+  border-width: 1px;
   color: #fff;
+  transform: none;
 }
 
 button.danger:hover:not(:disabled) {
   background: #9f1f28;
   color: #fff;
+  border-width: 1px;
 }
 
 button.secondary,
 button.secondary:hover:not(:disabled),
-button.secondary:focus:not(:disabled) {
+button.secondary:focus:not(:disabled),
+button.secondary:active:not(:disabled) {
   background: var(--surface);
   border: 1px solid var(--border-strong);
+  border-width: 1px;
   color: var(--text-secondary);
+  transform: none;
 }
 
 button.secondary:hover:not(:disabled) {
   background: var(--primary-soft);
   border-color: #9bb9e8;
+  border-width: 1px;
   color: var(--primary);
 }
 
@@ -1580,7 +1619,7 @@ button.secondary:hover:not(:disabled) {
   margin-top: 20px !important;
 }
 
-/* ── Dictionary (debug-tool structure, light theme) ──────────────── */
+/* ── Dictionary (compact expandable message table) ──────────────── */
 
 .dict-workspace {
   max-width: none;
@@ -1590,6 +1629,107 @@ button.secondary:hover:not(:disabled) {
 .dict-panel {
   padding: 0;
   overflow: hidden;
+}
+
+.dict-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - var(--topbar-h) - 160px);
+}
+
+.dict-msg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dict-msg-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.dict-msg-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  vertical-align: middle;
+  color: var(--text);
+}
+
+.dict-col-exp {
+  width: 28px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.dict-msg-row {
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.dict-msg-row:hover {
+  background: #f8fafc;
+}
+
+.dict-msg-row.open {
+  background: var(--primary-soft);
+}
+
+.dict-msg-row.open td {
+  border-bottom-color: transparent;
+}
+
+.dict-msg-expand-row td {
+  padding: 0 10px 12px 28px;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.dict-expand-body {
+  padding: 4px 0 2px;
+}
+
+.dict-bus-pill {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.dict-bus-pill.high {
+  background: var(--primary-soft);
+  border-color: #c5d7f5;
+  color: var(--primary);
+}
+
+.dict-bus-pill.low {
+  background: var(--warning-soft);
+  border-color: #f0d48a;
+  color: var(--warning);
+}
+
+.dict-signal-table {
+  min-width: 900px;
+}
+
+.dictionary-summary .muted {
+  color: var(--text-tertiary);
+  font-weight: 500;
 }
 
 .dict-toolbar {
@@ -1842,7 +1982,7 @@ button.secondary:hover:not(:disabled) {
 
 /* Bit grid (debug-tool column-per-byte) */
 .dict-bitgrid .bit-grid-head {
-  align-items: center;
+  align-items: flex-start;
   color: var(--text-tertiary);
   display: flex;
   gap: 10px;
@@ -1860,6 +2000,29 @@ button.secondary:hover:not(:disabled) {
   font-size: 11px;
   font-style: normal;
   font-weight: 650;
+  flex-shrink: 0;
+}
+
+.bit-grid-help {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-transform: none;
+  font-weight: 450;
+}
+
+.bit-grid-help strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.bit-row-caption {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  margin: 0 0 6px;
+  letter-spacing: 0.02em;
 }
 
 /* Horizontal scroll when DLC is wide; avoids bit-cells clipped by .panel overflow */
@@ -1896,50 +2059,70 @@ button.secondary:hover:not(:disabled) {
 .bit-row {
   display: flex;
   gap: 3px;
+  /* allow ring box-shadow without clipping; isolation for z-index stacks */
+  position: relative;
+  z-index: 0;
+  padding: 2px; /* room for 3px focus ring without overlapping sibling hit targets as badly */
+  margin: -2px;
 }
 
-/* Color key: which solid color maps to which signal */
+/* Signal meaning cards (color → plain language) */
 .bit-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 4px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 10px 0 8px;
 }
 
-button.bit-legend-item,
-.bit-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 3px 8px 3px 5px;
+button.bit-legend-card,
+.bit-legend-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 0;
+  padding: 9px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
-  font-size: 11.5px;
-  font-weight: 600;
-  box-shadow: none;
+  text-align: left;
+  /* Reserve left accent rail so hover does not reflow text */
+  box-shadow: inset 3px 0 0 transparent;
   cursor: default;
+  transform: none;
+  font-weight: 450;
 }
 
-button.bit-legend-item {
+button.bit-legend-card {
   cursor: pointer;
 }
 
-button.bit-legend-item:hover:not(:disabled),
-button.bit-legend-item:focus:not(:disabled),
-button.bit-legend-item.active {
+button.bit-legend-card:hover:not(:disabled),
+button.bit-legend-card:focus:not(:disabled),
+button.bit-legend-card.active,
+button.bit-legend-card:active:not(:disabled) {
   border-color: var(--bit-color, var(--primary));
-  background: color-mix(in srgb, var(--bit-color, var(--primary)) 12%, #fff);
+  background: color-mix(in srgb, var(--bit-color, var(--primary)) 10%, #fff);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bit-color, var(--primary)) 35%, transparent);
+  box-shadow: inset 3px 0 0 var(--bit-color, var(--primary));
+  transform: none;
+  padding: 9px 10px;
+  min-height: 0;
+  font-weight: 450;
 }
 
-.bit-legend-item.unused {
-  color: var(--text-tertiary);
-  font-weight: 550;
+.bit-legend-card.unused {
+  color: var(--text-secondary);
   cursor: default;
+  background: var(--surface-subtle);
+}
+
+.bit-legend-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .bit-legend-swatch {
@@ -1967,34 +2150,48 @@ button.bit-legend-item.active {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 3px;
   background: var(--bit-color, var(--primary));
   color: #fff;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
   flex-shrink: 0;
 }
 
-.bit-legend-label {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.bit-legend-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.bit-legend-key {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.bit-legend-meaning {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.35;
+  font-weight: 450;
 }
 
 .bit-legend-meta {
   color: var(--text-tertiary);
   font-size: 10px;
   font-weight: 550;
+  margin-left: auto;
 }
 
 button.bit-cell,
 button.bit-cell:hover:not(:disabled),
-button.bit-cell:focus:not(:disabled) {
+button.bit-cell:focus:not(:disabled),
+button.bit-cell:active:not(:disabled) {
   align-items: center;
   background: #eef1f4;
   border: 1px solid var(--border);
@@ -2004,19 +2201,31 @@ button.bit-cell:focus:not(:disabled) {
   height: 20px;
   width: 20px;
   min-height: 20px;
+  max-height: 20px;
+  min-width: 20px;
+  max-width: 20px;
   justify-content: center;
   padding: 0;
   margin: 0;
   box-shadow: none;
   font: inherit;
   position: relative;
-  transition: opacity 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+  /* Never scale — causes expand + overlap with neighbors */
+  transform: none;
+  transition: opacity 120ms ease, box-shadow 120ms ease, filter 120ms ease, background 120ms ease;
 }
 
-button.bit-cell.wide {
+button.bit-cell.wide,
+button.bit-cell.wide:hover:not(:disabled),
+button.bit-cell.wide:focus:not(:disabled),
+button.bit-cell.wide:active:not(:disabled) {
   height: 18px;
   width: 18px;
   min-height: 18px;
+  max-height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  transform: none;
 }
 
 button.bit-cell span {
@@ -2059,7 +2268,9 @@ button.bit-cell.filled {
   font-weight: 800;
 }
 
-button.bit-cell.filled.field-start span {
+button.bit-cell.filled.field-start span,
+button.bit-cell.filled.field-end span,
+button.bit-cell.filled.field-flag span {
   text-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
 }
 
@@ -2068,64 +2279,163 @@ button.bit-cell.filled.dimmed {
   filter: grayscale(0.15);
 }
 
+/* Highlight without layout growth — ring is pure box-shadow (out of flow) */
 button.bit-cell.highlight,
 button.bit-cell.filled:hover:not(:disabled),
-button.bit-cell.filled:focus-visible {
+button.bit-cell.filled:focus-visible,
+button.bit-cell.filled:active:not(:disabled) {
   box-shadow:
     0 0 0 2px #fff,
-    0 0 0 4px var(--bit-color, var(--text));
+    0 0 0 3px var(--bit-color, var(--text));
   z-index: 2;
   outline: none;
   opacity: 1;
   filter: none;
-  transform: scale(1.06);
+  transform: none;
 }
 
 .bit-inspector {
-  align-items: center;
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-top: 8px;
-  min-height: 42px;
-  padding: 7px 10px;
+  margin-top: 10px;
+  min-height: 72px;
+  padding: 12px 14px;
 }
 
 .bit-inspector[data-active='1'] {
-  background: color-mix(in srgb, var(--bit-color, var(--primary)) 12%, #fff);
+  background: color-mix(in srgb, var(--bit-color, var(--primary)) 10%, #fff);
   border-color: color-mix(in srgb, var(--bit-color, var(--primary)) 45%, var(--border));
+  box-shadow: inset 3px 0 0 var(--bit-color, var(--primary));
+}
+
+.bit-inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bit-inspector-body.idle strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bit-inspector-body.idle p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+  max-width: 70ch;
+}
+
+.bit-inspector-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .bit-inspector-swatch {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
   border-radius: 3px;
   background: var(--bit-color, var(--primary));
   border: 1px solid color-mix(in srgb, var(--bit-color, var(--primary)) 50%, #000);
   flex-shrink: 0;
 }
 
-.bit-inspector strong,
-.bit-inspector span {
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 12px;
+.bit-inspector-title {
+  display: block;
+  font-size: 15px;
   font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  font-family: var(--font-ui);
 }
 
-.bit-inspector[data-active='1'] strong,
-.bit-inspector[data-active='1'] > span:not(.bit-inspector-swatch) {
-  color: color-mix(in srgb, var(--bit-color, var(--primary)) 70%, #000);
-}
-
-.bit-inspector em {
+.bit-inspector-key {
+  display: block;
+  margin-top: 1px;
   color: var(--text-tertiary);
   font-size: 11px;
-  font-style: normal;
+}
+
+.bit-inspector-meaning {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.bit-inspector-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.bit-inspector-kv div {
+  min-width: 0;
+}
+
+.bit-inspector-kv dt {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.bit-inspector-kv dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.bit-inspector-hint {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.bit-inspector-hint strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.sig-name-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  vertical-align: middle;
+}
+
+.sig-name-stack strong {
+  font-size: 12.5px;
+}
+
+.sig-key {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.sig-meaning-cell {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.signal-table tr {
+  cursor: default;
 }
 
 .bit-empty,
@@ -2521,9 +2831,11 @@ button.bit-cell.filled:focus-visible {
 
 button.gear-btn,
 button.gear-btn:hover:not(:disabled),
-button.gear-btn:focus:not(:disabled) {
+button.gear-btn:focus:not(:disabled),
+button.gear-btn:active:not(:disabled) {
   flex: 1;
   min-height: 36px;
+  height: 36px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   color: var(--text-secondary);
@@ -2532,13 +2844,17 @@ button.gear-btn:focus:not(:disabled) {
   font-size: 14px;
   border-radius: var(--radius);
   box-shadow: none;
-  transition: all var(--transition);
+  transform: none;
+  padding: 0 8px;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
 button.gear-btn:hover:not(:disabled) {
   border-color: #9bb9e8;
   color: var(--primary);
   background: var(--primary-soft);
+  /* keep 1px border — never thicken */
+  border-width: 1px;
 }
 
 button.gear-btn.active,

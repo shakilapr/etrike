@@ -1,31 +1,24 @@
 /**
- * CAN Dictionary workspace — structure ported from debug-tool
- * (CanDictionary / MessageCard / BitGrid / SignalTable).
- * Data is always loaded from YAML-generated protocol catalog via API.
+ * CAN Dictionary — compact expandable message table.
+ * Data from YAML-generated protocol catalog via API.
+ * (Avoids MessageCard stacks that re-list the same signals 3–4 ways.)
  */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 
-/** High-contrast palette — consecutive signals stay visually distinct (no pale blues). */
 const FIELD_COLORS = [
-  '#1f6feb', // blue
-  '#cf222e', // red
-  '#1a7f37', // green
-  '#9a6700', // amber
-  '#8250df', // purple
-  '#bf3989', // magenta
-  '#0969da', // sky
-  '#bc4c00', // orange
-  '#116329', // forest
-  '#a40e26', // crimson
-  '#6639ba', // violet
-  '#0550ae', // navy
+  '#1f6feb',
+  '#cf222e',
+  '#1a7f37',
+  '#9a6700',
+  '#8250df',
+  '#bf3989',
+  '#0969da',
+  '#bc4c00',
+  '#116329',
+  '#a40e26',
+  '#6639ba',
+  '#0550ae',
 ]
 
 export type DictField = {
@@ -72,9 +65,9 @@ function scaleFor(signal: DictField): string {
   const f = signal._factor
   const o = signal._offset
   if (f === 1 && o === 0) return 'raw'
-  if (f === 1) return `raw ${o >= 0 ? '+' : '-'} ${Math.abs(o)}`
-  if (o === 0) return `raw x ${f}`
-  return `raw x ${f} ${o >= 0 ? '+' : '-'} ${Math.abs(o)}`
+  if (f === 1) return `raw ${o >= 0 ? '+' : '−'} ${Math.abs(o)}`
+  if (o === 0) return `raw × ${f}`
+  return `raw × ${f} ${o >= 0 ? '+' : '−'} ${Math.abs(o)}`
 }
 
 function valuesFor(signal: DictField): string {
@@ -87,354 +80,145 @@ function dash(value: string | number | null | undefined): string {
   return String(value)
 }
 
-function signalGlyph(label: string): string {
-  const t = label.trim()
-  if (!t) return '·'
-  // Prefer leading letter/digit; fall back to first char
-  const m = t.match(/[A-Za-z0-9]/)
-  return (m?.[0] ?? t[0]).toUpperCase()
+function unitFor(signal: DictField): string {
+  if (signal.unit) return signal.unit
+  if (/_mmps$/i.test(signal.key)) return 'mm/s'
+  if (/_mrad_s$/i.test(signal.key)) return 'mrad/s'
+  if (/_kpa$/i.test(signal.key)) return 'kPa'
+  return ''
 }
 
-function BitGrid({
-  message,
-  activeSignal,
-  setActiveSignal,
-}: {
-  message: DictMessage
-  activeSignal: number
-  setActiveSignal: (i: number) => void
-}) {
-  const dlc = Math.max(message.dlc, 0)
-  const bitMap = useMemo(() => {
-    const map = Array.from({ length: dlc * 8 }, () => -1)
-    message.fields.forEach((signal, index) => {
-      const start = signal._byte * 8 + signal._bit_offset
-      for (let offset = 0; offset < signal._size; offset++) {
-        const bit = start + offset
-        if (bit >= 0 && bit < map.length) map[bit] = index
-      }
+function titleFor(signal: DictField): string {
+  let k = signal.key
+    .replace(/_mmps$/i, '')
+    .replace(/_mrad_s$/i, '')
+    .replace(/_raw$/i, '')
+  const words = k.split(/_+/).filter(Boolean)
+  if (!words.length) return signal.label || signal.key
+  return words
+    .map((w) => {
+      const lower = w.toLowerCase()
+      if (lower === 'estop') return 'E-stop'
+      return lower.charAt(0).toUpperCase() + lower.slice(1)
     })
-    return map
-  }, [message.fields, dlc])
+    .join(' ')
+}
 
-  /** Linear bit index of the first bit of each signal (for in-cell glyph). */
-  const fieldStartBit = useMemo(() => {
-    const starts = new Map<number, number>()
-    message.fields.forEach((signal, index) => {
-      starts.set(index, signal._byte * 8 + signal._bit_offset)
-    })
-    return starts
-  }, [message.fields])
+function meaningFor(signal: DictField): string {
+  const KNOWN: Record<string, string> = {
+    speed_mmps: 'Host longitudinal speed command (mm/s).',
+    yaw_rate_mrad_s: 'Host yaw-rate command (mrad/s).',
+    gear: 'Requested gear / drive mode.',
+    gear_state: 'Reported gear from motor controller.',
+    motor_speed_mmps: 'Low-bus direct motor speed command (mm/s).',
+    actual_speed_mmps: 'Measured motor speed feedback (mm/s).',
+    estop_active: 'Emergency-stop latched (1 = active).',
+    heartbeat_ok: 'SYS safety heartbeat healthy.',
+    light_left: 'Left turn / indicator lamp.',
+    light_right: 'Right turn / indicator lamp.',
+    light_brake: 'Brake lamp.',
+    light_head: 'Headlamp.',
+    fault_flags: 'Motor fault / status bitfield.',
+    target_angle_raw: 'Steering target angle (vendor raw).',
+    pressure_request_raw: 'Brake pressure request (vendor raw).',
+    rolling_counter: 'Rolling counter for freshness.',
+    checksum: 'Payload checksum.',
+    req_mode: 'HMI mode request (manual/auto).',
+    req_start: 'HMI power start/stop request.',
+  }
+  if (KNOWN[signal.key]) return KNOWN[signal.key]
+  if (signal.kind === 'boolean' || signal._size === 1) {
+    return `Flag: ${titleFor(signal)} (0/1).`
+  }
+  if (signal.kind === 'enum' && signal.options?.length) {
+    return `Enum: ${valuesFor(signal)}`
+  }
+  const u = unitFor(signal)
+  return u ? `${titleFor(signal)} (${u}).` : `${titleFor(signal)}.`
+}
 
-  const mappedBits = bitMap.filter((i) => i >= 0).length
-  const unusedBits = dlc * 8 - mappedBits
-  const wide = dlc >= 7
-  const dimOthers = activeSignal >= 0
+function msgKey(m: DictMessage): string {
+  return `${m.bus}:${m.id}:${m.name}`
+}
 
-  if (dlc === 0) {
+function ExpandedSignals({ message }: { message: DictMessage }) {
+  if (message.fields.length === 0) {
     return (
-      <div className="bit-empty">DLC=0 event frame. The CAN ID is the signal.</div>
+      <div className="signal-empty" data-testid="dict-signal-table">
+        {message.dlc === 0
+          ? 'DLC=0 event frame — no payload signals (CAN ID is the event).'
+          : 'No payload signals (opaque / event layout).'}
+      </div>
     )
   }
 
-  const active = activeSignal >= 0 ? message.fields[activeSignal] : null
-  const activeColor = activeSignal >= 0 ? colorFor(activeSignal) : undefined
-
   return (
-    <div
-      className={`dict-bitgrid${dimOthers ? ' has-focus' : ''}`}
-      data-testid="dict-bit-grid"
-    >
-      <div className="bit-grid-head">
-        <span>Byte layout</span>
-        <em>
-          {mappedBits}/{dlc * 8} bits mapped
-          {unusedBits > 0 ? ` · ${unusedBits} unused` : ''}
-        </em>
-      </div>
-
-      {message.fields.length > 0 || unusedBits > 0 ? (
-        <div className="bit-legend" data-testid="dict-bit-legend" aria-label="Signal color key">
-          {message.fields.map((signal, index) => (
-            <button
-              key={signal.key}
-              type="button"
-              className={`bit-legend-item${activeSignal === index ? ' active' : ''}`}
-              style={
-                {
-                  ['--bit-color' as string]: colorFor(index),
-                } as CSSProperties
-              }
-              title={`${signal.label} · B${signal._byte}.${signal._bit_offset} · ${signal._size}-bit`}
-              onMouseEnter={() => setActiveSignal(index)}
-              onMouseLeave={() => setActiveSignal(-1)}
-              onFocus={() => setActiveSignal(index)}
-              onBlur={() => setActiveSignal(-1)}
-            >
-              <span className="bit-legend-swatch" aria-hidden />
-              <span className="bit-legend-glyph" aria-hidden>
-                {signalGlyph(signal.label)}
-              </span>
-              <span className="bit-legend-label">{signal.label}</span>
-              <span className="bit-legend-meta mono">
-                B{signal._byte}.{signal._bit_offset}/{signal._size}
-              </span>
-            </button>
-          ))}
-          {unusedBits > 0 ? (
-            <span className="bit-legend-item unused" title="Unmapped / reserved bits">
-              <span className="bit-legend-swatch unused-swatch" aria-hidden />
-              <span className="bit-legend-label">unused</span>
-              <span className="bit-legend-meta mono">{unusedBits} bit{unusedBits === 1 ? '' : 's'}</span>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="byte-grid-scroll" aria-label={`${message.name} byte layout`}>
-        <div className="byte-grid">
-          {Array.from({ length: dlc }, (_, byte) => (
-            <div key={byte} className="byte-col">
-              <span className="byte-label">B{byte}</span>
-              <div className="bit-row" role="group" aria-label={`Byte ${byte} bits 7→0`}>
-                {[7, 6, 5, 4, 3, 2, 1, 0].map((bit) => {
-                  const linear = byte * 8 + bit
-                  const signalIndex = bitMap[linear] ?? -1
-                  const filled = signalIndex >= 0
-                  const highlight = activeSignal === signalIndex && filled
-                  const dimmed =
-                    dimOthers && filled && activeSignal !== signalIndex
-                  const isStart =
-                    filled && fieldStartBit.get(signalIndex) === linear
-                  const glyph = filled
-                    ? isStart
-                      ? signalGlyph(message.fields[signalIndex].label)
-                      : ''
-                    : String(bit)
-                  return (
-                    <button
-                      key={`${byte}-${bit}`}
-                      type="button"
-                      className={[
-                        'bit-cell',
-                        wide ? 'wide' : '',
-                        filled ? 'filled' : 'empty',
-                        highlight ? 'highlight' : '',
-                        dimmed ? 'dimmed' : '',
-                        isStart ? 'field-start' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      style={
-                        filled
-                          ? ({
-                              ['--bit-color' as string]: colorFor(signalIndex),
-                            } as CSSProperties)
-                          : undefined
-                      }
-                      title={
-                        filled
-                          ? `${message.fields[signalIndex].label}: B${byte}.${bit} · ${message.fields[signalIndex]._size}-bit ${message.fields[signalIndex]._type}`
-                          : `B${byte}.${bit} unused (no signal)`
-                      }
-                      aria-label={
-                        filled
-                          ? `${message.fields[signalIndex].label} bit B${byte}.${bit}`
-                          : `Unused bit B${byte}.${bit}`
-                      }
-                      onMouseEnter={() => setActiveSignal(signalIndex)}
-                      onMouseLeave={() => setActiveSignal(-1)}
-                      onFocus={() => setActiveSignal(signalIndex)}
-                      onBlur={() => setActiveSignal(-1)}
-                    >
-                      <span>{glyph}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div
-        className="bit-inspector"
-        role="status"
-        style={
-          activeColor
-            ? ({ ['--bit-color' as string]: activeColor } as CSSProperties)
-            : undefined
-        }
-        data-active={active ? '1' : '0'}
-      >
-        {active ? (
-          <>
-            <span className="bit-inspector-swatch" aria-hidden />
-            <strong>
-              B{active._byte}.{active._bit_offset}
-            </strong>
-            <span>{active.label}</span>
-            <em>
-              {active._size}-bit {active._type} · scale {scaleFor(active)}
-              {active.unit ? ` ${active.unit}` : ''}
-            </em>
-          </>
-        ) : (
-          <>
-            <strong>Bit detail</strong>
-            <span>{message.name}</span>
-            <em>
-              Hover a colored bit or legend chip — hatch / numbered cells are unused.
-            </em>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function SignalTable({
-  message,
-  activeSignal,
-}: {
-  message: DictMessage
-  activeSignal: number
-}) {
-  if (message.fields.length === 0) {
-    return <div className="signal-empty">No payload signals (opaque / event layout).</div>
-  }
-
-  const receivers =
-    message.receivers?.length > 0 ? message.receivers.join(', ') : '—'
-
-  return (
-    <div className="signal-table-wrap" data-testid="dict-signal-table">
-      <table className="signal-table">
-        <thead>
-          <tr>
-            <th>Signal</th>
-            <th>Start</th>
-            <th>Byte</th>
-            <th>Bit</th>
-            <th>Len</th>
-            <th>Type</th>
-            <th>Scale</th>
-            <th>Min</th>
-            <th>Max</th>
-            <th>Unit</th>
-            <th>Rx</th>
-            <th>Values</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {message.fields.map((signal, index) => (
-            <tr
-              key={signal.key}
-              className={activeSignal === index ? 'highlight' : undefined}
-            >
-              <td data-label="Signal">
-                <span
-                  className="sig-color"
-                  style={{ background: colorFor(index) }}
-                />
-                <strong>{signal.label}</strong>
-              </td>
-              <td data-label="Start">
-                B{signal._byte}.{signal._bit_offset}
-              </td>
-              <td data-label="Byte">{signal._byte}</td>
-              <td data-label="Bit">{signal._bit_offset}</td>
-              <td data-label="Len">{signal._size}</td>
-              <td data-label="Type">{signal._type}</td>
-              <td data-label="Scale">{scaleFor(signal)}</td>
-              <td data-label="Min">{dash(signal.min)}</td>
-              <td data-label="Max">{dash(signal.max)}</td>
-              <td data-label="Unit">{dash(signal.unit)}</td>
-              <td data-label="Rx">{receivers}</td>
-              <td data-label="Values">{valuesFor(signal)}</td>
-              <td data-label="Description">{dash(signal.key)}</td>
+    <div className="dict-expand-body" data-testid="dictionary-detail">
+      {message.comment ? <p className="message-comment">{message.comment}</p> : null}
+      <div className="signal-table-wrap" data-testid="dict-signal-table">
+        <table className="signal-table dict-signal-table">
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th>Meaning</th>
+              <th>Start</th>
+              <th>Len</th>
+              <th>Type</th>
+              <th>Scale</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Unit</th>
+              <th>Values</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {message.fields.map((signal, index) => (
+              <tr key={signal.key}>
+                <td data-label="Signal">
+                  <span
+                    className="sig-color"
+                    style={{ background: colorFor(index) }}
+                    aria-hidden
+                  />
+                  <div className="sig-name-stack">
+                    <strong>{titleFor(signal)}</strong>
+                    <span className="mono sig-key">{signal.key}</span>
+                  </div>
+                </td>
+                <td data-label="Meaning" className="sig-meaning-cell">
+                  {meaningFor(signal)}
+                </td>
+                <td data-label="Start" className="mono">
+                  B{signal._byte}.{signal._bit_offset}
+                </td>
+                <td data-label="Len" className="mono">
+                  {signal._size}
+                </td>
+                <td data-label="Type">
+                  {signal._type}
+                  {signal._size === 1
+                    ? ' flag'
+                    : signal.kind === 'enum'
+                      ? ' enum'
+                      : ''}
+                </td>
+                <td data-label="Scale" className="mono small">
+                  {scaleFor(signal)}
+                </td>
+                <td data-label="Min" className="mono">
+                  {dash(signal.min)}
+                </td>
+                <td data-label="Max" className="mono">
+                  {dash(signal.max)}
+                </td>
+                <td data-label="Unit">{dash(unitFor(signal))}</td>
+                <td data-label="Values">{valuesFor(signal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
-  )
-}
-
-function MessageCard({ message }: { message: DictMessage }) {
-  const [activeSignal, setActiveSignal] = useState(-1)
-  const receivers =
-    message.receivers?.length > 0 ? message.receivers : (['all'] as string[])
-  const signalCountLabel =
-    message.fields.length === 1
-      ? '1 signal'
-      : `${message.fields.length} signals`
-
-  return (
-    <article
-      className="message-card is-dictionary"
-      data-testid="frame-row"
-      data-msg={`${message.bus}:${message.id}`}
-    >
-      <div className="message-head">
-        <span className="message-id">{message.id}</span>
-        <strong>{message.name}</strong>
-        <span className="message-bus">{message.bus}</span>
-      </div>
-
-      <div className="message-meta">
-        <span className="badge sender" title="Sender ECU">
-          TX {message.sender}
-        </span>
-        <span className="badge receiver" title="Receiver ECU(s)">
-          RX {receivers.join(', ')}
-        </span>
-        <span className="badge" title="CAN payload length">
-          DLC {message.dlc}
-        </span>
-        <span className="badge" title="Transmit period">
-          {message.period}
-        </span>
-        <span className="badge" title="Signal byte order">
-          {message.byteOrder}
-        </span>
-        <span className="badge" title="Signal count">
-          {signalCountLabel}
-        </span>
-        <span className="badge source" title="Generated from protocol YAML">
-          YAML
-        </span>
-      </div>
-
-      <div
-        className="route-map"
-        aria-label={`${message.name} sender and receivers`}
-      >
-        <span className="route-node tx">TX {message.sender}</span>
-        <span className="route-arrow" aria-hidden>
-          -&gt;
-        </span>
-        <span className="route-receivers">
-          {receivers.map((r) => (
-            <span key={r} className="route-node rx">
-              RX {r}
-            </span>
-          ))}
-        </span>
-      </div>
-
-      <section className="dictionary-detail" data-testid="dictionary-detail">
-        {message.comment ? (
-          <p className="message-comment">{message.comment}</p>
-        ) : null}
-        <BitGrid
-          message={message}
-          activeSignal={activeSignal}
-          setActiveSignal={setActiveSignal}
-        />
-        <SignalTable message={message} activeSignal={activeSignal} />
-      </section>
-    </article>
   )
 }
 
@@ -446,7 +230,9 @@ export function CanDictionary() {
   const [filterText, setFilterText] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  const [loadedAt, setLoadedAt] = useState<string>('')
+  const [loadedAt, setLoadedAt] = useState('')
+  /** Single expanded message key (or null). */
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async (refresh = false) => {
     setBusy(true)
@@ -481,6 +267,7 @@ export function CanDictionary() {
         message.name.toLowerCase().includes(text) ||
         message.sender.toLowerCase().includes(text) ||
         (message.comment || '').toLowerCase().includes(text) ||
+        message.receivers.some((r) => r.toLowerCase().includes(text)) ||
         message.fields.some(
           (s) =>
             s.label.toLowerCase().includes(text) ||
@@ -494,6 +281,11 @@ export function CanDictionary() {
     () => filtered.reduce((n, m) => n + m.fields.length, 0),
     [filtered],
   )
+
+  function toggle(m: DictMessage) {
+    const k = msgKey(m)
+    setExpanded((cur) => (cur === k ? null : k))
+  }
 
   return (
     <div className="workspace dict-workspace" data-testid="workspace-dictionary">
@@ -522,7 +314,7 @@ export function CanDictionary() {
             <input
               className="dictionary-search search"
               data-testid="dict-filter"
-              placeholder="Search by CAN ID, name, signal, ECU, or comment"
+              placeholder="Search by CAN ID, name, signal, ECU…"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
             />
@@ -538,40 +330,115 @@ export function CanDictionary() {
             </button>
           </div>
           <div className="dictionary-count">
-            <span>
-              {filtered.length} messages
-            </span>
+            <span>{filtered.length} messages</span>
             <span>{visibleSignals} signals</span>
           </div>
         </div>
 
         <div className="dictionary-summary">
-          <span>
-            {messages.length} canonical protocol messages
-          </span>
+          <span>{messages.length} canonical protocol messages</span>
           <span className="mono" title={hash}>
             hash {(hash || '—').slice(0, 12)}…
           </span>
           <span>{source || 'YAML'}</span>
           {loadedAt ? <span>loaded {loadedAt}</span> : null}
+          <span className="muted">Click a row to expand signals</span>
         </div>
 
         {err && <p className="danger-text dict-err">{err}</p>}
 
         <div className="dictionary-reference" data-testid="dict-grid">
-          {filtered.map((message) => (
-            <MessageCard
-              key={`${message.bus}:${message.id}:${message.name}`}
-              message={message}
-            />
-          ))}
-          {filtered.length === 0 && !busy && (
-            <div className="empty-state">
-              No CAN dictionary messages match the current filters.
+          {filtered.length === 0 && !busy ? (
+            <div className="empty-state">No CAN dictionary messages match the current filters.</div>
+          ) : (
+            <div className="dict-table-wrap">
+              <table className="dict-msg-table" data-testid="dict-msg-table">
+                <thead>
+                  <tr>
+                    <th className="dict-col-exp" aria-label="Expand" />
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Bus</th>
+                    <th>TX</th>
+                    <th>RX</th>
+                    <th>DLC</th>
+                    <th>Period</th>
+                    <th>Order</th>
+                    <th>Signals</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((message) => {
+                    const k = msgKey(message)
+                    const open = expanded === k
+                    const rx =
+                      message.receivers?.length > 0
+                        ? message.receivers.join(', ')
+                        : '—'
+                    return (
+                      <MessageRows
+                        key={k}
+                        message={message}
+                        open={open}
+                        rx={rx}
+                        onToggle={() => toggle(message)}
+                      />
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+function MessageRows({
+  message,
+  open,
+  rx,
+  onToggle,
+}: {
+  message: DictMessage
+  open: boolean
+  rx: string
+  onToggle: () => void
+}) {
+  return (
+    <>
+      <tr
+        className={`dict-msg-row${open ? ' open' : ''}`}
+        data-testid="frame-row"
+        data-msg={`${message.bus}:${message.id}`}
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <td className="dict-col-exp mono" aria-hidden>
+          {open ? '▾' : '▸'}
+        </td>
+        <td className="mono message-id">{message.id}</td>
+        <td>
+          <strong>{message.name}</strong>
+        </td>
+        <td>
+          <span className={`dict-bus-pill ${message.bus}`}>{message.bus}</span>
+        </td>
+        <td className="mono">{message.sender}</td>
+        <td className="mono muted">{rx}</td>
+        <td className="num mono">{message.dlc}</td>
+        <td className="mono">{message.period}</td>
+        <td className="muted">{message.byteOrder}</td>
+        <td className="num mono">{message.fields.length}</td>
+      </tr>
+      {open ? (
+        <tr className="dict-msg-expand-row" data-testid={`dict-expand-${message.id}`}>
+          <td colSpan={10}>
+            <ExpandedSignals message={message} />
+          </td>
+        </tr>
+      ) : null}
+    </>
   )
 }
