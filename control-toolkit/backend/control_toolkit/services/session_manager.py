@@ -1,4 +1,4 @@
-"""Session lifecycle: profiles, Bench TX, revision, Stop All."""
+"""Session lifecycle: profiles, FSM, Bench TX, revision, Stop All (Phase 3)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from control_toolkit import protocol_bridge as proto
 from control_toolkit.config import Profile
 from control_toolkit.models.session import (
     BenchTxState,
+    ChangeProfileRequest,
     CreateSessionRequest,
     SessionPhase,
     SessionState,
@@ -28,6 +29,18 @@ class SessionError(Exception):
         self.status = status
 
 
+TERMINAL_PHASES = frozenset(
+    {
+        SessionPhase.STOPPED,
+        SessionPhase.COMPLETED,
+        SessionPhase.FAILED,
+        SessionPhase.INCONCLUSIVE,
+    }
+)
+
+PHYSICAL_PROFILES = frozenset({Profile.FULL_VEHICLE, Profile.BENCH_TEST})
+
+
 class SessionManager:
     def __init__(
         self,
@@ -36,13 +49,19 @@ class SessionManager:
         get_transport_open: Callable[[], bool],
         get_adapter_epoch: Callable[[], int | None],
         on_stop_all: Callable[[], None] | None = None,
+        on_profile_change: Callable[[Profile], None] | None = None,
     ) -> None:
         self._lock = threading.Lock()
         self._ownership = ownership
         self._get_transport_open = get_transport_open
         self._get_adapter_epoch = get_adapter_epoch
         self._on_stop_all = on_stop_all
-        self._state = SessionState(wire_hash=proto.WIRE_HASH)
+        self._on_profile_change = on_profile_change
+        self._state = SessionState(
+            wire_hash=proto.WIRE_HASH,
+            semantic_hash=proto.SEMANTIC_HASH,
+            destination="virtual",
+        )
         self._scheduler: Scheduler | None = None
 
     def bind_scheduler(self, scheduler: Scheduler) -> None:
@@ -50,59 +69,96 @@ class SessionManager:
 
     def snapshot(self) -> SessionState:
         with self._lock:
-            st = self._state.model_copy(deep=True)
-            st.leases = self._ownership.list_ids()
-            if self._scheduler is not None:
-                st.jobs = self._scheduler.job_ids()
-            return st
+            return self._snapshot_locked()
+
+    def _snapshot_locked(self) -> SessionState:
+        st = self._state.model_copy(deep=True)
+        st.leases = self._ownership.list_ids()
+        if self._scheduler is not None:
+            st.jobs = self._scheduler.job_ids()
+        return st
 
     def create(self, req: CreateSessionRequest) -> SessionState:
         with self._lock:
-            if self._state.session_id is not None and self._state.phase not in (
-                SessionPhase.STOPPED,
-                SessionPhase.COMPLETED,
-                SessionPhase.FAILED,
-            ):
+            if self._state.session_id is not None and self._state.phase not in TERMINAL_PHASES:
                 raise SessionError(
                     "session.active",
                     "close the active session before creating another",
                     status=409,
                 )
+            self._assert_profile_allowed_locked(req.profile)
 
-            if req.profile is Profile.PURE_SOFTWARE:
-                if not self._get_transport_open():
-                    raise SessionError(
-                        "transport.unavailable",
-                        "Pure Software requires an open virtual transport",
-                        status=503,
-                    )
-            else:
-                # No silent virtual fallback for physical profiles.
-                raise SessionError(
-                    "profile.physical_unavailable",
-                    f"{req.profile.value} requires a physical adapter (not available yet)",
-                    status=503,
-                )
-
+            # Controlled start: Preparing → Listening → Running
+            sid = f"ses_{uuid.uuid4().hex[:12]}"
+            test_id = req.test_session_id or f"test_{uuid.uuid4().hex[:10]}"
             self._state = SessionState(
                 profile=req.profile,
-                phase=SessionPhase.RUNNING,
+                phase=SessionPhase.PREPARING,
                 bench_tx=BenchTxState.DISABLED,
-                session_id=f"ses_{uuid.uuid4().hex[:12]}",
+                session_id=sid,
+                test_session_id=test_id,
                 revision=1,
                 adapter_epoch=self._get_adapter_epoch(),
                 wire_hash=proto.WIRE_HASH,
+                semantic_hash=proto.SEMANTIC_HASH,
+                destination=self._destination_for(req.profile),
+                capabilities=list(req.capabilities),
             )
-            return self._state.model_copy(deep=True)
+            # Listening: observe bus before TX
+            self._state.phase = SessionPhase.LISTENING
+            self._state.revision += 1
+            # Running: session active for commands
+            self._state.phase = SessionPhase.RUNNING
+            self._state.revision += 1
+            return self._snapshot_locked()
+
+    def change_profile(self, req: ChangeProfileRequest) -> SessionState:
+        """Controlled profile transition: stop TX → neutral → activate."""
+        with self._lock:
+            self._require_active_locked()
+            self._check_revision_locked(req.expected_revision)
+            if not req.confirm:
+                raise SessionError(
+                    "profile.confirm_required",
+                    "set confirm=true after reviewing destination; controlled transition required",
+                    status=400,
+                )
+            if req.profile == self._state.profile:
+                return self._snapshot_locked()
+
+            self._assert_profile_allowed_locked(req.profile)
+
+            # Stop periodic TX and disable Bench TX before switch.
+            self._neutralize_locked()
+            self._state.phase = SessionPhase.PREPARING
+            self._state.profile = req.profile
+            self._state.destination = self._destination_for(req.profile)
+            self._state.adapter_epoch = self._get_adapter_epoch()
+            self._state.revision += 1
+
+            self._state.phase = SessionPhase.LISTENING
+            self._state.revision += 1
+            self._state.phase = SessionPhase.RUNNING
+            self._state.revision += 1
+
+            if self._on_profile_change is not None:
+                self._on_profile_change(req.profile)
+            return self._snapshot_locked()
 
     def set_bench_tx(self, enabled: bool, expected_revision: int | None = None) -> SessionState:
         with self._lock:
             self._require_active_locked()
             self._check_revision_locked(expected_revision)
-            if enabled and self._state.profile is not Profile.PURE_SOFTWARE:
+            if self._state.phase is not SessionPhase.RUNNING:
+                raise SessionError(
+                    "session.not_running",
+                    f"Bench TX only in running phase (now {self._state.phase.value})",
+                    status=409,
+                )
+            if enabled and self._state.profile in PHYSICAL_PROFILES:
                 raise SessionError(
                     "bench_tx.physical_unavailable",
-                    "physical Bench TX is not available yet",
+                    "physical Bench TX is not available yet (hardware track)",
                     status=503,
                 )
             if enabled and not self._get_transport_open():
@@ -114,48 +170,82 @@ class SessionManager:
             self._state.bench_tx = (
                 BenchTxState.ENABLED if enabled else BenchTxState.DISABLED
             )
-            if not enabled and self._scheduler is not None:
-                self._scheduler.cancel_all()
+            if not enabled:
+                self._cancel_jobs_locked()
             self._state.revision += 1
-            return self._state.model_copy(deep=True)
+            return self._snapshot_locked()
 
     def stop_all(self, expected_revision: int | None = None) -> SessionState:
         with self._lock:
             self._require_active_locked()
             self._check_revision_locked(expected_revision)
-            self._state.bench_tx = BenchTxState.DISABLED
-            if self._scheduler is not None:
-                self._scheduler.cancel_all()
-            self._ownership.clear()
-            if self._on_stop_all is not None:
-                self._on_stop_all()
+            self._neutralize_locked()
             self._state.revision += 1
-            return self._state.model_copy(deep=True)
+            return self._snapshot_locked()
 
-    def close(self, expected_revision: int | None = None) -> SessionState:
+    def close(
+        self,
+        expected_revision: int | None = None,
+        outcome: SessionPhase = SessionPhase.STOPPED,
+    ) -> SessionState:
         with self._lock:
             if self._state.session_id is None:
-                return self._state.model_copy(deep=True)
+                return self._snapshot_locked()
             self._check_revision_locked(expected_revision)
-            if self._scheduler is not None:
-                self._scheduler.cancel_all()
-            self._ownership.clear()
-            if self._on_stop_all is not None:
-                self._on_stop_all()
+            self._state.phase = SessionPhase.STOPPING
+            self._neutralize_locked()
+            if outcome not in TERMINAL_PHASES:
+                outcome = SessionPhase.STOPPED
+            prev_profile = self._state.profile
+            rev = self._state.revision + 1
             self._state = SessionState(
-                profile=self._state.profile,
-                phase=SessionPhase.STOPPED,
+                profile=prev_profile,
+                phase=outcome,
                 bench_tx=BenchTxState.DISABLED,
                 session_id=None,
-                revision=self._state.revision + 1,
+                test_session_id=None,
+                revision=rev,
                 wire_hash=proto.WIRE_HASH,
+                semantic_hash=proto.SEMANTIC_HASH,
+                destination=self._destination_for(prev_profile),
             )
-            return self._state.model_copy(deep=True)
+            return self._snapshot_locked()
+
+    def update_vehicle_view(
+        self,
+        *,
+        requested_mode: str | None = None,
+        confirmed_mode: str | None = None,
+        requested_power: str | None = None,
+        confirmed_power: str | None = None,
+        estop_active: bool | None = None,
+        recording: bool | None = None,
+    ) -> SessionState:
+        with self._lock:
+            if requested_mode is not None:
+                self._state.requested_mode = requested_mode
+            if confirmed_mode is not None:
+                self._state.confirmed_mode = confirmed_mode
+            if requested_power is not None:
+                self._state.requested_power = requested_power
+            if confirmed_power is not None:
+                self._state.confirmed_power = confirmed_power
+            if estop_active is not None:
+                self._state.estop_active = estop_active
+            if recording is not None:
+                self._state.recording = recording
+            return self._snapshot_locked()
 
     def require_bench_tx_enabled(self) -> None:
         with self._lock:
             if self._state.session_id is None:
                 raise SessionError("session.none", "no active session", status=409)
+            if self._state.phase is not SessionPhase.RUNNING:
+                raise SessionError(
+                    "session.not_running",
+                    "session is not running",
+                    status=409,
+                )
             if self._state.bench_tx is not BenchTxState.ENABLED:
                 raise SessionError(
                     "bench_tx.disabled",
@@ -175,8 +265,45 @@ class SessionManager:
         with self._lock:
             return self._state.session_id
 
+    def phase(self) -> SessionPhase:
+        with self._lock:
+            return self._state.phase
+
+    def _assert_profile_allowed_locked(self, profile: Profile) -> None:
+        if profile is Profile.PURE_SOFTWARE:
+            if not self._get_transport_open():
+                raise SessionError(
+                    "transport.unavailable",
+                    "Pure Software requires an open virtual transport",
+                    status=503,
+                )
+            return
+        if profile in PHYSICAL_PROFILES:
+            # Never silent virtual fallback.
+            raise SessionError(
+                "profile.physical_unavailable",
+                f"{profile.value} requires a physical adapter (hardware track not ready)",
+                status=503,
+            )
+        raise SessionError("profile.unknown", f"unknown profile {profile}", status=400)
+
+    @staticmethod
+    def _destination_for(profile: Profile) -> str:
+        return "virtual" if profile is Profile.PURE_SOFTWARE else "physical"
+
+    def _neutralize_locked(self) -> None:
+        self._state.bench_tx = BenchTxState.DISABLED
+        self._cancel_jobs_locked()
+        self._ownership.clear()
+        if self._on_stop_all is not None:
+            self._on_stop_all()
+
+    def _cancel_jobs_locked(self) -> None:
+        if self._scheduler is not None:
+            self._scheduler.cancel_all()
+
     def _require_active_locked(self) -> None:
-        if self._state.session_id is None:
+        if self._state.session_id is None or self._state.phase in TERMINAL_PHASES:
             raise SessionError("session.none", "no active session", status=409)
 
     def _check_revision_locked(self, expected: int | None) -> None:

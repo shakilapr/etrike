@@ -2,7 +2,7 @@
 
 **Source:** [`architecture-control-toolkit.md`](architecture-control-toolkit.md)  
 **Vehicle architecture:** [`../architecture.md`](../architecture.md) (protocol model, RT/SYS roles)  
-**Status:** Phase 0 complete. Phase 1 complete (virtual dual-bus pipeline, history, topology, full API/tests). Later software phases partial. Physical CANalyst deferred.
+**Status:** Phase 0–1 complete. Phase 3 complete (profiles, session FSM, Bench TX, leases, Stop All, architecture shell UI). Later software phases partial. Physical CANalyst deferred.
 **Last updated:** 2026-07-16 (architecture line map pinned to `architecture-control-toolkit.md` same day)
 
 ---
@@ -49,11 +49,11 @@
 
 ### Software track exit gate (before any hardware track work)
 
-- [ ] Backend runs Pure Software with no USB adapter
-- [ ] Virtual High + Low inject → decode → `GET /state` + WebSocket
-- [ ] Sessions, Bench TX model, leases, Stop All work on virtual buses
+- [x] Backend runs Pure Software with no USB adapter
+- [x] Virtual High + Low inject → decode → `GET /state` + WebSocket
+- [x] Sessions, Bench TX model, leases, Stop All work on virtual buses
 - [ ] Injection + synthetic peers + evidence basics covered by pytest
-- [ ] Optional: React read-only + control against virtual backend
+- [x] Optional: React read-only + control against virtual backend
 - [ ] Headless Python scripts can drive the same API without UI
 - [ ] Default CI is green **without** `@pytest.mark.hardware`
 
@@ -442,43 +442,47 @@ pytest control-toolkit/backend/tests/test_hw_characterization.py -v -m hardware
 
 ### 3.1 Profile state machine
 
-- [ ] **Pure Software (required for this phase exit):** two virtual High/Low buses, full session lifecycle, TX allowed only on virtual, no physical adapter
-- [ ] **Full Vehicle / Bench Test (stub until hardware track):**
+- [x] **Pure Software (required for this phase exit):** two virtual High/Low buses, full session lifecycle, TX allowed only on virtual, no physical adapter
+- [x] **Full Vehicle / Bench Test (stub until hardware track):**
   - Names and transition rules exist in API/models
   - Activating them without a physical adapter → clear error / blocked state
   - Never silently fall back to virtual
-- [ ] Controlled transition: stop periodic TX → neutral controls → confirm → activate
-- [ ] Profile visible in API status and WebSocket events
+- [x] Controlled transition: stop periodic TX → neutral controls → confirm → activate
+- [x] Profile visible in API status and WebSocket events
 - [ ] After Phase 2: flesh out Full Vehicle (passive physical) and Bench Test (selected ECU + synthetic peers) for real hardware
 
 ### 3.2 Test-session state machine
 
-- [ ] States: Stopped → Preparing → Listening → Running → Stopping → Completed/Failed/Inconclusive
-- [ ] Session identity: backend session ID, adapter epoch, test session ID, protocol hash
-- [ ] Session revision for concurrent mutation control
+- [x] States: Stopped → Preparing → Listening → Running → Stopping → Completed/Failed/Inconclusive
+- [x] Session identity: backend session ID, adapter epoch, test session ID, protocol hash
+- [x] Session revision for concurrent mutation control
 
 ### 3.3 Bench TX state
 
-- [ ] Disabled/Enabled binary state
-- [ ] Connecting adapter leaves Disabled
-- [ ] Explicit enable required for physical TX
-- [ ] Auto-disable on: profile change, disconnect, shutdown, session stop, reconnect
-- [ ] Passive monitoring and recording work while Disabled
+- [x] Disabled/Enabled binary state
+- [x] Connecting adapter leaves Disabled
+- [x] Explicit enable required for physical TX
+- [x] Auto-disable on: profile change, disconnect, shutdown, session stop, reconnect
+- [x] Passive monitoring and recording work while Disabled
 
 ### 3.4 Stimulus leases and source ownership
 
-- [ ] Exclusive, expiring ownership of resources (steering, motor, brake, HMI, periodic CAN ID)
-- [ ] One permitted producer per `bus + CAN ID` during a session
-- [ ] Lease renewal mechanism for interactive controls
-- [ ] Backend-owned cleanup on expiry, disconnect, or Stop All
+- [x] Exclusive, expiring ownership of resources (steering, motor, brake, HMI, periodic CAN ID)
+- [x] One permitted producer per `bus + CAN ID` during a session
+- [x] Lease renewal mechanism for interactive controls
+- [x] Backend-owned cleanup on expiry, disconnect, or Stop All
 
 ### 3.5 Session API
 
-- [ ] `GET /api/v1/sessions` — current session state
-- [ ] `POST /api/v1/sessions` — create session with profile and capabilities
-- [ ] `POST /api/v1/sessions/{id}/bench-tx` — enable/disable Bench TX
-- [ ] `POST /api/v1/sessions/{id}/stop-all` — Stop All
-- [ ] `DELETE /api/v1/sessions/{id}` — close session
+- [x] `GET /api/v1/sessions` — current session state
+- [x] `POST /api/v1/sessions` — create session with profile and capabilities
+- [x] `POST /api/v1/sessions/{id}/bench-tx` — enable/disable Bench TX
+- [x] `POST /api/v1/sessions/{id}/stop-all` — Stop All
+- [x] `DELETE /api/v1/sessions/{id}` — close session
+- [x] `GET /api/v1/sessions/profiles` — declared profiles + availability
+- [x] `POST /api/v1/sessions/{id}/profile` — controlled profile change (`confirm=true`)
+- [x] `POST /api/v1/sessions/{id}/leases` · renew · release
+- [x] `POST /api/v1/sessions/{id}/vehicle-view` — requested/confirmed mode/power/ESTOP/recording
 
 **Tests (software track — virtual only):**
 ```bash
@@ -496,10 +500,11 @@ pytest control-toolkit/backend/tests/test_api_sessions.py -v
 ```
 
 **Exit gate (software track):**
-- [ ] Pure Software sessions fully work on virtual buses
-- [ ] Physical profiles cannot silently become virtual
-- [ ] Bench TX / leases / Stop All correct for virtual TX
-- [ ] Session revision prevents concurrent conflicts
+- [x] Pure Software sessions fully work on virtual buses
+- [x] Physical profiles cannot silently become virtual
+- [x] Bench TX / leases / Stop All correct for virtual TX
+- [x] Session revision prevents concurrent conflicts
+- [x] Architecture shell UI: full status header, 8 workspaces, Overview/Network/Live/Control/Settings wired to session API
 - [ ] **Deferred to hardware track:** adapter-loss → disable TX, physical profile smoke tests
 
 ---

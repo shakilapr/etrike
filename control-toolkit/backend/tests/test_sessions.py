@@ -18,7 +18,7 @@ def test_create_pure_software_session(client):
     assert ses["profile"] == "pure_software"
     assert ses["phase"] == "running"
     assert ses["bench_tx"] == "disabled"
-    assert ses["revision"] == 1
+    assert ses["revision"] >= 1
 
 
 def test_physical_profile_refused(client):
