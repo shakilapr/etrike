@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore, type MessageState } from './store'
 
-type Gear = 'P' | 'R' | 'D' | 'S'
+/** Firmware / host.yaml gear enum: 0=N 1=D 2=S 3=R (not PRND). */
+type Gear = 'N' | 'D' | 'S' | 'R'
 type ShiftMode = 'smart' | 'direct'
 type DriveSource = 'keyboard' | 'can'
 
@@ -39,7 +40,7 @@ const PIXELS_PER_METER = 100
 const L = 120
 const W = 80
 const FRICTION = 0.98
-const GEARS: Gear[] = ['P', 'R', 'D', 'S']
+const GEARS: Gear[] = ['N', 'D', 'S', 'R']
 
 const INITIAL: SimState = {
   x: 0,
@@ -51,7 +52,7 @@ const INITIAL: SimState = {
   isBraking: false,
   brakePressureKpa: 0,
   isEstop: false,
-  gear: 'P',
+  gear: 'N',
   shiftMode: 'smart',
 }
 
@@ -67,12 +68,14 @@ function gearFromCan(m: MessageState | undefined): Gear | null {
   const raw = m.signals?.gear
   if (!raw) return null
   const label = String(raw.enum_label ?? raw.engineering_value ?? '').toUpperCase()
-  if (label === 'P' || label === 'R' || label === 'D' || label === 'S') return label
+  if (label === 'N' || label === 'D' || label === 'S' || label === 'R') return label
+  // Legacy mistaken P maps to N
+  if (label === 'P') return 'N'
   const n = Number(raw.engineering_value)
-  if (n === 0) return 'P'
-  if (n === 1) return 'R'
-  if (n === 2) return 'D'
-  if (n === 3) return 'S'
+  if (n === 0) return 'N'
+  if (n === 1) return 'D'
+  if (n === 2) return 'S'
+  if (n === 3) return 'R'
   return null
 }
 
@@ -102,7 +105,7 @@ export function VehiclePreview() {
 
   const [driveSource, setDriveSource] = useState<DriveSource>('keyboard')
   const [shiftMode, setShiftMode] = useState<ShiftMode>('smart')
-  const [gear, setGear] = useState<Gear>('P')
+  const [gear, setGear] = useState<Gear>('N')
   const [maxSpeedMmps, setMaxSpeedMmps] = useState(3000)
   const [maxYawMrad, setMaxYawMrad] = useState(3000)
   const [hud, setHud] = useState<Hud>({
@@ -218,7 +221,7 @@ export function VehiclePreview() {
 
       if (state.shiftMode === 'smart') {
         if (keys.Space) {
-          if (state.gear !== 'P') applyGear('P')
+          if (state.gear !== 'N') applyGear('N')
         } else if (state.v === 0) {
           if (pressingUp && state.gear !== 'D' && state.gear !== 'S') applyGear('D')
           if (pressingDown && state.gear !== 'R') applyGear('R')
@@ -231,7 +234,7 @@ export function VehiclePreview() {
         state.isBraking =
           !!keys.Space || (state.v > 0 && pressingDown) || (state.v < 0 && pressingUp)
 
-        if (state.gear === 'P') {
+        if (state.gear === 'N') {
           state.v *= FRICTION
           if (Math.abs(state.v) < 1) state.v = 0
         } else if (state.gear === 'R') {
@@ -257,9 +260,9 @@ export function VehiclePreview() {
           }
         }
       } else {
-        if (keys.Space && state.gear !== 'P') applyGear('P')
+        if (keys.Space && state.gear !== 'N') applyGear('N')
         state.isBraking = !!keys.Space || pressingDown
-        if (state.gear === 'P') {
+        if (state.gear === 'N') {
           state.v *= FRICTION
           if (Math.abs(state.v) < 1) state.v = 0
         } else if (state.gear === 'R') {
@@ -671,7 +674,7 @@ export function VehiclePreview() {
           </div>
 
           <h2 className="mt-section">
-            HOST_Gear <span className="muted mono small">[0x300]</span>
+            HOST_Gear <span className="muted mono small">[0x300] N/D/S/R</span>
           </h2>
           <div className="gear-row" data-testid="preview-gears">
             {GEARS.map((g) => (
@@ -773,10 +776,10 @@ export function VehiclePreview() {
               <kbd>A</kbd>/<kbd>D</kbd> or arrows · steer
             </li>
             <li>
-              <kbd>Space</kbd> E-stop (auto P)
+              <kbd>Space</kbd> E-stop (auto N)
             </li>
             <li>
-              <kbd>Q</kbd>/<kbd>E</kbd> gear override
+              <kbd>Q</kbd>/<kbd>E</kbd> gear N→D→S→R
             </li>
           </ul>
 

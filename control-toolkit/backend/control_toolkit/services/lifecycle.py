@@ -10,6 +10,7 @@ from control_toolkit.config import Profile, ToolkitConfig
 from control_toolkit.pipeline.freshness import FreshnessAger
 from control_toolkit.pipeline.router import Router
 from control_toolkit import protocol_bridge as proto
+from control_toolkit.services.control_intent import ControlIntentService
 from control_toolkit.services.diagnostics import DiagnosticsService
 from control_toolkit.services.event_bus import EventBus
 from control_toolkit.services.ownership import OwnershipTable
@@ -48,6 +49,11 @@ class Lifecycle:
         )
         self.scheduler = Scheduler(self.tx_gate)
         self.synthetic = SyntheticPeerService(self.scheduler)
+        self.control = ControlIntentService(
+            tx_gate=self.tx_gate,
+            scheduler=self.scheduler,
+            require_bench_tx=lambda: self.sessions.require_bench_tx_enabled(),
+        )
         self.sessions = SessionManager(
             ownership=self.ownership,
             get_transport_open=lambda: self.transport is not None,
@@ -60,6 +66,7 @@ class Lifecycle:
 
     def _on_stop_all(self) -> None:
         self.synthetic.stop_all()
+        self.control.release(reason="stop_all")
         self.diagnostics.emit(
             code="session.stop_all",
             title="Stop All",
@@ -105,8 +112,18 @@ class Lifecycle:
             detail=f"profile={self.config.default_profile.value} wire={proto.WIRE_HASH[:12]}",
             severity="info",
         )
+        self._tasks.append(asyncio.create_task(self._control_watchdog_loop()))
         self._tasks.append(asyncio.create_task(self._broadcast_loop()))
         self._ready = True
+
+    async def _control_watchdog_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(0.05)
+                if self._ready:
+                    self.control.tick_watchdog()
+        except asyncio.CancelledError:
+            return
 
     async def _topology_loop(self) -> None:
         try:

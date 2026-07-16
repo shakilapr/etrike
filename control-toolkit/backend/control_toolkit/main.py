@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from control_toolkit import __version__
 from control_toolkit.api import (
     analysis,
+    control,
     events,
     hmi,
     injections,
@@ -58,6 +59,7 @@ def create_app(config: ToolkitConfig | None = None) -> FastAPI:
     app.include_router(synthetic.router, prefix=prefix)
     app.include_router(hmi.router, prefix=prefix)
     app.include_router(analysis.router, prefix=prefix)
+    app.include_router(control.router, prefix=prefix)
     app.include_router(recordings.router, prefix=prefix)
     app.include_router(events.router, prefix=prefix)
     app.include_router(stream.router, prefix=prefix)
