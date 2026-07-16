@@ -213,17 +213,20 @@ const TABS: Array<{
             })
           }
         }
-        // Expand row: meaning / why / type / examples — not packing waffle
-        const sigRow = page.locator('[data-testid^="dict-sig-row-"]').first()
-        if (await sigRow.count()) {
-          await sigRow.click()
-          const exp = page.locator('[data-testid^="dict-sig-expand-"]').first()
+        // Expand HOST_DRIVE speed_mmps: vertical doc (what/why/type/examples)
+        const speedRow = page.getByTestId('dict-sig-row-speed_mmps').first()
+        if (await speedRow.count()) {
+          await page.getByTestId('dict-sig-toggle-speed_mmps').first().click()
+          const exp = page.getByTestId('dict-sig-expand-speed_mmps').first()
           await expect(exp).toBeVisible({ timeout: 5_000 })
-          await expect(exp.getByTestId('dict-expand-what')).toBeVisible()
+          await expect(exp.getByTestId('dict-expand-what')).toContainText(/speed|kinematics|mm\/s/i)
           await expect(exp.getByTestId('dict-expand-why')).toBeVisible()
-          await expect(exp.getByTestId('dict-expand-type')).toBeVisible()
+          await expect(exp.getByTestId('dict-expand-type')).toContainText(/integer|signed/i)
           await expect(exp.getByTestId('dict-expand-examples')).toBeVisible()
-          await expect(exp).not.toContainText(/Multi-bit field|same-color cells|Bits pack contiguously/i)
+          await expect(exp).not.toContainText(/Multi-bit field|Bits pack contiguously|raw = engineering/i)
+          // Doc is vertical stack, not multi-col hover grid
+          await expect(exp.locator('.dict-sig-doc')).toBeVisible()
+          await expect(exp.locator('.bit-inspector-kv')).toHaveCount(0)
         }
       }
 
