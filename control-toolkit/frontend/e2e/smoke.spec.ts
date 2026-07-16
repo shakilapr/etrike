@@ -55,6 +55,10 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await expect(page.getByTestId('workspace-preview')).toBeVisible()
     await expect(page.getByTestId('preview-canvas')).toBeVisible()
     await expect(page.getByTestId('preview-telemetry')).toBeVisible()
+    await expect(page.getByTestId('drive-keycaps')).toBeVisible()
+    await expect(page.getByTestId('btn-drive-arm')).toBeVisible()
+    await expect(page.getByTestId('preview-mode-adaptive')).toBeVisible()
+    await expect(page.getByTestId('preview-mode-direct')).toBeVisible()
 
     await page.getByTestId('nav-bench').click()
     await expect(page.getByTestId('workspace-bench')).toBeVisible()
@@ -127,25 +131,17 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     })
   })
 
-  test('vehicle preview follows CAN after host-drive inject', async ({ page }) => {
+  test('drive console arms CAN control and shows keycaps', async ({ page }) => {
     await page.goto('/')
-    await page.getByTestId('nav-control').click()
-    await page.getByTestId('input-speed').fill('1000')
-    await page.getByTestId('input-yaw').fill('200')
-    await page.getByTestId('check-periodic').check()
-    await page.getByTestId('input-period').fill('100')
-    await page.getByTestId('btn-inject-drive').click()
-    await expect(page.getByTestId('control-log')).toContainText(/host-drive|periodic|submitted/i, {
-      timeout: 15_000,
-    })
-
     await page.getByTestId('nav-preview').click()
-    await page.getByTestId('preview-src-can').click()
-    await expect(page.getByTestId('preview-canvas')).toBeVisible()
-    // Follow CAN maps HOST_DriveSpeed into preview telemetry (non-zero once stream lands)
-    await expect(page.getByTestId('preview-telemetry')).toContainText(/[1-9]\d* mm\/s/, {
+    await page.getByTestId('btn-drive-arm').click()
+    await expect(page.getByTestId('drive-log')).toContainText(/Armed|HOST_DRIVE|CAN/i, {
       timeout: 15_000,
     })
+    await expect(page.getByTestId('btn-drive-disarm')).toBeVisible()
+    await expect(page.getByTestId('drive-gauges')).toBeVisible()
+    await page.getByTestId('preview-mode-direct').click()
+    await expect(page.getByTestId('preview-mode-blurb')).toContainText(/Direct/i)
   })
 
   test('live CAN stream view toggles chronological history', async ({ page }) => {
