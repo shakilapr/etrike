@@ -79,6 +79,8 @@ const TABS: Array<{
       await expect(page.getByTestId('high-analysis-inject')).toBeVisible()
       await expect(page.getByTestId('input-yaw')).toBeVisible()
       await expect(page.getByTestId('btn-inject-drive')).toBeVisible()
+      await expect(page.getByTestId('control-session-panel')).toBeVisible()
+      await expect(page.getByTestId('control-bench-tx')).toBeVisible()
       await expect(page.getByTestId('btn-enable-tx')).toBeVisible()
       await expect(page.getByTestId('btn-stop-all')).toBeVisible()
 
@@ -94,13 +96,15 @@ const TABS: Array<{
       await expect(page.getByTestId('hmi-panel')).toBeVisible()
       await expect(page.getByTestId('btn-mode-manual')).toBeVisible()
       await expect(page.getByTestId('btn-power-on')).toBeVisible()
+      await expect(page.getByTestId('hmi-requested-confirmed')).toBeVisible()
 
       // Back to high + enable TX
       await page.getByTestId('control-method-high').click()
       await page.getByTestId('btn-enable-tx').click()
-      await expect(page.getByTestId('control-log')).toContainText(/Bench TX|enabled|Method/i, {
+      await expect(page.getByTestId('control-log')).toContainText(/Bench TX|enabled|Method|gate/i, {
         timeout: 12_000,
       })
+      await expect(page.getByTestId('control-bench-tx')).toContainText(/ON|enabled/i)
 
       await page.getByTestId('input-speed').fill('111')
       await page.getByTestId('input-yaw').fill('22')

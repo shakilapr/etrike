@@ -2119,21 +2119,102 @@ function Control() {
 
   const activeMethod = String(ctrlStatus?.method ?? 'none')
   const activeLabel = String(ctrlStatus?.method_label ?? 'No active motion method')
+  const benchOn = String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled'
+  const sessionId = status?.session?.session_id
+  const gearLabels: Record<number, string> = { 0: 'N', 1: 'D', 2: 'S', 3: 'R' }
 
   return (
     <div className="workspace" data-testid="workspace-control">
       <header className="ws-header">
         <h1>Control</h1>
         <p className="muted">
-          Two exclusive motion methods: <strong>High bus</strong> Host kinematics vs{' '}
-          <strong>Low bus</strong> direct actuators. They use different messages and must not
-          run together. HMI mode/power is separate (not motion).
+          Pick <strong>one</strong> path below. High and Low motion are exclusive (backend
+          cancels the other). HMI is mode/power only — not drive.
         </p>
       </header>
 
+      {/* ── Session gate ─────────────────────────────────────────── */}
+      <section className="panel control-session-panel" data-testid="control-session-panel">
+        <div className="control-status-row" data-testid="control-status-row">
+          <div className="control-status-item">
+            <span className="muted small">Session</span>
+            <strong className="mono" data-testid="control-session-id">
+              {sessionId ?? 'none'}
+            </strong>
+          </div>
+          <div className="control-status-item">
+            <span className="muted small">Bench TX (TX gate)</span>
+            <strong
+              className={benchOn ? 'ok-text' : 'danger-text'}
+              data-testid="control-bench-tx"
+            >
+              {benchOn ? 'ON — bus TX allowed' : 'OFF — inject/control blocked'}
+            </strong>
+          </div>
+          <div className="control-status-item">
+            <span className="muted small">Backend motion</span>
+            <strong className="mono" data-testid="control-active-method">
+              {activeMethod}
+            </strong>
+            <span className="muted small">{activeLabel}</span>
+          </div>
+        </div>
+        {!benchOn && (
+          <p className="control-callout" data-testid="control-bench-hint">
+            Turn <strong>Bench TX ON</strong> before keyboard, inject, or low-bus streams.
+            This is a safety gate, not a motion command.
+          </p>
+        )}
+        <div className="actions tight">
+          {benchOn ? (
+            <>
+              <button
+                type="button"
+                className="secondary"
+                data-testid="btn-disable-tx"
+                disabled={busy}
+                onClick={() => void disableTx()}
+              >
+                Turn Bench TX off
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                data-testid="btn-enable-tx"
+                disabled={busy}
+                title="Session already enabled — re-assert gate"
+                onClick={() => void enableTx()}
+              >
+                Keep Bench TX on
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              data-testid="btn-enable-tx"
+              disabled={busy}
+              onClick={() => void enableTx()}
+            >
+              Turn Bench TX on
+            </button>
+          )}
+          <button
+            type="button"
+            className="danger"
+            data-testid="btn-stop-all"
+            disabled={busy}
+            title="Stop inject jobs, keyboard intent, and direct streams"
+            onClick={() => void stopAll()}
+          >
+            Stop all motion TX
+          </button>
+        </div>
+      </section>
+
+      {/* ── Method picker ────────────────────────────────────────── */}
       <section className="panel control-method-panel" data-testid="control-method-picker">
-        <h2>Control method</h2>
-        <div className="seg" role="tablist" aria-label="Control method">
+        <h2>What do you want to control?</h2>
+        <div className="seg control-method-seg" role="tablist" aria-label="Control method">
           <button
             type="button"
             role="tab"
@@ -2143,7 +2224,7 @@ function Control() {
             disabled={busy}
             onClick={() => void selectMethod('high')}
           >
-            High bus · Host
+            High bus · Host drive
           </button>
           <button
             type="button"
@@ -2154,7 +2235,7 @@ function Control() {
             disabled={busy}
             onClick={() => void selectMethod('low')}
           >
-            Low bus · Direct
+            Low bus · Actuators
           </button>
           <button
             type="button"
@@ -2165,108 +2246,50 @@ function Control() {
             disabled={busy}
             onClick={() => void selectMethod('hmi')}
           >
-            HMI (mode/power)
+            HMI · Mode / power
           </button>
         </div>
         <div className="method-compare" data-testid="method-compare">
-          <div className={method === 'high' ? 'method-card active' : 'method-card'}>
-            <strong>High-level</strong>
-            <span className="chip tiny">High bus</span>
-            <ul className="muted small">
-              <li>Message: HOST_DRIVE_CMD 0x300 @ 10 ms</li>
-              <li>You send Host intent (speed / yaw / gear)</li>
-              <li>RT runs kinematics and safety</li>
-              <li>Drive console + keyboard use this path</li>
-            </ul>
-          </div>
-          <div className={method === 'low' ? 'method-card active' : 'method-card'}>
-            <strong>Low-level</strong>
-            <span className="chip tiny">Low bus</span>
-            <ul className="muted small">
-              <li>Motor 0x204 · Steer 0x169 · Brake 0x7B9</li>
-              <li>Bypasses Host / RT kinematics stack</li>
-              <li>Isolated unit test of each actuator</li>
-              <li>Exclusive with high-bus motion</li>
-            </ul>
-          </div>
-        </div>
-        <dl className="kv compact">
-          <dt>Backend active method</dt>
-          <dd data-testid="control-active-method">
-            <span className="mono">{activeMethod}</span>
-            <span className="muted small"> · {activeLabel}</span>
-          </dd>
-          <dt>Bench TX</dt>
-          <dd data-testid="control-bench-tx">
-            <span
-              className={
-                String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled'
-                  ? 'ok-text'
-                  : 'muted'
-              }
-            >
-              {status?.session?.bench_tx ?? 'disabled'}
-            </span>
-            <span className="muted small">
-              {' '}
-              · gate for inject / keyboard / direct TX
-            </span>
-          </dd>
-        </dl>
-        <div className="actions tight">
-          {String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled' ? (
-            <button
-              type="button"
-              className="secondary"
-              data-testid="btn-disable-tx"
-              disabled={busy}
-              onClick={() => void disableTx()}
-            >
-              Disable Bench TX
-            </button>
-          ) : (
-            <button
-              type="button"
-              data-testid="btn-enable-tx"
-              disabled={busy}
-              onClick={() => void enableTx()}
-            >
-              Enable Bench TX
-            </button>
+          {method === 'high' && (
+            <div className="method-card active" data-testid="method-blurb-high">
+              <strong>High bus · Host kinematics</strong>
+              <p className="muted small" style={{ margin: '6px 0 0' }}>
+                You send <span className="mono">HOST_DRIVE_CMD 0x300</span> (speed / yaw /
+                gear). RT runs kinematics. Use keyboard here or the Drive tab. Does{' '}
+                <strong>not</strong> talk to motor/steer/brake IDs on Low.
+              </p>
+            </div>
           )}
-          {/* Keep enable test id present for e2e when already on (hidden control for restart) */}
-          {String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled' ? (
-            <button
-              type="button"
-              className="secondary"
-              data-testid="btn-enable-tx"
-              disabled={busy}
-              title="Re-assert Bench TX (session already enabled)"
-              onClick={() => void enableTx()}
-            >
-              Re-arm Bench TX
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="danger"
-            data-testid="btn-stop-all"
-            disabled={busy}
-            onClick={() => void stopAll()}
-          >
-            Stop All
-          </button>
+          {method === 'low' && (
+            <div className="method-card active" data-testid="method-blurb-low">
+              <strong>Low bus · Direct actuators</strong>
+              <p className="muted small" style={{ margin: '6px 0 0' }}>
+                Streams motor <span className="mono">0x204</span>, steer{' '}
+                <span className="mono">0x169</span>, brake <span className="mono">0x7B9</span>{' '}
+                for unit tests. Starting any channel stops high-bus Host drive jobs.
+              </p>
+            </div>
+          )}
+          {method === 'hmi' && (
+            <div className="method-card active" data-testid="method-blurb-hmi">
+              <strong>HMI · Mode / power only</strong>
+              <p className="muted small" style={{ margin: '6px 0 0' }}>
+                Sends HMI request frames (and vehicle-view labels). Not a drive method —
+                no throttle/yaw. Requested vs confirmed stay separate until ECU feedback.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
       {method === 'high' && (
         <>
           <section className="panel" data-testid="keyboard-control">
-            <h2>High bus · Keyboard Host intent</h2>
+            <h2>1 · Keyboard teleop</h2>
             <p className="muted small">
-              Shapes to HOST_DRIVE_CMD on <strong>High</strong> only. Backend 10 ms TX · gear
-              N/D/S/R · 500 ms stale stop · blur releases. Does not write Low-bus SES/SEB/motor
-              commands.
+              Continuous Host intent via <span className="mono">POST /control/intent</span>{' '}
+              (shaped on backend). Needs Bench TX on. Focus the page; blur / hide tab
+              releases control.
             </p>
             <div className="actions">
               <button
@@ -2278,14 +2301,18 @@ function Control() {
                   if (kbEnabled) {
                     setKbEnabled(false)
                     void api.controlRelease('disable').catch(() => undefined)
+                    setLog('Keyboard control off')
                   } else {
                     void ensureSessionReady()
-                      .then(() => setKbEnabled(true))
+                      .then(() => {
+                        setKbEnabled(true)
+                        setLog('Keyboard control on — WASD / arrows')
+                      })
                       .catch((e) => setLog(String(e)))
                   }
                 }}
               >
-                {kbEnabled ? 'Disable keyboard' : 'Enable keyboard control'}
+                {kbEnabled ? 'Stop keyboard' : 'Start keyboard'}
               </button>
               <button
                 type="button"
@@ -2293,7 +2320,7 @@ function Control() {
                 data-testid="btn-open-drive-from-control"
                 onClick={() => setWorkspace('preview')}
               >
-                Open Drive console
+                Open Drive tab
               </button>
             </div>
             <ul className="controls-legend muted small">
@@ -2305,31 +2332,34 @@ function Control() {
                 ESTOP
               </li>
             </ul>
+            {kbEnabled && (
+              <p className="ok-text small" data-testid="kb-active-banner">
+                Keyboard armed — keys stream Host intent on High bus.
+              </p>
+            )}
             {kbSnap && (
-              <dl className="kv">
-                <dt>Method</dt>
-                <dd className="mono">{String(kbSnap.method ?? 'high_kinematics')}</dd>
-                <dt>Active</dt>
-                <dd>{kbSnap.active ? 'yes' : 'no'}</dd>
-                <dt>Speed, mm/s</dt>
-                <dd className="mono">{String(kbSnap.shaped_speed_mmps)}</dd>
-                <dt>Yaw, mrad/s</dt>
-                <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s)}</dd>
+              <dl className="kv compact" data-testid="kb-shaped">
+                <dt>Shaped speed</dt>
+                <dd className="mono">{String(kbSnap.shaped_speed_mmps)} mm/s</dd>
+                <dt>Shaped yaw</dt>
+                <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s)} mrad/s</dd>
                 <dt>Gear</dt>
                 <dd className="mono">
                   {String(kbSnap.gear_label)} ({String(kbSnap.gear)})
                 </dd>
-                <dt>Loss</dt>
-                <dd>{String(kbSnap.loss_reason ?? '—')}</dd>
+                <dt>Active</dt>
+                <dd>{kbSnap.active ? 'yes' : 'no'}</dd>
               </dl>
             )}
           </section>
 
           <section className="panel" data-testid="high-analysis-inject">
-            <h2>High bus · Analysis inject (HOST_DRIVE_CMD)</h2>
+            <h2>2 · Numeric inject (analysis)</h2>
             <p className="muted small">
-              Numeric Host intent for yaw/speed study on High bus — not Low-bus actuators, not a
-              full synthetic vehicle.
+              One-shot or periodic <span className="mono">HOST_DRIVE_CMD</span> via{' '}
+              <span className="mono">POST /analysis/host-drive</span>. For fixed
+              speed/yaw experiments — not the same as keyboard (keyboard uses
+              /control/intent).
             </p>
             <div className="form-grid">
               <label>
@@ -2342,7 +2372,7 @@ function Control() {
                   max={3000}
                   onChange={(e) => setSpeed(Number(e.target.value))}
                 />
-                <span className="field-hint">Allowed range: −500 to 3000</span>
+                <span className="field-hint">−500 … 3000</span>
               </label>
               <label>
                 Yaw rate, mrad/s
@@ -2354,19 +2384,21 @@ function Control() {
                   max={3000}
                   onChange={(e) => setYaw(Number(e.target.value))}
                 />
-                <span className="field-hint">Allowed range: −3000 to 3000</span>
+                <span className="field-hint">−3000 … 3000</span>
               </label>
               <label>
                 Gear
-                <input
+                <select
                   data-testid="input-gear"
-                  type="number"
-                  min={0}
-                  max={3}
                   value={gear}
                   onChange={(e) => setGear(Number(e.target.value))}
-                />
-                <span className="field-hint">0=N 1=D 2=S 3=R (host.yaml / MTR)</span>
+                >
+                  {([0, 1, 2, 3] as const).map((g) => (
+                    <option key={g} value={g}>
+                      {g} = {gearLabels[g]}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Period, ms
@@ -2374,9 +2406,11 @@ function Control() {
                   data-testid="input-period"
                   type="number"
                   value={periodMs}
+                  min={10}
                   disabled={!periodic}
                   onChange={(e) => setPeriodMs(Number(e.target.value))}
                 />
+                <span className="field-hint">Only used if periodic is checked</span>
               </label>
               <label className="check">
                 <input
@@ -2385,7 +2419,7 @@ function Control() {
                   checked={periodic}
                   onChange={(e) => setPeriodic(e.target.checked)}
                 />
-                Periodic (re-encode each period)
+                Periodic stream (else one-shot frame)
               </label>
             </div>
             <div className="actions">
@@ -2395,7 +2429,7 @@ function Control() {
                 disabled={busy}
                 onClick={() => void injectHostDrive()}
               >
-                Inject host drive (High)
+                {periodic ? 'Start periodic inject' : 'Send one-shot inject'}
               </button>
             </div>
           </section>
@@ -2406,9 +2440,8 @@ function Control() {
         <section className="panel" data-testid="direct-actuators">
           <h2>Low bus · Direct actuators</h2>
           <p className="muted small">
-            Completely separate from Host kinematics. Each card streams its own Low-bus
-            message with automatic counter/checksum. Starting any channel cancels high-bus
-            HOST_DRIVE_CMD jobs.
+            Unit-test path. Each Start enables a continuous Low-bus job (needs Bench TX).
+            Starting any channel preempts high Host kinematics.
           </p>
           <DirectActuatorCards
             busy={busy}
@@ -2422,54 +2455,71 @@ function Control() {
 
       {method === 'hmi' && (
         <section className="panel" data-testid="hmi-panel">
-          <h2>HMI requests (not a motion method)</h2>
+          <h2>HMI · Mode and power requests</h2>
           <p className="muted small">
-            Mode/power requests on HMI frames. Independent of high Host intent and low
-            direct actuators. Requested vs confirmed stay separate until ECU feedback.
+            Wire: MANUAL/AUTO mode and ON/OFF power. PURE_SIM is UI-only (no HMI_MODE_REQ
+            enum yet). Needs Bench TX for bus TX.
           </p>
-          <div className="actions">
-            {(['MANUAL', 'AUTO', 'PURE_SIM'] as const).map((m) => (
+          <div className="hmi-request-block">
+            <span className="field-label">Mode request</span>
+            <div className="actions tight">
+              {(['MANUAL', 'AUTO', 'PURE_SIM'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  data-testid={`btn-mode-${m.toLowerCase()}`}
+                  disabled={busy}
+                  className={
+                    status?.session?.requested_mode === m ? '' : 'secondary'
+                  }
+                  onClick={() => void setMode(m)}
+                >
+                  {m === 'PURE_SIM' ? 'PURE_SIM (UI only)' : m}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="hmi-request-block">
+            <span className="field-label">Power request</span>
+            <div className="actions tight">
               <button
-                key={m}
                 type="button"
-                data-testid={`btn-mode-${m.toLowerCase()}`}
+                data-testid="btn-power-on"
                 disabled={busy}
-                className="secondary"
-                onClick={() => void setMode(m)}
+                className={status?.session?.requested_power === 'ON' ? '' : 'secondary'}
+                onClick={() => void setPower('ON')}
               >
-                Request {m.replace('_', ' ')}
+                ON
               </button>
-            ))}
-            <button
-              type="button"
-              data-testid="btn-power-on"
-              disabled={busy}
-              className="secondary"
-              onClick={() => void setPower('ON')}
-            >
-              Request power ON
-            </button>
-            <button
-              type="button"
-              data-testid="btn-power-off"
-              disabled={busy}
-              className="secondary"
-              onClick={() => void setPower('OFF')}
-            >
-              Request power OFF
-            </button>
+              <button
+                type="button"
+                data-testid="btn-power-off"
+                disabled={busy}
+                className={status?.session?.requested_power === 'OFF' ? '' : 'secondary'}
+                onClick={() => void setPower('OFF')}
+              >
+                OFF
+              </button>
+            </div>
           </div>
-          <div className="muted small">
-            Current: mode req {status?.session?.requested_mode ?? '—'} / conf{' '}
-            {status?.session?.confirmed_mode ?? '—'} · power req{' '}
-            {status?.session?.requested_power ?? '—'} / conf{' '}
-            {status?.session?.confirmed_power ?? '—'}
-          </div>
+          <dl className="kv compact" data-testid="hmi-requested-confirmed">
+            <dt>Mode requested / confirmed</dt>
+            <dd className="mono">
+              {status?.session?.requested_mode ?? '—'} /{' '}
+              {status?.session?.confirmed_mode ?? '—'}
+            </dd>
+            <dt>Power requested / confirmed</dt>
+            <dd className="mono">
+              {status?.session?.requested_power ?? '—'} /{' '}
+              {status?.session?.confirmed_power ?? '—'}
+            </dd>
+          </dl>
         </section>
       )}
 
       <pre className="log" data-testid="control-log">
-        {log || 'Ready. Pick High bus (Host) or Low bus (direct).'}
+        {log ||
+          '1) Turn Bench TX on  ·  2) Pick High / Low / HMI  ·  3) Start keyboard, inject, or streams'}
       </pre>
     </div>
   )

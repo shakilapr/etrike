@@ -135,7 +135,7 @@ test.describe('Full system — tabs, buttons, CAN side-effects', () => {
     })
     await page.getByTestId('input-speed').fill('750')
     await page.getByTestId('input-yaw').fill('180')
-    await page.getByTestId('input-gear').fill('1')
+    await page.getByTestId('input-gear').selectOption('1')
     await page.getByTestId('check-periodic').uncheck()
     await page.getByTestId('btn-inject-drive').click()
     await expect(page.getByTestId('control-log')).toContainText(
