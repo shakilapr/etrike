@@ -17,7 +17,7 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from control_toolkit import protocol_bridge as proto
 from control_toolkit.models.frames import RawFrameEnvelope
@@ -48,11 +48,13 @@ class Router:
         *,
         history: FrameHistory | None = None,
         topology: TopologyTracker | None = None,
+        on_frame: Callable[[RawFrameEnvelope], Any] | None = None,
     ) -> None:
         self._transport = transport
         self._latest = latest
         self._history = history
         self._topology = topology
+        self._on_frame = on_frame
         self._seq = 0
         self._running = False
         self._processed = 0
@@ -73,6 +75,11 @@ class Router:
 
         if self._history is not None:
             self._history.append(env)
+        if self._on_frame is not None:
+            try:
+                self._on_frame(env)
+            except Exception:
+                pass
 
         result = decode_envelope(env)
 

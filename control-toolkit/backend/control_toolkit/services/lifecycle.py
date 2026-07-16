@@ -9,8 +9,11 @@ import time
 from control_toolkit.config import Profile, ToolkitConfig
 from control_toolkit.pipeline.freshness import FreshnessAger
 from control_toolkit.pipeline.router import Router
+from control_toolkit import protocol_bridge as proto
+from control_toolkit.services.diagnostics import DiagnosticsService
 from control_toolkit.services.event_bus import EventBus
 from control_toolkit.services.ownership import OwnershipTable
+from control_toolkit.services.recording import RecordingService
 from control_toolkit.services.scheduler import Scheduler
 from control_toolkit.services.session_manager import SessionManager
 from control_toolkit.services.synthetic_peers import SyntheticPeerService
@@ -29,6 +32,8 @@ class Lifecycle:
         self.topology = TopologyTracker()
         self.events = EventBus()
         self.ownership = OwnershipTable()
+        self.recording = RecordingService()
+        self.diagnostics = DiagnosticsService()
         self.transport: VirtualTransportAdapter | None = None
         self.router: Router | None = None
         self.ager: FreshnessAger | None = None
@@ -47,11 +52,32 @@ class Lifecycle:
             ownership=self.ownership,
             get_transport_open=lambda: self.transport is not None,
             get_adapter_epoch=lambda: self.transport.epoch if self.transport else None,
-            on_stop_all=lambda: self.synthetic.stop_all(),
+            on_stop_all=self._on_stop_all,
         )
         self.sessions.bind_scheduler(self.scheduler)
         self._tasks: list[asyncio.Task] = []
         self._ready = False
+
+    def _on_stop_all(self) -> None:
+        self.synthetic.stop_all()
+        self.diagnostics.emit(
+            code="session.stop_all",
+            title="Stop All",
+            detail="Bench TX disabled; jobs and leases cleared",
+            severity="warning",
+        )
+
+    def _record_frame(self, env) -> None:
+        self.recording.observe_frame(
+            bus=env.channel.value,
+            can_id=env.can_id,
+            dlc=env.dlc,
+            data=env.data,
+            direction=env.direction.value,
+            source=env.source.value,
+            backend_arrival_ns=env.backend_arrival_ns,
+            adapter_epoch=env.adapter_epoch,
+        )
 
     async def startup(self) -> None:
         self.ager = FreshnessAger(self.latest)
@@ -68,10 +94,17 @@ class Lifecycle:
                 self.latest,
                 history=self.history,
                 topology=self.topology,
+                on_frame=self._record_frame,
             )
             self._tasks.append(asyncio.create_task(self.router.run()))
 
         self.scheduler.start()
+        self.diagnostics.emit(
+            code="backend.ready",
+            title="Backend ready",
+            detail=f"profile={self.config.default_profile.value} wire={proto.WIRE_HASH[:12]}",
+            severity="info",
+        )
         self._tasks.append(asyncio.create_task(self._broadcast_loop()))
         self._ready = True
 

@@ -858,7 +858,13 @@ function Control() {
     try {
       const st = await ensureSessionReady()
       await api.vehicleView(st.session.session_id!, { requested_mode: mode })
-      setLog(`Requested mode: ${mode} (confirmed remains independent)`)
+      // Protocol HMI_MODE_REQ is MANUAL=0 / AUTO=1 only; PURE_SIM is UI request label.
+      if (mode === 'MANUAL' || mode === 'AUTO') {
+        const res = await api.hmiMode(mode === 'AUTO' ? 1 : 0, true)
+        setLog(`HMI mode TX: ${JSON.stringify(res)} (confirmed remains independent)`)
+      } else {
+        setLog(`Requested mode: ${mode} (no wire HMI_MODE_REQ for PURE_SIM yet)`)
+      }
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -872,7 +878,8 @@ function Control() {
     try {
       const st = await ensureSessionReady()
       await api.vehicleView(st.session.session_id!, { requested_power: power })
-      setLog(`Requested power: ${power}`)
+      const res = await api.hmiPower(power === 'ON' ? 1 : 0, true)
+      setLog(`HMI power TX: ${JSON.stringify(res)}`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -1154,15 +1161,76 @@ function Dictionary() {
 
 function Diagnostics() {
   const status = useAppStore((s) => s.status)
+  const setStatus = useAppStore((s) => s.setStatus)
   const quality = useAppStore((s) => s.streamQuality)
+  const mismatch = useAppStore((s) => s.protocolMismatch)
+  const [events, setEvents] = useState<Array<Record<string, unknown>>>([])
+  const [episodes, setEpisodes] = useState<Array<Record<string, unknown>>>([])
+  const [activeRec, setActiveRec] = useState<Record<string, unknown> | null>(null)
+  const [recLog, setRecLog] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const refreshDiag = useCallback(async () => {
+    const [ev, ep, rec, st] = await Promise.all([
+      api.events(40),
+      api.episodes(),
+      api.recordings(),
+      api.status(),
+    ])
+    setEvents(ev.events || [])
+    setEpisodes(ep.episodes || [])
+    setActiveRec(rec.active)
+    setStatus(st)
+  }, [setStatus])
+
+  useEffect(() => {
+    void refreshDiag().catch(() => undefined)
+    const id = window.setInterval(() => void refreshDiag().catch(() => undefined), 2000)
+    return () => window.clearInterval(id)
+  }, [refreshDiag])
+
+  async function startRec() {
+    setBusy(true)
+    try {
+      const r = await api.startRecording()
+      setRecLog(`Started ${String(r.recording.recording_id)}`)
+      await refreshDiag()
+    } catch (e) {
+      setRecLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function stopRec() {
+    setBusy(true)
+    try {
+      const id = String(activeRec?.recording_id || '')
+      if (!id) {
+        setRecLog('No active recording')
+        return
+      }
+      const r = await api.stopRecording(id)
+      setRecLog(
+        `Stopped ${id} · frames ${String(r.recording.frame_count)} · quality ${String(r.recording.evidence_quality)}`,
+      )
+      await refreshDiag()
+    } catch (e) {
+      setRecLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="workspace" data-testid="workspace-diagnostics">
       <header className="ws-header">
         <h1>Diagnostics</h1>
         <p className="muted">
-          Faults, verification sequences, and recordings (full pipeline in later phases).
+          Event timeline, diagnostic episodes, and opt-in recording with evidence quality.
         </p>
       </header>
+
       <section className="panel">
         <h2>Session evidence snapshot</h2>
         <dl className="kv">
@@ -1173,14 +1241,113 @@ function Diagnostics() {
           <dt>Wire hash</dt>
           <dd className="mono">{status?.wire_hash ?? '—'}</dd>
           <dt>Recording</dt>
-          <dd>{status?.session?.recording ? 'on' : 'off'}</dd>
+          <dd>{status?.session?.recording || activeRec ? 'on' : 'off'}</dd>
           <dt>Mismatch</dt>
-          <dd>{useAppStore.getState().protocolMismatch ? 'yes' : 'no'}</dd>
+          <dd>{mismatch ? 'yes' : 'no'}</dd>
         </dl>
+      </section>
+
+      <section className="panel" data-testid="recording-panel">
+        <h2>Recording</h2>
         <p className="muted small">
-          Timeline, sequential verification, and evidence quality land in the diagnostics
-          phase. Stop All and lease state already feed session outcome.
+          Opt-in capture of RX/TX frames. Evidence quality is Complete unless frames are
+          dropped.
         </p>
+        <div className="actions">
+          <button
+            type="button"
+            data-testid="btn-rec-start"
+            disabled={busy || !!activeRec}
+            onClick={() => void startRec()}
+          >
+            Start recording
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-rec-stop"
+            disabled={busy || !activeRec}
+            onClick={() => void stopRec()}
+          >
+            Stop recording
+          </button>
+        </div>
+        {activeRec && (
+          <dl className="kv">
+            <dt>Active ID</dt>
+            <dd className="mono">{String(activeRec.recording_id)}</dd>
+            <dt>Frames</dt>
+            <dd className="mono">{String(activeRec.frame_count)}</dd>
+            <dt>Quality</dt>
+            <dd>{String(activeRec.evidence_quality)}</dd>
+          </dl>
+        )}
+        <pre className="log" data-testid="recording-log">
+          {recLog || 'Idle.'}
+        </pre>
+      </section>
+
+      <section className="panel" data-testid="episodes-panel">
+        <h2>Episodes</h2>
+        {episodes.length === 0 ? (
+          <p className="muted small">No active diagnostic episodes.</p>
+        ) : (
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Scope</th>
+                <th>Count</th>
+                <th>Severity</th>
+                <th>Recovered</th>
+              </tr>
+            </thead>
+            <tbody>
+              {episodes.map((e) => (
+                <tr key={String(e.episode_id)}>
+                  <td className="mono">{String(e.code)}</td>
+                  <td>{String(e.scope)}</td>
+                  <td className="num">{String(e.count)}</td>
+                  <td>{String(e.severity)}</td>
+                  <td>{e.recovered ? 'yes' : 'no'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="panel" data-testid="events-panel">
+        <h2>Event timeline</h2>
+        <table className="data-table compact" data-testid="events-table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Code</th>
+              <th>Title</th>
+              <th>Age, s</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((e) => (
+              <tr key={String(e.event_id)}>
+                <td>{String(e.severity)}</td>
+                <td className="mono">{String(e.code)}</td>
+                <td>{String(e.title)}</td>
+                <td className="num mono">
+                  {typeof e.age_s === 'number' ? e.age_s.toFixed(1) : '—'}
+                </td>
+              </tr>
+            ))}
+            {events.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  No events yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </section>
     </div>
   )
