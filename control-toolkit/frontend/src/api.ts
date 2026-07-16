@@ -6,10 +6,20 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   })
   if (!r.ok) {
-    const body = await r.json().catch(() => ({}))
+    const body = (await r.json().catch(() => ({}))) as {
+      detail?: string
+      title?: string
+    }
     throw new Error(body.detail || body.title || r.statusText)
   }
   return r.json() as Promise<T>
+}
+
+export type HostDriveBody = {
+  speed_mmps: number
+  yaw_rate_mrad_s: number
+  gear: number
+  period_ms?: number | null
 }
 
 export const api = {
@@ -37,14 +47,14 @@ export const api = {
         body: JSON.stringify({ expected_revision }),
       },
     ),
-  inject: (body: Record<string, unknown>) =>
-    json<Record<string, unknown>>('/injections', {
+  hostDrive: (body: HostDriveBody) =>
+    json<Record<string, unknown>>('/analysis/host-drive', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  startPeers: (names?: string[]) =>
-    json<Record<string, unknown>>('/synthetic-peers/start', {
+  stopAnalysis: () =>
+    json<{ ok: boolean; stopped: number }>('/analysis/stop', {
       method: 'POST',
-      body: JSON.stringify({ names: names ?? null }),
+      body: '{}',
     }),
 }
