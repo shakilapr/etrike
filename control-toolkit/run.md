@@ -233,3 +233,9 @@ npx playwright test e2e/smoke.spec.ts --reporter=list
 | API docs | http://127.0.0.1:8001/docs |
 | API stream | ws://127.0.0.1:8001/api/v1/stream |
 | Proxied API (via Vite) | http://127.0.0.1:5173/api/v1/status |
+
+## API reference
+
+Endpoint dictionary (methods, bodies, gates, UI mapping):
+
+- **[docs/api-dictionary.md](docs/api-dictionary.md)**
