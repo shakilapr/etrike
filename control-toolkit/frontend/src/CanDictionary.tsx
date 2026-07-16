@@ -12,19 +12,20 @@ import {
 } from 'react'
 import { api } from './api'
 
+/** High-contrast palette — consecutive signals stay visually distinct (no pale blues). */
 const FIELD_COLORS = [
-  '#4ea1ff',
-  '#e0556a',
-  '#4caf82',
-  '#e6b34a',
-  '#b06bff',
-  '#3dd6c8',
-  '#ee5e5e',
-  '#7bc96f',
-  '#8f7cff',
-  '#2fb6a7',
-  '#e09f3e',
-  '#6f91ff',
+  '#1f6feb', // blue
+  '#cf222e', // red
+  '#1a7f37', // green
+  '#9a6700', // amber
+  '#8250df', // purple
+  '#bf3989', // magenta
+  '#0969da', // sky
+  '#bc4c00', // orange
+  '#116329', // forest
+  '#a40e26', // crimson
+  '#6639ba', // violet
+  '#0550ae', // navy
 ]
 
 export type DictField = {
@@ -86,6 +87,14 @@ function dash(value: string | number | null | undefined): string {
   return String(value)
 }
 
+function signalGlyph(label: string): string {
+  const t = label.trim()
+  if (!t) return '·'
+  // Prefer leading letter/digit; fall back to first char
+  const m = t.match(/[A-Za-z0-9]/)
+  return (m?.[0] ?? t[0]).toUpperCase()
+}
+
 function BitGrid({
   message,
   activeSignal,
@@ -108,8 +117,19 @@ function BitGrid({
     return map
   }, [message.fields, dlc])
 
+  /** Linear bit index of the first bit of each signal (for in-cell glyph). */
+  const fieldStartBit = useMemo(() => {
+    const starts = new Map<number, number>()
+    message.fields.forEach((signal, index) => {
+      starts.set(index, signal._byte * 8 + signal._bit_offset)
+    })
+    return starts
+  }, [message.fields])
+
   const mappedBits = bitMap.filter((i) => i >= 0).length
+  const unusedBits = dlc * 8 - mappedBits
   const wide = dlc >= 7
+  const dimOthers = activeSignal >= 0
 
   if (dlc === 0) {
     return (
@@ -118,25 +138,79 @@ function BitGrid({
   }
 
   const active = activeSignal >= 0 ? message.fields[activeSignal] : null
+  const activeColor = activeSignal >= 0 ? colorFor(activeSignal) : undefined
 
   return (
-    <div className="dict-bitgrid" data-testid="dict-bit-grid">
+    <div
+      className={`dict-bitgrid${dimOthers ? ' has-focus' : ''}`}
+      data-testid="dict-bit-grid"
+    >
       <div className="bit-grid-head">
         <span>Byte layout</span>
         <em>
           {mappedBits}/{dlc * 8} bits mapped
+          {unusedBits > 0 ? ` · ${unusedBits} unused` : ''}
         </em>
       </div>
+
+      {message.fields.length > 0 || unusedBits > 0 ? (
+        <div className="bit-legend" data-testid="dict-bit-legend" aria-label="Signal color key">
+          {message.fields.map((signal, index) => (
+            <button
+              key={signal.key}
+              type="button"
+              className={`bit-legend-item${activeSignal === index ? ' active' : ''}`}
+              style={
+                {
+                  ['--bit-color' as string]: colorFor(index),
+                } as CSSProperties
+              }
+              title={`${signal.label} · B${signal._byte}.${signal._bit_offset} · ${signal._size}-bit`}
+              onMouseEnter={() => setActiveSignal(index)}
+              onMouseLeave={() => setActiveSignal(-1)}
+              onFocus={() => setActiveSignal(index)}
+              onBlur={() => setActiveSignal(-1)}
+            >
+              <span className="bit-legend-swatch" aria-hidden />
+              <span className="bit-legend-glyph" aria-hidden>
+                {signalGlyph(signal.label)}
+              </span>
+              <span className="bit-legend-label">{signal.label}</span>
+              <span className="bit-legend-meta mono">
+                B{signal._byte}.{signal._bit_offset}/{signal._size}
+              </span>
+            </button>
+          ))}
+          {unusedBits > 0 ? (
+            <span className="bit-legend-item unused" title="Unmapped / reserved bits">
+              <span className="bit-legend-swatch unused-swatch" aria-hidden />
+              <span className="bit-legend-label">unused</span>
+              <span className="bit-legend-meta mono">{unusedBits} bit{unusedBits === 1 ? '' : 's'}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="byte-grid-scroll" aria-label={`${message.name} byte layout`}>
         <div className="byte-grid">
           {Array.from({ length: dlc }, (_, byte) => (
             <div key={byte} className="byte-col">
               <span className="byte-label">B{byte}</span>
-              <div className="bit-row">
+              <div className="bit-row" role="group" aria-label={`Byte ${byte} bits 7→0`}>
                 {[7, 6, 5, 4, 3, 2, 1, 0].map((bit) => {
-                  const signalIndex = bitMap[byte * 8 + bit] ?? -1
+                  const linear = byte * 8 + bit
+                  const signalIndex = bitMap[linear] ?? -1
                   const filled = signalIndex >= 0
                   const highlight = activeSignal === signalIndex && filled
+                  const dimmed =
+                    dimOthers && filled && activeSignal !== signalIndex
+                  const isStart =
+                    filled && fieldStartBit.get(signalIndex) === linear
+                  const glyph = filled
+                    ? isStart
+                      ? signalGlyph(message.fields[signalIndex].label)
+                      : ''
+                    : String(bit)
                   return (
                     <button
                       key={`${byte}-${bit}`}
@@ -144,8 +218,10 @@ function BitGrid({
                       className={[
                         'bit-cell',
                         wide ? 'wide' : '',
-                        filled ? 'filled' : '',
+                        filled ? 'filled' : 'empty',
                         highlight ? 'highlight' : '',
+                        dimmed ? 'dimmed' : '',
+                        isStart ? 'field-start' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
@@ -159,14 +235,19 @@ function BitGrid({
                       title={
                         filled
                           ? `${message.fields[signalIndex].label}: B${byte}.${bit} · ${message.fields[signalIndex]._size}-bit ${message.fields[signalIndex]._type}`
-                          : `B${byte}.${bit} unused`
+                          : `B${byte}.${bit} unused (no signal)`
+                      }
+                      aria-label={
+                        filled
+                          ? `${message.fields[signalIndex].label} bit B${byte}.${bit}`
+                          : `Unused bit B${byte}.${bit}`
                       }
                       onMouseEnter={() => setActiveSignal(signalIndex)}
                       onMouseLeave={() => setActiveSignal(-1)}
                       onFocus={() => setActiveSignal(signalIndex)}
                       onBlur={() => setActiveSignal(-1)}
                     >
-                      <span>{filled ? '' : bit}</span>
+                      <span>{glyph}</span>
                     </button>
                   )
                 })}
@@ -175,9 +256,19 @@ function BitGrid({
           ))}
         </div>
       </div>
-      <div className="bit-inspector" role="status">
+      <div
+        className="bit-inspector"
+        role="status"
+        style={
+          activeColor
+            ? ({ ['--bit-color' as string]: activeColor } as CSSProperties)
+            : undefined
+        }
+        data-active={active ? '1' : '0'}
+      >
         {active ? (
           <>
+            <span className="bit-inspector-swatch" aria-hidden />
             <strong>
               B{active._byte}.{active._bit_offset}
             </strong>
@@ -191,7 +282,9 @@ function BitGrid({
           <>
             <strong>Bit detail</strong>
             <span>{message.name}</span>
-            <em>Hover a mapped bit to inspect position, type, and scale.</em>
+            <em>
+              Hover a colored bit or legend chip — hatch / numbered cells are unused.
+            </em>
           </>
         )}
       </div>
