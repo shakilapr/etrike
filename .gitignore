@@ -171,8 +171,15 @@ control-ui/frontend/node_modules/
 control-ui/frontend/dist/
 control-ui/frontend/build/
 control-ui/frontend/playwright-report/
+# ── mtr-stm32-v2 (STM32CubeIDE) ──────────────────────────────────────
+/mtr-stm32-v2/Drivers/
+/mtr-stm32-v2/WeActStudio.STM32G431CoreBoard-master/
+/mtr-stm32-v2/Debug/
+/mtr-stm32-v2/Release/
+/mtr-stm32-v2/.settings/
 
 # ── Temporary files ──────────────────────────────────────────────────
 *.tem
 *.tmp
 *.temp
+
