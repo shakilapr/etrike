@@ -154,13 +154,11 @@ class Lifecycle:
         loop = self._loop
         if loop is not None and loop.is_running():
             self._router_task = loop.create_task(self.router.run())
-            self._tasks.append(self._router_task)
         else:
             try:
                 self._router_task = asyncio.get_running_loop().create_task(
                     self.router.run()
                 )
-                self._tasks.append(self._router_task)
             except RuntimeError:
                 # No loop yet (startup race); will attach on next open after loop set.
                 self._router_task = None
@@ -262,7 +260,6 @@ class Lifecycle:
         # If router deferred, start now that loop is known.
         if self.transport is not None and self.router is not None and self._router_task is None:
             self._router_task = asyncio.create_task(self.router.run())
-            self._tasks.append(self._router_task)
 
         self.scheduler.start()
         adapter = self.transport.status().identity if self.transport else "none"
@@ -343,6 +340,10 @@ class Lifecycle:
         self.ownership.clear()
         if self.router is not None:
             self.router.stop()
+        if self._router_task is not None:
+            self._router_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._router_task
         if self.ager is not None:
             self.ager.stop()
         for task in self._tasks:
