@@ -151,6 +151,27 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     })
   })
 
+  test('missing CANalyst leaves the Computer session active and explains the problem', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.getByTestId('nav-settings').click()
+    await page.getByTestId('btn-start-pure').click()
+    await expect(page.getByTestId('settings-log')).toContainText(/phase running|Active/i)
+
+    const before = await page.request.get('/api/v1/status').then((r) => r.json())
+    const sessionId = before.session.session_id
+    await page.getByTestId('topbar-mode-real').click()
+
+    await expect(page.getByTestId('topbar-mode-toggle')).toHaveAttribute(
+      'title',
+      /CANalyst-II|04D8:0053|USB device/i,
+    )
+    const after = await page.request.get('/api/v1/status').then((r) => r.json())
+    expect(after.session.session_id).toBe(sessionId)
+    expect(after.session.profile).toBe('pure_software')
+  })
+
   test('drive console arms CAN control and shows keycaps', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('nav-preview').click()

@@ -18,9 +18,8 @@ def get_settings(request: Request) -> dict:
     life = request.app.state.lifecycle
     config = request.app.state.config
 
-    ok, reason = (False, "probe unavailable")
-    if hasattr(life, "physical_available"):
-        ok, reason = life.physical_available()
+    discovery = life.physical_discovery()
+    ok, reason = discovery.available, discovery.reason
 
     if life.transport is not None:
         st = life.transport.status()
@@ -142,11 +141,11 @@ def get_settings(request: Request) -> dict:
                 },
             ],
             "physical_adapter": {
+                **discovery.model_dump(),
                 "kind": "canalystii",
                 "available": ok,
                 "reason": None if ok else reason,
                 "channels": {"high": "CH0", "low": "CH1"},
-                "bitrate": 500_000,
             },
             "channel_map": channel_map,
             "active": {
@@ -180,6 +179,13 @@ def get_settings(request: Request) -> dict:
             "browser_lost_ms": config.browser_lost_ms,
             "rx_queue_maxsize": config.rx_queue_maxsize,
             "history_capacity": config.history_capacity,
+            "canalyst_device_index": config.canalyst_device_index,
+            "canalyst_bitrate": config.canalyst_bitrate,
+            "canalyst_poll_ms": config.canalyst_poll_ms,
+            "canalyst_receive_timeout_ms": config.canalyst_receive_timeout_ms,
+            "canalyst_reconnect_initial_ms": config.canalyst_reconnect_initial_ms,
+            "canalyst_reconnect_max_ms": config.canalyst_reconnect_max_ms,
+            "canalyst_recovery_stability_ms": config.canalyst_recovery_stability_ms,
             "host": config.host,
             "port": config.port,
             "env_prefix": "CTK_",

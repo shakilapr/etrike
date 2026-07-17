@@ -1,8 +1,8 @@
 """Adapter status and capability models (workplan §1.2 / §2.3).
 
 Capability fields are tri-state: True / False / None (Unknown). The CANalyst-II
-backend cannot report TEC/REC, bus-off, or TX echo — those stay Unknown and are
-NEVER surfaced as zero (can-analyzer-research §10).
+backend cannot report TEC/REC, bus-off, TX echo, or listen-only state — those
+stay Unknown and are NEVER surfaced as a made-up healthy value.
 """
 
 from __future__ import annotations
@@ -48,7 +48,9 @@ class ChannelState(BaseModel):
     rx_count: int = 0
     tx_count: int = 0
     rx_overflow: int = 0
+    rx_invalid: int = 0
     queue_high_water: int = 0
+    last_error: str | None = None
 
 
 class AdapterStatus(BaseModel):
@@ -59,3 +61,10 @@ class AdapterStatus(BaseModel):
     adapter_epoch: int = 0
     capability: Capability = Field(default_factory=Capability)
     channels: dict[str, ChannelState] = Field(default_factory=dict)
+    device_index: int | None = None
+    bitrate: int | None = None
+    channel_map: dict[str, int] = Field(default_factory=dict)
+    worker_alive: bool | None = None
+    worker_heartbeat_ns: int | None = None
+    retry_count: int = 0
+    last_error: str | None = None

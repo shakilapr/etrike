@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
+from pathlib import Path
+
 from fastapi import APIRouter, Request
+from fastapi.responses import Response
 
 from control_toolkit import protocol_bridge as proto
 from control_toolkit.services.session_manager import SessionError
@@ -86,3 +92,46 @@ def export_recording(recording_id: str, request: Request) -> dict:
             status=404,
         )
     return body
+
+
+@router.get("/{recording_id}/export/vector")
+def export_vector_bundle(recording_id: str, request: Request) -> Response:
+    """Download BLF + High/Low DBC + sidecar for Vector CANalyzer."""
+    exported = request.app.state.lifecycle.recording.export_blf(recording_id)
+    if exported is None:
+        raise SessionError(
+            "recording.not_found",
+            f"recording {recording_id} not found",
+            status=404,
+        )
+    blf, sidecar = exported
+
+    repo_root = Path(__file__).resolve().parents[4]
+    dbc_dir = repo_root / "protocol" / "generated" / "dbc" / "buses"
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr(f"{recording_id}.blf", blf)
+        bundle.writestr(
+            f"{recording_id}.metadata.json",
+            json.dumps(sidecar, indent=2, sort_keys=True),
+        )
+        for bus in ("high", "low"):
+            dbc = dbc_dir / f"{bus}.dbc"
+            if dbc.is_file():
+                bundle.writestr(f"dbc/etrike_{bus}.dbc", dbc.read_bytes())
+        bundle.writestr(
+            "README.txt",
+            "Vector CANalyzer import bundle\n"
+            "===============================\n"
+            "Open the .blf file in CANalyzer. Assign dbc/etrike_high.dbc to "
+            "channel 1 (Control Toolkit CH0/High) and dbc/etrike_low.dbc to "
+            "channel 2 (Control Toolkit CH1/Low). The metadata JSON records "
+            "clock, evidence quality, protocol hash, and limitations.\n",
+        )
+
+    filename = f"{recording_id}-canalyzer.zip"
+    return Response(
+        content=archive.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

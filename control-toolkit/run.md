@@ -14,6 +14,9 @@ Open the app at: **http://127.0.0.1:5173/**
 
 **Testing (software-only, unit tests, 10 s motion observation):** see [`docs/testing-guide.md`](docs/testing-guide.md).
 
+**CANalyst-II hardware setup and safe connection order:** see
+[`docs/canalyst-ii-setup.md`](docs/canalyst-ii-setup.md).
+
 ---
 
 ## Run from monorepo root (recommended)
@@ -69,6 +72,9 @@ Open: **http://127.0.0.1:5173/**
 | `CTK_E2E_API` | `http://127.0.0.1:8001` | Vite proxy target (full URL) |
 | `CTK_UI_HOST` | `127.0.0.1` | Vite bind host |
 | `CTK_UI_PORT` | `5173` | Vite bind port |
+| `CTK_CANALYST_DEVICE_INDEX` | `0` | CANalyst-II USB device index |
+| `CTK_CANALYST_BITRATE` | `500000` | Physical High/Low bitrate |
+| `CTK_CANALYST_POLL_MS` | `2` | CANalyst receive polling delay |
 
 Example (custom API port — keep proxy in sync):
 
@@ -214,6 +220,7 @@ npx playwright test e2e/smoke.spec.ts --reporter=list
 | `npm run dev` only | UI without API | Always start API first |
 | Port in use | control-ui or old Vite on 5173 | Free port or use stop snippet above |
 | Real mode fails | No CANalyst | Stay on **Computer** |
+| USB visible but Real still unavailable | Windows driver is not PyUSB-compatible | Follow `docs/canalyst-ii-setup.md`; bind WinUSB/libusbK |
 
 ---
 

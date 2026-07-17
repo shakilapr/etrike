@@ -44,6 +44,17 @@ class ToolkitConfig(BaseModel):
     # Chronological frame history capacity (bounded ring).
     history_capacity: int = 4096
 
+    # CANalyst-II physical transport.  Keep these explicit rather than relying
+    # on python-can global configuration so the Settings API and bench evidence
+    # describe the exact hardware setup in use.
+    canalyst_device_index: int = Field(default=0, ge=0)
+    canalyst_bitrate: int = Field(default=500_000, gt=0)
+    canalyst_poll_ms: float = Field(default=2.0, ge=1.0, le=100.0)
+    canalyst_receive_timeout_ms: float = Field(default=100.0, ge=10.0, le=1000.0)
+    canalyst_reconnect_initial_ms: float = Field(default=250.0, ge=10.0)
+    canalyst_reconnect_max_ms: float = Field(default=5_000.0, ge=10.0)
+    canalyst_recovery_stability_ms: float = Field(default=500.0, ge=0.0)
+
     title: str = "E-Trike Control Toolkit"
     api_prefix: str = "/api/v1"
 
@@ -57,4 +68,18 @@ class ToolkitConfig(BaseModel):
             overrides["port"] = int(v)
         if v := os.getenv("CTK_PROFILE"):
             overrides["default_profile"] = Profile(v)
+        if v := os.getenv("CTK_CANALYST_DEVICE_INDEX"):
+            overrides["canalyst_device_index"] = int(v)
+        if v := os.getenv("CTK_CANALYST_BITRATE"):
+            overrides["canalyst_bitrate"] = int(v)
+        if v := os.getenv("CTK_CANALYST_POLL_MS"):
+            overrides["canalyst_poll_ms"] = float(v)
+        if v := os.getenv("CTK_CANALYST_RECEIVE_TIMEOUT_MS"):
+            overrides["canalyst_receive_timeout_ms"] = float(v)
+        if v := os.getenv("CTK_CANALYST_RECONNECT_INITIAL_MS"):
+            overrides["canalyst_reconnect_initial_ms"] = float(v)
+        if v := os.getenv("CTK_CANALYST_RECONNECT_MAX_MS"):
+            overrides["canalyst_reconnect_max_ms"] = float(v)
+        if v := os.getenv("CTK_CANALYST_RECOVERY_STABILITY_MS"):
+            overrides["canalyst_recovery_stability_ms"] = float(v)
         return cls(**overrides)

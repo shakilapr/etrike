@@ -62,9 +62,23 @@ export type Status = {
     identity: string
     health: string
     adapter_epoch: number
+    worker_alive?: boolean | null
+    worker_heartbeat_ns?: number | null
+    retry_count?: number
+    last_error?: string | null
+    device_index?: number | null
+    bitrate?: number | null
+    channel_map?: Record<string, number>
     channels: Record<
       string,
-      { activity: string; rx_count: number; tx_count?: number; rx_overflow?: number }
+      {
+        activity: string
+        rx_count: number
+        tx_count?: number
+        rx_overflow?: number
+        rx_invalid?: number
+        last_error?: string | null
+      }
     >
   }
   session: SessionState

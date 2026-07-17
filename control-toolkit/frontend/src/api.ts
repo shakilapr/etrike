@@ -18,7 +18,12 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
       title?: string
       code?: string
     }
-    if (r.status === 502 || r.status === 503 || r.status === 504) {
+    if (
+      (r.status === 502 || r.status === 503 || r.status === 504) &&
+      !body.detail &&
+      !body.title &&
+      !body.code
+    ) {
       throw new Error(
         `Backend unavailable (${r.status} ${r.statusText}). Vite proxy cannot reach the API — start uvicorn on 127.0.0.1:8001.`,
       )
@@ -62,6 +67,12 @@ export type PhysicalAdapterInfo = {
   reason?: string | null
   channels?: Record<string, string>
   bitrate?: number
+  device_index?: number
+  usb_vid?: number
+  usb_pid?: number
+  usb_visible?: boolean | null
+  python_can_version?: string
+  backend?: string
 }
 
 export type SettingsSnapshot = {
@@ -111,6 +122,13 @@ export type SettingsSnapshot = {
     browser_lost_ms: number
     rx_queue_maxsize: number
     history_capacity: number
+    canalyst_device_index?: number
+    canalyst_bitrate?: number
+    canalyst_poll_ms?: number
+    canalyst_receive_timeout_ms?: number
+    canalyst_reconnect_initial_ms?: number
+    canalyst_reconnect_max_ms?: number
+    canalyst_recovery_stability_ms?: number
     host?: string
     port?: number
     env_prefix?: string

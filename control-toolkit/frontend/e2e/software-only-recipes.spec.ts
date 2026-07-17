@@ -162,8 +162,7 @@ test.describe('Software-only recipes UI', () => {
     )
 
     await go(page, 'control')
-    await page.getByTestId('btn-direct-motor-stop').click()
-    await page.waitForTimeout(400)
+    await page.getByTestId('control-method-low').click()
 
     // ── Recipe C: Steering ──────────────────────────────────────────
     const steerIn = page.getByTestId('direct-steer-angle')
