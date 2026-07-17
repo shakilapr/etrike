@@ -47,6 +47,15 @@ class SessionState(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     leases: list[str] = Field(default_factory=list)
 
+    # UI metrics for real-time status display
+    synthetic_peers_active: int = 0
+    pending_injections: int = 0
+    submitted_injections: int = 0
+    total_conflicts: int = 0
+    listening: bool = False
+    listen_remaining_ms: int | None = None
+    last_update_ns: int | None = None
+
 
 class CreateSessionRequest(BaseModel):
     profile: Profile = Profile.PURE_SOFTWARE
