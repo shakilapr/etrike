@@ -35,9 +35,8 @@ def list_profiles(request: Request) -> dict:
     - **real** (``bench_test`` / ``full_vehicle``): CANalyst-II CH0=High, CH1=Low
     """
     life = request.app.state.lifecycle
-    ok, reason = (False, "probe unavailable")
-    if hasattr(life, "physical_available"):
-        ok, reason = life.physical_available()
+    discovery = life.physical_discovery()
+    ok, reason = discovery.available, discovery.reason
     return {
         "transport_modes": [
             {
@@ -92,11 +91,11 @@ def list_profiles(request: Request) -> dict:
             },
         ],
         "physical_adapter": {
+            **discovery.model_dump(),
             "kind": "canalystii",
             "available": ok,
             "reason": None if ok else reason,
             "channels": {"high": "CH0", "low": "CH1"},
-            "bitrate": 500_000,
         },
     }
 

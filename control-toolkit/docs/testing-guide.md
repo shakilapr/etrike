@@ -420,6 +420,10 @@ Filter by hex ID or name; open row detail for signals / hex.
 
 Diagnostics → record **while** TX is active → stop → evidence. Quiet bus after Stop-all ⇒ 0 frames is normal.
 
+Stopped recordings also expose **Export CANalyzer**. The downloaded ZIP includes
+BLF + High/Low DBC + metadata and can be inspected in Vector CANalyzer without
+changing the toolkit runtime transport.
+
 ---
 
 ## 9. “Full system software-only” without all ECUs

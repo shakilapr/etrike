@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import time
+import zipfile
+
+import can
 
 
 def _tx(client):
@@ -56,3 +60,45 @@ def test_recording_double_start_rejected(client):
     r = client.post("/api/v1/recordings")
     assert r.status_code == 409
     assert r.json()["code"] == "recording.active"
+
+
+def test_vector_canalyzer_bundle_contains_readable_blf_dbc_and_sidecar(client):
+    _tx(client)
+    rid = client.post("/api/v1/recordings").json()["recording"]["recording_id"]
+    client.post(
+        "/api/v1/injections",
+        json={
+            "bus": "high",
+            "key": "host:host_drive_cmd",
+            "values": {"speed_mmps": 321, "yaw_rate_mrad_s": -50, "gear": 1},
+            "owner": "rec:vector",
+        },
+    )
+    time.sleep(0.15)
+    client.delete(f"/api/v1/recordings/{rid}")
+
+    response = client.get(f"/api/v1/recordings/{rid}/export/vector")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "canalyzer.zip" in response.headers["content-disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+        names = set(bundle.namelist())
+        assert f"{rid}.blf" in names
+        assert f"{rid}.metadata.json" in names
+        assert "dbc/etrike_high.dbc" in names
+        assert "dbc/etrike_low.dbc" in names
+        assert "README.txt" in names
+        blf = bundle.read(f"{rid}.blf")
+
+    # BLF is not merely present: python-can can parse the generated Vector log.
+    class _ReadableBuffer(io.BytesIO):
+        @property
+        def name(self) -> str:
+            return "recording.blf"
+
+    messages = list(can.BLFReader(_ReadableBuffer(blf)))
+    assert messages
+    frame = next(msg for msg in messages if msg.arbitration_id == 0x300)
+    assert frame.channel == 0
+    assert frame.dlc == 8

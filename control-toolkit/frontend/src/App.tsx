@@ -489,14 +489,22 @@ function Topbar() {
     setModeBusy(true)
     setModeErr(null)
     try {
-      const st = await api.status()
-      if (st.session?.session_id) {
-        await api
-          .closeSession(st.session.session_id, st.session.revision)
-          .catch(() => undefined)
+      if (next === 'real') {
+        const profiles = await api.profiles()
+        if (!profiles.physical_adapter?.available) {
+          throw new Error(
+            profiles.physical_adapter?.reason ||
+              'CANalyst-II is not available. Connect it by USB and refresh Settings.',
+          )
+        }
       }
+      const st = await api.status()
       const profile = next === 'computer' ? 'pure_software' : 'bench_test'
-      await api.createSession(profile)
+      if (st.session?.session_id) {
+        await api.changeProfile(st.session.session_id, profile, st.session.revision, true)
+      } else {
+        await api.createSession(profile)
+      }
       setStatus(await api.status())
     } catch (e) {
       setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 120))
@@ -3017,15 +3025,28 @@ function Diagnostics() {
                       <td className="num">{String(r.frame_count)}</td>
                       <td>{String(r.evidence_quality)}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="secondary"
-                          data-testid={`btn-evidence-${id}`}
-                          disabled={busy}
-                          onClick={() => void openEvidence(id)}
-                        >
-                          Open evidence
-                        </button>
+                        <div className="actions tight">
+                          <button
+                            type="button"
+                            className="secondary"
+                            data-testid={`btn-evidence-${id}`}
+                            disabled={busy}
+                            onClick={() => void openEvidence(id)}
+                          >
+                            Open evidence
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            data-testid={`btn-canalyzer-${id}`}
+                            disabled={busy || String(r.state) === 'recording'}
+                            onClick={() =>
+                              window.location.assign(`/api/v1/recordings/${id}/export/vector`)
+                            }
+                          >
+                            Export CANalyzer
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -3491,11 +3512,21 @@ function Settings() {
   async function ensureThenSetProfile(profile: string) {
     setBusy(true)
     try {
-      const st = await api.status()
-      if (st.session?.session_id) {
-        await api.closeSession(st.session.session_id, st.session.revision).catch(() => undefined)
+      if (profile === 'bench_test' || profile === 'full_vehicle') {
+        const profiles = await api.profiles()
+        if (!profiles.physical_adapter?.available) {
+          throw new Error(
+            profiles.physical_adapter?.reason ||
+              'CANalyst-II is not available. Connect it by USB and refresh Settings.',
+          )
+        }
       }
-      const created = await api.createSession(profile)
+      const st = await api.status()
+      const created = st.session?.session_id
+        ? st.session.profile === profile
+          ? { session: st.session }
+          : await api.changeProfile(st.session.session_id, profile, st.session.revision, true)
+        : await api.createSession(profile)
       setStatus(await api.status())
       await refreshSettings()
       const label = PROFILE_LABELS[profile] ?? profile
@@ -3717,6 +3748,29 @@ function Settings() {
                   <span className="danger-text">{String(realReason || 'not detected')}</span>
                 )}
               </li>
+              <li>
+                Driver:{' '}
+                <strong className="mono">
+                  {physAdapter?.backend || 'python-can/canalystii'}
+                </strong>
+                {physAdapter?.python_can_version
+                  ? ` · python-can ${physAdapter.python_can_version}`
+                  : ''}
+                {physAdapter?.device_index != null ? ` · device ${physAdapter.device_index}` : ''}
+              </li>
+              <li>
+                USB:{' '}
+                <span className="mono">
+                  {physAdapter?.usb_vid != null && physAdapter?.usb_pid != null
+                    ? `${physAdapter.usb_vid.toString(16).padStart(4, '0').toUpperCase()}:${physAdapter.usb_pid.toString(16).padStart(4, '0').toUpperCase()}`
+                    : '04D8:0053'}
+                </span>
+                {physAdapter?.usb_visible === true
+                  ? ' · visible'
+                  : physAdapter?.usb_visible === false
+                    ? ' · not visible'
+                    : ' · visibility unknown'}
+              </li>
             </ul>
 
             <div className="field" style={{ marginTop: 10 }}>
@@ -3787,6 +3841,23 @@ function Settings() {
           <dd className="mono">
             {String(adapterLive.health ?? status?.adapter?.health ?? '—')}
           </dd>
+          <dt>Worker / reconnect</dt>
+          <dd className="mono">
+            {adapterLive.worker_alive == null
+              ? '—'
+              : adapterLive.worker_alive
+                ? 'running'
+                : 'stopped'}
+            {adapterLive.retry_count != null
+              ? ` · retries ${String(adapterLive.retry_count)}`
+              : ''}
+          </dd>
+          {adapterLive.last_error ? (
+            <>
+              <dt>Adapter error</dt>
+              <dd className="danger-text">{String(adapterLive.last_error)}</dd>
+            </>
+          ) : null}
         </dl>
         <pre className="log" data-testid="settings-log">
           {log ||

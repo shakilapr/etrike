@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import threading
 import time
 import uuid
@@ -9,6 +10,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+import can
 
 
 class EvidenceQuality(str, Enum):
@@ -35,6 +38,8 @@ class RecordedFrame:
     source: str
     backend_arrival_ns: int
     adapter_epoch: int | None
+    is_extended: bool = False
+    is_remote: bool = False
 
 
 @dataclass
@@ -42,6 +47,8 @@ class RecordingSession:
     recording_id: str
     state: RecordingState = RecordingState.RECORDING
     started_mono: float = field(default_factory=time.monotonic)
+    started_mono_ns: int = field(default_factory=time.monotonic_ns)
+    started_wall_ns: int = field(default_factory=time.time_ns)
     stopped_mono: float | None = None
     frames: deque[RecordedFrame] = field(default_factory=lambda: deque(maxlen=50_000))
     dropped: int = 0
@@ -151,6 +158,62 @@ class RecordingService:
                 "frames": [self._frame_dict(f) for f in list(rec.frames)],
             }
 
+    def export_blf(self, recording_id: str) -> tuple[bytes, dict[str, Any]] | None:
+        """Export a Vector CANalyzer-compatible BLF plus sidecar metadata."""
+        with self._lock:
+            rec = self._find_locked(recording_id)
+            if rec is None:
+                return None
+            frames = list(rec.frames)
+            summary = rec.to_summary()
+            started_mono_ns = rec.started_mono_ns
+            started_wall_ns = rec.started_wall_ns
+
+        # python-can closes file-like objects in BLFWriter.stop(). Keep this
+        # in-memory buffer readable so the API can place it into a ZIP bundle.
+        class _ExportBuffer(io.BytesIO):
+            def close(self) -> None:  # noqa: D401 - intentional no-op
+                """Leave the export buffer readable after writer finalization."""
+
+        output = _ExportBuffer()
+        writer = can.BLFWriter(output, channel=0)
+        try:
+            for frame in frames:
+                timestamp_ns = started_wall_ns + (
+                    frame.backend_arrival_ns - started_mono_ns
+                )
+                writer.on_message_received(
+                    can.Message(
+                        timestamp=timestamp_ns / 1_000_000_000,
+                        arbitration_id=frame.can_id,
+                        is_extended_id=frame.is_extended,
+                        is_remote_frame=frame.is_remote,
+                        channel=0 if frame.bus == "high" else 1,
+                        dlc=frame.dlc,
+                        data=b"" if frame.is_remote else bytes.fromhex(frame.data_hex),
+                        is_rx=frame.direction == "rx",
+                    )
+                )
+        finally:
+            writer.stop()
+
+        sidecar = {
+            **summary,
+            "export_format": "vector_blf+etrike_sidecar.v1",
+            "clock": {
+                "source": "backend_monotonic_arrival",
+                "wall_anchor_ns": started_wall_ns,
+                "monotonic_anchor_ns": started_mono_ns,
+            },
+            "channel_map": {"0": "high", "1": "low"},
+            "bitrate": {"high": 500_000, "low": 500_000},
+            "limitations": [
+                "cross-channel arrival order includes CANalyst USB grouping jitter",
+                "submitted TX does not prove receiver delivery",
+            ],
+        }
+        return output.getvalue(), sidecar
+
     def mark_degraded(self, reason: str) -> None:
         with self._lock:
             if self._active is None:
@@ -178,6 +241,8 @@ class RecordingService:
         source: str,
         backend_arrival_ns: int,
         adapter_epoch: int | None,
+        is_extended: bool = False,
+        is_remote: bool = False,
     ) -> None:
         with self._lock:
             rec = self._active
@@ -199,6 +264,8 @@ class RecordingService:
                     source=source,
                     backend_arrival_ns=backend_arrival_ns,
                     adapter_epoch=adapter_epoch,
+                    is_extended=is_extended,
+                    is_remote=is_remote,
                 )
             )
 
@@ -214,4 +281,6 @@ class RecordingService:
             "source": f.source,
             "backend_arrival_ns": f.backend_arrival_ns,
             "adapter_epoch": f.adapter_epoch,
+            "is_extended": f.is_extended,
+            "is_remote": f.is_remote,
         }

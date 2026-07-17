@@ -366,42 +366,42 @@ Not a dependency of Phases 3–7. During the software track, leave a stub adapte
 
 *(Note: Port logic from `control-ui/backend/canalyst_manager.py` (specifically DLC payload slicing, observable drops, and SocketCAN error frame decoding) to build the new adapter. Ignore its hardware timestamp wrapping and heavy threading, as we are using a single-worker asyncio model and software timestamps.)*
 
-- [ ] Implement `CanalystTransportAdapter`:
+- [x] Implement `CanalystTransportAdapter`:
   - `python-can` `CANalystIIBus` for both channels
   - Channel 0 → High Bus, Channel 1 → Low Bus (**corrected** from debug-tool defaults)
   - Configurable poll delay: start at 1–2ms (not 20ms default)
   - Dedicated blocking receive worker or `can.Notifier`
   - Bounded typed RX queue with overflow counter
-- [ ] Device discovery: USB VID/PID, device index, driver/backend info
-- [ ] Lock validated dependency version in `pyproject.toml`
+- [x] Device discovery: USB VID/PID, device index, driver/backend info
+- [x] Lock validated dependency version in `pyproject.toml`
 
 ### 2.2 Timestamp architecture
 
-- [ ] Use `time.monotonic_ns()` for backend arrival time
-- [ ] Ignore CANalyst-II hardware device timestamps (undocumented rollover behavior, unneeded for UI observation)
-- [ ] Per-channel sequence counter
-- [ ] Cross-channel analysis uses backend arrival time, subject to USB polling jitter
+- [x] Use `time.monotonic_ns()` for backend arrival time
+- [x] Ignore CANalyst-II hardware device timestamps (undocumented rollover behavior, unneeded for UI observation)
+- [x] Per-channel sequence counter
+- [x] Cross-channel analysis uses backend arrival time, subject to USB polling jitter
 
 ### 2.3 Adapter health and capabilities
 
-- [ ] Capability record: HW timestamps (ignored), TX echo (unknown), listen-only (check), bus-off (unknown), TEC/REC (unknown → never fake zero)
-- [ ] Health states: Absent → Opening → Open → Active → Quiet → Degraded → Recovering → Closed
-- [ ] Adapter-worker heartbeat monitoring (Degraded after 500ms, Failed after 1.5s)
-- [ ] Notifier.exception and listener.on_error() monitoring
+- [x] Capability record: HW timestamps (ignored), TX echo (unknown), listen-only (unknown), bus-off (unknown), TEC/REC (unknown → never fake zero)
+- [x] Health states: Absent → Opening → Open → Active → Quiet → Degraded → Recovering → Closed
+- [x] Adapter-worker heartbeat monitoring (Degraded after 500ms, Failed after 1.5s)
+- [x] Receive-worker and send exception monitoring
 
 ### 2.4 Disconnect and reconnect
 
-- [ ] On failure: disable Bench TX → cancel jobs → end leases → mark stale → close → begin reconnect
-- [ ] Bounded exponential backoff with jitter, visible retry count
-- [ ] Reconnect: new adapter epoch → clear stale buffers → receive-only → stability window → Recovered
-- [ ] Never restore Bench TX or resume prior jobs on reconnect
-- [ ] Fast retries → indefinite slow discovery
+- [x] On failure: disable Bench TX → cancel jobs → end leases → mark recording degraded → close → begin reconnect
+- [x] Bounded exponential backoff with jitter, visible retry count
+- [x] Reconnect: new adapter epoch → clear stale buffers → receive-only → stability window → Recovered
+- [x] Never restore Bench TX or resume prior jobs on reconnect
+- [x] Fast retries → indefinite slow discovery
 
 ### 2.5 Dual-channel integration
 
-- [ ] Simultaneous High + Low bus operation
-- [ ] Independent per-channel statistics
-- [ ] Cross-channel analysis uses backend arrival time (ingestion order)
+- [x] Simultaneous High + Low bus operation (software fake-device proof; hardware gate remains below)
+- [x] Independent per-channel statistics
+- [x] Cross-channel analysis uses backend arrival time (ingestion order)
 
 **Tests:**
 ```bash
@@ -424,9 +424,9 @@ pytest control-toolkit/backend/tests/test_hw_characterization.py -v -m hardware
 - [ ] Software track still green (virtual path regression-free)
 - [ ] Channel mapping: Ch0=High, Ch1=Low (opposite of debug-tool — tested on hardware)
 - [ ] Arrival timestamps applied correctly at transport layer
-- [ ] Overflow counter exposed (never silent eviction)
-- [ ] Adapter health FSM transitions verified (sim + hardware where possible)
-- [ ] Reconnect creates new epoch, never restores TX state
+- [x] Overflow counter exposed (never silent eviction)
+- [x] Adapter health FSM transitions verified in simulation (hardware still pending)
+- [x] Reconnect creates new epoch, never restores TX state
 - [ ] `pytest -m hardware` characterization passes when adapter present
 - [ ] Full Vehicle / Bench Test profiles can open physical adapter without silent virtual fallback
 

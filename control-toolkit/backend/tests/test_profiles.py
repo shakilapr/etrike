@@ -4,10 +4,17 @@
 def test_list_profiles(client):
     r = client.get("/api/v1/sessions/profiles")
     assert r.status_code == 200
-    by_id = {p["id"]: p for p in r.json()["profiles"]}
+    body = r.json()
+    by_id = {p["id"]: p for p in body["profiles"]}
     assert by_id["pure_software"]["available"] is True
     assert by_id["bench_test"]["available"] is False
     assert by_id["full_vehicle"]["available"] is False
+    adapter = body["physical_adapter"]
+    assert adapter["kind"] == "canalystii"
+    assert adapter["channels"] == {"high": "CH0", "low": "CH1"}
+    assert adapter["usb_vid"] == 0x04D8
+    assert adapter["usb_pid"] == 0x0053
+    assert adapter["python_can_version"] == "4.6.1"
 
 
 def test_create_pure_software_session(client):

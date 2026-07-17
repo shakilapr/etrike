@@ -80,6 +80,10 @@ class RawFrameEnvelope(BaseModel):
         raise TypeError("data must be bytes-like")
 
     def model_post_init(self, _ctx: object) -> None:
+        if self.is_remote:
+            if self.data:
+                raise ValueError("remote frames must not carry payload bytes")
+            return
         if len(self.data) != self.dlc:
             raise ValueError(
                 f"data length {len(self.data)} != dlc {self.dlc} "

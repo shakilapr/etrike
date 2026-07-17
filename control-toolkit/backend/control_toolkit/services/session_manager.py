@@ -106,13 +106,6 @@ class SessionManager:
                 destination=self._destination_for(req.profile),
                 capabilities=list(req.capabilities),
             )
-            # Listening: observe bus before TX
-            self._state.phase = SessionPhase.LISTENING
-            self._state.revision += 1
-            # Running: session active for commands
-            self._state.phase = SessionPhase.RUNNING
-            self._state.revision += 1
-            snap = self._snapshot_locked()
         # Transport switch outside lock (may open CANalyst / virtual).
         # Pure Software is usually already open from lifecycle startup — still call
         # so physical→virtual switches work; open_* methods are idempotent.
@@ -130,7 +123,15 @@ class SessionManager:
                     str(exc),
                     status=503,
                 ) from exc
-        return snap
+        with self._lock:
+            # Only report Listening/Running after the selected destination is
+            # actually open.  This also records the new physical adapter epoch.
+            self._state.adapter_epoch = self._get_adapter_epoch()
+            self._state.phase = SessionPhase.LISTENING
+            self._state.revision += 1
+            self._state.phase = SessionPhase.RUNNING
+            self._state.revision += 1
+            return self._snapshot_locked()
 
     def change_profile(self, req: ChangeProfileRequest) -> SessionState:
         """Controlled profile transition: stop TX → neutral → activate."""
@@ -147,6 +148,7 @@ class SessionManager:
                 return self._snapshot_locked()
 
             self._assert_profile_allowed_locked(req.profile)
+            previous = self._state.model_copy(deep=True)
 
             # Stop periodic TX and disable Bench TX before switch.
             self._neutralize_locked()
@@ -156,21 +158,63 @@ class SessionManager:
             self._state.adapter_epoch = self._get_adapter_epoch()
             self._state.revision += 1
 
-            self._state.phase = SessionPhase.LISTENING
-            self._state.revision += 1
-            self._state.phase = SessionPhase.RUNNING
-            self._state.revision += 1
-            snap = self._snapshot_locked()
         if self._on_profile_change is not None:
             try:
                 self._on_profile_change(req.profile)
             except Exception as exc:
+                with self._lock:
+                    # Lifecycle opens a candidate before replacing the active
+                    # transport, so a failed physical switch can safely restore
+                    # the previous visible profile. TX remains neutralized.
+                    self._state = previous
+                    self._state.bench_tx = BenchTxState.DISABLED
+                    self._state.revision += 1
                 raise SessionError(
                     "transport.open_failed",
                     str(exc),
                     status=503,
                 ) from exc
-        return snap
+        with self._lock:
+            self._state.adapter_epoch = self._get_adapter_epoch()
+            self._state.phase = SessionPhase.LISTENING
+            self._state.revision += 1
+            self._state.phase = SessionPhase.RUNNING
+            self._state.revision += 1
+            return self._snapshot_locked()
+
+    def transport_failed(self, reason: str) -> SessionState:
+        """Fail safe on physical adapter loss without ending the session.
+
+        Periodic work, ownership leases, and Bench TX are cleared immediately.
+        The adapter may reconnect in receive-only mode; the operator must
+        explicitly re-enable Bench TX after inspecting the recovered buses.
+        """
+        with self._lock:
+            if self._state.profile not in PHYSICAL_PROFILES:
+                return self._snapshot_locked()
+            self._neutralize_locked()
+            self._state.capabilities = [
+                cap for cap in self._state.capabilities if cap != "transport_recovered"
+            ]
+            if "transport_failed" not in self._state.capabilities:
+                self._state.capabilities.append("transport_failed")
+            self._state.revision += 1
+            return self._snapshot_locked()
+
+    def transport_recovered(self, adapter_epoch: int) -> SessionState:
+        """Record receive-only recovery; deliberately do not restore TX/jobs."""
+        with self._lock:
+            if self._state.profile not in PHYSICAL_PROFILES:
+                return self._snapshot_locked()
+            self._state.adapter_epoch = adapter_epoch
+            self._state.bench_tx = BenchTxState.DISABLED
+            self._state.capabilities = [
+                cap for cap in self._state.capabilities if cap != "transport_failed"
+            ]
+            if "transport_recovered" not in self._state.capabilities:
+                self._state.capabilities.append("transport_recovered")
+            self._state.revision += 1
+            return self._snapshot_locked()
 
     def set_bench_tx(self, enabled: bool, expected_revision: int | None = None) -> SessionState:
         with self._lock:

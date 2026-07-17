@@ -63,6 +63,7 @@ Errors use RFC 9457-style Problem Details (`detail` / `title` / code) via sessio
 | `DELETE` | `/api/v1/recordings/{id}` | Recording |
 | `GET` | `/api/v1/recordings/{id}` | Recording |
 | `GET` | `/api/v1/recordings/{id}/export` | Recording |
+| `GET` | `/api/v1/recordings/{id}/export/vector` | Vector CANalyzer ZIP (BLF + DBC + metadata) |
 | `GET` | `/api/v1/events` | Diagnostics |
 | `GET` | `/api/v1/events/{event_id}` | Diagnostics |
 | `GET` | `/api/v1/episodes` | Diagnostics |
@@ -451,6 +452,11 @@ Recording summary / body.
 ### `GET /api/v1/recordings/{recording_id}/export`
 
 Full JSON export + evidence quality.
+
+### `GET /api/v1/recordings/{recording_id}/export/vector`
+
+ZIP download for Vector CANalyzer. Contains a standard BLF recording, generated
+High/Low DBC files, a metadata/evidence sidecar, and import instructions.
 
 ---
 

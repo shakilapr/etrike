@@ -7,6 +7,7 @@ import contextlib
 import time
 
 from control_toolkit.config import Profile, ToolkitConfig
+from control_toolkit.models.adapter import AdapterHealth
 from control_toolkit.pipeline.freshness import FreshnessAger
 from control_toolkit.pipeline.router import Router
 from control_toolkit import protocol_bridge as proto
@@ -25,8 +26,9 @@ from control_toolkit.state.history import FrameHistory
 from control_toolkit.state.latest import LatestStore
 from control_toolkit.state.topology import TopologyTracker
 from control_toolkit.transport.canalyst import (
+    CanalystDiscovery,
     CanalystTransportAdapter,
-    canalyst_available,
+    discover_canalyst,
 )
 from control_toolkit.transport.virtual import VirtualTransportAdapter
 
@@ -82,10 +84,48 @@ class Lifecycle:
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def _transport_open(self) -> bool:
-        return self.transport is not None
+        if self.transport is None:
+            return False
+        try:
+            return self.transport.status().health in (
+                AdapterHealth.OPEN,
+                AdapterHealth.ACTIVE,
+                AdapterHealth.QUIET,
+            )
+        except Exception:
+            return False
 
     def physical_available(self) -> tuple[bool, str]:
-        return canalyst_available()
+        result = self.physical_discovery()
+        return result.available, result.reason
+
+    def physical_discovery(self, *, force: bool = False) -> CanalystDiscovery:
+        # Never probe/open a second USB handle while the active physical
+        # transport already owns the device.
+        if isinstance(self.transport, CanalystTransportAdapter):
+            status = self.transport.status()
+            ok = status.health in (
+                AdapterHealth.OPEN,
+                AdapterHealth.ACTIVE,
+                AdapterHealth.QUIET,
+            )
+            reason = (
+                "CANalyst-II is the active transport"
+                if ok
+                else status.last_error or f"CANalyst-II is {status.health.value}"
+            )
+            return CanalystDiscovery(
+                available=ok,
+                reason=reason,
+                device_index=self.config.canalyst_device_index,
+                bitrate=self.config.canalyst_bitrate,
+                usb_visible=True if ok else None,
+            )
+        return discover_canalyst(
+            device_index=self.config.canalyst_device_index,
+            bitrate=self.config.canalyst_bitrate,
+            force=force,
+        )
 
     def is_physical_transport(self) -> bool:
         return isinstance(self.transport, CanalystTransportAdapter)
@@ -134,6 +174,8 @@ class Lifecycle:
             source=env.source.value,
             backend_arrival_ns=env.backend_arrival_ns,
             adapter_epoch=env.adapter_epoch,
+            is_extended=env.is_extended,
+            is_remote=env.is_remote,
         )
 
     def _start_router(self) -> None:
@@ -167,11 +209,12 @@ class Lifecycle:
         """Open Pure Software dual virtual buses (no hardware)."""
         if isinstance(self.transport, VirtualTransportAdapter):
             return
-        self._tear_down_transport()
-        self.transport = VirtualTransportAdapter(
+        candidate = VirtualTransportAdapter(
             rx_queue_maxsize=self.config.rx_queue_maxsize
         )
-        self.transport.open()
+        candidate.open()
+        self._tear_down_transport()
+        self.transport = candidate
         self._start_router()
         self.diagnostics.emit(
             code="transport.virtual_open",
@@ -184,20 +227,63 @@ class Lifecycle:
         """Open CANalyst-II High+Low. Raises if device missing (no silent virtual)."""
         if isinstance(self.transport, CanalystTransportAdapter):
             return
-        ok, reason = canalyst_available()
-        if not ok:
-            raise RuntimeError(f"CANalyst-II unavailable: {reason}")
-        self._tear_down_transport()
-        self.transport = CanalystTransportAdapter(
-            rx_queue_maxsize=self.config.rx_queue_maxsize
+        # Open the candidate before replacing the current virtual transport.
+        # A driver/open failure therefore leaves Computer mode intact and is
+        # still returned explicitly to the caller (never a silent fallback).
+        candidate = CanalystTransportAdapter(
+            rx_queue_maxsize=self.config.rx_queue_maxsize,
+            bitrate=self.config.canalyst_bitrate,
+            device_index=self.config.canalyst_device_index,
+            poll_ms=self.config.canalyst_poll_ms,
+            receive_timeout_ms=self.config.canalyst_receive_timeout_ms,
+            reconnect_initial_ms=self.config.canalyst_reconnect_initial_ms,
+            reconnect_max_ms=self.config.canalyst_reconnect_max_ms,
+            recovery_stability_ms=self.config.canalyst_recovery_stability_ms,
+            on_failure=self._physical_failure_from_worker,
+            on_recovered=self._physical_recovered_from_worker,
         )
-        self.transport.open()
+        candidate.open()
+        self._tear_down_transport()
+        self.transport = candidate
         self._start_router()
         self.diagnostics.emit(
             code="transport.canalyst_open",
             title="CANalyst-II open",
             detail="CH0=High CH1=Low @ 500 kbit/s",
             severity="info",
+        )
+
+    def _physical_failure_from_worker(self, reason: str) -> None:
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(self._handle_physical_failure, reason)
+        else:
+            self._handle_physical_failure(reason)
+
+    def _handle_physical_failure(self, reason: str) -> None:
+        self.sessions.transport_failed(reason)
+        self.recording.mark_degraded(f"physical transport failure: {reason}")
+        self.diagnostics.emit(
+            code="transport.canalyst_failed",
+            title="CANalyst-II connection lost",
+            detail=f"{reason}; Bench TX disabled and jobs/leases cleared",
+            severity="error",
+        )
+
+    def _physical_recovered_from_worker(self, epoch: int) -> None:
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(self._handle_physical_recovered, epoch)
+        else:
+            self._handle_physical_recovered(epoch)
+
+    def _handle_physical_recovered(self, epoch: int) -> None:
+        self.sessions.transport_recovered(epoch)
+        self.diagnostics.emit(
+            code="transport.canalyst_recovered",
+            title="CANalyst-II recovered receive-only",
+            detail=f"adapter epoch={epoch}; Bench TX remains disabled",
+            severity="warning",
         )
 
     def _tear_down_transport(self) -> None:

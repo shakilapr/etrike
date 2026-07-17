@@ -34,12 +34,19 @@ uvicorn control_toolkit.main:app --host 127.0.0.1 --port 8000
 Environment overrides: `CTK_HOST`, `CTK_PORT`, `CTK_PROFILE`
 (`pure_software` | `bench_test` | `full_vehicle`).
 
-Physical profiles return **503** until CANalyst is implemented (no silent virtual fallback).
+Physical profiles use the dual-channel **CANalyst-II** adapter through
+`python-can` (`CH0=High`, `CH1=Low`, 500 kbit/s). They return **503** when the
+adapter/driver cannot be opened; there is no silent virtual fallback. See
+[`../docs/canalyst-ii-setup.md`](../docs/canalyst-ii-setup.md) before connecting
+CAN wiring.
 
 ## Test
 
 ```bash
 pytest -v
+
+# Passive hardware preflight (never transmits)
+python scripts/canalyst_preflight.py
 ```
 
 ## Layout
@@ -49,7 +56,7 @@ pytest -v
 | `protocol_bridge.py` | Seam to generated `protocol` package |
 | `config.py` / `main.py` | Config + app factory |
 | `models/` | Frames, state, adapter, session |
-| `transport/` | Virtual dual-bus; CANalyst stub |
+| `transport/` | Virtual dual-bus + fail-safe CANalyst-II physical adapter |
 | `pipeline/` | Decode, validate, freshness, router |
 | `state/` | Latest store |
 | `services/` | Lifecycle, sessions, TX gate, scheduler, peers, ownership |
