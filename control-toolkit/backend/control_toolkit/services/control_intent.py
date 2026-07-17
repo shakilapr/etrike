@@ -292,7 +292,7 @@ class ControlIntentService:
             gear = GEAR_N
         else:
             gear = st.gear
-            if thr > 0 and gear == GEAR_N:
+            if thr > 0 and gear in (GEAR_N, GEAR_R):
                 gear = GEAR_D
             if thr < 0 and gear not in (GEAR_R,):
                 # Reverse intent maps to R; magnitude uses reverse limit
@@ -302,10 +302,6 @@ class ControlIntentService:
             speed = int(round(thr * MAX_SPEED_FWD_MMPS))
         else:
             speed = int(round(thr * MAX_SPEED_REV_MMPS))  # negative
-        if gear == GEAR_R and speed > 0:
-            speed = -abs(speed)
-        if gear == GEAR_R and speed == 0 and thr < 0:
-            speed = int(round(thr * MAX_SPEED_REV_MMPS))
 
         yaw = int(round(ste * MAX_YAW_MRAD_S))
         speed = int(_clamp(speed, -MAX_SPEED_REV_MMPS, MAX_SPEED_FWD_MMPS))

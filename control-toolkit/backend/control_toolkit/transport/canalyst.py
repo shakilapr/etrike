@@ -270,10 +270,14 @@ class CanalystTransportAdapter:
 
     def close(self) -> None:
         self._stop.set()
+        thread_exited = True
         if self._thread is not None:
             self._thread.join(timeout=1.5)
-            self._thread = None
-        if self._bus is not None:
+            if self._thread.is_alive():
+                thread_exited = False
+            else:
+                self._thread = None
+        if self._bus is not None and thread_exited:
             try:
                 self._bus.shutdown()
             except Exception:
