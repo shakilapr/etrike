@@ -19,6 +19,8 @@ from vtc.config import Profile, VtcConfig
 from vtc.pipeline.freshness import FreshnessAger
 from vtc.pipeline.router import Router
 from vtc.services.event_bus import EventBus
+from vtc.services.ownership import OwnershipTable
+from vtc.services.session_manager import SessionManager
 from vtc.state.latest import LatestStore
 from vtc.transport.virtual import VirtualTransportAdapter
 
@@ -31,6 +33,14 @@ class Lifecycle:
         self.transport: VirtualTransportAdapter | None = None
         self.router: Router | None = None
         self.ager: FreshnessAger | None = None
+        self.ownership = OwnershipTable()
+        self.sessions = SessionManager(
+            ownership=self.ownership,
+            get_transport_open=lambda: self.transport is not None,
+            get_adapter_epoch=lambda: self.transport.status().adapter_epoch
+            if self.transport is not None
+            else None,
+        )
         self._tasks: list[asyncio.Task] = []
         self._ready = False
 
@@ -51,6 +61,8 @@ class Lifecycle:
 
     async def shutdown(self) -> None:
         self._ready = False
+        with contextlib.suppress(Exception):
+            self.sessions.close()  # auto-disable Bench TX, clear leases (§3.3)
         if self.router is not None:
             self.router.stop()
         if self.ager is not None:
