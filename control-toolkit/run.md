@@ -12,6 +12,8 @@ Always bind with an **explicit host** (`127.0.0.1`), not an omitted host / ambig
 
 Open the app at: **http://127.0.0.1:5173/**
 
+**Testing (software-only, unit tests, 10 s motion observation):** see [`docs/testing-guide.md`](docs/testing-guide.md).
+
 ---
 
 ## Run from monorepo root (recommended)
