@@ -6,7 +6,7 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
-  testMatch: '**/live-click-audit.spec.ts',
+  testMatch: ['**/live-click-audit.spec.ts', '**/software-only-recipes.spec.ts'],
   fullyParallel: false,
   retries: 0,
   workers: 1,
