@@ -124,12 +124,12 @@ protocol::Frame f=protocol::Frame::standard(0x012,1);f.data[0]=1;CHECK_EQ(f.data
 static void t16(){T("=== 16. BrakeDiag ===");
 generated::BrakeDiag b;b.pressure_raw=250.0;b.fault=0;b.motor_current=2.5;b.ecu_temp=40.0;
 protocol::Frame f;generated::encode(b,f);generated::BrakeDiag d;generated::decode(f.view(),d);
-CHECK_EQ((int)(d.pressure_raw/0.05),5000,"press");CHECK_EQ(d.fault,0,"ok");}
+CHECK_EQ((int)(d.pressure_raw/0.05),5000,"press");CHECK_EQ(d.fault,false,"ok");}
 
 static void t17(){T("=== 17. SteerDiag ===");
 generated::SteerDiag s;s.angle_0_1deg=0;s.fault=0;s.motor_current=1.5;s.ecu_temp=30.0;
 protocol::Frame f;generated::encode(s,f);generated::SteerDiag d;generated::decode(f.view(),d);
-CHECK_EQ((int)((d.angle_0_1deg+3000.0)/0.1),30000,"angle=0");CHECK_EQ(d.fault,0,"ok");}
+CHECK_EQ((int)((d.angle_0_1deg+3000.0)/0.1),30000,"angle=0");CHECK_EQ(d.fault,false,"ok");}
 
 static void t18(){T("=== 18. Throttle ===");
 int16_t ss[]={0,1500,3000};for(int i=0;i<3;i++){generated::SysThrottleSts t;t.speed_mmps=ss[i];

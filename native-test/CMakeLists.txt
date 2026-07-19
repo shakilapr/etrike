@@ -102,9 +102,10 @@ endif()
 
 target_compile_definitions(freertos PRIVATE PROJCODELOC=1)
 
-# MSVC-MingW port needs winmm.lib for timeBeginPeriod/timeEndPeriod
+# Windows ports need winmm for timeBeginPeriod/timeEndPeriod. CMake adds the
+# correct platform-specific library syntax for both MSVC and MinGW.
 if(WIN32)
-    target_link_libraries(freertos PUBLIC -lwinmm)
+    target_link_libraries(freertos PUBLIC winmm)
 endif()
 
 if(FREERTOS_EXTRA_LIBS)

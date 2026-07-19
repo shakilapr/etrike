@@ -292,7 +292,7 @@ class ControlIntentService:
             gear = GEAR_N
         else:
             gear = st.gear
-            if thr > 0 and gear in (GEAR_N, GEAR_R):
+            if thr > 0 and gear == GEAR_N:
                 gear = GEAR_D
             if thr < 0 and gear not in (GEAR_R,):
                 # Reverse intent maps to R; magnitude uses reverse limit
@@ -302,6 +302,12 @@ class ControlIntentService:
             speed = int(round(thr * MAX_SPEED_FWD_MMPS))
         else:
             speed = int(round(thr * MAX_SPEED_REV_MMPS))  # negative
+
+        # Direct-shift Reverse treats throttle as pedal magnitude. This keeps
+        # R + W / positive joystick input in reverse instead of silently
+        # changing to Drive. Smart shift still maps negative throttle to R.
+        if gear == GEAR_R and speed > 0:
+            speed = -abs(speed)
 
         yaw = int(round(ste * MAX_YAW_MRAD_S))
         speed = int(_clamp(speed, -MAX_SPEED_REV_MMPS, MAX_SPEED_FWD_MMPS))

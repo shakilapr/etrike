@@ -260,6 +260,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  tests: () =>
+    json<{ count: number; tests: Array<Record<string, unknown>> }>('/tests'),
+  test: (testId: string) =>
+    json<{ test: Record<string, unknown> }>(`/tests/${testId}`),
+  syntheticPeers: () =>
+    json<{
+      available: Array<Record<string, unknown>>
+      running: Array<Record<string, unknown>>
+    }>('/synthetic-peers'),
+  startSyntheticPeers: (names: string[]) =>
+    json<{ started: Array<Record<string, unknown>> }>('/synthetic-peers/start', {
+      method: 'POST',
+      body: JSON.stringify({ names }),
+    }),
+  stopSyntheticPeers: (names?: string[]) =>
+    json<{ stopped: number }>('/synthetic-peers/stop', {
+      method: 'POST',
+      body: JSON.stringify(names ? { names } : {}),
+    }),
   profiles: () =>
     json<{
       profiles: ProfileInfo[]
@@ -352,30 +371,19 @@ export const api = {
       body: '{}',
     }),
   injectEstop: async () => {
-    // Dual-bus ESTOP matches firmware bridge (network.yaml high↔low same_frame).
-    const high = await json<Record<string, unknown>>('/injections', {
+    // Use the backend's atomic control-safety path: it transmits on both buses,
+    // latches the session ESTOP view, and releases any active motion ownership.
+    return json<Record<string, unknown>>('/control/intent', {
       method: 'POST',
       body: JSON.stringify({
-        bus: 'high',
-        key: 'safety:safety_estop',
-        values: {},
-        owner: 'ui:estop',
+        sequence: Date.now(),
+        source: 'ui:header',
+        mode: 'estop',
+        throttle: 0,
+        steer: 0,
+        estop: true,
       }),
     })
-    try {
-      await json<Record<string, unknown>>('/injections', {
-        method: 'POST',
-        body: JSON.stringify({
-          bus: 'low',
-          key: 'safety:safety_estop',
-          values: {},
-          owner: 'ui:estop',
-        }),
-      })
-    } catch {
-      /* low may conflict if ownership shared; high already sent */
-    }
-    return high
   },
   controlStatus: () =>
     json<{ control: Record<string, unknown> }>('/control/status'),

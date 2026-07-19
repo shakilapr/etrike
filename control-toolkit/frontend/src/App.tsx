@@ -2775,6 +2775,68 @@ function Control() {
 
 function Bench() {
   const status = useAppStore((s) => s.status)
+  const setStatus = useAppStore((s) => s.setStatus)
+  const setWorkspace = useAppStore((s) => s.setWorkspace)
+  const [available, setAvailable] = useState<Array<Record<string, unknown>>>([])
+  const [running, setRunning] = useState<Array<Record<string, unknown>>>([])
+  const [busy, setBusy] = useState(false)
+  const [log, setLog] = useState('')
+
+  const refreshPeers = useCallback(async () => {
+    const peers = await api.syntheticPeers()
+    setAvailable(peers.available || [])
+    setRunning(peers.running || [])
+  }, [])
+
+  useEffect(() => {
+    void refreshPeers().catch((e) => setLog(String(e)))
+  }, [refreshPeers])
+
+  async function ensureBenchTx() {
+    let st = await api.status()
+    if (!st.session?.session_id) {
+      await api.createSession('pure_software')
+      st = await api.status()
+    }
+    if (st.session.bench_tx !== 'enabled') {
+      await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+      st = await api.status()
+    }
+    setStatus(st)
+  }
+
+  async function startHostStimulus() {
+    setBusy(true)
+    try {
+      await ensureBenchTx()
+      await api.controlRelease('bench_synthetic_start').catch(() => undefined)
+      await api.stopAnalysis().catch(() => undefined)
+      const result = await api.startSyntheticPeers(['host_drive_analysis'])
+      await refreshPeers()
+      setStatus(await api.status())
+      setLog(`Started host_drive_analysis: ${JSON.stringify(result.started)}`)
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function stopStimuli() {
+    setBusy(true)
+    try {
+      const result = await api.stopSyntheticPeers()
+      await refreshPeers()
+      setStatus(await api.status())
+      setLog(`Stopped ${result.stopped} analysis stimulus job(s)`)
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const hostRunning = running.some((p) => String(p.name) === 'host_drive_analysis')
   return (
     <div className="workspace" data-testid="workspace-bench">
       <header className="ws-header">
@@ -2811,6 +2873,61 @@ function Bench() {
           <dd className="mono">{(status?.session?.jobs || []).join(', ') || 'none'}</dd>
         </dl>
       </section>
+      <section className="panel" data-testid="synthetic-peers-panel">
+        <h2>Analysis stimuli</h2>
+        <p className="muted small">
+          Explicit zero-speed HostDrive stimulus on High bus. This is not a synthetic
+          vehicle or ECU heartbeat mesh; Bench TX remains the safety gate.
+        </p>
+        <dl className="kv compact">
+          <dt>Available</dt>
+          <dd className="mono">
+            {available.map((p) => String(p.name)).join(', ') || 'none'}
+          </dd>
+          <dt>Running</dt>
+          <dd className="mono" data-testid="synthetic-running">
+            {running.map((p) => String(p.name)).join(', ') || 'none'}
+          </dd>
+        </dl>
+        <div className="actions tight">
+          <button
+            type="button"
+            data-testid="btn-synthetic-start"
+            disabled={busy || hostRunning || available.length === 0}
+            onClick={() => void startHostStimulus()}
+          >
+            Start zero-speed Host stimulus
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-synthetic-stop"
+            disabled={busy || !hostRunning}
+            onClick={() => void stopStimuli()}
+          >
+            Stop analysis stimuli
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-bench-open-control"
+            onClick={() => setWorkspace('control')}
+          >
+            Open Control
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-bench-open-diagnostics"
+            onClick={() => setWorkspace('diagnostics')}
+          >
+            Open Diagnostics
+          </button>
+        </div>
+        <pre className="log" data-testid="synthetic-log">
+          {log || 'No analysis stimulus action yet.'}
+        </pre>
+      </section>
     </div>
   )
 }
@@ -2831,7 +2948,9 @@ function Diagnostics() {
   const [episodes, setEpisodes] = useState<Array<Record<string, unknown>>>([])
   const [activeRec, setActiveRec] = useState<Record<string, unknown> | null>(null)
   const [recordings, setRecordings] = useState<Array<Record<string, unknown>>>([])
+  const [tests, setTests] = useState<Array<Record<string, unknown>>>([])
   const [recLog, setRecLog] = useState('')
+  const [testLog, setTestLog] = useState('')
   const [busy, setBusy] = useState(false)
   const [evidenceId, setEvidenceId] = useState<string | null>(null)
   const [evidenceFrames, setEvidenceFrames] = useState<Array<Record<string, unknown>>>(
@@ -2843,16 +2962,18 @@ function Diagnostics() {
 
   const refreshDiag = useCallback(async () => {
     try {
-      const [ev, ep, rec, st] = await Promise.all([
+      const [ev, ep, rec, verification, st] = await Promise.all([
         api.events(40),
         api.episodes(),
         api.recordings(),
+        api.tests(),
         api.status(),
       ])
       setEvents(ev.events || [])
       setEpisodes(ep.episodes || [])
       setActiveRec(rec.active && typeof rec.active === 'object' ? rec.active : null)
       setRecordings(rec.recordings || [])
+      setTests(verification.tests || [])
       setStatus(st)
       setDiagErr('')
     } catch (e) {
@@ -2921,6 +3042,48 @@ function Diagnostics() {
       setEvidenceId(id)
       setEvidenceFrames([])
       setEvidenceMeta(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runVerification() {
+    setBusy(true)
+    try {
+      let st = await api.status()
+      if (!st.session?.session_id) {
+        await api.createSession('pure_software')
+        st = await api.status()
+      }
+      if (st.session.bench_tx !== 'enabled') {
+        await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+      }
+      await api.controlRelease('diagnostics_verification').catch(() => undefined)
+      await api.stopAnalysis().catch(() => undefined)
+      const result = await api.runTest({
+        name: 'UI zero-speed HostDrive loopback',
+        stimulus: {
+          type: 'inject',
+          bus: 'high',
+          key: 'host:host_drive_cmd',
+          values: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 0 },
+        },
+        expect: {
+          type: 'message_observed',
+          bus: 'high',
+          can_id: 0x300,
+          name: 'HOST_DRIVE_CMD',
+          timeout_ms: 1500,
+        },
+      })
+      const id = String(result.test.test_id || '')
+      const detail = id ? (await api.test(id)).test : result.test
+      setTestLog(
+        `${String(detail.disposition).toUpperCase()} ${id} · ${String(detail.detail || '')}`,
+      )
+      await refreshDiag()
+    } catch (e) {
+      setTestLog(String(e))
     } finally {
       setBusy(false)
     }
@@ -3088,6 +3251,49 @@ function Diagnostics() {
         <pre className="log" data-testid="recording-log">
           {recLog || 'Idle.'}
         </pre>
+      </section>
+
+      <section className="panel" data-testid="test-runner-panel">
+        <h2>Verification runner</h2>
+        <p className="muted small">
+          Safe zero-speed High-bus loopback: inject HOST_DRIVE_CMD and verify the decoded
+          message is observed. The backend runs one verification step at a time.
+        </p>
+        <div className="actions tight">
+          <button
+            type="button"
+            data-testid="btn-run-verification"
+            disabled={busy}
+            onClick={() => void runVerification()}
+          >
+            Run zero-speed verification
+          </button>
+        </div>
+        <pre className="log" data-testid="test-runner-log">
+          {testLog || 'No verification run from this UI yet.'}
+        </pre>
+        {tests.length > 0 && (
+          <table className="data-table compact" data-testid="verification-tests-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Result</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tests.slice(0, 8).map((t) => (
+                <tr key={String(t.test_id)}>
+                  <td className="mono">{String(t.test_id)}</td>
+                  <td>{String(t.name)}</td>
+                  <td>{String(t.disposition)}</td>
+                  <td className="mono">{String(t.duration_ms ?? '—')} ms</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="panel" data-testid="episodes-panel">
@@ -3555,6 +3761,69 @@ function Settings() {
     await ensureThenSetProfile(realSub)
   }
 
+  async function restartSession(profile: string) {
+    setBusy(true)
+    try {
+      if (profile === 'bench_test' || profile === 'full_vehicle') {
+        const profileInfo = await api.profiles()
+        if (!profileInfo.physical_adapter?.available) {
+          throw new Error(
+            profileInfo.physical_adapter?.reason ||
+              'CANalyst-II is not available. Connect it by USB and refresh Settings.',
+          )
+        }
+      }
+      const st = await api.status()
+      if (st.session?.session_id) {
+        await api.closeSession(st.session.session_id, st.session.revision)
+      }
+      const created = await api.createSession(profile)
+      setStatus(await api.status())
+      await refreshSettings()
+      setLog(
+        `Restarted ${PROFILE_LABELS[profile] ?? profile} · session ${created.session.session_id} · phase ${created.session.phase}`,
+      )
+    } catch (e) {
+      setLog(String(e))
+      await refreshSettings().catch(() => undefined)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function closeCurrentSession() {
+    const sid = String(snap?.session?.session_id || status?.session?.session_id || '')
+    const rev = Number(snap?.session?.revision ?? status?.session?.revision ?? 0)
+    if (!sid) return
+    setBusy(true)
+    try {
+      await api.closeSession(sid, rev)
+      setStatus(await api.status())
+      await refreshSettings()
+      setLog(`Ended session ${sid}; Bench TX and control jobs are stopped.`)
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function releaseLease(leaseId: string) {
+    const sid = String(snap?.session?.session_id || status?.session?.session_id || '')
+    if (!sid) return
+    setBusy(true)
+    try {
+      await api.releaseLease(sid, leaseId)
+      setStatus(await api.status())
+      await refreshSettings()
+      setLog(`Released ownership lease ${leaseId}`)
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function toggleBenchTx(enabled: boolean) {
     const sid = String(snap?.session?.session_id || status?.session?.session_id || '')
     const rev = Number(snap?.session?.revision ?? status?.session?.revision ?? 0)
@@ -3710,7 +3979,7 @@ function Settings() {
                 type="button"
                 disabled={busy}
                 data-testid="btn-start-pure"
-                onClick={() => void activateComputer()}
+                onClick={() => void restartSession('pure_software')}
               >
                 {activeMode === 'computer' ? 'Restart Computer session' : 'Switch to Computer'}
               </button>
@@ -3806,7 +4075,7 @@ function Settings() {
                 disabled={busy || !realOk}
                 className={activeMode === 'real' ? 'secondary' : undefined}
                 data-testid="btn-connect-real"
-                onClick={() => void activateReal()}
+                onClick={() => void restartSession(realSub)}
               >
                 {!realOk
                   ? 'CANalyst-II required'
@@ -3917,7 +4186,32 @@ function Settings() {
           >
             Stop all
           </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy || !session.session_id}
+            data-testid="btn-close-session"
+            onClick={() => void closeCurrentSession()}
+          >
+            End session
+          </button>
         </div>
+        {leases.length > 0 && (
+          <div className="actions tight" style={{ marginTop: 10 }} data-testid="lease-controls">
+            {leases.map((leaseId) => (
+              <button
+                key={leaseId}
+                type="button"
+                className="secondary"
+                disabled={busy}
+                data-testid={`btn-release-lease-${leaseId}`}
+                onClick={() => void releaseLease(leaseId)}
+              >
+                Release lease {leaseId.slice(0, 10)}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="panel" data-testid="settings-adapter-panel">

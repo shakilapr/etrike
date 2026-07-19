@@ -183,3 +183,5 @@ control-ui/frontend/playwright-report/
 *.tmp
 *.temp
 
+# ── CANaR tool ───────────────────────────────────────────────────────
+/CANaR/
