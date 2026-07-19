@@ -17,7 +17,7 @@ How to compile and upload firmware to each ECU in the E-Trike system.
 | `pwt-esp32/` | ESP32-S3-DevKitC-1 | ESP-IDF | `vehicle` |
 | `mtr-stm32/` | STM32F103C8 (Blue Pill) | STM32Cube | `vehicle` |
 | `debug-tool/debug-esp32/` | ESP32-S3-DevKitC-1 | ESP-IDF | `esp32-s3` |
-| `rt-test/` | ESP32-S3-DevKitC-1 | ESP-IDF | `esp32-s3-devkitc-1` |
+| `rt-esp32/` | ESP32-S3 N16R8 | ESP-IDF | `esp32-s3-devkitc-1-n16r8` |
 
 ## Identify Connected Boards
 
@@ -112,10 +112,11 @@ Pass the port explicitly with `--upload-port`:
 pio run --target upload --upload-port COM5
 ```
 
-### Flash size mismatch warning
-`Warning! Flash memory size mismatch detected. Expected 8MB, found 2MB!`
-
-This is cosmetic for current firmware sizes (~250-270 KB). If your board truly has 2 MB flash, adjust in `sdkconfig.defaults` or ignore while usage stays under 2 MB.
+### Flash size / PSRAM configuration
+RT and SYS target the local `esp32-s3-devkitc-1-n16r8` board definition: 16 MB
+flash with 8 MB octal PSRAM. Confirm the module marking or run `esptool.py
+flash_id` before the first upload. Do not ignore a flash-size mismatch or flash
+an N16R8 image to a different ESP32-S3 module.
 
 ### Permission denied / access denied (Windows)
 Make sure no other serial terminal (PuTTY, Arduino IDE, PlatformIO Home monitor) has the COM port open. Only one application can open a serial port at a time.

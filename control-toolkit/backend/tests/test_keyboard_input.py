@@ -134,3 +134,15 @@ def test_reverse_throttle_uses_rev_limit(client):
     # full reverse → -500 mm/s (shared kMaxSpeedRevMmps)
     assert r.json()["control"]["shaped_speed_mmps"] == -500
     assert r.json()["control"]["gear_label"] == "R"
+
+
+def test_explicit_reverse_with_positive_pedal_never_commands_forward(client):
+    _tx(client)
+    r = client.post(
+        "/api/v1/control/intent",
+        json={"sequence": 1, "throttle": 1.0, "steer": 0, "gear": 3},
+    )
+    assert r.status_code == 200
+    control = r.json()["control"]
+    assert control["shaped_speed_mmps"] == -500
+    assert control["gear_label"] == "R"

@@ -3,6 +3,7 @@
  * Fails on page errors / 5xx; collects actionable issues for control/drive/settings.
  */
 import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
+import { resetComputerSession } from './session-reset'
 
 const NAV = [
   'overview',
@@ -57,6 +58,14 @@ function collectErrors(page: Page) {
 
 test.describe('Full system — tabs, buttons, CAN side-effects', () => {
   test.setTimeout(240_000)
+
+  test.beforeEach(async ({ request }) => {
+    await resetComputerSession(request)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await resetComputerSession(request)
+  })
 
   test('walk every tab, exercise controls, verify CAN updates', async ({ page }) => {
     const bag = collectErrors(page)
@@ -246,6 +255,13 @@ test.describe('Full system — tabs, buttons, CAN side-effects', () => {
     await expect(page.getByTestId('recording-log')).toContainText(/Stopped|quality|frames/i, {
       timeout: 12_000,
     })
+    const exportButton = page.locator('[data-testid^="btn-canalyzer-"]').first()
+    await expect(exportButton).toBeVisible()
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      exportButton.click(),
+    ])
+    expect(download.suggestedFilename()).toMatch(/canalyzer.*\.zip$/i)
 
     // ── Logs ───────────────────────────────────────────────────────
     await go(page, 'logs')

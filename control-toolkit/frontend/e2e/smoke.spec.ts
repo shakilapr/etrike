@@ -145,10 +145,22 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await expect(page.getByTestId('settings-protocol-panel')).toBeVisible()
     await expect(page.getByTestId('settings-session-panel')).toBeVisible()
     await expect(page.getByTestId('settings-runtime-kv')).toContainText(/ms|Hz|pure_software/i)
+    const before = await page.request.get('/api/v1/status').then((r) => r.json())
     await page.getByTestId('btn-start-pure').click()
-    await expect(page.getByTestId('settings-log')).toContainText(/Session ses_|phase running|Computer|Active/i, {
+    await expect(page.getByTestId('settings-log')).toContainText(/Restarted .*phase running/i, {
       timeout: 10_000,
     })
+    const restarted = await page.request.get('/api/v1/status').then((r) => r.json())
+    expect(restarted.session.session_id).not.toBe(before.session.session_id)
+
+    await page.getByTestId('btn-close-session').click()
+    await expect(page.getByTestId('settings-log')).toContainText(/Ended session/i)
+    const ended = await page.request.get('/api/v1/status').then((r) => r.json())
+    expect(ended.session.session_id).toBeNull()
+
+    // Restore the normal receive-only Computer session for later tests.
+    await page.getByTestId('btn-start-pure').click()
+    await expect(page.getByTestId('settings-log')).toContainText(/phase running/i)
   })
 
   test('missing CANalyst leaves the Computer session active and explains the problem', async ({

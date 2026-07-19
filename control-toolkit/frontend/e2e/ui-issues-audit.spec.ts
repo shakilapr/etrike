@@ -109,7 +109,6 @@ test.describe('UI issues audit — every tab', () => {
     await page.getByTestId('btn-direct-brake-start').click()
     await page.waitForTimeout(600)
     const steerTx = await page.getByTestId('direct-steer-tx').innerText()
-    const brakeTx = await page.getByTestId('direct-brake-tx').innerText()
     if (!/en=1\/1|en=1/.test(steerTx) && !/alignment|control/i.test(steerTx)) {
       // en=1/1 is ideal
       if (/en=—/.test(steerTx)) {

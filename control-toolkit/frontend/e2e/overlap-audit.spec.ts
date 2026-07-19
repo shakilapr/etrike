@@ -19,13 +19,6 @@ type Hit = {
   detail?: string
 }
 
-function labelOf(el: { tag: string; testId: string; cls: string; text: string; role: string }) {
-  const tid = el.testId ? `[${el.testId}]` : ''
-  const txt = el.text ? `"${el.text.slice(0, 28)}"` : ''
-  const cls = el.cls ? `.${el.cls.split(/\s+/).filter(Boolean).slice(0, 3).join('.')}` : ''
-  return `${el.tag}${tid}${cls} ${txt}`.trim()
-}
-
 async function collectIssues(page: Page, workspace: string): Promise<Hit[]> {
   return page.evaluate((ws) => {
     const hits: Array<{

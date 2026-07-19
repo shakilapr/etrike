@@ -8,7 +8,6 @@ import fs from 'node:fs'
 
 const OUT = path.join('test-results', 'hover-click-audit')
 const GROW = 2.0
-const OVERLAP_AREA = 16
 
 type Issue = {
   workspace: string

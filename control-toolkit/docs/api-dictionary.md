@@ -552,12 +552,18 @@ Fetch result. **404** if unknown.
 | UI action | API |
 |-----------|-----|
 | App load / health | `GET /status`, `WS /stream`, `GET /topology` |
-| Computer / Real toggle | `DELETE` old session → `POST /sessions` with profile |
+| Computer / Real toggle or restart | `DELETE` old session → `POST /sessions` with profile |
+| End session | `DELETE /sessions/{id}` |
 | Enable Bench TX | `POST /sessions/{id}/bench-tx` `{enabled:true}` |
 | Drive / Control keyboard | `POST /control/intent` loop + `POST /control/release` |
+| Global ESTOP | `POST /control/intent` with `estop:true` (atomically commands both buses and releases motion) |
 | Control numeric inject | `POST /analysis/host-drive` (after release/clear owners) |
 | Low motor/steer/brake | `POST /control/direct` |
 | HMI MANUAL/ON | `POST /hmi/mode`, `POST /hmi/power` |
+| Bench Analysis start/stop | `POST` / `DELETE /analysis/host-drive` with an explicit zero-speed stimulus |
+| Synthetic peers start/stop | `POST /synthetic-peers/start`, `POST /synthetic-peers/stop` |
+| Diagnostics verification | `POST /tests`, then `GET /tests/{id}` |
+| Release managed owner | `DELETE /injections/{bus}/{key}` |
 | CAN Dictionary | `GET /protocol/dictionary` |
 | Logging table | `GET /logs` |
 | Start/stop recording | `POST/DELETE /recordings…` |

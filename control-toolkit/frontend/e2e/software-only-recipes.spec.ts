@@ -5,6 +5,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { resetComputerSession } from './session-reset'
 
 const OUT = path.join('test-results', 'software-only-ui')
 
@@ -46,6 +47,14 @@ async function ensureBenchTx(page: Page) {
 
 test.describe('Software-only recipes UI', () => {
   test.setTimeout(240_000)
+
+  test.beforeEach(async ({ request }) => {
+    await resetComputerSession(request)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await resetComputerSession(request)
+  })
 
   test('recipes A–E with screenshots', async ({ page }) => {
     fs.mkdirSync(OUT, { recursive: true })

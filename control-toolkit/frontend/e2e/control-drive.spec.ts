@@ -219,6 +219,14 @@ test.describe('Control + Drive paths', () => {
     const driveLog = await page.getByTestId('drive-log').innerText()
     // shaped display
     const shaped = await page.getByTestId('drive-shaped').innerText()
+
+    // Explicit Reverse + positive pedal/key input must remain bounded reverse.
+    await page.getByTestId('preview-gear-R').click()
+    await page.getByTestId('keycap-W').dispatchEvent('pointerdown')
+    await expect(page.getByTestId('drive-shaped')).toContainText(/-500 mm\/s · R/i, {
+      timeout: 8_000,
+    })
+    await page.getByTestId('keycap-W').dispatchEvent('pointerup')
     await page.screenshot({ path: path.join(OUT, '05-drive-armed.png') })
 
     // Live after drive

@@ -11,7 +11,7 @@ pio run -t upload    # flash
 pio device monitor   # serial console
 ```
 
-Target: `esp32-s3-devkitc-1` | Framework: `espidf` | FreeRTOS, 1000 Hz tick
+Target: `esp32-s3-devkitc-1-n16r8` (16 MB flash, 8 MB octal PSRAM) | Framework: `espidf` | FreeRTOS, 1000 Hz tick
 
 ## Host tests
 

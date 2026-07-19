@@ -253,7 +253,7 @@ export function DriveConsole() {
     }
   }
 
-  async function disarmControl(reason = 'disarm') {
+  const disarmControl = useCallback(async (reason = 'disarm') => {
     setArmed(false)
     clearKeys()
     try {
@@ -262,7 +262,7 @@ export function DriveConsole() {
       /* ignore */
     }
     setLog(`Disarmed (${reason}). Keyboard drives local sim only.`)
-  }
+  }, [clearKeys])
 
   async function fireEstop() {
     setBusy(true)
@@ -289,7 +289,7 @@ export function DriveConsole() {
   }
 
   /** True when Drive tab owns keyboard (canvas, side panel, or buttons). */
-  function driveOwnsKeyboard() {
+  const driveOwnsKeyboard = useCallback(() => {
     const root = rootRef.current
     if (!root) return false
     if (root.matches(':focus-within')) return true
@@ -297,7 +297,7 @@ export function DriveConsole() {
     if (ae && root.contains(ae)) return true
     // After click on non-focusable area, body may be active but user is on this tab.
     return focused && (ae === document.body || ae === document.documentElement)
-  }
+  }, [focused])
 
   // Keyboard: entire Drive workspace, not only the canvas wrap.
   useEffect(() => {
@@ -360,7 +360,7 @@ export function DriveConsole() {
       // Leaving Drive tab always disarms High-bus intent (safety).
       void api.controlRelease('left_drive_tab').catch(() => undefined)
     }
-  }, [applyGear, clearKeys, focused])
+  }, [applyGear, clearKeys, disarmControl, driveOwnsKeyboard])
 
   // Armed: publish intent at 20 Hz; coalesce so only one POST is in flight.
   useEffect(() => {
@@ -575,11 +575,16 @@ export function DriveConsole() {
       const speedMmps = fromBusSpeed ?? shapedRef.current.speed
       const yawMrad = fromBusYaw ?? shapedRef.current.yaw
       const g = gearFromCan(drive)
-      if (g && g !== state.gear) applyGear(g)
-      else if (!g && shapedRef.current.gear) {
-        const map: Gear[] = ['N', 'D', 'S', 'R']
-        const sg = map[shapedRef.current.gear]
-        if (sg && sg !== state.gear) applyGear(sg)
+      // While armed, `gear` is the operator's next command. CAN gear remains
+      // visible through displayGear but must not overwrite a freshly selected
+      // R/N/D/S value before the next intent tick.
+      if (!armedRef.current) {
+        if (g && g !== state.gear) applyGear(g)
+        else if (!g && shapedRef.current.gear) {
+          const map: Gear[] = ['N', 'D', 'S', 'R']
+          const sg = map[shapedRef.current.gear]
+          if (sg && sg !== state.gear) applyGear(sg)
+        }
       }
       const targetV = (speedMmps / 1000) * PIXELS_PER_METER
       const omega = yawMrad / 1000
