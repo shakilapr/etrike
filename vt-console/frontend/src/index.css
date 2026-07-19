@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  @apply bg-bg text-text font-ui;
+  font-feature-settings: 'tnum';
+}
+
+code,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}

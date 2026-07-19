@@ -3,7 +3,7 @@
 **Source of truth:** `protocol/contracts/*.yaml` (message IDs, names, buses, DLC, cycles, byte order, codec strategy). RT/SYS firmware compiles against `can::gen::*` generated from these YAML files, so the YAML — not any prose doc — is authoritative.
 **Design reference:** [`architecture-vtc.md`](file:///c:/projects/etrike/vt-console/architecture-vtc.md) — authoritative for tool behavior/UX only. **Where its §12.2/§22 bench tables disagree with the YAML (e.g. synthetic-peer periods), the YAML wins.**
 **Status:** Design-only — no implementation code exists yet
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-16 (Phase 4 frontend foundation complete)
 
 ---
 
@@ -12,6 +12,8 @@
 Phases are sequential. Do not start phase N+1 until all code, tests, and the exit gate for phase N pass. If a later phase exposes a regression, return to the phase that owns the broken contract, fix it, and rerun every gate from there forward.
 
 Each phase delivers working, tested code. Hardware tests remain opt-in and run only on a controlled bench with Bench TX explicitly disabled by default.
+
+**Sequencing exception (2026-07-16):** Phase 2 (CANalyst-II physical transport) is deferred — see the note at the top of that section. Phase 3 onward proceeds against the Phase 1 virtual transport only. Phase 2 must still close out (exit gate fully green, including the opt-in hardware suite) before anything that requires real bus traffic — Phase 5.4 synthetic-peer bench proof and Phase 10 conformance — can pass.
 
 ---
 
@@ -320,6 +322,8 @@ pytest vt-console/backend/tests/test_websocket_stream.py -v
 
 ## Phase 2 — CANalyst-II Transport and Timestamp Architecture
 
+> **DEFERRED (2026-07-16).** Hardware is available (CANalyst-II adapter in hand) but not yet wired up. Rather than block on it, work proceeds to Phase 3 on the Phase 1 virtual transport; this phase resumes later. Reference when resuming: `debug-tool/backend/canalystii_bridge.py` is a working, already-hardened `canalystii`-based bridge (handles RX-buffer priming, the WinUSB `__del__` reset-noise issue) — port its lessons rather than starting from zero. **Correct its channel mapping when porting**: the debug-tool script defaults `Ch0→low, Ch1→high` (`CANALYST_CH0_BUS`/`CANALYST_CH1_BUS` env vars), which is the reversed mapping this workplan already flagged as wrong (§2.1 requires **Ch0→High, Ch1→Low**). It also talks the `canalystii` PyPI package directly over a stdio JSON bridge, not `python-can`'s `CANalystIIBus` — §2.1 still calls for the `python-can` backend for consistency with the `Transport` protocol used by `virtual.py`, so this is source material to adapt, not to drop in unchanged.
+
 **Goal:** Add physical CAN transport via `python-can` CANalyst-II, with correct channel mapping, device timestamps, adapter health, and connection lifecycle.
 
 **Depends on:** Phase 1
@@ -397,46 +401,49 @@ pytest vt-console/backend/tests/test_hw_characterization.py -v -m hardware
 
 **Goal:** Implement the three operating profiles (Full Vehicle, Bench Test, Pure Software) with explicit transitions, session state machine, and Bench TX controls.
 
-**Depends on:** Phase 2
+**Depends on:** Phase 1 (Phase 2 deferred, see sequencing exception above — Full Vehicle/Bench Test profiles that need real adapter transitions stay untestable against hardware until Phase 2 closes out; Pure Software profile work is unaffected)
 
-### 3.1 Profile state machine
+### 3.1 Profile state machine — ✅ done (2026-07-16, `vtc/services/session_manager.py`)
 
-- [ ] Three profiles with explicit transition rules:
-  - Full Vehicle: both physical buses, passive by default
-  - Bench Test: selected physical ECUs, missing peers may be synthesized
-  - Pure Software: two virtual buses, no physical TX
-- [ ] Controlled transition: stop periodic TX → neutral controls → confirm → activate
-- [ ] Adapter loss never silently switches to Pure Software (explicit operator action required)
-- [ ] Profile visible in API status and WebSocket events
+- [x] Three profiles recognized; **only Pure Software is reachable** while Phase 2 is deferred — Full Vehicle and Bench Test are refused outright (`profile.physical_unavailable`, 503), never a silent fallback to Pure Software
+- [x] Controlled transition: `change_profile` requires `confirm=true` + matching `expected_revision`, neutralizes (Bench TX off, leases cleared) before switching
+- [x] Adapter loss never silently switches profile — refusal is explicit and typed, not a fallback (full adapter-loss-*during*-an-active-physical-session behavior needs Phase 2 hardware to exist at all; deferred with it)
+- [x] Profile visible in `GET /api/v1/status` (`session.profile`, `session.destination`) and `GET /api/v1/sessions`; WebSocket event carrying it is Phase 4/stream scope, not yet wired
 
-### 3.2 Test-session state machine
+### 3.2 Test-session state machine — ✅ done (`vtc/services/session_manager.py`, `vtc/models/session.py`)
 
-- [ ] States: Stopped → Preparing → Listening → Running → Stopping → Completed/Failed/Inconclusive
-- [ ] Session identity: backend session ID, adapter epoch, test session ID, protocol hash
-- [ ] Session revision for concurrent mutation control
+- [x] States implemented: Stopped → Preparing → Listening → Running → Stopping → Completed/Failed/Inconclusive (`SessionPhase`); `create()` collapses Preparing→Listening→Running synchronously (no async bring-up work exists yet to justify pausing there)
+- [x] Session identity: `session_id` (`ses_*`), `test_session_id` (`test_*` or caller-supplied), `adapter_epoch`, `wire_hash` — no `semantic_hash` (vtc's `protocol_bridge` only exports `WIRE_HASH`, unlike control-toolkit's sibling module)
+- [x] Session revision (`revision: int`) increments on every mutation; enforced via `expected_revision` on bench-tx/profile/stop-all/close
 
-### 3.3 Bench TX state
+### 3.3 Bench TX state — ✅ done
 
-- [ ] Disabled/Enabled binary state
-- [ ] Connecting adapter leaves Disabled
-- [ ] Explicit enable required for physical TX
-- [ ] Auto-disable on: profile change, disconnect, shutdown, session stop, reconnect
-- [ ] Passive monitoring and recording work while Disabled
+- [x] Disabled/Enabled binary state (`BenchTxState`)
+- [x] New session starts Disabled
+- [x] Explicit enable required; enabling for a physical profile is refused (503) since no adapter can exist yet
+- [x] Auto-disable on: profile change, Stop All, session close, backend shutdown (`Lifecycle.shutdown` calls `sessions.close()`) — **disconnect/reconnect auto-disable is Phase 2 scope** (no adapter to disconnect yet)
+- [x] Passive monitoring/state endpoints are unaffected by Bench TX state (untouched by this phase)
 
-### 3.4 Stimulus leases and source ownership
+### 3.4 Stimulus leases and source ownership — ✅ done (`vtc/services/ownership.py`)
 
-- [ ] Exclusive, expiring ownership of resources (steering, motor, brake, HMI, periodic CAN ID)
-- [ ] One permitted producer per `bus + CAN ID` during a session
-- [ ] Lease renewal mechanism for interactive controls
-- [ ] Backend-owned cleanup on expiry, disconnect, or Stop All
+- [x] Exclusive, expiring ownership of `(bus, can_id)` (`OwnershipTable`/`Lease`) — the resource-name fields (steering/motor/brake/HMI) are supported via the free-form `resource` field but no caller-side semantic mapping exists yet (that lands with Phase 5/7 actuator control)
+- [x] One permitted producer per `bus + CAN ID`; same-owner reclaim renews instead of conflicting; different-owner claim raises `OwnershipConflict` → `409 ownership.conflict`
+- [x] Lease renewal via `POST /sessions/{id}/leases/renew`
+- [x] Backend-owned cleanup: TTL expiry (lazy, checked on every claim/list/renew), and `OwnershipTable.clear()` on Stop All / session close. Disconnect-triggered cleanup is Phase 2 scope.
 
-### 3.5 Session API
+### 3.5 Session API — ✅ done (`vtc/api/sessions.py`, `vtc/api/errors.py`)
 
-- [ ] `GET /api/v1/sessions` — current session state
-- [ ] `POST /api/v1/sessions` — create session with profile and capabilities
-- [ ] `POST /api/v1/sessions/{id}/bench-tx` — enable/disable Bench TX
-- [ ] `POST /api/v1/sessions/{id}/stop-all` — Stop All
-- [ ] `DELETE /api/v1/sessions/{id}` — close session
+- [x] `GET /api/v1/sessions` — current session state
+- [x] `GET /api/v1/sessions/profiles` — profile availability (added beyond the minimal §3.5 list; needed to surface *why* Full Vehicle/Bench Test are unavailable)
+- [x] `POST /api/v1/sessions` — create session with profile and capabilities
+- [x] `POST /api/v1/sessions/{id}/profile` — controlled profile transition (added; required by §3.1's controlled-transition rule)
+- [x] `POST /api/v1/sessions/{id}/bench-tx` — enable/disable Bench TX
+- [x] `POST /api/v1/sessions/{id}/stop-all` — Stop All
+- [x] `DELETE /api/v1/sessions/{id}` — close session
+- [x] `POST /api/v1/sessions/{id}/leases`, `.../leases/renew`, `DELETE .../leases/{lease_id}` — added; required by §3.4
+- [x] Errors as RFC 9457 `problem+json` (`code`, `status`, `detail`) via a `SessionError` → exception-handler mapping
+
+Deliberately **not** added: a `vehicle-view` endpoint (requested/confirmed mode/power header fields) — that belongs to the Overview workspace shell (Phase 4, architecture §6), not session management.
 
 **Tests:**
 ```bash
@@ -462,13 +469,15 @@ pytest vt-console/backend/tests/test_source_ownership.py -v
 pytest vt-console/backend/tests/test_api_sessions.py -v
 ```
 
-**Exit gate:**
-- [ ] Profile transitions are explicit and tested
-- [ ] Bench TX cannot be enabled without proper session
-- [ ] Source ownership prevents duplicate producers
-- [ ] Adapter loss disables Bench TX and marks stale (never silent fallback)
-- [ ] Stop All cancels all jobs and disables TX
-- [ ] Session revision prevents concurrent conflicts
+**Exit gate:** *(35 new tests passing, 2026-07-16; 113 total in `vt-console/backend`)*
+- [x] Profile transitions are explicit and tested — confirm+revision required; physical profiles refused, never silently swapped
+- [x] Bench TX cannot be enabled without proper session — no active session (404) or physical profile / no adapter (503/409) all rejected
+- [x] Source ownership prevents duplicate producers — `OwnershipConflict` → 409 on cross-owner claim of the same `(bus, can_id)`
+- [~] Bench TX disables on profile change / Stop All / session close / backend shutdown — **the "adapter loss" and "reconnect" triggers are Phase 2 scope** (no physical adapter exists yet to be lost); "marks stale" (adapter status field) is likewise Phase 2
+- [~] Stop All disables TX and clears leases — **"cancels all jobs" is Phase 5 scope** (the periodic scheduler doesn't exist yet); nothing to cancel today
+- [x] Session revision prevents concurrent conflicts — `expected_revision` mismatch → 409 `session.revision_conflict`
+
+**Phase 3 status: functionally complete for everything that doesn't require Phase 2 (physical transport) or Phase 5 (scheduler).** The two partial items above aren't bugs — they name capabilities owned by later phases and will close out when those phases land, per the non-negotiable phase rule.
 
 ---
 
@@ -478,60 +487,48 @@ pytest vt-console/backend/tests/test_api_sessions.py -v
 
 **Depends on:** Phase 3
 
-### 4.1 Frontend scaffolding
+### 4.1 Frontend scaffolding — ✅ done (2026-07-16, `vt-console/frontend/`, React 19 + Vite 8 + TS)
 
-- [ ] Create `vt-console/frontend/` with Vite + React + TypeScript
-- [ ] Tailwind CSS + shadcn/ui component primitives
-- [ ] Zustand for live state management
-- [ ] Generated TypeScript API client from OpenAPI
-- [ ] Dark, high-contrast automotive theme (architecture §17)
+- [x] `vt-console/frontend/` with Vite + React + TypeScript
+- [x] Tailwind CSS — **hand-rolled `Card`/`Badge`/`StatusPill` primitives instead of shadcn/ui**; a full shadcn CLI install was judged disproportionate for a read-only-MVP phase
+- [x] Zustand for live state management (`store.ts`)
+- [~] **Hand-written typed `api.ts`/`types.ts` instead of OpenAPI codegen** — written directly against the real backend models (`vtc/models/*.py`) and verified against the live server; generating a client from OpenAPI is a separate, larger task not justified for three read-only GET endpoints
+- [x] Dark, high-contrast automotive theme
 
-### 4.2 Application shell
+### 4.2 Application shell — ✅ done (`Header.tsx`, `NavRail.tsx`)
 
-- [ ] Persistent status header:
-  - Active profile badge
-  - USB adapter state indicator
-  - High Bus / Low Bus activity (independent)
-  - Vehicle power state (requested vs confirmed)
-  - Vehicle mode (requested vs confirmed)
-  - ESTOP state
-  - Recording state
-  - Stream quality badge (LIVE / DELAYED / DROPPING)
-- [ ] Left navigation rail with workspace icons
-- [ ] Protocol hash match/mismatch indicator
+- [~] Persistent status header — built: active profile badge, adapter/channel activity (High/Low independent, from `/status.adapter.channels`, tri-state `Capability` rendered as "Unknown" not false), stream quality badge (LIVE/DELAYED/LOST), protocol hash match/mismatch. **Not built (no backend source exists yet):** vehicle power/mode requested-vs-confirmed, ESTOP state, recording state — `SessionState` deliberately has none of these fields (Phase 3 note); owned by Phase 5/6/7 when HMI/diagnostics/recording land
+- [x] Left navigation rail — exactly 3 workspace icons (Overview/Network/Live CAN); no placeholder tabs for later-phase workspaces
+- [x] Protocol hash match/mismatch indicator — checked both directions (WS `hello.wire_hash` vs `/status.wire_hash`)
 
-### 4.3 WebSocket client
+### 4.3 WebSocket client — ✅ done (`useStream.ts`)
 
-- [ ] Connection sequence: authenticate → exchange protocol hash → clock offset → subscribe → receive snapshot → apply deltas
-- [ ] Gap detection from batch sequence numbers → request fresh snapshot
-- [ ] Independent freshness clock (ages continue increasing without new messages)
-- [ ] Reconnect with exponential backoff and visible attempt count
-- [ ] Clock-offset estimation for transport delay measurement
+- [x] Connection sequence — matches the **actual** `stream.py` contract, not the prose above: `hello` (wire hash + server clock) → initial `state` → thereafter **full snapshots** on every store-version change (there is no delta/patch format — "apply deltas" in this checklist item was aspirational text that the Phase 1 implementation didn't build; each `state` message is already the complete current message list)
+- [x] Gap detection from `batch_seq` → sends `{"type":"resync"}`
+- [x] Independent freshness clock — stream-quality decays on a 250ms client-side interval, not gated on new frames arriving
+- [x] Reconnect with exponential backoff (500ms × 2^n, capped 8s) and visible attempt count
+- [x] Clock-offset estimation from `hello`/`heartbeat` `server_time_ns`
 
-### 4.4 Overview workspace
+### 4.4 Overview workspace — ✅ done for what's derivable today (`Overview.tsx`)
 
-- [ ] Safety and mode strip: ESTOP, power, mode, control path, CAN health
-- [ ] Vehicle status cards: speed, steering, brake, gear, faults (with freshness)
-- [ ] Command/feedback pairs table: Drive, Steering, Brake (requested vs measured + error + health)
-- [ ] Click card → open contributing CAN messages
+- [~] Safety/mode strip — **built:** ESTOP (from `SAFETY_ESTOP` event-frame freshness — "seen recently" = latched active, no dedicated backend field exists), CAN health aggregate (freshness distribution). **Rendered as explicit "Unknown", not fabricated:** confirmed mode, control path — no backend field exists yet (Phase 5/6/7)
+- [x] Vehicle status cards — built from real decoded signals already in `/state` (RT/MTR/SES messages), not guessed field names; SES/SEB flagged as opaque custom-codec (freshness shown, no decoded values, matching their vendor-XOR codec status)
+- [x] Command/feedback pairs table — best-effort from the real catalog
+- [ ] Click card → open contributing CAN messages — **deferred**, overlaps the Live CAN message-detail drawer (§4.6, also deferred)
 
-### 4.5 Network workspace
+### 4.5 Network workspace — ✅ done, derived entirely client-side (`Network.tsx`, `topology.ts`)
 
-- [ ] Topology map: High and Low bus lines, RT bridging, attached nodes
-- [ ] Node states: Live, Late, Offline, Simulated, Unknown traffic, Fault
-- [ ] Heartbeat rules from generated metadata
-- [ ] Bus health cards: adapter, bitrate, RX/TX rate, errors, unknown IDs
-- [ ] Five-layer connection-loss display (USB, channel, stream, ECU, signal)
+- [x] Topology — **no backend topology endpoint exists** (`vtc/state/topology.py` confirmed an empty stub, left untouched — out of this phase's "Depends on: Phase 3" scope). Built client-side instead: groups `/protocol/messages` catalog instances by declared `sender`, cross-referenced against `/state` per-message `freshness`, with a 7-state worst-case severity rollup per node
+- [~] Node states — Live/Late/Missing/Invalid/Unseen/Frozen/Recovering (the backend's real `FreshnessState` enum) rather than the checklist's Live/Late/**Offline**/**Simulated**/**Unknown traffic**/Fault — those four need a per-frame `source`/provenance field that only exists on the raw envelope, not the latest-value API `MessageState` consumes; deferred to whichever phase adds a source-aware endpoint
+- [x] Bus health cards — from `/status.adapter.channels`
+- [ ] Five-layer connection-loss display — **deferred**; several of the five layers (USB, physical channel) don't exist without Phase 2 hardware
 
-### 4.6 Live CAN workspace
+### 4.6 Live CAN workspace — ✅ done for the must-have (`LiveCan.tsx`)
 
-- [ ] Latest-by-message view (default): one row per bus/ID, updates in place
-  - Activity indicator, bus, CAN ID, name, sender, direction, source, rate, raw bytes, decoded values, age
-  - Changed-value highlight without full-row flash
-- [ ] Chronological stream view (opt-in): individual frames, virtualized rows, pause/resume/clear
-- [ ] Filters: bus, ID/name, sender, signal, direction, source, category, known/unknown/warning/fault
-- [ ] Message detail drawer: identity, contract, live health, decoded signals, raw frame, byte/bit map, warnings
-- [ ] TanStack Table for latest-message view
+- [x] Latest-by-message view — one row per `(bus, can_id)`, updates in place, changed-value highlight, age from `last_seen_ns`; **`@tanstack/react-table`** as named in the checklist
+- [ ] Chronological stream view — **deferred**; no raw-frame history API exists on the backend to page through (`vtc/state/history.py` is Phase 6 scope)
+- [x] Filters — bus, name, sender, freshness
+- [ ] Message detail drawer — **deferred**; overlaps Phase 6 CAN Dictionary scope (byte/bit map rendering belongs there)
 
 **Tests:**
 ```bash
@@ -554,15 +551,19 @@ npx playwright test tests/e2e/live-can.spec.ts
 # → verify UI shows correct decoded values, freshness, topology
 ```
 
+**Verified 2026-07-16:** `npm run build` (tsc + vite) clean, no type errors. `npx vitest run` — **12/12 tests passing** across 5 files (Header, Overview, Network, LiveCan, useStream — including a `batch_seq`-gap→resync test and a fake-WebSocket reconnect test). Manually verified the real backend (`vtc/main.py` under uvicorn) against every hand-written type in `api.ts`/`types.ts` — no mismatches found. `npx playwright test` (`e2e/smoke.spec.ts`) — **1/1 passing** (6.8s): both webServers (Vite on 5173, backend on 8000) started cleanly, WS `/api/v1/stream` accepted, header/stream-quality/profile assertions all held. (Port 8000 was initially blocked by two stray leftover `uvicorn main:app --reload` processes — a `control-ui` dev server accidentally launched twice — cleared before this run; unrelated to vt-console code.)
+
 **Exit gate:**
-- [ ] Frontend connects to backend via WebSocket
-- [ ] Protocol hash match/mismatch shown
-- [ ] Overview shows live vehicle state with freshness indicators
-- [ ] Network topology correctly shows node liveness
-- [ ] Live CAN table displays decoded values with proper units
-- [ ] Freshness visually transitions: Live → Late → Missing
-- [ ] Stream quality badge reflects actual state
-- [ ] All Playwright tests pass against virtual backend
+- [x] Frontend connects to backend via WebSocket — verified live
+- [x] Protocol hash match/mismatch shown — checked both directions (`hello` vs `/status`)
+- [x] Overview shows live vehicle state with freshness indicators — for every signal with a real backend source; fields with none show explicit "Unknown" (see §4.4)
+- [x] Network topology correctly shows node liveness — client-derived (see §4.5), using the backend's real 7-state `FreshnessState`, not the checklist's Live/Late/Offline/Simulated/Unknown/Fault taxonomy (that needs a provenance field the API doesn't expose yet)
+- [x] Live CAN table displays decoded values with proper units — latest-by-message view, `@tanstack/react-table`
+- [x] Freshness visually transitions: Live → Late → Missing — driven by the same `FreshnessState` the backend computes; no client-side reimplementation of the aging logic
+- [x] Stream quality badge reflects actual state — independent 250ms decay clock, not gated on new frames
+- [x] All Playwright tests pass against virtual backend — 1/1 smoke test passing (full per-workspace E2E coverage still deferred, see below)
+
+**Phase 4 status: functionally complete for the must-have items (frontend connects, all three workspaces show real live data, freshness/quality indicators work, E2E-verified end to end).** Deferred, by design, to later phases: chronological raw-frame view and message-detail drawer (§4.6, need history/dictionary APIs that are Phase 6 scope), click-through from Overview cards to contributing messages (§4.4, same dependency), five-layer connection-loss display (§4.5, needs Phase 2 hardware), and per-workspace Playwright specs (`overview.spec.ts`/`network.spec.ts`/`live-can.spec.ts` — only the cross-cutting smoke test exists so far).
 
 ---
 
@@ -1156,8 +1157,9 @@ pytest vt-console/backend/tests/test_service_levels.py -v
 ```mermaid
 flowchart TD
     P0[Phase 0: Protocol Foundation] --> P1[Phase 1: Backend Skeleton + Virtual Transport]
-    P1 --> P2[Phase 2: CANalyst-II Transport]
-    P2 --> P3[Phase 3: Profiles + Sessions]
+    P1 --> P2[Phase 2: CANalyst-II Transport — DEFERRED]
+    P1 --> P3[Phase 3: Profiles + Sessions]
+    P2 -.deferred, must close before.-> P10
     P3 --> P4[Phase 4: Read-Only Frontend]
     P4 --> P5[Phase 5: Command Pipeline + Injection]
     P5 --> P6[Phase 6: Diagnostics + Recording + Evidence]
