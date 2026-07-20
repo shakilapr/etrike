@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include "shared_config.h"
+#ifndef TESTING
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 
 namespace mtr {
@@ -33,23 +34,34 @@ enum class Gear : uint8_t {
     R = messages::RtDriveCmd::kGearR,
 };
 
+#else
+// Stubs for native testing where the host GCC is too old for C++17 inline variables
+namespace mtr {
+enum class Mode : uint8_t {
+    Manual = 0,
+    Auto = 1,
+    Estop = 2,
+};
+enum class Gear : uint8_t {
+    N = 0,
+    D = 1,
+    S = 2,
+    R = 3,
+};
+#endif
+
 // ── Throttle — MCP4725 I2C DAC (0-5V) + ADC read ─────────────────
-constexpr int      kThrottleI2cSda      = 23;   // PB7 (1*16+7) — I2C1 SDA
-constexpr int      kThrottleI2cScl      = 22;   // PB6 (1*16+6) — I2C1 SCL
+constexpr int      kThrottleI2cSda      = 7;    // PA7 (0*16+7) — SW I2C SDA
+constexpr int      kThrottleI2cScl      = 5;    // PA5 (0*16+5) — SW I2C SCL
 constexpr uint8_t  kThrottleDacI2cAddr  = 0x61; // MCP4725, A0 tied to VCC
 constexpr unsigned kThrottleDeadZone    = 200;   // raw ADC counts
 constexpr int      kThrottleMaxSpeedMmps= 3000;
 constexpr int      kThrottleDacMaxVal   = 4095;  // 12-bit DAC
 
-// ── Gear — TLP281 optoisolator input + MOSFET output (72V) ────────
-// TLP281 inputs: active-low (72V present = opto pulls GPIO LOW)
-constexpr int kGearDSense = 16;  // PB0 (16+0) — TLP281 ch1
-constexpr int kGearSSense = 17;  // PB1 (16+1) — TLP281 ch2
-constexpr int kGearRSense = 18;  // PB2 (16+2) — TLP281 ch3
-// MOSFET outputs: HIGH = gate driven = 72V passed through
-constexpr int kGearDOut   = 3;   // PA3 —  MOSFET ch1
-constexpr int kGearSOut   = 4;   // PA4 —  MOSFET ch2
-constexpr int kGearROut   = 5;   // PA5 —  MOSFET ch3
+// ── Gear — Logic Decoder (74HC139 or similar) ───────────────────────
+constexpr int kGearDecA    = 0;   // PA0 — Decoder input A
+constexpr int kGearDecB    = 1;   // PA1 — Decoder input B
+constexpr int kGearDecEn   = 16;  // PB0 — Decoder enable (active-low)
 
 // ── ESTOP — direct-wired from dashboard button ────────────────────
 // NC (normally-closed), active-low, pull-up.
@@ -62,7 +74,12 @@ constexpr int kSafetyCheckHz       = 20;    // ESTOP GPIO + staleness
 constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 
 // ── Timeouts ──────────────────────────────────────────────────────
+#ifndef TESTING
 constexpr int kCmdStaleTimeoutMs   = messages::RtDriveCmd::kCycleMs * 20;
+#else
+constexpr int kCmdStaleTimeoutMs   = 10 * 20;
+#endif
+
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
 
 // ── Gear safety ───────────────────────────────────────────────────

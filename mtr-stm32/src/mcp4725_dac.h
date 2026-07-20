@@ -12,6 +12,13 @@
 //
 // STM32 HAL: HAL_I2C_Mem_Write(&hi2c1, (0x61 << 1), 0x40,
 //                              I2C_MEMADD_SIZE_8BIT, data, 2, timeout)
+//
+// Protocol (I2C):
+//   START + dev_addr(0x60) + W + ACK
+//   command_byte(0x40) + ACK        // Write DAC register, normal power mode
+//   D[11:4] + ACK                   // Upper 8 bits of 12-bit value
+//   D[3:0] << 4 + ACK               // Lower nibble shifted to upper nibble
+//   STOP
 
 #include <cstdint>
 #include "config.h"
@@ -26,30 +33,22 @@ public:
 
     /// Write a 12-bit value directly to the DAC (0-4095 → 0-5V).
     /// Returns true on success, false if I2C write failed after retry.
-    /// Uses 100ms finite timeout — HAL_MAX_DELAY would block forever on
-    /// I2C bus disruption, defeating hardware ESTOP (bug 8.2).
     bool write(uint16_t val) {
         if (val > kThrottleDacMaxVal) val = kThrottleDacMaxVal;
-        extern I2C_HandleTypeDef hi2c1;
-        uint8_t buf[2];
-        buf[0] = (val >> 4) & 0xFF;
-        buf[1] = (val << 4) & 0xFF;
-        constexpr uint32_t kI2cTimeoutMs = 100;  // Finite — never HAL_MAX_DELAY
-        HAL_StatusTypeDef st = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
-                                                  0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, kI2cTimeoutMs);
-        if (st != HAL_OK) {
-            // Retry once — I2C bus may have had a transient glitch
-            st = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(kThrottleDacI2cAddr << 1),
-                                   0x40, I2C_MEMADD_SIZE_8BIT, buf, 2, kI2cTimeoutMs);
+        
+        bool success = do_write(val);
+        if (!success) {
+            // Retry once
+            success = do_write(val);
         }
-        if (st != HAL_OK) {
+        
+        if (!success) {
             m_i2c_fail_count++;
         }
-        return st == HAL_OK;
+        return success;
     }
 
-    /// Returns consecutive I2C write failure count. Caller should force
-    /// throttle to safe state if this exceeds threshold (e.g., 3).
+    /// Returns consecutive I2C write failure count.
     uint32_t i2c_failures() const { return m_i2c_fail_count; }
 
     /// Convenience: set DAC from speed in mm/s.
@@ -73,6 +72,85 @@ public:
 private:
     uint32_t m_i2c_fail_count = 0;
 
+    static GPIO_TypeDef* get_port(int pin) {
+        return (pin < 16) ? GPIOA : ((pin < 32) ? GPIOB : GPIOC);
+    }
+    static uint16_t get_mask(int pin) {
+        return 1 << (pin & 0x0F);
+    }
+
+    static void set_pin(int pin, bool state) {
+        HAL_GPIO_WritePin(get_port(pin), get_mask(pin), state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    }
+
+    static bool read_pin(int pin) {
+        return HAL_GPIO_ReadPin(get_port(pin), get_mask(pin)) == GPIO_PIN_SET;
+    }
+
+    static void delay() {
+        for (volatile int i = 0; i < 50; i++);
+    }
+
+    static void start() {
+        set_pin(kThrottleI2cSda, true);
+        delay();
+        set_pin(kThrottleI2cScl, true);
+        delay();
+        set_pin(kThrottleI2cSda, false);
+        delay();
+        set_pin(kThrottleI2cScl, false);
+        delay();
+    }
+
+    static void stop() {
+        set_pin(kThrottleI2cSda, false);
+        delay();
+        set_pin(kThrottleI2cScl, true);
+        delay();
+        set_pin(kThrottleI2cSda, true);
+        delay();
+    }
+
+    static bool write_byte(uint8_t byte) {
+        for (uint8_t i = 0; i < 8; i++) {
+            set_pin(kThrottleI2cSda, (byte & 0x80) != 0);
+            byte <<= 1;
+            delay();
+            set_pin(kThrottleI2cScl, true);
+            delay();
+            set_pin(kThrottleI2cScl, false);
+        }
+        
+        // Read ACK
+        set_pin(kThrottleI2cSda, true);
+        delay();
+        set_pin(kThrottleI2cScl, true);
+        delay();
+        
+        bool ack = !read_pin(kThrottleI2cSda);
+        
+        set_pin(kThrottleI2cScl, false);
+        delay();
+        
+        return ack;
+    }
+
+    bool do_write(uint16_t val) {
+        // Try addresses 0x60 and 0x61
+        uint8_t addrs[] = {0x60 << 1, 0x61 << 1};
+        for (int i = 0; i < 2; i++) {
+            start();
+            if (write_byte(addrs[i])) {
+                write_byte(0x40);
+                write_byte((val >> 4) & 0xFF);
+                write_byte((val << 4) & 0xFF);
+                stop();
+                return true;
+            }
+            stop();
+        }
+        return false;
+    }
 };
 
 /// Global DAC instance.

@@ -24,7 +24,7 @@
 #include <atomic>
 
 /* STM32 HAL */
-#include "stm32f1xx_hal.h"
+#include "stm32g4xx_hal.h"
 
 /* FreeRTOS */
 #include "FreeRTOS.h"
@@ -44,8 +44,7 @@
 /* When STM32CubeMX project is configured, these externs link to the   */
 /* generated main.c. Until then, stubs satisfy the linker for CI.       */
 namespace mtr {
-CAN_HandleTypeDef hcan = {};
-I2C_HandleTypeDef  hi2c1 = {};
+FDCAN_HandleTypeDef hfdcan1 = {};
 ADC_HandleTypeDef  hadc1 = {};
 }
 

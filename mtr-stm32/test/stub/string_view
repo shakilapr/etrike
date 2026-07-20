@@ -1,0 +1,7 @@
+#pragma once
+namespace std {
+    class string_view {
+    public:
+        constexpr string_view(const char*) {}
+    };
+}
