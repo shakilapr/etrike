@@ -46,7 +46,11 @@ def decode_frame(body: DecodeFrameRequest) -> dict:
     try:
         data = bytes.fromhex(body.data_hex)
     except ValueError as exc:
-        raise SessionError("protocol.invalid_data_hex", "data_hex is not valid hexadecimal", status=400) from exc
+        raise SessionError(
+            "protocol.invalid_data_hex",
+            "data_hex is not valid hexadecimal",
+            status=400,
+        ) from exc
     frame = proto.Frame(
         bus=body.bus,
         id=body.can_id,
@@ -56,7 +60,7 @@ def decode_frame(body: DecodeFrameRequest) -> dict:
     status, values = proto.decode(key, frame)
     return {
         "known": True,
-        "status": str(status),
+        "status": status.value if hasattr(status, "value") else str(status),
         "bus": body.bus,
         "can_id": body.can_id,
         "data_hex": body.data_hex,

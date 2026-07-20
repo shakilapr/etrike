@@ -226,14 +226,6 @@ class Lifecycle:
             detail="High+Low virtual CAN",
             severity="info",
         )
-        if self.native_sil is not None:
-            self.diagnostics.emit(
-                code="simulation.native_sil_open",
-                title="Native RT SIL connected",
-                detail=str(self.native_sil.executable),
-                severity="info",
-            )
-
     def _native_sil_error(self, detail: str) -> None:
         self.diagnostics.emit(
             code="simulation.native_sil_error",

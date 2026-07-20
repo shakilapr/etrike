@@ -32,7 +32,7 @@ async function shot(page: Page, name: string) {
 async function ensureBenchTx(page: Page) {
   await go(page, 'control')
   const bench = (await page.getByTestId('control-bench-tx').innerText().catch(() => '')).trim()
-  if (/on|enabled/i.test(bench)) {
+  if (/^on\b|\benabled\b/i.test(bench)) {
     note('ok', 'control', `Bench TX already ON: ${bench}`)
     return
   }
@@ -41,7 +41,7 @@ async function ensureBenchTx(page: Page) {
     await page.waitForTimeout(700)
   }
   const after = (await page.getByTestId('control-bench-tx').innerText().catch(() => '')).trim()
-  if (/on|enabled/i.test(after)) note('ok', 'control', `Bench TX enabled: ${after}`)
+  if (/^on\b|\benabled\b/i.test(after)) note('ok', 'control', `Bench TX enabled: ${after}`)
   else note('error', 'control', `Bench TX not ON after click: ${after}`)
 }
 

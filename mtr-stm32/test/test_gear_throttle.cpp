@@ -15,14 +15,16 @@ typedef int GPIO_TypeDef;  // dummy
 #define GPIO_PIN_RESET  0
 #define GPIO_PIN_SET    1
 
-static uint16_t g_gpio_state = 0;  // bits represent pin levels
+static uint16_t g_gpio_state[4] = {0, 0, 0, 0};  // bits represent pin levels for Port A, B, C
 
-static int HAL_GPIO_ReadPin(GPIO_TypeDef*, uint16_t mask) {
-    return (g_gpio_state & mask) ? GPIO_PIN_SET : GPIO_PIN_RESET;
+static int HAL_GPIO_ReadPin(GPIO_TypeDef* port, uint16_t mask) {
+    int p = (port == GPIOA) ? 1 : (port == GPIOB) ? 2 : (port == GPIOC) ? 3 : 0;
+    return (g_gpio_state[p] & mask) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
-static void HAL_GPIO_WritePin(GPIO_TypeDef*, uint16_t mask, int state) {
-    if (state == GPIO_PIN_SET) g_gpio_state |= mask;
-    else g_gpio_state &= ~mask;
+static void HAL_GPIO_WritePin(GPIO_TypeDef* port, uint16_t mask, int state) {
+    int p = (port == GPIOA) ? 1 : (port == GPIOB) ? 2 : (port == GPIOC) ? 3 : 0;
+    if (state == GPIO_PIN_SET) g_gpio_state[p] |= mask;
+    else g_gpio_state[p] &= ~mask;
 }
 
 // ADC stub
@@ -54,36 +56,12 @@ int main() {
         CHECK(gc.current_gear() == Gear::N, "init → N");
     }
 
-    printf("-- GearControl: single gear sense --\n");
+    printf("-- GearControl: read_sense (V2) --\n");
     {
         mtr::GearControl gc; gc.init();
-        // Simulate D gear active (GPIO LOW on D sense pin = GPIO_PIN_RESET)
-        // Using pin from config.h: kGearDSense
-        g_gpio_state = 1u << (kGearDSense & 0x0F);  // set D pin HIGH (not active)
-        // Wait, TLP281 active-low: GPIO LOW = active. HAL_GPIO_ReadPin returns RESET=LOW.
-        // Our stub returns RESET when mask bit is CLEAR, SET when mask bit is SET.
-        // So to simulate "D active", clear the D bit.
-        g_gpio_state = 0;  // all LOW = all "active" — but that's a conflict!
-        // Let's just test the pure logic by directly unit-testing the functions.
-        // Actually, let's use the stub properly:
-        // To make D active (LOW on D pin): clear D bit
-        g_gpio_state = 0;
-        g_gpio_state |= 1u << (kGearSSense & 0x0F);  // S not active
-        g_gpio_state |= 1u << (kGearRSense & 0x0F);  // R not active
-        // D bit = 0 → RESET → active
         Gear g = gc.read_sense();
-        CHECK(g == Gear::D, "D active → D gear");
+        CHECK(g == Gear::N, "V2 has no sense hardware → always N");
         CHECK(!gc.gear_conflict_detected(), "no conflict");
-    }
-
-    printf("-- GearControl: conflict detection --\n");
-    {
-        mtr::GearControl gc; gc.init();
-        // Multiple gears active → conflict → N
-        g_gpio_state = 0;  // all pins LOW → D, S, R all "active"
-        Gear g = gc.read_sense();
-        CHECK(g == Gear::N, "conflict → N (fail-safe)");
-        CHECK(gc.gear_conflict_detected(), "conflict detected");
     }
 
     printf("-- GearControl: set_mosfets and all_off --\n");
@@ -91,7 +69,7 @@ int main() {
         mtr::GearControl gc; gc.init();
         gc.set_mosfets(Gear::D);
         CHECK(gc.current_gear() == Gear::D, "set to D");
-        CHECK(g_gpio_state != 0, "output pins set");
+        CHECK((g_gpio_state[1] | g_gpio_state[2] | g_gpio_state[3]) != 0, "output pins set");
         gc.all_off();
         CHECK(gc.current_gear() == Gear::N, "all_off → N");
     }
