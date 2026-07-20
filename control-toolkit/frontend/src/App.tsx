@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useAppStore, type MessageState, type TopologyNode, type Workspace } from './store'
+import { useAppStore, type MessageState, type Status, type TopologyNode, type Workspace } from './store'
 import { useBackendStream } from './useStream'
 import { api } from './api'
 import { VehiclePreview } from './VehiclePreview'
@@ -475,10 +475,24 @@ function Topbar() {
   const estopOn = !!ses?.estop_active
 
   async function injectEstop() {
+    setModeErr(null)
     try {
+      let st = await api.status()
+      if (transportModeOf(st.session?.profile ?? st.profile) === 'computer') {
+        if (!st.session?.session_id) {
+          await api.createSession('pure_software')
+          st = await api.status()
+        }
+        if (st.session.bench_tx !== 'enabled') {
+          await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+        }
+      } else if (st.session?.bench_tx !== 'enabled') {
+        throw new Error('Physical TX is disabled. Enable Bench TX before injecting ESTOP on Real buses.')
+      }
       await api.injectEstop()
+      setStatus(await api.status())
     } catch (e) {
-      console.error(e)
+      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
     }
   }
 
@@ -489,23 +503,8 @@ function Topbar() {
     setModeBusy(true)
     setModeErr(null)
     try {
-      if (next === 'real') {
-        const profiles = await api.profiles()
-        if (!profiles.physical_adapter?.available) {
-          throw new Error(
-            profiles.physical_adapter?.reason ||
-              'CANalyst-II is not available. Connect it by USB and refresh Settings.',
-          )
-        }
-      }
-      const st = await api.status()
       const profile = next === 'computer' ? 'pure_software' : 'bench_test'
-      if (st.session?.session_id) {
-        await api.changeProfile(st.session.session_id, profile, st.session.revision, true)
-      } else {
-        await api.createSession(profile)
-      }
-      setStatus(await api.status())
+      setStatus(await activateTransportProfile(profile))
     } catch (e) {
       setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 120))
       try {
@@ -702,6 +701,12 @@ function Topbar() {
           Inject ESTOP
         </button>
       </div>
+
+      {modeErr && (
+        <div className="topbar-action-error" role="status" data-testid="topbar-action-error">
+          {modeErr}
+        </div>
+      )}
 
       {/* Secondary context — denser, lower priority */}
       <div className="topbar-row topbar-row-meta" data-testid="topbar-row-session">
@@ -2361,7 +2366,7 @@ function Control() {
   const gearLabels: Record<number, string> = { 0: 'N', 1: 'D', 2: 'S', 3: 'R' }
 
   return (
-    <div className="workspace" data-testid="workspace-control">
+    <div className="workspace control-workspace" data-testid="workspace-control">
       <header className="ws-header">
         <h1>Control</h1>
         <p className="muted">
@@ -2370,6 +2375,7 @@ function Control() {
         </p>
       </header>
 
+      <div className="control-setup-grid">
       {/* ── Session gate ─────────────────────────────────────────── */}
       <section className="panel control-session-panel" data-testid="control-session-panel">
         <div className="control-status-row" data-testid="control-status-row">
@@ -2518,9 +2524,10 @@ function Control() {
           )}
         </div>
       </section>
+      </div>
 
       {method === 'high' && (
-        <>
+        <div className="control-high-grid">
           <section className="panel" data-testid="keyboard-control">
             <h2>1 · Keyboard teleop</h2>
             <p className="muted small">
@@ -2679,7 +2686,7 @@ function Control() {
               </button>
             </div>
           </section>
-        </>
+        </div>
       )}
 
       {method === 'low' && (
@@ -2838,7 +2845,7 @@ function Bench() {
 
   const hostRunning = running.some((p) => String(p.name) === 'host_drive_analysis')
   return (
-    <div className="workspace" data-testid="workspace-bench">
+    <div className="workspace bench-workspace" data-testid="workspace-bench">
       <header className="ws-header">
         <h1>Bench</h1>
         <p className="muted">
@@ -2846,7 +2853,8 @@ function Bench() {
           hardware-track; Pure Software uses virtual buses only.
         </p>
       </header>
-      <section className="panel">
+      <div className="bench-grid">
+      <section className="panel bench-setup-panel">
         <h2>Bench setup</h2>
         <ol className="setup-list">
           <li>Physical target ECU(s) — deferred (hardware track)</li>
@@ -2928,8 +2936,33 @@ function Bench() {
           {log || 'No analysis stimulus action yet.'}
         </pre>
       </section>
+      </div>
     </div>
   )
+}
+
+async function activateTransportProfile(profile: string): Promise<Status> {
+  if (profile === 'bench_test' || profile === 'full_vehicle') {
+    const profiles = await api.profiles()
+    if (!profiles.physical_adapter?.available) {
+      throw new Error(
+        profiles.physical_adapter?.reason ||
+          'CANalyst-II is unavailable. Connect USB and retry; Computer remains active.',
+      )
+    }
+  }
+  const current = await api.status()
+  if (current.session?.session_id && current.session.profile !== profile) {
+    await api.changeProfile(
+      current.session.session_id,
+      profile,
+      current.session.revision,
+      true,
+    )
+  } else if (!current.session?.session_id) {
+    await api.createSession(profile)
+  }
+  return api.status()
 }
 
 /* ── Dictionary ────────────────────────────────────────────────────── */
@@ -3090,7 +3123,7 @@ function Diagnostics() {
   }
 
   return (
-    <div className="workspace" data-testid="workspace-diagnostics">
+    <div className="workspace diagnostics-workspace" data-testid="workspace-diagnostics">
       <header className="ws-header">
         <h1>Diagnostics</h1>
         <p className="muted">
@@ -3253,6 +3286,7 @@ function Diagnostics() {
         </pre>
       </section>
 
+      <div className="diagnostics-secondary-grid">
       <section className="panel" data-testid="test-runner-panel">
         <h2>Verification runner</h2>
         <p className="muted small">
@@ -3325,6 +3359,7 @@ function Diagnostics() {
           </table>
         )}
       </section>
+      </div>
 
       <section className="panel" data-testid="events-panel">
         <h2>Event timeline</h2>

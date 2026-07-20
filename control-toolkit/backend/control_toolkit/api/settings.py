@@ -202,4 +202,5 @@ def get_settings(request: Request) -> dict:
             "episodes": diag_eps[:20] if isinstance(diag_eps, list) else [],
         },
         "recording": {"active": rec_active},
+        "simulation": life.simulation_status(),
     }
