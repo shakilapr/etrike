@@ -2189,7 +2189,6 @@ function Control() {
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVis)
       window.clearInterval(tick)
-      void api.controlRelease('disable').catch(() => undefined)
     }
   }, [kbEnabled, method])
 
@@ -2602,8 +2601,14 @@ function Control() {
                 onClick={() => {
                   if (kbEnabled) {
                     setKbEnabled(false)
-                    void api.controlRelease('disable').catch(() => undefined)
-                    setLog('Keyboard control off')
+                    setBusy(true)
+                    void api.controlRelease('disable')
+                      .then(async () => {
+                        setLog('Keyboard control off')
+                        await refresh()
+                      })
+                      .catch((e) => setLog(String(e)))
+                      .finally(() => setBusy(false))
                   } else {
                     void ensureSessionReady()
                       .then(async () => {
