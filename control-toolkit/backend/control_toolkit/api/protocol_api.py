@@ -11,6 +11,7 @@ import importlib
 import logging
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from control_toolkit import protocol_bridge as proto
 from control_toolkit.services.bit_layout import build_bit_grid
@@ -20,6 +21,49 @@ from control_toolkit.services.session_manager import SessionError
 log = logging.getLogger("control_toolkit.protocol")
 
 router = APIRouter(prefix="/protocol", tags=["protocol"])
+
+
+class DecodeFrameRequest(BaseModel):
+    bus: str
+    can_id: int
+    data_hex: str
+    is_extended: bool = False
+
+
+@router.post("/decode")
+def decode_frame(body: DecodeFrameRequest) -> dict:
+    """Decode one evidence/history frame through the generated protocol codec."""
+    key = proto.message_key_for(body.bus, body.can_id)
+    if key is None:
+        return {
+            "known": False,
+            "status": "unknown_id",
+            "bus": body.bus,
+            "can_id": body.can_id,
+            "data_hex": body.data_hex,
+            "signals": None,
+        }
+    try:
+        data = bytes.fromhex(body.data_hex)
+    except ValueError as exc:
+        raise SessionError("protocol.invalid_data_hex", "data_hex is not valid hexadecimal", status=400) from exc
+    frame = proto.Frame(
+        bus=body.bus,
+        id=body.can_id,
+        frame_format="extended" if body.is_extended else "standard",
+        data=data,
+    )
+    status, values = proto.decode(key, frame)
+    return {
+        "known": True,
+        "status": str(status),
+        "bus": body.bus,
+        "can_id": body.can_id,
+        "data_hex": body.data_hex,
+        "key": key,
+        "name": proto.CATALOG[key]["name"],
+        "signals": values,
+    }
 
 
 @router.get("/messages")

@@ -4,6 +4,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { resetComputerSession } from './session-reset'
 
 const OUT = path.join('test-results', 'control-drive')
 
@@ -19,12 +20,13 @@ async function go(page: Page, id: string) {
 test.describe('Control + Drive paths', () => {
   test.setTimeout(240_000)
 
-  test('high inject, keyboard, low actuators, HMI, drive arm, live CAN', async ({ page }) => {
+  test('high inject, keyboard, low actuators, HMI, drive arm, live CAN', async ({ page, request }) => {
     fs.mkdirSync(OUT, { recursive: true })
     const issues: Issue[] = []
     const pageErrors: string[] = []
     page.on('pageerror', (e) => pageErrors.push(e.message))
 
+    await resetComputerSession(request)
     await page.goto('/')
     await expect(page.getByTestId('app')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('chip-stream')).not.toHaveText(/CONNECTING/i, {
@@ -36,7 +38,7 @@ test.describe('Control + Drive paths', () => {
     await go(page, 'control')
     await expect(page.getByTestId('control-session-panel')).toBeVisible()
     await page.getByTestId('btn-enable-tx').click()
-    await expect(page.getByTestId('control-bench-tx')).toContainText(/ON|enabled/i, {
+    await expect(page.getByTestId('control-bench-tx')).toContainText(/ON — bus TX allowed|enabled/i, {
       timeout: 12_000,
     })
     await expect(page.getByTestId('btn-disable-tx')).toBeVisible()

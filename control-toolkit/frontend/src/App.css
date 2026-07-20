@@ -156,6 +156,15 @@ button.active {
   max-width: 112px;
 }
 
+.topbar-action-error {
+  padding: 6px 14px;
+  border-bottom: 1px solid #e8b4b8;
+  background: var(--danger-soft);
+  color: #7f1720;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .topbar-brand-cluster {
   flex: 0 0 auto;
   gap: 8px;
@@ -1939,6 +1948,11 @@ button:disabled {
 button:focus-visible {
   outline: 2px solid #9bb9e8;
   outline-offset: 2px; /* outline does not affect layout */
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 button.dense,
@@ -3959,6 +3973,51 @@ button.keycap:active:not(:disabled) {
 
 .control-session-panel .actions {
   margin-top: 10px;
+}
+
+.software-runtime {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-subtle, #f8fafc);
+}
+
+.software-runtime-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.runtime-indicators {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.runtime-indicator {
+  display: grid;
+  grid-template-columns: 8px minmax(82px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.runtime-indicator strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.runtime-scope {
+  margin: 10px 0 0;
+}
+
+@media (max-width: 800px) {
+  .runtime-indicators {
+    grid-template-columns: 1fr;
+  }
 }
 
 .control-status-row {

@@ -90,7 +90,7 @@ Indicators must therefore report RT SIL as running/stopped/error and SYS SIL as 
 | B14 Real tests | **New, confirmed** | Existing E2E intentionally skips Real activation. Add fake-CANalyst backend and Playwright success/failure/rollback tests. |
 | B15 ESTOP state semantics | **New, design gap** | `session.estop_active` is a UI injection latch, not evidence that a physical ESTOP/reset circuit is active. Label and reset/acknowledge it accurately. |
 | B16 Fake topology fallback | **Confirmed** | Empty topology must render an honest empty/unknown state; never invent Host/RT nodes. |
-| B17 PURE_SIM sends MANUAL | **Confirmed, critical correctness** | PURE_SIM is a local view/state option and must not call the physical HMI API. MANUAL/AUTO and local simulation mode need separate handlers. |
+| B17 PURE_SIM sends MANUAL | **Already fixed in current source** | Current `setMode` calls `hmiMode` only for MANUAL/AUTO and keeps PURE_SIM UI-only. Retain this as a regression test rather than an open implementation bug. |
 
 ## Mode/action matrix
 

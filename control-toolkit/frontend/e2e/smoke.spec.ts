@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { resetComputerSession } from './session-reset'
 
 test.describe('Control Toolkit UI (Pure Software)', () => {
   test('loads shell and shows stream/live status', async ({ page }) => {
@@ -86,9 +87,13 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
 
   test('analysis inject: yaw/speed appear on Overview and Live CAN', async ({
     page,
+    request,
   }) => {
+    await resetComputerSession(request)
     await page.goto('/')
     await page.getByTestId('nav-control').click()
+    await page.getByTestId('btn-enable-tx').click()
+    await expect(page.getByTestId('control-bench-tx')).toContainText('ON — bus TX allowed')
     await page.getByTestId('control-method-high').click()
 
     await page.getByTestId('input-speed').fill('800')
@@ -249,6 +254,11 @@ test.describe('Control Toolkit UI (Pure Software)', () => {
     await page.getByTestId('nav-live').click()
     await page.getByTestId('live-mode-chrono').click()
     await expect(page.getByTestId('live-chrono-table')).toBeVisible()
+    const firstHistoryRow = page.getByTestId('live-chrono-table').locator('tbody tr').first()
+    await expect(firstHistoryRow).toBeVisible()
+    await firstHistoryRow.click()
+    await expect(page.getByTestId('chrono-detail')).toBeVisible()
+    await expect(page.getByTestId('chrono-detail')).toContainText(/Sequence|Decode|Payload/)
     await expect(page.getByTestId('live-pause')).toBeVisible()
   })
 })

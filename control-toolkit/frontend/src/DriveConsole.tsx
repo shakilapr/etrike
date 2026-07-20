@@ -214,11 +214,13 @@ export function DriveConsole() {
   async function ensureArmedPath() {
     let st = await api.status()
     if (!st.session?.session_id) {
-      await api.createSession('pure_software')
-      st = await api.status()
+      throw new Error('No active session. Start Computer or connect Real in Settings first.')
     }
     if (st.session.bench_tx !== 'enabled') {
-      await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+      if (st.session.profile !== 'pure_software') {
+        throw new Error('Physical TX is disabled. Enable Bench TX explicitly before arming Drive.')
+      }
+      await api.setBenchTx(st.session.session_id, true, st.session.revision)
       st = await api.status()
     }
     setStatus(st)
@@ -258,14 +260,18 @@ export function DriveConsole() {
     clearKeys()
     try {
       await api.controlRelease(reason)
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setLog(`Local control disarmed, but backend release failed: ${String(e)}`)
+      return
     }
     setLog(`Disarmed (${reason}). Keyboard drives local sim only.`)
   }, [clearKeys])
 
   async function fireEstop() {
     setBusy(true)
+    setArmed(false)
+    clearKeys()
+    applyGear('N')
     try {
       await ensureArmedPath()
       seqRef.current += 1
@@ -276,9 +282,6 @@ export function DriveConsole() {
         estop: true,
       })
       setCtrlSnap(r.control)
-      setArmed(false)
-      clearKeys()
-      applyGear('N')
       setLog('ESTOP: SAFETY_ESTOP on high+low CAN')
       setStatus(await api.status())
     } catch (e) {
@@ -422,8 +425,15 @@ export function DriveConsole() {
         })
         .catch((e) => {
           const msg = String(e)
-          // Stale sequence from races is expected under load; don't flood the log.
-          if (!/stale_sequence|409/i.test(msg)) setLog(msg)
+          // Only an actual stale-sequence race is ignorable. Session, ownership,
+          // and TX-gate conflicts mean authoritative control was lost.
+          if (!/stale[_ ]sequence/i.test(msg)) {
+            setArmed(false)
+            clearKeys()
+            applyGear('N')
+            setLog(`Control lost: ${msg}`)
+            void api.status().then(setStatus).catch(() => undefined)
+          }
         })
         .finally(() => {
           intentInFlightRef.current = false
@@ -713,6 +723,7 @@ export function DriveConsole() {
 
   const k = keyUi
   const benchOn = status?.session?.bench_tx === 'enabled'
+  const fullVehicle = (status?.session?.profile ?? status?.profile) === 'full_vehicle'
   const displaySpeed = armed && canSpeed != null ? canSpeed : hud.speedMmps
   const displayYaw = armed && canYaw != null ? canYaw : hud.yawMradS
   const displayGear = armed && canGear ? canGear : gear
@@ -720,6 +731,10 @@ export function DriveConsole() {
     ctrlSnap?.shaped_speed_mmps != null ? Number(ctrlSnap.shaped_speed_mmps) : null
   const shapedYaw =
     ctrlSnap?.shaped_yaw_mrad_s != null ? Number(ctrlSnap.shaped_yaw_mrad_s) : null
+
+  useEffect(() => {
+    if (fullVehicle && armedRef.current) void disarmControl('full_vehicle_profile')
+  }, [fullVehicle, disarmControl])
 
   /** Hold virtual key (pointer) — works while armed or local sim. */
   function pressVirtual(code: string, down: boolean) {
@@ -805,7 +820,11 @@ export function DriveConsole() {
           </span>
         </div>
         <div className="actions tight drive-top-actions">
-          {!armed ? (
+          {fullVehicle ? (
+            <span className="chip danger" data-testid="drive-mode-restriction">
+              Teleoperation hidden in Full Vehicle
+            </span>
+          ) : !armed ? (
             <button
               type="button"
               data-testid="btn-drive-arm"
@@ -825,7 +844,7 @@ export function DriveConsole() {
               Disarm
             </button>
           )}
-          <button
+          {!fullVehicle && <button
             type="button"
             className="danger"
             data-testid="btn-drive-estop"
@@ -833,7 +852,7 @@ export function DriveConsole() {
             onClick={() => void fireEstop()}
           >
             ESTOP
-          </button>
+          </button>}
         </div>
       </header>
 
