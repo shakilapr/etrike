@@ -1,12 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
-import path from 'node:path'
 
 // Dedicated e2e ports to avoid clashes with a developer's manual servers.
 const backendPort = 8010
 const frontendPort = 5174
-const backend = `http://127.0.0.1:${backendPort}`
 const frontend = `http://127.0.0.1:${frontendPort}`
-const nativeSil = path.resolve(process.cwd(), '../../native-test/build-sil/sim_engine_native.exe')
 
 export default defineConfig({
   testDir: './e2e',
@@ -17,36 +14,11 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   reporter: [['list']],
+  globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: frontend,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: [
-    {
-      command: `python -m uvicorn control_toolkit.main:app --host 127.0.0.1 --port ${backendPort}`,
-      cwd: '../backend',
-      url: `${backend}/api/v1/status`,
-      reuseExistingServer: false,
-      timeout: 120_000,
-      env: {
-        ...process.env,
-        CTK_NATIVE_SIL_EXE: nativeSil,
-      },
-    },
-    {
-      // Point Vite proxy at e2e backend port via env (vite.config reads it).
-      // Launch Vite directly. The npm wrapper leaves its child node process
-      // alive on Windows when Playwright tears down the webServer fixture.
-      command: `node node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${frontendPort}`,
-      url: frontend,
-      reuseExistingServer: false,
-      timeout: 120_000,
-      env: {
-        ...process.env,
-        CTK_E2E_API: backend,
-      },
-    },
-  ],
 })
