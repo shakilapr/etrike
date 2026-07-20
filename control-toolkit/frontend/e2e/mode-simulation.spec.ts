@@ -54,10 +54,14 @@ test.describe('Computer / Real mode and managed simulation', () => {
 
     await page.getByTestId('btn-header-estop').click()
     await expect(page.getByTestId('chip-estop')).toContainText('Active')
-    const after = await (await request.get('/api/v1/status')).json()
-    expect(after.session.profile).toBe('pure_software')
-    expect(after.session.bench_tx).toBe('enabled')
-    expect(after.session.estop_active).toBe(true)
+    await expect.poll(async () => {
+      const after = await (await request.get('/api/v1/status')).json()
+      return {
+        profile: after.session.profile,
+        bench_tx: after.session.bench_tx,
+        estop_active: after.session.estop_active,
+      }
+    }).toEqual({ profile: 'pure_software', bench_tx: 'enabled', estop_active: true })
   })
 
   test('control actions do not silently create a Computer session', async ({ page, request }) => {
