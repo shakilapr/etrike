@@ -206,6 +206,17 @@ export const api = {
       semantic_hash: string
       instances: Array<Record<string, unknown>>
     }>('/protocol/messages'),
+  decodeFrame: (body: { bus: string; can_id: number; data_hex: string; is_extended?: boolean }) =>
+    json<{
+      known: boolean
+      status: string
+      bus: string
+      can_id: number
+      data_hex: string
+      key?: string
+      name?: string
+      signals: Record<string, unknown> | null
+    }>('/protocol/decode', { method: 'POST', body: JSON.stringify(body) }),
   protocolDictionary: () =>
     json<{
       count: number

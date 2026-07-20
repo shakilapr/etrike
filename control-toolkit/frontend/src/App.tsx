@@ -1391,10 +1391,7 @@ function Network() {
         <div className="bus-row">
           <div className="bus-label">High</div>
           <div className="bus-line high">
-            {(highNodes.length ? highNodes : [
-              { node: 'Host', bus: 'high', can_id: 0x7fc, liveness: 'offline', freshness: 'unseen' },
-              { node: 'RT_high', bus: 'high', can_id: 0x7fd, liveness: 'offline', freshness: 'unseen' },
-            ]).map((n) => (
+            {highNodes.map((n) => (
               <div
                 key={`${n.bus}-${n.node}`}
                 className={`topo-node liveness-${n.liveness}`}
@@ -1406,17 +1403,16 @@ function Network() {
                 <LivenessBadge value={n.liveness} />
               </div>
             ))}
+            {highNodes.length === 0 && (
+              <div className="topology-empty muted">No High-bus nodes observed.</div>
+            )}
           </div>
         </div>
         <div className="bus-bridge muted">RT gateway bridges High ↔ Low domains</div>
         <div className="bus-row">
           <div className="bus-label">Low</div>
           <div className="bus-line low">
-            {(lowNodes.length ? lowNodes : [
-              { node: 'RT_low', bus: 'low', can_id: 0x7fd, liveness: 'offline', freshness: 'unseen' },
-              { node: 'SYS', bus: 'low', can_id: 0x7fe, liveness: 'offline', freshness: 'unseen' },
-              { node: 'MTR', bus: 'low', can_id: 0x206, liveness: 'offline', freshness: 'unseen' },
-            ]).map((n) => (
+            {lowNodes.map((n) => (
               <div
                 key={`${n.bus}-${n.node}`}
                 className={`topo-node liveness-${n.liveness}`}
@@ -1428,6 +1424,9 @@ function Network() {
                 <LivenessBadge value={n.liveness} />
               </div>
             ))}
+            {lowNodes.length === 0 && (
+              <div className="topology-empty muted">No Low-bus nodes observed.</div>
+            )}
           </div>
         </div>
       </section>
@@ -1445,6 +1444,7 @@ type HistoryFrame = {
   data_hex: string
   direction: string
   source: string
+  is_extended?: boolean
 }
 
 function LiveCan() {
@@ -1458,6 +1458,10 @@ function LiveCan() {
   const [paused, setPaused] = useState(false)
   const [chrono, setChrono] = useState<HistoryFrame[]>([])
   const [chronoFrozen, setChronoFrozen] = useState<HistoryFrame[]>([])
+  const [chronoDetail, setChronoDetail] = useState<{
+    frame: HistoryFrame
+    decoded: Awaited<ReturnType<typeof api.decodeFrame>>
+  } | null>(null)
 
   useEffect(() => {
     if (viewMode !== 'chrono' || paused) return
@@ -1513,6 +1517,30 @@ function LiveCan() {
   const detail = filtered.find(
     (m) => `${m.bus}-${m.can_id}` === selected || m.key === selected,
   )
+
+  async function selectChronoFrame(frame: HistoryFrame) {
+    try {
+      const decoded = await api.decodeFrame({
+        bus: frame.bus,
+        can_id: frame.can_id,
+        data_hex: frame.data_hex,
+        is_extended: frame.is_extended,
+      })
+      setChronoDetail({ frame, decoded })
+    } catch {
+      setChronoDetail({
+        frame,
+        decoded: {
+          known: false,
+          status: 'decode_error',
+          bus: frame.bus,
+          can_id: frame.can_id,
+          data_hex: frame.data_hex,
+          signals: null,
+        },
+      })
+    }
+  }
 
   return (
     <div className="workspace live-layout" data-testid="workspace-live">
@@ -1654,7 +1682,12 @@ function LiveCan() {
             </thead>
             <tbody>
               {chronoFiltered.map((f) => (
-                <tr key={`${f.global_sequence}-${f.bus}-${f.can_id}`}>
+                <tr
+                  key={`${f.global_sequence}-${f.bus}-${f.can_id}`}
+                  className={chronoDetail?.frame.global_sequence === f.global_sequence ? 'selected' : undefined}
+                  data-testid={`chrono-row-${f.global_sequence}`}
+                  onClick={() => void selectChronoFrame(f)}
+                >
                   <td className="mono num">{f.global_sequence}</td>
                   <td>{f.bus}</td>
                   <td className="mono">{hexId(f.can_id)}</td>
@@ -1678,8 +1711,27 @@ function LiveCan() {
 
         <aside className="detail-drawer" data-testid="live-detail">
           <h2>Message detail</h2>
-          {!detail && <p className="muted">Select a row to inspect identity, health, and signals.</p>}
-          {detail && (
+          {viewMode === 'chrono' && !chronoDetail && (
+            <p className="muted">Select a historical frame to decode its exact payload.</p>
+          )}
+          {viewMode === 'chrono' && chronoDetail && (
+            <div data-testid="chrono-detail">
+              <dl className="kv">
+                <dt>Sequence</dt>
+                <dd className="mono">{chronoDetail.frame.global_sequence}</dd>
+                <dt>Identity</dt>
+                <dd className="mono">{chronoDetail.frame.bus} {hexId(chronoDetail.frame.can_id)} · {chronoDetail.decoded.name || 'unknown'}</dd>
+                <dt>Decode</dt>
+                <dd>{chronoDetail.decoded.status}</dd>
+                <dt>Payload</dt>
+                <dd className="mono">{chronoDetail.frame.data_hex || 'DLC 0'}</dd>
+              </dl>
+              <h3>Signals at this frame</h3>
+              <pre className="log chrono-signals">{chronoDetail.decoded.signals ? JSON.stringify(chronoDetail.decoded.signals, null, 2) : 'No generated decoder for this identity.'}</pre>
+            </div>
+          )}
+          {viewMode === 'latest' && !detail && <p className="muted">Select a row to inspect identity, health, and signals.</p>}
+          {viewMode === 'latest' && detail && (
             <>
               <dl className="kv">
                 <dt>Identity</dt>
@@ -1884,15 +1936,7 @@ function DirectActuatorCards({
         </p>
         <label className="field">
           <span className="field-label">Speed, mm/s</span>
-          <input
-            type="number"
-            data-testid="direct-motor-speed"
-            value={motorSpeed}
-            min={-500}
-            max={3000}
-            disabled={locked}
-            onChange={(e) => setMotorSpeed(Number(e.target.value))}
-          />
+          <NumericDraft testId="direct-motor-speed" value={motorSpeed} min={-500} max={3000} disabled={locked} onValue={setMotorSpeed} />
         </label>
         <label className="field">
           <span className="field-label">Gear</span>
@@ -1949,15 +1993,7 @@ function DirectActuatorCards({
         </p>
         <label className="field">
           <span className="field-label">Target angle raw (0.1°)</span>
-          <input
-            type="number"
-            data-testid="direct-steer-angle"
-            value={steerAngle}
-            min={-450}
-            max={450}
-            disabled={locked}
-            onChange={(e) => setSteerAngle(Number(e.target.value))}
-          />
+          <NumericDraft testId="direct-steer-angle" value={steerAngle} min={-450} max={450} disabled={locked} onValue={setSteerAngle} />
           <span className="field-hint">±450 · control_enable=1 · alignment_enable=1</span>
         </label>
         <div className="tx-line mono small" data-testid="direct-steer-tx">
@@ -2001,15 +2037,7 @@ function DirectActuatorCards({
         </p>
         <label className="field">
           <span className="field-label">Pressure request raw 0–100</span>
-          <input
-            type="number"
-            data-testid="direct-brake-pressure"
-            value={brakePressure}
-            min={0}
-            max={100}
-            disabled={locked}
-            onChange={(e) => setBrakePressure(Number(e.target.value))}
-          />
+          <NumericDraft testId="direct-brake-pressure" value={brakePressure} min={0} max={100} disabled={locked} onValue={setBrakePressure} />
           <span className="field-hint">control_enable=1 · alignment_enable=1</span>
         </label>
         <div className="tx-line mono small" data-testid="direct-brake-tx">
@@ -2178,29 +2206,9 @@ function Control() {
   }, [setStatus])
 
   async function ensureSessionReady() {
-    let st = await refresh()
+    const st = await refresh()
     if (!st.session?.session_id) {
-      try {
-        await api.createSession('pure_software')
-      } catch (e) {
-        // Concurrent create or leftover active session — reuse if present.
-        st = await refresh()
-        if (!st.session?.session_id) throw e
-      }
-      st = await refresh()
-    }
-    const tx = String(st.session?.bench_tx ?? '').toLowerCase()
-    if (tx !== 'enabled' && st.session?.session_id) {
-      try {
-        await api.setBenchTx(st.session.session_id, true, st.session.revision)
-      } catch {
-        // Revision race: re-read and retry once.
-        st = await refresh()
-        if (String(st.session?.bench_tx ?? '').toLowerCase() !== 'enabled' && st.session?.session_id) {
-          await api.setBenchTx(st.session.session_id, true, st.session.revision)
-        }
-      }
-      st = await refresh()
+      throw new Error('No active session. Start Computer or connect Real in Settings first.')
     }
     return st
   }
@@ -2242,9 +2250,13 @@ function Control() {
   async function enableTx() {
     setBusy(true)
     try {
-      await ensureSessionReady()
+      let st = await ensureSessionReady()
+      if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
+        await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+        st = await refresh()
+      }
       setLog('Bench TX enabled')
-      await refresh()
+      setStatus(st)
     } catch (e) {
       setLog(String(e))
     } finally {
@@ -2297,6 +2309,20 @@ function Control() {
       const lid = (res as { lease_id?: string }).lease_id
       if (typeof lid === 'string') setLeaseId(lid)
       setLog(`High-bus inject HOST_DRIVE_CMD: ${JSON.stringify(res)}`)
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function stopHostDriveInject() {
+    setBusy(true)
+    try {
+      const result = await api.stopAnalysis()
+      setLeaseId(null)
+      setLog(`Stopped periodic HostDrive analysis (${result.stopped} job(s))`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -2359,11 +2385,34 @@ function Control() {
     }
   }
 
+  async function disableHmi(kind: 'mode' | 'power') {
+    setBusy(true)
+    try {
+      const result = kind === 'mode' ? await api.hmiMode(0, false) : await api.hmiPower(0, false)
+      setLog(`HMI ${kind} periodic request disabled: ${JSON.stringify(result)}`)
+      await refresh()
+    } catch (e) {
+      setLog(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const activeMethod = String(ctrlStatus?.method ?? 'none')
   const activeLabel = String(ctrlStatus?.method_label ?? 'No active motion method')
   const benchOn = String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled'
   const sessionId = status?.session?.session_id
+  const activeProfile = status?.session?.profile ?? status?.profile ?? 'pure_software'
+  const fullVehicle = activeProfile === 'full_vehicle'
   const gearLabels: Record<number, string> = { 0: 'N', 1: 'D', 2: 'S', 3: 'R' }
+
+  useEffect(() => {
+    if (fullVehicle && method !== 'high') {
+      setKbEnabled(false)
+      setMethod('high')
+      setLog('Full Vehicle exposes named High-bus injection only. Bench bypass and HMI controls are hidden.')
+    }
+  }, [fullVehicle, method])
 
   return (
     <div className="workspace control-workspace" data-testid="workspace-control">
@@ -2409,7 +2458,16 @@ function Control() {
           </p>
         )}
         <div className="actions tight">
-          {benchOn ? (
+          {!sessionId ? (
+            <button
+              type="button"
+              className="secondary"
+              data-testid="btn-open-settings-session"
+              onClick={() => setWorkspace('settings')}
+            >
+              Start a session in Settings
+            </button>
+          ) : benchOn ? (
             <>
               <button
                 type="button"
@@ -2469,7 +2527,7 @@ function Control() {
           >
             High bus · Host drive
           </button>
-          <button
+          {!fullVehicle && <button
             type="button"
             role="tab"
             data-testid="control-method-low"
@@ -2479,8 +2537,8 @@ function Control() {
             onClick={() => void selectMethod('low')}
           >
             Low bus · Actuators
-          </button>
-          <button
+          </button>}
+          {!fullVehicle && <button
             type="button"
             role="tab"
             data-testid="control-method-hmi"
@@ -2490,7 +2548,7 @@ function Control() {
             onClick={() => void selectMethod('hmi')}
           >
             HMI · Mode / power
-          </button>
+          </button>}
         </div>
         <div className="method-compare" data-testid="method-compare">
           {method === 'high' && (
@@ -2528,7 +2586,7 @@ function Control() {
 
       {method === 'high' && (
         <div className="control-high-grid">
-          <section className="panel" data-testid="keyboard-control">
+          {!fullVehicle && <section className="panel" data-testid="keyboard-control">
             <h2>1 · Keyboard teleop</h2>
             <p className="muted small">
               Continuous Host intent via <span className="mono">POST /control/intent</span>{' '}
@@ -2604,7 +2662,7 @@ function Control() {
                 <dd>{kbSnap.active ? 'yes' : 'no'}</dd>
               </dl>
             )}
-          </section>
+          </section>}
 
           <section className="panel" data-testid="high-analysis-inject">
             <h2>2 · Numeric inject (analysis)</h2>
@@ -2617,26 +2675,12 @@ function Control() {
             <div className="form-grid">
               <label>
                 Speed, mm/s
-                <input
-                  data-testid="input-speed"
-                  type="number"
-                  value={speed}
-                  min={-500}
-                  max={3000}
-                  onChange={(e) => setSpeed(Number(e.target.value))}
-                />
+                <NumericDraft testId="input-speed" value={speed} min={-500} max={3000} onValue={setSpeed} />
                 <span className="field-hint">−500 … 3000</span>
               </label>
               <label>
                 Yaw rate, mrad/s
-                <input
-                  data-testid="input-yaw"
-                  type="number"
-                  value={yaw}
-                  min={-3000}
-                  max={3000}
-                  onChange={(e) => setYaw(Number(e.target.value))}
-                />
+                <NumericDraft testId="input-yaw" value={yaw} min={-3000} max={3000} onValue={setYaw} />
                 <span className="field-hint">−3000 … 3000</span>
               </label>
               <label>
@@ -2655,14 +2699,7 @@ function Control() {
               </label>
               <label>
                 Period, ms
-                <input
-                  data-testid="input-period"
-                  type="number"
-                  value={periodMs}
-                  min={10}
-                  disabled={!periodic}
-                  onChange={(e) => setPeriodMs(Number(e.target.value))}
-                />
+                <NumericDraft testId="input-period" value={periodMs} min={10} disabled={!periodic} onValue={setPeriodMs} />
                 <span className="field-hint">Only used if periodic is checked</span>
               </label>
               <label className="check">
@@ -2683,6 +2720,15 @@ function Control() {
                 onClick={() => void injectHostDrive()}
               >
                 {periodic ? 'Start periodic inject' : 'Send one-shot inject'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                data-testid="btn-stop-drive-inject"
+                disabled={busy || (!periodic && !leaseId)}
+                onClick={() => void stopHostDriveInject()}
+              >
+                Stop periodic inject
               </button>
             </div>
           </section>
@@ -2730,6 +2776,15 @@ function Control() {
                   {m === 'PURE_SIM' ? 'PURE_SIM (UI only)' : m}
                 </button>
               ))}
+              <button
+                type="button"
+                className="secondary"
+                data-testid="btn-mode-disable"
+                disabled={busy}
+                onClick={() => void disableHmi('mode')}
+              >
+                Disable mode TX
+              </button>
             </div>
           </div>
           <div className="hmi-request-block">
@@ -2752,6 +2807,15 @@ function Control() {
                 onClick={() => void setPower('OFF')}
               >
                 OFF
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                data-testid="btn-power-disable"
+                disabled={busy}
+                onClick={() => void disableHmi('power')}
+              >
+                Disable power TX
               </button>
             </div>
           </div>
@@ -2788,6 +2852,7 @@ function Bench() {
   const [running, setRunning] = useState<Array<Record<string, unknown>>>([])
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
+  const fullVehicle = (status?.session?.profile ?? status?.profile) === 'full_vehicle'
 
   const refreshPeers = useCallback(async () => {
     const peers = await api.syntheticPeers()
@@ -2802,11 +2867,13 @@ function Bench() {
   async function ensureBenchTx() {
     let st = await api.status()
     if (!st.session?.session_id) {
-      await api.createSession('pure_software')
-      st = await api.status()
+      throw new Error('No active session. Start Computer or connect Real in Settings first.')
     }
     if (st.session.bench_tx !== 'enabled') {
-      await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+      if (transportModeOf(st.session.profile) === 'real') {
+        throw new Error('Physical TX is disabled. Enable Bench TX explicitly before starting synthetic peers.')
+      }
+      await api.setBenchTx(st.session.session_id, true, st.session.revision)
       st = await api.status()
     }
     setStatus(st)
@@ -2881,7 +2948,7 @@ function Bench() {
           <dd className="mono">{(status?.session?.jobs || []).join(', ') || 'none'}</dd>
         </dl>
       </section>
-      <section className="panel" data-testid="synthetic-peers-panel">
+      {!fullVehicle ? <section className="panel" data-testid="synthetic-peers-panel">
         <h2>Analysis stimuli</h2>
         <p className="muted small">
           Explicit zero-speed HostDrive stimulus on High bus. This is not a synthetic
@@ -2935,9 +3002,75 @@ function Bench() {
         <pre className="log" data-testid="synthetic-log">
           {log || 'No analysis stimulus action yet.'}
         </pre>
-      </section>
+      </section> : (
+        <section className="panel mode-restriction" data-testid="synthetic-peers-hidden">
+          <h2>Bench stimuli unavailable</h2>
+          <p className="muted">
+            Full Vehicle observes physical ECUs and allows explicit named injection only.
+            Switch to Real Bench or Computer to run synthetic stimuli.
+          </p>
+        </section>
+      )}
       </div>
     </div>
+  )
+}
+
+function NumericDraft({
+  value,
+  onValue,
+  min,
+  max,
+  testId,
+  disabled,
+}: {
+  value: number
+  onValue: (value: number) => void
+  min?: number
+  max?: number
+  testId?: string
+  disabled?: boolean
+}) {
+  const [draft, setDraft] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+  const parsed = draft.trim() === '' || draft.trim() === '-' ? NaN : Number(draft)
+  const valid =
+    Number.isFinite(parsed) &&
+    (min == null || parsed >= min) &&
+    (max == null || parsed <= max)
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value))
+  }, [editing, value])
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      data-testid={testId}
+      value={draft}
+      disabled={disabled}
+      aria-invalid={!valid}
+      onFocus={() => setEditing(true)}
+      onChange={(event) => {
+        const next = event.target.value
+        setDraft(next)
+        const number = Number(next)
+        if (
+          next.trim() !== '' &&
+          next.trim() !== '-' &&
+          Number.isFinite(number) &&
+          (min == null || number >= min) &&
+          (max == null || number <= max)
+        ) {
+          onValue(number)
+        }
+      }}
+      onBlur={() => {
+        setEditing(false)
+        if (!valid) setDraft(String(value))
+      }}
+    />
   )
 }
 
@@ -3023,11 +3156,9 @@ function Diagnostics() {
   async function startRec() {
     setBusy(true)
     try {
-      // Ensure a session exists so vehicle_view recording flag has a home
-      let st = await api.status()
+      const st = await api.status()
       if (!st.session?.session_id) {
-        await api.createSession('pure_software')
-        st = await api.status()
+        throw new Error('No active session. Start Computer or connect Real in Settings before recording.')
       }
       const r = await api.startRecording()
       const rid =
@@ -3083,13 +3214,12 @@ function Diagnostics() {
   async function runVerification() {
     setBusy(true)
     try {
-      let st = await api.status()
+      const st = await api.status()
       if (!st.session?.session_id) {
-        await api.createSession('pure_software')
-        st = await api.status()
+        throw new Error('No active session. Start Computer or connect Real in Settings first.')
       }
       if (st.session.bench_tx !== 'enabled') {
-        await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+        throw new Error('Bench TX is disabled. Enable it explicitly before verification.')
       }
       await api.controlRelease('diagnostics_verification').catch(() => undefined)
       await api.stopAnalysis().catch(() => undefined)
@@ -3735,6 +3865,16 @@ function Settings() {
         synthetic_peers: prev?.synthetic_peers ?? [],
         diagnostics: prev?.diagnostics ?? { episode_count: 0, episodes: [] },
         recording: prev?.recording ?? { active: null },
+        simulation: prev?.simulation ?? {
+          mode: 'computer',
+          profile: 'pure_software',
+          backend: { state: 'unknown' },
+          virtual_can: { state: 'unknown' },
+          router: { state: 'unknown' },
+          rt_sil: { state: 'unknown' },
+          sys_sil: { state: 'unavailable', available: false },
+          protocol: { state: 'unknown' },
+        },
       }))
     }
   }, [status?.session?.destination, status?.session?.profile, status?.profile])
@@ -3753,27 +3893,13 @@ function Settings() {
   async function ensureThenSetProfile(profile: string) {
     setBusy(true)
     try {
-      if (profile === 'bench_test' || profile === 'full_vehicle') {
-        const profiles = await api.profiles()
-        if (!profiles.physical_adapter?.available) {
-          throw new Error(
-            profiles.physical_adapter?.reason ||
-              'CANalyst-II is not available. Connect it by USB and refresh Settings.',
-          )
-        }
-      }
-      const st = await api.status()
-      const created = st.session?.session_id
-        ? st.session.profile === profile
-          ? { session: st.session }
-          : await api.changeProfile(st.session.session_id, profile, st.session.revision, true)
-        : await api.createSession(profile)
-      setStatus(await api.status())
+      const nextStatus = await activateTransportProfile(profile)
+      setStatus(nextStatus)
       await refreshSettings()
       const label = PROFILE_LABELS[profile] ?? profile
       setLog(
-        `Active: ${label} · session ${created.session.session_id} · phase ${created.session.phase}` +
-          (created.session.destination ? ` · dest ${created.session.destination}` : ''),
+        `Active: ${label} · session ${nextStatus.session.session_id} · phase ${nextStatus.session.phase}` +
+          (nextStatus.session.destination ? ` · dest ${nextStatus.session.destination}` : ''),
       )
     } catch (e) {
       setLog(String(e))
@@ -3899,6 +4025,20 @@ function Settings() {
     }
   }
 
+  async function setSimulationRunning(running: boolean) {
+    setBusy(true)
+    try {
+      const result = running ? await api.startSimulation() : await api.stopSimulation()
+      await refreshSettings()
+      setLog(`RT SIL ${result.simulation.rt_sil.state}. Virtual CAN remains ${result.simulation.virtual_can.state}.`)
+    } catch (e) {
+      setLog(String(e).replace(/^Error:\s*/i, ''))
+      await refreshSettings().catch(() => undefined)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const modes = snap?.transport?.modes ?? []
   const profiles = snap?.transport?.profiles ?? []
   const physAdapter = snap?.transport?.physical_adapter
@@ -3918,6 +4058,7 @@ function Settings() {
   const history = snap?.history ?? {}
   const control = snap?.control ?? {}
   const service = snap?.service
+  const simulation = snap?.simulation
   const benchTx = String(session.bench_tx ?? 'disabled')
   const caps = Array.isArray(session.capabilities) ? (session.capabilities as string[]) : []
   const leases = Array.isArray(session.leases) ? (session.leases as string[]) : []
@@ -3971,7 +4112,7 @@ function Settings() {
             className={activeMode === 'real' ? 'transport-btn active real' : 'transport-btn'}
             data-testid="mode-real"
             aria-selected={activeMode === 'real'}
-            disabled={busy || !realOk}
+            disabled={busy}
             title={realOk ? 'Connect via CANalyst-II' : String(realReason || 'Adapter not found')}
             onClick={() => void activateReal()}
           >
@@ -4009,6 +4150,57 @@ function Settings() {
                 {channelMap.low?.physical || 'virtual:low'}
               </li>
             </ul>
+            {activeMode === 'computer' && (
+              <div className="software-runtime" data-testid="software-runtime-panel">
+                <div className="software-runtime-head">
+                  <strong>Software runtime</strong>
+                  <span className="muted small">explicit process health</span>
+                </div>
+                <div className="runtime-indicators">
+                  {[
+                    ['Backend', simulation?.backend],
+                    ['Virtual CAN', simulation?.virtual_can],
+                    ['Router', simulation?.router],
+                    ['RT SIL', simulation?.rt_sil],
+                    ['SYS SIL', simulation?.sys_sil],
+                    ['Protocol', simulation?.protocol],
+                  ].map(([label, indicator]) => {
+                    const item = indicator as import('./api').RuntimeIndicator | undefined
+                    const state = item?.state || 'unknown'
+                    const tone = state === 'running' || state === 'loaded' ? 'ok' : state === 'error' ? 'danger' : 'muted'
+                    return (
+                      <div className="runtime-indicator" key={String(label)}>
+                        <span className={`status-dot ${tone === 'ok' ? 'live' : tone === 'danger' ? 'danger' : 'muted'}`} />
+                        <span>{String(label)}</span>
+                        <strong className="mono">{state}</strong>
+                      </div>
+                    )
+                  })}
+                </div>
+                <p className="muted small runtime-scope" data-testid="simulation-scope">
+                  {simulation?.rt_sil?.scope || 'RT SIL status unavailable.'} SYS: {simulation?.sys_sil?.reason || simulation?.sys_sil?.state || 'unknown'}.
+                </p>
+                <div className="actions tight">
+                  <button
+                    type="button"
+                    data-testid="btn-simulation-start"
+                    disabled={busy || simulation?.rt_sil?.state === 'running' || !simulation?.rt_sil?.available}
+                    onClick={() => void setSimulationRunning(true)}
+                  >
+                    Start simulation
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    data-testid="btn-simulation-stop"
+                    disabled={busy || simulation?.rt_sil?.state !== 'running'}
+                    onClick={() => void setSimulationRunning(false)}
+                  >
+                    Stop simulation
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="actions tight">
               <button
                 type="button"
