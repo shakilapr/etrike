@@ -75,6 +75,29 @@ export type PhysicalAdapterInfo = {
   backend?: string
 }
 
+export type RuntimeIndicator = {
+  state: string
+  available?: boolean
+  configured?: boolean
+  reason?: string | null
+  last_error?: string | null
+  executable?: string | null
+  pid?: number | null
+  scope?: string
+  wire_hash?: string
+}
+
+export type SimulationSnapshot = {
+  mode: 'computer' | 'real'
+  profile: string
+  backend: RuntimeIndicator
+  virtual_can: RuntimeIndicator
+  router: RuntimeIndicator
+  rt_sil: RuntimeIndicator
+  sys_sil: RuntimeIndicator
+  protocol: RuntimeIndicator
+}
+
 export type SettingsSnapshot = {
   service: {
     title: string
@@ -142,6 +165,7 @@ export type SettingsSnapshot = {
     episodes: Array<Record<string, unknown>>
   }
   recording: { active: Record<string, unknown> | null }
+  simulation: SimulationSnapshot
 }
 
 export type VehicleViewBody = {
@@ -287,6 +311,17 @@ export const api = {
     }>('/sessions/profiles'),
   /** Aggregated live settings: transport, session, adapter, protocol, runtime, … */
   settings: () => json<SettingsSnapshot>('/settings'),
+  simulation: () => json<{ simulation: SimulationSnapshot }>('/simulation'),
+  startSimulation: () =>
+    json<{ simulation: SimulationSnapshot }>('/simulation/start', {
+      method: 'POST',
+      body: '{}',
+    }),
+  stopSimulation: () =>
+    json<{ simulation: SimulationSnapshot }>('/simulation/stop', {
+      method: 'POST',
+      body: '{}',
+    }),
   session: () =>
     json<{ session: import('./store').SessionState }>('/sessions'),
   createSession: (profile = 'pure_software') =>

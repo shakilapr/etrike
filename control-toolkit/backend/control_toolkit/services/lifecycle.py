@@ -219,12 +219,7 @@ class Lifecycle:
         self.transport = candidate
         self._start_router()
         if self.config.native_sil_executable:
-            self.native_sil = NativeSilBridge(
-                self.config.native_sil_executable,
-                candidate,
-                on_error=self._native_sil_error,
-            )
-            self.native_sil.start()
+            self.start_native_sil()
         self.diagnostics.emit(
             code="transport.virtual_open",
             title="Virtual buses open",
@@ -246,6 +241,125 @@ class Lifecycle:
             detail=detail,
             severity="error",
         )
+
+    def simulation_status(self) -> dict:
+        """Truthful software-runtime status; never infer ECU health from bus traffic."""
+        profile = self.sessions.active_profile()
+        virtual = isinstance(self.transport, VirtualTransportAdapter)
+        bridge = self.native_sil
+        executable = (
+            str(bridge.executable)
+            if bridge is not None
+            else self.config.native_sil_executable
+        )
+        return {
+            "mode": "computer" if profile is Profile.PURE_SOFTWARE else "real",
+            "profile": profile.value,
+            "backend": {"state": "running" if self.ready else "starting"},
+            "virtual_can": {
+                "state": "running" if virtual and self._transport_open() else "stopped",
+                "available": profile is Profile.PURE_SOFTWARE,
+            },
+            "router": {
+                "state": "running"
+                if self.router is not None and self._router_task is not None
+                else "stopped"
+            },
+            "rt_sil": {
+                "state": (
+                    "running"
+                    if bridge is not None and bridge.running
+                    else "error"
+                    if bridge is not None and bridge.last_error
+                    else "stopped"
+                ),
+                "configured": bool(self.config.native_sil_executable),
+                "available": bool(executable),
+                "executable": executable,
+                "pid": bridge.pid if bridge is not None else None,
+                "last_error": bridge.last_error if bridge is not None else None,
+                "scope": "RT physics model + generated codec; not full RT tasks",
+            },
+            "sys_sil": {
+                "state": "unavailable",
+                "configured": False,
+                "available": False,
+                "reason": "SYS is covered by offline tests but is not integrated into the managed live SIL bridge",
+            },
+            "protocol": {
+                "state": "loaded",
+                "wire_hash": proto.WIRE_HASH,
+            },
+        }
+
+    def start_native_sil(self) -> dict:
+        """Start the optional RT SIL peer while retaining the virtual transport."""
+        if self.sessions.active_profile() is not Profile.PURE_SOFTWARE:
+            from control_toolkit.services.session_manager import SessionError
+
+            raise SessionError(
+                "simulation.computer_only",
+                "software simulation is available only in Computer mode",
+                status=409,
+            )
+        if not isinstance(self.transport, VirtualTransportAdapter):
+            from control_toolkit.services.session_manager import SessionError
+
+            raise SessionError(
+                "simulation.virtual_transport_required",
+                "start the Computer virtual transport before simulation",
+                status=409,
+            )
+        if self.native_sil is not None and self.native_sil.running:
+            return self.simulation_status()
+        executable = self.config.native_sil_executable
+        if not executable:
+            from control_toolkit.services.session_manager import SessionError
+
+            raise SessionError(
+                "simulation.not_configured",
+                "RT SIL executable is not configured (set CTK_NATIVE_SIL_EXE)",
+                status=503,
+            )
+        bridge = NativeSilBridge(executable, self.transport, on_error=self._native_sil_error)
+        try:
+            bridge.start()
+        except Exception as exc:
+            bridge.last_error = str(exc)
+            self.native_sil = bridge
+            self._native_sil_error(str(exc))
+            from control_toolkit.services.session_manager import SessionError
+
+            raise SessionError("simulation.start_failed", str(exc), status=503) from exc
+        self.native_sil = bridge
+        self.diagnostics.emit(
+            code="simulation.native_sil_open",
+            title="Native RT SIL connected",
+            detail=str(bridge.executable),
+            severity="info",
+        )
+        return self.simulation_status()
+
+    def stop_native_sil(self) -> dict:
+        """Stop the RT SIL process without closing Computer virtual CAN."""
+        if self.sessions.active_profile() is not Profile.PURE_SOFTWARE:
+            from control_toolkit.services.session_manager import SessionError
+
+            raise SessionError(
+                "simulation.computer_only",
+                "software simulation is available only in Computer mode",
+                status=409,
+            )
+        if self.native_sil is not None:
+            self.native_sil.stop()
+            self.native_sil = None
+            self.diagnostics.emit(
+                code="simulation.native_sil_stopped",
+                title="Native RT SIL stopped",
+                detail="Virtual CAN remains open",
+                severity="info",
+            )
+        return self.simulation_status()
 
     def open_physical_transport(self) -> None:
         """Open CANalyst-II High+Low. Raises if device missing (no silent virtual)."""

@@ -30,10 +30,15 @@ class NativeSilBridge:
         self._writer: threading.Thread | None = None
         self._reader: threading.Thread | None = None
         self._stopping = threading.Event()
+        self.last_error: str | None = None
 
     @property
     def running(self) -> bool:
         return self._process is not None and self._process.poll() is None
+
+    @property
+    def pid(self) -> int | None:
+        return self._process.pid if self.running and self._process is not None else None
 
     def start(self) -> None:
         if self.running:
@@ -41,6 +46,7 @@ class NativeSilBridge:
         if not self.executable.is_file():
             raise FileNotFoundError(f"native SIL executable not found: {self.executable}")
         self._stopping.clear()
+        self.last_error = None
         self._process = subprocess.Popen(
             [str(self.executable)],
             stdin=subprocess.PIPE,
@@ -143,5 +149,6 @@ class NativeSilBridge:
                 self._error("native SIL process exited")
 
     def _error(self, detail: str) -> None:
+        self.last_error = detail
         if self.on_error is not None:
             self.on_error(detail)
