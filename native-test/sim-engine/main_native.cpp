@@ -15,6 +15,8 @@
  */
 
 #include <cstdio>
+#include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cmath>
@@ -79,10 +81,13 @@ static void write_json(const char* json) {
 }
 
 static std::string json_get_string(const std::string& json, const char* key) {
-    std::string search = "\"" + std::string(key) + "\":\"";
+    std::string search = "\"" + std::string(key) + "\":";
     auto pos = json.find(search);
     if (pos == std::string::npos) return "";
     pos += search.length();
+    while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) ++pos;
+    if (pos >= json.length() || json[pos] != '"') return "";
+    ++pos;
     auto end = json.find('"', pos);
     if (end == std::string::npos) return "";
     return json.substr(pos, end - pos);
@@ -104,9 +109,34 @@ static int json_get_int(const std::string& json, const char* key, int def = 0) {
     return num.empty() ? def : std::stoi(num);
 }
 
+static bool json_get_byte_array(const std::string& json, const char* key,
+                                std::array<std::uint8_t, 8>& out, std::size_t& size) {
+    std::string search = "\"" + std::string(key) + "\":";
+    auto pos = json.find(search);
+    if (pos == std::string::npos) return false;
+    pos += search.length();
+    while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) ++pos;
+    if (pos >= json.length() || json[pos] != '[') return false;
+    ++pos;
+    size = 0;
+    while (pos < json.length() && json[pos] != ']') {
+        while (pos < json.length() && (std::isspace(static_cast<unsigned char>(json[pos])) || json[pos] == ',')) ++pos;
+        if (pos >= json.length() || json[pos] == ']') break;
+        if (!std::isdigit(static_cast<unsigned char>(json[pos]))) return false;
+        int value = 0;
+        while (pos < json.length() && std::isdigit(static_cast<unsigned char>(json[pos]))) {
+            value = value * 10 + (json[pos++] - '0');
+        }
+        if (value > 255 || size >= out.size()) return false;
+        out[size++] = static_cast<std::uint8_t>(value);
+    }
+    return pos < json.length() && json[pos] == ']';
+}
+
 // ── Main ──
 int main() {
     write_json("{\"type\":\"state\",\"ecu\":\"rt\",\"healthy\":true,\"uptime_ms\":0}");
+    rt::DriveCmd commanded_drive{};
 
     while (!g_eof) {
         std::string line = read_line();
@@ -114,14 +144,35 @@ int main() {
 
         std::string msg_type = json_get_type(line);
 
-        if (msg_type == "tick") {
+        if (msg_type == "frame") {
+            // A small JSON-Lines CAN ingress for software-in-the-loop clients.
+            // Decode with the generated production protocol codec, not a local layout.
+            const std::string id = json_get_string(line, "id");
+            std::array<std::uint8_t, 8> data{};
+            std::size_t length = 0;
+            if (id == "0x300" && json_get_byte_array(line, "data", data, length)) {
+                etrike::protocol::Frame frame = etrike::protocol::Frame::standard(0x300u, static_cast<std::uint8_t>(length));
+                frame.data = data;
+                etrike::protocol::generated::HostDriveCmd host{};
+                if (etrike::protocol::generated::decode(frame.view(), host) == etrike::protocol::CodecStatus::Ok) {
+                    commanded_drive.speed_mmps = host.speed_mmps;
+                    commanded_drive.yaw_rate_mrad_s = host.yaw_rate_mrad_s;
+                    write_json("{\"type\":\"ack\",\"id\":\"0x300\",\"name\":\"HOST_DRIVE_CMD\"}");
+                } else {
+                    write_json("{\"type\":\"error\",\"code\":\"invalid_host_drive_cmd\"}");
+                }
+            }
+        } else if (msg_type == "tick") {
             int dt_ms = json_get_int(line, "dt_ms", 10);
             g_sim_time_us += int64_t(dt_ms) * 1000;
 
             // Run physics: resolve a drive command
-            rt::DriveCmd cmd{};
-            cmd.speed_mmps = json_get_int(line, "speed_mmps", 2000);
-            cmd.yaw_rate_mrad_s = json_get_int(line, "yaw_mrad_s", 0);
+            rt::DriveCmd cmd = commanded_drive;
+            // Keep explicit scalar input for standalone simulator trace tools.
+            if (line.find("\"speed_mmps\"") != std::string::npos)
+                cmd.speed_mmps = json_get_int(line, "speed_mmps", cmd.speed_mmps);
+            if (line.find("\"yaw_mrad_s\"") != std::string::npos)
+                cmd.yaw_rate_mrad_s = json_get_int(line, "yaw_mrad_s", cmd.yaw_rate_mrad_s);
 
             rt::ResolvedSetpoint sp{};
             bool ok = g_physics.resolve(cmd, sp);

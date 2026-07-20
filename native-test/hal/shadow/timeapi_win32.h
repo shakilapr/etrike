@@ -6,26 +6,11 @@
  * but on newer GCC/MinGW the multimedia timers API is not exposed
  * by default.
  *
- * This header provides the minimal declarations needed.
+ * Prefer MinGW's own declarations when they are available.  Including
+ * mmsystem.h here is safe before the FreeRTOS port includes windows.h and
+ * avoids redeclaring TIMECAPS/timeGetDevCaps on current MinGW toolchains.
  */
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#ifndef MMNOSOUND
-typedef struct {
-    unsigned int wPeriodMin;
-    unsigned int wPeriodMax;
-} TIMECAPS;
-#endif
-
-/* Declared in winmm.dll, linked via -lwinmm */
-unsigned int __stdcall timeGetDevCaps(TIMECAPS *ptc, unsigned int cbtc);
-unsigned int __stdcall timeBeginPeriod(unsigned int uPeriod);
-unsigned int __stdcall timeEndPeriod(unsigned int uPeriod);
-
-#ifdef __cplusplus
-}
-#endif
+#include <windows.h>
+#include <mmsystem.h>
