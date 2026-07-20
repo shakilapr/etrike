@@ -432,9 +432,9 @@ function findMsg(messages: MessageState[], name: string, bus?: string) {
   return messages.find((m) => m.name === name && (bus == null || m.bus === bus))
 }
 
-function ageMs(lastSeenNs?: number | null): string {
-  if (lastSeenNs == null) return '—'
-  const ms = Math.max(0, Date.now() - lastSeenNs / 1e6)
+function formatAge(age?: number | null): string {
+  if (age == null || !Number.isFinite(age)) return '—'
+  const ms = Math.max(0, age)
   if (ms < 1000) return `${Math.round(ms)} ms`
   return `${(ms / 1000).toFixed(1)} s`
 }
@@ -1616,7 +1616,7 @@ function LiveCan() {
                         : ''}
                     </td>
                     <td>{m.validation_status}</td>
-                    <td className="mono muted">{ageMs(m.last_seen_ns)}</td>
+                    <td className="mono muted age-cell">{formatAge(m.age_ms)}</td>
                     <td className="signals-cell">
                       {Object.entries(m.signals || {})
                         .map(([k, v]) => `${k}=${v.enum_label ?? v.engineering_value}`)
@@ -1695,7 +1695,7 @@ function LiveCan() {
                     : ''}
                 </dd>
                 <dt>Last seen</dt>
-                <dd className="mono">{ageMs(detail.last_seen_ns)} ago</dd>
+                <dd className="mono">{formatAge(detail.age_ms)} ago</dd>
               </dl>
               <h3>Signals</h3>
               <table className="data-table compact">
@@ -4403,12 +4403,16 @@ function Settings() {
 export default function App() {
   useBackendStream()
   const workspace = useAppStore((s) => s.workspace)
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 })
+  }, [workspace])
   return (
     <div className="app" data-testid="app">
       <Topbar />
       <div className="body">
         <Sidebar />
-        <main>
+        <main ref={mainRef}>
           {workspace === 'overview' && <Overview />}
           {workspace === 'network' && <Network />}
           {workspace === 'live' && <LiveCan />}

@@ -39,6 +39,8 @@ class MessageState(BaseModel):
     key: str | None = None
     name: str | None = None
     last_seen_ns: int | None = None
+    # Relative age computed on the backend monotonic clock for API consumers.
+    age_ms: float | None = None
     observed_rate_hz: float | None = None
     expected_rate_hz: float | None = None
     freshness: FreshnessState = FreshnessState.UNSEEN

@@ -6,6 +6,7 @@ export type MessageState = {
   key?: string | null
   name?: string | null
   last_seen_ns?: number | null
+  age_ms?: number | null
   observed_rate_hz?: number | null
   expected_rate_hz?: number | null
   freshness: string

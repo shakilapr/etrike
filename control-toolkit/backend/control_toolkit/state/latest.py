@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from control_toolkit import protocol_bridge as proto
 from control_toolkit.models.state import LatestStateSnapshot, MessageState
@@ -25,6 +26,10 @@ class LatestStore:
         with self._lock:
             self._sequence += 1
             messages = [m.model_copy(deep=True) for m in self._messages.values()]
+            now_ns = time.monotonic_ns()
+            for message in messages:
+                if message.last_seen_ns is not None:
+                    message.age_ms = max(0.0, (now_ns - message.last_seen_ns) / 1_000_000)
             return LatestStateSnapshot(
                 sequence=self._sequence,
                 wire_hash=proto.WIRE_HASH,
