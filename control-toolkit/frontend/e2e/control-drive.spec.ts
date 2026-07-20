@@ -102,6 +102,18 @@ test.describe('Control + Drive paths', () => {
     await page.keyboard.down('w')
     await page.waitForTimeout(350)
     const kbWhile = await page.getByTestId('kb-shaped').innerText()
+    await expect.poll(async () => {
+      const response = await page.request.get('/api/v1/state')
+      const messages = ((await response.json()) as { messages?: Array<{
+        name?: string
+        signals?: Record<string, { engineering_value?: number }>
+      }> }).messages ?? []
+      const rtDrive = messages.find((message) => message.name === 'RT_DRIVE_CMD')
+      return Number(rtDrive?.signals?.motor_speed_mmps?.engineering_value ?? 0)
+    }, {
+      message: 'keyboard W must reach native RT SIL and return RT_DRIVE_CMD',
+      timeout: 8_000,
+    }).toBeGreaterThan(0)
     await page.keyboard.up('w')
     if (!/\b[1-9]\d{2,}\b/.test(kbWhile) && !/1500|3000|mm\/s/.test(kbWhile)) {
       // shaped_speed should be ~3000 at full throttle

@@ -29,16 +29,16 @@ test.describe('Control Toolkit API-integrated contract coverage', () => {
     })
     expect(lease.status()).toBe(200)
     const leaseBody = await lease.json()
-    expect(await request.post(`/api/v1/sessions/${sid}/leases/renew`, {
+    expect((await request.post(`/api/v1/sessions/${sid}/leases/renew`, {
       data: { lease_id: leaseBody.lease_id },
-    })).toHaveProperty('status', 200)
+    })).status()).toBe(200)
 
-    expect(await request.post(`/api/v1/sessions/${sid}/bench-tx`, { data: { enabled: true } })).toHaveProperty('status', 200)
-    expect(await request.post('/api/v1/control/intent', {
+    expect((await request.post(`/api/v1/sessions/${sid}/bench-tx`, { data: { enabled: true } })).status()).toBe(200)
+    expect((await request.post('/api/v1/control/intent', {
       data: { speed_mmps: 500, yaw_rate_mrad_s: 20, gear: 1, source: 'playwright', sequence: 1 },
-    })).toHaveProperty('status', 200)
-    expect(await request.post('/api/v1/hmi/mode', { data: { req_mode: 1, enabled: true } })).toHaveProperty('status', 200)
-    expect(await request.post('/api/v1/hmi/power', { data: { req_start: 1, enabled: true } })).toHaveProperty('status', 200)
+    })).status()).toBe(200)
+    expect((await request.post('/api/v1/hmi/mode', { data: { req_mode: 1, enabled: true } })).status()).toBe(200)
+    expect((await request.post('/api/v1/hmi/power', { data: { req_start: 1, enabled: true } })).status()).toBe(200)
 
     const recording = await request.post('/api/v1/recordings')
     expect(recording.status()).toBe(200)

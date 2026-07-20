@@ -21,6 +21,8 @@ def test_kinematics_owns_0x300(client):
         "/api/v1/control/intent",
         json={"sequence": 1, "throttle": 0.2, "steer": 0.0, "mode": "kinematics"},
     )
+    # Give the background scheduler loop a moment to tick and claim ownership of 0x300.
+    time.sleep(0.05)
     # Competing inject on same CAN ID with different owner fails
     r = client.post(
         "/api/v1/injections",

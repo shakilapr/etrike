@@ -22,6 +22,7 @@ from control_toolkit.services.session_manager import SessionManager
 from control_toolkit.services.synthetic_peers import SyntheticPeerService
 from control_toolkit.services.tx_gate import TxGate
 from control_toolkit.services.verification import VerificationService
+from control_toolkit.services.native_sil import NativeSilBridge
 from control_toolkit.state.history import FrameHistory
 from control_toolkit.state.latest import LatestStore
 from control_toolkit.state.topology import TopologyTracker
@@ -82,6 +83,7 @@ class Lifecycle:
         self._ready = False
         self._router_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self.native_sil: NativeSilBridge | None = None
 
     def _transport_open(self) -> bool:
         if self.transport is None:
@@ -216,11 +218,33 @@ class Lifecycle:
         self._tear_down_transport()
         self.transport = candidate
         self._start_router()
+        if self.config.native_sil_executable:
+            self.native_sil = NativeSilBridge(
+                self.config.native_sil_executable,
+                candidate,
+                on_error=self._native_sil_error,
+            )
+            self.native_sil.start()
         self.diagnostics.emit(
             code="transport.virtual_open",
             title="Virtual buses open",
             detail="High+Low virtual CAN",
             severity="info",
+        )
+        if self.native_sil is not None:
+            self.diagnostics.emit(
+                code="simulation.native_sil_open",
+                title="Native RT SIL connected",
+                detail=str(self.native_sil.executable),
+                severity="info",
+            )
+
+    def _native_sil_error(self, detail: str) -> None:
+        self.diagnostics.emit(
+            code="simulation.native_sil_error",
+            title="Native RT SIL error",
+            detail=detail,
+            severity="error",
         )
 
     def open_physical_transport(self) -> None:
@@ -287,6 +311,9 @@ class Lifecycle:
         )
 
     def _tear_down_transport(self) -> None:
+        if self.native_sil is not None:
+            self.native_sil.stop()
+            self.native_sil = None
         if self.router is not None:
             self.router.stop()
             self.router = None
@@ -417,6 +444,9 @@ class Lifecycle:
 
     async def shutdown(self) -> None:
         self._ready = False
+        if self.native_sil is not None:
+            self.native_sil.stop()
+            self.native_sil = None
         try:
             self.sessions.close()
         except Exception:

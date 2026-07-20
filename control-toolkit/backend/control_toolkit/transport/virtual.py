@@ -20,6 +20,7 @@ import queue
 import threading
 import time
 import uuid
+from collections.abc import Callable
 
 import can
 
@@ -90,6 +91,7 @@ class VirtualTransportAdapter:
         }
         self._overflow = 0
         self._queue_high_water = 0
+        self._tx_listeners: list[Callable[[RawFrameEnvelope], None]] = []
 
     # ---- capability & status -------------------------------------------------
 
@@ -240,4 +242,20 @@ class VirtualTransportAdapter:
             is_extended=frame.is_extended,
             is_remote=frame.is_remote,
         )
+        # Notify software peers only after the frame was accepted by the bus.
+        # Copy under the lock so listeners can safely detach during shutdown.
+        with self._lock:
+            listeners = tuple(self._tx_listeners)
+        for listener in listeners:
+            listener(frame)
         return "submitted"
+
+    def add_tx_listener(self, listener: Callable[[RawFrameEnvelope], None]) -> None:
+        with self._lock:
+            if listener not in self._tx_listeners:
+                self._tx_listeners.append(listener)
+
+    def remove_tx_listener(self, listener: Callable[[RawFrameEnvelope], None]) -> None:
+        with self._lock:
+            if listener in self._tx_listeners:
+                self._tx_listeners.remove(listener)

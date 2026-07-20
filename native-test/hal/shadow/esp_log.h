@@ -1,7 +1,8 @@
 /*
  * esp_log.h — Host stub for ESP-IDF logging.
  *
- * Routes ESP_LOGx macros to printf with tag prefix and level.
+ * Routes ESP_LOGx macros to stderr with tag prefix and level.  Keeping logs
+ * off stdout preserves the simulator's JSON-Lines IPC contract.
  */
 #pragma once
 
@@ -22,12 +23,12 @@ typedef int esp_log_level_t;
 #define ESP_LOG_VERBOSE 5
 
 inline void _host_esp_log(const char* level, const char* tag, const char* fmt, ...) {
-    printf("[%s] %s: ", level, tag ? tag : "-");
+    fprintf(stderr, "[%s] %s: ", level, tag ? tag : "-");
     va_list args;
     va_start(args, fmt);
-    vprintf(fmt, args);
+    vfprintf(stderr, fmt, args);
     va_end(args);
-    printf("\n");
+    fputc('\n', stderr);
 }
 
 #define ESP_LOGE(tag, fmt, ...)  _host_esp_log("E", tag, fmt, ##__VA_ARGS__)

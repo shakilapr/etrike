@@ -44,6 +44,11 @@ class ToolkitConfig(BaseModel):
     # Chronological frame history capacity (bounded ring).
     history_capacity: int = 4096
 
+    # Optional native software-in-the-loop peer. When set, Pure Software sends
+    # HOST_DRIVE_CMD frames to this JSON-Lines process and receives its CAN
+    # responses through the normal virtual transport/router path.
+    native_sil_executable: str | None = None
+
     # CANalyst-II physical transport.  Keep these explicit rather than relying
     # on python-can global configuration so the Settings API and bench evidence
     # describe the exact hardware setup in use.
@@ -68,6 +73,8 @@ class ToolkitConfig(BaseModel):
             overrides["port"] = int(v)
         if v := os.getenv("CTK_PROFILE"):
             overrides["default_profile"] = Profile(v)
+        if v := os.getenv("CTK_NATIVE_SIL_EXE"):
+            overrides["native_sil_executable"] = v
         if v := os.getenv("CTK_CANALYST_DEVICE_INDEX"):
             overrides["canalyst_device_index"] = int(v)
         if v := os.getenv("CTK_CANALYST_BITRATE"):
