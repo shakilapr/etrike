@@ -12,6 +12,10 @@ import { formatAge, hexId } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store'
 import { FreshnessBadge } from './FreshnessBadge'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
+import { Seg, SegButton } from './ui/seg'
+import { WorkspaceShell } from './WorkspaceShell'
 
 export type HistoryFrame = {
   global_sequence: number
@@ -135,67 +139,57 @@ export function LiveCan() {
   }
 
   return (
-    <div
-      className={cn(
-        'flex max-w-none flex-col gap-4 px-[22px] py-5',
-        'workspace live-layout',
-      )}
-      data-testid="workspace-live"
+    <WorkspaceShell
+      testId="workspace-live"
+      className="live-layout max-w-none"
+      title="Live CAN"
+      description={
+        viewMode === 'latest'
+          ? `Latest-by-message · updates in place · ${filtered.length} rows`
+          : `Chronological stream · ${chronoFiltered.length} frames (pause freezes rendering, not capture)`
+      }
     >
-      <header className="ws-header m-0">
-        <h1 className="m-0 text-[22px] font-bold tracking-tight text-[var(--text)]">
-          Live CAN
-        </h1>
-        <p className="muted mt-1 max-w-[72ch] text-[13px] text-[var(--text-secondary)]">
-          {viewMode === 'latest'
-            ? `Latest-by-message · updates in place · ${filtered.length} rows`
-            : `Chronological stream · ${chronoFiltered.length} frames (pause freezes rendering, not capture)`}
-        </p>
-      </header>
 
       <div className="toolbar flex min-w-0 flex-wrap items-center gap-2.5">
-        <input
+        <Input
+          search
           data-testid="live-filter"
-          className="search"
           placeholder="Filter ID, name, signal…"
           value={liveFilter}
           onChange={(e) => setLiveFilter(e.target.value)}
         />
-        <div className="seg">
+        <Seg>
           {(['both', 'high', 'low'] as const).map((b) => (
-            <button
+            <SegButton
               key={b}
-              type="button"
-              className={busFilter === b ? 'seg-btn active' : 'seg-btn'}
+              active={busFilter === b}
               data-testid={`filter-bus-${b}`}
               onClick={() => setBusFilter(b)}
             >
               {b === 'both' ? 'Both buses' : b}
-            </button>
+            </SegButton>
           ))}
-        </div>
-        <div className="seg" data-testid="live-view-mode">
-          <button
-            type="button"
-            className={viewMode === 'latest' ? 'seg-btn active' : 'seg-btn'}
+        </Seg>
+        <Seg data-testid="live-view-mode">
+          <SegButton
+            active={viewMode === 'latest'}
             data-testid="live-mode-latest"
             onClick={() => setViewMode('latest')}
           >
             Latest
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'chrono' ? 'seg-btn active' : 'seg-btn'}
+          </SegButton>
+          <SegButton
+            active={viewMode === 'chrono'}
             data-testid="live-mode-chrono"
             onClick={() => setViewMode('chrono')}
           >
             Stream
-          </button>
-        </div>
+          </SegButton>
+        </Seg>
         {viewMode === 'chrono' && (
-          <button
-            type="button"
-            className="secondary dense"
+          <Button
+            variant="secondary"
+            size="dense"
             data-testid="live-pause"
             onClick={() => {
               if (!paused) setChronoFrozen(chrono)
@@ -203,7 +197,7 @@ export function LiveCan() {
             }}
           >
             {paused ? 'Resume' : 'Pause'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -424,6 +418,6 @@ export function LiveCan() {
           )}
         </aside>
       </div>
-    </div>
+    </WorkspaceShell>
   )
 }
