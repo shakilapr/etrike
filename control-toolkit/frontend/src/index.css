@@ -19,8 +19,13 @@
   --color-primary-hover: #174e9d;
   --color-primary-soft: #eaf2ff;
   --color-success: #21845a;
+  --color-success-soft: #eaf6f0;
   --color-warning: #9a6700;
+  --color-warning-soft: #fff7e0;
   --color-danger: #ba2d36;
+  --color-danger-soft: #fff0f1;
+  --color-info: #315d9c;
+  --color-info-soft: #edf3fb;
   --color-muted: #5b6573;
   --color-accent: #1f5fbf;
   --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

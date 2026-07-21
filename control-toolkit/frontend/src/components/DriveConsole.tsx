@@ -8,8 +8,8 @@
  * Transport is CAN (virtual/physical via backend), not ROS cmd_vel.
  */
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { useAppStore, type MessageState } from './store'
-import { api } from './api'
+import { useAppStore, type MessageState } from '../store'
+import { api } from '../api'
 
 type Gear = 'N' | 'D' | 'S' | 'R'
 type ShiftMode = 'smart' | 'direct'
@@ -1100,3 +1100,4 @@ export function DriveConsole() {
     </div>
   )
 }
+

@@ -13,7 +13,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react'
-import { api } from './api'
+import { api } from '../api'
 
 const FIELD_COLORS = [
   '#1f6feb',
@@ -1214,7 +1214,7 @@ export function CanDictionary() {
   )
 
   return (
-    <div className="workspace dict-workspace" data-testid="workspace-dictionary">
+    <div className="workspace dict-workspace flex max-w-[1600px] flex-col gap-4 px-[22px] py-5" data-testid="workspace-dictionary">
       <div className="panel monitor-panel dict-panel">
         <div className="toolbar dict-toolbar">
           <div className="toolbar-main">
@@ -1290,3 +1290,4 @@ export function CanDictionary() {
     </div>
   )
 }
+
