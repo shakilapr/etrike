@@ -18,6 +18,8 @@ static void monitor_can_bus_off() {
         if (drv) drv->get_error_counters(tec, rec);
         if (tec > 128)
             ESP_LOGW(TAG, "Low CAN error-warning: TEC=%u REC=%u", tec, rec);
+        // TEC saturates at 255 in bus-off. Recover slowly from monitor only
+        // (send_can_low also recovers on state==bus-off with 3s debounce).
         if (tec >= 255) {
             ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", tec, rec);
             bus_off_count_low++;
@@ -30,7 +32,13 @@ static void monitor_can_bus_off() {
                     xQueueSend(g_gw_tx_high_q, &ef, 0);
                 }
             }
-            if (drv) drv->recovery();  // lightweight bus-off recovery
+            // Debounce: at most one recovery attempt / 3 s from this path
+            static int64_t last_rec_us = 0;
+            int64_t now = esp_timer_get_time();
+            if (drv && (now - last_rec_us) > 3'000'000) {
+                last_rec_us = now;
+                drv->recovery();
+            }
         } else {
             bus_off_count_low = 0;
         }

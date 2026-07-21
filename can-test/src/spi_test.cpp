@@ -1,7 +1,8 @@
 // SPI-TEST — verify MCP2515 is present and responding on SPI bus.
-// Pins: SCK=36, MOSI=37, MISO=38, CS=39, INT=40.
-// Reads key registers and reports chip status.
-// Run: cd can-test && pio run -t upload && pio device monitor
+// Pins match rt-esp32/src/config.h production map:
+//   SCK=15 MOSI=16 MISO=17 CS=18 INT=7
+// Prefer: pio run -e hw_verify (full HW check) over this SPI-only test.
+// Run: cd can-test && pio run -e spi -t upload --upload-port COM9
 
 #include <cstdio>
 #include <cstring>
@@ -13,12 +14,12 @@
 
 // ── Pin map (matches rt-esp32/src/config.h) ──────────────────────────
 constexpr int kSpiHost   = SPI2_HOST;  // ESP32-S3 SPI2 (FSPI)
-constexpr int kSpiSck    = 36;
-constexpr int kSpiMosi   = 37;
-constexpr int kSpiMiso   = 38;
-constexpr int kSpiCs     = 39;
-constexpr int kMcpInt    = 40;
-constexpr int kSpiFreqHz = 8'000'000;  // 8 MHz
+constexpr int kSpiSck    = 15;
+constexpr int kSpiMosi   = 16;
+constexpr int kSpiMiso   = 17;
+constexpr int kSpiCs     = 18;
+constexpr int kMcpInt    = 7;
+constexpr int kSpiFreqHz = 1'000'000;  // 1 MHz for reliability on bench
 
 // ── MCP2515 instruction set ───────────────────────────────────────────
 constexpr uint8_t kCmdReset     = 0xC0;
