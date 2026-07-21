@@ -19,9 +19,18 @@ if sdkconfig.exists():
         "#define CONFIG_ESP_MAIN_TASK_STACK_SIZE 6144",
         content,
     )
-    patches = hz_patches + stack_patches
+    # N16R8: never abort boot on flaky SPIRAM memtest
+    content2 = content
+    content2 = re.sub(
+        r"#define CONFIG_SPIRAM_MEMTEST\s+1",
+        "/* CONFIG_SPIRAM_MEMTEST disabled for N16R8 boot reliability */",
+        content2,
+    )
+    if "CONFIG_SPIRAM_IGNORE_NOTFOUND" not in content2:
+        content2 += "\n#define CONFIG_SPIRAM_IGNORE_NOTFOUND 1\n"
+    patches = hz_patches + stack_patches + (1 if content2 != content else 0)
     if patches:
-        sdkconfig.write_text(content)
+        sdkconfig.write_text(content2)
         print(f"[sdkconfig] Applied {patches} patch(es) to {sdkconfig}")
     else:
         print(f"[sdkconfig] No patches needed for {sdkconfig}")

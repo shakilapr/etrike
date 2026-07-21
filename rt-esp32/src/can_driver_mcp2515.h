@@ -46,6 +46,10 @@ public:
 
     bool init();
     bool is_initialized() const { return m_initialized.load(std::memory_order_relaxed); }
+    Mode operating_mode() const { return m_mode.load(std::memory_order_relaxed); }
+    bool can_transmit() const {
+        return is_initialized() && operating_mode() != Mode::ListenOnly;
+    }
 
     /// Switch operating mode. Returns false if the chip fails to enter
     /// the requested mode within 1ms. ListenOnly is safe for bus monitoring.
@@ -141,6 +145,7 @@ private:
 
     Config m_cfg;
     std::atomic<bool> m_initialized{false};
+    std::atomic<Mode> m_mode{Mode::Configuration};
 
     // ── ISR-driven RX state ───────────────────────────────────────
     // Cached second-buffer frame: when both RXB0 and RXB1 have data

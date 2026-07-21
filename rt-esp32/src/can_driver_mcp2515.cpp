@@ -330,6 +330,7 @@ bool Mcp2515Driver::init_mcp2515_regs() {
                  start_mode == Mode::ListenOnly ? "listen-only" : "normal", canstat);
         return false;
     }
+    m_mode.store(start_mode, std::memory_order_relaxed);
     return true;
 }
 
@@ -356,7 +357,9 @@ bool Mcp2515Driver::set_mode(Mode mode) {
     uint8_t canstat = read_reg(kRegCanStat);
     uint8_t opmode = (canstat >> 5) & 0x07;
     uint8_t expected = static_cast<uint8_t>(mode) >> 5;
-    return opmode == expected;
+    if (opmode != expected) return false;
+    m_mode.store(mode, std::memory_order_relaxed);
+    return true;
 }
 
 // ── Send ───────────────────────────────────────────────────────────
@@ -369,6 +372,10 @@ bool Mcp2515Driver::set_mode(Mode mode) {
 
 bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
+    // ListenOnly cannot place frames on the wire; do not spin waiting for TXB.
+    if (m_mode.load(std::memory_order_relaxed) == Mode::ListenOnly) {
+        return false;
+    }
 
     bool is_estop = (frame.id == 0x001);
     bool is_telem = (frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220);
