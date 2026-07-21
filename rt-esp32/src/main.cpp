@@ -173,7 +173,8 @@ static bool send_can_low(can::Frame& fr) {
     g_can_tx_consec_fail_low++;
     uint32_t state = 0, tec = 0, rec = 0;
     drv->status(state, tec, rec);
-    if (!g_can_tx_had_fail_low || (g_can_tx_fail_low % 50 == 0)) {
+    // Rate-limit: works-then-stops was caused by recovery thrash every 1s.
+    if (!g_can_tx_had_fail_low || (g_can_tx_fail_low % 100 == 0)) {
         ESP_LOGW(TAG, "Low CAN TX failed (n=%lu consec=%lu state=%lu tec=%lu rec=%lu id=0x%lX)",
                  static_cast<unsigned long>(g_can_tx_fail_low),
                  static_cast<unsigned long>(g_can_tx_consec_fail_low),
@@ -183,14 +184,12 @@ static bool send_can_low(can::Frame& fr) {
                  static_cast<unsigned long>(fr.id));
         g_can_tx_had_fail_low = true;
     }
-    // Full reinstall after bus-off / persistent fails. Debounce 1 s so we
-    // don't thrash the controller every few frames.
+    // Only recover on true bus-off, and at most every 3 s.
     // twai_state_t: 0=stopped 1=running 2=bus-off 3=recovering
     const int64_t now = esp_timer_get_time();
-    if ((g_can_tx_consec_fail_low >= 8 || tec >= 128 || state == 2 /* bus-off */)
-        && (now - g_last_low_recovery_us) > 1'000'000) {
+    if (state == 2 /* bus-off */ && (now - g_last_low_recovery_us) > 3'000'000) {
         g_last_low_recovery_us = now;
-        ESP_LOGW(TAG, "Low CAN initiating TWAI recovery");
+        ESP_LOGW(TAG, "Low CAN bus-off — soft recovery");
         drv->recovery();
         g_can_tx_consec_fail_low = 0;
     }

@@ -817,7 +817,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     send_estop_frame("ESTOP");
                 }
             }
-            g_can.recovery();  // lightweight bus-off recovery via twai_initiate_recovery
+            // Debounce: at most once / 3 s (was every diag tick → thrash + stop)
+            static TickType_t last_rec = 0;
+            TickType_t now = xTaskGetTickCount();
+            if ((now - last_rec) > pdMS_TO_TICKS(3000)) {
+                last_rec = now;
+                g_can.recovery();
+            }
         } else { bus_off_count = 0; }
 
         vTaskDelayUntil(&last, period);
