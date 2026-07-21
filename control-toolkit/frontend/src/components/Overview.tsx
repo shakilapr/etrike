@@ -85,7 +85,15 @@ export function Overview() {
         <div className={`strip-item ${estopOn || safetyEstopOn ? 'hazard' : 'ok'}`}>
           <span className="strip-k">ESTOP</span>
           <StatusPill
-            label={estopOn || safetyEstopOn ? 'Active' : 'Clear'}
+            label={
+              estopOn && safetyEstopOn
+                ? 'Inject + bus'
+                : estopOn
+                  ? 'Host latch'
+                  : safetyEstopOn
+                    ? 'Bus active'
+                    : 'Clear'
+            }
             tone={estopOn || safetyEstopOn ? 'danger' : 'ok'}
             testId="meter-estop"
           />

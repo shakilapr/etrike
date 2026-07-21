@@ -54,7 +54,13 @@ def classify(
     )
 
     if cycle_ms <= 0:
-        # Event/aperiodic (or unknown) message: no staleness expectation.
+        # Event/aperiodic: do not stay LIVE forever. After a long idle, treat as
+        # Missing so host ESTOP latch injects do not look like continuous bus traffic.
+        age_ms = (now_ns - last_seen_ns) / 1_000_000
+        if age_ms > MISSING_FLOOR_MS * 4:  # ~2s
+            return FreshnessState.MISSING
+        if age_ms > LATE_FLOOR_MS * 2:  # ~300ms
+            return FreshnessState.LATE
         return fresh_state
 
     age_ms = (now_ns - last_seen_ns) / 1_000_000

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { cleanupControlStreams, isStaleSequenceError } from '../lib/cleanup'
 import { findMsg, signalText } from '../lib/signals'
 import { useAppStore, type Status } from '../store'
 import { NumericDraft } from './NumericDraft'
@@ -61,6 +62,42 @@ function DirectActuatorCards({
       window.clearInterval(id)
     }
   }, [])
+
+  // Heartbeat direct channels so backend 500ms watchdog does not kill streams
+  // while this tab is open. Leaving the page / crash → streams stop.
+  useEffect(() => {
+    const channels = (['motor', 'steering', 'brake'] as const).filter((c) => active[c])
+    if (!channels.length) return
+    const beat = () => {
+      for (const channel of channels) {
+        const values =
+          channel === 'motor'
+            ? { motor_speed_mmps: motorSpeed, gear: motorGear }
+            : channel === 'steering'
+              ? {
+                  target_angle_raw: steerAngle,
+                  control_enable: true,
+                  alignment_enable: true,
+                }
+              : {
+                  pressure_request_raw: brakePressure,
+                  control_enable: true,
+                  alignment_enable: true,
+                  control_mode: 1,
+                }
+        void api
+          .controlDirect({
+            channel,
+            enabled: true,
+            values,
+            period_ms: channel === 'motor' ? 10 : 20,
+          })
+          .catch(() => undefined)
+      }
+    }
+    const id = window.setInterval(beat, 250)
+    return () => window.clearInterval(id)
+  }, [active, motorSpeed, motorGear, steerAngle, brakePressure])
 
   async function start(channel: 'motor' | 'steering' | 'brake') {
     setBusy(true)
@@ -397,7 +434,11 @@ export function Control() {
         })
         .catch((e) => {
           const msg = String(e)
-          if (!/stale_sequence|409/i.test(msg)) setLog(msg)
+          // Only stale-sequence races are ignorable; TX/session conflicts mean control lost.
+          if (isStaleSequenceError(msg)) return
+          setKbEnabled(false)
+          setLog(`Control lost: ${msg}`)
+          void api.status().then(setStatus).catch(() => undefined)
         })
     }, 50)
 
@@ -435,26 +476,17 @@ export function Control() {
     if (next === method) return
     setBusy(true)
     try {
-      if (method === 'high' || next === 'low' || next === 'hmi') {
-        setKbEnabled(false)
-        await api.controlRelease('method_switch').catch(() => undefined)
-        await api.stopAnalysis().catch(() => undefined)
-        setLeaseId(null)
-      }
-      if (method === 'low' || next === 'high') {
-        // Stop all low-bus direct streams when leaving low method.
-        for (const ch of ['motor', 'steering', 'brake'] as const) {
-          await api.controlDirect({ channel: ch, enabled: false }).catch(() => undefined)
-        }
-        await api.controlRelease('method_switch').catch(() => undefined)
-      }
+      setKbEnabled(false)
+      const clean = await cleanupControlStreams('method_switch')
+      setLeaseId(null)
       setMethod(next)
       setLog(
-        next === 'high'
+        (next === 'high'
           ? 'Method: High bus · Host kinematics (HOST_DRIVE_CMD 0x300)'
           : next === 'low'
             ? 'Method: Low bus · Direct actuators (motor / steer / brake)'
-            : 'Method: HMI (mode/power requests only — not motion)',
+            : 'Method: HMI (mode/power requests only — not motion)') +
+          (clean.ok ? '' : ` · ${clean.detail}`),
       )
       await refresh()
     } catch (e) {
@@ -472,7 +504,7 @@ export function Control() {
         await api.setBenchTx(st.session.session_id!, true, st.session.revision)
         st = await refresh()
       }
-      setLog('Bench TX enabled')
+      setLog('Bench TX armed (explicit)')
       setStatus(st)
     } catch (e) {
       setLog(String(e))
@@ -509,14 +541,12 @@ export function Control() {
   async function injectHostDrive() {
     setBusy(true)
     try {
-      await ensureSessionReady()
-      // High-bus only. Free competing owners before analysis inject.
-      setKbEnabled(false)
-      await api.controlRelease('pre_inject').catch(() => undefined)
-      for (const ch of ['motor', 'steering', 'brake'] as const) {
-        await api.controlDirect({ channel: ch, enabled: false }).catch(() => undefined)
+      const st = await ensureSessionReady()
+      if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
+        throw new Error('Bench TX is off. Arm TX explicitly before HostDrive inject.')
       }
-      await api.stopAnalysis().catch(() => undefined)
+      setKbEnabled(false)
+      const clean = await cleanupControlStreams('pre_inject')
       const res = await api.hostDrive({
         speed_mmps: speed,
         yaw_rate_mrad_s: yaw,
@@ -525,7 +555,10 @@ export function Control() {
       })
       const lid = (res as { lease_id?: string }).lease_id
       if (typeof lid === 'string') setLeaseId(lid)
-      setLog(`High-bus inject HOST_DRIVE_CMD: ${JSON.stringify(res)}`)
+      setLog(
+        `High-bus inject HOST_DRIVE_CMD: ${JSON.stringify(res)}` +
+          (clean.ok ? '' : ` · ${clean.detail}`),
+      )
       await refresh()
     } catch (e) {
       setLog(String(e))

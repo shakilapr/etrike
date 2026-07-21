@@ -82,6 +82,14 @@ export type Status = {
       }
     >
   }
+  /** Physical/virtual link view (Real may be disconnected). */
+  link?: {
+    mode: string
+    destination?: string
+    connected: boolean
+    health: string
+    detail?: string | null
+  }
   session: SessionState
   catalog: { messages: number; instances: number }
 }
@@ -93,6 +101,7 @@ export type Workspace =
   | 'control'
   | 'preview'
   | 'bench'
+  | 'inject'
   | 'dictionary'
   | 'diagnostics'
   | 'logs'
@@ -118,6 +127,8 @@ type AppState = {
   setWorkspace: (w: Workspace) => void
   setLiveFilter: (f: string) => void
   setSelectedMessageKey: (k: string | null) => void
+  /** Drop Live CAN selection + message ghosts (mode/transport switch). */
+  clearLiveView: () => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -131,8 +142,42 @@ export const useAppStore = create<AppState>((set) => ({
   workspace: 'overview',
   liveFilter: '',
   selectedMessageKey: null,
-  setStatus: (status) => set({ status }),
-  setMessages: (messages, sequence) => set({ messages, sequence }),
+  setStatus: (status) =>
+    set((prev) => {
+      const prevProfile = prev.status?.session?.profile
+      const nextProfile = status.session?.profile
+      const prevDest = prev.status?.session?.destination
+      const nextDest = status.session?.destination
+      const modeChanged =
+        (prevProfile != null && nextProfile != null && prevProfile !== nextProfile) ||
+        (prevDest != null && nextDest != null && prevDest !== nextDest)
+      // Never keep previous mode's channel activity when adapter identity changes
+      // (virtual → none/absent, etc.).
+      if (modeChanged) {
+        return {
+          status,
+          messages: [],
+          topology: [],
+          selectedMessageKey: null,
+        }
+      }
+      return { status }
+    }),
+  setMessages: (messages, sequence) =>
+    set((s) => {
+      const keep =
+        !!s.selectedMessageKey &&
+        messages.some(
+          (m) =>
+            m.key === s.selectedMessageKey ||
+            `${m.bus}-${m.can_id}` === s.selectedMessageKey,
+        )
+      return {
+        messages,
+        sequence,
+        selectedMessageKey: keep ? s.selectedMessageKey : null,
+      }
+    }),
   setTopology: (topology) => set({ topology }),
   setStreamQuality: (streamQuality) => set({ streamQuality }),
   setReconnectAttempts: (reconnectAttempts) => set({ reconnectAttempts }),
@@ -140,4 +185,5 @@ export const useAppStore = create<AppState>((set) => ({
   setWorkspace: (workspace) => set({ workspace }),
   setLiveFilter: (liveFilter) => set({ liveFilter }),
   setSelectedMessageKey: (selectedMessageKey) => set({ selectedMessageKey }),
+  clearLiveView: () => set({ messages: [], topology: [], selectedMessageKey: null }),
 }))

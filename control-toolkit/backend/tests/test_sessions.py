@@ -21,12 +21,70 @@ def test_create_pure_software_session(client):
     assert ses["revision"] >= 1
 
 
-def test_physical_profile_refused(client):
+def test_physical_profile_without_adapter(client):
+    """Real mode is allowed without CANalyst; link is absent and TX stays off."""
     r = _create_session(client, "full_vehicle")
-    assert r.status_code == 503
-    body = r.json()
-    assert body["code"] == "profile.physical_unavailable"
-    assert "problem" in r.headers.get("content-type", "") or body.get("type")
+    assert r.status_code == 200
+    body = r.json()["session"]
+    assert body["profile"] == "full_vehicle"
+    assert body["destination"] == "physical"
+    assert body["bench_tx"] == "disabled"
+    st = client.get("/api/v1/status").json()
+    assert st["adapter"]["health"] == "absent"
+    assert st["link"]["connected"] is False
+
+
+def test_stop_all_clears_estop_latch(client):
+    ses = _create_session(client).json()["session"]
+    sid = ses["session_id"]
+    client.post(
+        f"/api/v1/sessions/{sid}/bench-tx",
+        json={"enabled": True, "expected_revision": ses["revision"]},
+    )
+    client.post(
+        "/api/v1/control/intent",
+        json={
+            "sequence": 1,
+            "source": "test",
+            "mode": "estop",
+            "throttle": 0,
+            "steer": 0,
+            "estop": True,
+        },
+    )
+    assert client.get("/api/v1/status").json()["session"]["estop_active"] is True
+    ses = client.get("/api/v1/sessions").json()["session"]
+    r = client.post(
+        f"/api/v1/sessions/{sid}/stop-all",
+        json={"expected_revision": ses["revision"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["session"]["estop_active"] is False
+    assert r.json()["session"]["bench_tx"] == "disabled"
+
+
+def test_clear_estop_endpoint(client):
+    ses = _create_session(client).json()["session"]
+    sid = ses["session_id"]
+    client.post(
+        f"/api/v1/sessions/{sid}/bench-tx",
+        json={"enabled": True, "expected_revision": ses["revision"]},
+    )
+    client.post(
+        "/api/v1/control/intent",
+        json={
+            "sequence": 1,
+            "source": "test",
+            "mode": "estop",
+            "throttle": 0,
+            "steer": 0,
+            "estop": True,
+        },
+    )
+    r = client.post("/api/v1/control/estop/clear", json={})
+    assert r.status_code == 200
+    assert r.json()["session"]["estop_active"] is False
+    assert client.get("/api/v1/status").json()["session"]["estop_active"] is False
 
 
 def test_bench_tx_enable_disable(client):

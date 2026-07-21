@@ -151,12 +151,18 @@ class SessionManager:
             previous = self._state.model_copy(deep=True)
 
             # Stop periodic TX and disable Bench TX before switch.
-            self._neutralize_locked()
+            self._cancel_jobs_locked()
+            self._ownership.clear()
+            cb = self._on_stop_all
+            self._state.bench_tx = BenchTxState.DISABLED
             self._state.phase = SessionPhase.PREPARING
             self._state.profile = req.profile
             self._state.destination = self._destination_for(req.profile)
             self._state.adapter_epoch = self._get_adapter_epoch()
             self._state.revision += 1
+
+        if cb is not None:
+            cb()
 
         if self._on_profile_change is not None:
             try:
@@ -192,14 +198,20 @@ class SessionManager:
         with self._lock:
             if self._state.profile not in PHYSICAL_PROFILES:
                 return self._snapshot_locked()
-            self._neutralize_locked()
+            self._cancel_jobs_locked()
+            self._ownership.clear()
+            cb = self._on_stop_all
+            self._state.bench_tx = BenchTxState.DISABLED
             self._state.capabilities = [
                 cap for cap in self._state.capabilities if cap != "transport_recovered"
             ]
             if "transport_failed" not in self._state.capabilities:
                 self._state.capabilities.append("transport_failed")
             self._state.revision += 1
-            return self._snapshot_locked()
+            snap = self._snapshot_locked()
+        if cb is not None:
+            cb()
+        return snap
 
     def transport_recovered(self, adapter_epoch: int) -> SessionState:
         """Record receive-only recovery; deliberately do not restore TX/jobs."""
@@ -240,7 +252,7 @@ class SessionManager:
             if enabled and not self._get_transport_open():
                 raise SessionError(
                     "bench_tx.no_adapter",
-                    "cannot enable Bench TX without an open adapter",
+                    "cannot enable Bench TX without an open adapter (Real mode may be disconnected)",
                     status=409,
                 )
             self._state.bench_tx = (
@@ -252,10 +264,63 @@ class SessionManager:
             return self._snapshot_locked()
 
     def stop_all(self, expected_revision: int | None = None) -> SessionState:
+        """Full host neutral: TX off, jobs/leases cleared, host ESTOP latch cleared."""
         with self._lock:
             self._require_active_locked()
             self._check_revision_locked(expected_revision)
-            self._neutralize_locked()
+            self._cancel_jobs_locked()
+            self._ownership.clear()
+            cb = self._on_stop_all
+            # Keep bench_tx ENABLED until after callback so safe zero frames work.
+        if cb is not None:
+            cb()
+        with self._lock:
+            self._state.bench_tx = BenchTxState.DISABLED
+            self._cancel_jobs_locked()
+            self._state.estop_active = False
+            self._state.revision += 1
+            return self._snapshot_locked()
+
+    def clear_estop_latch(self) -> SessionState:
+        """Clear host-side ESTOP injection latch (does not claim vehicle recovery)."""
+        with self._lock:
+            self._state.estop_active = False
+            self._state.revision += 1
+            return self._snapshot_locked()
+
+    def mark_link_absent(self, reason: str = "") -> SessionState:
+        """Real profile is active but physical adapter is not open."""
+        with self._lock:
+            if self._state.profile not in PHYSICAL_PROFILES:
+                return self._snapshot_locked()
+            self._state.bench_tx = BenchTxState.DISABLED
+            self._state.capabilities = [
+                c
+                for c in self._state.capabilities
+                if c not in ("link_connected", "transport_recovered")
+            ]
+            if "link_absent" not in self._state.capabilities:
+                self._state.capabilities.append("link_absent")
+            # reason is diagnostic-only; do not stamp transport_failed here
+            # (that flag is for mid-session loss via transport_failed()).
+            _ = reason
+            self._state.revision += 1
+            return self._snapshot_locked()
+
+    def mark_link_connected(self, adapter_epoch: int | None = None) -> SessionState:
+        """Physical adapter opened while already in a Real profile."""
+        with self._lock:
+            if self._state.profile not in PHYSICAL_PROFILES:
+                return self._snapshot_locked()
+            if adapter_epoch is not None:
+                self._state.adapter_epoch = adapter_epoch
+            self._state.capabilities = [
+                c
+                for c in self._state.capabilities
+                if c not in ("link_absent", "transport_failed")
+            ]
+            if "link_connected" not in self._state.capabilities:
+                self._state.capabilities.append("link_connected")
             self._state.revision += 1
             return self._snapshot_locked()
 
@@ -269,7 +334,10 @@ class SessionManager:
                 return self._snapshot_locked()
             self._check_revision_locked(expected_revision)
             self._state.phase = SessionPhase.STOPPING
-            self._neutralize_locked()
+            self._cancel_jobs_locked()
+            self._ownership.clear()
+            cb = self._on_stop_all
+            self._state.bench_tx = BenchTxState.DISABLED
             if outcome not in TERMINAL_PHASES:
                 outcome = SessionPhase.STOPPED
             prev_profile = self._state.profile
@@ -285,7 +353,10 @@ class SessionManager:
                 semantic_hash=proto.SEMANTIC_HASH,
                 destination=self._destination_for(prev_profile),
             )
-            return self._snapshot_locked()
+            snap = self._snapshot_locked()
+        if cb is not None:
+            cb()
+        return snap
 
     def update_vehicle_view(
         self,
@@ -346,24 +417,15 @@ class SessionManager:
             return self._state.phase
 
     def _assert_profile_allowed_locked(self, profile: Profile) -> None:
+        """Profiles are always selectable.
+
+        Real (bench/full_vehicle) may be entered without a CANalyst so the UI can
+        show disconnected state. Physical TX remains gated by open adapter health.
+        Never silently map physical → virtual traffic.
+        """
         if profile is Profile.PURE_SOFTWARE:
-            # Virtual transport is opened by lifecycle; allow create then open.
             return
         if profile in PHYSICAL_PROFILES:
-            if self._physical_available is None:
-                raise SessionError(
-                    "profile.physical_unavailable",
-                    f"{profile.value} requires a physical adapter",
-                    status=503,
-                )
-            ok, reason = self._physical_available()
-            if not ok:
-                # Never silent virtual fallback.
-                raise SessionError(
-                    "profile.physical_unavailable",
-                    f"{profile.value} requires CANalyst-II: {reason}",
-                    status=503,
-                )
             return
         raise SessionError("profile.unknown", f"unknown profile {profile}", status=400)
 
@@ -372,11 +434,32 @@ class SessionManager:
         return "virtual" if profile is Profile.PURE_SOFTWARE else "physical"
 
     def _neutralize_locked(self) -> None:
+        """Cancel jobs/leases and disarm TX.
+
+        Must not call ``on_stop_all`` while holding the session lock — the
+        callback may re-enter via ``bench_tx()`` / TX paths (deadlock).
+        Callers that need the stop-all side effects must invoke the callback
+        outside the lock (see ``stop_all`` / ``_neutralize``).
+        """
         self._state.bench_tx = BenchTxState.DISABLED
         self._cancel_jobs_locked()
         self._ownership.clear()
-        if self._on_stop_all is not None:
-            self._on_stop_all()
+
+    def _neutralize(self) -> None:
+        """Thread-safe neutralize with stop-all callback outside the lock."""
+        with self._lock:
+            self._cancel_jobs_locked()
+            self._ownership.clear()
+            cb = self._on_stop_all
+            # leave TX armed for zero frame if currently enabled
+            armed = self._state.bench_tx is BenchTxState.ENABLED
+        if cb is not None and armed:
+            cb()
+        elif cb is not None:
+            cb()
+        with self._lock:
+            self._state.bench_tx = BenchTxState.DISABLED
+            self._cancel_jobs_locked()
 
     def _cancel_jobs_locked(self) -> None:
         if self._scheduler is not None:

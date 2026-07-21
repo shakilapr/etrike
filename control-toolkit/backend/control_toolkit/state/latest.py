@@ -65,3 +65,10 @@ class LatestStore:
                 st.freshness = classify(
                     st.validation_status, st.last_seen_ns, cycle_ms, now_ns
                 )
+
+    def clear(self) -> None:
+        """Drop all latest-value rows (transport/profile switch — no ghost traffic)."""
+        with self._lock:
+            self._messages.clear()
+            self._prev_seen_ns.clear()
+            self._sequence += 1

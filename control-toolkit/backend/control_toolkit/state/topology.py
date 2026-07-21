@@ -101,6 +101,15 @@ class TopologyTracker:
                 updated_ns=time.monotonic_ns(),
             )
 
+    def clear(self) -> None:
+        """Reset node liveness (no observed heartbeats after transport switch)."""
+        with self._lock:
+            for node in self._nodes.values():
+                node.liveness = NodeLiveness.OFFLINE
+                node.last_seen_ns = None
+                node.freshness = FreshnessState.UNSEEN
+                node.validation_status = None
+
     @staticmethod
     def _map_liveness(
         freshness: FreshnessState, validation: str | None

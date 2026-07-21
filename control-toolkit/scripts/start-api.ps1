@@ -13,11 +13,27 @@ $RepoRoot = Split-Path $ToolkitRoot -Parent
 $hostAddr = if ($env:CTK_HOST) { $env:CTK_HOST } else { "127.0.0.1" }
 $port = if ($env:CTK_PORT) { [int]$env:CTK_PORT } else { 8001 }
 
+# Auto-wire RT SIL if present (unlocks Settings → Start simulation).
+if (-not $env:CTK_NATIVE_SIL_EXE) {
+  $silCandidates = @(
+    (Join-Path $RepoRoot "native-test\build-sil\sim_engine_native.exe"),
+    (Join-Path $RepoRoot "native-test\build\Release\sim_engine_native.exe"),
+    (Join-Path $RepoRoot "native-test\build\Debug\sim_engine_native.exe")
+  )
+  foreach ($c in $silCandidates) {
+    if (Test-Path -LiteralPath $c) {
+      $env:CTK_NATIVE_SIL_EXE = (Resolve-Path -LiteralPath $c).Path
+      break
+    }
+  }
+}
+
 Write-Host "Control Toolkit API"
 Write-Host "  host     : $hostAddr"
 Write-Host "  port     : $port"
 Write-Host "  backend  : $BackendRoot"
 Write-Host "  repo     : $RepoRoot"
+Write-Host "  RT SIL   : $(if ($env:CTK_NATIVE_SIL_EXE) { $env:CTK_NATIVE_SIL_EXE } else { '(not found — Start simulation stays locked)' })"
 Write-Host "  status   : http://${hostAddr}:${port}/api/v1/status"
 Write-Host "  docs     : http://${hostAddr}:${port}/docs"
 Write-Host "  stream   : ws://${hostAddr}:${port}/api/v1/stream"

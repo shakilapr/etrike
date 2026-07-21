@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import { transportModeOf } from '../lib/signals'
 import { useAppStore } from '../store'
 import { WorkspaceShell } from './WorkspaceShell'
 
@@ -30,11 +29,9 @@ export function Bench() {
       throw new Error('No active session. Start Computer or connect Real in Settings first.')
     }
     if (st.session.bench_tx !== 'enabled') {
-      if (transportModeOf(st.session.profile) === 'real') {
-        throw new Error('Physical TX is disabled. Enable Bench TX explicitly before starting synthetic peers.')
-      }
-      await api.setBenchTx(st.session.session_id, true, st.session.revision)
-      st = await api.status()
+      throw new Error(
+        'Bench TX is off. Enable Bench TX explicitly before starting synthetic peers.',
+      )
     }
     setStatus(st)
   }
@@ -43,12 +40,15 @@ export function Bench() {
     setBusy(true)
     try {
       await ensureBenchTx()
-      await api.controlRelease('bench_synthetic_start').catch(() => undefined)
-      await api.stopAnalysis().catch(() => undefined)
+      const { cleanupControlStreams } = await import('../lib/cleanup')
+      const clean = await cleanupControlStreams('bench_synthetic_start', { direct: false })
       const result = await api.startSyntheticPeers(['host_drive_analysis'])
       await refreshPeers()
       setStatus(await api.status())
-      setLog(`Started host_drive_analysis: ${JSON.stringify(result.started)}`)
+      setLog(
+        `Started host_drive_analysis: ${JSON.stringify(result.started)}` +
+          (clean.ok ? '' : ` · ${clean.detail}`),
+      )
     } catch (e) {
       setLog(String(e))
     } finally {

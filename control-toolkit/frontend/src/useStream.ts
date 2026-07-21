@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useAppStore } from './store'
+import { useAppStore, type Status } from './store'
 import { api } from './api'
 
 function wsUrl() {
@@ -74,6 +74,9 @@ export function useBackendStream() {
             wire_hash?: string
             messages?: unknown[]
             sequence?: number
+            session?: import('./store').SessionState
+            link?: import('./store').Status['link']
+            adapter?: import('./store').Status['adapter']
           }
           if (msg.wire_hash && statusWireHash.current) {
             setProtocolMismatch(msg.wire_hash !== statusWireHash.current)
@@ -84,6 +87,34 @@ export function useBackendStream() {
           // Heartbeat / hello keep the stream alive even with no CAN traffic
           if (msg.type === 'hello' || msg.type === 'heartbeat' || msg.type === 'ping') {
             lastMsg = Date.now()
+          }
+          // Merge link/session/adapter from stream so Real connect updates without HTTP poll.
+          // Do NOT merge channel maps across adapter identities — virtual "active" must not
+          // stick after Real-without-adapter (identity none / empty channels).
+          if (
+            (msg.type === 'state' || msg.type === 'heartbeat') &&
+            (msg.session || msg.link || msg.adapter)
+          ) {
+            const prev = useAppStore.getState().status
+            if (prev) {
+              const nextAdapter = msg.adapter
+                ? {
+                    ...prev.adapter,
+                    ...msg.adapter,
+                    // Replace channels entirely when provided (including {}).
+                    channels:
+                      msg.adapter.channels != null
+                        ? { ...(msg.adapter.channels as Status['adapter']['channels']) }
+                        : prev.adapter?.channels || {},
+                  }
+                : prev.adapter
+              setStatus({
+                ...prev,
+                session: msg.session ? { ...prev.session, ...msg.session } : prev.session,
+                link: msg.link ?? prev.link,
+                adapter: nextAdapter,
+              })
+            }
           }
           if (msg.type === 'state' && Array.isArray(msg.messages)) {
             setMessages(msg.messages as never[], msg.sequence ?? 0)

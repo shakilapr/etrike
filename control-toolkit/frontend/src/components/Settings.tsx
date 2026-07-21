@@ -132,30 +132,50 @@ export function Settings() {
   }
 
   async function activateReal() {
-    await ensureThenSetProfile(realSub)
+    setBusy(true)
+    try {
+      const nextStatus = await activateTransportProfile(realSub)
+      setStatus(nextStatus)
+      await refreshSettings()
+      const label = PROFILE_LABELS[realSub] ?? realSub
+      const noLink =
+        nextStatus.adapter?.health === 'absent' || nextStatus.link?.connected === false
+      setLog(
+        noLink
+          ? `Active: ${label} · Link: No connection (plug CANalyst when ready; TX stays off)`
+          : `Active: ${label} · Link: Connected · session ${nextStatus.session.session_id}`,
+      )
+    } catch (e) {
+      setLog(String(e))
+      try {
+        setStatus(await api.status())
+      } catch {
+        /* keep last */
+      }
+      await refreshSettings().catch(() => undefined)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function restartSession(profile: string) {
     setBusy(true)
     try {
-      if (profile === 'bench_test' || profile === 'full_vehicle') {
-        const profileInfo = await api.profiles()
-        if (!profileInfo.physical_adapter?.available) {
-          throw new Error(
-            profileInfo.physical_adapter?.reason ||
-              'CANalyst-II is not available. Connect it by USB and refresh Settings.',
-          )
-        }
-      }
       const st = await api.status()
       if (st.session?.session_id) {
         await api.closeSession(st.session.session_id, st.session.revision)
       }
       const created = await api.createSession(profile)
-      setStatus(await api.status())
+      const next = await api.status()
+      setStatus(next)
       await refreshSettings()
+      const linkNote =
+        profile !== 'pure_software' &&
+        (next.adapter?.health === 'absent' || next.link?.connected === false)
+          ? ' · Link: No connection (plug CANalyst when ready)'
+          : ''
       setLog(
-        `Restarted ${PROFILE_LABELS[profile] ?? profile} · session ${created.session.session_id} · phase ${created.session.phase}`,
+        `Restarted ${PROFILE_LABELS[profile] ?? profile} · session ${created.session.session_id} · phase ${created.session.phase}${linkNote}`,
       )
     } catch (e) {
       setLog(String(e))
@@ -316,13 +336,19 @@ export function Settings() {
             data-testid="mode-real"
             aria-selected={activeMode === 'real'}
             disabled={busy}
-            title={realOk ? 'Connect via CANalyst-II' : String(realReason || 'Adapter not found')}
+            title={
+              realOk
+                ? 'Connect via CANalyst-II'
+                : `Enter Real without adapter · ${String(realReason || 'no CANalyst yet')}`
+            }
             onClick={() => void activateReal()}
           >
             <span className="transport-btn-title">
               {realMode?.label?.split('(')[0]?.trim() || 'Real'}
             </span>
-            <span className="transport-btn-sub">CANalyst-II CH0/CH1</span>
+            <span className="transport-btn-sub">
+              {realOk ? 'CANalyst-II CH0/CH1' : 'No adapter · enter Real'}
+            </span>
           </button>
         </div>
 
@@ -381,13 +407,36 @@ export function Settings() {
                   })}
                 </div>
                 <p className="muted small runtime-scope" data-testid="simulation-scope">
-                  {simulation?.rt_sil?.scope || 'RT SIL status unavailable.'} SYS: {simulation?.sys_sil?.reason || simulation?.sys_sil?.state || 'unknown'}.
+                  RT: {simulation?.rt_sil?.scope || 'RT SIL status unavailable.'} · SYS:{' '}
+                  {simulation?.sys_sil?.scope ||
+                    simulation?.sys_sil?.reason ||
+                    simulation?.sys_sil?.state ||
+                    'unknown'}
+                  .
                 </p>
+                {!simulation?.rt_sil?.available && (
+                  <p className="muted small" data-testid="simulation-unavailable-hint">
+                    Start simulation is locked: RT SIL executable not configured.
+                    Build <span className="mono">native-test</span> (sim_engine_native) or set{' '}
+                    <span className="mono">CTK_NATIVE_SIL_EXE</span>, then restart the API.
+                  </p>
+                )}
                 <div className="actions tight">
                   <button
                     type="button"
                     data-testid="btn-simulation-start"
-                    disabled={busy || simulation?.rt_sil?.state === 'running' || !simulation?.rt_sil?.available}
+                    disabled={
+                      busy ||
+                      simulation?.rt_sil?.state === 'running' ||
+                      !simulation?.rt_sil?.available
+                    }
+                    title={
+                      !simulation?.rt_sil?.available
+                        ? 'RT SIL executable missing — set CTK_NATIVE_SIL_EXE or build native-test SIL'
+                        : simulation?.rt_sil?.state === 'running'
+                          ? 'Already running'
+                          : 'Start RT SIL peer on virtual CAN'
+                    }
                     onClick={() => void setSimulationRunning(true)}
                   >
                     Start simulation
@@ -502,16 +551,21 @@ export function Settings() {
             <div className="actions tight">
               <button
                 type="button"
-                disabled={busy || !realOk}
+                disabled={busy}
                 className={activeMode === 'real' ? 'secondary' : undefined}
                 data-testid="btn-connect-real"
+                title={
+                  realOk
+                    ? 'Open Real session on CANalyst-II'
+                    : 'Enter Real mode without adapter (link shows No connection until USB is present)'
+                }
                 onClick={() => void restartSession(realSub)}
               >
-                {!realOk
-                  ? 'CANalyst-II required'
-                  : activeMode === 'real' && activeProfile === realSub
-                    ? 'Restart Real session'
-                    : 'Connect Real (CANalyst-II)'}
+                {activeMode === 'real' && activeProfile === realSub
+                  ? 'Restart Real session'
+                  : realOk
+                    ? 'Connect Real (CANalyst-II)'
+                    : 'Enter Real (no adapter yet)'}
               </button>
             </div>
           </div>
