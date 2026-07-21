@@ -95,7 +95,7 @@ public:
     static constexpr uint8_t kCnf1_500k = 0x00;  // SJW=1, BRP=0 (TQ=250ns at 8 MHz)
 #endif
     static constexpr uint8_t kCnf2_500k = 0x91;  // BTLMODE=1, PS1=3, PropSeg=2
-    static constexpr uint8_t kCnf3_500k = 0x08;  // PS2=2 (PHSEG2=1 → 1+1=2 TQ, total 8 TQ)
+    static constexpr uint8_t kCnf3_500k = 0x01;  // PHSEG2=1 → 2 TQ, total 8 TQ at 500 kbit/s
 
 private:
     static constexpr uint8_t kCmdReset      = 0xC0;
