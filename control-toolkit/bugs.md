@@ -154,3 +154,27 @@ Indicators must therefore report RT SIL as running/stopped/error and SYS SIL as 
 - Full Vehicle hides software simulation, isolated-bench direct actuator, synthetic-peer, and teleoperation controls by default.
 - Normal controls retain protocol limits; malformed testing is only through Raw/Fault Injector.
 - All behavior has backend and Playwright positive and negative coverage.
+
+## Implementation status after repair pass (2026-07-20)
+
+### Completed in this pass
+
+- B03: routine Control, Drive, Bench, recording, and verification actions no longer silently create sessions or enable physical TX. Explicit Computer ESTOP is the documented exception and establishes virtual prerequisites visibly.
+- B04: periodic HostDrive, HMI mode, and HMI power now have local stop/disable actions. Verification cancellation remains open because the backend test API is still synchronous.
+- B05/B07a: Drive disarms locally on ESTOP, reports cleanup failures, and treats only stale-sequence races as ignorable. A duplicate keyboard-release race that could cancel newly started Low streams was also removed.
+- B06/B07b: Chrono rows select the exact historical frame and decode it through the generated protocol codec.
+- B08: editable numeric controls preserve blank and minus-sign drafts and validate on commit.
+- B09/B10/B11/B13: Computer/Real use one transition path; unavailable Real activation is visible and rolls back; Computer has RT SIL Start/Stop and truthful backend, virtual CAN, router, RT, SYS, and protocol indicators; header ESTOP reports gate failures.
+- B12/B16/B17: Full Vehicle hides software/direct/teleoperation surfaces, empty topology is honest, and PURE_SIM remains UI-only.
+
+### Still open before production-ready classification
+
+- B01/B02: build a generated-dictionary Message Injector and a separately gated raw/malformed-frame injector. The backend currently supports validated named-message injection, not arbitrary raw payload transmission.
+- B04/B07c: convert verification to asynchronous create/status/cancel with progress reporting.
+- B05: finish replacing non-critical swallowed best-effort cleanup calls with a unified visible action/result log.
+- B12/B14: enforce profile capabilities in the backend as well as the UI, and add fake-CANalyst Playwright coverage for successful Real activation and rollback.
+- B15: separate the software ESTOP-injection latch from observed physical ESTOP/reset state.
+- Integrate a managed SYS SIL process. Current indicators intentionally report SYS as unavailable; the connected native simulator is RT-only.
+- Run the physical characterization suite with `CTK_PHYSICAL=1` after connecting CANalyst-II and the intended bench hardware.
+
+Validation for this repair pass: backend `191 passed, 1 skipped` (physical USB characterization only); frontend production build passed; Playwright `27 passed` in two isolated groups. The aggregate one-command Playwright wrapper intermittently hangs during Windows web-server teardown, while both deterministic groups complete cleanly.
