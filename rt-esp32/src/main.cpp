@@ -163,6 +163,10 @@ static bool send_can_low(can::Frame& fr) {
     return true;
 }
 static bool send_can_high(can::Frame& fr) {
+    // ListenOnly / missing MCP: never block waiting for a TX buffer that will not clear.
+    if (!g_can_high.can_transmit()) {
+        return false;
+    }
     if (!g_can_high.send(fr)) {
         g_can_tx_fail_high++;
         if (!g_can_tx_had_fail_high) { ESP_LOGW(TAG, "High CAN TX failed"); g_can_tx_had_fail_high = true; }
@@ -344,17 +348,23 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 
         if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
             t100 = xTaskGetTickCount();
-            // Gate: in MANUAL mode, RT does not command actuators
-            if (g_mode_current.load() == uint8_t(can::Mode::Manual)) continue;
-            if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE) {
-                g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
-                // Drive motor lockout: only send 0x204 when steering is ready (arch §7.6).
-                // Block during boot, listen-sync, and fault — send {0,N} instead of silence
-                // so MTR's 200ms staleness check does not false-trigger.
+            // MANUAL / ESTOP: still publish a keep-alive 0x204 {0,N} so bus monitors
+            // and MTR see RT is alive. Do NOT command motion (speed forced 0).
+            // Previously `continue` skipped the whole TX loop delay and silenced RT entirely.
+            const uint8_t mode_now_100 = g_mode_current.load();
+            const bool motion_mode =
+                mode_now_100 == uint8_t(can::Mode::Auto);  // only Auto may command speed
+            if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE || !motion_mode) {
+                if (motion_mode) {
+                    g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
+                }
+                // Drive motor lockout: only send motion when steering is ready (arch §7.6).
+                // Otherwise send {0,N} instead of silence so MTR staleness does not trip.
                 auto ss = g_steering.state();
-                bool drive_allowed = (ss == rt::SteerState::STEER_ACTIVE
-                                   || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
-                                   || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT);
+                bool drive_allowed = motion_mode
+                    && (ss == rt::SteerState::STEER_ACTIVE
+                        || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
+                        || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT);
                 int32_t speed_out = drive_allowed ? sp.motor_speed_mmps : 0;
                 uint8_t gear_out;
                 if (!drive_allowed) {
@@ -468,19 +478,26 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             ESP_LOGE(TAG, "RT_STATE_RPT codec rejected local values");
             continue;
         }
-        static uint32_t rpt_fail_count = 0;
-        if (!g_can_high.send(fr)) {
-            rpt_fail_count++;
-            if (rpt_fail_count == 1 || rpt_fail_count % 100 == 0) {
-                ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed (count=%lu)", rpt_fail_count);
-            }
-        } else if (rpt_fail_count > 0) {
-            ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
-            rpt_fail_count = 0;
-        }
-        // Also send on low bus so SYS can read RT safety_state for takeover detection
+        // Always publish RT_STATE_RPT on low (TWAI) so SYS/host see RT even if MCP is ListenOnly.
         auto* drv_low = rt::can_low_driver();
-        if (drv_low) drv_low->send(fr);
+        if (drv_low) {
+            if (!drv_low->send(fr)) {
+                ESP_LOGW(TAG, "Low CAN RT_STATE_RPT send failed");
+            }
+        }
+        // High bus only when MCP can transmit (Normal mode with ACKing peers).
+        static uint32_t rpt_fail_count = 0;
+        if (g_can_high.can_transmit()) {
+            if (!g_can_high.send(fr)) {
+                rpt_fail_count++;
+                if (rpt_fail_count == 1 || rpt_fail_count % 100 == 0) {
+                    ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed (count=%lu)", rpt_fail_count);
+                }
+            } else if (rpt_fail_count > 0) {
+                ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
+                rpt_fail_count = 0;
+            }
+        }
 
         // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
@@ -591,16 +608,19 @@ static void check_task_watchdog() {
         g_heartbeat.tick_low(fr, hf);
         auto* drv = rt::can_low_driver();
         if (drv) send_can_low(fr);
-        g_heartbeat.tick_high(fr, hf);
-        static uint32_t hb_fail_count = 0;
-        if (!g_can_high.send(fr)) {
-            hb_fail_count++;
-            if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
-                ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
+        // High heartbeat only when MCP can actually transmit (not ListenOnly / missing).
+        if (g_can_high.can_transmit()) {
+            g_heartbeat.tick_high(fr, hf);
+            static uint32_t hb_fail_count = 0;
+            if (!g_can_high.send(fr)) {
+                hb_fail_count++;
+                if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
+                    ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
+                }
+            } else if (hb_fail_count > 0) {
+                ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
+                hb_fail_count = 0;
             }
-        } else if (hb_fail_count > 0) {
-            ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
-            hb_fail_count = 0;
         }
         vTaskDelayUntil(&last, per);
     }
