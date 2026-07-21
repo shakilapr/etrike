@@ -1,8 +1,13 @@
-// CAN-TEST — minimal TWAI send/receive test (no RTOS tasks, bare loop).
-// Flashes to ESP32-S3. TX=GPIO5, RX=GPIO4, 500 kbit/s.
-// Prints received frames, sends a test frame every 500ms, tracks errors.
-// Connect two boards via CAN transceiver + twisted pair + 120Ω termination.
-// If only one board: place CAN transceiver in loopback mode or expect TX failures.
+// Minimal dual-board CAN smoke test for ESP32-S3 N16R8 + SN65HVD230.
+//
+// Build roles (platformio.ini envs):
+//   role_rt  → COM9  TX id 0x100 every 200 ms, payload "RT" + seq
+//   role_sys → COM5  TX id 0x200 every 200 ms, payload "SY" + seq
+//
+// Both roles: accept-all RX, print peer frames, log TEC/REC once/sec.
+// Watch CANalyst-II low bus (CH1) for 0x100 / 0x200 — that proves wiring.
+//
+// Optional: -D TWAI_SWAP_TX_RX=1 if CTX/CRX wires may be crossed.
 
 #include <cstdio>
 #include <cstring>
@@ -13,114 +18,171 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// ── TWAI config ──────────────────────────────────────────────────────────
+#ifndef BOARD_ROLE
+#define BOARD_ROLE 0  // 0=RT 1=SYS
+#endif
+#ifndef TWAI_SWAP_TX_RX
+#define TWAI_SWAP_TX_RX 0
+#endif
+
+#if TWAI_SWAP_TX_RX
+constexpr gpio_num_t kTxGpio = GPIO_NUM_4;
+constexpr gpio_num_t kRxGpio = GPIO_NUM_5;
+#else
 constexpr gpio_num_t kTxGpio = GPIO_NUM_5;
 constexpr gpio_num_t kRxGpio = GPIO_NUM_4;
-constexpr int        kBitrate = 500'000;  // 500 kbit/s
+#endif
 
-// Timing for 500 kbit/s @ 8 MHz resolution
-// TQ = 1/8MHz = 125ns.  Bit time = 2µs = 16 TQ.
-// Sync=1, PropSeg=7, PS1=4, PS2=4, SJW=2 → total 16 TQ.
-static const twai_timing_config_t kTiming = {
-    .quanta_resolution_hz = 8'000'000,
-    .tseg_1 = 11,   // PropSeg + PS1 = 7+4 = 11
-    .tseg_2 = 4,    // PS2 = 4
-    .sjw    = 2,
-};
+constexpr int kBitrate = 500'000;
+constexpr uint32_t kTxId = (BOARD_ROLE == 0) ? 0x100u : 0x200u;
+constexpr const char* kRole = (BOARD_ROLE == 0) ? "RT" : "SYS";
+constexpr const char* kTag = "can-smoke";
 
-// ── helpers ───────────────────────────────────────────────────────────────
-
-static void print_frame(const char* dir, const twai_message_t& msg) {
-    printf("  %-4s id=0x%03lX dlc=%d ext=%d data=",
-           dir, (unsigned long)msg.identifier, msg.data_length_code, msg.extd);
-    for (int i = 0; i < msg.data_length_code && i < 8; ++i)
-        printf("%02X ", msg.data[i]);
-    printf("\n");
+static twai_timing_config_t timing_500k() {
+    twai_timing_config_t t{};
+    t.quanta_resolution_hz = 8'000'000;
+    t.tseg_1 = 11;
+    t.tseg_2 = 4;
+    t.sjw = 2;
+    return t;
 }
 
-static void print_error_counters() {
-    twai_status_info_t info;
-    if (twai_get_status_info(&info) == ESP_OK) {
-        printf("  [TEC=%3lu REC=%3lu tx_q=%lu rx_q=%lu tx_fail=%lu rx_miss=%lu bus_err=%lu arb_lost=%lu]\n",
-               (unsigned long)info.tx_error_counter, (unsigned long)info.rx_error_counter,
-               (unsigned long)info.msgs_to_tx, (unsigned long)info.msgs_to_rx,
-               (unsigned long)info.tx_failed_count, (unsigned long)info.rx_missed_count,
-               (unsigned long)info.bus_error_count, (unsigned long)info.arb_lost_count);
+static bool twai_start_normal() {
+    twai_stop();
+    twai_driver_uninstall();
+
+    twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT_V2(
+        0, kTxGpio, kRxGpio, TWAI_MODE_NORMAL);
+    g.tx_queue_len = 8;
+    g.rx_queue_len = 16;
+    twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+    twai_timing_config_t t = timing_500k();
+
+    if (twai_driver_install(&g, &t, &f) != ESP_OK) {
+        ESP_LOGE(kTag, "twai_driver_install failed");
+        return false;
     }
+    if (twai_start() != ESP_OK) {
+        ESP_LOGE(kTag, "twai_start failed");
+        twai_driver_uninstall();
+        return false;
+    }
+    return true;
 }
 
-// ── app_main — bare loop (FreeRTOS init only, no tasks) ──────────────────
+// Phase 0: controller self-test (no ACK / no transceiver required).
+static bool self_test_controller() {
+    ESP_LOGI(kTag, "--- phase0: TWAI NO_ACK self-test (chip only) ---");
+    twai_stop();
+    twai_driver_uninstall();
+
+    twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT_V2(
+        0, kTxGpio, kRxGpio, TWAI_MODE_NO_ACK);
+    twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+    twai_timing_config_t t = timing_500k();
+    if (twai_driver_install(&g, &t, &f) != ESP_OK || twai_start() != ESP_OK) {
+        ESP_LOGE(kTag, "self-test install/start FAILED");
+        return false;
+    }
+
+    twai_message_t tx{};
+    tx.identifier = 0x7E0;
+    tx.data_length_code = 2;
+    tx.data[0] = 'T';
+    tx.data[1] = '0';
+    esp_err_t e = twai_transmit(&tx, pdMS_TO_TICKS(100));
+    if (e != ESP_OK) {
+        ESP_LOGE(kTag, "self-test TX failed: %s", esp_err_to_name(e));
+        return false;
+    }
+    ESP_LOGI(kTag, "self-test TX OK — controller + pins driven");
+    return true;
+}
 
 extern "C" void app_main() {
-    printf("\n=== CAN-TEST: TWAI TX=%d RX=%d @ %d kbit/s ===\n\n",
-           kTxGpio, kRxGpio, kBitrate / 1000);
+    ESP_LOGI(kTag, "=== CAN SMOKE role=%s TX=GPIO%d RX=GPIO%d id=0x%03lX @500k swap=%d ===",
+             kRole, static_cast<int>(kTxGpio), static_cast<int>(kRxGpio),
+             static_cast<unsigned long>(kTxId), TWAI_SWAP_TX_RX);
 
-    // 1. Install TWAI driver
-    twai_general_config_t g_cfg = TWAI_GENERAL_CONFIG_DEFAULT_V2(
-        0, kTxGpio, kRxGpio, TWAI_MODE_NORMAL);
-    twai_filter_config_t f_cfg = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-
-    esp_err_t err = twai_driver_install(&g_cfg, &kTiming, &f_cfg);
-    if (err != ESP_OK) {
-        printf("FATAL: twai_driver_install failed: %s\n", esp_err_to_name(err));
+    if (!self_test_controller()) {
+        ESP_LOGE(kTag, "Controller self-test failed — stop");
         return;
     }
-    printf("[init] driver installed\n");
 
-    err = twai_start();
-    if (err != ESP_OK) {
-        printf("FATAL: twai_start failed: %s\n", esp_err_to_name(err));
+    ESP_LOGI(kTag, "--- phase1: NORMAL bus traffic ---");
+    if (!twai_start_normal()) {
+        ESP_LOGE(kTag, "NORMAL mode start failed — stop");
         return;
     }
-    printf("[init] TWAI started\n\n");
+    ESP_LOGI(kTag, "TWAI NORMAL ready — TX id=0x%03lX every 200ms",
+             static_cast<unsigned long>(kTxId));
 
-    // 2. Main loop — receive + periodic transmit
     uint32_t seq = 0;
-    int64_t  next_tx_us = esp_timer_get_time() + 1'000'000;  // first TX at 1s
-    int      rx_count = 0, tx_count = 0, tx_fail = 0;
-    int64_t  last_status_us = 0;
+    uint32_t tx_ok = 0, tx_fail = 0, rx_n = 0;
+    int64_t next_tx = esp_timer_get_time() + 200'000;
+    int64_t next_stat = esp_timer_get_time() + 1'000'000;
+    int64_t last_recovery = 0;
 
-    while (1) {
-        // ── Receive (non-blocking poll) ──────────────────────────────
-        twai_message_t rx_msg;
-        if (twai_receive(&rx_msg, 0) == ESP_OK) {
-            rx_count++;
-            print_frame("RX", rx_msg);
+    while (true) {
+        twai_message_t rx{};
+        if (twai_receive(&rx, 0) == ESP_OK) {
+            rx_n++;
+            ESP_LOGI(kTag, "RX id=0x%03lX dlc=%u data=%02X %02X %02X %02X",
+                     static_cast<unsigned long>(rx.identifier),
+                     rx.data_length_code,
+                     rx.data[0], rx.data[1], rx.data[2], rx.data[3]);
         }
 
-        // ── Transmit every 500ms (after first 1s) ────────────────────
-        int64_t now_us = esp_timer_get_time();
-        if (now_us >= next_tx_us) {
-            twai_message_t tx_msg = {};
-            tx_msg.identifier       = 0x555;  // test CAN ID
-            tx_msg.data_length_code = 4;
-            tx_msg.data[0] = (seq >> 24) & 0xFF;
-            tx_msg.data[1] = (seq >> 16) & 0xFF;
-            tx_msg.data[2] = (seq >>  8) & 0xFF;
-            tx_msg.data[3] = (seq      ) & 0xFF;
+        const int64_t now = esp_timer_get_time();
+        if (now >= next_tx) {
+            twai_message_t tx{};
+            tx.identifier = kTxId;
+            tx.data_length_code = 4;
+            tx.data[0] = static_cast<uint8_t>(kRole[0]);
+            tx.data[1] = static_cast<uint8_t>(kRole[1]);
+            tx.data[2] = static_cast<uint8_t>((seq >> 8) & 0xFF);
+            tx.data[3] = static_cast<uint8_t>(seq & 0xFF);
             seq++;
 
-            err = twai_transmit(&tx_msg, pdMS_TO_TICKS(50));
-            if (err == ESP_OK) {
-                tx_count++;
-                print_frame("TX", tx_msg);
+            if (twai_transmit(&tx, pdMS_TO_TICKS(50)) == ESP_OK) {
+                tx_ok++;
             } else {
                 tx_fail++;
-                if (tx_fail <= 3 || tx_fail % 100 == 0) {
-                    printf("  TX-FAIL #%d: %s\n", tx_fail, esp_err_to_name(err));
+                twai_status_info_t info{};
+                if (twai_get_status_info(&info) == ESP_OK) {
+                    if (tx_fail <= 5 || (tx_fail % 25) == 0) {
+                        ESP_LOGW(kTag, "TX fail n=%lu state=%d tec=%lu rec=%lu",
+                                 static_cast<unsigned long>(tx_fail),
+                                 static_cast<int>(info.state),
+                                 static_cast<unsigned long>(info.tx_error_counter),
+                                 static_cast<unsigned long>(info.rx_error_counter));
+                    }
+                    // Recover from bus-off (state 2) every 1s max
+                    if ((info.state == TWAI_STATE_BUS_OFF || info.tx_error_counter >= 128)
+                        && (now - last_recovery) > 1'000'000) {
+                        last_recovery = now;
+                        ESP_LOGW(kTag, "bus recover → reinstall NORMAL");
+                        twai_start_normal();
+                    }
                 }
             }
-
-            next_tx_us = now_us + 500'000;  // every 500ms
+            next_tx = now + 200'000;
         }
 
-        // ── Status every 5s ──────────────────────────────────────────
-        if (now_us - last_status_us > 5'000'000) {
-            print_error_counters();
-            printf("  [rx=%d tx=%d fail=%d]\n\n", rx_count, tx_count, tx_fail);
-            last_status_us = now_us;
+        if (now >= next_stat) {
+            twai_status_info_t info{};
+            twai_get_status_info(&info);
+            ESP_LOGI(kTag, "STAT role=%s tx_ok=%lu tx_fail=%lu rx=%lu tec=%lu rec=%lu state=%d",
+                     kRole,
+                     static_cast<unsigned long>(tx_ok),
+                     static_cast<unsigned long>(tx_fail),
+                     static_cast<unsigned long>(rx_n),
+                     static_cast<unsigned long>(info.tx_error_counter),
+                     static_cast<unsigned long>(info.rx_error_counter),
+                     static_cast<int>(info.state));
+            next_stat = now + 1'000'000;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1));  // 1ms poll interval
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
