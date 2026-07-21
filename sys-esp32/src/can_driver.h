@@ -93,10 +93,13 @@ public:
     }
 
     bool recovery() {
+        // Full reinstall after bus-off / no-ACK is more reliable on bench.
         if (!initialized_) return init();
-        if (twai_initiate_recovery() != ESP_OK) return init();
-        vTaskDelay(pdMS_TO_TICKS(50));
-        return twai_start() == ESP_OK;
+        twai_stop();
+        twai_driver_uninstall();
+        initialized_ = false;
+        vTaskDelay(pdMS_TO_TICKS(20));
+        return init();
     }
 
 private:

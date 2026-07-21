@@ -25,8 +25,11 @@ public:
     bool init();
     bool recovery();
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
-    bool send(const can::Frame& frame, uint32_t timeout_ms = 10);
+    // Longer default TX wait: bus with peers/noise can need more than 10 ms.
+    bool send(const can::Frame& frame, uint32_t timeout_ms = 50);
     void get_error_counters(uint8_t& tec, uint8_t& rec) const;
+    // state is twai_state_t cast to uint32_t (0=stopped … 3=bus-off).
+    bool status(uint32_t& state, uint32_t& tec, uint32_t& rec) const;
 
 private:
     Config m_config;

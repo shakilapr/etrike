@@ -58,10 +58,32 @@ bool TwaiDriver::init() {
 }
 
 bool TwaiDriver::recovery() {
+    // Full reinstall is more reliable than initiate_recovery alone after
+    // solo-node bus-off (no ACK) or flaky bench wiring.
     if (!m_initialized) return init();
-    if (twai_initiate_recovery() != ESP_OK) return init();
-    vTaskDelay(pdMS_TO_TICKS(50));
-    if (twai_start() != ESP_OK) return false;
+    twai_status_info_t info{};
+    if (twai_get_status_info(&info) == ESP_OK) {
+        ESP_LOGW(kTag, "TWAI recovery: state=%d tec=%lu rec=%lu",
+                 static_cast<int>(info.state),
+                 static_cast<unsigned long>(info.tx_error_counter),
+                 static_cast<unsigned long>(info.rx_error_counter));
+    }
+    twai_stop();
+    twai_driver_uninstall();
+    m_initialized = false;
+    vTaskDelay(pdMS_TO_TICKS(20));
+    return init();
+}
+
+bool TwaiDriver::status(uint32_t& state, uint32_t& tec, uint32_t& rec) const {
+    twai_status_info_t info{};
+    if (twai_get_status_info(&info) != ESP_OK) {
+        state = tec = rec = 0;
+        return false;
+    }
+    state = static_cast<uint32_t>(info.state);
+    tec = info.tx_error_counter;
+    rec = info.rx_error_counter;
     return true;
 }
 

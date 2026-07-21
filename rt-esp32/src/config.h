@@ -46,9 +46,20 @@ constexpr int kHeartbeatIntervalMs     = can::gen::RtHeartbeat::kCycleMs;
 constexpr int kHeartbeatTimeoutMsSys   = can::gen::SysHeartbeat::kCycleMs * 2; // policy: two missed frames
 
 // ── CAN — low-level (built-in TWAI) ───────────────────────────────
+// Default pin map matches architecture (CTX←GPIO5, CRX←GPIO4).
+// If frames never leave the node but RX works, try the swap flag
+// (bench docs: "try swapping CTX/CRX wires").
+#ifndef ETRIKE_RT_TWAI_SWAP_TX_RX
+#define ETRIKE_RT_TWAI_SWAP_TX_RX 0
+#endif
 constexpr int kCanLowBitrateHz = 500'000;
+#if ETRIKE_RT_TWAI_SWAP_TX_RX
+constexpr int kCanLowTxGpio    =      4;
+constexpr int kCanLowRxGpio    =      5;
+#else
 constexpr int kCanLowTxGpio    =      5;
 constexpr int kCanLowRxGpio    =      4;
+#endif
 
 // ── CAN — high-level (external MCP2515 via SPI) ───────────────────
 constexpr int kCanHighBitrateHz = 500'000;
