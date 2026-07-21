@@ -118,6 +118,15 @@ export function IconSearch() {
   )
 }
 
+/** Lucide zap — inject */
+export function IconZap() {
+  return (
+    <NavIcon>
+      <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+    </NavIcon>
+  )
+}
+
 /** Lucide scroll-text (logs) */
 export function IconLogs() {
   return (
@@ -212,6 +221,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Analysis',
     items: [
       { id: 'bench', label: 'Bench', icon: <IconTerminal /> },
+      { id: 'inject', label: 'Inject', icon: <IconZap /> },
       { id: 'dictionary', label: 'Dictionary', icon: <IconBook /> },
       { id: 'diagnostics', label: 'Diagnostics', icon: <IconSearch /> },
       { id: 'logs', label: 'Logging', icon: <IconLogs /> },

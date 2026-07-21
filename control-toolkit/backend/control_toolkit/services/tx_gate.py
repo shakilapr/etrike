@@ -150,3 +150,79 @@ class TxGate:
             encode=encoded,
             lease_id=lease_id,
         )
+
+    def submit_raw(
+        self,
+        *,
+        bus: str,
+        can_id: int,
+        data: bytes,
+        is_extended: bool = False,
+        owner: str = "injection:raw",
+        source: FrameSource = FrameSource.INJECTION,
+        claim_ownership: bool = False,
+        lease_ttl_s: float = 1.0,
+    ) -> TxResult:
+        """Expert raw TX — no encode/range validation (fault-injection path)."""
+        request_id = f"req_{uuid.uuid4().hex[:10]}"
+        profile: Profile = self._get_profile()
+        if profile not in (Profile.PURE_SOFTWARE, Profile.BENCH_TEST, Profile.FULL_VEHICLE):
+            return TxResult("rejected", request_id, reason="unknown_profile")
+        transport = self._get_transport()
+        if transport is None:
+            return TxResult("rejected", request_id, reason="no_transport")
+        if profile is not Profile.PURE_SOFTWARE:
+            identity = ""
+            try:
+                identity = str(transport.status().identity)
+            except Exception:
+                identity = ""
+            if "canalyst" not in identity.lower():
+                return TxResult(
+                    "rejected", request_id, reason="physical_profile_unavailable"
+                )
+        if self._get_bench_tx() is not BenchTxState.ENABLED:
+            return TxResult("rejected", request_id, reason="bench_tx_disabled")
+        if bus not in ("high", "low"):
+            return TxResult("rejected", request_id, reason="unsupported_bus")
+        if can_id < 0 or can_id > (0x1FFFFFFF if is_extended else 0x7FF):
+            return TxResult("rejected", request_id, reason="invalid_can_id")
+        if len(data) > 8:
+            return TxResult("rejected", request_id, reason="dlc_exceeds_8")
+
+        lease_id = None
+        if claim_ownership:
+            try:
+                lease = self._ownership.claim(
+                    bus=bus, can_id=int(can_id), owner=owner, ttl_s=lease_ttl_s
+                )
+                lease_id = lease.lease_id
+            except OwnershipConflict as exc:
+                return TxResult(
+                    "rejected", request_id, reason=f"ownership:{exc}"
+                )
+
+        epoch = self._get_adapter_epoch() or 0
+        env = RawFrameEnvelope(
+            adapter_epoch=epoch,
+            channel=ChannelId(bus),
+            backend_arrival_ns=time.monotonic_ns(),
+            can_id=int(can_id),
+            is_extended=bool(is_extended),
+            dlc=len(data),
+            data=bytes(data),
+            channel_sequence=0,
+            direction=Direction.TX,
+            source=source,
+        )
+        try:
+            disposition = transport.send(env)
+        except Exception as exc:  # pragma: no cover
+            return TxResult(
+                "failed", request_id, reason=str(exc), lease_id=lease_id
+            )
+        return TxResult(
+            "submitted" if disposition == "submitted" else disposition,
+            request_id,
+            lease_id=lease_id,
+        )

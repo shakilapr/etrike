@@ -1,4 +1,4 @@
-"""Injection preview / one-shot / periodic API."""
+"""Injection preview / one-shot / periodic / raw fault API."""
 
 from __future__ import annotations
 
@@ -22,6 +22,17 @@ class InjectBody(BaseModel):
     period_ms: float | None = None
     counter_field: str | None = None
     owner: str = "injection"
+
+
+class RawInjectBody(BaseModel):
+    """Expert fault path — arbitrary bytes, no codec range checks."""
+
+    bus: str
+    can_id: int
+    data_hex: str = ""
+    is_extended: bool = False
+    owner: str = "injection:raw"
+    confirm_raw: bool = False
 
 
 @router.post("/preview")
@@ -121,6 +132,73 @@ def inject(request: Request, body: InjectBody) -> dict:
         "can_id": enc.can_id if enc else body.can_id,
         "data_hex": enc.data.hex() if enc else "",
         "name": enc.name if enc else None,
+    }
+
+
+@router.post("/raw")
+def inject_raw(request: Request, body: RawInjectBody) -> dict:
+    """Transmit a raw CAN frame for fault injection (explicit confirm required)."""
+    if not body.confirm_raw:
+        raise SessionError(
+            "injection.raw_confirm_required",
+            "set confirm_raw=true for expert raw/fault injection",
+            status=400,
+        )
+    life = request.app.state.lifecycle
+    life.sessions.require_bench_tx_enabled()
+    hex_str = (body.data_hex or "").strip().replace(" ", "").replace("0x", "")
+    if hex_str and len(hex_str) % 2:
+        raise SessionError(
+            "injection.bad_hex", "data_hex must have even length", status=400
+        )
+    try:
+        data = bytes.fromhex(hex_str) if hex_str else b""
+    except ValueError as exc:
+        raise SessionError(
+            "injection.bad_hex", f"invalid data_hex: {exc}", status=400
+        ) from exc
+    result = life.tx_gate.submit_raw(
+        bus=body.bus,
+        can_id=body.can_id,
+        data=data,
+        is_extended=body.is_extended,
+        owner=body.owner,
+        source=FrameSource.INJECTION,
+        claim_ownership=False,
+    )
+    if result.disposition in ("rejected", "failed"):
+        life.audit.log(
+            category="inject",
+            code="inject.raw_rejected",
+            title="Raw inject rejected",
+            detail=result.reason or result.disposition,
+            severity="warning",
+            bus=body.bus,
+            can_id=body.can_id,
+        )
+        raise SessionError(
+            "injection.rejected",
+            result.reason or result.disposition,
+            status=409,
+        )
+    life.audit.log(
+        category="inject",
+        code="inject.raw_submitted",
+        title="Raw fault inject submitted",
+        detail=f"0x{body.can_id:X} dlc={len(data)}",
+        severity="warning",
+        bus=body.bus,
+        can_id=body.can_id,
+        data={"data_hex": data.hex(), "owner": body.owner},
+    )
+    return {
+        "ok": True,
+        "disposition": result.disposition,
+        "request_id": result.request_id,
+        "bus": body.bus,
+        "can_id": body.can_id,
+        "dlc": len(data),
+        "data_hex": data.hex(),
     }
 
 

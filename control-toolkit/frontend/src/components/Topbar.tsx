@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { activateTransportProfile } from '../lib/session'
+import { activateTransportProfile, linkLabelFromStatus } from '../lib/session'
 import { busActivityTone, dash, PROFILE_LABELS, transportModeOf, type OverallHealth } from '../lib/signals'
 import { useAppStore } from '../store'
 import { IconCable, IconMonitor } from './icons'
@@ -23,21 +23,23 @@ export function Topbar() {
   const adapterHealth = (status?.adapter?.health || '—').toLowerCase()
   const benchOn = (ses?.bench_tx || '').toLowerCase() === 'enabled'
   const estopOn = !!ses?.estop_active
+  const link = linkLabelFromStatus(status)
 
   async function injectEstop() {
     setModeErr(null)
     try {
       let st = await api.status()
-      if (transportModeOf(st.session?.profile ?? st.profile) === 'computer') {
-        if (!st.session?.session_id) {
-          await api.createSession('pure_software')
-          st = await api.status()
+      if (!st.session?.session_id) {
+        throw new Error('No active session. Start Computer or Real first.')
+      }
+      if (st.session.bench_tx !== 'enabled') {
+        if (transportModeOf(st.session.profile) === 'computer') {
+          await api.setBenchTx(st.session.session_id, true, st.session.revision)
+        } else {
+          throw new Error(
+            'Physical TX is off. Enable Bench TX after the adapter is Connected before injecting ESTOP.',
+          )
         }
-        if (st.session.bench_tx !== 'enabled') {
-          await api.setBenchTx(st.session.session_id!, true, st.session.revision)
-        }
-      } else if (st.session?.bench_tx !== 'enabled') {
-        throw new Error('Physical TX is disabled. Enable Bench TX before injecting ESTOP on Real buses.')
       }
       await api.injectEstop()
       setStatus(await api.status())
@@ -46,7 +48,17 @@ export function Topbar() {
     }
   }
 
-  /** Same session restart path as Settings Computer / Real. */
+  async function clearEstop() {
+    setModeErr(null)
+    try {
+      await api.clearEstop()
+      setStatus(await api.status())
+    } catch (e) {
+      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
+    }
+  }
+
+  /** Same session path as Settings Computer / Real (Real allowed without USB). */
   async function switchTransportMode(next: 'computer' | 'real') {
     if (modeBusy) return
     if (next === mode) return
@@ -54,7 +66,14 @@ export function Topbar() {
     setModeErr(null)
     try {
       const profile = next === 'computer' ? 'pure_software' : 'bench_test'
-      setStatus(await activateTransportProfile(profile))
+      const st = await activateTransportProfile(profile)
+      setStatus(st)
+      if (next === 'real') {
+        const l = linkLabelFromStatus(st)
+        if (l.label === 'No connection') {
+          setModeErr(`Real mode active · ${l.detail}`)
+        }
+      }
     } catch (e) {
       setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 120))
       try {
@@ -79,7 +98,7 @@ export function Topbar() {
             : 'Connecting'
 
   // Fault = safety/protocol problem. Offline = no backend/API.
-  // If HTTP status is ready but WS is reconnecting, prefer Degraded not Offline.
+  // Real + no adapter is Degraded (mode is intentional), not Offline.
   const overall: OverallHealth = (() => {
     if (estopOn || mismatch) return 'fault'
     if (adapterHealth === 'failed' || adapterHealth === 'error') return 'fault'
@@ -88,7 +107,8 @@ export function Topbar() {
       return 'offline'
     }
     if (quality === 'lost' && !apiUp) return 'offline'
-    if (quality === 'lost' && apiUp) return 'degraded' // HTTP ok, stream reconnecting
+    if (quality === 'lost' && apiUp) return 'degraded'
+    if (mode === 'real' && link.tone === 'danger') return 'degraded'
     if (
       quality === 'delayed' ||
       quality === 'dropping' ||
@@ -98,15 +118,32 @@ export function Topbar() {
     ) {
       return 'degraded'
     }
-    if (
-      quality === 'live' &&
-      (adapterHealth === 'open' ||
-        adapterHealth === 'ok' ||
-        adapterHealth === 'healthy' ||
+    // Bus chips use channel activity (active/quiet/unseen). Overall health must
+    // not claim "Healthy" solely because Computer mode + API are up — quiet
+    // virtual buses after SIL stop are degraded-or-healthy only if adapter open.
+    if (quality === 'live' && apiUp) {
+      if (
         adapterHealth === 'active' ||
-        apiUp)
-    ) {
-      return 'healthy'
+        adapterHealth === 'ok' ||
+        adapterHealth === 'healthy'
+      ) {
+        return 'healthy'
+      }
+      // open/quiet virtual bus with live stream: still usable, not "all green"
+      if (adapterHealth === 'open' || adapterHealth === 'quiet') {
+        const highAct = (high?.activity || '').toLowerCase()
+        const lowAct = (low?.activity || '').toLowerCase()
+        const anyBusActive =
+          highAct === 'active' ||
+          highAct === 'rx' ||
+          highAct === 'tx' ||
+          highAct === 'live' ||
+          lowAct === 'active' ||
+          lowAct === 'rx' ||
+          lowAct === 'tx' ||
+          lowAct === 'live'
+        return anyBusActive ? 'healthy' : 'degraded'
+      }
     }
     return apiUp ? 'degraded' : 'offline'
   })()
@@ -188,8 +225,20 @@ export function Topbar() {
           </div>
 
           <div
+            className={`chip health-chip ${
+              link.tone === 'ok' ? 'ok' : link.tone === 'warn' ? 'warning' : link.tone === 'danger' ? 'danger' : ''
+            }`}
+            data-testid="chip-link"
+            title={link.detail}
+          >
+            <span className="chip-k">Link</span>
+            <span className="chip-v">{link.label}</span>
+          </div>
+
+          <div
             className={`chip ${estopOn ? 'danger' : 'ok'} health-chip`}
             data-testid="chip-estop"
+            title="Host inject latch (not physical E-stop hardware)"
           >
             <span className="chip-k">ESTOP</span>
             <span className="chip-v">{estopOn ? 'Active' : 'Clear'}</span>
@@ -241,15 +290,28 @@ export function Topbar() {
           </div>
         </div>
 
-        <button
-          type="button"
-          className="btn-estop"
-          data-testid="btn-header-estop"
-          title="Inject SAFETY_ESTOP (DLC=0) on high and low — requires Bench TX"
-          onClick={() => void injectEstop()}
-        >
-          Inject ESTOP
-        </button>
+        <div className="topbar-estop-actions flex items-center gap-1.5">
+          <button
+            type="button"
+            className="btn-estop"
+            data-testid="btn-header-estop"
+            title="Inject SAFETY_ESTOP (DLC=0) on high and low — requires Bench TX"
+            onClick={() => void injectEstop()}
+          >
+            Inject ESTOP
+          </button>
+          {estopOn ? (
+            <button
+              type="button"
+              className="btn secondary"
+              data-testid="btn-header-estop-clear"
+              title="Clear host ESTOP inject latch so the UI can continue testing"
+              onClick={() => void clearEstop()}
+            >
+              Clear ESTOP
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {modeErr && (

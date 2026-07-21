@@ -108,8 +108,9 @@ def test_sessions_full_lifecycle_api(client):
     }
     pure = next(p for p in profiles if p["id"] == "pure_software")
     assert pure["available"] is True
-    blocked = [p for p in profiles if p["id"] != "pure_software"]
-    assert all(not p["available"] for p in blocked)
+    physical = [p for p in profiles if p["id"] != "pure_software"]
+    assert all(p["available"] for p in physical)
+    assert all(p.get("link_available") is False for p in physical)
 
     created = client.post(
         "/api/v1/sessions", json={"profile": "pure_software"}
@@ -120,13 +121,27 @@ def test_sessions_full_lifecycle_api(client):
     assert created["destination"] == "virtual"
     rev = created["revision"]
 
-    # physical profile refused without adapter
+    # physical profile allowed without adapter — Real + no link, not virtual
     r = client.post(
         f"/api/v1/sessions/{sid}/profile",
         json={"profile": "full_vehicle", "expected_revision": rev, "confirm": True},
     )
-    assert r.status_code == 503
-    assert r.json()["code"] == "profile.physical_unavailable"
+    assert r.status_code == 200
+    assert r.json()["session"]["profile"] == "full_vehicle"
+    assert r.json()["session"]["destination"] == "physical"
+    assert r.json()["session"]["bench_tx"] == "disabled"
+    # Switch back to pure_software for remaining surface tests
+    ses = client.get("/api/v1/sessions").json()["session"]
+    r = client.post(
+        f"/api/v1/sessions/{sid}/profile",
+        json={
+            "profile": "pure_software",
+            "expected_revision": ses["revision"],
+            "confirm": True,
+        },
+    )
+    assert r.status_code == 200
+    rev = r.json()["session"]["revision"]
 
     # vehicle view
     r = client.post(

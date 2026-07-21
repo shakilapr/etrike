@@ -75,11 +75,18 @@ class _QueueListener(can.Listener):
 class VirtualTransportAdapter:
     """python-can virtual dual-bus adapter (High + Low)."""
 
-    def __init__(self, rx_queue_maxsize: int = 65536) -> None:
+    def __init__(
+        self,
+        rx_queue_maxsize: int = 65536,
+        *,
+        quiet_after_ms: float = 750.0,
+    ) -> None:
         self._epoch = 0
         self._health = AdapterHealth.ABSENT
         self._maxsize = rx_queue_maxsize
         self._lock = threading.Lock()
+        # Same semantics as CANalyst: no recent RX → quiet, not forever-active.
+        self._quiet_after_ns = int(max(quiet_after_ms, 100.0) * 1_000_000)
 
         self._queue: "queue.Queue[RawFrameEnvelope]" = queue.Queue(maxsize=rx_queue_maxsize)
         self._rx_buses: dict[ChannelId, can.BusABC] = {}
@@ -111,15 +118,43 @@ class VirtualTransportAdapter:
         )
 
     def status(self) -> AdapterStatus:
+        # Lazy quiet aging so the topbar does not stick on "active" after SIL stops.
+        self._mark_quiet_channels()
         with self._lock:
             channels = {ch.value: self._state[ch].model_copy() for ch in _CHANNELS}
+            health = self._health
         return AdapterStatus(
             identity="virtual",
-            health=self._health,
+            health=health,
             adapter_epoch=self._epoch,
             capability=self.capability,
             channels=channels,
         )
+
+    def _mark_quiet_channels(self) -> None:
+        """Demote ACTIVE → QUIET when no RX within quiet_after (matches physical adapter)."""
+        now_ns = time.monotonic_ns()
+        with self._lock:
+            if self._health in (
+                AdapterHealth.ABSENT,
+                AdapterHealth.CLOSED,
+                AdapterHealth.DEGRADED,
+            ):
+                return
+            any_active = False
+            for st in self._state.values():
+                if (
+                    st.activity is ChannelActivity.ACTIVE
+                    and st.last_rx_ns is not None
+                    and now_ns - st.last_rx_ns >= self._quiet_after_ns
+                ):
+                    st.activity = ChannelActivity.QUIET
+                if st.activity is ChannelActivity.ACTIVE:
+                    any_active = True
+            if not any_active and self._health is AdapterHealth.ACTIVE:
+                self._health = AdapterHealth.QUIET
+            elif any_active and self._health in (AdapterHealth.OPEN, AdapterHealth.QUIET):
+                self._health = AdapterHealth.ACTIVE
 
     # ---- lifecycle -----------------------------------------------------------
 
@@ -196,7 +231,7 @@ class VirtualTransportAdapter:
             if qsize > self._queue_high_water:
                 self._queue_high_water = qsize
             st.queue_high_water = self._queue_high_water
-            if self._health == AdapterHealth.OPEN:
+            if self._health in (AdapterHealth.OPEN, AdapterHealth.QUIET):
                 self._health = AdapterHealth.ACTIVE
 
     def _on_error(self, channel: ChannelId, exc: Exception) -> None:  # pragma: no cover

@@ -19,18 +19,26 @@ test.describe('Computer / Real mode and managed simulation', () => {
     await expect(runtime).toContainText('RT SIL')
     await expect(runtime).toContainText('SYS SIL')
     await expect(page.getByTestId('simulation-scope')).toContainText(/not full RT tasks/i)
-    await expect(page.getByTestId('simulation-scope')).toContainText(/not integrated/i)
+    await expect(page.getByTestId('simulation-scope')).toContainText(/Managed in-process SYS|SYS_HEARTBEAT|SYS peer/i)
+    await expect(runtime).toContainText(/SYS SIL\s*running/i)
 
     await page.getByTestId('btn-simulation-stop').click()
     await expect(runtime).toContainText(/RT SIL\s*stopped/i)
-    let status = await request.get('/api/v1/simulation')
-    expect((await status.json()).simulation.rt_sil.state).toBe('stopped')
-    expect((await (await request.get('/api/v1/simulation')).json()).simulation.virtual_can.state).toBe('running')
+    await expect(runtime).toContainText(/SYS SIL\s*stopped/i)
+    let sim = (await (await request.get('/api/v1/simulation')).json()).simulation
+    expect(sim.rt_sil.state).toBe('stopped')
+    expect(sim.sys_sil.state).toBe('stopped')
+    expect(sim.virtual_can.state).toBe('running')
 
     await page.getByTestId('btn-simulation-start').click()
-    await expect(runtime).toContainText(/RT SIL\s*running/i)
-    status = await request.get('/api/v1/simulation')
-    expect((await status.json()).simulation.rt_sil.state).toBe('running')
+    await expect(runtime).toContainText(/SYS SIL\s*running/i)
+    sim = (await (await request.get('/api/v1/simulation')).json()).simulation
+    expect(sim.sys_sil.state).toBe('running')
+    // RT runs only when native executable is configured for the e2e API process.
+    if (sim.rt_sil.available) {
+      await expect(runtime).toContainText(/RT SIL\s*running/i)
+      expect(sim.rt_sil.state).toBe('running')
+    }
   })
 
   test('unavailable Real activation explains failure and preserves Computer', async ({ page }) => {

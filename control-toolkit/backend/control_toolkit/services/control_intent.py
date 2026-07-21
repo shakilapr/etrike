@@ -106,7 +106,15 @@ class ControlIntentService:
         gear: int | None = None,
         hard_brake: bool = False,
         estop: bool = False,
+        profile: str | None = None,
     ) -> dict[str, Any]:
+        # Full Vehicle: teleop kinematics are not a default control path.
+        if profile == "full_vehicle" and mode == "kinematics" and not estop:
+            raise SessionError(
+                "control.profile_blocked",
+                "Host kinematics teleop is disabled in Full Vehicle profile",
+                status=409,
+            )
         self._require_bench_tx()
         now = time.monotonic()
         with self._lock:
@@ -253,18 +261,29 @@ class ControlIntentService:
                     pass
             return self._snap_unlocked()
 
-    def tick_watchdog(self) -> None:
-        """Called periodically: stop TX if intent stale (firmware 500 ms host stale)."""
+    def clear_estop_flag(self) -> dict[str, Any]:
+        """Clear host ESTOP flag only (session latch is owned by SessionManager)."""
         with self._lock:
-            if not self._state.active:
+            self._state.estop = False
+            return self._snap_unlocked()
+
+    def tick_watchdog(self) -> None:
+        """Stop kinematics / direct TX if client intent heartbeat is stale (~500 ms)."""
+        with self._lock:
+            if not self._state.active and not self._state.direct_jobs:
                 return
-            if time.monotonic() - self._state.last_mono > HOST_CMD_STALE_S:
-                self._zero_locked()
-                self._cancel_job_locked()
-                self._state.active = False
-                self._state.mode = "none"
-                self._state.loss_reason = "stale_intent"
-                # Send one zero host-drive so RT would see end sequence on virtual bus
+            if time.monotonic() - self._state.last_mono <= HOST_CMD_STALE_S:
+                return
+            had_kinematics = bool(self._state.job_id)
+            direct_channels = list(self._state.direct_jobs.keys())
+            self._zero_locked()
+            self._cancel_job_locked()
+            self._cancel_direct_locked()
+            self._state.active = False
+            self._state.mode = "none"
+            self._state.loss_reason = "stale_intent"
+            # Best-effort safe frames so ECUs see end of stream, not silent loss.
+            if had_kinematics:
                 self._tx.submit(
                     bus="high",
                     key="host:host_drive_cmd",
@@ -278,6 +297,8 @@ class ControlIntentService:
                     claim_ownership=True,
                     lease_ttl_s=1.0,
                 )
+            for channel in direct_channels:
+                self._submit_direct_safe_frame(channel)
 
     def _shape_locked(self) -> tuple[int, int, int]:
         st = self._state
@@ -347,6 +368,44 @@ class ControlIntentService:
         for job_id in list(self._state.direct_jobs.values()):
             self._scheduler.cancel(job_id)
         self._state.direct_jobs.clear()
+
+    def _submit_direct_safe_frame(self, channel: str) -> None:
+        """One-shot disable/zero for a direct channel after client loss."""
+        spec = DIRECT_CHANNELS.get(channel)
+        if not spec:
+            return
+        if channel == "motor":
+            values = {"motor_speed_mmps": 0, "gear": GEAR_N}
+        elif channel == "steering":
+            values = {
+                "alignment_enable": True,
+                "control_enable": False,
+                "target_angle_raw": 0,
+                "target_speed_raw": 125,
+                "rolling_counter": 0,
+                "vehicle_speed_raw": 0,
+            }
+        elif channel == "brake":
+            values = {
+                "alignment_enable": True,
+                "control_enable": False,
+                "auto_brake": False,
+                "control_mode": 1,
+                "stroke_request_raw": 600,
+                "pressure_request_raw": 0,
+                "rolling_counter": 0,
+            }
+        else:
+            return
+        self._tx.submit(
+            bus=str(spec["bus"]),
+            key=str(spec["key"]),
+            values=values,
+            owner=str(spec["owner"]),
+            source=FrameSource.INJECTION,
+            claim_ownership=False,
+            lease_ttl_s=0.5,
+        )
 
     def _zero_locked(self) -> None:
         self._state.shaped_speed = 0

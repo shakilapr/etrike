@@ -9,8 +9,31 @@ from __future__ import annotations
 
 import os
 from enum import Enum
+from pathlib import Path
 
 from pydantic import BaseModel, Field
+
+
+def _discover_native_sil_executable() -> str | None:
+    """Find monorepo RT SIL binary when CTK_NATIVE_SIL_EXE is unset.
+
+    Search order matches e2e / docs: build-sil first, then common CMake outputs.
+    """
+    # control_toolkit/config.py → backend/control_toolkit → backend → control-toolkit → repo root
+    here = Path(__file__).resolve()
+    repo_root = here.parents[3]
+    candidates = [
+        repo_root / "native-test" / "build-sil" / "sim_engine_native.exe",
+        repo_root / "native-test" / "build-sil" / "sim_engine_native",
+        repo_root / "native-test" / "build" / "Release" / "sim_engine_native.exe",
+        repo_root / "native-test" / "build" / "Debug" / "sim_engine_native.exe",
+        repo_root / "native-test" / "build2" / "sim_engine_native.exe",
+        repo_root / "native-test" / "build2" / "sim_engine_native",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+    return None
 
 
 class Profile(str, Enum):
@@ -75,6 +98,8 @@ class ToolkitConfig(BaseModel):
             overrides["default_profile"] = Profile(v)
         if v := os.getenv("CTK_NATIVE_SIL_EXE"):
             overrides["native_sil_executable"] = v
+        elif discovered := _discover_native_sil_executable():
+            overrides["native_sil_executable"] = discovered
         if v := os.getenv("CTK_CANALYST_DEVICE_INDEX"):
             overrides["canalyst_device_index"] = int(v)
         if v := os.getenv("CTK_CANALYST_BITRATE"):

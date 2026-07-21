@@ -6,6 +6,7 @@ import { CanDictionary } from './components/CanDictionary'
 import { Bench } from './components/Bench'
 import { Control } from './components/Control'
 import { Diagnostics } from './components/Diagnostics'
+import { Inject } from './components/Inject'
 import { LiveCan } from './components/LiveCan'
 import { Logs } from './components/Logs'
 import { Network } from './components/Network'
@@ -34,6 +35,7 @@ export default function App() {
           {workspace === 'control' && <Control />}
           {workspace === 'preview' && <VehiclePreview />}
           {workspace === 'bench' && <Bench />}
+          {workspace === 'inject' && <Inject />}
           {workspace === 'dictionary' && <CanDictionary />}
           {workspace === 'diagnostics' && <Diagnostics />}
           {workspace === 'logs' && <Logs />}

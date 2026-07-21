@@ -17,6 +17,7 @@ export function Diagnostics() {
   const [recLog, setRecLog] = useState('')
   const [testLog, setTestLog] = useState('')
   const [busy, setBusy] = useState(false)
+  const [activeTestId, setActiveTestId] = useState<string | null>(null)
   const [evidenceId, setEvidenceId] = useState<string | null>(null)
   const [evidenceFrames, setEvidenceFrames] = useState<Array<Record<string, unknown>>>(
     [],
@@ -112,6 +113,7 @@ export function Diagnostics() {
 
   async function runVerification() {
     setBusy(true)
+    setActiveTestId(null)
     try {
       const st = await api.status()
       if (!st.session?.session_id) {
@@ -120,9 +122,9 @@ export function Diagnostics() {
       if (st.session.bench_tx !== 'enabled') {
         throw new Error('Bench TX is disabled. Enable it explicitly before verification.')
       }
-      await api.controlRelease('diagnostics_verification').catch(() => undefined)
-      await api.stopAnalysis().catch(() => undefined)
-      const result = await api.runTest({
+      const { cleanupControlStreams } = await import('../lib/cleanup')
+      const clean = await cleanupControlStreams('diagnostics_verification', { direct: false })
+      const started = await api.startTest({
         name: 'UI zero-speed HostDrive loopback',
         stimulus: {
           type: 'inject',
@@ -138,16 +140,40 @@ export function Diagnostics() {
           timeout_ms: 1500,
         },
       })
-      const id = String(result.test.test_id || '')
-      const detail = id ? (await api.test(id)).test : result.test
-      setTestLog(
-        `${String(detail.disposition).toUpperCase()} ${id} · ${String(detail.detail || '')}`,
-      )
+      const id = String(started.test.test_id || '')
+      setActiveTestId(id || null)
+      setTestLog(`RUNNING ${id}${clean.ok ? '' : ` · ${clean.detail}`}`)
+      // Poll until terminal disposition
+      const deadline = Date.now() + 8000
+      let detail = started.test
+      while (Date.now() < deadline) {
+        if (id) {
+          detail = (await api.test(id)).test
+          const d = String(detail.disposition || '')
+          setTestLog(`${d.toUpperCase()} ${id} · ${String(detail.detail || '')}`)
+          if (d && d !== 'running') break
+        }
+        await new Promise((r) => window.setTimeout(r, 100))
+      }
+      setActiveTestId(null)
       await refreshDiag()
     } catch (e) {
       setTestLog(String(e))
+      setActiveTestId(null)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function cancelVerification() {
+    if (!activeTestId) return
+    try {
+      const r = await api.cancelTest(activeTestId)
+      setTestLog(
+        `CANCEL ${activeTestId} · ${String(r.test.detail || 'cancel requested')}`,
+      )
+    } catch (e) {
+      setTestLog(String(e))
     }
   }
 
@@ -329,6 +355,15 @@ export function Diagnostics() {
             onClick={() => void runVerification()}
           >
             Run zero-speed verification
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="btn-cancel-verification"
+            disabled={!activeTestId}
+            onClick={() => void cancelVerification()}
+          >
+            Cancel
           </button>
         </div>
         <pre className="log" data-testid="test-runner-log">

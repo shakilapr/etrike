@@ -174,7 +174,7 @@ Indicators must therefore report RT SIL as running/stopped/error and SYS SIL as 
 - B05: finish replacing non-critical swallowed best-effort cleanup calls with a unified visible action/result log.
 - B12/B14: enforce profile capabilities in the backend as well as the UI, and add fake-CANalyst Playwright coverage for successful Real activation and rollback.
 - B15: separate the software ESTOP-injection latch from observed physical ESTOP/reset state.
-- Integrate a managed SYS SIL process. Current indicators intentionally report SYS as unavailable; the connected native simulator is RT-only.
+- ~~Integrate a managed SYS SIL process~~ **Done (in-process peer):** `SysSilBridge` emits `SYS_HEARTBEAT` / `SYS_SAFETY_STS` / `SYS_DIAG_RPT` on virtual CAN via generated codecs; Start/Stop Simulation controls RT+SYS. Not full SYS FreeRTOS firmware tasks.
 - Run the physical characterization suite with `CTK_PHYSICAL=1` after connecting CANalyst-II and the intended bench hardware.
 
 Validation for this repair pass: backend `191 passed, 1 skipped` (physical USB characterization only); frontend production build passed; Playwright `27 passed` in two isolated groups. The aggregate one-command Playwright wrapper intermittently hangs during Windows web-server teardown, while both deterministic groups complete cleanly.

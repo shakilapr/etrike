@@ -106,11 +106,12 @@ def get_settings(request: Request) -> dict:
                     "label": "Real (CANalyst-II)",
                     "description": (
                         "Physical High/Low via CANalyst-II (CH0=High, CH1=Low @ 500 kbit/s). "
-                        "Refuses without the adapter — no silent virtual fallback."
+                        "Selectable without adapter; link shows disconnected until USB is present."
                     ),
                     "destination": "physical",
                     "profiles": ["bench_test", "full_vehicle"],
-                    "available": ok,
+                    "available": True,
+                    "link_available": ok,
                     "reason": None if ok else reason,
                     "adapter": "canalystii",
                 },
@@ -128,7 +129,8 @@ def get_settings(request: Request) -> dict:
                     "label": "Real · Bench Test (CANalyst-II)",
                     "destination": "physical",
                     "mode": "real",
-                    "available": ok,
+                    "available": True,
+                    "link_available": ok,
                     "reason": None if ok else reason,
                 },
                 {
@@ -136,7 +138,8 @@ def get_settings(request: Request) -> dict:
                     "label": "Real · Full Vehicle (CANalyst-II)",
                     "destination": "physical",
                     "mode": "real",
-                    "available": ok,
+                    "available": True,
+                    "link_available": ok,
                     "reason": None if ok else reason,
                 },
             ],

@@ -290,15 +290,98 @@ export const api = {
     name: string
     stimulus: Record<string, unknown>
     expect: Record<string, unknown>
+    async?: boolean
   }) =>
     json<{ test: Record<string, unknown> }>('/tests', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        name: body.name,
+        stimulus: body.stimulus,
+        expect: body.expect,
+        async: body.async ?? false,
+      }),
+    }),
+  startTest: (body: {
+    name: string
+    stimulus: Record<string, unknown>
+    expect: Record<string, unknown>
+  }) =>
+    json<{ test: Record<string, unknown> }>('/tests', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: body.name,
+        stimulus: body.stimulus,
+        expect: body.expect,
+        async: true,
+      }),
+    }),
+  cancelTest: (testId: string) =>
+    json<{ test: Record<string, unknown> }>(`/tests/${testId}/cancel`, {
+      method: 'POST',
+      body: '{}',
     }),
   tests: () =>
     json<{ count: number; tests: Array<Record<string, unknown>> }>('/tests'),
   test: (testId: string) =>
     json<{ test: Record<string, unknown> }>(`/tests/${testId}`),
+  injectPreview: (body: {
+    bus: string
+    key?: string | null
+    can_id?: number | null
+    values?: Record<string, unknown>
+  }) =>
+    json<{
+      ok: boolean
+      status: string
+      bus: string
+      can_id: number
+      key?: string
+      name?: string
+      dlc: number
+      data_hex: string
+      signals?: Record<string, unknown>
+      warnings?: string[]
+    }>('/injections/preview', { method: 'POST', body: JSON.stringify(body) }),
+  inject: (body: {
+    bus: string
+    key?: string | null
+    can_id?: number | null
+    values?: Record<string, unknown>
+    period_ms?: number | null
+    counter_field?: string | null
+    owner?: string
+  }) =>
+    json<{
+      ok: boolean
+      disposition: string
+      job_id?: string
+      request_id?: string
+      data_hex?: string
+      can_id?: number
+      name?: string | null
+      period_ms?: number
+    }>('/injections', { method: 'POST', body: JSON.stringify(body) }),
+  injectRaw: (body: {
+    bus: string
+    can_id: number
+    data_hex?: string
+    is_extended?: boolean
+    confirm_raw: boolean
+  }) =>
+    json<{
+      ok: boolean
+      disposition: string
+      request_id?: string
+      bus: string
+      can_id: number
+      dlc: number
+      data_hex: string
+    }>('/injections/raw', { method: 'POST', body: JSON.stringify(body) }),
+  cancelInjection: (jobId: string) =>
+    json<{ ok: boolean; job_id: string; canceled: boolean }>(
+      `/injections/${jobId}`,
+      { method: 'DELETE' },
+    ),
   syntheticPeers: () =>
     json<{
       available: Array<Record<string, unknown>>
@@ -431,6 +514,11 @@ export const api = {
       }),
     })
   },
+  clearEstop: () =>
+    json<{ control: Record<string, unknown>; session: Record<string, unknown> }>(
+      '/control/estop/clear',
+      { method: 'POST', body: '{}' },
+    ),
   controlStatus: () =>
     json<{ control: Record<string, unknown> }>('/control/status'),
   controlIntent: (body: {

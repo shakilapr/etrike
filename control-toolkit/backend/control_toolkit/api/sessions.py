@@ -56,11 +56,13 @@ def list_profiles(request: Request) -> dict:
                 "label": "Real (CANalyst-II)",
                 "description": (
                     "Physical vehicle/bench buses via CANalyst-II "
-                    "(CH0 = High, CH1 = Low @ 500 kbit/s). Refuses without the adapter."
+                    "(CH0 = High, CH1 = Low @ 500 kbit/s). Selectable without "
+                    "adapter; link shows disconnected until USB is present."
                 ),
                 "destination": "physical",
                 "profiles": ["bench_test", "full_vehicle"],
-                "available": ok,
+                "available": True,
+                "link_available": ok,
                 "reason": None if ok else reason,
                 "adapter": "canalystii",
             },
@@ -78,7 +80,8 @@ def list_profiles(request: Request) -> dict:
                 "label": "Real · Bench Test (CANalyst-II)",
                 "destination": "physical",
                 "mode": "real",
-                "available": ok,
+                "available": True,
+                "link_available": ok,
                 "reason": None if ok else reason,
             },
             {
@@ -86,7 +89,8 @@ def list_profiles(request: Request) -> dict:
                 "label": "Real · Full Vehicle (CANalyst-II)",
                 "destination": "physical",
                 "mode": "real",
-                "available": ok,
+                "available": True,
+                "link_available": ok,
                 "reason": None if ok else reason,
             },
         ],

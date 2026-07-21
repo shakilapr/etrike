@@ -42,6 +42,29 @@ def control_status(request: Request) -> dict:
     return {"control": request.app.state.lifecycle.control.snapshot()}
 
 
+@router.post("/estop/clear")
+def clear_estop(request: Request) -> dict:
+    """Clear host-side ESTOP injection latch (not a claim that hardware recovered)."""
+    life = request.app.state.lifecycle
+    st = life.sessions.clear_estop_latch()
+    snap = life.control.clear_estop_flag()
+    life.diagnostics.emit(
+        code="control.estop_cleared",
+        title="Host ESTOP latch cleared",
+        detail="Operator cleared inject latch; vehicle state is independent",
+        severity="info",
+    )
+    life.audit.log(
+        category="safety",
+        code="control.estop_cleared",
+        title="Host ESTOP latch cleared",
+        detail="operator clear",
+        severity="info",
+        session_id=st.session_id,
+    )
+    return {"control": snap, "session": st.model_dump()}
+
+
 @router.post("/intent")
 def control_intent(request: Request, body: IntentBody) -> dict:
     life = request.app.state.lifecycle
@@ -62,8 +85,8 @@ def control_intent(request: Request, body: IntentBody) -> dict:
         life.sessions.update_vehicle_view(estop_active=True)
         life.diagnostics.emit(
             code="control.estop",
-            title="Control ESTOP",
-            detail="SAFETY_ESTOP on high+low",
+            title="Control ESTOP inject",
+            detail="SAFETY_ESTOP on high+low; host latch active until Clear",
             severity="critical",
         )
         snap = life.control.release(reason="estop")
@@ -79,6 +102,7 @@ def control_intent(request: Request, body: IntentBody) -> dict:
             gear=body.gear,
             hard_brake=body.hard_brake,
             estop=False,
+            profile=life.sessions.active_profile().value,
         )
     except SessionError:
         raise
@@ -117,6 +141,12 @@ def control_release(request: Request, body: ReleaseBody | None = None) -> dict:
 def control_direct(request: Request, body: DirectBody) -> dict:
     """Direct actuator TX on Low bus (exclusive with kinematics)."""
     life = request.app.state.lifecycle
+    if body.enabled and life.sessions.active_profile().value == "full_vehicle":
+        raise SessionError(
+            "control.profile_blocked",
+            "Low-bus direct actuator bypass is disabled in Full Vehicle profile",
+            status=409,
+        )
     snap = life.control.set_direct(
         channel=body.channel,
         enabled=body.enabled,

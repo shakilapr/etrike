@@ -52,11 +52,15 @@ class SqliteStorage:
         if self._task:
             self._task.cancel()
             try:
-                await self._task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(self._task, timeout=1.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+            self._task = None
         if self.db:
-            await self.db.close()
+            try:
+                await asyncio.wait_for(self.db.close(), timeout=1.5)
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                logger.warning("SQLite close timed out or failed", exc_info=True)
             self.db = None
 
     def append(self, env: RawFrameEnvelope) -> None:

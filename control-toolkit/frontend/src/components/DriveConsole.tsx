@@ -217,11 +217,9 @@ export function DriveConsole() {
       throw new Error('No active session. Start Computer or connect Real in Settings first.')
     }
     if (st.session.bench_tx !== 'enabled') {
-      if (st.session.profile !== 'pure_software') {
-        throw new Error('Physical TX is disabled. Enable Bench TX explicitly before arming Drive.')
-      }
-      await api.setBenchTx(st.session.session_id, true, st.session.revision)
-      st = await api.status()
+      throw new Error(
+        'Bench TX is off. Enable Bench TX explicitly (Control or Settings) before arming Drive.',
+      )
     }
     setStatus(st)
     return st
@@ -231,12 +229,8 @@ export function DriveConsole() {
     setBusy(true)
     try {
       await ensureArmedPath()
-      // Free Control-tab keyboard / low-direct / analysis so this tab owns intent seq.
-      await api.controlRelease('drive_arm').catch(() => undefined)
-      await api.stopAnalysis().catch(() => undefined)
-      for (const ch of ['motor', 'steering', 'brake'] as const) {
-        await api.controlDirect({ channel: ch, enabled: false }).catch(() => undefined)
-      }
+      const { cleanupControlStreams } = await import('../lib/cleanup')
+      const clean = await cleanupControlStreams('drive_arm')
       seqRef.current = 0
       // Usable default: leave Adaptive free; in Direct start in Drive gear.
       if (shiftRef.current === 'direct' && gearRef.current === 'N') {
@@ -245,7 +239,8 @@ export function DriveConsole() {
       setArmed(true)
       focusDrive()
       setLog(
-        'Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Leaving this tab disarms. Canvas follows bus.',
+        'Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Leaving this tab disarms. Canvas follows bus.' +
+          (clean.ok ? '' : ` · ${clean.detail}`),
       )
     } catch (e) {
       setLog(String(e))

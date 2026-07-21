@@ -2035,6 +2035,64 @@ button.secondary:active:not(:disabled) {
   color: var(--text-secondary);
 }
 
+.inject-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .inject-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.inject-fields {
+  margin-top: 4px;
+}
+
+.inject-template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inject-template-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--surface));
+  cursor: pointer;
+}
+
+.inject-template-btn:hover {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+.inject-template-btn strong {
+  font-size: 13px;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.panel-title-row h2 {
+  margin: 0;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
