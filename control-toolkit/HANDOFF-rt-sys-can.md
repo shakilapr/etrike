@@ -1,144 +1,251 @@
-# Handoff summary — etrike RT/SYS ESP32 + Control Toolkit
+# Handoff — RT/SYS ESP32-S3 N16R8 + Control Toolkit CAN
 
-## Goal
-Get **RT** and **SYS** ESP32-S3 **N16R8** modules working on **physical CAN** (both buses if possible), visible in Control Toolkit API. User wants simple bus smoke tests first, then restore full firmware.
+**Last updated:** 2026-07-21  
+**Workspace:** `E:\work\etrike`  
+**User intent:** Verify hardware with simple tests first; make both controllers publish/receive on both buses; only then run full vehicle firmware. Prefer API (`/api/v1`) to observe CAN.
 
-## Hardware map
-| Role | Port (typical) | USB MAC | Notes |
-|------|----------------|---------|--------|
-| **RT** | **COM9** | `80:b5:4e:c7:d0:34` | Low CAN = TWAI GPIO**5 TX / 4 RX** @ 500k; High = MCP2515 SPI (often **missing** on bench) |
-| **SYS** | **COM5** | `80:b5:4e:c5:b9:4c` | Low CAN only, same TWAI pins |
-| **CANalyst-II** | USB | — | CTK Real mode: **CH0=high, CH1=low** @ 500k |
+---
 
-Transceivers: SN65HVD230 / WCMCU-230 (CTX↔GPIO5, CRX↔GPIO4). Docs say if no frames, **swap CTX/CRX**; fake chips can RX but not TX.
+## 1. Current hardware map (authoritative)
 
-## Repo roots
-- Workspace: `E:\work\etrike`
-- RT firmware: `rt-esp32/` (env `vehicle`, board `esp32-s3-devkitc-1-n16r8`)
-- SYS firmware: `sys-esp32/` (same)
-- **Minimal CAN smoke** (preferred next step): `can-test/` (`role_rt` / `role_sys`)
-- API: `control-toolkit/backend` on **http://127.0.0.1:8001** (`/api/v1/...`)
-- UI vite often on 5173; native SIL may be set for Computer mode
+| Role | Serial port **now** | Chip MAC (USB/eFuse) | Notes |
+|------|---------------------|----------------------|--------|
+| **SYS** | **COM6** (CH343 USB-UART) | `80:b5:4e:c5:b9:4c` | User: CH343 → ESP UART pins |
+| **RT** | **COM10** (CH343 USB-UART) | `80:b5:4e:c7:d0:34` | Same |
+| **CANalyst-II** | USB (python-can) | — | CTK Real: **CH0 = high**, **CH1 = low**, 500 kbit/s |
 
-## What was fixed (keep these)
-1. **RT reboot loop**  
-   Stale `sdkconfig.vehicle` had **`CONFIG_FREERTOS_HZ=100`**.  
-   `pdMS_TO_TICKS(5) → 0` → `xTaskDelayUntil` assert → boot loop.  
-   **Must be 1000 Hz** (defaults + patched vehicle/bench sdkconfigs + `pio_patch_sdkconfig.py` / SYS `patch_sdkconfig.py`).
+**Earlier ports (when native USB-JTAG was used):** COM5 = SYS, COM9 = RT. Do **not** assume those; always list ports.
 
-2. **N16R8 PSRAM**  
-   8MB octal works; **80 MHz** often fails MSPI timing. Use **40 MHz**, disable hard **MEMTEST**, **IGNORE_NOTFOUND**.  
-   Confirmed: `Found 8MB PSRAM`, `Speed: 40MHz`, flash 16MB Boya.
+**ESP USB-JTAG** (VID `303A`) may or may not be plugged. With CH343 on UART0, **app `ESP_LOG` only appears if console is UART**. Builds that set `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` show only **ROM boot** on COM6/COM10 (entry to flash boot, then silence).
 
-3. **RT defensive DelayUntil**  
-   `ticks_ms_at_least_1()` in `rt-esp32/src/main.cpp`.
+### CAN pinout (architecture)
+| Bus | Controller | Pins |
+|-----|------------|------|
+| **Low** | Built-in TWAI | **TX=GPIO5, RX=GPIO4**, 500 kbit/s |
+| **High** | MCP2515 SPI (RT only) | **SCK=15, MOSI=16, MISO=17, CS=18, INT=7** |
 
-4. **RT no MCP**  
-   Skip `tx_high` watchdog spam when high CAN absent (`g_high_can_present`).
+SYS has **no high CAN**. High needs RT MCP + CANalyst CH0 (+ host).
 
-5. **TWAI recovery**  
-   Full reinstall on TX fail / bus-off (`can_driver_twai.cpp`, rate-limited in `send_can_low`).
+Transceivers: SN65HVD230 / WCMCU-230 @ 3.3 V. Docs: if no frames, try swap CTX/CRX; flaky modules can RX but not TX.
 
-6. **Rate-limited logs**  
-   Command stale / SYS HB timeout no longer 100 Hz spam.
+---
 
-## What was observed (physical)
-### API (Real / `bench_test` / canalystii)
-- Adapter often **active** then **quiet**.
-- At best, **low** bus only:
-  - `0x7FE` SYS_HEARTBEAT ~10 Hz  
-  - `0x011` SYS_SAFETY_STS ~5 Hz  
-  - `0x110`, `0x600`, `0x7B9` (SEB req ~50–58 Hz)  
-- **No RT frames** (`0x7FD`, `0x210`, `0x204`, etc.) ever seen live on CANalyst.
+## 2. Goal / process agreed with user
 
-### RT serial (COM9) after N16R8 fix
-- Boots: `Ready — 6 tasks`, TWAI OK, MCP fail (expected).
-- Then: **`Low CAN TX failed … state=2 tec=128`** (bus-off / no ACK).
-- Occasional 1 TX “ok” after recovery, then fail again.
-- Implied **RX may work** (SYS HB timeout path) but **TX path broken** or **not on same bus as CANalyst/SYS**.
+1. **Hardware verify** with simple firmware before vehicle builds.  
+2. Use **API** to check each bus and each controller publish/receive.  
+3. Then flash full `vehicle` RT + SYS.  
+4. High bus separately (MCP must answer SPI).
 
-### SYS
-- Once **TX’d successfully** on low bus (API proof).
-- USB serial often **silent** (console was UART0; defaults updated to **USB Serial/JTAG**).
-- Later went **quiet** (power/USB/unplug or bus death).  
-- Full **vehicle** flash to COM5 **succeeded once** (`sys-esp32/_flash_com5.log`, ~256KB app).
+---
 
-### High bus
-- MCP2515 not ready → RT high tasks skipped.
-- CANalyst high mostly **unseen** / old residual counts.
+## 3. Services already running (often)
 
-## Smoke test (in progress — finish this first)
-**Path:** `can-test/`  
-**Firmware:** `src/main.cpp`  
-- Phase0: `TWAI_MODE_NO_ACK` self-test (chip only)  
-- Phase1: NORMAL, 200 ms TX  
-  - **RT** `role_rt`: id **0x100**, payload `RT`+seq → COM9  
-  - **SYS** `role_sys`: id **0x200**, payload `SY`+seq → COM5  
-- Optional envs: `role_rt_swap` / `role_sys_swap` (`TWAI_SWAP_TX_RX=1` → TX=4 RX=5)
+| Service | URL / path |
+|---------|------------|
+| CTK API | `http://127.0.0.1:8001` prefix `/api/v1` |
+| Frontend vite | `http://127.0.0.1:5173` |
+| Native SIL (optional) | `native-test/build-sil/sim_engine_native.exe` via env on backend |
 
-```text
+Session typically: **`bench_test`**, destination **`physical`**, canalystii.
+
+### Useful API
+```http
+GET  /api/v1/status
+GET  /api/v1/state
+GET  /api/v1/history?limit=50
+GET  /api/v1/topology
+GET  /api/v1/sessions
+POST /api/v1/sessions/{id}/bench-tx   {"enabled": true, "expected_revision": N}
+POST /api/v1/injections               {"bus":"high","key":"host:host_heartbeat","values":{...},"period_ms":500}
+POST /api/v1/injections/raw           {"bus":"high","can_id":2044,"data_hex":"0100","confirm_raw":true}
+```
+
+Smoke IDs **0x100 / 0x200** are **not** in the protocol catalog → `key=None`, `freshness=invalid` is OK; still count as live if `age_ms` is low.
+
+---
+
+## 4. Software fixes already in tree (keep)
+
+### Boot / N16R8
+- **`CONFIG_FREERTOS_HZ=1000`** (was 100 → `pdMS_TO_TICKS(5)==0` → `xTaskDelayUntil` assert reboot).  
+  Files: `rt-esp32`/`sys-esp32` `sdkconfig.defaults`, `sdkconfig.vehicle`, `pio_patch_sdkconfig.py` / `patch_sdkconfig.py`.
+- **PSRAM octal 40 MHz**, no hard memtest, `IGNORE_NOTFOUND`.
+- Board: `esp32-s3-devkitc-1-n16r8` (16 MB flash, 8 MB PSRAM). Confirmed on both chips.
+
+### RT app
+- `ticks_ms_at_least_1()` for DelayUntil.  
+- Skip `tx_high` watchdog when MCP missing (`g_high_can_present`).  
+- **Soft TWAI recovery** + mutex + **3 s debounce** (stop thrash that caused “works then dies” / spinlock crash).  
+  Files: `rt-esp32/src/can_driver_twai.cpp`, `main.cpp` `send_can_low`, `can_health.h`.
+
+### SYS app
+- Same soft recovery + mutex + 3 s debounce.  
+  Files: `sys-esp32/src/can_driver.h`, `main.cpp` diag recovery path.
+
+### Console
+- Defaults were flipped between USB-JTAG and UART for CH343.  
+  **For COM6/COM10 UART logs:** `CONFIG_ESP_CONSOLE_UART_DEFAULT=y` (+ optional secondary USB-JTAG).  
+  **For native USB-JTAG only:** USB-JTAG primary.  
+  Current `sdkconfig.defaults` intent: UART primary for CH343 bench.
+
+---
+
+## 5. What works vs what doesn’t (latest observations)
+
+### Low bus (CH1) — **works when SYS is up**
+- Adapter **active**, low **active**, `rx_count` climbs (~60–70 frames/s when SYS vehicle or smoke TX).  
+- **SYS vehicle IDs live and stable for 10–12 s+** (not dying immediately after fix window):
+  - `0x7FE` SYS_HEARTBEAT  
+  - `0x011` SYS_SAFETY_STS  
+  - `0x110` SYS_MODE_CMD  
+  - `0x600` SYS_DIAG_RPT  
+  - `0x7B9` VCU_SEB_REQ (can be ~50 Hz flood)
+
+### Smoke test (when both flashed successfully earlier)
+- **SYS `0x200`** live on low (~5 Hz, payload `53 59 …` = `SY`+seq).  
+- **RT `0x100`** also live on low when RT smoke was good (API proof once: both IDs for 12 s).  
+- Later sessions often showed **only `0x200`** → RT not publishing or not flashed.
+
+### High bus (CH0) — **not working as a peer bus**
+- Host inject: **`tx_count` increases** (CANalyst can TX).  
+- **`rx` stuck** (~2105), no live high frames in history.  
+- RT vehicle log: **`MCP2515 not ready (CANSTAT=0x00)`** → SPI returns zeros → no MCP / wrong pins / no power.  
+- High tasks skipped: `Ready — 6 tasks` (low-only).  
+- SYS has no high controller.
+
+### Serial on CH343 (COM6/COM10)
+- Opening port often only shows **ROM**: `SPI_FAST_FLASH_BOOT` / `entry 0x…` then silence if console is USB-JTAG.  
+- App is still running (API proves SYS CAN).  
+- Do not conclude “upload failed” from silent CH343 if ROM boot appears after flash.
+
+### “Works a few seconds then stops”
+- Was **bus-off + recovery thrash** (full TWAI uninstall every 1 s from multiple tasks → spinlock).  
+- Soft recovery + debounce **landed in source**; may not be on flash if vehicle rebuild interrupted.  
+- Steady SYS heartbeats on API after later flashes suggest SYS path improved when bus + image OK.
+
+---
+
+## 6. Flash / upload status (important for next AI)
+
+Uploads were **often interrupted** (session cancel / long ESP-IDF rebuild / port busy). That is **not** “COM broken.”
+
+| Attempt | Result |
+|---------|--------|
+| SYS smoke → **COM6** | **SUCCESS** (hash verified, MAC `…:c5:b9:4c`) |
+| RT smoke → **COM10** | **Often incomplete** (build of `role_rt` still compiling when job killed) |
+| Vehicle SYS/RT → COM6/COM10 | **Failed/interrupted** mid-rebuild (`SYS_FAIL` once) |
+| Earlier vehicle → COM5/COM9 | SYS and RT vehicle succeeded at least once on native USB ports |
+
+**Right now (API snapshot while writing this doc):**
+- Low **active**, live **`0x200` only** (SYS smoke likely still running).  
+- No RT id.  
+- High **quiet**.
+
+---
+
+## 7. Tooling: `can-test/` (use this first)
+
+Path: `E:\work\etrike\can-test`
+
+| Env | Purpose |
+|-----|---------|
+| **`role_sys`** | SYS: TX **0x200** @ 200 ms, payload `SY`+seq, NORMAL TWAI |
+| **`role_rt`** | RT: TX **0x100** @ 200 ms, payload `RT`+seq |
+| **`role_rt_seek`** | RT auto-cycles pin map × NORMAL/NO_ACK |
+| **`role_*_swap`** | TX/RX GPIOs swapped (4/5) |
+| **`hw_verify`** | PSRAM + TWAI self-test + MCP SPI probe (primary + legacy pins) + loopback |
+| **`spi`** | MCP SPI-only (pins fixed to 15–18/7) |
+
+**ESP-IDF note:** PlatformIO `build_src_filter` is **ignored**. Sources chosen in `src/CMakeLists.txt` via `$ENV{PIOENV}` or `board_build.cmake_extra_args = -DAPP_SRC=...`.
+
+```powershell
 cd E:\work\etrike\can-test
-pio run -e role_rt  -t upload --upload-port COM9
-pio run -e role_sys -t upload --upload-port COM5
+# Kill stray pio first
+Get-Process pio -ErrorAction SilentlyContinue | Stop-Process -Force
+
+pio run -e role_sys -t upload --upload-port COM6
+pio run -e role_rt  -t upload --upload-port COM10
+
+# Then API watch for low:0x100 and low:0x200 for ≥15 s
 ```
 
-**Pass criteria**
-1. Serial: self-test TX OK; STAT `tx_ok` rising, `tec` low.  
-2. Peer RX: each board logs the other’s id.  
-3. API: low bus live `0x100` and/or `0x200` (note: unknown IDs may still appear in raw adapter path; check `/api/v1/status` rx_count and `/api/v1/state` if decoded).
+**Pass (low smoke):**
+1. Both IDs live (`age_ms` < ~500) continuously.  
+2. History shows both IDs.  
+3. Optional: serial RX of peer id if UART console enabled.
 
-**If smoke fails**
-- Try `*_swap` envs (crossed CTX/CRX).  
-- Check 120Ω termination (one each end; CANalyst term settings).  
-- Swap WCMCU-230 modules (docs: flaky TX).  
-- Confirm RT/SYS/CANalyst **low** share CAN_H/CAN_L/GND.
+**High smoke:** only after `hw_verify` shows MCP SPI + loopback PASS on RT. Then vehicle RT can TX high; host inject alone does not prove high peer bus.
 
-**If smoke passes**
-Restore full firmware:
-```text
-cd E:\work\etrike\sys-esp32 && pio run -e vehicle -t upload --upload-port COM5
-cd E:\work\etrike\rt-esp32  && pio run -e vehicle -t upload --upload-port COM9
+Docs: `control-toolkit/docs/HARDWARE-VERIFY.md`
+
+---
+
+## 8. Vehicle flash (only after smoke)
+
+```powershell
+cd E:\work\etrike\sys-esp32
+pio run -e vehicle -t upload --upload-port COM6
+
+cd E:\work\etrike\rt-esp32
+pio run -e vehicle -t upload --upload-port COM10
 ```
-Expect low: SYS `0x7FE/0x011` + RT `0x7FD/0x210` (and keep-alive `0x204` in Manual).  
-High needs MCP wired and working.
 
-## Important config flags / files
-- `rt-esp32/sdkconfig.defaults` + `sdkconfig.vehicle`: FREERTOS 1000, SPIRAM 40M, N16R8  
-- `sys-esp32/sdkconfig.defaults`: same + **USB Serial JTAG console**  
-- `rt-esp32/platformio.ini`: `-D ETRIKE_RT_TWAI_SWAP_TX_RX=0` (normal pins)  
-- Pin map architecture: TX=5, RX=4 both ECUs  
+Expect low: SYS `0x7FE/0x011` + RT `0x7FD/0x210` (+ `0x204` keep-alive).  
+High: only if MCP ready.
 
-## CTK API cheatsheet
-```text
-GET http://127.0.0.1:8001/api/v1/status
-GET http://127.0.0.1:8001/api/v1/state
-GET http://127.0.0.1:8001/api/v1/sessions
-GET http://127.0.0.1:8001/api/v1/sessions/profiles
+---
+
+## 9. Root causes (current best model)
+
+| Layer | Status |
+|-------|--------|
+| ESP modules (CPU/PSRAM/flash) | **OK** on both (esptool + PSRAM logs) |
+| FREERTOS_HZ / DelayUntil reboot | **Fixed in tree** |
+| Low bus + SYS publish | **Works** (stable API) |
+| RT low publish | **Intermittent / often missing** — need confirmed `role_rt` flash + stable TX |
+| Recovery thrash “stops after seconds” | **Fixed in tree**, re-flash vehicle to deploy |
+| High bus | **MCP not detected** (`CANSTAT=0x00`) — hardware/SPI, not CTK |
+| CH343 silent app logs | Console on USB-JTAG vs UART0 — config/wiring, not dead MCU |
+| Upload “not working” | Long rebuilds + cancelled jobs + port busy — retry **upload-only** when `.bin` exists |
+
+---
+
+## 10. Next AI checklist (do in order)
+
+1. **List ports** — confirm COM6 = SYS, COM10 = RT (or update map).  
+2. **Kill all `pio`** processes; one upload at a time.  
+3. **Smoke:**  
+   - `role_sys` → COM6 (may already be done).  
+   - Finish **`role_rt` → COM10** (build if needed, then upload).  
+4. **API 15–30 s:** require **both** `0x100` and `0x200` live; `dL` climbing.  
+5. If only `0x200`: RT power/bus/TX; try `role_rt_swap`; check serial if UART console.  
+6. **RT `hw_verify` → COM10:** read SUMMARY for MCP.  
+7. If MCP FAIL: stop high work; fix SPI/power.  
+8. If low smoke solid: flash vehicle SYS+RT with recovery fixes; watch `0x7FE` + `0x7FD`.  
+9. High: enable bench-tx, inject host HB on high; expect RT high only after MCP PASS.  
+10. Do **not** thrash fullclean unless sdkconfig console/PSRAM change requires it.
+
+---
+
+## 11. Key file paths
+
 ```
-Session was **`bench_test` / physical** when canalyst worked. Low `rx_count` climbing with live frames = good.
+control-toolkit/HANDOFF-rt-sys-can.md          ← this file
+control-toolkit/docs/HARDWARE-VERIFY.md
+can-test/src/main.cpp                         ← smoke dual-role
+can-test/src/hw_verify.cpp                    ← hardware verify
+can-test/platformio.ini
+rt-esp32/src/can_driver_twai.cpp              ← soft recovery + mutex
+rt-esp32/src/main.cpp                         ← send_can_low debounce
+rt-esp32/src/can_health.h
+rt-esp32/src/config.h                         ← TWAI + MCP pins
+sys-esp32/src/can_driver.h
+sys-esp32/src/main.cpp
+```
 
-## Latest software push (2026-07-21)
-- `can-test` enhanced with **auto seek** (`role_rt_seek`): cycles TX/RX pin maps × NORMAL/NO_ACK.  
-- Flashed: **COM9** `role_rt_seek`, **COM5** `role_sys` (SUCCESS).  
-- **API proof (when CANalyst was up):** low bus live **only 0x200 SYS smoke** (~5 Hz, payload `SY`+seq). **0x100 RT never live.**  
-- **SYS serial:** NORMAL TX works (`tx_ok` climbing, few fails).  
-- **RT serial:** receives many frames (`rx` 1000+); TX intermittent + bus-off even in NO_ACK seek; never LOCKED.  
-- **Blocker now:** CANalyst-II **USB not found** (`reconnect N failed: No Canalyst-II USB device found`) — API cannot see frames until re-plugged.  
+---
 
-## Interrupted / incomplete work
-- Full vehicle RT/SYS re-flash after dual-ID smoke **not done**.  
-- High bus (MCP) **not working** on this bench.  
-- RT stable TX still not achieved via software alone.
+## 12. One-liner status for next session
 
-## Suggested next AI sequence
-1. Kill stray `pio`; list COM5/COM9.  
-2. Flash `can-test` `role_rt`→COM9, `role_sys`→COM5.  
-3. 8–10 s serial on both + API low activity.  
-4. On TX fail only: flash swap envs; retest.  
-5. On pass: reflash full `vehicle` RT+SYS; confirm RT+SYS IDs on low.  
-6. High: only after MCP present and SPI init OK.
-
-## Root diagnosis so far (likely)
-- **Software boot/PSRAM/tick rate:** fixed.  
-- **RT low CAN TX:** hardware/wiring/transceiver/termination or wrong bus attachment (bus-off, no ACK) — **smoke test is the discriminator**.  
-- **SYS:** can TX when powered/on bus; USB log/console was the main software friction.
+**SYS on COM6 is publishing smoke/vehicle traffic on low CAN; CANalyst low is active. RT on COM10 often not on the bus (smoke upload incomplete). High bus has no peer (MCP silent). Prefer finishing dual smoke flash on COM6/COM10 and API-checking 0x100+0x200 before vehicle firmware.**

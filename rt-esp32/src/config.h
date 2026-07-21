@@ -67,7 +67,7 @@ constexpr int kSpiSckGpio       =      15;
 constexpr int kSpiMosiGpio      =      16;
 constexpr int kSpiMisoGpio      =      17;
 constexpr int kSpiCsGpio        =      18;
-constexpr int kMcpIntGpio       =       7; // Was 47. Strapped pins (0, 3, 45, 46) must not be used.
+constexpr int kMcpIntGpio       =      47; // MCP2515 INT; GPIO47 is not a strapping pin.
 
 // ── watchdog ──────────────────────────────────────────────────────
 // constexpr int kWdtToggleGpio = 21; // Temporarily disabled
