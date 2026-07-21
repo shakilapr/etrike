@@ -520,7 +520,7 @@ pytest control-toolkit/backend/tests/test_api_sessions.py -v
 ### 4.1 Frontend scaffolding
 
 - [x] Create `control-toolkit/frontend/` with Vite + React + TypeScript
-- [ ] Tailwind CSS + shadcn/ui component primitives *(deferred: hand CSS implements ui-design rules)*
+- [x] Tailwind CSS setup + path aliases + `cn()` util *(phased: LiveCan extracted to `src/components/LiveCan.tsx` with layout utilities; App.css remains for complex interactive styles; full shadcn/ui deferred — hand CSS still implements ui-design rules; add shadcn primitives incrementally)*
 - [x] Zustand for live state management
 - [ ] Generated TypeScript API client from OpenAPI *(hand client covers current API)*
 - [x] Dark, high-contrast automotive theme (architecture §17 + ui-design baseline)

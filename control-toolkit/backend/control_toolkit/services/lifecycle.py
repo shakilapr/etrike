@@ -25,6 +25,7 @@ from control_toolkit.services.verification import VerificationService
 from control_toolkit.services.native_sil import NativeSilBridge
 from control_toolkit.state.history import FrameHistory
 from control_toolkit.state.latest import LatestStore
+from control_toolkit.state.storage import SqliteStorage
 from control_toolkit.state.topology import TopologyTracker
 from control_toolkit.transport.canalyst import (
     CanalystDiscovery,
@@ -40,6 +41,7 @@ class Lifecycle:
         self.latest = LatestStore()
         self.history = FrameHistory(capacity=getattr(config, "history_capacity", 4096))
         self.topology = TopologyTracker()
+        self.storage = SqliteStorage("history.sqlite")
         self.events = EventBus()
         self.ownership = OwnershipTable()
         self.recording = RecordingService()
@@ -179,6 +181,8 @@ class Lifecycle:
             is_extended=env.is_extended,
             is_remote=env.is_remote,
         )
+        if self.storage:
+            self.storage.append(env)
 
     def _start_router(self) -> None:
         if self.transport is None:
@@ -451,6 +455,7 @@ class Lifecycle:
         self.ager = FreshnessAger(self.latest)
         self._tasks.append(asyncio.create_task(self.ager.run()))
         self._tasks.append(asyncio.create_task(self._topology_loop()))
+        await self.storage.start()
 
         # Prefer explicit env transport; else open virtual for Pure Software default.
         import os
@@ -560,6 +565,8 @@ class Lifecycle:
         self.scheduler.stop()
         self.synthetic.stop_all()
         self.ownership.clear()
+        if self.storage:
+            await self.storage.stop()
         if self.router is not None:
             self.router.stop()
         if self._router_task is not None:
