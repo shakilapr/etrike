@@ -80,6 +80,8 @@ static std::atomic<uint32_t> g_alive_control{0};
 static std::atomic<uint32_t> g_alive_dispatch{0};
 static std::atomic<uint32_t> g_alive_tx_low{0};
 static std::atomic<uint32_t> g_alive_tx_high{0};
+// False when MCP2515 is missing — tx_high/rx_high never start; do not flag as stalled.
+static std::atomic<bool> g_high_can_present{false};
 static void check_task_watchdog();
 
 // ── ESTOP reason atomic (written by dispatch/safety/health, read by tx) ─
@@ -151,16 +153,48 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
 static uint32_t g_can_tx_ok_low = 0, g_can_tx_ok_high = 0;
 static bool g_can_tx_had_fail_low = false, g_can_tx_had_fail_high = false;
+static uint32_t g_can_tx_consec_fail_low = 0;
+static int64_t g_last_low_recovery_us = 0;
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
-    if (!drv || !drv->send(fr)) {
-        g_can_tx_fail_low++;
-        if (!g_can_tx_had_fail_low) { ESP_LOGW(TAG, "Low CAN TX failed"); g_can_tx_had_fail_low = true; }
-        return false;
+    if (!drv) return false;
+    if (drv->send(fr)) {
+        if (g_can_tx_had_fail_low) {
+            ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu",
+                     static_cast<unsigned long>(g_can_tx_fail_low),
+                     static_cast<unsigned long>(g_can_tx_ok_low));
+            g_can_tx_had_fail_low = false;
+        }
+        g_can_tx_ok_low++;
+        g_can_tx_consec_fail_low = 0;
+        return true;
     }
-    if (g_can_tx_had_fail_low) { ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu", g_can_tx_fail_low, g_can_tx_ok_low); g_can_tx_had_fail_low = false; }
-    g_can_tx_ok_low++;
-    return true;
+    g_can_tx_fail_low++;
+    g_can_tx_consec_fail_low++;
+    uint32_t state = 0, tec = 0, rec = 0;
+    drv->status(state, tec, rec);
+    if (!g_can_tx_had_fail_low || (g_can_tx_fail_low % 50 == 0)) {
+        ESP_LOGW(TAG, "Low CAN TX failed (n=%lu consec=%lu state=%lu tec=%lu rec=%lu id=0x%lX)",
+                 static_cast<unsigned long>(g_can_tx_fail_low),
+                 static_cast<unsigned long>(g_can_tx_consec_fail_low),
+                 static_cast<unsigned long>(state),
+                 static_cast<unsigned long>(tec),
+                 static_cast<unsigned long>(rec),
+                 static_cast<unsigned long>(fr.id));
+        g_can_tx_had_fail_low = true;
+    }
+    // Full reinstall after bus-off / persistent fails. Debounce 1 s so we
+    // don't thrash the controller every few frames.
+    // twai_state_t: 0=stopped 1=running 2=bus-off 3=recovering
+    const int64_t now = esp_timer_get_time();
+    if ((g_can_tx_consec_fail_low >= 8 || tec >= 128 || state == 2 /* bus-off */)
+        && (now - g_last_low_recovery_us) > 1'000'000) {
+        g_last_low_recovery_us = now;
+        ESP_LOGW(TAG, "Low CAN initiating TWAI recovery");
+        drv->recovery();
+        g_can_tx_consec_fail_low = 0;
+    }
+    return false;
 }
 static bool send_can_high(can::Frame& fr) {
     // ListenOnly / missing MCP: never block waiting for a TX buffer that will not clear.
@@ -180,9 +214,16 @@ static bool send_can_high(can::Frame& fr) {
 // ── CAN bus health monitor (extracted to can_health.h) ──────────────
 #include "can_health.h"
 
+// FreeRTOS rejects xTimeIncrement==0. With CONFIG_FREERTOS_HZ=100,
+// pdMS_TO_TICKS(ms<10) can round to 0 — never pass that to DelayUntil.
+static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
+    TickType_t t = pdMS_TO_TICKS(ms);
+    return t > 0 ? t : static_cast<TickType_t>(1);
+}
+
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_control(void*) {
-    TickType_t per = pdMS_TO_TICKS(10), last = xTaskGetTickCount();
+    TickType_t per = ticks_ms_at_least_1(10), last = xTaskGetTickCount();
     can::gen::HostDriveCmd cmd{};
 
     // Local state drained from safety event queue (architecture principle #1).
@@ -344,7 +385,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     while (1) {
         g_alive_tx_low.store(xTaskGetTickCount(), std::memory_order_relaxed);
         auto* drv = rt::can_low_driver();
-        if (!drv) { vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(5)); continue; }
+        if (!drv) { vTaskDelayUntil(&last_wake, ticks_ms_at_least_1(5)); continue; }
 
         if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
             t100 = xTaskGetTickCount();
@@ -431,7 +472,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         }
 
         if (xQueueReceive(g_gw_tx_low_q, &gw, 0) == pdTRUE) drv->send(gw);
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(5));
+        vTaskDelayUntil(&last_wake, ticks_ms_at_least_1(5));
     }
 }
 
@@ -469,7 +510,10 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             if (now - g_alive_control.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x01;
             if (now - g_alive_dispatch.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x02;
             if (now - g_alive_tx_low.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x04;
-            if (now - g_alive_tx_high.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x08;
+            // High TX task is optional (no MCP on some N16R8 bench modules).
+            if (!g_high_can_present.load(std::memory_order_relaxed)
+                || now - g_alive_tx_high.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500))
+                rpt.task_health |= 0x08;
 #ifdef BENCH_BUILD_ACKNOWLEDGED
             rpt.task_health |= 0x80;  // bit 7: bench build indicator
 #endif
@@ -557,11 +601,16 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 
 // ── Watchdog (prio 1, 10 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_watchdog(void*) {
-    TickType_t per = pdMS_TO_TICKS(100), last = xTaskGetTickCount();
+    TickType_t per = ticks_ms_at_least_1(100), last = xTaskGetTickCount();
     while (1) {
         check_task_watchdog();
         if (g_watchdog.is_stale(esp_timer_get_time())) {
-            ESP_LOGW(TAG, "Command stale");
+            static int64_t last_stale_log_us = 0;
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us - last_stale_log_us > 2'000'000) {
+                last_stale_log_us = now_us;
+                ESP_LOGW(TAG, "Command stale (no host drive)");
+            }
             can::gen::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
             g_steering.start_estop(false);  // ramp to 0° (gap C3, replaces disable flag)
@@ -579,12 +628,13 @@ static void check_task_watchdog() {
     stale(g_alive_control,  "control");
     stale(g_alive_dispatch, "dispatch");
     stale(g_alive_tx_low,   "tx_low");
-    stale(g_alive_tx_high,  "tx_high");
+    if (g_high_can_present.load(std::memory_order_relaxed))
+        stale(g_alive_tx_high, "tx_high");
 }
 
 // ── Heartbeat (prio 1, 2 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_heartbeat(void*) {
-    TickType_t per = pdMS_TO_TICKS(rt::kHeartbeatIntervalMs), last = xTaskGetTickCount();
+    TickType_t per = ticks_ms_at_least_1(rt::kHeartbeatIntervalMs), last = xTaskGetTickCount();
     can::Frame fr;
     while (1) {
         // Compute health flags for heartbeat byte 1
@@ -665,6 +715,7 @@ extern "C" void app_main() {
 
     rt::can_low_init();
     bool has_high_can = g_can_high.init();
+    g_high_can_present.store(has_high_can, std::memory_order_relaxed);
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();

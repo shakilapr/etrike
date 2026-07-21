@@ -94,7 +94,12 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
     int64_t sys_hb = g_last_sys_hb_us.load();
     if (sys_hb > 0 && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
-        ESP_LOGW("rt", "SYS heartbeat timeout — RT taking over brake via 0x7B9");
+        // Rate-limit: control loop is 100 Hz; do not spam the log every tick.
+        static int64_t last_sys_hb_log_us = 0;
+        if (now - last_sys_hb_log_us > 1'000'000) {
+            last_sys_hb_log_us = now;
+            ESP_LOGW("rt", "SYS heartbeat timeout — RT taking over brake via 0x7B9");
+        }
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
         seb_takeover = true;
