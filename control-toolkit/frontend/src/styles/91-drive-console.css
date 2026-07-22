@@ -163,7 +163,18 @@
   height: 100%;
   background: var(--primary);
   border-radius: 999px;
-  transition: width 140ms ease;
+  /* No width transition — live telemetry + limit slider would thrash layout. */
+}
+
+.drive-limit-row {
+  min-width: 0;
+}
+
+.drive-limit-val {
+  min-width: 3.5ch;
+  width: 3.5ch;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .drive-gauge.tone-warn .drive-gauge-fill {

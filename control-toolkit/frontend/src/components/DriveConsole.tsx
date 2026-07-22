@@ -179,6 +179,12 @@ export function DriveConsole() {
     dynSlewDegS: 125,
   })
 
+  /** Slider caps read from refs so canvas/intent loops do not tear down on every drag tick. */
+  const maxSpeedRef = useRef(maxSpeedMmps)
+  const maxYawRef = useRef(maxYawMrad)
+  maxSpeedRef.current = maxSpeedMmps
+  maxYawRef.current = maxYawMrad
+
   armedRef.current = armed
   gearRef.current = gear
   shiftRef.current = shiftMode
@@ -414,9 +420,10 @@ export function DriveConsole() {
       if (k.KeyS || k.ArrowDown) throttle -= 1
       if (k.KeyA || k.ArrowLeft) steer -= 1
       if (k.KeyD || k.ArrowRight) steer += 1
-      // Scale by sliders as fraction of firmware max authority.
-      const speedFrac = Math.min(1, maxSpeedMmps / 3000)
-      const yawFrac = Math.min(1, maxYawMrad / 3000)
+      // Scale by slider refs (not state) so dragging limits does not restart this loop
+      // or call controlRelease on cleanup — that was shattering the UI mid-drive.
+      const speedFrac = Math.min(1, maxSpeedRef.current / 3000)
+      const yawFrac = Math.min(1, maxYawRef.current / 3000)
       throttle *= speedFrac
       steer *= yawFrac
 
@@ -478,9 +485,10 @@ export function DriveConsole() {
     return () => {
       window.clearInterval(id)
       intentQueuedRef.current = false
+      // Only release when arming ends / unmount — not when limit sliders change.
       void api.controlRelease('disable').catch(() => undefined)
     }
-  }, [armed, maxSpeedMmps, maxYawMrad, applyGear, clearKeys])
+  }, [armed, applyGear, clearKeys, setStatus])
 
   // Canvas + physics
   useEffect(() => {
@@ -505,10 +513,10 @@ export function DriveConsole() {
     ro.observe(wrap)
 
     function maxVPx() {
-      return (maxSpeedMmps / 1000) * PIXELS_PER_METER
+      return (maxSpeedRef.current / 1000) * PIXELS_PER_METER
     }
     function maxAlphaRad() {
-      return (maxYawMrad / 1000) * 15 * (Math.PI / 180)
+      return (maxYawRef.current / 1000) * 15 * (Math.PI / 180)
     }
     function accel() {
       return maxVPx() / 1.5
@@ -752,7 +760,8 @@ export function DriveConsole() {
       cancelAnimationFrame(rafRef.current)
       ro.disconnect()
     }
-  }, [applyGear, maxSpeedMmps, maxYawMrad])
+    // maxSpeed/maxYaw read via refs — do not restart RAF/resize on slider drag.
+  }, [applyGear])
 
   const k = keyUi
   const benchOn = status?.session?.bench_tx === 'enabled'
@@ -1106,7 +1115,7 @@ export function DriveConsole() {
             </div>
             <label className="field">
               <span className="field-label">Max drive speed, mm/s</span>
-              <div className="field-row">
+              <div className="field-row drive-limit-row">
                 <input
                   type="range"
                   min={0}
@@ -1116,12 +1125,12 @@ export function DriveConsole() {
                   data-testid="drive-max-speed"
                   onChange={(e) => setMaxSpeedMmps(Number(e.target.value))}
                 />
-                <span className="mono field-val">{maxSpeedMmps}</span>
+                <span className="mono field-val drive-limit-val">{maxSpeedMmps}</span>
               </div>
             </label>
             <label className="field">
               <span className="field-label">Max yaw rate, mrad/s</span>
-              <div className="field-row">
+              <div className="field-row drive-limit-row">
                 <input
                   type="range"
                   min={0}
@@ -1131,7 +1140,7 @@ export function DriveConsole() {
                   data-testid="drive-max-yaw"
                   onChange={(e) => setMaxYawMrad(Number(e.target.value))}
                 />
-                <span className="mono field-val">{maxYawMrad}</span>
+                <span className="mono field-val drive-limit-val">{maxYawMrad}</span>
               </div>
             </label>
           </section>
