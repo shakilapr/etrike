@@ -229,10 +229,16 @@ function formatBytes(hex?: string): string {
 }
 
 /**
- * Message dropdown (old model, restored + cleaned up):
- *  - Filter by bus + optional ECU (sender or receiver)
+ * Message dropdown:
+ *  - Bus + ECU filter
+ *  - Direction (industry standard): All | TX | RX
+ *      TX = this ECU transmits (sends)
+ *      RX = this ECU receives
  *  - Group options by sender ECU in optgroups
  */
+/** All / TX (transmit) / RX (receive) — Vector/industry naming. */
+type DirFilter = 'all' | 'tx' | 'rx'
+
 const ECU_ORDER = [
   'Host',
   'RT',
@@ -271,10 +277,26 @@ function msgReceivers(m: DictMessage): string[] {
     .filter((r) => r && r !== '—')
 }
 
-/** ECU filter: messages this unit sends or receives. */
+/** ECU filter without direction: messages this unit sends or receives. */
 function msgTouchesEcu(m: DictMessage, ecu: string): boolean {
   if (ecu === 'all') return true
   if (msgSender(m) === ecu) return true
+  return msgReceivers(m).includes(ecu)
+}
+
+/**
+ * Direction relative to the selected ECU (or bus when ECU=All).
+ * TX = transmit/send · RX = receive · All = both.
+ */
+function matchesEcuDir(m: DictMessage, ecu: string, dir: DirFilter): boolean {
+  if (dir === 'all') return msgTouchesEcu(m, ecu)
+  if (dir === 'tx') {
+    // Transmit: ECU is the sender (or every frame if no ECU picked)
+    if (ecu === 'all') return true
+    return msgSender(m) === ecu
+  }
+  // Receive: ECU is listed as a receiver
+  if (ecu === 'all') return msgReceivers(m).length > 0
   return msgReceivers(m).includes(ecu)
 }
 
@@ -316,6 +338,8 @@ export function Inject() {
   const [mode, setMode] = useState<'named' | 'raw'>('named')
   const [bus, setBus] = useState<'high' | 'low'>('high')
   const [ecuFilter, setEcuFilter] = useState<string>('all')
+  /** All | TX (transmit) | RX (receive) */
+  const [dirFilter, setDirFilter] = useState<DirFilter>('all')
   const [filter, setFilter] = useState('')
   const [selectedKey, setSelectedKey] = useState('')
   const [values, setValues] = useState<Record<string, FieldValue>>({})
@@ -376,11 +400,11 @@ export function Inject() {
     return [...set].sort((a, b) => ecuRank(a) - ecuRank(b) || a.localeCompare(b))
   }, [onBus])
 
-  // Full catalog on bus, optional ECU touch-filter + text search.
+  // Catalog on bus × ECU × TX/RX + text search.
   const busMessages = useMemo(() => {
     const q = filter.trim().toLowerCase()
     return onBus
-      .filter((m) => msgTouchesEcu(m, ecuFilter))
+      .filter((m) => matchesEcuDir(m, ecuFilter, dirFilter))
       .filter((m) => {
         if (!q) return true
         const route = routeLabel(m).toLowerCase()
@@ -398,9 +422,9 @@ export function Inject() {
           a.can_id - b.can_id ||
           a.name.localeCompare(b.name),
       )
-  }, [onBus, ecuFilter, filter])
+  }, [onBus, ecuFilter, dirFilter, filter])
 
-  /** Dropdown groups by sender ECU (restored old separation). */
+  /** Dropdown groups by sender ECU. */
   const messagesByEcu = useMemo(() => {
     const map = new Map<string, DictMessage[]>()
     for (const m of busMessages) {
@@ -425,6 +449,13 @@ export function Inject() {
 
   const selectedInjectable = selected ? canNamedInject(selected) : false
 
+  const dirCounts = useMemo(() => {
+    const all = onBus.filter((m) => msgTouchesEcu(m, ecuFilter)).length
+    const tx = onBus.filter((m) => matchesEcuDir(m, ecuFilter, 'tx')).length
+    const rx = onBus.filter((m) => matchesEcuDir(m, ecuFilter, 'rx')).length
+    return { all, tx, rx }
+  }, [onBus, ecuFilter])
+
   // Keep selection valid when filters change
   useEffect(() => {
     if (!selectedKey) return
@@ -442,6 +473,7 @@ export function Inject() {
   const handleBusChange = (newBus: 'high' | 'low') => {
     setBus(newBus)
     setEcuFilter('all')
+    setDirFilter('all')
     const first = messages.find((m) => m.bus === newBus)
     if (first) {
       setSelectedKey(first.canonicalKey)
@@ -796,8 +828,8 @@ export function Inject() {
                 className="inject-ecu-select"
                 data-testid="inject-ecu-filter"
                 value={ecuFilter}
-                aria-label="Filter by ECU"
-                title="Filter messages this ECU sends or receives"
+                aria-label="Filter by ECU / node"
+                title="Node filter. Use TX/RX for transmit vs receive relative to this ECU."
                 onChange={(e) => setEcuFilter(e.target.value)}
               >
                 <option value="all">All ECUs ({onBus.length})</option>
@@ -810,6 +842,39 @@ export function Inject() {
                   )
                 })}
               </select>
+              <Seg
+                data-testid="inject-dir-filter"
+                aria-label="Direction: All, TX transmit, RX receive"
+                title={
+                  ecuFilter === 'all'
+                    ? 'TX = all frames · RX = frames with receivers · pick an ECU for node-relative TX/RX'
+                    : `Relative to ${ECU_LABEL[ecuFilter] ?? ecuFilter}: TX = transmits · RX = receives`
+                }
+              >
+                <SegButton
+                  active={dirFilter === 'all'}
+                  data-testid="inject-dir-all"
+                  onClick={() => setDirFilter('all')}
+                >
+                  All ({dirCounts.all})
+                </SegButton>
+                <SegButton
+                  active={dirFilter === 'tx'}
+                  data-testid="inject-dir-tx"
+                  title="TX — transmit (this ECU sends)"
+                  onClick={() => setDirFilter('tx')}
+                >
+                  TX ({dirCounts.tx})
+                </SegButton>
+                <SegButton
+                  active={dirFilter === 'rx'}
+                  data-testid="inject-dir-rx"
+                  title="RX — receive (this ECU is a receiver)"
+                  onClick={() => setDirFilter('rx')}
+                >
+                  RX ({dirCounts.rx})
+                </SegButton>
+              </Seg>
               <Input
                 className="inject-filter-input h-8 min-h-8 max-w-none"
                 data-testid="inject-filter"
@@ -826,7 +891,9 @@ export function Inject() {
               >
                 {busMessages.length === 0 && (
                   <option value="">
-                    No messages{ecuFilter !== 'all' ? ` for ${ecuFilter}` : ''} on {bus}
+                    No messages
+                    {ecuFilter !== 'all' ? ` for ${ecuFilter}` : ''}
+                    {dirFilter === 'tx' ? ' TX' : dirFilter === 'rx' ? ' RX' : ''} on {bus}
                   </option>
                 )}
                 {messagesByEcu.map(([ecu, group]) => (
@@ -852,12 +919,27 @@ export function Inject() {
                 <span className="mono">{selected.id}</span>
                 {' · '}
                 <strong>{selected.name}</strong>
-                {' · sender '}
-                <span className="mono">{msgSender(selected)}</span>
+                {' · '}
+                <span className="tx-text" title="Transmit / sender">
+                  TX {msgSender(selected)}
+                </span>
                 {msgReceivers(selected).length > 0 ? (
                   <>
-                    {' · RX '}
-                    <span className="mono">{msgReceivers(selected).join(', ')}</span>
+                    {' · '}
+                    <span title="Receive / receivers">
+                      RX {msgReceivers(selected).join(', ')}
+                    </span>
+                  </>
+                ) : null}
+                {ecuFilter !== 'all' ? (
+                  <>
+                    {' · node '}
+                    <span className="mono">{ECU_LABEL[ecuFilter] ?? ecuFilter}</span>
+                    {msgSender(selected) === ecuFilter
+                      ? ' (TX)'
+                      : msgReceivers(selected).includes(ecuFilter)
+                        ? ' (RX)'
+                        : ''}
                   </>
                 ) : null}
                 {' · '}
