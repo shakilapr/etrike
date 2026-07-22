@@ -44,7 +44,7 @@ export default function App() {
           {workspace === 'settings' && <Settings />}
           {workspace === 'ui-kit' && <UiKit />}
         </main>
-        {/* Active TX: always open on Inject/Control; collapsed strip elsewhere. */}
+        {/* Active TX: open by default on Inject/Control; collapsible everywhere. */}
         <ActiveTxRail />
       </div>
     </div>
