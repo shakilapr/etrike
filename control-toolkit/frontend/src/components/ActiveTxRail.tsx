@@ -15,8 +15,8 @@ import { useActiveTxStore } from '../lib/activeTxStore'
 import { useAppStore, type Workspace } from '../store'
 import { BusChip, StatusDot } from './ui'
 
-/** Workspaces where Active TX is a primary panel (always expanded). */
-const ALWAYS_OPEN: ReadonlySet<Workspace> = new Set(['inject', 'control'])
+/** Inject / Control open by default; every workspace can collapse or expand. */
+const DEFAULT_OPEN: ReadonlySet<Workspace> = new Set(['inject', 'control'])
 
 export function ActiveTxRail() {
   const workspace = useAppStore((s) => s.workspace)
@@ -35,10 +35,9 @@ export function ActiveTxRail() {
   const removePaused = useActiveTxStore((s) => s.removePaused)
   const stopAll = useActiveTxStore((s) => s.stopAll)
 
-  /** Manual expand on non-inject/control workspaces only. */
-  const [optionalOpen, setOptionalOpen] = useState(false)
-  const primary = ALWAYS_OPEN.has(workspace)
-  const open = primary || optionalOpen
+  const primary = DEFAULT_OPEN.has(workspace)
+  /** User-toggled open state; reset to workspace default on tab change. */
+  const [open, setOpen] = useState(() => DEFAULT_OPEN.has(workspace))
 
   useEffect(() => {
     void loadCatalog()
@@ -47,18 +46,18 @@ export function ActiveTxRail() {
     return () => window.clearInterval(timer)
   }, [loadCatalog, refreshJobs])
 
-  // Leaving Inject/Control collapses the optional panel again.
+  // Workspace change → Inject/Control open by default; others collapsed.
   useEffect(() => {
-    if (!primary) setOptionalOpen(false)
-  }, [workspace, primary])
+    setOpen(DEFAULT_OPEN.has(workspace))
+  }, [workspace])
 
   const railCount = jobs.length + paused.length
 
-  // Collapsed strip on Overview / Live / … — still polls jobs for host-TX coloring.
+  // Collapsed strip — still polls jobs for host-TX coloring.
   if (!open) {
     return (
       <aside
-        className="active-tx-rail inject-rail is-collapsed"
+        className={`active-tx-rail inject-rail is-collapsed${primary ? ' is-primary' : ' is-optional'}`}
         data-testid="inject-side-manager"
         data-rail-open="0"
         aria-label="Active host TX (collapsed)"
@@ -73,7 +72,7 @@ export function ActiveTxRail() {
               : 'Expand Active TX'
           }
           aria-expanded={false}
-          onClick={() => setOptionalOpen(true)}
+          onClick={() => setOpen(true)}
         >
           <StatusDot
             tone={railCount > 0 ? 'tx' : 'muted'}
@@ -116,19 +115,17 @@ export function ActiveTxRail() {
               ×
             </button>
           )}
-          {!primary && (
-            <button
-              type="button"
-              className="inject-icon-btn"
-              data-testid="active-tx-collapse"
-              title="Collapse Active TX"
-              aria-label="Collapse Active TX"
-              aria-expanded={true}
-              onClick={() => setOptionalOpen(false)}
-            >
-              ›
-            </button>
-          )}
+          <button
+            type="button"
+            className="inject-icon-btn"
+            data-testid="active-tx-collapse"
+            title="Collapse Active TX"
+            aria-label="Collapse Active TX"
+            aria-expanded={true}
+            onClick={() => setOpen(false)}
+          >
+            ›
+          </button>
         </div>
       </div>
 
