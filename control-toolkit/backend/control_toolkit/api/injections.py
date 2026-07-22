@@ -202,9 +202,37 @@ def inject_raw(request: Request, body: RawInjectBody) -> dict:
     }
 
 
+@router.get("/jobs")
+def list_jobs(request: Request) -> dict:
+    life = request.app.state.lifecycle
+    jobs = []
+    scheduler = life.scheduler
+    for job in list(scheduler._jobs.values()):
+        jobs.append({
+            "job_id": job.job_id,
+            "bus": job.bus,
+            "key": job.key,
+            "can_id": job.can_id,
+            "values": job.values,
+            "period_ms": job.period_s * 1000.0,
+            "owner": job.owner,
+            "counter_field": job.counter_field,
+            "missed": job.missed,
+            "last_result": job.last_result,
+        })
+    return {"ok": True, "count": len(jobs), "jobs": jobs}
+
+
+@router.delete("")
+def cancel_all_injections(request: Request) -> dict:
+    count = request.app.state.lifecycle.scheduler.cancel_all()
+    return {"ok": True, "canceled_count": count}
+
+
 @router.delete("/{job_id}")
 def cancel_injection(job_id: str, request: Request) -> dict:
     ok = request.app.state.lifecycle.scheduler.cancel(job_id)
     if not ok:
         raise SessionError("injection.not_found", f"job {job_id} not found", status=404)
     return {"ok": True, "job_id": job_id, "canceled": True}
+

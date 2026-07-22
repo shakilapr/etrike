@@ -642,6 +642,36 @@ button.topbar-mode-btn.btn {
 }
 
 /* Matches control-ui: padded nav stack + section gaps */
+.sidebar-quick-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px 10px 0;
+}
+
+.quick-nav {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.quick-nav:hover,
+.quick-nav:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.quick-nav.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
 .sidebar-nav {
   padding: 14px 10px 8px;
   display: flex;
@@ -2080,6 +2110,91 @@ button.secondary:active:not(:disabled) {
 .inject-template-btn strong {
   font-size: 13px;
 }
+
+.started-controller-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--surface));
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.started-controller-card:hover {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+.started-controller-card.active-running {
+  border-left: 4px solid var(--success);
+}
+
+.started-controller-card.active-stopped {
+  border-left: 4px solid var(--warning);
+}
+
+.started-controller-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.started-controller-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.started-controller-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.started-controller-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.signal-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.preset-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.preset-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.signal-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.signal-slider {
+  flex: 1;
+  accent-color: var(--primary);
+  height: 4px;
+}
+
 
 .panel-title-row {
   display: flex;

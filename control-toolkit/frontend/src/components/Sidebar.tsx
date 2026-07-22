@@ -1,6 +1,13 @@
 import { findMsg, PROFILE_LABELS } from '../lib/signals'
 import { useAppStore } from '../store'
-import { IconExternalLink, IconGauge, NAV_SECTIONS } from './icons'
+import {
+  IconActivity,
+  IconExternalLink,
+  IconGauge,
+  IconLayoutGrid,
+  IconSliders,
+  NAV_SECTIONS,
+} from './icons'
 
 export function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
@@ -79,6 +86,25 @@ export function Sidebar() {
       data-testid="sidebar"
       aria-label="Primary navigation"
     >
+      <div className="sidebar-quick-nav" role="group" aria-label="Quick workspace switcher">
+        {[
+          { id: 'overview' as const, label: 'Overview', icon: <IconLayoutGrid /> },
+          { id: 'control' as const, label: 'All-node control', icon: <IconSliders /> },
+          { id: 'live' as const, label: 'Live CAN', icon: <IconActivity /> },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={workspace === item.id ? 'quick-nav active' : 'quick-nav'}
+            data-testid={`quick-nav-${item.id}`}
+            aria-label={item.label}
+            title={item.label}
+            onClick={() => setWorkspace(item.id)}
+          >
+            {item.icon}
+          </button>
+        ))}
+      </div>
       <nav className="sidebar-nav flex flex-col gap-3 p-3" aria-label="Primary workspaces">
         {NAV_SECTIONS.map((section) => (
           <div key={section.label} className="nav-section">

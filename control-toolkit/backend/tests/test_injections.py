@@ -120,3 +120,30 @@ def test_ownership_conflict(client):
     body["owner"] = "b"
     r = client.post("/api/v1/injections", json=body)
     assert r.status_code == 409
+
+
+def test_list_and_cancel_all_jobs(client):
+    _session_with_tx(client)
+    r1 = client.post(
+        "/api/v1/injections",
+        json={
+            "bus": "high",
+            "key": "host:host_heartbeat",
+            "values": {"alive_ctr": 0, "health_flags": 0},
+            "period_ms": 100,
+        },
+    )
+    assert r1.status_code == 200
+    r2 = client.get("/api/v1/injections/jobs")
+    assert r2.status_code == 200
+    jobs = r2.json()["jobs"]
+    assert len(jobs) >= 1
+    assert any(j["job_id"] == r1.json()["job_id"] for j in jobs)
+
+    r3 = client.delete("/api/v1/injections")
+    assert r3.status_code == 200
+    assert r3.json()["canceled_count"] >= 1
+
+    r4 = client.get("/api/v1/injections/jobs")
+    assert len(r4.json()["jobs"]) == 0
+
