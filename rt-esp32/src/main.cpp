@@ -313,11 +313,13 @@ static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
             g_calc_speed.reset();
 
             if (can_send_estop()) {
+                // Protocol: SAFETY_ESTOP is DLC 0 — always encode, never hand-roll.
                 can::Frame estop_frame;
-                estop_frame.id = can::kIdSafetyEstop;
-                estop_frame.dlc = 0;
-                xQueueSendToFront(g_gw_tx_low_q, &estop_frame, pdMS_TO_TICKS(10));
-                xQueueSendToFront(g_gw_tx_high_q, &estop_frame, pdMS_TO_TICKS(10));
+                can::gen::SafetyEstop estop_msg{};
+                if (can::gen::encode_safety_estop(estop_msg, estop_frame) == can::gen::CodecStatus::Ok) {
+                    xQueueSendToFront(g_gw_tx_low_q, &estop_frame, pdMS_TO_TICKS(10));
+                    xQueueSendToFront(g_gw_tx_high_q, &estop_frame, pdMS_TO_TICKS(10));
+                }
             }
         }
         if (sr.brake_kpa) bk = sr.brake_kpa;

@@ -29,4 +29,4 @@ if (-not (Test-Path ".\node_modules")) {
   npm install
 }
 
-npm run dev -- --host $uiHost --port $uiPort --strictPort
+npx vite --host $uiHost --port $uiPort --strictPort

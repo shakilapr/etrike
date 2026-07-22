@@ -131,7 +131,7 @@ python -m uvicorn control_toolkit.main:app --host 127.0.0.1 --port 8001
 ```powershell
 cd C:\projects\etrike\control-toolkit\frontend
 $env:CTK_E2E_API = "http://127.0.0.1:8001"
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+npx vite --host 127.0.0.1 --port 5173 --strictPort
 ```
 
 `npm run dev` alone is **not** enough: it only starts Vite. The API must already be on **127.0.0.1:8001**.

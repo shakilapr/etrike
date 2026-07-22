@@ -394,7 +394,8 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     }
 
     // Load TX buffer in one burst write.
-    uint8_t dlc = std::min<uint8_t>(frame.dlc, 8);
+    // SAFETY_ESTOP (0x001) is classic DLC 0 — never pad to 8 on MCP either.
+    uint8_t dlc = (frame.id == 0x001u) ? 0 : std::min<uint8_t>(frame.dlc, 8);
     uint8_t tx_buf[13] = {};
 
     uint8_t sidh = (frame.id >> 3) & 0xFF;

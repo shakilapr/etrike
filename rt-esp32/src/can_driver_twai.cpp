@@ -1,222 +1,186 @@
-// TWAI (built-in CAN controller) driver — low-level CAN bus.
-// Architecture.md §7.2.
+// Handle-based TWAI driver for the ESP32-S3 low CAN bus.
+// Unlike the deprecated driver, this API preserves classic CAN DLC=0 by
+// carrying buffer_len=0 through to the HAL.
 
 #include "can_driver_twai.h"
-#include "driver/twai.h"
+#include "esp_attr.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
+#include "esp_twai_onchip.h"
+#include <cstring>
 #include <new>
 
 namespace rt {
 namespace {
 
 constexpr const char* kTag = "twai";
-
 alignas(TwaiDriver) unsigned char g_can_low_storage[sizeof(TwaiDriver)];
 TwaiDriver* g_can_low = nullptr;
 
-// Serialize install / recover / send / receive — concurrent uninstall was
-// crashing (spinlock assert) when recovery raced RX/TX tasks.
-static SemaphoreHandle_t g_twai_mutex = nullptr;
-
-static bool lock_twai(uint32_t ms = 100) {
-    if (!g_twai_mutex) return true;
-    return xSemaphoreTake(g_twai_mutex, pdMS_TO_TICKS(ms)) == pdTRUE;
-}
-static void unlock_twai() {
-    if (g_twai_mutex) xSemaphoreGive(g_twai_mutex);
-}
-
-}  // anonymous namespace
+}  // namespace
 
 TwaiDriver::~TwaiDriver() {
-    if (m_initialized) {
-        if (lock_twai(500)) {
-            twai_stop();
-            twai_driver_uninstall();
-            m_initialized = false;
-            unlock_twai();
+    if (m_node) {
+        twai_node_disable(m_node);
+        twai_node_delete(m_node);
+        m_node = nullptr;
+    }
+    if (m_rx_queue) vQueueDelete(m_rx_queue);
+    if (m_free_tx_slots) vQueueDelete(m_free_tx_slots);
+    if (m_control_mutex) vSemaphoreDelete(m_control_mutex);
+}
+
+void TwaiDriver::reset_tx_slots() {
+    xQueueReset(m_free_tx_slots);
+    for (uint8_t index = 0; index < kTxSlots; ++index) {
+        xQueueSend(m_free_tx_slots, &index, 0);
+    }
+}
+
+bool IRAM_ATTR TwaiDriver::on_rx_done(twai_node_handle_t node,
+                                      const twai_rx_done_event_data_t*,
+                                      void* user_ctx) {
+    auto* self = static_cast<TwaiDriver*>(user_ctx);
+    RxItem item{};
+    twai_frame_t frame{};
+    frame.buffer = item.data;
+    frame.buffer_len = sizeof(item.data);
+    if (twai_node_receive_from_isr(node, &frame) != ESP_OK || frame.header.dlc > 8) {
+        return false;
+    }
+    item.id = frame.header.id;
+    item.dlc = static_cast<uint8_t>(frame.header.dlc);
+    item.extended = frame.header.ide;
+    BaseType_t wake = pdFALSE;
+    xQueueSendFromISR(self->m_rx_queue, &item, &wake);
+    return wake == pdTRUE;
+}
+
+bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
+                                      const twai_tx_done_event_data_t* event,
+                                      void* user_ctx) {
+    auto* self = static_cast<TwaiDriver*>(user_ctx);
+    BaseType_t wake = pdFALSE;
+    for (uint8_t index = 0; index < kTxSlots; ++index) {
+        if (event->done_tx_frame == &self->m_tx_slots[index].frame) {
+            xQueueSendFromISR(self->m_free_tx_slots, &index, &wake);
+            break;
         }
     }
+    return wake == pdTRUE;
 }
 
 bool TwaiDriver::init() {
-    if (!g_twai_mutex) {
-        g_twai_mutex = xSemaphoreCreateMutex();
-    }
-    if (!lock_twai(500)) return false;
+    if (!m_rx_queue) m_rx_queue = xQueueCreate(32, sizeof(RxItem));
+    if (!m_free_tx_slots) m_free_tx_slots = xQueueCreate(kTxSlots, sizeof(uint8_t));
+    if (!m_control_mutex) m_control_mutex = xSemaphoreCreateMutex();
+    if (!m_rx_queue || !m_free_tx_slots || !m_control_mutex) return false;
+    if (xSemaphoreTake(m_control_mutex, pdMS_TO_TICKS(500)) != pdTRUE) return false;
 
-    if (m_initialized) {
-        twai_stop();
-        twai_driver_uninstall();
-        m_initialized = false;
+    if (m_node) {
+        twai_node_disable(m_node);
+        twai_node_delete(m_node);
+        m_node = nullptr;
     }
+    m_initialized = false;
+    xQueueReset(m_rx_queue);
+    reset_tx_slots();
 
-    twai_general_config_t general = TWAI_GENERAL_CONFIG_DEFAULT_V2(
-        0, static_cast<gpio_num_t>(m_config.tx_gpio),
-        static_cast<gpio_num_t>(m_config.rx_gpio), TWAI_MODE_NORMAL);
-    general.tx_queue_len = 16;
-    general.rx_queue_len = 32;
+    twai_onchip_node_config_t config{};
+    config.io_cfg.tx = static_cast<gpio_num_t>(m_config.tx_gpio);
+    config.io_cfg.rx = static_cast<gpio_num_t>(m_config.rx_gpio);
+    config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
+    config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
+    config.bit_timing.bitrate = m_config.bitrate_hz;
+    config.fail_retry_cnt = 3;
+    config.tx_queue_depth = kTxSlots;
 
-    twai_timing_config_t timing{};
-    timing.quanta_resolution_hz = 8'000'000;
-    if (m_config.bitrate_hz == 500'000) {
-        timing.tseg_1 = 11;
-        timing.tseg_2 = 4;
-        timing.sjw = 2;
-    } else {
-        timing.tseg_1 = 14;
-        timing.tseg_2 = 7;
-        timing.sjw = 3;
+    esp_err_t result = twai_new_node_onchip(&config, &m_node);
+    if (result == ESP_OK) {
+        twai_event_callbacks_t callbacks{};
+        callbacks.on_rx_done = &TwaiDriver::on_rx_done;
+        callbacks.on_tx_done = &TwaiDriver::on_tx_done;
+        result = twai_node_register_event_callbacks(m_node, &callbacks, this);
     }
-    const twai_filter_config_t filter = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-    bool ok = false;
-    if (twai_driver_install(&general, &timing, &filter) == ESP_OK) {
-        if (twai_start() == ESP_OK) {
-            m_initialized = true;
-            ok = true;
-        } else {
-            twai_driver_uninstall();
-        }
+    if (result == ESP_OK) result = twai_node_enable(m_node);
+    if (result == ESP_OK) {
+        m_initialized = true;
+    } else if (m_node) {
+        twai_node_delete(m_node);
+        m_node = nullptr;
     }
-    unlock_twai();
-    return ok;
+    xSemaphoreGive(m_control_mutex);
+    return m_initialized;
 }
 
 bool TwaiDriver::recovery() {
-    // Soft recovery first (official path). Full reinstall only if soft fails.
-    // Never uninstall while other tasks call send/receive without the mutex.
-    if (!m_initialized) return init();
-    if (!lock_twai(200)) {
-        ESP_LOGW(kTag, "recovery: mutex busy — skip");
-        return false;
+    if (!m_initialized || !m_node) return init();
+    if (xSemaphoreTake(m_control_mutex, pdMS_TO_TICKS(200)) != pdTRUE) return false;
+    twai_node_status_t info{};
+    esp_err_t result = twai_node_get_info(m_node, &info, nullptr);
+    if (result == ESP_OK && info.state == TWAI_ERROR_BUS_OFF) {
+        ESP_LOGW(kTag, "recovery: bus-off tec=%u rec=%u", info.tx_error_count,
+                 info.rx_error_count);
+        result = twai_node_recover(m_node);
     }
-
-    twai_status_info_t info{};
-    if (twai_get_status_info(&info) == ESP_OK) {
-        ESP_LOGW(kTag, "recovery: state=%d tec=%lu rec=%lu",
-                 static_cast<int>(info.state),
-                 static_cast<unsigned long>(info.tx_error_counter),
-                 static_cast<unsigned long>(info.rx_error_counter));
-    }
-
-    bool ok = false;
-    if (info.state == TWAI_STATE_BUS_OFF) {
-        if (twai_initiate_recovery() == ESP_OK) {
-            // Wait until controller leaves bus-off (STOPPED then start).
-            for (int i = 0; i < 50; ++i) {
-                unlock_twai();
-                vTaskDelay(pdMS_TO_TICKS(10));
-                if (!lock_twai(100)) return false;
-                if (twai_get_status_info(&info) == ESP_OK
-                    && info.state == TWAI_STATE_STOPPED) {
-                    break;
-                }
-            }
-            if (twai_start() == ESP_OK) {
-                ok = true;
-                ESP_LOGI(kTag, "soft recovery OK (bus-off → start)");
-            }
-        }
-    } else if (info.state == TWAI_STATE_STOPPED) {
-        ok = (twai_start() == ESP_OK);
-    } else if (info.state == TWAI_STATE_RUNNING) {
-        // Still running — clear transmit queue if API available; just report OK.
-        ok = true;
-    }
-
-    if (!ok) {
-        ESP_LOGW(kTag, "soft recovery failed — full reinstall");
-        twai_stop();
-        twai_driver_uninstall();
-        m_initialized = false;
-        unlock_twai();
-        vTaskDelay(pdMS_TO_TICKS(50));
-        return init();
-    }
-
-    unlock_twai();
-    return true;
+    xSemaphoreGive(m_control_mutex);
+    return result == ESP_OK;
 }
 
 bool TwaiDriver::status(uint32_t& state, uint32_t& tec, uint32_t& rec) const {
-    twai_status_info_t info{};
-    if (twai_get_status_info(&info) != ESP_OK) {
+    twai_node_status_t info{};
+    if (!m_node || twai_node_get_info(m_node, &info, nullptr) != ESP_OK) {
         state = tec = rec = 0;
         return false;
     }
-    state = static_cast<uint32_t>(info.state);
-    tec = info.tx_error_counter;
-    rec = info.rx_error_counter;
+    // Preserve the legacy wrapper contract used by main.cpp: 1=running, 2=bus-off.
+    state = info.state == TWAI_ERROR_BUS_OFF ? 2U : 1U;
+    tec = info.tx_error_count;
+    rec = info.rx_error_count;
     return true;
 }
 
 bool TwaiDriver::receive(can::Frame& out, uint32_t timeout_ms) {
     if (!m_initialized) return false;
-    // Non-blocking path for 0 timeout; short lock for actual receive.
-    twai_message_t message{};
-    // twai_receive blocks; do not hold mutex across full timeout — only guard
-    // against concurrent uninstall. Use try-lock style: check init, receive,
-    // if recovery races, receive fails cleanly.
-    if (!lock_twai(timeout_ms == 0 ? 5 : timeout_ms + 20)) return false;
-    if (!m_initialized) {
-        unlock_twai();
-        return false;
-    }
-    // Release mutex while waiting so recovery can run between frames.
-    unlock_twai();
-    if (twai_receive(&message, pdMS_TO_TICKS(timeout_ms)) != ESP_OK) return false;
-    out = can::Frame(message.identifier, message.extd != 0, message.data_length_code);
-    for (uint8_t i = 0; i < message.data_length_code && i < out.data.size(); ++i)
-        out.data[i] = message.data[i];
+    RxItem item{};
+    if (xQueueReceive(m_rx_queue, &item, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
+    out = can::Frame(item.id, item.extended, item.dlc);
+    std::memcpy(out.data.data(), item.data, item.dlc);
     return true;
 }
 
-bool TwaiDriver::send(const can::Frame& frame, uint32_t timeout_ms) {
-    if (!m_initialized) return false;
+bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
+    if (!m_initialized || !m_node || source.dlc > 8) return false;
+    uint8_t index = 0;
+    if (xQueueReceive(m_free_tx_slots, &index, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
 
-    twai_status_info_t info{};
-    if (twai_get_status_info(&info) == ESP_OK) {
-        // Do not hammer the bus while bus-off / recovering.
-        if (info.state == TWAI_STATE_BUS_OFF || info.state == TWAI_STATE_RECOVERING) {
-            return false;
-        }
-    }
+    TxSlot& slot = m_tx_slots[index];
+    slot.frame = {};
+    slot.frame.header.id = source.id;
+    slot.frame.header.ide = source.extended;
+    slot.frame.header.dlc = source.dlc;
+    slot.frame.buffer = slot.data;
+    slot.frame.buffer_len = source.dlc;  // Must remain zero for a DLC-0 frame.
+    if (source.dlc) std::memcpy(slot.data, source.data.data(), source.dlc);
 
-    twai_message_t message{};
-    message.identifier = frame.id;
-    message.extd = frame.extended ? 1 : 0;
-    message.data_length_code = frame.dlc;
-    for (uint8_t i = 0; i < frame.dlc && i < frame.data.size(); ++i)
-        message.data[i] = frame.data[i];
-
-    if (!lock_twai(timeout_ms + 20)) return false;
-    if (!m_initialized) {
-        unlock_twai();
+    if (twai_node_transmit(m_node, &slot.frame, timeout_ms) != ESP_OK) {
+        xQueueSend(m_free_tx_slots, &index, 0);
         return false;
     }
-    unlock_twai();  // do not hold during transmit wait
-    return twai_transmit(&message, pdMS_TO_TICKS(timeout_ms)) == ESP_OK;
+    return true;
 }
 
 void TwaiDriver::get_error_counters(uint8_t& tec, uint8_t& rec) const {
-    twai_status_info_t info{};
-    if (twai_get_status_info(&info) == ESP_OK) {
-        tec = static_cast<uint8_t>(info.tx_error_counter);
-        rec = static_cast<uint8_t>(info.rx_error_counter);
+    twai_node_status_t info{};
+    if (m_node && twai_node_get_info(m_node, &info, nullptr) == ESP_OK) {
+        tec = static_cast<uint8_t>(info.tx_error_count);
+        rec = static_cast<uint8_t>(info.rx_error_count);
     } else {
         tec = rec = 0;
     }
 }
 
 bool can_low_init(int tx_gpio, int rx_gpio, int bitrate_hz) {
-    if (g_can_low) {
-        ESP_LOGW(kTag, "already initialized");
-        return true;
-    }
-
+    if (g_can_low) return true;
     g_can_low = new (static_cast<void*>(g_can_low_storage)) TwaiDriver(
         TwaiDriver::Config{tx_gpio, rx_gpio, bitrate_hz});
     if (!g_can_low->init()) {
@@ -225,14 +189,11 @@ bool can_low_init(int tx_gpio, int rx_gpio, int bitrate_hz) {
         g_can_low = nullptr;
         return false;
     }
-
-    ESP_LOGI(kTag, "TWAI ready: TX=%d RX=%d @ %d kbit/s",
-             tx_gpio, rx_gpio, bitrate_hz / 1000);
+    ESP_LOGI(kTag, "TWAI ready: TX=%d RX=%d @ %d kbit/s", tx_gpio, rx_gpio,
+             bitrate_hz / 1000);
     return true;
 }
 
-TwaiDriver* can_low_driver() {
-    return g_can_low;
-}
+TwaiDriver* can_low_driver() { return g_can_low; }
 
 }  // namespace rt

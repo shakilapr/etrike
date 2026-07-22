@@ -3,6 +3,10 @@
 // Architecture.md §7.2: TX=GPIO5, RX=GPIO4, 500 kbit/s.
 
 #include <cstdint>
+#include "esp_twai.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "protocol/compat/can.hpp"
 #include "config.h"
 
@@ -32,7 +36,32 @@ public:
     bool status(uint32_t& state, uint32_t& tec, uint32_t& rec) const;
 
 private:
+    static constexpr uint8_t kTxSlots = 16;
+    struct RxItem {
+        uint32_t id;
+        uint8_t dlc;
+        bool extended;
+        uint8_t data[8];
+    };
+    struct TxSlot {
+        twai_frame_t frame{};
+        uint8_t data[8]{};
+    };
+
+    static bool on_rx_done(twai_node_handle_t node,
+                           const twai_rx_done_event_data_t* event,
+                           void* user_ctx);
+    static bool on_tx_done(twai_node_handle_t node,
+                           const twai_tx_done_event_data_t* event,
+                           void* user_ctx);
+    void reset_tx_slots();
+
     Config m_config;
+    twai_node_handle_t m_node = nullptr;
+    QueueHandle_t m_rx_queue = nullptr;
+    QueueHandle_t m_free_tx_slots = nullptr;
+    SemaphoreHandle_t m_control_mutex = nullptr;
+    TxSlot m_tx_slots[kTxSlots]{};
     bool m_initialized = false;
 };
 
