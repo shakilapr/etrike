@@ -726,8 +726,6 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 
 ---
 
-## 17. Pre-Power Checklist
-
 ## 16.1 Pre-production dual-bus smoke test
 
 Flash the dedicated smoke image before restoring vehicle firmware. RT publishes `0x100` on low CAN and `0x110` on high CAN; SYS publishes `0x200` on low CAN. All frames are standard 500 kbit/s CAN and are sent every 200 ms. Confirm the physical Control Toolkit API observes all three IDs before proceeding.
@@ -741,6 +739,9 @@ pio run -e dual_sys -t upload --upload-port COM6
 Hardware/API mapping: CANalyst-II Ch0 = high bus and Ch1 = low bus. The smoke IDs are intentionally outside the production catalog, so an API `unknown_id` or `invalid` decode still counts as a physical-frame pass.
 
 ---
+
+## 17. Pre-Power Checklist
+
 ### 17.1 RT ESP32-S3
 
 - [ ] WCMCU-230 (low bus): VCC → 3V3 (J1-1), GND → GND (J1-22), CTX → GPIO5, CRX → GPIO4

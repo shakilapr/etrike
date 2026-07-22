@@ -49,7 +49,7 @@ Source: `can-test/src/dual_bus_smoke.cpp`
 |---|---|---:|---|---:|
 | RT `dual_rt` | Low | `0x100` | `RT` | 5 Hz |
 | RT `dual_rt` | High | `0x110` | `RH` | 5 Hz |
-| SYS `role_sys` | Low | `0x200` | `SY` | 5 Hz |
+| SYS `dual_sys` | Low | `0x200` | `SY` | 5 Hz |
 
 The RT high controller is configured with the verified 8 MHz / 500 kbit/s
 MCP2515 timing: `CNF1=0x00`, `CNF2=0x91`, `CNF3=0x01`.
@@ -70,7 +70,7 @@ MCP2515 timing: `CNF1=0x00`, `CNF2=0x91`, `CNF3=0x01`.
 
    ```powershell
    cd E:\work\etrike\can-test
-   pio run -e role_sys -t upload --upload-port COM6
+   pio run -e dual_sys -t upload --upload-port COM6
    ```
 
 4. Inspect `GET /api/v1/state` and the channel counters in
