@@ -281,8 +281,8 @@ test.describe('Full system — tabs, buttons, CAN side-effects', () => {
       timeout: 15_000,
     })
 
-    // ── Sidebar open drive ─────────────────────────────────────────
-    await page.getByTestId('sidebar-open-drive').click()
+    // ── Drive via workspace explorer only ──────────────────────────
+    await go(page, 'preview')
     await expect(page.getByTestId('workspace-preview')).toBeVisible()
 
     // ── Visit remaining tabs once more (nav active) ────────────────

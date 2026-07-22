@@ -333,7 +333,6 @@ function DirectActuatorCards({
 export function Control() {
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
-  const setWorkspace = useAppStore((s) => s.setWorkspace)
   const method = useAppStore((s) => s.controlMethod)
   const setMethod = useAppStore((s) => s.setControlMethod)
   const [log, setLog] = useState('')
@@ -671,8 +670,8 @@ export function Control() {
     <WorkspaceShell
       testId="workspace-control"
       className="control-workspace"
-      title="All-node control"
-      description={<>Select one motion route at a time. High, Low-all and MTR-only are exclusive because High control also makes RT publish Low <span className="mono">0x204</span>. All routes share the same Bench TX Arm gate.</>}
+      title="Control"
+      description={<>Select one motion method at a time. High, Low-all and MTR-only are exclusive because High control also makes RT publish Low <span className="mono">0x204</span>. All methods share the same Bench TX Arm gate. Quick keyboard / TX / fake-signal tools live in the Control activity sidebar.</>}
     >
 
       <div className="control-setup-grid">
@@ -710,14 +709,9 @@ export function Control() {
         )}
         <div className="actions tight">
           {!sessionId ? (
-            <button
-              type="button"
-              className="secondary"
-              data-testid="btn-open-settings-session"
-              onClick={() => setWorkspace('settings')}
-            >
-              Start a session in Settings
-            </button>
+            <p className="control-callout" data-testid="btn-open-settings-session">
+              No session — start one from <strong>Settings</strong> in Workspace explorer.
+            </p>
           ) : benchOn ? (
             <>
               <button
@@ -902,14 +896,6 @@ export function Control() {
                 }}
               >
                 {kbEnabled ? 'Stop keyboard' : 'Start keyboard'}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                data-testid="btn-open-drive-from-control"
-                onClick={() => setWorkspace('preview')}
-              >
-                Open Drive tab
               </button>
             </div>
             <ul className="controls-legend muted small">

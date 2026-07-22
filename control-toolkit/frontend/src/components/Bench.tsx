@@ -6,7 +6,6 @@ import { WorkspaceShell } from './WorkspaceShell'
 export function Bench() {
   const status = useAppStore((s) => s.status)
   const setStatus = useAppStore((s) => s.setStatus)
-  const setWorkspace = useAppStore((s) => s.setWorkspace)
   const [available, setAvailable] = useState<Array<Record<string, unknown>>>([])
   const [running, setRunning] = useState<Array<Record<string, unknown>>>([])
   const [busy, setBusy] = useState(false)
@@ -139,22 +138,6 @@ export function Bench() {
             onClick={() => void stopStimuli()}
           >
             Stop analysis stimuli
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            data-testid="btn-bench-open-control"
-            onClick={() => setWorkspace('control')}
-          >
-            Open Control
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            data-testid="btn-bench-open-diagnostics"
-            onClick={() => setWorkspace('diagnostics')}
-          >
-            Open Diagnostics
           </button>
         </div>
         <pre className="log" data-testid="synthetic-log">
