@@ -1,0 +1,210 @@
+/* ── Forms / actions ─────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+  align-items: center;
+}
+
+.actions.tight {
+  margin: 8px 0 0;
+}
+
+.actions > button {
+  flex-shrink: 0;
+}
+
+/*
+ * Primary fill is OPT-IN only (.btn / .primary / ui Button default).
+ * Bare buttons must never become white-on-primary — that broke inject chips.
+ */
+button.btn,
+button.primary,
+button.btn:hover:not(:disabled),
+button.primary:hover:not(:disabled),
+button.btn:focus:not(:disabled),
+button.primary:focus:not(:disabled),
+button.btn:active:not(:disabled),
+button.primary:active:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid var(--primary);
+  border-width: 1px;
+  border-radius: var(--radius);
+  padding: 0 12px;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  font-weight: 600;
+  font-size: var(--font-size-ui);
+  line-height: 1.2;
+  box-shadow: none;
+  transform: none;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+button.btn:hover:not(:disabled),
+button.primary:hover:not(:disabled),
+button.btn:active:not(:disabled),
+button.primary:active:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: #fff;
+}
+
+button.btn.small,
+button.primary.small {
+  min-height: var(--control-h-dense);
+  height: var(--control-h-dense);
+  max-height: var(--control-h-dense);
+  padding: 0 10px;
+  font-size: var(--font-size-label);
+}
+
+/* Bus filter tabs must never inherit filled primary. */
+.bus-tabs button,
+.bus-tabs button:hover:not(:disabled),
+.bus-tabs button:focus:not(:disabled),
+.bus-tabs button:active:not(:disabled),
+.bus-tabs button.active,
+.bus-tabs button.active:hover:not(:disabled),
+.bus-tabs button.active:active:not(:disabled) {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 0;
+  min-height: 32px;
+  height: 32px;
+  max-height: 32px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: none;
+  transform: none;
+}
+
+.bus-tabs button + button {
+  border-left: 1px solid var(--border);
+}
+
+.bus-tabs button:hover:not(:disabled) {
+  background: #f8fafc;
+  color: var(--text);
+}
+
+.bus-tabs button.active,
+.bus-tabs button.active:hover:not(:disabled) {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button:focus-visible {
+  outline: 2px solid #9bb9e8;
+  outline-offset: 2px; /* outline does not affect layout */
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+button.dense,
+button.dense:hover:not(:disabled),
+button.dense:focus:not(:disabled),
+button.dense:active:not(:disabled) {
+  min-height: var(--control-h-dense);
+  height: var(--control-h-dense);
+  max-height: var(--control-h-dense);
+  padding: 0 10px;
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  border-width: 1px;
+  transform: none;
+}
+
+/* Chip / compact actions share dense height */
+button.small,
+button.secondary.small,
+button.danger.small {
+  min-height: var(--control-h-dense);
+  height: var(--control-h-dense);
+  max-height: var(--control-h-dense);
+  padding: 0 8px;
+  font-size: var(--font-size-label);
+}
+
+button.danger,
+button.danger:hover:not(:disabled),
+button.danger:focus:not(:disabled),
+button.danger:active:not(:disabled) {
+  background: var(--danger);
+  border: 1px solid #9f1f28;
+  border-width: 1px;
+  color: #fff;
+  padding: 0 12px;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  font-weight: 600;
+  font-size: var(--font-size-ui);
+  line-height: 1.2;
+  box-shadow: none;
+  transform: none;
+}
+
+button.danger:hover:not(:disabled),
+button.danger:active:not(:disabled) {
+  background: #9f1f28;
+  color: #fff;
+  border-width: 1px;
+}
+
+button.secondary,
+button.secondary:hover:not(:disabled),
+button.secondary:focus:not(:disabled),
+button.secondary:active:not(:disabled) {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-width: 1px;
+  color: var(--text-secondary);
+  padding: 0 12px;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  font-weight: 600;
+  font-size: var(--font-size-ui);
+  line-height: 1.2;
+  box-shadow: none;
+  transform: none;
+}
+
+button.secondary:hover:not(:disabled),
+button.secondary:active:not(:disabled) {
+  background: var(--primary-soft);
+  border-color: #9bb9e8;
+  border-width: 1px;
+  color: var(--primary);
+}
+
+.log {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-height: 56px;
+  white-space: pre-wrap;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  margin-top: 12px;
+  color: var(--text-secondary);
+}
+

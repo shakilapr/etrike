@@ -1,0 +1,74 @@
+/* ── Logging workspace ───────────────────────────────────────────── */
+
+.logs-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.logs-toolbar select {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.logs-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 1450px) {
+  .logs-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1050px) {
+  .cards.metric-cards {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .bus-health {
+    grid-template-columns: 1fr;
+  }
+}
+
+.logs-table-wrap {
+  max-height: calc(100vh - var(--topbar-h) - 220px);
+  overflow: auto;
+}
+
+.log-sev {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.log-sev-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.log-sev-error,
+.log-sev-critical {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.log-sev-info,
+.log-sev-debug {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
