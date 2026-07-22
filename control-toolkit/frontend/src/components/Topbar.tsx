@@ -14,10 +14,12 @@ import {
 import { useAppStore } from '../store'
 import { IconCable, IconMonitor } from './icons'
 
+/** green=clean live · yellow=late or live+errors · red=dead · muted=unknown */
 function ecuDotTone(liveness: string): 'live' | 'warning' | 'danger' | 'muted' {
   const k = liveness.toLowerCase()
   if (k === 'live') return 'live'
-  if (k === 'late') return 'warning'
+  // late / degraded (live with faults) / recovering → yellow
+  if (k === 'late' || k === 'degraded' || k === 'recovering' || k === 'warn') return 'warning'
   if (k === 'fault' || k === 'offline' || k === 'missing') return 'danger'
   return 'muted'
 }
@@ -26,6 +28,7 @@ function ecuConnectedLabel(liveness: string): string {
   const k = liveness.toLowerCase()
   if (k === 'live') return 'connected'
   if (k === 'late') return 'late'
+  if (k === 'degraded') return 'live · error'
   if (k === 'fault') return 'fault'
   if (k === 'missing') return 'missing'
   if (k === 'offline') return 'offline'
@@ -461,13 +464,15 @@ export function Topbar() {
           {ecuNodes.map((n) => {
             const tone = ecuDotTone(n.liveness)
             const state = ecuConnectedLabel(n.liveness)
+            const issueHint =
+              n.issues?.length ? ` · ${n.issues.slice(0, 3).join('; ')}` : ''
             return (
               <div
                 key={`${n.bus}-${n.node}`}
                 className={`ecu-cell tone-${tone}`}
                 data-testid={`ecu-lamp-${n.node}`}
                 data-liveness={n.liveness}
-                title={n.title || `${n.node} · ${state}`}
+                title={n.title || `${n.node} · ${state}${issueHint}`}
               >
                 <span className="ecu-cell-name">{n.short}</span>
                 <span className={`ecu-led ${tone}`} aria-hidden />
