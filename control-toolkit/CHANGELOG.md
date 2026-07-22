@@ -2,9 +2,9 @@
 
 All notable changes to the Control Toolkit project will be documented in this file.
 
-## [Unreleased] - Phase 1 Implementation & System Stabilization
+## [0.8.0-alpha] — 2026-07-23
 
-This release covers the complete implementation of Phase 1 of the Control Toolkit, bringing the system from an empty backend skeleton to a functional, stable, and testable bench engineering application.
+This release covers the complete implementation and hardware testing bring-up of the Control Toolkit, bringing the system to a functional, stable, and testable bench & hardware engineering application.
 
 ### Major Problems Faced & Solved
 

@@ -2,6 +2,43 @@
 
 All notable changes to the E-Trike Drive-by-Wire Control System.
 
+## [0.8.0-alpha] — 2026-07-23
+
+### Summary
+
+This release introduces the **Control Toolkit** engineering platform, comprehensive hardware bring-up and CAN driver hardening across physical bench setups, Software-in-the-Loop (SIL) simulation capabilities, and pre-vehicle validation infrastructure. Major improvements span real-time CAN injection and monitoring, state-driven bus-off recovery, lease-based control intent ownership, and updated developer pin mapping.
+
+### Added
+
+**Control Toolkit & Engineering UI**:
+- Built complete Control Toolkit web platform (FastAPI backend + Vite/React UI) providing real-time dual-bus CAN visualization, live frame decoding, and manual teleop control.
+- Added global Active TX rail with host-TX blue indicator cues, per-sender ECU dropdown grouping, direction filters (`All`/`TX`/`RX`), live signal change highlighting, and message age color decay.
+- Implemented Drive Console workspace with holdable keycap controls, speed limits, gear direction shaping, and arming sequence.
+- Added session profile management, lease ownership tracking (`claim`/`release` semantics), tab handoff safety, and SQLite historical frame logging.
+- Added operational audit logging, diagnostic frame capture/export, and health monitoring header strip.
+
+**Hardware Testing & CAN Driver Reliability**:
+- Hardened MCP2515 SPI driver with interrupt GPIO reassignment (developer override pin updated from GPIO35 to GPIO42) and state-driven CAN bus-off recovery.
+- Enhanced CANalyst-II adapter with software TX mirroring, hardware availability probing, and physical test flags (`CTK_PHYSICAL=1`).
+- Added dual-role CAN testing and role-swapping capabilities in PlatformIO configuration for RT and SYS ESP32-S3 targets.
+- Introduced N16R8-safe memory and flash settings for ESP32-S3 RT/SYS controllers.
+- Imported STM32G4 HAL drivers and CMSIS headers for `mtr-stm32-v2` hardware support.
+
+**Software-in-the-Loop (SIL) & Simulation**:
+- Integrated native SIL framework enabling hardware-less virtual dual-bus execution and simulation controls.
+- Added age decay properties and observed message rate estimation to the receive pipeline.
+- Implemented dual-bus QA test harness and combination matrix test runner with ~3,000 high/low control test cases.
+
+**Testing & Validation**:
+- Published `RT/SYS Pre-Vehicle Validation Document and Testing Guide`.
+- Created Playwright end-to-end test suite (`qa-tabs`, `visual-audit`, `live-click-audit`) verifying backend REST/WebSocket routes and UI state contracts.
+
+### Fixed
+- Resolved ASGI race conditions and concurrent WebSocket receive errors under high EventBus load.
+- Corrected Inject ECU input vs. output routing and restored `SYS_SAFETY_STS` telemetry on Overview safety strip.
+- Prevented UI layout shift by locking button padding, height, and border styling across active/pressed states.
+- Cleaned up monorepo startup scripts (`toolkit:api`, `toolkit:ui`) and fixed explicit 127.0.0.1 binding.
+
 ## [0.4.0-alpha] — 2026-07-14
 
 ### Summary

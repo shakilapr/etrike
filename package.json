@@ -1,5 +1,6 @@
 {
   "name": "etrike-monorepo",
+  "version": "0.8.0-alpha",
   "private": true,
   "scripts": {
     "toolkit:api": "pwsh -NoProfile -File control-toolkit/scripts/start-api.ps1",
