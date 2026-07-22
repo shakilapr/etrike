@@ -188,9 +188,9 @@
 
 .inject-editor-bar {
   display: grid;
-  /* bus · ECU filter · text filter · message (grouped by sender) */
+  /* bus · ECU · All/TX/RX · text filter · message (grouped by sender) */
   grid-template-columns:
-    auto minmax(120px, 150px) minmax(100px, 160px) minmax(0, 1fr);
+    auto minmax(110px, 140px) auto minmax(90px, 140px) minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;
