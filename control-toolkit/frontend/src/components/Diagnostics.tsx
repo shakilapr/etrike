@@ -228,6 +228,7 @@ export function Diagnostics() {
         <div className="actions">
           <button
             type="button"
+            className="primary"
             data-testid="btn-rec-start"
             disabled={busy || !!activeRec || !!diagErr}
             onClick={() => void startRec()}
@@ -350,6 +351,7 @@ export function Diagnostics() {
         <div className="actions tight">
           <button
             type="button"
+            className="primary"
             data-testid="btn-run-verification"
             disabled={busy}
             onClick={() => void runVerification()}
