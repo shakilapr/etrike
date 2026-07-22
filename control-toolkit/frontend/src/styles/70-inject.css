@@ -110,13 +110,21 @@
 
 .inject-editor-bar {
   display: grid;
-  grid-template-columns: auto minmax(88px, 110px) minmax(90px, 140px) minmax(0, 1fr);
+  /* bus · Out/In/All · device · text filter · message */
+  grid-template-columns:
+    auto auto minmax(120px, 160px) minmax(90px, 140px) minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
+  .inject-editor-bar {
+    grid-template-columns: auto auto 1fr;
+  }
+}
+
+@media (max-width: 720px) {
   .inject-editor-bar {
     grid-template-columns: 1fr 1fr;
   }
