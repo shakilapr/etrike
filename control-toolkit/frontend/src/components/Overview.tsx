@@ -21,6 +21,7 @@ export function Overview() {
   const hostBrake = findMsg(messages, 'HOST_BRAKE_REQ')
   const rtBrake = findMsg(messages, 'RT_BRAKE_CMD')
   const brakeDiag = findMsg(messages, 'BRAKE_DIAG')
+  const safety = findMsg(messages, 'SYS_SAFETY_STS')
   const ses = status?.session
   const estopObs = observeEstop(messages, ses)
 
@@ -336,13 +337,13 @@ export function Overview() {
                 {/* Binary ESTOP — pill, not a 0/100 progress bar */}
                 <StatusPill
                   label={
-                    safety
-                      ? safetyEstopOn
-                        ? 'ESTOP on'
-                        : 'ESTOP clear'
-                      : '—'
+                    estopObs.any
+                      ? estopObs.label
+                      : safety
+                        ? 'ESTOP clear'
+                        : '—'
                   }
-                  tone={safety ? (safetyEstopOn ? 'danger' : 'ok') : 'muted'}
+                  tone={estopObs.any ? 'danger' : safety ? 'ok' : 'muted'}
                   testId="status-safety-estop"
                 />
               </td>
