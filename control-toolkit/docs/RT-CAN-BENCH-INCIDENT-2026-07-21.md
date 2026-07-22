@@ -46,3 +46,12 @@ RT vehicle low-bus output currently fails:
 - Earlier A/B testing exchanged the RT and SYS low transceiver modules. SYS became stable and RT stopped transmitting, so the fault followed the module.
 
 Conclusion: RT cannot currently deliver low-level commands. Replace or reseat the low-CAN transceiver now connected to RT, then repeat the CH1 API test for `0x204`, `0x210`, and `0x7FD`.
+## Repeated dual-smoke test
+
+Both cached smoke images were reflashed successfully: RT role to COM10 and SYS role to COM6. A 30-second CH1 API watch produced:
+
+- SYS `0x200`: live in 20/20 samples, age 17-198 ms, approximately 5 Hz.
+- RT `0x100`: live in 0/20 samples, no frames in the latest 500-frame history.
+- CH1 RX continued increasing from SYS traffic.
+
+This rules out stale vehicle firmware or role selection. The RT low-CAN physical TX path remains failed while the SYS low-CAN path passes using the same smoke source, GPIO map, bitrate, and bus.
