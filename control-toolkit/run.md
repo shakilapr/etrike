@@ -21,19 +21,19 @@ Open the app at: **http://127.0.0.1:5173/**
 
 ## Run from monorepo root (recommended)
 
-Repo root: `C:\projects\etrike` (or your clone path).
+Repo root: `e:\work\etrike` (or your clone path).
 
 ### Terminal 1 — API
 
 ```powershell
-cd C:\projects\etrike
+cd e:\work\etrike
 npm run toolkit:api
 ```
 
 Same thing without npm:
 
 ```powershell
-cd C:\projects\etrike
+cd e:\work\etrike
 pwsh -File .\control-toolkit\scripts\start-api.ps1
 ```
 
@@ -48,14 +48,14 @@ Leave this window open.
 ### Terminal 2 — UI
 
 ```powershell
-cd C:\projects\etrike
+cd e:\work\etrike
 npm run toolkit:ui
 ```
 
 Or:
 
 ```powershell
-cd C:\projects\etrike
+cd e:\work\etrike
 pwsh -File .\control-toolkit\scripts\start-ui.ps1
 ```
 
@@ -102,7 +102,7 @@ npm run toolkit:ui
 ### Backend install (once)
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e ".[dev]"
@@ -111,7 +111,7 @@ pip install -e ".[dev]"
 ### Frontend install (once)
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\frontend
+cd e:\work\etrike\control-toolkit\frontend
 npm install
 ```
 
@@ -122,14 +122,14 @@ npm install
 ### Terminal 1 — backend
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 python -m uvicorn control_toolkit.main:app --host 127.0.0.1 --port 8001
 ```
 
 ### Terminal 2 — frontend
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\frontend
+cd e:\work\etrike\control-toolkit\frontend
 $env:CTK_E2E_API = "http://127.0.0.1:8001"
 npx vite --host 127.0.0.1 --port 5173 --strictPort
 ```
@@ -198,14 +198,14 @@ No silent physical → virtual fallback.
 
 ```powershell
 # From monorepo root — backend tests
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 pytest -q
 
 # Live API probe (API must be up at 127.0.0.1:8001)
 python scripts\control_drive_probe.py
 
 # Playwright (API + UI should be up, or Playwright may start its own API)
-cd C:\projects\etrike\control-toolkit\frontend
+cd e:\work\etrike\control-toolkit\frontend
 $env:CTK_E2E_API = "http://127.0.0.1:8001"
 npx playwright test e2e/smoke.spec.ts --reporter=list
 ```

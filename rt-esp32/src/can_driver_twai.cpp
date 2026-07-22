@@ -153,14 +153,16 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
     uint8_t index = 0;
     if (xQueueReceive(m_free_tx_slots, &index, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
 
+    // SAFETY_ESTOP (0x001) is classic DLC 0. Never retransmit padded DLC-8 zeros.
+    const uint8_t dlc = (source.id == 0x001u) ? 0 : source.dlc;
     TxSlot& slot = m_tx_slots[index];
     slot.frame = {};
     slot.frame.header.id = source.id;
     slot.frame.header.ide = source.extended;
-    slot.frame.header.dlc = source.dlc;
+    slot.frame.header.dlc = dlc;
     slot.frame.buffer = slot.data;
-    slot.frame.buffer_len = source.dlc;  // Must remain zero for a DLC-0 frame.
-    if (source.dlc) std::memcpy(slot.data, source.data.data(), source.dlc);
+    slot.frame.buffer_len = dlc;  // Must remain zero for a DLC-0 frame.
+    if (dlc) std::memcpy(slot.data, source.data.data(), dlc);
 
     if (twai_node_transmit(m_node, &slot.frame, timeout_ms) != ESP_OK) {
         xQueueSend(m_free_tx_slots, &index, 0);

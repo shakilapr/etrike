@@ -166,12 +166,12 @@ Toolkit Low **brake** therefore matches the **wire to SEB** (what SYS/RT would f
 
 ```powershell
 # Terminal 1 — API
-cd C:\projects\etrike
+cd e:\work\etrike
 npm run toolkit:api
 # http://127.0.0.1:8001
 
 # Terminal 2 — UI
-cd C:\projects\etrike
+cd e:\work\etrike
 npm run toolkit:ui
 # http://127.0.0.1:5173
 ```
@@ -184,7 +184,7 @@ Details / stop / ports: [`../run.md`](../run.md).
 ## 5. Unit tests (backend — original protocol on the path)
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 # once: python -m venv .venv; .\.venv\Scripts\activate; pip install -e ".[dev]"
 .\.venv\Scripts\activate
 python -m pytest -q
@@ -219,7 +219,7 @@ python scripts/control_drive_probe.py
 ## 6. UI e2e (optional)
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\frontend
+cd e:\work\etrike\control-toolkit\frontend
 npm run test:e2e
 # dedicated ports 8010 / 5174
 
