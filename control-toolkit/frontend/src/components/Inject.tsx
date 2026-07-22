@@ -1,7 +1,6 @@
 /**
- * CAN Injector — signal-tailored CAN generator & interactive controller manager.
- * Loads YAML protocol contract definitions; boolean / enum / number range controls + live wire preview.
- * Includes interactive Started Controllers sidebar (Start/Stop/Load), templates, and command logs.
+ * CAN Injector — dense layout:
+ * toolbar · editor (left) · Active TX rail (right) · collapsible templates/log
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
@@ -46,19 +45,6 @@ type ActiveJob = {
   last_result?: string | null
 }
 
-type StartedController = {
-  id: string
-  bus: 'high' | 'low'
-  key: string
-  can_id: string
-  name: string
-  period_ms: number
-  values: Record<string, FieldValue>
-  status: 'RUNNING' | 'STOPPED'
-  job_id?: string | null
-  last_started_at: string
-}
-
 type AckLog = {
   id: string
   timestamp: string
@@ -73,39 +59,26 @@ type AckLog = {
 
 const SIGNAL_PRESETS: Record<string, Array<{ label: string; value: number }>> = {
   speed_mmps: [
-    { label: 'Rev (-0.5m/s)', value: -500 },
-    { label: 'Stop (0m/s)', value: 0 },
-    { label: 'Slow (0.8m/s)', value: 800 },
-    { label: 'Drive (2m/s)', value: 2000 },
-    { label: 'Max (3m/s)', value: 3000 },
+    { label: '0', value: 0 },
+    { label: '0.8', value: 800 },
+    { label: '2', value: 2000 },
+    { label: '3', value: 3000 },
   ],
   motor_speed_mmps: [
-    { label: 'Rev (-0.5m/s)', value: -500 },
-    { label: 'Stop (0m/s)', value: 0 },
-    { label: 'Drive (2m/s)', value: 2000 },
-    { label: 'Max (3m/s)', value: 3000 },
-  ],
-  actual_speed_mmps: [
-    { label: 'Stop (0m/s)', value: 0 },
-    { label: 'Drive (2m/s)', value: 2000 },
-    { label: 'Max (3m/s)', value: 3000 },
+    { label: '0', value: 0 },
+    { label: '2', value: 2000 },
+    { label: '3', value: 3000 },
   ],
   yaw_rate_mrad_s: [
-    { label: 'Left (-1.5rad/s)', value: -1500 },
-    { label: 'Straight (0)', value: 0 },
-    { label: 'Right (+1.5rad/s)', value: 1500 },
-  ],
-  brake_pressure_kpa: [
-    { label: 'Off (0 kPa)', value: 0 },
-    { label: 'Light (5k)', value: 5000 },
-    { label: 'Med (10k)', value: 10000 },
-    { label: 'Full (20k)', value: 20000 },
+    { label: 'L', value: -1500 },
+    { label: '0', value: 0 },
+    { label: 'R', value: 1500 },
   ],
   gear: [
-    { label: 'N (0)', value: 0 },
-    { label: 'D (1)', value: 1 },
-    { label: 'S (2)', value: 2 },
-    { label: 'R (3)', value: 3 },
+    { label: 'N', value: 0 },
+    { label: 'D', value: 1 },
+    { label: 'S', value: 2 },
+    { label: 'R', value: 3 },
   ],
 }
 
@@ -188,7 +161,7 @@ const RAW_PRESETS: RawPreset[] = [
   {
     id: 'corrupt-payload',
     label: 'Corrupt Payload (0xFF)',
-    description: '0x300 HOST_DRIVE_CMD with invalid 0xFF payload',
+    description: '0x300 with invalid 0xFF payload',
     bus: 'high',
     can_id: '0x300',
     data_hex: 'ffffffffffffffff',
@@ -196,7 +169,7 @@ const RAW_PRESETS: RawPreset[] = [
   {
     id: 'dlc-mismatch',
     label: 'DLC Mismatch (Short)',
-    description: '0x300 with incomplete 4-byte payload',
+    description: '0x300 with 4-byte payload',
     bus: 'high',
     can_id: '0x300',
     data_hex: '00000000',
@@ -204,7 +177,7 @@ const RAW_PRESETS: RawPreset[] = [
   {
     id: 'unmapped-id',
     label: 'Unmapped CAN ID (0x7FF)',
-    description: 'Transmit unmapped diagnostic ID frame',
+    description: 'Unmapped diagnostic ID',
     bus: 'high',
     can_id: '0x7FF',
     data_hex: '11223344',
@@ -212,7 +185,7 @@ const RAW_PRESETS: RawPreset[] = [
   {
     id: 'estop-raw',
     label: 'Raw ESTOP (0x001)',
-    description: 'Empty DLC 0 frame to trigger safety stop',
+    description: 'Empty DLC 0 safety frame',
     bus: 'high',
     can_id: '0x001',
     data_hex: '',
@@ -257,22 +230,24 @@ function formatBytes(hex?: string): string {
   return `[${pairs.join(', ')}]`
 }
 
-function formatSignalSummary(msg: DictMessage | null, values: Record<string, FieldValue>): string {
-  if (!msg || !msg.fields || msg.fields.length === 0) return 'No signals (DLC 0)'
-  return msg.fields
-    .map((f) => {
-      const val = values[f.key] ?? 0
-      if (f.kind === 'enum' && f.options) {
-        const opt = f.options.find((o) => String(o.value) === String(val))
-        return `${f.key}: ${opt ? opt.label : val}`
-      }
-      if (f.kind === 'boolean') {
-        return `${f.key}: ${val ? 'ON' : 'OFF'}`
-      }
-      const unitStr = f.unit ? ` ${f.unit}` : ''
-      return `${f.key}: ${val}${unitStr}`
-    })
-    .join(' · ')
+function jobLabel(job: ActiveJob, catalog: DictMessage[]): string {
+  if (job.key) {
+    const m = catalog.find((x) => x.canonicalKey === job.key)
+    if (m?.name) return m.name
+    const short = job.key.includes(':') ? job.key.split(':').pop() : job.key
+    return String(short || job.key).toUpperCase()
+  }
+  if (job.can_id != null) return hexId(job.can_id)
+  return 'JOB'
+}
+
+function jobCanId(job: ActiveJob, catalog: DictMessage[]): string {
+  if (job.can_id != null) return hexId(job.can_id)
+  if (job.key) {
+    const m = catalog.find((x) => x.canonicalKey === job.key)
+    if (m) return hexId(m.can_id)
+  }
+  return '—'
 }
 
 export function Inject() {
@@ -294,19 +269,18 @@ export function Inject() {
     warnings?: string[]
     ok?: boolean
   } | null>(null)
-  
-  // Active Periodic Jobs & Started Controllers
+
   const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([])
-  const [startedControllers, setStartedControllers] = useState<Record<string, StartedController>>({})
   const [ackLogs, setAckLogs] = useState<AckLog[]>([])
-  
-  // Raw mode state
+  const [templatesOpen, setTemplatesOpen] = useState(true)
+  const [logOpen, setLogOpen] = useState(false)
+
   const [rawId, setRawId] = useState('0x300')
   const [rawHex, setRawHex] = useState('')
   const [rawExtended, setRawExtended] = useState(false)
   const [confirmRaw, setConfirmRaw] = useState(false)
   const [confirmEstop, setConfirmEstop] = useState(false)
-  
+
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
 
@@ -315,54 +289,29 @@ export function Inject() {
 
   const loadCatalog = useCallback(async () => {
     const d = await api.protocolDictionary()
-    const msgs = (d.messages || []) as DictMessage[]
-    setMessages(msgs)
+    setMessages((d.messages || []) as DictMessage[])
   }, [])
 
   const fetchJobs = useCallback(async () => {
     try {
       const res = await api.injectionJobs()
-      const jobs = res.jobs || []
-      setActiveJobs(jobs)
-
-      // Sync startedControllers state with backend running jobs
-      setStartedControllers((prev) => {
-        const next = { ...prev }
-        const jobMap = new Map(jobs.map((j) => [`${j.bus}:${j.key || j.can_id}`, j]))
-        
-        // Update existing controllers
-        for (const ctrlKey of Object.keys(next)) {
-          const ctrl = next[ctrlKey]
-          const backendJob = jobMap.get(`${ctrl.bus}:${ctrl.key}`) || jobMap.get(`${ctrl.bus}:${ctrl.can_id}`)
-          if (backendJob) {
-            next[ctrlKey] = {
-              ...ctrl,
-              status: 'RUNNING',
-              job_id: backendJob.job_id,
-            }
-          } else if (ctrl.status === 'RUNNING') {
-            next[ctrlKey] = {
-              ...ctrl,
-              status: 'STOPPED',
-              job_id: null,
-            }
-          }
-        }
-        return next
-      })
+      setActiveJobs(res.jobs || [])
     } catch {
-      // Ignore poll errors if backend offline
+      /* poll errors ignored */
     }
   }, [])
 
   useEffect(() => {
     void loadCatalog().catch((e) => setLog(String(e)))
     void fetchJobs()
-    const timer = setInterval(() => {
-      void fetchJobs()
-    }, 2000)
+    const timer = setInterval(() => void fetchJobs(), 2000)
     return () => clearInterval(timer)
   }, [loadCatalog, fetchJobs])
+
+  // Collapse templates once something is running (more room for actives)
+  useEffect(() => {
+    if (activeJobs.length > 0) setTemplatesOpen(false)
+  }, [activeJobs.length])
 
   const busMessages = useMemo(() => {
     const q = filter.trim().toLowerCase()
@@ -395,7 +344,6 @@ export function Inject() {
     )
   }, [busMessages, selectedKey])
 
-  // Select first message when switching bus if selectedKey isn't on new bus
   const handleBusChange = (newBus: 'high' | 'low') => {
     setBus(newBus)
     const firstOnBus = messages.find((m) => m.bus === newBus)
@@ -409,17 +357,13 @@ export function Inject() {
     setConfirmEstop(false)
   }
 
-  // Handle explicit message selection change
   const handleMessageChange = (key: string) => {
     setSelectedKey(key)
     const msg = busMessages.find((m) => m.canonicalKey === key)
-    if (msg) {
-      setValues(defaultsFor(msg))
-    }
+    if (msg) setValues(defaultsFor(msg))
     setConfirmEstop(false)
   }
 
-  // Live preview when values change
   useEffect(() => {
     if (mode !== 'named' || !selected) return
     let cancel = false
@@ -465,7 +409,7 @@ export function Inject() {
       setPeriodic(false)
     }
     setConfirmEstop(false)
-    setLog(`Template loaded: ${t.label}`)
+    setLog(`Template: ${t.label}`)
   }
 
   function applyRawPreset(p: RawPreset) {
@@ -475,16 +419,38 @@ export function Inject() {
     setRawHex(p.data_hex)
     setRawExtended(Boolean(p.is_extended))
     setConfirmRaw(true)
-    setLog(`Raw preset loaded: ${p.label}`)
+    setLog(`Raw preset: ${p.label}`)
+  }
+
+  function loadJobIntoEditor(job: ActiveJob) {
+    setMode('named')
+    const b = job.bus === 'low' ? 'low' : 'high'
+    setBus(b)
+    if (job.key) {
+      setSelectedKey(job.key)
+      const msg = messages.find((m) => m.canonicalKey === job.key)
+      const fromJob: Record<string, FieldValue> = {}
+      for (const [k, v] of Object.entries(job.values || {})) {
+        if (typeof v === 'boolean' || typeof v === 'number') fromJob[k] = v
+        else if (v != null && v !== '') {
+          const n = Number(v)
+          if (Number.isFinite(n)) fromJob[k] = n
+        }
+      }
+      setValues({ ...(msg ? defaultsFor(msg) : {}), ...fromJob })
+    }
+    setPeriodic(true)
+    setPeriodMs(job.period_ms || 50)
+    setLog(`Loaded job ${job.job_id}`)
   }
 
   async function ensureSessionAndTx() {
     const st = await api.status()
     if (!st.session?.session_id) {
-      throw new Error('No active session. Create or start a session in Settings first.')
+      throw new Error('No active session. Start a session in Settings first.')
     }
     if (st.session.bench_tx !== 'enabled') {
-      throw new Error('Bench TX is disabled. Arm Bench TX before injecting CAN frames.')
+      throw new Error('Bench TX is disabled. Arm Bench TX before injecting.')
     }
     setStatus(st)
     return st
@@ -508,11 +474,11 @@ export function Inject() {
         name: 'BENCH_TX_ARM',
         data_hex: '',
         ok: true,
-        detail: 'Bench TX armed successfully',
+        detail: 'Bench TX armed',
       })
-      setLog('Bench TX armed successfully.')
+      setLog('Bench TX armed.')
     } catch (e) {
-      setLog(`Failed to arm Bench TX: ${String(e)}`)
+      setLog(`Arm failed: ${String(e)}`)
     } finally {
       setBusy(false)
     }
@@ -530,7 +496,7 @@ export function Inject() {
     try {
       await ensureSessionAndTx()
       if (isEstop && !confirmEstop) {
-        throw new Error('Confirm ESTOP injection checkbox before sending.')
+        throw new Error('Confirm ESTOP injection before sending.')
       }
 
       const isPeriodic = periodic && periodMs > 0
@@ -549,7 +515,7 @@ export function Inject() {
       const hexText = hexId(Number(r.can_id ?? selected.can_id))
 
       if (r.job_id) {
-        setLog(`Scheduled periodic ${selected.name} (${hexText}) @ ${r.period_ms} ms [job ${r.job_id}]`)
+        setLog(`Periodic ${selected.name} @ ${r.period_ms} ms [${r.job_id}]`)
         addAckLog({
           timestamp,
           type: 'PERIODIC',
@@ -558,30 +524,11 @@ export function Inject() {
           name: selected.name,
           data_hex: dataHex,
           ok: true,
-          detail: `Periodic scheduled @ ${r.period_ms} ms (job ${r.job_id})`,
+          detail: `Periodic @ ${r.period_ms} ms`,
         })
-
-        // Track in Started Controllers sidebar
-        const ctrlId = `${selected.bus}:${selected.canonicalKey}`
-        setStartedControllers((prev) => ({
-          ...prev,
-          [ctrlId]: {
-            id: ctrlId,
-            bus: selected.bus as 'high' | 'low',
-            key: selected.canonicalKey,
-            can_id: hexText,
-            name: selected.name,
-            period_ms: r.period_ms || periodMs,
-            values: { ...values },
-            status: 'RUNNING',
-            job_id: r.job_id,
-            last_started_at: timestamp,
-          },
-        }))
-
         await fetchJobs()
       } else {
-        setLog(`Injected ${selected.name} (${hexText}) · ${formatBytes(dataHex)}`)
+        setLog(`Injected ${selected.name} · ${formatBytes(dataHex)}`)
         addAckLog({
           timestamp,
           type: 'ONESHOT',
@@ -590,7 +537,7 @@ export function Inject() {
           name: selected.name,
           data_hex: dataHex,
           ok: true,
-          detail: `One-shot injected on ${selected.bus} bus (req ${r.request_id || 'ok'})`,
+          detail: 'One-shot ok',
         })
       }
       setStatus(await api.status())
@@ -612,101 +559,12 @@ export function Inject() {
     }
   }
 
-  async function startController(ctrl: StartedController) {
-    setBusy(true)
-    const timestamp = new Date().toLocaleTimeString()
-    try {
-      await ensureSessionAndTx()
-      const msg = messages.find((m) => m.canonicalKey === ctrl.key)
-      const r = await api.inject({
-        bus: ctrl.bus,
-        key: ctrl.key,
-        values: ctrl.values as Record<string, unknown>,
-        period_ms: ctrl.period_ms,
-        counter_field: msg?.fields.some((f) => f.key === 'rolling_counter') ? 'rolling_counter' : null,
-        owner: 'ui:inject',
-      })
-      if (r.job_id) {
-        setLog(`Resumed periodic ${ctrl.name} @ ${ctrl.period_ms} ms [job ${r.job_id}]`)
-        addAckLog({
-          timestamp,
-          type: 'PERIODIC',
-          bus: ctrl.bus,
-          can_id: ctrl.can_id,
-          name: ctrl.name,
-          data_hex: r.data_hex || '',
-          ok: true,
-          detail: `Resumed periodic transmission @ ${ctrl.period_ms} ms`,
-        })
-        setStartedControllers((prev) => ({
-          ...prev,
-          [ctrl.id]: {
-            ...ctrl,
-            status: 'RUNNING',
-            job_id: r.job_id,
-            last_started_at: timestamp,
-          },
-        }))
-        await fetchJobs()
-      }
-      setStatus(await api.status())
-    } catch (e) {
-      setLog(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function stopController(ctrl: StartedController) {
-    if (!ctrl.job_id) return
-    setBusy(true)
-    const timestamp = new Date().toLocaleTimeString()
-    try {
-      await api.cancelInjection(ctrl.job_id)
-      setLog(`Stopped controller ${ctrl.name} (${ctrl.job_id})`)
-      addAckLog({
-        timestamp,
-        type: 'STOP',
-        bus: ctrl.bus,
-        can_id: ctrl.can_id,
-        name: ctrl.name,
-        data_hex: '',
-        ok: true,
-        detail: `Stopped controller loop ${ctrl.name}`,
-      })
-      setStartedControllers((prev) => ({
-        ...prev,
-        [ctrl.id]: {
-          ...ctrl,
-          status: 'STOPPED',
-          job_id: null,
-        },
-      }))
-      await fetchJobs()
-      setStatus(await api.status())
-    } catch (e) {
-      setLog(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function loadControllerSettings(ctrl: StartedController) {
-    setMode('named')
-    setBus(ctrl.bus)
-    setSelectedKey(ctrl.key)
-    setValues({ ...ctrl.values })
-    setPeriodic(true)
-    setPeriodMs(ctrl.period_ms)
-    setLog(`Loaded settings for ${ctrl.name}`)
-  }
-
   async function doStopJob(jobId: string) {
     setBusy(true)
     const timestamp = new Date().toLocaleTimeString()
     try {
       await api.cancelInjection(jobId)
-      setLog(`Stopped job ${jobId}`)
+      setLog(`Stopped ${jobId}`)
       addAckLog({
         timestamp,
         type: 'STOP',
@@ -715,7 +573,7 @@ export function Inject() {
         name: 'CANCEL_JOB',
         data_hex: '',
         ok: true,
-        detail: `Canceled periodic job ${jobId}`,
+        detail: `Stopped ${jobId}`,
       })
       await fetchJobs()
       setStatus(await api.status())
@@ -731,7 +589,7 @@ export function Inject() {
     const timestamp = new Date().toLocaleTimeString()
     try {
       const res = await api.cancelAllInjections()
-      setLog(`Canceled ${res.canceled_count} active periodic job(s)`)
+      setLog(`Canceled ${res.canceled_count} job(s)`)
       addAckLog({
         timestamp,
         type: 'STOP',
@@ -740,14 +598,7 @@ export function Inject() {
         name: 'CANCEL_ALL',
         data_hex: '',
         ok: true,
-        detail: `Canceled all ${res.canceled_count} periodic job(s)`,
-      })
-      setStartedControllers((prev) => {
-        const next = { ...prev }
-        for (const k of Object.keys(next)) {
-          next[k] = { ...next[k], status: 'STOPPED', job_id: null }
-        }
-        return next
+        detail: `Canceled ${res.canceled_count}`,
       })
       await fetchJobs()
       setStatus(await api.status())
@@ -764,7 +615,7 @@ export function Inject() {
     try {
       await ensureSessionAndTx()
       if (!confirmRaw) {
-        throw new Error('Check the raw injection confirmation checkbox before sending.')
+        throw new Error('Confirm raw injection before sending.')
       }
       const idStr = rawId.trim().toLowerCase().replace(/^0x/, '')
       const can_id = Number.parseInt(idStr, 16)
@@ -777,7 +628,7 @@ export function Inject() {
         confirm_raw: true,
       })
       const formattedId = hexId(can_id)
-      setLog(`Raw inject ${formattedId} dlc=${r.dlc} · ${formatBytes(r.data_hex)}`)
+      setLog(`Raw ${formattedId} dlc=${r.dlc}`)
       addAckLog({
         timestamp,
         type: 'RAW',
@@ -786,7 +637,7 @@ export function Inject() {
         name: 'RAW_FRAME',
         data_hex: r.data_hex,
         ok: true,
-        detail: `Raw frame submitted (dlc=${r.dlc})`,
+        detail: `dlc=${r.dlc}`,
       })
       setStatus(await api.status())
     } catch (e) {
@@ -807,143 +658,226 @@ export function Inject() {
     }
   }
 
-  const previewHex = preview?.data_hex ?? ''
-  const previewMeta = selected
-    ? `${selected.id} · DLC ${preview?.dlc ?? selected.dlc} · ${selected.name}`
-    : '—'
+  const previewHex = mode === 'named' ? preview?.data_hex ?? '' : rawHex
+  const wireText = formatBytes(previewHex)
 
-  const startedList = useMemo(() => Object.values(startedControllers), [startedControllers])
+  const activeRail = (
+    <aside className="inject-rail" data-testid="inject-side-manager">
+      <div className="inject-rail-head" data-testid="inject-active-jobs">
+        <div className="inject-rail-title">
+          <strong>Active TX</strong>
+          <span className="mono muted small" data-testid="inject-active-count">
+            {activeJobs.length}
+          </span>
+        </div>
+        {activeJobs.length > 0 && (
+          <button
+            type="button"
+            className="secondary small danger-text"
+            disabled={busy}
+            data-testid="inject-stop-all"
+            onClick={() => void doStopAllJobs()}
+          >
+            Stop all
+          </button>
+        )}
+      </div>
+
+      {activeJobs.length === 0 ? (
+        <p className="inject-rail-empty muted small">No active TX</p>
+      ) : (
+        <ul className="inject-active-list" data-testid="inject-active-list">
+          {activeJobs.map((job) => {
+            const idText = jobCanId(job, messages)
+            const name = jobLabel(job, messages)
+            const health =
+              job.last_result === 'submitted' || !job.last_result
+                ? job.missed > 0
+                  ? `miss:${job.missed}`
+                  : 'ok'
+                : String(job.last_result)
+            return (
+              <li
+                key={job.job_id}
+                className="inject-active-row"
+                data-testid={`inject-active-row-${job.job_id}`}
+              >
+                <button
+                  type="button"
+                  className="inject-active-main"
+                  title="Load into editor"
+                  onClick={() => loadJobIntoEditor(job)}
+                >
+                  <span className={`inject-bus-chip bus-${job.bus}`}>
+                    {job.bus === 'low' ? 'L' : 'H'}
+                  </span>
+                  <span className="inject-active-meta">
+                    <span className="mono inject-active-id">{idText}</span>
+                    <span className="inject-active-name" title={name}>
+                      {name}
+                    </span>
+                    <span className="mono muted inject-active-period">
+                      {job.period_ms} ms · {health}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="secondary small danger-text inject-active-stop"
+                  disabled={busy}
+                  data-testid={`inject-active-stop-${job.job_id}`}
+                  onClick={() => void doStopJob(job.job_id)}
+                >
+                  Stop
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {ackLogs.length > 0 && (
+        <div className="inject-rail-recent" data-testid="inject-rail-recent">
+          <span className="nav-label">Recent</span>
+          {ackLogs.slice(0, 4).map((ack) => (
+            <div key={ack.id} className={`inject-recent-line ${ack.ok ? 'ok' : 'bad'}`}>
+              <span className="mono muted">{ack.timestamp}</span>
+              <span className="mono">
+                {ack.bus === 'system' || ack.bus === 'both' ? '·' : ack.bus[0]?.toUpperCase()}{' '}
+                {ack.can_id} {ack.type}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
+  )
 
   return (
     <WorkspaceShell
       testId="workspace-inject"
-      title="CAN Generator & Injector"
-      description={
-        <>
-          Interactive CAN frame generator & fault injection toolkit with signal-tailored controls.
-        </>
-      }
+      className="inject-workspace"
+      title="Inject"
+      description="Named or raw CAN inject · active TX on the right"
     >
-      {/* Top Banner / Session & Bench TX Status */}
-      <section className="panel" data-testid="inject-gate">
-        <div className="control-status-row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            <div className="control-status-item">
-              <span className="muted small">Session</span>
-              <strong className="mono">{sessionId ?? 'none'}</strong>
-            </div>
-            <div className="control-status-item">
-              <span className="muted small">Bench TX</span>
-              <strong className={benchOn ? 'ok-text' : 'danger-text'} data-testid="inject-bench-tx">
-                {benchOn ? 'Armed' : 'Off'}
-              </strong>
-            </div>
-            <div className="control-status-item">
-              <span className="muted small">Wire Preview</span>
-              <strong className="mono" data-testid="inject-preview-hex" style={{ color: 'var(--primary)' }}>
-                {mode === 'named'
-                  ? formatBytes(previewHex)
-                  : formatBytes(rawHex)}
-              </strong>
-            </div>
-          </div>
-
+      {/* Dense toolbar */}
+      <div className="inject-toolbar" data-testid="inject-gate">
+        <div className="inject-toolbar-left">
+          <span className="inject-toolbar-item">
+            <span className="meta-k">TX</span>
+            <strong
+              className={benchOn ? 'ok-text' : 'danger-text'}
+              data-testid="inject-bench-tx"
+            >
+              {benchOn ? 'Armed' : 'Off'}
+            </strong>
+          </span>
           {!benchOn && (
             <button
               type="button"
-              className="primary"
+              className="primary small"
               disabled={busy || !sessionId}
-              style={{ backgroundColor: 'var(--warning)', borderColor: 'var(--warning)' }}
+              data-testid="inject-arm-tx"
               onClick={() => void enableBenchTx()}
             >
-              Arm Bench TX
+              Arm TX
+            </button>
+          )}
+          <span className="inject-toolbar-divider" aria-hidden />
+          <div className="seg inject-mode-seg" role="tablist" aria-label="Inject mode">
+            <button
+              type="button"
+              role="tab"
+              className={mode === 'named' ? 'seg-btn active' : 'seg-btn'}
+              data-testid="inject-mode-named"
+              onClick={() => setMode('named')}
+            >
+              Named
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={mode === 'raw' ? 'seg-btn active' : 'seg-btn'}
+              data-testid="inject-mode-raw"
+              onClick={() => setMode('raw')}
+            >
+              Raw
+            </button>
+          </div>
+        </div>
+        <div className="inject-toolbar-right">
+          <span className="inject-toolbar-item wire">
+            <span className="meta-k">Wire</span>
+            <strong className="mono" data-testid="inject-preview-hex">
+              {wireText}
+            </strong>
+          </span>
+          {activeJobs.length > 0 && (
+            <button
+              type="button"
+              className="secondary small danger-text"
+              disabled={busy}
+              data-testid="inject-toolbar-stop-all"
+              onClick={() => void doStopAllJobs()}
+            >
+              Stop all ({activeJobs.length})
             </button>
           )}
         </div>
+      </div>
 
-        {/* Mode Switcher */}
-        <div className="seg" style={{ marginTop: 14 }}>
-          <button
-            type="button"
-            className={mode === 'named' ? 'seg-btn active' : 'seg-btn'}
-            data-testid="inject-mode-named"
-            onClick={() => setMode('named')}
-          >
-            Named Messages
-          </button>
-          <button
-            type="button"
-            className={mode === 'raw' ? 'seg-btn active' : 'seg-btn'}
-            data-testid="inject-mode-raw"
-            onClick={() => setMode('raw')}
-          >
-            Raw / Fault Inject
-          </button>
-        </div>
-      </section>
-
-      {/* Main Workspace Layout */}
       {mode === 'named' ? (
         <div className="inject-layout" data-testid="inject-named-panel">
-          {/* Main Injector Panel */}
           <section className="panel inject-main">
-            <div className="panel-title-row">
-              <h2>Signal Generator</h2>
-              <span className="mono muted small">{previewMeta}</span>
+            <div className="inject-editor-bar">
+              <div className="seg" data-testid="inject-bus-tabs">
+                {(['high', 'low'] as const).map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    className={bus === b ? 'seg-btn active' : 'seg-btn'}
+                    data-testid={`inject-bus-${b}`}
+                    onClick={() => handleBusChange(b)}
+                  >
+                    {b === 'high' ? 'High' : 'Low'}
+                  </button>
+                ))}
+              </div>
+              <input
+                className="inject-filter-input"
+                data-testid="inject-filter"
+                placeholder="Filter…"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+              <select
+                className="inject-message-select"
+                data-testid="inject-message"
+                value={selected?.canonicalKey ?? ''}
+                onChange={(e) => handleMessageChange(e.target.value)}
+              >
+                {busMessages.length === 0 && (
+                  <option value="">No messages on {bus}</option>
+                )}
+                {busMessages.map((m) => (
+                  <option key={`${m.bus}-${m.canonicalKey}-${m.can_id}`} value={m.canonicalKey}>
+                    {m.id} {m.name}
+                    {(m.fields || []).length === 0 ? ' · DLC0' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Bus selector tabs */}
-            <div className="seg" data-testid="inject-bus-tabs">
-              {(['high', 'low'] as const).map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  className={bus === b ? 'seg-btn active' : 'seg-btn'}
-                  data-testid={`inject-bus-${b}`}
-                  onClick={() => handleBusChange(b)}
-                >
-                  {b.toUpperCase()} Bus
-                </button>
-              ))}
-            </div>
-
-            <div className="field-row" style={{ marginTop: 10 }}>
-              <label className="field" style={{ flex: 1 }}>
-                <span className="field-label">Filter Messages</span>
-                <input
-                  data-testid="inject-filter"
-                  placeholder="Search name, ID (0x300), key, sender…"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                />
-              </label>
-
-              <label className="field" style={{ flex: 2 }}>
-                <span className="field-label">CAN Message</span>
-                <select
-                  data-testid="inject-message"
-                  value={selected?.canonicalKey ?? ''}
-                  onChange={(e) => handleMessageChange(e.target.value)}
-                >
-                  {busMessages.length === 0 && <option value="">No messages matching on {bus}</option>}
-                  {busMessages.map((m) => (
-                    <option key={`${m.bus}-${m.canonicalKey}-${m.can_id}`} value={m.canonicalKey}>
-                      {m.id} {m.name}
-                      {m.sender && m.sender !== '—' ? ` · ${m.sender}` : ''}
-                      {(m.fields || []).length === 0 ? ' · (DLC 0 / event)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {/* Signal-Tailored Field Editors */}
             {selected && (selected.fields || []).length > 0 ? (
-              <div className="form-grid inject-fields" data-testid="inject-fields" style={{ marginTop: 12 }}>
+              <div className="form-grid inject-fields" data-testid="inject-fields">
                 {selected.fields.map((field) => {
                   const presets = SIGNAL_PRESETS[field.key] || []
                   const curVal = Number(values[field.key] ?? 0)
-                  const hasSlider = field.kind !== 'boolean' && field.kind !== 'enum' && field.min != null && field.max != null
+                  const hasSlider =
+                    field.kind !== 'boolean' &&
+                    field.kind !== 'enum' &&
+                    field.min != null &&
+                    field.max != null
 
                   return (
                     <div key={field.key} className="field" data-testid={`inject-field-${field.key}`}>
@@ -959,7 +893,7 @@ export function Inject() {
                       </div>
 
                       {field.kind === 'boolean' ? (
-                        <div style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label className="check-row">
                           <input
                             type="checkbox"
                             data-testid={`inject-val-${field.key}`}
@@ -967,9 +901,9 @@ export function Inject() {
                             onChange={(e) => setField(field.key, e.target.checked)}
                           />
                           <span className={`small ${values[field.key] ? 'ok-text' : 'muted'}`}>
-                            {values[field.key] ? 'ACTIVE (1)' : 'INACTIVE (0)'}
+                            {values[field.key] ? '1' : '0'}
                           </span>
-                        </div>
+                        </label>
                       ) : field.kind === 'enum' && field.options?.length ? (
                         <select
                           data-testid={`inject-val-${field.key}`}
@@ -977,7 +911,10 @@ export function Inject() {
                           onChange={(e) => {
                             const raw = e.target.value
                             const asNum = Number(raw)
-                            setField(field.key, Number.isFinite(asNum) ? asNum : (raw as unknown as number))
+                            setField(
+                              field.key,
+                              Number.isFinite(asNum) ? asNum : (raw as unknown as number),
+                            )
                           }}
                         >
                           {field.options.map((opt) => (
@@ -1000,7 +937,7 @@ export function Inject() {
                                 onChange={(e) => setField(field.key, Number(e.target.value))}
                               />
                             )}
-                            <div style={{ width: hasSlider ? '90px' : '100%' }}>
+                            <div style={{ width: hasSlider ? '88px' : '100%' }}>
                               <NumericDraft
                                 testId={`inject-val-${field.key}`}
                                 value={curVal}
@@ -1010,7 +947,6 @@ export function Inject() {
                               />
                             </div>
                           </div>
-
                           {presets.length > 0 && (
                             <div className="signal-presets">
                               {presets.map((p) => (
@@ -1032,25 +968,23 @@ export function Inject() {
                 })}
               </div>
             ) : selected ? (
-              <p className="muted small" data-testid="inject-no-fields" style={{ marginTop: 10 }}>
-                This message has no configurable payload fields (event trigger or DLC 0 frame).
+              <p className="muted small" data-testid="inject-no-fields">
+                No payload fields (DLC 0 / event).
               </p>
             ) : null}
 
-            {/* ESTOP Safety Confirmation */}
             {isEstop && (
-              <label className="check-row danger-text" data-testid="inject-confirm-estop" style={{ marginTop: 14 }}>
+              <label className="check-row danger-text" data-testid="inject-confirm-estop">
                 <input
                   type="checkbox"
                   checked={confirmEstop}
                   onChange={(e) => setConfirmEstop(e.target.checked)}
                 />
-                Confirm ESTOP Injection (Safety frame trigger)
+                Confirm ESTOP inject
               </label>
             )}
 
-            {/* Periodic Transmission Settings */}
-            <div className="field-row inject-period-row" style={{ marginTop: 14, alignItems: 'end' }}>
+            <div className="inject-actions-row">
               <label className="check-row">
                 <input
                   type="checkbox"
@@ -1058,10 +992,10 @@ export function Inject() {
                   checked={periodic}
                   onChange={(e) => setPeriodic(e.target.checked)}
                 />
-                Periodic Loop
+                Periodic
               </label>
-              <label className="field">
-                <span className="field-label">Interval (ms)</span>
+              <label className="field inject-period-field">
+                <span className="field-label">ms</span>
                 <NumericDraft
                   testId="inject-period"
                   value={periodMs}
@@ -1071,19 +1005,6 @@ export function Inject() {
                   onValue={setPeriodMs}
                 />
               </label>
-              {selected?.fields.some((f) => f.key === 'rolling_counter') ? (
-                <span className="muted small">rolling_counter auto-increments each period</span>
-              ) : null}
-            </div>
-
-            {preview?.warnings?.length ? (
-              <p className="danger-text small" data-testid="inject-warnings" style={{ marginTop: 8 }}>
-                Validation warnings: {preview.warnings.join(', ')}
-              </p>
-            ) : null}
-
-            {/* Main Action Buttons */}
-            <div className="actions tight" style={{ marginTop: 16 }}>
               <button
                 type="button"
                 className="primary"
@@ -1091,182 +1012,64 @@ export function Inject() {
                 data-testid="inject-submit"
                 onClick={() => void doInject()}
               >
-                {periodic ? 'Start Periodic' : 'Send Once'}
+                {periodic ? 'Start loop' : 'Send once'}
               </button>
-              {activeJobs.length > 0 && (
-                <button
-                  type="button"
-                  className="secondary danger-text"
-                  disabled={busy}
-                  data-testid="inject-stop-all"
-                  onClick={() => void doStopAllJobs()}
-                >
-                  Stop All ({activeJobs.length})
-                </button>
-              )}
             </div>
-          </section>
 
-          {/* Side Panel: Started Controllers Manager & Templates */}
-          <section className="panel inject-side" data-testid="inject-side-manager">
-            {/* Started Controllers Sidebar */}
-            <div className="panel-title-row">
-              <h2>Started Controllers</h2>
-              <span className="muted small">{startedList.length}</span>
-            </div>
-            <p className="muted small" style={{ marginTop: 0 }}>
-              Active and saved transmission controllers. Click card to load settings.
-            </p>
-
-            {startedList.length === 0 ? (
-              <p className="muted small" style={{ padding: '8px 0' }}>
-                No controllers started yet. Use <strong>Start Periodic</strong> to register a controller here.
+            {preview?.warnings?.length ? (
+              <p className="danger-text small" data-testid="inject-warnings">
+                {preview.warnings.join(', ')}
               </p>
-            ) : (
-              <div className="inject-template-list" style={{ marginBottom: 16 }}>
-                {startedList.map((ctrl) => {
-                  const isRunning = ctrl.status === 'RUNNING'
-                  const msg = messages.find((m) => m.canonicalKey === ctrl.key)
-
-                  return (
-                    <div
-                      key={ctrl.id}
-                      className={`started-controller-card ${isRunning ? 'active-running' : 'active-stopped'}`}
-                      onClick={() => loadControllerSettings(ctrl)}
-                    >
-                      <div className="started-controller-header">
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <span className="started-controller-title">{ctrl.name}</span>
-                          <span className="mono muted small">{ctrl.can_id}</span>
-                        </div>
-                        <span className={`small mono ${isRunning ? 'ok-text' : 'warning-text'}`}>
-                          {isRunning ? 'RUNNING' : 'STOPPED'}
-                        </span>
-                      </div>
-
-                      <div className="started-controller-summary">
-                        {formatSignalSummary(msg || null, ctrl.values)} · {ctrl.period_ms} ms
-                      </div>
-
-                      <div className="started-controller-actions" onClick={(e) => e.stopPropagation()}>
-                        {isRunning ? (
-                          <button
-                            type="button"
-                            className="secondary small danger-text"
-                            disabled={busy}
-                            onClick={() => void stopController(ctrl)}
-                          >
-                            Stop
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="primary small"
-                            disabled={busy}
-                            onClick={() => void startController(ctrl)}
-                          >
-                            Start
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="secondary small"
-                          onClick={() => loadControllerSettings(ctrl)}
-                        >
-                          Load Settings
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Preset Templates */}
-            <div className="panel-title-row" style={{ marginTop: 12 }}>
-              <h2>Presets & Templates</h2>
-              <span className="muted small">{TEMPLATES.length}</span>
-            </div>
-            <div className="inject-template-list" data-testid="inject-templates">
-              {TEMPLATES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="inject-template-btn"
-                  data-testid={`inject-template-${t.id}`}
-                  onClick={() => applyTemplate(t)}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                    <strong>{t.label}</strong>
-                    <span className="mono muted small">{t.bus.toUpperCase()}</span>
-                  </div>
-                  <span className="muted small">{t.description}</span>
-                </button>
-              ))}
-            </div>
-
-            <h3 style={{ marginTop: 18 }}>Live Value Map</h3>
-            <dl className="kv compact" data-testid="inject-value-summary">
-              {Object.entries(values).map(([k, v]) => (
-                <FragmentPair key={k} k={k} v={v} />
-              ))}
-              {Object.keys(values).length === 0 && (
-                <>
-                  <dt>—</dt>
-                  <dd className="muted">No signals configured</dd>
-                </>
-              )}
-            </dl>
+            ) : null}
+            {log ? (
+              <p className="muted small mono inject-status-line" data-testid="inject-status-line">
+                {log}
+              </p>
+            ) : null}
           </section>
+
+          {activeRail}
         </div>
       ) : (
-        /* Raw / Fault Injection Panel */
         <div className="inject-layout" data-testid="inject-raw-panel">
           <section className="panel inject-main">
-            <h2>Raw / Fault Injection</h2>
-            <p className="control-callout danger-text">
-              Direct CAN frame generation. Bypasses signal codec validation. Use for protocol fault testing.
+            <p className="control-callout danger-text" style={{ marginTop: 0 }}>
+              Raw frames bypass signal validation — for fault testing only.
             </p>
-            <div className="field-row" style={{ marginTop: 12 }}>
+            <div className="field-row">
               <label className="field">
-                <span className="field-label">Target Bus</span>
+                <span className="field-label">Bus</span>
                 <select
                   data-testid="raw-bus"
                   value={bus}
                   onChange={(e) => setBus(e.target.value as 'high' | 'low')}
                 >
-                  <option value="high">HIGH Bus</option>
-                  <option value="low">LOW Bus</option>
+                  <option value="high">High</option>
+                  <option value="low">Low</option>
                 </select>
               </label>
               <label className="field">
-                <span className="field-label">CAN ID (Hex format)</span>
+                <span className="field-label">CAN ID</span>
                 <input
                   data-testid="raw-can-id"
                   className="mono"
-                  placeholder="e.g. 0x300 or 300"
+                  placeholder="0x300"
                   value={rawId}
                   onChange={(e) => setRawId(e.target.value)}
                 />
               </label>
             </div>
-
-            <label className="field" style={{ marginTop: 10 }}>
-              <span className="field-label">Payload Data Hex (0-8 bytes / even length hex)</span>
+            <label className="field" style={{ marginTop: 8 }}>
+              <span className="field-label">Data hex</span>
               <input
                 data-testid="raw-data-hex"
                 className="mono"
-                placeholder="e.g. 00ffaabb11223344 or empty for DLC=0"
+                placeholder="even hex or empty for DLC 0"
                 value={rawHex}
                 onChange={(e) => setRawHex(e.target.value)}
               />
             </label>
-
-            <div style={{ marginTop: 8, fontSize: '13px' }}>
-              Hex preview: <code className="mono">{formatBytes(rawHex)}</code>
-            </div>
-
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="inject-raw-checks">
               <label className="check-row">
                 <input
                   type="checkbox"
@@ -1274,9 +1077,8 @@ export function Inject() {
                   checked={rawExtended}
                   onChange={(e) => setRawExtended(e.target.checked)}
                 />
-                Extended CAN ID (29-bit)
+                Extended ID
               </label>
-
               <label className="check-row danger-text">
                 <input
                   type="checkbox"
@@ -1284,11 +1086,10 @@ export function Inject() {
                   checked={confirmRaw}
                   onChange={(e) => setConfirmRaw(e.target.checked)}
                 />
-                I confirm this is intentional raw / fault injection
+                Confirm raw inject
               </label>
             </div>
-
-            <div className="actions tight" style={{ marginTop: 16 }}>
+            <div className="actions tight" style={{ marginTop: 12 }}>
               <button
                 type="button"
                 className="primary"
@@ -1296,164 +1097,126 @@ export function Inject() {
                 data-testid="raw-submit"
                 onClick={() => void doRaw()}
               >
-                Transmit Raw Frame
+                Transmit raw
               </button>
             </div>
+            {log ? (
+              <p className="muted small mono inject-status-line">{log}</p>
+            ) : null}
           </section>
-
-          <section className="panel inject-side">
-            <h2>Raw Fault Presets</h2>
-            <p className="muted small">Quick-load common hardware/protocol failure payloads.</p>
-            <div className="inject-template-list">
-              {RAW_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="inject-template-btn"
-                  onClick={() => applyRawPreset(p)}
-                >
-                  <strong>{p.label}</strong>
-                  <span className="muted small">{p.description}</span>
-                </button>
-              ))}
-            </div>
-          </section>
+          {activeRail}
         </div>
       )}
 
-      {/* Active Periodic Jobs Manager */}
-      <section className="panel" style={{ marginTop: 16 }} data-testid="inject-active-jobs">
-        <div className="panel-title-row">
-          <h2>Active Periodic Transmitters</h2>
-          <span className="mono muted small">{activeJobs.length} Running</span>
-        </div>
-
-        {activeJobs.length === 0 ? (
-          <p className="muted small" style={{ margin: '8px 0' }}>
-            No periodic injection loops currently running.
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto', marginTop: 8 }}>
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>Job ID</th>
-                  <th style={{ textAlign: 'left' }}>Bus</th>
-                  <th style={{ textAlign: 'left' }}>Target Message</th>
-                  <th style={{ textAlign: 'right' }}>Period</th>
-                  <th style={{ textAlign: 'right' }}>Missed</th>
-                  <th style={{ textAlign: 'left' }}>Last Result</th>
-                  <th style={{ textAlign: 'center' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeJobs.map((job) => (
-                  <tr key={job.job_id}>
-                    <td className="mono small">{job.job_id}</td>
-                    <td>
-                      <span className="mono small">{job.bus.toUpperCase()}</span>
-                    </td>
-                    <td className="mono small">
-                      {job.key || (job.can_id ? hexId(job.can_id) : '—')}
-                    </td>
-                    <td className="mono small" style={{ textAlign: 'right' }}>
-                      {job.period_ms} ms
-                    </td>
-                    <td className="mono small" style={{ textAlign: 'right' }}>
-                      {job.missed}
-                    </td>
-                    <td>
-                      <span className={`small ${job.last_result === 'submitted' ? 'ok-text' : 'warning-text'}`}>
-                        {job.last_result || 'active'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button
-                        type="button"
-                        className="secondary small danger-text"
-                        disabled={busy}
-                        onClick={() => void doStopJob(job.job_id)}
-                      >
-                        Stop
-                      </button>
-                    </td>
-                  </tr>
+      {/* Collapsible templates */}
+      <section className="panel inject-collapse" data-testid="inject-templates-section">
+        <button
+          type="button"
+          className="inject-collapse-toggle"
+          data-testid="inject-templates-toggle"
+          aria-expanded={templatesOpen}
+          onClick={() => setTemplatesOpen((o) => !o)}
+        >
+          <span>
+            {mode === 'raw' ? 'Fault presets' : 'Templates'}{' '}
+            <span className="muted small">
+              ({mode === 'raw' ? RAW_PRESETS.length : TEMPLATES.length})
+            </span>
+          </span>
+          <span className="muted small">{templatesOpen ? '▾' : '▸'}</span>
+        </button>
+        {templatesOpen && (
+          <div
+            className="inject-template-grid"
+            data-testid="inject-templates"
+          >
+            {mode === 'named'
+              ? TEMPLATES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="inject-template-chip"
+                    data-testid={`inject-template-${t.id}`}
+                    onClick={() => applyTemplate(t)}
+                  >
+                    <span className="inject-template-chip-label">{t.label}</span>
+                    <span className="mono muted small">{t.bus === 'high' ? 'H' : 'L'}</span>
+                  </button>
+                ))
+              : RAW_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="inject-template-chip"
+                    onClick={() => applyRawPreset(p)}
+                  >
+                    <span className="inject-template-chip-label">{p.label}</span>
+                    <span className="mono muted small">{p.bus === 'high' ? 'H' : 'L'}</span>
+                  </button>
                 ))}
-              </tbody>
-            </table>
           </div>
         )}
       </section>
 
-      {/* Command Acks & Transmit Log Panel */}
-      <section className="panel" style={{ marginTop: 16 }} data-testid="inject-ack-log">
-        <div className="panel-title-row">
-          <h2>Command Acks & Transmission History</h2>
-          {ackLogs.length > 0 && (
-            <button
-              type="button"
-              className="secondary small"
-              onClick={() => setAckLogs([])}
-            >
-              Clear Log
-            </button>
-          )}
-        </div>
-
-        {log ? (
-          <div className="control-callout" style={{ margin: '8px 0', fontSize: '13px' }}>
-            Latest: <code className="mono">{log}</code>
-          </div>
-        ) : null}
-
-        {ackLogs.length === 0 ? (
-          <p className="muted small" style={{ margin: '8px 0' }}>
-            No recent command transmissions recorded.
-          </p>
-        ) : (
-          <div style={{ maxHeight: '240px', overflowY: 'auto', marginTop: 8 }}>
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>Time</th>
-                  <th style={{ textAlign: 'left' }}>Type</th>
-                  <th style={{ textAlign: 'left' }}>Bus</th>
-                  <th style={{ textAlign: 'left' }}>Message</th>
-                  <th style={{ textAlign: 'left' }}>Payload</th>
-                  <th style={{ textAlign: 'left' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ackLogs.map((ack) => (
-                  <tr key={ack.id}>
-                    <td className="mono small muted">{ack.timestamp}</td>
-                    <td>
-                      <span className="mono small">{ack.type}</span>
-                    </td>
-                    <td className="mono small">{ack.bus.toUpperCase()}</td>
-                    <td className="mono small">
-                      {ack.can_id} {ack.name}
-                    </td>
-                    <td className="mono small">{formatBytes(ack.data_hex)}</td>
-                    <td className={ack.ok ? 'ok-text small' : 'danger-text small'}>
-                      {ack.detail}
-                    </td>
+      {/* Collapsible transmit log */}
+      <section className="panel inject-collapse" data-testid="inject-ack-log">
+        <button
+          type="button"
+          className="inject-collapse-toggle"
+          data-testid="inject-log-toggle"
+          aria-expanded={logOpen}
+          onClick={() => setLogOpen((o) => !o)}
+        >
+          <span>
+            Transmit log{' '}
+            <span className="muted small">({ackLogs.length})</span>
+          </span>
+          <span className="muted small">{logOpen ? '▾' : '▸'}</span>
+        </button>
+        {logOpen && (
+          <div className="inject-log-body">
+            {ackLogs.length > 0 && (
+              <button
+                type="button"
+                className="secondary small"
+                onClick={() => setAckLogs([])}
+              >
+                Clear
+              </button>
+            )}
+            {ackLogs.length === 0 ? (
+              <p className="muted small">No transmissions yet.</p>
+            ) : (
+              <table className="data-table compact inject-log-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Bus</th>
+                    <th>Msg</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {ackLogs.map((ack) => (
+                    <tr key={ack.id}>
+                      <td className="mono small muted">{ack.timestamp}</td>
+                      <td className="mono small">{ack.type}</td>
+                      <td className="mono small">{ack.bus}</td>
+                      <td className="mono small">
+                        {ack.can_id} {ack.name}
+                      </td>
+                      <td className={ack.ok ? 'ok-text small' : 'danger-text small'}>
+                        {ack.detail}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </section>
     </WorkspaceShell>
-  )
-}
-
-function FragmentPair({ k, v }: { k: string; v: FieldValue }) {
-  return (
-    <>
-      <dt className="mono">{k}</dt>
-      <dd className="mono">{String(v)}</dd>
-    </>
   )
 }
