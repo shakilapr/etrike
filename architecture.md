@@ -492,7 +492,7 @@ The system uses a unified 3-mode configuration via `SYSTEM_RUN_MODE` in `shared/
 | Mode | Name | Effect |
 |------|------|--------|
 | 0 | PRODUCTION | Strict safety, requires real hardware. No bypasses allowed. |
-| 1 | PROTOTYPE | Checks physical developer override pin (GPIO 35) to dynamically enable bypasses. |
+| 1 | PROTOTYPE | Checks the active-low physical developer override pin (GPIO42) to dynamically enable bypasses. |
 | 2 | PURE SIM | Mocks everything. Disables cross-ECU heartbeat timeouts and actuator syncs. |
 
 The physical override pin allows safe lab testing on real hardware without flashing a compromised binary.
@@ -524,7 +524,7 @@ presets — the tool can inject any CAN frame via the encode API.
 
 **Full bench (2 ECUs + CANalyst-II):**
 - RT + SYS on low bus, CANalyst-II as Host on high bus
-- Set `SYSTEM_RUN_MODE = 1` and jump GPIO 35 to GND.
+- Set `SYSTEM_RUN_MODE = 1` and jump GPIO42 (DevKitC J3 pin 6) to GND.
 - CANalyst-II injects synthetic peer frames as needed
 
 ---
@@ -583,7 +583,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 17 | MCP2515 MISO | SPI data in |
 | 18 | MCP2515 CS | SPI chip select |
 | 47 | MCP2515 INT | Interrupt (active low, pull-up, NEGEDGE) |
-| 35 | OVERRIDE | Developer override pin for Mode 1 |
+| 42 | OVERRIDE | Active-low developer override for Mode 1; J3 pin 6; conflicts with external JTAG MTMS |
 | 1-2 | Encoder rear motor | Quadrature PCNT (rear motor speed feedback) |
 | 10,6 | Encoder front wheel | Quadrature PCNT (front wheel) |
 | 9,12 | Encoder rear left | Quadrature PCNT (differential) |
@@ -612,7 +612,8 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 39 | Bulb MANUAL | Mode indicator |
 | 40 | 12V relay | Accessory power relay |
 | 41 | START button | Green momentary — press=ignition ON, hold 3s=OFF |
-| 33-35 | Gear outputs | Retired SYS motor-I/O reservation; do not wire to vehicle. |
+| 42 | OVERRIDE | Active-low developer override for Mode 1; J3 pin 6; conflicts with external JTAG MTMS |
+| 33-35 | Gear outputs | Retired and unavailable on N16R8 octal-memory modules; do not wire. |
 
 ### MTR STM32 (planned - not approved for vehicle wiring)
 

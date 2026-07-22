@@ -25,13 +25,16 @@ class NodeLiveness(str, Enum):
     UNKNOWN = "unknown"
 
 
-# Heartbeat / liveness probes used for topology (bus, can_id, node label).
+# Heartbeat / status probes used for topology (bus, can_id, node label).
+# SES/SEB use periodic status frames (not pure heartbeats) as presence on Low.
 HEARTBEAT_NODES: tuple[tuple[str, int, str], ...] = (
     ("high", 0x7FC, "Host"),
     ("high", 0x7FD, "RT_high"),
     ("low", 0x7FD, "RT_low"),
     ("low", 0x7FE, "SYS"),
     ("low", 0x206, "MTR"),
+    ("low", 0x201, "SES"),
+    ("low", 0x721, "SEB"),
 )
 
 

@@ -28,5 +28,7 @@ deployment blockers; source configuration takes precedence over older tables.
 - RT high CAN firmware mapping is SCK=GPIO15, MOSI=GPIO16, MISO=GPIO17, CS=GPIO18, INT=GPIO47. Older documents that specify GPIO36-41 or reuse one GPIO for two SPI signals are invalid.
 - RT/SYS TWAI GPIO5 TX and GPIO4 RX are valid ESP32-S3 matrix pins. The SN65HVD230 must run from 3.3 V.
 - SYS GPIO39-41 are usable GPIOs but overlap conventional JTAG signals. They cannot be used with external JTAG debugging unless the debugger or those functions are remapped or disconnected.
+- RT/SYS Mode 1 uses GPIO42 (DevKitC J3 pin 6) as an active-low developer override. GPIO42 is not a strapping pin and is outside the N16R8 octal-memory range, but it overlaps external JTAG MTMS; remove the jumper before external JTAG debugging.
+- GPIO33-37 are unavailable on the project's ESP32-S3 N16R8 modules because they are used by the octal flash/PSRAM interface. GPIO35 is not a strapping pin, but it must not be used as board I/O on this module variant.
 - GPIO0, GPIO3, GPIO45, and GPIO46 are ESP32-S3 strapping pins. Do not move safety or actuator wiring to them without a boot-level analysis.
 - Relay coils, lamps, and 72 V interfaces require transistor/opto drivers, flyback suppression, suitable fusing, and a common low-voltage ground where isolation is not deliberate. No ESP32 GPIO can drive those loads directly.

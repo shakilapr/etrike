@@ -18,7 +18,7 @@ This document provides a highly detailed, deeply structured breakdown of the har
 | **18** | Output | SPI CS | Chip Select for MCP2515 (High-Level CAN) |
 | **47** | Input | MCP INT | Interrupt from MCP2515 (active-low, falling edge) |
 | **21** | Output | WDT Toggle | Toggles an external TPS3850 Hardware Watchdog |
-| **35** | Input | OVERRIDE | Developer override pin to bypass strict production safety checks |
+| **42** | Input | OVERRIDE | Active-low Mode 1 developer override; jumper to GND (external JTAG MTMS unavailable while connected) |
 | **1 / 2** | Input | PCNT (Enc) | Quadrature encoder A/B for rear motor speed feedback |
 | **10 / 6** | Input | PCNT (Enc) | Quadrature encoder A/B for front wheel speed |
 | **9 / 12** | Input | PCNT (Enc) | Quadrature encoder A/B for rear-left wheel |

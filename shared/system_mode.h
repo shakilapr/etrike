@@ -17,8 +17,10 @@ static_assert(ETRIKE_SYSTEM_RUN_MODE >= 0 && ETRIKE_SYSTEM_RUN_MODE <= 2,
               "ETRIKE_SYSTEM_RUN_MODE must be 0, 1, or 2");
 constexpr int SYSTEM_RUN_MODE = ETRIKE_SYSTEM_RUN_MODE;
 
-// The GPIO pin used for Mode 1 hardware override
-constexpr int DEVELOPER_OVERRIDE_PIN = 35;
+// Mode 1 hardware override: active-low jumper to GND. GPIO42 is exposed on
+// the ESP32-S3-DevKitC-1, is not a strapping pin, and is outside the N16R8
+// octal-memory GPIO33-37 range. It overlaps the external JTAG MTMS signal.
+constexpr int DEVELOPER_OVERRIDE_PIN = 42;
 
 // Runtime bypass flags (initialized based on SYSTEM_RUN_MODE)
 extern bool g_bench_solo_mode;
