@@ -189,6 +189,35 @@ export function DriveConsole() {
   const canYaw = numSignal(driveMsg, 'yaw_rate_mrad_s')
   const canGear = gearFromCan(driveMsg)
 
+  // Vehicle motion gate (firmware): non-zero RT_DRIVE_CMD only in AUTO.
+  const rtStateMsg =
+    messages.find((m) => m.name === 'RT_STATE_RPT' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'RT_STATE_RPT')
+  const rtModeLabel = (() => {
+    if (!rtStateMsg) return null
+    const raw = rtStateMsg.signals?.mode
+    if (!raw) return null
+    const label = String(raw.enum_label ?? raw.engineering_value ?? '').toUpperCase()
+    if (label) return label
+    const n = Number(raw.engineering_value)
+    if (n === 0) return 'MANUAL'
+    if (n === 1) return 'AUTO'
+    if (n === 2) return 'ESTOP'
+    return null
+  })()
+  const rtModeLive = rtStateMsg?.freshness?.toLowerCase() === 'live'
+  const sysHb =
+    messages.find((m) => m.name === 'SYS_HEARTBEAT' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'SYS_HEARTBEAT')
+  const sysLive = sysHb?.freshness?.toLowerCase() === 'live'
+  const isPhysical =
+    (status?.session?.destination ?? status?.link?.destination ?? '').toLowerCase() ===
+    'physical'
+  const motionLocked =
+    isPhysical &&
+    armed &&
+    (!sysLive || (rtModeLive && rtModeLabel != null && rtModeLabel !== 'AUTO'))
+
   const applyGear = useCallback((g: Gear) => {
     stateRef.current.gear = g
     setGear(g)
@@ -216,19 +245,26 @@ export function DriveConsole() {
     if (!st.session?.session_id) {
       throw new Error('No active session. Start Computer or connect Real in Settings first.')
     }
+    let enabledBench = false
     if (st.session.bench_tx !== 'enabled') {
-      throw new Error(
-        'Bench TX is off. Enable Bench TX explicitly (Control or Settings) before arming Drive.',
-      )
+      // Explicit operator action: Arm itself arms the TX gate (not a silent background heal).
+      await api.setBenchTx(st.session.session_id, true, st.session.revision)
+      st = await api.status()
+      enabledBench = true
+      if (st.session?.bench_tx !== 'enabled') {
+        throw new Error(
+          'Failed to enable Bench TX. Check Real link / adapter health in Settings.',
+        )
+      }
     }
     setStatus(st)
-    return st
+    return { st, enabledBench }
   }
 
   async function armControl() {
     setBusy(true)
     try {
-      await ensureArmedPath()
+      const { enabledBench } = await ensureArmedPath()
       const { cleanupControlStreams } = await import('../lib/cleanup')
       const clean = await cleanupControlStreams('drive_arm')
       seqRef.current = 0
@@ -239,7 +275,9 @@ export function DriveConsole() {
       setArmed(true)
       focusDrive()
       setLog(
-        'Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Leaving this tab disarms. Canvas follows bus.' +
+        (enabledBench ? 'Bench TX enabled · ' : '') +
+          'Armed: keys/keycaps → HOST_DRIVE_CMD on High bus @ 10 ms. Leaving this tab disarms. Canvas follows bus. ' +
+          'RT only commands non-zero RT_DRIVE_CMD in AUTO (needs live SYS).' +
           (clean.ok ? '' : ` · ${clean.detail}`),
       )
     } catch (e) {
@@ -809,6 +847,24 @@ export function DriveConsole() {
             <span className="chip-k">0x300</span>
             <span className="chip-v">{canLive ? 'Live' : 'Idle'}</span>
           </span>
+          <span
+            className={`chip ${rtModeLive && rtModeLabel === 'AUTO' ? 'ok' : motionLocked ? 'danger' : ''}`}
+            title="RT vehicle mode (from RT_STATE_RPT). Motion requires AUTO."
+            data-testid="drive-rt-mode-chip"
+          >
+            <span className="chip-k">RT mode</span>
+            <span className="chip-v">
+              {rtModeLive && rtModeLabel ? rtModeLabel : rtModeLabel ? `${rtModeLabel}?` : '—'}
+            </span>
+          </span>
+          <span
+            className={`chip ${sysLive ? 'ok' : isPhysical ? 'danger' : ''}`}
+            title="SYS heartbeat on Low bus — required for AUTO mode changes"
+            data-testid="drive-sys-chip"
+          >
+            <span className="chip-k">SYS</span>
+            <span className="chip-v">{sysLive ? 'Live' : isPhysical ? 'Missing' : 'N/A'}</span>
+          </span>
           <span className={`chip ${focused ? 'ok' : ''}`} data-testid="drive-focus-chip">
             <span className="chip-k">Keys</span>
             <span className="chip-v">{focused ? 'Ready' : 'Click UI'}</span>
@@ -871,14 +927,18 @@ export function DriveConsole() {
         >
           <canvas ref={canvasRef} data-testid="preview-canvas" />
           <div
-            className={`drive-lock-hint ${armed ? 'armed' : 'muted'}`}
+            className={`drive-lock-hint ${armed ? 'armed' : 'muted'}${motionLocked ? ' warn' : ''}`}
             data-testid="drive-lock-hint"
           >
-            {armed
-              ? 'Armed — keys & keycaps publish HOST_DRIVE_CMD @ 10 ms'
-              : focused
-                ? 'Local sim — Arm CAN control to transmit on the bus'
-                : 'Click canvas or side panel, then use WASD / keycaps'}
+            {motionLocked
+              ? !sysLive
+                ? 'Armed host TX, but SYS is missing — RT stays MANUAL; RT_DRIVE_CMD stays 0. Bring SYS up, then HMI AUTO.'
+                : `Armed host TX, but RT mode is ${rtModeLabel ?? 'not AUTO'} — motion locked. Request AUTO via Control → HMI (needs live SYS).`
+              : armed
+                ? 'Armed — keys & keycaps publish HOST_DRIVE_CMD @ 10 ms'
+                : focused
+                  ? 'Local sim — Arm CAN control to transmit on the bus'
+                  : 'Click canvas or side panel, then use WASD / keycaps'}
           </div>
         </div>
 

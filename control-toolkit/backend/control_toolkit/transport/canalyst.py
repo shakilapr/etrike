@@ -648,12 +648,52 @@ class CanalystTransportAdapter:
             )
             with self._lock:
                 self._state[frame.channel].tx_count += 1
+            # CANalyst has no hardware TX echo. Mirror submitted frames into the
+            # observation queue so Live CAN / latest state can show HOST_DRIVE etc.
+            self._enqueue_tx_mirror(frame)
             return "submitted"
         except Exception as exc:  # noqa: BLE001
             self._signal_failure(
                 f"CANalyst-II send failed: {str(exc).strip() or type(exc).__name__}"
             )
             return "rejected"
+
+    def _enqueue_tx_mirror(self, frame: RawFrameEnvelope) -> None:
+        """Software observation of our own TX (not hardware loopback).
+
+        Does not increment ``rx_count`` — that stays true bus RX only.
+        """
+        channel = frame.channel
+        arrival_ns = time.monotonic_ns()
+        with self._lock:
+            self._seq[channel] += 1
+            seq = self._seq[channel]
+            epoch = self._epoch
+        env = frame.model_copy(
+            update={
+                "adapter_epoch": epoch,
+                "backend_arrival_ns": arrival_ns,
+                "channel_sequence": seq,
+                "direction": Direction.TX,
+                "global_sequence": None,
+            }
+        )
+        try:
+            self._queue.put_nowait(env)
+        except queue.Full:
+            # Drop mirror only; wire TX already succeeded. Count as overflow.
+            with self._lock:
+                self._state[channel].rx_overflow += 1
+            return
+        with self._lock:
+            qsize = self._queue.qsize()
+            self._queue_high_water = max(self._queue_high_water, qsize)
+            st = self._state[channel]
+            st.queue_high_water = self._queue_high_water
+            # Activity reflects host participation on the channel.
+            st.activity = ChannelActivity.ACTIVE
+            if self._health in (AdapterHealth.OPEN, AdapterHealth.QUIET):
+                self._health = AdapterHealth.ACTIVE
 
     def inject(self, *args: Any, **kwargs: Any) -> None:
         raise RuntimeError("inject not supported on physical CANalyst transport")

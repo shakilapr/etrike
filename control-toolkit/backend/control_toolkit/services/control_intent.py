@@ -29,6 +29,16 @@ DEADBAND = 0.05
 GEAR_N, GEAR_D, GEAR_S, GEAR_R = 0, 1, 2, 3
 
 
+def _lease_owner_for_source(source: str) -> str:
+    """Map intent source to a stable ownership lease name."""
+    raw = (source or "keyboard").strip().lower()
+    if not raw or raw in ("none", "null"):
+        raw = "keyboard"
+    # Keep lease id short and punctuation-free for logs / ownership tables.
+    safe = "".join(c if c.isalnum() or c in "_-" else "_" for c in raw)[:40]
+    return f"control:{safe or 'keyboard'}"
+
+
 @dataclass
 class IntentState:
     sequence: int = 0
@@ -148,6 +158,13 @@ class ControlIntentService:
             st.last_mono = now
             st.active = True
             st.loss_reason = None
+
+            # Lease owner reflects producer (drive_console vs keyboard) so
+            # ownership conflicts are diagnosable.
+            new_owner = _lease_owner_for_source(source)
+            if st.job_id and st.lease_owner != new_owner:
+                self._cancel_job_locked()
+            st.lease_owner = new_owner
 
             if st.estop:
                 self._zero_locked()
