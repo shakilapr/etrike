@@ -68,6 +68,28 @@ def _field_def(field: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Custom codecs that still implement encode() (command TX). Status/telemetry
+# frames are RX-only in the protocol package until encoders are added.
+_ENCODEABLE_CUSTOM_KEYS = frozenset(
+    {
+        "ses:vcu_ses_req",
+        "seb:vcu_seb_req",
+    }
+)
+
+
+def _can_named_inject(key: str, strategy: str, dlc: int, field_count: int) -> bool:
+    """Whether named inject can build a wire payload for this catalog key."""
+    if strategy == "generated":
+        return True
+    if key in _ENCODEABLE_CUSTOM_KEYS:
+        return True
+    # Empty-payload frames (e.g. SAFETY_ESTOP) need no field encode.
+    if dlc == 0 or field_count == 0:
+        return True
+    return False
+
+
 def build_dictionary_messages() -> list[dict[str, Any]]:
     """Expand catalog messages x instances into dictionary rows (high/low only)."""
     out: list[dict[str, Any]] = []
@@ -83,6 +105,7 @@ def build_dictionary_messages() -> list[dict[str, Any]]:
         endian = "motorola" if byte_order in ("big", "motorola") else "intel"
         dlc = int(msg.get("dlc") or 0)
         name = str(msg.get("name") or key)
+        inject_ok = _can_named_inject(key, strategy, dlc, len(fields))
 
         for inst in msg.get("instances") or []:
             bus = str(inst.get("bus") or "")
@@ -119,7 +142,8 @@ def build_dictionary_messages() -> list[dict[str, Any]]:
                         "semanticDecode": strategy == "generated"
                         or strategy == "custom"
                         or bool(fields),
-                        "decodedInjection": strategy == "generated",
+                        # Named inject when encode path exists (generated + known custom cmds).
+                        "decodedInjection": inject_ok,
                         "codecStrategy": strategy,
                         "implementation": codec.get("implementation_id"),
                     },
