@@ -435,6 +435,80 @@ button.topbar-mode-btn.btn {
   padding: 5px 14px 6px;
   background: #f7f9fb;
   border-top: none;
+  align-items: center;
+}
+
+/* ECU presence — right side of meta row (label over LED) */
+.ecu-rail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+}
+
+.ecu-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 34px;
+  padding: 0 5px;
+  cursor: default;
+}
+
+.ecu-cell + .ecu-cell {
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.ecu-cell-name {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ecu-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.ecu-led.live {
+  background: var(--success);
+  box-shadow: 0 0 0 2px var(--success-soft);
+}
+
+.ecu-led.warning {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px var(--warning-soft);
+}
+
+.ecu-led.danger {
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--danger-soft);
+}
+
+.ecu-led.muted {
+  background: #c5ccd4;
+  box-shadow: none;
+}
+
+.ecu-cell.tone-live .ecu-cell-name {
+  color: var(--text-secondary);
+}
+
+.ecu-cell.tone-danger .ecu-cell-name,
+.ecu-cell.tone-muted .ecu-cell-name {
+  color: var(--text-tertiary);
 }
 
 .meta-group {
@@ -467,7 +541,6 @@ button.topbar-mode-btn.btn {
 }
 
 .meta-hash {
-  margin-left: auto;
   opacity: 0.85;
 }
 
@@ -617,6 +690,14 @@ button.topbar-mode-btn.btn {
 
   .meta-hash {
     margin-left: 0;
+  }
+
+  .ecu-rail {
+    margin-left: 0;
+    border-left: 0;
+    padding-left: 0;
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 

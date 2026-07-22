@@ -28,7 +28,7 @@ def test_topology_lists_expected_nodes(client):
     r = client.get("/api/v1/topology")
     assert r.status_code == 200
     nodes = {n["node"] for n in r.json()["nodes"]}
-    assert {"Host", "RT_high", "RT_low", "SYS", "MTR"} <= nodes
+    assert {"Host", "RT_high", "RT_low", "SYS", "MTR", "SES", "SEB"} <= nodes
 
 
 def test_state_after_inject_has_expected_rate(client):

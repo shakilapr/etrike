@@ -97,7 +97,7 @@ Both **SYS ESP32-S3** (Level 2 monitor) and **MTR STM32** (Level 1 primary) have
 | Throttle ADC | Retired on SYS (conflicts with body I/O) | Planned PA0 (ADC1_IN0), unimplemented |
 | MCP4725 DAC | I²C addr 0x60, SDA=GPIO15, SCL=GPIO16 | I²C addr 0x61, SDA=PB7, SCL=PB6 |
 | Gear sense (TLP281) | D=GPIO12, S=GPIO13, R=GPIO14 | D=PB0, S=PB1, R=PB2 |
-| Gear relay out | D=GPIO33, S=GPIO34, R=GPIO35 | D=PA3, S=PA4, R=PA5 |
+| Gear relay out | Retired/unavailable on N16R8; replacement TBD | D=PA3, S=PA4, R=PA5 |
 
 **MTR MCP4725 A0 pin is tied to VCC (5 V)** to differentiate addresses — SYS at 0x60, MTR at 0x61. Both are on separate I²C buses so no functional collision, but address differentiation prevents debugging traps.
 
@@ -108,9 +108,11 @@ A single **4PDT signal relay** physically switches the motor controller's thrott
 | Relay pole | Motor controller pin | SYS source (de-energized) | MTR source (energized) |
 |-----------|---------------------|--------------------------|------------------------|
 | Pole 1 | Throttle input (0–5 V) | SYS MCP4725 (GPIO15/16) | MTR MCP4725 (PB6/PB7) |
-| Pole 2 | Gear D (72 V) | SYS relay GPIO33 | MTR relay PA3 |
-| Pole 3 | Gear S (72 V) | SYS relay GPIO34 | MTR relay PA4 |
-| Pole 4 | Gear R (72 V) | SYS relay GPIO35 | MTR relay PA5 |
+| Pole 2 | Gear D (72 V) | SYS source retired; replacement TBD | MTR relay PA3 |
+| Pole 3 | Gear S (72 V) | SYS source retired; replacement TBD | MTR relay PA4 |
+| Pole 4 | Gear R (72 V) | SYS source retired; replacement TBD | MTR relay PA5 |
+
+GPIO33-37 are occupied by the octal flash/PSRAM interface on the project's ESP32-S3 N16R8 modules. Do not construct the historical SYS gear-output mapping on those pins.
 
 **Relay:** Omron G6K-4P-DC12 (4PDT, 12 V coil, DIP, 1 A contacts) or Finder 55.34.9.012.0040.
 

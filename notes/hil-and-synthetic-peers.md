@@ -11,7 +11,7 @@ The E-Trike firmware includes a unified configuration mechanism (`SYSTEM_RUN_MOD
 | Mode | Name | Effect |
 |------|------|--------|
 | **0** | PRODUCTION | Strict safety. Requires real hardware and physical signals. No software bypasses allowed. |
-| **1** | PROTOTYPE | Checks a physical developer override pin (e.g., GPIO 35 jumped to GND) to dynamically enable certain safety bypasses. Allows lab testing on real hardware without flashing a compromised binary. |
+| **1** | PROTOTYPE | Checks the physical developer override pin (GPIO42 jumped to GND) to dynamically enable certain safety bypasses. Allows lab testing on real hardware without flashing a compromised binary. |
 | **2** | PURE SIM | Disables cross-ECU heartbeat timeouts and actuator syncs. Used for pure software-in-the-loop testing. |
 
 This ensures that development features don't accidentally make it into a production vehicle, as Mode 0 strictly refuses to start without valid hardware connections.

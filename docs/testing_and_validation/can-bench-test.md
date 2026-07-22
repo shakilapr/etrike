@@ -416,6 +416,7 @@ Before plugging in USB:
 - [ ] J1-5 **GPIO5** (silkscreen "5") → WCMCU-230 **CTX** (blue Dupont)
 - [ ] J1-4 **GPIO4** (silkscreen "4") → WCMCU-230 **CRX** (green Dupont)
 - [ ] 120Ω termination jumper **ON**
+- [ ] Mode 1 only: **GPIO42** (J3 pin 6) → **GND**; remove for production and external JTAG
 
 **RT — MCP2515 (high bus):**
 - [ ] **GPIO15** → MCP2515 **SCK** (through level translation if module is 5 V)
@@ -432,6 +433,7 @@ Before plugging in USB:
 - [ ] J1-5 **GPIO5** (silkscreen "5") → WCMCU-230 **CTX** (blue Dupont)
 - [ ] J1-4 **GPIO4** (silkscreen "4") → WCMCU-230 **CRX** (green Dupont)
 - [ ] 120Ω termination jumper **ON**
+- [ ] Mode 1 only: **GPIO42** (J3 pin 6) → **GND**; remove for production and external JTAG
 
 **Low bus backbone:**
 - [ ] CAN_H: RT WCMCU → SYS WCMCU → CANalyst-II Ch0 **H** (yellow)

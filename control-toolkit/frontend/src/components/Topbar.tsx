@@ -1,9 +1,51 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../api'
+import { hexId } from '../lib/format'
 import { activateTransportProfile, linkLabelFromStatus } from '../lib/session'
 import { busActivityTone, dash, PROFILE_LABELS, transportModeOf, type OverallHealth } from '../lib/signals'
-import { useAppStore } from '../store'
+import { useAppStore, type TopologyNode } from '../store'
 import { IconCable, IconMonitor } from './icons'
+
+/** Stable display order for ECU presence lamps (CAN topology). */
+const ECU_ORDER = ['Host', 'RT_high', 'RT_low', 'SYS', 'MTR', 'SES', 'SEB'] as const
+
+const ECU_SHORT: Record<string, string> = {
+  Host: 'Host',
+  RT_high: 'RT-H',
+  RT_low: 'RT-L',
+  SYS: 'SYS',
+  MTR: 'MTR',
+  SES: 'SES',
+  SEB: 'SEB',
+}
+
+function ecuDotTone(liveness: string): 'live' | 'warning' | 'danger' | 'muted' {
+  const k = liveness.toLowerCase()
+  if (k === 'live') return 'live'
+  if (k === 'late') return 'warning'
+  if (k === 'fault' || k === 'offline' || k === 'missing') return 'danger'
+  return 'muted'
+}
+
+function ecuConnectedLabel(liveness: string): string {
+  const k = liveness.toLowerCase()
+  if (k === 'live') return 'connected'
+  if (k === 'late') return 'late'
+  if (k === 'fault') return 'fault'
+  if (k === 'missing') return 'missing'
+  if (k === 'offline') return 'offline'
+  return liveness || 'unknown'
+}
+
+function sortEcuNodes(nodes: TopologyNode[]): TopologyNode[] {
+  const rank = new Map(ECU_ORDER.map((n, i) => [n, i]))
+  return [...nodes].sort((a, b) => {
+    const ra = rank.get(a.node as (typeof ECU_ORDER)[number]) ?? 100
+    const rb = rank.get(b.node as (typeof ECU_ORDER)[number]) ?? 100
+    if (ra !== rb) return ra - rb
+    return a.node.localeCompare(b.node) || a.bus.localeCompare(b.bus)
+  })
+}
 
 export function Topbar() {
   const status = useAppStore((s) => s.status)
@@ -11,6 +53,7 @@ export function Topbar() {
   const quality = useAppStore((s) => s.streamQuality)
   const mismatch = useAppStore((s) => s.protocolMismatch)
   const reconnect = useAppStore((s) => s.reconnectAttempts)
+  const topology = useAppStore((s) => s.topology)
   const [modeBusy, setModeBusy] = useState(false)
   const [modeErr, setModeErr] = useState<string | null>(null)
   const ses = status?.session
@@ -24,6 +67,18 @@ export function Topbar() {
   const benchOn = (ses?.bench_tx || '').toLowerCase() === 'enabled'
   const estopOn = !!ses?.estop_active
   const link = linkLabelFromStatus(status)
+
+  const ecuNodes = useMemo(() => {
+    // Prefer live topology from API; fall back to known labels if stream empty.
+    if (topology.length > 0) return sortEcuNodes(topology)
+    return ECU_ORDER.map((node) => ({
+      node,
+      bus: node === 'Host' || node === 'RT_high' ? 'high' : 'low',
+      can_id: 0,
+      liveness: 'offline',
+      freshness: 'unseen',
+    }))
+  }, [topology])
 
   async function injectEstop() {
     setModeErr(null)
@@ -320,7 +375,7 @@ export function Topbar() {
         </div>
       )}
 
-      {/* Secondary context — denser, lower priority */}
+      {/* Secondary context — session meta left, ECU presence right */}
       <div className="topbar-row topbar-row-meta" data-testid="topbar-row-session">
         <div className="meta-group" data-testid="chip-profile" title="Operating profile / destination">
           <span className="meta-k">Profile</span>
@@ -388,6 +443,31 @@ export function Topbar() {
         >
           <span className="meta-k">Wire</span>
           <span className="meta-v">{(status?.wire_hash ?? '').slice(0, 10) || '—'}…</span>
+        </div>
+
+        <div
+          className="ecu-rail"
+          data-testid="ecu-strip"
+          aria-label="ECU connection from CAN"
+        >
+          {ecuNodes.map((n) => {
+            const tone = ecuDotTone(n.liveness)
+            const short = ECU_SHORT[n.node] ?? n.node
+            const state = ecuConnectedLabel(n.liveness)
+            const idText = n.can_id ? hexId(n.can_id) : '—'
+            return (
+              <div
+                key={`${n.bus}-${n.node}`}
+                className={`ecu-cell tone-${tone}`}
+                data-testid={`ecu-lamp-${n.node}`}
+                data-liveness={n.liveness}
+                title={`${n.node} · ${n.bus} · ${idText} · ${state}`}
+              >
+                <span className="ecu-cell-name">{short}</span>
+                <span className={`ecu-led ${tone}`} aria-hidden />
+              </div>
+            )
+          })}
         </div>
       </div>
     </header>

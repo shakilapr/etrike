@@ -168,6 +168,7 @@ Dual-channel passive CAN monitor/injector.
 | 9 | Encoder B (rear left) | 12 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 10 | Encoder A (rear right) | 13 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
 | 11 | Encoder B (rear right) | 14 | PCNT quadrature | TBD sensor | Compile-disabled | Differential speed |
+| 12 | Developer override | 42 | Digital, active-low | Mode 1 jumper → GND | Internal pull-up; J3 pin 6; conflicts with external JTAG MTMS |
 
 ### 3.3 RT — Outputs
 
@@ -200,6 +201,7 @@ GPIO 16 : MCP2515 MOSI
 GPIO 17 : MCP2515 MISO
 GPIO 18 : MCP2515 CS
 GPIO 21 : WDT toggle → TPS3850 WDI
+GPIO 42 : Mode 1 developer override (active-low, J3 pin 6)
 GPIO 47 : MCP2515 INT
 ```
 
@@ -246,6 +248,7 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 | 3 | START Button | 41 | Digital, NO, active-low | Green momentary → GND | Internal pull-up. Press exits ESTOP to MANUAL. |
 | 4 | MODE Button | 11 | Digital, NO, active-low | Momentary → GND | Internal pull-up. Toggles MANUAL ↔ AUTO. Long-press 3s exits ESTOP. |
 | 5 | Ignition relay | 8 | Reserved output | Not implemented by production firmware | Do not wire as a vehicle power-control path. |
+| 6 | Developer override | 42 | Digital, active-low | Mode 1 jumper → GND | Internal pull-up; J3 pin 6; conflicts with external JTAG MTMS. |
 | 7 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | RT commands, MTR feedback (0x206), SEB feedback (0x721) |
 
 ### 4.3 SYS — Signal Lights & Switches
@@ -294,9 +297,10 @@ GPIO 21 : Brake light — relay output
 GPIO 39 : MANUAL mode bulb — external JTAG conflict
 GPIO 40 : 12V accessory relay — external JTAG conflict
 GPIO 41 : START button (active-low) — external JTAG conflict
+GPIO 42 : Mode 1 developer override (active-low, J3 pin 6) — external JTAG conflict
 GPIO 47 : WDT toggle → TPS3850 WDI (20 Hz)
 GPIO 48 : AUTO mode bulb — relay output
-GPIO 33–35 : Bench-only gear relay outputs
+GPIO 33–37 : Unavailable on N16R8 octal-memory modules
 ```
 
 ### 4.7 SYS — Power
@@ -756,6 +760,7 @@ Hardware/API mapping: CANalyst-II Ch0 = high bus and Ch1 = low bus. The smoke ID
 - [ ] MCP2515: SCK → GPIO15, MOSI → GPIO16, MISO → GPIO17, CS → GPIO18, INT → GPIO47
 - [ ] MCP2515: CAN_H/CAN_L to high bus backbone
 - [ ] WDT: GPIO21 → TPS3850 WDI
+- [ ] Mode 1 only: GPIO42 (J3 pin 6) → GND. Remove for production and external JTAG.
 
 ### 17.2 SYS ESP32-S3
 
@@ -770,6 +775,7 @@ Hardware/API mapping: CANalyst-II Ch0 = high bus and Ch1 = low bus. The smoke ID
 - [ ] Lamp drivers: GPIO18/19/21/10 → relay or lamp-driver inputs; add coil suppression.
 - [ ] Indicator/accessory drivers: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO40 (accessory) → driver inputs; add coil suppression.
 - [ ] WDT: GPIO47 → TPS3850 WDI
+- [ ] Mode 1 only: GPIO42 (J3 pin 6) → GND. Remove for production and external JTAG.
 
 ### 17.3 MTR STM32
 
@@ -837,6 +843,7 @@ GPIO 16 : MCP2515 MOSI                              [OUT]
 GPIO 17 : MCP2515 MISO                              [IN]
 GPIO 18 : MCP2515 CS                                [OUT, active-low]
 GPIO 21 : WDT toggle → TPS3850 WDI                  [OUT, 100 Hz]
+GPIO 42 : Mode 1 developer override                 [IN, active-low, pull-up]
 GPIO 47 : MCP2515 INT                               [IN, falling edge]
 ```
 
@@ -865,7 +872,8 @@ GPIO 48 : AUTO mode bulb relay                      [OUT, active-high]
 GPIO 39 : MANUAL mode bulb relay                    [OUT, active-high]
 GPIO 40 : 12V power relay                           [OUT, active-high]
 GPIO 41 : START button (NO, active-low)             [IN, internal pull-up]
-GPIO 33–35 : Bench-only gear relay outputs          [OUT, active-high]
+GPIO 42 : Mode 1 developer override                 [IN, active-low, internal pull-up]
+GPIO 33–37 : Octal flash/PSRAM interface            [unavailable on N16R8]
 ```
 
 ### 18.3 MTR STM32 (planned only; not approved for vehicle wiring)

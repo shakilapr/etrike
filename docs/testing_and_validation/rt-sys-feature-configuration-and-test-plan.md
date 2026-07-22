@@ -6,7 +6,7 @@ This document is an implementation and verification plan. The configuration
 model, manifest, tests, and flashing gate described here are not yet fully
 implemented.
 
-Do not use the current broad `bench` or GPIO35 override behavior as permission
+Do not use the current broad `bench` or GPIO42 override behavior as permission
 to operate a physical actuator. Current bench behavior does not provide a
 complete output inhibit or one-actuator allowlist.
 
