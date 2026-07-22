@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { cleanupControlStreams, isStaleSequenceError } from '../lib/cleanup'
-import { formatAge, hexId } from '../lib/format'
+import { hexId } from '../lib/format'
 import { findMsg, PROFILE_LABELS } from '../lib/signals'
 import { useAppStore } from '../store'
 import { ActivityBar } from './ActivityBar'
@@ -23,6 +23,7 @@ export function Sidebar() {
   const [kbEnabled, setKbEnabled] = useState(false)
   const [kbSnap, setKbSnap] = useState<Record<string, unknown> | null>(null)
   const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
+  const [monitorExpanded, setMonitorExpanded] = useState<string | null>(null)
 
   const seqRef = useRef(0)
   const keysRef = useRef<Record<string, boolean>>({})
@@ -91,12 +92,29 @@ export function Sidebar() {
   const fullVehicle = profileId === 'full_vehicle'
   const fakeOn = fakeRunning.includes('host_drive_analysis')
 
+  /** live | late → live; everything else → dead */
+  const isMsgLive = (freshness?: string) => {
+    const f = String(freshness || '').toLowerCase()
+    return f === 'live' || f === 'late'
+  }
+
   const liveCompact = useMemo(() => {
     return [...messages]
       .filter((m) => (busFilter === 'both' ? true : m.bus === busFilter))
-      .sort((a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id)
-      .slice(0, 48)
+      .sort((a, b) => {
+        const la = isMsgLive(a.freshness) ? 0 : 1
+        const lb = isMsgLive(b.freshness) ? 0 : 1
+        if (la !== lb) return la - lb
+        return a.bus.localeCompare(b.bus) || a.can_id - b.can_id
+      })
+      .slice(0, 64)
   }, [messages, busFilter])
+
+  const monitorLiveCount = useMemo(
+    () => liveCompact.filter((m) => isMsgLive(m.freshness)).length,
+    [liveCompact],
+  )
+  const monitorDeadCount = liveCompact.length - monitorLiveCount
 
   const refreshFakeSignals = useCallback(async () => {
     try {
@@ -426,17 +444,9 @@ export function Sidebar() {
         <div className="context-sidebar-head">
           <span className="nav-label">Inspect</span>
           <strong>CAN monitor</strong>
-          <small>Live CAN · simplified</small>
-        </div>
-
-        <div className="monitor-live-meta" data-testid="monitor-live-meta">
-          <span className={`status-dot ${streamOk ? 'success' : 'warning'}`} />
-          <div>
-            <strong>{streamLabel}</strong>
-            <small>
-              {liveCompact.length} msg{liveCompact.length === 1 ? '' : 's'} · latest-by-ID
-            </small>
-          </div>
+          <small>
+            {monitorLiveCount} live · {monitorDeadCount} dead
+          </small>
         </div>
 
         <div className="monitor-bus-filter" role="group" aria-label="Bus filter">
@@ -453,38 +463,56 @@ export function Sidebar() {
           ))}
         </div>
 
-        <div className="monitor-live-table-wrap" data-testid="monitor-live-simplified">
-          <table className="monitor-live-table">
-            <thead>
-              <tr>
-                <th>Bus</th>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Age</th>
-              </tr>
-            </thead>
-            <tbody>
-              {liveCompact.map((m) => {
-                const key = `${m.bus}-${m.can_id}`
-                const fresh = String(m.freshness || '').toLowerCase()
-                return (
-                  <tr key={key} data-fresh={fresh || undefined}>
-                    <td>{m.bus}</td>
-                    <td className="mono">{hexId(m.can_id)}</td>
-                    <td title={m.name ?? undefined}>{m.name || '—'}</td>
-                    <td className="mono muted">{formatAge(m.age_ms)}</td>
-                  </tr>
-                )
-              })}
-              {liveCompact.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="muted">
-                    No frames yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="monitor-msg-list" data-testid="monitor-live-simplified">
+          {liveCompact.length === 0 && (
+            <p className="muted small monitor-msg-empty">No frames yet</p>
+          )}
+          {liveCompact.map((m) => {
+            const key = `${m.bus}-${m.can_id}`
+            const live = isMsgLive(m.freshness)
+            const open = monitorExpanded === key
+            const label = m.name?.trim() || hexId(m.can_id)
+            return (
+              <div
+                key={key}
+                className={`monitor-msg ${live ? 'is-live' : 'is-dead'}${open ? ' is-open' : ''}`}
+                data-testid={`monitor-msg-${m.bus}-${m.can_id}`}
+                data-status={live ? 'live' : 'dead'}
+              >
+                <button
+                  type="button"
+                  className="monitor-msg-row"
+                  aria-expanded={open}
+                  onClick={() => setMonitorExpanded((cur) => (cur === key ? null : key))}
+                >
+                  <span className={`status-dot ${live ? 'live' : 'danger'}`} aria-hidden />
+                  <span className="monitor-msg-label" title={label}>
+                    {label}
+                  </span>
+                  <span className={`monitor-msg-status ${live ? 'ok-text' : 'danger-text'}`}>
+                    {live ? 'live' : 'dead'}
+                  </span>
+                  <span className="monitor-msg-chevron muted" aria-hidden>
+                    {open ? '▾' : '▸'}
+                  </span>
+                </button>
+                {open && (
+                  <div className="monitor-msg-detail" data-testid={`monitor-msg-detail-${m.bus}-${m.can_id}`}>
+                    <span className={`status-dot ${live ? 'live' : 'danger'}`} aria-hidden />
+                    <span className={`monitor-msg-status ${live ? 'ok-text' : 'danger-text'}`}>
+                      {live ? 'live' : 'dead'}
+                    </span>
+                    <span className="mono">{m.bus === 'high' ? 'H' : 'L'}</span>
+                    <span className="mono">{hexId(m.can_id)}</span>
+                    {m.name ? <span className="monitor-msg-detail-name">{m.name}</span> : null}
+                    {m.observed_rate_hz != null && Number.isFinite(m.observed_rate_hz) ? (
+                      <span className="mono muted">{m.observed_rate_hz.toFixed(1)} Hz</span>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </>
     )
