@@ -424,6 +424,7 @@ export function Settings() {
                 <div className="actions tight">
                   <button
                     type="button"
+                    className="primary"
                     data-testid="btn-simulation-start"
                     disabled={
                       busy ||
@@ -456,6 +457,7 @@ export function Settings() {
             <div className="actions tight">
               <button
                 type="button"
+                className="primary"
                 disabled={busy}
                 data-testid="btn-start-pure"
                 onClick={() => void restartSession('pure_software')}
@@ -552,7 +554,7 @@ export function Settings() {
               <button
                 type="button"
                 disabled={busy}
-                className={activeMode === 'real' ? 'secondary' : undefined}
+                className={activeMode === 'real' ? 'secondary' : 'primary'}
                 data-testid="btn-connect-real"
                 title={
                   realOk

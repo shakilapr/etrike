@@ -124,6 +124,7 @@ export function Bench() {
         <div className="actions tight">
           <button
             type="button"
+            className="primary"
             data-testid="btn-synthetic-start"
             disabled={busy || hostRunning || available.length === 0}
             onClick={() => void startHostStimulus()}
