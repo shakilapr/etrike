@@ -5,6 +5,7 @@
 #include "can_driver_twai.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_twai_onchip.h"
 #include <cstring>
 #include <new>
@@ -69,6 +70,23 @@ bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
     return wake == pdTRUE;
 }
 
+bool IRAM_ATTR TwaiDriver::on_state_change(twai_node_handle_t,
+                                           const twai_state_change_event_data_t* event,
+                                           void* user_ctx) {
+    auto* self = static_cast<TwaiDriver*>(user_ctx);
+    self->m_state.store(event->new_sta, std::memory_order_release);
+    self->m_last_transition_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
+    if (event->new_sta == TWAI_ERROR_BUS_OFF) {
+        self->m_bus_off_started_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
+    } else if (event->old_sta == TWAI_ERROR_BUS_OFF && event->new_sta == TWAI_ERROR_ACTIVE) {
+        self->m_recovery_in_progress.store(false, std::memory_order_release);
+        self->m_recovery_completed_pending.store(true, std::memory_order_release);
+        self->m_first_rx_pending.store(true, std::memory_order_release);
+        self->m_first_tx_pending.store(true, std::memory_order_release);
+    }
+    return false;
+}
+
 bool TwaiDriver::init() {
     if (!m_rx_queue) m_rx_queue = xQueueCreate(32, sizeof(RxItem));
     if (!m_free_tx_slots) m_free_tx_slots = xQueueCreate(kTxSlots, sizeof(uint8_t));
@@ -99,11 +117,13 @@ bool TwaiDriver::init() {
         twai_event_callbacks_t callbacks{};
         callbacks.on_rx_done = &TwaiDriver::on_rx_done;
         callbacks.on_tx_done = &TwaiDriver::on_tx_done;
+        callbacks.on_state_change = &TwaiDriver::on_state_change;
         result = twai_node_register_event_callbacks(m_node, &callbacks, this);
     }
     if (result == ESP_OK) result = twai_node_enable(m_node);
     if (result == ESP_OK) {
         m_initialized = true;
+        m_state.store(TWAI_ERROR_ACTIVE, std::memory_order_release);
     } else if (m_node) {
         twai_node_delete(m_node);
         m_node = nullptr;
@@ -113,17 +133,59 @@ bool TwaiDriver::init() {
 }
 
 bool TwaiDriver::recovery() {
-    if (!m_initialized || !m_node) return init();
+    if (!m_initialized || !m_node) return false;
     if (xSemaphoreTake(m_control_mutex, pdMS_TO_TICKS(200)) != pdTRUE) return false;
     twai_node_status_t info{};
     esp_err_t result = twai_node_get_info(m_node, &info, nullptr);
     if (result == ESP_OK && info.state == TWAI_ERROR_BUS_OFF) {
-        ESP_LOGW(kTag, "recovery: bus-off tec=%u rec=%u", info.tx_error_count,
-                 info.rx_error_count);
+        const uint32_t attempt = m_recovery_attempts.fetch_add(1, std::memory_order_relaxed) + 1;
+        m_last_recovery_attempt_us.store(esp_timer_get_time(), std::memory_order_relaxed);
+        ESP_LOGW(kTag, "state=bus_off recovery=start attempt=%lu tec=%u rec=%u",
+                 static_cast<unsigned long>(attempt), info.tx_error_count, info.rx_error_count);
         result = twai_node_recover(m_node);
+        m_recovery_in_progress.store(result == ESP_OK, std::memory_order_release);
     }
     xSemaphoreGive(m_control_mutex);
     return result == ESP_OK;
+}
+
+bool TwaiDriver::service_recovery(int64_t now_us) {
+    if (m_recovery_completed_pending.exchange(false, std::memory_order_acq_rel)) {
+        const TickType_t elapsed = xTaskGetTickCount()
+            - m_bus_off_started_tick.load(std::memory_order_relaxed);
+        ESP_LOGI(kTag, "state=active recovery=complete elapsed_ms=%lu",
+                 static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS));
+    }
+    if (!recovery_needed()) return false;
+    const int64_t last = m_last_recovery_attempt_us.load(std::memory_order_relaxed);
+    if (m_recovery_in_progress.load(std::memory_order_acquire)
+        && now_us - last < 3'000'000) return false;
+    return recovery();
+}
+
+bool TwaiDriver::recovery_needed() const {
+    return m_state.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF;
+}
+
+TwaiDriver::HealthState TwaiDriver::map_state(twai_error_state_t state) {
+    switch (state) {
+    case TWAI_ERROR_WARNING: return HealthState::Warning;
+    case TWAI_ERROR_PASSIVE: return HealthState::Passive;
+    case TWAI_ERROR_BUS_OFF: return HealthState::BusOff;
+    default: return HealthState::Active;
+    }
+}
+
+TwaiDriver::HealthSnapshot TwaiDriver::health_snapshot() const {
+    twai_node_status_t info{};
+    if (m_node) (void)twai_node_get_info(m_node, &info, nullptr);
+    const auto state = m_state.load(std::memory_order_acquire);
+    return {map_state(state),
+            static_cast<uint16_t>(state == TWAI_ERROR_BUS_OFF ? 255 : info.tx_error_count),
+            info.rx_error_count,
+            m_recovery_in_progress.load(std::memory_order_acquire),
+            m_recovery_attempts.load(std::memory_order_relaxed),
+            m_last_transition_tick.load(std::memory_order_relaxed)};
 }
 
 bool TwaiDriver::status(uint32_t& state, uint32_t& tec, uint32_t& rec) const {
@@ -133,7 +195,7 @@ bool TwaiDriver::status(uint32_t& state, uint32_t& tec, uint32_t& rec) const {
         return false;
     }
     // Preserve the legacy wrapper contract used by main.cpp: 1=running, 2=bus-off.
-    state = info.state == TWAI_ERROR_BUS_OFF ? 2U : 1U;
+    state = m_state.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF ? 2U : 1U;
     tec = info.tx_error_count;
     rec = info.rx_error_count;
     return true;
@@ -145,6 +207,7 @@ bool TwaiDriver::receive(can::Frame& out, uint32_t timeout_ms) {
     if (xQueueReceive(m_rx_queue, &item, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
     out = can::Frame(item.id, item.extended, item.dlc);
     std::memcpy(out.data.data(), item.data, item.dlc);
+    log_first_io_after_recovery(true);
     return true;
 }
 
@@ -168,13 +231,24 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
         xQueueSend(m_free_tx_slots, &index, 0);
         return false;
     }
+    log_first_io_after_recovery(false);
     return true;
+}
+
+void TwaiDriver::log_first_io_after_recovery(bool rx) {
+    auto& pending = rx ? m_first_rx_pending : m_first_tx_pending;
+    if (!pending.exchange(false, std::memory_order_acq_rel)) return;
+    const TickType_t elapsed = xTaskGetTickCount()
+        - m_bus_off_started_tick.load(std::memory_order_relaxed);
+    ESP_LOGI(kTag, "post_recovery first_%s elapsed_ms=%lu", rx ? "rx" : "tx",
+             static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS));
 }
 
 void TwaiDriver::get_error_counters(uint8_t& tec, uint8_t& rec) const {
     twai_node_status_t info{};
     if (m_node && twai_node_get_info(m_node, &info, nullptr) == ESP_OK) {
-        tec = static_cast<uint8_t>(info.tx_error_count);
+        tec = m_state.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF
+            ? UINT8_MAX : static_cast<uint8_t>(info.tx_error_count);
         rec = static_cast<uint8_t>(info.rx_error_count);
     } else {
         tec = rec = 0;

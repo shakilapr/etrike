@@ -30,6 +30,7 @@ spi_device_handle_t g_spi_handle = nullptr;
 // during concurrent access indicate a driver-level race. An explicit
 // mutex prevents overlapping spi_device_transmit calls.
 static SemaphoreHandle_t g_spi_mutex = nullptr;
+static SemaphoreHandle_t g_control_mutex = nullptr;
 
 // ── ISR notification infrastructure ──────────────────────────────
 // The GPIO ISR on the MCP2515 INT pin (GPIO 40) notifies the RX
@@ -59,6 +60,23 @@ static void spi_unlock() {
     if (g_spi_mutex) xSemaphoreGive(g_spi_mutex);
 }
 
+class ControlGuard {
+public:
+    explicit ControlGuard(uint32_t timeout_ms)
+        : locked_(g_control_mutex
+                  && xSemaphoreTake(g_control_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {}
+    ~ControlGuard() { if (locked_) xSemaphoreGive(g_control_mutex); }
+    explicit operator bool() const { return locked_; }
+    void release() {
+        if (locked_) {
+            xSemaphoreGive(g_control_mutex);
+            locked_ = false;
+        }
+    }
+private:
+    bool locked_;
+};
+
 }  // anonymous namespace
 
 // ── SPI primitives ─────────────────────────────────────────────────
@@ -72,9 +90,9 @@ bool Mcp2515Driver::spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting transfer");
         return false;
     }
-    spi_device_transmit(g_spi_handle, &t);
+    const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
-    return true;
+    return result == ESP_OK;
 }
 
 void Mcp2515Driver::spi_write_byte(uint8_t addr, uint8_t data) {
@@ -144,8 +162,10 @@ bool Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len
         ESP_LOGE(kTag, "SPI mutex timeout — aborting burst read");
         return false;
     }
-    spi_device_transmit(g_spi_handle, &t);
+    const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
+
+    if (result != ESP_OK) return false;
 
     memcpy(data, &rx_buf[2], len);
     return true;
@@ -167,17 +187,17 @@ bool Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, siz
         ESP_LOGE(kTag, "SPI mutex timeout — aborting burst write");
         return false;
     }
-    spi_device_transmit(g_spi_handle, &t);
+    const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
-    return true;
+    return result == ESP_OK;
 }
 
 // ── Burst frame read ─────────────────────────────────────────────
 // Reads a complete CAN frame from an MCP2515 RX buffer in one SPI
 // transaction. 13 bytes: SIDH, SIDL, EID8, EID0, DLC, D0-D7.
-void Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
-    uint8_t buf[13];
-    (void)spi_read_burst(base_addr, buf, 13);
+bool Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
+    uint8_t buf[13]{};
+    if (!spi_read_burst(base_addr, buf, 13)) return false;
 
     out = {};
 
@@ -192,6 +212,7 @@ void Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
     for (int i = 0; i < out.dlc && i < 8; ++i) {
         out.data[i] = buf[5 + i];
     }
+    return out.dlc <= 8;
 }
 
 // ── Init ───────────────────────────────────────────────────────────
@@ -268,20 +289,21 @@ bool Mcp2515Driver::init_spi() {
     return true;
 }
 
-bool Mcp2515Driver::init_mcp2515_regs() {
+bool Mcp2515Driver::init_mcp2515_regs(bool cold_boot) {
     // Cold-boot retry: MCP2515 oscillator can take up to 128 ms to
     // stabilise after power-on. On a warm boot (ESP32 reboots, MCP2515
     // already powered) the first reset succeeds. On cold boot we retry
     // with increasing backoff.
     uint8_t canstat = 0x00;
-    for (int attempt = 0; attempt < 4; ++attempt) {
+    const int max_attempts = cold_boot ? 4 : 1;
+    for (int attempt = 0; attempt < max_attempts; ++attempt) {
         reset();
 
         // Verify device: read CANSTAT after reset → should be 0x80 (config mode)
         canstat = read_reg(kRegCanStat);
         if ((canstat >> 5) == 0x04) break;  // OPMOD bits = 100 = config mode
 
-        if (attempt < 3) {
+        if (attempt + 1 < max_attempts) {
             // 0 → 200ms, 1 → 400ms, 2 → 600ms backoff
             int delay_ms = 200 * (attempt + 1);
             ESP_LOGW(kTag, "MCP2515 not ready (CANSTAT=0x%02X), retrying in %dms...",
@@ -292,7 +314,7 @@ bool Mcp2515Driver::init_mcp2515_regs() {
 
     if ((canstat >> 5) != 0x04) {
         ESP_LOGE(kTag, "MCP2515 not in config mode after %d attempts (CANSTAT=0x%02X)",
-                 4, canstat);
+                 max_attempts, canstat);
         return false;
     }
 
@@ -337,6 +359,10 @@ bool Mcp2515Driver::init_mcp2515_regs() {
 // ── Init (orchestrator) ─────────────────────────────────────────────
 
 bool Mcp2515Driver::init() {
+    if (!g_control_mutex) g_control_mutex = xSemaphoreCreateMutex();
+    if (!g_control_mutex) return false;
+    ControlGuard guard(500);
+    if (!guard) return false;
     if (!init_gpio()) return false;
     if (!init_spi()) return false;
     if (!init_mcp2515_regs()) return false;
@@ -348,10 +374,44 @@ bool Mcp2515Driver::init() {
     return true;
 }
 
+bool Mcp2515Driver::recover() {
+    if (!is_initialized()) return false;
+    bool expected = false;
+    if (!m_recovering.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return false;
+    }
+    const uint32_t attempt = m_recovery_attempts.fetch_add(1, std::memory_order_relaxed) + 1;
+    ESP_LOGW(kTag, "state=bus_off recovery=start attempt=%lu",
+             static_cast<unsigned long>(attempt));
+    bool ok = false;
+    {
+        ControlGuard guard(200);
+        if (guard) {
+            m_has_pending = false;
+            ok = init_mcp2515_regs(false);
+        }
+    }
+    if (ok) {
+        m_bus_off.store(false, std::memory_order_release);
+        m_first_rx_pending.store(true, std::memory_order_release);
+        m_first_tx_pending.store(true, std::memory_order_release);
+        const int64_t started = m_bus_off_started_us.load(std::memory_order_relaxed);
+        ESP_LOGI(kTag, "state=active recovery=complete elapsed_ms=%lld",
+                 static_cast<long long>((esp_timer_get_time() - started) / 1000));
+    } else {
+        m_recovery_failures.fetch_add(1, std::memory_order_relaxed);
+        ESP_LOGE(kTag, "recovery=failed attempt=%lu", static_cast<unsigned long>(attempt));
+    }
+    m_recovering.store(false, std::memory_order_release);
+    return ok;
+}
+
 // ── Mode switch ─────────────────────────────────────────────────────
 
 bool Mcp2515Driver::set_mode(Mode mode) {
     if (!m_initialized) return false;
+    ControlGuard guard(10);
+    if (!guard || is_recovering()) return false;
     modify_reg(kRegCanCtrl, 0xE0, static_cast<uint8_t>(mode));
     vTaskDelay(pdMS_TO_TICKS(1));
     uint8_t canstat = read_reg(kRegCanStat);
@@ -372,6 +432,8 @@ bool Mcp2515Driver::set_mode(Mode mode) {
 
 bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (!m_initialized) return false;
+    ControlGuard guard(timeout_ms + 2);
+    if (!guard || is_recovering() || bus_off()) return false;
     // ListenOnly cannot place frames on the wire; do not spin waiting for TXB.
     if (m_mode.load(std::memory_order_relaxed) == Mode::ListenOnly) {
         return false;
@@ -388,7 +450,7 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     if (status & txreq_bit) {
         int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
         while (read_status() & txreq_bit) {
-            if (esp_timer_get_time() > deadline) return false;
+            if (is_recovering() || bus_off() || esp_timer_get_time() > deadline) return false;
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
@@ -410,6 +472,8 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     uint8_t rts = rts_cmd;
     if (!spi_transfer(&rts, nullptr, 1)) return false;
 
+    guard.release();
+    log_first_io_after_recovery(false);
     return true;
 }
 
@@ -430,15 +494,23 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
     // immediately and the second is cached here. The INT pin stays
     // low while any interrupt flag is set, so no new ISR edge fires
     // for RXB1 — we must drain it proactively.
-    if (m_has_pending) {
-        out = m_pending_frame;
-        m_has_pending = false;
-        return true;
+    {
+        ControlGuard guard(5);
+        if (!guard || is_recovering()) return false;
+        if (m_has_pending) {
+            out = m_pending_frame;
+            m_has_pending = false;
+            guard.release();
+            log_first_io_after_recovery(true);
+            return true;
+        }
     }
 
     int64_t const deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
 
     while (true) {
+        ControlGuard guard(5);
+        if (!guard || is_recovering()) return false;
         // ── Check CANINTF for pending RX buffers or errors ────────
         uint8_t canintf = read_reg(kRegCanIntF);
 
@@ -446,9 +518,12 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
         if (canintf & 0xA0) {  // bits 5 (ERRIF) or 7 (MERRE)
             uint8_t eflg = read_reg(kRegEflg);
             if (eflg & 0x80) {  // TXBO — bus-off
-                m_bus_off.store(true, std::memory_order_release);
-                ESP_LOGW(kTag, "MCP2515 entered bus-off (TEC=%d REC=%d)",
-                         read_reg(kRegTec), read_reg(kRegRec));
+                const bool was_bus_off = m_bus_off.exchange(true, std::memory_order_acq_rel);
+                if (!was_bus_off) {
+                    m_bus_off_started_us.store(esp_timer_get_time(), std::memory_order_relaxed);
+                    ESP_LOGW(kTag, "MCP2515 entered bus-off (TEC=%d REC=%d)",
+                             read_reg(kRegTec), read_reg(kRegRec));
+                }
             } else if (eflg & 0x40) {  // TXEP — error-passive
                 ESP_LOGW(kTag, "MCP2515 error-passive (TEC=%d REC=%d)",
                          read_reg(kRegTec), read_reg(kRegRec));
@@ -458,23 +533,27 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
         }
 
         if (canintf & 0x01) {  // RX0IF — RXB0 has data
-            read_frame_burst(out, kRegRxb0Data);
+            if (!read_frame_burst(out, kRegRxb0Data)) return false;
             modify_reg(kRegCanIntF, 0x01, 0x00);  // clear RX0IF
 
             // Check for second frame in RXB1 (no new ISR edge —
             // INT stays low while any flag remains set)
             canintf = read_reg(kRegCanIntF);
             if (canintf & 0x02) {
-                read_frame_burst(m_pending_frame, kRegRxb1Data);
+                if (!read_frame_burst(m_pending_frame, kRegRxb1Data)) return false;
                 modify_reg(kRegCanIntF, 0x02, 0x00);  // clear RX1IF
                 m_has_pending = true;
             }
+            guard.release();
+            log_first_io_after_recovery(true);
             return true;
         }
 
         if (canintf & 0x02) {  // RX1IF — RXB1 has data
-            read_frame_burst(out, kRegRxb1Data);
+            if (!read_frame_burst(out, kRegRxb1Data)) return false;
             modify_reg(kRegCanIntF, 0x02, 0x00);  // clear RX1IF
+            guard.release();
+            log_first_io_after_recovery(true);
             return true;
         }
 
@@ -486,6 +565,9 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
         // timeout expires (silent bus fallback). Combined ISR+polling approach:
         // the ISR is the fast path (microsecond latency); the 1ms timeout
         // handles the silent-bus case without burning CPU on SPI reads.
+        // Release the control mutex before blocking so recovery is never
+        // delayed by the silent-bus wait.
+        guard.release();
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1));
     }
 }
@@ -493,8 +575,22 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
 // ── Diagnostics ────────────────────────────────────────────────────
 
 void Mcp2515Driver::get_error_counters(uint8_t& tec, uint8_t& rec) {
+    ControlGuard guard(5);
+    if (!guard || is_recovering()) { tec = rec = 0; return; }
     tec = read_reg(kRegTec);
     rec = read_reg(kRegRec);
+}
+
+void Mcp2515Driver::log_first_io_after_recovery(bool rx) {
+    auto& pending = rx ? m_first_rx_pending : m_first_tx_pending;
+    if (!pending.exchange(false, std::memory_order_acq_rel)) return;
+    const int64_t started = m_bus_off_started_us.load(std::memory_order_relaxed);
+    ESP_LOGI(kTag, "post_recovery first_%s elapsed_ms=%lld", rx ? "rx" : "tx",
+             static_cast<long long>((esp_timer_get_time() - started) / 1000));
+    if (!m_first_rx_pending.load(std::memory_order_relaxed)
+        && !m_first_tx_pending.load(std::memory_order_relaxed)) {
+        m_bus_off_started_us.store(0, std::memory_order_relaxed);
+    }
 }
 
 }  // namespace rt

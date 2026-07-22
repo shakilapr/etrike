@@ -13,15 +13,12 @@ static void monitor_can_bus_off() {
 
     // Low bus (TWAI)
     {
-        uint8_t tec = 0, rec = 0;
         auto* drv = rt::can_low_driver();
-        if (drv) drv->get_error_counters(tec, rec);
-        if (tec > 128)
-            ESP_LOGW(TAG, "Low CAN error-warning: TEC=%u REC=%u", tec, rec);
-        // TEC saturates at 255 in bus-off. Recover slowly from monitor only
-        // (send_can_low also recovers on state==bus-off with 3s debounce).
-        if (tec >= 255) {
-            ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", tec, rec);
+        const auto health = drv ? drv->health_snapshot() : rt::TwaiDriver::HealthSnapshot{};
+        if (drv && health.state == rt::TwaiDriver::HealthState::Passive)
+            ESP_LOGW(TAG, "Low CAN error-passive: TEC=%u REC=%u", health.tec, health.rec);
+        if (drv && health.state == rt::TwaiDriver::HealthState::BusOff) {
+            ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", health.tec, health.rec);
             bus_off_count_low++;
             if (bus_off_count_low >= 5) {
                 ESP_LOGE(TAG, "Low CAN bus-off persistent - triggering ESTOP");
@@ -35,13 +32,7 @@ static void monitor_can_bus_off() {
                     }
                 }
             }
-            // Debounce: at most one recovery attempt / 3 s from this path
-            static int64_t last_rec_us = 0;
-            int64_t now = esp_timer_get_time();
-            if (drv && (now - last_rec_us) > 3'000'000) {
-                last_rec_us = now;
-                drv->recovery();
-            }
+            drv->service_recovery(esp_timer_get_time());
         } else {
             bus_off_count_low = 0;
         }
@@ -49,45 +40,30 @@ static void monitor_can_bus_off() {
 
     // High bus (MCP2515) — interrupt-driven + polled fallback
     {
-        bool fast_path_handled = false;
-
-        // Fast path: bus-off detected by interrupt (ERRIF handler in receive())
+        // Bus-off is latched by the receive path and remains latched until a
+        // complete controller-only recovery succeeds.
         if (g_can_high.bus_off()) {
-            g_can_high.clear_bus_off();
+            bus_off_count_high++;
             static int64_t last_reinit_us = 0;
             int64_t now = esp_timer_get_time();
-            if (now - last_reinit_us > 500'000) {  // debounce: max 2 reinit/sec
+            if (last_reinit_us == 0 || now - last_reinit_us > 3'000'000) {
                 last_reinit_us = now;
-                ESP_LOGE(TAG, "High CAN bus-off (interrupt) — reinitializing");
-                bus_off_count_high++;
-                g_can_high.init();
+                ESP_LOGE(TAG, "High CAN bus-off — controller recovery");
+                g_can_high.recover();
             }
-            fast_path_handled = true;  // prevent slow path from resetting counter (bug 4.7)
-        }
-
-        // Slow path: polled TEC for error-warning and as fallback.
-        // Only runs when fast path didn't handle a bus-off this cycle.
-        // Without this guard, reinit() in the fast path zeros TEC, causing
-        // the slow path to clear bus_off_count_high before it reaches 5.
-        if (!fast_path_handled) {
+            if (bus_off_count_high >= 5) {
+                ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
+                g_estop_reason.store(rt::kEstopReasonBusOff);
+                can::gen::HostDriveCmd zero{};
+                xQueueOverwrite(g_cmd_q, &zero);
+                g_steering.start_estop(false);
+            }
+        } else if (!g_can_high.is_recovering()) {
             uint8_t tec = 0, rec = 0;
             g_can_high.get_error_counters(tec, rec);
             if (tec > 128)
                 ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
-            if (tec >= 255) {
-                ESP_LOGE(TAG, "High CAN bus-off: TEC=%u REC=%u", tec, rec);
-                bus_off_count_high++;
-                if (bus_off_count_high >= 5) {
-                    ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
-                    g_estop_reason.store(rt::kEstopReasonBusOff);
-                    can::gen::HostDriveCmd zero{};
-                    xQueueOverwrite(g_cmd_q, &zero);
-                    g_steering.start_estop(false);
-                }
-                g_can_high.init();  // attempt recovery
-            } else {
-                bus_off_count_high = 0;
-            }
+            bus_off_count_high = 0;
         }
     }
 }
