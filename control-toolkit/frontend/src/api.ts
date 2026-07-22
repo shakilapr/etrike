@@ -382,6 +382,27 @@ export const api = {
       `/injections/${jobId}`,
       { method: 'DELETE' },
     ),
+  injectionJobs: () =>
+    json<{
+      ok: boolean
+      count: number
+      jobs: Array<{
+        job_id: string
+        bus: string
+        key?: string | null
+        can_id?: number | null
+        values: Record<string, unknown>
+        period_ms: number
+        owner: string
+        counter_field?: string | null
+        missed: number
+        last_result?: string | null
+      }>
+    }>('/injections/jobs'),
+  cancelAllInjections: () =>
+    json<{ ok: boolean; canceled_count: number }>('/injections', {
+      method: 'DELETE',
+    }),
   syntheticPeers: () =>
     json<{
       available: Array<Record<string, unknown>>
