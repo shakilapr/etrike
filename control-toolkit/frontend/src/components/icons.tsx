@@ -213,7 +213,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Operate',
     items: [
-      { id: 'control', label: 'All-node control', icon: <IconSliders /> },
+      { id: 'control', label: 'Control', icon: <IconSliders /> },
       { id: 'preview', label: 'Drive', icon: <IconGauge /> },
     ],
   },

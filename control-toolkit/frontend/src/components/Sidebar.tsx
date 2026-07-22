@@ -1,21 +1,33 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
-import { cleanupControlStreams } from '../lib/cleanup'
+import { cleanupControlStreams, isStaleSequenceError } from '../lib/cleanup'
+import { formatAge, hexId } from '../lib/format'
 import { findMsg, PROFILE_LABELS } from '../lib/signals'
 import { useAppStore } from '../store'
-import { IconExternalLink, IconGauge, NAV_SECTIONS } from './icons'
+import { ActivityBar } from './ActivityBar'
+import { IconGauge, NAV_SECTIONS } from './icons'
 
 export function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
   const activity = useAppStore((s) => s.activity)
-  const controlMethod = useAppStore((s) => s.controlMethod)
-  const setControlMethod = useAppStore((s) => s.setControlMethod)
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
   const quality = useAppStore((s) => s.streamQuality)
   const messages = useAppStore((s) => s.messages)
+
   const [busy, setBusy] = useState(false)
+  const [fakeBusy, setFakeBusy] = useState(false)
+  const [fakeRunning, setFakeRunning] = useState<string[]>([])
+  const [controlNote, setControlNote] = useState('')
+  const [kbEnabled, setKbEnabled] = useState(false)
+  const [kbSnap, setKbSnap] = useState<Record<string, unknown> | null>(null)
+  const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
+
+  const seqRef = useRef(0)
+  const keysRef = useRef<Record<string, boolean>>({})
+  const kbEnabledRef = useRef(false)
+  kbEnabledRef.current = kbEnabled
 
   const ses = status?.session
   const profileId = ses?.profile ?? status?.profile ?? '—'
@@ -48,7 +60,6 @@ export function Sidebar() {
       ? `${steerRaw.toFixed(1)}°`
       : '—'
 
-  // Outbound CAN commands (TX) — high Host intent and/or low RT drive
   const hostSpeed = hostCmd?.signals?.speed_mmps?.engineering_value
   const hostYaw = hostCmd?.signals?.yaw_rate_mrad_s?.engineering_value
   const hostGear =
@@ -72,216 +83,521 @@ export function Sidebar() {
   const rtCmdSpeedText = fmtNum(rtSpeed, 0, 'mm/s')
   const rtCmdGearText = rtGear != null && rtGear !== '' ? String(rtGear) : '—'
 
-  const hostFresh = hostCmd?.freshness
-    ? String(hostCmd.freshness).toLowerCase()
-    : ''
-  const rtFresh = rtDriveCmd?.freshness
-    ? String(rtDriveCmd.freshness).toLowerCase()
-    : ''
+  const hostFresh = hostCmd?.freshness ? String(hostCmd.freshness).toLowerCase() : ''
+  const rtFresh = rtDriveCmd?.freshness ? String(rtDriveCmd.freshness).toLowerCase() : ''
   const hostTxLive = hostFresh === 'live' || hostFresh === 'late'
   const rtTxLive = rtFresh === 'live' || rtFresh === 'late'
   const benchOn = String(ses?.bench_tx ?? '').toLowerCase() === 'enabled'
   const fullVehicle = profileId === 'full_vehicle'
+  const fakeOn = fakeRunning.includes('host_drive_analysis')
 
-  async function selectControlRoute(method: 'high' | 'low' | 'mtr' | 'hmi') {
-    if (method === controlMethod) {
-      setWorkspace('control')
-      return
-    }
-    setBusy(true)
+  const liveCompact = useMemo(() => {
+    return [...messages]
+      .filter((m) => (busFilter === 'both' ? true : m.bus === busFilter))
+      .sort((a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id)
+      .slice(0, 48)
+  }, [messages, busFilter])
+
+  const refreshFakeSignals = useCallback(async () => {
     try {
-      await cleanupControlStreams('activity_route_switch')
-      setControlMethod(method)
-      setWorkspace('control')
-    } finally {
-      setBusy(false)
+      const peers = await api.syntheticPeers()
+      setFakeRunning((peers.running || []).map((p) => String(p.name)))
+    } catch {
+      /* ignore poll errors */
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (activity !== 'control') return
+    void refreshFakeSignals()
+    const id = window.setInterval(() => void refreshFakeSignals(), 2000)
+    return () => window.clearInterval(id)
+  }, [activity, refreshFakeSignals])
+
+  // Leave control activity → drop keyboard ownership
+  useEffect(() => {
+    if (activity === 'control') return
+    if (!kbEnabledRef.current) return
+    setKbEnabled(false)
+    setKbSnap(null)
+    void api.controlRelease('left_control_activity').catch(() => undefined)
+  }, [activity])
+
+  // Keyboard teleop while Control activity is open
+  useEffect(() => {
+    if (!kbEnabled || activity !== 'control') return
+
+    const onDown = (e: KeyboardEvent) => {
+      keysRef.current[e.code] = true
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+        e.preventDefault()
+      }
+    }
+    const onUp = (e: KeyboardEvent) => {
+      keysRef.current[e.code] = false
+    }
+    const onBlur = () => {
+      keysRef.current = {}
+      void api.controlRelease('blur').catch(() => undefined)
+      setKbEnabled(false)
+      setControlNote('Keyboard released (window blur)')
+    }
+    const onVis = () => {
+      if (document.hidden) {
+        void api.controlRelease('tab_hidden').catch(() => undefined)
+        setKbEnabled(false)
+        setControlNote('Keyboard released (tab hidden)')
+      }
+    }
+
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVis)
+
+    const tick = window.setInterval(() => {
+      if (!kbEnabledRef.current) return
+      const k = keysRef.current
+      let throttle = 0
+      let steer = 0
+      if (k.KeyW || k.ArrowUp) throttle += 1
+      if (k.KeyS || k.ArrowDown) throttle -= 1
+      if (k.KeyA || k.ArrowLeft) steer -= 1
+      if (k.KeyD || k.ArrowRight) steer += 1
+      const hard_brake = !!k.ShiftLeft || !!k.ShiftRight
+      const estop = !!k.Space
+      seqRef.current += 1
+      void api
+        .controlIntent({
+          sequence: seqRef.current,
+          source: 'sidebar_keyboard',
+          mode: 'kinematics',
+          throttle,
+          steer,
+          gear: throttle < 0 ? 3 : 1,
+          hard_brake,
+          estop,
+        })
+        .then((r) => setKbSnap(r.control))
+        .catch((e) => {
+          const msg = String(e)
+          if (isStaleSequenceError(msg)) return
+          setKbEnabled(false)
+          setControlNote(`Control lost: ${msg}`)
+          void api.status().then(setStatus).catch(() => undefined)
+        })
+    }, 50)
+
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVis)
+      window.clearInterval(tick)
+    }
+  }, [kbEnabled, activity, setStatus])
 
   async function toggleBenchTx() {
     setBusy(true)
     try {
       const fresh = await api.status()
       const session = fresh.session
-      if (!session?.session_id) return
+      if (!session?.session_id) {
+        setControlNote('No session — start one in Settings (explorer)')
+        return
+      }
       await api.setBenchTx(session.session_id, !benchOn, session.revision)
       setStatus(await api.status())
+      setControlNote(!benchOn ? 'Bench TX armed' : 'Bench TX off')
+    } catch (e) {
+      setControlNote(String(e))
     } finally {
       setBusy(false)
     }
   }
 
+  async function toggleKeyboard() {
+    if (kbEnabled) {
+      setBusy(true)
+      try {
+        setKbEnabled(false)
+        setKbSnap(null)
+        await api.controlRelease('sidebar_kb_disable')
+        setControlNote('Keyboard off')
+      } catch (e) {
+        setControlNote(String(e))
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
+    setBusy(true)
+    try {
+      const st = await api.status()
+      if (!st.session?.session_id) {
+        setControlNote('No session — start one in Settings (explorer)')
+        return
+      }
+      if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
+        setControlNote('Arm Bench TX before keyboard')
+        return
+      }
+      await cleanupControlStreams('sidebar_kb_enable')
+      seqRef.current = 0
+      keysRef.current = {}
+      setKbEnabled(true)
+      setControlNote('Keyboard on — WASD / arrows')
+    } catch (e) {
+      setControlNote(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function stopAllMotion() {
+    setBusy(true)
+    try {
+      setKbEnabled(false)
+      setKbSnap(null)
+      const st = await api.status()
+      if (st.session?.session_id) {
+        await api.stopAll(st.session.session_id, st.session.revision)
+      }
+      await cleanupControlStreams('sidebar_stop_all')
+      setStatus(await api.status())
+      await refreshFakeSignals()
+      setControlNote('Stop all — motion TX cleared')
+    } catch (e) {
+      setControlNote(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function toggleFakeSignals() {
+    setFakeBusy(true)
+    try {
+      if (fakeOn) {
+        await api.stopSyntheticPeers()
+        setControlNote('Fake signals stopped')
+      } else {
+        const st = await api.status()
+        if (!st.session?.session_id) {
+          setControlNote('No session — start one in Settings (explorer)')
+          return
+        }
+        if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
+          setControlNote('Arm Bench TX before fake signals')
+          return
+        }
+        await cleanupControlStreams('sidebar_fake_start', { direct: false })
+        await api.startSyntheticPeers(['host_drive_analysis'])
+        setControlNote('Fake signals · host_drive_analysis')
+      }
+      await refreshFakeSignals()
+      setStatus(await api.status())
+    } catch (e) {
+      setControlNote(String(e))
+    } finally {
+      setFakeBusy(false)
+    }
+  }
+
+  let body: ReactNode
+  let bodyTestId = 'sidebar'
+  let bodyLabel = 'Workspace explorer'
+  let bodyClass = 'sidebar-body explorer-body'
+
   if (activity === 'control') {
-    return (
-      <aside className="sidebar contextual-sidebar" data-testid="sidebar-control" aria-label="All-node control sidebar">
+    bodyTestId = 'sidebar-control'
+    bodyLabel = 'Control sidebar'
+    bodyClass = 'sidebar-body control-toolbox'
+    body = (
+      <>
         <div className="context-sidebar-head">
           <span className="nav-label">Operate</span>
-          <strong>All-node control</strong>
-          <small>One motion route at a time</small>
+          <strong>Control</strong>
+          <small>TX · keyboard · fake signals</small>
         </div>
-        <div className="context-arm-card">
+
+        <div className="context-arm-card" data-testid="control-tx-card">
           <span className={`status-dot ${benchOn ? 'success' : 'danger'}`} />
           <div>
-            <strong>{benchOn ? 'Bench TX armed' : 'Bench TX off'}</strong>
-            <small>Shared gate for every route</small>
+            <strong>{benchOn ? 'TX armed' : 'TX off'}</strong>
+            <small>Bench TX gate</small>
           </div>
-          <button data-testid="sidebar-bench-toggle" type="button" disabled={busy || !ses?.session_id} onClick={() => void toggleBenchTx()}>
+          <button
+            data-testid="sidebar-bench-toggle"
+            type="button"
+            disabled={busy || !ses?.session_id}
+            onClick={() => void toggleBenchTx()}
+          >
             {benchOn ? 'Disarm' : 'Arm'}
           </button>
         </div>
-        <nav className="context-nav" aria-label="Control routes">
-          <button data-testid="control-route-high" className={controlMethod === 'high' ? 'nav active' : 'nav'} disabled={busy} onClick={() => void selectControlRoute('high')}>
-            <span><strong>High bus</strong><small>Host 0x300 → RT kinematics</small></span>
-          </button>
-          <button data-testid="control-route-low" className={controlMethod === 'low' ? 'nav active' : 'nav'} disabled={busy || fullVehicle} onClick={() => void selectControlRoute('low')}>
-            <span><strong>Low bus</strong><small>Motor + steering + brake</small></span>
-          </button>
-          <button data-testid="control-route-mtr" className={controlMethod === 'mtr' ? 'nav active' : 'nav'} disabled={busy || fullVehicle} onClick={() => void selectControlRoute('mtr')}>
-            <span><strong>MTR direct</strong><small>Motor-only 0x204 on Low</small></span>
-          </button>
-          <button data-testid="control-route-hmi" className={controlMethod === 'hmi' ? 'nav active' : 'nav'} disabled={busy || fullVehicle} onClick={() => void selectControlRoute('hmi')}>
-            <span><strong>HMI</strong><small>Mode and power requests</small></span>
-          </button>
-        </nav>
-        <p className="context-warning">Changing routes stops existing motion streams before selecting the next route.</p>
-      </aside>
-    )
-  }
 
-  if (activity === 'monitor') {
-    const monitorItems = NAV_SECTIONS.flatMap((section) => section.items).filter((item) =>
-      ['live', 'network', 'diagnostics', 'logs', 'dictionary'].includes(item.id),
+        <div className="control-toolbox-block" data-testid="control-keyboard">
+          <p className="nav-label">Keyboard</p>
+          <button
+            type="button"
+            data-testid="sidebar-kb-toggle"
+            className={kbEnabled ? '' : 'secondary'}
+            disabled={busy || fullVehicle || !ses?.session_id}
+            onClick={() => void toggleKeyboard()}
+          >
+            {kbEnabled ? 'Stop keyboard' : 'Start keyboard'}
+          </button>
+          <ul className="controls-legend muted small control-kb-legend">
+            <li>
+              <kbd>W</kbd>/<kbd>↑</kbd> throttle · <kbd>S</kbd>/<kbd>↓</kbd> reverse
+            </li>
+            <li>
+              <kbd>A</kbd>/<kbd>D</kbd> yaw · <kbd>Shift</kbd> brake · <kbd>Space</kbd> ESTOP
+            </li>
+          </ul>
+          {kbEnabled && (
+            <p className="ok-text small" data-testid="sidebar-kb-active">
+              Armed — Host intent on High bus
+            </p>
+          )}
+          {kbSnap && (
+            <dl className="kv compact" data-testid="sidebar-kb-shaped">
+              <dt>Speed</dt>
+              <dd className="mono">{String(kbSnap.shaped_speed_mmps ?? '—')} mm/s</dd>
+              <dt>Yaw</dt>
+              <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s ?? '—')} mrad/s</dd>
+              <dt>Gear</dt>
+              <dd className="mono">
+                {String(kbSnap.gear_label ?? kbSnap.gear ?? '—')}
+              </dd>
+            </dl>
+          )}
+        </div>
+
+        <div className="control-toolbox-block" data-testid="control-fake-signals">
+          <p className="nav-label">Fake signals</p>
+          <div className="context-arm-card compact">
+            <span className={`status-dot ${fakeOn ? 'success' : 'muted'}`} />
+            <div>
+              <strong>{fakeOn ? 'Stimulus on' : 'Stimulus off'}</strong>
+              <small>Zero-speed Host 0x300</small>
+            </div>
+            <button
+              data-testid="sidebar-fake-toggle"
+              type="button"
+              disabled={fakeBusy || busy || fullVehicle || (!fakeOn && !ses?.session_id)}
+              onClick={() => void toggleFakeSignals()}
+            >
+              {fakeOn ? 'Stop' : 'Start'}
+            </button>
+          </div>
+        </div>
+
+        <div className="control-toolbox-actions">
+          <button
+            type="button"
+            className="danger"
+            data-testid="sidebar-stop-all"
+            disabled={busy}
+            onClick={() => void stopAllMotion()}
+          >
+            Stop all motion TX
+          </button>
+        </div>
+
+        {controlNote ? (
+          <p className="control-toolbox-note" data-testid="sidebar-control-note">
+            {controlNote}
+          </p>
+        ) : (
+          <p className="context-warning">
+            Blur or hide the tab releases keyboard. Workspace tabs only in explorer.
+          </p>
+        )}
+      </>
     )
-    return (
-      <aside className="sidebar contextual-sidebar" data-testid="sidebar-monitor" aria-label="CAN monitor sidebar">
+  } else if (activity === 'monitor') {
+    bodyTestId = 'sidebar-monitor'
+    bodyLabel = 'CAN monitor sidebar'
+    bodyClass = 'sidebar-body monitor-sidebar'
+    body = (
+      <>
         <div className="context-sidebar-head">
           <span className="nav-label">Inspect</span>
           <strong>CAN monitor</strong>
-          <small>Live traffic and evidence</small>
+          <small>Live CAN · simplified</small>
         </div>
-        <nav className="context-nav" aria-label="Monitor workspaces">
-          {monitorItems.map((item) => (
-            <button key={item.id} type="button" className={workspace === item.id ? 'nav active' : 'nav'} onClick={() => setWorkspace(item.id)}>
-              {item.icon}<span>{item.label}</span>
+
+        <div className="monitor-live-meta" data-testid="monitor-live-meta">
+          <span className={`status-dot ${streamOk ? 'success' : 'warning'}`} />
+          <div>
+            <strong>{streamLabel}</strong>
+            <small>
+              {liveCompact.length} msg{liveCompact.length === 1 ? '' : 's'} · latest-by-ID
+            </small>
+          </div>
+        </div>
+
+        <div className="monitor-bus-filter" role="group" aria-label="Bus filter">
+          {(['both', 'high', 'low'] as const).map((b) => (
+            <button
+              key={b}
+              type="button"
+              data-testid={`monitor-bus-${b}`}
+              className={busFilter === b ? 'route-chip active' : 'route-chip'}
+              onClick={() => setBusFilter(b)}
+            >
+              {b === 'both' ? 'Both' : b === 'high' ? 'High' : 'Low'}
             </button>
           ))}
+        </div>
+
+        <div className="monitor-live-table-wrap" data-testid="monitor-live-simplified">
+          <table className="monitor-live-table">
+            <thead>
+              <tr>
+                <th>Bus</th>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              {liveCompact.map((m) => {
+                const key = `${m.bus}-${m.can_id}`
+                const fresh = String(m.freshness || '').toLowerCase()
+                return (
+                  <tr key={key} data-fresh={fresh || undefined}>
+                    <td>{m.bus}</td>
+                    <td className="mono">{hexId(m.can_id)}</td>
+                    <td title={m.name ?? undefined}>{m.name || '—'}</td>
+                    <td className="mono muted">{formatAge(m.age_ms)}</td>
+                  </tr>
+                )
+              })}
+              {liveCompact.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    No frames yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </>
+    )
+  } else {
+    body = (
+      <>
+        <nav className="sidebar-nav flex flex-col gap-3 p-3" aria-label="Primary workspaces">
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} className="nav-section">
+              <p className="nav-label">{section.label}</p>
+              {section.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-testid={`nav-${item.id}`}
+                  className={workspace === item.id ? 'nav active' : 'nav'}
+                  onClick={() => setWorkspace(item.id)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          ))}
         </nav>
-      </aside>
+
+        <section className="vehicle-card" aria-labelledby="side-vehicle-title">
+          <div className="vehicle-card-header">
+            <div className="vehicle-card-title">
+              <IconGauge />
+              <div>
+                <strong id="side-vehicle-title">eTrike</strong>
+                <small>Cmd TX · feedback</small>
+              </div>
+            </div>
+            {streamOk ? (
+              <span className="vehicle-live">Live</span>
+            ) : (
+              <span className="vehicle-offline">Offline</span>
+            )}
+          </div>
+          <div className="vehicle-readouts">
+            <div className="vehicle-readout">
+              <span>Speed fbk</span>
+              <strong data-testid="sidebar-speed">{speedText}</strong>
+              <small className="vehicle-cmd" data-testid="sidebar-speed-cmd">
+                {hostTxLive
+                  ? `cmd ${hostCmdSpeedText}`
+                  : rtTxLive
+                    ? `cmd ${rtCmdSpeedText}`
+                    : hostCmd
+                      ? `cmd ${hostCmdSpeedText}`
+                      : rtDriveCmd
+                        ? `cmd ${rtCmdSpeedText}`
+                        : 'cmd —'}
+              </small>
+            </div>
+            <div className="vehicle-readout">
+              <span>Steer fbk</span>
+              <strong data-testid="sidebar-steer">{steerText}</strong>
+              <small className="vehicle-cmd" data-testid="sidebar-steer-cmd">
+                {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw —'}
+              </small>
+            </div>
+          </div>
+          <div className="vehicle-cmd-strip" data-testid="sidebar-cmd-strip">
+            <div className="vehicle-cmd-line" data-testid="sidebar-cmd-high">
+              <span className="vehicle-cmd-tag">TX High</span>
+              <span className="mono">
+                0x300 {hostCmdSpeedText} · yaw {hostCmdYawText} · gear {hostCmdGearText}
+              </span>
+              {hostFresh ? (
+                <span className={`vehicle-cmd-fresh fresh-${hostFresh}`}>{hostFresh}</span>
+              ) : (
+                <span className="vehicle-cmd-fresh muted">—</span>
+              )}
+            </div>
+            <div className="vehicle-cmd-line" data-testid="sidebar-cmd-low">
+              <span className="vehicle-cmd-tag">TX Low</span>
+              <span className="mono">
+                0x204 {rtCmdSpeedText} · gear {rtCmdGearText}
+              </span>
+              {rtFresh ? (
+                <span className={`vehicle-cmd-fresh fresh-${rtFresh}`}>{rtFresh}</span>
+              ) : (
+                <span className="vehicle-cmd-fresh muted">—</span>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <div className="system-card" data-testid="sidebar-system-card">
+          <div className="system-card-row">
+            <span
+              className={`status-dot ${streamOk ? 'success' : quality === 'connecting' ? 'warning' : 'danger'}`}
+            />
+            <div>
+              <strong>{streamLabel}</strong>
+              <small>
+                {profileLabel} · adapter {adapterHealth}
+              </small>
+            </div>
+          </div>
+        </div>
+      </>
     )
   }
 
   return (
-    <aside
-      className="sidebar flex w-[var(--sidebar-w)] shrink-0 flex-col overflow-y-auto border-r border-border bg-surface-2"
-      data-testid="sidebar"
-      aria-label="Primary navigation"
-    >
-      <nav className="sidebar-nav flex flex-col gap-3 p-3" aria-label="Primary workspaces">
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.label} className="nav-section">
-            <p className="nav-label">{section.label}</p>
-            {section.items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                data-testid={`nav-${item.id}`}
-                className={workspace === item.id ? 'nav active' : 'nav'}
-                onClick={() => setWorkspace(item.id)}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </nav>
-
-      <section className="vehicle-card" aria-labelledby="side-vehicle-title">
-        <div className="vehicle-card-header">
-          <div className="vehicle-card-title">
-            <IconGauge />
-            <div>
-              <strong id="side-vehicle-title">eTrike</strong>
-              <small>Cmd TX · feedback</small>
-            </div>
-          </div>
-          {streamOk ? (
-            <span className="vehicle-live">Live</span>
-          ) : (
-            <span className="vehicle-offline">Offline</span>
-          )}
-        </div>
-        <div className="vehicle-readouts">
-          <div className="vehicle-readout">
-            <span>Speed fbk</span>
-            <strong data-testid="sidebar-speed">{speedText}</strong>
-            <small className="vehicle-cmd" data-testid="sidebar-speed-cmd">
-              {hostTxLive
-                ? `cmd ${hostCmdSpeedText}`
-                : rtTxLive
-                  ? `cmd ${rtCmdSpeedText}`
-                  : hostCmd
-                    ? `cmd ${hostCmdSpeedText}`
-                    : rtDriveCmd
-                      ? `cmd ${rtCmdSpeedText}`
-                      : 'cmd —'}
-            </small>
-          </div>
-          <div className="vehicle-readout">
-            <span>Steer fbk</span>
-            <strong data-testid="sidebar-steer">{steerText}</strong>
-            <small className="vehicle-cmd" data-testid="sidebar-steer-cmd">
-              {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw —'}
-            </small>
-          </div>
-        </div>
-        <div className="vehicle-cmd-strip" data-testid="sidebar-cmd-strip">
-          <div className="vehicle-cmd-line" data-testid="sidebar-cmd-high">
-            <span className="vehicle-cmd-tag">TX High</span>
-            <span className="mono">
-              0x300 {hostCmdSpeedText} · yaw {hostCmdYawText} · gear {hostCmdGearText}
-            </span>
-            {hostFresh ? (
-              <span className={`vehicle-cmd-fresh fresh-${hostFresh}`}>{hostFresh}</span>
-            ) : (
-              <span className="vehicle-cmd-fresh muted">—</span>
-            )}
-          </div>
-          <div className="vehicle-cmd-line" data-testid="sidebar-cmd-low">
-            <span className="vehicle-cmd-tag">TX Low</span>
-            <span className="mono">
-              0x204 {rtCmdSpeedText} · gear {rtCmdGearText}
-            </span>
-            {rtFresh ? (
-              <span className={`vehicle-cmd-fresh fresh-${rtFresh}`}>{rtFresh}</span>
-            ) : (
-              <span className="vehicle-cmd-fresh muted">—</span>
-            )}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="vehicle-open-drive"
-          data-testid="sidebar-open-drive"
-          onClick={() => setWorkspace('preview')}
-        >
-          <IconExternalLink />
-          <span>Open Drive console</span>
-        </button>
-      </section>
-
-      <div className="system-card" data-testid="sidebar-system-card">
-        <div className="system-card-row">
-          <span
-            className={`status-dot ${streamOk ? 'success' : quality === 'connecting' ? 'warning' : 'danger'}`}
-          />
-          <div>
-            <strong>{streamLabel}</strong>
-            <small>
-              {profileLabel} · adapter {adapterHealth}
-            </small>
-          </div>
-        </div>
+    <aside className="sidebar" data-testid="sidebar" aria-label="Application sidebar">
+      <ActivityBar />
+      <div className={bodyClass} data-testid={bodyTestId} aria-label={bodyLabel}>
+        {body}
       </div>
     </aside>
   )

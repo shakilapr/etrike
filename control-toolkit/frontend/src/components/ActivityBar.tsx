@@ -8,10 +8,11 @@ const ACTIVITIES: Array<{
   icon: ReactNode
 }> = [
   { id: 'explorer', label: 'Workspace explorer', icon: <IconLayoutGrid /> },
-  { id: 'control', label: 'All-node control', icon: <IconSliders /> },
+  { id: 'control', label: 'Control', icon: <IconSliders /> },
   { id: 'monitor', label: 'CAN monitor', icon: <IconActivity /> },
 ]
 
+/** Horizontal activity switcher — sits at the top of the sidebar. */
 export function ActivityBar() {
   const activity = useAppStore((s) => s.activity)
   const setActivity = useAppStore((s) => s.setActivity)
@@ -27,8 +28,8 @@ export function ActivityBar() {
           title={item.label}
           data-testid={`activity-${item.id}`}
           onClick={() => {
-            // Activity rail only swaps the contextual sidebar — main workspace
-            // stays put until the user picks a nav item (or control route).
+            // Activity icons only swap the contextual sidebar body.
+            // Main workspace changes exclusively via Workspace explorer nav.
             setActivity(item.id)
           }}
         >

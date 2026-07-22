@@ -13,7 +13,6 @@ import { Network } from './components/Network'
 import { Overview } from './components/Overview'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
-import { ActivityBar } from './components/ActivityBar'
 import { Topbar } from './components/Topbar'
 import './App.css'
 
@@ -28,7 +27,6 @@ export default function App() {
     <div className="app flex h-screen flex-col overflow-hidden" data-testid="app">
       <Topbar />
       <div className="body flex min-h-0 flex-1">
-        <ActivityBar />
         <Sidebar />
         <main ref={mainRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
           {workspace === 'overview' && <Overview />}
