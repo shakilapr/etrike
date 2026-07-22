@@ -5,18 +5,16 @@ import { IconActivity, IconLayoutGrid, IconSliders } from './icons'
 const ACTIVITIES: Array<{
   id: Activity
   label: string
-  workspace: 'overview' | 'control' | 'live'
   icon: ReactNode
 }> = [
-  { id: 'explorer', label: 'Workspace explorer', workspace: 'overview', icon: <IconLayoutGrid /> },
-  { id: 'control', label: 'All-node control', workspace: 'control', icon: <IconSliders /> },
-  { id: 'monitor', label: 'CAN monitor', workspace: 'live', icon: <IconActivity /> },
+  { id: 'explorer', label: 'Workspace explorer', icon: <IconLayoutGrid /> },
+  { id: 'control', label: 'All-node control', icon: <IconSliders /> },
+  { id: 'monitor', label: 'CAN monitor', icon: <IconActivity /> },
 ]
 
 export function ActivityBar() {
   const activity = useAppStore((s) => s.activity)
   const setActivity = useAppStore((s) => s.setActivity)
-  const setWorkspace = useAppStore((s) => s.setWorkspace)
 
   return (
     <nav className="activity-bar" aria-label="Activity bar" data-testid="activity-bar">
@@ -29,8 +27,9 @@ export function ActivityBar() {
           title={item.label}
           data-testid={`activity-${item.id}`}
           onClick={() => {
+            // Activity rail only swaps the contextual sidebar — main workspace
+            // stays put until the user picks a nav item (or control route).
             setActivity(item.id)
-            setWorkspace(item.workspace)
           }}
         >
           {item.icon}

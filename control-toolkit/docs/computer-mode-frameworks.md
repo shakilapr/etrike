@@ -174,11 +174,11 @@ UI never opens CAN directly. It calls the **same API** as scripts and CI (`/api/
 
 ```powershell
 # Terminal 1 — backend (opens virtual High+Low by default)
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 python -m uvicorn control_toolkit.main:app --host 127.0.0.1 --port 8001
 
 # Terminal 2 — UI (proxy /api → 8001)
-cd C:\projects\etrike\control-toolkit\frontend
+cd e:\work\etrike\control-toolkit\frontend
 $env:CTK_E2E_API = "http://127.0.0.1:8001"
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
@@ -188,7 +188,7 @@ Then in UI: **Settings → Computer**, or Control **Turn Bench TX on** (creates 
 **API smoke (no UI):**
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 python scripts/dual_bus_api_qa.py --base http://127.0.0.1:8001
 ```
 

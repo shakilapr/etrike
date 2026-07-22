@@ -50,7 +50,7 @@ tools\canalystii-driver\zadig-2.9.exe
 Then run the passive dual-channel open test:
 
 ```powershell
-cd C:\projects\etrike\control-toolkit\backend
+cd e:\work\etrike\control-toolkit\backend
 python scripts\canalyst_preflight.py --open --listen-seconds 3
 ```
 
