@@ -154,7 +154,6 @@ static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
 static uint32_t g_can_tx_ok_low = 0, g_can_tx_ok_high = 0;
 static bool g_can_tx_had_fail_low = false, g_can_tx_had_fail_high = false;
 static uint32_t g_can_tx_consec_fail_low = 0;
-static int64_t g_last_low_recovery_us = 0;
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
     if (!drv) return false;
@@ -184,15 +183,8 @@ static bool send_can_low(can::Frame& fr) {
                  static_cast<unsigned long>(fr.id));
         g_can_tx_had_fail_low = true;
     }
-    // Only recover on true bus-off, and at most every 3 s.
-    // twai_state_t: 0=stopped 1=running 2=bus-off 3=recovering
-    const int64_t now = esp_timer_get_time();
-    if (state == 2 /* bus-off */ && (now - g_last_low_recovery_us) > 3'000'000) {
-        g_last_low_recovery_us = now;
-        ESP_LOGW(TAG, "Low CAN bus-off — soft recovery");
-        drv->recovery();
-        g_can_tx_consec_fail_low = 0;
-    }
+    // Recovery has one owner: monitor_can_bus_off(). TX failures remain
+    // diagnostics and cannot reset the controller.
     return false;
 }
 static bool send_can_high(can::Frame& fr) {

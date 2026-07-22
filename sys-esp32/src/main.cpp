@@ -181,6 +181,16 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     }
 }
 
+// ── CAN recovery supervisor (prio 2) ───────────────────────────────
+// State transitions are latched by the TWAI ISR callback. All control API
+// calls remain here in task context.
+[[noreturn]] static void task_can_control(void*) {
+    while (1) {
+        g_can.service_recovery(esp_timer_get_time());
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
 // ── Dispatch task (prio 4) ────────────────────────────────────────
 
 [[noreturn]] static void task_dispatch(void*) {
@@ -804,10 +814,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::Frame fr;
         if (can::gen::encode_sys_diag_rpt(rpt, fr) == can::gen::CodecStatus::Ok) send_can(fr);
 
-        // CAN bus-off monitoring (architecture §8.10)
-        if (tec > 128)
-            ESP_LOGW(TAG, "CAN error-warning: TEC=%u REC=%u", tec, rec);
-        if (tec >= 255) {
+        // CAN bus-off monitoring is state-driven. TEC/REC are telemetry only.
+        const auto can_health = g_can.health_snapshot();
+        if (can_health.state == can::CanDriver::HealthState::Passive)
+            ESP_LOGW(TAG, "CAN error-passive: TEC=%u REC=%u", tec, rec);
+        if (can_health.state == can::CanDriver::HealthState::BusOff) {
             ESP_LOGE(TAG, "CAN bus-off: TEC=%u REC=%u", tec, rec);
             bus_off_count++;
             if (bus_off_count >= 5) {
@@ -816,13 +827,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 if (can_send_estop()) {
                     send_estop_frame("ESTOP");
                 }
-            }
-            // Debounce: at most once / 3 s (was every diag tick → thrash + stop)
-            static TickType_t last_rec = 0;
-            TickType_t now = xTaskGetTickCount();
-            if ((now - last_rec) > pdMS_TO_TICKS(3000)) {
-                last_rec = now;
-                g_can.recovery();
             }
         } else { bus_off_count = 0; }
 
@@ -849,9 +853,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         message.task_can_tx_ok = task_health & 0x08;
         // can_ok: set only while below the CAN error-passive threshold.
         {
-            uint8_t tec = 0, rec = 0;
-            g_can.get_error_counters(tec, rec);
-            message.can_ok = tec < 128;
+            const auto can_health = g_can.health_snapshot();
+            message.can_ok = can_health.state == can::CanDriver::HealthState::Active
+                          || can_health.state == can::CanDriver::HealthState::Warning;
         }
         can::Frame fr;
         if (can::gen::encode_sys_heartbeat(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
@@ -864,7 +868,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
 static TaskHandle_t h_can_rx, h_safety, h_dispatch, h_mode;
 static TaskHandle_t h_gear, h_brake, h_lights;
-static TaskHandle_t h_indicator, h_power, h_can_tx, h_diag, h_hb;
+static TaskHandle_t h_indicator, h_power, h_can_tx, h_can_control, h_diag, h_hb;
 
 // Put every connected SYS GPIO in a deterministic, non-actuating state before
 // starting CAN or tasks. GPIO reset defaults leave button inputs floating.
@@ -1020,9 +1024,10 @@ extern "C" void app_main() {
     xTaskCreate(task_indicator, "indicator", 2560, nullptr, 2, &h_indicator);
     xTaskCreate(task_power,     "power",     2560, nullptr, 2, &h_power);
     xTaskCreate(task_can_tx,    "can_tx",    3584, nullptr, 2, &h_can_tx);
+    xTaskCreate(task_can_control,"can_ctrl",  2560, nullptr, 2, &h_can_control);
     xTaskCreate(task_diag,      "diag",      3584, nullptr, 1, &h_diag);
     xTaskCreate(task_hb,        "hb",        2560, nullptr, 1, &h_hb);
 
-    ESP_LOGI(TAG, "Ready — 12 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
+    ESP_LOGI(TAG, "Ready — 13 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
     vTaskDelete(nullptr);
 }

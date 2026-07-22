@@ -45,10 +45,13 @@ public:
     // ── Lifecycle ─────────────────────────────────────────────────
 
     bool init();
+    bool recover();
     bool is_initialized() const { return m_initialized.load(std::memory_order_relaxed); }
+    bool is_recovering() const { return m_recovering.load(std::memory_order_acquire); }
     Mode operating_mode() const { return m_mode.load(std::memory_order_relaxed); }
     bool can_transmit() const {
-        return is_initialized() && operating_mode() != Mode::ListenOnly;
+        return is_initialized() && !is_recovering() && !bus_off()
+            && operating_mode() != Mode::ListenOnly;
     }
 
     /// Switch operating mode. Returns false if the chip fails to enter
@@ -64,7 +67,8 @@ public:
 
     void get_error_counters(uint8_t& tec, uint8_t& rec);
     bool bus_off() const { return m_bus_off.load(std::memory_order_relaxed); }
-    void clear_bus_off() { m_bus_off.store(false, std::memory_order_relaxed); }
+    uint32_t recovery_attempts() const { return m_recovery_attempts.load(std::memory_order_relaxed); }
+    uint32_t recovery_failures() const { return m_recovery_failures.load(std::memory_order_relaxed); }
 
     // ── RX overflow telemetry ─────────────────────────────────────
     uint16_t rx_overflow_count() const { return m_rx_overflow_count.load(std::memory_order_relaxed); }
@@ -84,7 +88,8 @@ private:
     void write_reg(uint8_t reg, uint8_t val);
     void modify_reg(uint8_t reg, uint8_t mask, uint8_t val);
     uint8_t read_status();
-    void read_frame_burst(can::Frame& out, uint8_t base_addr);
+    bool read_frame_burst(can::Frame& out, uint8_t base_addr);
+    void log_first_io_after_recovery(bool rx);
 
     // ── MCP2515 register addresses ─────────────────────────────────
 public:
@@ -141,7 +146,7 @@ private:
     // Initialization sub-steps (Part 4)
     bool init_gpio();
     bool init_spi();
-    bool init_mcp2515_regs();
+    bool init_mcp2515_regs(bool cold_boot = true);
 
     Config m_cfg;
     std::atomic<bool> m_initialized{false};
@@ -159,6 +164,12 @@ private:
 
     // ── Bus-off detection (set by ISR via receive path) ───────────
     std::atomic<bool> m_bus_off{false};
+    std::atomic<bool> m_recovering{false};
+    std::atomic<uint32_t> m_recovery_attempts{0};
+    std::atomic<uint32_t> m_recovery_failures{0};
+    std::atomic<int64_t> m_bus_off_started_us{0};
+    std::atomic<bool> m_first_rx_pending{false};
+    std::atomic<bool> m_first_tx_pending{false};
 };
 
 }  // namespace rt

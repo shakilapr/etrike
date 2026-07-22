@@ -3,6 +3,7 @@
 // Architecture.md §7.2: TX=GPIO5, RX=GPIO4, 500 kbit/s.
 
 #include <cstdint>
+#include <atomic>
 #include "esp_twai.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -14,6 +15,15 @@ namespace rt {
 
 class TwaiDriver {
 public:
+    enum class HealthState : uint8_t { Active, Warning, Passive, BusOff };
+    struct HealthSnapshot {
+        HealthState state;
+        uint16_t tec;
+        uint16_t rec;
+        bool recovery_in_progress;
+        uint32_t recovery_attempts;
+        uint32_t last_transition_tick;
+    };
     struct Config {
         int tx_gpio;
         int rx_gpio;
@@ -28,6 +38,9 @@ public:
 
     bool init();
     bool recovery();
+    bool service_recovery(int64_t now_us);
+    bool recovery_needed() const;
+    HealthSnapshot health_snapshot() const;
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
     // Longer default TX wait: bus with peers/noise can need more than 10 ms.
     bool send(const can::Frame& frame, uint32_t timeout_ms = 50);
@@ -54,6 +67,11 @@ private:
     static bool on_tx_done(twai_node_handle_t node,
                            const twai_tx_done_event_data_t* event,
                            void* user_ctx);
+    static bool on_state_change(twai_node_handle_t node,
+                                const twai_state_change_event_data_t* event,
+                                void* user_ctx);
+    static HealthState map_state(twai_error_state_t state);
+    void log_first_io_after_recovery(bool rx);
     void reset_tx_slots();
 
     Config m_config;
@@ -63,6 +81,15 @@ private:
     SemaphoreHandle_t m_control_mutex = nullptr;
     TxSlot m_tx_slots[kTxSlots]{};
     bool m_initialized = false;
+    std::atomic<twai_error_state_t> m_state{TWAI_ERROR_ACTIVE};
+    std::atomic<bool> m_recovery_in_progress{false};
+    std::atomic<bool> m_recovery_completed_pending{false};
+    std::atomic<uint32_t> m_recovery_attempts{0};
+    std::atomic<uint32_t> m_last_transition_tick{0};
+    std::atomic<int64_t> m_last_recovery_attempt_us{0};
+    std::atomic<uint32_t> m_bus_off_started_tick{0};
+    std::atomic<bool> m_first_rx_pending{false};
+    std::atomic<bool> m_first_tx_pending{false};
 };
 
 // Initialize the low-level TWAI CAN bus. Returns true on success.
