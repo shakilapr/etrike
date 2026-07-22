@@ -229,13 +229,10 @@ function formatBytes(hex?: string): string {
 }
 
 /**
- * Per-ECU wire direction (not injectability):
- *  - Output = this ECU is the sender (it publishes the frame)
- *  - Input  = this ECU is a receiver (it consumes the frame)
- * Input and output sets for the same ECU are different messages.
+ * Message dropdown (old model, restored + cleaned up):
+ *  - Filter by bus + optional ECU (sender or receiver)
+ *  - Group options by sender ECU in optgroups
  */
-type EcuDir = 'sends' | 'receives' | 'both'
-
 const ECU_ORDER = [
   'Host',
   'RT',
@@ -274,32 +271,21 @@ function msgReceivers(m: DictMessage): string[] {
     .filter((r) => r && r !== '—')
 }
 
-function ecuSends(m: DictMessage, ecu: string): boolean {
-  return msgSender(m) === ecu
-}
-
-function ecuReceives(m: DictMessage, ecu: string): boolean {
-  return msgReceivers(m).includes(ecu)
-}
-
-/** Does this frame belong on the ECU list under the chosen direction? */
-function matchesEcuDir(m: DictMessage, ecu: string, dir: EcuDir): boolean {
+/** ECU filter: messages this unit sends or receives. */
+function msgTouchesEcu(m: DictMessage, ecu: string): boolean {
   if (ecu === 'all') return true
-  const out = ecuSends(m, ecu)
-  const inn = ecuReceives(m, ecu)
-  if (dir === 'sends') return out
-  if (dir === 'receives') return inn
-  return out || inn
+  if (msgSender(m) === ecu) return true
+  return msgReceivers(m).includes(ecu)
 }
 
 function routeLabel(m: DictMessage): string {
   const from = msgSender(m)
   const to = msgReceivers(m)
-  if (to.length) return `${from} → ${to.join(',')}`
+  if (to.length) return `${from}→${to.join(',')}`
   return from
 }
 
-/** Named inject can build a payload (independent of ECU input/output). */
+/** Named inject can build a wire payload. */
 function canNamedInject(m: DictMessage): boolean {
   const caps = m.capabilities || {}
   if (caps.decodedInjection === true) return true
@@ -311,6 +297,15 @@ function canNamedInject(m: DictMessage): boolean {
   return k === 'ses:vcu_ses_req' || k === 'seb:vcu_seb_req'
 }
 
+/** Compact option text for the message <select>. */
+function messageOptionLabel(m: DictMessage): string {
+  const route = routeLabel(m)
+  const dlc0 = (m.fields || []).length === 0 ? ' · DLC0' : ''
+  const inj = canNamedInject(m) ? '' : ' · no-encode'
+  // ID · name · route
+  return `${m.id}  ${m.name}  · ${route}${dlc0}${inj}`
+}
+
 export function Inject() {
   const status = useAppStore((s) => s.status)
   const setStatus = useAppStore((s) => s.setStatus)
@@ -320,10 +315,7 @@ export function Inject() {
   const [messages, setMessages] = useState<DictMessage[]>([])
   const [mode, setMode] = useState<'named' | 'raw'>('named')
   const [bus, setBus] = useState<'high' | 'low'>('high')
-  /** Which ECU; "all" = every message on the bus. */
   const [ecuFilter, setEcuFilter] = useState<string>('all')
-  /** Relative to selected ECU: frames it sends vs receives (ignored when ECU=all). */
-  const [ecuDir, setEcuDir] = useState<EcuDir>('both')
   const [filter, setFilter] = useState('')
   const [selectedKey, setSelectedKey] = useState('')
   const [values, setValues] = useState<Record<string, FieldValue>>({})
@@ -373,7 +365,7 @@ export function Inject() {
     [messages, bus],
   )
 
-  // Every ECU that appears as sender or receiver on this bus.
+  // ECU list: every sender + receiver on this bus (stable order).
   const ecuOptions = useMemo(() => {
     const set = new Set<string>()
     for (const m of onBus) {
@@ -384,10 +376,11 @@ export function Inject() {
     return [...set].sort((a, b) => ecuRank(a) - ecuRank(b) || a.localeCompare(b))
   }, [onBus])
 
+  // Full catalog on bus, optional ECU touch-filter + text search.
   const busMessages = useMemo(() => {
     const q = filter.trim().toLowerCase()
     return onBus
-      .filter((m) => matchesEcuDir(m, ecuFilter, ecuDir))
+      .filter((m) => msgTouchesEcu(m, ecuFilter))
       .filter((m) => {
         if (!q) return true
         const route = routeLabel(m).toLowerCase()
@@ -399,46 +392,16 @@ export function Inject() {
           msgSender(m).toLowerCase().includes(q)
         )
       })
-      .sort((a, b) => {
-        // When an ECU is selected: its outputs first, then its inputs.
-        if (ecuFilter !== 'all') {
-          const aOut = ecuSends(a, ecuFilter) ? 0 : 1
-          const bOut = ecuSends(b, ecuFilter) ? 0 : 1
-          if (aOut !== bOut) return aOut - bOut
-        } else {
-          const sa = ecuRank(msgSender(a)) - ecuRank(msgSender(b))
-          if (sa !== 0) return sa
-        }
-        return a.can_id - b.can_id || a.name.localeCompare(b.name)
-      })
-  }, [onBus, ecuFilter, ecuDir, filter])
+      .sort(
+        (a, b) =>
+          ecuRank(msgSender(a)) - ecuRank(msgSender(b)) ||
+          a.can_id - b.can_id ||
+          a.name.localeCompare(b.name),
+      )
+  }, [onBus, ecuFilter, filter])
 
-  /**
-   * Message groups for the select:
-   *  - ECU selected → Outputs (sends) / Inputs (receives)
-   *  - All ECUs → group by sender
-   */
-  const messageGroups = useMemo(() => {
-    if (ecuFilter !== 'all') {
-      const outs = busMessages.filter((m) => ecuSends(m, ecuFilter))
-      const inns = busMessages.filter((m) => ecuReceives(m, ecuFilter) && !ecuSends(m, ecuFilter))
-      const groups: Array<{ key: string; label: string; items: DictMessage[] }> = []
-      if (outs.length) {
-        groups.push({
-          key: 'out',
-          label: `Outputs · ${ECU_LABEL[ecuFilter] ?? ecuFilter} sends · ${outs.length}`,
-          items: outs,
-        })
-      }
-      if (inns.length) {
-        groups.push({
-          key: 'in',
-          label: `Inputs · ${ECU_LABEL[ecuFilter] ?? ecuFilter} receives · ${inns.length}`,
-          items: inns,
-        })
-      }
-      return groups
-    }
+  /** Dropdown groups by sender ECU (restored old separation). */
+  const messagesByEcu = useMemo(() => {
     const map = new Map<string, DictMessage[]>()
     for (const m of busMessages) {
       const s = msgSender(m)
@@ -446,14 +409,10 @@ export function Inject() {
       list.push(m)
       map.set(s, list)
     }
-    return [...map.entries()]
-      .sort((a, b) => ecuRank(a[0]) - ecuRank(b[0]) || a[0].localeCompare(b[0]))
-      .map(([sender, items]) => ({
-        key: sender,
-        label: `Sender · ${ECU_LABEL[sender] ?? sender} · ${items.length}`,
-        items,
-      }))
-  }, [busMessages, ecuFilter])
+    return [...map.entries()].sort(
+      (a, b) => ecuRank(a[0]) - ecuRank(b[0]) || a[0].localeCompare(b[0]),
+    )
+  }, [busMessages])
 
   const selected = useMemo(() => {
     return (
@@ -465,13 +424,6 @@ export function Inject() {
   }, [busMessages, selectedKey])
 
   const selectedInjectable = selected ? canNamedInject(selected) : false
-
-  const sendCount =
-    ecuFilter === 'all'
-      ? onBus.length
-      : onBus.filter((m) => ecuSends(m, ecuFilter)).length
-  const recvCount =
-    ecuFilter === 'all' ? 0 : onBus.filter((m) => ecuReceives(m, ecuFilter)).length
 
   // Keep selection valid when filters change
   useEffect(() => {
@@ -490,7 +442,6 @@ export function Inject() {
   const handleBusChange = (newBus: 'high' | 'low') => {
     setBus(newBus)
     setEcuFilter('all')
-    setEcuDir('both')
     const first = messages.find((m) => m.bus === newBus)
     if (first) {
       setSelectedKey(first.canonicalKey)
@@ -500,11 +451,6 @@ export function Inject() {
       setValues({})
     }
     setConfirmEstop(false)
-  }
-
-  const handleEcuChange = (ecu: string) => {
-    setEcuFilter(ecu)
-    setEcuDir('both')
   }
 
   const handleMessageChange = (key: string) => {
@@ -850,60 +796,24 @@ export function Inject() {
                 className="inject-ecu-select"
                 data-testid="inject-ecu-filter"
                 value={ecuFilter}
-                aria-label="ECU"
-                title="Filter by ECU. Outputs = this ECU sends; inputs = this ECU receives."
-                onChange={(e) => handleEcuChange(e.target.value)}
+                aria-label="Filter by ECU"
+                title="Filter messages this ECU sends or receives"
+                onChange={(e) => setEcuFilter(e.target.value)}
               >
                 <option value="all">All ECUs ({onBus.length})</option>
                 {ecuOptions.map((ecu) => {
-                  const nSend = onBus.filter((m) => ecuSends(m, ecu)).length
-                  const nRecv = onBus.filter((m) => ecuReceives(m, ecu)).length
+                  const n = onBus.filter((m) => msgTouchesEcu(m, ecu)).length
                   return (
                     <option key={ecu} value={ecu}>
-                      {ECU_LABEL[ecu] ?? ecu} · out {nSend} / in {nRecv}
+                      {ECU_LABEL[ecu] ?? ecu} ({n})
                     </option>
                   )
                 })}
               </select>
-              <Seg
-                data-testid="inject-ecu-dir"
-                aria-label="Direction relative to selected ECU"
-                title={
-                  ecuFilter === 'all'
-                    ? 'Pick an ECU to filter its outputs vs inputs'
-                    : `Relative to ${ecuFilter}: messages it sends (outputs) vs receives (inputs)`
-                }
-              >
-                <SegButton
-                  active={ecuDir === 'both'}
-                  disabled={ecuFilter === 'all'}
-                  data-testid="inject-ecu-dir-both"
-                  onClick={() => setEcuDir('both')}
-                >
-                  Both
-                  {ecuFilter !== 'all' ? ` (${sendCount + recvCount})` : ''}
-                </SegButton>
-                <SegButton
-                  active={ecuDir === 'sends'}
-                  disabled={ecuFilter === 'all'}
-                  data-testid="inject-ecu-dir-sends"
-                  onClick={() => setEcuDir('sends')}
-                >
-                  Sends{ecuFilter !== 'all' ? ` (${sendCount})` : ''}
-                </SegButton>
-                <SegButton
-                  active={ecuDir === 'receives'}
-                  disabled={ecuFilter === 'all'}
-                  data-testid="inject-ecu-dir-receives"
-                  onClick={() => setEcuDir('receives')}
-                >
-                  Receives{ecuFilter !== 'all' ? ` (${recvCount})` : ''}
-                </SegButton>
-              </Seg>
               <Input
                 className="inject-filter-input h-8 min-h-8 max-w-none"
                 data-testid="inject-filter"
-                placeholder="Filter name / id / route…"
+                placeholder="Filter name / id…"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
@@ -911,38 +821,27 @@ export function Inject() {
                 className="inject-message-select"
                 data-testid="inject-message"
                 value={selected?.canonicalKey ?? ''}
+                size={1}
                 onChange={(e) => handleMessageChange(e.target.value)}
               >
                 {busMessages.length === 0 && (
                   <option value="">
-                    No messages
-                    {ecuFilter !== 'all' ? ` for ${ecuFilter}` : ''} on {bus}
+                    No messages{ecuFilter !== 'all' ? ` for ${ecuFilter}` : ''} on {bus}
                   </option>
                 )}
-                {messageGroups.map((g) => (
-                  <optgroup key={g.key} label={g.label}>
-                    {g.items.map((m) => {
-                      const inj = canNamedInject(m)
-                      const roleNote =
-                        ecuFilter !== 'all'
-                          ? ecuSends(m, ecuFilter)
-                            ? ' · out'
-                            : ' · in'
-                          : ''
-                      return (
-                        <option
-                          key={`${m.bus}-${m.canonicalKey}-${m.can_id}`}
-                          value={m.canonicalKey}
-                        >
-                          {m.id} {m.name}
-                          {' · '}
-                          {routeLabel(m)}
-                          {roleNote}
-                          {(m.fields || []).length === 0 ? ' · DLC0' : ''}
-                          {inj ? '' : ' · no encode'}
-                        </option>
-                      )
-                    })}
+                {messagesByEcu.map(([ecu, group]) => (
+                  <optgroup
+                    key={ecu}
+                    label={`${ECU_LABEL[ecu] ?? ecu} · ${group.length} msg`}
+                  >
+                    {group.map((m) => (
+                      <option
+                        key={`${m.bus}-${m.canonicalKey}-${m.can_id}`}
+                        value={m.canonicalKey}
+                      >
+                        {messageOptionLabel(m)}
+                      </option>
+                    ))}
                   </optgroup>
                 ))}
               </select>
@@ -953,27 +852,14 @@ export function Inject() {
                 <span className="mono">{selected.id}</span>
                 {' · '}
                 <strong>{selected.name}</strong>
-                {' · '}
-                <span className="mono" title="Wire route: sender → receivers">
-                  {routeLabel(selected)}
-                </span>
-                {ecuFilter !== 'all' ? (
+                {' · sender '}
+                <span className="mono">{msgSender(selected)}</span>
+                {msgReceivers(selected).length > 0 ? (
                   <>
-                    {' · for '}
-                    <span className="mono">{ECU_LABEL[ecuFilter] ?? ecuFilter}</span>
-                    {': '}
-                    {ecuSends(selected, ecuFilter) ? (
-                      <span className="tx-text">output (sends)</span>
-                    ) : ecuReceives(selected, ecuFilter) ? (
-                      <span>input (receives)</span>
-                    ) : null}
+                    {' · RX '}
+                    <span className="mono">{msgReceivers(selected).join(', ')}</span>
                   </>
-                ) : (
-                  <>
-                    {' · sender '}
-                    <span className="mono">{msgSender(selected)}</span>
-                  </>
-                )}
+                ) : null}
                 {' · '}
                 {selectedInjectable ? (
                   <span className="tx-text">named inject OK</span>
@@ -983,7 +869,7 @@ export function Inject() {
                   </span>
                 )}
                 {' · '}
-                <span className="mono muted">{busMessages.length} listed</span>
+                <span className="mono muted">{busMessages.length} on list</span>
               </p>
             ) : null}
 
