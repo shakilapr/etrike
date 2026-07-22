@@ -158,3 +158,23 @@ button.seg-btn:focus-visible {
   margin-top: 14px;
 }
 
+/* Changed signal values in message detail */
+.detail-drawer tr.sig-row-changed td {
+  background: var(--primary-soft);
+}
+
+.detail-drawer .sig-value-changed {
+  color: var(--primary);
+  font-weight: 700;
+  animation: sig-value-flash 1.2s ease;
+}
+
+@keyframes sig-value-flash {
+  0% {
+    background: rgba(31, 95, 191, 0.28);
+  }
+  100% {
+    background: transparent;
+  }
+}
+

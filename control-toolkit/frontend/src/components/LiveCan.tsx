@@ -117,6 +117,67 @@ export function LiveCan() {
     (m) => `${m.bus}-${m.can_id}` === selected || m.key === selected,
   )
 
+  /** Stable value string for change detection (eng + enum + raw). */
+  const signalSnapshot = useMemo(() => {
+    if (!detail) return { id: '', values: {} as Record<string, string> }
+    const id = `${detail.bus}-${detail.can_id}`
+    const values: Record<string, string> = {}
+    for (const [k, v] of Object.entries(detail.signals || {})) {
+      values[k] = `${String(v.enum_label ?? '')}|${String(v.engineering_value ?? '')}|${String(v.raw_value ?? '')}`
+    }
+    return { id, values }
+  }, [detail])
+
+  /** Signal keys that changed since the previous update (detail panel highlight). */
+  const [changedSignals, setChangedSignals] = useState<Set<string>>(() => new Set())
+  const prevSnapRef = useRef<{ id: string; values: Record<string, string> }>({
+    id: '',
+    values: {},
+  })
+
+  useEffect(() => {
+    const prev = prevSnapRef.current
+    const { id, values } = signalSnapshot
+
+    // New selection or empty — baseline without flash.
+    if (!id || prev.id !== id) {
+      prevSnapRef.current = { id, values: { ...values } }
+      setChangedSignals(new Set())
+      return
+    }
+
+    const changed = new Set<string>()
+    for (const [k, v] of Object.entries(values)) {
+      if (prev.values[k] !== undefined && prev.values[k] !== v) changed.add(k)
+    }
+    // New signal key while still on the same message
+    for (const k of Object.keys(values)) {
+      if (!(k in prev.values) && Object.keys(prev.values).length > 0) changed.add(k)
+    }
+
+    prevSnapRef.current = { id, values: { ...values } }
+
+    if (changed.size === 0) return
+
+    setChangedSignals(changed)
+    // Hold highlight briefly so rapid updates stay readable.
+    const t = window.setTimeout(() => {
+      setChangedSignals((cur) => {
+        let same = cur.size === changed.size
+        if (same) {
+          for (const k of changed) {
+            if (!cur.has(k)) {
+              same = false
+              break
+            }
+          }
+        }
+        return same ? new Set() : cur
+      })
+    }, 1200)
+    return () => window.clearTimeout(t)
+  }, [signalSnapshot])
+
   async function selectChronoFrame(frame: HistoryFrame) {
     try {
       const decoded = await api.decodeFrame({
@@ -423,7 +484,7 @@ export function LiveCan() {
                 <dd className="mono">{formatAge(detail.age_ms)} ago</dd>
               </dl>
               <h3 className="mt-3.5">Signals</h3>
-              <table className="data-table compact">
+              <table className="data-table compact" data-testid="live-detail-signals">
                 <thead>
                   <tr>
                     <th>Signal</th>
@@ -433,16 +494,34 @@ export function LiveCan() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(detail.signals || {}).map(([k, v]) => (
-                    <tr key={k}>
-                      <td>{k}</td>
-                      <td className="mono">
-                        {String(v.enum_label ?? v.engineering_value ?? '—')}
-                      </td>
-                      <td className="mono muted">{v.raw_value ?? '—'}</td>
-                      <td className="muted">{v.unit ?? ''}</td>
-                    </tr>
-                  ))}
+                  {Object.entries(detail.signals || {}).map(([k, v]) => {
+                    const changed = changedSignals.has(k)
+                    const eng = String(v.enum_label ?? v.engineering_value ?? '—')
+                    return (
+                      <tr
+                        key={k}
+                        className={changed ? 'sig-row-changed' : undefined}
+                        data-changed={changed ? '1' : '0'}
+                      >
+                        <td>{k}</td>
+                        <td
+                          className={cn('mono sig-value', changed && 'sig-value-changed')}
+                          title={changed ? 'Value changed' : undefined}
+                        >
+                          {eng}
+                        </td>
+                        <td
+                          className={cn(
+                            'mono',
+                            changed ? 'sig-value-changed' : 'muted',
+                          )}
+                        >
+                          {v.raw_value ?? '—'}
+                        </td>
+                        <td className="muted">{v.unit ?? ''}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </>
