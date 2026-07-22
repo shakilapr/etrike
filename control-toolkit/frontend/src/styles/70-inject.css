@@ -3,7 +3,7 @@
   margin: 0;
 }
 
-/* Persistent right rail in App body */
+/* Right rail in App body — open on Inject/Control; optional elsewhere */
 .active-tx-rail.inject-rail {
   position: sticky;
   top: 0;
@@ -20,6 +20,64 @@
   border-right: 0;
   overflow: hidden auto;
   z-index: 5;
+  flex-shrink: 0;
+}
+
+/* Collapsed strip (Overview, Live, …) — expand on demand */
+.active-tx-rail.inject-rail.is-collapsed {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  padding: 8px 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.active-tx-collapsed-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.active-tx-collapsed-btn:hover,
+.active-tx-collapsed-btn:focus {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 0;
+}
+
+.active-tx-collapsed-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.active-tx-collapsed-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.inject-rail-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .inject-rail-note {
@@ -31,9 +89,29 @@
   white-space: nowrap;
 }
 
+/* Primary workspaces keep full rail; optional expand still available on narrow */
 @media (max-width: 1100px) {
-  .active-tx-rail.inject-rail {
-    display: none;
+  .active-tx-rail.inject-rail.is-primary {
+    /* keep usable on inject/control even when narrow */
+    width: 220px;
+    min-width: 200px;
+  }
+
+  .active-tx-rail.inject-rail.is-optional {
+    /* optional full panel may crowd — collapse strip preferred under 900 */
+  }
+}
+
+@media (max-width: 900px) {
+  .active-tx-rail.inject-rail.is-optional:not(.is-collapsed) {
+    position: fixed;
+    right: 0;
+    top: var(--topbar-h);
+    bottom: 0;
+    width: min(280px, 85vw);
+    max-width: 300px;
+    box-shadow: -4px 0 16px rgba(27, 31, 35, 0.08);
+    z-index: 40;
   }
 }
 

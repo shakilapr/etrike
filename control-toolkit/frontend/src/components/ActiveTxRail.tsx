@@ -1,9 +1,9 @@
 /**
- * Global Active TX rail — host-side CAN output we control (inject / control / analysis).
- * Mounted once in App so it survives workspace tab changes.
+ * Active TX rail — host-side CAN output (inject / control / analysis).
+ * Always open on Inject + Control. Other workspaces: collapsed strip, optional expand.
  * Visual: blue (host TX), not green (ECU RX live).
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   hostTxKeySet,
   jobCanIdText,
@@ -12,9 +12,14 @@ import {
   type PausedJob,
 } from '../lib/activeTx'
 import { useActiveTxStore } from '../lib/activeTxStore'
+import { useAppStore, type Workspace } from '../store'
 import { BusChip, StatusDot } from './ui'
 
+/** Workspaces where Active TX is a primary panel (always expanded). */
+const ALWAYS_OPEN: ReadonlySet<Workspace> = new Set(['inject', 'control'])
+
 export function ActiveTxRail() {
+  const workspace = useAppStore((s) => s.workspace)
   const jobs = useActiveTxStore((s) => s.jobs)
   const paused = useActiveTxStore((s) => s.paused)
   const catalog = useActiveTxStore((s) => s.catalog)
@@ -30,6 +35,11 @@ export function ActiveTxRail() {
   const removePaused = useActiveTxStore((s) => s.removePaused)
   const stopAll = useActiveTxStore((s) => s.stopAll)
 
+  /** Manual expand on non-inject/control workspaces only. */
+  const [optionalOpen, setOptionalOpen] = useState(false)
+  const primary = ALWAYS_OPEN.has(workspace)
+  const open = primary || optionalOpen
+
   useEffect(() => {
     void loadCatalog()
     void refreshJobs()
@@ -37,14 +47,52 @@ export function ActiveTxRail() {
     return () => window.clearInterval(timer)
   }, [loadCatalog, refreshJobs])
 
+  // Leaving Inject/Control collapses the optional panel again.
+  useEffect(() => {
+    if (!primary) setOptionalOpen(false)
+  }, [workspace, primary])
+
   const railCount = jobs.length + paused.length
-  // Publish host key set for other monitors via data attribute is overkill;
-  // consumers read jobs from the same store.
+
+  // Collapsed strip on Overview / Live / … — still polls jobs for host-TX coloring.
+  if (!open) {
+    return (
+      <aside
+        className="active-tx-rail inject-rail is-collapsed"
+        data-testid="inject-side-manager"
+        data-rail-open="0"
+        aria-label="Active host TX (collapsed)"
+      >
+        <button
+          type="button"
+          className="active-tx-collapsed-btn"
+          data-testid="active-tx-expand"
+          title={
+            railCount > 0
+              ? `Expand Active TX · ${railCount} job(s)`
+              : 'Expand Active TX'
+          }
+          aria-expanded={false}
+          onClick={() => setOptionalOpen(true)}
+        >
+          <StatusDot
+            tone={railCount > 0 ? 'tx' : 'muted'}
+            title={railCount > 0 ? 'Host TX active' : 'No host TX'}
+          />
+          <span className="active-tx-collapsed-label">TX</span>
+          <span className="mono active-tx-collapsed-count" data-testid="inject-active-count">
+            {railCount}
+          </span>
+        </button>
+      </aside>
+    )
+  }
 
   return (
     <aside
-      className="active-tx-rail inject-rail"
+      className={`active-tx-rail inject-rail${primary ? ' is-primary' : ' is-optional'}`}
       data-testid="inject-side-manager"
+      data-rail-open="1"
       aria-label="Active host TX"
     >
       <div className="inject-rail-head" data-testid="inject-active-jobs">
@@ -54,19 +102,34 @@ export function ActiveTxRail() {
             {railCount}
           </span>
         </div>
-        {railCount > 0 && (
-          <button
-            type="button"
-            className="inject-icon-btn"
-            disabled={busy}
-            data-testid="inject-stop-all"
-            title="Remove all TX"
-            aria-label="Remove all TX"
-            onClick={() => void stopAll()}
-          >
-            ×
-          </button>
-        )}
+        <div className="inject-rail-head-actions">
+          {railCount > 0 && (
+            <button
+              type="button"
+              className="inject-icon-btn"
+              disabled={busy}
+              data-testid="inject-stop-all"
+              title="Remove all TX"
+              aria-label="Remove all TX"
+              onClick={() => void stopAll()}
+            >
+              ×
+            </button>
+          )}
+          {!primary && (
+            <button
+              type="button"
+              className="inject-icon-btn"
+              data-testid="active-tx-collapse"
+              title="Collapse Active TX"
+              aria-label="Collapse Active TX"
+              aria-expanded={true}
+              onClick={() => setOptionalOpen(false)}
+            >
+              ›
+            </button>
+          )}
+        </div>
       </div>
 
       {railCount === 0 ? (

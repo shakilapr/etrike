@@ -44,7 +44,7 @@ export default function App() {
           {workspace === 'settings' && <Settings />}
           {workspace === 'ui-kit' && <UiKit />}
         </main>
-        {/* Host TX rail — shared across all workspaces (Inject, Control, Live, …). */}
+        {/* Active TX: always open on Inject/Control; collapsed strip elsewhere. */}
         <ActiveTxRail />
       </div>
     </div>
