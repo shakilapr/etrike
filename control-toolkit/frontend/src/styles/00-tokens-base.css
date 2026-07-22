@@ -1,0 +1,163 @@
+/**
+ * Visual design from control-ui/frontend (light engineering palette).
+ * Structure stays control-toolkit: topbar + left nav + main workspaces.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  color-scheme: light;
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --surface-subtle: #f9fafb;
+  --surface-2: #f1f4f7;
+  --text: #1b1f23;
+  --text-secondary: #5b6573;
+  --text-tertiary: #7a8491;
+  --border: #d8dee5;
+  --border-strong: #b7c0ca;
+  --primary: #1f5fbf;
+  --primary-hover: #174e9d;
+  --primary-soft: #eaf2ff;
+  --success: #21845a;
+  --success-soft: #eaf6f0;
+  --warning: #9a6700;
+  --warning-soft: #fff7e0;
+  --danger: #ba2d36;
+  --danger-soft: #fff0f1;
+  --info: #315d9c;
+  --info-soft: #edf3fb;
+
+  /* Aliases used by existing class names */
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --muted: var(--text-secondary);
+  --accent: var(--primary);
+  --accent-hover: var(--primary-hover);
+  --accent-dim: var(--primary-soft);
+  --accent-muted: var(--primary-soft);
+  --live: var(--success);
+  --late: var(--warning);
+  --missing: #8b949e;
+  --invalid: var(--danger);
+
+  --sidebar-w: 252px;
+  /* Compact 2-row health bar; layout budget for full-height panes */
+  --topbar-h: 96px;
+
+  /*
+   * Density scale (single source of truth).
+   * Default control = 32px. Dense = 28px. Do not invent other heights.
+   */
+  --control-h: 32px;
+  --control-h-dense: 28px;
+  --control-h-lg: 32px; /* alias — no third size */
+
+  --font-size-body: 13px;
+  --font-size-ui: 12px;
+  --font-size-label: 11px;
+  --font-size-meta: 10.5px;
+  --font-size-title: 18px;
+  --font-size-section: 13px;
+
+  --radius: 5px;
+  --radius-input: 4px;
+  --panel-pad: 12px 14px;
+  --page-pad: 16px 18px;
+  --shadow-sm: 0 1px 3px rgba(27, 31, 35, 0.06);
+  --transition: 140ms ease;
+  --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  font-family: var(--font-ui);
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  font-feature-settings: 'tnum' 1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  box-sizing: border-box;
+  /* Kill UA inset/outset press chrome that reflows layout on :active */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Default form controls — one height with action buttons */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+select,
+textarea {
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  padding: 0 10px;
+  font-size: var(--font-size-ui);
+  font-weight: 500;
+  line-height: 1.2;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--text);
+}
+
+textarea {
+  height: auto;
+  max-height: none;
+  min-height: 72px;
+  padding: 8px 10px;
+}
+
+.field-label {
+  font-size: var(--font-size-label) !important;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+/*
+ * Global geometry lock: hover / focus / active / selected must only change
+ * color, background, border-color, and box-shadow — never padding, border
+ * width, font-weight, font-size, line-height, or transform scale.
+ */
+button:hover,
+button:focus,
+button:active,
+button.active {
+  transform: none !important;
+}
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+

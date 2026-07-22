@@ -1,0 +1,1290 @@
+/* ── Dictionary (compact expandable message table) ──────────────── */
+
+.dict-workspace {
+  max-width: none;
+  padding: 12px 14px 20px;
+}
+
+.dict-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dict-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - var(--topbar-h) - 160px);
+}
+
+.dict-msg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dict-msg-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.dict-msg-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  vertical-align: middle;
+  color: var(--text);
+}
+
+.dict-col-exp {
+  width: 28px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.dict-msg-row {
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.dict-msg-row:hover {
+  background: #f8fafc;
+}
+
+.dict-msg-row.open {
+  background: var(--primary-soft);
+}
+
+.dict-msg-row.open td {
+  border-bottom-color: transparent;
+}
+
+.dict-msg-expand-row td {
+  padding: 0 10px 12px 28px;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+}
+
+.dict-expand-body {
+  padding: 4px 0 2px;
+}
+
+.dict-bus-pill {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.dict-bus-pill.high {
+  background: var(--primary-soft);
+  border-color: #c5d7f5;
+  color: var(--primary);
+}
+
+.dict-bus-pill.low {
+  background: var(--warning-soft);
+  border-color: #f0d48a;
+  color: var(--warning);
+}
+
+.dict-signal-table {
+  min-width: 900px;
+}
+
+.dictionary-summary .muted {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.dict-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dict-toolbar .toolbar-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.dict-toolbar .toolbar-main > button,
+.dict-toolbar .dictionary-count {
+  flex-shrink: 0;
+}
+
+.dict-toolbar .dictionary-search {
+  flex: 1 1 180px;
+  min-width: 140px;
+  max-width: 440px;
+}
+
+.dictionary-title {
+  display: grid;
+  gap: 2px;
+  min-width: max-content;
+}
+
+.dictionary-title h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.dictionary-title span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bus-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.dictionary-search {
+  max-width: 440px;
+  min-width: 200px;
+  flex: 1;
+}
+
+.dictionary-count,
+.dictionary-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+}
+
+.dictionary-count span,
+.dictionary-summary span {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 650;
+  min-height: 28px;
+  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dictionary-summary {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+}
+
+.dict-err {
+  margin: 10px 14px 0;
+}
+
+.dictionary-reference {
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - var(--topbar-h) - 180px);
+  overflow: auto;
+  padding: 14px;
+}
+
+.empty-state {
+  color: var(--text-tertiary);
+  padding: 18px 12px;
+}
+
+/* Message card (debug-tool) */
+.message-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden; /* contain children; bit grid scrolls inside .byte-grid-scroll */
+}
+
+.message-card.is-dictionary .message-head {
+  background: #f5f7f9;
+  border-bottom: 1px solid var(--border);
+  margin: -12px -12px 0;
+  padding: 10px 12px;
+}
+
+.message-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+}
+
+.message-id,
+.message-bus {
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.message-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.badge {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  font-size: 10.5px;
+  font-weight: 750;
+  line-height: 1.2;
+  min-height: 24px;
+  align-items: center;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.badge.sender {
+  border-color: #9bb9e8;
+  color: #174a88;
+}
+
+.badge.receiver {
+  border-color: #c5e4d2;
+  color: var(--success);
+}
+
+.badge.source {
+  border-color: #9bb9e8;
+  color: var(--primary);
+}
+
+.route-map {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.route-node {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
+.route-node.tx {
+  border-color: #9bb9e8;
+  color: #174a88;
+}
+
+.route-node.rx {
+  border-color: #c5e4d2;
+  color: var(--success);
+}
+
+.route-arrow {
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-weight: 800;
+}
+
+.route-receivers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.message-comment {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.dictionary-detail {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+/* Bit grid (debug-tool column-per-byte) */
+.dict-bitgrid .bit-grid-head {
+  align-items: flex-start;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.dict-bitgrid .bit-grid-head span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.dict-bitgrid .bit-grid-head em {
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+  flex-shrink: 0;
+}
+
+.bit-grid-help {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-transform: none;
+  font-weight: 450;
+}
+
+.bit-grid-help strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.bit-row-caption {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  margin: 0 0 6px;
+  letter-spacing: 0.02em;
+}
+
+/* Horizontal scroll when DLC is wide; avoids bit-cells clipped by .panel overflow */
+.byte-grid-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.byte-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  row-gap: 12px;
+  padding: 6px 0 2px;
+  min-width: min-content;
+}
+
+.byte-col {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+
+.byte-label {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.bit-row {
+  display: flex;
+  gap: 3px;
+  /* allow ring box-shadow without clipping; isolation for z-index stacks */
+  position: relative;
+  z-index: 0;
+  padding: 2px; /* room for 3px focus ring without overlapping sibling hit targets as badly */
+  margin: -2px;
+}
+
+/* Signal meaning cards (color → plain language) */
+.bit-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+
+button.bit-legend-card,
+.bit-legend-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  /* Reserve left accent rail so hover does not reflow text */
+  box-shadow: inset 3px 0 0 transparent;
+  cursor: default;
+  transform: none;
+  font-weight: 450;
+}
+
+button.bit-legend-card {
+  cursor: pointer;
+}
+
+button.bit-legend-card:hover:not(:disabled),
+button.bit-legend-card:focus:not(:disabled),
+button.bit-legend-card.active,
+button.bit-legend-card:active:not(:disabled) {
+  border-color: var(--bit-color, var(--primary));
+  background: color-mix(in srgb, var(--bit-color, var(--primary)) 10%, #fff);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--bit-color, var(--primary));
+  transform: none;
+  padding: 9px 10px;
+  min-height: 0;
+  font-weight: 450;
+}
+
+.bit-legend-card.unused {
+  color: var(--text-secondary);
+  cursor: default;
+  background: var(--surface-subtle);
+}
+
+.bit-legend-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.bit-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--bit-color, var(--primary));
+  border: 1px solid color-mix(in srgb, var(--bit-color, var(--primary)) 55%, #000);
+  flex-shrink: 0;
+}
+
+.bit-legend-swatch.unused-swatch,
+.unused-swatch {
+  background: repeating-linear-gradient(
+    -45deg,
+    #f0f3f6,
+    #f0f3f6 2px,
+    #d5dbe3 2px,
+    #d5dbe3 4px
+  );
+  border: 1px dashed #9aa5b1;
+}
+
+.bit-legend-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--bit-color, var(--primary));
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.bit-legend-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.bit-legend-key {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.bit-legend-meaning {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.35;
+  font-weight: 450;
+}
+
+.bit-legend-meta {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 550;
+  margin-left: auto;
+}
+
+button.bit-cell,
+button.bit-cell:hover:not(:disabled),
+button.bit-cell:focus:not(:disabled),
+button.bit-cell:active:not(:disabled) {
+  align-items: center;
+  background: #eef1f4;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  height: 20px;
+  width: 20px;
+  min-height: 20px;
+  max-height: 20px;
+  min-width: 20px;
+  max-width: 20px;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  font: inherit;
+  position: relative;
+  /* Never scale — causes expand + overlap with neighbors */
+  transform: none;
+  transition: opacity 120ms ease, box-shadow 120ms ease, filter 120ms ease, background 120ms ease;
+}
+
+button.bit-cell.wide,
+button.bit-cell.wide:hover:not(:disabled),
+button.bit-cell.wide:focus:not(:disabled),
+button.bit-cell.wide:active:not(:disabled) {
+  height: 18px;
+  width: 18px;
+  min-height: 18px;
+  max-height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  transform: none;
+}
+
+button.bit-cell span {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Unmapped bits: hatch + bit index — clearly not a signal */
+button.bit-cell.empty,
+button.bit-cell.empty:hover:not(:disabled),
+button.bit-cell.empty:focus:not(:disabled) {
+  background: repeating-linear-gradient(
+    -45deg,
+    #f7f8fa,
+    #f7f8fa 2px,
+    #e4e9ef 2px,
+    #e4e9ef 4px
+  );
+  border: 1px dashed #a8b2bd;
+  color: #7a8491;
+  font-weight: 650;
+}
+
+button.bit-cell.empty:hover:not(:disabled),
+button.bit-cell.empty:focus-visible {
+  border-color: #7a8491;
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px #7a8491;
+  z-index: 1;
+}
+
+/* Mapped signals: solid saturated color (not washed-out blue pastel) */
+button.bit-cell.filled {
+  background: var(--bit-color, var(--primary));
+  border: 1px solid color-mix(in srgb, var(--bit-color, var(--primary)) 55%, #000);
+  color: #fff;
+  font-weight: 800;
+}
+
+button.bit-cell.filled.field-start span,
+button.bit-cell.filled.field-end span,
+button.bit-cell.filled.field-flag span {
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
+button.bit-cell.filled.dimmed {
+  opacity: 0.28;
+  filter: grayscale(0.15);
+}
+
+/* Highlight without layout growth — ring is pure box-shadow (out of flow) */
+button.bit-cell.highlight,
+button.bit-cell.filled:hover:not(:disabled),
+button.bit-cell.filled:focus-visible,
+button.bit-cell.filled:active:not(:disabled) {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3px var(--bit-color, var(--text));
+  z-index: 2;
+  outline: none;
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+
+.bit-inspector {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  margin-top: 10px;
+  min-height: 72px;
+  padding: 12px 14px;
+}
+
+/* Reserved height so hover never reflows the card (short: meaning + wire only) */
+.bit-inspector-fixed {
+  min-height: 88px;
+  height: 88px;
+  max-height: 88px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.bit-inspector-fixed .bit-inspector-body {
+  height: 100%;
+  overflow: hidden;
+}
+
+.bit-inspector-fixed .bit-inspector-meaning {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bit-inspector-cell {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  align-self: center;
+}
+
+.dict-sig-expand td {
+  padding: 0 10px 14px !important;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--border);
+  /* expand cell is full-width doc, not a data grid cell */
+  display: table-cell !important;
+  width: auto !important;
+}
+
+.dict-sig-expand td::before {
+  content: none !important;
+  display: none !important;
+}
+
+.dict-sig-expand-body {
+  border: 1px solid color-mix(in srgb, var(--bit-color, var(--primary)) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bit-color, var(--primary)) 8%, #fff);
+  box-shadow: inset 3px 0 0 var(--bit-color, var(--primary));
+  padding: 14px 16px;
+  margin-top: 2px;
+  max-width: 720px;
+}
+
+.dict-sig-expand-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.dict-sig-expand-head strong {
+  font-size: 14px;
+  font-weight: 750;
+}
+
+/* Vertical document stack — do NOT reuse .bit-inspector-kv multi-column grid */
+.dict-sig-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+}
+
+.dict-sig-block h4 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.dict-sig-block p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.dict-sig-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 16px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.dict-sig-examples {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.55;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.dict-sig-examples li {
+  margin: 0 0 3px;
+}
+
+button.dict-exp-btn,
+button.dict-exp-btn:hover:not(:disabled),
+button.dict-exp-btn:focus:not(:disabled),
+button.dict-exp-btn:active:not(:disabled) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+}
+
+button.dict-exp-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.signal-table tr.row-open {
+  background: var(--primary-soft);
+}
+
+.signal-table tbody tr:not(.dict-sig-expand) {
+  cursor: pointer;
+}
+
+.signal-table tbody tr.dict-sig-expand {
+  cursor: default;
+}
+
+.bit-inspector[data-active='1'] {
+  background: color-mix(in srgb, var(--bit-color, var(--primary)) 10%, #fff);
+  border-color: color-mix(in srgb, var(--bit-color, var(--primary)) 45%, var(--border));
+  box-shadow: inset 3px 0 0 var(--bit-color, var(--primary));
+}
+
+.bit-inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bit-inspector-body.idle strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bit-inspector-body.idle p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+  max-width: 70ch;
+}
+
+.bit-inspector-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.bit-inspector-swatch {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 3px;
+  background: var(--bit-color, var(--primary));
+  border: 1px solid color-mix(in srgb, var(--bit-color, var(--primary)) 50%, #000);
+  flex-shrink: 0;
+}
+
+.bit-inspector-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+.bit-inspector-key {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.bit-inspector-meaning {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.bit-inspector-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.bit-inspector-kv div {
+  min-width: 0;
+}
+
+.bit-inspector-kv dt {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.bit-inspector-kv dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.bit-inspector-hint {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.bit-inspector-hint strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.sig-name-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  vertical-align: middle;
+}
+
+.sig-name-stack strong {
+  font-size: 12.5px;
+}
+
+.sig-key {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.sig-meaning-cell {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.signal-table tr {
+  cursor: default;
+}
+
+.bit-empty,
+.signal-empty {
+  background: var(--surface-subtle);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 12px;
+}
+
+/* Signal table (debug-tool columns) */
+.signal-table-wrap {
+  overflow-x: auto;
+}
+
+.signal-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 1120px;
+  width: 100%;
+}
+
+.signal-table th,
+.signal-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.signal-table th {
+  background: var(--surface-subtle);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.signal-table tr.highlight td {
+  background: var(--primary-soft);
+}
+
+.signal-table td {
+  color: var(--text);
+}
+
+.sig-color {
+  background: var(--primary);
+  border-radius: 2px;
+  display: inline-block;
+  height: 10px;
+  margin-right: 7px;
+  vertical-align: middle;
+  width: 10px;
+}
+
+.evidence-frames {
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .dictionary-reference {
+    max-height: none;
+    padding: 10px;
+  }
+
+  .signal-table {
+    min-width: 0;
+  }
+
+  .signal-table thead {
+    display: none;
+  }
+
+  .signal-table,
+  .signal-table tbody,
+  .signal-table tr,
+  .signal-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .signal-table tr:not(.dict-sig-expand) {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+
+  .signal-table tr:not(.dict-sig-expand) td {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .signal-table tr:not(.dict-sig-expand) td::before {
+    color: var(--text-tertiary);
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 750;
+    text-transform: uppercase;
+  }
+
+  .signal-table tr.dict-sig-expand {
+    border: none;
+    margin: 0 0 12px;
+    overflow: visible;
+  }
+
+  .signal-table tr.dict-sig-expand td {
+    display: block;
+    padding: 0 0 8px !important;
+  }
+
+  .dict-sig-expand-body {
+    max-width: none;
+  }
+}
+
+.profile-list {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface);
+}
+
+.profile-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+
+/* Transport mode: Computer (virtual) vs Real (CANalyst-II) */
+.transport-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+button.transport-btn,
+button.transport-btn:hover:not(:disabled),
+button.transport-btn:focus:not(:disabled),
+button.transport-btn:active:not(:disabled),
+button.transport-btn.active,
+button.transport-btn.active:hover:not(:disabled),
+button.transport-btn.active:active:not(:disabled) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 64px;
+  height: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-width: 1px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  text-align: left;
+  box-shadow: inset 3px 0 0 transparent;
+  transform: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition),
+    box-shadow var(--transition);
+}
+
+button.transport-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  color: var(--text);
+  border-color: #9bb9e8;
+  border-width: 1px;
+}
+
+button.transport-btn.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  border-width: 1px;
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--primary);
+  padding: 12px 14px;
+  font-weight: 500;
+}
+
+button.transport-btn.active.real {
+  background: color-mix(in srgb, var(--warning) 10%, #fff);
+  border-color: #e0b84a;
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+button.transport-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.transport-btn-title {
+  font-size: 15px;
+  font-weight: 750;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.transport-btn-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.transport-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .transport-cards,
+  .transport-toggle {
+    grid-template-columns: 1fr;
+  }
+}
+
+.transport-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface-subtle);
+}
+
+.transport-card.active {
+  background: var(--surface);
+  border-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.transport-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.transport-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.transport-bullets {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.transport-bullets li {
+  margin-bottom: 3px;
+}
+
+.ok-text {
+  color: var(--success);
+  font-weight: 650;
+}
+
+/* Settings: multi-section layout driven by GET /settings */
+.settings-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.settings-channel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.settings-channel-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface-subtle);
+}
+
+@media (max-width: 900px) {
+  .settings-grid-2,
+  .settings-channel-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chip.tiny {
+  font-size: 10px;
+  min-height: 20px;
+  padding: 1px 7px;
+}
+
+.setup-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.setup-list li {
+  margin-bottom: 6px;
+}
+

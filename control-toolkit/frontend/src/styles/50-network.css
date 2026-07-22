@@ -1,0 +1,110 @@
+/* ── Network ─────────────────────────────────────────────────────── */
+
+.bus-health {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.health-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.kv dt {
+  color: var(--text-tertiary);
+  margin: 0;
+  font-weight: 500;
+}
+
+.kv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.topology {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+.bus-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.bus-label {
+  width: 48px;
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bus-line {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  min-height: 88px;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.bus-bridge {
+  text-align: center;
+  font-size: 12px;
+  padding: 4px 0;
+  color: var(--text-secondary);
+}
+
+.topo-node {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  min-width: 100px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.topo-node.liveness-live {
+  border-color: #9dceb4;
+}
+
+.topo-node.liveness-late {
+  border-color: #e8c96a;
+}
+
+.topo-node.liveness-fault {
+  border-color: #e4aeb2;
+}
+
+.topo-name {
+  font-weight: 650;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+

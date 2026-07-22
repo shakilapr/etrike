@@ -1,0 +1,109 @@
+/* ── Control toolbox (activity sidebar) — dense controls ─────────── */
+.control-toolbox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.control-toolbox-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.control-toolbox-block .nav-label {
+  margin: 0 2px;
+}
+
+.control-route-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.route-chip {
+  min-height: var(--control-h);
+  height: var(--control-h);
+  max-height: var(--control-h);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-secondary);
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.route-chip:hover:not(:disabled),
+.route-chip:focus-visible:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.route-chip.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.route-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.control-toolbox-hint {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  line-height: 1.35;
+  padding: 0 2px;
+}
+
+.control-toolbox-block > button {
+  width: 100%;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.control-kb-legend {
+  margin: 4px 0 0;
+  padding-left: 14px;
+  line-height: 1.45;
+}
+
+.control-toolbox-block .kv.compact {
+  margin-top: 6px;
+}
+
+.monitor-bus-filter {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.context-arm-card.compact {
+  padding: 7px 8px;
+}
+
+.control-toolbox-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.control-toolbox-actions button {
+  width: 100%;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.control-toolbox-note {
+  margin: auto 4px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+

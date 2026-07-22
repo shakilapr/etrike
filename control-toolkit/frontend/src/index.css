@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 /*
- * Map design tokens from App.css :root so Tailwind utilities can use them
- * (e.g. bg-surface, text-muted, border-border, font-mono).
- * Full migration off App.css is gradual — both systems coexist.
+ * Map design tokens from styles/00-tokens-base.css (:root) for Tailwind
+ * (bg-surface, text-text, border-border, font-mono, …).
+ * Page CSS lives under src/styles/*; App.css only imports those modules.
  */
 @theme {
   --color-bg: #f5f7f9;

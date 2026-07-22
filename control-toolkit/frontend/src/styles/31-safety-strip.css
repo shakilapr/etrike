@@ -1,0 +1,93 @@
+/* ── Safety / metric strip ───────────────────────────────────────── */
+
+.safety-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+  gap: 0;
+  margin-bottom: 0;
+}
+
+.strip-item {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 64px;
+  justify-content: flex-start;
+}
+
+.strip-item:last-child {
+  border-right: none;
+}
+
+.strip-item.ok .strip-v {
+  color: var(--success);
+}
+
+.strip-item.hazard {
+  background: var(--danger-soft);
+}
+
+.strip-item.hazard .strip-v {
+  color: var(--danger);
+}
+
+.strip-item.health-healthy .strip-v {
+  color: var(--success);
+}
+
+.strip-item.health-degraded .strip-v {
+  color: var(--warning);
+}
+
+.strip-item.health-lost .strip-v {
+  color: var(--danger);
+}
+
+.strip-k {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.strip-v {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Req/Conf lines — compact single block, not paired with a second chip */
+.strip-v-detail {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.strip-sep {
+  margin: 0 4px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.strip-item .meter-bar {
+  margin-top: 2px;
+}
+
+/* Status pill is the primary value in the strip (no duplicate .strip-v) */
+.strip-item > .status-pill {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 4px 10px;
+}
+
