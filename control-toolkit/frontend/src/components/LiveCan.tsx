@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { api } from '../api'
 import { isHostTxFrame } from '../lib/activeTx'
-import { formatAge, hexId } from '../lib/format'
+import { ageTone, formatAge, hexId } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store'
 import { useHostTxKeys } from './ActiveTxRail'
@@ -262,7 +262,17 @@ export function LiveCan() {
                         {m.expected_rate_hz != null ? ` / ${m.expected_rate_hz}` : ''}
                       </td>
                       <td>{m.validation_status}</td>
-                      <td className="mono muted age-cell min-w-[72px] whitespace-nowrap">
+                      <td
+                        className={cn(
+                          'mono age-cell min-w-[72px] whitespace-nowrap',
+                          `age-tone-${ageTone(m.age_ms, m.expected_rate_hz)}`,
+                        )}
+                        title={
+                          m.expected_rate_hz != null && m.expected_rate_hz > 0
+                            ? `Age vs expected period ${Math.round(1000 / m.expected_rate_hz)} ms (1× orange · 2× red)`
+                            : 'No expected rate — age uncolored'
+                        }
+                      >
                         {formatAge(m.age_ms)}
                       </td>
                       <td className="signals-cell">{Object.entries(m.signals || {})

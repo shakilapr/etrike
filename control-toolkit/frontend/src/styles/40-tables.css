@@ -79,6 +79,28 @@
   font-weight: 600;
 }
 
+/* Live CAN age column only — vs expected cycle period */
+.can-table td.age-cell.age-tone-ok {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.can-table td.age-cell.age-tone-late {
+  /* Orange (clearer than pale yellow on light UI) */
+  color: #c45c12;
+  font-weight: 700;
+}
+
+.can-table td.age-cell.age-tone-stale {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.can-table td.age-cell.age-tone-unknown {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
 .signals-cell {
   max-width: 360px;
   min-width: 180px;
