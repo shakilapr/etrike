@@ -2,22 +2,17 @@ import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { hexId } from '../lib/format'
 import { activateTransportProfile, linkLabelFromStatus } from '../lib/session'
-import { busActivityTone, dash, PROFILE_LABELS, transportModeOf, type OverallHealth } from '../lib/signals'
-import { useAppStore, type TopologyNode } from '../store'
+import { buildEcuPresence } from '../lib/ecuPresence'
+import {
+  busActivityTone,
+  dash,
+  observeEstop,
+  PROFILE_LABELS,
+  transportModeOf,
+  type OverallHealth,
+} from '../lib/signals'
+import { useAppStore } from '../store'
 import { IconCable, IconMonitor } from './icons'
-
-/** Stable display order for ECU presence lamps (CAN topology). */
-const ECU_ORDER = ['Host', 'RT_high', 'RT_low', 'SYS', 'MTR', 'SES', 'SEB'] as const
-
-const ECU_SHORT: Record<string, string> = {
-  Host: 'Host',
-  RT_high: 'RT-H',
-  RT_low: 'RT-L',
-  SYS: 'SYS',
-  MTR: 'MTR',
-  SES: 'SES',
-  SEB: 'SEB',
-}
 
 function ecuDotTone(liveness: string): 'live' | 'warning' | 'danger' | 'muted' {
   const k = liveness.toLowerCase()
@@ -37,16 +32,6 @@ function ecuConnectedLabel(liveness: string): string {
   return liveness || 'unknown'
 }
 
-function sortEcuNodes(nodes: TopologyNode[]): TopologyNode[] {
-  const rank = new Map(ECU_ORDER.map((n, i) => [n, i]))
-  return [...nodes].sort((a, b) => {
-    const ra = rank.get(a.node as (typeof ECU_ORDER)[number]) ?? 100
-    const rb = rank.get(b.node as (typeof ECU_ORDER)[number]) ?? 100
-    if (ra !== rb) return ra - rb
-    return a.node.localeCompare(b.node) || a.bus.localeCompare(b.bus)
-  })
-}
-
 export function Topbar() {
   const status = useAppStore((s) => s.status)
   const setStatus = useAppStore((s) => s.setStatus)
@@ -54,6 +39,7 @@ export function Topbar() {
   const mismatch = useAppStore((s) => s.protocolMismatch)
   const reconnect = useAppStore((s) => s.reconnectAttempts)
   const topology = useAppStore((s) => s.topology)
+  const messages = useAppStore((s) => s.messages)
   const [modeBusy, setModeBusy] = useState(false)
   const [modeErr, setModeErr] = useState<string | null>(null)
   const ses = status?.session
@@ -65,20 +51,15 @@ export function Topbar() {
   const dest = ses?.destination ?? (mode === 'real' ? 'physical' : 'virtual')
   const adapterHealth = (status?.adapter?.health || '—').toLowerCase()
   const benchOn = (ses?.bench_tx || '').toLowerCase() === 'enabled'
-  const estopOn = !!ses?.estop_active
+  const estopObs = useMemo(() => observeEstop(messages, ses), [messages, ses])
+  const estopOn = estopObs.any
   const link = linkLabelFromStatus(status)
 
-  const ecuNodes = useMemo(() => {
-    // Prefer live topology from API; fall back to known labels if stream empty.
-    if (topology.length > 0) return sortEcuNodes(topology)
-    return ECU_ORDER.map((node) => ({
-      node,
-      bus: node === 'Host' || node === 'RT_high' ? 'high' : 'low',
-      can_id: 0,
-      liveness: 'offline',
-      freshness: 'unseen',
-    }))
-  }, [topology])
+  // Always show full unit set (incl. SBW/BBW). Prefer live CAN; topology as fallback.
+  const ecuNodes = useMemo(
+    () => buildEcuPresence(topology, messages),
+    [topology, messages],
+  )
 
   async function injectEstop() {
     setModeErr(null)
@@ -96,8 +77,14 @@ export function Topbar() {
           )
         }
       }
-      await api.injectEstop()
+      const result = await api.injectEstop()
       setStatus(await api.status())
+      // Surface dual-bus inject result in the topbar strip (not console-only).
+      const estop = (result as { estop?: Array<{ bus?: string; disposition?: string }> }).estop
+      if (Array.isArray(estop) && estop.length) {
+        const bits = estop.map((e) => `${e.bus ?? '?'}:${e.disposition ?? 'ok'}`).join(' · ')
+        setModeErr(`ESTOP injected · ${bits} · host latch ON`)
+      }
     } catch (e) {
       setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
     }
@@ -106,8 +93,10 @@ export function Topbar() {
   async function clearEstop() {
     setModeErr(null)
     try {
+      // Only clears host inject latch — not ECU-latched ESTOP on the bus.
       await api.clearEstop()
       setStatus(await api.status())
+      setModeErr('Host ESTOP latch cleared (bus/SYS/RT may still report ESTOP)')
     } catch (e) {
       setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
     }
@@ -154,6 +143,7 @@ export function Topbar() {
 
   // Fault = safety/protocol problem. Offline = no backend/API.
   // Real + no adapter is Degraded (mode is intentional), not Offline.
+  // ESTOP uses multi-source observeEstop (latch + bus 0x001 + SYS/RT), not latch alone.
   const overall: OverallHealth = (() => {
     if (estopOn || mismatch) return 'fault'
     if (adapterHealth === 'failed' || adapterHealth === 'error') return 'fault'
@@ -291,12 +281,29 @@ export function Topbar() {
           </div>
 
           <div
-            className={`chip ${estopOn ? 'danger' : 'ok'} health-chip`}
+            className={`chip ${estopOn ? 'danger' : 'ok'} health-chip chip-estop`}
             data-testid="chip-estop"
-            title="Host inject latch (not physical E-stop hardware)"
+            title={estopObs.detail}
           >
             <span className="chip-k">ESTOP</span>
-            <span className="chip-v">{estopOn ? 'Active' : 'Clear'}</span>
+            <span className="chip-v" data-testid="chip-estop-label">
+              {estopObs.label}
+            </span>
+            {/* Bus presence of 0x001 — separate from host latch label */}
+            <span className="estop-bus-lamps" aria-label="SAFETY_ESTOP bus presence">
+              <span
+                className={`estop-bus-lamp ${estopObs.busHigh ? 'on' : 'off'}`}
+                title={estopObs.busHigh ? '0x001 recent on High' : 'No recent 0x001 on High'}
+              >
+                H
+              </span>
+              <span
+                className={`estop-bus-lamp ${estopObs.busLow ? 'on' : 'off'}`}
+                title={estopObs.busLow ? '0x001 recent on Low' : 'No recent 0x001 on Low'}
+              >
+                L
+              </span>
+            </span>
           </div>
 
           <div
@@ -350,20 +357,21 @@ export function Topbar() {
             type="button"
             className="btn-estop"
             data-testid="btn-header-estop"
-            title="Inject SAFETY_ESTOP (DLC=0) on high and low — requires Bench TX"
+            title="Inject SAFETY_ESTOP (DLC=0) on High and Low · latches host ESTOP · requires TX armed"
             onClick={() => void injectEstop()}
           >
             Inject ESTOP
           </button>
-          {estopOn ? (
+          {/* Clear only applies to host inject latch — not bus/SYS/RT vehicle ESTOP. */}
+          {estopObs.hostLatch ? (
             <button
               type="button"
               className="btn secondary"
               data-testid="btn-header-estop-clear"
-              title="Clear host ESTOP inject latch so the UI can continue testing"
+              title="Clear host inject latch only. Does not clear ECU-latched ESTOP on the bus."
               onClick={() => void clearEstop()}
             >
-              Clear ESTOP
+              Clear latch
             </button>
           ) : null}
         </div>
@@ -452,18 +460,16 @@ export function Topbar() {
         >
           {ecuNodes.map((n) => {
             const tone = ecuDotTone(n.liveness)
-            const short = ECU_SHORT[n.node] ?? n.node
             const state = ecuConnectedLabel(n.liveness)
-            const idText = n.can_id ? hexId(n.can_id) : '—'
             return (
               <div
                 key={`${n.bus}-${n.node}`}
                 className={`ecu-cell tone-${tone}`}
                 data-testid={`ecu-lamp-${n.node}`}
                 data-liveness={n.liveness}
-                title={`${n.node} · ${n.bus} · ${idText} · ${state}`}
+                title={n.title || `${n.node} · ${state}`}
               >
-                <span className="ecu-cell-name">{short}</span>
+                <span className="ecu-cell-name">{n.short}</span>
                 <span className={`ecu-led ${tone}`} aria-hidden />
               </div>
             )
