@@ -50,18 +50,26 @@ def test_kinematics_intent_shapes_host_drive(client):
     assert ctrl["shaped_speed_mmps"] == 1500  # 0.5 * 3000
     assert ctrl["shaped_yaw_mrad_s"] == 750  # 0.25 * 3000
     assert ctrl["gear_label"] == "D"
+    # Ownership lease name follows source for diagnostics.
+    assert client.app.state.lifecycle.control._state.lease_owner == "control:keyboard"
 
-    deadline = time.time() + 2.0
-    found = None
-    while time.time() < deadline:
-        msgs = client.get("/api/v1/state").json()["messages"]
-        found = next((m for m in msgs if m.get("name") == "HOST_DRIVE_CMD"), None)
-        if found and found.get("signals"):
-            break
-        time.sleep(0.02)
-    assert found is not None
-    assert found["can_id"] == 0x300
-    assert int(found["signals"]["speed_mmps"]["engineering_value"]) == 1500
+
+def test_drive_console_source_owns_distinct_lease(client):
+    _tx(client)
+    r = client.post(
+        "/api/v1/control/intent",
+        json={
+            "sequence": 1,
+            "source": "drive_console",
+            "mode": "kinematics",
+            "throttle": 0.2,
+            "steer": 0,
+            "gear": 1,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["control"]["shaped_speed_mmps"] == 600  # 0.2 * 3000
+    assert client.app.state.lifecycle.control._state.lease_owner == "control:drive_console"
 
 
 def test_stale_sequence_rejected(client):

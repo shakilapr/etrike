@@ -214,6 +214,15 @@ def test_transmit_maps_high_low_and_counts_submission() -> None:
         status = adapter.status()
         assert status.channels["high"].tx_count == 1
         assert status.channels["low"].tx_count == 1
+        # Software TX mirror for observation (no hardware echo).
+        mirrored = _drain(adapter, 2)
+        assert len(mirrored) == 2
+        assert all(f.direction is Direction.TX for f in mirrored)
+        assert {f.channel for f in mirrored} == {ChannelId.HIGH, ChannelId.LOW}
+        # Mirror must not inflate true RX counters.
+        status2 = adapter.status()
+        assert status2.channels["high"].rx_count == 0
+        assert status2.channels["low"].rx_count == 0
     finally:
         adapter.close()
 

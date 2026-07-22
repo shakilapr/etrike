@@ -12,15 +12,41 @@ def test_status_ok(client):
     assert body["ready"] is True
     assert body["wire_hash"] == proto.WIRE_HASH
     assert body["catalog"] == {"messages": 32, "instances": 42}
+    # Top-level profile follows session (default pure_software with no session).
     assert body["profile"] == "pure_software"
+    assert body["default_profile"] == "pure_software"
 
 
-def test_state_snapshot_is_valid_and_empty(client):
+def test_status_profile_tracks_session(client):
+    """Top-level status.profile follows the session profile, not only config default."""
+    from control_toolkit.config import Profile
+
+    created = client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    assert created.status_code == 200
+    body = client.get("/api/v1/status").json()
+    assert body["profile"] == body["session"]["profile"] == "pure_software"
+    assert body["default_profile"] == "pure_software"
+
+    # Force a physical profile on the session manager without opening CANalyst
+    # (avoids USB contention with a live toolkit process and message pollution).
+    life = client.app.state.lifecycle
+    with life.sessions._lock:
+        life.sessions._state.profile = Profile.BENCH_TEST
+        life.sessions._state.destination = "physical"
+    body2 = client.get("/api/v1/status").json()
+    assert body2["session"]["profile"] == "bench_test"
+    assert body2["profile"] == "bench_test"
+    assert body2["default_profile"] == "pure_software"
+
+
+def test_state_snapshot_is_valid(client):
     r = client.get("/api/v1/state")
     assert r.status_code == 200
     body = r.json()
     assert body["wire_hash"] == proto.WIRE_HASH
-    assert body["messages"] == []
+    # Startup may auto-open Pure Software virtual buses + managed SYS peer,
+    # so messages can already be non-empty. Require a valid list only.
+    assert isinstance(body["messages"], list)
     assert body["sequence"] >= 1
 
 

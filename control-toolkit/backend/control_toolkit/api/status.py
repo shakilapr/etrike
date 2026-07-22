@@ -36,6 +36,13 @@ def get_status(request: Request) -> dict:
             last_error=last,
             channels={},  # explicit empty — UI must not keep virtual channel ghosts
         )
+    # Active session profile is authoritative. Fall back to configured default
+    # only when no session has ever set a profile (still always present on state).
+    active_profile = (
+        session.profile.value
+        if getattr(session, "profile", None) is not None
+        else config.default_profile.value
+    )
     return {
         "service": config.title,
         "version": __version__,
@@ -43,7 +50,8 @@ def get_status(request: Request) -> dict:
         "wire_hash": proto.WIRE_HASH,
         "semantic_hash": proto.SEMANTIC_HASH,
         "network_hash": proto.NETWORK_HASH,
-        "profile": config.default_profile.value,
+        "profile": active_profile,
+        "default_profile": config.default_profile.value,
         "catalog": {
             "messages": proto.message_count(),
             "instances": proto.instance_count(),
