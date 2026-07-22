@@ -73,3 +73,28 @@ The API labels these smoke IDs `invalid` only because they are not in the protoc
 - High-level bus work is application/protocol behavior (RT/SYS message definitions, state machines, commands, safety and freshness handling), not a CAN wiring substitute. Validate low-level electrical and frame transport first.
 - Current port identity: SYS COM6 (CH343 `5A7A060077`), RT COM10 (CH343 `5A7A059756`).
 - For future tests, verify the API is in physical `bench_test` mode, then check both expected IDs for at least 30 seconds. A live channel alone is insufficient: it may only be one node transmitting.
+
+## Follow-up: invalid DLC-0 ESTOP resolved — 2026-07-22
+
+With MTR disconnected and the safety bypass not activated, asserted ESTOP was
+expected. The remaining defect was that Low `SAFETY_ESTOP 0x001` decoded as an
+invalid DLC-8 frame while the High copy decoded correctly as DLC 0.
+
+This was a firmware/API defect, not wiring. In ESP-IDF 5.5, deprecated
+`driver/twai.h` builds a HAL transaction with `buffer_len=8`. The SJA1000 HAL
+uses that length whenever `header.dlc` is zero, so a requested DLC-0 frame is
+transmitted as DLC 8. RT and SYS low CAN were migrated to the handle-based
+`esp_twai` API, with the transaction's `buffer_len` set equal to the canonical
+frame DLC. Persistent TX slots keep queued frame and buffer pointers valid;
+RX callbacks copy received frames into task queues.
+
+Both `vehicle` images compiled and were flashed with hash verification to RT
+COM10 and SYS COM6. Physical API evidence after reboot:
+
+- Raw High and Low `0x001`: DLC 0, empty payload.
+- High and Low `SAFETY_ESTOP`: validation `ok`.
+- RT heartbeats live on both buses; SYS heartbeat live on Low.
+- SYS diagnostic TEC=0, REC=0.
+
+Therefore the invalid ESTOP issue is resolved. The active ESTOP state itself
+remains correct until the bypass/input is deliberately released.

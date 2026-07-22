@@ -115,3 +115,31 @@ pio run -e vehicle -t upload --upload-port COM6
 
 Keep the RT production settings: low TWAI TX=GPIO5/RX=GPIO4, MCP2515
 INT=GPIO47, and 8 MHz MCP2515 timing with `CNF3=0x01`.
+
+## Production validation — 2026-07-22
+
+After restoring the RT and SYS `vehicle` images, both low-CAN drivers were
+migrated from deprecated `driver/twai.h` to the handle-based `esp_twai` API.
+The reason is specific and observable: ESP-IDF 5.5's deprecated transmit path
+always supplies an eight-byte HAL buffer, and the SJA1000 HAL substitutes that
+buffer length when the requested DLC is zero. This changed `SAFETY_ESTOP`
+`0x001` from DLC 0 to DLC 8 on the wire.
+
+Production images were built and hash-verified while flashing:
+
+| Image | Port | MAC | Result |
+|---|---|---|---|
+| RT `vehicle` | COM10 | `80:b5:4e:c7:d0:34` | PASS |
+| SYS `vehicle` | COM6 | `80:b5:4e:c5:b9:4c` | PASS |
+
+The physical Control Toolkit API then showed:
+
+- Low and High `SAFETY_ESTOP 0x001`: `validation_status=ok`.
+- Raw history on both buses: `dlc=0`, empty `data_hex`, `source=physical`.
+- RT heartbeat live on Low and High; SYS heartbeat live on Low.
+- SYS diagnostics live with TEC=0 and REC=0.
+- Three samples two seconds apart retained the same healthy result.
+
+ESTOP remaining active is expected while the hardware bypass/input is not
+released. The defect fixed here was the invalid frame shape, not the asserted
+safety state.

@@ -33,6 +33,12 @@ Pin-to-pin wiring for all five ECUs, three CAN buses, power distribution, and ev
 | Idle voltage (H/L) | ~2.5 V / ~2.5 V | ~2.5 V / ~2.5 V | ~2.5 V / ~2.5 V |
 | Dominant (H/L) | ~3.5 V / ~1.5 V | ~3.5 V / ~1.5 V | ~3.5 V / ~1.5 V |
 
+`SAFETY_ESTOP` (`0x001`) is intentionally a Classical CAN frame with **DLC 0**
+and no payload. RT and SYS low CAN use ESP-IDF's handle-based TWAI driver so
+that zero payload length reaches the controller unchanged. Do not replace that
+driver with the deprecated `driver/twai.h` transmit API on ESP-IDF 5.5: its HAL
+path expands a requested DLC 0 to DLC 8.
+
 ### 2.2 Termination Rules
 
 | Rule | Detail |
