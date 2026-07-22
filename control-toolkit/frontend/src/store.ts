@@ -106,6 +106,7 @@ export type Workspace =
   | 'diagnostics'
   | 'logs'
   | 'settings'
+  | 'ui-kit'
 
 export type Activity = 'explorer' | 'control' | 'monitor'
 export type ControlMethod = 'high' | 'low' | 'mtr' | 'hmi'

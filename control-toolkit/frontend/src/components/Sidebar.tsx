@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api'
+import { isHostTxFrame } from '../lib/activeTx'
+import { useHostTxKeys } from './ActiveTxRail'
 import { cleanupControlStreams, isStaleSequenceError } from '../lib/cleanup'
-import { hexId } from '../lib/format'
+import { formatAge, hexId } from '../lib/format'
 import { findMsg, PROFILE_LABELS } from '../lib/signals'
 import { useAppStore } from '../store'
 import { ActivityBar } from './ActivityBar'
 import { IconGauge, NAV_SECTIONS } from './icons'
+import { StatusDot } from './ui'
 
 export function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
@@ -15,6 +18,7 @@ export function Sidebar() {
   const status = useAppStore((s) => s.status)
   const quality = useAppStore((s) => s.streamQuality)
   const messages = useAppStore((s) => s.messages)
+  const hostTxKeys = useHostTxKeys()
 
   const [busy, setBusy] = useState(false)
   const [fakeBusy, setFakeBusy] = useState(false)
@@ -23,7 +27,10 @@ export function Sidebar() {
   const [kbEnabled, setKbEnabled] = useState(false)
   const [kbSnap, setKbSnap] = useState<Record<string, unknown> | null>(null)
   const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
+  const [monitorEcuFilter, setMonitorEcuFilter] = useState<string>('all')
   const [monitorExpanded, setMonitorExpanded] = useState<string | null>(null)
+  /** bus|can_id → sender ECU from protocol dictionary */
+  const [senderByKey, setSenderByKey] = useState<Record<string, string>>({})
 
   const seqRef = useRef(0)
   const keysRef = useRef<Record<string, boolean>>({})
@@ -98,9 +105,37 @@ export function Sidebar() {
     return f === 'live' || f === 'late'
   }
 
+  const ecuOfMsg = useCallback(
+    (m: { bus: string; can_id: number; name?: string | null }) => {
+      const fromDict = senderByKey[`${m.bus}|${m.can_id}`]
+      if (fromDict) return fromDict
+      const n = (m.name || '').toUpperCase()
+      if (n.startsWith('HOST_') || n.startsWith('HMI_')) return 'Host'
+      if (n.startsWith('RT_') || n.startsWith('VCU_SES')) return 'RT'
+      if (n.startsWith('SYS_')) return 'SYS'
+      if (n.startsWith('MTR_')) return 'MTR'
+      if (n.startsWith('SES_')) return 'EPS_C'
+      if (n.startsWith('SEB_') || n.startsWith('VCU_SEB') || n.startsWith('BRAKE_')) return 'SEB'
+      if (n.startsWith('SAFETY_') || n.includes('ESTOP')) return 'Any'
+      return '—'
+    },
+    [senderByKey],
+  )
+
+  const monitorEcuOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const m of messages) {
+      if (busFilter !== 'both' && m.bus !== busFilter) continue
+      const e = ecuOfMsg(m)
+      if (e && e !== '—') set.add(e)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [messages, busFilter, ecuOfMsg])
+
   const liveCompact = useMemo(() => {
     return [...messages]
       .filter((m) => (busFilter === 'both' ? true : m.bus === busFilter))
+      .filter((m) => (monitorEcuFilter === 'all' ? true : ecuOfMsg(m) === monitorEcuFilter))
       .sort((a, b) => {
         const la = isMsgLive(a.freshness) ? 0 : 1
         const lb = isMsgLive(b.freshness) ? 0 : 1
@@ -108,7 +143,7 @@ export function Sidebar() {
         return a.bus.localeCompare(b.bus) || a.can_id - b.can_id
       })
       .slice(0, 64)
-  }, [messages, busFilter])
+  }, [messages, busFilter, monitorEcuFilter, ecuOfMsg])
 
   const monitorLiveCount = useMemo(
     () => liveCompact.filter((m) => isMsgLive(m.freshness)).length,
@@ -131,6 +166,29 @@ export function Sidebar() {
     const id = window.setInterval(() => void refreshFakeSignals(), 2000)
     return () => window.clearInterval(id)
   }, [activity, refreshFakeSignals])
+
+  useEffect(() => {
+    if (activity !== 'monitor') return
+    let cancel = false
+    void api
+      .protocolDictionary()
+      .then((d) => {
+        if (cancel) return
+        const map: Record<string, string> = {}
+        for (const m of d.messages || []) {
+          const bus = String((m as { bus?: string }).bus || '')
+          const canId = Number((m as { can_id?: number }).can_id)
+          const sender = String((m as { sender?: string }).sender || '').trim()
+          if (!bus || !Number.isFinite(canId) || !sender || sender === '—') continue
+          map[`${bus}|${canId}`] = sender
+        }
+        setSenderByKey(map)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancel = true
+    }
+  }, [activity])
 
   // Leave control activity → drop keyboard ownership
   useEffect(() => {
@@ -348,6 +406,7 @@ export function Sidebar() {
           <button
             data-testid="sidebar-bench-toggle"
             type="button"
+            className={benchOn ? 'secondary' : 'primary'}
             disabled={busy || !ses?.session_id}
             onClick={() => void toggleBenchTx()}
           >
@@ -360,7 +419,7 @@ export function Sidebar() {
           <button
             type="button"
             data-testid="sidebar-kb-toggle"
-            className={kbEnabled ? '' : 'secondary'}
+            className={kbEnabled ? 'secondary' : 'primary'}
             disabled={busy || fullVehicle || !ses?.session_id}
             onClick={() => void toggleKeyboard()}
           >
@@ -404,6 +463,7 @@ export function Sidebar() {
             <button
               data-testid="sidebar-fake-toggle"
               type="button"
+              className={fakeOn ? 'secondary' : 'primary'}
               disabled={fakeBusy || busy || fullVehicle || (!fakeOn && !ses?.session_id)}
               onClick={() => void toggleFakeSignals()}
             >
@@ -449,18 +509,37 @@ export function Sidebar() {
           </small>
         </div>
 
-        <div className="monitor-bus-filter" role="group" aria-label="Bus filter">
-          {(['both', 'high', 'low'] as const).map((b) => (
-            <button
-              key={b}
-              type="button"
-              data-testid={`monitor-bus-${b}`}
-              className={busFilter === b ? 'route-chip active' : 'route-chip'}
-              onClick={() => setBusFilter(b)}
-            >
-              {b === 'both' ? 'Both' : b === 'high' ? 'High' : 'Low'}
-            </button>
-          ))}
+        <div className="monitor-filters">
+          <div className="monitor-bus-filter" role="group" aria-label="Bus filter">
+            {(['both', 'high', 'low'] as const).map((b) => (
+              <button
+                key={b}
+                type="button"
+                data-testid={`monitor-bus-${b}`}
+                className={busFilter === b ? 'route-chip active' : 'route-chip'}
+                onClick={() => {
+                  setBusFilter(b)
+                  setMonitorEcuFilter('all')
+                }}
+              >
+                {b === 'both' ? 'Both' : b === 'high' ? 'High' : 'Low'}
+              </button>
+            ))}
+          </div>
+          <select
+            className="monitor-ecu-select"
+            data-testid="monitor-ecu-filter"
+            aria-label="Filter by ECU"
+            value={monitorEcuFilter}
+            onChange={(e) => setMonitorEcuFilter(e.target.value)}
+          >
+            <option value="all">All ECUs</option>
+            {monitorEcuOptions.map((ecu) => (
+              <option key={ecu} value={ecu}>
+                {ecu}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="monitor-msg-list" data-testid="monitor-live-simplified">
@@ -470,44 +549,122 @@ export function Sidebar() {
           {liveCompact.map((m) => {
             const key = `${m.bus}-${m.can_id}`
             const live = isMsgLive(m.freshness)
+            const hostTx = isHostTxFrame({
+              bus: m.bus,
+              can_id: m.can_id,
+              hostKeys: hostTxKeys,
+            })
             const open = monitorExpanded === key
-            const label = m.name?.trim() || hexId(m.can_id)
+            const idText = hexId(m.can_id)
+            const name = m.name?.trim() || '—'
+            const ecu = ecuOfMsg(m)
+            const rate =
+              m.observed_rate_hz != null && Number.isFinite(m.observed_rate_hz)
+                ? `${m.observed_rate_hz.toFixed(1)} Hz`
+                : '—'
+            const exp =
+              m.expected_rate_hz != null && Number.isFinite(m.expected_rate_hz)
+                ? `${m.expected_rate_hz} Hz`
+                : null
+            const sigEntries = Object.entries(m.signals || {}).slice(0, 6)
             return (
               <div
                 key={key}
-                className={`monitor-msg ${live ? 'is-live' : 'is-dead'}${open ? ' is-open' : ''}`}
+                className={`monitor-msg ${live ? 'is-live' : 'is-dead'}${hostTx ? ' is-host-tx' : ''}${open ? ' is-open' : ''}`}
                 data-testid={`monitor-msg-${m.bus}-${m.can_id}`}
                 data-status={live ? 'live' : 'dead'}
+                data-host-tx={hostTx ? '1' : '0'}
               >
                 <button
                   type="button"
                   className="monitor-msg-row"
                   aria-expanded={open}
+                  title={`${idText} ${name} · ${hostTx ? 'host TX' : live ? 'live' : 'dead'}`}
                   onClick={() => setMonitorExpanded((cur) => (cur === key ? null : key))}
                 >
-                  <span className={`status-dot ${live ? 'live' : 'danger'}`} aria-hidden />
-                  <span className="monitor-msg-label" title={label}>
-                    {label}
+                  <span className="monitor-msg-main">
+                    <span className="mono monitor-msg-id">{idText}</span>
+                    <span className="monitor-msg-name" title={name}>
+                      {name}
+                    </span>
+                    <span className="monitor-msg-chevron muted" aria-hidden>
+                      {open ? '▾' : '▸'}
+                    </span>
+                    {live && (
+                      <StatusDot
+                        tone={hostTx ? 'tx' : 'live'}
+                        title={hostTx ? 'Host TX (our output)' : 'live'}
+                        className="monitor-msg-lamp"
+                      />
+                    )}
                   </span>
-                  <span className={`monitor-msg-status ${live ? 'ok-text' : 'danger-text'}`}>
-                    {live ? 'live' : 'dead'}
-                  </span>
-                  <span className="monitor-msg-chevron muted" aria-hidden>
-                    {open ? '▾' : '▸'}
-                  </span>
+                  {!live && (
+                    <span className="monitor-msg-dead-line">
+                      <StatusDot tone="danger" title="dead" className="monitor-msg-lamp" />
+                    </span>
+                  )}
                 </button>
                 {open && (
-                  <div className="monitor-msg-detail" data-testid={`monitor-msg-detail-${m.bus}-${m.can_id}`}>
-                    <span className={`status-dot ${live ? 'live' : 'danger'}`} aria-hidden />
-                    <span className={`monitor-msg-status ${live ? 'ok-text' : 'danger-text'}`}>
-                      {live ? 'live' : 'dead'}
-                    </span>
-                    <span className="mono">{m.bus === 'high' ? 'H' : 'L'}</span>
-                    <span className="mono">{hexId(m.can_id)}</span>
-                    {m.name ? <span className="monitor-msg-detail-name">{m.name}</span> : null}
-                    {m.observed_rate_hz != null && Number.isFinite(m.observed_rate_hz) ? (
-                      <span className="mono muted">{m.observed_rate_hz.toFixed(1)} Hz</span>
-                    ) : null}
+                  <dl
+                    className="monitor-msg-stats"
+                    data-testid={`monitor-msg-detail-${m.bus}-${m.can_id}`}
+                  >
+                    <div>
+                      <dt>Status</dt>
+                      <dd className={hostTx ? 'tx-text' : live ? 'ok-text' : 'danger-text'}>
+                        {hostTx ? 'host TX' : live ? 'live' : 'dead'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Bus</dt>
+                      <dd className="mono">{m.bus}</dd>
+                    </div>
+                    <div>
+                      <dt>ID</dt>
+                      <dd className="mono">{idText}</dd>
+                    </div>
+                    <div>
+                      <dt>Name</dt>
+                      <dd>{name}</dd>
+                    </div>
+                    <div>
+                      <dt>ECU</dt>
+                      <dd className="mono">{ecu}</dd>
+                    </div>
+                    <div>
+                      <dt>Rate</dt>
+                      <dd className="mono">
+                        {rate}
+                        {exp ? ` / ${exp}` : ''}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Age</dt>
+                      <dd className="mono">{formatAge(m.age_ms)}</dd>
+                    </div>
+                    <div>
+                      <dt>Valid</dt>
+                      <dd className="mono">{m.validation_status || '—'}</dd>
+                    </div>
+                  </dl>
+                )}
+                {open && sigEntries.length > 0 && (
+                  <div
+                    className="monitor-msg-signals"
+                    data-testid={`monitor-msg-signals-${m.bus}-${m.can_id}`}
+                  >
+                    <span className="monitor-msg-signals-label">Signals</span>
+                    <ul className="monitor-msg-signals-list">
+                      {sigEntries.map(([k, v]) => (
+                        <li key={k}>
+                          <span className="mono monitor-sig-key">{k}</span>
+                          <span className="mono monitor-sig-val">
+                            {String(v.enum_label ?? v.engineering_value ?? '—')}
+                            {v.unit ? ` ${v.unit}` : ''}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -579,13 +736,20 @@ export function Sidebar() {
             </div>
           </div>
           <div className="vehicle-cmd-strip" data-testid="sidebar-cmd-strip">
-            <div className="vehicle-cmd-line" data-testid="sidebar-cmd-high">
+            <div
+              className={`vehicle-cmd-line${hostTxKeys.has(`high:${hostCmd?.can_id ?? 0x300}`) ? ' is-host-tx' : ''}`}
+              data-testid="sidebar-cmd-high"
+            >
               <span className="vehicle-cmd-tag">TX High</span>
               <span className="mono">
                 0x300 {hostCmdSpeedText} · yaw {hostCmdYawText} · gear {hostCmdGearText}
               </span>
               {hostFresh ? (
-                <span className={`vehicle-cmd-fresh fresh-${hostFresh}`}>{hostFresh}</span>
+                <span
+                  className={`vehicle-cmd-fresh fresh-${hostFresh}${hostTxKeys.has(`high:${hostCmd?.can_id ?? 0x300}`) ? ' is-host-tx' : ''}`}
+                >
+                  {hostTxKeys.has(`high:${hostCmd?.can_id ?? 0x300}`) ? 'tx' : hostFresh}
+                </span>
               ) : (
                 <span className="vehicle-cmd-fresh muted">—</span>
               )}
