@@ -1,6 +1,6 @@
 # Handoff — RT/SYS ESP32-S3 N16R8 + Control Toolkit CAN
 
-**Last updated:** 2026-07-21  
+**Last updated:** 2026-07-22
 **Workspace:** `E:\work\etrike`  
 **User intent:** Verify hardware with simple tests first; make both controllers publish/receive on both buses; only then run full vehicle firmware. Prefer API (`/api/v1`) to observe CAN.
 
@@ -22,9 +22,20 @@
 | Bus | Controller | Pins |
 |-----|------------|------|
 | **Low** | Built-in TWAI | **TX=GPIO5, RX=GPIO4**, 500 kbit/s |
-| **High** | MCP2515 SPI (RT only) | **SCK=15, MOSI=16, MISO=17, CS=18, INT=7** |
+| **High** | MCP2515 SPI (RT only) | **SCK=15, MOSI=16, MISO=17, CS=18, INT=47** |
 
 SYS has **no high CAN**. High needs RT MCP + CANalyst CH0 (+ host).
+
+### Current verified production state (2026-07-22)
+
+- RT `vehicle` is flashed on COM10; SYS `vehicle` is flashed on COM6 (both
+  esptool hashes verified).
+- High and Low buses are active in the physical Control Toolkit API.
+- RT heartbeat is live on High and Low; SYS heartbeat is live on Low.
+- `SAFETY_ESTOP 0x001` is valid DLC 0 with an empty payload on both buses.
+- SYS diagnostic reports TEC=0 and REC=0.
+- ESTOP is asserted because the bypass/input is not released; that state is
+  expected and is separate from the now-fixed invalid-DLC defect.
 
 Transceivers: SN65HVD230 / WCMCU-230 @ 3.3 V. Docs: if no frames, try swap CTX/CRX; flaky modules can RX but not TX.
 
