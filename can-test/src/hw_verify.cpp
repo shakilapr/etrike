@@ -1,5 +1,5 @@
 // Hardware verification (no vehicle logic).
-// Flash to RT (COM9) and SYS (COM5) before main vehicle firmware.
+// Flash to RT (COM10) and SYS (COM6) before main vehicle firmware.
 //
 // Checks:
 //   A) PSRAM present (boot log)
@@ -7,8 +7,8 @@
 //   C) High CAN MCP2515 SPI (RT only): detect chip, optional loopback TX
 //   D) Optional alternate SPI pin map if primary fails
 //
-//   pio run -e hw_verify -t upload --upload-port COM9
-//   pio run -e hw_verify -t upload --upload-port COM5
+//   pio run -e hw_verify -t upload --upload-port COM10
+//   pio run -e hw_verify -t upload --upload-port COM6
 
 #include <cstdio>
 #include <cstring>
@@ -32,9 +32,7 @@ struct SpiPins {
 };
 
 // Primary = production RT map
-static const SpiPins kMcpPrimary{15, 16, 17, 18, 7, "primary SCK15 MOSI16 MISO17 CS18 INT7"};
-// Legacy / older docs (spi_test old map)
-static const SpiPins kMcpLegacy{36, 37, 38, 39, 40, "legacy SCK36 MOSI37 MISO38 CS39 INT40"};
+static const SpiPins kMcpPrimary{15, 16, 17, 18, 47, "production SCK15 MOSI16 MISO17 CS18 INT47"};
 
 constexpr gpio_num_t kTwaiTx = GPIO_NUM_5;
 constexpr gpio_num_t kTwaiRx = GPIO_NUM_4;
@@ -315,14 +313,11 @@ extern "C" void app_main() {
         }
     }
 
-    // C) High MCP2515 — try primary then legacy pins
+    // C) High MCP2515 — production RT pin map only
     ESP_LOGI(kTag, "[C] High CAN MCP2515 SPI");
-    if (!probe_mcp(kMcpPrimary, r)) {
-        ESP_LOGW(kTag, "  primary pin map failed — trying legacy map");
-        probe_mcp(kMcpLegacy, r);
-    }
+    probe_mcp(kMcpPrimary, r);
     if (!r.mcp_spi) {
-        ESP_LOGE(kTag, "  MCP2515 NOT DETECTED on either pin map");
+        ESP_LOGE(kTag, "  MCP2515 NOT DETECTED on the production pin map");
         ESP_LOGE(kTag, "  High bus cannot work until SPI module is present/wired/powered");
     }
 

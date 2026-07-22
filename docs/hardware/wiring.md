@@ -42,7 +42,7 @@ Pin-to-pin wiring for all five ECUs, three CAN buses, power distribution, and ev
 | Middle taps | Never terminate — termination only at furthest-apart nodes |
 | Total bus impedance | Two 120 Ω in parallel = **~60 Ω** (measure with power off) |
 | WCMCU-230 module | Onboard 120 Ω — enable via solder jumper / shunt / DIP switch |
-| MCP2515 module | No onboard termination — add external if needed or rely on CANalyst-II Ch1 |
+| MCP2515 module | No onboard termination — add an external 120 Ω at the far endpoint; during bench use CANalyst-II Ch0 as that endpoint |
 | CANalyst-II | Software-controlled termination per channel |
 
 ### 2.3 Bus Ground Reference
@@ -90,7 +90,7 @@ Used by RT for the high bus. Standalone SPI-to-CAN controller.
 - **ESP32-S3 GPIOs are not 5 V tolerant.** Do not directly connect a 5 V module's
   MISO or INT output to the ESP32. Use bidirectional level translation for all SPI
   and interrupt signals, or use a 3.3 V MCP2515 plus 3.3 V CAN transceiver design.
-- **No onboard termination** — rely on CANalyst-II Ch1 or add external 120 Ω
+- **No onboard termination** — use an external 120 Ω at the far endpoint; during bench CANalyst-II Ch0 is the high-bus endpoint
 
 ### 2.6 CANalyst-II USB Analyzer
 
@@ -98,8 +98,8 @@ Dual-channel passive CAN monitor/injector.
 
 | Channel | Typical Bus | Termination | Notes |
 |---------|------------|-------------|-------|
-| Ch0 | Low bus | OFF (RT + SYS provide 60 Ω) | Middle tap |
-| Ch1 | High bus | ON (sole terminator for high bus) | Endpoint |
+| Ch0 | High bus | ON when used as the high-bus endpoint | Endpoint |
+| Ch1 | Low bus | OFF (RT + SYS provide 60 Ω) | Middle tap |
 
 - **Driver:** WinUSB via Zadig (see `debug-tool/CANALYST-II-SETUP.md`)
 - **Mode:** Listen-only — never ACKs or participates in arbitration
@@ -144,7 +144,7 @@ Dual-channel passive CAN monitor/injector.
 | — | CAN_H | High bus backbone | 22 AWG, orange |
 | — | CAN_L | High bus backbone | 22 AWG, blue |
 
-- No onboard termination — CANalyst-II Ch1 provides 120 Ω for the high bus
+- No onboard termination — CANalyst-II Ch0 provides the high-bus endpoint termination during bench work
 - Source: `rt::kSpiSckGpio=15`, `rt::kSpiMosiGpio=16`, `rt::kSpiMisoGpio=17`, `rt::kSpiCsGpio=18`, `rt::kMcpIntGpio=47`, bitrate 500 kbit/s
 
 ### 3.2 RT — Inputs
@@ -465,7 +465,7 @@ they can be developed or wired.
 | CAN GND | High bus backbone | Ground reference |
 
 - 120 Ω terminator: **ON** (Jetson is one end of the high bus)
-- RT MCP2515 is the other end (termination via CANalyst-II Ch1 during bench testing, or external 120 Ω in production)
+- RT MCP2515 is the other end (termination via CANalyst-II Ch0 during bench testing, or external 120 Ω in production)
 
 ### 7.2 Jetson — CAN Messages (High Bus)
 
@@ -705,8 +705,8 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 | Bus | Node | Terminator | Resistor | Notes |
 |-----|------|:----------:|----------|-------|
 | **High** | Jetson Orin | ✅ ON | 120 Ω | Endpoint |
-| **High** | RT MCP2515 | ❌ OFF | — | Middle (CANalyst-II Ch1 is other endpoint in bench test) |
-| **High** | CANalyst-II Ch1 | ✅ ON | 120 Ω | Bench-test endpoint. Remove in production, add 120 Ω at RT. |
+| **High** | RT MCP2515 | ❌ OFF | — | Middle (CANalyst-II Ch0 is other endpoint in bench test) |
+| **High** | CANalyst-II Ch0 | ✅ ON | 120 Ω | Bench-test endpoint. Remove in production, add 120 Ω at RT. |
 | **Low** | RT WCMCU-230 | ✅ ON | 120 Ω | Endpoint |
 | **Low** | SYS WCMCU-230 | ✅ ON | 120 Ω | Endpoint |
 | **Low** | PWT WCMCU-230 #1 | ❌ OFF | — | Middle tap |
@@ -714,13 +714,13 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 | **Low** | EPS-C | ❌ OFF | — | Middle tap (unless at physical end) |
 | **Low** | SEB | ❌ OFF | — | Middle tap (unless at physical end) |
 | **Low** | DC-DC Converter | ❌ OFF | — | Middle tap (unless at physical end) |
-| **Low** | CANalyst-II Ch0 | ❌ OFF | — | Middle tap |
+| **Low** | CANalyst-II Ch1 | ❌ OFF | — | Middle tap |
 | **Pwt** | PWT WCMCU-230 #2 | ✅ ON | 120 Ω | Endpoint |
 | **Pwt** | Motor Controller | ✅ ON | 120 Ω | Endpoint |
 | **Pwt** | DC-DC Converter | ❌ OFF | — | Middle tap (if on pwt bus) |
 
 **Resulting bus impedances (power off):**
-- High bus: ~120 Ω (Jetson ∥ CANalyst-II Ch1; bench test) or ~60 Ω (Jetson ∥ RT; production)
+- High bus: ~120 Ω (Jetson ∥ CANalyst-II Ch0; bench test) or ~60 Ω (Jetson ∥ RT; production)
 - Low bus: ~60 Ω (RT ∥ SYS, both 120 Ω)
 - Powertrain bus: ~60 Ω (PWT ∥ Motor Controller, both 120 Ω)
 
@@ -728,6 +728,19 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 
 ## 17. Pre-Power Checklist
 
+## 16.1 Pre-production dual-bus smoke test
+
+Flash the dedicated smoke image before restoring vehicle firmware. RT publishes `0x100` on low CAN and `0x110` on high CAN; SYS publishes `0x200` on low CAN. All frames are standard 500 kbit/s CAN and are sent every 200 ms. Confirm the physical Control Toolkit API observes all three IDs before proceeding.
+
+```powershell
+cd E:\work\etrike\can-test
+pio run -e dual_rt  -t upload --upload-port COM10
+pio run -e dual_sys -t upload --upload-port COM6
+```
+
+Hardware/API mapping: CANalyst-II Ch0 = high bus and Ch1 = low bus. The smoke IDs are intentionally outside the production catalog, so an API `unknown_id` or `invalid` decode still counts as a physical-frame pass.
+
+---
 ### 17.1 RT ESP32-S3
 
 - [ ] WCMCU-230 (low bus): VCC → 3V3 (J1-1), GND → GND (J1-22), CTX → GPIO5, CRX → GPIO4

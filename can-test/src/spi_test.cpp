@@ -1,8 +1,8 @@
 // SPI-TEST — verify MCP2515 is present and responding on SPI bus.
 // Pins match rt-esp32/src/config.h production map:
-//   SCK=15 MOSI=16 MISO=17 CS=18 INT=7
+//   SCK=15 MOSI=16 MISO=17 CS=18 INT=47
 // Prefer: pio run -e hw_verify (full HW check) over this SPI-only test.
-// Run: cd can-test && pio run -e spi -t upload --upload-port COM9
+// Run: cd can-test && pio run -e spi -t upload --upload-port COM10
 
 #include <cstdio>
 #include <cstring>
@@ -18,7 +18,7 @@ constexpr int kSpiSck    = 15;
 constexpr int kSpiMosi   = 16;
 constexpr int kSpiMiso   = 17;
 constexpr int kSpiCs     = 18;
-constexpr int kMcpInt    = 7;
+constexpr int kMcpInt    = 47;
 constexpr int kSpiFreqHz = 1'000'000;  // 1 MHz for reliability on bench
 
 // ── MCP2515 instruction set ───────────────────────────────────────────
