@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { useActiveTxStore } from '../lib/activeTxStore'
 import { cleanupControlStreams, isStaleSequenceError } from '../lib/cleanup'
 import { findMsg, signalText } from '../lib/signals'
 import { useAppStore, type ControlMethod, type Status } from '../store'
@@ -221,6 +222,7 @@ function DirectActuatorCards({
         <div className="actions tight">
           <button
             type="button"
+            className="primary"
             data-testid="btn-direct-motor-start"
             disabled={locked}
             onClick={() => void start('motor')}
@@ -265,6 +267,7 @@ function DirectActuatorCards({
         <div className="actions tight">
           <button
             type="button"
+            className="primary"
             data-testid="btn-direct-steer-start"
             disabled={locked}
             onClick={() => void start('steering')}
@@ -309,6 +312,7 @@ function DirectActuatorCards({
         <div className="actions tight">
           <button
             type="button"
+            className="primary"
             data-testid="btn-direct-brake-start"
             disabled={locked}
             onClick={() => void start('brake')}
@@ -562,6 +566,7 @@ export function Control() {
           (clean.ok ? '' : ` · ${clean.detail}`),
       )
       await refresh()
+      await useActiveTxStore.getState().refreshJobs()
     } catch (e) {
       setLog(String(e))
     } finally {
@@ -576,6 +581,7 @@ export function Control() {
       setLeaseId(null)
       setLog(`Stopped periodic HostDrive analysis (${result.stopped} job(s))`)
       await refresh()
+      await useActiveTxStore.getState().refreshJobs()
     } catch (e) {
       setLog(String(e))
     } finally {
@@ -592,6 +598,7 @@ export function Control() {
       }
       await api.stopAnalysis().catch(() => undefined)
       setKbEnabled(false)
+      await useActiveTxStore.getState().stopAll().catch(() => undefined)
       setLeaseId(null)
       setLog('Stop All — high and low motion streams cleared')
       await refresh()
@@ -737,6 +744,7 @@ export function Control() {
           ) : (
             <button
               type="button"
+              className="primary"
               data-testid="btn-enable-tx"
               disabled={busy}
               onClick={() => void enableTx()}
@@ -864,7 +872,7 @@ export function Control() {
                 type="button"
                 data-testid="btn-kb-enable"
                 disabled={busy}
-                className={kbEnabled ? '' : 'secondary'}
+                className={kbEnabled ? 'secondary' : 'primary'}
                 onClick={() => {
                   if (kbEnabled) {
                     setKbEnabled(false)
@@ -979,6 +987,7 @@ export function Control() {
             <div className="actions">
               <button
                 type="button"
+                className="primary"
                 data-testid="btn-inject-drive"
                 disabled={busy}
                 onClick={() => void injectHostDrive()}
@@ -1051,7 +1060,7 @@ export function Control() {
                   data-testid={`btn-mode-${m.toLowerCase()}`}
                   disabled={busy}
                   className={
-                    status?.session?.requested_mode === m ? '' : 'secondary'
+                    status?.session?.requested_mode === m ? 'primary' : 'secondary'
                   }
                   onClick={() => void setMode(m)}
                 >
@@ -1076,7 +1085,7 @@ export function Control() {
                 type="button"
                 data-testid="btn-power-on"
                 disabled={busy}
-                className={status?.session?.requested_power === 'ON' ? '' : 'secondary'}
+                className={status?.session?.requested_power === 'ON' ? 'primary' : 'secondary'}
                 onClick={() => void setPower('ON')}
               >
                 ON
@@ -1085,7 +1094,7 @@ export function Control() {
                 type="button"
                 data-testid="btn-power-off"
                 disabled={busy}
-                className={status?.session?.requested_power === 'OFF' ? '' : 'secondary'}
+                className={status?.session?.requested_power === 'OFF' ? 'primary' : 'secondary'}
                 onClick={() => void setPower('OFF')}
               >
                 OFF

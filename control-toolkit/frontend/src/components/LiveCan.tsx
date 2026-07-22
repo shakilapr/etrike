@@ -8,9 +8,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { api } from '../api'
+import { isHostTxFrame } from '../lib/activeTx'
 import { formatAge, hexId } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store'
+import { useHostTxKeys } from './ActiveTxRail'
 import { FreshnessBadge } from './FreshnessBadge'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -34,6 +36,7 @@ export function LiveCan() {
   const setLiveFilter = useAppStore((s) => s.setLiveFilter)
   const selected = useAppStore((s) => s.selectedMessageKey)
   const setSelected = useAppStore((s) => s.setSelectedMessageKey)
+  const hostTxKeys = useHostTxKeys()
   const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
   const [viewMode, setViewMode] = useState<'latest' | 'chrono'>('latest')
   const [paused, setPaused] = useState(false)
@@ -232,11 +235,20 @@ export function LiveCan() {
                 {filtered.map((m) => {
                   // Prefer bus+can_id — canonical keys like safety:safety_estop collide on high+low
                   const key = `${m.bus}-${m.can_id}`
+                  const hostTx = isHostTxFrame({
+                    bus: m.bus,
+                    can_id: m.can_id,
+                    hostKeys: hostTxKeys,
+                  })
                   return (
                     <tr
                       key={key}
                       data-testid={`row-${m.bus}-${m.can_id}`}
-                      className={selected === key || selected === m.key ? 'selected' : undefined}
+                      data-host-tx={hostTx ? '1' : '0'}
+                      className={cn(
+                        selected === key || selected === m.key ? 'selected' : undefined,
+                        hostTx && 'is-host-tx',
+                      )}
                       onClick={() => setSelected(key)}
                     >
                       <td>
@@ -290,16 +302,25 @@ export function LiveCan() {
                 )}
                 {virtualItems.map((virtualRow) => {
                   const f = chronoFiltered[virtualRow.index]
+                  const hostTx = isHostTxFrame({
+                    bus: f.bus,
+                    can_id: f.can_id,
+                    direction: f.direction,
+                    source: f.source,
+                    hostKeys: hostTxKeys,
+                  })
                   return (
                     <tr
                       key={virtualRow.key}
                       data-index={virtualRow.index}
                       ref={rowVirtualizer.measureElement}
-                      className={
+                      data-host-tx={hostTx ? '1' : '0'}
+                      className={cn(
                         chronoDetail?.frame.global_sequence === f.global_sequence
                           ? 'selected'
-                          : undefined
-                      }
+                          : undefined,
+                        hostTx && 'is-host-tx',
+                      )}
                       data-testid={`chrono-row-${f.global_sequence}`}
                       onClick={() => void selectChronoFrame(f)}
                     >

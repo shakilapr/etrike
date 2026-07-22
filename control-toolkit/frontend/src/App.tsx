@@ -12,8 +12,10 @@ import { Logs } from './components/Logs'
 import { Network } from './components/Network'
 import { Overview } from './components/Overview'
 import { Settings } from './components/Settings'
+import { ActiveTxRail } from './components/ActiveTxRail'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
+import { UiKit } from './components/UiKit'
 import './App.css'
 
 export default function App() {
@@ -40,7 +42,10 @@ export default function App() {
           {workspace === 'diagnostics' && <Diagnostics />}
           {workspace === 'logs' && <Logs />}
           {workspace === 'settings' && <Settings />}
+          {workspace === 'ui-kit' && <UiKit />}
         </main>
+        {/* Host TX rail — shared across all workspaces (Inject, Control, Live, …). */}
+        <ActiveTxRail />
       </div>
     </div>
   )
