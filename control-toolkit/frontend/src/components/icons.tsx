@@ -229,6 +229,9 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'System',
-    items: [{ id: 'settings', label: 'Settings', icon: <IconSettings /> }],
+    items: [
+      { id: 'settings', label: 'Settings', icon: <IconSettings /> },
+      { id: 'ui-kit', label: 'UI kit', icon: <IconLayoutGrid /> },
+    ],
   },
 ]

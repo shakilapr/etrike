@@ -17,8 +17,8 @@ export function Input({ className, search, type = 'text', ...props }: InputProps
         'disabled:cursor-not-allowed disabled:opacity-50',
         'aria-invalid:border-danger',
         search
-          ? 'search min-h-[34px] min-w-[240px] max-w-[400px] flex-1 px-3 text-[13.5px]'
-          : 'h-9 min-h-9 px-3 text-[13px]',
+          ? 'search min-h-8 h-8 max-h-8 min-w-[200px] max-w-[400px] flex-1 px-2.5 text-[length:var(--font-size-ui)]'
+          : 'h-8 min-h-8 max-h-8 px-2.5 text-[length:var(--font-size-ui)]',
         className,
       )}
       {...props}
