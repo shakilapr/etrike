@@ -93,8 +93,16 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
 
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) {
-        ctx.gw_lo = fr;
-        ctx.gw_hi = fr;
+        // SAFETY_ESTOP is DLC 0 only (protocol). Normalize wire junk / DLC-padded
+        // peers so gateway TX never rebroadcasts unexpected_length frames.
+        // Cross-bus only — never echo 0x001 back onto the bus it arrived on
+        // (that amplified DLC-8 floods on low and kept nodes latched).
+        can::Frame estop = can::Frame::standard(can::kIdSafetyEstop, 0);
+        if (from_high) {
+            ctx.gw_lo = estop;
+        } else {
+            ctx.gw_hi = estop;
+        }
         g_estop_reason.store(rt::kEstopReasonCanEstop);
         // Enqueue ESTOP event with 10ms timeout (blocking — safety critical)
         rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};

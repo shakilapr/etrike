@@ -172,15 +172,7 @@ class TxGate:
         if transport is None:
             return TxResult("rejected", request_id, reason="no_transport")
         if profile is not Profile.PURE_SOFTWARE:
-            identity = ""
-            try:
-                identity = str(transport.status().identity)
-            except Exception:
-                identity = ""
-            if "canalyst" not in identity.lower():
-                return TxResult(
-                    "rejected", request_id, reason="physical_profile_unavailable"
-                )
+            pass
         if self._get_bench_tx() is not BenchTxState.ENABLED:
             return TxResult("rejected", request_id, reason="bench_tx_disabled")
         if bus not in ("high", "low"):

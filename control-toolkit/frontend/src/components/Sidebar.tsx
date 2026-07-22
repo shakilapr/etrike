@@ -1,20 +1,21 @@
+import { useState } from 'react'
+import { api } from '../api'
+import { cleanupControlStreams } from '../lib/cleanup'
 import { findMsg, PROFILE_LABELS } from '../lib/signals'
 import { useAppStore } from '../store'
-import {
-  IconActivity,
-  IconExternalLink,
-  IconGauge,
-  IconLayoutGrid,
-  IconSliders,
-  NAV_SECTIONS,
-} from './icons'
+import { IconExternalLink, IconGauge, NAV_SECTIONS } from './icons'
 
 export function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
+  const activity = useAppStore((s) => s.activity)
+  const controlMethod = useAppStore((s) => s.controlMethod)
+  const setControlMethod = useAppStore((s) => s.setControlMethod)
+  const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
   const quality = useAppStore((s) => s.streamQuality)
   const messages = useAppStore((s) => s.messages)
+  const [busy, setBusy] = useState(false)
 
   const ses = status?.session
   const profileId = ses?.profile ?? status?.profile ?? '—'
@@ -79,6 +80,95 @@ export function Sidebar() {
     : ''
   const hostTxLive = hostFresh === 'live' || hostFresh === 'late'
   const rtTxLive = rtFresh === 'live' || rtFresh === 'late'
+  const benchOn = String(ses?.bench_tx ?? '').toLowerCase() === 'enabled'
+  const fullVehicle = profileId === 'full_vehicle'
+
+  async function selectControlRoute(method: 'high' | 'low' | 'mtr' | 'hmi') {
+    if (method === controlMethod) {
+      setWorkspace('control')
+      return
+    }
+    setBusy(true)
+    try {
+      await cleanupControlStreams('activity_route_switch')
+      setControlMethod(method)
+      setWorkspace('control')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function toggleBenchTx() {
+    setBusy(true)
+    try {
+      const fresh = await api.status()
+      const session = fresh.session
+      if (!session?.session_id) return
+      await api.setBenchTx(session.session_id, !benchOn, session.revision)
+      setStatus(await api.status())
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (activity === 'control') {
+    return (
+      <aside className="sidebar contextual-sidebar" data-testid="sidebar-control" aria-label="All-node control sidebar">
+        <div className="context-sidebar-head">
+          <span className="nav-label">Operate</span>
+          <strong>All-node control</strong>
+          <small>One motion route at a time</small>
+        </div>
+        <div className="context-arm-card">
+          <span className={`status-dot ${benchOn ? 'success' : 'danger'}`} />
+          <div>
+            <strong>{benchOn ? 'Bench TX armed' : 'Bench TX off'}</strong>
+            <small>Shared gate for every route</small>
+          </div>
+          <button data-testid="sidebar-bench-toggle" type="button" disabled={busy || !ses?.session_id} onClick={() => void toggleBenchTx()}>
+            {benchOn ? 'Disarm' : 'Arm'}
+          </button>
+        </div>
+        <nav className="context-nav" aria-label="Control routes">
+          <button data-testid="control-route-high" className={controlMethod === 'high' ? 'nav active' : 'nav'} disabled={busy} onClick={() => void selectControlRoute('high')}>
+            <span><strong>High bus</strong><small>Host 0x300 → RT kinematics</small></span>
+          </button>
+          <button data-testid="control-route-low" className={controlMethod === 'low' ? 'nav active' : 'nav'} disabled={busy || fullVehicle} onClick={() => void selectControlRoute('low')}>
+            <span><strong>Low bus</strong><small>Motor + steering + brake</small></span>
+          </button>
+          <button data-testid="control-route-mtr" className={controlMethod === 'mtr' ? 'nav active' : 'nav'} disabled={busy || fullVehicle} onClick={() => void selectControlRoute('mtr')}>
+            <span><strong>MTR direct</strong><small>Motor-only 0x204 on Low</small></span>
+          </button>
+          <button data-testid="control-route-hmi" className={controlMethod === 'hmi' ? 'nav active' : 'nav'} disabled={busy || fullVehicle} onClick={() => void selectControlRoute('hmi')}>
+            <span><strong>HMI</strong><small>Mode and power requests</small></span>
+          </button>
+        </nav>
+        <p className="context-warning">Changing routes stops existing motion streams before selecting the next route.</p>
+      </aside>
+    )
+  }
+
+  if (activity === 'monitor') {
+    const monitorItems = NAV_SECTIONS.flatMap((section) => section.items).filter((item) =>
+      ['live', 'network', 'diagnostics', 'logs', 'dictionary'].includes(item.id),
+    )
+    return (
+      <aside className="sidebar contextual-sidebar" data-testid="sidebar-monitor" aria-label="CAN monitor sidebar">
+        <div className="context-sidebar-head">
+          <span className="nav-label">Inspect</span>
+          <strong>CAN monitor</strong>
+          <small>Live traffic and evidence</small>
+        </div>
+        <nav className="context-nav" aria-label="Monitor workspaces">
+          {monitorItems.map((item) => (
+            <button key={item.id} type="button" className={workspace === item.id ? 'nav active' : 'nav'} onClick={() => setWorkspace(item.id)}>
+              {item.icon}<span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      </aside>
+    )
+  }
 
   return (
     <aside
@@ -86,25 +176,6 @@ export function Sidebar() {
       data-testid="sidebar"
       aria-label="Primary navigation"
     >
-      <div className="sidebar-quick-nav" role="group" aria-label="Quick workspace switcher">
-        {[
-          { id: 'overview' as const, label: 'Overview', icon: <IconLayoutGrid /> },
-          { id: 'control' as const, label: 'All-node control', icon: <IconSliders /> },
-          { id: 'live' as const, label: 'Live CAN', icon: <IconActivity /> },
-        ].map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={workspace === item.id ? 'quick-nav active' : 'quick-nav'}
-            data-testid={`quick-nav-${item.id}`}
-            aria-label={item.label}
-            title={item.label}
-            onClick={() => setWorkspace(item.id)}
-          >
-            {item.icon}
-          </button>
-        ))}
-      </div>
       <nav className="sidebar-nav flex flex-col gap-3 p-3" aria-label="Primary workspaces">
         {NAV_SECTIONS.map((section) => (
           <div key={section.label} className="nav-section">

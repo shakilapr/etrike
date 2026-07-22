@@ -107,6 +107,9 @@ export type Workspace =
   | 'logs'
   | 'settings'
 
+export type Activity = 'explorer' | 'control' | 'monitor'
+export type ControlMethod = 'high' | 'low' | 'mtr' | 'hmi'
+
 type AppState = {
   status: Status | null
   messages: MessageState[]
@@ -116,6 +119,8 @@ type AppState = {
   reconnectAttempts: number
   protocolMismatch: boolean
   workspace: Workspace
+  activity: Activity
+  controlMethod: ControlMethod
   liveFilter: string
   selectedMessageKey: string | null
   setStatus: (s: Status) => void
@@ -125,6 +130,8 @@ type AppState = {
   setReconnectAttempts: (n: number) => void
   setProtocolMismatch: (v: boolean) => void
   setWorkspace: (w: Workspace) => void
+  setActivity: (activity: Activity) => void
+  setControlMethod: (method: ControlMethod) => void
   setLiveFilter: (f: string) => void
   setSelectedMessageKey: (k: string | null) => void
   /** Drop Live CAN selection + message ghosts (mode/transport switch). */
@@ -140,6 +147,8 @@ export const useAppStore = create<AppState>((set) => ({
   reconnectAttempts: 0,
   protocolMismatch: false,
   workspace: 'overview',
+  activity: 'explorer',
+  controlMethod: 'high',
   liveFilter: '',
   selectedMessageKey: null,
   setStatus: (status) =>
@@ -183,6 +192,8 @@ export const useAppStore = create<AppState>((set) => ({
   setReconnectAttempts: (reconnectAttempts) => set({ reconnectAttempts }),
   setProtocolMismatch: (protocolMismatch) => set({ protocolMismatch }),
   setWorkspace: (workspace) => set({ workspace }),
+  setActivity: (activity) => set({ activity }),
+  setControlMethod: (controlMethod) => set({ controlMethod }),
   setLiveFilter: (liveFilter) => set({ liveFilter }),
   setSelectedMessageKey: (selectedMessageKey) => set({ selectedMessageKey }),
   clearLiveView: () => set({ messages: [], topology: [], selectedMessageKey: null }),

@@ -5,7 +5,8 @@
     "toolkit:api": "pwsh -NoProfile -File control-toolkit/scripts/start-api.ps1",
     "toolkit:ui": "pwsh -NoProfile -File control-toolkit/scripts/start-ui.ps1",
     "toolkit:dev:api": "pwsh -NoProfile -File control-toolkit/scripts/start-api.ps1",
-    "toolkit:dev:ui": "pwsh -NoProfile -File control-toolkit/scripts/start-ui.ps1"
+    "toolkit:dev:ui": "pwsh -NoProfile -File control-toolkit/scripts/start-ui.ps1",
+    "toolkit:stop": "pwsh -NoProfile -File control-toolkit/scripts/stop.ps1"
   },
   "devDependencies": {
     "playwright": "^1.61.1"

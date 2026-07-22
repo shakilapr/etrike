@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { cleanupControlStreams, isStaleSequenceError } from '../lib/cleanup'
 import { findMsg, signalText } from '../lib/signals'
-import { useAppStore, type Status } from '../store'
+import { useAppStore, type ControlMethod, type Status } from '../store'
 import { NumericDraft } from './NumericDraft'
 import { WorkspaceShell } from './WorkspaceShell'
 
@@ -13,6 +13,7 @@ function DirectActuatorCards({
   ensureSessionReady,
   refresh,
   disabled,
+  motorOnly = false,
 }: {
   busy: boolean
   setBusy: (b: boolean) => void
@@ -20,6 +21,7 @@ function DirectActuatorCards({
   ensureSessionReady: () => Promise<Status>
   refresh: () => Promise<Status>
   disabled?: boolean
+  motorOnly?: boolean
 }) {
   const messages = useAppStore((s) => s.messages)
   const [motorSpeed, setMotorSpeed] = useState(300)
@@ -169,10 +171,11 @@ function DirectActuatorCards({
   return (
     <div className="direct-grid" data-testid="direct-grid">
       <p className="control-callout" data-testid="direct-safety-banner" style={{ gridColumn: '1 / -1' }}>
-        <strong>Safety bypass ON</strong> for toolkit Low-bus unit tests: SES/SEB{' '}
-        <span className="mono">control_enable</span> + <span className="mono">alignment_enable</span>{' '}
-        are forced true on every TX. Watch <strong>TX</strong> lines below (command on bus); FBK
-        only appears if a peer/ECU answers.
+        {motorOnly ? (
+          <><strong>MTR-only route.</strong> Streams only <span className="mono">RT_DRIVE_CMD 0x204</span> on Low CAN.</>
+        ) : (
+          <><strong>Safety bypass ON</strong> for toolkit Low-bus unit tests: SES/SEB <span className="mono">control_enable</span> + <span className="mono">alignment_enable</span> are forced true on every TX.</>
+        )}{' '}Watch <strong>TX</strong> lines below; FBK only appears if a peer/ECU answers.
       </p>
       <p className="muted small mono" data-testid="direct-channels-live" style={{ gridColumn: '1 / -1' }}>
         Backend direct channels: {channels.length ? channels.join(', ') : 'none'} · method{' '}
@@ -236,7 +239,7 @@ function DirectActuatorCards({
         </div>
       </div>
 
-      <div className={`direct-card${active.steering ? ' streaming' : ''}`} data-testid="direct-steering">
+      {!motorOnly && <div className={`direct-card${active.steering ? ' streaming' : ''}`} data-testid="direct-steering">
         <div className="direct-card-head">
           <h3>Steering · Low · 0x169</h3>
           <span className={`chip tiny ${active.steering ? 'ok' : ''}`}>
@@ -278,9 +281,9 @@ function DirectActuatorCards({
             Stop
           </button>
         </div>
-      </div>
+      </div>}
 
-      <div className={`direct-card${active.brake ? ' streaming' : ''}`} data-testid="direct-brake">
+      {!motorOnly && <div className={`direct-card${active.brake ? ' streaming' : ''}`} data-testid="direct-brake">
         <div className="direct-card-head">
           <h3>Brake · Low · 0x7B9</h3>
           <span className={`chip tiny ${active.brake ? 'ok' : ''}`}>
@@ -322,19 +325,17 @@ function DirectActuatorCards({
             Stop
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
-
-/** Exclusive motion-control methods — high Host vs low direct (never mixed). */
-type ControlMethod = 'high' | 'low' | 'hmi'
 
 export function Control() {
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
-  const [method, setMethod] = useState<ControlMethod>('high')
+  const method = useAppStore((s) => s.controlMethod)
+  const setMethod = useAppStore((s) => s.setControlMethod)
   const [log, setLog] = useState('')
   const [busy, setBusy] = useState(false)
   const [speed, setSpeed] = useState(500)
@@ -485,6 +486,8 @@ export function Control() {
           ? 'Method: High bus · Host kinematics (HOST_DRIVE_CMD 0x300)'
           : next === 'low'
             ? 'Method: Low bus · Direct actuators (motor / steer / brake)'
+            : next === 'mtr'
+              ? 'Method: Direct MTR · Low bus motor only (RT_DRIVE_CMD 0x204)'
             : 'Method: HMI (mode/power requests only — not motion)') +
           (clean.ok ? '' : ` · ${clean.detail}`),
       )
@@ -668,8 +671,8 @@ export function Control() {
     <WorkspaceShell
       testId="workspace-control"
       className="control-workspace"
-      title="Control"
-      description={<>Pick <strong>one</strong> path below. High and Low motion are exclusive (backend cancels the other). HMI is mode/power only — not drive.</>}
+      title="All-node control"
+      description={<>Select one motion route at a time. High, Low-all and MTR-only are exclusive because High control also makes RT publish Low <span className="mono">0x204</span>. All routes share the same Bench TX Arm gate.</>}
     >
 
       <div className="control-setup-grid">
@@ -789,6 +792,17 @@ export function Control() {
           {!fullVehicle && <button
             type="button"
             role="tab"
+            data-testid="control-method-mtr"
+            className={method === 'mtr' ? 'seg-btn active' : 'seg-btn'}
+            aria-selected={method === 'mtr'}
+            disabled={busy}
+            onClick={() => void selectMethod('mtr')}
+          >
+            MTR direct · 0x204
+          </button>}
+          {!fullVehicle && <button
+            type="button"
+            role="tab"
             data-testid="control-method-hmi"
             className={method === 'hmi' ? 'seg-btn active' : 'seg-btn'}
             aria-selected={method === 'hmi'}
@@ -816,6 +830,16 @@ export function Control() {
                 Streams motor <span className="mono">0x204</span>, steer{' '}
                 <span className="mono">0x169</span>, brake <span className="mono">0x7B9</span>{' '}
                 for unit tests. Starting any channel stops high-bus Host drive jobs.
+              </p>
+            </div>
+          )}
+          {method === 'mtr' && (
+            <div className="method-card active" data-testid="method-blurb-mtr">
+              <strong>MTR direct · Low CAN motor only</strong>
+              <p className="muted small" style={{ margin: '6px 0 0' }}>
+                Streams <span className="mono">RT_DRIVE_CMD 0x204</span> directly to the
+                MTR contract without High-bus host kinematics. Selecting this route first
+                releases High and other Low actuator streams.
               </p>
             </div>
           )}
@@ -1002,6 +1026,24 @@ export function Control() {
             setLog={setLog}
             ensureSessionReady={ensureSessionReady}
             refresh={refresh}
+          />
+        </section>
+      )}
+
+      {method === 'mtr' && (
+        <section className="panel" data-testid="direct-mtr">
+          <h2>MTR direct · Low bus</h2>
+          <p className="muted small">
+            Motor-only unit-test route. Uses the shared Bench TX Arm gate and backend
+            watchdog; leaving this workspace stops the stream.
+          </p>
+          <DirectActuatorCards
+            busy={busy}
+            setBusy={setBusy}
+            setLog={setLog}
+            ensureSessionReady={ensureSessionReady}
+            refresh={refresh}
+            motorOnly
           />
         </section>
       )}

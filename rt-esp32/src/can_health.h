@@ -27,9 +27,12 @@ static void monitor_can_bus_off() {
                 ESP_LOGE(TAG, "Low CAN bus-off persistent - triggering ESTOP");
                 g_estop_reason.store(rt::kEstopReasonBusOff);
                 if (can_send_estop()) {
-                    can::Frame ef{}; ef.id = can::kIdSafetyEstop; ef.dlc = 0;
-                    xQueueSend(g_gw_tx_low_q, &ef, 0);
-                    xQueueSend(g_gw_tx_high_q, &ef, 0);
+                    can::Frame ef;
+                    can::gen::SafetyEstop estop_msg{};
+                    if (can::gen::encode_safety_estop(estop_msg, ef) == can::gen::CodecStatus::Ok) {
+                        xQueueSend(g_gw_tx_low_q, &ef, 0);
+                        xQueueSend(g_gw_tx_high_q, &ef, 0);
+                    }
                 }
             }
             // Debounce: at most one recovery attempt / 3 s from this path
