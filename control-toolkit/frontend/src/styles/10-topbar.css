@@ -426,6 +426,12 @@ button.topbar-mode-btn.btn {
   color: var(--text-secondary);
 }
 
+/* Live but errors / late — yellow lamp + name */
+.ecu-cell.tone-warning .ecu-cell-name {
+  color: var(--warning);
+  font-weight: 700;
+}
+
 .ecu-cell.tone-danger .ecu-cell-name,
 .ecu-cell.tone-muted .ecu-cell-name {
   color: var(--text-tertiary);
