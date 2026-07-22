@@ -26,9 +26,13 @@ export function WorkspaceShell({
       data-testid={testId}
     >
       <header className="ws-header m-0">
-        <h1 className="m-0 text-[22px] font-bold tracking-tight text-text">{title}</h1>
+        <h1 className="m-0 text-[length:var(--font-size-title)] font-bold tracking-tight text-text leading-tight">
+          {title}
+        </h1>
         {description != null && description !== '' && (
-          <p className="muted mt-1 max-w-[72ch] text-[13px] text-text-secondary">{description}</p>
+          <p className="muted mt-1 max-w-[72ch] text-[length:var(--font-size-ui)] text-text-secondary leading-snug">
+            {description}
+          </p>
         )}
         {headerExtra}
       </header>
