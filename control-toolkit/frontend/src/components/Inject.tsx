@@ -228,7 +228,13 @@ function formatBytes(hex?: string): string {
   return `[${pairs.join(', ')}]`
 }
 
-/** Stable ECU order in inject filter (every controller on the bus). */
+/**
+ * Input vs output devices are different on the bus:
+ *  - Output (TX): frames we inject — producer on the wire, aimed at a target ECU.
+ *  - Input (RX):  status/telemetry frames devices publish — not normal inject targets.
+ */
+type IoRole = 'out' | 'in' | 'all'
+
 const ECU_ORDER = [
   'Host',
   'RT',
@@ -261,11 +267,10 @@ function msgSender(m: DictMessage): string {
   return s && s !== '—' ? s : '—'
 }
 
-/** True if this ECU sends or receives the frame (all msgs a controller uses). */
-function msgTouchesEcu(m: DictMessage, ecu: string): boolean {
-  if (ecu === 'all') return true
-  if (msgSender(m) === ecu) return true
-  return (m.receivers || []).some((r) => String(r).trim() === ecu)
+function msgReceivers(m: DictMessage): string[] {
+  return (m.receivers || [])
+    .map((r) => String(r).trim())
+    .filter((r) => r && r !== '—')
 }
 
 /** Named inject can build a payload (generated + known custom cmds + empty DLC). */
@@ -273,12 +278,67 @@ function canNamedInject(m: DictMessage): boolean {
   const caps = m.capabilities || {}
   if (caps.decodedInjection === true) return true
   if (caps.decodedInjection === false) return false
-  // Older backend without the flag: allow generated / empty fields.
   const strategy = String(caps.codecStrategy || '')
   if (strategy === 'generated' || strategy === '') return true
   if ((m.fields || []).length === 0 || m.dlc === 0) return true
   const k = m.canonicalKey
   return k === 'ses:vcu_ses_req' || k === 'seb:vcu_seb_req'
+}
+
+/** Output frame = we can (or should) TX it. Input = device-reported status. */
+function isOutputMsg(m: DictMessage): boolean {
+  return canNamedInject(m)
+}
+
+function isInputMsg(m: DictMessage): boolean {
+  return !canNamedInject(m)
+}
+
+/**
+ * Output device = who the command is for (primary receiver).
+ * Prefer actuators/controllers over Host when both are listed.
+ */
+function outputDevice(m: DictMessage): string {
+  const recv = msgReceivers(m)
+  const prefer = recv.find((r) => r !== 'Host' && r !== 'Any')
+  if (prefer) return prefer
+  if (recv[0]) return recv[0]
+  // Broadcast / no receivers: group by producer we impersonate
+  return msgSender(m)
+}
+
+/** Input device = who publishes the status frame on the bus. */
+function inputDevice(m: DictMessage): string {
+  return msgSender(m)
+}
+
+function deviceForRole(m: DictMessage, role: IoRole): string {
+  if (role === 'in') return inputDevice(m)
+  if (role === 'out') return outputDevice(m)
+  // All: show under sender for catalog completeness
+  return msgSender(m)
+}
+
+function matchesDevice(m: DictMessage, role: IoRole, device: string): boolean {
+  if (device === 'all') return true
+  if (role === 'out') {
+    // Output filter: target device OR producer (Host injecting as Host)
+    return outputDevice(m) === device || msgSender(m) === device
+  }
+  if (role === 'in') {
+    return inputDevice(m) === device
+  }
+  // All: either side of the link
+  if (msgSender(m) === device) return true
+  if (outputDevice(m) === device) return true
+  return msgReceivers(m).includes(device)
+}
+
+function routeLabel(m: DictMessage): string {
+  const from = msgSender(m)
+  const to = msgReceivers(m)
+  if (to.length) return `${from} → ${to.join(',')}`
+  return from
 }
 
 export function Inject() {
@@ -290,8 +350,10 @@ export function Inject() {
   const [messages, setMessages] = useState<DictMessage[]>([])
   const [mode, setMode] = useState<'named' | 'raw'>('named')
   const [bus, setBus] = useState<'high' | 'low'>('high')
+  /** Output = inject TX · Input = device RX status · All = catalog */
+  const [ioRole, setIoRole] = useState<IoRole>('out')
   const [filter, setFilter] = useState('')
-  const [ecuFilter, setEcuFilter] = useState<string>('all')
+  const [deviceFilter, setDeviceFilter] = useState<string>('all')
   const [selectedKey, setSelectedKey] = useState('')
   const [values, setValues] = useState<Record<string, FieldValue>>({})
   const [periodMs, setPeriodMs] = useState(50)
@@ -335,59 +397,78 @@ export function Inject() {
     if (activeJobCount > 0) setTemplatesOpen(false)
   }, [activeJobCount])
 
-  // Full ECU set for this bus: every sender + receiver in the catalog (not only injectables).
-  const ecuOptions = useMemo(() => {
+  const onBus = useMemo(
+    () => messages.filter((m) => m.bus === bus),
+    [messages, bus],
+  )
+
+  const rolePool = useMemo(() => {
+    if (ioRole === 'out') return onBus.filter(isOutputMsg)
+    if (ioRole === 'in') return onBus.filter(isInputMsg)
+    return onBus
+  }, [onBus, ioRole])
+
+  // Device list depends on I/O role — output targets ≠ input publishers.
+  const deviceOptions = useMemo(() => {
     const set = new Set<string>()
-    for (const m of messages) {
-      if (m.bus !== bus) continue
-      const s = msgSender(m)
-      if (s !== '—') set.add(s)
-      for (const r of m.receivers || []) {
-        const t = String(r).trim()
+    for (const m of rolePool) {
+      if (ioRole === 'out') {
+        const t = outputDevice(m)
         if (t && t !== '—') set.add(t)
+        const s = msgSender(m)
+        if (s && s !== '—') set.add(s)
+      } else if (ioRole === 'in') {
+        const s = inputDevice(m)
+        if (s && s !== '—') set.add(s)
+      } else {
+        const s = msgSender(m)
+        if (s && s !== '—') set.add(s)
+        for (const r of msgReceivers(m)) set.add(r)
       }
     }
     return [...set].sort((a, b) => ecuRank(a) - ecuRank(b) || a.localeCompare(b))
-  }, [messages, bus])
+  }, [rolePool, ioRole])
 
-  // All catalog messages on the bus. Never drop SES/SEB/custom frames.
-  // ECU filter = msgs that ECU sends OR receives (everything that controller uses).
   const busMessages = useMemo(() => {
     const q = filter.trim().toLowerCase()
-    return messages
-      .filter((m) => m.bus === bus)
-      .filter((m) => msgTouchesEcu(m, ecuFilter))
+    return rolePool
+      .filter((m) => matchesDevice(m, ioRole, deviceFilter))
       .filter((m) => {
         if (!q) return true
-        const recv = (m.receivers || []).join(' ').toLowerCase()
+        const route = routeLabel(m).toLowerCase()
         return (
           m.name.toLowerCase().includes(q) ||
           m.id.toLowerCase().includes(q) ||
           m.canonicalKey.toLowerCase().includes(q) ||
-          msgSender(m).toLowerCase().includes(q) ||
-          recv.includes(q)
+          route.includes(q) ||
+          deviceForRole(m, ioRole).toLowerCase().includes(q)
         )
       })
       .sort((a, b) => {
-        const sa = ecuRank(msgSender(a)) - ecuRank(msgSender(b))
-        if (sa !== 0) return sa
+        const da = ecuRank(deviceForRole(a, ioRole)) - ecuRank(deviceForRole(b, ioRole))
+        if (da !== 0) return da
+        // Outputs first within All
+        if (ioRole === 'all') {
+          const oa = isOutputMsg(a) === isOutputMsg(b) ? 0 : isOutputMsg(a) ? -1 : 1
+          if (oa !== 0) return oa
+        }
         return a.can_id - b.can_id || a.name.localeCompare(b.name)
       })
-  }, [messages, bus, filter, ecuFilter])
+  }, [rolePool, ioRole, deviceFilter, filter])
 
-  /** Message list grouped by sender ECU for the select (full set per controller). */
-  const messagesByEcu = useMemo(() => {
+  /** Group by the device that matters for the active I/O role. */
+  const messagesByDevice = useMemo(() => {
     const map = new Map<string, DictMessage[]>()
     for (const m of busMessages) {
-      const s = msgSender(m)
-      const list = map.get(s) || []
+      const d = deviceForRole(m, ioRole)
+      const list = map.get(d) || []
       list.push(m)
-      map.set(s, list)
+      map.set(d, list)
     }
     return [...map.entries()].sort(
       (a, b) => ecuRank(a[0]) - ecuRank(b[0]) || a[0].localeCompare(b[0]),
     )
-  }, [busMessages])
+  }, [busMessages, ioRole])
 
   const selected = useMemo(() => {
     return (
@@ -399,8 +480,10 @@ export function Inject() {
   }, [busMessages, selectedKey])
 
   const selectedInjectable = selected ? canNamedInject(selected) : false
+  const outCount = onBus.filter(isOutputMsg).length
+  const inCount = onBus.filter(isInputMsg).length
 
-  // Keep selection valid when ECU/bus filters change
+  // Keep selection valid when bus / I/O / device filters change
   useEffect(() => {
     if (!selectedKey) return
     if (busMessages.some((m) => m.canonicalKey === selectedKey)) return
@@ -414,18 +497,35 @@ export function Inject() {
     }
   }, [busMessages, selectedKey])
 
+  // Drop invalid device when role changes (output targets ≠ input sources)
+  useEffect(() => {
+    if (deviceFilter === 'all') return
+    if (!deviceOptions.includes(deviceFilter)) setDeviceFilter('all')
+  }, [deviceOptions, deviceFilter])
+
   const handleBusChange = (newBus: 'high' | 'low') => {
     setBus(newBus)
-    setEcuFilter('all')
-    const firstOnBus = messages.find((m) => m.bus === newBus)
-    if (firstOnBus) {
-      setSelectedKey(firstOnBus.canonicalKey)
-      setValues(defaultsFor(firstOnBus))
+    setDeviceFilter('all')
+    const pool =
+      ioRole === 'out'
+        ? messages.filter((m) => m.bus === newBus && isOutputMsg(m))
+        : ioRole === 'in'
+          ? messages.filter((m) => m.bus === newBus && isInputMsg(m))
+          : messages.filter((m) => m.bus === newBus)
+    const first = pool[0]
+    if (first) {
+      setSelectedKey(first.canonicalKey)
+      setValues(defaultsFor(first))
     } else {
       setSelectedKey('')
       setValues({})
     }
     setConfirmEstop(false)
+  }
+
+  const handleIoRole = (role: IoRole) => {
+    setIoRole(role)
+    setDeviceFilter('all')
   }
 
   const handleMessageChange = (key: string) => {
@@ -754,7 +854,7 @@ export function Inject() {
       {mode === 'named' ? (
         <div className="inject-layout" data-testid="inject-named-panel">
           <Panel className="inject-main">
-            <div className="inject-editor-bar">
+            <div className="inject-editor-bar" data-testid="inject-editor-bar">
               <Seg data-testid="inject-bus-tabs">
                 {(['high', 'low'] as const).map((b) => (
                   <SegButton
@@ -767,24 +867,67 @@ export function Inject() {
                   </SegButton>
                 ))}
               </Seg>
+              <Seg
+                data-testid="inject-io-role"
+                aria-label="Output TX vs input RX devices"
+                title="Output and input devices are different: TX commands vs RX status"
+              >
+                <SegButton
+                  active={ioRole === 'out'}
+                  data-testid="inject-io-out"
+                  onClick={() => handleIoRole('out')}
+                >
+                  Out ({outCount})
+                </SegButton>
+                <SegButton
+                  active={ioRole === 'in'}
+                  data-testid="inject-io-in"
+                  onClick={() => handleIoRole('in')}
+                >
+                  In ({inCount})
+                </SegButton>
+                <SegButton
+                  active={ioRole === 'all'}
+                  data-testid="inject-io-all"
+                  onClick={() => handleIoRole('all')}
+                >
+                  All
+                </SegButton>
+              </Seg>
               <select
                 className="inject-ecu-select"
-                data-testid="inject-ecu-filter"
-                value={ecuFilter}
-                aria-label="Filter by ECU (sender or receiver)"
-                title="Show every message this ECU sends or receives"
-                onChange={(e) => setEcuFilter(e.target.value)}
+                data-testid="inject-device-filter"
+                value={deviceFilter}
+                aria-label={
+                  ioRole === 'in'
+                    ? 'Input device (status publisher)'
+                    : ioRole === 'out'
+                      ? 'Output device (command target or producer)'
+                      : 'Device'
+                }
+                title={
+                  ioRole === 'in'
+                    ? 'Input devices publish status on the bus'
+                    : ioRole === 'out'
+                      ? 'Output devices are command targets (or producers we inject as)'
+                      : 'Filter by any device on the link'
+                }
+                onChange={(e) => setDeviceFilter(e.target.value)}
               >
                 <option value="all">
-                  All ECUs ({messages.filter((m) => m.bus === bus).length})
+                  {ioRole === 'in'
+                    ? `All inputs (${rolePool.length})`
+                    : ioRole === 'out'
+                      ? `All outputs (${rolePool.length})`
+                      : `All devices (${rolePool.length})`}
                 </option>
-                {ecuOptions.map((ecu) => {
-                  const n = messages.filter(
-                    (m) => m.bus === bus && msgTouchesEcu(m, ecu),
-                  ).length
+                {deviceOptions.map((dev) => {
+                  const n = rolePool.filter((m) => matchesDevice(m, ioRole, dev)).length
+                  const prefix =
+                    ioRole === 'in' ? 'In' : ioRole === 'out' ? 'Out' : 'Dev'
                   return (
-                    <option key={ecu} value={ecu}>
-                      {ECU_LABEL[ecu] ?? ecu} ({n})
+                    <option key={dev} value={dev}>
+                      {prefix} · {ECU_LABEL[dev] ?? dev} ({n})
                     </option>
                   )
                 })}
@@ -792,7 +935,7 @@ export function Inject() {
               <Input
                 className="inject-filter-input h-8 min-h-8 max-w-none"
                 data-testid="inject-filter"
-                placeholder="Filter name / id / ECU…"
+                placeholder="Filter name / id / route…"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
@@ -804,57 +947,75 @@ export function Inject() {
               >
                 {busMessages.length === 0 && (
                   <option value="">
-                    No messages{ecuFilter !== 'all' ? ` for ${ecuFilter}` : ''} on {bus}
+                    No {ioRole === 'in' ? 'input' : ioRole === 'out' ? 'output' : ''} messages
+                    {deviceFilter !== 'all' ? ` for ${deviceFilter}` : ''} on {bus}
                   </option>
                 )}
-                {messagesByEcu.map(([ecu, group]) => (
-                  <optgroup key={ecu} label={`${ECU_LABEL[ecu] ?? ecu} · ${group.length} msg`}>
-                    {group.map((m) => {
-                      const inj = canNamedInject(m)
-                      const recv =
-                        (m.receivers || []).length > 0
-                          ? ` → ${(m.receivers || []).join(',')}`
-                          : ''
-                      return (
-                        <option
-                          key={`${m.bus}-${m.canonicalKey}-${m.can_id}`}
-                          value={m.canonicalKey}
-                        >
-                          {m.id} {m.name}
-                          {recv}
-                          {(m.fields || []).length === 0 ? ' · DLC0' : ''}
-                          {inj ? '' : ' · RX-only'}
-                        </option>
-                      )
-                    })}
-                  </optgroup>
-                ))}
+                {messagesByDevice.map(([dev, group]) => {
+                  const roleTag =
+                    ioRole === 'in' ? 'Input' : ioRole === 'out' ? 'Output' : 'Device'
+                  return (
+                    <optgroup
+                      key={dev}
+                      label={`${roleTag} · ${ECU_LABEL[dev] ?? dev} · ${group.length}`}
+                    >
+                      {group.map((m) => {
+                        const out = isOutputMsg(m)
+                        return (
+                          <option
+                            key={`${m.bus}-${m.canonicalKey}-${m.can_id}`}
+                            value={m.canonicalKey}
+                          >
+                            {m.id} {m.name}
+                            {' · '}
+                            {routeLabel(m)}
+                            {(m.fields || []).length === 0 ? ' · DLC0' : ''}
+                            {out ? '' : ' · input'}
+                          </option>
+                        )
+                      })}
+                    </optgroup>
+                  )
+                })}
               </select>
             </div>
 
             {selected ? (
               <p className="muted small inject-msg-meta" data-testid="inject-msg-meta">
+                {selectedInjectable ? (
+                  <span className="tx-text" title="Named inject / host TX">
+                    Output
+                  </span>
+                ) : (
+                  <span title="Device-published status (input)">Input</span>
+                )}
+                {' · '}
                 <span className="mono">{selected.id}</span>
                 {' · '}
                 <strong>{selected.name}</strong>
-                {' · sender '}
-                <span className="mono">{msgSender(selected)}</span>
-                {(selected.receivers || []).length > 0 ? (
-                  <>
-                    {' · RX '}
-                    <span className="mono">{(selected.receivers || []).join(', ')}</span>
-                  </>
-                ) : null}
                 {' · '}
+                <span className="mono" title="Wire route sender → receivers">
+                  {routeLabel(selected)}
+                </span>
                 {selectedInjectable ? (
-                  <span className="tx-text">named inject OK</span>
+                  <>
+                    {' · target '}
+                    <span className="mono">{outputDevice(selected)}</span>
+                    {' · '}
+                    <span className="tx-text">named inject OK</span>
+                  </>
                 ) : (
-                  <span className="muted" title="Status/telemetry frames have no encoder — use Raw or another TX source">
-                    RX-only (no named encode)
-                  </span>
+                  <>
+                    {' · from '}
+                    <span className="mono">{inputDevice(selected)}</span>
+                    {' · '}
+                    <span className="muted" title="No named encoder — use Raw for fault injection">
+                      no named encode
+                    </span>
+                  </>
                 )}
                 {' · '}
-                <span className="mono muted">{busMessages.length} on list</span>
+                <span className="mono muted">{busMessages.length} listed</span>
               </p>
             ) : null}
 
