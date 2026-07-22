@@ -1,4 +1,10 @@
-import { formatReqConf, findMsg, signalNum, signalText } from '../lib/signals'
+import {
+  formatReqConf,
+  findMsg,
+  observeEstop,
+  signalNum,
+  signalText,
+} from '../lib/signals'
 import { useAppStore } from '../store'
 import { FreshnessBadge } from './FreshnessBadge'
 import { MeterBar, MetricCard, StatusPill } from './primitives'
@@ -15,8 +21,8 @@ export function Overview() {
   const hostBrake = findMsg(messages, 'HOST_BRAKE_REQ')
   const rtBrake = findMsg(messages, 'RT_BRAKE_CMD')
   const brakeDiag = findMsg(messages, 'BRAKE_DIAG')
-  const safety = findMsg(messages, 'SYS_SAFETY_STS')
   const ses = status?.session
+  const estopObs = observeEstop(messages, ses)
 
   // Single stream/CAN label — never join two synonyms (was "lost · lost").
   const streamHealthLabel =
@@ -66,12 +72,7 @@ export function Overview() {
 
   const gearLabel =
     signalText(drive, 'gear') || signalText(motor, 'gear_state') || '—'
-  const estopOn = !!ses?.estop_active
   const benchOn = ses?.bench_tx === 'enabled'
-  const safetyEstopOn =
-    String(signalText(safety, 'estop_active')).toLowerCase().includes('1') ||
-    String(signalText(safety, 'estop_active')).toLowerCase() === 'true' ||
-    String(signalText(safety, 'estop_active')).toLowerCase() === 'active'
 
   return (
     <WorkspaceShell
@@ -81,20 +82,15 @@ export function Overview() {
     >
 
       <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
-        {/* Discrete states: label + one StatusPill only (never value text + same pill). */}
-        <div className={`strip-item ${estopOn || safetyEstopOn ? 'hazard' : 'ok'}`}>
+        {/* Multi-source ESTOP (latch + 0x001 H/L + SYS/RT) — same as topbar. */}
+        <div
+          className={`strip-item ${estopObs.any ? 'hazard' : 'ok'}`}
+          title={estopObs.detail}
+        >
           <span className="strip-k">ESTOP</span>
           <StatusPill
-            label={
-              estopOn && safetyEstopOn
-                ? 'Inject + bus'
-                : estopOn
-                  ? 'Host latch'
-                  : safetyEstopOn
-                    ? 'Bus active'
-                    : 'Clear'
-            }
-            tone={estopOn || safetyEstopOn ? 'danger' : 'ok'}
+            label={estopObs.label}
+            tone={estopObs.any ? 'danger' : 'ok'}
             testId="meter-estop"
           />
         </div>
