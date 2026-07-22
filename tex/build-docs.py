@@ -229,8 +229,8 @@ def main() -> None:
         description="Build E-Trike LaTeX documentation from markdown sources."
     )
     parser.add_argument(
-        "--version", default="v0.4.0-alpha",
-        help="Version string for the documentation (default: v0.4.0-alpha)"
+        "--version", default="v0.8.0-alpha",
+        help="Version string for the documentation (default: v0.8.0-alpha)"
     )
     parser.add_argument(
         "--date", default=today,

@@ -5,4 +5,4 @@ receive pipeline, latest-value state, and REST/WebSocket API.
 See ``control-toolkit/workplan.md`` for delivery order.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.8.0-alpha"
