@@ -1,0 +1,188 @@
+% ===========================================================================
+%  E-Trike — Control Toolkit (Control Toolbox) Technical & Operational Guide
+% ===========================================================================
+
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{XCharter}
+\usepackage[inner=30mm,outer=20mm,top=22mm,bottom=25mm,footskip=14mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usepackage{soul}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{alltt}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{pmboxdraw}
+\usepackage{textcomp}
+\usepackage{calc}
+\usepackage{ragged2e}
+
+% ── Pandoc compatibility ────────────────────────────────────────────
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% ── Prevent overfull hboxes ─────────────────────────────────────────
+\setlength{\emergencystretch}{3em}
+\tolerance=2000
+\hbadness=10000
+
+% ── Table spacing ───────────────────────────────────────────────────
+\setlength{\LTpre}{6pt plus 2pt minus 2pt}
+\setlength{\LTpost}{6pt plus 2pt minus 2pt}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\raggedbottom
+
+% ── Unicode character support ───────────────────────────────────────
+\DeclareUnicodeCharacter{03A9}{\ensuremath{\Omega}}
+\DeclareUnicodeCharacter{03C0}{\ensuremath{\pi}}
+\DeclareUnicodeCharacter{03B4}{\ensuremath{\delta}}
+\DeclareUnicodeCharacter{03C9}{\ensuremath{\omega}}
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}
+\DeclareUnicodeCharacter{03B8}{\ensuremath{\theta}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{00B0}{\textdegree}
+\DeclareUnicodeCharacter{00B1}{\ensuremath{\pm}}
+\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}}
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{2190}{\ensuremath{\leftarrow}}
+\DeclareUnicodeCharacter{2194}{\ensuremath{\leftrightarrow}}
+\DeclareUnicodeCharacter{25BA}{$\triangleright$}
+\DeclareUnicodeCharacter{25B6}{$\triangleright$}
+\DeclareUnicodeCharacter{25C0}{$\triangleleft$}
+\DeclareUnicodeCharacter{25BC}{$\triangledown$}
+\DeclareUnicodeCharacter{25B2}{$\triangle$}
+
+% ── Title formatting ────────────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\fontsize{16}{20}\selectfont}
+  {\chaptertitlename\ \thechapter}{12pt}{}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{14}{17}\selectfont}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{13}{16}\selectfont}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\bfseries\fontsize{12}{15}\selectfont}
+  {\thesubsubsection}{1em}{}
+
+% ── Hyperref setup ──────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black,
+  pdfauthor={E-Trike Engineering Team},
+  pdftitle={Control Toolkit Technical \& Operational Guide},
+  pdfsubject={Control Toolkit (Control Toolbox) Guide},
+  pdfkeywords={Control Toolkit, Control Toolbox, CAN bus, FastAPI, React, CANalyst-II, Bench Testing, Fault Injection, Synthetic Peers},
+  bookmarksnumbered=true,
+  bookmarksopen=true,
+  bookmarksopenlevel=1
+}
+
+% ── Code listing style ──────────────────────────────────────────────
+\lstdefinestyle{etrike}{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=false,
+  frame=single,
+  framesep=4pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+  showstringspaces=false,
+  columns=flexible,
+  keepspaces=true,
+  tabsize=2,
+  captionpos=b
+}
+\lstset{style=etrike}
+
+% ── Header / footer ─────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{E-Trike Control Toolkit Guide}}
+\fancyhead[R]{\small\textit{v0.8.0-alpha}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{14pt}
+
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+}
+
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  TITLE PAGE
+% ═══════════════════════════════════════════════════════════════════════
+
+\thispagestyle{empty}
+
+\vspace*{40mm}
+
+\begin{center}
+  {\fontsize{28}{34}\selectfont\textbf{E-Trike Project}}\\[8mm]
+  {\fontsize{22}{28}\selectfont\textbf{Control Toolkit (Control Toolbox)}}\\[4mm]
+  {\fontsize{16}{20}\selectfont Technical \& Operational Guide}\\[20mm]
+  {\fontsize{13}{16}\selectfont\textit{Bench Control, Diagnostics, SIL, Fault Injection, and Hardware Testing}}\\[30mm]
+  {\fontsize{12}{15}\selectfont Version 0.8.0-alpha}\\[4mm]
+  {\fontsize{11}{14}\selectfont \today}
+\end{center}
+
+\vfill
+
+\begin{center}
+  {\footnotesize
+  Control Toolkit User Manual --- System Architecture --- Features \& Operations\\[2mm]
+  FastAPI Backend (8001) --- React/Vite UI (5173) --- CANalyst-II Dual Bus (500 kbit/s)
+  }
+\end{center}
+
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  TABLE OF CONTENTS
+% ═══════════════════════════════════════════════════════════════════════
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  DOCUMENT CONTENT
+% ═══════════════════════════════════════════════════════════════════════
+
+\input{control-toolkit-guide-fragment.tex}
+
+\vfill
+
+\begin{center}
+  \rule{0.5\textwidth}{0.4pt}\\[4mm]
+  {\small\textit{E-Trike Control Toolkit Technical \& Operational Guide v0.8.0-alpha}}\\[2mm]
+  {\small E-Trike Engineering Team --- Control Toolbox}\\[2mm]
+  {\small Compiled with \LaTeX}
+\end{center}
+
+\end{document}
