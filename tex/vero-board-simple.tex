@@ -1,0 +1,448 @@
+% ===========================================================================
+%  E-Trike Vero Board GPIO Quick Reference
+%  Generated: 2026-07-23
+%  Compile:  pdflatex -interaction=nonstopmode vero-board-simple.tex
+% ===========================================================================
+
+\documentclass[10pt,a4paper,oneside]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[inner=15mm,outer=12mm,top=12mm,bottom=12mm,footskip=8mm,headsep=4mm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usepackage[normalem]{ulem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{calc}
+
+\setlength{\LTpre}{2pt plus 1pt minus 1pt}
+\setlength{\LTpost}{2pt plus 1pt minus 1pt}
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.05}
+\raggedbottom
+\setlength{\emergencystretch}{2em}
+\tolerance=2000
+\hbadness=10000
+
+\widowpenalty=10000
+\clubpenalty=10000
+
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\fontsize{10}{12}\selectfont}
+  {}{0pt}{}
+\titlespacing*{\chapter}{0pt}{-1.5em}{4pt}
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{10}{12}\selectfont}
+  {}{0pt}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{9}{11}\selectfont}
+  {}{0pt}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black,
+  pdfauthor={E-Trike Project},
+  pdftitle={E-Trike Vero Board GPIO Quick Reference},
+  bookmarksnumbered=true,
+  bookmarksopen=true,
+  bookmarksopenlevel=1
+}
+
+\lstdefinestyle{etrike}{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  framesep=2pt,
+  xleftmargin=3pt,
+  xrightmargin=3pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false,
+  columns=flexible,
+  keepspaces=true,
+  tabsize=2,
+  escapechar=|
+}
+\lstset{style=etrike}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\scriptsize\textit{Vero Board GPIO Reference}}
+\fancyhead[R]{\scriptsize\textit{v0.8.0-alpha}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{10pt}
+\setlength{\headsep}{4mm}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  RT ESP32-S3
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{RT ESP32-S3 (N16R8) — CAN Gateway \& Real-Time Controller}
+
+\section{RT — CAN Module Wiring (Vero Board)}
+
+\subsection{WCMCU-230 (Low Bus TWAI)}
+
+\begin{longtable}{|L{0.8cm}|L{1.2cm}|L{2.2cm}|L{2.5cm}|L{3.5cm}|}
+\hline
+\textbf{GPIO} & \textbf{J1} & \textbf{Signal} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{GPIO} & \textbf{J1} & \textbf{Signal} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+— & 1 (3V3) & 3.3V & WCMCU-230 VCC & Vero board 3.3V rail \\
+\hline
+— & 22 (GND) & GND & WCMCU-230 GND & Vero board ground \\
+\hline
+5 & 5 & CAN TX & WCMCU-230 CTX & Vero board trace \\
+\hline
+4 & 4 & CAN RX & WCMCU-230 CRX & Vero board trace \\
+\hline
+— & — & CAN\_H & Low bus & 22 AWG, yellow \\
+\hline
+— & — & CAN\_L & Low bus & 22 AWG, green \\
+\hline
+— & — & GND & Low bus & 22 AWG, black \\
+\hline
+\end{longtable}
+
+120$\Omega$ terminator: ON. Source: \texttt{rt::kCanLowTxGpio=5}, \texttt{rt::kCanLowRxGpio=4}, 500 kbit/s
+
+\subsection{MCP2515 SPI (High Bus)}
+
+\begin{longtable}{|L{0.8cm}|L{2cm}|L{3cm}|L{4.5cm}|}
+\hline
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+15 & SPI SCK & MCP2515 SCK & Vero board trace \\
+\hline
+16 & SPI MOSI & MCP2515 SI & Vero board trace \\
+\hline
+17 & SPI MISO & MCP2515 SO & Vero board trace \\
+\hline
+18 & SPI CS & MCP2515 CS & Vero board trace \\
+\hline
+47 & INT & MCP2515 INT & Vero board trace \\
+\hline
+— & VCC & MCP2515 VCC & Vero board 5V rail \\
+\hline
+— & GND & MCP2515 GND & Vero board ground \\
+\hline
+— & CAN\_H & High bus & 22 AWG, orange \\
+\hline
+— & CAN\_L & High bus & 22 AWG, blue \\
+\hline
+\end{longtable}
+
+No onboard termination. Source: \texttt{rt::kSpiSck=15}, \texttt{rt::kSpiMosi=16}, \texttt{rt::kSpiMiso=17}, \texttt{rt::kSpiCs=18}, \texttt{rt::kMcpInt=47}, 500 kbit/s
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — Inputs}
+
+\begin{longtable}{|L{0.4cm}|L{2.5cm}|L{0.8cm}|L{1.8cm}|L{2.2cm}|L{3cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & CAN RX low & 4 & TWAI RX & SN65HVD230 CRX & Active \\
+\hline
+2 & MCP2515 MISO & 17 & SPI & MCP2515 SO & Active \\
+\hline
+3 & MCP2515 INT & 47 & Digital & MCP2515 INT & Active, falling edge \\
+\hline
+4 & Dev override [latch] & 42 & Active-low & Latch switch$\rightarrow$GND & J3 pin 6 \\
+\hline
+\end{longtable}
+
+\subsection{RT — Encoder Inputs}
+
+\begin{longtable}{|L{0.4cm}|L{2.5cm}|L{0.8cm}|L{1.8cm}|L{2.2cm}|L{3cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & Rear motor enc A & 1 & PCNT & Terminal block & $\rightarrow$ GPIO1 \\
+\hline
+2 & Rear motor enc B & 2 & PCNT & Terminal block & $\rightarrow$ GPIO2 \\
+\hline
+3 & Front wheel enc A & 10 & PCNT & Terminal block & $\rightarrow$ GPIO10 \\
+\hline
+4 & Front wheel enc B & 6 & PCNT & Terminal block & $\rightarrow$ GPIO6 \\
+\hline
+5 & Rear-left enc A & 9 & PCNT & Terminal block & $\rightarrow$ GPIO9 \\
+\hline
+6 & Rear-left enc B & 12 & PCNT & Terminal block & $\rightarrow$ GPIO12 \\
+\hline
+7 & Rear-right enc A & 13 & PCNT & Terminal block & $\rightarrow$ GPIO13 \\
+\hline
+8 & Rear-right enc B & 14 & PCNT & Terminal block & $\rightarrow$ GPIO14 \\
+\hline
+\end{longtable}
+
+Encoders: terminal block $\rightarrow$ Dupont jumper $\rightarrow$ GPIO
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — Outputs}
+
+\begin{longtable}{|L{0.4cm}|L{2.2cm}|L{0.8cm}|L{1.8cm}|L{2.2cm}|L{3cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & CAN TX low & 5 & TWAI TX & SN65HVD230 CTX & 0x204, 0x205, 0x169, 0x001, 0x302, 0x7FD \\
+\hline
+2 & SPI SCK & 15 & SPI out & MCP2515 SCK & 10 MHz max \\
+\hline
+3 & SPI MOSI & 16 & SPI out & MCP2515 SI & High bus TX \\
+\hline
+4 & SPI CS & 18 & Digital out & MCP2515 CS & Active low \\
+\hline
+5 & WDT Toggle & 21 & Digital out & TPS3850 WDI & 100 Hz \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — GPIO Quick Reference}
+
+\begin{lstlisting}
+GPIO 1  -> Rear motor enc A
+GPIO 2  -> Rear motor enc B
+GPIO 4  -> CAN RX (TWAI)
+GPIO 5  -> CAN TX (TWAI)
+GPIO 6  -> Front wheel enc B
+GPIO 7  -> (unused)
+GPIO 8  -> (unused)
+GPIO 9  -> Rear-left enc A
+GPIO 10 -> Front wheel enc A
+GPIO 11 -> (unused)
+GPIO 12 -> Rear-left enc B
+GPIO 13 -> Rear-right enc A
+GPIO 14 -> Rear-right enc B
+GPIO 15 -> MCP2515 SCK
+GPIO 16 -> MCP2515 MOSI
+GPIO 17 -> MCP2515 MISO
+GPIO 18 -> MCP2515 CS
+GPIO 21 -> TPS3850 WDI
+GPIO 42 -> Dev override latch
+GPIO 47 -> MCP2515 INT
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — Power}
+
+\begin{longtable}{|L{1.2cm}|L{3cm}|L{5cm}|}
+\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endfirsthead\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endhead
+3.3V & USB or dev board & ESP32-S3, WCMCU-230 \\
+\hline
+5V & USB or dev board & MCP2515 VCC \\
+\hline
+GND & USB or dev board & Common ground \\
+\hline
+\end{longtable}
+
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  SYS ESP32-S3
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{SYS ESP32-S3 (N16R8) — Safety \& Body Controller}
+
+\section{SYS — CAN Module Wiring (Vero Board)}
+
+\subsection{WCMCU-230 (Low Bus TWAI)}
+
+\begin{longtable}{|L{0.8cm}|L{1.2cm}|L{2.2cm}|L{2.5cm}|L{3.5cm}|}
+\hline
+\textbf{GPIO} & \textbf{J1} & \textbf{Signal} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{GPIO} & \textbf{J1} & \textbf{Signal} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+— & 1 (3V3) & 3.3V & WCMCU-230 VCC & Vero board 3.3V rail \\
+\hline
+— & 22 (GND) & GND & WCMCU-230 GND & Vero board ground \\
+\hline
+5 & 5 & CAN TX & WCMCU-230 CTX & Vero board trace \\
+\hline
+4 & 4 & CAN RX & WCMCU-230 CRX & Vero board trace \\
+\hline
+— & — & CAN\_H & Low bus & 22 AWG, yellow \\
+\hline
+— & — & CAN\_L & Low bus & 22 AWG, green \\
+\hline
+— & — & GND & Low bus & 22 AWG, black \\
+\hline
+\end{longtable}
+
+120$\Omega$ terminator: ON. Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}, 500 kbit/s
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Safety Inputs}
+
+\begin{longtable}{|L{0.4cm}|L{2.5cm}|L{0.8cm}|L{1.8cm}|L{2.2cm}|L{3cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & ESTOP Button & 1 & NC, active-low & 3.3V$\rightarrow$GPIO1 & 10k pull-down \\
+\hline
+2 & Brake Lever & 2 & NO, active-low & Lever$\rightarrow$GND & 0x7B9 to SEB \\
+\hline
+3 & START Button & 41 & NO, active-low & Momentary$\rightarrow$GND & Exits ESTOP \\
+\hline
+4 & MODE Button & 11 & NO, active-low & Momentary$\rightarrow$GND & Toggles AUTO/MANUAL \\
+\hline
+5 & Ignition relay & 8 & Reserved & Not implemented & — \\
+\hline
+6 & Dev override [latch] & 42 & Active-low & Latch$\rightarrow$GND & J3 pin 6 \\
+\hline
+7 & CAN RX low & 4 & TWAI RX & SN65HVD230 CRX & From RT, MTR, SEB \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Signal Lights \& Switches}
+
+\begin{longtable}{|L{0.4cm}|L{2.5cm}|L{0.8cm}|L{1.8cm}|L{2.2cm}|L{3cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & Left Turn Sw & 9 & NO, active-low & Momentary$\rightarrow$GND & — \\
+\hline
+2 & Right Turn Sw & 6 & NO, active-low & Momentary$\rightarrow$GND & — \\
+\hline
+3 & Headlight Sw & 7 & NO, active-low & Toggle$\rightarrow$GND & — \\
+\hline
+4 & Left Turn Lamp & 18 & Digital out & Relay$\rightarrow$12V & — \\
+\hline
+5 & Right Turn Lamp & 19 & Digital out & Relay$\rightarrow$12V & — \\
+\hline
+6 & Brake Light & 21 & Digital out & Relay$\rightarrow$12V & — \\
+\hline
+7 & Headlight & 10 & Digital out & Relay driver$\rightarrow$12V & Not direct GPIO \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Indicators \& Power Control}
+
+\begin{longtable}{|L{0.4cm}|L{2.5cm}|L{0.8cm}|L{1.8cm}|L{2.2cm}|L{3cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endfirsthead\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connect To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & AUTO Mode Bulb & 48 & Digital out & Lamp driver$\rightarrow$12V & Not direct GPIO \\
+\hline
+2 & MANUAL Mode Bulb & 39 & Digital out & Lamp driver$\rightarrow$12V & JTAG conflict \\
+\hline
+3 & READY Bulb & 17 & Digital out & Relay$\rightarrow$12V & Green \\
+\hline
+4 & ESTOP Bulb & 20 & Digital out & Relay$\rightarrow$12V & Red \\
+\hline
+5 & 12V Power Relay & 40 & Digital out & Relay driver$\rightarrow$12V & JTAG conflict \\
+\hline
+6 & WDT Toggle & 47 & Digital out & TPS3850 WDI & 20 Hz \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — GPIO Quick Reference}
+
+\begin{lstlisting}
+GPIO 1  -> ESTOP button
+GPIO 2  -> Brake lever
+GPIO 4  -> CAN RX (TWAI)
+GPIO 5  -> CAN TX (TWAI)
+GPIO 6  -> Right turn switch
+GPIO 7  -> Headlight switch
+GPIO 8  -> (reserved)
+GPIO 9  -> Left turn switch
+GPIO 10 -> Headlight relay
+GPIO 11 -> MODE button
+GPIO 12 -> Gear sense (bench)
+GPIO 13 -> Gear sense (bench)
+GPIO 14 -> Gear sense (bench)
+GPIO 15 -> MCP4725 SCL (bench)
+GPIO 16 -> MCP4725 SDA (bench)
+GPIO 17 -> READY bulb
+GPIO 18 -> Left turn lamp
+GPIO 19 -> Right turn lamp
+GPIO 20 -> ESTOP bulb
+GPIO 21 -> Brake light
+GPIO 39 -> MANUAL mode bulb
+GPIO 40 -> 12V accessory relay
+GPIO 41 -> START button
+GPIO 42 -> Dev override latch
+GPIO 47 -> TPS3850 WDI
+GPIO 48 -> AUTO mode bulb
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Power}
+
+\begin{longtable}{|L{1.2cm}|L{3cm}|L{5cm}|}
+\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endfirsthead\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endhead
+3.3V & USB or dev board & ESP32-S3, WCMCU-230 \\
+\hline
+5V & USB or dev board & MCP4725 DAC \\
+\hline
+12V & DC-DC (via relay) & Lamps, bulbs, relays \\
+\hline
+GND & USB or dev board & Common ground \\
+\hline
+\end{longtable}
+
+\end{document}
