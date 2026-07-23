@@ -90,6 +90,26 @@ private:
     std::atomic<uint32_t> m_bus_off_started_tick{0};
     std::atomic<bool> m_first_rx_pending{false};
     std::atomic<bool> m_first_tx_pending{false};
+
+#if ETRIKE_RT_TWAI_INSTRUMENT
+    // Instrumentation counters — all zero-initialized, never cleared after init.
+    // Examined in service_recovery() to prove or disprove the slot-leak hypothesis.
+    //   tx_submitted:       incremented each time twai_node_transmit() succeeds in send()
+    //   tx_done_ok:         incremented in on_tx_done when tx_success = true
+    //   tx_done_fail:       incremented in on_tx_done when tx_success = false
+    //   tx_done_no_slot:    incremented in on_tx_done when done_tx_frame matches no slot
+    //                       (indicates driver called back for a frame not in our pool)
+    //   free_slots_at_busoff:     depth of m_free_tx_slots at Bus-Off entry (ISR context)
+    //   free_slots_at_recovery:   depth of m_free_tx_slots at recovery completion (ISR context)
+    //   busoff_count:       total Bus-Off events observed
+    std::atomic<uint32_t> m_instr_tx_submitted{0};
+    std::atomic<uint32_t> m_instr_tx_done_ok{0};
+    std::atomic<uint32_t> m_instr_tx_done_fail{0};
+    std::atomic<uint32_t> m_instr_tx_done_no_slot{0};
+    std::atomic<uint8_t>  m_instr_free_slots_at_busoff{0};
+    std::atomic<uint8_t>  m_instr_free_slots_at_recovery{0};
+    std::atomic<uint32_t> m_instr_busoff_count{0};
+#endif
 };
 
 // Initialize the low-level TWAI CAN bus. Returns true on success.
