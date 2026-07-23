@@ -18,12 +18,19 @@ The error handling architecture spans multiple specialized hardware controllers 
 > **The Danger of Non-Real-Time Queues in Autonomous Driving**
 > In non-real-time systems (like standard Linux/Python), queues can grow infinitely, consume memory unpredictably, and introduce massive latency. This is highly problematic in autonomous driving because a controller might process "stale" data (e.g., executing a braking command based on where the vehicle was 2 seconds ago). 
 
-While standard queues are highly problematic for autonomous driving, the ETrike system utilizes **FreeRTOS** to provide strict real-time queuing guarantees that solve these exact issues:
+FreeRTOS provides bounded storage and deterministic scheduling, but a bounded
+FIFO can still contain stale control values. The ETrike transport therefore
+uses different policies for state and events:
 
-* **Bounded Sizes (No Infinite Queues)**: Communication channels like `g_safety_evt_q`, `g_can_rx_low_q`, and `g_can_rx_high_q` have strict, pre-allocated maximum sizes. They cannot grow infinitely, preventing unpredictable memory allocation delays.
-* **Strict Preemption**: FreeRTOS employs priority-based preemptive scheduling. If a message enters a queue monitored by a high-priority task (e.g., the Safety Monitor), the OS instantly interrupts lower-priority tasks to process the event, guaranteeing low latency.
-* **Jumping the Line (LIFO for Emergencies)**: Critical safety events (e.g., `kIdSafetyEstop`) bypass normal FIFO queue logic. They are dispatched using `xQueueSendToFront()` to jump to the front of the line and guarantee immediate processing over normal bus traffic.
-* **Deterministic Timeouts**: Queue submissions and reads use strict time limits (e.g., `pdMS_TO_TICKS(10)`). This prevents a faulty or blocked consumer task from permanently locking up the producer task.
+* **Periodic actuator state**: At most one frame of each actuator command may
+  be pending/in flight. New control cycles regenerate current state instead of
+  queuing history.
+* **Non-blocking CAN submission**: Real-time TX never waits for driver queue
+  capacity while holding control or lifecycle resources.
+* **Bounded event queues**: Safety events and diagnostics retain bounded queues
+  where event ordering matters.
+* **ESTOP priority**: `kIdSafetyEstop` uses front-of-queue delivery and is
+  latched independently of optional-hardware bypass.
 
 ## 3. Fault Detection & Validation
 
@@ -45,13 +52,26 @@ The dispatcher continuously monitors operational boundaries via diagnostic frame
 
 * **Safety Monitor Subsystem**: A dedicated `SafetyMonitor` object acts as the state machine for transitioning between normal operations, internal fault states, and emergency stops.
 * **Multi-Task Watchdog**: The `sys-esp32` layer runs a multi-task software watchdog. Per-task atomic counters (e.g., `g_alive_safety`, `g_alive_motor`) are incremented during their execution loops. A supervisor task monitors these; if any task freezes, the watchdog forces a safe state.
-* **Staleness Tracking (Data Freshness)**: To solve the problem of processing "old" data that got stuck in a queue or dropped by a controller, the `protocol` layer implements `FreshnessTracker` and `CounterTracker` classes. These enforce time-to-live (TTL) on CAN frames. If the SES or SEB stops communicating, the freshness tracker flags a timeout, effectively treating the missing node as a fault.
+* **Staleness Tracking (Data Freshness)**: Drive and brake consumers enforce
+  deadlines derived from their declared cycle times. A timed-out actuator
+  command is replaced by its defined safe output and is not refreshed by old
+  queued data.
+* **Dependency policy**: Developer bypass suppresses faults caused only by
+  intentionally absent hardware. It never suppresses physical ESTOP, valid CAN
+  ESTOP, explicit ESTOP mode, or local watchdog failures.
 
 ## 5. Recovery Procedures
 
-The system is designed to recover gracefully from transient hardware issues without requiring full power-cycling.
+RT prevents the common startup Bus-Off by keeping operational TX closed until a
+valid low-bus peer is observed. The controller remains receive-capable and ACKs
+the SYS bootstrap traffic.
 
-* **Soft Bus-Off Recovery (TWAI/CAN)**: 
-  The `can_driver.h` monitors the Transmit Error Counter (TEC) and Receive Error Counter (REC) of the physical CAN controllers. If the controller enters a bus-off state due to electrical faults, it attempts a "soft recovery" using `twai_initiate_recovery()`. A full driver reinstall is only executed as a last-resort fallback.
-* **Logical Recovery Events**: 
-  The `FreshnessTracker` and `CounterTracker` support specific `Recovery` events (`FreshnessEvent::Recovery`, `CounterEvent::Recovery`). When a node recovers from a timeout or counter freeze, these events alert the higher-level dispatchers to logically resume operations safely, rather than requiring a hard reset.
+RT does not automatically recover a Bus-Off controller. ESP-IDF may immediately
+resume frames retained in its transmit queue after recovery. Production
+therefore remains ESTOP-latched and TX-closed until controlled restart. In
+developer bypass, intentionally missing peers produce a degraded/unavailable
+state rather than a synthetic ESTOP.
+
+See
+[`can-realtime-startup-and-bypass.md`](../communications/can-realtime-startup-and-bypass.md)
+for the complete transport, deadline, ACK, and bypass contract.
