@@ -1,0 +1,552 @@
+% ===========================================================================
+%  E-Trike Vero Board Wiring — RT & SYS ESP32-S3
+%  Generated: 2026-07-23
+%  Compile:  pdflatex -interaction=nonstopmode vero-board-wiring.tex
+%  Source:   docs/hardware/wiring-vero-board.md
+% ===========================================================================
+
+\documentclass[10pt,a4paper,oneside]{report}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[inner=20mm,outer=15mm,top=18mm,bottom=15mm,footskip=10mm,headsep=6mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% ── Table spacing and behavior ──────────────────────────────────────
+\setlength{\LTpre}{4pt plus 2pt minus 2pt}
+\setlength{\LTpost}{4pt plus 2pt minus 2pt}
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.1}
+\raggedbottom
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usepackage{soul}
+\usepackage[normalem]{ulem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{alltt}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{textcomp}
+\usepackage{calc}
+
+% ── Prevent overfull hboxes in narrow table columns ─────────────────
+\setlength{\emergencystretch}{3em}
+\tolerance=3000
+\hbadness=10000
+
+% ── Prevent orphaned titles and headers ─────────────────────────────
+\widowpenalty=10000
+\clubpenalty=10000
+\displaywidowpenalty=10000
+\brokenpenalty=10000
+\predisplaypenalty=10000
+\postdisplaypenalty=10000
+\interlinepenalty=10000
+
+% ── Unicode character support ─────────────────────────────────────────
+\DeclareUnicodeCharacter{03A9}{\ensuremath{\Omega}}
+\DeclareUnicodeCharacter{03C0}{\ensuremath{\pi}}
+\DeclareUnicodeCharacter{03B4}{\ensuremath{\delta}}
+\DeclareUnicodeCharacter{03C9}{\ensuremath{\omega}}
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}
+\DeclareUnicodeCharacter{03B8}{\ensuremath{\theta}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{00B0}{\ensuremath{{}^\circ}}
+\DeclareUnicodeCharacter{00B1}{\ensuremath{\pm}}
+\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}}
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{2190}{\ensuremath{\leftarrow}}
+\DeclareUnicodeCharacter{2194}{\ensuremath{\leftrightarrow}}
+\DeclareUnicodeCharacter{25CB}{\ensuremath{\circ}}
+\DeclareUnicodeCharacter{2713}{$\checkmark$}
+
+% ── Title formatting (11pt chapter/section headings, 10pt body) ───────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\fontsize{11}{13}\selectfont}
+  {}{0pt}{}
+\titlespacing*{\chapter}{0pt}{-2em}{8pt}
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{11}{13}\selectfont}
+  {}{0pt}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{10}{12}\selectfont}
+  {}{0pt}{}
+\titleformat{\subsubsection}
+  {\normalfont\bfseries\fontsize{10}{12}\selectfont}
+  {}{0pt}{}
+
+% ── Hyperref setup ────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black,
+  pdfauthor={E-Trike Project},
+  pdftitle={E-Trike Vero Board Wiring — RT & SYS ESP32-S3},
+  pdfsubject={Vero board wiring for RT and SYS ESP32-S3 controllers},
+  pdfkeywords={CAN bus, embedded systems, ESP32-S3, GPIO, pinout, vero board, wiring},
+  bookmarksnumbered=true,
+  bookmarksopen=true,
+  bookmarksopenlevel=1
+}
+
+% ── Code listing style with strikethrough support ──────────────────────
+\lstdefinestyle{etrike}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=true,
+  postbreak=\mbox{$\hookrightarrow$\space},
+  frame=single,
+  framesep=3pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  aboveskip=6pt,
+  belowskip=6pt,
+  showstringspaces=false,
+  columns=flexible,
+  keepspaces=true,
+  tabsize=2,
+  captionpos=b,
+  escapechar=|
+}
+\lstset{style=etrike}
+
+% ── Header / footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\textit{E-Trike Vero Board Wiring}}
+\fancyhead[R]{\footnotesize\textit{v0.8.0-alpha}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{14pt}
+\setlength{\headsep}{6mm}
+
+% ── Convenience commands ──────────────────────────────────────────────
+\newcommand{\canid}[1]{\texttt{0x#1}}
+\newcommand{\canname}[1]{\textsc{#1}}
+\newcommand{\gpio}[1]{\texttt{GPIO#1}}
+\newcommand{\voltage}[1]{\ensuremath{#1\,\text{V}}}
+\newcommand{\bitrate}[1]{\ensuremath{#1\,\text{kbit/s}}}
+\newcommand{\frequency}[1]{\ensuremath{#1\,\text{Hz}}}
+\newcommand{\mcu}[1]{\texttt{#1}}
+\newcommand{\pinname}[1]{\texttt{#1}}
+\newcommand{\iicaddr}[1]{\texttt{0x#1}}
+
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 1 — RT ESP32-S3 — CAN Gateway & Real-Time Controller
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{RT ESP32-S3 — CAN Gateway \& Real-Time Controller}
+
+\textbf{Role:} CAN gateway (high $\leftrightarrow$ low), real-time kinematics, steering state machine, PID speed control\\
+\textbf{Board:} ESP32-S3-DevKitC-1 (N16R8 — 16 MB flash, 8 MB octal PSRAM)\\
+\textbf{CAN modules:} 2 — TWAI (built-in, low bus) + MCP2515 (SPI, high bus)
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — CAN Module Wiring}
+
+\noindent\textit{Note: Both CAN transceiver modules (WCMCU-230 and MCP2515) are mounted directly on the vero board. All connections between the ESP32-S3 dev board and the transceiver modules are made via traces/wires on the vero board — not via external Dupont cables.}
+
+\subsection{Module A: WCMCU-230 (Low Bus via TWAI)}
+
+\begin{longtable}{|L{1cm}|L{1.5cm}|L{2.5cm}|L{2.8cm}|L{4.5cm}|}
+\hline
+\textbf{GPIO} & \textbf{J1 Pin} & \textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{GPIO} & \textbf{J1 Pin} & \textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+— & 1 (3V3) & 3.3\,V power & WCMCU-230 VCC & Vero board 3.3\,V rail \\
+\hline
+— & 22 (GND) & Ground & WCMCU-230 GND & Vero board ground plane \\
+\hline
+5 & 5 & CAN TX (TWAI) & WCMCU-230 CTX & Vero board trace \\
+\hline
+4 & 4 & CAN RX (TWAI) & WCMCU-230 CRX & Vero board trace \\
+\hline
+— & — & CAN\_H & Low bus backbone & 22 AWG, yellow \\
+\hline
+— & — & CAN\_L & Low bus backbone & 22 AWG, green \\
+\hline
+— & — & GND & Low bus backbone & 22 AWG, black \\
+\hline
+\end{longtable}
+
+\begin{itemize}[nosep]
+  \item 120\,$\Omega$ terminator: \textbf{ON} (RT is a bus endpoint on the low bus)
+  \item Source: \texttt{rt::kCanLowTxGpio=5}, \texttt{rt::kCanLowRxGpio=4}, bitrate 500\,kbit/s
+\end{itemize}
+
+\subsection{Module B: MCP2515 SPI (High Bus)}
+
+\begin{longtable}{|L{1cm}|L{2.2cm}|L{3cm}|L{5.5cm}|}
+\hline
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{GPIO} & \textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+15 & SPI SCK & MCP2515 SCK & Vero board trace \\
+\hline
+16 & SPI MOSI & MCP2515 SI & Vero board trace \\
+\hline
+17 & SPI MISO & MCP2515 SO & Vero board trace \\
+\hline
+18 & SPI CS & MCP2515 CS & Vero board trace \\
+\hline
+47 & INT & MCP2515 INT & Vero board trace \\
+\hline
+— & Module supply & MCP2515 VCC & Vero board 5\,V rail \\
+\hline
+— (J1-22, GND) & Ground & MCP2515 GND & Vero board ground plane \\
+\hline
+— & CAN\_H & High bus backbone & 22 AWG, orange \\
+\hline
+— & CAN\_L & High bus backbone & 22 AWG, blue \\
+\hline
+\end{longtable}
+
+\begin{itemize}[nosep]
+  \item No onboard termination — CANalyst-II Ch0 provides the high-bus endpoint termination during bench work
+  \item Source: \texttt{rt::kSpiSckGpio=15}, \texttt{rt::kSpiMosiGpio=16}, \texttt{rt::kSpiMisoGpio=17}, \texttt{rt::kSpiCsGpio=18}, \texttt{rt::kMcpIntGpio=47}, bitrate 500\,kbit/s
+\end{itemize}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — Inputs}
+
+\begin{longtable}{|L{0.5cm}|L{2.8cm}|L{1cm}|L{2cm}|L{2.5cm}|L{1cm}|L{3.5cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Status} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Status} & \textbf{Notes} \\
+\hline
+\endhead
+1 & CAN RX (low bus) & 4 & TWAI RX & SN65HVD230 CRX & \textbf{Active} & Low bus frames from SYS, MTR, EPS-C, SEB \\
+\hline
+2 & MCP2515 MISO & 17 & SPI & MCP2515 SO & \textbf{Active} & High bus RX data (Host commands) \\
+\hline
+3 & MCP2515 INT & 47 & Digital, falling & MCP2515 INT & \textbf{Active} & RX buffer ready interrupt \\
+\hline
+4 & Developer override button [latch] & 42 & Digital, active-low & Latch switch $\rightarrow$ GND & & Internal pull-up; J3 pin 6; conflicts with external JTAG MTMS \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\subsection{RT — Encoder Inputs}
+
+\begin{longtable}{|L{0.5cm}|L{2.8cm}|L{1cm}|L{2cm}|L{2.5cm}|L{1cm}|L{3.5cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Status} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Status} & \textbf{Notes} \\
+\hline
+\endhead
+1 & Rear motor encoder A & 1 & PCNT input & Encoder ChA via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO1 \\
+\hline
+2 & Rear motor encoder B & 2 & PCNT input & Encoder ChB via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO2 \\
+\hline
+3 & Front wheel encoder A & 10 & PCNT input & Encoder ChA via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO10 \\
+\hline
+4 & Front wheel encoder B & 6 & PCNT input & Encoder ChB via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO6 \\
+\hline
+5 & Rear-left encoder A & 9 & PCNT input & Encoder ChA via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO9 \\
+\hline
+6 & Rear-left encoder B & 12 & PCNT input & Encoder ChB via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO12 \\
+\hline
+7 & Rear-right encoder A & 13 & PCNT input & Encoder ChA via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO13 \\
+\hline
+8 & Rear-right encoder B & 14 & PCNT input & Encoder ChB via terminal block & \textbf{Active} & Terminal block $\rightarrow$ GPIO14 \\
+\hline
+\end{longtable}
+
+\noindent\textit{Note: All encoder signals must first connect to a \textbf{Pluggable Screw Terminal Block Connector} on the vero board. Encoder wires (from harness) terminate in the screw terminal block; short Dupont jumper wires then run from the terminal block to the ESP32 GPIO pins.}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — Outputs}
+
+\begin{longtable}{|L{0.5cm}|L{2.2cm}|L{1cm}|L{2cm}|L{2.5cm}|L{4.5cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & CAN TX (low bus) & 5 & TWAI TX & SN65HVD230 CTX & 0x204, 0x205, 0x169, 0x001, 0x302, 0x7FD on low bus \\
+\hline
+2 & SPI SCK & 15 & SPI out & MCP2515 SCK & 10 MHz max \\
+\hline
+3 & SPI MOSI & 16 & SPI out & MCP2515 SI & High bus TX data \\
+\hline
+4 & SPI CS & 18 & Digital out & MCP2515 CS & Active low \\
+\hline
+5 & WDT Toggle & 21 & Digital out & TPS3850 WDI pin & Toggled at 100 Hz by control\_task \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — GPIO Quick Reference}
+
+\textbf{General GPIO:}
+\begin{lstlisting}
+GPIO 4  : CAN RX - low bus TWAI
+GPIO 5  : CAN TX - low bus TWAI
+GPIO 7  : (unused)
+GPIO 8  : (unused)
+GPIO 11 : (unused)
+GPIO 15 : MCP2515 SCK
+GPIO 16 : MCP2515 MOSI
+GPIO 17 : MCP2515 MISO
+GPIO 18 : MCP2515 CS
+GPIO 21 : WDT toggle -> TPS3850 WDI
+GPIO 42 : Developer override latch (active-low, J3 pin 6)
+GPIO 47 : MCP2515 INT
+\end{lstlisting}
+
+\textbf{Encoder GPIO (via terminal block) — \st{not yet wired}:}
+\begin{lstlisting}
+GPIO 1  : |\sout{Rear motor encoder A (PCNT)}|
+GPIO 2  : |\sout{Rear motor encoder B (PCNT)}|
+GPIO 6  : |\sout{Front wheel encoder B (PCNT)}|
+GPIO 9  : |\sout{Rear-left encoder A (PCNT)}|
+GPIO 10 : |\sout{Front wheel encoder A (PCNT)}|
+GPIO 12 : |\sout{Rear-left encoder B (PCNT)}|
+GPIO 13 : |\sout{Rear-right encoder A (PCNT)}|
+GPIO 14 : |\sout{Rear-right encoder B (PCNT)}|
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{RT — Power \& Wiring Notes}
+
+\begin{longtable}{|L{1.5cm}|L{3.5cm}|L{6cm}|}
+\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endhead
+3.3\,V & USB or dev board regulator & ESP32-S3, WCMCU-230 transceiver \\
+\hline
+5\,V & USB or dev board regulator & MCP2515 module VCC \\
+\hline
+GND & USB or dev board & Common ground — shared with both CAN modules \\
+\hline
+\end{longtable}
+
+\textbf{Encoder Wiring:} All encoder signals (GPIO 1, 2, 6, 9, 10, 12, 13, 14) must route through \textbf{Pluggable Screw Terminal Block Connectors} mounted on the vero board.
+
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════
+%  CHAPTER 2 — SYS ESP32-S3 — Safety & Body Controller
+% ═══════════════════════════════════════════════════════════════════════
+
+\chapter{SYS ESP32-S3 — Safety \& Body Controller}
+
+\textbf{Role:} Safety monitor (EGAS Level 2), body control, and brake-by-wire interface.\\
+Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path is approved until MTR hardware is implemented and validated.\\
+\textbf{Board:} ESP32-S3-DevKitC-1 (N16R8 — 16 MB flash, 8 MB octal PSRAM)\\
+\textbf{CAN modules:} 1 — TWAI (built-in, low bus only)
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — CAN Module Wiring}
+
+\noindent\textit{Note: The WCMCU-230 CAN transceiver module is mounted directly on the vero board. All connections between the ESP32-S3 dev board and the transceiver module are made via traces/wires on the vero board — not via external Dupont cables.}
+
+\subsection{Module: WCMCU-230 (Low Bus via TWAI)}
+
+\begin{longtable}{|L{1cm}|L{1.5cm}|L{2.5cm}|L{2.8cm}|L{4.5cm}|}
+\hline
+\textbf{GPIO} & \textbf{J1 Pin} & \textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{GPIO} & \textbf{J1 Pin} & \textbf{Signal} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+— & 1 (3V3) & 3.3\,V power & WCMCU-230 VCC & Vero board 3.3\,V rail \\
+\hline
+— & 22 (GND) & Ground & WCMCU-230 GND & Vero board ground plane \\
+\hline
+5 & 5 & CAN TX (TWAI) & WCMCU-230 CTX & Vero board trace \\
+\hline
+4 & 4 & CAN RX (TWAI) & WCMCU-230 CRX & Vero board trace \\
+\hline
+— & — & CAN\_H & Low bus backbone & 22 AWG, yellow \\
+\hline
+— & — & CAN\_L & Low bus backbone & 22 AWG, green \\
+\hline
+— & — & GND & Low bus backbone & 22 AWG, black \\
+\hline
+\end{longtable}
+
+\begin{itemize}[nosep]
+  \item 120\,$\Omega$ terminator: \textbf{ON} (SYS is a bus endpoint on the low bus)
+  \item Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}, bitrate 500\,kbit/s
+\end{itemize}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Safety Inputs}
+
+\begin{longtable}{|L{0.5cm}|L{2.8cm}|L{1cm}|L{2cm}|L{2.5cm}|L{4.5cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & ESTOP Button & 1 & Digital, NC, active-low & NC contact from 3.3\,V to GPIO1 & 10k external pull-down at GPIO1. LOW = ESTOP, including an open wire. \\
+\hline
+2 & Brake Lever & 2 & Digital, NO, active-low & Lever switch $\rightarrow$ GND & Internal pull-up. LOW = pressed $\rightarrow$ SEB via CAN 0x7B9 \\
+\hline
+3 & START Button & 41 & Digital, NO, active-low & Green momentary $\rightarrow$ GND & Internal pull-up. Press exits ESTOP to MANUAL. \\
+\hline
+4 & MODE Button & 11 & Digital, NO, active-low & Momentary $\rightarrow$ GND & Internal pull-up. Toggles MANUAL $\leftrightarrow$ AUTO. Long-press 3s exits ESTOP. \\
+\hline
+5 & Ignition relay & 8 & Reserved output & Not implemented by production firmware & Do not wire as a vehicle power-control path. \\
+\hline
+6 & Developer override button [latch] & 42 & Digital, active-low & Latch switch $\rightarrow$ GND & Internal pull-up; J3 pin 6; conflicts with external JTAG MTMS. \\
+\hline
+7 & CAN RX (low bus) & 4 & TWAI RX & SN65HVD230 CRX & RT commands, MTR feedback (0x206), SEB feedback (0x721) \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Signal Lights \& Switches}
+
+\begin{longtable}{|L{0.5cm}|L{2.8cm}|L{1cm}|L{2cm}|L{2.5cm}|L{4.5cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & Left Turn Switch & 9 & Digital, NO, active-low & Handlebar momentary $\rightarrow$ GND & Internal pull-up \\
+\hline
+2 & Right Turn Switch & 6 & Digital, NO, active-low & Handlebar momentary $\rightarrow$ GND & Internal pull-up \\
+\hline
+3 & Headlight Switch & 7 & Digital, NO, active-low & Handlebar toggle $\rightarrow$ GND & Internal pull-up \\
+\hline
+4 & Left Turn Lamp & 18 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+\hline
+5 & Right Turn Lamp & 19 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+\hline
+6 & Brake Light & 21 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = lamp \\
+\hline
+7 & Headlight & 10 & Digital out & Relay coil driver $\rightarrow$ 12\,V & ESP GPIO must not drive the relay coil directly. \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Indicators \& Power Control}
+
+\begin{longtable}{|L{0.5cm}|L{2.8cm}|L{1cm}|L{2cm}|L{2.5cm}|L{4.5cm}|}
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
+\hline
+\endhead
+1 & AUTO Mode Bulb & 48 & Digital out & Lamp driver $\rightarrow$ 12\,V & ESP GPIO must not drive the lamp directly. \\
+\hline
+2 & MANUAL Mode Bulb & 39 & Digital out & Lamp driver $\rightarrow$ 12\,V & Conflicts with external JTAG use. \\
+\hline
+3 & READY Bulb & 17 & Digital out & Relay coil $\rightarrow$ 12\,V & Green — system ready (AUTO/MANUAL, RT alive, no faults) \\
+\hline
+4 & ESTOP Bulb & 20 & Digital out & Relay coil $\rightarrow$ 12\,V & Red — dedicated ESTOP indicator \\
+\hline
+5 & 12V Power Relay & 40 & Digital out & Relay driver $\rightarrow$ 12\,V & Accessory relay, opens in ESTOP. Conflicts with external JTAG use. \\
+\hline
+6 & WDT Toggle & 47 & Digital out & TPS3850 WDI pin & Toggled at 20 Hz by safety task. \\
+\hline
+\end{longtable}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — GPIO Quick Reference}
+
+\begin{lstlisting}
+GPIO 1  : ESTOP button (NC from 3.3 V, external pull-down, active-low)
+GPIO 2  : Brake lever (active-low) -> SEB via CAN 0x7B9
+GPIO 4  : CAN RX - low bus TWAI
+GPIO 5  : CAN TX - low bus TWAI
+GPIO 6  : |\sout{Right turn switch (active-low)}|
+GPIO 7  : |\sout{Headlight switch (active-low)}|
+GPIO 8  : Reserved ignition output - not implemented
+GPIO 9  : |\sout{Left turn switch (active-low)}|
+GPIO 10 : |\sout{Headlight relay driver}|
+GPIO 11 : MODE button (active-low) - publishes CAN 0x110
+GPIO 12-14 : Bench-only gear sense
+GPIO 15-16 : Bench-only MCP4725 I2C
+GPIO 17 : |\sout{READY bulb (green)}|
+GPIO 18 : |\sout{Left turn lamp}|
+GPIO 19 : |\sout{Right turn lamp}|
+GPIO 20 : |\sout{ESTOP bulb (red)}|
+GPIO 21 : |\sout{Brake light}|
+GPIO 33-37 : Unavailable on N16R8 octal-memory modules
+GPIO 39 : MANUAL mode bulb - external JTAG conflict
+GPIO 40 : 12V accessory relay - external JTAG conflict
+GPIO 41 : START button (active-low) - external JTAG conflict
+GPIO 42 : Developer override latch (active-low, J3 pin 6) - external JTAG conflict
+GPIO 47 : WDT toggle -> TPS3850 WDI (20 Hz)
+GPIO 48 : AUTO mode bulb
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────────────
+\section{SYS — Power}
+
+\begin{longtable}{|L{1.5cm}|L{3.5cm}|L{6cm}|}
+\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Rail} & \textbf{Source} & \textbf{Used For} \\
+\hline
+\endhead
+3.3\,V & USB or dev board regulator & ESP32-S3, WCMCU-230 transceiver \\
+\hline
+5\,V & USB or dev board regulator & MCP4725 DAC VCC (for 0–5\,V output) \\
+\hline
+12\,V & DC-DC converter (via 12V relay) & Lamps, bulbs, relay coils \\
+\hline
+GND & USB or dev board & Common ground \\
+\hline
+\end{longtable}
+
+\end{document}
