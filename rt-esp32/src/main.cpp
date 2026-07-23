@@ -73,6 +73,7 @@ std::atomic<bool>     g_seb_takeover{false};
 // ── Heartbeat tracking ─────────────────────────────────────────────
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
+std::atomic<int64_t>  g_last_low_peer_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
 // ── Per-task alive counters for multi-task watchdog (gap #5) ──────
@@ -157,6 +158,9 @@ static uint32_t g_can_tx_consec_fail_low = 0;
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
     if (!drv) return false;
+    if (fr.id != can::kIdSafetyEstop && !drv->tx_admitted()) {
+        return false;
+    }
     if (drv->send(fr)) {
         if (g_can_tx_had_fail_low) {
             ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu",
@@ -212,6 +216,29 @@ static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
     return t > 0 ? t : static_cast<TickType_t>(1);
 }
 
+static void update_low_can_tx_admission(int64_t now_us) {
+    auto* drv = rt::can_low_driver();
+    if (!drv) return;
+
+    const int64_t last_peer = g_last_low_peer_us.load(std::memory_order_acquire);
+    bool admitted = last_peer > 0
+        && now_us - last_peer <= int64_t(rt::kLowCanPeerTimeoutMs) * 1000;
+#if ETRIKE_RT_TWAI_SELF_TEST
+    // Self-test is compiled only for the isolated software bench. It does not
+    // require an ACK peer, but unbypassable ESTOP processing remains enabled.
+    admitted = admitted || g_bench_solo_mode;
+#endif
+
+    const bool was_admitted = drv->tx_admitted();
+    drv->set_tx_admission(admitted);
+    if (admitted != was_admitted) {
+        ESP_LOGI(TAG, "Low CAN TX admission=%s peer_age_ms=%lld%s",
+                 admitted ? "open" : "closed",
+                 last_peer > 0 ? static_cast<long long>((now_us - last_peer) / 1000) : -1LL,
+                 g_bench_solo_mode ? " developer-bypass" : "");
+    }
+}
+
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
 [[noreturn]] static void t_control(void*) {
     TickType_t per = ticks_ms_at_least_1(10), last = xTaskGetTickCount();
@@ -219,6 +246,7 @@ static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
 
     // Local state drained from safety event queue (architecture principle #1).
     bool     m_estop_pending = false;
+    uint8_t  m_estop_reason  = rt::kEstopReasonCanEstop;
     uint8_t  m_current_mode  = 0;   // 0=Manual, 1=Auto, 2=Estop
     bool     m_seb_takeover  = false;
 
@@ -229,18 +257,24 @@ static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
         bool had_estop_this_cycle = g_pending_estop_event.exchange(false);
         if (had_estop_this_cycle) {
             m_estop_pending = true;
+            const uint8_t fallback_reason = g_estop_reason.load();
+            m_estop_reason = fallback_reason != rt::kEstopReasonNone
+                ? fallback_reason : rt::kEstopReasonCanEstop;
         }
         int16_t pending_mode = g_pending_mode_event.exchange(-1);
         if (pending_mode >= 0) {
             m_current_mode = static_cast<uint8_t>(pending_mode);
             if (pending_mode != int16_t(can::Mode::Estop) && !had_estop_this_cycle) {
                 m_estop_pending = false;
+                m_estop_reason = rt::kEstopReasonCanEstop;
             }
         }
         while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
             switch (evt.type) {
             case rt::SafetyEvent::ESTOP:
                 m_estop_pending = true;
+                m_estop_reason = evt.payload != rt::kEstopReasonNone
+                    ? evt.payload : rt::kEstopReasonCanEstop;
                 had_estop_this_cycle = true;
                 break;
             case rt::SafetyEvent::MODE_CHANGE:
@@ -250,6 +284,7 @@ static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
                 // a valid ESTOP that arrived in the same queue window (bug 4.9).
                 if (evt.payload != uint8_t(can::Mode::Estop) && !had_estop_this_cycle) {
                     m_estop_pending = false;
+                    m_estop_reason = rt::kEstopReasonCanEstop;
                 }
                 break;
             }
@@ -284,10 +319,14 @@ static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
 
         // ── Safety checks ──────────────────────────────────────────
         int64_t const now = esp_timer_get_time();
+        update_low_can_tx_admission(now);
         bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
 
         rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
                                                   m_estop_pending, m_current_mode, m_seb_takeover);
+        if (m_estop_pending && sr.estop_reason == rt::kEstopReasonCanEstop) {
+            sr.estop_reason = m_estop_reason;
+        }
         g_seb_takeover.store(m_seb_takeover);
 
         // Propagate ESTOP reason from safety checks to telemetry atomic.
@@ -597,7 +636,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     TickType_t per = ticks_ms_at_least_1(100), last = xTaskGetTickCount();
     while (1) {
         check_task_watchdog();
-        if (g_watchdog.is_stale(esp_timer_get_time())) {
+        if (!g_bench_solo_mode && g_watchdog.is_stale(esp_timer_get_time())) {
             static int64_t last_stale_log_us = 0;
             const int64_t now_us = esp_timer_get_time();
             if (now_us - last_stale_log_us > 2'000'000) {
@@ -707,6 +746,17 @@ extern "C" void app_main() {
     }
 
     rt::can_low_init();
+    if (auto* drv = rt::can_low_driver()) {
+#if ETRIKE_RT_TWAI_SELF_TEST
+        drv->set_tx_admission(g_bench_solo_mode);
+#else
+        drv->set_tx_admission(false);
+#endif
+        if (!drv->tx_admitted()) {
+            ESP_LOGW(TAG,
+                "Low CAN operational TX closed; waiting for a valid low-bus peer");
+        }
+    }
     bool has_high_can = g_can_high.init();
     g_high_can_present.store(has_high_can, std::memory_order_relaxed);
     g_steering.init();

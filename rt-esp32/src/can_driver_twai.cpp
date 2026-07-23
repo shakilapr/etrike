@@ -67,6 +67,12 @@ bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
                                       const twai_tx_done_event_data_t* event,
                                       void* user_ctx) {
     auto* self = static_cast<TwaiDriver*>(user_ctx);
+    const uint32_t pending_bit =
+        actuation_pending_bit(event->done_tx_frame->header.id);
+    if (pending_bit != 0) {
+        self->m_actuation_pending.fetch_and(~pending_bit,
+                                             std::memory_order_release);
+    }
     BaseType_t wake = pdFALSE;
     bool slot_found = false;
     for (uint8_t index = 0; index < kTxSlots; ++index) {
@@ -78,7 +84,7 @@ bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
     }
 #if ETRIKE_RT_TWAI_INSTRUMENT
     if (event->done_tx_frame->header.id != 0) {  // ignore null-frame sentinels
-        if (event->tx_success) {
+        if (event->is_tx_success) {
             self->m_instr_tx_done_ok.fetch_add(1, std::memory_order_relaxed);
         } else {
             self->m_instr_tx_done_fail.fetch_add(1, std::memory_order_relaxed);
@@ -100,6 +106,9 @@ bool IRAM_ATTR TwaiDriver::on_state_change(twai_node_handle_t,
     self->m_state.store(event->new_sta, std::memory_order_release);
     self->m_last_transition_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
     if (event->new_sta == TWAI_ERROR_BUS_OFF) {
+        // Transport failure never grants itself permission to resume TX.
+        // Recovery/peer supervision must explicitly reopen admission.
+        self->m_tx_admitted.store(false, std::memory_order_release);
         self->m_bus_off_started_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
 #if ETRIKE_RT_TWAI_INSTRUMENT
         // Snapshot the free-slot queue depth at the exact Bus-Off moment.
@@ -140,6 +149,8 @@ bool TwaiDriver::init() {
         m_node = nullptr;
     }
     m_initialized = false;
+    m_tx_admitted.store(false, std::memory_order_release);
+    m_actuation_pending.store(0, std::memory_order_release);
     xQueueReset(m_rx_queue);
     reset_tx_slots();
 
@@ -149,7 +160,9 @@ bool TwaiDriver::init() {
     config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
     config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
     config.bit_timing.bitrate = m_config.bitrate_hz;
-    config.fail_retry_cnt = 3;  // 3 HW retries per frame; see testing notes in can_driver_twai.cpp
+    // Node-wide single-shot mode. Periodic application traffic is regenerated;
+    // retaining and retrying an old control value is undesirable.
+    config.fail_retry_cnt = 0;
     config.tx_queue_depth = kTxSlots;
 
 #if ETRIKE_RT_TWAI_SELF_TEST
@@ -292,9 +305,30 @@ bool TwaiDriver::receive(can::Frame& out, uint32_t timeout_ms) {
 }
 
 bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
+    (void)timeout_ms;
     if (!m_initialized || !m_node || source.dlc > 8) return false;
+    // ESTOP is an unbypassable, bounded event and may be attempted even while
+    // operational traffic is gated. All other traffic requires a known peer.
+    if (source.id != 0x001u && !m_tx_admitted.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+    const uint32_t pending_bit = actuation_pending_bit(source.id);
+    if (pending_bit != 0
+        && (m_actuation_pending.fetch_or(pending_bit, std::memory_order_acq_rel)
+            & pending_bit) != 0) {
+        // A newer periodic value will be regenerated next cycle. Never queue a
+        // historical value behind the same actuator command.
+        return false;
+    }
+
     uint8_t index = 0;
-    if (xQueueReceive(m_free_tx_slots, &index, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
+    if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
+        if (pending_bit != 0) {
+            m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
+        }
+        return false;
+    }
 
     // SAFETY_ESTOP (0x001) is classic DLC 0. Never retransmit padded DLC-8 zeros.
     const uint8_t dlc = (source.id == 0x001u) ? 0 : source.dlc;
@@ -307,8 +341,11 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
     slot.frame.buffer_len = dlc;  // Must remain zero for a DLC-0 frame.
     if (dlc) std::memcpy(slot.data, source.data.data(), dlc);
 
-    if (twai_node_transmit(m_node, &slot.frame, timeout_ms) != ESP_OK) {
+    if (twai_node_transmit(m_node, &slot.frame, 0) != ESP_OK) {
         xQueueSend(m_free_tx_slots, &index, 0);
+        if (pending_bit != 0) {
+            m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
+        }
         return false;
     }
 #if ETRIKE_RT_TWAI_INSTRUMENT

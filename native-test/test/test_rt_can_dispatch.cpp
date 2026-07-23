@@ -32,6 +32,7 @@ std::atomic<uint8_t> g_mode_current{0};
 std::atomic<bool> g_seb_takeover{false};
 std::atomic<int64_t> g_last_sys_hb_us{0};
 std::atomic<int64_t> g_last_host_hb_us{0};
+std::atomic<int64_t> g_last_low_peer_us{0};
 std::atomic<int64_t> g_last_estop_sent_us{0};
 std::atomic<uint8_t> g_estop_reason{0};
 std::atomic<int16_t> g_last_cmd_angle_0_1deg{0};
@@ -65,6 +66,7 @@ static int fail = 0;
 static void reset_state() {
     g_last_sys_hb_us.store(0);
     g_last_host_hb_us.store(0);
+    g_last_low_peer_us.store(0);
     esp_timer_test_reset();
 }
 
@@ -83,10 +85,24 @@ int main() {
         esp_timer_test_advance(1000);
         process_frame(fr, true, ctx);
         CHECK(g_last_sys_hb_us.load() == 0);
+        CHECK(g_last_low_peer_us.load() == 0);
 
         esp_timer_test_advance(1000);
         process_frame(fr, false, ctx);
         CHECK(g_last_sys_hb_us.load() == 2000);
+        CHECK(g_last_low_peer_us.load() == 2000);
+    }
+
+    {
+        reset_state();
+        can::Frame unknown{};
+        unknown.id = 0x7FF;
+        unknown.dlc = 0;
+
+        DispatchContext ctx{};
+        esp_timer_test_advance(1000);
+        process_frame(unknown, false, ctx);
+        CHECK(g_last_low_peer_us.load() == 0);
     }
 
     {

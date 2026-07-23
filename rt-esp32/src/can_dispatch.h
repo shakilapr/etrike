@@ -90,6 +90,14 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     q.steer_angle_status   = &ctx.steer_angle_status;
     const auto route_status = rt::route_frame(fr, from_high, q);
     if (route_status != can::gen::CodecStatus::Ok) return;
+    if (!from_high
+        && can::is_known_frame_on_bus(
+            fr.id, fr.extended, fr.dlc, can::Bus::Low)) {
+        // A valid frame from any known low-bus unit proves an ACK-capable peer
+        // is currently present. Operational TX admission still remains
+        // independent from actuator authority and ESTOP state.
+        g_last_low_peer_us.store(esp_timer_get_time(), std::memory_order_release);
+    }
 
     // ── Post-routing handlers ───────────────────────────────────────
     if (fr.id == can::kIdSafetyEstop) {
@@ -105,7 +113,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
         g_estop_reason.store(rt::kEstopReasonCanEstop);
         // Enqueue ESTOP event with 10ms timeout (blocking — safety critical)
-        rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
+        rt::SafetyEvent evt{
+            rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
         enqueue_safety_event(evt, pdMS_TO_TICKS(10));
     }
     if (fr.id == can::kIdSbwStatus) {
@@ -144,7 +153,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (angle_faults || torque_faults) {
             ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
             g_estop_reason.store(rt::kEstopReasonInternal);
-            rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
+            rt::SafetyEvent evt{
+                rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
             // Use timeout to avoid silent ESTOP drop when queue is full (bug B4)
             enqueue_safety_event(evt, pdMS_TO_TICKS(10));
         }
@@ -198,7 +208,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         uint8_t seb_err = value.error_status;
         if (seb_err == 3) {
             g_estop_reason.store(rt::kEstopReasonInternal);
-            rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, 0};
+            rt::SafetyEvent evt{
+                rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
             enqueue_safety_event(evt, pdMS_TO_TICKS(10));
         }
 

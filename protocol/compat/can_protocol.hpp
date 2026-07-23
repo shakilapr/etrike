@@ -104,6 +104,18 @@ inline bool is_forwarded_high_to_low(std::uint32_t id) noexcept {
     return is_forwarded(id, false, Bus::High, Bus::Low);
 }
 
+inline bool is_known_frame_on_bus(std::uint32_t id, bool extended,
+                                  std::uint8_t dlc, Bus bus) noexcept {
+    const std::string_view name = bus_name(bus);
+    for (const MessageMetadata& message : kMessages) {
+        if (message.bus == name && message.id == id
+            && message.extended == extended && message.dlc == dlc) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline bool is_estop_id(std::uint32_t id) noexcept {
     return id == kIdSafetyEstop;
 }
@@ -130,6 +142,7 @@ using ::etrike::protocol::compat::is_estop_id;
 using ::etrike::protocol::compat::is_forwarded;
 using ::etrike::protocol::compat::is_forwarded_high_to_low;
 using ::etrike::protocol::compat::is_forwarded_low_to_high;
+using ::etrike::protocol::compat::is_known_frame_on_bus;
 using ::etrike::protocol::compat::mode_name;
 using ::etrike::protocol::compat::to_protocol_frame;
 
