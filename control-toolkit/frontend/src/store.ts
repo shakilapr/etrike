@@ -97,6 +97,8 @@ export type Status = {
     active?: boolean
     host_latch?: boolean
     summary?: string
+    primary_cause?: string
+    cause_resolution?: string
     causes?: string[]
     sources?: Array<Record<string, unknown>>
     rt?: {
@@ -104,6 +106,8 @@ export type Status = {
       mode_estop?: boolean
       estop_reason?: number
       estop_reason_label?: string
+      estop_reason_display?: string
+      estop_reason_detail?: string
       safety_state?: number | null
     }
     bus?: { high_0x001?: boolean; low_0x001?: boolean }

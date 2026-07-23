@@ -61,7 +61,8 @@ test.describe('Computer / Real mode and managed simulation', () => {
     expect(before.session.bench_tx).toBe('disabled')
 
     await page.getByTestId('btn-header-estop').click()
-    await expect(page.getByTestId('chip-estop')).toContainText('Active')
+    await expect(page.getByTestId('chip-estop')).toHaveClass(/danger/)
+    await expect(page.getByTestId('chip-estop-label')).not.toHaveText('Clear')
     await expect.poll(async () => {
       const after = await (await request.get('/api/v1/status')).json()
       return {
@@ -70,6 +71,15 @@ test.describe('Computer / Real mode and managed simulation', () => {
         estop_active: after.session.estop_active,
       }
     }).toEqual({ profile: 'pure_software', bench_tx: 'enabled', estop_active: true })
+    await expect.poll(async () => {
+      const body = await (
+        await request.get('/api/v1/logs?category=safety&limit=20')
+      ).json()
+      return body.logs?.some(
+        (entry: { code?: string; data?: { origin?: string } }) =>
+          entry.code === 'safety.estop_frame' && entry.data?.origin === 'host_toolkit',
+      )
+    }).toBe(true)
   })
 
   test('control actions do not silently create a Computer session', async ({ page, request }) => {

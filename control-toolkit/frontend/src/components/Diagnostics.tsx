@@ -242,6 +242,16 @@ export function Diagnostics() {
           <dd className={estopLive.any ? 'danger-text' : 'ok-text'}>
             {estopApi?.summary || estopLive.detail}
           </dd>
+          <dt>Primary cause</dt>
+          <dd className={estopLive.any ? 'danger-text' : 'ok-text'}>
+            {estopApi?.primary_cause ||
+              (estopLive.rtReasonCode !== 0
+                ? `RT: ${estopLive.rtReasonLabel}`
+                : estopLive.causes[0] || 'No active safety stop')}
+            {estopApi?.cause_resolution
+              ? ` · attribution=${estopApi.cause_resolution}`
+              : ''}
+          </dd>
           <dt>Host latch</dt>
           <dd className="mono">{estopLive.hostLatch ? 'ON' : 'off'}</dd>
           <dt>Bus 0x001</dt>
@@ -257,8 +267,8 @@ export function Diagnostics() {
           </dd>
           <dt>RT</dt>
           <dd className="mono" data-testid="diag-estop-rt-reason">
-            mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode} (
-            {estopLive.rtReasonLabel})
+            mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode}:{' '}
+            {estopApi?.rt?.estop_reason_display || estopLive.rtReasonLabel}
             {estopLive.safetyState != null ? ` · safety_state=${estopLive.safetyState}` : ''}
           </dd>
         </dl>
@@ -510,6 +520,7 @@ export function Diagnostics() {
               <th>Severity</th>
               <th>Code</th>
               <th>Title</th>
+              <th>Cause / evidence</th>
               <th>Age, s</th>
             </tr>
           </thead>
@@ -519,6 +530,7 @@ export function Diagnostics() {
                 <td>{String(e.severity)}</td>
                 <td className="mono">{String(e.code)}</td>
                 <td>{String(e.title)}</td>
+                <td className="small">{String(e.detail || '—')}</td>
                 <td className="num mono">
                   {typeof e.age_s === 'number' ? e.age_s.toFixed(1) : '—'}
                 </td>
@@ -526,7 +538,7 @@ export function Diagnostics() {
             ))}
             {events.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted">
+                <td colSpan={5} className="muted">
                   No events yet.
                 </td>
               </tr>
