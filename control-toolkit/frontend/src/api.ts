@@ -536,10 +536,14 @@ export const api = {
     })
   },
   clearEstop: () =>
-    json<{ control: Record<string, unknown>; session: Record<string, unknown> }>(
-      '/control/estop/clear',
-      { method: 'POST', body: '{}' },
-    ),
+    json<{
+      control: Record<string, unknown>
+      session: Record<string, unknown>
+      estop?: Record<string, unknown>
+    }>('/control/estop/clear', { method: 'POST', body: '{}' }),
+  /** Structured ESTOP report (causes, RT estop_reason, bus 0x001, SYS flags). */
+  estopReport: () =>
+    json<{ estop: Record<string, unknown>; session_id?: string | null }>('/control/estop'),
   controlStatus: () =>
     json<{ control: Record<string, unknown> }>('/control/status'),
   controlIntent: (body: {

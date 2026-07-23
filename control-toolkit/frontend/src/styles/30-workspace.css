@@ -45,6 +45,23 @@ h3 {
   letter-spacing: 0.02em;
 }
 
+.panel-hazard {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 20%, transparent);
+}
+
+.diag-estop-causes {
+  margin: 8px 0 12px;
+  padding-left: 1.2rem;
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.diag-estop-causes li {
+  margin: 3px 0;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);

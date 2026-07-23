@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { hexId } from '../lib/format'
+import { observeEstop } from '../lib/signals'
 import { useAppStore } from '../store'
 import { WorkspaceShell } from './WorkspaceShell'
 
@@ -9,6 +10,13 @@ export function Diagnostics() {
   const setStatus = useAppStore((s) => s.setStatus)
   const quality = useAppStore((s) => s.streamQuality)
   const mismatch = useAppStore((s) => s.protocolMismatch)
+  const messages = useAppStore((s) => s.messages)
+  const estopLive = useMemo(
+    () => observeEstop(messages, status?.session),
+    [messages, status?.session],
+  )
+  /** Prefer API report (status.estop) when present; fall back to live observe. */
+  const estopApi = status?.estop
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([])
   const [episodes, setEpisodes] = useState<Array<Record<string, unknown>>>([])
   const [activeRec, setActiveRec] = useState<Record<string, unknown> | null>(null)
@@ -217,6 +225,74 @@ export function Diagnostics() {
             Refresh diagnostics
           </button>
         </div>
+      </section>
+
+      <section
+        className={`panel${estopLive.any || estopApi?.active ? ' panel-hazard' : ''}`}
+        data-testid="diag-estop-panel"
+      >
+        <h2>ESTOP causes</h2>
+        <p className="muted small">
+          Multi-source: host inject latch, bus 0x001 SAFETY_ESTOP, SYS flags, and RT{' '}
+          <span className="mono">estop_reason</span> (firmware codes). Clear latch only clears the
+          host side.
+        </p>
+        <dl className="kv" data-testid="diag-estop-summary">
+          <dt>State</dt>
+          <dd className={estopLive.any ? 'danger-text' : 'ok-text'}>
+            {estopApi?.summary || estopLive.detail}
+          </dd>
+          <dt>Host latch</dt>
+          <dd className="mono">{estopLive.hostLatch ? 'ON' : 'off'}</dd>
+          <dt>Bus 0x001</dt>
+          <dd className="mono">
+            H={estopLive.busHigh ? 'recent' : '—'} · L={estopLive.busLow ? 'recent' : '—'}
+          </dd>
+          <dt>SYS</dt>
+          <dd className="mono">
+            estop={estopLive.sysReported ? '1' : '0'}
+            {estopLive.sysHeartbeatBad ? ' · heartbeat_ok=0' : ''}
+            {estopLive.sysCanBad ? ' · can_ok=0' : ''}
+            {estopLive.sysBrakeFault ? ' · brake_fault' : ''}
+          </dd>
+          <dt>RT</dt>
+          <dd className="mono" data-testid="diag-estop-rt-reason">
+            mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode} (
+            {estopLive.rtReasonLabel})
+            {estopLive.safetyState != null ? ` · safety_state=${estopLive.safetyState}` : ''}
+          </dd>
+        </dl>
+        {(estopApi?.causes?.length || estopLive.causes.length) > 0 ? (
+          <ul className="diag-estop-causes" data-testid="diag-estop-causes">
+            {(estopApi?.causes?.length ? estopApi.causes : estopLive.causes).map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted small">No active ESTOP sources.</p>
+        )}
+        {estopApi?.sources && Array.isArray(estopApi.sources) && estopApi.sources.length > 0 ? (
+          <table className="data-table compact" data-testid="diag-estop-sources">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {estopApi.sources.map((s, i) => (
+                <tr key={String(s.id ?? i)}>
+                  <td>{String(s.title ?? s.id ?? '—')}</td>
+                  <td className="mono small">{String(s.detail ?? '—')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+        <p className="muted small mono">
+          RT reason map: 0=none 2=heartbeat_loss 3=following_error 4=obstacle 5=can_estop_frame
+          6=bus_off 7=internal
+        </p>
       </section>
 
       <section className="panel" data-testid="recording-panel">

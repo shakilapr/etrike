@@ -92,6 +92,23 @@ export type Status = {
   }
   session: SessionState
   catalog: { messages: number; instances: number }
+  /** Structured ESTOP cause report (host latch + bus + SYS + RT reason). */
+  estop?: {
+    active?: boolean
+    host_latch?: boolean
+    summary?: string
+    causes?: string[]
+    sources?: Array<Record<string, unknown>>
+    rt?: {
+      mode?: string | null
+      mode_estop?: boolean
+      estop_reason?: number
+      estop_reason_label?: string
+      safety_state?: number | null
+    }
+    bus?: { high_0x001?: boolean; low_0x001?: boolean }
+    sys?: Record<string, unknown>
+  }
 }
 
 export type Workspace =

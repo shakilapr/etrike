@@ -42,27 +42,61 @@ def control_status(request: Request) -> dict:
     return {"control": request.app.state.lifecycle.control.snapshot()}
 
 
+@router.get("/estop")
+def get_estop(request: Request) -> dict:
+    """Structured ESTOP active/causes report (host latch + bus + SYS + RT reason)."""
+    from control_toolkit.services.estop_report import build_estop_report
+
+    life = request.app.state.lifecycle
+    session = life.sessions.snapshot()
+    try:
+        msgs = list(life.latest.snapshot().messages)
+    except Exception:  # noqa: BLE001
+        msgs = []
+    report = build_estop_report(
+        msgs, host_latch=bool(getattr(session, "estop_active", False))
+    )
+    return {"estop": report, "session_id": session.session_id}
+
+
 @router.post("/estop/clear")
 def clear_estop(request: Request) -> dict:
     """Clear host-side ESTOP injection latch (not a claim that hardware recovered)."""
+    from control_toolkit.services.estop_report import build_estop_report
+
     life = request.app.state.lifecycle
     st = life.sessions.clear_estop_latch()
     snap = life.control.clear_estop_flag()
+    try:
+        msgs = list(life.latest.snapshot().messages)
+    except Exception:  # noqa: BLE001
+        msgs = []
+    remaining = build_estop_report(msgs, host_latch=False)
+    detail = (
+        "Operator cleared host inject latch. "
+        + (
+            f"Vehicle/bus ESTOP may still be active: {remaining['summary']}"
+            if remaining.get("active")
+            else "No SYS/RT/bus ESTOP sources active in latest state."
+        )
+    )
     life.diagnostics.emit(
         code="control.estop_cleared",
         title="Host ESTOP latch cleared",
-        detail="Operator cleared inject latch; vehicle state is independent",
+        detail=detail,
         severity="info",
+        evidence={"remaining": remaining},
     )
     life.audit.log(
         category="safety",
         code="control.estop_cleared",
         title="Host ESTOP latch cleared",
-        detail="operator clear",
+        detail=detail,
         severity="info",
         session_id=st.session_id,
+        data={"remaining_active": remaining.get("active"), "causes": remaining.get("causes")},
     )
-    return {"control": snap, "session": st.model_dump()}
+    return {"control": snap, "session": st.model_dump(), "estop": remaining}
 
 
 @router.post("/intent")
@@ -81,16 +115,42 @@ def control_intent(request: Request, body: IntentBody) -> dict:
                 source=FrameSource.INJECTION,
                 claim_ownership=False,
             )
-            results.append({"bus": bus, "disposition": r.disposition})
+            results.append(
+                {
+                    "bus": bus,
+                    "disposition": r.disposition,
+                    "reason": getattr(r, "reason", None),
+                }
+            )
         life.sessions.update_vehicle_view(estop_active=True)
+        bits = ", ".join(f"{x['bus']}={x['disposition']}" for x in results)
+        detail = (
+            f"Host inject SAFETY_ESTOP (DLC=0) on high+low · TX [{bits}] · "
+            f"source={body.source} · host latch ON until Clear · "
+            f"does not clear ECU-latched ESTOP"
+        )
         life.diagnostics.emit(
             code="control.estop",
             title="Control ESTOP inject",
-            detail="SAFETY_ESTOP on high+low; host latch active until Clear",
+            detail=detail,
             severity="critical",
+            evidence={
+                "source": body.source,
+                "tx": results,
+                "cause": "host_inject",
+                "estop_reason_note": "Host inject; RT estop_reason may later show can_estop_frame(5)",
+            },
+        )
+        life.audit.log(
+            category="safety",
+            code="control.estop",
+            title="Control ESTOP inject",
+            detail=detail,
+            severity="critical",
+            data={"source": body.source, "tx": results, "cause": "host_inject"},
         )
         snap = life.control.release(reason="estop")
-        return {"control": snap, "estop": results}
+        return {"control": snap, "estop": results, "cause": "host_inject", "detail": detail}
 
     try:
         snap = life.control.apply_intent(
