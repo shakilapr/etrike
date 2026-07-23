@@ -1,6 +1,13 @@
 // Handle-based TWAI driver for the ESP32-S3 low CAN bus.
 // Unlike the deprecated driver, this API preserves classic CAN DLC=0 by
 // carrying buffer_len=0 through to the HAL.
+//
+// Instrumentation build: define ETRIKE_RT_TWAI_INSTRUMENT=1 to enable
+// per-event atomic counters and diagnostic log dumps. This is active in
+// [env:bench] via platformio.ini and lets us verify:
+//   (a) whether on_tx_done fires for all queued frames after Bus-Off recovery
+//   (b) whether m_free_tx_slots count tracks correctly against callbacks
+//   (c) whether the driver resumes pending frames automatically after recovery
 
 #include "can_driver_twai.h"
 #include "esp_attr.h"
@@ -61,12 +68,28 @@ bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
                                       void* user_ctx) {
     auto* self = static_cast<TwaiDriver*>(user_ctx);
     BaseType_t wake = pdFALSE;
+    bool slot_found = false;
     for (uint8_t index = 0; index < kTxSlots; ++index) {
         if (event->done_tx_frame == &self->m_tx_slots[index].frame) {
             xQueueSendFromISR(self->m_free_tx_slots, &index, &wake);
+            slot_found = true;
             break;
         }
     }
+#if ETRIKE_RT_TWAI_INSTRUMENT
+    if (event->done_tx_frame->header.id != 0) {  // ignore null-frame sentinels
+        if (event->tx_success) {
+            self->m_instr_tx_done_ok.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            self->m_instr_tx_done_fail.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (!slot_found) {
+            self->m_instr_tx_done_no_slot.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+#else
+    (void)slot_found;
+#endif
     return wake == pdTRUE;
 }
 
@@ -78,11 +101,28 @@ bool IRAM_ATTR TwaiDriver::on_state_change(twai_node_handle_t,
     self->m_last_transition_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
     if (event->new_sta == TWAI_ERROR_BUS_OFF) {
         self->m_bus_off_started_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
+#if ETRIKE_RT_TWAI_INSTRUMENT
+        // Snapshot the free-slot queue depth at the exact Bus-Off moment.
+        // If slots leak, this count will diverge from (kTxSlots - tx_submitted + tx_done).
+        UBaseType_t free_at_busoff = uxQueueMessagesWaitingFromISR(self->m_free_tx_slots);
+        self->m_instr_free_slots_at_busoff.store(
+            static_cast<uint8_t>(free_at_busoff), std::memory_order_relaxed);
+        self->m_instr_busoff_count.fetch_add(1, std::memory_order_relaxed);
+#endif
     } else if (event->old_sta == TWAI_ERROR_BUS_OFF && event->new_sta == TWAI_ERROR_ACTIVE) {
         self->m_recovery_in_progress.store(false, std::memory_order_release);
         self->m_recovery_completed_pending.store(true, std::memory_order_release);
         self->m_first_rx_pending.store(true, std::memory_order_release);
         self->m_first_tx_pending.store(true, std::memory_order_release);
+#if ETRIKE_RT_TWAI_INSTRUMENT
+        // Snapshot free-slot count immediately after recovery transition.
+        // Per ESP-IDF docs: "pending transmissions resume right away" after recovery.
+        // If that is true, on_tx_done will fire for any still-queued frames and
+        // free_slots_at_recovery will climb back toward kTxSlots within milliseconds.
+        UBaseType_t free_at_recovery = uxQueueMessagesWaitingFromISR(self->m_free_tx_slots);
+        self->m_instr_free_slots_at_recovery.store(
+            static_cast<uint8_t>(free_at_recovery), std::memory_order_relaxed);
+#endif
     }
     return false;
 }
@@ -109,8 +149,18 @@ bool TwaiDriver::init() {
     config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
     config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
     config.bit_timing.bitrate = m_config.bitrate_hz;
-    config.fail_retry_cnt = 3;
+    config.fail_retry_cnt = 3;  // 3 HW retries per frame; see testing notes in can_driver_twai.cpp
     config.tx_queue_depth = kTxSlots;
+
+#if ETRIKE_RT_TWAI_SELF_TEST
+    // Self-test mode: ACK is not checked during TX. Used on bench when no peer
+    // node or CANalyst-II is in passive (listen-only) mode and cannot supply ACK.
+    // This prevents TEC accumulation from missing ACKs, so Bus-Off never fires
+    // and the slot/callback behaviour under normal operation can be measured.
+    // DO NOT use in vehicle — self-test masks real bus failures.
+    config.flags.enable_self_test = 1;
+    ESP_LOGW(kTag, "TWAI SELF-TEST MODE ENABLED — ACK not required (bench only)");
+#endif
 
     esp_err_t result = twai_new_node_onchip(&config, &m_node);
     if (result == ESP_OK) {
@@ -153,8 +203,38 @@ bool TwaiDriver::service_recovery(int64_t now_us) {
     if (m_recovery_completed_pending.exchange(false, std::memory_order_acq_rel)) {
         const TickType_t elapsed = xTaskGetTickCount()
             - m_bus_off_started_tick.load(std::memory_order_relaxed);
-        ESP_LOGI(kTag, "state=active recovery=complete elapsed_ms=%lu",
-                 static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS));
+        UBaseType_t free_now = uxQueueMessagesWaiting(m_free_tx_slots);
+        ESP_LOGI(kTag, "state=active recovery=complete elapsed_ms=%lu free_slots=%u/%u",
+                 static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS),
+                 static_cast<unsigned>(free_now), static_cast<unsigned>(kTxSlots));
+#if ETRIKE_RT_TWAI_INSTRUMENT
+        // Verify the ESP-IDF claim: "pending transmissions resume right away."
+        // After a short settle window, free_slots should equal kTxSlots again
+        // if the driver fired on_tx_done for all frames queued before Bus-Off.
+        // If free_slots < kTxSlots here, slots are genuinely leaked.
+        // We log both the ISR-time snapshot and the post-recovery task-context count.
+        ESP_LOGI(kTag,
+            "[INSTR] busoff#=%lu free@busoff=%u free@recovery_isr=%u free@recovery_task=%u"
+            " tx_submitted=%lu tx_done_ok=%lu tx_done_fail=%lu tx_done_no_slot=%lu",
+            static_cast<unsigned long>(m_instr_busoff_count.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(m_instr_free_slots_at_busoff.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(m_instr_free_slots_at_recovery.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(free_now),
+            static_cast<unsigned long>(m_instr_tx_submitted.load(std::memory_order_relaxed)),
+            static_cast<unsigned long>(m_instr_tx_done_ok.load(std::memory_order_relaxed)),
+            static_cast<unsigned long>(m_instr_tx_done_fail.load(std::memory_order_relaxed)),
+            static_cast<unsigned long>(m_instr_tx_done_no_slot.load(std::memory_order_relaxed)));
+        // Decision rule printed directly to serial:
+        if (free_now < kTxSlots) {
+            ESP_LOGE(kTag,
+                "[INSTR] SLOT LEAK CONFIRMED: %u of %u slots not returned after recovery",
+                static_cast<unsigned>(kTxSlots - free_now), static_cast<unsigned>(kTxSlots));
+        } else {
+            ESP_LOGI(kTag,
+                "[INSTR] No slot leak: all %u slots returned after recovery",
+                static_cast<unsigned>(kTxSlots));
+        }
+#endif
     }
     if (!recovery_needed()) return false;
     const int64_t last = m_last_recovery_attempt_us.load(std::memory_order_relaxed);
@@ -231,6 +311,9 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
         xQueueSend(m_free_tx_slots, &index, 0);
         return false;
     }
+#if ETRIKE_RT_TWAI_INSTRUMENT
+    m_instr_tx_submitted.fetch_add(1, std::memory_order_relaxed);
+#endif
     log_first_io_after_recovery(false);
     return true;
 }
