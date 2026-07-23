@@ -32,11 +32,11 @@ GENERATED_DIR = DOC_DIR / "generated"
 OUTPUT_DIR = DOC_DIR / "output"
 
 # Source files grouped by template placeholder
-ARCH_SOURCES = [
+ARCH_SOURCES = [f for f in [
     REPO_ROOT / "architecture.md",
     REPO_ROOT / "docs" / "generated_can_documentation.md",
     REPO_ROOT / "docs" / "generated_can_dictionary.md",
-]
+] if f.exists()]
 DOC_SOURCES = [f for f in sorted((REPO_ROOT / "docs").glob("*.md")) if f.name not in ("generated_can_dictionary.md", "generated_can_documentation.md")]
 NOTE_SOURCES = sorted((REPO_ROOT / "notes").glob("*.md"))
 STD_SOURCES = sorted((REPO_ROOT / "standards").glob("*.md"))
@@ -211,6 +211,28 @@ def build(args: argparse.Namespace) -> None:
         compile_pdf(arch_tex_path, OUTPUT_DIR)
         arch_pdf_path = OUTPUT_DIR / f"etrike-architecture-{short_version}.pdf"
         print(f"  OK PDF: {arch_pdf_path.relative_to(REPO_ROOT)}")
+
+    # ── Control Toolkit Guide ──────────────────────────────────────────
+    print("\n=== Building Control Toolkit Guide ===")
+    ctk_md = REPO_ROOT / "docs" / "control-toolkit-guide.md"
+    if ctk_md.exists():
+        ctk_tex = md_to_latex(ctk_md)
+        ctk_fragment_path = GENERATED_DIR / "control-toolkit-guide-fragment.tex"
+        ctk_fragment_path.write_text(ctk_tex, encoding="utf-8")
+        print(f"  OK Wrote {ctk_fragment_path.relative_to(REPO_ROOT)}")
+
+        ctk_template_path = TEMPLATE_DIR / "control-toolkit-guide.tex"
+        if ctk_template_path.exists():
+            ctk_template = ctk_template_path.read_text(encoding="utf-8")
+            ctk_template = replace_template_vars(ctk_template, version, build_date)
+            ctk_tex_path = GENERATED_DIR / "control-toolkit-guide.tex"
+            ctk_tex_path.write_text(ctk_template, encoding="utf-8")
+            print(f"  OK Wrote {ctk_tex_path.relative_to(REPO_ROOT)}")
+
+            if not args.no_compile:
+                compile_pdf(ctk_tex_path, OUTPUT_DIR)
+                ctk_pdf_path = OUTPUT_DIR / "control-toolkit-guide.pdf"
+                print(f"  OK PDF: {ctk_pdf_path.relative_to(REPO_ROOT)}")
 
     # ── Summary ──────────────────────────────────────────────────────────
     print(f"\n{'=' * 72}")
