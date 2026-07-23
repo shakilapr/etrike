@@ -19,6 +19,7 @@
 #include "protocol/compat/can.hpp"
 #include "steering_control.h"
 #include "physics_model.h"
+#include "system_mode.h"
 
 namespace rt {
 
@@ -93,7 +94,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
 
     // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
     int64_t sys_hb = g_last_sys_hb_us.load();
-    if (sys_hb > 0 && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
+    if (!g_bench_solo_mode && sys_hb > 0
+        && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
         // Rate-limit: control loop is 100 Hz; do not spam the log every tick.
         static int64_t last_sys_hb_log_us = 0;
         if (now - last_sys_hb_log_us > 1'000'000) {
@@ -110,7 +112,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
 
     // 4. Host heartbeat timeout (arch §7.6: 1500ms → assisted stop)
     int64_t host_hb = g_last_host_hb_us.load();
-    if (host_hb > 0 && (now - host_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
+    if (!g_bench_solo_mode && host_hb > 0
+        && (now - host_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
         ESP_LOGW("rt", "Host heartbeat timeout — assisted stop brake=2000kPa");
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
@@ -119,7 +122,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
 
     // 5. Steering following-error check (arch §7.6, fix #5)
     static int steer_follow_err_ticks = 0;
-    if (!r.zero_setpoints && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
+    if (!g_bypass_eps_sync && !r.zero_setpoints
+        && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
         int16_t cmd_0_1deg    = g_last_cmd_angle_0_1deg.load();
         int16_t actual_0_1deg = g_ses_angle_0_1deg.load();
         if (actual_0_1deg != INT16_MIN) {

@@ -59,6 +59,8 @@ static int fail = 0;
 } while (0)
 
 static void reset_state() {
+    g_bench_solo_mode = false;
+    g_bypass_eps_sync = false;
     g_brake_request_kpa.store(0);
     g_obstacle_mm.store(UINT32_MAX);
     g_ses_angle_0_1deg.store(INT16_MIN);
@@ -152,6 +154,32 @@ int main() {
 
         CHECK(r.zero_setpoints);
         CHECK(g_brake_request_kpa.load() == shared::kAssistStopKpa);
+    }
+
+    {
+        reset_state();
+        g_bench_solo_mode = true;
+        g_bypass_eps_sync = true;
+        g_last_sys_hb_us.store(1);
+        g_last_host_hb_us.store(1);
+        bool estop_pending = false;
+        bool seb_takeover = false;
+        auto r = run_safety_checks(20'000'000, false, UINT32_MAX,
+                                   estop_pending, uint8_t(can::Mode::Manual),
+                                   seb_takeover);
+
+        CHECK(!r.zero_setpoints);
+        CHECK(!r.disable_steering);
+        CHECK(!seb_takeover);
+
+        // Developer bypass never suppresses an actual ESTOP event.
+        estop_pending = true;
+        r = run_safety_checks(20'010'000, false, UINT32_MAX,
+                              estop_pending, uint8_t(can::Mode::Manual),
+                              seb_takeover);
+        CHECK(r.zero_setpoints);
+        CHECK(r.brake_kpa == shared::kMaxBrakeKpa);
+        CHECK(r.disable_steering);
     }
 
     {

@@ -64,6 +64,7 @@ std::atomic<uint8_t> g_cmd_gear{0};
 
 /// Timestamp of last CAN 0x204 in FreeRTOS ticks (written by task_can_rx).
 std::atomic<uint32_t> g_last_cmd_tick{0};
+std::atomic<uint8_t> g_cmd_fresh_streak{0};
 
 /// Actual speed in mm/s (written by task_control, read by task_can_tx).
 std::atomic<int16_t> g_actual_speed_mmps{0};
@@ -132,6 +133,8 @@ static void process_can_frame(const etrike::protocol::Frame& frame) {
         g_cmd_speed_mmps.store(cmd.motor_speed_mmps, std::memory_order_relaxed);
         g_cmd_gear.store(cmd.gear, std::memory_order_relaxed);
         g_last_cmd_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+        uint8_t streak = g_cmd_fresh_streak.load(std::memory_order_relaxed);
+        if (streak < 3) g_cmd_fresh_streak.store(streak + 1, std::memory_order_relaxed);
     }
 }
 
@@ -205,9 +208,10 @@ void task_safety(void* pvParameters) {
                 /* Stale: zero command so control loop sees safe values */
                 g_cmd_speed_mmps.store(0, std::memory_order_relaxed);
                 g_cmd_gear.store(0, std::memory_order_relaxed);
+                g_cmd_fresh_streak.store(0, std::memory_order_relaxed);
                 /* Set stale fault flag — atomic RMW to avoid race with task_control */
                 g_fault_flags.fetch_or(mtr::kFaultCmdTimeout, std::memory_order_relaxed);
-            } else {
+            } else if (g_cmd_fresh_streak.load(std::memory_order_relaxed) >= 3) {
                 /* Clear stale fault flag when commands resume */
                 g_fault_flags.fetch_and(~mtr::kFaultCmdTimeout, std::memory_order_relaxed);
             }
@@ -318,8 +322,10 @@ void task_control(void* pvParameters) {
             int32_t  cmd_speed = g_cmd_speed_mmps.load(std::memory_order_relaxed);
             uint8_t  cmd_gear  = g_cmd_gear.load(std::memory_order_relaxed);
             uint32_t last_tick = g_last_cmd_tick.load(std::memory_order_relaxed);
-            bool stale         = !grace
-                               && (now - last_tick > pdMS_TO_TICKS(mtr::kCmdStaleTimeoutMs));
+            bool stale         = g_cmd_fresh_streak.load(std::memory_order_relaxed) < 3
+                               || (!grace
+                                   && (now - last_tick
+                                       > pdMS_TO_TICKS(mtr::kCmdStaleTimeoutMs)));
 
             if (stale) {
                 cmd_speed = 0;
