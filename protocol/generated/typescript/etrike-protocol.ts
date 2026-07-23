@@ -3,7 +3,7 @@
 // NETWORK_HASH: buses + routes + instances.
 export const SEMANTIC_HASH = "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a" as const;
 export const WIRE_HASH = SEMANTIC_HASH;
-export const NETWORK_HASH = "b47bb9ad17c3d7108c711b48c5be9827c60f84678774e9f4d918170d3c379141" as const;
+export const NETWORK_HASH = "d97449c7e8f29cd884a2bc1d4d0c9759cfec7255bffdefbf102f3db26bd44887" as const;
 export const METADATA = {
   "hmi:hmi_mode_req": {
     "byte_order": "big",
@@ -1479,7 +1479,7 @@ export const METADATA = {
     "instances": [
       {
         "bus": "low",
-        "cycle_ms": 0,
+        "cycle_ms": 1000,
         "frame_format": "standard",
         "id": 272,
         "receivers": [
