@@ -18,35 +18,47 @@ from control_toolkit.models.state import MessageState
 # RT firmware (rt-esp32/src/config.h) — estop_reason on RT_STATE_RPT.
 RT_ESTOP_REASONS: dict[int, str] = {
     0: "none",
+    1: "button",
     2: "heartbeat_loss",
     3: "following_error",
     4: "obstacle",
     5: "can_estop_frame",
     6: "bus_off",
     7: "internal",
+    8: "egas_mismatch",
+    9: "stale_cmd",
+    10: "watchdog",
 }
 
 RT_ESTOP_REASON_DISPLAY: dict[int, str] = {
     0: "None",
+    1: "Physical ESTOP button pressed",
     2: "Heartbeat lost",
     3: "Steering following error",
     4: "Obstacle detected",
     5: "CAN ESTOP received",
     6: "CAN bus-off",
     7: "RT internal fault",
+    8: "EGAS speed mismatch fault",
+    9: "Stale command timeout",
+    10: "Task watchdog fault",
 }
 
 RT_ESTOP_REASON_DETAIL: dict[int, str] = {
     0: "RT has not reported a safety-stop reason.",
-    2: "RT stopped motion after a required heartbeat timed out.",
-    3: "RT stopped motion after steering exceeded the following-error limit.",
-    4: "RT stopped motion after the obstacle stop condition became active.",
+    1: "RT or SYS stopped motion after the physical mushroom ESTOP button was pressed or circuit opened.",
+    2: "RT stopped motion after a required node heartbeat (Host or SYS) timed out.",
+    3: "RT stopped motion after steering exceeded the speed-scaled following-error limit for >300ms.",
+    4: "RT stopped motion after an obstacle was detected in the stop distance zone.",
     5: (
         "RT stopped after receiving SAFETY_ESTOP (0x001). The frame has DLC 0 "
         "and sender=Any, so the wire protocol does not identify its origin."
     ),
-    6: "RT stopped motion because a CAN controller entered bus-off.",
-    7: "RT stopped motion because it detected an internal fault.",
+    6: "RT stopped motion because a CAN controller entered bus-off error state.",
+    7: "RT stopped motion because it detected an internal safety fault or L3 hardware error.",
+    8: "RT stopped motion due to an EGAS motor speed setpoint vs feedback mismatch (>500 mm/s for >500ms).",
+    9: "RT stopped motion because the control command stream timed out (stale command watchdog).",
+    10: "RT stopped motion because an internal task watchdog failed to kick within its deadline.",
 }
 
 
@@ -288,7 +300,7 @@ def build_estop_report(
 
     primary_cause = "No active safety stop"
     cause_resolution = "clear"
-    if reason_code in (2, 3, 4, 6, 7):
+    if reason_code in (1, 2, 3, 4, 6, 7, 8, 9, 10):
         primary_cause = f"RT: {reason_human}"
         cause_resolution = "reported"
     elif reason_code == 5 and host_latch:

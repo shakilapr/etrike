@@ -79,23 +79,31 @@ export function signalIsOn(m: MessageState | undefined, key: string): boolean {
 /** RT firmware estop_reason codes (rt-esp32/src/config.h). */
 export const RT_ESTOP_REASONS: Record<number, string> = {
   0: 'None',
+  1: 'ESTOP Button',
   2: 'Heartbeat Loss',
   3: 'Following Error',
   4: 'Obstacle',
   5: 'CAN Frame',
   6: 'Bus Off',
   7: 'Internal',
+  8: 'EGAS Mismatch',
+  9: 'Stale Cmd',
+  10: 'Watchdog',
 }
 
 /** Deliberately compact: this value is rendered in the fixed top health strip. */
 export const RT_ESTOP_REASON_SHORT: Record<number, string> = {
   0: 'ESTOP',
+  1: 'Button',
   2: 'Heartbeat',
   3: 'Steering',
   4: 'Obstacle',
   5: 'CAN frame',
   6: 'Bus-off',
   7: 'Internal',
+  8: 'EGAS fault',
+  9: 'Stale cmd',
+  10: 'Watchdog',
 }
 
 /**
