@@ -27,7 +27,7 @@
     ["high","0x7FD","standard","rt:rt_heartbeat",2,500,"RT",["Host","SYS"]],
     ["low","0x001","standard","safety:safety_estop",0,0,"Any",["SYS","Host","MTR","DCDC"]],
     ["low","0x011","standard","sys:sys_safety_sts",3,200,"SYS",["RT","Host"]],
-    ["low","0x110","standard","sys:sys_mode_cmd",1,0,"SYS",["RT","MTR"]],
+    ["low","0x110","standard","sys:sys_mode_cmd",1,1000,"SYS",["RT","MTR"]],
     ["low","0x111","standard","hmi:hmi_mode_req",2,1000,"HMI",["SYS","Host"]],
     ["low","0x112","standard","hmi:hmi_pwr_req",2,1000,"HMI",["SYS"]],
     ["low","0x120","standard","mtr:sys_throttle_sts",2,10,"MTR",["RT","Host"]],

@@ -12,7 +12,7 @@
 namespace etrike::protocol {
 inline constexpr std::string_view kSemanticHash = "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "b47bb9ad17c3d7108c711b48c5be9827c60f84678774e9f4d918170d3c379141";
+inline constexpr std::string_view kNetworkHash = "d97449c7e8f29cd884a2bc1d4d0c9759cfec7255bffdefbf102f3db26bd44887";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
@@ -1867,10 +1867,10 @@ struct SysModeCmd {
     static constexpr std::string_view kKey = "sys:sys_mode_cmd";
     static constexpr std::uint32_t kId = 0x110u;
     static constexpr std::size_t kDlc = 1u;
-    static constexpr std::uint32_t kCycleMs = 0u;
+    static constexpr std::uint32_t kCycleMs = 1000u;
     static constexpr bool kExtended = false;
     static constexpr std::uint32_t kLowId = 0x110u;
-    static constexpr std::uint32_t kLowCycleMs = 0u;
+    static constexpr std::uint32_t kLowCycleMs = 1000u;
     static constexpr bool kLowExtended = false;
     std::uint8_t mode{};
     struct ModeMeta {

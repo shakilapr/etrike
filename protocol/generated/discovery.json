@@ -1595,7 +1595,7 @@
       "instances": [
         {
           "bus": "low",
-          "cycle_ms": 0,
+          "cycle_ms": 1000,
           "frame_format": "standard",
           "id": "0x110",
           "receivers": [
@@ -1708,7 +1708,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "b47bb9ad17c3d7108c711b48c5be9827c60f84678774e9f4d918170d3c379141",
+  "network_hash": "d97449c7e8f29cd884a2bc1d4d0c9759cfec7255bffdefbf102f3db26bd44887",
   "routes": [
     {
       "from": "low",

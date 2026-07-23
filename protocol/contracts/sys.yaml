@@ -10,7 +10,7 @@
     ]},
     {"key":"sys_mode_cmd","owner":"sys","protocol":"etrike.application.v1","name":"SYS_MODE_CMD","dlc":1,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2}
-    ]},"instances":[{"bus":"low","id":"0x110","frame_format":"standard","sender":"SYS","receivers":["RT","MTR"],"cycle_ms":0,"semantics":"independent"}]},
+    ]},"instances":[{"bus":"low","id":"0x110","frame_format":"standard","sender":"SYS","receivers":["RT","MTR"],"cycle_ms":1000,"semantics":"independent"}]},
     {"key":"sys_diag_rpt","owner":"sys","protocol":"etrike.application.v1","name":"SYS_DIAG_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2},{"key":"brake_engaged","byte":1,"bit":0,"bits":1},{"key":"brake_fault","byte":1,"bit":1,"bits":1},
       {"key":"heartbeat_ok","byte":2,"bit":0,"bits":1},{"key":"rx_overflow","byte":2,"bit":1,"bits":6,"max":63},{"key":"estop_active","byte":3,"bit":0,"bits":8,"min":0,"max":1},
