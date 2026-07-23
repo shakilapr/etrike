@@ -26,6 +26,39 @@ RT_ESTOP_REASONS: dict[int, str] = {
     7: "internal",
 }
 
+RT_ESTOP_REASON_DISPLAY: dict[int, str] = {
+    0: "None",
+    2: "Heartbeat lost",
+    3: "Steering following error",
+    4: "Obstacle detected",
+    5: "CAN ESTOP received",
+    6: "CAN bus-off",
+    7: "RT internal fault",
+}
+
+RT_ESTOP_REASON_DETAIL: dict[int, str] = {
+    0: "RT has not reported a safety-stop reason.",
+    2: "RT stopped motion after a required heartbeat timed out.",
+    3: "RT stopped motion after steering exceeded the following-error limit.",
+    4: "RT stopped motion after the obstacle stop condition became active.",
+    5: (
+        "RT stopped after receiving SAFETY_ESTOP (0x001). The frame has DLC 0 "
+        "and sender=Any, so the wire protocol does not identify its origin."
+    ),
+    6: "RT stopped motion because a CAN controller entered bus-off.",
+    7: "RT stopped motion because it detected an internal fault.",
+}
+
+
+def reason_display(reason_code: int) -> str:
+    return RT_ESTOP_REASON_DISPLAY.get(reason_code, f"Unknown reason {reason_code}")
+
+
+def reason_detail(reason_code: int) -> str:
+    return RT_ESTOP_REASON_DETAIL.get(
+        reason_code, f"RT reported an undocumented ESTOP reason code ({reason_code})."
+    )
+
 
 def _sig(msg: MessageState | None, key: str) -> Any:
     if msg is None:
@@ -134,6 +167,8 @@ def build_estop_report(
     if reason_code is None:
         reason_code = 0
     reason_label = RT_ESTOP_REASONS.get(reason_code, f"unknown_{reason_code}")
+    reason_human = reason_display(reason_code)
+    reason_explanation = reason_detail(reason_code)
     safety_state = _num(rt, "safety_state")
 
     sources: list[dict[str, Any]] = []
@@ -214,7 +249,10 @@ def build_estop_report(
         )
         causes.append("SYS brake_fault")
     if rt_mode_estop or reason_code != 0:
-        detail = f"RT mode={rt_mode or '—'} · estop_reason={reason_code} ({reason_label})"
+        detail = (
+            f"RT mode={rt_mode or '—'} · reason {reason_code}: {reason_human}. "
+            f"{reason_explanation}"
+        )
         if safety_state is not None:
             detail += f" · safety_state={safety_state}"
         sources.append(
@@ -225,12 +263,14 @@ def build_estop_report(
                 "detail": detail,
                 "estop_reason": reason_code,
                 "estop_reason_label": reason_label,
+                "estop_reason_display": reason_human,
+                "estop_reason_detail": reason_explanation,
                 "mode": rt_mode or None,
                 "safety_state": safety_state,
             }
         )
         if reason_code != 0:
-            causes.append(f"RT estop_reason={reason_code} ({reason_label})")
+            causes.append(f"RT reason {reason_code}: {reason_human}")
         elif rt_mode_estop:
             causes.append(f"RT mode ESTOP (reason code 0 / not set)")
 
@@ -245,6 +285,37 @@ def build_estop_report(
         or sys_can_bad
         or sys_brake_fault
     )
+
+    primary_cause = "No active safety stop"
+    cause_resolution = "clear"
+    if reason_code in (2, 3, 4, 6, 7):
+        primary_cause = f"RT: {reason_human}"
+        cause_resolution = "reported"
+    elif reason_code == 5 and host_latch:
+        primary_cause = "Host/toolkit SAFETY_ESTOP injection received by RT"
+        cause_resolution = "correlated"
+    elif reason_code == 5:
+        primary_cause = (
+            "RT received SAFETY_ESTOP (0x001); originating node is not encoded"
+        )
+        cause_resolution = "unknown_origin"
+    elif sys_hb_bad:
+        primary_cause = "SYS detected a required heartbeat failure"
+        cause_resolution = "reported"
+    elif sys_brake_fault:
+        primary_cause = "SYS brake fault"
+        cause_resolution = "reported"
+    elif host_latch:
+        primary_cause = "Host/toolkit SAFETY_ESTOP injection latch"
+        cause_resolution = "reported"
+    elif bus_high or bus_low:
+        primary_cause = (
+            "SAFETY_ESTOP (0x001) observed; originating node is not encoded"
+        )
+        cause_resolution = "unknown_origin"
+    elif sys_estop or rt_mode_estop:
+        primary_cause = "ECU reports ESTOP without a specific reason"
+        cause_resolution = "unknown"
 
     if not any_active:
         summary = "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP"
@@ -268,11 +339,15 @@ def build_estop_report(
             "mode_estop": rt_mode_estop,
             "estop_reason": reason_code,
             "estop_reason_label": reason_label,
+            "estop_reason_display": reason_human,
+            "estop_reason_detail": reason_explanation,
             "safety_state": safety_state,
             "frame_fresh": _fresh_ok(rt),
         },
         "sources": sources,
         "causes": causes,
+        "primary_cause": primary_cause,
+        "cause_resolution": cause_resolution,
         "summary": summary,
         "reason_codes": dict(RT_ESTOP_REASONS),
     }

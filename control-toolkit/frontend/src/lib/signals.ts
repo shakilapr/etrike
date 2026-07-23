@@ -78,13 +78,24 @@ export function signalIsOn(m: MessageState | undefined, key: string): boolean {
 
 /** RT firmware estop_reason codes (rt-esp32/src/config.h). */
 export const RT_ESTOP_REASONS: Record<number, string> = {
-  0: 'none',
-  2: 'heartbeat_loss',
-  3: 'following_error',
-  4: 'obstacle',
-  5: 'can_estop_frame',
-  6: 'bus_off',
-  7: 'internal',
+  0: 'None',
+  2: 'Heartbeat Loss',
+  3: 'Following Error',
+  4: 'Obstacle',
+  5: 'CAN Frame',
+  6: 'Bus Off',
+  7: 'Internal',
+}
+
+/** Deliberately compact: this value is rendered in the fixed top health strip. */
+export const RT_ESTOP_REASON_SHORT: Record<number, string> = {
+  0: 'ESTOP',
+  2: 'Heartbeat',
+  3: 'Steering',
+  4: 'Obstacle',
+  5: 'CAN frame',
+  6: 'Bus-off',
+  7: 'Internal',
 }
 
 /**
@@ -185,7 +196,9 @@ export function observeEstop(
 
   let label = 'Clear'
   if (any) {
-    if (rtReasonCode !== 0) label = `RT:${rtReasonLabel}`
+    if (rtReasonCode !== 0) {
+      label = `RT · ${RT_ESTOP_REASON_SHORT[rtReasonCode] ?? `Reason ${rtReasonCode}`}`
+    }
     else if (hostLatch && (busHigh || busLow || sysReported || rtModeEstop)) label = 'Latch+bus'
     else if (hostLatch) label = 'Host latch'
     else if (busHigh && busLow) label = 'Bus H+L'

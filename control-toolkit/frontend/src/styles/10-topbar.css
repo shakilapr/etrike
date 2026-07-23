@@ -264,6 +264,13 @@ button.topbar-mode-btn.btn {
 .chip-estop {
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+}
+
+.chip-estop > .chip-v {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .estop-bus-lamps {
@@ -626,4 +633,3 @@ button.topbar-mode-btn.btn {
     justify-content: flex-end;
   }
 }
-

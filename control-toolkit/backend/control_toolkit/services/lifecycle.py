@@ -14,6 +14,7 @@ from control_toolkit import protocol_bridge as proto
 from control_toolkit.services.control_intent import ControlIntentService
 from control_toolkit.services.audit_log import AuditLogService
 from control_toolkit.services.diagnostics import DiagnosticsService
+from control_toolkit.services.estop_monitor import EstopEventMonitor
 from control_toolkit.services.event_bus import EventBus
 from control_toolkit.services.ownership import OwnershipTable
 from control_toolkit.services.recording import RecordingService
@@ -48,6 +49,12 @@ class Lifecycle:
         self.recording = RecordingService()
         self.audit = AuditLogService()
         self.diagnostics = DiagnosticsService(on_emit=self._mirror_diag_to_audit)
+        self.estop_monitor = EstopEventMonitor(
+            self.diagnostics,
+            get_session_id=lambda: self.sessions.snapshot().session_id
+            if getattr(self, "sessions", None)
+            else None,
+        )
         self.transport: VirtualTransportAdapter | CanalystTransportAdapter | None = None
         self.router: Router | None = None
         self.ager: FreshnessAger | None = None
@@ -224,6 +231,7 @@ class Lifecycle:
             history=self.history,
             topology=self.topology,
             on_frame=self._record_frame,
+            on_message=self.estop_monitor.observe,
         )
         if self._router_task is not None:
             self._router_task.cancel()
@@ -608,6 +616,7 @@ class Lifecycle:
                 pass
             self.transport = None
         # No transport ⇒ no live traffic; do not leave prior bus rows as "live".
+        self.estop_monitor.reset()
         self._clear_live_observations(reason="transport torn down")
 
     def _on_profile_change(self, profile: Profile) -> None:

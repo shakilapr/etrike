@@ -50,12 +50,14 @@ class Router:
         history: FrameHistory | None = None,
         topology: TopologyTracker | None = None,
         on_frame: Callable[[RawFrameEnvelope], Any] | None = None,
+        on_message: Callable[[MessageState, RawFrameEnvelope], Any] | None = None,
     ) -> None:
         self._transport = transport
         self._latest = latest
         self._history = history
         self._topology = topology
         self._on_frame = on_frame
+        self._on_message = on_message
         self._seq = 0
         self._running = False
         self._processed = 0
@@ -96,6 +98,7 @@ class Router:
                 signals={},
             )
             self._latest.upsert(state)
+            self._notify_message(state, env)
             return
 
         signals: dict[str, SignalValue] = {}
@@ -190,8 +193,18 @@ class Router:
             signals=signals,
         )
         self._latest.upsert(state)
+        self._notify_message(state, env)
         if self._topology is not None:
             self._topology.observe(state)
+
+    def _notify_message(self, state: MessageState, env: RawFrameEnvelope) -> None:
+        if self._on_message is None:
+            return
+        try:
+            self._on_message(state, env)
+        except Exception:
+            # Observation-side diagnostics must never stop CAN routing.
+            pass
 
     def drain_once(self, timeout: float = 0.0) -> int:
         frames = self._transport.poll(timeout=timeout)

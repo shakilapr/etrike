@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
-import { hexId } from '../lib/format'
 import { activateTransportProfile, linkLabelFromStatus } from '../lib/session'
 import { buildEcuPresence } from '../lib/ecuPresence'
 import {
@@ -307,15 +306,6 @@ export function Topbar() {
                 L
               </span>
             </span>
-            {estopOn && estopObs.rtReasonCode !== 0 ? (
-              <span
-                className="chip-v mono"
-                data-testid="chip-estop-reason"
-                title={`RT estop_reason=${estopObs.rtReasonCode}`}
-              >
-                · {estopObs.rtReasonLabel}
-              </span>
-            ) : null}
           </div>
 
           <div

@@ -104,6 +104,7 @@ def control_intent(request: Request, body: IntentBody) -> dict:
     life = request.app.state.lifecycle
     if body.estop:
         life.sessions.require_bench_tx_enabled()
+        life.estop_monitor.note_host_inject(source=body.source)
         # Dual-bus ESTOP matches network.yaml (high↔low same_frame bridge).
         results = []
         for bus in ("high", "low"):
