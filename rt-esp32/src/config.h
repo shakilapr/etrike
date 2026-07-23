@@ -13,12 +13,16 @@ namespace rt {
 
 // RT policy values carried by RtStateRpt::estop_reason.
 constexpr uint8_t kEstopReasonNone           = 0;
+constexpr uint8_t kEstopReasonButton         = 1;
 constexpr uint8_t kEstopReasonHeartbeat      = 2;
 constexpr uint8_t kEstopReasonFollowingError = 3;
 constexpr uint8_t kEstopReasonObstacle       = 4;
 constexpr uint8_t kEstopReasonCanEstop       = 5;
 constexpr uint8_t kEstopReasonBusOff         = 6;
 constexpr uint8_t kEstopReasonInternal       = 7;
+constexpr uint8_t kEstopReasonEgasMismatch   = 8;
+constexpr uint8_t kEstopReasonStaleCmd       = 9;
+constexpr uint8_t kEstopReasonWatchdog       = 10;
 
 // ── steering — steer-by-wire unit via CAN 0x169 ───────────────────────
 constexpr float kSteerFollowingErrMinDeg=   2.0f;   // floor threshold (was fixed 5.0)
@@ -44,6 +48,7 @@ constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then
 constexpr int kControlLoopHz           =  100;
 constexpr int kHeartbeatIntervalMs     = can::gen::RtHeartbeat::kCycleMs;
 constexpr int kHeartbeatTimeoutMsSys   = can::gen::SysHeartbeat::kCycleMs * 2; // policy: two missed frames
+constexpr int kLowCanPeerTimeoutMs     = 1500;  // TX closes when no valid low-bus peer is heard
 
 // ── CAN — low-level (built-in TWAI) ───────────────────────────────
 // Default pin map matches architecture (CTX←GPIO5, CRX←GPIO4).

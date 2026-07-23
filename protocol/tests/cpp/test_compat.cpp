@@ -37,6 +37,11 @@ void test_generated_routes() {
     CHECK(!can::is_forwarded_low_to_high(can::kIdRtDriveCmd));
     CHECK(!can::is_forwarded(can::kIdPwtDcdcCmd, true, can::Bus::Powertrain,
                              can::Bus::Low));
+    CHECK(can::is_known_frame_on_bus(
+        can::kIdSysHeartbeat, false, can::gen::SysHeartbeat::kDlc, can::Bus::Low));
+    CHECK(!can::is_known_frame_on_bus(
+        can::kIdSysHeartbeat, false, can::gen::SysHeartbeat::kDlc + 1, can::Bus::Low));
+    CHECK(!can::is_known_frame_on_bus(0x7FFu, false, 0, can::Bus::Low));
 }
 
 void test_generated_adapters() {

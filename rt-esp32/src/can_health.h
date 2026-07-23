@@ -18,21 +18,37 @@ static void monitor_can_bus_off() {
         if (drv && health.state == rt::TwaiDriver::HealthState::Passive)
             ESP_LOGW(TAG, "Low CAN error-passive: TEC=%u REC=%u", health.tec, health.rec);
         if (drv && health.state == rt::TwaiDriver::HealthState::BusOff) {
-            ESP_LOGE(TAG, "Low CAN bus-off: TEC=%u REC=%u", health.tec, health.rec);
             bus_off_count_low++;
-            if (bus_off_count_low >= 5) {
-                ESP_LOGE(TAG, "Low CAN bus-off persistent - triggering ESTOP");
-                g_estop_reason.store(rt::kEstopReasonBusOff);
-                if (can_send_estop()) {
-                    can::Frame ef;
-                    can::gen::SafetyEstop estop_msg{};
-                    if (can::gen::encode_safety_estop(estop_msg, ef) == can::gen::CodecStatus::Ok) {
-                        xQueueSend(g_gw_tx_low_q, &ef, 0);
-                        xQueueSend(g_gw_tx_high_q, &ef, 0);
+            if (bus_off_count_low == 1) {
+                drv->set_tx_admission(false);
+                xQueueReset(g_gw_tx_low_q);
+                if (g_bench_solo_mode) {
+                    ESP_LOGW(TAG,
+                        "Low CAN unavailable in developer bypass: TEC=%u REC=%u; "
+                        "operational TX remains closed until reboot",
+                        health.tec, health.rec);
+                } else {
+                    ESP_LOGE(TAG,
+                        "Low CAN bus-off: TEC=%u REC=%u - latching ESTOP; "
+                        "automatic recovery disabled",
+                        health.tec, health.rec);
+                    const rt::SafetyEvent event{
+                        rt::SafetyEvent::ESTOP, rt::kEstopReasonBusOff};
+                    enqueue_safety_event(event, 0);
+                    can::gen::HostDriveCmd zero{};
+                    xQueueOverwrite(g_cmd_q, &zero);
+                    g_steering.start_estop(false);
+                    g_estop_reason.store(rt::kEstopReasonBusOff);
+                    if (can_send_estop()) {
+                        can::Frame ef;
+                        can::gen::SafetyEstop estop_msg{};
+                        if (can::gen::encode_safety_estop(estop_msg, ef)
+                            == can::gen::CodecStatus::Ok) {
+                            xQueueSend(g_gw_tx_high_q, &ef, 0);
+                        }
                     }
                 }
             }
-            drv->service_recovery(esp_timer_get_time());
         } else {
             bus_off_count_low = 0;
         }
@@ -51,7 +67,7 @@ static void monitor_can_bus_off() {
                 ESP_LOGE(TAG, "High CAN bus-off — controller recovery");
                 g_can_high.recover();
             }
-            if (bus_off_count_high >= 5) {
+            if (bus_off_count_high >= 5 && !g_bench_solo_mode) {
                 ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
                 g_estop_reason.store(rt::kEstopReasonBusOff);
                 can::gen::HostDriveCmd zero{};

@@ -52,6 +52,7 @@ extern std::atomic<bool>     g_seb_takeover;     // SEB takeover active (control
 // ── Heartbeat tracking (written by dispatch, checked by control) ────
 extern std::atomic<int64_t>  g_last_sys_hb_us;
 extern std::atomic<int64_t>  g_last_host_hb_us;
+extern std::atomic<int64_t>  g_last_low_peer_us;
 extern std::atomic<int64_t>  g_last_estop_sent_us;  // 0x001 rate limiter
 
 // ── ESTOP reason (written by dispatch/safety/health, read by tx) ───

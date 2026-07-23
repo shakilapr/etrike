@@ -40,10 +40,19 @@ public:
     bool recovery();
     bool service_recovery(int64_t now_us);
     bool recovery_needed() const;
+    void set_tx_admission(bool admitted) {
+        const bool transport_active =
+            m_state.load(std::memory_order_acquire) != TWAI_ERROR_BUS_OFF;
+        m_tx_admitted.store(admitted && transport_active,
+                            std::memory_order_release);
+    }
+    bool tx_admitted() const {
+        return m_tx_admitted.load(std::memory_order_acquire);
+    }
     HealthSnapshot health_snapshot() const;
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
-    // Longer default TX wait: bus with peers/noise can need more than 10 ms.
-    bool send(const can::Frame& frame, uint32_t timeout_ms = 50);
+    // Strictly non-blocking. Periodic callers regenerate current values next cycle.
+    bool send(const can::Frame& frame, uint32_t timeout_ms = 0);
     void get_error_counters(uint8_t& tec, uint8_t& rec) const;
     // state is twai_state_t cast to uint32_t (0=stopped … 3=bus-off).
     bool status(uint32_t& state, uint32_t& tec, uint32_t& rec) const;
@@ -71,6 +80,13 @@ private:
                                 const twai_state_change_event_data_t* event,
                                 void* user_ctx);
     static HealthState map_state(twai_error_state_t state);
+    static constexpr uint32_t actuation_pending_bit(uint32_t id) {
+        return id == 0x204u ? 1u << 0
+             : id == 0x205u ? 1u << 1
+             : id == 0x169u ? 1u << 2
+             : id == 0x7B9u ? 1u << 3
+             : 0u;
+    }
     void log_first_io_after_recovery(bool rx);
     void reset_tx_slots();
 
@@ -81,6 +97,8 @@ private:
     SemaphoreHandle_t m_control_mutex = nullptr;
     TxSlot m_tx_slots[kTxSlots]{};
     bool m_initialized = false;
+    std::atomic<bool> m_tx_admitted{false};
+    std::atomic<uint32_t> m_actuation_pending{0};
     std::atomic<twai_error_state_t> m_state{TWAI_ERROR_ACTIVE};
     std::atomic<bool> m_recovery_in_progress{false};
     std::atomic<bool> m_recovery_completed_pending{false};
