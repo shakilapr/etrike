@@ -307,6 +307,15 @@ export function Topbar() {
                 L
               </span>
             </span>
+            {estopOn && estopObs.rtReasonCode !== 0 ? (
+              <span
+                className="chip-v mono"
+                data-testid="chip-estop-reason"
+                title={`RT estop_reason=${estopObs.rtReasonCode}`}
+              >
+                · {estopObs.rtReasonLabel}
+              </span>
+            ) : null}
           </div>
 
           <div

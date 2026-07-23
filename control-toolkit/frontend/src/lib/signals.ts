@@ -76,9 +76,20 @@ export function signalIsOn(m: MessageState | undefined, key: string): boolean {
   return Number.isFinite(n) ? n !== 0 : false
 }
 
+/** RT firmware estop_reason codes (rt-esp32/src/config.h). */
+export const RT_ESTOP_REASONS: Record<number, string> = {
+  0: 'none',
+  2: 'heartbeat_loss',
+  3: 'following_error',
+  4: 'obstacle',
+  5: 'can_estop_frame',
+  6: 'bus_off',
+  7: 'internal',
+}
+
 /**
  * ESTOP is multi-source — never trust only session.estop_active (host inject latch).
- * Sources: host latch, dual-bus SAFETY_ESTOP 0x001, SYS safety/heartbeat, RT mode.
+ * Includes RT estop_reason, SYS flags, and bus 0x001 so UI can show *why*.
  */
 export type EstopObservation = {
   hostLatch: boolean
@@ -86,9 +97,18 @@ export type EstopObservation = {
   busLow: boolean
   sysReported: boolean
   rtModeEstop: boolean
+  rtReasonCode: number
+  rtReasonLabel: string
+  rtMode: string
+  safetyState: number | null
+  sysHeartbeatBad: boolean
+  sysCanBad: boolean
+  sysBrakeFault: boolean
   any: boolean
   /** Short chip label */
   label: string
+  /** Human causes (ordered) */
+  causes: string[]
   /** Tooltip / detail */
   detail: string
 }
@@ -98,8 +118,8 @@ export function observeEstop(
   ses: { estop_active?: boolean | null } | null | undefined,
 ): EstopObservation {
   const hostLatch = !!ses?.estop_active
-  const busHigh = frameRecent(findMsg(messages, 'SAFETY_ESTOP', 'high'))
-  const busLow = frameRecent(findMsg(messages, 'SAFETY_ESTOP', 'low'))
+  const busHigh = frameRecent(findMsg(messages, 'SAFETY_ESTOP', 'high'), 5000)
+  const busLow = frameRecent(findMsg(messages, 'SAFETY_ESTOP', 'low'), 5000)
   const sysSafety = findMsg(messages, 'SYS_SAFETY_STS')
   const sysHb = findMsg(messages, 'SYS_HEARTBEAT')
   const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
@@ -107,25 +127,66 @@ export function observeEstop(
     signalIsOn(sysSafety, 'estop_active') ||
     signalIsOn(sysHb, 'estop_active') ||
     signalIsOn(sysDiag, 'estop_active')
-  const rtState = findMsg(messages, 'RT_STATE_RPT')
-  const rtMode =
-    String(rtState?.signals?.mode?.enum_label ?? rtState?.signals?.mode?.engineering_value ?? '')
-      .trim()
-      .toUpperCase()
-  const rtModeEstop = rtMode === 'ESTOP' || rtMode === '2'
+  const sysHeartbeatBad =
+    !!sysHb &&
+    frameRecent(sysHb) &&
+    sysHb.signals?.heartbeat_ok != null &&
+    !signalIsOn(sysHb, 'heartbeat_ok')
+  const sysCanBad =
+    !!sysHb && frameRecent(sysHb) && sysHb.signals?.can_ok != null && !signalIsOn(sysHb, 'can_ok')
+  const sysBrakeFault = signalIsOn(sysDiag, 'brake_fault')
 
-  const any = hostLatch || busHigh || busLow || sysReported || rtModeEstop
+  const rtState =
+    findMsg(messages, 'RT_STATE_RPT', 'high') ||
+    findMsg(messages, 'RT_STATE_RPT', 'low') ||
+    findMsg(messages, 'RT_STATE_RPT')
+  const rtModeRaw = rtState?.signals?.mode
+  let rtMode = String(rtModeRaw?.enum_label ?? rtModeRaw?.engineering_value ?? '')
+    .trim()
+    .toUpperCase()
+  if (!rtMode && rtModeRaw?.engineering_value != null) {
+    const n = Number(rtModeRaw.engineering_value)
+    if (n === 0) rtMode = 'MANUAL'
+    else if (n === 1) rtMode = 'AUTO'
+    else if (n === 2) rtMode = 'ESTOP'
+  }
+  const rtModeEstop = rtMode === 'ESTOP' || Number(rtModeRaw?.engineering_value) === 2
+  const rtReasonCode = (() => {
+    const n = signalNum(rtState, 'estop_reason')
+    return n != null && Number.isFinite(n) ? Math.trunc(n) : 0
+  })()
+  const rtReasonLabel = RT_ESTOP_REASONS[rtReasonCode] ?? `unknown_${rtReasonCode}`
+  const safetyState = signalNum(rtState, 'safety_state')
 
-  const parts: string[] = []
-  if (hostLatch) parts.push('host latch')
-  if (busHigh) parts.push('0x001 high')
-  if (busLow) parts.push('0x001 low')
-  if (sysReported) parts.push('SYS estop_active')
-  if (rtModeEstop) parts.push('RT mode ESTOP')
+  const causes: string[] = []
+  if (hostLatch) causes.push('Host inject latch (Clear latch = host only)')
+  if (busHigh) causes.push('0x001 SAFETY_ESTOP on High')
+  if (busLow) causes.push('0x001 SAFETY_ESTOP on Low')
+  if (sysReported) causes.push('SYS estop_active')
+  if (sysHeartbeatBad) causes.push('SYS heartbeat_ok=0')
+  if (sysCanBad) causes.push('SYS can_ok=0')
+  if (sysBrakeFault) causes.push('SYS brake_fault')
+  if (rtReasonCode !== 0) {
+    causes.push(`RT estop_reason=${rtReasonCode} (${rtReasonLabel})`)
+  } else if (rtModeEstop) {
+    causes.push('RT mode ESTOP (reason code 0)')
+  }
+
+  const any =
+    hostLatch ||
+    busHigh ||
+    busLow ||
+    sysReported ||
+    rtModeEstop ||
+    rtReasonCode !== 0 ||
+    sysHeartbeatBad ||
+    sysCanBad ||
+    sysBrakeFault
 
   let label = 'Clear'
   if (any) {
-    if (hostLatch && (busHigh || busLow || sysReported || rtModeEstop)) label = 'Latch+bus'
+    if (rtReasonCode !== 0) label = `RT:${rtReasonLabel}`
+    else if (hostLatch && (busHigh || busLow || sysReported || rtModeEstop)) label = 'Latch+bus'
     else if (hostLatch) label = 'Host latch'
     else if (busHigh && busLow) label = 'Bus H+L'
     else if (busHigh) label = 'Bus High'
@@ -133,6 +194,7 @@ export function observeEstop(
     else if (sysReported && rtModeEstop) label = 'SYS+RT'
     else if (sysReported) label = 'SYS'
     else if (rtModeEstop) label = 'RT ESTOP'
+    else if (sysHeartbeatBad || sysCanBad || sysBrakeFault) label = 'SYS fault'
     else label = 'Active'
   }
 
@@ -142,11 +204,19 @@ export function observeEstop(
     busLow,
     sysReported,
     rtModeEstop,
+    rtReasonCode,
+    rtReasonLabel,
+    rtMode,
+    safetyState,
+    sysHeartbeatBad,
+    sysCanBad,
+    sysBrakeFault,
     any,
     label,
+    causes,
     detail: any
-      ? `ESTOP sources: ${parts.join(' · ')}`
-      : 'No host latch, no recent 0x001 SAFETY_ESTOP on High/Low, SYS/RT not reporting ESTOP',
+      ? `ESTOP: ${causes.join(' · ')}`
+      : 'ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP',
   }
 }
 

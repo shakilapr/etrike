@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 
 from control_toolkit import __version__, protocol_bridge as proto
 from control_toolkit.models.adapter import AdapterHealth, AdapterStatus
+from control_toolkit.services.estop_report import build_estop_report
 
 router = APIRouter(tags=["status"])
 
@@ -43,6 +44,16 @@ def get_status(request: Request) -> dict:
         if getattr(session, "profile", None) is not None
         else config.default_profile.value
     )
+    # ESTOP cause report from latest bus state + host latch (not latch alone).
+    try:
+        snap = lifecycle.latest.snapshot()
+        msgs = list(snap.messages)
+    except Exception:  # noqa: BLE001
+        msgs = []
+    estop = build_estop_report(
+        msgs, host_latch=bool(getattr(session, "estop_active", False))
+    )
+
     return {
         "service": config.title,
         "version": __version__,
@@ -58,6 +69,7 @@ def get_status(request: Request) -> dict:
         },
         "adapter": adapter.model_dump(),
         "session": session.model_dump(),
+        "estop": estop,
         "link": {
             "mode": "real" if (session.destination or "") == "physical" else "computer",
             "destination": session.destination,
