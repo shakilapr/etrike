@@ -177,6 +177,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 static bool warned = false;
                 if (!warned) { ESP_LOGW(TAG, "CAN RX queue overflow — frames dropped"); warned = true; }
             }
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(1));  // yield when silent or uninitialized to prevent CPU starvation
         }
     }
 }
