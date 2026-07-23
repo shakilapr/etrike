@@ -75,9 +75,9 @@ constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
 
 // ── Timeouts ──────────────────────────────────────────────────────
 #ifndef TESTING
-constexpr int kCmdStaleTimeoutMs   = messages::RtDriveCmd::kCycleMs * 20;
+constexpr int kCmdStaleTimeoutMs   = messages::RtDriveCmd::kCycleMs * 5;
 #else
-constexpr int kCmdStaleTimeoutMs   = 10 * 20;
+constexpr int kCmdStaleTimeoutMs   = 10 * 5;
 #endif
 
 constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot

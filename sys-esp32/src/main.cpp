@@ -122,6 +122,7 @@ static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 M
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
+static std::atomic<uint32_t> g_last_brake_setpoint_tick{0};
 
 // Gap #14: Rate-limit 0x001 ESTOP broadcasts. Prevents flooding.
 static std::atomic<int64_t>  g_last_estop_sent_us{0};
@@ -216,6 +217,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             can::gen::RtBrakeCmd brk{};
             if (can::gen::decode_rt_brake_cmd(fr.view(), brk) != can::gen::CodecStatus::Ok) break;
             g_brake_pressure_kpa.store(brk.brake_pressure_kpa, std::memory_order_relaxed);
+            g_last_brake_setpoint_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
         case can::kIdHmiModeReq: {   // 0x111 — HMI mode heartbeat (1Hz)
@@ -452,7 +454,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_safety.set_estop(estop_hw);
         g_safety.set_brake_lever(brake_lever);
 
-        bool estop_triggered = g_safety.estop_active() || !g_safety.heartbeat_ok();
+        // Developer bypass suppresses only missing-dependency faults. The
+        // physical ESTOP remains unbypassable.
+        bool estop_triggered = g_safety.estop_active()
+            || (!g_bench_solo_mode && !g_safety.heartbeat_ok());
         if (estop_triggered) {
             if (g_mode_mgr.mode() != can::Mode::Estop) {
                 g_mode_mgr.force_estop();
@@ -503,7 +508,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         }
         // F3: MTR ESTOP ACK check (Gap #15)
         // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags.
-        {
+        if (!g_bypass_mtr_absent) {
             uint32_t last_trig = g_last_estop_trigger_tick.load(std::memory_order_relaxed);
             if (last_trig > 0
                 && (xTaskGetTickCount() - last_trig) >= pdMS_TO_TICKS(sys::kMtrEstopAckTimeoutMs)) {
@@ -523,7 +528,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // F4: 0x206 staleness check (Gap #15)
         // Warn if no MTR feedback for >200ms (MTR comms lost).
         // Startup grace: skip if never received (g_last_mtr_fbk_tick == 0).
-        {
+        if (!g_bypass_mtr_absent) {
             uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
             if (last_fbk > 0
                 && (xTaskGetTickCount() - last_fbk) >= pdMS_TO_TICKS(sys::kMtrFbkStaleMs)) {
@@ -601,6 +606,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool estop     = (g_mode_mgr.mode() == can::Mode::Estop);
         can::Mode mode = g_mode_mgr.mode();
         int32_t brake_kpa = g_brake_pressure_kpa.load(std::memory_order_relaxed);
+        const TickType_t brake_age =
+            xTaskGetTickCount() - g_last_brake_setpoint_tick.load(std::memory_order_relaxed);
+        if (mode == can::Mode::Auto
+            && brake_age > pdMS_TO_TICKS(sys::kBrakeSetpointStaleMs)) {
+            // Never reuse an old RT brake value after its real-time deadline.
+            brake_kpa = shared::kMaxBrakeKpa;
+        }
 
         // Suppress SYS 0x7B9 in AUTO when RT is healthy, no rider override,
         // AND RT safety_state is Normal (not in InternalEstop/takeover).
