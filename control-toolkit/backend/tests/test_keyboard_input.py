@@ -50,8 +50,18 @@ def test_kinematics_intent_shapes_host_drive(client):
     assert ctrl["shaped_speed_mmps"] == 1500  # 0.5 * 3000
     assert ctrl["shaped_yaw_mrad_s"] == 750  # 0.25 * 3000
     assert ctrl["gear_label"] == "D"
+    assert ctrl["heartbeat_job_id"]
     # Ownership lease name follows source for diagnostics.
     assert client.app.state.lifecycle.control._state.lease_owner == "control:keyboard"
+
+    time.sleep(0.05)
+    messages = client.get("/api/v1/state").json()["messages"]
+    heartbeat = next(
+        (m for m in messages if m["bus"] == "high" and m["can_id"] == 0x7FC),
+        None,
+    )
+    assert heartbeat is not None
+    assert heartbeat["name"] == "HOST_HEARTBEAT"
 
 
 def test_drive_console_source_owns_distinct_lease(client):
@@ -101,6 +111,7 @@ def test_release_stops_job(client):
     assert r.json()["control"]["active"] is False
     assert r.json()["control"]["loss_reason"] == "blur"
     assert r.json()["control"]["job_id"] is None
+    assert r.json()["control"]["heartbeat_job_id"] is None
 
 
 def test_stale_intent_watchdog(client):
