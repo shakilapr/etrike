@@ -110,6 +110,8 @@ bool IRAM_ATTR TwaiDriver::on_state_change(twai_node_handle_t,
         // Recovery/peer supervision must explicitly reopen admission.
         self->m_tx_admitted.store(false, std::memory_order_release);
         self->m_bus_off_started_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
+        self->m_consecutive_bus_offs.fetch_add(1, std::memory_order_relaxed);
+        self->m_tx_resume_not_before_us.store(INT64_MAX, std::memory_order_release);
 #if ETRIKE_RT_TWAI_INSTRUMENT
         // Snapshot the free-slot queue depth at the exact Bus-Off moment.
         // If slots leak, this count will diverge from (kTxSlots - tx_submitted + tx_done).
@@ -163,7 +165,7 @@ bool TwaiDriver::init() {
     // Node-wide single-shot mode. Periodic application traffic is regenerated;
     // retaining and retrying an old control value is undesirable.
     config.fail_retry_cnt = 0;
-    config.tx_queue_depth = kTxSlots;
+    config.tx_queue_depth = 1;
 
 #if ETRIKE_RT_TWAI_SELF_TEST
     // Self-test mode: ACK is not checked during TX. Used on bench when no peer
@@ -216,38 +218,61 @@ bool TwaiDriver::service_recovery(int64_t now_us) {
     if (m_recovery_completed_pending.exchange(false, std::memory_order_acq_rel)) {
         const TickType_t elapsed = xTaskGetTickCount()
             - m_bus_off_started_tick.load(std::memory_order_relaxed);
+        const UBaseType_t free_before_reclaim =
+            uxQueueMessagesWaiting(m_free_tx_slots);
+        // The ESP-IDF on-chip driver drops the active frame pointer across
+        // Bus-Off without completing it. Queue depth=1 makes reclaim safe.
+        reset_tx_slots();
+        m_actuation_pending.store(0, std::memory_order_release);
+        const uint32_t streak =
+            m_consecutive_bus_offs.load(std::memory_order_relaxed);
+        const uint32_t shift = streak > 4 ? 4 : (streak > 0 ? streak - 1 : 0);
+        int64_t backoff_us = 500'000LL << shift;
+        if (backoff_us > 5'000'000LL) backoff_us = 5'000'000LL;
+        m_tx_resume_not_before_us.store(now_us + backoff_us,
+                                        std::memory_order_release);
         UBaseType_t free_now = uxQueueMessagesWaiting(m_free_tx_slots);
-        ESP_LOGI(kTag, "state=active recovery=complete elapsed_ms=%lu free_slots=%u/%u",
-                 static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS),
-                 static_cast<unsigned>(free_now), static_cast<unsigned>(kTxSlots));
-#if ETRIKE_RT_TWAI_INSTRUMENT
-        // Verify the ESP-IDF claim: "pending transmissions resume right away."
-        // After a short settle window, free_slots should equal kTxSlots again
-        // if the driver fired on_tx_done for all frames queued before Bus-Off.
-        // If free_slots < kTxSlots here, slots are genuinely leaked.
-        // We log both the ISR-time snapshot and the post-recovery task-context count.
         ESP_LOGI(kTag,
-            "[INSTR] busoff#=%lu free@busoff=%u free@recovery_isr=%u free@recovery_task=%u"
+                 "state=active recovery=complete elapsed_ms=%lu "
+                 "free_slots=%u/%u tx_backoff_ms=%lld streak=%lu",
+                 static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS),
+                 static_cast<unsigned>(free_now), static_cast<unsigned>(kTxSlots),
+                 static_cast<long long>(backoff_us / 1000),
+                 static_cast<unsigned long>(streak));
+#if ETRIKE_RT_TWAI_INSTRUMENT
+        // Record whether the ESP-IDF callback returned the active frame before
+        // the deterministic single-slot workaround reclaimed it.
+        ESP_LOGI(kTag,
+            "[INSTR] busoff#=%lu free@busoff=%u free@recovery_isr=%u "
+            "free@recovery_pre_reclaim=%u free@recovery_post_reclaim=%u"
             " tx_submitted=%lu tx_done_ok=%lu tx_done_fail=%lu tx_done_no_slot=%lu",
             static_cast<unsigned long>(m_instr_busoff_count.load(std::memory_order_relaxed)),
             static_cast<unsigned>(m_instr_free_slots_at_busoff.load(std::memory_order_relaxed)),
             static_cast<unsigned>(m_instr_free_slots_at_recovery.load(std::memory_order_relaxed)),
+            static_cast<unsigned>(free_before_reclaim),
             static_cast<unsigned>(free_now),
             static_cast<unsigned long>(m_instr_tx_submitted.load(std::memory_order_relaxed)),
             static_cast<unsigned long>(m_instr_tx_done_ok.load(std::memory_order_relaxed)),
             static_cast<unsigned long>(m_instr_tx_done_fail.load(std::memory_order_relaxed)),
             static_cast<unsigned long>(m_instr_tx_done_no_slot.load(std::memory_order_relaxed)));
-        // Decision rule printed directly to serial:
-        if (free_now < kTxSlots) {
-            ESP_LOGE(kTag,
-                "[INSTR] SLOT LEAK CONFIRMED: %u of %u slots not returned after recovery",
-                static_cast<unsigned>(kTxSlots - free_now), static_cast<unsigned>(kTxSlots));
+        if (free_before_reclaim < kTxSlots) {
+            ESP_LOGW(kTag,
+                "[INSTR] ESP-IDF omitted %u completion callback(s); "
+                "single-slot workaround reclaimed them",
+                static_cast<unsigned>(kTxSlots - free_before_reclaim));
         } else {
             ESP_LOGI(kTag,
-                "[INSTR] No slot leak: all %u slots returned after recovery",
+                "[INSTR] All %u slots returned before workaround",
                 static_cast<unsigned>(kTxSlots));
         }
 #endif
+    }
+    const TickType_t last_bus_off =
+        m_bus_off_started_tick.load(std::memory_order_relaxed);
+    if (m_state.load(std::memory_order_acquire) == TWAI_ERROR_ACTIVE
+        && last_bus_off != 0
+        && xTaskGetTickCount() - last_bus_off > pdMS_TO_TICKS(10'000)) {
+        m_consecutive_bus_offs.store(0, std::memory_order_relaxed);
     }
     if (!recovery_needed()) return false;
     const int64_t last = m_last_recovery_attempt_us.load(std::memory_order_relaxed);
@@ -307,6 +332,10 @@ bool TwaiDriver::receive(can::Frame& out, uint32_t timeout_ms) {
 bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
     (void)timeout_ms;
     if (!m_initialized || !m_node || source.dlc > 8) return false;
+    if (esp_timer_get_time()
+        < m_tx_resume_not_before_us.load(std::memory_order_acquire)) {
+        return false;
+    }
     // ESTOP is an unbypassable, bounded event and may be attempted even while
     // operational traffic is gated. All other traffic requires a known peer.
     if (source.id != 0x001u && !m_tx_admitted.load(std::memory_order_acquire)) {

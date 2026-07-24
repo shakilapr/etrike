@@ -43,6 +43,8 @@ bool IRAM_ATTR CanDriver::on_state_change_(twai_node_handle_t,
     self->last_transition_tick_.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
     if (event->new_sta == TWAI_ERROR_BUS_OFF) {
         self->bus_off_started_tick_.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
+        self->consecutive_bus_offs_.fetch_add(1, std::memory_order_relaxed);
+        self->tx_resume_not_before_us_.store(INT64_MAX, std::memory_order_release);
     } else if (event->old_sta == TWAI_ERROR_BUS_OFF
                && event->new_sta == TWAI_ERROR_ACTIVE) {
         self->recovery_in_progress_.store(false, std::memory_order_release);

@@ -156,13 +156,13 @@ def build_estop_report(
     sys_diag = _find(messages, "SYS_DIAG_RPT", "low") or _find(messages, "SYS_DIAG_RPT")
 
     sys_estop = (
-        _on(sys_safety, "estop_active")
-        or _on(sys_hb, "estop_active")
-        or _on(sys_diag, "estop_active")
+        (_fresh_ok(sys_safety) and _on(sys_safety, "estop_active"))
+        or (_fresh_ok(sys_hb) and _on(sys_hb, "estop_active"))
+        or (_fresh_ok(sys_diag) and _on(sys_diag, "estop_active"))
     )
     sys_hb_bad = sys_hb is not None and _fresh_ok(sys_hb) and not _on(sys_hb, "heartbeat_ok")
     sys_can_bad = sys_hb is not None and _fresh_ok(sys_hb) and not _on(sys_hb, "can_ok")
-    sys_brake_fault = _on(sys_diag, "brake_fault")
+    sys_brake_fault = _fresh_ok(sys_diag) and _on(sys_diag, "brake_fault")
 
     rt = (
         _find(messages, "RT_STATE_RPT", "high")
@@ -174,8 +174,9 @@ def build_estop_report(
     if not rt_mode and _num(rt, "mode") is not None:
         mode_n = _num(rt, "mode")
         rt_mode = {0: "MANUAL", 1: "AUTO", 2: "ESTOP"}.get(mode_n or -1, str(mode_n))
-    rt_mode_estop = rt_mode == "ESTOP" or _num(rt, "mode") == 2
-    reason_code = _num(rt, "estop_reason")
+    rt_fresh = _fresh_ok(rt)
+    rt_mode_estop = rt_fresh and (rt_mode == "ESTOP" or _num(rt, "mode") == 2)
+    reason_code = _num(rt, "estop_reason") if rt_fresh else 0
     if reason_code is None:
         reason_code = 0
     reason_label = RT_ESTOP_REASONS.get(reason_code, f"unknown_{reason_code}")
@@ -354,7 +355,7 @@ def build_estop_report(
             "estop_reason_display": reason_human,
             "estop_reason_detail": reason_explanation,
             "safety_state": safety_state,
-            "frame_fresh": _fresh_ok(rt),
+            "frame_fresh": rt_fresh,
         },
         "sources": sources,
         "causes": causes,

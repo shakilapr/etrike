@@ -7,6 +7,8 @@
 static void monitor_can_bus_off() {
     static int bus_check_ctr = 0;
     static int bus_off_count_low = 0, bus_off_count_high = 0;
+    static bool low_passive_reported = false;
+    static uint32_t handled_low_recovery_attempts = 0;
     if (++bus_check_ctr < 10) return;  // check at 10 Hz (was 1 Hz)
 
     bus_check_ctr = 0;
@@ -15,22 +17,38 @@ static void monitor_can_bus_off() {
     {
         auto* drv = rt::can_low_driver();
         const auto health = drv ? drv->health_snapshot() : rt::TwaiDriver::HealthSnapshot{};
-        if (drv && health.state == rt::TwaiDriver::HealthState::Passive)
+        const bool low_passive =
+            drv && health.state == rt::TwaiDriver::HealthState::Passive;
+        if (low_passive && !low_passive_reported) {
             ESP_LOGW(TAG, "Low CAN error-passive: TEC=%u REC=%u", health.tec, health.rec);
-        if (drv && health.state == rt::TwaiDriver::HealthState::BusOff) {
+        } else if (!low_passive && low_passive_reported) {
+            ESP_LOGI(TAG, "Low CAN left error-passive state");
+        }
+        low_passive_reported = low_passive;
+
+        // Recovery can complete between 10 Hz health polls. The monotonic
+        // attempt count preserves the Bus-Off event even when current state is
+        // already Active again.
+        const bool new_bus_off_event =
+            drv && health.recovery_attempts != handled_low_recovery_attempts;
+        if (new_bus_off_event) {
+            handled_low_recovery_attempts = health.recovery_attempts;
+        }
+        if (drv && (health.state == rt::TwaiDriver::HealthState::BusOff
+                    || new_bus_off_event)) {
             bus_off_count_low++;
-            if (bus_off_count_low == 1) {
+            if (bus_off_count_low == 1 || new_bus_off_event) {
                 drv->set_tx_admission(false);
                 xQueueReset(g_gw_tx_low_q);
                 if (g_bench_solo_mode) {
                     ESP_LOGW(TAG,
                         "Low CAN unavailable in developer bypass: TEC=%u REC=%u; "
-                        "operational TX remains closed until reboot",
+                        "recovery supervisor active; TX held until stable",
                         health.tec, health.rec);
                 } else {
                     ESP_LOGE(TAG,
                         "Low CAN bus-off: TEC=%u REC=%u - latching ESTOP; "
-                        "automatic recovery disabled",
+                        "transport recovery remains safety-gated",
                         health.tec, health.rec);
                     const rt::SafetyEvent event{
                         rt::SafetyEvent::ESTOP, rt::kEstopReasonBusOff};
