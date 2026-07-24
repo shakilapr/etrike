@@ -507,7 +507,12 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
         }
 
-        if (xQueueReceive(g_gw_tx_low_q, &gw, 0) == pdTRUE) drv->send(gw);
+        // Retain a gateway frame until the TWAI driver accepts it.  The old
+        // receive-then-send path silently discarded High→Low HMI requests
+        // whenever the single TX slot was occupied by a periodic RT frame.
+        if (xQueuePeek(g_gw_tx_low_q, &gw, 0) == pdTRUE && send_can_low(gw)) {
+            xQueueReceive(g_gw_tx_low_q, &gw, 0);
+        }
         vTaskDelayUntil(&last_wake, ticks_ms_at_least_1(5));
     }
 }

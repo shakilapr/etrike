@@ -34,6 +34,15 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
             *q.brake_req_kpa = decoded.brake_pressure_kpa;
         }
         return can::gen::CodecStatus::Ok;
+    // HMI/Host controls for SYS are transparent High→Low gateway traffic.
+    // Keep these explicit rather than relying only on metadata lookup: mode
+    // selection is a prerequisite for RT motion authority, so a route-table
+    // mismatch must never silently strand RT in MANUAL.
+    case can::kIdHmiModeReq:
+    case can::kIdHmiPwrReq:
+    case can::kIdHostLightCmd:
+        if (is_high_bus && q.gw_tx_low) *q.gw_tx_low = f;
+        return can::gen::CodecStatus::Ok;
     case can::kIdSysModeCmd:  // SYS_MODE_CMD — consumed by RT
         if (!is_high_bus && q.mode_from_sys) {
             can::gen::SysModeCmd decoded{};
