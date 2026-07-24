@@ -73,8 +73,11 @@ public:
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
-        config.fail_retry_cnt = 3;
-        config.tx_queue_depth = kTxSlots;
+        // ESP-IDF 5.5 abandons the active frame without an on_tx_done
+        // callback on Bus-Off. Keep one driver-owned frame so recovery can
+        // reclaim its application slot deterministically.
+        config.fail_retry_cnt = 0;
+        config.tx_queue_depth = 1;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {
@@ -110,6 +113,11 @@ public:
 
     bool send(const Frame& source, TickType_t timeout_ms = 20) {
         if (!initialized_ || !node_ || source.dlc > 8) return false;
+        if (state_.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF
+            || esp_timer_get_time()
+                < tx_resume_not_before_us_.load(std::memory_order_acquire)) {
+            return false;
+        }
         uint8_t index = 0;
         if (xQueueReceive(free_tx_slots_, &index, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
             return false;
@@ -165,8 +173,25 @@ public:
         if (recovery_completed_pending_.exchange(false, std::memory_order_acq_rel)) {
             const TickType_t elapsed = xTaskGetTickCount()
                 - bus_off_started_tick_.load(std::memory_order_relaxed);
-            ESP_LOGI("can", "state=active recovery=complete elapsed_ms=%lu",
-                     static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS));
+            reset_tx_slots_();
+            const uint32_t streak =
+                consecutive_bus_offs_.load(std::memory_order_relaxed);
+            const int64_t backoff_us = recovery_backoff_us_(streak);
+            tx_resume_not_before_us_.store(now_us + backoff_us,
+                                           std::memory_order_release);
+            ESP_LOGI("can",
+                     "state=active recovery=complete elapsed_ms=%lu "
+                     "tx_backoff_ms=%lld streak=%lu",
+                     static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS),
+                     static_cast<long long>(backoff_us / 1000),
+                     static_cast<unsigned long>(streak));
+        }
+        const TickType_t last_bus_off =
+            bus_off_started_tick_.load(std::memory_order_relaxed);
+        if (state_.load(std::memory_order_acquire) == TWAI_ERROR_ACTIVE
+            && last_bus_off != 0
+            && xTaskGetTickCount() - last_bus_off > pdMS_TO_TICKS(10'000)) {
+            consecutive_bus_offs_.store(0, std::memory_order_relaxed);
         }
         if (state_.load(std::memory_order_acquire) != TWAI_ERROR_BUS_OFF) return false;
         const int64_t last = last_recovery_attempt_us_.load(std::memory_order_relaxed);
@@ -192,7 +217,12 @@ public:
     }
 
 private:
-    static constexpr uint8_t kTxSlots = 16;
+    static constexpr uint8_t kTxSlots = 1;
+    static int64_t recovery_backoff_us_(uint32_t streak) {
+        const uint32_t shift = streak > 4 ? 4 : (streak > 0 ? streak - 1 : 0);
+        const int64_t delay = 500'000LL << shift;
+        return delay > 5'000'000LL ? 5'000'000LL : delay;
+    }
     struct RxItem {
         uint32_t id;
         uint8_t dlc;
@@ -255,6 +285,8 @@ private:
     std::atomic<uint32_t> bus_off_started_tick_{0};
     std::atomic<bool> first_rx_pending_{false};
     std::atomic<bool> first_tx_pending_{false};
+    std::atomic<uint32_t> consecutive_bus_offs_{0};
+    std::atomic<int64_t> tx_resume_not_before_us_{0};
 };
 
 }  // namespace can

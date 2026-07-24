@@ -58,7 +58,9 @@ public:
     bool status(uint32_t& state, uint32_t& tec, uint32_t& rec) const;
 
 private:
-    static constexpr uint8_t kTxSlots = 16;
+    // ESP-IDF 5.5 abandons the active frame without on_tx_done on Bus-Off.
+    // One driver/application slot lets recovery reclaim it deterministically.
+    static constexpr uint8_t kTxSlots = 1;
     struct RxItem {
         uint32_t id;
         uint8_t dlc;
@@ -108,6 +110,8 @@ private:
     std::atomic<uint32_t> m_bus_off_started_tick{0};
     std::atomic<bool> m_first_rx_pending{false};
     std::atomic<bool> m_first_tx_pending{false};
+    std::atomic<uint32_t> m_consecutive_bus_offs{0};
+    std::atomic<int64_t> m_tx_resume_not_before_us{0};
 
 #if ETRIKE_RT_TWAI_INSTRUMENT
     // Instrumentation counters — all zero-initialized, never cleared after init.

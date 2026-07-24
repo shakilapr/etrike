@@ -73,7 +73,12 @@ static bool send_can(can::Frame& fr, const char* caller = "?") {
         }
         g_can_tx_fail_count++;
         if (!g_can_tx_had_failure) {
-            ESP_LOGW(TAG, "CAN TX mailbox full (%s) — frame %03X dropped", caller, fr.id);
+            const auto health = g_can.health_snapshot();
+            ESP_LOGW(TAG,
+                     "CAN TX unavailable (%s) — frame %03X dropped "
+                     "state=%u recovering=%u",
+                     caller, fr.id, static_cast<unsigned>(health.state),
+                     health.recovery_in_progress ? 1U : 0U);
             g_can_tx_had_failure = true;
         }
         return false;

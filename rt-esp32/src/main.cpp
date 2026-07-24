@@ -319,6 +319,10 @@ static void update_low_can_tx_admission(int64_t now_us) {
 
         // ── Safety checks ──────────────────────────────────────────
         int64_t const now = esp_timer_get_time();
+        if (auto* drv = rt::can_low_driver()) {
+            // Restore transport independently of the latched safety state.
+            drv->service_recovery(now);
+        }
         update_low_can_tx_admission(now);
         bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
 
@@ -516,9 +520,14 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     can::Frame fr;
     while (1) {
         g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        // Drain gateway queue every 10ms (100 Hz) — was 100ms
+        // Drain a bounded batch every 10ms. An unbounded drain lets a faulty
+        // or flooded Low bus keep this task inside send_can_high() forever
+        // when High has no ACKing peer, starving telemetry and its liveness
+        // update. Eight matches the queue capacity and preserves a yield.
         for (int i = 0; i < 10; i++) {
-            while (xQueueReceive(g_gw_tx_high_q, &gw, 0) == pdTRUE) {
+            g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
+            for (int forwarded = 0; forwarded < 8; ++forwarded) {
+                if (xQueueReceive(g_gw_tx_high_q, &gw, 0) != pdTRUE) break;
                 send_can_high(gw);
             }
             vTaskDelay(pdMS_TO_TICKS(10));

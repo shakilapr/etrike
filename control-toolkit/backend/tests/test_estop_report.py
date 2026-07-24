@@ -96,3 +96,41 @@ def test_can_estop_reason_is_truthful_about_unknown_sender():
     correlated = build_estop_report(msgs, host_latch=True)
     assert correlated["cause_resolution"] == "correlated"
     assert correlated["primary_cause"].startswith("Host/toolkit")
+
+
+def test_stale_ecu_fault_bits_do_not_remain_active():
+    msgs = [
+        _msg(
+            "SYS_SAFETY_STS",
+            "low",
+            0x11,
+            {"estop_active": 1, "heartbeat_ok": 0},
+            freshness=FreshnessState.MISSING,
+            age_ms=30_000.0,
+        ),
+        _msg(
+            "SYS_DIAG_RPT",
+            "low",
+            0x600,
+            {"estop_active": 1, "brake_fault": 1},
+            freshness=FreshnessState.MISSING,
+            age_ms=30_000.0,
+        ),
+        _msg(
+            "RT_STATE_RPT",
+            "high",
+            0x210,
+            {"mode": 2, "safety_state": 2, "estop_reason": 6},
+            freshness=FreshnessState.MISSING,
+            age_ms=30_000.0,
+        ),
+    ]
+
+    r = build_estop_report(msgs, host_latch=False)
+
+    assert r["active"] is False
+    assert r["sys"]["estop_active"] is False
+    assert r["sys"]["brake_fault"] is False
+    assert r["rt"]["mode_estop"] is False
+    assert r["rt"]["estop_reason"] == 0
+    assert r["rt"]["frame_fresh"] is False
