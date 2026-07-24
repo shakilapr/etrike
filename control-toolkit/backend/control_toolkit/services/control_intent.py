@@ -25,6 +25,7 @@ MAX_SPEED_REV_MMPS = 500
 MAX_YAW_MRAD_S = 3000
 HOST_CMD_STALE_S = 0.5
 HOST_DRIVE_PERIOD_MS = 10.0
+HOST_HEARTBEAT_PERIOD_MS = 500.0
 DEADBAND = 0.05
 GEAR_N, GEAR_D, GEAR_S, GEAR_R = 0, 1, 2, 3
 
@@ -51,6 +52,7 @@ class IntentState:
     estop: bool = False
     last_mono: float = 0.0
     job_id: str | None = None
+    heartbeat_job_id: str | None = None
     lease_owner: str = "control:keyboard"
     shaped_speed: int = 0
     shaped_yaw: int = 0
@@ -186,6 +188,7 @@ class ControlIntentService:
             st.shaped_yaw = yaw
             st.gear = g
             self._ensure_job_locked(speed, yaw, g)
+            self._ensure_heartbeat_job_locked()
             return self._snap_unlocked()
 
     def set_direct(
@@ -380,6 +383,23 @@ class ControlIntentService:
         if self._state.job_id:
             self._scheduler.cancel(self._state.job_id)
             self._state.job_id = None
+        if self._state.heartbeat_job_id:
+            self._scheduler.cancel(self._state.heartbeat_job_id)
+            self._state.heartbeat_job_id = None
+
+    def _ensure_heartbeat_job_locked(self) -> None:
+        """Keep RT's Host watchdog alive while this service owns Host drive TX."""
+        if self._state.heartbeat_job_id:
+            return
+        self._state.heartbeat_job_id = self._scheduler.schedule(
+            bus="high",
+            key="host:host_heartbeat",
+            values={"alive_ctr": 0, "health_flags": 0},
+            period_ms=HOST_HEARTBEAT_PERIOD_MS,
+            owner=f"{self._state.lease_owner}:heartbeat",
+            source=FrameSource.INJECTION,
+            counter_field="alive_ctr",
+        )
 
     def _cancel_direct_locked(self) -> None:
         for job_id in list(self._state.direct_jobs.values()):
@@ -507,6 +527,7 @@ class ControlIntentService:
             "command_age_s": age,
             "stale_timeout_s": HOST_CMD_STALE_S,
             "job_id": s.job_id,
+            "heartbeat_job_id": s.heartbeat_job_id,
             "loss_reason": s.loss_reason,
             "direct_channels": list(s.direct_jobs.keys()),
             "direct_jobs": dict(s.direct_jobs),
@@ -517,6 +538,7 @@ class ControlIntentService:
                     "can_id": 0x300,
                     "owner_role": "Host intent; RT runs kinematics",
                     "period_ms": HOST_DRIVE_PERIOD_MS,
+                    "heartbeat_period_ms": HOST_HEARTBEAT_PERIOD_MS,
                     "stale_s": HOST_CMD_STALE_S,
                 },
                 "low_direct": {
