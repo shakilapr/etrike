@@ -23,7 +23,7 @@ public:
     // (wire break → 0 reading) which would otherwise saturate the I-term.
     void update_shadow_pid(int32_t desired_mmps, int32_t measured_mmps, float dt,
                            int16_t& pid_output_mmps) {
-        if (measured_mmps == 0) {
+        if (desired_mmps == 0 && measured_mmps == 0) {
             m_pid.reset();
             pid_output_mmps = 0;
             return;

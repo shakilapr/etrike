@@ -440,7 +440,7 @@ static void update_low_can_tx_admission(int64_t now_us) {
             g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
 
             if constexpr (rt::build::kPidMode == rt::build::PidMode::Active) {
-                if (measured_speed_mmps != 0) {
+                if (sp.motor_speed_mmps != 0) {
                     sp.motor_speed_mmps += pid_out;
                     sp.motor_speed_mmps = std::clamp<int32_t>(sp.motor_speed_mmps,
                         -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
