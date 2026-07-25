@@ -22,11 +22,12 @@ class LatestStore:
         with self._lock:
             return {k: v.model_copy(deep=True) for k, v in self._messages.items()}
 
-    def snapshot(self) -> LatestStateSnapshot:
+    def snapshot(self, now_ns: int | None = None) -> LatestStateSnapshot:
         with self._lock:
             self._sequence += 1
             messages = [m.model_copy(deep=True) for m in self._messages.values()]
-            now_ns = time.monotonic_ns()
+            if now_ns is None:
+                now_ns = time.monotonic_ns()
             for message in messages:
                 if message.last_seen_ns is not None:
                     message.age_ms = max(0.0, (now_ns - message.last_seen_ns) / 1_000_000)
