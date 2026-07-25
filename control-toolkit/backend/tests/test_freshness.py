@@ -71,16 +71,20 @@ def test_store_reclassify_ages_in_place():
         )
     )
     store.reclassify_freshness(now_ns=300 * MS)
-    assert store.snapshot().messages[0].freshness is FreshnessState.LATE
+    assert store.snapshot(now_ns=300 * MS).messages[0].freshness is FreshnessState.LATE
     store.reclassify_freshness(now_ns=600 * MS)
-    assert store.snapshot().messages[0].freshness is FreshnessState.MISSING
+    assert store.snapshot(now_ns=600 * MS).messages[0].freshness is FreshnessState.MISSING
 
 
 # ---- real-time API integration ----------------------------------------------
 
 
 def test_freshness_ages_to_missing_via_api(client):
-    transport = client.app.state.lifecycle.transport
+    life = client.app.state.lifecycle
+    if getattr(life, "sys_sil", None):
+        life.sys_sil.stop()
+
+    transport = life.transport
     transport.inject(ChannelId.LOW, 0x7FE, bytes.fromhex("ffff"))
 
     # Wait until Live.
