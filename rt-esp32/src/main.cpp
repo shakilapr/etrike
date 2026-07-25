@@ -826,6 +826,9 @@ extern "C" void app_main() {
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();
+    if constexpr (rt::build::kEncodersEnabled) {
+        rt::encoder_init();
+    }
 
     // External watchdog GPIO — toggled by control_task at 100 Hz (TPS3850 or equiv)
     // gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
