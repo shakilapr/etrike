@@ -626,19 +626,34 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool rt_alive     = g_safety.heartbeat_ok();
         bool rt_normal    = (g_rt_safety_state.load(std::memory_order_relaxed) == 0);
         TickType_t now_ticks = xTaskGetTickCount();
-        TickType_t last_roll_change = g_last_seb_roll_change_tick.load(std::memory_order_relaxed);
-        bool seb_ack = g_seb_rolling.load(std::memory_order_relaxed)
-                    && last_roll_change != 0
-                    && (now_ticks - last_roll_change) <= pdMS_TO_TICKS(sys::kSebRollingTimeoutMs);
-        g_seb_rolling.store(seb_ack, std::memory_order_relaxed);
+
+        // On the MANUAL→AUTO transition, RT needs a short collision-free window
+        // to publish its first AUTO state and assume 0x7B9 ownership. Requiring
+        // RT_NORMAL or a changing SEB counter before suppressing SYS creates a
+        // circular dependency: both nodes transmit 0x7B9, their different
+        // payloads collide, and RT's single Low-CAN TX slot becomes blocked.
+        static can::Mode previous_mode = can::Mode::Manual;
+        static TickType_t auto_enter_tick = 0;
+        if (mode == can::Mode::Auto && previous_mode != can::Mode::Auto) {
+            auto_enter_tick = now_ticks;
+        } else if (mode != can::Mode::Auto) {
+            auto_enter_tick = 0;
+        }
+        previous_mode = mode;
+        const bool auto_handoff_grace =
+            mode == can::Mode::Auto && auto_enter_tick != 0
+            && (now_ticks - auto_enter_tick) <= pdMS_TO_TICKS(sys::kSebHandoffGraceMs);
 
         // Fast-path deadman (gap C4): if RT 0x204 setpoint is stale (>200ms),
         // RT has likely crashed — resume direct brake control immediately.
         // This is faster than waiting for the 1000ms heartbeat timeout.
         bool rt_setpoint_fresh = (now_ticks - g_last_setpoint_tick.load(std::memory_order_relaxed))
                                  < pdMS_TO_TICKS(sys::kSetpointStaleMs);
-        bool suppress_seb = (mode == can::Mode::Auto) && rt_alive && rt_normal
-                           && seb_ack && !lever && !estop && rt_setpoint_fresh;
+        const bool rt_authority_established =
+            rt_alive && rt_normal && rt_setpoint_fresh;
+        bool suppress_seb = (mode == can::Mode::Auto)
+                           && (auto_handoff_grace || rt_authority_established)
+                           && !lever && !estop;
 
         can::custom::seb::Command seb_cmd;
         uint8_t  seb_b0 = g_seb_status_byte0.load(std::memory_order_relaxed);

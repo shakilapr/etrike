@@ -206,6 +206,37 @@ static bool send_can_high(can::Frame& fr) {
     return true;
 }
 
+// ── Gateway TX pump ─────────────────────────────────────────────────
+// Single-shot HW TX frees the one TX slot after every attempt, so a frame
+// that loses arbitration is dropped by hardware. Retain it in the gateway
+// queue and re-attempt from software each TX cycle until it is delivered or
+// goes stale. This is what lets HMI_MODE_REQ (0x111) eventually win
+// arbitration against SYS_MODE_CMD (0x110) without starving other Low traffic.
+static constexpr TickType_t kGwFreshnessTicks = pdMS_TO_TICKS(80);
+static constexpr uint16_t   kGwMaxAttempts    = 40;
+
+static bool gw_pump(QueueHandle_t q, bool (*send_fn)(can::Frame&), const char* tag) {
+    GwTxFrame gw;
+    if (xQueueReceive(q, &gw, 0) != pdTRUE) return false;
+    const bool accepted = send_fn(gw.frame);
+    if (gw.frame.id == can::kIdHmiModeReq) {
+        ESP_LOGI(tag, "HMI_MODE_REQ gateway TX accepted=%s attempts=%u depth=%u",
+                 accepted ? "yes" : "no", unsigned(gw.attempts),
+                 unsigned(uxQueueMessagesWaiting(q)));
+    }
+    if (accepted) {
+        // HW accepted the frame; with auto-retransmit (fail_retry_cnt = -1) the
+        // controller retries until it wins arbitration and is delivered, which
+        // fires on_tx_done and frees the slot. Do NOT re-enqueue — a fresh High
+        // 0x111 re-triggers forwarding. This avoids a duplicate storm.
+        return true;
+    }
+    // Transient failure (slot busy / TX not yet admitted): retry next cycle.
+    gw.attempts++;
+    if (gw.attempts <= kGwMaxAttempts) xQueueSendToFront(q, &gw, 0);
+    return true;
+}
+
 // ── CAN bus health monitor (extracted to can_health.h) ──────────────
 #include "can_health.h"
 
@@ -293,7 +324,12 @@ static void update_low_can_tx_admission(int64_t now_us) {
         // SEB takeover is published immediately after safety checks below.
         g_mode_current.store(m_current_mode);
 
-        if (xQueueReceive(g_cmd_q, &cmd, 0) != pdTRUE)
+        // Hold the latest Host command between updates. HOST_DRIVE_CMD may run
+        // slower than the 100 Hz control loop; consuming the one-deep queue made
+        // every intervening control tick fall back to zero, producing an
+        // alternating {command, neutral} motor output. The watchdog explicitly
+        // overwrites this queue with zero when the command becomes stale.
+        if (xQueuePeek(g_cmd_q, &cmd, 0) != pdTRUE)
             cmd = {0, 0};
 
         rt::ResolvedSetpoint sp;
@@ -352,8 +388,10 @@ static void update_low_can_tx_admission(int64_t now_us) {
                 can::Frame estop_frame;
                 can::gen::SafetyEstop estop_msg{};
                 if (can::gen::encode_safety_estop(estop_msg, estop_frame) == can::gen::CodecStatus::Ok) {
-                    xQueueSendToFront(g_gw_tx_low_q, &estop_frame, pdMS_TO_TICKS(10));
-                    xQueueSendToFront(g_gw_tx_high_q, &estop_frame, pdMS_TO_TICKS(10));
+                    GwTxFrame gwf_lo{estop_frame, xTaskGetTickCount(), 0};
+                    GwTxFrame gwf_hi{estop_frame, xTaskGetTickCount(), 0};
+                    xQueueSendToFront(g_gw_tx_low_q, &gwf_lo, pdMS_TO_TICKS(10));
+                    xQueueSendToFront(g_gw_tx_high_q, &gwf_hi, pdMS_TO_TICKS(10));
                 }
             }
         }
@@ -417,7 +455,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     TickType_t last_wake = xTaskGetTickCount();
     TickType_t t100 = last_wake, t50 = last_wake;
     rt::ResolvedSetpoint sp{};
-    can::Frame fr; can::Frame gw;
+    can::Frame fr;
     while (1) {
         g_alive_tx_low.store(xTaskGetTickCount(), std::memory_order_relaxed);
         auto* drv = rt::can_low_driver();
@@ -507,12 +545,10 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
         }
 
-        // Retain a gateway frame until the TWAI driver accepts it.  The old
-        // receive-then-send path silently discarded High→Low HMI requests
-        // whenever the single TX slot was occupied by a periodic RT frame.
-        if (xQueuePeek(g_gw_tx_low_q, &gw, 0) == pdTRUE && send_can_low(gw)) {
-            xQueueReceive(g_gw_tx_low_q, &gw, 0);
-        }
+        // Retain a gateway frame and retry it in software (single-shot HW TX)
+        // until delivered or stale. This fixes HMI_MODE_REQ (0x111) being
+        // dropped when it loses arbitration to SYS_MODE_CMD (0x110).
+        gw_pump(g_gw_tx_low_q, send_can_low, TAG);
         vTaskDelayUntil(&last_wake, ticks_ms_at_least_1(5));
     }
 }
@@ -521,7 +557,6 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 // Gateway frames are drained at 100 Hz (10ms inner loop) while
 // periodic telemetry is produced at 10 Hz (100ms outer loop).
 [[noreturn]] static void t_can_tx_high(void*) {
-    can::Frame gw;
     can::Frame fr;
     while (1) {
         g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -532,8 +567,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         for (int i = 0; i < 10; i++) {
             g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
             for (int forwarded = 0; forwarded < 8; ++forwarded) {
-                if (xQueueReceive(g_gw_tx_high_q, &gw, 0) != pdTRUE) break;
-                send_can_high(gw);
+                if (!gw_pump(g_gw_tx_high_q, send_can_high, TAG)) break;
             }
             vTaskDelay(pdMS_TO_TICKS(10));
         }
@@ -785,8 +819,8 @@ extern "C" void app_main() {
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
     g_cmd_q         = xQueueCreate( 1, sizeof(can::gen::HostDriveCmd));  // overwrite queue — only latest value matters
     g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
-    g_gw_tx_low_q   = xQueueCreate( 8, sizeof(can::Frame));
-    g_gw_tx_high_q  = xQueueCreate( 8, sizeof(can::Frame));
+    g_gw_tx_low_q   = xQueueCreate( 8, sizeof(GwTxFrame));
+    g_gw_tx_high_q  = xQueueCreate( 8, sizeof(GwTxFrame));
     g_safety_evt_q  = xQueueCreate(16, sizeof(rt::SafetyEvent));
 
     int task_count = 0;
