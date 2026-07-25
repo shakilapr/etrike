@@ -323,7 +323,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             enqueue_safety_event(evt, 0);
             // Also clear ESTOP if exiting ESTOP mode
             if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
-                g_steering.exit_estop();
+                g_steering_exit_request.store(true);
             }
         }
 
@@ -334,7 +334,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (ctx.has_cmd) {
             xQueueOverwrite(g_cmd_q, &ctx.cmd);
             g_watchdog.feed(esp_timer_get_time());
-            g_steering.exit_estop();
+            g_steering_exit_request.store(true);
         }
     }
 }

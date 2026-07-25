@@ -57,6 +57,8 @@ QueueHandle_t g_safety_evt_q = nullptr;  // depth 16, SafetyEvent
 std::atomic<bool>     g_pending_estop_event{false};
 std::atomic<int16_t>  g_pending_mode_event{-1};
 std::atomic<uint32_t> g_safety_event_drops{0};
+std::atomic<bool>     g_steering_estop_request{false};
+std::atomic<bool>     g_steering_exit_request{false};
 
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 std::atomic<int32_t>  g_brake_request_kpa{0};
@@ -283,6 +285,12 @@ static void update_low_can_tx_admission(int64_t now_us) {
 
     while (1) {
         g_alive_control.store(xTaskGetTickCount(), std::memory_order_relaxed);
+        if (g_steering_estop_request.exchange(false)) {
+            g_steering.start_estop(false);
+        }
+        if (g_steering_exit_request.exchange(false)) {
+            g_steering.exit_estop();
+        }
         // ── Drain bounded safety events and their overflow fallbacks ─
         rt::SafetyEvent evt;
         bool had_estop_this_cycle = g_pending_estop_event.exchange(false);
@@ -693,7 +701,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
             can::gen::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
-            g_steering.start_estop(false);  // ramp to 0° (gap C3, replaces disable flag)
+            g_steering_estop_request.store(true);  // ramp to 0° (gap C3, replaces disable flag)
         }
         vTaskDelayUntil(&last, per);
     }

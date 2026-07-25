@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 // SteeringControl — steer-by-wire unit command generation (0x169 VCU_SES_REQ).
 //
 // TASK OWNERSHIP: This class is owned by t_control (prio 4). All mutation
@@ -37,7 +38,7 @@ public:
         m_estop_hold_angle = 0;
         m_estop_following_err_start_ms = 0;
     }
-    SteerState state() const { return m_state; }
+    SteerState state() const { return m_state.load(std::memory_order_relaxed); }
 
     // Call at 50 Hz. ses_angle_raw = 0.1° units from 0x201 (INT16_MIN if no data).
     // ses_angle_status = 0x201 byte0 bit0 (0=center finding, 1=aligned).
@@ -234,7 +235,7 @@ private:
     }
 
     static constexpr int kRollCounterMask = 0x0F;
-    SteerState m_state = SteerState::STEER_BOOT_WAIT;
+    std::atomic<SteerState> m_state{SteerState::STEER_BOOT_WAIT};
     int        m_timer = 0;
     int16_t    m_active_angle = 0;
     uint8_t    m_roll = 0;
