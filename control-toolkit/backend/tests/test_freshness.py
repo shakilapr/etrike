@@ -36,8 +36,9 @@ def test_missing_past_threshold():
 
 
 def test_event_message_never_ages():
-    # cycle 0 (event/aperiodic): huge age still Live.
-    assert classify("ok", 0, 0, 10_000 * MS) is FreshnessState.LIVE
+    # cycle 0 (event/aperiodic): Live when fresh (<300ms), Missing after long idle (>2s).
+    assert classify("ok", 0, 0, 100 * MS) is FreshnessState.LIVE
+    assert classify("ok", 0, 0, 3_000 * MS) is FreshnessState.MISSING
 
 
 def test_staleness_dominates_invalidity():
