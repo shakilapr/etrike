@@ -335,8 +335,9 @@ bool Mcp2515Driver::init_mcp2515_regs(bool cold_boot) {
     // receive CANalyst-II injected frames (0x300, 0x7FC) without
     // accumulating TX errors from un-ACKed outgoing frames. On a real
     // vehicle with a Host/Jetson that ACKs, use Normal mode.
-    Mode start_mode = Mode::Normal;
-    modify_reg(kRegCanCtrl, 0xE0, 0x00);  // REQOP[2:0]=000 = normal mode
+    Mode start_mode = g_bench_solo_mode ? Mode::ListenOnly : Mode::Normal;
+    uint8_t reqop = static_cast<uint8_t>(start_mode);
+    modify_reg(kRegCanCtrl, 0xE0, reqop);  // REQOP[2:0]=011 (ListenOnly) or 000 (Normal)
     vTaskDelay(pdMS_TO_TICKS(1));
 
     canstat = read_reg(kRegCanStat);
