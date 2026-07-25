@@ -46,6 +46,7 @@ extern std::atomic<int32_t>  g_ses_angle_0_1deg;
 extern std::atomic<uint8_t>  g_ses_angle_status;
 extern std::atomic<int32_t>  g_brake_kpa_to_send;
 extern std::atomic<int32_t>  g_mtr_actual_speed_mmps;
+extern std::atomic<int32_t>  g_encoder_speed_mmps;
 
 // ── Derived state (written by control, read by tx tasks) ────────────
 extern std::atomic<uint8_t>  g_mode_current;     // current mode (control publishes after event drain)
