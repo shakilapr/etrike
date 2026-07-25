@@ -21,6 +21,15 @@
 
 static const char* TAG_DISP = "rt-dispatch";
 
+// Gateway TX element: the CAN frame plus bookkeeping so the TX task can retry
+// it in software (single-shot HW TX) and drop it once stale. See main.cpp
+// gw_pump().
+struct GwTxFrame {
+    can::Frame  frame;
+    TickType_t  enq_tick;
+    uint16_t    attempts;
+};
+
 inline bool enqueue_safety_event(const rt::SafetyEvent& evt, TickType_t timeout) {
     if (xQueueSend(g_safety_evt_q, &evt, timeout) == pdTRUE) return true;
 
@@ -52,6 +61,15 @@ struct DispatchContext {
 // ── Frame processor ─────────────────────────────────────────────────
 
 static void process_frame(const can::Frame& fr, bool from_high, DispatchContext& ctx) {
+    if (from_high && fr.id == can::kIdHmiModeReq) {
+        static uint32_t hmi_mode_rx_count = 0;
+        ++hmi_mode_rx_count;
+        if (hmi_mode_rx_count == 1 || (hmi_mode_rx_count % 20) == 0) {
+            ESP_LOGI(TAG_DISP, "HMI_MODE_REQ received on High (count=%lu data=%02X%02X)",
+                     static_cast<unsigned long>(hmi_mode_rx_count),
+                     unsigned(fr.data[0]), unsigned(fr.data[1]));
+        }
+    }
     // Frozen counter detection: use delta comparison to handle 8-bit
     // rollover correctly. Equality check (new != old) false-positives
     // when counter wraps from 0xFF back to a previously-seen value (bug M8).
@@ -265,30 +283,39 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                 }
             }
             if (ctx.gw_lo.id) {
-                if (!(is_estop ? xQueueSendToFront(g_gw_tx_low_q, &ctx.gw_lo, 0)
-                              : xQueueSend(g_gw_tx_low_q, &ctx.gw_lo, 0))) {
+                GwTxFrame gwf{ctx.gw_lo, xTaskGetTickCount(), 0};
+                const BaseType_t queued =
+                    is_estop ? xQueueSendToFront(g_gw_tx_low_q, &gwf, 0)
+                             : xQueueSend(g_gw_tx_low_q, &gwf, 0);
+                if (ctx.gw_lo.id == can::kIdHmiModeReq) {
+                    ESP_LOGI(TAG_DISP, "HMI_MODE_REQ Low gateway enqueue=%s depth=%u",
+                             queued == pdTRUE ? "ok" : "full",
+                             unsigned(uxQueueMessagesWaiting(g_gw_tx_low_q)));
+                }
+                if (queued != pdTRUE) {
                     static uint32_t gw_lo_drops = 0; gw_lo_drops++;
                 }
             }
         }
-        if (ctx.gw_hi.id) {
-            bool is_estop = (ctx.gw_hi.id == can::kIdSafetyEstop);
-            if (is_estop) {
-                static int64_t last_estop_fwd_hi_us = 0;
-                int64_t now_us = esp_timer_get_time();
-                if (now_us - last_estop_fwd_hi_us < 100000) {
-                    ctx.gw_hi.id = 0;  // suppress — rate limited
-                } else {
-                    last_estop_fwd_hi_us = now_us;
-                }
-            }
             if (ctx.gw_hi.id) {
-                if (!(is_estop ? xQueueSendToFront(g_gw_tx_high_q, &ctx.gw_hi, 0)
-                              : xQueueSend(g_gw_tx_high_q, &ctx.gw_hi, 0))) {
-                    static uint32_t gw_hi_drops = 0; gw_hi_drops++;
+                bool is_estop = (ctx.gw_hi.id == can::kIdSafetyEstop);
+                if (is_estop) {
+                    static int64_t last_estop_fwd_hi_us = 0;
+                    int64_t now_us = esp_timer_get_time();
+                    if (now_us - last_estop_fwd_hi_us < 100000) {
+                        ctx.gw_hi.id = 0;  // suppress — rate limited
+                    } else {
+                        last_estop_fwd_hi_us = now_us;
+                    }
+                }
+                if (ctx.gw_hi.id) {
+                    GwTxFrame gwf{ctx.gw_hi, xTaskGetTickCount(), 0};
+                    if (!(is_estop ? xQueueSendToFront(g_gw_tx_high_q, &gwf, 0)
+                                  : xQueueSend(g_gw_tx_high_q, &gwf, 0))) {
+                        static uint32_t gw_hi_drops = 0; gw_hi_drops++;
+                    }
                 }
             }
-        }
 
         // Mode change → safety event queue (guaranteed delivery)
         if (ctx.has_mode) {

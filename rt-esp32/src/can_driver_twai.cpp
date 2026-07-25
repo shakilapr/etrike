@@ -64,23 +64,32 @@ bool IRAM_ATTR TwaiDriver::on_rx_done(twai_node_handle_t node,
 }
 
 bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
-                                      const twai_tx_done_event_data_t* event,
-                                      void* user_ctx) {
+                                       const twai_tx_done_event_data_t* event,
+                                       void* user_ctx) {
     auto* self = static_cast<TwaiDriver*>(user_ctx);
     const uint32_t pending_bit =
         actuation_pending_bit(event->done_tx_frame->header.id);
     if (pending_bit != 0) {
         self->m_actuation_pending.fetch_and(~pending_bit,
-                                             std::memory_order_release);
+                                            std::memory_order_release);
     }
     BaseType_t wake = pdFALSE;
-    bool slot_found = false;
-    for (uint8_t index = 0; index < kTxSlots; ++index) {
-        if (event->done_tx_frame == &self->m_tx_slots[index].frame) {
-            xQueueSendFromISR(self->m_free_tx_slots, &index, &wake);
-            slot_found = true;
-            break;
-        }
+    // Free the slot we know is in flight. Pointer matching against our pool is
+    // unreliable for the on-chip driver (it may copy the frame), and a
+    // single-shot transmit that loses arbitration is abandoned WITHOUT a
+    // matching callback — so trust the in-flight tracker instead. With
+    // kTxSlots==1 there is exactly one slot.
+    uint8_t idx = self->m_inflight_slot.load(std::memory_order_acquire);
+    if (idx < kTxSlots) {
+        xQueueSendFromISR(self->m_free_tx_slots, &idx, &wake);
+        self->m_inflight_slot.store(0xFF, std::memory_order_release);
+        self->m_inflight_id.store(0, std::memory_order_release);
+    } else {
+        // tx_done arrived with no tracked in-flight slot: either a late/duplicate
+        // callback or the slot was already reclaimed by the watchdog.
+#if ETRIKE_RT_TWAI_INSTRUMENT
+        self->m_instr_tx_done_no_slot.fetch_add(1, std::memory_order_relaxed);
+#endif
     }
 #if ETRIKE_RT_TWAI_INSTRUMENT
     if (event->done_tx_frame->header.id != 0) {  // ignore null-frame sentinels
@@ -89,13 +98,17 @@ bool IRAM_ATTR TwaiDriver::on_tx_done(twai_node_handle_t,
         } else {
             self->m_instr_tx_done_fail.fetch_add(1, std::memory_order_relaxed);
         }
-        if (!slot_found) {
-            self->m_instr_tx_done_no_slot.fetch_add(1, std::memory_order_relaxed);
-        }
     }
-#else
-    (void)slot_found;
 #endif
+    // Record a failed completion so a task-context log can explain the cause
+    // (arbitration loss / missing ACK) without doing IO inside the ISR.
+    if (!event->is_tx_success && event->done_tx_frame->header.id != 0) {
+        self->m_last_tx_fail_id.store(
+            static_cast<uint32_t>(event->done_tx_frame->header.id),
+            std::memory_order_release);
+        self->m_last_tx_fail_us.store(esp_timer_get_time(),
+                                      std::memory_order_release);
+    }
     return wake == pdTRUE;
 }
 
@@ -112,6 +125,13 @@ bool IRAM_ATTR TwaiDriver::on_state_change(twai_node_handle_t,
         self->m_bus_off_started_tick.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
         self->m_consecutive_bus_offs.fetch_add(1, std::memory_order_relaxed);
         self->m_tx_resume_not_before_us.store(INT64_MAX, std::memory_order_release);
+        // Reclaim the in-flight slot so it cannot leak across the bus reset.
+        uint8_t stuck = self->m_inflight_slot.load(std::memory_order_acquire);
+        if (stuck < kTxSlots) {
+            self->m_inflight_slot.store(0xFF, std::memory_order_release);
+            self->m_inflight_id.store(0, std::memory_order_release);
+        }
+        self->m_bus_off_stuck_slot.store(stuck, std::memory_order_release);
 #if ETRIKE_RT_TWAI_INSTRUMENT
         // Snapshot the free-slot queue depth at the exact Bus-Off moment.
         // If slots leak, this count will diverge from (kTxSlots - tx_submitted + tx_done).
@@ -162,8 +182,13 @@ bool TwaiDriver::init() {
     config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
     config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
     config.bit_timing.bitrate = m_config.bitrate_hz;
-    // Node-wide single-shot mode. Periodic application traffic is regenerated;
-    // retaining and retrying an old control value is undesirable.
+    // Single-shot TX (fail_retry_cnt = 0). Combined with TWAI self-test mode
+    // (ETRIKE_RT_TWAI_SELF_TEST, bench only) the controller self-ACKs each
+    // one-shot transmit, so on_tx_done always fires and frees the single HW TX
+    // slot — no slot leak, and no prolonged TX holding that would accumulate TEC
+    // and trigger Bus-Off. Arbitration losses (e.g. 0x111 vs 0x110) are retried
+    // in software by the gateway pump in main.cpp, so delivery is still
+    // guaranteed without hardware auto-retransmission.
     config.fail_retry_cnt = 0;
     config.tx_queue_depth = 1;
 
@@ -205,8 +230,18 @@ bool TwaiDriver::recovery() {
     if (result == ESP_OK && info.state == TWAI_ERROR_BUS_OFF) {
         const uint32_t attempt = m_recovery_attempts.fetch_add(1, std::memory_order_relaxed) + 1;
         m_last_recovery_attempt_us.store(esp_timer_get_time(), std::memory_order_relaxed);
-        ESP_LOGW(kTag, "state=bus_off recovery=start attempt=%lu tec=%u rec=%u",
-                 static_cast<unsigned long>(attempt), info.tx_error_count, info.rx_error_count);
+        const uint8_t stuck = static_cast<uint8_t>(
+            m_bus_off_stuck_slot.load(std::memory_order_acquire));
+        const char* cause = (info.rx_error_count == 0 && info.tx_error_count > 0)
+            ? "missing ACK from peer (disconnected / miswired / no termination)"
+            : "error counter overflow (noise / faulty transceiver / collision)";
+        ESP_LOGE(kTag,
+                 "Low CAN BUS-OFF — TX shut down. attempt=%lu tec=%u rec=%u "
+                 "cause: %s. in-flight slot=%s reclaimed. Recovery supervisor "
+                 "will reopen admission once a peer ACKs again.",
+                 static_cast<unsigned long>(attempt), info.tx_error_count,
+                 info.rx_error_count, cause,
+                 stuck < kTxSlots ? "yes" : "none");
         result = twai_node_recover(m_node);
         m_recovery_in_progress.store(result == ESP_OK, std::memory_order_release);
     }
@@ -334,11 +369,21 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
     if (!m_initialized || !m_node || source.dlc > 8) return false;
     if (esp_timer_get_time()
         < m_tx_resume_not_before_us.load(std::memory_order_acquire)) {
+        // Bus-Off recovery backoff window — TX intentionally suspended.
         return false;
     }
     // ESTOP is an unbypassable, bounded event and may be attempted even while
     // operational traffic is gated. All other traffic requires a known peer.
     if (source.id != 0x001u && !m_tx_admitted.load(std::memory_order_acquire)) {
+        const int64_t now = esp_timer_get_time();
+        const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
+        if (now - last > 2000000) {
+            m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
+            ESP_LOGW(kTag,
+                     "Low CAN TX suppressed id=0x%lX: no ACK-capable peer seen "
+                     "(bus disconnected / miswired / wrong termination?)",
+                     static_cast<unsigned long>(source.id));
+        }
         return false;
     }
 
@@ -355,6 +400,15 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
     if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
         if (pending_bit != 0) {
             m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
+        }
+        const int64_t now = esp_timer_get_time();
+        const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
+        if (now - last > 2000000) {
+            m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
+            ESP_LOGW(kTag,
+                     "Low CAN TX dropped id=0x%lX: no free TX slot (in-flight "
+                     "frame not yet completed by controller)",
+                     static_cast<unsigned long>(source.id));
         }
         return false;
     }
@@ -375,8 +429,23 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
         if (pending_bit != 0) {
             m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
         }
+        const int64_t now = esp_timer_get_time();
+        const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
+        if (now - last > 2000000) {
+            m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
+            ESP_LOGE(kTag, "Low CAN TX transmit error id=0x%lX",
+                     static_cast<unsigned long>(source.id));
+        }
         return false;
     }
+    // Track the in-flight slot so on_tx_done can free it. Auto-retransmit
+    // (fail_retry_cnt = -1) lets the controller win arbitration and deliver the
+    // frame, which fires on_tx_done; the slot is then returned. Single-shot TX
+    // must NOT be used here: an arbitration-lost frame is abandoned WITHOUT a
+    // tx_done, leaking the slot.
+    m_inflight_slot.store(index, std::memory_order_release);
+    m_inflight_id.store(source.id, std::memory_order_release);
+    m_inflight_us.store(esp_timer_get_time(), std::memory_order_release);
 #if ETRIKE_RT_TWAI_INSTRUMENT
     m_instr_tx_submitted.fetch_add(1, std::memory_order_relaxed);
 #endif
