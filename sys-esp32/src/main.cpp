@@ -544,6 +544,27 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
         }
 
+        // Brake fault auto-recovery: clear when all underlying conditions are healthy
+        if (g_brake_fault_active.load(std::memory_order_relaxed)) {
+            bool seb_healthy = g_seb_error_status.load(std::memory_order_relaxed) < 3;
+            uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
+            bool mtr_fresh = g_bypass_mtr_absent
+                || (last_fbk > 0
+                    && (xTaskGetTickCount() - last_fbk) < pdMS_TO_TICKS(sys::kMtrFbkStaleMs));
+            bool not_in_estop = (g_mode_mgr.mode() != can::Mode::Estop);
+
+            static int brake_recovery_count = 0;
+            if (seb_healthy && mtr_fresh && not_in_estop) {
+                if (++brake_recovery_count >= 30) {  // 30 * 100ms = 3s
+                    g_brake_fault_active.store(false, std::memory_order_relaxed);
+                    brake_recovery_count = 0;
+                    ESP_LOGI(TAG, "Brake fault cleared — all conditions recovered");
+                }
+            } else {
+                brake_recovery_count = 0;
+            }
+        }
+
         vTaskDelayUntil(&last, period);
     }
 }
