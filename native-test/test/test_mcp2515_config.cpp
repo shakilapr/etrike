@@ -38,7 +38,7 @@ static int bit_tq(uint8_t cnf1, uint8_t cnf2, uint8_t cnf3) {
     int brp    = (cnf1 & 0x3F);           // CNF1[5:0]
     int prseg  = (cnf2 & 0x07) + 1;       // CNF2[2:0] + 1
     int phseg1 = ((cnf2 >> 3) & 0x07) + 1; // CNF2[5:3] + 1
-    int phseg2 = ((cnf3 >> 3) & 0x07) + 1; // CNF3[5:3] + 1 (was bug: used bit 0)
+    int phseg2 = (cnf3 & 0x07) + 1;       // CNF3[2:0] + 1 (PHSEG2 bits)
     return 1 + prseg + phseg1 + phseg2;   // Sync + PropSeg + PS1 + PS2
 }
 
@@ -55,12 +55,12 @@ int main() {
     int brp    = (cnf1 & 0x3F);
     int prseg  = (cnf2 & 0x07) + 1;
     int phseg1 = ((cnf2 >> 3) & 0x07) + 1;
-    int phseg2 = ((cnf3 >> 3) & 0x07) + 1;
+    int phseg2 = (cnf3 & 0x07) + 1;
 
     CHECK(brp == 0,           "BRP = 0");
     CHECK(prseg == 2,         "PropSeg = 2 TQ");
     CHECK(phseg1 == 3,        "PS1 = 3 TQ");
-    CHECK(phseg2 == 2,        "PS2 = 2 TQ (PHSEG2 bits are at CNF3[5:3], not [2:0])");
+    CHECK(phseg2 == 2,        "PS2 = 2 TQ (PHSEG2 bits are at CNF3[2:0])");
     int total_tq = 1 + prseg + phseg1 + phseg2;
     CHECK(total_tq == 8,      "Total = 8 TQ (minimum per CAN spec)");
 

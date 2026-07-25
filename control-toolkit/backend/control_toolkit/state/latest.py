@@ -30,6 +30,14 @@ class LatestStore:
             for message in messages:
                 if message.last_seen_ns is not None:
                     message.age_ms = max(0.0, (now_ns - message.last_seen_ns) / 1_000_000)
+                    cycle_ms = (
+                        int(round(1000 / message.expected_rate_hz))
+                        if message.expected_rate_hz
+                        else 0
+                    )
+                    message.freshness = classify(
+                        message.validation_status, message.last_seen_ns, cycle_ms, now_ns
+                    )
             return LatestStateSnapshot(
                 sequence=self._sequence,
                 wire_hash=proto.WIRE_HASH,
