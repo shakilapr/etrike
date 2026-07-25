@@ -233,7 +233,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         case can::kIdHmiModeReq: {   // 0x111 — HMI mode heartbeat (1Hz)
             can::gen::HmiModeReq request{};
             if (can::gen::decode_hmi_mode_req(fr.view(), request) != can::gen::CodecStatus::Ok) break;
-            if (g_mode_mgr.parse_hmi_mode(request.req_mode ? 1 : 0)) {
+            if (g_mode_mgr.parse_hmi_mode(request.req_mode)) {
                 // If mode actually changed due to this request, log it.
                 // The main 10Hz control loop will naturally pick up the new mode 
                 // and broadcast 0x110 SYS_MODE_CMD on its next tick.
