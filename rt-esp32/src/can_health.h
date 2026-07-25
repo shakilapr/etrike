@@ -55,7 +55,7 @@ static void monitor_can_bus_off() {
                     enqueue_safety_event(event, 0);
                     can::gen::HostDriveCmd zero{};
                     xQueueOverwrite(g_cmd_q, &zero);
-                    g_steering.start_estop(false);
+                    g_steering_estop_request.store(true);
                     g_estop_reason.store(rt::kEstopReasonBusOff);
                     if (can_send_estop()) {
                         can::Frame ef;
@@ -90,7 +90,7 @@ static void monitor_can_bus_off() {
                 g_estop_reason.store(rt::kEstopReasonBusOff);
                 can::gen::HostDriveCmd zero{};
                 xQueueOverwrite(g_cmd_q, &zero);
-                g_steering.start_estop(false);
+                g_steering_estop_request.store(true);
             }
         } else if (!g_can_high.is_recovering()) {
             uint8_t tec = 0, rec = 0;

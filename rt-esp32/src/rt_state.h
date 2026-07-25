@@ -36,6 +36,8 @@ extern QueueHandle_t g_safety_evt_q;  // depth 16, SafetyEvent
 extern std::atomic<bool>     g_pending_estop_event;
 extern std::atomic<int16_t>  g_pending_mode_event;  // -1 when no fallback is pending
 extern std::atomic<uint32_t> g_safety_event_drops;
+extern std::atomic<bool>     g_steering_estop_request;
+extern std::atomic<bool>     g_steering_exit_request;
 
 // ── Shared state (atomics for sensor / latest-value data) ───────────
 extern std::atomic<int32_t>  g_brake_request_kpa;
