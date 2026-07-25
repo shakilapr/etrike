@@ -31,6 +31,7 @@ bool g_bypass_mtr_absent = false;
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
+#include "encoder_pcnt.h"
 
 static const char* TAG = "rt";
 
@@ -67,6 +68,7 @@ std::atomic<int32_t>  g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t>  g_ses_angle_status{0};
 std::atomic<int32_t>  g_brake_kpa_to_send{0};
 std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t>  g_encoder_speed_mmps{0};
 
 // ── Derived state (written by control, read by tx tasks) ────────────
 std::atomic<uint8_t>  g_mode_current{0};
@@ -351,6 +353,12 @@ static void update_low_can_tx_admission(int64_t now_us) {
         // (runs always; is only consumed when SpeedFeedbackSource::Calculated).
         g_calc_speed.update(sp.motor_speed_mmps, 0.01f);
 
+        if constexpr (rt::build::kEncodersEnabled) {
+            float enc_speed = rt::encoder_read_speed_mmps(0, 0.01f);
+            g_encoder_speed_mmps.store(static_cast<int32_t>(enc_speed));
+            rt::encoder_reset(0);
+        }
+
         // ── Dynamic angle clamp (arch §7.6, fix #6) ─────────────────
         {
             float max_deg = rt::compute_dynamic_limit(static_cast<float>(std::abs(sp.motor_speed_mmps)));
@@ -419,7 +427,7 @@ static void update_low_can_tx_admission(int64_t now_us) {
         if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Mtr) {
             measured_speed_mmps = g_mtr_actual_speed_mmps.load();
         } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::RtEncoder) {
-            measured_speed_mmps = g_mtr_actual_speed_mmps.load();
+            measured_speed_mmps = g_encoder_speed_mmps.load();
         } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Calculated) {
             measured_speed_mmps = g_calc_speed.get();
         }
