@@ -447,12 +447,12 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(1000 / sys::kSafetyCheckHz);
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        // Read hardware ESTOP button (NC: LOW = pressed)
+        // Read hardware ESTOP button (NC fail-safe: HIGH = pressed / open circuit)
 #ifdef TESTING
         bool estop_hw = false;
         bool brake_lever = false;
 #else
-        bool estop_hw = (gpio_get_level(static_cast<gpio_num_t>(sys::kEstopGpio)) == 0);
+        bool estop_hw = (gpio_get_level(static_cast<gpio_num_t>(sys::kEstopGpio)) == 1);
         bool brake_lever = (gpio_get_level(static_cast<gpio_num_t>(sys::kBrakeLeverGpio)) == 0);
 #endif
 
@@ -965,8 +965,8 @@ static void init_board_gpio() {
     gpio_config_t estop = {};
     estop.pin_bit_mask = 1ULL << sys::kEstopGpio;
     estop.mode = GPIO_MODE_INPUT;
-    estop.pull_up_en = GPIO_PULLUP_DISABLE;
-    estop.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    estop.pull_up_en = GPIO_PULLUP_ENABLE;
+    estop.pull_down_en = GPIO_PULLDOWN_DISABLE;
     estop.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&estop));
 
