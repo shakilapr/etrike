@@ -21,6 +21,9 @@ QueueHandle_t g_safety_evt_q = nullptr;
 std::atomic<bool> g_pending_estop_event{false};
 std::atomic<int16_t> g_pending_mode_event{-1};
 std::atomic<uint32_t> g_safety_event_drops{0};
+std::atomic<bool> g_steering_estop_request{false};
+std::atomic<bool> g_steering_exit_request{false};
+std::atomic<int32_t> g_encoder_speed_mmps{0};
 
 std::atomic<int32_t> g_brake_request_kpa{0};
 std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};

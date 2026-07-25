@@ -309,6 +309,22 @@ add_test(NAME all_signals          COMMAND all_signals)
 add_test(NAME dlc_consistency      COMMAND dlc_consistency)
 add_test(NAME gateway_forwarding   COMMAND gateway_forwarding)
 
+# ── Remediation bug fixes unit test suite ────────────────────────────
+add_executable(remediation_fixes
+    test/test_remediation_fixes.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
+)
+target_include_directories(remediation_fixes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/sys-esp32/src
+)
+add_test(NAME remediation_fixes    COMMAND remediation_fixes)
+
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
     sim-engine/main_native.cpp
