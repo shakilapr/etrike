@@ -46,6 +46,10 @@ static std::atomic<uint32_t> g_alive_safety{0};
 static std::atomic<uint32_t> g_alive_brake{0};
 static std::atomic<uint32_t> g_alive_dispatch{0};
 static std::atomic<uint32_t> g_alive_can_tx{0};
+static std::atomic<uint32_t> g_alive_can_ctrl{0};
+static std::atomic<uint32_t> g_alive_hb{0};
+static std::atomic<uint32_t> g_alive_mode{0};
+static std::atomic<uint32_t> g_alive_gear{0};
 static std::atomic<uint8_t>  g_task_health_bits{0};
 static std::atomic<uint32_t> g_can_rx_overflow{0};
 
@@ -194,6 +198,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 // calls remain here in task context.
 [[noreturn]] static void task_can_control(void*) {
     while (1) {
+        g_alive_can_ctrl.store(xTaskGetTickCount(), std::memory_order_relaxed);
         g_can.service_recovery(esp_timer_get_time());
         vTaskDelay(pdMS_TO_TICKS(20));
     }
@@ -575,6 +580,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(100);  // 10 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
+        g_alive_mode.store(xTaskGetTickCount(), std::memory_order_relaxed);
 #ifdef TESTING
         bool mode_btn  = false;
         bool start_btn = false;
@@ -602,6 +608,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(1000 / sys::kGearCheckHz);
     TickType_t last   = xTaskGetTickCount();
     while (1) {
+        g_alive_gear.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Mode mode = g_mode_mgr.mode();
         // MTR owns motor: monitor gear mismatch via CAN
         uint8_t reported  = g_mtr_gear_state.load(std::memory_order_relaxed);   // from 0x206
@@ -838,13 +845,17 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         uint8_t task_health = (fresh(g_alive_safety)   ? 0x01 : 0)
                             | (fresh(g_alive_brake)    ? 0x02 : 0)
                             | (fresh(g_alive_dispatch) ? 0x04 : 0)
-                            | (fresh(g_alive_can_tx)   ? 0x08 : 0);
+                            | (fresh(g_alive_can_tx)   ? 0x08 : 0)
+                            | (fresh(g_alive_can_ctrl) ? 0x10 : 0)
+                            | (fresh(g_alive_hb)       ? 0x20 : 0)
+                            | (fresh(g_alive_mode)     ? 0x40 : 0)
+                            | (fresh(g_alive_gear)     ? 0x80 : 0);
         g_task_health_bits.store(task_health, std::memory_order_relaxed);
         if (task_health != previous_task_health) {
-            if (task_health == 0x0F) {
+            if (task_health == 0xFF) {
                 ESP_LOGI(TAG, "SYS task health recovered: mask=0x%X", task_health);
             } else {
-                ESP_LOGE(TAG, "SYS task deadline missed: mask=0x%X expected=0xF", task_health);
+                ESP_LOGE(TAG, "SYS task deadline missed: mask=0x%X expected=0xFF", task_health);
             }
             previous_task_health = task_health;
         }
@@ -896,6 +907,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     uint8_t alive_ctr = 0;
     while (1) {
+        g_alive_hb.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::gen::SysHeartbeat message{};
         message.alive_ctr = ++alive_ctr;
         message.heartbeat_ok = g_safety.heartbeat_ok();
