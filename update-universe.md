@@ -6,10 +6,9 @@ We are connecting the E-Trike to **Autoware Universe**, the current ROS 2 self-d
 software stack (we were previously aimed at the older "Autoware.Auto"). The goal is simple:
 the trike should drive itself under Universe.
 
-The good news: the trike's internal computers and its wired command bus mostly **stay
-exactly as they are**. The only software that needs real work is the **bridge** — the program
-on the Jetson computer that translates between Universe's messages and the trike's wired
-commands.
+The existing safety architecture and CAN layouts remain compatible. The bridge needs the
+largest rewrite, while Phase 2 adds two messages and corresponding RT/tooling work. SYS and
+MTR firmware stay unchanged.
 
 ---
 
@@ -22,7 +21,7 @@ commands.
 | **Wired bus (CAN)** | The cables carrying commands and sensor readings between the computers and the steering/brake motors. |
 | **Message / topic** | How Universe sends a command, e.g. "steer left 5°", "go". |
 | **Mode** | Who is driving: a human (**MANUAL**) or the computer (**AUTONOMOUS**). |
-| **Engage** | The software switch that says "start driving now". Universe's canonical engage path is the AD-API topics `/api/autoware/get/engage` (state) and `/api/autoware/set/engage` (command). The older `/vehicle/engage` topic still exists but is legacy. |
+| **Engage** | Autoware's software permission to transmit motion commands. In the pinned Universe stack, `/api/autoware/get/engage` is a topic and `/api/autoware/set/engage` is a service. Physical mode changes use the existing `0x111` path through SYS. |
 | **ESTOP** | Emergency stop — cut motion immediately. |
 | **PARK** | Hold the brake while stopped. |
 | **Frame / signal** | One wired message / one value inside it. |
@@ -31,11 +30,13 @@ commands.
 
 ## The short version
 
-1. **One component needs rewriting: the bridge.** Everything else can stay as-is for now.
-2. Fix **6 specific things** in the bridge and the trike drives under Universe.
-3. One later, **optional** firmware improvement lets it steer while parked — not required to drive.
-4. Mode (who drives) and emergency stop are **safety decisions owned by SYS**, the trike's
+1. **The bridge needs rewriting** for the pinned Autoware Universe interfaces.
+2. The Phase 2 protocol, RT, toolkit, and simulation work is also **required**, including
+   steering while stopped and accurate motion feedback.
+3. Mode (who drives) and emergency stop are **safety decisions owned by SYS**, the trike's
    safety computer. The bridge only relays; it never decides these.
+4. HMI and Jetson/Autoware may both request AUTO or MANUAL using the existing `0x111` command.
+   SYS remains the sole authority that accepts/rejects the request and broadcasts confirmed mode.
 
 ---
 
@@ -43,12 +44,13 @@ commands.
 
 | Component | Change? | In one line |
 |---|---|---|
-| **Bridge (Jetson)** | **YES — required** | Rewrite to Universe message types; fix direction, gear numbers, mode request, engage, emergency. This is the only work needed to drive. |
-| **Wired commands (protocol)** | **NO (for now)** | Keep all existing messages exactly. New messages are optional later polish only. |
-| **RT computer** | **NO (for now)** | Drives as-is. Only needed later for steering-while-parked. |
+| **Bridge (Jetson)** | **YES — required** | Rewrite for Universe types; fix signs, gears, control-mode service/reporting, engage, emergency, lifecycle, parameters, and safety gating. |
+| **Wired commands (protocol)** | **YES — additive/metadata only** | Keep every existing layout, document HMI and Host as permitted `0x111` producers, and add required `0x303` steering command and `0x121` motion report. |
+| **RT computer** | **YES — required** | Add direct steering-angle input and coherent motion feedback. Preserve the existing `0x111` High→Low gateway path. |
 | **SYS computer** | **NO** | Already handles mode and emergency correctly; the bridge uses its existing path. |
-| **control-toolkit** | **Phase 2 only** | Codecs auto-update from the shared protocol; the control-intent logic must also *send* the new `0x303` steer-angle frame (parallel to the bridge) so the bench tool can exercise standstill steering. |
-| **simulation / debug-tool / vt-console** | **NO** | Regenerate only. |
+| **MTR computer** | **NO** | Existing propulsion, gear, feedback, timeout, and ESTOP behavior stays unchanged. |
+| **control-toolkit** | **YES — required** | Regenerate codecs, send `0x111` and `0x303`, decode `0x121`, and exercise mode changes, standstill steering, and motion feedback under bench safety gating. |
+| **simulation / native tests / debug-tool / vt-console** | **YES — required** | Regenerate and update models, fixtures, decoders, displays, and regression tests for `0x303` and `0x121`. |
 | **Autoware settings** | **YES — small** | Lower speed/steer limits to trike size; keep mode timeout. |
 | **New ROS packages** | **YES** | 4 small packages: bridge, protocol wrapper, launch, vehicle description. |
 
@@ -56,7 +58,7 @@ commands.
 
 ## The 6 things the bridge MUST fix
 
-If any of these is wrong, the trike will not drive correctly. All six are bridge-only fixes.
+These six bridge corrections are required, followed by the mandatory Phase 2 work.
 
 1. **Build for Universe types.** The old bridge used message fields that no longer exist in
    Universe. Port it to the current `Control` message and remove the deleted `VehicleKinematicState`.
@@ -70,23 +72,26 @@ If any of these is wrong, the trike will not drive correctly. All six are bridge
    **1** (which Universe reads as NEUTRAL). If unfixed, a "drive" command is ignored and the
    trike **never moves**. Fix: translate the numbers both ways from the message definitions.
 
-4. **Answer the "go autonomous?" request and report autonomous.** Universe asks "switch to
-   self-driving?" as a service and expects a yes/no. The bridge must answer, and then report
-   the autonomous state using the trike's existing mode feedback. Without this, Universe never
-   finishes engaging.
+4. **Implement the control-mode service over the existing SYS-authorized path.** Universe calls
+   `/control/control_mode_request` as an `autoware_vehicle_msgs/srv/ControlModeCommand`
+   service. For AUTONOMOUS or MANUAL, the bridge sends `0x111` with the requested mode and a
+   valid rolling counter. SYS accepts or rejects it using its existing ESTOP/mode rules. The
+   service reports whether the request was admitted, while `/vehicle/status/control_mode`
+   changes only after `0x210` confirms SYS's result. Unsupported partial-control modes return
+   `success=false`.
 
-5. **Listen on the correct engage topic with correct delivery settings.** Universe's canonical
-   engage path is the AD-API: `/api/autoware/get/engage` (state) and `/api/autoware/set/engage`
-   (command), per `vehicle_cmd_gate.launch.xml:35,38`. The older `/vehicle/engage` topic still
-   works in simulation but is legacy. The bridge should subscribe to the AD-API topic (or use
-   a launch remap). Universe's commands also use a "keep last known value" delivery style, so
-   the bridge must subscribe with matching settings.
+5. **Use the pinned engage and command interfaces with matching delivery settings.** The
+   bridge may subscribe to `/api/autoware/get/engage` through a launch remap; it must not treat
+   the `/api/autoware/set/engage` service as a topic. The five `/control/command/*` outputs are
+   reliable, transient-local, depth 1 in the pinned stack, so bridge subscriptions must be
+   compatible. Motion output still requires engage plus confirmed SYS AUTO mode.
 
 6. **React to the emergency signal.** Universe sends an emergency flag (true/false). On true,
    the bridge must send the stop command. (See "Emergency stop" below for the important
    safety rule about clearing it.)
 
-Close these six and the trike is **drivable under Universe end-to-end** on the existing wiring.
+These bridge corrections establish the Universe interface. Completion also requires the
+mandatory Phase 2 RT/protocol/tooling work and all validation stages below.
 
 ---
 
@@ -105,7 +110,7 @@ upstream is standard Autoware.
 | `GearCommand` (DRIVE/REVERSE/PARK) | translate numbers; PARK → brake hold | gear in drive command; brake hold for PARK |
 | Turn / hazard lights | pass through | light command |
 | Emergency (true) | send stop | ESTOP event |
-| Mode request (go autonomous) | send existing mode-request message `0x111` | SYS decides, broadcasts mode |
+| HMI or Autoware requests AUTO/MANUAL | bridge sends/relays existing `0x111` with rolling counter | RT forwards it; SYS decides and broadcasts confirmed mode |
 
 **Universe expects back ← bridge builds from trike feedback**
 
@@ -142,18 +147,22 @@ The old bridge hard-coded DRIVE as `1`, which Universe reads as NEUTRAL → the 
 never move. Fix: read the gear value from Universe's message definition (DRIVE = 2) and
 translate to the trike's value when sending, and back when reporting.
 
-## Mode (who is driving) — a safety decision
+## Mode (who is driving) — requests from HMI or Autoware, authority in SYS
 
-**Mode is owned by SYS, the trike's safety computer. The bridge must never decide mode.**
+**HMI and Jetson/Autoware may request mode changes. SYS alone decides the physical mode.**
 
-- When Universe asks to switch to autonomous, the bridge sends the trike's **existing**
-  mode-request message (`0x111`). The RT computer forwards it to SYS.
-- SYS already arbitrates this message against the physical mode button and the emergency
-  stop (and rejects it during an emergency). SYS is the sole authority that broadcasts the
-  current mode.
-- The bridge simply reports the mode SYS confirmed. It never invents a mode.
+- HMI may send `0x111 HMI_MODE_REQ` directly or through Jetson.
+- Autoware may also request AUTONOMOUS or MANUAL through
+  `/control/control_mode_request`; the bridge translates that request to the same existing
+  `0x111` CAN command and maintains the rolling counter.
+- RT forwards `0x111` from High CAN to SYS on Low CAN.
+- SYS applies its existing rules, including rejecting mode changes during ESTOP, and remains
+  the sole authority that broadcasts confirmed mode.
+- Existing `0x210 RT_STATE_RPT` carries the confirmed result back to the bridge. The bridge
+  never reports AUTONOMOUS merely because it transmitted a request.
+- Motion output requires both confirmed SYS AUTO mode and Autoware engage permission.
 
-So no SYS firmware change is needed — the bridge reuses a path that already exists.
+No SYS firmware or new mode-message ID is needed; the plan reuses `0x111`.
 
 ## Emergency stop — physical reset by design
 
@@ -177,7 +186,8 @@ Universe does command PARK. The bridge handles this **without any firmware chang
 - On a PARK command, the bridge sends a **brake-hold** command (`0x301`) and reports PARK
   back to Universe from its own memory.
 - Since the trike has no separate "PARK" gear value, the bridge sends NEUTRAL on the gear
-  field plus the held brake — functionally identical to park-hold. SYS/MTR execute the brake.
+  field plus the held brake — functionally identical to park-hold. RT and SYS execute the
+  brake path; MTR handles propulsion and gear only.
 
 ---
 
@@ -213,57 +223,49 @@ message is present.
 - The wheels then turn while parked; actual turning of the vehicle still only happens once
   the trike rolls (turn rate = speed × angle).
 
-This is the **only firmware change required** for a safe, standstill-capable system. All other
-gaps are bridge-only or optional.
+This RT change and the motion-report work below are required parts of the completed system.
+SYS and MTR firmware remain unchanged.
 
 ---
 
-## Phase 2 — optional improvements (included in the plan)
+## Phase 2 — required protocol, RT, tooling, and simulation work
 
-These are **part of the plan**, done after Phase 1 proves the trike drives. They add fidelity
-and safety reporting. They are **new messages only** — never edits to existing ones (old
-firmware would reject a changed message). They are safe because they only add *feedback from*
-the trike; the command path is untouched.
+These are mandatory after the bridge port is operational on `vcan`. They use new CAN IDs rather
+than widening existing layouts, because strict-DLC decoders may reject changed in-service
+frames. `0x303` extends the Host→RT command path and `0x121` extends RT→Host feedback. Neither
+message changes SYS or MTR authority.
 
-### 2.1 Steering angle at any speed — `0x303` (recommended; the one firmware MUST)
+### 2.1 Steering angle at any speed — `0x303` (required)
 
 Lets the trike steer while parked (see "The one firmware change that truly matters").
 
-- **Protocol:** add a new message `0x303` carrying the steering angle (signed, ±45°, right = positive).
+- **Protocol:** add `0x303 HOST_STEER_CMD` carrying a signed steering angle in 0.1-degree
+  units (`int16`, ±450 for ±45°, right = positive), plus validity/freshness information.
 - **RT firmware:** when `0x303` arrives, forward the angle to the steering motor and
-  **bypass the low-speed steering cutoff**; keep the old yaw-rate path for other sources.
+  **bypass the low-speed steering cutoff** while it is fresh and valid. Define a timeout and
+  make the direct-angle path authoritative so it cannot fight the legacy `0x300` yaw path.
 - **Bridge:** send `0x303` from Universe's steering angle; keep sending the existing drive
   command for speed.
 - **Why safe:** new message ID; old firmware ignores it.
 
-### 2.2 Motion report — `0x121` (fidelity)
+### 2.2 Motion report — `0x121` (required)
 
 Gives Universe an honest turn rate and the real gear state.
 
-- **Protocol:** add a new message `0x121` carrying turn rate (computed by RT from speed ×
-  angle) and the actual gear (including a "PARK rejected" state if the brake-hold failed).
-- **RT firmware:** publish `0x121` at 10 Hz using speed and steering angle it already has.
-- **Bridge:** use `0x121` for the speed report's turn-rate field and for an accurate gear
-  report (including PARK feedback).
+- **Protocol:** add `0x121 RT_MOTION_RPT` carrying coherent measured speed, estimated yaw rate,
+  physical gear, and validity/freshness flags. PARK is not a physical MTR gear.
+- **RT firmware:** publish `0x121` from fresh measured speed and steering angle; compute
+  `yaw_rate = velocity × tan(steering_angle) / wheelbase` with documented signs and units.
+- **Bridge:** use `0x121` for `VelocityReport.longitudinal_velocity`, `heading_rate`, and
+  physical gear reporting.
 
-### 2.3 Mode detail — `0x211` (fidelity)
+### 2.3 Why these are safe to add
 
-Lets the bridge report all 7 mode states and answer the engage request honestly.
+Existing frame layouts remain unchanged. Old firmware ignores the new IDs, but a completed
+deployment requires the new RT firmware. Mixed versions must remain motion-disabled until the
+bridge verifies the expected feedback/capability. Measure added CAN load and arbitration.
 
-- **Protocol:** add a new message `0x211` carrying the confirmed mode (all 7 states), the
-  requested mode, and a reject reason.
-- **RT firmware:** publish `0x211` from the mode SYS broadcasts.
-- **Bridge:** report the richer mode states (e.g. "not ready", "disengaged") and include the
-  reject reason in the engage answer.
-
-### 2.4 Why these are safe to add
-
-RT *receives* commands on the existing drive/brake/light messages. Adding `0x303/0x121/0x211`
-only touches the **feedback** direction, so the command path is untouched. RT's receiver
-ignores unknown message IDs, and the bridge is the only new consumer — old firmware will not
-break.
-
-### 2.5 Orphans kept
+### 2.4 Orphans kept
 
 Not used by stock Universe, but kept for tooling/future use: obstacle distance, PID
 telemetry, HMI mode request, headlight bits, brake/diagnostic reports. None are removed.
@@ -274,35 +276,47 @@ telemetry, HMI mode request, headlight bits, brake/diagnostic reports. None are 
 
 The **control_toolkit** (our bench engineering tool) talks **directly to the CAN bus** via a
 USB adapter — it does NOT go through the bridge. It can replace the Jetson/Host role during
-bench testing by sending the same CAN messages the bridge would (drive command, heartbeat,
-mode request, ESTOP). In production, the bridge talks to Autoware + CAN; in bench testing,
+bench testing by sending the same CAN messages the bridge would (mode request, drive command,
+direct steering, heartbeat, ESTOP). The toolkit may send `0x111` with the same rolling-counter
+rules when mode testing is explicitly armed and propulsion is safely inhibited. In production,
+the bridge talks to Autoware + CAN; in bench testing,
 the control_toolkit talks to CAN directly. They are parallel paths, not chained.
 
-The control_toolkit already implements the same CAN protocol (same message codecs from the
-shared `etrike_protocol` package), so its mode/ESTOP/gear handling is a reference for how the
-bridge should work. The bridge just adds the Autoware ROS layer on top.
+The control_toolkit uses the same generated protocol codecs. Its mode, command, ESTOP, gear,
+and new `0x303` behavior provide bench coverage for the bridge path.
 
 ---
 
 ## Rollout
 
-**Phase 1 — make it drive (bridge only):**
-1. Rewrite the bridge and test against a virtual CAN bus (no firmware needed).
-2. Add the 4 small ROS packages and the Autoware limit settings.
-3. Validate end-to-end in simulation, then on the real trike (wheels lifted).
+**Phase 1 — bridge port and Autoware integration:**
+1. Rewrite the bridge for the pinned Universe message, service, topic, and QoS interfaces.
+2. Add the bridge, exported protocol, E-Trike launch, and vehicle-description ROS packages;
+   load parameters and ensure lifecycle activation works.
+3. Implement the two-layer gate: HMI or Autoware requests mode through `0x111`, SYS confirms
+   physical mode, and engage enables or suppresses Host motion transmission.
+4. Add bridge unit tests and `vcan` integration tests.
 
-**Phase 2 — fidelity & standstill steering (optional, planned):**
-4. Add the `0x303` angle message + RT firmware (steering while parked).
-5. Add `0x121` motion report and `0x211` mode detail; bridge consumes them.
-6. Regenerate codecs and re-validate.
+**Phase 2 — required RT/protocol/tooling work:**
+5. Add `0x303` and `0x121` contracts, golden vectors, and regenerated codecs.
+6. Implement direct standstill steering and coherent motion reporting in RT.
+7. Update control-toolkit, simulation, native tests, debug-tool, and vt-console as applicable.
 
-Phase 1 alone is enough to drive. Phase 2 is included in the plan so the work is scoped and
-ready, not an afterthought.
+**Phase 3 — staged validation:**
+8. Validate HMI-direct, HMI-via-Jetson, Autoware-service, and toolkit mode requests through RT
+   to SYS. Confirm rolling counters, ESTOP rejection, confirmed `0x210` feedback, and no motion
+   before SYS AUTO plus engage. Run injected mode tests with propulsion inhibited.
+9. Test on the real trike with propulsion disabled, then wheels lifted: signs, limits, gear,
+   PARK hold, HMI/manual takeover, ESTOP/reset, timeouts, and CAN failure.
+10. Permit ground motion only after all required tests pass and evidence is recorded.
+
+All three phases are required. Phase 2 is not optional.
 
 ---
 
 ## What stays the same (no change)
 
-The wired command format, the safety layering, the heartbeat messages, the split between the
-two buses, the steering/brake motor protocols, the brake-pressure path, and the emergency-stop
-behavior. The bridge is the only piece that must change to get moving.
+All existing CAN frame layouts, the safety layering, heartbeat messages, bus split,
+steering/brake motor protocols, brake-pressure path, physical/HMI mode authority, and
+emergency-stop behavior remain compatible. The additive `0x303` and `0x121` messages change
+only the Host↔RT interface; SYS and MTR firmware remain unchanged.
