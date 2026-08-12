@@ -1,7 +1,8 @@
-import { ID_HOST_DRIVE_CMD, ID_HOST_BRAKE_REQ, ID_HOST_HEARTBEAT } from "@etrike/debug-shared";
+import { ID_HOST_DRIVE_CMD, ID_HOST_STEER_CMD, ID_HOST_BRAKE_REQ, ID_HOST_HEARTBEAT } from "@etrike/debug-shared";
 /**
  * HOST model — drive-by-wire commander.
- * Generates 0x300 (drive), 0x301 (brake), 0x7FC (heartbeat).
+ * Generates 0x300 (drive), 0x303 (direct steering), 0x301 (brake),
+ * and 0x7FC (heartbeat).
  * Speed/brake/gear/yaw are set externally (keyboard/controller/scenario).
  */
 import { decoder } from "@etrike/debug-shared";
@@ -13,9 +14,12 @@ export class HostModel implements EcuModel {
 
   speedMmps = 0;
   yawMradS = 0;
+  steerAngle01deg = 0;
+  steerAngleValid = true;
   gear = 1; // D
   brakeKpa = 0;
   private hbCounter = 0;
+  private steerCounter = 0;
   private callbacks: Array<(frame: CanFrame) => void> = [];
   private frameQueue: CanFrame[] = [];
   private tickCount = 0;
@@ -32,11 +36,18 @@ export class HostModel implements EcuModel {
     this.frameQueue = [];
     this.hbCounter = (this.hbCounter + 1) & 0xFF;
 
-    // Drive command 0x300 (50 Hz)
-    if (this.tickCount % 2 === 0) {
+    // Motion commands 0x300 + 0x303 (100 Hz)
+    if (this.tickCount % 1 === 0) {
       const s = Math.round(this.speedMmps);
       const y = Math.round(this.yawMradS);
       this.emit("high", ID_HOST_DRIVE_CMD, "HOST_DRIVE_CMD", { speed_mmps: s, yaw_rate_mrad_s: y, gear: this.gear });
+      this.emit("high", ID_HOST_STEER_CMD, "HOST_STEER_CMD", {
+        steer_angle_0_1deg: Math.round(this.steerAngle01deg),
+        angle_valid: this.steerAngleValid ? 1 : 0,
+        reserved: 0,
+        rolling_counter: this.steerCounter,
+      });
+      this.steerCounter = (this.steerCounter + 1) & 0xFF;
     }
 
     // Brake request 0x301 (10 Hz) — only when braking
