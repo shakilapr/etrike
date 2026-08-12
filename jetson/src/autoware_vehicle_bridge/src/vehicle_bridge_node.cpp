@@ -258,6 +258,14 @@ bool CanEncoder::encode_estop(struct can_frame & frame)
          to_socket_frame(encoded, frame);
 }
 
+bool CanEncoder::encode_mode_request(bool autonomous, struct can_frame & frame)
+{
+  messages::HmiModeReq message{autonomous, mode_request_ctr_++};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
 // =====================================================================
 //  CanDecoder
 // =====================================================================
@@ -530,7 +538,9 @@ CallbackReturn VehicleBridgeNode::on_cleanup(const State &)
   timer_diag_.reset();
   encoder_.reset();
   decoder_.reset();
-  engaged_ = false;
+  engaged_.store(false, std::memory_order_relaxed);
+  confirmed_auto_.store(false, std::memory_order_relaxed);
+  software_emergency_.store(false, std::memory_order_relaxed);
   rt_heartbeat_ = HeartbeatMonitor{};
   return CallbackReturn::SUCCESS;
 }
@@ -583,20 +593,41 @@ void VehicleBridgeNode::on_hazard(const autoware_vehicle_msgs::msg::HazardLights
 
 void VehicleBridgeNode::on_engage(const autoware_vehicle_msgs::msg::Engage::SharedPtr msg)
 {
-  engaged_ = msg->engage;
-  RCLCPP_INFO(get_logger(), "Engage: %s", engaged_ ? "ON" : "OFF");
+  engaged_.store(msg->engage, std::memory_order_relaxed);
+  RCLCPP_INFO(get_logger(), "Engage: %s", msg->engage ? "ON" : "OFF");
 }
 
 void VehicleBridgeNode::on_control_mode(
   const std::shared_ptr<autoware_vehicle_msgs::srv::ControlModeCommand::Request> request,
   std::shared_ptr<autoware_vehicle_msgs::srv::ControlModeCommand::Response> response)
 {
-  response->success = request->mode == autoware_vehicle_msgs::srv::ControlModeCommand::Request::AUTONOMOUS ||
-    request->mode == autoware_vehicle_msgs::srv::ControlModeCommand::Request::MANUAL;
+  using Request = autoware_vehicle_msgs::srv::ControlModeCommand::Request;
+  if (request->mode != Request::AUTONOMOUS && request->mode != Request::MANUAL) {
+    response->success = false;
+    return;
+  }
+  if (!encoder_ || !can_->is_open() || software_emergency_.load(std::memory_order_relaxed)) {
+    response->success = false;
+    return;
+  }
+
+  struct can_frame frame;
+  response->success = encoder_->encode_mode_request(request->mode == Request::AUTONOMOUS, frame) &&
+    can_->send(frame);
+  if (response->success && request->mode == Request::MANUAL) {
+    engaged_.store(false, std::memory_order_relaxed);
+  }
 }
 
-void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr /*msg*/)
+void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr msg)
 {
+  software_emergency_.store(msg->emergency, std::memory_order_relaxed);
+  if (!msg->emergency) {
+    // Stop asserting ESTOP. Physical recovery remains exclusively with SYS/operator input.
+    return;
+  }
+  engaged_.store(false, std::memory_order_relaxed);
+
   // Rate-limited: max 1 ESTOP frame per 500ms from Host
   auto n = now();
   if ((n - last_estop_tx_).seconds() * 1000.0 < 500.0) return;
@@ -625,7 +656,11 @@ void VehicleBridgeNode::tick_control()
         to_socket_frame(encoded, z)) can_->send(z);
     return;
   }
-  if (!engaged_) return;
+  const bool motion_enabled = engaged_.load(std::memory_order_relaxed) &&
+    confirmed_auto_.load(std::memory_order_relaxed) &&
+    !software_emergency_.load(std::memory_order_relaxed) &&
+    sys_estop_active_.load(std::memory_order_relaxed) == 0;
+  if (!motion_enabled) return;
 
   // Snapshot latest commands
   autoware_control_msgs::msg::Control::SharedPtr ctrl;
@@ -700,7 +735,12 @@ void VehicleBridgeNode::tick_diagnostics()
   };
 
   add("CAN", can_->is_open(), can_->is_open() ? "connected" : "disconnected");
-  add("Engage", engaged_, engaged_ ? "engaged" : "disengaged");
+  const bool engaged = engaged_.load(std::memory_order_relaxed);
+  add("Engage", engaged, engaged ? "engaged" : "disengaged");
+  add("Confirmed mode", confirmed_auto_.load(std::memory_order_relaxed),
+      confirmed_auto_.load(std::memory_order_relaxed) ? "AUTO" : "not AUTO");
+  add("Software emergency", !software_emergency_.load(std::memory_order_relaxed),
+      software_emergency_.load(std::memory_order_relaxed) ? "asserted" : "clear");
   add("RT Heartbeat", rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms),
       rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms) ? "alive" : "timeout");
   uint8_t hb = sys_heartbeat_ok_.load(std::memory_order_relaxed);
@@ -787,6 +827,11 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     }
 
     case CAN_STATE_RPT: {
+      messages::RtStateRpt value{};
+      if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
+      confirmed_auto_.store(
+        value.mode == messages::RtStateRpt::kModeAuto && value.safety_state == 0,
+        std::memory_order_relaxed);
       autoware_vehicle_msgs::msg::ControlModeReport mode;
       autoware_vehicle_msgs::msg::GearReport gear;
       if (decoder_->decode_state(frame, mode, gear)) {
