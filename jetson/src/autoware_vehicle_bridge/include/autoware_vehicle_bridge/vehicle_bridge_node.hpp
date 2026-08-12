@@ -103,10 +103,12 @@ public:
 
   bool encode_heartbeat(struct can_frame & frame);
   bool encode_estop(struct can_frame & frame);
+  bool encode_mode_request(bool autonomous, struct can_frame & frame);
 
 private:
   const VehicleParams & params_;
   uint8_t host_alive_ctr_{0};
+  uint8_t mode_request_ctr_{0};
 
   int32_t speed_to_mmps(float speed_ms) const;
   int32_t steering_to_yaw(float angle_rad, float speed_ms) const;
@@ -201,7 +203,9 @@ private:
   autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr latest_turn_;
   autoware_vehicle_msgs::msg::HazardLightsCommand::SharedPtr latest_hazard_;
   rclcpp::Time last_cmd_time_;
-  bool engaged_{false};
+  std::atomic<bool> engaged_{false};
+  std::atomic<bool> confirmed_auto_{false};
+  std::atomic<bool> software_emergency_{false};
 
   // ---- Heartbeat ----
   HeartbeatMonitor rt_heartbeat_;
