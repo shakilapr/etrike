@@ -641,6 +641,9 @@ bool VehicleBridgeNode::load_parameters()
 void VehicleBridgeNode::on_control(const autoware_control_msgs::msg::Control::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (software_emergency_.load(std::memory_order_relaxed)) {
+    return;
+  }
   latest_control_ = msg;
   last_cmd_time_ = now();
 }
