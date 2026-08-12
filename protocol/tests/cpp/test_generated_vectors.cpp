@@ -31,10 +31,19 @@ void check_vector(const Message& value, const std::array<std::uint8_t, Size>& ex
     CHECK(frame.id == Message::kId);
     CHECK(frame.extended == Message::kExtended);
     CHECK(frame.dlc == Message::kDlc);
-    for (std::size_t index = 0; index < Size; ++index) CHECK(frame.data[index] == expected[index]);
+    if constexpr (Size > 0) {
+        for (std::size_t index = 0; index < Size; ++index) {
+            CHECK(frame.data[index] == expected[index]);
+        }
+    }
     std::printf("VECTOR %.*s ", static_cast<int>(Message::kKey.size()), Message::kKey.data());
-    if constexpr (Size == 0) std::printf("-");
-    for (std::size_t index = 0; index < Size; ++index) std::printf("%02x", frame.data[index]);
+    if constexpr (Size == 0) {
+        std::printf("-");
+    } else {
+        for (std::size_t index = 0; index < Size; ++index) {
+            std::printf("%02x", frame.data[index]);
+        }
+    }
     std::printf("\n");
 
     Message decoded{};
@@ -244,7 +253,7 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-    CHECK(etrike::protocol::kMessages.size() == 42);
+    CHECK(etrike::protocol::kMessages.size() == 44);
     CHECK(etrike::protocol::kRoutes.size() == 9);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);
