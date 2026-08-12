@@ -1,5 +1,5 @@
 {
-  "baseline_version": "current-wire-2026-07-14",
+  "baseline_version": "universe-phase2-2026-08-12",
   "frozen": true,
   "source_contracts": ["shared/can/can_high.yaml", "shared/can/can_low.yaml", "pwt-esp32/can_powertrain.yaml"],
   "source_hashes": {
@@ -13,12 +13,14 @@
     ["high","0x111","standard","hmi:hmi_mode_req",2,1000,"HMI",["SYS","Host"]],
     ["high","0x112","standard","hmi:hmi_pwr_req",2,1000,"HMI",["SYS"]],
     ["high","0x120","standard","mtr:sys_throttle_sts",2,10,"MTR",["RT","Host"]],
+    ["high","0x121","standard","rt:rt_motion_rpt",8,10,"RT",["Host"]],
     ["high","0x206","standard","mtr:mtr_motor_fbk",4,20,"MTR",["RT","SYS","Host"]],
     ["high","0x210","standard","rt:rt_state_rpt",6,100,"RT",["Host","SYS"]],
     ["high","0x220","standard","rt:rt_pid_rpt",6,100,"RT",["Host"]],
     ["high","0x300","standard","host:host_drive_cmd",8,10,"Host",["RT"]],
     ["high","0x301","standard","host:host_brake_req",4,0,"Host",["RT"]],
     ["high","0x302","standard","host:host_light_cmd",1,0,"Host",["RT","SYS"]],
+    ["high","0x303","standard","host:host_steer_cmd",4,10,"Host",["RT"]],
     ["high","0x310","standard","rt:steer_diag",8,100,"RT",["Host"]],
     ["high","0x311","standard","rt:brake_diag",8,100,"RT",["Host"]],
     ["high","0x400","standard","host:host_obstacle_dist",4,100,"Host",["RT"]],

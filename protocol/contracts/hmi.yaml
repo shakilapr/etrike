@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "messages": [
-    {"key":"hmi_mode_req","owner":"hmi","protocol":"etrike.application.v1","name":"HMI_MODE_REQ","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+    {"key":"hmi_mode_req","owner":"hmi","protocol":"etrike.application.v1","name":"HMI_MODE_REQ","comment":"Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"req_mode","byte":0,"bit":0,"bits":8,"min":0,"max":1,"enum":{"0":"MANUAL","1":"AUTO"}},
       {"key":"rolling_counter","byte":1,"bit":0,"bits":8}
     ]},"instances":[

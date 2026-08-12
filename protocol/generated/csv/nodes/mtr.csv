@@ -1,7 +1,7 @@
 Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,Bit,Size,Type,Scale,Range,Unit,Description
 0x001,SAFETY_ESTOP_high,Any,"SYS, Host, MTR, DCDC",0,0,(No signals/Opaque),,,,,,,,
 0x001,SAFETY_ESTOP_low,Any,"SYS, Host, MTR, DCDC",0,0,(No signals/Opaque),,,,,,,,
-0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",1,0,mode,0,0,8,unsigned,1,"[0, 2]",,
+0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",1,1000,mode,0,0,8,unsigned,1,"[0, 2]",,
 0x120,SYS_THROTTLE_STS_low,MTR,"RT, Host",2,10,speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 0x120,SYS_THROTTLE_STS_high,MTR,"RT, Host",2,10,speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 0x204,RT_DRIVE_CMD_low,RT,"SYS, MTR",5,10,motor_speed_mmps,0,0,32,signed,1,"[-500, 3000]",,

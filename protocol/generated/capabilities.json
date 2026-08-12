@@ -52,6 +52,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "host:host_steer_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:mtr_motor_fbk",
         "payload": "typed",
         "semantic_decode": true,
@@ -95,6 +102,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_motion_rpt",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -278,6 +292,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "host:host_steer_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:mtr_motor_fbk",
         "payload": "typed",
         "semantic_decode": true,
@@ -321,6 +342,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_heartbeat",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_motion_rpt",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -504,6 +532,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "host:host_steer_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:mtr_motor_fbk",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -547,6 +582,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_heartbeat",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_motion_rpt",
         "payload": "raw_compatibility",
         "semantic_decode": false,
         "strategy": "generated"
@@ -679,8 +721,8 @@
       }
     ]
   },
-  "network_hash": "d97449c7e8f29cd884a2bc1d4d0c9759cfec7255bffdefbf102f3db26bd44887",
+  "network_hash": "81c2981c7c4b34ed25ec026b4c26527f08dbc46da0a0eb781ace04908e3a755e",
   "schema_version": 1,
-  "semantic_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a",
-  "wire_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a"
+  "semantic_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c",
+  "wire_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c"
 }

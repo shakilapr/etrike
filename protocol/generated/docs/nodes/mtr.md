@@ -37,7 +37,7 @@
 - **Sender:** SYS
 - **Receivers:** RT, MTR
 - **DLC:** 1 bytes
-- **Cycle:** 0 ms (0 = event-based)
+- **Cycle:** 1000 ms (0 = event-based)
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|

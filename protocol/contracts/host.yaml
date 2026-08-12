@@ -15,6 +15,11 @@
       {"bus":"high","id":"0x302","frame_format":"standard","sender":"Host","receivers":["RT","SYS"],"cycle_ms":0,"semantics":"independent"},
       {"bus":"low","id":"0x302","frame_format":"standard","sender":"Host","receivers":["RT","SYS"],"cycle_ms":0,"semantics":"same_frame"}
     ]},
+    {"key":"host_steer_cmd","owner":"host","protocol":"etrike.application.v1","name":"HOST_STEER_CMD","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"steer_angle_0_1deg","byte":0,"bit":0,"bits":16,"signed":true,"min":-450,"max":450},
+      {"key":"angle_valid","byte":2,"bit":0,"bits":1},{"key":"reserved","byte":2,"bit":1,"bits":7,"constant":0},
+      {"key":"rolling_counter","byte":3,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[{"bus":"high","id":"0x303","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":10,"semantics":"independent"}]},
     {"key":"host_obstacle_dist","owner":"host","protocol":"etrike.application.v1","name":"HOST_OBSTACLE_DIST","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"distance_mm","byte":0,"bit":0,"bits":32,"min":0,"max":4294967295,"enum":{"4294967295":"clear"}}
     ]},"instances":[{"bus":"high","id":"0x400","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":100,"semantics":"independent"}]},

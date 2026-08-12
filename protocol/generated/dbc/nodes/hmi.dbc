@@ -25,6 +25,8 @@ BO_ 274 HMI_PWR_REQ_low: 2 HMI
  SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS
 
 
+CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.";
+CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.";
 
 
 

@@ -10,14 +10,14 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a";
+inline constexpr std::string_view kSemanticHash = "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "d97449c7e8f29cd884a2bc1d4d0c9759cfec7255bffdefbf102f3db26bd44887";
+inline constexpr std::string_view kNetworkHash = "81c2981c7c4b34ed25ec026b4c26527f08dbc46da0a0eb781ace04908e3a755e";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 42> kMessages{{
+inline constexpr std::array<MessageMetadata, 44> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
@@ -28,6 +28,7 @@ inline constexpr std::array<MessageMetadata, 42> kMessages{{
     {"host:host_light_cmd", "high", 0x302u, 1u, false, CodecStrategy::Generated},
     {"host:host_light_cmd", "low", 0x302u, 1u, false, CodecStrategy::Generated},
     {"host:host_obstacle_dist", "high", 0x400u, 4u, false, CodecStrategy::Generated},
+    {"host:host_steer_cmd", "high", 0x303u, 4u, false, CodecStrategy::Generated},
     {"mtr:mtr_motor_fbk", "high", 0x206u, 4u, false, CodecStrategy::Generated},
     {"mtr:mtr_motor_fbk", "low", 0x206u, 4u, false, CodecStrategy::Generated},
     {"mtr:sys_throttle_sts", "high", 0x120u, 2u, false, CodecStrategy::Generated},
@@ -38,6 +39,7 @@ inline constexpr std::array<MessageMetadata, 42> kMessages{{
     {"rt:rt_drive_cmd", "low", 0x204u, 5u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "high", 0x7FDu, 2u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "low", 0x7FDu, 2u, false, CodecStrategy::Generated},
+    {"rt:rt_motion_rpt", "high", 0x121u, 8u, false, CodecStrategy::Generated},
     {"rt:rt_pid_rpt", "high", 0x220u, 6u, false, CodecStrategy::Generated},
     {"rt:rt_state_rpt", "high", 0x210u, 6u, false, CodecStrategy::Generated},
     {"rt:rt_state_rpt", "low", 0x210u, 6u, false, CodecStrategy::Generated},
@@ -621,6 +623,96 @@ inline CodecStatus decode_host_obstacle_dist(FrameView frame, HostObstacleDist& 
 
 inline CodecStatus encode(const HostObstacleDist& value, Frame& out) noexcept { return encode_host_obstacle_dist(value, out); }
 inline CodecStatus decode(FrameView frame, HostObstacleDist& out) noexcept { return decode_host_obstacle_dist(frame, out); }
+
+struct HostSteerCmd {
+    static constexpr std::string_view kKey = "host:host_steer_cmd";
+    static constexpr std::uint32_t kId = 0x303u;
+    static constexpr std::size_t kDlc = 4u;
+    static constexpr std::uint32_t kCycleMs = 10u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x303u;
+    static constexpr std::uint32_t kHighCycleMs = 10u;
+    static constexpr bool kHighExtended = false;
+    std::int16_t steer_angle_0_1deg{};
+    bool angle_valid{};
+    std::uint8_t reserved{0};
+    std::uint8_t rolling_counter{};
+    struct SteerAngle01degMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct AngleValidMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint8_t kReserved = 0;
+    struct ReservedMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 7u;
+        static constexpr std::uint64_t kMask = 0x7Full;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (steer_angle_0_1deg < -450 || steer_angle_0_1deg > 450) return CodecStatus::ValueOutOfRange;
+        if (reserved != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(steer_angle_0_1deg));
+        detail::insert(payload.data(), 2u, 0u, 1u, false, static_cast<std::uint64_t>(angle_valid));
+        detail::insert(payload.data(), 2u, 1u, 7u, false, static_cast<std::uint64_t>(reserved));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, HostSteerCmd& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        HostSteerCmd value{};
+        const std::uint64_t raw_steer_angle_0_1deg = detail::extract(source, 0u, 0u, 16u, false);
+        value.steer_angle_0_1deg = static_cast<std::int16_t>(detail::sign_extend(raw_steer_angle_0_1deg, 16u));
+        if (value.steer_angle_0_1deg < -450 || value.steer_angle_0_1deg > 450) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_angle_valid = detail::extract(source, 2u, 0u, 1u, false);
+        value.angle_valid = raw_angle_valid != 0u;
+        const std::uint64_t raw_reserved = detail::extract(source, 2u, 1u, 7u, false);
+        if (raw_reserved != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved = static_cast<std::uint8_t>(raw_reserved);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 3u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_host_steer_cmd(const HostSteerCmd& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(HostSteerCmd::kId, static_cast<std::uint8_t>(HostSteerCmd::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), HostSteerCmd::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_host_steer_cmd(FrameView frame, HostSteerCmd& out) noexcept {
+    if (frame.id() != 0x303u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x303u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != HostSteerCmd::kDlc) return CodecStatus::UnexpectedLength;
+    return HostSteerCmd::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const HostSteerCmd& value, Frame& out) noexcept { return encode_host_steer_cmd(value, out); }
+inline CodecStatus decode(FrameView frame, HostSteerCmd& out) noexcept { return decode_host_steer_cmd(frame, out); }
 
 struct MtrMotorFbk {
     static constexpr std::string_view kKey = "mtr:mtr_motor_fbk";
@@ -1224,6 +1316,146 @@ inline CodecStatus decode_rt_heartbeat(FrameView frame, RtHeartbeat& out) noexce
 
 inline CodecStatus encode(const RtHeartbeat& value, Frame& out) noexcept { return encode_rt_heartbeat(value, out); }
 inline CodecStatus decode(FrameView frame, RtHeartbeat& out) noexcept { return decode_rt_heartbeat(frame, out); }
+
+struct RtMotionRpt {
+    static constexpr std::string_view kKey = "rt:rt_motion_rpt";
+    static constexpr std::uint32_t kId = 0x121u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 10u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x121u;
+    static constexpr std::uint32_t kHighCycleMs = 10u;
+    static constexpr bool kHighExtended = false;
+    std::int16_t speed_mmps{};
+    std::int32_t yaw_rate_mrad_s{};
+    std::uint8_t gear{};
+    bool speed_valid{};
+    bool yaw_rate_valid{};
+    bool gear_valid{};
+    std::uint8_t reserved{0};
+    std::uint8_t rolling_counter{};
+    struct SpeedMmpsMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct YawRateMradSMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 24u;
+        static constexpr std::uint64_t kMask = 0xFFFFFFull;
+    };
+    static constexpr std::uint8_t kGearN = 0;
+    static constexpr std::uint8_t kGearD = 1;
+    static constexpr std::uint8_t kGearS = 2;
+    static constexpr std::uint8_t kGearR = 3;
+    struct GearMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct SpeedValidMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct YawRateValidMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct GearValidMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint8_t kReserved = 0;
+    struct ReservedMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 5u;
+        static constexpr std::uint64_t kMask = 0x1Full;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 7u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (speed_mmps < -500 || speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        if (yaw_rate_mrad_s < -3000 || yaw_rate_mrad_s > 3000) return CodecStatus::ValueOutOfRange;
+        if (gear > 3) return CodecStatus::ValueOutOfRange;
+        if (gear != 0 && gear != 1 && gear != 2 && gear != 3) return CodecStatus::InvalidEnum;
+        if (reserved != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(speed_mmps));
+        detail::insert(payload.data(), 2u, 0u, 24u, false, static_cast<std::uint64_t>(yaw_rate_mrad_s));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(gear));
+        detail::insert(payload.data(), 6u, 0u, 1u, false, static_cast<std::uint64_t>(speed_valid));
+        detail::insert(payload.data(), 6u, 1u, 1u, false, static_cast<std::uint64_t>(yaw_rate_valid));
+        detail::insert(payload.data(), 6u, 2u, 1u, false, static_cast<std::uint64_t>(gear_valid));
+        detail::insert(payload.data(), 6u, 3u, 5u, false, static_cast<std::uint64_t>(reserved));
+        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, RtMotionRpt& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        RtMotionRpt value{};
+        const std::uint64_t raw_speed_mmps = detail::extract(source, 0u, 0u, 16u, false);
+        value.speed_mmps = static_cast<std::int16_t>(detail::sign_extend(raw_speed_mmps, 16u));
+        if (value.speed_mmps < -500 || value.speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_yaw_rate_mrad_s = detail::extract(source, 2u, 0u, 24u, false);
+        value.yaw_rate_mrad_s = static_cast<std::int32_t>(detail::sign_extend(raw_yaw_rate_mrad_s, 24u));
+        if (value.yaw_rate_mrad_s < -3000 || value.yaw_rate_mrad_s > 3000) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_gear = detail::extract(source, 5u, 0u, 8u, false);
+        value.gear = static_cast<std::uint8_t>(raw_gear);
+        if (value.gear > 3) return CodecStatus::ValueOutOfRange;
+        if (value.gear != 0 && value.gear != 1 && value.gear != 2 && value.gear != 3) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_speed_valid = detail::extract(source, 6u, 0u, 1u, false);
+        value.speed_valid = raw_speed_valid != 0u;
+        const std::uint64_t raw_yaw_rate_valid = detail::extract(source, 6u, 1u, 1u, false);
+        value.yaw_rate_valid = raw_yaw_rate_valid != 0u;
+        const std::uint64_t raw_gear_valid = detail::extract(source, 6u, 2u, 1u, false);
+        value.gear_valid = raw_gear_valid != 0u;
+        const std::uint64_t raw_reserved = detail::extract(source, 6u, 3u, 5u, false);
+        if (raw_reserved != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved = static_cast<std::uint8_t>(raw_reserved);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 7u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_rt_motion_rpt(const RtMotionRpt& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(RtMotionRpt::kId, static_cast<std::uint8_t>(RtMotionRpt::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), RtMotionRpt::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_rt_motion_rpt(FrameView frame, RtMotionRpt& out) noexcept {
+    if (frame.id() != 0x121u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x121u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != RtMotionRpt::kDlc) return CodecStatus::UnexpectedLength;
+    return RtMotionRpt::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const RtMotionRpt& value, Frame& out) noexcept { return encode_rt_motion_rpt(value, out); }
+inline CodecStatus decode(FrameView frame, RtMotionRpt& out) noexcept { return decode_rt_motion_rpt(frame, out); }
 
 struct RtPidRpt {
     static constexpr std::string_view kKey = "rt:rt_pid_rpt";
