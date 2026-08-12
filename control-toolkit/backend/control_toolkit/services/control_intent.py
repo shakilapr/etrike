@@ -1,10 +1,11 @@
-"""Keyboard/gamepad intent → shaped HOST_DRIVE_CMD (Phase 7, virtual).
+"""Keyboard/gamepad intent → shaped Host drive and steering commands.
 
 Limits and stale timeout mirror firmware shared_config / host.yaml:
   speed_mmps [-500, 3000], yaw_rate_mrad_s [-3000, 3000]
   gear 0=N 1=D 2=S 3=R
   host command stale ~500 ms (shared::kHostCmdStaleTimeoutMs)
   nominal HOST_DRIVE_CMD cycle 10 ms (protocol cycle_ms)
+  nominal HOST_STEER_CMD cycle 10 ms (protocol cycle_ms)
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ MAX_SPEED_REV_MMPS = 500
 MAX_YAW_MRAD_S = 3000
 HOST_CMD_STALE_S = 0.5
 HOST_DRIVE_PERIOD_MS = 10.0
+HOST_STEER_PERIOD_MS = 10.0
 HOST_HEARTBEAT_PERIOD_MS = 500.0
 DEADBAND = 0.05
 GEAR_N, GEAR_D, GEAR_S, GEAR_R = 0, 1, 2, 3
@@ -52,6 +54,7 @@ class IntentState:
     estop: bool = False
     last_mono: float = 0.0
     job_id: str | None = None
+    steer_job_id: str | None = None
     heartbeat_job_id: str | None = None
     lease_owner: str = "control:keyboard"
     shaped_speed: int = 0
@@ -164,7 +167,7 @@ class ControlIntentService:
             # Lease owner reflects producer (drive_console vs keyboard) so
             # ownership conflicts are diagnosable.
             new_owner = _lease_owner_for_source(source)
-            if st.job_id and st.lease_owner != new_owner:
+            if (st.job_id or st.steer_job_id) and st.lease_owner != new_owner:
                 self._cancel_job_locked()
             st.lease_owner = new_owner
 
@@ -294,7 +297,7 @@ class ControlIntentService:
                 return
             if time.monotonic() - self._state.last_mono <= HOST_CMD_STALE_S:
                 return
-            had_kinematics = bool(self._state.job_id)
+            had_kinematics = bool(self._state.job_id or self._state.steer_job_id)
             direct_channels = list(self._state.direct_jobs.keys())
             self._zero_locked()
             self._cancel_job_locked()
@@ -311,6 +314,20 @@ class ControlIntentService:
                         "speed_mmps": 0,
                         "yaw_rate_mrad_s": 0,
                         "gear": GEAR_N,
+                    },
+                    owner=self._state.lease_owner,
+                    source=FrameSource.INJECTION,
+                    claim_ownership=True,
+                    lease_ttl_s=1.0,
+                )
+                self._tx.submit(
+                    bus="high",
+                    key="host:host_steer_cmd",
+                    values={
+                        "steer_angle_0_1deg": 0,
+                        "angle_valid": False,
+                        "reserved": 0,
+                        "rolling_counter": 0,
                     },
                     owner=self._state.lease_owner,
                     source=FrameSource.INJECTION,
@@ -358,31 +375,56 @@ class ControlIntentService:
         return speed, yaw, gear
 
     def _ensure_job_locked(self, speed: int, yaw: int, gear: int) -> None:
-        values = {
+        drive_values = {
             "speed_mmps": speed,
             "yaw_rate_mrad_s": yaw,
             "gear": gear,
         }
-        if self._state.job_id and self._scheduler.update_values(
-            self._state.job_id, values
-        ):
+        steer_values = {
+            "steer_angle_0_1deg": int(round(self._state.steer * 450.0)),
+            "angle_valid": True,
+            "reserved": 0,
+            "rolling_counter": 0,
+        }
+        drive_updated = bool(self._state.job_id) and self._scheduler.update_values(
+            self._state.job_id, drive_values
+        )
+        steer_updated = bool(self._state.steer_job_id) and self._scheduler.update_values(
+            self._state.steer_job_id, steer_values
+        )
+        if drive_updated and steer_updated:
             return
         if self._state.job_id:
             self._scheduler.cancel(self._state.job_id)
             self._state.job_id = None
+        if self._state.steer_job_id:
+            self._scheduler.cancel(self._state.steer_job_id)
+            self._state.steer_job_id = None
         self._state.job_id = self._scheduler.schedule(
             bus="high",
             key="host:host_drive_cmd",
-            values=values,
+            values=drive_values,
             period_ms=HOST_DRIVE_PERIOD_MS,
             owner=self._state.lease_owner,
             source=FrameSource.INJECTION,
+        )
+        self._state.steer_job_id = self._scheduler.schedule(
+            bus="high",
+            key="host:host_steer_cmd",
+            values=steer_values,
+            period_ms=HOST_STEER_PERIOD_MS,
+            owner=self._state.lease_owner,
+            source=FrameSource.INJECTION,
+            counter_field="rolling_counter",
         )
 
     def _cancel_job_locked(self) -> None:
         if self._state.job_id:
             self._scheduler.cancel(self._state.job_id)
             self._state.job_id = None
+        if self._state.steer_job_id:
+            self._scheduler.cancel(self._state.steer_job_id)
+            self._state.steer_job_id = None
         if self._state.heartbeat_job_id:
             self._scheduler.cancel(self._state.heartbeat_job_id)
             self._state.heartbeat_job_id = None
@@ -527,6 +569,7 @@ class ControlIntentService:
             "command_age_s": age,
             "stale_timeout_s": HOST_CMD_STALE_S,
             "job_id": s.job_id,
+            "steer_job_id": s.steer_job_id,
             "heartbeat_job_id": s.heartbeat_job_id,
             "loss_reason": s.loss_reason,
             "direct_channels": list(s.direct_jobs.keys()),
@@ -536,6 +579,8 @@ class ControlIntentService:
                     "bus": "high",
                     "message": "HOST_DRIVE_CMD",
                     "can_id": 0x300,
+                    "steering_message": "HOST_STEER_CMD",
+                    "steering_can_id": 0x303,
                     "owner_role": "Host intent; RT runs kinematics",
                     "period_ms": HOST_DRIVE_PERIOD_MS,
                     "heartbeat_period_ms": HOST_HEARTBEAT_PERIOD_MS,

@@ -11,7 +11,7 @@ def test_status_ok(client):
     body = r.json()
     assert body["ready"] is True
     assert body["wire_hash"] == proto.WIRE_HASH
-    assert body["catalog"] == {"messages": 32, "instances": 42}
+    assert body["catalog"] == {"messages": 34, "instances": 44}
     # Top-level profile follows session (default pure_software with no session).
     assert body["profile"] == "pure_software"
     assert body["default_profile"] == "pure_software"
@@ -53,7 +53,7 @@ def test_state_snapshot_is_valid(client):
 def test_protocol_messages_list(client):
     r = client.get("/api/v1/protocol/messages")
     assert r.status_code == 200
-    assert r.json()["count"] == 32
+    assert r.json()["count"] == 34
 
 
 def test_protocol_message_detail_hex_and_404(client):
