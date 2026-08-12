@@ -198,6 +198,47 @@ describe("0x300 HOST_DRIVE_CMD — real bytes", () => {
   });
 });
 
+describe("Phase 2 Host steering and RT motion frames", () => {
+  it("0x303 carries a valid signed direct angle and advancing counter", () => {
+    const runner = new SimulationRunner();
+    runner.configure({
+      initialMode: "auto",
+      hostDriveCycle: [{
+        durationMs: 99999,
+        speedMmps: 0,
+        yawRateMradS: 0,
+        gear: 1,
+        steerAngle01deg: -123,
+      }],
+    });
+    runner.runDuration(30);
+    const frames = runner.capturedFrames.filter(f => f.canId === "0x303" && f.bus === "high");
+    expect(frames.length).toBeGreaterThanOrEqual(2);
+    expect(frames[0].data).toEqual([0xFF, 0x85, 0x01, 0x00]);
+    expect(frames[1].data[3]).toBe(1);
+  });
+
+  it("0x121 reports physical speed, yaw, gear, validity, and counter", () => {
+    const runner = new SimulationRunner();
+    runner.configure({
+      initialMode: "auto",
+      hostDriveCycle: [{
+        durationMs: 99999,
+        speedMmps: 1000,
+        yawRateMradS: 0,
+        gear: 1,
+        steerAngle01deg: 100,
+      }],
+    });
+    runner.runDuration(800);
+    const frames = runner.capturedFrames.filter(f => f.canId === "0x121" && f.bus === "high");
+    expect(frames.length).toBeGreaterThan(10);
+    const valid = frames.find(f => (f.data[6] & 0x07) === 0x07 && f.data[5] === 1);
+    expect(valid).toBeDefined();
+    expect(frames[1].data[7]).not.toBe(frames[0].data[7]);
+  });
+});
+
 // ═══════════════════════════════════════════════════════════
 //  0x169 VCU_SES_REQ — steer-by-wire LE encoding + checksum
 // ═══════════════════════════════════════════════════════════

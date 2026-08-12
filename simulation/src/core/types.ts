@@ -90,6 +90,8 @@ export interface DriveCycleStep {
   yawRateMradS: number;
   gear: number;
   durationMs: number;
+  /** Direct Host steering angle in signed 0.1° units (right positive). */
+  steerAngle01deg?: number;
 }
 
 // ── Fault injection ────────────────────────────────────────────────

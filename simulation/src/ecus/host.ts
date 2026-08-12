@@ -17,12 +17,19 @@ export class HostEcu implements SimulatedEcu {
   private stepIndex = 0;
   private stepStartMs = 0;
   private heartbeatCtr = 0;
+  private steerCtr = 0;
   private obstacleDistanceMm = 0xFFFFFFFF; // max = clear
 
   // I11: Incoming telemetry store (latest values from 0x210/0x310/0x311)
   private lastRtStateRpt: { mode: number; safetyState: number } | null = null;
   private lastSteerDiag: { angle: number; fault: number } | null = null;
   private lastBrakeDiag: { pressureRaw: number; fault: number } | null = null;
+  private lastMotionRpt: {
+    speedMmps: number;
+    yawRateMradS: number;
+    gear: number;
+    valid: boolean;
+  } | null = null;
 
   /** Latest RT_STATE_RPT (0x210) data. */
   getRtStateRpt(): { mode: number; safetyState: number } | null { return this.lastRtStateRpt; }
@@ -30,6 +37,8 @@ export class HostEcu implements SimulatedEcu {
   getSteerDiag(): { angle: number; fault: number } | null { return this.lastSteerDiag; }
   /** Latest BRAKE_DIAG (0x311) data. */
   getBrakeDiag(): { pressureRaw: number; fault: number } | null { return this.lastBrakeDiag; }
+  /** Latest coherent RT_MOTION_RPT (0x121) data. */
+  getMotionRpt() { return this.lastMotionRpt; }
 
   /** Set the drive cycle. Each step has {speedMmps, yawRateMradS, gear, durationMs}. */
   setDriveCycle(cycle: DriveCycleStep[]): void {
@@ -61,6 +70,16 @@ export class HostEcu implements SimulatedEcu {
 
     // ── Process incoming high-bus telemetry (I11) ───────────────
     for (const f of highBusRx) {
+      const motion = decodeAs(f, "rt:rt_motion_rpt");
+      if (motion !== undefined) {
+        this.lastMotionRpt = {
+          speedMmps: Number(motion.speed_mmps),
+          yawRateMradS: Number(motion.yaw_rate_mrad_s),
+          gear: Number(motion.gear),
+          valid: Boolean(motion.speed_valid && motion.yaw_rate_valid && motion.gear_valid),
+        };
+        continue;
+      }
       const state = decodeAs(f, "rt:rt_state_rpt");
       if (state !== undefined) {
         this.lastRtStateRpt = {
@@ -87,6 +106,7 @@ export class HostEcu implements SimulatedEcu {
     let speed = 0;
     let yaw = 0;
     let gear = 0;
+    let steerAngle01deg = 0;
 
     if (this.driveCycle.length > 0 && this.stepIndex < this.driveCycle.length) {
       const step = this.driveCycle[this.stepIndex];
@@ -100,6 +120,7 @@ export class HostEcu implements SimulatedEcu {
         speed = active.speedMmps;
         yaw = active.yawRateMradS;
         gear = active.gear;
+        steerAngle01deg = active.steerAngle01deg ?? 0;
       }
     }
 
@@ -110,6 +131,16 @@ export class HostEcu implements SimulatedEcu {
         yaw_rate_mrad_s: yaw,
         gear,
       }, "high", "host", nowMs));
+      const hasDirectAngle = this.driveCycle.length > 0
+        && this.stepIndex < this.driveCycle.length
+        && this.driveCycle[this.stepIndex].steerAngle01deg !== undefined;
+      out.push(encodeSimFrame("host:host_steer_cmd", {
+        steer_angle_0_1deg: steerAngle01deg,
+        angle_valid: hasDirectAngle ? 1 : 0,
+        reserved: 0,
+        rolling_counter: this.steerCtr,
+      }, "high", "host", nowMs));
+      this.steerCtr = (this.steerCtr + 1) & 0xFF;
     }
 
     // ── 0x301 HOST_BRAKE_REQ (on demand, sent at 50Hz here) ────
