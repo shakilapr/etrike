@@ -193,6 +193,17 @@ target_include_directories(rt_can_rx_router PRIVATE
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
+add_executable(rt_phase2_motion
+    test/test_rt_phase2_motion.cpp
+)
+target_link_libraries(rt_phase2_motion PRIVATE protocol_headers)
+target_include_directories(rt_phase2_motion PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+)
+
 # ── RT CAN dispatch test ─────────────────────────────────────────────
 add_executable(rt_can_dispatch
     test/test_rt_can_dispatch.cpp
@@ -292,6 +303,7 @@ add_test(NAME protocol_compat      COMMAND protocol_compat)
 add_test(NAME protocol_compat_cpp11 COMMAND protocol_compat_cpp11)
 add_test(NAME mcp2515_config      COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
+add_test(NAME rt_phase2_motion    COMMAND rt_phase2_motion)
 add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
 add_test(NAME sys_can_dispatch    COMMAND sys_can_dispatch)
 add_test(NAME task_watchdog       COMMAND task_watchdog)

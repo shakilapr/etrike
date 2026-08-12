@@ -6,6 +6,7 @@ struct GatewayQueues {
     can::Frame* gw_tx_low=nullptr;
     can::Frame* gw_tx_high=nullptr;
     can::gen::HostDriveCmd* cmd=nullptr;
+    can::gen::HostSteerCmd* steer_cmd=nullptr;
     int32_t* brake_req_kpa=nullptr;
     bool* estop_flag=nullptr;
     uint8_t* mode_from_sys=nullptr;
@@ -32,6 +33,14 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
             auto status = can::decode_frame(f, decoded);
             if (status != can::gen::CodecStatus::Ok) return status;
             *q.brake_req_kpa = decoded.brake_pressure_kpa;
+        }
+        return can::gen::CodecStatus::Ok;
+    case can::kIdHostSteerCmd:  // HOST_STEER_CMD — direct angle consumed by RT
+        if (is_high_bus && q.steer_cmd) {
+            can::gen::HostSteerCmd decoded{};
+            auto status = can::decode_frame(f, decoded);
+            if (status != can::gen::CodecStatus::Ok) return status;
+            *q.steer_cmd = decoded;
         }
         return can::gen::CodecStatus::Ok;
     // HMI/Host controls for SYS are transparent High→Low gateway traffic.
