@@ -48,6 +48,7 @@ struct DispatchContext {
     can::Frame        gw_lo;
     can::Frame        gw_hi;
     can::gen::HostDriveCmd cmd;
+    can::gen::HostSteerCmd steer_cmd;
     int32_t           brake_req_kpa = 0;
     bool              estop_flag    = false;
     uint8_t           mode_from_sys = 0;
@@ -101,6 +102,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     q.gw_tx_low  = &ctx.gw_lo;
     q.gw_tx_high = &ctx.gw_hi;
     q.cmd = &ctx.cmd;
+    q.steer_cmd = &ctx.steer_cmd;
     q.brake_req_kpa = &ctx.brake_req_kpa;
     q.estop_flag = &ctx.estop_flag;
     q.mode_from_sys = &ctx.mode_from_sys;
@@ -149,6 +151,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                 last_eps_roll = roll;
                 g_ses_angle_0_1deg.store(ctx.steer_feedback_angle - rt::kSbwAngleOffset);
                 g_ses_angle_status.store(ctx.steer_angle_status);
+                g_last_ses_feedback_us.store(esp_timer_get_time());
             }
             g_ses_error_status.store(value.error_status);
         }
@@ -159,7 +162,25 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     if (fr.id == can::kIdMtrMotorFbk && !from_high) {
         can::gen::MtrMotorFbk value{};
-        if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) g_mtr_actual_speed_mmps.store(value.actual_speed_mmps);
+        if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) {
+            g_mtr_actual_speed_mmps.store(value.actual_speed_mmps);
+            g_mtr_gear_state.store(value.gear_state);
+            g_last_mtr_feedback_us.store(esp_timer_get_time());
+        }
+    }
+    if (fr.id == can::kIdHostSteerCmd && from_high) {
+        // A repeated counter is a frozen producer, so it must not refresh the
+        // receive timestamp. Any non-zero uint8 delta includes normal wrap.
+        static uint8_t last_counter = 0;
+        static bool first = true;
+        const uint8_t delta = ctx.steer_cmd.rolling_counter - last_counter;
+        if (first || delta != 0) {
+            first = false;
+            last_counter = ctx.steer_cmd.rolling_counter;
+            g_direct_steer_angle_0_1deg.store(ctx.steer_cmd.steer_angle_0_1deg);
+            g_direct_steer_valid.store(ctx.steer_cmd.angle_valid);
+            g_last_direct_steer_us.store(esp_timer_get_time());
+        }
     }
 
     // 0x202 SES_ErrInfo — L3 fault bits → ESTOP (arch §7.3)

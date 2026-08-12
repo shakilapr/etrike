@@ -54,6 +54,27 @@ int main() {
     {
         can::Frame low{}, high{}, fr{};
         can::gen::HostDriveCmd cmd{};
+        can::gen::HostSteerCmd steer_cmd{};
+        int32_t brake_kpa = 0;
+        bool estop = false;
+        uint8_t mode = 0, steer_status = 0;
+        uint16_t steer_angle = 0;
+        auto q = make_queues(low, high, cmd, brake_kpa, estop, mode, steer_angle, steer_status);
+        q.steer_cmd = &steer_cmd;
+
+        can::gen::HostSteerCmd value{-123, true, 0, 42};
+        can::encode_frame(value, fr);
+        CHECK(rt::route_frame(fr, true, q) == can::gen::CodecStatus::Ok);
+        CHECK(steer_cmd.steer_angle_0_1deg == -123);
+        CHECK(steer_cmd.angle_valid);
+        CHECK(steer_cmd.rolling_counter == 42);
+        CHECK(low.id == 0);
+        CHECK(high.id == 0);
+    }
+
+    {
+        can::Frame low{}, high{}, fr{};
+        can::gen::HostDriveCmd cmd{};
         int32_t brake_kpa = 0;
         bool estop = false;
         uint8_t mode = 0, steer_status = 0;

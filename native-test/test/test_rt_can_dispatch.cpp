@@ -31,6 +31,12 @@ std::atomic<int32_t> g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t> g_ses_angle_status{0};
 std::atomic<int32_t> g_brake_kpa_to_send{0};
 std::atomic<int32_t> g_mtr_actual_speed_mmps{0};
+std::atomic<uint8_t> g_mtr_gear_state{uint8_t(can::Gear::N)};
+std::atomic<int32_t> g_direct_steer_angle_0_1deg{0};
+std::atomic<bool> g_direct_steer_valid{false};
+std::atomic<int64_t> g_last_direct_steer_us{-1};
+std::atomic<int64_t> g_last_mtr_feedback_us{-1};
+std::atomic<int64_t> g_last_ses_feedback_us{-1};
 std::atomic<uint8_t> g_mode_current{0};
 std::atomic<bool> g_seb_takeover{false};
 std::atomic<int64_t> g_last_sys_hb_us{0};
@@ -70,6 +76,9 @@ static void reset_state() {
     g_last_sys_hb_us.store(0);
     g_last_host_hb_us.store(0);
     g_last_low_peer_us.store(0);
+    g_last_direct_steer_us.store(-1);
+    g_last_mtr_feedback_us.store(-1);
+    g_last_ses_feedback_us.store(-1);
     esp_timer_test_reset();
 }
 
@@ -140,6 +149,47 @@ int main() {
          CHECK(high_ctx.has_cmd);
          CHECK(high_ctx.cmd.speed_mmps == 500);
      }
+
+    {
+        reset_state();
+        can::Frame fr{};
+        can::gen::HostSteerCmd steer{100, true, 0, 10};
+        can::encode_frame(steer, fr);
+
+        DispatchContext ctx{};
+        esp_timer_test_advance(1000);
+        process_frame(fr, true, ctx);
+        CHECK(g_direct_steer_angle_0_1deg.load() == 100);
+        CHECK(g_direct_steer_valid.load());
+        CHECK(g_last_direct_steer_us.load() == 1000);
+
+        steer.steer_angle_0_1deg = 200;
+        can::encode_frame(steer, fr);
+        esp_timer_test_advance(1000);
+        process_frame(fr, true, ctx);
+        CHECK(g_direct_steer_angle_0_1deg.load() == 100);
+        CHECK(g_last_direct_steer_us.load() == 1000);
+
+        steer.rolling_counter = 11;
+        can::encode_frame(steer, fr);
+        process_frame(fr, true, ctx);
+        CHECK(g_direct_steer_angle_0_1deg.load() == 200);
+        CHECK(g_last_direct_steer_us.load() == 2000);
+    }
+
+    {
+        reset_state();
+        can::Frame fr{};
+        can::gen::MtrMotorFbk feedback{-250, uint8_t(can::Gear::R), 0};
+        can::encode_frame(feedback, fr);
+
+        DispatchContext ctx{};
+        esp_timer_test_advance(3000);
+        process_frame(fr, false, ctx);
+        CHECK(g_mtr_actual_speed_mmps.load() == -250);
+        CHECK(g_mtr_gear_state.load() == uint8_t(can::Gear::R));
+        CHECK(g_last_mtr_feedback_us.load() == 3000);
+    }
  
      {
          can::Frame fr{};

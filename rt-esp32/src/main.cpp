@@ -32,6 +32,7 @@ bool g_bypass_mtr_absent = false;
 #include "brake_arbitration.h"
 #include "seb_request.h"
 #include "encoder_pcnt.h"
+#include "phase2_motion.h"
 
 static const char* TAG = "rt";
 
@@ -68,7 +69,13 @@ std::atomic<int32_t>  g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t>  g_ses_angle_status{0};
 std::atomic<int32_t>  g_brake_kpa_to_send{0};
 std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};
+std::atomic<uint8_t>  g_mtr_gear_state{uint8_t(can::Gear::N)};
 std::atomic<int32_t>  g_encoder_speed_mmps{0};
+std::atomic<int32_t>  g_direct_steer_angle_0_1deg{0};
+std::atomic<bool>     g_direct_steer_valid{false};
+std::atomic<int64_t>  g_last_direct_steer_us{-1};
+std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
+std::atomic<int64_t>  g_last_ses_feedback_us{-1};
 
 // ── Derived state (written by control, read by tx tasks) ────────────
 std::atomic<uint8_t>  g_mode_current{0};
@@ -346,6 +353,16 @@ static void update_low_can_tx_admission(int64_t now_us) {
         g_resolver.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
         sp.cmd_gear = cmd.gear;  // propagate CAN gear override
 
+        can::gen::HostSteerCmd direct_steer{};
+        direct_steer.steer_angle_0_1deg = static_cast<int16_t>(
+            g_direct_steer_angle_0_1deg.load());
+        direct_steer.angle_valid = g_direct_steer_valid.load();
+        // While fresh and valid, 0x303 is authoritative over legacy 0x300 yaw,
+        // including at standstill. On invalid/stale input, legacy resolution
+        // resumes without affecting longitudinal open-loop drive.
+        rt::apply_fresh_direct_steering(direct_steer,
+            g_last_direct_steer_us.load(), esp_timer_get_time(), sp);
+
         uint32_t obs = g_obstacle_mm.load();
         sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
 
@@ -584,6 +601,23 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
             for (int forwarded = 0; forwarded < 8; ++forwarded) {
                 if (!gw_pump(g_gw_tx_high_q, send_can_high, TAG)) break;
+            }
+            // 0x121 RT_MOTION_RPT — coherent 100 Hz measured motion report.
+            // Speed and physical gear share the MTR feedback timestamp; yaw is
+            // valid only when both MTR speed and aligned SES angle are fresh.
+            static uint8_t motion_counter = 0;
+            auto motion = rt::make_motion_report(
+                esp_timer_get_time(),
+                g_mtr_actual_speed_mmps.load(),
+                g_mtr_gear_state.load(),
+                g_last_mtr_feedback_us.load(),
+                g_ses_angle_0_1deg.load(),
+                g_ses_angle_status.load(),
+                g_last_ses_feedback_us.load(),
+                motion_counter);
+            if (can::encode_frame(motion, fr) == can::gen::CodecStatus::Ok
+                && send_can_high(fr)) {
+                ++motion_counter;
             }
             vTaskDelay(pdMS_TO_TICKS(10));
         }
