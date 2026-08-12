@@ -39,6 +39,40 @@ class TestEncoderBasics:
         assert result.dlc > 0
         assert result.can_id == 0x7FC
 
+    def test_encode_host_steer_cmd_round_trip(self, encoder):
+        result = encoder.encode_message(
+            key="host:host_steer_cmd",
+            values={
+                "steer_angle_0_1deg": -125,
+                "angle_valid": 1,
+                "reserved": 0,
+                "rolling_counter": 7,
+            },
+            bus="high",
+        )
+        assert result.ok, f"Encode failed: {result.error}"
+        assert result.can_id == 0x303
+        assert result.dlc == 4
+
+    def test_encode_rt_motion_report_round_trip(self, encoder):
+        result = encoder.encode_message(
+            key="rt:rt_motion_rpt",
+            values={
+                "speed_mmps": 1200,
+                "yaw_rate_mrad_s": -85,
+                "gear": 1,
+                "speed_valid": 1,
+                "yaw_rate_valid": 1,
+                "gear_valid": 1,
+                "reserved": 0,
+                "rolling_counter": 9,
+            },
+            bus="high",
+        )
+        assert result.ok, f"Encode failed: {result.error}"
+        assert result.can_id == 0x121
+        assert result.dlc == 8
+
     def test_encode_all_messages_present(self, encoder):
         """Verify encoder can handle all protocol messages."""
         # This is a smoke test — just verify no crash on catalog access

@@ -167,6 +167,20 @@ class SyntheticPeerEngine:
             counter_max=None,
         ),
         PeerTemplate(
+            name="rt:host_steer_cmd",
+            key="host:host_steer_cmd",
+            bus="high",
+            period_ms=10,
+            startup_values={
+                "steer_angle_0_1deg": 0,
+                "angle_valid": 1,
+                "reserved": 0,
+                "rolling_counter": 0,
+            },
+            counter_field="rolling_counter",
+            counter_max=255,
+        ),
+        PeerTemplate(
             name="rt:host_heartbeat",
             key="host:host_heartbeat",
             bus="high",
