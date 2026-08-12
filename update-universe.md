@@ -116,9 +116,9 @@ upstream is standard Autoware.
 
 | Universe expects | From trike feedback |
 |---|---|
-| Speed report | speed message (`0x120`) |
+| Speed and yaw-rate report | coherent RT motion report (`0x121`) |
 | Steering report | steering-angle message (`0x310`), sign flipped |
-| Gear report | motor feedback (`0x206`) |
+| Gear report | physical gear in coherent RT motion report (`0x121`) |
 | Mode report | RT status (`0x210`) → mapped to autonomous |
 | Turn / hazard reports | SYS safety status (`0x011`) |
 
