@@ -22,6 +22,7 @@
   <depend>tier4_vehicle_msgs</depend>
   <depend>diagnostic_msgs</depend>
   <depend>lifecycle_msgs</depend>
+  <depend>etrike_protocol</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
