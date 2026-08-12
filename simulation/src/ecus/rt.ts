@@ -51,6 +51,15 @@ export class RtEcu implements SimulatedEcu {
   private sesAngleStatus = 0;
   private steerFollowErrTicks = 0;
   private lastCmdAngleRaw: number | null = null;  // 0.1° units, from steering tick
+  private directSteerAngle01deg = 0;
+  private directSteerValid = false;
+  private lastDirectSteerMs = -Infinity;
+  private lastDirectSteerCtr = -1;
+  private measuredSpeedMmps = 0;
+  private physicalGear = 0;
+  private lastMtrFeedbackMs = -Infinity;
+  private lastSesFeedbackMs = -Infinity;
+  private motionCounter = 0;
 
   init(): void {
     this.kinematics.reset();
@@ -73,6 +82,15 @@ export class RtEcu implements SimulatedEcu {
     this.sesAngleStatus = 0;
     this.steerFollowErrTicks = 0;
     this.lastCmdAngleRaw = null;
+    this.directSteerAngle01deg = 0;
+    this.directSteerValid = false;
+    this.lastDirectSteerMs = -Infinity;
+    this.lastDirectSteerCtr = -1;
+    this.measuredSpeedMmps = 0;
+    this.physicalGear = 0;
+    this.lastMtrFeedbackMs = -Infinity;
+    this.lastSesFeedbackMs = -Infinity;
+    this.motionCounter = 0;
   }
 
   shutdown(): void {
@@ -106,6 +124,17 @@ export class RtEcu implements SimulatedEcu {
       const brake = decodeAs(f, "host:host_brake_req");
       if (brake !== undefined) {
         this.hostBrakeKpa = Number(brake.brake_pressure_kpa);
+        continue;
+      }
+      const directSteer = decodeAs(f, "host:host_steer_cmd");
+      if (directSteer !== undefined) {
+        const counter = Number(directSteer.rolling_counter);
+        if (counter !== this.lastDirectSteerCtr) {
+          this.lastDirectSteerCtr = counter;
+          this.directSteerAngle01deg = Number(directSteer.steer_angle_0_1deg);
+          this.directSteerValid = Boolean(directSteer.angle_valid);
+          this.lastDirectSteerMs = nowMs;
+        }
         continue;
       }
       const heartbeat = decodeAs(f, "host:host_heartbeat");
@@ -147,6 +176,15 @@ export class RtEcu implements SimulatedEcu {
       if (steering !== undefined) {
         this.sesAngleRaw = Number(steering.steering_angle_raw);
         this.sesAngleStatus = steering.angle_aligned === true ? 1 : 0;
+        this.lastSesFeedbackMs = nowMs;
+        continue;
+      }
+      const motor = decodeAs(f, "mtr:mtr_motor_fbk");
+      if (motor !== undefined) {
+        this.measuredSpeedMmps = Number(motor.actual_speed_mmps);
+        this.physicalGear = Number(motor.gear_state);
+        this.lastMtrFeedbackMs = nowMs;
+        out.push({ ...f, bus: "high", sender: "rt" });
         continue;
       }
       if (decodeAs(f, "safety:safety_estop") !== undefined) {
@@ -156,7 +194,6 @@ export class RtEcu implements SimulatedEcu {
       if (
         decodeAs(f, "sys:sys_safety_sts") !== undefined ||
         decodeAs(f, "mtr:sys_throttle_sts") !== undefined ||
-        decodeAs(f, "mtr:mtr_motor_fbk") !== undefined ||
         decodeAs(f, "sys:sys_diag_rpt") !== undefined
       ) {
         out.push({ ...f, bus: "high", sender: "rt" });
@@ -188,6 +225,14 @@ export class RtEcu implements SimulatedEcu {
         : this.hostDriveCmd;
 
       const resolved = this.kinematics.resolve(cmd);
+      const directFresh = nowMs - this.lastDirectSteerMs <= 100;
+      if (this.directSteerValid && directFresh) {
+        const dynamicLimit = this.kinematics.getDynamicLimit(resolved.motorSpeedMmps);
+        resolved.steerAngleDeg = Math.max(
+          -dynamicLimit,
+          Math.min(dynamicLimit, this.directSteerAngle01deg * 0.1),
+        );
+      }
 
       // Feed resolved steering target to steering controller (matching C++ main.cpp line 429)
       this.steering.setTarget(
@@ -349,6 +394,27 @@ export class RtEcu implements SimulatedEcu {
         speed_measured: 0,
         pid_output: 0,
       }, "high", "rt", nowMs));
+    }
+
+    // ── RT_MOTION_RPT 0x121 on high bus (100 Hz) ───────────
+    if (nowMs % 10 === 0) {
+      const speedFresh = nowMs - this.lastMtrFeedbackMs <= 100;
+      const steerFresh = nowMs - this.lastSesFeedbackMs <= 100 && this.sesAngleStatus === 1;
+      const angle01deg = this.sesAngleRaw !== null ? this.sesAngleRaw - 30000 : 0;
+      const yaw = speedFresh && steerFresh
+        ? Math.round(this.measuredSpeedMmps * Math.tan(angle01deg * 0.1 * Math.PI / 180) / 1.5)
+        : 0;
+      out.push(encodeSimFrame("rt:rt_motion_rpt", {
+        speed_mmps: this.measuredSpeedMmps,
+        yaw_rate_mrad_s: yaw,
+        gear: this.physicalGear,
+        speed_valid: speedFresh ? 1 : 0,
+        yaw_rate_valid: speedFresh && steerFresh ? 1 : 0,
+        gear_valid: speedFresh ? 1 : 0,
+        reserved: 0,
+        rolling_counter: this.motionCounter,
+      }, "high", "rt", nowMs));
+      this.motionCounter = (this.motionCounter + 1) & 0xFF;
     }
 
     // ── Heartbeats (2 Hz) ───────────────────────────────────
