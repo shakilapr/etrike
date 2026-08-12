@@ -14,9 +14,7 @@
     The only remapped topic is Engage — bridge uses local namespace, Autoware publishes globally.
   -->
   <arg name="can_interface" default="can0"/>
-  <node name="vehicle_bridge" pkg="autoware_vehicle_bridge" exec="vehicle_bridge_node">
-    <param from="$(find-pkg-share autoware_vehicle_bridge)/config/etrike.param.yaml"/>
-    <param name="can_interface" value="$(var can_interface)"/>
-    <remap from="~/input/engage" to="/api/autoware/get/engage"/>
-  </node>
+  <include file="$(find-pkg-share autoware_vehicle_bridge)/launch/vehicle_bridge.launch.py">
+    <arg name="can_interface" value="$(var can_interface)"/>
+  </include>
 </launch>
