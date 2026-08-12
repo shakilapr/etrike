@@ -94,10 +94,12 @@
       role: "High-to-low pipeline: host commands in, low-bus actuator commands and RT state out.",
       commands: [
         { bus: "high", id: "0x300", label: "Host drive command", intervalMs: 20, defaults: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 } },
+        { bus: "high", id: "0x303", label: "Host direct steering", intervalMs: 10, defaults: { steer_angle_0_1deg: 0, angle_valid: true, reserved: 0, rolling_counter: 0 } },
         { bus: "high", id: "0x301", label: "Host brake request", intervalMs: 50, defaults: { brake_pressure_kpa: 0 } },
         { bus: "high", id: "0x7FC", label: "Host heartbeat", intervalMs: 500, defaults: { alive_ctr: 1 } }
       ],
       feedback: [
+        { bus: "high", id: "0x121", label: "RT motion report" },
         { bus: "high", id: "0x210", label: "RT state" },
         { bus: "high", id: "0x7FD", label: "RT heartbeat" },
         { bus: "low", id: "0x204", label: "Low drive output" },
@@ -111,12 +113,14 @@
       role: "High bus host-side commands: drive, brake, lights, obstacle distance, heartbeat.",
       commands: [
         { bus: "high", id: "0x300", label: "Drive command", intervalMs: 20, defaults: { speed_mmps: 0, yaw_rate_mrad_s: 0, gear: 1 } },
+        { bus: "high", id: "0x303", label: "Direct steering", intervalMs: 10, defaults: { steer_angle_0_1deg: 0, angle_valid: true, reserved: 0, rolling_counter: 0 } },
         { bus: "high", id: "0x301", label: "Brake request", intervalMs: 50, defaults: { brake_pressure_kpa: 0 } },
         { bus: "high", id: "0x302", label: "Light command", intervalMs: 200, defaults: { left_turn: false, right_turn: false, brake_light: false, headlight: false } },
         { bus: "high", id: "0x400", label: "Obstacle distance", intervalMs: 100, defaults: { distance_mm: 4294967295 } },
         { bus: "high", id: "0x7FC", label: "Heartbeat", intervalMs: 500, defaults: { alive_ctr: 1 } }
       ],
       feedback: [
+        { bus: "high", id: "0x121", label: "RT motion report" },
         { bus: "high", id: "0x210", label: "RT state" },
         { bus: "high", id: "0x011", label: "Safety status" },
         { bus: "high", id: "0x120", label: "Speed status" },
