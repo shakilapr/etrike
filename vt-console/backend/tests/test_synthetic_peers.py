@@ -59,6 +59,7 @@ class TestSyntheticPeerTemplates:
         peers = SyntheticPeerEngine.RT_DUT_PEERS
         assert len(peers) > 0
         assert any(p.name == "rt:host_drive_cmd" for p in peers)
+        assert any(p.name == "rt:host_steer_cmd" for p in peers)
         assert any(p.name == "rt:sys_heartbeat" for p in peers)
 
     @pytest.mark.asyncio
@@ -105,6 +106,15 @@ class TestSyntheticPeerTemplates:
             if p.name == "sys:rt_drive_cmd"
         )
         assert rt_drive.counter_field is None
+
+        host_steer = next(
+            p for p in SyntheticPeerEngine.RT_DUT_PEERS
+            if p.name == "rt:host_steer_cmd"
+        )
+        assert host_steer.period_ms == 10
+        assert host_steer.counter_field == "rolling_counter"
+        assert host_steer.counter_max == 255
+        assert host_steer.startup_values["angle_valid"] == 1
 
 
 class TestListenWindow:
@@ -180,6 +190,17 @@ class TestPeerActivation:
         assert len(peers) > 0
         assert "rt:host_drive_cmd" in peers
         assert "rt:sys_heartbeat" in peers
+
+    @pytest.mark.asyncio
+    async def test_activate_phase2_host_steer_peer(self, synthetic_engine):
+        peers = await synthetic_engine.activate_peers(
+            session_id="ses_123",
+            dut=DutKind.RT,
+        )
+
+        steer = peers["rt:host_steer_cmd"]
+        assert steer.peer_template.period_ms == 10
+        assert steer.peer_template.counter_field == "rolling_counter"
 
     @pytest.mark.asyncio
     async def test_activated_peers_have_job_ids(self, synthetic_engine):

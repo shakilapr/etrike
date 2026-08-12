@@ -5,21 +5,22 @@ from __future__ import annotations
 from vtc import protocol_bridge as proto
 
 
-def test_catalog_matches_phase0_counts():
-    # Phase 0 verified: 32 messages, 42 instances.
-    assert proto.message_count() == 32
-    assert proto.instance_count() == 42
+def test_catalog_matches_phase2_counts():
+    assert proto.message_count() == 34
+    assert proto.instance_count() == 44
 
 
-def test_wire_hash_is_the_phase0_hash():
+def test_wire_hash_is_the_phase2_hash():
     assert proto.WIRE_HASH == (
-        "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a"
+        "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c"
     )
 
 
 def test_rt_sys_runtime_identities_resolve():
     # Compatibility-contract messages resolve at their corrected (bus, id).
     assert proto.message_key_for("high", 0x300) == "host:host_drive_cmd"
+    assert proto.message_key_for("high", 0x303) == "host:host_steer_cmd"
+    assert proto.message_key_for("high", 0x121) == "rt:rt_motion_rpt"
     assert proto.message_key_for("low", 0x204) == "rt:rt_drive_cmd"
     assert proto.message_key_for("high", 0x210) == "rt:rt_state_rpt"
     assert proto.message_key_for("low", 0x210) == "rt:rt_state_rpt"
