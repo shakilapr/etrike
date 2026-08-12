@@ -186,6 +186,7 @@ const INJECTABLE_IDENTITIES = new Set([
   "high:0x300",
   "high:0x301",
   "high:0x302",
+  "high:0x303",
   "high:0x400",
   "high:0x7FC",
   "low:0x001",
@@ -652,6 +653,7 @@ export function initCanDatabase(): void {
 
 export const INJECTION_TEMPLATES: InjectionTemplate[] = [
   { bus: "high", id: "0x300", name: "Host drive 2.0 m/s", description: "Host drive command in D gear.", dlc: 8, values: { speed_mmps: 2000, yaw_rate_mrad_s: 0, gear: 1 } },
+  { bus: "high", id: "0x303", name: "Host steer right 10°", description: "Direct Host steering angle with a fresh rolling counter.", dlc: 4, values: { steer_angle_0_1deg: 100, angle_valid: 1, reserved: 0, rolling_counter: 1 } },
   { bus: "high", id: "0x301", name: "Host brake 5 MPa", description: "Host brake request.", dlc: 4, values: { brake_pressure_kpa: 5000 } },
   { bus: "high", id: "0x7FC", name: "Host heartbeat", description: "Host heartbeat. Inject every 500ms.", dlc: 2, values: { alive_ctr: 1, health_flags: 0 } },
   { bus: "low", id: "0x001", name: "ESTOP trigger", description: "DLC=0 ESTOP frame.", dlc: 0, values: {} },

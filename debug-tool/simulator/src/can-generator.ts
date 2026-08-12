@@ -19,10 +19,12 @@ export const DEFAULT_PROFILE: Profile = [
   { bus: "high", id: "0x001", name: "ESTOP_CMD", interval_ms: 100, dlc: 0 },
   { bus: "high", id: "0x011", name: "SYS_SAFETY_STS", interval_ms: 100, dlc: 3 },
   { bus: "high", id: "0x120", name: "HOST_SPEED_OPS", interval_ms: 100, dlc: 2 },
+  { bus: "high", id: "0x121", name: "RT_MOTION_RPT", interval_ms: 10, dlc: 8 },
   { bus: "high", id: "0x206", name: "MTR_MOTOR_FBK", interval_ms: 50, dlc: 4 },
   { bus: "high", id: "0x210", name: "RT_STATE", interval_ms: 100, dlc: 6 },
   { bus: "high", id: "0x220", name: "RT_LED_STATUS", interval_ms: 200, dlc: 6 },
   { bus: "high", id: "0x300", name: "HOST_DRIVE_CMD", interval_ms: 100, dlc: 8 },
+  { bus: "high", id: "0x303", name: "HOST_STEER_CMD", interval_ms: 10, dlc: 4 },
   { bus: "high", id: "0x301", name: "RT_BRAKE_PRES_CMD", interval_ms: 100, dlc: 4 },
   { bus: "high", id: "0x302", name: "RT_BRAKE_PRES_FBK", interval_ms: 100, dlc: 1 },
   { bus: "high", id: "0x400", name: "OBSTACLE", interval_ms: 100, dlc: 4 },
@@ -84,6 +86,19 @@ export function generateFrame(entry: ProfileEntry): CanFrame {
   const data = new Array(entry.dlc).fill(0);
 
   switch (id) {
+    case "0x121": { // RT_MOTION_RPT
+      const speed = sineSpeed();
+      const yaw = yawRate();
+      data[0] = (speed >> 8) & 0xFF;
+      data[1] = speed & 0xFF;
+      data[2] = (yaw >> 16) & 0xFF;
+      data[3] = (yaw >> 8) & 0xFF;
+      data[4] = yaw & 0xFF;
+      data[5] = 1; // gear = D
+      data[6] = 0x07; // speed, yaw, and gear valid
+      data[7] = counter(id);
+      break;
+    }
     case "0x300": { // HOST_DRIVE_CMD
       const speed = sineSpeed();
       const yaw = yawRate();
@@ -93,6 +108,14 @@ export function generateFrame(entry: ProfileEntry): CanFrame {
       data[3] = yaw & 0xFF;
       data[4] = 1; // gear = D
       data[5] = counter(id);
+      break;
+    }
+    case "0x303": { // HOST_STEER_CMD
+      const angle = Math.round(200 * Math.sin(simTime * 0.3));
+      data[0] = (angle >> 8) & 0xFF;
+      data[1] = angle & 0xFF;
+      data[2] = 0x01;
+      data[3] = counter(id);
       break;
     }
     case "0x204": { // RT_DRIVE_CMD

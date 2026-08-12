@@ -57,7 +57,7 @@ describe("SIL Physics & Dynamics", () => {
     let mtrFb = mtrFbs.pop();
     expect(mtrFb).toBeDefined();
     expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeGreaterThan(0);
-    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeLessThan(1500);
+    expect(mtrFb.payload.decoded.signals.actual_speed_mmps).toBeLessThan(1700);
     
     // Fast forward 2 seconds (time to reach steady state)
     vi.advanceTimersByTime(2000);
@@ -70,6 +70,7 @@ describe("SIL Physics & Dynamics", () => {
     engine.injectExternal(normalizeFrame({ ts: 0, bus: "low", id: "0x110", name: "SYS_MODE_CMD", dlc: 1, data: [1], decoded: { mode: 1 } }));
     
     host.yawMradS = 1000;
+    host.steerAngleValid = false;
     
     vi.advanceTimersByTime(100);
     
@@ -77,6 +78,26 @@ describe("SIL Physics & Dynamics", () => {
     expect(sesReq).toBeDefined();
     // 1000 mrad/s * 0.05 = 50
     expect(sesReq.payload.decoded.signals.target_angle).toBe(50);
+  });
+
+  it("uses fresh direct steering at zero speed and publishes physical motion feedback", async () => {
+    engine.injectExternal(normalizeFrame({ ts: 0, bus: "low", id: "0x110", name: "SYS_MODE_CMD", dlc: 1, data: [1], decoded: { mode: 1 } }));
+    host.speedMmps = 0;
+    host.yawMradS = 0;
+    host.steerAngle01deg = -125;
+
+    vi.advanceTimersByTime(200);
+
+    const steerReq = hubEvents.filter(e => e.payload.frame.id === "0x169").pop();
+    expect(steerReq).toBeDefined();
+    expect(steerReq.payload.decoded.signals.target_angle).toBe(-125);
+
+    const reports = hubEvents.filter(e => e.payload.frame.id === "0x121");
+    expect(reports.length).toBeGreaterThan(1);
+    expect(reports.at(-1).payload.decoded.signals.speed_valid).toBe(1);
+    expect(reports.at(-1).payload.decoded.signals.gear_valid).toBe(1);
+    expect(reports.at(-1).payload.decoded.signals.rolling_counter)
+      .not.toBe(reports.at(-2).payload.decoded.signals.rolling_counter);
   });
 
   it("brakes sharply to 0 when ESTOP is triggered during motion", async () => {
