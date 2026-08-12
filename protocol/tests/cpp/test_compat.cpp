@@ -19,6 +19,8 @@ int failures = 0;
 void test_constants_and_names() {
     static_assert(can::kIdSafetyEstop == can::gen::SafetyEstop::kId);
     static_assert(can::kIdHostDriveCmd == can::gen::HostDriveCmd::kId);
+    static_assert(can::kIdHostSteerCmd == can::gen::HostSteerCmd::kId);
+    static_assert(can::kIdRtMotionRpt == can::gen::RtMotionRpt::kId);
     static_assert(can::kIdPwtDcdcCmd == can::gen::PwtDcdcCmd::kId);
     static_assert(can::kIdVcuSesReq == can::custom::ses::kCommandId);
     static_assert(can::kIdSebStatus == can::custom::seb::kStatusId);
