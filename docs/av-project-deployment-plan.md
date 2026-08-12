@@ -226,16 +226,14 @@ regardless of the publisher's durability.
 Beyond QoS, these bridge↔Autoware assumptions were checked against the source and
 must be confirmed against the target Universe version before first motion:
 
-- **Engage source (S1, new):** the bridge subscribes `~/input/engage` remapped to
-  `/api/autoware/get/engage` (`vehicle_bridge_node.cpp:509`,
-  `vehicle_bridge.launch.py:27`) and only flips `engaged_` true on that topic
-  (`on_engage`, `:707-710`). In Autoware Universe `/api/autoware/get/engage` is
-  normally an **external-API service**, not a published topic. If no topic of type
-  `autoware_vehicle_msgs/msg/Engage` is published there, the subscription connects
-  to nothing → `engaged_` stays false → gate stuck closed, **no error**. Verify with
-  `ros2 topic info -v /api/autoware/get/engage`; if it is a service only, remap
-  `~/input/engage` to the real engage topic (e.g. `/control/engage`) or add a service
-  client. (See risk register + TODO.)
+- **Engage source (S1, fixed in code):** the bridge subscribes `~/input/engage`
+  remapped via the `engage_topic` launch arg (default `/api/autoware/get/engage`,
+  `vehicle_bridge.launch.py:28`). In Autoware Universe `/api/autoware/get/engage`
+  is normally an **external-API service**, not a published topic. If no topic of
+  type `autoware_vehicle_msgs/msg/Engage` is published there, the subscription
+  connects to nothing → `engaged_` stays false → gate stuck closed, **no error**.
+  Verify with `ros2 topic info -v /api/autoware/get/engage`; if it is a service
+  only, set `engage_topic:=/control/engage` (or the real engage topic) at launch.
 - **Single vehicle interface (S1):** the bridge consumes the high-level
   `/control/command/control_cmd` and performs its own conversion (replacing
   `raw_vehicle_cmd_converter` + `autoware_vehicle_interface`). Ensure the standard
@@ -248,7 +246,7 @@ must be confirmed against the target Universe version before first motion:
   `longitudinal.acceleration`, `longitudinal.is_defined_acceleration`,
   `lateral.steering_tire_angle` (`:197-219`,`:273-276`,`:851`) — and
   `VelocityReport.{longitudinal_velocity,lateral_velocity,heading_rate,header}`
-  (`:319-325`,`:423-426`,`:952-953`). These match the published Universe schema, so
+  (`:423-426`,`:952-953`). These match the published Universe schema, so
   the `colcon build` field-mismatch risk is **low** but still verify against pinned
   headers (Phase 1 step 3).
 - **`confirmed_auto_` path (verified OK):** set true only from `0x210` when
