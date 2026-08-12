@@ -206,12 +206,12 @@ class TestEncoderSpecialCases:
         # RT_HEARTBEAT appears on both High and Low buses
         result_high = encoder.encode_message(
             key="rt:rt_heartbeat",
-            values={"alive_ctr": 0, "heartbeat_ok": 1},
+            values={"alive_ctr": 0, "health_flags": 1},
             bus="high",
         )
         result_low = encoder.encode_message(
             key="rt:rt_heartbeat",
-            values={"alive_ctr": 0, "heartbeat_ok": 1},
+            values={"alive_ctr": 0, "health_flags": 1},
             bus="low",
         )
         assert result_high.ok, f"High encode failed: {result_high.error}"
