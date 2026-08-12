@@ -13,15 +13,12 @@ find_package(autoware_vehicle_msgs REQUIRED)
 find_package(tier4_vehicle_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
+find_package(etrike_protocol REQUIRED)
 
 include_directories(include)
 
 add_executable(vehicle_bridge_node
   src/vehicle_bridge_node.cpp
-)
-
-target_include_directories(vehicle_bridge_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../..
 )
 
 ament_target_dependencies(vehicle_bridge_node
@@ -32,6 +29,7 @@ ament_target_dependencies(vehicle_bridge_node
   tier4_vehicle_msgs
   diagnostic_msgs
   lifecycle_msgs
+  etrike_protocol
 )
 
 install(TARGETS
@@ -56,8 +54,8 @@ if(BUILD_TESTING)
   add_executable(test_motion_conversion test/test_motion_conversion.cpp)
   target_include_directories(test_motion_conversion PRIVATE
     include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../..
   )
+  ament_target_dependencies(test_motion_conversion etrike_protocol)
   add_test(NAME motion_conversion COMMAND test_motion_conversion)
 endif()
 
