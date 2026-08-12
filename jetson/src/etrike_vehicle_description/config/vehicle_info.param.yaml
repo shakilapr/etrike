@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    # Confirmed control geometry.
+    wheel_base: 1.5
+    max_steer_angle: 0.698
+
+    # Conservative visualization envelope; verify by physical measurement before
+    # using these dimensions for footprint-critical planning.
+    wheel_radius: 0.25
+    wheel_width: 0.10
+    wheel_tread: 0.8
+    front_overhang: 0.35
+    rear_overhang: 0.45
+    left_overhang: 0.10
+    right_overhang: 0.10
+    vehicle_height: 1.7

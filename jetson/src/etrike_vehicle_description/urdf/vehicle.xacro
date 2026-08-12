@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:property name="vehicle_info" value="${xacro.load_yaml('$(find etrike_vehicle_description)/config/vehicle_info.param.yaml')}"/>
+  <xacro:property name="params" value="${vehicle_info['/**']['ros__parameters']}"/>
+  <xacro:property name="length" value="${params['wheel_base'] + params['front_overhang'] + params['rear_overhang']}"/>
+  <xacro:property name="width" value="${params['wheel_tread'] + params['left_overhang'] + params['right_overhang']}"/>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="${(params['front_overhang'] - params['rear_overhang']) / 2.0} 0 ${params['vehicle_height'] / 2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${length} ${width} ${params['vehicle_height']}"/>
+      </geometry>
+      <material name="etrike_blue"><color rgba="0.08 0.32 0.58 1.0"/></material>
+    </visual>
+  </link>
+</robot>
