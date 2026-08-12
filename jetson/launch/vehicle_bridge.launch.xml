@@ -3,18 +3,20 @@
   <!--
     E-Trike Autoware Vehicle Bridge — launch configuration.
 
-    Bridge uses standard Autoware.Auto global topics directly:
+    Bridge uses the pinned Autoware Universe interfaces directly:
       Subscriptions: /control/command/control_cmd, /control/command/gear_cmd,
                      /control/command/turn_indicators_cmd, /control/command/hazard_lights_cmd,
-                     /control/control_mode_request, /control/command/emergency_cmd
+                     /control/command/emergency_cmd; service /control/control_mode_request
       Publications:  /vehicle/status/velocity_status, /vehicle/status/steering_status,
                      /vehicle/status/gear_status, /vehicle/status/control_mode,
-                     /vehicle/status/turn_indicators_status, /vehicle/status/hazard_lights_status,
-                     /vehicle/status/kinematic_state
+                     /vehicle/status/turn_indicators_status, /vehicle/status/hazard_lights_status
 
     The only remapped topic is Engage — bridge uses local namespace, Autoware publishes globally.
   -->
+  <arg name="can_interface" default="can0"/>
   <node name="vehicle_bridge" pkg="autoware_vehicle_bridge" exec="vehicle_bridge_node">
-    <remap from="~/input/engage" to="/control/command/engage"/>
+    <param from="$(find-pkg-share autoware_vehicle_bridge)/config/etrike.param.yaml"/>
+    <param name="can_interface" value="$(var can_interface)"/>
+    <remap from="~/input/engage" to="/api/autoware/get/engage"/>
   </node>
 </launch>

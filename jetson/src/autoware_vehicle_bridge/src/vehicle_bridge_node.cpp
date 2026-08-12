@@ -61,12 +61,13 @@ constexpr canid_t CAN_HOST_HB      = messages::HostHeartbeat::kHighId;
 constexpr canid_t CAN_RT_HB        = messages::RtHeartbeat::kHighId;
 
 // =====================================================================
-//  Gear constants (Autoware.Auto <-> CAN)
+//  Gear constants (Autoware Universe <-> CAN)
 // =====================================================================
 namespace gear {
-  // Autoware.Auto GearCommand/GearReport
+  // Autoware Universe GearCommand/GearReport
   constexpr uint8_t NONE    = 0;
-  constexpr uint8_t DRIVE   = 1;
+  constexpr uint8_t NEUTRAL = 1;
+  constexpr uint8_t DRIVE   = 2;
   constexpr uint8_t REVERSE = 20;
   constexpr uint8_t PARK    = 22;
   constexpr uint8_t LOW     = 23;
@@ -182,18 +183,16 @@ uint8_t CanEncoder::derive_gear(int32_t speed_mmps, uint8_t gear_override, bool 
   return gear::CAN_N;
 }
 
-bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannControlCommand & cmd,
+bool CanEncoder::encode_drive(const autoware_control_msgs::msg::Control & cmd,
                               uint8_t gear_override, bool has_override,
                               struct can_frame & frame)
 {
-  float speed_ms = cmd.longitudinal.is_defined_speed ? cmd.longitudinal.speed : 0.0f;
+  float speed_ms = cmd.longitudinal.velocity;
   int32_t speed_mmps = speed_to_mmps(speed_ms);
 
-  float steer = cmd.lateral.is_defined_steering_tire_angle
-    ? std::clamp(cmd.lateral.steering_tire_angle,
-                 -params_.max_steering_angle,
-                  params_.max_steering_angle)
-    : 0.0f;
+  float steer = std::clamp(cmd.lateral.steering_tire_angle,
+                           -params_.max_steering_angle,
+                            params_.max_steering_angle);
   int32_t yaw_mrad = steering_to_yaw(steer, speed_ms);
 
   uint8_t gear = derive_gear(speed_mmps, gear_override, has_override);
@@ -204,7 +203,7 @@ bool CanEncoder::encode_drive(const autoware_auto_control_msgs::msg::AckermannCo
          to_socket_frame(encoded, frame);
 }
 
-bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannControlCommand & cmd,
+bool CanEncoder::encode_brake(const autoware_control_msgs::msg::Control & cmd,
                               struct can_frame & frame)
 {
   if (!cmd.longitudinal.is_defined_acceleration) return false;
@@ -223,17 +222,17 @@ bool CanEncoder::encode_brake(const autoware_auto_control_msgs::msg::AckermannCo
          to_socket_frame(encoded, frame);
 }
 
-bool CanEncoder::encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
-                               const autoware_auto_vehicle_msgs::msg::HazardLightsCommand * hazard,
+bool CanEncoder::encode_lights(const autoware_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
+                               const autoware_vehicle_msgs::msg::HazardLightsCommand * hazard,
                                bool is_braking,
                                struct can_frame & frame)
 {
   messages::HostLightCmd message{};
   if (turn) {
-    message.left_turn = turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_LEFT;
-    message.right_turn = turn->command == autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_RIGHT;
+    message.left_turn = turn->command == autoware_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_LEFT;
+    message.right_turn = turn->command == autoware_vehicle_msgs::msg::TurnIndicatorsCommand::ENABLE_RIGHT;
   }
-  if (hazard && hazard->command == autoware_auto_vehicle_msgs::msg::HazardLightsCommand::ENABLE)
+  if (hazard && hazard->command == autoware_vehicle_msgs::msg::HazardLightsCommand::ENABLE)
     message.left_turn = message.right_turn = true;
   message.brake_light = is_braking;
   // bit3=headlight reserved for future
@@ -263,7 +262,7 @@ bool CanEncoder::encode_estop(struct can_frame & frame)
 //  CanDecoder
 // =====================================================================
 bool CanDecoder::decode_velocity(const struct can_frame & frame,
-                                 autoware_auto_vehicle_msgs::msg::VelocityReport & msg) const
+                                 autoware_vehicle_msgs::msg::VelocityReport & msg) const
 {
   messages::SysThrottleSts value{};
   if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) return false;
@@ -274,8 +273,8 @@ bool CanDecoder::decode_velocity(const struct can_frame & frame,
 }
 
 bool CanDecoder::decode_state(const struct can_frame & frame,
-                              autoware_auto_vehicle_msgs::msg::ControlModeReport & mode_msg,
-                              autoware_auto_vehicle_msgs::msg::GearReport & gear_msg) const
+                              autoware_vehicle_msgs::msg::ControlModeReport & mode_msg,
+                              autoware_vehicle_msgs::msg::GearReport & gear_msg) const
 {
   messages::RtStateRpt value{};
   if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) return false;
@@ -382,13 +381,11 @@ bool HeartbeatMonitor::is_alive(const rclcpp::Time & now, int timeout_ms) const
 VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("vehicle_bridge", options)
 {
-  using autoware_auto_control_msgs::msg::AckermannControlCommand;
-  using autoware_auto_vehicle_msgs::msg::ControlModeCommand;
-  using autoware_auto_vehicle_msgs::msg::Engage;
-  using autoware_auto_vehicle_msgs::msg::GearCommand;
-  using autoware_auto_vehicle_msgs::msg::HazardLightsCommand;
-  using autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand;
-  using autoware_auto_vehicle_msgs::msg::VehicleKinematicState;
+  using autoware_control_msgs::msg::Control;
+  using autoware_vehicle_msgs::msg::Engage;
+  using autoware_vehicle_msgs::msg::GearCommand;
+  using autoware_vehicle_msgs::msg::HazardLightsCommand;
+  using autoware_vehicle_msgs::msg::TurnIndicatorsCommand;
   using tier4_vehicle_msgs::msg::VehicleEmergencyStamped;
 
   declare_parameter("wheel_base", 1.5);
@@ -404,28 +401,29 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
   declare_parameter("rt_heartbeat_timeout_ms", 1500);
   declare_parameter("can_interface", "can0");
 
-  sub_control_ = create_subscription<AckermannControlCommand>("/control/command/control_cmd", rclcpp::QoS(1),
-    [this](const AckermannControlCommand::SharedPtr m) { on_control(m); });
-  sub_gear_ = create_subscription<GearCommand>("/control/command/gear_cmd", rclcpp::QoS(1),
+  const auto command_qos = rclcpp::QoS(1).reliable().transient_local();
+  sub_control_ = create_subscription<Control>("/control/command/control_cmd", command_qos,
+    [this](const Control::SharedPtr m) { on_control(m); });
+  sub_gear_ = create_subscription<GearCommand>("/control/command/gear_cmd", command_qos,
     [this](const GearCommand::SharedPtr m) { on_gear(m); });
-  sub_turn_ = create_subscription<TurnIndicatorsCommand>("/control/command/turn_indicators_cmd", rclcpp::QoS(1),
+  sub_turn_ = create_subscription<TurnIndicatorsCommand>("/control/command/turn_indicators_cmd", command_qos,
     [this](const TurnIndicatorsCommand::SharedPtr m) { on_turn(m); });
-  sub_hazard_ = create_subscription<HazardLightsCommand>("/control/command/hazard_lights_cmd", rclcpp::QoS(1),
+  sub_hazard_ = create_subscription<HazardLightsCommand>("/control/command/hazard_lights_cmd", command_qos,
     [this](const HazardLightsCommand::SharedPtr m) { on_hazard(m); });
   sub_engage_ = create_subscription<Engage>("~/input/engage", rclcpp::QoS(1),
     [this](const Engage::SharedPtr m) { on_engage(m); });
-  sub_control_mode_ = create_subscription<ControlModeCommand>("/control/control_mode_request", rclcpp::QoS(1),
-    [this](const ControlModeCommand::SharedPtr m) { on_control_mode(m); });
+  srv_control_mode_ = create_service<autoware_vehicle_msgs::srv::ControlModeCommand>(
+    "/control/control_mode_request",
+    [this](const auto request, auto response) { on_control_mode(request, response); });
   sub_emergency_ = create_subscription<VehicleEmergencyStamped>("/control/command/emergency_cmd", rclcpp::QoS(1),
     [this](const VehicleEmergencyStamped::SharedPtr m) { on_emergency(m); });
 
-  pub_velocity_      = create_publisher<autoware_auto_vehicle_msgs::msg::VelocityReport>("/vehicle/status/velocity_status", rclcpp::QoS(1));
-  pub_steering_      = create_publisher<autoware_auto_vehicle_msgs::msg::SteeringReport>("/vehicle/status/steering_status", rclcpp::QoS(1));
-  pub_gear_          = create_publisher<autoware_auto_vehicle_msgs::msg::GearReport>("/vehicle/status/gear_status", rclcpp::QoS(1));
-  pub_mode_          = create_publisher<autoware_auto_vehicle_msgs::msg::ControlModeReport>("/vehicle/status/control_mode", rclcpp::QoS(1));
-  pub_turn_status_   = create_publisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport>("/vehicle/status/turn_indicators_status", rclcpp::QoS(1));
-  pub_hazard_status_ = create_publisher<autoware_auto_vehicle_msgs::msg::HazardLightsReport>("/vehicle/status/hazard_lights_status", rclcpp::QoS(1));
-  pub_kinematic_state_ = create_publisher<autoware_auto_vehicle_msgs::msg::VehicleKinematicState>("/vehicle/status/kinematic_state", rclcpp::QoS(1));
+  pub_velocity_      = create_publisher<autoware_vehicle_msgs::msg::VelocityReport>("/vehicle/status/velocity_status", rclcpp::QoS(1));
+  pub_steering_      = create_publisher<autoware_vehicle_msgs::msg::SteeringReport>("/vehicle/status/steering_status", rclcpp::QoS(1));
+  pub_gear_          = create_publisher<autoware_vehicle_msgs::msg::GearReport>("/vehicle/status/gear_status", rclcpp::QoS(1));
+  pub_mode_          = create_publisher<autoware_vehicle_msgs::msg::ControlModeReport>("/vehicle/status/control_mode", rclcpp::QoS(1));
+  pub_turn_status_   = create_publisher<autoware_vehicle_msgs::msg::TurnIndicatorsReport>("/vehicle/status/turn_indicators_status", rclcpp::QoS(1));
+  pub_hazard_status_ = create_publisher<autoware_vehicle_msgs::msg::HazardLightsReport>("/vehicle/status/hazard_lights_status", rclcpp::QoS(1));
   pub_diag_          = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("~/output/diagnostics", rclcpp::QoS(1));
 
   can_ = std::make_unique<SocketCanDriver>();
@@ -490,7 +488,6 @@ CallbackReturn VehicleBridgeNode::on_activate(const State &)
   pub_mode_->on_activate();
   pub_turn_status_->on_activate();
   pub_hazard_status_->on_activate();
-  pub_kinematic_state_->on_activate();
   pub_diag_->on_activate();
 
   timer_control_->reset();
@@ -520,7 +517,6 @@ CallbackReturn VehicleBridgeNode::on_deactivate(const State &)
   pub_mode_->on_deactivate();
   pub_turn_status_->on_deactivate();
   pub_hazard_status_->on_deactivate();
-  pub_kinematic_state_->on_deactivate();
   pub_diag_->on_deactivate();
   return CallbackReturn::SUCCESS;
 }
@@ -560,42 +556,43 @@ bool VehicleBridgeNode::load_parameters()
 }
 
 // ---- Subscription callbacks ----
-void VehicleBridgeNode::on_control(const autoware_auto_control_msgs::msg::AckermannControlCommand::SharedPtr msg)
+void VehicleBridgeNode::on_control(const autoware_control_msgs::msg::Control::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   latest_control_ = msg;
   last_cmd_time_ = now();
 }
 
-void VehicleBridgeNode::on_gear(const autoware_auto_vehicle_msgs::msg::GearCommand::SharedPtr msg)
+void VehicleBridgeNode::on_gear(const autoware_vehicle_msgs::msg::GearCommand::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   latest_gear_ = msg;
 }
 
-void VehicleBridgeNode::on_turn(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr msg)
+void VehicleBridgeNode::on_turn(const autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   latest_turn_ = msg;
 }
 
-void VehicleBridgeNode::on_hazard(const autoware_auto_vehicle_msgs::msg::HazardLightsCommand::SharedPtr msg)
+void VehicleBridgeNode::on_hazard(const autoware_vehicle_msgs::msg::HazardLightsCommand::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   latest_hazard_ = msg;
 }
 
-void VehicleBridgeNode::on_engage(const autoware_auto_vehicle_msgs::msg::Engage::SharedPtr msg)
+void VehicleBridgeNode::on_engage(const autoware_vehicle_msgs::msg::Engage::SharedPtr msg)
 {
   engaged_ = msg->engage;
   RCLCPP_INFO(get_logger(), "Engage: %s", engaged_ ? "ON" : "OFF");
 }
 
-void VehicleBridgeNode::on_control_mode(const autoware_auto_vehicle_msgs::msg::ControlModeCommand::SharedPtr msg)
+void VehicleBridgeNode::on_control_mode(
+  const std::shared_ptr<autoware_vehicle_msgs::srv::ControlModeCommand::Request> request,
+  std::shared_ptr<autoware_vehicle_msgs::srv::ControlModeCommand::Response> response)
 {
-  // Map ControlModeCommand to Engage — physical mode gated by SYS MODE button
-  engaged_ = (msg->mode == autoware_auto_vehicle_msgs::msg::ControlModeCommand::AUTONOMOUS);
-  RCLCPP_INFO(get_logger(), "ControlMode request: %s", engaged_ ? "AUTONOMOUS" : "MANUAL");
+  response->success = request->mode == autoware_vehicle_msgs::srv::ControlModeCommand::Request::AUTONOMOUS ||
+    request->mode == autoware_vehicle_msgs::srv::ControlModeCommand::Request::MANUAL;
 }
 
 void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr /*msg*/)
@@ -631,10 +628,10 @@ void VehicleBridgeNode::tick_control()
   if (!engaged_) return;
 
   // Snapshot latest commands
-  autoware_auto_control_msgs::msg::AckermannControlCommand::SharedPtr ctrl;
-  autoware_auto_vehicle_msgs::msg::GearCommand::SharedPtr gear;
-  autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr turn;
-  autoware_auto_vehicle_msgs::msg::HazardLightsCommand::SharedPtr hazard;
+  autoware_control_msgs::msg::Control::SharedPtr ctrl;
+  autoware_vehicle_msgs::msg::GearCommand::SharedPtr gear;
+  autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr turn;
+  autoware_vehicle_msgs::msg::HazardLightsCommand::SharedPtr hazard;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     ctrl = latest_control_; gear = latest_gear_; turn = latest_turn_; hazard = latest_hazard_;
@@ -644,7 +641,7 @@ void VehicleBridgeNode::tick_control()
   // Gear override
   uint8_t gear_val = gear::CAN_N;
   bool has_gear = false;
-  if (gear && gear->command != autoware_auto_vehicle_msgs::msg::GearCommand::NO_COMMAND) {
+  if (gear && gear->command != autoware_vehicle_msgs::msg::GearCommand::NONE) {
     switch (gear->command) {
       case gear::DRIVE:   gear_val = gear::CAN_D; break;
       case gear::REVERSE: gear_val = gear::CAN_R; break;
@@ -737,44 +734,17 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     }
 
     case CAN_THROTTLE_STS: {
-      autoware_auto_vehicle_msgs::msg::VelocityReport vel;
+      autoware_vehicle_msgs::msg::VelocityReport vel;
       if (decoder_->decode_velocity(frame, vel) && pub_velocity_->is_activated())
         pub_velocity_->publish(vel);
 
-      // Dead-reckoning odometry: integrate speed + steer angle via tricycle model
-      auto n = now();
-      if ((n - last_steer_time_).seconds() < 0.2 && last_odom_time_.nanoseconds() > 0) {
-        double dt = (n - last_odom_time_).seconds();
-        if (dt > 0.0 && dt < 0.5) {
-          double v = vel.longitudinal_velocity;
-          double omega = (std::abs(v) > params_.low_speed_threshold)
-            ? v * std::tan(steer_angle_rad_.load(std::memory_order_relaxed)) / params_.wheel_base
-            : 0.0;
-          odom_yaw_ += omega * dt;
-          odom_x_ += v * std::cos(odom_yaw_) * dt;
-          odom_y_ += v * std::sin(odom_yaw_) * dt;
-
-          autoware_auto_vehicle_msgs::msg::VehicleKinematicState kine;
-          kine.header.stamp = n;
-          kine.header.frame_id = "base_link";
-          kine.state.pose.position.x = odom_x_;
-          kine.state.pose.position.y = odom_y_;
-          // Quaternion from yaw (rotation about Z)
-          kine.state.pose.orientation.z = std::sin(odom_yaw_ * 0.5);
-          kine.state.pose.orientation.w = std::cos(odom_yaw_ * 0.5);
-          kine.state.twist.linear.x = v;
-          kine.state.twist.angular.z = omega;
-          if (pub_kinematic_state_->is_activated()) pub_kinematic_state_->publish(kine);
-        }
-      }
-      last_odom_time_ = n;
       break;
     }
 
     case CAN_MOTOR_FBK: {  // 0x206 — actual gear state from MTR (forwarded low→high)
       messages::MtrMotorFbk value{};
       if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
-      autoware_auto_vehicle_msgs::msg::GearReport gear;
+      autoware_vehicle_msgs::msg::GearReport gear;
       switch (value.gear_state) {
         case gear::CAN_N: gear.report = gear::NONE;    break;
         case gear::CAN_D: gear.report = gear::DRIVE;   break;
@@ -796,29 +766,29 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       {
         uint8_t lights = (value.light_left ? 1u : 0u) | (value.light_right ? 2u : 0u) |
                          (value.light_brake ? 4u : 0u) | (value.light_head ? 8u : 0u);
-        autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport turn;
+        autoware_vehicle_msgs::msg::TurnIndicatorsReport turn;
         if ((lights & 0x03) == 0x03)
-          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
         else if (lights & 0x01)
-          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
         else if (lights & 0x02)
-          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
         else
-          turn.report = autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
         if (pub_turn_status_->is_activated()) pub_turn_status_->publish(turn);
 
-        autoware_auto_vehicle_msgs::msg::HazardLightsReport hazard;
+        autoware_vehicle_msgs::msg::HazardLightsReport hazard;
         hazard.report = ((lights & 0x03) == 0x03)
-          ? autoware_auto_vehicle_msgs::msg::HazardLightsReport::ENABLE
-          : autoware_auto_vehicle_msgs::msg::HazardLightsReport::DISABLE;
+          ? autoware_vehicle_msgs::msg::HazardLightsReport::ENABLE
+          : autoware_vehicle_msgs::msg::HazardLightsReport::DISABLE;
         if (pub_hazard_status_->is_activated()) pub_hazard_status_->publish(hazard);
       }
       break;
     }
 
     case CAN_STATE_RPT: {
-      autoware_auto_vehicle_msgs::msg::ControlModeReport mode;
-      autoware_auto_vehicle_msgs::msg::GearReport gear;
+      autoware_vehicle_msgs::msg::ControlModeReport mode;
+      autoware_vehicle_msgs::msg::GearReport gear;
       if (decoder_->decode_state(frame, mode, gear)) {
         if (pub_mode_->is_activated()) pub_mode_->publish(mode);
         if (pub_gear_->is_activated()) pub_gear_->publish(gear);
@@ -837,10 +807,9 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       messages::SteerDiag message{};
       if (messages::decode(protocol_view(frame), message) != protocol::CodecStatus::Ok) break;
       float steer_deg = static_cast<float>(message.angle_0_1deg);
-      steer_angle_rad_.store(steer_deg * M_PI / 180.0f, std::memory_order_relaxed);  // cache for odometry
-      last_steer_time_ = now();
-      autoware_auto_vehicle_msgs::msg::SteeringReport steer;
-      steer.steering_tire_angle = steer_angle_rad_.load(std::memory_order_relaxed);
+      autoware_vehicle_msgs::msg::SteeringReport steer;
+      steer.stamp = now();
+      steer.steering_tire_angle = steer_deg * M_PI / 180.0f;
       if (pub_steering_->is_activated()) pub_steering_->publish(steer);
       break;
     }

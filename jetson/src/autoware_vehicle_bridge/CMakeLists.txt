@@ -8,8 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
-find_package(autoware_auto_control_msgs REQUIRED)
-find_package(autoware_auto_vehicle_msgs REQUIRED)
+find_package(autoware_control_msgs REQUIRED)
+find_package(autoware_vehicle_msgs REQUIRED)
 find_package(tier4_vehicle_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -27,8 +27,8 @@ target_include_directories(vehicle_bridge_node PRIVATE
 ament_target_dependencies(vehicle_bridge_node
   rclcpp
   rclcpp_lifecycle
-  autoware_auto_control_msgs
-  autoware_auto_vehicle_msgs
+  autoware_control_msgs
+  autoware_vehicle_msgs
   tier4_vehicle_msgs
   diagnostic_msgs
   lifecycle_msgs
