@@ -52,6 +52,13 @@ install(DIRECTORY
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
+
+  add_executable(test_motion_conversion test/test_motion_conversion.cpp)
+  target_include_directories(test_motion_conversion PRIVATE
+    include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+  )
+  add_test(NAME motion_conversion COMMAND test_motion_conversion)
 endif()
 
 ament_package()

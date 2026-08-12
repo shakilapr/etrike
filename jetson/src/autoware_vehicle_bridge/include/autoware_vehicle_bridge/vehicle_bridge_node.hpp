@@ -78,7 +78,7 @@ struct VehicleParams
   int rt_heartbeat_timeout_ms{1500};
   std::string can_interface{"can0"};
 
-  bool load_from(const rclcpp::Node * node);
+  bool load_from(const rclcpp_lifecycle::LifecycleNode * node);
   void validate_or_throw() const;
 };
 
@@ -93,8 +93,14 @@ public:
                     uint8_t gear_override, bool has_gear_override,
                     struct can_frame & frame);
 
+  bool encode_steering(const autoware_control_msgs::msg::Control & cmd,
+                       struct can_frame & frame);
+  bool encode_neutral_drive(struct can_frame & frame);
+  bool encode_invalid_steering(struct can_frame & frame);
+
   bool encode_brake(const autoware_control_msgs::msg::Control & cmd,
                     struct can_frame & frame);
+  bool encode_brake_hold(struct can_frame & frame);
 
   bool encode_lights(const autoware_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
                      const autoware_vehicle_msgs::msg::HazardLightsCommand * hazard,
@@ -109,6 +115,7 @@ private:
   const VehicleParams & params_;
   uint8_t host_alive_ctr_{0};
   uint8_t mode_request_ctr_{0};
+  uint8_t steering_ctr_{0};
 
   int32_t speed_to_mmps(float speed_ms) const;
   int32_t steering_to_yaw(float angle_rad, float speed_ms) const;
@@ -122,6 +129,10 @@ public:
   bool decode_velocity(const struct can_frame & frame,
                        autoware_vehicle_msgs::msg::VelocityReport & msg) const;
 
+  bool decode_motion(const struct can_frame & frame,
+                     autoware_vehicle_msgs::msg::VelocityReport & velocity_msg,
+                     autoware_vehicle_msgs::msg::GearReport & gear_msg);
+
   bool decode_state(const struct can_frame & frame,
                     autoware_vehicle_msgs::msg::ControlModeReport & mode_msg,
                     autoware_vehicle_msgs::msg::GearReport & gear_msg) const;
@@ -129,6 +140,10 @@ public:
   bool decode_diagnostics(const struct can_frame & frame,
                           diagnostic_msgs::msg::DiagnosticArray & msg,
                           const rclcpp::Time & now) const;
+
+private:
+  bool have_motion_counter_{false};
+  uint8_t last_motion_counter_{0};
 };
 
 // ---- Heartbeat monitor (thread-safe: accessed from RX and executor threads) ----
@@ -206,6 +221,7 @@ private:
   std::atomic<bool> engaged_{false};
   std::atomic<bool> confirmed_auto_{false};
   std::atomic<bool> software_emergency_{false};
+  std::atomic<bool> park_requested_{false};
 
   // ---- Heartbeat ----
   HeartbeatMonitor rt_heartbeat_;
