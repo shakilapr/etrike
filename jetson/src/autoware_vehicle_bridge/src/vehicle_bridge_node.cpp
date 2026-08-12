@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 #include "autoware_vehicle_bridge/vehicle_bridge_node.hpp"
+#include "autoware_vehicle_bridge/motion_conversion.hpp"
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 
 #include <algorithm>
@@ -51,6 +52,7 @@ static bool to_socket_frame(const protocol::Frame & source, struct can_frame & d
 constexpr canid_t CAN_ESTOP        = messages::SafetyEstop::kHighId;
 constexpr canid_t CAN_SAFETY_STS   = messages::SysSafetySts::kHighId;
 constexpr canid_t CAN_THROTTLE_STS = messages::SysThrottleSts::kHighId;
+constexpr canid_t CAN_MOTION_RPT   = messages::RtMotionRpt::kHighId;
 constexpr canid_t CAN_STATE_RPT    = messages::RtStateRpt::kHighId;
 constexpr canid_t CAN_DRIVE_CMD    = messages::HostDriveCmd::kHighId;
 constexpr canid_t CAN_BRAKE_REQ    = messages::HostBrakeReq::kHighId;
@@ -84,7 +86,7 @@ namespace mode {
 // =====================================================================
 //  VehicleParams
 // =====================================================================
-bool VehicleParams::load_from(const rclcpp::Node * node)
+bool VehicleParams::load_from(const rclcpp_lifecycle::LifecycleNode * node)
 {
   wheel_base              = node->get_parameter("wheel_base").as_double();
   max_speed_forward       = node->get_parameter("max_speed_forward").as_double();
@@ -162,17 +164,14 @@ CanEncoder::CanEncoder(const VehicleParams & params) : params_(params) {}
 
 int32_t CanEncoder::speed_to_mmps(float speed_ms) const
 {
-  int32_t mmps = static_cast<int32_t>(speed_ms * 1000.0f);
-  return std::clamp(mmps,
-    static_cast<int32_t>(-params_.max_speed_reverse * 1000.0f),
-    static_cast<int32_t>(params_.max_speed_forward * 1000.0f));
+  return motion::speed_to_mmps(speed_ms, params_.max_speed_forward, params_.max_speed_reverse);
 }
 
 int32_t CanEncoder::steering_to_yaw(float angle_rad, float speed_ms) const
 {
-  if (speed_ms < params_.low_speed_threshold) return 0;
-  float omega = speed_ms * std::tan(angle_rad) / params_.wheel_base;
-  return std::clamp(static_cast<int32_t>(omega * 1000.0f), -3000, 3000);
+  return motion::legacy_yaw_mrad_s(
+    angle_rad, speed_ms, params_.wheel_base, params_.max_steering_angle,
+    params_.low_speed_threshold);
 }
 
 uint8_t CanEncoder::derive_gear(int32_t speed_mmps, uint8_t gear_override, bool has_override) const
@@ -188,6 +187,7 @@ bool CanEncoder::encode_drive(const autoware_control_msgs::msg::Control & cmd,
                               struct can_frame & frame)
 {
   float speed_ms = cmd.longitudinal.velocity;
+  if (!std::isfinite(speed_ms) || !std::isfinite(cmd.lateral.steering_tire_angle)) return false;
   int32_t speed_mmps = speed_to_mmps(speed_ms);
 
   float steer = std::clamp(cmd.lateral.steering_tire_angle,
@@ -209,6 +209,7 @@ bool CanEncoder::encode_brake(const autoware_control_msgs::msg::Control & cmd,
   if (!cmd.longitudinal.is_defined_acceleration) return false;
 
   float accel = cmd.longitudinal.acceleration;
+  if (!std::isfinite(accel)) return false;
   int32_t kpa = 0;
   if (accel < 0.0f) {
     float decel = -accel;
@@ -245,6 +246,43 @@ bool CanEncoder::encode_lights(const autoware_vehicle_msgs::msg::TurnIndicatorsC
 bool CanEncoder::encode_heartbeat(struct can_frame & frame)
 {
   messages::HostHeartbeat message{host_alive_ctr_++, 0};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
+bool CanEncoder::encode_brake_hold(struct can_frame & frame)
+{
+  messages::HostBrakeReq message{static_cast<int32_t>(params_.max_brake_pressure_kpa)};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
+bool CanEncoder::encode_steering(
+  const autoware_control_msgs::msg::Control & cmd, struct can_frame & frame)
+{
+  if (!std::isfinite(cmd.lateral.steering_tire_angle)) return false;
+  messages::HostSteerCmd message{
+    motion::to_trike_steering_0_1deg(
+      cmd.lateral.steering_tire_angle, params_.max_steering_angle),
+    true, 0, steering_ctr_++};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
+bool CanEncoder::encode_neutral_drive(struct can_frame & frame)
+{
+  messages::HostDriveCmd message{0, 0, gear::CAN_N};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
+bool CanEncoder::encode_invalid_steering(struct can_frame & frame)
+{
+  messages::HostSteerCmd message{0, false, 0, steering_ctr_++};
   protocol::Frame encoded;
   return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
          to_socket_frame(encoded, frame);
@@ -364,6 +402,29 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   return true;
 }
 
+bool CanDecoder::decode_motion(
+  const struct can_frame & frame, autoware_vehicle_msgs::msg::VelocityReport & velocity_msg,
+  autoware_vehicle_msgs::msg::GearReport & gear_msg)
+{
+  messages::RtMotionRpt value{};
+  if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) return false;
+  if (have_motion_counter_ && value.rolling_counter == last_motion_counter_) return false;
+  have_motion_counter_ = true;
+  last_motion_counter_ = value.rolling_counter;
+  if (!value.speed_valid || !value.yaw_rate_valid || !value.gear_valid) return false;
+  velocity_msg.longitudinal_velocity = value.speed_mmps / 1000.0F;
+  velocity_msg.lateral_velocity = 0.0F;
+  velocity_msg.heading_rate = motion::universe_heading_rate(value.yaw_rate_mrad_s);
+  switch (value.gear) {
+    case gear::CAN_N: gear_msg.report = gear::NEUTRAL; break;
+    case gear::CAN_D: gear_msg.report = gear::DRIVE; break;
+    case gear::CAN_S: gear_msg.report = gear::LOW; break;
+    case gear::CAN_R: gear_msg.report = gear::REVERSE; break;
+    default: return false;
+  }
+  return true;
+}
+
 // =====================================================================
 //  HeartbeatMonitor
 // =====================================================================
@@ -422,7 +483,8 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
     [this](const Engage::SharedPtr m) { on_engage(m); });
   srv_control_mode_ = create_service<autoware_vehicle_msgs::srv::ControlModeCommand>(
     "/control/control_mode_request",
-    [this](const auto request, auto response) { on_control_mode(request, response); });
+    std::bind(&VehicleBridgeNode::on_control_mode, this, std::placeholders::_1,
+      std::placeholders::_2));
   sub_emergency_ = create_subscription<VehicleEmergencyStamped>("/control/command/emergency_cmd", rclcpp::QoS(1),
     [this](const VehicleEmergencyStamped::SharedPtr m) { on_emergency(m); });
 
@@ -541,6 +603,7 @@ CallbackReturn VehicleBridgeNode::on_cleanup(const State &)
   engaged_.store(false, std::memory_order_relaxed);
   confirmed_auto_.store(false, std::memory_order_relaxed);
   software_emergency_.store(false, std::memory_order_relaxed);
+  park_requested_.store(false, std::memory_order_relaxed);
   rt_heartbeat_ = HeartbeatMonitor{};
   return CallbackReturn::SUCCESS;
 }
@@ -577,6 +640,9 @@ void VehicleBridgeNode::on_gear(const autoware_vehicle_msgs::msg::GearCommand::S
 {
   std::lock_guard<std::mutex> lock(mutex_);
   latest_gear_ = msg;
+  park_requested_.store(
+    msg->command == autoware_vehicle_msgs::msg::GearCommand::PARK,
+    std::memory_order_relaxed);
 }
 
 void VehicleBridgeNode::on_turn(const autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr msg)
@@ -627,6 +693,11 @@ void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmerg
     return;
   }
   engaged_.store(false, std::memory_order_relaxed);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    latest_control_.reset();
+    last_cmd_time_ = now();
+  }
 
   // Rate-limited: max 1 ESTOP frame per 500ms from Host
   auto n = now();
@@ -649,18 +720,20 @@ void VehicleBridgeNode::tick_control()
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Command timeout: %.0fms — sending zero speed", cmd_age);
     // Send zero-speed frame so RT's staleness watchdog doesn't need to wait 500ms
     struct can_frame z;
-    std::memset(&z, 0, sizeof(z));
-    messages::HostDriveCmd stop{0, 0, gear::CAN_N};
-    protocol::Frame encoded;
-    if (messages::encode(stop, encoded) == protocol::CodecStatus::Ok &&
-        to_socket_frame(encoded, z)) can_->send(z);
+    if (encoder_->encode_neutral_drive(z)) can_->send(z);
+    if (encoder_->encode_invalid_steering(z)) can_->send(z);
     return;
   }
   const bool motion_enabled = engaged_.load(std::memory_order_relaxed) &&
     confirmed_auto_.load(std::memory_order_relaxed) &&
     !software_emergency_.load(std::memory_order_relaxed) &&
     sys_estop_active_.load(std::memory_order_relaxed) == 0;
-  if (!motion_enabled) return;
+  if (!motion_enabled) {
+    struct can_frame z;
+    if (encoder_->encode_neutral_drive(z)) can_->send(z);
+    if (encoder_->encode_invalid_steering(z)) can_->send(z);
+    return;
+  }
 
   // Snapshot latest commands
   autoware_control_msgs::msg::Control::SharedPtr ctrl;
@@ -692,8 +765,14 @@ void VehicleBridgeNode::tick_control()
   if (encoder_->encode_drive(*ctrl, gear_val, has_gear, frame))
     can_->send(frame);
 
+  // Direct angle stays valid at zero speed; 0x300 remains the speed/legacy-yaw path.
+  if (encoder_->encode_steering(*ctrl, frame))
+    can_->send(frame);
+
   // 0x301 HOST_BRAKE_REQ
   if (encoder_->encode_brake(*ctrl, frame))
+    can_->send(frame);
+  if (park_requested_.load(std::memory_order_relaxed) && encoder_->encode_brake_hold(frame))
     can_->send(frame);
 
   // 0x302 HOST_LIGHT_CMD
@@ -773,11 +852,24 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case CAN_THROTTLE_STS: {
-      autoware_vehicle_msgs::msg::VelocityReport vel;
-      if (decoder_->decode_velocity(frame, vel) && pub_velocity_->is_activated())
-        pub_velocity_->publish(vel);
+    case CAN_THROTTLE_STS:
+      // Retained for diagnostics/compatibility; 0x121 is the coherent report source.
+      break;
 
+    case CAN_MOTION_RPT: {
+      autoware_vehicle_msgs::msg::VelocityReport velocity;
+      autoware_vehicle_msgs::msg::GearReport gear_report;
+      velocity.header.stamp = now();
+      velocity.header.frame_id = "base_link";
+      gear_report.stamp = velocity.header.stamp;
+      if (decoder_->decode_motion(frame, velocity, gear_report)) {
+        if (park_requested_.load(std::memory_order_relaxed) &&
+            gear_report.report == autoware_vehicle_msgs::msg::GearReport::NEUTRAL) {
+          gear_report.report = autoware_vehicle_msgs::msg::GearReport::PARK;
+        }
+        if (pub_velocity_->is_activated()) pub_velocity_->publish(velocity);
+        if (pub_gear_->is_activated()) pub_gear_->publish(gear_report);
+      }
       break;
     }
 
@@ -792,7 +884,6 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
         case gear::CAN_R: gear.report = gear::REVERSE; break;
         default:          gear.report = gear::NONE;     break;
       }
-      if (pub_gear_->is_activated()) pub_gear_->publish(gear);
       break;
     }
 
@@ -836,7 +927,6 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       autoware_vehicle_msgs::msg::GearReport gear;
       if (decoder_->decode_state(frame, mode, gear)) {
         if (pub_mode_->is_activated()) pub_mode_->publish(mode);
-        if (pub_gear_->is_activated()) pub_gear_->publish(gear);
       }
       break;
     }
@@ -851,10 +941,10 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
     case messages::SteerDiag::kId: {
       messages::SteerDiag message{};
       if (messages::decode(protocol_view(frame), message) != protocol::CodecStatus::Ok) break;
-      float steer_deg = static_cast<float>(message.angle_0_1deg);
+      const int16_t trike_angle = static_cast<int16_t>(std::lround(message.angle_0_1deg * 10.0));
       autoware_vehicle_msgs::msg::SteeringReport steer;
       steer.stamp = now();
-      steer.steering_tire_angle = steer_deg * M_PI / 180.0f;
+      steer.steering_tire_angle = motion::universe_steering_rad(trike_angle);
       if (pub_steering_->is_activated()) pub_steering_->publish(steer);
       break;
     }
