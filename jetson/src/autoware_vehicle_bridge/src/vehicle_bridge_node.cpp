@@ -506,13 +506,14 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
     [this](const TurnIndicatorsCommand::SharedPtr m) { on_turn(m); });
   sub_hazard_ = create_subscription<HazardLightsCommand>("/control/command/hazard_lights_cmd", command_qos,
     [this](const HazardLightsCommand::SharedPtr m) { on_hazard(m); });
-  sub_engage_ = create_subscription<Engage>("~/input/engage", rclcpp::QoS(1),
+  sub_engage_ = create_subscription<Engage>("~/input/engage", command_qos,
     [this](const Engage::SharedPtr m) { on_engage(m); });
   srv_control_mode_ = create_service<autoware_vehicle_msgs::srv::ControlModeCommand>(
     "/control/control_mode_request",
     std::bind(&VehicleBridgeNode::on_control_mode, this, std::placeholders::_1,
       std::placeholders::_2));
-  sub_emergency_ = create_subscription<VehicleEmergencyStamped>("/control/command/emergency_cmd", rclcpp::QoS(1),
+  sub_emergency_ = create_subscription<VehicleEmergencyStamped>(
+    "/control/command/emergency_cmd", command_qos,
     [this](const VehicleEmergencyStamped::SharedPtr m) { on_emergency(m); });
 
   pub_velocity_      = create_publisher<autoware_vehicle_msgs::msg::VelocityReport>("/vehicle/status/velocity_status", rclcpp::QoS(1));
