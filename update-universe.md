@@ -44,12 +44,12 @@ MTR firmware stay unchanged.
 
 | Component | Change? | In one line |
 |---|---|---|
-| **Bridge (Jetson)** | **YES — required** | Rewrite for Universe types; fix signs, gears, control-mode service/reporting, engage, emergency, lifecycle, parameters, and safety gating. |
+| **Bridge (Jetson)** | **YES — required** | Rewrite for Universe types; fix signs, gears, `0x111` mode requests, engage, lights/hazards, emergency, lifecycle, parameters, and safety gating. Preserve `0x112` transport without treating it as working ignition control. |
 | **Wired commands (protocol)** | **YES — additive/metadata only** | Keep every existing layout, document HMI and Host as permitted `0x111` producers, and add required `0x303` steering command and `0x121` motion report. |
-| **RT computer** | **YES — required** | Add direct steering-angle input and coherent motion feedback. Preserve the existing `0x111` High→Low gateway path. |
+| **RT computer** | **YES — narrowly scoped** | Add `0x303` direct steering-angle input and `0x121` motion feedback. Preserve everything else, including PID, encoders, resolvers, diagnostics, bypass flags, safety logic, and the existing `0x111` gateway. |
 | **SYS computer** | **NO** | Already handles mode and emergency correctly; the bridge uses its existing path. |
 | **MTR computer** | **NO** | Existing propulsion, gear, feedback, timeout, and ESTOP behavior stays unchanged. |
-| **control-toolkit** | **YES — required** | Regenerate codecs, send `0x111` and `0x303`, decode `0x121`, and exercise mode changes, standstill steering, and motion feedback under bench safety gating. |
+| **control-toolkit** | **YES — required** | Regenerate codecs; retain `0x111`, `0x112`, lights, and ESTOP controls; add `0x303` and decode `0x121`; exercise them under bench safety gating. |
 | **simulation / native tests / debug-tool / vt-console** | **YES — required** | Regenerate and update models, fixtures, decoders, displays, and regression tests for `0x303` and `0x121`. |
 | **Autoware settings** | **YES — small** | Lower speed/steer limits to trike size; keep mode timeout. |
 | **New ROS packages** | **YES** | 4 small packages: bridge, protocol wrapper, launch, vehicle description. |
@@ -164,6 +164,34 @@ translate to the trike's value when sending, and back when reporting.
 
 No SYS firmware or new mode-message ID is needed; the plan reuses `0x111`.
 
+## HMI and operator paths — inputs, outputs, and feedback
+
+Do not treat all HMI-related signals as commands from Jetson. Some are physical inputs to SYS,
+some are CAN inputs to RT/SYS, some are physical outputs driven by SYS, and others are CAN
+feedback from the units:
+
+| Function | Source → destination | Kind | Universe/Jetson work |
+|---|---|---|---|
+| AUTO/MANUAL request | HMI or Bridge → High `0x111` → RT gateway → SYS | CAN input to SYS | Bridge translates supported Autoware control-mode requests to `0x111` and maintains the rolling counter. |
+| Confirmed physical mode | SYS → Low `0x110` → RT/MTR; RT → High `0x210` → Bridge | Unit output/feedback | Bridge waits for `0x210` before publishing the confirmed Autoware control-mode report. It never treats transmitted `0x111` as confirmation. |
+| Physical MODE button | Button GPIO → SYS | Physical input to SYS | No bridge emulation is required; preserve it as another request source handled by SYS. |
+| Power/start request | HMI or tooling → High `0x112` → RT gateway → SYS | CAN input to SYS | Preserve codec, 1 Hz rolling counter, gateway, and tests. SYS currently only decodes/logs it, so do not claim a power-state output or ignition action. |
+| Physical START button | Button GPIO → SYS | Physical input to SYS | Used for ESTOP recovery. Never replace it with `0x112` or an Autoware command. |
+| Requested turn/head/brake lamps | Bridge/Host → High `0x302` → RT gateway → SYS | CAN input to SYS | Bridge sets requested left/right and brake-light bits. Preserve headlight support; stock Universe supplies no standard headlight command. |
+| Physical turn/head switches | Switch GPIOs → SYS | Physical inputs to SYS | SYS combines these with `0x302`; the bridge does not read or emulate the GPIOs. |
+| Actual lamps | SYS light arbitration → lamp GPIOs | Physical outputs from SYS | SYS remains the output owner. Host requests do not directly drive lamp GPIOs. |
+| Actual lamp feedback | SYS → `0x011` → RT/Bridge | CAN output from SYS | Bridge builds turn and hazard reports from actual `light_left/right`, not from the last `0x302` request. Brake/head bits remain diagnostics/tooling feedback. |
+| Physical brake lever | Lever GPIO/ADC → SYS | Physical input to SYS | SYS uses it for manual braking and brake-lamp arbitration. `0x600.brake_engaged` reports the lever state; it is not brake-actuator confirmation. |
+| Autoware brake request | Bridge → High `0x301` → RT → Low `0x205`/brake path | CAN input to RT | Separate from the physical lever. Existing RT/SYS brake arbitration remains authoritative. |
+| ESTOP assertion | Physical ESTOP → SYS, or any permitted CAN sender → `0x001` → all units | Physical/CAN safety input | Bridge sends `0x001` only for `emergency=true`; all existing unit reactions stay unchanged. |
+| ESTOP state feedback | SYS `0x011` and RT `0x210` → Bridge | CAN output from units | Bridge reports disengaged/safe state until the units confirm recovery. |
+| ESTOP reset | Physical START or documented physical MODE long-press → SYS | Physical input to SYS | Never generate from Autoware, Jetson, `0x112`, or another CAN command. |
+
+Thus Jetson produces requested mode, light, brake, and ESTOP CAN inputs; it consumes confirmed
+mode, actual-light, safety, and diagnostic outputs. SYS owns physical inputs, lamp outputs,
+mode confirmation, brake arbitration, and ESTOP recovery. `0x112` is preserved as an input but
+has no implemented power output/state feedback today.
+
 ## Emergency stop — physical reset by design
 
 On an emergency signal (`true`), the bridge sends the stop command (`0x001`). That is
@@ -202,11 +230,16 @@ angle to be tracked even when stopped (for pull-out, parking, and engaging from 
 What currently happens at zero speed with only a yaw rate: **nothing** — the command is thrown
 away by both the bridge and RT.
 
-**Why it fails today.** The bridge converts Universe's steering angle to a yaw rate using
-`yaw = speed × tan(angle) / wheelbase`. At zero speed, this yields yaw = 0 regardless of
-angle — the precise angle is lost in the conversion. The bridge also explicitly zeroes yaw
-below 0.05 m/s as a safety guard. So RT receives yaw ≈ 0, and its physics model decays
-steering toward center.
+**Why it fails today.** The current Autoware.Auto bridge already converts
+`AckermannControlCommand` steering angle to yaw rate using
+`yaw = speed × tan(angle) / wheelbase`. Its `steering_to_yaw()` explicitly returns zero below
+the configured 0.05 m/s threshold. RT independently applies its own absolute-speed 0.05 m/s
+threshold in `PhysicsModel::resolve()` before performing inverse kinematics. At zero speed the
+angle is therefore lost on the legacy `0x300` path and RT decays steering toward center.
+
+The current bridge check is written as `speed < threshold`, not `abs(speed) < threshold`, so
+it also zeros yaw for every negative/reverse speed. The Universe port must correct this to a
+symmetric absolute-speed check and add forward/reverse boundary tests.
 
 (Note: RT does have a fallback — if it *did* receive a non-zero yaw at standstill, it would
 turn the wheel to full lock in that direction, preparing for a turn. But the angle→yaw
@@ -245,7 +278,10 @@ Lets the trike steer while parked (see "The one firmware change that truly matte
   **bypass the low-speed steering cutoff** while it is fresh and valid. Define a timeout and
   make the direct-angle path authoritative so it cannot fight the legacy `0x300` yaw path.
 - **Bridge:** send `0x303` from Universe's steering angle; keep sending the existing drive
-  command for speed.
+  command for speed. For the legacy/compatibility yaw field in `0x300`, explicitly implement
+  `abs(speed) < low_speed_threshold → yaw_rate = 0`; do not rely on RT's independent guard.
+  This guard applies only to derived yaw rate—fresh valid `0x303` steering angle must continue
+  through zero speed so standstill steering works.
 - **Why safe:** new message ID; old firmware ignores it.
 
 ### 2.2 Motion report — `0x121` (required)
@@ -259,16 +295,37 @@ Gives Universe an honest turn rate and the real gear state.
 - **Bridge:** use `0x121` for `VelocityReport.longitudinal_velocity`, `heading_rate`, and
   physical gear reporting.
 
-### 2.3 Why these are safe to add
+### 2.3 RT scope boundary — preserve existing features
+
+The Universe migration is not an RT cleanup project. Do not remove or redesign code merely
+because the production profile currently disables it or because it is not used by this plan.
+
+- Keep the current PID controller, PID telemetry, calculated-speed estimator, encoder support,
+  `DirectResolver`, bicycle `PhysicsModel`, diagnostics, bench modes, bypass variables, and
+  feature flags.
+- Keep the production vehicle configuration with `ETRIKE_RT_PID_MODE=0`, speed feedback set to
+  `None`, and encoders disabled unless a separate validated hardware decision changes it.
+- PID disabled means **normal open-loop longitudinal drive**: RT sends the bounded requested
+  speed to MTR without adding PID correction. It does not mean stop, fault, or inhibit motion.
+- Shadow and active PID behavior remain available for their existing bench/future profiles and
+  are outside the Universe migration scope.
+- Do not optimize away calculated-speed/PID work, suppress `0x220`, remove unused variables, or
+  alter build variants as part of this plan. Such cleanup requires a separate review and tests.
+- Limit functional RT edits to decoding/arbitrating fresh `0x303`, commanding steering at
+  standstill, publishing `0x121`, updating CAN routing/filter tables where required, and adding
+  corresponding tests.
+
+### 2.4 Why these are safe to add
 
 Existing frame layouts remain unchanged. Old firmware ignores the new IDs, but a completed
 deployment requires the new RT firmware. Mixed versions must remain motion-disabled until the
 bridge verifies the expected feedback/capability. Measure added CAN load and arbitration.
 
-### 2.4 Orphans kept
+### 2.5 Orphans kept
 
 Not used by stock Universe, but kept for tooling/future use: obstacle distance, PID
-telemetry, HMI mode request, headlight bits, brake/diagnostic reports. None are removed.
+telemetry, HMI power request, headlight bits, brake/diagnostic reports, alternate resolver,
+encoder support, calculated-speed estimator, and bench/bypass support. None are removed.
 
 ---
 
@@ -299,13 +356,21 @@ and new `0x303` behavior provide bench coverage for the bridge path.
 
 **Phase 2 — required RT/protocol/tooling work:**
 5. Add `0x303` and `0x121` contracts, golden vectors, and regenerated codecs.
-6. Implement direct standstill steering and coherent motion reporting in RT.
+6. Implement only direct standstill steering and coherent motion reporting in RT; preserve
+   PID-disabled open-loop driving and all existing optional/dormant RT features.
 7. Update control-toolkit, simulation, native tests, debug-tool, and vt-console as applicable.
+   Preserve HMI coverage for periodic `0x111`/`0x112` counters, lights, and ESTOP; tests must
+   distinguish the currently effective `0x111` mode path from non-functional `0x112` power action.
+   Add bridge/RT boundary cases at `-0.05`, just below `-0.05`, zero, just below `+0.05`, and
+   `+0.05` m/s: legacy yaw uses a symmetric absolute-speed guard while fresh `0x303` steering
+   remains active at every speed.
 
 **Phase 3 — staged validation:**
 8. Validate HMI-direct, HMI-via-Jetson, Autoware-service, and toolkit mode requests through RT
    to SYS. Confirm rolling counters, ESTOP rejection, confirmed `0x210` feedback, and no motion
-   before SYS AUTO plus engage. Run injected mode tests with propulsion inhibited.
+   before SYS AUTO plus engage. Also verify `0x112` is transported without claiming that it
+   switches vehicle power, and verify turn/hazard/headlight/brake-light mappings. Run injected
+   mode and ESTOP tests with propulsion inhibited.
 9. Test on the real trike with propulsion disabled, then wheels lifted: signs, limits, gear,
    PARK hold, HMI/manual takeover, ESTOP/reset, timeouts, and CAN failure.
 10. Permit ground motion only after all required tests pass and evidence is recorded.
@@ -319,4 +384,5 @@ All three phases are required. Phase 2 is not optional.
 All existing CAN frame layouts, the safety layering, heartbeat messages, bus split,
 steering/brake motor protocols, brake-pressure path, physical/HMI mode authority, and
 emergency-stop behavior remain compatible. The additive `0x303` and `0x121` messages change
-only the Host↔RT interface; SYS and MTR firmware remain unchanged.
+only the Host↔RT interface; SYS and MTR firmware remain unchanged. Existing RT PID, encoder,
+resolver, diagnostics, bench, bypass, and unused/dormant code stays in place.
