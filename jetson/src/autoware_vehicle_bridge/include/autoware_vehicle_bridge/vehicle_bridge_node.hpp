@@ -151,12 +151,14 @@ class HeartbeatMonitor
 {
 public:
   void feed(uint8_t counter, const rclcpp::Time & now);
+  void reset();
   bool is_alive(const rclcpp::Time & now, int timeout_ms) const;
   uint8_t counter() const { std::lock_guard<std::mutex> lk(mutex_); return counter_; }
   rclcpp::Time last_time() const { std::lock_guard<std::mutex> lk(mutex_); return last_time_; }
 
 private:
   mutable std::mutex mutex_;
+  bool have_sample_{false};
   uint8_t counter_{0};
   rclcpp::Time last_time_{0, 0, RCL_SYSTEM_TIME};
 };
