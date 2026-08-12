@@ -214,9 +214,11 @@ bool CanEncoder::encode_drive(const autoware_control_msgs::msg::Control & cmd,
 bool CanEncoder::encode_brake(const autoware_control_msgs::msg::Control & cmd,
                               struct can_frame & frame)
 {
-  if (!cmd.longitudinal.is_defined_acceleration) return false;
-
-  float accel = cmd.longitudinal.acceleration;
+  // If acceleration is undefined, treat as zero (coast / no braking) rather than
+  // skipping the brake frame, so RT always receives an explicit brake command.
+  float accel = cmd.longitudinal.is_defined_acceleration
+                  ? cmd.longitudinal.acceleration
+                  : 0.0f;
   if (!std::isfinite(accel)) return false;
   int32_t kpa = 0;
   if (accel < 0.0f) {
@@ -497,7 +499,10 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
   declare_parameter("motion_report_timeout_ms", 100);
   declare_parameter("can_interface", "can0");
 
-  const auto command_qos = rclcpp::QoS(1).reliable().transient_local();
+  // VOLATILE durability: connects to both VOLATILE and TRANSIENT_LOCAL publishers.
+  // (transient_local would silently fail to connect to standard VOLATILE Autoware
+  // command publishers — see deployment plan QoS section.)
+  const auto command_qos = rclcpp::QoS(1).reliable();
   sub_control_ = create_subscription<Control>("/control/command/control_cmd", command_qos,
     [this](const Control::SharedPtr m) { on_control(m); });
   sub_gear_ = create_subscription<GearCommand>("/control/command/gear_cmd", command_qos,
@@ -818,7 +823,9 @@ void VehicleBridgeNode::tick_control()
     return;
   }
 
-  // Gear override
+  // Gear selection: honor explicit GearCommand; when engaged and no explicit
+  // gear is given, latch DRIVE (matches Autoware's expect-gear-latched behavior
+  // and avoids dropping to NEUTRAL at standstill / low speed).
   uint8_t gear_val = gear::CAN_N;
   bool has_gear = false;
   if (gear && gear->command != autoware_vehicle_msgs::msg::GearCommand::NONE) {
@@ -828,6 +835,9 @@ void VehicleBridgeNode::tick_control()
       case gear::LOW:     gear_val = gear::CAN_S; break;
       default:            gear_val = gear::CAN_N; break;
     }
+    has_gear = true;
+  } else if (engaged_.load(std::memory_order_relaxed)) {
+    gear_val = gear::CAN_D;
     has_gear = true;
   }
 

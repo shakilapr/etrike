@@ -14,6 +14,7 @@ from lifecycle_msgs.msg import Transition
 
 def generate_launch_description() -> LaunchDescription:
     can_interface = LaunchConfiguration("can_interface")
+    engage_topic = LaunchConfiguration("engage_topic")
     parameter_file = PathJoinSubstitution(
         [FindPackageShare("autoware_vehicle_bridge"), "config", "etrike.param.yaml"]
     )
@@ -24,7 +25,7 @@ def generate_launch_description() -> LaunchDescription:
         name="vehicle_bridge",
         output="screen",
         parameters=[parameter_file, {"can_interface": can_interface}],
-        remappings=[("~/input/engage", "/api/autoware/get/engage")],
+        remappings=[("~/input/engage", engage_topic)],
     )
 
     configure = EmitEvent(
@@ -43,6 +44,14 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument("can_interface", default_value="can0"),
+            DeclareLaunchArgument(
+                "engage_topic",
+                default_value="/api/autoware/get/engage",
+                description="Topic of type autoware_vehicle_msgs/msg/Engage the bridge "
+                "subscribes to. Verify this is a PUBLISHED topic in the target Autoware "
+                "Universe version; if engage is only exposed as an external-API service, "
+                "this must be remapped to the real engage topic (e.g. /control/engage).",
+            ),
             bridge,
             RegisterEventHandler(
                 OnProcessStart(target_action=bridge, on_start=[configure])

@@ -4,8 +4,10 @@
   <arg name="raw_vehicle_cmd_converter_param_path" default=""/>
   <arg name="initial_engage_state" default="false"/>
   <arg name="can_interface" default="can0"/>
+  <arg name="engage_topic" default="/api/autoware/get/engage"/>
 
   <include file="$(find-pkg-share autoware_vehicle_bridge)/launch/vehicle_bridge.launch.py">
     <arg name="can_interface" value="$(var can_interface)"/>
+    <arg name="engage_topic" value="$(var engage_topic)"/>
   </include>
 </launch>
