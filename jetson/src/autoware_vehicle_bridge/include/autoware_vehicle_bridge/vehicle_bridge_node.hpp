@@ -15,19 +15,18 @@
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
-#include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
-#include <autoware_auto_vehicle_msgs/msg/control_mode_command.hpp>
-#include <autoware_auto_vehicle_msgs/msg/control_mode_report.hpp>
-#include <autoware_auto_vehicle_msgs/msg/engage.hpp>
-#include <autoware_auto_vehicle_msgs/msg/gear_command.hpp>
-#include <autoware_auto_vehicle_msgs/msg/gear_report.hpp>
-#include <autoware_auto_vehicle_msgs/msg/hazard_lights_command.hpp>
-#include <autoware_auto_vehicle_msgs/msg/hazard_lights_report.hpp>
-#include <autoware_auto_vehicle_msgs/msg/steering_report.hpp>
-#include <autoware_auto_vehicle_msgs/msg/turn_indicators_command.hpp>
-#include <autoware_auto_vehicle_msgs/msg/turn_indicators_report.hpp>
-#include <autoware_auto_vehicle_msgs/msg/vehicle_kinematic_state.hpp>
-#include <autoware_auto_vehicle_msgs/msg/velocity_report.hpp>
+#include <autoware_control_msgs/msg/control.hpp>
+#include <autoware_vehicle_msgs/msg/control_mode_report.hpp>
+#include <autoware_vehicle_msgs/msg/engage.hpp>
+#include <autoware_vehicle_msgs/msg/gear_command.hpp>
+#include <autoware_vehicle_msgs/msg/gear_report.hpp>
+#include <autoware_vehicle_msgs/msg/hazard_lights_command.hpp>
+#include <autoware_vehicle_msgs/msg/hazard_lights_report.hpp>
+#include <autoware_vehicle_msgs/msg/steering_report.hpp>
+#include <autoware_vehicle_msgs/msg/turn_indicators_command.hpp>
+#include <autoware_vehicle_msgs/msg/turn_indicators_report.hpp>
+#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
+#include <autoware_vehicle_msgs/srv/control_mode_command.hpp>
 #include <tier4_vehicle_msgs/msg/vehicle_emergency_stamped.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <diagnostic_msgs/msg/diagnostic_status.hpp>
@@ -90,15 +89,15 @@ public:
   explicit CanEncoder(const VehicleParams & params);
 
   // Returns true if a frame should be sent
-  bool encode_drive(const autoware_auto_control_msgs::msg::AckermannControlCommand & cmd,
+  bool encode_drive(const autoware_control_msgs::msg::Control & cmd,
                     uint8_t gear_override, bool has_gear_override,
                     struct can_frame & frame);
 
-  bool encode_brake(const autoware_auto_control_msgs::msg::AckermannControlCommand & cmd,
+  bool encode_brake(const autoware_control_msgs::msg::Control & cmd,
                     struct can_frame & frame);
 
-  bool encode_lights(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
-                     const autoware_auto_vehicle_msgs::msg::HazardLightsCommand * hazard,
+  bool encode_lights(const autoware_vehicle_msgs::msg::TurnIndicatorsCommand * turn,
+                     const autoware_vehicle_msgs::msg::HazardLightsCommand * hazard,
                      bool is_braking,
                      struct can_frame & frame);
 
@@ -119,11 +118,11 @@ class CanDecoder
 {
 public:
   bool decode_velocity(const struct can_frame & frame,
-                       autoware_auto_vehicle_msgs::msg::VelocityReport & msg) const;
+                       autoware_vehicle_msgs::msg::VelocityReport & msg) const;
 
   bool decode_state(const struct can_frame & frame,
-                    autoware_auto_vehicle_msgs::msg::ControlModeReport & mode_msg,
-                    autoware_auto_vehicle_msgs::msg::GearReport & gear_msg) const;
+                    autoware_vehicle_msgs::msg::ControlModeReport & mode_msg,
+                    autoware_vehicle_msgs::msg::GearReport & gear_msg) const;
 
   bool decode_diagnostics(const struct can_frame & frame,
                           diagnostic_msgs::msg::DiagnosticArray & msg,
@@ -169,22 +168,21 @@ private:
   std::unique_ptr<CanDecoder> decoder_;
 
   // ---- Subscriptions ----
-  rclcpp::Subscription<autoware_auto_control_msgs::msg::AckermannControlCommand>::SharedPtr sub_control_;
-  rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::GearCommand>::SharedPtr sub_gear_;
-  rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand>::SharedPtr sub_turn_;
-  rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::HazardLightsCommand>::SharedPtr sub_hazard_;
-  rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::Engage>::SharedPtr sub_engage_;
-  rclcpp::Subscription<autoware_auto_vehicle_msgs::msg::ControlModeCommand>::SharedPtr sub_control_mode_;
+  rclcpp::Subscription<autoware_control_msgs::msg::Control>::SharedPtr sub_control_;
+  rclcpp::Subscription<autoware_vehicle_msgs::msg::GearCommand>::SharedPtr sub_gear_;
+  rclcpp::Subscription<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>::SharedPtr sub_turn_;
+  rclcpp::Subscription<autoware_vehicle_msgs::msg::HazardLightsCommand>::SharedPtr sub_hazard_;
+  rclcpp::Subscription<autoware_vehicle_msgs::msg::Engage>::SharedPtr sub_engage_;
   rclcpp::Subscription<tier4_vehicle_msgs::msg::VehicleEmergencyStamped>::SharedPtr sub_emergency_;
+  rclcpp::Service<autoware_vehicle_msgs::srv::ControlModeCommand>::SharedPtr srv_control_mode_;
 
   // ---- Publishers ----
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::VelocityReport>::SharedPtr pub_velocity_;
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::SteeringReport>::SharedPtr pub_steering_;
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::GearReport>::SharedPtr pub_gear_;
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::ControlModeReport>::SharedPtr pub_mode_;
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsReport>::SharedPtr pub_turn_status_;
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::HazardLightsReport>::SharedPtr pub_hazard_status_;
-  rclcpp_lifecycle::LifecyclePublisher<autoware_auto_vehicle_msgs::msg::VehicleKinematicState>::SharedPtr pub_kinematic_state_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_vehicle_msgs::msg::VelocityReport>::SharedPtr pub_velocity_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_vehicle_msgs::msg::SteeringReport>::SharedPtr pub_steering_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_vehicle_msgs::msg::GearReport>::SharedPtr pub_gear_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_vehicle_msgs::msg::ControlModeReport>::SharedPtr pub_mode_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_vehicle_msgs::msg::TurnIndicatorsReport>::SharedPtr pub_turn_status_;
+  rclcpp_lifecycle::LifecyclePublisher<autoware_vehicle_msgs::msg::HazardLightsReport>::SharedPtr pub_hazard_status_;
   rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr pub_diag_;
 
   // ---- Timers ----
@@ -198,21 +196,15 @@ private:
 
   // ---- Command state (mutex-protected) ----
   std::mutex mutex_;
-  autoware_auto_control_msgs::msg::AckermannControlCommand::SharedPtr latest_control_;
-  autoware_auto_vehicle_msgs::msg::GearCommand::SharedPtr latest_gear_;
-  autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr latest_turn_;
-  autoware_auto_vehicle_msgs::msg::HazardLightsCommand::SharedPtr latest_hazard_;
+  autoware_control_msgs::msg::Control::SharedPtr latest_control_;
+  autoware_vehicle_msgs::msg::GearCommand::SharedPtr latest_gear_;
+  autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr latest_turn_;
+  autoware_vehicle_msgs::msg::HazardLightsCommand::SharedPtr latest_hazard_;
   rclcpp::Time last_cmd_time_;
   bool engaged_{false};
 
   // ---- Heartbeat ----
   HeartbeatMonitor rt_heartbeat_;
-
-  // ---- Odometry (dead reckoning) ----
-  std::atomic<double> steer_angle_rad_{0.0};  // written by RX thread, read by executor thread
-  rclcpp::Time last_steer_time_{0, 0, RCL_SYSTEM_TIME};
-  double odom_x_{0.0}, odom_y_{0.0}, odom_yaw_{0.0};
-  rclcpp::Time last_odom_time_{0, 0, RCL_SYSTEM_TIME};
 
   // ---- SYS liveness (from 0x011, written in RX thread, read in executor thread) ----
   std::atomic<uint8_t> sys_estop_active_{0};
@@ -222,12 +214,14 @@ private:
   rclcpp::Time last_estop_tx_{0, 0, RCL_SYSTEM_TIME};
 
   // ---- Callbacks ----
-  void on_control(const autoware_auto_control_msgs::msg::AckermannControlCommand::SharedPtr msg);
-  void on_gear(const autoware_auto_vehicle_msgs::msg::GearCommand::SharedPtr msg);
-  void on_turn(const autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr msg);
-  void on_hazard(const autoware_auto_vehicle_msgs::msg::HazardLightsCommand::SharedPtr msg);
-  void on_engage(const autoware_auto_vehicle_msgs::msg::Engage::SharedPtr msg);
-  void on_control_mode(const autoware_auto_vehicle_msgs::msg::ControlModeCommand::SharedPtr msg);
+  void on_control(const autoware_control_msgs::msg::Control::SharedPtr msg);
+  void on_gear(const autoware_vehicle_msgs::msg::GearCommand::SharedPtr msg);
+  void on_turn(const autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr msg);
+  void on_hazard(const autoware_vehicle_msgs::msg::HazardLightsCommand::SharedPtr msg);
+  void on_engage(const autoware_vehicle_msgs::msg::Engage::SharedPtr msg);
+  void on_control_mode(
+    const std::shared_ptr<autoware_vehicle_msgs::srv::ControlModeCommand::Request> request,
+    std::shared_ptr<autoware_vehicle_msgs::srv::ControlModeCommand::Response> response);
   void on_emergency(const tier4_vehicle_msgs::msg::VehicleEmergencyStamped::SharedPtr msg);
 
   void tick_control();

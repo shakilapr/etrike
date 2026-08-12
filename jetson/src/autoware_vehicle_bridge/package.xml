@@ -4,8 +4,8 @@
   <name>autoware_vehicle_bridge</name>
   <version>0.1.0</version>
   <description>
-    Autoware.Auto ROS 2 to CAN bridge for the E-Trike (Jetson Orin).
-    Converts AckermannControlCommand to CAN frames (0x300, 0x301, 0x302, 0x7FC)
+    Autoware Universe ROS 2 to CAN bridge for the E-Trike (Jetson Orin).
+    Converts Control commands to CAN frames (0x300, 0x301, 0x302, 0x7FC)
     on the high-level CAN bus and decodes feedback frames (0x120, 0x011, 0x210,
     0x600, 0x7FD) into ROS 2 vehicle reports. Implements inverse tricycle
     kinematics, heartbeat liveness monitoring, and command timeout safety.
@@ -17,8 +17,8 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
-  <depend>autoware_auto_control_msgs</depend>
-  <depend>autoware_auto_vehicle_msgs</depend>
+  <depend>autoware_control_msgs</depend>
+  <depend>autoware_vehicle_msgs</depend>
   <depend>tier4_vehicle_msgs</depend>
   <depend>diagnostic_msgs</depend>
   <depend>lifecycle_msgs</depend>
