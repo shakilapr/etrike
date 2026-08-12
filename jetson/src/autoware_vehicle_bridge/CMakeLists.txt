@@ -43,6 +43,11 @@ install(DIRECTORY
 )
 
 install(DIRECTORY
+  launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(DIRECTORY
   include/
   DESTINATION include
 )
