@@ -76,6 +76,9 @@ struct VehicleParams
   int command_timeout_ms{500};
   int heartbeat_interval_ms{500};
   int rt_heartbeat_timeout_ms{1500};
+  int sys_status_timeout_ms{500};
+  int state_report_timeout_ms{500};
+  int motion_report_timeout_ms{100};
   std::string can_interface{"can0"};
 
   bool load_from(const rclcpp_lifecycle::LifecycleNode * node);
@@ -141,6 +144,8 @@ public:
                           diagnostic_msgs::msg::DiagnosticArray & msg,
                           const rclcpp::Time & now) const;
 
+  uint8_t motion_counter() const { return last_motion_counter_; }
+
 private:
   bool have_motion_counter_{false};
   uint8_t last_motion_counter_{0};
@@ -151,7 +156,9 @@ class HeartbeatMonitor
 {
 public:
   void feed(uint8_t counter, const rclcpp::Time & now);
+  void observe(const rclcpp::Time & now);
   void reset();
+  bool has_sample() const { std::lock_guard<std::mutex> lk(mutex_); return have_sample_; }
   bool is_alive(const rclcpp::Time & now, int timeout_ms) const;
   uint8_t counter() const { std::lock_guard<std::mutex> lk(mutex_); return counter_; }
   rclcpp::Time last_time() const { std::lock_guard<std::mutex> lk(mutex_); return last_time_; }
@@ -224,13 +231,17 @@ private:
   std::atomic<bool> confirmed_auto_{false};
   std::atomic<bool> software_emergency_{false};
   std::atomic<bool> park_requested_{false};
+  std::atomic<bool> accepting_control_{false};
 
-  // ---- Heartbeat ----
+  // ---- Feedback liveness ----
   HeartbeatMonitor rt_heartbeat_;
+  HeartbeatMonitor sys_status_;
+  HeartbeatMonitor state_report_;
+  HeartbeatMonitor motion_report_;
 
   // ---- SYS liveness (from 0x011, written in RX thread, read in executor thread) ----
-  std::atomic<uint8_t> sys_estop_active_{0};
-  std::atomic<uint8_t> sys_heartbeat_ok_{1};
+  std::atomic<uint8_t> sys_estop_active_{1};
+  std::atomic<uint8_t> sys_heartbeat_ok_{0};
 
   // ---- Rate limiting ----
   rclcpp::Time last_estop_tx_{0, 0, RCL_SYSTEM_TIME};
@@ -253,6 +264,7 @@ private:
 
   // ---- Helpers ----
   bool load_parameters();
+  void invalidate_control();
   void publish_vehicle_reports(const struct can_frame & frame);
 };
 

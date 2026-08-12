@@ -11,4 +11,7 @@
     command_timeout_ms: 500
     heartbeat_interval_ms: 500
     rt_heartbeat_timeout_ms: 1500
+    sys_status_timeout_ms: 500
+    state_report_timeout_ms: 500
+    motion_report_timeout_ms: 100
     can_interface: "can0"

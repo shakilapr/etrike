@@ -99,6 +99,9 @@ bool VehicleParams::load_from(const rclcpp_lifecycle::LifecycleNode * node)
   command_timeout_ms      = node->get_parameter("command_timeout_ms").as_int();
   heartbeat_interval_ms   = node->get_parameter("heartbeat_interval_ms").as_int();
   rt_heartbeat_timeout_ms = node->get_parameter("rt_heartbeat_timeout_ms").as_int();
+  sys_status_timeout_ms   = node->get_parameter("sys_status_timeout_ms").as_int();
+  state_report_timeout_ms = node->get_parameter("state_report_timeout_ms").as_int();
+  motion_report_timeout_ms = node->get_parameter("motion_report_timeout_ms").as_int();
   can_interface           = node->get_parameter("can_interface").as_string();
   return true;
 }
@@ -112,6 +115,11 @@ void VehicleParams::validate_or_throw() const
   if (max_deceleration <= 0.0)    throw std::domain_error("max_deceleration must be positive");
   if (loop_rate <= 0.0)           throw std::domain_error("loop_rate must be positive");
   if (command_timeout_ms <= 0)    throw std::domain_error("command_timeout_ms must be positive");
+  if (heartbeat_interval_ms <= 0) throw std::domain_error("heartbeat_interval_ms must be positive");
+  if (rt_heartbeat_timeout_ms <= 0) throw std::domain_error("rt_heartbeat_timeout_ms must be positive");
+  if (sys_status_timeout_ms <= 0) throw std::domain_error("sys_status_timeout_ms must be positive");
+  if (state_report_timeout_ms <= 0) throw std::domain_error("state_report_timeout_ms must be positive");
+  if (motion_report_timeout_ms <= 0) throw std::domain_error("motion_report_timeout_ms must be positive");
   if (can_interface.empty())      throw std::domain_error("can_interface must not be empty");
 }
 
@@ -438,6 +446,13 @@ void HeartbeatMonitor::feed(uint8_t counter, const rclcpp::Time & now)
   }
 }
 
+void HeartbeatMonitor::observe(const rclcpp::Time & now)
+{
+  std::lock_guard<std::mutex> lk(mutex_);
+  have_sample_ = true;
+  last_time_ = now;
+}
+
 void HeartbeatMonitor::reset()
 {
   std::lock_guard<std::mutex> lk(mutex_);
@@ -477,6 +492,9 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
   declare_parameter("command_timeout_ms", 500);
   declare_parameter("heartbeat_interval_ms", 500);
   declare_parameter("rt_heartbeat_timeout_ms", 1500);
+  declare_parameter("sys_status_timeout_ms", 500);
+  declare_parameter("state_report_timeout_ms", 500);
+  declare_parameter("motion_report_timeout_ms", 100);
   declare_parameter("can_interface", "can0");
 
   const auto command_qos = rclcpp::QoS(1).reliable().transient_local();
@@ -572,7 +590,14 @@ CallbackReturn VehicleBridgeNode::on_activate(const State &)
   timer_control_->reset();
   timer_heartbeat_->reset();
   timer_diag_->reset();
-  last_cmd_time_ = now();
+  accepting_control_.store(false, std::memory_order_relaxed);
+  invalidate_control();
+  rt_heartbeat_.reset();
+  sys_status_.reset();
+  state_report_.reset();
+  motion_report_.reset();
+  sys_estop_active_.store(1, std::memory_order_relaxed);
+  sys_heartbeat_ok_.store(0, std::memory_order_relaxed);
 
   rx_running_ = true;
   rx_thread_ = std::thread(&VehicleBridgeNode::run_can_receive, this);
@@ -589,6 +614,8 @@ CallbackReturn VehicleBridgeNode::on_deactivate(const State &)
   rx_running_ = false;
   can_->close();
   if (rx_thread_.joinable()) rx_thread_.join();
+  accepting_control_.store(false, std::memory_order_relaxed);
+  invalidate_control();
 
   pub_velocity_->on_deactivate();
   pub_steering_->on_deactivate();
@@ -613,7 +640,13 @@ CallbackReturn VehicleBridgeNode::on_cleanup(const State &)
   confirmed_auto_.store(false, std::memory_order_relaxed);
   software_emergency_.store(false, std::memory_order_relaxed);
   park_requested_.store(false, std::memory_order_relaxed);
+  accepting_control_.store(false, std::memory_order_relaxed);
   rt_heartbeat_.reset();
+  sys_status_.reset();
+  state_report_.reset();
+  motion_report_.reset();
+  sys_estop_active_.store(1, std::memory_order_relaxed);
+  sys_heartbeat_ok_.store(0, std::memory_order_relaxed);
   return CallbackReturn::SUCCESS;
 }
 
@@ -641,7 +674,8 @@ bool VehicleBridgeNode::load_parameters()
 void VehicleBridgeNode::on_control(const autoware_control_msgs::msg::Control::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (software_emergency_.load(std::memory_order_relaxed)) {
+  if (!accepting_control_.load(std::memory_order_relaxed) ||
+      software_emergency_.load(std::memory_order_relaxed)) {
     return;
   }
   latest_control_ = msg;
@@ -694,6 +728,8 @@ void VehicleBridgeNode::on_control_mode(
     can_->send(frame);
   if (response->success && request->mode == Request::MANUAL) {
     engaged_.store(false, std::memory_order_relaxed);
+    accepting_control_.store(false, std::memory_order_relaxed);
+    invalidate_control();
   }
 }
 
@@ -705,11 +741,8 @@ void VehicleBridgeNode::on_emergency(const tier4_vehicle_msgs::msg::VehicleEmerg
     return;
   }
   engaged_.store(false, std::memory_order_relaxed);
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    latest_control_.reset();
-    last_cmd_time_ = now();
-  }
+  accepting_control_.store(false, std::memory_order_relaxed);
+  invalidate_control();
 
   // Rate-limited: max 1 ESTOP frame per 500ms from Host
   auto n = now();
@@ -727,23 +760,36 @@ void VehicleBridgeNode::tick_control()
 {
   if (!can_->is_open()) return;
 
-  auto cmd_age = (now() - last_cmd_time_).seconds() * 1000.0;
-  if (cmd_age > params_.command_timeout_ms) {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Command timeout: %.0fms — sending zero speed", cmd_age);
-    // Send zero-speed frame so RT's staleness watchdog doesn't need to wait 500ms
+  const auto tick_now = now();
+  auto send_safe_motion = [this]() {
     struct can_frame z;
     if (encoder_->encode_neutral_drive(z)) can_->send(z);
     if (encoder_->encode_invalid_steering(z)) can_->send(z);
-    return;
-  }
-  const bool motion_enabled = engaged_.load(std::memory_order_relaxed) &&
+  };
+  const bool feedback_ready =
+    rt_heartbeat_.has_sample() &&
+    rt_heartbeat_.is_alive(tick_now, params_.rt_heartbeat_timeout_ms) &&
+    sys_status_.has_sample() &&
+    sys_status_.is_alive(tick_now, params_.sys_status_timeout_ms) &&
+    state_report_.has_sample() &&
+    state_report_.is_alive(tick_now, params_.state_report_timeout_ms) &&
+    motion_report_.has_sample() &&
+    motion_report_.is_alive(tick_now, params_.motion_report_timeout_ms) &&
+    sys_heartbeat_ok_.load(std::memory_order_relaxed) == 1;
+  const bool base_gate_ready = engaged_.load(std::memory_order_relaxed) &&
     confirmed_auto_.load(std::memory_order_relaxed) &&
     !software_emergency_.load(std::memory_order_relaxed) &&
-    sys_estop_active_.load(std::memory_order_relaxed) == 0;
-  if (!motion_enabled) {
-    struct can_frame z;
-    if (encoder_->encode_neutral_drive(z)) can_->send(z);
-    if (encoder_->encode_invalid_steering(z)) can_->send(z);
+    sys_estop_active_.load(std::memory_order_relaxed) == 0 &&
+    feedback_ready;
+  if (!base_gate_ready) {
+    accepting_control_.store(false, std::memory_order_relaxed);
+    invalidate_control();
+    send_safe_motion();
+    return;
+  }
+  if (!accepting_control_.exchange(true, std::memory_order_relaxed)) {
+    invalidate_control();
+    send_safe_motion();
     return;
   }
 
@@ -752,11 +798,24 @@ void VehicleBridgeNode::tick_control()
   autoware_vehicle_msgs::msg::GearCommand::SharedPtr gear;
   autoware_vehicle_msgs::msg::TurnIndicatorsCommand::SharedPtr turn;
   autoware_vehicle_msgs::msg::HazardLightsCommand::SharedPtr hazard;
+  rclcpp::Time command_time;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     ctrl = latest_control_; gear = latest_gear_; turn = latest_turn_; hazard = latest_hazard_;
+    command_time = last_cmd_time_;
   }
-  if (!ctrl) return;
+  if (!ctrl) {
+    send_safe_motion();
+    return;
+  }
+  auto cmd_age = (tick_now - command_time).seconds() * 1000.0;
+  if (cmd_age > params_.command_timeout_ms) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Command timeout: %.0fms — sending zero speed", cmd_age);
+    accepting_control_.store(false, std::memory_order_relaxed);
+    invalidate_control();
+    send_safe_motion();
+    return;
+  }
 
   // Gear override
   uint8_t gear_val = gear::CAN_N;
@@ -795,6 +854,13 @@ void VehicleBridgeNode::tick_control()
   // Turn/hazard status published from 0x011 CAN feedback (actual state, not echo)
 }
 
+void VehicleBridgeNode::invalidate_control()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  latest_control_.reset();
+  last_cmd_time_ = now();
+}
+
 void VehicleBridgeNode::tick_heartbeat()
 {
   if (!can_->is_open()) return;
@@ -814,7 +880,8 @@ void VehicleBridgeNode::tick_diagnostics()
 {
   if (!pub_diag_->is_activated()) return;
   diagnostic_msgs::msg::DiagnosticArray diag;
-  diag.header.stamp = now();
+  const auto diag_now = now();
+  diag.header.stamp = diag_now;
 
   auto add = [&](const std::string & name, bool ok, const std::string & detail) {
     diagnostic_msgs::msg::DiagnosticStatus s;
@@ -832,8 +899,18 @@ void VehicleBridgeNode::tick_diagnostics()
       confirmed_auto_.load(std::memory_order_relaxed) ? "AUTO" : "not AUTO");
   add("Software emergency", !software_emergency_.load(std::memory_order_relaxed),
       software_emergency_.load(std::memory_order_relaxed) ? "asserted" : "clear");
-  add("RT Heartbeat", rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms),
-      rt_heartbeat_.is_alive(now(), params_.rt_heartbeat_timeout_ms) ? "alive" : "timeout");
+  const bool rt_alive = rt_heartbeat_.has_sample() &&
+    rt_heartbeat_.is_alive(diag_now, params_.rt_heartbeat_timeout_ms);
+  const bool sys_fresh = sys_status_.has_sample() &&
+    sys_status_.is_alive(diag_now, params_.sys_status_timeout_ms);
+  const bool state_fresh = state_report_.has_sample() &&
+    state_report_.is_alive(diag_now, params_.state_report_timeout_ms);
+  const bool motion_fresh = motion_report_.has_sample() &&
+    motion_report_.is_alive(diag_now, params_.motion_report_timeout_ms);
+  add("RT Heartbeat", rt_alive, rt_alive ? "alive" : "missing, frozen, or timeout");
+  add("SYS status", sys_fresh, sys_fresh ? "fresh" : "missing or timeout");
+  add("RT state report", state_fresh, state_fresh ? "fresh" : "missing or timeout");
+  add("RT motion report", motion_fresh, motion_fresh ? "fresh" : "missing, frozen, invalid, or timeout");
   uint8_t hb = sys_heartbeat_ok_.load(std::memory_order_relaxed);
   uint8_t estop = sys_estop_active_.load(std::memory_order_relaxed);
   add("SYS Heartbeat", hb == 1, hb ? "alive" : "timeout");
@@ -875,6 +952,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       velocity.header.frame_id = "base_link";
       gear_report.stamp = velocity.header.stamp;
       if (decoder_->decode_motion(frame, velocity, gear_report)) {
+        motion_report_.feed(decoder_->motion_counter(), velocity.header.stamp);
         if (park_requested_.load(std::memory_order_relaxed) &&
             gear_report.report == autoware_vehicle_msgs::msg::GearReport::NEUTRAL) {
           gear_report.report = autoware_vehicle_msgs::msg::GearReport::PARK;
@@ -904,6 +982,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
       sys_estop_active_.store(value.estop_active, std::memory_order_relaxed);
       sys_heartbeat_ok_.store(value.heartbeat_ok, std::memory_order_relaxed);
+      sys_status_.observe(now());
 
       // Light state feedback (present when DLC ≥ 3, v0.0.5)
       {
@@ -935,6 +1014,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       confirmed_auto_.store(
         value.mode == messages::RtStateRpt::kModeAuto && value.safety_state == 0,
         std::memory_order_relaxed);
+      state_report_.observe(now());
       autoware_vehicle_msgs::msg::ControlModeReport mode;
       autoware_vehicle_msgs::msg::GearReport gear;
       if (decoder_->decode_state(frame, mode, gear)) {
