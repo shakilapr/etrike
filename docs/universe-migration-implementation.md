@@ -1,7 +1,7 @@
 # Autoware Universe migration implementation record
 
 This document records the implementation completed from
-[`update-universe.md`](../update-universe.md). The migration is additive: existing CAN
+[`update-universe.md`](update-universe.md). The migration is additive: existing CAN
 layouts and safety ownership are preserved, while the bridge and the mandatory Phase 2
 motion path are extended for the pinned Autoware Universe interfaces.
 
