@@ -431,16 +431,25 @@ bool CanDecoder::decode_motion(
 void HeartbeatMonitor::feed(uint8_t counter, const rclcpp::Time & now)
 {
   std::lock_guard<std::mutex> lk(mutex_);
-  if (counter != counter_) {
+  if (!have_sample_ || counter != counter_) {
+    have_sample_ = true;
     counter_ = counter;
     last_time_ = now;
   }
 }
 
+void HeartbeatMonitor::reset()
+{
+  std::lock_guard<std::mutex> lk(mutex_);
+  have_sample_ = false;
+  counter_ = 0;
+  last_time_ = rclcpp::Time(0, 0, RCL_SYSTEM_TIME);
+}
+
 bool HeartbeatMonitor::is_alive(const rclcpp::Time & now, int timeout_ms) const
 {
   std::lock_guard<std::mutex> lk(mutex_);
-  if (last_time_.nanoseconds() == 0) return true;  // no data yet
+  if (!have_sample_) return true;  // no data yet
   return (now - last_time_).seconds() * 1000.0 < timeout_ms;
 }
 
@@ -604,7 +613,7 @@ CallbackReturn VehicleBridgeNode::on_cleanup(const State &)
   confirmed_auto_.store(false, std::memory_order_relaxed);
   software_emergency_.store(false, std::memory_order_relaxed);
   park_requested_.store(false, std::memory_order_relaxed);
-  rt_heartbeat_ = HeartbeatMonitor{};
+  rt_heartbeat_.reset();
   return CallbackReturn::SUCCESS;
 }
 
