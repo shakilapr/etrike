@@ -190,10 +190,17 @@ export function DriveConsole() {
   shiftRef.current = shiftMode
 
   const driveMsg = messages.find((m) => m.name === 'HOST_DRIVE_CMD')
+  const motionMsg = messages.find((m) => m.name === 'RT_MOTION_RPT' && m.bus === 'high')
   const canLive = driveMsg?.freshness?.toLowerCase() === 'live'
   const canSpeed = numSignal(driveMsg, 'speed_mmps')
   const canYaw = numSignal(driveMsg, 'yaw_rate_mrad_s')
   const canGear = gearFromCan(driveMsg)
+  const motionLive = motionMsg?.freshness?.toLowerCase() === 'live'
+  const motionValid = motionLive &&
+    numSignal(motionMsg, 'speed_valid') === 1 &&
+    numSignal(motionMsg, 'yaw_rate_valid') === 1 &&
+    numSignal(motionMsg, 'gear_valid') === 1
+  // RT reports trike-right-positive yaw; the Universe visualization is left-positive.
 
   // Vehicle motion gate (firmware): non-zero RT_DRIVE_CMD only in AUTO.
   const rtStateMsg =
@@ -620,12 +627,19 @@ export function DriveConsole() {
       const state = stateRef.current
       const msgs = useAppStore.getState().messages
       const drive = msgs.find((m) => m.name === 'HOST_DRIVE_CMD')
-      // Prefer live bus decode; fall back to last shaped intent so canvas moves immediately on arm+W.
+      const motion = msgs.find((m) => m.name === 'RT_MOTION_RPT' && m.bus === 'high')
+      const motionIsValid = motion?.freshness?.toLowerCase() === 'live' &&
+        numSignal(motion, 'speed_valid') === 1 &&
+        numSignal(motion, 'yaw_rate_valid') === 1 &&
+        numSignal(motion, 'gear_valid') === 1
+      // Prefer fresh measured motion; fall back to command data in simulation/bench startup.
       const fromBusSpeed = numSignal(drive, 'speed_mmps')
       const fromBusYaw = numSignal(drive, 'yaw_rate_mrad_s')
-      const speedMmps = fromBusSpeed ?? shapedRef.current.speed
-      const yawMrad = fromBusYaw ?? shapedRef.current.yaw
-      const g = gearFromCan(drive)
+      const measuredSpeedMmps = motionIsValid ? numSignal(motion, 'speed_mmps') : null
+      const measuredYawMrad = motionIsValid ? -(numSignal(motion, 'yaw_rate_mrad_s') ?? 0) : null
+      const speedMmps = measuredSpeedMmps ?? fromBusSpeed ?? shapedRef.current.speed
+      const yawMrad = measuredYawMrad ?? fromBusYaw ?? shapedRef.current.yaw
+      const g = (motionIsValid ? gearFromCan(motion) : null) ?? gearFromCan(drive)
       // While armed, `gear` is the operator's next command. CAN gear remains
       // visible through displayGear but must not overwrite a freshly selected
       // R/N/D/S value before the next intent tick.
@@ -852,9 +866,9 @@ export function DriveConsole() {
             <span className="chip-k">Control</span>
             <span className="chip-v">{armed ? 'Armed' : 'Local'}</span>
           </span>
-          <span className={`chip ${canLive ? 'ok' : ''}`} title="HOST_DRIVE_CMD freshness">
-            <span className="chip-k">0x300</span>
-            <span className="chip-v">{canLive ? 'Live' : 'Idle'}</span>
+          <span className={`chip ${motionValid ? 'ok' : ''}`} title="RT_MOTION_RPT measured feedback freshness">
+            <span className="chip-k">0x121</span>
+            <span className="chip-v">{motionValid ? 'Measured' : canLive ? 'Command' : 'Idle'}</span>
           </span>
           <span
             className={`chip ${rtModeLive && rtModeLabel === 'AUTO' ? 'ok' : motionLocked ? 'danger' : ''}`}
