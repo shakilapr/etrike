@@ -106,6 +106,7 @@ BO_ 2046 SYS_HEARTBEAT: 2 SYS
  SG_ task_can_tx_ok : 8|1@0+ (1,0) [0|1] "" RT
 
 
+CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.";
 
 
 
@@ -131,6 +132,7 @@ BA_ "GenMsgCycleTime" BO_ 514 100;
 BA_ "GenMsgCycleTime" BO_ 515 1000;
 BA_ "GenMsgCycleTime" BO_ 1786 10;
 BA_ "GenMsgCycleTime" BO_ 17 200;
+BA_ "GenMsgCycleTime" BO_ 272 1000;
 BA_ "GenMsgCycleTime" BO_ 1536 1000;
 BA_ "GenMsgCycleTime" BO_ 2046 100;
 

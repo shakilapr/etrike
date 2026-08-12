@@ -13,7 +13,7 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 ,,,,,,light_right,2,1,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_brake,2,2,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_head,2,3,1,unsigned,1,"[0, 1]",,
-0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",1,0,mode,0,0,8,unsigned,1,"[0, 2]",,
+0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",1,1000,mode,0,0,8,unsigned,1,"[0, 2]",,
 0x111,HMI_MODE_REQ_high,HMI,"SYS, Host",2,1000,req_mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"
 ,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
 0x111,HMI_MODE_REQ_low,HMI,"SYS, Host",2,1000,req_mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"

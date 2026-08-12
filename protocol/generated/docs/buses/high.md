@@ -4,8 +4,8 @@
 *(Note: This file is fully auto-generated from the YAML configurations. Do not edit manually.)*
 
 ## Summary Statistics
-- **Unique CAN Message IDs:** 17
-- **Total Signal Definitions:** 56
+- **Unique CAN Message IDs:** 19
+- **Total Signal Definitions:** 68
 
 ---
 
@@ -45,6 +45,7 @@
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
+- **Description:** Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -71,6 +72,23 @@
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+
+### 0x121 — RT_MOTION_RPT (Bus: high)
+- **Sender:** RT
+- **Receivers:** Host
+- **DLC:** 8 bytes
+- **Cycle:** 10 ms (0 = event-based)
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `yaw_rate_mrad_s` | 2 | 0 | 24 | signed | 1 | [-3000, 3000] | - |  |
+| `gear` | 5 | 0 | 8 | unsigned | 1 | [0, 3] | - |  (Values: 0=N, 1=D, 2=S, 3=R) |
+| `speed_valid` | 6 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
+| `yaw_rate_valid` | 6 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
+| `gear_valid` | 6 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
+| `reserved` | 6 | 3 | 5 | unsigned | 1 | [0, 31] | - |  |
+| `rolling_counter` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
 ### 0x206 — MTR_MOTOR_FBK (Bus: high)
 - **Sender:** MTR
@@ -146,6 +164,19 @@
 | `right_turn` | 0 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `brake_light` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
+
+### 0x303 — HOST_STEER_CMD (Bus: high)
+- **Sender:** Host
+- **Receivers:** RT
+- **DLC:** 4 bytes
+- **Cycle:** 10 ms (0 = event-based)
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `steer_angle_0_1deg` | 0 | 0 | 16 | signed | 1 | [-450, 450] | - |  |
+| `angle_valid` | 2 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
+| `reserved` | 2 | 1 | 7 | unsigned | 1 | [0, 127] | - |  |
+| `rolling_counter` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
 ### 0x310 — STEER_DIAG (Bus: high)
 - **Sender:** RT

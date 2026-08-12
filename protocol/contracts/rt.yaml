@@ -1,6 +1,14 @@
 {
   "schema_version": 1,
   "messages": [
+    {"key":"rt_motion_rpt","owner":"rt","protocol":"etrike.application.v1","name":"RT_MOTION_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"speed_mmps","byte":0,"bit":0,"bits":16,"signed":true,"min":-500,"max":3000},
+      {"key":"yaw_rate_mrad_s","byte":2,"bit":0,"bits":24,"signed":true,"min":-3000,"max":3000},
+      {"key":"gear","byte":5,"bit":0,"bits":8,"min":0,"max":3,"enum":{"0":"N","1":"D","2":"S","3":"R"}},
+      {"key":"speed_valid","byte":6,"bit":0,"bits":1},{"key":"yaw_rate_valid","byte":6,"bit":1,"bits":1},{"key":"gear_valid","byte":6,"bit":2,"bits":1},
+      {"key":"reserved","byte":6,"bit":3,"bits":5,"constant":0},
+      {"key":"rolling_counter","byte":7,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[{"bus":"high","id":"0x121","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":10,"semantics":"independent"}]},
     {"key":"rt_drive_cmd","owner":"rt","protocol":"etrike.application.v1","name":"RT_DRIVE_CMD","dlc":5,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"motor_speed_mmps","byte":0,"bit":0,"bits":32,"signed":true,"min":-500,"max":3000},
       {"key":"gear","byte":4,"bit":0,"bits":8,"min":0,"max":3,"enum":{"0":"N","1":"D","2":"S","3":"R"}}

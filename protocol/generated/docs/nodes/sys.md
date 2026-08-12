@@ -67,7 +67,7 @@
 - **Sender:** SYS
 - **Receivers:** RT, MTR
 - **DLC:** 1 bytes
-- **Cycle:** 0 ms (0 = event-based)
+- **Cycle:** 1000 ms (0 = event-based)
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -78,6 +78,7 @@
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
+- **Description:** Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -89,6 +90,7 @@
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
+- **Description:** Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|

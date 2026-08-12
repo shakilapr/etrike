@@ -6,6 +6,7 @@
       "codec": {
         "strategy": "generated"
       },
+      "comment": "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.",
       "dlc": 2,
       "instances": [
         {
@@ -373,6 +374,69 @@
         "kind": "signals"
       },
       "name": "HOST_OBSTACLE_DIST",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_steer_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 4,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x303",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_steer_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "steer_angle_0_1deg",
+            "max": 450,
+            "min": -450,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 2,
+            "key": "angle_valid"
+          },
+          {
+            "bit": 1,
+            "bits": 7,
+            "byte": 2,
+            "constant": 0,
+            "key": "reserved"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_STEER_CMD",
       "owner": "host",
       "protocol": "etrike.application.v1"
     },
@@ -807,6 +871,104 @@
         "kind": "signals"
       },
       "name": "RT_HEARTBEAT",
+      "owner": "rt",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rt:rt_motion_rpt",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x121",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rt_motion_rpt",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "speed_mmps",
+            "max": 3000,
+            "min": -500,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 24,
+            "byte": 2,
+            "key": "yaw_rate_mrad_s",
+            "max": 3000,
+            "min": -3000,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 5,
+            "enum": {
+              "0": "N",
+              "1": "D",
+              "2": "S",
+              "3": "R"
+            },
+            "key": "gear",
+            "max": 3,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 6,
+            "key": "speed_valid"
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 6,
+            "key": "yaw_rate_valid"
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 6,
+            "key": "gear_valid"
+          },
+          {
+            "bit": 3,
+            "bits": 5,
+            "byte": 6,
+            "constant": 0,
+            "key": "reserved"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RT_MOTION_RPT",
       "owner": "rt",
       "protocol": "etrike.application.v1"
     },
@@ -1708,7 +1870,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "d97449c7e8f29cd884a2bc1d4d0c9759cfec7255bffdefbf102f3db26bd44887",
+  "network_hash": "81c2981c7c4b34ed25ec026b4c26527f08dbc46da0a0eb781ace04908e3a755e",
   "routes": [
     {
       "from": "low",
@@ -1775,6 +1937,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a",
-  "wire_hash": "d3ee430b7bf8f2c49be8caa501edcb9e54e16204a3e814804975c75d4779f63a"
+  "semantic_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c",
+  "wire_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c"
 }
