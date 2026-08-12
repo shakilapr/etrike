@@ -15,7 +15,7 @@ def _tx(client):
     )
 
 
-def test_kinematics_owns_0x300(client):
+def test_kinematics_owns_drive_and_direct_steering(client):
     _tx(client)
     client.post(
         "/api/v1/control/intent",
@@ -34,6 +34,10 @@ def test_kinematics_owns_0x300(client):
         },
     )
     assert r.status_code == 409
+    status = client.get("/api/v1/control/status").json()["control"]
+    assert status["job_id"]
+    assert status["steer_job_id"]
+    assert status["paths"]["high_kinematics"]["steering_can_id"] == 0x303
 
 
 def test_stop_all_releases_control(client):
