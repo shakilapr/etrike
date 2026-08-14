@@ -195,7 +195,7 @@ and pass its applicable interface test in the Jetson overlay.
 
 ## QoS compatibility
 
-**Current bridge code** (`vehicle_bridge_node.cpp:500`):
+**Current bridge code** (`vehicle_bridge_node.cpp:505`):
 ```cpp
 // VOLATILE durability: connects to both VOLATILE and TRANSIENT_LOCAL publishers.
 const auto command_qos = rclcpp::QoS(1).reliable();
@@ -244,13 +244,13 @@ must be confirmed against the target Universe version before first motion:
 - **Message field schema (lower risk):** the bridge uses the standard Universe
   `autoware_control_msgs/msg/Control` fields — `longitudinal.velocity`,
   `longitudinal.acceleration`, `longitudinal.is_defined_acceleration`,
-  `lateral.steering_tire_angle` (`:197-219`,`:273-276`,`:851`) — and
+  `lateral.steering_tire_angle` (`:197-219`,`:273-276`,`:861`) — and
   `VelocityReport.{longitudinal_velocity,lateral_velocity,heading_rate,header}`
-  (`:423-426`,`:952-953`). These match the published Universe schema, so
+  (`:423-427`,`:962-963`). These match the published Universe schema, so
   the `colcon build` field-mismatch risk is **low** but still verify against pinned
   headers (Phase 1 step 3).
 - **`confirmed_auto_` path (verified OK):** set true only from `0x210` when
-  `mode == kModeAuto && safety_state == 0` (`:1015-1017`); requires RT firmware to
+  `mode == kModeAuto && safety_state == 0` (`:1025-1027`); requires RT firmware to
   send AUTO with `safety_state == 0` (firmware validation item).
 
 ## Header stamps and frame_id
@@ -259,11 +259,11 @@ The bridge now populates headers correctly:
 
 | Report | stamp | frame_id | Source |
 |---|---|---|---|
-| `VelocityReport` | `now()` | `"base_link"` | `vehicle_bridge_node.cpp:952-953` |
-| `GearReport` | `now()` | — | `vehicle_bridge_node.cpp:954` |
-| `SteeringReport` | `now()` | — | `vehicle_bridge_node.cpp:1039` |
+| `VelocityReport` | `now()` | `"base_link"` | `vehicle_bridge_node.cpp:962-963` |
+| `GearReport` | `now()` | — | `vehicle_bridge_node.cpp:964` |
+| `SteeringReport` | `now()` | — | `vehicle_bridge_node.cpp:1049` |
 | `ControlModeReport` | **NOT set** | — | `decode_state()` sets `mode` only; `header.stamp` must be added before publish (`publish_vehicle_reports` line 1029-1032) |
-| `DiagnosticArray` | `now()` | — | `vehicle_bridge_node.cpp:885,1050` |
+| `DiagnosticArray` | `now()` | — | `vehicle_bridge_node.cpp:895,1060` |
 
 ## ControlModeReport state mapping
 
@@ -289,7 +289,7 @@ When `abs(speed_mps) < low_speed_threshold` (default 0.05, configurable via
 `etrike.param.yaml:9`), derived yaw is clamped to 0. Direct-angle steering
 (`0x303`) remains valid at standstill.
 
-**Mode/engage gating** (`vehicle_bridge_node.cpp:770-795`): Motion transmission
+**Mode/engage gating** (`vehicle_bridge_node.cpp:780-794`): Motion transmission
 requires all of:
 - `engaged` is true
 - `confirmed_auto` is true (RT feedback confirms AUTO mode)
@@ -301,7 +301,7 @@ requires all of:
 Loss of any gate sends neutral drive plus invalid steering and clears the
 cached control command. Recovery requires a fresh post-fault control command.
 
-**Emergency handling** (`vehicle_bridge_node.cpp:737-757`): Checks
+**Emergency handling** (`vehicle_bridge_node.cpp:742-767`): Checks
 `msg->emergency` boolean — `true` asserts CAN ESTOP, `false` clears the
 software latch only (physical recovery remains with SYS/operator). ESTOP frames
 are rate-limited to max 1 per 500 ms.
@@ -313,14 +313,14 @@ Autoware.Auto era is fixed.
 
 **PARK handling**: Universe PARK command is mapped to NEUTRAL gear + brake-hold
 (`0x301`), with `park_requested_` flag used to override `GearReport` to PARK
-(`vehicle_bridge_node.cpp:957-959`).
+(`vehicle_bridge_node.cpp:967-973`).
 
-**ControlModeCommand** (`vehicle_bridge_node.cpp:511-514`): Implemented as a
+**ControlModeCommand** (`vehicle_bridge_node.cpp:521-524`): Implemented as a
 service (`/control/control_mode_request`), not a subscription. Supports
 AUTONOMOUS and MANUAL; returns `success=false` for unsupported modes. Sends
 `0x111` with rolling counter via existing SYS mode-request path.
 
-**Topic names** (`vehicle_bridge_node.cpp:501-525`):
+**Topic names** (`vehicle_bridge_node.cpp:506-530`):
 
 | Function | Topic |
 |---|---|
@@ -409,7 +409,7 @@ Firmware report ◀─ CAN ◀─ [5] Bridge decode ◀─ [4] Firmware encode �
 - `test_bridge_encode_gear`: Universe DRIVE/REVERSE → CAN_D/CAN_R
   (`vehicle_bridge_node.cpp:68-78`).
 - `test_bridge_encode_emergency`: `emergency=true` → exactly one `0x001` ESTOP
-  frame, second within 500 ms suppressed (`vehicle_bridge_node.cpp:737-757`).
+  frame, second within 500 ms suppressed (`vehicle_bridge_node.cpp:742-767`).
   (`0x7FC` is the Host heartbeat, not ESTOP.)
 
 **L3 — CAN → firmware decode/actuate [needs bridge-frame acceptance]**
@@ -481,7 +481,7 @@ deployment/validation steps.
 
 **Blocking defects (must close before first hardware test)**
 - [x] [code] Fix QoS: subscriptions now VOLATILE (`rclcpp::QoS(1).reliable()`,
-  `vehicle_bridge_node.cpp:500`) — connects to both VOLATILE and TRANSIENT_LOCAL
+  `vehicle_bridge_node.cpp:505`) — connects to both VOLATILE and TRANSIENT_LOCAL
   publishers. Verify with L1 test. **S1 — done**
 - [x] [code] Fix `vehicle_model` discovery: params now nested under
   `config/etrike/vehicle_info.param.yaml` (flat file removed). **S1 — done**
@@ -509,7 +509,7 @@ deployment/validation steps.
 - [ ] [test] L5 `test_bridge_decode_feedback` / `_zero_yaw_report` — reports correct
   with trike→Universe sign.
 - [ ] [test] L6 `test_bridge_gate_closed` / `_gate_open` / `_fault_recovery` — gating
-  per `vehicle_bridge_node.cpp:770-795`.
+  per `vehicle_bridge_node.cpp:780-794`.
 
 **Firmware bridge-frame acceptance (currently missing)**
 - [ ] [test] L3 feed bridge-encoded golden frames into RT `can_rx_router`; assert
