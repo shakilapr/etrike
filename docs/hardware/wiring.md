@@ -239,7 +239,7 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 - 120 Ω terminator: **ON** (SYS is a bus endpoint on the low bus)
 - Source: `sys::kCanTxGpio=5`, `sys::kCanRxGpio=4`, bitrate 500 kbit/s
 
-### 4.2 SYS — Safety Inputs
+### 4.2 SYS — Safety & Sensor Inputs
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
@@ -247,9 +247,15 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 | 2 | Brake Lever | 2 | Digital, NO, active-low | Lever switch → GND | Internal pull-up. LOW = pressed → SEB via CAN 0x7B9 |
 | 3 | START Button | 41 | Digital, NO, active-low | Green momentary → GND | Internal pull-up. Press exits ESTOP to MANUAL. |
 | 4 | MODE Button | 11 | Digital, NO, active-low | Momentary → GND | Internal pull-up. Toggles MANUAL ↔ AUTO. Long-press 3s exits ESTOP. |
-| 5 | Ignition relay | 8 | Reserved output | Not implemented by production firmware | Do not wire as a vehicle power-control path. |
-| 6 | Developer override | 42 | Digital, active-low | Mode 1 jumper → GND | Internal pull-up; J3 pin 6; conflicts with external JTAG MTMS. |
-| 7 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | RT commands, MTR feedback (0x206), SEB feedback (0x721) |
+| 5 | Parking Gear Sense | 7 | Digital, active-low | Gear Shifter (Park) via divider | Scaled via R1/R2 voltage divider to 3.3V |
+| 6 | Speed Sensor | 10 | Digital pulse input | Speed sensor via divider | Scaled via R1/R2 voltage divider to 3.3V |
+| 7 | Drive Gear Sense | 12 | Digital, active-low | Gear Shifter (Drive) via divider | Scaled via R1/R2 voltage divider to 3.3V |
+| 8 | Reverse Gear Sense | 13 | Digital, active-low | Gear Shifter (Reverse) via divider | Scaled via R1/R2 voltage divider to 3.3V |
+| 9 | ADS1115 SCL (Throttle) | 15 | I2C Clock | ADS1115 ADC SCL | 16-bit ADC for throttle sensing |
+| 10 | ADS1115 SDA (Throttle) | 16 | I2C Data | ADS1115 ADC SDA | I2C Addr 0x48 (ADDR pin to GND) |
+| 11 | Ignition relay | 8 | Reserved output | Not implemented by production firmware | Do not wire as a vehicle power-control path. |
+| 12 | Developer override | 42 | Digital, active-low | Mode 1 jumper → GND | Internal pull-up; J3 pin 6; conflicts with external JTAG MTMS. |
+| 13 | CAN RX (low bus) | 4 | TWAI RX | SN65HVD230 CRX | RT commands, MTR feedback (0x206), SEB feedback (0x721) |
 
 ### 4.3 SYS — Signal Lights & Switches
 
@@ -257,11 +263,11 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 |---|--------|------|------|-------------|-------|
 | 1 | Left Turn Switch | 9 | Digital, NO, active-low | Handlebar momentary → GND | Internal pull-up |
 | 2 | Right Turn Switch | 6 | Digital, NO, active-low | Handlebar momentary → GND | Internal pull-up |
-| 3 | Headlight Switch | 7 | Digital, NO, active-low | Handlebar toggle → GND | Internal pull-up |
-| 4 | Left Turn Lamp | 18 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
-| 5 | Right Turn Lamp | 19 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
-| 6 | Brake Light | 21 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
-| 7 | Headlight | 10 | Digital out | Relay coil driver → 12 V | ESP GPIO must not drive the relay coil directly. |
+| 3 | Left Turn Lamp | 18 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
+| 4 | Right Turn Lamp | 19 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
+| 5 | Brake Light | 21 | Digital out | Relay coil → 12 V | Relay COM = 12 V, NO = lamp |
+| 6 | Headlight Switch | TBD | Digital, NO, active-low | Handlebar toggle → GND | Reassigned from GPIO 7 (free pin e.g. GPIO 14/22) |
+| 7 | Headlight Relay | TBD | Digital out | Relay coil driver → 12 V | Reassigned from GPIO 10 (free pin e.g. GPIO 14/22) |
 
 ### 4.5 SYS — Indicators & Power Control
 
@@ -282,13 +288,16 @@ GPIO 2  : Brake lever (active-low) → SEB via CAN 0x7B9
 GPIO 4  : CAN RX — low bus TWAI
 GPIO 5  : CAN TX — low bus TWAI
 GPIO 6  : Right turn switch (active-low)
-GPIO 7  : Headlight switch (active-low)
+GPIO 7  : Parking Gear sense (via voltage divider R1/R2)
 GPIO 8  : Reserved ignition output — not implemented
 GPIO 9  : Left turn switch (active-low)
-GPIO 10 : Headlight relay driver
+GPIO 10 : Speed sensor pulse input (via voltage divider R1/R2)
 GPIO 11 : MODE button (active-low) — publishes CAN 0x110
-GPIO 12–14 : Bench-only gear sense
-GPIO 15–16 : Bench-only MCP4725 I2C
+GPIO 12 : Drive Gear sense (via voltage divider R1/R2)
+GPIO 13 : Reverse Gear sense (via voltage divider R1/R2)
+GPIO 14 : (Unassigned / free)
+GPIO 15 : ADS1115 I2C SCL (Throttle ADC)
+GPIO 16 : ADS1115 I2C SDA (Throttle ADC)
 GPIO 17 : READY bulb (green) — relay output
 GPIO 18 : Left turn lamp — relay output
 GPIO 19 : Right turn lamp — relay output
@@ -855,13 +864,16 @@ GPIO 2  : Brake lever (NO, active-low)              [IN, internal pull-up]
 GPIO 4  : CAN RX — low bus TWAI                     [IN]
 GPIO 5  : CAN TX — low bus TWAI                     [OUT]
 GPIO 6  : Right turn switch (NO, active-low)        [IN, internal pull-up]
-GPIO 7  : Headlight switch (active-low)             [IN, internal pull-up]
+GPIO 7  : Parking Gear sense                        [IN, voltage divider R1/R2]
 GPIO 8  : Reserved ignition output                   [not implemented]
 GPIO 9  : Left turn switch (NO, active-low)         [IN, internal pull-up]
-GPIO 10 : Headlight relay driver                     [OUT, active-high]
+GPIO 10 : Speed sensor pulse input                   [IN, voltage divider R1/R2]
 GPIO 11 : MODE button (NO, active-low)              [IN, internal pull-up]
-GPIO 12–14 : Bench-only gear sense                  [IN, pull-up]
-GPIO 15–16 : Bench-only MCP4725 I2C                 [I/O]
+GPIO 12 : Drive Gear sense                          [IN, voltage divider R1/R2]
+GPIO 13 : Reverse Gear sense                        [IN, voltage divider R1/R2]
+GPIO 14 : (Unassigned / free)
+GPIO 15 : ADS1115 I2C SCL (Throttle ADC)            [I/O, I2C clock]
+GPIO 16 : ADS1115 I2C SDA (Throttle ADC)            [I/O, I2C data, addr 0x48]
 GPIO 17 : READY bulb (green) relay                  [OUT, active-high]
 GPIO 18 : Left turn lamp relay                      [OUT, active-high]
 GPIO 19 : Right turn lamp relay                     [OUT, active-high]
