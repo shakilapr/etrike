@@ -44,3 +44,10 @@ add_executable(rta_mode
 )
 target_link_libraries(rta_mode PRIVATE rta_core)
 add_test(NAME rta_mode COMMAND rta_mode)
+
+# ── Safety + liveness supervision unit tests ────────────────────────
+add_executable(rta_safety
+    ${RTA_TESTS_ROOT}/test_safety.cpp
+)
+target_link_libraries(rta_safety PRIVATE rta_core)
+add_test(NAME rta_safety COMMAND rta_safety)
