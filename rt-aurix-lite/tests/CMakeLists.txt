@@ -71,3 +71,10 @@ add_executable(rta_watchdog
 )
 target_link_libraries(rta_watchdog PRIVATE rta_core)
 add_test(NAME rta_watchdog COMMAND rta_watchdog)
+
+# ── IPC abstractions test ───────────────────────────────────────────
+add_executable(rta_ipc
+    ${RTA_TESTS_ROOT}/test_ipc.cpp
+)
+target_link_libraries(rta_ipc PRIVATE rta_core)
+add_test(NAME rta_ipc COMMAND rta_ipc)
