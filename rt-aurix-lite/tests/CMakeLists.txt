@@ -23,3 +23,10 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_options(rta_kinematics_diff PRIVATE -static)
 endif()
 add_test(NAME rta_kinematics_diff COMMAND rta_kinematics_diff)
+
+# ── Steering controller unit test ───────────────────────────────────
+add_executable(rta_steering
+    ${RTA_TESTS_ROOT}/test_steering.cpp
+)
+target_link_libraries(rta_steering PRIVATE rta_core)
+add_test(NAME rta_steering COMMAND rta_steering)
