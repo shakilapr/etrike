@@ -51,3 +51,16 @@ add_executable(rta_safety
 )
 target_link_libraries(rta_safety PRIVATE rta_core)
 add_test(NAME rta_safety COMMAND rta_safety)
+
+# ── Protocol adapter + route table tests ────────────────────────────
+add_executable(rta_protocol_adapters
+    ${RTA_TESTS_ROOT}/test_protocol_adapters.cpp
+)
+target_link_libraries(rta_protocol_adapters PRIVATE rta_core)
+add_test(NAME rta_protocol_adapters COMMAND rta_protocol_adapters)
+
+add_executable(rta_route_table
+    ${RTA_TESTS_ROOT}/test_route_table.cpp
+)
+target_link_libraries(rta_route_table PRIVATE rta_core)
+add_test(NAME rta_route_table COMMAND rta_route_table)

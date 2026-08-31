@@ -16,7 +16,7 @@ target_include_directories(rta_headers INTERFACE
     ${ETRIKE_ROOT}
     ${ETRIKE_ROOT}/shared
     ${RTA_SRC_ROOT}
-    ${RTA_SRC_ROOT}/protocol/generated/cpp
+    ${RTA_SRC_ROOT}/../protocol/generated/cpp   # subset generated etrike_protocol.hpp
 )
 
 # rta_core — pure domain/app/protocol/ipc logic (grows with each commit).
