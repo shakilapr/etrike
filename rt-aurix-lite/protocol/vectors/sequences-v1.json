@@ -1,0 +1,12 @@
+{
+  "vector_set_id": "sequences-v1",
+  "schema_version": 1,
+  "tracker_key": ["bus", "id", "expected_producer", "session_epoch"],
+  "sequences": [
+    {"id":"normal-and-wrap","instance":{"bus":"low","id":"0x7FE","expected_producer":"SYS","session_epoch":1},"samples":[[254,"first"],[255,"increment"],[0,"wrap"],[1,"increment"]]},
+    {"id":"duplicate-gap-reorder-recovery","instance":{"bus":"high","id":"0x7FC","expected_producer":"Host","session_epoch":4},"samples":[[10,"first"],[10,"duplicate"],[13,"gap:2"],[12,"reorder"],[14,"recovery"]]},
+    {"id":"same-id-independent-buses","instances":[{"bus":"high","id":"0x7FD","expected_producer":"RT","session_epoch":2,"samples":[[7,"first"],[8,"increment"]]},{"bus":"low","id":"0x7FD","expected_producer":"RT","session_epoch":2,"samples":[[200,"first"],[201,"increment"]]}]},
+    {"id":"new-session-resets","instances":[{"bus":"high","id":"0x7FC","expected_producer":"Host","session_epoch":8,"samples":[[90,"first"],[91,"increment"]]},{"bus":"high","id":"0x7FC","expected_producer":"Host","session_epoch":9,"samples":[[0,"first"]]}]},
+    {"id":"frozen-with-traffic","instance":{"bus":"low","id":"0x7FE","expected_producer":"SYS","session_epoch":1},"samples":[[22,"first"],[22,"duplicate"],[22,"frozen"],[23,"recovery"]]}
+  ]
+}

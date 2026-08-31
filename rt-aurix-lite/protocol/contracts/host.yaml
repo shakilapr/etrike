@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "messages": [
+    {"key":"host_drive_cmd","owner":"host","protocol":"etrike.application.v1","name":"HOST_DRIVE_CMD","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"speed_mmps","byte":0,"bit":0,"bits":32,"signed":true,"min":-500,"max":3000},
+      {"key":"yaw_rate_mrad_s","byte":4,"bit":0,"bits":24,"signed":true,"min":-3000,"max":3000},
+      {"key":"gear","byte":7,"bit":0,"bits":8,"min":0,"max":3,"enum":{"0":"N","1":"D","2":"S","3":"R"}}
+    ]},"instances":[{"bus":"high","id":"0x300","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":10,"semantics":"independent"}]},
+    {"key":"host_brake_req","owner":"host","protocol":"etrike.application.v1","name":"HOST_BRAKE_REQ","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"brake_pressure_kpa","byte":0,"bit":0,"bits":32,"signed":true,"min":0,"max":20000}
+    ]},"instances":[{"bus":"high","id":"0x301","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":0,"semantics":"independent"}]},
+    {"key":"host_light_cmd","owner":"host","protocol":"etrike.application.v1","name":"HOST_LIGHT_CMD","dlc":1,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"left_turn","byte":0,"bit":0,"bits":1},{"key":"right_turn","byte":0,"bit":1,"bits":1},{"key":"brake_light","byte":0,"bit":2,"bits":1},{"key":"headlight","byte":0,"bit":3,"bits":1}
+    ]},"instances":[
+      {"bus":"high","id":"0x302","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":0,"semantics":"independent"},
+      {"bus":"low","id":"0x302","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":0,"semantics":"same_frame"}
+    ]},
+    {"key":"host_steer_cmd","owner":"host","protocol":"etrike.application.v1","name":"HOST_STEER_CMD","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"steer_angle_0_1deg","byte":0,"bit":0,"bits":16,"signed":true,"min":-450,"max":450},
+      {"key":"angle_valid","byte":2,"bit":0,"bits":1},{"key":"reserved","byte":2,"bit":1,"bits":7,"constant":0},
+      {"key":"rolling_counter","byte":3,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[{"bus":"high","id":"0x303","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":10,"semantics":"independent"}]},
+    {"key":"host_obstacle_dist","owner":"host","protocol":"etrike.application.v1","name":"HOST_OBSTACLE_DIST","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"distance_mm","byte":0,"bit":0,"bits":32,"min":0,"max":4294967295,"enum":{"4294967295":"clear"}}
+    ]},"instances":[{"bus":"high","id":"0x400","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":100,"semantics":"independent"}]},
+    {"key":"host_heartbeat","owner":"host","protocol":"etrike.application.v1","name":"HOST_HEARTBEAT","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"alive_ctr","byte":0,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},
+      {"key":"health_flags","byte":1,"bit":0,"bits":8}
+    ]},"instances":[{"bus":"high","id":"0x7FC","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":500,"semantics":"independent"}]}
+  ]
+}

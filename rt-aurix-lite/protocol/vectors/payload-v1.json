@@ -1,0 +1,474 @@
+{
+  "vector_set_id": "payload-v1",
+  "schema_version": 1,
+  "encoding": "hexadecimal payload bytes in CAN wire order",
+  "vectors": [
+    {
+      "id": "safety-event",
+      "message": "safety:safety_estop",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "",
+      "values": {},
+      "status": "ok"
+    },
+    {
+      "id": "sys-safety-packed",
+      "message": "rta:rta_safety_sts",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "01010d",
+      "values": {
+        "estop_active": 1,
+        "heartbeat_ok": 1,
+        "light_left": 1,
+        "light_right": 0,
+        "light_brake": 1,
+        "light_head": 1
+      },
+      "status": "ok"
+    },
+    {
+      "id": "hmi-mode",
+      "message": "hmi:hmi_mode_req",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "012a",
+      "values": {
+        "req_mode": 1,
+        "rolling_counter": 42
+      },
+      "status": "ok"
+    },
+    {
+      "id": "hmi-power",
+      "message": "hmi:hmi_pwr_req",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "0107",
+      "values": {
+        "req_start": 1,
+        "rolling_counter": 7
+      },
+      "status": "ok"
+    },
+    {
+      "id": "mtr-speed-negative",
+      "message": "mtr:sys_throttle_sts",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "fffe",
+      "values": {
+        "speed_mmps": -2
+      },
+      "status": "ok"
+    },
+    {
+      "id": "mtr-feedback",
+      "message": "mtr:mtr_motor_fbk",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "fffe0311",
+      "values": {
+        "actual_speed_mmps": -2,
+        "gear_state": 3,
+        "fault_flags": 17
+      },
+      "status": "ok"
+    },
+    {
+      "id": "rt-motion-signed-yaw",
+      "message": "rta:rta_motion_rpt",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "03e8fffffe01072a",
+      "values": {
+        "speed_mmps": 1000,
+        "yaw_rate_mrad_s": -2,
+        "gear": 1,
+        "speed_valid": 1,
+        "yaw_rate_valid": 1,
+        "gear_valid": 1,
+        "reserved": 0,
+        "rolling_counter": 42
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-drive-signed-i24",
+      "message": "host:host_drive_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "000003e8fffffe03",
+      "values": {
+        "speed_mmps": 1000,
+        "yaw_rate_mrad_s": -2,
+        "gear": 3
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-brake",
+      "message": "host:host_brake_req",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "000004d2",
+      "values": {
+        "brake_pressure_kpa": 1234
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-lights-packed",
+      "message": "host:host_light_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "0b",
+      "values": {
+        "left_turn": 1,
+        "right_turn": 1,
+        "brake_light": 0,
+        "headlight": 1
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-steer-negative",
+      "message": "host:host_steer_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "ff85012a",
+      "values": {
+        "steer_angle_0_1deg": -123,
+        "angle_valid": 1,
+        "reserved": 0,
+        "rolling_counter": 42
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-obstacle-clear",
+      "message": "host:host_obstacle_dist",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "ffffffff",
+      "values": {
+        "distance_mm": 4294967295
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-heartbeat",
+      "message": "host:host_heartbeat",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "070d",
+      "values": {
+        "alive_ctr": 7,
+        "health_flags": 13
+      },
+      "status": "ok"
+    },
+    {
+      "id": "rt-drive-negative",
+      "message": "rta:rta_drive_cmd",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "fffffe0c03",
+      "values": {
+        "motor_speed_mmps": -500,
+        "gear": 3
+      },
+      "status": "ok"
+    },
+    {
+      "id": "rt-state-packed",
+      "message": "rta:rta_state_rpt",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "012101070f05",
+      "values": {
+        "mode": 1,
+        "safety_state": 1,
+        "estop_reason": 2,
+        "reversing": 1,
+        "rx_overflow": 7,
+        "task_health": 15,
+        "steer_state": 5
+      },
+      "status": "ok"
+    },
+    {
+      "id": "rt-pid-endian",
+      "message": "rta:rta_pid_rpt",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "0001fffe012c",
+      "values": {
+        "speed_setpoint": 1,
+        "speed_measured": -2,
+        "pid_output": 300
+      },
+      "status": "ok"
+    },
+    {
+      "id": "steer-diag",
+      "message": "rta:steer_diag",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "753001006401f400",
+      "values": {
+        "angle_0_1deg": 0.0,
+        "fault": 1,
+        "motor_current": 1.0,
+        "ecu_temp": 50.0,
+        "reserved": 0
+      },
+      "status": "ok"
+    },
+    {
+      "id": "brake-diag",
+      "message": "rta:brake_diag",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "00640100c8012c00",
+      "values": {
+        "pressure_raw": 5.0,
+        "fault": 1,
+        "motor_current": 2.0,
+        "ecu_temp": 30.0,
+        "reserved": 0
+      },
+      "status": "ok"
+    },
+    {
+      "id": "rt-heartbeat",
+      "message": "rta:rta_heartbeat",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "ff0f",
+      "values": {
+        "alive_ctr": 255,
+        "health_flags": 15
+      },
+      "status": "ok"
+    },
+    {
+      "id": "sys-mode",
+      "message": "rta:rta_mode_cmd",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "02",
+      "values": {
+        "mode": 2
+      },
+      "status": "ok"
+    },
+    {
+      "id": "sys-diag-packed",
+      "message": "rta:rta_diag_rpt",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "020311011234aa55",
+      "values": {
+        "mode": 2,
+        "brake_engaged": 1,
+        "brake_fault": 1,
+        "heartbeat_ok": 1,
+        "rx_overflow": 8,
+        "estop_active": 1,
+        "free_heap_kb": 4660,
+        "tec": 170,
+        "rec": 85
+      },
+      "status": "ok"
+    },
+    {
+      "id": "ses-command-checksum",
+      "message": "ses:vcu_ses_req",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "030030757d530592",
+      "status": "ok"
+    },
+    {
+      "id": "ses-status-checksum",
+      "message": "ses:ses_status",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "410030751000a348",
+      "status": "ok"
+    },
+    {
+      "id": "ses-error-bitmap",
+      "message": "ses:ses_err_info",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "018004010000002a",
+      "status": "ok"
+    },
+    {
+      "id": "ses-version-raw-unsupported",
+      "message": "ses:ses_version",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "0102030405060708",
+      "status": "unsupported_semantics"
+    },
+    {
+      "id": "ses-test-little-endian",
+      "message": "ses:ses_test",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "0034127856bc9a00",
+      "status": "ok"
+    },
+    {
+      "id": "seb-command-checksum",
+      "message": "seb:vcu_seb_req",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "06000050000053fa",
+      "status": "ok"
+    },
+    {
+      "id": "seb-status-checksum",
+      "message": "seb:seb_status",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "450034120078a347",
+      "status": "ok"
+    },
+    {
+      "id": "seb-error-bitmap",
+      "message": "seb:seb_err_info",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "84a62c0300000000",
+      "status": "ok"
+    },
+    {
+      "id": "seb-version-raw",
+      "message": "seb:seb_version",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "c80d000000000000",
+      "status": "ok"
+    },
+    {
+      "id": "seb-test-little-endian",
+      "message": "seb:seb_test",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "00feff5000001800",
+      "status": "ok"
+    },
+    {
+      "id": "ses-status-bad-checksum",
+      "message": "ses:ses_status",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "410030751000a349",
+      "status": "checksum_mismatch"
+    },
+    {
+      "id": "host-drive-short",
+      "message": "host:host_drive_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "000003e8",
+      "status": "unexpected_length"
+    },
+    {
+      "id": "host-drive-min-speed",
+      "message": "host:host_drive_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "fffffe0c00000000",
+      "values": {
+        "speed_mmps": -500,
+        "yaw_rate_mrad_s": 0,
+        "gear": 0
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-drive-max-yaw",
+      "message": "host:host_drive_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "00000000000bb801",
+      "values": {
+        "speed_mmps": 0,
+        "yaw_rate_mrad_s": 3000,
+        "gear": 1
+      },
+      "status": "ok"
+    },
+    {
+      "id": "host-drive-min-yaw",
+      "message": "host:host_drive_cmd",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "00000000fff44802",
+      "values": {
+        "speed_mmps": 0,
+        "yaw_rate_mrad_s": -3000,
+        "gear": 2
+      },
+      "status": "ok"
+    },
+    {
+      "id": "safety-estop-low",
+      "message": "safety:safety_estop",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "",
+      "values": {},
+      "status": "ok"
+    },
+    {
+      "id": "rt-heartbeat-high",
+      "message": "rta:rta_heartbeat",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "0a01",
+      "values": {
+        "alive_ctr": 10,
+        "health_flags": 1
+      },
+      "status": "ok"
+    },
+    {
+      "id": "hmi-mode-manual",
+      "message": "hmi:hmi_mode_req",
+      "bus": "high",
+      "frame_format": "standard",
+      "payload": "0000",
+      "values": {
+        "req_mode": 0,
+        "rolling_counter": 0
+      },
+      "status": "ok"
+    },
+    {
+      "id": "sys-diag-rx-overflow-max",
+      "message": "rta:rta_diag_rpt",
+      "bus": "low",
+      "frame_format": "standard",
+      "payload": "00007e0000000000",
+      "values": {
+        "mode": 0,
+        "brake_engaged": 0,
+        "brake_fault": 0,
+        "heartbeat_ok": 0,
+        "rx_overflow": 63,
+        "estop_active": 0,
+        "free_heap_kb": 0,
+        "tec": 0,
+        "rec": 0
+      },
+      "status": "ok"
+    }
+  ]
+}
