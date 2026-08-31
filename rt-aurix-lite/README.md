@@ -1,16 +1,18 @@
 # RT-AURIX-Lite — Consolidated E-Trike Controller
 
-> **Status: Architecture only.** No source implementation exists yet. This directory contains the architecture specification for a planned cost-reduced AURIX TC3xx variant. The distributed ESP32-S3 reference architecture (`rt-esp32/` + `sys-esp32/`) is the active implementation.
+> **Status: Architecture + plan only.** No source implementation exists yet. This directory contains the architecture, wiring, and implementation work plan for a cost-reduced AURIX TC375 variant. The distributed ESP32-S3 reference architecture (`rt-esp32/` + `sys-esp32/`) is the active implementation.
 
 A single **AURIX TC375** (AURIX™ Lite Kit V2) controller that combines RT (realtime physics, steering, CAN gateway) and the former SYS (safety, brake, body control, mode authority) into one microcontroller — **RT only, no SYS node, no RT↔SYS intercommunication.** It keeps the same two-CAN-bus topology as the distributed architecture and bridges between high and low buses.
 
 ## What this is
 
-A consolidated variant of the [distributed E-Trike architecture](../architecture.md) that runs all realtime + safety + body control on **one AURIX TC375** (three TriCore cores) instead of two ESP32-S3s. The MTR STM32 (EGAS Level 1 motor controller) and Jetson Orin (ROS 2 perception) remain separate.
+A consolidated variant of the [distributed E-Trike architecture](../architecture.md) that runs all realtime + safety + body control on **one AURIX TC375** (three TriCore cores: CPU0/CPU1 lockstep, CPU2 non-lockstep) instead of two ESP32-S3s. The MTR STM32 (EGAS Level 1 motor controller) and Jetson Orin (ROS 2 perception) remain separate.
 
 ## Architecture
 
-See [`architecture.md`](architecture.md) for the full specification (topology, removed intercommunication, three-core task layout, EGAS 3-level, hardware pins, protocol workflow).
+- [`architecture.md`](architecture.md) — full specification: hardware identity, topology, removed intercommunication, CAN catalog, runtime model (target-gated), EGAS 3-level, pins, error responses, config, implementation strategy.
+- [`work-plan.md`](work-plan.md) — phased implementation plan, exit gates, cleanup rules, vertical commit sequence.
+- [`wiring.md`](wiring.md) — harness/wiring source of truth (status-coded connections).
 
 ## Key Differences from Distributed
 
@@ -21,8 +23,8 @@ See [`architecture.md`](architecture.md) for the full specification (topology, r
 | CAN buses | 2 (high + low) | 2 (high + low) |
 | CAN gateway | Yes (RT bridges) | Yes (RT bridges) |
 | RT↔SYS traffic | `0x7FE`, `0x205`, `0x110`, fwd `0x011`/`0x600` | **none** |
-| Cores | 2× single-core | 3× TriCore (data plane / ASIL / body) |
-| Task count | 8 (RT) + 15 (SYS) = 23 | 15 (merged) |
+| Cores | 2× single-core | 3× TriCore (CPU0 data plane / CPU1 ASIL lockstep / CPU2 body) |
+| Runtime | 8 (RT) + 15 (SYS) = 23 FreeRTOS tasks | 15 functional units; runtime mechanism **target-gated** |
 
 ## CAN Protocol
 
@@ -30,8 +32,8 @@ The RT-only subset lives in [`protocol/`](protocol/) (contracts, generated codec
 
 ## Hardware
 
-Target: **AURIX™ Lite Kit V2, TC375** (`SAK-TC375TP-96F300W AA`) — see [`aurix.md`](aurix.md) for the board manual.
-- Low CAN bus: on-board MCMCAN0 (P20.7/P20.8, TLE9251VSJ, 120 Ω termination).
+Target: **Infineon KIT_A2G_TC375_LITE, SAK-TC375TP-96F300W AA** (3×300 MHz TriCore; CPU0/CPU1 lockstep; 2×MCMCAN×4 nodes) — see [`aurix.md`](aurix.md) for the board manual and [`wiring.md`](wiring.md) for connections.
+- Low CAN bus: on-board TLE9251VSJ (P20.7/P20.8, P20.6 standby, 120 Ω termination).
 - High CAN bus: CAN_HIGH (P15.0/P15.1, TXCAN2/RXCAN2, mikroBUS 13/14) + external transceiver (TBD).
 - Rider inputs/light relays on free expansion-header pins (see architecture §9).
 - Added externals: 2nd CAN transceiver, TPS3850-Q1 watchdog, relay driver board.
@@ -40,17 +42,20 @@ Target: **AURIX™ Lite Kit V2, TC375** (`SAK-TC375TP-96F300W AA`) — see [`aur
 
 ```
 rt-aurix-lite/
-├── architecture.md                  ← Consolidated architecture spec (RT-only, 3-core)
+├── architecture.md                  ← Consolidated architecture spec (RT-only, runtime target-gated)
+├── work-plan.md                     ← Phased implementation plan + gates
 ├── wiring.md                        ← Wiring / harness reference
 ├── README.md                        ← This file
 ├── aurix.md                         ← AURIX Lite Kit V2 board manual (full transcription)
 ├── AURIX_Lite_Kit_V2_User_Manual.md ← Board manual (reference)
-└── protocol/                        ← RT-only stripped CAN protocol (generated)
-    ├── contracts/                   ← network.yaml + rta/host/mtr/ses/seb/hmi
-    ├── generated/                   ← codecs (C++/Py/TS), DBC, CSV, docs, manifests
-    └── vectors/                     ← language-neutral payload vectors
+├── protocol/                        ← RT-only stripped CAN protocol (generated)
+│   ├── contracts/                   ← network.yaml + rta/host/mtr/ses/seb/hmi
+│   ├── generated/                   ← codecs (C++/Py/TS), DBC, CSV, docs, manifests
+│   └── vectors/                     ← language-neutral payload vectors
+└── src/                             ← (planned) platform-agnostic firmware, host-first
 ```
 
 ## Status
 
-Architecture documented. Protocol subset generated. Source implementation pending.
+Architecture, wiring, and work plan documented. Protocol subset generated. Source implementation pending (host-first; target runtime behind TC375 gate).
+

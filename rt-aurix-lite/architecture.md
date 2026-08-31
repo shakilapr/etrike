@@ -6,13 +6,45 @@ safety, body control, mode authority and the CAN gateway — and **MTR STM32** (
 actuation, EGAS Level 1). There is **no separate SYS node**: RT absorbs all former SYS
 safety/body duties, so **no RT↔SYS intercommunication exists anywhere in the system.**
 
+## Hardware identity
+
+| Property | Value |
+|----------|-------|
+| Evaluation board | **Infineon KIT_A2G_TC375_LITE** (AURIX™ lite Kit V2, Rev 2.2) |
+| MCU | **SAK-TC375TP-96F300W AA**, LQFP-176 |
+| Cores | **3 × TriCore** @ **300 MHz** (CPU0, CPU1, CPU2) |
+| Lockstep | **CPU0 and CPU1 lockstep-protected; CPU2 not** |
+| Program Flash | 6 MB |
+| SRAM (incl. cache) | 1136 KB |
+| CAN | **2 MCMCAN modules × 4 nodes each = 8 CAN nodes** |
+| DMA | 128 channels |
+| FPU / DSP | Yes |
+| HSM | Yes (eVita) |
+| Safety | up to **ASIL-D / SIL-3** hardware support |
+
+Per-core memory (this exact derivative):
+
+| Memory | CPU0 | CPU1 | CPU2 |
+|--------|-----:|-----:|-----:|
+| DSPR | 240 KB | 240 KB | 96 KB |
+| DLMU | 64 KB | 64 KB | 64 KB |
+| PSPR | 64 KB | 64 KB | 64 KB |
+| Lockstep checker | Yes | Yes | No |
+
+> **Sources:** board manual [`aurix.md`](aurix.md) (AURIX™ Lite Kit V2 Rev 2.2) for board
+> pin/connector/power facts; TC37x datasheet and TC375 Safety Lite Kit documentation for
+> the MCU capability table above. The on-board CAN transceiver is the **TLE9251VSJ** on
+> CAN node 0 (`P20.7`/`P20.8`); the exact MCMCAN module/node assignments for **both** buses
+> are confirmed during ADS/iLLD bring-up (§9.1).
+
 This document is grounded in the board manual [`aurix.md`](aurix.md) (AURIX™ Lite Kit V2,
 Rev 2.2, TC375) and the RT-only wire contracts in [`protocol/`](protocol/README.md), which
 are generated from the repository's canonical [`protocol/`](../protocol/) contracts by the
 same scripts.
 
 > **Deployment status:** Architecture only. No RT source implementation exists yet for the
-> AURIX target. Statements here are target design, not bench evidence.
+> AURIX target. Statements here are target design, not bench evidence. The implementation
+> approach and phase gates are defined in [`work-plan.md`](work-plan.md).
 
 ---
 
@@ -245,28 +277,56 @@ MANUAL ←→ AUTO       (mode button / HMI 0x111)
 
 ---
 
-## 6. Three-Core Task Layout (TC375)
+## 6. Runtime Model (TC375 — target-gated)
 
-The AURIX TC375 has **three TriCore cores**. RT uses an **AMP model** — one FreeRTOS
-instance per core, tasks pinned, no shared scheduler. The safety-critical domain is
-**isolated on its own core** with AURIX hardware support (MPU/memory-protection sets + SMU).
+The AURIX TC375 has **three TriCore cores**. This document specifies the **functional
+partition** across cores and the **required execution periods**; it deliberately does **not**
+commit to a scheduler topology (FreeRTOS kernels vs. deterministic cyclic executives vs. a
+mix) until the target-early feasibility spike decides (see [`work-plan.md`](work-plan.md)
+target gate).
 
-> **Correction vs. the earlier lite doc:** TC375 has **no lockstep** (lockstep is TC39x
-> only). Freedom-from-interference is provided by core separation, AURIX **MPU**
-> (memory-protection sets) and **SMU**, not by lockstep.
+> **Correction:** for the exact part `SAK-TC375TP-96F300W AA`, **CPU0 and CPU1 are
+> lockstep-protected; CPU2 is not**. Earlier text claiming "TC375 has no lockstep" was
+> wrong (that applies to some TC3xx family members, not this part). Freedom-from-interference
+> additionally uses AURIX **MPU** (memory-protection sets) and **SMU**.
 
-| Core | Domain | Tasks | Owns |
-|------|--------|-------|------|
-| **CPU0** (master) | Data plane / gateway (QM) | `can_rx_low`, `can_rx_high`, `dispatch`, `can_tx_low`, `can_tx_high`, `heartbeat` | MCMCAN0 (low), CAN_HIGH (high, MCMCAN module TBD), CAN transceivers, gateway queues |
-| **CPU1** | Motion control + safety (**ASIL**) | `safety`, `control`, `brake`, `watchdog` | ESTOP GPIO, TPS3850-Q1 WDT, actuator setpoint/feedback atomics, SMU init, steering/brake state machines |
-| **CPU2** | Body + HMI + diag (QM) | `lights`, `mode`, `indicator`, `power`, `diag` | light relays, mode/START buttons, HMI `0x111`/`0x112`, 12V relay |
+### 6.1 Functional partition (core-affinity intent)
 
-**15 FreeRTOS tasks total** (16 minus the removed `dcdc`).
+| Core | Domain | Functional units | Owns |
+|------|--------|------------------|------|
+| **CPU0** (master, lockstep) | Data plane / gateway (QM) | `can_rx_low`, `can_rx_high`, `dispatch`, `can_tx_low`, `can_tx_high`, `heartbeat` | CAN_LOW bus, CAN_HIGH bus, CAN transceivers, gateway queues |
+| **CPU1** (lockstep) | Motion control + safety (**ASIL**) | `safety`, `control`, `brake`, `watchdog` | ESTOP GPIO, TPS3850-Q1 WDT, actuator setpoint/feedback, SMU init, steering/brake state machines |
+| **CPU2** (non-lockstep) | Body + HMI + diag (QM) | `lights`, `mode`, `indicator`, `power`, `diag` | light relays, mode/START buttons, HMI `0x111`/`0x112`, 12V relay |
 
-| Task | Core | Prio | Period | Behavior |
+> **Why CPU0/CPU1 for safety:** both are lockstep-protected, so the safety-critical domain
+> can be isolated on a lockstep core. CPU2 (non-lockstep) carries only QM body/HMI work.
+> The exact core that owns the MCMCAN peripheral(s) and the ESTOP emergency resource is a
+> **bring-up decision** (§6.2).
+
+### 6.2 Runtime mechanism — decision gate (deferred)
+
+The following are all candidates; the winner is chosen only after the target spike
+([`work-plan.md`](work-plan.md) target gate) demonstrates multicore startup, peripheral
+access, shared-memory IPC and synchronization:
+
+- **Three independent FreeRTOS kernels (AMP)** — one per core, tasks pinned.
+- **One/two FreeRTOS kernels + deterministic cyclic executive(s)** on the remaining core(s).
+- **Deterministic cyclic executives only** (no RTOS) with interrupt/event handling.
+
+> **Rule:** *do not port the ESP32 firmware's execution architecture. Port its required
+> behavior.* The execution architecture belongs to the TC375 and remains unresolved until
+> target bring-up. No 15-FreeRTOS-task shell is built on the host.
+
+### 6.3 Functional units and required periods
+
+The **15 functional units** below are the work to be performed (regardless of runtime
+mechanism). Periods are the required execution cadence; on a cyclic executive these are
+slot periods, on FreeRTOS these are task periods.
+
+| Unit | Core | Prio | Period | Behavior |
 |------|------|------|--------|----------|
-| `can_rx_low` | 0 | 5 | event | MCMCAN0 → RX queue |
-| `can_rx_high` | 0 | 5 | event | CAN_HIGH (MCMCAN module TBD) → RX queue |
+| `can_rx_low` | 0 | 5 | event | CAN_LOW → RX queue |
+| `can_rx_high` | 0 | 5 | event | CAN_HIGH → RX queue |
 | `dispatch` | 0 | 4 | event | route both RX queues + gateway + steering/brake feedback + fault escalation |
 | `can_tx_low` | 0 | 3 | event | `0x204`@100 Hz, `0x169`@50 Hz, `0x7B9`@50 Hz, `0x110`, gateway forwards |
 | `can_tx_high` | 0 | 3 | event | `0x011`, `0x121`, `0x210`, `0x310`, `0x311`, `0x600`, forwarded `0x120`/`0x206` |
@@ -274,27 +334,29 @@ instance per core, tasks pinned, no shared scheduler. The safety-critical domain
 | `safety` | 1 | 5 | 20 Hz | ESTOP GPIO, MTR liveness (`0x206`), EGAS L2 comparison, SMU monitoring |
 | `control` | 1 | 4 | 100 Hz | kinematics, dynamic angle clamp, obstacle limit, brake arbitration, safety checks, ESTOP handling |
 | `brake` | 1 | 3 | 50 Hz | SEB boot sequence + `0x7B9` continuous TX + lever |
-| `watchdog` | 1 | 1 | 10 Hz | command staleness (500 ms) → zero setpoints + stop steer; TPS3850-Q1 toggle |
+| `watchdog` | 1 | 1 | 10 Hz | command staleness (500 ms) → zero setpoints + stop steer; watchdog health decision |
 | `lights` | 2 | 3 | 20 Hz | turn/brake/head lamp GPIOs + blink |
 | `mode` | 2 | 4 | 10 Hz | MODE/START buttons, HMI `0x111`, ESTOP exit, `0x110` to MTR |
 | `indicator` | 2 | 2 | 5 Hz | mode bulbs (AUTO/MANUAL) |
 | `power` | 2 | 2 | 5 Hz | 12V accessory relay |
 | `diag` | 2 | 1 | 1 Hz | system health → `0x600` |
 
-### 6.1 Cross-Core IPC
+### 6.4 Cross-Core IPC
 
 "Queues over shared state" extends across cores. No mutexes in the data path:
 
 - **Lock-free single-writer / single-reader ring buffers** per core-to-core link, with
   CPU-to-CPU interrupts (SRE/service request) for wakeup.
-- **Atomic pipeline across cores:** `can_rx_*` (CPU0) decodes → writes atomics →
-  `control` (CPU1) reads atomics, computes physics, writes setpoint atomics →
-  `can_tx_low` (CPU0) reads setpoint atomics and sends `0x204`/`0x169`/`0x7B9`.
-- **ESTOP bypass:** `safety` (CPU1) writes `0x001` and the `0x7B9`-max frame **directly to
-  the MCMCAN TX mailbox** (SRI-accessible from CPU1) plus a CPU0/CPU2 interrupt so the
-  gateway and body react (forward `0x001`, lights, mode).
-- **Mode authority:** `mode` (CPU2) publishes mode to the ring; `control` (CPU1) and
-  `can_tx_*` (CPU0) consume it; `heartbeat` (CPU0) aggregates per-core health into `0x7FD`.
+- **Atomic pipeline across cores:** RX decodes → typed inputs → `control` computes physics
+  → setpoint outputs → TX sends `0x204`/`0x169`/`0x7B9`.
+- **ESTOP bypass:** the safety domain raises an **urgent** transmit (`TxClass::Urgent`); the
+  target implements the emergency resource per the proven architecture (direct mailbox write
+  vs. other). The portable interface does **not** expose mailbox details.
+- **Mode authority:** the body domain publishes mode; motion/control and TX consume it;
+  heartbeat aggregates per-core health into `0x7FD`.
+- **Target correctness (later):** shared-memory placement (LMU/DLMU), alignment, publication
+  ordering and **DSYNC**/compiler barriers, SRI routing, and MPU/BMP access are established
+  during the target spike — not simulated on the host.
 
 ---
 
@@ -305,9 +367,9 @@ Level 3: Hardware — ESTOP button wired direct to both RT and MTR
          TPS3850-Q1 external watchdog. No software, no CAN.
          ESTOP press → MTR cuts throttle + gear instantly (local).
 
-Level 2: Function Monitor — RT CPU1 safety task (ASIL, prio 5)
-         Isolated on its own core; AURIX MPU (memory-protection sets)
-         isolates safety-task memory from QM cores; SMU enforces
+Level 2: Function Monitor — RT CPU1 safety unit (ASIL, prio 5)
+         Isolated on a lockstep core (CPU1); AURIX MPU (memory-protection
+         sets) isolates safety memory from QM cores; SMU enforces
          freedom-from-interference. Compares 0x204 setpoint vs 0x206
          feedback. Mismatch > 500 mm/s for > 500 ms → CAN 0x001 ESTOP.
 
@@ -332,8 +394,8 @@ Level 1: Function Controller — MTR STM32
   heartbeat ID.
 - `0x7FD` is sent on **both buses independently** (per-bus alive counters, NOT bridged).
 - `0x7FE` SYS heartbeat is **deleted** (no SYS node). RT's own liveness is internal:
-  per-core task-health counters reported via `0x210`/`0x600`, plus the TPS3850-Q1 external
-  watchdog toggled by the CPU1 safety task.
+  per-core health counters reported via `0x210`/`0x600`, plus the TPS3850-Q1 external
+  watchdog serviced by the CPU1 safety unit.
 
 ---
 
@@ -343,6 +405,11 @@ Pin facts from [`aurix.md`](aurix.md). Pins marked *(header)* are free board pin
 for this design; verify alternate functions against the TC375 datasheet.
 
 ### 9.1 CAN
+
+The exact MCU has **2 MCMCAN modules × 4 CAN nodes each (8 nodes total)**. The on-board
+Lite Kit transceiver is on **CAN node 0** (`P20.7`/`P20.8`, `P20.6` standby). The exact
+MCMCAN module/node for **both** buses, and the iLLD `IfxCan_*Pin` symbols, are confirmed
+during ADS/iLLD bring-up — `MCMCAN0`/`MCMCAN1` module indices are not assumed here.
 
 | Bus | TX | RX | Standby | Transceiver | Status |
 |-----|----|----|---------|-------------|--------|
@@ -358,7 +425,7 @@ CAN_HIGH property certainty (split per-property rather than one row-level status
 | RX pin | `P15.1` / RXCAN2 | DATASHEET-VERIFIED |
 | Connector | mikroBUS pin 13 (TX) / pin 14 (RX) | BOARD-VERIFIED |
 | Intended use | high-level CAN (Jetson) | DESIGN-SELECTED |
-| MCMCAN module/node | TBD | BRING-UP-TBD |
+| MCMCAN module/node | TBD (2×MCMCAN, 4 nodes each) | BRING-UP-TBD |
 | iLLD `IfxCan_*Pin` symbols | TBD | BRING-UP-TBD |
 
 > **CAN_HIGH pins:** the TC37x datasheet assigns TXCAN2/RXCAN2 to P15.0/P15.1, which the
@@ -450,10 +517,10 @@ pin, decoupling, protection, termination and connector wiring.
 | EPS-C L3 fault (`0x202`) | L3 fault bits | ESTOP via `0x001` |
 | SEB L3 fault (`0x731`) | L3 fault bits | ESTOP via `0x001` |
 | `0x721`/`0x201` checksum fail | XOR(bytes 0–6) ^ 0xFF mismatch | Drop frame (checksum-before-L3 pattern) |
-| Command stale (500 ms) | `watchdog` task | Zero `0x204` + steering ramp-to-zero |
+| Command stale (500 ms) | `watchdog` unit | Zero `0x204` + steering ramp-to-zero |
 | CAN bus-off (low) | TEC poll / error interrupt | Auto-recover; 5 consecutive → ESTOP (loss of actuator bus non-survivable) |
 | CAN bus-off (high) | TEC poll / error interrupt | Graceful: zero setpoints, steer ramp-to-zero (Jetson link loss survivable) |
-| Task stalled >500 ms | per-task alive counters (CPU0/CPU2) + safety task (CPU1) | Log ERROR; TPS3850-Q1 external WDT as backstop |
+| Unit stalled >500 ms | per-core health counters (CPU0/CPU2) + safety unit (CPU1) | Log ERROR; TPS3850-Q1 external WDT as backstop |
 
 ### 10.1 Asymmetric Bus-Off Response
 
@@ -481,10 +548,10 @@ checksum before L3 escalation. DLC < 8 → immediate reject.
 | RT↔SYS messages | `0x7FE`, `0x7FD`(low→SYS), `0x205`, `0x110`(RT←SYS), `0x011`/`0x600`(fwd) | **none** — all removed/re-homed |
 | `0x7B9` owner | SYS (MANUAL/ESTOP) / RT (AUTO), dual-sender suppression | RT in all modes, single sender |
 | Mode authority | SYS | RT |
-| EGAS Level 2 | SYS ESP32 (separate MCU) | RT CPU1 safety task (isolated core, MPU + SMU) |
-| Freedom-from-interference | physical (separate MCU) | logical (core isolation + MPU + SMU; no lockstep on TC375) |
-| Cores | 2 single-core ESP32 | 3 TriCore (CPU0 data plane / CPU1 ASIL / CPU2 body) |
-| RTOS tasks | 8 (RT) + 15 (SYS) = 23 | 15 (merged; `dcdc` dropped) |
+| EGAS Level 2 | SYS ESP32 (separate MCU) | RT CPU1 safety unit (lockstep core, MPU + SMU) |
+| Freedom-from-interference | physical (separate MCU) | logical (CPU0/CPU1 lockstep + MPU + SMU; CPU2 non-lockstep QM) |
+| Cores | 2 single-core ESP32 | 3 TriCore (CPU0 data plane / CPU1 ASIL lockstep / CPU2 body) |
+| RTOS / executors | 8 (RT) + 15 (SYS) = 23 tasks | 15 functional units; runtime mechanism **target-gated** (not pre-committed to FreeRTOS) |
 | Powertrain bus / DC-DC | present (PWT) | **dropped** (no powertrain bus) |
 | BOM cost | higher (2 MCUs + 2 transceivers + powertrain) | lower (1 MCU + 2 transceivers, no PWT) |
 | Development complexity | cross-MCU coordination | single codebase, 3-core partition |
@@ -492,6 +559,16 @@ checksum before L3 escalation. DLC < 8 → immediate reject.
 ---
 
 ## 12. Configuration Constants
+
+The firmware configuration is split by concern (implemented under `src/config/`):
+
+- `control_config.h` — physics/control constants (reuse `shared_config.h` where identical).
+- `safety_config.h` — safety thresholds (EGAS, ESTOP, faults).
+- `timing_config.h` — periods, timeouts, heartbeat (§8).
+- Board pins (`P15.0`, `P15.1`, `P33.1`, …) belong to the future `platform/aurix/board_pins.h`
+  (or the board HAL), **not** firmware configuration.
+
+Representative values (namespace `rta`):
 
 ```cpp
 namespace rta {
@@ -581,3 +658,42 @@ Generated hashes (subset): `SEMANTIC_HASH=e46be1e489de29116d0661ca908f242209a60f
 - [`protocol/`](protocol/) — generated C++/Python/TS codecs, DBC, CSV, docs, manifests.
 - [`can-dictionary.md`](../can-dictionary.md) — canonical bit-level signal layouts (wire layouts identical).
 - [`architecture.md`](../architecture.md) — distributed reference architecture (RT + SYS) this variant consolidates.
+- [`wiring.md`](wiring.md) — harness/wiring reference (status-coded connections).
+- [`work-plan.md`](work-plan.md) — phased implementation plan, exit gates, and cleanup rules.
+
+---
+
+## 15. Implementation Strategy
+
+> **Principle:** *Do not port the ESP32 firmware's execution architecture. Port its required
+> behavior. The execution architecture belongs to the TC375 and remains unresolved until
+> target bring-up.*
+
+### 15.1 Host-first, target-early
+
+- **Host now:** implement the scheduler-independent control, safety, protocol and
+  state-machine logic as platform-agnostic C++ (`src/`), validated with a **deterministic
+  three-domain system simulation** (virtual CPU0/CPU1/CPU2 executors + virtual CAN/GPIO/
+  watchdog + fault injection) on the existing `native-test` harness.
+- **Target gate:** install the TriCore toolchain + TC375 iLLD, then prove a walking skeleton
+  (multicore startup, real CAN_LOW/CAN_HIGH, shared-memory IPC + DSYNC, SRI, MPU/SMU)
+  **before** choosing the runtime mechanism.
+- **Do not** build 15 FreeRTOS task shells on the host; the runtime is decided at the gate.
+
+### 15.2 Layered source tree (dependency direction)
+
+```
+CAN bytes → generated codec → protocol adapter → typed input
+        → app orchestration → domain logic → typed output
+        → protocol adapter → generated codec → CAN bytes
+```
+
+- `domain/` — pure logic: no CAN IDs, no IPC, no logging, no clock calls (`step(now_us, …)`).
+- `app/` — orchestration controllers (motion, safety, body, gateway, watchdog-health).
+- `protocol/` — decode/encode adapters + route table (owns all CAN-ID↔typed mapping).
+- `ipc/` — snapshots, SPSC channels, typed messages (host: `std::atomic`; target: LMU/DSYNC later).
+- `hal/` — interfaces only: `Can` (with `TxClass::Urgent`), `Gpio`, `Clock`, `Watchdog::service()`.
+- `config/` — control/safety/timing split; board pins live in the board HAL, not config.
+- `platform/` — `host/` (virtual adapters) now; `aurix/` (iLLD) after the gate.
+
+See [`work-plan.md`](work-plan.md) for the phased plan, exit gates, and vertical commit sequence.
