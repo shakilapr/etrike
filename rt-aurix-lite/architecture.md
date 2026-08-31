@@ -257,7 +257,7 @@ instance per core, tasks pinned, no shared scheduler. The safety-critical domain
 
 | Core | Domain | Tasks | Owns |
 |------|--------|-------|------|
-| **CPU0** (master) | Data plane / gateway (QM) | `can_rx_low`, `can_rx_high`, `dispatch`, `can_tx_low`, `can_tx_high`, `heartbeat` | MCMCAN0 (low), MCMCAN1 (high), CAN transceivers, gateway queues |
+| **CPU0** (master) | Data plane / gateway (QM) | `can_rx_low`, `can_rx_high`, `dispatch`, `can_tx_low`, `can_tx_high`, `heartbeat` | MCMCAN0 (low), CAN_HIGH (high, MCMCAN module TBD), CAN transceivers, gateway queues |
 | **CPU1** | Motion control + safety (**ASIL**) | `safety`, `control`, `brake`, `watchdog` | ESTOP GPIO, TPS3850-Q1 WDT, actuator setpoint/feedback atomics, SMU init, steering/brake state machines |
 | **CPU2** | Body + HMI + diag (QM) | `lights`, `mode`, `indicator`, `power`, `diag` | light relays, mode/START buttons, HMI `0x111`/`0x112`, 12V relay |
 
@@ -266,7 +266,7 @@ instance per core, tasks pinned, no shared scheduler. The safety-critical domain
 | Task | Core | Prio | Period | Behavior |
 |------|------|------|--------|----------|
 | `can_rx_low` | 0 | 5 | event | MCMCAN0 → RX queue |
-| `can_rx_high` | 0 | 5 | event | MCMCAN1 → RX queue |
+| `can_rx_high` | 0 | 5 | event | CAN_HIGH (MCMCAN module TBD) → RX queue |
 | `dispatch` | 0 | 4 | event | route both RX queues + gateway + steering/brake feedback + fault escalation |
 | `can_tx_low` | 0 | 3 | event | `0x204`@100 Hz, `0x169`@50 Hz, `0x7B9`@50 Hz, `0x110`, gateway forwards |
 | `can_tx_high` | 0 | 3 | event | `0x011`, `0x121`, `0x210`, `0x310`, `0x311`, `0x600`, forwarded `0x120`/`0x206` |
@@ -542,8 +542,10 @@ constexpr int kBrakeLightGpio= 82;  // P33.12
 constexpr int kHeadlightGpio = 83;  // P33.13
 constexpr int kBulbAutoGpio  = 84;  // P21.4
 constexpr int kBulbManualGpio= 85;  // P21.5
+constexpr int kWdtToggleGpio = 86;  // P33.1 (X2-29), TPS3850-Q1 WDI
 // CAN: MCMCAN0 P20.8 TX / P20.7 RX / P20.6 STB (board-fixed)
-//      MCMCAN1 P15.5 TX / P15.4 RX (proposed, external transceiver; confirm mux)
+//      CAN_HIGH P15.0 TXCAN2 / P15.1 RXCAN2 (mikroBUS 13/14; MCMCAN module TBD)
+// WDT:  P33.1 (X2-29) -> TPS3850-Q1 WDI (window timing per TPS3850-Q1 config)
 
 } // namespace rta
 ```
