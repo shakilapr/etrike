@@ -41,6 +41,7 @@ Target: **AURIX™ Lite Kit V2, TC375** (`SAK-TC375TP-96F300W AA`) — see [`aur
 ```
 rt-aurix-lite/
 ├── architecture.md                  ← Consolidated architecture spec (RT-only, 3-core)
+├── wiring.md                        ← Wiring / harness reference
 ├── README.md                        ← This file
 ├── aurix.md                         ← AURIX Lite Kit V2 board manual (full transcription)
 ├── AURIX_Lite_Kit_V2_User_Manual.md ← Board manual (reference)
