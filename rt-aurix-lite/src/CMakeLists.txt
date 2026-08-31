@@ -24,5 +24,6 @@ add_library(rta_core STATIC
     ${RTA_SRC_ROOT}/domain/kinematics.cpp
     ${RTA_SRC_ROOT}/domain/steering.cpp
     ${RTA_SRC_ROOT}/domain/brake.cpp
+    ${RTA_SRC_ROOT}/domain/mode.cpp
 )
 target_link_libraries(rta_core PUBLIC rta_headers)

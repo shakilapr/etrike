@@ -13,6 +13,11 @@ constexpr int kSafetyRateHz    = 20;    // CPU1 safety
 constexpr int kHealthRateHz    = 10;    // CPU1 watchdog/health
 constexpr int kHeartbeatRateHz = 2;     // CPU0 heartbeat
 
+// ── Mode manager (architecture.md §5) ─────────────────────────────
+constexpr int kModeDebounceMs   = 500;   // button debounce
+constexpr int kModeLongPressMs  = 3000;  // MODE long-press in ESTOP -> MANUAL
+constexpr int kModeTickRateHz   = 10;    // mode manager call rate
+
 // ── Heartbeat (architecture.md §8) ────────────────────────────────
 constexpr int kHeartbeatId          = 0x7FD;
 constexpr int kHeartbeatIntervalMs  = 500;   // 2 Hz
