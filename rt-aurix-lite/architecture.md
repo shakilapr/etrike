@@ -63,9 +63,9 @@ frames between them.
 
 > **Dual CAN hardware on RT:** the AURIX TC375 has multiple MCMCAN nodes. **MCMCAN0**
 > drives the low-level bus (EPS-C, SEB, MTR) using the on-board TLE9251VSJ transceiver on
-> `P20.7/P20.8` with standby control `P20.6`. **MCMCAN1** drives the high-level bus
-> (Jetson) via a second, external transceiver (e.g. SN65HVD230) wired to expansion pins —
-> see §10 for the proposed pin mapping.
+> `P20.7/P20.8` with standby control `P20.6`. **CAN_HIGH** drives the high-level bus
+> (Jetson) via a second, external transceiver (part TBD — see §9.1.2) wired to the
+> mikroBUS P15.0/P15.1 pins — see §9.1.
 
 ---
 
@@ -258,7 +258,7 @@ instance per core, tasks pinned, no shared scheduler. The safety-critical domain
 | Core | Domain | Tasks | Owns |
 |------|--------|-------|------|
 | **CPU0** (master) | Data plane / gateway (QM) | `can_rx_low`, `can_rx_high`, `dispatch`, `can_tx_low`, `can_tx_high`, `heartbeat` | MCMCAN0 (low), MCMCAN1 (high), CAN transceivers, gateway queues |
-| **CPU1** | Motion control + safety (**ASIL**) | `safety`, `control`, `brake`, `watchdog` | ESTOP GPIO, TPS3850 WDT, actuator setpoint/feedback atomics, SMU init, steering/brake state machines |
+| **CPU1** | Motion control + safety (**ASIL**) | `safety`, `control`, `brake`, `watchdog` | ESTOP GPIO, TPS3850-Q1 WDT, actuator setpoint/feedback atomics, SMU init, steering/brake state machines |
 | **CPU2** | Body + HMI + diag (QM) | `lights`, `mode`, `indicator`, `power`, `diag` | light relays, mode/START buttons, HMI `0x111`/`0x112`, 12V relay |
 
 **15 FreeRTOS tasks total** (16 minus the removed `dcdc`).
@@ -274,7 +274,7 @@ instance per core, tasks pinned, no shared scheduler. The safety-critical domain
 | `safety` | 1 | 5 | 20 Hz | ESTOP GPIO, MTR liveness (`0x206`), EGAS L2 comparison, SMU monitoring |
 | `control` | 1 | 4 | 100 Hz | kinematics, dynamic angle clamp, obstacle limit, brake arbitration, safety checks, ESTOP handling |
 | `brake` | 1 | 3 | 50 Hz | SEB boot sequence + `0x7B9` continuous TX + lever |
-| `watchdog` | 1 | 1 | 10 Hz | command staleness (500 ms) → zero setpoints + stop steer; TPS3850 toggle |
+| `watchdog` | 1 | 1 | 10 Hz | command staleness (500 ms) → zero setpoints + stop steer; TPS3850-Q1 toggle |
 | `lights` | 2 | 3 | 20 Hz | turn/brake/head lamp GPIOs + blink |
 | `mode` | 2 | 4 | 10 Hz | MODE/START buttons, HMI `0x111`, ESTOP exit, `0x110` to MTR |
 | `indicator` | 2 | 2 | 5 Hz | mode bulbs (AUTO/MANUAL) |
@@ -302,7 +302,7 @@ instance per core, tasks pinned, no shared scheduler. The safety-critical domain
 
 ```
 Level 3: Hardware — ESTOP button wired direct to both RT and MTR
-         TPS3850 external watchdog. No software, no CAN.
+         TPS3850-Q1 external watchdog. No software, no CAN.
          ESTOP press → MTR cuts throttle + gear instantly (local).
 
 Level 2: Function Monitor — RT CPU1 safety task (ASIL, prio 5)
@@ -332,7 +332,7 @@ Level 1: Function Controller — MTR STM32
   heartbeat ID.
 - `0x7FD` is sent on **both buses independently** (per-bus alive counters, NOT bridged).
 - `0x7FE` SYS heartbeat is **deleted** (no SYS node). RT's own liveness is internal:
-  per-core task-health counters reported via `0x210`/`0x600`, plus the TPS3850 external
+  per-core task-health counters reported via `0x210`/`0x600`, plus the TPS3850-Q1 external
   watchdog toggled by the CPU1 safety task.
 
 ---
@@ -370,6 +370,31 @@ CAN_HIGH property certainty (split per-property rather than one row-level status
 > The Lite Kit V2 has exactly **one on-board CAN transceiver** (CAN node 0). The high bus
 > requires an external transceiver on the expansion header.
 
+#### 9.1.1 CAN termination rule
+
+**Exactly two 120 Ω terminations across CANH–CANL, at the two physical ends of each CAN
+bus.**
+
+| Bus | Termination points |
+|-----|--------------------|
+| CAN_LOW | Lite Kit on-board termination: **120 Ω on-board**. If the Lite Kit is at one physical bus end, one external endpoint termination is still required at the far end. |
+| CAN_HIGH | External-transceiver PCB termination: **configurable / DNP by default**. Actual termination depends on the physical bus position of the two endpoints. |
+
+#### 9.1.2 CAN_HIGH transceiver (TBD)
+
+Part: **TBD**. The generic `SN65HVD230 (or TLE9251V)` pairing is not used; requirements only:
+
+- ISO 11898-2 high-speed CAN.
+- 500 kbit/s required.
+- MCU-side interface compatible with TC375 I/O (3.3 V).
+- Automotive-qualified preferred.
+- Standby/enable behavior explicitly defined.
+- External CANH/CANL.
+- Termination configurable according to bus position.
+
+When the component is selected, add its exact VCC/VIO arrangement, TXD/RXD levels, STB/EN
+pin, decoupling, protection, termination and connector wiring.
+
 ### 9.2 Rider inputs / body outputs (free board pins)
 
 | Signal | AURIX pin | Dir | Notes |
@@ -392,7 +417,7 @@ CAN_HIGH property certainty (split per-property rather than one row-level status
 
 > **Added external components (not on the Lite Kit V2):**
 > - Second CAN transceiver (high bus).
-> - TPS3850 external watchdog (EGAS L3). If omitted, rely on AURIX internal SMU + per-core
+> - TPS3850-Q1 external watchdog (EGAS L3). If omitted, rely on AURIX internal SMU + per-core
 >   task watchdogs (documented as reduced safety depth).
 > - Light/relay driver board (the board exposes GPIO only; no high-current relay drivers).
 > - ESTOP button and rider switches are wired to free header pins (the board's own Button1
@@ -428,7 +453,7 @@ CAN_HIGH property certainty (split per-property rather than one row-level status
 | Command stale (500 ms) | `watchdog` task | Zero `0x204` + steering ramp-to-zero |
 | CAN bus-off (low) | TEC poll / error interrupt | Auto-recover; 5 consecutive → ESTOP (loss of actuator bus non-survivable) |
 | CAN bus-off (high) | TEC poll / error interrupt | Graceful: zero setpoints, steer ramp-to-zero (Jetson link loss survivable) |
-| Task stalled >500 ms | per-task alive counters (CPU0/CPU2) + safety task (CPU1) | Log ERROR; TPS3850 external WDT as backstop |
+| Task stalled >500 ms | per-task alive counters (CPU0/CPU2) + safety task (CPU1) | Log ERROR; TPS3850-Q1 external WDT as backstop |
 
 ### 10.1 Asymmetric Bus-Off Response
 
