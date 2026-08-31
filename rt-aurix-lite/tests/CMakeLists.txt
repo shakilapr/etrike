@@ -85,3 +85,10 @@ add_executable(rta_controllers
 )
 target_link_libraries(rta_controllers PRIVATE rta_core)
 add_test(NAME rta_controllers COMMAND rta_controllers)
+
+# ── HAL interface compile check ─────────────────────────────────────
+add_executable(rta_hal_compile
+    ${RTA_TESTS_ROOT}/test_hal_compile.cpp
+)
+target_link_libraries(rta_hal_compile PRIVATE rta_core)
+add_test(NAME rta_hal_compile COMMAND rta_hal_compile)
