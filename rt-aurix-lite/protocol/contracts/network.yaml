@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "protocol_version": "etrike-wire-v1",
+  "instance_semantics": {
+    "same_frame": "The received frame is forwarded without changing ID, format, DLC, or payload bytes.",
+    "regenerated": "A receiver decodes and emits a new frame; payload and sequence state are not inherited.",
+    "independent": "The producer emits this instance with bus-local sequence and scheduling state."
+  },
+  "buses": [
+    {"key": "high", "bitrate_hz": 500000},
+    {"key": "low", "bitrate_hz": 500000}
+  ],
+  "nodes": ["Host", "RT", "MTR", "EPS_C", "SEB", "HMI", "Any"],
+  "routes": [
+    {"key": "rt-l2h-estop", "message": "safety:safety_estop", "from": "low", "to": "high", "semantics": "same_frame"},
+    {"key": "rt-h2l-estop", "message": "safety:safety_estop", "from": "high", "to": "low", "semantics": "same_frame"},
+    {"key": "rt-l2h-speed", "message": "mtr:sys_throttle_sts", "from": "low", "to": "high", "semantics": "same_frame"},
+    {"key": "rt-l2h-motor", "message": "mtr:mtr_motor_fbk", "from": "low", "to": "high", "semantics": "same_frame"},
+    {"key": "rt-h2l-lights", "message": "host:host_light_cmd", "from": "high", "to": "low", "semantics": "same_frame"},
+    {"key": "rt-h2l-mode", "message": "hmi:hmi_mode_req", "from": "high", "to": "low", "semantics": "same_frame"},
+    {"key": "rt-h2l-power", "message": "hmi:hmi_pwr_req", "from": "high", "to": "low", "semantics": "same_frame"}
+  ],
+  "messages": [
+    {
+      "key": "safety_estop", "owner": "safety", "protocol": "etrike.application.v1", "name": "SAFETY_ESTOP", "dlc": 0, "byte_order": "big",
+      "codec": {"strategy": "generated"}, "layout": {"kind": "signals", "fields": []},
+      "instances": [
+        {"bus": "high", "id": "0x001", "frame_format": "standard", "sender": "Any", "receivers": ["RT", "Host", "MTR"], "cycle_ms": 0, "semantics": "same_frame"},
+        {"bus": "low", "id": "0x001", "frame_format": "standard", "sender": "Any", "receivers": ["RT", "Host", "MTR"], "cycle_ms": 0, "semantics": "same_frame"}
+      ]
+    }
+  ]
+}

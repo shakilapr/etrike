@@ -1,0 +1,64 @@
+{
+  "$defs": {
+    "codec": {
+      "properties": {
+        "strategy": {
+          "enum": [
+            "custom",
+            "generated",
+            "profile"
+          ]
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "type": "object"
+    },
+    "instance": {
+      "required": [
+        "bus",
+        "id",
+        "frame_format",
+        "sender",
+        "receivers",
+        "cycle_ms",
+        "semantics"
+      ],
+      "type": "object"
+    },
+    "message": {
+      "required": [
+        "key",
+        "owner",
+        "protocol",
+        "name",
+        "dlc",
+        "byte_order",
+        "codec",
+        "layout",
+        "instances"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://etrike.local/protocol/contract-schema-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "messages": {
+      "items": {
+        "$ref": "#/$defs/message"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "messages"
+  ],
+  "title": "E-Trike canonical message contract",
+  "type": "object"
+}

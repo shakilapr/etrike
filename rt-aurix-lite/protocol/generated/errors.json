@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "statuses": [
+    "ok",
+    "wrong_message_id",
+    "wrong_frame_format",
+    "unexpected_length",
+    "value_out_of_range",
+    "invalid_enum",
+    "constant_mismatch",
+    "checksum_mismatch",
+    "unsupported_semantics"
+  ],
+  "unsupported": [
+    {
+      "message": "ses:ses_version",
+      "raw_access": true,
+      "reason": "Vendor version semantics are unresolved.",
+      "status": "unsupported_semantics"
+    }
+  ]
+}

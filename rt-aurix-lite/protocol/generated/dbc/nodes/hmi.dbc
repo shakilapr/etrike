@@ -1,0 +1,45 @@
+VERSION "created by canmatrix"
+
+
+NS_ :
+
+BS_:
+
+BU_: Host RT MTR EPS_C SEB HMI Any 
+
+
+BO_ 273 HMI_MODE_REQ_high: 2 HMI
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" RT,Host
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT,Host
+
+BO_ 273 HMI_MODE_REQ_low: 2 HMI
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+BO_ 274 HMI_PWR_REQ_high: 2 HMI
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+BO_ 274 HMI_PWR_REQ_low: 2 HMI
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+
+CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; RT remains the sole mode authority.";
+CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; RT remains the sole mode authority.";
+
+
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+
+
+BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
+
+
+VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
+VAL_ 274 req_start 0 "OFF" 1 "ON";

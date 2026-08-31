@@ -1,0 +1,95 @@
+VERSION "created by canmatrix"
+
+
+NS_ :
+
+BS_:
+
+BU_: Host RT MTR EPS_C SEB HMI Any 
+
+
+BO_ 1 SAFETY_ESTOP: 0 Any
+
+BO_ 273 HMI_MODE_REQ: 2 HMI
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+BO_ 274 HMI_PWR_REQ: 2 HMI
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+BO_ 770 HOST_LIGHT_CMD: 1 Host
+ SG_ left_turn : 7|1@0+ (1,0) [0|1] "" RT
+ SG_ right_turn : 6|1@0+ (1,0) [0|1] "" RT
+ SG_ brake_light : 5|1@0+ (1,0) [0|1] "" RT
+ SG_ headlight : 4|1@0+ (1,0) [0|1] "" RT
+
+BO_ 288 SYS_THROTTLE_STS: 2 MTR
+ SG_ speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT
+
+BO_ 518 MTR_MOTOR_FBK: 4 MTR
+ SG_ actual_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT
+ SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT
+ SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT
+
+BO_ 516 RTA_DRIVE_CMD: 5 RT
+ SG_ motor_speed_mmps : 7|32@0- (1,0) [-500|3000] "" MTR
+ SG_ gear : 39|8@0+ (1,0) [0|3] "" MTR
+
+BO_ 272 RTA_MODE_CMD: 1 RT
+ SG_ mode : 7|8@0+ (1,0) [0|2] "" MTR
+
+BO_ 2045 RTA_HEARTBEAT: 2 RT
+ SG_ alive_ctr : 7|8@0+ (1,0) [0|255] "" MTR
+ SG_ health_flags : 15|8@0+ (1,0) [0|255] "" MTR
+
+BO_ 1977 VCU_SEB_REQ: 8 RT
+
+BO_ 1825 SEB_STATUS: 8 SEB
+
+BO_ 1841 SEB_ERR_INFO: 8 SEB
+
+BO_ 1857 SEB_VERSION: 8 SEB
+
+BO_ 1787 SEB_TEST: 8 SEB
+
+BO_ 361 VCU_SES_REQ: 8 RT
+
+BO_ 513 SES_STATUS: 8 EPS_C
+
+BO_ 514 SES_ERR_INFO: 8 EPS_C
+
+BO_ 515 SES_VERSION: 8 EPS_C
+
+BO_ 1786 SES_TEST: 8 EPS_C
+
+
+CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; RT remains the sole mode authority.";
+
+
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+
+
+BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
+BA_ "GenMsgCycleTime" BO_ 288 10;
+BA_ "GenMsgCycleTime" BO_ 518 20;
+BA_ "GenMsgCycleTime" BO_ 516 10;
+BA_ "GenMsgCycleTime" BO_ 272 1000;
+BA_ "GenMsgCycleTime" BO_ 2045 500;
+BA_ "GenMsgCycleTime" BO_ 1977 20;
+BA_ "GenMsgCycleTime" BO_ 1825 10;
+BA_ "GenMsgCycleTime" BO_ 1841 100;
+BA_ "GenMsgCycleTime" BO_ 1857 1000;
+BA_ "GenMsgCycleTime" BO_ 1787 10;
+BA_ "GenMsgCycleTime" BO_ 361 20;
+BA_ "GenMsgCycleTime" BO_ 513 10;
+BA_ "GenMsgCycleTime" BO_ 514 100;
+BA_ "GenMsgCycleTime" BO_ 515 1000;
+BA_ "GenMsgCycleTime" BO_ 1786 10;
+
+
+VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
+VAL_ 516 gear 0 "N" 1 "D" 2 "S" 3 "R";

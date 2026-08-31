@@ -1,0 +1,1648 @@
+{
+  "messages": [
+    {
+      "byte_order": "big",
+      "canonical_key": "hmi:hmi_mode_req",
+      "codec": {
+        "strategy": "generated"
+      },
+      "comment": "Mode requests may be produced directly by HMI or by Host/Jetson; RT remains the sole mode authority.",
+      "dlc": 2,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x111",
+          "receivers": [
+            "RT",
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "HMI"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x111",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "same_frame",
+          "sender": "HMI"
+        }
+      ],
+      "key": "hmi_mode_req",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "enum": {
+              "0": "MANUAL",
+              "1": "AUTO"
+            },
+            "key": "req_mode",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HMI_MODE_REQ",
+      "owner": "hmi",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "hmi:hmi_pwr_req",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 2,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x112",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "HMI"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x112",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "same_frame",
+          "sender": "HMI"
+        }
+      ],
+      "key": "hmi_pwr_req",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "enum": {
+              "0": "OFF",
+              "1": "ON"
+            },
+            "key": "req_start",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HMI_PWR_REQ",
+      "owner": "hmi",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_brake_req",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 4,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x301",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_brake_req",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 32,
+            "byte": 0,
+            "key": "brake_pressure_kpa",
+            "max": 20000,
+            "min": 0,
+            "signed": true
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_BRAKE_REQ",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_drive_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x300",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_drive_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 32,
+            "byte": 0,
+            "key": "speed_mmps",
+            "max": 3000,
+            "min": -500,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 24,
+            "byte": 4,
+            "key": "yaw_rate_mrad_s",
+            "max": 3000,
+            "min": -3000,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "enum": {
+              "0": "N",
+              "1": "D",
+              "2": "S",
+              "3": "R"
+            },
+            "key": "gear",
+            "max": 3,
+            "min": 0
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_DRIVE_CMD",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_heartbeat",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 2,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 500,
+          "frame_format": "standard",
+          "id": "0x7FC",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_heartbeat",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "alive_ctr"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "key": "health_flags"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_HEARTBEAT",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_light_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 1,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x302",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x302",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "same_frame",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_light_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 0,
+            "key": "left_turn"
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 0,
+            "key": "right_turn"
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 0,
+            "key": "brake_light"
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 0,
+            "key": "headlight"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_LIGHT_CMD",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_obstacle_dist",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 4,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x400",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_obstacle_dist",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 32,
+            "byte": 0,
+            "enum": {
+              "4294967295": "clear"
+            },
+            "key": "distance_mm",
+            "max": 4294967295,
+            "min": 0
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_OBSTACLE_DIST",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "host:host_steer_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 4,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x303",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_steer_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "steer_angle_0_1deg",
+            "max": 450,
+            "min": -450,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 2,
+            "key": "angle_valid"
+          },
+          {
+            "bit": 1,
+            "bits": 7,
+            "byte": 2,
+            "constant": 0,
+            "key": "reserved"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_STEER_CMD",
+      "owner": "host",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "mtr:mtr_motor_fbk",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 4,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x206",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "same_frame",
+          "sender": "MTR"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x206",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "MTR"
+        }
+      ],
+      "key": "mtr_motor_fbk",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "actual_speed_mmps",
+            "max": 3000,
+            "min": -500,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 2,
+            "key": "gear_state",
+            "max": 3,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "key": "fault_flags"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "MTR_MOTOR_FBK",
+      "owner": "mtr",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "mtr:sys_throttle_sts",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 2,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x120",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "same_frame",
+          "sender": "MTR"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x120",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "MTR"
+        }
+      ],
+      "key": "sys_throttle_sts",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "speed_mmps",
+            "max": 3000,
+            "min": -500,
+            "signed": true
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "SYS_THROTTLE_STS",
+      "owner": "mtr",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:brake_diag",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x311",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "brake_diag",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "factor": 0.05,
+            "key": "pressure_raw"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 2,
+            "key": "fault",
+            "max": 1
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 3,
+            "factor": 0.01,
+            "key": "motor_current"
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 5,
+            "factor": 0.1,
+            "key": "ecu_temp"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "constant": 0,
+            "key": "reserved"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "BRAKE_DIAG",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_diag_rpt",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x600",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_diag_rpt",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "key": "mode",
+            "max": 2,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 1,
+            "key": "brake_engaged"
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 1,
+            "key": "brake_fault"
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 2,
+            "key": "heartbeat_ok"
+          },
+          {
+            "bit": 1,
+            "bits": 6,
+            "byte": 2,
+            "key": "rx_overflow",
+            "max": 63
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "key": "estop_active",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 4,
+            "key": "free_heap_kb"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 6,
+            "key": "tec"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "key": "rec"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_DIAG_RPT",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_drive_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 5,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x204",
+          "receivers": [
+            "MTR"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_drive_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 32,
+            "byte": 0,
+            "key": "motor_speed_mmps",
+            "max": 3000,
+            "min": -500,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 4,
+            "enum": {
+              "0": "N",
+              "1": "D",
+              "2": "S",
+              "3": "R"
+            },
+            "key": "gear",
+            "max": 3,
+            "min": 0
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_DRIVE_CMD",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_heartbeat",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 2,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 500,
+          "frame_format": "standard",
+          "id": "0x7FD",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 500,
+          "frame_format": "standard",
+          "id": "0x7FD",
+          "receivers": [
+            "MTR"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_heartbeat",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "alive_ctr"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "key": "health_flags"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_HEARTBEAT",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_mode_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 1,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x110",
+          "receivers": [
+            "MTR"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_mode_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "key": "mode",
+            "max": 2,
+            "min": 0
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_MODE_CMD",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_motion_rpt",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x121",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_motion_rpt",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "speed_mmps",
+            "max": 3000,
+            "min": -500,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 24,
+            "byte": 2,
+            "key": "yaw_rate_mrad_s",
+            "max": 3000,
+            "min": -3000,
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 5,
+            "enum": {
+              "0": "N",
+              "1": "D",
+              "2": "S",
+              "3": "R"
+            },
+            "key": "gear",
+            "max": 3,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 6,
+            "key": "speed_valid"
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 6,
+            "key": "yaw_rate_valid"
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 6,
+            "key": "gear_valid"
+          },
+          {
+            "bit": 3,
+            "bits": 5,
+            "byte": 6,
+            "constant": 0,
+            "key": "reserved"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_MOTION_RPT",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_pid_rpt",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 6,
+      "instances": [
+        {
+          "availability": "reserved",
+          "bus": "high",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x220",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_pid_rpt",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "key": "speed_setpoint",
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 2,
+            "key": "speed_measured",
+            "signed": true
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 4,
+            "key": "pid_output",
+            "signed": true
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_PID_RPT",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_safety_sts",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 3,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 200,
+          "frame_format": "standard",
+          "id": "0x011",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_safety_sts",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "key": "estop_active",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "key": "heartbeat_ok",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 2,
+            "key": "light_left"
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 2,
+            "key": "light_right"
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 2,
+            "key": "light_brake"
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 2,
+            "key": "light_head"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_SAFETY_STS",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:rta_state_rpt",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 6,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x210",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rta_state_rpt",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "enum": {
+              "0": "MANUAL",
+              "1": "AUTO",
+              "2": "ESTOP"
+            },
+            "key": "mode",
+            "max": 2,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 2,
+            "byte": 1,
+            "key": "safety_state",
+            "max": 2,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 4,
+            "byte": 1,
+            "key": "estop_reason",
+            "max": 7,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 2,
+            "key": "reversing"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "key": "rx_overflow"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 4,
+            "key": "task_health"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 5,
+            "key": "steer_state",
+            "max": 5
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RTA_STATE_RPT",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rta:steer_diag",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x310",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "steer_diag",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 0,
+            "factor": 0.1,
+            "key": "angle_0_1deg",
+            "offset": -3000
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 2,
+            "key": "fault",
+            "max": 1
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 3,
+            "factor": 0.01,
+            "key": "motor_current"
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 5,
+            "factor": 0.1,
+            "key": "ecu_temp"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "constant": 0,
+            "key": "reserved"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "STEER_DIAG",
+      "owner": "rta",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "safety:safety_estop",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 0,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x001",
+          "receivers": [
+            "RT",
+            "Host",
+            "MTR"
+          ],
+          "semantics": "same_frame",
+          "sender": "Any"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x001",
+          "receivers": [
+            "RT",
+            "Host",
+            "MTR"
+          ],
+          "semantics": "same_frame",
+          "sender": "Any"
+        }
+      ],
+      "key": "safety_estop",
+      "layout": {
+        "fields": [],
+        "kind": "signals"
+      },
+      "name": "SAFETY_ESTOP",
+      "owner": "safety",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "seb:seb_err_info",
+      "codec": {
+        "implementation_id": "seb-error-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x731",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "SEB"
+        }
+      ],
+      "key": "seb_err_info",
+      "layout": {
+        "algorithm": "vendor fault bitmap",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SEB_ERR_INFO",
+      "owner": "seb",
+      "protocol": "seb.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "seb:seb_status",
+      "codec": {
+        "implementation_id": "seb-status-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x721",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "SEB"
+        }
+      ],
+      "key": "seb_status",
+      "layout": {
+        "algorithm": "vendor pressure/stroke/angle overlap; XOR8-complement checksum",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SEB_STATUS",
+      "owner": "seb",
+      "protocol": "seb.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "seb:seb_test",
+      "codec": {
+        "implementation_id": "seb-test-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x6FB",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "SEB"
+        }
+      ],
+      "key": "seb_test",
+      "layout": {
+        "algorithm": "reserved byte 0; little-endian i16/u16/u16 at bytes 1,3,5; reserved byte 7",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SEB_TEST",
+      "owner": "seb",
+      "protocol": "seb.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "seb:seb_version",
+      "codec": {
+        "implementation_id": "seb-version-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x741",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "SEB"
+        }
+      ],
+      "key": "seb_version",
+      "layout": {
+        "algorithm": "legacy-compatible raw version payload",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SEB_VERSION",
+      "owner": "seb",
+      "protocol": "seb.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "seb:vcu_seb_req",
+      "codec": {
+        "implementation_id": "seb-command-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x7B9",
+          "receivers": [
+            "SEB"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "vcu_seb_req",
+      "layout": {
+        "algorithm": "vendor pressure/stroke overlap; XOR8-complement checksum",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "VCU_SEB_REQ",
+      "owner": "seb",
+      "protocol": "seb.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "ses:ses_err_info",
+      "codec": {
+        "implementation_id": "ses-error-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x202",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "EPS_C"
+        }
+      ],
+      "key": "ses_err_info",
+      "layout": {
+        "algorithm": "vendor fault bitmap; byte 7 is vehicle-speed snapshot",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SES_ERR_INFO",
+      "owner": "ses",
+      "protocol": "ses.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "ses:ses_status",
+      "codec": {
+        "implementation_id": "ses-status-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x201",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "EPS_C"
+        }
+      ],
+      "key": "ses_status",
+      "layout": {
+        "algorithm": "vendor overlapping status layout; XOR8-complement checksum",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SES_STATUS",
+      "owner": "ses",
+      "protocol": "ses.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "ses:ses_test",
+      "codec": {
+        "implementation_id": "ses-test-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 10,
+          "frame_format": "standard",
+          "id": "0x6FA",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "EPS_C"
+        }
+      ],
+      "key": "ses_test",
+      "layout": {
+        "algorithm": "reserved byte 0; little-endian i16/u16/u16 at bytes 1,3,5; reserved byte 7",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "SES_TEST",
+      "owner": "ses",
+      "protocol": "ses.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "ses:ses_version",
+      "codec": {
+        "implementation_id": "ses-version-raw-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 1000,
+          "frame_format": "standard",
+          "id": "0x203",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "EPS_C"
+        }
+      ],
+      "key": "ses_version",
+      "layout": {
+        "bytes": 8,
+        "kind": "opaque",
+        "semantic_support": "raw_only",
+        "unsupported_reason": "Vendor evidence does not resolve the version byte semantics."
+      },
+      "name": "SES_VERSION",
+      "owner": "ses",
+      "protocol": "ses.vendor.v1"
+    },
+    {
+      "byte_order": "little",
+      "canonical_key": "ses:vcu_ses_req",
+      "codec": {
+        "implementation_id": "ses-command-v1",
+        "strategy": "custom",
+        "vector_set_id": "payload-v1"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x169",
+          "receivers": [
+            "EPS_C"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "vcu_ses_req",
+      "layout": {
+        "algorithm": "xor8-complement over bytes 0..6; rolling counter and enable bits share byte 5",
+        "bytes": 8,
+        "kind": "opaque"
+      },
+      "name": "VCU_SES_REQ",
+      "owner": "ses",
+      "protocol": "ses.vendor.v1"
+    }
+  ],
+  "network_hash": "8ac1b59c1b5605c5472fd07eef968da569f249b3b0e29e7229e296d2d4557aa5",
+  "routes": [
+    {
+      "from": "low",
+      "key": "rt-l2h-estop",
+      "message": "safety:safety_estop",
+      "semantics": "same_frame",
+      "to": "high"
+    },
+    {
+      "from": "high",
+      "key": "rt-h2l-estop",
+      "message": "safety:safety_estop",
+      "semantics": "same_frame",
+      "to": "low"
+    },
+    {
+      "from": "low",
+      "key": "rt-l2h-speed",
+      "message": "mtr:sys_throttle_sts",
+      "semantics": "same_frame",
+      "to": "high"
+    },
+    {
+      "from": "low",
+      "key": "rt-l2h-motor",
+      "message": "mtr:mtr_motor_fbk",
+      "semantics": "same_frame",
+      "to": "high"
+    },
+    {
+      "from": "high",
+      "key": "rt-h2l-lights",
+      "message": "host:host_light_cmd",
+      "semantics": "same_frame",
+      "to": "low"
+    },
+    {
+      "from": "high",
+      "key": "rt-h2l-mode",
+      "message": "hmi:hmi_mode_req",
+      "semantics": "same_frame",
+      "to": "low"
+    },
+    {
+      "from": "high",
+      "key": "rt-h2l-power",
+      "message": "hmi:hmi_pwr_req",
+      "semantics": "same_frame",
+      "to": "low"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_hash": "e46be1e489de29116d0661ca908f242209a60fb0b66887382032c0274025ff03",
+  "wire_hash": "e46be1e489de29116d0661ca908f242209a60fb0b66887382032c0274025ff03"
+}
