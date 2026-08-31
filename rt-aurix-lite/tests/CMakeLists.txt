@@ -37,3 +37,10 @@ add_executable(rta_brake
 )
 target_link_libraries(rta_brake PRIVATE rta_core)
 add_test(NAME rta_brake COMMAND rta_brake)
+
+# ── Mode/ESTOP state model unit test ───────────────────────────────
+add_executable(rta_mode
+    ${RTA_TESTS_ROOT}/test_mode.cpp
+)
+target_link_libraries(rta_mode PRIVATE rta_core)
+add_test(NAME rta_mode COMMAND rta_mode)
