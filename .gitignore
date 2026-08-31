@@ -134,6 +134,9 @@ Release/
 Libraries/.ads/
 .ads/
 
+# ── Personal daily diary (not for sync) ──────────────────────────────
+daily-diary.md
+
 # ── AI assistant local files ─────────────────────────────────────────
 .claude/
 CLAUDE.md
