@@ -2,49 +2,55 @@
 
 > **Status: Architecture only.** No source implementation exists yet. This directory contains the architecture specification for a planned cost-reduced AURIX TC3xx variant. The distributed ESP32-S3 reference architecture (`rt-esp32/` + `sys-esp32/`) is the active implementation.
 
-Single AURIX TC3xx variant that combines RT (realtime physics, steering, CAN gateway) and SYS (safety, brake, body control, motor actuation) into one microcontroller. Keeps the same two-CAN-bus topology as the distributed architecture — AURIX bridges between high and low buses.
+A single **AURIX TC375** (AURIX™ Lite Kit V2) controller that combines RT (realtime physics, steering, CAN gateway) and the former SYS (safety, brake, body control, mode authority) into one microcontroller — **RT only, no SYS node, no RT↔SYS intercommunication.** It keeps the same two-CAN-bus topology as the distributed architecture and bridges between high and low buses.
 
 ## What this is
 
-A cost-reduced variant of the [distributed E-Trike architecture](../architecture.md) that runs all realtime control on one AURIX TC3xx instead of two ESP32-S3s. The MTR STM32 (EGAS Level 1 motor controller) and Jetson Orin (ROS 2 perception) remain separate.
+A consolidated variant of the [distributed E-Trike architecture](../architecture.md) that runs all realtime + safety + body control on **one AURIX TC375** (three TriCore cores) instead of two ESP32-S3s. The MTR STM32 (EGAS Level 1 motor controller) and Jetson Orin (ROS 2 perception) remain separate.
 
 ## Architecture
 
-See [`rt-aurix-lite-architecture.md`](rt-aurix-lite-architecture.md) for the full specification.
+See [`architecture.md`](architecture.md) for the full specification (topology, removed intercommunication, three-core task layout, EGAS 3-level, hardware pins, protocol workflow).
 
 ## Key Differences from Distributed
 
-| | Distributed | AURIX Lite |
+| | Distributed | RT-AURIX-Lite |
 |---|---|---|
-| MCUs | 2× ESP32-S3 | 1× AURIX TC3xx |
+| MCUs | 2× ESP32-S3 (RT + SYS) | 1× AURIX TC375 (RT) + MTR |
+| SYS node | separate | removed (folded into RT) |
 | CAN buses | 2 (high + low) | 2 (high + low) |
-| CAN gateway | Yes (RT bridges) | Yes (AURIX bridges) |
-| Heartbeats | 3 nodes per bus | 2 nodes (AURIX + Jetson) |
-| Task count | 8 (RT) + 15 (SYS) = 23 | 16 (merged) |
+| CAN gateway | Yes (RT bridges) | Yes (RT bridges) |
+| RT↔SYS traffic | `0x7FE`, `0x205`, `0x110`, fwd `0x011`/`0x600` | **none** |
+| Cores | 2× single-core | 3× TriCore (data plane / ASIL / body) |
+| Task count | 8 (RT) + 15 (SYS) = 23 | 15 (merged) |
 
 ## CAN Protocol
 
-Uses the **same CAN IDs, signal layouts, and protocol definitions** as the distributed architecture. See [`can-dictionary.md`](../can-dictionary.md). All 25 CAN IDs coexist on one bus — no ID conflicts.
+Generated from the repository's canonical [`protocol/`](../protocol/) contracts by the standard scripts. The RT-only subset lives in [`protocol/`](protocol/) (contracts, generated codecs/DBC/CSV/docs, vectors). Wire layouts of retained messages are byte-identical to the canonical contracts; only network/sender metadata changed. See [`protocol/README.md`](protocol/README.md).
 
 ## Hardware
 
-Target: **AURIX TC3xx Lite Kit** (KIT_A2G_TC387_LITE)
-- MCMCAN for single CAN bus
-- I2C0 for IMU (optional)
-- GPIO for lights, buttons, relays, watchdog
+Target: **AURIX™ Lite Kit V2, TC375** (`SAK-TC375TP-96F300W AA`) — see [`aurix.md`](aurix.md) for the board manual.
+- Low CAN bus: on-board MCMCAN0 (P20.7/P20.8, TLE9251VSJ, 120 Ω termination).
+- High CAN bus: MCMCAN1 (proposed P21.0/P21.1) + external transceiver.
+- Rider inputs/light relays on free expansion-header pins (see architecture §9).
+- Added externals: 2nd CAN transceiver, TPS3850 watchdog, relay driver board.
 
-## Build
-
-Placeholder — implementation files in `src/` to follow.
+## Layout
 
 ```
 rt-aurix-lite/
-├── rt-aurix-lite-architecture.md   ← Architecture spec
-├── README.md                       ← This file
-└── src/                            ← Source files (TBD)
-    └── config.h                    ← Merged pin/config
+├── architecture.md                  ← Consolidated architecture spec (RT-only, 3-core)
+├── README.md                        ← This file
+├── aurix.md                         ← AURIX Lite Kit V2 board manual (full transcription)
+├── AURIX_Lite_Kit_V2_User_Manual.md ← Board manual (reference)
+└── protocol/                        ← RT-only stripped CAN protocol (generated)
+    ├── contracts/                   ← network.yaml + rta/host/mtr/ses/seb/hmi
+    ├── generated/                   ← codecs (C++/Py/TS), DBC, CSV, docs, manifests
+    ├── codecs/, profiles/, compat/  ← shared custom SES/SEB codecs
+    └── vectors/                     ← language-neutral payload vectors
 ```
 
 ## Status
 
-Architecture documented. Source implementation pending.
+Architecture documented. Protocol subset generated. Source implementation pending.
