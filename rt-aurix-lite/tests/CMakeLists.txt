@@ -30,3 +30,10 @@ add_executable(rta_steering
 )
 target_link_libraries(rta_steering PRIVATE rta_core)
 add_test(NAME rta_steering COMMAND rta_steering)
+
+# ── Brake controller unit test ──────────────────────────────────────
+add_executable(rta_brake
+    ${RTA_TESTS_ROOT}/test_brake.cpp
+)
+target_link_libraries(rta_brake PRIVATE rta_core)
+add_test(NAME rta_brake COMMAND rta_brake)
