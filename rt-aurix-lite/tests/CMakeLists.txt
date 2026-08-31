@@ -64,3 +64,10 @@ add_executable(rta_route_table
 )
 target_link_libraries(rta_route_table PRIVATE rta_core)
 add_test(NAME rta_route_table COMMAND rta_route_table)
+
+# ── Watchdog health supervisor test ─────────────────────────────────
+add_executable(rta_watchdog
+    ${RTA_TESTS_ROOT}/test_watchdog.cpp
+)
+target_link_libraries(rta_watchdog PRIVATE rta_core)
+add_test(NAME rta_watchdog COMMAND rta_watchdog)
