@@ -9,7 +9,6 @@ namespace rta {
 
 // ── Functional-unit periods (architecture.md §6.3) ────────────────
 constexpr int kControlLoopHz   = 100;   // CPU1 control
-constexpr int kBrakeCmdRateHz  = 50;    // CPU1 brake
 constexpr int kSafetyRateHz    = 20;    // CPU1 safety
 constexpr int kHealthRateHz    = 10;    // CPU1 watchdog/health
 constexpr int kHeartbeatRateHz = 2;     // CPU0 heartbeat

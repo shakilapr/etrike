@@ -34,6 +34,7 @@ constexpr int   kSbwAngleOffset          = 30000;   // 0° -> raw 30000
 constexpr float kSteerLimitDeg           = 40.0f;   // soft clamp for kinematics
 
 // ── Brake (brake-by-wire unit) ────────────────────────────────────
+constexpr int   kBrakeCmdRateHz   = 50;     // 0x7B9 contract / TX schedule: 20 ms
 constexpr int   kBrakeBootWaitMs  = 500;
 constexpr int   kBrakeSyncTimeoutMs = 2000;
 constexpr float kBrakeManualStroke = 15.0f;  // mm, lever pressed
