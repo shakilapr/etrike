@@ -387,8 +387,8 @@ CAN_HIGH property certainty (split per-property rather than one row-level status
 | HEADLIGHT | `P33.13` *(header X1-5)* | Out | relay → 12 V lamp |
 | BULB_AUTO | `P21.4` *(header X1-19)* | Out | mode indicator |
 | BULB_MANUAL | `P21.5` *(header X1-22)* | Out | mode indicator |
-| RELAY_12V | `P21.0` *(header X1-15)* | Out | 12 V accessory relay (P21.0 is free; CAN1 uses P15.5/P15.4) |
-| WDT_TOGGLE | `P20.9` *(header X1-28 area)* | Out | TPS3850 WDI, 100 Hz — **requires adding an external TPS3850** (not on Lite Kit V2) |
+| RELAY_12V | `P21.0` *(header X1-15)* | Out | 12 V accessory relay (P21.0 is free) |
+| WDT_WDI | `P33.1` *(header X2-29)* | Out | TPS3850-Q1 WDI. **DESIGN-SELECTED**; bring-up: verify electrical level + watchdog window timing. (Prior `P20.9`/X1-28 claim was incorrect — X1-28 = `P20.14`; `P20.9` is package pin 127, flash INT path, not exposed on X1.) |
 
 > **Added external components (not on the Lite Kit V2):**
 > - Second CAN transceiver (high bus).
