@@ -29,3 +29,15 @@ add_library(rta_core STATIC
     ${RTA_SRC_ROOT}/app/controllers.cpp
 )
 target_link_libraries(rta_core PUBLIC rta_headers)
+
+# rta_sim — deterministic host simulator (uses native-test virtual_can).
+# Not part of rta_core so the portable core stays FreeRTOS/HAL-free.
+add_library(rta_sim STATIC
+    ${RTA_SRC_ROOT}/platform/host/simulator.cpp
+    ${ETRIKE_ROOT}/native-test/can/virtual_can_bus.cpp
+)
+target_include_directories(rta_sim PUBLIC
+    ${ETRIKE_ROOT}/native-test              # can/virtual_can_bus.h
+)
+target_link_libraries(rta_sim PUBLIC rta_core)
+target_link_libraries(rta_core PUBLIC rta_headers)

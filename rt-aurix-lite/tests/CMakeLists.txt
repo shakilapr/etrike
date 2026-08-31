@@ -92,3 +92,10 @@ add_executable(rta_hal_compile
 )
 target_link_libraries(rta_hal_compile PRIVATE rta_core)
 add_test(NAME rta_hal_compile COMMAND rta_hal_compile)
+
+# ── Deterministic system simulation test ────────────────────────────
+add_executable(rta_simulator
+    ${RTA_TESTS_ROOT}/test_simulator.cpp
+)
+target_link_libraries(rta_simulator PRIVATE rta_sim)
+add_test(NAME rta_simulator COMMAND rta_simulator)
