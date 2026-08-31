@@ -344,14 +344,31 @@ for this design; verify alternate functions against the TC375 datasheet.
 
 ### 9.1 CAN
 
-| Bus | MCMCAN node | TX | RX | Standby | Transceiver | Notes |
-|-----|-------------|----|----|---------|-------------|-------|
-| Low-level | MCMCAN0 | `P20.8` | `P20.7` | `P20.6` (`CAN_STB`, drive LOW to enable) | On-board **TLE9251VSJ** (120 Ω termination on board) | Board-fixed per `aurix.md` Table 5 |
-| High-level | MCMCAN1 | `P15.5` *(header X1-29)* | `P15.4` *(header X1-31)* | n/a | External **SN65HVD230** (or TLE9251V) wired to expansion headers | Proposed; **must confirm CAN1 mux on TC375** — `aurix.md` does not document CAN1 pins. P21.1 (old proposal) is package pin 106 and is **not exposed** on any header |
+| Bus | TX | RX | Standby | Transceiver | Status |
+|-----|----|----|---------|-------------|--------|
+| CAN_LOW | `P20.8` | `P20.7` | `P20.6` (`CAN_STB`, drive LOW to enable) | On-board **TLE9251VSJ** (120 Ω termination on board) | BOARD-FIXED per `aurix.md` Table 5 |
+| CAN_HIGH | `P15.0` / TXCAN2 | `P15.1` / RXCAN2 | n/a | **TBD** (external; requirements in §9.1.2) | DATASHEET-VERIFIED / DESIGN-SELECTED |
+
+CAN_HIGH property certainty (split per-property rather than one row-level status):
+
+| Property | Value | Status |
+|----------|-------|--------|
+| Logical bus | `CAN_HIGH` | DESIGN-SELECTED |
+| TX pin | `P15.0` / TXCAN2 | DATASHEET-VERIFIED |
+| RX pin | `P15.1` / RXCAN2 | DATASHEET-VERIFIED |
+| Connector | mikroBUS pin 13 (TX) / pin 14 (RX) | BOARD-VERIFIED |
+| Intended use | high-level CAN (Jetson) | DESIGN-SELECTED |
+| MCMCAN module/node | TBD | BRING-UP-TBD |
+| iLLD `IfxCan_*Pin` symbols | TBD | BRING-UP-TBD |
+
+> **CAN_HIGH pins:** the TC37x datasheet assigns TXCAN2/RXCAN2 to P15.0/P15.1, which the
+> Lite Kit V2 exposes on the mikroBUS TX/RX pins (13/14). The prior proposal
+> (`P15.5`/`P15.4` on X1-29/31) is **removed** — neither pin has a CAN alternate function on
+> TC37x. Using P15.0/P15.1 for CAN_HIGH **sacrifices the mikroBUS ASCLIN1 UART**. The exact
+> MCMCAN module/node and iLLD pin-mapping symbols are confirmed during ADS/iLLD bring-up.
 
 > The Lite Kit V2 has exactly **one on-board CAN transceiver** (CAN node 0). The high bus
-> requires an external transceiver on the expansion header. The TC375 CAN1 node supports
-> multiple pin options; the `P15.5`/`P15.4` choice requires datasheet mux validation.
+> requires an external transceiver on the expansion header.
 
 ### 9.2 Rider inputs / body outputs (free board pins)
 
