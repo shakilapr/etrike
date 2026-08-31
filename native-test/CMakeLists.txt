@@ -361,6 +361,17 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_options(sim_engine_native PRIVATE -static)
 endif()
 
+# ── RT-AURIX-Lite (host-first firmware core + tests) ────────────────
+add_subdirectory(
+    ${ETRIKE_ROOT}/rt-aurix-lite
+    ${CMAKE_BINARY_DIR}/rt-aurix-lite
+)
+
+add_subdirectory(
+    ${ETRIKE_ROOT}/rt-aurix-lite/tests
+    ${CMAKE_BINARY_DIR}/rt-aurix-lite-tests
+)
+
 # ── Status ───────────────────────────────────────────────────────────
 message(STATUS "Native test build configured.")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
