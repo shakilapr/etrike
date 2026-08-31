@@ -78,3 +78,10 @@ add_executable(rta_ipc
 )
 target_link_libraries(rta_ipc PRIVATE rta_core)
 add_test(NAME rta_ipc COMMAND rta_ipc)
+
+# ── App orchestration controllers test ──────────────────────────────
+add_executable(rta_controllers
+    ${RTA_TESTS_ROOT}/test_controllers.cpp
+)
+target_link_libraries(rta_controllers PRIVATE rta_core)
+add_test(NAME rta_controllers COMMAND rta_controllers)
