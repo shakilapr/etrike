@@ -19,6 +19,7 @@ constexpr float kSteerHardLimitDeg       = 40.0f;
 constexpr float kSteerMaxAngleLowSpeed   = 40.0f;
 constexpr float kSteerMaxAngleHighSpeed  = 5.0f;
 constexpr int   kSteerBootWaitMs         = 500;
+constexpr int   kSteerCmdRateHz          = 50;    // 0x169 contract / TX schedule: 20 ms
 constexpr int   kSteerSyncTimeoutMs      = 5000;    // LISTEN_SYNC timeout
 constexpr int   kSteerEstopHoldMs        = 500;     // obstacle hold-then-silent
 constexpr float kSteerEstopRampDegS      = 20.0f;   // ramp-to-zero rate

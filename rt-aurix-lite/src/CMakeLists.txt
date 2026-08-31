@@ -22,5 +22,6 @@ target_include_directories(rta_headers INTERFACE
 # rta_core — pure domain/app/protocol/ipc logic (grows with each commit).
 add_library(rta_core STATIC
     ${RTA_SRC_ROOT}/domain/kinematics.cpp
+    ${RTA_SRC_ROOT}/domain/steering.cpp
 )
 target_link_libraries(rta_core PUBLIC rta_headers)
