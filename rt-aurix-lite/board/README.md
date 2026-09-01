@@ -27,13 +27,20 @@ D4 gate** — no task shells are written before that.
 ## Prerequisite: install DAS driver
 
 The on-board miniWiggler (USB X4) and the 10-pin DAP debug path require the
-**Infineon DAS** driver. It is bundled but not yet installed:
+**Infineon DAS** driver. AURIX Studio needs DAS as its debug-driver layer, but
+DAS is a **separate Windows driver install** (not part of the IDE itself).
 
-```
-E:\Infineon\AURIX-Studio-1.10.36\DAS_V8_4_0_SETUP.exe
-```
+**Where it is:** `E:\Infineon\AURIX-Studio-1.10.36\DAS_V8_4_0_SETUP.exe` (40 MB, bundled).
 
-Run it once. After install, the miniWiggler (LED5 ACT) works for debug/flashing.
+**How to install (manual, needs admin/UAC):**
+1. In Windows Explorer, double-click `DAS_V8_4_0_SETUP.exe`.
+2. Approve the **User Account Control (UAC)** prompt.
+3. Click through the installer (defaults are fine).
+
+> It cannot be installed silently from a non-elevated shell. AURIX Studio
+> *uses* DAS once installed — you don't run DAS separately.
+
+After install, the miniWiggler (LED5 ACT) works for debug/flashing.
 
 ---
 
@@ -65,7 +72,9 @@ Then add the portable core + board HAL sources:
 - [ ] DAS installed; board powers via X4 (LED4 green) and/or X3.
 - [ ] AURIX Studio project builds (HighTec) with a blinky on LED1/LED2.
 - [ ] miniWiggler debug session connects (LED5 ACT on).
-- [ ] `AurixClock::init()` (STM) + `AurixGpio::init()` (pins) working.
+- [x] `AurixClock::init()` (STM) + `AurixGpio::init()` (pins) implemented.
+- [x] `AurixCan::init()` (CAN0 Node 0 + Node 2, 500 kbit/s) implemented.
+- [ ] Actually run the skeleton on hardware and verify a CAN0 loopback.
 
 ### D1 — Multicore startup
 - [ ] CPU0 boots; CPU1 and CPU2 brought up (template Cpu1/Cpu2 mains).
