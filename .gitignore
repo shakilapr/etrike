@@ -143,11 +143,14 @@ rt-aurix-lite/board/**/Service/
 # ADS project-generated config is machine-specific; the portable glue in
 # rt-aurix-lite/board/ (board_pins.h, hal_aurix/, main.cpp, README.md) is tracked.
 rt-aurix-lite/board/.settings/
-rt-aurix-lite/board/.cproject
-rt-aurix-lite/board/.project
 rt-aurix-lite/.metadata/
 # Headless board build output.
 rt-aurix-lite/board/port/build/
+
+# But the .project/.cproject (and rendered config/linker) ARE tracked so the
+# board/ folder can be imported directly into AURIX Studio.
+!rt-aurix-lite/board/.project
+!rt-aurix-lite/board/.cproject
 
 # ── Personal daily diary (not for sync) ──────────────────────────────
 daily-diary.md
