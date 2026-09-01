@@ -44,25 +44,37 @@ After install, the miniWiggler (LED5 ACT) works for debug/flashing.
 
 ---
 
-## Create the ADS project (D0)
+## Create / import the AURIX Studio project
 
-Use the AURIX Studio new-project wizard with the TC375 Lite Kit target:
+### Option A — Import the folder directly (recommended, B)
 
-1. Launch `AURIX-studio.exe`.
-2. **File → New → AURIX Project**.
-3. Device: **TC375** (`TC37xTP_A-Step`), Board: **KIT_A2G_TC375_LITE** (→ `TC375LK`).
-4. iLLD set: **Full_Set** (extracts `iLLD_1_20_0__TC37A`).
-5. Compiler: **HighTec tricore-gcc11**.
-6. The wizard generates the 3-core scaffold (Cpu0/1/2 mains, linker
-   `Lcf_Gnuc_Tricore_Tc.lsl`, BMHD, `Ifx_Cfg_Ssw*`).
+`rt-aurix-lite/board/` now contains a `.project` + `.cproject` so it can be
+**imported** without the wizard:
 
-Then add the portable core + board HAL sources:
+1. AURIX Studio → **File → Import → Existing Projects into Workspace**.
+2. Select root directory: **`E:\work\etrike\rt-aurix-lite\board`**.
+3. Ensure `rt-aurix-lite` is checked → **Finish**.
 
-- `../src/` (rta_core logic, header-only domain/app/protocol/ipc + `.cpp`).
-- `board/hal_aurix/aurix_hal.{h,cpp}` (board HAL).
-- `board/main.cpp` (target entry).
+The project targets **TC375** (`DEVICE_TC37X`, LQFP-176), HighTec
+`tricore-gcc11` (`-mcpu=tc38xx`), and the GCC linker
+(`Lcf_Gnuc_Tricore_Tc.lsl`). The iLLD must be extracted at
+`board/Libraries/` (the project-initializer zip is used by the wizard; for
+import, extract `iLLD_1_20_0__TC37A.zip` there — see `board/port/build.ps1`).
 
-> The iLLD is large and IDE-generated; keep it out of git (see `.gitignore`).
+### Option B — New-project wizard (fallback)
+
+If import has issues, use the wizard pointed at the same folder:
+
+1. **File → New → AURIX Project**.
+2. Project location: `E:\work\etrike\rt-aurix-lite\board`.
+3. Device **TC375** (`TC37xTP_A-Step`), Board **KIT_A2G_TC375_LITE`, iLLD
+   **Full Set**, Compiler **HighTec tricore-gcc11**.
+4. Add `hal_aurix/`, `main.cpp`, `board_pins.h`, and `../src/` to the build.
+
+The portable core is in `../src/`; the board glue in `board/`.
+
+> `main.cpp` is the target entry; `Cpu1_Main.c`/`Cpu2_Main.c` are the
+> multicore bring-up (D1) stubs from the TC37A template.
 
 ---
 
