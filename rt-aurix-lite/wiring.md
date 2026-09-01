@@ -80,8 +80,7 @@ termination if the Lite Kit is one end.
 | TX pin | `P15.0` / TXCAN2 | DATASHEET-VERIFIED |
 | RX pin | `P15.1` / RXCAN2 | DATASHEET-VERIFIED |
 | Connector | mikroBUS pin 13 (TX) / pin 14 (RX) | BOARD-VERIFIED |
-| Transceiver | TBD (requirements in §9.1.2 of architecture) | BRING-UP-TBD |
-| MCMCAN module/node + iLLD `IfxCan_*Pin` | TBD | BRING-UP-TBD |
+| MCMCAN module/node + iLLD `IfxCan_*Pin` | **CAN0 Node 2** — `IfxCan_TXD02_P15_0_OUT`, `IfxCan_RXD02A_P15_1_IN` | DATASHEET-VERIFIED (iLLD pinmap) |
 
 ```
 AURIX Lite Kit                          CAN_HIGH transceiver (TBD)
@@ -220,8 +219,8 @@ Negative constraints (things that must **not** be assumed available):
 
 | Decision | Status | Notes |
 |----------|--------|-------|
-| CAN_HIGH MCMCAN module/node | BRING-UP-TBD | Confirm against TC375 + iLLD during ADS/iLLD bring-up. |
-| CAN_HIGH iLLD `IfxCan_*Pin` symbols | BRING-UP-TBD | Same. |
+| CAN_HIGH MCMCAN module/node | **RESOLVED** | CAN0 Node 2 (iLLD `IfxCan_PinMap_TC37x_LQFP176`). |
+| CAN_HIGH iLLD `IfxCan_*Pin` symbols | **RESOLVED** | `IfxCan_TXD02_P15_0_OUT`, `IfxCan_RXD02A_P15_1_IN`. |
 | CAN_HIGH transceiver part | BRING-UP-TBD | Requirements in architecture §9.1.2. |
 | WDT_WDI electrical level / window timing | BRING-UP-TBD | Verify against TPS3850-Q1 selected CWD/SET config. |
 | Relay driver board part / pinout | BRING-UP-TBD | Selected when the relay board is chosen. |
