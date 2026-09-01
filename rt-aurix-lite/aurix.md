@@ -1,6 +1,36 @@
 # Evaluation Board for AURIX™ Family — AURIX™ lite Kit V2
 
-**Board User's Manual**  
+**Board User's Manual**  Commission Electrotechnique Internationale. IrDA™ of Infrared Data Association. ISO™ of INTERNATIONAL ORGANIZATION FOR STANDARDIZATION. MATLAB™ of MathWorks, Inc. MAXIM™ of Maxim Integrated Products, Inc. MICROTEC™, NUCLEUS™ of Mentor Graphics Corporation. Mifare™ of NXP. MIPI™ of MIPI Alliance, Inc. MIPS™ of MIPS Technologies, Inc., USA. muRata™ of MURATA MANUFACTURING CO. MICROWAVE OFFICE™ of Applied Wave Research Inc. OmniVision™ of OmniVision Technologies, Inc. Openwave™ of Openwave Systems Inc. RED HAT™ of Red Hat, Inc. RFMD™ of RF Micro Devices, Inc. SIRIUS™ of Sirius Satellite Radio Inc. SOLARIS™ of Sun Microsystems, Inc. SPANSION™ of Spansion LLC Ltd. Symbian™ of Symbian Software Limited. TAIYO YUDEN™ of Taiyo Yuden Co. TEAKLITE™ of CEVA, Inc. TEKTRONIX™ of Tektronix Inc. TOKO™ of TOKO KABUSHIKI KAISHA TA. UNIX™ of X/Open Company Limited. VERILOG™, PALLADIUM™ of Cadence Design Systems, Inc. VLYNQ™ of Texas Instruments Incorporated. VXWORKS™, WIND RIVER™ of WIND RIVER SYSTEMS, INC. ZETEX™ of Diodes Zetex Limited.
+
+EtherCAT® is a registered trademark and patented technology, licensed by Beckhoff Automation GmbH, Germany.
+
+---
+
+## Table of Contents
+
+1. [Introduction](#1-introduction)
+   - 1.1 [Block Diagram](#11-block-diagram)
+2. [Hardware Description](#2-hardware-description)
+   - 2.1 [Power Supply](#21-power-supply)
+   - 2.2 [User Push Buttons, User LEDs and Potentiometer](#22-user-push-buttons-user-leds-and-potentiometer)
+   - 2.3 [Debugging and On-Board miniWiggler](#23-debugging-and-on-board-miniwiggler)
+     - 2.3.1 [USB Connector](#231-usb-connector)
+     - 2.3.2 [Serial Connection to PC](#232-serial-connection-to-pc)
+     - 2.3.3 [miniWiggler JDS](#233-miniwiggler-jds)
+   - 2.4 [Reset](#24-reset)
+   - 2.5 [CAN Transceiver](#25-can-transceiver)
+   - 2.6 [I²C EEPROM](#26-ic-eeprom)
+   - 2.7 [Ethernet](#27-ethernet)
+   - 2.8 [Optional Cypress Semper™ (Secure) Flash](#28-optional-cypress-semper-secure-flash)
+   - 2.9 [Optional F-RAM](#29-optional-f-ram)
+3. [Configuration](#3-configuration)
+   - 3.1 [Bootmode](#31-bootmode)
+   - 3.2 [Config Signals](#32-config-signals)
+   - 3.3 [Optional Resistors](#33-optional-resistors)
+4. [Connector Pin Assignment](#4-connector-pin-assignment)
+   - 4.1 [Pinout of X1 and X2 Connectors](#41-pinout-of-x1-and-x2-connectors)
+   - 4.2 [Shield2Go and mikroBus™ Pinout](#42-shield2go-and-mikrobus-pinout)
+   - 4.3 [Arduino Compatible Connector](#43-arduino-comp
 **Document Revision:** 2.2  
 **Revision date:** 14 April 2022 (2022-04-14)  
 **Microcontroller:** Infineon AURIX™ TriCore™  
@@ -41,79 +71,41 @@ Infineon Technologies components may be used in life-support devices or systems 
 
 Trademarks of Infineon Technologies AG: AURIX™, C166™, CanPAK™, CIPOS™, CIPURSE™, EconoPACK™, CoolMOS™, CoolSET™, CORECONTROL™, CROSSAVE™, DAVE™, EasyPIM™, EconoBRIDGE™, EconoDUAL™, EconoPIM™, EiceDRIVER™, eupec™, FCOS™, HITFET™, HybridPACK™, I²RF™, ISOFACE™, IsoPACK™, MIPAQ™, ModSTACK™, my-d™, NovalithIC™, OptiMOS™, ORIGA™, PRIMARION™, PrimePACK™, PrimeSTACK™, PRO-SIL™, PROFET™, RASIC™, ReverSave™, SatRIC™, SIEGET™, SINDRION™, SIPMOS™, SmartLEWIS™, SOLID FLASH™, TEMPFET™, thinQ!™, TRENCHSTOP™, TriCore™.
 
-Other trademarks: ADS (Agilent), AMBA™, ARM™, MULTI-ICE™, KEIL™, PRIMECELL™, REALVIEW™, THUMB™, µVision™ of ARM Limited, UK. AUTOSAR™ licensed by AUTOSAR development partnership. Bluetooth™ of Bluetooth SIG Inc. CAT-iq™ of DECT Forum. COLOSSUS™, FirstGPS™ of Trimble Navigation Ltd. EMV™ of EMVCo, LLC. EPCOS™ of Epcos AG. FLEXGO™ of Microsoft Corporation. FlexRay™ licensed by FlexRay Consortium. HYPERTERMINAL™ of Hilgraeve Incorporated. IEC™ of Commission Electrotechnique Internationale. IrDA™ of Infrared Data Association. ISO™ of INTERNATIONAL ORGANIZATION FOR STANDARDIZATION. MATLAB™ of MathWorks, Inc. MAXIM™ of Maxim Integrated Products, Inc. MICROTEC™, NUCLEUS™ of Mentor Graphics Corporation. Mifare™ of NXP. MIPI™ of MIPI Alliance, Inc. MIPS™ of MIPS Technologies, Inc., USA. muRata™ of MURATA MANUFACTURING CO. MICROWAVE OFFICE™ of Applied Wave Research Inc. OmniVision™ of OmniVision Technologies, Inc. Openwave™ of Openwave Systems Inc. RED HAT™ of Red Hat, Inc. RFMD™ of RF Micro Devices, Inc. SIRIUS™ of Sirius Satellite Radio Inc. SOLARIS™ of Sun Microsystems, Inc. SPANSION™ of Spansion LLC Ltd. Symbian™ of Symbian Software Limited. TAIYO YUDEN™ of Taiyo Yuden Co. TEAKLITE™ of CEVA, Inc. TEKTRONIX™ of Tektronix Inc. TOKO™ of TOKO KABUSHIKI KAISHA TA. UNIX™ of X/Open Company Limited. VERILOG™, PALLADIUM™ of Cadence Design Systems, Inc. VLYNQ™ of Texas Instruments Incorporated. VXWORKS™, WIND RIVER™ of WIND RIVER SYSTEMS, INC. ZETEX™ of Diodes Zetex Limited.
-
-EtherCAT® is a registered trademark and patented technology, licensed by Beckhoff Automation GmbH, Germany.
-
-Last Trademarks Update: 2011-02-24
-
----
-
-## Table of Contents
-
-*(Page numbers refer to the original PDF.)*
-
-1. [Introduction](#1-introduction) — p. 6
-   - 1.1 [Block Diagram](#11-block-diagram) — p. 7
-2. [Hardware Description](#2-hardware-description) — p. 8
-   - 2.1 [Power Supply](#21-power-supply) — p. 9
-   - 2.2 [User Push Buttons, User LEDs and Potentiometer](#22-user-push-buttons-user-leds-and-potentiometer) — p. 10
-   - 2.3 [Debugging and On-Board miniWiggler](#23-debugging-and-on-board-miniwiggler) — p. 11
-     - 2.3.1 [USB Connector](#231-usb-connector) — p. 11
-     - 2.3.2 [Serial Connection to PC](#232-serial-connection-to-pc) — p. 11
-     - 2.3.3 [miniWiggler JDS](#233-miniwiggler-jds) — p. 12
-   - 2.4 [Reset](#24-reset) — p. 12
-   - 2.5 [CAN Transceiver](#25-can-transceiver) — p. 12
-   - 2.6 [I²C EEPROM](#26-ic-eeprom) — p. 12
-   - 2.7 [Ethernet](#27-ethernet) — p. 13
-   - 2.8 [Optional Cypress Semper™ (Secure) Flash](#28-optional-cypress-semper-secure-flash) — p. 13
-   - 2.9 [Optional F-RAM](#29-optional-f-ram) — p. 13
-3. [Configuration](#3-configuration) — p. 14
-   - 3.1 [Bootmode](#31-bootmode) — p. 14
-   - 3.2 [Config Signals](#32-config-signals) — p. 14
-   - 3.3 [Optional Resistors](#33-optional-resistors) — p. 15
-4. [Connector Pin Assignment](#4-connector-pin-assignment) — p. 16
-   - 4.1 [Pinout of X1 and X2 Connectors](#41-pinout-of-x1-and-x2-connectors) — p. 16
-   - 4.2 [Shield2Go and mikroBus™ Pinout](#42-shield2go-and-mikrobus-pinout) — p. 17
-   - 4.3 [Arduino Compatible Connector](#43-arduino-compatible-connector) — p. 18
-   - 4.4 [Infineon DAP Debug Connector (10-pin)](#44-infineon-dap-debug-connector-10-pin) — p. 19
-5. [Schematics and Placement](#5-schematics-and-placement) — p. 20
+Other trademarks: ADS (Agilent), AMBA™, ARM™, MULTI-ICE™, KEIL™, PRIMECELL™, REALVIEW™, THUMB™, µVision™ of ARM Limited, UK. AUTOSAR™ licensed by AUTOSAR development partnership. Bluetooth™ of Bluetooth SIG Inc. CAT-iq™ of DECT Forum. COLOSSUS™, FirstGPS™ of Trimble Navigation Ltd. EMV™ of EMVCo, LLC. EPCOS™ of Epcos AG. FLEXGO™ of Microsoft Corporation. FlexRay™ licensed by FlexRay Consortium. HYPERTERMINAL™ of Hilgraeve Incorporated. IEC™ of atible-connector)
+   - 4.4 [Infineon DAP Debug Connector (10-pin)](#44-infineon-dap-debug-connector-10-pin)
+5. [Schematics and Placement](#5-schematics-and-placement)
 
 ### List of Figures
 
-*(Page numbers refer to the original PDF.)*
-
-| Figure | Description | Page |
-| --- | --- | --- |
-| 1 | Block Diagram of the AURIX™ lite Kit V2 | 7 |
-| 2 | AURIX™ lite Kit Board V2 View from the Top | 8 |
-| 3 | AURIX™ lite Kit Board V2 View from the Bottom | 8 |
-| 4 | Power Supply Concept | 10 |
-| 5 | Signal mapping of the pin headers X1 and X2 | 16 |
-| 6 | Signal mapping of the pin headers for mikroBUS and Shield2Go Connector 1 and 2 | 17 |
-| 7 | Mapping of Arduino Functions to AURIX™ Pin Functions | 18 |
-| 8 | Schematic: Project Overview | 20 |
-| 9 | Schematic: On Board miniWiggler | 21 |
-| 10 | Schematic: Power and Connectors | 22 |
-| 11 | Schematic: CPU and config | 23 |
-| 12 | Schematic: Ethernet and memory expansion | 24 |
-| 13 | Placement: Top View | 25 |
-| 14 | Placement: Bottom View | 26 |
+| Figure | Description |
+| --- | --- |
+| 1 | Block Diagram of the AURIX™ lite Kit V2 |
+| 2 | AURIX™ lite Kit Board V2 View from the Top |
+| 3 | AURIX™ lite Kit Board V2 View from the Bottom |
+| 4 | Power Supply Concept |
+| 5 | Signal mapping of the pin headers X1 and X2 |
+| 6 | Signal mapping of the pin headers for mikroBUS and Shield2Go Connector 1 and 2 |
+| 7 | Mapping of Arduino Functions to AURIX™ Pin Functions |
+| 8 | Schematic: Project Overview |
+| 9 | Schematic: On Board miniWiggler |
+| 10 | Schematic: Power and Connectors |
+| 11 | Schematic: CPU and config |
+| 12 | Schematic: Ethernet and memory expansion |
+| 13 | Placement: Top View |
+| 14 | Placement: Bottom View |
 
 ### List of Tables
 
-*(Page numbers refer to the original PDF.)*
-
-| Table | Description | Page |
-| --- | --- | --- |
-| 1 | Overview of the Board Specification | 6 |
-| 2 | AURIX™ Pin Mapping for User LEDs | 10 |
-| 3 | miniWiggler Pin Mapping for User LEDs | 11 |
-| 4 | AURIX™ Push Buttons and Potentiometer | 11 |
-| 5 | CAN Signals and AURIX™ Pin Mapping | 12 |
-| 6 | User Startup Modes | 14 |
-| 7 | Config Signals | 14 |
-| 8 | Signal mapping of the optional resistors | 15 |
+| Table | Description |
+| --- | --- |
+| 1 | Overview of the Board Specification |
+| 2 | AURIX™ Pin Mapping for User LEDs |
+| 3 | miniWiggler Pin Mapping for User LEDs |
+| 4 | AURIX™ Push Buttons and Potentiometer |
+| 5 | CAN Signals and AURIX™ Pin Mapping |
+| 6 | User Startup Modes |
+| 7 | Config Signals |
+| 8 | Signal mapping of the optional resistors |
 | 9 | Pin Assignment of the DAP Debug Connector |
 
 ---
@@ -122,7 +114,7 @@ Last Trademarks Update: 2011-02-24
 
 This document describes the features and hardware details of the AURIX™ lite Kit V2 equipped with a 32-bit single-chip AURIX™ TriCore™-based Microcontroller TC375, TC365, TC275 or TC265 from Infineon Technologies AG.
 
-It can be used with a range of development tools including Infineon's free of charge Eclipse-based IDE [**AURIX™ Development Studio**](https://www.infineon.com/cms/en/product/promopages/aurix-development-studio/) or the Eclipse-based **FreeEntryToolchain** from HighTec/PLS/Infineon. AURIX™ Development Studio is a comprehensive environment, including C-Compiler and Multi-core Debugger, Infineon's low-level driver (iLLD), with no time and code-size limitations that enables editing, compiling and debugging application code. The FreeEntryToolchain is a full C/C++ development environment which has a source-level UDE debugger from PLS included and is also based on Infineon low-level driver (iLLD).
+It can be used with a range of development tools including Infineon's free of charge Eclipse-based IDE **AURIX™ Development Studio** or the Eclipse-based **FreeEntryToolchain** from HighTec/PLS/Infineon. AURIX™ Development Studio is a comprehensive environment, including C-Compiler and Multi-core Debugger, Infineon's low-level driver (iLLD), with no time and code-size limitations that enables editing, compiling and debugging application code. The FreeEntryToolchain is a full C/C++ development environment which has a source-level UDE debugger from PLS included and is also based on Infineon low-level driver (iLLD).
 
 > These boards are neither cost nor size optimized and do not serve as a reference design.
 
@@ -143,11 +135,11 @@ The block diagram in Figure 1 shows the main components of the AURIX™ lite Kit
 | Block | Components shown in the original figure |
 | --- | --- |
 | Power | DC IN → 5 V LDO → 3.3 V LDO → VDD; external power interface; `R35/0R`, `C39/22µF`, `L3/3.3µH`; Ext. Oscillator Input; 12 MHz crystal for FTDI; 20 MHz external crystal for AURIX |
-| Debug | Micro USB2.0 (DP/DM) → UTMI PHY → FTDI FT2232HL; EEPROM 1 kB `93LC46B-I/SN`; MPSSE Channel A (OCDS); MPSSE Channel B; 2× single-bit bus transceivers; octal buffer gate; single bus buffer gate; 2× LEDs for OCDS (LED5 ACT / LED6 RUN); DAP Connector (DAP1, P21.7) |
+| Debug | Micro USB2.0 (DP/DM) → UTMI PHY → FTDI FT2232HL; EEPROM 1 kB `93LC46B-I/SN`; MPSSE Channel A (OCDS); MPSSE Channel B; 2× single-bit bus transceivers; octal buffer gate; single bus buffer gate; 2× LEDs for OCDS (ADBUS2); DAP Connector (DAP1, P21.7); EEPROM 2 kB `24AA02E48-E/OT` (EUI-48 Node Address) |
 | MCU | AURIX TC375, TC365, TC275 or TC265; Ports 0, 2, 10, 11, 13, 14, 15, 20, 21, 22, 23, 32, 33; Ext. Gate Ctrl; Dig. Core Supply; CAN0 Node 0; OCDS Input; CAN Transceiver `TLE9251VSJ` → CAN Header (1×2, 0.1″) |
-| I²C / Ethernet support | EEPROM 2 kB `24AA02E48-E/OT` (EUI-48 Node Address) feeding the Ethernet MAC/address path; Ethernet PHY `DP83825IRMQR` → RJ45 connector |
 | Interfaces | Pin Header X2 (2×20, 0.1″); Arduino Pin Header (DIGITAL) — UART (ASCLIN3/ASCLIN0), QSPI1, I2C0; Arduino Pin Header (ANALOG IN) — ADC/AN24-25, AN36-39; Pin Header X1 (2×20, 0.1″); Shield2GO Slot1 S2G1 (ASCLIN2, I2C0, QSPI0, ADC/AN16, AN17, GPIO); Shield2GO Slot1 S2G2 (ASCLIN3, I2C0, QSPI1, ADC/AN18, AN19, GPIO); mikroBUS Connector (UART/ASCLIN1, I2C0, QSPI2, ADC/AN26, GPIO) |
 | Memory (optional) | Optional Semper (secure) Flash; Optional F-RAM |
+| Ethernet | Ethernet PHY `DP83825IRMQR`; RJ45 connector |
 
 ---
 
@@ -232,7 +224,6 @@ Power tree components visible in the original figure:
 | X4 | Micro USB | USB supply |
 | D1 | SS24T3G | Schottky diode in USB path (VDD_USB) |
 | G1 | IFX27001TFV33 | 5 V / VDD_USB → +3.3 V LDO |
-| D5 | Schottky/power diode | Additional rectifier/protection diode in the power path (visible in the original Figure 4 area near the USB +5 V and regulator rails) |
 | R39 | 0 Ω optional | Connects +5V to mikroBUS and Shield2Go (`+5V_S2G_MB`) |
 | R27 | 0 Ω | VEXT routing |
 | C39 | 22 µF | Bulk decoupling |
@@ -284,7 +275,7 @@ The AURIX™ lite Kit V2 supports debugging via 2 different channels:
 
 The USB connector is used for connection to a PC. Via the USB it is possible to power the board, to use **ASCLIN0** as a serial connection via USB, and to debug via **DAS**.
 
-> **NOTE:** Before connecting the board to the PC, make sure that the actual DAS software is installed on the PC. For actual DAS software please contact your local FAE. The software can also be found on the [DAS website](https://www.infineon.com/cms/en/product/promopages/aurix-development-studio/).
+> **NOTE:** Before connecting the board to the PC, make sure that the actual DAS software is installed on the PC. For actual DAS software please contact your local FAE. The software can also be found on the DAS website.
 
 #### 2.3.2 Serial Connection to PC
 
@@ -365,8 +356,7 @@ The AURIX™ lite Kit V2 provides a **2 Kb I²C Serial EEPROM with Pre-Programme
 
 The AURIX™ lite Kit V2 provides an **RJ45 connector (X5)** for twisted-pair Ethernet connections. The board uses a **DP83825I Low Power 10/100 Mbps Ethernet Physical Layer Transceiver** from Texas Instruments (board part `DP83825IRMQR`) as the physical interface device.
 
-- For more information about the Ethernet module see the AURIX™ User's Manual; about the PHY see the [DP83825I datasheet from the TI website](https://www.ti.com/product/DP83825I).
-- The [TLE9251V CAN transceiver datasheet](https://www.infineon.com/cms/en/product/transceivers/automotive-transceiver/tle9251v/) describes the transceiver used for the CAN interface.
+- For more information about the Ethernet module see the AURIX™ User's Manual; about the PHY see the DP83825I datasheet from the TI website.
 - For the connection between AURIX™ and PHY, **RMII** is used.
 - For the MD connection (e.g. for PHY configuration) **P21.2** and **P21.3** are used (MDC/MDIO).
 - The PHY interrupt **INT_ETH** is routed to **P33.7**.
@@ -386,7 +376,7 @@ For more information see [Cypress Semper NOR Flash](https://www.cypress.com/prod
 
 If you assemble a flash, also assemble the ceramic capacitor **C64** with **100 nF** (size 0603) and the resistor **R67** with **0 Ω** (size 0603). In case of a Semper™ Secure NOR Flash you can additionally assemble resistor **R68** with **0 Ω** (size 0603) to connect the interrupt output of the flash to the AURIX™ pin **P20.9** (`SCU_REQ7` on TC3X5; `SCU_REQ11` on TC2X5).
 
-> **[Source typo corrected]** The original Rev. 2.2 prose names `R67` twice in this sentence; the schematic (Figure 12) clearly shows two separate option resistors: **R67** (0 Ω) ties the flash **RESET#** to `/ESR0`, and **R68** (0 Ω, optional) ties the flash **INT#/DNU** to **P20.9**. The text below uses the schematic-correct mapping.
+> **Note on R67/R68 (from schematic):** R67 (0 Ω) connects the flash **RESET#** to `/ESR0`; R68 (0 Ω, optional) connects the flash **INT#/DNU** to **P20.9**.
 
 The AURIX™ supports only the **single SPI** protocol for this external flash; Dual and Quad SPI protocol is not possible.
 
@@ -424,12 +414,12 @@ Unfortunately there is **no connection on pin 3 (#WP) and pin 7 (#HOLD)** of the
 
 | HWCFG[5…3] | Type of Boot | R58 | R57 | R59 |
 | --- | --- | --- | --- | --- |
-| **XX1** | **Start-up mode is selected by Boot Mode Index** | X | X | NA |
-| 110 | Internal Start from Flash | NA | NA | A |
+| XX1 | Start-up mode is selected by Boot Mode Index | X | X | NA |
+| **110** | **Internal Start from Flash** (default setting) | NA | NA | A |
 | 100 | Alternate Boot Mode, Generic Bootstrap Loader on fail (P14.0/P14.1) | A | NA | A |
 | 000 | Generic Bootstrap Loader (P14.0/P14.1) | A | A | A |
 
-1) The shaded row indicates the **default setting** — in the rendered manual the shaded row is `XX1` (Start-up mode is selected by Boot Mode Index).
+1) The shadowed line (Internal Start from Flash, `110`) indicates the **default setting**.
 2) 'A' means assembled, 'NA' means not assembled, 'X' represents the don't-care state.
 
 Please see also Table 8.
@@ -589,6 +579,7 @@ The pin connectors for the Shield2Go Connectors 1 and 2 and the mikroBUS™ can 
 ### 4.3 Arduino Compatible Connector
 
 The mapping of GPIOs and AURIX™ pin functions to Arduino-compatible functions can be found in Figure 7. The Arduino-compatible connector supports:
+
 - SPI interface (SPI_xxx)
 - I²C interface (I2C_xxx)
 - UART interface (UART_xxx)
@@ -597,8 +588,6 @@ The mapping of GPIOs and AURIX™ pin functions to Arduino-compatible functions 
 - Interrupt input (INT0–1)
 
 > Note that all pins are capable of offering more functions than mentioned. For more information about all pin functions, refer to the corresponding datasheet.
->
-> **[Source typos corrected]** The original Rev. 2.2 Arduino figure spells a few peripheral names loosely: `QSPI1.SLK1` (→ `SCLK1`), `ASLIN0.ARX0B` (→ `ASCLIN0.ARX0B`), and `QSPI1.SLSO18` (→ `SLSO19`). The tables below use the corrected spellings.
 
 The AURIX™ lite Kit V2 works with **3.3 V logic levels**. Therefore, any board that works with 5 V logic levels cannot be used. Analog input signals **ADC0–5** are limited to a voltage smaller than or equal to **VAREF** with **VAREF = VDDM = 3.3 V**. Primarily, ADC0 to ADC5 should be used as analog input, because there is no additional circuit connected to these pins. **Parallel operation of I²C and ADC4/ADC5** is possible, because they don't share the same pins at the Arduino connector X301 and X303 anymore, as on the previous AURIX™ lite Kit V1.
 
@@ -658,7 +647,7 @@ The AURIX™ lite Kit V2 works with **3.3 V logic levels**. Therefore, any board
 
 ### 4.4 Infineon DAP Debug Connector (10-pin)
 
-Infineon's 10-pin Device Access Port Debug Connector (DAP) is a two-wire tool access port for microcontrollers and similar devices. It allows robust high-speed connections over a long cable for automotive applications. The board comes with a DAP connector (board part `GPEC214-0502B009C1BC`); you can connect DAP hardware here. If you use this connector, make sure that the miniWiggler JDS is **not active (LED5 is off)**. For more information, refer to the [DAP Connector Manual](https://www.infineon.com/cms/en/product/microcontrollers/32-bit-tricore-microcontroller/).
+Infineon's 10-pin Device Access Port Debug Connector (DAP) is a two-wire tool access port for microcontrollers and similar devices. It allows robust high-speed connections over a long cable for automotive applications. The board comes with a DAP connector (board part `GPEC214-0502B009C1BC`); you can connect DAP hardware here. If you use this connector, make sure that the miniWiggler JDS is **not active (LED5 is off)**. For more information, refer to the DAP Connector Manual.
 
 ### Table 9 — Pin Assignment of the DAP Debug Connector
 
@@ -669,12 +658,9 @@ Infineon's 10-pin Device Access Port Debug Connector (DAP) is a two-wire tool ac
 | 3 | GND | GND | — | Recommended pin for signal return of DAP1 for high-frequency impedance matching. |
 | 4 | DAP0 / SUP | TCK | I | DAP: Clock. SPD: Optional user pin value for feedback into the target system. Otherwise reserved. |
 | 5 | GND | GND | — | Recommended pin for signal return of DAP0 for high-frequency impedance matching. |
-| 6 | DAP2 | P21.7 | I/O | DAP: Optional second data pin. |
-| | USER0 | P21.7 | I/O/O | Generic signal that can be used for non-specified functions. |
+| 6 | DAP2 / USER0 | P21.7 | I/O | DAP: Optional second data pin. Generic signal that can be used for non-specified functions. |
 | 7 | KEY (GND in cable) | GND | — | Enforces polarization. If the recommended connector with keying shroud is not used, this pin provides another option to enforce polarization. In that instance this pin is removed from the target connector and the associated jack in the cable connector is closed with a plastic pin, for example. |
-| 8 | DAP3 | /TRST | I/O | DAP: Optional third data pin. |
-| | USER1 | /TRST | I/O/I | Generic signal for non-specified functions. |
-| | DAPEN | /TRST | I | Optional indicator that the tool is connected; can be used to enable the DAP interface of the device. |
+| 8 | DAP3 / USER1 / DAPEN | /TRST | I/O / I | DAP: Optional third data pin. Generic signal for non-specified functions. Optional indicator that the tool is connected; can be used to enable the DAP interface of the device. |
 | 9 | GND | GND | — | Supply ground. |
 | 10 | RESET | /PORST | I/O | Target reset signal. Open-drain active-low signal. May be used bi-directionally to drive or sense the target reset signal; usually driven by the tool to reset the target system. The target system is responsible for providing a pull-up to VREF on this signal to establish a logic one. The resistor shall not have a value less than 1 kΩ. |
 
@@ -682,677 +668,147 @@ Infineon's 10-pin Device Access Port Debug Connector (DAP) is a two-wire tool ac
 
 ## 5. Schematics and Placement
 
-The original pages 20–26 are the five schematic sheets (Figures 8–12) and the two placement drawings (Figures 13–14). This section reconstructs their electrical content as structured tables and net lists rather than reproducing the images. All reference designators, values, pin numbers and net names are taken from the schematic set (project **AURIX™ Lite Kit V2**, rev **V2.0**).
+This section summarizes the five schematic sheets (Figures 8–12) and the two placement drawings (Figures 13–14) as structured component maps. All sheet titles and part references come from the schematic set (project: **AURIX™ Lite Kit V2**, rev **V2.0**, initially created **07/2020**).
 
-| Figure | Schematic sheet | Document name | Page |
-| --- | --- | --- | --- |
-| 8 | Cover Sheet / Revision History | `01_Revision_History.SchDoc` | 20 |
-| 9 | OCDS / On-board miniWiggler | `02_OCDS.SchDoc` | 21 |
-| 10 | Power and Connectors | `03_Power_a_Connector.SchDoc` | 22 |
-| 11 | CPU and config | `04_CPU.SchDoc` | 23 |
-| 12 | Ethernet and memory expansion | `05_Ethernet_Memory_Expansion.SchDoc` | 24 |
-| 13 | Placement: Top View | — | 25 |
-| 14 | Placement: Bottom View | — | 26 |
-
-### Figure 8 — Schematic Project Overview (Sheet 1)
-
-#### Project metadata (title block)
-
-| Field | Value |
-| --- | --- |
-| Project / title | AURIX™ Lite Kit V2 |
-| Variant | [No Variations] |
-| Schematic revision | V2.0 |
-| Initial design date | 07/2020 (rel. 06/2020, drawn 16.10.2020) |
-| Author | H.D. |
-| Manufacturer | Infineon Technologies AG, Am Campeon 1–15, 85579 Neubiberg, Germany |
-| Document name | `01_Revision_History.SchDoc` |
-| Sheet size | A3 |
-| SVN revision | Not in version control |
-| Copyright | © Infineon Technologies AG 2020. All Rights Reserved. |
-| Sheet | Sheet 1 of 5 |
-
-#### Revision table (sheet 1)
-
-| Rev. | Release date | Author | Description | Page(s) |
-| --- | --- | --- | --- | --- |
-| V2.0 | 06/2020 | H.D. | First new design for TC3xx | — |
-
-#### Schematic page index
-
-| Sheet | Schematics page name |
-| ---: | --- |
-| 01 | Cover Sheet / Revision History |
-| 02 | OCDS |
-| 03 | Power_a_Connector |
-| 04 | CPU |
-| 05 | Ethernet_Memory_Expansion |
-| 06–10 | (empty) |
-
-#### Schematic-set legal disclaimer (different from the front-of-manual disclaimer)
-
-> **LEGAL DISCLAIMER:** THE INFORMATION GIVEN IN THIS DOCUMENT IS GIVEN FOR ILLUSTRATING PURPOSES ONLY. THE RECIPIENT OF THIS DOCUMENT MUST VERIFY ANY FUNCTION DESCRIBED HEREIN IN THE REAL APPLICATION. INFINEON TECHNOLOGIES HEREBY DISCLAIMS ANY AND ALL WARRANTIES AND LIABILITIES OF ANY KIND (INCLUDING WITHOUT LIMITATION WARRANTIES OF NON-INFRINGEMENT OF INTELLECTUAL PROPERTY RIGHTS OF ANY THIRD PARTY) WITH RESPECT TO ANY AND ALL INFORMATION GIVEN IN THIS DOCUMENT.
-
----
-
-### Figure 9 — On-Board miniWiggler / OCDS (Sheet 2, `02_OCDS.SchDoc`)
-
-#### Main functional chain
-
-```mermaid
-flowchart LR
-    X4[Micro-USB X4 ZX62-AB-5PA] --> USB[DP / DM]
-    USB --> IC1[IC1 FT2232HL]
-    IC1 --> U5[U5 93LC46B-I/SN EEPROM]
-    IC1 --> U1[U1 SN74AHC244PWR octal buffer]
-    IC1 --> U2[U2 SN74LVC1G125DBVR buffer]
-    U1 --> LEVEL[U3/U4 SN74LVC1T45DBVR level translators]
-    LEVEL --> DAP[DAP0 / DAP1 / DAP2 P21.7 / TRST / PORST]
-    IC1 --> LEDS[LED5 ACT + LED6 RUN]
-    IC1 --> UART0[P14.0 / P14.1 USB serial]
-    UART0 -. optional R44/R45 .-> UART4[P00.9 / P00.12 ASCLIN4]
-    Y1[12 MHz crystal] --> IC1
-```
-
-#### Principal components
-
-| Ref. | Device / value | Role |
+| Figure | Schematic sheet | Document name |
 | --- | --- | --- |
-| X4 | `ZX62-AB-5PA(31)` | Micro-USB connector (MP1–MP6 mounting posts) |
-| IC1 | FT2232HL | Dual high-speed USB UART/FIFO IC, on-board debug controller |
-| U1 | SN74AHC244PWR | Octal buffer/driver — OCDS signal conditioning |
-| U2 | SN74LVC1G125DBVR | Single bus buffer gate (signal network switch) |
-| U3 | SN74LVC1T45DBVR | Single-bit dual-supply bus transceiver (DAP1 level translation) |
-| U4 | SN74LVC1T45DBVR | Single-bit dual-supply bus transceiver (P21.7 level translation) |
-| U5 | 93LC46B-I/SN | 1 kB FTDI configuration EEPROM |
-| Y1 | 12 MHz crystal | FT2232HL clock (OSCI/OSCO, C14/C15 = 8 pF load caps) |
+| 8 | Cover Sheet / Revision History | `01_Revision_History.SchDoc` |
+| 9 | OCDS / On-board miniWiggler | `02_OCDS.SchDoc` |
+| 10 | Power and Connectors | `03_Power_a_Connector.SchDoc` |
+| 11 | CPU and config | `04_CPU.SchDoc` |
+| 12 | Ethernet and memory expansion | `05_Ethernet_Memory_Expansion.SchDoc` |
+
+### Figure 9 — On-Board miniWiggler (Sheet 2)
+
+| Reference | Value / device | Purpose |
+| --- | --- | --- |
+| X4 | `ZX62-AB-5PA(31)` | Micro-USB connector |
+| IC1 | FT2232HL | Dual high-speed USB UART/FIFO IC (miniWiggler) |
+| U1 | SN74AHC244PWR | Octal buffer gate (OCDS signal conditioning) |
+| U2 | SN74LVC1G125DBVR | Single bus buffer gate |
+| U3, U4 | SN74LVC1T45DBVR | 2× single-bit dual-supply bus transceivers (level translation) |
+| U5 | 93LC46B-I/SN | 1 kB configuration EEPROM for FT2232HL |
+| Y1 | 12 MHz crystal | FT2232HL clock |
 | L1, L2 | MMZ1608R300ATA00 | Ferrite beads on +3V3 |
-| LED5 | Green, 680 Ω (R1) | OCDS LED — ACT activity |
-| LED6 | Green, 680 Ω (R2) | OCDS LED — RUN status |
-| TP1, TP2 | Test points | Debug probing points |
-
-#### FT2232HL (IC1) pin-out and net assignments
-
-**Channel A (MPSSE A — OCDS/DAP):**
-
-| FT2232HL pin | Signal | Board net |
-| ---: | --- | --- |
-| 16 | ADBUS0 | → U1 1A1 → DAP0 |
-| 17 | ADBUS1 | → U2 buffer |
-| 18 | ADBUS2 | → U3 A (level-shifted to DAP1) |
-| 19 | ADBUS3 | → U1 (2A side) |
-| 21 | ADBUS4 | OCDS LED5 ACT (R1) |
-| 22 | ADBUS5 | spare |
-| 23 | ADBUS6 | → U1 1A3 → USR0 |
-| 24 | ADBUS7 | OCDS LED6 RUN (R2) |
-| 26 | ACBUS0 | spare |
-| 27 | ACBUS1 | `/PORST` reset control (IC1.27) |
-| 28 | ACBUS2 | → U1 1A2 → /TRST |
-| 29 | ACBUS3 | → U4 A (level-shifted to P21.7) |
-| 30 | ACBUS4 | U2 OE (signal network switch control) |
-| 32 | ACBUS5 | U3 DIR control (also U1 1A4 → USR8) |
-| 33 | ACBUS6 | spare |
-| 34 | ACBUS7 | U4 DIR control |
-
-**Channel B (MPSSE B — USB serial / ASCLIN):**
-
-| FT2232HL pin | Signal | Board net |
-| ---: | --- | --- |
-| 38 | BDBUS0 | P14.1 (ASCLIN0 TX) → R44 opt → P00.12 |
-| 39 | BDBUS1 | P14.0 (ASCLIN0 RX) → R45 opt → P00.9 |
-| 40 | BDBUS2 | spare |
-| 41 | BDBUS3 | spare |
-| 43–46 | BDBUS4–7 | spare |
-| 48 | BCBUS0 | spare |
-| 52 | BCBUS1 | spare |
-| 53–55, 57–59 | BCBUS2–7 | spare |
-
-**USB, EEPROM, control and power pins:**
-
-| FT2232HL pin(s) | Signal | Net / note |
-| ---: | --- | --- |
-| — (USB D±) | USB_D_P / USB_D_N | via R4/R5 = 22 Ω to X4 DP/DM |
-| 63 / 62 / 61 | EECS / EECLK / EEDATA | to U5 (with R11/R12/R14 10 kΩ pull-ups) |
-| 14 | RESET_N | R6 1 kΩ to +3V3 |
-| 6 | REF | R7 12 kΩ |
-| 60 | PWREN_N | spare |
-| 36 | SUSPEND_N | spare |
-| 13 | TEST | tied |
-| 2 / 3 | OSCI / OSCO | Y1 12 MHz, C14/C15 8 pF |
-| 12, 37, 64 | VPLL / VPHY / VCCIO | +3V3 / +1V8 power |
-| 20, 31, 42, 56 | VCORE | +1.8 V digital core |
-| 9, 4, 50, 49 | VCCIO / VREGIN / VREGOUT | power |
-| 1, 5, 11, 15, 25, 35, 47, 51, 10 | GND / AGND | ground |
-
-#### Support passives on sheet 2
-
-| Ref. | Value | Net / function |
-| --- | --- | --- |
-| R1 | 680 Ω | LED5 (ACT) series resistor |
-| R2 | 680 Ω | LED6 (RUN) series resistor |
+| R1, R2 | 680 Ω | LED5/LED6 series resistors |
 | R3, R13 | 10 kΩ | Pull-ups |
-| R4, R5 | 22 Ω | USB DP / DM series resistors |
+| R4, R5 | 22 Ω | USB DP/DM series resistors |
 | R6 | 1 kΩ | RESET_N pull-up |
 | R7 | 12 kΩ | REF network |
-| R8 | 10 kΩ | ADBUS0 pull-up |
-| R9 | 10 kΩ | pull-up |
-| R11, R12, R14 | 10 kΩ | U5 EEPROM interface pull-ups (EECS/EECLK/EEDATA) |
-| R17 | 2.2 kΩ | U5 EEPROM DO pull-up |
-| R18 | 4.7 kΩ | U3 DAP1-side pull-up |
-| R19 | 4.7 kΩ | U4 P21.7-side pull-up |
-| R106 | 1 MΩ | USB / shield circuitry bias |
-| R44 | 0 Ω optional | P14.1 ↔ P00.12 (ASCLIN4 route) |
-| R45 | 0 Ω optional | P14.0 ↔ P00.9 (ASCLIN4 route) |
-| C1, C3, C4, C6–C10, C12, C13 | 100 nF | +3V3 / +1V8 bypass |
-| C2, C5 | 4.7 µF | +3V3 / +1V8 bulk |
-| C11 | 3.3 µF | power bulk |
-| C14, C15 | 8 pF | Y1 crystal load caps |
-| C16–C21 | 100 nF | U2/U3/U4 supply bypass |
-| C100 | 100 nF | USB / shield circuitry |
+| R11, R12, R14 | 10 kΩ | EEPROM interface pull-ups |
+| R17 | 2.2 kΩ | EEPROM interface |
+| R18 | 4.7 kΩ | DAP1 buffer pull-up |
+| R19 | 4.7 kΩ | P21.7 buffer pull-up |
+| R44 | 0 Ω optional | ASCLIN4 P00.12 instead of ASCLIN0 P14.1 |
+| R45 | 0 Ω optional | ASCLIN4 P00.9 instead of ASCLIN0 P14.0 |
+| LED5 | Green | ADBUS4 (ACTIV) activity |
+| LED6 | Green | ADBUS7 (RUN) status |
 
-FT2232HL signal groups (for reference): Channel A `ADBUS0–7`, `ACBUS0–7`; Channel B `BDBUS0–7`, `BCBUS0–7`; USB `DP`, `DM`, `USB_D_P`, `USB_D_N`; EEPROM `EECS`, `EECLK`, `EEDATA`; control `RESET_N`, `PWREN_N`, `SUSPEND_N`, `REF`, `TEST`. Debug nets: `DAP0`, `DAP1`, `P21.7` (DAP2), `/TRST`, `/PORST`, `USR0`, `USR8`, test points `TP1`/`TP2`. Power rails: `+1V8`/`+1.8V`, `+3V3`, `VCCIO`, `VREGIN`, `VREGOUT`, `VPLL`, `VPHY`, `VCORE`.
+FT2232HL signal groups: Channel A (`ADBUS0–7`, `ACBUS0–7`), Channel B (`BDBUS0–7`, `BCBUS0–7`), USB (`DP`, `DM`, `USB_D_P`, `USB_D_N`), EEPROM (`EECS`, `EECLK`, `EEDATA`), control (`RESET_N`, `PWREN_N`, `SUSPEND_N`, `REF`, `TEST`). Debug nets: `DAP0`, `DAP1`, `P21.7` (DAP2), `/TRST`, `/PORST`, `USR0`, `USR8`, test points `TP1`/`TP2`. Power: `+1V8`/`+1.8V`, `+3V3`, `VCCIO`, `VREGIN`, `VREGOUT`, `VPLL`, `VPHY`, `VCORE`.
 
----
+### Figure 10 — Power and Connectors (Sheet 3)
 
-### Figure 10 — Power and Connectors (Sheet 3, `03_Power_a_Connector.SchDoc`)
-
-This sheet contains the power tree, MCU power pins, user LEDs/buttons, reset circuit, Arduino headers, X1/X2, DAP connector, Shield2Go, mikroBUS, and board power switching.
-
-#### Power regulators and input protection
-
-| Ref. | Value / device | Purpose |
+| Reference | Value / device | Purpose |
 | --- | --- | --- |
 | X3 | DC plug | VIN input |
-| D2 | SS24T3G | Schottky diode, DC input path |
-| G2 | IFX27001TFV50 | VIN → +5 V LDO (GND/ADJ; C23 10 µF, C49 100 nF/50 V) |
-| X4 | Micro-USB | USB supply |
-| D1 | SS24T3G | Schottky diode, USB path (VDD_USB) |
-| G1 | IFX27001TFV33 | 5 V / VDD_USB → +3.3 V LDO (GND/ADJ; C24 10 µF, C50 10 µF) |
+| X1, X2 | `68691-440HLF` | 40-pin (2×20) headers |
+| X301 / X302 / X303 / X304 | — | Arduino ANALOG IN / POWER / SPI-I2C / DIGITAL headers |
+| X302 reset | `FSM2JSMA` | Reset button switch |
+| DAP | `GPEC214-0502B009C1BC` | 10-pin DAP connector |
+| U6 | TC375 / TC365 / TC275 / TC265 | AURIX MCU |
+| G1 | IFX27001TFV33 | 5 V → 3.3 V LDO |
+| G2 | IFX27001TFV50 | VIN → 5 V LDO |
+| D1, D2 | SS24T3G | Schottky diodes (USB / DC path) |
+| Q1 | BSZ15DC02KD | MOSFET, power control path |
+| L3 | LTF5022T-3R3N2R5-LC | 3.3 µH inductor |
 | R27 | 0 Ω | VEXT routing |
-| Q1 | BSZ15DC02KD | Power MOSFET (digital-core 1.25 V path) |
-| L3 | LTF5022T-3R3N2R5-LC | 3.3 µH inductor (core supply) |
-| R35 | 0 Ω | VDD digital-core routing |
-| R16 | 0 Ω | +1.25 V core supply (VDD) routing |
-| C39 | 22 µF | Core-supply bulk decoupling |
+| R35, R43 | 0 Ω | Power routing (VDD / VDDM) |
+| R37 | 0 Ω | XTAL2 series resistor |
+| R39 | 0 Ω optional | +5V → mikroBUS/Shield2Go |
+| R15 | 120 Ω | CAN termination |
+| R32 | 10 kΩ | Potentiometer (AN0) |
+| R33 | 0 Ω | AN0 potentiometer disconnect |
+| R22 | 0 Ω | X302 routing |
+| C39 | 22 µF | Bulk decoupling |
+| C33, C43 | 330 nF | AURIX VAREF/decoupling |
+| Y2 | 20 MHz | Main AURIX oscillator (XTAL1/XTAL2), 10 pF load caps |
+| LED1/LED2 | Green, 680 Ω | User LEDs (P00.5/P00.6) |
+| LED3 | Red | ESR0 LED |
+| LED4 | Green | 3.3 V power LED |
+| R10/R24 | 680 Ω / 4.7 kΩ | LED/reset network |
 
-MCU-dependent assembly table on this sheet:
+MCU power nets: `VEXT`, `VDD`, `VDDP3`, `VDDM`, `VAREF1`, `VAREF2`, `VAGND1`, `VAGND2`, `VFLEX`, `VSS`, `VSSM`, plus external gate control pins `P32.0/VGATE1N` and `P32.1/VGATE1P`. Buttons & LEDs: `BUTTON1` on P00.7, reset switch on `/PORST`.
 
-| Component | TC375 | TC365 | TC275 | TC265 |
-| --- | --- | --- | --- | --- |
-| R29 | 6.8 Ω | — | NA | NA |
-| R40 | NA | — | 0 Ω | NA |
-| R41 | 0 Ω | — | NA | 0 Ω |
-| R42 | 0 Ω | — | NA | NA |
-| R43 | NA | — | 0 Ω | NA |
-| C27 | 2.2 µF | — | NA | NA |
+### Figure 11 — CPU and Config (Sheet 4)
 
-*(TC375 column shown; the schematic repeats the population columns per MCU variant.)*
-
-#### Analog reference / VAREF supply
-
-| Ref. | Value | Net / function |
+| Group | AURIX™ function | Package pin |
 | --- | --- | --- |
-| R25 | 1.2 Ω | VAREF1 analog supply resistor |
-| R28 | 6.8 Ω | VAREF2 analog supply resistor |
-| R29 | 6.8 Ω (variant) | VAREF1/2 filter (variant-dependent) |
-| R40 / R41 | 0 Ω (variant) | VAREF / rail routing (variant-dependent) |
-| C33 | 330 nF | VAREF1 decoupling |
-| C43 | 330 nF | VAREF2 decoupling |
-| C37 | 100 nF | analog supply decoupling |
+| OCDS / JTAG / DAP control | `/TRST` (TRST_N) | 114 |
+| | `TCK` (DAP0) | 115 |
+| | `TMS` (DAP1) | 112 |
+| | `P21.6` (TDI) | 111 |
+| | `P21.7` (TDO, DAP2) | 113 |
+| Analog inputs | AN0–AN8 | 67–59 |
+| | AN10–AN13 | 58–55 |
+| | AN16–AN21 | 50–45 |
+| | AN24–AN29 / P40.0–P40.3, P40.13, P40.14 | 44–39 |
+| | AN32–AN33 / P40.4, P40.5 | 38–37 |
+| | AN35 | 36 |
+| | AN36–AN39 / P40.6–P40.9 | 35–32 |
+| | AN44–AN47 | 31–28 |
+| Port 0 | P00.0–P00.12 | 11–23 |
+| Port 2 | P02.0–P02.8 | 1–9 |
+| Port 10 | P10.0–P10.8 | 168–176 |
+| Port 11 | P11.2, P11.3, P11.6, P11.9, P11.10, P11.11, P11.12 | 160–167 |
+| Port 13 | P13.0–P13.3 | 156–159 |
+| Port 14 | P14.0–P14.10 | 142–152 |
+| Port 15 | P15.0–P15.8 | 133–141 |
+| Port 20 | P20.0, P20.1, P20.3, P20.6–P20.14 | 116–132 |
+| Port 21 | P21.0–P21.5 | 105–110 |
+| Port 22 | P22.0–P22.3 | 95–98 |
+| Port 23 | P23.0–P23.5 | 89–94 |
+| Port 32 | P32.2, P32.3, P32.4 | 86–88 |
+| Port 33 | P33.0–P33.13 | 70–83 |
 
-#### Reset circuit
+Board functions mapped on the CPU sheet: Port 0 (LED1/LED2, Button1, Shield2Go interrupts, optional ASCLIN4 USB routing), Port 2 (GPIO/GTM/QSPI/CCU6, Arduino PWM/INT), Port 10 (GPT/GTM/QSPI1, mikroBUS RST/INT, S2G2 INT), Port 11 (Ethernet RMII), Ports 13/14 (I²C0, GTM, QSPI2, CAN, CCU6, GPT120, HWCFG, USB-serial), Port 15 (GTM/ASC1/QSPI0,2/CAN2/CCU6/I2C0, mikroBUS UART), Ports 20/21 (GTM/ASC3/HSCT/QSPI, CAN transceiver control, Shield2Go, Ethernet MDC/MDIO), Ports 22/23 (QSPI memory expansion, Shield2Go resets), Ports 32/33 (ASC/GTM/SENT/QSPI/DSADC/CCU6).
 
-| Ref. | Value | Function |
-| --- | --- | --- |
-| Reset switch | `FSM2JSMA` | Reset push-button on `/PORST` |
-| R26 | 2.2 kΩ | `/PORST` pull-up (keeps PORST high in normal operation) |
-| C45 | 100 nF | reset-line filtering |
+CAN transceiver section: **U7 = TLE9251VSJ**, CANH/CANL to a 1×2 header (`HTSW-102-07-L-S`), termination **R15 = 120 Ω**, TXD from P20.8, RXD to P20.7, STB from P20.6, VIO = VEXT, VCC = +5 V, 100 nF decoupling C46/C47.
 
-> **Note:** Button1 (P00.7) uses the same `FSM2JSMA` switch; its pull-up is **R20 = 2.2 kΩ** (see Buttons & LEDs below).
+HW config network: R30 (TC2X5 only, 4.7 kΩ) for HWCFG0; R31 (4.7 kΩ, assembled) for HWCFG1; optional R52/R53/R54/R55/R56/R57/R58/R59 (4.7 kΩ) for HWCFG2/3/4/5/6 (see Tables 6–8).
 
-#### Buttons & LEDs
+### Figure 12 — Ethernet and Memory Expansion (Sheet 5)
 
-| Ref. | Value | Function |
-| --- | --- | --- |
-| Button1 | `FSM2JSMA` | User push-button on P00.7 (low-active) |
-| R20 | 2.2 kΩ | Button1 (P00.7) pull-up |
-| R21 | 680 Ω | LED1 (P00.5) series resistor — green, low-active |
-| R23 | 680 Ω | LED2 (P00.6) series resistor — green, low-active |
-| R24 | 680 Ω | LED3 (/ESR0) series resistor — red |
-| R36 | 680 Ω | LED4 (power) series resistor — green |
-| LED1 | Green | P00.5 user LED |
-| LED2 | Green | P00.6 user LED |
-| LED3 | Red | /ESR0 emergency-service-request LED |
-| LED4 | Green | 3.3 V power indication |
-
-#### Main oscillator
-
-| Ref. | Value | Function |
-| --- | --- | --- |
-| Y2 | 20 MHz | AURIX main oscillator (XTAL1/XTAL2) |
-| R37 | 0 Ω | XTAL2 series resistor (amplitude control) |
-| C40, C44 | 10 pF | Y2 crystal load capacitors |
-
-#### Potentiometer / AN0
-
-| Ref. | Value | Function |
-| --- | --- | --- |
-| R32 | 10 kΩ | Potentiometer, wiper → AN0 (via R33) |
-| R33 | 0 Ω | AN0 disconnect (remove to free AN0) |
-| C26 | 47 nF | AN0 filter |
-| C28 | 2.2 µF | AN0/analog filter |
-
-#### Connector groups on the sheet
-
-- Arduino X301 (ANALOG IN), X302 (POWER), X303 (DIGITAL/SPI/I²C), X304 (DIGITAL/UART/INT).
-- Expansion headers X1 and X2 — 2×20, 0.1″ (`68691-440HLF`).
-- 10-pin DAP connector (`GPEC214-0502B009C1BC`).
-- Shield2Go S2G1 and S2G2.
-- mikroBUS connector.
-
-#### MCU power-related nets
-
-`VEXT`, `VDD`, `VDDP3`, `VDDM`, `VAREF1`, `VAREF2`, `VAGND1` (pin 27), `VAGND2`, `VFLEX`, `VSS`, `VSSM`, plus external gate-control pins `P32.0/VGATE1N` and `P32.1/VGATE1P` (with **R34** in the flash-supply / external-gate-control area). Power rails: `VDD_USB`, `+5V`, `+5V_S2G_MB` (via R39), `+3V3`, `VEXT`, `VIN`. R38 (0 Ω) routes `VEXT (VDDP3)`. Buttons & LEDs: `BUTTON1` on P00.7, reset switch on `/PORST`.
-
-Board-to-header signal names on the sheet: `AN0…AN47`, `P00.x`, `P02.x`, `P10.x`, `P11.x`, `P13.x`, `P14.x`, `P15.x`, `P20.x`, `P21.x`, `P22.x`, `P23.x`, `P32.x`, `P33.x`, Ethernet RMII nets, Shield2Go SPI/UART nets, `VDD_USB`, `+5V`, `+3V3`, `VIN`, `/ESR0`, `/ESR1`, `/PORST`.
-
----
-
-### Figure 11 — CPU and Config (Sheet 4, `04_CPU.SchDoc`)
-
-The CPU sheet maps the AURIX device pins into logical port groups and board functions, organized in multiple U6 sheet units (U6A–U6O).
-
-#### OCDS / JTAG / DAP control pins
-
-| MCU pad/function | Package pin | Board net |
-| --- | ---: | --- |
-| TRST_N | 114 | /TRST (DAP3) |
-| TCK | 115 | DAP0 (DAP clock) |
-| P21.6 / TDI | 111 | (JTAG TDI) |
-| P21.7 / TDO | 113 | DAP2 / USER0 (P21.7) |
-| TMS | 112 | DAP1 (DAP data) |
-
-#### Analog inputs (VADC groups)
-
-| Group | Signal (package pin) | Board net |
-| --- | --- | --- |
-| Group 0 | AN0 (67), AN1 (66), AN2 (65), AN3 (64), AN4 (63), AN5 (62), AN6 (61), AN7 (60) | AN0 = potentiometer; AN1–AN7 → X2 |
-| Group 1 | AN8 (59), AN10 (58), AN11 (57), AN12 (56), AN13 (55) | spare |
-| Group 2 | AN16 (50), AN17 (49), AN18 (48), AN19 (47), AN20 (46), AN21 (45) | AN16/17 → S2G1 AN1/AN2; AN18/19 → S2G2 AN1/AN2 |
-| Group 8 | AN24/P40.0 (44), AN25/P40.1 (43), AN26/P40.2 (42), AN27/P40.3 (41), AN28/P40.13 (40), AN29/P40.14 (39) | AN24/25 → ADC4/5 (X301); AN26 → mikroBUS AN |
-| Group 8 | AN32/P40.4 (38), AN33/P40.5 (37) | spare |
-| Group 8 | AN35 (36) | spare |
-| Group 8 | AN36/P40.6 (35), AN37/P40.7 (34), AN38/P40.8 (33), AN39/P40.9 (32) | ADC3/2/1/0 (X301) |
-| Group 8 | AN44 (31), AN45 (30), AN46 (29), AN47 (28) | → X2 |
-
-#### Port 0 (pins 11–23)
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 11–14 | P00.0–P00.3 | spare (Arduino digital, X304 INT/IO) |
-| 15 | P00.4 | INT_S2G1 |
-| 16 | P00.5 | LED1 |
-| 17 | P00.6 | LED2 |
-| 18 | P00.7 | BUTTON1 |
-| 19 | P00.8 | spare |
-| 20 | P00.9 | → R45 opt → P14.0 (ASCLIN4) |
-| 21 | P00.10 | spare |
-| 22 | P00.11 | spare |
-| 23 | P00.12 | → R44 opt → P14.1 (ASCLIN4) |
-
-#### Port 2 (pins 1–9)
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 1 | P02.0 | PWM_2 / INT0 (ERS3.REQ6) |
-| 2 | P02.1 | PWM_3 / INT1 (ERS2.REQ14) |
-| 3 | P02.2 | (spare) |
-| 4 | P02.3 | PWM_5 |
-| 5 | P02.4 | PWM_7 / IO1 |
-| 6 | P02.5 | PWM_6 |
-| 7 | P02.6 | PWM_8 / IO2 |
-| 8 | P02.7 | PWM_9 |
-| 9 | P02.8 | PWM_MB (mikroBUS PWM) |
-
-#### Port 10 (pins 168–176)
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 168 | P10.0 | (spare) |
-| 169 | P10.1 | MISO (X303 SPI_MISO) |
-| 170 | P10.2 | SPICLK (X303 SPI_CLK) |
-| 171 | P10.3 | MOSI (X303 SPI_MOSI) |
-| 172 | P10.4 | PWM_4 / IO0 |
-| 173 | P10.5 | SS0 / PWM_10 (SPI_CS, HWCFG4) |
-| 174 | P10.6 | RST_MB (mikroBUS RST, HWCFG5) |
-| 175 | P10.7 | INT_MB (mikroBUS INT) |
-| 176 | P10.8 | INT_S2G2 |
-
-#### Port 11 (Ethernet RMII)
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 160 | P11.2 | TX_D1 |
-| 161 | P11.3 | TX_D0 |
-| 162 | P11.6 | TX_EN |
-| 163 | P11.9 | RX_D1 |
-| 165 | P11.10 | RX_D0 |
-| 166 | P11.11 | CRS_DV |
-| 167 | P11.12 | CLK50 (50 MHz out) |
-
-#### Ports 13 and 14
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 156–159 | P13.0–P13.3 | P13.1 = SCL0, P13.2 = SDA0 (I²C0) |
-| 142 | P14.0 | BDBUS1 → R45 opt → P00.9 (ASCLIN0 RX) |
-| 143 | P14.1 | BDBUS0 → R44 opt → P00.12 (ASCLIN0 TX) |
-| 144 | P14.2 | HWCFG2 |
-| 145 | P14.3 | HWCFG3 |
-| 146 | P14.4 | HWCFG6 |
-| 147 | P14.5 | HWCFG1 |
-| 148 | P14.6 | HWCFG0 |
-| 149 | P14.7 | SS_MB (mikroBUS CS) |
-| 150 | P14.8 | spare |
-| 151 | P14.9 | PWM_S2G1 |
-| 152 | P14.10 | PWM_S2G2 |
-
-#### Port 15
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 133 | P15.0 | TXD0_MB (mikroBUS TX) |
-| 134 | P15.1 | RXD0_MB (mikroBUS RX) |
-| 135 | P15.2 | TX (UART_TXD ASCLIN0.ATX0) |
-| 136 | P15.3 | RX (UART_RXD ASCLIN0.ARX0B) |
-| 137 | P15.4 | spare |
-| 138 | P15.5 | spare |
-| 139 | P15.6 | MOSI_MB (mikroBUS MOSI) |
-| 140 | P15.7 | MISO_MB (mikroBUS MISO) |
-| 141 | P15.8 | SPICLK_MB (mikroBUS SCK) |
-
-#### Ports 20 and 21
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 116 | P20.0 | TXD_S2G2 |
-| 117 | P20.1 | spare |
-| 119 | P20.3 | RXD_S2G2 |
-| 124 | P20.6 | CAN_STB |
-| 125 | P20.7 | CAN_RXD |
-| 126 | P20.8 | CAN_TXD |
-| 127 | P20.9 | → R68 opt → flash INT#/DNU |
-| 128 | P20.10 | CS_S2G2 |
-| 129 | P20.11 | SPICLK_S2G |
-| 130 | P20.12 | MISO_S2G |
-| 131 | P20.13 | CS_S2G1 |
-| 132 | P20.14 | MOSI_S2G |
-| 105 | P21.0 | spare |
-| 106 | P21.1 | spare |
-| 107 | P21.2 | MDC |
-| 108 | P21.3 | MDIO |
-| 109 | P21.4 | spare |
-| 110 | P21.5 | spare |
-
-#### Ports 22 and 23
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 95 | P22.0 | optional flash DQ0/SI + F-RAM SI |
-| 96 | P22.1 | optional flash DQ1/SO + F-RAM SO |
-| 97 | P22.2 | optional flash CS# (SLSO3 QSPI4 / SLSO12 QSPI3) |
-| 98 | P22.3 | optional flash CK + F-RAM SCK |
-| 89 | P23.0 | spare |
-| 90 | P23.1 | optional F-RAM CS (SLSO6 QSPI4 / SLSO13 QSPI3) |
-| 91 | P23.2 | spare |
-| 92 | P23.3 | spare |
-| 93 | P23.4 | RST_S2G1 |
-| 94 | P23.5 | RST_S2G2 |
-
-#### Ports 32 and 33
-
-| Pin | Signal | Board net |
-| ---: | --- | --- |
-| 86 | P32.2 | GPIO1_S2G1 |
-| 87 | P32.3 | GPIO1_S2G2 |
-| 88 | P32.4 | spare (→ X1 pin 6) |
-| 70–77 | P33.0–P33.7 | P33.7 (77) = INT_ETH |
-| 78 | P33.8 | RXD_S2G1 |
-| 79 | P33.9 | TXD_S2G1 |
-| 80–83 | P33.10–P33.13 | spare (→ X1 pins 38/4/2/... ) |
-
-#### CAN transceiver section (on CPU sheet)
-
-| Item | Mapping |
-| --- | --- |
-| Transceiver | U7 = TLE9251VSJ (TXD pin 1, RXD pin 4, STB pin 8, VIO pin 5 = VEXT, VCC pin 3 = +5 V, GND pin 2) |
-| CANH / CANL | pins 7/6 → 1×2 CAN header (`HTSW-102-07-L-S`) |
-| Termination | R15 = 120 Ω between CANH and CANL |
-| TXD | CAN_TXD from P20.8 |
-| RXD | CAN_RXD to P20.7 |
-| STB | CAN_STB from P20.6 |
-| Decoupling | C46, C47 = 100 nF |
-
-#### Hardware configuration network (HWCFG)
-
-The boot/configuration resistor network R30–R59 around `HWCFG0…HWCFG6`:
-
-| Resistor | Value | Net | Notes |
+| Section | Reference | Value / device | Notes |
 | --- | --- | --- | --- |
-| R30 | 4.7 kΩ | HWCFG0 (P14.6) | populated for TC2X5 only (TC275/TC265); NA for TC375/TC365 |
-| R31 | 4.7 kΩ | HWCFG1 (P14.5) | assembled initially (EVR33OFF) |
-| R52 | 4.7 kΩ opt | HWCFG2 (P14.2) | needed with TC2X5 if R59 assembled |
-| R53 | 4.7 kΩ opt | HWCFG3 (P14.3) | boot from BMI, TC2X5 + R59 only |
-| R54 | 4.7 kΩ opt | P10.5 (HWCFG4) | set high; with R56, not R57 |
-| R55 | 4.7 kΩ opt | P10.6 (HWCFG5) | set high; with R56, not R58 |
-| R56 | 4.7 kΩ opt | HWCFG3 (P14.3) | select boot from HWCFG4/5 |
-| R57 | 4.7 kΩ opt | P10.5 (HWCFG4) | set low; with R56, not R54 |
-| R58 | 4.7 kΩ opt | P10.6 (HWCFG5) | set low; with R56, not R55 |
-| R59 | 4.7 kΩ opt | HWCFG6 (P14.4) | GPIOs tri-state after reset |
-
----
-
-### Figure 12 — Ethernet and Memory Expansion (Sheet 5, `05_Ethernet_Memory_Expansion.SchDoc`)
-
-#### I²C EEPROM with unique MAC ID
-
-| Ref. | Device / value | Notes |
-| --- | --- | --- |
-| U9 | `MT_24AA02E48-E/OT` | VCC pin 4 = +3V3, VSS pin 2 = GND, SDA pin 3 = SDA0, SCL pin 1 = SCL0, NC pin 5 |
-| R65 | 2.2 kΩ | SDA0 pull-up |
-| R66 | 2.2 kΩ | SCL0 pull-up |
-| C61 | 100 nF | VCC bypass |
-
-#### Ethernet PHY — DP83825IRMQR (U8)
-
-PHY pin mapping:
-
-| U8 pin | Signal | MCU net |
-| ---: | --- | --- |
-| 1 | TX_EN | P11.6 |
-| 23 | TX_D0 | P11.3 |
-| 24 | TX_D1 | P11.2 |
-| 22 | CRS_DV | P11.11 |
-| 20 | RX_D0 | P11.10 |
-| 18 | RX_D1 | P11.9 |
-| 9 | RX_ER | (not routed) |
-| 2 | 50 MHz out / LED2 (CLK50) | P11.12 |
-| 4 | LED0 | R64 470 Ω |
-| 16 | MDC | P21.2 |
-| 15 | MDIO | P21.3 |
-| 3 | INTR / PWRDN | P33.7 (INT_ETH) |
-| 5 | RST_N | /ESR0 |
-| 11 / 10 | TD_P / TD_N | differential pair → RJ45 magnetics |
-| 8 / 7 | RD_P / RD_N | differential pair ← RJ45 magnetics |
-| 12 | XO | R62 0 Ω → Y3 |
-| 13 | XI / 50 MHz In | Y3 (25 MHz crystal, C59/C60 = 20 pF load caps) |
-| 14 | RBIAS | R63 6.49 kΩ/1% |
-| 6 | VDDA3V3 | R60 0 Ω from +3V3 |
-| 19 | VDDIO | R61 0 Ω from +3V3 |
-| 21, 25 | GND | ground |
-
-PHY supply decoupling networks:
-
-| Rail | C (from VCC) | C (from VDDIO) |
-| --- | --- | --- |
-| 10 µF (opt) | C51 | C55 |
-| 1 µF | C52 | C56 |
-| 100 nF | C53 | C57 |
-| 10 nF (opt) | C54 | C58 |
-
-#### Ethernet magnetics / RJ45
-
-| Ref. | Device | Notes |
-| --- | --- | --- |
-| X5 | `7499010211A` | RJ45 with integrated magnetics (TD_P/TD_N, RD_P/RD_N, SHLD1/SHLD2, center taps) |
-| Y3 | 25 MHz crystal | PHY clock (XI/XO), C59/C60 = 20 pF load caps |
-| L4 | BLM18PG600SN1D | Ferrite bead on supply to magnetics |
-| C62, C63 | 10 nF | magnetics / center-tap decoupling |
-
-#### Optional external serial flash (U10)
-
-Semper S25HL / S35HL, SOIC-16:
-
-| U10 pin | Signal | Net |
-| ---: | --- | --- |
-| 1 | RESET# | /ESR0 via R67 (0 Ω opt) |
-| 2 | VCC | +3V3 (C64 100 nF opt) |
-| 7 | CS# | P22.2 |
-| 8 | DQ1/SO | P22.1 |
-| 9 | DQ2/WP# | (WP — not used) |
-| 10 | VSS | GND |
-| 13 | INT#/DNU | P20.9 via R68 (0 Ω opt) |
-| 15 | DQ0/SI | P22.0 |
-| 16 | CK | P22.3 |
-| — | DQ3/RESET# | (not used) |
-
-#### Optional external serial F-RAM (U11)
-
-FM25VN10-G / CY15B, SOIC-8 (SO8-150):
-
-| U11 pin | Signal | Net |
-| ---: | --- | --- |
-| 1 | CS | P23.1 |
-| 2 | SO | P22.1 |
-| 3 | WP | not connected (check datasheet for internal pull-up) |
-| 4 | VSS | GND |
-| 5 | SI | P22.0 |
-| 6 | SCK | P22.3 |
-| 7 | HOLD | not connected (check datasheet for internal pull-up) |
-| 8 | VDD | +3V3 (C65 100 nF opt) |
-
-> **[Source typo corrected]** The original Rev. 2.2 prose names `R67` twice; Figure 12 shows R67 → RESET#/ESR0 and R68 → INT#/P20.9 as separate 0 Ω option resistors.
-
----
+| I²C EEPROM | U9 | `MT_24AA02E48-E/OT` | Unique MAC ID; SDA0/SCL0; +3V3; C61 100 nF; R65/R66 2.2 kΩ |
+| Ethernet PHY | U8 | DP83825IRMQR | 10/100 Base-T, RMII |
+| | Y3 | 25 MHz crystal | C59/C60 = 20 pF load caps |
+| | X5 | `7499010211A` | RJ45 with integrated magnetics |
+| | L4 | BLM18PG600SN1D | Ferrite bead |
+| | R63 | 6.49 kΩ/1% | RBIAS |
+| | R64 | 470 Ω | LED0 |
+| | R60, R61 | 0 Ω | Power routing (VDDA3V3, VDDIO) |
+| | R62 | 0 Ω | XO routing |
+| | C51–C54 | 10 µF opt / 1 µF / 100 nF / 10 nF opt | VDDA3V3 decoupling |
+| | C55–C58 | 10 µF opt / 1 µF / 100 nF / 10 nF opt | VDDIO decoupling |
+| | C62, C63 | 10 nF | Magnetics/RJ45 |
+| PHY nets | | TX_D0 (P11.3), TX_D1 (P11.2), TX_EN (P11.6), RX_D0 (P11.10), RX_D1 (P11.9), CRS_DV (P11.11), CLK50 (P11.12), MDC (P21.2), MDIO (P21.3), INT_ETH (P33.7), RST_N (/ESR0) | Differential pairs TD_P/TD_N, RD_P/RD_N |
+| Optional flash | U10 | Semper S25HL / S35HL, SOIC-16 | `CS#` P22.2, `CK` P22.3, `DQ0/SI` P22.0, `DQ1/SO` P22.1, `DQ2/WP#`, `DQ3/RESET#`; R67 (0 Ω) RESET# → /ESR0; R68 (0 Ω opt) INT#/DNU → P20.9; C64 100 nF opt |
+| Optional F-RAM | U11 | FM25VN10-G / CY15B, SOIC-8 (SO8-150) | `CS` P23.1, `SCK` P22.3, `SI` P22.0, `SO` P22.1; #WP/#HOLD unconnected; C65 100 nF opt |
 
 ### Figure 13 — Placement, Top View
 
-The top-placement drawing identifies the physical locations of essentially every populated component.
-
-#### Major physical landmarks
-
-- **U6** (AURIX MCU) central; **IC1** (FT2232HL) in the miniWiggler area; **U1–U5** (buffers, level shifters, FTDI EEPROM) around IC1.
-- **U7** CAN transceiver, **U8** Ethernet PHY, **U9** I²C EEPROM.
-- **X1 / X2** headers along the long edges; **X301–X304** Arduino headers; **X3** DC jack; **X4** Micro-USB; **X5** RJ45 (with CANL/CANH header beside it); **DAP** 10-pin connector.
-- **Shield2Go S2G1 / S2G2** with **mikroBUS** between them.
-- **LED1, LED2** (P00.5/P00.6), **LED3** (ESR0, with R24), **LED4** (power), **LED5/LED6** (miniWiggler ACT/RUN, with R1/R2).
-- **Reset button** (R26, C45) and **Button1** (P00.7, R20, C22).
-- **R32** potentiometer (AN0, with R33, C26, C28).
-
-#### Component reference regions
-
-- **R1–R29** — debug/power/LED areas (e.g. R10, R14, R16, R18, R19, R20, R21, R23, R24, R25, R26, R28, R29).
-- **R30–R45** — configuration region (R30–R31 populated; R33, R37; R44/R45 optional) plus R32, R34, R35, R36, R38, R39.
-- **R52–R59** — configuration-resistor region (HWCFG network).
-- **R60–R66** — Ethernet-support region (R60/R61 0 Ω, R62 0 Ω, R63 6.49 kΩ, R64 470 Ω, R65/R66 2.2 kΩ).
-- **R67/R68** — memory-expansion option resistors (flash RESET#/INT#).
-- **C1–C65** — decoupling/filtering components (C1–C21, C100 miniWiggler; C22–C50 power/reset/analog/oscillator; C51–C65 Ethernet/memory).
-- **Y1** (12 MHz), **Y2** (20 MHz), **Y3** (25 MHz).
-- **L1–L4** — L1/L2 ferrite beads (miniWiggler), L3 core inductor, L4 Ethernet ferrite.
-- **Q1** power MOSFET, **D1/D2** Schottky diodes, **D5** power diode.
-- **G1/G2** LDOs, **TP1/TP2** test points.
-- **R106, C100** — USB/shield circuitry (near X4).
-
-Board silkscreen marks: `www.infineon.com/AURIX-Lite-Kit`, `AURIX Lite Kit V2`, `TC375 / TC365 / TC275 / TC265`, `ESR0`, `POWER`, `USB3.0 (900mA)`.
-
----
+Component placement landmarks: U6 (AURIX MCU, center), IC1 (FT2232HL, miniWiggler), U1–U5 (buffers/level shifters/EEPROM), U7 (CAN transceiver), U8 (Ethernet PHY), U9 (I²C EEPROM), X1/X2 headers, X301–X304 (Arduino), X3 (DC), X4 (USB), X5 (RJ45), DAP connector, Shield2Go S2G1/S2G2, mikroBUS, LED1–LED6, Reset button, Button1, R32 potentiometer, G1/G2 LDOs, D1/D2 diodes, Q1 MOSFET, L1–L3, Y1/Y2 crystals, and the config-resistor regions R30–R45 / R52–R59.
 
 ### Figure 14 — Placement, Bottom View
 
-The bottom drawing reproduces the board's silkscreen pin tables and the optional-memory footprints.
-
-#### X1 silkscreen matrix (as printed on PCB bottom)
-
-| Pin | Signal | | Pin | Signal |
-| ---: | --- | --- | ---: | --- |
-| 1 | +3V3 | | 2 | GND |
-| 3 | P33.12 | | 4 | P33.11 |
-| 5 | P32.4 | | 6 | P33.13 |
-| 7 | P23.0 | | 8 | P23.1 |
-| 9 | P23.2 | | 10 | P23.3 |
-| 11 | RST_S2G1 | | 12 | RST_S2G2 |
-| 13 | P22.0 | | 14 | P22.1 |
-| 15 | P22.2 | | 16 | P21.0 |
-| 17 | P22.3 | | 18 | P21.2 |
-| 19 | P21.3 | | 20 | P21.4 |
-| 21 | P21.5 | | 22 | SPICLK_S2G |
-| 23 | P20.1 | | 24 | TXD2_S2G2 |
-| 25 | /ESR1 | | 26 | RXD2_S2G2 |
-| 27 | MOSI_S2G | | 28 | /ESR0 |
-| 29 | /PORST | | 30 | P15.5 |
-| 31 | P11.12 | | 32 | P15.4 |
-| 33 | P11.10 | | 34 | P11.11 |
-| 35 | P11.6 | | 36 | P11.9 |
-| 37 | P11.6* | | 38 | P11.3 |
-| 39 | GND | | 40 | VDD_USB |
-
-> *May be printed wrongly as **P11.6**; the correct signal is **P11.2** (TX_D1).
-
-#### X2 silkscreen matrix (as printed on PCB bottom)
-
-| Pin | Signal | | Pin | Signal |
-| ---: | --- | --- | ---: | --- |
-| 1 | +3V3 | | 2 | GND |
-| 3 | TXD1_S2G1 | | 4 | P33.10 |
-| 5 | SCL0 | | 6 | P33.7 |
-| 7 | SDA0 | | 8 | P33.5 |
-| 9 | VAREF | | 10 | P33.3 |
-| 11 | GND | | 12 | P33.1 |
-| 13 | SPICLK | | 14 | AN0 |
-| 15 | MISO | | 16 | AN2 |
-| 17 | MOSI | | 18 | AN4 |
-| 19 | P10.5 | | 20 | AN6 |
-| 21 | P02.7 | | 22 | AN44 |
-| 23 | P02.6 | | 24 | AN46 |
-| 25 | P02.4 | | 26 | VAREF1 |
-| 27 | P02.5 | | 28 | P00.12 |
-| 29 | P02.3 | | 30 | P00.10 |
-| 31 | P10.4 | | 32 | P00.8 |
-| 33 | P02.1 | | 34 | P00.6 |
-| 35 | P02.0 | | 36 | P00.2 |
-| 37 | TX | | 38 | P00.0 |
-| 39 | RX | | 40 | GND |
-
-#### Arduino labels (bottom silkscreen)
-
-- **POWER** (X302): `VEXT`, `/PORST`, `+3V3`, `+5V`, `GND`, `GND`, `VIN`.
-- **ANALOG IN** (X301): `AN24`, `AN25`, `AN36`, `AN37`, `AN38`, `AN39`.
-- **DIGITAL** (X303/X304): `P02.4–P02.0`, `P10.4`, `P02.1`, `P02.0`, `TX`, `RX`.
-
-#### Other bottom-side markings
-
-- Shield2Go 1/2 and mikroBUS pin names (S2G1, S2G2, mikroBUS silkscreen tables).
-- Optional **U10** flash and **U11** F-RAM footprints with C64/R67/R68 and C65 respectively.
-- `USB3.0 (900mA)` recommendation marking.
-- `www.infineon.com/AURIX-Lite-Kit`.
+Bottom-side silkscreen: X1/X2 pin tables (reproduced in §4.1), Arduino `DIGITAL` / `ANALOG IN` / `POWER` labels, Shield2Go 1/2 and mikroBUS pin names, optional U10 flash and U11 F-RAM footprints, `USB3.0 (900 mA)` marking, and the power/reference labels (`VIN`, `+5V`, `+3V3`, `VDD_USB`, `GND`, `VAREF`).
 
 > **Important silkscreen correction:** A location on the X1 silkscreen may be printed wrongly as **P11.6**; the correct signal is **P11.2**. Use the signal mapping in §4.1 rather than relying solely on the affected PCB silkscreen.
 
 ---
 
-## Added Practical Summary — not part of the original document
-
-The following quick-reference bullet list is a condensed aid added by the transcriber; it is **not** part of the Infineon manual.
+## Practical Quick Reference
 
 - **First power-up:** use X4 (USB) or a regulated DC source on X3 (7–14 V recommended); verify green LED4 (3.3 V present); do not inject another supply into `VEXT`, `+5V`, `+3V3`, or `VDD_USB` while USB/DC is present; treat all logic I/O as 3.3 V.
 - **First debug:** install current Infineon DAS; connect X4; LED5 indicates active miniWiggler/DAS connection; do not simultaneously drive the DAP connector while the miniWiggler is active.
