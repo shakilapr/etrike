@@ -145,6 +145,8 @@ rt-aurix-lite/board/**/Service/
 rt-aurix-lite/board/.settings/
 rt-aurix-lite/board/.cproject
 rt-aurix-lite/board/.project
+# Headless board build output.
+rt-aurix-lite/board/port/build/
 
 # ── Personal daily diary (not for sync) ──────────────────────────────
 daily-diary.md
