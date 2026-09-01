@@ -71,4 +71,32 @@ foreach ($s in $cpp_srcs) {
   Write-Host "  OK: $name"
 }
 
+# ── 3. Board HAL over iLLD (C++, uses iLLD CAN/Port/Stm) ─────────────
+Write-Host "== Board HAL (aurix_hal.cpp) =="
+$hal_incs = @(
+  "-I$lib\iLLD\TC3xx\Tricore",
+  "-I$lib\iLLD\TC3xx\Tricore\Can\Std",
+  "-I$lib\iLLD\TC3xx\Tricore\Can\Can",
+  "-I$lib\iLLD\TC3xx\Tricore\Port\Std",
+  "-I$lib\iLLD\TC3xx\Tricore\Stm\Std",
+  "-I$lib\iLLD\TC3xx\Tricore\Cpu\Std",
+  "-I$lib\iLLD\TC3xx\Tricore\Scu\Std",
+  "-I$lib\Infra\Sfr\TC37x",
+  "-I$lib\Infra\Platform",
+  "-I$lib\Service\CpuGeneric",
+  "-I$lib\iLLD\TC3xx\Tricore\_PinMap",
+  "-I$lib\iLLD\TC3xx\Tricore\_PinMap\TC37x",
+  "-I$cfg",
+  "-I$root",
+  "-I$src",
+  "-I$gen",
+  "-I$repo\shared",
+  "-I$repo"
+)
+& $gxx @("-mcpu=tc38xx","-std=gnu++17","-c","-Wall","-fno-exceptions","-fno-rtti","-Wno-register") `
+       @hal_incs `
+       "$board\hal_aurix\aurix_hal.cpp" "-o" "$out\aurix_hal.o"
+if ($LASTEXITCODE -ne 0) { throw "Board HAL compile failed" }
+Write-Host "  OK: aurix_hal.o"
+
 Write-Host "`nBuild OK. Artifacts in $out"

@@ -145,6 +145,7 @@ rt-aurix-lite/board/**/Service/
 rt-aurix-lite/board/.settings/
 rt-aurix-lite/board/.cproject
 rt-aurix-lite/board/.project
+rt-aurix-lite/.metadata/
 # Headless board build output.
 rt-aurix-lite/board/port/build/
 
