@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?fileVersion 4.0.0?>
+<cproject storage_type_id="org.eclipse.cdt.core.XmlProjectDescriptionStorage">
+	<storageModule moduleId="org.eclipse.cdt.core.settings">
+		<cconfiguration id="com.infineon.aurix.buildsystem.managed.external.gcc.builtin.configuration.debug">
+			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.infineon.aurix.buildsystem.managed.external.gcc.builtin.configuration.debug" moduleId="org.eclipse.cdt.core.settings" name="TriCore Debug (GCC)">
+				<externalSettings/>
+				<extensions>
+					<extension id="org.eclipse.cdt.core.ELF" point="org.eclipse.cdt.core.BinaryParser"/>
+					<extension id="org.eclipse.cdt.core.GmakeErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GCCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.ASMErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GASErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+				</extensions>
+			</storageModule>
+			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+				<configuration artifactExtension="elf" artifactName="rt-aurix-lite" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.debug" cleanCommand="rm -rf" description="" errorParsers="org.eclipse.cdt.core.GmakeErrorParser;org.eclipse.cdt.core.GCCErrorParser;org.eclipse.cdt.core.ASMErrorParser;org.eclipse.cdt.core.GASErrorParser" id="com.infineon.aurix.buildsystem.managed.external.gcc.builtin.configuration.debug" name="TriCore Debug (GCC)" parent="org.eclipse.cdt.build.core.prefbase.cfg" postbuildStep="" prebuildStep="" projectName="rt-aurix-lite">
+					<folderInfo id="com.infineon.aurix.buildsystem.managed.external.gcc.builtin.configuration.debug." name="/" resourcePath="">
+						<toolChain id="com.infineon.aurix.buildsystem.managed.toolchain.gcc" name="Infineon AURIX (GCC)" superClass="com.infineon.aurix.buildsystem.managed.toolchain.gcc" supportsManagedBuild="true" supportsRestrictedBuild="true" targetPlatform="tricore">
+							<option id="com.infineon.aurix.buildsystem.managed.gcc.c.option.mtc" name="Architecture" superClass="com.infineon.aurix.buildsystem.managed.gcc.c.option.mtc" useByScannerDiscovery="false" value="tc38xx" valueType="string"/>
+							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="com.infineon.aurix.buildsystem.managed.platform.gcc" isAbstract="false" name="tricore" osList="all" superClass="com.infineon.aurix.buildsystem.managed.platform.gcc"/>
+							<builder buildPath="${workspace_loc:/rt-aurix-lite}/Debug" id="com.infineon.aurix.buildsystem.managed.builder.gcc" keepEnvironmentInBuildfile="false" name="GNU Make Builder" superClass="com.infineon.aurix.buildsystem.managed.builder.gcc"/>
+							<tool id="com.infineon.aurix.buildsystem.managed.tool.c.compiler" name="GCC C Compiler" superClass="com.infineon.aurix.buildsystem.managed.tool.c.compiler">
+								<option id="com.infineon.aurix.buildsystem.managed.tool.c.compiler.option.optimization.level" name="Optimization Level" superClass="com.infineon.aurix.buildsystem.managed.tool.c.compiler.option.optimization.level" value="gnu.c.optimization.level.debug" valueType="enumerated"/>
+								<option id="com.infineon.aurix.buildsystem.managed.tool.c.compiler.option.debugging.other" name="Debugging" superClass="com.infineon.aurix.buildsystem.managed.tool.c.compiler.option.debugging.other" useByScannerDiscovery="false" value="-gdwarf-3" valueType="string"/>
+								<option id="gnu.c.compiler.option.include.paths" name="Include Paths" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}}/Libraries&quot;"/>
+								</option>
+							</tool>
+							<tool id="com.infineon.aurix.buildsystem.managed.tool.cpp.compiler" name="GCC C++ Compiler" superClass="com.infineon.aurix.buildsystem.managed.tool.cpp.compiler">
+								<option id="com.infineon.aurix.buildsystem.managed.tool.cpp.compiler.option.optimization.level" name="Optimization Level" superClass="com.infineon.aurix.buildsystem.managed.tool.cpp.compiler.option.optimization.level" value="gnu.cpp.compiler.optimization.level.debug" valueType="enumerated"/>
+								<option id="com.infineon.aurix.buildsystem.managed.tool.cpp.compiler.option.debugging.other" name="Debugging" superClass="com.infineon.aurix.buildsystem.managed.tool.cpp.compiler.option.debugging.other" useByScannerDiscovery="false" value="-gdwarf-3" valueType="string"/>
+								<option id="gnu.cpp.compiler.option.include.paths" name="Include Paths" superClass="gnu.cpp.compiler.option.include.paths" useByScannerDiscovery="false">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}}/Libraries&quot;"/>
+								</option>
+							</tool>
+							<tool id="com.infineon.aurix.buildsystem.managed.tool.assembler" name="GCC Assembler" superClass="com.infineon.aurix.buildsystem.managed.tool.assembler"/>
+							<tool id="com.infineon.aurix.buildsystem.managed.tool.c.linker" name="GCC C Linker" superClass="com.infineon.aurix.buildsystem.managed.tool.c.linker">
+								<option id="com.infineon.aurix.buildsystem.managed.gcc.c.linker.option.linkerScript" name="Linker Script" superClass="com.infineon.aurix.buildsystem.managed.gcc.c.linker.option.linkerScript" value="&quot;${workspace_loc:/${ProjName}}/Lcf_Gnuc_Tricore_Tc.lsl&quot;" valueType="string"/>
+							</tool>
+							<tool id="com.infineon.aurix.buildsystem.managed.tool.cpp.linker" name="GCC C++ Linker" superClass="com.infineon.aurix.buildsystem.managed.tool.cpp.linker"/>
+							<tool id="com.infineon.aurix.buildsystem.managed.tool.archiver" name="GCC Archiver" superClass="com.infineon.aurix.buildsystem.managed.tool.archiver"/>
+						</toolChain>
+					</folderInfo>
+					<sourceEntries>
+						<entry excluding="Libraries|port/build|.metadata|Configurations" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name=""/>
+					</sourceEntries>
+				</configuration>
+			</storageModule>
+		</cconfiguration>
+	</storageModule>
+	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+		<project id="com.infineon.aurix.buildsystem.managed.external.gcc.builtin.configuration.debug" name="rt-aurix-lite"/>
+	</storageModule>
+	<storageModule moduleId="scannerConfiguration">
+		<autodiscovery enabled="true" problemReportingEnabled="false" selectedProfileId="org.eclipse.cdt.core.defaultGCCProfile"/>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
+	<storageModule moduleId="refreshScope"/>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
+</cproject>
