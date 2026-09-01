@@ -134,6 +134,18 @@ Release/
 Libraries/.ads/
 .ads/
 
+# ── AURIX Lite (KIT_A2G_TC375_LITE) IDE / iLLD ────────────────────
+# The iLLD is large and IDE-extracted (new-project wizard); keep it out.
+rt-aurix-lite/board/Libraries/
+rt-aurix-lite/board/**/iLLD/
+rt-aurix-lite/board/**/Infra/
+rt-aurix-lite/board/**/Service/
+# ADS project-generated config is machine-specific; the portable glue in
+# rt-aurix-lite/board/ (board_pins.h, hal_aurix/, main.cpp, README.md) is tracked.
+rt-aurix-lite/board/.settings/
+rt-aurix-lite/board/.cproject
+rt-aurix-lite/board/.project
+
 # ── Personal daily diary (not for sync) ──────────────────────────────
 daily-diary.md
 

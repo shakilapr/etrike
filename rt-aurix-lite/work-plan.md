@@ -173,19 +173,24 @@ functions the future runtime will call.
 ## TARGET GATE (deferred — toolchain + iLLD required)
 
 Prerequisite: install a TriCore toolchain + TC375 iLLD (or AURIX Development Studio).
+**Status (2026-09-01): AURIX Studio 1.10.36 installed at `E:\Infineon\AURIX-Studio-1.10.36`
+(HighTec `tricore-gcc11` + TASKING compilers, TC37A iLLD 1.20.0, TC375LK template). DAS
+driver still needs its bundled installer run (see `board/README.md`).**
 
 ### D0. ADS/iLLD walking skeleton
 - Minimal project: clock init, port init, LED or UART blinky, on-board CAN0 loopback.
-- Freeze the exact MCMCAN module/node for CAN_LOW (`P20.7/P20.8`) and CAN_HIGH
-  (`P15.0/P15.1` TXCAN2/RXCAN2) + iLLD `IfxCan_*Pin` symbols.
+- Freeze the exact MCMCAN module/node: **CAN_LOW = CAN0 Node 0** (`P20.8` alt5 TX,
+  `P20.7` RxSel_b RX), **CAN_HIGH = CAN0 Node 2** (`P15.0` alt5 TX, `P15.1` RxSel_a RX)
+  — from iLLD `IfxCan_PinMap_TC37x_LQFP176` (done, in `architecture.md` §9.1).
 
 ### D1. Multicore startup
 - CPU0 boot + CPU1/CPU2 bring-up; verify per-core execution (lockstep cores CPU0/CPU1,
   non-lockstep CPU2).
 
 ### D2. Real CAN_LOW / CAN_HIGH
-- On-board TLE9251VSJ on CAN_LOW; external transceiver (part per architecture §9.1.2) on
-  CAN_HIGH. Verify TX/RX at 500 kbit/s, standby handling, termination.
+- On-board TLE9251VSJ on CAN_LOW (CAN0 Node 0); external transceiver (part per
+  architecture §9.1.2) on CAN_HIGH (CAN0 Node 2). Verify TX/RX at 500 kbit/s, standby
+  handling, termination.
 
 ### D3. LMU + barriers + SRI + MPU/SMU
 - Shared-memory placement (LMU/DLMU), alignment, publication ordering, **DSYNC**/compiler
