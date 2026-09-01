@@ -406,10 +406,18 @@ for this design; verify alternate functions against the TC375 datasheet.
 
 ### 9.1 CAN
 
-The exact MCU has **2 MCMCAN modules × 4 CAN nodes each (8 nodes total)**. The on-board
-Lite Kit transceiver is on **CAN node 0** (`P20.7`/`P20.8`, `P20.6` standby). The exact
-MCMCAN module/node for **both** buses, and the iLLD `IfxCan_*Pin` symbols, are confirmed
-during ADS/iLLD bring-up — `MCMCAN0`/`MCMCAN1` module indices are not assumed here.
+The exact MCU has **2 MCMCAN modules × 4 CAN nodes each (8 nodes total)**. The module/node
+assignments are now **frozen from the iLLD `IfxCan_PinMap_TC37x_LQFP176`**:
+
+| Bus | Module | Node | TX | RX |
+|-----|--------|------|----|----|
+| CAN_LOW | CAN0 | Node 0 | `IfxCan_TXD00_P20_8_OUT` (P20.8, alt5) | `IfxCan_RXD00B_P20_7_IN` (P20.7, RxSel_b) |
+| CAN_HIGH | CAN0 | Node 2 | `IfxCan_TXD02_P15_0_OUT` (P15.0, alt5) | `IfxCan_RXD02A_P15_1_IN` (P15.1, RxSel_a) |
+
+The on-board Lite Kit transceiver is on **CAN0 Node 0** (`P20.7`/`P20.8`, `P20.6` standby).
+The high bus uses **CAN0 Node 2** on `P15.0`/`P15.1` (TXCAN2/RXCAN2), exposed on mikroBUS
+13/14. The `IfxCan_*Pin` symbols are taken from the iLLD `IfxCan_PinMap_TC37x_LQFP176`
+(LQFP-176 = TC375 package).
 
 | Bus | TX | RX | Standby | Transceiver | Status |
 |-----|----|----|---------|-------------|--------|
@@ -425,8 +433,8 @@ CAN_HIGH property certainty (split per-property rather than one row-level status
 | RX pin | `P15.1` / RXCAN2 | DATASHEET-VERIFIED |
 | Connector | mikroBUS pin 13 (TX) / pin 14 (RX) | BOARD-VERIFIED |
 | Intended use | high-level CAN (Jetson) | DESIGN-SELECTED |
-| MCMCAN module/node | TBD (2×MCMCAN, 4 nodes each) | BRING-UP-TBD |
-| iLLD `IfxCan_*Pin` symbols | TBD | BRING-UP-TBD |
+| MCMCAN module/node | **CAN0 Node 2** (`IfxCan_TXD02_P15_0_OUT` / `IfxCan_RXD02A_P15_1_IN`) | DATASHEET-VERIFIED (iLLD pinmap) |
+| iLLD `IfxCan_*Pin` symbols | `IfxCan_TXD02_P15_0_OUT`, `IfxCan_RXD02A_P15_1_IN` | DATASHEET-VERIFIED |
 
 > **CAN_HIGH pins:** the TC37x datasheet assigns TXCAN2/RXCAN2 to P15.0/P15.1, which the
 > Lite Kit V2 exposes on the mikroBUS TX/RX pins (13/14). The prior proposal
