@@ -1,94 +1,46 @@
 #pragma once
-// MTR STM32 — Motor controller configuration.
-// CAN protocol definitions come from the canonical root protocol.
-// Vehicle-wide constants are in shared/shared_config.h (namespace shared).
-// Dedicated motor actuation: throttle DAC, gear MOSFETs, ADC, TLP281 sense.
-// ESTOP wired direct — cuts throttle/gear locally, no CAN dependency.
-//
-// Pin encoding: (port_number * 16 + pin_number)
-//   0-15  = PORTA (PA0-PA15)
-//   16-31 = PORTB (PB0-PB15)
-//   32-47 = PORTC (PC0-PC15)
-// Helper macros GPIO_PORT(p) and GPIO_PIN(p) are defined in the HAL support
-// header; implementation files use these to map to STM32 HAL calls.
+// MTR STM32G431 — Hardware & Timing Configuration
+// Pinout strictly preserves mtr-stm/architecture.md §6 and physical wiring specs.
 
 #include <cstdint>
+#include "protocol/compat/can.hpp"
 #include "shared_config.h"
-#ifndef TESTING
-#include "protocol/generated/cpp/etrike_protocol.hpp"
 
 namespace mtr {
 
-namespace messages = etrike::protocol::generated;
+// ── CAN Bus (FDCAN1 Classic CAN @ 500 kbit/s) ──────────────────────
+constexpr int kCanBitrateHz = 500'000;
+// PA11: FDCAN1_RX (AF9)
+// PA12: FDCAN1_TX (AF9)
 
-enum class Mode : uint8_t {
-    Manual = messages::RtStateRpt::kModeManual,
-    Auto = messages::RtStateRpt::kModeAuto,
-    Estop = messages::RtStateRpt::kModeEstop,
-};
+// ── Relay Control Outputs (Active-Low) ─────────────────────────────
+// Active-Low: GPIO RESET = Relay ON (Energized), GPIO SET = Relay OFF (De-energized)
+constexpr uint16_t kRelayRevPin      = 0x0001;  // PA0: Mode Reverse Relay
+constexpr uint16_t kRelayDrivePin    = 0x0004;  // PA2: Mode Drive Relay
+constexpr uint16_t kRelayIgnitionPin = 0x0010;  // PA4: Ignition Relay
 
-enum class Gear : uint8_t {
-    N = messages::RtDriveCmd::kGearN,
-    D = messages::RtDriveCmd::kGearD,
-    S = messages::RtDriveCmd::kGearS,
-    R = messages::RtDriveCmd::kGearR,
-};
+// ── Software I2C Pins for MCP4725 DAC ──────────────────────────────
+constexpr uint16_t kI2cSclPin        = 0x0020;  // PA5: I2C Clock (Open-drain)
+constexpr uint16_t kI2cSdaPin        = 0x0080;  // PA7: I2C Data (Open-drain)
 
-#else
-// Stubs for native testing where the host GCC is too old for C++17 inline variables
-namespace mtr {
-enum class Mode : uint8_t {
-    Manual = 0,
-    Auto = 1,
-    Estop = 2,
-};
-enum class Gear : uint8_t {
-    N = 0,
-    D = 1,
-    S = 2,
-    R = 3,
-};
-#endif
+// ── Status LED ─────────────────────────────────────────────────────
+constexpr uint16_t kLedPin           = 0x0040;  // PC6: Status LED (Active-Low)
 
-// ── Throttle — MCP4725 I2C DAC (0-5V) + ADC read ─────────────────
-constexpr int      kThrottleI2cSda      = 7;    // PA7 (0*16+7) — SW I2C SDA
-constexpr int      kThrottleI2cScl      = 5;    // PA5 (0*16+5) — SW I2C SCL
-constexpr uint8_t  kThrottleDacI2cAddr  = 0x61; // MCP4725, A0 tied to VCC
-constexpr unsigned kThrottleDeadZone    = 200;   // raw ADC counts
-constexpr int      kThrottleMaxSpeedMmps= 3000;
-constexpr int      kThrottleDacMaxVal   = 4095;  // 12-bit DAC
+// ── MCP4725 DAC Limits (at 5.0 V VCC reference) ───────────────────
+// 0.8 V -> Code 655
+// 2.4 V -> Code 1966 (Safety limit)
+constexpr uint16_t kDacMinCode       =  655;
+constexpr uint16_t kDacMaxCode       = 1966;
+constexpr uint16_t kDacZeroCode      =    0;  // 0.0 V output
 
-// ── Gear — Logic Decoder (74HC139 or similar) ───────────────────────
-constexpr int kGearDecA    = 0;   // PA0 — Decoder input A
-constexpr int kGearDecB    = 1;   // PA1 — Decoder input B
-constexpr int kGearDecEn   = 16;  // PB0 — Decoder enable (active-low)
+// Speed scaling
+constexpr int32_t  kMaxForwardSpeedMmps = 3000; // 3.0 m/s maximum speed setpoint
+constexpr int32_t  kMaxReverseSpeedMmps =  500; // 0.5 m/s maximum reverse setpoint
 
-// ── ESTOP — direct-wired from dashboard button ────────────────────
-// NC (normally-closed), active-low, pull-up.
-// When button is pressed, GPIO goes LOW.
-// Shared with SYS GPIO1 (separate MCU, different physical pin).
-
-// ── Timing ────────────────────────────────────────────────────────
-constexpr int kControlLoopHz       = 100;   // 10 ms — main motor control
-constexpr int kSafetyCheckHz       = 20;    // ESTOP GPIO + staleness
-constexpr int kCanTxLoopHz         = 100;   // base rate for CAN TX task
-
-// ── Timeouts ──────────────────────────────────────────────────────
-#ifndef TESTING
-constexpr int kCmdStaleTimeoutMs   = messages::RtDriveCmd::kCycleMs * 5;
-#else
-constexpr int kCmdStaleTimeoutMs   = 10 * 5;
-#endif
-
-constexpr int kStartupGracePeriodMs = 3000; // mask checks at boot
-
-// ── Gear safety ───────────────────────────────────────────────────
-constexpr int kGearSwitchMaxSpeedMmps = 50;  // max speed for safe gear change (mm/s)
-
-// ── Fault flags (bit positions in 0x206 fault_flags byte) ─────────
-// Gap #15: Canonical definitions in shared/shared_config.h (shared::kMtrFault*).
-// Local aliases retained for MTR code compatibility.
-constexpr uint8_t kFaultEstopActive   = shared::kMtrFaultEstopActive;
-constexpr uint8_t kFaultCmdTimeout    = shared::kMtrFaultCmdTimeout;
+// ── Timing & Rates ────────────────────────────────────────────────
+constexpr uint32_t kWatchdogTimeoutMs =  500;  // 500 ms allowed CAN silence before shutdown
+constexpr uint32_t kFeedbackPeriodMs  =   20;  // 50 Hz for 0x206 MTR_MOTOR_FBK
+constexpr uint32_t kThrottlePeriodMs  =   10;  // 100 Hz for 0x120 SYS_THROTTLE_STS
+constexpr uint32_t kMainLoopPeriodMs  =    5;  // 5 ms main loop evaluation
 
 }  // namespace mtr

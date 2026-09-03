@@ -1,491 +1,122 @@
-/* MTR STM32 — Motor Controller Firmware
- *
- * EGAS Level 1: Function Controller
- * Dedicated STM32 board that owns all motor-related I/O:
- *   - MCP4725 I2C DAC (0-5V throttle output)
- *   - ADC (throttle grip position, 0-5V)
- *   - TLP281 optoisolator inputs (72V gear sense, active-low)
- *   - MOSFET outputs (72V gear control)
- *   - ESTOP button GPIO (Level 3 — direct hardware kill, also monitored)
- *   - CAN (low-level bus, bxCAN)
- *
- * FreeRTOS tasks:
- *   Pri 5  task_can_rx    — CAN receive, event-driven
- *   Pri 5  task_safety    — ESTOP GPIO monitor, 0x204 staleness (20 Hz)
- *   Pri 4  task_control   — Main motor control loop (100 Hz)
- *   Pri 3  task_can_tx    — CAN 0x120 @ 100Hz, 0x206 @ 50Hz
- *
- * Cross-task state uses std::atomic (lock-free, no mutexes).
- * Per architecture design principle #1: "Queues over shared state."
- * CAN frames flow through queues; actuation state is atomic.
- */
+// MTR STM32G431 — Main Application Entry Point (C++17)
+// Dual-workflow support: STM32CubeIDE (GUI) & PlatformIO (CLI)
 
-#include <cstdint>
-#include <atomic>
-
-/* STM32 HAL */
-#include "stm32g4xx_hal.h"
-
-/* FreeRTOS */
-#include "FreeRTOS.h"
-#include "task.h"
-
-/* Canonical protocol */
-#include "protocol/generated/cpp/etrike_protocol.hpp"
-
-/* MTR module headers */
+#include "main.h"
 #include "config.h"
 #include "can_driver.h"
-#include "mcp4725_dac.h"
-#include "throttle_input.h"
-#include "gear_control.h"
+#include "relay_controller.h"
+#include "dac_controller.h"
+#include "motor_manager.h"
 
-/* ── CubeMX-generated stubs — replace with generated code ──────────── */
-/* When STM32CubeMX project is configured, these externs link to the   */
-/* generated main.c. Until then, stubs satisfy the linker for CI.       */
-namespace mtr {
-FDCAN_HandleTypeDef hfdcan1 = {};
-ADC_HandleTypeDef  hadc1 = {};
-}
+// Subsystem singletons
+static mtr::CanDriver       g_can;
+static mtr::RelayController g_relays;
+static mtr::DacController   g_dac;
+static mtr::MotorManager    g_motor(g_relays, g_dac);
 
-/* ── Cross-task state (std::atomic, lock-free) ────────────────────── */
+// Peripheral handles required by HAL interrupt vectors
+extern "C" FDCAN_HandleTypeDef hfdcan1;
 
-/// Current system mode (written by task_can_rx from 0x110).
-std::atomic<mtr::Mode> g_mode{mtr::Mode::Manual};
+// Forward declaration of system clock setup
+extern "C" void SystemClock_Config(void);
 
-/// ESTOP active flag: set by task_can_rx (0x001) or task_safety (GPIO).
-std::atomic<bool> g_estop_active{false};
-
-/// Command speed from CAN 0x204 (written by task_can_rx).
-std::atomic<int32_t> g_cmd_speed_mmps{0};
-
-/// Command gear from CAN 0x204 (written by task_can_rx).
-std::atomic<uint8_t> g_cmd_gear{0};
-
-/// Timestamp of last CAN 0x204 in FreeRTOS ticks (written by task_can_rx).
-std::atomic<uint32_t> g_last_cmd_tick{0};
-std::atomic<uint8_t> g_cmd_fresh_streak{0};
-
-/// Actual speed in mm/s (written by task_control, read by task_can_tx).
-std::atomic<int16_t> g_actual_speed_mmps{0};
-
-/// Current gear state (written by task_control, read by task_can_tx).
-std::atomic<uint8_t> g_current_gear{0};
-
-/// Fault flags byte for 0x206 (written by task_control + task_safety).
-std::atomic<uint8_t> g_fault_flags{0};
-
-/// Startup grace period flag: true for first 3 s to suppress stale warnings.
-std::atomic<bool> g_startup_grace{true};
-
-/* ── Global driver instances (defined in their respective .h files) ── */
-
-namespace mtr {
-    Mcp4725Dac  g_dac;
-    ThrottleInput g_throttle;
-    GearControl g_gear;
-    CanDriver   g_can;
-}
-
-static bool estop_gpio_pressed() {
-    // Stub until the CubeMX GPIO layer is wired into this target.
-    return false;
-}
-
-/* ── Task function prototypes ─────────────────────────────────────── */
-
-extern "C" {
-    void task_can_rx(void* pvParameters);
-    void task_safety(void* pvParameters);
-    void task_control(void* pvParameters);
-    void task_can_tx(void* pvParameters);
-}
-
-/* ── CAN frame processing ─────────────────────────────────────────── */
-
-/// Dispatch a received CAN frame to the appropriate atomic state.
-/// Called from task_can_rx.
-static void process_can_frame(const etrike::protocol::Frame& frame) {
-    using etrike::protocol::CodecStatus;
-    namespace messages = etrike::protocol::generated;
-
-    if (frame.id == messages::SafetyEstop::kId) {
-        /* 0x001 SAFETY_ESTOP — DLC=0, no payload */
-        messages::SafetyEstop estop{};
-        if (messages::decode(frame.view(), estop) != CodecStatus::Ok) return;
-        g_estop_active.store(true, std::memory_order_relaxed);
-
-    } else if (frame.id == messages::SysModeCmd::kId) {
-        /* 0x110 SYS_MODE_CMD — u8 mode */
-        messages::SysModeCmd cmd{};
-        if (messages::decode(frame.view(), cmd) != CodecStatus::Ok) return;
-        mtr::Mode new_mode = static_cast<mtr::Mode>(cmd.mode);
-        if (new_mode == mtr::Mode::Manual ||
-            new_mode == mtr::Mode::Auto ||
-            new_mode == mtr::Mode::Estop) {
-            g_mode.store(new_mode, std::memory_order_relaxed);
-        }
-
-    } else if (frame.id == messages::RtDriveCmd::kId) {
-        /* 0x204 RT_DRIVE_CMD — i32 speed + u8 gear */
-        messages::RtDriveCmd cmd{};
-        if (messages::decode(frame.view(), cmd) != CodecStatus::Ok) return;
-        g_cmd_speed_mmps.store(cmd.motor_speed_mmps, std::memory_order_relaxed);
-        g_cmd_gear.store(cmd.gear, std::memory_order_relaxed);
-        g_last_cmd_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        uint8_t streak = g_cmd_fresh_streak.load(std::memory_order_relaxed);
-        if (streak < 3) g_cmd_fresh_streak.store(streak + 1, std::memory_order_relaxed);
+// FDCAN1 RX FIFO 0 Interrupt Handler Callback
+extern "C" void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs) {
+    if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != 0U) {
+        g_can.handle_rx_fifo0_isr();
     }
 }
 
-/* ── Task: CAN Receive (prio 5, event-driven) ─────────────────────── */
-
-/**
- * Polls the CAN peripheral for incoming frames at a high rate.
- * Dispatches each frame via process_can_frame() — no queue needed
- * since the STM32 bxCAN hardware FIFO provides buffering.
- *
- * In a production implementation this task would pend on a semaphore
- * from the CAN RX interrupt (HAL_CAN_RxFifo0MsgPendingCallback).
- * For simplicity the polling variant is shown — the delay is kept short
- * (2 ms) so the bus is serviced faster than the fastest periodic message
- * (100 Hz = 10 ms period).
- */
-void task_can_rx(void* pvParameters) {
-    (void)pvParameters;
-    etrike::protocol::Frame frame;
-
-    for (;;) {
-        if (mtr::g_can.receive(frame, 0)) {
-            process_can_frame(frame);
-        }
-        vTaskDelay(pdMS_TO_TICKS(2));
+// Error Handler definition
+extern "C" void Error_Handler(void) {
+    __disable_irq();
+    while (1) {
     }
 }
 
-/* ── Task: Safety Monitor (prio 5, 20 Hz) ─────────────────────────── */
+// 16 MHz HSI System Clock configuration
+extern "C" void SystemClock_Config(void) {
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-/**
- * Monitors two independent safety inputs:
- *   1. ESTOP GPIO — NC, active-low. If LOW, forces ESTOP active.
- *   2. CAN 0x204 staleness — if no command received for >200 ms in AUTO,
- *      sets the stale flag so the control loop uses zero speed + neutral.
- *
- * Frequency: 20 Hz (50 ms period) — sufficient for human-scale button
- * response and the 200 ms staleness window.
- */
-void task_safety(void* pvParameters) {
-    (void)pvParameters;
-    TickType_t last_wake = xTaskGetTickCount();
-    uint32_t startup_end_tick = last_wake + pdMS_TO_TICKS(mtr::kStartupGracePeriodMs);
+    HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-    for (;;) {
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000 / mtr::kSafetyCheckHz));
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+        Error_Handler();
+    }
 
-        TickType_t now = xTaskGetTickCount();
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-        /* ── Startup grace period ── */
-        if (now >= startup_end_tick) {
-            g_startup_grace.store(false, std::memory_order_relaxed);
-        }
-
-        /* ── 1. ESTOP GPIO check ── */
-        /* Physical ESTOP button (NC, active-low). When pressed:
-         *   - Hardware directly kills throttle/gear (Level 3)
-         *   - This firmware also detects it for CAN feedback (0x206)
-         */
-        if (estop_gpio_pressed()) {
-            g_estop_active.store(true, std::memory_order_relaxed);
-        }
-
-        /* ── 2. CAN 0x204 staleness check ── */
-        mtr::Mode mode = g_mode.load(std::memory_order_relaxed);
-        if (!g_startup_grace.load(std::memory_order_relaxed) &&
-            mode == mtr::Mode::Auto) {
-            uint32_t last_tick = g_last_cmd_tick.load(std::memory_order_relaxed);
-            uint32_t elapsed = now - last_tick;
-            if (elapsed > pdMS_TO_TICKS(mtr::kCmdStaleTimeoutMs)) {
-                /* Stale: zero command so control loop sees safe values */
-                g_cmd_speed_mmps.store(0, std::memory_order_relaxed);
-                g_cmd_gear.store(0, std::memory_order_relaxed);
-                g_cmd_fresh_streak.store(0, std::memory_order_relaxed);
-                /* Set stale fault flag — atomic RMW to avoid race with task_control */
-                g_fault_flags.fetch_or(mtr::kFaultCmdTimeout, std::memory_order_relaxed);
-            } else if (g_cmd_fresh_streak.load(std::memory_order_relaxed) >= 3) {
-                /* Clear stale fault flag when commands resume */
-                g_fault_flags.fetch_and(~mtr::kFaultCmdTimeout, std::memory_order_relaxed);
-            }
-        }
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK) {
+        Error_Handler();
     }
 }
 
-/* ── Task: Motor Control (prio 4, 100 Hz) ──────────────────────────── */
-
-/**
- * Main motor control loop — runs at 100 Hz (10 ms period).
- *
- * Mode-gated behavior (§4.0 architecture.md):
- *
- *   MANUAL (mode=0):
- *     - Read throttle ADC → MCP4725 DAC (pass-through)
- *     - Read TLP281 gear sense → gear MOSFETs (pass-through)
- *
- *   AUTO (mode=1):
- *     - Follow CAN 0x204 RT_MotorSpeed → MCP4725 DAC
- *     - Follow CAN 0x204 RT_Gear → gear MOSFETs
- *     - If 0x204 stale (>200 ms since last frame): speed=0, gear=N
- *
- *   ESTOP (mode=2):
- *     - DAC = 0 (cut throttle)
- *     - All gear MOSFETs off
- */
-void task_control(void* pvParameters) {
-    (void)pvParameters;
-    TickType_t last_wake = xTaskGetTickCount();
-    uint32_t startup_end_tick = last_wake + pdMS_TO_TICKS(mtr::kStartupGracePeriodMs);
-
-    for (;;) {
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000 / mtr::kControlLoopHz));
-
-        bool     estop   = g_estop_active.load(std::memory_order_relaxed);
-        mtr::Mode mode   = g_mode.load(std::memory_order_relaxed);
-        TickType_t now   = xTaskGetTickCount();
-
-        /* ── Startup grace expiry ── */
-        bool grace = g_startup_grace.load(std::memory_order_relaxed);
-        if (grace && now >= startup_end_tick) {
-            g_startup_grace.store(false, std::memory_order_relaxed);
-            grace = false;
-            /* Set StartupReady fault flag — MTR boot complete, ready for commands */
-            g_fault_flags.fetch_or(shared::kMtrFaultStartupReady, std::memory_order_relaxed);
-        }
-
-        /* ── Handle ESTOP ── */
-        if (estop || mode == mtr::Mode::Estop) {
-            if (!mtr::g_dac.write(0)) {
-                // I2C write failed — throttle may still be at previous voltage.
-                // Hardware ESTOP GPIO (Level 3) is the backstop.
-                g_fault_flags.fetch_or(shared::kMtrFaultAdcFault, std::memory_order_relaxed);
-            }
-            mtr::g_gear.all_off();                // All MOSFETs off → N
-
-            g_actual_speed_mmps.store(0, std::memory_order_relaxed);
-            g_current_gear.store(static_cast<uint8_t>(mtr::Gear::N),
-                                 std::memory_order_relaxed);
-
-            /* Set ESTOP_ACTIVE fault flag — atomic RMW to avoid race with task_safety */
-            g_fault_flags.fetch_or(shared::kMtrFaultEstopActive, std::memory_order_relaxed);
-
-            continue;
-        }
-
-        /* ── Clear ESTOP fault bit when not in ESTOP ── */
-        g_fault_flags.fetch_and(~shared::kMtrFaultEstopActive, std::memory_order_relaxed);
-
-        /* ── Manual mode: pass-through ── */
-        if (mode == mtr::Mode::Manual) {
-            /* Read throttle ADC → compute speed */
-            uint16_t raw_adc = mtr::g_throttle.read_raw();
-            int16_t speed = mtr::g_throttle.tick(raw_adc);
-
-            /* ADC stuck-at-rail detection: 0 = short to GND, 4095 = short to VCC */
-            if (raw_adc == 0 || raw_adc == 4095) {
-                g_fault_flags.fetch_or(shared::kMtrFaultAdcFault, std::memory_order_relaxed);
-            } else {
-                g_fault_flags.fetch_and(~shared::kMtrFaultAdcFault, std::memory_order_relaxed);
-            }
-
-            /* Write to DAC */
-            mtr::g_dac.set_speed_mmps(speed);
-
-            /* Read TLP281 gear sense → mirror to MOSFETs */
-            mtr::g_gear.pass_through();
-
-            /* Check for gear conflict and set fault flag */
-            if (mtr::g_gear.gear_conflict_detected()) {
-                g_fault_flags.fetch_or(shared::kMtrFaultGearConflict, std::memory_order_relaxed);
-            } else {
-                g_fault_flags.fetch_and(~shared::kMtrFaultGearConflict, std::memory_order_relaxed);
-            }
-
-            /* Publish for CAN TX tasks */
-            g_actual_speed_mmps.store(speed, std::memory_order_relaxed);
-            g_current_gear.store(
-                static_cast<uint8_t>(mtr::g_gear.current_gear()),
-                std::memory_order_relaxed);
-
-            continue;
-        }
-
-        /* ── Auto mode: follow CAN 0x204 ── */
-        if (mode == mtr::Mode::Auto) {
-            int32_t  cmd_speed = g_cmd_speed_mmps.load(std::memory_order_relaxed);
-            uint8_t  cmd_gear  = g_cmd_gear.load(std::memory_order_relaxed);
-            uint32_t last_tick = g_last_cmd_tick.load(std::memory_order_relaxed);
-            bool stale         = g_cmd_fresh_streak.load(std::memory_order_relaxed) < 3
-                               || (!grace
-                                   && (now - last_tick
-                                       > pdMS_TO_TICKS(mtr::kCmdStaleTimeoutMs)));
-
-            if (stale) {
-                cmd_speed = 0;
-                cmd_gear  = static_cast<uint8_t>(mtr::Gear::N);
-            }
-
-            /* Clamp speed to valid range before DAC write (C5).
-             * Guards against corrupt CAN 0x204 frames producing arbitrary throttle. */
-            if (cmd_speed > shared::kMaxSpeedFwdMmps) cmd_speed = shared::kMaxSpeedFwdMmps;
-            else if (cmd_speed < -shared::kMaxSpeedRevMmps) cmd_speed = -shared::kMaxSpeedRevMmps;
-
-            /* Write DAC */
-            mtr::g_dac.set_speed_mmps(cmd_speed);
-
-            /* Set gear MOSFETs — only if speed is safe for contactor switching (C7).
-             * Shifting 72V contactors under load damages hardware. */
-            int16_t current_speed = g_actual_speed_mmps.load(std::memory_order_relaxed);
-            int16_t abs_speed = current_speed >= 0 ? current_speed : int16_t(-current_speed);
-            if (abs_speed <= mtr::kGearSwitchMaxSpeedMmps) {
-                mtr::g_gear.set_mosfets(static_cast<mtr::Gear>(cmd_gear));
-            }
-            /* else: defer gear change — keep current gear until speed drops */
-
-            /* Publish for CAN TX tasks */
-            g_actual_speed_mmps.store(
-                static_cast<int16_t>(cmd_speed > 32767 ? 32767 :
-                                    (cmd_speed < -32768 ? -32768 : cmd_speed)),
-                std::memory_order_relaxed);
-            g_current_gear.store(cmd_gear & 0x03, std::memory_order_relaxed);
-
-            continue;
-        }
-    }
-}
-
-/* ── Task: CAN Transmit (prio 3, 100 Hz base) ─────────────────────── */
-
-/**
- * Periodically transmits two CAN messages at different rates:
- *   - 0x120 SYS_THROTTLE_STS @ 100 Hz (every cycle)
- *   - 0x206 MTR_MOTOR_FBK  @ 50 Hz  (every other cycle)
- *
- * Loops at 100 Hz. A cycle counter selects which messages to send.
- */
-void task_can_tx(void* pvParameters) {
-    (void)pvParameters;
-    TickType_t last_wake = xTaskGetTickCount();
-    uint32_t cycle = 0;
-
-    for (;;) {
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000 / mtr::kCanTxLoopHz));
-
-        /* Read shared state once per cycle */
-        int16_t actual_speed = g_actual_speed_mmps.load(std::memory_order_relaxed);
-        uint8_t gear_state   = g_current_gear.load(std::memory_order_relaxed);
-        uint8_t fault_flags  = g_fault_flags.load(std::memory_order_relaxed);
-
-        etrike::protocol::Frame tx;
-
-        /* ── 0x120 SYS_THROTTLE_STS @ 100 Hz (every cycle) ── */
-        etrike::protocol::generated::SysThrottleSts throttle_sts{};
-        throttle_sts.speed_mmps = actual_speed;
-        if (etrike::protocol::generated::encode(throttle_sts, tx) ==
-            etrike::protocol::CodecStatus::Ok)
-            mtr::g_can.send(tx);
-
-        /* ── 0x206 MTR_MOTOR_FBK @ 50 Hz (every 2nd cycle) ── */
-        if ((cycle & 1) == 0) {
-            etrike::protocol::generated::MtrMotorFbk fbk{};
-            fbk.actual_speed_mmps = actual_speed;
-            fbk.gear_state        = gear_state;
-            fbk.fault_flags       = fault_flags;
-            if (etrike::protocol::generated::encode(fbk, tx) ==
-                etrike::protocol::CodecStatus::Ok)
-                mtr::g_can.send(tx);
-        }
-
-        cycle++;
-    }
-}
-
-/* ── FreeRTOS task handles ────────────────────────────────────────── */
-
-static TaskHandle_t s_task_can_rx   = nullptr;
-static TaskHandle_t s_task_safety   = nullptr;
-static TaskHandle_t s_task_control  = nullptr;
-static TaskHandle_t s_task_can_tx   = nullptr;
-
-/* ── Application entry point ──────────────────────────────────────── */
-
-/**
- * STM32 + FreeRTOS entry point.
- *
- * Prerequisites (set up by STM32CubeMX-generated code before main):
- *   - HAL_Init()
- *   - SystemClock_Config()
- *   - MX_GPIO_Init()
- *   - MX_I2C1_Init()
- *   - MX_ADC1_Init()
- *   - MX_CAN_Init()
- *
- * This function initialises the MTR-specific drivers and creates all
- * FreeRTOS tasks before starting the scheduler.
- */
 int main(void) {
-    /* ── STM32 HAL + peripheral init (CubeMX-generated) ── */
-    /* HAL_Init(); */
-    /* SystemClock_Config(); */
-    /* MX_GPIO_Init(); */
-    /* MX_I2C1_Init(); */
-    /* MX_ADC1_Init(); */
-    /* MX_CAN_Init(); */
+    // 1. Reset peripherals, initialize Flash interface and Systick
+    HAL_Init();
 
-    /* ── MTR module init ── */
-    mtr::g_dac.init();           // DAC starts at 0 V
-    mtr::g_throttle.init();      // ADC ready
-    mtr::g_gear.init();          // All MOSFETs OFF
-    mtr::g_can.init();           // bxCAN started + RX interrupt armed
+    // 2. Enable DWT cycle counter
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    *(volatile uint32_t *)0xE0001FB0 = 0xC5ACCE55;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-    /* ── Create FreeRTOS tasks ── */
+    // 3. Configure 16 MHz system clock
+    SystemClock_Config();
 
-    xTaskCreate(
-        task_can_rx,             // task function
-        "can_rx",                // name
-        256,                     // stack size (words)
-        nullptr,                 // parameter
-        5,                       // priority
-        &s_task_can_rx           // handle
-    );
+    // 4. Initialize Motor Manager (configures GPIO Relays and DAC)
+    g_motor.init();
 
-    xTaskCreate(
-        task_safety,
-        "safety",
-        192,
-        nullptr,
-        5,
-        &s_task_safety
-    );
+    // 5. Initialize CAN Driver
+    if (!g_can.init()) {
+        Error_Handler();
+    }
+    // Link HAL handle
+    hfdcan1 = *g_can.handle();
 
-    xTaskCreate(
-        task_control,
-        "control",
-        256,
-        nullptr,
-        4,
-        &s_task_control
-    );
+    uint32_t last_loop_ms = HAL_GetTick();
+    uint32_t last_fbk_ms = last_loop_ms;
+    uint32_t last_throttle_ms = last_loop_ms;
 
-    xTaskCreate(
-        task_can_tx,
-        "can_tx",
-        256,
-        nullptr,
-        3,
-        &s_task_can_tx
-    );
+    // 6. Main Execution Loop
+    while (1) {
+        uint32_t now_ms = HAL_GetTick();
 
-    /* ── Start the FreeRTOS scheduler ── */
-    vTaskStartScheduler();
+        // Drain incoming CAN messages
+        can::Frame rx_frame;
+        while (g_can.poll_rx(rx_frame)) {
+            g_motor.handle_frame(rx_frame, now_ms);
+        }
 
-    /* Scheduler should never return; if it does, infinite loop */
-    for (;;) { }
+        // Periodic motor & watchdog evaluation (5 ms rate)
+        if (now_ms - last_loop_ms >= mtr::kMainLoopPeriodMs) {
+            last_loop_ms = now_ms;
+            g_motor.tick(now_ms);
+        }
+
+        // Periodic 0x120 SYS_THROTTLE_STS broadcast (100 Hz / 10 ms rate)
+        if (now_ms - last_throttle_ms >= mtr::kThrottlePeriodMs) {
+            last_throttle_ms = now_ms;
+            can::Frame fr = g_motor.build_throttle_status_frame();
+            g_can.send(fr);
+        }
+
+        // Periodic 0x206 MTR_MOTOR_FBK broadcast (50 Hz / 20 ms rate)
+        if (now_ms - last_fbk_ms >= mtr::kFeedbackPeriodMs) {
+            last_fbk_ms = now_ms;
+            can::Frame fr = g_motor.build_motor_feedback_frame();
+            g_can.send(fr);
+        }
+
+        HAL_Delay(1);
+    }
 }
