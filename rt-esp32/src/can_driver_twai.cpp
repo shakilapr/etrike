@@ -398,19 +398,51 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
 
     uint8_t index = 0;
     if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
-        if (pending_bit != 0) {
-            m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
-        }
+        // No free slot. With kTxSlots==1 the single in-flight frame normally
+        // fires on_tx_done within a frame time at 500 kbit/s. If tx_done has
+        // not arrived within kTxReclaimUs, the controller abandoned the frame
+        // without a completion callback (arbitration loss with fail_retry_cnt=0,
+        // or an abort). Reclaim the slot so Low TX cannot deadlock permanently;
+        // the periodic TX tasks regenerate the value next cycle anyway.
         const int64_t now = esp_timer_get_time();
-        const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
-        if (now - last > 2000000) {
-            m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
+        const uint8_t inflight = m_inflight_slot.load(std::memory_order_acquire);
+        const int64_t inflight_us = m_inflight_us.load(std::memory_order_relaxed);
+        const uint32_t inflight_id = m_inflight_id.load(std::memory_order_relaxed);
+        if (inflight < kTxSlots
+            && inflight_us != 0
+            && now - inflight_us >= kTxReclaimUs) {
+            m_inflight_slot.store(0xFF, std::memory_order_release);
+            m_inflight_id.store(0, std::memory_order_release);
+            m_inflight_us.store(0, std::memory_order_release);
+            xQueueReset(m_free_tx_slots);
+            for (uint8_t s = 0; s < kTxSlots; ++s) {
+                xQueueSend(m_free_tx_slots, &s, 0);
+            }
             ESP_LOGW(kTag,
-                     "Low CAN TX dropped id=0x%lX: no free TX slot (in-flight "
-                     "frame not yet completed by controller)",
-                     static_cast<unsigned long>(source.id));
+                     "Low CAN TX slot reclaimed after %lld ms (was id=0x%lX) — "
+                     "on_tx_done never fired",
+                     static_cast<long long>((now - inflight_us) / 1000),
+                     static_cast<unsigned long>(inflight_id));
+            if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
+                if (pending_bit != 0) {
+                    m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
+                }
+                return false;
+            }
+        } else {
+            if (pending_bit != 0) {
+                m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
+            }
+            const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
+            if (now - last > 2000000) {
+                m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
+                ESP_LOGW(kTag,
+                         "Low CAN TX dropped id=0x%lX: no free TX slot (in-flight "
+                         "frame not yet completed by controller)",
+                         static_cast<unsigned long>(source.id));
+            }
+            return false;
         }
-        return false;
     }
 
     // SAFETY_ESTOP (0x001) is classic DLC 0. Never retransmit padded DLC-8 zeros.
