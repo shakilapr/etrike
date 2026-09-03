@@ -12,7 +12,7 @@ def main():
     # Run the protocol tool verify command
     try:
         subprocess.run(
-            [sys.executable, str(protocol_dir / 'tools' / 'protocol.py'), '--verify'],
+            [sys.executable, str(protocol_dir / 'tools' / 'protocol.py'), 'generate', '--check'],
             cwd=str(repo_root),
             check=True
         )

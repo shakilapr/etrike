@@ -58,6 +58,9 @@ _filelist.txt
 # ── Generated CMakeLists (PlatformIO manages its own) ────────────────
 CMakeLists.txt
 !native-test/CMakeLists.txt
+!rm-esp32/CMakeLists.txt
+!rm-esp32/src/CMakeLists.txt
+!mtr-stm32/CMakeLists.txt
 
 # ── Coverage & profiling ─────────────────────────────────────────────
 *.gcda
@@ -131,6 +134,9 @@ Release/
 .settings/
 .cproject
 .project
+!mtr-stm32/.project
+!mtr-stm32/.cproject
+!mtr-stm32/.mxproject
 Libraries/.ads/
 .ads/
 
@@ -192,6 +198,9 @@ control-ui/frontend/node_modules/
 control-ui/frontend/dist/
 control-ui/frontend/build/
 control-ui/frontend/playwright-report/
+# ── mtr-stm32 (STM32CubeIDE) ─────────────────────────────────────────
+/mtr-stm32/Drivers/
+
 # ── mtr-stm32-v2 (STM32CubeIDE) ──────────────────────────────────────
 /mtr-stm32-v2/Drivers/
 /mtr-stm32-v2/WeActStudio.STM32G431CoreBoard-master/
@@ -206,3 +215,7 @@ control-ui/frontend/playwright-report/
 
 # ── CANaR tool ───────────────────────────────────────────────────────
 /CANaR/
+*.sqlite-shm
+*.sqlite-wal
+rt-aurix-lite/board/TriCore Debug (GCC)/
+rt-aurix-lite/test/
