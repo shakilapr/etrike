@@ -331,11 +331,15 @@ bool Mcp2515Driver::init_mcp2515_regs(bool cold_boot) {
     write_reg(kRegCanIntE, 0xA3);  // RX0IE | RX1IE | ERRIE | MERRE
 
     // ── Normal mode ────────────────────────────────────────────────
-    // Bench mode (CONFIG_BENCH_SOLO): start in ListenOnly so RT can
-    // receive CANalyst-II injected frames (0x300, 0x7FC) without
-    // accumulating TX errors from un-ACKed outgoing frames. On a real
-    // vehicle with a Host/Jetson that ACKs, use Normal mode.
-    Mode start_mode = g_bench_solo_mode ? Mode::ListenOnly : Mode::Normal;
+    // Pure software bench (SYSTEM_RUN_MODE 2) has no physical ACK peer on
+    // the High bus, so the MCP starts in ListenOnly to receive injected
+    // frames (0x300, 0x7FC) without accumulating TX errors from un-ACKed
+    // transmissions. Any hardware run — vehicle (mode 0) or the GPIO42
+    // developer-override hardware bench (mode 1) where a CANalyst-II /
+    // Host node ACKs High frames — starts in Normal mode so RT can drive
+    // the High bus.
+    Mode start_mode =
+        SYSTEM_RUN_MODE == 2 ? Mode::ListenOnly : Mode::Normal;
     uint8_t reqop = static_cast<uint8_t>(start_mode);
     modify_reg(kRegCanCtrl, 0xE0, reqop);  // REQOP[2:0]=011 (ListenOnly) or 000 (Normal)
     vTaskDelay(pdMS_TO_TICKS(1));
