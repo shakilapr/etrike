@@ -75,11 +75,14 @@ public:
         configure_filter_(4, 0x0BB); // RM_RELAY_STATE (Legacy RM fallback)
         configure_filter_(5, 0x0AA); // RM_THROTTLE_RAW (Legacy RM fallback)
 
-        // 4. Configure Global Filter: reject non-matching standard frames
-        HAL_FDCAN_ConfigGlobalFilter(&hfdcan_, FDCAN_REJECT, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_FILTER_REMOTE);
+        // 4. Configure Global Filter: reject non-matching standard frames AND remote frames.
+        // NOTE: FDCAN_FILTER_REMOTE means "accept into FIFO" on STM32G4 — use FDCAN_REJECT_REMOTE instead.
+        HAL_FDCAN_ConfigGlobalFilter(&hfdcan_, FDCAN_REJECT, FDCAN_REJECT, FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE);
 
         // 5. NVIC Interrupt Configuration
-        HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 0, 0);
+        // Priority 5: high enough to service FIFO0 at 500 kbit/s without
+        // preempting SysTick or HAL critical sections (which use priority 0).
+        HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 5, 0);
         HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 
         // 6. Start FDCAN and enable RX FIFO 0 New Message interrupt
@@ -163,11 +166,21 @@ public:
     // Service Bus-Off auto-recovery sequence per ISO 11898-1
     void service_recovery() {
         if (!initialized_) return;
-        // Check Protocol Status Register (PSR) for Bus-Off flag
-        if ((hfdcan_.Instance->PSR & FDCAN_PSR_BO) != 0U) {
-            // Clear CCCR INIT bit to request normal operation and start 128x11-bit sequence
-            CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
+        // Check Protocol Status Register (PSR) for Bus-Off flag.
+        // Also check if HAL state went to error (can happen after direct HW access).
+        if ((hfdcan_.Instance->PSR & FDCAN_PSR_BO) == 0U
+            && hfdcan_.State != HAL_FDCAN_STATE_ERROR) {
+            return;
         }
+        // Use HAL Stop/Start to reset both the hardware controller and HAL's
+        // internal state machine. Direct CCCR.INIT manipulation leaves hfdcan_.State
+        // corrupted, causing all subsequent TX calls to silently return HAL_ERROR.
+        HAL_FDCAN_Stop(&hfdcan_);
+        // Clear CCCR.INIT through the HAL-visible path to trigger 128x11-bit recovery
+        CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
+        HAL_FDCAN_Start(&hfdcan_);
+        // Re-arm RX FIFO 0 interrupt which is cleared by HAL_FDCAN_Stop
+        HAL_FDCAN_ActivateNotification(&hfdcan_, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
     }
 
     FDCAN_HandleTypeDef* handle() { return &hfdcan_; }
