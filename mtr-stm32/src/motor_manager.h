@@ -3,6 +3,7 @@
 // Handles speed mapping to DAC, relay coordination, ESTOP monitoring, and CAN TX.
 
 #include <cstdint>
+#include <cmath>
 #include <algorithm>
 #include "config.h"
 #include "relay_controller.h"
@@ -58,7 +59,6 @@ public:
             if (can::gen::decode_rt_drive_cmd(frame.view(), cmd) == can::gen::CodecStatus::Ok) {
                 target_speed_mmps_ = cmd.motor_speed_mmps;
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
-                legacy_mode_active_ = false;
             }
             break;
         }
@@ -68,33 +68,6 @@ public:
             if (can::gen::decode_hmi_pwr_req(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
                 ignition_on_ = (pwr.req_start != 0);
             }
-            break;
-        }
-
-        case 0x0BB: { // Legacy Relay State (fallback)
-            uint8_t b = frame.data[0];
-            uint8_t mode = b & 0x0F;
-            if (mode == 0x03) {
-                ignition_on_ = true;
-                target_gear_ = can::Gear::N;
-            } else if (mode == 0x05) {
-                ignition_on_ = true;
-                target_gear_ = can::Gear::D;
-            } else if (mode == 0x09) {
-                ignition_on_ = true;
-                target_gear_ = can::Gear::R;
-            } else {
-                ignition_on_ = false;
-                target_gear_ = can::Gear::N;
-            }
-            break;
-        }
-
-        case 0x0AA: { // Legacy 16-bit Throttle (fallback)
-            uint16_t raw = (static_cast<uint16_t>(frame.data[0]) << 8) | frame.data[1];
-            // Convert 16-bit raw to DAC code (same formula as legacy: (val + 8) >> 4)
-            legacy_dac_code_ = (raw + 8) >> 4;
-            legacy_mode_active_ = true;
             break;
         }
 
@@ -123,29 +96,18 @@ public:
             return;
         }
 
-        // Update Throttle DAC
+        // Update Throttle DAC (canonical path only)
         bool drive_enabled = ignition_on_ && (target_gear_ == can::Gear::D);
         bool reverse_enabled = ignition_on_ && (target_gear_ == can::Gear::R);
         bool neutral_active = (target_gear_ == can::Gear::N) || !ignition_on_;
 
-        if (legacy_mode_active_) {
-            bool throttle_allowed = (target_gear_ != can::Gear::N);
-            dac_.set_throttle(legacy_dac_code_, throttle_allowed);
-        } else {
-            int32_t eff_speed = drive_enabled ? target_speed_mmps_ : (reverse_enabled ? -target_speed_mmps_ : 0);
-            if (eff_speed <= 0) {
-                // If commanded speed is positive in reverse, accept it as magnitude as well
-                if (reverse_enabled && target_speed_mmps_ > 0) {
-                    eff_speed = target_speed_mmps_;
-                }
-            }
+        int32_t speed_mag = std::abs(target_speed_mmps_);
 
-            if (neutral_active || eff_speed <= 0) {
-                dac_.force_zero();
-            } else {
-                uint16_t code = calculate_dac_code_(eff_speed, drive_enabled, reverse_enabled);
-                dac_.set_throttle(code, true);
-            }
+        if (neutral_active || speed_mag == 0 || (!drive_enabled && !reverse_enabled)) {
+            dac_.force_zero();
+        } else {
+            uint16_t code = calculate_dac_code_(speed_mag, drive_enabled, reverse_enabled);
+            dac_.set_throttle(code, true);
         }
     }
 
@@ -217,9 +179,6 @@ private:
     can::Gear target_gear_{can::Gear::N};
     can::Mode current_mode_{can::Mode::Manual};
     bool ignition_on_{false};
-
-    bool legacy_mode_active_{false};
-    uint16_t legacy_dac_code_{0};
 };
 
 }  // namespace mtr
