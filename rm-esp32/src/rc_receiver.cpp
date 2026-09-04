@@ -15,7 +15,7 @@ bool RcReceiver::init() {
         config.clk_div = 80;
         config.mem_block_num = 1;
         config.rx_config.filter_en = true;
-        config.rx_config.filter_ticks_thresh = 100; // 100 us glitch filter
+        config.rx_config.filter_ticks_thresh = 10;  // 10 us glitch filter (per new-architecture.md §4.1)
         config.rx_config.idle_threshold = 8000;     // 8 ms idle threshold (frame period is 20 ms)
 
         esp_err_t err = rmt_config(&config);
