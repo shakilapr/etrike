@@ -8,16 +8,16 @@
 #include "dac_controller.h"
 #include "motor_manager.h"
 
-// Subsystem singletons
-static mtr::CanDriver       g_can;
-static mtr::RelayController g_relays;
-static mtr::DacController   g_dac;
-static mtr::MotorManager    g_motor(g_relays, g_dac);
-
 // Peripheral handles required by HAL interrupt vectors
 extern "C" {
     FDCAN_HandleTypeDef hfdcan1;
 }
+
+// Subsystem singletons
+static mtr::CanDriver       g_can(hfdcan1);
+static mtr::RelayController g_relays;
+static mtr::DacController   g_dac;
+static mtr::MotorManager    g_motor(g_relays, g_dac);
 
 // Forward declaration of system clock setup
 extern "C" void SystemClock_Config(void);
