@@ -37,6 +37,7 @@ public:
         last_rx_ms_ = now_ms;
         first_frame_seen_ = true;
         comms_timed_out_ = false;
+        comms_healthy_ = true; // Maintain link health flag — cleared in tick() on watchdog expiry
 
         switch (frame.id) {
         case can::kIdSafetyEstop: { // 0x001 DLC 0 (Explicit Emergency Stop)
@@ -65,6 +66,11 @@ public:
             if (can::gen::decode_rt_drive_cmd(frame.view(), cmd) == can::gen::CodecStatus::Ok) {
                 target_speed_mmps_ = cmd.motor_speed_mmps;
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
+                // Standalone RM mode ESTOP reset sequence:
+                // If Ignition is OFF (or requested OFF via 0x112), Gear is Neutral, and speed is 0
+                if (estop_active_ && !ignition_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
+                    clear_estop();
+                }
             }
             break;
         }
@@ -73,6 +79,10 @@ public:
             can::gen::HmiPwrReq pwr{};
             if (can::gen::decode_hmi_pwr_req(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
                 ignition_on_ = (pwr.req_start != 0);
+                // In standalone RM mode, cycling ignition OFF while in Neutral allows clearing latched ESTOP
+                if (estop_active_ && !ignition_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
+                    clear_estop();
+                }
             }
             break;
         }
@@ -117,6 +127,7 @@ public:
     void tick(uint32_t now_ms) {
         // 1. Check Comms Watchdog (500 ms)
         comms_timed_out_ = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
+        if (comms_timed_out_) comms_healthy_ = false;
 
         // 2. Evaluate Actuation (fail-safe on latched ESTOP or active CAN timeout)
         if (estop_active_ || comms_timed_out_) {
@@ -233,6 +244,7 @@ public:
 
     bool is_estop_active() const { return estop_active_; }
     bool is_comms_timed_out() const { return comms_timed_out_; }
+    bool is_comms_healthy() const { return comms_healthy_; }
     int32_t target_speed_mmps() const { return target_speed_mmps_; }
     can::Gear target_gear() const { return target_gear_; }
 
@@ -240,13 +252,21 @@ private:
     uint16_t calculate_dac_code_(int32_t speed_mmps, bool forward, bool reverse) const {
         if (speed_mmps <= 0) return 0;
 
+        // Treat speeds below the shared low-speed threshold as zero to avoid
+        // requesting the 0.8 V motor idle voltage (kDacMinCode) for tiny setpoints,
+        // which would produce deadband jitter or no motion at all.
+        if (speed_mmps < static_cast<int32_t>(shared::kLowSpeedThreshMmps)) return 0;
+
         int32_t max_speed = forward ? kMaxForwardSpeedMmps : kMaxReverseSpeedMmps;
         float norm = static_cast<float>(speed_mmps) / static_cast<float>(max_speed);
         norm = std::clamp(norm, 0.0f, 1.0f);
 
-        // Linear interpolation across safe active window [kDacMinCode (655), kDacMaxCode (1966)]
-        float code_f = static_cast<float>(kDacMinCode) + norm * static_cast<float>(kDacMaxCode - kDacMinCode);
-        return static_cast<uint16_t>(code_f);
+        // Use a motion-floor slightly above kDacMinCode to clear the actuator deadband.
+        // kDacMinCode (655 = 0.8 V) is the idle threshold; true motion begins at ~0.85 V.
+        static constexpr uint16_t kDacActiveFloor = 700; // ~0.855 V
+        float code_f = static_cast<float>(kDacActiveFloor)
+                     + norm * static_cast<float>(kDacMaxCode - kDacActiveFloor);
+        return std::clamp(static_cast<uint16_t>(code_f), kDacMinCode, kDacMaxCode);
     }
 
     RelayController& relays_;
