@@ -42,12 +42,11 @@ constexpr int kBulbAuto       = 48;
 constexpr int kBulbManual     = 39;
 constexpr int kBulbReady      = 17;  // green — system ready (AUTO/MANUAL, RT alive, no faults)
 constexpr int kBulbEstop      = 20;  // red — dedicated ESTOP indicator
+constexpr int kBulbBypass     = 14;  // yellow/amber — developer override / safety bypass active
 constexpr int kPower12vRelay  = 40;
 
 // ── watchdog ──────────────────────────────────────────────────────
 // constexpr int kWdtToggleGpio = 47; // Temporarily disabled
-
-
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;
 constexpr int kHeartbeatIntervalMs  = can::gen::SysHeartbeat::kCycleMs;

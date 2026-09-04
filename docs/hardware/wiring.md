@@ -277,8 +277,9 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 | 2 | MANUAL Mode Bulb | 39 | Digital out | Lamp driver → 12 V | Conflicts with external JTAG use. |
 | 3 | READY Bulb | 17 | Digital out | Relay coil → 12 V | Green — system ready (AUTO/MANUAL, RT alive, no faults) |
 | 4 | ESTOP Bulb | 20 | Digital out | Relay coil → 12 V | Red — dedicated ESTOP indicator |
-| 5 | 12V Power Relay | 40 | Digital out | Relay driver → 12 V | Accessory relay, opens in ESTOP. Conflicts with external JTAG use. |
-| 6 | WDT Toggle | 47 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety task. |
+| 5 | Bypass Indicator | 14 | Digital out | Lamp driver / LED → GND | Yellow/amber — developer override / safety bypass active |
+| 6 | 12V Power Relay | 40 | Digital out | Relay driver → 12 V | Accessory relay, opens in ESTOP. Conflicts with external JTAG use. |
+| 7 | WDT Toggle | 47 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety task. |
 
 ### 4.6 SYS — GPIO Quick Reference
 
@@ -295,7 +296,7 @@ GPIO 10 : Speed sensor pulse input (via voltage divider R1/R2)
 GPIO 11 : MODE button (active-low) — publishes CAN 0x110
 GPIO 12 : Drive Gear sense (via voltage divider R1/R2)
 GPIO 13 : Reverse Gear sense (via voltage divider R1/R2)
-GPIO 14 : (Unassigned / free)
+GPIO 14 : Bypass indicator (yellow/amber) — active when safety checks bypassed
 GPIO 15 : ADS1115 I2C SCL (Throttle ADC)
 GPIO 16 : ADS1115 I2C SDA (Throttle ADC)
 GPIO 17 : READY bulb (green) — relay output
@@ -871,7 +872,7 @@ GPIO 10 : Speed sensor pulse input                   [IN, voltage divider R1/R2]
 GPIO 11 : MODE button (NO, active-low)              [IN, internal pull-up]
 GPIO 12 : Drive Gear sense                          [IN, voltage divider R1/R2]
 GPIO 13 : Reverse Gear sense                        [IN, voltage divider R1/R2]
-GPIO 14 : (Unassigned / free)
+GPIO 14 : Bypass indicator (yellow/amber)           [OUT, active-high]
 GPIO 15 : ADS1115 I2C SCL (Throttle ADC)            [I/O, I2C clock]
 GPIO 16 : ADS1115 I2C SDA (Throttle ADC)            [I/O, I2C data, addr 0x48]
 GPIO 17 : READY bulb (green) relay                  [OUT, active-high]

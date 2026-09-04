@@ -386,9 +386,11 @@ GND & USB or dev board & Common ground \\
 \hline
 4 & ESTOP Bulb & 20 & Digital out & Relay$\rightarrow$12V & Red \\
 \hline
-5 & 12V Power Relay & 40 & Digital out & Relay driver$\rightarrow$12V & JTAG conflict \\
+5 & Bypass Indicator & 14 & Digital out & LED/Driver$\rightarrow$GND & Yellow/amber \\
 \hline
-6 & WDT Toggle & 47 & Digital out & TPS3850 WDI & 20 Hz \\
+6 & 12V Power Relay & 40 & Digital out & Relay driver$\rightarrow$12V & JTAG conflict \\
+\hline
+7 & WDT Toggle & 47 & Digital out & TPS3850 WDI & 20 Hz \\
 \hline
 \end{longtable}
 
@@ -408,7 +410,7 @@ GPIO 10 -> Headlight relay
 GPIO 11 -> MODE button
 GPIO 12 -> Gear sense (bench)
 GPIO 13 -> Gear sense (bench)
-GPIO 14 -> Gear sense (bench)
+GPIO 14 -> Bypass indicator (amber)
 GPIO 15 -> MCP4725 SCL (bench)
 GPIO 16 -> MCP4725 SDA (bench)
 GPIO 17 -> READY bulb
