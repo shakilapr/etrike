@@ -48,11 +48,11 @@ public:
         hfdcan_.Init.ProtocolException = DISABLE;
 
         // Bit timing for 500 kbps @ 16 MHz kernel:
-        // Prescaler 2 -> Tq = 125 ns. (1 + 12 + 3) = 16 Tq = 2 us -> 500 kbps (81.25% sample point)
+        // Prescaler 2 -> Tq = 125 ns. (1 + 13 + 2) = 16 Tq = 2 us -> 500 kbps (87.5% sample point, CiA DS-102)
         hfdcan_.Init.NominalPrescaler = 2;
-        hfdcan_.Init.NominalSyncJumpWidth = 3;
-        hfdcan_.Init.NominalTimeSeg1 = 12;
-        hfdcan_.Init.NominalTimeSeg2 = 3;
+        hfdcan_.Init.NominalSyncJumpWidth = 2;
+        hfdcan_.Init.NominalTimeSeg1 = 13;
+        hfdcan_.Init.NominalTimeSeg2 = 2;
 
         hfdcan_.Init.DataPrescaler = 1;
         hfdcan_.Init.DataSyncJumpWidth = 1;
