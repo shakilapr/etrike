@@ -221,6 +221,37 @@ test.describe('Control + Drive paths', () => {
         message: `ESTOP button height ${estopBox.height}px < 36px`,
       })
     }
+    // Ergonomic checks: Center vehicle reset button
+    const resetBtn = page.getByTestId('btn-reset-view')
+    await expect(resetBtn).toBeVisible()
+    await resetBtn.click()
+
+    // Bipolar steering gauge
+    const steerGauge = page.getByTestId('gauge-steer α')
+    await expect(steerGauge).toBeVisible()
+    await expect(steerGauge).toHaveClass(/is-bipolar/)
+    await expect(steerGauge.locator('.drive-gauge-center')).toBeVisible()
+
+    // Authority limit presets and human-readable units
+    await expect(page.getByTestId('drive-limit-presets')).toBeVisible()
+    await expect(page.getByText(/km\/h/i)).toBeVisible()
+    await expect(page.getByText(/°\/s/i)).toBeVisible()
+    // Click Crawl preset
+    await page.getByRole('button', { name: /Crawl/i }).click()
+    // Click Max preset
+    await page.getByRole('button', { name: /Max/i }).click()
+
+    // Adaptive mode gear hint
+    await expect(page.getByTestId('preview-gear-auto-hint')).toBeVisible()
+    await expect(page.getByTestId('preview-gears')).toHaveClass(/is-auto/)
+    // Switch to Direct mode to verify hint disappears
+    await page.getByTestId('preview-mode-direct').click()
+    await expect(page.getByTestId('preview-gear-auto-hint')).not.toBeVisible()
+    await expect(page.getByTestId('preview-gears')).not.toHaveClass(/is-auto/)
+    // Switch back to Adaptive mode
+    await page.getByTestId('preview-mode-adaptive').click()
+    await expect(page.getByTestId('preview-gear-auto-hint')).toBeVisible()
+
     // Keycaps visible without scroll (layout fix)
     await expect(page.getByTestId('drive-keycaps')).toBeVisible()
     await expect(page.getByTestId('keycap-W')).toBeVisible()
@@ -237,6 +268,12 @@ test.describe('Control + Drive paths', () => {
     await page.waitForTimeout(600)
     await page.getByTestId('keycap-W').dispatchEvent('pointerup')
     await page.waitForTimeout(300)
+    // Steer A to test bipolar steering reaction
+    await page.getByTestId('keycap-A').dispatchEvent('pointerdown')
+    await page.waitForTimeout(400)
+    await page.getByTestId('keycap-A').dispatchEvent('pointerup')
+    await page.waitForTimeout(200)
+
     // Gear D
     await page.getByTestId('preview-gear-D').click()
     await page.getByTestId('keycap-W').dispatchEvent('pointerdown')

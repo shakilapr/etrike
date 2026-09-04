@@ -190,11 +190,57 @@ button.btn-drive-estop:hover:not(:disabled) {
   overflow: hidden;
 }
 
+.drive-gauge-bar.bipolar {
+  position: relative;
+}
+
+.drive-gauge-center {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-tertiary, #94a3b8);
+  z-index: 1;
+}
+
 .drive-gauge-fill {
   height: 100%;
   background: var(--primary);
   border-radius: 999px;
   /* No width transition — live telemetry + limit slider would thrash layout. */
+}
+
+.drive-gauge-bar.bipolar .drive-gauge-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.drive-limit-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.drive-limit-presets .chip {
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  transition: all var(--transition);
+}
+
+.drive-limit-presets .chip:hover {
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 .drive-limit-row {
@@ -242,6 +288,29 @@ button.btn-drive-estop:hover:not(:disabled) {
   height: 100%;
 }
 
+.drive-canvas-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.drive-canvas-btn:hover {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
 .preview-kv {
   grid-template-columns: 1fr;
   gap: 2px 0;
@@ -278,6 +347,17 @@ button.btn-drive-estop:hover:not(:disabled) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.gear-row.is-auto button.gear-btn:not(.active) {
+  opacity: 0.65;
+}
+
+.gear-auto-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-tertiary);
 }
 
 button.gear-btn,

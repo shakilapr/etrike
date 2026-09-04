@@ -5,6 +5,7 @@
 import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { resetComputerSession } from './session-reset'
 
 const OUT = path.join('test-results', 'qa-tabs')
 const REPORT_PATH = path.join(OUT, 'qa-report.json')
@@ -438,10 +439,12 @@ async function checkShell(page: Page, issues: Issue[]) {
 test.describe('QA — every tab automated', () => {
   test.setTimeout(180_000)
 
-  test('audit all workspaces, interactions, console errors', async ({ page }) => {
+  test('audit all workspaces, interactions, console errors', async ({ page, request }) => {
     fs.mkdirSync(OUT, { recursive: true })
     const allIssues: Issue[] = []
     const tabResults: TabResult[] = []
+
+    await resetComputerSession(request)
 
     const shellIssues: Issue[] = []
     const detachShell = attachCollectors(page, shellIssues, 'shell')
