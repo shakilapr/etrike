@@ -123,6 +123,10 @@ public:
         }
 
         // Update Throttle DAC
+        bool drive_enabled = ignition_on_ && (target_gear_ == can::Gear::D);
+        bool reverse_enabled = ignition_on_ && (target_gear_ == can::Gear::R);
+        bool neutral_active = (target_gear_ == can::Gear::N) || !ignition_on_;
+
         if (legacy_mode_active_) {
             bool throttle_allowed = (target_gear_ != can::Gear::N);
             dac_.set_throttle(legacy_dac_code_, throttle_allowed);
