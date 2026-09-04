@@ -160,7 +160,22 @@ public:
         bool reverse_enabled = ignition_on_ && (active_gear_ == can::Gear::R);
         bool neutral_active = (active_gear_ == can::Gear::N) || !ignition_on_;
 
-        int32_t speed_mag = std::abs(target_speed_mmps_);
+        // Directional setpoint sign verification:
+        // In Drive (D), speed must be non-negative (0..3000 mm/s). Negative values are rejected.
+        // In Reverse (R), canonical 0x204 transmits negative speed (-500..0 mm/s) or legacy positive magnitude (<=500 mm/s).
+        // A forward setpoint (>500 mm/s) must never drive Reverse.
+        int32_t speed_mag = 0;
+        if (drive_enabled) {
+            if (target_speed_mmps_ > 0) {
+                speed_mag = target_speed_mmps_;
+            }
+        } else if (reverse_enabled) {
+            if (target_speed_mmps_ < 0) {
+                speed_mag = -target_speed_mmps_;
+            } else if (target_speed_mmps_ > 0 && target_speed_mmps_ <= kMaxReverseSpeedMmps) {
+                speed_mag = target_speed_mmps_; // Support legacy positive reverse setpoints <= 500 mm/s
+            }
+        }
 
         if (neutral_active || speed_mag == 0 || (!drive_enabled && !reverse_enabled)) {
             dac_.force_zero();
