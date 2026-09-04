@@ -102,28 +102,45 @@ function Gauge({
   unit,
   max,
   tone = 'accent',
+  bipolar = false,
 }: {
   label: string
   value: number
   unit: string
   max: number
   tone?: 'accent' | 'warn' | 'ok' | 'danger'
+  bipolar?: boolean
 }) {
-  const pct = Math.min(100, (Math.abs(value) / Math.max(1, max)) * 100)
+  const absVal = Math.abs(value)
+  const pct = Math.min(100, (absVal / Math.max(1, max)) * 100)
   // Brake (and similar): high fill → danger red; mid → warn
   let t = tone
   if (tone === 'danger') {
     t = pct >= 70 ? 'danger' : pct >= 35 ? 'warn' : 'ok'
   }
+
+  const barStyle = bipolar
+    ? value < 0
+      ? { width: `${pct / 2}%`, right: '50%' }
+      : { width: `${pct / 2}%`, left: '50%' }
+    : { width: `${pct}%` }
+
+  const formattedValue = Number.isFinite(value)
+    ? bipolar && Math.abs(value) >= 0.5
+      ? `${value > 0 ? '+' : ''}${value.toFixed(1)}${value < -0.5 ? ' L' : ' R'}`
+      : value.toFixed(0)
+    : '—'
+
   return (
-    <div className={`drive-gauge tone-${t}`} data-testid={`gauge-${label}`}>
+    <div className={`drive-gauge tone-${t}${bipolar ? ' is-bipolar' : ''}`} data-testid={`gauge-${label}`}>
       <div className="drive-gauge-label">{label}</div>
       <div className="drive-gauge-value mono">
-        {Number.isFinite(value) ? value.toFixed(0) : '—'}
+        {formattedValue}
         <span className="unit">{unit}</span>
       </div>
-      <div className="drive-gauge-bar">
-        <div className="drive-gauge-fill" style={{ width: `${pct}%` }} />
+      <div className={`drive-gauge-bar${bipolar ? ' bipolar' : ''}`}>
+        {bipolar && <div className="drive-gauge-center" />}
+        <div className="drive-gauge-fill" style={barStyle} />
       </div>
     </div>
   )
@@ -244,6 +261,16 @@ export function DriveConsole() {
   const clearKeys = useCallback(() => {
     keysRef.current = {}
     setKeyUi({})
+  }, [])
+
+  const resetPose = useCallback(() => {
+    stateRef.current.x = 0
+    stateRef.current.y = 0
+    stateRef.current.theta = -Math.PI / 2
+    stateRef.current.v = 0
+    stateRef.current.alpha = 0
+    stateRef.current.omega = 0
+    stateRef.current.brakePressureKpa = 0
   }, [])
 
   useEffect(() => {
@@ -733,7 +760,7 @@ export function DriveConsole() {
       ctx!.save()
       ctx!.translate(L, 0)
       ctx!.rotate(state.alpha)
-      ctx!.fillStyle = '#ba2d36'
+      ctx!.fillStyle = '#0284c7'
       ctx!.fillRect(-17, -7, 34, 14)
       ctx!.restore()
       ctx!.restore()
@@ -953,6 +980,19 @@ export function DriveConsole() {
           }}
         >
           <canvas ref={canvasRef} data-testid="preview-canvas" />
+          <button
+            type="button"
+            className="drive-canvas-btn"
+            data-testid="btn-reset-view"
+            title="Reset vehicle position and heading"
+            onClick={(e) => {
+              e.stopPropagation()
+              resetPose()
+              focusDrive()
+            }}
+          >
+            Center vehicle
+          </button>
           <div
             className={`drive-lock-hint ${armed ? 'armed' : 'muted'}${motionLocked ? ' warn' : ''}`}
             data-testid="drive-lock-hint"
@@ -1061,13 +1101,14 @@ export function DriveConsole() {
               )}
             </p>
 
-            <div className="gear-row" data-testid="preview-gears">
+            <div className={`gear-row${shiftMode === 'smart' ? ' is-auto' : ''}`} data-testid="preview-gears">
               {GEARS.map((g) => (
                 <button
                   key={g}
                   type="button"
                   className={gear === g ? 'gear-btn active' : 'gear-btn'}
                   data-testid={`preview-gear-${g}`}
+                  title={shiftMode === 'smart' ? 'Auto-managed in Adaptive mode' : `Select gear ${g}`}
                   onClick={() => {
                     applyGear(g)
                     setFocused(true)
@@ -1077,6 +1118,11 @@ export function DriveConsole() {
                 </button>
               ))}
             </div>
+            {shiftMode === 'smart' && (
+              <p className="gear-auto-hint muted small" data-testid="preview-gear-auto-hint">
+                Gear auto-selected by throttle in Adaptive mode
+              </p>
+            )}
           </section>
 
           <section className="drive-section" data-testid="drive-telemetry-section">
@@ -1101,7 +1147,7 @@ export function DriveConsole() {
                 max={Math.max(1, maxYawMrad)}
                 tone="warn"
               />
-              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" />
+              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" bipolar />
               <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
             </div>
             <dl className="kv preview-kv" data-testid="preview-telemetry">
@@ -1131,8 +1177,43 @@ export function DriveConsole() {
               <h2>Authority limits</h2>
               <span className="muted small">firmware max 3000</span>
             </div>
+            <div className="drive-limit-presets" data-testid="drive-limit-presets">
+              <span className="muted small">Presets:</span>
+              <button
+                type="button"
+                className="chip tiny"
+                onClick={() => {
+                  setMaxSpeedMmps(800)
+                  setMaxYawMrad(1000)
+                }}
+              >
+                Crawl (0.8 m/s)
+              </button>
+              <button
+                type="button"
+                className="chip tiny"
+                onClick={() => {
+                  setMaxSpeedMmps(1500)
+                  setMaxYawMrad(2000)
+                }}
+              >
+                Mid (1.5 m/s)
+              </button>
+              <button
+                type="button"
+                className="chip tiny"
+                onClick={() => {
+                  setMaxSpeedMmps(3000)
+                  setMaxYawMrad(3000)
+                }}
+              >
+                Max (3.0 m/s)
+              </button>
+            </div>
             <label className="field">
-              <span className="field-label">Max drive speed, mm/s</span>
+              <span className="field-label">
+                Max drive speed, mm/s <small className="muted">({((maxSpeedMmps / 1000) * 3.6).toFixed(1)} km/h)</small>
+              </span>
               <div className="field-row drive-limit-row">
                 <input
                   type="range"
@@ -1147,7 +1228,9 @@ export function DriveConsole() {
               </div>
             </label>
             <label className="field">
-              <span className="field-label">Max yaw rate, mrad/s</span>
+              <span className="field-label">
+                Max yaw rate, mrad/s <small className="muted">({(((maxYawMrad / 1000) * 180) / Math.PI).toFixed(0)}°/s)</small>
+              </span>
               <div className="field-row drive-limit-row">
                 <input
                   type="range"
