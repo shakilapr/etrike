@@ -294,6 +294,17 @@ target_include_directories(dual_heartbeat PRIVATE
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
+add_executable(architecture_data_flow test/test_architecture_data_flow.cpp)
+target_link_libraries(architecture_data_flow PRIVATE protocol_headers)
+target_include_directories(architecture_data_flow PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/mtr-stm32/src
+    ${ETRIKE_ROOT}/rm-esp32/src
+)
+
 # ── CTest ────────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME smoke               COMMAND smoke_test)
@@ -320,6 +331,7 @@ add_test(NAME signal_chains        COMMAND signal_chains)
 add_test(NAME all_signals          COMMAND all_signals)
 add_test(NAME dlc_consistency      COMMAND dlc_consistency)
 add_test(NAME gateway_forwarding   COMMAND gateway_forwarding)
+add_test(NAME architecture_data_flow COMMAND architecture_data_flow)
 
 # ── Remediation bug fixes unit test suite ────────────────────────────
 add_executable(remediation_fixes
