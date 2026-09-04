@@ -160,6 +160,16 @@ public:
         }
     }
 
+    // Service Bus-Off auto-recovery sequence per ISO 11898-1
+    void service_recovery() {
+        if (!initialized_) return;
+        // Check Protocol Status Register (PSR) for Bus-Off flag
+        if ((hfdcan_.Instance->PSR & FDCAN_PSR_BO) != 0U) {
+            // Clear CCCR INIT bit to request normal operation and start 128x11-bit sequence
+            CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
+        }
+    }
+
     FDCAN_HandleTypeDef* handle() { return &hfdcan_; }
 
     uint32_t tx_count() const { return tx_count_; }

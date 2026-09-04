@@ -100,6 +100,7 @@ int main(void) {
         // Periodic motor & watchdog evaluation (5 ms rate)
         if (now_ms - last_loop_ms >= mtr::kMainLoopPeriodMs) {
             last_loop_ms = now_ms;
+            g_can.service_recovery();
             g_motor.tick(now_ms);
         }
 
