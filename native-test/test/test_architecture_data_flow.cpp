@@ -164,13 +164,13 @@ static void test_flow_b_remote_control_pipeline() {
     raw_us[5] = 2000;
     raw_us[0] = 1750; // Right steer
     raw_us[1] = 1800; // Brake trigger
-    raw_us[2] = 1800; // 80% speed trim
+    raw_us[2] = 1800; // 80% throttle (Left Stick Vertical, CH3)
     auto state_drive = rm::decode_rc_signals(raw_us, last_edge_ms, now_ms);
     TEST_CHECK_EQ(static_cast<int>(state_drive.gear), static_cast<int>(can::Gear::D),
                   "SWC at 2000 µs decodes to Drive Gear");
     TEST_CHECK(state_drive.steering_deg > 0.0f, "Right stick produces positive steering angle");
     TEST_CHECK(state_drive.brake_stroke_mm > 0.0f, "Brake trigger produces positive brake stroke");
-    TEST_CHECK(state_drive.speed_trim > 0.7f, "VRA dial decodes to speed trim > 0.7");
+    TEST_CHECK(state_drive.throttle_norm > 0.7f, "Left stick vertical decodes to throttle_norm > 0.7");
 
     // 2. Verify CAN transmission encoding
     generated::HmiModeReq hmi_mode{};
@@ -240,7 +240,7 @@ static void test_flow_e_rm_standalone_bypass_pipeline() {
     TEST_CHECK_EQ(seb_fr.id, 0x7B9u, "SEB frame ID is 0x7B9");
 
     // 3. Direct Canonical Motor Command -> 0x204 RT_DRIVE_CMD
-    int32_t target_motor_speed = static_cast<int32_t>(snap.speed_trim * shared::kMaxSpeedFwdMmps);
+    int32_t target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedFwdMmps);
     generated::RtDriveCmd drive_cmd{};
     drive_cmd.motor_speed_mmps = target_motor_speed;
     drive_cmd.gear = static_cast<uint8_t>(snap.gear);
@@ -255,6 +255,15 @@ static void test_flow_e_rm_standalone_bypass_pipeline() {
     mtr::MotorManager mtr_direct{relays_direct, dac_direct};
     mtr_direct.init();
 
+    // Send ignition ON via 0x112 HMI_PWR_REQ (canonical path, no longer via 0x0BB)
+    can::Frame ignition_fr{};
+    ignition_fr.id = can::kIdHmiPwrReq; // 0x112
+    ignition_fr.dlc = 1;
+    can::gen::HmiPwrReq ign_pwr{};
+    ign_pwr.req_start = 1;
+    can::gen::encode_hmi_pwr_req(ign_pwr, ignition_fr);
+    mtr_direct.handle_frame(ignition_fr, 90);
+
     can::Frame can_204_in{};
     can_204_in.id = drive_fr.id;
     can_204_in.dlc = drive_fr.dlc;
@@ -268,35 +277,7 @@ static void test_flow_e_rm_standalone_bypass_pipeline() {
     TEST_CHECK(dac_direct.current_code() > 0,
                "MTR DAC outputs throttle voltage directly from RM 0x204");
 
-    // 4. Fallback Direct Motor Command -> 0x0BB Relay & 0x0AA Throttle
-    mtr::RelayController relays_fallback{};
-    mtr::DacController dac_fallback{};
-    mtr::MotorManager mtr_fallback{relays_fallback, dac_fallback};
-    mtr_fallback.init();
-
-    // Emulate RM emitting 0x0BB (0x05 = Drive)
-    can::Frame relay_fr{};
-    relay_fr.id = 0x0BB;
-    relay_fr.dlc = 8;
-    relay_fr.data[0] = 0x05; // Drive
-    mtr_fallback.handle_frame(relay_fr, 200);
-
-    // Emulate RM emitting 0x0AA (16-bit throttle = 32768, ~50%)
-    can::Frame throttle_fr{};
-    throttle_fr.id = 0x0AA;
-    throttle_fr.dlc = 8;
-    throttle_fr.data[0] = 0x80;
-    throttle_fr.data[1] = 0x00;
-    mtr_fallback.handle_frame(throttle_fr, 200);
-
-    mtr_fallback.tick(200);
-
-    TEST_CHECK_EQ(relays_fallback.state(), mtr::RelayController::State::Drive,
-                  "MTR switches to Drive relay directly from RM fallback 0x0BB");
-    TEST_CHECK(dac_fallback.current_code() > 0,
-               "MTR DAC outputs throttle voltage directly from RM fallback 0x0AA");
-
-    // 5. RC Signal Loss Deadman Guard -> 0x001 SAFETY_ESTOP from RM
+    // 4. RC Signal Loss Deadman Guard -> 0x001 SAFETY_ESTOP from RM
     raw_us[0] = 0; // Signal lost on steering
     auto snap_lost = rm::decode_rc_signals(raw_us, last_edge_ms, 250);
     TEST_CHECK(!snap_lost.signal_valid, "RC signal correctly marked invalid");
@@ -326,11 +307,22 @@ static void test_flow_c_motor_actuation_pipeline() {
     mtr::MotorManager motor{relays, dac};
     motor.init();
 
-    // 1. Initial State: Neutral/Park (ignition ON, relays OFF), Speed 0
+    // 1. Initial State: Neutral/Park (relays OFF before ignition), Speed 0
     motor.tick(0);
     TEST_CHECK_EQ(motor.target_speed_mmps(), 0, "Motor initial target speed is 0");
     TEST_CHECK_EQ(dac.current_code(), 0, "MCP4725 DAC initial code is 0 (0.0 V)");
-    TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relay state initially Park (Drive/Rev relays OFF)");
+    TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Off, "Relay state initially Off before ignition");
+
+    // Power on Ignition via canonical 0x112 HMI_PWR_REQ
+    can::Frame ign_frame{};
+    ign_frame.id = can::kIdHmiPwrReq; // 0x112
+    ign_frame.dlc = 1;
+    can::gen::HmiPwrReq ign_req{};
+    ign_req.req_start = 1;
+    can::gen::encode_hmi_pwr_req(ign_req, ign_frame);
+    motor.handle_frame(ign_frame, 10);
+    motor.tick(10);
+    TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relay state transitions to Park upon ignition ON");
 
     // 2. Command Forward Drive 1500 mm/s in AUTO mode
     can::Frame mode_frame{};
@@ -364,7 +356,12 @@ static void test_flow_c_motor_actuation_pipeline() {
     can::gen::encode_rt_drive_cmd(rev_cmd, rev_frame);
 
     motor.handle_frame(rev_frame, 500);
-    motor.tick(500);
+    motor.tick(500); // 50 ms dwell period initiated, relays transition to Park, DAC forced to 0
+    TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relays safely hold Park during 50ms dwell");
+    TEST_CHECK_EQ(dac.current_code(), 0, "DAC forced to 0 during dwell");
+
+    // Advance 60 ms past dwell completion
+    motor.tick(560);
 
     TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Reverse, "Reverse relay PA0 energized");
     TEST_CHECK_EQ(motor.target_speed_mmps(), 1000, "Target speed is now 1000 mm/s reverse");
@@ -386,6 +383,15 @@ static void test_flow_d_estop_pipeline() {
     mtr::DacController dac{};
     mtr::MotorManager motor{relays, dac};
     motor.init();
+
+    // Turn on Ignition via 0x112 HMI_PWR_REQ
+    can::Frame ign_frame{};
+    ign_frame.id = can::kIdHmiPwrReq;
+    ign_frame.dlc = 1;
+    can::gen::HmiPwrReq ign_req{};
+    ign_req.req_start = 1;
+    can::gen::encode_hmi_pwr_req(ign_req, ign_frame);
+    motor.handle_frame(ign_frame, 50);
 
     // Spin up motor in Drive mode
     can::Frame run_frame{};
