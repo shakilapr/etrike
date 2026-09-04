@@ -65,7 +65,8 @@ public:
     }
 
     void tick() {
-        if (estop_active) {
+        if (estop_active || comms_timed_out) {
+            target_speed_mmps = 0;
             relays.apply(0);
             dac_code = 0;
             return;
@@ -105,11 +106,15 @@ public:
 
     can::Frame build_feedback() const {
         can::gen::MtrMotorFbk fbk{};
-        fbk.actual_speed_mmps = static_cast<int16_t>(target_speed_mmps);
+        bool inhibited = estop_active || comms_timed_out || (target_gear == can::Gear::N);
+        fbk.actual_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps);
         fbk.gear_state = (relays.drive) ? 1 : ((relays.reverse) ? 3 : 0);
         uint8_t flags = 0;
         if (estop_active) {
             flags |= shared::kMtrFaultEstopActive;
+        }
+        if (comms_timed_out) {
+            flags |= shared::kMtrFaultCmdTimeout;
         }
         flags |= shared::kMtrFaultStartupReady;
         fbk.fault_flags = flags;
@@ -120,13 +125,15 @@ public:
 
     can::Frame build_throttle_sts() const {
         can::gen::SysThrottleSts sts{};
-        sts.speed_mmps = static_cast<int16_t>(target_speed_mmps);
+        bool inhibited = estop_active || comms_timed_out || (target_gear == can::Gear::N);
+        sts.speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps);
         can::Frame fr;
         can::gen::encode_sys_throttle_sts(sts, fr);
         return fr;
     }
 
     bool estop_active{false};
+    bool comms_timed_out{false};
     int32_t target_speed_mmps{0};
     can::Gear target_gear{can::Gear::N};
     MockRelayState relays;
@@ -289,6 +296,43 @@ void test_telemetry_frame_encoding() {
     ASSERT_EQ(fbk.gear_state, 1); // Drive
 }
 
+void test_watchdog_timeout_speed_zero_and_fault_flag() {
+    MockMotorManager mgr;
+    mgr.init();
+
+    // 1. Cruising in Drive at 2000 mm/s
+    mgr.handle_drive_cmd(2000, can::Gear::D);
+    mgr.tick();
+    ASSERT_TRUE(mgr.relays.drive);
+    ASSERT_TRUE(mgr.dac_code > 0);
+
+    // 2. Watchdog timeout occurs (CAN comms lost)
+    mgr.comms_timed_out = true;
+    mgr.tick();
+
+    // Actuation must be killed and target speed zeroed
+    ASSERT_TRUE(!mgr.relays.drive);
+    ASSERT_TRUE(!mgr.relays.reverse);
+    ASSERT_TRUE(!mgr.relays.ignition);
+    ASSERT_EQ(mgr.dac_code, 0);
+    ASSERT_EQ(mgr.target_speed_mmps, 0);
+
+    // 0x120 SYS_THROTTLE_STS must report 0 speed (not stale 2000)
+    can::Frame th_fr = mgr.build_throttle_sts();
+    can::gen::SysThrottleSts th{};
+    ASSERT_EQ(static_cast<int>(can::gen::decode_sys_throttle_sts(th_fr.view(), th)),
+              static_cast<int>(can::gen::CodecStatus::Ok));
+    ASSERT_EQ(th.speed_mmps, 0);
+
+    // 0x206 MTR_MOTOR_FBK must report 0 speed and assert kMtrFaultCmdTimeout (0x02)
+    can::Frame fbk_fr = mgr.build_feedback();
+    can::gen::MtrMotorFbk fbk{};
+    ASSERT_EQ(static_cast<int>(can::gen::decode_mtr_motor_fbk(fbk_fr.view(), fbk)),
+              static_cast<int>(can::gen::CodecStatus::Ok));
+    ASSERT_EQ(fbk.actual_speed_mmps, 0);
+    ASSERT_TRUE((fbk.fault_flags & shared::kMtrFaultCmdTimeout) != 0);
+}
+
 } // namespace
 
 int main() {
@@ -300,6 +344,7 @@ int main() {
     test_dac_throttle_curve_and_clamps();
     test_estop_shutdown_and_sys_gap15_ack();
     test_telemetry_frame_encoding();
+    test_watchdog_timeout_speed_zero_and_fault_flag();
 
     std::printf("----------------------------------------\n");
     std::printf("Tests Run: %d | Failures: %d\n", g_tests_run, g_tests_failed);

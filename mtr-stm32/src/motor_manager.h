@@ -22,6 +22,7 @@ public:
         relays_.init();
         dac_.init();
         estop_active_ = false;
+        comms_timed_out_ = false;
         comms_healthy_ = false;
         first_frame_seen_ = false;
         target_speed_mmps_ = 0;
@@ -35,6 +36,7 @@ public:
     void handle_frame(const can::Frame& frame, uint32_t now_ms) {
         last_rx_ms_ = now_ms;
         first_frame_seen_ = true;
+        comms_timed_out_ = false;
 
         switch (frame.id) {
         case can::kIdSafetyEstop: { // 0x001 DLC 0 (Explicit Emergency Stop)
@@ -114,10 +116,11 @@ public:
     // Periodic evaluation (called at 5 ms rate)
     void tick(uint32_t now_ms) {
         // 1. Check Comms Watchdog (500 ms)
-        bool comms_timed_out = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
+        comms_timed_out_ = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
 
         // 2. Evaluate Actuation (fail-safe on latched ESTOP or active CAN timeout)
-        if (estop_active_ || comms_timed_out) {
+        if (estop_active_ || comms_timed_out_) {
+            target_speed_mmps_ = 0;
             relays_.set_state(RelayController::State::Off);
             dac_.force_zero();
             return;
@@ -184,7 +187,7 @@ public:
     // Generate 0x120 SYS_THROTTLE_STS (100 Hz)
     can::Frame build_throttle_status_frame() const {
         can::gen::SysThrottleSts sts{};
-        bool inhibited = estop_active_ || !ignition_on_ || (active_gear_ == can::Gear::N);
+        bool inhibited = estop_active_ || comms_timed_out_ || !ignition_on_ || (active_gear_ == can::Gear::N);
         sts.speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         can::Frame fr;
         can::gen::encode_sys_throttle_sts(sts, fr);
@@ -194,13 +197,16 @@ public:
     // Generate 0x206 MTR_MOTOR_FBK (50 Hz)
     can::Frame build_motor_feedback_frame() const {
         can::gen::MtrMotorFbk fbk{};
-        bool inhibited = estop_active_ || !ignition_on_ || (active_gear_ == can::Gear::N);
+        bool inhibited = estop_active_ || comms_timed_out_ || !ignition_on_ || (active_gear_ == can::Gear::N);
         fbk.actual_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         fbk.gear_state = static_cast<uint8_t>(relays_.current_gear());
 
         uint8_t flags = 0;
         if (estop_active_) {
             flags |= shared::kMtrFaultEstopActive; // Redundant ESTOP ACK to SYS (Gap #15)
+        }
+        if (comms_timed_out_) {
+            flags |= shared::kMtrFaultCmdTimeout; // Command timeout flag (0x02)
         }
         flags |= shared::kMtrFaultStartupReady; // Bit 4
         fbk.fault_flags = flags;
@@ -211,6 +217,7 @@ public:
     }
 
     bool is_estop_active() const { return estop_active_; }
+    bool is_comms_timed_out() const { return comms_timed_out_; }
     int32_t target_speed_mmps() const { return target_speed_mmps_; }
     can::Gear target_gear() const { return target_gear_; }
 
@@ -231,6 +238,7 @@ private:
     DacController& dac_;
 
     bool estop_active_{false};
+    bool comms_timed_out_{false};
     bool comms_healthy_{false};
     bool first_frame_seen_{false};
     uint32_t last_rx_ms_{0};
