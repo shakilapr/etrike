@@ -138,7 +138,55 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             send_can_frame(seb_fr, "VCU_SEB_REQ");
         }
 
-        // 4. Transmit HMI Mode & Power Requests (1 Hz or on-change)
+        // 4. Transmit Motor Command -> 0x204 RT_DRIVE_CMD & Legacy Fallback Frames (50 Hz)
+        // Directly drives MTR on Low CAN bus when operating in standalone RM bypass mode
+        int32_t target_motor_speed = 0;
+        if (drive_active) {
+            if (snap.gear == can::Gear::D) {
+                target_motor_speed = static_cast<int32_t>(snap.speed_trim * shared::kMaxSpeedFwdMmps);
+            } else if (snap.gear == can::Gear::R) {
+                target_motor_speed = static_cast<int32_t>(snap.speed_trim * shared::kMaxSpeedRevMmps);
+            }
+        }
+
+        // Canonical 0x204 RT_DRIVE_CMD (MTR receives speed setpoint + gear)
+        can::gen::RtDriveCmd drive_cmd{};
+        drive_cmd.motor_speed_mmps = target_motor_speed;
+        drive_cmd.gear = static_cast<uint8_t>(snap.signal_valid && snap.ignition ? snap.gear : can::Gear::N);
+        can::Frame drive_fr;
+        if (can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {
+            send_can_frame(drive_fr, "RT_DRIVE_CMD");
+        }
+
+        // Fallback 0x0BB (Relay state) & 0x0AA (Throttle DAC code) for legacy hardware compatibility
+        can::Frame relay_fr{};
+        relay_fr.id = 0x0BB;
+        relay_fr.dlc = 8;
+        if (snap.signal_valid && snap.ignition) {
+            if (snap.gear == can::Gear::D) {
+                relay_fr.data[0] = 0x05; // Drive
+            } else if (snap.gear == can::Gear::R) {
+                relay_fr.data[0] = 0x09; // Reverse
+            } else {
+                relay_fr.data[0] = 0x03; // Park / Neutral
+            }
+        } else {
+            relay_fr.data[0] = 0x00; // Ignition OFF
+        }
+        send_can_frame(relay_fr, "LEGACY_RELAY_STATE");
+
+        can::Frame throttle_fr{};
+        throttle_fr.id = 0x0AA;
+        throttle_fr.dlc = 8;
+        uint16_t raw_throttle = 0;
+        if (drive_active) {
+            raw_throttle = static_cast<uint16_t>(snap.speed_trim * 65535.0f);
+        }
+        throttle_fr.data[0] = static_cast<uint8_t>((raw_throttle >> 8) & 0xFF);
+        throttle_fr.data[1] = static_cast<uint8_t>(raw_throttle & 0xFF);
+        send_can_frame(throttle_fr, "LEGACY_THROTTLE");
+
+        // 5. Transmit HMI Mode & Power Requests (1 Hz or on-change)
         if (++hmi_heartbeat_counter >= 50) { // 50 * 20ms = 1000ms (1 Hz)
             hmi_heartbeat_counter = 0;
 
