@@ -15,7 +15,9 @@ static mtr::DacController   g_dac;
 static mtr::MotorManager    g_motor(g_relays, g_dac);
 
 // Peripheral handles required by HAL interrupt vectors
-extern "C" FDCAN_HandleTypeDef hfdcan1;
+extern "C" {
+    FDCAN_HandleTypeDef hfdcan1;
+}
 
 // Forward declaration of system clock setup
 extern "C" void SystemClock_Config(void);
