@@ -184,7 +184,8 @@ public:
     // Generate 0x120 SYS_THROTTLE_STS (100 Hz)
     can::Frame build_throttle_status_frame() const {
         can::gen::SysThrottleSts sts{};
-        sts.speed_mmps = static_cast<int16_t>(target_speed_mmps_);
+        bool inhibited = estop_active_ || !ignition_on_ || (active_gear_ == can::Gear::N);
+        sts.speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         can::Frame fr;
         can::gen::encode_sys_throttle_sts(sts, fr);
         return fr;
@@ -193,7 +194,8 @@ public:
     // Generate 0x206 MTR_MOTOR_FBK (50 Hz)
     can::Frame build_motor_feedback_frame() const {
         can::gen::MtrMotorFbk fbk{};
-        fbk.actual_speed_mmps = static_cast<int16_t>(target_speed_mmps_);
+        bool inhibited = estop_active_ || !ignition_on_ || (active_gear_ == can::Gear::N);
+        fbk.actual_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         fbk.gear_state = static_cast<uint8_t>(relays_.current_gear());
 
         uint8_t flags = 0;
