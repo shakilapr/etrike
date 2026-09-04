@@ -37,9 +37,27 @@ class DirectBody(BaseModel):
     period_ms: float | None = None
 
 
+def _mode_gate(life, control: dict) -> dict:
+    """Enrich a control snapshot dict with the authoritative vehicle-mode gate."""
+    from control_toolkit.services.mode_gate import derive_motion_gate
+
+    try:
+        msgs = list(life.latest.snapshot().messages)
+    except Exception:  # noqa: BLE001
+        msgs = []
+    return derive_motion_gate(control, msgs)
+
+
+def _snap_with_mode_gate(life) -> dict:
+    """Control snapshot enriched with the authoritative vehicle-mode gate."""
+    snap = life.control.snapshot()
+    snap["vehicle_mode"] = _mode_gate(life, snap)
+    return snap
+
+
 @router.get("/status")
 def control_status(request: Request) -> dict:
-    return {"control": request.app.state.lifecycle.control.snapshot()}
+    return {"control": _snap_with_mode_gate(request.app.state.lifecycle)}
 
 
 @router.get("/estop")
@@ -151,6 +169,7 @@ def control_intent(request: Request, body: IntentBody) -> dict:
             data={"source": body.source, "tx": results, "cause": "host_inject"},
         )
         snap = life.control.release(reason="estop")
+        snap["vehicle_mode"] = _mode_gate(life, snap)
         return {"control": snap, "estop": results, "cause": "host_inject", "detail": detail}
 
     try:
@@ -180,6 +199,7 @@ def control_intent(request: Request, body: IntentBody) -> dict:
             severity="info",
             data={"sequence": body.sequence, "method": snap.get("method")},
         )
+    snap["vehicle_mode"] = _mode_gate(life, snap)
     return {"control": snap}
 
 
@@ -195,6 +215,7 @@ def control_release(request: Request, body: ReleaseBody | None = None) -> dict:
         detail=reason,
         severity="info",
     )
+    snap["vehicle_mode"] = _mode_gate(life, snap)
     return {"control": snap}
 
 
@@ -223,4 +244,5 @@ def control_direct(request: Request, body: DirectBody) -> dict:
         bus="low",
         data={"channel": body.channel, "enabled": body.enabled},
     )
+    snap["vehicle_mode"] = _mode_gate(life, snap)
     return {"control": snap}

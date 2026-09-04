@@ -15,8 +15,8 @@ bool RcReceiver::init() {
         config.clk_div = 80;
         config.mem_block_num = 1;
         config.rx_config.filter_en = true;
-        config.rx_config.filter_ticks_thresh = 10; // 10 us glitch filter
-        config.rx_config.idle_threshold = 25000;    // 25 ms idle threshold (end-of-frame)
+        config.rx_config.filter_ticks_thresh = 100; // 100 us glitch filter
+        config.rx_config.idle_threshold = 8000;     // 8 ms idle threshold (frame period is 20 ms)
 
         esp_err_t err = rmt_config(&config);
         if (err != ESP_OK) {
@@ -46,7 +46,7 @@ bool RcReceiver::init() {
         past_filtered_us_[i] = (i == 0 || i == 5) ? kPulseCenterUs : kPulseMinValidUs;
     }
 
-    ESP_LOGI(TAG, "Initialized 6 RMT pulse channels at 1.0 us/tick");
+    ESP_LOGI(TAG, "Initialized 6 RMT pulse channels at 1.0 us/tick (idle_threshold=8000us)");
     return true;
 }
 
@@ -57,24 +57,24 @@ void RcReceiver::sample(uint32_t now_ms) {
 
         size_t rx_size = 0;
         rmt_item32_t* item = nullptr;
-        rmt_item32_t* latest_item = nullptr;
 
         while ((item = static_cast<rmt_item32_t*>(xRingbufferReceive(ringbufs_[i], &rx_size, 0))) != nullptr) {
-            if (latest_item) {
-                vRingbufferReturnItem(ringbufs_[i], latest_item);
-            }
-            latest_item = item;
-        }
+            if (rx_size >= sizeof(rmt_item32_t)) {
+                size_t num_items = rx_size / sizeof(rmt_item32_t);
+                for (size_t k = 0; k < num_items; ++k) {
+                    uint32_t dur0 = item[k].duration0;
+                    uint32_t lvl0 = item[k].level0;
+                    uint32_t dur1 = item[k].duration1;
+                    uint32_t lvl1 = item[k].level1;
 
-        if (latest_item) {
-            // duration0 is the HIGH pulse duration in 1.0 us counter ticks
-            uint32_t duration_us = latest_item->duration0;
-            vRingbufferReturnItem(ringbufs_[i], latest_item);
-
-            if (duration_us >= kPulseMinValidUs && duration_us <= kPulseMaxValidUs) {
-                raw_high_us_[i] = duration_us;
-                last_edge_time_ms_[i] = now_ms;
+                    uint32_t duration_us = (lvl0 == 1) ? dur0 : ((lvl1 == 1) ? dur1 : 0);
+                    if (duration_us >= kPulseMinValidUs && duration_us <= kPulseMaxValidUs) {
+                        raw_high_us_[i] = duration_us;
+                        last_edge_time_ms_[i] = now_ms;
+                    }
+                }
             }
+            vRingbufferReturnItem(ringbufs_[i], item);
         }
     }
 

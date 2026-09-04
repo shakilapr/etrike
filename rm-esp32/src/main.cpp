@@ -227,7 +227,24 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
     TickType_t last = xTaskGetTickCount();
 
     while (1) {
-        g_alive_hb.store(xTaskGetTickCount(), std::memory_order_relaxed);
+        static uint32_t hb_count = 0;
+        if (++hb_count % 10 == 0) {
+            const auto snap = g_rc.snapshot();
+            ESP_LOGI(TAG, "STATUS | Valid=%d Ign=%d Gear=%s Steer=%.1f Spd=%.2f | CH[0..5]=[%lu,%lu,%lu,%lu,%lu,%lu]us | CAN ok=%lu fail=%lu",
+                     snap.signal_valid ? 1 : 0,
+                     snap.ignition ? 1 : 0,
+                     (snap.gear == can::Gear::D) ? "D" : ((snap.gear == can::Gear::R) ? "R" : "N"),
+                     snap.steering_deg,
+                     snap.speed_trim,
+                     static_cast<unsigned long>(g_rc.raw_pulse_us(0)),
+                     static_cast<unsigned long>(g_rc.raw_pulse_us(1)),
+                     static_cast<unsigned long>(g_rc.raw_pulse_us(2)),
+                     static_cast<unsigned long>(g_rc.raw_pulse_us(3)),
+                     static_cast<unsigned long>(g_rc.raw_pulse_us(4)),
+                     static_cast<unsigned long>(g_rc.raw_pulse_us(5)),
+                     static_cast<unsigned long>(g_can_tx_ok.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long>(g_can_tx_fail.load(std::memory_order_relaxed)));
+        }
 
         const auto health = g_can.health_snapshot();
         if (health.state == can::CanDriver::HealthState::BusOff) {
