@@ -431,12 +431,12 @@ void test_motor_manager_dac_curves() {
     mgr.tick(100);
     ASSERT_EQ(dac.current_code(), 0);
 
-    // 1500 mm/s (50% forward) -> midpoint = 655 + 0.5 * (1966 - 655) = 1310
+    // 1500 mm/s (50% forward) -> midpoint = 700 + 0.5 * (1966 - 700) = 1333
     drv.motor_speed_mmps = 1500;
     can::gen::encode_rt_drive_cmd(drv, fr);
     mgr.handle_frame(fr, 100);
     mgr.tick(100);
-    ASSERT_NEAR(dac.current_code(), 1310, 5);
+    ASSERT_NEAR(dac.current_code(), 1333, 5);
 
     // 3000 mm/s (100% forward) -> max code 1966
     drv.motor_speed_mmps = 3000;
@@ -461,8 +461,8 @@ void test_motor_manager_dac_curves() {
     mgr.tick(100); // starts dwell
     mgr.tick(160); // dwell complete
 
-    // Midpoint reverse (-250 mm/s) -> midpoint = 1310
-    ASSERT_NEAR(dac.current_code(), 1310, 5);
+    // Midpoint reverse (-250 mm/s) -> midpoint = 1333
+    ASSERT_NEAR(dac.current_code(), 1333, 5);
 
     // Max reverse speed (-500 mm/s) -> 1966
     drv.motor_speed_mmps = -500;
@@ -511,7 +511,7 @@ void test_motor_manager_legacy_fallback() {
 
     ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
     ASSERT_EQ(mgr.target_speed_mmps(), 1500);
-    ASSERT_NEAR(dac.current_code(), 1310, 10);
+    ASSERT_NEAR(dac.current_code(), 1333, 10);
 
     // 2. 0x0BB = 0x09 (Reverse)
     relay_fr.data[0] = 0x09;
