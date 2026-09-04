@@ -785,6 +785,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 #ifndef TESTING
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), ready ? 1 : 0);
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), estop ? 1 : 0);
+        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbBypass), g_bench_solo_mode ? 1 : 0);
 #endif
 
         vTaskDelayUntil(&last, period);
@@ -948,6 +949,7 @@ static void init_board_gpio() {
                                   | (1ULL << sys::kBulbManual)
                                   | (1ULL << sys::kBulbReady)
                                   | (1ULL << sys::kBulbEstop)
+                                  | (1ULL << sys::kBulbBypass)
                                   | (1ULL << sys::kPower12vRelay);
                                   // | (1ULL << sys::kWdtToggleGpio);
     constexpr uint64_t kPullupInputs = (1ULL << sys::kBrakeLeverGpio)
@@ -961,7 +963,7 @@ static void init_board_gpio() {
     // not receive an indeterminate boot pulse.
     for (int pin : {sys::kLightLeftTurn, sys::kLightRightTurn, sys::kLightBrake,
                     sys::kLightHead, sys::kBulbAuto, sys::kBulbManual,
-                    sys::kBulbReady, sys::kBulbEstop, sys::kPower12vRelay/*,
+                    sys::kBulbReady, sys::kBulbEstop, sys::kBulbBypass, sys::kPower12vRelay/*,
                     sys::kWdtToggleGpio*/}) {
         ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(pin), 0));
     }
@@ -1069,11 +1071,13 @@ extern "C" void app_main() {
     g_indicator.init();
     // g_wdt.init();
 
-    // Init status bulbs (green=ready, red=ESTOP) — start both OFF
+    // Init status bulbs (green=ready, red=ESTOP, amber=bypass) — start ready/estop OFF, bypass reflects solo mode
     gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbReady), GPIO_MODE_OUTPUT);
     gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), 0);
     gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbEstop), GPIO_MODE_OUTPUT);
     gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), 0);
+    gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbBypass), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(sys::kBulbBypass), g_bench_solo_mode ? 1 : 0);
 
 
     // 3. Create queues

@@ -599,7 +599,8 @@ All firmware builds with PlatformIO. Three environments per ECU:
 | 2 | Brake lever | Active-low, pull-up. Rider brake input for MANUAL mode. |
 | 8 | Ignition relay | Reserved; production firmware does not drive this pin. |
 | 11 | Mode button | Momentary, toggles MANUAL↔AUTO |
-| 12-14 | Gear sense | Retired SYS motor-I/O reservation; do not wire to vehicle. |
+| 12-13 | Gear sense | Retired SYS motor-I/O reservation; do not wire to vehicle. |
+| 14 | Bulb BYPASS | Yellow/amber indicator — developer override / safety bypass active |
 | 15-16 | Throttle I2C | Retired SYS motor-I/O reservation; do not wire to vehicle. |
 | 17 | Bulb READY | Green indicator — system ready (AUTO/MANUAL, RT alive, no faults) |
 | 18 | Light left turn | Relay output |

@@ -491,9 +491,11 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 \hline
 4 & ESTOP Bulb & 20 & Digital out & Relay coil $\rightarrow$ 12\,V & Red — dedicated ESTOP indicator \\
 \hline
-5 & 12V Power Relay & 40 & Digital out & Relay driver $\rightarrow$ 12\,V & Accessory relay, opens in ESTOP. Conflicts with external JTAG use. \\
+5 & Bypass Indicator & 14 & Digital out & Lamp driver / LED $\rightarrow$ GND & Yellow/amber — developer override / safety bypass active \\
 \hline
-6 & WDT Toggle & 47 & Digital out & TPS3850 WDI pin & Toggled at 20 Hz by safety task. \\
+6 & 12V Power Relay & 40 & Digital out & Relay driver $\rightarrow$ 12\,V & Accessory relay, opens in ESTOP. Conflicts with external JTAG use. \\
+\hline
+7 & WDT Toggle & 47 & Digital out & TPS3850 WDI pin & Toggled at 20 Hz by safety task. \\
 \hline
 \end{longtable}
 
@@ -511,7 +513,8 @@ GPIO 8  : Reserved ignition output - not implemented
 GPIO 9  : |\sout{Left turn switch (active-low)}|
 GPIO 10 : |\sout{Headlight relay driver}|
 GPIO 11 : MODE button (active-low) - publishes CAN 0x110
-GPIO 12-14 : Bench-only gear sense
+GPIO 12-13 : Bench-only gear sense
+GPIO 14 : Bypass indicator (yellow/amber)
 GPIO 15-16 : Bench-only MCP4725 I2C
 GPIO 17 : |\sout{READY bulb (green)}|
 GPIO 18 : |\sout{Left turn lamp}|
