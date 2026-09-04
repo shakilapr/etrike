@@ -53,15 +53,15 @@ void test_steering_deadband_and_limits() {
     snap = rm::decode_rc_signals(raw_us, last_edge_ms, now_ms);
     ASSERT_NEAR(snap.steering_deg, 0.0f, 0.001f);
 
-    // 3. Full Right (1950us -> +450.0 deg)
+    // 3. Full Right (1950us -> +kMaxSteerAngleDeg)
     raw_us[0] = 1950;
     snap = rm::decode_rc_signals(raw_us, last_edge_ms, now_ms);
-    ASSERT_NEAR(snap.steering_deg, 450.0f, 0.1f);
+    ASSERT_NEAR(snap.steering_deg, rm::kMaxSteerAngleDeg, 0.1f);
 
-    // 4. Full Left (1050us -> -450.0 deg)
+    // 4. Full Left (1050us -> -kMaxSteerAngleDeg)
     raw_us[0] = 1050;
     snap = rm::decode_rc_signals(raw_us, last_edge_ms, now_ms);
-    ASSERT_NEAR(snap.steering_deg, -450.0f, 0.1f);
+    ASSERT_NEAR(snap.steering_deg, -rm::kMaxSteerAngleDeg, 0.1f);
 }
 
 void test_brake_stroke_proportionality() {
@@ -132,11 +132,11 @@ void test_deadman_signal_loss_failsafe() {
 }
 
 void test_canonical_can_encoding() {
-    // Test 1: VCU_SES_REQ (0x169)
+    // Test 1: VCU_SES_REQ (0x169) - Neutral Center (30000 raw = 0.0 deg)
     can::custom::ses::Command ses_cmd{};
     ses_cmd.alignment_enable = true;
     ses_cmd.control_enable = true;
-    ses_cmd.target_angle_raw = 150; // 15.0 deg
+    ses_cmd.target_angle_raw = static_cast<int16_t>(rm::kSbwAngleOffset); // 30000
     ses_cmd.target_speed_raw = 328;
     ses_cmd.rolling_counter = 5;
 
@@ -145,10 +145,27 @@ void test_canonical_can_encoding() {
               static_cast<int>(can::gen::CodecStatus::Ok));
     ASSERT_EQ(ses_fr.id, 0x169u);
     ASSERT_EQ(ses_fr.dlc, 8u);
-    // Validate checksum byte at index 7 is non-zero
-    ASSERT_TRUE(ses_fr.data[7] != 0);
+    // Byte 2-3 little endian: 30000 = 0x7530 -> data[2]=0x30, data[3]=0x75
+    ASSERT_EQ(ses_fr.data[2], 0x30);
+    ASSERT_EQ(ses_fr.data[3], 0x75);
+    ASSERT_TRUE(ses_fr.data[7] != 0); // XOR checksum
 
-    // Test 2: VCU_SEB_REQ (0x7B9)
+    // Test 1b: Full Left (29550 raw = -45.0 deg) & Full Right (30450 raw = +45.0 deg)
+    ses_cmd.target_angle_raw = rm::kMinSteerRaw; // 29550
+    ASSERT_EQ(static_cast<int>(can::custom::ses::encode_command(ses_cmd, ses_fr)),
+              static_cast<int>(can::gen::CodecStatus::Ok));
+    // 29550 = 0x736E -> data[2]=0x6E, data[3]=0x73
+    ASSERT_EQ(ses_fr.data[2], 0x6E);
+    ASSERT_EQ(ses_fr.data[3], 0x73);
+
+    ses_cmd.target_angle_raw = rm::kMaxSteerRaw; // 30450
+    ASSERT_EQ(static_cast<int>(can::custom::ses::encode_command(ses_cmd, ses_fr)),
+              static_cast<int>(can::gen::CodecStatus::Ok));
+    // 30450 = 0x76F2 -> data[2]=0xF2, data[3]=0x76
+    ASSERT_EQ(ses_fr.data[2], 0xF2);
+    ASSERT_EQ(ses_fr.data[3], 0x76);
+
+    // Test 2: VCU_SEB_REQ (0x7B9) - Released (600 raw = 0mm) & Max (1140 raw = 27mm)
     can::custom::seb::Command seb_cmd{};
     seb_cmd.alignment_enable = true;
     seb_cmd.control_enable = true;
@@ -161,7 +178,17 @@ void test_canonical_can_encoding() {
               static_cast<int>(can::gen::CodecStatus::Ok));
     ASSERT_EQ(seb_fr.id, 0x7B9u);
     ASSERT_EQ(seb_fr.dlc, 8u);
+    // Byte 2-3 little endian: 600 = 0x0258 -> data[2]=0x58, data[3]=0x02
+    ASSERT_EQ(seb_fr.data[2], 0x58);
+    ASSERT_EQ(seb_fr.data[3], 0x02);
     ASSERT_TRUE(seb_fr.data[7] != 0);
+
+    seb_cmd.stroke_request_raw = 1140; // 27mm max emergency brake
+    ASSERT_EQ(static_cast<int>(can::custom::seb::encode_command(seb_cmd, seb_fr)),
+              static_cast<int>(can::gen::CodecStatus::Ok));
+    // 1140 = 0x0474 -> data[2]=0x74, data[3]=0x04
+    ASSERT_EQ(seb_fr.data[2], 0x74);
+    ASSERT_EQ(seb_fr.data[3], 0x04);
 
     // Test 3: HMI_MODE_REQ (0x111) & HMI_PWR_REQ (0x112)
     can::gen::HmiModeReq mode_msg{1, 42};

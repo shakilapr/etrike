@@ -105,8 +105,12 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         can::custom::ses::Command ses_cmd{};
         ses_cmd.alignment_enable = snap.signal_valid && snap.ignition;
         ses_cmd.control_enable = drive_active;
-        // Raw angle in 0.1 deg units (-3000 to +3000)
-        int16_t angle_raw = static_cast<int16_t>(snap.steering_deg * 10.0f);
+        // Raw angle in 0.1 deg units + vendor offset (29550 to 30450)
+        int16_t angle_raw = static_cast<int16_t>(rm::kSbwAngleOffset);
+        if (drive_active) {
+            angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(rm::kSbwAngleOffset);
+            angle_raw = std::clamp(angle_raw, rm::kMinSteerRaw, rm::kMaxSteerRaw);
+        }
         ses_cmd.target_angle_raw = angle_raw;
         ses_cmd.target_speed_raw = 328; // Standard nominal speed
         ses_cmd.rolling_counter = g_roll_ses;
@@ -170,6 +174,9 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             } else {
                 relay_fr.data[0] = 0x03; // Park / Neutral
             }
+            if (snap.brake_stroke_mm > 5.0f) {
+                relay_fr.data[0] |= 0x10; // Brake flag
+            }
         } else {
             relay_fr.data[0] = 0x00; // Ignition OFF
         }
@@ -179,8 +186,13 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         throttle_fr.id = 0x0AA;
         throttle_fr.dlc = 8;
         uint16_t raw_throttle = 0;
-        if (drive_active) {
-            raw_throttle = static_cast<uint16_t>(snap.speed_trim * 65535.0f);
+        if (drive_active && snap.speed_trim > 0.001f && snap.brake_stroke_mm <= 5.0f) {
+            // STM MCP4725 DAC expects: (analog_value + 8) >> 4 to fall within [DAC_MIN_VAL(655), DAC_MAX_VAL(1966)]
+            // 655 * 16 = 10480 (0.8V idle threshold), 1966 * 16 = 31456 (2.4V max speed)
+            constexpr uint32_t kLegacyDacMinRaw = 655U * 16U;
+            constexpr uint32_t kLegacyDacMaxRaw = 1966U * 16U;
+            raw_throttle = static_cast<uint16_t>(kLegacyDacMinRaw +
+                snap.speed_trim * static_cast<float>(kLegacyDacMaxRaw - kLegacyDacMinRaw));
         }
         throttle_fr.data[0] = static_cast<uint8_t>((raw_throttle >> 8) & 0xFF);
         throttle_fr.data[1] = static_cast<uint8_t>(raw_throttle & 0xFF);

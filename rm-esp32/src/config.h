@@ -42,9 +42,15 @@ constexpr uint32_t kGearDriveMinUs      = 1700;
 constexpr uint32_t kIgnitionThresholdUs = 1500;
 
 // ── Actuator Limits ───────────────────────────────────────────────
-constexpr float kMaxSteerAngleDeg       = 450.0f; // SES Steering (+/- 450 deg)
+constexpr float kMaxSteerAngleDeg       = 45.0f;  // Mechanical rack limit (+/- 45.0 deg)
+constexpr int   kSbwAngleOffset         = 30000;  // Steer-by-wire vendor offset (0° -> 30000 raw)
+constexpr int16_t kMinSteerRaw          = 29550;  // -45.0 deg full left limit (29550 raw)
+constexpr int16_t kMaxSteerRaw          = 30450;  // +45.0 deg full right limit (30450 raw)
 constexpr float kMaxBrakeStrokeMm       = 27.0f;  // SEB Max Emergency Stroke
 constexpr float kManualBrakeStrokeMm    = 15.0f;  // SEB Manual Pull Reference
+
+constexpr uint32_t kThrottleMinUs       = 1050;   // Throttle idle threshold (deadband)
+constexpr uint32_t kThrottleMaxUs       = 1950;   // Throttle full power threshold
 
 // ── Timing & Rates ────────────────────────────────────────────────
 constexpr int kRcCaptureHz              = 50;     // 20 ms loop (matches 50Hz RC frame)
