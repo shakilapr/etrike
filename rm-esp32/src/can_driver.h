@@ -72,7 +72,10 @@ public:
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
-        config.fail_retry_cnt = -1;  // infinite auto-retransmit (matches legacy TWAI default)
+        // ESP-IDF 5.5 abandons the active frame without an on_tx_done
+        // callback on Bus-Off. Keep one driver-owned frame so recovery can
+        // reclaim its application slot deterministically.
+        config.fail_retry_cnt = 0;
         config.tx_queue_depth = 1;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
