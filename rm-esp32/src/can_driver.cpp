@@ -13,7 +13,15 @@ bool IRAM_ATTR CanDriver::on_rx_done_(twai_node_handle_t node,
     if (twai_node_receive_from_isr(node, &frame) != ESP_OK || frame.header.dlc > 8) {
         return false;
     }
-    item.id = frame.header.id;
+
+    // Drop our own high-rate TX frames in ISR to prevent rx_queue_ starvation.
+    // RM only needs to receive supervisor frames (e.g. 0x001 SAFETY_ESTOP, 0x110 SYS_MODE_CMD).
+    const uint32_t id = frame.header.id;
+    if (id == 0x169u || id == 0x7B9u || id == 0x204u || id == 0x111u || id == 0x112u) {
+        return false;
+    }
+
+    item.id = id;
     item.dlc = static_cast<uint8_t>(frame.header.dlc);
     item.extended = frame.header.ide;
     BaseType_t wake = pdFALSE;
