@@ -29,7 +29,7 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
     // 1. Deadman signal validity check (CH0: Steer, CH1: Brake, CH2: Throttle, CH4: Ign, CH5: Gear)
     bool valid = true;
     for (uint8_t i : {0, 1, 2, 4, 5}) {
-        if (now_ms < last_edge_ms[i] || (now_ms - last_edge_ms[i]) > kSignalLossTimeoutMs) {
+        if ((now_ms - last_edge_ms[i]) > kSignalLossTimeoutMs) {
             valid = false;
             break;
         }
