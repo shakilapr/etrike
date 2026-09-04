@@ -162,44 +162,13 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             send_can_frame(drive_fr, "RT_DRIVE_CMD");
         }
 
-        // Fallback 0x0BB (Relay state) & 0x0AA (Throttle DAC code) for legacy hardware compatibility
-        can::Frame relay_fr{};
-        relay_fr.id = 0x0BB;
-        relay_fr.dlc = 8;
-        if (snap.signal_valid && snap.ignition) {
-            if (snap.gear == can::Gear::D) {
-                relay_fr.data[0] = 0x05; // Drive
-            } else if (snap.gear == can::Gear::R) {
-                relay_fr.data[0] = 0x09; // Reverse
-            } else {
-                relay_fr.data[0] = 0x03; // Park / Neutral
-            }
-            if (snap.brake_stroke_mm > 5.0f) {
-                relay_fr.data[0] |= 0x10; // Brake flag
-            }
-        } else {
-            relay_fr.data[0] = 0x00; // Ignition OFF
-        }
-        send_can_frame(relay_fr, "LEGACY_RELAY_STATE");
 
-        can::Frame throttle_fr{};
-        throttle_fr.id = 0x0AA;
-        throttle_fr.dlc = 8;
-        uint16_t raw_throttle = 0;
-        if (drive_active && snap.throttle_norm > 0.001f && snap.brake_stroke_mm <= 5.0f) {
-            // STM MCP4725 DAC expects: (analog_value + 8) >> 4 to fall within [DAC_MIN_VAL(655), DAC_MAX_VAL(1966)]
-            // 655 * 16 = 10480 (0.8V idle threshold), 1966 * 16 = 31456 (2.4V max speed)
-            constexpr uint32_t kLegacyDacMinRaw = 655U * 16U;
-            constexpr uint32_t kLegacyDacMaxRaw = 1966U * 16U;
-            raw_throttle = static_cast<uint16_t>(kLegacyDacMinRaw +
-                snap.throttle_norm * static_cast<float>(kLegacyDacMaxRaw - kLegacyDacMinRaw));
-        }
-        throttle_fr.data[0] = static_cast<uint8_t>((raw_throttle >> 8) & 0xFF);
-        throttle_fr.data[1] = static_cast<uint8_t>(raw_throttle & 0xFF);
-        send_can_frame(throttle_fr, "LEGACY_THROTTLE");
+        // 5. Transmit HMI Mode & Power Requests (Immediate on-change or 10 Hz periodic)
+        static bool last_ignition = false;
+        bool ignition_changed = (snap.ignition != last_ignition);
+        last_ignition = snap.ignition;
 
-        // 5. Transmit HMI Mode & Power Requests (1 Hz or on-change)
-        if (++hmi_heartbeat_counter >= 50) { // 50 * 20ms = 1000ms (1 Hz)
+        if (++hmi_heartbeat_counter >= 5 || ignition_changed) { // 5 * 20ms = 100ms (10 Hz)
             hmi_heartbeat_counter = 0;
 
             // 0x111 HMI_MODE_REQ
