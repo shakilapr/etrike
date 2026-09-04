@@ -82,8 +82,6 @@ int main(void) {
     if (!g_can.init()) {
         Error_Handler();
     }
-    // Link HAL handle
-    hfdcan1 = *g_can.handle();
 
     uint32_t last_loop_ms = HAL_GetTick();
     uint32_t last_fbk_ms = last_loop_ms;
