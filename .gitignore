@@ -1,6 +1,10 @@
-# ── PDFs (large binaries — keep out of repo) ──────────────────────────
+# ── PDFs & Binaries ──────────────────────────────────────────────────
 *.pdf
 *.png
+stsw-link009/
+*.zip
+*.msi
+*.exe
 
 # ── Python cache ─────────────────────────────────────────────────────
 __pycache__/

@@ -26,6 +26,14 @@ public:
     // Get latest atomic snapshot
     RcSnapshot snapshot() const;
 
+    uint32_t raw_pulse_us(uint8_t ch) const {
+        return (ch < kNumRcChannels) ? raw_high_us_[ch] : 0;
+    }
+
+    uint32_t last_edge_ms(uint8_t ch) const {
+        return (ch < kNumRcChannels) ? last_edge_time_ms_[ch] : 0;
+    }
+
 private:
     static rmt_channel_t channel_from_index(uint8_t index) {
         return static_cast<rmt_channel_t>(RMT_CHANNEL_0 + index);
