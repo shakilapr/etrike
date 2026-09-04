@@ -351,7 +351,7 @@ static void test_flow_c_motor_actuation_pipeline() {
     rev_frame.id = can::kIdRtDriveCmd;
     rev_frame.dlc = 5;
     can::gen::RtDriveCmd rev_cmd{};
-    rev_cmd.motor_speed_mmps = 1000;
+    rev_cmd.motor_speed_mmps = -500;
     rev_cmd.gear = static_cast<uint8_t>(can::Gear::R);
     can::gen::encode_rt_drive_cmd(rev_cmd, rev_frame);
 
@@ -364,7 +364,7 @@ static void test_flow_c_motor_actuation_pipeline() {
     motor.tick(560);
 
     TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Reverse, "Reverse relay PA0 energized");
-    TEST_CHECK_EQ(motor.target_speed_mmps(), 1000, "Target speed is now 1000 mm/s reverse");
+    TEST_CHECK_EQ(motor.target_speed_mmps(), -500, "Target speed is now -500 mm/s reverse");
     TEST_CHECK(dac.current_code() > 0, "DAC code active in reverse");
 
     // 4. Verify MTR Feedback Frame (0x206)
