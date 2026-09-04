@@ -94,10 +94,18 @@
   padding: 0 2px;
 }
 
-.control-toolbox-actions button {
+.control-toolbox-actions button,
+.control-toolbox-actions button.danger {
   width: 100%;
-  min-height: 32px;
-  font-size: 12px;
+  min-height: 42px;
+  height: 42px;
+  max-height: 42px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(186, 45, 54, 0.25);
+  transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 
 .control-toolbox-note {

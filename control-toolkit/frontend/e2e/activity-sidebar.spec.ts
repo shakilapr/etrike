@@ -17,6 +17,8 @@ test('activity rail swaps contextual sidebars only (main workspace unchanged)', 
   await expect(page.getByTestId('sidebar-kb-toggle')).toBeVisible()
   await expect(page.getByTestId('control-fake-signals')).toBeVisible()
   await expect(page.getByTestId('sidebar-stop-all')).toBeVisible()
+  const stopAllBox = await page.getByTestId('sidebar-stop-all').boundingBox()
+  expect(stopAllBox?.height).toBeGreaterThanOrEqual(40)
   await expect(page.getByTestId('control-route-high')).toHaveCount(0)
 
   // Monitor activity: simplified live CAN only; main stays put.
