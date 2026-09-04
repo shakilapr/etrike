@@ -241,7 +241,7 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
 extern "C" void app_main() {
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  RM-ESP32 Receiver Gateway (C++17)");
-    ESP_LOGI(TAG, "  Version: " FW_VERSION);
+    ESP_LOGI(TAG, "  Version: %s", rm::kFirmwareVersion);
     ESP_LOGI(TAG, "========================================");
 
     esp_err_t ret = nvs_flash_init();

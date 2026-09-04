@@ -8,6 +8,8 @@
 
 namespace rm {
 
+constexpr const char* kFirmwareVersion = "v0.8.0-alpha-rm";
+
 // ── CAN Bus (Built-in TWAI on Low-CAN) ─────────────────────────────
 constexpr int kCanBitrateHz = 500'000;
 constexpr int kCanTxGpio    = 21;
