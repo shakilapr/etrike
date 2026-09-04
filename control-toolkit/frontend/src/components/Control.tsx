@@ -352,6 +352,8 @@ export function Control() {
   const [kbEnabled, setKbEnabled] = useState(false)
   const [kbSnap, setKbSnap] = useState<Record<string, unknown> | null>(null)
   const [ctrlStatus, setCtrlStatus] = useState<Record<string, unknown> | null>(null)
+  const intentInFlightRef = useRef(false)
+  const intentQueuedRef = useRef(false)
   const seqRef = useRef(0)
   const keysRef = useRef<Record<string, boolean>>({})
   const kbEnabledRef = useRef(false)
@@ -409,8 +411,12 @@ export function Control() {
     window.addEventListener('blur', onBlur)
     document.addEventListener('visibilitychange', onVis)
 
-    const tick = window.setInterval(() => {
+    const sendLatest = () => {
       if (!kbEnabledRef.current) return
+      if (intentInFlightRef.current) {
+        intentQueuedRef.current = true
+        return
+      }
       const k = keysRef.current
       let throttle = 0
       let steer = 0
@@ -421,9 +427,12 @@ export function Control() {
       const hard_brake = !!k.ShiftLeft || !!k.ShiftRight
       const estop = !!k.Space
       seqRef.current += 1
+      const seq = seqRef.current
+      intentInFlightRef.current = true
+      intentQueuedRef.current = false
       void api
         .controlIntent({
-          sequence: seqRef.current,
+          sequence: seq,
           source: 'control_keyboard',
           mode: 'kinematics',
           throttle,
@@ -444,7 +453,13 @@ export function Control() {
           setLog(`Control lost: ${msg}`)
           void api.status().then(setStatus).catch(() => undefined)
         })
-    }, 50)
+        .finally(() => {
+          intentInFlightRef.current = false
+          if (intentQueuedRef.current && kbEnabledRef.current) sendLatest()
+        })
+    }
+
+    const tick = window.setInterval(sendLatest, 50)
 
     return () => {
       window.removeEventListener('keydown', onDown)
@@ -452,6 +467,7 @@ export function Control() {
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVis)
       window.clearInterval(tick)
+      intentQueuedRef.current = false
     }
   }, [kbEnabled, method])
 

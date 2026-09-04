@@ -38,5 +38,5 @@ export async function cleanupControlStreams(
 
 /** True when an intent error is only a stale sequence race (ignore). */
 export function isStaleSequenceError(msg: string): boolean {
-  return /stale[_ ]sequence/i.test(msg)
+  return /stale[_ ]sequence|intent sequence \d+ < current/i.test(msg)
 }
