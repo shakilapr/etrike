@@ -43,7 +43,7 @@ static uint8_t g_roll_hmi_mode = 0;
 static uint8_t g_roll_hmi_pwr = 0;
 
 static bool send_can_frame(can::Frame& fr, const char* name) {
-    if (!g_can.send(fr)) {
+    if (!g_can.send(fr, 2)) {
         g_can_tx_fail.fetch_add(1, std::memory_order_relaxed);
         ESP_LOGW(TAG, "CAN TX dropped: %s (ID %03lX)", name, static_cast<unsigned long>(fr.id));
         return false;
