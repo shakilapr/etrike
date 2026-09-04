@@ -97,11 +97,11 @@ I (330) rm: RC Receiver RMT channels 0-5 armed
 
 ## 6. Running Native Tests
 
-You can run signal decoding and fail-safe deadman tests directly on your host PC without hardware:
+You can run the complete subsystem test suite (signal decoding, bounds, deadbands, per-channel deadman timeouts, jitter filter, gateway state machine, ESTOP reset sequence, and CAN encoding) directly on your host PC without hardware:
 
-```bash
+```powershell
 cd rm-esp32
-g++ -static -std=c++17 -I .. -I ../shared test/test_rm_receiver.cpp -o test_rm.exe
-.\test_rm.exe
-Remove-Item test_rm.exe
+g++ -std=c++17 -I . -I .. -I ../shared test/test_rm_full_suite.cpp -o test_rm_suite.exe
+.\test_rm_suite.exe
+Remove-Item test_rm_suite.exe
 ```

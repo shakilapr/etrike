@@ -101,3 +101,16 @@ MTR accepts motor and relay commands from two operational sources on Low CAN (50
 1. **Mode 1 (Autonomous)**: Sourced from RT gateway (`0x204 RT_DRIVE_CMD`).
 2. **Mode 2 (Remote Manual)**: Sourced directly from RM gateway (`0x204` canonical or fallback `0x0BB` relay + `0x0AA` throttle).
 3. **Emergency Stop (`0x001 SAFETY_ESTOP`)**: De-energizes all relays immediately and clamps DAC to 0.0 V.
+
+---
+
+## 7. Running Native Tests
+
+You can run the complete subsystem test suite (relays active-low mutual exclusion, MCP4725 software I2C multi-address probing and voltage window clamping, ESTOP and mode recovery, 50 ms direction shift arc-protection dwell, 500 ms comms watchdog timeout, legacy fallback frames, and FDCAN ringbuffer mechanics) directly on your host PC without hardware:
+
+```powershell
+cd mtr-stm32
+g++ -std=c++17 -I . -I .. -I ../shared -I test/stub test/test_mtr_full_suite.cpp -o test_mtr_suite.exe
+.\test_mtr_suite.exe
+Remove-Item test_mtr_suite.exe
+```
