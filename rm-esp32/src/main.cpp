@@ -34,6 +34,7 @@ static std::atomic<uint32_t> g_can_tx_fail{0};
 static std::atomic<uint32_t> g_alive_capture{0};
 static std::atomic<uint32_t> g_alive_can_tx{0};
 static std::atomic<uint32_t> g_alive_hb{0};
+static std::atomic<bool>     g_can_estop_latched{false};
 
 // Rolling counters for protocol frames
 static uint8_t g_roll_ses = 0;
@@ -198,6 +199,18 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
 [[noreturn]] static void task_can_control(void*) {
     while (1) {
         g_can.service_recovery(esp_timer_get_time());
+
+        // Drain incoming CAN messages to prevent queue overflow and process bus ESTOP
+        can::Frame rx_frame;
+        while (g_can.receive(rx_frame, 0)) {
+            if (rx_frame.id == 0x001u) { // SAFETY_ESTOP
+                if (!g_can_estop_latched.load(std::memory_order_relaxed)) {
+                    g_can_estop_latched.store(true, std::memory_order_release);
+                    ESP_LOGE(TAG, "CAN SAFETY_ESTOP (0x001) received from bus! Latching vehicle stop.");
+                }
+            }
+        }
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
