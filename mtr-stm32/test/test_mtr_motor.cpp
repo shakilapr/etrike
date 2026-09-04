@@ -88,9 +88,14 @@ public:
 
         bool fwd = (target_gear == can::Gear::D || target_gear == can::Gear::S);
         bool rev = (target_gear == can::Gear::R);
-        int32_t eff_speed = fwd ? target_speed_mmps : (rev ? -target_speed_mmps : 0);
-        if (eff_speed <= 0 && rev && target_speed_mmps > 0) {
-            eff_speed = target_speed_mmps;
+        int32_t eff_speed = 0;
+        if (fwd) {
+            if (target_speed_mmps > 0) eff_speed = target_speed_mmps;
+        } else if (rev) {
+            if (target_speed_mmps < 0) eff_speed = -target_speed_mmps;
+            else if (target_speed_mmps > 0 && target_speed_mmps <= mtr::kMaxReverseSpeedMmps) {
+                eff_speed = target_speed_mmps;
+            }
         }
 
         if (target_gear == can::Gear::N || eff_speed <= 0) {
@@ -238,6 +243,16 @@ void test_dac_throttle_curve_and_clamps() {
     mgr.handle_drive_cmd(500, can::Gear::R);
     mgr.tick();
     ASSERT_EQ(mgr.dac_code, mtr::kDacMaxCode);
+
+    // Negative speed in Drive must be rejected -> 0 V (Code 0)
+    mgr.handle_drive_cmd(-500, can::Gear::D);
+    mgr.tick();
+    ASSERT_EQ(mgr.dac_code, 0);
+
+    // Forward speed > 500 in Reverse must be rejected -> 0 V (Code 0)
+    mgr.handle_drive_cmd(1500, can::Gear::R);
+    mgr.tick();
+    ASSERT_EQ(mgr.dac_code, 0);
 }
 
 void test_estop_shutdown_and_sys_gap15_ack() {
