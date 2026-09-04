@@ -191,7 +191,132 @@ static void test_flow_b_remote_control_pipeline() {
 }
 
 // ============================================================================
-// Test Suite 3: Flow C — Motor Actuation & Relay Control (MTR Node)
+// Test Suite 3: Flow E — RM Standalone Direct Actuator Bypass on Low CAN
+// (Host, RT, and SYS Disconnected or Powered OFF)
+// ============================================================================
+static void test_flow_e_rm_standalone_bypass_pipeline() {
+    std::printf("\n--- Flow E: RM Standalone Direct Bypass Pipeline (RM -> SES, SEB, MTR) ---\n");
+
+    // RM directly commands SES, SEB, and MTR on Low CAN bus
+    // Set RC inputs: Drive engaged, SWB ignition ON, 50% speed trim, right steer 15.0 deg, 5.0 mm brake
+    uint32_t raw_us[rm::kNumRcChannels] = {1650, 1600, 1500, 1500, 2000, 2000};
+    uint32_t last_edge_ms[rm::kNumRcChannels] = {100, 100, 100, 100, 100, 100};
+    uint32_t now_ms = 110;
+
+    auto snap = rm::decode_rc_signals(raw_us, last_edge_ms, now_ms);
+    TEST_CHECK(snap.signal_valid, "RM RC signals valid");
+    TEST_CHECK(snap.ignition, "RM Ignition ON");
+    TEST_CHECK_EQ(static_cast<int>(snap.gear), static_cast<int>(can::Gear::D), "RM Gear is Drive");
+
+    // 1. Direct Steering Setpoint -> 0x169 VCU_SES_REQ
+    bool drive_active = snap.signal_valid && snap.ignition &&
+                       (snap.gear == can::Gear::D || snap.gear == can::Gear::R);
+    TEST_CHECK(drive_active, "RM Drive active for steering & traction");
+
+    codecs::ses::Command ses_cmd{};
+    ses_cmd.alignment_enable = snap.signal_valid && snap.ignition;
+    ses_cmd.control_enable = drive_active;
+    ses_cmd.target_angle_raw = static_cast<int16_t>(snap.steering_deg * 10.0f);
+    ses_cmd.target_speed_raw = 328;
+    ses_cmd.rolling_counter = 1;
+    etrike::protocol::Frame ses_fr{};
+    auto status_ses = codecs::ses::encode_command(ses_cmd, ses_fr);
+    TEST_CHECK(status_ses == etrike::protocol::CodecStatus::Ok, "RM encodes 0x169 VCU_SES_REQ directly");
+    TEST_CHECK_EQ(ses_fr.id, 0x169u, "SES frame ID is 0x169");
+    TEST_CHECK(ses_cmd.target_angle_raw > 0, "Direct steer angle commanded positive");
+
+    // 2. Direct Brake Setpoint -> 0x7B9 VCU_SEB_REQ
+    codecs::seb::Command seb_cmd{};
+    seb_cmd.alignment_enable = snap.signal_valid;
+    seb_cmd.control_enable = snap.signal_valid;
+    seb_cmd.control_mode = codecs::seb::ControlMode::Stroke;
+    float commanded_stroke = snap.signal_valid ? snap.brake_stroke_mm : rm::kMaxBrakeStrokeMm;
+    uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+    seb_cmd.stroke_request_raw = stroke_raw;
+    seb_cmd.rolling_counter = 1;
+    etrike::protocol::Frame seb_fr{};
+    auto status_seb = codecs::seb::encode_command(seb_cmd, seb_fr);
+    TEST_CHECK(status_seb == etrike::protocol::CodecStatus::Ok, "RM encodes 0x7B9 VCU_SEB_REQ directly");
+    TEST_CHECK_EQ(seb_fr.id, 0x7B9u, "SEB frame ID is 0x7B9");
+
+    // 3. Direct Canonical Motor Command -> 0x204 RT_DRIVE_CMD
+    int32_t target_motor_speed = static_cast<int32_t>(snap.speed_trim * shared::kMaxSpeedFwdMmps);
+    generated::RtDriveCmd drive_cmd{};
+    drive_cmd.motor_speed_mmps = target_motor_speed;
+    drive_cmd.gear = static_cast<uint8_t>(snap.gear);
+    etrike::protocol::Frame drive_fr{};
+    generated::encode(drive_cmd, drive_fr);
+    TEST_CHECK_EQ(drive_fr.id, 0x204u, "RM drive frame ID is 0x204");
+    TEST_CHECK(drive_cmd.motor_speed_mmps > 0, "RM motor speed setpoint > 0");
+
+    // Feed RM's direct 0x204 frame directly into MTR STM32 (without RT or SYS)
+    mtr::RelayController relays_direct{};
+    mtr::DacController dac_direct{};
+    mtr::MotorManager mtr_direct{relays_direct, dac_direct};
+    mtr_direct.init();
+
+    can::Frame can_204_in{};
+    can_204_in.id = drive_fr.id;
+    can_204_in.dlc = drive_fr.dlc;
+    std::memcpy(can_204_in.data.data(), drive_fr.data.data(), drive_fr.dlc);
+
+    mtr_direct.handle_frame(can_204_in, 100);
+    mtr_direct.tick(100);
+
+    TEST_CHECK_EQ(relays_direct.state(), mtr::RelayController::State::Drive,
+                  "MTR switches to Drive relay directly from RM 0x204");
+    TEST_CHECK(dac_direct.current_code() > 0,
+               "MTR DAC outputs throttle voltage directly from RM 0x204");
+
+    // 4. Fallback Direct Motor Command -> 0x0BB Relay & 0x0AA Throttle
+    mtr::RelayController relays_fallback{};
+    mtr::DacController dac_fallback{};
+    mtr::MotorManager mtr_fallback{relays_fallback, dac_fallback};
+    mtr_fallback.init();
+
+    // Emulate RM emitting 0x0BB (0x05 = Drive)
+    can::Frame relay_fr{};
+    relay_fr.id = 0x0BB;
+    relay_fr.dlc = 8;
+    relay_fr.data[0] = 0x05; // Drive
+    mtr_fallback.handle_frame(relay_fr, 200);
+
+    // Emulate RM emitting 0x0AA (16-bit throttle = 32768, ~50%)
+    can::Frame throttle_fr{};
+    throttle_fr.id = 0x0AA;
+    throttle_fr.dlc = 8;
+    throttle_fr.data[0] = 0x80;
+    throttle_fr.data[1] = 0x00;
+    mtr_fallback.handle_frame(throttle_fr, 200);
+
+    mtr_fallback.tick(200);
+
+    TEST_CHECK_EQ(relays_fallback.state(), mtr::RelayController::State::Drive,
+                  "MTR switches to Drive relay directly from RM fallback 0x0BB");
+    TEST_CHECK(dac_fallback.current_code() > 0,
+               "MTR DAC outputs throttle voltage directly from RM fallback 0x0AA");
+
+    // 5. RC Signal Loss Deadman Guard -> 0x001 SAFETY_ESTOP from RM
+    raw_us[0] = 0; // Signal lost on steering
+    auto snap_lost = rm::decode_rc_signals(raw_us, last_edge_ms, 250);
+    TEST_CHECK(!snap_lost.signal_valid, "RC signal correctly marked invalid");
+    TEST_CHECK_EQ(snap_lost.brake_stroke_mm, rm::kMaxBrakeStrokeMm, "Emergency brake maxed on signal loss");
+
+    can::Frame rm_estop{};
+    rm_estop.id = 0x001;
+    rm_estop.dlc = 0; // Wire contract
+
+    mtr_direct.handle_frame(rm_estop, 300);
+    mtr_direct.tick(300);
+
+    TEST_CHECK_EQ(relays_direct.state(), mtr::RelayController::State::Off,
+                  "MTR immediately cuts relays upon RM fail-safe ESTOP");
+    TEST_CHECK_EQ(dac_direct.current_code(), 0,
+                  "MTR DAC forced to 0V upon RM fail-safe ESTOP");
+}
+
+// ============================================================================
+// Test Suite 4: Flow C — Motor Actuation & Relay Control (MTR Node in Hierarchy)
 // ============================================================================
 static void test_flow_c_motor_actuation_pipeline() {
     std::printf("\n--- Flow C: Motor Actuation & Relay Pipeline ---\n");
@@ -335,6 +460,7 @@ int main() {
 
     test_flow_a_autonomous_pipeline();
     test_flow_b_remote_control_pipeline();
+    test_flow_e_rm_standalone_bypass_pipeline();
     test_flow_c_motor_actuation_pipeline();
     test_flow_d_estop_pipeline();
     test_gateway_message_matrix();
