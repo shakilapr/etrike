@@ -38,10 +38,10 @@ Vehicle driving controls and switch mapping for the electric three-wheeler (`etr
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Right Gimbal** | 2-Axis Gimbal (Spring) | Lower Right | CH1 / GPIO 18 | **Steering** | Horizontal (X) | $1050 \dots 1950$ | $-45.0^\circ \dots +45.0^\circ$ | `0x169` (raw: $29550 \dots 30450$) |
 | **Right Gimbal** | 2-Axis Gimbal (Spring) | Lower Right | CH2 / GPIO 19 | **Brake** | Vertical (Y) | $1520 \dots 1970$ | $0.0 \dots 27.0\text{ mm}$ stroke | `0x7B9` (raw: $600 \dots 1140$) |
-| **Left Gimbal** | 2-Axis Gimbal (Ratcheted/Spring) | Lower Left | CH3 / GPIO 14 | **Throttle** | Vertical (Y) | $1050 \dots 1950$ | $0 \dots 100\%$ speed | `0x204` ($0 \dots 3000\text{ mm/s}$)<br>`0x0AA` ($0.81 \dots 2.40\text{ V}$) |
+| **Left Gimbal** | 2-Axis Gimbal (Ratcheted/Spring) | Lower Left | CH3 / GPIO 14 | **Throttle** | Vertical (Y) | $1050 \dots 1950$ | $0 \dots 100\%$ speed | `0x204` ($0 \dots 3000\text{ mm/s}$) |
 | **Left Gimbal** | 2-Axis Gimbal | Lower Left | CH4 / GPIO 32 | *Spare* | Horizontal (X) | $1000 \dots 2000$ | $0.0 \dots 1.0$ pass-through | Telemetry logging |
-| **SWB Switch** | 2-Position Toggle | Top Inner-Left | CH5 / GPIO 13 | **Ignition** | UP / DOWN | $1034$ / $2035$ | OFF / ON | `0x112` (`req_start` 0 / 1)<br>`0x0BB` (`0x00` / active) |
-| **SWC Switch** | 3-Position Toggle | Top Inner-Right | CH6 / GPIO 4 | **Gear** | UP / MID / DOWN | $1035$ / $1535$ / $2035$| Reverse / Neutral / Drive | `0x204` (`gear` 3 / 0 / 1)<br>`0x0BB` (`0x09` / `0x03` / `0x05`) |
+| **SWB Switch** | 2-Position Toggle | Top Inner-Left | CH5 / GPIO 13 | **Ignition** | UP / DOWN | $1034$ / $2035$ | OFF / ON | `0x112` (`req_start` 0 / 1) |
+| **SWC Switch** | 3-Position Toggle | Top Inner-Right | CH6 / GPIO 4 | **Gear** | UP / MID / DOWN | $1035$ / $1535$ / $2035$| Reverse / Neutral / Drive | `0x204` (`gear` 3 / 0 / 1) |
 | **VRA / VRB** | Rotary Potentiometers | Top Center | — | *Unavailable* | Dial Rotation | — | Not transmitted (6-ch limit) | — |
 | **SWA / SWD** | 2-Position Toggles | Top Outer L/R | — | *Unavailable* | Toggle | — | Not transmitted (6-ch limit) | — |
 
@@ -73,7 +73,6 @@ Vehicle driving controls and switch mapping for the electric three-wheeler (`etr
 - **Linear Acceleration ($1050 \dots 1950\,\mu\text{s}$)**:
   - **Drive (D)**: Linearly ramps speed setpoint from $0 \dots 3000\,\text{mm/s}$ ($10.8\,\text{km/h}$) on canonical CAN `0x204`.
   - **Reverse (R)**: Linearly ramps speed setpoint from $0 \dots 500\,\text{mm/s}$ ($1.8\,\text{km/h}$) on canonical CAN `0x204`.
-  - **Legacy Throttle DAC (`0x0AA`)**: Linearly maps across the motor controller's safe analog window ($10480 \dots 31456$ raw $\longrightarrow 0.81\,\text{V} \dots 2.40\,\text{V}$).
 
 ---
 
@@ -82,7 +81,7 @@ Vehicle driving controls and switch mapping for the electric three-wheeler (`etr
 #### 1. When Does It Engage?
 - **Released (Idle)**: When the stick is centered at spring rest ($\le 1520\,\mu\text{s}$), the brake is **completely disengaged ($0.0\,\text{mm}$)**.
 - **Engagement**: Pushing the Right Stick upward past the **$1520\,\mu\text{s}$ threshold** engages the electro-mechanical brake caliper.
-- **Throttle Cutoff Interlock**: When brake stroke reaches **$> 5.0\,\text{mm}$** ($> 1603\,\mu\text{s}$), motor throttle is **instantly forced to $0\,\text{mm/s}$ ($0.0\,\text{V}$ DAC)** and the CAN brake flag bit (`0x10`) on `0x0BB` is asserted. The motor will never fight the brakes.
+- **Throttle Cutoff Interlock**: When brake stroke reaches **$> 5.0\,\text{mm}$** ($> 1603\,\mu\text{s}$), motor throttle is **instantly forced to $0\,\text{mm/s}$ ($0.0\,\text{V}$ DAC)**. The motor will never fight the brakes.
 - **Fail-Safe Override**: If the RC signal drops or the transmitter is turned off for **$> 100\,\text{ms}$**, the emergency brake automatically clamps to **$27.0\,\text{mm}$ (maximum emergency stroke)**.
 
 #### 2. Mathematical Value Conversion & Examples
@@ -145,13 +144,13 @@ Vehicle driving controls and switch mapping for the electric three-wheeler (`etr
 ### E. Ignition & Gear Switching: When & How It Operates
 
 #### 1. Ignition (SWB 2-Position Toggle)
-- **UP ($1034\,\mu\text{s}$)**: Vehicle is **OFF / Park**. CAN `0x112` (`req_start=0`), CAN `0x0BB` (`0x00`). Relays open, motor drive disabled.
+- **UP ($1034\,\mu\text{s}$)**: Vehicle is **OFF / Park**. CAN `0x112` (`req_start=0`). Relays open, motor drive disabled.
 - **DOWN ($2035\,\mu\text{s}$)**: Vehicle is **ON**. CAN `0x112` (`req_start=1`), main contactor closed.
 
 #### 2. Gear Selector (SWC 3-Position Toggle)
-- **UP ($1035\,\mu\text{s}$)**: **Reverse (R)** — CAN `0x204` (`gear=3`), CAN `0x0BB` (`0x09`). Speed capped at $500\,\text{mm/s}$.
-- **MID ($1535\,\mu\text{s}$)**: **Neutral / Park (N)** — CAN `0x204` (`gear=0`), CAN `0x0BB` (`0x03`). Motor disabled.
-- **DOWN ($2035\,\mu\text{s}$)**: **Drive (D)** — CAN `0x204` (`gear=1`), CAN `0x0BB` (`0x05`). Speed allowed up to $3000\,\text{mm/s}$.
+- **UP ($1035\,\mu\text{s}$)**: **Reverse (R)** — CAN `0x204` (`gear=3`). Speed capped at $500\,\text{mm/s}$.
+- **MID ($1535\,\mu\text{s}$)**: **Neutral / Park (N)** — CAN `0x204` (`gear=0`). Motor disabled.
+- **DOWN ($2035\,\mu\text{s}$)**: **Drive (D)** — CAN `0x204` (`gear=1`). Speed allowed up to $3000\,\text{mm/s}$.
 
 ---
 
