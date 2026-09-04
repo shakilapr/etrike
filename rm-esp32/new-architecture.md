@@ -40,8 +40,8 @@ All physical pin assignments from the original hardware design are preserved **1
 
 | Channel | GPIO | Signal Name | Physical Connection / Role | Calibrated Engineering Output |
 | :--- | :--- | :--- | :--- | :--- |
-| `CH0` | **GPIO 18** | `RC_DRIVE` | Steering / Drive-by-wire analog channel | Steering angle: $\pm 450.0^\circ$ $\rightarrow$ `VCU_SES_REQ` (`0x169`) |
-| `CH1` | **GPIO 19** | `RC_BRAKE` | Brake-by-wire proportional lever/trigger | Stroke setpoint: $0\text{ mm} \dots 27\text{ mm}$ $\rightarrow$ `VCU_SEB_REQ` (`0x7B9`) |
+| `CH0` | **GPIO 18** | `RC_DRIVE` | Steering / Drive-by-wire analog channel | Steering angle: $\pm 45.0^\circ$ (vendor offset $30000$: $29550\dots 30450$) $\rightarrow$ `VCU_SES_REQ` (`0x169`) |
+| `CH1` | **GPIO 19** | `RC_BRAKE` | Brake-by-wire proportional lever/trigger | Stroke setpoint: $0\text{ mm} \dots 27\text{ mm}$ (raw $600\dots 1140$) $\rightarrow$ `VCU_SEB_REQ` (`0x7B9`) |
 | `CH2` | **GPIO 14** | `RC_AUX_ANALOG`| Auxiliary analog input (potentiometer / slider)| Auxiliary analog telemetry $\rightarrow$ `0x0AA` |
 | `CH3` | **GPIO 32** | `RC_PASS` | Pass-through / expansion channel | Auxiliary telemetry $\rightarrow$ `0x112` / telemetry |
 | `CH4` | **GPIO 13** | `RC_IGNITION` | Digital ignition switch (2-position switch) | System Power Request $\rightarrow$ `HMI_PWR_REQ` (`0x112`) |
@@ -83,7 +83,7 @@ Because the FS-i6 outputs up to 6 PWM channels simultaneously over standard serv
 
 | Transmitter Control | Receiver Channel | GPIO Pin | Function | Pulse Output Range | Vehicle Behavior |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Right Stick (X)** | CH1 $\rightarrow$ `CH0` | **GPIO 18** | **Steering** | $1000\,\mu\text{s} \dots 2000\,\mu\text{s}$ | Left/Right steering setpoint ($\pm 450.0^\circ$) via `0x169` |
+| **Right Stick (X)** | CH1 $\rightarrow$ `CH0` | **GPIO 18** | **Steering** | $1000\,\mu\text{s} \dots 2000\,\mu\text{s}$ | Left/Right steering setpoint ($\pm 45.0^\circ$, raw $29550\dots 30450$) via `0x169` |
 | **Left Stick (Y)** | CH2 $\rightarrow$ `CH1` | **GPIO 19** | **Brake** | $1000\,\mu\text{s} \dots 2000\,\mu\text{s}$ | Proportional brake stroke ($0\text{ mm} \dots 27\text{ mm}$) via `0x7B9` |
 | **VRA (Rotary Dial)**| CH3 $\rightarrow$ `CH2` | **GPIO 14** | **Speed Limiter / Trim** | $1000\,\mu\text{s} \dots 2000\,\mu\text{s}$ | Auxiliary trim / max speed clamp (0% to 100%) |
 | **VRB (Rotary Dial)**| CH4 $\rightarrow$ `CH3` | **GPIO 32** | **Pass-Through / Aux** | $1000\,\mu\text{s} \dots 2000\,\mu\text{s}$ | Auxiliary lighting / payload trigger |
@@ -128,7 +128,7 @@ Standard RC PWM operates on a 50 Hz frame period (20 ms) with pulses nominally b
 
 1. **CH0: Steering Angle (`RC_DRIVE`)**:
    - Normalized: $u_{\text{steer}} = \text{clamp}\left(\frac{t_{\mu\text{s}} - 1500}{500}, -1.0, 1.0\right)$ (deadband applied around center).
-   - Angle Setpoint: $\theta_{\text{target}} = u_{\text{steer}} \times 450.0^\circ$ (resolution: $0.1^\circ$).
+   - Angle Setpoint: $\theta_{\text{target}} = u_{\text{steer}} \times 45.0^\circ$ (resolution: $0.1^\circ$, CAN raw $= \theta_{\text{target}} \times 10 + 30000 \in [29550, 30450]$).
 2. **CH1: Brake Stroke (`RC_BRAKE`)**:
    - Released: $t_{\mu\text{s}} \le 1520\,\mu\text{s} \rightarrow 0.0\text{ mm}$ stroke.
    - Pulled: $t_{\mu\text{s}} \in (1520, 2000] \rightarrow \text{Stroke} = \frac{t_{\mu\text{s}} - 1520}{480} \times 27.0\text{ mm}$.
@@ -205,8 +205,8 @@ The firmware eliminates legacy arbitrary byte packing (`0x0BB`, manual shifts) i
 
 | CAN ID | Message Key | Codec Type | Cycle | Payload Summary |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x169` | `ses:vcu_ses_req` | `can::custom::ses::Command` | 20 ms | **Steering Setpoint**: Alignment enable, control enable, target angle ($0.1^\circ$), rolling counter, XOR8-complement checksum. Active only when Ignition is ON and Gear is D/R. |
-| `0x7B9` | `seb:vcu_seb_req` | `can::custom::seb::Command` | 20 ms | **Brake Setpoint**: Stroke request ($0\dots 27\text{ mm}$), alignment enable, control enable, rolling counter, XOR8-complement checksum. |
+| `0x169` | `ses:vcu_ses_req` | `can::custom::ses::Command` | 20 ms | **Steering Setpoint**: Alignment enable, control enable, target angle ($0.1^\circ$ with $30000$ offset $\in [29550, 30450]$), rolling counter, XOR8-complement checksum. Active only when Ignition is ON and Gear is D/R (centered at $30000$ with control disabled otherwise). |
+| `0x7B9` | `seb:vcu_seb_req` | `can::custom::seb::Command` | 20 ms | **Brake Setpoint**: Stroke request ($0\dots 27\text{ mm}$, raw $600\dots 1140$), alignment enable, control enable, rolling counter, XOR8-complement checksum. |
 | `0x204` | `rt:rt_drive_cmd` | `can::gen::RtDriveCmd` | 20 ms | **Motor Setpoint (Standalone Bypass)**: Target speed ($0\dots 3000\text{ mm/s}$ Drive, $0\dots 500\text{ mm/s}$ Reverse based on VRA trim) and Gear (`N/D/R`). Directly commands MTR when RT/SYS are offline. |
 | `0x0BB` | `legacy_relay_state`| Raw Frame | 20 ms | **Legacy Relay Fallback**: Byte 0: `0x00`=Off, `0x03`=Park, `0x05`=Drive, `0x09`=Reverse. |
 | `0x0AA` | `legacy_throttle` | Raw Frame | 20 ms | **Legacy Throttle Fallback**: Bytes 0-1: 16-bit proportional throttle mapped from VRA trim. |

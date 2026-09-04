@@ -41,10 +41,10 @@ private:
 
     static gpio_num_t gpio_from_index(uint8_t index) {
         switch (index) {
-        case 0: return static_cast<gpio_num_t>(kRcDriveGpio);
+        case 0: return static_cast<gpio_num_t>(kRcSteerGpio);
         case 1: return static_cast<gpio_num_t>(kRcBrakeGpio);
-        case 2: return static_cast<gpio_num_t>(kRcAuxAnalogGpio);
-        case 3: return static_cast<gpio_num_t>(kRcPassGpio);
+        case 2: return static_cast<gpio_num_t>(kRcThrottleGpio);
+        case 3: return static_cast<gpio_num_t>(kRcSpareGpio);
         case 4: return static_cast<gpio_num_t>(kRcIgnitionGpio);
         case 5: return static_cast<gpio_num_t>(kRcGearGpio);
         default: return GPIO_NUM_NC;
@@ -62,8 +62,8 @@ private:
     // Thread-safe snapshot state
     std::atomic<float>    snap_steering_{0.0f};
     std::atomic<float>    snap_brake_{0.0f};
-    std::atomic<float>    snap_speed_trim_{1.0f};
-    std::atomic<float>    snap_aux_pass_{0.0f};
+    std::atomic<float>    snap_throttle_norm_{0.0f};
+    std::atomic<float>    snap_spare_ch4_{0.0f};
     std::atomic<bool>     snap_ignition_{false};
     std::atomic<can::Gear> snap_gear_{can::Gear::N};
     std::atomic<bool>     snap_valid_{false};

@@ -95,8 +95,8 @@ void RcReceiver::sample(uint32_t now_ms) {
     // 4. Store atomically
     snap_steering_.store(snap.steering_deg, std::memory_order_relaxed);
     snap_brake_.store(snap.brake_stroke_mm, std::memory_order_relaxed);
-    snap_speed_trim_.store(snap.speed_trim, std::memory_order_relaxed);
-    snap_aux_pass_.store(snap.aux_pass, std::memory_order_relaxed);
+    snap_throttle_norm_.store(snap.throttle_norm, std::memory_order_relaxed);
+    snap_spare_ch4_.store(snap.spare_ch4, std::memory_order_relaxed);
     snap_ignition_.store(snap.ignition, std::memory_order_relaxed);
     snap_gear_.store(snap.gear, std::memory_order_relaxed);
     snap_valid_.store(snap.signal_valid, std::memory_order_relaxed);
@@ -107,8 +107,8 @@ RcSnapshot RcReceiver::snapshot() const {
     RcSnapshot snap;
     snap.steering_deg = snap_steering_.load(std::memory_order_relaxed);
     snap.brake_stroke_mm = snap_brake_.load(std::memory_order_relaxed);
-    snap.speed_trim = snap_speed_trim_.load(std::memory_order_relaxed);
-    snap.aux_pass = snap_aux_pass_.load(std::memory_order_relaxed);
+    snap.throttle_norm = snap_throttle_norm_.load(std::memory_order_relaxed);
+    snap.spare_ch4 = snap_spare_ch4_.load(std::memory_order_relaxed);
     snap.ignition = snap_ignition_.load(std::memory_order_relaxed);
     snap.gear = snap_gear_.load(std::memory_order_relaxed);
     snap.signal_valid = snap_valid_.load(std::memory_order_relaxed);
