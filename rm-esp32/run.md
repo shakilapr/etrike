@@ -23,7 +23,7 @@ Framework: **ESP-IDF 5.5** with **C++17** (`-std=gnu++17`).
 | :--- | :--- | :--- | :--- |
 | **CAN TX** | **GPIO 21** | Output | Low CAN bus transceiver TXD (500 kbit/s) |
 | **CAN RX** | **GPIO 22** | Input | Low CAN bus transceiver RXD (500 kbit/s) |
-| **CH0 (Steer)** | **GPIO 18** | Input | RMT Right Stick Horizontal ($\pm 450.0^\circ$ $\rightarrow$ `0x169`) |
+| **CH0 (Steer)** | **GPIO 18** | Input | RMT Right Stick Horizontal ($\pm 45.0^\circ$, raw $29550\dots 30450$ $\rightarrow$ `0x169`) |
 | **CH1 (Brake)** | **GPIO 19** | Input | RMT Left Stick Vertical ($0\dots 27\text{ mm}$ $\rightarrow$ `0x7B9`) |
 | **CH2 (Throttle/Trim)**| **GPIO 14** | Input | RMT VRA Dial ($0\dots 100\%$ speed trim / throttle $\rightarrow$ `0x204` / `0x0AA`) |
 | **CH3 (Aux Pass)**| **GPIO 32** | Input | RMT VRB Rotary Dial |

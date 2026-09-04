@@ -16,12 +16,12 @@ constexpr int kCanTxGpio    = 21;
 constexpr int kCanRxGpio    = 22;
 
 // ── RMT RC Inputs (6 PWM Channels from RC Receiver) ───────────────
-constexpr int kRcDriveGpio      = 18;  // CH0: Right Stick Horizontal (Steering)
-constexpr int kRcBrakeGpio      = 19;  // CH1: Left Stick Vertical (Brake Stroke)
-constexpr int kRcAuxAnalogGpio  = 14;  // CH2: VRA Rotary Dial (Speed Trim)
-constexpr int kRcPassGpio       = 32;  // CH3: VRB Rotary Dial / Aux
-constexpr int kRcIgnitionGpio   = 13;  // CH4: SWB 2-Position Switch (Ignition)
-constexpr int kRcGearGpio       =  4;  // CH5: SWC 3-Position Switch (Gear P/R/D)
+constexpr int kRcSteerGpio     = 18;  // CH0 / Pin 1: Right Stick Horizontal (Steering +/-45 deg)
+constexpr int kRcBrakeGpio     = 19;  // CH1 / Pin 2: Right Stick Vertical (Brake Stroke 0..27mm)
+constexpr int kRcThrottleGpio  = 14;  // CH2 / Pin 3: Left Stick Vertical (Throttle 0..100%)
+constexpr int kRcSpareGpio     = 32;  // CH3 / Pin 4: Left Stick Horizontal (Spare / Unused)
+constexpr int kRcIgnitionGpio  = 13;  // CH4 / Pin 5: SWB 2-Position Switch (Ignition OFF/ON)
+constexpr int kRcGearGpio      =  4;  // CH5 / Pin 6: SWC 3-Position Switch (Gear R/N/D)
 
 constexpr uint8_t kNumRcChannels = 6;
 

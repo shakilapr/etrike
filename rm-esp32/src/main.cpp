@@ -147,9 +147,9 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         int32_t target_motor_speed = 0;
         if (drive_active) {
             if (snap.gear == can::Gear::D) {
-                target_motor_speed = static_cast<int32_t>(snap.speed_trim * shared::kMaxSpeedFwdMmps);
+                target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedFwdMmps);
             } else if (snap.gear == can::Gear::R) {
-                target_motor_speed = static_cast<int32_t>(snap.speed_trim * shared::kMaxSpeedRevMmps);
+                target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedRevMmps);
             }
         }
 
@@ -186,13 +186,13 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         throttle_fr.id = 0x0AA;
         throttle_fr.dlc = 8;
         uint16_t raw_throttle = 0;
-        if (drive_active && snap.speed_trim > 0.001f && snap.brake_stroke_mm <= 5.0f) {
+        if (drive_active && snap.throttle_norm > 0.001f && snap.brake_stroke_mm <= 5.0f) {
             // STM MCP4725 DAC expects: (analog_value + 8) >> 4 to fall within [DAC_MIN_VAL(655), DAC_MAX_VAL(1966)]
             // 655 * 16 = 10480 (0.8V idle threshold), 1966 * 16 = 31456 (2.4V max speed)
             constexpr uint32_t kLegacyDacMinRaw = 655U * 16U;
             constexpr uint32_t kLegacyDacMaxRaw = 1966U * 16U;
             raw_throttle = static_cast<uint16_t>(kLegacyDacMinRaw +
-                snap.speed_trim * static_cast<float>(kLegacyDacMaxRaw - kLegacyDacMinRaw));
+                snap.throttle_norm * static_cast<float>(kLegacyDacMaxRaw - kLegacyDacMinRaw));
         }
         throttle_fr.data[0] = static_cast<uint8_t>((raw_throttle >> 8) & 0xFF);
         throttle_fr.data[1] = static_cast<uint8_t>(raw_throttle & 0xFF);
@@ -242,12 +242,13 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         static uint32_t hb_count = 0;
         if (++hb_count % 10 == 0) {
             const auto snap = g_rc.snapshot();
-            ESP_LOGI(TAG, "STATUS | Valid=%d Ign=%d Gear=%s Steer=%.1f Spd=%.2f | CH[0..5]=[%lu,%lu,%lu,%lu,%lu,%lu]us | CAN ok=%lu fail=%lu",
+            ESP_LOGI(TAG, "STATUS | Valid=%d Ign=%d Gear=%s Steer=%.1f deg Brk=%.1f mm Throt=%.0f%% | CH[0..5]=[%lu,%lu,%lu,%lu,%lu,%lu]us | CAN ok=%lu fail=%lu",
                      snap.signal_valid ? 1 : 0,
                      snap.ignition ? 1 : 0,
                      (snap.gear == can::Gear::D) ? "D" : ((snap.gear == can::Gear::R) ? "R" : "N"),
                      snap.steering_deg,
-                     snap.speed_trim,
+                     snap.brake_stroke_mm,
+                     snap.throttle_norm * 100.0f,
                      static_cast<unsigned long>(g_rc.raw_pulse_us(0)),
                      static_cast<unsigned long>(g_rc.raw_pulse_us(1)),
                      static_cast<unsigned long>(g_rc.raw_pulse_us(2)),

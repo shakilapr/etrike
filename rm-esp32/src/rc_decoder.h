@@ -11,10 +11,10 @@
 namespace rm {
 
     struct RcSnapshot {
-    float steering_deg{0.0f};     // Steering angle: +/- 40.0 deg
-    float brake_stroke_mm{0.0f};  // Brake stroke: 0.0 to 27.0 mm
-    float speed_trim{0.0f};       // Speed trim / limiter from VRA dial (0.0 to 1.0)
-    float aux_pass{0.0f};         // Aux pass-through from VRB dial (0.0 to 1.0)
+    float steering_deg{0.0f};     // Steering angle: +/- 45.0 deg (Right Stick Horizontal)
+    float brake_stroke_mm{0.0f};  // Brake stroke: 0.0 to 27.0 mm (Right Stick Vertical)
+    float throttle_norm{0.0f};    // Proportional throttle demand: 0.0 to 1.0 (Left Stick Vertical)
+    float spare_ch4{0.0f};        // Spare input: 0.0 to 1.0 (Left Stick Horizontal)
     bool  ignition{false};        // Ignition switch via SWB (true = ON)
     can::Gear gear{can::Gear::N}; // Gear selector via SWC: N, D, R
     bool  signal_valid{false};    // True if all critical channels receive fresh pulses
@@ -26,9 +26,9 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
                                     uint32_t now_ms) {
     RcSnapshot snap;
 
-    // 1. Deadman signal validity check (CH0, CH1, CH4, CH5 are safety critical)
+    // 1. Deadman signal validity check (CH0: Steer, CH1: Brake, CH2: Throttle, CH4: Ign, CH5: Gear)
     bool valid = true;
-    for (uint8_t i : {0, 1, 4, 5}) {
+    for (uint8_t i : {0, 1, 2, 4, 5}) {
         if (now_ms < last_edge_ms[i] || (now_ms - last_edge_ms[i]) > kSignalLossTimeoutMs) {
             valid = false;
             break;
@@ -43,7 +43,7 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
     snap.last_update_ms = now_ms;
 
     if (valid) {
-        // CH0: Steering (+/- 450 deg)
+        // CH0 (Right Stick Horizontal): Steering (+/- 45.0 deg)
         int32_t steer_offset = static_cast<int32_t>(raw_us[0]) - static_cast<int32_t>(kPulseCenterUs);
         if (std::abs(steer_offset) <= static_cast<int32_t>(kPulseDeadbandUs)) {
             snap.steering_deg = 0.0f;
@@ -53,8 +53,8 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
             snap.steering_deg = norm * kMaxSteerAngleDeg;
         }
 
-        // CH1: Brake Stroke (0.0 to 27.0 mm)
-        // Pulled from 1520us to 2000us
+        // CH1 (Right Stick Vertical): Brake Stroke (0.0 to 27.0 mm)
+        // Spring centered at 1500us; pushing past 1520us engages brake linearly up to 1970us
         if (raw_us[1] > (kPulseCenterUs + 20)) {
             float norm = static_cast<float>(raw_us[1] - (kPulseCenterUs + 20)) / 450.0f;
             norm = std::clamp(norm, 0.0f, 1.0f);
@@ -63,23 +63,24 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
             snap.brake_stroke_mm = 0.0f;
         }
 
-        // CH2: Speed Limiter / Throttle (0.0 to 1.0) with idle deadband
+        // CH2 (Left Stick Vertical): Throttle (0.0 to 1.0) with idle deadband
+        // Fully down (idle) <= 1050us -> 0.0. Pushing up ramps smoothly to 1.0 at 1950us.
         if (raw_us[2] <= kThrottleMinUs) {
-            snap.speed_trim = 0.0f;
+            snap.throttle_norm = 0.0f;
         } else {
-            float trim_norm = static_cast<float>(raw_us[2] - kThrottleMinUs) /
-                              static_cast<float>(kThrottleMaxUs - kThrottleMinUs);
-            snap.speed_trim = std::clamp(trim_norm, 0.0f, 1.0f);
+            float t_norm = static_cast<float>(raw_us[2] - kThrottleMinUs) /
+                           static_cast<float>(kThrottleMaxUs - kThrottleMinUs);
+            snap.throttle_norm = std::clamp(t_norm, 0.0f, 1.0f);
         }
 
-        // CH3: Aux Pass-Through (0.0 to 1.0)
-        float aux_norm = static_cast<float>(raw_us[3] - kPulseMinValidUs) / 1000.0f;
-        snap.aux_pass = std::clamp(aux_norm, 0.0f, 1.0f);
+        // CH3 (Left Stick Horizontal): Spare Pass-Through (0.0 to 1.0)
+        float spare_norm = static_cast<float>(raw_us[3] - kPulseMinValidUs) / 1000.0f;
+        snap.spare_ch4 = std::clamp(spare_norm, 0.0f, 1.0f);
 
-        // CH4: Ignition (SWB 2-position toggle)
+        // CH4 (SWB 2-position toggle): Ignition OFF/ON
         snap.ignition = (raw_us[4] >= kIgnitionThresholdUs);
 
-        // CH5: Gear Selector (SWC 3-position toggle)
+        // CH5 (SWC 3-position toggle): Gear Selector R / N / D
         // UP = Reverse, MID = Park/Neutral, DOWN = Drive
         if (raw_us[5] <= kGearRevMaxUs) {
             snap.gear = can::Gear::R;
@@ -94,7 +95,8 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
         snap.brake_stroke_mm = kMaxBrakeStrokeMm; // Maximum emergency brake stroke
         snap.ignition = false;
         snap.gear = can::Gear::N;
-        snap.speed_trim = 0.0f;
+        snap.throttle_norm = 0.0f;
+        snap.spare_ch4 = 0.0f;
     }
 
     return snap;
