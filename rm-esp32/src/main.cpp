@@ -36,9 +36,10 @@ static std::atomic<uint32_t> g_alive_can_tx{0};
 static std::atomic<uint32_t> g_alive_hb{0};
 static std::atomic<bool>     g_can_estop_latched{false};
 // Tracks 0x001 SAFETY_ESTOP frames originated by this RM node.
-// Incremented before TX, decremented in the RX loop to filter self-loopback.
-// Without this, RM latches ESTOP on its own TWAI loopback — self-deadlock.
+// Incremented on successful TX, decremented in the RX loop within a 50ms window.
+// Prevents RM from latching ESTOP on its own TWAI loopback while protecting against credit leaks.
 static std::atomic<uint32_t> g_rm_self_estop_pending{0};
+static std::atomic<int64_t>  g_rm_self_estop_tx_us{0};
 
 // Rolling counters for protocol frames
 static uint8_t g_roll_ses = 0;
@@ -104,9 +105,10 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
                 can::Frame estop_fr;
                 can::gen::SafetyEstop estop_msg{};
                 if (can::gen::encode_safety_estop(estop_msg, estop_fr) == can::gen::CodecStatus::Ok) {
-                    // Increment before TX so the RX drain loop can discard our own loopback
-                    g_rm_self_estop_pending.fetch_add(1, std::memory_order_relaxed);
-                    send_can_frame(estop_fr, "SAFETY_ESTOP");
+                    if (send_can_frame(estop_fr, "SAFETY_ESTOP")) {
+                        g_rm_self_estop_tx_us.store(esp_timer_get_time(), std::memory_order_release);
+                        g_rm_self_estop_pending.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
             }
         } else {
@@ -234,11 +236,19 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         can::Frame rx_frame;
         while (g_can.receive(rx_frame, 0)) {
             if (rx_frame.id == 0x001u) { // SAFETY_ESTOP
-                // Consume one self-sent credit if available — skip our own loopback
-                uint32_t pending = g_rm_self_estop_pending.load(std::memory_order_relaxed);
-                if (pending > 0) {
+                // Consume one self-sent credit if available within expected loopback window (~50 ms)
+                const uint32_t pending = g_rm_self_estop_pending.load(std::memory_order_relaxed);
+                const int64_t tx_us = g_rm_self_estop_tx_us.load(std::memory_order_acquire);
+                const int64_t now_us = esp_timer_get_time();
+                const int64_t elapsed_us = now_us - tx_us;
+
+                if (pending > 0 && tx_us > 0 && elapsed_us >= 0 && elapsed_us < 50000) {
                     g_rm_self_estop_pending.fetch_sub(1, std::memory_order_relaxed);
                     continue; // Discard self-loopback frame
+                }
+                if (pending > 0) {
+                    // Expire stale loopback credit to prevent swallowing future genuine ESTOPs
+                    g_rm_self_estop_pending.store(0, std::memory_order_relaxed);
                 }
                 if (!g_can_estop_latched.load(std::memory_order_relaxed)) {
                     g_can_estop_latched.store(true, std::memory_order_release);
