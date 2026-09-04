@@ -206,6 +206,10 @@ export function Sidebar() {
     if (!kbEnabled || activity !== 'control') return
 
     const onDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+        return
+      }
       keysRef.current[e.code] = true
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault()
@@ -213,12 +217,6 @@ export function Sidebar() {
     }
     const onUp = (e: KeyboardEvent) => {
       keysRef.current[e.code] = false
-    }
-    const onBlur = () => {
-      keysRef.current = {}
-      void api.controlRelease('blur').catch(() => undefined)
-      setKbEnabled(false)
-      setControlNote('Keyboard released (window blur)')
     }
     const onVis = () => {
       if (document.hidden) {
@@ -230,7 +228,6 @@ export function Sidebar() {
 
     window.addEventListener('keydown', onDown)
     window.addEventListener('keyup', onUp)
-    window.addEventListener('blur', onBlur)
     document.addEventListener('visibilitychange', onVis)
 
     const sendLatest = () => {
@@ -282,7 +279,6 @@ export function Sidebar() {
     return () => {
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
-      window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVis)
       window.clearInterval(tick)
       intentQueuedRef.current = false
@@ -332,8 +328,13 @@ export function Sidebar() {
         return
       }
       if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
-        setControlNote('Arm Bench TX before keyboard')
-        return
+        await api.setBenchTx(st.session.session_id, true, st.session.revision)
+        const fresh = await api.status()
+        setStatus(fresh)
+        if (String(fresh.session?.bench_tx).toLowerCase() !== 'enabled') {
+          setControlNote('Failed to arm Bench TX for keyboard')
+          return
+        }
       }
       await cleanupControlStreams('sidebar_kb_enable')
       seqRef.current = 0
@@ -488,6 +489,48 @@ export function Sidebar() {
           </div>
         </div>
 
+        <div className="control-toolbox-block" data-testid="control-toolbox-feedback">
+          <p className="nav-label">Live feedback</p>
+          <div className="vehicle-card compact">
+            <div className="vehicle-readouts">
+              <div className="vehicle-readout">
+                <span>Speed fbk</span>
+                <strong data-testid="toolbox-speed">{speedText}</strong>
+                <small className="vehicle-cmd" data-testid="toolbox-speed-cmd">
+                  {hostTxLive ? `cmd ${hostCmdSpeedText}` : rtTxLive ? `cmd ${rtCmdSpeedText}` : 'cmd —'}
+                </small>
+              </div>
+              <div className="vehicle-readout">
+                <span>Steer fbk</span>
+                <strong data-testid="toolbox-steer">{steerText}</strong>
+                <small className="vehicle-cmd" data-testid="toolbox-steer-cmd">
+                  {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw —'}
+                </small>
+              </div>
+            </div>
+            <div className="vehicle-cmd-strip" data-testid="toolbox-cmd-strip">
+              <div className="vehicle-cmd-line">
+                <span className="vehicle-cmd-tag">TX High</span>
+                <span className="mono">0x300 {hostCmdSpeedText} · gear {hostCmdGearText}</span>
+                {hostFresh ? (
+                  <span className={`vehicle-cmd-fresh fresh-${hostFresh}`}>{hostFresh}</span>
+                ) : (
+                  <span className="vehicle-cmd-fresh muted">—</span>
+                )}
+              </div>
+              <div className="vehicle-cmd-line">
+                <span className="vehicle-cmd-tag">TX Low</span>
+                <span className="mono">0x204 {rtCmdSpeedText} · gear {rtCmdGearText}</span>
+                {rtFresh ? (
+                  <span className={`vehicle-cmd-fresh fresh-${rtFresh}`}>{rtFresh}</span>
+                ) : (
+                  <span className="vehicle-cmd-fresh muted">—</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="control-toolbox-actions">
           <button
             type="button"
@@ -506,7 +549,7 @@ export function Sidebar() {
           </p>
         ) : (
           <p className="context-warning">
-            Blur or hide the tab releases keyboard. Workspace tabs only in explorer.
+            Hiding the tab releases keyboard. Workspace tabs only in explorer.
           </p>
         )}
       </>

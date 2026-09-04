@@ -115,3 +115,11 @@
   line-height: 1.4;
 }
 
+.control-toolbox .vehicle-card {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
