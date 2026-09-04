@@ -26,6 +26,8 @@ public:
         first_frame_seen_ = false;
         target_speed_mmps_ = 0;
         target_gear_ = can::Gear::N;
+        active_gear_ = can::Gear::N;
+        shift_dwell_start_ms_ = 0;
         current_mode_ = can::Mode::Manual;
     }
 
@@ -88,8 +90,29 @@ public:
             return;
         }
 
-        // Update Relays with live ignition state
-        relays_.set_gear(target_gear_, ignition_on_);
+        // Update Relays with live ignition state and direction shift arc-protection
+        bool is_direction_shift = (active_gear_ == can::Gear::D && target_gear_ == can::Gear::R) ||
+                                  (active_gear_ == can::Gear::R && target_gear_ == can::Gear::D);
+
+        if (is_direction_shift && shift_dwell_start_ms_ == 0) {
+            shift_dwell_start_ms_ = now_ms;
+            dac_.force_zero();
+            relays_.set_gear(can::Gear::N, ignition_on_);
+        }
+
+        if (shift_dwell_start_ms_ != 0) {
+            if (now_ms - shift_dwell_start_ms_ < kShiftDwellMs) {
+                dac_.force_zero();
+                return;
+            }
+            // Dwell complete, allow shift
+            shift_dwell_start_ms_ = 0;
+            active_gear_ = target_gear_;
+        } else {
+            active_gear_ = target_gear_;
+        }
+
+        relays_.set_gear(active_gear_, ignition_on_);
 
         if (!ignition_on_) {
             dac_.force_zero();
@@ -97,9 +120,9 @@ public:
         }
 
         // Update Throttle DAC (canonical path only)
-        bool drive_enabled = ignition_on_ && (target_gear_ == can::Gear::D);
-        bool reverse_enabled = ignition_on_ && (target_gear_ == can::Gear::R);
-        bool neutral_active = (target_gear_ == can::Gear::N) || !ignition_on_;
+        bool drive_enabled = ignition_on_ && (active_gear_ == can::Gear::D);
+        bool reverse_enabled = ignition_on_ && (active_gear_ == can::Gear::R);
+        bool neutral_active = (active_gear_ == can::Gear::N) || !ignition_on_;
 
         int32_t speed_mag = std::abs(target_speed_mmps_);
 
@@ -115,6 +138,8 @@ public:
         estop_active_ = true;
         target_speed_mmps_ = 0;
         target_gear_ = can::Gear::N;
+        active_gear_ = can::Gear::N;
+        shift_dwell_start_ms_ = 0;
         relays_.set_state(RelayController::State::Off);
         dac_.force_zero();
     }
@@ -177,8 +202,12 @@ private:
 
     int32_t target_speed_mmps_{0};
     can::Gear target_gear_{can::Gear::N};
+    can::Gear active_gear_{can::Gear::N};
     can::Mode current_mode_{can::Mode::Manual};
     bool ignition_on_{false};
+
+    static constexpr uint32_t kShiftDwellMs{50};
+    uint32_t shift_dwell_start_ms_{0};
 };
 
 }  // namespace mtr
