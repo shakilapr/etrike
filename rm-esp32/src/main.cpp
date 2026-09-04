@@ -78,6 +78,18 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         rm::RcSnapshot snap = g_rc.snapshot();
 
+        // Check latched emergency stop status
+        bool estop_latched = g_can_estop_latched.load(std::memory_order_acquire);
+
+        // Allow resetting latched ESTOP when RC signal is valid, ignition is switched OFF, and gear is in Neutral
+        if (estop_latched && snap.signal_valid && !snap.ignition && snap.gear == can::Gear::N) {
+            g_can_estop_latched.store(false, std::memory_order_release);
+            estop_latched = false;
+            ESP_LOGI(TAG, "ESTOP condition cleared via RC reset sequence (Ignition OFF + Gear Neutral)");
+        }
+
+        bool estop_or_signal_loss = !snap.signal_valid || estop_latched;
+
         // 1. Fail-Safe / Signal Loss Deadman Guard
         if (!snap.signal_valid) {
             if (!was_in_signal_loss) {
@@ -99,12 +111,12 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         }
 
         // 2. Transmit Steering Setpoint -> 0x169 VCU_SES_REQ
-        // Active when Ignition is ON and in Drive or Reverse
-        bool drive_active = snap.signal_valid && snap.ignition &&
+        // Active when Signal is valid, not in ESTOP, Ignition is ON, and in Drive or Reverse
+        bool drive_active = !estop_or_signal_loss && snap.ignition &&
                            (snap.gear == can::Gear::D || snap.gear == can::Gear::R);
 
         can::custom::ses::Command ses_cmd{};
-        ses_cmd.alignment_enable = snap.signal_valid && snap.ignition;
+        ses_cmd.alignment_enable = !estop_or_signal_loss && snap.ignition;
         ses_cmd.control_enable = drive_active;
         // Raw angle in 0.1 deg units + vendor offset (29550 to 30450)
         int16_t angle_raw = static_cast<int16_t>(rm::kSbwAngleOffset);
@@ -125,13 +137,14 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
 
         // 3. Transmit Brake Setpoint -> 0x7B9 VCU_SEB_REQ
         can::custom::seb::Command seb_cmd{};
-        seb_cmd.alignment_enable = snap.signal_valid;
-        seb_cmd.control_enable = snap.signal_valid;
+        seb_cmd.alignment_enable = !estop_or_signal_loss;
+        seb_cmd.control_enable = !estop_or_signal_loss;
         seb_cmd.control_mode = can::custom::seb::ControlMode::Stroke;
         seb_cmd.auto_brake = false;
 
         // Raw stroke units: (mm - (-30.0)) / 0.05 = (mm + 30.0) * 20
-        float commanded_stroke = snap.signal_valid ? snap.brake_stroke_mm : rm::kMaxBrakeStrokeMm;
+        // When in ESTOP or signal loss, clamp immediately to maximum emergency brake stroke
+        float commanded_stroke = (!estop_or_signal_loss) ? snap.brake_stroke_mm : rm::kMaxBrakeStrokeMm;
         uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
         seb_cmd.stroke_request_raw = stroke_raw;
         seb_cmd.pressure_request_raw = 0;
@@ -143,26 +156,28 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             send_can_frame(seb_fr, "VCU_SEB_REQ");
         }
 
-        // 4. Transmit Motor Command -> 0x204 RT_DRIVE_CMD & Legacy Fallback Frames (50 Hz)
-        // Directly drives MTR on Low CAN bus when operating in standalone RM bypass mode
-        int32_t target_motor_speed = 0;
-        if (drive_active) {
-            if (snap.gear == can::Gear::D) {
-                target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedFwdMmps);
-            } else if (snap.gear == can::Gear::R) {
-                target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedRevMmps);
+        // 4. Transmit Motor Command -> 0x204 RT_DRIVE_CMD (50 Hz)
+        // Directly drives MTR on Low CAN bus when operating in standalone RM bypass mode.
+        // Gated off when under ESTOP or signal loss so MTR watchdog (500 ms) trips independently.
+        if (!estop_or_signal_loss) {
+            int32_t target_motor_speed = 0;
+            if (drive_active) {
+                if (snap.gear == can::Gear::D) {
+                    target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedFwdMmps);
+                } else if (snap.gear == can::Gear::R) {
+                    target_motor_speed = -static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedRevMmps);
+                }
+            }
+
+            // Canonical 0x204 RT_DRIVE_CMD (MTR receives speed setpoint + gear)
+            can::gen::RtDriveCmd drive_cmd{};
+            drive_cmd.motor_speed_mmps = target_motor_speed;
+            drive_cmd.gear = static_cast<uint8_t>(snap.ignition ? snap.gear : can::Gear::N);
+            can::Frame drive_fr;
+            if (can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {
+                send_can_frame(drive_fr, "RT_DRIVE_CMD");
             }
         }
-
-        // Canonical 0x204 RT_DRIVE_CMD (MTR receives speed setpoint + gear)
-        can::gen::RtDriveCmd drive_cmd{};
-        drive_cmd.motor_speed_mmps = target_motor_speed;
-        drive_cmd.gear = static_cast<uint8_t>(snap.signal_valid && snap.ignition ? snap.gear : can::Gear::N);
-        can::Frame drive_fr;
-        if (can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {
-            send_can_frame(drive_fr, "RT_DRIVE_CMD");
-        }
-
 
         // 5. Transmit HMI Mode & Power Requests (Immediate on-change or 10 Hz periodic)
         static bool last_ignition = false;
@@ -183,7 +198,7 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
 
             // 0x112 HMI_PWR_REQ
             can::gen::HmiPwrReq pwr_req{};
-            pwr_req.req_start = snap.ignition ? 1 : 0;
+            pwr_req.req_start = (!estop_or_signal_loss && snap.ignition) ? 1 : 0;
             pwr_req.rolling_counter = ++g_roll_hmi_pwr;
             can::Frame pwr_fr;
             if (can::gen::encode_hmi_pwr_req(pwr_req, pwr_fr) == can::gen::CodecStatus::Ok) {
