@@ -704,7 +704,7 @@ export function DriveConsole() {
       // Light stage matching control-ui robot-preview-stage (#f8fafc)
       ctx!.fillStyle = '#f8fafc'
       ctx!.fillRect(0, 0, w, h)
-      const egoY = h * 0.75
+      const egoY = Math.max((h - 85) * 0.55, 120)
       const grid = 50
       const ox = w / 2 - state.x
       const oy = egoY - state.y
@@ -866,11 +866,12 @@ export function DriveConsole() {
     >
       <header className="drive-topbar" data-testid="drive-topbar">
         <div className="drive-top-title">
-          <h1>Drive</h1>
-          <p className="muted small">
-            High-bus Host kinematics (<span className="mono">HOST_DRIVE_CMD 0x300</span>). For
-            Low-bus motor/steer/brake unit tests use <strong>Control → Low bus</strong>.
-          </p>
+          <div className="drive-top-headline">
+            <h1>Drive</h1>
+            <span className="muted small drive-top-desc">
+              High-bus kinematics (<span className="mono">HOST_DRIVE_CMD 0x300</span>)
+            </span>
+          </div>
         </div>
         <div className="drive-top-chips" data-testid="drive-status-chips">
           <span className={`chip quality-${quality}`} title="WebSocket stream quality">
@@ -993,27 +994,55 @@ export function DriveConsole() {
           >
             Center vehicle
           </button>
-          <div
-            className={`drive-lock-hint ${armed ? 'armed' : 'muted'}${motionLocked ? ' warn' : ''}`}
-            data-testid="drive-lock-hint"
-          >
-            {motionLocked
-              ? !sysLive
-                ? 'Armed host TX, but SYS is missing — RT stays MANUAL; RT_DRIVE_CMD stays 0. Bring SYS up, then HMI AUTO.'
-                : `Armed host TX, but RT mode is ${rtModeLabel ?? 'not AUTO'} — motion locked. Request AUTO via Control → HMI (needs live SYS).`
-              : armed
-                ? 'Armed — keys & keycaps publish HOST_DRIVE_CMD @ 10 ms'
-                : focused
-                  ? 'Local sim — Arm CAN control to transmit on the bus'
-                  : 'Click canvas or side panel, then use WASD / keycaps'}
+
+          {/* Cockpit Instrument HUD */}
+          <div className="drive-canvas-hud" data-testid="drive-canvas-hud">
+            <div className="drive-gauges" data-testid="drive-gauges">
+              <Gauge
+                label="cmd speed"
+                value={displaySpeed}
+                unit="mm/s"
+                max={Math.max(1, maxSpeedMmps)}
+                tone="accent"
+              />
+              <Gauge
+                label="cmd yaw"
+                value={displayYaw}
+                unit="mrad/s"
+                max={Math.max(1, maxYawMrad)}
+                tone="warn"
+              />
+              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" bipolar />
+              <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
+            </div>
+            <div className="drive-hud-footer">
+              <div
+                className={`drive-lock-hint ${armed ? 'armed' : 'muted'}${motionLocked ? ' warn' : ''}`}
+                data-testid="drive-lock-hint"
+              >
+                {motionLocked
+                  ? !sysLive
+                    ? 'Armed host TX, but SYS is missing — RT stays MANUAL; RT_DRIVE_CMD stays 0. Bring SYS up, then HMI AUTO.'
+                    : `Armed host TX, but RT mode is ${rtModeLabel ?? 'not AUTO'} — motion locked. Request AUTO via Control → HMI (needs live SYS).`
+                  : armed
+                    ? 'Armed — keys & keycaps publish HOST_DRIVE_CMD @ 10 ms'
+                    : focused
+                      ? 'Local sim — Arm CAN control to transmit on the bus'
+                      : 'Click canvas or side panel, then use WASD / keycaps'}
+              </div>
+              <div className="drive-hud-telemetry">
+                <span className="mono bold">{displayGear}</span>
+                <span className="mono muted small">θ {hud.thetaDeg.toFixed(1)}°</span>
+                <span className="mono muted small">{hud.radiusText}</span>
+              </div>
+            </div>
           </div>
         </div>
 
         <aside className="drive-side panel" data-testid="drive-side">
-          {/* Controls first so keycaps/gears are visible without scrolling past gauges */}
           <section className="drive-section" data-testid="drive-controls-section">
             <div className="drive-section-head">
-              <h2>Controls</h2>
+              <h2>Driving controls</h2>
               <span className="muted small">hold keycaps or use keyboard</span>
             </div>
             <div className="keycap-pad" data-testid="drive-keycaps">
@@ -1068,24 +1097,24 @@ export function DriveConsole() {
           <section className="drive-section" data-testid="drive-shift-section">
             <div className="drive-section-head">
               <h2>Shift mode</h2>
-            </div>
-            <div className="seg" data-testid="preview-shift-mode">
-              <button
-                type="button"
-                className={shiftMode === 'smart' ? 'seg-btn active' : 'seg-btn'}
-                data-testid="preview-mode-adaptive"
-                onClick={() => setShiftMode('smart')}
-              >
-                Adaptive
-              </button>
-              <button
-                type="button"
-                className={shiftMode === 'direct' ? 'seg-btn active' : 'seg-btn'}
-                data-testid="preview-mode-direct"
-                onClick={() => setShiftMode('direct')}
-              >
-                Direct
-              </button>
+              <div className="seg compact" data-testid="preview-shift-mode">
+                <button
+                  type="button"
+                  className={shiftMode === 'smart' ? 'seg-btn active' : 'seg-btn'}
+                  data-testid="preview-mode-adaptive"
+                  onClick={() => setShiftMode('smart')}
+                >
+                  Adaptive
+                </button>
+                <button
+                  type="button"
+                  className={shiftMode === 'direct' ? 'seg-btn active' : 'seg-btn'}
+                  data-testid="preview-mode-direct"
+                  onClick={() => setShiftMode('direct')}
+                >
+                  Direct
+                </button>
+              </div>
             </div>
             <p className="muted small preview-mode-blurb" data-testid="preview-mode-blurb">
               {shiftMode === 'smart' ? (
@@ -1123,53 +1152,6 @@ export function DriveConsole() {
                 Gear auto-selected by throttle in Adaptive mode
               </p>
             )}
-          </section>
-
-          <section className="drive-section" data-testid="drive-telemetry-section">
-            <div className="drive-section-head">
-              <h2>Telemetry</h2>
-              <span className="muted small mono">
-                {armed ? (canLive ? 'from bus' : 'waiting 0x300') : 'local sim'}
-              </span>
-            </div>
-            <div className="drive-gauges" data-testid="drive-gauges">
-              <Gauge
-                label="cmd speed"
-                value={displaySpeed}
-                unit="mm/s"
-                max={Math.max(1, maxSpeedMmps)}
-                tone="accent"
-              />
-              <Gauge
-                label="cmd yaw"
-                value={displayYaw}
-                unit="mrad/s"
-                max={Math.max(1, maxYawMrad)}
-                tone="warn"
-              />
-              <Gauge label="steer α" value={hud.alphaDeg} unit="°" max={45} tone="ok" bipolar />
-              <Gauge label="brake" value={hud.brakeKpa} unit="kPa" max={5000} tone="danger" />
-            </div>
-            <dl className="kv preview-kv" data-testid="preview-telemetry">
-              <dt>HOST speed / yaw [0x300]</dt>
-              <dd className="mono">
-                {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
-              </dd>
-              <dt>Gear · heading</dt>
-              <dd className="mono">
-                {displayGear} · θ {hud.thetaDeg.toFixed(1)}°
-              </dd>
-              <dt>Turn radius</dt>
-              <dd className="mono">{hud.radiusText}</dd>
-              <dt>Backend shaped</dt>
-              <dd className="mono" data-testid="drive-shaped">
-                {shapedSpeed != null
-                  ? `${shapedSpeed} mm/s · ${String(ctrlSnap?.gear_label ?? '—')} · yaw ${shapedYaw ?? 0}`
-                  : armed
-                    ? 'waiting intent…'
-                    : '— (arm to shape)'}
-              </dd>
-            </dl>
           </section>
 
           <section className="drive-section" data-testid="drive-limits-section">
@@ -1244,6 +1226,35 @@ export function DriveConsole() {
                 <span className="mono field-val drive-limit-val">{maxYawMrad}</span>
               </div>
             </label>
+          </section>
+
+          <section className="drive-section" data-testid="drive-telemetry-section">
+            <div className="drive-section-head">
+              <h2>Telemetry details</h2>
+              <span className="muted small mono">
+                {armed ? (canLive ? 'from bus' : 'waiting 0x300') : 'local sim'}
+              </span>
+            </div>
+            <dl className="kv preview-kv" data-testid="preview-telemetry">
+              <dt>HOST speed / yaw [0x300]</dt>
+              <dd className="mono">
+                {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
+              </dd>
+              <dt>Gear · heading</dt>
+              <dd className="mono">
+                {displayGear} · θ {hud.thetaDeg.toFixed(1)}°
+              </dd>
+              <dt>Turn radius</dt>
+              <dd className="mono">{hud.radiusText}</dd>
+              <dt>Backend shaped</dt>
+              <dd className="mono" data-testid="drive-shaped">
+                {shapedSpeed != null
+                  ? `${shapedSpeed} mm/s · ${String(ctrlSnap?.gear_label ?? '—')} · yaw ${shapedYaw ?? 0}`
+                  : armed
+                    ? 'waiting intent…'
+                    : '— (arm to shape)'}
+              </dd>
+            </dl>
           </section>
 
           <ul className="controls-legend muted small" data-testid="preview-controls-legend">
