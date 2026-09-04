@@ -185,6 +185,7 @@ inline void HAL_GPIO_TogglePin(GPIO_TypeDef* port, uint16_t pin_mask) {
 #define FDCAN_FILTER_TO_RXFIFO0 0
 #define FDCAN_REJECT            0
 #define FDCAN_FILTER_REMOTE     0
+#define FDCAN_REJECT_REMOTE     1
 #define FDCAN1_IT0_IRQn         0
 #define FDCAN_IT_RX_FIFO0_NEW_MESSAGE (1 << 0)
 #define FDCAN_DATA_FRAME        0
@@ -276,9 +277,17 @@ typedef struct {
     uint32_t TxFifoQueueMode;
 } FDCAN_InitTypeDef;
 
+typedef enum {
+    HAL_FDCAN_STATE_RESET = 0x00U,
+    HAL_FDCAN_STATE_READY = 0x01U,
+    HAL_FDCAN_STATE_BUSY  = 0x02U,
+    HAL_FDCAN_STATE_ERROR = 0x03U
+} HAL_FDCAN_StateTypeDef;
+
 typedef struct {
     FDCAN_GlobalTypeDef* Instance;
     FDCAN_InitTypeDef Init;
+    HAL_FDCAN_StateTypeDef State;
 } FDCAN_HandleTypeDef;
 
 // Global FDCAN Mock Buffers
@@ -302,13 +311,23 @@ inline void reset() {
 } // namespace fdcan_mock
 
 inline HAL_StatusTypeDef HAL_RCCEx_PeriphCLKConfig(RCC_PeriphCLKInitTypeDef*) { return HAL_OK; }
-inline HAL_StatusTypeDef HAL_FDCAN_Init(FDCAN_HandleTypeDef*) { return HAL_OK; }
+inline HAL_StatusTypeDef HAL_FDCAN_Init(FDCAN_HandleTypeDef* hfdcan) {
+    if (hfdcan) hfdcan->State = HAL_FDCAN_STATE_READY;
+    return HAL_OK;
+}
 inline HAL_StatusTypeDef HAL_FDCAN_ConfigFilter(FDCAN_HandleTypeDef*, FDCAN_FilterTypeDef*) { return HAL_OK; }
 inline HAL_StatusTypeDef HAL_FDCAN_ConfigGlobalFilter(FDCAN_HandleTypeDef*, uint32_t, uint32_t, uint32_t, uint32_t) { return HAL_OK; }
 inline void HAL_NVIC_SetPriority(uint32_t, uint32_t, uint32_t) {}
 inline void HAL_NVIC_EnableIRQ(uint32_t) {}
 inline void HAL_NVIC_DisableIRQ(uint32_t) {}
-inline HAL_StatusTypeDef HAL_FDCAN_Start(FDCAN_HandleTypeDef*) { return HAL_OK; }
+inline HAL_StatusTypeDef HAL_FDCAN_Start(FDCAN_HandleTypeDef* hfdcan) {
+    if (hfdcan) hfdcan->State = HAL_FDCAN_STATE_BUSY;
+    return HAL_OK;
+}
+inline HAL_StatusTypeDef HAL_FDCAN_Stop(FDCAN_HandleTypeDef* hfdcan) {
+    if (hfdcan) hfdcan->State = HAL_FDCAN_STATE_READY;
+    return HAL_OK;
+}
 inline HAL_StatusTypeDef HAL_FDCAN_ActivateNotification(FDCAN_HandleTypeDef*, uint32_t, uint32_t) { return HAL_OK; }
 
 inline HAL_StatusTypeDef HAL_FDCAN_AddMessageToTxFifoQ(FDCAN_HandleTypeDef*, FDCAN_TxHeaderTypeDef* header, uint8_t* data) {
