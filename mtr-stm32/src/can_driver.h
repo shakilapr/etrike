@@ -5,14 +5,18 @@
 #include <cstdint>
 #include <cstring>
 #include "stm32g4xx_hal.h"
-#include "config.h"
 #include "protocol/compat/can.hpp"
+
+extern "C" {
+    extern FDCAN_HandleTypeDef hfdcan1;
+}
 
 namespace mtr {
 
 class CanDriver {
 public:
-    CanDriver() = default;
+    explicit CanDriver(FDCAN_HandleTypeDef& hfdcan) : hfdcan_(hfdcan) {}
+    CanDriver() : CanDriver(hfdcan1) {}
 
     bool init() {
         // Configure FDCAN kernel clock to PCLK1 (16 MHz)
@@ -55,7 +59,7 @@ public:
         hfdcan_.Init.DataTimeSeg1 = 1;
         hfdcan_.Init.DataTimeSeg2 = 1;
 
-        hfdcan_.Init.StdFiltersNbr = 6; // 0x001, 0x110, 0x204, 0x0BB, 0x0AA, 0x112
+        hfdcan_.Init.StdFiltersNbr = 4; // 0x001, 0x110, 0x204, 0x112
         hfdcan_.Init.ExtFiltersNbr = 0;
         hfdcan_.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
 
@@ -67,9 +71,7 @@ public:
         configure_filter_(0, 0x001); // SAFETY_ESTOP
         configure_filter_(1, 0x110); // SYS_MODE_CMD
         configure_filter_(2, 0x204); // RT_DRIVE_CMD
-        configure_filter_(3, 0x0BB); // Legacy relay state
-        configure_filter_(4, 0x0AA); // Legacy throttle
-        configure_filter_(5, 0x112); // HMI_PWR_REQ (Ignition)
+        configure_filter_(3, 0x112); // HMI_PWR_REQ (Ignition)
 
         // 4. Configure Global Filter: reject non-matching standard frames
         HAL_FDCAN_ConfigGlobalFilter(&hfdcan_, FDCAN_REJECT, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_FILTER_REMOTE);
@@ -203,7 +205,7 @@ private:
     volatile uint16_t rx_head_{0};
     volatile uint16_t rx_tail_{0};
 
-    FDCAN_HandleTypeDef hfdcan_{};
+    FDCAN_HandleTypeDef& hfdcan_;
     bool initialized_{false};
     uint32_t tx_count_{0};
     uint32_t tx_dropped_{0};
