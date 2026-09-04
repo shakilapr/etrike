@@ -918,15 +918,19 @@ export function DriveConsole() {
               Disarm
             </button>
           )}
-          {!fullVehicle && <button
-            type="button"
-            className="danger"
-            data-testid="btn-drive-estop"
-            disabled={busy}
-            onClick={() => void fireEstop()}
-          >
-            ESTOP
-          </button>}
+          {!fullVehicle && (
+            <div className="drive-estop-wrap">
+              <button
+                type="button"
+                className="danger btn-drive-estop"
+                data-testid="btn-drive-estop"
+                disabled={busy}
+                onClick={() => void fireEstop()}
+              >
+                ESTOP
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

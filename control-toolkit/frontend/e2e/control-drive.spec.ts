@@ -209,6 +209,18 @@ test.describe('Control + Drive paths', () => {
     await go(page, 'preview')
     await page.getByTestId('btn-drive-arm').click()
     await expect(page.getByTestId('btn-drive-disarm')).toBeVisible({ timeout: 15_000 })
+    // Safety check: ESTOP button is isolated and meets emergency target sizing
+    const estopBtn = page.getByTestId('btn-drive-estop')
+    await expect(estopBtn).toBeVisible()
+    await expect(estopBtn).toHaveClass(/btn-drive-estop/)
+    const estopBox = await estopBtn.boundingBox()
+    if (estopBox && estopBox.height < 36) {
+      issues.push({
+        area: 'drive-safety',
+        severity: 'error',
+        message: `ESTOP button height ${estopBox.height}px < 36px`,
+      })
+    }
     // Keycaps visible without scroll (layout fix)
     await expect(page.getByTestId('drive-keycaps')).toBeVisible()
     await expect(page.getByTestId('keycap-W')).toBeVisible()
