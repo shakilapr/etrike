@@ -85,14 +85,27 @@ Vehicle driving controls and switch mapping for the electric three-wheeler (`etr
 - **Throttle Cutoff Interlock**: When brake stroke reaches **$> 5.0\,\text{mm}$** ($> 1603\,\mu\text{s}$), motor throttle is **instantly forced to $0\,\text{mm/s}$ ($0.0\,\text{V}$ DAC)** and the CAN brake flag bit (`0x10`) on `0x0BB` is asserted. The motor will never fight the brakes.
 - **Fail-Safe Override**: If the RC signal drops or the transmitter is turned off for **$> 100\,\text{ms}$**, the emergency brake automatically clamps to **$27.0\,\text{mm}$ (maximum emergency stroke)**.
 
-#### 2. How Do Values Change?
-- **Linear Stroke Transfer**:
-  $$\text{Stroke (mm)} = \text{clamp}\left(\frac{\text{Pulse} - 1520\,\mu\text{s}}{450\,\mu\text{s}}, 0.0, 1.0\right) \times 27.0\,\text{mm}$$
-- **Raw CAN Encoding (`0x7B9`)**:
-  $$\text{stroke\_raw} = (\text{Stroke} + 30.0) \times 20$$
-  - $\le 1520\,\mu\text{s} \longrightarrow 0.0\,\text{mm}$ ($600$ raw)
-  - $\approx 1745\,\mu\text{s} \longrightarrow 13.5\,\text{mm}$ ($870$ raw)
-  - $\ge 1970\,\mu\text{s} \longrightarrow 27.0\,\text{mm}$ ($1140$ raw)
+#### 2. Mathematical Value Conversion & Examples
+- **Continuous Transfer Formula**:
+  $$\text{Stroke (mm)} = \begin{cases} 
+  0.0\text{ mm} & \text{if } \text{Pulse} \le 1520\,\mu\text{s} \\
+  \operatorname{clamp}\left(\dfrac{\text{Pulse} - 1520\,\mu\text{s}}{450\,\mu\text{s}},\, 0.0,\, 1.0\right) \times 27.0\,\text{mm} & \text{if } \text{Pulse} > 1520\,\mu\text{s}
+  \end{cases}$$
+- **CAN `0x7B9` Raw Wire Encoding** (Resolution $0.05\,\text{mm/LSB}$, Offset $-30.0\,\text{mm}$):
+  $$\text{stroke\_raw} = \frac{\text{Stroke} - (-30.0)}{0.05} = (\text{Stroke} + 30.0) \times 20 = \text{Stroke} \times 20 + 600$$
+
+| Action | Pulse ($\mu\text{s}$) | Stroke ($\text{mm}$) | Math Calculation | CAN Raw (`0x7B9`) | Little-Endian Wire Bytes |
+| :--- | :---: | :---: | :--- | :---: | :---: |
+| **Resting (Released)** | $\le 1520\,\mu\text{s}$ | **$0.0\text{ mm}$** | $(0.0 \times 20) + 600$ | **`600`** | `0x58 0x02` |
+| **Light Drag** | $1600\,\mu\text{s}$ | **$4.8\text{ mm}$** | $(4.8 \times 20) + 600$ | **`696`** | `0xB8 0x02` |
+| **Manual Equivalent** | $1770\,\mu\text{s}$ | **$15.0\text{ mm}$** | $(15.0 \times 20) + 600$ | **`900`** | `0x84 0x03` |
+| **Full Emergency Lock** | $\ge 1970\,\mu\text{s}$ | **$27.0\text{ mm}$** | $(27.0 \times 20) + 600$ | **`1140`** | `0x74 0x04` |
+| **Fail-Safe Timeout** | $>100\text{ ms}$ loss | **$27.0\text{ mm}$** | $(27.0 \times 20) + 600$ | **`1140`** | `0x74 0x04` |
+
+#### 3. Assigned Brake Limitations
+- **Mechanical Cylinder Limit**: Hardware hard stop at $27.0\,\text{mm}$ (raw $1140$).
+- **Negative Stroke Barred**: Raw values below $600$ ($-30.0\,\text{mm} \dots -0.05\,\text{mm}$) are forbidden during driving.
+- **Operating Mode**: Commanded in `ControlMode::Stroke` (`0`), `auto_brake = false`.
 
 *(Tip: If you prefer pulling backward to brake instead of pushing forward, simply invert Channel 2 on your FlySky transmitter under `Functions setup > Reverse > Ch2: Rev`).*
 
@@ -102,13 +115,30 @@ Vehicle driving controls and switch mapping for the electric three-wheeler (`etr
 
 #### 1. When Does It Engage?
 - Active only when **Ignition is ON** and gear is in **Drive (D)** or **Reverse (R)**.
-- When in Neutral (N) or Ignition OFF, steering automatically centers to $0.0^\circ$.
+- When in Neutral (N), Park, or Ignition OFF, steering automatically holds center ($0.0^\circ$, raw $30000$) with `control_enable = 0`.
 
-#### 2. How Do Values Change?
-- **Deadband**: $\pm 30\,\mu\text{s}$ ($1470 \dots 1530\,\mu\text{s}$) holds the rack at exactly $0.0^\circ$ ($30000$ raw) to eliminate hand tremor jitter.
-- **Rack Limit**: Calibrated to the vehicle's $\pm 45.0^\circ$ mechanical rack limit.
-- **Left ($1500 \rightarrow 1050\,\mu\text{s}$)**: Turns rack left from $0.0^\circ \rightarrow -45.0^\circ$ (CAN `0x169`: $30000 \rightarrow 29550$ raw).
-- **Right ($1500 \rightarrow 1950\,\mu\text{s}$)**: Turns rack right from $0.0^\circ \rightarrow +45.0^\circ$ (CAN `0x169`: $30000 \rightarrow 30450$ raw).
+#### 2. Mathematical Value Conversion & Examples
+- **Continuous Transfer Formula**:
+  $$\theta(t) = \begin{cases} 
+  0.0^\circ & \text{if } |\text{Pulse} - 1500\,\mu\text{s}| \le 30\,\mu\text{s} \\
+  \operatorname{clamp}\left(\dfrac{\text{Pulse} - 1500\,\mu\text{s}}{450\,\mu\text{s}},\, -1.0,\, 1.0\right) \times 45.0^\circ & \text{if } |\text{Pulse} - 1500\,\mu\text{s}| > 30\,\mu\text{s}
+  \end{cases}$$
+- **CAN `0x169` Raw Wire Encoding** (Resolution $0.1^\circ/\text{LSB}$, Vendor Offset $+30000$):
+  $$\text{target\_angle\_raw} = \operatorname{round}(\theta(t) \times 10) + 30000$$
+
+| Action | Pulse ($\mu\text{s}$) | Angle ($^\circ$) | Math Calculation | CAN Raw (`0x169`) | Little-Endian Wire Bytes |
+| :--- | :---: | :---: | :--- | :---: | :---: |
+| **Full Left** | $1050\,\mu\text{s}$ | **$-45.0^\circ$** | $(-45.0 \times 10) + 30000 = -450 + 30000$ | **`29550`** | `0x6E 0x73` |
+| **Half Left** | $1275\,\mu\text{s}$ | **$-22.5^\circ$** | $(-22.5 \times 10) + 30000 = -225 + 30000$ | **`29775`** | `0x4F 0x74` |
+| **Center Deadband** | $1470 \dots 1530\,\mu\text{s}$ | **$0.0^\circ$** | $(0.0 \times 10) + 30000 = 0 + 30000$ | **`30000`** | `0x30 0x75` |
+| **Half Right** | $1725\,\mu\text{s}$ | **$+22.5^\circ$** | $(+22.5 \times 10) + 30000 = +225 + 30000$ | **`30225`** | `0x11 0x76` |
+| **Full Right** | $1950\,\mu\text{s}$ | **$+45.0^\circ$** | $(+45.0 \times 10) + 30000 = +450 + 30000$ | **`30450`** | `0xF2 0x76` |
+
+#### 3. Assigned Steering Limitations
+- **Mechanical Fork Limit**: Physical mechanical bump stops hit at $\pm 45.0^\circ$.
+- **Software Safety Clamping**: Clamped strictly between `29550` and `30450`.
+- **EPS-C Safety Trip**: Vendor ECU triggers `OverAngle_Err` if commanded $< 23000$ ($-70^\circ$) or $> 37000$ ($+70^\circ$).
+- **Slew Rate Setting**: Commanded with standard nominal slew speed of $328$ ($32.8^\circ/\text{s}$).
 
 ---
 

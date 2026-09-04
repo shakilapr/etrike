@@ -34,7 +34,7 @@ public:
         first_frame_seen_ = true;
 
         switch (frame.id) {
-        case can::kIdSafetyEstop: { // 0x001 DLC 0
+        case can::kIdSafetyEstop: { // 0x001 DLC 0 (Explicit Emergency Stop)
             trigger_estop();
             break;
         }
@@ -45,6 +45,9 @@ public:
                 current_mode_ = static_cast<can::Mode>(mode_cmd.mode);
                 if (current_mode_ == can::Mode::Estop) {
                     trigger_estop();
+                } else if (current_mode_ == can::Mode::Manual || current_mode_ == can::Mode::Auto) {
+                    // Safe mode command clears latched estop
+                    clear_estop();
                 }
             }
             break;
@@ -103,12 +106,10 @@ public:
     // Periodic evaluation (called at 5 ms rate)
     void tick(uint32_t now_ms) {
         // 1. Check Comms Watchdog (500 ms)
-        if (first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs)) {
-            trigger_estop();
-        }
+        bool comms_timed_out = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
 
-        // 2. Evaluate Actuation
-        if (estop_active_) {
+        // 2. Evaluate Actuation (fail-safe on latched ESTOP or active CAN timeout)
+        if (estop_active_ || comms_timed_out) {
             relays_.set_state(RelayController::State::Off);
             dac_.force_zero();
             return;

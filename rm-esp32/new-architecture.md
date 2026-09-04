@@ -127,11 +127,11 @@ Standard RC PWM operates on a 50 Hz frame period (20 ms) with pulses nominally b
 ### 4.3 Channel Transfer Functions
 
 1. **CH0: Steering Angle (`RC_DRIVE`)**:
-   - Normalized: $u_{\text{steer}} = \text{clamp}\left(\frac{t_{\mu\text{s}} - 1500}{500}, -1.0, 1.0\right)$ (deadband applied around center).
+   - Normalized: $u_{\text{steer}} = \text{clamp}\left(\frac{t_{\mu\text{s}} - 1500}{450}, -1.0, 1.0\right)$ (deadband applied around center).
    - Angle Setpoint: $\theta_{\text{target}} = u_{\text{steer}} \times 45.0^\circ$ (resolution: $0.1^\circ$, CAN raw $= \theta_{\text{target}} \times 10 + 30000 \in [29550, 30450]$).
 2. **CH1: Brake Stroke (`RC_BRAKE`)**:
    - Released: $t_{\mu\text{s}} \le 1520\,\mu\text{s} \rightarrow 0.0\text{ mm}$ stroke.
-   - Pulled: $t_{\mu\text{s}} \in (1520, 2000] \rightarrow \text{Stroke} = \frac{t_{\mu\text{s}} - 1520}{480} \times 27.0\text{ mm}$.
+   - Pulled: $t_{\mu\text{s}} \in (1520, 1970]\,\mu\text{s} \rightarrow \text{Stroke} = \text{clamp}\left(\frac{t_{\mu\text{s}} - 1520}{450}, 0.0, 1.0\right) \times 27.0\text{ mm}$.
 3. **CH4: Ignition Switch (`RC_IGNITION` via SWB)**:
    - $t_{\mu\text{s}} < 1500\,\mu\text{s}$ (UP) $\rightarrow$ **Ignition OFF** (`req_start = 0`).
    - $t_{\mu\text{s}} \ge 1500\,\mu\text{s}$ (DOWN) $\rightarrow$ **Ignition ON** (`req_start = 1`).
@@ -140,6 +140,86 @@ Standard RC PWM operates on a 50 Hz frame period (20 ms) with pulses nominally b
    - **Park / Neutral (P/N)**: $t_{\mu\text{s}} \in [1350, 1650]\,\mu\text{s}$ (Switch MID).
    - **Drive (D)**: $t_{\mu\text{s}} \in [1700, 2100]\,\mu\text{s}$ (Switch DOWN).
    - $50\,\mu\text{s}$ hysteresis zones prevent jitter between switch positions.
+
+---
+
+### 4.4 Detailed Mathematical Value Conversion & Assigned Limitations
+
+This section specifies the exact mathematical transformations between handheld RC timing pulses ($\mu\text{s}$), physical vehicle engineering units ($^\circ$ and $\text{mm}$), and the raw CAN wire representations transmitted to the Low-CAN bus.
+
+#### 1. Steering Actuator Conversion (EPS-C / SES on `0x169 VCU_SES_REQ`)
+
+##### A. Mathematical Transfer Function
+1. **Pulse Input to Normalized Deflection**:
+   Let $t$ be the measured high pulse duration on GPIO 18 in microseconds ($t \in [1000, 2000]\,\mu\text{s}$):
+   $$\Delta t = t - 1500\,\mu\text{s}$$
+   $$u_{\text{steer}}(t) = \begin{cases} 
+   0.0 & \text{if } |\Delta t| \le 30\,\mu\text{s} \quad \text{(Deadband)} \\
+   \operatorname{clamp}\left(\dfrac{\Delta t}{450},\, -1.0,\, 1.0\right) & \text{if } |\Delta t| > 30\,\mu\text{s}
+   \end{cases}$$
+
+2. **Normalized Deflection to Physical Front Fork Angle**:
+   The vehicle front fork angle $\theta_{\text{target}}$ is scaled by the calibrated mechanical limit ($45.0^\circ$):
+   $$\theta_{\text{target}} = u_{\text{steer}}(t) \times 45.0^\circ \quad \in [-45.0^\circ, +45.0^\circ]$$
+
+3. **Physical Angle to CAN Raw Word (`target_angle_raw`)**:
+   Per the manufacturer CAN specification (`by-wire - steering.csv`), the signal uses a resolution of $0.1^\circ/\text{LSB}$ with a positive vendor base offset of $+3000.0^\circ$ ($+30000$ raw):
+   $$\text{CAN Raw} = \operatorname{round}(\theta_{\text{target}} \times 10) + 30000$$
+
+4. **ECU Internal Inverse Decoding** (executed inside the EPS-C microcontroller):
+   $$\theta_{\text{physical}} = (\text{CAN Raw} \times 0.1^\circ) - 3000.0^\circ$$
+
+##### B. Worked Step-by-Step Examples
+
+| Control Input Condition | Pulse $t$ ($\mu\text{s}$) | Offset $\Delta t$ | Normalized $u$ | Target Angle $\theta$ | CAN Raw Calculation | CAN Raw | Little-Endian Wire Bytes (`data[2..3]`) |
+| :--- | :---: | :---: | :---: | :---: | :--- | :---: | :---: |
+| **Full Left Deflection** | $1050\,\mu\text{s}$ | $-450\,\mu\text{s}$ | $-1.000$ | **$-45.0^\circ$** | $(-45.0 \times 10) + 30000 = -450 + 30000$ | **`29550`** | `0x6E 0x73` |
+| **Half Left** | $1275\,\mu\text{s}$ | $-225\,\mu\text{s}$ | $-0.500$ | **$-22.5^\circ$** | $(-22.5 \times 10) + 30000 = -225 + 30000$ | **`29775`** | `0x4F 0x74` |
+| **Neutral / Deadband** | $1510\,\mu\text{s}$ | $+10\,\mu\text{s}$ | $0.000$ | **$0.0^\circ$** | $(0.0 \times 10) + 30000 = 0 + 30000$ | **`30000`** | `0x30 0x75` |
+| **Quarter Right** | $1612.5\,\mu\text{s}$ | $+112.5\,\mu\text{s}$ | $+0.250$ | **$+11.25^\circ$** | $(11.25 \times 10) + 30000 = 113 + 30000$ | **`30113`** | `0xA1 0x75` |
+| **Full Right Deflection**| $1950\,\mu\text{s}$ | $+450\,\mu\text{s}$ | $+1.000$ | **$+45.0^\circ$** | $(+45.0 \times 10) + 30000 = +450 + 30000$ | **`30450`** | `0xF2 0x76` |
+
+##### C. Assigned Steering Limitations
+* **Physical Mechanical Stops**: The trike's front fork has mechanical rubber bump stops at $\pm 45.0^\circ$. Any command commanding beyond $\pm 45.0^\circ$ causes steering motor stall, high current draw, and potential tie-rod bending.
+* **Firmware Clamping**: Software strictly enforces an output clamp of $[\text{kMinSteerRaw}, \text{kMaxSteerRaw}] = [29550, 30450]$ (representing $-45.0^\circ \dots +45.0^\circ$).
+* **Actuator Hardware Safety Window**: The EPS-C actuator firmware defines its absolute fault threshold at $\pm 70.0^\circ$ (raw $23000 \dots 37000$). Any frame with raw $< 23000$ or $> 37000$ immediately sets `SES_OverAngle_Err` and shuts off motor assist.
+* **Control Gate**: Angle control is enabled (`control_enable = 1`) only when `signal_valid == true`, `ignition == true`, and Gear is in Drive (`D`) or Reverse (`R`). In Park (`P`), Neutral (`N`), or Ignition OFF, the angle is forced to straight ahead ($30000$) with `control_enable = 0`.
+
+---
+
+#### 2. Brake Actuator Conversion (SEB on `0x7B9 VCU_SEB_REQ`)
+
+##### A. Mathematical Transfer Function
+1. **Pulse Input to Physical Stroke Setpoint**:
+   Let $t$ be the measured high pulse duration on GPIO 19 in microseconds ($t \in [1000, 2000]\,\mu\text{s}$):
+   $$S_{\text{brake}}(t) = \begin{cases} 
+   0.0\text{ mm} & \text{if } t \le 1520\,\mu\text{s} \quad \text{(Resting / Released)} \\
+   \operatorname{clamp}\left(\dfrac{t - 1520}{450},\, 0.0,\, 1.0\right) \times 27.0\text{ mm} & \text{if } t > 1520\,\mu\text{s}
+   \end{cases}$$
+
+2. **Physical Stroke to CAN Raw Word (`stroke_request_raw`)**:
+   Per the manufacturer CAN specification (`by-wire - brake.csv`), the stroke signal has a resolution of $0.05\,\text{mm/LSB}$ and an offset of $-30.0\,\text{mm}$:
+   $$\text{CAN Raw} = \frac{S_{\text{brake}}(t) - (-30.0\,\text{mm})}{0.05\,\text{mm/LSB}} = (S_{\text{brake}}(t) + 30.0) \times 20 = S_{\text{brake}}(t) \times 20 + 600$$
+
+3. **ECU Internal Inverse Decoding** (executed inside the SEB microcontroller):
+   $$S_{\text{physical}} = (\text{CAN Raw} \times 0.05\,\text{mm}) - 30.0\,\text{mm}$$
+
+##### B. Worked Step-by-Step Examples
+
+| Brake Input State | Pulse $t$ ($\mu\text{s}$) | Physical Stroke ($S$) | CAN Raw Calculation | CAN Raw | Little-Endian Wire Bytes (`data[2..3]`) | Physical Action |
+| :--- | :---: | :---: | :--- | :---: | :---: | :--- |
+| **Resting (Released)** | $1500\,\mu\text{s}$ | **$0.0\text{ mm}$** | $(0.0 \times 20) + 600$ | **`600`** | `0x58 0x02` | Caliper open, zero hydraulic pressure |
+| **Light Braking** | $1600\,\mu\text{s}$ | **$4.8\text{ mm}$** | $(4.8 \times 20) + 600 = 96 + 600$ | **`696`** | `0xB8 0x02` | Initial pad contact, light deceleration |
+| **Moderate Braking** | $1745\,\mu\text{s}$ | **$13.5\text{ mm}$** | $(13.5 \times 20) + 600 = 270 + 600$ | **`870`** | `0x66 0x03` | Half brake stroke |
+| **Manual Lever Equivalent**| $1770\,\mu\text{s}$ | **$15.0\text{ mm}$** | $(15.0 \times 20) + 600 = 300 + 600$ | **`900`** | `0x84 0x03` | Equivalent to standard manual lever pull |
+| **Full Emergency Lockup** | $1970\,\mu\text{s}$ | **$27.0\text{ mm}$** | $(27.0 \times 20) + 600 = 540 + 600$ | **`1140`** | `0x74 0x04` | Full cylinder travel (5.0 MPa lockup) |
+| **Signal Loss (Fail-Safe)**| Timeout $>100\text{ ms}$ | **$27.0\text{ mm}$** | $(27.0 \times 20) + 600$ | **`1140`** | `0x74 0x04` | Automatic full emergency brake + `0x001` ESTOP |
+
+##### C. Assigned Brake Limitations
+* **Maximum Actuator Stroke**: $27.0\text{ mm}$ (`raw 1140`). This represents maximum master cylinder displacement. Exceeding $27.0\text{ mm}$ is prevented by firmware clamping to avoid cylinder over-travel.
+* **Negative Stroke Prohibition**: Raw values between $0$ and $599$ correspond to negative stroke ($-30.0\text{ mm} \dots -0.05\text{ mm}$), which is reserved for factory calibration and retraction. Normal commanding must strictly stay $\ge 600$.
+* **Control Mode**: Commanded strictly in `ControlMode::Stroke` (`mode = 0`) with `auto_brake = false` to indicate operator-commanded manual/RC braking.
+* **Fail-Safe Override**: If RMT pulse reception is interrupted for $>100\text{ ms}$, the firmware immediately forces $S = 27.0\text{ mm}$ (`raw 1140`), guaranteeing that a disconnected or unpowered transmitter stops the vehicle.
 
 ---
 
