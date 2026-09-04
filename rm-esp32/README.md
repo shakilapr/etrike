@@ -14,14 +14,17 @@ The `rm-esp32` node decodes 6 channels of high-resolution PWM timing pulses from
   - Center deadband of $\pm 30\,\mu\text{s}$ holds $0.0^\circ$ and suppresses hand jitter.
 - **Braking Control (`0x7B9 VCU_SEB_REQ`)**:
   - Left gimbal vertical axis $\longrightarrow$ proportional stroke request ($0\dots 27\text{ mm}$) to SEB.
+- **Motor Control & Standalone Bypass (`0x204 RT_DRIVE_CMD`, `0x0BB`, `0x0AA`)**:
+  - Enables direct vehicle driving without Host, RT, or SYS connected.
+  - In Drive (D) or Reverse (R), VRA speed trim maps directly to motor speed setpoint ($0\dots 3000\text{ mm/s}$ Drive, $0\dots 500\text{ mm/s}$ Reverse) and emits canonical `0x204 RT_DRIVE_CMD` as well as fallback `0x0BB` relay and `0x0AA` throttle frames.
 - **Ignition Switch (`0x112 HMI_PWR_REQ`)**:
   - **SWB** (2-position toggle) $\longrightarrow$ Ignition ON / OFF commands broadcast at 1 Hz.
 - **Gear Selector (`0x111 HMI_MODE_REQ`)**:
   - **SWC** (3-position toggle) $\longrightarrow$ **Reverse** ($1000\,\mu\text{s}$), **Neutral / Park** ($1500\,\mu\text{s}$), **Drive** ($2000\,\mu\text{s}$).
 - **Speed Limiter / Trim**:
-  - **VRA** rotary dial $\longrightarrow$ proportional speed trim ($0.0\dots 1.0$).
+  - **VRA** rotary dial $\longrightarrow$ proportional speed trim / throttle ($0.0\dots 1.0$).
 - **Safety Deadman & ESTOP (`0x001 SAFETY_ESTOP`)**:
-  - If RC pulses drop or disconnect for $>100\text{ ms}$, the node immediately snaps steering to $0.0^\circ$, applies maximum emergency brake stroke ($27.0\text{ mm}$), and broadcasts a zero-length `SAFETY_ESTOP` frame.
+  - If RC pulses drop or disconnect for $>100\text{ ms}$, the node immediately snaps steering to $0.0^\circ$, applies maximum emergency brake stroke ($27.0\text{ mm}$), forces motor speed to 0, and broadcasts a zero-length `SAFETY_ESTOP` frame.
 
 ---
 

@@ -71,14 +71,14 @@ Hardware filter acceptance list in FDCAN message RAM:
 1. `0x001` — **`SAFETY_ESTOP`** (DLC 0):
    - Global emergency stop. Immediate de-energization of all relays and DAC to $0.0\text{ V}$.
 2. `0x110` — **`SYS_MODE_CMD`** (DLC 1):
-   - `0 = MANUAL`, `1 = AUTO`, `2 = ESTOP`.
+   - Mode authority from SYS: `0 = MANUAL`, `1 = AUTO`, `2 = ESTOP`.
 3. `0x204` — **`RT_DRIVE_CMD`** (DLC 5, 50 Hz):
-   - `motor_speed_mmps` (int32, big-endian, $[-500, 3000]$ mm/s).
-   - `gear` (uint8, `0 = N`, `1 = D`, `2 = S`, `3 = R`).
-4. `0x0BB` — **Legacy Relay State** (DLC 8, fallback compatibility):
+   - Authoritative motor setpoint: `motor_speed_mmps` (int32, big-endian, $[-500, 3000]$ mm/s) and `gear` (uint8, `0 = N`, `1 = D`, `2 = S`, `3 = R`).
+   - Sourced from **RT** during Mode 1 (Autonomous Hierarchy), or directly from **RM** during Mode 2 (Direct Remote Manual Bypass).
+4. `0x0BB` — **Legacy Relay State** (DLC 8, fallback compatibility from RM):
    - `0x00` = OFF, `0x03` = Park, `0x05` = Drive, `0x09` = Reverse.
-5. `0x0AA` — **Legacy Raw Throttle** (DLC 8, fallback compatibility):
-   - `rxData[0:1]` = 16-bit raw analog throttle.
+5. `0x0AA` — **Legacy Raw Throttle** (DLC 8, fallback compatibility from RM):
+   - `rxData[0:1]` = 16-bit raw analog throttle code.
 
 ### 4.2 Transmitted Messages (TX Path via TX FIFO)
 1. `0x120` — **`SYS_THROTTLE_STS`** (DLC 2, 100 Hz / 10 ms period):

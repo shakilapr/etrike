@@ -207,7 +207,10 @@ The firmware eliminates legacy arbitrary byte packing (`0x0BB`, manual shifts) i
 | :--- | :--- | :--- | :--- | :--- |
 | `0x169` | `ses:vcu_ses_req` | `can::custom::ses::Command` | 20 ms | **Steering Setpoint**: Alignment enable, control enable, target angle ($0.1^\circ$), rolling counter, XOR8-complement checksum. Active only when Ignition is ON and Gear is D/R. |
 | `0x7B9` | `seb:vcu_seb_req` | `can::custom::seb::Command` | 20 ms | **Brake Setpoint**: Stroke request ($0\dots 27\text{ mm}$), alignment enable, control enable, rolling counter, XOR8-complement checksum. |
-| `0x111` | `hmi:hmi_mode_req` | `can::gen::HmiModeReq` | 1000 ms / on-change | **Mode Request**: `req_mode = AUTO` (when remote engaged) or `MANUAL`. SYS remains sole mode authority. |
+| `0x204` | `rt:rt_drive_cmd` | `can::gen::RtDriveCmd` | 20 ms | **Motor Setpoint (Standalone Bypass)**: Target speed ($0\dots 3000\text{ mm/s}$ Drive, $0\dots 500\text{ mm/s}$ Reverse based on VRA trim) and Gear (`N/D/R`). Directly commands MTR when RT/SYS are offline. |
+| `0x0BB` | `legacy_relay_state`| Raw Frame | 20 ms | **Legacy Relay Fallback**: Byte 0: `0x00`=Off, `0x03`=Park, `0x05`=Drive, `0x09`=Reverse. |
+| `0x0AA` | `legacy_throttle` | Raw Frame | 20 ms | **Legacy Throttle Fallback**: Bytes 0-1: 16-bit proportional throttle mapped from VRA trim. |
+| `0x111` | `hmi:hmi_mode_req` | `can::gen::HmiModeReq` | 1000 ms / on-change | **Mode Request**: `req_mode = AUTO` (when remote engaged) or `MANUAL`. SYS remains sole mode authority when present. |
 | `0x112` | `hmi:hmi_pwr_req` | `can::gen::HmiPwrReq` | 1000 ms / on-change | **Power Request**: `req_start = ON (1)` when CH4 switch is high, `OFF (0)` when low. |
 | `0x001` | `safety:safety_estop`| `can::gen::SafetyEstop` | Event-driven | **Emergency Stop**: DLC=0 broadcast if RC signal is lost for $>100\text{ ms}$ while engaged. |
 
@@ -217,15 +220,17 @@ To ensure vehicle safety:
 1. **Neutral / Park / Ignition OFF**:
    - Steering setpoints are held at neutral ($0^\circ$). Control enable bit is set to `false`.
    - Brake setpoint holds resting position ($0\text{ mm}$ stroke) unless the RC brake channel is actively pulled.
+   - Motor setpoint commands $0\text{ mm/s}$ and Gear = Neutral (`can::Gear::N`).
 2. **Drive (D) or Reverse (R) with Ignition ON**:
    - Steering setpoint actively tracks CH0 with control enable = `true`.
    - Brake setpoint actively tracks CH1 proportional input.
+   - Motor speed setpoint tracks VRA dial ($0\%\dots 100\%$) mapped to $3000\text{ mm/s}$ (Drive) or $500\text{ mm/s}$ (Reverse).
 3. **Signal Loss / Fail-Safe**:
    - If pulse capture on any critical channel times out ($>100\text{ ms}$ without valid edge):
      - `signal_valid` is set to `false`.
      - Target steering angle ramps to $0^\circ$.
      - Brake stroke immediately commands **maximum emergency braking ($27.0\text{ mm}$)**.
-     - Mode transitions to `MANUAL` / `ESTOP`.
+     - Target motor speed immediately collapses to $0\text{ mm/s}$, gear transitions to Neutral.
      - Rate-limited `0x001 SAFETY_ESTOP` is emitted.
 
 ---
