@@ -27,25 +27,28 @@
   height: var(--control-h);
   max-height: var(--control-h);
   padding: 0 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong, #b7c0ca);
   border-radius: var(--radius-input);
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--text-secondary);
+  background: var(--surface, #ffffff);
+  color: var(--text, #1b1f23);
   font-size: var(--font-size-ui);
   font-weight: 600;
   cursor: pointer;
+  transition: all var(--transition);
 }
 
 .route-chip:hover:not(:disabled),
 .route-chip:focus-visible:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
+  background: var(--surface-subtle);
 }
 
 .route-chip.active {
   border-color: var(--primary);
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .route-chip:disabled {
@@ -121,5 +124,18 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+.control-toolbox-sticky-footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 8px 2px 4px;
+  background: #f1f4f7;
+  border-top: 1px solid var(--border);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 

@@ -531,27 +531,29 @@ export function Sidebar() {
           </div>
         </div>
 
-        <div className="control-toolbox-actions">
-          <button
-            type="button"
-            className="danger"
-            data-testid="sidebar-stop-all"
-            disabled={busy}
-            onClick={() => void stopAllMotion()}
-          >
-            Stop all motion TX
-          </button>
-        </div>
+        <div className="control-toolbox-sticky-footer">
+          <div className="control-toolbox-actions">
+            <button
+              type="button"
+              className="danger"
+              data-testid="sidebar-stop-all"
+              disabled={busy}
+              onClick={() => void stopAllMotion()}
+            >
+              Stop all motion TX
+            </button>
+          </div>
 
-        {controlNote ? (
-          <p className="control-toolbox-note" data-testid="sidebar-control-note">
-            {controlNote}
-          </p>
-        ) : (
-          <p className="context-warning">
-            Hiding the tab releases keyboard. Workspace tabs only in explorer.
-          </p>
-        )}
+          {controlNote ? (
+            <p className="control-toolbox-note" data-testid="sidebar-control-note">
+              {controlNote}
+            </p>
+          ) : (
+            <p className="context-warning">
+              Hiding the tab releases keyboard. Workspace tabs only in explorer.
+            </p>
+          )}
+        </div>
       </>
     )
   } else if (activity === 'monitor') {
