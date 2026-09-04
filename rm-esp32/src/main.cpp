@@ -161,7 +161,11 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         // Gated off when under ESTOP or signal loss so MTR watchdog (500 ms) trips independently.
         if (!estop_or_signal_loss) {
             int32_t target_motor_speed = 0;
-            if (drive_active) {
+            // Brake-Over-Throttle interlock: zero throttle setpoint when mechanical brake > 5.0 mm
+            constexpr float kBrakeCutoffStrokeMm = 5.0f;
+            bool throttle_inhibited_by_brake = (snap.brake_stroke_mm > kBrakeCutoffStrokeMm);
+
+            if (drive_active && !throttle_inhibited_by_brake) {
                 if (snap.gear == can::Gear::D) {
                     target_motor_speed = static_cast<int32_t>(snap.throttle_norm * shared::kMaxSpeedFwdMmps);
                 } else if (snap.gear == can::Gear::R) {
