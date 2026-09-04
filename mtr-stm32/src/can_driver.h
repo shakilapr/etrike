@@ -124,12 +124,17 @@ public:
         return true;
     }
 
-    // Called from ISR or Polling loop to extract next received frame
+    // Called from ISR or Polling loop to extract next received frame atomically
     bool poll_rx(can::Frame& out) {
-        if (rx_head_ == rx_tail_) return false;
+        HAL_NVIC_DisableIRQ(FDCAN1_IT0_IRQn);
+        if (rx_head_ == rx_tail_) {
+            HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
+            return false;
+        }
 
         out = rx_ring_[rx_tail_];
         rx_tail_ = (rx_tail_ + 1) % kRxRingSize;
+        HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
         return true;
     }
 
