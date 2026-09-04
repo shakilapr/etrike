@@ -55,7 +55,7 @@ public:
         hfdcan_.Init.DataTimeSeg1 = 1;
         hfdcan_.Init.DataTimeSeg2 = 1;
 
-        hfdcan_.Init.StdFiltersNbr = 5; // 0x001, 0x110, 0x204, 0x0BB, 0x0AA
+        hfdcan_.Init.StdFiltersNbr = 6; // 0x001, 0x110, 0x204, 0x0BB, 0x0AA, 0x112
         hfdcan_.Init.ExtFiltersNbr = 0;
         hfdcan_.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
 
@@ -69,6 +69,7 @@ public:
         configure_filter_(2, 0x204); // RT_DRIVE_CMD
         configure_filter_(3, 0x0BB); // Legacy relay state
         configure_filter_(4, 0x0AA); // Legacy throttle
+        configure_filter_(5, 0x112); // HMI_PWR_REQ (Ignition)
 
         // 4. Configure Global Filter: reject non-matching standard frames
         HAL_FDCAN_ConfigGlobalFilter(&hfdcan_, FDCAN_REJECT, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_FILTER_REMOTE);

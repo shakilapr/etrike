@@ -52,9 +52,21 @@ public:
 
     uint16_t current_code() const { return current_code_; }
 
-    // Direct MCP4725 fast write routine with multi-address scanning
+    // Direct MCP4725 fast write routine with multi-address scanning and caching
     void write_dac_raw(uint16_t value) {
         if (value > 4095) value = 4095;
+
+        // If cached address is known, attempt write directly
+        if (cached_address_ != 0) {
+            i2c_start_();
+            uint8_t ack = i2c_write_byte_(cached_address_);
+            i2c_write_byte_(0x40);
+            i2c_write_byte_(static_cast<uint8_t>(value >> 4));
+            i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
+            i2c_stop_();
+            if (ack) return;
+            cached_address_ = 0; // Invalidate cache on NACK
+        }
 
         // Candidate 7-bit addresses shifted for write form (addr << 1)
         static const uint8_t kAddresses[] = {
@@ -75,6 +87,7 @@ public:
 
             if (ack) {
                 // Device found and acknowledged
+                cached_address_ = addr;
                 break;
             }
         }
@@ -134,6 +147,7 @@ private:
     }
 
     uint16_t current_code_{0};
+    uint8_t cached_address_{0};
 };
 
 }  // namespace mtr
