@@ -35,6 +35,10 @@ static std::atomic<uint32_t> g_alive_capture{0};
 static std::atomic<uint32_t> g_alive_can_tx{0};
 static std::atomic<uint32_t> g_alive_hb{0};
 static std::atomic<bool>     g_can_estop_latched{false};
+// Tracks 0x001 SAFETY_ESTOP frames originated by this RM node.
+// Incremented before TX, decremented in the RX loop to filter self-loopback.
+// Without this, RM latches ESTOP on its own TWAI loopback — self-deadlock.
+static std::atomic<uint32_t> g_rm_self_estop_pending{0};
 
 // Rolling counters for protocol frames
 static uint8_t g_roll_ses = 0;
@@ -100,6 +104,8 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
                 can::Frame estop_fr;
                 can::gen::SafetyEstop estop_msg{};
                 if (can::gen::encode_safety_estop(estop_msg, estop_fr) == can::gen::CodecStatus::Ok) {
+                    // Increment before TX so the RX drain loop can discard our own loopback
+                    g_rm_self_estop_pending.fetch_add(1, std::memory_order_relaxed);
                     send_can_frame(estop_fr, "SAFETY_ESTOP");
                 }
             }
@@ -194,7 +200,8 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             // 0x111 HMI_MODE_REQ
             can::gen::HmiModeReq mode_req{};
             mode_req.req_mode = (drive_active) ? 1 : 0; // 1 = AUTO / REMOTE, 0 = MANUAL
-            mode_req.rolling_counter = ++g_roll_hmi_mode;
+            g_roll_hmi_mode = (g_roll_hmi_mode + 1) & 0xFF;
+            mode_req.rolling_counter = g_roll_hmi_mode;
             can::Frame mode_fr;
             if (can::gen::encode_hmi_mode_req(mode_req, mode_fr) == can::gen::CodecStatus::Ok) {
                 send_can_frame(mode_fr, "HMI_MODE_REQ");
@@ -203,7 +210,8 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             // 0x112 HMI_PWR_REQ
             can::gen::HmiPwrReq pwr_req{};
             pwr_req.req_start = (!estop_or_signal_loss && snap.ignition) ? 1 : 0;
-            pwr_req.rolling_counter = ++g_roll_hmi_pwr;
+            g_roll_hmi_pwr = (g_roll_hmi_pwr + 1) & 0xFF;
+            pwr_req.rolling_counter = g_roll_hmi_pwr;
             can::Frame pwr_fr;
             if (can::gen::encode_hmi_pwr_req(pwr_req, pwr_fr) == can::gen::CodecStatus::Ok) {
                 send_can_frame(pwr_fr, "HMI_PWR_REQ");
@@ -219,15 +227,25 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
     while (1) {
         g_can.service_recovery(esp_timer_get_time());
 
-        // Drain incoming CAN messages to prevent queue overflow and process bus ESTOP
+        // Drain incoming CAN messages to prevent queue overflow and process bus ESTOP.
+        // NOTE: The TWAI node has no hardware acceptance filter, so RM receives all
+        // frames including its own TX loopback. Self-sent 0x001 frames are discarded via
+        // g_rm_self_estop_pending; all other self-echoed frames are silently dropped below.
         can::Frame rx_frame;
         while (g_can.receive(rx_frame, 0)) {
             if (rx_frame.id == 0x001u) { // SAFETY_ESTOP
+                // Consume one self-sent credit if available — skip our own loopback
+                uint32_t pending = g_rm_self_estop_pending.load(std::memory_order_relaxed);
+                if (pending > 0) {
+                    g_rm_self_estop_pending.fetch_sub(1, std::memory_order_relaxed);
+                    continue; // Discard self-loopback frame
+                }
                 if (!g_can_estop_latched.load(std::memory_order_relaxed)) {
                     g_can_estop_latched.store(true, std::memory_order_release);
-                    ESP_LOGE(TAG, "CAN SAFETY_ESTOP (0x001) received from bus! Latching vehicle stop.");
+                    ESP_LOGE(TAG, "CAN SAFETY_ESTOP (0x001) received from external peer! Latching vehicle stop.");
                 }
             }
+            // All other IDs (incl. our own 0x204 loopback) are discarded here
         }
 
         vTaskDelay(pdMS_TO_TICKS(20));
