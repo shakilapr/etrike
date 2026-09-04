@@ -48,18 +48,18 @@ public:
         hfdcan_.Init.ProtocolException = DISABLE;
 
         // Bit timing for 500 kbps @ 16 MHz kernel:
-        // Prescaler 2 -> Tq = 125 ns. (1 + 13 + 2) = 16 Tq = 2 us -> 500 kbps (87.5% sample point)
+        // Prescaler 2 -> Tq = 125 ns. (1 + 12 + 3) = 16 Tq = 2 us -> 500 kbps (81.25% sample point)
         hfdcan_.Init.NominalPrescaler = 2;
-        hfdcan_.Init.NominalSyncJumpWidth = 2;
-        hfdcan_.Init.NominalTimeSeg1 = 13;
-        hfdcan_.Init.NominalTimeSeg2 = 2;
+        hfdcan_.Init.NominalSyncJumpWidth = 3;
+        hfdcan_.Init.NominalTimeSeg1 = 12;
+        hfdcan_.Init.NominalTimeSeg2 = 3;
 
         hfdcan_.Init.DataPrescaler = 1;
         hfdcan_.Init.DataSyncJumpWidth = 1;
         hfdcan_.Init.DataTimeSeg1 = 1;
         hfdcan_.Init.DataTimeSeg2 = 1;
 
-        hfdcan_.Init.StdFiltersNbr = 4; // 0x001, 0x110, 0x204, 0x112
+        hfdcan_.Init.StdFiltersNbr = 6; // 0x001, 0x110, 0x204, 0x112, 0x0BB, 0x0AA
         hfdcan_.Init.ExtFiltersNbr = 0;
         hfdcan_.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
 
@@ -72,6 +72,8 @@ public:
         configure_filter_(1, 0x110); // SYS_MODE_CMD
         configure_filter_(2, 0x204); // RT_DRIVE_CMD
         configure_filter_(3, 0x112); // HMI_PWR_REQ (Ignition)
+        configure_filter_(4, 0x0BB); // RM_RELAY_STATE (Legacy RM fallback)
+        configure_filter_(5, 0x0AA); // RM_THROTTLE_RAW (Legacy RM fallback)
 
         // 4. Configure Global Filter: reject non-matching standard frames
         HAL_FDCAN_ConfigGlobalFilter(&hfdcan_, FDCAN_REJECT, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_FILTER_REMOTE);

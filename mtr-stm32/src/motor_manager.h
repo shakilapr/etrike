@@ -73,6 +73,37 @@ public:
             break;
         }
 
+        case 0x0BBu: { // RM_RELAY_STATE (Legacy fallback compatibility)
+            if (frame.dlc >= 1) {
+                uint8_t state = frame.data[0];
+                if (state == 0x05) { // Drive
+                    target_gear_ = can::Gear::D;
+                    ignition_on_ = true;
+                } else if (state == 0x09) { // Reverse
+                    target_gear_ = can::Gear::R;
+                    ignition_on_ = true;
+                } else if (state == 0x03) { // Park / Neutral
+                    target_gear_ = can::Gear::N;
+                    ignition_on_ = true;
+                } else { // 0x00 Off
+                    target_gear_ = can::Gear::N;
+                    ignition_on_ = false;
+                }
+            }
+            break;
+        }
+
+        case 0x0AAu: { // RM_THROTTLE_RAW (Legacy fallback compatibility)
+            if (frame.dlc >= 2) {
+                uint16_t raw_throttle = static_cast<uint16_t>(frame.data[0]) |
+                                       (static_cast<uint16_t>(frame.data[1]) << 8);
+                target_speed_mmps_ = (raw_throttle > 0)
+                    ? static_cast<int32_t>((static_cast<uint32_t>(raw_throttle) * kMaxForwardSpeedMmps) / 65535U)
+                    : 0;
+            }
+            break;
+        }
+
         default:
             break;
         }
