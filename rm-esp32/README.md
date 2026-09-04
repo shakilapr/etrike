@@ -15,9 +15,9 @@ The `rm-esp32` node decodes 6 channels of high-resolution PWM timing pulses from
   - Center deadband of $\pm 30\,\mu\text{s}$ holds $0.0^\circ$ (raw `30000`) and suppresses hand jitter.
 - **Braking Control (`0x7B9 VCU_SEB_REQ`)**:
   - Left gimbal vertical axis $\longrightarrow$ proportional stroke request ($0\dots 27\text{ mm}$, raw $600\dots 1140$) to SEB.
-- **Motor Control & Standalone Bypass (`0x204 RT_DRIVE_CMD`, `0x0BB`, `0x0AA`)**:
+- **Motor Control & Standalone Bypass (`0x204 RT_DRIVE_CMD`)**:
   - Enables direct vehicle driving without Host, RT, or SYS connected.
-  - In Drive (D) or Reverse (R), VRA speed trim maps directly to motor speed setpoint ($0\dots 3000\text{ mm/s}$ Drive, $0\dots 500\text{ mm/s}$ Reverse) and emits canonical `0x204 RT_DRIVE_CMD` as well as fallback `0x0BB` relay and `0x0AA` throttle frames.
+  - In Drive (D) or Reverse (R), Left Stick throttle maps directly to motor speed setpoint ($0\dots 3000\text{ mm/s}$ Drive, $0\dots 500\text{ mm/s}$ Reverse) and emits canonical `0x204 RT_DRIVE_CMD`.
 - **Ignition Switch (`0x112 HMI_PWR_REQ`)**:
   - **SWB** (2-position toggle) $\longrightarrow$ Ignition ON / OFF commands broadcast at 1 Hz.
 - **Gear Selector (`0x111 HMI_MODE_REQ`)**:
@@ -25,7 +25,7 @@ The `rm-esp32` node decodes 6 channels of high-resolution PWM timing pulses from
 - **Dual-Stick Proportional Control**:
   - **Right Stick Horizontal (CH1 / GPIO 18)** $\longrightarrow$ Steering ($\pm 45.0^\circ$ rack limit, CAN `0x169`: $29550\dots 30450$).
   - **Right Stick Vertical (CH2 / GPIO 19)** $\longrightarrow$ Brake stroke ($0.0\dots 27.0\text{ mm}$, CAN `0x7B9`: $600\dots 1140$).
-  - **Left Stick Vertical (CH3 / GPIO 14)** $\longrightarrow$ Proportional throttle ($0\dots 100\%$, CAN `0x204` & legacy `0x0AA`).
+  - **Left Stick Vertical (CH3 / GPIO 14)** $\longrightarrow$ Proportional throttle ($0\dots 100\%$, CAN `0x204`).
 - **Safety Deadman & ESTOP (`0x001 SAFETY_ESTOP`)**:
   - If RC pulses drop or disconnect for $>100\text{ ms}$, the node immediately snaps steering to $0.0^\circ$ (raw `30000`), applies maximum emergency brake stroke ($27.0\text{ mm}$, raw `1140`), forces motor speed to 0, and broadcasts a zero-length `SAFETY_ESTOP` frame.
 
