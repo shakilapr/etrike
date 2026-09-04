@@ -60,28 +60,54 @@ The compiled binary and ELF images are generated at:
 
 ## 4. Flashing / Uploading Firmware
 
-### Option A: PlatformIO CLI (Recommended)
-Connect your ST-LINK programmer to the board and PC:
+### Option A: Direct USB Type-C (Built-in DFU — Recommended)
+Upload directly through the onboard USB Type-C port without an external debugger.
 
+1. **Enter ROM Bootloader Mode**:
+   - Hold down the **`BOOT0`** button on the STM32 board.
+   - Press and release the **`NRST`** (Reset) button once.
+   - Release the **`BOOT0`** button.
+   - *(The board enumerates in Windows as `DFU in FS Mode` with USB ID `0483:DF11`).*
+
+2. **One-Time Windows Driver Setup (First-Time Only)**:
+   - If Windows shows a driver warning for `DFU in FS Mode`:
+     - Open [Zadig](https://zadig.akeo.ie/) $\to$ **Options $\to$ List All Devices**.
+     - Select **`DFU in FS Mode`** (`0483:DF11`).
+     - Choose **`WinUSB`** and click **Install Driver** / **Replace Driver**.
+
+3. **Upload via PlatformIO**:
+   ```bash
+   cd mtr-stm32
+   pio run -e vehicle -t upload
+   ```
+   *PlatformIO invokes `dfu-util` with target address `0x08000000:leave` to erase, download, verify, and immediately boot into the new firmware.*
+
+> **Note on `Error during download get_status`**: When `dfu-util` finishes writing and submits the `"leave"` request, the STM32 hardware instantly jumps out of DFU mode and severs the USB DFU pipe to boot your firmware. The download is 100% complete and verified. Press **`NRST`** once for a clean hardware boot if needed.
+
+### Option B: External ST-LINK (SWD Programmer)
+If using an external ST-LINK V2 / V3 hardware debugger (connected to `SWCLK`, `SWDIO`, `GND`, `3.3V`):
+
+Update `platformio.ini` to use ST-Link:
+```ini
+upload_protocol = custom
+upload_command = $PROJECT_PACKAGES_DIR/tool-openocd/bin/openocd -s $PROJECT_PACKAGES_DIR/tool-openocd/openocd/scripts -f interface/stlink.cfg -f target/stm32g4x.cfg -c "program {$SOURCE} verify reset 0x08000000; shutdown"
+```
+
+Then run:
 ```bash
 cd mtr-stm32
 pio run -e vehicle -t upload
 ```
 
-PlatformIO automatically invokes OpenOCD/ST-Link and writes the firmware to flash address `0x08000000`.
-
-### Option B: STM32CubeProgrammer GUI
-1. Open **STM32CubeProgrammer**.
-2. Set interface to **ST-LINK** (SWD, Normal mode) and click **Connect**.
-3. Click **Open file** and browse to:
-   `e:\work\etrike\mtr-stm32\.pio\build\vehicle\firmware.bin`
-4. Set Start address: `0x08000000`.
-5. Click **Download**.
-
-### Option C: STM32CubeProgrammer CLI
-```bash
-STM32_Programmer_CLI -c port=SWD -w .pio/build/vehicle/firmware.bin 0x08000000 -v -rst
-```
+### Option C: STM32CubeProgrammer GUI / CLI
+- **GUI**: Select **USB** or **ST-LINK** port $\to$ **Connect** $\to$ Load `.pio/build/vehicle/firmware.bin` at `0x08000000` $\to$ **Download**.
+- **CLI**:
+  ```bash
+  # Over USB DFU
+  STM32_Programmer_CLI -c port=usb1 -w .pio/build/vehicle/firmware.bin 0x08000000 -v -rst
+  # Over ST-LINK SWD
+  STM32_Programmer_CLI -c port=SWD -w .pio/build/vehicle/firmware.bin 0x08000000 -v -rst
+  ```
 
 ---
 
