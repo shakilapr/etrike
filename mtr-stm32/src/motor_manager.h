@@ -45,11 +45,13 @@ public:
         case can::kIdSysModeCmd: { // 0x110
             can::gen::SysModeCmd mode_cmd{};
             if (can::gen::decode_sys_mode_cmd(frame.view(), mode_cmd) == can::gen::CodecStatus::Ok) {
+                can::Mode prev_mode = current_mode_;
                 current_mode_ = static_cast<can::Mode>(mode_cmd.mode);
                 if (current_mode_ == can::Mode::Estop) {
                     trigger_estop();
-                } else if (current_mode_ == can::Mode::Manual || current_mode_ == can::Mode::Auto) {
-                    // Safe mode command clears latched estop
+                } else if (prev_mode == can::Mode::Estop &&
+                           (current_mode_ == can::Mode::Manual || current_mode_ == can::Mode::Auto)) {
+                    // Only clear latched ESTOP on an explicit recovery transition out of Mode::Estop
                     clear_estop();
                 }
             }
