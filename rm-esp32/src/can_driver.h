@@ -72,7 +72,7 @@ public:
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
-        config.fail_retry_cnt = 0;
+        config.fail_retry_cnt = -1;  // infinite auto-retransmit (matches legacy TWAI default)
         config.tx_queue_depth = 1;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);

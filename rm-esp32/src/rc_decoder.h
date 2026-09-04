@@ -10,10 +10,10 @@
 
 namespace rm {
 
-struct RcSnapshot {
-    float steering_deg{0.0f};     // Steering angle: +/- 450.0 deg
+    struct RcSnapshot {
+    float steering_deg{0.0f};     // Steering angle: +/- 40.0 deg
     float brake_stroke_mm{0.0f};  // Brake stroke: 0.0 to 27.0 mm
-    float speed_trim{1.0f};       // Speed trim / limiter from VRA dial (0.0 to 1.0)
+    float speed_trim{0.0f};       // Speed trim / limiter from VRA dial (0.0 to 1.0)
     float aux_pass{0.0f};         // Aux pass-through from VRB dial (0.0 to 1.0)
     bool  ignition{false};        // Ignition switch via SWB (true = ON)
     can::Gear gear{can::Gear::N}; // Gear selector via SWC: N, D, R
@@ -63,9 +63,14 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
             snap.brake_stroke_mm = 0.0f;
         }
 
-        // CH2: Speed Limiter / Trim (0.0 to 1.0)
-        float trim_norm = static_cast<float>(raw_us[2] - kPulseMinValidUs) / 1000.0f;
-        snap.speed_trim = std::clamp(trim_norm, 0.0f, 1.0f);
+        // CH2: Speed Limiter / Throttle (0.0 to 1.0) with idle deadband
+        if (raw_us[2] <= kThrottleMinUs) {
+            snap.speed_trim = 0.0f;
+        } else {
+            float trim_norm = static_cast<float>(raw_us[2] - kThrottleMinUs) /
+                              static_cast<float>(kThrottleMaxUs - kThrottleMinUs);
+            snap.speed_trim = std::clamp(trim_norm, 0.0f, 1.0f);
+        }
 
         // CH3: Aux Pass-Through (0.0 to 1.0)
         float aux_norm = static_cast<float>(raw_us[3] - kPulseMinValidUs) / 1000.0f;
@@ -89,6 +94,7 @@ inline RcSnapshot decode_rc_signals(const uint32_t raw_us[kNumRcChannels],
         snap.brake_stroke_mm = kMaxBrakeStrokeMm; // Maximum emergency brake stroke
         snap.ignition = false;
         snap.gear = can::Gear::N;
+        snap.speed_trim = 0.0f;
     }
 
     return snap;

@@ -60,16 +60,28 @@ public:
             break;
         }
 
+        case can::kIdHmiPwrReq: { // 0x112
+            can::gen::HmiPwrReq pwr{};
+            if (can::gen::decode_hmi_pwr_req(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
+                ignition_on_ = (pwr.req_start != 0);
+            }
+            break;
+        }
+
         case 0x0BB: { // Legacy Relay State (fallback)
             uint8_t b = frame.data[0];
             uint8_t mode = b & 0x0F;
             if (mode == 0x03) {
+                ignition_on_ = true;
                 target_gear_ = can::Gear::N;
             } else if (mode == 0x05) {
+                ignition_on_ = true;
                 target_gear_ = can::Gear::D;
             } else if (mode == 0x09) {
+                ignition_on_ = true;
                 target_gear_ = can::Gear::R;
             } else {
+                ignition_on_ = false;
                 target_gear_ = can::Gear::N;
             }
             break;
@@ -102,13 +114,13 @@ public:
             return;
         }
 
-        // Drive or Reverse active
-        bool drive_enabled = (target_gear_ == can::Gear::D || target_gear_ == can::Gear::S);
-        bool reverse_enabled = (target_gear_ == can::Gear::R);
-        bool neutral_active = (target_gear_ == can::Gear::N);
+        // Update Relays with live ignition state
+        relays_.set_gear(target_gear_, ignition_on_);
 
-        // Update Relays
-        relays_.set_gear(target_gear_, true);
+        if (!ignition_on_) {
+            dac_.force_zero();
+            return;
+        }
 
         // Update Throttle DAC
         if (legacy_mode_active_) {
@@ -199,6 +211,7 @@ private:
     int32_t target_speed_mmps_{0};
     can::Gear target_gear_{can::Gear::N};
     can::Mode current_mode_{can::Mode::Manual};
+    bool ignition_on_{false};
 
     bool legacy_mode_active_{false};
     uint16_t legacy_dac_code_{0};
