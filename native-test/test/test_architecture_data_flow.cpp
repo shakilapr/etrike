@@ -44,6 +44,24 @@ static int g_fail = 0;
     } \
 } while (0)
 
+// Authority frames (0x110/0x113) require a baseline frame then an advancing
+// frame before MotorManager's StreamValidity accepts them. Each stream keeps
+// its own monotonic counter.
+static uint8_t g_tam_mode_ctr = 0;
+static uint8_t g_tam_pwr_ctr = 0;
+static void auth_mode(mtr::MotorManager& m, can::Mode mode, uint32_t now) {
+    generated::SysModeCmd c0{static_cast<uint8_t>(mode), g_tam_mode_ctr++};
+    etrike::protocol::Frame f0; generated::encode_sys_mode_cmd(c0, f0); m.handle_frame(f0, now);
+    generated::SysModeCmd c1{static_cast<uint8_t>(mode), g_tam_mode_ctr++};
+    etrike::protocol::Frame f1; generated::encode_sys_mode_cmd(c1, f1); m.handle_frame(f1, now);
+}
+static void auth_power(mtr::MotorManager& m, bool on, uint32_t now) {
+    generated::SysPwrCmd c0{on, g_tam_pwr_ctr++};
+    etrike::protocol::Frame f0; generated::encode_sys_pwr_cmd(c0, f0); m.handle_frame(f0, now);
+    generated::SysPwrCmd c1{on, g_tam_pwr_ctr++};
+    etrike::protocol::Frame f1; generated::encode_sys_pwr_cmd(c1, f1); m.handle_frame(f1, now);
+}
+
 // ============================================================================
 // Test Suite 1: Flow A — Autonomous Mode (Jetson -> RT -> SES/MTR/SEB)
 // ============================================================================
@@ -255,14 +273,10 @@ static void test_flow_e_rm_standalone_bypass_pipeline() {
     mtr::MotorManager mtr_direct{relays_direct, dac_direct};
     mtr_direct.init();
 
-    // Send ignition ON via 0x112 HMI_PWR_REQ (canonical path, no longer via 0x0BB)
-    can::Frame ignition_fr{};
-    ignition_fr.id = can::kIdHmiPwrReq; // 0x112
-    ignition_fr.dlc = 1;
-    can::gen::HmiPwrReq ign_pwr{};
-    ign_pwr.req_start = 1;
-    can::gen::encode_hmi_pwr_req(ign_pwr, ignition_fr);
-    mtr_direct.handle_frame(ignition_fr, 90);
+    // Send power + mode authority to MTR (0x113 SYS_PWR_CMD + 0x110 SYS_MODE_CMD).
+    // MTR no longer takes 0x112; RM emulates SYS on the bench.
+    auth_power(mtr_direct, true, 90);
+    auth_mode(mtr_direct, can::Mode::Auto, 90);
 
     can::Frame can_204_in{};
     can_204_in.id = drive_fr.id;
@@ -313,23 +327,13 @@ static void test_flow_c_motor_actuation_pipeline() {
     TEST_CHECK_EQ(dac.current_code(), 0, "MCP4725 DAC initial code is 0 (0.0 V)");
     TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Off, "Relay state initially Off before ignition");
 
-    // Power on Ignition via canonical 0x112 HMI_PWR_REQ
-    can::Frame ign_frame{};
-    ign_frame.id = can::kIdHmiPwrReq; // 0x112
-    ign_frame.dlc = 1;
-    can::gen::HmiPwrReq ign_req{};
-    ign_req.req_start = 1;
-    can::gen::encode_hmi_pwr_req(ign_req, ign_frame);
-    motor.handle_frame(ign_frame, 10);
+    // Power-on authority via 0x113 SYS_PWR_CMD (MTR no longer takes 0x112).
+    auth_power(motor, true, 10);
     motor.tick(10);
     TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relay state transitions to Park upon ignition ON");
 
-    // 2. Command Forward Drive 1500 mm/s in AUTO mode
-    can::Frame mode_frame{};
-    mode_frame.id = can::kIdSysModeCmd; // 0x110
-    mode_frame.dlc = 1;
-    mode_frame.data[0] = static_cast<uint8_t>(can::Mode::Auto);
-    motor.handle_frame(mode_frame, 50);
+    // 2. Command Forward Drive 1500 mm/s in AUTO mode (mode authority 0x110)
+    auth_mode(motor, can::Mode::Auto, 50);
 
     can::Frame fwd_frame{};
     fwd_frame.id = can::kIdRtDriveCmd; // 0x204
@@ -384,14 +388,9 @@ static void test_flow_d_estop_pipeline() {
     mtr::MotorManager motor{relays, dac};
     motor.init();
 
-    // Turn on Ignition via 0x112 HMI_PWR_REQ
-    can::Frame ign_frame{};
-    ign_frame.id = can::kIdHmiPwrReq;
-    ign_frame.dlc = 1;
-    can::gen::HmiPwrReq ign_req{};
-    ign_req.req_start = 1;
-    can::gen::encode_hmi_pwr_req(ign_req, ign_frame);
-    motor.handle_frame(ign_frame, 50);
+    // Turn on Ignition via authority frames 0x113 (power) + 0x110 (mode).
+    auth_power(motor, true, 50);
+    auth_mode(motor, can::Mode::Auto, 50);
 
     // Spin up motor in Drive mode
     can::Frame run_frame{};
@@ -439,9 +438,10 @@ static void test_gateway_message_matrix() {
     TEST_CHECK_EQ(generated::SafetyEstop::kDlc, 0, "0x001 SAFETY_ESTOP DLC = 0");
     TEST_CHECK_EQ(generated::SysSafetySts::kDlc, 3, "0x011 SYS_SAFETY_STATUS DLC = 3");
     TEST_CHECK_EQ(generated::PwtDcdcCmd::kDlc, 8, "0x10262B27 PWT_DCDC_CMD DLC = 8");
-    TEST_CHECK_EQ(generated::SysModeCmd::kDlc, 1, "0x110 SYS_MODE_CMD DLC = 1");
+    TEST_CHECK_EQ(generated::SysModeCmd::kDlc, 2, "0x110 SYS_MODE_CMD DLC = 2");
     TEST_CHECK_EQ(generated::HmiModeReq::kDlc, 2, "0x111 HMI_MODE_REQ DLC = 2");
     TEST_CHECK_EQ(generated::HmiPwrReq::kDlc, 2, "0x112 HMI_PWR_REQ DLC = 2");
+    TEST_CHECK_EQ(generated::SysPwrCmd::kDlc, 2, "0x113 SYS_PWR_CMD DLC = 2");
     TEST_CHECK_EQ(generated::SysThrottleSts::kDlc, 2, "0x120 SYS_THROTTLE_STS DLC = 2");
     TEST_CHECK_EQ(codecs::ses::kDlc, 8, "0x169 VCU_SES_REQ DLC = 8");
     TEST_CHECK_EQ(generated::RtDriveCmd::kDlc, 5, "0x204 RT_DRIVE_CMD DLC = 5");

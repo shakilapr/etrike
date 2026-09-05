@@ -193,17 +193,37 @@ int main() {
  
      {
          can::Frame fr{};
-         can::gen::SysModeCmd val_mode{uint8_t(can::Mode::Auto)};
+         can::gen::SysModeCmd val_mode{uint8_t(can::Mode::Auto), 0};
          can::encode_frame(val_mode, fr);
- 
+
          DispatchContext high_ctx{};
          process_frame(fr, true, high_ctx);
          CHECK(!high_ctx.has_mode);
- 
+
+         // RT supervises the 0x110 rolling counter + freshness: a baseline
+         // frame must be followed by an advancing frame before mode authority
+         // is granted (has_mode only set when the stream is valid).
+         DispatchContext low_ctx_base{};
+         process_frame(fr, false, low_ctx_base);
+         CHECK(!low_ctx_base.has_mode);  // baseline frame not yet authoritative
+
+         can::gen::SysModeCmd adv_mode{uint8_t(can::Mode::Auto), 1};
+         can::encode_frame(adv_mode, fr);
          DispatchContext low_ctx{};
          process_frame(fr, false, low_ctx);
          CHECK(low_ctx.has_mode);
          CHECK(low_ctx.mode_from_sys == uint8_t(can::Mode::Auto));
+     }
+
+     {
+         // Counter sequence fault (>2 jump) must invalidate the 0x110 stream:
+         // a faulted frame must not be accepted as mode authority.
+         can::Frame fr{};
+         can::gen::SysModeCmd fault_mode{uint8_t(can::Mode::Manual), 5};  // jump from last ctr (1) -> fault
+         can::encode_frame(fault_mode, fr);
+         DispatchContext low_ctx{};
+         process_frame(fr, false, low_ctx);
+         CHECK(!low_ctx.has_mode);
      }
  
      {
