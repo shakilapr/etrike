@@ -36,6 +36,8 @@ inline bool enqueue_safety_event(const rt::SafetyEvent& evt, TickType_t timeout)
     g_safety_event_drops.fetch_add(1, std::memory_order_relaxed);
     if (evt.type == rt::SafetyEvent::ESTOP) {
         g_pending_estop_event.store(true, std::memory_order_release);
+    } else if (evt.type == rt::SafetyEvent::SAFETY_CLEAR) {
+        g_pending_safety_clear.store(true, std::memory_order_release);
     } else {
         g_pending_mode_event.store(evt.payload, std::memory_order_release);
     }
@@ -138,6 +140,58 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         rt::SafetyEvent evt{
             rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
         enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+    }
+    if (fr.id == can::kIdSysSafetySts && !from_high) {
+        // SYS_SAFETY_STS (0x011) is RT's authoritative E-stop latch source on the
+        // low bus (SYS/MTR only). ESTOP persists independently of SYS_MODE_CMD
+        // (0x110, now MANUAL/AUTO only). RT still forwards this frame Low->High
+        // for Host via the gateway (same_frame, in can_rx_router.h).
+        can::gen::SysSafetySts ssts{};
+        if (can::gen::decode_sys_safety_sts(fr.view(), ssts) == can::gen::CodecStatus::Ok) {
+            const uint8_t crc = can::e2e::sys_safety_sts_crc(fr.data.data());
+            static etrike::protocol::StreamValidity ssts_val;
+            static bool ssts_inited = false;
+            if (!ssts_inited) {
+                ssts_val.set_key(1, can::kIdSysSafetySts, 700);  // kSafetyFreshMs
+                ssts_inited = true;
+            }
+            if (crc != ssts.e2e_crc) {
+                ssts_val.invalidate_now();
+            } else {
+                const bool ok = ssts_val.observe(
+                    static_cast<uint8_t>(ssts.rolling_counter), xTaskGetTickCount());
+                if (ok) {
+                    g_last_sys_safety_sts_us.store(esp_timer_get_time(),
+                                                   std::memory_order_release);
+                    static bool ssts_latched = false;
+                    static uint8_t ssts_clear_confirm = 0;
+                    static bool ssts_last_zero = false;
+                    if (ssts.estop_active) {
+                        if (!ssts_latched) {
+                            ssts_latched = true;
+                            rt::SafetyEvent evt{
+                                rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
+                            enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                        }
+                        ssts_clear_confirm = 0;
+                        ssts_last_zero = false;
+                    } else {
+                        // Asymmetric clear: first fresh frame is a baseline; two
+                        // consecutive fresh advancing zero frames clear the latch.
+                        if (ssts_last_zero) {
+                            if (++ssts_clear_confirm >= 2 && ssts_latched) {
+                                ssts_latched = false;
+                                rt::SafetyEvent clr{rt::SafetyEvent::SAFETY_CLEAR, 0};
+                                enqueue_safety_event(clr, 0);
+                            }
+                        } else {
+                            ssts_clear_confirm = 1;
+                        }
+                        ssts_last_zero = true;
+                    }
+                }
+            }
+        }
     }
     if (fr.id == can::kIdSbwStatus) {
         can::custom::ses::Status value{};
@@ -345,7 +399,10 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (ctx.has_mode) {
             rt::SafetyEvent evt{rt::SafetyEvent::MODE_CHANGE, ctx.mode_from_sys};
             enqueue_safety_event(evt, 0);
-            // Also clear ESTOP if exiting ESTOP mode
+            // Allow the physical steering emergency-release whenever a valid
+            // (MANUAL/AUTO) SYS_MODE_CMD arrives. SYS_MODE_CMD no longer carries
+            // ESTOP, so this fires on every 0x110 (the E-stop latch is released
+            // only by the 0x011 SAFETY_CLEAR path, not by a mode change).
             if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
                 g_steering_exit_request.store(true);
             }

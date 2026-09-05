@@ -35,6 +35,7 @@ extern rt::CmdWatchdog               g_watchdog;
 extern QueueHandle_t g_safety_evt_q;  // depth 16, SafetyEvent
 extern std::atomic<bool>     g_pending_estop_event;
 extern std::atomic<int16_t>  g_pending_mode_event;  // -1 when no fallback is pending
+extern std::atomic<bool>     g_pending_safety_clear; // authoritative E-stop clear from 0x011
 extern std::atomic<uint32_t> g_safety_event_drops;
 extern std::atomic<bool>     g_steering_estop_request;
 extern std::atomic<bool>     g_steering_exit_request;
@@ -62,6 +63,7 @@ extern std::atomic<bool>     g_seb_takeover;     // SEB takeover active (control
 extern std::atomic<int64_t>  g_last_sys_hb_us;
 extern std::atomic<int64_t>  g_last_host_hb_us;
 extern std::atomic<int64_t>  g_last_low_peer_us;
+extern std::atomic<int64_t>  g_last_sys_safety_sts_us;  // 0x011 freshness (fail-safe)
 extern std::atomic<int64_t>  g_last_estop_sent_us;  // 0x001 rate limiter
 
 // ── ESTOP reason (written by dispatch/safety/health, read by tx) ───
