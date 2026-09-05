@@ -37,6 +37,14 @@ public:
         // Bind authority stream supervisors (Low bus, SYS as producer).
         mode_val_.set_key(1 /*low*/, can::kIdSysModeCmd, kAuthFreshMs);
         pwr_val_.set_key(1 /*low*/, can::kIdSysPwrCmd, kAuthFreshMs);
+        safety_val_.set_key(1 /*low*/, can::kIdSysSafetySts, kSafetyFreshMs);
+        safety_state_valid_ = false;
+        clear_confirm_ = 0;
+        last_estop_zero_ = false;
+        rearm_required_ = false;
+        rearm_off_seen_ = false;
+        rearm_observed_ = false;
+        prev_pwr_on_ = false;
     }
 
     // Process incoming CAN frames
@@ -47,27 +55,26 @@ public:
         comms_healthy_ = true; // Maintain link health flag — cleared in tick() on watchdog expiry
 
         switch (frame.id) {
-        case can::kIdSafetyEstop: { // 0x001 DLC 0 (Explicit Emergency Stop)
+        case can::kIdSafetyEstop: { // 0x001 DLC 0 (Explicit Emergency Stop, hardwired dump)
             trigger_estop();
             break;
         }
 
-        case can::kIdSysModeCmd: { // 0x110 — authoritative mode command from SYS
+        case can::kIdSysSafetySts: { // 0x011 — persistent E-stop authority (latched state)
+            handle_safety_status(frame, now_ms);
+            break;
+        }
+
+        case can::kIdSysModeCmd: { // 0x110 — authoritative mode command from SYS (MANUAL/AUTO only)
             can::gen::SysModeCmd mode_cmd{};
             if (can::gen::decode_sys_mode_cmd(frame.view(), mode_cmd) == can::gen::CodecStatus::Ok) {
                 const bool ok = mode_val_.observe(
                     static_cast<std::uint8_t>(mode_cmd.rolling_counter), now_ms);
                 mode_valid_ = ok;
                 if (!ok) break;  // stale/invalid authority: keep last mode, inhibit drive
-                can::Mode prev_mode = current_mode_;
-                current_mode_ = static_cast<can::Mode>(mode_cmd.mode);
-                if (current_mode_ == can::Mode::Estop) {
-                    trigger_estop();
-                } else if (prev_mode == can::Mode::Estop &&
-                           (current_mode_ == can::Mode::Manual || current_mode_ == can::Mode::Auto)) {
-                    // Only clear latched ESTOP on an explicit recovery transition out of Mode::Estop
-                    clear_estop();
-                }
+                current_mode_ = (mode_cmd.mode ? can::Mode::Auto : can::Mode::Manual);
+                // NOTE: 0x110 no longer carries ESTOP. The latched E-stop is
+                // asserted/cleared solely via 0x011 SYS_SAFETY_STS.
             }
             break;
         }
@@ -79,10 +86,7 @@ public:
                 if (!mode_valid_) break;
                 target_speed_mmps_ = cmd.motor_speed_mmps;
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
-                // ESTOP reset sequence: Ignition ON, Gear Neutral, speed 0
-                if (estop_active_ && ignition_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
-                    clear_estop();
-                }
+                // ESTOP is no longer cleared by a 0x204 reset sequence; only 0x011 can.
             }
             break;
         }
@@ -94,11 +98,20 @@ public:
                     static_cast<std::uint8_t>(pwr.rolling_counter), now_ms);
                 power_valid_ = ok;
                 if (!ok) break;  // stale/invalid power authority: enter power-safe (zero propulsion)
-                power_state_on_ = (pwr.power_state != 0);
-                // ESTOP reset sequence: Power ON, Gear Neutral, speed 0
-                if (estop_active_ && power_state_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
-                    clear_estop();
+                const bool pwr_on = (pwr.power_state != 0);
+                // REARM observability (Phase A): after an authorized clear, MTR requires
+                // a fresh 0x113 OFF->ON edge (with a fresh 0x110 seen meanwhile) before
+                // propulsion is re-enabled.
+                if (rearm_required_) {
+                    if (!pwr_on) {
+                        rearm_off_seen_ = true;
+                    } else if (rearm_off_seen_ && mode_valid_) {
+                        rearm_observed_ = true;
+                    }
                 }
+                prev_pwr_on_ = pwr_on;
+                power_state_on_ = pwr_on;
+                // ESTOP is no longer cleared by a 0x113 reset sequence; only 0x011 can.
             }
             break;
         }
@@ -108,16 +121,85 @@ public:
         }
     }
 
+    // Monitor SYS_SAFETY_STS (0x011): E2E-CRC protected persistent E-stop authority.
+    void handle_safety_status(const can::Frame& frame, uint32_t now_ms) {
+        can::gen::SysSafetySts msg{};
+        if (can::gen::decode_sys_safety_sts(frame.view(), msg) != can::gen::CodecStatus::Ok) return;
+
+        // E2E: CRC-8 over the protected payload bytes [0..3]; reject on mismatch.
+        const std::uint8_t crc = ::etrike::protocol::e2e::sys_safety_sts_crc(frame.data.data());
+        if (crc != msg.e2e_crc) {
+            safety_val_.invalidate_now();
+            safety_state_valid_ = false;
+            clear_confirm_ = 0;
+            last_estop_zero_ = false;
+            return;
+        }
+
+        const bool ok = safety_val_.observe(static_cast<std::uint8_t>(msg.rolling_counter), now_ms);
+        safety_state_valid_ = ok;
+        if (!ok) {
+            clear_confirm_ = 0;
+            last_estop_zero_ = false;
+            return;
+        }
+        last_safety_ms_ = now_ms;
+
+        if (msg.estop_active) {
+            if (!estop_active_) trigger_estop();
+            clear_confirm_ = 0;
+            last_estop_zero_ = false;
+        } else {
+            // Asymmetric clear: the first fresh frame after boot/reacquisition is a
+            // baseline (do NOT clear). Two consecutive fresh, advancing frames with
+            // estop_active == 0 are required for an authorized clear.
+            if (last_estop_zero_) {
+                if (++clear_confirm_ >= 2) authorized_clear();
+            } else {
+                clear_confirm_ = 1;
+            }
+            last_estop_zero_ = true;
+        }
+    }
+
+    // Authorized E-stop clear: latch released only after the validated two-frame
+    // sequence. Authority streams are invalidated so a stale 0x204/0x110/0x113
+    // cannot re-enable motion until a fresh REARM sequence is observed.
+    void authorized_clear() {
+        estop_active_ = false;
+        mode_valid_ = false;
+        power_valid_ = false;
+        mode_val_.invalidate_now();
+        pwr_val_.invalidate_now();
+        clear_confirm_ = 0;
+        last_estop_zero_ = false;
+        rearm_required_ = true;
+        rearm_off_seen_ = false;
+        rearm_observed_ = false;
+    }
+
     // Periodic evaluation (called at 5 ms rate)
     void tick(uint32_t now_ms) {
         // 1. Check Comms Watchdog (500 ms)
         comms_timed_out_ = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
         if (comms_timed_out_) comms_healthy_ = false;
 
-        // 2. Evaluate Actuation (fail-safe on latched ESTOP, CAN timeout, or lost power authority)
-        // Power authority: derive ignition from a valid power command.
-        ignition_on_ = power_valid_ && power_state_on_;
-        if (estop_active_ || comms_timed_out_ || !power_valid_) {
+        // 2. Evaluate Actuation (fail-safe on latched ESTOP, CAN timeout, lost power
+        //    authority, lost/invalid safety-state stream, or un-rearmed recovery).
+        // Power authority: derive ignition from a valid power command, gated by the
+        // persistent safety-state stream (0x011) and the REARM sequence.
+        // Freshness supervision: a silently-stopping 0x011 stream must fail safe even
+        // between received frames.
+        if (safety_state_valid_ && (now_ms - last_safety_ms_ > kSafetyFreshMs)) {
+            safety_state_valid_ = false;
+            safety_val_.invalidate_now();
+            clear_confirm_ = 0;
+            last_estop_zero_ = false;
+        }
+        ignition_on_ = power_valid_ && power_state_on_ && safety_state_valid_ &&
+                       (!rearm_required_ || rearm_observed_);
+        if (estop_active_ || comms_timed_out_ || !power_valid_ || !safety_state_valid_ ||
+            (rearm_required_ && !rearm_observed_)) {
             target_speed_mmps_ = 0;
             relays_.set_state(RelayController::State::Off);
             dac_.force_zero();
@@ -198,14 +280,10 @@ public:
         dac_.force_zero();
     }
 
-    void clear_estop() {
-        estop_active_ = false;
-    }
-
     // Generate 0x120 SYS_THROTTLE_STS (100 Hz)
     can::Frame build_throttle_status_frame() const {
         can::gen::SysThrottleSts sts{};
-        bool inhibited = estop_active_ || comms_timed_out_ || !ignition_on_ || (active_gear_ == can::Gear::N);
+        bool inhibited = propulsion_inhibited();
         sts.speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         can::Frame fr;
         can::gen::encode_sys_throttle_sts(sts, fr);
@@ -215,7 +293,7 @@ public:
     // Generate 0x206 MTR_MOTOR_FBK (50 Hz)
     can::Frame build_motor_feedback_frame() const {
         can::gen::MtrMotorFbk fbk{};
-        bool inhibited = estop_active_ || comms_timed_out_ || !ignition_on_ || (active_gear_ == can::Gear::N);
+        bool inhibited = propulsion_inhibited();
         fbk.actual_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         fbk.gear_state = static_cast<uint8_t>(relays_.current_gear());
 
@@ -239,6 +317,14 @@ public:
     bool is_comms_healthy() const { return comms_healthy_; }
     int32_t target_speed_mmps() const { return target_speed_mmps_; }
     can::Gear target_gear() const { return target_gear_; }
+
+    // Centralized propulsion-inhibit predicate: any of these conditions forces
+    // zero propulsion ( limp / safe state ).
+    bool propulsion_inhibited() const {
+        return estop_active_ || comms_timed_out_ || !power_valid_ ||
+               !safety_state_valid_ || (rearm_required_ && !rearm_observed_) ||
+               !ignition_on_ || (active_gear_ == can::Gear::N);
+    }
 
 private:
     uint16_t calculate_dac_code_(int32_t speed_mmps, bool forward, bool reverse) const {
@@ -285,6 +371,23 @@ private:
     etrike::protocol::StreamValidity mode_val_;
     etrike::protocol::StreamValidity pwr_val_;
     static constexpr uint32_t kAuthFreshMs = can::gen::SysModeCmd::kCycleMs * 5;  // 100ms cycle -> 500ms
+
+    // Persistent safety-state stream (0x011 SYS_SAFETY_STS) supervision.
+    // FTTI-derived freshness timeout; deliberately NOT a multiple of the 200 ms
+    // cycle so a silent clock-doubling fault cannot keep the stream "fresh".
+    static constexpr uint32_t kSafetyFreshMs = 700;
+    etrike::protocol::StreamValidity safety_val_;
+    bool safety_state_valid_{false};
+    uint32_t last_safety_ms_{0};
+    // Asymmetric assert/clear bookkeeping for the 0x011 authority.
+    uint8_t clear_confirm_{0};
+    bool last_estop_zero_{false};
+    // REARM: after an authorized clear, propulsion stays inhibited until a fresh
+    // 0x113 OFF->ON edge (with a fresh 0x110 seen meanwhile) is observed.
+    bool rearm_required_{false};
+    bool rearm_off_seen_{false};
+    bool rearm_observed_{false};
+    bool prev_pwr_on_{false};
 
     static constexpr uint32_t kShiftDwellMs{50};
     uint32_t shift_dwell_start_ms_{0};
