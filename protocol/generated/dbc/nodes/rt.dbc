@@ -8,6 +8,18 @@ BS_:
 BU_: Host RT SYS MTR PWT DCDC EPS_C SEB HMI Any 
 
 
+BO_ 1 SAFETY_ESTOP_high: 0 Any
+
+BO_ 1 SAFETY_ESTOP_low: 0 Any
+
+BO_ 273 HMI_MODE_REQ_high: 2 Host
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+BO_ 274 HMI_PWR_REQ_high: 2 Host
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
 BO_ 768 HOST_DRIVE_CMD_high: 8 Host
  SG_ speed_mmps : 7|32@0- (1,0) [-500|3000] "" RT
  SG_ yaw_rate_mrad_s : 39|24@0- (1,0) [-3000|3000] "" RT
@@ -133,24 +145,19 @@ BO_ 515 SES_VERSION_low: 8 EPS_C
 
 BO_ 1786 SES_TEST_low: 8 EPS_C
 
-BO_ 17 SYS_SAFETY_STS_low: 3 SYS
- SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,Host
- SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,Host
- SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,Host
+BO_ 17 SYS_SAFETY_STS_low: 5 SYS
+ SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,MTR
+ SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,MTR
+ SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,MTR
+ SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,MTR
+ SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,MTR
+ SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,MTR
+ SG_ rolling_counter : 31|8@0+ (1,0) [0|255] "" RT,MTR
+ SG_ e2e_crc : 39|8@0+ (1,0) [0|255] "" RT,MTR
 
-BO_ 17 SYS_SAFETY_STS_high: 3 SYS
- SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,Host
- SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,Host
- SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,Host
-
-BO_ 272 SYS_MODE_CMD_low: 1 SYS
- SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,MTR
+BO_ 272 SYS_MODE_CMD_low: 2 SYS
+ SG_ mode : 7|8@0+ (1,0) [0|1] "" RT,MTR
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT,MTR
 
 BO_ 1536 SYS_DIAG_RPT_low: 8 SYS
  SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,Host
@@ -186,6 +193,7 @@ BO_ 2046 SYS_HEARTBEAT_low: 2 SYS
  SG_ task_can_tx_ok : 8|1@0+ (1,0) [0|1] "" RT
 
 
+CM_ BO_ 273  "Mode requests are produced by Host (acting as the logical HMI role) and forwarded by RT to SYS, which remains the sole mode authority.";
 
 
 
@@ -193,6 +201,8 @@ BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
 BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000000000;
 
 
+BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
 BA_ "GenMsgCycleTime" BO_ 768 10;
 BA_ "GenMsgCycleTime" BO_ 771 10;
 BA_ "GenMsgCycleTime" BO_ 1024 100;
@@ -219,16 +229,20 @@ BA_ "GenMsgCycleTime" BO_ 514 100;
 BA_ "GenMsgCycleTime" BO_ 515 1000;
 BA_ "GenMsgCycleTime" BO_ 1786 10;
 BA_ "GenMsgCycleTime" BO_ 17 200;
-BA_ "GenMsgCycleTime" BO_ 17 200;
-BA_ "GenMsgCycleTime" BO_ 272 1000;
+BA_ "GenMsgCycleTime" BO_ 272 100;
 BA_ "GenMsgCycleTime" BO_ 1536 1000;
 BA_ "GenMsgCycleTime" BO_ 1536 1000;
 BA_ "GenMsgCycleTime" BO_ 2046 100;
 
 
+VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
 VAL_ 768 gear 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 1024 distance_mm 4294967295 "clear";
 VAL_ 289 gear 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 516 gear 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 528 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
 VAL_ 528 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
+VAL_ 272 mode 0 "MANUAL" 1 "AUTO";
+VAL_ 1536 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
+VAL_ 1536 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";

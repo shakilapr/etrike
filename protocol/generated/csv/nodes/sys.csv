@@ -1,26 +1,28 @@
 Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,Bit,Size,Type,Scale,Range,Unit,Description
-0x001,SAFETY_ESTOP_high,Any,"SYS, Host, MTR, DCDC",0,0,(No signals/Opaque),,,,,,,,
-0x001,SAFETY_ESTOP_low,Any,"SYS, Host, MTR, DCDC",0,0,(No signals/Opaque),,,,,,,,
-0x011,SYS_SAFETY_STS_low,SYS,"RT, Host",3,200,estop_active,0,0,8,unsigned,1,"[0, 1]",,
+0x001,SAFETY_ESTOP_low,Any,"SYS, MTR, DCDC, RT",0,0,(No signals/Opaque),,,,,,,,
+0x011,SYS_SAFETY_STS_low,SYS,"RT, MTR",5,200,estop_active,0,0,8,unsigned,1,"[0, 1]",,
 ,,,,,,heartbeat_ok,1,0,8,unsigned,1,"[0, 1]",,
 ,,,,,,light_left,2,0,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_right,2,1,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_brake,2,2,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_head,2,3,1,unsigned,1,"[0, 1]",,
-0x011,SYS_SAFETY_STS_high,SYS,"RT, Host",3,200,estop_active,0,0,8,unsigned,1,"[0, 1]",,
+,,,,,,rolling_counter,3,0,8,unsigned,1,"[0, 255]",,
+,,,,,,e2e_crc,4,0,8,unsigned,1,"[0, 255]",,
+0x011,SYS_SAFETY_STS_high,SYS,Host,5,200,estop_active,0,0,8,unsigned,1,"[0, 1]",,
 ,,,,,,heartbeat_ok,1,0,8,unsigned,1,"[0, 1]",,
 ,,,,,,light_left,2,0,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_right,2,1,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_brake,2,2,1,unsigned,1,"[0, 1]",,
 ,,,,,,light_head,2,3,1,unsigned,1,"[0, 1]",,
-0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",1,1000,mode,0,0,8,unsigned,1,"[0, 2]",,
-0x111,HMI_MODE_REQ_high,HMI,"SYS, Host",2,1000,req_mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"
+,,,,,,rolling_counter,3,0,8,unsigned,1,"[0, 255]",,
+,,,,,,e2e_crc,4,0,8,unsigned,1,"[0, 255]",,
+0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",2,100,mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"
 ,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
-0x111,HMI_MODE_REQ_low,HMI,"SYS, Host",2,1000,req_mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"
+0x111,HMI_MODE_REQ_low,Host,SYS,2,1000,req_mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"
 ,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
-0x112,HMI_PWR_REQ_high,HMI,SYS,2,1000,req_start,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=OFF, 1=ON)"
+0x112,HMI_PWR_REQ_low,Host,SYS,2,1000,req_start,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=OFF, 1=ON)"
 ,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
-0x112,HMI_PWR_REQ_low,HMI,SYS,2,1000,req_start,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=OFF, 1=ON)"
+0x113,SYS_PWR_CMD_low,SYS,MTR,2,100,power_state,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=OFF, 1=ON)"
 ,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
 0x204,RT_DRIVE_CMD_low,RT,"SYS, MTR",5,10,motor_speed_mmps,0,0,32,signed,1,"[-500, 3000]",,
 ,,,,,,gear,4,0,8,unsigned,1,"[0, 3]",," (Values: 0=N, 1=D, 2=S, 3=R)"
@@ -53,7 +55,7 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 ,,,,,,right_turn,0,1,1,unsigned,1,"[0, 1]",,
 ,,,,,,brake_light,0,2,1,unsigned,1,"[0, 1]",,
 ,,,,,,headlight,0,3,1,unsigned,1,"[0, 1]",,
-0x600,SYS_DIAG_RPT_low,SYS,"RT, Host",8,1000,mode,0,0,8,unsigned,1,"[0, 2]",,
+0x600,SYS_DIAG_RPT_low,SYS,"RT, Host",8,1000,mode,0,0,8,unsigned,1,"[0, 2]",," (Values: 0=MANUAL, 1=AUTO, 2=ESTOP)"
 ,,,,,,brake_engaged,1,0,1,unsigned,1,"[0, 1]",,
 ,,,,,,brake_fault,1,1,1,unsigned,1,"[0, 1]",,
 ,,,,,,heartbeat_ok,2,0,1,unsigned,1,"[0, 1]",,
@@ -62,7 +64,7 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 ,,,,,,free_heap_kb,4,0,16,unsigned,1,"[0, 65535]",,
 ,,,,,,tec,6,0,8,unsigned,1,"[0, 255]",,
 ,,,,,,rec,7,0,8,unsigned,1,"[0, 255]",,
-0x600,SYS_DIAG_RPT_high,SYS,"RT, Host",8,1000,mode,0,0,8,unsigned,1,"[0, 2]",,
+0x600,SYS_DIAG_RPT_high,SYS,"RT, Host",8,1000,mode,0,0,8,unsigned,1,"[0, 2]",," (Values: 0=MANUAL, 1=AUTO, 2=ESTOP)"
 ,,,,,,brake_engaged,1,0,1,unsigned,1,"[0, 1]",,
 ,,,,,,brake_fault,1,1,1,unsigned,1,"[0, 1]",,
 ,,,,,,heartbeat_ok,2,0,1,unsigned,1,"[0, 1]",,

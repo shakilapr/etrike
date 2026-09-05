@@ -8,8 +8,6 @@ BS_:
 BU_: Host RT SYS MTR PWT DCDC EPS_C SEB HMI Any 
 
 
-BO_ 1 SAFETY_ESTOP_high: 0 Any
-
 BO_ 1 SAFETY_ESTOP_low: 0 Any
 
 BO_ 2418420519 PWT_DCDC_CMD_powertrain: 8 PWT

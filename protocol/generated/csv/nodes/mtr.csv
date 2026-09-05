@@ -1,7 +1,17 @@
 Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,Bit,Size,Type,Scale,Range,Unit,Description
-0x001,SAFETY_ESTOP_high,Any,"SYS, Host, MTR, DCDC",0,0,(No signals/Opaque),,,,,,,,
-0x001,SAFETY_ESTOP_low,Any,"SYS, Host, MTR, DCDC",0,0,(No signals/Opaque),,,,,,,,
-0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",1,1000,mode,0,0,8,unsigned,1,"[0, 2]",,
+0x001,SAFETY_ESTOP_low,Any,"SYS, MTR, DCDC, RT",0,0,(No signals/Opaque),,,,,,,,
+0x011,SYS_SAFETY_STS_low,SYS,"RT, MTR",5,200,estop_active,0,0,8,unsigned,1,"[0, 1]",,
+,,,,,,heartbeat_ok,1,0,8,unsigned,1,"[0, 1]",,
+,,,,,,light_left,2,0,1,unsigned,1,"[0, 1]",,
+,,,,,,light_right,2,1,1,unsigned,1,"[0, 1]",,
+,,,,,,light_brake,2,2,1,unsigned,1,"[0, 1]",,
+,,,,,,light_head,2,3,1,unsigned,1,"[0, 1]",,
+,,,,,,rolling_counter,3,0,8,unsigned,1,"[0, 255]",,
+,,,,,,e2e_crc,4,0,8,unsigned,1,"[0, 255]",,
+0x110,SYS_MODE_CMD_low,SYS,"RT, MTR",2,100,mode,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=MANUAL, 1=AUTO)"
+,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
+0x113,SYS_PWR_CMD_low,SYS,MTR,2,100,power_state,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=OFF, 1=ON)"
+,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
 0x120,SYS_THROTTLE_STS_low,MTR,"RT, Host",2,10,speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 0x120,SYS_THROTTLE_STS_high,MTR,"RT, Host",2,10,speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 0x204,RT_DRIVE_CMD_low,RT,"SYS, MTR",5,10,motor_speed_mmps,0,0,32,signed,1,"[-500, 3000]",,

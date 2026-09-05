@@ -10,15 +10,21 @@ BU_: Host RT SYS MTR PWT DCDC EPS_C SEB HMI Any
 
 BO_ 1 SAFETY_ESTOP_high: 0 Any
 
-BO_ 1 SAFETY_ESTOP_low: 0 Any
+BO_ 273 HMI_MODE_REQ_high: 2 Host
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
 
-BO_ 273 HMI_MODE_REQ_high: 2 HMI
- SG_ req_mode : 7|8@0+ (1,0) [0|1] "" SYS,Host
- SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS,Host
+BO_ 273 HMI_MODE_REQ_low: 2 Host
+ SG_ req_mode : 7|8@0+ (1,0) [0|1] "" SYS
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS
 
-BO_ 273 HMI_MODE_REQ_low: 2 HMI
- SG_ req_mode : 7|8@0+ (1,0) [0|1] "" SYS,Host
- SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS,Host
+BO_ 274 HMI_PWR_REQ_high: 2 Host
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" RT
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" RT
+
+BO_ 274 HMI_PWR_REQ_low: 2 Host
+ SG_ req_start : 7|8@0+ (1,0) [0|1] "" SYS
+ SG_ rolling_counter : 15|8@0+ (1,0) [0|255] "" SYS
 
 BO_ 768 HOST_DRIVE_CMD_high: 8 Host
  SG_ speed_mmps : 7|32@0- (1,0) [-500|3000] "" RT
@@ -124,21 +130,15 @@ BO_ 2045 RT_HEARTBEAT_low: 2 RT
  SG_ alive_ctr : 7|8@0+ (1,0) [0|255] "" Host,SYS
  SG_ health_flags : 15|8@0+ (1,0) [0|255] "" Host,SYS
 
-BO_ 17 SYS_SAFETY_STS_low: 3 SYS
- SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,Host
- SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,Host
- SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,Host
-
-BO_ 17 SYS_SAFETY_STS_high: 3 SYS
- SG_ estop_active : 7|8@0+ (1,0) [0|1] "" RT,Host
- SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" RT,Host
- SG_ light_left : 23|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_right : 22|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_brake : 21|1@0+ (1,0) [0|1] "" RT,Host
- SG_ light_head : 20|1@0+ (1,0) [0|1] "" RT,Host
+BO_ 17 SYS_SAFETY_STS_high: 5 SYS
+ SG_ estop_active : 7|8@0+ (1,0) [0|1] "" Host
+ SG_ heartbeat_ok : 15|8@0+ (1,0) [0|1] "" Host
+ SG_ light_left : 23|1@0+ (1,0) [0|1] "" Host
+ SG_ light_right : 22|1@0+ (1,0) [0|1] "" Host
+ SG_ light_brake : 21|1@0+ (1,0) [0|1] "" Host
+ SG_ light_head : 20|1@0+ (1,0) [0|1] "" Host
+ SG_ rolling_counter : 31|8@0+ (1,0) [0|255] "" Host
+ SG_ e2e_crc : 39|8@0+ (1,0) [0|255] "" Host
 
 BO_ 1536 SYS_DIAG_RPT_low: 8 SYS
  SG_ mode : 7|8@0+ (1,0) [0|2] "" RT,Host
@@ -163,8 +163,8 @@ BO_ 1536 SYS_DIAG_RPT_high: 8 SYS
  SG_ rec : 63|8@0+ (1,0) [0|255] "" RT,Host
 
 
-CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.";
-CM_ BO_ 273  "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.";
+CM_ BO_ 273  "Mode requests are produced by Host (acting as the logical HMI role) and forwarded by RT to SYS, which remains the sole mode authority.";
+CM_ BO_ 273  "Mode requests are produced by Host (acting as the logical HMI role) and forwarded by RT to SYS, which remains the sole mode authority.";
 
 
 
@@ -174,6 +174,8 @@ BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000000000;
 
 BA_ "GenMsgCycleTime" BO_ 273 1000;
 BA_ "GenMsgCycleTime" BO_ 273 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
+BA_ "GenMsgCycleTime" BO_ 274 1000;
 BA_ "GenMsgCycleTime" BO_ 768 10;
 BA_ "GenMsgCycleTime" BO_ 771 10;
 BA_ "GenMsgCycleTime" BO_ 1024 100;
@@ -191,15 +193,18 @@ BA_ "GenMsgCycleTime" BO_ 785 100;
 BA_ "GenMsgCycleTime" BO_ 2045 500;
 BA_ "GenMsgCycleTime" BO_ 2045 500;
 BA_ "GenMsgCycleTime" BO_ 17 200;
-BA_ "GenMsgCycleTime" BO_ 17 200;
 BA_ "GenMsgCycleTime" BO_ 1536 1000;
 BA_ "GenMsgCycleTime" BO_ 1536 1000;
 
 
 VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
 VAL_ 273 req_mode 0 "MANUAL" 1 "AUTO";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
+VAL_ 274 req_start 0 "OFF" 1 "ON";
 VAL_ 768 gear 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 1024 distance_mm 4294967295 "clear";
 VAL_ 289 gear 0 "N" 1 "D" 2 "S" 3 "R";
 VAL_ 528 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
 VAL_ 528 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
+VAL_ 1536 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";
+VAL_ 1536 mode 0 "MANUAL" 1 "AUTO" 2 "ESTOP";

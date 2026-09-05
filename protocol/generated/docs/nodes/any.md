@@ -19,7 +19,7 @@
 ## Message Dictionary
 ### 0x001 — SAFETY_ESTOP (Bus: high)
 - **Sender:** Any
-- **Receivers:** SYS, Host, MTR, DCDC
+- **Receivers:** Host, RT
 - **DLC:** 0 bytes
 - **Cycle:** 0 ms (0 = event-based)
 
@@ -27,7 +27,7 @@
 
 ### 0x001 — SAFETY_ESTOP (Bus: low)
 - **Sender:** Any
-- **Receivers:** SYS, Host, MTR, DCDC
+- **Receivers:** SYS, MTR, DCDC, RT
 - **DLC:** 0 bytes
 - **Cycle:** 0 ms (0 = event-based)
 

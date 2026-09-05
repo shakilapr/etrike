@@ -28,8 +28,8 @@
       "key": "safety_estop", "owner": "safety", "protocol": "etrike.application.v1", "name": "SAFETY_ESTOP", "dlc": 0, "byte_order": "big",
       "codec": {"strategy": "generated"}, "layout": {"kind": "signals", "fields": []},
       "instances": [
-        {"bus": "high", "id": "0x001", "frame_format": "standard", "sender": "Any", "receivers": ["SYS", "Host", "MTR", "DCDC"], "cycle_ms": 0, "semantics": "same_frame"},
-        {"bus": "low", "id": "0x001", "frame_format": "standard", "sender": "Any", "receivers": ["SYS", "Host", "MTR", "DCDC"], "cycle_ms": 0, "semantics": "same_frame"}
+        {"bus": "high", "id": "0x001", "frame_format": "standard", "sender": "Any", "receivers": ["Host", "RT"], "cycle_ms": 0, "semantics": "same_frame"},
+        {"bus": "low", "id": "0x001", "frame_format": "standard", "sender": "Any", "receivers": ["SYS", "MTR", "DCDC", "RT"], "cycle_ms": 0, "semantics": "same_frame"}
       ]
     }
   ]

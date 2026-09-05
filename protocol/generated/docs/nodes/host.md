@@ -4,7 +4,7 @@
 *(Note: This file is fully auto-generated from the YAML configurations. Do not edit manually.)*
 
 ## Summary Statistics
-- **Unique CAN Message IDs:** 18
+- **Unique CAN Message IDs:** 19
 - **Total Signal Definitions:** 100
 
 ---
@@ -19,39 +19,16 @@
 ## Message Dictionary
 ### 0x001 — SAFETY_ESTOP (Bus: high)
 - **Sender:** Any
-- **Receivers:** SYS, Host, MTR, DCDC
+- **Receivers:** Host, RT
 - **DLC:** 0 bytes
 - **Cycle:** 0 ms (0 = event-based)
 
 *No payload (DLC=0 event frame)*
-
-### 0x001 — SAFETY_ESTOP (Bus: low)
-- **Sender:** Any
-- **Receivers:** SYS, Host, MTR, DCDC
-- **DLC:** 0 bytes
-- **Cycle:** 0 ms (0 = event-based)
-
-*No payload (DLC=0 event frame)*
-
-### 0x011 — SYS_SAFETY_STS (Bus: low)
-- **Sender:** SYS
-- **Receivers:** RT, Host
-- **DLC:** 3 bytes
-- **Cycle:** 200 ms (0 = event-based)
-
-| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
-|---|---|---|---|---|---|---|---|---|
-| `estop_active` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  |
-| `heartbeat_ok` | 1 | 0 | 8 | unsigned | 1 | [0, 1] | - |  |
-| `light_left` | 2 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
-| `light_right` | 2 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
-| `light_brake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
-| `light_head` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
 ### 0x011 — SYS_SAFETY_STS (Bus: high)
 - **Sender:** SYS
-- **Receivers:** RT, Host
-- **DLC:** 3 bytes
+- **Receivers:** Host
+- **DLC:** 5 bytes
 - **Cycle:** 200 ms (0 = event-based)
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
@@ -62,13 +39,15 @@
 | `light_right` | 2 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `light_brake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `light_head` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
+| `rolling_counter` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
+| `e2e_crc` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
 ### 0x111 — HMI_MODE_REQ (Bus: high)
-- **Sender:** HMI
-- **Receivers:** SYS, Host
+- **Sender:** Host
+- **Receivers:** RT
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.
+- **Description:** Mode requests are produced by Host (acting as the logical HMI role) and forwarded by RT to SYS, which remains the sole mode authority.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -76,15 +55,37 @@
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
 ### 0x111 — HMI_MODE_REQ (Bus: low)
-- **Sender:** HMI
-- **Receivers:** SYS, Host
+- **Sender:** Host
+- **Receivers:** SYS
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.
+- **Description:** Mode requests are produced by Host (acting as the logical HMI role) and forwarded by RT to SYS, which remains the sole mode authority.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `req_mode` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=MANUAL, 1=AUTO) |
+| `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
+
+### 0x112 — HMI_PWR_REQ (Bus: high)
+- **Sender:** Host
+- **Receivers:** RT
+- **DLC:** 2 bytes
+- **Cycle:** 1000 ms (0 = event-based)
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `req_start` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=OFF, 1=ON) |
+| `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
+
+### 0x112 — HMI_PWR_REQ (Bus: low)
+- **Sender:** Host
+- **Receivers:** SYS
+- **DLC:** 2 bytes
+- **Cycle:** 1000 ms (0 = event-based)
+
+| Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
+|---|---|---|---|---|---|---|---|---|
+| `req_start` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=OFF, 1=ON) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
 ### 0x120 — SYS_THROTTLE_STS (Bus: low)
@@ -299,7 +300,7 @@
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  |
+| `mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  (Values: 0=MANUAL, 1=AUTO, 2=ESTOP) |
 | `brake_engaged` | 1 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `brake_fault` | 1 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `heartbeat_ok` | 2 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
@@ -317,7 +318,7 @@
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  |
+| `mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  (Values: 0=MANUAL, 1=AUTO, 2=ESTOP) |
 | `brake_engaged` | 1 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `brake_fault` | 1 | 1 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `heartbeat_ok` | 2 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
