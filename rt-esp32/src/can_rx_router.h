@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include "protocol/compat/can.hpp"
+#include "stream_validity.h"
 namespace rt {
 struct GatewayQueues {
     can::Frame* gw_tx_low=nullptr;
@@ -10,6 +11,7 @@ struct GatewayQueues {
     int32_t* brake_req_kpa=nullptr;
     bool* estop_flag=nullptr;
     uint8_t* mode_from_sys=nullptr;
+    bool* mode_valid=nullptr;  // 0x110 rolling-counter/freshness authority state
     uint16_t* steer_feedback_angle=nullptr; // from 0x201 SES_StrAngle raw value (CSV: Unsigned)
     uint8_t* steer_angle_status=nullptr;   // 0x201 byte0 bit0: 0=center finding, 1=found (gap C2)
 };
@@ -52,12 +54,24 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
     case can::kIdHostLightCmd:
         if (is_high_bus && q.gw_tx_low) *q.gw_tx_low = f;
         return can::gen::CodecStatus::Ok;
-    case can::kIdSysModeCmd:  // SYS_MODE_CMD — consumed by RT
+    case can::kIdSysModeCmd:  // SYS_MODE_CMD — consumed by RT (authoritative mode)
         if (!is_high_bus && q.mode_from_sys) {
             can::gen::SysModeCmd decoded{};
             auto status = can::decode_frame(f, decoded);
             if (status != can::gen::CodecStatus::Ok) return status;
-            *q.mode_from_sys = decoded.mode;
+            // Supervise the 0x110 rolling counter + freshness. A stale or
+            // sequence-faulted stream must not be treated as a valid mode.
+            static etrike::protocol::StreamValidity sval;
+            static bool inited = false;
+            if (!inited) {
+                sval.set_key(1 /*low*/, can::kIdSysModeCmd,
+                             can::gen::SysModeCmd::kCycleMs * 5);
+                inited = true;
+            }
+            const bool ok = sval.observe(
+                static_cast<std::uint8_t>(decoded.rolling_counter), xTaskGetTickCount());
+            if (q.mode_valid) *q.mode_valid = ok;
+            if (ok) *q.mode_from_sys = decoded.mode;
         }
         return can::gen::CodecStatus::Ok;
     case can::kIdSbwStatus:  // SES_STATUS — consumed by RT (steering feedback)
@@ -74,7 +88,7 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
     }
     // ── Transparent forwarding (all remaining IDs) ───────────────────
     // Uses the canonical protocol forwarding rules.
-    // Low→High: 0x001,0x011,0x120,0x206,0x600.  High→Low: 0x001,0x302.
+    // Low→High: 0x001,0x011,0x120,0x206,0x600.  High→Low: 0x001,0x111,0x112,0x302.
     // 0x001 is handled above; the rest fall through to here.
     if (can::is_forwarded_low_to_high(f.id) && !is_high_bus && q.gw_tx_high) {
         *q.gw_tx_high = f;
