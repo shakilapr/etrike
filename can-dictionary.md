@@ -665,6 +665,24 @@ SYS heartbeat never leaves low bus. Startup grace period: 3 seconds (both heartb
 
 ---
 
+### 0x113 — SYS_PWR_CMD
+
+| Property | Value |
+|----------|-------|
+| **Sender** | SYS |
+| **Receiver(s)** | MTR (Low bus only) |
+| **DLC** | 2 |
+| **Period** | 100 ms (10 Hz) — authority watchdog window = 5 × period |
+
+| Signal | Start bit | Len | Type | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-----|-----|------|-------------|
+| `power_state` | 0 | 8 | u8 enum | 0 | 1 | — | 0=OFF (contactor open / power-safe), 1=ON. MTR derives ignition from a *valid* power command. |
+| `rolling_counter` | 8 | 8 | u8 | 0 | 255 | — | Life signal; MTR's `StreamValidity` accepts a baseline frame followed by an advancing frame, and rejects duplicates / sequence faults. |
+
+> Protocol: `protocol/contracts/sys.yaml` (`sys_pwr_cmd`). Power authority for MTR: a stale or faulted `0x113` stream drops MTR to power-safe (relays open, DAC 0 V).
+
+---
+
 ## 2. High-Level CAN Bus
 
 Nodes: Jetson Orin, RT ESP32-S3 (MCP2515 SPI).
@@ -919,7 +937,8 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x001` | SAFETY_ESTOP | RT, SYS | All | 0 | Event |
 | `0x011` | SYS_SAFETY_STS | SYS | RT (→Jetson) | 3 | 5 Hz |
 | `0x012` | SYS_DCDC_CMD | SYS | DC-DC | 1 | Change |
-| `0x110` | SYS_MODE_CMD | SYS | RT | 1 | Change |
+| `0x110` | SYS_MODE_CMD | SYS | RT, MTR | 2 | 100 Hz |
+| `0x113` | SYS_PWR_CMD | SYS | MTR | 2 | 100 Hz |
 | `0x120` | SYS_THROTTLE_STS | MTR | RT (→Jetson) | 2 | 100 Hz |
 | `0x169` | VCU_SES_REQ | RT | EPS-C | 8 | **50 Hz** |
 | `0x201` | SES_STATUS | EPS-C | RT | 8 | 100 Hz |
@@ -972,8 +991,8 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Direction | IDs |
 |-----------|-----|
-| Low → High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600`, `0x111`, `0x112` |
-| High → Low | `0x001`, `0x302` |
+| Low → High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600` |
+| High → Low | `0x001`, `0x111`, `0x112`, `0x302` |
 
 ### Category 2: Consumed by RT → different message generated
 
@@ -986,7 +1005,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
+| Low only | `0x012`, `0x110`, `0x113`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (steer-by-wire unit feedback) |
 | High only | `0x220`, `0x400` (obstacle distance), `0x310` (steer diag), `0x311` (brake diag) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC`, `0x210` (per-node heartbeat — NOT bridged; `0x210` independent on both buses) |

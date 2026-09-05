@@ -66,7 +66,7 @@ TOPOLOGY 2: DIRECT REMOTE MANUAL CONTROL (RM STANDALONE BYPASS ON LOW CAN)
 ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
 │   SES (EPS-C)    │  │    SEB Brake     │  │    MTR STM32     │
 │ Steer-by-Wire    │  │  Brake-by-Wire   │  │ Motor Controller │
-│  0x169 Target    │  │   0x7B9 Stroke   │  │ 0x204 / 0x0AA/0x0BB
+│  0x169 Target    │  │   0x7B9 Stroke   │  │ 0x204 / 0x110 / 0x113
 └──────────────────┘  └──────────────────┘  └──────────────────┘
 
 ---
@@ -78,8 +78,8 @@ TOPOLOGY 2: DIRECT REMOTE MANUAL CONTROL (RM STANDALONE BYPASS ON LOW CAN)
 | **Jetson** | Orin NX (Arm Cortex-A78AE + Ampere GPU) | Ubuntu Linux + ROS 2 Autoware | Camera/LiDAR perception, global path planning, velocity (`0x300`) and steering requests | No hard real-time guarantees ($>10\,\text{ms}$ jitter). Cannot drive actuators or relays directly. |
 | **RT** | ESP32-S3 Dual-Core @ 240 MHz | FreeRTOS (ESP-IDF 5.5) | Dual-CAN gateway, tricycle kinematics solver, PID closed-loop speed control, SES steering safety clamp | Does not switch battery relays, evaluate physical driver key switches, or read analog brake levers. |
 | **SYS** | ESP32-S3 Dual-Core @ 240 MHz | FreeRTOS (ESP-IDF 5.5) | Master safety state machine, mode authority (`0x110`), physical ignition & E-Stop reading, PCR3 contactor cut | Does not solve vehicle kinematics, calculate steering geometry, or control traction motor PWM. |
-| **MTR** | STM32G431CBU6 Cortex-M4F @ 16 MHz | Bare-Metal HAL (C++17) | Converts `0x204` speed (or `0x0BB`/`0x0AA`) to MCP4725 I2C DAC ($0.8\text{V}\dots 2.4\text{V}$), interlocking 72V relays (PA0/PA2/PA4) | Does not command steering angle or evaluate global obstacle distances. |
-| **RM** | ESP32 Dual-Core @ 240 MHz | FreeRTOS (ESP-IDF 5.5) | Decodes 6-channel RMT pulses from FlySky FS-i6. In Standalone Mode, directly drives SES (`0x169`), SEB (`0x7B9`), and MTR (`0x204`/`0x0BB`/`0x0AA`) over Low CAN | Does not execute autonomous trajectory planning or closed-loop speed regulation. |
+| **MTR** | STM32G431CBU6 Cortex-M4F @ 16 MHz | Bare-Metal HAL (C++17) | Converts `0x204` speed to MCP4725 I2C DAC ($0.8\text{V}\dots 2.4\text{V}$); takes mode from `0x110 SYS_MODE_CMD` and power authority from `0x113 SYS_PWR_CMD` (rolling-counter `StreamValidity`), interlocking 72V relays (PA0/PA2/PA4) | Does not command steering angle or evaluate global obstacle distances. |
+| **RM** | ESP32 Dual-Core @ 240 MHz | FreeRTOS (ESP-IDF 5.5) | Decodes 6-channel RMT pulses from FlySky FS-i6. In Standalone Mode, drives SES (`0x169`), SEB (`0x7B9`), MTR (`0x204`), and emulates SYS authority via `0x110`/`0x113` over Low CAN | Does not execute autonomous trajectory planning or closed-loop speed regulation. |
 | **SES** | Smart Steer Actuator (EPS-C) | Internal ECU | Closed-loop steering column positioning based on `0x169 VCU_SES_REQ`, status feedback on `0x201` | Does not compute steering trajectory or dynamic rollover bounds. |
 | **SEB** | Smart Brake Actuator | Internal ECU | Electromechanical brake cylinder displacement ($0\dots 27\,\text{mm}$) based on `0x7B9 VCU_SEB_REQ`, status on `0x721` | Does not arbitrate driver vs autonomous authority. |
 
@@ -149,10 +149,10 @@ In Direct Remote Manual Control, **Host, RT, and SYS are completely omitted or p
    │
    ├─► Low CAN 0x169 VCU_SES_REQ  ──► [SES Steer] (Direct front wheel steering)
    ├─► Low CAN 0x7B9 VCU_SEB_REQ  ──► [SEB Brake] (Direct mechanical brake pull)
-   ├─► Low CAN 0x204 RT_DRIVE_CMD  ──► [MTR STM32] (Canonical speed & gear target)
-   ├─► Low CAN 0x0BB RELAY_STATE  ──► [MTR STM32] (Fallback relay state: 0x05=D, 0x09=R, 0x03=P)
-   ├─► Low CAN 0x0AA THROTTLE_RAW ──► [MTR STM32] (Fallback 16-bit throttle to DAC)
-   └─► Low CAN 0x001 SAFETY_ESTOP ──► ALL NODES   (Asserted if RC RF signal is lost)
+    ├─► Low CAN 0x204 RT_DRIVE_CMD  ──► [MTR STM32] (Canonical speed & gear target)
+    ├─► Low CAN 0x110 SYS_MODE_CMD  ──► [MTR STM32] (Emulated mode authority, rolling counter)
+    ├─► Low CAN 0x113 SYS_PWR_CMD   ──► [MTR STM32] (Emulated power authority, rolling counter)
+    └─► Low CAN 0x001 SAFETY_ESTOP ──► ALL NODES   (Asserted if RC RF signal is lost)
 ```
 
 1. **RF Input Capture**: The ESP-IDF RMT peripheral samples PWM pulses from the FS-iA6 receiver:
@@ -164,10 +164,9 @@ In Direct Remote Manual Control, **Host, RT, and SYS are completely omitted or p
 2. **Direct Actuator Dispatch over Low CAN**:
    - **SES Steering (`0x169`)**: Transmitted at 50 Hz. Angle setpoint $\theta_{\text{target}} \in [-450^\circ, +450^\circ]$. Active only when Ignition is ON and Gear is D or R.
    - **SEB Braking (`0x7B9`)**: Transmitted at 50 Hz. Stroke $0\dots 27\,\text{mm}$. When brake stick is released, stroke is $0\,\text{mm}$.
-   - **MTR Motor Traction (`0x204`, `0x0BB`, `0x0AA`)**: Transmitted at 50 Hz.
-     - Canonical `0x204`: Motor speed = $\text{trim} \times 3000\,\text{mm/s}$ (Drive) or $\text{trim} \times 500\,\text{mm/s}$ (Reverse), with commanded gear state.
-     - Fallback `0x0BB`: Discrete relay mode byte (`0x03` = Park, `0x05` = Drive, `0x09` = Reverse).
-     - Fallback `0x0AA`: 16-bit linear throttle word mapped to the MCP4725 DAC.
+    - **MTR Motor Traction (`0x204`, `0x110`, `0x113`)**: Transmitted at 50 Hz.
+      - Canonical `0x204`: Motor speed = $\text{trim} \times 3000\,\text{mm/s}$ (Drive) or $\text{trim} \times 500\,\text{mm/s}$ (Reverse), with commanded gear state.
+      - `0x110 SYS_MODE_CMD` / `0x113 SYS_PWR_CMD`: RM *emulates* SYS on the bench, providing the mode and power authority MTR's `StreamValidity` requires (no legacy `0x0BB`/`0x0AA` fallback).
 3. **Deadman Fail-Safe**:
    - If RC signal is lost for $>100\,\text{ms}$, RM immediately asserts `0x001 SAFETY_ESTOP` (DLC 0), clamps steering to $0^\circ$, applies maximum emergency braking ($27\,\text{mm}$ stroke), and zeroes all throttle commands.
 
@@ -180,9 +179,9 @@ The MTR STM32 node accommodates both operational topologies seamlessly:
 ```
 [Low CAN Bus]
    │
-   ├─► Canonical Frame: 0x204 RT_DRIVE_CMD (speed_mmps, gear) ──► Used by RT (Mode 1) & RM (Mode 2)
-   ├─► Fallback Frames:  0x0BB (Relay State) + 0x0AA (Throttle) ──► Direct legacy RM bypass
-   ├─► Safety Frame:    0x001 SAFETY_ESTOP                     ──► Immediate relay open & DAC to 0V
+    ├─► Canonical Frame: 0x204 RT_DRIVE_CMD (speed_mmps, gear) ──► Used by RT (Mode 1) & RM (Mode 2)
+    ├─► Authority Frames: 0x110 SYS_MODE_CMD + 0x113 SYS_PWR_CMD ──► RM emulates SYS on the bench
+    ├─► Safety Frame:    0x001 SAFETY_ESTOP                     ──► Immediate relay open & DAC to 0V
    ▼
 [MTR STM32G431]
    ├─ Watchdog Monitor: Command age > 500 ms ──► CUT SPEED TO 0, GEAR TO NEUTRAL
@@ -208,11 +207,10 @@ The MTR STM32 node accommodates both operational topologies seamlessly:
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **1** | `0x001` | `SAFETY_ESTOP` | ANY / RM | ALL | Both | Event | 0 | **0-byte wire contract**. Immediate vehicle shutdown. |
 | **17** | `0x011` | `SYS_SAFETY_STATUS` | SYS | RT, Jetson | Low $\rightarrow$ High | 20 Hz | 3 | Byte 0: State (`BOOT`, `READY`, `ESTOP`), Byte 1-2: Fault bits |
-| **170**| `0x0AA` | `RM_THROTTLE_RAW` | RM | MTR | Low | 50 Hz | 8 | Bytes 0-1: 16-bit raw analog throttle (legacy standalone bypass) |
-| **187**| `0x0BB` | `RM_RELAY_STATE` | RM | MTR | Low | 50 Hz | 8 | Byte 0: Digital gear/relay state (`0x03`=P, `0x05`=D, `0x09`=R) |
-| **272**| `0x110` | `SYS_MODE_CMD` | SYS | ALL | Low | 20 Hz | 1 | `0 = MANUAL`, `1 = AUTO`, `2 = ESTOP` |
-| **273**| `0x111` | `HMI_MODE_REQ` | RM / HMI | SYS | Low | 20 Hz | 2 | Byte 0: Target mode, Byte 1: Requested gear |
-| **274**| `0x112` | `HMI_PWR_REQ` | RM / HMI | SYS | Low | 10 Hz | 2 | `0x01` = Ignition power request, rolling counter |
+| **272**| `0x110` | `SYS_MODE_CMD` | SYS / RM | RT, MTR | Low | 100 Hz | 2 | `mode` (`0`=MANUAL, `1`=AUTO, `2`=ESTOP), `rolling_counter`; RM emulates this on the bench |
+| **273**| `0x111` | `HMI_MODE_REQ` | HMI | SYS, Host | Low $\rightarrow$ High | 1 Hz | 2 | Byte 0: Target mode, Byte 1: rolling counter (RM no longer emits this) |
+| **274**| `0x112` | `HMI_PWR_REQ` | HMI | SYS | Low $\rightarrow$ High | 1 Hz | 2 | `0x01` = Ignition power request, rolling counter (RM no longer emits this) |
+| **275**| `0x113` | `SYS_PWR_CMD` | SYS / RM | MTR | Low | 100 Hz | 2 | `power_state` (`0`=OFF, `1`=ON), `rolling_counter`; power authority for MTR |
 | **288**| `0x120` | `SYS_THROTTLE_STS` | MTR | RT, SYS | Low $\rightarrow$ High | 100 Hz | 2 | Commanded motor speed (int16 mm/s) |
 | **361**| `0x169` | `VCU_SES_REQ` | RT / RM | SES | Low | 50 Hz | 8 | Target steering angle ($\pm 450.0^\circ$, 0.1°/LSB), XOR8 checksum |
 | **513**| `0x201` | `SES_STATUS` | SES | RT | Low | 100 Hz | 8 | Actual steering angle, torque feedback, motor status |

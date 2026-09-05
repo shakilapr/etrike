@@ -16,7 +16,7 @@ Dedicated STM32G431CBU6 motor actuation and relay control board for the E-Trike 
   - In Drive/Reverse, commanded linear speed maps to a clamped voltage window:
     $$\text{Code} \in [655, 1966] \implies \approx 0.8\text{ V}\dots 2.4\text{ V}$$
 - **Canonical CAN Integration**:
-  - **RX**: Decodes `0x204` (`RT_DRIVE_CMD`), `0x110` (`SYS_MODE_CMD`), and `0x001` (`SAFETY_ESTOP`).
+  - **RX**: Decodes `0x204` (`RT_DRIVE_CMD`), `0x110` (`SYS_MODE_CMD`, mode authority), `0x113` (`SYS_PWR_CMD`, power authority), and `0x001` (`SAFETY_ESTOP`).
   - **TX**: Broadcasts `0x120` (`SYS_THROTTLE_STS`) at 100 Hz and `0x206` (`MTR_MOTOR_FBK`) at 50 Hz.
   - **Gap #15 ESTOP Confirmation**: When ESTOP occurs, `0x206` asserts `kMtrFaultEstopActive`, providing SYS with redundant hardware confirmation.
 - **500 ms Comms Watchdog**:
@@ -31,26 +31,30 @@ MTR is the **lowest-level actuator** on the Low CAN bus (500 kbit/s). It is
 upstream and does not distinguish between them. Two command topologies feed it:
 
 ```
-Topology 1 (Autonomous)              Topology 2 (RM raw-mode bypass)
+Topology 1 (Autonomous)              Topology 2 (RM test-bench bypass)
 Jetson ─► RT ESP32-S3                FlySky RC ─► RM ESP32
             │ 0x204 RT_DRIVE_CMD                    │ 0x204 RT_DRIVE_CMD (canonical)
-            ▼                                        ├─ 0x0BB RM_RELAY_STATE (fallback)
-        MTR STM32                                    └─ 0x0AA RM_THROTTLE_RAW (fallback)
+            ▼                                        │ 0x110 SYS_MODE_CMD (emulated)
+        MTR STM32                                    └─ 0x113 SYS_PWR_CMD (emulated)
 ```
 
 - **Mode 1 (Autonomous):** `0x204 RT_DRIVE_CMD` arrives from the **RT** gateway
   (which derived it from Jetson `0x300` via kinematics). SYS monitors this as
-  EGAS L2.
-- **Mode 2 (Remote Manual / raw-mode bypass):** when Host/RT/SYS are powered down,
-  the **RM** node directly masters the low bus and drives MTR with the same
-  `0x204` canonical frame, or the legacy fallback pair `0x0BB` (relay state) +
-  `0x0AA` (16-bit raw throttle to the MCP4725 DAC). MTR applies identical
-  speed→DAC mapping, gear interlocking, and the 500 ms watchdog regardless of source.
-- **Cross-cutting frames:** `0x110 SYS_MODE_CMD` (mode) and `0x001 SAFETY_ESTOP`
-  (immediate relay open + DAC 0 V) are honored from any sender.
+  EGAS L2. Mode and power authority come from `0x110`/`0x113` produced by SYS.
+- **Mode 2 (Remote Manual / test-bench bypass):** when Host/RT/SYS are powered down,
+  the **RM** node emulates SYS on the bench and drives MTR with the same canonical
+  frames — `0x204` (drive) plus the authority pair `0x110 SYS_MODE_CMD` and
+  `0x113 SYS_PWR_CMD`. The legacy `0x0BB`/`0x0AA` fallback frames are no longer
+  accepted by MTR (it only listens for `0x001`, `0x110`, `0x113`, `0x204`). MTR
+  applies identical speed→DAC mapping, gear interlocking, and the 500 ms watchdog
+  regardless of which node provides authority.
+- **Cross-cutting frames:** `0x110 SYS_MODE_CMD` (mode authority), `0x113 SYS_PWR_CMD`
+  (power authority), and `0x001 SAFETY_ESTOP` (immediate relay open + DAC 0 V) are
+  honored from any sender; both `0x110`/`0x113` carry a rolling counter that MTR's
+  `StreamValidity` supervises (a stale/sequence-faulted stream drops to power-safe).
 
 MTR's only upstream *dependencies* are the `0x204` command stream (from RT or RM)
-and the `0x001`/`0x110` safety frames. It reports back `0x120 SYS_THROTTLE_STS`
+and the `0x001`/`0x110`/`0x113` safety/authority frames. It reports back `0x120 SYS_THROTTLE_STS`
 (100 Hz) and `0x206 MTR_MOTOR_FBK` (50 Hz, including `ESTOP_ACTIVE` for SYS
 redundant confirmation). See `docs/system-architecture-and-data-flow.md` §3 for
 the full dual-topology flow.

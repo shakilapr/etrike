@@ -40,9 +40,10 @@ SYS ── 0x7FE SYS_HEARTBEAT  ─► RT/MTR
   `0x206`), `0x210` safety state, `0x7FE` consumed by RT.
 - **MTR:** `0x206 MTR_MOTOR_FBK` — SYS reads `ESTOP_ACTIVE` bit for redundant ESTOP
   confirmation and speed-mismatch monitoring.
-- **RM:** sends `0x111 HMI_MODE_REQ` / `0x112 HMI_PWR_REQ` *requests*; SYS is the
-  sole decision maker and may ignore them in ESTOP. When Host/RT/SYS are offline,
-  RM bypasses SYS entirely (see `rm-esp32/README.md`).
+- **RM:** on the test bench RM *emulates* SYS and emits the authoritative
+  `0x110 SYS_MODE_CMD` / `0x113 SYS_PWR_CMD` frames; it never emits the Host
+  `0x111`/`0x112` request frames. When Host/RT/SYS are offline, RM bypasses SYS
+  entirely (see `rm-esp32/README.md`).
 
 ## Build
 

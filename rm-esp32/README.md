@@ -18,10 +18,10 @@ The `rm-esp32` node decodes 6 channels of high-resolution PWM timing pulses from
 - **Motor Control & Standalone Bypass (`0x204 RT_DRIVE_CMD`)**:
   - Enables direct vehicle driving without Host, RT, or SYS connected.
   - In Drive (D) or Reverse (R), Left Stick throttle maps directly to motor speed setpoint ($0\dots 3000\text{ mm/s}$ Drive, $0\dots 500\text{ mm/s}$ Reverse) and emits canonical `0x204 RT_DRIVE_CMD`.
-- **Ignition Switch (`0x112 HMI_PWR_REQ`)**:
-  - **SWB** (2-position toggle) $\longrightarrow$ Ignition ON / OFF commands broadcast at 1 Hz.
-- **Gear Selector (`0x111 HMI_MODE_REQ`)**:
-  - **SWC** (3-position toggle) $\longrightarrow$ **Reverse** ($1000\,\mu\text{s}$), **Neutral / Park** ($1500\,\mu\text{s}$), **Drive** ($2000\,\mu\text{s}$).
+- **Ignition Switch (`0x113 SYS_PWR_CMD`)**:
+  - **SWB** (2-position toggle) $\longrightarrow$ power authority ON / OFF broadcast at 10 Hz. On the test bench RM *emulates* SYS, so this is the authoritative power command consumed by MTR (not a Host request).
+- **Gear Selector (`0x110 SYS_MODE_CMD`)**:
+  - **SWC** (3-position toggle) $\longrightarrow$ **Reverse** ($1000\,\mu\text{s}$), **Neutral / Park** ($1500\,\mu\text{s}$), **Drive** ($2000\,\mu\text{s}$), mapped to the emulated SYS mode (Manual/Auto).
 - **Dual-Stick Proportional Control**:
   - **Right Stick Horizontal (CH1 / GPIO 18)** $\longrightarrow$ Steering ($\pm 45.0^\circ$ rack limit, CAN `0x169`: $29550\dots 30450$).
   - **Right Stick Vertical (CH2 / GPIO 19)** $\longrightarrow$ Brake stroke ($0.0\dots 27.0\text{ mm}$, CAN `0x7B9`: $600\dots 1140$).
@@ -40,13 +40,13 @@ actuator ECUs itself — no gateway, no kinematics solver, no safety authority i
 the loop.
 
 ```
-                 Topology 1 (Autonomous)          Topology 2 (RM raw-mode bypass)
+                 Topology 1 (Autonomous)          Topology 2 (RM test-bench bypass)
 Jetson ─► RT ESP32-S3 ─┬► SES/SEB/MTR       FlySky RC ─► RM ESP32 ─┬► 0x169 VCU_SES_REQ  ─► SES
-                       └► SYS (safety)                                     ├► 0x7B9 VCU_SEB_REQ  ─► SEB
-                                                                          ├► 0x204 RT_DRIVE_CMD ─► MTR
-                                                                          ├► 0x0BB RM_RELAY_STATE ─► MTR
-                                                                          ├► 0x0AA RM_THROTTLE_RAW ─► MTR
-                                                                          └► 0x001 SAFETY_ESTOP    ─► ALL
+                        └► SYS (safety)                                     ├► 0x7B9 VCU_SEB_REQ  ─► SEB
+                                                                           ├► 0x204 RT_DRIVE_CMD ─► MTR
+                                                                           ├► 0x110 SYS_MODE_CMD ─► MTR
+                                                                           ├► 0x113 SYS_PWR_CMD ─► MTR
+                                                                           └► 0x001 SAFETY_ESTOP    ─► ALL
 ```
 
 In this mode RM directly masters three actuator ECUs at 50 Hz:
@@ -54,24 +54,21 @@ In this mode RM directly masters three actuator ECUs at 50 Hz:
 - **SES** — `0x169 VCU_SES_REQ` (steering angle, ±45°). Active only when ignition
   is ON and gear is D/R.
 - **SEB** — `0x7B9 VCU_SEB_REQ` (brake stroke 0…27 mm, Stroke mode).
-- **MTR** — `0x204 RT_DRIVE_CMD` (canonical speed + gear) and, as legacy fallback,
-  `0x0BB RM_RELAY_STATE` + `0x0AA RM_THROTTLE_RAW` straight to the MCP4725 DAC.
+- **MTR** — `0x204 RT_DRIVE_CMD` (canonical speed + gear) plus the authority pair
+  `0x110 SYS_MODE_CMD` and `0x113 SYS_PWR_CMD`, which RM *emulates* in place of SYS
+  so MTR's rolling-counter `StreamValidity` accepts the bench as authoritative.
 
 **Fail-safe:** loss of RMT pulses for > 100 ms triggers a deadman ESTOP — steering
 ramps to 0°, full brake stroke (27 mm), motor speed zeroed, and rate-limited
 `0x001 SAFETY_ESTOP` broadcast.
 
-**Mode authority:** RM does **not** own the vehicle mode. Its transmitter's gear
-selector (SWC) and ignition switch (SWB) are decoded into the canonical
-`0x111 HMI_MODE_REQ` / `0x112 HMI_PWR_REQ` *request* frames and transmitted
-unconditionally (`rm-esp32/src/main.cpp:202-218`). These are **requests**, not
-commands: when SYS is on the bus it is the sole decision maker and may ignore them
-(e.g. in ESTOP). When SYS is offline (the pure standalone bypass) they have no
-receiver and are inert — RM's actual gear/ignition gating comes from its local
-switch decode driving `0x204`/`0x0BB`/`0x0AA` directly to MTR, not from SYS's reply.
-The raw-mode bypass is therefore the topology used when SYS is absent. See
+**Mode authority:** On the test bench RM *is* SYS — it emits the authoritative
+`0x110`/`0x113` command frames (not the Host `0x111`/`0x112` request frames, which
+are suppressed). When the real SYS is on the bus it is the sole decision maker;
+when SYS is offline (the pure standalone bypass) RM's `0x110`/`0x113` drive MTR
+directly. RM never emits `0x111`/`0x112`. See
 `docs/system-architecture-and-data-flow.md` §Topology 2 for the full flow, and
-`mtr-stm32/README.md` for how MTR accepts RM's `0x204`/`0x0BB`/`0x0AA`.
+`mtr-stm32/README.md` for how MTR accepts RM's `0x204`/`0x110`/`0x113`.
 
 ---
 
