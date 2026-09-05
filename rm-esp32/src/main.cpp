@@ -44,8 +44,8 @@ static std::atomic<int64_t>  g_rm_self_estop_tx_us{0};
 // Rolling counters for protocol frames
 static uint8_t g_roll_ses = 0;
 static uint8_t g_roll_seb = 0;
-static uint8_t g_roll_hmi_mode = 0;
-static uint8_t g_roll_hmi_pwr = 0;
+static uint8_t g_roll_sys_mode = 0;
+static uint8_t g_roll_sys_pwr = 0;
 
 static bool send_can_frame(can::Frame& fr, const char* name) {
     if (!g_can.send(fr, 2)) {
@@ -77,7 +77,7 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
     TickType_t period = pdMS_TO_TICKS(1000 / rm::kCanTxHz);
     TickType_t last = xTaskGetTickCount();
     static bool was_in_signal_loss = false;
-    static int hmi_heartbeat_counter = 0;
+    static int cmd_heartbeat_counter = 0;
 
     while (1) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -191,32 +191,36 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             }
         }
 
-        // 5. Transmit HMI Mode & Power Requests (Immediate on-change or 10 Hz periodic)
+        // 5. Transmit authoritative SYS commands (emulated): 0x110 SYS_MODE_CMD + 0x113 SYS_PWR_CMD
+        // RM is a development/test command emulator (not a second operational architecture). In
+        // production SYS produces these; emulating them directly lets MTR/RT be exercised in
+        // isolation without a real SYS node. RM must NOT emit the HMI request frames 0x111/0x112
+        // (those are Host→RT→SYS requests terminated at SYS).
         static bool last_ignition = false;
         bool ignition_changed = (snap.ignition != last_ignition);
         last_ignition = snap.ignition;
 
-        if (++hmi_heartbeat_counter >= 5 || ignition_changed) { // 5 * 20ms = 100ms (10 Hz)
-            hmi_heartbeat_counter = 0;
+        if (++cmd_heartbeat_counter >= 5 || ignition_changed) { // 5 * 20ms = 100ms (10 Hz)
+            cmd_heartbeat_counter = 0;
 
-            // 0x111 HMI_MODE_REQ
-            can::gen::HmiModeReq mode_req{};
-            mode_req.req_mode = (drive_active) ? 1 : 0; // 1 = AUTO / REMOTE, 0 = MANUAL
-            g_roll_hmi_mode = (g_roll_hmi_mode + 1) & 0xFF;
-            mode_req.rolling_counter = g_roll_hmi_mode;
+            // 0x110 SYS_MODE_CMD (authoritative mode)
+            can::gen::SysModeCmd mode_cmd{};
+            mode_cmd.mode = drive_active ? uint8_t(can::Mode::Auto) : uint8_t(can::Mode::Manual);
+            g_roll_sys_mode = (g_roll_sys_mode + 1) & 0xFF;
+            mode_cmd.rolling_counter = g_roll_sys_mode;
             can::Frame mode_fr;
-            if (can::gen::encode_hmi_mode_req(mode_req, mode_fr) == can::gen::CodecStatus::Ok) {
-                send_can_frame(mode_fr, "HMI_MODE_REQ");
+            if (can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr) == can::gen::CodecStatus::Ok) {
+                send_can_frame(mode_fr, "SYS_MODE_CMD");
             }
 
-            // 0x112 HMI_PWR_REQ
-            can::gen::HmiPwrReq pwr_req{};
-            pwr_req.req_start = (!estop_or_signal_loss && snap.ignition) ? 1 : 0;
-            g_roll_hmi_pwr = (g_roll_hmi_pwr + 1) & 0xFF;
-            pwr_req.rolling_counter = g_roll_hmi_pwr;
+            // 0x113 SYS_PWR_CMD (authoritative power)
+            can::gen::SysPwrCmd pwr_cmd{};
+            pwr_cmd.power_state = (!estop_or_signal_loss && snap.ignition) ? 1u : 0u;
+            g_roll_sys_pwr = (g_roll_sys_pwr + 1) & 0xFF;
+            pwr_cmd.rolling_counter = g_roll_sys_pwr;
             can::Frame pwr_fr;
-            if (can::gen::encode_hmi_pwr_req(pwr_req, pwr_fr) == can::gen::CodecStatus::Ok) {
-                send_can_frame(pwr_fr, "HMI_PWR_REQ");
+            if (can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr) == can::gen::CodecStatus::Ok) {
+                send_can_frame(pwr_fr, "SYS_PWR_CMD");
             }
         }
 
