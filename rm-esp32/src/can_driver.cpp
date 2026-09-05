@@ -15,9 +15,10 @@ bool IRAM_ATTR CanDriver::on_rx_done_(twai_node_handle_t node,
     }
 
     // Drop our own high-rate TX frames in ISR to prevent rx_queue_ starvation.
-    // RM only needs to receive supervisor frames (e.g. 0x001 SAFETY_ESTOP, 0x110 SYS_MODE_CMD).
+    // RM only needs to receive supervisor frames (e.g. 0x001 SAFETY_ESTOP). 0x110/0x113 are
+    // emulated by RM itself, so its own echoes are dropped; RM must NOT emit 0x111/0x112.
     const uint32_t id = frame.header.id;
-    if (id == 0x169u || id == 0x7B9u || id == 0x204u || id == 0x111u || id == 0x112u) {
+    if (id == 0x169u || id == 0x7B9u || id == 0x204u || id == 0x110u || id == 0x113u) {
         return false;
     }
 
