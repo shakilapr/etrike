@@ -463,8 +463,8 @@ public:
 
     uint8_t roll_ses{0};
     uint8_t roll_seb{0};
-    uint8_t roll_hmi_mode{0};
-    uint8_t roll_hmi_pwr{0};
+    uint8_t roll_sys_mode{0};
+    uint8_t roll_sys_pwr{0};
 
     void handle_rx_can(const can::Frame& fr) {
         if (fr.id == 0x001u) {
@@ -555,26 +555,29 @@ public:
             tx_history.push_back({drive_fr, "RT_DRIVE_CMD"});
         }
 
-        // 5. HMI Requests (10 Hz periodic or on ignition toggle)
+        // 5. Authority commands (10 Hz periodic or on ignition toggle).
+        // RM emulates SYS on the test bench: emits 0x110 SYS_MODE_CMD + 0x113
+        // SYS_PWR_CMD (it must NOT emit the Host request frames 0x111/0x112).
         bool ignition_changed = (snap.ignition != last_ignition);
         last_ignition = snap.ignition;
 
         if (++hmi_heartbeat_counter >= 5 || ignition_changed) {
             hmi_heartbeat_counter = 0;
 
-            can::gen::HmiModeReq mode_req{};
-            mode_req.req_mode = (drive_active) ? 1 : 0;
-            mode_req.rolling_counter = ++roll_hmi_mode;
+            can::gen::SysModeCmd mode_cmd{};
+            mode_cmd.mode = (drive_active) ? static_cast<uint8_t>(can::Mode::Auto)
+                                           : static_cast<uint8_t>(can::Mode::Manual);
+            mode_cmd.rolling_counter = ++roll_sys_mode;
             can::Frame mode_fr;
-            can::gen::encode_hmi_mode_req(mode_req, mode_fr);
-            tx_history.push_back({mode_fr, "HMI_MODE_REQ"});
+            can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr);
+            tx_history.push_back({mode_fr, "SYS_MODE_CMD"});
 
-            can::gen::HmiPwrReq pwr_req{};
-            pwr_req.req_start = (!estop_or_signal_loss && snap.ignition) ? 1 : 0;
-            pwr_req.rolling_counter = ++roll_hmi_pwr;
+            can::gen::SysPwrCmd pwr_cmd{};
+            pwr_cmd.power_state = (!estop_or_signal_loss && snap.ignition) ? true : false;
+            pwr_cmd.rolling_counter = ++roll_sys_pwr;
             can::Frame pwr_fr;
-            can::gen::encode_hmi_pwr_req(pwr_req, pwr_fr);
-            tx_history.push_back({pwr_fr, "HMI_PWR_REQ"});
+            can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr);
+            tx_history.push_back({pwr_fr, "SYS_PWR_CMD"});
         }
     }
 };
@@ -619,6 +622,8 @@ void test_rm_gateway_state_machine() {
     gw.tick_can_tx(snap);
 
     // Verify RT_DRIVE_CMD: speed = 0.60 * 3000 = 1800 mm/s
+    bool found_sys_mode = false, found_sys_pwr = false;
+    bool found_hmi_mode = false, found_hmi_pwr = false;
     for (const auto& rec : gw.tx_history) {
         if (rec.frame.id == 0x204u) {
             can::gen::RtDriveCmd cmd{};
@@ -631,8 +636,22 @@ void test_rm_gateway_state_machine() {
             can::custom::ses::decode_command(rec.frame.view(), ses);
             ASSERT_EQ(ses.target_angle_raw, 30150);
             ASSERT_TRUE(ses.control_enable);
+        } else if (rec.frame.id == can::kIdSysModeCmd) {
+            found_sys_mode = true;
+        } else if (rec.frame.id == can::kIdSysPwrCmd) {
+            found_sys_pwr = true;
+        } else if (rec.frame.id == can::kIdHmiModeReq) {
+            found_hmi_mode = true;
+        } else if (rec.frame.id == can::kIdHmiPwrReq) {
+            found_hmi_pwr = true;
         }
     }
+    // RM emulates SYS: emits authority frames (0x110/0x113), never the Host
+    // request frames (0x111/0x112).
+    ASSERT_TRUE(found_sys_mode);
+    ASSERT_TRUE(found_sys_pwr);
+    ASSERT_FALSE(found_hmi_mode);
+    ASSERT_FALSE(found_hmi_pwr);
 
     // 3. Shift to Reverse (R) with 40% throttle
     gw.tx_history.clear();
