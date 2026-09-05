@@ -63,20 +63,42 @@ int g_tests_failed = 0;
 static uint8_t g_mode_ctr = 0;
 static uint8_t g_pwr_ctr = 0;
 static void send_mode(mtr::MotorManager& mgr, can::Mode mode, uint32_t now) {
-    can::gen::SysModeCmd c0{static_cast<uint8_t>(mode), g_mode_ctr++};
+    const bool auto_mode = (mode == can::Mode::Auto);
+    can::gen::SysModeCmd c0{auto_mode, g_mode_ctr++};
     can::Frame f0; can::gen::encode_sys_mode_cmd(c0, f0); mgr.handle_frame(f0, now);
-    can::gen::SysModeCmd c1{static_cast<uint8_t>(mode), g_mode_ctr++};
+    can::gen::SysModeCmd c1{auto_mode, g_mode_ctr++};
     can::Frame f1; can::gen::encode_sys_mode_cmd(c1, f1); mgr.handle_frame(f1, now);
 }
 static void send_power(mtr::MotorManager& mgr, bool on, uint32_t now) {
-    can::gen::SysPwrCmd c0{on ? true : false, g_pwr_ctr++};
+    can::gen::SysPwrCmd c0{on, g_pwr_ctr++};
     can::Frame f0; can::gen::encode_sys_pwr_cmd(c0, f0); mgr.handle_frame(f0, now);
-    can::gen::SysPwrCmd c1{on ? true : false, g_pwr_ctr++};
+    can::gen::SysPwrCmd c1{on, g_pwr_ctr++};
     can::Frame f1; can::gen::encode_sys_pwr_cmd(c1, f1); mgr.handle_frame(f1, now);
 }
 static void send_drive(mtr::MotorManager& mgr, int32_t speed, can::Gear gear, uint32_t now) {
     can::gen::RtDriveCmd drv{speed, static_cast<uint8_t>(gear)};
     can::Frame f; can::gen::encode_rt_drive_cmd(drv, f); mgr.handle_frame(f, now);
+}
+
+// Persistent safety authority frame (0x011 SYS_SAFETY_STS) with E2E CRC.
+// The two-frame minimum for the StreamValidity baseline means callers that need
+// the stream VALID must send at least two advancing frames.
+static void send_safety(mtr::MotorManager& mgr, bool estop, uint8_t roll, uint32_t now) {
+    can::gen::SysSafetySts msg{};
+    msg.estop_active = estop;
+    msg.heartbeat_ok = true;
+    msg.light_left = false;
+    msg.light_right = false;
+    msg.light_brake = false;
+    msg.light_head = false;
+    msg.rolling_counter = roll;
+    msg.e2e_crc = 0;
+    can::Frame tmp;
+    can::gen::encode_sys_safety_sts(msg, tmp);
+    msg.e2e_crc = static_cast<std::uint8_t>(can::e2e::sys_safety_sts_crc(tmp.data.data()));
+    can::Frame f;
+    can::gen::encode_sys_safety_sts(msg, f);
+    mgr.handle_frame(f, now);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -283,14 +305,20 @@ void test_motor_manager_estop_and_recovery() {
     ASSERT_TRUE((fbk.fault_flags & shared::kMtrFaultEstopActive) != 0);
     ASSERT_TRUE((fbk.fault_flags & shared::kMtrFaultStartupReady) != 0);
 
-    // 3. Mode recovery sequence via 0x110 SYS_MODE_CMD
-    // Remaining in Estop mode (mode = 2) -> ESTOP stays latched
-    send_mode(mgr, can::Mode::Estop, 110);
-    ASSERT_TRUE(mgr.is_estop_active());
-
-    // Transition to Manual mode (mode = 0) -> CLEARS ESTOP!
-    send_mode(mgr, can::Mode::Manual, 120);
+    // 3. Recovery via SYS_SAFETY_STS (0x011) — the ONLY path that clears the
+    //    latched E-stop. The 0x110 mode command no longer carries ESTOP.
+    //    Two consecutive fresh, advancing frames with estop_active == 0 are
+    //    required for an authorized clear (asymmetric assert/clear).
+    send_safety(mgr, false, 0, 110); // baseline frame (does not clear)
+    send_safety(mgr, false, 1, 110); // second frame -> authorized clear
     ASSERT_FALSE(mgr.is_estop_active());
+
+    // After an authorized clear the authority streams are invalidated and a REARM
+    // sequence is required before propulsion is re-enabled. Re-establish mode and
+    // observe a fresh 0x113 OFF->ON edge.
+    send_mode(mgr, can::Mode::Manual, 115); // re-establish mode authority (fresh 0x110)
+    send_power(mgr, false, 115);            // REARM off phase
+    send_power(mgr, true, 115);             // REARM on edge -> rearm_observed
 
     // Now tick again with valid drive frame -> Motor resumes!
     mgr.handle_frame(drv_fr, 120);
