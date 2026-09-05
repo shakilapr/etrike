@@ -624,11 +624,18 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Authoritative actuator commands are emitted every cycle (100 ms).
         // 0x110 SYS_MODE_CMD carries the resolved mode + rolling counter.
+        // ESTOP is no longer encoded here: the enum is MANUAL/AUTO only, and the
+        // latched E-stop state travels on 0x011 SYS_SAFETY_STS.estop_active.
+        // During ESTOP we report MANUAL so MTR's existing "0x110 == MANUAL while
+        // 0x011.estop_active == 1" rule keeps motion disabled.
         static uint8_t roll_mode = 0;
         {
             can::Frame fr;
             can::gen::SysModeCmd message{};
-            message.mode = g_mode_mgr.mode_u8();
+            const can::Mode resolved = g_mode_mgr.mode();
+            const can::Mode tx_mode =
+                (resolved == can::Mode::Estop) ? can::Mode::Manual : resolved;
+            message.mode = (tx_mode == can::Mode::Auto);
             message.rolling_counter = roll_mode++;
             if (can::gen::encode_sys_mode_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
         }
@@ -860,21 +867,34 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 // ── CAN TX task (prio 2, 5 Hz) — 0x011 SYS_SAFETY_STS ──────────────
 
 [[noreturn]] static void task_can_tx(void*) {
-    TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
+    TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz (SYS_SAFETY_STS cycle)
     TickType_t last   = xTaskGetTickCount();
+    static uint8_t safety_roll = 0;
     while (1) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Frame fr;
         const uint8_t lights = g_light_state.load(std::memory_order_relaxed);
         can::gen::SysSafetySts message{};
-        message.estop_active = g_mode_mgr.mode() == can::Mode::Estop;
+        // ESTOP authority is reported here as a latched safety state, separate
+        // from 0x110 SYS_MODE_CMD (which is clamped to MANUAL/AUTO). While the
+        // E-stop is latched the mode may read MANUAL, but estop_active stays
+        // set until a validated REARM clears it.
+        message.estop_active = g_safety.estop_active();
         message.heartbeat_ok = g_safety.heartbeat_ok();
         message.light_left = lights & 0x01;
         message.light_right = lights & 0x02;
         message.light_brake = lights & 0x04;
         message.light_head = lights & 0x08;
-        if (can::gen::encode_sys_safety_sts(message, fr) == can::gen::CodecStatus::Ok)
-            send_can(fr, "safety");
+        message.rolling_counter = safety_roll++;
+        // E2E: CRC-8 over protected payload bytes [0..3]; fill the CRC field
+        // before the final encode.
+        message.e2e_crc = 0;
+        can::Frame tmp;
+        if (can::gen::encode_sys_safety_sts(message, tmp) == can::gen::CodecStatus::Ok) {
+            message.e2e_crc = can::e2e::sys_safety_sts_crc(tmp.data.data());
+            if (can::gen::encode_sys_safety_sts(message, fr) == can::gen::CodecStatus::Ok)
+                send_can(fr, "safety");
+        }
 
         vTaskDelayUntil(&last, period);
     }
