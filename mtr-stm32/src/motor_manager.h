@@ -10,6 +10,7 @@
 #include "dac_controller.h"
 #include "protocol/compat/can.hpp"
 #include "shared_config.h"
+#include "stream_validity.h"
 
 namespace mtr {
 
@@ -30,6 +31,12 @@ public:
         active_gear_ = can::Gear::N;
         shift_dwell_start_ms_ = 0;
         current_mode_ = can::Mode::Manual;
+        mode_valid_ = false;
+        power_valid_ = false;
+        power_state_on_ = false;
+        // Bind authority stream supervisors (Low bus, SYS as producer).
+        mode_val_.set_key(1 /*low*/, can::kIdSysModeCmd, kAuthFreshMs);
+        pwr_val_.set_key(1 /*low*/, can::kIdSysPwrCmd, kAuthFreshMs);
     }
 
     // Process incoming CAN frames
@@ -45,9 +52,13 @@ public:
             break;
         }
 
-        case can::kIdSysModeCmd: { // 0x110
+        case can::kIdSysModeCmd: { // 0x110 — authoritative mode command from SYS
             can::gen::SysModeCmd mode_cmd{};
             if (can::gen::decode_sys_mode_cmd(frame.view(), mode_cmd) == can::gen::CodecStatus::Ok) {
+                const bool ok = mode_val_.observe(
+                    static_cast<std::uint8_t>(mode_cmd.rolling_counter), now_ms);
+                mode_valid_ = ok;
+                if (!ok) break;  // stale/invalid authority: keep last mode, inhibit drive
                 can::Mode prev_mode = current_mode_;
                 current_mode_ = static_cast<can::Mode>(mode_cmd.mode);
                 if (current_mode_ == can::Mode::Estop) {
@@ -64,56 +75,30 @@ public:
         case can::kIdRtDriveCmd: { // 0x204 (motor_speed_mmps int32, gear uint8)
             can::gen::RtDriveCmd cmd{};
             if (can::gen::decode_rt_drive_cmd(frame.view(), cmd) == can::gen::CodecStatus::Ok) {
+                // Mode authority lost: inhibit the drive command (no autonomous propulsion).
+                if (!mode_valid_) break;
                 target_speed_mmps_ = cmd.motor_speed_mmps;
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
-                // Standalone RM mode ESTOP reset sequence:
-                // If Ignition is OFF (or requested OFF via 0x112), Gear is Neutral, and speed is 0
-                if (estop_active_ && !ignition_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
+                // ESTOP reset sequence: Ignition ON, Gear Neutral, speed 0
+                if (estop_active_ && ignition_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
                     clear_estop();
                 }
             }
             break;
         }
 
-        case can::kIdHmiPwrReq: { // 0x112
-            can::gen::HmiPwrReq pwr{};
-            if (can::gen::decode_hmi_pwr_req(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
-                ignition_on_ = (pwr.req_start != 0);
-                // In standalone RM mode, cycling ignition OFF while in Neutral allows clearing latched ESTOP
-                if (estop_active_ && !ignition_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
+        case can::kIdSysPwrCmd: { // 0x113 — authoritative power command from SYS
+            can::gen::SysPwrCmd pwr{};
+            if (can::gen::decode_sys_pwr_cmd(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
+                const bool ok = pwr_val_.observe(
+                    static_cast<std::uint8_t>(pwr.rolling_counter), now_ms);
+                power_valid_ = ok;
+                if (!ok) break;  // stale/invalid power authority: enter power-safe (zero propulsion)
+                power_state_on_ = (pwr.power_state != 0);
+                // ESTOP reset sequence: Power ON, Gear Neutral, speed 0
+                if (estop_active_ && power_state_on_ && target_gear_ == can::Gear::N && target_speed_mmps_ == 0) {
                     clear_estop();
                 }
-            }
-            break;
-        }
-
-        case 0x0BBu: { // RM_RELAY_STATE (Legacy fallback compatibility)
-            if (frame.dlc >= 1) {
-                uint8_t state = frame.data[0];
-                if (state == 0x05) { // Drive
-                    target_gear_ = can::Gear::D;
-                    ignition_on_ = true;
-                } else if (state == 0x09) { // Reverse
-                    target_gear_ = can::Gear::R;
-                    ignition_on_ = true;
-                } else if (state == 0x03) { // Park / Neutral
-                    target_gear_ = can::Gear::N;
-                    ignition_on_ = true;
-                } else { // 0x00 Off
-                    target_gear_ = can::Gear::N;
-                    ignition_on_ = false;
-                }
-            }
-            break;
-        }
-
-        case 0x0AAu: { // RM_THROTTLE_RAW (Legacy fallback compatibility)
-            if (frame.dlc >= 2) {
-                uint16_t raw_throttle = static_cast<uint16_t>(frame.data[0]) |
-                                       (static_cast<uint16_t>(frame.data[1]) << 8);
-                target_speed_mmps_ = (raw_throttle > 0)
-                    ? static_cast<int32_t>((static_cast<uint32_t>(raw_throttle) * kMaxForwardSpeedMmps) / 65535U)
-                    : 0;
             }
             break;
         }
@@ -129,12 +114,19 @@ public:
         comms_timed_out_ = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
         if (comms_timed_out_) comms_healthy_ = false;
 
-        // 2. Evaluate Actuation (fail-safe on latched ESTOP or active CAN timeout)
-        if (estop_active_ || comms_timed_out_) {
+        // 2. Evaluate Actuation (fail-safe on latched ESTOP, CAN timeout, or lost power authority)
+        // Power authority: derive ignition from a valid power command.
+        ignition_on_ = power_valid_ && power_state_on_;
+        if (estop_active_ || comms_timed_out_ || !power_valid_) {
             target_speed_mmps_ = 0;
             relays_.set_state(RelayController::State::Off);
             dac_.force_zero();
             return;
+        }
+
+        // Mode authority lost: inhibit the drive command (zero propulsion) but keep power.
+        if (!mode_valid_) {
+            target_speed_mmps_ = 0;
         }
 
         // Update Relays with live ignition state and direction shift arc-protection
@@ -283,6 +275,16 @@ private:
     can::Gear active_gear_{can::Gear::N};
     can::Mode current_mode_{can::Mode::Manual};
     bool ignition_on_{false};
+
+    // Actuator-authority validity (from SYS 0x110/0x113 rolling-counter streams).
+    // mode_valid_ false -> inhibit 0x204 drive command (zero propulsion).
+    // power_valid_ false -> power-safe (zero propulsion, relays off).
+    bool mode_valid_{false};
+    bool power_valid_{false};
+    bool power_state_on_{false};
+    etrike::protocol::StreamValidity mode_val_;
+    etrike::protocol::StreamValidity pwr_val_;
+    static constexpr uint32_t kAuthFreshMs = can::gen::SysModeCmd::kCycleMs * 5;  // 100ms cycle -> 500ms
 
     static constexpr uint32_t kShiftDwellMs{50};
     uint32_t shift_dwell_start_ms_{0};

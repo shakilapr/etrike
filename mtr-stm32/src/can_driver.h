@@ -59,7 +59,7 @@ public:
         hfdcan_.Init.DataTimeSeg1 = 1;
         hfdcan_.Init.DataTimeSeg2 = 1;
 
-        hfdcan_.Init.StdFiltersNbr = 6; // 0x001, 0x110, 0x204, 0x112, 0x0BB, 0x0AA
+        hfdcan_.Init.StdFiltersNbr = 4; // 0x001, 0x110, 0x113, 0x204
         hfdcan_.Init.ExtFiltersNbr = 0;
         hfdcan_.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
 
@@ -69,11 +69,9 @@ public:
 
         // 3. Configure Hardware Standard Filters (Routing to FIFO 0)
         configure_filter_(0, 0x001); // SAFETY_ESTOP
-        configure_filter_(1, 0x110); // SYS_MODE_CMD
-        configure_filter_(2, 0x204); // RT_DRIVE_CMD
-        configure_filter_(3, 0x112); // HMI_PWR_REQ (Ignition)
-        configure_filter_(4, 0x0BB); // RM_RELAY_STATE (Legacy RM fallback)
-        configure_filter_(5, 0x0AA); // RM_THROTTLE_RAW (Legacy RM fallback)
+        configure_filter_(1, 0x110); // SYS_MODE_CMD (mode authority)
+        configure_filter_(2, 0x113); // SYS_PWR_CMD (power authority)
+        configure_filter_(3, 0x204); // RT_DRIVE_CMD (drive)
 
         // 4. Configure Global Filter: reject non-matching standard frames AND remote frames.
         // NOTE: FDCAN_FILTER_REMOTE means "accept into FIFO" on STM32G4 — use FDCAN_REJECT_REMOTE instead.
