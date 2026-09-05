@@ -6,6 +6,7 @@
 #include "protocol/codecs/seb.hpp"
 #include "protocol/codecs/ses.hpp"
 #include "protocol/compat/transport.hpp"
+#include "protocol/compat/e2e.hpp"
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 
 namespace etrike {
@@ -137,6 +138,7 @@ using Mode = ::etrike::protocol::compat::Mode;
 using Gear = ::etrike::protocol::compat::Gear;
 namespace gen = ::etrike::protocol::generated;
 namespace custom = ::etrike::protocol::codecs;
+namespace e2e = ::etrike::protocol::e2e;
 
 using ::etrike::protocol::compat::frame_view;
 using ::etrike::protocol::compat::from_protocol_frame;
