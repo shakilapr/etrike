@@ -17,17 +17,9 @@
 | `DLC=0` | Zero-length CAN frame (event signal, no payload) |
 
 ## Message Dictionary
-### 0x001 — SAFETY_ESTOP (Bus: high)
-- **Sender:** Any
-- **Receivers:** SYS, Host, MTR, DCDC
-- **DLC:** 0 bytes
-- **Cycle:** 0 ms (0 = event-based)
-
-*No payload (DLC=0 event frame)*
-
 ### 0x001 — SAFETY_ESTOP (Bus: low)
 - **Sender:** Any
-- **Receivers:** SYS, Host, MTR, DCDC
+- **Receivers:** SYS, MTR, DCDC, RT
 - **DLC:** 0 bytes
 - **Cycle:** 0 ms (0 = event-based)
 

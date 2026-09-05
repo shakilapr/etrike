@@ -1209,10 +1209,8 @@
           "frame_format": "standard",
           "id": "0x001",
           "receivers": [
-            "SYS",
             "Host",
-            "MTR",
-            "DCDC"
+            "RT"
           ],
           "semantics": "same_frame",
           "sender": "Any"
@@ -1224,9 +1222,9 @@
           "id": "0x001",
           "receivers": [
             "SYS",
-            "Host",
             "MTR",
-            "DCDC"
+            "DCDC",
+            "RT"
           ],
           "semantics": "same_frame",
           "sender": "Any"
@@ -1604,6 +1602,11 @@
             "bit": 0,
             "bits": 8,
             "byte": 0,
+            "enum": {
+              "0": "MANUAL",
+              "1": "AUTO",
+              "2": "ESTOP"
+            },
             "key": "mode",
             "max": 2,
             "min": 0
@@ -1783,8 +1786,12 @@
             "bit": 0,
             "bits": 8,
             "byte": 0,
+            "enum": {
+              "0": "MANUAL",
+              "1": "AUTO"
+            },
             "key": "mode",
-            "max": 2,
+            "max": 1,
             "min": 0
           },
           {
@@ -1864,7 +1871,7 @@
       "codec": {
         "strategy": "generated"
       },
-      "dlc": 3,
+      "dlc": 5,
       "instances": [
         {
           "bus": "high",
@@ -1872,7 +1879,6 @@
           "frame_format": "standard",
           "id": "0x011",
           "receivers": [
-            "RT",
             "Host"
           ],
           "semantics": "same_frame",
@@ -1885,7 +1891,7 @@
           "id": "0x011",
           "receivers": [
             "RT",
-            "Host"
+            "MTR"
           ],
           "semantics": "independent",
           "sender": "SYS"
@@ -1933,6 +1939,24 @@
             "bits": 1,
             "byte": 2,
             "key": "light_head"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 4,
+            "key": "e2e_crc",
+            "max": 255
           }
         ],
         "kind": "signals"
@@ -1942,7 +1966,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "d7339f152d615f835f9a2c4f30e85acc4371e01426be1fe85a19b551dd2cfabe",
+  "network_hash": "f136e42a4ecfeeef64e0acf7308d5f053f44f046bf25481fcd4a29725857cd56",
   "routes": [
     {
       "from": "low",
@@ -2009,6 +2033,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd",
-  "wire_hash": "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd"
+  "semantic_hash": "565f9be38c4ab6a3861863dabfd5edc175e1079a8789f1f5ffad89cf4530c227",
+  "wire_hash": "565f9be38c4ab6a3861863dabfd5edc175e1079a8789f1f5ffad89cf4530c227"
 }
