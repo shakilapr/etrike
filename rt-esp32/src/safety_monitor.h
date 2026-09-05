@@ -28,10 +28,11 @@ namespace rt {
 struct SafetyEvent {
     enum Type : uint8_t {
         ESTOP = 0,          // CAN 0x001 received or internal fault
-        MODE_CHANGE         // SYS 0x110 mode command (payload = new mode)
+        MODE_CHANGE,        // SYS 0x110 mode command (payload = new mode)
+        SAFETY_CLEAR       // authoritative E-stop clear from SYS_SAFETY_STS (0x011)
     };
     Type    type;
-    uint8_t payload;  // for MODE_CHANGE: 0=Manual, 1=Auto, 2=Estop
+    uint8_t payload;  // for MODE_CHANGE: 0=Manual, 1=Auto; for SAFETY_CLEAR: unused
 };
 
 // ── Safety check result ─────────────────────────────────────────────
@@ -59,9 +60,10 @@ inline bool can_send_estop() {
 // Parameters are local state drained from the safety event queue by
 // t_control, plus atomics for sensor data (latest-value semantics).
 //
-// estop_pending: set true when ESTOP event received, cleared by mode change
-//                away from ESTOP.  Consumed (set to false) by this function.
-// current_mode:  current operating mode (0=Manual, 1=Auto, 2=Estop).
+// estop_pending: set true when ESTOP event received, cleared by an
+//                authoritative SAFETY_CLEAR (two-frame 0x011 sequence) or
+//                a fresh SYS_SAFETY_STS (0x011) stream loss (fail-safe).
+// current_mode:  current operating mode (0=Manual, 1=Auto).
 // seb_takeover:  in/out — SEB takeover state (true = RT owns 0x7B9).
 
 inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
@@ -72,10 +74,11 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     using rt::SafetyResult;
     SafetyResult r{};
 
-    // 1. ESTOP event — latch until SYS mode clears it (PCR3).
-    // CAN 0x001 is not a one-shot; it holds ESTOP until SYS explicitly
-    // transitions away from ESTOP mode via 0x110 MODE_CMD. The MODE_CHANGE
-    // handler in t_control clears m_estop_pending on non-ESTOP transitions.
+    // 1. ESTOP event — latch until an authoritative clear.
+    // CAN 0x001 is not a one-shot; it holds ESTOP until SYS releases it via
+    // SYS_SAFETY_STS (0x011) estop_active==0 for two consecutive fresh frames
+    // (asymmetric clear), or until the 0x011 stream is lost (fail-safe in
+    // t_control). The SAFETY_CLEAR handler in t_control clears m_estop_pending.
     if (estop_pending) {
         r.zero_setpoints = true;
         r.brake_kpa = shared::kMaxBrakeKpa;

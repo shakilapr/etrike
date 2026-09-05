@@ -59,6 +59,7 @@ QueueHandle_t g_safety_evt_q = nullptr;  // depth 16, SafetyEvent
 std::atomic<bool>     g_pending_estop_event{false};
 std::atomic<int16_t>  g_pending_mode_event{-1};
 std::atomic<uint32_t> g_safety_event_drops{0};
+std::atomic<bool>     g_pending_safety_clear{false};
 std::atomic<bool>     g_steering_estop_request{false};
 std::atomic<bool>     g_steering_exit_request{false};
 
@@ -85,6 +86,7 @@ std::atomic<bool>     g_seb_takeover{false};
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
 std::atomic<int64_t>  g_last_low_peer_us{0};
+std::atomic<int64_t>  g_last_sys_safety_sts_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
 // ── Per-task alive counters for multi-task watchdog (gap #5) ──────
@@ -311,11 +313,13 @@ static void update_low_can_tx_admission(int64_t now_us) {
         }
         int16_t pending_mode = g_pending_mode_event.exchange(-1);
         if (pending_mode >= 0) {
+            // SYS_MODE_CMD now carries MANUAL/AUTO only (ESTOP lives on 0x001 /
+            // 0x011), so a mode change never clears an established E-stop latch.
             m_current_mode = static_cast<uint8_t>(pending_mode);
-            if (pending_mode != int16_t(can::Mode::Estop) && !had_estop_this_cycle) {
-                m_estop_pending = false;
-                m_estop_reason = rt::kEstopReasonCanEstop;
-            }
+        }
+        if (g_pending_safety_clear.exchange(false)) {
+            m_estop_pending = false;
+            m_estop_reason = rt::kEstopReasonNone;
         }
         while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
             switch (evt.type) {
@@ -327,14 +331,22 @@ static void update_low_can_tx_admission(int64_t now_us) {
                 break;
             case rt::SafetyEvent::MODE_CHANGE:
                 m_current_mode = evt.payload;
-                // Only clear ESTOP on mode change if no ESTOP arrived in this
-                // drain cycle. Prevents periodic Auto broadcasts from cancelling
-                // a valid ESTOP that arrived in the same queue window (bug 4.9).
-                if (evt.payload != uint8_t(can::Mode::Estop) && !had_estop_this_cycle) {
-                    m_estop_pending = false;
-                    m_estop_reason = rt::kEstopReasonCanEstop;
-                }
                 break;
+            case rt::SafetyEvent::SAFETY_CLEAR:
+                // Authoritative E-stop clear from SYS_SAFETY_STS (0x011) two-frame
+                // sequence. Replaces the old 0x110 mode-driven clear.
+                m_estop_pending = false;
+                m_estop_reason = rt::kEstopReasonNone;
+                break;
+            }
+        }
+        // Fail-safe: loss of the SYS_SAFETY_STS (0x011) stream must keep (or set)
+        // the E-stop latch — never silently clear it.
+        if (!m_estop_pending) {
+            const int64_t last = g_last_sys_safety_sts_us.load();
+            if (last != 0 && (esp_timer_get_time() - last > 700000)) {
+                m_estop_pending = true;
+                m_estop_reason = rt::kEstopReasonCanEstop;
             }
         }
         // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
