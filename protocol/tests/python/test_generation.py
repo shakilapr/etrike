@@ -42,7 +42,7 @@ class GenerationTests(unittest.TestCase):
         capabilities = json.loads((GENERATED / "capabilities.json").read_text(encoding="utf-8"))
         errors = json.loads((GENERATED / "errors.json").read_text(encoding="utf-8"))
         schema = json.loads((GENERATED / "contract-schema.json").read_text(encoding="utf-8"))
-        self.assertEqual(34, len(manifest["messages"]))
+        self.assertEqual(35, len(manifest["messages"]))
         self.assertEqual({"cpp", "python", "typescript"}, set(capabilities["languages"]))
         cpp = {item["message"]: item for item in capabilities["languages"]["cpp"]}
         self.assertEqual("typed", cpp["host:host_drive_cmd"]["payload"])

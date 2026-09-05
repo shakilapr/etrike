@@ -234,6 +234,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "sys:sys_pwr_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "sys:sys_safety_sts",
         "payload": "typed",
         "semantic_decode": true,
@@ -468,6 +475,13 @@
       {
         "implementation": "generated-v1",
         "message": "sys:sys_mode_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_pwr_cmd",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -714,6 +728,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "sys:sys_pwr_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "sys:sys_safety_sts",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -721,8 +742,8 @@
       }
     ]
   },
-  "network_hash": "81c2981c7c4b34ed25ec026b4c26527f08dbc46da0a0eb781ace04908e3a755e",
+  "network_hash": "d7339f152d615f835f9a2c4f30e85acc4371e01426be1fe85a19b551dd2cfabe",
   "schema_version": 1,
-  "semantic_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c",
-  "wire_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c"
+  "semantic_hash": "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd",
+  "wire_hash": "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd"
 }

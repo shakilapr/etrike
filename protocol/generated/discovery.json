@@ -6,7 +6,7 @@
       "codec": {
         "strategy": "generated"
       },
-      "comment": "Mode requests may be produced directly by HMI or by Host/Jetson; SYS remains the sole mode authority.",
+      "comment": "Mode requests are produced by Host (acting as the logical HMI role) and forwarded by RT to SYS, which remains the sole mode authority.",
       "dlc": 2,
       "instances": [
         {
@@ -15,11 +15,10 @@
           "frame_format": "standard",
           "id": "0x111",
           "receivers": [
-            "SYS",
-            "Host"
+            "RT"
           ],
           "semantics": "independent",
-          "sender": "HMI"
+          "sender": "Host"
         },
         {
           "bus": "low",
@@ -27,11 +26,10 @@
           "frame_format": "standard",
           "id": "0x111",
           "receivers": [
-            "SYS",
-            "Host"
+            "SYS"
           ],
           "semantics": "same_frame",
-          "sender": "HMI"
+          "sender": "Host"
         }
       ],
       "key": "hmi_mode_req",
@@ -53,6 +51,11 @@
             "bit": 0,
             "bits": 8,
             "byte": 1,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
             "key": "rolling_counter"
           }
         ],
@@ -76,10 +79,10 @@
           "frame_format": "standard",
           "id": "0x112",
           "receivers": [
-            "SYS"
+            "RT"
           ],
           "semantics": "independent",
-          "sender": "HMI"
+          "sender": "Host"
         },
         {
           "bus": "low",
@@ -90,7 +93,7 @@
             "SYS"
           ],
           "semantics": "same_frame",
-          "sender": "HMI"
+          "sender": "Host"
         }
       ],
       "key": "hmi_pwr_req",
@@ -112,6 +115,11 @@
             "bit": 0,
             "bits": 8,
             "byte": 1,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
             "key": "rolling_counter"
           }
         ],
@@ -1753,11 +1761,11 @@
       "codec": {
         "strategy": "generated"
       },
-      "dlc": 1,
+      "dlc": 2,
       "instances": [
         {
           "bus": "low",
-          "cycle_ms": 1000,
+          "cycle_ms": 100,
           "frame_format": "standard",
           "id": "0x110",
           "receivers": [
@@ -1778,11 +1786,75 @@
             "key": "mode",
             "max": 2,
             "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
           }
         ],
         "kind": "signals"
       },
       "name": "SYS_MODE_CMD",
+      "owner": "sys",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "sys:sys_pwr_cmd",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 2,
+      "instances": [
+        {
+          "bus": "low",
+          "cycle_ms": 100,
+          "frame_format": "standard",
+          "id": "0x113",
+          "receivers": [
+            "MTR"
+          ],
+          "semantics": "independent",
+          "sender": "SYS"
+        }
+      ],
+      "key": "sys_pwr_cmd",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "enum": {
+              "0": "OFF",
+              "1": "ON"
+            },
+            "key": "power_state",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "SYS_PWR_CMD",
       "owner": "sys",
       "protocol": "etrike.application.v1"
     },
@@ -1870,7 +1942,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "81c2981c7c4b34ed25ec026b4c26527f08dbc46da0a0eb781ace04908e3a755e",
+  "network_hash": "d7339f152d615f835f9a2c4f30e85acc4371e01426be1fe85a19b551dd2cfabe",
   "routes": [
     {
       "from": "low",
@@ -1937,6 +2009,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c",
-  "wire_hash": "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c"
+  "semantic_hash": "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd",
+  "wire_hash": "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd"
 }
