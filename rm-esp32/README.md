@@ -27,7 +27,51 @@ The `rm-esp32` node decodes 6 channels of high-resolution PWM timing pulses from
   - **Right Stick Vertical (CH2 / GPIO 19)** $\longrightarrow$ Brake stroke ($0.0\dots 27.0\text{ mm}$, CAN `0x7B9`: $600\dots 1140$).
   - **Left Stick Vertical (CH3 / GPIO 14)** $\longrightarrow$ Proportional throttle ($0\dots 100\%$, CAN `0x204`).
 - **Safety Deadman & ESTOP (`0x001 SAFETY_ESTOP`)**:
-  - If RC pulses drop or disconnect for $>100\text{ ms}$, the node immediately snaps steering to $0.0^\circ$ (raw `30000`), applies maximum emergency brake stroke ($27.0\text{ mm}$, raw `1140`), forces motor speed to 0, and broadcasts a zero-length `SAFETY_ESTOP` frame.
+   - If RC pulses drop or disconnect for $>100\text{ ms}$, the node immediately snaps steering to $0.0^\circ$ (raw `30000`), applies maximum emergency brake stroke ($27.0\text{ mm}$, raw `1140`), forces motor speed to 0, and broadcasts a zero-length `SAFETY_ESTOP` frame.
+
+---
+
+## 1.1 Raw-Mode Bypass & ECU Pipeline
+
+RM is the **standalone / raw-mode master**. It exists for the case where the
+autonomous stack is **not present**: Host (Jetson), RT, and SYS are omitted or
+powered down, and RM connects directly to the **Low CAN bus** to drive the
+actuator ECUs itself — no gateway, no kinematics solver, no safety authority in
+the loop.
+
+```
+                 Topology 1 (Autonomous)          Topology 2 (RM raw-mode bypass)
+Jetson ─► RT ESP32-S3 ─┬► SES/SEB/MTR       FlySky RC ─► RM ESP32 ─┬► 0x169 VCU_SES_REQ  ─► SES
+                       └► SYS (safety)                                     ├► 0x7B9 VCU_SEB_REQ  ─► SEB
+                                                                          ├► 0x204 RT_DRIVE_CMD ─► MTR
+                                                                          ├► 0x0BB RM_RELAY_STATE ─► MTR
+                                                                          ├► 0x0AA RM_THROTTLE_RAW ─► MTR
+                                                                          └► 0x001 SAFETY_ESTOP    ─► ALL
+```
+
+In this mode RM directly masters three actuator ECUs at 50 Hz:
+
+- **SES** — `0x169 VCU_SES_REQ` (steering angle, ±45°). Active only when ignition
+  is ON and gear is D/R.
+- **SEB** — `0x7B9 VCU_SEB_REQ` (brake stroke 0…27 mm, Stroke mode).
+- **MTR** — `0x204 RT_DRIVE_CMD` (canonical speed + gear) and, as legacy fallback,
+  `0x0BB RM_RELAY_STATE` + `0x0AA RM_THROTTLE_RAW` straight to the MCP4725 DAC.
+
+**Fail-safe:** loss of RMT pulses for > 100 ms triggers a deadman ESTOP — steering
+ramps to 0°, full brake stroke (27 mm), motor speed zeroed, and rate-limited
+`0x001 SAFETY_ESTOP` broadcast.
+
+**Mode authority:** RM does **not** own the vehicle mode. Its transmitter's gear
+selector (SWC) and ignition switch (SWB) are decoded into the canonical
+`0x111 HMI_MODE_REQ` / `0x112 HMI_PWR_REQ` *request* frames and transmitted
+unconditionally (`rm-esp32/src/main.cpp:202-218`). These are **requests**, not
+commands: when SYS is on the bus it is the sole decision maker and may ignore them
+(e.g. in ESTOP). When SYS is offline (the pure standalone bypass) they have no
+receiver and are inert — RM's actual gear/ignition gating comes from its local
+switch decode driving `0x204`/`0x0BB`/`0x0AA` directly to MTR, not from SYS's reply.
+The raw-mode bypass is therefore the topology used when SYS is absent. See
+`docs/system-architecture-and-data-flow.md` §Topology 2 for the full flow, and
+`mtr-stm32/README.md` for how MTR accepts RM's `0x204`/`0x0BB`/`0x0AA`.
 
 ---
 
