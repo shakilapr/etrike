@@ -394,7 +394,7 @@ Active PID (`ETRIKE_RT_PID_MODE=2`): correction injected into motor setpoint. Di
 | Direction | IDs | ESTOP prioritization |
 |-----------|-----|---------------------|
 | Low → High | 0x001, 0x011, 0x120, 0x206, 0x600 | 0x001 uses `xQueueSendToFront` |
-| High → Low | 0x001, 0x302 | Same |
+| High → Low | 0x001, 0x111, 0x112, 0x302 | Same |
 
 Gateway TX queues: depth 8. Overflow counter logged. ESTOP skips queue via send-to-front.
 
