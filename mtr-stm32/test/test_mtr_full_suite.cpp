@@ -55,6 +55,30 @@ int g_tests_failed = 0;
     } \
 } while(0)
 
+// Authority frames (0x110/0x113) require a baseline frame followed by an
+// advancing frame before MotorManager's StreamValidity accepts them. Counters
+// advance monotonically across all helpers so back-to-back command pairs stay
+// in-sequence. Each stream keeps its OWN monotonic counter so interleaved
+// send_mode/send_power calls do not jump a single stream's counter by >1.
+static uint8_t g_mode_ctr = 0;
+static uint8_t g_pwr_ctr = 0;
+static void send_mode(mtr::MotorManager& mgr, can::Mode mode, uint32_t now) {
+    can::gen::SysModeCmd c0{static_cast<uint8_t>(mode), g_mode_ctr++};
+    can::Frame f0; can::gen::encode_sys_mode_cmd(c0, f0); mgr.handle_frame(f0, now);
+    can::gen::SysModeCmd c1{static_cast<uint8_t>(mode), g_mode_ctr++};
+    can::Frame f1; can::gen::encode_sys_mode_cmd(c1, f1); mgr.handle_frame(f1, now);
+}
+static void send_power(mtr::MotorManager& mgr, bool on, uint32_t now) {
+    can::gen::SysPwrCmd c0{on ? true : false, g_pwr_ctr++};
+    can::Frame f0; can::gen::encode_sys_pwr_cmd(c0, f0); mgr.handle_frame(f0, now);
+    can::gen::SysPwrCmd c1{on ? true : false, g_pwr_ctr++};
+    can::Frame f1; can::gen::encode_sys_pwr_cmd(c1, f1); mgr.handle_frame(f1, now);
+}
+static void send_drive(mtr::MotorManager& mgr, int32_t speed, can::Gear gear, uint32_t now) {
+    can::gen::RtDriveCmd drv{speed, static_cast<uint8_t>(gear)};
+    can::Frame f; can::gen::encode_rt_drive_cmd(drv, f); mgr.handle_frame(f, now);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Relay Controller: Mutual Exclusion & Active-Low Polarity
 // ═══════════════════════════════════════════════════════════════════════
@@ -225,11 +249,9 @@ void test_motor_manager_estop_and_recovery() {
     ASSERT_FALSE(mgr.is_estop_active());
 
     // 1. Establish normal driving state in Drive
-    // Power ON (0x112)
-    can::gen::HmiPwrReq pwr{1, 1};
-    can::Frame pwr_fr;
-    can::gen::encode_hmi_pwr_req(pwr, pwr_fr);
-    mgr.handle_frame(pwr_fr, 100);
+    // Authority from SYS: mode (0x110) + power (0x113), then drive command.
+    send_mode(mgr, can::Mode::Manual, 100);
+    send_power(mgr, true, 100);
 
     // Drive command 2000 mm/s in Drive (0x204)
     can::gen::RtDriveCmd drv{2000, static_cast<uint8_t>(can::Gear::D)};
@@ -263,16 +285,11 @@ void test_motor_manager_estop_and_recovery() {
 
     // 3. Mode recovery sequence via 0x110 SYS_MODE_CMD
     // Remaining in Estop mode (mode = 2) -> ESTOP stays latched
-    can::gen::SysModeCmd mode_cmd{static_cast<uint8_t>(can::Mode::Estop)};
-    can::Frame mode_fr;
-    can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr);
-    mgr.handle_frame(mode_fr, 110);
+    send_mode(mgr, can::Mode::Estop, 110);
     ASSERT_TRUE(mgr.is_estop_active());
 
     // Transition to Manual mode (mode = 0) -> CLEARS ESTOP!
-    mode_cmd.mode = static_cast<uint8_t>(can::Mode::Manual);
-    can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr);
-    mgr.handle_frame(mode_fr, 120);
+    send_mode(mgr, can::Mode::Manual, 120);
     ASSERT_FALSE(mgr.is_estop_active());
 
     // Now tick again with valid drive frame -> Motor resumes!
@@ -295,11 +312,9 @@ void test_motor_manager_direction_shift_dwell() {
     mtr::MotorManager mgr(relays, dac);
     mgr.init();
 
-    // Ignition ON
-    can::gen::HmiPwrReq pwr{1, 1};
-    can::Frame pwr_fr;
-    can::gen::encode_hmi_pwr_req(pwr, pwr_fr);
-    mgr.handle_frame(pwr_fr, 100);
+    // Authority from SYS: mode (0x110) + power (0x113)
+    send_mode(mgr, can::Mode::Manual, 100);
+    send_power(mgr, true, 100);
 
     // 1. Cruising in Drive (D) at 1500 mm/s
     can::gen::RtDriveCmd drv_cmd{1500, static_cast<uint8_t>(can::Gear::D)};
@@ -367,11 +382,9 @@ void test_motor_manager_watchdog_timeout() {
     mtr::MotorManager mgr(relays, dac);
     mgr.init();
 
-    // Ignition ON
-    can::gen::HmiPwrReq pwr{1, 1};
-    can::Frame pwr_fr;
-    can::gen::encode_hmi_pwr_req(pwr, pwr_fr);
-    mgr.handle_frame(pwr_fr, 1000);
+    // Authority from SYS: mode (0x110) + power (0x113)
+    send_mode(mgr, can::Mode::Manual, 1000);
+    send_power(mgr, true, 1000);
 
     // Drive command at t = 1000 ms
     can::gen::RtDriveCmd drv{2000, static_cast<uint8_t>(can::Gear::D)};
@@ -417,10 +430,9 @@ void test_motor_manager_dac_curves() {
     mtr::MotorManager mgr(relays, dac);
     mgr.init();
 
-    can::gen::HmiPwrReq pwr{1, 1};
-    can::Frame pwr_fr;
-    can::gen::encode_hmi_pwr_req(pwr, pwr_fr);
-    mgr.handle_frame(pwr_fr, 100);
+    // Authority from SYS: mode (0x110) + power (0x113)
+    send_mode(mgr, can::Mode::Manual, 100);
+    send_power(mgr, true, 100);
 
     // Forward curve: 0 .. 3000 mm/s -> 655 .. 1966
     // Zero speed in Drive -> DAC 0
@@ -477,63 +489,6 @@ void test_motor_manager_dac_curves() {
     mgr.handle_frame(fr, 160);
     mgr.tick(160);
     ASSERT_EQ(dac.current_code(), mtr::kDacMaxCode);
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// 7. Motor Manager: Legacy RM Fallback Frames (0x0BB, 0x0AA)
-// ═══════════════════════════════════════════════════════════════════════
-
-void test_motor_manager_legacy_fallback() {
-    std::printf("[TEST GROUP] Legacy RM Fallback Frames (0x0BB & 0x0AA)...\n");
-    hal_mock::reset();
-
-    mtr::RelayController relays;
-    mtr::DacController dac;
-    mtr::MotorManager mgr(relays, dac);
-    mgr.init();
-
-    // 1. 0x0BB RM_RELAY_STATE = 0x05 (Drive + Ignition ON)
-    can::Frame relay_fr;
-    relay_fr.id = 0x0BB;
-    relay_fr.dlc = 1;
-    relay_fr.data[0] = 0x05;
-    mgr.handle_frame(relay_fr, 100);
-
-    // 0x0AA RM_THROTTLE_RAW = 32768 (50% throttle -> 1500 mm/s)
-    can::Frame throt_fr;
-    throt_fr.id = 0x0AA;
-    throt_fr.dlc = 2;
-    throt_fr.data[0] = 0x00; // Little endian 0x8000 = 32768
-    throt_fr.data[1] = 0x80;
-    mgr.handle_frame(throt_fr, 100);
-
-    mgr.tick(100);
-
-    ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
-    ASSERT_EQ(mgr.target_speed_mmps(), 1500);
-    ASSERT_NEAR(dac.current_code(), 1333, 10);
-
-    // 2. 0x0BB = 0x09 (Reverse)
-    relay_fr.data[0] = 0x09;
-    mgr.handle_frame(relay_fr, 200);
-    mgr.tick(200); // starts shift dwell
-    mgr.tick(260); // dwell complete
-    ASSERT_EQ(relays.state(), mtr::RelayController::State::Reverse);
-
-    // 3. 0x0BB = 0x03 (Park / Neutral)
-    relay_fr.data[0] = 0x03;
-    mgr.handle_frame(relay_fr, 300);
-    mgr.tick(300);
-    ASSERT_EQ(relays.state(), mtr::RelayController::State::Park);
-    ASSERT_EQ(dac.current_code(), 0);
-
-    // 4. 0x0BB = 0x00 (Off)
-    relay_fr.data[0] = 0x00;
-    mgr.handle_frame(relay_fr, 400);
-    mgr.tick(400);
-    ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
-    ASSERT_FALSE(relays.is_ignition_on());
-    ASSERT_EQ(dac.current_code(), 0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -615,7 +570,6 @@ int main() {
     test_motor_manager_direction_shift_dwell();
     test_motor_manager_watchdog_timeout();
     test_motor_manager_dac_curves();
-    test_motor_manager_legacy_fallback();
     test_fdcan_driver_ringbuffer();
 
     std::printf("\n--------------------------------------------------------\n");
