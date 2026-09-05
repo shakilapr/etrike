@@ -99,15 +99,16 @@ public:
                 power_valid_ = ok;
                 if (!ok) break;  // stale/invalid power authority: enter power-safe (zero propulsion)
                 const bool pwr_on = (pwr.power_state != 0);
-                // REARM observability (Phase A): after an authorized clear, MTR requires
-                // a fresh 0x113 OFF->ON edge (with a fresh 0x110 seen meanwhile) before
-                // propulsion is re-enabled.
-                if (rearm_required_) {
-                    if (!pwr_on) {
-                        rearm_off_seen_ = true;
-                    } else if (rearm_off_seen_ && mode_valid_) {
-                        rearm_observed_ = true;
-                    }
+                // REARM observability (Phase A): MTR requires, after an authorized
+                // clear, a 0x113 OFF->ON edge (with a fresh 0x110 seen meanwhile)
+                // before propulsion is re-enabled. The OFF edge happens during the
+                // ESTOP (SYS drives 0x113=OFF while latched); the ON edge arrives
+                // post-clear. Track the OFF edge across the clear so the post-clear
+                // ON completes the REARM sequence.
+                if (!pwr_on) {
+                    rearm_off_seen_ = true;
+                } else if (rearm_required_ && rearm_off_seen_ && mode_valid_) {
+                    rearm_observed_ = true;
                 }
                 prev_pwr_on_ = pwr_on;
                 power_state_on_ = pwr_on;
@@ -154,7 +155,9 @@ public:
             // baseline (do NOT clear). Two consecutive fresh, advancing frames with
             // estop_active == 0 are required for an authorized clear.
             if (last_estop_zero_) {
-                if (++clear_confirm_ >= 2) authorized_clear();
+                // Only clear an ESTOP that is actually latched. Normal running
+                // (estop_active==0 continuously) must never trigger a clear/REARM.
+                if (++clear_confirm_ >= 2 && estop_active_) authorized_clear();
             } else {
                 clear_confirm_ = 1;
             }
@@ -174,7 +177,9 @@ public:
         clear_confirm_ = 0;
         last_estop_zero_ = false;
         rearm_required_ = true;
-        rearm_off_seen_ = false;
+        // rearm_off_seen_ is intentionally NOT reset here: the OFF edge observed
+        // during the ESTOP (0x113=OFF) carries across the clear to pair with the
+        // post-clear ON. Only rearm_observed_ must be re-acquired each recovery.
         rearm_observed_ = false;
     }
 
@@ -190,7 +195,8 @@ public:
         // persistent safety-state stream (0x011) and the REARM sequence.
         // Freshness supervision: a silently-stopping 0x011 stream must fail safe even
         // between received frames.
-        if (safety_state_valid_ && (now_ms - last_safety_ms_ > kSafetyFreshMs)) {
+        if (safety_state_valid_ && now_ms >= last_safety_ms_ &&
+            (now_ms - last_safety_ms_ > kSafetyFreshMs)) {
             safety_state_valid_ = false;
             safety_val_.invalidate_now();
             clear_confirm_ = 0;
