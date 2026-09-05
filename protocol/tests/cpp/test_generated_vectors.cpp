@@ -63,7 +63,9 @@ void test_success_vectors() {
     safety.light_left = true;
     safety.light_brake = true;
     safety.light_head = true;
-    check_vector(safety, std::array<std::uint8_t, 3>{0x01, 0x01, 0x0D});
+    safety.rolling_counter = 0;
+    safety.e2e_crc = 0x32;  // CRC-8 over bytes [0x01,0x01,0x0D,0x00]
+    check_vector(safety, std::array<std::uint8_t, 5>{0x01, 0x01, 0x0D, 0x00, 0x32});
 
     generated::HmiModeReq hmi_mode{};
     hmi_mode.req_mode = true;
@@ -110,6 +112,29 @@ void test_success_vectors() {
     host_heartbeat.alive_ctr = 7;
     host_heartbeat.health_flags = 13;
     check_vector(host_heartbeat, std::array<std::uint8_t, 2>{0x07, 0x0D});
+
+    generated::HostSteerCmd steer_cmd{};
+    steer_cmd.steer_angle_0_1deg = -123;
+    steer_cmd.angle_valid = true;
+    steer_cmd.reserved = 0;
+    steer_cmd.rolling_counter = 42;
+    check_vector(steer_cmd, std::array<std::uint8_t, 4>{0xFF, 0x85, 0x01, 0x2A});
+
+    generated::RtMotionRpt motion{};
+    motion.speed_mmps = 1000;
+    motion.yaw_rate_mrad_s = -2;
+    motion.gear = 1;
+    motion.speed_valid = true;
+    motion.yaw_rate_valid = true;
+    motion.gear_valid = true;
+    motion.reserved = 0;
+    motion.rolling_counter = 42;
+    check_vector(motion, std::array<std::uint8_t, 8>{0x03, 0xE8, 0xFF, 0xFF, 0xFE, 0x01, 0x07, 0x2A});
+
+    generated::SysPwrCmd pwr_vec{};
+    pwr_vec.power_state = true;
+    pwr_vec.rolling_counter = 5;
+    check_vector(pwr_vec, std::array<std::uint8_t, 2>{0x01, 0x05});
 
     generated::RtDriveCmd rt_drive{};
     rt_drive.motor_speed_mmps = -500;
@@ -158,8 +183,8 @@ void test_success_vectors() {
     check_vector(rt_heartbeat, std::array<std::uint8_t, 2>{0xFF, 0x0F});
 
     generated::SysModeCmd mode{};
-    mode.mode = 2;
-    check_vector(mode, std::array<std::uint8_t, 1>{0x02});
+    mode.mode = 1;  // AUTO (0x110 enum is MANUAL/AUTO only; ESTOP moved to 0x011)
+    check_vector(mode, std::array<std::uint8_t, 2>{0x01, 0x00});
 
     generated::SysDiagRpt diagnostic{};
     diagnostic.mode = 2;
@@ -253,7 +278,7 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-    CHECK(etrike::protocol::kMessages.size() == 44);
+    CHECK(etrike::protocol::kMessages.size() == 45);
     CHECK(etrike::protocol::kRoutes.size() == 9);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);

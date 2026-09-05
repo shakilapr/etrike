@@ -4,7 +4,7 @@
   "encoding": "hexadecimal payload bytes in CAN wire order",
   "vectors": [
     {"id":"safety-event","message":"safety:safety_estop","bus":"high","frame_format":"standard","payload":"","values":{},"status":"ok"},
-    {"id":"sys-safety-packed","message":"sys:sys_safety_sts","bus":"low","frame_format":"standard","payload":"01010d","values":{"estop_active":1,"heartbeat_ok":1,"light_left":1,"light_right":0,"light_brake":1,"light_head":1},"status":"ok"},
+    {"id":"sys-safety-packed","message":"sys:sys_safety_sts","bus":"low","frame_format":"standard","payload":"01010d0032","values":{"estop_active":1,"heartbeat_ok":1,"light_left":1,"light_right":0,"light_brake":1,"light_head":1,"rolling_counter":0,"e2e_crc":50},"status":"ok"},
     {"id":"hmi-mode","message":"hmi:hmi_mode_req","bus":"high","frame_format":"standard","payload":"012a","values":{"req_mode":1,"rolling_counter":42},"status":"ok"},
     {"id":"hmi-power","message":"hmi:hmi_pwr_req","bus":"high","frame_format":"standard","payload":"0107","values":{"req_start":1,"rolling_counter":7},"status":"ok"},
     {"id":"mtr-speed-negative","message":"mtr:sys_throttle_sts","bus":"low","frame_format":"standard","payload":"fffe","values":{"speed_mmps":-2},"status":"ok"},
@@ -23,7 +23,7 @@
     {"id":"steer-diag","message":"rt:steer_diag","bus":"high","frame_format":"standard","payload":"753001006401f400","values":{"angle_0_1deg":0.0,"fault":1,"motor_current":1.0,"ecu_temp":50.0,"reserved":0},"status":"ok"},
     {"id":"brake-diag","message":"rt:brake_diag","bus":"high","frame_format":"standard","payload":"00640100c8012c00","values":{"pressure_raw":5.0,"fault":1,"motor_current":2.0,"ecu_temp":30.0,"reserved":0},"status":"ok"},
     {"id":"rt-heartbeat","message":"rt:rt_heartbeat","bus":"low","frame_format":"standard","payload":"ff0f","values":{"alive_ctr":255,"health_flags":15},"status":"ok"},
-    {"id":"sys-mode","message":"sys:sys_mode_cmd","bus":"low","frame_format":"standard","payload":"0200","values":{"mode":2,"rolling_counter":0},"status":"ok"},
+    {"id":"sys-mode","message":"sys:sys_mode_cmd","bus":"low","frame_format":"standard","payload":"0100","values":{"mode":1,"rolling_counter":0},"status":"ok"},
     {"id":"sys-power","message":"sys:sys_pwr_cmd","bus":"low","frame_format":"standard","payload":"0105","values":{"power_state":1,"rolling_counter":5},"status":"ok"},
     {"id":"sys-diag-packed","message":"sys:sys_diag_rpt","bus":"low","frame_format":"standard","payload":"020311011234aa55","values":{"mode":2,"brake_engaged":1,"brake_fault":1,"heartbeat_ok":1,"rx_overflow":8,"estop_active":1,"free_heap_kb":4660,"tec":170,"rec":85},"status":"ok"},
     {"id":"sys-heartbeat-all","message":"sys:sys_heartbeat","bus":"low","frame_format":"standard","payload":"ffff","values":{"alive_ctr":255,"heartbeat_ok":1,"estop_active":1,"mode_auto":1,"can_ok":1,"task_safety_ok":1,"task_brake_ok":1,"task_dispatch_ok":1,"task_can_tx_ok":1},"status":"ok"},
