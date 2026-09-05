@@ -52,6 +52,7 @@ struct DispatchContext {
     int32_t           brake_req_kpa = 0;
     bool              estop_flag    = false;
     uint8_t           mode_from_sys = 0;
+    bool              has_mode_valid = false;  // 0x110 authority valid this frame
     uint16_t          steer_feedback_angle = 0;
     uint8_t           steer_angle_status   = 0;
     bool              has_mode  = false;
@@ -106,6 +107,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     q.brake_req_kpa = &ctx.brake_req_kpa;
     q.estop_flag = &ctx.estop_flag;
     q.mode_from_sys = &ctx.mode_from_sys;
+    q.mode_valid    = &ctx.has_mode_valid;
     q.steer_feedback_angle = &ctx.steer_feedback_angle;
     q.steer_angle_status   = &ctx.steer_angle_status;
     const auto route_status = rt::route_frame(fr, from_high, q);
@@ -258,7 +260,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         g_seb_error_status.store(seb_err);
     }
     // Track reception flags (fix #3: 0=Manual/0=release are valid values)
-    if (fr.id == can::kIdSysModeCmd && !from_high)   { ctx.has_mode = true; }
+    // Only a counter/freshness-valid 0x110 advances RT's mode authority state.
+    if (fr.id == can::kIdSysModeCmd && !from_high)   { if (ctx.has_mode_valid) ctx.has_mode = true; }
     if (fr.id == can::kIdHostBrakeReq && from_high)  { ctx.has_brake = true; }
     if (fr.id == can::kIdHostDriveCmd && from_high)  { ctx.has_cmd = true; }
 }
