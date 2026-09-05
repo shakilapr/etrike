@@ -2,6 +2,8 @@
 
 Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless noted (steer-by-wire protocol uses Motorola LSB).
 
+> **Source of truth:** The canonical, machine-generated CAN contract now lives in [`protocol/`](../protocol). YAML contracts under `protocol/contracts/*.yaml` are the authoritative definitions; `protocol/generated/` holds derived artifacts (C++ header, Python/TypeScript codecs, CSV, DBC). Regenerate with `python -m protocol.tools.protocol generate` and check drift with `... generate --check`. This document is the human-readable companion — signal tables for SES/SEB vendor frames (`0x169`/`0x201`/`0x202`/`0x6FA`/`0x721`/`0x731`/`0x741`/`0x7B9`) are hand-maintained because those use opaque custom codecs not represented in the generated CSV/DBC. Where this doc and `protocol/` disagree, `protocol/` wins.
+
 ### Type Notation
 
 | Notation | C Type | Meaning |
@@ -84,6 +86,8 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 
 ESTOP → **1 (on)** — maintains 12V for MCUs, CAN transceivers, and brake light. The 12V accessory relay (GPIO40) provides the secondary cut for non-safety loads (see architecture §8.6). All other modes → 1 (on).
 
+> **Protocol note:** The canonical `protocol/` contract routes DC-DC control over the **powertrain** bus as extended-frame `0x10262B27 PWT_DCDC_CMD` (sender PWT → DCDC, 8-byte, 100 ms). This standard-frame `0x012` low-bus variant is superseded by that definition; prefer `protocol/contracts/pwt.yaml`.
+
 ---
 
 ### 0x110 — SYS_MODE_CMD
@@ -161,7 +165,7 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 | Property | Value |
 |----------|-------|
 | **Sender** | MTR STM32 |
-| **Receiver(s)** | SYS, RT |
+| **Receiver(s)** | RT, SYS, Host (forwarded to high bus) |
 | **DLC** | 4 |
 | **Period** | 50 Hz (20 ms) |
 
@@ -619,9 +623,45 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 | Signal | Start bit | Len | Type | Description |
 |--------|-----------|-----|------|-------------|
 | `alive_ctr` | 0 | 8 | u8 | Increments every frame (wraps at 255). Frozen = hung SYS. |
-| `health_flags` | 8 | 8 | u8 | bit0=heartbeat_ok, bit1=estop_active, bits2-3=reserved |
+| `health_flags` | 8 | 8 | u8 bitmask | bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bit4=task_safety_ok, bit5=task_brake_ok, bit6=task_dispatch_ok, bit7=task_can_tx_ok |
 
 SYS heartbeat never leaves low bus. Startup grace period: 3 seconds (both heartbeat monitors).
+
+---
+
+### 0x111 — HMI_MODE_REQ
+
+| Property | Value |
+|----------|-------|
+| **Sender** | HMI |
+| **Receiver(s)** | SYS, Host (both buses) |
+| **DLC** | 2 |
+| **Period** | 1 Hz (1000 ms) |
+
+| Signal | Start bit | Len | Type | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-----|-----|------|-------------|
+| `req_mode` | 0 | 8 | u8 enum | 0 | 1 | — | 0=MANUAL, 1=AUTO. SYS remains the sole mode authority (may be produced by HMI or Host/Jetson). |
+| `rolling_counter` | 8 | 8 | u8 | 0 | 255 | — | Life signal, increments per frame. |
+
+> Protocol: `protocol/contracts/hmi.yaml` (`hmi_mode_req`). Present on both buses; low instance is `same_frame` (transparent), high instance is `independent`.
+
+---
+
+### 0x112 — HMI_PWR_REQ
+
+| Property | Value |
+|----------|-------|
+| **Sender** | HMI |
+| **Receiver(s)** | SYS (both buses) |
+| **DLC** | 2 |
+| **Period** | 1 Hz (1000 ms) |
+
+| Signal | Start bit | Len | Type | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-----|-----|------|-------------|
+| `req_start` | 0 | 8 | u8 enum | 0 | 1 | — | 0=OFF, 1=ON |
+| `rolling_counter` | 8 | 8 | u8 | 0 | 255 | — | Life signal, increments per frame. |
+
+> Protocol: `protocol/contracts/hmi.yaml` (`hmi_pwr_req`).
 
 ---
 
@@ -768,6 +808,62 @@ Jetson sends min obstacle distance from perception (LiDAR/camera) to RT at 10 Hz
 
 ---
 
+### 0x111 — HMI_MODE_REQ (forwarded)
+
+See low-level §1 `0x111`. Present on both buses (HMI → SYS, Host).
+
+---
+
+### 0x112 — HMI_PWR_REQ (forwarded)
+
+See low-level §1 `0x112`. Present on both buses (HMI → SYS).
+
+---
+
+### 0x310 — STEER_DIAG (steering diagnostics)
+
+| Property | Value |
+|----------|-------|
+| **Sender** | RT ESP32-S3 |
+| **Receiver(s)** | Host (Jetson) |
+| **DLC** | 8 |
+| **Period** | 100 Hz (10 ms) |
+| **Endianness** | Big-endian |
+
+| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
+| `angle_0_1deg` | 0 | 16 | u16 | 0.1 | -3000 | -3000 | 3553.5 | ° | Steering angle. `physical_deg = raw × 0.1 − 3000`. |
+| `fault` | 16 | 8 | u8 bool | 1 | 0 | 0 | 1 | — | Fault flag |
+| `motor_current` | 24 | 16 | u16 | 0.01 | 0 | 0 | 655.35 | A | Steering motor current |
+| `ecu_temp` | 40 | 16 | u16 | 0.1 | 0 | 0 | 6553.5 | °C | ECU temperature |
+| (reserved) | 56 | 8 | — | — | — | — | — | — | Byte 7 |
+
+> Protocol: `protocol/contracts/rt.yaml` (`steer_diag`). RT→Host only (high bus); mirrors `0x6FA` SES_Test telemetry from the steer-by-wire unit.
+
+---
+
+### 0x311 — BRAKE_DIAG (brake diagnostics)
+
+| Property | Value |
+|----------|-------|
+| **Sender** | RT ESP32-S3 |
+| **Receiver(s)** | Host (Jetson) |
+| **DLC** | 8 |
+| **Period** | 100 Hz (10 ms) |
+| **Endianness** | Big-endian |
+
+| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
+| `pressure_raw` | 0 | 16 | u16 | 0.05 | 0 | 0 | 3276.75 | MPa | Brake pressure (raw) |
+| `fault` | 16 | 8 | u8 bool | 1 | 0 | 0 | 1 | — | Fault flag |
+| `motor_current` | 24 | 16 | u16 | 0.01 | 0 | 0 | 655.35 | A | Brake motor current |
+| `ecu_temp` | 40 | 16 | u16 | 0.1 | 0 | 0 | 6553.5 | °C | ECU temperature |
+| (reserved) | 56 | 8 | — | — | — | — | — | — | Byte 7 |
+
+> Protocol: `protocol/contracts/rt.yaml` (`brake_diag`). RT→Host only (high bus); mirrors `0x6FB` SEB_Test telemetry from the brake-by-wire unit.
+
+---
+
 ### 0x600 — SYS_DIAG_RPT (forwarded)
 
 Forwarded from low-level by RT. Same layout as §1 `0x600`.
@@ -831,6 +927,8 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x203` | SES_Version | EPS-C | RT | 8 | 1 Hz |
 | `0x204` | RT_DRIVE_CMD | RT | SYS, MTR | 5 | 100 Hz |
 | `0x205` | RT_BRAKE_CMD | RT | SYS | 4 | **50 Hz** |
+| `0x206` | MTR_MOTOR_FBK | MTR | RT, SYS, Host | 4 | 50 Hz |
+| `0x210` | RT_STATE_RPT | RT | Host, SYS | 6 | 10 Hz |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | Change |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (→Jetson) | 8 | 1 Hz |
 | `0x6FA` | SES_Test | EPS-C | RT | 8 | 100 Hz |
@@ -848,16 +946,21 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 |----|------|--------|----------|-----|------|
 | `0x001` | SAFETY_ESTOP | Jetson, RT | Jetson, RT | 0 | Event |
 | `0x011` | SYS_SAFETY_STS | RT (fwd) | Jetson | 3 | 5 Hz |
+| `0x111` | HMI_MODE_REQ | HMI | SYS, Host | 2 | 1 Hz |
+| `0x112` | HMI_PWR_REQ | HMI | SYS | 2 | 1 Hz |
 | `0x120` | SYS_THROTTLE_STS | RT (fwd) | Jetson | 2 | 100 Hz |
-| `0x210` | RT_STATE_RPT | RT | Jetson | 6 | 10 Hz |
+| `0x206` | MTR_MOTOR_FBK | MTR | RT, SYS, Host | 4 | 50 Hz |
+| `0x210` | RT_STATE_RPT | RT | Jetson, SYS | 6 | 10 Hz |
 | `0x220` | RT_PID_RPT | RT | Jetson | 6 | — (RESERVED, inactive) |
 | `0x300` | HOST_DRIVE_CMD | Jetson | RT | 8 | ≤100 Hz |
 | `0x301` | HOST_BRAKE_REQ | Jetson | RT | 4 | Demand |
 | `0x302` | HOST_LIGHT_CMD | Jetson | RT (→SYS) | 1 | Change |
+| `0x310` | STEER_DIAG | RT | Host | 8 | 100 Hz |
+| `0x311` | BRAKE_DIAG | RT | Host | 8 | 100 Hz |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | 10 Hz |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 2 | 2 Hz |
-| `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 1 | 2 Hz |
+| `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 2 | 2 Hz |
 
 ---
 
@@ -869,7 +972,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Direction | IDs |
 |-----------|-----|
-| Low → High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600` |
+| Low → High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600`, `0x111`, `0x112` |
 | High → Low | `0x001`, `0x302` |
 
 ### Category 2: Consumed by RT → different message generated
@@ -885,8 +988,8 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 |-----|-----|
 | Low only | `0x012`, `0x110`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (steer-by-wire unit feedback) |
-| High only | `0x210`, `0x220`, `0x400` (obstacle distance) |
-| Both independent | `0x7FD`, `0x7FE`, `0x7FC` (per-node heartbeat — NOT bridged) |
+| High only | `0x220`, `0x400` (obstacle distance), `0x310` (steer diag), `0x311` (brake diag) |
+| Both independent | `0x7FD`, `0x7FE`, `0x7FC`, `0x210` (per-node heartbeat — NOT bridged; `0x210` independent on both buses) |
 
 ---
 
@@ -896,8 +999,8 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 |----------|----------|-----|
 | Highest | `0x001` | ESTOP |
 | Very High | `0x010`–`0x01F` | SAFETY_STATUS, DCDC_CMD |
-| High | `0x100`–`0x11F` | MODE_CMD |
-| Medium | `0x120`–`0x3FF` | THROTTLE, DRIVE, MTR_MOTOR_FBK, SES_STATUS/REQ/ErrInfo/Version, DRIVE_CMD, BRAKE_REQ, LIGHT_CMD |
+| High | `0x100`–`0x11F` | MODE_CMD, HMI_MODE_REQ (`0x111`), HMI_PWR_REQ (`0x112`) |
+| Medium | `0x120`–`0x3FF` | THROTTLE, DRIVE, MTR_MOTOR_FBK, SES_STATUS/REQ/ErrInfo/Version, DRIVE_CMD, BRAKE_REQ, LIGHT_CMD, STEER_DIAG (`0x310`), BRAKE_DIAG (`0x311`) |
 | Low | `0x400`–`0x5FF` | OBSTACLE, STATE_REPORT, PID_FEEDBACK |
 | Lowest | `0x600`–`0x7FF` | DIAG, SES_Test (`0x6FA`), SEB_Test (`0x6FB`), SEB_STATUS/ErrInfo/Version (`0x721`/`0x731`/`0x741`), SEB_REQ (`0x7B9`), HEARTBEAT (`0x7FC`–`0x7FE`) |
 
