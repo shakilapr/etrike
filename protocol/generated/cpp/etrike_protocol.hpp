@@ -10,14 +10,14 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "5bec9d1ef7a06a158d1d620c0da85c28ec741d082f553964494675620d89027c";
+inline constexpr std::string_view kSemanticHash = "54eec6a8588403e169383cf05a12a0fc0f34496a8cae899c81bc6dfd64f191fd";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "81c2981c7c4b34ed25ec026b4c26527f08dbc46da0a0eb781ace04908e3a755e";
+inline constexpr std::string_view kNetworkHash = "d7339f152d615f835f9a2c4f30e85acc4371e01426be1fe85a19b551dd2cfabe";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 44> kMessages{{
+inline constexpr std::array<MessageMetadata, 45> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
@@ -59,7 +59,8 @@ inline constexpr std::array<MessageMetadata, 44> kMessages{{
     {"sys:sys_diag_rpt", "high", 0x600u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_diag_rpt", "low", 0x600u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_heartbeat", "low", 0x7FEu, 2u, false, CodecStrategy::Generated},
-    {"sys:sys_mode_cmd", "low", 0x110u, 1u, false, CodecStrategy::Generated},
+    {"sys:sys_mode_cmd", "low", 0x110u, 2u, false, CodecStrategy::Generated},
+    {"sys:sys_pwr_cmd", "low", 0x113u, 2u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "high", 0x11u, 3u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "low", 0x11u, 3u, false, CodecStrategy::Generated},
 }};
@@ -2098,15 +2099,22 @@ inline CodecStatus decode(FrameView frame, SysHeartbeat& out) noexcept { return 
 struct SysModeCmd {
     static constexpr std::string_view kKey = "sys:sys_mode_cmd";
     static constexpr std::uint32_t kId = 0x110u;
-    static constexpr std::size_t kDlc = 1u;
-    static constexpr std::uint32_t kCycleMs = 1000u;
+    static constexpr std::size_t kDlc = 2u;
+    static constexpr std::uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     static constexpr std::uint32_t kLowId = 0x110u;
-    static constexpr std::uint32_t kLowCycleMs = 1000u;
+    static constexpr std::uint32_t kLowCycleMs = 100u;
     static constexpr bool kLowExtended = false;
     std::uint8_t mode{};
+    std::uint8_t rolling_counter{};
     struct ModeMeta {
         static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 1u;
         static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 8u;
         static constexpr std::uint64_t kMask = 0xFFull;
@@ -2118,6 +2126,7 @@ struct SysModeCmd {
         if (mode > 2) return CodecStatus::ValueOutOfRange;
         std::array<std::uint8_t, kDlc> payload{};
         detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(mode));
+        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
         return CodecStatus::Ok;
     }
@@ -2129,6 +2138,8 @@ struct SysModeCmd {
         const std::uint64_t raw_mode = detail::extract(source, 0u, 0u, 8u, false);
         value.mode = static_cast<std::uint8_t>(raw_mode);
         if (value.mode > 2) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 1u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
         out = value;
         return CodecStatus::Ok;
     }
@@ -2151,6 +2162,76 @@ inline CodecStatus decode_sys_mode_cmd(FrameView frame, SysModeCmd& out) noexcep
 
 inline CodecStatus encode(const SysModeCmd& value, Frame& out) noexcept { return encode_sys_mode_cmd(value, out); }
 inline CodecStatus decode(FrameView frame, SysModeCmd& out) noexcept { return decode_sys_mode_cmd(frame, out); }
+
+struct SysPwrCmd {
+    static constexpr std::string_view kKey = "sys:sys_pwr_cmd";
+    static constexpr std::uint32_t kId = 0x113u;
+    static constexpr std::size_t kDlc = 2u;
+    static constexpr std::uint32_t kCycleMs = 100u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kLowId = 0x113u;
+    static constexpr std::uint32_t kLowCycleMs = 100u;
+    static constexpr bool kLowExtended = false;
+    bool power_state{};
+    std::uint8_t rolling_counter{};
+    static constexpr bool kPowerStateOff = 0;
+    static constexpr bool kPowerStateOn = 1;
+    struct PowerStateMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (power_state != 0 && power_state != 1) return CodecStatus::InvalidEnum;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(power_state));
+        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, SysPwrCmd& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        SysPwrCmd value{};
+        const std::uint64_t raw_power_state = detail::extract(source, 0u, 0u, 8u, false);
+        if (raw_power_state > 1u) return CodecStatus::ValueOutOfRange;
+        value.power_state = raw_power_state != 0u;
+        if (value.power_state != 0 && value.power_state != 1) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 1u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_sys_pwr_cmd(const SysPwrCmd& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(SysPwrCmd::kId, static_cast<std::uint8_t>(SysPwrCmd::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), SysPwrCmd::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_sys_pwr_cmd(FrameView frame, SysPwrCmd& out) noexcept {
+    if (frame.id() != 0x113u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x113u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != SysPwrCmd::kDlc) return CodecStatus::UnexpectedLength;
+    return SysPwrCmd::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const SysPwrCmd& value, Frame& out) noexcept { return encode_sys_pwr_cmd(value, out); }
+inline CodecStatus decode(FrameView frame, SysPwrCmd& out) noexcept { return decode_sys_pwr_cmd(frame, out); }
 
 struct SysSafetySts {
     static constexpr std::string_view kKey = "sys:sys_safety_sts";

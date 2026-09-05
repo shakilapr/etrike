@@ -17,8 +17,8 @@ class ContractSchemaTests(unittest.TestCase):
 
     def test_current_contract_is_complete_and_matches_frozen_baseline(self):
         validated = validate_model(self.model)
-        self.assertEqual(34, len(validated["messages"]))
-        self.assertEqual(44, len(validated["instances"]))
+        self.assertEqual(35, len(validated["messages"]))
+        self.assertEqual(45, len(validated["instances"]))
         self.assertEqual("raw_only", validated["messages"]["ses:ses_version"]["layout"]["semantic_support"])
         self.assertEqual("extended", validated["messages"]["pwt:pwt_dcdc_cmd"]["instances"][0]["frame_format"])
 

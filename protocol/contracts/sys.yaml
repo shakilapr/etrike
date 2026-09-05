@@ -8,9 +8,14 @@
       {"bus":"low","id":"0x011","frame_format":"standard","sender":"SYS","receivers":["RT","Host"],"cycle_ms":200,"semantics":"independent"},
       {"bus":"high","id":"0x011","frame_format":"standard","sender":"SYS","receivers":["RT","Host"],"cycle_ms":200,"semantics":"same_frame"}
     ]},
-    {"key":"sys_mode_cmd","owner":"sys","protocol":"etrike.application.v1","name":"SYS_MODE_CMD","dlc":1,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
-      {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2}
-    ]},"instances":[{"bus":"low","id":"0x110","frame_format":"standard","sender":"SYS","receivers":["RT","MTR"],"cycle_ms":1000,"semantics":"independent"}]},
+    {"key":"sys_mode_cmd","owner":"sys","protocol":"etrike.application.v1","name":"SYS_MODE_CMD","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2},
+      {"key":"rolling_counter","byte":1,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[{"bus":"low","id":"0x110","frame_format":"standard","sender":"SYS","receivers":["RT","MTR"],"cycle_ms":100,"semantics":"independent"}]},
+    {"key":"sys_pwr_cmd","owner":"sys","protocol":"etrike.application.v1","name":"SYS_PWR_CMD","dlc":2,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"power_state","byte":0,"bit":0,"bits":8,"min":0,"max":1,"enum":{"0":"OFF","1":"ON"}},
+      {"key":"rolling_counter","byte":1,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[{"bus":"low","id":"0x113","frame_format":"standard","sender":"SYS","receivers":["MTR"],"cycle_ms":100,"semantics":"independent"}]},
     {"key":"sys_diag_rpt","owner":"sys","protocol":"etrike.application.v1","name":"SYS_DIAG_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2},{"key":"brake_engaged","byte":1,"bit":0,"bits":1},{"key":"brake_fault","byte":1,"bit":1,"bits":1},
       {"key":"heartbeat_ok","byte":2,"bit":0,"bits":1},{"key":"rx_overflow","byte":2,"bit":1,"bits":6,"max":63},{"key":"estop_active","byte":3,"bit":0,"bits":8,"min":0,"max":1},
