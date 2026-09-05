@@ -241,7 +241,9 @@ export class SysEcu implements SimulatedEcu {
     }
 
     // ── 0x110 SYS_MODE_CMD (on change only) ──────────────────────
-    const modeByte = ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0;
+    // 0x110 SYS_MODE_CMD mode is MANUAL/AUTO only (ESTOP lives on 0x011).
+    // Clamp the ESTOP latch to MANUAL here, matching the SYS firmware.
+    const modeByte = ctx.mode === "auto" ? 1 : 0;
     if (modeByte !== this.lastSentMode) {
       this.lastSentMode = modeByte;
       out.push(encodeSimFrame("sys:sys_mode_cmd", { mode: modeByte }, "low", "sys", nowMs));
