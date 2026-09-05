@@ -32,6 +32,7 @@ bool g_bypass_mtr_absent = false;
 #include "can_driver.h"
 #include "safety_monitor.h"
 #include "mode_manager.h"
+#include "stream_validity.h"
 
 #include "brake_control.h"
 #include "light_control.h"
@@ -133,6 +134,19 @@ static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 M
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
 static std::atomic<uint32_t> g_last_brake_setpoint_tick{0};
 
+// ── HMI request (0x111/0x112) stream validity + resolved power ──────
+// SYS is the sole authority: it validates the Host-produced request streams
+// (rolling counter + freshness) before letting them change resolved state.
+// Invalid/stale requests do NOT change resolved mode/power; SYS falls back to
+// its remaining valid inputs (physical buttons, safety state).
+static etrike::protocol::StreamValidity g_mode_req_val;
+static etrike::protocol::StreamValidity g_pwr_req_val;
+static constexpr uint32_t kReqFreshTicks =
+    can::gen::HmiModeReq::kCycleMs * 5;  // request cycle 1000ms -> 5s timeout
+static std::atomic<bool> g_hmi_pwr_on{false};        // last VALID power request
+static std::atomic<bool> g_mode_request_valid{false};
+static std::atomic<bool> g_power_request_valid{false};
+
 // Gap #14: Rate-limit 0x001 ESTOP broadcasts. Prevents flooding.
 static std::atomic<int64_t>  g_last_estop_sent_us{0};
 
@@ -230,23 +244,37 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_last_brake_setpoint_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
-        case can::kIdHmiModeReq: {   // 0x111 — HMI mode heartbeat (1Hz)
+        case can::kIdHmiModeReq: {   // 0x111 — Host mode request (1Hz, High→Low via RT)
+            static bool inited = false;
+            if (!inited) {
+                g_mode_req_val.set_key(1 /*low*/, can::kIdHmiModeReq, kReqFreshTicks);
+                g_pwr_req_val.set_key(1 /*low*/, can::kIdHmiPwrReq, kReqFreshTicks);
+                inited = true;
+            }
             can::gen::HmiModeReq request{};
             if (can::gen::decode_hmi_mode_req(fr.view(), request) != can::gen::CodecStatus::Ok) break;
+            // Validate the request stream (rolling counter + freshness) before use.
+            const bool ok = g_mode_req_val.observe(
+                static_cast<std::uint8_t>(request.rolling_counter), xTaskGetTickCount());
+            g_mode_request_valid.store(ok, std::memory_order_relaxed);
+            if (!ok) break;  // stale/replayed request: do not change resolved mode
             if (g_mode_mgr.parse_hmi_mode(request.req_mode)) {
                 // If mode actually changed due to this request, log it.
-                // The main 10Hz control loop will naturally pick up the new mode 
+                // The main 10Hz control loop will naturally pick up the new mode
                 // and broadcast 0x110 SYS_MODE_CMD on its next tick.
                 ESP_LOGI(TAG, "HMI changed mode to %s", g_mode_mgr.name());
             }
             break;
         }
-        case can::kIdHmiPwrReq: {    // 0x112 — HMI power heartbeat (1Hz)
-#if ENABLE_CAN_HMI
-            // Phase 0/1: Just log it for now. Ignition control will be wired later
-            // to a specific GPIO or power manager task.
-            // uint8_t req_start = fr.u8_at(0);
-#endif
+        case can::kIdHmiPwrReq: {    // 0x112 — Host power request (1Hz, High→Low via RT)
+            can::gen::HmiPwrReq request{};
+            if (can::gen::decode_hmi_pwr_req(fr.view(), request) != can::gen::CodecStatus::Ok) break;
+            // Validate the request stream (rolling counter + freshness) before use.
+            const bool ok = g_pwr_req_val.observe(
+                static_cast<std::uint8_t>(request.rolling_counter), xTaskGetTickCount());
+            g_power_request_valid.store(ok, std::memory_order_relaxed);
+            if (!ok) break;  // stale/replayed request: do not change resolved power
+            g_hmi_pwr_on.store(request.req_start != 0, std::memory_order_relaxed);
             break;
         }
         case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
@@ -590,12 +618,34 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 #endif
 
         bool changed = g_mode_mgr.tick(mode_btn, start_btn);
-        static int refresh_ctr = 0;
-        if (changed || ++refresh_ctr >= 10) {  // on-change OR every 1s
-            refresh_ctr = 0;
+        if (changed) {
+            ESP_LOGI(TAG, "Mode changed to %s", g_mode_mgr.name());
+        }
+
+        // Authoritative actuator commands are emitted every cycle (100 ms).
+        // 0x110 SYS_MODE_CMD carries the resolved mode + rolling counter.
+        static uint8_t roll_mode = 0;
+        {
             can::Frame fr;
-            can::gen::SysModeCmd message{g_mode_mgr.mode_u8()};
+            can::gen::SysModeCmd message{};
+            message.mode = g_mode_mgr.mode_u8();
+            message.rolling_counter = roll_mode++;
             if (can::gen::encode_sys_mode_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
+        }
+
+        // 0x113 SYS_PWR_CMD: resolved power authority for MTR.
+        // Resolved from the validated HMI power request + safety state. ESTOP
+        // (or any hard safety fault) forces power OFF.
+        static uint8_t roll_pwr = 0;
+        {
+            can::Mode mode = g_mode_mgr.mode();
+            const bool estop = (mode == can::Mode::Estop);
+            const bool pwr_on = g_hmi_pwr_on.load(std::memory_order_relaxed) && !estop;
+            can::Frame fr;
+            can::gen::SysPwrCmd message{};
+            message.power_state = pwr_on ? 1u : 0u;
+            message.rolling_counter = roll_pwr++;
+            if (can::gen::encode_sys_pwr_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
         }
 
         vTaskDelayUntil(&last, period);

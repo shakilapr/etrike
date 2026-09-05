@@ -39,6 +39,7 @@ inline constexpr const char* gear_name(Gear gear) noexcept {
 inline constexpr std::uint32_t kIdSafetyEstop = generated::SafetyEstop::kId;
 inline constexpr std::uint32_t kIdSysSafetySts = generated::SysSafetySts::kId;
 inline constexpr std::uint32_t kIdSysModeCmd = generated::SysModeCmd::kId;
+inline constexpr std::uint32_t kIdSysPwrCmd = generated::SysPwrCmd::kId;
 inline constexpr std::uint32_t kIdHmiModeReq = generated::HmiModeReq::kId;
 inline constexpr std::uint32_t kIdHmiPwrReq = generated::HmiPwrReq::kId;
 inline constexpr std::uint32_t kIdSysThrottleSts = generated::SysThrottleSts::kId;
@@ -178,6 +179,7 @@ using ::etrike::protocol::compat::kIdSteerDiag;
 using ::etrike::protocol::compat::kIdSysDiagRpt;
 using ::etrike::protocol::compat::kIdSysHeartbeat;
 using ::etrike::protocol::compat::kIdSysModeCmd;
+using ::etrike::protocol::compat::kIdSysPwrCmd;
 using ::etrike::protocol::compat::kIdSysSafetySts;
 using ::etrike::protocol::compat::kIdSysThrottleSts;
 using ::etrike::protocol::compat::kIdVcuSebReq;
