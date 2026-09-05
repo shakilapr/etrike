@@ -101,11 +101,20 @@ int main() {
         uint16_t steer_angle = 0;
         auto q = make_queues(low, high, cmd, brake_kpa, estop, mode, steer_angle, steer_status);
 
+        // 0x110 SYS_MODE_CMD is DLC2 with a rolling counter; RT supervises it
+        // via StreamValidity, so a baseline frame must be followed by an
+        // advancing frame before the mode is accepted.
         fr.id = can::kIdSysModeCmd;
-        fr.dlc = 1;
+        fr.dlc = 2;
         fr.data[0] = uint8_t(can::Mode::Auto);
+        fr.data[1] = 0;  // rolling counter (baseline)
         rt::route_frame(fr, false, q);
+        CHECK(mode == 0);  // baseline frame not yet authoritative
+        CHECK(low.id == 0);
+        CHECK(high.id == 0);
 
+        fr.data[1] = 1;  // advancing counter
+        rt::route_frame(fr, false, q);
         CHECK(mode == uint8_t(can::Mode::Auto));
         CHECK(low.id == 0);
         CHECK(high.id == 0);
