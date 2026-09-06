@@ -113,6 +113,7 @@ vocabularies:
   observability:  [DIRECT, DERIVED, COMMUNICATION, SELF_TEST, EXTERNAL_REPORTED, UNOBSERVABLE]
   monitoring:     [IMPLEMENTED, NOT_IMPLEMENTED]
   detection_basis: [DIRECT_HW, DIRECT_SW, DERIVED]
+  disposition:    [ACTIVE, PHASE_C, DEFERRED, OMITTED]   # planning metadata only; excluded from firmware & DIAGNOSTICS_HASH
   failure_mode:   [ASSERTED, TIMEOUT, STALE, INVALID, IMPLAUSIBLE, MISMATCH,
                    FOLLOWING_ERROR, BUS_OFF, CRC_ERROR, COUNTER_ERROR,
                    WRITE_FAILED, INTERNAL_ERROR]
@@ -142,7 +143,7 @@ but corroborated by several ECUs:
 `source` is singular (the diagnosed entity); `evidence_sources` is an array of
 the signals that support the conclusion.
 
-### Example entry (with snapshot metadata)
+### Example entry (with snapshot metadata & detection basis)
 
 ```yaml
 diagnostics:
@@ -157,7 +158,9 @@ diagnostics:
     severity: CRITICAL
     reaction: ESTOP          # present ONLY when monitoring: IMPLEMENTED
     observability: COMMUNICATION
+    detection_basis: DIRECT_SW
     monitoring: IMPLEMENTED
+    disposition: ACTIVE      # planning lifecycle: ACTIVE, PHASE_C, DEFERRED, OMITTED
     latching: true
     snapshot:                # decoded by generated Host dictionary; see §8.4
       encoding: U16
@@ -180,23 +183,34 @@ exists, therefore no actual reaction occurs. Such entries **must not carry a
 metadata and from `DIAGNOSTICS_HASH`**. `reaction` always means the *current
 implemented* vehicle behavior.
 
-### `observability` vs `monitoring` (separate)
+### `monitoring`, `observability`, and `disposition` (orthogonal)
 
 ```text
-hardware/signals could support detection
-but firmware doesn't implement it
-  → observability = DIRECT / DERIVED / ...
-    monitoring    = NOT_IMPLEMENTED
+monitoring:
+  IMPLEMENTED      — detector exists in current firmware; raises live CAN events
+  NOT_IMPLEMENTED  — no detector exists in production firmware; coverage/future
 
-hardware genuinely cannot know
-  → observability = UNOBSERVABLE
-    monitoring    = NOT_IMPLEMENTED   (coverage-map entry only)
+observability:
+  DIRECT / DERIVED / COMMUNICATION / SELF_TEST / EXTERNAL_REPORTED — hardware/signals support detection
+  UNOBSERVABLE — physical sensors or bus architecture genuinely cannot detect the condition
+
+detection_basis:
+  DIRECT_HW — discrete hardware interrupt, pin state, peripheral error register (e.g. TWAI TEC/REC, GPIO)
+  DIRECT_SW — pure software evaluation of message arrival, sequence counter, task deadline, or CRC
+  DERIVED   — correlation of multiple physical signals or model estimates (e.g. pressure vs stroke, EGAS L2)
+
+disposition (planning lifecycle only; excluded from firmware & DIAGNOSTICS_HASH):
+  ACTIVE   — live in Phase B
+  PHASE_C  — planned for Phase C implementation
+  DEFERRED — deferred low-priority / bench-only investigation
+  OMITTED  — omitted by engineering audit (redundant, unobservable, or zero value)
 ```
 
 "Observable but not monitored" and "genuinely unobservable" are distinct states
 and must not be collapsed. Wheel-slip / differential-wheel-speed / actual-yaw
 mismatch entries must be audited: if no independent measurement exists, they are
-`UNOBSERVABLE`, not merely `NOT_IMPLEMENTED`.
+`UNOBSERVABLE`, not merely `NOT_IMPLEMENTED`. Planning status belongs strictly
+in `disposition`, leaving `monitoring` as a clean binary invariant.
 
 ### Traceability without rot
 
@@ -226,8 +240,8 @@ used by `sys_diag_rpt`); no new serialization convention is introduced.
 ```text
 diag_id            u16   @ byte 0   (high byte = ECU namespace, low byte = event index)
 state              u8    @ byte 2   (0 PENDING reserved, 1 ACTIVE, 2 LATCHED, 3 RECOVERED, 4 CLEARED, 5..255 reserved)
-occurrence_count   u8    @ byte 3   (saturating 0..255; reset on clear()/boot)
-report_counter     u8    @ byte 4   (modulo-256; reset on boot; one increment per transmitted frame incl. replay)
+occurrence_count   u8    @ byte 3   (saturating 0..255; preserved on CLEARED report, reset to 0 after CLEARED emitted or on boot)
+report_counter     u8    @ byte 4   (modulo-256; reset on boot; incremented when DiagnosticManager emits/dequeues a report incl. replay)
 flags              u8    @ byte 5   (bit 0: FIRST_LOCAL_ESTOP_CAUSE, bit 1: SNAPSHOT_VALID, bits 2-7 reserved)
 snapshot_data      u16   @ byte 6   (live contextual telemetry; decoded per-event from diagnostics.yaml, see §8.4)
 ```
@@ -250,11 +264,14 @@ snapshot_data      u16   @ byte 6   (live contextual telemetry; decoded per-even
 
 - **`occurrence_count`** is a **saturating** counter (max 255) of distinct
   `raise()` qualifications since the last `clear()` or ECU boot. It is **not**
-  incremented every control loop.
+  incremented every control loop. On a `clear()` call, the emitted `CLEARED`
+  report retains the final incident occurrence count; once dequeued/emitted, the
+  internal count resets to 0 (so the next `raise()` begins at 1).
 - **`report_counter`** is a **modulo-256** sequence counter, incremented once
-  per transmitted `DIAG_EVENT_RPT` frame (including periodic replay). It
-  **supports detection of dropped / duplicate / replayed frames** — it is not
-  cryptographic replay protection.
+  whenever `DiagnosticManager` emits/dequeues a `DiagReport` for transmission
+  (including periodic active replay). It belongs to the manager's emission stream,
+  not CAN physical transmission, allowing the Host to detect downstream queue drops,
+  corruptions, or gaps. It is not cryptographic replay protection.
 
 ### Diagnostic payload data fields
 
@@ -264,9 +281,9 @@ snapshot_data      u16   @ byte 6   (live contextual telemetry; decoded per-even
    operator ack). `PENDING` is reserved and not emitted in Phase B.
 3. **`occurrence_count` (8-bit):** Saturating count of distinct qualifications;
    helps surface intermittent issues (flaky connectors, intermittent CAN framing
-   errors).
-4. **`report_counter` (8-bit):** Supports detection of dropped/duplicate/replayed
-   diagnostic frames (not cryptographic replay protection).
+   errors). Preserved on the final `CLEARED` report for post-incident audit.
+4. **`report_counter` (8-bit):** Emission sequence counter incremented on each
+   dequeued report; detects dropped, duplicate, or out-of-order diagnostic frames.
 5. **`flags` (8-bit):**
    - `bit 0`: `FIRST_LOCAL_ESTOP_CAUSE` — set by the reporting ECU if this event
      was the first local ESTOP-class cause of the **current ESTOP episode**. The
@@ -316,20 +333,20 @@ reporting. It does **not** dispatch reactions, debounce, or implement detection.
 ```cpp
 void raise(DiagId id, uint16_t snapshot = 0);   // bookkeeping only
 void recover(DiagId id);
-void clear(DiagId id);
-bool pop_pending_report(DiagReport& out);        // called by existing low-prio CAN TX task
+void clear(DiagId id);                          // clears diagnostic record (RECOVERED/LATCHED -> CLEARED)
+void on_estop_episode_cleared();                // bookkeeping only: resets FIRST_LOCAL_ESTOP_CAUSE latch after Phase-A rearm
+bool pop_pending_report(DiagReport& out);        // called by existing low-prio CAN TX task; increments report_counter
 ```
 
 It owns:
 
 - the **active set** (many simultaneous events),
 - per-event **state**,
-- **occurrence_count** (incremented per qualification, not per loop),
-- **report_counter** (serialization counter),
+- **occurrence_count** (incremented per qualification, not per loop; preserved on `CLEARED` report, reset post-drain),
+- **report_counter** (serialization counter incremented on each dequeued report),
 - **immediate report on state change**,
 - **periodic active-set replay** (so a dropped frame is recovered),
-- per-ECU **first_local_estop_cause** (local observation only — no global
-  causality claim).
+- per-ECU **first_local_estop_cause** (local observation only — reset strictly via `on_estop_episode_cleared()`).
 
 The **existing detector owns qualification**. Detector code that today reads:
 
@@ -392,23 +409,38 @@ struct DiagRuntime {
     uint8_t   occurrence_count;  // saturating 0..255
     uint16_t  snapshot;          // value supplied at raise() time
     bool      pending_report;    // flagged for CAN transmission
+    bool      reset_count_after_drain; // true if CLEARED report has been staged
 };
 // fixed array indexed by the implemented-only DiagId enum
 ```
 
 #### Exact State Transitions
 1. **`raise(id, snapshot)`**:
-   - If `state == ACTIVE`: updates `snapshot` if changed, does not re-increment `occurrence_count`, no burst CAN spam.
-   - If `state != ACTIVE`: transitions to `ACTIVE` (or `LATCHED` if `meta.latching`), increments `occurrence_count` (saturating at 255), sets `snapshot`, and marks `pending_report = true`.
-   - If `meta.is_estop_cause` is true and no local cause has been claimed for the **current ESTOP episode**, sets `FIRST_LOCAL_ESTOP_CAUSE` flag on the outgoing report and latches episode ownership.
+   - **`CLEARED` / `RECOVERED` / `LATCHED` → `ACTIVE`**:
+     - `raise()` **always** enters `ACTIVE`, regardless of `meta.latching`. (A fault reappearing while its previous occurrence remains `LATCHED` returns directly to `ACTIVE`).
+     - Increments `occurrence_count` (saturating at 255).
+     - Updates `snapshot` and sets `pending_report = true`.
+     - If `meta.is_estop_cause` is true and no local cause has been claimed for the **current ESTOP episode**, sets `FIRST_LOCAL_ESTOP_CAUSE` flag on the outgoing report and latches episode ownership.
+   - **`ACTIVE` → `ACTIVE`**:
+     - Updates `snapshot` if changed; does not re-increment `occurrence_count` or burst CAN spam.
 2. **`recover(id)`**:
-   - If `state == ACTIVE`:
-     - If `meta.latching` is true: transitions to `LATCHED` (remains reported as latched cause until operator clears).
-     - If `meta.latching` is false: transitions to `RECOVERED`, marks `pending_report = true`.
+   - Only takes effect if `state == ACTIVE`.
+   - If `meta.latching` is true: transitions `ACTIVE → LATCHED` (fault condition physically cleared, but retained pending operator acknowledgement), marks `pending_report = true`.
+   - If `meta.latching` is false: transitions `ACTIVE → RECOVERED`, marks `pending_report = true`.
 3. **`clear(id)` / `clear_all()`**:
-   - Called when Phase-A `SAFETY_CLEAR` sequence completes.
+   - Targets specific diagnostic records (`RECOVERED` or `LATCHED`).
    - If `state == LATCHED` or `state == RECOVERED`: transitions to `CLEARED`, marks `pending_report = true`.
-   - Resets the local `first_local_estop_cause` episode latch, arming the manager for the next ESTOP episode.
+   - The emitted `CLEARED` report carries the **final `occurrence_count`** of the resolved incident.
+   - When the `CLEARED` report is dequeued via `pop_pending_report()`, the internal `occurrence_count` resets to 0 (so the subsequent incident begins with `occurrence_count = 1`).
+   - Does **not** reset the vehicle safety ESTOP episode latch.
+4. **`on_estop_episode_cleared()`**:
+   - Called strictly by the safety subsystem after the Phase-A `SAFETY_CLEAR` handshake completes and the vehicle successfully returns to `NORMAL/CLEARED`.
+   - Resets the local `first_local_estop_cause` episode latch, arming the manager for the next distinct ESTOP episode.
+   - Completely decoupled from clearing individual warning/advisory records.
+5. **`pop_pending_report(out)`**:
+   - Dequeues the next pending report for transmission.
+   - Increments the manager's monotonic modulo-256 `report_counter`.
+   - If dequeuing a `CLEARED` report, clears `reset_count_after_drain` and zeroes `occurrence_count`.
 
 - `raise()` updates local state and marks `pending_report = true`; it does **not**
   send CAN synchronously.
@@ -469,8 +501,8 @@ The Jetson Orin Host maintains a rolling **10–30 second in-memory buffer of al
 ### 6.5 Session & Build Identity Telemetry
 
 To correlate field logs without polluting diagnostic payloads or rewriting CAN contracts:
-* **`boot_session_id`:** Random `uint32_t` generated at startup. Phase B does **not** modify `0x210` or `0x600` CAN contracts; session identification is provided in discovery metadata (`capabilities.json`) or deferred to a dedicated Phase-C identity mechanism.
-* **Firmware Build Identity:** Git commit hash, `SEMANTIC_HASH`, `DIAGNOSTICS_HASH`, and `NETWORK_HASH` exposed in discovery telemetry.
+* **`boot_session_id`:** Random `uint32_t` generated at startup. Phase B does **not** modify `0x210` or `0x600` CAN contracts. Static discovery (`capabilities.json`) provides build/firmware identities only (hashes, git commit). Runtime `boot_session_id` is deferred strictly to Phase C via a dedicated identity/status frame or diagnostic protocol service.
+* **Firmware Build Identity:** Git commit hash, `SEMANTIC_HASH`, `DIAGNOSTICS_HASH`, and `NETWORK_HASH` exposed in static discovery telemetry.
 
 ## 7. Generated artifacts
 
@@ -495,7 +527,7 @@ The generator emits different amounts of metadata for firmware vs Host:
 - **Rich dictionary** (`generated/typescript/diagnostics.ts`,
   `generated/python/diagnostics.py`) for Host/UI — full reporter/source/
   evidence_sources/subsystem/component/failure_mode/severity/reaction/
-  observability/monitoring/latching/snapshot/description.
+  observability/detection_basis/monitoring/latching/snapshot/description.
 - **Coverage markdown** (`generated/coverage/diagnostics.md`) — the coverage
   dictionary (IMPLEMENTED / NOT_IMPLEMENTED / UNOBSERVABLE), including
   code/documentation reaction mismatches.
@@ -503,10 +535,10 @@ The generator emits different amounts of metadata for firmware vs Host:
 A separate **`DIAGNOSTICS_HASH`** is added to `discovery.json` /
 `capabilities.json`, hashed over the canonical diagnostic semantics
 (`id/key/reporter/source/evidence_sources/subsystem/component/failure_mode/
-severity/reaction/observability/monitoring/latching/snapshot`). `proposed_reaction`
-and editorial `description` are excluded, so the hash is stable across
+severity/reaction/observability/detection_basis/monitoring/latching/snapshot`). `proposed_reaction`,
+editorial `description`, and planning `disposition` are excluded, so the hash is stable across
 planning-only edits and two systems cannot agree on a `DiagId` but disagree on
-bytes 6–7. This keeps `SEMANTIC_HASH` (CAN-message wire facts) and
+bytes 6–7 or detection basis. This keeps `SEMANTIC_HASH` (CAN-message wire facts) and
 `NETWORK_HASH` (topology/routing) stable when only a diagnostic is edited.
 
 ## 8. Verified event catalog
@@ -577,125 +609,124 @@ is omitted for all `NOT_IMPLEMENTED` entries below.
 
 #### 8.2.1 SYS Node Capabilities (`0x01xx`)
 
-| DiagId | Key | reporter→source | reaction | monitoring | Diagnostic Mechanism / Source Data |
-|---|---|---|---|---|---|
-| `0x0120` | `SYS_RT_COUNTER_FROZEN` | SYS→RT | — | NOT_IMPLEMENTED | Detects `0x7FD` frames arriving with deadlocked/repeating `alive_ctr` |
-| `0x0121` | `SYS_RT_DEGRADED_STATE` | SYS→RT | — | NOT_IMPLEMENTED | Decodes `0x210` byte 1 (`safety_state > 0` or nonzero `estop_reason`) |
-| `0x0122` | `SYS_RT_TASK_UNHEALTHY` | SYS→RT | — | NOT_IMPLEMENTED | Decodes `0x210` byte 4 (`task_health != 0xFF`) indicating RT task starvation |
-| `0x0123` | `SYS_RT_STEER_FAULT_RPT` | SYS→RT | — | NOT_IMPLEMENTED | Decodes `0x210` byte 5 (`steer_state` indicating degraded/failed steering) |
-| `0x0124` | `SYS_BRAKE_THROTTLE_CONFLICT`| SYS→VEHICLE_CONTROL | — | NOT_IMPLEMENTED | Correlates SEB brake pressure $>100$ kPa with commanded speed $>0$ mm/s; requires careful state invariant checking to avoid false positives during deceleration |
-| `0x0125` | `SYS_MTR_UNCOMMANDED_PROPULSION`| SYS→MTR | — | NOT_IMPLEMENTED | EGAS L2: MTR reports speed $>0$ while mode is MANUAL/OFF or power is OFF (verify non-overlap with EGAS mismatch) |
-| `0x0126` | `SYS_SAFETY_STREAM_CRC_ERR` | SYS→SYS | — | NOT_IMPLEMENTED | Internal E2E CRC-8 generation verification mismatch on `0x011` payload |
-| `0x0130` | `SYS_SEB_ROLLING_FROZEN` | SYS→SEB | — | NOT_IMPLEMENTED | Detects `0x721` rolling counter unchanged for $>100$ ms (SEB CPU deadlock) |
-| `0x0131` | `SYS_SEB_NOT_ALIGNED` | SYS→SEB | — | NOT_IMPLEMENTED | Inspects `0x721` byte 0 bit 0 (`alignment_status == 0`) after boot grace |
-| `0x0132` | `SYS_SEB_PRESSURE_BUILD_FAILURE` | SYS→SEB | — | NOT_IMPLEMENTED | Full stroke request (`0x7B9`) + near-zero motor current (`0x6FB`) + low pressure. Canonical monitor choice (SYS vs RT). Possible causes: line rupture, air, empty reservoir |
-| `0x0133` | `SYS_SEB_CURRENT_HIGH_LOW_STROKE`| SYS→SEB | — | NOT_IMPLEMENTED | Excessive motor current (`0x6FB`) observed at low stroke setpoints (possible bind, foreign object, or high seal friction) |
-| `0x0134` | `SYS_SEB_TEMP_RATE_HIGH` | SYS→SEB | — | NOT_IMPLEMENTED | High $\Delta T / \Delta t$ calculated from `0x6FB` ECU temperature telemetry |
-| `0x0135` | `SYS_SEB_CHECKSUM_ERROR` | SYS→SEB | — | NOT_IMPLEMENTED | XOR8-complement checksum mismatch on incoming `0x721` / `0x731` |
-| `0x0136` | `SYS_SEB_UNCOMMANDED_BRAKING` | SYS→SEB | — | NOT_IMPLEMENTED | Ghost braking: `0x721` reports pressure $>500$ kPa while no brake commanded |
-| `0x0140` | `SYS_MTR_ROLLAWAY` | SYS→MTR | — | NOT_IMPLEMENTED | Vehicle speed $> 100$ mm/s on `0x206` while in Neutral without throttle |
-| `0x0141` | `SYS_MTR_STALL` | SYS→MTR | — | NOT_IMPLEMENTED | High commanded speed on `0x204` for $> 1.0$ s with zero measured speed on `0x206` |
-| `0x0142` | `SYS_MTR_PARTIAL_CRASH` | SYS→MTR | — | NOT_IMPLEMENTED | STM32 broadcasting `0x120` (`SYS_THROTTLE_STS`) but failing to emit `0x206` |
-| `0x0150` | `SYS_SES_STATUS_TIMEOUT` | SYS→SES | — | NOT_IMPLEMENTED | Low CAN monitor: complete absence of forwarded SES `0x201` during vehicle motion |
-| `0x0160` | `SYS_LEVER_SWITCH_HELD_ACTIVE_LONG`| SYS→SYS | — | NOT_IMPLEMENTED | Physical brake lever GPIO 2 held active continuously for $>60$ s while speed $>0$ (rider holding brake vs stuck switch) |
-| `0x0161` | `SYS_START_BUTTON_STUCK_ACTIVE` | SYS→SYS | — | NOT_IMPLEMENTED | Momentary START (GPIO 41) held LOW $>10$ s |
-| `0x0162` | `SYS_MODE_BUTTON_STUCK_ACTIVE` | SYS→SYS | — | NOT_IMPLEMENTED | MODE (GPIO 11) button held LOW $>10$ s |
-| `0x0163` | `SYS_SWITCH_CONFLICT` | SYS→SYS | — | NOT_IMPLEMENTED | Handlebar Left (GPIO 9) and Right (GPIO 6) turn inputs active simultaneously |
-| `0x0170` | `SYS_CAN_BUS_PASSIVE` | SYS→CAN | — | NOT_IMPLEMENTED | TWAI controller enters Error-Passive state (TEC or REC $> 127$) |
-| `0x0171` | `SYS_CAN_SIGNAL_DEGRADED` | SYS→CAN | — | NOT_IMPLEMENTED | Spiking REC with valid frame decode errors (loose wire / termination noise) |
-| `0x0172` | `SYS_CAN_BABBLING_NODE` | SYS→CAN | — | DEFERRED | Simple per-ID timestamp check (`last_rx_tick`). Low priority unless bus abuse occurs |
-| `0x0173` | `SYS_CAN_INVALID_DLC` | SYS→CAN | — | NOT_IMPLEMENTED | Received frame DLC mismatches contract (e.g. `0x001` DLC $> 0$ or `0x204` DLC $\ne 5$) |
-| `0x0174` | `SYS_CAN_ESTOP_FLOOD` | SYS→CAN | — | NOT_IMPLEMENTED | Rate-limit violation on incoming `0x001` ($>2$ frames / 500 ms) |
-| `0x0175` | `SYS_DUAL_SENDER_CONFLICT` | SYS→RT | — | UNOBSERVABLE | Unobservable on Classic CAN 2.0B without dedicated sender ID in payload. Hardware arbitration resolves bus access without exposing transmitting node ID to receivers. Omitted. |
-| `0x0180` | `SYS_SOC_TEMP_HIGH` | SYS→SYS | — | NOT_IMPLEMENTED | On-die ESP32-S3 silicon temperature sensor exceeds safe thermal threshold |
-| `0x0181` | `SYS_STACK_HIGH_WATER` | SYS→SYS | — | DEFERRED | FreeRTOS task stack high-water mark approaches exhaustion ($< 256$ bytes) |
-| `0x0182` | `SYS_BROWNOUT_DETECTED` | SYS→SYS | — | NOT_IMPLEMENTED | NVS reset reason registers brownout (`ESP_RST_BROWNOUT`); evidence of MCU brownout reset |
-| `0x0183` | `SYS_MODE_SPLIT_BRAIN` | SYS→RT | — | NOT_IMPLEMENTED | Qualified mode desync: SYS mode `0x110` vs RT mode `0x210` desync after completed handshake timeout ($>1.0$ s) |
-| `0x0184` | `SYS_HMI_MODE_REQ_TIMEOUT` | SYS→HMI | — | NOT_IMPLEMENTED | HMI mode request `0x111` or power request `0x112` stream stale / frozen counter |
-| `0x0185` | `SYS_HEAP_LOW_WARNING` | SYS→SYS | — | NOT_IMPLEMENTED | Boot/slow periodic health check of available heap if 3rd-party libs allocate at runtime |
-| `0x0186` | `SYS_CPU_CORE_SATURATED` | SYS→SYS | — | OMITTED | Omitted: task deadline/watchdog monitoring gives more actionable evidence with zero complexity |
-| `0x0187` | `SYS_MUTEX_DEADLOCK_TRIP` | SYS→SYS | — | NOT_IMPLEMENTED | Mutex acquire timeout ($>500$ ms) on critical CAN driver or peripheral lock |
-| `0x0188` | `SYS_WATCHDOG_PET_FAILURE` | SYS→SYS | — | NOT_IMPLEMENTED | Internal FreeRTOS Task Watchdog Timer (TWDT) flags starvation on registered task |
-| `0x0189` | `SYS_NVS_STORAGE_CORRUPT` | SYS→SYS | — | NOT_IMPLEMENTED | NVS flash partition CRC validation failure or wear-out write abort |
+| DiagId | Key | reporter→source | reaction | monitoring | disposition | Diagnostic Mechanism / Source Data |
+|---|---|---|---|---|---|---|
+| `0x0120` | `SYS_RT_COUNTER_FROZEN` | SYS→RT | — | NOT_IMPLEMENTED | PHASE_C | Detects `0x7FD` frames arriving with unchanged `alive_ctr` sequence counter |
+| `0x0121` | `SYS_RT_DEGRADED_STATE` | SYS→RT | — | NOT_IMPLEMENTED | PHASE_C | Decodes `0x210` byte 1 (`safety_state > 0` or nonzero `estop_reason`) |
+| `0x0122` | `SYS_RT_TASK_UNHEALTHY` | SYS→RT | — | NOT_IMPLEMENTED | PHASE_C | Decodes `0x210` byte 4 (`task_health != 0xFF`) indicating RT task starvation |
+| `0x0123` | `SYS_RT_STEER_FAULT_RPT` | SYS→RT | — | NOT_IMPLEMENTED | PHASE_C | Decodes `0x210` byte 5 (`steer_state` indicating degraded/failed steering) |
+| `0x0124` | `SYS_BRAKE_THROTTLE_CONFLICT`| SYS→VEHICLE_CONTROL | — | NOT_IMPLEMENTED | PHASE_C | Independent supervisor: correlates SEB brake pressure $>100$ kPa with commanded speed $>0$ mm/s at vehicle level |
+| `0x0125` | `SYS_MTR_UNCOMMANDED_PROPULSION`| SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | Independent supervisor (EGAS L2): MTR reports speed $>0$ while mode is MANUAL/OFF or power is OFF |
+| `0x0126` | `SYS_SAFETY_STREAM_CRC_ERR` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Internal E2E CRC-8 generation verification mismatch on `0x011` payload |
+| `0x0130` | `SYS_SEB_ROLLING_FROZEN` | SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | Detects `0x721` rolling counter unchanged for $>100$ ms (observable symptom: frozen sequence counter; possible causes include SEB stall, task lockup, or bus buffer stall) |
+| `0x0131` | `SYS_SEB_NOT_ALIGNED` | SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | Inspects `0x721` byte 0 bit 0 (`alignment_status == 0`) after boot grace |
+| `0x0132` | `SYS_SEB_PRESSURE_BUILD_FAILURE` | SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | Independent supervisor: full stroke request (`0x7B9`) + near-zero motor current (`0x6FB`) + low pressure. Possible causes: line rupture, air, empty reservoir |
+| `0x0133` | `SYS_SEB_CURRENT_HIGH_LOW_STROKE`| SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | Excessive motor current (`0x6FB`) observed at low stroke setpoints (possible bind, foreign object, or high seal friction) |
+| `0x0134` | `SYS_SEB_TEMP_RATE_HIGH` | SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | High $\Delta T / \Delta t$ calculated from `0x6FB` ECU board temperature telemetry |
+| `0x0135` | `SYS_SEB_CHECKSUM_ERROR` | SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | XOR8-complement checksum mismatch on incoming `0x721` / `0x731` |
+| `0x0136` | `SYS_SEB_UNCOMMANDED_BRAKING` | SYS→SEB | — | NOT_IMPLEMENTED | PHASE_C | Ghost braking: `0x721` reports pressure $>500$ kPa while no brake commanded |
+| `0x0140` | `SYS_MTR_ROLLAWAY` | SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | Vehicle speed $> 100$ mm/s on `0x206` while in Neutral without throttle |
+| `0x0141` | `SYS_MTR_STALL` | SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | High commanded speed on `0x204` for $> 1.0$ s with zero measured speed on `0x206` |
+| `0x0142` | `SYS_MTR_PARTIAL_CRASH` | SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | STM32 broadcasting `0x120` (`SYS_THROTTLE_STS`) but failing to emit `0x206` |
+| `0x0150` | `SYS_SES_STATUS_TIMEOUT` | SYS→SES | — | NOT_IMPLEMENTED | PHASE_C | Low CAN monitor: complete absence of forwarded SES `0x201` during vehicle motion |
+| `0x0160` | `SYS_LEVER_SWITCH_HELD_ACTIVE_LONG`| SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Physical brake lever GPIO 2 held active continuously for $>60$ s while speed $>0$ (rider holding brake vs stuck switch) |
+| `0x0161` | `SYS_START_BUTTON_STUCK_ACTIVE` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Momentary START (GPIO 41) held LOW $>10$ s |
+| `0x0162` | `SYS_MODE_BUTTON_STUCK_ACTIVE` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | MODE (GPIO 11) button held LOW $>10$ s |
+| `0x0163` | `SYS_SWITCH_CONFLICT` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Handlebar Left (GPIO 9) and Right (GPIO 6) turn inputs active simultaneously |
+| `0x0170` | `SYS_CAN_BUS_PASSIVE` | SYS→CAN | — | NOT_IMPLEMENTED | PHASE_C | TWAI controller enters Error-Passive state (TEC or REC $> 127$) |
+| `0x0171` | `SYS_CAN_SIGNAL_DEGRADED` | SYS→CAN | — | NOT_IMPLEMENTED | PHASE_C | Spiking REC with valid frame decode errors (loose wire / termination noise) |
+| `0x0172` | `SYS_CAN_BABBLING_NODE` | SYS→CAN | — | NOT_IMPLEMENTED | DEFERRED | Simple per-ID timestamp check (`last_rx_tick`). Low priority unless bus abuse occurs |
+| `0x0173` | `SYS_CAN_INVALID_DLC` | SYS→CAN | — | NOT_IMPLEMENTED | PHASE_C | Received frame DLC mismatches contract (e.g. `0x001` DLC $> 0$ or `0x204` DLC $\ne 5$) |
+| `0x0174` | `SYS_CAN_ESTOP_FLOOD` | SYS→CAN | — | NOT_IMPLEMENTED | OMITTED | Omitted: multiple ECUs legitimately assert identical DLC0 `0x001` frames simultaneously during emergency stop; without sender ID payload, fixed rate threshold causes noisy false positives |
+| `0x0175` | `SYS_DUAL_SENDER_CONFLICT` | SYS→RT | — | NOT_IMPLEMENTED | OMITTED | Unobservable on Classic CAN 2.0B without dedicated sender ID in payload. Hardware arbitration resolves bus access without exposing transmitting node ID to receivers. Omitted |
+| `0x0180` | `SYS_SOC_TEMP_HIGH` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | On-die ESP32-S3 silicon temperature sensor exceeds safe thermal threshold |
+| `0x0181` | `SYS_STACK_HIGH_WATER` | SYS→SYS | — | NOT_IMPLEMENTED | DEFERRED | FreeRTOS task stack high-water mark approaches exhaustion ($< 256$ bytes) |
+| `0x0182` | `SYS_BROWNOUT_DETECTED` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | NVS reset reason registers brownout (`ESP_RST_BROWNOUT`); evidence of MCU brownout reset |
+| `0x0183` | `SYS_MODE_SPLIT_BRAIN` | SYS→RT | — | NOT_IMPLEMENTED | PHASE_C | Qualified mode desync: SYS mode `0x110` vs RT mode `0x210` desync after completed handshake timeout ($>1.0$ s) |
+| `0x0184` | `SYS_HMI_MODE_REQ_TIMEOUT` | SYS→HMI | — | NOT_IMPLEMENTED | PHASE_C | HMI mode request `0x111` or power request `0x112` stream stale / frozen counter |
+| `0x0185` | `SYS_HEAP_LOW_WARNING` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Boot/slow periodic health check of available heap if 3rd-party libs allocate at runtime |
+| `0x0186` | `SYS_CPU_CORE_SATURATED` | SYS→SYS | — | NOT_IMPLEMENTED | OMITTED | Omitted: task deadline/watchdog monitoring gives more actionable evidence with zero complexity |
+| `0x0187` | `SYS_MUTEX_DEADLOCK_TRIP` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Mutex acquire timeout ($>500$ ms) on critical CAN driver or peripheral lock |
+| `0x0188` | `SYS_WATCHDOG_PET_FAILURE` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Internal FreeRTOS Task Watchdog Timer (TWDT) flags starvation on registered task |
+| `0x0189` | `SYS_NVS_STORAGE_CORRUPT` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | NVS flash partition CRC validation failure or wear-out write abort |
 
 #### 8.2.2 RT Node Capabilities (`0x02xx`)
 
-| DiagId | Key | reporter→source | reaction | monitoring | Diagnostic Mechanism / Source Data |
-|---|---|---|---|---|---|
-| `0x0220` | `RT_SYS_HB_ECHO_LOST` | RT→SYS | — | NOT_IMPLEMENTED | `0x011` byte 1 reads `SYS_HeartbeatOk == 0` while RT is actively transmitting `0x7FD` (indicates RT heartbeat unacknowledged by SYS; possible TX failure, RX drop, queue stall, or bus arbitration) |
-| `0x0221` | `RT_SEB_STATUS_TIMEOUT` | RT→SEB | — | NOT_IMPLEMENTED | SEB `0x721` stops arriving for $>50$ ms during ACTIVE mode (mid-drive brake actuator loss) |
-| `0x0222` | `RT_SEB_PRESSURE_BUILD_FAILURE` | RT→SEB | — | NOT_IMPLEMENTED | `0x721` reports stroke near maximum ($>20$ mm) while line pressure remains $<500$ kPa. Possible causes: line rupture, fluid leak, air |
-| `0x0223` | `RT_SEB_PRESSURE_REMAINS_HIGH` | RT→SEB | — | NOT_IMPLEMENTED | Zero brake commanded (`0x7B9`) but `0x721` line pressure persists $>500$ kPa or stroke $>5$ mm (observable hydraulic symptom; possible causes include caliper drag/stick, transducer offset, or return spring failure) |
-| `0x0224` | `RT_STEER_HIGH_OPPOSING_LOAD` | RT→SES | — | NOT_IMPLEMENTED | Measured steering torque (`0x201`) or motor current (`0x6FA` $>20$ A) excessive for requested slew rate (indicates high load; binding, curb impact, or tire/road load) |
-| `0x0225` | `RT_STEER_OPPOSING_TORQUE_SPIKE` | RT→SES | — | NOT_IMPLEMENTED | Sharp measured torque spike opposing commanded direction (front wheel struck obstacle/curb) |
-| `0x0226` | `RT_MTR_NO_MOTION_UNDER_COMMAND` | RT→MTR | — | NOT_IMPLEMENTED | Commanded speed $>0$ on `0x204` but measured speed 0 on `0x206` for $>1.0$ s with zero brake |
-| `0x0227` | `RT_MTR_RUNAWAY_MISMATCH` | RT→MTR | — | NOT_IMPLEMENTED | Measured speed on `0x206` $>500$ mm/s while RT setpoint is 0 and gear is Neutral |
-| `0x0228` | `RT_THROTTLE_BRAKE_CONFLICT`| RT→MTR | — | NOT_IMPLEMENTED | Motor speed $>0$ on `0x206` while active hydraulic brake pressure $>1000$ kPa on `0x721` |
-| `0x0229` | `RT_PLANNER_CONTRADICTION` | RT→Host | — | NOT_IMPLEMENTED | Host sends conflicting commands simultaneously: drive $>1000$ mm/s (`0x300`) and brake $>2000$ kPa (`0x301`) |
-| `0x022A` | `RT_PLANNER_OBSTACLE_CONFLICT`| RT→Host | — | NOT_IMPLEMENTED | Host requests forward drive speed $>1000$ mm/s while obstacle distance $\le 300$ mm on `0x400` |
-| `0x022B` | `RT_TRANSMISSION_SHIFT_ILLEGAL`| RT→Host | — | NOT_IMPLEMENTED | Reverse gear ($R$) commanded while vehicle forward velocity $>500$ mm/s |
-| `0x022C` | `RT_HMI_SYS_MODE_DEADLOCK` | RT→SYS | — | NOT_IMPLEMENTED | HMI requested AUTO (`0x111`) but SYS fails to transition `SYS_Mode` (`0x110`) within 3 s without ESTOP |
-| `0x022D` | `RT_SUPPLY_VOLTAGE_SAG` | RT→SES | — | NOT_IMPLEMENTED | SES `0x6FA` supply voltage drops below $11.0$ V under actuator load |
-| `0x022E` | `RT_CAN_BUS_FLOOD_DETECTED` | RT→CAN | — | DEFERRED | Inter-arrival time of any single CAN ID $<2$ ms ($>500$ Hz babbling node / DoS condition) |
-| `0x022F` | `RT_CAN_JITTER_EXCESSIVE` | RT→CAN | — | DEFERRED | Periodic frame arrival jitter exceeds $\pm 10$ ms (CAN bus arbitration starvation) |
-| `0x0230` | `RT_SOC_TEMP_HIGH` | RT→RT | — | NOT_IMPLEMENTED | On-chip ESP32-S3 silicon temperature sensor exceeds $90^\circ$C |
-| `0x0231` | `RT_BROWNOUT_DETECTED` | RT→RT | — | NOT_IMPLEMENTED | ESP32-S3 internal 3.3V brownout interrupt triggered ($V_{\text{DD33}} < 2.8$ V); evidence of MCU brownout reset |
-| `0x0232` | `RT_STACK_HIGH_WATER` | RT→RT | — | DEFERRED | FreeRTOS task stack margin approaches exhaustion ($< 256$ bytes) |
-| `0x0233` | `RT_ROLLOVER_RISK_HIGH` | RT→RT | — | NOT_IMPLEMENTED | Calculated lateral acceleration $a_y \approx \frac{v^2 \tan\delta}{L}$ exceeds dynamic stability threshold |
-| `0x0234` | `RT_MOTOR_STALL_DETECTED` | RT→MTR | — | NOT_IMPLEMENTED | Commanded speed $>0$ mm/s on `0x204` for $>1.0$ s with zero encoder pulse delta and zero brake |
-| `0x0235` | `RT_UNCOMMANDED_ROLLAWAY` | RT→MTR | — | NOT_IMPLEMENTED | Rear encoder detects vehicle speed $>100$ mm/s while parked or in Neutral without throttle |
-| `0x0236` | `RT_DIRECTION_ROLLBACK_CONFLICT`| RT→MTR | — | NOT_IMPLEMENTED | Commanded Drive ($D$) but encoder measures reverse motion, or commanded Reverse ($R$) but rolling forward |
-| `0x0237` | `RT_DYNAMIC_CLAMP_EXCEEDED` | RT→Host | — | NOT_IMPLEMENTED | Commanded steering angle exceeds vehicle speed-dependent stability limit $\delta_{\text{max}}(v)$ |
-| `0x0238` | `RT_CAN_HIGH_TX_FAILURE`| RT→CAN | — | NOT_IMPLEMENTED | Evidence-only: MCP2515 SPI responsive but CAN TX failing (causes: transceiver, wiring, termination, missing ACK, stuck dominant) |
-| `0x0239` | `RT_SPEED_TRACKING_ERROR` | RT→MTR | — | NOT_IMPLEMENTED | Closed-loop following error: $|v_{\text{target}} - v_{\text{encoder}}| > 500$ mm/s for $>1$ s |
-| `0x023A` | `RT_HOST_OBSTACLE_DIST_TIMEOUT`| RT→Host | — | NOT_IMPLEMENTED | Host `0x400` obstacle distance frame timed out during autonomous travel |
-| `0x023B` | `RT_MTR_ENCODER_SPEED_MISMATCH`| RT→MTR | — | NOT_IMPLEMENTED | Measured speed on `0x206` diverges from PCNT rear encoder pulses $>200$ mm/s (encoder slip / pulse noise) |
-| `0x023C` | `RT_WHEEL_SLIP_DETECTED` | RT→MTR | — | UNOBSERVABLE | Unobservable without independent 4-wheel speed sensors; omitted from Phase B/C |
-| `0x023D` | `RT_DIFF_WHEEL_SPEED_MISMATCH`| RT→MTR | — | UNOBSERVABLE | Unobservable without independent rear wheel speed sensors; omitted from Phase B/C |
-| `0x023E` | `RT_YAW_RATE_KINEMATIC_MISMATCH`| RT→Host | — | UNOBSERVABLE | Unobservable without independent calibrated IMU/yaw rate sensor; omitted from Phase B/C |
-| `0x023F` | `RT_SPIN_IN_PLACE_REJECTED` | RT→Host | — | NOT_IMPLEMENTED | Host requested $v=0, \omega > 0$ which is kinematically impossible on a tricycle |
-| `0x0240` | `RT_STEER_SLEW_RATE_EXCEEDED` | RT→SES | — | NOT_IMPLEMENTED | Commanded or measured steering angle rate of change exceeds $525^\circ$/s |
-| `0x0241` | `RT_STEER_ANGLE_OFFSET_DRIFT` | RT→SES | — | NOT_IMPLEMENTED | Steer center finding alignment departs $>5.0^\circ$ from calibrated straight-ahead neutral |
-| `0x0242` | `RT_SES_CONTROL_ENABLE_REJECTED`| RT→SES | — | NOT_IMPLEMENTED | SES fails to transition to active control mode feedback within 200 ms of command |
-| `0x0243` | `RT_SEB_PRESSURE_RESPONSE_SLUGGISH`| RT→SEB | — | NOT_IMPLEMENTED | Hydraulic line pressure rise time $>200$ ms behind commanded step (fluid air bubbles) |
-| `0x0244` | `RT_SEB_STROKE_FOR_PRESSURE_HIGH` | RT→SEB | — | NOT_IMPLEMENTED | Stroke required to achieve 1000 kPa exceeds 22 mm (approaching physical travel limit; possible causes include pad wear, air in line, mechanical compliance) |
-| `0x0245` | `RT_SEB_CONTROL_ENABLE_REJECTED`| RT→SEB | — | NOT_IMPLEMENTED | SEB fails to transition to active control enable feedback within 200 ms of command |
-| `0x0246` | `RT_SEB_SUBZERO_TEMP_WARN` | RT→SEB | — | NOT_IMPLEMENTED | SEB ECU/fluid temperature $<-10^\circ$C risking high fluid viscosity / sluggish brake actuation |
-| `0x0247` | `RT_MCP2515_REGISTER_VERIFY_FAILED` | RT→CAN | — | NOT_IMPLEMENTED | High CAN MCP2515 SPI bus failure: written configuration/control registers read back corrupted or mismatched (line severed, clock fault, or chip unresponsive) |
-| `0x0248` | `RT_CAN_LOW_BUS_PASSIVE` | RT→CAN | — | NOT_IMPLEMENTED | TWAI controller enters Error-Passive state (TEC or REC $>127$) |
-| `0x0249` | `RT_CAN_HIGH_BUS_PASSIVE` | RT→CAN | — | NOT_IMPLEMENTED | MCP2515 controller enters Error-Passive state (TEC or REC $>127$) |
-| `0x024A` | `RT_CAN_INVALID_DLC` | RT→CAN | — | NOT_IMPLEMENTED | Frame received with unexpected DLC (e.g. `0x001` with DLC $>0$ or `0x300` with DLC $\ne 8$) |
-| `0x024B` | `RT_GATEWAY_DROP_OVERFLOW` | RT→CAN | — | NOT_IMPLEMENTED | High-to-Low or Low-to-High gateway queue saturated, dropping forwarded frames |
-| `0x024C` | `RT_HEAP_LOW_WARNING` | RT→RT | — | NOT_IMPLEMENTED | Boot/slow periodic health check of available heap if 3rd-party libs allocate at runtime |
-| `0x024D` | `RT_CONTROL_OUTPUT_INVALID`| RT→RT | — | BACKLOG | Control output NaN/Inf/out-of-range guard (`!std::isfinite()`); cheap Phase-C backlog guard |
-| `0x024E` | `RT_NVS_STORAGE_FAULT` | RT→RT | — | NOT_IMPLEMENTED | Non-volatile storage write/read failure on calibration or runtime persistence |
-| `0x024F` | `RT_SYS_SAFETY_COUNTER_STALE` | RT→SYS | — | NOT_IMPLEMENTED | Rolling counter in `0x011` stopped advancing |
-| `0x0250` | `RT_SES_STATUS_COUNTER_STALE` | RT→SES | — | NOT_IMPLEMENTED | Rolling counter in `0x201` (SES status) stopped advancing |
-| `0x0251` | `RT_SEB_STATUS_COUNTER_STALE` | RT→SEB | — | NOT_IMPLEMENTED | Rolling counter in `0x721` (SEB status) stopped advancing |
-| `0x0252` | `RT_HOST_DRIVE_COUNTER_STALE` | RT→Host | — | NOT_IMPLEMENTED | Rolling counter in `0x300` (host drive cmd) stopped advancing |
-| `0x0253` | `RT_ENCODER_GLITCH_OVERFREQ` | RT→RT | — | NOT_IMPLEMENTED | GPIO 1/2 PCNT pulse frequency exceeds physical maximum ($>50$ km/h) |
-| `0x0254` | `RT_HOST_CLOCK_SKEW_EXCESSIVE` | RT→Host | — | NOT_IMPLEMENTED | Host command message timestamp / sequence clock drifts $>200$ ms relative to RT tick |
-| `0x0255` | `RT_SEB_PRESSURE_ZERO_DRIFT` | RT→SEB | — | NOT_IMPLEMENTED | Rest transducer pressure $>150$ kPa when brake pushrod is confirmed fully retracted ($0$ mm) |
-| `0x0256` | `RT_MTR_TEMPERATURE_HIGH` | RT→MTR | — | NOT_IMPLEMENTED | Motor controller or winding temperature on `0x206`/`0x600` exceeds thermal derating limit |
-| `0x0257` | `RT_TASK_DEADLINE_MISSED` | RT→RT | — | NOT_IMPLEMENTED | Control loop (100 Hz) execution time or scheduling period exceeds threshold ($>15$ ms) |
-| `0x0258` | `RT_HEAP_FRAGMENTATION_HIGH` | RT→RT | — | OMITTED | Omitted under zero-runtime-allocation policy |
-| `0x0259` | `RT_SAFETY_QUEUE_OVERFLOW` | RT→RT | — | NOT_IMPLEMENTED | FreeRTOS safety event queue `g_safety_evt_q` saturated; dropped transition event |
-| `0x025A` | `RT_PID_INTEGRATOR_SATURATED` | RT→RT | — | NOT_IMPLEMENTED | Speed PID integral error accumulator clamped at ceiling/floor for $>2.0$ s |
-| `0x025B` | `RT_LOCAL_ESTOP_LATCH_PREVENT_CLEAR` | RT→RT | — | NOT_IMPLEMENTED | SYS issued `SAFETY_CLEAR` but local RT latch (following error / obstacle) actively blocks release |
-| `0x025C` | `RT_SYS_SAFETY_CRC_ERROR` | RT→SYS | — | NOT_IMPLEMENTED | E2E CRC-8 Autosar mismatch on received `0x011` safety status frame |
-| `0x025D` | `RT_CALIBRATION_CORRUPTED` | RT→RT | — | NOT_IMPLEMENTED | Stored calibration parameters in NVS fail CRC32 verification on startup |
+| DiagId | Key | reporter→source | reaction | monitoring | disposition | Diagnostic Mechanism / Source Data |
+|---|---|---|---|---|---|---|
+| `0x0220` | `RT_SYS_HB_ECHO_LOST` | RT→SYS | — | NOT_IMPLEMENTED | PHASE_C | `0x011` byte 1 reads `SYS_HeartbeatOk == 0` while RT is actively transmitting `0x7FD` (indicates RT heartbeat unacknowledged by SYS; possible TX failure, RX drop, queue stall, or bus arbitration) |
+| `0x0221` | `RT_SEB_STATUS_TIMEOUT` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | SEB `0x721` stops arriving for $>50$ ms during ACTIVE mode (mid-drive brake actuator loss) |
+| `0x0222` | `RT_SEB_PRESSURE_BUILD_FAILURE` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | Independent supervisor: `0x721` reports stroke near maximum ($>20$ mm) while line pressure remains $<500$ kPa. Possible causes: line rupture, fluid leak, air |
+| `0x0223` | `RT_SEB_PRESSURE_REMAINS_HIGH` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | Zero brake commanded (`0x7B9`) but `0x721` line pressure persists $>500$ kPa or stroke $>5$ mm (observable hydraulic symptom; possible causes include caliper drag/stick, transducer offset, or return spring failure) |
+| `0x0224` | `RT_STEER_HIGH_OPPOSING_LOAD` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | Measured steering torque (`0x201`) or motor current (`0x6FA` $>20$ A) excessive for requested slew rate (indicates high load; binding, curb impact, or tire/road load) |
+| `0x0225` | `RT_STEER_OPPOSING_TORQUE_SPIKE` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | Sharp measured torque spike opposing commanded direction (observable load impulse; front wheel obstacle or curb strike is a possible cause) |
+| `0x0226` | `RT_MTR_NO_MOTION_UNDER_COMMAND` | RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Commanded speed $>0$ on `0x204` but measured speed 0 on `0x206` for $>1.0$ s with zero brake (observable symptom: no motion under command; encompasses motor stall, drivetrain disengagement, or open wiring) |
+| `0x0227` | `RT_MTR_RUNAWAY_MISMATCH` | RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Measured speed on `0x206` $>500$ mm/s while RT setpoint is 0 and gear is Neutral (RT motion-plane runaway check) |
+| `0x0228` | `RT_THROTTLE_BRAKE_CONFLICT`| RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Independent supervisor: motor speed $>0$ on `0x206` while active hydraulic brake pressure $>1000$ kPa on `0x721` |
+| `0x0229` | `RT_PLANNER_CONTRADICTION` | RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Host sends conflicting commands simultaneously: drive $>1000$ mm/s (`0x300`) and brake $>2000$ kPa (`0x301`) |
+| `0x022A` | `RT_PLANNER_OBSTACLE_CONFLICT`| RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Host requests forward drive speed $>1000$ mm/s while obstacle distance $\le 300$ mm on `0x400` |
+| `0x022B` | `RT_TRANSMISSION_SHIFT_ILLEGAL`| RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Reverse gear ($R$) commanded while vehicle forward velocity $>500$ mm/s |
+| `0x022C` | `RT_HMI_SYS_MODE_DEADLOCK` | RT→SYS | — | NOT_IMPLEMENTED | PHASE_C | HMI requested AUTO (`0x111`) but SYS fails to transition `SYS_Mode` (`0x110`) within 3 s without ESTOP |
+| `0x022D` | `RT_SUPPLY_VOLTAGE_SAG` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | SES `0x6FA` supply voltage drops below $11.0$ V under actuator load |
+| `0x022E` | `RT_CAN_BUS_FLOOD_DETECTED` | RT→CAN | — | NOT_IMPLEMENTED | DEFERRED | Inter-arrival time of any single CAN ID $<2$ ms ($>500$ Hz babbling node / DoS condition) |
+| `0x022F` | `RT_CAN_JITTER_EXCESSIVE` | RT→CAN | — | NOT_IMPLEMENTED | DEFERRED | Periodic frame arrival jitter exceeds $\pm 10$ ms (CAN bus arbitration starvation) |
+| `0x0230` | `RT_SOC_TEMP_HIGH` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | On-chip ESP32-S3 silicon temperature sensor exceeds $90^\circ$C |
+| `0x0231` | `RT_BROWNOUT_DETECTED` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | ESP32-S3 internal 3.3V brownout interrupt triggered ($V_{\text{DD33}} < 2.8$ V); evidence of MCU brownout reset |
+| `0x0232` | `RT_STACK_HIGH_WATER` | RT→RT | — | NOT_IMPLEMENTED | DEFERRED | FreeRTOS task stack margin approaches exhaustion ($< 256$ bytes) |
+| `0x0233` | `RT_ROLLOVER_RISK_HIGH` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Calculated lateral acceleration $a_y \approx \frac{v^2 \tan\delta}{L}$ exceeds dynamic stability threshold |
+| `0x0235` | `RT_UNCOMMANDED_ROLLAWAY` | RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Rear encoder detects vehicle speed $>100$ mm/s while parked or in Neutral without throttle |
+| `0x0236` | `RT_DIRECTION_ROLLBACK_CONFLICT`| RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Commanded Drive ($D$) but encoder measures reverse motion, or commanded Reverse ($R$) but rolling forward |
+| `0x0237` | `RT_DYNAMIC_CLAMP_EXCEEDED` | RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Commanded steering angle exceeds vehicle speed-dependent stability limit $\delta_{\text{max}}(v)$ |
+| `0x0238` | `RT_CAN_HIGH_TX_FAILURE`| RT→CAN | — | NOT_IMPLEMENTED | PHASE_C | Evidence-only: MCP2515 SPI responsive but CAN TX failing (causes: transceiver, wiring, termination, missing ACK, stuck dominant) |
+| `0x0239` | `RT_SPEED_TRACKING_ERROR` | RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Closed-loop following error: $|v_{\text{target}} - v_{\text{encoder}}| > 500$ mm/s for $>1$ s |
+| `0x023A` | `RT_HOST_OBSTACLE_DIST_TIMEOUT`| RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Host `0x400` obstacle distance frame timed out during autonomous travel |
+| `0x023B` | `RT_MTR_ENCODER_SPEED_MISMATCH`| RT→MTR | — | NOT_IMPLEMENTED | PHASE_C | Measured speed on `0x206` diverges from PCNT rear encoder pulses $>200$ mm/s (encoder slip / pulse noise) |
+| `0x023C` | `RT_WHEEL_SLIP_DETECTED` | RT→MTR | — | NOT_IMPLEMENTED | OMITTED | Unobservable without independent 4-wheel speed sensors; omitted from Phase B/C |
+| `0x023D` | `RT_DIFF_WHEEL_SPEED_MISMATCH`| RT→MTR | — | NOT_IMPLEMENTED | OMITTED | Unobservable without independent rear wheel speed sensors; omitted from Phase B/C |
+| `0x023E` | `RT_YAW_RATE_KINEMATIC_MISMATCH`| RT→Host | — | NOT_IMPLEMENTED | OMITTED | Unobservable without independent calibrated IMU/yaw rate sensor; omitted from Phase B/C |
+| `0x023F` | `RT_SPIN_IN_PLACE_REJECTED` | RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Host requested $v=0, \omega > 0$ which is kinematically impossible on a tricycle |
+| `0x0240` | `RT_STEER_SLEW_RATE_EXCEEDED` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | Commanded or measured steering angle rate of change exceeds $525^\circ$/s |
+| `0x0241` | `RT_STEER_ANGLE_OFFSET_DRIFT` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | Steer center finding alignment departs $>5.0^\circ$ from calibrated straight-ahead neutral |
+| `0x0242` | `RT_SES_CONTROL_ENABLE_REJECTED`| RT→SES | — | NOT_IMPLEMENTED | PHASE_C | SES fails to transition to active control mode feedback within 200 ms of command |
+| `0x0243` | `RT_SEB_PRESSURE_RESPONSE_SLUGGISH`| RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | Hydraulic line pressure rise time $>200$ ms behind commanded step (fluid air bubbles) |
+| `0x0244` | `RT_SEB_STROKE_FOR_PRESSURE_HIGH` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | Stroke required to achieve 1000 kPa exceeds 22 mm (approaching physical travel limit; possible causes include pad wear, air in line, mechanical compliance) |
+| `0x0245` | `RT_SEB_CONTROL_ENABLE_REJECTED`| RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | SEB fails to transition to active control enable feedback within 200 ms of command |
+| `0x0246` | `RT_SEB_SUBZERO_TEMP_WARN` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | SEB ECU board temperature $<-10^\circ$C risking high fluid viscosity / sluggish brake actuation |
+| `0x0247` | `RT_MCP2515_REGISTER_VERIFY_FAILED` | RT→CAN | — | NOT_IMPLEMENTED | PHASE_C | Written MCP2515 configuration/control register failed read-back verification. Possible causes include peripheral power, SPI wiring/configuration/timing, concurrent access, or MCP2515 failure |
+| `0x0248` | `RT_CAN_LOW_BUS_PASSIVE` | RT→CAN | — | NOT_IMPLEMENTED | PHASE_C | TWAI controller enters Error-Passive state (TEC or REC $>127$) |
+| `0x0249` | `RT_CAN_HIGH_BUS_PASSIVE` | RT→CAN | — | NOT_IMPLEMENTED | PHASE_C | MCP2515 controller enters Error-Passive state (TEC or REC $>127$) |
+| `0x024A` | `RT_CAN_INVALID_DLC` | RT→CAN | — | NOT_IMPLEMENTED | PHASE_C | Frame received with unexpected DLC (e.g. `0x001` with DLC $>0$ or `0x300` with DLC $\ne 8$) |
+| `0x024B` | `RT_GATEWAY_DROP_OVERFLOW` | RT→CAN | — | NOT_IMPLEMENTED | PHASE_C | High-to-Low or Low-to-High gateway queue saturated, dropping forwarded frames |
+| `0x024C` | `RT_HEAP_LOW_WARNING` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Boot/slow periodic health check of available heap if 3rd-party libs allocate at runtime |
+| `0x024D` | `RT_CONTROL_OUTPUT_INVALID`| RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Control output NaN/Inf/out-of-range guard (`!std::isfinite()`); cheap Phase-C backlog guard |
+| `0x024E` | `RT_NVS_STORAGE_FAULT` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Non-volatile storage write/read failure on calibration or runtime persistence |
+| `0x024F` | `RT_SYS_SAFETY_COUNTER_STALE` | RT→SYS | — | NOT_IMPLEMENTED | PHASE_C | Rolling counter in `0x011` stopped advancing |
+| `0x0250` | `RT_SES_STATUS_COUNTER_STALE` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | Rolling counter in `0x201` (SES status) stopped advancing |
+| `0x0251` | `RT_SEB_STATUS_COUNTER_STALE` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | Rolling counter in `0x721` (SEB status) stopped advancing |
+| `0x0252` | `RT_HOST_DRIVE_COUNTER_STALE` | RT→Host | — | NOT_IMPLEMENTED | PHASE_C | Rolling counter in `0x300` (host drive cmd) stopped advancing |
+| `0x0253` | `RT_ENCODER_GLITCH_OVERFREQ` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | GPIO 1/2 PCNT pulse frequency exceeds physical maximum ($>50$ km/h) |
+| `0x0254` | `RT_HOST_CLOCK_SKEW_EXCESSIVE` | RT→Host | — | NOT_IMPLEMENTED | OMITTED | Unobservable: `0x300` carries sequence counters, not shared-epoch timestamps; sequence gaps indicate frame loss or stale timing, not clock skew. Omitted |
+| `0x0255` | `RT_SEB_PRESSURE_ZERO_DRIFT` | RT→SEB | — | NOT_IMPLEMENTED | PHASE_C | Rest transducer pressure $>150$ kPa when brake pushrod is confirmed fully retracted ($0$ mm) |
+| `0x0256` | `RT_MTR_TEMPERATURE_HIGH` | RT→MTR | — | NOT_IMPLEMENTED | OMITTED | Unobservable: neither `0x206` nor `0x600` carries motor controller/winding temperature telemetry. Omitted |
+| `0x0257` | `RT_TASK_DEADLINE_MISSED` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Control loop (100 Hz) execution time or scheduling period exceeds threshold ($>15$ ms) |
+| `0x0258` | `RT_HEAP_FRAGMENTATION_HIGH` | RT→RT | — | NOT_IMPLEMENTED | OMITTED | Omitted under zero-runtime-allocation policy |
+| `0x0259` | `RT_SAFETY_QUEUE_OVERFLOW` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | FreeRTOS safety event queue `g_safety_evt_q` saturated; dropped transition event |
+| `0x025A` | `RT_PID_INTEGRATOR_SATURATED` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Speed PID integral error accumulator clamped at ceiling/floor for $>2.0$ s |
+| `0x025B` | `RT_LOCAL_ESTOP_LATCH_PREVENT_CLEAR` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | SYS issued `SAFETY_CLEAR` but local RT latch (following error / obstacle) actively blocks release |
+| `0x025C` | `RT_SYS_SAFETY_CRC_ERROR` | RT→SYS | — | NOT_IMPLEMENTED | PHASE_C | E2E CRC-8 Autosar mismatch on received `0x011` safety status frame |
+| `0x025D` | `RT_CALIBRATION_CORRUPTED` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Stored calibration parameters in NVS fail CRC32 verification on startup |
 
 #### 8.2.3 MTR Node Capabilities (`0x03xx`)
 
-| DiagId | Key | reporter→source | reaction | monitoring | Diagnostic Mechanism / Source Data |
-|---|---|---|---|---|---|
-| `0x0302` | `MTR_THROTTLE_IMPLAUSIBLE` | MTR→MTR | — | NOT_IMPLEMENTED | Calculated DAC code outside clamped range $[655, 1966]$ |
-| `0x0303` | `MTR_ADC_FAULT` | MTR→MTR | — | NOT_IMPLEMENTED | Throttle grip ADC stuck-at-rail (0 or 4095) in manual mode |
-| `0x0304` | `MTR_GEAR_CONFLICT` | MTR→MTR | — | NOT_IMPLEMENTED | Drive (PA2) and Reverse (PA0) relays commanded active simultaneously |
-| `0x030C` | `MTR_I2C_DAC_NACK` | MTR→DAC | — | NOT_IMPLEMENTED | MCP4725 DAC fails to acknowledge address $0x60/0x61/0x62$ on PA5/PA7 |
-| `0x0310` | `MTR_I2C_BUS_LOCKUP` | MTR→DAC | — | NOT_IMPLEMENTED | I2C SDA line held low by peripheral (slave bus lockup condition) |
-| `0x0312` | `MTR_SYS_HEARTBEAT_LOSS` | MTR→SYS | — | NOT_IMPLEMENTED | SYS heartbeat `0x7FE` absence $>500$ ms |
-| `0x0313` | `MTR_CLOCK_CALIBRATION_DRIFT` | MTR→MTR | — | OMITTED | Omitted: arbitration, queue, and ISR latency contaminate CAN arrival timing |
+| DiagId | Key | reporter→source | reaction | monitoring | disposition | Diagnostic Mechanism / Source Data |
+|---|---|---|---|---|---|---|
+| `0x0302` | `MTR_THROTTLE_IMPLAUSIBLE` | MTR→MTR | — | NOT_IMPLEMENTED | PHASE_C | Calculated DAC code outside clamped range $[655, 1966]$ |
+| `0x0303` | `MTR_ADC_FAULT` | MTR→MTR | — | NOT_IMPLEMENTED | PHASE_C | Throttle grip ADC stuck-at-rail (0 or 4095) in manual mode |
+| `0x0304` | `MTR_GEAR_CONFLICT` | MTR→MTR | — | NOT_IMPLEMENTED | PHASE_C | Drive (PA2) and Reverse (PA0) relays commanded active simultaneously |
+| `0x030C` | `MTR_I2C_DAC_NACK` | MTR→DAC | — | NOT_IMPLEMENTED | PHASE_C | MCP4725 DAC fails to acknowledge address $0x60/0x61/0x62$ on PA5/PA7 |
+| `0x0310` | `MTR_I2C_BUS_LOCKUP` | MTR→DAC | — | NOT_IMPLEMENTED | PHASE_C | I2C SDA line held low by peripheral (slave bus lockup condition) |
+| `0x0312` | `MTR_SYS_HEARTBEAT_LOSS` | MTR→SYS | — | NOT_IMPLEMENTED | PHASE_C | SYS heartbeat `0x7FE` absence $>500$ ms |
+| `0x0313` | `MTR_CLOCK_CALIBRATION_DRIFT` | MTR→MTR | — | NOT_IMPLEMENTED | OMITTED | Omitted: arbitration, queue, and ISR latency contaminate CAN arrival timing |
 
 ---
 
@@ -854,8 +885,13 @@ Notes:
   observability is therefore **unproven**. It is kept as a coverage backlog item.
 - `MTR_SHIFT_DWELL_ACTIVE` was removed: mandatory D↔R neutral dwell is normal protective behavior.
 - **Audit Decisions & Categorization Rules:**
-  - **OMITTED**: `MTR_CLOCK_CALIBRATION_DRIFT` (arbitration/queue latency contaminates CAN arrival timing), `SYS_CPU_CORE_SATURATED` (task-deadline/watchdog monitoring gives more actionable evidence with zero complexity), dynamic heap fragmentation under zero-runtime-allocation policy.
-  - **UNOBSERVABLE**: Wheel slip, differential wheel speed, and kinematic yaw mismatch are unsupported by current single-encoder sensing without independent 4-wheel sensors or IMU.
+  - **Independent Supervisors vs Duplicates**:
+    - `SYS_BRAKE_THROTTLE_CONFLICT` vs `RT_THROTTLE_BRAKE_CONFLICT`: SYS acts as vehicle-level supervisor correlating high-level SEB brake pressure with motor command; RT acts as motion-plane supervisor monitoring low-level real-time actuation conflicts.
+    - `SYS_SEB_PRESSURE_BUILD_FAILURE` vs `RT_SEB_PRESSURE_BUILD_FAILURE`: SYS monitors stroke command vs low-pressure buildup as canonical SEB health supervisor; RT monitors hydraulic pressure failure during active motion control.
+    - `SYS_MTR_UNCOMMANDED_PROPULSION` vs `SYS_EGAS_L2_MISMATCH` vs `RT_MTR_RUNAWAY_MISMATCH`: `SYS_EGAS_L2_MISMATCH` is an active Phase-B detector checking torque command vs mode; `SYS_MTR_UNCOMMANDED_PROPULSION` supervises motor spin in disabled/off modes; `RT_MTR_RUNAWAY_MISMATCH` is RT's independent motion check against wheel motion in Neutral.
+    - `RT_MOTOR_STALL_DETECTED` is removed in favor of the observable symptom `RT_MTR_NO_MOTION_UNDER_COMMAND` (`0x0226`).
+  - **OMITTED**: `MTR_CLOCK_CALIBRATION_DRIFT` (arbitration/queue latency contaminates CAN arrival timing), `SYS_CPU_CORE_SATURATED` (task-deadline/watchdog monitoring gives more actionable evidence with zero complexity), `SYS_CAN_ESTOP_FLOOD` (multiple ECUs legitimately emit `0x001` simultaneously), dynamic heap fragmentation under zero-runtime-allocation policy.
+  - **UNOBSERVABLE**: Wheel slip, differential wheel speed, kinematic yaw mismatch (no 4-wheel speed sensors or IMU); `RT_HOST_CLOCK_SKEW_EXCESSIVE` (`0x300` carries sequence counters, not shared-epoch timestamps); `RT_MTR_TEMPERATURE_HIGH` (no temperature telemetry in `0x206`/`0x600`); `SYS_DUAL_SENDER_CONFLICT` (Classic CAN arbitration hides transmitter node identity).
   - **DEFERRED**: CAN rate/jitter analysis, stack high-water trend monitoring.
   - **PHASE C CANDIDATES**: `RT_MCP2515_REGISTER_VERIFY_FAILED`, `RT_CAN_HIGH_TX_FAILURE` (evidence-only), `RT_CONTROL_OUTPUT_INVALID` (`!std::isfinite()` guard), brownout reset history, local ESTOP clear-block reason, qualified mode desync, pressure-build failure.
 
