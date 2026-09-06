@@ -34,6 +34,14 @@ existing detector/control code = vehicle behavior (unchanged by Phase B)
 9. **Phase B does not silently add new safety behavior** — it instruments
    existing detectors only.
 10. **Observability and monitoring are separate fields** (see §4).
+11. **Lowest-cost authoritative evidence sourcing.** A diagnostic shall be
+    sourced at the lowest-cost authoritative observation point. Hardware status
+    flags (TWAI/CAN error registers, MCU reset reasons, I2C/SPI driver return
+    codes) and existing software decisions (safety monitor inhibit checks, E2E
+    CRC verifications, queue push results) are strictly preferred over duplicate
+    monitoring. Derived checks use values already in memory (`!std::isfinite()`,
+    range clamp, following error). Expensive historical, statistical, and
+    cross-ECU correlation belongs exclusively on the Host flight recorder.
 
 ## 2. Diagnostic identity
 
@@ -455,9 +463,37 @@ struct DiagRuntime {
   slight tolerance for slower health diagnostics; MTR smallest fixed table, no
   extra complexity in the motor-actuation path.
 
-### 6.1 Future production-debugging architecture — Phase C (Non-Phase-B Scope)
+### 6.1 Lowest-Cost Authoritative Evidence Sourcing
 
-The mechanisms in §§6.1–6.5 represent the future production-debugging architecture (Phase C). **Phase B strictly implements only the in-memory DiagnosticManager, active-set tracking, and CAN event reporting (0x601/0x621/0x631) for existing detectors.**
+To prevent redundant computation, CPU cycle waste, and false positives, every diagnostic class is mapped strictly to its lowest-cost observation point:
+
+| Diagnostic Class | Lowest-Cost Authoritative Sourcing | Anti-Pattern to Avoid |
+|---|---|---|
+| CAN bus-off / error-passive | Read TWAI/FDCAN hardware interrupt/status flags directly | Software frame timeout inference |
+| CAN TEC/REC | Read hardware error counter registers on event trigger | Periodic high-rate register polling |
+| CAN RX FIFO drop | Increment drop counter where ring buffer / FreeRTOS queue enqueue fails | Periodic background queue depth scanning |
+| Message timeout | Record `last_valid_rx_tick` on accepted frame | Periodic bus frequency analysis |
+| Frozen sequence counter | Compare current rolling counter against previous accepted value | Complex arrival jitter measurement |
+| CRC-8 / Checksum error | Read existing E2E decoder validation return code | Recalculating CRC in diagnostic task |
+| Task stall | Task updates monotonic cycle checkpoint; supervisor checks at 10–20 Hz | CPU load percentage / runtime stats |
+| Task deadline miss | Measure loop execution period against fixed threshold ($T_{\text{cycle}} > T_{\text{max}}$) | Scheduler trace profiling in production |
+| Queue overflow | Check return code on `xQueueSend()` / `try_push()` | Queue-depth histograms |
+| Stack overflow | FreeRTOS `vApplicationStackOverflowHook()` | Continuous stack high-water telemetry spam |
+| MCU crash / reset cause | Read reset reason register at boot (`esp_reset_reason()`, `RCC->CSR`) | Inferring crash from battery voltage or missing heartbeat |
+| HardFault / Panic | Cortex-M `.noinit` fault handler / ESP-IDF panic handler captures registers & core dump | Guessing crash root cause from watchdog timeout |
+| SPI controller failure | Read back known registers after write verification; check `CANSTAT` | Inferring specific severed SPI lines (MOSI/MISO/CS) |
+| DAC / I²C failure | Check driver ACK / timeout / SDA stuck-low return codes | Inferring analog actuator output correctness |
+| Control math invalid | Single guard immediately prior to output: `!std::isfinite()` or out-of-range | Solver-specific mathematical diagnostics everywhere |
+| Sensor following error | Evaluate $|y_{\text{target}} - y_{\text{measured}}|$ in existing 100 Hz control loop | Separate diagnostic sampling task |
+| ESTOP clear refusal | Safety state machine returns explicit inhibit reason enum to caller | Reconstructing latch state after the fact |
+| Config corruption | Validate CRC32 / range clamp once during boot | Periodically reading flash sectors at runtime |
+| Build identity | Static compile-time hashes (`SEMANTIC_HASH`, `DIAGNOSTICS_HASH`) | Transmitting dynamic diagnostic events |
+| Incident chronology | Local 32-entry RAM breadcrumb ring buffer (`.noinit`) | Emitting CAN frames for internal state transitions |
+| Cross-ECU timeline | Host-side raw CAN flight recorder (10 s pre-freeze buffer) | Microcontrollers trying to negotiate global causal blame |
+
+### 6.2 Future production-debugging architecture — Phase C (Non-Phase-B Scope)
+
+The mechanisms in §§6.2–6.6 represent the future production-debugging architecture (Phase C). **Phase B strictly implements only the in-memory DiagnosticManager, active-set tracking, and CAN event reporting (0x601/0x621/0x631) for existing detectors.**
 
 Production firmware in Phase C introduces **two distinct diagnostic depths**:
 
@@ -478,7 +514,7 @@ To survive ECU resets (e.g. crash, brownout, watchdog reset), each ECU retains a
 * **Persisted Severity:** Persists only `ERROR`, `CRITICAL`, `ESTOP` causes, watchdog resets, brownouts, bus-offs, and critical actuator faults. Transient advisory warnings (`WARN`) are not written to NVM.
 * **Persistence Guarantees:** A background persistence task is inherently best-effort during sudden power collapse. NVM incident memory reliably retains committed past history plus the hardware reset cause observed on the subsequent boot. The final fatal event immediately preceding an ungraceful reset is not guaranteed to hit flash before brownout collapses core voltage.
 
-### 6.2 MCU Boot & Reset Cause Supervision (Phase C1)
+### 6.3 MCU Boot & Reset Cause Supervision (Phase C1)
 
 Every ECU exposes a **mandatory boot/reset cause diagnostic** after startup to immediately inform the network why the microcontroller restarted.
 
@@ -486,19 +522,19 @@ Every ECU exposes a **mandatory boot/reset cause diagnostic** after startup to i
 * **STM32 (MTR):** Query RCC reset flags (`RCC->CSR`) on boot before clearing; report `MTR_IWDG_RESET` or `MTR_HARDFAULT_RESET` (captured via Cortex-M `.noinit` fault handler).
 * **Reset Classes:** `POWER_ON`, `SOFTWARE_RESET`, `WATCHDOG_RESET`, `BROWNOUT_RESET`, `PANIC_RESET`, `UNKNOWN`. Normal power-on is reported as nominal telemetry.
 
-### 6.3 RAM Breadcrumb Ring Buffer (Pre-Crash Event Sequence — Phase C1)
+### 6.4 RAM Breadcrumb Ring Buffer (Pre-Crash Event Sequence — Phase C1)
 
 Each ECU maintains a small, fixed **32-entry RAM ring buffer** (`struct Breadcrumb { uint32_t tick_ms; uint8_t event_code; uint16_t arg; }`) to record key state transitions immediately prior to a crash (e.g. `MODE_REQ_AUTO`, `STEER_SYNC_START`, `ESTOP_ASSERT`, `SAFETY_CLEAR_RX`).
 * **Local Only:** Breadcrumbs do **not** generate CAN traffic.
 * **Crash Survival:** Preserved across software restarts in `.noinit` RAM or embedded inside panic core dumps for post-mortem debugging.
 
-### 6.4 Host-Side CAN Flight Recorder (Vehicle Event Timeline — Phase C)
+### 6.5 Host-Side CAN Flight Recorder (Vehicle Event Timeline — Phase C)
 
 The Jetson Orin Host maintains a rolling **10–30 second in-memory buffer of all raw High CAN frames**.
 * **Automatic Freeze:** Automatically freezes and writes a dated `.log` file on `0x001 ESTOP`, critical `DiagId`, ECU heartbeat loss, or manual debug trigger.
 * **Time Window:** Preserves $10\text{ s}$ before + $5\text{ s}$ after the incident for chronological cross-ECU root-cause analysis.
 
-### 6.5 Session & Build Identity Telemetry
+### 6.6 Session & Build Identity Telemetry
 
 To correlate field logs without polluting diagnostic payloads or rewriting CAN contracts:
 * **`boot_session_id`:** Random `uint32_t` generated at startup. Phase B does **not** modify `0x210` or `0x600` CAN contracts. Static discovery (`capabilities.json`) provides build/firmware identities only (hashes, git commit). Runtime `boot_session_id` is deferred strictly to Phase C via a dedicated identity/status frame or diagnostic protocol service.
@@ -510,8 +546,11 @@ The generator emits different amounts of metadata for firmware vs Host:
 
 - **Compact C++** (`generated/cpp/diagnostics.hpp`) for ESP32/STM32 — `DiagId`
   enum (**IMPLEMENTED events only**) plus minimal runtime metadata
-  (`latching`, `is_estop_cause`, `persist`, snapshot format). No human-readable strings; severity/reaction/
-  description stay Host-side. A `NOT_IMPLEMENTED` coverage ID does not exist in
+  (`latching`, `is_estop_cause`, `persist`). No human-readable strings; severity/reaction/
+  description stay Host-side. Because `diag.raise(id, uint16_t snapshot)` takes an
+  already-packed 16-bit integer, the embedded runtime does not store snapshot decoding formats:
+  the firmware detection point packs the raw value, and the generated Host dictionary owns
+  the decoding interpretation. A `NOT_IMPLEMENTED` coverage ID does not exist in
   the firmware enum, so it is unnameable from production code:
   ```cpp
   enum class DiagId : uint16_t { SysEstopButtonAsserted = 0x0101, /* … implemented only … */ };
@@ -520,9 +559,8 @@ The generator emits different amounts of metadata for firmware vs Host:
       bool     latching;        // requires explicit clear() to exit latched state
       bool     is_estop_cause;  // eligible for FIRST_LOCAL_ESTOP_CAUSE flag
       bool     persist;         // eligible for Phase-C NVM incident logging
-      uint8_t  snapshot_format; // snapshot decode index (U16 vs BITFIELD16)
   };
-  // Note: diag_key() string generation is omitted from embedded headers. Host owns all names.
+  // Note: diag_key() strings and snapshot format decoders are omitted from embedded headers. Host owns all decoding.
   ```
 - **Rich dictionary** (`generated/typescript/diagnostics.ts`,
   `generated/python/diagnostics.py`) for Host/UI — full reporter/source/
