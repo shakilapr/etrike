@@ -366,6 +366,7 @@ The following diagnostics can be evaluated and emitted purely through software l
 | `0x0133` | `SYS_SEB_CALIPER_BIND` | SYS→SEB | WARN | NOT_IMPLEMENTED | Excessive motor current (`0x6FB`) observed at low stroke setpoints |
 | `0x0134` | `SYS_SEB_TEMP_RATE_HIGH` | SYS→SEB | WARN | NOT_IMPLEMENTED | High $\Delta T / \Delta t$ calculated from `0x6FB` ECU temperature telemetry |
 | `0x0135` | `SYS_SEB_CHECKSUM_ERROR` | SYS→SEB | WARN | NOT_IMPLEMENTED | XOR8-complement checksum mismatch on incoming `0x721` / `0x731` |
+| `0x0136` | `SYS_SEB_UNCOMMANDED_BRAKING` | SYS→SEB | WARN | NOT_IMPLEMENTED | H-08 Ghost braking: `0x721` reports pressure $>500$ kPa while no brake commanded |
 | `0x0140` | `SYS_MTR_ROLLAWAY` | SYS→MTR | WARN | NOT_IMPLEMENTED | Vehicle speed $> 100$ mm/s on `0x206` while in Neutral without throttle |
 | `0x0141` | `SYS_MTR_STALL` | SYS→MTR | WARN | NOT_IMPLEMENTED | High commanded speed on `0x204` for $> 1.0$ s with zero measured speed on `0x206` |
 | `0x0142` | `SYS_MTR_PARTIAL_CRASH` | SYS→MTR | WARN | NOT_IMPLEMENTED | STM32 broadcasting `0x120` (`SYS_THROTTLE_STS`) but failing to emit `0x206` |
@@ -378,7 +379,6 @@ The following diagnostics can be evaluated and emitted purely through software l
 | `0x0171` | `SYS_CAN_SIGNAL_DEGRADED` | SYS→CAN | WARN | NOT_IMPLEMENTED | Spiking REC with valid frame decode errors (loose wire / termination noise) |
 | `0x0172` | `SYS_CAN_BABBLING_NODE` | SYS→CAN | WARN | NOT_IMPLEMENTED | Frame arrival rate for a single CAN ID exceeds $5\times$ contracted cycle rate |
 | `0x0173` | `SYS_CAN_INVALID_DLC` | SYS→CAN | WARN | NOT_IMPLEMENTED | Received frame DLC mismatches contract (e.g. `0x001` DLC $> 0$ or `0x204` DLC $\ne 5$) |
-| `0x0136` | `SYS_SEB_UNCOMMANDED_BRAKING` | SYS→SEB | WARN | NOT_IMPLEMENTED | H-08 Ghost braking: `0x721` reports pressure $>500$ kPa while no brake commanded |
 | `0x0174` | `SYS_CAN_ESTOP_FLOOD` | SYS→CAN | WARN | NOT_IMPLEMENTED | H-20 CAN DoS: rate-limit violation on incoming `0x001` ($>2$ frames / 500 ms) |
 | `0x0175` | `SYS_DUAL_SENDER_CONFLICT` | SYS→RT | WARN | NOT_IMPLEMENTED | H-11 Dual sender collision: both RT and SYS transmitting `0x7B9` on low bus |
 | `0x0180` | `SYS_SOC_TEMP_HIGH` | SYS→SYS | WARN | NOT_IMPLEMENTED | On-die ESP32-S3 silicon temperature sensor exceeds safe thermal threshold |
@@ -386,6 +386,11 @@ The following diagnostics can be evaluated and emitted purely through software l
 | `0x0182` | `SYS_BROWNOUT_DETECTED` | SYS→SYS | WARN | NOT_IMPLEMENTED | NVS reset reason registers brownout (`ESP_RST_BROWNOUT`) |
 | `0x0183` | `SYS_MODE_SPLIT_BRAIN` | SYS→RT | WARN | NOT_IMPLEMENTED | H-35 Mode desync: SYS mode `0x110` mismatches RT mode `0x210` for $>1.0$ s |
 | `0x0184` | `SYS_HMI_MODE_REQ_TIMEOUT` | SYS→HMI | WARN | NOT_IMPLEMENTED | HMI mode request `0x111` or power request `0x112` stream stale / frozen counter |
+| `0x0185` | `SYS_HEAP_LOW_WARNING` | SYS→SYS | WARN | NOT_IMPLEMENTED | Free heap memory drops below 32 KB or largest contiguous block $<8$ KB |
+| `0x0186` | `SYS_CPU_CORE_SATURATED` | SYS→SYS | WARN | NOT_IMPLEMENTED | FreeRTOS idle task runtime drops below 5% (Core 0 or Core 1 load $>95\%$) |
+| `0x0187` | `SYS_MUTEX_DEADLOCK_TRIP` | SYS→SYS | ESTOP | NOT_IMPLEMENTED | Mutex acquire timeout ($>500$ ms) on critical CAN driver or peripheral lock |
+| `0x0188` | `SYS_WATCHDOG_PET_FAILURE` | SYS→SYS | ESTOP | NOT_IMPLEMENTED | Internal FreeRTOS Task Watchdog Timer (TWDT) flags starvation on registered task |
+| `0x0189` | `SYS_NVS_STORAGE_CORRUPT` | SYS→SYS | WARN | NOT_IMPLEMENTED | NVS flash partition CRC validation failure or wear-out write abort |
 
 #### 8.2.2 RT Node Capabilities (`0x02xx`)
 
@@ -411,6 +416,11 @@ The following diagnostics can be evaluated and emitted purely through software l
 | `0x0231` | `RT_BROWNOUT_DETECTED` | RT→RT | WARN | NOT_IMPLEMENTED | ESP32-S3 internal 3.3V brownout interrupt triggered ($V_{\text{DD33}} < 2.8$ V) |
 | `0x0232` | `RT_STACK_HIGH_WATER` | RT→RT | WARN | NOT_IMPLEMENTED | FreeRTOS task stack margin approaches exhaustion ($< 256$ bytes) |
 | `0x0233` | `RT_ROLLOVER_RISK_HIGH` | RT→RT | WARN | NOT_IMPLEMENTED | Calculated lateral acceleration $a_y \approx \frac{v^2 \tan\delta}{L}$ exceeds dynamic stability threshold |
+| `0x0234` | `RT_MOTOR_STALL_DETECTED` | RT→MTR | WARN | NOT_IMPLEMENTED | H-06 Stall: Commanded speed $>0$ mm/s on `0x204` for $>1.0$ s with zero encoder pulse delta and zero brake |
+| `0x0235` | `RT_UNCOMMANDED_ROLLAWAY` | RT→MTR | WARN | NOT_IMPLEMENTED | H-36 Rollaway: Rear encoder detects vehicle speed $>100$ mm/s while parked or in Neutral without throttle |
+| `0x0236` | `RT_DIRECTION_ROLLBACK_CONFLICT`| RT→MTR | WARN | NOT_IMPLEMENTED | H-37 Rollback: Commanded Drive ($D$) but encoder measures reverse motion, or commanded Reverse ($R$) but rolling forward |
+| `0x0237` | `RT_DYNAMIC_CLAMP_EXCEEDED` | RT→Host | WARN | NOT_IMPLEMENTED | H-16 Clamp: Commanded steering angle exceeds vehicle speed-dependent stability limit $\delta_{\text{max}}(v)$ |
+| `0x0238` | `RT_CAN_HIGH_TRANSCEIVER_FAULT`| RT→CAN | ESTOP | NOT_IMPLEMENTED | MCP2515 SPI is responsive but CAN transceiver is dead/unpowered or stuck dominant (EFLG.TXBO set, TEC=255) |
 | `0x0239` | `RT_SPEED_TRACKING_ERROR` | RT→MTR | WARN | NOT_IMPLEMENTED | Closed-loop following error: $|v_{\text{target}} - v_{\text{encoder}}| > 500$ mm/s for $>1$ s |
 | `0x023A` | `RT_HOST_OBSTACLE_DIST_TIMEOUT`| RT→Host | WARN | NOT_IMPLEMENTED | Host `0x400` obstacle distance frame timed out during autonomous travel |
 | `0x023B` | `RT_MTR_ENCODER_SPEED_MISMATCH`| RT→MTR | WARN | NOT_IMPLEMENTED | Measured speed on `0x206` diverges from PCNT rear encoder pulses $>200$ mm/s (encoder slip / pulse noise) |
@@ -426,7 +436,7 @@ The following diagnostics can be evaluated and emitted purely through software l
 | `0x0245` | `RT_SEB_CONTROL_ENABLE_REJECTED`| RT→SEB | WARN | NOT_IMPLEMENTED | SEB fails to transition to active control enable feedback within 200 ms of command |
 | `0x0246` | `RT_SEB_SUBZERO_TEMP_WARN` | RT→SEB | WARN | NOT_IMPLEMENTED | SEB ECU/fluid temperature $<-10^\circ$C risking high fluid viscosity / sluggish brake actuation |
 | `0x0247` | `RT_DCDC_TELEMETRY_TIMEOUT` | RT→PWT | WARN | NOT_IMPLEMENTED | DC-DC converter `0x600` telemetry stream dropped from Low CAN bus |
-| `0x0248` | `RT_MCP2515_SPI_COMM_FAIL` | RT→CAN | ESTOP | NOT_IMPLEMENTED | High CAN MCP2515 SPI transaction timeout or invalid register echo (e.g. CANSTAT read fail) |
+| `0x0248` | `RT_MCP2515_SPI_COMM_FAIL` | RT→CAN | ESTOP | NOT_IMPLEMENTED | High CAN MCP2515 SPI bus failure: MISO/MOSI/SCK/CS line severed, transaction timeout, or register echo failure |
 | `0x0249` | `RT_CAN_LOW_BUS_PASSIVE` | RT→CAN | WARN | NOT_IMPLEMENTED | TWAI controller enters Error-Passive state (TEC or REC $>127$) |
 | `0x024A` | `RT_CAN_HIGH_BUS_PASSIVE` | RT→CAN | WARN | NOT_IMPLEMENTED | MCP2515 controller enters Error-Passive state (TEC or REC $>127$) |
 | `0x024B` | `RT_CAN_INVALID_DLC` | RT→CAN | WARN | NOT_IMPLEMENTED | Frame received with unexpected DLC (e.g. `0x001` with DLC $>0$ or `0x300` with DLC $\ne 8$) |
@@ -440,6 +450,14 @@ The following diagnostics can be evaluated and emitted purely through software l
 | `0x0253` | `RT_SEB_PRESSURE_ZERO_DRIFT` | RT→SEB | WARN | NOT_IMPLEMENTED | Rest transducer pressure $>150$ kPa when brake pushrod is confirmed fully retracted ($0$ mm) |
 | `0x0254` | `RT_DCDC_OUTPUT_VOLTAGE_SAG` | RT→PWT | WARN | NOT_IMPLEMENTED | DC-DC `0x600` output voltage drops $<11.0$ V under transient steering/braking load |
 | `0x0255` | `RT_MTR_TEMPERATURE_HIGH` | RT→MTR | WARN | NOT_IMPLEMENTED | Motor controller or winding temperature on `0x206`/`0x600` exceeds thermal derating limit |
+| `0x0256` | `RT_TASK_DEADLINE_MISSED` | RT→RT | WARN | NOT_IMPLEMENTED | Control loop (100 Hz) execution time or scheduling period exceeds threshold ($>15$ ms) |
+| `0x0257` | `RT_HEAP_FRAGMENTATION_HIGH` | RT→RT | WARN | NOT_IMPLEMENTED | Largest free heap block $<4$ KB while total free heap is available (memory fragmentation trap) |
+| `0x0258` | `RT_SAFETY_QUEUE_OVERFLOW` | RT→RT | ESTOP | NOT_IMPLEMENTED | FreeRTOS safety event queue `g_safety_evt_q` saturated; dropped transition event |
+| `0x0259` | `RT_PID_INTEGRATOR_SATURATED` | RT→RT | WARN | NOT_IMPLEMENTED | Speed PID integral error accumulator clamped at ceiling/floor for $>2.0$ s |
+| `0x025A` | `RT_LOCAL_ESTOP_LATCH_PREVENT_CLEAR` | RT→RT | WARN | NOT_IMPLEMENTED | SYS issued `SAFETY_CLEAR` but local RT latch (following error / obstacle) actively blocks release |
+| `0x025B` | `RT_SYS_SAFETY_CRC_ERROR` | RT→SYS | WARN | NOT_IMPLEMENTED | E2E CRC-8 Autosar mismatch on received `0x011` safety status frame |
+| `0x025C` | `RT_STREAM_COUNTER_FROZEN` | RT→CAN | WARN | NOT_IMPLEMENTED | Rolling counter in `0x011`, `0x201`, `0x721`, or `0x300` repeated without increment |
+| `0x025D` | `RT_CALIBRATION_CORRUPTED` | RT→RT | INHIBIT | NOT_IMPLEMENTED | Stored calibration parameters in NVS fail CRC32 verification on startup |
 
 #### 8.2.3 MTR Node Capabilities (`0x03xx`)
 
@@ -588,10 +606,18 @@ When `flags` bit 1 (`SNAPSHOT_VALID`) is asserted in `0x601`, `0x621`, or `0x631
 | **Rolling Counter Stale / Frozen** (`*_COUNTER_STALE`, `SYS_RT_COUNTER_FROZEN`) | `(expected_ctr << 8) \| stuck_ctr` | Count | Detects sender thread deadlock vs dropped frame sequence |
 | **Task Deadline Missed** (`*_TASK_DEADLINE_MISSED`, `RT_TASK_HEALTH_FAULT`) | `(task_index << 8) \| elapsed_period_ms`| Index / ms | Identifies starved FreeRTOS task and exact loop overrun duration |
 | **Task Stack Exhaustion** (`*_STACK_HIGH_WATER`) | `(task_index << 8) \| min_free_bytes` | Index / Bytes | Detects task nearing stack overflow before corruption occurs |
-| **Heap Memory Exhaustion** (`RT_HEAP_LOW_WARNING`) | Remaining free heap | 1 KB | Warns before dynamic memory allocation failure or malloc crash |
+| **Heap Memory Exhaustion** (`*_HEAP_LOW_WARNING`) | Remaining free heap | 1 KB | Warns before dynamic memory allocation failure or malloc crash |
+| **Heap Fragmentation Risk** (`RT_HEAP_FRAGMENTATION_HIGH`) | Largest contiguous allocatable block | Bytes | Detects memory fragmentation preventing allocation despite total free RAM |
+| **CPU Core Saturated** (`SYS_CPU_CORE_SATURATED`) | FreeRTOS idle task runtime percentage | 1 % | Warns when Core 0 or Core 1 load exceeds 95% threshold |
+| **Mutex Deadlock Trip** (`SYS_MUTEX_DEADLOCK_TRIP`) | Mutex identifier / caller address | Hex ID | Captures deadlock on TWAI CAN driver or peripheral control lock |
+| **Task Watchdog Starvation** (`SYS_WATCHDOG_PET_FAILURE`) | Starved task FreeRTOS handle index | Task index | Traps task deadlock or un-pet state triggering Task Watchdog |
+| **Safety Queue Overflow** (`RT_SAFETY_QUEUE_OVERFLOW`) | Cumulative dropped safety events | Count | Identifies dropped ESTOP or MODE transitions caused by full event queue |
+| **PID Integrator Clamping** (`RT_PID_INTEGRATOR_SATURATED`) | Clamped integral correction effort | 1 mm/s | Traps windup condition where speed loop cannot overcome load |
+| **Local Latch Blocks Clear** (`RT_LOCAL_ESTOP_LATCH_PREVENT_CLEAR`) | Local blocking `estop_reason` code | Reason enum | Explains why RT rejected SYS_SAFETY_STS clear command |
+| **Calibration Corrupted** (`RT_CALIBRATION_CORRUPTED`) | Calibration parameter group ID | ID code | Indicates steering center or PID non-volatile parameters failed CRC32 |
 | **Silicon Die Overheat** (`*_SOC_TEMP_HIGH`) | ESP32-S3 internal die temperature | 0.1 °C | Verifies thermal throttling or enclosure overheating (e.g. $920 = 92.0^\circ\text{C}$) |
 | **Brownout Detected** (`*_BROWNOUT_DETECTED`) | `(reset_reason << 8) \| min_vdd_mv` | Code / mV | Detects 3.3V power rail collapse ($V_{\text{DD33}} < 2.8\text{ V}$) causing MCU reset |
-| **Storage Fault** (`RT_NVS_STORAGE_FAULT`) | Low 16 bits of ESP-IDF `esp_err_t` | Error code | Captures flash wear-out or NVS partition corruption on parameter save |
+| **Storage / Flash NVS Fault** (`RT_NVS_STORAGE_FAULT`, `SYS_NVS_STORAGE_CORRUPT`) | Low 16 bits of ESP-IDF `esp_err_t` | Error code | Captures flash wear-out or NVS partition corruption on parameter/diag save |
 | **Steering Following Error** (`RT_STEER_FOLLOWING_ERROR`) | Absolute steering angle error $|\Delta \theta|$ | 0.1 ° | Quantifies tracking lag between RT rack angle command and SES feedback |
 | **Steering Mechanical Bind / Jam** (`RT_STEER_MECHANICAL_BIND`, `RT_STEER_ESTOP_JAM`)| Steering motor current draw | 0.01 A | Differentiates physical linkage jam / flat tire ($>20\text{ A}$) from sensor fault |
 | **Steering Curb Strike** (`RT_STEER_CURB_IMPACT`) | Peak opposing reaction torque | 0.1 N·m | Documents external obstacle collision deflecting front steering column |
@@ -629,6 +655,10 @@ When `flags` bit 1 (`SNAPSHOT_VALID`) is asserted in `0x601`, `0x621`, or `0x631
 | **Switch Contact Conflict** (`SYS_SWITCH_CONFLICT`) | Raw GPIO input port bitmask | Bitfield | Detects mutually exclusive switch contacts active simultaneously (e.g. Left + Right) |
 | **Supply Sag Under Actuation** (`RT_SUPPLY_VOLTAGE_SAG`, `RT_DCDC_OUTPUT_VOLTAGE_SAG`)| Measured 12V bus voltage | 1 mV | Captures weak 12V battery or DC-DC collapse under heavy steering/braking load |
 | **Powertrain DC-DC Converter Fault** (`PWT_DCDC_VOLTAGE_*`, `PWT_DCDC_OVERTEMP`)| DC-DC reported telemetry value | 0.1 V / 0.1 °C| Pinpoints converter high-voltage bus side or thermal trip |
+| **SPI Interface Failure** (`RT_MCP2515_SPI_COMM_FAIL`) | `(spi_err_code << 8) \| last_canstat` | Code / Byte | Distinguishes physical SPI bus fault (MOSI/MISO/SCK/CS) vs MCP2515 brownout/config reset |
+| **CAN Transceiver Hardware Fault** (`RT_CAN_HIGH_TRANSCEIVER_FAULT`) | `(txbo_state << 8) \| tec_count` | Flag / Count | Proves SPI bus is healthy but physical transceiver stage is unpowered or stuck dominant |
+| **Direction Rollback Conflict** (`RT_DIRECTION_ROLLBACK_CONFLICT`) | Uncommanded reverse/forward speed | 1 mm/s | Traps vehicle rolling backward on incline while Drive ($D$) is commanded |
+| **Dynamic Steering Clamp Exceeded** (`RT_DYNAMIC_CLAMP_EXCEEDED`) | Excess angle $|\theta - \theta_{\text{limit}}(v)|$ | 0.1 ° | Traps planner or actuator exceeding speed-dependent dynamic steering envelope |
 
 Notes:
 - `RT_HOST_HEARTBEAT_TIMEOUT` asserts `0x001` in firmware (`safety_monitor.h:116-124`
