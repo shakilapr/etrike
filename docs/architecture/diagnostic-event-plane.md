@@ -34,14 +34,19 @@ existing detector/control code = vehicle behavior (unchanged by Phase B)
 9. **Phase B does not silently add new safety behavior** — it instruments
    existing detectors only.
 10. **Observability and monitoring are separate fields** (see §4).
-11. **Lowest-cost authoritative evidence sourcing.** A diagnostic shall be
-    sourced at the lowest-cost authoritative observation point. Hardware status
-    flags (TWAI/CAN error registers, MCU reset reasons, I2C/SPI driver return
-    codes) and existing software decisions (safety monitor inhibit checks, E2E
-    CRC verifications, queue push results) are strictly preferred over duplicate
-    monitoring. Derived checks use values already in memory (`!std::isfinite()`,
-    range clamp, following error). Expensive historical, statistical, and
-    cross-ECU correlation belongs exclusively on the Host flight recorder.
+11. **Sourcing — closest authoritative observation point, lowest additional cost.**
+    A diagnostic shall be sourced from the closest authoritative observation point
+    that already possesses sufficient evidence, using the lowest additional runtime
+    cost. *Authoritative* is evidence-specific: a node does **not** need to fully
+    decode a payload to be authoritative for transport-level facts it directly
+    observes — DLC mismatch, frame timeout, bus-off, and RX overflow are observable
+    from frame metadata / controller state without decoding the signal. Semantic
+    signal diagnostics belong where the signal is decoded or computed; transport
+    diagnostics may belong where frame metadata or controller state is directly
+    observed. Existing detector decisions are preferred over duplicate monitoring.
+    Local cross-ECU plausibility checks are permitted when required for intentional
+    independent supervision; expensive historical and global causal analysis
+    belongs on the Host.
 
 ## 2. Diagnostic identity
 
@@ -123,8 +128,9 @@ vocabularies:
   detection_basis: [DIRECT_HW, DIRECT_SW, DERIVED]
   disposition:    [ACTIVE, PHASE_C, DEFERRED, OMITTED]   # planning metadata only; excluded from firmware & DIAGNOSTICS_HASH
   failure_mode:   [ASSERTED, TIMEOUT, STALE, INVALID, IMPLAUSIBLE, MISMATCH,
-                   FOLLOWING_ERROR, BUS_OFF, CRC_ERROR, COUNTER_ERROR,
-                   WRITE_FAILED, INTERNAL_ERROR]
+                   FOLLOWING_ERROR, BUS_OFF, ERROR_PASSIVE, CRC_ERROR, COUNTER_ERROR,
+                   OVERFLOW, DEADLINE_MISSED, OVERTEMP, UNDERTEMP, UNDERVOLTAGE,
+                   RESOURCE_LOW, RESET, WRITE_FAILED, INTERNAL_ERROR]
 ```
 
 ### `source` vs `evidence_sources`
@@ -182,6 +188,14 @@ diagnostics:
       firmware timeout.
 ```
 
+The `reporter` must be the closest authoritative observation point (design
+principle 11): RT decodes SES (`0x201`/`0x202`); SYS decodes SEB
+(`0x721`/`0x6FB`/`0x731`/`0x741`) and MTR (`0x206`); MTR decodes SYS
+(`0x011`/`0x110`/`0x113`) and RT (`0x204`). A node that receives but does not
+decode a payload may still be authoritative for transport-level facts (DLC
+mismatch, frame timeout, bus-off, RX overflow) observed from frame metadata or
+controller state.
+
 ### `monitoring: NOT_IMPLEMENTED` omits `reaction`
 
 A `NOT_IMPLEMENTED` entry is a **coverage / future** diagnostic — no detector
@@ -234,10 +248,14 @@ define the diagnostic identity.
 
 ### `latching`
 
-`latching: true` marks an event that, once active, remains reported until an
-explicit recovery/clear (e.g. ESTOP-class causes). `latching: false` marks
-events that clear as soon as the condition disappears (e.g. a transient
-timeout that recovers when communication resumes).
+`latching: true` marks an event that, once active, transitions `ACTIVE → LATCHED`
+when the fault condition physically clears, and remains reported (`LATCHED`)
+until an explicit `clear()` (operator acknowledgement). `latching: false` means
+disappearance of the fault condition allows an immediate transition
+`ACTIVE → RECOVERED` with no operator acknowledgement — the physical recovery is
+acknowledged automatically. `CLEARED` is the diagnostic-record lifecycle state
+after an explicit `clear()` (or after `RECOVERED` for non-latching records, if the
+record is cleared); it is **not** entered merely because the condition disappears.
 
 ## 5. CAN wire contracts & diagnostic data payload
 
@@ -545,8 +563,8 @@ To correlate field logs without polluting diagnostic payloads or rewriting CAN c
 The generator emits different amounts of metadata for firmware vs Host:
 
 - **Compact C++** (`generated/cpp/diagnostics.hpp`) for ESP32/STM32 — `DiagId`
-  enum (**IMPLEMENTED events only**) plus minimal runtime metadata
-  (`latching`, `is_estop_cause`, `persist`). No human-readable strings; severity/reaction/
+   enum (**IMPLEMENTED events only**) plus minimal runtime metadata
+   (`latching`, `is_estop_cause`). No human-readable strings; severity/reaction/
   description stay Host-side. Because `diag.raise(id, uint16_t snapshot)` takes an
   already-packed 16-bit integer, the embedded runtime does not store snapshot decoding formats:
   the firmware detection point packs the raw value, and the generated Host dictionary owns
@@ -558,7 +576,6 @@ The generator emits different amounts of metadata for firmware vs Host:
       DiagId   id;
       bool     latching;        // requires explicit clear() to exit latched state
       bool     is_estop_cause;  // eligible for FIRST_LOCAL_ESTOP_CAUSE flag
-      bool     persist;         // eligible for Phase-C NVM incident logging
   };
   // Note: diag_key() strings and snapshot format decoders are omitted from embedded headers. Host owns all decoding.
   ```
@@ -666,7 +683,6 @@ is omitted for all `NOT_IMPLEMENTED` entries below.
 | `0x0140` | `SYS_MTR_ROLLAWAY` | SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | Vehicle speed $> 100$ mm/s on `0x206` while in Neutral without throttle |
 | `0x0141` | `SYS_MTR_STALL` | SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | High commanded speed on `0x204` for $> 1.0$ s with zero measured speed on `0x206` |
 | `0x0142` | `SYS_MTR_PARTIAL_CRASH` | SYS→MTR | — | NOT_IMPLEMENTED | PHASE_C | STM32 broadcasting `0x120` (`SYS_THROTTLE_STS`) but failing to emit `0x206` |
-| `0x0150` | `SYS_SES_STATUS_TIMEOUT` | SYS→SES | — | NOT_IMPLEMENTED | PHASE_C | Low CAN monitor: complete absence of forwarded EPS-C `0x201` during vehicle motion |
 | `0x0160` | `SYS_LEVER_SWITCH_HELD_ACTIVE_LONG`| SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Physical brake lever GPIO 2 held active continuously for $>60$ s while speed $>0$ (rider holding brake vs stuck switch) |
 | `0x0161` | `SYS_START_BUTTON_STUCK_ACTIVE` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | Momentary START (GPIO 41) held LOW $>10$ s |
 | `0x0162` | `SYS_MODE_BUTTON_STUCK_ACTIVE` | SYS→SYS | — | NOT_IMPLEMENTED | PHASE_C | MODE (GPIO 11) button held LOW $>10$ s |
@@ -753,6 +769,7 @@ is omitted for all `NOT_IMPLEMENTED` entries below.
 | `0x025B` | `RT_LOCAL_ESTOP_LATCH_PREVENT_CLEAR` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | SYS issued `SAFETY_CLEAR` but local RT latch (following error / obstacle) actively blocks release |
 | `0x025C` | `RT_SYS_SAFETY_CRC_ERROR` | RT→SYS | — | NOT_IMPLEMENTED | PHASE_C | E2E CRC-8 Autosar mismatch on received `0x011` safety status frame |
 | `0x025D` | `RT_CALIBRATION_CORRUPTED` | RT→RT | — | NOT_IMPLEMENTED | PHASE_C | Stored calibration parameters in NVS fail CRC32 verification on startup |
+| `0x025E` | `RT_SES_STATUS_TIMEOUT` | RT→SES | — | NOT_IMPLEMENTED | PHASE_C | RT detects absence of valid `0x201` SES_STATUS for $>5$ s (`rt-esp32/src/steering_control.h:67`). Distinct observation from `RT_SES_L3_FAULT` (`0x0206`); SYS cannot observe SES (no decoder) so ownership is RT |
 
 #### 8.2.3 MTR Node Capabilities (`0x03xx`)
 
@@ -893,12 +910,23 @@ Example registry entries:
   key: RT_CAN_INVALID_DLC
   snapshot:
     encoding: BITFIELD16
-    fields: [{ name: expected_dlc, bits: "15:8" }, { name: actual_dlc, bits: "7:0" }]
+    fields:
+      - { name: reserved, bits: "15:15" }
+      - { name: offending_can_id, bits: "14:4" }   # 11-bit standard CAN ID
+      - { name: actual_dlc, bits: "3:0" }
+- id: 0x0173
+  key: SYS_CAN_INVALID_DLC
+  snapshot:   # identical packing to RT_CAN_INVALID_DLC
+    encoding: BITFIELD16
+    fields:
+      - { name: reserved, bits: "15:15" }
+      - { name: offending_can_id, bits: "14:4" }
+      - { name: actual_dlc, bits: "3:0" }
 ```
 
-The Host dictionary maps `DiagId → snapshot` metadata for display; embedded
-firmware only needs the encoding to populate byte 6–7 from values already
-available at the detection point.
+The Host dictionary maps `DiagId → snapshot` metadata for display. The embedded
+runtime stores an already-packed 16-bit snapshot value; interpretation of bytes
+6–7 is Host-side only.
 
 ---
 
