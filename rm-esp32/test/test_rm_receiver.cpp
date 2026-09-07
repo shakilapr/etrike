@@ -216,7 +216,7 @@ void test_canonical_can_encoding() {
 
 } // namespace
 
-int main() {
+int rm_receiver_test_main() {
     std::printf("========================================\n");
     std::printf("  RM-ESP32 Receiver & CAN Protocol Tests\n");
     std::printf("========================================\n");
