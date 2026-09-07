@@ -11,6 +11,7 @@
 #include "protocol/compat/can.hpp"
 #include "shared_config.h"
 #include "stream_validity.h"
+#include "shared/diagnostics.h"
 
 namespace mtr {
 
@@ -18,6 +19,10 @@ class MotorManager {
 public:
     MotorManager(RelayController& relays, DacController& dac)
         : relays_(relays), dac_(dac) {}
+
+    // Wire the shared DiagnosticManager (Phase B reporting). Optional: if unset,
+    // no diagnostic reports are emitted. Bookkeeping only — never changes reaction.
+    void set_diag(etrike::diagnostics::DiagnosticManager& diag) { diag_ = &diag; }
 
     void init() {
         relays_.init();
@@ -83,7 +88,10 @@ public:
             can::gen::RtDriveCmd cmd{};
             if (can::gen::decode_rt_drive_cmd(frame.view(), cmd) == can::gen::CodecStatus::Ok) {
                 // Mode authority lost: inhibit the drive command (no autonomous propulsion).
-                if (!mode_valid_) break;
+                if (!mode_valid_) {
+                    if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrCmdStreamUnauthorised);
+                    break;
+                }
                 target_speed_mmps_ = cmd.motor_speed_mmps;
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
                 // ESTOP is no longer cleared by a 0x204 reset sequence; only 0x011 can.
@@ -99,16 +107,14 @@ public:
                 power_valid_ = ok;
                 if (!ok) break;  // stale/invalid power authority: enter power-safe (zero propulsion)
                 const bool pwr_on = (pwr.power_state != 0);
-                // REARM observability (Phase A): MTR requires, after an authorized
-                // clear, a 0x113 OFF->ON edge (with a fresh 0x110 seen meanwhile)
-                // before propulsion is re-enabled. The OFF edge happens during the
-                // ESTOP (SYS drives 0x113=OFF while latched); the ON edge arrives
-                // post-clear. Track the OFF edge across the clear so the post-clear
-                // ON completes the REARM sequence.
                 if (!pwr_on) {
                     rearm_off_seen_ = true;
                 } else if (rearm_required_ && rearm_off_seen_ && mode_valid_) {
                     rearm_observed_ = true;
+                } else if (rearm_required_ && !rearm_off_seen_) {
+                    // 0x113 ON arrived but the required OFF edge was never observed:
+                    // REARM sequence violation. Reporting only — reaction unchanged.
+                    if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrRearmSequenceViolation);
                 }
                 prev_pwr_on_ = pwr_on;
                 power_state_on_ = pwr_on;
@@ -134,6 +140,7 @@ public:
             safety_state_valid_ = false;
             clear_confirm_ = 0;
             last_estop_zero_ = false;
+            if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrSysSafetyCrcError);
             return;
         }
 
@@ -142,6 +149,7 @@ public:
         if (!ok) {
             clear_confirm_ = 0;
             last_estop_zero_ = false;
+            if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrSysSafetyCounterStale);
             return;
         }
         last_safety_ms_ = now_ms;
@@ -201,6 +209,10 @@ public:
             safety_val_.invalidate_now();
             clear_confirm_ = 0;
             last_estop_zero_ = false;
+            if (diag_) {
+                diag_->raise(etrike::diagnostics::DiagId::MtrSysSafetyStsTimeout,
+                             static_cast<std::uint16_t>(now_ms - last_safety_ms_));
+            }
         }
         ignition_on_ = power_valid_ && power_state_on_ && safety_state_valid_ &&
                        (!rearm_required_ || rearm_observed_);
@@ -355,6 +367,7 @@ private:
 
     RelayController& relays_;
     DacController& dac_;
+    etrike::diagnostics::DiagnosticManager* diag_{nullptr};  // Phase B reporting (optional)
 
     bool estop_active_{false};
     bool comms_timed_out_{false};

@@ -18,6 +18,7 @@ static mtr::CanDriver       g_can(hfdcan1);
 static mtr::RelayController g_relays;
 static mtr::DacController   g_dac;
 static mtr::MotorManager    g_motor(g_relays, g_dac);
+static etrike::diagnostics::DiagnosticManager g_diag;  // Phase B diagnostic reporting
 
 // Forward declaration of system clock setup
 extern "C" void SystemClock_Config(void);
@@ -83,6 +84,10 @@ int main(void) {
         Error_Handler();
     }
 
+    // Wire the shared DiagnosticManager into the firmware subsystems (reporting only).
+    g_motor.set_diag(g_diag);
+    g_can.set_diag(g_diag);
+
     uint32_t last_loop_ms = HAL_GetTick();
     uint32_t last_fbk_ms = last_loop_ms;
     uint32_t last_throttle_ms = last_loop_ms;
@@ -102,6 +107,24 @@ int main(void) {
             last_loop_ms = now_ms;
             g_can.service_recovery();
             g_motor.tick(now_ms);
+
+            // Phase B: bounded drain of pending diagnostic reports to 0x631 (MTR_DIAG_EVENT_RPT).
+            // pop_pending_report() is non-blocking; cap frames per iteration to avoid TX floods.
+            static constexpr std::uint8_t kDiagDrainBudget = 8;
+            std::uint8_t diag_budget = kDiagDrainBudget;
+            etrike::diagnostics::DiagReport diag_rpt{};
+            while (diag_budget-- > 0 && g_diag.pop_pending_report(diag_rpt)) {
+                can::gen::MtrDiagEventRpt out{};
+                out.diag_id = static_cast<std::uint16_t>(diag_rpt.id);
+                out.state = static_cast<std::uint8_t>(diag_rpt.state);
+                out.occurrence_count = diag_rpt.occurrence_count;
+                out.report_counter = diag_rpt.report_counter;
+                out.flags = diag_rpt.flags;
+                out.snapshot_data = diag_rpt.snapshot_data;
+                can::Frame diag_frame{};
+                can::gen::encode_mtr_diag_event_rpt(out, diag_frame);
+                g_can.send(diag_frame);
+            }
         }
 
         // Periodic 0x120 SYS_THROTTLE_STS broadcast (100 Hz / 10 ms rate)

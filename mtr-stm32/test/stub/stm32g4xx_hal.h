@@ -207,6 +207,7 @@ inline void HAL_GPIO_TogglePin(GPIO_TypeDef* port, uint16_t pin_mask) {
 
 typedef struct {
     volatile uint32_t CCCR;
+    volatile uint32_t ECR;   // Error Counter Register (TEC 15:8, REC 7:0) — present on real STM32G4
     volatile uint32_t PSR;
 } FDCAN_GlobalTypeDef;
 
