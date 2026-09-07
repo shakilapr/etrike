@@ -294,7 +294,8 @@ target_include_directories(dual_heartbeat PRIVATE
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
-add_executable(architecture_data_flow test/test_architecture_data_flow.cpp)
+add_executable(architecture_data_flow test/test_architecture_data_flow.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp)
 target_link_libraries(architecture_data_flow PRIVATE protocol_headers)
 target_include_directories(architecture_data_flow PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
