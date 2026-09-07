@@ -24,6 +24,7 @@ bool g_bypass_mtr_absent = false;
 
 #include "config.h"
 #include "rt_state.h"
+#include "safety_stream_loss.h" // 0x011 freshness fail-safe (unit-tested)
 #include "build_config.h"      // compile-time feature flags (validated)
 #include "resolver_config.h"   // rt::ActiveResolver (type alias, zero overhead)
 #include "calculated_speed.h"  // CalculatedSpeedEstimator (SpeedFeedbackSource::Calculated)
@@ -378,15 +379,15 @@ static void pump_diagnostics() {
         }
         // Fail-safe: loss of the SYS_SAFETY_STS (0x011) stream must keep (or set)
         // the E-stop latch — never silently clear it.
-        if (!m_estop_pending) {
-            const int64_t last = g_last_sys_safety_sts_us.load();
-            if (last != 0 && (esp_timer_get_time() - last > 700000)) {
-                m_estop_pending = true;
-                m_estop_reason = rt::kEstopReasonCanEstop;
-                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
-                                 static_cast<std::uint16_t>(
-                                     (esp_timer_get_time() - last) / 1000));
-            }
+        if (!m_estop_pending
+            && rt::sys_safety_sts_lost(g_last_sys_safety_sts_us.load(),
+                                       esp_timer_get_time())) {
+            m_estop_pending = true;
+            m_estop_reason = rt::kEstopReasonCanEstop;
+            rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                             static_cast<std::uint16_t>(
+                                 (esp_timer_get_time()
+                                  - g_last_sys_safety_sts_us.load()) / 1000));
         }
         // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
         // SEB takeover is published immediately after safety checks below.
