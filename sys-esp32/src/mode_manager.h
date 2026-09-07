@@ -29,6 +29,18 @@ public:
     uint8_t mode_u8() const { return uint8_t(m_mode.load(std::memory_order_relaxed)); }
     const char* name() const;
 
+    // System ESTOP latch predicate (safety invariant, issue #4).
+    // The persistent ESTOP state SYS publishes (0x011.estop_active and
+    // 0x7FE.estop_active) must reflect the *system* latch, not merely the
+    // hardware ESTOP button. A software ESTOP (CAN 0x001, SEB L3, EGAS,
+    // bus-off, MTR-reported-ESTOP) latches ModeManager into ESTOP; while
+    // that latch is held estop_active MUST be 1 so downstream (RT/MTR)
+    // cannot two-frame-clear into a false all-clear. It only drops to 0
+    // once SYS has been explicitly reset out of ESTOP.
+    static constexpr bool estop_latched(can::Mode mode, bool hw_estop) {
+        return mode == can::Mode::Estop || hw_estop;
+    }
+
 private:
     void set_mode(can::Mode m) { m_mode.store(m, std::memory_order_relaxed); }
     static bool falling_edge(bool prev, bool now) { return prev && !now; }

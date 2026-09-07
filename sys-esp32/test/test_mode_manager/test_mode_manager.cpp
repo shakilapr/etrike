@@ -181,8 +181,49 @@ void test_mode_manager_can_mode_cmd_does_not_clear_estop(void) {
     TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
 }
 
+// Issue #4 safety invariant: the estop_active bit SYS publishes in 0x011 /
+// 0x7FE must track the *system* ESTOP latch (ModeManager mode == ESTOP),
+// not merely the hardware button. A software ESTOP (CAN 0x001, SEB L3,
+// EGAS, bus-off, MTR-reported-ESTOP) latches the mode into ESTOP, so the
+// published bit must be 1 even when the physical button is released —
+// otherwise RT/MTR could two-frame-clear into a false all-clear.
+void test_estop_latched_invariant(void) {
+    // hw button active alone → latched
+    TEST_ASSERT_TRUE(ModeManager::estop_latched(Mode::Manual, true));
+    TEST_ASSERT_TRUE(ModeManager::estop_latched(Mode::Auto, true));
+    // mode ESTOP alone (software source) → latched regardless of hw button
+    TEST_ASSERT_TRUE(ModeManager::estop_latched(Mode::Estop, false));
+    TEST_ASSERT_TRUE(ModeManager::estop_latched(Mode::Estop, true));
+    // neither → not latched
+    TEST_ASSERT_FALSE(ModeManager::estop_latched(Mode::Manual, false));
+    TEST_ASSERT_FALSE(ModeManager::estop_latched(Mode::Auto, false));
+}
+
+void test_estop_latched_follows_mode_latch_lifecycle(void) {
+    ModeManager mm;
+    mm.init();
+    // Software ESTOP (e.g. force_estop from CAN 0x001) with button released:
+    // published estop_active must be 1 for the whole duration of the latch.
+    mm.force_estop();
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+    TEST_ASSERT_TRUE(ModeManager::estop_latched(mm.mode(), /*hw_estop=*/false));
+
+    // A CAN mode command must not clear it (existing N1 regression).
+    mm.set_from_can(uint8_t(Mode::Manual));
+    TEST_ASSERT_TRUE(ModeManager::estop_latched(mm.mode(), /*hw_estop=*/false));
+
+    // Only the physical START-button reset path exits ESTOP; only then may the
+    // published bit drop to 0 so RT/MTR can begin their confirmed clear.
+    mm.tick(false, true);  // START press
+    mm.tick(false, false); // debounce settle
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+    TEST_ASSERT_FALSE(ModeManager::estop_latched(mm.mode(), /*hw_estop=*/false));
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
+    RUN_TEST(test_estop_latched_invariant);
+    RUN_TEST(test_estop_latched_follows_mode_latch_lifecycle);
     RUN_TEST(test_mode_manager_manual_to_auto);
     RUN_TEST(test_mode_manager_auto_to_manual);
     RUN_TEST(test_mode_manager_estop_exit_via_start_button);

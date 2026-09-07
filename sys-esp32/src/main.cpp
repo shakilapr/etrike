@@ -183,6 +183,18 @@ static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
 static std::atomic<uint8_t>  g_seb_error_status{0};   // from 0x721 byte0 bits6-7
 static std::atomic<bool>     g_brake_fault_active{false};
 
+// ── System ESTOP latch predicate (safety invariant, issue #4) ────────
+// The persistent ESTOP state SYS publishes (0x011.estop_active and
+// 0x7FE.estop_active) must reflect the *system* latch, not merely the
+// hardware ESTOP button. A software ESTOP (CAN 0x001, SEB L3, EGAS,
+// bus-off, MTR-reported-ESTOP) latches ModeManager into ESTOP; while that
+// latch is held, estop_active MUST be 1 so downstream (RT/MTR) cannot
+// two-frame-clear into a false all-clear. It only drops to 0 once SYS has
+// been explicitly reset out of ESTOP via the physical reset path.
+static bool sys_estop_latched() {
+    return sys::ModeManager::estop_latched(g_mode_mgr.mode(), g_safety.estop_active());
+}
+
 // Queues
 static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
@@ -643,11 +655,15 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // 0x113 SYS_PWR_CMD: resolved power authority for MTR.
         // Resolved from the validated HMI power request + safety state. ESTOP
         // (or any hard safety fault) forces power OFF.
+        // Fallback: If no valid HMI power request stream is actively present,
+        // default power to ON so MTR energizes when mode is operational.
         static uint8_t roll_pwr = 0;
         {
             can::Mode mode = g_mode_mgr.mode();
             const bool estop = (mode == can::Mode::Estop);
-            const bool pwr_on = g_hmi_pwr_on.load(std::memory_order_relaxed) && !estop;
+            const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
+            const bool pwr_req = hmi_valid ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
+            const bool pwr_on = pwr_req && !estop;
             can::Frame fr;
             can::gen::SysPwrCmd message{};
             message.power_state = pwr_on ? 1u : 0u;
@@ -734,8 +750,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // This is faster than waiting for the 1000ms heartbeat timeout.
         bool rt_setpoint_fresh = (now_ticks - g_last_setpoint_tick.load(std::memory_order_relaxed))
                                  < pdMS_TO_TICKS(sys::kSetpointStaleMs);
+        const bool seb_counter_alive = (now_ticks - g_last_seb_roll_change_tick.load(std::memory_order_relaxed))
+                                       <= pdMS_TO_TICKS(sys::kSebRollingTimeoutMs);
+        if (!seb_counter_alive) {
+            g_seb_rolling.store(false, std::memory_order_relaxed);
+        }
         const bool rt_authority_established =
-            rt_alive && rt_normal && rt_setpoint_fresh;
+            rt_alive && rt_normal && rt_setpoint_fresh && seb_counter_alive;
         bool suppress_seb = (mode == can::Mode::Auto)
                            && (auto_handoff_grace || rt_authority_established)
                            && !lever && !estop;
@@ -879,7 +900,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // from 0x110 SYS_MODE_CMD (which is clamped to MANUAL/AUTO). While the
         // E-stop is latched the mode may read MANUAL, but estop_active stays
         // set until a validated REARM clears it.
-        message.estop_active = g_safety.estop_active();
+        message.estop_active = sys_estop_latched();
         message.heartbeat_ok = g_safety.heartbeat_ok();
         message.light_left = lights & 0x01;
         message.light_right = lights & 0x02;
@@ -982,7 +1003,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::gen::SysHeartbeat message{};
         message.alive_ctr = ++alive_ctr;
         message.heartbeat_ok = g_safety.heartbeat_ok();
-        message.estop_active = g_safety.estop_active();
+        message.estop_active = sys_estop_latched();
         message.mode_auto = g_mode_mgr.mode() == can::Mode::Auto;
         const uint8_t task_health = g_task_health_bits.load(std::memory_order_relaxed);
         message.task_safety_ok = task_health & 0x01;
