@@ -1,5 +1,5 @@
 #pragma once
-// MTR STM32G431 — Motor Actuation Supervisor & Telemetry Engine
+// MTR STM32G431 ? Motor Actuation Supervisor & Telemetry Engine
 // Handles speed mapping to DAC, relay coordination, ESTOP monitoring, and CAN TX.
 
 #include <cstdint>
@@ -21,7 +21,7 @@ public:
         : relays_(relays), dac_(dac) {}
 
     // Wire the shared DiagnosticManager (Phase B reporting). Optional: if unset,
-    // no diagnostic reports are emitted. Bookkeeping only — never changes reaction.
+    // no diagnostic reports are emitted. Bookkeeping only ? never changes reaction.
     void set_diag(etrike::diagnostics::DiagnosticManager& diag) { diag_ = &diag; }
 
     void init() {
@@ -50,6 +50,7 @@ public:
         rearm_required_ = false;
         rearm_off_seen_ = false;
         rearm_observed_ = false;
+        rearm_start_ms_ = 0;
         prev_pwr_on_ = false;
         // Dedicated 0x204 watchdog state (issue #2).
         last_drive_ms_ = 0;
@@ -66,7 +67,7 @@ public:
         last_rx_ms_ = now_ms;
         first_frame_seen_ = true;
         comms_timed_out_ = false;
-        comms_healthy_ = true; // Maintain link health flag — cleared in tick() on watchdog expiry
+        comms_healthy_ = true; // Maintain link health flag ? cleared in tick() on watchdog expiry
 
         switch (frame.id) {
         case can::kIdSafetyEstop: { // 0x001 DLC 0 (Explicit Emergency Stop, hardwired dump)
@@ -74,12 +75,12 @@ public:
             break;
         }
 
-        case can::kIdSysSafetySts: { // 0x011 — persistent E-stop authority (latched state)
+        case can::kIdSysSafetySts: { // 0x011 ? persistent E-stop authority (latched state)
             handle_safety_status(frame, now_ms);
             break;
         }
 
-        case can::kIdSysModeCmd: { // 0x110 — authoritative mode command from SYS (MANUAL/AUTO only)
+        case can::kIdSysModeCmd: { // 0x110 ? authoritative mode command from SYS (MANUAL/AUTO only)
             can::gen::SysModeCmd mode_cmd{};
             if (can::gen::decode_sys_mode_cmd(frame.view(), mode_cmd) == can::gen::CodecStatus::Ok) {
                 const bool ok = mode_val_.observe(
@@ -125,7 +126,7 @@ public:
             break;
         }
 
-        case can::kIdSysPwrCmd: { // 0x113 — authoritative power command from SYS
+        case can::kIdSysPwrCmd: { // 0x113 ? authoritative power command from SYS
             can::gen::SysPwrCmd pwr{};
             if (can::gen::decode_sys_pwr_cmd(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
                 const bool ok = pwr_val_.observe(
@@ -137,9 +138,10 @@ public:
                     rearm_off_seen_ = true;
                 } else if (rearm_required_ && rearm_off_seen_ && mode_valid_) {
                     rearm_observed_ = true;
+                    rearm_start_ms_ = 0;   // REARM complete
                 } else if (rearm_required_ && !rearm_off_seen_) {
                     // 0x113 ON arrived but the required OFF edge was never observed:
-                    // REARM sequence violation. Reporting only — reaction unchanged.
+                    // REARM sequence violation. Reporting only ? reaction unchanged.
                     if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrRearmSequenceViolation);
                 }
                 prev_pwr_on_ = pwr_on;
@@ -220,13 +222,13 @@ public:
         clear_seq_last_ctr_ = msg.rolling_counter;
         last_estop_zero_ = true;
 
-        if (clear_confirm_ >= 2) authorized_clear();
+        if (clear_confirm_ >= 2) authorized_clear(now_ms);
     }
 
     // Authorized E-stop clear: latch released only after the validated two-frame
     // sequence. Authority streams are invalidated so a stale 0x204/0x110/0x113
     // cannot re-enable motion until a fresh REARM sequence is observed.
-    void authorized_clear() {
+    void authorized_clear(uint32_t now_ms) {
         estop_active_ = false;
         mode_valid_ = false;
         power_valid_ = false;
@@ -240,6 +242,7 @@ public:
         // during the ESTOP (0x113=OFF) carries across the clear to pair with the
         // post-clear ON. Only rearm_observed_ must be re-acquired each recovery.
         rearm_observed_ = false;
+        rearm_start_ms_ = now_ms;   // anchor the REARM-timeout diagnostic (issue RC4)
     }
 
     // Periodic evaluation (called at 5 ms rate)
@@ -287,7 +290,7 @@ public:
                 last_drive_gap_ok_ = false;
 
             if (drive_cmd_timed_out_) {
-                // Latched trip: release only via confirmed recovery — N consecutive
+                // Latched trip: release only via confirmed recovery ? N consecutive
                 // valid 0x204 frames at plausible cadence. Restart the stale clock
                 // so a subsequent silence re-trips after a full timeout.
                 if (drive_recover_count_ >= kDriveCmdRecoverFrames && last_drive_gap_ok_) {
@@ -321,6 +324,18 @@ public:
             target_speed_mmps_ = 0;
             relays_.set_state(RelayController::State::Off);
             dac_.force_zero();
+
+            // Issue RC4 (Case B): a REARM that is required but never observed
+            // within kRearmTimeoutMs after the clear is surfaced as a diagnostic
+            // (the vehicle stays safely inhibited). Rate-limit to one raise per
+            // window by comparing against the anchor.
+            if (rearm_required_ && !rearm_observed_ && rearm_start_ms_ != 0
+                && (now_ms - rearm_start_ms_ >= kRearmTimeoutMs)) {
+                if (diag_) {
+                    diag_->raise(etrike::diagnostics::DiagId::MtrRearmSequenceViolation,
+                                 static_cast<std::uint16_t>(now_ms - rearm_start_ms_));
+                }
+            }
             return;
         }
 
@@ -416,7 +431,7 @@ public:
     can::Frame build_motor_feedback_frame() const {
         can::gen::MtrMotorFbk fbk{};
         bool inhibited = propulsion_inhibited();
-        fbk.actual_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
+        fbk.applied_speed_command_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         fbk.gear_state = static_cast<uint8_t>(relays_.current_gear());
 
         uint8_t flags = 0;
@@ -514,17 +529,26 @@ private:
     bool rearm_required_{false};
     bool rearm_off_seen_{false};
     bool rearm_observed_{false};
+    // Issue RC4 (Case B): when a REARM is required but the fresh 0x113 OFF->ON
+    // edge never arrives (power stayed ON through the clear in a non-SYS flow),
+    // propulsion stays inhibited silently. rearm_start_ms_ anchors a timeout that
+    // surfaces this as a diagnostic instead of a silent stuck state.
+    uint32_t rearm_start_ms_{0};
+    // If REARM is not observed within this window after an authorized clear,
+    // raise MtrRearmSequenceViolation (reporting only; safe default is unchanged:
+    // the vehicle stays inhibited until the operator cycles power / re-drives 0x113).
+    static constexpr uint32_t kRearmTimeoutMs = 10'000;
     bool prev_pwr_on_{false};
 
     static constexpr uint32_t kShiftDwellMs{50};
     uint32_t shift_dwell_start_ms_{0};
 
-    // ── Dedicated 0x204 drive-command watchdog state (issue #2) ──
+    // ?? Dedicated 0x204 drive-command watchdog state (issue #2) ??
     uint32_t last_drive_ms_{0};          // last valid 0x204 receive time (ms)
     bool     drive_seen_{false};         // has any valid 0x204 ever arrived
     bool     drive_expected_{false};     // computed each tick: AUTO+power+valid authority
     uint32_t expected_since_ms_{0};      // when drive_expected first became true (arm clock)
-    bool     drive_cmd_timed_out_{false};// latched trip — 0x204 stale while expected
+    bool     drive_cmd_timed_out_{false};// latched trip ? 0x204 stale while expected
     uint8_t  drive_recover_count_{0};    // consecutive valid 0x204 events (confirmed recovery)
     bool     last_drive_gap_ok_{true};   // inter-arrival gaps stayed within cadence window
 };
