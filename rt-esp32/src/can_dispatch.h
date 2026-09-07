@@ -178,6 +178,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                     static bool ssts_latched = false;
                     static uint8_t ssts_clear_confirm = 0;
                     static bool ssts_last_zero = false;
+                    static uint8_t ssts_clear_last_ctr = 0;
                     if (ssts.estop_active) {
                         if (!ssts_latched) {
                             ssts_latched = true;
@@ -185,22 +186,40 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                                 rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
                             enqueue_safety_event(evt, pdMS_TO_TICKS(10));
                         }
+                        // Assert frame: restart the clear sequence.
                         ssts_clear_confirm = 0;
                         ssts_last_zero = false;
-                    } else {
-                        // Asymmetric clear: first fresh frame is a baseline; two
-                        // consecutive fresh advancing zero frames clear the latch.
-                        if (ssts_last_zero) {
-                            if (++ssts_clear_confirm >= 2 && ssts_latched) {
-                                ssts_latched = false;
-                                rt::SafetyEvent clr{rt::SafetyEvent::SAFETY_CLEAR, 0};
-                                enqueue_safety_event(clr, 0);
-                                g_steering_exit_request.store(true);
-                            }
-                        } else {
-                            ssts_clear_confirm = 1;
-                        }
+                    } else if (!ssts_latched) {
+                        // Continuous zeros while NOT latched must never accumulate
+                        // clear credit (normal running must never clear/REARM).
+                        // Observe counters for sequence state only.
+                        ssts_clear_confirm = 0;
                         ssts_last_zero = true;
+                        ssts_clear_last_ctr = static_cast<uint8_t>(ssts.rolling_counter);
+                    } else {
+                        // Asymmetric clear: an authorized clear requires TWO
+                        // consecutive zero frames whose rolling counters advance by
+                        // exactly +1 (mod 256) from the previous zero in the clear
+                        // sequence. A duplicate, gap (missed frame), or counter jump
+                        // restarts the sequence from that frame as the new baseline.
+                        const bool first_zero = !ssts_last_zero;
+                        const bool advances = (ssts.rolling_counter ==
+                            static_cast<uint8_t>(ssts_clear_last_ctr + 1u));
+                        if (first_zero) {
+                            ssts_clear_confirm = 1;  // baseline
+                        } else if (advances) {
+                            ++ssts_clear_confirm;    // consecutive advancing zero
+                        } else {
+                            ssts_clear_confirm = 1;  // dup/gap -> new baseline
+                        }
+                        ssts_clear_last_ctr = static_cast<uint8_t>(ssts.rolling_counter);
+                        ssts_last_zero = true;
+                        if (ssts_clear_confirm >= 2) {
+                            ssts_latched = false;
+                            rt::SafetyEvent clr{rt::SafetyEvent::SAFETY_CLEAR, 0};
+                            enqueue_safety_event(clr, 0);
+                            g_steering_exit_request.store(true);
+                        }
                     }
                 }
             }

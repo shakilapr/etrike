@@ -98,22 +98,22 @@ struct DriveCmd {
 };
 ```
 
-For normal motion, steering is computed from the requested yaw rate and speed:
+For normal motion, steering is computed from the requested yaw rate and speed using the signed inverse bicycle equation:
 
 $$
-\delta = \arctan\left(\frac{L \omega}{|v|}\right)
+\delta = \arctan\left(\frac{L \omega}{v}\right)
 $$
 
-where `omega` is the commanded yaw rate.
+where `omega` is the commanded yaw rate and `v` is linear velocity.
 
-The implementation uses `atan2(L * omega, abs(v))` so the sign comes from the
-yaw-rate command and the zero-speed case stays numerically stable.
+The implementation uses `atan((L * w) / v)` for $|v| > \text{low\_speed}$. Using signed $v$ preserves the required reverse-drive steering sign so that $\dot{\theta} = \frac{v}{L} \tan(\delta)$ holds during reversing.
 
-### Low-speed behavior
+### Low-speed and standstill behavior
 
-When `|v|` falls below the low-speed threshold, the steering angle is not
-re-estimated from the command. The firmware holds the last valid steering angle
-and decays it toward zero. This avoids noisy steering changes near standstill.
+When $|v|$ falls below the low-speed threshold ($50\text{ mm/s}$):
+
+1. **Standstill with yaw rate ($|\omega| > 0.001\text{ rad/s}$):** The tricycle cannot spin in place. The firmware sets the front wheel to full lock ($\pm 40^\circ$) in the requested direction but keeps motor speed at zero ($v = 0$). This pre-aligns the steering for the turn without causing an unexpected forward lurch (bug 4.5 fix).
+2. **Standstill without yaw rate:** The firmware holds the last valid steering angle and decays it toward zero (decay factor $0.8$). This avoids noisy steering changes near standstill.
 
 ### Output limits
 

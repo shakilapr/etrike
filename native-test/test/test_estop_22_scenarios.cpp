@@ -1,6 +1,12 @@
 // Test: Dedicated 22 ESTOP & Safety Reset Scenario Suite (§7.12)
 // Verifies assertion paths, assert dominance, reboot behavior, stale authority,
-// gateway echo loops, and safety invariants.
+// gateway echo loops, and safety invariants against the REAL mtr::MotorManager.
+//
+// Each scenario drives a fresh MotorManager with self-contained rolling counters
+// so the SYS_SAFETY_STS (0x011) stream validity / asymmetric-clear bookkeeping
+// is exercised genuinely (no accidental cross-scenario counter coupling, no
+// stream-invalidating jumps that would make assertions pass for the wrong
+// reason).
 
 #include <cassert>
 #include <cstdio>
@@ -21,6 +27,7 @@ extern "C" {
 #include "mtr-stm32/src/relay_controller.h"
 #include "mtr-stm32/src/dac_controller.h"
 #include "mtr-stm32/src/motor_manager.h"
+#include "sys-esp32/src/mode_manager.h"
 #include "shared/diagnostics.h"
 #include "protocol/compat/can.hpp"
 #include "protocol/generated/cpp/etrike_protocol.hpp"
@@ -41,9 +48,19 @@ static int g_failed = 0;
 
 namespace {
 
+// Mode / power / safety authority helpers. Each MotorManager instance owns its
+// own StreamValidity supervisors (reset by init()), so mode/power counters are
+// monotonic globals (safe). The 0x011 safety counter is passed EXPLICITLY by
+// each scenario via a local Ctr so the clear-sequence tests stay contiguous.
 static uint8_t g_mode_ctr = 0;
 static uint8_t g_pwr_ctr = 0;
-static uint8_t g_safe_ctr = 0;
+
+// Small modular-counter helper: yields 0..255 and wraps.
+struct Ctr {
+    uint8_t v;
+    explicit Ctr(uint8_t start = 0) : v(start) {}
+    uint8_t next() { return v++; }
+};
 
 static void send_mode(mtr::MotorManager& mgr, can::Mode mode, uint32_t now) {
     const bool auto_mode = (mode == can::Mode::Auto);
@@ -65,31 +82,31 @@ static void send_drive(mtr::MotorManager& mgr, int32_t speed, can::Gear gear, ui
     can::Frame f; can::gen::encode_rt_drive_cmd(drv, f); mgr.handle_frame(f, now);
 }
 
-static void send_safety_frames(mtr::MotorManager& mgr, bool estop, int n, uint32_t now, uint8_t* counter_override = nullptr) {
-    for (int i = 0; i < n; ++i) {
-        can::gen::SysSafetySts msg{};
-        msg.estop_active = estop;
-        msg.heartbeat_ok = true;
-        msg.light_left = false;
-        msg.light_right = false;
-        msg.light_brake = false;
-        msg.light_head = false;
-        msg.rolling_counter = counter_override ? *counter_override : g_safe_ctr++;
-        msg.e2e_crc = 0;
-        can::Frame tmp;
-        can::gen::encode_sys_safety_sts(msg, tmp);
-        msg.e2e_crc = static_cast<std::uint8_t>(can::e2e::sys_safety_sts_crc(tmp.data.data()));
-        can::Frame f;
-        can::gen::encode_sys_safety_sts(msg, f);
-        mgr.handle_frame(f, now);
-    }
-}
-
-static void send_safety_corrupt(mtr::MotorManager& mgr, bool estop, uint32_t now) {
+// Single SYS_SAFETY_STS frame at an explicit rolling counter.
+static void send_safety(mtr::MotorManager& mgr, bool estop, uint8_t ctr, uint32_t now) {
     can::gen::SysSafetySts msg{};
     msg.estop_active = estop;
     msg.heartbeat_ok = true;
-    msg.rolling_counter = g_safe_ctr++;
+    msg.light_left = false;
+    msg.light_right = false;
+    msg.light_brake = false;
+    msg.light_head = false;
+    msg.rolling_counter = ctr;
+    msg.e2e_crc = 0;
+    can::Frame tmp;
+    can::gen::encode_sys_safety_sts(msg, tmp);
+    msg.e2e_crc = static_cast<std::uint8_t>(can::e2e::sys_safety_sts_crc(tmp.data.data()));
+    can::Frame f;
+    can::gen::encode_sys_safety_sts(msg, f);
+    mgr.handle_frame(f, now);
+}
+
+// Deliberately corrupted CRC frame (rejected before the clear logic runs).
+static void send_safety_corrupt(mtr::MotorManager& mgr, bool estop, uint8_t ctr, uint32_t now) {
+    can::gen::SysSafetySts msg{};
+    msg.estop_active = estop;
+    msg.heartbeat_ok = true;
+    msg.rolling_counter = ctr;
     msg.e2e_crc = 0;
     can::Frame tmp;
     can::gen::encode_sys_safety_sts(msg, tmp);
@@ -99,68 +116,88 @@ static void send_safety_corrupt(mtr::MotorManager& mgr, bool estop, uint32_t now
     mgr.handle_frame(f, now);
 }
 
+// Hardwired ESTOP frame (0x001).
+static void send_001(mtr::MotorManager& mgr, uint32_t now) {
+    mgr.handle_frame(can::Frame{can::kIdSafetyEstop, 0, {}}, now);
+}
+
+// Establish a driving baseline: valid mode (Manual), valid power (ON), a VALID
+// 0x011 stream (two contiguous zeros @ s, s+1 -> First + Increment), and a
+// drive command. Returns the next safety counter.
+static uint8_t setup_healthy_drive(mtr::MotorManager& mgr, mtr::RelayController& relays,
+                                   mtr::DacController& dac, uint8_t s, uint32_t now) {
+    hal_mock::reset();
+    mgr.init();
+    send_mode(mgr, can::Mode::Manual, now);
+    send_power(mgr, true, now);
+    send_safety(mgr, false, s,     now);
+    send_safety(mgr, false, s + 1, now);
+    send_drive(mgr, 2000, can::Gear::D, now);
+    mgr.tick(now);
+    ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
+    ASSERT_TRUE(dac.current_code() > 0);
+    ASSERT_FALSE(mgr.is_estop_active());
+    return static_cast<uint8_t>(s + 2);
+}
+
+// Number of SameFrame gateway routes for safety_estop between two buses.
+static int count_estop_routes(const char* from, const char* to) {
+    int n = 0;
+    for (const auto& r : etrike::protocol::kRoutes) {
+        if (r.semantics == etrike::protocol::RouteSemantics::SameFrame &&
+            r.message == "safety:safety_estop" && r.from_bus == from && r.to_bus == to) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 } // namespace
 
 int main() {
     std::printf("Running 22-Scenario ESTOP & Safety Reset Suite (§7.12)...\n");
 
-    // Helper to establish initial healthy drive state
-    auto setup_healthy_drive = [](mtr::MotorManager& mgr, mtr::RelayController& relays, mtr::DacController& dac) {
-        hal_mock::reset();
-        mgr.init();
-        send_mode(mgr, can::Mode::Manual, 100);
-        send_power(mgr, true, 100);
-        send_safety_frames(mgr, false, 2, 100);
-        send_drive(mgr, 2000, can::Gear::D, 100);
-        mgr.tick(100);
-        ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
-        ASSERT_TRUE(dac.current_code() > 0);
-        ASSERT_FALSE(mgr.is_estop_active());
-    };
-
     // 1. test_estop_001_high_to_low
     {
-        // 0x001 on High bus triggers ESTOP and forwards to Low bus exactly once
-        bool forwarded_to_low = can::is_forwarded_high_to_low(can::kIdSafetyEstop);
-        ASSERT_TRUE(forwarded_to_low);
+        // 0x001 is routed High -> Low exactly once (SameFrame, no echo loop).
+        ASSERT_EQ(count_estop_routes("high", "low"), 1);
     }
 
     // 2. test_estop_001_low_to_high
     {
-        // 0x001 on Low bus triggers ESTOP and forwards to High bus exactly once
-        bool forwarded_to_high = can::is_forwarded_low_to_high(can::kIdSafetyEstop);
-        ASSERT_TRUE(forwarded_to_high);
+        // 0x001 is routed Low -> High exactly once (SameFrame, no echo loop).
+        ASSERT_EQ(count_estop_routes("low", "high"), 1);
     }
 
     // 3. test_estop_multiple_assertors
     {
-        // Multiple distinct assertors (0x001 hardwired frame, and 0x011 SYS_SAFETY_STS with estop_active=1)
+        // Distinct assertors (0x001 hardwired frame AND 0x011 estop_active=1)
+        // both leave the latch asserted with actuators forced safe.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(10);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        // First assertor: 0x001
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
+        send_001(mgr, 105);                                  // First assertor
         ASSERT_TRUE(mgr.is_estop_active());
-
-        // Second assertor: 0x011 with estop_active=1
-        send_safety_frames(mgr, true, 1, 106);
+        send_safety(mgr, true, s.next(), 106);               // Second assertor
         ASSERT_TRUE(mgr.is_estop_active());
+        mgr.tick(106);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
         ASSERT_EQ(dac.current_code(), 0);
     }
 
     // 4. test_safety_sts_assert_first_frame
     {
-        // 0x011 estop_active=1 asserts immediately on the very first frame
+        // 0x011 with estop_active=1 asserts immediately and forces actuators off.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(20);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        send_safety_frames(mgr, true, 1, 110);
+        send_safety(mgr, true, s.next(), 110);
         ASSERT_TRUE(mgr.is_estop_active());
         mgr.tick(110);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
@@ -168,118 +205,141 @@ int main() {
 
     // 5. test_safety_sts_zero_baseline_does_not_clear
     {
-        // A single 0x011 zero frame acts as baseline only and does NOT clear
+        // A single zero frame is a baseline only and must NOT clear the latch.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(30);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
         ASSERT_TRUE(mgr.is_estop_active());
 
-        send_safety_frames(mgr, false, 1, 110); // 1 zero frame (baseline)
+        send_safety(mgr, false, s.next(), 110); // 1 zero frame (baseline)
         ASSERT_TRUE(mgr.is_estop_active());
     }
 
     // 6. test_safety_sts_two_fresh_zero_frames_clear_authority
     {
-        // Exactly two consecutive zero frames clear the ESTOP latch
+        // Two CONSECUTIVE advancing zeros clear the ESTOP latch.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(40);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);   // SYS also publishing estop=true
         ASSERT_TRUE(mgr.is_estop_active());
 
-        send_safety_frames(mgr, false, 1, 110); // Frame 1: baseline
+        send_safety(mgr, false, s.next(), 110);  // Frame 1: baseline
         ASSERT_TRUE(mgr.is_estop_active());
-        send_safety_frames(mgr, false, 1, 112); // Frame 2: clear!
+        send_safety(mgr, false, s.next(), 112);  // Frame 2: advancing -> clear!
         ASSERT_FALSE(mgr.is_estop_active());
     }
 
     // 7. test_safety_sts_duplicate_does_not_advance_clear
     {
-        // A duplicate rolling counter does not count toward clear
+        // A duplicate rolling counter (same value as the baseline) must never
+        // count toward the clear; even repeated duplicates never clear.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(50);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
         ASSERT_TRUE(mgr.is_estop_active());
 
-        uint8_t ctr = 10;
-        send_safety_frames(mgr, false, 1, 110, &ctr); // baseline
-        send_safety_frames(mgr, false, 1, 111, &ctr); // duplicate counter 10
-        ASSERT_TRUE(mgr.is_estop_active()); // Still latched!
+        const uint8_t dup = s.next();
+        send_safety(mgr, false, dup, 110); // baseline @dup
+        send_safety(mgr, false, dup, 111); // duplicate @dup (must NOT advance)
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, false, dup, 112); // third identical frame (still no advance)
+        ASSERT_TRUE(mgr.is_estop_active());
     }
 
     // 8. test_safety_sts_crc_error_does_not_advance_clear
     {
-        // CRC corruption rejects frame and does not clear
+        // A CRC-corrupted zero frame is rejected: it must neither clear nor
+        // advance the sequence, and the authority stream is invalidated so the
+        // next zero is only a fresh re-acquisition baseline.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(60);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
         ASSERT_TRUE(mgr.is_estop_active());
 
-        send_safety_frames(mgr, false, 1, 110); // baseline
-        send_safety_corrupt(mgr, false, 112);   // bad CRC
+        send_safety(mgr, false, s.next(), 110);     // baseline
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety_corrupt(mgr, false, s.next(), 112); // bad CRC -> rejected
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, false, s.next(), 114);     // post-corrupt re-acquire (baseline)
         ASSERT_TRUE(mgr.is_estop_active());
     }
 
-    // 9. test_safety_sts_counter_fault_resets_clear_sequence
+    // 9. test_safety_sts_counter_gap_does_not_clear
     {
-        // A counter gap/jump resets clear eligibility
+        // A gap (a missed frame, +2) between zero frames means the second zero is
+        // NOT "consecutive advancing" from the first, so two observed zeros do
+        // not clear.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(70);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
         ASSERT_TRUE(mgr.is_estop_active());
 
-        uint8_t c1 = 10;
-        uint8_t c2 = 25; // gap!
-        send_safety_frames(mgr, false, 1, 110, &c1);
-        send_safety_frames(mgr, false, 1, 112, &c2);
+        send_safety(mgr, false, s.next(),       110); // baseline @c
+        send_safety(mgr, false, (uint8_t)(s.v + 1), 112); // @c+2 (missed c+1) -> not consecutive
         ASSERT_TRUE(mgr.is_estop_active());
+        s.v = static_cast<uint8_t>(s.v + 2); // consume
     }
 
     // 10. test_safety_sts_timeout_resets_clear_sequence
     {
-        // Timeout past freshness window resets clear sequence
+        // A freshness timeout (>700 ms) invalidates the 0x011 stream and resets
+        // the clear sequence. Two fresh zeros after the timeout only re-acquire
+        // and re-baseline (do NOT clear); a third consecutive one clears.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(80);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
         ASSERT_TRUE(mgr.is_estop_active());
 
-        send_safety_frames(mgr, false, 1, 110); // baseline
+        send_safety(mgr, false, s.next(), 110); // baseline
         mgr.tick(1000); // 1000 - 110 = 890 ms > kSafetyFreshMs (700ms) -> timed out
         ASSERT_TRUE(mgr.is_estop_active());
+
+        send_safety(mgr, false, s.next(), 1010); // re-acquire First (still invalid)
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, false, s.next(), 1012); // Increment -> baseline only
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, false, s.next(), 1014); // 2nd consecutive -> clears
+        ASSERT_FALSE(mgr.is_estop_active());
     }
 
     // 11. test_safety_sts_counter_wrap
     {
-        // 254 -> 255 -> 0 -> 1 valid wrap
+        // A genuine counter wrap (255 -> 0) between the baseline and the second
+        // zero is an advancing (+1 mod 256) clear across the boundary.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
@@ -287,94 +347,147 @@ int main() {
         mgr.init();
         send_mode(mgr, can::Mode::Manual, 100);
         send_power(mgr, true, 100);
-        uint8_t c252 = 252;
-        send_safety_frames(mgr, false, 1, 100, &c252);
+        // Establish a valid stream ending at 253.
+        send_safety(mgr, false, 252, 100); // First
+        send_safety(mgr, false, 253, 100); // Increment -> valid
         send_drive(mgr, 2000, can::Gear::D, 100);
         mgr.tick(100);
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
         ASSERT_FALSE(mgr.is_estop_active());
 
-        // Latch ESTOP at counter 253
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        uint8_t c253 = 253;
-        send_safety_frames(mgr, true, 1, 108, &c253);
+        send_safety(mgr, true, 254, 105);  // assert at 254 (accepted, latch)
         ASSERT_TRUE(mgr.is_estop_active());
-
-        uint8_t c254 = 254;
-        uint8_t c255 = 255;
-        uint8_t c0 = 0;
-        send_safety_frames(mgr, false, 1, 109, &c254); // baseline
-        send_safety_frames(mgr, false, 1, 110, &c255); // fresh zero #1
-        send_safety_frames(mgr, false, 1, 112, &c0);   // fresh zero #2 across wrap!
-        ASSERT_FALSE(mgr.is_estop_active());           // Authorized clear across wrap
+        send_safety(mgr, false, 255, 110); // baseline @255
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, false, 0, 111);   // @0 advances mod 256 -> CLEAR
+        ASSERT_FALSE(mgr.is_estop_active());
     }
 
     // 12. test_estop_assert_wins_during_clear
     {
-        // If an ASSERT frame arrives during clear sequence, ASSERT immediately wins
+        // If an ASSERT frame arrives during the clear sequence, it wins: the
+        // clear progress is discarded and the next zero is only a baseline.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(90);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, true, 1, 108);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
         ASSERT_TRUE(mgr.is_estop_active());
 
-        send_safety_frames(mgr, false, 1, 110); // baseline
-        send_safety_frames(mgr, true, 1, 112);  // ASSERT frame arrives!
+        send_safety(mgr, false, s.next(), 110); // baseline
+        send_safety(mgr, true,  s.next(), 112); // ASSERT arrives -> discards progress
         ASSERT_TRUE(mgr.is_estop_active());
-        send_safety_frames(mgr, false, 1, 114); // Next zero is only a baseline again
+        send_safety(mgr, false, s.next(), 114); // next zero is baseline only
         ASSERT_TRUE(mgr.is_estop_active());
     }
 
     // 13. test_estop_cause_still_active_blocks_clear
     {
-        // If hardware ESTOP button or system latch is still held, clear cannot proceed
-        // Emulate sys::ModeManager behavior
-        bool hw_estop_pressed = true;
-        bool sys_latched = (can::Mode::Manual == can::Mode::Estop) || hw_estop_pressed;
-        ASSERT_TRUE(sys_latched); // Blocks 0x011 from transitioning to 0
+        // The system-level ESTOP latch predicate (SYS ModeManager) must report
+        // latched while the hardware ESTOP is pressed OR the mode is ESTOP, and
+        // NOT latched only when the button is released in MANUAL.
+        ASSERT_TRUE(sys::ModeManager::estop_latched(can::Mode::Manual, true));  // hw pressed
+        ASSERT_TRUE(sys::ModeManager::estop_latched(can::Mode::Estop, false));  // sw ESTOP
+        ASSERT_TRUE(sys::ModeManager::estop_latched(can::Mode::Estop, true));   // both
+        ASSERT_FALSE(sys::ModeManager::estop_latched(can::Mode::Manual, false));// healthy
+        ASSERT_FALSE(sys::ModeManager::estop_latched(can::Mode::Auto, false));  // healthy AUTO
     }
 
     // 14. test_sys_reboot_does_not_clear_estop
     {
-        // SYS reboot boots in safe default state
+        // SYS is the 0x011 producer. If SYS reboots and goes silent, the stream
+        // times out and MTR stays latched/safe; when SYS reconnects, the clear
+        // sequence must start from a fresh baseline (two fresh zeros do NOT
+        // clear a latched ESTOP on their own).
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        mgr.init();
-        ASSERT_FALSE(relays.is_ignition_on());
+        Ctr s(110);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
+
+        // Latch via 0x011 estop_active=1 (the SYS-held latch).
+        send_safety(mgr, true, s.next(), 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+
+        // SYS reboot: stream goes silent past the 700 ms freshness window.
+        mgr.tick(900);
+        ASSERT_TRUE(mgr.is_estop_active());
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
         ASSERT_EQ(dac.current_code(), 0);
+
+        // SYS reconnects: two fresh zeros only re-establish baseline, no clear.
+        send_safety(mgr, false, s.next(), 1000); // re-acquire
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, false, s.next(), 1005); // baseline
+        ASSERT_TRUE(mgr.is_estop_active());
     }
 
     // 15. test_rt_reboot_does_not_clear_estop
     {
-        // RT reboot stops sending 0x204/0x7FD, MTR remains safe/inhibited
+        // RT is the 0x204 producer. If RT reboots (all traffic stops), MTR's
+        // generic comms watchdog (>500 ms of total silence) removes propulsion
+        // authority. Sustained silence keeps the vehicle safe even though the
+        // last drive/authority frames are still latched in.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        mgr.init();
-        mgr.tick(600); // Exceeds watchdog
-        ASSERT_FALSE(relays.is_ignition_on());
+        Ctr s(120);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
+
+        // RT reboots: total CAN silence >500 ms trips the generic watchdog.
+        mgr.tick(700); // 700 - 100 = 600 ms > kWatchdogTimeoutMs (500ms)
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+        ASSERT_EQ(dac.current_code(), 0);
+
+        // A stray single drive frame DOES feed the generic deadman (any frame
+        // counts) — that models a live RT resuming. To prove a dead RT cannot
+        // re-enable motion, what matters is that a one-shot frame WITHOUT a
+        // sustained stream is not a valid recovery: the watchdog re-trips as soon
+        // as silence resumes. Assert the fail-safe still holds after one more
+        // silence window.
+        send_drive(mgr, 2000, can::Gear::D, 710);
+        mgr.tick(710);
+        mgr.tick(1300); // 1300 - 710 = 590 ms silence again -> watchdog re-trips
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
         ASSERT_EQ(dac.current_code(), 0);
     }
 
     // 16. test_mtr_reboot_does_not_clear_estop
     {
-        // MTR reboot initializes relays OFF, DAC 0, requiring fresh baseline before any clear
+        // After an MTR reboot (re-init), actuators boot safe and the 0x011 stream
+        // is NOT valid until a fresh baseline + advancing frame arrive. A single
+        // zero frame is insufficient to make the stream valid, so a drive command
+        // cannot move the vehicle.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
+        hal_mock::reset();
         mgr.init();
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+        ASSERT_EQ(dac.current_code(), 0);
+        ASSERT_FALSE(mgr.is_estop_active());
+
+        // Fresh mode/power authorities + a SINGLE zero (baseline) is not enough:
+        // the safety stream stays invalid, so propulsion stays off.
+        Ctr s(130);
+        send_mode(mgr, can::Mode::Manual, 100);
+        send_power(mgr, true, 100);
+        send_safety(mgr, false, s.next(), 100); // First (still invalid)
+        send_drive(mgr, 2000, can::Gear::D, 100);
+        mgr.tick(100);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
         ASSERT_EQ(dac.current_code(), 0);
     }
 
     // 17. test_all_ecus_reboot_safe
     {
-        // Cold start across all ECUs produces 0 motion
+        // Cold start with NO traffic at all: MTR boots inert (relays OFF, DAC 0,
+        // not latched) and even a raw drive command cannot produce motion.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
@@ -383,22 +496,31 @@ int main() {
         mgr.tick(0);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
         ASSERT_EQ(dac.current_code(), 0);
+
+        send_drive(mgr, 2000, can::Gear::D, 5);
+        mgr.tick(5);
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+        ASSERT_EQ(dac.current_code(), 0);
     }
 
     // 18. test_clear_enters_rearm_required
     {
-        // Clear releases latch into REARM_REQUIRED, NOT propulsion
+        // An authorized clear releases the latch into REARM_REQUIRED, NOT
+        // propulsion: a drive command after clear (without rearm) stays off.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(140);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, false, 2, 110);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
+        send_safety(mgr, false, s.next(), 110); // baseline
+        send_safety(mgr, false, s.next(), 112); // advancing -> clear
         ASSERT_FALSE(mgr.is_estop_active());
 
-        // Try to drive without rearm
+        // Try to drive without rearm.
         send_drive(mgr, 2000, can::Gear::D, 115);
         mgr.tick(115);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
@@ -407,57 +529,76 @@ int main() {
 
     // 19. test_pre_estop_mode_authority_invalid_after_clear
     {
-        // Pre-estop 0x110 mode authority is invalidated upon clear
+        // After an authorized clear, the pre-estop 0x110 mode authority is
+        // invalidated. Re-arming power (OFF -> ON) WITHOUT a fresh mode must not
+        // complete the REARM (rearm_observed_ requires mode_valid_), so the
+        // vehicle stays off.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(150);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, false, 2, 110);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
+        send_safety(mgr, false, s.next(), 110); // baseline
+        send_safety(mgr, false, s.next(), 112); // clear
+        ASSERT_FALSE(mgr.is_estop_active());
 
-        // Power cycled but no fresh mode
-        send_power(mgr, false, 112);
-        send_power(mgr, true, 114);
-        send_drive(mgr, 2000, can::Gear::D, 115);
-        mgr.tick(115);
+        // Power cycled but no fresh mode -> REARM cannot complete.
+        send_power(mgr, false, 114);
+        send_power(mgr, true, 115);
+        send_drive(mgr, 2000, can::Gear::D, 116);
+        mgr.tick(116);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+        ASSERT_EQ(dac.current_code(), 0);
     }
 
     // 20. test_pre_estop_power_authority_invalid_after_clear
     {
-        // Pre-estop 0x113 power authority is invalidated upon clear
+        // After an authorized clear, the pre-estop 0x113 power authority is
+        // invalidated too. Re-issuing only a mode (power untouched) leaves
+        // power_valid_ false, so ignition stays off.
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(160);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, false, 2, 110);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
+        send_safety(mgr, false, s.next(), 110); // baseline
+        send_safety(mgr, false, s.next(), 112); // clear
+        ASSERT_FALSE(mgr.is_estop_active());
 
-        // Mode sent but power left untouched (no OFF->ON edge)
-        send_mode(mgr, can::Mode::Manual, 112);
-        send_drive(mgr, 2000, can::Gear::D, 115);
-        mgr.tick(115);
+        // Fresh mode but power authority untouched -> power_valid_ stays false.
+        send_mode(mgr, can::Mode::Manual, 114);
+        send_drive(mgr, 2000, can::Gear::D, 116);
+        mgr.tick(116);
         ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+        ASSERT_EQ(dac.current_code(), 0);
     }
 
     // 21. test_full_post_clear_rearm_sequence_allows_drive
     {
-        // Full sequence: clear -> fresh mode -> power OFF -> power ON -> drive enabled
+        // Full sequence: clear -> fresh mode -> power OFF -> power ON -> drive
+        // enabled (positive control for scenarios 19/20/18).
         mtr::RelayController relays;
         mtr::DacController dac;
         mtr::MotorManager mgr(relays, dac);
-        setup_healthy_drive(mgr, relays, dac);
+        Ctr s(170);
+        setup_healthy_drive(mgr, relays, dac, s.next(), 100);
 
-        can::Frame f001{can::kIdSafetyEstop, 0, {}};
-        mgr.handle_frame(f001, 105);
-        send_safety_frames(mgr, false, 2, 110);
+        send_001(mgr, 105);
+        ASSERT_TRUE(mgr.is_estop_active());
+        send_safety(mgr, true, s.next(), 108);
+        send_safety(mgr, false, s.next(), 110); // baseline
+        send_safety(mgr, false, s.next(), 112); // clear
         ASSERT_FALSE(mgr.is_estop_active());
 
-        // Full REARM
+        // Full REARM: fresh mode, then power OFF->ON, then drive.
         send_mode(mgr, can::Mode::Manual, 120);
         send_power(mgr, false, 122);
         send_power(mgr, true, 124);
@@ -469,18 +610,16 @@ int main() {
 
     // 22. test_gateway_no_estop_echo_loop
     {
-        // Production route check: 0x001 forwarded exactly once across buses
-        int high_to_low = 0;
-        int low_to_high = 0;
-        if (can::is_forwarded_high_to_low(can::kIdSafetyEstop)) ++high_to_low;
-        if (can::is_forwarded_low_to_high(can::kIdSafetyEstop)) ++low_to_high;
-        ASSERT_EQ(high_to_low, 1);
-        ASSERT_EQ(low_to_high, 1);
+        // Production route table: 0x001 is forwarded exactly once in each
+        // direction (SameFrame routes), preventing any echo loop.
+        ASSERT_EQ(count_estop_routes("high", "low"), 1);
+        ASSERT_EQ(count_estop_routes("low", "high"), 1);
     }
 
     // 23. test_diagnostics_enabled_does_not_change_safety_outputs (§7.10)
     {
-        // Safety execution with diagnostics disabled vs enabled must produce identical physical outputs
+        // Safety execution with diagnostics disabled vs enabled must produce
+        // identical physical outputs.
         mtr::RelayController relaysA, relaysB;
         mtr::DacController dacA, dacB;
         mtr::MotorManager mgrA(relaysA, dacA); // No diag
@@ -488,8 +627,9 @@ int main() {
         etrike::diagnostics::DiagnosticManager diag;
         mgrB.set_diag(diag);
 
-        setup_healthy_drive(mgrA, relaysA, dacA);
-        setup_healthy_drive(mgrB, relaysB, dacB);
+        Ctr sa(180), sb(190);
+        setup_healthy_drive(mgrA, relaysA, dacA, sa.next(), 100);
+        setup_healthy_drive(mgrB, relaysB, dacB, sb.next(), 100);
 
         ASSERT_EQ(relaysA.state(), relaysB.state());
         ASSERT_EQ(dacA.current_code(), dacB.current_code());
@@ -512,4 +652,3 @@ int main() {
         return 1;
     }
 }
-
