@@ -968,6 +968,156 @@ void test_motor_manager_sys_estop_via_safety_status() {
     ASSERT_TRUE(dac.current_code() > 0);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Issue #2: dedicated 0x204 RT_DRIVE_CMD watchdog. The generic "any CAN frame
+// within 500 ms" deadman must NOT be the only thing protecting propulsion:
+// a frozen 0x204 while 0x110/0x113/0x011 stay alive must trip a fail-safe
+// disable within the dedicated window, and it must recover only after N
+// consecutive valid 0x204 frames at plausible cadence.
+// ═══════════════════════════════════════════════════════════════════════
+void test_motor_manager_drive_cmd_watchdog() {
+    std::printf("[TEST GROUP] Motor Manager: dedicated 0x204 drive-command watchdog (#2)...\n");
+
+    // ── A: drive in AUTO, then 0x204 goes stale while authority stays fresh ──
+    {
+        mtr::RelayController relays;
+        mtr::DacController dac;
+        mtr::MotorManager mgr(relays, dac);
+        mgr.init();
+
+        send_mode(mgr, can::Mode::Auto, 100);
+        send_power(mgr, true, 100);
+        send_safety(mgr, false, 100);
+        can::gen::RtDriveCmd drv{2000, static_cast<uint8_t>(can::Gear::D)};
+        can::Frame drv_fr;
+        can::gen::encode_rt_drive_cmd(drv, drv_fr);
+        mgr.handle_frame(drv_fr, 100);
+        mgr.tick(100);
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
+        ASSERT_TRUE(dac.current_code() > 0);
+        ASSERT_TRUE(mgr.is_drive_expected());
+        ASSERT_FALSE(mgr.is_drive_cmd_timed_out());
+
+        // Keep 0x110/0x113/0x011 alive but STOP sending 0x204. At 5 ms tick cadence,
+        // step in 20 ms increments re-feeding authority. Drive timeout = 150 ms.
+        uint32_t now = 100;
+        for (uint32_t step = 0; step < 8; ++step) {  // 8 * 20ms = 160ms
+            now += 20;
+            // Keep authority streams fresh (must keep advancing counters).
+            send_mode(mgr, can::Mode::Auto, now);
+            send_power(mgr, true, now);
+            send_safety(mgr, false, now);
+            mgr.tick(now);
+        }
+        // >150 ms with no 0x204 while authority alive -> dedicated watchdog trips.
+        ASSERT_TRUE(mgr.is_drive_cmd_timed_out());
+        ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+        ASSERT_EQ(dac.current_code(), 0);
+
+        // 0x206 feedback must expose the command-timeout fault flag (0x02).
+        can::Frame fbk = mgr.build_motor_feedback_frame();
+        can::gen::MtrMotorFbk fbk_dec{};
+        ASSERT_EQ(can::gen::decode_mtr_motor_fbk(fbk.view(), fbk_dec), can::gen::CodecStatus::Ok);
+        ASSERT_TRUE((fbk_dec.fault_flags & shared::kMtrFaultCmdTimeout) != 0);
+
+        // ── Confirmed recovery: one stray frame must NOT release the latch ──
+        mgr.handle_frame(drv_fr, now);  // frame 1 (single)
+        mgr.tick(now);
+        ASSERT_TRUE(mgr.is_drive_cmd_timed_out());
+
+        // Two more consecutive valid frames at cadence complete the 3-frame recovery.
+        now += 20;
+        mgr.handle_frame(drv_fr, now);  // frame 2
+        mgr.tick(now);
+        now += 20;
+        mgr.handle_frame(drv_fr, now);  // frame 3
+        mgr.tick(now);
+        ASSERT_FALSE(mgr.is_drive_cmd_timed_out());
+        // Authority kept fresh throughout: motor may resume on a fresh valid drive.
+        send_mode(mgr, can::Mode::Auto, now);
+        send_power(mgr, true, now);
+        send_safety(mgr, false, now);
+        mgr.tick(now);
+        ASSERT_TRUE(dac.current_code() > 0);
+    }
+
+    // ── B: startup — AUTO authority but no 0x204 has EVER arrived ──
+    {
+        mtr::RelayController relays;
+        mtr::DacController dac;
+        mtr::MotorManager mgr(relays, dac);
+        mgr.init();
+
+        send_mode(mgr, can::Mode::Auto, 100);
+        send_power(mgr, true, 100);
+        send_safety(mgr, false, 100);
+        mgr.tick(100);
+        ASSERT_TRUE(mgr.is_drive_expected());
+        ASSERT_FALSE(mgr.is_drive_cmd_timed_out());
+
+        uint32_t now = 100;
+        for (uint32_t step = 0; step < 8; ++step) {  // 8 * 20ms = 160ms
+            now += 20;
+            send_mode(mgr, can::Mode::Auto, now);
+            send_power(mgr, true, now);
+            send_safety(mgr, false, now);
+            mgr.tick(now);
+        }
+        // Never-saw-0x204 while expected -> trips (dead RT drive sender at startup).
+        ASSERT_TRUE(mgr.is_drive_cmd_timed_out());
+    }
+
+    // ── C: MANUAL authority alive without 0x204 must NOT trip (watchdog disarmed) ──
+    {
+        mtr::RelayController relays;
+        mtr::DacController dac;
+        mtr::MotorManager mgr(relays, dac);
+        mgr.init();
+
+        send_mode(mgr, can::Mode::Manual, 100);
+        send_power(mgr, true, 100);
+        send_safety(mgr, false, 100);
+        mgr.tick(100);
+        ASSERT_FALSE(mgr.is_drive_expected());
+        ASSERT_FALSE(mgr.is_drive_cmd_timed_out());
+
+        uint32_t now = 100;
+        for (uint32_t step = 0; step < 8; ++step) {
+            now += 20;
+            send_mode(mgr, can::Mode::Manual, now);
+            send_power(mgr, true, now);
+            send_safety(mgr, false, now);
+            mgr.tick(now);
+        }
+        // No AUTO authority -> drive not expected -> no spurious trip.
+        ASSERT_FALSE(mgr.is_drive_cmd_timed_out());
+    }
+
+    // ── D: power OFF disarms the watchdog (not expected to drive) ──
+    {
+        mtr::RelayController relays;
+        mtr::DacController dac;
+        mtr::MotorManager mgr(relays, dac);
+        mgr.init();
+
+        send_mode(mgr, can::Mode::Auto, 100);
+        send_power(mgr, false, 100);   // power OFF
+        send_safety(mgr, false, 100);
+        mgr.tick(100);
+        ASSERT_FALSE(mgr.is_drive_expected());
+
+        uint32_t now = 100;
+        for (uint32_t step = 0; step < 8; ++step) {
+            now += 20;
+            send_mode(mgr, can::Mode::Auto, now);
+            send_power(mgr, false, now);
+            send_safety(mgr, false, now);
+            mgr.tick(now);
+        }
+        ASSERT_FALSE(mgr.is_drive_cmd_timed_out());
+    }
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -992,6 +1142,7 @@ int main() {
     test_motor_manager_safety_crc_corruption_fail_safe();
     test_motor_manager_recovery_requires_rearm();
     test_motor_manager_sys_estop_via_safety_status();
+    test_motor_manager_drive_cmd_watchdog();
     test_fdcan_driver_ringbuffer();
 
     std::printf("\n--------------------------------------------------------\n");
