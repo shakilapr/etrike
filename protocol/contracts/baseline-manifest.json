@@ -52,6 +52,11 @@
     ["low","0x7B9","standard","seb:vcu_seb_req",8,20,"SYS",["SEB"]],
     ["low","0x7FD","standard","rt:rt_heartbeat",2,500,"RT",["Host","SYS"]],
     ["low","0x7FE","standard","sys:sys_heartbeat",2,100,"SYS",["RT"]],
-    ["powertrain","0x10262B27","extended","pwt:pwt_dcdc_cmd",8,100,"PWT",["DCDC"]]
+    ["powertrain","0x10262B27","extended","pwt:pwt_dcdc_cmd",8,100,"PWT",["DCDC"]],
+    ["high","0x601","standard","sys:sys_diag_event_rpt",8,0,"SYS",["RT","Host"]],
+    ["low","0x601","standard","sys:sys_diag_event_rpt",8,0,"SYS",["RT"]],
+    ["high","0x621","standard","rt:rt_diag_event_rpt",8,0,"RT",["Host"]],
+    ["low","0x631","standard","mtr:mtr_diag_event_rpt",8,0,"MTR",["RT"]],
+    ["high","0x631","standard","mtr:mtr_diag_event_rpt",8,0,"MTR",["RT","Host"]]
   ]
 }
