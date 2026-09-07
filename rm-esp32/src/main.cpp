@@ -46,6 +46,7 @@ static uint8_t g_roll_ses = 0;
 static uint8_t g_roll_seb = 0;
 static uint8_t g_roll_sys_mode = 0;
 static uint8_t g_roll_sys_pwr = 0;
+static uint8_t g_roll_sys_safety = 0;
 
 static bool send_can_frame(can::Frame& fr, const char* name) {
     if (!g_can.send(fr, 2)) {
@@ -221,6 +222,21 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             can::Frame pwr_fr;
             if (can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr) == can::gen::CodecStatus::Ok) {
                 send_can_frame(pwr_fr, "SYS_PWR_CMD");
+            }
+
+            // 0x011 SYS_SAFETY_STS — persistent safety-authority frame MTR requires to
+            // enable ignition (safety_state_valid_) and to clear a latched ESTOP. RM is the
+            // isolated/bench controller, so it authors this frame here. estop_active tracks RM's
+            // stop state. NOTE: encode_sys_safety_sts does NOT auto-fill the E2E CRC, so it is
+            // computed over bytes[0..3] here (same scheme MTR validates, motor_manager.h:137).
+            can::gen::SysSafetySts ssts{};
+            ssts.estop_active    = estop_or_signal_loss;
+            ssts.heartbeat_ok    = true;
+            ssts.rolling_counter = g_roll_sys_safety++;
+            can::Frame ssts_fr;
+            if (can::gen::encode_sys_safety_sts(ssts, ssts_fr) == can::gen::CodecStatus::Ok) {
+                ssts_fr.data[4] = ::etrike::protocol::e2e::sys_safety_sts_crc(ssts_fr.data.data());
+                send_can_frame(ssts_fr, "SYS_SAFETY_STS");
             }
         }
 

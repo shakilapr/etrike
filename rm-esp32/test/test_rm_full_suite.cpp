@@ -8,6 +8,10 @@
 #include "rm-esp32/src/config.h"
 #include "rm-esp32/src/rc_decoder.h"
 
+// Receiver suite entry (defined in test_rm_receiver.cpp). Combined into this single
+// test binary so there is exactly one `main` across the test/ sources.
+int rm_receiver_test_main();
+
 // ═══════════════════════════════════════════════════════════════════════
 // Test Framework & Assertions
 // ═══════════════════════════════════════════════════════════════════════
@@ -465,6 +469,7 @@ public:
     uint8_t roll_seb{0};
     uint8_t roll_sys_mode{0};
     uint8_t roll_sys_pwr{0};
+    uint8_t roll_sys_safety{0};
 
     void handle_rx_can(const can::Frame& fr) {
         if (fr.id == 0x001u) {
@@ -578,6 +583,19 @@ public:
             can::Frame pwr_fr;
             can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr);
             tx_history.push_back({pwr_fr, "SYS_PWR_CMD"});
+
+            // 0x011 SYS_SAFETY_STS (mirror of main.cpp): persistent safety authority MTR
+            // needs to enable ignition and to clear a latched ESTOP. E2E CRC is computed
+            // over bytes[0..3] (encoder does not auto-fill it).
+            can::gen::SysSafetySts ssts{};
+            ssts.estop_active = estop_or_signal_loss;
+            ssts.heartbeat_ok = true;
+            ssts.rolling_counter = roll_sys_safety++;
+            can::Frame ssts_fr;
+            if (can::gen::encode_sys_safety_sts(ssts, ssts_fr) == can::gen::CodecStatus::Ok) {
+                ssts_fr.data[4] = ::etrike::protocol::e2e::sys_safety_sts_crc(ssts_fr.data.data());
+                tx_history.push_back({ssts_fr, "SYS_SAFETY_STS"});
+            }
         }
     }
 };
@@ -819,16 +837,59 @@ void test_wire_can_codecs() {
     ASSERT_EQ(estop_fr.dlc, 0u);
 }
 
+void test_rm_safety_sts_emission() {
+    std::printf("[TEST GROUP] RM SYS_SAFETY_STS (0x011) Emission & E2E CRC...\n");
+    RmGatewayEngine gw;
+
+    rm::RcSnapshot snap{};
+    snap.signal_valid = true;
+    snap.ignition = true;
+    snap.gear = can::Gear::D;
+
+    // Normal operation: 0x011 present, estop_active == false, CRC valid.
+    gw.tick_can_tx(snap);
+    bool found = false;
+    for (const auto& rec : gw.tx_history) {
+        if (rec.frame.id == 0x11u) {
+            found = true;
+            can::gen::SysSafetySts ssts;
+            ASSERT_EQ(static_cast<int>(can::gen::decode_sys_safety_sts(rec.frame.view(), ssts)),
+                      static_cast<int>(can::gen::CodecStatus::Ok));
+            ASSERT_FALSE(ssts.estop_active);
+            const uint8_t crc = ::etrike::protocol::e2e::sys_safety_sts_crc(rec.frame.data.data());
+            ASSERT_EQ(crc, rec.frame.data[4]);
+        }
+    }
+    ASSERT_TRUE(found);
+
+    // Latched ESTOP (external 0x001) -> estop_active must be true, CRC still valid.
+    can::Frame estop_in; estop_in.id = 0x001u; estop_in.dlc = 0;
+    gw.handle_rx_can(estop_in);
+    gw.tx_history.clear();
+    gw.tick_can_tx(snap);
+    for (const auto& rec : gw.tx_history) {
+        if (rec.frame.id == 0x11u) {
+            can::gen::SysSafetySts ssts;
+            can::gen::decode_sys_safety_sts(rec.frame.view(), ssts);
+            ASSERT_TRUE(ssts.estop_active);
+            const uint8_t crc = ::etrike::protocol::e2e::sys_safety_sts_crc(rec.frame.data.data());
+            ASSERT_EQ(crc, rec.frame.data[4]);
+        }
+    }
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
 // Main Entry Point
 // ═══════════════════════════════════════════════════════════════════════
 
-int main() {
+extern "C" int app_main() {
     std::printf("\n========================================================\n");
     std::printf("  RM-ESP32 COMPLETE TEST SUITE (FULL SUBSYSTEM COVERAGE)\n");
     std::printf("========================================================\n\n");
+
+    rm_receiver_test_main();
 
     test_pulse_bounds_and_rejection();
     test_deadman_watchdog_timeouts();
@@ -840,6 +901,7 @@ int main() {
     test_jitter_filter();
     test_rm_gateway_state_machine();
     test_wire_can_codecs();
+    test_rm_safety_sts_emission();
 
     std::printf("\n--------------------------------------------------------\n");
     std::printf("RM-ESP32 Total Assertions: %d | Failures: %d\n", g_tests_run, g_tests_failed);
