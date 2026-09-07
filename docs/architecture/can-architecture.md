@@ -328,9 +328,26 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 
 ### 1. SEB Brake Command Arbitration (Option D)
 
+> **SUPERSEDED by issue #3 (single normal `0x7B9` owner).** The dual-sender
+> model below — RT transmitting `0x7B9` in AUTO while SYS suppresses itself —
+> is **no longer the implemented architecture**. In current firmware:
+> - **SYS is the SOLE normal `0x7B9` producer** (`sys-esp32 task_brake`). It
+>   consumes RT's `0x205 RT_BRAKE_CMD` kPa intent (with a stale-`0x205` → max
+>   brake fallback) and emits the final `0x7B9`, including ESTOP / lever /
+>   released priorities (the 4-tier hierarchy below still applies, inside
+>   `BrakeControl`).
+> - **RT does NOT transmit `0x7B9` in normal operation.** It is only an
+>   *emergency fallback writer* (`rt-esp32/src/brake_fallback.h`): RT becomes
+>   the `0x7B9` writer only when SYS heartbeat is lost **and** SYS `0x7B9` has
+>   actually disappeared from the Low bus for a guard interval.
+> - The old `suppress_seb` / `kSebHandoffGraceMs` / dual-sender circular-deadlock
+>   machinery in SYS and RT was **removed**.
+> The remainder of this section is retained as the historical design rationale
+> and for the (deferred) option-3 distinct-source-ID target.
+
 #### Architecture Overview
 To eliminate single points of failure (SPOF) while achieving 1-hop minimal latency:
-- **In AUTO Mode**: When RT is healthy (`rt_alive && rt_normal && rt_setpoint_fresh`), RT transmits `0x7B9` (`VCU_SEB_REQ`) directly to SEB (1-hop latency). SYS suppresses its own `0x7B9` output ([sys-esp32/src/main.cpp:L626-L656](file:///e:/work/etrike/sys-esp32/src/main.cpp#L626-L656)).
+- **In AUTO Mode**: SYS is the sole `0x7B9` producer, applying RT's `0x205` intent. (Historical: RT transmitted `0x7B9` directly and SYS suppressed — superseded, see banner above.)
 - **In MANUAL / ESTOP Mode**: SYS assumes direct ownership of `0x7B9` (`VCU_SEB_REQ`), translating physical lever inputs or ESTOP brake curves into SEB commands.
 - **Rider Lever Override**: If the rider pulls the physical brake lever in AUTO mode, SYS immediately overrides RT, takes over `0x7B9` (`VCU_SEB_REQ`), and commands maximum rider braking pressure.
 
