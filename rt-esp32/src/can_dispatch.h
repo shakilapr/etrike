@@ -184,6 +184,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                                 ssts_latched = false;
                                 rt::SafetyEvent clr{rt::SafetyEvent::SAFETY_CLEAR, 0};
                                 enqueue_safety_event(clr, 0);
+                                g_steering_exit_request.store(true);
                             }
                         } else {
                             ssts_clear_confirm = 1;
@@ -409,13 +410,6 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         if (ctx.has_mode) {
             rt::SafetyEvent evt{rt::SafetyEvent::MODE_CHANGE, ctx.mode_from_sys};
             enqueue_safety_event(evt, 0);
-            // Allow the physical steering emergency-release whenever a valid
-            // (MANUAL/AUTO) SYS_MODE_CMD arrives. SYS_MODE_CMD no longer carries
-            // ESTOP, so this fires on every 0x110 (the E-stop latch is released
-            // only by the 0x011 SAFETY_CLEAR path, not by a mode change).
-            if (ctx.mode_from_sys != uint8_t(can::Mode::Estop)) {
-                g_steering_exit_request.store(true);
-            }
         }
 
         // Brake request → atomic (latest-value OK — max-select in control)

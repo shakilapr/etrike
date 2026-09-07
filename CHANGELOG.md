@@ -2,6 +2,20 @@
 
 All notable changes to the E-Trike Drive-by-Wire Control System.
 
+## [0.8.1-alpha] — 2026-09-07
+
+### Summary
+This maintenance release resolves 7 critical cross-node pipeline bugs across `sys-esp32`, `rt-esp32`, and Jetson `autoware_vehicle_bridge` under Steer-by-Wire (SES) and Brake-by-Wire (SEB) integration.
+
+### Fixed
+- **SYS ESTOP Latch Telemetry (`sys-esp32`)**: Updated `0x011` (`SYS_SAFETY_STS`) and `0x7FE` (`SYS_HEARTBEAT`) telemetry to broadcast system-latched ESTOP state (`sys_estop_latched()`), preventing MTR and RT from prematurely clearing ESTOP latches while SYS remains in ESTOP.
+- **Steering ESTOP Exit Coupling (`rt-esp32`)**: Decoupled `g_steering_exit_request` from periodic `0x110 SYS_MODE_CMD` frames and bound it strictly to the confirmed two-frame `SAFETY_CLEAR` sequence from `0x011`, allowing SES ESTOP centering ramps to complete without interruption.
+- **Brake-by-Wire Suppression Stall Recovery (`sys-esp32`)**: Added SEB rolling counter freshness checks in `task_brake` to drop `suppress_seb` and resume direct SYS `0x7B9` braking if RT communication drops or SEB counter stalls.
+- **Active Speed PID Setpoint Queueing (`rt-esp32`)**: Reordered `xQueueOverwrite(g_setpoint_q, &sp)` in `t_control` to execute after `PidMode::Active` calculation, enabling closed-loop speed corrections on `0x204 RT_SETPOINT`.
+- **Ignition Power Request & Auto-Assertion (`sys-esp32` & `jetson`)**: Implemented `0x112 HMI_PWR_REQ` encoding in Jetson `CanEncoder` and added operational fallback in `sys-esp32` `task_mode` to ensure MTR contactors energize during manual/autonomous mode.
+- **Steering Task Concurrency (`rt-esp32`)**: Restricted `g_steering.set_target()` to `t_control` (priority 4), resolving thread-safety data races with `t_can_tx_low` (priority 3).
+- **Physical Motor Gear Feedback Reporting (`jetson`)**: Added timestamp assignment and published `pub_gear_` on `0x206 MTR_MOTOR_FBK` reception in `vehicle_bridge_node`.
+
 ## [0.8.0-alpha] — 2026-07-23
 
 ### Summary
