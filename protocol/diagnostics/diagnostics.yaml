@@ -1,0 +1,2917 @@
+schema_version: 2
+
+namespaces:
+  SYS: 0x01
+  RT: 0x02
+  MTR: 0x03
+
+vocabularies:
+  severity: [INFO, WARNING, ERROR, CRITICAL]
+  reaction: [NONE, WARN, DERATE, INHIBIT, CSTOP, ESTOP]
+  observability: [DIRECT, DERIVED, COMMUNICATION, SELF_TEST, EXTERNAL_REPORTED, UNOBSERVABLE]
+  monitoring: [IMPLEMENTED, NOT_IMPLEMENTED]
+  detection_basis: [DIRECT_HW, DIRECT_SW, DERIVED]
+  disposition: [ACTIVE, PHASE_C, DEFERRED, OMITTED]
+  failure_mode: [ASSERTED, TIMEOUT, STALE, INVALID, IMPLAUSIBLE, MISMATCH, FOLLOWING_ERROR, BUS_OFF, ERROR_PASSIVE, CRC_ERROR, COUNTER_ERROR, OVERFLOW, DEADLINE_MISSED, OVERTEMP, UNDERTEMP, UNDERVOLTAGE, RESOURCE_LOW, RESET, WRITE_FAILED, INTERNAL_ERROR]
+
+diagnostics:
+  - id: 0x0101
+    key: SYS_ESTOP_BUTTON_ASSERTED
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: SAFETY
+    component: ESTOP_BUTTON
+    failure_mode: ASSERTED
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    evidence: "sys-esp32/src/main.cpp:488,497"
+    description: >
+      SYS asserted reported by SYS.
+
+  - id: 0x0102
+    key: SYS_RT_HEARTBEAT_TIMEOUT
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: COMMUNICATION
+    component: RT_HEARTBEAT
+    failure_mode: TIMEOUT
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "sys-esp32/src/main.cpp:497-498"
+    description: >
+      RT timeout reported by SYS.
+
+  - id: 0x0103
+    key: SYS_SEB_STATUS_TIMEOUT
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: COMMUNICATION
+    component: SEB_STATUS
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "sys-esp32/src/main.cpp:758-774"
+    description: >
+      SEB timeout reported by SYS.
+
+  - id: 0x0104
+    key: SYS_SEB_L3_FAULT
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_L3
+    failure_mode: ASSERTED
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    evidence: "sys-esp32/src/main.cpp:418-448"
+    description: >
+      SEB asserted reported by SYS.
+
+  - id: 0x0105
+    key: SYS_EGAS_L2_MISMATCH
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: EGAS_L2
+    failure_mode: MISMATCH
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    evidence: "sys-esp32/src/main.cpp:516-546"
+    description: >
+      MTR mismatch reported by SYS.
+
+  - id: 0x0106
+    key: SYS_MTR_FBK_TIMEOUT
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: COMMUNICATION
+    component: MTR_FBK
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "sys-esp32/src/main.cpp:566-578"
+    description: >
+      MTR timeout reported by SYS.
+
+  - id: 0x0107
+    key: SYS_SEB_BRAKE_FOLLOW_ERR
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_BRAKE
+    failure_mode: FOLLOWING_ERROR
+    severity: WARNING
+    reaction: WARN
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "sys-esp32/src/main.cpp:376-402"
+    description: >
+      SEB following error reported by SYS.
+
+  - id: 0x0108
+    key: SYS_MTR_ESTOP_ACK_TIMEOUT
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: SAFETY
+    component: MTR_ESTOP_ACK
+    failure_mode: TIMEOUT
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "sys-esp32/src/main.cpp:547-564"
+    description: >
+      MTR timeout reported by SYS.
+
+  - id: 0x0109
+    key: SYS_CAN_BUS_OFF
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: BUS_OFF
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: BITFIELD16
+      fields:
+        - { name: tec, bits: "15:8" }
+        - { name: rec, bits: "7:0" }
+    evidence: "sys-esp32/src/main.cpp:958-967"
+    description: >
+      CAN bus off reported by SYS.
+
+  - id: 0x010A
+    key: SYS_TASK_DEADLINE_MISSED
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: TASK
+    failure_mode: DEADLINE_MISSED
+    severity: WARNING
+    reaction: WARN
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "sys-esp32/src/main.cpp:910-932"
+    description: >
+      SYS deadline missed reported by SYS.
+
+  - id: 0x010B
+    key: SYS_GEAR_MISMATCH
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: GEAR
+    failure_mode: MISMATCH
+    severity: WARNING
+    reaction: WARN
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "sys-esp32/src/main.cpp:672-679"
+    description: >
+      MTR mismatch reported by SYS.
+
+  - id: 0x010C
+    key: SYS_SEB_TEMP_HIGH
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_TEMP
+    failure_mode: OVERTEMP
+    severity: WARNING
+    reaction: WARN
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: ecu_temp
+      unit: 0.1C
+      scale: 1
+      saturate: true
+    evidence: "sys-esp32/src/main.cpp:406-416"
+    description: >
+      SEB overtemp reported by SYS.
+
+  - id: 0x010D
+    key: SYS_CAN_RX_OVERFLOW
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_RX
+    failure_mode: OVERFLOW
+    severity: WARNING
+    reaction: WARN
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "sys-esp32/src/main.cpp:199-203"
+    description: >
+      CAN overflow reported by SYS.
+
+  - id: 0x010E
+    key: SYS_RT_SETPOINT_STALE
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: CONTROL
+    component: RT_SETPOINT
+    failure_mode: STALE
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_stale
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "sys-esp32/src/main.cpp:701-705,735"
+    description: >
+      RT stale reported by SYS.
+
+  - id: 0x0120
+    key: SYS_RT_COUNTER_FROZEN
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: COMMUNICATION
+    component: RT_COUNTER
+    failure_mode: STALE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x7FD alive_ctr frozen"
+    description: >
+      RT stale reported by SYS.
+
+  - id: 0x0121
+    key: SYS_RT_DEGRADED_STATE
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SUPERVISION
+    component: RT_STATE
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x210 safety_state>0"
+    description: >
+      RT invalid reported by SYS.
+
+  - id: 0x0122
+    key: SYS_RT_TASK_UNHEALTHY
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SUPERVISION
+    component: RT_TASK
+    failure_mode: INTERNAL_ERROR
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x210 task_health!=0xFF"
+    description: >
+      RT internal error reported by SYS.
+
+  - id: 0x0123
+    key: SYS_RT_STEER_FAULT_RPT
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SUPERVISION
+    component: RT_STEER
+    failure_mode: ASSERTED
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x210 steer_state degraded"
+    description: >
+      RT asserted reported by SYS.
+
+  - id: 0x0124
+    key: SYS_BRAKE_THROTTLE_CONFLICT
+    reporter: SYS
+    source: VEHICLE_CONTROL
+    evidence_sources: [RT, MTR, SEB]
+    subsystem: SUPERVISION
+    component: BRAKE_THROTTLE
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "SEB pressure>100kPa & speed>0"
+    description: >
+      VEHICLE_CONTROL mismatch reported by SYS.
+
+  - id: 0x0125
+    key: SYS_MTR_UNCOMMANDED_PROPULSION
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: SUPERVISION
+    component: MTR_PROPULSION
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "MTR speed>0 in OFF/MANUAL"
+    description: >
+      MTR implausible reported by SYS.
+
+  - id: 0x0126
+    key: SYS_SAFETY_STREAM_CRC_ERR
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: SAFETY
+    component: SAFETY_CRC
+    failure_mode: CRC_ERROR
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x011 E2E CRC mismatch"
+    description: >
+      SYS crc error reported by SYS.
+
+  - id: 0x0130
+    key: SYS_SEB_ROLLING_FROZEN
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: COMMUNICATION
+    component: SEB_COUNTER
+    failure_mode: STALE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x721 counter frozen>100ms"
+    description: >
+      SEB stale reported by SYS.
+
+  - id: 0x0131
+    key: SYS_SEB_NOT_ALIGNED
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_ALIGN
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x721 alignment==0"
+    description: >
+      SEB invalid reported by SYS.
+
+  - id: 0x0132
+    key: SYS_SEB_PRESSURE_BUILD_FAILURE
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_PRESSURE
+    failure_mode: ASSERTED
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "full stroke + low pressure"
+    description: >
+      SEB asserted reported by SYS.
+
+  - id: 0x0133
+    key: SYS_SEB_CURRENT_HIGH_LOW_STROKE
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_CURRENT
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "high current at low stroke"
+    description: >
+      SEB implausible reported by SYS.
+
+  - id: 0x0134
+    key: SYS_SEB_TEMP_RATE_HIGH
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_TEMP
+    failure_mode: OVERTEMP
+    severity: WARNING
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "dT/dt high on 0x6FB"
+    description: >
+      SEB overtemp reported by SYS.
+
+  - id: 0x0135
+    key: SYS_SEB_CHECKSUM_ERROR
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: COMMUNICATION
+    component: SEB_CRC
+    failure_mode: CRC_ERROR
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x721/0x731 XOR8 mismatch"
+    description: >
+      SEB crc error reported by SYS.
+
+  - id: 0x0136
+    key: SYS_SEB_UNCOMMANDED_BRAKING
+    reporter: SYS
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_BRAKE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "pressure>500kPa no cmd"
+    description: >
+      SEB implausible reported by SYS.
+
+  - id: 0x0140
+    key: SYS_MTR_ROLLAWAY
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: SUPERVISION
+    component: MTR_ROLLAWAY
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "speed>100mm/s Neutral"
+    description: >
+      MTR implausible reported by SYS.
+
+  - id: 0x0141
+    key: SYS_MTR_STALL
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: MTR_STALL
+    failure_mode: FOLLOWING_ERROR
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "cmd speed>0 measured 0"
+    description: >
+      MTR following error reported by SYS.
+
+  - id: 0x0142
+    key: SYS_MTR_PARTIAL_CRASH
+    reporter: SYS
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: MTR_FBK
+    failure_mode: INVALID
+    severity: ERROR
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x120 sent, 0x206 missing"
+    description: >
+      MTR invalid reported by SYS.
+
+  - id: 0x0160
+    key: SYS_LEVER_SWITCH_HELD_ACTIVE_LONG
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: LEVER_SWITCH
+    failure_mode: ASSERTED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "brake lever GPIO2 held>60s"
+    description: >
+      SYS asserted reported by SYS.
+
+  - id: 0x0161
+    key: SYS_START_BUTTON_STUCK_ACTIVE
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: START_BUTTON
+    failure_mode: ASSERTED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "START GPIO41 held>10s"
+    description: >
+      SYS asserted reported by SYS.
+
+  - id: 0x0162
+    key: SYS_MODE_BUTTON_STUCK_ACTIVE
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: MODE_BUTTON
+    failure_mode: ASSERTED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "MODE GPIO11 held>10s"
+    description: >
+      SYS asserted reported by SYS.
+
+  - id: 0x0163
+    key: SYS_SWITCH_CONFLICT
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: SWITCH
+    failure_mode: MISMATCH
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "left+right turn both active"
+    description: >
+      SYS mismatch reported by SYS.
+
+  - id: 0x0170
+    key: SYS_CAN_BUS_PASSIVE
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: ERROR_PASSIVE
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "TEC/REC>127"
+    description: >
+      CAN error passive reported by SYS.
+
+  - id: 0x0171
+    key: SYS_CAN_SIGNAL_DEGRADED
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_RX
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "spiking REC"
+    description: >
+      CAN invalid reported by SYS.
+
+  - id: 0x0172
+    key: SYS_CAN_BABBLING_NODE
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: DEFERRED
+    latching: false
+    evidence: "per-ID inter-arrival"
+    description: >
+      CAN invalid reported by SYS.
+
+  - id: 0x0173
+    key: SYS_CAN_INVALID_DLC
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_DLC
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: BITFIELD16
+      fields:
+        - { name: reserved, bits: "15:15" }
+        - { name: offending_can_id, bits: "14:4" }
+        - { name: actual_dlc, bits: "3:0" }
+    evidence: "DLC mismatch"
+    description: >
+      CAN invalid reported by SYS.
+
+  - id: 0x0174
+    key: SYS_CAN_ESTOP_FLOOD
+    reporter: SYS
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "multiple 0x001"
+    description: >
+      CAN invalid reported by SYS.
+
+  - id: 0x0175
+    key: SYS_DUAL_SENDER_CONFLICT
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: COMMUNICATION
+    component: CAN_ID
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "Classic CAN hidden sender"
+    description: >
+      RT invalid reported by SYS.
+
+  - id: 0x0180
+    key: SYS_SOC_TEMP_HIGH
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: SOC_TEMP
+    failure_mode: OVERTEMP
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "ESP32-S3 temp>threshold"
+    description: >
+      SYS overtemp reported by SYS.
+
+  - id: 0x0181
+    key: SYS_STACK_HIGH_WATER
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: STACK
+    failure_mode: RESOURCE_LOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: DEFERRED
+    latching: false
+    evidence: "stack margin<256B"
+    description: >
+      SYS resource low reported by SYS.
+
+  - id: 0x0182
+    key: SYS_BROWNOUT_DETECTED
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: BROWNOUT
+    failure_mode: UNDERVOLTAGE
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "ESP_RST_BROWNOUT"
+    description: >
+      SYS undervoltage reported by SYS.
+
+  - id: 0x0183
+    key: SYS_MODE_SPLIT_BRAIN
+    reporter: SYS
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SUPERVISION
+    component: MODE
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x110 vs 0x210 desync"
+    description: >
+      RT mismatch reported by SYS.
+
+  - id: 0x0184
+    key: SYS_HMI_MODE_REQ_TIMEOUT
+    reporter: SYS
+    source: HMI
+    evidence_sources: [HMI]
+    subsystem: COMMUNICATION
+    component: HMI_MODE
+    failure_mode: TIMEOUT
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "0x111/0x112 stale"
+    description: >
+      HMI timeout reported by SYS.
+
+  - id: 0x0185
+    key: SYS_HEAP_LOW_WARNING
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: HEAP
+    failure_mode: RESOURCE_LOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "free heap low"
+    description: >
+      SYS resource low reported by SYS.
+
+  - id: 0x0186
+    key: SYS_CPU_CORE_SATURATED
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: CPU
+    failure_mode: RESOURCE_LOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "task deadline preferred"
+    description: >
+      SYS resource low reported by SYS.
+
+  - id: 0x0187
+    key: SYS_MUTEX_DEADLOCK_TRIP
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: MUTEX
+    failure_mode: INTERNAL_ERROR
+    severity: ERROR
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "lock acquire>500ms"
+    description: >
+      SYS internal error reported by SYS.
+
+  - id: 0x0188
+    key: SYS_WATCHDOG_PET_FAILURE
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: WATCHDOG
+    failure_mode: INTERNAL_ERROR
+    severity: ERROR
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "TWDT starvation"
+    description: >
+      SYS internal error reported by SYS.
+
+  - id: 0x0189
+    key: SYS_NVS_STORAGE_CORRUPT
+    reporter: SYS
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: DIAGNOSTIC
+    component: NVS
+    failure_mode: WRITE_FAILED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "NVS CRC fail"
+    description: >
+      SYS write failed reported by SYS.
+
+  - id: 0x0201
+    key: RT_HOST_HEARTBEAT_TIMEOUT
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: COMMUNICATION
+    component: HOST_HEARTBEAT
+    failure_mode: TIMEOUT
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/safety_monitor.h:116-124"
+    description: >
+      Host timeout reported by RT.
+
+  - id: 0x0202
+    key: RT_SYS_HEARTBEAT_TIMEOUT
+    reporter: RT
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_HEARTBEAT
+    failure_mode: TIMEOUT
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/safety_monitor.h:98-114"
+    description: >
+      SYS timeout reported by RT.
+
+  - id: 0x0203
+    key: RT_STEER_FOLLOWING_ERROR
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_FOLLOW
+    failure_mode: FOLLOWING_ERROR
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: U16
+      quantity: absolute_angle_error
+      unit: 0.1deg
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/safety_monitor.h:126-150"
+    description: >
+      SES following error reported by RT.
+
+  - id: 0x0204
+    key: RT_CAN_BUS_OFF
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: BUS_OFF
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: BITFIELD16
+      fields:
+        - { name: tec, bits: "15:8" }
+        - { name: rec, bits: "7:0" }
+    evidence: "rt-esp32/src/can_health.h:53-94"
+    description: >
+      CAN bus off reported by RT.
+
+  - id: 0x0205
+    key: RT_CAN_HIGH_BUS_OFF
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: BUS_OFF
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: BITFIELD16
+      fields:
+        - { name: tec, bits: "15:8" }
+        - { name: rec, bits: "7:0" }
+    evidence: "rt-esp32/src/can_health.h:79-94"
+    description: >
+      CAN bus off reported by RT.
+
+  - id: 0x0206
+    key: RT_SES_L3_FAULT
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_L3
+    failure_mode: ASSERTED
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    evidence: "rt-esp32/src/can_dispatch.h:243-255"
+    description: >
+      SES asserted reported by RT.
+
+  - id: 0x0208
+    key: RT_HOST_DRIVE_CMD_STALE
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: COMMUNICATION
+    component: HOST_DRIVE
+    failure_mode: STALE
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_stale
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/main.cpp:749-759"
+    description: >
+      Host stale reported by RT.
+
+  - id: 0x0209
+    key: RT_STEER_SYNC_TIMEOUT
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_SYNC
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/steering_control.h:68-71"
+    description: >
+      SES timeout reported by RT.
+
+  - id: 0x020A
+    key: RT_STEER_IMPLAUSIBLE_ANGLE
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_ANGLE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    reaction: INHIBIT
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: angle_error
+      unit: 0.1deg
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/steering_control.h:78-82"
+    description: >
+      SES implausible reported by RT.
+
+  - id: 0x020B
+    key: RT_STEER_ESTOP_JAM
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_JAM
+    failure_mode: ASSERTED
+    severity: ERROR
+    reaction: INHIBIT
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "rt-esp32/src/steering_control.h:120-126"
+    description: >
+      SES asserted reported by RT.
+
+  - id: 0x020C
+    key: RT_SYS_SAFETY_STS_LOSS
+    reporter: RT
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: SAFETY
+    component: SYS_SAFETY
+    failure_mode: TIMEOUT
+    severity: CRITICAL
+    reaction: ESTOP
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: true
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/main.cpp:346-350"
+    description: >
+      SYS timeout reported by RT.
+
+  - id: 0x020D
+    key: RT_LOW_CAN_PEER_TIMEOUT
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: COMMUNICATION
+    component: CAN_PEER
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/main.cpp:267-270"
+    description: >
+      CAN timeout reported by RT.
+
+  - id: 0x020F
+    key: RT_TASK_HEALTH_FAULT
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: TASK
+    failure_mode: INTERNAL_ERROR
+    severity: WARNING
+    reaction: WARN
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "rt-esp32/src/main.cpp:764-775"
+    description: >
+      RT internal error reported by RT.
+
+  - id: 0x0210
+    key: RT_SES_TELEMETRY_WARN
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_TELEM
+    failure_mode: INVALID
+    severity: WARNING
+    reaction: WARN
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "rt-esp32/src/can_dispatch.h:282-284"
+    description: >
+      SES invalid reported by RT.
+
+  - id: 0x0211
+    key: RT_CAN_HIGH_RX_OVERFLOW
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_RX
+    failure_mode: OVERFLOW
+    severity: WARNING
+    reaction: WARN
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "rt-esp32/src/main.cpp:148"
+    description: >
+      CAN overflow reported by RT.
+
+  - id: 0x0212
+    key: RT_DIRECT_STEER_STALE
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: STEERING
+    component: DIRECT_STEER
+    failure_mode: STALE
+    severity: WARNING
+    reaction: WARN
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_stale
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/phase2_motion.h:16-31"
+    description: >
+      Host stale reported by RT.
+
+  - id: 0x0213
+    key: RT_MTR_FBK_TIMEOUT
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: COMMUNICATION
+    component: MTR_FBK
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "rt-esp32/src/main.cpp:78,phase2_motion.h:54"
+    description: >
+      MTR timeout reported by RT.
+
+  - id: 0x0220
+    key: RT_SYS_HB_ECHO_LOST
+    reporter: RT
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_HB
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x011 HeartbeatOk==0 while 0x7FD sent"
+    description: >
+      SYS invalid reported by RT.
+
+  - id: 0x0221
+    key: RT_SEB_STATUS_TIMEOUT
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: COMMUNICATION
+    component: SEB_STATUS
+    failure_mode: TIMEOUT
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "0x721 absent>50ms"
+    description: >
+      SEB timeout reported by RT.
+
+  - id: 0x0222
+    key: RT_SEB_PRESSURE_BUILD_FAILURE
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_PRESSURE
+    failure_mode: ASSERTED
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "stroke>20mm & pressure<500kPa"
+    description: >
+      SEB asserted reported by RT.
+
+  - id: 0x0223
+    key: RT_SEB_PRESSURE_REMAINS_HIGH
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_PRESSURE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "pressure>500kPa no cmd"
+    description: >
+      SEB implausible reported by RT.
+
+  - id: 0x0224
+    key: RT_STEER_HIGH_OPPOSING_LOAD
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_LOAD
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "torque/current excess"
+    description: >
+      SES implausible reported by RT.
+
+  - id: 0x0225
+    key: RT_STEER_OPPOSING_TORQUE_SPIKE
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_TORQUE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "torque spike opposing"
+    description: >
+      SES implausible reported by RT.
+
+  - id: 0x0226
+    key: RT_MTR_NO_MOTION_UNDER_COMMAND
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: MTR_MOTION
+    failure_mode: FOLLOWING_ERROR
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "cmd>0 measured 0"
+    description: >
+      MTR following error reported by RT.
+
+  - id: 0x0227
+    key: RT_MTR_RUNAWAY_MISMATCH
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: MTR_RUNAWAY
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "speed>500 Neutral"
+    description: >
+      MTR mismatch reported by RT.
+
+  - id: 0x0228
+    key: RT_THROTTLE_BRAKE_CONFLICT
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR, SEB]
+    subsystem: SUPERVISION
+    component: THROTTLE_BRAKE
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "speed>0 & brake>1000kPa"
+    description: >
+      MTR mismatch reported by RT.
+
+  - id: 0x0229
+    key: RT_PLANNER_CONTRADICTION
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: SUPERVISION
+    component: PLANNER
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "drive>1000 & brake>2000"
+    description: >
+      Host mismatch reported by RT.
+
+  - id: 0x022A
+    key: RT_PLANNER_OBSTACLE_CONFLICT
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: SUPERVISION
+    component: PLANNER
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "drive>1000 & obstacle<=300mm"
+    description: >
+      Host mismatch reported by RT.
+
+  - id: 0x022B
+    key: RT_TRANSMISSION_SHIFT_ILLEGAL
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: POWERTRAIN
+    component: GEAR
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "Reverse at >500mm/s"
+    description: >
+      Host invalid reported by RT.
+
+  - id: 0x022C
+    key: RT_HMI_SYS_MODE_DEADLOCK
+    reporter: RT
+    source: SYS
+    evidence_sources: [SYS, HMI]
+    subsystem: SUPERVISION
+    component: MODE
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "AUTO req no transition>3s"
+    description: >
+      SYS mismatch reported by RT.
+
+  - id: 0x022D
+    key: RT_SUPPLY_VOLTAGE_SAG
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: INTERFACE
+    component: SUPPLY
+    failure_mode: UNDERVOLTAGE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "EPS-C <11.0V"
+    description: >
+      SES undervoltage reported by RT.
+
+  - id: 0x022E
+    key: RT_CAN_BUS_FLOOD_DETECTED
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: DEFERRED
+    latching: false
+    evidence: "inter-arrival<2ms"
+    description: >
+      CAN invalid reported by RT.
+
+  - id: 0x022F
+    key: RT_CAN_JITTER_EXCESSIVE
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: DEFERRED
+    latching: false
+    evidence: "jitter>10ms"
+    description: >
+      CAN invalid reported by RT.
+
+  - id: 0x0230
+    key: RT_SOC_TEMP_HIGH
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: SOC_TEMP
+    failure_mode: OVERTEMP
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "ESP32-S3>90C"
+    description: >
+      RT overtemp reported by RT.
+
+  - id: 0x0231
+    key: RT_BROWNOUT_DETECTED
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: BROWNOUT
+    failure_mode: UNDERVOLTAGE
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "VDD33<2.8V"
+    description: >
+      RT undervoltage reported by RT.
+
+  - id: 0x0232
+    key: RT_STACK_HIGH_WATER
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: STACK
+    failure_mode: RESOURCE_LOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: DEFERRED
+    latching: false
+    evidence: "stack<256B"
+    description: >
+      RT resource low reported by RT.
+
+  - id: 0x0233
+    key: RT_ROLLOVER_RISK_HIGH
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SUPERVISION
+    component: ROLLOVER
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "lateral accel high"
+    description: >
+      RT implausible reported by RT.
+
+  - id: 0x0235
+    key: RT_UNCOMMANDED_ROLLAWAY
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: SUPERVISION
+    component: ROLLAWAY
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "speed>100 Neutral"
+    description: >
+      MTR implausible reported by RT.
+
+  - id: 0x0236
+    key: RT_DIRECTION_ROLLBACK_CONFLICT
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: DIRECTION
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "cmd D rolls back"
+    description: >
+      MTR mismatch reported by RT.
+
+  - id: 0x0237
+    key: RT_DYNAMIC_CLAMP_EXCEEDED
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: SUPERVISION
+    component: STEER_CLAMP
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "angle>limit(v)"
+    description: >
+      Host invalid reported by RT.
+
+  - id: 0x0238
+    key: RT_CAN_HIGH_TX_FAILURE
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_TX
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "MCP2515 TX fail"
+    description: >
+      CAN invalid reported by RT.
+
+  - id: 0x0239
+    key: RT_SPEED_TRACKING_ERROR
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: SPEED_TRACK
+    failure_mode: FOLLOWING_ERROR
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "|v_target-v_enc|>500"
+    description: >
+      MTR following error reported by RT.
+
+  - id: 0x023A
+    key: RT_HOST_OBSTACLE_DIST_TIMEOUT
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: COMMUNICATION
+    component: OBSTACLE
+    failure_mode: TIMEOUT
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "0x400 timeout"
+    description: >
+      Host timeout reported by RT.
+
+  - id: 0x023B
+    key: RT_MTR_ENCODER_SPEED_MISMATCH
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: ENC_SPEED
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "speed diverge>200"
+    description: >
+      MTR mismatch reported by RT.
+
+  - id: 0x023C
+    key: RT_WHEEL_SLIP_DETECTED
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: WHEEL_SLIP
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "unobservable (no 4-wheel)"
+    description: >
+      MTR implausible reported by RT.
+
+  - id: 0x023D
+    key: RT_DIFF_WHEEL_SPEED_MISMATCH
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: WHEEL_SPEED
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "unobservable"
+    description: >
+      MTR mismatch reported by RT.
+
+  - id: 0x023E
+    key: RT_YAW_RATE_KINEMATIC_MISMATCH
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: SUPERVISION
+    component: YAW
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "unobservable (no IMU)"
+    description: >
+      Host mismatch reported by RT.
+
+  - id: 0x023F
+    key: RT_SPIN_IN_PLACE_REJECTED
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: SUPERVISION
+    component: MOTION
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "v=0,w>0 impossible"
+    description: >
+      Host invalid reported by RT.
+
+  - id: 0x0240
+    key: RT_STEER_SLEW_RATE_EXCEEDED
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_SLEW
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "rate>525deg/s"
+    description: >
+      SES invalid reported by RT.
+
+  - id: 0x0241
+    key: RT_STEER_ANGLE_OFFSET_DRIFT
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_OFFSET
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "drift>5deg"
+    description: >
+      SES invalid reported by RT.
+
+  - id: 0x0242
+    key: RT_SES_CONTROL_ENABLE_REJECTED
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: STEERING
+    component: SES_ENABLE
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "enable feedback>200ms"
+    description: >
+      SES invalid reported by RT.
+
+  - id: 0x0243
+    key: RT_SEB_PRESSURE_RESPONSE_SLUGGISH
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_PRESSURE
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "rise>200ms"
+    description: >
+      SEB invalid reported by RT.
+
+  - id: 0x0244
+    key: RT_SEB_STROKE_FOR_PRESSURE_HIGH
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_STROKE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "stroke>22mm@1000kPa"
+    description: >
+      SEB implausible reported by RT.
+
+  - id: 0x0245
+    key: RT_SEB_CONTROL_ENABLE_REJECTED
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_ENABLE
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "enable>200ms"
+    description: >
+      SEB invalid reported by RT.
+
+  - id: 0x0246
+    key: RT_SEB_SUBZERO_TEMP_WARN
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_TEMP
+    failure_mode: UNDERTEMP
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: ecu_temp
+      unit: 0.1C
+      scale: 1
+      saturate: true
+    evidence: "temp<-10C"
+    description: >
+      SEB undertemp reported by RT.
+
+  - id: 0x0247
+    key: RT_MCP2515_REGISTER_VERIFY_FAILED
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: MCP2515
+    failure_mode: WRITE_FAILED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "reg readback fail"
+    description: >
+      CAN write failed reported by RT.
+
+  - id: 0x0248
+    key: RT_CAN_LOW_BUS_PASSIVE
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: ERROR_PASSIVE
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "TEC/REC>127"
+    description: >
+      CAN error passive reported by RT.
+
+  - id: 0x0249
+    key: RT_CAN_HIGH_BUS_PASSIVE
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_BUS
+    failure_mode: ERROR_PASSIVE
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "TEC/REC>127"
+    description: >
+      CAN error passive reported by RT.
+
+  - id: 0x024A
+    key: RT_CAN_INVALID_DLC
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: CAN_DLC
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: BITFIELD16
+      fields:
+        - { name: reserved, bits: "15:15" }
+        - { name: offending_can_id, bits: "14:4" }
+        - { name: actual_dlc, bits: "3:0" }
+    evidence: "DLC mismatch"
+    description: >
+      CAN invalid reported by RT.
+
+  - id: 0x024B
+    key: RT_GATEWAY_DROP_OVERFLOW
+    reporter: RT
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: GATEWAY
+    failure_mode: OVERFLOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "queue saturated"
+    description: >
+      CAN overflow reported by RT.
+
+  - id: 0x024C
+    key: RT_HEAP_LOW_WARNING
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: HEAP
+    failure_mode: RESOURCE_LOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "heap low"
+    description: >
+      RT resource low reported by RT.
+
+  - id: 0x024D
+    key: RT_CONTROL_OUTPUT_INVALID
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: CONTROL
+    component: CONTROL_OUT
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "NaN/Inf guard"
+    description: >
+      RT invalid reported by RT.
+
+  - id: 0x024E
+    key: RT_NVS_STORAGE_FAULT
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: NVS
+    failure_mode: WRITE_FAILED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "NVS fail"
+    description: >
+      RT write failed reported by RT.
+
+  - id: 0x024F
+    key: RT_SYS_SAFETY_COUNTER_STALE
+    reporter: RT
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_COUNTER
+    failure_mode: STALE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x011 counter frozen"
+    description: >
+      SYS stale reported by RT.
+
+  - id: 0x0250
+    key: RT_SES_STATUS_COUNTER_STALE
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: COMMUNICATION
+    component: SES_COUNTER
+    failure_mode: STALE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x201 frozen"
+    description: >
+      SES stale reported by RT.
+
+  - id: 0x0251
+    key: RT_SEB_STATUS_COUNTER_STALE
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: COMMUNICATION
+    component: SEB_COUNTER
+    failure_mode: STALE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x721 frozen"
+    description: >
+      SEB stale reported by RT.
+
+  - id: 0x0252
+    key: RT_HOST_DRIVE_COUNTER_STALE
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: COMMUNICATION
+    component: HOST_COUNTER
+    failure_mode: STALE
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x300 frozen"
+    description: >
+      Host stale reported by RT.
+
+  - id: 0x0253
+    key: RT_ENCODER_GLITCH_OVERFREQ
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: POWERTRAIN
+    component: ENC_FREQ
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "pulse>50km/h"
+    description: >
+      RT invalid reported by RT.
+
+  - id: 0x0254
+    key: RT_HOST_CLOCK_SKEW_EXCESSIVE
+    reporter: RT
+    source: Host
+    evidence_sources: [Host]
+    subsystem: COMMUNICATION
+    component: CLOCK
+    failure_mode: INVALID
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "unobservable (no epoch)"
+    description: >
+      Host invalid reported by RT.
+
+  - id: 0x0255
+    key: RT_SEB_PRESSURE_ZERO_DRIFT
+    reporter: RT
+    source: SEB
+    evidence_sources: [SEB]
+    subsystem: BRAKE
+    component: SEB_PRESSURE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "pressure>150kPa retracted"
+    description: >
+      SEB implausible reported by RT.
+
+  - id: 0x0256
+    key: RT_MTR_TEMPERATURE_HIGH
+    reporter: RT
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: MTR_TEMP
+    failure_mode: OVERTEMP
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "unobservable (no telemetry)"
+    description: >
+      MTR overtemp reported by RT.
+
+  - id: 0x0257
+    key: RT_TASK_DEADLINE_MISSED
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: TASK
+    failure_mode: DEADLINE_MISSED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "loop>15ms"
+    description: >
+      RT deadline missed reported by RT.
+
+  - id: 0x0258
+    key: RT_HEAP_FRAGMENTATION_HIGH
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: HEAP
+    failure_mode: RESOURCE_LOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "omit under zero-alloc"
+    description: >
+      RT resource low reported by RT.
+
+  - id: 0x0259
+    key: RT_SAFETY_QUEUE_OVERFLOW
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SAFETY
+    component: SAFETY_Q
+    failure_mode: OVERFLOW
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "g_safety_evt_q full"
+    description: >
+      RT overflow reported by RT.
+
+  - id: 0x025A
+    key: RT_PID_INTEGRATOR_SATURATED
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: CONTROL
+    component: PID
+    failure_mode: INVALID
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "integ clamp>2s"
+    description: >
+      RT invalid reported by RT.
+
+  - id: 0x025B
+    key: RT_LOCAL_ESTOP_LATCH_PREVENT_CLEAR
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SAFETY
+    component: ESTOP_LATCH
+    failure_mode: ASSERTED
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "clear blocked"
+    description: >
+      RT asserted reported by RT.
+
+  - id: 0x025C
+    key: RT_SYS_SAFETY_CRC_ERROR
+    reporter: RT
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: SAFETY
+    component: SAFETY_CRC
+    failure_mode: CRC_ERROR
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "0x011 E2E mismatch"
+    description: >
+      SYS crc error reported by RT.
+
+  - id: 0x025D
+    key: RT_CALIBRATION_CORRUPTED
+    reporter: RT
+    source: RT
+    evidence_sources: [RT]
+    subsystem: DIAGNOSTIC
+    component: CALIB
+    failure_mode: WRITE_FAILED
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "NVS CRC32 fail"
+    description: >
+      RT write failed reported by RT.
+
+  - id: 0x025E
+    key: RT_SES_STATUS_TIMEOUT
+    reporter: RT
+    source: SES
+    evidence_sources: [SES]
+    subsystem: COMMUNICATION
+    component: SES_STATUS
+    failure_mode: TIMEOUT
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "0x201 absent>5s"
+    description: >
+      SES timeout reported by RT.
+
+  - id: 0x0301
+    key: MTR_RT_DRIVE_CMD_TIMEOUT
+    reporter: MTR
+    source: RT
+    evidence_sources: [RT]
+    subsystem: COMMUNICATION
+    component: RT_DRIVE
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "mtr-stm32/src/motor_manager.h:329-333"
+    description: >
+      RT timeout reported by MTR.
+
+  - id: 0x0305
+    key: MTR_SYS_SAFETY_STS_TIMEOUT
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_SAFETY
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      SYS timeout reported by MTR.
+
+  - id: 0x0306
+    key: MTR_SYS_SAFETY_CRC_ERROR
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: SAFETY
+    component: SYS_SAFETY_CRC
+    failure_mode: CRC_ERROR
+    severity: WARNING
+    reaction: WARN
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      SYS crc error reported by MTR.
+
+  - id: 0x0307
+    key: MTR_SYS_SAFETY_COUNTER_STALE
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_COUNTER
+    failure_mode: STALE
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      SYS stale reported by MTR.
+
+  - id: 0x0308
+    key: MTR_SYS_MODE_CMD_TIMEOUT
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_MODE
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      SYS timeout reported by MTR.
+
+  - id: 0x0309
+    key: MTR_SYS_PWR_CMD_TIMEOUT
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_PWR
+    failure_mode: TIMEOUT
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      SYS timeout reported by MTR.
+
+  - id: 0x030A
+    key: MTR_REARM_SEQUENCE_VIOLATION
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: SAFETY
+    component: REARM
+    failure_mode: INVALID
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "mtr-stm32/src/motor_manager.h"
+    description: >
+      SYS invalid reported by MTR.
+
+  - id: 0x030D
+    key: MTR_FDCAN_BUS_OFF
+    reporter: MTR
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: FDCAN_BUS
+    failure_mode: BUS_OFF
+    severity: ERROR
+    reaction: INHIBIT
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: BITFIELD16
+      fields:
+        - { name: tec, bits: "15:8" }
+        - { name: rec, bits: "7:0" }
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      CAN bus off reported by MTR.
+
+  - id: 0x030E
+    key: MTR_FDCAN_RX_OVERFLOW
+    reporter: MTR
+    source: CAN
+    evidence_sources: [CAN]
+    subsystem: INTERFACE
+    component: FDCAN_RX
+    failure_mode: OVERFLOW
+    severity: WARNING
+    reaction: WARN
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "mtr-stm32/src/can_handler.cpp"
+    description: >
+      CAN overflow reported by MTR.
+
+  - id: 0x030F
+    key: MTR_SPEED_SETPOINT_INVALID
+    reporter: MTR
+    source: RT
+    evidence_sources: [RT]
+    subsystem: POWERTRAIN
+    component: SPEED_SETPOINT
+    failure_mode: INVALID
+    severity: WARNING
+    reaction: WARN
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: speed_setpoint
+      unit: mmps
+      scale: 1
+      saturate: true
+    evidence: "mtr-stm32/src/motor_manager.h"
+    description: >
+      RT invalid reported by MTR.
+
+  - id: 0x0311
+    key: MTR_CMD_STREAM_UNAUTHORISED
+    reporter: MTR
+    source: RT
+    evidence_sources: [RT]
+    subsystem: SAFETY
+    component: CMD_AUTH
+    failure_mode: INVALID
+    severity: ERROR
+    reaction: INHIBIT
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "mtr-stm32/src/motor_manager.h"
+    description: >
+      RT invalid reported by MTR.
+
+  - id: 0x0302
+    key: MTR_THROTTLE_IMPLAUSIBLE
+    reporter: MTR
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: THROTTLE
+    failure_mode: IMPLAUSIBLE
+    severity: ERROR
+    observability: DERIVED
+    detection_basis: DERIVED
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "DAC code out of clamp"
+    description: >
+      MTR implausible reported by MTR.
+
+  - id: 0x0303
+    key: MTR_ADC_FAULT
+    reporter: MTR
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: ADC
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "ADC stuck rail"
+    description: >
+      MTR invalid reported by MTR.
+
+  - id: 0x0304
+    key: MTR_GEAR_CONFLICT
+    reporter: MTR
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: POWERTRAIN
+    component: GEAR
+    failure_mode: MISMATCH
+    severity: ERROR
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "PA2+PA0 both active"
+    description: >
+      MTR mismatch reported by MTR.
+
+  - id: 0x030C
+    key: MTR_I2C_DAC_NACK
+    reporter: MTR
+    source: DAC
+    evidence_sources: [DAC]
+    subsystem: INTERFACE
+    component: I2C_DAC
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "MCP4725 NACK"
+    description: >
+      DAC invalid reported by MTR.
+
+  - id: 0x0310
+    key: MTR_I2C_BUS_LOCKUP
+    reporter: MTR
+    source: DAC
+    evidence_sources: [DAC]
+    subsystem: INTERFACE
+    component: I2C_BUS
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    evidence: "SDA stuck low"
+    description: >
+      DAC invalid reported by MTR.
+
+  - id: 0x0312
+    key: MTR_SYS_HEARTBEAT_LOSS
+    reporter: MTR
+    source: SYS
+    evidence_sources: [SYS]
+    subsystem: COMMUNICATION
+    component: SYS_HB
+    failure_mode: TIMEOUT
+    severity: WARNING
+    observability: COMMUNICATION
+    detection_basis: DIRECT_SW
+    monitoring: NOT_IMPLEMENTED
+    disposition: PHASE_C
+    latching: false
+    snapshot:
+      encoding: U16
+      quantity: elapsed_silence
+      unit: ms
+      scale: 1
+      saturate: true
+    evidence: "0x7FE absent>500ms"
+    description: >
+      SYS timeout reported by MTR.
+
+  - id: 0x0313
+    key: MTR_CLOCK_CALIBRATION_DRIFT
+    reporter: MTR
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: DIAGNOSTIC
+    component: CLOCK
+    failure_mode: INVALID
+    severity: WARNING
+    observability: DIRECT
+    detection_basis: DIRECT_HW
+    monitoring: NOT_IMPLEMENTED
+    disposition: OMITTED
+    latching: false
+    evidence: "unobservable (arbitration)"
+    description: >
+      MTR invalid reported by MTR.
+

@@ -9,12 +9,15 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = PACKAGE_ROOT / "contracts"
 VECTORS = PACKAGE_ROOT / "vectors"
 GENERATED = PACKAGE_ROOT / "generated"
 KEY_RE = re.compile(r"^[a-z][a-z0-9_.-]*$")
+DIAG_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 STRATEGIES = {"generated", "profile", "custom"}
 SEMANTICS = {"same_frame", "regenerated", "independent"}
 FORMATS = {"standard", "extended"}
@@ -261,12 +264,16 @@ def render_outputs(model: dict, validated: dict) -> dict[str, str]:
     wire_hash, network_hash = hashes(model, validated)
     # Semantic hash is the wire-content hash (stable across source formatting).
     semantic_hash = wire_hash
+    diagnostics_doc = load_diagnostics()
+    _ = validate_diagnostics(diagnostics_doc)
+    diag_hash = diagnostics_hash(diagnostics_doc)
     normalized = normalized_contract(validated)
     discovery = {
         "schema_version": 1,
         "wire_hash": wire_hash,
         "semantic_hash": semantic_hash,
         "network_hash": network_hash,
+        "diagnostics_hash": diag_hash,
         "messages": normalized["messages"],
         "routes": model["network"]["routes"],
     }
@@ -275,6 +282,7 @@ def render_outputs(model: dict, validated: dict) -> dict[str, str]:
         "wire_hash": wire_hash,
         "semantic_hash": semantic_hash,
         "network_hash": network_hash,
+        "diagnostics_hash": diag_hash,
         "languages": {},
     }
     for language in ("cpp", "python", "typescript"):
@@ -300,7 +308,7 @@ def render_outputs(model: dict, validated: dict) -> dict[str, str]:
     }
     schema = _render_schema()
     metadata = {key: _runtime_message(message) for key, message in sorted(validated["messages"].items())}
-    return {
+    outputs = {
         "discovery.json": canonical_json(discovery, pretty=True),
         "capabilities.json": canonical_json(capabilities, pretty=True),
         "errors.json": canonical_json(errors, pretty=True),
@@ -308,6 +316,344 @@ def render_outputs(model: dict, validated: dict) -> dict[str, str]:
         "python/etrike_protocol.py": _render_python(metadata, semantic_hash, network_hash),
         "typescript/etrike-protocol.ts": _render_typescript(metadata, semantic_hash, network_hash),
         "cpp/etrike_protocol.hpp": _render_cpp(validated, semantic_hash, network_hash),
+    }
+    outputs.update(render_diagnostics(diagnostics_doc, diag_hash))
+    return outputs
+
+
+DIAGNOSTICS = PACKAGE_ROOT / "diagnostics"
+
+
+def load_diagnostics(root: Path = PACKAGE_ROOT) -> dict:
+    path = root / "diagnostics" / "diagnostics.yaml"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ContractError(f"{path}: {exc}") from exc
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ContractError(f"{path}: {exc}") from exc
+    if not isinstance(doc, dict):
+        raise ContractError(f"{path}: document root must be an object")
+    return doc
+
+
+def _validate_snapshot(key: str, snapshot: dict) -> None:
+    if not isinstance(snapshot, dict):
+        raise ContractError(f"{key}: snapshot must be an object")
+    encoding = snapshot.get("encoding")
+    if encoding not in ("U16", "BITFIELD16"):
+        raise ContractError(f"{key}: snapshot encoding must be U16 or BITFIELD16")
+    if encoding == "U16":
+        if "quantity" not in snapshot or "unit" not in snapshot:
+            raise ContractError(f"{key}: U16 snapshot requires quantity and unit")
+        if not isinstance(snapshot.get("scale"), (int, float)):
+            raise ContractError(f"{key}: U16 snapshot requires numeric scale")
+        if not isinstance(snapshot.get("saturate"), bool):
+            raise ContractError(f"{key}: U16 snapshot requires saturate boolean")
+        return
+    fields = snapshot.get("fields")
+    if not isinstance(fields, list) or not fields:
+        raise ContractError(f"{key}: BITFIELD16 snapshot requires a fields list")
+    occupied: set[int] = set()
+    names: set[str] = set()
+    for field in fields:
+        name = field.get("name")
+        if name in names:
+            raise ContractError(f"{key}: duplicate snapshot field {name!r}")
+        names.add(name)
+        match = re.match(r"^(\d+):(\d+)$", str(field.get("bits")))
+        if not match:
+            raise ContractError(f"{key}: snapshot field {name!r} bits must be 'high:low'")
+        high, low = int(match.group(1)), int(match.group(2))
+        if not (0 <= low <= high <= 15):
+            raise ContractError(f"{key}: snapshot field {name!r} bits out of range")
+        for bit in range(low, high + 1):
+            if bit in occupied:
+                raise ContractError(f"{key}: snapshot field {name!r} overlaps bit {bit}")
+            occupied.add(bit)
+    if len(occupied) != 16:
+        raise ContractError(f"{key}: BITFIELD16 must cover all 16 bits (use reserved for gaps)")
+
+
+def validate_diagnostics(doc: dict) -> dict:
+    if doc.get("schema_version") != 2:
+        raise ContractError("diagnostics.yaml: schema_version must be 2")
+    namespaces = doc.get("namespaces")
+    if not isinstance(namespaces, dict) or not namespaces:
+        raise ContractError("diagnostics.yaml: namespaces must be a non-empty object")
+    vocabularies = doc.get("vocabularies")
+    if not isinstance(vocabularies, dict):
+        raise ContractError("diagnostics.yaml: vocabularies must be an object")
+    vocab = {name: set(values) for name, values in vocabularies.items()}
+    diagnostics = doc.get("diagnostics")
+    if not isinstance(diagnostics, list) or not diagnostics:
+        raise ContractError("diagnostics.yaml: diagnostics must be a non-empty list")
+    seen_ids: set[int] = set()
+    seen_keys: set[str] = set()
+    seen_enum_names: set[str] = set()
+    implemented: list[tuple[int, str, str, bool, bool]] = []
+    for entry in diagnostics:
+        if not isinstance(entry, dict):
+            raise ContractError("diagnostics.yaml: each diagnostic must be an object")
+        diag_id = entry.get("id")
+        if not isinstance(diag_id, int) or not (0 <= diag_id <= 0xFFFF):
+            raise ContractError(f"diagnostic {entry.get('key')}: id must be 0..0xFFFF")
+        if diag_id in seen_ids:
+            raise ContractError(f"duplicate diagnostic id 0x{diag_id:04X}")
+        seen_ids.add(diag_id)
+        key = entry.get("key")
+        if not isinstance(key, str) or not DIAG_KEY_RE.fullmatch(key):
+            raise ContractError(f"diagnostic 0x{diag_id:04X}: invalid key {key!r}")
+        if key in seen_keys:
+            raise ContractError(f"duplicate diagnostic key {key!r}")
+        seen_keys.add(key)
+        reporter = entry.get("reporter")
+        if reporter not in namespaces:
+            raise ContractError(f"{key}: reporter {reporter!r} not in namespaces")
+        if (diag_id >> 8) != int(namespaces[reporter]):
+            raise ContractError(f"{key}: id high byte 0x{diag_id >> 8:02X} != namespace {reporter}")
+        if not key.startswith(reporter + "_"):
+            raise ContractError(f"{key}: key must start with reporter prefix '{reporter}_'")
+        if not isinstance(entry.get("source"), str) or not entry["source"]:
+            raise ContractError(f"{key}: source must be non-empty")
+        if not isinstance(entry.get("component"), str) or not entry["component"]:
+            raise ContractError(f"{key}: component must be non-empty")
+        if not isinstance(entry.get("subsystem"), str) or not entry["subsystem"]:
+            raise ContractError(f"{key}: subsystem must be non-empty")
+        evidence = entry.get("evidence_sources")
+        if not isinstance(evidence, list) or not evidence or not all(isinstance(item, str) and item for item in evidence):
+            raise ContractError(f"{key}: evidence_sources must be a non-empty list of strings")
+        if entry.get("failure_mode") not in vocab.get("failure_mode", set()):
+            raise ContractError(f"{key}: failure_mode {entry.get('failure_mode')!r} not in vocabulary")
+        if entry.get("severity") not in vocab.get("severity", set()):
+            raise ContractError(f"{key}: severity {entry.get('severity')!r} not in vocabulary")
+        if entry.get("observability") not in vocab.get("observability", set()):
+            raise ContractError(f"{key}: observability {entry.get('observability')!r} not in vocabulary")
+        if entry.get("detection_basis") not in vocab.get("detection_basis", set()):
+            raise ContractError(f"{key}: detection_basis {entry.get('detection_basis')!r} not in vocabulary")
+        monitoring = entry.get("monitoring")
+        if monitoring not in vocab.get("monitoring", set()):
+            raise ContractError(f"{key}: monitoring {monitoring!r} not in vocabulary")
+        disposition = entry.get("disposition")
+        if disposition not in vocab.get("disposition", set()):
+            raise ContractError(f"{key}: disposition {disposition!r} not in vocabulary")
+        reaction = entry.get("reaction")
+        if monitoring == "IMPLEMENTED":
+            if reaction not in vocab.get("reaction", set()):
+                raise ContractError(f"{key}: IMPLEMENTED diagnostic requires a valid reaction")
+            if disposition != "ACTIVE":
+                raise ContractError(f"{key}: IMPLEMENTED diagnostic must have disposition ACTIVE")
+        else:
+            if reaction is not None:
+                raise ContractError(f"{key}: NOT_IMPLEMENTED diagnostic must not carry a reaction")
+            if disposition == "ACTIVE":
+                raise ContractError(f"{key}: NOT_IMPLEMENTED diagnostic cannot be disposition ACTIVE")
+        if entry.get("observability") == "UNOBSERVABLE" and monitoring == "IMPLEMENTED":
+            raise ContractError(f"{key}: UNOBSERVABLE requires monitoring NOT_IMPLEMENTED")
+        if disposition == "OMITTED" and monitoring == "IMPLEMENTED":
+            raise ContractError(f"{key}: OMITTED disposition requires monitoring NOT_IMPLEMENTED")
+        latching = entry.get("latching")
+        if not isinstance(latching, bool):
+            raise ContractError(f"{key}: latching must be boolean")
+        if reaction == "ESTOP" and latching is not True:
+            raise ContractError(f"{key}: ESTOP reaction requires latching true")
+        snapshot = entry.get("snapshot")
+        if snapshot is not None:
+            _validate_snapshot(key, snapshot)
+        enum_name = _cpp_pascal(key)
+        if enum_name in seen_enum_names:
+            raise ContractError(f"{key}: generated enum name {enum_name} collides")
+        seen_enum_names.add(enum_name)
+        is_estop_cause = (monitoring == "IMPLEMENTED" and reaction == "ESTOP")
+        if monitoring == "IMPLEMENTED":
+            implemented.append((diag_id, key, enum_name, latching, is_estop_cause))
+    return {"diagnostics": diagnostics, "namespaces": namespaces, "vocabularies": vocabularies, "implemented": implemented}
+
+
+def diagnostics_hash(doc: dict) -> str:
+    namespaces = doc.get("namespaces", {})
+    entries = []
+    for entry in sorted(doc.get("diagnostics", []), key=lambda item: item.get("id")):
+        entries.append({
+            "id": entry.get("id"),
+            "key": entry.get("key"),
+            "reporter": entry.get("reporter"),
+            "source": entry.get("source"),
+            "evidence_sources": sorted(entry.get("evidence_sources", [])),
+            "subsystem": entry.get("subsystem"),
+            "component": entry.get("component"),
+            "failure_mode": entry.get("failure_mode"),
+            "severity": entry.get("severity"),
+            "reaction": entry.get("reaction"),
+            "observability": entry.get("observability"),
+            "detection_basis": entry.get("detection_basis"),
+            "monitoring": entry.get("monitoring"),
+            "latching": entry.get("latching"),
+            "snapshot": entry.get("snapshot"),
+        })
+    view = {
+        "schema_version": doc.get("schema_version"),
+        "namespaces": dict(sorted(namespaces.items())),
+        "diagnostics": entries,
+    }
+    return hashlib.sha256(canonical_json(view).encode()).hexdigest()
+
+
+def _diagnostics_records(doc: dict) -> dict:
+    out: dict = {}
+    for entry in doc.get("diagnostics", []):
+        out[entry.get("key")] = {
+            "id": entry.get("id"),
+            "key": entry.get("key"),
+            "reporter": entry.get("reporter"),
+            "source": entry.get("source"),
+            "evidence_sources": list(entry.get("evidence_sources", [])),
+            "subsystem": entry.get("subsystem"),
+            "component": entry.get("component"),
+            "failure_mode": entry.get("failure_mode"),
+            "severity": entry.get("severity"),
+            "reaction": entry.get("reaction"),
+            "observability": entry.get("observability"),
+            "detection_basis": entry.get("detection_basis"),
+            "monitoring": entry.get("monitoring"),
+            "disposition": entry.get("disposition"),
+            "latching": entry.get("latching"),
+            "snapshot": entry.get("snapshot"),
+            "evidence": entry.get("evidence", ""),
+            "description": entry.get("description", ""),
+        }
+    return out
+
+
+def _render_diagnostics_cpp(doc: dict, diag_hash: str, implemented: list) -> str:
+    lines = [
+        "// Generated by protocol.tools.protocol. Do not edit.",
+        "#pragma once",
+        "#include <cstddef>",
+        "#include <cstdint>",
+        "#include <string_view>",
+        "",
+        "namespace etrike::diagnostics {",
+        f'inline constexpr std::string_view kDiagnosticsHash = "{diag_hash}";',
+        "",
+        "enum class DiagId : std::uint16_t {",
+    ]
+    for diag_id, _key, enum_name, _latching, _is_estop in implemented:
+        lines.append(f"    {enum_name} = 0x{diag_id:04X},")
+    lines += [
+        "};",
+        "",
+        "struct DiagMetaLite {",
+        "    DiagId id;",
+        "    bool latching;",
+        "    bool is_estop_cause;",
+        "};",
+        f"inline constexpr std::size_t kImplementedDiagCount = {len(implemented)};",
+        "inline const DiagMetaLite kImplementedDiagMeta[kImplementedDiagCount] = {",
+    ]
+    for _diag_id, _key, enum_name, latching, is_estop in implemented:
+        lines.append(f"    {{ DiagId::{enum_name}, {'true' if latching else 'false'}, {'true' if is_estop else 'false'} }},")
+    lines += [
+        "};",
+        "",
+        "inline const DiagMetaLite* diag_meta(DiagId id) noexcept {",
+        "    for (std::size_t i = 0; i < kImplementedDiagCount; ++i) {",
+        "        if (kImplementedDiagMeta[i].id == id) return &kImplementedDiagMeta[i];",
+        "    }",
+        "    return nullptr;",
+        "}",
+        "}  // namespace etrike::diagnostics",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _render_diagnostics_ts(doc: dict, diag_hash: str) -> str:
+    registry = _diagnostics_records(doc)
+    embedded = canonical_json(registry, pretty=True)
+    return (
+        "// Generated by protocol.tools.protocol. Do not edit.\n"
+        "export type DiagMonitoring = \"IMPLEMENTED\" | \"NOT_IMPLEMENTED\";\n"
+        "export interface DiagRecord {\n"
+        "  id: number;\n"
+        "  key: string;\n"
+        "  reporter: string;\n"
+        "  source: string;\n"
+        "  evidence_sources: string[];\n"
+        "  subsystem: string;\n"
+        "  component: string;\n"
+        "  failure_mode: string;\n"
+        "  severity: string;\n"
+        "  reaction: string | null;\n"
+        "  observability: string;\n"
+        "  detection_basis: string;\n"
+        "  monitoring: DiagMonitoring;\n"
+        "  disposition: string;\n"
+        "  latching: boolean;\n"
+        "  snapshot: unknown | null;\n"
+        "  evidence: string;\n"
+        "  description: string;\n"
+        "}\n"
+        f"export const DIAGNOSTICS_HASH = {json.dumps(diag_hash)} as const;\n"
+        f"export const DIAGNOSTICS: Record<string, DiagRecord> = {embedded.strip()} as const;\n"
+    )
+
+
+def _render_diagnostics_python(doc: dict, diag_hash: str) -> str:
+    registry = _diagnostics_records(doc)
+    return (
+        "# Generated by protocol.tools.protocol. Do not edit.\n"
+        "from __future__ import annotations\n\n"
+        f"DIAGNOSTICS_HASH = {diag_hash!r}\n"
+        f"REGISTRY = {registry!r}\n"
+    )
+
+
+def _render_coverage_md(doc: dict) -> str:
+    all_entries = doc.get("diagnostics", [])
+    implemented_entries = [entry for entry in all_entries if entry.get("monitoring") == "IMPLEMENTED"]
+    not_implemented = [entry for entry in all_entries if entry.get("monitoring") != "IMPLEMENTED"]
+    disposition: dict[str, int] = {}
+    for entry in not_implemented:
+        disposition[entry.get("disposition")] = disposition.get(entry.get("disposition"), 0) + 1
+    lines = [
+        "# Diagnostic Coverage",
+        "",
+        "Generated from `diagnostics.yaml`. Do not edit.",
+        "",
+        f"Implemented: {len(implemented_entries)}",
+        f"Not implemented: {len(not_implemented)}",
+        "",
+        "Disposition:",
+        f"  Active: {len(implemented_entries)}",
+    ]
+    for key in ("PHASE_C", "DEFERRED", "OMITTED"):
+        lines.append(f"  {key}: {disposition.get(key, 0)}")
+    lines += [
+        "",
+        "| DiagId | Key | Reporter | Source | Monitoring | Observability | Detection Basis | Disposition | Severity | Reaction |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for entry in sorted(all_entries, key=lambda item: item.get("id")):
+        lines.append(
+            f"| 0x{entry['id']:04X} | {entry['key']} | {entry['reporter']} | {entry['source']} | "
+            f"{entry['monitoring']} | {entry['observability']} | {entry['detection_basis']} | "
+            f"{entry['disposition']} | {entry['severity']} | {entry.get('reaction') or '-'} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_diagnostics(doc: dict, diag_hash: str) -> dict[str, str]:
+    validated = validate_diagnostics(doc)
+    implemented = sorted(validated["implemented"], key=lambda item: item[0])
+    return {
+        "cpp/diagnostics.hpp": _render_diagnostics_cpp(doc, diag_hash, implemented),
+        "typescript/diagnostics.ts": _render_diagnostics_ts(doc, diag_hash),
+        "python/diagnostics.py": _render_diagnostics_python(doc, diag_hash),
+        "coverage/diagnostics.md": _render_coverage_md(doc),
     }
 
 
@@ -611,7 +957,7 @@ def build_parser() -> argparse.ArgumentParser:
         "target",
         nargs="?",
         default="all",
-        choices=["all", "python", "typescript", "cpp", "manifests"],
+        choices=["all", "python", "typescript", "cpp", "manifests", "diagnostics"],
         help="artifact family to generate or check (default: all)",
     )
     generate.add_argument("--check", action="store_true", help="read-only verification; fail if output differs")
@@ -626,6 +972,7 @@ _TARGET_PREFIXES = {
     "typescript": ("typescript/",),
     "cpp": ("cpp/",),
     "manifests": ("discovery.json", "capabilities.json", "errors.json", "contract-schema.json"),
+    "diagnostics": ("cpp/diagnostics.hpp", "typescript/diagnostics.ts", "python/diagnostics.py", "coverage/diagnostics.md"),
     "all": (),
 }
 
@@ -636,11 +983,16 @@ def main(argv: list[str] | None = None) -> int:
         model = load_model()
         validated = validate_model(model, check_baseline=not getattr(args, "no_baseline", False))
         if args.command == "validate":
+            diag_doc = load_diagnostics()
+            validate_diagnostics(diag_doc)
+            dh = diagnostics_hash(diag_doc)
             wire_hash, network_hash = hashes(model, validated)
             print(
                 f"valid: {len(validated['messages'])} messages, "
                 f"{len(validated['instances'])} instances, "
-                f"SEMANTIC_HASH={wire_hash}, NETWORK_HASH={network_hash}"
+                f"{len(diag_doc['diagnostics'])} diagnostics, "
+                f"SEMANTIC_HASH={wire_hash}, NETWORK_HASH={network_hash}, "
+                f"DIAGNOSTICS_HASH={dh}"
             )
         elif args.command == "generate":
             semantic_hash, network_hash = hashes(model, validated)

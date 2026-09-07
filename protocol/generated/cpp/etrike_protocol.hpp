@@ -10,14 +10,14 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "565f9be38c4ab6a3861863dabfd5edc175e1079a8789f1f5ffad89cf4530c227";
+inline constexpr std::string_view kSemanticHash = "07cf327066e124be6f78be51f6cddce0ad3048e3f2b3d3581dea144b68ed1e9a";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "f136e42a4ecfeeef64e0acf7308d5f053f44f046bf25481fcd4a29725857cd56";
+inline constexpr std::string_view kNetworkHash = "6765421a1129138419b8b797e825928b94044ea7d689b723cf945e7eb39564bc";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 45> kMessages{{
+inline constexpr std::array<MessageMetadata, 50> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
@@ -29,6 +29,8 @@ inline constexpr std::array<MessageMetadata, 45> kMessages{{
     {"host:host_light_cmd", "low", 0x302u, 1u, false, CodecStrategy::Generated},
     {"host:host_obstacle_dist", "high", 0x400u, 4u, false, CodecStrategy::Generated},
     {"host:host_steer_cmd", "high", 0x303u, 4u, false, CodecStrategy::Generated},
+    {"mtr:mtr_diag_event_rpt", "high", 0x631u, 8u, false, CodecStrategy::Generated},
+    {"mtr:mtr_diag_event_rpt", "low", 0x631u, 8u, false, CodecStrategy::Generated},
     {"mtr:mtr_motor_fbk", "high", 0x206u, 4u, false, CodecStrategy::Generated},
     {"mtr:mtr_motor_fbk", "low", 0x206u, 4u, false, CodecStrategy::Generated},
     {"mtr:sys_throttle_sts", "high", 0x120u, 2u, false, CodecStrategy::Generated},
@@ -36,6 +38,7 @@ inline constexpr std::array<MessageMetadata, 45> kMessages{{
     {"pwt:pwt_dcdc_cmd", "powertrain", 0x10262B27u, 8u, true, CodecStrategy::Generated},
     {"rt:brake_diag", "high", 0x311u, 8u, false, CodecStrategy::Generated},
     {"rt:rt_brake_cmd", "low", 0x205u, 4u, false, CodecStrategy::Generated},
+    {"rt:rt_diag_event_rpt", "high", 0x621u, 8u, false, CodecStrategy::Generated},
     {"rt:rt_drive_cmd", "low", 0x204u, 5u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "high", 0x7FDu, 2u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "low", 0x7FDu, 2u, false, CodecStrategy::Generated},
@@ -56,6 +59,8 @@ inline constexpr std::array<MessageMetadata, 45> kMessages{{
     {"ses:ses_test", "low", 0x6FAu, 8u, false, CodecStrategy::Custom},
     {"ses:ses_version", "low", 0x203u, 8u, false, CodecStrategy::Custom},
     {"ses:vcu_ses_req", "low", 0x169u, 8u, false, CodecStrategy::Custom},
+    {"sys:sys_diag_event_rpt", "high", 0x601u, 8u, false, CodecStrategy::Generated},
+    {"sys:sys_diag_event_rpt", "low", 0x601u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_diag_rpt", "high", 0x600u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_diag_rpt", "low", 0x600u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_heartbeat", "low", 0x7FEu, 2u, false, CodecStrategy::Generated},
@@ -64,7 +69,7 @@ inline constexpr std::array<MessageMetadata, 45> kMessages{{
     {"sys:sys_safety_sts", "high", 0x11u, 5u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "low", 0x11u, 5u, false, CodecStrategy::Generated},
 }};
-inline constexpr std::array<RouteMetadata, 9> kRoutes{{
+inline constexpr std::array<RouteMetadata, 11> kRoutes{{
     {"rt-l2h-estop", "safety:safety_estop", "low", "high", RouteSemantics::SameFrame},
     {"rt-h2l-estop", "safety:safety_estop", "high", "low", RouteSemantics::SameFrame},
     {"rt-l2h-safety", "sys:sys_safety_sts", "low", "high", RouteSemantics::SameFrame},
@@ -74,6 +79,8 @@ inline constexpr std::array<RouteMetadata, 9> kRoutes{{
     {"rt-h2l-mode", "hmi:hmi_mode_req", "high", "low", RouteSemantics::SameFrame},
     {"rt-h2l-power", "hmi:hmi_pwr_req", "high", "low", RouteSemantics::SameFrame},
     {"rt-h2l-lights", "host:host_light_cmd", "high", "low", RouteSemantics::SameFrame},
+    {"rt-l2h-diag-sys", "sys:sys_diag_event_rpt", "low", "high", RouteSemantics::SameFrame},
+    {"rt-l2h-diag-mtr", "mtr:mtr_diag_event_rpt", "low", "high", RouteSemantics::SameFrame},
 }};
 
 namespace generated {
@@ -715,6 +722,123 @@ inline CodecStatus decode_host_steer_cmd(FrameView frame, HostSteerCmd& out) noe
 inline CodecStatus encode(const HostSteerCmd& value, Frame& out) noexcept { return encode_host_steer_cmd(value, out); }
 inline CodecStatus decode(FrameView frame, HostSteerCmd& out) noexcept { return decode_host_steer_cmd(frame, out); }
 
+struct MtrDiagEventRpt {
+    static constexpr std::string_view kKey = "mtr:mtr_diag_event_rpt";
+    static constexpr std::uint32_t kId = 0x631u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 0u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x631u;
+    static constexpr std::uint32_t kHighCycleMs = 0u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x631u;
+    static constexpr std::uint32_t kLowCycleMs = 0u;
+    static constexpr bool kLowExtended = false;
+    std::uint16_t diag_id{};
+    std::uint8_t state{};
+    std::uint8_t occurrence_count{};
+    std::uint8_t report_counter{};
+    std::uint8_t flags{};
+    std::uint16_t snapshot_data{};
+    struct DiagIdMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    static constexpr std::uint8_t kStatePending = 0;
+    static constexpr std::uint8_t kStateActive = 1;
+    static constexpr std::uint8_t kStateLatched = 2;
+    static constexpr std::uint8_t kStateRecovered = 3;
+    static constexpr std::uint8_t kStateCleared = 4;
+    struct StateMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct OccurrenceCountMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct ReportCounterMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct FlagsMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct SnapshotDataMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (state > 4) return CodecStatus::ValueOutOfRange;
+        if (state != 0 && state != 1 && state != 2 && state != 3 && state != 4) return CodecStatus::InvalidEnum;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(diag_id));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(state));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(occurrence_count));
+        detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(report_counter));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(flags));
+        detail::insert(payload.data(), 6u, 0u, 16u, false, static_cast<std::uint64_t>(snapshot_data));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, MtrDiagEventRpt& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        MtrDiagEventRpt value{};
+        const std::uint64_t raw_diag_id = detail::extract(source, 0u, 0u, 16u, false);
+        value.diag_id = static_cast<std::uint16_t>(raw_diag_id);
+        const std::uint64_t raw_state = detail::extract(source, 2u, 0u, 8u, false);
+        value.state = static_cast<std::uint8_t>(raw_state);
+        if (value.state > 4) return CodecStatus::ValueOutOfRange;
+        if (value.state != 0 && value.state != 1 && value.state != 2 && value.state != 3 && value.state != 4) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_occurrence_count = detail::extract(source, 3u, 0u, 8u, false);
+        value.occurrence_count = static_cast<std::uint8_t>(raw_occurrence_count);
+        const std::uint64_t raw_report_counter = detail::extract(source, 4u, 0u, 8u, false);
+        value.report_counter = static_cast<std::uint8_t>(raw_report_counter);
+        const std::uint64_t raw_flags = detail::extract(source, 5u, 0u, 8u, false);
+        value.flags = static_cast<std::uint8_t>(raw_flags);
+        const std::uint64_t raw_snapshot_data = detail::extract(source, 6u, 0u, 16u, false);
+        value.snapshot_data = static_cast<std::uint16_t>(raw_snapshot_data);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_mtr_diag_event_rpt(const MtrDiagEventRpt& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(MtrDiagEventRpt::kId, static_cast<std::uint8_t>(MtrDiagEventRpt::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), MtrDiagEventRpt::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_mtr_diag_event_rpt(FrameView frame, MtrDiagEventRpt& out) noexcept {
+    if (frame.id() != 0x631u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x631u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != MtrDiagEventRpt::kDlc) return CodecStatus::UnexpectedLength;
+    return MtrDiagEventRpt::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const MtrDiagEventRpt& value, Frame& out) noexcept { return encode_mtr_diag_event_rpt(value, out); }
+inline CodecStatus decode(FrameView frame, MtrDiagEventRpt& out) noexcept { return decode_mtr_diag_event_rpt(frame, out); }
+
 struct MtrMotorFbk {
     static constexpr std::string_view kKey = "mtr:mtr_motor_fbk";
     static constexpr std::uint32_t kId = 0x206u;
@@ -1174,6 +1298,120 @@ inline CodecStatus decode_rt_brake_cmd(FrameView frame, RtBrakeCmd& out) noexcep
 
 inline CodecStatus encode(const RtBrakeCmd& value, Frame& out) noexcept { return encode_rt_brake_cmd(value, out); }
 inline CodecStatus decode(FrameView frame, RtBrakeCmd& out) noexcept { return decode_rt_brake_cmd(frame, out); }
+
+struct RtDiagEventRpt {
+    static constexpr std::string_view kKey = "rt:rt_diag_event_rpt";
+    static constexpr std::uint32_t kId = 0x621u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 0u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x621u;
+    static constexpr std::uint32_t kHighCycleMs = 0u;
+    static constexpr bool kHighExtended = false;
+    std::uint16_t diag_id{};
+    std::uint8_t state{};
+    std::uint8_t occurrence_count{};
+    std::uint8_t report_counter{};
+    std::uint8_t flags{};
+    std::uint16_t snapshot_data{};
+    struct DiagIdMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    static constexpr std::uint8_t kStatePending = 0;
+    static constexpr std::uint8_t kStateActive = 1;
+    static constexpr std::uint8_t kStateLatched = 2;
+    static constexpr std::uint8_t kStateRecovered = 3;
+    static constexpr std::uint8_t kStateCleared = 4;
+    struct StateMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct OccurrenceCountMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct ReportCounterMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct FlagsMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct SnapshotDataMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (state > 4) return CodecStatus::ValueOutOfRange;
+        if (state != 0 && state != 1 && state != 2 && state != 3 && state != 4) return CodecStatus::InvalidEnum;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(diag_id));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(state));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(occurrence_count));
+        detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(report_counter));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(flags));
+        detail::insert(payload.data(), 6u, 0u, 16u, false, static_cast<std::uint64_t>(snapshot_data));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, RtDiagEventRpt& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        RtDiagEventRpt value{};
+        const std::uint64_t raw_diag_id = detail::extract(source, 0u, 0u, 16u, false);
+        value.diag_id = static_cast<std::uint16_t>(raw_diag_id);
+        const std::uint64_t raw_state = detail::extract(source, 2u, 0u, 8u, false);
+        value.state = static_cast<std::uint8_t>(raw_state);
+        if (value.state > 4) return CodecStatus::ValueOutOfRange;
+        if (value.state != 0 && value.state != 1 && value.state != 2 && value.state != 3 && value.state != 4) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_occurrence_count = detail::extract(source, 3u, 0u, 8u, false);
+        value.occurrence_count = static_cast<std::uint8_t>(raw_occurrence_count);
+        const std::uint64_t raw_report_counter = detail::extract(source, 4u, 0u, 8u, false);
+        value.report_counter = static_cast<std::uint8_t>(raw_report_counter);
+        const std::uint64_t raw_flags = detail::extract(source, 5u, 0u, 8u, false);
+        value.flags = static_cast<std::uint8_t>(raw_flags);
+        const std::uint64_t raw_snapshot_data = detail::extract(source, 6u, 0u, 16u, false);
+        value.snapshot_data = static_cast<std::uint16_t>(raw_snapshot_data);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_rt_diag_event_rpt(const RtDiagEventRpt& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(RtDiagEventRpt::kId, static_cast<std::uint8_t>(RtDiagEventRpt::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), RtDiagEventRpt::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_rt_diag_event_rpt(FrameView frame, RtDiagEventRpt& out) noexcept {
+    if (frame.id() != 0x621u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x621u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != RtDiagEventRpt::kDlc) return CodecStatus::UnexpectedLength;
+    return RtDiagEventRpt::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const RtDiagEventRpt& value, Frame& out) noexcept { return encode_rt_diag_event_rpt(value, out); }
+inline CodecStatus decode(FrameView frame, RtDiagEventRpt& out) noexcept { return decode_rt_diag_event_rpt(frame, out); }
 
 struct RtDriveCmd {
     static constexpr std::string_view kKey = "rt:rt_drive_cmd";
@@ -1819,6 +2057,123 @@ inline CodecStatus decode_safety_estop(FrameView frame, SafetyEstop& out) noexce
 
 inline CodecStatus encode(const SafetyEstop& value, Frame& out) noexcept { return encode_safety_estop(value, out); }
 inline CodecStatus decode(FrameView frame, SafetyEstop& out) noexcept { return decode_safety_estop(frame, out); }
+
+struct SysDiagEventRpt {
+    static constexpr std::string_view kKey = "sys:sys_diag_event_rpt";
+    static constexpr std::uint32_t kId = 0x601u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 0u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x601u;
+    static constexpr std::uint32_t kHighCycleMs = 0u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x601u;
+    static constexpr std::uint32_t kLowCycleMs = 0u;
+    static constexpr bool kLowExtended = false;
+    std::uint16_t diag_id{};
+    std::uint8_t state{};
+    std::uint8_t occurrence_count{};
+    std::uint8_t report_counter{};
+    std::uint8_t flags{};
+    std::uint16_t snapshot_data{};
+    struct DiagIdMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    static constexpr std::uint8_t kStatePending = 0;
+    static constexpr std::uint8_t kStateActive = 1;
+    static constexpr std::uint8_t kStateLatched = 2;
+    static constexpr std::uint8_t kStateRecovered = 3;
+    static constexpr std::uint8_t kStateCleared = 4;
+    struct StateMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct OccurrenceCountMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct ReportCounterMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct FlagsMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct SnapshotDataMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (state > 4) return CodecStatus::ValueOutOfRange;
+        if (state != 0 && state != 1 && state != 2 && state != 3 && state != 4) return CodecStatus::InvalidEnum;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(diag_id));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(state));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(occurrence_count));
+        detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(report_counter));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(flags));
+        detail::insert(payload.data(), 6u, 0u, 16u, false, static_cast<std::uint64_t>(snapshot_data));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, SysDiagEventRpt& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        SysDiagEventRpt value{};
+        const std::uint64_t raw_diag_id = detail::extract(source, 0u, 0u, 16u, false);
+        value.diag_id = static_cast<std::uint16_t>(raw_diag_id);
+        const std::uint64_t raw_state = detail::extract(source, 2u, 0u, 8u, false);
+        value.state = static_cast<std::uint8_t>(raw_state);
+        if (value.state > 4) return CodecStatus::ValueOutOfRange;
+        if (value.state != 0 && value.state != 1 && value.state != 2 && value.state != 3 && value.state != 4) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_occurrence_count = detail::extract(source, 3u, 0u, 8u, false);
+        value.occurrence_count = static_cast<std::uint8_t>(raw_occurrence_count);
+        const std::uint64_t raw_report_counter = detail::extract(source, 4u, 0u, 8u, false);
+        value.report_counter = static_cast<std::uint8_t>(raw_report_counter);
+        const std::uint64_t raw_flags = detail::extract(source, 5u, 0u, 8u, false);
+        value.flags = static_cast<std::uint8_t>(raw_flags);
+        const std::uint64_t raw_snapshot_data = detail::extract(source, 6u, 0u, 16u, false);
+        value.snapshot_data = static_cast<std::uint16_t>(raw_snapshot_data);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_sys_diag_event_rpt(const SysDiagEventRpt& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(SysDiagEventRpt::kId, static_cast<std::uint8_t>(SysDiagEventRpt::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), SysDiagEventRpt::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_sys_diag_event_rpt(FrameView frame, SysDiagEventRpt& out) noexcept {
+    if (frame.id() != 0x601u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x601u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != SysDiagEventRpt::kDlc) return CodecStatus::UnexpectedLength;
+    return SysDiagEventRpt::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const SysDiagEventRpt& value, Frame& out) noexcept { return encode_sys_diag_event_rpt(value, out); }
+inline CodecStatus decode(FrameView frame, SysDiagEventRpt& out) noexcept { return decode_sys_diag_event_rpt(frame, out); }
 
 struct SysDiagRpt {
     static constexpr std::string_view kKey = "sys:sys_diag_rpt";
