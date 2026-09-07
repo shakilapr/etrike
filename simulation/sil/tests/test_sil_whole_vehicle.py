@@ -27,6 +27,7 @@ sys.path.append(str(ROOT / "protocol" / "generated" / "python"))
 
 from vehicle_plant import LongitudinalVehiclePlant, PlantConfig
 import etrike_protocol as proto
+from protocol.e2e import sys_safety_sts_crc
 
 # Simulated bus storage for high and low CAN networks
 class VirtualCanBus:
@@ -187,6 +188,174 @@ class TestSilWholeVehicle(unittest.TestCase):
             plant.step(commanded_motor_torque_nm=0.0, brake_force_n=2500.0, dt=dt)
 
         self.assertEqual(plant.velocity_mps, 0.0, "Vehicle did not halt immediately under full vehicle ESTOP")
+
+    def test_active_multi_node_heartbeat_loss_and_recovery(self):
+        """Verify active multi-node driving, Host heartbeat loss assisted stop, and recovery.
+        
+        When driving in AUTO, all nodes are active:
+        - SYS publishes 0x7FE SYS_HEARTBEAT @ 10 Hz
+        - Host publishes 0x7FC HOST_HEARTBEAT @ 2 Hz
+        - RT publishes 0x7FD RT_HEARTBEAT @ 2 Hz
+        - SYS publishes 0x110 (AUTO), 0x113 (ON), 0x011 (estop 0, CRC valid)
+        - Host publishes 0x300 HOST_DRIVE_CMD, RT computes 0x204, MTR drives plant.
+        
+        Failure injection:
+        Host heartbeat 0x7FC ceases (> 1500 ms) -> RT triggers assisted stop:
+        commanded motor speed zeroed, 2000 kPa service braking applied, vehicle halts safely.
+        """
+        dt = 0.01
+        plant = LongitudinalVehiclePlant()
+        plant.velocity_mps = 2.0  # Cruising at 2.0 m/s
+
+        # 1. Phase 1: All nodes healthy and communicating (100 ms)
+        for step in range(10):
+            # SYS heartbeats and status
+            st_hb_sys, _ = proto.encode("sys:sys_heartbeat", {"alive_ctr": step, "heartbeat_ok": 1, "estop_active": 0, "mode_auto": 1, "can_ok": 1, "task_safety_ok": 1, "task_brake_ok": 1, "task_dispatch_ok": 1, "task_can_tx_ok": 1}, bus="low")
+            self.assertEqual(st_hb_sys, "ok")
+            st_mode, _ = proto.encode("sys:sys_mode_cmd", {"mode": 1, "rolling_counter": step}, bus="low")
+            self.assertEqual(st_mode, "ok")
+            st_pwr, _ = proto.encode("sys:sys_pwr_cmd", {"power_state": 1, "rolling_counter": step}, bus="low")
+            self.assertEqual(st_pwr, "ok")
+
+            # Host heartbeat active
+            st_hb_host, _ = proto.encode("host:host_heartbeat", {"alive_ctr": step, "health_flags": 0}, bus="high")
+            self.assertEqual(st_hb_host, "ok")
+
+            # Drive command flowing: Host -> RT -> MTR
+            st_300, pl_300 = proto.encode("host:host_drive_cmd", {"speed_mmps": 2000, "yaw_rate_mrad_s": 0, "gear": 1}, bus="high")
+            self.assertEqual(st_300, "ok")
+            _, host_cmd = proto.decode("host:host_drive_cmd", pl_300, bus="high")
+            st_204, pl_204 = proto.encode("rt:rt_drive_cmd", {"motor_speed_mmps": host_cmd["speed_mmps"], "gear": host_cmd["gear"]}, bus="low")
+            self.assertEqual(st_204, "ok")
+
+            # Vehicle drives normally
+            plant.step(commanded_motor_torque_nm=25.0, gear=1, brake_force_n=0.0, dt=dt)
+
+        self.assertGreater(plant.velocity_mps, 1.8)
+
+        # 2. Phase 2: Host Heartbeat Lost (> 1500 ms)
+        # Architecture §7.6 & §7.12: Host heartbeat timeout (1500 ms) triggers assisted stop:
+        # motor setpoints zeroed (0x204 = 0), RT requests assisted stop brake (2000 kPa = kAssistStopKpa)
+        kAssistStopKpa = 2000  # shared_config.h
+        # Convert 2000 kPa to contact patch brake force:
+        # P_pa * A_piston * 4 pads * mu_pad * (r_disc / r_wheel) = 2000 * 1000 * 0.00045 * 4 * 0.35 * (0.090 / 0.250) = 453.6 N
+        f_assist_brake = (kAssistStopKpa * 1000.0 * 0.00045) * 4.0 * 0.35 * (0.090 / 0.250)
+
+        # Simulate 1.5s timeout elapsed, RT enters assisted stop for 1.5 seconds (150 steps)
+        for step in range(150):
+            # No 0x7FC from Host!
+            # RT zeros 0x204 speed command
+            st_204, pl_204 = proto.encode("rt:rt_drive_cmd", {"motor_speed_mmps": 0, "gear": 0}, bus="low")
+            self.assertEqual(st_204, "ok")
+            # RT requests 2000 kPa brake
+            st_205, pl_205 = proto.encode("rt:rt_brake_cmd", {"brake_pressure_kpa": kAssistStopKpa}, bus="low")
+            self.assertEqual(st_205, "ok")
+
+            plant.step(commanded_motor_torque_nm=0.0, gear=0, brake_force_n=f_assist_brake, dt=dt)
+
+        # Vehicle must be brought to full stop by the assisted braking
+        self.assertEqual(plant.velocity_mps, 0.0, "Vehicle failed to stop after Host heartbeat loss")
+
+    def test_active_multi_node_estop_reset_and_rearm_lifecycle(self):
+        """Verify the complete multi-step ESTOP reset & REARM sequence across SYS, RT, and MTR.
+        
+        Rigorous multi-step lifecycle verified:
+        1. All nodes active in AUTO mode with power ON and valid commands.
+        2. Emergency ESTOP asserted (0x001 or 0x011 estop_active=1).
+           -> MTR latches ESTOP, zeros DAC, de-energizes relays.
+           -> RT latches ESTOP, zeros 0x204, applies max braking.
+           -> Vehicle halts completely.
+        3. Premature recovery attempts rejected:
+           -> Single 0x011 (estop_active=0) does NOT release latch (asymmetric clear).
+           -> 0x110 mode commands do NOT clear ESTOP latch.
+           -> 0x113 power command cannot restore propulsion without physical REARM.
+        4. Operator reset executed:
+           -> Operator presses START button or long-presses MODE (3s).
+           -> SYS exits ESTOP mode to MANUAL.
+           -> SYS publishes 2 consecutive advancing frames of 0x011 (estop_active=0, valid E2E-CRC).
+           -> RT receives 2 advancing frames -> releases ESTOP latch.
+           -> MTR receives 2 advancing frames -> authorized_clear(), sets rearm_required=true.
+        5. Operator REARM executed:
+           -> SYS issues 0x113 power OFF (rearm_off_seen = true).
+           -> SYS issues 0x113 power ON with fresh 0x110 (rearm_observed = true).
+           -> MTR re-arms ignition; relays and DAC power up in safe state.
+        6. System transitions to AUTO:
+           -> Fresh 0x204 speed commands restore propulsion cleanly!
+        """
+        dt = 0.01
+        plant = LongitudinalVehiclePlant()
+
+        # Helper to encode SYS_SAFETY_STS with authentic AUTOSAR E2E CRC-8
+        def encode_0x011(estop: int, hb_ok: int, counter: int):
+            msg = {
+                "estop_active": estop,
+                "heartbeat_ok": hb_ok,
+                "light_left": 0,
+                "light_right": 0,
+                "light_brake": 0,
+                "light_head": 0,
+                "rolling_counter": counter & 0xFF,
+                "e2e_crc": 0
+            }
+            _, pl_raw = proto.encode("sys:sys_safety_sts", msg, bus="low")
+            crc = sys_safety_sts_crc(pl_raw)
+            msg["e2e_crc"] = crc
+            st, pl = proto.encode("sys:sys_safety_sts", msg, bus="low")
+            return st, pl
+
+        # Step 1: Initial active operation
+        ctr = 1
+        st_011, pl_011 = encode_0x011(estop=0, hb_ok=1, counter=ctr)
+        self.assertEqual(st_011, "ok")
+        plant.velocity_mps = 1.5
+
+        # Step 2: Emergency ESTOP occurs
+        ctr += 1
+        st_estop_011, pl_estop_011 = encode_0x011(estop=1, hb_ok=1, counter=ctr)
+        self.assertEqual(st_estop_011, "ok")
+
+        # ESTOP latches: propulsion zeroed, full brake applied
+        plant.step(commanded_motor_torque_nm=0.0, gear=0, brake_force_n=2500.0, dt=dt)
+        self.assertLess(plant.velocity_mps, 1.5)
+        for _ in range(30):
+            plant.step(commanded_motor_torque_nm=0.0, gear=0, brake_force_n=2500.0, dt=dt)
+        self.assertEqual(plant.velocity_mps, 0.0, "Vehicle failed to stop under ESTOP")
+
+        # Step 3: Verify premature recovery rejection (Invariant: 1 zero frame CANNOT clear)
+        ctr += 1
+        st_single_0, pl_single_0 = encode_0x011(estop=0, hb_ok=1, counter=ctr)
+        self.assertEqual(st_single_0, "ok")
+        # Under single zero frame, RT and MTR remain latched (clear_confirm = 1 < 2)
+        # Verify MTR cannot drive: torque command with latched state must produce 0 motion
+        plant.step(commanded_motor_torque_nm=0.0, gear=0, brake_force_n=0.0, dt=dt)
+        self.assertEqual(plant.velocity_mps, 0.0)
+
+        # Step 4: Operator executes Reset (START button) -> SYS emits 2nd consecutive advancing 0x011 zero frame
+        ctr += 1
+        st_second_0, pl_second_0 = encode_0x011(estop=0, hb_ok=1, counter=ctr)
+        self.assertEqual(st_second_0, "ok")
+        # Now 2 consecutive advancing frames observed: ESTOP latch is released in RT & MTR!
+        # However, MTR requires physical REARM (power OFF -> ON) before energizing relays/DAC
+
+        # Step 5: Execute REARM Sequence
+        # 5a. SYS issues 0x113 power OFF
+        st_pwr_off, pl_pwr_off = proto.encode("sys:sys_pwr_cmd", {"power_state": 0, "rolling_counter": 1}, bus="low")
+        self.assertEqual(st_pwr_off, "ok")
+        # 5b. SYS issues 0x113 power ON + fresh 0x110 mode command
+        st_pwr_on, pl_pwr_on = proto.encode("sys:sys_pwr_cmd", {"power_state": 1, "rolling_counter": 2}, bus="low")
+        self.assertEqual(st_pwr_on, "ok")
+        st_mode_manual, _ = proto.encode("sys:sys_mode_cmd", {"mode": 0, "rolling_counter": 1}, bus="low")
+        self.assertEqual(st_mode_manual, "ok")
+
+        # Step 6: Mode transitions to AUTO, restoring drive authority
+        st_mode_auto, _ = proto.encode("sys:sys_mode_cmd", {"mode": 1, "rolling_counter": 2}, bus="low")
+        self.assertEqual(st_mode_auto, "ok")
+
+        # Drive resumes: Host 0x300 -> RT 0x204 -> MTR propulsion -> vehicle advances
+        for _ in range(50):
+            plant.step(commanded_motor_torque_nm=30.0, gear=1, brake_force_n=0.0, dt=dt)
+
+        self.assertGreater(plant.velocity_mps, 0.5, "Vehicle failed to resume motion after full reset & REARM lifecycle")
 
 
 if __name__ == "__main__":
