@@ -1,6 +1,6 @@
-// Whole-Vehicle Multi-Node Integration Suite — SYS + RT + MTR "all active".
+// Whole-Vehicle Multi-Node Integration Suite ? SYS + RT + MTR "all active".
 //
-// Purpose: exercise the *coordinated* behavior that unit tests cannot — the
+// Purpose: exercise the *coordinated* behavior that unit tests cannot ? the
 // vehicle is fully up (all authority streams flowing, AUTO, driving), and then
 // a fault + recovery requires the ECUs to send a COMBINATION of commands in the
 // correct order. Real production code is exercised on all three nodes:
@@ -62,15 +62,15 @@
 #include "mtr-stm32/src/motor_manager.h"
 #include "stub/stm32g4xx_hal.h"
 
-// ── SYS atomics (inhibit_state.h externs; normally sys main.cpp) ──
+// ?? SYS atomics (inhibit_state.h externs; normally sys main.cpp) ??
 namespace sys {
 std::atomic<uint32_t> g_inhibit_reasons{0};
 std::atomic<uint32_t> g_latched_fault_reasons{0};
 }
-// ── RT atomics used by run_safety_checks (normally rt main.cpp) ──
+// ?? RT atomics used by run_safety_checks (normally rt main.cpp) ??
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
-std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{INT16_MIN};
@@ -92,7 +92,7 @@ namespace {
 
 struct Roll { uint8_t v = 0; uint8_t next() { return v++; } };
 
-// ── The full vehicle harness: real SYS + real MTR + real RT checks ──
+// ?? The full vehicle harness: real SYS + real MTR + real RT checks ??
 struct Vehicle {
     // SYS real authority
     sys::ModeManager   sys_mode;
@@ -123,14 +123,14 @@ struct Vehicle {
         g_last_mtr_feedback_us.store(-1);
         g_last_nonzero_cmd_us.store(-1);
         g_brake_request_kpa.store(0);
-        g_mtr_actual_speed_mmps.store(0);
+        g_mtr_applied_speed_command_mmps.store(0);
         rt::g_mtr_health.reset();
     }
 
     int64_t now_us() const { return int64_t(now_ms) * 1000; }
     void advance(uint32_t dt_ms) { now_ms += dt_ms; mtr.tick(now_ms); }
 
-    // ── Frame encoders (the "bus") ────────────────────────────────
+    // ?? Frame encoders (the "bus") ????????????????????????????????
     void send_sys_mode_cmd() {
         const can::Mode m = sys_mode.mode();
         const bool estop = (m == can::Mode::Estop) || hw_estop_pressed;
@@ -196,17 +196,17 @@ struct Vehicle {
         }
         // MTR 0x206 feedback to RT health supervisor (simulate echo of cmd).
         can::gen::MtrMotorFbk fbk{};
-        fbk.actual_speed_mmps = sp.motor_speed_mmps;
+        fbk.applied_speed_command_mmps = sp.motor_speed_mmps;
         fbk.gear_state = gear;
         fbk.fault_flags = 0;
         can::Frame ff; can::gen::encode_mtr_motor_fbk(fbk, ff);
         (void)ff;
-        g_mtr_actual_speed_mmps.store(sp.motor_speed_mmps);
+        g_mtr_applied_speed_command_mmps.store(sp.motor_speed_mmps);
         g_last_mtr_feedback_us.store(now_us());
         return {sp.motor_speed_mmps, gear};
     }
 
-    // ── Combined SYS publish tick (10 Hz mode task + 5 Hz safety task) ──
+    // ?? Combined SYS publish tick (10 Hz mode task + 5 Hz safety task) ??
     // Replays sys task_safety escalation + task_mode authority + task_can_tx.
     void sys_publish_tick() {
         // task_safety: hardware ESTOP (or safety latch) forces SYS into ESTOP.
@@ -223,7 +223,7 @@ struct Vehicle {
         mtr.tick(now_ms);
     }
 
-    // ── Bring the whole vehicle to "all active, AUTO, driving" ──
+    // ?? Bring the whole vehicle to "all active, AUTO, driving" ??
     // 1) SYS boots MANUAL, publishes valid streams (MTR re-acquires).
     // 2) MODE button -> AUTO; power ON. 3) Host drives.
     void drive_to_active_auto(int32_t speed_mmps = 2000) {
@@ -265,7 +265,7 @@ struct Vehicle {
         sys_mode.tick(false, false);   // release -> falling edge -> ESTOP->Manual
     }
 
-    // ── RT fail-safe check evaluation (mirrors t_control) ─────────
+    // ?? RT fail-safe check evaluation (mirrors t_control) ?????????
     // Returns the post-safety command that RT would send on 0x204.
     rt::SafetyResult rt_control_pass() {
         const bool startup_grace = (now_us() < int64_t(shared::kStartupGracePeriodMs) * 1000);
@@ -288,7 +288,7 @@ struct Vehicle {
 int main() {
     std::printf("\n=== Whole-Vehicle SYS+RT+MTR Integration Suite ===\n");
 
-    // ── S1: boot -> all streams active -> AUTO -> driving ──────────
+    // ?? S1: boot -> all streams active -> AUTO -> driving ??????????
     {
         std::printf("\n[S1] boot -> active AUTO drive (combined command cadence)\n");
         Vehicle v;
@@ -303,7 +303,7 @@ int main() {
         CHECK(!sr.zero_setpoints);
     }
 
-    // ── S2: ESTOP while driving cuts every node; drive alone can't restore ──
+    // ?? S2: ESTOP while driving cuts every node; drive alone can't restore ??
     {
         std::printf("\n[S2] ESTOP while driving: SYS latches, MTR cuts, drive blocked\n");
         Vehicle v;
@@ -330,7 +330,7 @@ int main() {
         CHECK_EQ(v.dac.current_code(), 0);
     }
 
-    // ── S3: premature clears are rejected ──────────────────────────
+    // ?? S3: premature clears are rejected ??????????????????????????
     {
         std::printf("\n[S3] premature clears rejected (single zero / mode / power)\n");
         Vehicle v;
@@ -370,7 +370,7 @@ int main() {
         CHECK_EQ((int)v.relays.state(), (int)mtr::RelayController::State::Off);
     }
 
-    // ── S4: operator reset -> two-frame 0x011 clear -> REARM_REQUIRED ──
+    // ?? S4: operator reset -> two-frame 0x011 clear -> REARM_REQUIRED ??
     {
         std::printf("\n[S4] operator reset: two-frame clear releases latch into REARM\n");
         Vehicle v;
@@ -400,7 +400,7 @@ int main() {
         CHECK_EQ(v.dac.current_code(), 0);
     }
 
-    // ── S5: full REARM restores AUTO drive ─────────────────────────
+    // ?? S5: full REARM restores AUTO drive ?????????????????????????
     {
         std::printf("\n[S5] REARM (fresh mode + power OFF->ON) restores drive\n");
         Vehicle v;
@@ -439,7 +439,7 @@ int main() {
         CHECK(v.dac.current_code() > 0);
     }
 
-    // ── S6: RT MTR-feedback (0x206) heartbeat loss in AUTO ────────
+    // ?? S6: RT MTR-feedback (0x206) heartbeat loss in AUTO ????????
     // Real rt::g_mtr_health (issue #8): while everything else stays fresh, a
     // stale 0x206 makes MTR unavailable -> RT zeroes setpoints. Confirmed
     // recovery requires consecutive fresh feedback at control cadence.
@@ -488,7 +488,7 @@ int main() {
         CHECK(recovered);
     }
 
-    // ── S7: SYS heartbeat (0x7FE) loss -> RT fail-safe -> recovery ──
+    // ?? S7: SYS heartbeat (0x7FE) loss -> RT fail-safe -> recovery ??
     {
         std::printf("\n[S7] SYS heartbeat loss -> RT motion prohibited -> recovery\n");
         Vehicle v;
@@ -526,7 +526,7 @@ int main() {
         CHECK(recovered);
     }
 
-    // ── S8: interleaved stress — brake req + mode toggle + ESTOP arrive ──
+    // ?? S8: interleaved stress ? brake req + mode toggle + ESTOP arrive ??
     // together while driving AUTO; the ESTOP must win and the whole reset +
     // rearm path must restore drive (combination that unit tests never try).
     {

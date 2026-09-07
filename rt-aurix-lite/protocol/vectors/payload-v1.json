@@ -70,7 +70,7 @@
       "frame_format": "standard",
       "payload": "fffe0311",
       "values": {
-        "actual_speed_mmps": -2,
+        "applied_speed_command_mmps": -2,
         "gear_state": 3,
         "fault_flags": 17
       },

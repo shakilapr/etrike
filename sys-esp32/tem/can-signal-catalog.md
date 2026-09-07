@@ -1,28 +1,28 @@
-# CAN Signal Catalog — Per-Signal Test Matrix
+# CAN Signal Catalog ? Per-Signal Test Matrix
 
 **Total:** 37 messages, 169 signals
 
-## 0x001 — SAFETY_ESTOP
+## 0x001 ? SAFETY_ESTOP
 
 - **Bus:** low | **DLC:** 0 | **Sender:** Any | **Cycle:** eventms
 - **Receivers:** SYS, Host, MTR, DCDC
-- **Comment:** DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
+- **Comment:** DLC=0 ? the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
 
-*(Event frame — no signals)*
+*(Event frame ? no signals)*
 
-## 0x001 — SAFETY_ESTOP
+## 0x001 ? SAFETY_ESTOP
 
 - **Bus:** high | **DLC:** 0 | **Sender:** Any | **Cycle:** eventms
 - **Receivers:** SYS, Host, MTR, DCDC
-- **Comment:** DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
+- **Comment:** DLC=0 ? the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
 
-*(Event frame — no signals)*
+*(Event frame ? no signals)*
 
-## 0x011 — SYS_SAFETY_STS
+## 0x011 ? SYS_SAFETY_STS
 
 - **Bus:** low | **DLC:** 3 | **Sender:** SYS | **Cycle:** 200ms
 - **Receivers:** RT, Host
-- **Comment:** Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
+- **Comment:** Forwarded low?high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -30,11 +30,11 @@
 | SYS_HeartbeatOk | 1 | 0 | 8 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SYS_LightState | 2 | 0 | 4 | unsigned | [0, 15] | 1 | - | zero, max, min, mid |
 
-## 0x011 — SYS_SAFETY_STS
+## 0x011 ? SYS_SAFETY_STS
 
 - **Bus:** high | **DLC:** 3 | **Sender:** SYS | **Cycle:** 200ms
 - **Receivers:** RT, Host
-- **Comment:** Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
+- **Comment:** Forwarded low?high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -42,7 +42,7 @@
 | SYS_HeartbeatOk | 1 | 0 | 8 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SYS_LightState | 2 | 0 | 4 | unsigned | [0, 15] | 1 | - | zero, max, min, mid |
 
-## 0x012 — SYS_DCDC_CMD
+## 0x012 ? SYS_DCDC_CMD
 
 - **Bus:** low | **DLC:** 1 | **Sender:** SYS | **Cycle:** eventms
 - **Receivers:** DCDC
@@ -52,7 +52,7 @@
 |---|---|---|---|---|---|---|---|---|
 | SYS_DcdcEnable | 0 | 0 | 8 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x110 — SYS_MODE_CMD
+## 0x110 ? SYS_MODE_CMD
 
 - **Bus:** low | **DLC:** 1 | **Sender:** SYS | **Cycle:** eventms
 - **Receivers:** RT, MTR
@@ -62,27 +62,27 @@
 |---|---|---|---|---|---|---|---|---|
 | SYS_Mode | 0 | 0 | 8 | unsigned | [0, 2] | 1 | enum | zero, max, min, mid, physical_min, physical_max, enum_Manual, enum_Auto, enum_ESTOP |
 
-## 0x120 — SYS_THROTTLE_STS
+## 0x120 ? SYS_THROTTLE_STS
 
 - **Bus:** low | **DLC:** 2 | **Sender:** MTR | **Cycle:** 10ms
 - **Receivers:** RT, Host
-- **Comment:** Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical.
+- **Comment:** Current vehicle speed from MTR STM32. Forwarded low?high by RT. SYS_ prefix is historical.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
 | SYS_ThrottleSpeed | 0 | 0 | 16 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
 
-## 0x120 — SYS_THROTTLE_STS
+## 0x120 ? SYS_THROTTLE_STS
 
 - **Bus:** high | **DLC:** 2 | **Sender:** MTR | **Cycle:** 10ms
 - **Receivers:** RT, Host
-- **Comment:** Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical.
+- **Comment:** Current vehicle speed from MTR STM32. Forwarded low?high by RT. SYS_ prefix is historical.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
 | SYS_ThrottleSpeed | 0 | 0 | 16 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
 
-## 0x169 — VCU_SES_REQ
+## 0x169 ? VCU_SES_REQ
 
 - **Bus:** low | **DLC:** 8 | **Sender:** RT | **Cycle:** 20ms
 - **Receivers:** EPS_C
@@ -100,7 +100,7 @@
 | SES_VehSpd | 6 | 0 | 8 | unsigned | [0, 255] | 1 | km/h | zero, max, min, mid, physical_min, physical_max |
 | SES_Checksum | 7 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x201 — SES_STATUS
+## 0x201 ? SES_STATUS
 
 - **Bus:** low | **DLC:** 8 | **Sender:** EPS_C | **Cycle:** 10ms
 - **Receivers:** RT
@@ -119,7 +119,7 @@
 | SES_RollCntStatus | 6 | 4 | 4 | unsigned | [0, 15] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SES_ChecksumStatus | 7 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x202 — SES_ErrInfo
+## 0x202 ? SES_ErrInfo
 
 - **Bus:** low | **DLC:** 8 | **Sender:** EPS_C | **Cycle:** 100ms
 - **Receivers:** RT
@@ -154,7 +154,7 @@
 | SES_EPROM | 3 | 0 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid |
 | SES_VehSpdSnapshot | 7 | 0 | 8 | unsigned | [0, 255] | 1 | km/h | zero, max, min, mid, physical_min, physical_max |
 
-## 0x203 — SES_Version
+## 0x203 ? SES_Version
 
 - **Bus:** low | **DLC:** 8 | **Sender:** EPS_C | **Cycle:** 1000ms
 - **Receivers:** RT
@@ -165,7 +165,7 @@
 | SES_SW_Version | 0 | 0 | 8 | unsigned | [0, 2.55] | 0.01 | - | zero, max, min, mid, physical_min, physical_max |
 | SES_HW_Version | 1 | 0 | 8 | unsigned | [0, 25.5] | 0.1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x204 — RT_DRIVE_CMD
+## 0x204 ? RT_DRIVE_CMD
 
 - **Bus:** low | **DLC:** 5 | **Sender:** RT | **Cycle:** 10ms
 - **Receivers:** SYS, MTR
@@ -176,7 +176,7 @@
 | RT_MotorSpeed | 0 | 0 | 32 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
 | RT_Gear | 4 | 0 | 8 | unsigned | [0, 3] | 1 | enum | zero, max, min, mid, physical_min, physical_max, enum_N, enum_D, enum_S, enum_R |
 
-## 0x205 — RT_BRAKE_CMD
+## 0x205 ? RT_BRAKE_CMD
 
 - **Bus:** low | **DLC:** 4 | **Sender:** RT | **Cycle:** 20ms
 - **Receivers:** SYS
@@ -186,31 +186,31 @@
 |---|---|---|---|---|---|---|---|---|
 | RT_BrakePressure | 0 | 0 | 32 | signed | [0, 20000] | 1 | kPa | zero, max, min, mid, physical_min, physical_max |
 
-## 0x206 — MTR_MOTOR_FBK
+## 0x206 ? MTR_MOTOR_FBK
 
 - **Bus:** low | **DLC:** 4 | **Sender:** MTR | **Cycle:** 20ms
 - **Receivers:** RT, SYS, Host
-- **Comment:** Motor feedback from STM32. Forwarded low→high by RT per gateway rules.
+- **Comment:** Motor feedback from STM32. Forwarded low?high by RT per gateway rules.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
-| MTR_ActualSpeed | 0 | 0 | 16 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
+| MTR_AppliedSpeedCmd | 0 | 0 | 16 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
 | MTR_GearState | 2 | 0 | 8 | unsigned | [0, 3] | 1 | enum | zero, max, min, mid, physical_min, physical_max, enum_N, enum_D, enum_S, enum_R |
 | MTR_FaultFlags | 3 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max, enum_EstopActive, enum_CmdTimeout, enum_AdcFault, enum_GearConflict, enum_StartupReady |
 
-## 0x206 — MTR_MOTOR_FBK
+## 0x206 ? MTR_MOTOR_FBK
 
 - **Bus:** high | **DLC:** 4 | **Sender:** MTR | **Cycle:** 20ms
 - **Receivers:** RT, SYS, Host
-- **Comment:** Motor feedback from STM32. Forwarded low→high by RT per gateway rules.
+- **Comment:** Motor feedback from STM32. Forwarded low?high by RT per gateway rules.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
-| MTR_ActualSpeed | 0 | 0 | 16 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
+| MTR_AppliedSpeedCmd | 0 | 0 | 16 | signed | [-500, 3000] | 1 | mm/s | zero, max, min, mid, physical_min, physical_max |
 | MTR_GearState | 2 | 0 | 8 | unsigned | [0, 3] | 1 | enum | zero, max, min, mid, physical_min, physical_max, enum_N, enum_D, enum_S, enum_R |
 | MTR_FaultFlags | 3 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max, enum_EstopActive, enum_CmdTimeout, enum_AdcFault, enum_GearConflict, enum_StartupReady |
 
-## 0x210 — RT_STATE_RPT
+## 0x210 ? RT_STATE_RPT
 
 - **Bus:** high | **DLC:** 4 | **Sender:** RT | **Cycle:** 100ms
 - **Receivers:** Host
@@ -223,7 +223,7 @@
 | RT_Reversing | 2 | 0 | 8 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | RT_RxOverflow | 3 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x220 — RT_PID_RPT
+## 0x220 ? RT_PID_RPT
 
 - **Bus:** high | **DLC:** 6 | **Sender:** RT | **Cycle:** 100ms
 - **Receivers:** Host
@@ -235,7 +235,7 @@
 | RT_PidMeasured | 2 | 0 | 16 | signed | [-32768, 32767] | 1 | mm/s | zero, max, min, mid |
 | RT_PidOutput | 4 | 0 | 16 | signed | [-32768, 32767] | 1 | - | zero, max, min, mid |
 
-## 0x300 — HOST_DRIVE_CMD
+## 0x300 ? HOST_DRIVE_CMD
 
 - **Bus:** high | **DLC:** 8 | **Sender:** Host | **Cycle:** 10ms
 - **Receivers:** RT
@@ -247,7 +247,7 @@
 | HOST_YawRate | 4 | 0 | 24 | signed | [-3000, 3000] | 1 | mrad/s | zero, max, min, mid, physical_min, physical_max |
 | HOST_Gear | 7 | 0 | 8 | unsigned | [0, 3] | 1 | enum | zero, max, min, mid, physical_min, physical_max, enum_N, enum_D, enum_S, enum_R |
 
-## 0x301 — HOST_BRAKE_REQ
+## 0x301 ? HOST_BRAKE_REQ
 
 - **Bus:** high | **DLC:** 4 | **Sender:** Host | **Cycle:** eventms
 - **Receivers:** RT
@@ -257,11 +257,11 @@
 |---|---|---|---|---|---|---|---|---|
 | HOST_BrakePressure | 0 | 0 | 32 | signed | [0, 20000] | 1 | kPa | zero, max, min, mid, physical_min, physical_max |
 
-## 0x302 — HOST_LIGHT_CMD
+## 0x302 ? HOST_LIGHT_CMD
 
 - **Bus:** low | **DLC:** 1 | **Sender:** Host | **Cycle:** eventms
 - **Receivers:** RT, SYS
-- **Comment:** Forwarded transparently high→low by RT.
+- **Comment:** Forwarded transparently high?low by RT.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -270,11 +270,11 @@
 | HOST_BrakeLight | 0 | 2 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | HOST_Headlight | 0 | 3 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x302 — HOST_LIGHT_CMD
+## 0x302 ? HOST_LIGHT_CMD
 
 - **Bus:** high | **DLC:** 1 | **Sender:** Host | **Cycle:** eventms
 - **Receivers:** RT, SYS
-- **Comment:** Forwarded transparently high→low by RT.
+- **Comment:** Forwarded transparently high?low by RT.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -283,11 +283,11 @@
 | HOST_BrakeLight | 0 | 2 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | HOST_Headlight | 0 | 3 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x310 — STEER_DIAG
+## 0x310 ? STEER_DIAG
 
 - **Bus:** high | **DLC:** 8 | **Sender:** RT | **Cycle:** 100ms
 - **Receivers:** Host
-- **Comment:** Steering telemetry to Host. v0.0.4 — previously missing from DBC.
+- **Comment:** Steering telemetry to Host. v0.0.4 ? previously missing from DBC.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -297,11 +297,11 @@
 | SteerDiag_ECUTemp | 5 | 0 | 16 | unsigned | [0, 65535] | 0.1 | degC | zero, max, min, mid |
 | SteerDiag_Reserved | 7 | 0 | 8 | unsigned | [0, 0] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x311 — BRAKE_DIAG
+## 0x311 ? BRAKE_DIAG
 
 - **Bus:** high | **DLC:** 8 | **Sender:** RT | **Cycle:** 100ms
 - **Receivers:** Host
-- **Comment:** Brake telemetry to Host. v0.0.4 — previously missing from DBC.
+- **Comment:** Brake telemetry to Host. v0.0.4 ? previously missing from DBC.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -311,7 +311,7 @@
 | BrakeDiag_ECUTemp | 5 | 0 | 16 | unsigned | [0, 65535] | 0.1 | degC | zero, max, min, mid |
 | BrakeDiag_Reserved | 7 | 0 | 8 | unsigned | [0, 0] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x400 — HOST_OBSTACLE_DIST
+## 0x400 ? HOST_OBSTACLE_DIST
 
 - **Bus:** high | **DLC:** 4 | **Sender:** Host | **Cycle:** 100ms
 - **Receivers:** RT
@@ -321,11 +321,11 @@
 |---|---|---|---|---|---|---|---|---|
 | HOST_ObstacleDistance | 0 | 0 | 32 | unsigned | [0, 4294967295] | 1 | mm | zero, max, min, mid, physical_min, physical_max |
 
-## 0x600 — SYS_DIAG_RPT
+## 0x600 ? SYS_DIAG_RPT
 
 - **Bus:** low | **DLC:** 8 | **Sender:** SYS | **Cycle:** 1000ms
 - **Receivers:** RT, Host
-- **Comment:** SYS diagnostics report. Forwarded low→high by RT.
+- **Comment:** SYS diagnostics report. Forwarded low?high by RT.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -338,11 +338,11 @@
 | SYS_DiagTec | 6 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SYS_DiagRec | 7 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x600 — SYS_DIAG_RPT
+## 0x600 ? SYS_DIAG_RPT
 
 - **Bus:** high | **DLC:** 8 | **Sender:** SYS | **Cycle:** 1000ms
 - **Receivers:** RT, Host
-- **Comment:** SYS diagnostics report. Forwarded low→high by RT.
+- **Comment:** SYS diagnostics report. Forwarded low?high by RT.
 
 | Signal | Byte | Bit | Size | Type | Range | Factor | Unit | Test Cases |
 |---|---|---|---|---|---|---|---|---|
@@ -355,7 +355,7 @@
 | SYS_DiagTec | 6 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SYS_DiagRec | 7 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x6FA — SES_Test
+## 0x6FA ? SES_Test
 
 - **Bus:** low | **DLC:** 8 | **Sender:** EPS_C | **Cycle:** 10ms
 - **Receivers:** RT
@@ -367,7 +367,7 @@
 | SES_ECUTemp | 3 | 0 | 16 | unsigned | [0, 255] | 0.5 | degC | zero, max, min, mid, physical_min, physical_max |
 | SES_PowVolt | 5 | 0 | 16 | unsigned | [0, 18] | 0.00390625 | V | zero, max, min, mid, physical_min, physical_max |
 
-## 0x6FB — SEB_Test
+## 0x6FB ? SEB_Test
 
 - **Bus:** low | **DLC:** 8 | **Sender:** SEB | **Cycle:** 10ms
 - **Receivers:** SYS, RT
@@ -379,7 +379,7 @@
 | SEB_ECUTemp | 3 | 0 | 16 | unsigned | [-40, 215] | 0.5 | degC | zero, max, min, mid, physical_min, physical_max |
 | SEB_PowVolt | 5 | 0 | 16 | unsigned | [0, 32] | 0.00390625 | V | zero, max, min, mid, physical_min, physical_max |
 
-## 0x721 — SEB_STATUS
+## 0x721 ? SEB_STATUS
 
 - **Bus:** low | **DLC:** 8 | **Sender:** SEB | **Cycle:** 10ms
 - **Receivers:** SYS, RT
@@ -400,7 +400,7 @@
 | SEB_RollCntStatus | 6 | 4 | 4 | unsigned | [0, 15] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SEB_ChecksumStatus | 7 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x731 — SEB_ErrInfo
+## 0x731 ? SEB_ErrInfo
 
 - **Bus:** low | **DLC:** 8 | **Sender:** SEB | **Cycle:** 100ms
 - **Receivers:** SYS
@@ -432,7 +432,7 @@
 | SEB_PreSensorOver | 3 | 0 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid |
 | SEB_LowVoltCharging | 3 | 1 | 1 | unsigned | [0, 1] | 1 | - | zero, max, min, mid |
 
-## 0x741 — SEB_Version
+## 0x741 ? SEB_Version
 
 - **Bus:** low | **DLC:** 8 | **Sender:** SEB | **Cycle:** 1000ms
 - **Receivers:** SYS
@@ -443,7 +443,7 @@
 | SEB_SW_Version | 0 | 0 | 8 | unsigned | [0, 2.55] | 0.01 | - | zero, max, min, mid, physical_min, physical_max |
 | SEB_HW_Version | 1 | 0 | 8 | unsigned | [0, 25.5] | 0.1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x7B9 — VCU_SEB_REQ
+## 0x7B9 ? VCU_SEB_REQ
 
 - **Bus:** low | **DLC:** 8 | **Sender:** SYS | **Cycle:** 20ms
 - **Receivers:** SEB
@@ -462,7 +462,7 @@
 | SEB_RollCnt | 6 | 4 | 4 | unsigned | [0, 15] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 | SEB_Checksum | 7 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x7FC — HOST_HEARTBEAT
+## 0x7FC ? HOST_HEARTBEAT
 
 - **Bus:** high | **DLC:** 1 | **Sender:** Host | **Cycle:** 500ms
 - **Receivers:** RT
@@ -472,7 +472,7 @@
 |---|---|---|---|---|---|---|---|---|
 | Host_AliveCtr | 0 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x7FD — RT_HEARTBEAT
+## 0x7FD ? RT_HEARTBEAT
 
 - **Bus:** low | **DLC:** 2 | **Sender:** RT | **Cycle:** 500ms
 - **Receivers:** Host, SYS
@@ -482,7 +482,7 @@
 |---|---|---|---|---|---|---|---|---|
 | RT_AliveCtr | 0 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x7FD — RT_HEARTBEAT
+## 0x7FD ? RT_HEARTBEAT
 
 - **Bus:** high | **DLC:** 1 | **Sender:** RT | **Cycle:** 500ms
 - **Receivers:** Host, SYS
@@ -492,7 +492,7 @@
 |---|---|---|---|---|---|---|---|---|
 | RT_AliveCtr | 0 | 0 | 8 | unsigned | [0, 255] | 1 | - | zero, max, min, mid, physical_min, physical_max |
 
-## 0x7FE — SYS_HEARTBEAT
+## 0x7FE ? SYS_HEARTBEAT
 
 - **Bus:** low | **DLC:** 2 | **Sender:** SYS | **Cycle:** 100ms
 - **Receivers:** RT

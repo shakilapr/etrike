@@ -74,7 +74,7 @@ describe("SysSafetyMonitor", () => {
     m.setEstop(true);
 
     // Simulate MTR 0x206 with ESTOP_ACTIVE bit (bit0 = 1 = faultFlags)
-    const mtrFbk = { actualSpeed: 0, gearState: 0, faultFlags: 0x01 };
+    const mtrFbk = { appliedSpeed: 0, gearState: 0, faultFlags: 0x01 };
     m.feedMtrFeedback(mtrFbk, 100); // t=100ms
 
     expect(m.mtrEstopAcked()).toBe(true);

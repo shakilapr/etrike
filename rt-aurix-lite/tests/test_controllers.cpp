@@ -1,4 +1,4 @@
-// App orchestration controller tests — typed end-to-end flow.
+// App orchestration controller tests ? typed end-to-end flow.
 
 #include <cstdio>
 #include <cstdlib>
@@ -36,7 +36,7 @@ void test_motion_forward() {
     demand.gear = 1;
 
     MotorFeedback mf;
-    mf.actual_speed_mmps = 900;  // tracking
+    mf.applied_speed_command_mmps = 900;  // tracking
     SteeringFeedback sf;
     sf.valid = true;
     sf.angle_aligned = true;

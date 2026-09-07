@@ -1,4 +1,4 @@
-// Protocol adapter tests — CAN bytes <-> typed domain I/O.
+// Protocol adapter tests ? CAN bytes <-> typed domain I/O.
 // Exercises the adapters against the generated subset codecs and the
 // vendor SES/SEB codecs (round-trip and known-vector checks).
 
@@ -68,7 +68,7 @@ void test_hmi_mode() {
 
 void test_mtr_motor() {
     gen::MtrMotorFbk fbk{};
-    fbk.actual_speed_mmps = -50;
+    fbk.applied_speed_command_mmps = -50;
     fbk.gear_state = 2;
     fbk.fault_flags = 0x03;
     Frame frame;
@@ -76,7 +76,7 @@ void test_mtr_motor() {
 
     rta::MotorFeedback out;
     CHECK(rta::decode_mtr_motor(frame.view(), out));
-    CHECK(out.actual_speed_mmps == -50);
+    CHECK(out.applied_speed_command_mmps == -50);
     CHECK(out.gear_state == 2);
     CHECK(out.fault_flags == 0x03);
 }
@@ -87,7 +87,7 @@ void test_ses_status_decode() {
     st.angle_aligned = true;
     st.control_mode = 1;
     st.error_status = 0;
-    st.steering_angle_raw = 1500;  // 150.0°
+    st.steering_angle_raw = 1500;  // 150.0?
     st.rolling_counter = 5;
 
     // ses::decode_status needs a raw frame; build one manually with a valid
@@ -146,7 +146,7 @@ void test_encode_drive_roundtrip() {
 void test_encode_steer_roundtrip() {
     rta::SteeringCommand in;
     in.valid = true;
-    in.angle_0_1deg = 123;   // 12.3°
+    in.angle_0_1deg = 123;   // 12.3?
     in.speed_raw = 300;
     in.rolling_counter = 4;
     in.vehicle_speed_raw = 20;

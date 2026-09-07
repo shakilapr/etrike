@@ -1,5 +1,5 @@
-// RT ESP32-S3 — Realtime Physics, Steering & CAN Gateway.
-// Architecture: architecture.md §7.  8 FreeRTOS tasks.
+// RT ESP32-S3 ? Realtime Physics, Steering & CAN Gateway.
+// Architecture: architecture.md ?7.  8 FreeRTOS tasks.
 
 // Runtime System Mode Configuration
 #include "system_mode.h"
@@ -39,16 +39,16 @@ bool g_bypass_mtr_absent = false;
 
 static const char* TAG = "rt";
 
-// ═══════════════════════════════════════════════════════════════════════
+// ???????????????????????????????????????????????????????????????????????
 // Definitions for all extern declarations in rt_state.h.
 // This is the single translation unit that owns the global state.
-// ═══════════════════════════════════════════════════════════════════════
+// ???????????????????????????????????????????????????????????????????????
 
-// ── CAN drivers ────────────────────────────────────────────────────
+// ?? CAN drivers ????????????????????????????????????????????????????
 rt::Mcp2515Driver g_can_high;
 
-// ── Application objects ────────────────────────────────────────────
-// g_resolver is typed as rt::ActiveResolver — resolved at compile time from
+// ?? Application objects ????????????????????????????????????????????
+// g_resolver is typed as rt::ActiveResolver ? resolved at compile time from
 // ETRIKE_RT_KINEMATICS_RESOLVER via resolver_config.h. Zero runtime overhead.
 rt::ActiveResolver  g_resolver;
 rt::SpeedController g_speed_ctrl;
@@ -57,7 +57,7 @@ rt::SteeringControl g_steering;
 rt::DualHeartbeat   g_heartbeat;
 rt::CmdWatchdog     g_watchdog;
 
-// ── Safety event queue ─────────────────────────────────────────────
+// ?? Safety event queue ?????????????????????????????????????????????
 QueueHandle_t g_safety_evt_q = nullptr;  // depth 16, SafetyEvent
 std::atomic<bool>     g_pending_estop_event{false};
 std::atomic<int16_t>  g_pending_mode_event{-1};
@@ -65,14 +65,15 @@ std::atomic<uint32_t> g_safety_event_drops{0};
 std::atomic<bool>     g_pending_safety_clear{false};
 std::atomic<bool>     g_steering_estop_request{false};
 std::atomic<bool>     g_steering_exit_request{false};
+std::atomic<bool>     g_sys_clear_in_progress{false};
 
-// ── Shared state (atomics for sensor / latest-value data) ───────────
+// ?? Shared state (atomics for sensor / latest-value data) ???????????
 std::atomic<int32_t>  g_brake_request_kpa{0};
 std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 std::atomic<int32_t>  g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t>  g_ses_angle_status{0};
 std::atomic<int32_t>  g_brake_kpa_to_send{0};
-std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
 std::atomic<uint8_t>  g_mtr_gear_state{uint8_t(can::Gear::N)};
 std::atomic<int32_t>  g_encoder_speed_mmps{0};
 std::atomic<int32_t>  g_direct_steer_angle_0_1deg{0};
@@ -83,30 +84,30 @@ std::atomic<int64_t>  g_last_ses_feedback_us{-1};
 std::atomic<int64_t>  g_last_0x7B9_rx_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 
-// ── Derived state (written by control, read by tx tasks) ────────────
+// ?? Derived state (written by control, read by tx tasks) ????????????
 std::atomic<uint8_t>  g_mode_current{0};
 std::atomic<bool>     g_seb_takeover{false};
 
-// ── Heartbeat tracking ─────────────────────────────────────────────
+// ?? Heartbeat tracking ?????????????????????????????????????????????
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
 std::atomic<int64_t>  g_last_low_peer_us{0};
 std::atomic<int64_t>  g_last_sys_safety_sts_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
-// ── Per-task alive counters for multi-task watchdog (gap #5) ──────
+// ?? Per-task alive counters for multi-task watchdog (gap #5) ??????
 static std::atomic<uint32_t> g_alive_control{0};
 static std::atomic<uint32_t> g_alive_dispatch{0};
 static std::atomic<uint32_t> g_alive_tx_low{0};
 static std::atomic<uint32_t> g_alive_tx_high{0};
-// False when MCP2515 is missing — tx_high/rx_high never start; do not flag as stalled.
+// False when MCP2515 is missing ? tx_high/rx_high never start; do not flag as stalled.
 static std::atomic<bool> g_high_can_present{false};
 static void check_task_watchdog();
 
-// ── ESTOP reason atomic (written by dispatch/safety/health, read by tx) ─
+// ?? ESTOP reason atomic (written by dispatch/safety/health, read by tx) ?
 std::atomic<uint8_t>  g_estop_reason{0};
 
-// ── Telemetry atomics ──────────────────────────────────────────────
+// ?? Telemetry atomics ??????????????????????????????????????????????
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{0};
 std::atomic<int16_t>  g_pid_output_mmps{0};
 std::atomic<int32_t>  g_last_speed_setpoint_mmps{0};
@@ -120,7 +121,7 @@ std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint16_t> g_seb_motor_current{0};
 std::atomic<uint16_t> g_seb_ecu_temp_c{0};
 
-// ── Queues ─────────────────────────────────────────────────────────
+// ?? Queues ?????????????????????????????????????????????????????????
 QueueHandle_t g_can_rx_low_q  = nullptr;
 QueueHandle_t g_can_rx_high_q = nullptr;
 QueueHandle_t g_cmd_q         = nullptr;
@@ -128,7 +129,7 @@ QueueHandle_t g_setpoint_q    = nullptr;
 QueueHandle_t g_gw_tx_low_q   = nullptr;
 QueueHandle_t g_gw_tx_high_q  = nullptr;
 
-// ── CAN RX — unified (prio 5) ─────────────────────────────────────
+// ?? CAN RX ? unified (prio 5) ?????????????????????????????????????
 using CanReceiveFn = bool (*)(can::Frame&, uint32_t);
 struct CanRxParams { CanReceiveFn receive; QueueHandle_t queue; rt::Mcp2515Driver* overflow_drv = nullptr; };
 
@@ -154,7 +155,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                 rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighRxOverflow);
                 static bool warned = false;
                 if (!warned) {
-                    ESP_LOGW(TAG, "High CAN RX queue overflow — check RT_STATE_RPT byte 3");
+                    ESP_LOGW(TAG, "High CAN RX queue overflow ? check RT_STATE_RPT byte 3");
                     warned = true;
                 }
             }
@@ -164,11 +165,11 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
     }
 }
 
-// ── Dispatch (extracted to can_dispatch.h) ──────────────────────────
+// ?? Dispatch (extracted to can_dispatch.h) ??????????????????????????
 #include "can_dispatch.h"
-// ── Safety monitor (extracted to safety_monitor.h) ──────────────────
+// ?? Safety monitor (extracted to safety_monitor.h) ??????????????????
 #include "safety_monitor.h"
-// ── RT Phase B diagnostic reporter (singleton accessor) ──────────────
+// ?? RT Phase B diagnostic reporter (singleton accessor) ??????????????
 #include "diag_rt.h"
 #include "protocol/compat/can.hpp"
 
@@ -180,7 +181,7 @@ MtrHealthSupervisor g_mtr_health;
 SebBrakeFallback    g_brake_fallback;
 }  // namespace rt
 
-// ── CAN TX helper — checks return, logs failure, detects recovery ────
+// ?? CAN TX helper ? checks return, logs failure, detects recovery ????
 static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
 static uint32_t g_can_tx_ok_low = 0, g_can_tx_ok_high = 0;
 static bool g_can_tx_had_fail_low = false, g_can_tx_had_fail_high = false;
@@ -193,7 +194,7 @@ static bool send_can_low(can::Frame& fr) {
     }
     if (drv->send(fr)) {
         if (g_can_tx_had_fail_low) {
-            ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu",
+            ESP_LOGI(TAG, "Low CAN TX recovered ? fail=%lu ok=%lu",
                      static_cast<unsigned long>(g_can_tx_fail_low),
                      static_cast<unsigned long>(g_can_tx_ok_low));
             g_can_tx_had_fail_low = false;
@@ -231,12 +232,12 @@ static bool send_can_high(can::Frame& fr) {
         if (!g_can_tx_had_fail_high) { ESP_LOGW(TAG, "High CAN TX failed"); g_can_tx_had_fail_high = true; }
         return false;
     }
-    if (g_can_tx_had_fail_high) { ESP_LOGI(TAG, "High CAN TX recovered — fail=%lu ok=%lu", g_can_tx_fail_high, g_can_tx_ok_high); g_can_tx_had_fail_high = false; }
+    if (g_can_tx_had_fail_high) { ESP_LOGI(TAG, "High CAN TX recovered ? fail=%lu ok=%lu", g_can_tx_fail_high, g_can_tx_ok_high); g_can_tx_had_fail_high = false; }
     g_can_tx_ok_high++;
     return true;
 }
 
-// ── Gateway TX pump ─────────────────────────────────────────────────
+// ?? Gateway TX pump ?????????????????????????????????????????????????
 // Single-shot HW TX frees the one TX slot after every attempt, so a frame
 // that loses arbitration is dropped by hardware. Retain it in the gateway
 // queue and re-attempt from software each TX cycle until it is delivered or
@@ -257,7 +258,7 @@ static bool gw_pump(QueueHandle_t q, bool (*send_fn)(can::Frame&), const char* t
     if (accepted) {
         // HW accepted the frame; with auto-retransmit (fail_retry_cnt = -1) the
         // controller retries until it wins arbitration and is delivered, which
-        // fires on_tx_done and frees the slot. Do NOT re-enqueue — a fresh High
+        // fires on_tx_done and frees the slot. Do NOT re-enqueue ? a fresh High
         // 0x111 re-triggers forwarding. This avoids a duplicate storm.
         return true;
     }
@@ -267,11 +268,11 @@ static bool gw_pump(QueueHandle_t q, bool (*send_fn)(can::Frame&), const char* t
     return true;
 }
 
-// ── CAN bus health monitor (extracted to can_health.h) ──────────────
+// ?? CAN bus health monitor (extracted to can_health.h) ??????????????
 #include "can_health.h"
 
 // FreeRTOS rejects xTimeIncrement==0. With CONFIG_FREERTOS_HZ=100,
-// pdMS_TO_TICKS(ms<10) can round to 0 — never pass that to DelayUntil.
+// pdMS_TO_TICKS(ms<10) can round to 0 ? never pass that to DelayUntil.
 static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
     TickType_t t = pdMS_TO_TICKS(ms);
     return t > 0 ? t : static_cast<TickType_t>(1);
@@ -305,7 +306,7 @@ static void update_low_can_tx_admission(int64_t now_us) {
     }
 }
 
-// ── Phase B diagnostic drain (RT_DIAG_EVENT_RPT = 0x621, high bus) ──
+// ?? Phase B diagnostic drain (RT_DIAG_EVENT_RPT = 0x621, high bus) ??
 // Throttled to ~10 Hz to bound high-bus TX. Latched/active states are
 // re-broadcast via replay_active_set() so the sink keeps receiving them.
 static void pump_diagnostics() {
@@ -332,7 +333,7 @@ static void pump_diagnostics() {
     rt::diag().replay_active_set();
 }
 
-// ── Control (prio 4, 100 Hz) ───────────────────────────────────────
+// ?? Control (prio 4, 100 Hz) ???????????????????????????????????????
 [[noreturn]] static void t_control(void*) {
     TickType_t per = ticks_ms_at_least_1(10), last = xTaskGetTickCount();
     can::gen::HostDriveCmd cmd{};
@@ -356,7 +357,7 @@ static void pump_diagnostics() {
         if (g_steering_exit_request.exchange(false)) {
             g_steering.exit_estop();
         }
-        // ── Drain bounded safety events and their overflow fallbacks ─
+        // ?? Drain bounded safety events and their overflow fallbacks ?
         rt::SafetyEvent evt;
         bool had_estop_this_cycle = g_pending_estop_event.exchange(false);
         if (had_estop_this_cycle) {
@@ -395,7 +396,7 @@ static void pump_diagnostics() {
             }
         }
         // Fail-safe: loss of the SYS_SAFETY_STS (0x011) stream must keep (or set)
-        // the E-stop latch — never silently clear it.
+        // the E-stop latch ? never silently clear it.
         if (!m_estop_pending
             && rt::sys_safety_sts_lost(g_last_sys_safety_sts_us.load(),
                                        esp_timer_get_time())) {
@@ -445,7 +446,7 @@ static void pump_diagnostics() {
             rt::encoder_reset(0);
         }
 
-        // ── Dynamic angle clamp (arch §7.6, fix #6) ─────────────────
+        // ?? Dynamic angle clamp (arch ?7.6, fix #6) ?????????????????
         {
             float max_deg = rt::compute_dynamic_limit(static_cast<float>(std::abs(sp.motor_speed_mmps)));
             int32_t limit_mdeg = static_cast<int32_t>(max_deg * 1000.0f);
@@ -455,7 +456,7 @@ static void pump_diagnostics() {
         int32_t obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
-        // ── Safety checks ──────────────────────────────────────────
+        // ?? Safety checks ??????????????????????????????????????????
         int64_t const now = esp_timer_get_time();
         if (auto* drv = rt::can_low_driver()) {
             // Restore transport independently of the latched safety state.
@@ -481,7 +482,7 @@ static void pump_diagnostics() {
 
         // Issue #3: SEB brake-ownership emergency fallback. run_safety_checks no
         // longer grants RT brake ownership on SYS-heartbeat loss alone; this
-        // machine decides when RT must become the emergency 0x7B9 writer — only
+        // machine decides when RT must become the emergency 0x7B9 writer ? only
         // once SYS's 0x7B9 has ALSO disappeared for the guard interval. In
         // SYS_DEGRADED (HB lost, SYS 0x7B9 still present) motion is already
         // prohibited via sr.zero_setpoints above but RT does NOT transmit 0x7B9.
@@ -516,8 +517,17 @@ static void pump_diagnostics() {
             sp = {};
             g_calc_speed.reset();
 
-            if (can_send_estop()) {
-                // Protocol: SAFETY_ESTOP is DLC 0 — always encode, never hand-roll.
+            // Broadcast 0x001 ONLY when RT actively originates an unhandled local emergency trip.
+            // Never broadcast 0x001 when reacting to external CAN ESTOP (CanEstop / Mode==Estop),
+            // nor when SYS clear is in progress, nor for soft disables (MTR fbk loss, host timeout).
+            const bool is_active_local_trip = (sr.obstacle_triggered ||
+                                               sr.estop_reason == rt::kEstopReasonFollowingError ||
+                                               sr.estop_reason == rt::kEstopReasonBusOff ||
+                                               sr.estop_reason == rt::kEstopReasonInternal ||
+                                               m_seb_takeover);
+            const bool sys_clear_in_progress = g_sys_clear_in_progress.load(std::memory_order_relaxed);
+            if (is_active_local_trip && !sys_clear_in_progress && can_send_estop()) {
+                // Protocol: SAFETY_ESTOP is DLC 0 ? always encode, never hand-roll.
                 can::Frame estop_frame;
                 can::gen::SafetyEstop estop_msg{};
                 if (can::gen::encode_safety_estop(estop_msg, estop_frame) == can::gen::CodecStatus::Ok) {
@@ -538,17 +548,17 @@ static void pump_diagnostics() {
 
         g_brake_kpa_to_send.store(bk);
 
-        // ── Speed feedback selection (build_config.h §SpeedFeedbackSource) ─
+        // ?? Speed feedback selection (build_config.h ?SpeedFeedbackSource) ?
         int32_t measured_speed_mmps = 0;
         if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Mtr) {
-            measured_speed_mmps = g_mtr_actual_speed_mmps.load();
+            measured_speed_mmps = g_mtr_applied_speed_command_mmps.load();
         } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::RtEncoder) {
             measured_speed_mmps = g_encoder_speed_mmps.load();
         } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Calculated) {
             measured_speed_mmps = g_calc_speed.get();
         }
 
-        // ── PID controller (build_config.h §PidMode) ──────────────
+        // ?? PID controller (build_config.h ?PidMode) ??????????????
         {
             int16_t pid_out = 0;
             g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps, measured_speed_mmps, 0.01f, pid_out);
@@ -567,7 +577,7 @@ static void pump_diagnostics() {
         xQueueOverwrite(g_setpoint_q, &sp);
 
         if (m_current_mode == uint8_t(can::Mode::Auto)) {
-            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
+            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_applied_speed_command_mmps.load());
         }
 
         g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
@@ -594,7 +604,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     drv.send(fr);
 }
 
-// ── CAN TX low (prio 3) ────────────────────────────────────────────
+// ?? CAN TX low (prio 3) ????????????????????????????????????????????
 [[noreturn]] static void t_can_tx_low(void*) {
     TickType_t last_wake = xTaskGetTickCount();
     TickType_t t100 = last_wake, t50 = last_wake;
@@ -614,7 +624,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             const bool motion_mode =
                 mode_now_100 == uint8_t(can::Mode::Auto);  // only Auto may command speed
             if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE || !motion_mode) {
-                // Drive motor lockout: only send motion when steering is ready (arch §7.6).
+                // Drive motor lockout: only send motion when steering is ready (arch ?7.6).
                 // Otherwise send {0,N} instead of silence so MTR staleness does not trip.
                 auto ss = g_steering.state();
                 bool drive_allowed = motion_mode
@@ -640,18 +650,18 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         }
         if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
             t50 = xTaskGetTickCount();
-            // 0x205 RT_BRAKE_CMD at 50 Hz (arch §7.4, fix C7).
-            // Architecture §2.3: RT→SYS, AUTO only. Suppress in MANUAL — SYS handles brake directly.
+            // 0x205 RT_BRAKE_CMD at 50 Hz (arch ?7.4, fix C7).
+            // Architecture ?2.3: RT?SYS, AUTO only. Suppress in MANUAL ? SYS handles brake directly.
             uint8_t mode_now = g_mode_current.load();
             if (mode_now != uint8_t(can::Mode::Manual)) {
                 can::gen::RtBrakeCmd message{g_brake_kpa_to_send.load()};
                 if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
             }
-            // 0x169 VCU_SES_REQ at 50 Hz — steering state machine gates transmission.
+            // 0x169 VCU_SES_REQ at 50 Hz ? steering state machine gates transmission.
             // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
             // Silent in BOOT_WAIT, LISTEN_SYNC, FAULT, and MANUAL mode.
-            // Allow in AUTO (active steering) and ESTOP (centering ramp per §7.6 gap #3).
-            // Only block in MANUAL — EPS-C runs standalone, RT must not command.
+            // Allow in AUTO (active steering) and ESTOP (centering ramp per ?7.6 gap #3).
+            // Only block in MANUAL ? EPS-C runs standalone, RT must not command.
             if (g_mode_current.load() != uint8_t(can::Mode::Manual)) {
                 can::custom::ses::Command ses;
                 int64_t now_ms = esp_timer_get_time() / 1000;
@@ -665,7 +675,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             // producer, converting RT's 0x205 intent into the final command).
             // RT transmits 0x7B9 ONLY as the emergency fallback writer, when
             // g_seb_takeover is set by the brake-fallback machine (SYS heartbeat
-            // lost AND SYS 0x7B9 has actually disappeared — see brake_fallback.h).
+            // lost AND SYS 0x7B9 has actually disappeared ? see brake_fallback.h).
             static uint8_t seb_roll = 0;
             bool seb_takeover = g_seb_takeover.load(std::memory_order_relaxed);
             if (seb_takeover) {
@@ -681,7 +691,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     }
 }
 
-// ── CAN TX high (prio 3) ───────────────────────────────────────────
+// ?? CAN TX high (prio 3) ???????????????????????????????????????????
 // Gateway frames are drained at 100 Hz (10ms inner loop) while
 // periodic telemetry is produced at 10 Hz (100ms outer loop).
 [[noreturn]] static void t_can_tx_high(void*) {
@@ -697,13 +707,13 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             for (int forwarded = 0; forwarded < 8; ++forwarded) {
                 if (!gw_pump(g_gw_tx_high_q, send_can_high, TAG)) break;
             }
-            // 0x121 RT_MOTION_RPT — coherent 100 Hz measured motion report.
+            // 0x121 RT_MOTION_RPT ? coherent 100 Hz measured motion report.
             // Speed and physical gear share the MTR feedback timestamp; yaw is
             // valid only when both MTR speed and aligned SES angle are fresh.
             static uint8_t motion_counter = 0;
             auto motion = rt::make_motion_report(
                 esp_timer_get_time(),
-                g_mtr_actual_speed_mmps.load(),
+                g_mtr_applied_speed_command_mmps.load(),
                 g_mtr_gear_state.load(),
                 g_last_mtr_feedback_us.load(),
                 g_ses_angle_0_1deg.load(),
@@ -717,7 +727,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             vTaskDelay(pdMS_TO_TICKS(10));
         }
 
-        // 0x210 RT_STATE_RPT — 10 Hz (arch §7.4)
+        // 0x210 RT_STATE_RPT ? 10 Hz (arch ?7.4)
         can::gen::RtStateRpt rpt;
         rpt.mode         = g_mode_current.load();
         auto ss = g_steering.state();
@@ -768,13 +778,13 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
         }
 
-        // 0x310 STEER_DIAG — 10 Hz (v0.0.4: EPS-C telemetry for Host)
-        // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) → STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
+        // 0x310 STEER_DIAG ? 10 Hz (v0.0.4: EPS-C telemetry for Host)
+        // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) ? STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
             int16_t angle = g_ses_angle_0_1deg.load();
             uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
-            uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ×0.78125
-            uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ×5
+            uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ?0.78125
+            uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ?5
             can::gen::SteerDiag message{};
             message.angle_0_1deg = angle * 0.1;
             message.fault = fault;
@@ -793,13 +803,13 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
         }
 
-        // 0x311 BRAKE_DIAG — 10 Hz (v0.0.4: SEB telemetry for Host)
-        // Rescale: SEB_Test source (0.0078125 A/bit, 0.5 degC/bit) → BRAKE_DIAG dest (0.01 A/bit, 0.1 degC/bit)
+        // 0x311 BRAKE_DIAG ? 10 Hz (v0.0.4: SEB telemetry for Host)
+        // Rescale: SEB_Test source (0.0078125 A/bit, 0.5 degC/bit) ? BRAKE_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
             uint16_t seb_pressure = g_seb_pressure_raw.load();
             uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
-            uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ×0.78125
-            // SEB: factor 0.5 offset -40 → BRAKE_DIAG: factor 0.1 offset 0.
+            uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ?0.78125
+            // SEB: factor 0.5 offset -40 ? BRAKE_DIAG: factor 0.1 offset 0.
             // Use signed intermediate to prevent wrap on sub-zero temps (bug B3).
             int32_t ecu_tmp_raw = int32_t(g_seb_ecu_temp_c.load()) * 5 - 400;
             uint16_t ecu_tmp = ecu_tmp_raw < 0 ? 0 : uint16_t(ecu_tmp_raw);
@@ -811,11 +821,11 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
         }
 
-        // 0x220 RT_PID_RPT — 10 Hz (shadow PID telemetry, arch §7.6, gap #5)
+        // 0x220 RT_PID_RPT ? 10 Hz (shadow PID telemetry, arch ?7.6, gap #5)
         {
             int16_t setpoint = static_cast<int16_t>(std::clamp(
                 g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
-            int16_t measured = g_mtr_actual_speed_mmps.load();
+            int16_t measured = g_mtr_applied_speed_command_mmps.load();
             int16_t pid      = g_pid_output_mmps.load();
             can::gen::RtPidRpt message{setpoint, measured, pid};
             if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
@@ -824,7 +834,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     }
 }
 
-// ── Watchdog (prio 1, 10 Hz) ───────────────────────────────────────
+// ?? Watchdog (prio 1, 10 Hz) ???????????????????????????????????????
 [[noreturn]] static void t_watchdog(void*) {
     TickType_t per = ticks_ms_at_least_1(100), last = xTaskGetTickCount();
     while (1) {
@@ -841,7 +851,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
             can::gen::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
-            g_steering_estop_request.store(true);  // ramp to 0° (gap C3, replaces disable flag)
+            g_steering_estop_request.store(true);  // ramp to 0? (gap C3, replaces disable flag)
         }
         vTaskDelayUntil(&last, per);
     }
@@ -852,7 +862,7 @@ static void check_task_watchdog() {
     uint16_t stalled_mask = 0;
     auto stale = [&](std::atomic<uint32_t>& a, const char* name, uint16_t bit) {
         if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(500)) {
-            ESP_LOGE(TAG, "Task %s stalled >500ms — hardware WDT may fire", name);
+            ESP_LOGE(TAG, "Task %s stalled >500ms ? hardware WDT may fire", name);
             stalled_mask |= bit;
         }
     };
@@ -866,7 +876,7 @@ static void check_task_watchdog() {
         rt::diag().raise(etrike::diagnostics::DiagId::RtTaskHealthFault, stalled_mask);
 }
 
-// ── Heartbeat (prio 1, 2 Hz) ───────────────────────────────────────
+// ?? Heartbeat (prio 1, 2 Hz) ???????????????????????????????????????
 [[noreturn]] static void t_heartbeat(void*) {
     TickType_t per = ticks_ms_at_least_1(rt::kHeartbeatIntervalMs), last = xTaskGetTickCount();
     can::Frame fr;
@@ -910,7 +920,7 @@ static void check_task_watchdog() {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────
+// ???????????????????????????????????????????????????????????????????
 extern "C" void app_main() {
     ESP_LOGI(TAG, "RT ESP32-S3 boot");
     
@@ -964,13 +974,13 @@ extern "C" void app_main() {
         rt::encoder_init();
     }
 
-    // External watchdog GPIO — toggled by control_task at 100 Hz (TPS3850 or equiv)
+    // External watchdog GPIO ? toggled by control_task at 100 Hz (TPS3850 or equiv)
     // gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
     // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
 
     g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
     g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
-    g_cmd_q         = xQueueCreate( 1, sizeof(can::gen::HostDriveCmd));  // overwrite queue — only latest value matters
+    g_cmd_q         = xQueueCreate( 1, sizeof(can::gen::HostDriveCmd));  // overwrite queue ? only latest value matters
     g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
     g_gw_tx_low_q   = xQueueCreate( 8, sizeof(GwTxFrame));
     g_gw_tx_high_q  = xQueueCreate( 8, sizeof(GwTxFrame));
@@ -989,7 +999,7 @@ extern "C" void app_main() {
         xTaskCreate(task_can_rx, "rx_high", 4096, &rx_high_par, 5, nullptr);
         task_count++;
     } else {
-        ESP_LOGW(TAG, "High CAN (MCP2515) not available — rx_high/tx_high tasks skipped");
+        ESP_LOGW(TAG, "High CAN (MCP2515) not available ? rx_high/tx_high tasks skipped");
     }
 
     xTaskCreate(t_dispatch,    "dispatch",4096, nullptr, 4, nullptr); task_count++;
@@ -1004,6 +1014,6 @@ extern "C" void app_main() {
     xTaskCreate(t_watchdog,    "watchdog",4096, nullptr, 1, nullptr); task_count++;
     xTaskCreate(t_heartbeat,   "hb",      3072, nullptr, 1, nullptr); task_count++;
 
-    ESP_LOGI(TAG, "Ready — %d tasks", task_count);
+    ESP_LOGI(TAG, "Ready ? %d tasks", task_count);
     vTaskDelete(nullptr);
 }

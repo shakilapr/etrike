@@ -5,7 +5,7 @@
  *   - ESTOP GPIO (simulated as state bit)
  *   - Brake lever (simulated as state bit)
  *   - RT heartbeat (0x7FD) with frozen counter detection
- *   - EGAS L2: 0x204 setpoint vs 0x206 actual speed mismatch
+ *   - EGAS L2 (command-path consistency): 0x204 setpoint vs 0x206 applied speed command (setpoint echo, not measured) mismatch
  */
 
 import {
@@ -67,11 +67,11 @@ export class SysSafetyMonitor {
   // ── EGAS L2 ──────────────────────────────────────────────────────
 
   /**
-   * Monitor EGAS Level 2: compare 0x204 commanded speed vs 0x206 actual.
+   * Monitor EGAS Level 2 (command-path consistency): compare 0x204 commanded speed vs 0x206 applied command (echo, not a measured speed).
    * Returns true if a fault is detected and persisted long enough.
    */
-  checkEgasL2(nowMs: number, cmdSpeedMmps: number, actualSpeedMmps: number): boolean {
-    const mismatch = Math.abs(cmdSpeedMmps - actualSpeedMmps) > EGAS_SPEED_THRESHOLD_MMPS;
+  checkEgasL2(nowMs: number, cmdSpeedMmps: number, appliedSpeedMmps: number): boolean {
+    const mismatch = Math.abs(cmdSpeedMmps - appliedSpeedMmps) > EGAS_SPEED_THRESHOLD_MMPS;
 
     if (mismatch) {
       if (this.egasFaultStartMs < 0) {
@@ -95,7 +95,7 @@ export class SysSafetyMonitor {
 
   /** Feed MTR motor feedback from 0x206 for ESTOP ACK detection (gap #15). */
   feedMtrFeedback(
-    fbk: { actualSpeed: number; gearState: number; faultFlags: number },
+    fbk: { appliedSpeed: number; gearState: number; faultFlags: number },
     _nowMs: number,
   ): void {
     this.mtrFaultFlags = fbk.faultFlags;

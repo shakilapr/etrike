@@ -806,8 +806,8 @@
       }
     ]
   },
-  "network_hash": "6765421a1129138419b8b797e825928b94044ea7d689b723cf945e7eb39564bc",
+  "network_hash": "dfe5c38c19bcb7802ac4ee1709d95ba68734f5153bba8aea53fd1d18eb432080",
   "schema_version": 1,
-  "semantic_hash": "07cf327066e124be6f78be51f6cddce0ad3048e3f2b3d3581dea144b68ed1e9a",
-  "wire_hash": "07cf327066e124be6f78be51f6cddce0ad3048e3f2b3d3581dea144b68ed1e9a"
+  "semantic_hash": "5cb47ac29e385023dafb477f099ffc43a47bc9c11b9fa58dfc4ff73712b1fcfb",
+  "wire_hash": "5cb47ac29e385023dafb477f099ffc43a47bc9c11b9fa58dfc4ff73712b1fcfb"
 }

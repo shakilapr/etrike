@@ -1,4 +1,4 @@
-// SYS CAN dispatch native test — feed synthetic frames, verify atomics
+// SYS CAN dispatch native test ? feed synthetic frames, verify atomics
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
@@ -7,13 +7,13 @@
 namespace generated = etrike::protocol::generated;
 using etrike::protocol::Frame;
 
-// ── Stubs for SYS globals (dispatch writes these) ─────────────────
+// ?? Stubs for SYS globals (dispatch writes these) ?????????????????
 static std::atomic<int32_t>  g_setpoint_speed_mmps{0};
 static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};
 static std::atomic<uint8_t>  g_rt_safety_state{0};
-static std::atomic<int16_t>  g_actual_speed_mmps{0};
+static std::atomic<int16_t>  g_applied_speed_command_mmps{0};
 static std::atomic<uint8_t>  g_motor_fault_flags{0};
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
 static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
@@ -21,7 +21,7 @@ static uint32_t g_tick = 0;
 
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("FAIL: %s\n", msg); return 1; } } while(0)
 
-// ── Simulated dispatch: process one frame, verify one atomic ──────
+// ?? Simulated dispatch: process one frame, verify one atomic ??????
 
 static int test_0x204_drive_cmd() {
     Frame fr;
@@ -72,10 +72,10 @@ static int test_0x206_motor_fbk() {
 
     generated::MtrMotorFbk fbk{};
     (void)generated::decode(fr.view(), fbk);
-    g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
+    g_applied_speed_command_mmps.store(fbk.applied_speed_command_mmps, std::memory_order_relaxed);
     g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
 
-    CHECK(g_actual_speed_mmps.load() == 1200, "0x206: speed should be 1200");
+    CHECK(g_applied_speed_command_mmps.load() == 1200, "0x206: speed should be 1200");
     CHECK(g_motor_fault_flags.load() == 0x11, "0x206: fault_flags should be 0x11");
     CHECK((g_motor_fault_flags.load() & 0x10) != 0, "0x206: StartupReady bit should be set");
     std::printf("  PASS: 0x206 MTR_MOTOR_FBK dispatch\n");
@@ -110,7 +110,7 @@ static int test_0x210_rt_state() {
 static int test_0x001_estop() {
     Frame fr;
     (void)generated::encode(generated::SafetyEstop{}, fr);
-    // ESTOP is DLC=0 — just the ID matters
+    // ESTOP is DLC=0 ? just the ID matters
     CHECK(fr.id == 0x001, "0x001: ESTOP ID should be 0x001");
     CHECK(fr.dlc == 0, "0x001: ESTOP DLC should be 0");
     std::printf("  PASS: 0x001 SAFETY_ESTOP dispatch\n");

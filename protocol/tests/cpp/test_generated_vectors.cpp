@@ -83,7 +83,7 @@ void test_success_vectors() {
     check_vector(throttle, std::array<std::uint8_t, 2>{0xFF, 0xFE});
 
     generated::MtrMotorFbk motor{};
-    motor.actual_speed_mmps = -2;
+    motor.applied_speed_command_mmps = -2;
     motor.gear_state = 3;
     motor.fault_flags = 17;
     check_vector(motor, std::array<std::uint8_t, 4>{0xFF, 0xFE, 0x03, 0x11});

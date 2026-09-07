@@ -1,6 +1,6 @@
-# Full CAN Network Documentation — E-Trike
+# Full CAN Network Documentation ? E-Trike
 **Version:** 1.0
-**Description:** E-Trike CAN signal definitions — single source of truth for DBC generation
+**Description:** E-Trike CAN signal definitions ? single source of truth for DBC generation
 
 *(Note: This file is fully auto-generated from the YAML configurations. Do not edit manually.)*
 
@@ -56,7 +56,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | **EPS_C** | steer-by-wire unit, steer-by-wire module, preprogrammed CAN IDs |
 | **SEB** | brake-by-wire unit, electro-hydraulic brake module, preprogrammed CAN IDs |
 | **HMI** | CAN Controller UI / Dashboard, mode and power requests |
-| **Any** | Wildcard — any node may send (e.g., ESTOP frames) |
+| **Any** | Wildcard ? any node may send (e.g., ESTOP frames) |
 
 ---
 
@@ -99,21 +99,21 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 ### Protocol: `custom_high`
 **Physical Bus:** high | **Byte Order:** motorola
 
-#### 0x001 — SAFETY_ESTOP
+#### 0x001 ? SAFETY_ESTOP
 - **Sender:** Any
 - **Receivers:** SYS, Host, MTR, DCDC
 - **DLC:** 0 bytes
 - **Cycle:** 0 ms (0 = event-based)
-- **Description:** DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
+- **Description:** DLC=0 ? the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
 
 *No payload (DLC=0 event frame)*
 
-#### 0x011 — SYS_SAFETY_STS
+#### 0x011 ? SYS_SAFETY_STS
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 3 bytes
 - **Cycle:** 200 ms (0 = event-based)
-- **Description:** Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
+- **Description:** Forwarded low?high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -124,55 +124,55 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SYS_LightBrake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `SYS_LightHead` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x111 — HMI_MODE_REQ
+#### 0x111 ? HMI_MODE_REQ
 - **Sender:** HMI
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+- **Description:** HMI mode request. 1Hz periodic heartbeat. Forwarded high?low by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `HMI_ReqMode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  (Values: 0=MANUAL, 1=AUTO, 2=PURE_SIM) |
 | `HMI_ModeAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
 
-#### 0x112 — HMI_PWR_REQ
+#### 0x112 ? HMI_PWR_REQ
 - **Sender:** HMI
 - **Receivers:** SYS
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+- **Description:** HMI power request. 1Hz periodic heartbeat. Forwarded high?low by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `HMI_ReqStart` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=False, 1=True) |
 | `HMI_PwrAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
 
-#### 0x120 — SYS_THROTTLE_STS
+#### 0x120 ? SYS_THROTTLE_STS
 - **Sender:** MTR
 - **Receivers:** RT, Host
 - **DLC:** 2 bytes
 - **Cycle:** 10 ms (0 = event-based)
-- **Description:** Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical.
+- **Description:** Current vehicle speed from MTR STM32. Forwarded low?high by RT. SYS_ prefix is historical.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `SYS_ThrottleSpeed` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | mm/s |  |
 
-#### 0x206 — MTR_MOTOR_FBK
+#### 0x206 ? MTR_MOTOR_FBK
 - **Sender:** MTR
 - **Receivers:** RT, SYS, Host
 - **DLC:** 4 bytes
 - **Cycle:** 20 ms (0 = event-based)
-- **Description:** Motor feedback from STM32. Forwarded low→high by RT per gateway rules.
+- **Description:** Motor feedback from STM32. Forwarded low?high by RT per gateway rules.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `MTR_ActualSpeed` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | mm/s |  |
+| `MTR_AppliedSpeedCmd` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | mm/s |  |
 | `MTR_GearState` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `MTR_FaultFlags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - | bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready |
 
-#### 0x210 — RT_STATE_RPT
+#### 0x210 ? RT_STATE_RPT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 6 bytes
@@ -185,11 +185,11 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `RT_SafetyState` | 1 | 0 | 2 | unsigned | 1 | [0, 2] | - | RT internal state: 0=Normal, 1=Internal ESTOP (steer ramp/hold), 2=Fault (Values: 0=Normal, 1=Warning, 2=Fault) |
 | `RT_EstopReason` | 1 | 4 | 4 | unsigned | 1 | [0, 7] | - | Reason for ESTOP state, packed in byte 1 bits 4-7 |
 | `RT_Reversing` | 2 | 0 | 1 | unsigned | 1 | [0, 1] | - |  |
-| `RT_RxOverflow` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - | MCP2515 RX overflow counter — telemetry for CAN bus health monitoring |
+| `RT_RxOverflow` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - | MCP2515 RX overflow counter ? telemetry for CAN bus health monitoring |
 | `RT_TaskHealth` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - | Bitmask of alive tasks (bits 0-3: control/dispatch/tx_low/tx_high) |
 | `RT_SteerState` | 5 | 0 | 8 | unsigned | 1 | [0, 5] | - | Steering state machine value |
 
-#### 0x220 — RT_PID_RPT
+#### 0x220 ? RT_PID_RPT
 - **Sender:** RT
 - **Receivers:** Host
 - **DLC:** 6 bytes
@@ -202,7 +202,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `RT_PidMeasured` | 2 | 0 | 16 | signed | 1 | [-32768, 32767] | mm/s |  |
 | `RT_PidOutput` | 4 | 0 | 16 | signed | 1 | [-32768, 32767] | - |  |
 
-#### 0x300 — HOST_DRIVE_CMD
+#### 0x300 ? HOST_DRIVE_CMD
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -215,7 +215,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `HOST_YawRate` | 4 | 0 | 24 | signed | 1 | [-3000, 3000] | mrad/s | ROS 2: angular.z * 1000. i24 big-endian at bytes 4-6. |
 | `HOST_Gear` | 7 | 0 | 8 | unsigned | 1 | [0, 3] | enum |  (Values: 0=N, 1=D, 2=S, 3=R) |
 
-#### 0x301 — HOST_BRAKE_REQ
+#### 0x301 ? HOST_BRAKE_REQ
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 4 bytes
@@ -226,12 +226,12 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 |---|---|---|---|---|---|---|---|---|
 | `HOST_BrakePressure` | 0 | 0 | 32 | signed | 1 | [0, 20000] | kPa |  |
 
-#### 0x302 — HOST_LIGHT_CMD
+#### 0x302 ? HOST_LIGHT_CMD
 - **Sender:** Host
 - **Receivers:** RT, SYS
 - **DLC:** 1 bytes
 - **Cycle:** 0 ms (0 = event-based)
-- **Description:** Forwarded transparently high→low by RT.
+- **Description:** Forwarded transparently high?low by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -240,12 +240,12 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `HOST_BrakeLight` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `HOST_Headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x310 — STEER_DIAG
+#### 0x310 ? STEER_DIAG
 - **Sender:** RT
 - **Receivers:** Host
 - **DLC:** 8 bytes
 - **Cycle:** 100 ms (0 = event-based)
-- **Description:** Steering telemetry to Host. v0.0.4 — previously missing from DBC.
+- **Description:** Steering telemetry to Host. v0.0.4 ? previously missing from DBC.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -255,12 +255,12 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SteerDiag_ECUTemp` | 5 | 0 | 16 | unsigned | x0.1 | [0, 65535] | degC | EPS-C ECU temperature, 0.1degC/bit |
 | `SteerDiag_Reserved` | 7 | 0 | 8 | unsigned | 1 | [0, 0] | - |  |
 
-#### 0x311 — BRAKE_DIAG
+#### 0x311 ? BRAKE_DIAG
 - **Sender:** RT
 - **Receivers:** Host
 - **DLC:** 8 bytes
 - **Cycle:** 100 ms (0 = event-based)
-- **Description:** Brake telemetry to Host. v0.0.4 — previously missing from DBC.
+- **Description:** Brake telemetry to Host. v0.0.4 ? previously missing from DBC.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -270,7 +270,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `BrakeDiag_ECUTemp` | 5 | 0 | 16 | unsigned | x0.1 | [0, 65535] | degC | SEB ECU temperature, 0.1degC/bit |
 | `BrakeDiag_Reserved` | 7 | 0 | 8 | unsigned | 1 | [0, 0] | - |  |
 
-#### 0x400 — HOST_OBSTACLE_DIST
+#### 0x400 ? HOST_OBSTACLE_DIST
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 4 bytes
@@ -281,12 +281,12 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 |---|---|---|---|---|---|---|---|---|
 | `HOST_ObstacleDistance` | 0 | 0 | 32 | unsigned | 1 | [0, 4.29497e+09] | mm | UINT32_MAX = no reading / timeout (Values: 4294967295=clear) |
 
-#### 0x600 — SYS_DIAG_RPT
+#### 0x600 ? SYS_DIAG_RPT
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 8 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** SYS diagnostics report. Forwarded low→high by RT.
+- **Description:** SYS diagnostics report. Forwarded low?high by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -299,7 +299,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SYS_DiagTec` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `SYS_DiagRec` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x7FC — HOST_HEARTBEAT
+#### 0x7FC ? HOST_HEARTBEAT
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 2 bytes
@@ -311,7 +311,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `Host_AliveCtr` | 0 | 0 | 8 | unsigned | 1 | [0, 255] | - | Timeout 1500ms -> controlled stop. Host is QM, not safety-critical. |
 | `Host_HealthFlags` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved |
 
-#### 0x7FD — RT_HEARTBEAT
+#### 0x7FD ? RT_HEARTBEAT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 2 bytes
@@ -328,21 +328,21 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 ### Protocol: `custom_low`
 **Physical Bus:** low | **Byte Order:** motorola
 
-#### 0x001 — SAFETY_ESTOP
+#### 0x001 ? SAFETY_ESTOP
 - **Sender:** Any
 - **Receivers:** SYS, Host, MTR, DCDC
 - **DLC:** 0 bytes
 - **Cycle:** 0 ms (0 = event-based)
-- **Description:** DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
+- **Description:** DLC=0 ? the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame.
 
 *No payload (DLC=0 event frame)*
 
-#### 0x011 — SYS_SAFETY_STS
+#### 0x011 ? SYS_SAFETY_STS
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 3 bytes
 - **Cycle:** 200 ms (0 = event-based)
-- **Description:** Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
+- **Description:** Forwarded low?high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5).
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -353,7 +353,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SYS_LightBrake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `SYS_LightHead` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x012 — SYS_DCDC_CMD
+#### 0x012 ? SYS_DCDC_CMD
 - **Sender:** SYS
 - **Receivers:** DCDC
 - **DLC:** 1 bytes
@@ -364,7 +364,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 |---|---|---|---|---|---|---|---|---|
 | `SYS_DcdcEnable` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - | ESTOP->1(on); maintains 12V for MCUs, CAN transceivers, brake light |
 
-#### 0x110 — SYS_MODE_CMD
+#### 0x110 ? SYS_MODE_CMD
 - **Sender:** SYS
 - **Receivers:** RT, MTR
 - **DLC:** 1 bytes
@@ -375,42 +375,42 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 |---|---|---|---|---|---|---|---|---|
 | `SYS_Mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  |
 
-#### 0x111 — HMI_MODE_REQ
+#### 0x111 ? HMI_MODE_REQ
 - **Sender:** HMI
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+- **Description:** HMI mode request. 1Hz periodic heartbeat. Forwarded high?low by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `HMI_ReqMode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  (Values: 0=MANUAL, 1=AUTO, 2=PURE_SIM) |
 | `HMI_ModeAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
 
-#### 0x112 — HMI_PWR_REQ
+#### 0x112 ? HMI_PWR_REQ
 - **Sender:** HMI
 - **Receivers:** SYS
 - **DLC:** 2 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT.
+- **Description:** HMI power request. 1Hz periodic heartbeat. Forwarded high?low by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `HMI_ReqStart` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=False, 1=True) |
 | `HMI_PwrAlive` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | Rolling counter for UI health |
 
-#### 0x120 — SYS_THROTTLE_STS
+#### 0x120 ? SYS_THROTTLE_STS
 - **Sender:** MTR
 - **Receivers:** RT, Host
 - **DLC:** 2 bytes
 - **Cycle:** 10 ms (0 = event-based)
-- **Description:** Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical.
+- **Description:** Current vehicle speed from MTR STM32. Forwarded low?high by RT. SYS_ prefix is historical.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
 | `SYS_ThrottleSpeed` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | mm/s |  |
 
-#### 0x204 — RT_DRIVE_CMD
+#### 0x204 ? RT_DRIVE_CMD
 - **Sender:** RT
 - **Receivers:** SYS, MTR
 - **DLC:** 5 bytes
@@ -422,7 +422,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `RT_MotorSpeed` | 0 | 0 | 32 | signed | 1 | [-500, 3000] | mm/s |  |
 | `RT_Gear` | 4 | 0 | 8 | unsigned | 1 | [0, 3] | enum |  (Values: 0=N, 1=D, 2=S, 3=R) |
 
-#### 0x205 — RT_BRAKE_CMD
+#### 0x205 ? RT_BRAKE_CMD
 - **Sender:** RT
 - **Receivers:** SYS
 - **DLC:** 4 bytes
@@ -433,25 +433,25 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 |---|---|---|---|---|---|---|---|---|
 | `RT_BrakePressure` | 0 | 0 | 32 | signed | 1 | [0, 20000] | kPa |  |
 
-#### 0x206 — MTR_MOTOR_FBK
+#### 0x206 ? MTR_MOTOR_FBK
 - **Sender:** MTR
 - **Receivers:** RT, SYS, Host
 - **DLC:** 4 bytes
 - **Cycle:** 20 ms (0 = event-based)
-- **Description:** Motor feedback from STM32. Forwarded low→high by RT per gateway rules.
+- **Description:** Motor feedback from STM32. Forwarded low?high by RT per gateway rules.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `MTR_ActualSpeed` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | mm/s |  |
+| `MTR_AppliedSpeedCmd` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | mm/s |  |
 | `MTR_GearState` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `MTR_FaultFlags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - | bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict |
 
-#### 0x302 — HOST_LIGHT_CMD
+#### 0x302 ? HOST_LIGHT_CMD
 - **Sender:** Host
 - **Receivers:** RT, SYS
 - **DLC:** 1 bytes
 - **Cycle:** 0 ms (0 = event-based)
-- **Description:** Forwarded transparently high→low by RT.
+- **Description:** Forwarded transparently high?low by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -460,12 +460,12 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `HOST_BrakeLight` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `HOST_Headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x600 — SYS_DIAG_RPT
+#### 0x600 ? SYS_DIAG_RPT
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 8 bytes
 - **Cycle:** 1000 ms (0 = event-based)
-- **Description:** SYS diagnostics report. Forwarded low→high by RT.
+- **Description:** SYS diagnostics report. Forwarded low?high by RT.
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
@@ -478,7 +478,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SYS_DiagTec` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `SYS_DiagRec` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x7FD — RT_HEARTBEAT
+#### 0x7FD ? RT_HEARTBEAT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 2 bytes
@@ -490,7 +490,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `RT_AliveCtr` | 0 | 0 | 8 | unsigned | 1 | [0, 255] | - | Low bus timeout 1000ms->SYS ESTOP |
 | `RT_HealthFlags` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - | bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved |
 
-#### 0x7FE — SYS_HEARTBEAT
+#### 0x7FE ? SYS_HEARTBEAT
 - **Sender:** SYS
 - **Receivers:** RT
 - **DLC:** 2 bytes
@@ -507,7 +507,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 ### Protocol: `sbw_unit`
 **Physical Bus:** low | **Byte Order:** intel
 
-#### 0x169 — VCU_SES_REQ
+#### 0x169 ? VCU_SES_REQ
 - **Sender:** RT
 - **Receivers:** EPS_C
 - **DLC:** 8 bytes
@@ -520,13 +520,13 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SES_CtrlEnable` | 0 | 1 | 1 | unsigned | 1 | [0, 1] | - | Direction Control Enable. 0=Disabled, 1=Enable (Angle Control). |
 | `SES_TgtStrAngle` | 2 | 0 | 16 | signed | x0.1 + -3000.0 | [-700, 700] | deg | Target Steering Angle. Negative=left. Offset=-3000 per mfr CSV. |
 | `SES_TgtStrAngleSpd` | 4 | 0 | 16 | unsigned | 1 | [125, 525] | deg/s | Target Angle Speed. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3. |
-| `SES_RollCntEnable` | 5 | 0 | 1 | unsigned | 1 | [0, 1] | - | Life Signal Enable — MUST be 1. |
-| `SES_ChecksumEnable` | 5 | 1 | 1 | unsigned | 1 | [0, 1] | - | Checksum Enable — MUST be 1. |
+| `SES_RollCntEnable` | 5 | 0 | 1 | unsigned | 1 | [0, 1] | - | Life Signal Enable ? MUST be 1. |
+| `SES_ChecksumEnable` | 5 | 1 | 1 | unsigned | 1 | [0, 1] | - | Checksum Enable ? MUST be 1. |
 | `SES_RollCnt` | 5 | 4 | 4 | unsigned | 1 | [0, 15] | - | Life Signal rolling counter. Increment every frame. |
 | `SES_VehSpd` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | km/h | Vehicle speed populated by RT. |
 | `SES_Checksum` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - | Checksum = XOR(bytes 0-6) ^ 0xFF. |
 
-#### 0x201 — SES_STATUS
+#### 0x201 ? SES_STATUS
 - **Sender:** EPS_C
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -543,10 +543,10 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SES_SteeringTorq` | 5 | 0 | 8 | unsigned | x0.1 + -12.1 | [-12, 12] | Nm | Steering Torque. |
 | `SES_RollCntEnStatus` | 6 | 0 | 1 | unsigned | 1 | [0, 1] | - | Life Signal Enable Feedback. |
 | `SES_ChecksumEnStatus` | 6 | 1 | 1 | unsigned | 1 | [0, 1] | - | Checksum Enable Feedback. |
-| `SES_RollCntStatus` | 6 | 4 | 4 | unsigned | 1 | [0, 15] | - | Life Signal Feedback — echoes rolling counter. |
+| `SES_RollCntStatus` | 6 | 4 | 4 | unsigned | 1 | [0, 15] | - | Life Signal Feedback ? echoes rolling counter. |
 | `SES_ChecksumStatus` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - | Checksum Feedback. |
 
-#### 0x202 — SES_ErrInfo
+#### 0x202 ? SES_ErrInfo
 - **Sender:** EPS_C
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -582,7 +582,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SES_EPROM` | 3 | 0 | 1 | unsigned | 1 | [0, 1] | - | EEPROM Fault [L2] |
 | `SES_VehSpdSnapshot` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | km/h | Vehicle speed at fault snapshot. |
 
-#### 0x203 — SES_Version
+#### 0x203 ? SES_Version
 - **Sender:** EPS_C
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -594,7 +594,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SES_SW_Version` | 0 | 0 | 8 | unsigned | x0.01 | [0, 2.55] | - | Software version (e.g. 0x64 = 1.00) |
 | `SES_HW_Version` | 1 | 0 | 8 | unsigned | x0.1 | [0, 25.5] | - | Hardware version (e.g. 0x0D = 1.3) |
 
-#### 0x6FA — SES_Test
+#### 0x6FA ? SES_Test
 - **Sender:** EPS_C
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -612,7 +612,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 ### Protocol: `bbw_unit`
 **Physical Bus:** low | **Byte Order:** intel
 
-#### 0x7B9 — VCU_SEB_REQ
+#### 0x7B9 ? VCU_SEB_REQ
 - **Sender:** SYS
 - **Receivers:** SEB
 - **DLC:** 8 bytes
@@ -627,12 +627,12 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SEB_AutoBrake` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - | Auto-brake / emergency trigger. |
 | `SEB_StrokeReq` | 2 | 0 | 16 | unsigned | 1 | [0, 65535] | raw | Stroke position raw counts. |
 | `SEB_PressureReq` | 3 | 0 | 8 | unsigned | 1 | [0, 100] | raw | Pressure raw counts. |
-| `SEB_RollCntEnable` | 6 | 0 | 1 | unsigned | 1 | [0, 1] | - | Life Signal Validity — MUST be 1. |
-| `SEB_ChecksumEnable` | 6 | 1 | 1 | unsigned | 1 | [0, 1] | - | Checksum Validity — MUST be 1. |
+| `SEB_RollCntEnable` | 6 | 0 | 1 | unsigned | 1 | [0, 1] | - | Life Signal Validity ? MUST be 1. |
+| `SEB_ChecksumEnable` | 6 | 1 | 1 | unsigned | 1 | [0, 1] | - | Checksum Validity ? MUST be 1. |
 | `SEB_RollCnt` | 6 | 4 | 4 | unsigned | 1 | [0, 15] | - | Life Signal rolling counter. |
 | `SEB_Checksum` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - | Checksum = XOR(bytes 0-6) ^ 0xFF. |
 
-#### 0x721 — SEB_STATUS
+#### 0x721 ? SEB_STATUS
 - **Sender:** SEB
 - **Receivers:** SYS, RT
 - **DLC:** 8 bytes
@@ -651,10 +651,10 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SEB_AngleValue` | 5 | 0 | 16 | signed | 1 | [-32768, 32767] | - | Angle raw counts. |
 | `SEB_RollCntEnStatus` | 6 | 0 | 1 | unsigned | 1 | [0, 1] | - | Life Signal Status Feedback. |
 | `SEB_ChecksumEnStatus` | 6 | 1 | 1 | unsigned | 1 | [0, 1] | - | Checksum Status Feedback. |
-| `SEB_RollCntStatus` | 6 | 4 | 4 | unsigned | 1 | [0, 15] | - | Life Signal Feedback — echoes rolling counter. |
+| `SEB_RollCntStatus` | 6 | 4 | 4 | unsigned | 1 | [0, 15] | - | Life Signal Feedback ? echoes rolling counter. |
 | `SEB_ChecksumStatus` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - | Checksum Feedback. |
 
-#### 0x731 — SEB_ErrInfo
+#### 0x731 ? SEB_ErrInfo
 - **Sender:** SEB
 - **Receivers:** SYS
 - **DLC:** 8 bytes
@@ -687,7 +687,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SEB_PreSensorOver` | 3 | 0 | 1 | unsigned | 1 | [0, 1] | - | Oil Pressure Sensor Overvoltage [L2] |
 | `SEB_LowVoltCharging` | 3 | 1 | 1 | unsigned | 1 | [0, 1] | - | Low Voltage Charging Failure [L2] |
 
-#### 0x741 — SEB_Version
+#### 0x741 ? SEB_Version
 - **Sender:** SEB
 - **Receivers:** SYS
 - **DLC:** 8 bytes
@@ -699,7 +699,7 @@ The **RT** ECU acts as a physical gateway between the High-Level and Low-Level C
 | `SEB_SW_Version` | 0 | 0 | 8 | unsigned | x0.01 | [0, 2.55] | - | Software version (e.g. 0xC8 = 2.00) |
 | `SEB_HW_Version` | 1 | 0 | 8 | unsigned | x0.1 | [0, 25.5] | - | Hardware version (e.g. 0x0D = 1.3) |
 
-#### 0x6FB — SEB_Test
+#### 0x6FB ? SEB_Test
 - **Sender:** SEB
 - **Receivers:** SYS, RT
 - **DLC:** 8 bytes

@@ -1,9 +1,9 @@
 # =============================================================================
-# E-Trike Low-Level CAN Bus — actuator & safety bus (500 kbit/s).
+# E-Trike Low-Level CAN Bus ? actuator & safety bus (500 kbit/s).
 # =============================================================================
 # All messages that appear on the low CAN bus.
 # Forwarded frames (0x001,0x011,0x120,0x206,0x302,0x600) are duplicated
-# identically in can_high.yaml — each DBC must be self-contained.
+# identically in can_high.yaml ? each DBC must be self-contained.
 #
 # RT is the only dual-bus node. SYS, MTR, EPS-C, SEB are low-bus only.
 # PWT currently has only the 250 kbit/s powertrain interface; it is not on
@@ -22,14 +22,14 @@
 
 protocols:
 
-  # ── Custom Protocol — Low Bus (Motorola/big-endian) ─────────────────
+  # ?? Custom Protocol ? Low Bus (Motorola/big-endian) ?????????????????
   custom_low:
     byte_order: motorola
     bus: "low"
     output: shared/can/etrike_low.dbc
     messages:
 
-      # 0x001 — SAFETY_ESTOP (DLC=0 event frame, any node can send)
+      # 0x001 ? SAFETY_ESTOP (DLC=0 event frame, any node can send)
       # Forwarded bidirectionally by RT. Appears on both buses.
       - id: 0x001
         name: SAFETY_ESTOP
@@ -37,17 +37,17 @@ protocols:
         sender: Any
         receivers: [SYS, Host, MTR, DCDC]
         cycle_ms: 0
-        comment: "DLC=0 — the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame."
+        comment: "DLC=0 ? the frame ID itself is the ESTOP signal. Any node can send (RT is nominal). Bridged bidirectionally. Highest priority CAN frame."
         signals: []
 
-      # 0x011 — SYS_SAFETY_STS (forwarded low→high by RT)
+      # 0x011 ? SYS_SAFETY_STS (forwarded low?high by RT)
       - id: 0x011
         name: SYS_SAFETY_STS
         dlc: 3
         sender: SYS
         receivers: [RT, Host]
         cycle_ms: 200
-        comment: "Forwarded low→high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5)."
+        comment: "Forwarded low?high by RT. Same payload on both buses. DLC=3 adds light state (v0.0.5)."
         signals:
           - {name: SYS_EstopActive,  key: estop_active,  byte: 0, bit_offset: 0, size: 8, min: 0, max: 1}
           - {name: SYS_HeartbeatOk,  key: heartbeat_ok,  byte: 1, bit_offset: 0, size: 8, min: 0, max: 1,
@@ -57,7 +57,7 @@ protocols:
           - {name: SYS_LightBrake,  key: light_brake,  byte: 2, bit_offset: 2, size: 1}
           - {name: SYS_LightHead,   key: light_head,   byte: 2, bit_offset: 3, size: 1}
 
-      # 0x110 — SYS_MODE_CMD (low bus only)
+      # 0x110 ? SYS_MODE_CMD (low bus only)
       - id: 0x110
         name: SYS_MODE_CMD
         dlc: 1
@@ -68,49 +68,49 @@ protocols:
         signals:
           - {name: SYS_Mode, key: mode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 2}
 
-      # 0x111 — HMI_MODE_REQ (HMI→SYS,Host)
+      # 0x111 ? HMI_MODE_REQ (HMI?SYS,Host)
       - id: 0x111
         name: HMI_MODE_REQ
         dlc: 2
         sender: HMI
         receivers: [SYS, Host]
         cycle_ms: 1000
-        comment: "HMI mode request. 1Hz periodic heartbeat. Forwarded high→low by RT."
+        comment: "HMI mode request. 1Hz periodic heartbeat. Forwarded high?low by RT."
         signals:
           - {name: HMI_ReqMode, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
              values: {0: MANUAL, 1: AUTO}}
           - {name: HMI_ModeAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Rolling counter for UI health"}
 
-      # 0x112 — HMI_PWR_REQ (HMI→SYS)
+      # 0x112 ? HMI_PWR_REQ (HMI?SYS)
       - id: 0x112
         name: HMI_PWR_REQ
         dlc: 2
         sender: HMI
         receivers: [SYS]
         cycle_ms: 1000
-        comment: "HMI power request. 1Hz periodic heartbeat. Forwarded high→low by RT."
+        comment: "HMI power request. 1Hz periodic heartbeat. Forwarded high?low by RT."
         signals:
           - {name: HMI_ReqStart, byte: 0, bit_offset: 0, size: 8, min: 0, max: 1,
              values: {0: OFF, 1: ON}}
           - {name: HMI_PwrAlive, key: rolling_counter, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Rolling counter for UI health"}
 
-      # 0x120 — SYS_THROTTLE_STS (MTR→RT, forwarded low→high)
-      # Historical note: SYS_ prefix is legacy — physical sender is MTR (STM32).
+      # 0x120 ? SYS_THROTTLE_STS (MTR?RT, forwarded low?high)
+      # Historical note: SYS_ prefix is legacy ? physical sender is MTR (STM32).
       - id: 0x120
         name: SYS_THROTTLE_STS
         dlc: 2
         sender: MTR
         receivers: [RT, Host]
         cycle_ms: 10
-        comment: "Current vehicle speed from MTR STM32. Forwarded low→high by RT. SYS_ prefix is historical."
+        comment: "Current vehicle speed from MTR STM32. Forwarded low?high by RT. SYS_ prefix is historical."
         signals:
           - {name: SYS_ThrottleSpeed, key: speed_mmps, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
 
-      # 0x204 — RT_DRIVE_CMD (RT→SYS,MTR on low bus)
+      # 0x204 ? RT_DRIVE_CMD (RT?SYS,MTR on low bus)
       - id: 0x204
         name: RT_DRIVE_CMD
         dlc: 5
@@ -125,7 +125,7 @@ protocols:
           - {name: RT_Gear, key: gear, byte: 4, bit_offset: 0, size: 8, min: 0, max: 3, unit: enum,
              values: {0: N, 1: D, 2: S, 3: R}}
 
-      # 0x205 — RT_BRAKE_CMD (RT→SYS on low bus)
+      # 0x205 ? RT_BRAKE_CMD (RT?SYS on low bus)
       - id: 0x205
         name: RT_BRAKE_CMD
         dlc: 4
@@ -138,23 +138,23 @@ protocols:
              type: signed, factor: 1, offset: 0,
              min: 0, max: 20000, unit: kPa}
 
-      # 0x206 — MTR_MOTOR_FBK (MTR→RT,SYS on low, forwarded low→high)
+      # 0x206 ? MTR_MOTOR_FBK (MTR?RT,SYS on low, forwarded low?high)
       - id: 0x206
         name: MTR_MOTOR_FBK
         dlc: 4
         sender: MTR
         receivers: [RT, SYS, Host]
         cycle_ms: 20
-        comment: "Motor feedback from STM32. Forwarded low→high by RT per gateway rules."
+        comment: "Motor feedback from STM32. Forwarded low?high by RT per gateway rules."
         signals:
-          - {name: MTR_ActualSpeed, key: actual_speed_mmps, byte: 0, bit_offset: 0, size: 16,
+          - {name: MTR_AppliedSpeedCmd, key: applied_speed_command_mmps, byte: 0, bit_offset: 0, size: 16,
              type: signed, factor: 1, offset: 0,
              min: -500, max: 3000, unit: mm/s}
           - {name: MTR_GearState, key: gear_state, byte: 2, bit_offset: 0, size: 8, min: 0, max: 3}
           - {name: MTR_FaultFlags, key: fault_flags, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, bit3=gear conflict, bit4=MTR startup ready"}
 
-      # 0x210 — RT_STATE_RPT (independently transmitted by RT on both buses)
+      # 0x210 ? RT_STATE_RPT (independently transmitted by RT on both buses)
       - id: 0x210
         name: RT_STATE_RPT
         dlc: 6
@@ -172,34 +172,34 @@ protocols:
              comment: "Reason for ESTOP state, packed in byte 1 bits 4-7"}
           - {name: RT_Reversing, key: reversing, byte: 2, bit_offset: 0, size: 1, min: 0, max: 1}
           - {name: RT_RxOverflow, key: rx_overflow, byte: 3, bit_offset: 0, size: 8, min: 0, max: 255,
-             comment: "MCP2515 RX overflow counter — telemetry for CAN bus health monitoring"}
+             comment: "MCP2515 RX overflow counter ? telemetry for CAN bus health monitoring"}
           - {name: RT_TaskHealth, key: task_health, byte: 4, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Bitmask of alive tasks (bits 0-3: control/dispatch/tx_low/tx_high)"}
           - {name: RT_SteerState, key: steer_state, byte: 5, bit_offset: 0, size: 8, min: 0, max: 5,
              comment: "Steering state machine value"}
 
-      # 0x302 — HOST_LIGHT_CMD (Host→RT, forwarded high→low)
+      # 0x302 ? HOST_LIGHT_CMD (Host?RT, forwarded high?low)
       - id: 0x302
         name: HOST_LIGHT_CMD
         dlc: 1
         sender: Host
         receivers: [RT, SYS]
         cycle_ms: 0
-        comment: "Forwarded transparently high→low by RT."
+        comment: "Forwarded transparently high?low by RT."
         signals:
           - {name: HOST_LeftTurn,   key: left_turn,   byte: 0, bit_offset: 0, size: 1, min: 0, max: 1}
           - {name: HOST_RightTurn,  key: right_turn,  byte: 0, bit_offset: 1, size: 1, min: 0, max: 1}
           - {name: HOST_BrakeLight, key: brake_light, byte: 0, bit_offset: 2, size: 1, min: 0, max: 1}
           - {name: HOST_Headlight,  key: headlight,   byte: 0, bit_offset: 3, size: 1, min: 0, max: 1}
 
-      # 0x600 — SYS_DIAG_RPT (SYS→RT, forwarded low→high)
+      # 0x600 ? SYS_DIAG_RPT (SYS?RT, forwarded low?high)
       - id: 0x600
         name: SYS_DIAG_RPT
         dlc: 8
         sender: SYS
         receivers: [RT, Host]
         cycle_ms: 1000
-        comment: "SYS diagnostics report. Forwarded low→high by RT."
+        comment: "SYS diagnostics report. Forwarded low?high by RT."
         signals:
           - {name: SYS_DiagMode,          byte: 0, bit_offset: 0, size: 8,  min: 0, max: 2}
           - {name: SYS_DiagBrakeEngaged,  byte: 1, bit_offset: 0, size: 1,  min: 0, max: 1}
@@ -212,8 +212,8 @@ protocols:
           - {name: SYS_DiagTec,           byte: 6, bit_offset: 0, size: 8,  min: 0, max: 255}
           - {name: SYS_DiagRec,           byte: 7, bit_offset: 0, size: 8,  min: 0, max: 255}
 
-      # 0x7FD — RT_HEARTBEAT (both buses, independent counters)
-      # Low-bus instance — independent counter from high bus.
+      # 0x7FD ? RT_HEARTBEAT (both buses, independent counters)
+      # Low-bus instance ? independent counter from high bus.
       - id: 0x7FD
         name: RT_HEARTBEAT
         dlc: 2
@@ -227,7 +227,7 @@ protocols:
           - {name: RT_HealthFlags, key: health_flags, byte: 1, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "bit0=heartbeat_ok, bit1=estop_active, bit2=mode_auto, bit3=can_ok, bits4-7=reserved"}
 
-      # 0x7FE — SYS_HEARTBEAT (SYS→RT, low bus only)
+      # 0x7FE ? SYS_HEARTBEAT (SYS?RT, low bus only)
       - id: 0x7FE
         name: SYS_HEARTBEAT
         dlc: 2
@@ -247,14 +247,14 @@ protocols:
           - {name: SYS_TaskDispatchOk, key: task_dispatch_ok, byte: 1, bit_offset: 6, size: 1, min: 0, max: 1}
           - {name: SYS_TaskCanTxOk, key: task_can_tx_ok, byte: 1, bit_offset: 7, size: 1, min: 0, max: 1}
 
-  # ── steer-by-wire unit (Intel/little-endian) ────────────────────────────
+  # ?? steer-by-wire unit (Intel/little-endian) ????????????????????????????
   sbw_unit:
     byte_order: intel
     bus: "low"
     output: shared/can/sbw_unit.dbc
     messages:
 
-      # 0x169 — VCU_SES_REQ (RT -> EPS_C, 50 Hz continuous)
+      # 0x169 ? VCU_SES_REQ (RT -> EPS_C, 50 Hz continuous)
       - id: 0x169
         name: VCU_SES_REQ
         dlc: 8
@@ -274,9 +274,9 @@ protocols:
              min: 125, max: 525, unit: deg/s, multiplexed: true,
              comment: "Target Angle Speed. Effective 10-bit: bits 0-7 in byte 4, bits 8-9 in byte 5 bits 2-3."}
           - {name: SES_RollCntEnable,  byte: 5, bit_offset: 0, size: 1, multiplexed: true,
-             comment: "Life Signal Enable — MUST be 1."}
+             comment: "Life Signal Enable ? MUST be 1."}
           - {name: SES_ChecksumEnable, byte: 5, bit_offset: 1, size: 1, multiplexed: true,
-             comment: "Checksum Enable — MUST be 1."}
+             comment: "Checksum Enable ? MUST be 1."}
           - {name: SES_RollCnt,        key: rolling_counter, byte: 5, bit_offset: 4, size: 4, min: 0, max: 15, multiplexed: true,
              comment: "Life Signal rolling counter. Increment every frame."}
           - {name: SES_VehSpd,         byte: 6, bit_offset: 0, size: 8, min: 0, max: 255, unit: km/h,
@@ -284,7 +284,7 @@ protocols:
           - {name: SES_Checksum,       key: checksum, byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum = XOR(bytes 0-6) ^ 0xFF."}
 
-      # 0x201 — SES_STATUS (EPS_C -> RT, 100 Hz)
+      # 0x201 ? SES_STATUS (EPS_C -> RT, 100 Hz)
       - id: 0x201
         name: SES_STATUS
         dlc: 8
@@ -313,11 +313,11 @@ protocols:
           - {name: SES_ChecksumEnStatus,   byte: 6, bit_offset: 1, size: 1,
              comment: "Checksum Enable Feedback."}
           - {name: SES_RollCntStatus,      key: rolling_counter,  byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
-             comment: "Life Signal Feedback — echoes rolling counter."}
+             comment: "Life Signal Feedback ? echoes rolling counter."}
           - {name: SES_ChecksumStatus,     key: checksum,         byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum Feedback."}
 
-      # 0x202 — SES_ErrInfo (EPS_C -> RT, 10 Hz)
+      # 0x202 ? SES_ErrInfo (EPS_C -> RT, 10 Hz)
       - id: 0x202
         name: SES_ErrInfo
         dlc: 8
@@ -354,7 +354,7 @@ protocols:
           - {name: SES_VehSpdSnapshot, byte: 7, bit_offset: 0, size: 8, min: 0, max: 255, unit: km/h,
              comment: "Vehicle speed at fault snapshot."}
 
-      # 0x203 — SES_Version (EPS_C -> RT, 1 Hz)
+      # 0x203 ? SES_Version (EPS_C -> RT, 1 Hz)
       - id: 0x203
         name: SES_Version
         dlc: 8
@@ -370,7 +370,7 @@ protocols:
              factor: 0.1, offset: 0, min: 0, max: 25.5,
              comment: "Hardware version (e.g. 0x0D = 1.3)"}
 
-      # 0x6FA — SES_Test (EPS_C -> RT, 100 Hz telemetry)
+      # 0x6FA ? SES_Test (EPS_C -> RT, 100 Hz telemetry)
       - id: 0x6FA
         name: SES_Test
         dlc: 8
@@ -389,14 +389,14 @@ protocols:
              factor: 0.00390625, offset: 0, min: 0, max: 18, unit: V,
              comment: "Supply voltage. 0-18V range."}
 
-  # ── brake-by-wire unit (Intel/little-endian) ──────────────────────────────
+  # ?? brake-by-wire unit (Intel/little-endian) ??????????????????????????????
   bbw_unit:
     byte_order: intel
     bus: "low"
     output: shared/can/bbw_unit.dbc
     messages:
 
-      # 0x7B9 — VCU_SEB_REQ (SYS -> SEB, 50 Hz continuous)
+      # 0x7B9 ? VCU_SEB_REQ (SYS -> SEB, 50 Hz continuous)
       - id: 0x7B9
         name: VCU_SEB_REQ
         dlc: 8
@@ -415,14 +415,14 @@ protocols:
           - {name: SEB_PressureReq,    key: pressure_req,    byte: 3, bit_offset: 0, size: 8,
              min: 0, max: 100, unit: raw, multiplexed: true,
              comment: "Pressure raw counts."}
-          - {name: SEB_RollCntEnable,  byte: 6, bit_offset: 0, size: 1, comment: "Life Signal Validity — MUST be 1."}
-          - {name: SEB_ChecksumEnable, byte: 6, bit_offset: 1, size: 1, comment: "Checksum Validity — MUST be 1."}
+          - {name: SEB_RollCntEnable,  byte: 6, bit_offset: 0, size: 1, comment: "Life Signal Validity ? MUST be 1."}
+          - {name: SEB_ChecksumEnable, byte: 6, bit_offset: 1, size: 1, comment: "Checksum Validity ? MUST be 1."}
           - {name: SEB_RollCnt,        key: rolling_counter, byte: 6, bit_offset: 4, size: 4, min: 0, max: 15,
              comment: "Life Signal rolling counter."}
           - {name: SEB_Checksum,       key: checksum,        byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum = XOR(bytes 0-6) ^ 0xFF."}
 
-      # 0x721 — SEB_STATUS (SEB -> SYS, 100 Hz)
+      # 0x721 ? SEB_STATUS (SEB -> SYS, 100 Hz)
       - id: 0x721
         name: SEB_STATUS
         dlc: 8
@@ -445,11 +445,11 @@ protocols:
           - {name: SEB_RollCntEnStatus,   byte: 6, bit_offset: 0, size: 1, multiplexed: true, comment: "Life Signal Status Feedback."}
           - {name: SEB_ChecksumEnStatus,  byte: 6, bit_offset: 1, size: 1, multiplexed: true, comment: "Checksum Status Feedback."}
           - {name: SEB_RollCntStatus,     key: rolling_counter,    byte: 6, bit_offset: 4, size: 4, min: 0, max: 15, multiplexed: true,
-             comment: "Life Signal Feedback — echoes rolling counter."}
+             comment: "Life Signal Feedback ? echoes rolling counter."}
           - {name: SEB_ChecksumStatus,    key: checksum,           byte: 7, bit_offset: 0, size: 8, min: 0, max: 255,
              comment: "Checksum Feedback."}
 
-      # 0x731 — SEB_ErrInfo (SEB -> SYS, 10 Hz)
+      # 0x731 ? SEB_ErrInfo (SEB -> SYS, 10 Hz)
       - id: 0x731
         name: SEB_ErrInfo
         dlc: 8
@@ -483,7 +483,7 @@ protocols:
           - {name: SEB_PreSensorOver,    byte: 3, bit_offset: 0, size: 1, comment: "Oil Pressure Sensor Overvoltage [L2]"}
           - {name: SEB_LowVoltCharging,  byte: 3, bit_offset: 1, size: 1, comment: "Low Voltage Charging Failure [L2]"}
 
-      # 0x741 — SEB_Version (SEB -> SYS, 1 Hz)
+      # 0x741 ? SEB_Version (SEB -> SYS, 1 Hz)
       - id: 0x741
         name: SEB_Version
         dlc: 8
@@ -499,7 +499,7 @@ protocols:
              factor: 0.1, offset: 0, min: 0, max: 25.5,
              comment: "Hardware version (e.g. 0x0D = 1.3)"}
 
-      # 0x6FB — SEB_Test (SEB -> SYS, 100 Hz telemetry)
+      # 0x6FB ? SEB_Test (SEB -> SYS, 100 Hz telemetry)
       - id: 0x6FB
         name: SEB_Test
         dlc: 8

@@ -37,8 +37,8 @@ public:
     //   startup_grace : suppress checks during boot (kStartupGracePeriodMs).
     //   estop_pending : latched ESTOP (hardware button / CAN 0x001 / fault).
     //   mode          : current mode (Estop forces zero setpoints).
-    //   motor_fb      : MTR feedback (0x206) for EGAS L2.
-    //   drive_cmd     : commanded drive (0x204) for EGAS L2 setpoint.
+    //   motor_fb      : MTR feedback (0x206) — applied setpoint echo, NOT a measurement (no encoder).
+    //   drive_cmd     : commanded drive (0x204) for command-path consistency compare.
     //   steer_fb      : steering feedback (0x201) for follow-error.
     //   steer_cmd     : commanded steering angle (0.1° units).
     //   steer_active  : steering FSM is ACTIVE (follow-error gated).

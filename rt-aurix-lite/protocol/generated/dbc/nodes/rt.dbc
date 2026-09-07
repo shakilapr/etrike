@@ -65,7 +65,7 @@ BO_ 288 SYS_THROTTLE_STS_low: 2 MTR
  SG_ speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT
 
 BO_ 518 MTR_MOTOR_FBK_low: 4 MTR
- SG_ actual_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT
+ SG_ applied_speed_command_mmps : 7|16@0- (1,0) [-500|3000] "" RT
  SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT
  SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT
 

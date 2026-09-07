@@ -12,7 +12,7 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 0x203,SES_VERSION,EPS_C,RT,8,1000,(No signals/Opaque),,,,,,,,
 0x204,RTA_DRIVE_CMD,RT,MTR,5,10,motor_speed_mmps,0,0,32,signed,1,"[-500, 3000]",,
 ,,,,,,gear,4,0,8,unsigned,1,"[0, 3]",," (Values: 0=N, 1=D, 2=S, 3=R)"
-0x206,MTR_MOTOR_FBK,MTR,RT,4,20,actual_speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
+0x206,MTR_MOTOR_FBK,MTR,RT,4,20,applied_speed_command_mmps,0,0,16,signed,1,"[-500, 3000]",,
 ,,,,,,gear_state,2,0,8,unsigned,1,"[0, 3]",,
 ,,,,,,fault_flags,3,0,8,unsigned,1,"[0, 255]",,
 0x302,HOST_LIGHT_CMD,Host,RT,1,0,left_turn,0,0,1,unsigned,1,"[0, 1]",,

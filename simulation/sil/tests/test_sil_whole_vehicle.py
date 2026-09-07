@@ -1,4 +1,4 @@
-"""SIL Suite 4: Whole-Vehicle Multi-Node Closed-Loop Simulation (§6.2 & §8).
+"""SIL Suite 4: Whole-Vehicle Multi-Node Closed-Loop Simulation (?6.2 & ?8).
 
 Simulates the complete vehicle pipeline across deterministic virtual CAN:
   Host (0x300 Drive, 0x301 Brake, 0x303 Steer)
@@ -117,7 +117,7 @@ class TestSilWholeVehicle(unittest.TestCase):
             clamped_feedback = max(-500, min(int(v_actual * 1000.0), 3000))
             st_206, pl_206 = proto.encode(
                 "mtr:mtr_motor_fbk",
-                {"actual_speed_mmps": clamped_feedback, "gear_state": 1, "fault_flags": 0},
+                {"applied_speed_command_mmps": clamped_feedback, "gear_state": 1, "fault_flags": 0},
                 bus="low"
             )
             self.assertEqual(st_206, "ok")
@@ -234,7 +234,7 @@ class TestSilWholeVehicle(unittest.TestCase):
         self.assertGreater(plant.velocity_mps, 1.8)
 
         # 2. Phase 2: Host Heartbeat Lost (> 1500 ms)
-        # Architecture §7.6 & §7.12: Host heartbeat timeout (1500 ms) triggers assisted stop:
+        # Architecture ?7.6 & ?7.12: Host heartbeat timeout (1500 ms) triggers assisted stop:
         # motor setpoints zeroed (0x204 = 0), RT requests assisted stop brake (2000 kPa = kAssistStopKpa)
         kAssistStopKpa = 2000  # shared_config.h
         # Convert 2000 kPa to contact patch brake force:

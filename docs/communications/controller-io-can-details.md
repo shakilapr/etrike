@@ -34,8 +34,8 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 | `g_mode_current` | `atomic<uint8_t>` | Stores current vehicle mode (0=Manual, 1=Auto). |
 | `g_brake_request_kpa` | `atomic<int32_t>` | Arbitrated brake pressure request. |
 | `g_obstacle_mm` | `atomic<uint32_t>` | Distance to nearest obstacle from Jetson (mm). |
-| `g_ses_angle_0_1deg` | `atomic<int32_t>` | Actual steering angle feedback (in 0.1°). |
-| `g_mtr_actual_speed_mmps`| `atomic<int32_t>` | Actual motor speed feedback (mm/s). |
+| `g_ses_angle_0_1deg` | `atomic<int32_t>` | Actual steering angle feedback (in 0.1?). |
+| `g_mtr_applied_speed_command_mmps`| `atomic<int32_t>` | Actual motor speed feedback (mm/s). |
 | `g_estop_reason` | `atomic<uint8_t>` | Tracks cause of ESTOP (0=None, 1=BusOff, 2=FollowingErr, etc). |
 | `g_seb_takeover` | `atomic<bool>` | Flag indicating SYS took over brakes due to a timeout. |
 | `g_last_sys_hb_us` | `atomic<int64_t>` | Microsecond timestamp of last valid SYS heartbeat. |
@@ -47,12 +47,12 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 | `g_safety_evt_q` | 16 | `SafetyEvent` | Safety events triggering mode changes. |
 | `g_can_rx_low_q` | 16 | `can::Frame` | Buffers raw frames from TWAI. |
 | `g_can_rx_high_q`| 16 | `can::Frame` | Buffers raw frames from MCP2515. |
-| `g_gw_tx_low_q` | 8 | `can::Frame` | Gateway queue for forwarding frames Low → High. |
+| `g_gw_tx_low_q` | 8 | `can::Frame` | Gateway queue for forwarding frames Low ? High. |
 | `g_cmd_q` | 1 | `HostDriveCmd` | Overwrite queue for the latest speed/yaw target from Jetson. |
 
 ### 1.3 CAN Messages - Received (RX)
 
-#### `0x300` HOST_DRIVE_CMD (High Bus, 8 bytes, ≤100Hz)
+#### `0x300` HOST_DRIVE_CMD (High Bus, 8 bytes, ?100Hz)
 | Signal Name | Start Bit | Length | Type | Description |
 |:---|:---|:---|:---|:---|
 | `HOST_DriveSpeed` | 0 | 32 | i32 | Target motor speed (mm/s) |
@@ -102,7 +102,7 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 #### `0x206` MTR_MOTOR_FBK (Low Bus, 4 bytes, 50Hz)
 | Signal Name | Start Bit | Length | Type | Description |
 |:---|:---|:---|:---|:---|
-| `MTR_ActualSpeed` | 0 | 16 | i16 | Actual motor speed (mm/s) |
+| `MTR_AppliedSpeedCmd` | 0 | 16 | i16 | Actual motor speed (mm/s) |
 | `MTR_GearState` | 16 | 8 | u8 | Actual gear (0=N, 1=D, 2=S, 3=R) |
 | `MTR_FaultFlags` | 24 | 8 | u8 | bit0=ESTOP, bit1=CMD timeout, bit2=ADC fault, etc. |
 
@@ -131,7 +131,7 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 | `VCU_SES_Align_En` | 0 | 1 | bool | Alignment Enable |
 | `VCU_SES_Ctrl_En` | 1 | 1 | bool | Control Enable |
 | `VCU_SES_Tgt_Angle`| 16 | 16 | i16 | Target Steering Angle |
-| `VCU_SES_Tgt_Spd` | 32 | 16 | u16 | Target Steering Slew Rate (°/s) |
+| `VCU_SES_Tgt_Spd` | 32 | 16 | u16 | Target Steering Slew Rate (?/s) |
 | `VCU_SES_RollCnt` | 44 | 4 | u8 | Rolling counter |
 | `VCU_Veh_Spd_Value`| 48 | 8 | u8 | Current vehicle speed |
 | `VCU_SES_CheckSum` | 56 | 8 | u8 | XOR Checksum |
@@ -165,7 +165,7 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 | **5** | Output | TWAI TX | Low-Level CAN Bus transmit |
 | **1** | Input | ESTOP Button | Normally Closed. Opens to 0V on ESTOP (active-low). |
 | **2** | Input | Brake Lever | Handlebar brake lever (active-low, pull-up). |
-| **11** | Input | Mode Button | Toggles MANUAL ↔ AUTO. |
+| **11** | Input | Mode Button | Toggles MANUAL ? AUTO. |
 | **41** | Input | START Button | Ignition, and overrides ESTOP back to Manual mode. |
 | **9** | Input | Switch L-Turn | Left turn signal switch on handlebars. |
 | **6** | Input | Switch R-Turn | Right turn signal switch on handlebars. |

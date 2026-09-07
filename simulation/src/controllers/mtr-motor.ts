@@ -1,5 +1,5 @@
 /**
- * MTR Motor Controller — port of MTR STM32 logic.
+ * MTR Motor Controller ? port of MTR STM32 logic.
  *
  * Receives 0x204 RT_DRIVE_CMD, writes DAC (MCP4725), controls gear relays,
  * produces 0x120 speed and 0x206 motor feedback.
@@ -73,7 +73,7 @@ export class MtrMotorController {
     // 0x206 MTR_MOTOR_FBK at 50Hz (every 20ms)
     if (nowMs % 20 === 0) {
       out.push(encodeSimFrame("mtr:mtr_motor_fbk", {
-        actual_speed_mmps: Math.round(actualSpeedMmps),
+        applied_speed_command_mmps: Math.round(actualSpeedMmps),
         gear_state: this.gear,
         fault_flags: this.faultFlags,
       }, "low", "mtr", nowMs));

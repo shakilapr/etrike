@@ -846,12 +846,12 @@ change. Indicator bulbs follow mode.
 | Real Node | Bus | CAN IDs It Sends | What to Inject | Why |
 |-----------|-----|-----------------|----------------|-----|
 | **Host (Jetson)** | High | `0x300` (≤100 Hz), `0x301`, `0x7FC` (2 Hz) | All three | RT consumes `0x300` → generates `0x204`/`0x169` on low bus. `0x7FC` needed for RT heartbeat tracking. Without Host input RT sends idle `0x204{speed=0,N}`. |
-| **MTR (STM32)** | Low | `0x120` (100 Hz), `0x206` (50 Hz) | Both | SYS EGAS L2 checks `0x206` actual vs `0x204` cmd in AUTO mode. RT forwards `0x120` low→high for telemetry. |
+| **MTR (STM32)** | Low | `0x120` (100 Hz), `0x206` (50 Hz) | Both | SYS command-path consistency (EGAS L2 role) checks `0x206` applied speed command (setpoint echo) vs `0x204` cmd in AUTO mode. RT forwards `0x120` low→high for telemetry. |
 | **EPS-C (steering)** | Low | `0x201` (100 Hz), `0x202` (10 Hz) | `0x201` min | RT steering needs `0x201` angle feedback. Without it, LISTEN_SYNC times out after 5s → FAULT. |
 | **SEB (brake)** | Low | `0x721` (100 Hz), `0x731` (10 Hz) | `0x721` min | SYS brake checks `0x721` staleness (100ms). Without it, SYS logs warnings every 1s. |
 
 **Minimum injection set** for a quiet bench: `0x201` (keep RT steering happy),
-`0x721` (keep SYS brake happy), `0x120` + `0x206` (keep EGAS L2 happy).
+`0x721` (keep SYS brake happy), `0x120` + `0x206` (keep command-path / EGAS L2 happy).
 
 If you skip all injections, RT and SYS still exchange heartbeats and basic status
 frames. SYS stays in MANUAL mode. RT steering stays in BOOT_WAIT/LISTEN_SYNC.

@@ -1,4 +1,4 @@
-// RT safety-monitor checks (run_safety_checks) — fail-safe reaction tests.
+// RT safety-monitor checks (run_safety_checks) ? fail-safe reaction tests.
 //
 // Exercises the control-loop safety decisions WITHOUT the FreeRTOS control task:
 //   #1 ESTOP latch (estop_pending) zeros setpoints + brakes
@@ -24,7 +24,7 @@
 // Globals referenced by run_safety_checks (for the scenarios above).
 std::atomic<int64_t> g_last_sys_hb_us{0};
 std::atomic<int64_t> g_last_host_hb_us{0};
-std::atomic<int32_t> g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
 bool                 g_bypass_eps_sync = true;   // skip steering-follow path
 bool                 g_bypass_mtr_absent = true; // these scenarios don't exercise MTR health (#8)
 namespace rt {
@@ -81,7 +81,7 @@ int main() {
         auto r = run_safety_checks(now, false, UINT32_MAX, estop, mode, seb);
         CHECK(r.zero_setpoints);
         CHECK_EQ(r.estop_reason, rt::kEstopReasonHeartbeat);
-        CHECK(!seb);   // takeover is NOT set here — the fallback machine decides
+        CHECK(!seb);   // takeover is NOT set here ? the fallback machine decides
     }
 
     // #5 Host heartbeat timeout -> assisted stop brake
@@ -99,7 +99,7 @@ int main() {
     // #7 Obstacle within stop distance at speed
     {
         bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
-        g_mtr_actual_speed_mmps.store(2000);  // 2.0 m/s, clearly above low-speed threshold
+        g_mtr_applied_speed_command_mmps.store(2000);  // 2.0 m/s, clearly above low-speed threshold
         auto r = run_safety_checks(now, false,
                                        shared::kObstacleStopMM - 10, estop, mode, seb);
         CHECK(r.disable_steering);
@@ -122,7 +122,7 @@ int main() {
         bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
         g_last_cmd_angle_0_1deg.store(1000);   // commanded 100.0 deg
         g_ses_angle_0_1deg.store(0);           // actual 0 deg -> 1000 (0.1deg) error
-        g_mtr_actual_speed_mmps.store(2000);   // speed shrinks the follow threshold
+        g_mtr_applied_speed_command_mmps.store(2000);   // speed shrinks the follow threshold
         bool triggered = false;
         for (int i = 0; i < 40; ++i) {
             auto r = run_safety_checks(now, false, UINT32_MAX, estop, mode, seb);

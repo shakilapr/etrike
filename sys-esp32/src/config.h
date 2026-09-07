@@ -98,8 +98,10 @@ constexpr int kMtrFbkStaleMs          =  200;  // MTR comms lost if no 0x206 for
 // safety-task cadence (i.e. sustained liveness, not a single stray frame).
 constexpr int kMtrFbkRecoverFrames    =    3;
 
-// ── 0x001 ESTOP rate limiting (gap #14) ──────────────────────────────
+// ── 0x001 ESTOP rate limiting & reset grace (gap #14) ────────────────
 constexpr int kEstopRateLimitWindowMs =  500;  // rolling window
 constexpr int kEstopRateLimitMax      =    2;  // max 0x001 frames per window
+constexpr int kEstopResetGraceMs      =  500;  // reset grace window: suppress in-flight 0x001
+constexpr int kEstopLoopbackWindowMs  =   50;  // own-0x001 reflection discrimination window
 
 }  // namespace sys

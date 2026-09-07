@@ -142,7 +142,7 @@ SYS does not currently own speed PID or the RT PCNT encoders.
 ### MTR responsibilities
 
 MTR is intended to own motor DAC and gear actuation. Its current
-`actual_speed_mmps` is not proven independent encoder feedback. In Auto it is
+`applied_speed_command_mmps` is not proven independent encoder feedback. In Auto it is
 largely derived from the command. It must not be treated as validated physical
 closed-loop feedback until the MTR implementation and hardware tests prove that
 claim.
@@ -1113,7 +1113,7 @@ Tests must verify that the Compile-Time Type Aliasing is fully deterministic and
 
 - **Type Enforcement**: Both `rt::PhysicsModel` and `rt::DirectResolver` conform to the exact same implicit signature (e.g., `resolve(const DriveCmd&, ResolvedSetpoint&)`) without runtime inheritance (vtables).
 - **Zero-Command Clamping**: Pure zero input (`speed_mmps = 0`, `yaw_rate_mrad_s = 0`) must deterministically produce pure zero actuator outputs for both traction and steering.
-- **Saturation and Bounds**: Mathematical outputs exceeding actuator mechanical limits (e.g., `±45°` steering, `V_max` motor speed) are safely clamped without wrapping, overflowing, or panicking.
+- **Saturation and Bounds**: Mathematical outputs exceeding actuator mechanical limits (e.g., `?45?` steering, `V_max` motor speed) are safely clamped without wrapping, overflowing, or panicking.
 - **Singularity Handling**: The Bicycle kinematics resolver must safely handle `yaw_rate_mrad_s = 0` (infinite turning radius straight-line travel) without division-by-zero exceptions.
 - **Direction Reversal**: Reverse speed requests with positive/negative yaw correctly resolve the left/right motor speed differentials and wheel-slip constraints.
 - **Compile-time Isolation**: Native tests compiled with `ETRIKE_RT_KINEMATICS_RESOLVER=1` must cleanly fail if they attempt to access stateful decay properties of `rt::PhysicsModel` that do not exist in `rt::DirectResolver`.

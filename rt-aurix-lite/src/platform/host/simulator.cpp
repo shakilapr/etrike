@@ -40,7 +40,7 @@ void Simulator::inject_host_heartbeat(std::uint8_t alive) {
 void Simulator::inject_mtr(std::int16_t speed_mmps, std::uint8_t gear, std::uint8_t faults) {
     Frame frame;
     gen::MtrMotorFbk fbk{};
-    fbk.actual_speed_mmps = speed_mmps;
+    fbk.applied_speed_command_mmps = speed_mmps;
     fbk.gear_state = gear;
     fbk.fault_flags = faults;
     if (etrike::protocol::succeeded(gen::encode(fbk, frame))) {
@@ -77,7 +77,7 @@ void Simulator::inject_estop(rta::hal::Bus b) {
     m_can.transmit(b, frame);
 }
 
-// CPU0: data-plane executor — decode received frames into typed inputs.
+// CPU0: data-plane executor ? decode received frames into typed inputs.
 void Simulator::executor_cpu0() {
     etrike::protocol::Frame frame;
     while (m_can.receive(rta::hal::Bus::High, frame)) {

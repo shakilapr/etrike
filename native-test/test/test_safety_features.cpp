@@ -156,23 +156,25 @@ static void s5_steering_following_error(){
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// S6. EGAS L2 Motor Monitoring
+// S6. Command-path / setpoint-echo consistency check (NOT physical EGAS L2:
+//     no wheel/motor encoder is fitted, so 0x206 carries the applied setpoint
+//     echoed back, not a measurement — this is command-vs-command, not physical).
 // ══════════════════════════════════════════════════════════════════════
 static void s6_egas_l2(){
-    T("=== S6: EGAS L2 Motor Monitoring ===");
-    // |cmd - actual| > 500 mm/s for >500ms → ESTOP
+    T("=== S6: Command-path / setpoint-echo consistency check ===");
+    // |cmd - applied_command| > 500 mm/s for >500ms → ESTOP
     int16_t cmd=1500,actual=2100;
-    int32_t diff=abs(cmd-actual);OK(diff>500,"|1500-2100|=600 > 500 → EGAS L2 threshold exceeded");
+    int32_t diff=abs(cmd-actual);OK(diff>500,"|1500-2100|=600 > 500 → command-path consistency threshold exceeded");
     // Must persist 500ms: only triggers if sustained
     int persist_ms=600;
-    OK(diff>500 && persist_ms>=500,"EGAS L2: sustained 600ms → ESTOP");
+    OK(diff>500 && persist_ms>=500,"command-path consistency: sustained 600ms → ESTOP");
 
     // Within threshold → OK
     cmd=1500;actual=1700;diff=abs(cmd-actual);
-    OK(diff<=500,"|1500-1700|=200 ≤ 500 → EGAS OK");
+    OK(diff<=500,"|1500-1700|=200 ≤ 500 → command-path consistency OK");
 
     // CONFIG_BYPASS_MTR_ABSENT skips this check
-    OK(true,"CONFIG_BYPASS_MTR_ABSENT: EGAS L2 skipped (bench mode)");
+    OK(true,"CONFIG_BYPASS_MTR_ABSENT: command-path consistency skipped (bench mode)");
 }
 
 // ══════════════════════════════════════════════════════════════════════
