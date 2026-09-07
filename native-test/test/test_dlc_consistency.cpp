@@ -6,7 +6,7 @@
 namespace generated = etrike::protocol::generated;
 
 static_assert(generated::SafetyEstop::kDlc == 0);
-static_assert(generated::SysSafetySts::kDlc == 3);
+static_assert(generated::SysSafetySts::kDlc == 5);
 static_assert(generated::RtStateRpt::kDlc == 6);
 static_assert(generated::HostLightCmd::kDlc == 1);
 static_assert(generated::HostHeartbeat::kDlc == 2);
