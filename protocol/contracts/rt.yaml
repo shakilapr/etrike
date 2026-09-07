@@ -42,6 +42,16 @@
     ]},"instances":[
       {"bus":"high","id":"0x7FD","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":500,"semantics":"independent"},
       {"bus":"low","id":"0x7FD","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":500,"semantics":"independent"}
+    ]},
+    {"key":"rt_diag_event_rpt","owner":"rt","protocol":"etrike.application.v1","name":"RT_DIAG_EVENT_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"diag_id","byte":0,"bit":0,"bits":16,"min":0,"max":65535},
+      {"key":"state","byte":2,"bit":0,"bits":8,"min":0,"max":4,"enum":{"0":"PENDING","1":"ACTIVE","2":"LATCHED","3":"RECOVERED","4":"CLEARED"}},
+      {"key":"occurrence_count","byte":3,"bit":0,"bits":8,"max":255},
+      {"key":"report_counter","byte":4,"bit":0,"bits":8,"max":255},
+      {"key":"flags","byte":5,"bit":0,"bits":8,"max":255},
+      {"key":"snapshot_data","byte":6,"bit":0,"bits":16,"max":65535}
+    ]},"instances":[
+      {"bus":"high","id":"0x621","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":0,"semantics":"independent"}
     ]}
   ]
 }

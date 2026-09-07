@@ -28,6 +28,17 @@
       {"key":"alive_ctr","byte":0,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},
       {"key":"heartbeat_ok","byte":1,"bit":0,"bits":1},{"key":"estop_active","byte":1,"bit":1,"bits":1},{"key":"mode_auto","byte":1,"bit":2,"bits":1},{"key":"can_ok","byte":1,"bit":3,"bits":1},
       {"key":"task_safety_ok","byte":1,"bit":4,"bits":1},{"key":"task_brake_ok","byte":1,"bit":5,"bits":1},{"key":"task_dispatch_ok","byte":1,"bit":6,"bits":1},{"key":"task_can_tx_ok","byte":1,"bit":7,"bits":1}
-    ]},"instances":[{"bus":"low","id":"0x7FE","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":100,"semantics":"independent"}]}
+    ]},"instances":[{"bus":"low","id":"0x7FE","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":100,"semantics":"independent"}]},
+    {"key":"sys_diag_event_rpt","owner":"sys","protocol":"etrike.application.v1","name":"SYS_DIAG_EVENT_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"diag_id","byte":0,"bit":0,"bits":16,"min":0,"max":65535},
+      {"key":"state","byte":2,"bit":0,"bits":8,"min":0,"max":4,"enum":{"0":"PENDING","1":"ACTIVE","2":"LATCHED","3":"RECOVERED","4":"CLEARED"}},
+      {"key":"occurrence_count","byte":3,"bit":0,"bits":8,"max":255},
+      {"key":"report_counter","byte":4,"bit":0,"bits":8,"max":255},
+      {"key":"flags","byte":5,"bit":0,"bits":8,"max":255},
+      {"key":"snapshot_data","byte":6,"bit":0,"bits":16,"max":65535}
+    ]},"instances":[
+      {"bus":"low","id":"0x601","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":0,"semantics":"independent"},
+      {"bus":"high","id":"0x601","frame_format":"standard","sender":"SYS","receivers":["RT","Host"],"cycle_ms":0,"semantics":"same_frame"}
+    ]}
   ]
 }
