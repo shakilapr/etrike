@@ -16,6 +16,7 @@
 
 #include "esp_timer.h"
 #include "protocol/compat/can_protocol.hpp"
+#include "protocol/codecs/ses.hpp"
 #include "rt_state.h"
 #include "system_mode.h"
 #include "safety_monitor.h"
@@ -95,6 +96,31 @@ int main() {
         CHECK(r.disable_steering);
         CHECK(r.obstacle_triggered);
         CHECK_EQ(r.estop_reason, rt::kEstopReasonObstacle);
+    }
+
+    // #6 Steering following-error ESTOP (full steering path enabled)
+    {
+        g_bypass_eps_sync = false;   // enable the steering-follow check
+        g_bench_solo_mode = false;
+        g_last_sys_hb_us.store(now);    // fresh heartbeats so they don't mask the steering check
+        g_last_host_hb_us.store(now);
+        g_steering.init();
+        etrike::protocol::codecs::ses::Command out{};
+        // Drive SteeringControl to STEER_ACTIVE (valid 0x201 feedback, 20 ms/tick).
+        for (int i = 0; i < 60; ++i) g_steering.tick(0, 1, uint32_t(i) * 20, out);
+        CHECK(g_steering.state() == rt::SteerState::STEER_ACTIVE);
+
+        bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
+        g_last_cmd_angle_0_1deg.store(1000);   // commanded 100.0 deg
+        g_ses_angle_0_1deg.store(0);           // actual 0 deg -> 1000 (0.1deg) error
+        g_mtr_actual_speed_mmps.store(2000);   // speed shrinks the follow threshold
+        bool triggered = false;
+        for (int i = 0; i < 40; ++i) {
+            auto r = run_safety_checks(now, false, UINT32_MAX, estop, mode, seb);
+            if (r.zero_setpoints && r.estop_reason == rt::kEstopReasonFollowingError)
+                triggered = true;
+        }
+        CHECK(triggered);
     }
 
     std::printf("\n=== %d pass, %d fail ===\n", pass, fail);
