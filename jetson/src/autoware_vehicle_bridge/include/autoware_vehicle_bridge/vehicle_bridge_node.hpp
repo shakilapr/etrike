@@ -113,11 +113,13 @@ public:
   bool encode_heartbeat(struct can_frame & frame);
   bool encode_estop(struct can_frame & frame);
   bool encode_mode_request(bool autonomous, struct can_frame & frame);
+  bool encode_power_request(bool start, struct can_frame & frame);
 
 private:
   const VehicleParams & params_;
   uint8_t host_alive_ctr_{0};
   uint8_t mode_request_ctr_{0};
+  uint8_t pwr_request_ctr_{0};
   uint8_t steering_ctr_{0};
 
   int32_t speed_to_mmps(float speed_ms) const;

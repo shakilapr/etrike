@@ -489,7 +489,6 @@ static void pump_diagnostics() {
         }
 
         g_brake_kpa_to_send.store(bk);
-        xQueueOverwrite(g_setpoint_q, &sp);
 
         // ── Speed feedback selection (build_config.h §SpeedFeedbackSource) ─
         int32_t measured_speed_mmps = 0;
@@ -515,6 +514,12 @@ static void pump_diagnostics() {
                         -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
                 }
             }
+        }
+
+        xQueueOverwrite(g_setpoint_q, &sp);
+
+        if (m_current_mode == uint8_t(can::Mode::Auto)) {
+            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
         }
 
         g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
@@ -561,9 +566,6 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             const bool motion_mode =
                 mode_now_100 == uint8_t(can::Mode::Auto);  // only Auto may command speed
             if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE || !motion_mode) {
-                if (motion_mode) {
-                    g_steering.set_target(sp.steer_angle_mdeg, g_mtr_actual_speed_mmps.load());
-                }
                 // Drive motor lockout: only send motion when steering is ready (arch §7.6).
                 // Otherwise send {0,N} instead of silence so MTR staleness does not trip.
                 auto ss = g_steering.state();

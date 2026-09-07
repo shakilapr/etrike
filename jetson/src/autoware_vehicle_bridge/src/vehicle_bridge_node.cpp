@@ -314,6 +314,14 @@ bool CanEncoder::encode_mode_request(bool autonomous, struct can_frame & frame)
          to_socket_frame(encoded, frame);
 }
 
+bool CanEncoder::encode_power_request(bool start, struct can_frame & frame)
+{
+  messages::HmiPwrReq message{start, pwr_request_ctr_++};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
 // =====================================================================
 //  CanDecoder
 // =====================================================================
@@ -885,6 +893,12 @@ void VehicleBridgeNode::tick_heartbeat()
   struct can_frame frame;
   if (encoder_->encode_heartbeat(frame))
     can_->send(frame);
+
+  // Send HMI Power Request (0x112) at heartbeat rate to keep SYS power energized
+  const bool power_req = !software_emergency_.load(std::memory_order_relaxed);
+  struct can_frame pwr_frame;
+  if (encoder_->encode_power_request(power_req, pwr_frame))
+    can_->send(pwr_frame);
 }
 
 void VehicleBridgeNode::tick_diagnostics()
@@ -978,6 +992,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       messages::MtrMotorFbk value{};
       if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
       autoware_vehicle_msgs::msg::GearReport gear;
+      gear.stamp = now();
       switch (value.gear_state) {
         case gear::CAN_N: gear.report = gear::NONE;    break;
         case gear::CAN_D: gear.report = gear::DRIVE;   break;
@@ -985,6 +1000,7 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
         case gear::CAN_R: gear.report = gear::REVERSE; break;
         default:          gear.report = gear::NONE;     break;
       }
+      if (pub_gear_->is_activated()) pub_gear_->publish(gear);
       break;
     }
 
