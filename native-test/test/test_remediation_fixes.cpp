@@ -204,6 +204,54 @@ void test_bug8_hmi_mode_validation() {
     TEST_ASSERT(mode_mgr.parse_hmi_mode(255) == false, "Out-of-bounds request (255) rejected");
 }
 
+// ── 9. SYS persistent ESTOP latch predicate (issue #4) ─────────────────
+// The estop_active bit SYS publishes in 0x011 / 0x7FE must track the
+// *system* ESTOP latch (ModeManager mode == ESTOP), not merely the hardware
+// button. A software ESTOP (CAN 0x001, SEB L3, EGAS, bus-off,
+// MTR-reported-ESTOP) latches the mode into ESTOP, so the published bit must
+// be 1 even when the physical button is released — otherwise RT/MTR could
+// two-frame-clear into a false all-clear.
+void test_issue4_estop_latched_predicate(void) {
+    std::printf("-- Test 9: SYS estop_latched tracks the mode latch, not just the button --\n");
+
+    using sys::ModeManager;
+    using can::Mode;
+
+    // Pure rule truth-table (static constexpr predicate):
+    TEST_ASSERT(ModeManager::estop_latched(Mode::Manual, /*hw=*/true),  "hw button alone latches");
+    TEST_ASSERT(ModeManager::estop_latched(Mode::Auto,   /*hw=*/true),  "hw button alone latches (AUTO)");
+    TEST_ASSERT(ModeManager::estop_latched(Mode::Estop,  /*hw=*/false), "mode ESTOP alone latches (software source)");
+    TEST_ASSERT(ModeManager::estop_latched(Mode::Estop,  /*hw=*/true),  "mode ESTOP + hw latches");
+    TEST_ASSERT(!ModeManager::estop_latched(Mode::Manual, /*hw=*/false), "MANUAL + no hw not latched");
+    TEST_ASSERT(!ModeManager::estop_latched(Mode::Auto,   /*hw=*/false), "AUTO + no hw not latched");
+
+    // Lifecycle via a real ModeManager: a software force_estop() (e.g. CAN
+    // 0x001) must keep estop_latched true even with the hw button released,
+    // and it must only clear after the physical reset path exits ESTOP.
+    ModeManager mm;
+    mm.init();
+    TEST_ASSERT(!ModeManager::estop_latched(mm.mode(), false), "starts not latched");
+
+    mm.force_estop();   // software ESTOP — hw button is NOT pressed
+    TEST_ASSERT(Mode::Estop == mm.mode(), "mode is ESTOP after force_estop");
+    TEST_ASSERT(ModeManager::estop_latched(mm.mode(), /*hw=*/false),
+                "mode latch alone keeps estop_active=1 (button released)");
+
+    // A CAN mode command must not clear the latch (N1 regression) and must
+    // not drop the published bit.
+    mm.set_from_can(uint8_t(Mode::Manual));
+    TEST_ASSERT(Mode::Estop == mm.mode(), "CAN cannot exit ESTOP");
+    TEST_ASSERT(ModeManager::estop_latched(mm.mode(), false), "still latched after CAN mode cmd");
+
+    // Physical START-button reset exits ESTOP; only then may the published
+    // bit drop to 0 so RT/MTR can begin their confirmed two-frame clear.
+    mm.tick(/*mode_btn=*/false, /*start_btn=*/true);  // START press
+    mm.tick(/*mode_btn=*/false, /*start_btn=*/false); // debounce settle
+    TEST_ASSERT(Mode::Manual == mm.mode(), "START button exits ESTOP");
+    TEST_ASSERT(!ModeManager::estop_latched(mm.mode(), false),
+                "published bit drops only after explicit reset");
+}
+
 int main() {
     std::printf("\n========================================\n");
     std::printf("   REMEDIATION FIXES VERIFICATION TEST  \n");
@@ -217,6 +265,7 @@ int main() {
     test_bug6_estop_gpio_logic();
     test_bug7_task_diag_health_mask();
     test_bug8_hmi_mode_validation();
+    test_issue4_estop_latched_predicate();
 
     std::printf("\n========================================\n");
     std::printf(" Results: %d PASSED, %d FAILED\n", pass_count, fail_count);
