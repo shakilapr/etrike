@@ -43,4 +43,16 @@ constexpr uint32_t kFeedbackPeriodMs  =   20;  // 50 Hz for 0x206 MTR_MOTOR_FBK
 constexpr uint32_t kThrottlePeriodMs  =   10;  // 100 Hz for 0x120 SYS_THROTTLE_STS
 constexpr uint32_t kMainLoopPeriodMs  =    5;  // 5 ms main loop evaluation
 
+// ── Dedicated 0x204 RT_DRIVE_CMD watchdog (issue #2) ──────────────
+// The drive command is the actual propulsion authority. It is supervised
+// separately from the generic "any CAN frame within 500 ms" deadman so a
+// frozen/stale 0x204 stream cannot keep a last throttle command applied
+// while unrelated authority traffic (0x110/0x113/0x011) keeps the generic
+// watchdog alive.
+constexpr uint32_t kDriveCmdTimeoutMs     = 150;  // no valid 0x204 for 150 ms while drive is expected
+// Recovery (confirmed): require kDriveCmdRecoverFrames consecutive valid
+// 0x204 receive events, each separated by at most kDriveCmdRecoverMaxGapMs.
+constexpr uint32_t kDriveCmdRecoverFrames =   3;
+constexpr uint32_t kDriveCmdRecoverMaxGapMs = 100;
+
 }  // namespace mtr

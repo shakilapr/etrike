@@ -50,6 +50,14 @@ public:
         rearm_off_seen_ = false;
         rearm_observed_ = false;
         prev_pwr_on_ = false;
+        // Dedicated 0x204 watchdog state (issue #2).
+        last_drive_ms_ = 0;
+        drive_seen_ = false;
+        drive_expected_ = false;
+        expected_since_ms_ = 0;
+        drive_cmd_timed_out_ = false;
+        drive_recover_count_ = 0;
+        last_drive_gap_ok_ = true;
     }
 
     // Process incoming CAN frames
@@ -95,6 +103,22 @@ public:
                 target_speed_mmps_ = cmd.motor_speed_mmps;
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
                 // ESTOP is no longer cleared by a 0x204 reset sequence; only 0x011 can.
+
+                // Dedicated 0x204 watchdog (issue #2): a valid drive command is
+                // the "heartbeat" that keeps the propulsion authority alive.
+                last_drive_ms_ = now_ms;
+                drive_seen_ = true;
+                drive_cmd_timed_out_ = false;  // a fresh valid frame clears the trip
+                if (last_drive_gap_ok_) {
+                    // Consecutive valid receive events at plausible cadence count
+                    // toward confirmed recovery. 0x204 has no rolling counter, so
+                    // identical payloads still count as separate valid events.
+                    if (drive_recover_count_ < kDriveCmdRecoverFrames)
+                        ++drive_recover_count_;
+                } else {
+                    drive_recover_count_ = 1;
+                }
+                last_drive_gap_ok_ = true;
             }
             break;
         }
@@ -216,7 +240,56 @@ public:
         }
         ignition_on_ = power_valid_ && power_state_on_ && safety_state_valid_ &&
                        (!rearm_required_ || rearm_observed_);
-        if (estop_active_ || comms_timed_out_ || !power_valid_ || !safety_state_valid_ ||
+
+        // 2b. Dedicated 0x204 drive-command watchdog (issue #2).
+        // Armed only while drive is *expected*: AUTO authority, power ON, valid
+        // mode/safety/power authority, and the REARM sequence satisfied. This is
+        // deliberately independent of the generic any-frame comms watchdog so a
+        // frozen 0x204 cannot keep a last throttle applied while 0x110/0x113/0x011
+        // keep the generic deadman fed.
+        const bool expect_drive =
+            mode_valid_ && power_valid_ && safety_state_valid_ && power_state_on_ &&
+            current_mode_ == can::Mode::Auto && (!rearm_required_ || rearm_observed_);
+        drive_expected_ = expect_drive;
+
+        if (drive_expected_) {
+            if (expected_since_ms_ == 0) expected_since_ms_ = now_ms;
+            // A gap longer than the recovery cadence window between valid 0x204
+            // events breaks the "consecutive at plausible cadence" recovery chain.
+            if (drive_seen_ && (now_ms - last_drive_ms_ > kDriveCmdRecoverMaxGapMs))
+                last_drive_gap_ok_ = false;
+
+            if (drive_cmd_timed_out_) {
+                // Latched trip: release only via confirmed recovery — N consecutive
+                // valid 0x204 frames at plausible cadence. Restart the stale clock
+                // so a subsequent silence re-trips after a full timeout.
+                if (drive_recover_count_ >= kDriveCmdRecoverFrames && last_drive_gap_ok_) {
+                    drive_cmd_timed_out_ = false;
+                    expected_since_ms_ = now_ms;
+                }
+            } else {
+                // Reference time is the last valid 0x204; if none has ever arrived
+                // while drive is expected (dead RT drive sender at startup), the
+                // arm time is used so the trip still fires.
+                const uint32_t ref = drive_seen_ ? last_drive_ms_ : expected_since_ms_;
+                if ((now_ms - ref) > kDriveCmdTimeoutMs) {
+                    drive_cmd_timed_out_ = true;
+                    if (diag_) {
+                        diag_->raise(etrike::diagnostics::DiagId::MtrRtDriveCmdTimeout,
+                                     static_cast<std::uint16_t>(now_ms - expected_since_ms_));
+                    }
+                }
+            }
+        } else {
+            // Not expecting drive: watchdog disarmed, trip cleared, recovery reset.
+            drive_cmd_timed_out_ = false;
+            expected_since_ms_ = 0;
+            drive_recover_count_ = 0;
+            last_drive_gap_ok_ = true;
+        }
+
+        if (estop_active_ || comms_timed_out_ || drive_cmd_timed_out_ ||
+            !power_valid_ || !safety_state_valid_ ||
             (rearm_required_ && !rearm_observed_)) {
             target_speed_mmps_ = 0;
             relays_.set_state(RelayController::State::Off);
@@ -319,7 +392,7 @@ public:
         if (estop_active_) {
             flags |= shared::kMtrFaultEstopActive; // Redundant ESTOP ACK to SYS (Gap #15)
         }
-        if (comms_timed_out_) {
+        if (comms_timed_out_ || drive_cmd_timed_out_) {
             flags |= shared::kMtrFaultCmdTimeout; // Command timeout flag (0x02)
         }
         flags |= shared::kMtrFaultStartupReady; // Bit 4
@@ -332,6 +405,8 @@ public:
 
     bool is_estop_active() const { return estop_active_; }
     bool is_comms_timed_out() const { return comms_timed_out_; }
+    bool is_drive_cmd_timed_out() const { return drive_cmd_timed_out_; }
+    bool is_drive_expected() const { return drive_expected_; }
     bool is_comms_healthy() const { return comms_healthy_; }
     int32_t target_speed_mmps() const { return target_speed_mmps_; }
     can::Gear target_gear() const { return target_gear_; }
@@ -339,8 +414,9 @@ public:
     // Centralized propulsion-inhibit predicate: any of these conditions forces
     // zero propulsion ( limp / safe state ).
     bool propulsion_inhibited() const {
-        return estop_active_ || comms_timed_out_ || !power_valid_ ||
-               !safety_state_valid_ || (rearm_required_ && !rearm_observed_) ||
+        return estop_active_ || comms_timed_out_ || drive_cmd_timed_out_ ||
+               !power_valid_ || !safety_state_valid_ ||
+               (rearm_required_ && !rearm_observed_) ||
                !ignition_on_ || (active_gear_ == can::Gear::N);
     }
 
@@ -410,6 +486,15 @@ private:
 
     static constexpr uint32_t kShiftDwellMs{50};
     uint32_t shift_dwell_start_ms_{0};
+
+    // ── Dedicated 0x204 drive-command watchdog state (issue #2) ──
+    uint32_t last_drive_ms_{0};          // last valid 0x204 receive time (ms)
+    bool     drive_seen_{false};         // has any valid 0x204 ever arrived
+    bool     drive_expected_{false};     // computed each tick: AUTO+power+valid authority
+    uint32_t expected_since_ms_{0};      // when drive_expected first became true (arm clock)
+    bool     drive_cmd_timed_out_{false};// latched trip — 0x204 stale while expected
+    uint8_t  drive_recover_count_{0};    // consecutive valid 0x204 events (confirmed recovery)
+    bool     last_drive_gap_ok_{true};   // inter-arrival gaps stayed within cadence window
 };
 
 }  // namespace mtr
