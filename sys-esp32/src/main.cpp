@@ -811,10 +811,13 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
 // ── Brake task (prio 3, 50 Hz) ─────────────────────────────────────
 
-// Gap #12 / Option D: In AUTO mode, RT sends 0x7B9 directly to SEB (1-hop).
-// SYS suppresses its own 0x7B9 to avoid bus collision. SYS resumes sending
-// in MANUAL, ESTOP, when lever is pressed (rider override), or when RT
-// heartbeat is lost (takeover fallback).
+// Issue #3: SYS is the SOLE normal producer of the final SEB brake command
+// 0x7B9. RT expresses brake *intent* via 0x205 RT_BRAKE_CMD (kPa); SYS applies
+// it (g_brake_pressure_kpa, with the stale-0x205 -> max-brake fallback below)
+// through BrakeControl, which also enforces ESTOP/lever override priority. RT
+// no longer transmits 0x7B9 in normal AUTO — it only ever becomes the emergency
+// fallback writer on SYS-loss (see rt-esp32), so the same-CAN-ID dual-producer
+// collision is eliminated by construction.
 [[noreturn]] static void task_brake(void*) {
     TickType_t period = pdMS_TO_TICKS(1000 / sys::kBrakeCmdRateHz);
     TickType_t last   = xTaskGetTickCount();
@@ -832,57 +835,19 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             brake_kpa = shared::kMaxBrakeKpa;
         }
 
-        // Suppress SYS 0x7B9 in AUTO when RT is healthy, no rider override,
-        // AND RT safety_state is Normal (not in InternalEstop/takeover).
-        // H1: Also require SEB rolling counter to be incrementing — if RT's
-        // 0x7B9 is failing, SEB stops acknowledging and SYS resumes sending.
-        bool rt_alive     = g_safety.heartbeat_ok();
-        bool rt_normal    = (g_rt_safety_state.load(std::memory_order_relaxed) == 0);
-        TickType_t now_ticks = xTaskGetTickCount();
-
-        // On the MANUAL→AUTO transition, RT needs a short collision-free window
-        // to publish its first AUTO state and assume 0x7B9 ownership. Requiring
-        // RT_NORMAL or a changing SEB counter before suppressing SYS creates a
-        // circular dependency: both nodes transmit 0x7B9, their different
-        // payloads collide, and RT's single Low-CAN TX slot becomes blocked.
-        static can::Mode previous_mode = can::Mode::Manual;
-        static TickType_t auto_enter_tick = 0;
-        if (mode == can::Mode::Auto && previous_mode != can::Mode::Auto) {
-            auto_enter_tick = now_ticks;
-        } else if (mode != can::Mode::Auto) {
-            auto_enter_tick = 0;
-        }
-        previous_mode = mode;
-        const bool auto_handoff_grace =
-            mode == can::Mode::Auto && auto_enter_tick != 0
-            && (now_ticks - auto_enter_tick) <= pdMS_TO_TICKS(sys::kSebHandoffGraceMs);
-
-        // Fast-path deadman (gap C4): if RT 0x204 setpoint is stale (>200ms),
-        // RT has likely crashed — resume direct brake control immediately.
-        // This is faster than waiting for the 1000ms heartbeat timeout.
-        bool rt_setpoint_fresh = (now_ticks - g_last_setpoint_tick.load(std::memory_order_relaxed))
-                                 < pdMS_TO_TICKS(sys::kSetpointStaleMs);
-        const bool seb_counter_alive = (now_ticks - g_last_seb_roll_change_tick.load(std::memory_order_relaxed))
-                                       <= pdMS_TO_TICKS(sys::kSebRollingTimeoutMs);
-        if (!seb_counter_alive) {
-            g_seb_rolling.store(false, std::memory_order_relaxed);
-        }
-        const bool rt_authority_established =
-            rt_alive && rt_normal && rt_setpoint_fresh && seb_counter_alive;
-        bool suppress_seb = (mode == can::Mode::Auto)
-                           && (auto_handoff_grace || rt_authority_established)
-                           && !lever && !estop;
-
         can::custom::seb::Command seb_cmd;
         uint8_t  seb_b0 = g_seb_status_byte0.load(std::memory_order_relaxed);
         uint16_t seb_stroke = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
         bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode,
                                       seb_b0, seb_stroke, seb_cmd);
-        // Store commanded stroke for following-error monitor even when suppressed
+        // Store commanded stroke for the following-error monitor even when not
+        // transmitting (e.g. during boot state).
         if (should_tx) {
             g_cmd_stroke_raw.store(seb_cmd.stroke_request_raw, std::memory_order_relaxed);
         }
-        if (should_tx && !suppress_seb) {
+        // Sole normal producer: always transmit when BrakeControl says so.
+        // No RT-health suppression — RT does not command SEB in normal operation.
+        if (should_tx) {
             can::Frame fr;
             if (can::custom::seb::encode_command(seb_cmd, fr) == can::gen::CodecStatus::Ok)
                 send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ

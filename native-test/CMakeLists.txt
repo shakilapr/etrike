@@ -376,6 +376,17 @@ target_include_directories(sys_inhibit_state PRIVATE
 )
 add_test(NAME sys_inhibit_state    COMMAND sys_inhibit_state)
 
+# ── RT SEB brake-ownership fallback (issue #3) ──────────────────────
+add_executable(rt_brake_fallback
+    test/test_rt_brake_fallback.cpp
+)
+target_include_directories(rt_brake_fallback PRIVATE
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+)
+add_test(NAME rt_brake_fallback    COMMAND rt_brake_fallback)
+
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
     sim-engine/main_native.cpp

@@ -194,6 +194,11 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     }
 
     // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
+    // Issue #3: heartbeat loss ALONE does not grant RT brake ownership. RT
+    // zeros propulsion here (motion prohibited) and enters SYS_DEGRADED; the
+    // SEB brake fallback machine (brake_fallback.h) decides whether RT must
+    // become the emergency 0x7B9 writer (only once SYS's 0x7B9 has also
+    // disappeared). seb_takeover is owned by that machine, not this check.
     int64_t sys_hb = g_last_sys_hb_us.load();
     if (!g_bench_solo_mode && sys_hb > 0
         && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
@@ -201,16 +206,12 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         static int64_t last_sys_hb_log_us = 0;
         if (now - last_sys_hb_log_us > 1'000'000) {
             last_sys_hb_log_us = now;
-            ESP_LOGW("rt", "SYS heartbeat timeout — RT taking over brake via 0x7B9");
+            ESP_LOGW("rt", "SYS heartbeat timeout — motion prohibited (brake ownership pending)");
         }
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
-        seb_takeover = true;
         rt::diag().raise(etrike::diagnostics::DiagId::RtSysHeartbeatTimeout,
                          static_cast<std::uint16_t>((now - sys_hb) / 1000));
-    } else if (seb_takeover) {
-        // SYS heartbeat recovered — release takeover
-        seb_takeover = false;
     }
 
     // 4. Host heartbeat timeout (arch §7.6: 1500ms → assisted stop)

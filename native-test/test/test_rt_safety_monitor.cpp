@@ -148,7 +148,10 @@ int main() {
                                    estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
 
         CHECK(r.zero_setpoints);
-        CHECK(seb_takeover);
+        // Issue #3: SYS-HB loss alone does NOT set seb_takeover (emergency 0x7B9)
+        // — that is owned by the brake-fallback machine, which additionally
+        // requires the SYS 0x7B9 to have disappeared.
+        CHECK(!seb_takeover);
 
         g_last_sys_hb_us.store(hb_us + timeout_us + 1);
         r = run_safety_checks(hb_us + timeout_us + 10'000, false, UINT32_MAX,

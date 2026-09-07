@@ -54,6 +54,11 @@ extern std::atomic<bool>     g_direct_steer_valid;
 extern std::atomic<int64_t>  g_last_direct_steer_us;
 extern std::atomic<int64_t>  g_last_mtr_feedback_us;
 extern std::atomic<int64_t>  g_last_ses_feedback_us;
+// Timestamp (us) of the most recent observed 0x7B9 VCU_SEB_REQ on the LOW bus
+// (issue #3, emergency fallback). In NORMAL/SYS_DEGRADED RT does not transmit
+// 0x7B9, so any received frame is SYS's normal brake command — used to prove
+// the brake producer is actually alive (not merely heartbeating).
+extern std::atomic<int64_t>  g_last_0x7B9_rx_us;
 // Timestamp (us) of the most recent non-zero propulsion command produced by
 // t_control (issue #8). Used to decide brake escalation when MTR feedback is
 // lost: we cannot measure true vehicle motion, so "recently commanded to move"

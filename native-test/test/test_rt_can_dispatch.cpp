@@ -38,6 +38,7 @@ std::atomic<bool> g_direct_steer_valid{false};
 std::atomic<int64_t> g_last_direct_steer_us{-1};
 std::atomic<int64_t> g_last_mtr_feedback_us{-1};
 std::atomic<int64_t> g_last_ses_feedback_us{-1};
+std::atomic<int64_t> g_last_0x7B9_rx_us{-1};
 std::atomic<uint8_t> g_mode_current{0};
 std::atomic<bool> g_seb_takeover{false};
 std::atomic<int64_t> g_last_sys_hb_us{0};

@@ -70,7 +70,10 @@ int main() {
         CHECK(r.zero_setpoints);
     }
 
-    // #4 SYS heartbeat timeout -> zero setpoints + SEB takeover
+    // #4 SYS heartbeat timeout -> zero setpoints (motion prohibited). Issue #3:
+    // run_safety_checks no longer grants RT brake ownership on SYS-HB loss alone;
+    // seb_takeover (emergency 0x7B9) is owned by the brake-fallback machine and
+    // only becomes true once SYS 0x7B9 has ALSO disappeared.
     {
         bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
         g_bench_solo_mode = false;
@@ -78,7 +81,7 @@ int main() {
         auto r = run_safety_checks(now, false, UINT32_MAX, estop, mode, seb);
         CHECK(r.zero_setpoints);
         CHECK_EQ(r.estop_reason, rt::kEstopReasonHeartbeat);
-        CHECK(seb);
+        CHECK(!seb);   // takeover is NOT set here — the fallback machine decides
     }
 
     // #5 Host heartbeat timeout -> assisted stop brake
