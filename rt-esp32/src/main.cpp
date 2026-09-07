@@ -32,6 +32,7 @@ bool g_bypass_mtr_absent = false;
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
+#include "brake_fallback.h"
 #include "encoder_pcnt.h"
 #include "phase2_motion.h"
 
@@ -78,6 +79,7 @@ std::atomic<bool>     g_direct_steer_valid{false};
 std::atomic<int64_t>  g_last_direct_steer_us{-1};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
 std::atomic<int64_t>  g_last_ses_feedback_us{-1};
+std::atomic<int64_t>  g_last_0x7B9_rx_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 
 // ── Derived state (written by control, read by tx tasks) ────────────
@@ -174,6 +176,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 // recovery across control-loop cycles.
 namespace rt {
 MtrHealthSupervisor g_mtr_health;
+SebBrakeFallback    g_brake_fallback;
 }  // namespace rt
 
 // ── CAN TX helper — checks return, logs failure, detects recovery ────
@@ -341,6 +344,11 @@ static void pump_diagnostics() {
 
     while (1) {
         g_alive_control.store(xTaskGetTickCount(), std::memory_order_relaxed);
+        static bool fallback_inited = false;
+        if (!fallback_inited) {
+            fallback_inited = true;
+            rt::g_brake_fallback.init(esp_timer_get_time());
+        }
         if (g_steering_estop_request.exchange(false)) {
             g_steering.start_estop(false);
         }
@@ -468,6 +476,28 @@ static void pump_diagnostics() {
                                                   m_estop_pending, m_current_mode, m_seb_takeover);
         if (m_estop_pending && sr.estop_reason == rt::kEstopReasonCanEstop) {
             sr.estop_reason = m_estop_reason;
+        }
+
+        // Issue #3: SEB brake-ownership emergency fallback. run_safety_checks no
+        // longer grants RT brake ownership on SYS-heartbeat loss alone; this
+        // machine decides when RT must become the emergency 0x7B9 writer — only
+        // once SYS's 0x7B9 has ALSO disappeared for the guard interval. In
+        // SYS_DEGRADED (HB lost, SYS 0x7B9 still present) motion is already
+        // prohibited via sr.zero_setpoints above but RT does NOT transmit 0x7B9.
+        {
+            rt::SebFallbackInput fb_in;
+            fb_in.now_us = now;
+            const int64_t last_hb = g_last_sys_hb_us.load();
+            const bool hb_lost = (!g_bench_solo_mode && (last_hb < 0
+                || (now - last_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000));
+            fb_in.sys_hb_fresh = !hb_lost;
+            const int64_t last_7b9 = g_last_0x7B9_rx_us.load();
+            fb_in.sys_0x7B9_observed =
+                (last_7b9 >= 0 && (now - last_7b9) < 100'000);  // seen within 100 ms
+            fb_in.startup_grace_active = startup_grace;
+            const auto fb_out = rt::g_brake_fallback.update(fb_in);
+            // RT becomes the emergency 0x7B9 writer ONLY in EMERGENCY_FALLBACK.
+            m_seb_takeover = fb_out.emergency_tx_0x7B9;
         }
         g_seb_takeover.store(m_seb_takeover);
 
@@ -630,28 +660,15 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                 }
             }
 
-            // Gap #12: SEB brake takeover — RT sends 0x7B9 at 50Hz on SYS heartbeat loss.
-            // Must be in same 50Hz block (not a separate timing check — was dead code).
+            // Issue #3: RT is NOT a normal 0x7B9 producer (SYS is the sole normal
+            // producer, converting RT's 0x205 intent into the final command).
+            // RT transmits 0x7B9 ONLY as the emergency fallback writer, when
+            // g_seb_takeover is set by the brake-fallback machine (SYS heartbeat
+            // lost AND SYS 0x7B9 has actually disappeared — see brake_fallback.h).
             static uint8_t seb_roll = 0;
             bool seb_takeover = g_seb_takeover.load(std::memory_order_relaxed);
             if (seb_takeover) {
                 send_seb_req(*drv, fr, rt::make_seb_takeover_req(), seb_roll);
-            }
-
-            // Gap #12 completion: Option D - RT sends 0x7B9 directly in AUTO mode.
-            // Architecture §6.2: 1-hop from kinematics, no cross-node sync needed.
-            // NOTE: SYS MUST gate its own 0x7B9 on mode (stop sending in AUTO).
-            // Uses Pressure Mode for kPa-based braking, Stroke Mode when no brake.
-            // Only active when NOT in SEB takeover (takeover has priority).
-            // Safety: Only send when steering is ACTIVE. In ESTOP/FAULT states,
-            // SYS is the 0x7B9 authority — RT must suppress to avoid dual-sender
-            // bus collision and brake=0 override (bugs 4.1, 4.2).
-            auto ss = g_steering.state();
-            if (!seb_takeover
-                && g_mode_current.load() == uint8_t(can::Mode::Auto)
-                && ss == rt::SteerState::STEER_ACTIVE) {
-                int32_t brake = g_brake_kpa_to_send.load();
-                send_seb_req(*drv, fr, rt::make_seb_auto_req(brake), seb_roll);
             }
         }
 

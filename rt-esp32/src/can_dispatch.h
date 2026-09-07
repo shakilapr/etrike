@@ -102,6 +102,17 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
 
+    // Issue #3: observe the SEB brake command (0x7B9) on the LOW bus. In
+    // NORMAL / SYS_DEGRADED, RT never transmits 0x7B9, so any received frame
+    // here is SYS's normal brake command. This is the "brake producer is
+    // actually alive" signal used by the emergency-fallback decision (a dead
+    // SYS heartbeat is NOT proof the brake task died). When RT itself is the
+    // emergency writer, its own TX may be echoed into RX; the handback epoch
+    // guard in the fallback state machine discards those.
+    if (fr.id == can::kIdVcuSebReq && !from_high) {
+        g_last_0x7B9_rx_us.store(esp_timer_get_time(), std::memory_order_relaxed);
+    }
+
     rt::GatewayQueues q;
     q.gw_tx_low  = &ctx.gw_lo;
     q.gw_tx_high = &ctx.gw_hi;
