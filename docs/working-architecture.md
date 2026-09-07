@@ -355,11 +355,10 @@ shadow PID in RT telemetry). Key scaling tables:
  RT forwards 0x001 across the Low<->High bridge
 ```
 
-> **Known inconsistency (flagged):** SYS `0x011.estop_active` / `0x7FE.estop_active` reflect **only the
-> hardware ESTOP button** (`g_safety.m_estop`), not CAN `0x001`/SEB-L3/EGAS/bus-off ESTOPs — those only
-> latch the *mode*. MTR/RT consume `0x011.estop_active` as the authoritative stop, so a SYS software
-> ESTOP disables MTR via `0x110=MANUAL` + `0x113=OFF` + `0x001`, but `0x011.estop_active` stays false
-> until the physical button is pressed (`sys-esp32/src/main.cpp:882,985`).
+> **Resolved inconsistency:** SYS `0x011.estop_active` / `0x7FE.estop_active` now reflects the true
+> system ESTOP latch via `sys::ModeManager::estop_latched(g_mode_mgr.mode(), g_safety.estop_active())`.
+> Software ESTOPs (CAN `0x001`, SEB L3, EGAS, bus-off, MTR-reported-ESTOP) latch `ModeManager` into ESTOP,
+> keeping `estop_active = 1` until explicitly reset via the physical START button reset path (`sys-esp32/src/main.cpp`).
 
 ### 6.2 ESTOP triggers per controller
 
@@ -489,13 +488,10 @@ vehicle testing. Severity: 🔴 critical / 🟠 high / 🟡 medium.
    RT transmits in AUTO and on takeover (`rt-esp32/src/main.cpp:622-636`). Same-ID dual producers can
    collide at bit level during takeover or interleave MAX/normal brake. Fix: one producer per ID
    (e.g. RT→`0x7B8` request, SYS→`0x7B9` command) or SEB-side source arbitration.
-4. 🔴 **`0x011.estop_active` reflects only the hardware ESTOP button.** `estop_active()` returns
-   `m_estop` (`sys-esp32/src/safety_monitor.h:16`), set solely by the ESTOP GPIO
-   (`sys-esp32/src/main.cpp:483-492`). Software ESTOPs (CAN `0x001`, SEB L3, EGAS, bus-off, MTR-loss)
-   change `mode` but never `m_estop`. MTR can then be *cleared* by two `0x011 estop_active==0`
-   frames while SYS still believes it is latched (propulsion stays off only via `0x113=OFF`).
-   Fix: `estop_active` = the true system latch + an `estop_epoch`/`reset_authorized` so clears are
-   explicit and coordinated.
+4. **`0x011.estop_active` reflects true system ESTOP latch (RESOLVED).** `sys_estop_latched()` now
+   combines `g_mode_mgr.mode() == Mode::Estop` and `g_safety.estop_active()`. Software ESTOPs (CAN `0x001`,
+   SEB L3, EGAS, bus-off, MTR-reported-ESTOP) hold `estop_active = 1` across `0x011` and `0x7FE` until SYS is
+   explicitly reset out of ESTOP via the START button.
 5. 🔴 **Brake faults are warn-only.** SEB `error_status` L3 (`sys main.cpp:344-347`) and brake
    following-error >3 mm / >100 ms (`:388-396`) only set `g_brake_fault_active` — no `force_estop()`.
    `0x721`/test loss >100 ms is `ESP_LOGW` only (`:758-774`). `g_brake_fault_active` feeds the "ready"
