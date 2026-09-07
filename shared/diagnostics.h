@@ -40,6 +40,7 @@ struct DiagRuntime {
     DiagState state = DiagState::Cleared;
     std::uint8_t occurrence_count = 0;
     std::uint16_t snapshot = 0;
+    bool snapshot_supplied = false;  // distinguishes a real 0 from "no snapshot"
     bool pending_report = false;
     bool reset_count_after_drain = false;
 };
@@ -49,26 +50,11 @@ public:
     static constexpr std::size_t kCapacity = kImplementedDiagCount;
 
     // Bookkeeping only — never transmits, never allocates, never reacts.
-    void raise(DiagId id, std::uint16_t snapshot = 0) noexcept {
-        const int idx = diag_index(id);
-        if (idx < 0) return;
-        const DiagMetaLite& meta = kImplementedDiagMeta[idx];
-        DiagRuntime& rec = records_[static_cast<std::size_t>(idx)];
-        if (rec.state == DiagState::Active) {
-            // Re-assertion: update snapshot if changed; never re-increment count
-            // or burst CAN spam.
-            if (rec.snapshot != snapshot) rec.snapshot = snapshot;
-            return;
-        }
-        rec.state = DiagState::Active;
-        if (rec.occurrence_count < 0xFF) ++rec.occurrence_count;
-        rec.snapshot = snapshot;
-        rec.pending_report = true;
-        if (meta.is_estop_cause && !estop_episode_claimed_) {
-            estop_episode_claimed_ = true;
-            estop_first_report_flag_pending_ = true;
-        }
-    }
+    // raise(id)            => no snapshot supplied (event has no snapshot block).
+    // raise(id, snapshot)  => snapshot supplied; a genuine 0 is preserved and
+    //                         distinguishable from "no snapshot" via snapshot_supplied.
+    void raise(DiagId id) noexcept { raise_impl(id, 0, false); }
+    void raise(DiagId id, std::uint16_t snapshot) noexcept { raise_impl(id, snapshot, true); }
 
     void recover(DiagId id) noexcept {
         const int idx = diag_index(id);
@@ -104,7 +90,7 @@ public:
     // Called strictly by the safety subsystem after Phase-A SAFETY_CLEAR completes.
     void on_estop_episode_cleared() noexcept {
         estop_episode_claimed_ = false;
-        estop_first_report_flag_pending_ = false;
+        first_estop_cause_index_ = -1;
     }
 
     // Dequeue the next report for transmission. Increments report_counter.
@@ -124,9 +110,9 @@ public:
             out.report_counter = ++report_counter_;
             out.snapshot_data = rec.snapshot;
             std::uint8_t flags = 0;
-            if (meta.is_estop_cause && estop_first_report_flag_pending_) {
+            if (static_cast<int>(i) == first_estop_cause_index_) {
                 flags |= kDiagFlagFirstLocalEstopCause;
-                estop_first_report_flag_pending_ = false;
+                first_estop_cause_index_ = -1;  // flag emitted exactly once
             }
             out.flags = flags;
             if (rec.state == DiagState::Cleared && rec.reset_count_after_drain) {
@@ -166,11 +152,42 @@ public:
         return records_[static_cast<std::size_t>(idx)].pending_report;
     }
 
+    bool snapshot_supplied_of(DiagId id) const noexcept {
+        const int idx = diag_index(id);
+        if (idx < 0) return false;
+        return records_[static_cast<std::size_t>(idx)].snapshot_supplied;
+    }
+
 private:
+    void raise_impl(DiagId id, std::uint16_t snapshot, bool supplied) noexcept {
+        const int idx = diag_index(id);
+        if (idx < 0) return;
+        const DiagMetaLite& meta = kImplementedDiagMeta[idx];
+        DiagRuntime& rec = records_[static_cast<std::size_t>(idx)];
+        if (rec.state == DiagState::Active) {
+            // Re-assertion: update snapshot if changed; never re-increment count
+            // or burst CAN spam.
+            if (rec.snapshot != snapshot) {
+                rec.snapshot = snapshot;
+                rec.snapshot_supplied = supplied;
+            }
+            return;
+        }
+        rec.state = DiagState::Active;
+        if (rec.occurrence_count < 0xFF) ++rec.occurrence_count;
+        rec.snapshot = snapshot;
+        rec.snapshot_supplied = supplied;
+        rec.pending_report = true;
+        if (meta.is_estop_cause && !estop_episode_claimed_) {
+            estop_episode_claimed_ = true;
+            first_estop_cause_index_ = idx;  // this record carries the episode's flag
+        }
+    }
+
     DiagRuntime records_[kCapacity] = {};
     std::uint8_t report_counter_ = 0;
     bool estop_episode_claimed_ = false;
-    bool estop_first_report_flag_pending_ = false;
+    int first_estop_cause_index_ = -1;  // dense index of the episode's flagged record
     std::size_t pop_cursor_ = 0;
 };
 

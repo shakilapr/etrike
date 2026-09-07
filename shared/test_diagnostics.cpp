@@ -167,6 +167,85 @@ int main() {
         CHECK(m.state_of(diag::DiagId::SysSebStatusTimeout) == diag::DiagState::Cleared);
     }
 
+    // --- FIRST_LOCAL_ESTOP_CAUSE attaches to the FIRST-RAISED cause, not first popped ---
+    // (regression: flag must not depend on dense-index pop order)
+    {
+        diag::DiagnosticManager e{};
+        e.on_estop_episode_cleared();
+        e.raise(diag::DiagId::RtHostHeartbeatTimeout);  // idx 14 — raised first, claims
+        e.raise(diag::DiagId::SysCanBusOff);            // idx 8  — raised later, no claim
+        // pop order is by dense index, so SysCanBusOff (idx 8) drains before idx 14
+        DiagReport r1 = pop_one(e);
+        CHECK(r1.id == diag::DiagId::SysCanBusOff);
+        CHECK((r1.flags & diag::kDiagFlagFirstLocalEstopCause) == 0);  // not the claimer
+        DiagReport r2 = pop_one(e);
+        CHECK(r2.id == diag::DiagId::RtHostHeartbeatTimeout);
+        CHECK((r2.flags & diag::kDiagFlagFirstLocalEstopCause) != 0);  // the claimer
+        expect_no_report(e);
+    }
+
+    // --- deterministic drain order: lowest dense index popped first ---
+    {
+        diag::DiagnosticManager m{};
+        m.raise(diag::DiagId::SysCanBusOff);            // idx 8
+        m.raise(diag::DiagId::SysEstopButtonAsserted);  // idx 0
+        DiagReport a = pop_one(m);
+        DiagReport b = pop_one(m);
+        CHECK(a.id == diag::DiagId::SysEstopButtonAsserted);
+        CHECK(b.id == diag::DiagId::SysCanBusOff);
+        expect_no_report(m);
+    }
+
+    // --- re-assert while ACTIVE creates no new pending report (no storm) ---
+    {
+        diag::DiagnosticManager m{};
+        m.raise(diag::DiagId::SysSebStatusTimeout);
+        pop_one(m);  // drained
+        CHECK(!m.is_pending_report(diag::DiagId::SysSebStatusTimeout));
+        m.raise(diag::DiagId::SysSebStatusTimeout);  // re-assert while ACTIVE
+        CHECK(!m.is_pending_report(diag::DiagId::SysSebStatusTimeout));
+        CHECK(m.occurrence_of(diag::DiagId::SysSebStatusTimeout) == 1);
+        m.replay_active_set();  // replay may re-mark
+        CHECK(m.is_pending_report(diag::DiagId::SysSebStatusTimeout));
+    }
+
+    // --- snapshot 0 is distinguishable from "no snapshot" ---
+    {
+        diag::DiagnosticManager m{};
+        m.raise(diag::DiagId::SysRtHeartbeatTimeout);  // no snapshot supplied
+        CHECK(!m.snapshot_supplied_of(diag::DiagId::SysRtHeartbeatTimeout));
+        m.raise(diag::DiagId::SysCanBusOff, 0);  // explicit snapshot value 0
+        CHECK(m.snapshot_supplied_of(diag::DiagId::SysCanBusOff));
+        DiagReport r1 = pop_one(m);
+        DiagReport r2 = pop_one(m);
+        CHECK(r1.snapshot_data == 0);
+        CHECK(r2.snapshot_data == 0);
+    }
+
+    // --- report_counter increments per emitted report (incl. replay) and wraps 255->0 ---
+    {
+        diag::DiagnosticManager m{};
+        for (std::size_t i = 0; i < diag::kImplementedDiagCount; ++i)
+            m.raise(diag::kImplementedDiagMeta[i].id);
+        bool saw_wrap = false;
+        std::uint8_t prev = 0;
+        bool first = true;
+        for (int cycle = 0; cycle < 7; ++cycle) {
+            DiagReport r{};
+            while (m.pop_pending_report(r)) {
+                if (!first) {
+                    std::uint8_t expected = static_cast<std::uint8_t>(prev + 1);
+                    CHECK(r.report_counter == expected);  // strictly increasing mod 256
+                }
+                if (r.report_counter == 0) saw_wrap = true;
+                prev = r.report_counter;
+                first = false;
+            }
+            m.replay_active_set();  // re-mark ACTIVE set for the next drain
+        }
+        CHECK(saw_wrap);
+    }
+
     if (failures == 0) {
         std::printf("PASS (%zu diagnostics manager checks)\n", diag::kImplementedDiagCount);
         return 0;
