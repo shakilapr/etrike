@@ -109,4 +109,54 @@ inline const DiagMetaLite* diag_meta(DiagId id) noexcept {
     }
     return nullptr;
 }
+
+// Dense 0..N-1 index for the IMPLEMENTED-only DiagId enum, or -1 for coverage-only IDs.
+// O(1); enables fixed-array bookkeeping in DiagnosticManager without STL containers.
+inline int diag_index(DiagId id) noexcept {
+    switch (static_cast<std::uint16_t>(id)) {
+        case 0x0101: return 0;
+        case 0x0102: return 1;
+        case 0x0103: return 2;
+        case 0x0104: return 3;
+        case 0x0105: return 4;
+        case 0x0106: return 5;
+        case 0x0107: return 6;
+        case 0x0108: return 7;
+        case 0x0109: return 8;
+        case 0x010A: return 9;
+        case 0x010B: return 10;
+        case 0x010C: return 11;
+        case 0x010D: return 12;
+        case 0x010E: return 13;
+        case 0x0201: return 14;
+        case 0x0202: return 15;
+        case 0x0203: return 16;
+        case 0x0204: return 17;
+        case 0x0205: return 18;
+        case 0x0206: return 19;
+        case 0x0208: return 20;
+        case 0x0209: return 21;
+        case 0x020A: return 22;
+        case 0x020B: return 23;
+        case 0x020C: return 24;
+        case 0x020D: return 25;
+        case 0x020F: return 26;
+        case 0x0210: return 27;
+        case 0x0211: return 28;
+        case 0x0212: return 29;
+        case 0x0213: return 30;
+        case 0x0301: return 31;
+        case 0x0305: return 32;
+        case 0x0306: return 33;
+        case 0x0307: return 34;
+        case 0x0308: return 35;
+        case 0x0309: return 36;
+        case 0x030A: return 37;
+        case 0x030D: return 38;
+        case 0x030E: return 39;
+        case 0x030F: return 40;
+        case 0x0311: return 41;
+        default: return -1;
+    }
+}
 }  // namespace etrike::diagnostics
