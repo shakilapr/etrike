@@ -16,6 +16,7 @@
 #include "mtr-stm32/src/relay_controller.h"
 #include "mtr-stm32/src/dac_controller.h"
 #include "mtr-stm32/src/motor_manager.h"
+#include "rt-esp32/src/physics_model.h"
 
 namespace generated = etrike::protocol::generated;
 namespace codecs = etrike::protocol::codecs;
@@ -49,6 +50,7 @@ static int g_fail = 0;
 // its own monotonic counter.
 static uint8_t g_tam_mode_ctr = 0;
 static uint8_t g_tam_pwr_ctr = 0;
+static uint8_t g_tam_safe_ctr = 0;
 static void auth_mode(mtr::MotorManager& m, can::Mode mode, uint32_t now) {
     generated::SysModeCmd c0{static_cast<uint8_t>(mode), g_tam_mode_ctr++};
     etrike::protocol::Frame f0; generated::encode_sys_mode_cmd(c0, f0); m.handle_frame(f0, now);
@@ -60,6 +62,21 @@ static void auth_power(mtr::MotorManager& m, bool on, uint32_t now) {
     etrike::protocol::Frame f0; generated::encode_sys_pwr_cmd(c0, f0); m.handle_frame(f0, now);
     generated::SysPwrCmd c1{on, g_tam_pwr_ctr++};
     etrike::protocol::Frame f1; generated::encode_sys_pwr_cmd(c1, f1); m.handle_frame(f1, now);
+}
+static void auth_safety(mtr::MotorManager& m, bool estop, uint32_t now) {
+    for (int i = 0; i < 2; ++i) {
+        can::gen::SysSafetySts msg{};
+        msg.estop_active = estop;
+        msg.heartbeat_ok = true;
+        msg.rolling_counter = g_tam_safe_ctr++;
+        msg.e2e_crc = 0;
+        can::Frame tmp;
+        can::gen::encode_sys_safety_sts(msg, tmp);
+        msg.e2e_crc = static_cast<std::uint8_t>(can::e2e::sys_safety_sts_crc(tmp.data.data()));
+        can::Frame f;
+        can::gen::encode_sys_safety_sts(msg, f);
+        m.handle_frame(f, now);
+    }
 }
 
 // ============================================================================
@@ -86,20 +103,25 @@ static void test_flow_a_autonomous_pipeline() {
     TEST_CHECK_EQ(decoded_host_cmd.speed_mmps, 2200, "Decoded speed matches 2200 mm/s");
     TEST_CHECK_EQ(decoded_host_cmd.yaw_rate_mrad_s, 200, "Decoded yaw rate matches 200 mrad/s");
 
-    // 2. RT Kinematics transformation (Tricycle Model)
-    // Curvature kappa = yaw_rate / speed = 0.2 / 2.2 ~= 0.0909 rad/m
-    const float speed_mps = decoded_host_cmd.speed_mmps / 1000.0f;
-    const float yaw_rate_rads = decoded_host_cmd.yaw_rate_mrad_s / 1000.0f;
-    const float kappa = yaw_rate_rads / speed_mps;
-    const float L = 1.35f;
-    const float W = 0.88f;
+    // 2. RT Kinematics transformation via the REAL production resolver
+    //    (inverse-bicycle model, kWheelbaseMM = 1.5 m — rt-esp32/src/physics_model.h).
+    //    Previously this test hard-coded L=1.35/W=0.88 and a slip-corrected formula
+    //    that did NOT match production; it now exercises the actual firmware math.
+    rt::PhysicsModel model;
+    rt::ResolvedSetpoint sp{};
+    model.resolve(rt::DriveCmd{decoded_host_cmd.speed_mmps,
+                               decoded_host_cmd.yaw_rate_mrad_s}, sp);
 
-    // delta = atan(L * kappa / (1 - 0.5 * W * kappa))
-    float delta_rad = std::atan(L * kappa / (1.0f - 0.5f * W * kappa));
-    float delta_deg = delta_rad * 180.0f / 3.14159265358979323846f;
+    TEST_CHECK_EQ(sp.motor_speed_mmps, 2200,
+                  "Resolver forwards 2.2 m/s setpoint (within [-0.5,3.0] m/s)");
+    TEST_CHECK(sp.steer_valid, "Resolver produced a valid steering angle");
+
+    // steer_angle_mdeg (+right, 0.001 deg/LSB); expect ~7.8 deg for this command.
+    const float delta_deg = sp.steer_angle_mdeg / 1000.0f;
 
     // Verify calculated steering angle is within safety bounds [-450, 450]
-    TEST_CHECK(delta_deg > 0.0f && delta_deg < 45.0f, "Tricycle front fork angle is physically valid (~7.5 deg)");
+    TEST_CHECK(delta_deg > 0.0f && delta_deg < 45.0f,
+               "Tricycle front fork angle is physically valid (~7.8 deg)");
 
     // Encode SES Steer Command (0x169)
     codecs::ses::Command ses_cmd{};
@@ -275,6 +297,7 @@ static void test_flow_e_rm_standalone_bypass_pipeline() {
 
     // Send power + mode authority to MTR (0x113 SYS_PWR_CMD + 0x110 SYS_MODE_CMD).
     // MTR no longer takes 0x112; RM emulates SYS on the bench.
+    auth_safety(mtr_direct, false, 90);
     auth_power(mtr_direct, true, 90);
     auth_mode(mtr_direct, can::Mode::Auto, 90);
 
@@ -328,6 +351,7 @@ static void test_flow_c_motor_actuation_pipeline() {
     TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Off, "Relay state initially Off before ignition");
 
     // Power-on authority via 0x113 SYS_PWR_CMD (MTR no longer takes 0x112).
+    auth_safety(motor, false, 10);
     auth_power(motor, true, 10);
     motor.tick(10);
     TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relay state transitions to Park upon ignition ON");
@@ -389,6 +413,7 @@ static void test_flow_d_estop_pipeline() {
     motor.init();
 
     // Turn on Ignition via authority frames 0x113 (power) + 0x110 (mode).
+    auth_safety(motor, false, 50);
     auth_power(motor, true, 50);
     auth_mode(motor, can::Mode::Auto, 50);
 
@@ -436,7 +461,7 @@ static void test_gateway_message_matrix() {
 
     // Check all canonical message DLCs per documentation
     TEST_CHECK_EQ(generated::SafetyEstop::kDlc, 0, "0x001 SAFETY_ESTOP DLC = 0");
-    TEST_CHECK_EQ(generated::SysSafetySts::kDlc, 3, "0x011 SYS_SAFETY_STATUS DLC = 3");
+    TEST_CHECK_EQ(generated::SysSafetySts::kDlc, 5, "0x011 SYS_SAFETY_STATUS DLC = 5");
     TEST_CHECK_EQ(generated::PwtDcdcCmd::kDlc, 8, "0x10262B27 PWT_DCDC_CMD DLC = 8");
     TEST_CHECK_EQ(generated::SysModeCmd::kDlc, 2, "0x110 SYS_MODE_CMD DLC = 2");
     TEST_CHECK_EQ(generated::HmiModeReq::kDlc, 2, "0x111 HMI_MODE_REQ DLC = 2");

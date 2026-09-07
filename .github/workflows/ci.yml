@@ -4,15 +4,19 @@ on:
     paths:
       - 'rt-esp32/**'
       - 'sys-esp32/**'
+      - 'mtr-stm32/**'
       - 'shared/**'
       - 'protocol/**'
+      - 'native-test/**'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'rt-esp32/**'
       - 'sys-esp32/**'
+      - 'mtr-stm32/**'
       - 'shared/**'
       - 'protocol/**'
+      - 'native-test/**'
       - '.github/workflows/ci.yml'
 jobs:
   static-analysis:
@@ -44,7 +48,38 @@ jobs:
       - run: pip install platformio pydantic PyYAML
       - run: cd sys-esp32 && pio run
 
+  # Native (host) unit tests — verify the tuktuk math + safety fail-safes
+  # without hardware. GCC on ubuntu-latest is >= 7 (C++17, <string_view> ok).
+  pio-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio pydantic PyYAML
+      - name: MTR native (DAC golden vectors)
+        run: cd mtr-stm32 && pio test -e native
+      - name: SYS native (mode manager + cross-node ESTOP)
+        run: cd sys-esp32 && pio test -e native
+      - name: RT native (resolver, stream-loss fail-safe)
+        run: cd rt-esp32 && pio test -e native
+      - name: RT end-to-end pipeline (HOST_DRIVE_CMD -> DAC)
+        run: cd rt-esp32 && pio test -e native_pipeline
 
+  # Full cross-node integration sim (FreeRTOS on host) — builds the firmware
+  # against virtual CAN and exercises the RT 0x011 two-frame ESTOP clear, etc.
+  native-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install platformio pydantic PyYAML
+      - name: Configure
+        run: cmake -S native-test -B native-test/build -G "Unix Makefiles"
+      - name: Build
+        run: cmake --build native-test/build -j4
+      - name: Test
+        run: ctest --test-dir native-test/build --output-on-failure
 
   vehicle-build:
     runs-on: ubuntu-latest
