@@ -187,8 +187,10 @@ static std::atomic<bool>     g_brake_fault_active{false};
 // ── Independent per-owner traction-inhibit masks (issues #5/#7) ─────
 // See inhibit_state.h. Each detector owns its own bit; latched faults are
 // cleared only by the explicit reset path.
+namespace sys {
 std::atomic<uint32_t> g_inhibit_reasons{0};
 std::atomic<uint32_t> g_latched_fault_reasons{0};
+}  // namespace sys
 
 // ── System ESTOP latch predicate (safety invariant, issue #4) ────────
 // The persistent ESTOP state SYS publishes (0x011.estop_active and
@@ -650,6 +652,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 [[noreturn]] static void task_mode(void*) {
     TickType_t period = pdMS_TO_TICKS(100);  // 10 Hz
     TickType_t last   = xTaskGetTickCount();
+    static uint8_t roll_mode_ = 0;
+    static uint8_t roll_pwr_ = 0;
     while (1) {
         g_alive_mode.store(xTaskGetTickCount(), std::memory_order_relaxed);
 #ifdef TESTING
@@ -676,38 +680,29 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // clamps the transmitted mode to MANUAL and drops power authority, so a
         // MTR-feedback loss or brake fault is an actuator-level safety action,
         // not merely an internal zero.
-        const bool traction_inhibit =
-            sys::transient_inhibited() || sys::latched_fault_present();
-        static uint8_t roll_mode = 0;
         {
-            can::Frame fr;
-            can::gen::SysModeCmd message{};
             const can::Mode resolved = g_mode_mgr.mode();
-            const can::Mode tx_mode =
-                (resolved == can::Mode::Estop || traction_inhibit)
-                    ? can::Mode::Manual : resolved;
-            message.mode = (tx_mode == can::Mode::Auto);
-            message.rolling_counter = roll_mode++;
-            if (can::gen::encode_sys_mode_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
-        }
-
-        // 0x113 SYS_PWR_CMD: resolved power authority for MTR.
-        // Resolved from the validated HMI power request + safety state. ESTOP
-        // (or any hard safety fault) forces power OFF.
-        // Fallback: If no valid HMI power request stream is actively present,
-        // default power to ON so MTR energizes when mode is operational.
-        static uint8_t roll_pwr = 0;
-        {
-            can::Mode mode = g_mode_mgr.mode();
-            const bool estop = (mode == can::Mode::Estop);
+            const bool mode_is_estop = (resolved == can::Mode::Estop);
+            const bool resolved_auto = (resolved == can::Mode::Auto);
             const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
-            const bool pwr_req = hmi_valid ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
-            const bool pwr_on = pwr_req && !estop && !traction_inhibit;
-            can::Frame fr;
-            can::gen::SysPwrCmd message{};
-            message.power_state = pwr_on ? 1u : 0u;
-            message.rolling_counter = roll_pwr++;
-            if (can::gen::encode_sys_pwr_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
+            const bool power_req = hmi_valid
+                ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
+
+            const auto auth = sys::resolve_authority(mode_is_estop, resolved_auto, power_req);
+
+            can::Frame fr_m;
+            can::gen::SysModeCmd message{};
+            message.mode = auth.mode_auto ? 1u : 0u;
+            message.rolling_counter = roll_mode_++;
+            if (can::gen::encode_sys_mode_cmd(message, fr_m) == can::gen::CodecStatus::Ok)
+                send_can(fr_m);
+
+            can::Frame fr_p;
+            can::gen::SysPwrCmd pwr_msg{};
+            pwr_msg.power_state = auth.power_on ? 1u : 0u;
+            pwr_msg.rolling_counter = roll_pwr_++;
+            if (can::gen::encode_sys_pwr_cmd(pwr_msg, fr_p) == can::gen::CodecStatus::Ok)
+                send_can(fr_p);
         }
 
         vTaskDelayUntil(&last, period);

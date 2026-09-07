@@ -55,5 +55,26 @@ inline void set_latched_fault(LatchedFaultReason r) {
 
 inline bool transient_inhibited() { return g_inhibit_reasons.load() != 0u; }
 inline bool latched_fault_present() { return g_latched_fault_reasons.load() != 0u; }
+inline bool any_inhibit() { return transient_inhibited() || latched_fault_present(); }
+
+// Resolved actuator authority given the system state (issues #5/#7).
+// task_mode uses these to decide what 0x110/0x113 must carry so that a
+// traction inhibit is an *actuator-level* action, not an internal zero:
+//   - 0x110 is clamped to MANUAL whenever ESTOP is latched or any inhibit is
+//     active (so MTR sees non-driving mode authority).
+//   - 0x113 power is OFF whenever ESTOP is latched or any inhibit is active.
+struct ResolvedAuthority {
+    bool mode_auto = false;   // transmitted 0x110.mode (true => AUTO)
+    bool power_on  = false;   // transmitted 0x113.power_state (true => ON)
+};
+
+inline ResolvedAuthority resolve_authority(bool mode_is_estop, bool resolved_mode_auto,
+                                           bool power_requested) {
+    const bool stop = mode_is_estop || any_inhibit();
+    ResolvedAuthority out;
+    out.mode_auto = !stop && resolved_mode_auto;
+    out.power_on  = !stop && power_requested;
+    return out;
+}
 
 }  // namespace sys
