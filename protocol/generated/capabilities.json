@@ -1,4 +1,5 @@
 {
+  "diagnostics_hash": "ed7a419be11e9f3b603bf77c6fe9c76e64d2eb1da1b956079d780f3bc472196d",
   "languages": {
     "cpp": [
       {
@@ -59,6 +60,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "mtr:mtr_diag_event_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:mtr_motor_fbk",
         "payload": "typed",
         "semantic_decode": true,
@@ -88,6 +96,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_brake_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_diag_event_rpt",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -210,6 +225,13 @@
         "payload": "metadata_only",
         "semantic_decode": false,
         "strategy": "custom"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_diag_event_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
       },
       {
         "implementation": "generated-v1",
@@ -306,6 +328,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "mtr:mtr_diag_event_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:mtr_motor_fbk",
         "payload": "typed",
         "semantic_decode": true,
@@ -335,6 +364,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_brake_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_diag_event_rpt",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -457,6 +493,13 @@
         "payload": "raw_compatibility",
         "semantic_decode": false,
         "strategy": "custom"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_diag_event_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
       },
       {
         "implementation": "generated-v1",
@@ -553,6 +596,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "mtr:mtr_diag_event_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:mtr_motor_fbk",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -582,6 +632,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_brake_cmd",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_diag_event_rpt",
         "payload": "raw_compatibility",
         "semantic_decode": false,
         "strategy": "generated"
@@ -707,6 +764,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "sys:sys_diag_event_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "sys:sys_diag_rpt",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -742,8 +806,8 @@
       }
     ]
   },
-  "network_hash": "f136e42a4ecfeeef64e0acf7308d5f053f44f046bf25481fcd4a29725857cd56",
+  "network_hash": "6765421a1129138419b8b797e825928b94044ea7d689b723cf945e7eb39564bc",
   "schema_version": 1,
-  "semantic_hash": "565f9be38c4ab6a3861863dabfd5edc175e1079a8789f1f5ffad89cf4530c227",
-  "wire_hash": "565f9be38c4ab6a3861863dabfd5edc175e1079a8789f1f5ffad89cf4530c227"
+  "semantic_hash": "07cf327066e124be6f78be51f6cddce0ad3048e3f2b3d3581dea144b68ed1e9a",
+  "wire_hash": "07cf327066e124be6f78be51f6cddce0ad3048e3f2b3d3581dea144b68ed1e9a"
 }
