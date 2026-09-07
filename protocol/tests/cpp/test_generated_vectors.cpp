@@ -5,6 +5,7 @@
 #include <type_traits>
 
 #include "protocol/generated/cpp/etrike_protocol.hpp"
+#include "protocol/generated/cpp/diagnostics.hpp"
 
 namespace {
 
@@ -214,7 +215,38 @@ void test_success_vectors() {
     generated::PwtDcdcCmd dcdc{};
     dcdc.control = true;
     check_vector(dcdc, std::array<std::uint8_t, 8>{0x01, 0xFF, 0xFF, 0xFF,
-                                                   0xFF, 0xFF, 0xFF, 0x00});
+                                                    0xFF, 0xFF, 0xFF, 0x00});
+
+    // WP0 diagnostics event reports (match first ok vector in payload-v1.json)
+    generated::SysDiagEventRpt sys_diag{};
+    sys_diag.diag_id = 0x0107;
+    sys_diag.state = 1;
+    sys_diag.occurrence_count = 1;
+    sys_diag.report_counter = 0;
+    sys_diag.flags = 0;
+    sys_diag.snapshot_data = 0;
+    check_vector(sys_diag, std::array<std::uint8_t, 8>{0x01, 0x07, 0x01, 0x01,
+                                                       0x00, 0x00, 0x00, 0x00});
+
+    generated::RtDiagEventRpt rt_diag{};
+    rt_diag.diag_id = 0x0210;
+    rt_diag.state = 1;
+    rt_diag.occurrence_count = 1;
+    rt_diag.report_counter = 0;
+    rt_diag.flags = 0;
+    rt_diag.snapshot_data = 0;
+    check_vector(rt_diag, std::array<std::uint8_t, 8>{0x02, 0x10, 0x01, 0x01,
+                                                      0x00, 0x00, 0x00, 0x00});
+
+    generated::MtrDiagEventRpt mtr_diag{};
+    mtr_diag.diag_id = 0x030F;
+    mtr_diag.state = 1;
+    mtr_diag.occurrence_count = 1;
+    mtr_diag.report_counter = 0;
+    mtr_diag.flags = 0;
+    mtr_diag.snapshot_data = 0;
+    check_vector(mtr_diag, std::array<std::uint8_t, 8>{0x03, 0x0F, 0x01, 0x01,
+                                                       0x00, 0x00, 0x00, 0x00});
 }
 
 void test_validation_and_unchanged_outputs() {
@@ -278,10 +310,21 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-    CHECK(etrike::protocol::kMessages.size() == 45);
-    CHECK(etrike::protocol::kRoutes.size() == 9);
+    CHECK(etrike::protocol::kMessages.size() == 50);
+    CHECK(etrike::protocol::kRoutes.size() == 11);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);
+
+    // WP0 diagnostics registry (IMPLEMENTED-only enum + minimal metadata)
+    {
+        const auto* meta = etrike::diagnostics::diag_meta(etrike::diagnostics::DiagId::SysEstopButtonAsserted);
+        CHECK(meta != nullptr);
+        CHECK(meta->latching == true);
+        CHECK(meta->is_estop_cause == true);
+        CHECK(etrike::diagnostics::kImplementedDiagCount == 42);
+        CHECK(etrike::diagnostics::kDiagnosticsHash.size() == 64);
+        CHECK(etrike::diagnostics::diag_meta(static_cast<etrike::diagnostics::DiagId>(0x0201)) != nullptr);
+    }
 }
 
 }  // namespace

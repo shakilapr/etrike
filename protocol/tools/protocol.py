@@ -439,6 +439,10 @@ def validate_diagnostics(doc: dict) -> dict:
         disposition = entry.get("disposition")
         if disposition not in vocab.get("disposition", set()):
             raise ContractError(f"{key}: disposition {disposition!r} not in vocabulary")
+        if entry.get("observability") == "UNOBSERVABLE" and monitoring == "IMPLEMENTED":
+            raise ContractError(f"{key}: UNOBSERVABLE requires monitoring NOT_IMPLEMENTED")
+        if disposition == "OMITTED" and monitoring == "IMPLEMENTED":
+            raise ContractError(f"{key}: OMITTED disposition requires monitoring NOT_IMPLEMENTED")
         reaction = entry.get("reaction")
         if monitoring == "IMPLEMENTED":
             if reaction not in vocab.get("reaction", set()):
@@ -450,10 +454,6 @@ def validate_diagnostics(doc: dict) -> dict:
                 raise ContractError(f"{key}: NOT_IMPLEMENTED diagnostic must not carry a reaction")
             if disposition == "ACTIVE":
                 raise ContractError(f"{key}: NOT_IMPLEMENTED diagnostic cannot be disposition ACTIVE")
-        if entry.get("observability") == "UNOBSERVABLE" and monitoring == "IMPLEMENTED":
-            raise ContractError(f"{key}: UNOBSERVABLE requires monitoring NOT_IMPLEMENTED")
-        if disposition == "OMITTED" and monitoring == "IMPLEMENTED":
-            raise ContractError(f"{key}: OMITTED disposition requires monitoring NOT_IMPLEMENTED")
         latching = entry.get("latching")
         if not isinstance(latching, bool):
             raise ContractError(f"{key}: latching must be boolean")
