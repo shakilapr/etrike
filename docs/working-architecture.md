@@ -146,9 +146,11 @@ unassigned (see §8 "Open safety issues").
 ### 3.3 Steering and braking sub-paths
 
 - **Steering:** RT computes target angle → `0x169 VCU_SES_REQ` → SES/SES → road wheel angle.
-- **Braking:** in AUTO, RT owns `0x7B9 VCU_SEB_REQ` (pressure/stroke). SYS suppresses its own `0x7B9`
-  while RT is healthy, and *resumes* braking (max stroke) on RT-dead / ESTOP / MANUAL
-  (`sys-esp32/src/main.cpp:686-756`, `brake_control.h:90-136`).
+- **Braking:** SYS is the **sole normal `0x7B9` producer**. RT sends brake *intent* via `0x205` (kPa);
+  SYS applies it (with a stale-`0x205` → max-brake fallback) and always emits the final `0x7B9` in its
+  active brake state, including ESTOP/lever override. RT does **not** transmit `0x7B9` in normal
+  operation — it is only an **emergency fallback writer** when SYS heartbeat *and* SYS `0x7B9` are both
+  lost (`brake_fallback.h`, issue #3).
 
 ---
 
@@ -221,8 +223,9 @@ unassigned (see §8 "Open safety issues").
         │
         ▼  t_can_tx_low (100/50 Hz)
    ┌─ 0x204 RT_DRIVE_CMD {speed_out, gear_out}  -> MTR   (speed forced 0 unless AUTO + steer OK)
+   ├─ 0x205 RT_BRAKE_CMD {kPa}  -> SYS (intent; SYS emits the final 0x7B9)
    ├─ 0x169 VCU_SES_REQ  {angle_raw=angle+30000, slew 125–525°/s} -> SES
-   ├─ 0x7B9 VCU_SEB_REQ  (AUTO brake / takeover on SYS-HB loss)   -> SEB
+   ├─ 0x7B9 VCU_SEB_REQ  (EMERGENCY fallback writer ONLY — SYS HB + 0x7B9 both lost)
    ├─ 0x210 RT_STATE_RPT {safety_state, estop_reason, ...}
    ├─ 0x7FD RT_HEARTBEAT (2 Hz)
    └─ 0x001 SAFETY_ESTOP (on trigger, rate-limited)
@@ -234,9 +237,10 @@ unassigned (see §8 "Open safety issues").
   Slew `rate = 125 + (kmh-2)*(400/23)` °/s clamp `[125,525]`
   (`steering_control.h:235-239`); ESTOP ramp-to-zero 20°/s.
 - **Watchdog (who RT watches):** `g_watchdog` fed **only by `0x300`**; stale >500 ms → zero cmd +
-  steering ramp (`watchdog.h:8-12`). RT also monitors SYS heartbeat `0x7FE` (200 ms → brake
-  takeover), Host heartbeat `0x7FC` (1500 ms → assist stop), and `0x011` stream (700 ms → ESTOP
-  latch). RT does **not** watchdog MTR (`0x206` staleness only affects the speed estimator).
+  steering ramp (`watchdog.h:8-12`). RT also monitors SYS heartbeat `0x7FE` (200 ms → motion
+  prohibited; brake *fallback* only after SYS `0x7B9` also disappears, issue #3), Host heartbeat
+  `0x7FC` (1500 ms → assist stop), `0x011` stream (700 ms → ESTOP latch), and **MTR `0x206`** (issue
+  #8: >200 ms stale in AUTO → MTR unavailable → propulsion prohibited, confirmed 3-frame recovery).
 
 ### 4.3 SYS — system safety authority
 
@@ -252,19 +256,20 @@ indicator/power/can_tx p2, can_rx p5, can_control p2, diag p1, hb p1). Entry `ap
  ModeManager  (MANUAL / AUTO / ESTOP)   <- sole validator of HMI request streams
         │  task_mode (10 Hz)
         ▼
- ┌─ 0x110 SYS_MODE_CMD  (mode; ESTOP clamps to MANUAL)        -> MTR / RT
- ├─ 0x113 SYS_PWR_CMD   (power_state = hmi_pwr && !estop)      -> MTR
- ├─ 0x011 SYS_SAFETY_STS (estop_active + E2E CRC-8)            -> MTR / RT   [persistent ESTOP authority]
+ ┌─ 0x110 SYS_MODE_CMD  (mode; ESTOP/inhibit clamps to MANUAL)   -> MTR / RT
+ ├─ 0x113 SYS_PWR_CMD   (power ON unless ESTOP/inhibit)          -> MTR
+ ├─ 0x011 SYS_SAFETY_STS (sys estop latch + E2E CRC-8)           -> MTR / RT   [persistent ESTOP authority]
  ├─ 0x600 SYS_DIAG_RPT, 0x7FE SYS_HEARTBEAT, lights/indicators
- └─ 0x7B9 VCU_SEB_REQ  (brake; suppressed in AUTO while RT healthy) -> SEB
+ └─ 0x7B9 VCU_SEB_REQ  (SOLE normal producer; 0x205 intent applied) -> SEB
  task_safety (20 Hz): hardware ESTOP btn, RT-HB loss, MTR ESTOP, SEB L3, EGAS L2, bus-off
         │  force_estop()  +  broadcast 0x001  ───────────────► whole bus
- task_brake (50 Hz): 0x205 -> SEB Command (pressure raw=(kPa+25)/50, stroke raw=(mm+30)*20)
+ task_brake (50 Hz): consume RT 0x205 kPa (stale -> max), ESTOP/lever override -> final 0x7B9
 ```
 
-- **SYS disables actuation by five coordinated signals** (no separate "disable" frame): broadcast
+- **SYS disables actuation by coordinated signals** (no separate "disable" frame): broadcast
   `0x001`, set `0x110=MANUAL`, set `0x113=OFF`, drive `0x7B9` max stroke (~27 mm), cut 12 V relay
-  (`main.cpp:858`).
+  (`main.cpp:858`). Traction inhibits (MTR-fbk loss, SEB-comms loss, brake following excursion, SEB
+  L3) clamp `0x110`→MANUAL + `0x113`→OFF via `resolve_authority()` (`inhibit_state.h`).
 - **EGAS L2:** `|0x204.setpoint − 0x206.actual| > 500 mm/s` for >500 ms in AUTO → ESTOP
   (`main.cpp:516-546`).
 
@@ -394,8 +399,8 @@ undervoltage, hardware safety-line. Those must arrive as `0x001`/`0x011` from up
 | 6 | EGAS L2 mismatch | `0x204` vs `0x206` | `>500 mm/s` for >500 ms (AUTO) | `force_estop()` + `0x001` |
 | 7 | MTR ESTOP-ACK timeout | `0x206` | ESTOP sent but MTR hasn't ACKed in 100 ms | retrigger `force_estop()` + `0x001` |
 | 8 | MTR feedback staleness | `0x206` | absent > 200 ms | zero speed+neutral (drive disabled, **not** full ESTOP) |
-| 9 | SEB `error_status` L3 | `0x721` byte0 b6-7 | `es>=3` | `brake_fault=true` (logged, not full ESTOP) |
-| 10 | Brake following-error | `0x721` vs cmd | `>60 raw` (3 mm) for >100 ms | `brake_fault=true` (logged) |
+| 9 | SEB `error_status` L3 | `0x721` byte0 b6-7 | `es>=3` | **Latched** `kLatchedSebL3` + `force_estop()` + `0x001` (issue #5, aligned with `0x731`) |
+| 10 | Brake following-error | `0x721` vs cmd | transient >3 mm → `kInhibitBrakeFollowing`; persistent >`kBrakeFollowingLatchedMs` → **latched** `kLatchedBrakeFollowing` + `force_estop()` |
 | 11 | CAN bus-off persistent | TWAI `BusOff` | ≥5 consecutive | `force_estop()` + `0x001` |
 | 12 | SEB status/test loss | `0x721`/`0x6FB` | >100 ms | warn only |
 
@@ -436,7 +441,7 @@ watchdog that asserts `0x001` (only the MTR-side 500 ms watchdog is referenced).
 | Controller | How ESTOP / disable is cleared |
 |------------|--------------------------------|
 | **MTR** | Latched ESTOP (A1/A2) cleared **only** by `0x011.estop_active==0` on **two consecutive fresh, advancing frames** (`clear_confirm_>=2`) → `authorized_clear()`, which then requires a `0x113` **OFF→ON edge** with a fresh `0x110` (REARM sequence) before motion resumes (`motor_manager.h:161-192`, `110-118`). Fail-safe B-class (timeout/CRC/counter) **auto-clears on next valid frame**. Power cycle re-runs `init()` and clears all state. |
-| **SYS** | ESTOP latch cleared **only** by the physical **START button (GPIO41)** falling edge, or **MODE button 3 s long-press (GPIO11)**, or power cycle. CAN `0x111`/`0x110` **cannot** clear ESTOP (`mode_manager.cpp:72-85`). `brake_fault` auto-clears after 3 s of all-healthy. |
+| **SYS** | ESTOP latch cleared **only** by the physical **START button (GPIO41)** falling edge, or **MODE button 3 s long-press (GPIO11)**, or power cycle. CAN `0x111`/`0x110` **cannot** clear ESTOP (`mode_manager.cpp:72-85`). Latched brake faults (`kLatchedSebL3`/`kLatchedBrakeFollowing`) are cleared by the reset path only when their underlying cause is healthy. Transient inhibits (MTR-fbk, SEB-comms, following excursion) recover with confirmed N-frame hysteresis. |
 | **RT** | Vehicle ESTOP latch (`0x001`/`0x011`) cleared by the `0x011` **two-frame `estop_active==0`** sequence (asymmetric). Steering/internal ESTOP (`kEstopReasonInternal`, `run_safety_checks`) is additionally released by a valid Host drive command (`g_steering_exit_request` from `0x300`). Power cycle clears all. |
 | **RM** | External-ESTOP latch (`g_can_estop_latched`) cleared **only** by the RC reset sequence: valid link **+ Ignition OFF + Gear Neutral** (`main.cpp:89-94`). Signal-loss deadman auto-clears when the RC link returns. Own `0x001` loopback is consumed via a 50 ms credit window so it cannot re-latch. |
 
@@ -447,15 +452,17 @@ watchdog that asserts `0x001` (only the MTR-side 500 ms watchdog is referenced).
 | Controller | What it watches | Timeout | On trip |
 |-----------|-----------------|---------|---------|
 | MTR | any CAN frame (deadman) | 500 ms | fail-safe disable (auto-clear) |
+| MTR | **`0x204` drive cmd (issue #2)** | 150 ms | latched fail-safe; confirmed 3-frame recovery |
 | MTR | `0x011` safety stream | 700 ms | disable |
 | MTR | `0x110`/`0x113` authority | 500 ms | inhibit / power-safe disable |
 | SYS | RT heartbeat `0x7FD` | 1000 ms (3 s grace) | ESTOP |
-| SYS | MTR feedback `0x206` | 200 ms | zero speed + neutral (not full ESTOP) |
-| SYS | SEB status `0x721`/`0x6FB` | 100 ms | warn |
+| SYS | MTR feedback `0x206` | 200 ms | `kInhibitMtrFbkLoss` → `0x113` OFF + `0x110` MANUAL (confirmed 3-frame recovery) |
+| SYS | SEB status `0x721` | 100 ms | `kInhibitSebCommsLoss` (traction inhibited; confirmed recovery) |
 | SYS | multi-task aliveness | per task | logged only |
 | RT | Host drive `0x300` (`g_watchdog`) | 500 ms | zero cmd + steer ramp |
 | RT | Host heartbeat `0x7FC` | 1500 ms | assist stop |
-| RT | SYS heartbeat `0x7FE` | 200 ms | SEB brake takeover |
+| RT | SYS heartbeat `0x7FE` | 200 ms | motion prohibited (SYS_DEGRADED); emergency `0x7B9` only after SYS `0x7B9` also lost (issue #3) |
+| RT | **MTR feedback `0x206` (issue #8)** | 200 ms | MTR unavailable → propulsion prohibited (confirmed 3-frame recovery) |
 | RT | `0x011` stream | 700 ms | ESTOP latch |
 | RM | RC link (per-channel edge) | 100 ms | broadcast `0x001` + safe outputs |
 
@@ -466,66 +473,71 @@ commented-out (`sys-esp32/src/main.cpp:40,514`). Timeouts are deliberately tiere
 
 ---
 
-## 8. Open safety issues (architecture blockers)
+## 8. Safety issues: status & residual architecture blockers
 
-Source-verified list (each with `file:line` evidence) of weaknesses that must be resolved before
-vehicle testing. Severity: 🔴 critical / 🟠 high / 🟡 medium.
+Source-verified list (each with `file:line` evidence) of safety weaknesses identified during the
+architecture review. Severity: 🔴 critical / 🟠 high / 🟡 medium. Items marked **RESOLVED** were
+fixed in the code (fault-class semantics at the end of this section); items still open are hardware
+dependencies or protocol redesigns.
 
-1. 🔴 **EGAS compares command vs echoed command — not physical.** `0x206.actual_speed_mmps` is the
-   commanded setpoint echoed back (`mtr-stm32/src/motor_manager.h:315` = `target_speed_mmps_`, loaded
-   from the decoded `0x204` at `:95`); MTR has **no speed sensor / encoder / ADC**. SYS EGAS
-   (`|0x204 − 0x206| > 500 mm/s`) is a command-path consistency check only — it cannot detect DAC
-   stuck, relay welded, wheel overspeed, or runaway. Until real wheel/motor speed feedback exists,
-   the field should be renamed (e.g. `applied_speed_command_mmps`) and the check must not be called
-   physical EGAS.
-2. 🔴 **MTR has no `0x204`-specific deadman.** The only link watchdog is "any frame within 500 ms"
-   (`motor_manager.h:197`, `last_rx_ms_` updated on *every* frame). `0x011`/`0x110`/`0x113` are each
-   individually supervised but `0x204` is not — a frozen drive command with otherwise-healthy bus
-   keeps `target_speed_mmps_` on the DAC indefinitely. Fix: dedicated `0x204` freshness (≤100 ms)
-   feeding the fail-safe gate.
-3. 🔴 **RT and SYS both transmit `0x7B9`** (same CAN ID). SYS suppresses itself only while
-   `mode==Auto && rt_authority_established` (`sys-esp32/src/main.cpp:739-741`, sends at `:752-756`);
-   RT transmits in AUTO and on takeover (`rt-esp32/src/main.cpp:622-636`). Same-ID dual producers can
-   collide at bit level during takeover or interleave MAX/normal brake. Fix: one producer per ID
-   (e.g. RT→`0x7B8` request, SYS→`0x7B9` command) or SEB-side source arbitration.
-4. **`0x011.estop_active` reflects true system ESTOP latch (RESOLVED).** `sys_estop_latched()` now
-   combines `g_mode_mgr.mode() == Mode::Estop` and `g_safety.estop_active()`. Software ESTOPs (CAN `0x001`,
-   SEB L3, EGAS, bus-off, MTR-reported-ESTOP) hold `estop_active = 1` across `0x011` and `0x7FE` until SYS is
-   explicitly reset out of ESTOP via the START button.
-5. 🔴 **Brake faults are warn-only.** SEB `error_status` L3 (`sys main.cpp:344-347`) and brake
-   following-error >3 mm / >100 ms (`:388-396`) only set `g_brake_fault_active` — no `force_estop()`.
-   `0x721`/test loss >100 ms is `ESP_LOGW` only (`:758-774`). `g_brake_fault_active` feeds the "ready"
-   bulb and `0x600` diag, never a stop. A confirmed-unavailable brake can coexist with live traction.
-6. 🔴 **No independent hardware watchdog (IWDG/WWDG)** on MTR or SYS
-   (`mtr-stm32/Core/Inc/stm32g4xx_hal_conf.h:49,68` — commented out). If MTR firmware hangs, the
-   fail-safe code never runs and DAC/relay outputs stay energized. Fix: STM32 IWDG + output-safe reset
-   state + (practical) external hardware enable.
-7. 🟠 **SYS MTR-feedback timeout is not actuator-level.** On `0x206` stale >200 ms SYS zeroes its
-   *internal* speed/gear (`sys main.cpp:566-578`) but does not change `0x110`/`0x113`/`0x001` and
-   does not own `0x204` — MTR keeps doing its last command. Fix: remove power authority (`0x113=OFF`)
-   and/or assert `0x001`.
-8. 🟠 **RT does not watchdog MTR.** `0x206` staleness only sets a report-validity flag
-   (`rt-esp32/src/can_dispatch.h:220-227`); RT never zeroes `0x204` or ESTOPs on MTR loss. Fix: treat
-   MTR acceptance loss as actuator failure (zero `0x204` + brake/ESTOP as appropriate).
-9. 🟠 **No real speed feedback anywhere (PID is open-loop in production).** Production build runs **no
-   active PID** (`platformio.ini [env:vehicle]`: `ETRIKE_RT_PID_MODE=0`, feedback source None). Bench
-   PID uses `Calculated` (synthetic, derived from the commanded setpoint), never MTR `0x206`
-   (`build_config.h:86-88` `static_assert`). Keep RT open-loop until a physical wheel/motor sensor
-   exists; do not present PID/telemetry as closed-loop.
-10. 🟠 **Production MANUAL has no commanded traction owner.** RT publishes a `0x204 {0,N}` keep-alive
-    in MANUAL (`rt main.cpp:555-589`) and suppresses `0x169`/`0x205` (`:605`,`:596`); SYS never sends
-    `0x204`; RM is disconnected. Traction command in production MANUAL is unassigned. Fix: define the
-    ownership matrix (AUTO/MANUAL/ESTOP/BENCH × `0x204`/`0x169`/`0x7B9`).
-11. 🟡 **`0x001` carries no sender/reason/epoch** (`protocol/generated/cpp/etrike_protocol.hpp:2013-2032`,
-    DLC 0). Fine as an immediate primitive, but persistent safety truth must be reconstructed from
-    `0x011`/`0x210`/`0x206` — contributing to issue 4.
-12. 🟡 **HMI authority freshness is 5 s.** `kReqFreshTicks = HmiModeReq::kCycleMs * 5` = 5000 ms
-    (`sys main.cpp:144-145`). Dead HMI authority outlives the 500 ms drive watchdog by 10×.
-13. 🟡 **Timeout policies are inconsistent** across controllers (100 ms SEB … 5000 ms HMI), so
-    controllers can occupy incompatible safety states after a partial failure.
+1. 🔴 **EGAS compares command vs echoed command — not physical (still open).** `0x206.actual_speed_mmps`
+   is the commanded setpoint echoed back (`mtr-stm32/src/motor_manager.h:315` = `target_speed_mmps_`).
+   MTR has **no speed sensor**. Requires real wheel/motor feedback hardware; until then the field name
+   and "EGAS" description remain misleading.
+2. ✅ **MTR dedicated `0x204` watchdog (RESOLVED).** `drive_expected_` is authority-only (AUTO + power ON
+   + valid `0x110`/`0x113`/`0x011`); a missing/frozen `0x204` (>150 ms) trips a latched fail-safe
+   (DAC 0, relays off, `0x206` flag `0x02`, `DiagId::MtrRtDriveCmdTimeout`) even if no `0x204` was ever
+   seen while drive is expected. Confirmed recovery requires 3 valid `0x204` frames at cadence. This is
+   independent of the generic any-frame 500 ms deadman.
+3. ✅ **Single normal `0x7B9` owner (RESOLVED, emergency fallback).** SYS is the sole normal producer;
+   RT's direct AUTO `0x7B9` and SYS's RT-health suppression are removed. RT becomes an *emergency
+   fallback writer* via a 3-state machine (`rt-esp32/src/brake_fallback.h`): SYS-heartbeat loss alone
+   only zeros propulsion (SYS_DEGRADED); RT writes `0x7B9` only when SYS `0x7B9` has also disappeared
+   from the Low bus for a guard interval (EMERGENCY_FALLBACK). Handback is latched + epoch-guarded.
+   The *long-term* target (distinct source IDs / SEB arbitration) remains documented as deferred until
+   SEB firmware is available.
+4. ✅ **`0x011`/`0x7FE` `estop_active` reflects the true system latch (RESOLVED).**
+   `sys::ModeManager::estop_latched(mode, hw)` = `mode==Estop || hw_button`. Software ESTOPs (CAN `0x001`,
+   SEB L3, EGAS, bus-off, MTR-reported-ESTOP) hold `estop_active = 1` across `0x011` and `0x7FE` until
+   SYS is explicitly reset out of ESTOP (START / MODE long-press). MTR/RT can no longer two-frame-clear
+   into a false all-clear while SYS is still latched.
+5. ✅ **Brake-fault classification (RESOLVED).** SEB `0x721` L3 → `kLatchedSebL3` + `force_estop()`
+   (aligned with the `0x731` L3 path). Brake following-error: transient excursion → `kInhibitBrakeFollowing`
+   (recoverable, hysteresis); persistent past `kBrakeFollowingLatchedMs` → `kLatchedBrakeFollowing` +
+   `force_estop()`. SEB status/comms loss → `kInhibitSebCommsLoss` (B-class, gated by `g_bypass_seb_sync`).
+   Latched faults are cleared only by the explicit reset path and only when the underlying cause is
+   healthy. Ready bulb / `0x600` diag reflect the aggregate (`sys::traction_fault_present()`).
+6. 🔴 **No independent hardware watchdog (IWDG/WWDG) on MTR or SYS (still open).**
+   (`mtr-stm32/Core/Inc/stm32g4xx_hal_conf.h:49,68` — commented out). Hardware requirement; a firmware
+   hang can leave DAC/relay outputs energized.
+7. ✅ **SYS MTR-feedback loss removes power authority (RESOLVED).** On `0x206` stale >200 ms SYS sets
+   `kInhibitMtrFbkLoss`; `task_mode` then clamps `0x110` to MANUAL and `0x113` to OFF via
+   `resolve_authority()`. Confirmed recovery = 3 consecutive fresh `0x206` observations. No longer an
+   internal-only zero.
+8. ✅ **RT watchdogs MTR (RESOLVED).** `MtrHealthSupervisor` (`rt-esp32/src/safety_monitor.h`): in AUTO
+   past the AUTO-entry grace, a stale `0x206` (>200 ms) makes MTR unavailable → propulsion prohibited
+   even at standstill. Max brake is applied only when a non-zero propulsion command was recently active
+   (measured motion is unknowable without a sensor — documented limitation). Confirmed 3-frame recovery;
+   disabled by `g_bypass_mtr_absent`.
+9. 🟠 **No real speed feedback anywhere (still open).** Production runs no active PID; bench PID uses
+   `Calculated` (synthetic). Requires a physical wheel/motor sensor.
+10. 🟠 **Production MANUAL has no commanded traction owner (still open).** RT sends `0x204 {0,N}`
+    keep-alive in MANUAL; SYS never sends `0x204`; RM is disconnected. Ownership matrix unassigned.
+11. 🟡 **`0x001` carries no sender/reason/epoch (still open).** DLC 0 broadcast primitive is fine
+    immediately; persistent truth is reconstructed from `0x011`/`0x210`/`0x206`.
+12. 🟡 **HMI authority freshness is 5 s (still open).** `kReqFreshTicks = HmiModeReq::kCycleMs * 5`.
+13. 🟡 **Timeout policies are inconsistent (still open).** 100 ms SEB … 5000 ms HMI.
 
-**Recommended fix order:** real speed feedback → `0x204` watchdog → single brake-command owner →
-unified ESTOP latch → brake-fault traction inhibition → hardware watchdogs → MANUAL ownership matrix.
+**Fault-class semantics (as implemented):**
+- **Latched ESTOP — explicit reset required:** ESTOP entries, `0x721`/`0x731` SEB L3, confirmed
+  persistent brake following-error.
+- **Recoverable with hysteresis:** transient brake following-error.
+- **B-class auto-recover with confirmed recovery (N consecutive valid frames at cadence):** MTR `0x204`
+  watchdog, MTR-feedback loss (SYS `kInhibitMtrFbkLoss`, RT MTR-health), SEB comms loss
+  (`kInhibitSebCommsLoss`).
+
+**Residual (hardware / protocol) fix order:** real speed feedback → hardware watchdogs → MANUAL
+ownership matrix → single-source-ID brake arbitration (SEB firmware) → `0x001` protocol → timeout policy.
 
 ---
 
@@ -534,9 +546,10 @@ unified ESTOP latch → brake-fault traction inhibition → hardware watchdogs �
 - **MTR:** `mtr-stm32/src/main.cpp`, `motor_manager.h`, `can_driver.h`, `relay_controller.h`,
   `dac_controller.h`, `config.h`.
 - **SYS:** `sys-esp32/src/main.cpp`, `mode_manager.cpp`, `safety_monitor.cpp`, `brake_control.h`,
-  `light_control.h`, `can_driver.cpp`, `config.h`.
+  `inhibit_state.h`, `light_control.h`, `can_driver.cpp`, `config.h`.
 - **RT:** `rt-esp32/src/main.cpp`, `can_dispatch.h`, `steering_control.h`, `phase2_motion.h`,
-  `safety_monitor.h`, `watchdog.h`, `can_health.h`, `physics_model.cpp`, `direct_resolver.cpp`.
+  `safety_monitor.h`, `watchdog.h`, `brake_fallback.h`, `can_health.h`, `physics_model.cpp`,
+  `direct_resolver.cpp`.
 - **RM:** `rm-esp32/src/main.cpp`, `rc_receiver.cpp`, `rc_decoder.h`, `can_driver.cpp`, `config.h`.
 - **Protocol:** `protocol/generated/cpp/etrike_protocol.hpp`, `protocol/codecs/{ses,seb}.hpp`,
   `protocol/compat/can_protocol.hpp`, `shared/{stream_validity.h,diagnostics.h,shared_config.h}`.
