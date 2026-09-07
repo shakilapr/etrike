@@ -136,6 +136,35 @@ def test_python_physics():
         return False, cp.stdout + cp.stderr
     return True, cp.stdout.strip() + cp.stderr.strip()
 
+# 6. Top-Level SIL Simulation Suites (§8)
+def test_sil_longitudinal():
+    script = ROOT / "simulation" / "sil" / "tests" / "test_sil_longitudinal.py"
+    cp = subprocess.run([sys.executable, str(script)], cwd=ROOT, capture_output=True, text=True)
+    if cp.returncode != 0:
+        return False, cp.stdout + cp.stderr
+    return True, cp.stdout.strip() + cp.stderr.strip()
+
+def test_sil_lateral():
+    script = ROOT / "simulation" / "sil" / "tests" / "test_sil_lateral.py"
+    cp = subprocess.run([sys.executable, str(script)], cwd=ROOT, capture_output=True, text=True)
+    if cp.returncode != 0:
+        return False, cp.stdout + cp.stderr
+    return True, cp.stdout.strip() + cp.stderr.strip()
+
+def test_sil_braking():
+    script = ROOT / "simulation" / "sil" / "tests" / "test_sil_braking.py"
+    cp = subprocess.run([sys.executable, str(script)], cwd=ROOT, capture_output=True, text=True)
+    if cp.returncode != 0:
+        return False, cp.stdout + cp.stderr
+    return True, cp.stdout.strip() + cp.stderr.strip()
+
+def test_sil_whole_vehicle():
+    script = ROOT / "simulation" / "sil" / "tests" / "test_sil_whole_vehicle.py"
+    cp = subprocess.run([sys.executable, str(script)], cwd=ROOT, capture_output=True, text=True)
+    if cp.returncode != 0:
+        return False, cp.stdout + cp.stderr
+    return True, cp.stdout.strip() + cp.stderr.strip()
+
 # 6. Simulation Vitest Suite
 def test_simulation_vitest(quick: bool):
     npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
@@ -207,6 +236,10 @@ def main():
         print(f"\n{BOLD}[2/3] Python SIL Suites{RESET}")
         results.append(("Python Diagnostic Reference Differential", run_step("Python Diagnostic Reference Model", test_python_differential)))
         results.append(("Python Longitudinal Physics & PID Loop", run_step("Python Closed-Loop Longitudinal Plant", test_python_physics)))
+        results.append(("SIL 1: Longitudinal Physics & Limits", run_step("SIL Longitudinal (Speed/Torque/Slope/Reverse)", test_sil_longitudinal)))
+        results.append(("SIL 2: Lateral Kinematics & Stability", run_step("SIL Lateral (Steer/Curvature/Yaw/Rollover)", test_sil_lateral)))
+        results.append(("SIL 3: Hydraulic Braking & ESTOP", run_step("SIL Braking (Pressure/Decel/Dist/ESTOP)", test_sil_braking)))
+        results.append(("SIL 4: Whole-Vehicle Closed-Loop", run_step("SIL Whole-Vehicle (Host->RT->SYS->Plant->Fbk)", test_sil_whole_vehicle)))
 
     # ── 3. TypeScript Simulation Suites ───────────────────
     if run_all or args.sim:
