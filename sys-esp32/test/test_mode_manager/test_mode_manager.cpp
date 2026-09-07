@@ -161,6 +161,26 @@ void test_parse_hmi_mode_rejects_invalid(void) {
     TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
 }
 
+// N1 safety regression: a CAN SYS_MODE_CMD (0x110) must NEVER clear a latched
+// ESTOP — only the physical START button or MODE 3s long-press may (Gap #11).
+// set_from_can() is the 0x110 ingest path and must refuse to leave Estop.
+void test_mode_manager_can_mode_cmd_does_not_clear_estop(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+
+    mm.set_from_can(uint8_t(Mode::Manual));   // 0x110 = MANUAL
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+
+    mm.set_from_can(uint8_t(Mode::Auto));     // 0x110 = AUTO
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+
+    // Still unrecoverable via CAN even after repeated frames.
+    for (int i = 0; i < 5; ++i) mm.set_from_can(uint8_t(Mode::Manual));
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_mode_manager_manual_to_auto);
@@ -173,6 +193,7 @@ extern "C" void app_main() {
     RUN_TEST(test_parse_hmi_mode_changes_mode);
     RUN_TEST(test_parse_hmi_mode_ignored_in_estop);
     RUN_TEST(test_parse_hmi_mode_rejects_invalid);
+    RUN_TEST(test_mode_manager_can_mode_cmd_does_not_clear_estop);
     UNITY_END();
 }
 
