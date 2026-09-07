@@ -73,6 +73,9 @@ void ModeManager::set_from_can(uint8_t m) {
     // Only MANUAL (0) and AUTO (1) are selectable via CAN 0x110.
     // ESTOP is a safety state triggered exclusively by hardware button,
     // CAN 0x001, or safety faults — never via mode command.
+    // Safety guard: a CAN mode command must NOT clear a latched ESTOP
+    // (only the physical START button or MODE 3s long-press may).
+    if (m_mode == can::Mode::Estop) return;
     if (m <= 1) set_mode(static_cast<can::Mode>(m));
 }
 
