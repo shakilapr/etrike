@@ -1,7 +1,10 @@
 #pragma once
 #include <cstdint>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "protocol/compat/can.hpp"
 #include "stream_validity.h"
+
 namespace rt {
 struct GatewayQueues {
     can::Frame* gw_tx_low=nullptr;

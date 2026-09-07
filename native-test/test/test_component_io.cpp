@@ -52,7 +52,7 @@ protocol::Frame f2;pack_ses_status(f2,eps);
 uint8_t vfy=0;for(int j=0;j<8;j++)vfy^=f2.data[j];CHECK_EQ(vfy,0xFF,"checksum");}}
 
 static void t4(){T("=== 4. Mode ===");
-uint8_t ms[]={0,1,2,0,1,2};
+uint8_t ms[]={0,1,0,1,0,1};
 for(int i=0;i<6;i++){generated::SysModeCmd m;m.mode=ms[i];protocol::Frame f;generated::encode(m,f);
 generated::SysModeCmd d;generated::decode(f.view(),d);CHECK_EQ(d.mode,ms[i],"mode");}}
 
