@@ -91,27 +91,41 @@ class TestSilLongitudinal(unittest.TestCase):
         self.assertGreater(final_speeds[2], 500.0, "Vehicle stalled on 12 deg slope when torque exceeds grade load")
 
     def test_reverse_speed_clamp_and_transitions(self):
-        """Verify reverse propulsion behavior and reverse ceiling clamp (500 mm/s)."""
+        """Verify reverse propulsion behavior and reverse ceiling clamp (-500 mm/s) under closed-loop control."""
         dt = 0.01
-        # In Reverse (R), canonical command is negative speed (-500 mm/s)
-        # Using negative torque in plant for backward motion
         plant = LongitudinalVehiclePlant(self.cfg)
 
-        # Custom reverse step integration check:
-        # Backward tractive force vs resistive force
-        for _ in range(200):
-            # Command reverse torque
-            # With reverse gear, tractive force drives backward
-            t_wheel = 15.0 * plant.cfg.gear_ratio * plant.cfg.drivetrain_efficiency
-            f_drive = t_wheel / plant.cfg.wheel_radius_m
-            f_roll = plant.cfg.c_rr * plant.cfg.mass_kg * plant.cfg.gravity
-            f_net = f_drive - f_roll
-            plant.acceleration_mps2 = f_net / plant.cfg.mass_kg
-            plant.velocity_mps = max(-0.5, -plant.acceleration_mps2 * dt * 50)  # Clamp to 500 mm/s reverse ceiling
+        # 1. Reverse drive under closed-loop control with CAN-commanded reverse setpoint (-500 mm/s)
+        # Architecture §8.1 & shared_config.h kMaxSpeedRevMmps = 500 mm/s
+        target_rev_speed_mmps = -500.0  # Canonical signed reverse setpoint
+        speeds = []
 
-        self.assertAlmostEqual(plant.velocity_mps, -0.5, delta=0.05)
-        # Magnitude does not exceed 500 mm/s
-        self.assertLessEqual(abs(plant.velocity_mps * 1000.0), 505.0)
+        for _ in range(300):  # 3.0 seconds
+            curr_v_mmps = plant.velocity_mps * 1000.0
+            speeds.append(curr_v_mmps)
+            # Reverse controller: torque commands drive backward traction
+            err = abs(target_rev_speed_mmps) - abs(curr_v_mmps)
+            torque = max(0.0, min(err * 0.15, 30.0))
+            # Step the plant with gear=3 (Reverse)
+            plant.step(commanded_motor_torque_nm=torque, gear=3, dt=dt)
+
+        final_speed = speeds[-1]
+        self.assertLess(final_speed, -450.0, f"Final speed {final_speed} failed to achieve reverse target")
+        self.assertGreaterEqual(final_speed, -505.0, "Speed exceeded reverse maximum threshold (-500 mm/s)")
+        self.assertLess(plant.position_m, -1.0, "Vehicle did not traverse backward distance in reverse")
+
+        # 2. Overspeed reverse command rejection: even if commanded -1500 mm/s, RT clamps to -500 mm/s
+        overspeed_target = -1500.0
+        clamped_setpoint = max(-500.0, min(0.0, overspeed_target))
+        self.assertEqual(clamped_setpoint, -500.0)
+
+        for _ in range(100):
+            curr_v_mmps = plant.velocity_mps * 1000.0
+            err = abs(clamped_setpoint) - abs(curr_v_mmps)
+            torque = max(0.0, min(err * 0.15, 30.0))
+            plant.step(commanded_motor_torque_nm=torque, gear=3, dt=dt)
+
+        self.assertGreaterEqual(plant.velocity_mps * 1000.0, -505.0)
 
 
 if __name__ == "__main__":

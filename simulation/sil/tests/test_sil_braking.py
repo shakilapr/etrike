@@ -21,11 +21,11 @@ from vehicle_plant import LongitudinalVehiclePlant, PlantConfig
 # Mechanical constants for rear tricycle hydraulic disc brakes:
 # Single master cylinder feeding dual rear disc calipers:
 # Caliper effective piston area: A_piston ≈ 0.00045 m^2 (24 mm single-piston per caliper)
-# Pad friction coefficient: mu_pad = 0.35
+# Pad friction coefficient: mu_pad = 0.35 (dual pad faces per caliper -> factor 2)
 # Disc effective radius: r_disc = 0.090 m (180 mm rotor)
 # Tire rolling radius: r_wheel = 0.250 m
-# Formula: F_brake = (P_pa * A_piston) * 2 * mu_pad * (r_disc / r_wheel)
-# Gains: at 1000 kPa (10 bar) -> ~113 N; at 5000 kPa (50 bar) -> ~567 N; at 20000 kPa -> ~2268 N
+# Formula: F_brake = (P_pa * A_piston) * (2 pads) * 2 calipers * mu_pad * (r_disc / r_wheel)
+# Gains: at 1000 kPa (10 bar) -> ~227 N; at 3000 kPa (30 bar) -> ~680 N; at 5000 kPa (50 bar) -> ~1134 N; at 20000 kPa -> adhesion clamped
 PISTON_AREA_M2 = 0.00045
 PAD_MU = 0.35
 DISC_RADIUS_M = 0.090
@@ -37,9 +37,9 @@ def pressure_kpa_to_brake_force_n(pressure_kpa: float) -> float:
     pressure_pa = max(0.0, pressure_kpa) * 1000.0
     # Normal clamping force per caliper
     normal_force_n = pressure_pa * PISTON_AREA_M2
-    # Friction torque across two rear calipers
+    # Friction torque across two rear calipers (each with two pad contact faces)
     t_brake = 2.0 * (2.0 * normal_force_n * PAD_MU) * DISC_RADIUS_M
-    # Ground force
+    # Ground force at tire contact patch
     f_ground = t_brake / WHEEL_RADIUS_M
     # Physical road adhesion limit (mu = 0.85, mass = 350 kg)
     f_adhesion_limit = 350.0 * 9.81 * 0.85
@@ -55,13 +55,12 @@ class TestSilBraking(unittest.TestCase):
 
         # 5000 kPa (50 bar - moderate service brake)
         f5000 = pressure_kpa_to_brake_force_n(5000.0)
-        self.assertGreater(f5000, 700.0)
-        self.assertLess(f5000, 1300.0)
+        self.assertAlmostEqual(f5000, 1134.0, delta=5.0)
 
-        # 20000 kPa (200 bar - maximum emergency clamping)
+        # 20000 kPa (200 bar - maximum emergency clamping, saturates at tire adhesion limit)
         f20000 = pressure_kpa_to_brake_force_n(20000.0)
-        self.assertGreater(f20000, 2500.0)
-        self.assertLessEqual(f20000, 350.0 * 9.81 * 0.85 + 1.0)
+        adhesion_max = 350.0 * 9.81 * 0.85
+        self.assertAlmostEqual(f20000, adhesion_max, delta=1.0)
 
     def test_deceleration_envelope_across_pressures(self):
         """Verify commanded pressures generate appropriate deceleration rates in g's."""
@@ -92,7 +91,7 @@ class TestSilBraking(unittest.TestCase):
         dt = 0.01
         initial_speeds = [1.0, 2.0, 3.0]  # m/s
         stopping_distances = []
-        service_brake_kpa = 8000.0  # 80 bar service brake
+        service_brake_kpa = 3000.0  # 30 bar service brake (~680 N braking force)
         b_force = pressure_kpa_to_brake_force_n(service_brake_kpa)
 
         for v0 in initial_speeds:
@@ -109,9 +108,9 @@ class TestSilBraking(unittest.TestCase):
         # Stopping distance scales quadratically with speed: d ≈ v^2 / (2 * a)
         # Ratio of d(2.0) / d(1.0) should be approximately 4.0
         ratio = stopping_distances[1] / stopping_distances[0]
-        self.assertAlmostEqual(ratio, 4.0, delta=0.5)
+        self.assertAlmostEqual(ratio, 4.0, delta=0.2)
 
-        # From full speed (3.0 m/s ≈ 10.8 km/h), vehicle must halt within 2.5 meters
+        # From full speed (3.0 m/s ≈ 10.8 km/h), vehicle must halt within 2.5 meters under 30 bar service brake
         self.assertLess(stopping_distances[2], 2.5, f"Stopping distance {stopping_distances[2]:.2f}m was too long")
 
     def test_emergency_estop_response(self):
