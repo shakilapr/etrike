@@ -106,9 +106,10 @@ public:
 
                 // Dedicated 0x204 watchdog (issue #2): a valid drive command is
                 // the "heartbeat" that keeps the propulsion authority alive.
+                // The trip is released ONLY by the confirmed 3-frame recovery in
+                // tick(); a single valid frame must not clear the latched trip.
                 last_drive_ms_ = now_ms;
                 drive_seen_ = true;
-                drive_cmd_timed_out_ = false;  // a fresh valid frame clears the trip
                 if (last_drive_gap_ok_) {
                     // Consecutive valid receive events at plausible cadence count
                     // toward confirmed recovery. 0x204 has no rolling counter, so
