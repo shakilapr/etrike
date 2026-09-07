@@ -241,6 +241,64 @@ int main() {
         CHECK(high_ctx.brake_req_kpa == 1234);
     }
 
+    // ── N2 (RT-consuming half): SYS_SAFETY_STS (0x011) asymmetric ESTOP clear ──
+    // RT must latch on a 0x011 with estop_active==1, and only release the latch
+    // after TWO consecutive fresh frames with estop_active==0 (architecture §8.6).
+    // A single zero frame, or a zero frame followed by an estop frame, must NOT
+    // clear. This closes the cross-node ESTOP consistency contract together with
+    // the SYS-publishing half (sys-esp32 test_rt_sys_integration).
+    {
+        reset_state();
+        g_pending_estop_event.store(false);
+        g_pending_safety_clear.store(false);
+        g_last_sys_safety_sts_us.store(0);
+
+        auto make_sts = [](bool estop_active, uint8_t roll) {
+            can::gen::SysSafetySts s{};
+            s.estop_active = estop_active;
+            s.heartbeat_ok = true;
+            s.rolling_counter = roll;
+            s.e2e_crc = 0;
+            can::Frame tmp;
+            can::gen::encode_sys_safety_sts(s, tmp);
+            s.e2e_crc = can::e2e::sys_safety_sts_crc(tmp.data.data());
+            can::Frame fr;
+            can::gen::encode_sys_safety_sts(s, fr);
+            return fr;
+        };
+
+        DispatchContext ctx{};
+        uint8_t roll = 0;
+
+        // 1) SYS estopped (estop_active==1) -> RT latches ESTOP.
+        process_frame(make_sts(true, roll++), false, ctx);
+        CHECK(g_pending_estop_event.load() == true);
+        CHECK(g_pending_safety_clear.load() == false);
+
+        // 2) One fresh zero frame is NOT enough (asymmetric clear).
+        g_pending_estop_event.store(false);
+        process_frame(make_sts(false, roll++), false, ctx);
+        CHECK(g_pending_safety_clear.load() == false);
+
+        // 3) Second consecutive fresh zero frame -> RT clears (SAFETY_CLEAR).
+        process_frame(make_sts(false, roll++), false, ctx);
+        CHECK(g_pending_safety_clear.load() == true);
+        CHECK(g_pending_estop_event.load() == false);
+
+        // 4) Re-latch: an estop frame after clear re-establishes the latch.
+        g_pending_safety_clear.store(false);
+        process_frame(make_sts(true, roll++), false, ctx);
+        CHECK(g_pending_estop_event.load() == true);
+
+        // 5) Zero frame then estop frame must NOT clear (sequence broken).
+        g_pending_estop_event.store(false);
+        g_pending_safety_clear.store(false);
+        process_frame(make_sts(false, roll++), false, ctx);  // baseline zero
+        process_frame(make_sts(true,  roll++), false, ctx);  // estop again -> re-latch, no clear
+        CHECK(g_pending_safety_clear.load() == false);
+        CHECK(g_pending_estop_event.load() == true);
+    }
+
     std::printf("\n=== %d pass, %d fail ===\n", pass, fail);
     return fail ? 1 : 0;
 }
