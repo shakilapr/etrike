@@ -564,6 +564,18 @@ def _render_diagnostics_cpp(doc: dict, diag_hash: str, implemented: list) -> str
         "    }",
         "    return nullptr;",
         "}",
+        "",
+        "// Dense 0..N-1 index for the IMPLEMENTED-only DiagId enum, or -1 for coverage-only IDs.",
+        "// O(1); enables fixed-array bookkeeping in DiagnosticManager without STL containers.",
+        "inline int diag_index(DiagId id) noexcept {",
+        "    switch (static_cast<std::uint16_t>(id)) {",
+    ]
+    for index, (_diag_id, _key, enum_name, _latching, _is_estop) in enumerate(implemented):
+        lines.append(f"        case 0x{_diag_id:04X}: return {index};")
+    lines += [
+        "        default: return -1;",
+        "    }",
+        "}",
         "}  // namespace etrike::diagnostics",
         "",
     ]
