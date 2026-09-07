@@ -387,6 +387,31 @@ target_include_directories(rt_brake_fallback PRIVATE
 )
 add_test(NAME rt_brake_fallback    COMMAND rt_brake_fallback)
 
+# ── Whole-vehicle multi-node integration (SYS + RT + MTR together) ───
+# Real sys::ModeManager/SafetyMonitor authority, real rt::PhysicsModel +
+# run_safety_checks/MTR-health, and real mtr::MotorManager actuation all on
+# one simulated clock (no FreeRTOS tasks; SYS/RT publish loops replayed).
+add_executable(vehicle_integration
+    test/test_vehicle_integration.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp
+)
+target_link_libraries(vehicle_integration PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(vehicle_integration PRIVATE
+    ${ETRIKE_ROOT}/mtr-stm32/test
+    ${ETRIKE_ROOT}/mtr-stm32/test/stub    # MTR's HAL stub must win over hal/shadow's
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/sys-esp32/src
+    ${ETRIKE_ROOT}/mtr-stm32/src
+)
+target_compile_definitions(vehicle_integration PRIVATE TESTING)
+add_test(NAME vehicle_integration   COMMAND vehicle_integration)
+
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
     sim-engine/main_native.cpp

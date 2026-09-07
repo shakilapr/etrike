@@ -46,6 +46,7 @@ public:
         safety_state_valid_ = false;
         clear_confirm_ = 0;
         last_estop_zero_ = false;
+        clear_seq_last_ctr_ = 0;
         rearm_required_ = false;
         rearm_off_seen_ = false;
         rearm_observed_ = false;
@@ -181,21 +182,45 @@ public:
 
         if (msg.estop_active) {
             if (!estop_active_) trigger_estop();
+            // Assert frame: reset the clear sequence (last_estop_zero_/clear_confirm_
+            // were cleared by trigger_estop; keep them cleared if already latched).
             clear_confirm_ = 0;
             last_estop_zero_ = false;
-        } else {
-            // Asymmetric clear: the first fresh frame after boot/reacquisition is a
-            // baseline (do NOT clear). Two consecutive fresh, advancing frames with
-            // estop_active == 0 are required for an authorized clear.
-            if (last_estop_zero_) {
-                // Only clear an ESTOP that is actually latched. Normal running
-                // (estop_active==0 continuously) must never trigger a clear/REARM.
-                if (++clear_confirm_ >= 2 && estop_active_) authorized_clear();
-            } else {
-                clear_confirm_ = 1;
-            }
-            last_estop_zero_ = true;
+            return;
         }
+
+        // estop_active == 0.
+        //
+        // Asymmetric clear: an authorized clear requires TWO consecutive zero
+        // frames whose rolling counters advance by exactly +1 (mod 256) from the
+        // previous zero *in the clear sequence*. A duplicate, a gap (missed
+        // frame), or a counter jump restarts the sequence from that frame as the
+        // new baseline. Continuous zeros while NOT latched never accumulate credit
+        // (normal running must never trigger a clear/REARM). Every new latch
+        // (trigger_estop) also resets the sequence so a stale pre-latch zero can
+        // never pair with a post-latch zero.
+        if (!estop_active_) {
+            // Not latched: observe counters for sequence state only, never clear.
+            clear_confirm_ = 0;
+            last_estop_zero_ = true;
+            clear_seq_last_ctr_ = msg.rolling_counter;
+            return;
+        }
+
+        const bool first_zero = !last_estop_zero_;
+        const bool advances = (msg.rolling_counter ==
+                               static_cast<std::uint8_t>(clear_seq_last_ctr_ + 1u));
+        if (first_zero) {
+            clear_confirm_ = 1;  // baseline
+        } else if (advances) {
+            ++clear_confirm_;    // consecutive advancing zero
+        } else {
+            clear_confirm_ = 1;  // duplicate/gap -> this frame is the new baseline
+        }
+        clear_seq_last_ctr_ = msg.rolling_counter;
+        last_estop_zero_ = true;
+
+        if (clear_confirm_ >= 2) authorized_clear();
     }
 
     // Authorized E-stop clear: latch released only after the validated two-frame
@@ -209,6 +234,7 @@ public:
         pwr_val_.invalidate_now();
         clear_confirm_ = 0;
         last_estop_zero_ = false;
+        clear_seq_last_ctr_ = 0;
         rearm_required_ = true;
         // rearm_off_seen_ is intentionally NOT reset here: the OFF edge observed
         // during the ESTOP (0x113=OFF) carries across the clear to pair with the
@@ -370,6 +396,10 @@ public:
         shift_dwell_start_ms_ = 0;
         relays_.set_state(RelayController::State::Off);
         dac_.force_zero();
+        // Any new latch (hardwired 0x001, GPIO, or 0x011 assert) restarts the
+        // asymmetric clear sequence: the next zero must establish a fresh baseline.
+        clear_confirm_ = 0;
+        last_estop_zero_ = false;
     }
 
     // Generate 0x120 SYS_THROTTLE_STS (100 Hz)
@@ -478,6 +508,7 @@ private:
     // Asymmetric assert/clear bookkeeping for the 0x011 authority.
     uint8_t clear_confirm_{0};
     bool last_estop_zero_{false};
+    uint8_t clear_seq_last_ctr_{0};
     // REARM: after an authorized clear, propulsion stays inhibited until a fresh
     // 0x113 OFF->ON edge (with a fresh 0x110 seen meanwhile) is observed.
     bool rearm_required_{false};

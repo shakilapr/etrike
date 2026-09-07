@@ -6,6 +6,7 @@
 
 // Runtime System Mode Configuration
 #include "system_mode.h"
+#include "bypass_modes.h"
 
 // Define runtime bypass flags
 bool g_bench_solo_mode = false;
@@ -1186,36 +1187,32 @@ extern "C" void app_main() {
     init_board_gpio();
     
     // Evaluate System Run Mode
-    if (SYSTEM_RUN_MODE == 2) {
-        ESP_LOGE(TAG, "***********************************");
-        ESP_LOGE(TAG, "* PURE SOFTWARE SIMULATION MODE   *");
-        ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
-        ESP_LOGE(TAG, "***********************************");
-        g_bench_solo_mode = true;
-        g_bypass_eps_sync = true;
-        g_bypass_seb_sync = true;
-        g_bypass_mtr_absent = true;
-    } else if (SYSTEM_RUN_MODE == 1) {
-        gpio_set_direction(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN), GPIO_MODE_INPUT);
-        gpio_pullup_en(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN));
-        
-        // Brief delay to let pull-up stabilize
-        vTaskDelay(pdMS_TO_TICKS(10));
-        
-        if (gpio_get_level(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN)) == 0) {
+    {
+        bool override_pin_low = false;
+        if (SYSTEM_RUN_MODE == 1) {
+            gpio_set_direction(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN), GPIO_MODE_INPUT);
+            gpio_pullup_en(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN));
+            // Brief delay to let pull-up stabilize
+            vTaskDelay(pdMS_TO_TICKS(10));
+            override_pin_low = (gpio_get_level(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN)) == 0);
+        }
+
+        const etrike::BypassState bypass = etrike::evaluate_run_mode_bypasses(SYSTEM_RUN_MODE, override_pin_low);
+        g_bench_solo_mode = bypass.bench_solo_mode;
+        g_bypass_eps_sync = bypass.bypass_eps_sync;
+        g_bypass_seb_sync = bypass.bypass_seb_sync;
+        g_bypass_mtr_absent = bypass.bypass_mtr_absent;
+
+        if (g_bench_solo_mode) {
             ESP_LOGE(TAG, "***********************************");
-            ESP_LOGE(TAG, "* HARDWARE OVERRIDE PIN DETECTED! *");
+            ESP_LOGE(TAG, "* DEVELOPER BYPASS ACTIVE         *");
             ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
             ESP_LOGE(TAG, "***********************************");
-            g_bench_solo_mode = true;
-            g_bypass_eps_sync = true;
-            g_bypass_seb_sync = true;
-            g_bypass_mtr_absent = true;
-        } else {
+        } else if (SYSTEM_RUN_MODE == 1) {
             ESP_LOGI(TAG, "Prototype mode: Override pin not jumped. Enforcing safety.");
+        } else {
+            ESP_LOGI(TAG, "Production mode: Safety checks enforced.");
         }
-    } else {
-        ESP_LOGI(TAG, "Production mode: Safety checks enforced.");
     }
 
     // 0. NVS init + crash persistence

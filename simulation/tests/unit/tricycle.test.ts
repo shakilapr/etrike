@@ -68,11 +68,24 @@ describe("TricycleKinematics", () => {
     expect(out.reversing).toBe(false);
   });
 
-  it("converts pure yaw at standstill to minimum-radius arc", () => {
-    // At standstill with yaw rate, should produce a small forward arc
+  it("prepares full-lock steering at standstill for pure yaw without forward lurch", () => {
+    // At standstill with yaw rate, should set steering to full lock but keep speed at 0
     const out = model.resolve({ speedMmps: 0, yawRateMradS: 50 });
-    expect(out.motorSpeedMmps).toBeGreaterThan(0); // should be moving forward
-    expect(Math.abs(out.steerAngleMdeg)).toBeGreaterThan(0);
+    expect(out.motorSpeedMmps).toBe(0);
+    expect(out.steerAngleMdeg).toBe(40000); // full lock 40°
+    expect(out.steerValid).toBe(true);
+  });
+
+  it("preserves reverse drive steering sign", () => {
+    const outLeft = model.resolve({ speedMmps: -300, yawRateMradS: 50 });
+    expect(outLeft.motorSpeedMmps).toBe(-300);
+    expect(outLeft.steerAngleMdeg).toBeCloseTo(-14036, -2);
+    expect(outLeft.reversing).toBe(true);
+
+    const outRight = model.resolve({ speedMmps: -300, yawRateMradS: -50 });
+    expect(outRight.motorSpeedMmps).toBe(-300);
+    expect(outRight.steerAngleMdeg).toBeCloseTo(14036, -2);
+    expect(outRight.reversing).toBe(true);
   });
 
   // ── Obstacle limiter ─────────────────────────────────────────────

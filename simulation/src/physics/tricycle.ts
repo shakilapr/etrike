@@ -1,7 +1,7 @@
 /**
  * Tricycle kinematics — port of rt-esp32/src/physics_model.cpp.
  *
- * Delta trike inverse bicycle model: delta = atan2(L * w, |v|)
+ * Delta trike inverse bicycle model: delta = atan(L * w / v)
  */
 
 // Vehicle and controller policy belongs to the simulation, not the wire contract.
@@ -97,16 +97,15 @@ export class TricycleKinematics {
     let saturated = false;
 
     if (Math.abs(v) > lowSpeedMps) {
-      const requestedSteer = Math.atan2(L * w, v);
+      const requestedSteer = Math.atan((L * w) / v);
       saturated = Math.abs(requestedSteer) > steerLimitRad;
       steer = Math.max(-steerLimitRad, Math.min(steerLimitRad, requestedSteer));
       this.steerHoldRad = steer;
       ok = !saturated;
     } else if (Math.abs(w) > kYawEpsilon) {
-      // Convert pure yaw into minimum-radius forward arc
-      const minRadiusM = L / Math.tan(steerLimitRad);
-      const turnSpeedMps = Math.abs(w) * minRadiusM;
-      v = Math.max(lowSpeedMps, Math.min(MAX_SPEED_FWD_MMPS / 1000, turnSpeedMps));
+      // Tricycle cannot spin in place. Set steering to full lock in the
+      // requested direction but keep speed at zero to prevent unexpected
+      // forward lurch (bug 4.5).
       steer = w > 0 ? steerLimitRad : -steerLimitRad;
       this.steerHoldRad = steer;
       ok = true;
