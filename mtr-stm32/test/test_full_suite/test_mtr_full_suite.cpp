@@ -7,6 +7,7 @@
 
 // 1. Include STM32 HAL stub before subsystem headers
 #include "stub/stm32g4xx_hal.h"
+#include <unity.h>
 
 // Define dummy global FDCAN handle needed by CanDriver extern "C"
 extern "C" {
@@ -22,6 +23,9 @@ extern "C" {
 #include "protocol/compat/can.hpp"
 #include "shared_config.h"
 
+void setUp(void) {}
+void tearDown(void) {}
+
 namespace {
 
 int g_tests_run = 0;
@@ -29,30 +33,19 @@ int g_tests_failed = 0;
 
 #define ASSERT_TRUE(cond) do { \
     g_tests_run++; \
-    if (!(cond)) { \
-        std::printf("  FAIL [%s:%d]: Condition failed: %s\n", __FILE__, __LINE__, #cond); \
-        g_tests_failed++; \
-    } \
+    TEST_ASSERT_TRUE(cond); \
 } while(0)
 
 #define ASSERT_FALSE(cond) ASSERT_TRUE(!(cond))
 
 #define ASSERT_EQ(val, target) do { \
     g_tests_run++; \
-    if ((val) != (target)) { \
-        std::printf("  FAIL [%s:%d]: val (%lld) != target (%lld)\n", __FILE__, __LINE__, \
-                    static_cast<long long>(val), static_cast<long long>(target)); \
-        g_tests_failed++; \
-    } \
+    TEST_ASSERT_EQUAL_INT64(static_cast<long long>(target), static_cast<long long>(val)); \
 } while(0)
 
 #define ASSERT_NEAR(val, target, eps) do { \
     g_tests_run++; \
-    if (std::abs((val) - (target)) > (eps)) { \
-        std::printf("  FAIL [%s:%d]: val (%f) not near target (%f), eps=(%f)\n", \
-                    __FILE__, __LINE__, static_cast<double>(val), static_cast<double>(target), static_cast<double>(eps)); \
-        g_tests_failed++; \
-    } \
+    TEST_ASSERT_FLOAT_WITHIN(static_cast<float>(eps), static_cast<float>(target), static_cast<float>(val)); \
 } while(0)
 
 // Authority frames (0x110/0x113) require a baseline frame followed by an
@@ -1125,32 +1118,23 @@ void test_motor_manager_drive_cmd_watchdog() {
 // ═══════════════════════════════════════════════════════════════════════
 
 int main() {
-    std::printf("\n========================================================\n");
-    std::printf("  MTR-STM32 COMPLETE TEST SUITE (FULL SUBSYSTEM COVERAGE)\n");
-    std::printf("========================================================\n\n");
+    UNITY_BEGIN();
 
-    test_relay_controller_mutual_exclusion();
-    test_dac_controller_software_i2c_and_clamps();
-    test_motor_manager_estop_and_recovery();
-    test_motor_manager_direction_shift_dwell();
-    test_motor_manager_watchdog_timeout();
-    test_motor_manager_dac_curves();
-    test_motor_manager_dac_golden_vectors();
-    test_motor_manager_mode_cmd_does_not_clear_estop();
-    test_motor_manager_asymmetric_clear_requires_two_frames();
-    test_motor_manager_safety_stream_freshness_fail_safe();
-    test_motor_manager_safety_crc_corruption_fail_safe();
-    test_motor_manager_recovery_requires_rearm();
-    test_motor_manager_sys_estop_via_safety_status();
-    test_motor_manager_drive_cmd_watchdog();
-    test_fdcan_driver_ringbuffer();
+    RUN_TEST(test_relay_controller_mutual_exclusion);
+    RUN_TEST(test_dac_controller_software_i2c_and_clamps);
+    RUN_TEST(test_motor_manager_estop_and_recovery);
+    RUN_TEST(test_motor_manager_direction_shift_dwell);
+    RUN_TEST(test_motor_manager_watchdog_timeout);
+    RUN_TEST(test_motor_manager_dac_curves);
+    RUN_TEST(test_motor_manager_dac_golden_vectors);
+    RUN_TEST(test_motor_manager_mode_cmd_does_not_clear_estop);
+    RUN_TEST(test_motor_manager_asymmetric_clear_requires_two_frames);
+    RUN_TEST(test_motor_manager_safety_stream_freshness_fail_safe);
+    RUN_TEST(test_motor_manager_safety_crc_corruption_fail_safe);
+    RUN_TEST(test_motor_manager_recovery_requires_rearm);
+    RUN_TEST(test_motor_manager_sys_estop_via_safety_status);
+    RUN_TEST(test_motor_manager_drive_cmd_watchdog);
+    RUN_TEST(test_fdcan_driver_ringbuffer);
 
-    std::printf("\n--------------------------------------------------------\n");
-    std::printf("MTR-STM32 Total Assertions: %d | Failures: %d\n", g_tests_run, g_tests_failed);
-    if (g_tests_failed == 0) {
-        std::printf(">>> ALL MTR-STM32 TESTS PASSED! <<<\n\n");
-        return 0;
-    }
-    std::printf(">>> SOME MTR-STM32 TESTS FAILED! <<<\n\n");
-    return 1;
+    return UNITY_END();
 }

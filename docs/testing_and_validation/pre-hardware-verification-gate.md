@@ -1716,7 +1716,51 @@ The verification stack runs within automated continuous integration pipelines to
 
 ### 11.2 Standard Execution Commands
 
-#### Native C++ Suite Build & Run
+#### Universal Master Test Runner (Recommended)
+Run all native, Python SIL, and TypeScript protocol suites in one unified command:
+
+```bash
+# Run everything (C++, Python SIL, and Simulation):
+python scripts/run_all_tests.py
+# Or via npm from repository root:
+npm test
+
+# Windows shortcut batch file:
+.\scripts\test.cmd
+
+# PowerShell shortcut:
+.\scripts\test.ps1
+
+# Subsystem-specific flags:
+python scripts/run_all_tests.py --native    # Run only native C++ suites (Exhaustive, Heap, ESTOP)
+python scripts/run_all_tests.py --python    # Run only Python SIL suites (Reference model, Physics)
+python scripts/run_all_tests.py --sim       # Run only TypeScript simulation suites
+python scripts/run_all_tests.py --pio       # Run PlatformIO native test pipelines (SYS, RT, MTR)
+python scripts/run_all_tests.py --quick     # Fast subset run
+```
+
+#### PlatformIO Native Firmware Test Pipelines
+PlatformIO native tests compile and run production firmware components on host architectures with mocked HAL drivers:
+
+```bash
+# 1. SYS-ESP32 Host Native Test Suite (31 tests across 8 suites)
+pio test -d sys-esp32 -e native
+
+# 2. RT-ESP32 Host Native Subsystem Tests (55 tests across 13 suites)
+pio test -d rt-esp32 -e native
+
+# 3. RT-ESP32 End-to-End Pipeline Math Suite (61 tests across 14 suites)
+# Chains RT PhysicsModel setpoints into MTR MotorManager DAC code vectors
+pio test -d rt-esp32 -e native_pipeline
+
+# 4. MTR-STM32 Complete Subsystem & DAC Golden Vector Suite (15 suites / 170 assertions)
+pio test -d mtr-stm32 -e native
+```
+
+> **Note on Windows Host Toolchains**:
+> Default MinGW GCC 6.3.0 distributions lack C++17 `<string_view>`. Ensure a modern C++17/20 toolchain (e.g. LLVM-MinGW `clang++`/`g++`) is first on `PATH` before invoking `pio test -e native`, or use `python run_all_tests.py --pio` which automatically configures the toolchain environment.
+
+#### Native C++ Suite Manual Build & Run
 ```bash
 mkdir native-test/build && cd native-test/build
 cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..

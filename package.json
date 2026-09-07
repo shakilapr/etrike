@@ -3,6 +3,12 @@
   "version": "0.8.0-alpha",
   "private": true,
   "scripts": {
+    "test": "python scripts/run_all_tests.py",
+    "test:quick": "python scripts/run_all_tests.py --quick",
+    "test:native": "python scripts/run_all_tests.py --native",
+    "test:python": "python scripts/run_all_tests.py --python",
+    "test:sim": "python scripts/run_all_tests.py --sim",
+    "test:pio": "python scripts/run_all_tests.py --pio",
     "toolkit:api": "pwsh -NoProfile -File control-toolkit/scripts/start-api.ps1",
     "toolkit:ui": "pwsh -NoProfile -File control-toolkit/scripts/start-ui.ps1",
     "toolkit:dev:api": "pwsh -NoProfile -File control-toolkit/scripts/start-api.ps1",
