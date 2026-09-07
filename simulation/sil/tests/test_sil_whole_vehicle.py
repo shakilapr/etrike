@@ -139,9 +139,10 @@ class TestSilWholeVehicle(unittest.TestCase):
         for step in range(150):
             obstacle_distance_mm = max(100, obstacle_distance_mm - 15)
 
-            # RT obstacle speed & brake limiter
+            # Canonical RT obstacle speed & brake limiter (rt-esp32/src/physics_model.cpp):
+            # stop_dist = 300 mm, clear_dist = 3000 mm, max_brake = 5000 kPa (shared_config.h kObstacleMaxKpa)
             if obstacle_distance_mm <= 300:
-                brake_kpa = 10000
+                brake_kpa = 5000
                 speed_target = 0
             elif obstacle_distance_mm >= 3000:
                 brake_kpa = 0
@@ -149,7 +150,7 @@ class TestSilWholeVehicle(unittest.TestCase):
             else:
                 t = (obstacle_distance_mm - 300) / 2700.0
                 speed_target = int(2000 * t)
-                brake_kpa = int(10000 * (1.0 - t))
+                brake_kpa = int(5000 * (1.0 - t))
 
             # RT publishes 0x205 RT_BRAKE_CMD
             st_205, pl_205 = proto.encode("rt:rt_brake_cmd", {"brake_pressure_kpa": brake_kpa}, bus="low")
@@ -159,8 +160,11 @@ class TestSilWholeVehicle(unittest.TestCase):
             st_sys_rx, brake_decoded = proto.decode("rt:rt_brake_cmd", pl_205, bus="low")
             self.assertEqual(st_sys_rx, "ok")
 
-            # Braking force proportional to commanded pressure
-            f_brake = (brake_decoded["brake_pressure_kpa"] / 10000.0) * 1500.0
+            # Braking force proportional to hydraulic pressure on dual rear calipers:
+            # P_pa * A_piston * (2 pads) * 2 calipers * mu_pad * (r_disc / r_wheel)
+            # 5000 kPa -> 1134 N
+            cmd_kpa = brake_decoded["brake_pressure_kpa"]
+            f_brake = (cmd_kpa * 1000.0 * 0.00045) * 4.0 * 0.35 * (0.090 / 0.250)
             plant.step(commanded_motor_torque_nm=0.0, brake_force_n=f_brake, dt=dt)
 
         # Vehicle must achieve full standstill before obstacle impact (< 300 mm)

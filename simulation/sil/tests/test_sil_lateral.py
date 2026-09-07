@@ -30,43 +30,58 @@ def compute_dynamic_limit_deg(speed_mmps: float) -> float:
     return max(5.0, min(40.0, limit_deg))
 
 
-def resolve_tricycle_kinematics(v_mmps: float, yaw_rate_mrad_s: float):
-    v = v_mmps / 1000.0
-    w = yaw_rate_mrad_s / 1000.0
-    L = WHEELBASE_M
-    low_speed_mps = 0.050
+class TricycleKinematicsSolver:
+    """Stateful inverse bicycle model solver (direct parity with rt::PhysicsModel)."""
+    def __init__(self, wheelbase_m: float = WHEELBASE_M, steer_limit_deg: float = STEER_HARD_LIMIT_DEG):
+        self.wheelbase_m = wheelbase_m
+        self.steer_limit_rad = math.radians(steer_limit_deg)
+        self.low_speed_mps = 0.050
+        self.steer_hold_rad = 0.0
 
-    steer_limit_rad = math.radians(STEER_HARD_LIMIT_DEG)
+    def reset(self):
+        self.steer_hold_rad = 0.0
 
-    if abs(v) > low_speed_mps:
-        requested_steer = math.atan((L * w) / v)
-        saturated = abs(requested_steer) > steer_limit_rad
-        steer = max(-steer_limit_rad, min(steer_limit_rad, requested_steer))
+    def resolve(self, v_mmps: float, yaw_rate_mrad_s: float):
+        v = v_mmps / 1000.0
+        w = yaw_rate_mrad_s / 1000.0
+        L = self.wheelbase_m
+        k_yaw_eps = 0.001
+
+        if abs(v) > self.low_speed_mps:
+            requested_steer = math.atan((L * w) / v)
+            saturated = abs(requested_steer) > self.steer_limit_rad
+            steer = max(-self.steer_limit_rad, min(self.steer_limit_rad, requested_steer))
+            self.steer_hold_rad = steer
+            ok = not saturated
+        elif abs(w) > k_yaw_eps:
+            # Standstill with yaw: align wheel to full lock, keep speed 0 (bug 4.5 fix)
+            steer = self.steer_limit_rad if w > 0 else -self.steer_limit_rad
+            self.steer_hold_rad = steer
+            saturated = False
+            ok = True
+        else:
+            # Standstill decay toward straight (avoids noisy steering near standstill)
+            k_steer_decay_factor = 0.8
+            steer = self.steer_hold_rad * k_steer_decay_factor
+            self.steer_hold_rad = steer
+            saturated = False
+            ok = True
+
+        v_clamped = max(-0.5, min(3.0, v))
         return {
-            "motor_speed_mmps": int(v * 1000.0),
+            "motor_speed_mmps": int(v_clamped * 1000.0),
             "steer_angle_deg": math.degrees(steer),
-            "steer_valid": not saturated,
+            "steer_valid": ok,
             "steer_saturated": saturated,
-            "reversing": v < 0,
+            "reversing": (v_clamped < 0) and (int(v_clamped * 1000.0) < 0),
         }
-    elif abs(w) > 0.001:
-        # Standstill with yaw: align wheel to full lock, keep speed 0
-        steer = steer_limit_rad if w > 0 else -steer_limit_rad
-        return {
-            "motor_speed_mmps": 0,
-            "steer_angle_deg": math.degrees(steer),
-            "steer_valid": True,
-            "steer_saturated": False,
-            "reversing": False,
-        }
-    else:
-        return {
-            "motor_speed_mmps": 0,
-            "steer_angle_deg": 0.0,
-            "steer_valid": True,
-            "steer_saturated": False,
-            "reversing": False,
-        }
+
+
+# Global instance for stateless test calls
+_solver = TricycleKinematicsSolver()
+
+def resolve_tricycle_kinematics(v_mmps: float, yaw_rate_mrad_s: float):
+    return _solver.resolve(v_mmps, yaw_rate_mrad_s)
 
 
 class TestSilLateral(unittest.TestCase):
