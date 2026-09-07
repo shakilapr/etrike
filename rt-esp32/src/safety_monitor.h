@@ -20,6 +20,7 @@
 #include "steering_control.h"
 #include "physics_model.h"
 #include "system_mode.h"
+#include "diag_rt.h"
 
 namespace rt {
 
@@ -108,6 +109,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
         seb_takeover = true;
+        rt::diag().raise(etrike::diagnostics::DiagId::RtSysHeartbeatTimeout,
+                         static_cast<std::uint16_t>((now - sys_hb) / 1000));
     } else if (seb_takeover) {
         // SYS heartbeat recovered — release takeover
         seb_takeover = false;
@@ -121,6 +124,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
         g_brake_request_kpa.store(shared::kAssistStopKpa);
+        rt::diag().raise(etrike::diagnostics::DiagId::RtHostHeartbeatTimeout,
+                         static_cast<std::uint16_t>((now - host_hb) / 1000));
     }
 
     // 5. Steering following-error check (arch §7.6, fix #5)
@@ -143,6 +148,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
                     r.brake_kpa = shared::kMaxBrakeKpa;
                     r.disable_steering = true;
                     r.estop_reason = rt::kEstopReasonFollowingError;
+                    rt::diag().raise(etrike::diagnostics::DiagId::RtSteerFollowingError,
+                                     static_cast<std::uint16_t>(err_0_1deg));
                 }
             } else {
                 steer_follow_err_ticks = 0;

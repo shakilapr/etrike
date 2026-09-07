@@ -18,6 +18,7 @@
 #include "safety_monitor.h"
 #include "can_rx_router.h"
 #include "watchdog.h"
+#include "diag_rt.h"
 
 static const char* TAG_DISP = "rt-dispatch";
 
@@ -247,6 +248,10 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         uint8_t torque_faults = (error.raw[2] >> 2) & 0x0F;
         if (angle_faults || torque_faults) {
             ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
+            rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault,
+                             static_cast<std::uint16_t>(
+                                 (static_cast<std::uint16_t>(angle_faults) << 8)
+                                 | static_cast<std::uint16_t>(torque_faults)));
             g_estop_reason.store(rt::kEstopReasonInternal);
             rt::SafetyEvent evt{
                 rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
@@ -279,9 +284,12 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         float mc_a = mc_raw * 0.0078125f;
         float et_c = et_raw * 0.5f;
         float pv_v = pv_raw * 0.00390625f;
-        if (et_c > 85.0f)  ESP_LOGW(TAG_DISP, "SES ECU temp high: %.1f°C", et_c);
-        if (mc_a > 30.0f)  ESP_LOGW(TAG_DISP, "SES motor current high: %.1f A", mc_a);
-        if (pv_v < 10.0f)  ESP_LOGW(TAG_DISP, "SES supply voltage low: %.2f V", pv_v);
+        uint16_t ses_warn_mask = 0;
+        if (et_c > 85.0f)  { ESP_LOGW(TAG_DISP, "SES ECU temp high: %.1f°C", et_c); ses_warn_mask |= 1u; }
+        if (mc_a > 30.0f)  { ESP_LOGW(TAG_DISP, "SES motor current high: %.1f A", mc_a); ses_warn_mask |= 2u; }
+        if (pv_v < 10.0f)  { ESP_LOGW(TAG_DISP, "SES supply voltage low: %.2f V", pv_v); ses_warn_mask |= 4u; }
+        if (ses_warn_mask != 0)
+            rt::diag().raise(etrike::diagnostics::DiagId::RtSesTelemetryWarn, ses_warn_mask);
     }
     // 0x6FB SEB_Test — motor current + ECU temp (for 0x311 BRAKE_DIAG)
     if (fr.id == can::kIdBbwTest && !from_high && fr.dlc >= 5) {
@@ -302,6 +310,8 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         // flipping error bits to 3 would trigger spurious ESTOP on corrupt frames.
         uint8_t seb_err = value.error_status;
         if (seb_err == 3) {
+            rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault,
+                             static_cast<std::uint16_t>(seb_err));
             g_estop_reason.store(rt::kEstopReasonInternal);
             rt::SafetyEvent evt{
                 rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};

@@ -10,6 +10,7 @@ public:
     bool is_stale(int64_t now_us) const {
         return (now_us - m_last_feed.load()) > int64_t(shared::kHostCmdStaleTimeoutMs) * 1000;
     }
+    int64_t last_feed() const { return m_last_feed.load(); }
 private:
     std::atomic<int64_t> m_last_feed{0};
 };

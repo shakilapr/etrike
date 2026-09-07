@@ -7,6 +7,7 @@
 #include "physics_model.h"
 #include "protocol/compat/can.hpp"
 #include "shared_config.h"
+#include "diag_rt.h"
 
 namespace rt {
 
@@ -22,6 +23,13 @@ inline bool apply_fresh_direct_steering(const can::gen::HostSteerCmd& command,
                                         ResolvedSetpoint& setpoint) {
     const bool fresh = received_us >= 0 && now_us >= received_us
         && now_us - received_us <= int64_t(kDirectSteerTimeoutMs) * 1000;
+    // Report-only: a previously received direct-steer command that went stale
+    // (authority falls back to the legacy 0x300 yaw path). No reaction change.
+    if (received_us >= 0
+        && now_us - received_us > int64_t(kDirectSteerTimeoutMs) * 1000) {
+        rt::diag().raise(etrike::diagnostics::DiagId::RtDirectSteerStale,
+                         static_cast<std::uint16_t>((now_us - received_us) / 1000));
+    }
     if (!fresh || !command.angle_valid) return false;
 
     setpoint.steer_angle_mdeg = int32_t(command.steer_angle_0_1deg) * 100;

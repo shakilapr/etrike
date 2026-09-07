@@ -1,5 +1,6 @@
 #pragma once
 // CAN bus health monitoring — called from t_control at 100 Hz.
+#include "diag_rt.h"
 // Checks both buses for error-warning, bus-off, and triggers
 // ESTOP or recovery actions. Included into main.cpp for access
 // to static globals (same pattern as can_dispatch.h).
@@ -38,6 +39,10 @@ static void monitor_can_bus_off() {
                     || new_bus_off_event)) {
             bus_off_count_low++;
             if (bus_off_count_low == 1 || new_bus_off_event) {
+                rt::diag().raise(etrike::diagnostics::DiagId::RtCanBusOff,
+                                 static_cast<std::uint16_t>(
+                                     (static_cast<std::uint16_t>(health.tec) << 8)
+                                     | static_cast<std::uint16_t>(health.rec)));
                 drv->set_tx_admission(false);
                 xQueueReset(g_gw_tx_low_q);
                 if (g_bench_solo_mode) {
@@ -78,6 +83,14 @@ static void monitor_can_bus_off() {
         // complete controller-only recovery succeeds.
         if (g_can_high.bus_off()) {
             bus_off_count_high++;
+            {
+                uint8_t tec = 0, rec = 0;
+                g_can_high.get_error_counters(tec, rec);
+                rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighBusOff,
+                                 static_cast<std::uint16_t>(
+                                     (static_cast<std::uint16_t>(tec) << 8)
+                                     | static_cast<std::uint16_t>(rec)));
+            }
             static int64_t last_reinit_us = 0;
             int64_t now = esp_timer_get_time();
             if (last_reinit_us == 0 || now - last_reinit_us > 3'000'000) {
