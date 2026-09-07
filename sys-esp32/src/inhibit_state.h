@@ -57,6 +57,12 @@ inline bool transient_inhibited() { return g_inhibit_reasons.load() != 0u; }
 inline bool latched_fault_present() { return g_latched_fault_reasons.load() != 0u; }
 inline bool any_inhibit() { return transient_inhibited() || latched_fault_present(); }
 
+// Aggregate "brake/traction fault" for operator feedback (ready bulb, 0x600
+// diag). Includes B-class inhibits (MTR feedback / SEB comms loss) because the
+// vehicle is not ready to drive while brake availability or propulsion health
+// is unconfirmed.
+inline bool traction_fault_present() { return any_inhibit(); }
+
 // Resolved actuator authority given the system state (issues #5/#7).
 // task_mode uses these to decide what 0x110/0x113 must carry so that a
 // traction inhibit is an *actuator-level* action, not an internal zero:

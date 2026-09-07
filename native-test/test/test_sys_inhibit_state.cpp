@@ -96,6 +96,40 @@ int main() {
         CHECK(!latched_fault_present());
     }
 
+    // ── #5: a latched brake fault clamps authority even if mode/power are OK ──
+    {
+        set_latched_fault(kLatchedBrakeFollowing);
+        auto a = resolve_authority(/*estop=*/false, /*auto=*/true, /*pwr_req=*/true);
+        CHECK(a.mode_auto == false);    // 0x110 clamped to MANUAL
+        CHECK(a.power_on == false);     // 0x113 OFF
+        g_latched_fault_reasons.store(0);
+    }
+
+    // ── #5: SEB L3 + following-error can both be latched independently ──
+    {
+        set_latched_fault(kLatchedSebL3);
+        set_latched_fault(kLatchedBrakeFollowing);
+        CHECK(g_latched_fault_reasons.load() ==
+              (uint32_t(kLatchedSebL3) | uint32_t(kLatchedBrakeFollowing)));
+        // Reset path clears each eligible latch independently once healthy.
+        g_latched_fault_reasons.fetch_and(~uint32_t(kLatchedSebL3));
+        CHECK(g_latched_fault_reasons.load() & kLatchedBrakeFollowing);
+        CHECK(!(g_latched_fault_reasons.load() & kLatchedSebL3));
+        g_latched_fault_reasons.store(0);
+    }
+
+    // ── Aggregate feedback predicate reflects any inhibit or latch ──
+    {
+        CHECK(!traction_fault_present());
+        set_inhibit(kInhibitSebCommsLoss);
+        CHECK(traction_fault_present());
+        clear_inhibit(kInhibitSebCommsLoss);
+        set_latched_fault(kLatchedSebL3);
+        CHECK(traction_fault_present());
+        g_latched_fault_reasons.store(0);
+        CHECK(!traction_fault_present());
+    }
+
     std::printf("\n=== %d pass, %d fail ===\n", pass, fail);
     return fail ? 1 : 0;
 }

@@ -363,8 +363,20 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 uint8_t es = value.error_status;
                 g_seb_error_status.store(es, std::memory_order_relaxed);
                 if (es >= 3) {
+                    // Issue #5: a confirmed Level-3 brake fault is a latched safety
+                    // fault (aligned with the 0x731 L3 path below) — full ESTOP.
+                    // The latched reason survives until the explicit reset path
+                    // confirms the underlying L3 has cleared.
                     ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x)", value.status_byte);
-                    g_brake_fault_active.store(true, std::memory_order_relaxed);
+                    sys::set_latched_fault(sys::kLatchedSebL3);
+                    if (g_mode_mgr.mode() != can::Mode::Estop) {
+                        g_mode_mgr.force_estop();
+                        g_last_estop_trigger_tick.store(xTaskGetTickCount(),
+                                                        std::memory_order_relaxed);
+                        if (can_send_estop()) {
+                            send_estop_frame("ESTOP");
+                        }
+                    }
                 }
             }
             // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30).
@@ -394,31 +406,66 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_last_seb_roll_change_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
                 g_seb_rolling.store(true, std::memory_order_relaxed);  // SEB is acknowledging
             }
-            // Brake following error monitor (§8.10): cmp cmd vs actual stroke.
+            // Brake following error monitor (§8.10, issue #5): cmp cmd vs actual stroke.
             // Only in Stroke mode — in Pressure mode cmd_stroke is fixed at 600
             // (0mm baseline) while the SEB physically moves to build pressure,
             // which would false-trigger the following error (bug 6.1).
+            //
+            // Two severities:
+            //   - transient excursion      -> kInhibitBrakeFollowing (recoverable,
+            //                                cleared after N healthy observations)
+            //   - confirmed persistent     -> kLatchedBrakeFollowing + force_estop()
+            //                                (latched safety fault; only the reset
+            //                                path clears it, once the cause is gone)
             {
                 uint8_t seb_ctrl = value.control_mode;
                 if (seb_ctrl == 0) {  // Stroke mode only
                     uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
                     uint16_t actual_raw = value.stroke_value_raw;
                     uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
-                    static bool  brake_follow_active = false;
-                    static TickType_t brake_follow_start = 0;
-                    if (diff > sys::kBrakeFollowingErrRaw) {
-                        if (!brake_follow_active) {
-                            brake_follow_active = true;
-                            brake_follow_start = xTaskGetTickCount();
-                        } else if ((xTaskGetTickCount() - brake_follow_start)
-                                    >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
-                            ESP_LOGE(TAG, "Brake following err: cmd=%u actual=%u diff=%u raw (~%d mm)",
-                                     cmd, actual_raw, diff, int(diff * 0.05f));
-                            g_brake_fault_active.store(true, std::memory_order_relaxed);
-                            brake_follow_active = false;  // log once per event
+
+                    // Track the persistence of the current excursion.
+                    static bool      follow_active = false;
+                    static TickType_t follow_start = 0;
+                    static int       follow_recover_count = 0;
+                    const bool in_excursion = (diff > sys::kBrakeFollowingErrRaw);
+                    if (in_excursion) {
+                        if (!follow_active) {
+                            follow_active = true;
+                            follow_start = xTaskGetTickCount();
+                            follow_recover_count = 0;  // fresh excursion: recovery restarts
+                            // Excursion present: transient inhibit is active now.
+                            sys::set_inhibit(sys::kInhibitBrakeFollowing);
+                        } else if ((xTaskGetTickCount() - follow_start)
+                                   >= pdMS_TO_TICKS(sys::kBrakeFollowingLatchedMs)) {
+                            // Confirmed persistent following error -> latched fault.
+                            if (!(sys::g_latched_fault_reasons.load()
+                                  & sys::kLatchedBrakeFollowing)) {
+                                ESP_LOGE(TAG, "Brake following err latched: cmd=%u actual=%u "
+                                              "diff=%u raw (~%d mm)",
+                                         cmd, actual_raw, diff, int(diff * 0.05f));
+                                sys::set_latched_fault(sys::kLatchedBrakeFollowing);
+                                if (g_mode_mgr.mode() != can::Mode::Estop) {
+                                    g_mode_mgr.force_estop();
+                                    g_last_estop_trigger_tick.store(xTaskGetTickCount(),
+                                                                    std::memory_order_relaxed);
+                                    if (can_send_estop()) {
+                                        send_estop_frame("ESTOP");
+                                    }
+                                }
+                            }
                         }
                     } else {
-                        brake_follow_active = false;
+                        follow_active = false;
+                        // Hysteresis recovery: clear the transient inhibit only after
+                        // several consecutive healthy observations. The latched fault
+                        // (if set) is NOT cleared here — only the reset path owns it.
+                        if (sys::g_inhibit_reasons.load() & sys::kInhibitBrakeFollowing) {
+                            if (++follow_recover_count >= sys::kBrakeFollowingRecoverFrames) {
+                                sys::clear_inhibit(sys::kInhibitBrakeFollowing);
+                                follow_recover_count = 0;
+                            }
+                        }
                     }
                 }
             }
@@ -669,6 +716,37 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             ESP_LOGI(TAG, "Mode changed to %s", g_mode_mgr.name());
         }
 
+        // Issue #5: explicit reset path for latched brake safety faults. When the
+        // operator successfully exits ESTOP (START button / MODE long-press drove
+        // ModeManager out of ESTOP), clear any latched fault whose underlying cause
+        // is no longer asserted. A latch whose cause is STILL active is retained so
+        // a next-0x721-frame re-latch is avoided (reset must not paper over a live
+        // fault). Only this reset path mutates g_latched_fault_reasons.
+        if (g_mode_mgr.mode() != can::Mode::Estop) {
+            uint32_t latched = sys::g_latched_fault_reasons.load(std::memory_order_relaxed);
+            if (latched != 0u) {
+                if ((latched & sys::kLatchedSebL3)
+                    && g_seb_error_status.load(std::memory_order_relaxed) < 3) {
+                    sys::g_latched_fault_reasons.fetch_and(
+                        ~static_cast<uint32_t>(sys::kLatchedSebL3), std::memory_order_relaxed);
+                    ESP_LOGI(TAG, "Latched SEB L3 fault cleared — underlying cause healthy");
+                }
+                // kLatchedBrakeFollowing clears only when no following excursion is
+                // active; the excursion detector re-arms on a fresh 0x721 in Stroke
+                // mode. If 0x721 is stale we cannot prove the cause cleared, so keep
+                // the latch (SEB-comms inhibit already holds traction).
+                if ((latched & sys::kLatchedBrakeFollowing)) {
+                    bool follow_clear = g_seb_status_byte0.load(std::memory_order_relaxed) != 0xFF;
+                    if (follow_clear) {
+                        sys::g_latched_fault_reasons.fetch_and(
+                            ~static_cast<uint32_t>(sys::kLatchedBrakeFollowing),
+                            std::memory_order_relaxed);
+                        ESP_LOGI(TAG, "Latched brake-following fault cleared — underlying cause healthy");
+                    }
+                }
+            }
+        }
+
         // Authoritative actuator commands are emitted every cycle (100 ms).
         // 0x110 SYS_MODE_CMD carries the resolved mode + rolling counter.
         // ESTOP is no longer encoded here: the enum is MANUAL/AUTO only, and the
@@ -810,20 +888,36 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
         }
 
-        // 0x721 staleness check (architecture §8.10): warn if no status for >100ms
+        // 0x721 staleness check (architecture §8.10, issue #5): a lost SEB
+        // status stream means brake availability is UNKNOWN. This is a B-class
+        // recoverable inhibit (kInhibitSebCommsLoss): while set, the mode task
+        // drops power/mode authority (traction inhibited). It clears only after
+        // several consecutive fresh 0x721 observations (confirmed recovery).
+        // g_bypass_seb_sync (bench/sim without an SEB node) disables the trip.
         {
             TickType_t last = g_last_seb_status_tick.load(std::memory_order_relaxed);
-            if (last > 0) {
-                TickType_t age = xTaskGetTickCount() - last;
-                if (age >= pdMS_TO_TICKS(sys::kSebStatusTimeoutMs)) {
+            const bool seb_seen = (last > 0);
+            const bool stale = seb_seen
+                && (xTaskGetTickCount() - last) >= pdMS_TO_TICKS(sys::kSebStatusTimeoutMs);
+            if (!g_bypass_seb_sync && (stale || !seb_seen)) {
+                sys::set_inhibit(sys::kInhibitSebCommsLoss);
+                if (seb_seen) {
                     static TickType_t last_staleness_warn = 0;
                     if (last_staleness_warn == 0
                         || (xTaskGetTickCount() - last_staleness_warn)
                             >= pdMS_TO_TICKS(1000)) {
                         ESP_LOGW(TAG, "0x721 SEB_STATUS stale — %lu ms since last frame",
-                                 (unsigned long)(age * portTICK_PERIOD_MS));
+                                 (unsigned long)((xTaskGetTickCount() - last) * portTICK_PERIOD_MS));
                         last_staleness_warn = xTaskGetTickCount();
                     }
+                }
+            } else if (sys::g_inhibit_reasons.load() & sys::kInhibitSebCommsLoss) {
+                // Fresh status present (or SEB bypassed): confirmed recovery
+                // (consecutive fresh observations at this 50 Hz cadence).
+                static int seb_comms_recover_count = 0;
+                if (++seb_comms_recover_count >= 3) {
+                    sys::clear_inhibit(sys::kInhibitSebCommsLoss);
+                    seb_comms_recover_count = 0;
                 }
             }
         }
@@ -886,11 +980,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbManual), out.manual_bulb ? 1 : 0);
 #endif
 
-        // Green "ready" bulb: AUTO or MANUAL, RT alive, no brake fault
+        // Green "ready" bulb: AUTO or MANUAL, RT alive, no brake/traction fault
         can::Mode mode = g_mode_mgr.mode();
         [[maybe_unused]] bool ready = (mode == can::Mode::Auto || mode == can::Mode::Manual)
                   && g_safety.heartbeat_ok()
-                  && !g_brake_fault_active.load(std::memory_order_relaxed);
+                  && !sys::traction_fault_present();
         // Red "ESTOP" bulb: dedicated, independent of brake lamp
         [[maybe_unused]] bool estop = (mode == can::Mode::Estop);
 
@@ -993,7 +1087,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::gen::SysDiagRpt rpt;
         rpt.mode = g_mode_mgr.mode_u8();
         rpt.brake_engaged = g_safety.brake_lever_pressed();
-        rpt.brake_fault = g_brake_fault_active.load(std::memory_order_relaxed);
+        rpt.brake_fault = g_brake_fault_active.load(std::memory_order_relaxed)
+                       || sys::traction_fault_present();
         rpt.heartbeat_ok  = g_safety.heartbeat_ok();
         rpt.estop_active = (g_mode_mgr.mode() == can::Mode::Estop);
         rpt.free_heap_kb = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);

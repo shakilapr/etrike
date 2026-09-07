@@ -67,9 +67,16 @@ constexpr float kBrakeMaxStroke    = 27.0f;    // mm, ESTOP
 constexpr int kEgasSpeedThresholdMmps = 500;   // abs(cmd - actual) > 500 mm/s
 constexpr int kEgasFaultDurationMs    = 500;   // persist 500ms → ESTOP
 
-// ── brake following error (architecture §8.10) ──────────────────────
+// ── brake following error (architecture §8.10, issue #5) ─────────────
 constexpr int   kBrakeFollowingErrRaw = 60;    // 3mm in raw units (3 / 0.05)
-constexpr int   kBrakeFollowingErrMs  = 100;   // persist 100ms → log error
+constexpr int   kBrakeFollowingErrMs  = 100;   // transient excursion must persist this long (debounce)
+// A brake following error that persists past this window is a CONFIRMED
+// latched safety fault (kLatchedBrakeFollowing + ESTOP), distinct from a
+// transient excursion (kInhibitBrakeFollowing, recoverable).
+constexpr int   kBrakeFollowingLatchedMs = 500;
+// Confirmed recovery for the transient inhibit (hysteresis): clear only after
+// this many consecutive healthy 0x721 observations at the brake/status cadence.
+constexpr int   kBrakeFollowingRecoverFrames = 3;
 
 // ── SEB status staleness (architecture §8.10) ───────────────────────
 constexpr int kSebStatusTimeoutMs     = 100;   // no 0x721 for 100ms → log warning
