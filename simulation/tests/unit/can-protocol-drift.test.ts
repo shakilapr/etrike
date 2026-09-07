@@ -3,8 +3,8 @@ import { routeFor } from "../../src/protocol.js";
 
 const requiredFrames = [
   ["0x001", "SAFETY_ESTOP", 0, "both"],
-  ["0x110", "SYS_MODE_CMD", 1, "low"],
-  ["0x011", "SYS_SAFETY_STS", 3, "both"],
+  ["0x110", "SYS_MODE_CMD", 2, "low"],
+  ["0x011", "SYS_SAFETY_STS", 5, "both"],
   ["0x210", "RT_STATE_RPT", 6, "both"],
   ["0x121", "RT_MOTION_RPT", 8, "high"],
   ["0x204", "RT_DRIVE_CMD", 5, "low"],

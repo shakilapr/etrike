@@ -85,6 +85,12 @@ constexpr int kMtrEstopAckTimeoutMs   =  100;  // ESTOP_ACTIVE bit in 0x206 with
 // ── 0x206 staleness (gap #15) ────────────────────────────────────────
 constexpr int kMtrFbkStaleMs          =  200;  // MTR comms lost if no 0x206 for 200ms
 
+// ── MTR-feedback loss recovery (issue #7) ────────────────────────────
+// kInhibitMtrFbkLoss is B-class / recoverable. To clear it, require
+// kMtrFbkRecoverFrames consecutive fresh 0x206 observations at the 20 Hz
+// safety-task cadence (i.e. sustained liveness, not a single stray frame).
+constexpr int kMtrFbkRecoverFrames    =    3;
+
 // ── 0x001 ESTOP rate limiting (gap #14) ──────────────────────────────
 constexpr int kEstopRateLimitWindowMs =  500;  // rolling window
 constexpr int kEstopRateLimitMax      =    2;  // max 0x001 frames per window

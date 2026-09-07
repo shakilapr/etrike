@@ -33,6 +33,7 @@ bool g_bypass_mtr_absent = false;
 #include "safety_monitor.h"
 #include "mode_manager.h"
 #include "stream_validity.h"
+#include "inhibit_state.h"
 
 #include "brake_control.h"
 #include "light_control.h"
@@ -182,6 +183,12 @@ static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
 // ── SEB fault state for 0x600 diag (Gap #13) ─────────────────────────
 static std::atomic<uint8_t>  g_seb_error_status{0};   // from 0x721 byte0 bits6-7
 static std::atomic<bool>     g_brake_fault_active{false};
+
+// ── Independent per-owner traction-inhibit masks (issues #5/#7) ─────
+// See inhibit_state.h. Each detector owns its own bit; latched faults are
+// cleared only by the explicit reset path.
+std::atomic<uint32_t> g_inhibit_reasons{0};
+std::atomic<uint32_t> g_latched_fault_reasons{0};
 
 // ── System ESTOP latch predicate (safety invariant, issue #4) ────────
 // The persistent ESTOP state SYS publishes (0x011.estop_active and
@@ -578,28 +585,52 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // F4: 0x206 staleness check (Gap #15)
         // Warn if no MTR feedback for >200ms (MTR comms lost).
         // Startup grace: skip if never received (g_last_mtr_fbk_tick == 0).
+        // Issue #7: MTR feedback loss is a B-class traction inhibit owned by
+        // kInhibitMtrFbkLoss (NOT the brake-fault state). It forces power
+        // authority OFF in task_mode until MTR feedback is confirmed healthy.
         if (!g_bypass_mtr_absent) {
             uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
-            if (last_fbk > 0
-                && (xTaskGetTickCount() - last_fbk) >= pdMS_TO_TICKS(sys::kMtrFbkStaleMs)) {
-                ESP_LOGE(TAG, "0x206 MTR_MOTOR_FBK stale — zeroing speed + neutral");
+            bool stale = last_fbk > 0
+                && (xTaskGetTickCount() - last_fbk) >= pdMS_TO_TICKS(sys::kMtrFbkStaleMs);
+            if (stale) {
+                sys::set_inhibit(sys::kInhibitMtrFbkLoss);
                 g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
                 g_setpoint_gear.store(0, std::memory_order_relaxed);
-                g_brake_fault_active.store(true, std::memory_order_relaxed);
+                static TickType_t last_warn = 0;
+                if (last_warn == 0 || (xTaskGetTickCount() - last_warn) >= pdMS_TO_TICKS(1000)) {
+                    ESP_LOGE(TAG, "0x206 MTR_MOTOR_FBK stale — removing power authority (inhibit)");
+                    last_warn = xTaskGetTickCount();
+                }
+            }
+            // Confirmed recovery: kMtrFbkRecoverFrames consecutive fresh 0x206
+            // observations at this 20 Hz cadence release the inhibit bit. This
+            // is not a single-frame recovery.
+            static int mtr_fbk_recover_count = 0;
+            if (sys::g_inhibit_reasons.load() & sys::kInhibitMtrFbkLoss) {
+                if (!stale) {
+                    if (++mtr_fbk_recover_count >= sys::kMtrFbkRecoverFrames) {
+                        sys::clear_inhibit(sys::kInhibitMtrFbkLoss);
+                        mtr_fbk_recover_count = 0;
+                        ESP_LOGI(TAG, "MTR feedback recovered — inhibit cleared");
+                    }
+                } else {
+                    // Still stale: any partial recovery progress is reset so a
+                    // release requires a full fresh run of N observations.
+                    mtr_fbk_recover_count = 0;
+                }
             }
         }
 
-        // Brake fault auto-recovery: clear when all underlying conditions are healthy
+        // Legacy brake-fault auto-recovery (SEB L3 / following-error paths; these
+        // are re-classified into the two-mask model by issue #5). MTR-feedback
+        // loss no longer sets g_brake_fault_active, so MTR freshness is removed
+        // from this recovery gate.
         if (g_brake_fault_active.load(std::memory_order_relaxed)) {
             bool seb_healthy = g_seb_error_status.load(std::memory_order_relaxed) < 3;
-            uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
-            bool mtr_fresh = g_bypass_mtr_absent
-                || (last_fbk > 0
-                    && (xTaskGetTickCount() - last_fbk) < pdMS_TO_TICKS(sys::kMtrFbkStaleMs));
             bool not_in_estop = (g_mode_mgr.mode() != can::Mode::Estop);
 
             static int brake_recovery_count = 0;
-            if (seb_healthy && mtr_fresh && not_in_estop) {
+            if (seb_healthy && not_in_estop) {
                 if (++brake_recovery_count >= 30) {  // 30 * 100ms = 3s
                     g_brake_fault_active.store(false, std::memory_order_relaxed);
                     brake_recovery_count = 0;
@@ -640,13 +671,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // latched E-stop state travels on 0x011 SYS_SAFETY_STS.estop_active.
         // During ESTOP we report MANUAL so MTR's existing "0x110 == MANUAL while
         // 0x011.estop_active == 1" rule keeps motion disabled.
+        //
+        // Issue #5/#7: any active traction inhibit (transient or latched) also
+        // clamps the transmitted mode to MANUAL and drops power authority, so a
+        // MTR-feedback loss or brake fault is an actuator-level safety action,
+        // not merely an internal zero.
+        const bool traction_inhibit =
+            sys::transient_inhibited() || sys::latched_fault_present();
         static uint8_t roll_mode = 0;
         {
             can::Frame fr;
             can::gen::SysModeCmd message{};
             const can::Mode resolved = g_mode_mgr.mode();
             const can::Mode tx_mode =
-                (resolved == can::Mode::Estop) ? can::Mode::Manual : resolved;
+                (resolved == can::Mode::Estop || traction_inhibit)
+                    ? can::Mode::Manual : resolved;
             message.mode = (tx_mode == can::Mode::Auto);
             message.rolling_counter = roll_mode++;
             if (can::gen::encode_sys_mode_cmd(message, fr) == can::gen::CodecStatus::Ok) send_can(fr);
@@ -663,7 +702,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             const bool estop = (mode == can::Mode::Estop);
             const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
             const bool pwr_req = hmi_valid ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
-            const bool pwr_on = pwr_req && !estop;
+            const bool pwr_on = pwr_req && !estop && !traction_inhibit;
             can::Frame fr;
             can::gen::SysPwrCmd message{};
             message.power_state = pwr_on ? 1u : 0u;

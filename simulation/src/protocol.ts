@@ -68,7 +68,12 @@ function preprocessValues(key: MessageKey, values: Readonly<Record<string, unkno
   }
   const processed = { ...values };
   for (const field of message.layout.fields ?? []) {
-    const value = values[field.key];
+    let value = values[field.key];
+    if (value === undefined) {
+      if (field.counter !== undefined || field.key === "rolling_counter" || field.key === "e2e_crc") {
+        value = 0;
+      }
+    }
     if (typeof value === "number") {
       const [minimum, maximum] = fieldLimits(field);
       const clamped = Math.max(minimum, Math.min(maximum, value));
