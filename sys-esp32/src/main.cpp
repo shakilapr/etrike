@@ -157,7 +157,11 @@ static bool can_send_estop() {
 }
 
 // ── Motor feedback from 0x206 MTR_MOTOR_FBK ─────────────────────────
-static std::atomic<int16_t>  g_actual_speed_mmps{0};
+// MTR 0x206 carries the APPLIED speed COMMAND (the setpoint echoed back) —
+// NOT a physical measurement (no wheel/motor encoder fitted). Renamed to
+// applied_speed_command_mmps to prevent downstream code from treating it as
+// closed-loop speed feedback (issue #1).
+static std::atomic<int16_t>  g_applied_speed_command_mmps{0};
 static std::atomic<uint8_t>  g_motor_fault_flags{0};
 
 // ── SEB status from 0x721 SEB_STATUS ────────────────────────────────
@@ -299,10 +303,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_hmi_pwr_on.store(request.req_start != 0, std::memory_order_relaxed);
             break;
         }
-        case can::kIdMtrMotorFbk: {  // 0x206 — EGAS L2 feedback (arch §8.3)
+        case can::kIdMtrMotorFbk: {  // 0x206 — applied-speed-command echo (issue #1: NOT physical speed)
             can::gen::MtrMotorFbk fbk{};
             if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
-            g_actual_speed_mmps.store(fbk.actual_speed_mmps, std::memory_order_relaxed);
+            g_applied_speed_command_mmps.store(fbk.applied_speed_command_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
             g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -582,15 +586,18 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_alive_safety.store(xTaskGetTickCount(), std::memory_order_relaxed);
         // g_wdt.tick();  // GPIO23 toggle
 
-        // EGAS L2: compare 0x204 setpoint vs 0x206 actual speed (arch §6.1)
-        // Only in AUTO mode. Mismatch > threshold for > duration → ESTOP.
+        // Command-path / setpoint-echo consistency check (issue #1). 0x206
+        // reports the APPLIED speed COMMAND, not physical speed (no encoder).
+        // This detects RT-vs-MTR command-path disagreement only — it is NOT a
+        // physical EGAS L2 check and cannot see DAC/relay/motor faults. Only in
+        // AUTO mode. Mismatch > threshold for > duration → ESTOP.
         if (!g_bypass_mtr_absent) {
             static bool  egas_fault_active = false;
             static TickType_t egas_fault_start = 0;
             if (g_mode_mgr.mode() == can::Mode::Auto) {
-                int32_t cmd    = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
-                int16_t actual = g_actual_speed_mmps.load(std::memory_order_relaxed);
-                int32_t diff   = (cmd > actual) ? (cmd - actual) : (actual - cmd);
+                int32_t cmd     = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
+                int16_t applied = g_applied_speed_command_mmps.load(std::memory_order_relaxed);
+                int32_t diff    = (cmd > applied) ? (cmd - applied) : (applied - cmd);
                 if (diff > sys::kEgasSpeedThresholdMmps) {
                     if (!egas_fault_active) {
                         egas_fault_active = true;
@@ -602,8 +609,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                             if (can_send_estop()) {
                                 send_estop_frame("ESTOP");
                             }
-                            ESP_LOGW(TAG, "EGAS L2: speed mismatch %ld mm/s > %d — ESTOP",
-                                     (long)diff, sys::kEgasSpeedThresholdMmps);
+                            ESP_LOGW(TAG, "Cmd-path mismatch: |0x204 %.0f - applied %.0f| > %d mm/s — ESTOP",
+                                     (double)cmd, (double)applied, sys::kEgasSpeedThresholdMmps);
                         }
                     }
                 } else {
@@ -1044,6 +1051,35 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 ESP_LOGE(TAG, "SYS task deadline missed: mask=0x%X expected=0xFF", task_health);
             }
             previous_task_health = task_health;
+        }
+
+        // Issue RC2: SYS must REACT to the death of its own safety-critical
+        // tasks, not merely log it. task_safety (bit0) polls the physical ESTOP
+        // button + RT heartbeat; task_brake (bit1) is the sole normal 0x7B9
+        // producer; task_dispatch (bit2) feeds every RX decoder; task_can_tx
+        // (bit3) publishes the 0x011 authority stream; task_mode (bit6) publishes
+        // 0x110/0x113 authority. If any of these misses its 1.5 s deadline for
+        // >= 2 consecutive 1 Hz diag cycles, SYS cannot guarantee a safe stop, so
+        // it latches ESTOP and broadcasts 0x001. (task_hb loss is handled
+        // downstream by RT's 0x7FE timeout -> SYS_DEGRADED; lights/indicator/gear
+        // and can_ctrl are non-life-critical and excluded.)
+        static constexpr uint8_t kCriticalTaskMask =
+            0x01 /*safety*/ | 0x02 /*brake*/ | 0x04 /*dispatch*/
+            | 0x08 /*can_tx*/ | 0x40 /*mode*/;
+        static int critical_miss_count = 0;
+        if ((task_health & kCriticalTaskMask) != kCriticalTaskMask) {
+            if (++critical_miss_count >= 2) {   // persistent >= 2 s miss
+                if (g_mode_mgr.mode() != can::Mode::Estop) {
+                    ESP_LOGE(TAG, "SYS critical task(s) dead (mask=0x%X need 0x%02X) — "
+                                  "forcing ESTOP", task_health, kCriticalTaskMask);
+                    g_mode_mgr.force_estop();
+                    if (can_send_estop()) {
+                        send_estop_frame("ESTOP");
+                    }
+                }
+            }
+        } else {
+            critical_miss_count = 0;
         }
 
         // Send 0x600 with real TEC/REC
