@@ -6,6 +6,7 @@
 #include <cstring>
 #include "stm32g4xx_hal.h"
 #include "protocol/compat/can.hpp"
+#include "shared/diagnostics.h"
 
 extern "C" {
     extern FDCAN_HandleTypeDef hfdcan1;
@@ -17,6 +18,9 @@ class CanDriver {
 public:
     explicit CanDriver(FDCAN_HandleTypeDef& hfdcan) : hfdcan_(hfdcan) {}
     CanDriver() : CanDriver(hfdcan1) {}
+
+    // Wire the shared DiagnosticManager (Phase B reporting). Optional.
+    void set_diag(etrike::diagnostics::DiagnosticManager& diag) { diag_ = &diag; }
 
     bool init() {
         // Configure FDCAN kernel clock to PCLK1 (16 MHz)
@@ -158,6 +162,10 @@ public:
                 rx_head_ = next_head;
             } else {
                 rx_overflow_++;
+                if (diag_) {
+                    diag_->raise(etrike::diagnostics::DiagId::MtrFdcanRxOverflow,
+                                 static_cast<std::uint16_t>(rx_overflow_));
+                }
             }
         }
     }
@@ -178,6 +186,14 @@ public:
         // Clear CCCR.INIT through the HAL-visible path to trigger 128x11-bit recovery
         CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
         HAL_FDCAN_Start(&hfdcan_);
+        // Report the bus-off event with TEC/REC snapshot (BITFIELD16: tec 15:8, rec 7:0).
+        if (diag_) {
+            const std::uint32_t ecr = hfdcan_.Instance->ECR;
+            const std::uint16_t tec = static_cast<std::uint16_t>((ecr >> 8) & 0xFFu);
+            const std::uint16_t rec = static_cast<std::uint16_t>(ecr & 0xFFu);
+            diag_->raise(etrike::diagnostics::DiagId::MtrFdcanBusOff,
+                         static_cast<std::uint16_t>((tec << 8u) | rec));
+        }
         // Re-arm RX FIFO 0 interrupt which is cleared by HAL_FDCAN_Stop
         HAL_FDCAN_ActivateNotification(&hfdcan_, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
     }
@@ -235,6 +251,7 @@ private:
     volatile uint16_t rx_tail_{0};
 
     FDCAN_HandleTypeDef& hfdcan_;
+    etrike::diagnostics::DiagnosticManager* diag_{nullptr};  // Phase B reporting (optional)
     bool initialized_{false};
     uint32_t tx_count_{0};
     uint32_t tx_dropped_{0};
