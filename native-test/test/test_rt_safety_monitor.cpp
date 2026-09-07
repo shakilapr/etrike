@@ -16,6 +16,14 @@ rt::CmdWatchdog g_watchdog;
 
 bool g_bench_solo_mode = false;
 bool g_bypass_eps_sync = false;
+bool g_bypass_seb_sync = false;
+bool g_bypass_mtr_absent = false;
+
+namespace rt {
+MtrHealthSupervisor g_mtr_health;
+}  // namespace rt
+std::atomic<int64_t> g_last_mtr_feedback_us{-1};
+std::atomic<int64_t> g_last_nonzero_cmd_us{-1};
 
 QueueHandle_t g_safety_evt_q = nullptr;
 
@@ -61,6 +69,12 @@ static int fail = 0;
 static void reset_state() {
     g_bench_solo_mode = false;
     g_bypass_eps_sync = false;
+    // These unit scenarios exercise SYS/Host/steering safety logic, not the
+    // MTR-feedback health check (#8); with no MTR present, bypass it so a
+    // stale-0x206 trip does not mask the scenario under test. Dedicated #8
+    // scenarios set g_bypass_mtr_absent = false and feed real timestamps.
+    g_bypass_mtr_absent = true;
+    rt::g_mtr_health.reset();
     g_brake_request_kpa.store(0);
     g_obstacle_mm.store(UINT32_MAX);
     g_ses_angle_0_1deg.store(INT16_MIN);
@@ -73,6 +87,8 @@ static void reset_state() {
     g_last_host_hb_us.store(0);
     g_last_estop_sent_us.store(0);
     g_last_cmd_angle_0_1deg.store(0);
+    g_last_mtr_feedback_us.store(-1);
+    g_last_nonzero_cmd_us.store(-1);
     g_steering.init();
 
     bool estop_pending = false;
@@ -221,6 +237,81 @@ int main() {
         CHECK(!r.zero_setpoints);
         CHECK(r.brake_kpa == 0);
         CHECK(!r.disable_steering);
+    }
+
+    // ── Issue #8: MTR feedback health (MTR present, not bypassed) ─────
+    {
+        reset_state();
+        g_bypass_mtr_absent = false;   // MTR is present — exercise the health check
+        bool estop_pending = false;
+        bool seb_takeover = false;
+        rt::SafetyResult r{};
+
+        // Healthy MTR in AUTO: fresh 0x206 every 100 ms, no trip.
+        int64_t now = 1'000'000;
+        g_last_mtr_feedback_us.store(now);
+        for (int i = 0; i < 10; ++i) {
+            now += 100'000;   // 100 ms
+            g_last_mtr_feedback_us.store(now);
+            r = run_safety_checks(now, false, UINT32_MAX,
+                                  estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
+            CHECK(!r.zero_setpoints);
+        }
+        CHECK(!rt::g_mtr_health.mtr_unavailable);
+
+        // MTR feedback goes stale past the AUTO-entry acquisition grace.
+        // Drive command was NOT recently non-zero (at standstill): propulsion
+        // must still be prohibited (actuator-health is decoupled from command),
+        // but without max brake.
+        for (int i = 0; i < 40; ++i) {
+            now += 100'000;   // keep advancing, do NOT refresh MTR feedback
+            r = run_safety_checks(now, false, UINT32_MAX,
+                                  estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
+        }
+        CHECK(rt::g_mtr_health.mtr_unavailable);
+        CHECK(r.zero_setpoints);
+        CHECK(r.brake_kpa == 0);   // no recent non-zero command -> prohibition, not max brake
+
+        // Confirmed recovery: kMtrFbkRecoverFrames consecutive fresh 0x206 frames.
+        bool recovered = false;
+        for (int i = 0; i < rt::kMtrFbkRecoverFrames; ++i) {
+            now += 100'000;
+            g_last_mtr_feedback_us.store(now);
+            r = run_safety_checks(now, false, UINT32_MAX,
+                                  estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
+            if (!rt::g_mtr_health.mtr_unavailable) recovered = true;
+        }
+        CHECK(recovered);
+        CHECK(!r.zero_setpoints);
+    }
+
+    // ── Issue #8: brake escalation when motion had recently been commanded ──
+    {
+        reset_state();
+        g_bypass_mtr_absent = false;
+        bool estop_pending = false;
+        bool seb_takeover = false;
+        rt::SafetyResult r{};
+
+        int64_t now = 1'000'000;
+        g_last_mtr_feedback_us.store(now);
+        for (int i = 0; i < 5; ++i) {
+            now += 100'000;
+            g_last_mtr_feedback_us.store(now);
+            g_last_nonzero_cmd_us.store(now);   // continuously commanded to move
+            r = run_safety_checks(now, false, UINT32_MAX,
+                                  estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
+        }
+        // Now MTR feedback stops; the last non-zero command was ~100 ms ago (still
+        // inside the 500 ms motion window) -> brake escalation to max.
+        for (int i = 0; i < 3; ++i) {
+            now += 100'000;   // 100..300 ms since the last non-zero command
+            r = run_safety_checks(now, false, UINT32_MAX,
+                                  estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
+        }
+        CHECK(rt::g_mtr_health.mtr_unavailable);
+        CHECK(r.zero_setpoints);
+        CHECK(r.brake_kpa == shared::kMaxBrakeKpa);   // motion window still active
     }
 
     std::printf("\n=== %d pass, %d fail ===\n", pass, fail);

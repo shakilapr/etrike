@@ -46,6 +46,72 @@ struct SafetyResult {
     uint8_t estop_reason     = 0;
 };
 
+// ── MTR health supervisor (issue #8) ────────────────────────────────
+// RT watchdogs its own propulsion actuator (MTR, 0x206 feedback). The health
+// state is decoupled from the current command: in AUTO, past the AUTO-entry
+// acquisition grace, a stale 0x206 means MTR is *unavailable* and propulsion is
+// prohibited — even at standstill, so a dead MTR cannot hide until the next
+// acceleration request. Brake escalation is a separate decision made by the
+// caller (whether motion had recently been commanded).
+//
+// The acquisition grace is relative to entering AUTO (not boot), so a long
+// MANUAL soak cannot expire it early. Recovery is confirmed: kMtrFbkRecoverFrames
+// consecutive fresh 0x206 frames at the control-loop cadence.
+struct MtrHealthSupervisor {
+    int64_t auto_entered_us = -1;   // when AUTO was (re)entered, us
+    bool    prev_auto = false;
+    bool    mtr_unavailable = false;
+    int     recover_count = 0;
+
+    void update(int64_t now, bool mode_auto, bool mtr_fresh) {
+        if (mode_auto != prev_auto) {
+            if (mode_auto) {
+                auto_entered_us = now;   // (re)start the acquisition grace
+                recover_count = 0;
+                // Do not clear mtr_unavailable here: an existing trip must be
+                // confirmed-recovered, not masked by a mode bounce.
+            } else {
+                // Leaving AUTO drops the drive dependency: clear trip + state.
+                mtr_unavailable = false;
+                auto_entered_us = -1;
+                recover_count = 0;
+            }
+        }
+        prev_auto = mode_auto;
+        if (!mode_auto) return;
+
+        if (mtr_fresh) {
+            if (mtr_unavailable) {
+                if (++recover_count >= rt::kMtrFbkRecoverFrames) {
+                    mtr_unavailable = false;
+                    recover_count = 0;
+                }
+            } else {
+                recover_count = 0;
+            }
+            return;
+        }
+
+        // mtr stale
+        recover_count = 0;
+        if (auto_entered_us >= 0
+            && now - auto_entered_us > int64_t(rt::kMtrFbkAcquireGraceMs) * 1000) {
+            mtr_unavailable = true;
+        }
+    }
+
+    void reset() {
+        auto_entered_us = -1;
+        prev_auto = false;
+        mtr_unavailable = false;
+        recover_count = 0;
+    }
+};
+
+// Global MTR-health supervisor (defined in main.cpp; declared here so the
+// free-inline run_safety_checks() below shares one instance across TUs).
+extern MtrHealthSupervisor g_mtr_health;
+
 }  // namespace rt
 
 // ── ESTOP rate limiter (gap #14) ─────────────────────────────────────
@@ -95,6 +161,37 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     }
 
     if (startup_grace) return r;
+
+    // Issue #8: MTR feedback health — RT watchdogs its own propulsion actuator.
+    // In AUTO, past the AUTO-entry acquisition grace, a stale 0x206 makes MTR
+    // *unavailable*: propulsion is prohibited even at standstill (so a dead MTR
+    // cannot hide until the next acceleration request). Brake escalation is a
+    // separate decision — max brake only if a non-zero propulsion command was
+    // recently active, because 0x206 speed is an echoed command and true motion
+    // is not measurable without an independent sensor. Recovery is confirmed:
+    // kMtrFbkRecoverFrames consecutive fresh 0x206 frames.
+    {
+        const bool  mode_auto = (current_mode == uint8_t(can::Mode::Auto));
+        const int64_t last_fbk = g_last_mtr_feedback_us.load();
+        const bool  mtr_fresh = (last_fbk >= 0
+            && (now - last_fbk) <= int64_t(rt::kMtrFbkTimeoutMs) * 1000);
+        rt::g_mtr_health.update(now, mode_auto && !g_bypass_mtr_absent, mtr_fresh);
+        if (rt::g_mtr_health.mtr_unavailable) {
+            const bool prior_zero = r.zero_setpoints;
+            r.zero_setpoints = true;
+            if (!prior_zero) {
+                r.estop_reason = rt::kEstopReasonWatchdog;
+                rt::diag().raise(etrike::diagnostics::DiagId::RtMtrFbkTimeout,
+                                 static_cast<std::uint16_t>(
+                                     last_fbk >= 0 ? (now - last_fbk) / 1000 : 0));
+            }
+            const int64_t last_nonzero = g_last_nonzero_cmd_us.load();
+            constexpr int64_t kMotionWindowUs = 500'000;  // 500 ms
+            if (last_nonzero >= 0 && (now - last_nonzero) <= kMotionWindowUs) {
+                r.brake_kpa = shared::kMaxBrakeKpa;
+            }
+        }
+    }
 
     // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
     int64_t sys_hb = g_last_sys_hb_us.load();

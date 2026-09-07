@@ -50,6 +50,23 @@ constexpr int kHeartbeatIntervalMs     = can::gen::RtHeartbeat::kCycleMs;
 constexpr int kHeartbeatTimeoutMsSys   = can::gen::SysHeartbeat::kCycleMs * 2; // policy: two missed frames
 constexpr int kLowCanPeerTimeoutMs     = 1500;  // TX closes when no valid low-bus peer is heard
 
+// ── MTR feedback (0x206) health (issue #8) ────────────────────────
+// RT watchdogs its own propulsion actuator. If MTR feedback goes stale while
+// RT is in AUTO (past the AUTO-entry grace), MTR is considered unavailable:
+// propulsion is prohibited. The trip decouples "actuator health" from the
+// current command: it fires even at standstill so a dead MTR cannot hide until
+// the next acceleration request. Brake escalation is decided separately by the
+// motion state (see run_safety_checks).
+constexpr int kMtrFbkTimeoutMs         =  200;   // no 0x206 for 200 ms -> MTR unavailable
+// AUTO-entry grace: after entering AUTO RT gives MTR this window to start
+// publishing feedback before declaring it unavailable (relative to AUTO entry,
+// not boot, so a long MANUAL soak cannot expire the grace early).
+constexpr int kMtrFbkAcquireGraceMs    =  300;
+// Confirmed recovery: kMtrFbkRecoverFrames consecutive fresh 0x206 frames at
+// the control-loop cadence (no rolling counter on 0x206, so this is a liveness
+// confirmation, not a sequence check).
+constexpr int kMtrFbkRecoverFrames     =    3;
+
 // ── CAN — low-level (built-in TWAI) ───────────────────────────────
 // Default pin map matches architecture (CTX←GPIO5, CRX←GPIO4).
 // If frames never leave the node but RX works, try the swap flag
