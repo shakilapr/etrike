@@ -146,6 +146,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
                 xQueueSendToFront(p.queue, &fr, 0);
             } else if (xQueueSend(p.queue, &fr, 0) != pdTRUE && p.overflow_drv) {
                 p.overflow_drv->record_rx_overflow();
+                rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighRxOverflow);
                 static bool warned = false;
                 if (!warned) {
                     ESP_LOGW(TAG, "High CAN RX queue overflow — check RT_STATE_RPT byte 3");
@@ -162,6 +163,9 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 #include "can_dispatch.h"
 // ── Safety monitor (extracted to safety_monitor.h) ──────────────────
 #include "safety_monitor.h"
+// ── RT Phase B diagnostic reporter (singleton accessor) ──────────────
+#include "diag_rt.h"
+#include "protocol/compat/can.hpp"
 
 // ── CAN TX helper — checks return, logs failure, detects recovery ────
 static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
@@ -275,12 +279,44 @@ static void update_low_can_tx_admission(int64_t now_us) {
 
     const bool was_admitted = drv->tx_admitted();
     drv->set_tx_admission(admitted);
+    // Report-only: low-speed CAN peer (e.g. SYS/MTR) lost beyond timeout.
+    if (!admitted && last_peer > 0) {
+        rt::diag().raise(etrike::diagnostics::DiagId::RtLowCanPeerTimeout,
+                         static_cast<std::uint16_t>((now_us - last_peer) / 1000));
+    }
     if (admitted != was_admitted) {
         ESP_LOGI(TAG, "Low CAN TX admission=%s peer_age_ms=%lld%s",
-                 admitted ? "open" : "closed",
-                 last_peer > 0 ? static_cast<long long>((now_us - last_peer) / 1000) : -1LL,
-                 g_bench_solo_mode ? " developer-bypass" : "");
+                  admitted ? "open" : "closed",
+                  last_peer > 0 ? static_cast<long long>((now_us - last_peer) / 1000) : -1LL,
+                  g_bench_solo_mode ? " developer-bypass" : "");
     }
+}
+
+// ── Phase B diagnostic drain (RT_DIAG_EVENT_RPT = 0x621, high bus) ──
+// Throttled to ~10 Hz to bound high-bus TX. Latched/active states are
+// re-broadcast via replay_active_set() so the sink keeps receiving them.
+static void pump_diagnostics() {
+    static int64_t last_pump_us = 0;
+    const int64_t now_us = esp_timer_get_time();
+    if (now_us - last_pump_us < 100'000) return;
+    last_pump_us = now_us;
+
+    etrike::diagnostics::DiagReport rpt{};
+    uint8_t budget = 8;
+    while (budget-- > 0 && rt::diag().pop_pending_report(rpt)) {
+        can::gen::RtDiagEventRpt out{};
+        out.diag_id = static_cast<std::uint16_t>(rpt.id);
+        out.state = static_cast<std::uint8_t>(rpt.state);
+        out.occurrence_count = rpt.occurrence_count;
+        out.report_counter = rpt.report_counter;
+        out.flags = rpt.flags;
+        out.snapshot_data = rpt.snapshot_data;
+        can::Frame fr{};
+        if (can::gen::encode_rt_diag_event_rpt(out, fr) == can::gen::CodecStatus::Ok) {
+            send_can_high(fr);
+        }
+    }
+    rt::diag().replay_active_set();
 }
 
 // ── Control (prio 4, 100 Hz) ───────────────────────────────────────
@@ -347,6 +383,9 @@ static void update_low_can_tx_admission(int64_t now_us) {
             if (last != 0 && (esp_timer_get_time() - last > 700000)) {
                 m_estop_pending = true;
                 m_estop_reason = rt::kEstopReasonCanEstop;
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                                 static_cast<std::uint16_t>(
+                                     (esp_timer_get_time() - last) / 1000));
             }
         }
         // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
@@ -481,6 +520,12 @@ static void update_low_can_tx_admission(int64_t now_us) {
         g_reversing.store(sp.reversing);
 
         monitor_can_bus_off();
+
+        // Phase B: drain pending diagnostic reports to 0x621 (RT_DIAG_EVENT_RPT)
+        // on the high bus. pop_pending_report() is non-blocking; budget caps
+        // frames per iteration. replay_active_set() re-broadcasts latched/active
+        // states so the sink keeps receiving them.
+        pump_diagnostics();
 
         vTaskDelayUntil(&last, per);
     }
@@ -749,6 +794,9 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         if (!g_bench_solo_mode && g_watchdog.is_stale(esp_timer_get_time())) {
             static int64_t last_stale_log_us = 0;
             const int64_t now_us = esp_timer_get_time();
+            rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
+                             static_cast<std::uint16_t>(
+                                 (now_us - g_watchdog.last_feed()) / 1000));
             if (now_us - last_stale_log_us > 2'000'000) {
                 last_stale_log_us = now_us;
                 ESP_LOGW(TAG, "Command stale (no host drive)");
@@ -763,15 +811,21 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 
 static void check_task_watchdog() {
     TickType_t now = xTaskGetTickCount();
-    auto stale = [now](std::atomic<uint32_t>& a, const char* name) {
-        if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(500))
+    uint16_t stalled_mask = 0;
+    auto stale = [&](std::atomic<uint32_t>& a, const char* name, uint16_t bit) {
+        if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(500)) {
             ESP_LOGE(TAG, "Task %s stalled >500ms — hardware WDT may fire", name);
+            stalled_mask |= bit;
+        }
     };
-    stale(g_alive_control,  "control");
-    stale(g_alive_dispatch, "dispatch");
-    stale(g_alive_tx_low,   "tx_low");
+    stale(g_alive_control,  "control",  1u);
+    stale(g_alive_dispatch, "dispatch", 2u);
+    stale(g_alive_tx_low,   "tx_low",   4u);
     if (g_high_can_present.load(std::memory_order_relaxed))
-        stale(g_alive_tx_high, "tx_high");
+        stale(g_alive_tx_high, "tx_high", 8u);
+    // Report-only: which RT task(s) missed their alive heartbeat (>500ms).
+    if (stalled_mask != 0)
+        rt::diag().raise(etrike::diagnostics::DiagId::RtTaskHealthFault, stalled_mask);
 }
 
 // ── Heartbeat (prio 1, 2 Hz) ───────────────────────────────────────

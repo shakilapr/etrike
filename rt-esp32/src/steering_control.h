@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include "diag_rt.h"
 // SteeringControl — steer-by-wire unit command generation (0x169 VCU_SES_REQ).
 //
 // TASK OWNERSHIP: This class is owned by t_control (prio 4). All mutation
@@ -66,6 +67,9 @@ public:
             }
             // Timeout check (gap C1): 5s without valid 0x201 → FAULT
             if (now_ms - m_sync_start_ms > static_cast<uint32_t>(kSteerSyncTimeoutMs)) {
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSteerSyncTimeout,
+                                 static_cast<std::uint16_t>(
+                                     now_ms - m_sync_start_ms));
                 m_state = SteerState::STEER_FAULT;
                 return false;
             }
@@ -77,6 +81,8 @@ public:
             // If >30° off, likely wrong offset or sensor fault — refuse ACTIVE.
             if (std::abs(ses_angle_raw) > 300) {  // 30° in 0.1° units
                 ESP_LOGE("steer", "Angle implausible at sync: %d (0.1°) — check offset", ses_angle_raw);
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSteerImplausibleAngle,
+                                 static_cast<std::uint16_t>(std::abs(ses_angle_raw)));
                 m_state = SteerState::STEER_FAULT;
                 return false;
             }
@@ -121,6 +127,8 @@ public:
                     if (m_estop_following_err_start_ms == 0)
                         m_estop_following_err_start_ms = now_ms;
                     else if (now_ms - m_estop_following_err_start_ms > 1000) {
+                        rt::diag().raise(etrike::diagnostics::DiagId::RtSteerEstopJam,
+                                         static_cast<std::uint16_t>(err));
                         m_state = SteerState::STEER_FAULT;
                         return false;  // silent-stop — linkage likely jammed
                     }
