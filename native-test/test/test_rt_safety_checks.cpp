@@ -26,6 +26,12 @@ std::atomic<int64_t> g_last_sys_hb_us{0};
 std::atomic<int64_t> g_last_host_hb_us{0};
 std::atomic<int32_t> g_mtr_actual_speed_mmps{0};
 bool                 g_bypass_eps_sync = true;   // skip steering-follow path
+bool                 g_bypass_mtr_absent = true; // these scenarios don't exercise MTR health (#8)
+namespace rt {
+MtrHealthSupervisor g_mtr_health;
+}  // namespace rt
+std::atomic<int64_t> g_last_mtr_feedback_us{-1};
+std::atomic<int64_t> g_last_nonzero_cmd_us{-1};
 std::atomic<int16_t> g_last_cmd_angle_0_1deg{INT16_MIN};
 std::atomic<int32_t> g_ses_angle_0_1deg{0};
 std::atomic<int32_t> g_brake_request_kpa{0};

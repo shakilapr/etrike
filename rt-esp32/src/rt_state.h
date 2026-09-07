@@ -54,6 +54,11 @@ extern std::atomic<bool>     g_direct_steer_valid;
 extern std::atomic<int64_t>  g_last_direct_steer_us;
 extern std::atomic<int64_t>  g_last_mtr_feedback_us;
 extern std::atomic<int64_t>  g_last_ses_feedback_us;
+// Timestamp (us) of the most recent non-zero propulsion command produced by
+// t_control (issue #8). Used to decide brake escalation when MTR feedback is
+// lost: we cannot measure true vehicle motion, so "recently commanded to move"
+// is the conservative proxy. Set only while AUTO, right before safety checks.
+extern std::atomic<int64_t>  g_last_nonzero_cmd_us;
 
 // ── Derived state (written by control, read by tx tasks) ────────────
 extern std::atomic<uint8_t>  g_mode_current;     // current mode (control publishes after event drain)

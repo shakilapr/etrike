@@ -78,6 +78,7 @@ std::atomic<bool>     g_direct_steer_valid{false};
 std::atomic<int64_t>  g_last_direct_steer_us{-1};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
 std::atomic<int64_t>  g_last_ses_feedback_us{-1};
+std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 
 // ── Derived state (written by control, read by tx tasks) ────────────
 std::atomic<uint8_t>  g_mode_current{0};
@@ -167,6 +168,13 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 // ── RT Phase B diagnostic reporter (singleton accessor) ──────────────
 #include "diag_rt.h"
 #include "protocol/compat/can.hpp"
+
+// Issue #8: MTR-feedback health supervisor (see safety_monitor.h). Tracks
+// AUTO-entry-relative acquisition grace, MTR-unavailable latch, and confirmed
+// recovery across control-loop cycles.
+namespace rt {
+MtrHealthSupervisor g_mtr_health;
+}  // namespace rt
 
 // ── CAN TX helper — checks return, logs failure, detects recovery ────
 static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
@@ -446,6 +454,15 @@ static void pump_diagnostics() {
         }
         update_low_can_tx_admission(now);
         bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
+
+        // Issue #8: record the most recent non-zero propulsion command (AUTO only,
+        // measured on the pre-safety setpoint). When MTR feedback is later lost we
+        // cannot measure true motion, so this "recently commanded to move" proxy
+        // drives the brake-escalation decision.
+        if (m_current_mode == uint8_t(can::Mode::Auto)
+            && std::abs(sp.motor_speed_mmps) > shared::kLowSpeedThreshMmps) {
+            g_last_nonzero_cmd_us.store(now, std::memory_order_relaxed);
+        }
 
         rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
                                                   m_estop_pending, m_current_mode, m_seb_takeover);
