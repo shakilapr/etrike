@@ -916,6 +916,58 @@ void test_fdcan_driver_ringbuffer() {
     ASSERT_EQ(fdcan_mock::g_tx_msgs[0].id, 0x206u);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 7g. Motor Manager: SYS asserts the E-stop purely via 0x011 estop_active
+//     (the SYS_SAFETY_STS authority) — NO 0x001 SAFETY_ESTOP needed. This is
+//     the SYS->MTR cross-node estop propagation (item #8): when SYS decides to
+//     halt, it reports estop_active = 1 on 0x011 and the motor MUST cut.
+// ═══════════════════════════════════════════════════════════════════════
+void test_motor_manager_sys_estop_via_safety_status() {
+    std::printf("[TEST GROUP] Motor Manager: SYS 0x011 estop_active cuts motor (#8)...\n");
+    mtr::RelayController relays;
+    mtr::DacController dac;
+    mtr::MotorManager mgr(relays, dac);
+    mgr.init();
+
+    // Normal driving in Drive with all authorities fresh (mode/power/0x011).
+    send_mode(mgr, can::Mode::Manual, 100);
+    send_power(mgr, true, 100);
+    send_safety(mgr, false, 100);
+    can::gen::RtDriveCmd drv{2000, static_cast<uint8_t>(can::Gear::D)};
+    can::Frame drv_fr;
+    can::gen::encode_rt_drive_cmd(drv, drv_fr);
+    mgr.handle_frame(drv_fr, 100);
+    mgr.tick(100);
+    ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
+    ASSERT_TRUE(dac.current_code() > 0);
+
+    // SYS reports estop_active = 1 on 0x011 (no 0x001 SAFETY_ESTOP anywhere).
+    send_safety(mgr, true, 108);
+    ASSERT_TRUE(mgr.is_estop_active());
+    mgr.tick(110);
+    ASSERT_EQ(relays.state(), mtr::RelayController::State::Off); // motor CUT
+    ASSERT_EQ(dac.current_code(), 0);
+
+    // Two consecutive fresh zero 0x011 frames -> authorized clear.
+    send_safety(mgr, false, 120);
+    ASSERT_FALSE(mgr.is_estop_active());
+
+    // Landing stays OFF until a fresh REARM (0x113 OFF->ON) is observed.
+    mgr.handle_frame(drv_fr, 125);
+    mgr.tick(125);
+    ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+    ASSERT_EQ(dac.current_code(), 0);
+
+    // Fresh REARM -> motor resumes.
+    send_mode(mgr, can::Mode::Manual, 130);
+    send_power(mgr, false, 130);
+    send_power(mgr, true, 130);
+    mgr.handle_frame(drv_fr, 130);
+    mgr.tick(130);
+    ASSERT_EQ(relays.state(), mtr::RelayController::State::Drive);
+    ASSERT_TRUE(dac.current_code() > 0);
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -939,6 +991,7 @@ int main() {
     test_motor_manager_safety_stream_freshness_fail_safe();
     test_motor_manager_safety_crc_corruption_fail_safe();
     test_motor_manager_recovery_requires_rearm();
+    test_motor_manager_sys_estop_via_safety_status();
     test_fdcan_driver_ringbuffer();
 
     std::printf("\n--------------------------------------------------------\n");
