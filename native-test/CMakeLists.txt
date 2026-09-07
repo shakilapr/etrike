@@ -219,6 +219,20 @@ target_include_directories(rt_can_dispatch PRIVATE
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
+add_executable(rt_safety_checks
+    test/test_rt_safety_checks.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
+)
+target_link_libraries(rt_safety_checks PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(rt_safety_checks PRIVATE
+    ${freertos_kernel_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+)
+
 # ── RT safety monitor test ──────────────────────────────────────────
 add_executable(rt_safety_monitor
     test/test_rt_safety_monitor.cpp
@@ -317,6 +331,7 @@ add_test(NAME mcp2515_config      COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
 add_test(NAME rt_phase2_motion    COMMAND rt_phase2_motion)
 add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
+add_test(NAME rt_safety_checks     COMMAND rt_safety_checks)
 add_test(NAME sys_can_dispatch    COMMAND sys_can_dispatch)
 add_test(NAME task_watchdog       COMMAND task_watchdog)
 add_test(NAME rt_safety_monitor   COMMAND rt_safety_monitor)
