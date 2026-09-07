@@ -365,6 +365,17 @@ target_include_directories(remediation_fixes PRIVATE
 )
 add_test(NAME remediation_fixes    COMMAND remediation_fixes)
 
+# ── SYS independent traction-inhibit state (issues #5/#7) ─────────────
+add_executable(sys_inhibit_state
+    test/test_sys_inhibit_state.cpp
+)
+target_include_directories(sys_inhibit_state PRIVATE
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/sys-esp32/src
+)
+add_test(NAME sys_inhibit_state    COMMAND sys_inhibit_state)
+
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
     sim-engine/main_native.cpp
