@@ -10,7 +10,7 @@ older markdown specs — those are called out explicitly.
 > **Trust note.** Where this document disagrees with `architecture.md`, `new-architecture.md`, or
 > `CONTROLLER.md`, the firmware is authoritative. Two notable divergences:
 > 1. **RM does not emit `HMI_MODE_REQ`/`HMI_PWR_REQ` (0x111/0x112).** It *emulates* the authoritative
->    `SYS_MODE_CMD` (0x110) and `SYS_PWR_CMD` (0x113) instead (`rm-esp32/src/main.cpp:194-198`).
+>    `SYS_MODE_CMD` (0x110) and `SYS_PWR_CMD` (0x113) instead (`rm-esp32/src/main.cpp:207-225`).
 > 2. **MTR is an open-loop throttle emulator.** There is no speed sensor, no PID, no current/temp/voltage
 >    sensing in MTR firmware. `0x206.actual_speed_mmps` is the *commanded setpoint echoed back*, not a
 >    measurement (`mtr-stm32/src/motor_manager.h:312-331`).
@@ -21,7 +21,7 @@ older markdown specs — those are called out explicitly.
 
 | Node | HW | OS | Bus | Role |
 |------|----|----|-----|------|
-| **RM**  | ESP32 (classic) | FreeRTOS/ESP-IDF | Low CAN 500 k | Operator RC → CAN command source; asserts `0x001` on link loss |
+| **RM**  | ESP32 (classic) | FreeRTOS/ESP-IDF | Low CAN 500 k | **Bench/isolated only** — operator RC → CAN command source when SYS/RT/Host are absent; asserts `0x001` on link loss |
 | **RT**  | ESP32-S3 | FreeRTOS/ESP-IDF | **Low + High CAN** | Kinematics, steering authority, dual-bus gateway, safety monitor, ESTOP latch |
 | **SYS** | ESP32-S3 | FreeRTOS/ESP-IDF | Low CAN 500 k | Mode/power authority, brake-by-wire (SEB) command, body control, **system ESTOP broadcast** |
 | **MTR** | STM32G431 | superloop (no RTOS) | Low CAN 500 k | Motor actuator: relays + 12-bit DAC throttle; ESTOP latch; 500 ms comms watchdog |
@@ -36,22 +36,35 @@ realtime guarantees, different safety criticality, independent power domains
 
 ## 2. CAN bus topology
 
+**RM is a separate, isolated controller — it is NOT co-located with SYS/RT/Host.** The same
+Low-CAN wiring is shared, but only one deployment is attached at a time:
+
+- **Production (AUTO):** SYS, RT, Host present; **RM disconnected**.
+- **Bench / manual (MANUAL):** **RM connected, SYS/RT/Host absent** — RM emulates the SYS
+  authority frames (`0x110`/`0x113`/`0x011`) so the actuators run standalone.
+
 ```
-                         HIGH CAN (500 k)                        LOW CAN (500 k)
-  Jetson/Host ──────────── RT (MCP2515 via SPI) ───────────────┐
-   (0x300 drive,            TWAI         │                       │
-    0x301 brake,            built-in     │                       │
-    0x303 steer,            ◄─────────────┤                       │
-    0x400 obstacle)                      │                       │
-                                         │   RT bridges Low<->High
-                                         ▼                       ▼
-                                   ┌─────────────── Low CAN backbone ───────────────┐
-                                   │   RM ──┐                                        │
-                                   │   SYS ─┤ 0x110/0x113 mode+pwr, 0x011 safety,    │
-                                   │   MTR ─┤ 0x001 ESTOP (broadcast on whole bus),  │
-                                   │   SES ─┤ 0x169 steer cmd, 0x201/0x202/0x6FA fbk  │
-                                   │   SEB ─┘ 0x7B9 brake cmd, 0x721/0x6FB/0x731 fbk  │
-                                   └────────────────────────────────────────────────┘
+  ── Production (AUTO): Host → RT → Low-CAN backbone ───────────────────────────────
+                          HIGH CAN (500 k)                    LOW CAN (500 k)
+   Jetson/Host ─────────── RT (MCP2515 via SPI) ───────────┐
+    (0x300 drive,           TWAI built-in    │              │
+     0x301 brake,           ◄────────────────┤  RT bridges  │
+     0x303 steer,                         Low<->High        │
+     0x400 obstacle)                                    ▼
+                                          ┌── Low CAN backbone (production) ──┐
+                                          │ SYS  0x110/0x113/0x011, 0x001       │
+                                          │ MTR  0x204 in, 0x206/0x120 out      │
+                                          │ SES  0x169 in, 0x201/0x202/0x6FA out│
+                                          │ SEB  0x7B9 in, 0x721/0x6FB/0x731 out│
+                                          └─────────────────────────────────────┘
+
+  ── Bench / isolated (MANUAL): RM alone drives the actuators ──────────────────────
+                                          ┌── Low CAN backbone (bench) ──────────┐
+                                          │ RM  emulates 0x110/0x113/0x011,      │
+                                          │     0x204/0x169/0x7B9, 0x001          │
+                                          │ MTR  SES  SEB  (same actuators)       │
+                                          └──────────────────────────────────────┘
+    RM is the SOLE command + authority source here; never on the bus with SYS/RT/Host.
 ```
 
 - **RT is the only node with two CAN interfaces** (`docs/architecture/distributed-architecture.md:104`):
@@ -87,7 +100,7 @@ for MTR (via `0x204`) and for steering (via `0x169`) and brake (via `0x7B9` in A
 `0x204`/`0x205` for EGAS L2 and brake-watchdog checks but does not re-transmit them
 (`sys-esp32/src/main.cpp:223-475`).
 
-### 3.2 Manual / bench (RM bypass) path — RM → MTR directly
+### 3.2 Bench / isolated (RM standalone) path — RM → MTR directly
 
 ```
  Operator RC (FlySky) ──PWM──► RM ESP32
@@ -97,16 +110,22 @@ for MTR (via `0x204`) and for steering (via `0x169`) and brake (via `0x7B9` in A
    MTR STM32  (same as above)
 ```
 
-In standalone/bench mode RM *emulates* the SYS authority frames so the stack runs without a real
-SYS node (`rm-esp32/src/main.cpp:194-198`). In MANUAL production, RT is silent on the low bus and
-SYS/RM drive the actuators directly.
+In **bench / isolated** mode RM *emulates* the SYS authority frames (`0x110`/`0x113`/`0x011`) so the
+stack runs without a real SYS node (`rm-esp32/src/main.cpp:207-225`). This is a **separate deployment**
+from production: in production, SYS is present and RM is **disconnected**; in bench mode SYS/RT/Host
+are absent and RM is the sole driver. The two are never on the bus together (see §2). Note that in
+production **MANUAL** mode, RT still publishes a `0x204 {0,N}` keep-alive every 100 ms (no motion,
+`rt-esp32/src/main.cpp:555-589`), RT suppresses `0x169` steering (`main.cpp:605`) and `0x205` brake
+(`main.cpp:596`, SYS handles brake directly), and SES runs steering standalone — **there is no
+commanded traction source in production MANUAL**; traction authority in that mode is currently
+unassigned (see §8 "Open safety issues").
 
 > **Duty — RM is the isolated / bench vehicle controller.** RM is connected **only** when SYS, RT,
 > and Host are absent (it is never on the bus simultaneously with them), so in that configuration it is
 > the sole authority and command source for the whole vehicle. It directly commands all three actuators
 > — `0x204`→MTR (motor), `0x169`→SES (steer), `0x7B9`→SEB (brake) — and emulates the SYS authority
 > frames MTR expects: `0x110 SYS_MODE_CMD`, `0x113 SYS_PWR_CMD`, and `0x011 SYS_SAFETY_STS`
-> (`main.cpp:206-224` for `0x110`/`0x113`, `0x011` at `main.cpp:227-240`). With **RM + MTR + SES + SEB** alone the trike is fully drivable: throttle, gear,
+> (`main.cpp:207-225` for `0x110`/`0x113`, `0x011` at `main.cpp:227-240`). With **RM + MTR + SES + SEB** alone the trike is fully drivable: throttle, gear,
 > steering, braking, mode/power arming, and ESTOP-on-link-loss all function, and a latched MTR ESTOP is
 > released by RM's `0x011` two-frame (`estop_active==0`) sequence + the `0x113` OFF→ON REARM
 > (`motor_manager.h:161-192,110-118`). RM's RC-reset sequence (Ignition OFF + Gear N, `main.cpp:89-94`)
@@ -135,11 +154,15 @@ SYS/RM drive the actuators directly.
 
 ## 4. Controller pipelines (with block diagrams)
 
-### 4.1 RM — operator remote / command source
+### 4.1 RM — operator remote / command source (bench / isolated only)
+
+> **Deployment:** RM is attached **only** when SYS/RT/Host are disconnected (§2). Every frame listed
+> below is what RM emits in that standalone mode; in production the same frame IDs are produced by
+> SYS/RT instead.
 
 **HW:** FlySky FS-i6 6-ch RC receiver → ESP32 RMT (6 ch, 50 Hz). 4 FreeRTOS tasks
 (`rc_capture` p8, `can_tx` p4, `can_ctrl` p2, `heartbeat` p1). Entry `app_main()`
-`rm-esp32/src/main.cpp:304`.
+`rm-esp32/src/main.cpp:320`.
 
 ```
  RC PWM (RMT, 1 µs tick)
@@ -152,7 +175,7 @@ SYS/RM drive the actuators directly.
    │  throttle_norm = (raw-1050)/900  (idle cutoff 1050 µs)
    │  ignition = raw>=1500 ; gear = R/D/N by 3-pos switch
    ▼
- task_can_tx (50 Hz)  main.cpp:76-229
+  task_can_tx (50 Hz)  main.cpp:77-245
    │  estop_or_signal_loss = !signal_valid || estop_latched
    │  drive_active = !estop && ignition && (gear==D||R)
    │  brake-over-throttle interlock: brake>5mm -> speed=0
@@ -171,9 +194,10 @@ SYS/RM drive the actuators directly.
 
 ### 4.2 RT — realtime motion master + gateway
 
-**HW:** ESP32-S3, dual CAN. 8 FreeRTOS tasks (`rx_low`/`rx_high` p5, `t_dispatch` p4,
-`t_control` p4 @100 Hz, `t_can_tx_low`/`t_can_tx_high` p3, `t_watchdog` p1 @10 Hz,
-`t_heartbeat` p1 @2 Hz). Entry `app_main()` `rt-esp32/src/main.cpp:877`.
+**HW:** ESP32-S3, dual CAN. 8 FreeRTOS tasks when High CAN (MCP2515) is present; **6** otherwise
+(`rx_high`/`t_can_tx_high` are created only inside `if (has_high_can)`, `rt-esp32/src/main.cpp:953-969`):
+`rx_low`/`rx_high` p5, `t_dispatch` p4, `t_control` p4 @100 Hz, `t_can_tx_low`/`t_can_tx_high` p3,
+`t_watchdog` p1 @10 Hz, `t_heartbeat` p1 @2 Hz. Entry `app_main()` `rt-esp32/src/main.cpp:877`.
 
 ```
  HIGH CAN 0x300/0x301/0x303/0x400/0x7FC        LOW CAN 0x001/0x011/0x110/0x201..0x206/0x721/0x6FB/0x7FE
@@ -184,13 +208,14 @@ SYS/RM drive the actuators directly.
         ▼  t_control @ 100 Hz  (main.cpp:324)
    ┌─────────────────────────────────────────────────────────────┐
    │ resolver.resolve({speed_mmps, yaw}) -> (steer_angle_mdeg, sp)│
-   │   PhysicsModel: v=speed/1000, w=yaw/1000, L=1.5m             │
-   │     steer = atan(L*w/v) clamped ±40°  (low-speed decay ×0.8) │
-   │   DirectResolver: yaw*15 mdeg/(mrad/s) clamp ±45000 mdeg     │
+    │   PhysicsModel: v=speed/1000, w=yaw/1000, L=1.5m             │
+    │     steer = atan(L*w/v) only if |v|>0.05 m/s; else decay/sat  │
+    │   DirectResolver: yaw*15 mdeg/(mrad/s) clamp ±45000 mdeg     │
    │ dynamic angle clamp: 40°-(kmh-2)*(35/23) clamp[5,40]°        │
    │ obstacle_limit(speed) + obstacle_to_kpa -> brake_arbitrate() │
    │ run_safety_checks() -> may zero_setpoints / disable_steering │
-   │ PID (shadow=telemetry; active=adds correction to motor_speed)│
+    │ PID — compile-time optional, DISABLED in prod `env:vehicle`;  │
+    │   bench Calculated feedback only (never MTR 0x206 echo)       │
    │ g_steering.set_target(angle, mtr_speed)  [AUTO only]         │
    └─────────────────────────────────────────────────────────────┘
         │
@@ -245,15 +270,15 @@ indicator/power/can_tx p2, can_rx p5, can_control p2, diag p1, hb p1). Entry `ap
 
 ### 4.4 MTR — motor actuator
 
-**HW:** STM32G431, **superloop** (no RTOS), 16 MHz HSI. Single `while(1)` with `HAL_Delay(1)`
-(`mtr-stm32/src/main.cpp:96`). CAN RX ISR → 32-deep ring → drained each loop. Entry `main()`
+**HW:** STM32G431, **superloop** (no RTOS), 16 MHz HSI. Single `while(1)` loop (`mtr-stm32/src/main.cpp:96`)
+with `HAL_Delay(1)` at `main.cpp:144`. CAN RX ISR → 32-deep ring → drained each loop. Entry `main()`
 `main.cpp:67`.
 
 ```
  CAN RX ring (filtered: only 0x001, 0x011, 0x110, 0x113, 0x204)   [Low CAN 500 k]
    │  g_can.poll_rx -> g_motor.handle_frame
    ▼
- motor_manager.tick(now_ms)  @ 5 ms   (main.cpp:106)
+  motor_manager.tick(now_ms)  @ 5 ms   (main.cpp:109)
    ┌─ global fail-safe gate: estop || comms_timeout || !power || !safety || un-rearmed
    │      -> target=0, relays Off, DAC force_zero()        (motor_manager.h:219-225)
    ├─ mode gate: !mode_valid -> target=0 (power kept)
@@ -300,7 +325,7 @@ shadow PID in RT telemetry). Key scaling tables:
 | Brake stroke (mm→raw) | `raw = (mm + 30) / 0.05` → 0 mm=600, 27 mm=1140 | `shared_config.h:36-37`, `brake_control.h` |
 | Brake pressure (kPa→raw) | `raw = (kPa + 25) / 50`, clamp 100 | `brake_control.h:122-123`, `shared_config.h:39` |
 | Yaw → steer (direct) | `steer_mdeg = yaw_mrad_s * 15`, clamp ±45000 mdeg | `direct_resolver.cpp:17,23` |
-| Yaw → steer (bicycle) | `steer = atan(L*w/v)`, L=1.5 m | `physics_model.cpp:52` |
+| Yaw → steer (bicycle) | `steer = atan(L*w/v)`, L=1.5 m; only if `|v|>0.05 m/s`, else decay ×0.8 / ±limit | `physics_model.cpp:36-70` |
 | RC steering | `norm = clamp((raw−1500)/450,−1,1) * 45°`, ±30 µs deadband | `rc_decoder.h:46-54` |
 | RC throttle | `norm = clamp((raw−1050)/900,0,1)`, idle cutoff 1050 µs | `rc_decoder.h:66-74` |
 | RC brake | `norm = clamp((raw−1520)/450,0,1) * 27 mm` | `rc_decoder.h:56-64` |
@@ -437,11 +462,78 @@ watchdog that asserts `0x001` (only the MTR-side 500 ms watchdog is referenced).
 
 No hardware independent watchdog (IWDG) is implemented on MTR or SYS; liveness is purely
 software/communications-based. SYS's external `g_wdt.tick()` on GPIO23 is present but
-commented-out (`sys-esp32/src/main.cpp:40,514`).
+commented-out (`sys-esp32/src/main.cpp:40,514`). Timeouts are deliberately tiered but uneven
+(100 ms SEB status … 5000 ms HMI authority) — see §8.
 
 ---
 
-## 8. Key file index
+## 8. Open safety issues (architecture blockers)
+
+Source-verified list (each with `file:line` evidence) of weaknesses that must be resolved before
+vehicle testing. Severity: 🔴 critical / 🟠 high / 🟡 medium.
+
+1. 🔴 **EGAS compares command vs echoed command — not physical.** `0x206.actual_speed_mmps` is the
+   commanded setpoint echoed back (`mtr-stm32/src/motor_manager.h:315` = `target_speed_mmps_`, loaded
+   from the decoded `0x204` at `:95`); MTR has **no speed sensor / encoder / ADC**. SYS EGAS
+   (`|0x204 − 0x206| > 500 mm/s`) is a command-path consistency check only — it cannot detect DAC
+   stuck, relay welded, wheel overspeed, or runaway. Until real wheel/motor speed feedback exists,
+   the field should be renamed (e.g. `applied_speed_command_mmps`) and the check must not be called
+   physical EGAS.
+2. 🔴 **MTR has no `0x204`-specific deadman.** The only link watchdog is "any frame within 500 ms"
+   (`motor_manager.h:197`, `last_rx_ms_` updated on *every* frame). `0x011`/`0x110`/`0x113` are each
+   individually supervised but `0x204` is not — a frozen drive command with otherwise-healthy bus
+   keeps `target_speed_mmps_` on the DAC indefinitely. Fix: dedicated `0x204` freshness (≤100 ms)
+   feeding the fail-safe gate.
+3. 🔴 **RT and SYS both transmit `0x7B9`** (same CAN ID). SYS suppresses itself only while
+   `mode==Auto && rt_authority_established` (`sys-esp32/src/main.cpp:739-741`, sends at `:752-756`);
+   RT transmits in AUTO and on takeover (`rt-esp32/src/main.cpp:622-636`). Same-ID dual producers can
+   collide at bit level during takeover or interleave MAX/normal brake. Fix: one producer per ID
+   (e.g. RT→`0x7B8` request, SYS→`0x7B9` command) or SEB-side source arbitration.
+4. 🔴 **`0x011.estop_active` reflects only the hardware ESTOP button.** `estop_active()` returns
+   `m_estop` (`sys-esp32/src/safety_monitor.h:16`), set solely by the ESTOP GPIO
+   (`sys-esp32/src/main.cpp:483-492`). Software ESTOPs (CAN `0x001`, SEB L3, EGAS, bus-off, MTR-loss)
+   change `mode` but never `m_estop`. MTR can then be *cleared* by two `0x011 estop_active==0`
+   frames while SYS still believes it is latched (propulsion stays off only via `0x113=OFF`).
+   Fix: `estop_active` = the true system latch + an `estop_epoch`/`reset_authorized` so clears are
+   explicit and coordinated.
+5. 🔴 **Brake faults are warn-only.** SEB `error_status` L3 (`sys main.cpp:344-347`) and brake
+   following-error >3 mm / >100 ms (`:388-396`) only set `g_brake_fault_active` — no `force_estop()`.
+   `0x721`/test loss >100 ms is `ESP_LOGW` only (`:758-774`). `g_brake_fault_active` feeds the "ready"
+   bulb and `0x600` diag, never a stop. A confirmed-unavailable brake can coexist with live traction.
+6. 🔴 **No independent hardware watchdog (IWDG/WWDG)** on MTR or SYS
+   (`mtr-stm32/Core/Inc/stm32g4xx_hal_conf.h:49,68` — commented out). If MTR firmware hangs, the
+   fail-safe code never runs and DAC/relay outputs stay energized. Fix: STM32 IWDG + output-safe reset
+   state + (practical) external hardware enable.
+7. 🟠 **SYS MTR-feedback timeout is not actuator-level.** On `0x206` stale >200 ms SYS zeroes its
+   *internal* speed/gear (`sys main.cpp:566-578`) but does not change `0x110`/`0x113`/`0x001` and
+   does not own `0x204` — MTR keeps doing its last command. Fix: remove power authority (`0x113=OFF`)
+   and/or assert `0x001`.
+8. 🟠 **RT does not watchdog MTR.** `0x206` staleness only sets a report-validity flag
+   (`rt-esp32/src/can_dispatch.h:220-227`); RT never zeroes `0x204` or ESTOPs on MTR loss. Fix: treat
+   MTR acceptance loss as actuator failure (zero `0x204` + brake/ESTOP as appropriate).
+9. 🟠 **No real speed feedback anywhere (PID is open-loop in production).** Production build runs **no
+   active PID** (`platformio.ini [env:vehicle]`: `ETRIKE_RT_PID_MODE=0`, feedback source None). Bench
+   PID uses `Calculated` (synthetic, derived from the commanded setpoint), never MTR `0x206`
+   (`build_config.h:86-88` `static_assert`). Keep RT open-loop until a physical wheel/motor sensor
+   exists; do not present PID/telemetry as closed-loop.
+10. 🟠 **Production MANUAL has no commanded traction owner.** RT publishes a `0x204 {0,N}` keep-alive
+    in MANUAL (`rt main.cpp:555-589`) and suppresses `0x169`/`0x205` (`:605`,`:596`); SYS never sends
+    `0x204`; RM is disconnected. Traction command in production MANUAL is unassigned. Fix: define the
+    ownership matrix (AUTO/MANUAL/ESTOP/BENCH × `0x204`/`0x169`/`0x7B9`).
+11. 🟡 **`0x001` carries no sender/reason/epoch** (`protocol/generated/cpp/etrike_protocol.hpp:2013-2032`,
+    DLC 0). Fine as an immediate primitive, but persistent safety truth must be reconstructed from
+    `0x011`/`0x210`/`0x206` — contributing to issue 4.
+12. 🟡 **HMI authority freshness is 5 s.** `kReqFreshTicks = HmiModeReq::kCycleMs * 5` = 5000 ms
+    (`sys main.cpp:144-145`). Dead HMI authority outlives the 500 ms drive watchdog by 10×.
+13. 🟡 **Timeout policies are inconsistent** across controllers (100 ms SEB … 5000 ms HMI), so
+    controllers can occupy incompatible safety states after a partial failure.
+
+**Recommended fix order:** real speed feedback → `0x204` watchdog → single brake-command owner →
+unified ESTOP latch → brake-fault traction inhibition → hardware watchdogs → MANUAL ownership matrix.
+
+---
+
+## 9. Key file index
 
 - **MTR:** `mtr-stm32/src/main.cpp`, `motor_manager.h`, `can_driver.h`, `relay_controller.h`,
   `dac_controller.h`, `config.h`.
