@@ -583,6 +583,87 @@ void test_motor_manager_dac_curves() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 6b. Motor Manager: GOLDEN DAC vectors (the "tuktuk math" low-level check)
+//     Asserts the exact analog code produced for a given RT_DRIVE_CMD speed,
+//     including the deadband, the active motion floor (700), and saturation.
+//     Formula: code = clamp(700 + 1266 * (|speed| / max), 655, 1966);
+//              |speed| < kLowSpeedThreshMmps(50) -> 0 V
+//     Forward max = 3000 mm/s, Reverse max = 500 mm/s.
+// ═══════════════════════════════════════════════════════════════════════
+
+static void drive_to_dac(mtr::MotorManager& mgr, mtr::DacController& dac,
+                         int32_t speed, can::Gear gear, uint32_t now) {
+    can::gen::RtDriveCmd drv{speed, static_cast<uint8_t>(gear)};
+    can::Frame fr;
+    can::gen::encode_rt_drive_cmd(drv, fr);
+    mgr.handle_frame(fr, now);
+    mgr.tick(now);
+}
+
+void test_motor_manager_dac_golden_vectors() {
+    std::printf("[TEST GROUP] GOLDEN DAC Vectors (tuktuk low-level math)...\n");
+
+    // --- Forward golden vectors (gear D) ---
+    struct FwdVec { int32_t speed; uint16_t expect; };
+    FwdVec fwd[] = {
+        {0,    0},     // zero -> 0 V
+        {49,   0},     // deadband ( < 50 ) -> 0 V
+        {50,   721},   // 700 + (50/3000)*1266 = 721.1 -> 721
+        {1500, 1333},  // midpoint 700 + 0.5*1266
+        {3000, 1966},  // 100% forward -> max code (2.404 V)
+        {4000, 0},     // overspeed (>kMaxForwardSpeedMmps) REJECTED -> safe 0 V
+    };
+    for (auto& v : fwd) {
+        hal_mock::reset();
+        mtr::RelayController relays;
+        mtr::DacController dac;
+        mtr::MotorManager mgr(relays, dac);
+        mgr.init();
+        send_mode(mgr, can::Mode::Manual, 100);
+        send_power(mgr, true, 100);
+        send_safety(mgr, false, 100);
+        drive_to_dac(mgr, dac, v.speed, can::Gear::D, 100);
+        ASSERT_EQ(dac.current_code(), v.expect);
+    }
+
+    // --- Reverse golden vectors (gear R) ---
+    // Enter Reverse first (50 ms arc-protection dwell), then sweep speeds.
+    // magnitude 50 (i.e. -50 mm/s) is NOT in deadband -> 700 + 0.1*1266 = 826.
+    struct RevVec { int32_t speed; uint16_t expect; };
+    RevVec rev[] = {
+        {-49,  0},     // |speed| < 50 -> 0 V
+        {-50,  826},   // magnitude 50 -> 700 + (50/500)*1266 = 826.6 -> 826
+        {-250, 1333},  // midpoint 700 + 0.5*1266
+        {-500, 1966},  // 100% reverse -> max code
+        {500,  1966},  // positive magnitude in R -> max code (legacy path)
+    };
+    hal_mock::reset();
+    mtr::RelayController relays;
+    mtr::DacController dac;
+    mtr::MotorManager mgr(relays, dac);
+    mgr.init();
+    send_mode(mgr, can::Mode::Manual, 100);
+    send_power(mgr, true, 100);
+    send_safety(mgr, false, 100);
+    drive_to_dac(mgr, dac, 0, can::Gear::D, 100);   // start in Drive
+    drive_to_dac(mgr, dac, -250, can::Gear::R, 100); // shifting D->R starts dwell
+    mgr.tick(160);                                 // dwell complete -> Reverse active
+    ASSERT_EQ(dac.current_code(), 1333);           // first reverse vector asserted
+    uint32_t t = 170;
+    for (size_t i = 1; i < sizeof(rev) / sizeof(rev[0]); ++i) {
+        drive_to_dac(mgr, dac, rev[i].speed, can::Gear::R, t);
+        std::printf("  DBG REV speed=%ld code=%u expect=%u\n", (long)rev[i].speed, (unsigned)dac.current_code(), (unsigned)rev[i].expect);
+        ASSERT_EQ(dac.current_code(), rev[i].expect);
+        t += 10;
+    }
+
+    // --- DAC code -> analog voltage sanity (VCC = 5.0 V, 12-bit) ---
+    // Max code 1966 must equal the documented 2.4 V safety limit.
+    const float v_max = static_cast<float>(mtr::kDacMaxCode) / 4095.0f * 5.0f;
+    ASSERT_NEAR(v_max, 2.404f, 0.01f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 7b. Motor Manager: 0x110 mode command must NOT clear a latched E-stop
 //     (Phase A regression guard — ESTOP lives on 0x001 / 0x011 only).
 // ═══════════════════════════════════════════════════════════════════════
@@ -852,6 +933,7 @@ int main() {
     test_motor_manager_direction_shift_dwell();
     test_motor_manager_watchdog_timeout();
     test_motor_manager_dac_curves();
+    test_motor_manager_dac_golden_vectors();
     test_motor_manager_mode_cmd_does_not_clear_estop();
     test_motor_manager_asymmetric_clear_requires_two_frames();
     test_motor_manager_safety_stream_freshness_fail_safe();
