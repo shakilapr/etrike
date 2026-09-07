@@ -1,7 +1,7 @@
-# VCU_2 / MTR — STM32G431 Motor & Relay Actuator Node: Architecture
+# VCU_2 / MTR ? STM32G431 Motor & Relay Actuator Node: Architecture
 
 > **ECU Role:** Motor Control Unit (MTR / Actuator Node)  
-> **Silicon:** STMicroelectronics STM32G431CBU6 (Arm® Cortex®-M4F @ 16 MHz, 128 KB Flash, 32 KB SRAM)  
+> **Silicon:** STMicroelectronics STM32G431CBU6 (Arm? Cortex?-M4F @ 16 MHz, 128 KB Flash, 32 KB SRAM)  
 > **Bus:** CAN Low Bus (Classic CAN 2.0A @ 500 kbit/s via internal FDCAN1 + external transceiver)  
 > **Language & Standard:** C++17 (`arm-none-eabi-g++ -std=gnu++17`)  
 > **Toolchains Supported:** Dual-workflow: **STM32CubeIDE** (GUI project / build / debug) & **PlatformIO** (`pio run -e vehicle -t upload`)
@@ -28,7 +28,7 @@ The `mtr-stm32` firmware functions as the primary vehicle traction actuator and 
 
 ## 2. Hardware Pin Map & Actuator Interfaces
 
-All pin assignments from `mtr-stm/architecture.md` §6 and physical wiring specifications are 100% strictly preserved:
+All pin assignments from `mtr-stm/architecture.md` ?6 and physical wiring specifications are 100% strictly preserved:
 
 | Pin | Function | Mode | Logic / Polarity | Description |
 |---|---|---|---|---|
@@ -37,8 +37,8 @@ All pin assignments from `mtr-stm/architecture.md` §6 and physical wiring speci
 | **PA4** | Ignition Relay | Output Push-Pull | **Active-Low** | RESET = Relay ON (Ignition ON), SET = Relay OFF |
 | **PA5** | SW-I2C SCL | Output Open-Drain | Idle HIGH (pull-up) | Clock line for MCP4725 DAC |
 | **PA7** | SW-I2C SDA | Output Open-Drain | Idle HIGH (pull-up) | Data line for MCP4725 DAC (ACK sampled low) |
-| **PA11** | FDCAN1_RX | Alternate Function (AF9) | — | CAN differential receiver input from transceiver |
-| **PA12** | FDCAN1_TX | Alternate Function (AF9) | — | CAN differential transmitter output to transceiver |
+| **PA11** | FDCAN1_RX | Alternate Function (AF9) | ? | CAN differential receiver input from transceiver |
+| **PA12** | FDCAN1_TX | Alternate Function (AF9) | ? | CAN differential transmitter output to transceiver |
 | **PC6** | Status LED | Output Push-Pull | **Active-Low** | Toggles on mode/relay state transitions |
 
 ### Power-Up Safe State
@@ -68,24 +68,24 @@ On reset, prior to enabling GPIO drivers:
 
 ### 4.1 Received Messages (RX Path via FIFO0)
 Hardware filter acceptance list in FDCAN message RAM:
-1. `0x001` — **`SAFETY_ESTOP`** (DLC 0):
+1. `0x001` ? **`SAFETY_ESTOP`** (DLC 0):
    - Global emergency stop. Immediate de-energization of all relays and DAC to $0.0\text{ V}$.
-2. `0x110` — **`SYS_MODE_CMD`** (DLC 1):
+2. `0x110` ? **`SYS_MODE_CMD`** (DLC 1):
    - Mode authority from SYS: `0 = MANUAL`, `1 = AUTO`, `2 = ESTOP`.
-3. `0x204` — **`RT_DRIVE_CMD`** (DLC 5, 50 Hz):
+3. `0x204` ? **`RT_DRIVE_CMD`** (DLC 5, 50 Hz):
    - Authoritative motor setpoint: `motor_speed_mmps` (int32, big-endian, $[-500, 3000]$ mm/s) and `gear` (uint8, `0 = N`, `1 = D`, `2 = S`, `3 = R`).
    - Sourced from **RT** during Mode 1 (Autonomous Hierarchy), or directly from **RM** during Mode 2 (Direct Remote Manual Bypass).
-4. `0x0BB` — **Legacy Relay State** (DLC 8, fallback compatibility from RM):
+4. `0x0BB` ? **Legacy Relay State** (DLC 8, fallback compatibility from RM):
    - `0x00` = OFF, `0x03` = Park, `0x05` = Drive, `0x09` = Reverse.
-5. `0x0AA` — **Legacy Raw Throttle** (DLC 8, fallback compatibility from RM):
+5. `0x0AA` ? **Legacy Raw Throttle** (DLC 8, fallback compatibility from RM):
    - `rxData[0:1]` = 16-bit raw analog throttle code.
 
 ### 4.2 Transmitted Messages (TX Path via TX FIFO)
-1. `0x120` — **`SYS_THROTTLE_STS`** (DLC 2, 100 Hz / 10 ms period):
+1. `0x120` ? **`SYS_THROTTLE_STS`** (DLC 2, 100 Hz / 10 ms period):
    - Signals: `speed_mmps` (int16). Reflects commanded motor speed.
-2. `0x206` — **`MTR_MOTOR_FBK`** (DLC 4, 50 Hz / 20 ms period):
+2. `0x206` ? **`MTR_MOTOR_FBK`** (DLC 4, 50 Hz / 20 ms period):
    - Signals:
-     - `actual_speed_mmps` (int16): Estimated / commanded vehicle linear velocity.
+     - `applied_speed_command_mmps` (int16): Estimated / commanded vehicle linear velocity.
      - `gear_state` (uint8): Actual engaged relay gear state (`0=N`, `1=D`, `2=S`, `3=R`).
      - `fault_flags` (uint8):
        - `Bit 0` (`0x01`): `kMtrFaultEstopActive` (Asserted during ESTOP; fulfills Gap #15 redundant acknowledgment to SYS).
@@ -99,12 +99,12 @@ Structured with the standard modular design from `sys-esp32` and `rt-esp32`:
 
 ```
 mtr-stm32/src/
-├── config.h               # Pin assignments, DAC limits, timings
-├── can_driver.h / .cpp    # Handle-based FDCAN1 driver, FIFO0 ringbuffer, TX queue
-├── relay_controller.h/.cpp# Active-low relay state machine with mutual exclusion
-├── dac_controller.h/.cpp  # Bit-bang I2C MCP4725 driver with address scan & voltage clamps
-├── motor_manager.h/.cpp   # Speed-to-DAC conversion, gear interlocking, CAN telemetry
-└── main.cpp               # SysTick timebase, 500ms comms watchdog, 5ms main loop
+??? config.h               # Pin assignments, DAC limits, timings
+??? can_driver.h / .cpp    # Handle-based FDCAN1 driver, FIFO0 ringbuffer, TX queue
+??? relay_controller.h/.cpp# Active-low relay state machine with mutual exclusion
+??? dac_controller.h/.cpp  # Bit-bang I2C MCP4725 driver with address scan & voltage clamps
+??? motor_manager.h/.cpp   # Speed-to-DAC conversion, gear interlocking, CAN telemetry
+??? main.cpp               # SysTick timebase, 500ms comms watchdog, 5ms main loop
 ```
 
 ### 5.1 Relay Interlock Rules

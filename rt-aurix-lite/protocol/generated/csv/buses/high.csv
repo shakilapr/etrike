@@ -19,7 +19,7 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 ,,,,,,gear_valid,6,2,1,unsigned,1,"[0, 1]",,
 ,,,,,,reserved,6,3,5,unsigned,1,"[0, 31]",,
 ,,,,,,rolling_counter,7,0,8,unsigned,1,"[0, 255]",,
-0x206,MTR_MOTOR_FBK,MTR,Host,4,20,actual_speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
+0x206,MTR_MOTOR_FBK,MTR,Host,4,20,applied_speed_command_mmps,0,0,16,signed,1,"[-500, 3000]",,
 ,,,,,,gear_state,2,0,8,unsigned,1,"[0, 3]",,
 ,,,,,,fault_flags,3,0,8,unsigned,1,"[0, 255]",,
 0x210,RTA_STATE_RPT,RT,Host,6,100,mode,0,0,8,unsigned,1,"[0, 2]",," (Values: 0=MANUAL, 1=AUTO, 2=ESTOP)"

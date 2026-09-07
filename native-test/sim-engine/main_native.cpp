@@ -1,11 +1,11 @@
 /**
- * sim-engine-native — CAN ECU simulation engine (IPC via stdin/stdout JSON-Lines).
+ * sim-engine-native ? CAN ECU simulation engine (IPC via stdin/stdout JSON-Lines).
  *
  * Reads:  JSON Lines from stdin  (frames, config, tick commands)
  * Writes: JSON Lines to   stdout (response frames, ECU state)
  *
  * Compiles the RT physics model from the actual firmware source.
- * HAL/FreeRTOS dependencies are stubbed out — only the pure-logic layer
+ * HAL/FreeRTOS dependencies are stubbed out ? only the pure-logic layer
  * (physics, steering math) is compiled. Safety monitor and full state
  * machines need the complete rt_state.h context; those will be added
  * incrementally as the stub layer matures.
@@ -24,7 +24,7 @@
 
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 
-// ── Stub the minimal ESP-IDF / FreeRTOS types needed ──
+// ?? Stub the minimal ESP-IDF / FreeRTOS types needed ??
 struct QueueHandle_t_dummy {};
 using QueueHandle_t = QueueHandle_t_dummy*;
 #define ESP_LOGE(tag, fmt, ...)
@@ -46,7 +46,7 @@ extern "C" {
 #undef esp_timer_get_time
 extern "C" int64_t esp_timer_get_time();
 
-// ── Include the real physics model (no FreeRTOS/ESP-IDF deps) ──
+// ?? Include the real physics model (no FreeRTOS/ESP-IDF deps) ??
 #include "config.h"
 #include "physics_model.h"
 
@@ -54,13 +54,13 @@ extern "C" int64_t esp_timer_get_time();
 #include <atomic>
 std::atomic<int32_t> g_brake_request_kpa{0};
 std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
-std::atomic<int32_t> g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
 std::atomic<int64_t> g_last_estop_sent_us{0};
 
 // Define the physics model instance
 rt::PhysicsModel g_physics;
 
-// ── JSON helpers ──
+// ?? JSON helpers ??
 static bool g_eof = false;
 
 static std::string read_line() {
@@ -133,7 +133,7 @@ static bool json_get_byte_array(const std::string& json, const char* key,
     return pos < json.length() && json[pos] == ']';
 }
 
-// ── Main ──
+// ?? Main ??
 int main() {
     write_json("{\"type\":\"state\",\"ecu\":\"rt\",\"healthy\":true,\"uptime_ms\":0}");
     rt::DriveCmd commanded_drive{};

@@ -1,13 +1,13 @@
 #pragma once
-// CAN dispatch — routes incoming CAN frames to the correct consumer.
+// CAN dispatch ? routes incoming CAN frames to the correct consumer.
 //
 // process_frame() classifies each frame, updates sensor atomics, and
 // enqueues safety events (ESTOP, MODE_CHANGE) via g_safety_evt_q.
 // t_dispatch() is the FreeRTOS task (prio 4) that reads both CAN RX
 // queues and drives the pipeline.
 //
-// Architecture §2.3: gateway forwarding categories (transparent,
-// consumed→regenerated, bus-local).
+// Architecture ?2.3: gateway forwarding categories (transparent,
+// consumed?regenerated, bus-local).
 
 #include <cstdint>
 #include "esp_log.h"
@@ -45,7 +45,7 @@ inline bool enqueue_safety_event(const rt::SafetyEvent& evt, TickType_t timeout)
     return false;
 }
 
-// ── Per-frame dispatch context ──────────────────────────────────────
+// ?? Per-frame dispatch context ??????????????????????????????????????
 
 struct DispatchContext {
     can::Frame        gw_lo;
@@ -63,7 +63,7 @@ struct DispatchContext {
     bool              has_cmd   = false;
 };
 
-// ── Frame processor ─────────────────────────────────────────────────
+// ?? Frame processor ?????????????????????????????????????????????????
 
 static void process_frame(const can::Frame& fr, bool from_high, DispatchContext& ctx) {
     if (from_high && fr.id == can::kIdHmiModeReq) {
@@ -135,11 +135,11 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         g_last_low_peer_us.store(esp_timer_get_time(), std::memory_order_release);
     }
 
-    // ── Post-routing handlers ───────────────────────────────────────
+    // ?? Post-routing handlers ???????????????????????????????????????
     if (fr.id == can::kIdSafetyEstop) {
         // SAFETY_ESTOP is DLC 0 only (protocol). Normalize wire junk / DLC-padded
         // peers so gateway TX never rebroadcasts unexpected_length frames.
-        // Cross-bus only — never echo 0x001 back onto the bus it arrived on
+        // Cross-bus only ? never echo 0x001 back onto the bus it arrived on
         // (that amplified DLC-8 floods on low and kept nodes latched).
         can::Frame estop = can::Frame::standard(can::kIdSafetyEstop, 0);
         if (from_high) {
@@ -148,7 +148,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             ctx.gw_hi = estop;
         }
         g_estop_reason.store(rt::kEstopReasonCanEstop);
-        // Enqueue ESTOP event with 10ms timeout (blocking — safety critical)
+        // Enqueue ESTOP event with 10ms timeout (blocking ? safety critical)
         rt::SafetyEvent evt{
             rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
         enqueue_safety_event(evt, pdMS_TO_TICKS(10));
@@ -180,6 +180,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                     static bool ssts_last_zero = false;
                     static uint8_t ssts_clear_last_ctr = 0;
                     if (ssts.estop_active) {
+                        g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
                         if (!ssts_latched) {
                             ssts_latched = true;
                             rt::SafetyEvent evt{
@@ -190,6 +191,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                         ssts_clear_confirm = 0;
                         ssts_last_zero = false;
                     } else if (!ssts_latched) {
+                        g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
                         // Continuous zeros while NOT latched must never accumulate
                         // clear credit (normal running must never clear/REARM).
                         // Observe counters for sequence state only.
@@ -202,6 +204,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                         // exactly +1 (mod 256) from the previous zero in the clear
                         // sequence. A duplicate, gap (missed frame), or counter jump
                         // restarts the sequence from that frame as the new baseline.
+                        g_sys_clear_in_progress.store(true, std::memory_order_relaxed);
                         const bool first_zero = !ssts_last_zero;
                         const bool advances = (ssts.rolling_counter ==
                             static_cast<uint8_t>(ssts_clear_last_ctr + 1u));
@@ -216,6 +219,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                         ssts_last_zero = true;
                         if (ssts_clear_confirm >= 2) {
                             ssts_latched = false;
+                            g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
                             rt::SafetyEvent clr{rt::SafetyEvent::SAFETY_CLEAR, 0};
                             enqueue_safety_event(clr, 0);
                             g_steering_exit_request.store(true);
@@ -251,7 +255,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     if (fr.id == can::kIdMtrMotorFbk && !from_high) {
         can::gen::MtrMotorFbk value{};
         if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) {
-            g_mtr_actual_speed_mmps.store(value.actual_speed_mmps);
+            g_mtr_applied_speed_command_mmps.store(value.applied_speed_command_mmps);
             g_mtr_gear_state.store(value.gear_state);
             g_last_mtr_feedback_us.store(esp_timer_get_time());
         }
@@ -271,7 +275,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
 
-    // 0x202 SES_ErrInfo — L3 fault bits → ESTOP (arch §7.3)
+    // 0x202 SES_ErrInfo ? L3 fault bits ? ESTOP (arch ?7.3)
     if (fr.id == can::kIdSbwErrInfo && !from_high) {
         can::custom::ses::ErrorInfo error{};
         if (can::custom::ses::decode_error_info(fr.view(), error) != can::gen::CodecStatus::Ok) return;
@@ -290,7 +294,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             enqueue_safety_event(evt, pdMS_TO_TICKS(10));
         }
     }
-    // 0x203 SES_Version — log SW/HW once (arch §7.3)
+    // 0x203 SES_Version ? log SW/HW once (arch ?7.3)
     if (fr.id == can::kIdSbwVersion && !from_high) {
         can::custom::ses::VersionRaw version{};
         if (can::custom::ses::decode_version(fr.view(), version) != can::gen::CodecStatus::Ok) return;
@@ -302,7 +306,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             ses_version_logged = true;
         }
     }
-    // 0x6FA SES_Test — motor current + ECU temp + supply voltage
+    // 0x6FA SES_Test ? motor current + ECU temp + supply voltage
     if (fr.id == can::kIdSbwTest && !from_high && fr.dlc >= 7) {
         can::custom::ses::TestTelemetry telemetry{};
         if (can::custom::ses::decode_test(fr.view(), telemetry) != can::gen::CodecStatus::Ok) return;
@@ -316,13 +320,13 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         float et_c = et_raw * 0.5f;
         float pv_v = pv_raw * 0.00390625f;
         uint16_t ses_warn_mask = 0;
-        if (et_c > 85.0f)  { ESP_LOGW(TAG_DISP, "SES ECU temp high: %.1f°C", et_c); ses_warn_mask |= 1u; }
+        if (et_c > 85.0f)  { ESP_LOGW(TAG_DISP, "SES ECU temp high: %.1f?C", et_c); ses_warn_mask |= 1u; }
         if (mc_a > 30.0f)  { ESP_LOGW(TAG_DISP, "SES motor current high: %.1f A", mc_a); ses_warn_mask |= 2u; }
         if (pv_v < 10.0f)  { ESP_LOGW(TAG_DISP, "SES supply voltage low: %.2f V", pv_v); ses_warn_mask |= 4u; }
         if (ses_warn_mask != 0)
             rt::diag().raise(etrike::diagnostics::DiagId::RtSesTelemetryWarn, ses_warn_mask);
     }
-    // 0x6FB SEB_Test — motor current + ECU temp (for 0x311 BRAKE_DIAG)
+    // 0x6FB SEB_Test ? motor current + ECU temp (for 0x311 BRAKE_DIAG)
     if (fr.id == can::kIdBbwTest && !from_high && fr.dlc >= 5) {
         can::custom::seb::TestTelemetry telemetry{};
         if (can::custom::seb::decode_test(fr.view(), telemetry) != can::gen::CodecStatus::Ok) return;
@@ -331,7 +335,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         g_seb_motor_current.store(mc_raw);
         g_seb_ecu_temp_c.store(et_raw);
     }
-    // 0x721 SEB_STATUS — capture pressure + error for 0x311 BRAKE_DIAG
+    // 0x721 SEB_STATUS ? capture pressure + error for 0x311 BRAKE_DIAG
     if (fr.id == can::kIdBbwStatus && !from_high) {
         can::custom::seb::Status value{};
         if (can::custom::seb::decode_status(fr.view(), value) != can::gen::CodecStatus::Ok) return;
@@ -350,7 +354,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
 
         // Byte 3 is pressure ONLY in Pressure mode (control_mode=1).
-        // In Stroke mode it's Stroke[15:8] — not pressure data.
+        // In Stroke mode it's Stroke[15:8] ? not pressure data.
         g_seb_pressure_raw.store(value.control_mode == 1 ? value.pressure_value_raw : 0);
         g_seb_error_status.store(seb_err);
     }
@@ -361,7 +365,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     if (fr.id == can::kIdHostDriveCmd && from_high)  { ctx.has_cmd = true; }
 }
 
-// ── Dispatch task (prio 4) ──────────────────────────────────────────
+// ?? Dispatch task (prio 4) ??????????????????????????????????????????
 
 [[noreturn]] static void t_dispatch(void*) {
     can::Frame fr;
@@ -373,7 +377,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         } else if (xQueueReceive(g_can_rx_high_q, &fr, 0) == pdTRUE) {
             from_high = true;
         } else {
-            // Both queues empty — block on low with short timeout to avoid
+            // Both queues empty ? block on low with short timeout to avoid
             // starving the high bus (portMAX_DELAY blocks forever on low).
             if (xQueueReceive(g_can_rx_low_q, &fr, pdMS_TO_TICKS(10)) == pdTRUE) {
                 from_high = false;
@@ -387,7 +391,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         DispatchContext ctx{};
         process_frame(fr, from_high, ctx);
 
-        // Gateway forwarding — ESTOP (0x001) skips to front of queue
+        // Gateway forwarding ? ESTOP (0x001) skips to front of queue
         // but rate-limited to max 1 per 100ms per bus to prevent a faulty
         // node from starving all other gateway traffic (bug 4.5).
         if (ctx.gw_lo.id) {
@@ -396,7 +400,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                 static int64_t last_estop_fwd_lo_us = 0;
                 int64_t now_us = esp_timer_get_time();
                 if (now_us - last_estop_fwd_lo_us < 100000) {
-                    ctx.gw_lo.id = 0;  // suppress — rate limited
+                    ctx.gw_lo.id = 0;  // suppress ? rate limited
                 } else {
                     last_estop_fwd_lo_us = now_us;
                 }
@@ -422,7 +426,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                     static int64_t last_estop_fwd_hi_us = 0;
                     int64_t now_us = esp_timer_get_time();
                     if (now_us - last_estop_fwd_hi_us < 100000) {
-                        ctx.gw_hi.id = 0;  // suppress — rate limited
+                        ctx.gw_hi.id = 0;  // suppress ? rate limited
                     } else {
                         last_estop_fwd_hi_us = now_us;
                     }
@@ -436,16 +440,16 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
                 }
             }
 
-        // Mode change → safety event queue (guaranteed delivery)
+        // Mode change ? safety event queue (guaranteed delivery)
         if (ctx.has_mode) {
             rt::SafetyEvent evt{rt::SafetyEvent::MODE_CHANGE, ctx.mode_from_sys};
             enqueue_safety_event(evt, 0);
         }
 
-        // Brake request → atomic (latest-value OK — max-select in control)
+        // Brake request ? atomic (latest-value OK ? max-select in control)
         if (ctx.has_brake)   g_brake_request_kpa.store(ctx.brake_req_kpa);
 
-        // Drive command → queue (already queue-based via g_cmd_q)
+        // Drive command ? queue (already queue-based via g_cmd_q)
         if (ctx.has_cmd) {
             xQueueOverwrite(g_cmd_q, &ctx.cmd);
             g_watchdog.feed(esp_timer_get_time());

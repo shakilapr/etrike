@@ -412,6 +412,50 @@ target_include_directories(vehicle_integration PRIVATE
 target_compile_definitions(vehicle_integration PRIVATE TESTING)
 add_test(NAME vehicle_integration   COMMAND vehicle_integration)
 
+# ── Master 1000-Test Qualification & Closed-Loop Matrix ───────────────
+add_executable(test_1000_master_matrix
+    test/test_1000_master_matrix.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp
+)
+target_link_libraries(test_1000_master_matrix PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(test_1000_master_matrix PRIVATE
+    ${ETRIKE_ROOT}/mtr-stm32/test
+    ${ETRIKE_ROOT}/mtr-stm32/test/stub
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/sys-esp32/src
+    ${ETRIKE_ROOT}/mtr-stm32/src
+)
+target_compile_definitions(test_1000_master_matrix PRIVATE TESTING)
+add_test(NAME test_1000_master_matrix COMMAND test_1000_master_matrix)
+
+# ── 140-Scenario Qualification Matrix ──────────────────────────────────
+add_executable(test_140_qualification_matrix
+    test/test_140_qualification_matrix.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp
+)
+target_link_libraries(test_140_qualification_matrix PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(test_140_qualification_matrix PRIVATE
+    ${ETRIKE_ROOT}/mtr-stm32/test
+    ${ETRIKE_ROOT}/mtr-stm32/test/stub
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/sys-esp32/src
+    ${ETRIKE_ROOT}/mtr-stm32/src
+)
+target_compile_definitions(test_140_qualification_matrix PRIVATE TESTING)
+add_test(NAME test_140_qualification_matrix COMMAND test_140_qualification_matrix)
+
 # ── Simulation engine native (IPC via stdin/stdout, no FreeRTOS) ──────
 add_executable(sim_engine_native
     sim-engine/main_native.cpp

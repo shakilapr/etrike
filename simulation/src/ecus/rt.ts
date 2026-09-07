@@ -1,5 +1,5 @@
 /**
- * RtEcu — simulated RT ESP32-S3 (dual-bus gateway, kinematics, steering).
+ * RtEcu ? simulated RT ESP32-S3 (dual-bus gateway, kinematics, steering).
  *
  * Receives Host commands on high bus, produces actuator commands on low bus.
  * Bridges selected messages between buses.
@@ -30,7 +30,7 @@ export class RtEcu implements SimulatedEcu {
 
   private kinematics = new RtKinematicsController();
   private steering = new RtSteeringController();
-  private sebRollCounter = 0;  // Gap #12: rolling counter for RT→0x7B9
+  private sebRollCounter = 0;  // Gap #12: rolling counter for RT?0x7B9
 
   private lastHostCmdMs = -Infinity;
   private hostCmdEverSeen = false;
@@ -47,15 +47,15 @@ export class RtEcu implements SimulatedEcu {
   private rtHbCtrLow = 0;
   private rtHbCtrHigh = 0;
   private lastSpeedMmps = 0;
-  private sesAngleRaw: number | null = null;  // 0.1° units
+  private sesAngleRaw: number | null = null;  // 0.1? units
   private sesAngleStatus = 0;
   private steerFollowErrTicks = 0;
-  private lastCmdAngleRaw: number | null = null;  // 0.1° units, from steering tick
+  private lastCmdAngleRaw: number | null = null;  // 0.1? units, from steering tick
   private directSteerAngle01deg = 0;
   private directSteerValid = false;
   private lastDirectSteerMs = -Infinity;
   private lastDirectSteerCtr = -1;
-  private measuredSpeedMmps = 0;
+  private appliedSpeedCommandMmps = 0;
   private physicalGear = 0;
   private lastMtrFeedbackMs = -Infinity;
   private lastSesFeedbackMs = -Infinity;
@@ -86,7 +86,7 @@ export class RtEcu implements SimulatedEcu {
     this.directSteerValid = false;
     this.lastDirectSteerMs = -Infinity;
     this.lastDirectSteerCtr = -1;
-    this.measuredSpeedMmps = 0;
+    this.appliedSpeedCommandMmps = 0;
     this.physicalGear = 0;
     this.lastMtrFeedbackMs = -Infinity;
     this.lastSesFeedbackMs = -Infinity;
@@ -106,7 +106,7 @@ export class RtEcu implements SimulatedEcu {
     this.currentMode = ctx.mode;
     const out: SimFrame[] = [];
 
-    // ── Process high-bus frames ──────────────────────────────
+    // ?? Process high-bus frames ??????????????????????????????
     for (const f of highBusRx) {
       const drive = decodeAs(f, "host:host_drive_cmd");
       if (drive !== undefined) {
@@ -160,7 +160,7 @@ export class RtEcu implements SimulatedEcu {
       }
     }
 
-    // ── Process low-bus frames ──────────────────────────────
+    // ?? Process low-bus frames ??????????????????????????????
     for (const f of lowBusRx) {
       const heartbeat = decodeAs(f, "sys:sys_heartbeat");
       if (heartbeat !== undefined) {
@@ -181,7 +181,7 @@ export class RtEcu implements SimulatedEcu {
       }
       const motor = decodeAs(f, "mtr:mtr_motor_fbk");
       if (motor !== undefined) {
-        this.measuredSpeedMmps = Number(motor.actual_speed_mmps);
+        this.appliedSpeedCommandMmps = Number(motor.applied_speed_command_mmps); // 0x206 = setpoint echo from MTR (no speed sensor); NOT a measured speed
         this.physicalGear = Number(motor.gear_state);
         this.lastMtrFeedbackMs = nowMs;
         out.push({ ...f, bus: "high", sender: "rt" });
@@ -200,7 +200,7 @@ export class RtEcu implements SimulatedEcu {
       }
     }
 
-    // ── Check safety conditions ─────────────────────────────
+    // ?? Check safety conditions ?????????????????????????????
 
     if (this.startupMs === null) {
       this.startupMs = nowMs;
@@ -217,7 +217,7 @@ export class RtEcu implements SimulatedEcu {
 
     let shouldEstop = ctx.estopActive || cmdStale || sysHbTimeout;
 
-    // ── Kinematics (100 Hz) — MANUAL mode: RT does not command actuators
+    // ?? Kinematics (100 Hz) ? MANUAL mode: RT does not command actuators
     if (nowMs % 10 === 0) {
       if (ctx.mode !== "manual") {  // gate: RT actuator commands only in AUTO/ESTOP
       const cmd = shouldEstop || ctx.mode !== "auto" || hostHbTimeout
@@ -236,7 +236,7 @@ export class RtEcu implements SimulatedEcu {
 
       // Feed resolved steering target to steering controller (matching C++ main.cpp line 429)
       this.steering.setTarget(
-        Math.round(resolved.steerAngleDeg * 1000),  // degrees → millidegrees
+        Math.round(resolved.steerAngleDeg * 1000),  // degrees ? millidegrees
         resolved.motorSpeedMmps,
       );
 
@@ -250,7 +250,7 @@ export class RtEcu implements SimulatedEcu {
       this.lastSpeedMmps = speed;
 
       // Steering following-error check (100 Hz)
-      // Threshold in degrees from speed-based lookup, converted to raw (0.1°/bit)
+      // Threshold in degrees from speed-based lookup, converted to raw (0.1?/bit)
       if (this.sesAngleRaw !== null && this.lastCmdAngleRaw !== null) {
         const thresholdDeg = computeFollowingErrorThreshold(this.lastSpeedMmps);
         const thresholdRaw = thresholdDeg * 10;
@@ -267,7 +267,7 @@ export class RtEcu implements SimulatedEcu {
       } // ctx.mode !== "manual" gate
     }
 
-    // ── Brake command (50 Hz) ───────────────────────────────
+    // ?? Brake command (50 Hz) ???????????????????????????????
     if (nowMs % 20 === 0) {
       const obstacleKpa = this.computeObstacleKpa();
       let brakeKpa = Math.max(obstacleKpa, this.hostBrakeKpa);
@@ -276,13 +276,13 @@ export class RtEcu implements SimulatedEcu {
       else if (hostHbTimeout) brakeKpa = ASSIST_STOP_KPA;
 
       // Fix 2: Originate 0x001 ESTOP on both buses on internal fault detection
-      // Matches firmware run_safety_checks() — DLC=0, no data
+      // Matches firmware run_safety_checks() ? DLC=0, no data
       if (shouldEstop) {
         out.push(encodeSimFrame("safety:safety_estop", {}, "low", "rt", nowMs));
         out.push(encodeSimFrame("safety:safety_estop", {}, "high", "rt", nowMs));
       }
 
-      // 0x205 RT_BRAKE_CMD on low bus (50 Hz) — suppressed in MANUAL mode (SES standalone, SYS handles brake)
+      // 0x205 RT_BRAKE_CMD on low bus (50 Hz) ? suppressed in MANUAL mode (SES standalone, SYS handles brake)
       if (ctx.mode !== "manual") {
         out.push(encodeSimFrame("rt:rt_brake_cmd", {
           brake_pressure_kpa: brakeKpa,
@@ -306,7 +306,7 @@ export class RtEcu implements SimulatedEcu {
       }
 
       // Gap #12: RT takes over 0x7B9 on SYS heartbeat loss (stroke=max)
-      // Matches firmware VcuSebReq::pack() — per steer-by-wire CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
+      // Matches firmware VcuSebReq::pack() ? per steer-by-wire CSV: strokemode, stroke=1140(max), rolling counter, xor^0xFF checksum
       if (sysHbTimeout) {
         const strokeRaw = 1140;  // 27mm max: (27+30)/0.05
         out.push(encodeSimFrame("seb:vcu_seb_req", {
@@ -322,7 +322,7 @@ export class RtEcu implements SimulatedEcu {
       }
     }
 
-    // ── Steering (50 Hz) ────────────────────────────────────
+    // ?? Steering (50 Hz) ????????????????????????????????????
     if (nowMs % (1000 / STEER_CMD_RATE_HZ) === 0) {
       if (shouldEstop && this.steering.state === SteerState.ACTIVE) {
         this.steering.startEstop(false, nowMs);
@@ -350,7 +350,7 @@ export class RtEcu implements SimulatedEcu {
       }
     }
 
-    // ── RT_STATE_RPT 0x210 on high bus (10 Hz) ──────────────
+    // ?? RT_STATE_RPT 0x210 on high bus (10 Hz) ??????????????
     if (nowMs % 100 === 0) {
       const modeByte = ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0;
       // safety_state: 0=Normal, 1=InternalEstop, 2=Fault
@@ -371,7 +371,7 @@ export class RtEcu implements SimulatedEcu {
       out.push(encodeSimFrame("rt:rt_state_rpt", state, "low", "rt", nowMs));
 
       // 0x310 STEER_DIAG (10 Hz, high bus, DLC=8)
-      // angle in 0.1°/bit signed i16 BE, NO OFFSET (unlike 0x169 encoding)
+      // angle in 0.1?/bit signed i16 BE, NO OFFSET (unlike 0x169 encoding)
       const sesAngle01deg = this.sesAngleRaw !== null ? (this.sesAngleRaw - 30000) : 0;
       const steerDiagAngle = Math.max(-32768, Math.min(32767, sesAngle01deg));
       out.push(encodeSimFrame("rt:steer_diag", {
@@ -396,16 +396,16 @@ export class RtEcu implements SimulatedEcu {
       }, "high", "rt", nowMs));
     }
 
-    // ── RT_MOTION_RPT 0x121 on high bus (100 Hz) ───────────
+    // ?? RT_MOTION_RPT 0x121 on high bus (100 Hz) ???????????
     if (nowMs % 10 === 0) {
       const speedFresh = nowMs - this.lastMtrFeedbackMs <= 100;
       const steerFresh = nowMs - this.lastSesFeedbackMs <= 100 && this.sesAngleStatus === 1;
       const angle01deg = this.sesAngleRaw !== null ? this.sesAngleRaw - 30000 : 0;
       const yaw = speedFresh && steerFresh
-        ? Math.round(this.measuredSpeedMmps * Math.tan(angle01deg * 0.1 * Math.PI / 180) / 1.5)
+        ? Math.round(this.appliedSpeedCommandMmps * Math.tan(angle01deg * 0.1 * Math.PI / 180) / 1.5)
         : 0;
       out.push(encodeSimFrame("rt:rt_motion_rpt", {
-        speed_mmps: this.measuredSpeedMmps,
+        speed_mmps: this.appliedSpeedCommandMmps,
         yaw_rate_mrad_s: yaw,
         gear: this.physicalGear,
         speed_valid: speedFresh ? 1 : 0,
@@ -417,7 +417,7 @@ export class RtEcu implements SimulatedEcu {
       this.motionCounter = (this.motionCounter + 1) & 0xFF;
     }
 
-    // ── Heartbeats (2 Hz) ───────────────────────────────────
+    // ?? Heartbeats (2 Hz) ???????????????????????????????????
     if (nowMs % 500 === 0) {
       this.rtHbCtrLow = (this.rtHbCtrLow + 1) & 0xFF;
       this.rtHbCtrHigh = (this.rtHbCtrHigh + 1) & 0xFF;
@@ -436,7 +436,7 @@ export class RtEcu implements SimulatedEcu {
   }
 
   private computeObstacleKpa(): number {
-    // Linear: 300mm→5000kPa, 3000mm→0kPa
+    // Linear: 300mm?5000kPa, 3000mm?0kPa
     if (this.obstacleDistanceMm <= 300) return OBSTACLE_MAX_KPA;
     if (this.obstacleDistanceMm >= 3000) return 0;
     const t = (this.obstacleDistanceMm - 300) / (3000 - 300);

@@ -1,4 +1,4 @@
-# CAN Network Documentation — SYS (Node)
+# CAN Network Documentation ? SYS (Node)
 **Description:** Signal reference generated from canonical protocol contracts
 
 *(Note: This file is fully auto-generated from the YAML configurations. Do not edit manually.)*
@@ -17,7 +17,7 @@
 | `DLC=0` | Zero-length CAN frame (event signal, no payload) |
 
 ## Message Dictionary
-### 0x001 — SAFETY_ESTOP (Bus: low)
+### 0x001 ? SAFETY_ESTOP (Bus: low)
 - **Sender:** Any
 - **Receivers:** SYS, MTR, DCDC, RT
 - **DLC:** 0 bytes
@@ -25,7 +25,7 @@
 
 *No payload (DLC=0 event frame)*
 
-### 0x011 — SYS_SAFETY_STS (Bus: low)
+### 0x011 ? SYS_SAFETY_STS (Bus: low)
 - **Sender:** SYS
 - **Receivers:** RT, MTR
 - **DLC:** 5 bytes
@@ -42,7 +42,7 @@
 | `rolling_counter` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `e2e_crc` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x011 — SYS_SAFETY_STS (Bus: high)
+### 0x011 ? SYS_SAFETY_STS (Bus: high)
 - **Sender:** SYS
 - **Receivers:** Host
 - **DLC:** 5 bytes
@@ -59,7 +59,7 @@
 | `rolling_counter` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `e2e_crc` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x110 — SYS_MODE_CMD (Bus: low)
+### 0x110 ? SYS_MODE_CMD (Bus: low)
 - **Sender:** SYS
 - **Receivers:** RT, MTR
 - **DLC:** 2 bytes
@@ -70,7 +70,7 @@
 | `mode` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=MANUAL, 1=AUTO) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x111 — HMI_MODE_REQ (Bus: low)
+### 0x111 ? HMI_MODE_REQ (Bus: low)
 - **Sender:** Host
 - **Receivers:** SYS
 - **DLC:** 2 bytes
@@ -82,7 +82,7 @@
 | `req_mode` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=MANUAL, 1=AUTO) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x112 — HMI_PWR_REQ (Bus: low)
+### 0x112 ? HMI_PWR_REQ (Bus: low)
 - **Sender:** Host
 - **Receivers:** SYS
 - **DLC:** 2 bytes
@@ -93,7 +93,7 @@
 | `req_start` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=OFF, 1=ON) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x113 — SYS_PWR_CMD (Bus: low)
+### 0x113 ? SYS_PWR_CMD (Bus: low)
 - **Sender:** SYS
 - **Receivers:** MTR
 - **DLC:** 2 bytes
@@ -104,7 +104,7 @@
 | `power_state` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=OFF, 1=ON) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x204 — RT_DRIVE_CMD (Bus: low)
+### 0x204 ? RT_DRIVE_CMD (Bus: low)
 - **Sender:** RT
 - **Receivers:** SYS, MTR
 - **DLC:** 5 bytes
@@ -115,7 +115,7 @@
 | `motor_speed_mmps` | 0 | 0 | 32 | signed | 1 | [-500, 3000] | - |  |
 | `gear` | 4 | 0 | 8 | unsigned | 1 | [0, 3] | - |  (Values: 0=N, 1=D, 2=S, 3=R) |
 
-### 0x205 — RT_BRAKE_CMD (Bus: low)
+### 0x205 ? RT_BRAKE_CMD (Bus: low)
 - **Sender:** RT
 - **Receivers:** SYS
 - **DLC:** 4 bytes
@@ -125,7 +125,7 @@
 |---|---|---|---|---|---|---|---|---|
 | `brake_pressure_kpa` | 0 | 0 | 32 | signed | 1 | [0, 20000] | - |  |
 
-### 0x206 — MTR_MOTOR_FBK (Bus: low)
+### 0x206 ? MTR_MOTOR_FBK (Bus: low)
 - **Sender:** MTR
 - **Receivers:** RT, SYS, Host
 - **DLC:** 4 bytes
@@ -133,11 +133,11 @@
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `actual_speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `applied_speed_command_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 | `gear_state` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `fault_flags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x206 — MTR_MOTOR_FBK (Bus: high)
+### 0x206 ? MTR_MOTOR_FBK (Bus: high)
 - **Sender:** MTR
 - **Receivers:** RT, SYS, Host
 - **DLC:** 4 bytes
@@ -145,11 +145,11 @@
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `actual_speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `applied_speed_command_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 | `gear_state` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `fault_flags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x210 — RT_STATE_RPT (Bus: high)
+### 0x210 ? RT_STATE_RPT (Bus: high)
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 6 bytes
@@ -165,7 +165,7 @@
 | `task_health` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `steer_state` | 5 | 0 | 8 | unsigned | 1 | [0, 5] | - |  |
 
-### 0x210 — RT_STATE_RPT (Bus: low)
+### 0x210 ? RT_STATE_RPT (Bus: low)
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 6 bytes
@@ -181,7 +181,7 @@
 | `task_health` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `steer_state` | 5 | 0 | 8 | unsigned | 1 | [0, 5] | - |  |
 
-### 0x302 — HOST_LIGHT_CMD (Bus: high)
+### 0x302 ? HOST_LIGHT_CMD (Bus: high)
 - **Sender:** Host
 - **Receivers:** RT, SYS
 - **DLC:** 1 bytes
@@ -194,7 +194,7 @@
 | `brake_light` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-### 0x302 — HOST_LIGHT_CMD (Bus: low)
+### 0x302 ? HOST_LIGHT_CMD (Bus: low)
 - **Sender:** Host
 - **Receivers:** RT, SYS
 - **DLC:** 1 bytes
@@ -207,7 +207,7 @@
 | `brake_light` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-### 0x600 — SYS_DIAG_RPT (Bus: low)
+### 0x600 ? SYS_DIAG_RPT (Bus: low)
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 8 bytes
@@ -225,7 +225,7 @@
 | `tec` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `rec` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x600 — SYS_DIAG_RPT (Bus: high)
+### 0x600 ? SYS_DIAG_RPT (Bus: high)
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 8 bytes
@@ -243,7 +243,7 @@
 | `tec` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `rec` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x6FB — SEB_TEST (Bus: low)
+### 0x6FB ? SEB_TEST (Bus: low)
 - **Sender:** SEB
 - **Receivers:** SYS, RT
 - **DLC:** 8 bytes
@@ -251,7 +251,7 @@
 
 *Opaque payload or unsupported layout kind: opaque*
 
-### 0x721 — SEB_STATUS (Bus: low)
+### 0x721 ? SEB_STATUS (Bus: low)
 - **Sender:** SEB
 - **Receivers:** SYS, RT
 - **DLC:** 8 bytes
@@ -259,7 +259,7 @@
 
 *Opaque payload or unsupported layout kind: opaque*
 
-### 0x731 — SEB_ERR_INFO (Bus: low)
+### 0x731 ? SEB_ERR_INFO (Bus: low)
 - **Sender:** SEB
 - **Receivers:** SYS
 - **DLC:** 8 bytes
@@ -267,7 +267,7 @@
 
 *Opaque payload or unsupported layout kind: opaque*
 
-### 0x741 — SEB_VERSION (Bus: low)
+### 0x741 ? SEB_VERSION (Bus: low)
 - **Sender:** SEB
 - **Receivers:** SYS
 - **DLC:** 8 bytes
@@ -275,7 +275,7 @@
 
 *Opaque payload or unsupported layout kind: opaque*
 
-### 0x7B9 — VCU_SEB_REQ (Bus: low)
+### 0x7B9 ? VCU_SEB_REQ (Bus: low)
 - **Sender:** SYS
 - **Receivers:** SEB
 - **DLC:** 8 bytes
@@ -283,7 +283,7 @@
 
 *Opaque payload or unsupported layout kind: opaque*
 
-### 0x7FD — RT_HEARTBEAT (Bus: high)
+### 0x7FD ? RT_HEARTBEAT (Bus: high)
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 2 bytes
@@ -294,7 +294,7 @@
 | `alive_ctr` | 0 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `health_flags` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x7FD — RT_HEARTBEAT (Bus: low)
+### 0x7FD ? RT_HEARTBEAT (Bus: low)
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 2 bytes
@@ -305,7 +305,7 @@
 | `alive_ctr` | 0 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `health_flags` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-### 0x7FE — SYS_HEARTBEAT (Bus: low)
+### 0x7FE ? SYS_HEARTBEAT (Bus: low)
 - **Sender:** SYS
 - **Receivers:** RT
 - **DLC:** 2 bytes

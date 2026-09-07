@@ -1,4 +1,4 @@
-"""Test: Closed-Loop Longitudinal Physics Step Response & PID Stability (§8.16).
+"""Test: Closed-Loop Longitudinal Physics Step Response & PID Stability (?8.16).
 
 Verifies:
 - CAN-driven closed-loop command path:
@@ -86,7 +86,7 @@ class TestClosedLoopDrive(unittest.TestCase):
             fbk_status, fbk_payload = proto.encode(
                 "mtr:mtr_motor_fbk",
                 {
-                    "actual_speed_mmps": fbk_speed,
+                    "applied_speed_command_mmps": fbk_speed,
                     "gear_state": 1,
                     "fault_flags": 0,
                 },
@@ -97,7 +97,7 @@ class TestClosedLoopDrive(unittest.TestCase):
             # 6. RT receives 0x206 feedback
             rt_fbk_status, fbk_decoded = proto.decode("mtr:mtr_motor_fbk", fbk_payload, bus="low")
             self.assertEqual(rt_fbk_status, "ok")
-            self.assertEqual(fbk_decoded["actual_speed_mmps"], fbk_speed)
+            self.assertEqual(fbk_decoded["applied_speed_command_mmps"], fbk_speed)
 
         final_speed = speeds[-1]
         peak_speed = max(speeds)

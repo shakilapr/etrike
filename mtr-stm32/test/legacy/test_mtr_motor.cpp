@@ -112,7 +112,7 @@ public:
     can::Frame build_feedback() const {
         can::gen::MtrMotorFbk fbk{};
         bool inhibited = estop_active || comms_timed_out || (target_gear == can::Gear::N);
-        fbk.actual_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps);
+        fbk.applied_speed_command_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps);
         fbk.gear_state = (relays.drive) ? 1 : ((relays.reverse) ? 3 : 0);
         uint8_t flags = 0;
         if (estop_active) {
@@ -307,7 +307,7 @@ void test_telemetry_frame_encoding() {
     can::gen::MtrMotorFbk fbk{};
     ASSERT_EQ(static_cast<int>(can::gen::decode_mtr_motor_fbk(fbk_fr.view(), fbk)),
               static_cast<int>(can::gen::CodecStatus::Ok));
-    ASSERT_EQ(fbk.actual_speed_mmps, 1234);
+    ASSERT_EQ(fbk.applied_speed_command_mmps, 1234);
     ASSERT_EQ(fbk.gear_state, 1); // Drive
 }
 
@@ -344,7 +344,7 @@ void test_watchdog_timeout_speed_zero_and_fault_flag() {
     can::gen::MtrMotorFbk fbk{};
     ASSERT_EQ(static_cast<int>(can::gen::decode_mtr_motor_fbk(fbk_fr.view(), fbk)),
               static_cast<int>(can::gen::CodecStatus::Ok));
-    ASSERT_EQ(fbk.actual_speed_mmps, 0);
+    ASSERT_EQ(fbk.applied_speed_command_mmps, 0);
     ASSERT_TRUE((fbk.fault_flags & shared::kMtrFaultCmdTimeout) != 0);
 }
 

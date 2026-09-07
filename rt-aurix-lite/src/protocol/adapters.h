@@ -1,5 +1,5 @@
 #pragma once
-// Protocol adapters — CAN bytes <-> typed domain I/O.
+// Protocol adapters ? CAN bytes <-> typed domain I/O.
 //
 // This is the ONLY layer that knows CAN IDs and wire encoding. It uses the
 // generated subset codecs (etrike_protocol.hpp: etrike::protocol::generated)
@@ -25,7 +25,7 @@ namespace gen = etrike::protocol::generated;
 namespace ses = etrike::protocol::codecs::ses;
 namespace seb = etrike::protocol::codecs::seb;
 
-// ── Decode: CAN frame -> typed domain input ─────────────────────────
+// ?? Decode: CAN frame -> typed domain input ?????????????????????????
 
 // Host drive command (0x300) -> DriveDemand.
 inline bool decode_host_drive(FrameView frame, DriveDemand& out) {
@@ -37,7 +37,7 @@ inline bool decode_host_drive(FrameView frame, DriveDemand& out) {
     return true;
 }
 
-// Host brake request (0x301) -> brake_kpa (returned via out.speed? no —
+// Host brake request (0x301) -> brake_kpa (returned via out.speed? no ?
 // use a dedicated output param).
 // We expose a simple accessor instead: brake pressure is carried as an
 // int32; map through a small struct.
@@ -70,7 +70,7 @@ inline bool decode_hmi_mode(FrameView frame, ModeRequest& out) {
 inline bool decode_mtr_motor(FrameView frame, MotorFeedback& out) {
     gen::MtrMotorFbk fbk{};
     if (!etrike::protocol::succeeded(gen::decode(frame, fbk))) return false;
-    out.actual_speed_mmps = fbk.actual_speed_mmps;
+    out.applied_speed_command_mmps = fbk.applied_speed_command_mmps;
     out.gear_state = fbk.gear_state;
     out.fault_flags = fbk.fault_flags;
     return true;
@@ -100,7 +100,7 @@ inline bool decode_seb_status(FrameView frame, BrakeFeedback& out) {
     return true;
 }
 
-// ── Encode: typed domain output -> CAN frame ────────────────────────
+// ?? Encode: typed domain output -> CAN frame ????????????????????????
 
 // DriveCommand (0x204) -> Frame.
 inline bool encode_drive_cmd(const DriveCommand& in, Frame& out) {
@@ -115,7 +115,7 @@ inline bool encode_steer_cmd(const SteeringCommand& in, Frame& out) {
     ses::Command cmd{};
     cmd.alignment_enable = true;
     cmd.control_enable = true;
-    cmd.target_angle_raw = in.angle_0_1deg + kSbwAngleOffset;  // 0.1° -> vendor offset
+    cmd.target_angle_raw = in.angle_0_1deg + kSbwAngleOffset;  // 0.1? -> vendor offset
     cmd.target_speed_raw = in.speed_raw;
     cmd.rolling_counter = in.rolling_counter;
     cmd.vehicle_speed_raw = in.vehicle_speed_raw;

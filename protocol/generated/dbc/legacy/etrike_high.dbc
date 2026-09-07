@@ -30,7 +30,7 @@ BO_ 288 SYS_THROTTLE_STS: 2 MTR
  SG_ SYS_ThrottleSpeed : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
 
 BO_ 518 MTR_MOTOR_FBK: 4 MTR
- SG_ MTR_ActualSpeed : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
+ SG_ MTR_AppliedSpeedCmd : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
  SG_ MTR_GearState : 23|8@0+ (1,0) [0|3] "" Vector__XXX
  SG_ MTR_FaultFlags : 31|8@0+ (1,0) [0|255] "" Vector__XXX
 

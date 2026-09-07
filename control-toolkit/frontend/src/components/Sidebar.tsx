@@ -29,7 +29,7 @@ export function Sidebar() {
   const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
   const [monitorEcuFilter, setMonitorEcuFilter] = useState<string>('all')
   const [monitorExpanded, setMonitorExpanded] = useState<string | null>(null)
-  /** bus|can_id → sender ECU from protocol dictionary */
+  /** bus|can_id ? sender ECU from protocol dictionary */
   const [senderByKey, setSenderByKey] = useState<Record<string, string>>({})
 
   const seqRef = useRef(0)
@@ -40,9 +40,9 @@ export function Sidebar() {
   kbEnabledRef.current = kbEnabled
 
   const ses = status?.session
-  const profileId = ses?.profile ?? status?.profile ?? '—'
+  const profileId = ses?.profile ?? status?.profile ?? '?'
   const profileLabel = PROFILE_LABELS[profileId] ?? profileId
-  const adapterHealth = status?.adapter?.health ?? '—'
+  const adapterHealth = status?.adapter?.health ?? '?'
   const streamOk = quality === 'live' || quality === 'delayed'
   const streamLabel =
     quality === 'live'
@@ -53,22 +53,22 @@ export function Sidebar() {
           ? 'Stream dropping'
           : quality === 'lost'
             ? 'Stream lost'
-            : 'Connecting…'
+            : 'Connecting?'
 
   const motor = findMsg(messages, 'MTR_MOTOR_FBK')
   const sesStatus = findMsg(messages, 'SES_STATUS')
   const hostCmd = findMsg(messages, 'HOST_DRIVE_CMD')
   const rtDriveCmd = findMsg(messages, 'RT_DRIVE_CMD')
-  const speedRaw = motor?.signals?.actual_speed_mmps?.engineering_value
+  const speedRaw = motor?.signals?.applied_speed_command_mmps?.engineering_value
   const steerRaw = sesStatus?.signals?.angle_deg?.engineering_value
   const speedText =
     typeof speedRaw === 'number' && Number.isFinite(speedRaw)
       ? `${speedRaw.toFixed(0)} mm/s`
-      : '—'
+      : '?'
   const steerText =
     typeof steerRaw === 'number' && Number.isFinite(steerRaw)
-      ? `${steerRaw.toFixed(1)}°`
-      : '—'
+      ? `${steerRaw.toFixed(1)}?`
+      : '?'
 
   const hostSpeed = hostCmd?.signals?.speed_mmps?.engineering_value
   const hostYaw = hostCmd?.signals?.yaw_rate_mrad_s?.engineering_value
@@ -84,14 +84,14 @@ export function Sidebar() {
       return `${v.toFixed(digits)}${unit ? ` ${unit}` : ''}`
     }
     if (v != null && v !== '') return String(v)
-    return '—'
+    return '?'
   }
 
   const hostCmdSpeedText = fmtNum(hostSpeed, 0, 'mm/s')
   const hostCmdYawText = fmtNum(hostYaw, 0, 'mrad/s')
-  const hostCmdGearText = hostGear != null && hostGear !== '' ? String(hostGear) : '—'
+  const hostCmdGearText = hostGear != null && hostGear !== '' ? String(hostGear) : '?'
   const rtCmdSpeedText = fmtNum(rtSpeed, 0, 'mm/s')
-  const rtCmdGearText = rtGear != null && rtGear !== '' ? String(rtGear) : '—'
+  const rtCmdGearText = rtGear != null && rtGear !== '' ? String(rtGear) : '?'
 
   const hostFresh = hostCmd?.freshness ? String(hostCmd.freshness).toLowerCase() : ''
   const rtFresh = rtDriveCmd?.freshness ? String(rtDriveCmd.freshness).toLowerCase() : ''
@@ -101,7 +101,7 @@ export function Sidebar() {
   const fullVehicle = profileId === 'full_vehicle'
   const fakeOn = fakeRunning.includes('host_drive_analysis')
 
-  /** live | late → live; everything else → dead */
+  /** live | late ? live; everything else ? dead */
   const isMsgLive = (freshness?: string) => {
     const f = String(freshness || '').toLowerCase()
     return f === 'live' || f === 'late'
@@ -119,7 +119,7 @@ export function Sidebar() {
       if (n.startsWith('SES_')) return 'SES'
       if (n.startsWith('SEB_') || n.startsWith('VCU_SEB') || n.startsWith('BRAKE_')) return 'SEB'
       if (n.startsWith('SAFETY_') || n.includes('ESTOP')) return 'Any'
-      return '—'
+      return '?'
     },
     [senderByKey],
   )
@@ -129,7 +129,7 @@ export function Sidebar() {
     for (const m of messages) {
       if (busFilter !== 'both' && m.bus !== busFilter) continue
       const e = ecuOfMsg(m)
-      if (e && e !== '—') set.add(e)
+      if (e && e !== '?') set.add(e)
     }
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [messages, busFilter, ecuOfMsg])
@@ -181,7 +181,7 @@ export function Sidebar() {
           const bus = String((m as { bus?: string }).bus || '')
           const canId = Number((m as { can_id?: number }).can_id)
           const sender = String((m as { sender?: string }).sender || '').trim()
-          if (!bus || !Number.isFinite(canId) || !sender || sender === '—') continue
+          if (!bus || !Number.isFinite(canId) || !sender || sender === '?') continue
           map[`${bus}|${canId}`] = sender
         }
         setSenderByKey(map)
@@ -192,7 +192,7 @@ export function Sidebar() {
     }
   }, [activity])
 
-  // Leave control activity → drop keyboard ownership
+  // Leave control activity ? drop keyboard ownership
   useEffect(() => {
     if (activity === 'control') return
     if (!kbEnabledRef.current) return
@@ -291,7 +291,7 @@ export function Sidebar() {
       const fresh = await api.status()
       const session = fresh.session
       if (!session?.session_id) {
-        setControlNote('No session — start one in Settings (explorer)')
+        setControlNote('No session ? start one in Settings (explorer)')
         return
       }
       await api.setBenchTx(session.session_id, !benchOn, session.revision)
@@ -324,7 +324,7 @@ export function Sidebar() {
     try {
       const st = await api.status()
       if (!st.session?.session_id) {
-        setControlNote('No session — start one in Settings (explorer)')
+        setControlNote('No session ? start one in Settings (explorer)')
         return
       }
       if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
@@ -340,7 +340,7 @@ export function Sidebar() {
       seqRef.current = 0
       keysRef.current = {}
       setKbEnabled(true)
-      setControlNote('Keyboard on — WASD / arrows')
+      setControlNote('Keyboard on ? WASD / arrows')
     } catch (e) {
       setControlNote(String(e))
     } finally {
@@ -360,7 +360,7 @@ export function Sidebar() {
       await cleanupControlStreams('sidebar_stop_all')
       setStatus(await api.status())
       await refreshFakeSignals()
-      setControlNote('Stop all — motion TX cleared')
+      setControlNote('Stop all ? motion TX cleared')
     } catch (e) {
       setControlNote(String(e))
     } finally {
@@ -377,7 +377,7 @@ export function Sidebar() {
       } else {
         const st = await api.status()
         if (!st.session?.session_id) {
-          setControlNote('No session — start one in Settings (explorer)')
+          setControlNote('No session ? start one in Settings (explorer)')
           return
         }
         if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
@@ -386,7 +386,7 @@ export function Sidebar() {
         }
         await cleanupControlStreams('sidebar_fake_start', { direct: false })
         await api.startSyntheticPeers(['host_drive_analysis'])
-        setControlNote('Fake signals · host_drive_analysis')
+        setControlNote('Fake signals ? host_drive_analysis')
       }
       await refreshFakeSignals()
       setStatus(await api.status())
@@ -411,7 +411,7 @@ export function Sidebar() {
         <div className="context-sidebar-head">
           <span className="nav-label">Operate</span>
           <strong>Control</strong>
-          <small>TX · keyboard · fake signals</small>
+          <small>TX ? keyboard ? fake signals</small>
         </div>
 
         <div className="context-arm-card" data-testid="control-tx-card">
@@ -444,26 +444,26 @@ export function Sidebar() {
           </button>
           <ul className="controls-legend muted small control-kb-legend">
             <li>
-              <kbd>W</kbd>/<kbd>↑</kbd> throttle · <kbd>S</kbd>/<kbd>↓</kbd> reverse
+              <kbd>W</kbd>/<kbd>?</kbd> throttle ? <kbd>S</kbd>/<kbd>?</kbd> reverse
             </li>
             <li>
-              <kbd>A</kbd>/<kbd>D</kbd> yaw · <kbd>Shift</kbd> brake · <kbd>Space</kbd> ESTOP
+              <kbd>A</kbd>/<kbd>D</kbd> yaw ? <kbd>Shift</kbd> brake ? <kbd>Space</kbd> ESTOP
             </li>
           </ul>
           {kbEnabled && (
             <p className="ok-text small" data-testid="sidebar-kb-active">
-              Armed — Host intent on High bus
+              Armed ? Host intent on High bus
             </p>
           )}
           {kbSnap && (
             <dl className="kv compact" data-testid="sidebar-kb-shaped">
               <dt>Speed</dt>
-              <dd className="mono">{String(kbSnap.shaped_speed_mmps ?? '—')} mm/s</dd>
+              <dd className="mono">{String(kbSnap.shaped_speed_mmps ?? '?')} mm/s</dd>
               <dt>Yaw</dt>
-              <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s ?? '—')} mrad/s</dd>
+              <dd className="mono">{String(kbSnap.shaped_yaw_mrad_s ?? '?')} mrad/s</dd>
               <dt>Gear</dt>
               <dd className="mono">
-                {String(kbSnap.gear_label ?? kbSnap.gear ?? '—')}
+                {String(kbSnap.gear_label ?? kbSnap.gear ?? '?')}
               </dd>
             </dl>
           )}
@@ -497,34 +497,34 @@ export function Sidebar() {
                 <span>Speed fbk</span>
                 <strong data-testid="toolbox-speed">{speedText}</strong>
                 <small className="vehicle-cmd" data-testid="toolbox-speed-cmd">
-                  {hostTxLive ? `cmd ${hostCmdSpeedText}` : rtTxLive ? `cmd ${rtCmdSpeedText}` : 'cmd —'}
+                  {hostTxLive ? `cmd ${hostCmdSpeedText}` : rtTxLive ? `cmd ${rtCmdSpeedText}` : 'cmd ?'}
                 </small>
               </div>
               <div className="vehicle-readout">
                 <span>Steer fbk</span>
                 <strong data-testid="toolbox-steer">{steerText}</strong>
                 <small className="vehicle-cmd" data-testid="toolbox-steer-cmd">
-                  {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw —'}
+                  {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw ?'}
                 </small>
               </div>
             </div>
             <div className="vehicle-cmd-strip" data-testid="toolbox-cmd-strip">
               <div className="vehicle-cmd-line">
                 <span className="vehicle-cmd-tag">TX High</span>
-                <span className="mono">0x300 {hostCmdSpeedText} · gear {hostCmdGearText}</span>
+                <span className="mono">0x300 {hostCmdSpeedText} ? gear {hostCmdGearText}</span>
                 {hostFresh ? (
                   <span className={`vehicle-cmd-fresh fresh-${hostFresh}`}>{hostFresh}</span>
                 ) : (
-                  <span className="vehicle-cmd-fresh muted">—</span>
+                  <span className="vehicle-cmd-fresh muted">?</span>
                 )}
               </div>
               <div className="vehicle-cmd-line">
                 <span className="vehicle-cmd-tag">TX Low</span>
-                <span className="mono">0x204 {rtCmdSpeedText} · gear {rtCmdGearText}</span>
+                <span className="mono">0x204 {rtCmdSpeedText} ? gear {rtCmdGearText}</span>
                 {rtFresh ? (
                   <span className={`vehicle-cmd-fresh fresh-${rtFresh}`}>{rtFresh}</span>
                 ) : (
-                  <span className="vehicle-cmd-fresh muted">—</span>
+                  <span className="vehicle-cmd-fresh muted">?</span>
                 )}
               </div>
             </div>
@@ -566,7 +566,7 @@ export function Sidebar() {
           <span className="nav-label">Inspect</span>
           <strong>CAN monitor</strong>
           <small>
-            {monitorLiveCount} live · {monitorDeadCount} dead
+            {monitorLiveCount} live ? {monitorDeadCount} dead
           </small>
         </div>
 
@@ -617,12 +617,12 @@ export function Sidebar() {
             })
             const open = monitorExpanded === key
             const idText = hexId(m.can_id)
-            const name = m.name?.trim() || '—'
+            const name = m.name?.trim() || '?'
             const ecu = ecuOfMsg(m)
             const rate =
               m.observed_rate_hz != null && Number.isFinite(m.observed_rate_hz)
                 ? `${m.observed_rate_hz.toFixed(1)} Hz`
-                : '—'
+                : '?'
             const exp =
               m.expected_rate_hz != null && Number.isFinite(m.expected_rate_hz)
                 ? `${m.expected_rate_hz} Hz`
@@ -640,7 +640,7 @@ export function Sidebar() {
                   type="button"
                   className="monitor-msg-row"
                   aria-expanded={open}
-                  title={`${idText} ${name} · ${hostTx ? 'host TX' : live ? 'live' : 'dead'}`}
+                  title={`${idText} ${name} ? ${hostTx ? 'host TX' : live ? 'live' : 'dead'}`}
                   onClick={() => setMonitorExpanded((cur) => (cur === key ? null : key))}
                 >
                   <span className="monitor-msg-main">
@@ -649,7 +649,7 @@ export function Sidebar() {
                       {name}
                     </span>
                     <span className="monitor-msg-chevron muted" aria-hidden>
-                      {open ? '▾' : '▸'}
+                      {open ? '?' : '?'}
                     </span>
                     {live && (
                       <StatusDot
@@ -705,7 +705,7 @@ export function Sidebar() {
                     </div>
                     <div>
                       <dt>Valid</dt>
-                      <dd className="mono">{m.validation_status || '—'}</dd>
+                      <dd className="mono">{m.validation_status || '?'}</dd>
                     </div>
                   </dl>
                 )}
@@ -720,7 +720,7 @@ export function Sidebar() {
                         <li key={k}>
                           <span className="mono monitor-sig-key">{k}</span>
                           <span className="mono monitor-sig-val">
-                            {String(v.enum_label ?? v.engineering_value ?? '—')}
+                            {String(v.enum_label ?? v.engineering_value ?? '?')}
                             {v.unit ? ` ${v.unit}` : ''}
                           </span>
                         </li>
@@ -763,7 +763,7 @@ export function Sidebar() {
               <IconGauge />
               <div>
                 <strong id="side-vehicle-title">eTrike</strong>
-                <small>Cmd TX · feedback</small>
+                <small>Cmd TX ? feedback</small>
               </div>
             </div>
             {streamOk ? (
@@ -785,14 +785,14 @@ export function Sidebar() {
                       ? `cmd ${hostCmdSpeedText}`
                       : rtDriveCmd
                         ? `cmd ${rtCmdSpeedText}`
-                        : 'cmd —'}
+                        : 'cmd ?'}
               </small>
             </div>
             <div className="vehicle-readout">
               <span>Steer fbk</span>
               <strong data-testid="sidebar-steer">{steerText}</strong>
               <small className="vehicle-cmd" data-testid="sidebar-steer-cmd">
-                {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw —'}
+                {hostCmd ? `cmd yaw ${hostCmdYawText}` : 'cmd yaw ?'}
               </small>
             </div>
           </div>
@@ -803,7 +803,7 @@ export function Sidebar() {
             >
               <span className="vehicle-cmd-tag">TX High</span>
               <span className="mono">
-                0x300 {hostCmdSpeedText} · yaw {hostCmdYawText} · gear {hostCmdGearText}
+                0x300 {hostCmdSpeedText} ? yaw {hostCmdYawText} ? gear {hostCmdGearText}
               </span>
               {hostFresh ? (
                 <span
@@ -812,18 +812,18 @@ export function Sidebar() {
                   {hostTxKeys.has(`high:${hostCmd?.can_id ?? 0x300}`) ? 'tx' : hostFresh}
                 </span>
               ) : (
-                <span className="vehicle-cmd-fresh muted">—</span>
+                <span className="vehicle-cmd-fresh muted">?</span>
               )}
             </div>
             <div className="vehicle-cmd-line" data-testid="sidebar-cmd-low">
               <span className="vehicle-cmd-tag">TX Low</span>
               <span className="mono">
-                0x204 {rtCmdSpeedText} · gear {rtCmdGearText}
+                0x204 {rtCmdSpeedText} ? gear {rtCmdGearText}
               </span>
               {rtFresh ? (
                 <span className={`vehicle-cmd-fresh fresh-${rtFresh}`}>{rtFresh}</span>
               ) : (
-                <span className="vehicle-cmd-fresh muted">—</span>
+                <span className="vehicle-cmd-fresh muted">?</span>
               )}
             </div>
           </div>
@@ -837,7 +837,7 @@ export function Sidebar() {
             <div>
               <strong>{streamLabel}</strong>
               <small>
-                {profileLabel} · adapter {adapterHealth}
+                {profileLabel} ? adapter {adapterHealth}
               </small>
             </div>
           </div>

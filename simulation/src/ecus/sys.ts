@@ -1,5 +1,5 @@
 /**
- * SysEcu — simulated SYS ESP32-S3 (safety, brake, lights, diag, mode).
+ * SysEcu ? simulated SYS ESP32-S3 (safety, brake, lights, diag, mode).
  *
  * Monitors safety, controls SEB brake via 0x7B9, manages mode transitions,
  * sends 0x011 safety status, 0x110 mode, 0x600 diag, 0x7FE heartbeat.
@@ -20,7 +20,7 @@ export class SysEcu implements SimulatedEcu {
   private currentMode: "manual" | "auto" | "estop" = "manual";
   private sysHbCtr = 0;
   private cmdSpeedMmps = 0;
-  private actualSpeedMmps = 0;
+  private appliedSpeedCommandMmps = 0;
   private brakeKpa = 0;
   private lights = 0; // bitfield: turn left, turn right, brake, head
   private diagHeapKb = 500;
@@ -35,7 +35,7 @@ export class SysEcu implements SimulatedEcu {
   private sebRollInit = false;     // first 0x721 seen?
   private lastSetpointTickMs = 0;  // timestamp of last 0x204 arrival
 
-  // Gap I9a: ESTOP rate-limiting — track ESTOP CAN frame RX timestamps
+  // Gap I9a: ESTOP rate-limiting ? track ESTOP CAN frame RX timestamps
   private estopTimestamps: number[] = [];
   private lastEstopRateLimitWarningMs = -Infinity;
 
@@ -43,11 +43,11 @@ export class SysEcu implements SimulatedEcu {
   private estopTriggerMs = -1;     // when ESTOP was first triggered (ms)
   private mtrAcked = false;        // whether MTR has acknowledged ESTOP
 
-  // ── Simulation inputs ────────────────────────────────────────────
+  // ?? Simulation inputs ????????????????????????????????????????????
 
   setEstopButton(pressed: boolean): void { this.safety.setEstop(pressed); }
   setBrakeLever(pressed: boolean): void { this.safety.setBrakeLever(pressed); }
-  setActualSpeed(mmps: number): void { this.actualSpeedMmps = mmps; }
+  setActualSpeed(mmps: number): void { this.appliedSpeedCommandMmps = mmps; }
 
   /**
    * Track ESTOP events for rate-limiting (I9a).
@@ -89,7 +89,7 @@ export class SysEcu implements SimulatedEcu {
     const out: SimFrame[] = [];
     const estopActive = ctx.estopActive || this.safety.estop;
 
-    // ── Process low-bus frames ──────────────────────────────────
+    // ?? Process low-bus frames ??????????????????????????????????
     for (const f of lowBusRx) {
       const heartbeat = decodeAs(f, "rt:rt_heartbeat");
       if (heartbeat !== undefined) {
@@ -109,9 +109,9 @@ export class SysEcu implements SimulatedEcu {
       }
       const motor = decodeAs(f, "mtr:mtr_motor_fbk");
       if (motor !== undefined) {
-        this.actualSpeedMmps = Number(motor.actual_speed_mmps);
+        this.appliedSpeedCommandMmps = Number(motor.applied_speed_command_mmps); // 0x206 = setpoint echo (not measured)
         this.safety.feedMtrFeedback({
-          actualSpeed: this.actualSpeedMmps,
+          appliedSpeed: this.appliedSpeedCommandMmps,
           gearState: Number(motor.gear_state),
           faultFlags: Number(motor.fault_flags),
         }, nowMs);
@@ -142,7 +142,7 @@ export class SysEcu implements SimulatedEcu {
       if (sebStatus !== undefined) {
           this.brake.feedSebStatus(Number(sebStatus.status_byte), Number(sebStatus.stroke_value_raw));
           // H1: Track SEB rolling counter (byte 6 bits 4-7). Frozen counter
-          // means SEB isn't receiving commands — SYS must resume sending 0x7B9.
+          // means SEB isn't receiving commands ? SYS must resume sending 0x7B9.
           const sebRoll = Number(sebStatus.rolling_counter);
           if (!this.sebRollInit || sebRoll !== this.lastSebRoll) {
             this.sebRollInit = true;
@@ -162,9 +162,9 @@ export class SysEcu implements SimulatedEcu {
       }
     }
 
-    // ── EGAS L2 check (every 20ms) ──────────────────────────────
+    // ?? EGAS L2 check (every 20ms) ??????????????????????????????
     if (nowMs % 20 === 0) {
-      const egasFault = this.safety.checkEgasL2(nowMs, this.cmdSpeedMmps, this.actualSpeedMmps);
+      const egasFault = this.safety.checkEgasL2(nowMs, this.cmdSpeedMmps, this.appliedSpeedCommandMmps);
       if (egasFault) {
         // EGAS L2 fault triggers ESTOP
         this.trackEstopEvent(nowMs);
@@ -173,29 +173,29 @@ export class SysEcu implements SimulatedEcu {
 
     const effectiveEstop = estopActive || this.safety.estop;
 
-    // ── MTR ESTOP ACK watchdog (I9b) ─────────────────────────────
+    // ?? MTR ESTOP ACK watchdog (I9b) ?????????????????????????????
     if (effectiveEstop) {
       if (this.estopTriggerMs < 0) {
-        // ESTOP just became active — start the ACK timer
+        // ESTOP just became active ? start the ACK timer
         this.estopTriggerMs = nowMs;
         this.mtrAcked = false;
       } else if (!this.mtrAcked) {
         // Check if MTR has acknowledged with ESTOP_ACTIVE bit
         this.mtrAcked = this.safety.mtrEstopAcked();
         if (!this.mtrAcked && (nowMs - this.estopTriggerMs) >= 100) {
-          // 100ms elapsed without ACK — retrigger ESTOP
-          console.warn(`[SYS] MTR ESTOP ACK timeout at ${nowMs}ms — retriggering`);
+          // 100ms elapsed without ACK ? retrigger ESTOP
+          console.warn(`[SYS] MTR ESTOP ACK timeout at ${nowMs}ms ? retriggering`);
           this.safety.setEstop(true);
           this.estopTriggerMs = nowMs;  // restart the timer
         }
       }
     } else {
-      // No ESTOP — reset watchdog
+      // No ESTOP ? reset watchdog
       this.estopTriggerMs = -1;
       this.mtrAcked = false;
     }
 
-    // ── Brake control (50 Hz) ────────────────────────────────────
+    // ?? Brake control (50 Hz) ????????????????????????????????????
     if (nowMs % 20 === 0) {
       const cmd = this.brake.tick(
         this.safety.brakeLever,
@@ -228,7 +228,7 @@ export class SysEcu implements SimulatedEcu {
       }
     }
 
-    // ── 0x011 SYS_SAFETY_STS (5 Hz) ─────────────────────────────
+    // ?? 0x011 SYS_SAFETY_STS (5 Hz) ?????????????????????????????
     if (nowMs % 200 === 0) {
       out.push(encodeSimFrame("sys:sys_safety_sts", {
         estop_active: effectiveEstop ? 1 : 0,
@@ -240,7 +240,7 @@ export class SysEcu implements SimulatedEcu {
       }, "low", "sys", nowMs));
     }
 
-    // ── 0x110 SYS_MODE_CMD (on change only) ──────────────────────
+    // ?? 0x110 SYS_MODE_CMD (on change only) ??????????????????????
     // 0x110 SYS_MODE_CMD mode is MANUAL/AUTO only (ESTOP lives on 0x011).
     // Clamp the ESTOP latch to MANUAL here, matching the SYS firmware.
     const modeByte = ctx.mode === "auto" ? 1 : 0;
@@ -249,7 +249,7 @@ export class SysEcu implements SimulatedEcu {
       out.push(encodeSimFrame("sys:sys_mode_cmd", { mode: modeByte }, "low", "sys", nowMs));
     }
 
-    // ── 0x600 SYS_DIAG_RPT (1 Hz) ───────────────────────────────
+    // ?? 0x600 SYS_DIAG_RPT (1 Hz) ???????????????????????????????
     if (nowMs % 1000 === 0) {
       out.push(encodeSimFrame("sys:sys_diag_rpt", {
         mode: ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0,
@@ -264,7 +264,7 @@ export class SysEcu implements SimulatedEcu {
       }, "low", "sys", nowMs));
     }
 
-    // ── 0x7FE SYS_HEARTBEAT (10 Hz) ─────────────────────────────
+    // ?? 0x7FE SYS_HEARTBEAT (10 Hz) ?????????????????????????????
     // PWT is a standalone powertrain node. SYS does not emit the retired
     // low-bus 0x012 gateway command; PWT owns its manufacturer command.
     if (nowMs % 100 === 0) {

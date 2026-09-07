@@ -32,7 +32,7 @@ std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 std::atomic<int32_t> g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t> g_ses_angle_status{0};
 std::atomic<int32_t> g_brake_kpa_to_send{0};
-std::atomic<int32_t> g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
 std::atomic<uint8_t> g_mode_current{0};
 std::atomic<bool> g_seb_takeover{false};
 std::atomic<int64_t> g_last_sys_hb_us{0};
@@ -80,7 +80,7 @@ static void reset_state() {
     g_ses_angle_0_1deg.store(INT16_MIN);
     g_ses_angle_status.store(0);
     g_brake_kpa_to_send.store(0);
-    g_mtr_actual_speed_mmps.store(0);
+    g_mtr_applied_speed_command_mmps.store(0);
     g_mode_current.store(0);
     g_seb_takeover.store(false);
     g_last_sys_hb_us.store(0);
@@ -149,7 +149,7 @@ int main() {
 
         CHECK(r.zero_setpoints);
         // Issue #3: SYS-HB loss alone does NOT set seb_takeover (emergency 0x7B9)
-        // — that is owned by the brake-fallback machine, which additionally
+        // ? that is owned by the brake-fallback machine, which additionally
         // requires the SYS 0x7B9 to have disappeared.
         CHECK(!seb_takeover);
 
@@ -204,7 +204,7 @@ int main() {
     {
         reset_state();
         boot_steering_to_active();
-        g_mtr_actual_speed_mmps.store(6944); // threshold floor: 2.0 deg = 20 in 0.1 deg
+        g_mtr_applied_speed_command_mmps.store(6944); // threshold floor: 2.0 deg = 20 in 0.1 deg
         g_last_cmd_angle_0_1deg.store(21);
         g_ses_angle_0_1deg.store(0);
 
@@ -225,7 +225,7 @@ int main() {
     {
         reset_state();
         boot_steering_to_active();
-        g_mtr_actual_speed_mmps.store(6944);
+        g_mtr_applied_speed_command_mmps.store(6944);
         g_last_cmd_angle_0_1deg.store(20);
         g_ses_angle_0_1deg.store(0);
 
@@ -242,10 +242,10 @@ int main() {
         CHECK(!r.disable_steering);
     }
 
-    // ── Issue #8: MTR feedback health (MTR present, not bypassed) ─────
+    // ?? Issue #8: MTR feedback health (MTR present, not bypassed) ?????
     {
         reset_state();
-        g_bypass_mtr_absent = false;   // MTR is present — exercise the health check
+        g_bypass_mtr_absent = false;   // MTR is present ? exercise the health check
         bool estop_pending = false;
         bool seb_takeover = false;
         rt::SafetyResult r{};
@@ -288,7 +288,7 @@ int main() {
         CHECK(!r.zero_setpoints);
     }
 
-    // ── Issue #8: brake escalation when motion had recently been commanded ──
+    // ?? Issue #8: brake escalation when motion had recently been commanded ??
     {
         reset_state();
         g_bypass_mtr_absent = false;

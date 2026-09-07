@@ -1,4 +1,4 @@
-# Full CAN Network Documentation — E-Trike
+# Full CAN Network Documentation ? E-Trike
 **Description:** Network generated from canonical protocol contracts
 
 *(Note: This file is fully auto-generated from the YAML configurations. Do not edit manually.)*
@@ -44,7 +44,7 @@ The E-Trike utilizes multiple primary CAN networks:
 ### Bus: `high`
 **Baudrate:** Unknown | **Description:** 
 
-#### 0x001 — SAFETY_ESTOP
+#### 0x001 ? SAFETY_ESTOP
 - **Sender:** Any
 - **Receivers:** SYS, Host, MTR, DCDC
 - **DLC:** 0 bytes
@@ -52,7 +52,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *No payload (DLC=0 event frame)*
 
-#### 0x011 — SYS_SAFETY_STS
+#### 0x011 ? SYS_SAFETY_STS
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 3 bytes
@@ -67,7 +67,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `light_brake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `light_head` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x111 — HMI_MODE_REQ
+#### 0x111 ? HMI_MODE_REQ
 - **Sender:** HMI
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
@@ -78,7 +78,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `req_mode` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=MANUAL, 1=AUTO) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x112 — HMI_PWR_REQ
+#### 0x112 ? HMI_PWR_REQ
 - **Sender:** HMI
 - **Receivers:** SYS
 - **DLC:** 2 bytes
@@ -89,7 +89,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `req_start` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=OFF, 1=ON) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x120 — SYS_THROTTLE_STS
+#### 0x120 ? SYS_THROTTLE_STS
 - **Sender:** MTR
 - **Receivers:** RT, Host
 - **DLC:** 2 bytes
@@ -99,7 +99,7 @@ The E-Trike utilizes multiple primary CAN networks:
 |---|---|---|---|---|---|---|---|---|
 | `speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 
-#### 0x206 — MTR_MOTOR_FBK
+#### 0x206 ? MTR_MOTOR_FBK
 - **Sender:** MTR
 - **Receivers:** RT, SYS, Host
 - **DLC:** 4 bytes
@@ -107,11 +107,11 @@ The E-Trike utilizes multiple primary CAN networks:
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `actual_speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `applied_speed_command_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 | `gear_state` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `fault_flags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x210 — RT_STATE_RPT
+#### 0x210 ? RT_STATE_RPT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 6 bytes
@@ -127,7 +127,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `task_health` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `steer_state` | 5 | 0 | 8 | unsigned | 1 | [0, 5] | - |  |
 
-#### 0x220 — RT_PID_RPT
+#### 0x220 ? RT_PID_RPT
 - **Sender:** RT
 - **Receivers:** Host
 - **DLC:** 6 bytes
@@ -139,7 +139,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `speed_measured` | 2 | 0 | 16 | signed | 1 | [-32768, 32767] | - |  |
 | `pid_output` | 4 | 0 | 16 | signed | 1 | [-32768, 32767] | - |  |
 
-#### 0x300 — HOST_DRIVE_CMD
+#### 0x300 ? HOST_DRIVE_CMD
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -151,7 +151,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `yaw_rate_mrad_s` | 4 | 0 | 24 | signed | 1 | [-3000, 3000] | - |  |
 | `gear` | 7 | 0 | 8 | unsigned | 1 | [0, 3] | - |  (Values: 0=N, 1=D, 2=S, 3=R) |
 
-#### 0x301 — HOST_BRAKE_REQ
+#### 0x301 ? HOST_BRAKE_REQ
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 4 bytes
@@ -161,7 +161,7 @@ The E-Trike utilizes multiple primary CAN networks:
 |---|---|---|---|---|---|---|---|---|
 | `brake_pressure_kpa` | 0 | 0 | 32 | signed | 1 | [0, 20000] | - |  |
 
-#### 0x302 — HOST_LIGHT_CMD
+#### 0x302 ? HOST_LIGHT_CMD
 - **Sender:** Host
 - **Receivers:** RT, SYS
 - **DLC:** 1 bytes
@@ -174,7 +174,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `brake_light` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x310 — STEER_DIAG
+#### 0x310 ? STEER_DIAG
 - **Sender:** RT
 - **Receivers:** Host
 - **DLC:** 8 bytes
@@ -188,7 +188,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `ecu_temp` | 5 | 0 | 16 | unsigned | x0.1 | [0, 6553.5] | - |  |
 | `reserved` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x311 — BRAKE_DIAG
+#### 0x311 ? BRAKE_DIAG
 - **Sender:** RT
 - **Receivers:** Host
 - **DLC:** 8 bytes
@@ -202,7 +202,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `ecu_temp` | 5 | 0 | 16 | unsigned | x0.1 | [0, 6553.5] | - |  |
 | `reserved` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x400 — HOST_OBSTACLE_DIST
+#### 0x400 ? HOST_OBSTACLE_DIST
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 4 bytes
@@ -212,7 +212,7 @@ The E-Trike utilizes multiple primary CAN networks:
 |---|---|---|---|---|---|---|---|---|
 | `distance_mm` | 0 | 0 | 32 | unsigned | 1 | [0, 4.29497e+09] | - |  (Values: 4294967295=clear) |
 
-#### 0x600 — SYS_DIAG_RPT
+#### 0x600 ? SYS_DIAG_RPT
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 8 bytes
@@ -230,7 +230,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `tec` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `rec` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x7FC — HOST_HEARTBEAT
+#### 0x7FC ? HOST_HEARTBEAT
 - **Sender:** Host
 - **Receivers:** RT
 - **DLC:** 2 bytes
@@ -241,7 +241,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `alive_ctr` | 0 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `health_flags` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x7FD — RT_HEARTBEAT
+#### 0x7FD ? RT_HEARTBEAT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 2 bytes
@@ -257,7 +257,7 @@ The E-Trike utilizes multiple primary CAN networks:
 ### Bus: `low`
 **Baudrate:** Unknown | **Description:** 
 
-#### 0x001 — SAFETY_ESTOP
+#### 0x001 ? SAFETY_ESTOP
 - **Sender:** Any
 - **Receivers:** SYS, Host, MTR, DCDC
 - **DLC:** 0 bytes
@@ -265,7 +265,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *No payload (DLC=0 event frame)*
 
-#### 0x011 — SYS_SAFETY_STS
+#### 0x011 ? SYS_SAFETY_STS
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 3 bytes
@@ -280,7 +280,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `light_brake` | 2 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `light_head` | 2 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x110 — SYS_MODE_CMD
+#### 0x110 ? SYS_MODE_CMD
 - **Sender:** SYS
 - **Receivers:** RT, MTR
 - **DLC:** 1 bytes
@@ -290,7 +290,7 @@ The E-Trike utilizes multiple primary CAN networks:
 |---|---|---|---|---|---|---|---|---|
 | `mode` | 0 | 0 | 8 | unsigned | 1 | [0, 2] | - |  |
 
-#### 0x111 — HMI_MODE_REQ
+#### 0x111 ? HMI_MODE_REQ
 - **Sender:** HMI
 - **Receivers:** SYS, Host
 - **DLC:** 2 bytes
@@ -301,7 +301,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `req_mode` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=MANUAL, 1=AUTO) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x112 — HMI_PWR_REQ
+#### 0x112 ? HMI_PWR_REQ
 - **Sender:** HMI
 - **Receivers:** SYS
 - **DLC:** 2 bytes
@@ -312,7 +312,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `req_start` | 0 | 0 | 8 | unsigned | 1 | [0, 1] | - |  (Values: 0=OFF, 1=ON) |
 | `rolling_counter` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x120 — SYS_THROTTLE_STS
+#### 0x120 ? SYS_THROTTLE_STS
 - **Sender:** MTR
 - **Receivers:** RT, Host
 - **DLC:** 2 bytes
@@ -322,7 +322,7 @@ The E-Trike utilizes multiple primary CAN networks:
 |---|---|---|---|---|---|---|---|---|
 | `speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 
-#### 0x169 — VCU_SES_REQ
+#### 0x169 ? VCU_SES_REQ
 - **Sender:** RT
 - **Receivers:** SES
 - **DLC:** 8 bytes
@@ -330,7 +330,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x201 — SES_STATUS
+#### 0x201 ? SES_STATUS
 - **Sender:** SES
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -338,7 +338,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x202 — SES_ERR_INFO
+#### 0x202 ? SES_ERR_INFO
 - **Sender:** SES
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -346,7 +346,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x203 — SES_VERSION
+#### 0x203 ? SES_VERSION
 - **Sender:** SES
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -354,7 +354,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x204 — RT_DRIVE_CMD
+#### 0x204 ? RT_DRIVE_CMD
 - **Sender:** RT
 - **Receivers:** SYS, MTR
 - **DLC:** 5 bytes
@@ -365,7 +365,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `motor_speed_mmps` | 0 | 0 | 32 | signed | 1 | [-500, 3000] | - |  |
 | `gear` | 4 | 0 | 8 | unsigned | 1 | [0, 3] | - |  (Values: 0=N, 1=D, 2=S, 3=R) |
 
-#### 0x205 — RT_BRAKE_CMD
+#### 0x205 ? RT_BRAKE_CMD
 - **Sender:** RT
 - **Receivers:** SYS
 - **DLC:** 4 bytes
@@ -375,7 +375,7 @@ The E-Trike utilizes multiple primary CAN networks:
 |---|---|---|---|---|---|---|---|---|
 | `brake_pressure_kpa` | 0 | 0 | 32 | signed | 1 | [0, 20000] | - |  |
 
-#### 0x206 — MTR_MOTOR_FBK
+#### 0x206 ? MTR_MOTOR_FBK
 - **Sender:** MTR
 - **Receivers:** RT, SYS, Host
 - **DLC:** 4 bytes
@@ -383,11 +383,11 @@ The E-Trike utilizes multiple primary CAN networks:
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `actual_speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `applied_speed_command_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 | `gear_state` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `fault_flags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x210 — RT_STATE_RPT
+#### 0x210 ? RT_STATE_RPT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 6 bytes
@@ -403,7 +403,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `task_health` | 4 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `steer_state` | 5 | 0 | 8 | unsigned | 1 | [0, 5] | - |  |
 
-#### 0x302 — HOST_LIGHT_CMD
+#### 0x302 ? HOST_LIGHT_CMD
 - **Sender:** Host
 - **Receivers:** RT, SYS
 - **DLC:** 1 bytes
@@ -416,7 +416,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `brake_light` | 0 | 2 | 1 | unsigned | 1 | [0, 1] | - |  |
 | `headlight` | 0 | 3 | 1 | unsigned | 1 | [0, 1] | - |  |
 
-#### 0x600 — SYS_DIAG_RPT
+#### 0x600 ? SYS_DIAG_RPT
 - **Sender:** SYS
 - **Receivers:** RT, Host
 - **DLC:** 8 bytes
@@ -434,7 +434,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `tec` | 6 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `rec` | 7 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x6FA — SES_TEST
+#### 0x6FA ? SES_TEST
 - **Sender:** SES
 - **Receivers:** RT
 - **DLC:** 8 bytes
@@ -442,7 +442,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x6FB — SEB_TEST
+#### 0x6FB ? SEB_TEST
 - **Sender:** SEB
 - **Receivers:** SYS, RT
 - **DLC:** 8 bytes
@@ -450,7 +450,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x721 — SEB_STATUS
+#### 0x721 ? SEB_STATUS
 - **Sender:** SEB
 - **Receivers:** SYS, RT
 - **DLC:** 8 bytes
@@ -458,7 +458,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x731 — SEB_ERR_INFO
+#### 0x731 ? SEB_ERR_INFO
 - **Sender:** SEB
 - **Receivers:** SYS
 - **DLC:** 8 bytes
@@ -466,7 +466,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x741 — SEB_VERSION
+#### 0x741 ? SEB_VERSION
 - **Sender:** SEB
 - **Receivers:** SYS
 - **DLC:** 8 bytes
@@ -474,7 +474,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x7B9 — VCU_SEB_REQ
+#### 0x7B9 ? VCU_SEB_REQ
 - **Sender:** SYS
 - **Receivers:** SEB
 - **DLC:** 8 bytes
@@ -482,7 +482,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 *Opaque payload or unsupported layout kind: opaque*
 
-#### 0x7FD — RT_HEARTBEAT
+#### 0x7FD ? RT_HEARTBEAT
 - **Sender:** RT
 - **Receivers:** Host, SYS
 - **DLC:** 2 bytes
@@ -493,7 +493,7 @@ The E-Trike utilizes multiple primary CAN networks:
 | `alive_ctr` | 0 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 | `health_flags` | 1 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
-#### 0x7FE — SYS_HEARTBEAT
+#### 0x7FE ? SYS_HEARTBEAT
 - **Sender:** SYS
 - **Receivers:** RT
 - **DLC:** 2 bytes
@@ -516,7 +516,7 @@ The E-Trike utilizes multiple primary CAN networks:
 ### Bus: `powertrain`
 **Baudrate:** Unknown | **Description:** 
 
-#### 0x10262B27 — PWT_DCDC_CMD
+#### 0x10262B27 ? PWT_DCDC_CMD
 - **Sender:** PWT
 - **Receivers:** DCDC
 - **DLC:** 8 bytes

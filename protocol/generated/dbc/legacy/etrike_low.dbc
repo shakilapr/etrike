@@ -40,7 +40,7 @@ BO_ 517 RT_BRAKE_CMD: 4 RT
  SG_ RT_BrakePressure : 7|32@0- (1,0) [0|20000] "kPa" Vector__XXX
 
 BO_ 518 MTR_MOTOR_FBK: 4 MTR
- SG_ MTR_ActualSpeed : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
+ SG_ MTR_AppliedSpeedCmd : 7|16@0- (1,0) [-500|3000] "mm/s" Vector__XXX
  SG_ MTR_GearState : 23|8@0+ (1,0) [0|3] "" Vector__XXX
  SG_ MTR_FaultFlags : 31|8@0+ (1,0) [0|255] "" Vector__XXX
 

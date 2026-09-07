@@ -445,7 +445,7 @@ export const METADATA = {
           "bit": 0,
           "bits": 16,
           "byte": 0,
-          "key": "actual_speed_mmps",
+          "key": "applied_speed_command_mmps",
           "max": 3000,
           "min": -500,
           "signed": true

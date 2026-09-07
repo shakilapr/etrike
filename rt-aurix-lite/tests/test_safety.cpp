@@ -1,4 +1,4 @@
-// Liveness + safety supervision unit tests — pure, deterministic.
+// Liveness + safety supervision unit tests ? pure, deterministic.
 
 #include <cstdio>
 #include <cstdlib>
@@ -116,14 +116,14 @@ void test_safety_mtr_loss() {
 void test_safety_follow_error() {
     SafetySupervisor ss;
     MotorFeedback mf;
-    mf.actual_speed_mmps = 2000;
+    mf.applied_speed_command_mmps = 2000;
     DriveCommand dc;
     rta::SteeringFeedback sf;
     sf.valid = true;
     sf.angle_0_1deg = 0;       // actual 0
-    const std::int16_t kCmd = 500;  // commanded 50° (far beyond threshold)
+    const std::int16_t kCmd = 500;  // commanded 50? (far beyond threshold)
 
-    // At 2 m/s, dynamic limit ~40° => threshold ~10°; err 50° exceeds.
+    // At 2 m/s, dynamic limit ~40? => threshold ~10?; err 50? exceeds.
     SafetyResult r = ss.evaluate(0, false, false, Mode::Auto, mf, dc, sf, kCmd, true,
                                  3000, true, true);
     CHECK(!r.zero_setpoints);  // not yet persisted
@@ -138,7 +138,7 @@ void test_safety_follow_error() {
 void test_safety_obstacle() {
     SafetySupervisor ss;
     MotorFeedback mf;
-    mf.actual_speed_mmps = 1000;
+    mf.applied_speed_command_mmps = 1000;
     DriveCommand dc;
     rta::SteeringFeedback sf;
 
@@ -153,7 +153,7 @@ void test_safety_obstacle() {
 void test_safety_startup_grace() {
     SafetySupervisor ss;
     MotorFeedback mf;
-    mf.actual_speed_mmps = 2000;
+    mf.applied_speed_command_mmps = 2000;
     DriveCommand dc;
     rta::SteeringFeedback sf;
     sf.valid = true;

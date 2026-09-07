@@ -13,7 +13,7 @@
 #include "mode_manager.h"
 #include "can_driver_mcp2515.h"
 
-// ── Global Mocks for RT & SYS ──────────────────────────────────────────
+// ?? Global Mocks for RT & SYS ??????????????????????????????????????????
 bool g_bench_solo_mode = false;
 bool g_bypass_eps_sync = true;
 bool g_bypass_seb_sync = true;
@@ -22,7 +22,7 @@ bool g_bypass_mtr_absent = true;
 std::atomic<bool>     g_steering_estop_request{false};
 std::atomic<bool>     g_steering_exit_request{false};
 std::atomic<int32_t>  g_encoder_speed_mmps{0};
-std::atomic<int32_t>  g_mtr_actual_speed_mmps{0};
+std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
 std::atomic<int32_t>  g_brake_fault_active{false};
 std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint32_t> g_last_mtr_fbk_tick{1000};
@@ -40,7 +40,7 @@ int fail_count = 0;
         } \
     } while(0)
 
-// ── 1. SteeringControl Data Race & Signal Draining Test ────────────────
+// ?? 1. SteeringControl Data Race & Signal Draining Test ????????????????
 void test_bug1_steering_signal_draining() {
     std::printf("-- Test 1: SteeringControl signal draining & atomic state --\n");
     rt::SteeringControl steering;
@@ -68,11 +68,11 @@ void test_bug1_steering_signal_draining() {
     TEST_ASSERT(g_steering_exit_request.load() == false, "Exit signal atomic cleared after drain");
 }
 
-// ── 2. SpeedFeedbackSource::RtEncoder Reading Test ─────────────────────
+// ?? 2. SpeedFeedbackSource::RtEncoder Reading Test ?????????????????????
 void test_bug2_encoder_speed_feedback() {
     std::printf("-- Test 2: RtEncoder speed feedback selection --\n");
     g_encoder_speed_mmps.store(1250);     // Local encoder
-    g_mtr_actual_speed_mmps.store(800);    // MTR feedback
+    g_mtr_applied_speed_command_mmps.store(800);    // MTR feedback
 
     int32_t measured_speed_mmps = 0;
     // Simulate RtEncoder selection branch
@@ -81,7 +81,7 @@ void test_bug2_encoder_speed_feedback() {
     TEST_ASSERT(measured_speed_mmps == 1250, "RtEncoder branch reads local encoder speed, not MTR");
 }
 
-// ── 3. MCP2515 Boot Mode Selection Test ────────────────────────────────
+// ?? 3. MCP2515 Boot Mode Selection Test ????????????????????????????????
 void test_bug3_mcp2515_boot_mode() {
     std::printf("-- Test 3: MCP2515 bench solo mode selection --\n");
     
@@ -94,7 +94,7 @@ void test_bug3_mcp2515_boot_mode() {
     TEST_ASSERT(mode_vehicle == rt::Mcp2515Driver::Mode::Normal, "Vehicle mode selects Normal");
 }
 
-// ── 4. PID Launch from Standstill Test ─────────────────────────────────
+// ?? 4. PID Launch from Standstill Test ?????????????????????????????????
 void test_bug4_pid_launch_from_standstill() {
     std::printf("-- Test 4: PID launch from standstill --\n");
     rt::PidController pid;
@@ -118,7 +118,7 @@ void test_bug4_pid_launch_from_standstill() {
     TEST_ASSERT(sp_motor_speed_mmps > 1000, "Active PID correction applied when sp.motor_speed_mmps != 0");
 }
 
-// ── 5. Brake Fault Auto-Recovery Test ──────────────────────────────────
+// ?? 5. Brake Fault Auto-Recovery Test ??????????????????????????????????
 void test_bug5_brake_fault_auto_recovery() {
     std::printf("-- Test 5: g_brake_fault_active auto-recovery --\n");
     g_brake_fault_active.store(true);
@@ -141,7 +141,7 @@ void test_bug5_brake_fault_auto_recovery() {
     TEST_ASSERT(g_brake_fault_active.load() == false, "g_brake_fault_active clears after 30 healthy cycles");
 }
 
-// ── 6. ESTOP GPIO Logic Test ───────────────────────────────────────────
+// ?? 6. ESTOP GPIO Logic Test ???????????????????????????????????????????
 void test_bug6_estop_gpio_logic() {
     std::printf("-- Test 6: ESTOP GPIO NC fail-safe level evaluation --\n");
     // NC fail-safe with pull-up: 0 = connected to GND (unpressed), 1 = open/floating (pressed/wire cut)
@@ -155,7 +155,7 @@ void test_bug6_estop_gpio_logic() {
     TEST_ASSERT(estop_pressed == true, "Level 1 evaluates to ESTOP active");
 }
 
-// ── 7. Diagnostic Task 8-Task Health Mask Test ─────────────────────────
+// ?? 7. Diagnostic Task 8-Task Health Mask Test ?????????????????????????
 void test_bug7_task_diag_health_mask() {
     std::printf("-- Test 7: task_diag 8-task health supervision mask --\n");
     
@@ -189,7 +189,7 @@ void test_bug7_task_diag_health_mask() {
     TEST_ASSERT(task_health == 0xEF, "Dead can_ctrl task drops bit 4 (mask 0xEF)");
 }
 
-// ── 8. ModeManager HMI Request Validation Test ─────────────────────────
+// ?? 8. ModeManager HMI Request Validation Test ?????????????????????????
 void test_bug8_hmi_mode_validation() {
     std::printf("-- Test 8: ModeManager HMI mode request bounds validation --\n");
     sys::ModeManager mode_mgr;
@@ -204,12 +204,12 @@ void test_bug8_hmi_mode_validation() {
     TEST_ASSERT(mode_mgr.parse_hmi_mode(255) == false, "Out-of-bounds request (255) rejected");
 }
 
-// ── 9. SYS persistent ESTOP latch predicate (issue #4) ─────────────────
+// ?? 9. SYS persistent ESTOP latch predicate (issue #4) ?????????????????
 // The estop_active bit SYS publishes in 0x011 / 0x7FE must track the
 // *system* ESTOP latch (ModeManager mode == ESTOP), not merely the hardware
 // button. A software ESTOP (CAN 0x001, SEB L3, EGAS, bus-off,
 // MTR-reported-ESTOP) latches the mode into ESTOP, so the published bit must
-// be 1 even when the physical button is released — otherwise RT/MTR could
+// be 1 even when the physical button is released ? otherwise RT/MTR could
 // two-frame-clear into a false all-clear.
 void test_issue4_estop_latched_predicate(void) {
     std::printf("-- Test 9: SYS estop_latched tracks the mode latch, not just the button --\n");
@@ -232,7 +232,7 @@ void test_issue4_estop_latched_predicate(void) {
     mm.init();
     TEST_ASSERT(!ModeManager::estop_latched(mm.mode(), false), "starts not latched");
 
-    mm.force_estop();   // software ESTOP — hw button is NOT pressed
+    mm.force_estop();   // software ESTOP ? hw button is NOT pressed
     TEST_ASSERT(Mode::Estop == mm.mode(), "mode is ESTOP after force_estop");
     TEST_ASSERT(ModeManager::estop_latched(mm.mode(), /*hw=*/false),
                 "mode latch alone keeps estop_active=1 (button released)");

@@ -12,7 +12,7 @@ static int g_pass=0,g_fail=0;
 #define CHECK(c,m) do{if(c){g_pass++;}else{fprintf(stderr,"  FAIL %s\n",m);g_fail++;}}while(0)
 #define CHECK_EQ(a,b,m) do{auto _a=(a);auto _b=(b);if(_a==_b){g_pass++;}else{fprintf(stderr,"  FAIL %s: %lld!=%lld\n",m,(long long)_b,(long long)_a);g_fail++;}}while(0)
 
-static void t1(){printf("\n=== Chain 1: 0x300→0x204 Drive ===\n");
+static void t1(){printf("\n=== Chain 1: 0x300?0x204 Drive ===\n");
 generated::HostDriveCmd c;c.speed_mmps=2000;c.gear=1;protocol::Frame f;generated::encode(c,f);
 generated::HostDriveCmd d;generated::decode(f.view(),d);CHECK_EQ(d.speed_mmps,2000,"0x300 speed=2000");CHECK_EQ(d.gear,1,"0x300 gear=D");
 generated::RtDriveCmd r;r.motor_speed_mmps=2000;r.gear=1;protocol::Frame f2;generated::encode(r,f2);
@@ -20,10 +20,10 @@ generated::RtDriveCmd d2;generated::decode(f2.view(),d2);CHECK_EQ(d2.motor_speed
 
 static void t2(){printf("\n=== Chain 2: ESTOP ===\n");
 protocol::Frame e;e.id=0x001;e.dlc=0;CHECK_EQ(e.id,0x001,"ESTOP ID");CHECK_EQ(e.dlc,0,"ESTOP DLC=0");
-generated::RtDriveCmd z{};generated::decode(e.view(),z);CHECK_EQ(z.motor_speed_mmps,0,"post-ESTOP speed=0(garbage DLC→safe default)");
+generated::RtDriveCmd z{};generated::decode(e.view(),z);CHECK_EQ(z.motor_speed_mmps,0,"post-ESTOP speed=0(garbage DLC?safe default)");
 CHECK(true,"ESTOP forwarded bidirectionally");}
 
-static void t3(){printf("\n=== Chain 3: 0x301→0x205 Brake ===\n");
+static void t3(){printf("\n=== Chain 3: 0x301?0x205 Brake ===\n");
 generated::HostBrakeReq b;b.brake_pressure_kpa=5000;protocol::Frame f;generated::encode(b,f);
 generated::HostBrakeReq db;generated::decode(f.view(),db);CHECK_EQ(db.brake_pressure_kpa,5000,"0x301 brake=5000");
 generated::RtBrakeCmd r;r.brake_pressure_kpa=5000;protocol::Frame f2;generated::encode(r,f2);
@@ -50,15 +50,15 @@ protocol::Frame f169;ses::encode_command(s,f169);
 uint8_t cs=0;for(int i=0;i<7;i++)cs^=f169.data[i];
 CHECK_EQ(f169.data[7],(uint8_t)(cs^0xFF),"[3]0x169 checksum");
 // MTR feedback
-generated::MtrMotorFbk m;m.actual_speed_mmps=1500;m.gear_state=1;m.fault_flags=0;
+generated::MtrMotorFbk m;m.applied_speed_command_mmps=1500;m.gear_state=1;m.fault_flags=0;
 protocol::Frame f206;generated::encode(m,f206);generated::MtrMotorFbk dm;generated::decode(f206.view(),dm);
-CHECK_EQ(dm.actual_speed_mmps,1500,"[4]0x206 speed=1500");CHECK_EQ(dm.fault_flags,0,"[4]no faults");
-printf("  Chain: Host(0x300)→RT→0x204(1500)→SYS/MTR→0x206(1500)\n");}
+CHECK_EQ(dm.applied_speed_command_mmps,1500,"[4]0x206 speed=1500");CHECK_EQ(dm.fault_flags,0,"[4]no faults");
+printf("  Chain: Host(0x300)?RT?0x204(1500)?SYS/MTR?0x206(1500)\n");}
 
-static void t7(){printf("\n=== Chain 7: Obstacle→ESTOP ===\n");
+static void t7(){printf("\n=== Chain 7: Obstacle?ESTOP ===\n");
 generated::HostObstacleDist o;o.distance_mm=500;protocol::Frame f;generated::encode(o,f);
 generated::HostObstacleDist ro;generated::decode(f.view(),ro);CHECK_EQ(ro.distance_mm,500u,"0x400 obstacle=500mm");
-CHECK(ro.distance_mm<2000u,"500mm<threshold→brake");CHECK(true,"chain: obstacle→ESTOP,speed→0");}
+CHECK(ro.distance_mm<2000u,"500mm<threshold?brake");CHECK(true,"chain: obstacle?ESTOP,speed?0");}
 
 static void t8(){printf("\n=== Chain 8: 0x011 Safety Status ===\n");
 generated::SysSafetySts sts;sts.estop_active=true;sts.heartbeat_ok=true;
