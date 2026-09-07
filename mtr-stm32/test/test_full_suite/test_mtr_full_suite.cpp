@@ -1111,6 +1111,64 @@ void test_motor_manager_drive_cmd_watchdog() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Issue RC4 (Case B): after an authorized clear, if the required REARM
+// (0x113 OFF->ON edge) never arrives, the vehicle must stay safely inhibited
+// (not silently re-arm, and not move). The REARM-timeout diagnostic must not
+// change the safe default — propulsion stays inhibited until a genuine power
+// OFF->ON cycle re-arms.
+// ═══════════════════════════════════════════════════════════════════════
+void test_motor_manager_rearm_timeout_stays_inhibited() {
+    std::printf("[TEST GROUP] Motor Manager: REARM timeout keeps vehicle inhibited (RC4 Case B)...\n");
+
+    mtr::RelayController relays;
+    mtr::DacController dac;
+    mtr::MotorManager mgr(relays, dac);
+    mgr.init();
+
+    // Authority valid; power OFF so the ESTOP->clear flow does NOT accidentally
+    // observe a post-clear OFF->ON (this is the Case-B configuration).
+    send_mode(mgr, can::Mode::Auto, 100);
+    send_power(mgr, false, 100);
+    send_safety(mgr, false, 100);
+
+    // Latch ESTOP via 0x011 estop_active.
+    send_safety(mgr, true, 105);
+    ASSERT_TRUE(mgr.is_estop_active());
+
+    // Authorized clear via two consecutive zero 0x011 frames.
+    send_safety_frames(mgr, false, 2, 110);
+    ASSERT_FALSE(mgr.is_estop_active());
+    // REARM is now required; no OFF->ON edge has been observed after the clear.
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+
+    // Hold the vehicle well past the REARM timeout WITHOUT ever sending an
+    // OFF->ON edge. It must remain inhibited the whole time (no auto-rearm).
+    uint32_t now = 110;
+    for (uint32_t step = 0; step < 300; ++step) {   // 300 * 50ms = 15 s > 10 s timeout
+        now += 50;
+        send_mode(mgr, can::Mode::Auto, now);
+        send_power(mgr, false, now);   // power stays OFF
+        send_safety(mgr, false, now);
+        mgr.tick(now);
+        if (step >= 100) {  // past the timeout: still safely inhibited
+            ASSERT_TRUE(mgr.propulsion_inhibited());
+        }
+    }
+    ASSERT_FALSE(mgr.is_estop_active());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+    ASSERT_EQ(relays.state(), mtr::RelayController::State::Off);
+
+    // A genuine OFF->ON power edge re-arms and restores motion authority.
+    send_power(mgr, true, now);
+    can::gen::RtDriveCmd drv{2000, static_cast<uint8_t>(can::Gear::D)};
+    can::Frame drv_fr;
+    can::gen::encode_rt_drive_cmd(drv, drv_fr);
+    mgr.handle_frame(drv_fr, now);
+    mgr.tick(now);
+    ASSERT_FALSE(mgr.propulsion_inhibited());
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1134,6 +1192,7 @@ int main() {
     RUN_TEST(test_motor_manager_recovery_requires_rearm);
     RUN_TEST(test_motor_manager_sys_estop_via_safety_status);
     RUN_TEST(test_motor_manager_drive_cmd_watchdog);
+    RUN_TEST(test_motor_manager_rearm_timeout_stays_inhibited);
     RUN_TEST(test_fdcan_driver_ringbuffer);
 
     return UNITY_END();
