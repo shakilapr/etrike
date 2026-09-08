@@ -310,8 +310,8 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-    CHECK(etrike::protocol::kMessages.size() == 52);
-    CHECK(etrike::protocol::kRoutes.size() == 11);
+  CHECK(etrike::protocol::kMessages.size() == 58);
+  CHECK(etrike::protocol::kRoutes.size() == 13);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);
 

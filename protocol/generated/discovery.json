@@ -612,6 +612,171 @@
     },
     {
       "byte_order": "big",
+      "canonical_key": "mtr:mtr_node_status",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x502",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "same_frame",
+          "sender": "MTR"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x502",
+          "receivers": [
+            "RT",
+            "SYS",
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "MTR"
+        }
+      ],
+      "key": "mtr_node_status",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 4,
+            "byte": 0,
+            "enum": {
+              "0": "INIT",
+              "1": "ACQUIRE",
+              "15": "UNKNOWN",
+              "2": "STANDBY",
+              "3": "ACTIVE",
+              "4": "INHIBITED",
+              "5": "ESTOP",
+              "6": "RECOVER"
+            },
+            "key": "node_state",
+            "max": 15,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 4,
+            "byte": 0,
+            "constant": 0,
+            "key": "reserved_b0"
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 1,
+            "key": "block_mask",
+            "max": 65535,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 3,
+            "key": "estop_active",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 3,
+            "key": "ready",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 3,
+            "key": "command_received",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 3,
+            "key": "command_nonzero",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 3,
+            "key": "output_enabled",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 5,
+            "bits": 1,
+            "byte": 3,
+            "key": "estop_latched",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 6,
+            "bits": 1,
+            "byte": 3,
+            "key": "recovery_pending",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 7,
+            "bits": 1,
+            "byte": 3,
+            "key": "degraded",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 4,
+            "constant": 0,
+            "key": "reserved_b4"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 6,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "key": "e2e_crc",
+            "max": 255
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "MTR_NODE_STATUS",
+      "owner": "mtr",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
       "canonical_key": "mtr:sys_throttle_sts",
       "codec": {
         "strategy": "generated"
@@ -1152,6 +1317,171 @@
         "kind": "signals"
       },
       "name": "RT_MOTION_RPT",
+      "owner": "rt",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
+      "canonical_key": "rt:rt_node_status",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x501",
+          "receivers": [
+            "SYS",
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x501",
+          "receivers": [
+            "SYS",
+            "Host"
+          ],
+          "semantics": "independent",
+          "sender": "RT"
+        }
+      ],
+      "key": "rt_node_status",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 4,
+            "byte": 0,
+            "enum": {
+              "0": "INIT",
+              "1": "ACQUIRE",
+              "15": "UNKNOWN",
+              "2": "STANDBY",
+              "3": "ACTIVE",
+              "4": "INHIBITED",
+              "5": "ESTOP",
+              "6": "RECOVER"
+            },
+            "key": "node_state",
+            "max": 15,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 4,
+            "byte": 0,
+            "constant": 0,
+            "key": "reserved_b0"
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 1,
+            "key": "block_mask",
+            "max": 65535,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 3,
+            "key": "estop_active",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 3,
+            "key": "ready",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 3,
+            "key": "command_received",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 3,
+            "key": "command_nonzero",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 3,
+            "key": "output_enabled",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 5,
+            "bits": 1,
+            "byte": 3,
+            "key": "estop_latched",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 6,
+            "bits": 1,
+            "byte": 3,
+            "key": "recovery_pending",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 7,
+            "bits": 1,
+            "byte": 3,
+            "key": "degraded",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 4,
+            "constant": 0,
+            "key": "reserved_b4"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 6,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "key": "e2e_crc",
+            "max": 255
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "RT_NODE_STATUS",
       "owner": "rt",
       "protocol": "etrike.application.v1"
     },
@@ -2165,6 +2495,169 @@
     },
     {
       "byte_order": "big",
+      "canonical_key": "sys:sys_node_status",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 8,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x500",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "same_frame",
+          "sender": "SYS"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 20,
+          "frame_format": "standard",
+          "id": "0x500",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "SYS"
+        }
+      ],
+      "key": "sys_node_status",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 4,
+            "byte": 0,
+            "enum": {
+              "0": "INIT",
+              "1": "ACQUIRE",
+              "15": "UNKNOWN",
+              "2": "STANDBY",
+              "3": "ACTIVE",
+              "4": "INHIBITED",
+              "5": "ESTOP",
+              "6": "RECOVER"
+            },
+            "key": "node_state",
+            "max": 15,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 4,
+            "byte": 0,
+            "constant": 0,
+            "key": "reserved_b0"
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 1,
+            "key": "block_mask",
+            "max": 65535,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 3,
+            "key": "estop_active",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 3,
+            "key": "ready",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 3,
+            "key": "command_received",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 3,
+            "key": "command_nonzero",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 3,
+            "key": "output_enabled",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 5,
+            "bits": 1,
+            "byte": 3,
+            "key": "estop_latched",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 6,
+            "bits": 1,
+            "byte": 3,
+            "key": "recovery_pending",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 7,
+            "bits": 1,
+            "byte": 3,
+            "key": "degraded",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 4,
+            "constant": 0,
+            "key": "reserved_b4"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 6,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 7,
+            "key": "e2e_crc",
+            "max": 255
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "SYS_NODE_STATUS",
+      "owner": "sys",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
       "canonical_key": "sys:sys_pwr_cmd",
       "codec": {
         "strategy": "generated"
@@ -2317,7 +2810,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "34ca8039025ea228229a42b4817467b35a89170af79139fcdb2527f6b1f05274",
+  "network_hash": "06a53df9e527d55f7d8a284035d40f47acceae57b06034270e6852ab8a826f9c",
   "routes": [
     {
       "from": "low",
@@ -2395,9 +2888,23 @@
       "message": "mtr:mtr_diag_event_rpt",
       "semantics": "same_frame",
       "to": "high"
+    },
+    {
+      "from": "low",
+      "key": "rt-l2h-sys-status",
+      "message": "sys:sys_node_status",
+      "semantics": "same_frame",
+      "to": "high"
+    },
+    {
+      "from": "low",
+      "key": "rt-l2h-mtr-status",
+      "message": "mtr:mtr_node_status",
+      "semantics": "same_frame",
+      "to": "high"
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8",
-  "wire_hash": "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8"
+  "semantic_hash": "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc",
+  "wire_hash": "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc"
 }
