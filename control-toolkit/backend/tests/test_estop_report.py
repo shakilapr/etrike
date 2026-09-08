@@ -133,4 +133,55 @@ def test_stale_ecu_fault_bits_do_not_remain_active():
     assert r["sys"]["brake_fault"] is False
     assert r["rt"]["mode_estop"] is False
     assert r["rt"]["estop_reason"] == 0
+
+
+def test_sys_node_status_latched_counts_as_active_source():
+    msgs = [
+        _msg(
+            "SYS_NODE_STATUS",
+            "low",
+            0x500,
+            {
+                "node_state": 5,
+                "estop_active": 1,
+                "estop_latched": 1,
+                "ready": 0,
+                "degraded": 0,
+                "recovery_pending": 0,
+                "output_enabled": 0,
+                "block_mask": 1,
+            },
+        )
+    ]
+    r = build_estop_report(msgs, host_latch=False)
+    assert r["active"] is True
+    assert r["nodes"]["sys"]["estop_latched"] is True
+    assert any(s["id"] == "sys_node_latched" for s in r["sources"])
+    assert "SYS NODE_STATUS latched" in r["summary"]
+    assert r["primary_cause"].startswith("Latched ESTOP in NODE_STATUS")
+
+
+def test_node_status_unlatched_reports_clear():
+    msgs = [
+        _msg(
+            "SYS_NODE_STATUS",
+            "low",
+            0x500,
+            {
+                "node_state": 3,
+                "estop_active": 0,
+                "estop_latched": 0,
+                "ready": 1,
+                "degraded": 0,
+                "recovery_pending": 0,
+                "output_enabled": 1,
+                "block_mask": 0,
+            },
+        )
+    ]
+    r = build_estop_report(msgs, host_latch=False)
+    assert r["active"] is False
+    assert r["nodes"]["sys"]["state"] == 3
+    assert "clear" in r["summary"].lower()
+
     assert r["rt"]["frame_fresh"] is False

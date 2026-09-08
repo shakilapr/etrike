@@ -161,3 +161,31 @@ def test_all_rt_estop_reasons_logged():
     rt_events = [e for e in events if e["code"] == "safety.rt_estop"]
     assert len(rt_events) == len(reasons)
 
+
+def test_node_status_latched_emits_durable_event():
+    diagnostics = DiagnosticsService()
+    monitor = EstopEventMonitor(diagnostics)
+
+    latched = _state(
+        "SYS_NODE_STATUS",
+        "low",
+        0x500,
+        {"node_state": 5, "estop_latched": 1, "estop_active": 1, "ready": 0},
+    )
+    monitor.observe(latched, _frame(ChannelId.LOW, 0x500, dlc=8))
+    monitor.observe(latched, _frame(ChannelId.LOW, 0x500, dlc=8))  # dedup on repeat
+
+    events = diagnostics.list_events(limit=10)
+    node_events = [e for e in events if e["code"] == "safety.sys_estop_latched"]
+    assert len(node_events) == 1
+    assert node_events[0]["title"] == "SYS_NODE_STATUS ESTOP latched"
+
+    clear = _state(
+        "SYS_NODE_STATUS",
+        "low",
+        0x500,
+        {"node_state": 3, "estop_latched": 0, "estop_active": 0, "ready": 1},
+    )
+    monitor.observe(clear, _frame(ChannelId.LOW, 0x500, dlc=8))
+    assert diagnostics.recover("safety.sys_estop_latched", scope="low") is True
+

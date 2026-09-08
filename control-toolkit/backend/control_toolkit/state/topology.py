@@ -27,12 +27,14 @@ class NodeLiveness(str, Enum):
 
 # Heartbeat / status probes used for topology (bus, can_id, node label).
 # SES/SEB use periodic status frames (not pure heartbeats) as presence on Low.
+# MTR presence is probed via its NODE_STATUS frame (0x502), not the 0x206 echo,
+# so the topology reflects node_state/estop_latched rather than feedback liveness.
 HEARTBEAT_NODES: tuple[tuple[str, int, str], ...] = (
     ("high", 0x7FC, "Host"),
     ("high", 0x7FD, "RT_high"),
     ("low", 0x7FD, "RT_low"),
     ("low", 0x7FE, "SYS"),
-    ("low", 0x206, "MTR"),
+    ("low", 0x502, "MTR"),
     ("low", 0x201, "SES"),
     ("low", 0x721, "SEB"),
 )
