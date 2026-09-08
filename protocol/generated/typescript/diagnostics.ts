@@ -20,7 +20,7 @@ export interface DiagRecord {
   evidence: string;
   description: string;
 }
-export const DIAGNOSTICS_HASH = "ed7a419be11e9f3b603bf77c6fe9c76e64d2eb1da1b956079d780f3bc472196d" as const;
+export const DIAGNOSTICS_HASH = "23ba595f0058c27122d078cf720af384856331ceef6f860a0fdc30af0a2b91ce" as const;
 export const DIAGNOSTICS: Record<string, DiagRecord> = {
   "MTR_ADC_FAULT": {
     "component": "ADC",
@@ -465,6 +465,28 @@ export const DIAGNOSTICS: Record<string, DiagRecord> = {
     "snapshot": null,
     "source": "MTR",
     "subsystem": "POWERTRAIN"
+  },
+  "MTR_WATCHDOG_RESET": {
+    "component": "IWDG",
+    "description": "The STM32 independent watchdog (IWDG) reset the MTR MCU \u2014 the main loop failed to complete a full safety cycle within the IWDG window (issue #4). Raised once at boot when RCC->CSR.IWDGRSTF is set.\n",
+    "detection_basis": "DIRECT_SW",
+    "disposition": "ACTIVE",
+    "evidence": "RCC IWDGRSTF set at boot",
+    "evidence_sources": [
+      "MTR"
+    ],
+    "failure_mode": "RESET",
+    "id": 788,
+    "key": "MTR_WATCHDOG_RESET",
+    "latching": false,
+    "monitoring": "IMPLEMENTED",
+    "observability": "DIRECT",
+    "reaction": "NONE",
+    "reporter": "MTR",
+    "severity": "WARNING",
+    "snapshot": null,
+    "source": "MTR",
+    "subsystem": "EXECUTION"
   },
   "RT_BROWNOUT_DETECTED": {
     "component": "BROWNOUT",
