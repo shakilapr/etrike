@@ -65,6 +65,15 @@ extern "C" void SystemClock_Config(void) {
 }
 
 int main(void) {
+    // 0. Issue #4: capture the reset cause BEFORE anything clears it. If the
+    // independent watchdog (IWDG) reset the MCU, RCC->CSR.IWDGRSTF is set. We
+    // clear the flag so a subsequent boot is distinguishable, then raise a
+    // diagnostic report once the manager is wired below.
+    const bool iwdg_reset_occurred = ((RCC->CSR & RCC_CSR_IWDGRSTF) != 0U);
+    if (iwdg_reset_occurred) {
+        RCC->CSR |= RCC_CSR_RMVF;  // write RMVF to clear the reset flags
+    }
+
     // 1. Reset peripherals, initialize Flash interface and Systick
     HAL_Init();
 
@@ -87,6 +96,34 @@ int main(void) {
     // Wire the shared DiagnosticManager into the firmware subsystems (reporting only).
     g_motor.set_diag(g_diag);
     g_can.set_diag(g_diag);
+
+    // Report that the independent watchdog reset us (issue #4). The manager was
+    // wired above; the bounded drain in the main loop emits the 0x631 report.
+    // We raise then immediately recover so the event is reported once (a boot
+    // notification, not a persistent active fault).
+    if (iwdg_reset_occurred) {
+        g_diag.raise(etrike::diagnostics::DiagId::MtrWatchdogReset);
+        g_diag.recover(etrike::diagnostics::DiagId::MtrWatchdogReset);
+    }
+
+    // 6. Issue #4: start the independent watchdog. It runs on the LSI (~32 kHz)
+    // and, once started, cannot be stopped except by reset. We refresh it ONLY
+    // at the end of a full safety cycle (after g_motor.tick() and the periodic
+    // CAN sends) so any hang in the loop resets the MCU back to the safe
+    // hardware-default-OFF output state re-established by g_motor.init() above
+    // (relays de-energized, DAC 0 V).
+    //   Prescaler /128 -> 32 kHz / 128 = 250 Hz (4 ms/tick); reload 400 gives a
+    //   ~1.6 s window — far above the 5 ms control cadence, below human notice.
+    static IWDG_HandleTypeDef h_iwdg{};
+    h_iwdg.Instance = IWDG;
+    h_iwdg.Init.Prescaler = IWDG_PRESCALER_128;
+    h_iwdg.Init.Reload = 400;
+    h_iwdg.Init.Window = IWDG_WINDOW_DISABLE;
+    if (HAL_IWDG_Init(&h_iwdg) != HAL_OK) {
+        // If the watchdog cannot start, halt in the safe (OFF) state rather than
+        // run an unguarded loop.
+        Error_Handler();
+    }
 
     uint32_t last_loop_ms = HAL_GetTick();
     uint32_t last_fbk_ms = last_loop_ms;
@@ -140,6 +177,12 @@ int main(void) {
             can::Frame fr = g_motor.build_motor_feedback_frame();
             g_can.send(fr);
         }
+
+        // Feed the independent watchdog ONLY after this full cycle completed —
+        // CAN drain, g_motor.tick() safety evaluation, and all periodic sends
+        // (issue #4). A hang anywhere above trips the IWDG and resets to the
+        // safe hardware-default-OFF output state.
+        HAL_IWDG_Refresh(&h_iwdg);
 
         HAL_Delay(1);
     }

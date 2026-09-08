@@ -2915,3 +2915,24 @@ diagnostics:
     description: >
       MTR invalid reported by MTR.
 
+  - id: 0x0314
+    key: MTR_WATCHDOG_RESET
+    reporter: MTR
+    source: MTR
+    evidence_sources: [MTR]
+    subsystem: EXECUTION
+    component: IWDG
+    failure_mode: RESET
+    severity: WARNING
+    reaction: NONE
+    observability: DIRECT
+    detection_basis: DIRECT_SW
+    monitoring: IMPLEMENTED
+    disposition: ACTIVE
+    latching: false
+    evidence: "RCC IWDGRSTF set at boot"
+    description: >
+      The STM32 independent watchdog (IWDG) reset the MTR MCU — the main loop
+      failed to complete a full safety cycle within the IWDG window (issue #4).
+      Raised once at boot when RCC->CSR.IWDGRSTF is set.
+

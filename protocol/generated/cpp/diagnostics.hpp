@@ -5,7 +5,7 @@
 #include <string_view>
 
 namespace etrike::diagnostics {
-inline constexpr std::string_view kDiagnosticsHash = "ed7a419be11e9f3b603bf77c6fe9c76e64d2eb1da1b956079d780f3bc472196d";
+inline constexpr std::string_view kDiagnosticsHash = "23ba595f0058c27122d078cf720af384856331ceef6f860a0fdc30af0a2b91ce";
 
 enum class DiagId : std::uint16_t {
     SysEstopButtonAsserted = 0x0101,
@@ -50,6 +50,7 @@ enum class DiagId : std::uint16_t {
     MtrFdcanRxOverflow = 0x030E,
     MtrSpeedSetpointInvalid = 0x030F,
     MtrCmdStreamUnauthorised = 0x0311,
+    MtrWatchdogReset = 0x0314,
 };
 
 struct DiagMetaLite {
@@ -57,7 +58,7 @@ struct DiagMetaLite {
     bool latching;
     bool is_estop_cause;
 };
-inline constexpr std::size_t kImplementedDiagCount = 42;
+inline constexpr std::size_t kImplementedDiagCount = 43;
 inline const DiagMetaLite kImplementedDiagMeta[kImplementedDiagCount] = {
     { DiagId::SysEstopButtonAsserted, true, true },
     { DiagId::SysRtHeartbeatTimeout, true, true },
@@ -101,6 +102,7 @@ inline const DiagMetaLite kImplementedDiagMeta[kImplementedDiagCount] = {
     { DiagId::MtrFdcanRxOverflow, false, false },
     { DiagId::MtrSpeedSetpointInvalid, false, false },
     { DiagId::MtrCmdStreamUnauthorised, false, false },
+    { DiagId::MtrWatchdogReset, false, false },
 };
 
 inline const DiagMetaLite* diag_meta(DiagId id) noexcept {
@@ -156,6 +158,7 @@ inline int diag_index(DiagId id) noexcept {
         case 0x030E: return 39;
         case 0x030F: return 40;
         case 0x0311: return 41;
+        case 0x0314: return 42;
         default: return -1;
     }
 }
