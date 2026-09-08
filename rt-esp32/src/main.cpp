@@ -480,12 +480,14 @@ static void pump_diagnostics() {
             sr.estop_reason = m_estop_reason;
         }
 
-        // Issue #3: SEB brake-ownership emergency fallback. run_safety_checks no
-        // longer grants RT brake ownership on SYS-heartbeat loss alone; this
-        // machine decides when RT must become the emergency 0x7B9 writer ? only
-        // once SYS's 0x7B9 has ALSO disappeared for the guard interval. In
-        // SYS_DEGRADED (HB lost, SYS 0x7B9 still present) motion is already
-        // prohibited via sr.zero_setpoints above but RT does NOT transmit 0x7B9.
+        // Issue #3/#5: SEB brake-ownership emergency fallback. run_safety_checks
+        // no longer grants RT brake ownership on SYS-heartbeat loss alone; this
+        // machine decides when RT must become the emergency 0x7B9 writer — once
+        // SYS's 0x7B9 has disappeared for the guard interval, watched INDEPENDENTLY
+        // of the heartbeat (issue #5: a live 0x7FE does not prove the SYS brake
+        // task is alive). In SYS_DEGRADED (HB lost, SYS 0x7B9 still present) motion
+        // is already prohibited via sr.zero_setpoints above but RT does NOT
+        // transmit 0x7B9.
         {
             rt::SebFallbackInput fb_in;
             fb_in.now_us = now;

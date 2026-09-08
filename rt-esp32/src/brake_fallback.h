@@ -7,18 +7,25 @@
 //   operation. RT does NOT transmit 0x7B9 in NORMAL or SYS_DEGRADED.
 //
 // Emergency fallback (the ONLY case RT transmits 0x7B9):
-//   A SYS heartbeat loss is NOT proof the SYS brake task died (separate tasks).
+//   SYS heartbeat loss is NOT proof the SYS brake task died (separate tasks).
 //   RT therefore only becomes the emergency writer when the SYS 0x7B9 command
 //   has ALSO actually disappeared from the Low bus for a guard interval. Even
 //   then this is labelled an *emergency fallback writer* — not strict single
 //   ownership — and the handback is latched and epoch-guarded.
 //
+// Issue #5: brake-channel health is watched INDEPENDENTLY of the heartbeat.
+// Because 0x7FE and 0x7B9 are produced by different SYS tasks, a live heartbeat
+// does NOT prove the SYS brake task is alive. A stale SYS 0x7B9 stream (absent
+// > guard while armed) escalates straight to EMERGENCY_FALLBACK even if the
+// heartbeat is still fresh — otherwise a dead SYS brake task with a live
+// heartbeat would leave nobody commanding the brake.
+//
 // States:
 //   NORMAL             SYS 0x7FE + 0x7B9 healthy. RT never TXs 0x7B9.
-//   SYS_DEGRADED       SYS 0x7FE lost (motion already prohibited by caller).
-//                      RT observes whether SYS 0x7B9 continues.
-//   EMERGENCY_FALLBACK SYS 0x7FE lost AND 0x7B9 absent > guard. RT asserts
-//                      0x001 (caller) and transmits max-brake 0x7B9.
+//   SYS_DEGRADED       SYS 0x7FE lost (motion already prohibited by caller),
+//                      SYS 0x7B9 still fresh. RT observes the brake stream.
+//   EMERGENCY_FALLBACK SYS 0x7B9 absent > guard — with or without 0x7FE. RT
+//                      asserts 0x001 (caller) and transmits max-brake 0x7B9.
 //
 // Startup acquisition: the fallback path is disarmed until a valid SYS 0x7B9
 // has been observed once OR the boot grace elapses — so RT booting ahead of
@@ -63,8 +70,12 @@ public:
         // ── State transition logic ────────────────────────────────
         switch (state_) {
         case SebBrakeState::NORMAL:
-            // Track SYS 0x7B9 observation for startup acquisition.
-            if (in.sys_0x7B9_observed) first_sys_0x7B9_us_ = now;
+            // Track SYS 0x7B9 observation for startup acquisition and for the
+            // independent brake-channel-health monitor (issue #5).
+            if (in.sys_0x7B9_observed) {
+                first_sys_0x7B9_us_ = now;
+                last_sys_0x7B9_seen_us_ = now;
+            }
             if (in.startup_grace_active) {
                 // Still within the global boot grace: no SYS dependency yet.
                 arm_ = false;
@@ -74,13 +85,29 @@ public:
                 if (saw_sys || (now - boot_us_ >= int64_t(rt::kSebFallbackArmGraceMs) * 1000))
                     arm_ = true;
             }
-            if (!in.sys_hb_fresh && arm_) {
-                // Enter SYS_DEGRADED: SYS heartbeat lost. Motion must already be
-                // prohibited by the caller (run_safety_checks zeros setpoints on
-                // SYS-HB loss). Observe the brake producer.
-                state_ = SebBrakeState::SYS_DEGRADED;
-                degraded_since_us_ = now;
-                last_sys_0x7B9_seen_us_ = (in.sys_0x7B9_observed ? now : last_sys_0x7B9_seen_us_);
+            if (arm_) {
+                // Issue #5: brake-channel health is INDEPENDENT of the SYS
+                // heartbeat. A live 0x7FE is produced by SYS's heartbeat task and
+                // does NOT prove the SYS *brake* task is alive. If the SYS 0x7B9
+                // stream is absent beyond the guard — with OR without a heartbeat —
+                // RT must become the emergency brake writer; nobody else is
+                // commanding the brake.
+                const bool brake_stale = (last_sys_0x7B9_seen_us_ < 0)
+                    || (now - last_sys_0x7B9_seen_us_)
+                           >= int64_t(rt::kSebFallbackGuardMs) * 1000;
+                if (brake_stale) {
+                    state_ = SebBrakeState::EMERGENCY_FALLBACK;
+                    handback_epoch_us_ = -1;   // fresh epoch on entry
+                    handback_verify_count_ = 0;
+                    break;
+                }
+                if (!in.sys_hb_fresh) {
+                    // Heartbeat lost but the brake stream is still fresh: SYS still
+                    // owns the brake. Enter SYS_DEGRADED to observe; motion is
+                    // already prohibited by the caller (run_safety_checks).
+                    state_ = SebBrakeState::SYS_DEGRADED;
+                    degraded_since_us_ = now;
+                }
             }
             break;
 
