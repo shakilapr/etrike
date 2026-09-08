@@ -74,6 +74,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "mtr:mtr_node_status",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:sys_throttle_sts",
         "payload": "typed",
         "semantic_decode": true,
@@ -124,6 +131,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_motion_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_node_status",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -257,6 +271,13 @@
       {
         "implementation": "generated-v1",
         "message": "sys:sys_mode_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_node_status",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -349,6 +370,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "mtr:mtr_node_status",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:sys_throttle_sts",
         "payload": "typed",
         "semantic_decode": true,
@@ -399,6 +427,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_motion_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_node_status",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -532,6 +567,13 @@
       {
         "implementation": "generated-v1",
         "message": "sys:sys_mode_cmd",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "sys:sys_node_status",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -624,6 +666,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "mtr:mtr_node_status",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "mtr:sys_throttle_sts",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -674,6 +723,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_motion_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_node_status",
         "payload": "raw_compatibility",
         "semantic_decode": false,
         "strategy": "generated"
@@ -813,6 +869,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "sys:sys_node_status",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "sys:sys_pwr_cmd",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -827,8 +890,8 @@
       }
     ]
   },
-  "network_hash": "34ca8039025ea228229a42b4817467b35a89170af79139fcdb2527f6b1f05274",
+  "network_hash": "06a53df9e527d55f7d8a284035d40f47acceae57b06034270e6852ab8a826f9c",
   "schema_version": 1,
-  "semantic_hash": "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8",
-  "wire_hash": "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8"
+  "semantic_hash": "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc",
+  "wire_hash": "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc"
 }

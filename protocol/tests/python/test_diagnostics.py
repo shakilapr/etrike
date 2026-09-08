@@ -27,8 +27,8 @@ class DiagnosticsRegistryTests(unittest.TestCase):
         total = len(self.doc["diagnostics"])
         impl = [e for e in self.doc["diagnostics"] if e["monitoring"] == "IMPLEMENTED"]
         not_impl = [e for e in self.doc["diagnostics"] if e["monitoring"] == "NOT_IMPLEMENTED"]
-        self.assertEqual(total, 148)
-        self.assertEqual(len(impl), 42)
+        self.assertEqual(total, 149)
+        self.assertEqual(len(impl), 43)
         self.assertEqual(len(not_impl), 106)
 
     def test_hash_deterministic_and_length(self):

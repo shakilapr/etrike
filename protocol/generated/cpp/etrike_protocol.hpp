@@ -10,14 +10,14 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8";
+inline constexpr std::string_view kSemanticHash = "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "34ca8039025ea228229a42b4817467b35a89170af79139fcdb2527f6b1f05274";
+inline constexpr std::string_view kNetworkHash = "06a53df9e527d55f7d8a284035d40f47acceae57b06034270e6852ab8a826f9c";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 52> kMessages{{
+inline constexpr std::array<MessageMetadata, 58> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
@@ -33,6 +33,8 @@ inline constexpr std::array<MessageMetadata, 52> kMessages{{
     {"mtr:mtr_diag_event_rpt", "low", 0x631u, 8u, false, CodecStrategy::Generated},
     {"mtr:mtr_motor_fbk", "high", 0x206u, 4u, false, CodecStrategy::Generated},
     {"mtr:mtr_motor_fbk", "low", 0x206u, 4u, false, CodecStrategy::Generated},
+    {"mtr:mtr_node_status", "high", 0x502u, 8u, false, CodecStrategy::Generated},
+    {"mtr:mtr_node_status", "low", 0x502u, 8u, false, CodecStrategy::Generated},
     {"mtr:sys_throttle_sts", "high", 0x120u, 2u, false, CodecStrategy::Generated},
     {"mtr:sys_throttle_sts", "low", 0x120u, 2u, false, CodecStrategy::Generated},
     {"pwt:pwt_dcdc_cmd", "powertrain", 0x10262B27u, 8u, true, CodecStrategy::Generated},
@@ -43,6 +45,8 @@ inline constexpr std::array<MessageMetadata, 52> kMessages{{
     {"rt:rt_heartbeat", "high", 0x7FDu, 2u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "low", 0x7FDu, 2u, false, CodecStrategy::Generated},
     {"rt:rt_motion_rpt", "high", 0x121u, 8u, false, CodecStrategy::Generated},
+    {"rt:rt_node_status", "high", 0x501u, 8u, false, CodecStrategy::Generated},
+    {"rt:rt_node_status", "low", 0x501u, 8u, false, CodecStrategy::Generated},
     {"rt:rt_pid_rpt", "high", 0x220u, 6u, false, CodecStrategy::Generated},
     {"rt:rt_state_rpt", "high", 0x210u, 6u, false, CodecStrategy::Generated},
     {"rt:rt_state_rpt", "low", 0x210u, 6u, false, CodecStrategy::Generated},
@@ -67,11 +71,13 @@ inline constexpr std::array<MessageMetadata, 52> kMessages{{
     {"sys:sys_diag_rpt", "low", 0x600u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_heartbeat", "low", 0x7FEu, 2u, false, CodecStrategy::Generated},
     {"sys:sys_mode_cmd", "low", 0x110u, 2u, false, CodecStrategy::Generated},
+    {"sys:sys_node_status", "high", 0x500u, 8u, false, CodecStrategy::Generated},
+    {"sys:sys_node_status", "low", 0x500u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_pwr_cmd", "low", 0x113u, 2u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "high", 0x11u, 5u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "low", 0x11u, 5u, false, CodecStrategy::Generated},
 }};
-inline constexpr std::array<RouteMetadata, 11> kRoutes{{
+inline constexpr std::array<RouteMetadata, 13> kRoutes{{
     {"rt-l2h-estop", "safety:safety_estop", "low", "high", RouteSemantics::SameFrame},
     {"rt-h2l-estop", "safety:safety_estop", "high", "low", RouteSemantics::SameFrame},
     {"rt-l2h-safety", "sys:sys_safety_sts", "low", "high", RouteSemantics::SameFrame},
@@ -83,6 +89,8 @@ inline constexpr std::array<RouteMetadata, 11> kRoutes{{
     {"rt-h2l-lights", "host:host_light_cmd", "high", "low", RouteSemantics::SameFrame},
     {"rt-l2h-diag-sys", "sys:sys_diag_event_rpt", "low", "high", RouteSemantics::SameFrame},
     {"rt-l2h-diag-mtr", "mtr:mtr_diag_event_rpt", "low", "high", RouteSemantics::SameFrame},
+    {"rt-l2h-sys-status", "sys:sys_node_status", "low", "high", RouteSemantics::SameFrame},
+    {"rt-l2h-mtr-status", "mtr:mtr_node_status", "low", "high", RouteSemantics::SameFrame},
 }};
 
 namespace generated {
@@ -923,6 +931,208 @@ inline CodecStatus decode_mtr_motor_fbk(FrameView frame, MtrMotorFbk& out) noexc
 inline CodecStatus encode(const MtrMotorFbk& value, Frame& out) noexcept { return encode_mtr_motor_fbk(value, out); }
 inline CodecStatus decode(FrameView frame, MtrMotorFbk& out) noexcept { return decode_mtr_motor_fbk(frame, out); }
 
+struct MtrNodeStatus {
+    static constexpr std::string_view kKey = "mtr:mtr_node_status";
+    static constexpr std::uint32_t kId = 0x502u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 20u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x502u;
+    static constexpr std::uint32_t kHighCycleMs = 20u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x502u;
+    static constexpr std::uint32_t kLowCycleMs = 20u;
+    static constexpr bool kLowExtended = false;
+    std::uint8_t node_state{};
+    std::uint8_t reserved_b0{0};
+    std::uint16_t block_mask{};
+    bool estop_active{};
+    bool ready{};
+    bool command_received{};
+    bool command_nonzero{};
+    bool output_enabled{};
+    bool estop_latched{};
+    bool recovery_pending{};
+    bool degraded{};
+    std::uint16_t reserved_b4{0};
+    std::uint8_t rolling_counter{};
+    std::uint8_t e2e_crc{};
+    static constexpr std::uint8_t kNodeStateInit = 0;
+    static constexpr std::uint8_t kNodeStateAcquire = 1;
+    static constexpr std::uint8_t kNodeStateStandby = 2;
+    static constexpr std::uint8_t kNodeStateActive = 3;
+    static constexpr std::uint8_t kNodeStateInhibited = 4;
+    static constexpr std::uint8_t kNodeStateEstop = 5;
+    static constexpr std::uint8_t kNodeStateRecover = 6;
+    static constexpr std::uint8_t kNodeStateUnknown = 15;
+    struct NodeStateMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 4u;
+        static constexpr std::uint64_t kMask = 0xFull;
+    };
+    static constexpr std::uint8_t kReservedB0 = 0;
+    struct ReservedB0Meta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 4u;
+        static constexpr std::uint64_t kMask = 0xFull;
+    };
+    struct BlockMaskMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct EstopActiveMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct ReadyMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandReceivedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandNonzeroMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct OutputEnabledMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct EstopLatchedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct RecoveryPendingMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct DegradedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 7u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint16_t kReservedB4 = 0;
+    struct ReservedB4Meta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct E2eCrcMeta {
+        static constexpr std::size_t kByte = 7u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (reserved_b0 != 0) return CodecStatus::ConstantMismatch;
+        if (reserved_b4 != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 4u, false, static_cast<std::uint64_t>(node_state));
+        detail::insert(payload.data(), 0u, 4u, 4u, false, static_cast<std::uint64_t>(reserved_b0));
+        detail::insert(payload.data(), 1u, 0u, 16u, false, static_cast<std::uint64_t>(block_mask));
+        detail::insert(payload.data(), 3u, 0u, 1u, false, static_cast<std::uint64_t>(estop_active));
+        detail::insert(payload.data(), 3u, 1u, 1u, false, static_cast<std::uint64_t>(ready));
+        detail::insert(payload.data(), 3u, 2u, 1u, false, static_cast<std::uint64_t>(command_received));
+        detail::insert(payload.data(), 3u, 3u, 1u, false, static_cast<std::uint64_t>(command_nonzero));
+        detail::insert(payload.data(), 3u, 4u, 1u, false, static_cast<std::uint64_t>(output_enabled));
+        detail::insert(payload.data(), 3u, 5u, 1u, false, static_cast<std::uint64_t>(estop_latched));
+        detail::insert(payload.data(), 3u, 6u, 1u, false, static_cast<std::uint64_t>(recovery_pending));
+        detail::insert(payload.data(), 3u, 7u, 1u, false, static_cast<std::uint64_t>(degraded));
+        detail::insert(payload.data(), 4u, 0u, 16u, false, static_cast<std::uint64_t>(reserved_b4));
+        detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(e2e_crc));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, MtrNodeStatus& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        MtrNodeStatus value{};
+        const std::uint64_t raw_node_state = detail::extract(source, 0u, 0u, 4u, false);
+        value.node_state = static_cast<std::uint8_t>(raw_node_state);
+        const std::uint64_t raw_reserved_b0 = detail::extract(source, 0u, 4u, 4u, false);
+        if (raw_reserved_b0 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b0 = static_cast<std::uint8_t>(raw_reserved_b0);
+        const std::uint64_t raw_block_mask = detail::extract(source, 1u, 0u, 16u, false);
+        value.block_mask = static_cast<std::uint16_t>(raw_block_mask);
+        const std::uint64_t raw_estop_active = detail::extract(source, 3u, 0u, 1u, false);
+        value.estop_active = raw_estop_active != 0u;
+        const std::uint64_t raw_ready = detail::extract(source, 3u, 1u, 1u, false);
+        value.ready = raw_ready != 0u;
+        const std::uint64_t raw_command_received = detail::extract(source, 3u, 2u, 1u, false);
+        value.command_received = raw_command_received != 0u;
+        const std::uint64_t raw_command_nonzero = detail::extract(source, 3u, 3u, 1u, false);
+        value.command_nonzero = raw_command_nonzero != 0u;
+        const std::uint64_t raw_output_enabled = detail::extract(source, 3u, 4u, 1u, false);
+        value.output_enabled = raw_output_enabled != 0u;
+        const std::uint64_t raw_estop_latched = detail::extract(source, 3u, 5u, 1u, false);
+        value.estop_latched = raw_estop_latched != 0u;
+        const std::uint64_t raw_recovery_pending = detail::extract(source, 3u, 6u, 1u, false);
+        value.recovery_pending = raw_recovery_pending != 0u;
+        const std::uint64_t raw_degraded = detail::extract(source, 3u, 7u, 1u, false);
+        value.degraded = raw_degraded != 0u;
+        const std::uint64_t raw_reserved_b4 = detail::extract(source, 4u, 0u, 16u, false);
+        if (raw_reserved_b4 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b4 = static_cast<std::uint16_t>(raw_reserved_b4);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 6u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        const std::uint64_t raw_e2e_crc = detail::extract(source, 7u, 0u, 8u, false);
+        value.e2e_crc = static_cast<std::uint8_t>(raw_e2e_crc);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_mtr_node_status(const MtrNodeStatus& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(MtrNodeStatus::kId, static_cast<std::uint8_t>(MtrNodeStatus::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), MtrNodeStatus::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_mtr_node_status(FrameView frame, MtrNodeStatus& out) noexcept {
+    if (frame.id() != 0x502u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x502u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != MtrNodeStatus::kDlc) return CodecStatus::UnexpectedLength;
+    return MtrNodeStatus::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const MtrNodeStatus& value, Frame& out) noexcept { return encode_mtr_node_status(value, out); }
+inline CodecStatus decode(FrameView frame, MtrNodeStatus& out) noexcept { return decode_mtr_node_status(frame, out); }
+
 struct SysThrottleSts {
     static constexpr std::string_view kKey = "mtr:sys_throttle_sts";
     static constexpr std::uint32_t kId = 0x120u;
@@ -1697,6 +1907,208 @@ inline CodecStatus decode_rt_motion_rpt(FrameView frame, RtMotionRpt& out) noexc
 
 inline CodecStatus encode(const RtMotionRpt& value, Frame& out) noexcept { return encode_rt_motion_rpt(value, out); }
 inline CodecStatus decode(FrameView frame, RtMotionRpt& out) noexcept { return decode_rt_motion_rpt(frame, out); }
+
+struct RtNodeStatus {
+    static constexpr std::string_view kKey = "rt:rt_node_status";
+    static constexpr std::uint32_t kId = 0x501u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 20u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x501u;
+    static constexpr std::uint32_t kHighCycleMs = 20u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x501u;
+    static constexpr std::uint32_t kLowCycleMs = 20u;
+    static constexpr bool kLowExtended = false;
+    std::uint8_t node_state{};
+    std::uint8_t reserved_b0{0};
+    std::uint16_t block_mask{};
+    bool estop_active{};
+    bool ready{};
+    bool command_received{};
+    bool command_nonzero{};
+    bool output_enabled{};
+    bool estop_latched{};
+    bool recovery_pending{};
+    bool degraded{};
+    std::uint16_t reserved_b4{0};
+    std::uint8_t rolling_counter{};
+    std::uint8_t e2e_crc{};
+    static constexpr std::uint8_t kNodeStateInit = 0;
+    static constexpr std::uint8_t kNodeStateAcquire = 1;
+    static constexpr std::uint8_t kNodeStateStandby = 2;
+    static constexpr std::uint8_t kNodeStateActive = 3;
+    static constexpr std::uint8_t kNodeStateInhibited = 4;
+    static constexpr std::uint8_t kNodeStateEstop = 5;
+    static constexpr std::uint8_t kNodeStateRecover = 6;
+    static constexpr std::uint8_t kNodeStateUnknown = 15;
+    struct NodeStateMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 4u;
+        static constexpr std::uint64_t kMask = 0xFull;
+    };
+    static constexpr std::uint8_t kReservedB0 = 0;
+    struct ReservedB0Meta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 4u;
+        static constexpr std::uint64_t kMask = 0xFull;
+    };
+    struct BlockMaskMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct EstopActiveMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct ReadyMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandReceivedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandNonzeroMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct OutputEnabledMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct EstopLatchedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct RecoveryPendingMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct DegradedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 7u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint16_t kReservedB4 = 0;
+    struct ReservedB4Meta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct E2eCrcMeta {
+        static constexpr std::size_t kByte = 7u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (reserved_b0 != 0) return CodecStatus::ConstantMismatch;
+        if (reserved_b4 != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 4u, false, static_cast<std::uint64_t>(node_state));
+        detail::insert(payload.data(), 0u, 4u, 4u, false, static_cast<std::uint64_t>(reserved_b0));
+        detail::insert(payload.data(), 1u, 0u, 16u, false, static_cast<std::uint64_t>(block_mask));
+        detail::insert(payload.data(), 3u, 0u, 1u, false, static_cast<std::uint64_t>(estop_active));
+        detail::insert(payload.data(), 3u, 1u, 1u, false, static_cast<std::uint64_t>(ready));
+        detail::insert(payload.data(), 3u, 2u, 1u, false, static_cast<std::uint64_t>(command_received));
+        detail::insert(payload.data(), 3u, 3u, 1u, false, static_cast<std::uint64_t>(command_nonzero));
+        detail::insert(payload.data(), 3u, 4u, 1u, false, static_cast<std::uint64_t>(output_enabled));
+        detail::insert(payload.data(), 3u, 5u, 1u, false, static_cast<std::uint64_t>(estop_latched));
+        detail::insert(payload.data(), 3u, 6u, 1u, false, static_cast<std::uint64_t>(recovery_pending));
+        detail::insert(payload.data(), 3u, 7u, 1u, false, static_cast<std::uint64_t>(degraded));
+        detail::insert(payload.data(), 4u, 0u, 16u, false, static_cast<std::uint64_t>(reserved_b4));
+        detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(e2e_crc));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, RtNodeStatus& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        RtNodeStatus value{};
+        const std::uint64_t raw_node_state = detail::extract(source, 0u, 0u, 4u, false);
+        value.node_state = static_cast<std::uint8_t>(raw_node_state);
+        const std::uint64_t raw_reserved_b0 = detail::extract(source, 0u, 4u, 4u, false);
+        if (raw_reserved_b0 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b0 = static_cast<std::uint8_t>(raw_reserved_b0);
+        const std::uint64_t raw_block_mask = detail::extract(source, 1u, 0u, 16u, false);
+        value.block_mask = static_cast<std::uint16_t>(raw_block_mask);
+        const std::uint64_t raw_estop_active = detail::extract(source, 3u, 0u, 1u, false);
+        value.estop_active = raw_estop_active != 0u;
+        const std::uint64_t raw_ready = detail::extract(source, 3u, 1u, 1u, false);
+        value.ready = raw_ready != 0u;
+        const std::uint64_t raw_command_received = detail::extract(source, 3u, 2u, 1u, false);
+        value.command_received = raw_command_received != 0u;
+        const std::uint64_t raw_command_nonzero = detail::extract(source, 3u, 3u, 1u, false);
+        value.command_nonzero = raw_command_nonzero != 0u;
+        const std::uint64_t raw_output_enabled = detail::extract(source, 3u, 4u, 1u, false);
+        value.output_enabled = raw_output_enabled != 0u;
+        const std::uint64_t raw_estop_latched = detail::extract(source, 3u, 5u, 1u, false);
+        value.estop_latched = raw_estop_latched != 0u;
+        const std::uint64_t raw_recovery_pending = detail::extract(source, 3u, 6u, 1u, false);
+        value.recovery_pending = raw_recovery_pending != 0u;
+        const std::uint64_t raw_degraded = detail::extract(source, 3u, 7u, 1u, false);
+        value.degraded = raw_degraded != 0u;
+        const std::uint64_t raw_reserved_b4 = detail::extract(source, 4u, 0u, 16u, false);
+        if (raw_reserved_b4 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b4 = static_cast<std::uint16_t>(raw_reserved_b4);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 6u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        const std::uint64_t raw_e2e_crc = detail::extract(source, 7u, 0u, 8u, false);
+        value.e2e_crc = static_cast<std::uint8_t>(raw_e2e_crc);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_rt_node_status(const RtNodeStatus& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(RtNodeStatus::kId, static_cast<std::uint8_t>(RtNodeStatus::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), RtNodeStatus::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_rt_node_status(FrameView frame, RtNodeStatus& out) noexcept {
+    if (frame.id() != 0x501u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x501u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != RtNodeStatus::kDlc) return CodecStatus::UnexpectedLength;
+    return RtNodeStatus::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const RtNodeStatus& value, Frame& out) noexcept { return encode_rt_node_status(value, out); }
+inline CodecStatus decode(FrameView frame, RtNodeStatus& out) noexcept { return decode_rt_node_status(frame, out); }
 
 struct RtPidRpt {
     static constexpr std::string_view kKey = "rt:rt_pid_rpt";
@@ -2626,6 +3038,208 @@ inline CodecStatus decode_sys_mode_cmd(FrameView frame, SysModeCmd& out) noexcep
 
 inline CodecStatus encode(const SysModeCmd& value, Frame& out) noexcept { return encode_sys_mode_cmd(value, out); }
 inline CodecStatus decode(FrameView frame, SysModeCmd& out) noexcept { return decode_sys_mode_cmd(frame, out); }
+
+struct SysNodeStatus {
+    static constexpr std::string_view kKey = "sys:sys_node_status";
+    static constexpr std::uint32_t kId = 0x500u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 20u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x500u;
+    static constexpr std::uint32_t kHighCycleMs = 20u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x500u;
+    static constexpr std::uint32_t kLowCycleMs = 20u;
+    static constexpr bool kLowExtended = false;
+    std::uint8_t node_state{};
+    std::uint8_t reserved_b0{0};
+    std::uint16_t block_mask{};
+    bool estop_active{};
+    bool ready{};
+    bool command_received{};
+    bool command_nonzero{};
+    bool output_enabled{};
+    bool estop_latched{};
+    bool recovery_pending{};
+    bool degraded{};
+    std::uint16_t reserved_b4{0};
+    std::uint8_t rolling_counter{};
+    std::uint8_t e2e_crc{};
+    static constexpr std::uint8_t kNodeStateInit = 0;
+    static constexpr std::uint8_t kNodeStateAcquire = 1;
+    static constexpr std::uint8_t kNodeStateStandby = 2;
+    static constexpr std::uint8_t kNodeStateActive = 3;
+    static constexpr std::uint8_t kNodeStateInhibited = 4;
+    static constexpr std::uint8_t kNodeStateEstop = 5;
+    static constexpr std::uint8_t kNodeStateRecover = 6;
+    static constexpr std::uint8_t kNodeStateUnknown = 15;
+    struct NodeStateMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 4u;
+        static constexpr std::uint64_t kMask = 0xFull;
+    };
+    static constexpr std::uint8_t kReservedB0 = 0;
+    struct ReservedB0Meta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 4u;
+        static constexpr std::uint64_t kMask = 0xFull;
+    };
+    struct BlockMaskMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct EstopActiveMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct ReadyMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandReceivedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandNonzeroMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct OutputEnabledMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct EstopLatchedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct RecoveryPendingMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct DegradedMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 7u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint16_t kReservedB4 = 0;
+    struct ReservedB4Meta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct E2eCrcMeta {
+        static constexpr std::size_t kByte = 7u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (reserved_b0 != 0) return CodecStatus::ConstantMismatch;
+        if (reserved_b4 != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 4u, false, static_cast<std::uint64_t>(node_state));
+        detail::insert(payload.data(), 0u, 4u, 4u, false, static_cast<std::uint64_t>(reserved_b0));
+        detail::insert(payload.data(), 1u, 0u, 16u, false, static_cast<std::uint64_t>(block_mask));
+        detail::insert(payload.data(), 3u, 0u, 1u, false, static_cast<std::uint64_t>(estop_active));
+        detail::insert(payload.data(), 3u, 1u, 1u, false, static_cast<std::uint64_t>(ready));
+        detail::insert(payload.data(), 3u, 2u, 1u, false, static_cast<std::uint64_t>(command_received));
+        detail::insert(payload.data(), 3u, 3u, 1u, false, static_cast<std::uint64_t>(command_nonzero));
+        detail::insert(payload.data(), 3u, 4u, 1u, false, static_cast<std::uint64_t>(output_enabled));
+        detail::insert(payload.data(), 3u, 5u, 1u, false, static_cast<std::uint64_t>(estop_latched));
+        detail::insert(payload.data(), 3u, 6u, 1u, false, static_cast<std::uint64_t>(recovery_pending));
+        detail::insert(payload.data(), 3u, 7u, 1u, false, static_cast<std::uint64_t>(degraded));
+        detail::insert(payload.data(), 4u, 0u, 16u, false, static_cast<std::uint64_t>(reserved_b4));
+        detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(e2e_crc));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, SysNodeStatus& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        SysNodeStatus value{};
+        const std::uint64_t raw_node_state = detail::extract(source, 0u, 0u, 4u, false);
+        value.node_state = static_cast<std::uint8_t>(raw_node_state);
+        const std::uint64_t raw_reserved_b0 = detail::extract(source, 0u, 4u, 4u, false);
+        if (raw_reserved_b0 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b0 = static_cast<std::uint8_t>(raw_reserved_b0);
+        const std::uint64_t raw_block_mask = detail::extract(source, 1u, 0u, 16u, false);
+        value.block_mask = static_cast<std::uint16_t>(raw_block_mask);
+        const std::uint64_t raw_estop_active = detail::extract(source, 3u, 0u, 1u, false);
+        value.estop_active = raw_estop_active != 0u;
+        const std::uint64_t raw_ready = detail::extract(source, 3u, 1u, 1u, false);
+        value.ready = raw_ready != 0u;
+        const std::uint64_t raw_command_received = detail::extract(source, 3u, 2u, 1u, false);
+        value.command_received = raw_command_received != 0u;
+        const std::uint64_t raw_command_nonzero = detail::extract(source, 3u, 3u, 1u, false);
+        value.command_nonzero = raw_command_nonzero != 0u;
+        const std::uint64_t raw_output_enabled = detail::extract(source, 3u, 4u, 1u, false);
+        value.output_enabled = raw_output_enabled != 0u;
+        const std::uint64_t raw_estop_latched = detail::extract(source, 3u, 5u, 1u, false);
+        value.estop_latched = raw_estop_latched != 0u;
+        const std::uint64_t raw_recovery_pending = detail::extract(source, 3u, 6u, 1u, false);
+        value.recovery_pending = raw_recovery_pending != 0u;
+        const std::uint64_t raw_degraded = detail::extract(source, 3u, 7u, 1u, false);
+        value.degraded = raw_degraded != 0u;
+        const std::uint64_t raw_reserved_b4 = detail::extract(source, 4u, 0u, 16u, false);
+        if (raw_reserved_b4 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b4 = static_cast<std::uint16_t>(raw_reserved_b4);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 6u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        const std::uint64_t raw_e2e_crc = detail::extract(source, 7u, 0u, 8u, false);
+        value.e2e_crc = static_cast<std::uint8_t>(raw_e2e_crc);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_sys_node_status(const SysNodeStatus& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(SysNodeStatus::kId, static_cast<std::uint8_t>(SysNodeStatus::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), SysNodeStatus::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_sys_node_status(FrameView frame, SysNodeStatus& out) noexcept {
+    if (frame.id() != 0x500u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x500u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != SysNodeStatus::kDlc) return CodecStatus::UnexpectedLength;
+    return SysNodeStatus::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const SysNodeStatus& value, Frame& out) noexcept { return encode_sys_node_status(value, out); }
+inline CodecStatus decode(FrameView frame, SysNodeStatus& out) noexcept { return decode_sys_node_status(frame, out); }
 
 struct SysPwrCmd {
     static constexpr std::string_view kKey = "sys:sys_pwr_cmd";
