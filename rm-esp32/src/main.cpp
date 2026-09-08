@@ -46,7 +46,9 @@ static uint8_t g_roll_ses = 0;
 static uint8_t g_roll_seb = 0;
 static uint8_t g_roll_sys_mode = 0;
 static uint8_t g_roll_sys_pwr = 0;
+#if defined(TESTING)
 static uint8_t g_roll_sys_safety = 0;
+#endif
 
 static bool send_can_frame(can::Frame& fr, const char* name) {
     if (!g_can.send(fr, 2)) {
@@ -225,10 +227,14 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             }
 
             // 0x011 SYS_SAFETY_STS — persistent safety-authority frame MTR requires to
-            // enable ignition (safety_state_valid_) and to clear a latched ESTOP. RM is the
-            // isolated/bench controller, so it authors this frame here. estop_active tracks RM's
-            // stop state. NOTE: encode_sys_safety_sts does NOT auto-fill the E2E CRC, so it is
+            // enable ignition (safety_state_valid_) and to clear a latched ESTOP.
+            // RM authors this ONLY as the isolated/bench controller (TESTING build =
+            // bench env where no real SYS exists). In a production vehicle build SYS
+            // is the sole 0x011 owner; RM must consume SYS 0x011 instead (see
+            // task_can_control) so it cannot fight the real authority stream.
+            // NOTE: encode_sys_safety_sts does NOT auto-fill the E2E CRC, so it is
             // computed over bytes[0..3] here (same scheme MTR validates, motor_manager.h:137).
+#if defined(TESTING)
             can::gen::SysSafetySts ssts{};
             ssts.estop_active    = estop_or_signal_loss;
             ssts.heartbeat_ok    = true;
@@ -238,6 +244,7 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
                 ssts_fr.data[4] = ::etrike::protocol::e2e::sys_safety_sts_crc(ssts_fr.data.data());
                 send_can_frame(ssts_fr, "SYS_SAFETY_STS");
             }
+#endif
         }
 
         vTaskDelayUntil(&last, period);
@@ -275,6 +282,25 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
                     ESP_LOGE(TAG, "CAN SAFETY_ESTOP (0x001) received from external peer! Latching vehicle stop.");
                 }
             }
+#if !defined(TESTING)
+            // In a production vehicle build the real SYS is the 0x011 authority
+            // owner (RM authors it only as the bench controller under TESTING).
+            // Consume SYS 0x011 estop_active — validated by the E2E CRC-8 over
+            // bytes[0..3] — so RM rides the same system latch instead of fighting
+            // the authority stream. A latched stop is released only by the RC reset
+            // sequence (valid link + Ignition OFF + Gear N) handled in task_can_tx.
+            else if (rx_frame.id == can::kIdSysSafetySts) { // 0x011 SYS_SAFETY_STS
+                if (rx_frame.dlc >= 5u &&
+                    rx_frame.data[4] == ::etrike::protocol::e2e::sys_safety_sts_crc(
+                                           rx_frame.data.data())) {
+                    if (rx_frame.data[0] != 0u &&
+                        !g_can_estop_latched.load(std::memory_order_relaxed)) {
+                        g_can_estop_latched.store(true, std::memory_order_release);
+                        ESP_LOGE(TAG, "SYS_SAFETY_STS (0x011) estop_active=1 received! Latching vehicle stop.");
+                    }
+                }
+            }
+#endif
             // All other IDs (incl. our own 0x204 loopback) are discarded here
         }
 
