@@ -53,7 +53,7 @@ namespace sys {
 
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
-std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t>  g_mtr_motor_command_speed_mmps{0};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{INT16_MIN};
@@ -66,6 +66,7 @@ std::atomic<bool>     g_seb_takeover{false};
 std::atomic<int64_t>  g_last_estop_sent_us{-1000000};
 std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint8_t>  g_seb_status_byte0{0};
+std::atomic<bool>     g_no_sys_authority{true};
 
 bool g_bench_solo_mode = false;
 bool g_bypass_eps_sync = true;
@@ -273,24 +274,25 @@ void test_t1_171_to_210_reset_atomicity_and_active_faults(void) {
         g_harness.sys_mode.force_estop();
         TEST_ASSERT_EQUAL(can::Mode::Estop, g_harness.sys_mode.mode());
 
-        // Operator presses START to attempt reset while L3 is still active!
+        // Operator presses START to attempt reset while L3 is still active.
+        // Validated reset (try_exit_estop) MUST refuse: it must not leave ESTOP
+        // nor clear a latched fault whose cause is still asserted (no false-clear
+        // 0x011). This is the corrected behavior — the old code illegally
+        // transitioned to Manual here.
         for (int d = 0; d < 6; ++d) g_harness.sys_mode.tick(false, false);
         g_harness.sys_mode.tick(/*mode=*/false, /*start=*/true);
         g_harness.sys_mode.tick(/*mode=*/false, /*start=*/false);
 
-        // Codify the race condition: ModeManager transitioned to Manual!
-        TEST_ASSERT_EQUAL(can::Mode::Manual, g_harness.sys_mode.mode());
-        // While the latched reason is STILL present!
+        TEST_ASSERT_EQUAL(can::Mode::Estop, g_harness.sys_mode.mode());
         TEST_ASSERT_TRUE(sys::latched_fault_present());
 
-        // When cause becomes healthy, reset succeeds cleanly:
+        // When the cause becomes healthy, try_exit_estop clears the latch
+        // atomically and transitions to Manual — no manual latch clear needed.
         g_seb_error_status.store(0);
         for (int d = 0; d < 6; ++d) g_harness.sys_mode.tick(false, false);
         g_harness.sys_mode.tick(/*mode=*/false, /*start=*/true);
         g_harness.sys_mode.tick(/*mode=*/false, /*start=*/false);
-        if (g_seb_error_status.load() < 3) {
-            sys::g_latched_fault_reasons.fetch_and(~static_cast<uint32_t>(sys::kLatchedSebL3));
-        }
+        TEST_ASSERT_EQUAL(can::Mode::Manual, g_harness.sys_mode.mode());
         TEST_ASSERT_FALSE(sys::latched_fault_present());
     }
 }

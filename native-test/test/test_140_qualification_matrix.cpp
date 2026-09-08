@@ -63,10 +63,17 @@ std::atomic<uint32_t> g_inhibit_reasons{0};
 std::atomic<uint32_t> g_latched_fault_reasons{0};
 extern int64_t g_sys_test_time_us;
 }
+// 0x721-derived SEB live state (see sys-esp32/src/inhibit_state.cpp). The
+// native test build provides these directly rather than linking inhibit_state.cpp.
+std::atomic<uint8_t> g_seb_status_byte0{0xFF};
+std::atomic<uint8_t> g_seb_error_status{0};
+// RT authority flag (see rt-esp32/src/rt_state.h); provided by the test build
+// since rt-esp32/src/main.cpp is not compiled here.
+std::atomic<bool> g_no_sys_authority{true};
 
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
-std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t>  g_mtr_motor_command_speed_mmps{0};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{INT16_MIN};
@@ -88,12 +95,18 @@ void setUp(void) {
     sys::g_inhibit_reasons.store(0);
     sys::g_latched_fault_reasons.store(0);
     sys::g_sys_test_time_us = 0;
+    g_seb_error_status.store(0);
+    g_seb_status_byte0.store(0xFF);
+    g_no_sys_authority.store(true);
 }
 
 void tearDown(void) {
     sys::g_inhibit_reasons.store(0);
     sys::g_latched_fault_reasons.store(0);
     sys::g_sys_test_time_us = 0;
+    g_seb_error_status.store(0);
+    g_seb_status_byte0.store(0xFF);
+    g_no_sys_authority.store(true);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -313,7 +326,7 @@ void test_010_command_echo_is_command_not_measured_speed(void) {
     can::gen::decode_mtr_motor_fbk(f_fbk.view(), decoded_fbk);
 
     // The wire round-trip is lossless for the command field.
-    TEST_ASSERT_EQUAL(decoded_cmd.motor_speed_mmps, decoded_fbk.applied_speed_command_mmps);
+    TEST_ASSERT_EQUAL(decoded_cmd.motor_speed_mmps, decoded_fbk.motor_command_speed_mmps);
 
     // But an echo must NOT be treated as measured motion: stall the plant and
     // confirm the feedback value and the physical state diverge (the real EGAS
@@ -322,7 +335,7 @@ void test_010_command_echo_is_command_not_measured_speed(void) {
     h.plant.motor_stalled = true;
     h.plant.update(2000, mtr::RelayController::State::Drive, 0.0f);
     TEST_ASSERT_EQUAL(0, h.plant.physical_wheel_speed_mmps);
-    TEST_ASSERT_TRUE(decoded_fbk.applied_speed_command_mmps != 0);  // echo says moving...
+    TEST_ASSERT_TRUE(decoded_fbk.motor_command_speed_mmps != 0);  // echo says moving...
     TEST_ASSERT_TRUE(h.plant.physical_wheel_speed_mmps == 0);       // ...wheel is not
 }
 
@@ -430,6 +443,12 @@ void test_019_sys_freeze_while_braking(void) {
 void test_020_sys_brake_task_failure_hb_alive(void) {
     rt::SebBrakeFallback fb; fb.init(1000);
     int64_t now = 1000 + int64_t(rt::kSebFallbackArmGraceMs) * 1000 + 100000;
+    // Issue #5: SYS 0x7FE (heartbeat) and 0x7B9 (brake command) are produced by
+    // *different* SYS tasks. A live heartbeat does NOT prove the SYS brake task is
+    // alive — RT therefore also watches the 0x7B9 stream itself. But escalation is
+    // still guarded: 100 ms past arm (arm grace just elapsed), the brake stream has
+    // never been seen yet, so RT stays NORMAL until the guard elapses and only then
+    // becomes the emergency brake writer.
     rt::SebFallbackInput in{now, true, false, false};
     auto out = fb.update(in);
     TEST_ASSERT_EQUAL(uint8_t(rt::SebBrakeState::NORMAL), uint8_t(out.state));
@@ -2092,5 +2111,5 @@ extern "C" void app_main() {
 
 int main() {
     app_main();
-    return 0;
+    return g_tests_failed == 0 ? 0 : 1;
 }

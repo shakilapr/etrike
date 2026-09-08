@@ -26,17 +26,6 @@ public:
     // Returns true if RT heartbeat is fresh (within timeout, startup grace applied)
     bool heartbeat_ok() const;
 
-    // ── RX 0x001 policy (gap #14) — shared by firmware + native-test harness ─
-    // The harness must route 0x001 through the *same* logic as the firmware so
-    // the test exercises the real pipeline, not a re-implemented model.
-    // Loopback: ignore our own 0x001 reflection on the wire.
-    // Reset-grace: after an operator resets out of ESTOP, ignore an in-flight
-    // 0x001 still on the bus for a grace window, preventing immediate re-latch
-    // (livelock). A real external ESTOP outside these windows still latches.
-    void mark_estop_broadcast(uint32_t now_ms);
-    void mark_estop_reset(uint32_t now_ms);
-    bool rx_estop_suppressed(uint32_t now_ms);
-
 private:
     // Shared state: read by multiple tasks (brake, lights, can_tx, diag, etc.),
     // written only by safety_task.  Must be atomic to prevent data races.
@@ -52,5 +41,16 @@ int64_t get_time_us();
 // Host test-time injection (set before calling feed_heartbeat_rt / heartbeat_ok).
 // Only used when TESTING is defined; otherwise esp_timer_get_time() is used.
 extern int64_t g_sys_test_time_us;
+
+// ── RX 0x001 policy (gap #14) — shared by firmware + native-test harness ─
+// The harness must route 0x001 through the *same* logic as the firmware so the
+// test exercises the real pipeline, not a re-implemented model.
+// Loopback: ignore our own 0x001 reflection on the wire.
+// Reset-grace: after an operator resets out of ESTOP, ignore an in-flight 0x001
+// still on the bus for a grace window, preventing immediate re-latch (livelock).
+// A real external ESTOP outside these windows still latches.
+void mark_estop_broadcast(uint32_t now_ms);
+void mark_estop_reset(uint32_t now_ms);
+bool rx_estop_suppressed(uint32_t now_ms);
 
 }  // namespace sys

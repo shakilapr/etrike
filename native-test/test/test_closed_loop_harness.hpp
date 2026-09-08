@@ -166,7 +166,7 @@ struct CanManipulator {
 
     static can::Frame make_feedback_frame(int32_t speed_mmps, can::Gear gear, uint8_t fault_flags = 0) {
         can::gen::MtrMotorFbk fbk{};
-        fbk.applied_speed_command_mmps = speed_mmps;
+        fbk.motor_command_speed_mmps = speed_mmps;
         fbk.gear_state = static_cast<uint8_t>(gear);
         fbk.fault_flags = fault_flags;
         can::Frame f;
@@ -408,13 +408,25 @@ public:
 
         sys::g_inhibit_reasons.store(0);
         sys::g_latched_fault_reasons.store(0);
+        // Reset reset-grace / loopback RX windows so they are inert between tests.
+        sys::mark_estop_broadcast(0);
+        sys::mark_estop_reset(0);
+        // Reset SEB 0x721-derived live state so each test starts clean (the
+        // firmware's SEB status ingest owns these; the harness reuses the same
+        // globals, so without a reset a previous test's L3/following-error leaks
+        // into the next test and can spuriously block the validated reset).
+        g_seb_error_status.store(0);
+        g_seb_status_byte0.store(0xFF);
         g_last_sys_hb_us.store(now_us);
         g_last_host_hb_us.store(now_us);
         g_last_mtr_feedback_us.store(-1);
         g_last_nonzero_cmd_us.store(-1);
         g_brake_request_kpa.store(0);
-        g_mtr_applied_speed_command_mmps.store(0);
+        g_mtr_motor_command_speed_mmps.store(0);
         rt::g_mtr_health.reset();
+        // In these closed-loop tests SYS is always present and publishing its
+        // 0x011 stream, so RT's SYS-authority acquisition is satisfied.
+        g_no_sys_authority.store(false, std::memory_order_relaxed);
 
         seb = SebActuatorModel{};
         plant = PhysicalPlantModel{};
@@ -457,11 +469,11 @@ public:
 
             if (f.id == can::kIdSafetyEstop) {
                 count_0x001_broadcasts++;
-                // 1. Loopback discrimination (50 ms window)
-                bool is_loopback = (now_us - last_sys_estop_tx_us) < 50000;
-                // 2. Operator reset grace window (500 ms window)
-                bool in_reset_grace = (now_us - last_operator_reset_us) < 500000;
-                if (!is_loopback && !in_reset_grace) {
+                // Route through the REAL firmware RX policy (sys::rx_estop_suppressed,
+                // implemented in sys-esp32/src/safety_monitor.cpp). The harness no
+                // longer re-implements the loopback / reset-grace logic — it must
+                // exercise the same code the firmware runs, or the test is dishonest.
+                if (!sys::rx_estop_suppressed(now_ms)) {
                     sys_safety.set_estop(true);
                     sys_mode.force_estop();
                 }
@@ -493,7 +505,7 @@ public:
                 g_last_mtr_feedback_us.store(now_us);
                 can::gen::MtrMotorFbk fmsg{};
                 if (can::gen::decode_mtr_motor_fbk(f.view(), fmsg) == can::gen::CodecStatus::Ok) {
-                    g_mtr_applied_speed_command_mmps.store(fmsg.applied_speed_command_mmps);
+                    g_mtr_motor_command_speed_mmps.store(fmsg.motor_command_speed_mmps);
                 }
             } else if (f.id == etrike::protocol::codecs::seb::kCommandId) {
                 seb.update(now_us, f);
@@ -517,6 +529,8 @@ public:
             high_bus_history.push_back(f);
             if (f.id == can::kIdSafetyEstop) {
                 low_bus.send(to_proto(f)); // Gateway forward
+            } else if (f.id == etrike::protocol::codecs::seb::kCommandId) {
+                low_bus.send(to_proto(f));
             } else if (f.id == 0x7FC) { // Host Heartbeat
                 g_last_host_hb_us.store(now_us);
             }
@@ -524,11 +538,12 @@ public:
     }
 
     void operator_reset() {
-        last_operator_reset_us = now_us;
         sys_safety.set_estop(false);
         for (int i = 0; i < 6; ++i) sys_mode.tick(false, false);
-        sys_mode.tick(false, true);
+        sys_mode.tick(false, true);  // START button: ESTOP → MANUAL (via try_exit_estop)
         sys_mode.tick(false, false);
+        // Real firmware opens the reset-grace window the moment mode leaves ESTOP.
+        sys::mark_estop_reset(now_ms);
     }
 
     void operator_press_mode() {
@@ -538,9 +553,9 @@ public:
     }
 
     void sys_broadcast_estop() {
-        last_sys_estop_tx_us = now_us;
         sys_safety.set_estop(true);
         sys_mode.force_estop();
+        sys::mark_estop_broadcast(now_ms);
         can::Frame f001{can::kIdSafetyEstop, 0, {}};
         low_bus.send(to_proto(f001));
         high_bus.send(to_proto(f001));
@@ -608,10 +623,11 @@ public:
             cmd.control_enable = true;
             cmd.control_mode = etrike::protocol::codecs::seb::ControlMode::Pressure;
             cmd.pressure_request_raw = estop ? 40 : 0;
-            cmd.rolling_counter = sys_seb_ctr++;
+            cmd.rolling_counter = static_cast<std::uint8_t>(sys_seb_ctr++ & 0x0Fu);
             etrike::protocol::Frame pf;
             if (etrike::protocol::codecs::seb::encode_command(cmd, pf) == can::gen::CodecStatus::Ok) {
                 low_bus.send(pf);
+                g_last_0x7B9_rx_us.store(now_us, std::memory_order_relaxed);
                 count_0x7b9_sys_tx++;
             }
         }
@@ -728,7 +744,7 @@ public:
         if (now_us - last_mtr_fbk_us >= 20000) {
             last_mtr_fbk_us = now_us;
             can::gen::MtrMotorFbk fbk{};
-            fbk.applied_speed_command_mmps = mtr_mgr.target_speed_mmps();
+            fbk.motor_command_speed_mmps = mtr_mgr.target_speed_mmps();
             fbk.gear_state = static_cast<uint8_t>(mtr_relays.state() == mtr::RelayController::State::Drive ? can::Gear::D : can::Gear::N);
             fbk.fault_flags = mtr_mgr.is_estop_active() ? 0x01 : 0x00;
             can::Frame ff; can::gen::encode_mtr_motor_fbk(fbk, ff);
