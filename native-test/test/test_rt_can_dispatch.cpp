@@ -24,6 +24,7 @@ std::atomic<int16_t> g_pending_mode_event{-1};
 std::atomic<uint32_t> g_safety_event_drops{0};
 std::atomic<bool> g_steering_estop_request{false};
 std::atomic<bool> g_steering_exit_request{false};
+std::atomic<bool> g_sys_clear_in_progress{false};  // 0x011 two-frame clear in progress (RT latch)
 std::atomic<int32_t> g_encoder_speed_mmps{0};
 
 std::atomic<int32_t> g_brake_request_kpa{0};
