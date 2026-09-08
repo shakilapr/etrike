@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include "config.h"
+#include "inhibit_state.h"
 
 #define ENABLE_CAN_HMI true
 
@@ -21,6 +22,14 @@ public:
 
     void force_estop();
     void set_from_can(uint8_t m);
+    
+    // Validated ESTOP→MANUAL reset (issue #7). Returns false — and remains in
+    // ESTOP — unless every *currently latched* safety fault's underlying cause
+    // is no longer asserted; on success it clears the latched faults and
+    // transitions to MANUAL atomically. This is the only path that clears a
+    // latched safety fault, so no observer ever sees mode==MANUAL while a
+    // latched fault is still set.
+    bool try_exit_estop();
     
     // Parses incoming 0x111 HMI_MODE_REQ. Returns true if mode changed.
     bool parse_hmi_mode(uint8_t requested_mode);

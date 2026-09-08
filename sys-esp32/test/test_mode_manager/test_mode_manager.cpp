@@ -220,6 +220,64 @@ void test_estop_latched_follows_mode_latch_lifecycle(void) {
     TEST_ASSERT_FALSE(ModeManager::estop_latched(mm.mode(), /*hw_estop=*/false));
 }
 
+// Issue #7: ESTOP exit is a validated transaction. The system must NOT leave
+// ESTOP while a latched safety fault's underlying cause is still asserted —
+// otherwise the published estop_active bit would drop to 0 and let RT/MTR
+// two-frame-clear into a false all-clear.
+void test_estop_exit_blocked_while_latched_cause_active(void) {
+    // kLatchedBrakeFollowing latched + no fresh 0x721 (byte0 == 0xFF) means the
+    // brake-following cause cannot be proven clear → reset must be refused.
+    g_seb_error_status.store(0);
+    g_seb_status_byte0.store(0xFF);
+    sys::g_latched_fault_reasons.store(0);  // clean slate
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    sys::set_latched_fault(sys::kLatchedBrakeFollowing);
+
+    // START-button reset attempt — refused.
+    mm.tick(false, true);
+    mm.tick(false, false);
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+
+    // MODE 3s long-press — also refused while the cause is still asserted.
+    bool exited = false;
+    for (int i = 0; i < 40; ++i) {
+        if (mm.tick(true, false)) { exited = true; break; }
+    }
+    TEST_ASSERT_FALSE(exited);
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+
+    // Cause clears (fresh 0x721 frame arrives) → validated reset now allowed.
+    g_seb_status_byte0.store(0x00);
+    mm.tick(false, true);   // release MODE, press START
+    mm.tick(false, false);  // START release → falling edge → reset
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+    TEST_ASSERT_FALSE(sys::latched_fault_present());
+}
+
+// Issue #7: SEB L3 latched with error_status still == 3 also blocks the reset.
+void test_estop_exit_blocked_while_seb_l3_active(void) {
+    g_seb_error_status.store(3);
+    g_seb_status_byte0.store(0x00);
+    sys::g_latched_fault_reasons.store(0);
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    sys::set_latched_fault(sys::kLatchedSebL3);
+
+    mm.tick(false, true);
+    mm.tick(false, false);
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+
+    // SEB recovers to error_status < 3 → reset allowed.
+    g_seb_error_status.store(0);
+    mm.tick(false, true);
+    mm.tick(false, false);
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+    TEST_ASSERT_FALSE(sys::latched_fault_present());
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_estop_latched_invariant);
@@ -235,6 +293,8 @@ extern "C" void app_main() {
     RUN_TEST(test_parse_hmi_mode_ignored_in_estop);
     RUN_TEST(test_parse_hmi_mode_rejects_invalid);
     RUN_TEST(test_mode_manager_can_mode_cmd_does_not_clear_estop);
+    RUN_TEST(test_estop_exit_blocked_while_latched_cause_active);
+    RUN_TEST(test_estop_exit_blocked_while_seb_l3_active);
     UNITY_END();
 }
 

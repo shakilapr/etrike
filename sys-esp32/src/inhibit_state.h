@@ -22,6 +22,15 @@
 #include <atomic>
 #include <cstdint>
 
+// SEB 0x721-derived live state, defined in inhibit_state.cpp at GLOBAL scope to
+// match the unqualified references in main.cpp's SEB-status ingest path.
+//   g_seb_error_status : error_status field (bits6-7 of byte0). ==3 ⇒ SEB L3.
+//   g_seb_status_byte0 : raw byte0; 0xFF means "no 0x721 frame seen yet",
+//     which the reset validator treats as "brake-following cause not proven
+//     clear".
+extern std::atomic<uint8_t> g_seb_error_status;
+extern std::atomic<uint8_t> g_seb_status_byte0;
+
 namespace sys {
 
 // Transient / recoverable inhibit reasons (own bit per detector).
@@ -37,7 +46,8 @@ enum LatchedFaultReason : uint32_t {
     kLatchedSebL3          = 1u << 1,  // SEB error_status == 3
 };
 
-// Defined in main.cpp.
+// Defined in inhibit_state.cpp (linked in both the firmware and the native
+// unit-test build — which excludes main.cpp).
 extern std::atomic<uint32_t> g_inhibit_reasons;
 extern std::atomic<uint32_t> g_latched_fault_reasons;
 
@@ -52,6 +62,34 @@ inline void set_latched_fault(LatchedFaultReason r) {
 }
 // No generic clear_latched_fault() outside the reset path: latched faults are
 // owned exclusively by the explicit reset handler.
+
+// ── Validated ESTOP reset transaction (issue #7) ────────────────────────────
+// The system may leave ESTOP only when every *currently latched* safety fault's
+// underlying cause is no longer asserted. A latch whose cause is still active
+// must NOT be cleared — that would paper over a live fault and let RT/MTR
+// two-frame-clear into motion. The reset is performed atomically by
+// ModeManager::try_exit_estop(): it gates the mode transition on this predicate
+// and clears the latch in the same step, so no observer ever sees
+// mode == Manual while a latched fault remains set.
+inline bool latched_causes_currently_clearable() {
+    uint32_t latched = g_latched_fault_reasons.load(std::memory_order_relaxed);
+    if ((latched & kLatchedSebL3) &&
+        g_seb_error_status.load(std::memory_order_relaxed) >= 3) {
+        return false;  // SEB L3 still asserted
+    }
+    if ((latched & kLatchedBrakeFollowing) &&
+        g_seb_status_byte0.load(std::memory_order_relaxed) == 0xFF) {
+        return false;  // no fresh 0x721 ⇒ brake-following cause not proven clear
+    }
+    return true;
+}
+
+inline void clear_latched_fault_reasons() {
+    g_latched_fault_reasons.fetch_and(
+        ~(static_cast<uint32_t>(kLatchedSebL3) |
+          static_cast<uint32_t>(kLatchedBrakeFollowing)),
+        std::memory_order_relaxed);
+}
 
 inline bool transient_inhibited() { return g_inhibit_reasons.load() != 0u; }
 inline bool latched_fault_present() { return g_latched_fault_reasons.load() != 0u; }
