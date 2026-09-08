@@ -85,7 +85,7 @@ Hardware filter acceptance list in FDCAN message RAM:
    - Signals: `speed_mmps` (int16). Reflects commanded motor speed.
 2. `0x206` ? **`MTR_MOTOR_FBK`** (DLC 4, 50 Hz / 20 ms period):
    - Signals:
-     - `applied_speed_command_mmps` (int16): Estimated / commanded vehicle linear velocity.
+     - `motor_command_speed_mmps` (int16): Estimated / commanded vehicle linear velocity.
      - `gear_state` (uint8): Actual engaged relay gear state (`0=N`, `1=D`, `2=S`, `3=R`).
      - `fault_flags` (uint8):
        - `Bit 0` (`0x01`): `kMtrFaultEstopActive` (Asserted during ESTOP; fulfills Gap #15 redundant acknowledgment to SYS).

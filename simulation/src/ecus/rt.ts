@@ -55,7 +55,7 @@ export class RtEcu implements SimulatedEcu {
   private directSteerValid = false;
   private lastDirectSteerMs = -Infinity;
   private lastDirectSteerCtr = -1;
-  private appliedSpeedCommandMmps = 0;
+  private motorCommandSpeedMmps = 0;
   private physicalGear = 0;
   private lastMtrFeedbackMs = -Infinity;
   private lastSesFeedbackMs = -Infinity;
@@ -86,7 +86,7 @@ export class RtEcu implements SimulatedEcu {
     this.directSteerValid = false;
     this.lastDirectSteerMs = -Infinity;
     this.lastDirectSteerCtr = -1;
-    this.appliedSpeedCommandMmps = 0;
+    this.motorCommandSpeedMmps = 0;
     this.physicalGear = 0;
     this.lastMtrFeedbackMs = -Infinity;
     this.lastSesFeedbackMs = -Infinity;
@@ -181,7 +181,7 @@ export class RtEcu implements SimulatedEcu {
       }
       const motor = decodeAs(f, "mtr:mtr_motor_fbk");
       if (motor !== undefined) {
-        this.appliedSpeedCommandMmps = Number(motor.applied_speed_command_mmps); // 0x206 = setpoint echo from MTR (no speed sensor); NOT a measured speed
+        this.motorCommandSpeedMmps = Number(motor.motor_command_speed_mmps); // 0x206 = setpoint echo from MTR (no speed sensor); NOT a measured speed
         this.physicalGear = Number(motor.gear_state);
         this.lastMtrFeedbackMs = nowMs;
         out.push({ ...f, bus: "high", sender: "rt" });
@@ -402,10 +402,10 @@ export class RtEcu implements SimulatedEcu {
       const steerFresh = nowMs - this.lastSesFeedbackMs <= 100 && this.sesAngleStatus === 1;
       const angle01deg = this.sesAngleRaw !== null ? this.sesAngleRaw - 30000 : 0;
       const yaw = speedFresh && steerFresh
-        ? Math.round(this.appliedSpeedCommandMmps * Math.tan(angle01deg * 0.1 * Math.PI / 180) / 1.5)
+        ? Math.round(this.motorCommandSpeedMmps * Math.tan(angle01deg * 0.1 * Math.PI / 180) / 1.5)
         : 0;
       out.push(encodeSimFrame("rt:rt_motion_rpt", {
-        speed_mmps: this.appliedSpeedCommandMmps,
+        speed_mmps: this.motorCommandSpeedMmps,
         yaw_rate_mrad_s: yaw,
         gear: this.physicalGear,
         speed_valid: speedFresh ? 1 : 0,

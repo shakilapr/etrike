@@ -68,7 +68,7 @@ void test_hmi_mode() {
 
 void test_mtr_motor() {
     gen::MtrMotorFbk fbk{};
-    fbk.applied_speed_command_mmps = -50;
+    fbk.motor_command_speed_mmps = -50;
     fbk.gear_state = 2;
     fbk.fault_flags = 0x03;
     Frame frame;
@@ -76,7 +76,7 @@ void test_mtr_motor() {
 
     rta::MotorFeedback out;
     CHECK(rta::decode_mtr_motor(frame.view(), out));
-    CHECK(out.applied_speed_command_mmps == -50);
+    CHECK(out.motor_command_speed_mmps == -50);
     CHECK(out.gear_state == 2);
     CHECK(out.fault_flags == 0x03);
 }

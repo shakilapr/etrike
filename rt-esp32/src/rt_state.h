@@ -51,7 +51,7 @@ extern std::atomic<uint32_t> g_obstacle_mm;
 extern std::atomic<int32_t>  g_ses_angle_0_1deg;
 extern std::atomic<uint8_t>  g_ses_angle_status;
 extern std::atomic<int32_t>  g_brake_kpa_to_send;
-extern std::atomic<int32_t>  g_mtr_applied_speed_command_mmps;
+extern std::atomic<int32_t>  g_mtr_motor_command_speed_mmps;
 extern std::atomic<uint8_t>  g_mtr_gear_state;
 extern std::atomic<int32_t>  g_encoder_speed_mmps;
 extern std::atomic<int32_t>  g_direct_steer_angle_0_1deg;

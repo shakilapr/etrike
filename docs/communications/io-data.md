@@ -190,7 +190,7 @@ Role: safety monitoring (EGAS Level 2), ESTOP handling, brake control (SEB via C
 |--------|---------|----------|------|-------------|--------|
 | `0x001` | SAFETY_ESTOP | (no payload) | DLC=0 | ? | any |
 | `0x205` | RT_BRAKE_CMD | `RT_BrakePressure` | i32 (kPa) | ? | RT |
-| `0x206` | MTR_MOTOR_FBK | `applied_speed_command_mmps` | i16 (mm/s) | ? | MTR |
+| `0x206` | MTR_MOTOR_FBK | `motor_command_speed_mmps` | i16 (mm/s) | ? | MTR |
 | `0x206` | MTR_MOTOR_FBK | `gear_state` | u8 enum | {N,D,S,R} | MTR |
 | `0x206` | MTR_MOTOR_FBK | `fault_flags` | u8 bitmask | ? | MTR |
 | `0x302` | HOST_LIGHT_CMD | light bits (4? bool) | u8 bitmask | ? | RT (fwd) |
@@ -289,8 +289,8 @@ Role: dedicated motor controller (EGAS Level 1 ? Function Controller). **Current
 
 | CAN ID | Message | Variable | Type | Range / Enum | Rate | Target |
 |--------|---------|----------|------|-------------|------|--------|
-| `0x120` | SYS_THROTTLE_STS | `applied_speed_command_mmps` | i16 (mm/s) | ? | 100 Hz | RT (? Host) |
-| `0x206` | MTR_MOTOR_FBK | `applied_speed_command_mmps` | i16 (mm/s) | ? | 50 Hz | SYS, RT |
+| `0x120` | SYS_THROTTLE_STS | `motor_command_speed_mmps` | i16 (mm/s) | ? | 100 Hz | RT (? Host) |
+| `0x206` | MTR_MOTOR_FBK | `motor_command_speed_mmps` | i16 (mm/s) | ? | 50 Hz | SYS, RT |
 | `0x206` | MTR_MOTOR_FBK | `gear_state` | u8 enum | {N,D,S,R} | 50 Hz | SYS, RT |
 | `0x206` | MTR_MOTOR_FBK | `fault_flags` | u8 bitmask | bit0=ESTOP_ACTIVE | 50 Hz | SYS, RT |
 

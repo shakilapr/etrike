@@ -199,7 +199,7 @@ Universe ? but under Universe it is actively harmful, because
 | Signal | Mapping | Verdict |
 |---|---|---|
 | `gear_state` u8 {0..3} | bridge `:778-784`: 0?NONE(0), 1?DRIVE(**1**), 2?LOW(23), 3?REVERSE(20) | Under Universe DRIVE=**2**; emitting 1 reports NEUTRAL. Same collision as ?1.1 |
-| `applied_speed_command_mmps` | unused by bridge | redundant with 0x120 |
+| `motor_command_speed_mmps` | unused by bridge | redundant with 0x120 |
 | `fault_flags` | unused by bridge | candidate for diagnostics |
 
 **Verdict: bridge mapping bug; CAN encoding fine.** No PARK representation (?1.1).

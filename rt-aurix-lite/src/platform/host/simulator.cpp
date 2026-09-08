@@ -40,7 +40,7 @@ void Simulator::inject_host_heartbeat(std::uint8_t alive) {
 void Simulator::inject_mtr(std::int16_t speed_mmps, std::uint8_t gear, std::uint8_t faults) {
     Frame frame;
     gen::MtrMotorFbk fbk{};
-    fbk.applied_speed_command_mmps = speed_mmps;
+    fbk.motor_command_speed_mmps = speed_mmps;
     fbk.gear_state = gear;
     fbk.fault_flags = faults;
     if (etrike::protocol::succeeded(gen::encode(fbk, frame))) {

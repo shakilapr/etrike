@@ -107,7 +107,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `applied_speed_command_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `motor_command_speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 | `gear_state` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `fault_flags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 
@@ -383,7 +383,7 @@ The E-Trike utilizes multiple primary CAN networks:
 
 | Signal Name | Byte | Bit | Size | Type | Scale | Range | Unit | Description |
 |---|---|---|---|---|---|---|---|---|
-| `applied_speed_command_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
+| `motor_command_speed_mmps` | 0 | 0 | 16 | signed | 1 | [-500, 3000] | - |  |
 | `gear_state` | 2 | 0 | 8 | unsigned | 1 | [0, 3] | - |  |
 | `fault_flags` | 3 | 0 | 8 | unsigned | 1 | [0, 255] | - |  |
 

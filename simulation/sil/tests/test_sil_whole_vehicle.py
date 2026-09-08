@@ -117,7 +117,7 @@ class TestSilWholeVehicle(unittest.TestCase):
             clamped_feedback = max(-500, min(int(v_actual * 1000.0), 3000))
             st_206, pl_206 = proto.encode(
                 "mtr:mtr_motor_fbk",
-                {"applied_speed_command_mmps": clamped_feedback, "gear_state": 1, "fault_flags": 0},
+                {"motor_command_speed_mmps": clamped_feedback, "gear_state": 1, "fault_flags": 0},
                 bus="low"
             )
             self.assertEqual(st_206, "ok")

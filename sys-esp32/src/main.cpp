@@ -166,9 +166,9 @@ static bool can_send_estop() {
 // ── Motor feedback from 0x206 MTR_MOTOR_FBK ─────────────────────────
 // MTR 0x206 carries the APPLIED speed COMMAND (the setpoint echoed back) —
 // NOT a physical measurement (no wheel/motor encoder fitted). Renamed to
-// applied_speed_command_mmps to prevent downstream code from treating it as
+// motor_command_speed_mmps to prevent downstream code from treating it as
 // closed-loop speed feedback (issue #1).
-static std::atomic<int16_t>  g_applied_speed_command_mmps{0};
+static std::atomic<int16_t>  g_motor_command_speed_mmps{0};
 static std::atomic<uint8_t>  g_motor_fault_flags{0};
 
 // ── SEB status from 0x721 SEB_STATUS ────────────────────────────────
@@ -310,7 +310,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         case can::kIdMtrMotorFbk: {  // 0x206 — applied-speed-command echo (issue #1: NOT physical speed)
             can::gen::MtrMotorFbk fbk{};
             if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
-            g_applied_speed_command_mmps.store(fbk.applied_speed_command_mmps, std::memory_order_relaxed);
+            g_motor_command_speed_mmps.store(fbk.motor_command_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
             g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
@@ -619,7 +619,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             static TickType_t egas_fault_start = 0;
             if (g_mode_mgr.mode() == can::Mode::Auto) {
                 int32_t cmd     = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
-                int16_t applied = g_applied_speed_command_mmps.load(std::memory_order_relaxed);
+                int16_t applied = g_motor_command_speed_mmps.load(std::memory_order_relaxed);
                 int32_t diff    = (cmd > applied) ? (cmd - applied) : (applied - cmd);
                 if (diff > sys::kEgasSpeedThresholdMmps) {
                     if (!egas_fault_active) {

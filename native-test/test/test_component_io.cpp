@@ -67,9 +67,9 @@ CHECK_EQ(d.estop_active,es[i],"estop");CHECK_EQ(d.heartbeat_ok,hb[i],"hb");}}
 
 static void t6(){T("=== 6. 0x206 Motor ===");
 int16_t sp[]={1500,0,1500,2000};uint8_t fl[]={0,0,1,0};
-for(int i=0;i<4;i++){generated::MtrMotorFbk m;m.applied_speed_command_mmps=sp[i];m.gear_state=1;m.fault_flags=fl[i];
+for(int i=0;i<4;i++){generated::MtrMotorFbk m;m.motor_command_speed_mmps=sp[i];m.gear_state=1;m.fault_flags=fl[i];
 protocol::Frame f;generated::encode(m,f);generated::MtrMotorFbk d;generated::decode(f.view(),d);
-CHECK_EQ(d.applied_speed_command_mmps,sp[i],"speed");CHECK_EQ(d.fault_flags,fl[i],"faults");}
+CHECK_EQ(d.motor_command_speed_mmps,sp[i],"speed");CHECK_EQ(d.fault_flags,fl[i],"faults");}
  CHECK(abs(1500-2100)>500,"command-path/setpoint-echo consistency threshold");}
 
 static void t7(){T("=== 7. 0x600 Diag ===");
@@ -155,9 +155,9 @@ ses::Command sr;sr.alignment_enable=1;sr.control_enable=1;sr.target_angle_raw=0;
 protocol::Frame f3;ses::encode_command(sr,f3);
 uint8_t cs=0;for(int i=0;i<7;i++)cs^=f3.data[i];f3.data[7]=cs^0xFF;
 uint8_t v=0;for(int i=0;i<8;i++)v^=f3.data[i];CHECK_EQ(v,0xFF,"[3]0x169");
-generated::MtrMotorFbk m;m.applied_speed_command_mmps=1500;m.gear_state=1;m.fault_flags=0;
+generated::MtrMotorFbk m;m.motor_command_speed_mmps=1500;m.gear_state=1;m.fault_flags=0;
 protocol::Frame f4;generated::encode(m,f4);generated::MtrMotorFbk d4;generated::decode(f4.view(),d4);
-CHECK_EQ(d4.applied_speed_command_mmps,1500,"[4]0x206");CHECK_EQ(d4.fault_flags,0,"no faults");
+CHECK_EQ(d4.motor_command_speed_mmps,1500,"[4]0x206");CHECK_EQ(d4.fault_flags,0,"no faults");
 generated::SysSafetySts st;st.estop_active=false;st.heartbeat_ok=true;protocol::Frame f5;generated::encode(st,f5);
 generated::SysSafetySts d5;generated::decode(f5.view(),d5);CHECK_EQ(d5.estop_active,false,"[5]safety OK");
 T("  Full chain: Host(0x300)->RT->0x204->SYS->MTR->0x206->RT->HOST verified");}

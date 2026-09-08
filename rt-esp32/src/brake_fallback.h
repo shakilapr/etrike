@@ -82,8 +82,10 @@ public:
             } else if (arm_ == false) {
                 // Arm once we have either seen a SYS 0x7B9 or the arm grace passed.
                 const bool saw_sys = (first_sys_0x7B9_us_ >= 0);
-                if (saw_sys || (now - boot_us_ >= int64_t(rt::kSebFallbackArmGraceMs) * 1000))
+                if (saw_sys || (now - boot_us_ >= int64_t(rt::kSebFallbackArmGraceMs) * 1000)) {
                     arm_ = true;
+                    armed_at_us_ = now;
+                }
             }
             if (arm_) {
                 // Issue #5: brake-channel health is INDEPENDENT of the SYS
@@ -92,9 +94,14 @@ public:
                 // stream is absent beyond the guard — with OR without a heartbeat —
                 // RT must become the emergency brake writer; nobody else is
                 // commanding the brake.
-                const bool brake_stale = (last_sys_0x7B9_seen_us_ < 0)
-                    || (now - last_sys_0x7B9_seen_us_)
-                           >= int64_t(rt::kSebFallbackGuardMs) * 1000;
+                // The guard is measured from the last observed 0x7B9, OR — if SYS
+                // has never published one — from the moment we armed, so a slow
+                // cold-start SYS is given the full guard window before RT escalates
+                // (it passes through SYS_DEGRADED first, matching issue #3).
+                const int64_t brake_ref = (last_sys_0x7B9_seen_us_ >= 0)
+                    ? last_sys_0x7B9_seen_us_ : armed_at_us_;
+                const bool brake_stale = (brake_ref < 0)
+                    || (now - brake_ref) >= int64_t(rt::kSebFallbackGuardMs) * 1000;
                 if (brake_stale) {
                     state_ = SebBrakeState::EMERGENCY_FALLBACK;
                     handback_epoch_us_ = -1;   // fresh epoch on entry
@@ -120,11 +127,17 @@ public:
                 break;
             }
             // SYS 0x7B9 absent beyond the guard -> the brake producer is truly gone.
-            if (last_sys_0x7B9_seen_us_ < 0
-                || (now - last_sys_0x7B9_seen_us_) >= int64_t(rt::kSebFallbackGuardMs) * 1000) {
-                state_ = SebBrakeState::EMERGENCY_FALLBACK;
-                handback_epoch_us_ = -1;   // fresh epoch on entry
-                handback_verify_count_ = 0;
+            // Measure the guard from the last observed 0x7B9, or from arm time if
+            // SYS has never published one (so a cold-start SYS gets the full window).
+            {
+                const int64_t brake_ref = (last_sys_0x7B9_seen_us_ >= 0)
+                    ? last_sys_0x7B9_seen_us_ : armed_at_us_;
+                if (brake_ref < 0
+                    || (now - brake_ref) >= int64_t(rt::kSebFallbackGuardMs) * 1000) {
+                    state_ = SebBrakeState::EMERGENCY_FALLBACK;
+                    handback_epoch_us_ = -1;   // fresh epoch on entry
+                    handback_verify_count_ = 0;
+                }
             }
             break;
 
@@ -177,6 +190,7 @@ public:
         boot_us_ = boot_us;
         state_ = SebBrakeState::NORMAL;
         arm_ = false;
+        armed_at_us_ = -1;
         first_sys_0x7B9_us_ = -1;
         last_sys_0x7B9_seen_us_ = -1;
         degraded_since_us_ = -1;
@@ -189,6 +203,7 @@ public:
 private:
     int64_t boot_us_ = 0;
     bool    arm_ = false;               // fallback armed (startup acquisition met)
+    int64_t armed_at_us_ = -1;          // timestamp arm_ first became true
     SebBrakeState state_ = SebBrakeState::NORMAL;
     int64_t first_sys_0x7B9_us_ = -1;
     int64_t last_sys_0x7B9_seen_us_ = -1;

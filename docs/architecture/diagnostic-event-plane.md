@@ -871,7 +871,7 @@ All three controller nodes broadcast both **periodic health state** and **event-
    * Emits MTR diagnostic records using standard DLC-8 layout with live snapshot data
 
 2. **Motor Actuator Feedback (`0x206 MTR_MOTOR_FBK` @ 50 Hz / 20 ms):**
-   * Actuator speed (`applied_speed_command_mmps` int16), Engaged relay gear state (`gear_state`: `N=0, D=1, S=2, R=3`), Fault flags (`kMtrFaultEstopActive=0x01, kMtrFaultCmdTimeout=0x02, kMtrFaultStartupReady=0x10`)
+   * Actuator speed (`motor_command_speed_mmps` int16), Engaged relay gear state (`gear_state`: `N=0, D=1, S=2, R=3`), Fault flags (`kMtrFaultEstopActive=0x01, kMtrFaultCmdTimeout=0x02, kMtrFaultStartupReady=0x10`)
 
 3. **Throttle Actuator Status (`0x120 SYS_THROTTLE_STS` @ 100 Hz / 10 ms):**
    * Commanded speed setpoint (`speed_mmps` int16) reflecting live DAC output status

@@ -255,7 +255,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     if (fr.id == can::kIdMtrMotorFbk && !from_high) {
         can::gen::MtrMotorFbk value{};
         if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) {
-            g_mtr_applied_speed_command_mmps.store(value.applied_speed_command_mmps);
+            g_mtr_motor_command_speed_mmps.store(value.motor_command_speed_mmps);
             g_mtr_gear_state.store(value.gear_state);
             g_last_mtr_feedback_us.store(esp_timer_get_time());
         }

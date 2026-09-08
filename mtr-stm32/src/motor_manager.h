@@ -431,7 +431,7 @@ public:
     can::Frame build_motor_feedback_frame() const {
         can::gen::MtrMotorFbk fbk{};
         bool inhibited = propulsion_inhibited();
-        fbk.applied_speed_command_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
+        fbk.motor_command_speed_mmps = inhibited ? 0 : static_cast<int16_t>(target_speed_mmps_);
         fbk.gear_state = static_cast<uint8_t>(relays_.current_gear());
 
         uint8_t flags = 0;

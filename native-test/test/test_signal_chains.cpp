@@ -50,9 +50,9 @@ protocol::Frame f169;ses::encode_command(s,f169);
 uint8_t cs=0;for(int i=0;i<7;i++)cs^=f169.data[i];
 CHECK_EQ(f169.data[7],(uint8_t)(cs^0xFF),"[3]0x169 checksum");
 // MTR feedback
-generated::MtrMotorFbk m;m.applied_speed_command_mmps=1500;m.gear_state=1;m.fault_flags=0;
+generated::MtrMotorFbk m;m.motor_command_speed_mmps=1500;m.gear_state=1;m.fault_flags=0;
 protocol::Frame f206;generated::encode(m,f206);generated::MtrMotorFbk dm;generated::decode(f206.view(),dm);
-CHECK_EQ(dm.applied_speed_command_mmps,1500,"[4]0x206 speed=1500");CHECK_EQ(dm.fault_flags,0,"[4]no faults");
+CHECK_EQ(dm.motor_command_speed_mmps,1500,"[4]0x206 speed=1500");CHECK_EQ(dm.fault_flags,0,"[4]no faults");
 printf("  Chain: Host(0x300)?RT?0x204(1500)?SYS/MTR?0x206(1500)\n");}
 
 static void t7(){printf("\n=== Chain 7: Obstacle?ESTOP ===\n");

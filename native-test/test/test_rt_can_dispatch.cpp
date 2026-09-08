@@ -32,7 +32,7 @@ std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 std::atomic<int32_t> g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t> g_ses_angle_status{0};
 std::atomic<int32_t> g_brake_kpa_to_send{0};
-std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t> g_mtr_motor_command_speed_mmps{0};
 std::atomic<uint8_t> g_mtr_gear_state{uint8_t(can::Gear::N)};
 std::atomic<int32_t> g_direct_steer_angle_0_1deg{0};
 std::atomic<bool> g_direct_steer_valid{false};
@@ -190,7 +190,7 @@ int main() {
         DispatchContext ctx{};
         esp_timer_test_advance(3000);
         process_frame(fr, false, ctx);
-        CHECK(g_mtr_applied_speed_command_mmps.load() == -250);
+        CHECK(g_mtr_motor_command_speed_mmps.load() == -250);
         CHECK(g_mtr_gear_state.load() == uint8_t(can::Gear::R));
         CHECK(g_last_mtr_feedback_us.load() == 3000);
     }

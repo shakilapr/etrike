@@ -70,7 +70,7 @@ inline bool decode_hmi_mode(FrameView frame, ModeRequest& out) {
 inline bool decode_mtr_motor(FrameView frame, MotorFeedback& out) {
     gen::MtrMotorFbk fbk{};
     if (!etrike::protocol::succeeded(gen::decode(frame, fbk))) return false;
-    out.applied_speed_command_mmps = fbk.applied_speed_command_mmps;
+    out.motor_command_speed_mmps = fbk.motor_command_speed_mmps;
     out.gear_state = fbk.gear_state;
     out.fault_flags = fbk.fault_flags;
     return true;

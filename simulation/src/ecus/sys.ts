@@ -20,7 +20,7 @@ export class SysEcu implements SimulatedEcu {
   private currentMode: "manual" | "auto" | "estop" = "manual";
   private sysHbCtr = 0;
   private cmdSpeedMmps = 0;
-  private appliedSpeedCommandMmps = 0;
+  private motorCommandSpeedMmps = 0;
   private brakeKpa = 0;
   private lights = 0; // bitfield: turn left, turn right, brake, head
   private diagHeapKb = 500;
@@ -47,7 +47,7 @@ export class SysEcu implements SimulatedEcu {
 
   setEstopButton(pressed: boolean): void { this.safety.setEstop(pressed); }
   setBrakeLever(pressed: boolean): void { this.safety.setBrakeLever(pressed); }
-  setActualSpeed(mmps: number): void { this.appliedSpeedCommandMmps = mmps; }
+  setActualSpeed(mmps: number): void { this.motorCommandSpeedMmps = mmps; }
 
   /**
    * Track ESTOP events for rate-limiting (I9a).
@@ -109,9 +109,9 @@ export class SysEcu implements SimulatedEcu {
       }
       const motor = decodeAs(f, "mtr:mtr_motor_fbk");
       if (motor !== undefined) {
-        this.appliedSpeedCommandMmps = Number(motor.applied_speed_command_mmps); // 0x206 = setpoint echo (not measured)
+        this.motorCommandSpeedMmps = Number(motor.motor_command_speed_mmps); // 0x206 = setpoint echo (not measured)
         this.safety.feedMtrFeedback({
-          appliedSpeed: this.appliedSpeedCommandMmps,
+          appliedSpeed: this.motorCommandSpeedMmps,
           gearState: Number(motor.gear_state),
           faultFlags: Number(motor.fault_flags),
         }, nowMs);
@@ -164,7 +164,7 @@ export class SysEcu implements SimulatedEcu {
 
     // ?? EGAS L2 check (every 20ms) ??????????????????????????????
     if (nowMs % 20 === 0) {
-      const egasFault = this.safety.checkEgasL2(nowMs, this.cmdSpeedMmps, this.appliedSpeedCommandMmps);
+      const egasFault = this.safety.checkEgasL2(nowMs, this.cmdSpeedMmps, this.motorCommandSpeedMmps);
       if (egasFault) {
         // EGAS L2 fault triggers ESTOP
         this.trackEstopEvent(nowMs);

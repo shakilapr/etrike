@@ -83,7 +83,7 @@ void test_success_vectors() {
     check_vector(throttle, std::array<std::uint8_t, 2>{0xFF, 0xFE});
 
     generated::MtrMotorFbk motor{};
-    motor.applied_speed_command_mmps = -2;
+    motor.motor_command_speed_mmps = -2;
     motor.gear_state = 3;
     motor.fault_flags = 17;
     check_vector(motor, std::array<std::uint8_t, 4>{0xFF, 0xFE, 0x03, 0x11});
@@ -310,7 +310,7 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-    CHECK(etrike::protocol::kMessages.size() == 50);
+    CHECK(etrike::protocol::kMessages.size() == 52);
     CHECK(etrike::protocol::kRoutes.size() == 11);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);
@@ -321,7 +321,7 @@ void test_metadata_and_compatibility() {
         CHECK(meta != nullptr);
         CHECK(meta->latching == true);
         CHECK(meta->is_estop_cause == true);
-        CHECK(etrike::diagnostics::kImplementedDiagCount == 42);
+        CHECK(etrike::diagnostics::kImplementedDiagCount == 43);
         CHECK(etrike::diagnostics::kDiagnosticsHash.size() == 64);
         CHECK(etrike::diagnostics::diag_meta(static_cast<etrike::diagnostics::DiagId>(0x0201)) != nullptr);
     }

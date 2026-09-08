@@ -27,10 +27,10 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 0x204,RT_DRIVE_CMD_low,RT,"SYS, MTR",5,10,motor_speed_mmps,0,0,32,signed,1,"[-500, 3000]",,
 ,,,,,,gear,4,0,8,unsigned,1,"[0, 3]",," (Values: 0=N, 1=D, 2=S, 3=R)"
 0x205,RT_BRAKE_CMD_low,RT,SYS,4,20,brake_pressure_kpa,0,0,32,signed,1,"[0, 20000]",,
-0x206,MTR_MOTOR_FBK_low,MTR,"RT, SYS, Host",4,20,applied_speed_command_mmps,0,0,16,signed,1,"[-500, 3000]",,
+0x206,MTR_MOTOR_FBK_low,MTR,"RT, SYS, Host",4,20,motor_command_speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 ,,,,,,gear_state,2,0,8,unsigned,1,"[0, 3]",,
 ,,,,,,fault_flags,3,0,8,unsigned,1,"[0, 255]",,
-0x206,MTR_MOTOR_FBK_high,MTR,"RT, SYS, Host",4,20,applied_speed_command_mmps,0,0,16,signed,1,"[-500, 3000]",,
+0x206,MTR_MOTOR_FBK_high,MTR,"RT, SYS, Host",4,20,motor_command_speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 ,,,,,,gear_state,2,0,8,unsigned,1,"[0, 3]",,
 ,,,,,,fault_flags,3,0,8,unsigned,1,"[0, 255]",,
 0x210,RT_STATE_RPT_high,RT,"Host, SYS",6,100,mode,0,0,8,unsigned,1,"[0, 2]",," (Values: 0=MANUAL, 1=AUTO, 2=ESTOP)"

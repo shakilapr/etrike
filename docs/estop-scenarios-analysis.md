@@ -104,7 +104,7 @@ Almost every scenario collapses into one of five structural root causes:
   See `docs/working-architecture.md` §8 item 1.
 - **Logic:** `cmd == applied` always by construction (`main.cpp:594-597`), so
   DAC-stuck/relay-weld/motor-runaway never produce a mismatch. Field renamed to
-  `applied_speed_command_mmps` across protocol + MTR + RT + SYS **[FIXED]** so
+  `motor_command_speed_mmps` across protocol + MTR + RT + SYS **[FIXED]** so
   nothing downstream mistakes it for a measurement.
 - **Optimal:** **[HARDWARE]** a wheel/motor speed sensor; then EGAS becomes real.
   Until then the check is a command-path consistency check only (and must be
@@ -260,7 +260,7 @@ Almost every scenario collapses into one of five structural root causes:
 | Item | Change | Status |
 |------|--------|--------|
 | RC2 | SYS forces ESTOP when its own `task_safety`/`task_brake`/`task_dispatch`/`task_can_tx`/`task_mode` miss ≥2×1.5 s deadlines (`sys-esp32/src/main.cpp:1049-1077`) | **[FIXED]** commit `6ac9fa4` |
-| RC5/#1 | SYS `0x206` consumer uses `applied_speed_command_mmps` (matches committed protocol + MTR/RT); EGAS re-framed as command-path check (`sys-esp32/src/main.cpp`) | **[FIXED]** commit `6ac9fa4` |
+| RC5/#1 | SYS `0x206` consumer uses `motor_command_speed_mmps` (matches committed protocol + MTR/RT); EGAS re-framed as command-path check (`sys-esp32/src/main.cpp`) | **[FIXED]** commit `6ac9fa4` |
 | #16 | builds green again: SYS, RT, MTR `pio run -e vehicle`; native ctest (tracked) green | verified |
 
 ## Fixes requiring hardware / SEB / protocol (not code-fixable here)

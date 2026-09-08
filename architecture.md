@@ -641,7 +641,7 @@ The following task and safety details are design targets only. They do not make 
 
 ### Atomic Sensor Pipeline (Same Pattern as RT)
 
-Nine lock-free atomics: `g_mode`, `g_estop_active`, `g_cmd_speed_mmps`, `g_cmd_gear`, `g_last_cmd_tick`, `g_applied_speed_command_mmps`, `g_current_gear`, `g_fault_flags`, `g_startup_grace`. CAN RX writes to atomics. Control reads atomics + ADC. CAN TX reads atomics. No locks.
+Nine lock-free atomics: `g_mode`, `g_estop_active`, `g_cmd_speed_mmps`, `g_cmd_gear`, `g_last_cmd_tick`, `g_motor_command_speed_mmps`, `g_current_gear`, `g_fault_flags`, `g_startup_grace`. CAN RX writes to atomics. Control reads atomics + ADC. CAN TX reads atomics. No locks.
 
 ### Mode-Gated Control
 

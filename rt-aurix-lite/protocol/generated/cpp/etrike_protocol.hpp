@@ -718,7 +718,7 @@ struct MtrMotorFbk {
     static constexpr std::uint32_t kLowId = 0x206u;
     static constexpr std::uint32_t kLowCycleMs = 20u;
     static constexpr bool kLowExtended = false;
-    std::int16_t applied_speed_command_mmps{};
+    std::int16_t motor_command_speed_mmps{};
     std::uint8_t gear_state{};
     std::uint8_t fault_flags{};
     struct ActualSpeedMmpsMeta {
@@ -743,10 +743,10 @@ struct MtrMotorFbk {
     CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
-        if (applied_speed_command_mmps < -500 || applied_speed_command_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        if (motor_command_speed_mmps < -500 || motor_command_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
         if (gear_state > 3) return CodecStatus::ValueOutOfRange;
         std::array<std::uint8_t, kDlc> payload{};
-        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(applied_speed_command_mmps));
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(motor_command_speed_mmps));
         detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(gear_state));
         detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(fault_flags));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
@@ -757,9 +757,9 @@ struct MtrMotorFbk {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
         MtrMotorFbk value{};
-        const std::uint64_t raw_applied_speed_command_mmps = detail::extract(source, 0u, 0u, 16u, false);
-        value.applied_speed_command_mmps = static_cast<std::int16_t>(detail::sign_extend(raw_applied_speed_command_mmps, 16u));
-        if (value.applied_speed_command_mmps < -500 || value.applied_speed_command_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_motor_command_speed_mmps = detail::extract(source, 0u, 0u, 16u, false);
+        value.motor_command_speed_mmps = static_cast<std::int16_t>(detail::sign_extend(raw_motor_command_speed_mmps, 16u));
+        if (value.motor_command_speed_mmps < -500 || value.motor_command_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
         const std::uint64_t raw_gear_state = detail::extract(source, 2u, 0u, 8u, false);
         value.gear_state = static_cast<std::uint8_t>(raw_gear_state);
         if (value.gear_state > 3) return CodecStatus::ValueOutOfRange;

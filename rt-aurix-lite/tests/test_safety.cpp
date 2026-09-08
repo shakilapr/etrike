@@ -116,7 +116,7 @@ void test_safety_mtr_loss() {
 void test_safety_follow_error() {
     SafetySupervisor ss;
     MotorFeedback mf;
-    mf.applied_speed_command_mmps = 2000;
+    mf.motor_command_speed_mmps = 2000;
     DriveCommand dc;
     rta::SteeringFeedback sf;
     sf.valid = true;
@@ -138,7 +138,7 @@ void test_safety_follow_error() {
 void test_safety_obstacle() {
     SafetySupervisor ss;
     MotorFeedback mf;
-    mf.applied_speed_command_mmps = 1000;
+    mf.motor_command_speed_mmps = 1000;
     DriveCommand dc;
     rta::SteeringFeedback sf;
 
@@ -153,7 +153,7 @@ void test_safety_obstacle() {
 void test_safety_startup_grace() {
     SafetySupervisor ss;
     MotorFeedback mf;
-    mf.applied_speed_command_mmps = 2000;
+    mf.motor_command_speed_mmps = 2000;
     DriveCommand dc;
     rta::SteeringFeedback sf;
     sf.valid = true;

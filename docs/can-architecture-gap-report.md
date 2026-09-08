@@ -135,7 +135,7 @@ Also note the obstacle-ESTOP trigger in `safety_monitor.h:157-162`:
 
 ```cpp
 if (obstacle_mm <= shared::kObstacleStopMM                            // 300 mm
-    && std::abs(g_mtr_applied_speed_command_mmps.load()) > shared::kLowSpeedThreshMmps)  // 50 mm/s
+    && std::abs(g_mtr_motor_command_speed_mmps.load()) > shared::kLowSpeedThreshMmps)  // 50 mm/s
 ```
 
 ? the document's "vehicle speed > 100 mm/s" qualifier is also outdated.

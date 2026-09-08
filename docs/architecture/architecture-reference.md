@@ -1003,7 +1003,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x001` | SAFETY_ESTOP | — | RT or any | `mode_set(Estop)` |
 | `0x204` | RT_DRIVE_CMD | `{i32 speed, u8 gear}` | RT | → `setpoint_queue`; stale >200ms → zero speed + N |
 | `0x205` | RT_BRAKE_CMD | `i32 brake_pressure_kpa` | RT | → `g_brake_pressure_kpa` atomic; >0 → SEB Pressure Mode |
-| `0x206` | MTR_MOTOR_FBK | `{i16 applied_speed_command_mmps, u8 gear_state, u8 fault_flags}` | MTR | Command-path consistency: compare speed setpoint vs applied command (echo); mismatch → ESTOP |
+| `0x206` | MTR_MOTOR_FBK | `{i16 motor_command_speed_mmps, u8 gear_state, u8 fault_flags}` | MTR | Command-path consistency: compare speed setpoint vs applied command (echo); mismatch → ESTOP |
 | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | RT | → `g_light_state` |
 | `0x6FB` | SEB_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | SEB | Monitor motor current / ECU temp trends for degradation early warning |
 | `0x721` | SEB_STATUS | `{u8 status, u16 stroke, u16 angle, u8 press, …}` (8 bytes) | SEB | Sync boot stroke, brake feedback, error level |
@@ -1534,7 +1534,7 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | GPIO2 brake lever (active-low) | Lever LOW → `0x7B9` stroke = `kBrakeManualStroke` (~15 mm). Driver always wins over AUTO. | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` → SEB (Stroke Mode) | Brake (MANUAL override) |
 | `0x204` RT_DRIVE_CMD — DLC=5, `{i32 speed_mmps, u8 gear}` | AUTO: `abs(speed)/3000 × 4095` → MCP4725 DAC, gear byte → relay. MANUAL: ADC→DAC pass-through. ESTOP: DAC=0, all gear OFF. Stall >200ms → zero+N. | MCP4725 DAC (0–5V) + gear relays (72V D/S/R) | Motor throttle + gear |
 | `0x205` RT_BRAKE_CMD — DLC=4, `{i32 brake_pressure_kpa}` | kPa→SEB raw (`kPa × 0.02`), clamp to `kSebMaxPressureRaw` (100). Mode-switch: 0→positive → Pressure Mode (bit=1); positive→0 → Stroke Mode stroke=0. | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` → SEB (Pressure Mode) | Brake pressure (AUTO) |
-| `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 applied_speed_command_mmps, u8 gear_state, u8 fault_flags}` | Command-path consistency: compare 0x204 setpoint vs 0x206 applied command (echo, not a measured speed). Mismatch → ESTOP. `ESTOP_ACTIVE` bit (0x01) → force ESTOP. | `0x001` SAFETY_ESTOP — DLC=0 if mismatch | Motor safety (command-path / EGAS L2 role) |
+| `0x206` MTR_MOTOR_FBK — DLC=4, `{i16 motor_command_speed_mmps, u8 gear_state, u8 fault_flags}` | Command-path consistency: compare 0x204 setpoint vs 0x206 applied command (echo, not a measured speed). Mismatch → ESTOP. `ESTOP_ACTIVE` bit (0x01) → force ESTOP. | `0x001` SAFETY_ESTOP — DLC=0 if mismatch | Motor safety (command-path / EGAS L2 role) |
 | `0x7FD` RT_HEARTBEAT — DLC=2, `{u8 alive_ctr, u8 health_flags}` | 1000ms timeout (2 missed at 2 Hz) → ESTOP. Faster: 0x204 staleness at 200ms catches RT crash first. | `0x001` SAFETY_ESTOP — DLC=0 if timeout | RT liveness |
 | GPIO11 MODE button (active-low, debounced) | Toggle MANUAL ↔ AUTO on falling edge. Ignored in ESTOP. | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` → RT + MTR | Mode control |
 | GPIO41 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. Long-press (3s) secondary ESTOP exit (gap #11). | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode}` → RT + MTR | ESTOP exit |
