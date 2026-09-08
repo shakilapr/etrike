@@ -19,13 +19,17 @@ bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
     if (m_mode == can::Mode::Estop) {
         if (mode_btn_pressed) {
             if (++m_estop_longpress_ctr >= (kEstopLongPressMs / 100)) {
-                set_mode(can::Mode::Manual);
-                m_estop_longpress_ctr = 0;
-                m_prev_mode_btn = false;  // prevent release from toggling back to AUTO
-                m_prev_start_btn = start_btn_pressed;
-                m_debounce = kDebounceMs / 100;
-                // Caller sends CAN 0x110 — log at that level
-                return true;
+                // Issue #7: the exit is a validated transaction — refused while
+                // a latched fault's cause is still asserted. Keep counting so a
+                // held MODE re-attempts once the cause clears.
+                if (try_exit_estop()) {
+                    m_estop_longpress_ctr = 0;
+                    m_prev_mode_btn = false;  // prevent release from toggling back to AUTO
+                    m_prev_start_btn = start_btn_pressed;
+                    m_debounce = kDebounceMs / 100;
+                    // Caller sends CAN 0x110 — log at that level
+                    return true;
+                }
             }
         } else {
             m_estop_longpress_ctr = 0;  // released before timeout
@@ -39,11 +43,17 @@ bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
     // START button — exit ESTOP→MANUAL only
     if (falling_edge(m_prev_start_btn, start_btn_pressed)) {
         if (m_mode == can::Mode::Estop) {
-            set_mode(can::Mode::Manual);
-            m_prev_mode_btn = mode_btn_pressed;
-            m_prev_start_btn = start_btn_pressed;
-            m_debounce = kDebounceMs / 100;  // 500ms → 5 ticks @ 10 Hz
-            return true;
+            // Issue #7: validated transaction. If the cause is still active the
+            // press is consumed (no exit); the operator must press again after
+            // the fault clears.
+            if (try_exit_estop()) {
+                m_prev_mode_btn = mode_btn_pressed;
+                m_prev_start_btn = start_btn_pressed;
+                m_debounce = kDebounceMs / 100;  // 500ms → 5 ticks @ 10 Hz
+                return true;
+            }
+            m_prev_start_btn = start_btn_pressed;  // consume the edge
+            return false;
         }
     }
 
@@ -68,6 +78,17 @@ bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
 }
 
 void ModeManager::force_estop() { set_mode(can::Mode::Estop); }
+
+bool ModeManager::try_exit_estop() {
+    if (m_mode != can::Mode::Estop) return false;
+    // Issue #7: never leave ESTOP while a latched fault's cause is still
+    // asserted. Clearing the latch here, in the same step as the mode
+    // transition, makes the reset a single transaction.
+    if (!sys::latched_causes_currently_clearable()) return false;
+    sys::clear_latched_fault_reasons();
+    set_mode(can::Mode::Manual);
+    return true;
+}
 
 void ModeManager::set_from_can(uint8_t m) {
     // Only MANUAL (0) and AUTO (1) are selectable via CAN 0x110.

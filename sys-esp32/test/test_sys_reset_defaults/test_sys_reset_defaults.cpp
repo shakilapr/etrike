@@ -6,11 +6,8 @@
 #include "brake_control.h"
 #include "inhibit_state.h"
 
-// Define storage for atomics declared in inhibit_state.h
-namespace sys {
-std::atomic<uint32_t> g_inhibit_reasons{0};
-std::atomic<uint32_t> g_latched_fault_reasons{0};
-}
+// g_inhibit_reasons / g_latched_fault_reasons are defined in inhibit_state.cpp
+// (linked by the native test build); we only reset them between tests.
 
 void setUp(void) {
     sys::g_inhibit_reasons.store(0);

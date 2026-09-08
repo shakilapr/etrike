@@ -130,7 +130,6 @@ static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Host
 static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
 static std::atomic<uint8_t>  g_rt_safety_state{0}; // RT safety_state from 0x210 (0=Normal, 1=InternalEstop, 2=Fault)
-static std::atomic<uint8_t>  g_seb_status_byte0{0xFF}; // byte 0 from 0x721 (alignment + error_status), 0xFF = no frame yet
 static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 MTR_MOTOR_FBK (C6b)
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
@@ -187,16 +186,13 @@ static std::atomic<uint32_t> g_last_estop_trigger_tick{0};
 static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
 
 // ── SEB fault state for 0x600 diag (Gap #13) ─────────────────────────
-static std::atomic<uint8_t>  g_seb_error_status{0};   // from 0x721 byte0 bits6-7
+// g_seb_error_status / g_seb_status_byte0 are defined in inhibit_state.cpp.
 static std::atomic<bool>     g_brake_fault_active{false};
 
 // ── Independent per-owner traction-inhibit masks (issues #5/#7) ─────
-// See inhibit_state.h. Each detector owns its own bit; latched faults are
-// cleared only by the explicit reset path.
-namespace sys {
-std::atomic<uint32_t> g_inhibit_reasons{0};
-std::atomic<uint32_t> g_latched_fault_reasons{0};
-}  // namespace sys
+// See inhibit_state.h. g_inhibit_reasons / g_latched_fault_reasons are defined
+// in inhibit_state.cpp; latched faults are cleared only by the validated reset
+// transaction (ModeManager::try_exit_estop).
 
 // ── System ESTOP latch predicate (safety invariant, issue #4) ────────
 // The persistent ESTOP state SYS publishes (0x011.estop_active and
@@ -742,37 +738,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         mode_was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
         if (changed) {
             ESP_LOGI(TAG, "Mode changed to %s", g_mode_mgr.name());
-        }
-
-        // Issue #5: explicit reset path for latched brake safety faults. When the
-        // operator successfully exits ESTOP (START button / MODE long-press drove
-        // ModeManager out of ESTOP), clear any latched fault whose underlying cause
-        // is no longer asserted. A latch whose cause is STILL active is retained so
-        // a next-0x721-frame re-latch is avoided (reset must not paper over a live
-        // fault). Only this reset path mutates g_latched_fault_reasons.
-        if (g_mode_mgr.mode() != can::Mode::Estop) {
-            uint32_t latched = sys::g_latched_fault_reasons.load(std::memory_order_relaxed);
-            if (latched != 0u) {
-                if ((latched & sys::kLatchedSebL3)
-                    && g_seb_error_status.load(std::memory_order_relaxed) < 3) {
-                    sys::g_latched_fault_reasons.fetch_and(
-                        ~static_cast<uint32_t>(sys::kLatchedSebL3), std::memory_order_relaxed);
-                    ESP_LOGI(TAG, "Latched SEB L3 fault cleared — underlying cause healthy");
-                }
-                // kLatchedBrakeFollowing clears only when no following excursion is
-                // active; the excursion detector re-arms on a fresh 0x721 in Stroke
-                // mode. If 0x721 is stale we cannot prove the cause cleared, so keep
-                // the latch (SEB-comms inhibit already holds traction).
-                if ((latched & sys::kLatchedBrakeFollowing)) {
-                    bool follow_clear = g_seb_status_byte0.load(std::memory_order_relaxed) != 0xFF;
-                    if (follow_clear) {
-                        sys::g_latched_fault_reasons.fetch_and(
-                            ~static_cast<uint32_t>(sys::kLatchedBrakeFollowing),
-                            std::memory_order_relaxed);
-                        ESP_LOGI(TAG, "Latched brake-following fault cleared — underlying cause healthy");
-                    }
-                }
-            }
         }
 
         // Authoritative actuator commands are emitted every cycle (100 ms).
