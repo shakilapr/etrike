@@ -40,6 +40,10 @@ extern std::atomic<uint32_t> g_safety_event_drops;
 extern std::atomic<bool>     g_steering_estop_request;
 extern std::atomic<bool>     g_steering_exit_request;
 extern std::atomic<bool>     g_sys_clear_in_progress;
+// Issue #10: SYS 0x011 authority not yet acquired / lost. While true, RT must
+// NOT grant propulsion/steering authority (boot never grants authority). Set by
+// t_control's SafetyStreamSupervisor each cycle; consumed by run_safety_checks.
+extern std::atomic<bool>     g_no_sys_authority;
 
 // ?? Shared state (atomics for sensor / latest-value data) ???????????
 extern std::atomic<int32_t>  g_brake_request_kpa;

@@ -95,6 +95,11 @@ std::atomic<int64_t>  g_last_low_peer_us{0};
 std::atomic<int64_t>  g_last_sys_safety_sts_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
+// Issue #10: SYS 0x011 safety-authority derived flag. Default = no authority
+// (boot never grants it); t_control flips it once the 0x011 stream is acquired.
+// g_safety_authority (the supervisor) is defined in namespace rt below.
+std::atomic<bool> g_no_sys_authority{true};
+
 // ?? Per-task alive counters for multi-task watchdog (gap #5) ??????
 static std::atomic<uint32_t> g_alive_control{0};
 static std::atomic<uint32_t> g_alive_dispatch{0};
@@ -179,6 +184,7 @@ static bool high_receive(can::Frame& fr, uint32_t timeout) {
 namespace rt {
 MtrHealthSupervisor g_mtr_health;
 SebBrakeFallback    g_brake_fallback;
+SafetyStreamSupervisor g_safety_authority;  // issue #10 (0x011 authority acquisition)
 }  // namespace rt
 
 // ?? CAN TX helper ? checks return, logs failure, detects recovery ????
@@ -350,6 +356,7 @@ static void pump_diagnostics() {
         if (!fallback_inited) {
             fallback_inited = true;
             rt::g_brake_fallback.init(esp_timer_get_time());
+            rt::g_safety_authority.reset(esp_timer_get_time());
         }
         if (g_steering_estop_request.exchange(false)) {
             g_steering.start_estop(false);
@@ -395,17 +402,36 @@ static void pump_diagnostics() {
                 break;
             }
         }
-        // Fail-safe: loss of the SYS_SAFETY_STS (0x011) stream must keep (or set)
-        // the E-stop latch ? never silently clear it.
-        if (!m_estop_pending
-            && rt::sys_safety_sts_lost(g_last_sys_safety_sts_us.load(),
-                                       esp_timer_get_time())) {
-            m_estop_pending = true;
-            m_estop_reason = rt::kEstopReasonCanEstop;
-            rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
-                             static_cast<std::uint16_t>(
-                                 (esp_timer_get_time()
-                                  - g_last_sys_safety_sts_us.load()) / 1000));
+        // Issue #10: SYS 0x011 safety-authority acquisition + freshness fail-safe.
+        // Booting grants NO authority: RT must receive N valid 0x011 frames before
+        // drive authority is confirmed (UNACQUIRED -> ACQUIRED). A post-acquisition
+        // stream loss (LOST) keeps/sets the E-stop latch — never a silent clear. A
+        // stream that never arrives within the acquisition window is a SYS-absent
+        // fail-safe (motion inhibited via g_no_sys_authority) but NOT a global ESTOP
+        // latch (a dead SYS could never send the two-frame clear to release it).
+        {
+            const int64_t now_safety = esp_timer_get_time();
+            const auto sst = rt::g_safety_authority.update(
+                now_safety, g_last_sys_safety_sts_us.load());
+            if (sst.estop_latch_required && !m_estop_pending) {
+                m_estop_pending = true;
+                m_estop_reason = rt::kEstopReasonCanEstop;
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                                 static_cast<std::uint16_t>(
+                                     (now_safety - g_last_sys_safety_sts_us.load())
+                                     / 1000));
+            }
+            if (sst.sys_absent_fault) {
+                g_no_sys_authority.store(true, std::memory_order_relaxed);
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                                 static_cast<std::uint16_t>(
+                                     rt::kSysSafetyAcquireTimeoutUs / 1000));
+            } else {
+                // UNACQUIRED (not yet N frames) also grants no authority; only a
+                // fresh ACQUIRED stream confirms it.
+                g_no_sys_authority.store(!sst.motion_authorized,
+                                         std::memory_order_relaxed);
+            }
         }
         // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
         // SEB takeover is published immediately after safety checks below.

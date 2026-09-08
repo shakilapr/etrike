@@ -160,6 +160,14 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         r.disable_steering = true;
     }
 
+    // Issue #10: no drive/steer authority until the SYS 0x011 stream is acquired.
+    // Boot never grants authority. While UNACQUIRED (or the stream is LOST and the
+    // estop latch has not yet engaged) t_control publishes g_no_sys_authority=true;
+    // this inhibits propulsion. Excluded in bench solo mode (no SYS present).
+    if (!g_bench_solo_mode && g_no_sys_authority.load(std::memory_order_relaxed)) {
+        r.zero_setpoints = true;
+    }
+
     if (startup_grace) return r;
 
     // Issue #8: MTR feedback health ? RT watchdogs its own propulsion actuator.
