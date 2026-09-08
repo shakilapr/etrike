@@ -83,6 +83,9 @@ class EstopEventMonitor:
         self._last_rt_event: tuple[bool, int] | None = None
         self._last_rt_event_bus: str | None = None
 
+        # NODE_STATUS (0x500/0x501/0x502) persistent latch tracking: (node, bus).
+        self._node_estop_latched: dict[tuple[str, str], bool] = {}
+
         self._sys_estop_by_bus: dict[str, bool] = {}
         self._sys_hb_ok_by_bus: dict[str, bool] = {}
         self._sys_can_ok_by_bus: dict[str, bool] = {}
@@ -121,6 +124,7 @@ class EstopEventMonitor:
         self._ses_fault_by_bus.clear()
         self._last_rt_event = None
         self._last_rt_event_bus = None
+        self._node_estop_latched.clear()
 
     def observe(self, message: MessageState, frame: RawFrameEnvelope) -> None:
         if message.name == "SAFETY_ESTOP":
@@ -131,6 +135,8 @@ class EstopEventMonitor:
             self._observe_sys_state(message, frame)
         elif message.name == "SES_ERR_INFO":
             self._observe_ses_err_info(message, frame)
+        elif message.name in ("SYS_NODE_STATUS", "RT_NODE_STATUS", "MTR_NODE_STATUS"):
+            self._observe_node_status(message)
 
     def _host_correlation(self) -> tuple[bool, str | None]:
         if self._host_inject_at is None:
@@ -170,6 +176,49 @@ class EstopEventMonitor:
                 "session_id": self._get_session_id(),
             },
         )
+
+    def _observe_node_status(self, message: MessageState) -> None:
+        """Track the NODE_STATUS persistent latch (estop_latched / ESTOP state).
+
+        These frames are observational and carry the authoritative latch that the
+        older per-signal frames only approximate, so a rising estop_latched must
+        produce the same durable evidence as a raw 0x001 observation.
+        """
+        node = message.name.replace("_NODE_STATUS", "").lower()
+        key = (node, message.bus)
+        latched = _signal_bool(message, "estop_latched")
+        if latched is None:
+            latched = _signal_bool(message, "estop_active")
+        if latched is None:
+            return
+        prev = self._node_estop_latched.get(key)
+        self._node_estop_latched[key] = latched
+
+        state_label = _signal_number(message, "node_state")
+        if latched and not prev:
+            detail = (
+                f"{message.name} on {message.bus.title()} reports estop_latched "
+                f"(node_state={state_label}). Persistent latch is authoritative."
+            )
+            logger.critical("%s", detail)
+            self._diagnostics.emit(
+                code=f"safety.{node}_estop_latched",
+                title=f"{message.name} ESTOP latched",
+                detail=detail,
+                severity="critical",
+                bus=message.bus,
+                can_id=message.can_id,
+                evidence={
+                    "cause": "node_status_latched",
+                    "node_state": state_label,
+                    "session_id": self._get_session_id(),
+                },
+            )
+        elif not latched and prev:
+            logger.info("%s latch cleared on %s bus", message.name, message.bus.title())
+            self._diagnostics.recover(
+                f"safety.{node}_estop_latched", scope=message.bus, force=True
+            )
 
     def _observe_rt_state(self, message: MessageState) -> None:
         mode = _signal_number(message, "mode")

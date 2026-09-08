@@ -137,6 +137,41 @@ def _find(
     return None
 
 
+# NODE_STATUS family: (frame name, node label). Carries the persistent latch /
+# authority state that the older signal frames only approximate.
+NODE_STATUS_FRAMES: tuple[tuple[str, str], ...] = (
+    ("SYS_NODE_STATUS", "sys"),
+    ("RT_NODE_STATUS", "rt"),
+    ("MTR_NODE_STATUS", "mtr"),
+)
+
+
+def _node_status(messages: list[MessageState], name: str) -> dict[str, Any] | None:
+    """Extract the observational NODE_STATUS fields for one node (fresh only)."""
+    msg = _find(messages, name, "low") or _find(messages, name)
+    if msg is None or not _fresh_ok(msg):
+        return None
+    return {
+        "state": _sig(msg, "node_state"),
+        "estop_active": _on(msg, "estop_active"),
+        "estop_latched": _on(msg, "estop_latched"),
+        "recovery_pending": _on(msg, "recovery_pending"),
+        "ready": _on(msg, "ready"),
+        "degraded": _on(msg, "degraded"),
+        "output_enabled": _on(msg, "output_enabled"),
+        "block_mask": _num(msg, "block_mask"),
+    }
+
+
+def _node_estop_latched(status: dict[str, Any] | None) -> bool:
+    if status is None:
+        return False
+    state = str(status.get("state") or "").strip().upper()
+    return bool(status.get("estop_latched")) or bool(
+        status.get("estop_active")
+    ) or state == "ESTOP"
+
+
 def build_estop_report(
     messages: list[MessageState],
     *,
@@ -186,6 +221,58 @@ def build_estop_report(
 
     sources: list[dict[str, Any]] = []
     causes: list[str] = []
+
+    # NODE_STATUS (0x500/0x501/0x502): the authoritative persistent latch / node
+    # authority view. A latched node must count as an active source even when the
+    # older signal frames race ahead on the same ECU.
+    nodes: dict[str, dict[str, Any]] = {}
+    node_estop: dict[str, bool] = {}
+    for frame_name, node_label in NODE_STATUS_FRAMES:
+        status = _node_status(messages, frame_name)
+        if status is None:
+            continue
+        nodes[node_label] = status
+        node_estop[node_label] = _node_estop_latched(status)
+
+    if node_estop.get("sys"):
+        sources.append(
+            {
+                "id": "sys_node_latched",
+                "active": True,
+                "title": "SYS node ESTOP latched (NODE_STATUS)",
+                "detail": "SYS_NODE_STATUS reports a latched ESTOP node_state / estop_latched",
+            }
+        )
+        causes.append("SYS NODE_STATUS latched")
+    if node_estop.get("rt"):
+        sources.append(
+            {
+                "id": "rt_node_latched",
+                "active": True,
+                "title": "RT node ESTOP latched (NODE_STATUS)",
+                "detail": "RT_NODE_STATUS reports a latched ESTOP node_state / estop_latched",
+            }
+        )
+        causes.append("RT NODE_STATUS latched")
+    if node_estop.get("mtr"):
+        sources.append(
+            {
+                "id": "mtr_node_latched",
+                "active": True,
+                "title": "MTR node ESTOP latched (NODE_STATUS)",
+                "detail": "MTR_NODE_STATUS reports a latched ESTOP node_state / estop_latched",
+            }
+        )
+        causes.append("MTR NODE_STATUS latched")
+    node_inhibited = [
+        label
+        for label, status in nodes.items()
+        if str(status.get("state") or "").strip().upper() in ("INHIBITED", "RECOVER")
+    ]
+    if node_inhibited:
+        causes.append(
+            "NODE_STATUS inhibited/recovering: " + ", ".join(sorted(node_inhibited))
+        )
 
     if host_latch:
         sources.append(
@@ -285,7 +372,7 @@ def build_estop_report(
         if reason_code != 0:
             causes.append(f"RT reason {reason_code}: {reason_human}")
         elif rt_mode_estop:
-            causes.append(f"RT mode ESTOP (reason code 0 / not set)")
+            causes.append("RT mode ESTOP (reason code 0 / not set)")
 
     any_active = bool(
         host_latch
@@ -297,6 +384,7 @@ def build_estop_report(
         or sys_hb_bad
         or sys_can_bad
         or sys_brake_fault
+        or any(node_estop.values())
     )
 
     primary_cause = "No active safety stop"
@@ -329,6 +417,10 @@ def build_estop_report(
     elif sys_estop or rt_mode_estop:
         primary_cause = "ECU reports ESTOP without a specific reason"
         cause_resolution = "unknown"
+    elif any(node_estop.values()):
+        latched = [label for label, active in node_estop.items() if active]
+        primary_cause = "Latched ESTOP in NODE_STATUS: " + ", ".join(sorted(latched))
+        cause_resolution = "reported"
 
     if not any_active:
         summary = "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP"
@@ -363,4 +455,5 @@ def build_estop_report(
         "cause_resolution": cause_resolution,
         "summary": summary,
         "reason_codes": dict(RT_ESTOP_REASONS),
+        "nodes": nodes,
     }
