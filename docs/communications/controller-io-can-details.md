@@ -35,7 +35,7 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 | `g_brake_request_kpa` | `atomic<int32_t>` | Arbitrated brake pressure request. |
 | `g_obstacle_mm` | `atomic<uint32_t>` | Distance to nearest obstacle from Jetson (mm). |
 | `g_ses_angle_0_1deg` | `atomic<int32_t>` | Actual steering angle feedback (in 0.1?). |
-| `g_mtr_motor_command_speed_mmps`| `atomic<int32_t>` | Actual motor speed feedback (mm/s). |
+| `g_mtr_motor_command_speed_mmps`| `atomic<int32_t>` | MTR's echoed 0x204 speed *command* setpoint from 0x206 — NOT a physical speed measurement (issue #1; physical wheel speed is 0x122 `measured_speed_mmps`). |
 | `g_estop_reason` | `atomic<uint8_t>` | Tracks cause of ESTOP (0=None, 1=BusOff, 2=FollowingErr, etc). |
 | `g_seb_takeover` | `atomic<bool>` | Flag indicating SYS took over brakes due to a timeout. |
 | `g_last_sys_hb_us` | `atomic<int64_t>` | Microsecond timestamp of last valid SYS heartbeat. |
