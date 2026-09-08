@@ -104,6 +104,7 @@ static bool send_estop_frame(const char* caller) {
     can::gen::SafetyEstop message{};
     if (can::gen::encode_safety_estop(message, frame) != can::gen::CodecStatus::Ok)
         return false;
+    sys::mark_estop_broadcast(static_cast<uint32_t>(xTaskGetTickCount()));
     return send_can(frame, caller);
 }
 
@@ -334,10 +335,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_light_bits.store(bits, std::memory_order_relaxed);
             break;
         }
-        case can::kIdSafetyEstop: {  // 0x001 — rate-limited RX (Gap #14)
-            // Always process the safety state change — rate-limiting must
-            // never suppress safety override processing (bug 6.3).
-            // Rate-limit only downstream actions (logging, CAN forwarding).
+        case can::kIdSafetyEstop: {  // 0x001 — rate-limited RX + loopback/reset-grace (Gap #14)
+            // Rate-limit only downstream actions (logging, CAN forwarding); the
+            // safety override itself is always evaluated via rx_estop_suppressed.
             static int        estop_rx_count = 0;
             static TickType_t estop_rx_window_start = 0;
             TickType_t now = xTaskGetTickCount();
@@ -349,6 +349,17 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             } else {
                 ++estop_rx_count;
                 within_limit = (estop_rx_count <= sys::kEstopRateLimitMax);
+            }
+            // Route through the real RX policy (shared with the native-test
+            // harness). Suppress only our own 0x001 reflection or a stray
+            // in-flight 0x001 during the operator reset grace window so the
+            // system cannot livelock re-latching ESTOP. A genuine external
+            // 0x001 outside these windows still latches.
+            if (sys::rx_estop_suppressed(static_cast<uint32_t>(now))) {
+                if (within_limit) {
+                    ESP_LOGW(TAG, "ESTOP via CAN 0x001 (suppressed: loopback/reset-grace)");
+                }
+                break;
             }
             g_mode_mgr.force_estop();
             g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
@@ -709,6 +720,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t last   = xTaskGetTickCount();
     static uint8_t roll_mode_ = 0;
     static uint8_t roll_pwr_ = 0;
+    static bool     mode_was_estop = false;
     while (1) {
         g_alive_mode.store(xTaskGetTickCount(), std::memory_order_relaxed);
 #ifdef TESTING
@@ -720,6 +732,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 #endif
 
         bool changed = g_mode_mgr.tick(mode_btn, start_btn);
+        // Issue #4 / gap #14: an operator reset (START button / MODE long-press)
+        // carries the system out of ESTOP. Open the reset-grace window so a
+        // 0x001 still in flight on the bus cannot instantly re-latch ESTOP
+        // (livelock). The harness shares this exact policy via sys::rx_estop_suppressed.
+        if (mode_was_estop && g_mode_mgr.mode() != can::Mode::Estop) {
+            sys::mark_estop_reset(static_cast<uint32_t>(xTaskGetTickCount()));
+        }
+        mode_was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
         if (changed) {
             ESP_LOGI(TAG, "Mode changed to %s", g_mode_mgr.name());
         }

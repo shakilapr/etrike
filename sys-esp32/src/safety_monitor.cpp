@@ -46,4 +46,23 @@ bool SafetyMonitor::heartbeat_ok() const {
     return (now - last) < int64_t(kHeartbeatTimeoutMsRt) * 1000;
 }
 
+// ── RX 0x001 policy (gap #14) ──────────────────────────────────────────
+// Statics use 0 as "never" sentinel so the grace/loopback windows are inert
+// until SYS has actually broadcast an ESTOP or performed a reset.
+namespace {
+uint32_t g_last_estop_broadcast_ms = 0;
+uint32_t g_last_estop_reset_ms     = 0;
+}
+
+void mark_estop_broadcast(uint32_t now_ms) { g_last_estop_broadcast_ms = now_ms; }
+void mark_estop_reset(uint32_t now_ms)     { g_last_estop_reset_ms     = now_ms; }
+
+bool rx_estop_suppressed(uint32_t now_ms) {
+    const bool loopback = (g_last_estop_broadcast_ms != 0)
+        && (now_ms - g_last_estop_broadcast_ms) < static_cast<uint32_t>(sys::kEstopLoopbackWindowMs);
+    const bool reset_grace = (g_last_estop_reset_ms != 0)
+        && (now_ms - g_last_estop_reset_ms) < static_cast<uint32_t>(sys::kEstopResetGraceMs);
+    return loopback || reset_grace;
+}
+
 }  // namespace sys

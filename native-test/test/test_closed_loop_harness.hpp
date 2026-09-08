@@ -461,8 +461,6 @@ public:
                 bool is_loopback = (now_us - last_sys_estop_tx_us) < 50000;
                 // 2. Operator reset grace window (500 ms window)
                 bool in_reset_grace = (now_us - last_operator_reset_us) < 500000;
-                std::printf("[DEBUG 0x001 RX] is_lb=%d in_rg=%d now=%lld sys_mode=%d\n",
-                            is_loopback, in_reset_grace, (long long)now_us, (int)sys_mode.mode());
                 if (!is_loopback && !in_reset_grace) {
                     sys_safety.set_estop(true);
                     sys_mode.force_estop();
@@ -650,8 +648,6 @@ public:
                                            rt_seb_takeover);
 
         if (is_active_local_trip && !rt_sys_clear_in_progress) {
-            std::printf("[DEBUG RT TRIP] obs_act=%d obs_trig=%d estop_reason=%d takeover=%d\n",
-                        rt_obstacle_active, sr.obstacle_triggered, (int)sr.estop_reason, rt_seb_takeover);
             if ((now_us - last_rt_0x001_sent_us) >= 250000) {
                 last_rt_0x001_sent_us = now_us;
                 can::Frame f001{can::kIdSafetyEstop, 0, {}};
@@ -690,10 +686,13 @@ public:
         // so the MTR 0x204 watchdog stays fed but the throttle is zeroed the
         // instant the mode leaves AUTO (this is what cuts an in-flight throttle
         // on SYS AUTO->MANUAL — MTR alone cannot know it must stop).
+        // run_safety_checks may ALSO force zero_setpoints (host/SYS heartbeat
+        // loss, MTR-health trip, ESTOP): RT must then emit {0,N}, not motion.
         if (now_us - last_rt_drive_us >= 10000) {
             last_rt_drive_us = now_us;
             const bool mode_auto = (sys_mode.mode() == can::Mode::Auto);
-            const bool motion_allowed = mode_auto && !rt_estop_pending && rt_steer_ready;
+            const bool motion_allowed =
+                mode_auto && !rt_estop_pending && rt_steer_ready && !sr.zero_setpoints;
             int32_t speed_out = motion_allowed ? rt_cmd_speed_mmps : 0;
             uint8_t gear_out;
             if (speed_out > 0) gear_out = static_cast<uint8_t>(can::Gear::D);
