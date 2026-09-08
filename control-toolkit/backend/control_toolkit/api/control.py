@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from control_toolkit.models.frames import FrameSource
+from control_toolkit.services.encoder import encode_message
 from control_toolkit.services.session_manager import SessionError
 
 router = APIRouter(prefix="/control", tags=["control"])
@@ -115,6 +117,100 @@ def clear_estop(request: Request) -> dict:
         data={"remaining_active": remaining.get("active"), "causes": remaining.get("causes")},
     )
     return {"control": snap, "session": st.model_dump(), "estop": remaining}
+
+
+_SYS_SAFETY_CLEAR = {
+    "estop_active": 0,
+    "heartbeat_ok": 1,
+    "light_left": 0,
+    "light_right": 0,
+    "light_brake": 0,
+    "light_head": 0,
+}
+
+
+@router.post("/estop/rearm")
+def rearm_estop(request: Request) -> dict:
+    """Bench/SIL operator REARM: author the SYS-side clear + REARM sequence.
+
+    New-reality reset contract: a latched MTR/RT ESTOP clears only after two
+    consecutive *advancing* SYS_SAFETY_STS (0x011) ``estop_active=0`` frames
+    with a valid E2E CRC, then a SYS_PWR_CMD (0x113) OFF→ON edge (plus a fresh
+    SYS_MODE_CMD stream). On a production bus the real SYS performs this via the
+    physical reset path; this endpoint emulates SYS so bench/SIL rigs (MTR/RT
+    without a real SYS) can be recovered. Requires Bench TX (never runs against
+    a live SYS-owned bus without an explicit bench session).
+    """
+    from control_toolkit.services.estop_report import build_estop_report
+
+    life = request.app.state.lifecycle
+    life.sessions.require_bench_tx_enabled()
+    life.sessions.clear_estop_latch()
+    snap = life.control.clear_estop_flag()
+    life.sessions.update_vehicle_view(estop_active=False)
+
+    def submit(bus: str, key: str, values: dict) -> dict:
+        r = life.tx_gate.submit(
+            bus=bus,
+            key=key,
+            values=values,
+            owner="control:rearm",
+            source=FrameSource.INJECTION,
+            claim_ownership=False,
+        )
+        return {"bus": bus, "key": key, "disposition": r.disposition, "reason": r.reason}
+
+    results: list[dict] = []
+
+    def final_values(key: str, values: dict, *, e2e: bool) -> dict:
+        r = encode_message(key=key, bus="low", values=values,
+                           auto_counter=True, auto_e2e=e2e)
+        return dict(r.signals) if r.ok else dict(values)
+
+    # 1. Two advancing 0x011 estop_active=0 frames (RT/MTR two-frame clear).
+    for _ in range(2):
+        results.append(submit("low", "sys:sys_safety_sts",
+                              final_values("sys:sys_safety_sts", dict(_SYS_SAFETY_CLEAR), e2e=True)))
+        time.sleep(0.12)
+    # 2. Fresh 0x110 MANUAL stream (mode authority valid while re-arming).
+    results.append(submit("low", "sys:sys_mode_cmd",
+                          final_values("sys:sys_mode_cmd", {"mode": 0}, e2e=False)))
+    time.sleep(0.05)
+    # 3. 0x113 OFF edge then ON edge = the REARM the MTR latches on.
+    for power_state in (0, 1):
+        results.append(submit("low", "sys:sys_pwr_cmd",
+                              final_values("sys:sys_pwr_cmd", {"power_state": power_state}, e2e=False)))
+        time.sleep(0.12)
+
+    try:
+        msgs = list(life.latest.snapshot().messages)
+    except Exception:  # noqa: BLE001
+        msgs = []
+    report = build_estop_report(msgs, host_latch=False)
+    dispositions = ", ".join(f"{r['key']}@{r['bus']}={r['disposition']}" for r in results)
+    detail = (
+        "Bench REARM emitted: two advancing 0x011 clear frames + 0x110 MANUAL + "
+        f"0x113 OFF->ON edge · [{dispositions}] · "
+        f"remaining={report['summary']}"
+    )
+    life.diagnostics.emit(
+        code="control.estop_rearm",
+        title="Bench ESTOP REARM sequence",
+        detail=detail,
+        severity="info",
+        evidence={"tx": results, "estop": report},
+    )
+    st = life.sessions.snapshot()
+    life.audit.log(
+        category="safety",
+        code="control.estop_rearm",
+        title="Bench ESTOP REARM sequence",
+        detail=detail,
+        severity="info",
+        session_id=st.session_id,
+        data={"tx": results, "remaining_active": report.get("active")},
+    )
+    return {"control": snap, "session": st.model_dump(), "estop": report, "tx": results}
 
 
 @router.post("/intent")
