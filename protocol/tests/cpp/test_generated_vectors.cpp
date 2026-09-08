@@ -183,6 +183,23 @@ void test_success_vectors() {
     rt_heartbeat.health_flags = 15;
     check_vector(rt_heartbeat, std::array<std::uint8_t, 2>{0xFF, 0x0F});
 
+    generated::RtWheelSpeedSts wheel{};
+    wheel.measured_speed_mmps = 1250;
+    wheel.sensor_state = 2;  // VALID
+    wheel.rolling_counter = 7;
+    check_vector(wheel, std::array<std::uint8_t, 4>{0x04, 0xE2, 0x02, 0x07});
+
+    generated::RtNodeStatus rt_node_status{};
+    rt_node_status.node_state = 3;  // ACTIVE
+    rt_node_status.block_mask = 0x0123;
+    rt_node_status.estop_active = true;
+    rt_node_status.ready = true;
+    rt_node_status.degraded = true;
+    rt_node_status.rolling_counter = 7;
+    rt_node_status.e2e_crc = 0x5A;
+    check_vector(rt_node_status, std::array<std::uint8_t, 8>{0x03, 0x01, 0x23, 0x83,
+                                                             0x00, 0x00, 0x07, 0x5A});
+
     generated::SysModeCmd mode{};
     mode.mode = 1;  // AUTO (0x110 enum is MANUAL/AUTO only; ESTOP moved to 0x011)
     check_vector(mode, std::array<std::uint8_t, 2>{0x01, 0x00});
@@ -211,6 +228,17 @@ void test_success_vectors() {
     sys_heartbeat.task_dispatch_ok = true;
     sys_heartbeat.task_can_tx_ok = true;
     check_vector(sys_heartbeat, std::array<std::uint8_t, 2>{0xFF, 0xFF});
+
+    generated::SysNodeStatus sys_node_status{};
+    sys_node_status.node_state = 3;  // ACTIVE
+    sys_node_status.block_mask = 0x0123;
+    sys_node_status.estop_active = true;
+    sys_node_status.ready = true;
+    sys_node_status.degraded = true;
+    sys_node_status.rolling_counter = 7;
+    sys_node_status.e2e_crc = 0x5A;
+    check_vector(sys_node_status, std::array<std::uint8_t, 8>{0x03, 0x01, 0x23, 0x83,
+                                                              0x00, 0x00, 0x07, 0x5A});
 
     generated::PwtDcdcCmd dcdc{};
     dcdc.control = true;
@@ -246,7 +274,18 @@ void test_success_vectors() {
     mtr_diag.flags = 0;
     mtr_diag.snapshot_data = 0;
     check_vector(mtr_diag, std::array<std::uint8_t, 8>{0x03, 0x0F, 0x01, 0x01,
-                                                       0x00, 0x00, 0x00, 0x00});
+                                                        0x00, 0x00, 0x00, 0x00});
+
+    generated::MtrNodeStatus mtr_node_status{};
+    mtr_node_status.node_state = 3;  // ACTIVE
+    mtr_node_status.block_mask = 0x0123;
+    mtr_node_status.estop_active = true;
+    mtr_node_status.ready = true;
+    mtr_node_status.degraded = true;
+    mtr_node_status.rolling_counter = 7;
+    mtr_node_status.e2e_crc = 0x5A;
+    check_vector(mtr_node_status, std::array<std::uint8_t, 8>{0x03, 0x01, 0x23, 0x83,
+                                                              0x00, 0x00, 0x07, 0x5A});
 }
 
 void test_validation_and_unchanged_outputs() {

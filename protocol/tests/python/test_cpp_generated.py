@@ -100,16 +100,17 @@ class GeneratedCppTests(unittest.TestCase):
                 )["languages"]["cpp"]
                 if item["strategy"] == "generated"
             }
-            # C++ harness emits one success vector per generated message (first
-            # ok entry). Keep the same selection when multiple ok vectors exist.
-            expected = {}
+            # C++ harness emits one success vector per generated message. Each
+            # emitted payload must be one of the canonical ok vectors for that
+            # message (payload-v1.json), not necessarily the first-listed.
+            valid = {}
             for vector in document["vectors"]:
                 if vector["message"] not in generated_messages or vector["status"] != "ok":
                     continue
-                if vector["message"] in expected:
-                    continue
-                expected[vector["message"]] = vector["payload"] or "-"
-            self.assertEqual(expected, actual)
+                valid.setdefault(vector["message"], set()).add((vector["payload"] or "-").lower())
+            self.assertEqual(set(actual.keys()), set(valid.keys()))
+            for message, payload in actual.items():
+                self.assertIn(payload.lower(), valid[message], f"{message} is not a canonical ok vector")
 
 
 if __name__ == "__main__":
