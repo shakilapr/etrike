@@ -25,6 +25,25 @@
     ]},"instances":[
       {"bus":"low","id":"0x631","frame_format":"standard","sender":"MTR","receivers":["RT"],"cycle_ms":0,"semantics":"independent"},
       {"bus":"high","id":"0x631","frame_format":"standard","sender":"MTR","receivers":["RT","Host"],"cycle_ms":0,"semantics":"same_frame"}
+    ]},
+    {"key":"mtr_node_status","owner":"mtr","protocol":"etrike.application.v1","name":"MTR_NODE_STATUS","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"node_state","byte":0,"bit":0,"bits":4,"min":0,"max":15,"enum":{"0":"INIT","1":"ACQUIRE","2":"STANDBY","3":"ACTIVE","4":"INHIBITED","5":"ESTOP","6":"RECOVER","15":"UNKNOWN"}},
+      {"key":"reserved_b0","byte":0,"bit":4,"bits":4,"constant":0},
+      {"key":"block_mask","byte":1,"bit":0,"bits":16,"min":0,"max":65535},
+      {"key":"estop_active","byte":3,"bit":0,"bits":1,"min":0,"max":1},
+      {"key":"ready","byte":3,"bit":1,"bits":1,"min":0,"max":1},
+      {"key":"command_received","byte":3,"bit":2,"bits":1,"min":0,"max":1},
+      {"key":"command_nonzero","byte":3,"bit":3,"bits":1,"min":0,"max":1},
+      {"key":"output_enabled","byte":3,"bit":4,"bits":1,"min":0,"max":1},
+      {"key":"estop_latched","byte":3,"bit":5,"bits":1,"min":0,"max":1},
+      {"key":"recovery_pending","byte":3,"bit":6,"bits":1,"min":0,"max":1},
+      {"key":"degraded","byte":3,"bit":7,"bits":1,"min":0,"max":1},
+      {"key":"reserved_b4","byte":4,"bit":0,"bits":16,"constant":0},
+      {"key":"rolling_counter","byte":6,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},
+      {"key":"e2e_crc","byte":7,"bit":0,"bits":8,"max":255}
+    ]},"instances":[
+      {"bus":"low","id":"0x502","frame_format":"standard","sender":"MTR","receivers":["RT","SYS","Host"],"cycle_ms":20,"semantics":"independent"},
+      {"bus":"high","id":"0x502","frame_format":"standard","sender":"MTR","receivers":["Host"],"cycle_ms":20,"semantics":"same_frame"}
     ]}
   ]
 }
