@@ -19,6 +19,16 @@ from typing import Any
 from control_toolkit.models.state import MessageState
 
 _MODE_LABELS = {0: "MANUAL", 1: "AUTO", 2: "ESTOP"}
+_NODE_STATE_LABELS = {
+    0: "INIT",
+    1: "ACQUIRE",
+    2: "STANDBY",
+    3: "ACTIVE",
+    4: "INHIBITED",
+    5: "ESTOP",
+    6: "RECOVER",
+    15: "UNKNOWN",
+}
 
 
 def _sig(msg: MessageState | None, key: str) -> Any:
@@ -82,6 +92,30 @@ def derive_vehicle_mode(
     ) or _find(messages, "RT_STATE_RPT")
     rt_fresh = _fresh(rt)
     mode: Any = None
+
+    # NODE_STATUS node_state is the authoritative observational latch/inhibit
+    # view: an ESTOP / INHIBITED / RECOVER node must gate motion even while the
+    # older RT_STATE_RPT.mode stream still reads MANUAL/AUTO.
+    for name, source in (
+        ("RT_NODE_STATUS", "rt_node"),
+        ("SYS_NODE_STATUS", "sys_node"),
+    ):
+        node_msg = _find(messages, name, "low") or _find(messages, name)
+        if not _fresh(node_msg):
+            continue
+        state = _sig(node_msg, "node_state")
+        label = str(state or "").strip().upper()
+        if label not in ("ESTOP", "INHIBITED", "RECOVER"):
+            n = _num(node_msg, "node_state")
+            if n is not None:
+                label = _NODE_STATE_LABELS.get(n, label)
+        if label in ("ESTOP", "INHIBITED", "RECOVER"):
+            return {
+                "mode": label,
+                "source": source,
+                "frame_fresh": True,
+            }
+
     if rt_fresh:
         raw = _sig(rt, "mode")
         mode = raw
