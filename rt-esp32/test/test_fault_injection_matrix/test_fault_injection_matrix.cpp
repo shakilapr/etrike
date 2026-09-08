@@ -454,6 +454,44 @@ void test_brake_emergency_fallback_and_handback_epoch(void) {
     TEST_ASSERT_FALSE(out.emergency_tx_0x7B9);
 }
 
+    // ── 9b. Issue #5: brake-stream health is independent of the heartbeat ──
+void test_brake_stream_loss_escalates_without_heartbeat_loss(void) {
+    rt::SebBrakeFallback fb;
+    const int64_t boot = 1'000'000; // 1.0 s
+    fb.init(boot);
+
+    // 1. Establish NORMAL with healthy SYS (HB + 0x7B9 observed)
+    int64_t now = boot + int64_t(rt::kSebFallbackArmGraceMs) * 1000 + 100'000;
+    rt::SebFallbackInput in{now, /*sys_hb_fresh=*/true, /*sys_0x7B9_observed=*/true,
+                            /*startup_grace_active=*/false};
+    auto out = fb.update(in);
+    TEST_ASSERT_EQUAL(uint8_t(rt::SebBrakeState::NORMAL), uint8_t(out.state));
+
+    // 2. The SYS *brake* task dies while the heartbeat stays alive: 0x7B9 stops
+    //    but 0x7FE continues. A live heartbeat must NOT mask the loss — RT must
+    //    escalate to emergency braking once the brake stream is stale.
+    now += int64_t(rt::kSebFallbackGuardMs) * 1000 + 50'000;
+    in = rt::SebFallbackInput{now, /*sys_hb_fresh=*/true, /*sys_0x7B9_observed=*/false,
+                              /*startup_grace_active=*/false};
+    out = fb.update(in);
+    TEST_ASSERT_EQUAL(uint8_t(rt::SebBrakeState::EMERGENCY_FALLBACK), uint8_t(out.state));
+    TEST_ASSERT_TRUE(out.emergency_tx_0x7B9);
+    TEST_ASSERT_TRUE(out.emergency_0x001);
+
+    // 3. SYS brake task recovers: fresh 0x7B9 frames (HB still fresh throughout)
+    //    drive the epoch-guarded handback back to NORMAL.
+    now += 100'000;
+    in = rt::SebFallbackInput{now, /*sys_hb_fresh=*/true, /*sys_0x7B9_observed=*/true,
+                              /*startup_grace_active=*/false};
+    for (int i = 0; i < rt::kSebHandbackVerifyFrames - 1; ++i) {
+        out = fb.update(in);
+        TEST_ASSERT_EQUAL(uint8_t(rt::SebBrakeState::EMERGENCY_FALLBACK), uint8_t(out.state));
+    }
+    out = fb.update(in);
+    TEST_ASSERT_EQUAL(uint8_t(rt::SebBrakeState::NORMAL), uint8_t(out.state));
+    TEST_ASSERT_FALSE(out.emergency_tx_0x7B9);
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // PART 3: STEERING FAULTS & EMERGENCY RAMPS
 // ═════════════════════════════════════════════════════════════════════
@@ -666,6 +704,7 @@ extern "C" void app_main() {
     RUN_TEST(test_brake_following_error_transient_vs_latched);
     RUN_TEST(test_brake_latched_fault_reset_rejection_if_cause_persists);
     RUN_TEST(test_brake_emergency_fallback_and_handback_epoch);
+    RUN_TEST(test_brake_stream_loss_escalates_without_heartbeat_loss);
 
     // Part 3: Steering Faults & Emergency Ramps
     RUN_TEST(test_steering_startup_implausible_angle_fault);

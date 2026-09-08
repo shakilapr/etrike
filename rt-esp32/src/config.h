@@ -107,16 +107,18 @@ constexpr int kEncRearRightB   = 14;
 // ── steering alias (used by physics_model.cpp) ────────────────────
 constexpr float kSteerLimitDeg = 40.0f;      // soft limit, matches kSteerHardLimitDeg
 
-// ── SEB brake-ownership fallback (issue #3) ─────────────────────────
+// ── SEB brake-ownership fallback (issue #3/#5) ────────────────────────
 // RT is NOT a normal 0x7B9 producer — SYS is the sole normal producer (it
-// converts RT's 0x205 kPa intent into the final 0x7B9). RT only becomes an
-// emergency fallback writer when BOTH conditions hold:
-//   - SYS heartbeat (0x7FE) is lost (>kHeartbeatTimeoutMsSys), AND
-//   - SYS's 0x7B9 brake command has actually disappeared from the Low bus for
-//     a guard interval (heartbeat freshness is NOT proof the brake task died).
-// States: NORMAL -> SYS_DEGRADED (on SYS-HB loss) -> EMERGENCY_FALLBACK (on
-// 0x7B9 absence beyond the guard). Recovery back to NORMAL is latched through
-// an epoch-guarded handback (see brake_fallback.h).
+// converts RT's 0x205 kPa intent into the final 0x7B9). RT becomes an emergency
+// fallback writer when the SYS 0x7B9 brake command disappears from the Low bus
+// for the guard interval. This is watched INDEPENDENTLY of the SYS heartbeat:
+// 0x7FE and 0x7B9 are produced by separate SYS tasks, so a live heartbeat does
+// NOT prove the SYS brake task is alive (issue #5). A stale 0x7B9 escalates to
+// EMERGENCY_FALLBACK with or without a heartbeat; heartbeat loss alone, with the
+// brake stream still fresh, enters SYS_DEGRADED (observe) instead.
+// States: NORMAL -> SYS_DEGRADED (on SYS-HB loss, 0x7B9 fresh) or
+// EMERGENCY_FALLBACK (0x7B9 absent beyond guard). Recovery to NORMAL is latched
+// through an epoch-guarded handback (see brake_fallback.h).
 constexpr int kSebFallbackGuardMs        = 300;   // no SYS 0x7B9 observed this long -> fallback
 // Startup acquisition: the fallback path is armed only after a valid SYS 0x7B9
 // has been observed at least once (or this boot grace elapses), so RT booting
