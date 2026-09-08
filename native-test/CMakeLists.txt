@@ -353,6 +353,7 @@ add_test(NAME architecture_data_flow COMMAND architecture_data_flow)
 add_executable(remediation_fixes
     test/test_remediation_fixes.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
+    ${ETRIKE_ROOT}/sys-esp32/src/inhibit_state.cpp
     ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
 )
 target_include_directories(remediation_fixes PRIVATE
