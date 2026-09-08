@@ -176,6 +176,20 @@ int main(void) {
             last_fbk_ms = now_ms;
             can::Frame fr = g_motor.build_motor_feedback_frame();
             g_can.send(fr);
+
+            // 0x502 MTR_NODE_STATUS at the same 50 Hz cadence (observational).
+            static uint8_t node_status_roll = 0;
+            can::gen::MtrNodeStatus ns{};
+            g_motor.fill_node_status(ns);
+            ns.rolling_counter = node_status_roll++;
+            ns.e2e_crc = 0;
+            can::Frame ns_fr{};
+            if (can::gen::encode_mtr_node_status(ns, ns_fr) == can::gen::CodecStatus::Ok) {
+                ns.e2e_crc = ::etrike::protocol::e2e::crc8_h2f(ns_fr.data.data(), 7u, 0u);
+                if (can::gen::encode_mtr_node_status(ns, ns_fr) == can::gen::CodecStatus::Ok) {
+                    g_can.send(ns_fr);
+                }
+            }
         }
 
         // Feed the independent watchdog ONLY after this full cycle completed —

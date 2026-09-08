@@ -449,6 +449,44 @@ public:
         return fr;
     }
 
+    // Fill 0x502 MTR_NODE_STATUS (observational, 50 Hz low-bus). Strictly
+    // observational: never clears ESTOP, re-arms ignition or grants authority.
+    // block_mask bits: 0x01 estop latch, 0x02 comms timeout, 0x04 drive-cmd
+    // timeout, 0x08 REARM pending, 0x10 authority invalid (0x110/0x113/0x011),
+    // 0x20 ignition OFF.
+    void fill_node_status(can::gen::MtrNodeStatus& ns) const {
+        const bool inhibited = propulsion_inhibited();
+        const bool rearm_pending = rearm_required_ && !rearm_observed_;
+        const bool gear_nonzero = relays_.current_gear() != can::Gear::N;
+        if (estop_active_) {
+            ns.node_state = can::gen::MtrNodeStatus::kNodeStateEstop;
+        } else if (rearm_pending) {
+            ns.node_state = can::gen::MtrNodeStatus::kNodeStateRecover;
+        } else if (!ignition_on_ || inhibited) {
+            ns.node_state = can::gen::MtrNodeStatus::kNodeStateInhibited;
+        } else if (current_mode_ == can::Mode::Auto && gear_nonzero) {
+            ns.node_state = can::gen::MtrNodeStatus::kNodeStateActive;
+        } else {
+            ns.node_state = can::gen::MtrNodeStatus::kNodeStateStandby;
+        }
+        uint16_t mask = 0;
+        if (estop_active_) mask |= 0x0001u;
+        if (comms_timed_out_) mask |= 0x0002u;
+        if (drive_cmd_timed_out_) mask |= 0x0004u;
+        if (rearm_pending) mask |= 0x0008u;
+        if (!mode_valid_ || !power_valid_ || !safety_state_valid_) mask |= 0x0010u;
+        if (!ignition_on_) mask |= 0x0020u;
+        ns.block_mask = mask;
+        ns.estop_active = estop_active_;
+        ns.estop_latched = estop_active_;
+        ns.recovery_pending = rearm_pending;
+        ns.ready = !inhibited && ignition_on_;
+        ns.command_received = !drive_cmd_timed_out_;
+        ns.command_nonzero = ns.command_received && target_speed_mmps_ != 0;
+        ns.output_enabled = ignition_on_ && gear_nonzero && !inhibited;
+        ns.degraded = (comms_timed_out_ || drive_cmd_timed_out_) && !estop_active_;
+    }
+
     bool is_estop_active() const { return estop_active_; }
     bool is_comms_timed_out() const { return comms_timed_out_; }
     bool is_drive_cmd_timed_out() const { return drive_cmd_timed_out_; }
