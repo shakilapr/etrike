@@ -25,6 +25,23 @@ export function dash(v: unknown): string {
   return s === '' ? '—' : s
 }
 
+/** NODE_STATUS enum label for node_state (INIT..UNKNOWN) — numeric fallback. */
+export function nodeStateLabel(m: MessageState | undefined): string {
+  const raw = m?.signals?.node_state
+  const label = String(raw?.enum_label ?? '').trim().toUpperCase()
+  if (label) return label
+  const n = signalNum(m, 'node_state')
+  return ({ 0: 'INIT', 1: 'ACQUIRE', 2: 'STANDBY', 3: 'ACTIVE', 4: 'INHIBITED', 5: 'ESTOP', 6: 'RECOVER', 15: 'UNKNOWN' })[n ?? -1] ?? ''
+}
+
+/** Persistent ESTOP latch observed from a node's NODE_STATUS frame (fresh). */
+export function nodeLatchActive(messages: MessageState[], name: string): boolean {
+  const m = findMsg(messages, name)
+  if (!m || !frameRecent(m)) return false
+  if (nodeStateLabel(m) === 'ESTOP') return true
+  return signalIsOn(m, 'estop_latched') || signalIsOn(m, 'estop_active')
+}
+
 /** Req/Conf line without "— · —" style doubling when both empty. */
 export function formatReqConf(req: unknown, conf: unknown): string {
   const r = dash(req)
@@ -123,6 +140,9 @@ export type EstopObservation = {
   sysHeartbeatBad: boolean
   sysCanBad: boolean
   sysBrakeFault: boolean
+  sysNodeLatch: boolean
+  rtNodeLatch: boolean
+  mtrNodeLatch: boolean
   any: boolean
   /** Short chip label */
   label: string
@@ -177,11 +197,19 @@ export function observeEstop(
   const rtReasonLabel = RT_ESTOP_REASONS[rtReasonCode] ?? `unknown_${rtReasonCode}`
   const safetyState = signalNum(rtState, 'safety_state')
 
+  // NODE_STATUS (0x500/0x501/0x502) authoritative persistent latch.
+  const sysNodeLatch = nodeLatchActive(messages, 'SYS_NODE_STATUS')
+  const rtNodeLatch = nodeLatchActive(messages, 'RT_NODE_STATUS')
+  const mtrNodeLatch = nodeLatchActive(messages, 'MTR_NODE_STATUS')
+
   const causes: string[] = []
   if (hostLatch) causes.push('Host inject latch (Clear latch = host only)')
   if (busHigh) causes.push('0x001 SAFETY_ESTOP on High')
   if (busLow) causes.push('0x001 SAFETY_ESTOP on Low')
   if (sysReported) causes.push('SYS estop_active')
+  if (sysNodeLatch) causes.push('SYS NODE_STATUS latched')
+  if (rtNodeLatch) causes.push('RT NODE_STATUS latched')
+  if (mtrNodeLatch) causes.push('MTR NODE_STATUS latched')
   if (sysHeartbeatBad) causes.push('SYS heartbeat_ok=0')
   if (sysCanBad) causes.push('SYS can_ok=0')
   if (sysBrakeFault) causes.push('SYS brake_fault')
@@ -196,6 +224,9 @@ export function observeEstop(
     busHigh ||
     busLow ||
     sysReported ||
+    sysNodeLatch ||
+    rtNodeLatch ||
+    mtrNodeLatch ||
     rtModeEstop ||
     rtReasonCode !== 0 ||
     sysHeartbeatBad ||
@@ -213,6 +244,11 @@ export function observeEstop(
     else if (busHigh) label = 'Bus High'
     else if (busLow) label = 'Bus Low'
     else if (sysReported && rtModeEstop) label = 'SYS+RT'
+    else if (sysNodeLatch && rtNodeLatch && mtrNodeLatch) label = 'SYS+RT+MTR latched'
+    else if (sysNodeLatch && rtNodeLatch) label = 'SYS+RT latched'
+    else if (sysNodeLatch) label = 'SYS latched'
+    else if (rtNodeLatch) label = 'RT latched'
+    else if (mtrNodeLatch) label = 'MTR latched'
     else if (sysReported) label = 'SYS'
     else if (rtModeEstop) label = 'RT ESTOP'
     else if (sysHeartbeatBad || sysCanBad || sysBrakeFault) label = 'SYS fault'
@@ -232,6 +268,9 @@ export function observeEstop(
     sysHeartbeatBad,
     sysCanBad,
     sysBrakeFault,
+    sysNodeLatch,
+    rtNodeLatch,
+    mtrNodeLatch,
     any,
     label,
     causes,

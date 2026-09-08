@@ -59,6 +59,10 @@ export function Overview() {
   const cmdYaw = signalNum(drive, 'yaw_rate_mrad_s')
   const fbkSpeed =
     signalNum(motor, 'motor_command_speed_mmps') ?? signalNum(motor, 'speed_mmps')
+  // 0x122 RT_WHEEL_SPEED_STS = the physical wheel-speed source (0x206 is only
+  // the echoed *command*). Show it separately so it is never mistaken for it.
+  const wheel = findMsg(messages, 'RT_WHEEL_SPEED_STS')
+  const physSpeed = wheel != null ? signalNum(wheel, 'measured_speed_mmps') : null
   const steerDeg =
     signalNum(sesStatus, 'angle_deg') ??
     signalNum(sesStatus, 'steer_angle_deg') ??
@@ -168,6 +172,18 @@ export function Overview() {
           tone="auto"
           testId="card-motor"
           meterTestId="meter-speed-fbk"
+        />
+        <MetricCard
+          title="Measured speed"
+          valueText={physSpeed != null ? physSpeed.toFixed(0) : 'n/a'}
+          unit="mm/s"
+          sub="RT_WHEEL_SPEED_STS 0x122"
+          freshness={wheel?.freshness}
+          value={physSpeed ?? 0}
+          max={3000}
+          tone="auto"
+          testId="card-measured"
+          meterTestId="meter-speed-physical"
         />
         <MetricCard
           title="Yaw rate"
