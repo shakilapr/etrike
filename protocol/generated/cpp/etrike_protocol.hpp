@@ -10,14 +10,14 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "5cb47ac29e385023dafb477f099ffc43a47bc9c11b9fa58dfc4ff73712b1fcfb";
+inline constexpr std::string_view kSemanticHash = "9d6c3325e3b6af0be9089b8fa7c94bb73656ad0c5e6e3dcd3124e22eb5c29f31";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "dfe5c38c19bcb7802ac4ee1709d95ba68734f5153bba8aea53fd1d18eb432080";
+inline constexpr std::string_view kNetworkHash = "106aa078bcaa33a97f347bd367be6b7c3d48c4b9bde0dbec6719e9382b8c071b";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 50> kMessages{{
+inline constexpr std::array<MessageMetadata, 52> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
@@ -46,6 +46,8 @@ inline constexpr std::array<MessageMetadata, 50> kMessages{{
     {"rt:rt_pid_rpt", "high", 0x220u, 6u, false, CodecStrategy::Generated},
     {"rt:rt_state_rpt", "high", 0x210u, 6u, false, CodecStrategy::Generated},
     {"rt:rt_state_rpt", "low", 0x210u, 6u, false, CodecStrategy::Generated},
+    {"rt:rt_wheel_speed_sts", "high", 0x122u, 4u, false, CodecStrategy::Generated},
+    {"rt:rt_wheel_speed_sts", "low", 0x122u, 4u, false, CodecStrategy::Generated},
     {"rt:steer_diag", "high", 0x310u, 8u, false, CodecStrategy::Generated},
     {"safety:safety_estop", "high", 0x1u, 0u, false, CodecStrategy::Generated},
     {"safety:safety_estop", "low", 0x1u, 0u, false, CodecStrategy::Generated},
@@ -1901,6 +1903,105 @@ inline CodecStatus decode_rt_state_rpt(FrameView frame, RtStateRpt& out) noexcep
 
 inline CodecStatus encode(const RtStateRpt& value, Frame& out) noexcept { return encode_rt_state_rpt(value, out); }
 inline CodecStatus decode(FrameView frame, RtStateRpt& out) noexcept { return decode_rt_state_rpt(frame, out); }
+
+struct RtWheelSpeedSts {
+    static constexpr std::string_view kKey = "rt:rt_wheel_speed_sts";
+    static constexpr std::uint32_t kId = 0x122u;
+    static constexpr std::size_t kDlc = 4u;
+    static constexpr std::uint32_t kCycleMs = 100u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x122u;
+    static constexpr std::uint32_t kHighCycleMs = 100u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x122u;
+    static constexpr std::uint32_t kLowCycleMs = 100u;
+    static constexpr bool kLowExtended = false;
+    std::int16_t measured_speed_mmps{};
+    std::uint8_t sensor_state{};
+    std::uint8_t reserved{0};
+    std::uint8_t rolling_counter{};
+    struct MeasuredSpeedMmpsMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    static constexpr std::uint8_t kSensorStateNotInstalled = 0;
+    static constexpr std::uint8_t kSensorStateAcquiring = 1;
+    static constexpr std::uint8_t kSensorStateValid = 2;
+    static constexpr std::uint8_t kSensorStateFault = 3;
+    struct SensorStateMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 2u;
+        static constexpr std::uint64_t kMask = 0x3ull;
+    };
+    static constexpr std::uint8_t kReserved = 0;
+    struct ReservedMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 6u;
+        static constexpr std::uint64_t kMask = 0x3Full;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (measured_speed_mmps < -500 || measured_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        if (sensor_state != 0 && sensor_state != 1 && sensor_state != 2 && sensor_state != 3) return CodecStatus::InvalidEnum;
+        if (reserved != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(measured_speed_mmps));
+        detail::insert(payload.data(), 2u, 0u, 2u, false, static_cast<std::uint64_t>(sensor_state));
+        detail::insert(payload.data(), 2u, 2u, 6u, false, static_cast<std::uint64_t>(reserved));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, RtWheelSpeedSts& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        RtWheelSpeedSts value{};
+        const std::uint64_t raw_measured_speed_mmps = detail::extract(source, 0u, 0u, 16u, false);
+        value.measured_speed_mmps = static_cast<std::int16_t>(detail::sign_extend(raw_measured_speed_mmps, 16u));
+        if (value.measured_speed_mmps < -500 || value.measured_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_sensor_state = detail::extract(source, 2u, 0u, 2u, false);
+        value.sensor_state = static_cast<std::uint8_t>(raw_sensor_state);
+        if (value.sensor_state != 0 && value.sensor_state != 1 && value.sensor_state != 2 && value.sensor_state != 3) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_reserved = detail::extract(source, 2u, 2u, 6u, false);
+        if (raw_reserved != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved = static_cast<std::uint8_t>(raw_reserved);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 3u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_rt_wheel_speed_sts(const RtWheelSpeedSts& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(RtWheelSpeedSts::kId, static_cast<std::uint8_t>(RtWheelSpeedSts::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), RtWheelSpeedSts::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_rt_wheel_speed_sts(FrameView frame, RtWheelSpeedSts& out) noexcept {
+    if (frame.id() != 0x122u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x122u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != RtWheelSpeedSts::kDlc) return CodecStatus::UnexpectedLength;
+    return RtWheelSpeedSts::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const RtWheelSpeedSts& value, Frame& out) noexcept { return encode_rt_wheel_speed_sts(value, out); }
+inline CodecStatus decode(FrameView frame, RtWheelSpeedSts& out) noexcept { return decode_rt_wheel_speed_sts(frame, out); }
 
 struct SteerDiag {
     static constexpr std::string_view kKey = "rt:steer_diag";

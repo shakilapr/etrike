@@ -35,6 +35,7 @@ bool g_bypass_mtr_absent = false;
 #include "mode_manager.h"
 #include "stream_validity.h"
 #include "inhibit_state.h"
+#include "physical_egas.h"
 
 #include "brake_control.h"
 #include "light_control.h"
@@ -130,6 +131,12 @@ static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};       // CAN 0x302 input from Host
 static std::atomic<uint8_t>  g_light_state{0};     // Actual SYS light output (packed for 0x011 byte 2)
 static std::atomic<uint8_t>  g_rt_safety_state{0}; // RT safety_state from 0x210 (0=Normal, 1=InternalEstop, 2=Fault)
+// Physical wheel speed from 0x122 RT_WHEEL_SPEED_STS (issue #3). Only populated
+// when RT is configured with a wheel encoder; otherwise untouched (no physical
+// EGAS on the current vehicle).
+static std::atomic<int16_t>  g_wheel_measured_mmps{0};
+static std::atomic<uint8_t>  g_wheel_sensor_state{0};  // 0 NI,1 ACQ,2 VALID,3 FAULT
+static std::atomic<uint32_t> g_last_wheel_speed_tick{0};
 static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 MTR_MOTOR_FBK (C6b)
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
@@ -544,6 +551,15 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_rt_safety_state.store(state.safety_state, std::memory_order_relaxed);
             break;
         }
+        case can::kIdRtWheelSpeedSts: {  // 0x122 — physical wheel speed (issue #3)
+            can::gen::RtWheelSpeedSts ws{};
+            if (can::gen::decode_rt_wheel_speed_sts(fr.view(), ws) == can::gen::CodecStatus::Ok) {
+                g_wheel_measured_mmps.store(ws.measured_speed_mmps, std::memory_order_relaxed);
+                g_wheel_sensor_state.store(ws.sensor_state, std::memory_order_relaxed);
+                g_last_wheel_speed_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+            }
+            break;
+        }
         case can::kIdRtHeartbeatLow: {  // 0x7FD
             can::gen::RtHeartbeat heartbeat{};
             if (can::gen::decode_rt_heartbeat(fr.view(), heartbeat) == can::gen::CodecStatus::Ok)
@@ -749,6 +765,43 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         //
         // Issue #5/#7: any active traction inhibit (transient or latched) also
         // clamps the transmitted mode to MANUAL and drops power authority, so a
+        // Issue #3: physical wheel-speed EGAS (OPTIONAL). Active only when the
+        // SYS build is configured with a fitted wheel encoder
+        // (ETRIKE_SYS_PHYSICAL_WHEEL_SENSOR). On the current encoder-less vehicle
+        // (kPhysicalWheelSensorInstalled == false) this is compiled out entirely.
+        // When enabled it compares the measured wheel speed (0x122, RT) against
+        // the 0x204 requested speed and escalates a persistent runaway / direction
+        // mismatch / stall to ESTOP — the same latch authority as the command-path
+        // EGAS check. If an encoder-equipped vehicle reports FAULT/ACQUIRING or the
+        // 0x122 stream goes stale, that is an unavailable sensor and is escalated
+        // by the caller's freshness policy (kPhysicalEgasFreshMs), never silently
+        // downgraded to "no sensor".
+        if constexpr (sys::kPhysicalWheelSensorInstalled) {
+            static sys::PhysicalEgasMonitor phys_egas;
+            sys::PhysicalEgasInput pin;
+            pin.sensor_installed = true;
+            const uint32_t ws_tick = g_last_wheel_speed_tick.load(std::memory_order_relaxed);
+            pin.frame_fresh = (xTaskGetTickCount() - ws_tick)
+                              <= pdMS_TO_TICKS(sys::kPhysicalEgasFreshMs);
+            pin.sensor_state = g_wheel_sensor_state.load(std::memory_order_relaxed);
+            pin.measured_mmps = g_wheel_measured_mmps.load(std::memory_order_relaxed);
+            pin.commanded_mmps = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
+            const auto phys_verdict = phys_egas.update(pin);
+            if (phys_verdict != sys::PhysicalEgasVerdict::OK) {
+                ESP_LOGE(TAG, "Physical EGAS trip (%d): cmd=%d measured=%d state=%u",
+                         static_cast<int>(phys_verdict), pin.commanded_mmps,
+                         pin.measured_mmps, pin.sensor_state);
+                if (g_mode_mgr.mode() != can::Mode::Estop) {
+                    g_mode_mgr.force_estop();
+                    g_last_estop_trigger_tick.store(xTaskGetTickCount(),
+                                                    std::memory_order_relaxed);
+                    if (can_send_estop()) {
+                        send_estop_frame("ESTOP");
+                    }
+                }
+            }
+        }
+
         // MTR-feedback loss or brake fault is an actuator-level safety action,
         // not merely an internal zero.
         {

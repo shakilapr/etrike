@@ -144,6 +144,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "rt:rt_wheel_speed_sts",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "rt:steer_diag",
         "payload": "typed",
         "semantic_decode": true,
@@ -406,6 +413,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_state_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_wheel_speed_sts",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -680,6 +694,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "rt:rt_wheel_speed_sts",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "rt:steer_diag",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -806,8 +827,8 @@
       }
     ]
   },
-  "network_hash": "dfe5c38c19bcb7802ac4ee1709d95ba68734f5153bba8aea53fd1d18eb432080",
+  "network_hash": "106aa078bcaa33a97f347bd367be6b7c3d48c4b9bde0dbec6719e9382b8c071b",
   "schema_version": 1,
-  "semantic_hash": "5cb47ac29e385023dafb477f099ffc43a47bc9c11b9fa58dfc4ff73712b1fcfb",
-  "wire_hash": "5cb47ac29e385023dafb477f099ffc43a47bc9c11b9fa58dfc4ff73712b1fcfb"
+  "semantic_hash": "9d6c3325e3b6af0be9089b8fa7c94bb73656ad0c5e6e3dcd3124e22eb5c29f31",
+  "wire_hash": "9d6c3325e3b6af0be9089b8fa7c94bb73656ad0c5e6e3dcd3124e22eb5c29f31"
 }
