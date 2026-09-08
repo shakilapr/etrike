@@ -169,7 +169,7 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     dataType: 'Signed integer motor speed command (mm/s).',
     examples: ['0 stop', '1500 forward crawl', 'negative = reverse'],
   },
-  applied_speed_command_mmps: {
+  motor_command_speed_mmps: {
     meaning: 'Measured motor speed feedback (mm/s).',
     why: 'Closed-loop observation for RT PID / Host monitoring.',
     dataType: 'Signed integer measured speed (mm/s).',

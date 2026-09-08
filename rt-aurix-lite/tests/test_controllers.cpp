@@ -36,7 +36,7 @@ void test_motion_forward() {
     demand.gear = 1;
 
     MotorFeedback mf;
-    mf.applied_speed_command_mmps = 900;  // tracking
+    mf.motor_command_speed_mmps = 900;  // tracking
     SteeringFeedback sf;
     sf.valid = true;
     sf.angle_aligned = true;

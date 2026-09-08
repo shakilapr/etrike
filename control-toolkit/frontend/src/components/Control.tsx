@@ -216,7 +216,7 @@ function DirectActuatorCards({
           {signalText(txMotor, 'gear')} ? {txMotor?.freshness ?? 'no frame yet'}
         </div>
         <div className="fbk-line muted small mono">
-          FBK 0x206 ? {signalText(fbkMtr, 'applied_speed_command_mmps') || '?'} ? gear{' '}
+          FBK 0x206 ? {signalText(fbkMtr, 'motor_command_speed_mmps') || '?'} ? gear{' '}
           {signalText(fbkMtr, 'gear_state') || signalText(fbkMtr, 'gear') || '?'}
         </div>
         <div className="actions tight">

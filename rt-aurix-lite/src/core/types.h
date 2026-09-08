@@ -32,7 +32,7 @@ struct DriveDemand {
 };
 
 struct MotorFeedback {
-    std::int16_t applied_speed_command_mmps = 0;
+    std::int16_t motor_command_speed_mmps = 0;
     std::uint8_t gear_state        = 0;
     std::uint8_t fault_flags       = 0;  // shared::kMtrFault*
 };

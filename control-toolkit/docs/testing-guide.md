@@ -128,7 +128,7 @@ There is **no** in-process ?RT digital twin? that auto-expands 0x300 into Low fr
 
 | ID | Name | Bus | Producer | Notes |
 |----|------|-----|----------|-------|
-| 0x206 | `MTR_MOTOR_FBK` | low (+ high same_frame) | MTR | `applied_speed_command_mmps`, `gear_state`, `fault_flags` |
+| 0x206 | `MTR_MOTOR_FBK` | low (+ high same_frame) | MTR | `motor_command_speed_mmps`, `gear_state`, `fault_flags` |
 | 0x120 | `SYS_THROTTLE_STS` | low (+ high) | MTR | speed report |
 | 0x201 | `SES_STATUS` | low | SES | steer status; RT uses for sync |
 | 0x721 | `SEB_STATUS` | low | SEB | SYS brake state machine sync |

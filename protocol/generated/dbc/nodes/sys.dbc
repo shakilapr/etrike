@@ -31,12 +31,12 @@ BO_ 770 HOST_LIGHT_CMD_low: 1 Host
  SG_ headlight : 4|1@0+ (1,0) [0|1] "" RT,SYS
 
 BO_ 518 MTR_MOTOR_FBK_low: 4 MTR
- SG_ applied_speed_command_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
+ SG_ motor_command_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
  SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT,SYS,Host
  SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT,SYS,Host
 
 BO_ 518 MTR_MOTOR_FBK_high: 4 MTR
- SG_ applied_speed_command_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
+ SG_ motor_command_speed_mmps : 7|16@0- (1,0) [-500|3000] "" RT,SYS,Host
  SG_ gear_state : 23|8@0+ (1,0) [0|3] "" RT,SYS,Host
  SG_ fault_flags : 31|8@0+ (1,0) [0|255] "" RT,SYS,Host
 

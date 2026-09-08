@@ -584,7 +584,7 @@
             "bit": 0,
             "bits": 16,
             "byte": 0,
-            "key": "applied_speed_command_mmps",
+            "key": "motor_command_speed_mmps",
             "max": 3000,
             "min": -500,
             "signed": true
@@ -2317,7 +2317,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "106aa078bcaa33a97f347bd367be6b7c3d48c4b9bde0dbec6719e9382b8c071b",
+  "network_hash": "34ca8039025ea228229a42b4817467b35a89170af79139fcdb2527f6b1f05274",
   "routes": [
     {
       "from": "low",
@@ -2398,6 +2398,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "9d6c3325e3b6af0be9089b8fa7c94bb73656ad0c5e6e3dcd3124e22eb5c29f31",
-  "wire_hash": "9d6c3325e3b6af0be9089b8fa7c94bb73656ad0c5e6e3dcd3124e22eb5c29f31"
+  "semantic_hash": "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8",
+  "wire_hash": "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8"
 }

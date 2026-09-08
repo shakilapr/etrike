@@ -66,7 +66,7 @@ SafetyResult SafetySupervisor::evaluate(TimeUs now_us, bool startup_grace,
 
     // 2. Command-path / setpoint-echo consistency check (NOT physical EGAS L2 — no wheel/motor
     //    encoder is fitted, so 0x206 carries the applied setpoint echoed back, not a measurement).
-    if (std::abs(static_cast<std::int32_t>(motor_fb.applied_speed_command_mmps)
+    if (std::abs(static_cast<std::int32_t>(motor_fb.motor_command_speed_mmps)
                  - static_cast<std::int32_t>(drive_cmd.motor_speed_mmps))
         > kEgasMismatchMmps) {
         // Requires persistence ? tracked via freshness of the mismatch window.
@@ -82,7 +82,7 @@ SafetyResult SafetySupervisor::evaluate(TimeUs now_us, bool startup_grace,
         std::int32_t err = std::abs(static_cast<std::int32_t>(steer_cmd_0_1deg)
                                     - static_cast<std::int32_t>(steer_fb.angle_0_1deg));
         float threshold_deg = compute_following_error_threshold(
-            static_cast<float>(std::abs(motor_fb.applied_speed_command_mmps)));
+            static_cast<float>(std::abs(motor_fb.motor_command_speed_mmps)));
         std::int32_t threshold_0_1deg = static_cast<std::int32_t>(threshold_deg * 10.0f);
         if (err > threshold_0_1deg) {
             if (!m_follow_err_active) {
@@ -106,7 +106,7 @@ SafetyResult SafetySupervisor::evaluate(TimeUs now_us, bool startup_grace,
 
     // 4. Obstacle-triggered ESTOP.
     if (obstacle_mm <= shared::kObstacleStopMM
-        && std::abs(motor_fb.applied_speed_command_mmps) > shared::kLowSpeedThreshMmps) {
+        && std::abs(motor_fb.motor_command_speed_mmps) > shared::kLowSpeedThreshMmps) {
         r.disable_steering = true;
         r.obstacle_triggered = true;
         r.estop_reason = kEstopReasonObstacle;

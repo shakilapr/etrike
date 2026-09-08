@@ -54,7 +54,7 @@ extern "C" int64_t esp_timer_get_time();
 #include <atomic>
 std::atomic<int32_t> g_brake_request_kpa{0};
 std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
-std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t> g_mtr_motor_command_speed_mmps{0};
 std::atomic<int64_t> g_last_estop_sent_us{0};
 
 // Define the physics model instance

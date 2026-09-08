@@ -13,7 +13,7 @@ static std::atomic<uint8_t>  g_setpoint_gear{0};
 static std::atomic<int32_t>  g_brake_pressure_kpa{0};
 static std::atomic<uint8_t>  g_light_bits{0};
 static std::atomic<uint8_t>  g_rt_safety_state{0};
-static std::atomic<int16_t>  g_applied_speed_command_mmps{0};
+static std::atomic<int16_t>  g_motor_command_speed_mmps{0};
 static std::atomic<uint8_t>  g_motor_fault_flags{0};
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
 static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
@@ -72,10 +72,10 @@ static int test_0x206_motor_fbk() {
 
     generated::MtrMotorFbk fbk{};
     (void)generated::decode(fr.view(), fbk);
-    g_applied_speed_command_mmps.store(fbk.applied_speed_command_mmps, std::memory_order_relaxed);
+    g_motor_command_speed_mmps.store(fbk.motor_command_speed_mmps, std::memory_order_relaxed);
     g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
 
-    CHECK(g_applied_speed_command_mmps.load() == 1200, "0x206: speed should be 1200");
+    CHECK(g_motor_command_speed_mmps.load() == 1200, "0x206: speed should be 1200");
     CHECK(g_motor_fault_flags.load() == 0x11, "0x206: fault_flags should be 0x11");
     CHECK((g_motor_fault_flags.load() & 0x10) != 0, "0x206: StartupReady bit should be set");
     std::printf("  PASS: 0x206 MTR_MOTOR_FBK dispatch\n");

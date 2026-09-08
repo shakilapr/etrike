@@ -73,7 +73,7 @@ export class MtrMotorController {
     // 0x206 MTR_MOTOR_FBK at 50Hz (every 20ms)
     if (nowMs % 20 === 0) {
       out.push(encodeSimFrame("mtr:mtr_motor_fbk", {
-        applied_speed_command_mmps: Math.round(actualSpeedMmps),
+        motor_command_speed_mmps: Math.round(actualSpeedMmps),
         gear_state: this.gear,
         fault_flags: this.faultFlags,
       }, "low", "mtr", nowMs));

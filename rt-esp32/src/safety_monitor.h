@@ -243,7 +243,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         if (actual_0_1deg != INT16_MIN) {
             int32_t diff = int32_t(cmd_0_1deg) - int32_t(actual_0_1deg);
             int32_t err_0_1deg = (diff >= 0 ? diff : -diff);
-            float threshold_deg = rt::compute_following_error_threshold(g_mtr_applied_speed_command_mmps.load());
+            float threshold_deg = rt::compute_following_error_threshold(g_mtr_motor_command_speed_mmps.load());
             int32_t threshold_0_1deg = static_cast<int32_t>(threshold_deg * 10.0f);
             constexpr int kTickLimit = rt::kSteerFollowingErrMs / (1000 / rt::kControlLoopHz);
             if (err_0_1deg > threshold_0_1deg) {
@@ -271,7 +271,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     // ESTOP events ? the previous condition required disable_steering to already
     // be true, which only ESTOP events set, making this dead code (bug 4.11).
     if (obstacle_mm <= shared::kObstacleStopMM
-        && std::abs(g_mtr_applied_speed_command_mmps.load()) > shared::kLowSpeedThreshMmps) {
+        && std::abs(g_mtr_motor_command_speed_mmps.load()) > shared::kLowSpeedThreshMmps) {
         r.disable_steering = true;
         r.obstacle_triggered = true;
         r.estop_reason = rt::kEstopReasonObstacle;

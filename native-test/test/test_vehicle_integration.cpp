@@ -67,10 +67,14 @@ namespace sys {
 std::atomic<uint32_t> g_inhibit_reasons{0};
 std::atomic<uint32_t> g_latched_fault_reasons{0};
 }
+// firmware globals (normally rt/sys main.cpp) provided for the unit-test build
+std::atomic<uint8_t>  g_seb_error_status{0};
+std::atomic<uint8_t>  g_seb_status_byte0{0xFF};
+std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority granted
 // ?? RT atomics used by run_safety_checks (normally rt main.cpp) ??
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
-std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t>  g_mtr_motor_command_speed_mmps{0};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{INT16_MIN};
@@ -123,7 +127,7 @@ struct Vehicle {
         g_last_mtr_feedback_us.store(-1);
         g_last_nonzero_cmd_us.store(-1);
         g_brake_request_kpa.store(0);
-        g_mtr_applied_speed_command_mmps.store(0);
+        g_mtr_motor_command_speed_mmps.store(0);
         rt::g_mtr_health.reset();
     }
 
@@ -196,12 +200,12 @@ struct Vehicle {
         }
         // MTR 0x206 feedback to RT health supervisor (simulate echo of cmd).
         can::gen::MtrMotorFbk fbk{};
-        fbk.applied_speed_command_mmps = sp.motor_speed_mmps;
+        fbk.motor_command_speed_mmps = sp.motor_speed_mmps;
         fbk.gear_state = gear;
         fbk.fault_flags = 0;
         can::Frame ff; can::gen::encode_mtr_motor_fbk(fbk, ff);
         (void)ff;
-        g_mtr_applied_speed_command_mmps.store(sp.motor_speed_mmps);
+        g_mtr_motor_command_speed_mmps.store(sp.motor_speed_mmps);
         g_last_mtr_feedback_us.store(now_us());
         return {sp.motor_speed_mmps, gear};
     }

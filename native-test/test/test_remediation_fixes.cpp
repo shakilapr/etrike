@@ -22,9 +22,8 @@ bool g_bypass_mtr_absent = true;
 std::atomic<bool>     g_steering_estop_request{false};
 std::atomic<bool>     g_steering_exit_request{false};
 std::atomic<int32_t>  g_encoder_speed_mmps{0};
-std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t>  g_mtr_motor_command_speed_mmps{0};
 std::atomic<int32_t>  g_brake_fault_active{false};
-std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint32_t> g_last_mtr_fbk_tick{1000};
 
 int pass_count = 0;
@@ -72,7 +71,7 @@ void test_bug1_steering_signal_draining() {
 void test_bug2_encoder_speed_feedback() {
     std::printf("-- Test 2: RtEncoder speed feedback selection --\n");
     g_encoder_speed_mmps.store(1250);     // Local encoder
-    g_mtr_applied_speed_command_mmps.store(800);    // MTR feedback
+    g_mtr_motor_command_speed_mmps.store(800);    // MTR feedback
 
     int32_t measured_speed_mmps = 0;
     // Simulate RtEncoder selection branch

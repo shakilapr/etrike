@@ -59,7 +59,7 @@ export function Sidebar() {
   const sesStatus = findMsg(messages, 'SES_STATUS')
   const hostCmd = findMsg(messages, 'HOST_DRIVE_CMD')
   const rtDriveCmd = findMsg(messages, 'RT_DRIVE_CMD')
-  const speedRaw = motor?.signals?.applied_speed_command_mmps?.engineering_value
+  const speedRaw = motor?.signals?.motor_command_speed_mmps?.engineering_value
   const steerRaw = sesStatus?.signals?.angle_deg?.engineering_value
   const speedText =
     typeof speedRaw === 'number' && Number.isFinite(speedRaw)

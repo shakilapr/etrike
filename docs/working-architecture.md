@@ -12,7 +12,7 @@ older markdown specs ? those are called out explicitly.
 > 1. **RM does not emit `HMI_MODE_REQ`/`HMI_PWR_REQ` (0x111/0x112).** It *emulates* the authoritative
 >    `SYS_MODE_CMD` (0x110) and `SYS_PWR_CMD` (0x113) instead (`rm-esp32/src/main.cpp:207-225`).
 > 2. **MTR is an open-loop throttle emulator.** There is no speed sensor, no PID, no current/temp/voltage
->    sensing in MTR firmware. `0x206.applied_speed_command_mmps` is the *commanded setpoint echoed back*, not a
+>    sensing in MTR firmware. `0x206.motor_command_speed_mmps` is the *commanded setpoint echoed back*, not a
 >    measurement (`mtr-stm32/src/motor_manager.h:312-331`).
 
 ---
@@ -480,7 +480,7 @@ architecture review. Severity: ?? critical / ?? high / ?? medium. Items marked *
 fixed in the code (fault-class semantics at the end of this section); items still open are hardware
 dependencies or protocol redesigns.
 
-1. **EGAS / command-path consistency relabeled (RESOLVED).** `0x206.applied_speed_command_mmps`
+1. **EGAS / command-path consistency relabeled (RESOLVED).** `0x206.motor_command_speed_mmps`
    is the commanded setpoint echoed back (`mtr-stm32/src/motor_manager.h:315` = `target_speed_mmps_`),
    **not** a measured speed. MTR has **no speed sensor**, so the SYS check `|0x204.setpoint ? 0x206.applied|`
    is a **command-path / setpoint-echo consistency** check, not physical EGAS. Genuine physical EGAS L2

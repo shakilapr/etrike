@@ -142,7 +142,7 @@ SYS does not currently own speed PID or the RT PCNT encoders.
 ### MTR responsibilities
 
 MTR is intended to own motor DAC and gear actuation. Its current
-`applied_speed_command_mmps` is not proven independent encoder feedback. In Auto it is
+`motor_command_speed_mmps` is not proven independent encoder feedback. In Auto it is
 largely derived from the command. It must not be treated as validated physical
 closed-loop feedback until the MTR implementation and hardware tests prove that
 claim.

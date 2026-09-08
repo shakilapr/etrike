@@ -24,7 +24,7 @@
 // Globals referenced by run_safety_checks (for the scenarios above).
 std::atomic<int64_t> g_last_sys_hb_us{0};
 std::atomic<int64_t> g_last_host_hb_us{0};
-std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t> g_mtr_motor_command_speed_mmps{0};
 bool                 g_bypass_eps_sync = true;   // skip steering-follow path
 bool                 g_bypass_mtr_absent = true; // these scenarios don't exercise MTR health (#8)
 namespace rt {
@@ -36,6 +36,10 @@ std::atomic<int16_t> g_last_cmd_angle_0_1deg{INT16_MIN};
 std::atomic<int32_t> g_ses_angle_0_1deg{0};
 std::atomic<int32_t> g_brake_request_kpa{0};
 bool g_bench_solo_mode = false;
+// firmware globals (normally rt/sys main.cpp) provided for the unit-test build
+std::atomic<uint8_t>  g_seb_error_status{0};
+std::atomic<uint8_t>  g_seb_status_byte0{0xFF};
+std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority granted
 rt::SteeringControl g_steering{};  // header-only; steering-follow path skipped via g_bypass_eps_sync
 
 static int pass = 0;
@@ -99,7 +103,7 @@ int main() {
     // #7 Obstacle within stop distance at speed
     {
         bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
-        g_mtr_applied_speed_command_mmps.store(2000);  // 2.0 m/s, clearly above low-speed threshold
+        g_mtr_motor_command_speed_mmps.store(2000);  // 2.0 m/s, clearly above low-speed threshold
         auto r = run_safety_checks(now, false,
                                        shared::kObstacleStopMM - 10, estop, mode, seb);
         CHECK(r.disable_steering);
@@ -122,7 +126,7 @@ int main() {
         bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
         g_last_cmd_angle_0_1deg.store(1000);   // commanded 100.0 deg
         g_ses_angle_0_1deg.store(0);           // actual 0 deg -> 1000 (0.1deg) error
-        g_mtr_applied_speed_command_mmps.store(2000);   // speed shrinks the follow threshold
+        g_mtr_motor_command_speed_mmps.store(2000);   // speed shrinks the follow threshold
         bool triggered = false;
         for (int i = 0; i < 40; ++i) {
             auto r = run_safety_checks(now, false, UINT32_MAX, estop, mode, seb);

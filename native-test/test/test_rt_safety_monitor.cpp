@@ -32,7 +32,7 @@ std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 std::atomic<int32_t> g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t> g_ses_angle_status{0};
 std::atomic<int32_t> g_brake_kpa_to_send{0};
-std::atomic<int32_t> g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t> g_mtr_motor_command_speed_mmps{0};
 std::atomic<uint8_t> g_mode_current{0};
 std::atomic<bool> g_seb_takeover{false};
 std::atomic<int64_t> g_last_sys_hb_us{0};
@@ -48,6 +48,9 @@ std::atomic<uint16_t> g_ses_pow_volt{0};
 std::atomic<uint8_t> g_ses_error_status{0};
 std::atomic<uint16_t> g_seb_pressure_raw{0};
 std::atomic<uint8_t> g_seb_error_status{0};
+// firmware globals (normally rt/sys main.cpp) provided for the unit-test build
+std::atomic<uint8_t>  g_seb_status_byte0{0xFF};
+std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority granted
 std::atomic<uint16_t> g_seb_motor_current{0};
 std::atomic<uint16_t> g_seb_ecu_temp_c{0};
 
@@ -80,7 +83,7 @@ static void reset_state() {
     g_ses_angle_0_1deg.store(INT16_MIN);
     g_ses_angle_status.store(0);
     g_brake_kpa_to_send.store(0);
-    g_mtr_applied_speed_command_mmps.store(0);
+    g_mtr_motor_command_speed_mmps.store(0);
     g_mode_current.store(0);
     g_seb_takeover.store(false);
     g_last_sys_hb_us.store(0);
@@ -204,7 +207,7 @@ int main() {
     {
         reset_state();
         boot_steering_to_active();
-        g_mtr_applied_speed_command_mmps.store(6944); // threshold floor: 2.0 deg = 20 in 0.1 deg
+        g_mtr_motor_command_speed_mmps.store(6944); // threshold floor: 2.0 deg = 20 in 0.1 deg
         g_last_cmd_angle_0_1deg.store(21);
         g_ses_angle_0_1deg.store(0);
 
@@ -225,7 +228,7 @@ int main() {
     {
         reset_state();
         boot_steering_to_active();
-        g_mtr_applied_speed_command_mmps.store(6944);
+        g_mtr_motor_command_speed_mmps.store(6944);
         g_last_cmd_angle_0_1deg.store(20);
         g_ses_angle_0_1deg.store(0);
 

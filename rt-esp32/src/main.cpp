@@ -73,7 +73,7 @@ std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
 std::atomic<int32_t>  g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t>  g_ses_angle_status{0};
 std::atomic<int32_t>  g_brake_kpa_to_send{0};
-std::atomic<int32_t>  g_mtr_applied_speed_command_mmps{0};
+std::atomic<int32_t>  g_mtr_motor_command_speed_mmps{0};
 std::atomic<uint8_t>  g_mtr_gear_state{uint8_t(can::Gear::N)};
 std::atomic<int32_t>  g_encoder_speed_mmps{0};
 std::atomic<int32_t>  g_direct_steer_angle_0_1deg{0};
@@ -579,7 +579,7 @@ static void pump_diagnostics() {
         // ?? Speed feedback selection (build_config.h ?SpeedFeedbackSource) ?
         int32_t measured_speed_mmps = 0;
         if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Mtr) {
-            measured_speed_mmps = g_mtr_applied_speed_command_mmps.load();
+            measured_speed_mmps = g_mtr_motor_command_speed_mmps.load();
         } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::RtEncoder) {
             measured_speed_mmps = g_encoder_speed_mmps.load();
         } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Calculated) {
@@ -605,7 +605,7 @@ static void pump_diagnostics() {
         xQueueOverwrite(g_setpoint_q, &sp);
 
         if (m_current_mode == uint8_t(can::Mode::Auto)) {
-            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_applied_speed_command_mmps.load());
+            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_motor_command_speed_mmps.load());
         }
 
         g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
@@ -741,7 +741,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             static uint8_t motion_counter = 0;
             auto motion = rt::make_motion_report(
                 esp_timer_get_time(),
-                g_mtr_applied_speed_command_mmps.load(),
+                g_mtr_motor_command_speed_mmps.load(),
                 g_mtr_gear_state.load(),
                 g_last_mtr_feedback_us.load(),
                 g_ses_angle_0_1deg.load(),
@@ -878,7 +878,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         {
             int16_t setpoint = static_cast<int16_t>(std::clamp(
                 g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
-            int16_t measured = g_mtr_applied_speed_command_mmps.load();
+            int16_t measured = g_mtr_motor_command_speed_mmps.load();
             int16_t pid      = g_pid_output_mmps.load();
             can::gen::RtPidRpt message{setpoint, measured, pid};
             if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);

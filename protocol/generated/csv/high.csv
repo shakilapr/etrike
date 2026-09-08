@@ -11,7 +11,7 @@ Message ID (Hex),Message Name,Sender,Receivers,DLC,Cycle (ms),Signal Name,Byte,B
 0x112,HMI_PWR_REQ,HMI,SYS,2,1000,req_start,0,0,8,unsigned,1,"[0, 1]",," (Values: 0=OFF, 1=ON)"
 ,,,,,,rolling_counter,1,0,8,unsigned,1,"[0, 255]",,
 0x120,SYS_THROTTLE_STS,MTR,"RT, Host",2,10,speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
-0x206,MTR_MOTOR_FBK,MTR,"RT, SYS, Host",4,20,applied_speed_command_mmps,0,0,16,signed,1,"[-500, 3000]",,
+0x206,MTR_MOTOR_FBK,MTR,"RT, SYS, Host",4,20,motor_command_speed_mmps,0,0,16,signed,1,"[-500, 3000]",,
 ,,,,,,gear_state,2,0,8,unsigned,1,"[0, 3]",,
 ,,,,,,fault_flags,3,0,8,unsigned,1,"[0, 255]",,
 0x210,RT_STATE_RPT,RT,"Host, SYS",6,100,mode,0,0,8,unsigned,1,"[0, 2]",," (Values: 0=MANUAL, 1=AUTO, 2=ESTOP)"

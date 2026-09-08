@@ -58,7 +58,7 @@ export function Overview() {
   const cmdSpeed = signalNum(drive, 'speed_mmps')
   const cmdYaw = signalNum(drive, 'yaw_rate_mrad_s')
   const fbkSpeed =
-    signalNum(motor, 'applied_speed_command_mmps') ?? signalNum(motor, 'speed_mmps')
+    signalNum(motor, 'motor_command_speed_mmps') ?? signalNum(motor, 'speed_mmps')
   const steerDeg =
     signalNum(sesStatus, 'angle_deg') ??
     signalNum(sesStatus, 'steer_angle_deg') ??

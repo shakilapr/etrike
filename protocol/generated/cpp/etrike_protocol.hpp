@@ -10,9 +10,9 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "9d6c3325e3b6af0be9089b8fa7c94bb73656ad0c5e6e3dcd3124e22eb5c29f31";
+inline constexpr std::string_view kSemanticHash = "0208ac4dc33f436012b822e46ba3ab802a5d5dc044d19ce3cc86de1a277675b8";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "106aa078bcaa33a97f347bd367be6b7c3d48c4b9bde0dbec6719e9382b8c071b";
+inline constexpr std::string_view kNetworkHash = "34ca8039025ea228229a42b4817467b35a89170af79139fcdb2527f6b1f05274";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
@@ -853,10 +853,10 @@ struct MtrMotorFbk {
     static constexpr std::uint32_t kLowId = 0x206u;
     static constexpr std::uint32_t kLowCycleMs = 20u;
     static constexpr bool kLowExtended = false;
-    std::int16_t applied_speed_command_mmps{};
+    std::int16_t motor_command_speed_mmps{};
     std::uint8_t gear_state{};
     std::uint8_t fault_flags{};
-    struct AppliedSpeedCommandMmpsMeta {
+    struct MotorCommandSpeedMmpsMeta {
         static constexpr std::size_t kByte = 0u;
         static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 16u;
@@ -878,10 +878,10 @@ struct MtrMotorFbk {
     CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
-        if (applied_speed_command_mmps < -500 || applied_speed_command_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        if (motor_command_speed_mmps < -500 || motor_command_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
         if (gear_state > 3) return CodecStatus::ValueOutOfRange;
         std::array<std::uint8_t, kDlc> payload{};
-        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(applied_speed_command_mmps));
+        detail::insert(payload.data(), 0u, 0u, 16u, false, static_cast<std::uint64_t>(motor_command_speed_mmps));
         detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(gear_state));
         detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(fault_flags));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
@@ -892,9 +892,9 @@ struct MtrMotorFbk {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
         MtrMotorFbk value{};
-        const std::uint64_t raw_applied_speed_command_mmps = detail::extract(source, 0u, 0u, 16u, false);
-        value.applied_speed_command_mmps = static_cast<std::int16_t>(detail::sign_extend(raw_applied_speed_command_mmps, 16u));
-        if (value.applied_speed_command_mmps < -500 || value.applied_speed_command_mmps > 3000) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_motor_command_speed_mmps = detail::extract(source, 0u, 0u, 16u, false);
+        value.motor_command_speed_mmps = static_cast<std::int16_t>(detail::sign_extend(raw_motor_command_speed_mmps, 16u));
+        if (value.motor_command_speed_mmps < -500 || value.motor_command_speed_mmps > 3000) return CodecStatus::ValueOutOfRange;
         const std::uint64_t raw_gear_state = detail::extract(source, 2u, 0u, 8u, false);
         value.gear_state = static_cast<std::uint8_t>(raw_gear_state);
         if (value.gear_state > 3) return CodecStatus::ValueOutOfRange;
