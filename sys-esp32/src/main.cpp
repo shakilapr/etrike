@@ -1026,10 +1026,46 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
 // ── CAN TX task (prio 2, 5 Hz) — 0x011 SYS_SAFETY_STS ──────────────
 
+// ── 0x500 SYS_NODE_STATUS (observational, issue-added NODE_STATUS) ──
+// Strictly observational: never changes mode/authority. Reports SYS's own
+// node_state + reason mask so hosts/RT can see the authoritative latch without
+// inferring it from 0x011. block_mask = low 8 bits transient inhibit reasons |
+// high 8 bits latched fault reasons (see inhibit_state.h).
+static can::gen::SysNodeStatus build_sys_node_status() {
+    can::gen::SysNodeStatus ns{};
+    const can::Mode m = g_mode_mgr.mode();
+    const bool estop = sys_estop_latched();
+    const bool inhibit = sys::any_inhibit();
+    if (estop) {
+        ns.node_state = can::gen::SysNodeStatus::kNodeStateEstop;
+    } else if (inhibit) {
+        ns.node_state = can::gen::SysNodeStatus::kNodeStateInhibited;
+    } else if (m == can::Mode::Auto) {
+        ns.node_state = can::gen::SysNodeStatus::kNodeStateActive;
+    } else {
+        ns.node_state = can::gen::SysNodeStatus::kNodeStateStandby;
+    }
+    const uint32_t inhibit_bits =
+        sys::g_inhibit_reasons.load(std::memory_order_relaxed);
+    const uint32_t latched_bits =
+        sys::g_latched_fault_reasons.load(std::memory_order_relaxed);
+    ns.block_mask = static_cast<uint16_t>(
+        (inhibit_bits & 0xFFu) | ((latched_bits & 0xFFu) << 8));
+    ns.estop_active = estop;
+    ns.estop_latched = estop;
+    ns.ready = !estop && !inhibit && g_safety.heartbeat_ok();
+    ns.output_enabled = !estop && !inhibit;
+    ns.degraded = g_brake_fault_active.load(std::memory_order_relaxed)
+               || sys::traction_fault_present();
+    ns.recovery_pending = false;
+    return ns;
+}
+
 [[noreturn]] static void task_can_tx(void*) {
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz (SYS_SAFETY_STS cycle)
     TickType_t last   = xTaskGetTickCount();
     static uint8_t safety_roll = 0;
+    static uint8_t node_status_roll = 0;
     while (1) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Frame fr;
@@ -1054,6 +1090,16 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             message.e2e_crc = can::e2e::sys_safety_sts_crc(tmp.data.data());
             if (can::gen::encode_sys_safety_sts(message, fr) == can::gen::CodecStatus::Ok)
                 send_can(fr, "safety");
+        }
+
+        // ── 0x500 SYS_NODE_STATUS (same 5 Hz cadence) ──────────────
+        can::gen::SysNodeStatus ns = build_sys_node_status();
+        ns.rolling_counter = node_status_roll++;
+        ns.e2e_crc = 0;
+        if (can::gen::encode_sys_node_status(ns, tmp) == can::gen::CodecStatus::Ok) {
+            ns.e2e_crc = can::e2e::crc8_h2f(tmp.data.data(), 7u, 0u);
+            if (can::gen::encode_sys_node_status(ns, fr) == can::gen::CodecStatus::Ok)
+                send_can(fr, "node-status");
         }
 
         vTaskDelayUntil(&last, period);
