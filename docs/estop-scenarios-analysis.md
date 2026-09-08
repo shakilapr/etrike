@@ -1,3 +1,10 @@
+> **Status note (2026-09-08):** this scenario analysis tracks the implemented ESTOP
+> architecture. Items still deferred/open per docs/working-architecture.md + docs/estop.md:
+> 0x001 sender/reason/epoch payload (issue #11), an RT positive 0x011 acquisition gate (#14),
+> distinct brake source IDs (issue #3 option-3), real wheel-speed supervision (0x122, hardware),
+> and IWDG on nodes without an independent watchdog. NODE_STATUS 0x500/0x501/0x502 are now
+> emitted by all three ECUs (observational only).
+
 # ESTOP & safety scenarios — root-cause analysis
 
 Deep analysis of 18 failure scenarios against the actual firmware

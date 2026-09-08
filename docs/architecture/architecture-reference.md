@@ -1,3 +1,14 @@
+> [!CAUTION]
+> **SUPERSEDED / HISTORICAL** - this document predates the ESTOP-architecture
+> overhaul (0x001 DLC-0 universal stop, persistent 0x011 authority + E2E CRC-8,
+> the 0x204 command / 0x206 echo / 0x122 measured three-name speed scheme, NODE_STATUS
+> 0x500/0x501/0x502, the REARM reset contract and sys inhibit_state).
+>
+> Current authority: **docs/estop.md** (ESTOP design & reset playbook),
+> **docs/working-architecture.md** (as-built) and the generated protocol
+> **protocol/generated/cpp/etrike_protocol.hpp** (+ protocol/generated/docs).
+> Where this file disagrees, the current sources win.
+
 # E-Trike System Architecture
 
 Five-node distributed control: **Jetson Orin** (ROS 2 perception/planning), **RT ESP32-S3** (realtime physics, steering, brake & CAN gateway), **SYS ESP32-S3** (safety & body control), **MTR STM32** (planned motor actuation), **PWT ESP32-S3** (standalone powertrain CAN node).
