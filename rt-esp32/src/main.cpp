@@ -623,6 +623,39 @@ static void pump_diagnostics() {
     }
 }
 
+// ── 0x501 RT_NODE_STATUS (observational) ─────────────────────────────
+// Strictly observational: never clears ESTOP or grants authority. RT is
+// dual-bus: emitted independently on low (50 Hz) and high (10 Hz). node_state
+// mirrors RT's stop/authority model; block_mask bit0 = SYS authority not
+// acquired, bit1 = ESTOP latch active.
+static can::gen::RtNodeStatus build_rt_node_status() {
+    can::gen::RtNodeStatus ns{};
+    const uint8_t mode = g_mode_current.load();
+    const uint8_t reason = g_estop_reason.load();
+    const bool estop = reason != rt::kEstopReasonNone;
+    const bool no_auth = g_no_sys_authority.load(std::memory_order_relaxed);
+    if (estop) {
+        ns.node_state = can::gen::RtNodeStatus::kNodeStateEstop;
+    } else if (no_auth) {
+        ns.node_state = can::gen::RtNodeStatus::kNodeStateInhibited;
+    } else if (mode == uint8_t(can::Mode::Auto)) {
+        ns.node_state = can::gen::RtNodeStatus::kNodeStateActive;
+    } else {
+        ns.node_state = can::gen::RtNodeStatus::kNodeStateStandby;
+    }
+    ns.block_mask = static_cast<uint16_t>((no_auth ? 1u : 0u) | (estop ? 2u : 0u));
+    ns.estop_active = estop;
+    ns.estop_latched = estop;
+    ns.ready = !estop && !no_auth;
+    ns.command_received = mode == uint8_t(can::Mode::Auto);
+    ns.command_nonzero = ns.command_received
+                      && g_last_speed_setpoint_mmps.load() != 0;
+    ns.output_enabled = ns.ready && mode == uint8_t(can::Mode::Auto);
+    ns.degraded = g_steering.state() == rt::SteerState::STEER_FAULT;
+    ns.recovery_pending = false;
+    return ns;
+}
+
 static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                          can::custom::seb::Command seb, uint8_t& rolling_counter) {
     seb.control_enable = 1;
@@ -708,6 +741,17 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             bool seb_takeover = g_seb_takeover.load(std::memory_order_relaxed);
             if (seb_takeover) {
                 send_seb_req(*drv, fr, rt::make_seb_takeover_req(), seb_roll);
+            }
+
+            // 0x501 RT_NODE_STATUS at ~50 Hz on the low bus (observational).
+            static uint8_t node_status_roll = 0;
+            can::gen::RtNodeStatus ns = build_rt_node_status();
+            ns.rolling_counter = node_status_roll++;
+            ns.e2e_crc = 0;
+            can::Frame nfr{};
+            if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
+                ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
+                if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) send_can_low(nfr);
             }
         }
 
@@ -803,6 +847,20 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             } else if (rpt_fail_count > 0) {
                 ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
                 rpt_fail_count = 0;
+            }
+        }
+
+        // 0x501 RT_NODE_STATUS at ~10 Hz on the high bus (independent dual-bus
+        // emission; low-bus copy runs at 50 Hz in tx_low).
+        {
+            static uint8_t node_status_roll_high = 0;
+            can::gen::RtNodeStatus ns = build_rt_node_status();
+            ns.rolling_counter = node_status_roll_high++;
+            ns.e2e_crc = 0;
+            can::Frame nfr{};
+            if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
+                ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
+                if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) send_can_high(nfr);
             }
         }
 
