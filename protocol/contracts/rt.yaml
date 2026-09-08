@@ -24,6 +24,15 @@
       {"bus":"high","id":"0x210","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":100,"semantics":"independent"},
       {"bus":"low","id":"0x210","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":100,"semantics":"independent"}
     ]},
+    {"key":"rt_wheel_speed_sts","owner":"rt","protocol":"etrike.application.v1","name":"RT_WHEEL_SPEED_STS","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"measured_speed_mmps","byte":0,"bit":0,"bits":16,"signed":true,"min":-500,"max":3000},
+      {"key":"sensor_state","byte":2,"bit":0,"bits":2,"min":0,"max":3,"enum":{"0":"NOT_INSTALLED","1":"ACQUIRING","2":"VALID","3":"FAULT"}},
+      {"key":"reserved","byte":2,"bit":2,"bits":6,"constant":0},
+      {"key":"rolling_counter","byte":3,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[
+      {"bus":"high","id":"0x122","frame_format":"standard","sender":"RT","receivers":["Host","SYS"],"cycle_ms":100,"semantics":"independent"},
+      {"bus":"low","id":"0x122","frame_format":"standard","sender":"RT","receivers":["SYS"],"cycle_ms":100,"semantics":"independent"}
+    ]},
     {"key":"rt_pid_rpt","owner":"rt","protocol":"etrike.application.v1","name":"RT_PID_RPT","dlc":6,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"speed_setpoint","byte":0,"bit":0,"bits":16,"signed":true},{"key":"speed_measured","byte":2,"bit":0,"bits":16,"signed":true},{"key":"pid_output","byte":4,"bit":0,"bits":16,"signed":true}
     ]},"instances":[{"bus":"high","id":"0x220","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":100,"semantics":"independent","availability":"reserved"}]},

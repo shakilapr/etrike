@@ -67,6 +67,19 @@ constexpr float kBrakeMaxStroke    = 27.0f;    // mm, ESTOP
 constexpr int kEgasSpeedThresholdMmps = 500;   // abs(cmd - actual) > 500 mm/s
 constexpr int kEgasFaultDurationMs    = 500;   // persist 500ms → ESTOP
 
+// ── Physical wheel-speed EGAS (issue #3, OPTIONAL) ──────────────────
+// The current vehicle has NO wheel encoder: physical EGAS is disabled and SYS
+// relies on the command path (0x206 echo) + MTR safety gates. Define
+// ETRIKE_SYS_PHYSICAL_WHEEL_SENSOR when a wheel encoder is fitted to RT (and RT
+// is configured with ETRIKE_RT_ENCODERS=1 publishing 0x122). This makes SYS
+// compare the *measured* wheel speed against the requested speed (runaway /
+// direction / stall) via sys::PhysicalEgasMonitor.
+#ifdef ETRIKE_SYS_PHYSICAL_WHEEL_SENSOR
+constexpr bool kPhysicalWheelSensorInstalled = true;
+#else
+constexpr bool kPhysicalWheelSensorInstalled = false;
+#endif
+
 // ── brake following error (architecture §8.10, issue #5) ─────────────
 constexpr int   kBrakeFollowingErrRaw = 60;    // 3mm in raw units (3 / 0.05)
 constexpr int   kBrakeFollowingErrMs  = 100;   // transient excursion must persist this long (debounce)

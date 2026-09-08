@@ -806,6 +806,31 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             }
         }
 
+        // 0x122 RT_WHEEL_SPEED_STS — physical wheel speed (issue #3). Published on
+        // the low bus for SYS ONLY when the encoder subsystem is compiled in. When
+        // disabled (the current vehicle has no wheel encoder) no frame is sent;
+        // SYS treats the absent stream as NOT_INSTALLED (no physical EGAS), and
+        // the 0x206 echo remains the command-path source. Sensor state ramps
+        // ACQUIRING -> VALID after the first frames following boot.
+        if constexpr (rt::build::kEncodersEnabled) {
+            static uint8_t ws_counter = 0;
+            static uint8_t ws_acquire = 0;
+            static constexpr uint8_t kWsAcquireFrames = 5;
+            can::gen::RtWheelSpeedSts ws{};
+            ws.measured_speed_mmps =
+                static_cast<std::int16_t>(g_encoder_speed_mmps.load());
+            ws.sensor_state = (ws_acquire < kWsAcquireFrames)
+                ? can::gen::RtWheelSpeedSts::kSensorStateAcquiring
+                : can::gen::RtWheelSpeedSts::kSensorStateValid;
+            if (ws_acquire < 255) ++ws_acquire;
+            ws.rolling_counter = ws_counter++;
+            can::Frame wfr{};
+            if (can::encode_frame(ws, wfr) == can::gen::CodecStatus::Ok) {
+                auto* drv_low = rt::can_low_driver();
+                if (drv_low) drv_low->send(wfr);
+            }
+        }
+
         // 0x310 STEER_DIAG ? 10 Hz (v0.0.4: SES telemetry for Host)
         // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) ? STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
         {
