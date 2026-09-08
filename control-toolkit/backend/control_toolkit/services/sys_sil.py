@@ -120,8 +120,27 @@ class SysSilBridge:
             "light_brake": 0,
             "light_head": 0,
         }
+        # Author a genuine SYS_SAFETY_STS: advancing rolling_counter + AUTOSAR
+        # E2E CRC-8 (Data-ID 0x3C11) so consumers (RT/MTR stream-validity +
+        # CRC checks) accept it. 0x011 is low->high `same_frame`: both buses get
+        # byte-identical frames.
+        result = encode_message(
+            key="sys:sys_safety_sts",
+            bus="low",
+            values=values,
+            auto_counter=True,
+            auto_e2e=True,
+        )
+        if not result.ok:
+            self._error(f"SYS SIL encode sys:sys_safety_sts: {result.status}")
+            return
         for bus in ("low", "high"):
-            self._inject("sys:sys_safety_sts", bus, values)
+            self.transport.inject(
+                ChannelId(bus),
+                result.can_id,
+                result.data,
+                is_extended=result.is_extended,
+            )
 
     def _emit_diag(self) -> None:
         values = {
