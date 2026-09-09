@@ -63,7 +63,32 @@
     ],
     [
       "high",
+      "0x114",
+      "standard",
+      "hmi:host_estop_reset_req",
+      4,
+      0,
+      "Host",
+      [
+        "RT"
+      ]
+    ],
+    [
+      "high",
+      "0x115",
+      "standard",
+      "sys:sys_estop_reset_rsp",
+      5,
+      0,
+      "SYS",
+      [
+        "Host"
+      ]
+    ],
+    [
+      "high",
       "0x120",
+
       "standard",
       "mtr:sys_throttle_sts",
       2,
@@ -401,7 +426,32 @@
     ],
     [
       "low",
+      "0x114",
+      "standard",
+      "hmi:host_estop_reset_req",
+      4,
+      0,
+      "Host",
+      [
+        "SYS"
+      ]
+    ],
+    [
+      "low",
+      "0x115",
+      "standard",
+      "sys:sys_estop_reset_rsp",
+      5,
+      0,
+      "SYS",
+      [
+        "RT"
+      ]
+    ],
+    [
+      "low",
       "0x120",
+
       "standard",
       "mtr:sys_throttle_sts",
       2,

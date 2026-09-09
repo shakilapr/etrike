@@ -58,6 +58,16 @@
     ]},"instances":[
       {"bus":"low","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":20,"semantics":"independent"},
       {"bus":"high","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["Host"],"cycle_ms":20,"semantics":"same_frame"}
+    ]},
+    {"key":"sys_estop_reset_rsp","owner":"sys","protocol":"etrike.application.v1","name":"SYS_ESTOP_RESET_RSP","dlc":5,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"request_seq","byte":0,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"result","byte":1,"bit":0,"bits":8,"min":0,"max":1,"enum":{"0":"ACCEPTED","1":"REJECTED"}},
+      {"key":"blocker_mask","byte":2,"bit":0,"bits":16,"min":0,"max":65535},
+      {"key":"rolling_counter","byte":4,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[
+      {"bus":"low","id":"0x115","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":0,"semantics":"independent"},
+      {"bus":"high","id":"0x115","frame_format":"standard","sender":"SYS","receivers":["Host"],"cycle_ms":0,"semantics":"same_frame"}
     ]}
   ]
 }
+

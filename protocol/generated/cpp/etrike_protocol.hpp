@@ -10,18 +10,20 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "d3507d71f7fb498b171f1acc086057afe581a417a1f35a44a137fa4d2f79d0b0";
+inline constexpr std::string_view kSemanticHash = "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "8db464fb4cd64e7fa20a7536c4fcc9dbe3e209035947378ad009bdc7e0a22da3";
+inline constexpr std::string_view kNetworkHash = "a37f51545783bf4de5ae166f653e0ed80e26b16aa62153dc17a425c0a47312df";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 59> kMessages{{
+inline constexpr std::array<MessageMetadata, 63> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "low", 0x112u, 2u, false, CodecStrategy::Generated},
+    {"hmi:host_estop_reset_req", "high", 0x114u, 4u, false, CodecStrategy::Generated},
+    {"hmi:host_estop_reset_req", "low", 0x114u, 4u, false, CodecStrategy::Generated},
     {"host:host_brake_req", "high", 0x301u, 4u, false, CodecStrategy::Generated},
     {"host:host_drive_cmd", "high", 0x300u, 8u, false, CodecStrategy::Generated},
     {"host:host_heartbeat", "high", 0x7FCu, 2u, false, CodecStrategy::Generated},
@@ -70,6 +72,8 @@ inline constexpr std::array<MessageMetadata, 59> kMessages{{
     {"sys:sys_diag_event_rpt", "low", 0x601u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_diag_rpt", "high", 0x600u, 8u, false, CodecStrategy::Generated},
     {"sys:sys_diag_rpt", "low", 0x600u, 8u, false, CodecStrategy::Generated},
+    {"sys:sys_estop_reset_rsp", "high", 0x115u, 5u, false, CodecStrategy::Generated},
+    {"sys:sys_estop_reset_rsp", "low", 0x115u, 5u, false, CodecStrategy::Generated},
     {"sys:sys_heartbeat", "low", 0x7FEu, 2u, false, CodecStrategy::Generated},
     {"sys:sys_mode_cmd", "low", 0x110u, 2u, false, CodecStrategy::Generated},
     {"sys:sys_node_status", "high", 0x500u, 8u, false, CodecStrategy::Generated},
@@ -78,7 +82,7 @@ inline constexpr std::array<MessageMetadata, 59> kMessages{{
     {"sys:sys_safety_sts", "high", 0x11u, 5u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "low", 0x11u, 5u, false, CodecStrategy::Generated},
 }};
-inline constexpr std::array<RouteMetadata, 13> kRoutes{{
+inline constexpr std::array<RouteMetadata, 15> kRoutes{{
     {"rt-l2h-estop", "safety:safety_estop", "low", "high", RouteSemantics::SameFrame},
     {"rt-h2l-estop", "safety:safety_estop", "high", "low", RouteSemantics::SameFrame},
     {"rt-l2h-safety", "sys:sys_safety_sts", "low", "high", RouteSemantics::SameFrame},
@@ -92,6 +96,8 @@ inline constexpr std::array<RouteMetadata, 13> kRoutes{{
     {"rt-l2h-diag-mtr", "mtr:mtr_diag_event_rpt", "low", "high", RouteSemantics::SameFrame},
     {"rt-l2h-sys-status", "sys:sys_node_status", "low", "high", RouteSemantics::SameFrame},
     {"rt-l2h-mtr-status", "mtr:mtr_node_status", "low", "high", RouteSemantics::SameFrame},
+    {"rt-h2l-reset-req", "hmi:host_estop_reset_req", "high", "low", RouteSemantics::SameFrame},
+    {"rt-l2h-reset-rsp", "sys:sys_estop_reset_rsp", "low", "high", RouteSemantics::SameFrame},
 }};
 
 namespace generated {
@@ -289,6 +295,84 @@ inline CodecStatus decode_hmi_pwr_req(FrameView frame, HmiPwrReq& out) noexcept 
 
 inline CodecStatus encode(const HmiPwrReq& value, Frame& out) noexcept { return encode_hmi_pwr_req(value, out); }
 inline CodecStatus decode(FrameView frame, HmiPwrReq& out) noexcept { return decode_hmi_pwr_req(frame, out); }
+
+struct HostEstopResetReq {
+    static constexpr std::string_view kKey = "hmi:host_estop_reset_req";
+    static constexpr std::uint32_t kId = 0x114u;
+    static constexpr std::size_t kDlc = 4u;
+    static constexpr std::uint32_t kCycleMs = 0u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x114u;
+    static constexpr std::uint32_t kHighCycleMs = 0u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x114u;
+    static constexpr std::uint32_t kLowCycleMs = 0u;
+    static constexpr bool kLowExtended = false;
+    std::uint8_t request_seq{};
+    std::uint16_t reset_token{};
+    std::uint8_t rolling_counter{};
+    struct RequestSeqMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct ResetTokenMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(request_seq));
+        detail::insert(payload.data(), 1u, 0u, 16u, false, static_cast<std::uint64_t>(reset_token));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, HostEstopResetReq& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        HostEstopResetReq value{};
+        const std::uint64_t raw_request_seq = detail::extract(source, 0u, 0u, 8u, false);
+        value.request_seq = static_cast<std::uint8_t>(raw_request_seq);
+        const std::uint64_t raw_reset_token = detail::extract(source, 1u, 0u, 16u, false);
+        value.reset_token = static_cast<std::uint16_t>(raw_reset_token);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 3u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_host_estop_reset_req(const HostEstopResetReq& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(HostEstopResetReq::kId, static_cast<std::uint8_t>(HostEstopResetReq::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), HostEstopResetReq::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_host_estop_reset_req(FrameView frame, HostEstopResetReq& out) noexcept {
+    if (frame.id() != 0x114u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x114u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != HostEstopResetReq::kDlc) return CodecStatus::UnexpectedLength;
+    return HostEstopResetReq::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const HostEstopResetReq& value, Frame& out) noexcept { return encode_host_estop_reset_req(value, out); }
+inline CodecStatus decode(FrameView frame, HostEstopResetReq& out) noexcept { return decode_host_estop_reset_req(frame, out); }
 
 struct HostBrakeReq {
     static constexpr std::string_view kKey = "host:host_brake_req";
@@ -3031,6 +3115,99 @@ inline CodecStatus decode_sys_diag_rpt(FrameView frame, SysDiagRpt& out) noexcep
 
 inline CodecStatus encode(const SysDiagRpt& value, Frame& out) noexcept { return encode_sys_diag_rpt(value, out); }
 inline CodecStatus decode(FrameView frame, SysDiagRpt& out) noexcept { return decode_sys_diag_rpt(frame, out); }
+
+struct SysEstopResetRsp {
+    static constexpr std::string_view kKey = "sys:sys_estop_reset_rsp";
+    static constexpr std::uint32_t kId = 0x115u;
+    static constexpr std::size_t kDlc = 5u;
+    static constexpr std::uint32_t kCycleMs = 0u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x115u;
+    static constexpr std::uint32_t kHighCycleMs = 0u;
+    static constexpr bool kHighExtended = false;
+    static constexpr std::uint32_t kLowId = 0x115u;
+    static constexpr std::uint32_t kLowCycleMs = 0u;
+    static constexpr bool kLowExtended = false;
+    std::uint8_t request_seq{};
+    bool result{};
+    std::uint16_t blocker_mask{};
+    std::uint8_t rolling_counter{};
+    struct RequestSeqMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    static constexpr bool kResultAccepted = 0;
+    static constexpr bool kResultRejected = 1;
+    struct ResultMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct BlockerMaskMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (result != 0 && result != 1) return CodecStatus::InvalidEnum;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(request_seq));
+        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(result));
+        detail::insert(payload.data(), 2u, 0u, 16u, false, static_cast<std::uint64_t>(blocker_mask));
+        detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, SysEstopResetRsp& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        SysEstopResetRsp value{};
+        const std::uint64_t raw_request_seq = detail::extract(source, 0u, 0u, 8u, false);
+        value.request_seq = static_cast<std::uint8_t>(raw_request_seq);
+        const std::uint64_t raw_result = detail::extract(source, 1u, 0u, 8u, false);
+        if (raw_result > 1u) return CodecStatus::ValueOutOfRange;
+        value.result = raw_result != 0u;
+        if (value.result != 0 && value.result != 1) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_blocker_mask = detail::extract(source, 2u, 0u, 16u, false);
+        value.blocker_mask = static_cast<std::uint16_t>(raw_blocker_mask);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 4u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_sys_estop_reset_rsp(const SysEstopResetRsp& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(SysEstopResetRsp::kId, static_cast<std::uint8_t>(SysEstopResetRsp::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), SysEstopResetRsp::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_sys_estop_reset_rsp(FrameView frame, SysEstopResetRsp& out) noexcept {
+    if (frame.id() != 0x115u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x115u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != SysEstopResetRsp::kDlc) return CodecStatus::UnexpectedLength;
+    return SysEstopResetRsp::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const SysEstopResetRsp& value, Frame& out) noexcept { return encode_sys_estop_reset_rsp(value, out); }
+inline CodecStatus decode(FrameView frame, SysEstopResetRsp& out) noexcept { return decode_sys_estop_reset_rsp(frame, out); }
 
 struct SysHeartbeat {
     static constexpr std::string_view kKey = "sys:sys_heartbeat";

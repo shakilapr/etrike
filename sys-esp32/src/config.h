@@ -92,6 +92,7 @@ constexpr int   kBrakeFollowingRecoverFrames = 3;
 constexpr int kSebStatusTimeoutMs     = 100;   // no 0x721 for 100ms → log warning
 constexpr int kSebRollingTimeoutMs    = 100;   // 0x721 rolling counter may repeat at 100Hz; must advance within 100ms
 constexpr int kSebHandoffGraceMs      = 500;   // AUTO transition: let RT establish sole 0x7B9 ownership
+constexpr int kSebStartupAcquireMs    = 1000;  // startup deadline to detect SEB before diagnosing absence
 
 // ── mode button long-press ESTOP exit (gap #11) ─────────────────────
 constexpr int kEstopLongPressMs       = 3000;  // held 3s → MANUAL
@@ -115,4 +116,9 @@ constexpr int kEstopRateLimitMax      =    2;  // max 0x001 frames per window
 constexpr int kEstopResetGraceMs      =  500;  // reset grace window: suppress in-flight 0x001
 constexpr int kEstopLoopbackWindowMs  =   50;  // own-0x001 reflection discrimination window
 
+// ── Remote Host ESTOP Reset Request (BUG-10) ──────────────────────────
+constexpr uint16_t kRemoteResetTokenMagic = 0x5253; // 'R', 'S'
+constexpr int16_t  kResetMaxMovingSpeedMmps = 50;  // Reject reset if measured speed > 50 mm/s
+
 }  // namespace sys
+

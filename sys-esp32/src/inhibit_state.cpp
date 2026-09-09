@@ -11,6 +11,7 @@
 // references). 0xFF on g_seb_status_byte0 = "no 0x721 frame seen yet".
 std::atomic<uint8_t> g_seb_status_byte0{0xFF};
 std::atomic<uint8_t> g_seb_error_status{0};
+std::atomic<bool>    g_seb_seen{false};
 
 namespace sys {
 

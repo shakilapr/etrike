@@ -90,6 +90,15 @@ bool ModeManager::try_exit_estop() {
     return true;
 }
 
+bool ModeManager::try_exit_estop_remote(uint16_t blocker_mask) {
+    if (m_mode != can::Mode::Estop) return false;
+    if (blocker_mask != 0) return false;
+    sys::clear_latched_fault_reasons();
+    set_mode(can::Mode::Manual);
+    return true;
+}
+
+
 void ModeManager::set_from_can(uint8_t m) {
     // Only MANUAL (0) and AUTO (1) are selectable via CAN 0x110.
     // ESTOP is a safety state triggered exclusively by hardware button,
