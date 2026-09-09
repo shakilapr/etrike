@@ -4,20 +4,24 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
 
 ## Severity 1 — functional safety or operator-visible failure
 
-### BUG-01: RT rejects valid high-level commands after SYS authority reacquisition
+### BUG-01: RT rejects valid high-level commands after SYS authority reacquisition [RESOLVED]
 
 - **Files**
-  - `rt-esp32/src/safety_stream_loss.h` lines 80–89
-  - `rt-esp32/src/safety_monitor.h` lines 165–169
-  - `rt-esp32/src/can_rx_router.h` lines 60–80
+  - `rt-esp32/src/safety_stream_loss.h`
+  - `rt-esp32/src/rt_state.h`
+  - `rt-esp32/src/can_dispatch.h`
+  - `rt-esp32/src/main.cpp`
 - **Symptom**
   - High-level drive/mode commands are accepted on the RT high bus but produce no motion, or only the *next* command works, after SYS 0x011 stream loss and recovery.
 - **Bug**
   - `SafetyStreamSupervisor` returns to `ACQUIRED` after one new 0x011 frame, even when it is only a reacquisition baseline. `StreamValidity::observe()` remains invalid until a subsequent advancing frame.
   - RT then clears `g_no_sys_authority`, but mode/Host command stream validators still reject the first post-recovery frame. This creates an inconsistent, one-frame authority handoff.
-- **Fix direction**
-  - Make STREAM acquisition atomic across the 0x011 safety authority and downstream mode/command stream validators.
-  - Resynchronize/reset the mode command validator and command watchdog state when safety authority transitions from `LOST` to `ACQUIRED`, or require the same reacquisition sequence everywhere.
+- **Resolution**
+  - Implemented multi-stream readiness bitmask (`g_ready_mask` with `READY_BIT_SAFETY`, `READY_BIT_MODE`, `READY_BIT_HOST`).
+  - Cleared on stream loss, fault, or ESTOP to prevent pre-fault data reuse.
+  - Set independently as each stream's validator confirms validity (parallel recovery without artificial sequencing).
+  - Single barrier release: `g_no_sys_authority` is cleared only when `is_sys_authority_ready()` (`SAFETY` & `MODE`) is satisfied. Motion setpoints are gated until `is_motion_ready()` (`SAFETY`, `MODE`, and fresh `HOST`) is satisfied.
+
 
 ### BUG-02: RT suppresses motion silently when the low bus has no ACK-capable peer
 

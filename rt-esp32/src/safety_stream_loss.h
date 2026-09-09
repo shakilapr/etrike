@@ -42,6 +42,22 @@ struct SafetyStreamStatus {
     bool sys_absent_fault      = false; // UNACQUIRED past deadline: inhibit + fault (no estop)
 };
 
+// BUG-01: Multi-stream authority readiness bitmask.
+constexpr uint8_t READY_BIT_SAFETY = 1u << 0;  // 0x011 valid & fresh (SafetyStreamSupervisor)
+constexpr uint8_t READY_BIT_MODE   = 1u << 1;  // 0x110 valid & fresh (StreamValidity advancing)
+constexpr uint8_t READY_BIT_HOST   = 1u << 2;  // 0x300 fresh (Host drive command received)
+
+constexpr uint8_t kSysAuthorityRequired = READY_BIT_SAFETY | READY_BIT_MODE;
+constexpr uint8_t kMotionRequired        = READY_BIT_SAFETY | READY_BIT_MODE | READY_BIT_HOST;
+
+inline bool is_sys_authority_ready(uint8_t mask) {
+    return (mask & kSysAuthorityRequired) == kSysAuthorityRequired;
+}
+
+inline bool is_motion_ready(uint8_t mask) {
+    return (mask & kMotionRequired) == kMotionRequired;
+}
+
 class SafetyStreamSupervisor {
 public:
     // now_us: current time. last_valid_frame_us: timestamp of the last *valid*
