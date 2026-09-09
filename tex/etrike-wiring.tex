@@ -589,7 +589,7 @@ Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
 \# & Signal & GPIO & Type & Connected To & Notes \\
 \midrule
 \endhead
-1 & ESTOP Button  & 1  & Digital, NC, active-low & Red mushroom $\rightarrow$ GND & 10k pull-up to 3.3\,V. LOW = ESTOP. Shared with MTR. \\
+1 & ESTOP Button  & 1  & Digital, NC, active-low & Red mushroom $\rightarrow$ GND & Internal pull-up. HIGH = ESTOP. Shared with MTR. \\
 2 & Brake Lever   & 2  & Digital, NO, active-low & Lever switch $\rightarrow$ GND & Internal pull-up. LOW = pressed $\rightarrow$ SEB via CAN \canid{7B9}. \\
 3 & START Button  & 32 & Digital, NO, active-low & Green momentary $\rightarrow$ GND & Internal pull-up. Press = ON, hold 3s = OFF. \\
 4 & MODE Button   & 11 & Digital, NO, active-low & Momentary $\rightarrow$ GND & Internal pull-up. Toggle MANUAL $\leftrightarrow$ AUTO. Long-press 3s exits ESTOP. \\
@@ -665,7 +665,7 @@ Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
 1 & AUTO Mode Bulb   & 25 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
 2 & MANUAL Mode Bulb  & 26 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V, NO = bulb \\
 3 & READY Bulb (green)& 17 & Digital out & Relay coil $\rightarrow$ 12\,V & System ready: AUTO/MANUAL, RT alive, no faults \\
-4 & ESTOP Bulb (red)  & 20 & Digital out & Relay coil $\rightarrow$ 12\,V & Dedicated ESTOP indicator \\
+4 & ESTOP Bulb (red)  & 18 & Digital out & Relay coil $\rightarrow$ 12\,V & Dedicated ESTOP indicator \\
 5 & 12\,V Power Relay & 27 & Digital out & Relay coil $\rightarrow$ 12\,V & Relay COM = 12\,V bus, NO = accessories. Opens in ESTOP. \\
 6 & WDT Toggle        & 23 & Digital out & TPS3850 WDI pin        & Toggled at 20\,Hz by safety\_task \\
 \bottomrule
@@ -702,11 +702,10 @@ Source: \texttt{sys::kCanTxGpio=5}, \texttt{sys::kCanRxGpio=4}.
 15 & I/O, I2C         & MCP4725 DAC SDA (I2C addr \iicaddr{60}) \\
 16 & OUT, I2C         & MCP4725 DAC SCL \\
 17 & OUT              & READY bulb (green) --- relay output \\
-18 & OUT              & Left turn lamp --- relay output \\
-19 & OUT              & Right turn lamp --- relay output \\
-20 & OUT              & ESTOP bulb (red) --- relay output \\
+18 & OUT              & ESTOP bulb (red) --- relay output \\
+19 & ---              & (Unused - USB Conflict) \\
+20 & ---              & (Unused - USB Conflict) \\
 21 & OUT              & Brake light --- relay output \\
-22 & OUT              & Headlight --- relay output \\
 23 & OUT, 20\,Hz      & WDT toggle $\rightarrow$ TPS3850 WDI \\
 24 & ---              & (unused) \\
 25 & OUT              & AUTO mode bulb --- relay output \\
@@ -1378,7 +1377,7 @@ Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
 \endhead
 \chkbox & WCMCU-230 (low bus): VCC $\rightarrow$ 3V3 (J1-1), GND $\rightarrow$ GND (J1-22), CTX $\rightarrow$ \gpio{5}, CRX $\rightarrow$ \gpio{4} & --- \\
 \chkbox & WCMCU-230: 120\,$\Omega$\ terminator jumper \textbf{ON} & --- \\
-\chkbox & ESTOP button: \gpio{1} $\rightarrow$ NC button $\rightarrow$ GND. 10k pull-up to 3.3\,V. & --- \\
+\chkbox & ESTOP button: \gpio{1} $\rightarrow$ NC button $\rightarrow$ GND. Internal pull-up. & --- \\
 \chkbox & Brake lever: \gpio{2} $\rightarrow$ NO switch $\rightarrow$ GND. Internal pull-up. & --- \\
 \chkbox & START button: \gpio{32} $\rightarrow$ NO momentary $\rightarrow$ GND. Internal pull-up. & --- \\
 \chkbox & MODE button: \gpio{11} $\rightarrow$ NO momentary $\rightarrow$ GND. Internal pull-up. & --- \\
@@ -1386,9 +1385,9 @@ Byte 1: [D7 D6 D5 D4 D3 D2 D1 D0]    -- Lower 8 data bits
 \chkbox & MCP4725 DAC: SDA $\rightarrow$ \gpio{15}, SCL $\rightarrow$ \gpio{16}, VCC $\rightarrow$ 5\,V & --- \\
 \chkbox & Gear sense: \gpio{12}/\gpio{13}/\gpio{14} $\rightarrow$ TLP281 ch1/ch2/ch3 (10k pull-ups to 3.3\,V) & --- \\
 \chkbox & Gear relays: \gpio{33}/\gpio{34}/\gpio{35} $\rightarrow$ relay module IN1/IN2/IN3 & --- \\
-\chkbox & Signal switches: \gpio{3} (left), \gpio{6} (right), \gpio{7} (headlight) $\rightarrow$ GND & --- \\
-\chkbox & Lamp relays: \gpio{18}/\gpio{19}/\gpio{21}/\gpio{22} $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
-\chkbox & Indicator relays: \gpio{25} (AUTO), \gpio{26} (MANUAL), \gpio{17} (READY), \gpio{20} (ESTOP), \gpio{27} (12\,V power) $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
+\chkbox & Signal switches: (Side signals / Headlight removed) & --- \\
+\chkbox & Lamp relays: \gpio{21} (Brake) $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
+\chkbox & Indicator relays: \gpio{25} (AUTO), \gpio{26} (MANUAL), \gpio{17} (READY), \gpio{18} (ESTOP), \gpio{27} (12\,V power) $\rightarrow$ relay coils $\rightarrow$ 12\,V & --- \\
 \chkbox & WDT: \gpio{23} $\rightarrow$ TPS3850 WDI & --- \\
 \bottomrule
 \caption{SYS ESP32-S3 pre-power checklist.}

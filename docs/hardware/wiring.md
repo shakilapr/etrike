@@ -776,14 +776,14 @@ Hardware/API mapping: CANalyst-II Ch0 = high bus and Ch1 = low bus. The smoke ID
 
 - [ ] WCMCU-230 (low bus): VCC → 3V3 (J1-1), GND → GND (J1-22), CTX → GPIO5, CRX → GPIO4
 - [ ] WCMCU-230: 120 Ω terminator jumper **ON**
-- [ ] ESTOP button: NC contact from 3.3 V → GPIO1, with 10k external pull-down at GPIO1.
+- [ ] ESTOP button: NC contact from GPIO1 → GND. (Uses internal pull-up).
 - [ ] Brake lever: GPIO2 → NO switch → GND. Internal pull-up.
 - [ ] START button: GPIO41 → NO momentary → GND. Internal pull-up.
 - [ ] MODE button: GPIO11 → NO momentary → GND. Internal pull-up.
 - [ ] Do not connect SYS throttle DAC, ADC, or gear I/O to a vehicle motor controller.
-- [ ] Signal switches: GPIO9 (left turn), GPIO6 (right turn), GPIO7 (headlight) → GND
-- [ ] Lamp drivers: GPIO18/19/21/10 → relay or lamp-driver inputs; add coil suppression.
-- [ ] Indicator/accessory drivers: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO40 (accessory) → driver inputs; add coil suppression.
+- [ ] Signal switches: *(Side signals / Headlight removed)*
+- [ ] Lamp drivers: GPIO21 (Brake lamp) → relay or lamp-driver inputs; add coil suppression.
+- [ ] Indicator/accessory drivers: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO18 (ESTOP), GPIO17 (READY), GPIO14 (BYPASS) → driver inputs; add coil suppression.
 - [ ] WDT: GPIO47 → TPS3850 WDI
 - [ ] Mode 1 only: GPIO42 (J3 pin 6) → GND. Remove for production and external JTAG.
 

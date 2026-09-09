@@ -32,16 +32,13 @@ constexpr int kSwitchRightTurn =  6;
 constexpr int kSwitchHeadlight =  7;
 
 // ── signal lights — relay lamp outputs ────────────────────────────
-constexpr int kLightLeftTurn  = 18;
-constexpr int kLightRightTurn = 19;
 constexpr int kLightBrake     = 21;
-constexpr int kLightHead      = 10;
 
 // ── mode indicator bulbs + 12V relay ─────────────────────────────
 constexpr int kBulbAuto       = 48;
 constexpr int kBulbManual     = 39;
 constexpr int kBulbReady      = 17;  // green — system ready (AUTO/MANUAL, RT alive, no faults)
-constexpr int kBulbEstop      = 20;  // red — dedicated ESTOP indicator
+constexpr int kBulbEstop      = 18;  // red — dedicated ESTOP indicator (moved from 20 to avoid USB conflict)
 constexpr int kBulbBypass     = 14;  // yellow/amber — developer override / safety bypass active
 constexpr int kPower12vRelay  = 40;
 

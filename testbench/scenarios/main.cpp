@@ -1,0 +1,104 @@
+#include <iostream>
+#include <chrono>
+
+namespace testbench {
+    bool test_estop_seb_l3_and_rearm_recovery();
+    bool test_01_estop_reset_loop();
+    bool test_02_repeated_reset_attempts();
+    bool test_03_rt_originated_estop_recovery();
+    bool test_04_remote_001_echo();
+    bool test_05_persistent_001_spam();
+    bool test_06_mtr_feedback_dropout_moving();
+    bool test_07_mtr_feedback_dropout_standstill();
+    bool test_08_mtr_feedback_recovery();
+    bool test_09_mtr_feedback_intermittent_loss();
+    bool test_10_command_echo_false_negative();
+    // Comprehensive ESTOP Trigger Verification Matrix
+    bool test_estop_trigger_01_hw_button();
+    bool test_estop_trigger_02_remote_001_low_can();
+    bool test_estop_trigger_03_remote_001_high_can();
+    bool test_estop_trigger_04_seb_l3_fault();
+    bool test_estop_trigger_05_brake_following_error();
+    bool test_estop_trigger_06_rt_software_estop();
+    bool test_estop_trigger_07_rt_heartbeat_timeout();
+    bool test_estop_trigger_08_seb_0x731_err_info();
+    bool test_estop_trigger_09_mtr_reported_estop();
+    bool test_estop_trigger_10_multi_cause_simultaneous();
+    bool test_estop_trigger_11_mode_longpress_reset();
+
+    // Section 3: Concurrent Publishing & Controller Active State Verification
+    bool test_estop_clear_with_transient_inflight_publishing();
+    bool test_estop_clear_refused_when_continuously_publishing();
+    bool test_estop_clear_does_not_mean_controllers_active();
+}
+
+int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
+    std::cout << "========================================================\n";
+    std::cout << "  E-TRIKE SYSTEM TEST BENCH (vECU -> Restbus -> HIL)\n";
+    std::cout << "  Running Exhaustive ESTOP & Distributed Verification Suite\n";
+    std::cout << "========================================================\n\n";
+
+    auto start_time = std::chrono::steady_clock::now();
+    bool all_passed = true;
+
+    auto run_test = [&](const char* name, auto fn) {
+        try {
+            if (!fn()) {
+                std::cerr << "FAIL: " << name << "\n\n";
+                all_passed = false;
+            } else {
+                std::cout << "\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "EXCEPTION in " << name << ": " << e.what() << "\n\n";
+            all_passed = false;
+        }
+    };
+
+    std::cout << "--- SECTION 1: Baseline & Prior Scenarios 1 to 10 ---\n";
+    run_test("Baseline ESTOP SEB L3 Recovery", testbench::test_estop_seb_l3_and_rearm_recovery);
+    run_test("Test 01: ESTOP Reset-Loop", testbench::test_01_estop_reset_loop);
+    run_test("Test 02: Repeated Reset Attempts (20x)", testbench::test_02_repeated_reset_attempts);
+    run_test("Test 03: RT-Originated ESTOP Recovery", testbench::test_03_rt_originated_estop_recovery);
+    run_test("Test 04: Remote 0x001 Echo", testbench::test_04_remote_001_echo);
+    run_test("Test 05: Persistent 0x001 Spam", testbench::test_05_persistent_001_spam);
+    run_test("Test 06: MTR Feedback 250ms Dropout Moving", testbench::test_06_mtr_feedback_dropout_moving);
+    run_test("Test 07: MTR Feedback 250ms Dropout Standstill", testbench::test_07_mtr_feedback_dropout_standstill);
+    run_test("Test 08: MTR Feedback Recovery", testbench::test_08_mtr_feedback_recovery);
+    run_test("Test 09: MTR Feedback Intermittent Loss", testbench::test_09_mtr_feedback_intermittent_loss);
+    run_test("Test 10: Command-Echo False-Negative", testbench::test_10_command_echo_false_negative);
+
+    std::cout << "--- SECTION 2: All ESTOP Triggers & Reset Matrix ---\n";
+    run_test("Trigger 01: Hardware ESTOP Button on SYS", testbench::test_estop_trigger_01_hw_button);
+    run_test("Trigger 02: Remote 0x001 on Low CAN", testbench::test_estop_trigger_02_remote_001_low_can);
+    run_test("Trigger 03: High CAN 0x001 (Gatewayed by RT)", testbench::test_estop_trigger_03_remote_001_high_can);
+    run_test("Trigger 04: SEB L3 Critical Fault (0x721)", testbench::test_estop_trigger_04_seb_l3_fault);
+    run_test("Trigger 05: Persistent Brake Following Error", testbench::test_estop_trigger_05_brake_following_error);
+    run_test("Trigger 06: RT Software ESTOP / Autonomy Fault", testbench::test_estop_trigger_06_rt_software_estop);
+    run_test("Trigger 07: RT Heartbeat Watchdog Timeout at SYS", testbench::test_estop_trigger_07_rt_heartbeat_timeout);
+    run_test("Trigger 08: SEB 0x731 L3 Error Info Frame", testbench::test_estop_trigger_08_seb_0x731_err_info);
+    run_test("Trigger 09: MTR Reported ESTOP (0x206)", testbench::test_estop_trigger_09_mtr_reported_estop);
+    run_test("Trigger 10: Multi-Cause Simultaneous ESTOP", testbench::test_estop_trigger_10_multi_cause_simultaneous);
+    run_test("Trigger 11: Alternative Reset via MODE 3s Long-Press", testbench::test_estop_trigger_11_mode_longpress_reset);
+
+    std::cout << "--- SECTION 3: Concurrent Publishing & Active State Invariants ---\n";
+    run_test("Test 12: In-Flight / Transient 0x001 Publishing During Clear", testbench::test_estop_clear_with_transient_inflight_publishing);
+    run_test("Test 13: Continuous 0x001 Publishing Re-Latches (Refusal)", testbench::test_estop_clear_refused_when_continuously_publishing);
+    run_test("Test 14: ESTOP Clear != Active State (Multi-Node Verification)", testbench::test_estop_clear_does_not_mean_controllers_active);
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start_time).count();
+
+    std::cout << "========================================================\n";
+    if (all_passed) {
+        std::cout << "  RESULT: ALL TESTS PASSED (" << elapsed << " ms execution time)\n";
+    } else {
+        std::cout << "  RESULT: SOME TESTS FAILED\n";
+    }
+    std::cout << "========================================================\n";
+
+    return all_passed ? 0 : 1;
+}
