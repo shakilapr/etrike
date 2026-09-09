@@ -275,6 +275,18 @@
     ],
     [
       "high",
+      "0x620",
+      "standard",
+      "rt:rt_diag_rpt",
+      8,
+      1000,
+      "RT",
+      [
+        "Host"
+      ]
+    ],
+    [
+      "high",
       "0x621",
       "standard",
       "rt:rt_diag_event_rpt",
