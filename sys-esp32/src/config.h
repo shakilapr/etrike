@@ -98,6 +98,7 @@ constexpr int kEstopLongPressMs       = 3000;  // held 3s → MANUAL
 
 // ── MTR ESTOP ACK (gap #15) ──────────────────────────────────────────
 constexpr int kMtrEstopAckTimeoutMs   =  100;  // ESTOP_ACTIVE bit in 0x206 within 100ms
+constexpr int kMtrEstopAckMaxRetries  =    3;  // retries before escalating to latched fault
 
 // ── 0x206 staleness (gap #15) ────────────────────────────────────────
 constexpr int kMtrFbkStaleMs          =  200;  // MTR comms lost if no 0x206 for 200ms
