@@ -42,7 +42,6 @@ public:
             twai_node_disable(node_);
             twai_node_delete(node_);
         }
-        if (rx_queue_) vQueueDelete(rx_queue_);
         if (free_tx_slots_) vQueueDelete(free_tx_slots_);
         if (control_mutex_) vSemaphoreDelete(control_mutex_);
     }
@@ -51,10 +50,9 @@ public:
     CanDriver& operator=(const CanDriver&) = delete;
 
     bool init() {
-        if (!rx_queue_) rx_queue_ = xQueueCreate(32, sizeof(RxItem));
         if (!free_tx_slots_) free_tx_slots_ = xQueueCreate(kTxSlots, sizeof(uint8_t));
         if (!control_mutex_) control_mutex_ = xSemaphoreCreateMutex();
-        if (!rx_queue_ || !free_tx_slots_ || !control_mutex_) return false;
+        if (!free_tx_slots_ || !control_mutex_) return false;
         if (xSemaphoreTake(control_mutex_, pdMS_TO_TICKS(500)) != pdTRUE) return false;
 
         if (node_) {
@@ -63,7 +61,6 @@ public:
             node_ = nullptr;
         }
         initialized_ = false;
-        xQueueReset(rx_queue_);
         reset_tx_slots_();
 
         twai_onchip_node_config_t config{};
@@ -76,12 +73,11 @@ public:
         // callback on Bus-Off. Keep one driver-owned frame so recovery can
         // reclaim its application slot deterministically.
         config.fail_retry_cnt = 0;
-        config.tx_queue_depth = 1;
+        config.tx_queue_depth = kTxSlots;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {
             twai_event_callbacks_t callbacks{};
-            callbacks.on_rx_done = &CanDriver::on_rx_done_;
             callbacks.on_tx_done = &CanDriver::on_tx_done_;
             callbacks.on_state_change = &CanDriver::on_state_change_;
             result = twai_node_register_event_callbacks(node_, &callbacks, this);
@@ -98,16 +94,6 @@ public:
         }
         xSemaphoreGive(control_mutex_);
         return initialized_;
-    }
-
-    bool receive(Frame& out, TickType_t timeout_ms = 100) {
-        if (!initialized_) return false;
-        RxItem item{};
-        if (xQueueReceive(rx_queue_, &item, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
-        out = Frame(item.id, item.extended, item.dlc);
-        std::memcpy(out.data.data(), item.data, item.dlc);
-        log_first_io_after_recovery_(true);
-        return true;
     }
 
     bool send(const Frame& source, TickType_t timeout_ms = 20) {
@@ -136,7 +122,7 @@ public:
             xQueueSend(free_tx_slots_, &index, 0);
             return false;
         }
-        log_first_io_after_recovery_(false);
+        log_first_tx_after_recovery_();
         return true;
     }
 
@@ -216,26 +202,17 @@ public:
     }
 
 private:
-    static constexpr uint8_t kTxSlots = 1;
+    static constexpr uint8_t kTxSlots = 4;
     static int64_t recovery_backoff_us_(uint32_t streak) {
         const uint32_t shift = streak > 4 ? 4 : (streak > 0 ? streak - 1 : 0);
         const int64_t delay = 500'000LL << shift;
         return delay > 5'000'000LL ? 5'000'000LL : delay;
     }
-    struct RxItem {
-        uint32_t id;
-        uint8_t dlc;
-        bool extended;
-        uint8_t data[8];
-    };
     struct TxSlot {
         twai_frame_t frame{};
         uint8_t data[8]{};
     };
 
-    static bool IRAM_ATTR on_rx_done_(twai_node_handle_t node,
-                                      const twai_rx_done_event_data_t* event,
-                                      void* user_ctx);
     static bool IRAM_ATTR on_tx_done_(twai_node_handle_t node,
                                       const twai_tx_done_event_data_t* event,
                                       void* user_ctx);
@@ -252,13 +229,12 @@ private:
         }
     }
 
-    void log_first_io_after_recovery_(bool rx) {
-        auto& pending = rx ? first_rx_pending_ : first_tx_pending_;
-        if (!pending.exchange(false, std::memory_order_acq_rel)) return;
+    void log_first_tx_after_recovery_() {
+        if (!first_tx_pending_.exchange(false, std::memory_order_acq_rel)) return;
         const TickType_t elapsed = xTaskGetTickCount()
             - bus_off_started_tick_.load(std::memory_order_relaxed);
-        ESP_LOGI("can", "post_recovery first_%s elapsed_ms=%lu",
-                 rx ? "rx" : "tx", static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS));
+        ESP_LOGI("can", "post_recovery first_tx elapsed_ms=%lu",
+                 static_cast<unsigned long>(elapsed * portTICK_PERIOD_MS));
     }
 
     void reset_tx_slots_() {
@@ -270,7 +246,6 @@ private:
 
     Config config_;
     twai_node_handle_t node_{nullptr};
-    QueueHandle_t rx_queue_{nullptr};
     QueueHandle_t free_tx_slots_{nullptr};
     SemaphoreHandle_t control_mutex_{nullptr};
     TxSlot tx_slots_[kTxSlots]{};
@@ -282,7 +257,6 @@ private:
     std::atomic<uint32_t> last_transition_tick_{0};
     std::atomic<int64_t> last_recovery_attempt_us_{0};
     std::atomic<uint32_t> bus_off_started_tick_{0};
-    std::atomic<bool> first_rx_pending_{false};
     std::atomic<bool> first_tx_pending_{false};
     std::atomic<uint32_t> consecutive_bus_offs_{0};
     std::atomic<int64_t> tx_resume_not_before_us_{0};

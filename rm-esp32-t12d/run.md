@@ -21,8 +21,8 @@ Receiver: **RadioLink R16F V1.0** via single-wire **SBUS** (100k, 8E2, inverted)
 
 | Signal | ESP32 GPIO | Direction | Purpose |
 | :--- | :--- | :--- | :--- |
-| **CAN TX** | **GPIO 21** | Output | Low CAN transceiver TXD (500 kbit/s) |
-| **CAN RX** | **GPIO 22** | Input | Low CAN transceiver RXD (500 kbit/s) |
+| **CAN TX** | **GPIO 5** | Output | Low CAN transceiver TXD (500 kbit/s) |
+| **CAN RX** | **GPIO 4** | Input | Low CAN transceiver RXD (500 kbit/s) |
 | **SBUS RX** | **GPIO 16** | Input | R16F CH16 S.BUS Signal (100 kbps, 8E2, inverted) |
 | **5V Supply** | **5V Pin** | Power | R16F Power (~50 mA @ 5V) |
 | **GND** | **GND Pin** | Ground | Common system ground |
@@ -76,16 +76,16 @@ Expected startup banner:
 ```text
 I (310) rm_t12d: =================================================
 I (310) rm_t12d:   RM-ESP32-T12D Receiver Gateway (RadioLink SBUS)
-I (310) rm_t12d:   Version: v0.8.0-alpha-rm-t12d
+I (310) rm_t12d:   Version: v0.8.0-clean-rm-t12d
 I (310) rm_t12d: =================================================
-I (320) can: TWAI TX=21 RX=22 @ 500 kbit/s
+I (320) can: TWAI TX=5 RX=4 @ 500 kbit/s
 I (330) rc_rx: Initialized SBUS UART1 on RX GPIO 16 (100k, 8E2, inverted)
 I (340) rm_t12d: All tasks created successfully. RM-ESP32-T12D operational.
 ```
 
-10 Hz Telemetry Log Example:
+1 Hz Telemetry Log Example:
 ```text
-I (1340) rm_t12d: STATUS | Valid=1 FS=0 Lost=0 Ign=1 Gear=D Steer=12.4 deg Brk=0.0 mm Throt=45% VRA=1.00 | CH[1..8]=[1624,1500,1450,1500,2000,2000,2000,1000]us | CAN ok=120 fail=0
+I (1340) rm_t12d: STATUS | Link=OK Valid=1 Enable=1 Gear=D Steer=+12.4 deg Brk=0.0 mm Throt=45% Spd=1350 | CAN ok=120 fail=0
 ```
 
 ---
