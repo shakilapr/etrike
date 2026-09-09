@@ -482,6 +482,19 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_options(sim_engine_native PRIVATE -static)
 endif()
 
+# ── RM-ESP32-T12D SBUS Suite ─────────────────────────────────────────
+add_executable(rm_t12d_suite
+    ${ETRIKE_ROOT}/rm-esp32-t12d/test/test_rm_t12d_suite.cpp
+    ${ETRIKE_ROOT}/rm-esp32-t12d/src/sbus_parser.cpp
+)
+target_link_libraries(rm_t12d_suite PRIVATE protocol_headers)
+target_include_directories(rm_t12d_suite PRIVATE
+    ${ETRIKE_ROOT}/rm-esp32-t12d/src
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+)
+add_test(NAME rm_t12d_suite COMMAND rm_t12d_suite)
+
 # ── RT-AURIX-Lite (host-first firmware core + tests) ────────────────
 add_subdirectory(
     ${ETRIKE_ROOT}/rt-aurix-lite
