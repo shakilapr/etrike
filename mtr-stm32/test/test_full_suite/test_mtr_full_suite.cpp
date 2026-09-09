@@ -1169,6 +1169,94 @@ void test_motor_manager_rearm_timeout_stays_inhibited() {
     ASSERT_FALSE(mgr.propulsion_inhibited());
 }
 
+// Multi-stream authority readiness bitmask latch:
+// Verify that MODE, POWER, and DRIVE streams must ALL be ready before propulsion is enabled.
+// Test out-of-order arrivals (e.g. DRIVE recovers before POWER, or MODE after DRIVE)
+// and verify motor stays inhibited until all required streams are valid.
+static void test_motor_manager_multi_stream_readiness_latch() {
+    mtr::RelayController relays;
+    mtr::DacController dac;
+    mtr::MotorManager mgr(relays, dac);
+    mgr.init();
+
+    uint32_t now = 100;
+    can::gen::RtDriveCmd drv{2500, static_cast<uint8_t>(can::Gear::D)};
+    can::Frame drv_fr;
+    can::gen::encode_rt_drive_cmd(drv, drv_fr);
+
+    // Initial state: 0 readiness mask
+    ASSERT_EQ(mgr.ready_mask(), 0);
+    ASSERT_FALSE(mgr.is_motor_ready());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+
+    // 1. Send Mode only (0x110)
+    send_mode(mgr, can::Mode::Auto, now);
+    ASSERT_EQ(mgr.ready_mask(), mtr::MTR_READY_MODE);
+    ASSERT_FALSE(mgr.is_motor_ready());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+
+    // 2. Send Safety (0x011) so safety state is valid
+    send_safety(mgr, false, now);
+
+    // 3. Send Drive (0x204) before Power - out of order
+    mgr.handle_frame(drv_fr, now);
+    mgr.tick(now);
+    // Even if drive frame is parsed, power is missing
+    ASSERT_FALSE(mgr.is_motor_ready());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+    ASSERT_EQ(dac.current_code(), 0);
+
+    // 4. Send Power ON (0x113)
+    send_power(mgr, true, now);
+    // Send another drive frame with power now on
+    mgr.handle_frame(drv_fr, now);
+    mgr.tick(now);
+
+    // Now all streams are present: MODE, POWER, DRIVE
+    ASSERT_TRUE(mgr.is_motor_ready());
+    ASSERT_FALSE(mgr.propulsion_inhibited());
+    ASSERT_TRUE(dac.current_code() > 0);
+
+    // 5. Trip ESTOP -> all readiness bits must be wiped immediately
+    send_safety(mgr, true, now + 20);
+    now += 20;
+    mgr.tick(now);
+    ASSERT_TRUE(mgr.is_estop_active());
+    ASSERT_EQ(mgr.ready_mask(), 0);
+    ASSERT_FALSE(mgr.is_motor_ready());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+    ASSERT_EQ(dac.current_code(), 0);
+
+    // 6. Clear ESTOP via two consecutive 0 frames
+    send_safety_frames(mgr, false, 2, now + 20);
+    now += 40;
+    mgr.tick(now);
+    ASSERT_FALSE(mgr.is_estop_active());
+    // Cleared ESTOP requires REARM, readiness mask must still lack power
+    ASSERT_FALSE(mgr.is_motor_ready());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+
+    // 7. Re-feed mode and power OFF->ON (satisfying REARM)
+    send_mode(mgr, can::Mode::Auto, now);
+    send_power(mgr, false, now); // OFF edge
+    mgr.tick(now);
+    ASSERT_FALSE(mgr.is_motor_ready());
+
+    now += 20;
+    send_power(mgr, true, now);  // ON edge
+    mgr.tick(now);
+    // Still waiting for fresh drive setpoint
+    ASSERT_FALSE(mgr.is_motor_ready());
+    ASSERT_TRUE(mgr.propulsion_inhibited());
+
+    // 8. Fresh drive command arrives
+    mgr.handle_frame(drv_fr, now);
+    mgr.tick(now);
+    ASSERT_TRUE(mgr.is_motor_ready());
+    ASSERT_FALSE(mgr.propulsion_inhibited());
+    ASSERT_TRUE(dac.current_code() > 0);
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1193,6 +1281,7 @@ int main() {
     RUN_TEST(test_motor_manager_sys_estop_via_safety_status);
     RUN_TEST(test_motor_manager_drive_cmd_watchdog);
     RUN_TEST(test_motor_manager_rearm_timeout_stays_inhibited);
+    RUN_TEST(test_motor_manager_multi_stream_readiness_latch);
     RUN_TEST(test_fdcan_driver_ringbuffer);
 
     return UNITY_END();
