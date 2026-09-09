@@ -132,6 +132,74 @@
     },
     {
       "byte_order": "big",
+      "canonical_key": "hmi:host_estop_reset_req",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 4,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x114",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "Host"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x114",
+          "receivers": [
+            "SYS"
+          ],
+          "semantics": "same_frame",
+          "sender": "Host"
+        }
+      ],
+      "key": "host_estop_reset_req",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "key": "request_seq",
+            "max": 255,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 1,
+            "key": "reset_token",
+            "max": 65535,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 3,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "HOST_ESTOP_RESET_REQ",
+      "owner": "hmi",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
       "canonical_key": "host:host_brake_req",
       "codec": {
         "strategy": "generated"
@@ -2481,6 +2549,86 @@
     },
     {
       "byte_order": "big",
+      "canonical_key": "sys:sys_estop_reset_rsp",
+      "codec": {
+        "strategy": "generated"
+      },
+      "dlc": 5,
+      "instances": [
+        {
+          "bus": "high",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x115",
+          "receivers": [
+            "Host"
+          ],
+          "semantics": "same_frame",
+          "sender": "SYS"
+        },
+        {
+          "bus": "low",
+          "cycle_ms": 0,
+          "frame_format": "standard",
+          "id": "0x115",
+          "receivers": [
+            "RT"
+          ],
+          "semantics": "independent",
+          "sender": "SYS"
+        }
+      ],
+      "key": "sys_estop_reset_rsp",
+      "layout": {
+        "fields": [
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 0,
+            "key": "request_seq",
+            "max": 255,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 1,
+            "enum": {
+              "0": "ACCEPTED",
+              "1": "REJECTED"
+            },
+            "key": "result",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 16,
+            "byte": 2,
+            "key": "blocker_mask",
+            "max": 65535,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 4,
+            "counter": {
+              "increment": 1,
+              "kind": "wrapping",
+              "reset_scope": "ecu_restart"
+            },
+            "key": "rolling_counter"
+          }
+        ],
+        "kind": "signals"
+      },
+      "name": "SYS_ESTOP_RESET_RSP",
+      "owner": "sys",
+      "protocol": "etrike.application.v1"
+    },
+    {
+      "byte_order": "big",
       "canonical_key": "sys:sys_heartbeat",
       "codec": {
         "strategy": "generated"
@@ -2939,7 +3087,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "8db464fb4cd64e7fa20a7536c4fcc9dbe3e209035947378ad009bdc7e0a22da3",
+  "network_hash": "a37f51545783bf4de5ae166f653e0ed80e26b16aa62153dc17a425c0a47312df",
   "routes": [
     {
       "from": "low",
@@ -3031,9 +3179,23 @@
       "message": "mtr:mtr_node_status",
       "semantics": "same_frame",
       "to": "high"
+    },
+    {
+      "from": "high",
+      "key": "rt-h2l-reset-req",
+      "message": "hmi:host_estop_reset_req",
+      "semantics": "same_frame",
+      "to": "low"
+    },
+    {
+      "from": "low",
+      "key": "rt-l2h-reset-rsp",
+      "message": "sys:sys_estop_reset_rsp",
+      "semantics": "same_frame",
+      "to": "high"
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "d3507d71f7fb498b171f1acc086057afe581a417a1f35a44a137fa4d2f79d0b0",
-  "wire_hash": "d3507d71f7fb498b171f1acc086057afe581a417a1f35a44a137fa4d2f79d0b0"
+  "semantic_hash": "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c",
+  "wire_hash": "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c"
 }

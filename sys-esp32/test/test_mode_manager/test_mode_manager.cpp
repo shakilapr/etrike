@@ -278,6 +278,100 @@ void test_estop_exit_blocked_while_seb_l3_active(void) {
     TEST_ASSERT_FALSE(sys::latched_fault_present());
 }
 
+// BUG-10: Remote Host ESTOP Reset Request tests
+void test_remote_reset_rejected_when_physical_estop_active(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    
+    // Physical ESTOP active (e.g. button pressed)
+    uint16_t blockers = sys::get_estop_reset_blockers(
+        /*physical_estop=*/true,
+        /*hb_ok=*/true,
+        /*measured_speed_mmps=*/0,
+        /*mtr_fault_flags=*/0,
+        /*token=*/sys::kRemoteResetTokenMagic
+    );
+    TEST_ASSERT_TRUE(blockers & sys::kResetBlockPhysicalEstop);
+    TEST_ASSERT_FALSE(mm.try_exit_estop_remote(blockers));
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
+void test_remote_reset_rejected_when_vehicle_moving(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    
+    // Measured wheel speed > 50 mm/s (e.g. 100 mm/s)
+    uint16_t blockers = sys::get_estop_reset_blockers(
+        /*physical_estop=*/false,
+        /*hb_ok=*/true,
+        /*measured_speed_mmps=*/100,
+        /*mtr_fault_flags=*/0,
+        /*token=*/sys::kRemoteResetTokenMagic
+    );
+    TEST_ASSERT_TRUE(blockers & sys::kResetBlockMoving);
+    TEST_ASSERT_FALSE(mm.try_exit_estop_remote(blockers));
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
+void test_remote_reset_rejected_when_token_invalid(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    
+    uint16_t blockers = sys::get_estop_reset_blockers(
+        /*physical_estop=*/false,
+        /*hb_ok=*/true,
+        /*measured_speed_mmps=*/0,
+        /*mtr_fault_flags=*/0,
+        /*token=*/0x1234  // Bad magic token
+    );
+    TEST_ASSERT_TRUE(blockers & sys::kResetBlockInvalidToken);
+    TEST_ASSERT_FALSE(mm.try_exit_estop_remote(blockers));
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
+void test_remote_reset_rejected_when_latched_fault_asserted(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    sys::set_latched_fault(sys::kLatchedSebL3);
+    g_seb_error_status.store(3); // active L3
+    
+    uint16_t blockers = sys::get_estop_reset_blockers(
+        /*physical_estop=*/false,
+        /*hb_ok=*/true,
+        /*measured_speed_mmps=*/0,
+        /*mtr_fault_flags=*/0,
+        /*token=*/sys::kRemoteResetTokenMagic
+    );
+    TEST_ASSERT_TRUE(blockers & sys::kResetBlockLatchedFault);
+    TEST_ASSERT_FALSE(mm.try_exit_estop_remote(blockers));
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
+void test_remote_reset_succeeds_when_clean(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    sys::g_latched_fault_reasons.store(0);
+    g_seb_error_status.store(0);
+    g_seb_status_byte0.store(0x00);
+    
+    uint16_t blockers = sys::get_estop_reset_blockers(
+        /*physical_estop=*/false,
+        /*hb_ok=*/true,
+        /*measured_speed_mmps=*/0,
+        /*mtr_fault_flags=*/0,
+        /*token=*/sys::kRemoteResetTokenMagic
+    );
+    TEST_ASSERT_EQUAL_UINT16(0, blockers);
+    TEST_ASSERT_TRUE(mm.try_exit_estop_remote(blockers));
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+    TEST_ASSERT_FALSE(sys::latched_fault_present());
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_estop_latched_invariant);
@@ -295,6 +389,11 @@ extern "C" void app_main() {
     RUN_TEST(test_mode_manager_can_mode_cmd_does_not_clear_estop);
     RUN_TEST(test_estop_exit_blocked_while_latched_cause_active);
     RUN_TEST(test_estop_exit_blocked_while_seb_l3_active);
+    RUN_TEST(test_remote_reset_rejected_when_physical_estop_active);
+    RUN_TEST(test_remote_reset_rejected_when_vehicle_moving);
+    RUN_TEST(test_remote_reset_rejected_when_token_invalid);
+    RUN_TEST(test_remote_reset_rejected_when_latched_fault_asserted);
+    RUN_TEST(test_remote_reset_succeeds_when_clean);
     UNITY_END();
 }
 

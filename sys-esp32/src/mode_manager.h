@@ -31,6 +31,9 @@ public:
     // latched fault is still set.
     bool try_exit_estop();
     
+    // Remote ESTOP reset (BUG-10). Returns false if blocker_mask != 0 or not in ESTOP.
+    bool try_exit_estop_remote(uint16_t blocker_mask);
+    
     // Parses incoming 0x111 HMI_MODE_REQ. Returns true if mode changed.
     bool parse_hmi_mode(uint8_t requested_mode);
 

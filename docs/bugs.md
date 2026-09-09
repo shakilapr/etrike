@@ -157,18 +157,36 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
 - **Fix direction**
   - Assign every stop-producing state a distinct RT state-report reason, or add a dedicated stop-cause report rather than overloading `estop_reason`.
 
-### BUG-10: estop reset is not observable through a dedicated Host command
+### BUG-10: [FIXED] estop reset is not observable through a dedicated Host command
 
 - **Files**
-  - `sys-esp32/src/mode_manager.cpp` lines 69–94
-  - `sys-esp32/src/safety_monitor.cpp` lines 48–66
+  - `protocol/contracts/hmi.yaml` (0x114 `HOST_ESTOP_RESET_REQ`)
+  - `protocol/contracts/sys.yaml` (0x115 `SYS_ESTOP_RESET_RSP`)
+  - `protocol/contracts/network.yaml`
+  - `protocol/contracts/baseline-manifest.json`
+  - `rt-esp32/src/can_rx_router.h`
+  - `sys-esp32/src/config.h`
+  - `sys-esp32/src/inhibit_state.h`
+  - `sys-esp32/src/mode_manager.h`
+  - `sys-esp32/src/mode_manager.cpp`
+  - `sys-esp32/src/main.cpp`
+  - `sys-esp32/test/test_mode_manager/test_mode_manager.cpp`
 - **Symptom**
-  - Host cannot reliably clear an estop after diagnosing the root cause.
+  - Host cannot reliably clear an estop after diagnosing the root cause or inspect why a reset attempt is refused.
 - **Bug**
-  - Reset is only supported through physical switches or long-press on SYS. The Host has no authorized, authenticated two-step reset command.
-  - This is intentional from a safety perspective but leaves the Host unable to perform a demonstrably safe automated reset when the fault clears.
-- **Fix direction**
-  - Add a dedicated, sequence-protected Host reset command with clear cause-proven, confirmed-clear semantics.
+  - Reset was only supported through physical switches (START button or 3s MODE long-press on SYS).
+  - The Host had no dedicated, sequence-protected, authenticated reset command or pre-flight blocker visibility.
+- **Resolution**
+  - Implemented 1-Req / 1-Rsp architecture with blocker introspection:
+    - Host sends `0x114 HOST_ESTOP_RESET_REQ` (`request_seq`, `reset_token = 0x5253`, `rolling_counter`).
+    - RT acts as Route Only, forwarding `0x114` High $\to$ Low.
+    - SYS acts as Sole Reset Authority via `get_estop_reset_blockers()`:
+      - Rejects if hardware ESTOP button pressed (`kResetBlockPhysicalEstop`), active latched faults (`kResetBlockLatchedFault`), vehicle moving $> 50\,\text{mm/s}$ (`kResetBlockMoving`), heartbeat lost (`kResetBlockHeartbeatLoss`), MTR active estop (`kResetBlockMtrEstopActive`), or bad token/stale stream (`kResetBlockInvalidToken`).
+    - If blockers == 0: executes `try_exit_estop_remote()` transitioning `ESTOP -> MANUAL` (power OFF), opens reset grace window (`sys::mark_estop_reset`), and replies `0x115 SYS_ESTOP_RESET_RSP` with `result = ACCEPTED (0)` and `blocker_mask = 0`.
+    - If blockers != 0: remains in ESTOP and replies `0x115 SYS_ESTOP_RESET_RSP` with `result = REJECTED (1)` and active `blocker_mask`.
+  - Preserved downstream safety invariants: RT and MTR clear only upon observing fresh advancing `0x011` clear frames, and MTR requires an explicit subsequent `0x113` power command (`OFF -> ON`) before rearming.
+  - Exposed continuous pre-flight visibility via `0x500 SYS_NODE_STATUS` `block_mask`.
+
 
 ## Severity 3 — protocol and tooling issues
 

@@ -55,9 +55,14 @@ inline can::gen::CodecStatus route_frame(const can::Frame& f, bool is_high_bus, 
     case can::kIdHmiModeReq:
     case can::kIdHmiPwrReq:
     case can::kIdHostLightCmd:
+    case can::kIdHostEstopResetReq: // 0x114 Host ESTOP reset request — Route Only High→Low to SYS
         if (is_high_bus && q.gw_tx_low) *q.gw_tx_low = f;
         return can::gen::CodecStatus::Ok;
+    case can::kIdSysEstopResetRsp:  // 0x115 SYS ESTOP reset response — Route Only Low→High to Host
+        if (!is_high_bus && q.gw_tx_high) *q.gw_tx_high = f;
+        return can::gen::CodecStatus::Ok;
     case can::kIdSysModeCmd:  // SYS_MODE_CMD — consumed by RT (authoritative mode)
+
         if (!is_high_bus && q.mode_from_sys) {
             can::gen::SysModeCmd decoded{};
             auto status = can::decode_frame(f, decoded);

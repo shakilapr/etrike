@@ -150,11 +150,14 @@ static std::atomic<uint32_t> g_last_brake_setpoint_tick{0};
 // its remaining valid inputs (physical buttons, safety state).
 static etrike::protocol::StreamValidity g_mode_req_val;
 static etrike::protocol::StreamValidity g_pwr_req_val;
+static etrike::protocol::StreamValidity g_reset_req_val;
 static constexpr uint32_t kReqFreshTicks =
     can::gen::HmiModeReq::kCycleMs * 5;  // request cycle 1000ms -> 5s timeout
+static constexpr uint32_t kResetReqFreshTicks = 5000; // 5s timeout for sporadic reset requests
 static std::atomic<bool> g_hmi_pwr_on{false};        // last VALID power request
 static std::atomic<bool> g_mode_request_valid{false};
 static std::atomic<bool> g_power_request_valid{false};
+
 
 // Gap #14: Rate-limit 0x001 ESTOP broadcasts. Prevents flooding.
 static std::atomic<int64_t>  g_last_estop_sent_us{0};
@@ -314,8 +317,61 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             g_hmi_pwr_on.store(request.req_start != 0, std::memory_order_relaxed);
             break;
         }
+        case can::kIdHostEstopResetReq: {  // 0x114 — Host ESTOP reset request (High→Low via RT)
+            static bool inited = false;
+            static uint8_t rsp_roll = 0;
+            if (!inited) {
+                g_reset_req_val.set_key(1 /*low*/, can::kIdHostEstopResetReq, kResetReqFreshTicks);
+                inited = true;
+            }
+            can::gen::HostEstopResetReq req{};
+            if (can::gen::decode_host_estop_reset_req(fr.view(), req) != can::gen::CodecStatus::Ok) break;
+
+            // Supervise freshness and rolling sequence
+            const bool fresh = g_reset_req_val.observe(
+                static_cast<std::uint8_t>(req.rolling_counter), xTaskGetTickCount());
+
+            uint16_t blockers = sys::get_estop_reset_blockers(
+                /*physical_estop=*/g_safety.estop_active(),
+                /*hb_ok=*/g_safety.heartbeat_ok(),
+                /*measured_speed_mmps=*/g_wheel_measured_mmps.load(std::memory_order_relaxed),
+                /*mtr_fault_flags=*/g_motor_fault_flags.load(std::memory_order_relaxed),
+                /*token=*/static_cast<uint16_t>(req.reset_token)
+            );
+
+            if (!fresh) {
+                blockers |= sys::kResetBlockInvalidToken;
+            }
+
+            bool reset_ok = false;
+            if (blockers == 0) {
+                reset_ok = g_mode_mgr.try_exit_estop_remote(blockers);
+                if (reset_ok) {
+                    sys::mark_estop_reset(static_cast<uint32_t>(xTaskGetTickCount()));
+                    ESP_LOGI(TAG, "ESTOP reset via Host request seq=%u accepted", req.request_seq);
+                }
+            }
+
+            // Transmit 0x115 SYS_ESTOP_RESET_RSP on low bus (RT forwards to High)
+            can::gen::SysEstopResetRsp rsp{};
+            rsp.request_seq = req.request_seq;
+            rsp.result = reset_ok ? 0u : 1u;
+            rsp.blocker_mask = blockers;
+            rsp.rolling_counter = rsp_roll++;
+
+            can::Frame rsp_frame;
+            if (can::gen::encode_sys_estop_reset_rsp(rsp, rsp_frame) == can::gen::CodecStatus::Ok) {
+                send_can(rsp_frame, "reset-rsp");
+            }
+            if (!reset_ok) {
+                ESP_LOGW(TAG, "ESTOP reset request seq=%u rejected blockers=0x%04x",
+                         req.request_seq, blockers);
+            }
+            break;
+        }
         case can::kIdMtrMotorFbk: {  // 0x206 — applied-speed-command echo (issue #1: NOT physical speed)
             can::gen::MtrMotorFbk fbk{};
+
             if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
             g_motor_command_speed_mmps.store(fbk.motor_command_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
@@ -419,6 +475,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
                 g_seb_actual_stroke_raw.store(actual_raw, std::memory_order_relaxed);
             }
+            g_seb_seen.store(true, std::memory_order_release);
             g_last_seb_status_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
             // H1: Track SEB rolling counter — if RT's 0x7B9 is failing, SEB stops
@@ -906,37 +963,52 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
         }
 
-        // 0x721 staleness check (architecture §8.10, issue #5): a lost SEB
+        // 0x721 staleness check (architecture §8.10, issue #5, BUG-06): a lost SEB
         // status stream means brake availability is UNKNOWN. This is a B-class
         // recoverable inhibit (kInhibitSebCommsLoss): while set, the mode task
         // drops power/mode authority (traction inhibited). It clears only after
         // several consecutive fresh 0x721 observations (confirmed recovery).
         // g_bypass_seb_sync (bench/sim without an SEB node) disables the trip.
         {
-            TickType_t last = g_last_seb_status_tick.load(std::memory_order_relaxed);
-            const bool seb_seen = (last > 0);
-            const bool stale = seb_seen
-                && (xTaskGetTickCount() - last) >= pdMS_TO_TICKS(sys::kSebStatusTimeoutMs);
-            if (!g_bypass_seb_sync && (stale || !seb_seen)) {
+            const bool seb_seen = g_seb_seen.load(std::memory_order_acquire);
+            const TickType_t now_ticks = xTaskGetTickCount();
+            if (!g_bypass_seb_sync && !seb_seen) {
+                // Startup acquisition window: traction is inhibited until SEB is seen.
                 sys::set_inhibit(sys::kInhibitSebCommsLoss);
-                if (seb_seen) {
+                if (now_ticks >= pdMS_TO_TICKS(sys::kSebStartupAcquireMs)) {
+                    static TickType_t last_boot_warn = 0;
+                    if (last_boot_warn == 0
+                        || (now_ticks - last_boot_warn) >= pdMS_TO_TICKS(1000)) {
+                        ESP_LOGW(TAG, "SEB not detected within startup deadline (%d ms) — traction inhibited",
+                                 sys::kSebStartupAcquireMs);
+                        last_boot_warn = now_ticks;
+                    }
+                }
+            } else if (!g_bypass_seb_sync) {
+                // SEB has been acquired at least once; monitor runtime staleness.
+                TickType_t last = g_last_seb_status_tick.load(std::memory_order_relaxed);
+                const bool stale = (now_ticks - last) >= pdMS_TO_TICKS(sys::kSebStatusTimeoutMs);
+                if (stale) {
+                    sys::set_inhibit(sys::kInhibitSebCommsLoss);
                     static TickType_t last_staleness_warn = 0;
                     if (last_staleness_warn == 0
-                        || (xTaskGetTickCount() - last_staleness_warn)
-                            >= pdMS_TO_TICKS(1000)) {
+                        || (now_ticks - last_staleness_warn) >= pdMS_TO_TICKS(1000)) {
                         ESP_LOGW(TAG, "0x721 SEB_STATUS stale — %lu ms since last frame",
-                                 (unsigned long)((xTaskGetTickCount() - last) * portTICK_PERIOD_MS));
-                        last_staleness_warn = xTaskGetTickCount();
+                                 (unsigned long)((now_ticks - last) * portTICK_PERIOD_MS));
+                        last_staleness_warn = now_ticks;
+                    }
+                } else if (sys::g_inhibit_reasons.load() & sys::kInhibitSebCommsLoss) {
+                    // Fresh status present: confirmed recovery
+                    // (consecutive fresh observations at this 50 Hz cadence).
+                    static int seb_comms_recover_count = 0;
+                    if (++seb_comms_recover_count >= 3) {
+                        sys::clear_inhibit(sys::kInhibitSebCommsLoss);
+                        seb_comms_recover_count = 0;
                     }
                 }
             } else if (sys::g_inhibit_reasons.load() & sys::kInhibitSebCommsLoss) {
-                // Fresh status present (or SEB bypassed): confirmed recovery
-                // (consecutive fresh observations at this 50 Hz cadence).
-                static int seb_comms_recover_count = 0;
-                if (++seb_comms_recover_count >= 3) {
-                    sys::clear_inhibit(sys::kInhibitSebCommsLoss);
-                    seb_comms_recover_count = 0;
-                }
+                // Bypassed mode recovery
+                sys::clear_inhibit(sys::kInhibitSebCommsLoss);
             }
         }
 

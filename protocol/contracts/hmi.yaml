@@ -14,6 +14,15 @@
     ]},"instances":[
       {"bus":"high","id":"0x112","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":1000,"semantics":"independent"},
       {"bus":"low","id":"0x112","frame_format":"standard","sender":"Host","receivers":["SYS"],"cycle_ms":1000,"semantics":"same_frame"}
+    ]},
+    {"key":"host_estop_reset_req","owner":"hmi","protocol":"etrike.application.v1","name":"HOST_ESTOP_RESET_REQ","dlc":4,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"request_seq","byte":0,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"reset_token","byte":1,"bit":0,"bits":16,"min":0,"max":65535},
+      {"key":"rolling_counter","byte":3,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[
+      {"bus":"high","id":"0x114","frame_format":"standard","sender":"Host","receivers":["RT"],"cycle_ms":0,"semantics":"independent"},
+      {"bus":"low","id":"0x114","frame_format":"standard","sender":"Host","receivers":["SYS"],"cycle_ms":0,"semantics":"same_frame"}
     ]}
   ]
 }
+

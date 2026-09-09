@@ -25,8 +25,11 @@
     {"key": "rt-l2h-diag-sys", "message": "sys:sys_diag_event_rpt", "from": "low", "to": "high", "semantics": "same_frame"},
     {"key": "rt-l2h-diag-mtr", "message": "mtr:mtr_diag_event_rpt", "from": "low", "to": "high", "semantics": "same_frame"},
     {"key": "rt-l2h-sys-status", "message": "sys:sys_node_status", "from": "low", "to": "high", "semantics": "same_frame"},
-    {"key": "rt-l2h-mtr-status", "message": "mtr:mtr_node_status", "from": "low", "to": "high", "semantics": "same_frame"}
+    {"key": "rt-l2h-mtr-status", "message": "mtr:mtr_node_status", "from": "low", "to": "high", "semantics": "same_frame"},
+    {"key": "rt-h2l-reset-req", "message": "hmi:host_estop_reset_req", "from": "high", "to": "low", "semantics": "same_frame"},
+    {"key": "rt-l2h-reset-rsp", "message": "sys:sys_estop_reset_rsp", "from": "low", "to": "high", "semantics": "same_frame"}
   ],
+
   "messages": [
     {
       "key": "safety_estop", "owner": "safety", "protocol": "etrike.application.v1", "name": "SAFETY_ESTOP", "dlc": 0, "byte_order": "big",

@@ -43,7 +43,10 @@ inline constexpr std::uint32_t kIdSysModeCmd = generated::SysModeCmd::kId;
 inline constexpr std::uint32_t kIdSysPwrCmd = generated::SysPwrCmd::kId;
 inline constexpr std::uint32_t kIdHmiModeReq = generated::HmiModeReq::kId;
 inline constexpr std::uint32_t kIdHmiPwrReq = generated::HmiPwrReq::kId;
+inline constexpr std::uint32_t kIdHostEstopResetReq = generated::HostEstopResetReq::kId;
+inline constexpr std::uint32_t kIdSysEstopResetRsp = generated::SysEstopResetRsp::kId;
 inline constexpr std::uint32_t kIdSysThrottleSts = generated::SysThrottleSts::kId;
+
 inline constexpr std::uint32_t kIdRtMotionRpt = generated::RtMotionRpt::kId;
 inline constexpr std::uint32_t kIdRtDriveCmd = generated::RtDriveCmd::kId;
 inline constexpr std::uint32_t kIdRtBrakeCmd = generated::RtBrakeCmd::kId;
@@ -157,7 +160,9 @@ using ::etrike::protocol::compat::kIdHmiModeReq;
 using ::etrike::protocol::compat::kIdHmiPwrReq;
 using ::etrike::protocol::compat::kIdHostBrakeReq;
 using ::etrike::protocol::compat::kIdHostDriveCmd;
+using ::etrike::protocol::compat::kIdHostEstopResetReq;
 using ::etrike::protocol::compat::kIdHostHeartbeat;
+
 using ::etrike::protocol::compat::kIdHostLightCmd;
 using ::etrike::protocol::compat::kIdHostObstacleDist;
 using ::etrike::protocol::compat::kIdHostSteerCmd;
@@ -181,7 +186,9 @@ using ::etrike::protocol::compat::kIdSesTest;
 using ::etrike::protocol::compat::kIdSesVersion;
 using ::etrike::protocol::compat::kIdSteerDiag;
 using ::etrike::protocol::compat::kIdSysDiagRpt;
+using ::etrike::protocol::compat::kIdSysEstopResetRsp;
 using ::etrike::protocol::compat::kIdSysHeartbeat;
+
 using ::etrike::protocol::compat::kIdSysModeCmd;
 using ::etrike::protocol::compat::kIdSysPwrCmd;
 using ::etrike::protocol::compat::kIdSysSafetySts;

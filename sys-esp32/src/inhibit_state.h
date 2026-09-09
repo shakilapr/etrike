@@ -21,6 +21,8 @@
 //   SEB L3              -> kLatchedSebL3            (reset path only)
 #include <atomic>
 #include <cstdint>
+#include "config.h"
+
 
 // SEB 0x721-derived live state, defined in inhibit_state.cpp at GLOBAL scope to
 // match the unqualified references in main.cpp's SEB-status ingest path.
@@ -30,6 +32,7 @@
 //     clear".
 extern std::atomic<uint8_t> g_seb_error_status;
 extern std::atomic<uint8_t> g_seb_status_byte0;
+extern std::atomic<bool>    g_seb_seen;
 
 namespace sys {
 
@@ -45,6 +48,19 @@ enum LatchedFaultReason : uint32_t {
     kLatchedBrakeFollowing = 1u << 0,  // confirmed persistent following error
     kLatchedSebL3          = 1u << 1,  // SEB error_status == 3
 };
+
+// Remote ESTOP reset blocker mask bits (BUG-10)
+enum EstopResetBlocker : uint16_t {
+    kResetBlockNone             = 0,
+    kResetBlockPhysicalEstop    = 1u << 0,  // Hardware button pressed / active
+    kResetBlockLatchedFault     = 1u << 1,  // Latched fault cause still asserted
+    kResetBlockMoving           = 1u << 2,  // Measured speed > 50 mm/s
+    kResetBlockHeartbeatLoss    = 1u << 3,  // Heartbeat not ok
+    kResetBlockMtrEstopActive   = 1u << 4,  // MTR still reporting ESTOP_ACTIVE
+    kResetBlockTransientInhibit = 1u << 5,  // Transient inhibit active
+    kResetBlockInvalidToken     = 1u << 6,  // Invalid magic auth token
+};
+
 
 // Defined in inhibit_state.cpp (linked in both the firmware and the native
 // unit-test build — which excludes main.cpp).
@@ -94,6 +110,41 @@ inline void clear_latched_fault_reasons() {
 inline bool transient_inhibited() { return g_inhibit_reasons.load() != 0u; }
 inline bool latched_fault_present() { return g_latched_fault_reasons.load() != 0u; }
 inline bool any_inhibit() { return transient_inhibited() || latched_fault_present(); }
+
+// Evaluate all blockers preventing ESTOP remote reset (BUG-10)
+inline uint16_t get_estop_reset_blockers(
+    bool physical_estop,
+    bool hb_ok,
+    int16_t measured_speed_mmps,
+    uint16_t mtr_fault_flags,
+    uint16_t token = kRemoteResetTokenMagic
+) {
+    uint16_t mask = kResetBlockNone;
+    if (token != kRemoteResetTokenMagic) {
+        mask |= kResetBlockInvalidToken;
+    }
+    if (physical_estop) {
+        mask |= kResetBlockPhysicalEstop;
+    }
+    if (!latched_causes_currently_clearable()) {
+        mask |= kResetBlockLatchedFault;
+    }
+    int16_t abs_speed = (measured_speed_mmps < 0) ? -measured_speed_mmps : measured_speed_mmps;
+    if (abs_speed > kResetMaxMovingSpeedMmps) {
+        mask |= kResetBlockMoving;
+    }
+    if (!hb_ok) {
+        mask |= kResetBlockHeartbeatLoss;
+    }
+    if (mtr_fault_flags & 0x0001) { // kMtrFaultEstopActive (bit 0)
+        mask |= kResetBlockMtrEstopActive;
+    }
+    if (transient_inhibited()) {
+        mask |= kResetBlockTransientInhibit;
+    }
+    return mask;
+}
+
 
 // Aggregate "brake/traction fault" for operator feedback (ready bulb, 0x600
 // diag). Includes B-class inhibits (MTR feedback / SEB comms loss) because the
