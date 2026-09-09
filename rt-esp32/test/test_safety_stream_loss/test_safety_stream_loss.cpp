@@ -128,6 +128,70 @@ static void test_stray_frames_do_not_grant_authority() {
     TEST_ASSERT_FALSE(s.motion_authorized);
 }
 
+static void test_readiness_bitmask_sys_authority_requires_safety_and_mode() {
+    uint8_t mask = 0;
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // Safety only: not sufficient for SYS authority
+    mask |= rt::READY_BIT_SAFETY;
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // Mode only: not sufficient
+    mask = rt::READY_BIT_MODE;
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // Both Safety and Mode: SYS authority ready, but NOT motion ready
+    mask = rt::READY_BIT_SAFETY | rt::READY_BIT_MODE;
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // Fresh Host command added: motion ready!
+    mask |= rt::READY_BIT_HOST;
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_TRUE(rt::is_motion_ready(mask));
+}
+
+static void test_readiness_bitmask_parallel_recovery_order_independent() {
+    // Case 1: Mode recovers before Safety
+    uint8_t mask1 = 0;
+    mask1 |= rt::READY_BIT_MODE;
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask1));
+    mask1 |= rt::READY_BIT_SAFETY;
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask1));
+
+    // Case 2: Host arrives first, then Mode, then Safety
+    uint8_t mask2 = 0;
+    mask2 |= rt::READY_BIT_HOST;
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask2));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask2));
+    mask2 |= rt::READY_BIT_MODE;
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask2));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask2));
+    mask2 |= rt::READY_BIT_SAFETY;
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask2));
+    TEST_ASSERT_TRUE(rt::is_motion_ready(mask2));
+}
+
+static void test_readiness_bitmask_clearing_on_loss() {
+    uint8_t mask = rt::kMotionRequired;
+    TEST_ASSERT_TRUE(rt::is_motion_ready(mask));
+
+    // Clearing SYS authority on stream loss resets all bits
+    mask &= ~rt::kMotionRequired;
+    TEST_ASSERT_EQUAL_UINT8(0, mask);
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // Host stale watchdog timeout clears HOST_READY only
+    mask = rt::kMotionRequired;
+    mask &= ~rt::READY_BIT_HOST;
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -142,5 +206,8 @@ int main() {
     RUN_TEST(test_acquired_stream_resume_reauthorizes);
     RUN_TEST(test_never_received_deadline_is_sys_absent_fault_not_estop);
     RUN_TEST(test_stray_frames_do_not_grant_authority);
+    RUN_TEST(test_readiness_bitmask_sys_authority_requires_safety_and_mode);
+    RUN_TEST(test_readiness_bitmask_parallel_recovery_order_independent);
+    RUN_TEST(test_readiness_bitmask_clearing_on_loss);
     return UNITY_END();
 }

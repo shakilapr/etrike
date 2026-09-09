@@ -100,7 +100,8 @@ std::atomic<int64_t>  g_last_estop_sent_us{0};
 // Issue #10: SYS 0x011 safety-authority derived flag. Default = no authority
 // (boot never grants it); t_control flips it once the 0x011 stream is acquired.
 // g_safety_authority (the supervisor) is defined in namespace rt below.
-std::atomic<bool> g_no_sys_authority{true};
+std::atomic<uint8_t> g_ready_mask{0};
+std::atomic<bool>    g_no_sys_authority{true};
 
 // ?? Per-task alive counters for multi-task watchdog (gap #5) ??????
 static std::atomic<uint32_t> g_alive_control{0};
@@ -423,15 +424,29 @@ static void pump_diagnostics() {
                                      (now_safety - g_last_sys_safety_sts_us.load())
                                      / 1000));
             }
+            if (sst.state == rt::SafetyStreamState::LOST || sst.sys_absent_fault || m_estop_pending) {
+                // Clear all authority bits when stream is lost, absent, or ESTOP is pending
+                rt::g_ready_mask.fetch_and(
+                    static_cast<uint8_t>(~(rt::READY_BIT_SAFETY | rt::READY_BIT_MODE | rt::READY_BIT_HOST)),
+                    std::memory_order_release);
+            } else if (sst.motion_authorized) {
+                rt::g_ready_mask.fetch_or(rt::READY_BIT_SAFETY, std::memory_order_release);
+            } else {
+                rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_SAFETY),
+                                           std::memory_order_release);
+            }
+
             if (sst.sys_absent_fault) {
                 g_no_sys_authority.store(true, std::memory_order_relaxed);
                 rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
                                  static_cast<std::uint16_t>(
                                      rt::kSysSafetyAcquireTimeoutUs / 1000));
             } else {
-                // UNACQUIRED (not yet N frames) also grants no authority; only a
-                // fresh ACQUIRED stream confirms it.
-                g_no_sys_authority.store(!sst.motion_authorized,
+                // BUG-01: Multi-stream authority readiness barrier.
+                // g_no_sys_authority is cleared ONLY when both 0x011 (SAFETY) and 0x110 (MODE)
+                // streams have confirmed validity.
+                const uint8_t mask = rt::g_ready_mask.load(std::memory_order_acquire);
+                g_no_sys_authority.store(!rt::is_sys_authority_ready(mask),
                                          std::memory_order_relaxed);
             }
         }
@@ -444,7 +459,10 @@ static void pump_diagnostics() {
         // every intervening control tick fall back to zero, producing an
         // alternating {command, neutral} motor output. The watchdog explicitly
         // overwrites this queue with zero when the command becomes stale.
-        if (xQueuePeek(g_cmd_q, &cmd, 0) != pdTRUE)
+        // Also gate motion on readiness: if motion is not ready (missing fresh host command
+        // post-recovery or authority missing), hold zero setpoint (BUG-01 / BUG-05).
+        const uint8_t cur_ready_mask = rt::g_ready_mask.load(std::memory_order_acquire);
+        if (!rt::is_motion_ready(cur_ready_mask) || xQueuePeek(g_cmd_q, &cmd, 0) != pdTRUE)
             cmd = {0, 0};
 
         rt::ResolvedSetpoint sp;
@@ -1013,6 +1031,8 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                 last_stale_log_us = now_us;
                 ESP_LOGW(TAG, "Command stale (no host drive)");
             }
+            rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                       std::memory_order_release);
             can::gen::HostDriveCmd zero{};
             xQueueOverwrite(g_cmd_q, &zero);
             g_steering_estop_request.store(true);  // ramp to 0? (gap C3, replaces disable flag)

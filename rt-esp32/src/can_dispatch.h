@@ -360,9 +360,17 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
     }
     // Track reception flags (fix #3: 0=Manual/0=release are valid values)
     // Only a counter/freshness-valid 0x110 advances RT's mode authority state.
-    if (fr.id == can::kIdSysModeCmd && !from_high)   { if (ctx.has_mode_valid) ctx.has_mode = true; }
+    if (fr.id == can::kIdSysModeCmd && !from_high) {
+        if (ctx.has_mode_valid) {
+            ctx.has_mode = true;
+            g_ready_mask.fetch_or(rt::READY_BIT_MODE, std::memory_order_release);
+        }
+    }
     if (fr.id == can::kIdHostBrakeReq && from_high)  { ctx.has_brake = true; }
-    if (fr.id == can::kIdHostDriveCmd && from_high)  { ctx.has_cmd = true; }
+    if (fr.id == can::kIdHostDriveCmd && from_high) {
+        ctx.has_cmd = true;
+        g_ready_mask.fetch_or(rt::READY_BIT_HOST, std::memory_order_release);
+    }
 }
 
 // ?? Dispatch task (prio 4) ??????????????????????????????????????????
