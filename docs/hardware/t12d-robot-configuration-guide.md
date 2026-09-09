@@ -141,3 +141,75 @@ Per ISO 13850:
 - [ ] **Receiver Mode**: R16F solid **RED + BLUE LEDs** (PWM + SBUS).
 - [ ] **RF Separation**: Transmitter $\ge 1.0\text{ m}$ from receiver during bench testing.
 - [ ] **Failsafe**: Transmitter powered off $\rightarrow$ vehicle clamps brakes ($27.0\text{ mm}$), speed $0\text{ mm/s}$, `0x001 SAFETY_ESTOP` emitted.
+
+---
+
+## 6. Hardware Wiring & Receiver Commissioning
+
+### 6.1 Wiring Overview Diagram
+
+```text
+                  RadioLink R16F Receiver
+                     ┌────────────────┐
+                     │ [S] CH16 (Top) ├─── (Inverted SBUS Signal) ───► GPIO 16 (ESP32 RX)
+                     │ [+] 5V   (Mid) ├─── (Receiver Power)      ───► 5V Power Rail
+                     │ [-] GND  (Bot) ├─── (Common Ground)       ───► GND
+                     └────────────────┘
+
+                     SN65HVD230 / VP230 CAN Transceiver
+                     ┌────────────────┐
+                     │  TXD           ├─── (CAN Send)            ───► GPIO 5 (ESP32 TX)
+                     │  RXD           ├─── (CAN Receive)         ───► GPIO 4 (ESP32 RX)
+                     │  VCC           ├─── (3.3V Power)          ───► 3.3V
+                     │  GND           ├─── (Common Ground)       ───► GND
+                     │  CANH / CANL   ├─────────────────────────────► Low CAN Bus
+                     └────────────────┘
+```
+
+### 6.2 Receiver (R16F) Pin Connections
+
+Pin ordering on 3-pin headers (top to bottom):
+- **Top Row (S)**: Signal
+- **Middle Row (+)**: Positive 5V
+- **Bottom Row (-)**: Ground (GND)
+
+| R16F Pin | Connect To | Description / Notes |
+| :--- | :--- | :--- |
+| **CH16 Signal** (Top) | **ESP32 GPIO 16** | Single-wire SBUS output (100 kbps, 8E2 inverted) |
+| **CH16 +5V** (Middle) | **ESP32 5V / VIN** | Receiver 5V power supply (~50 mA) |
+| **CH16 GND** (Bottom) | **ESP32 GND** | Common Ground |
+
+> [!CAUTION]
+> **Power Connection Rule**: Power the R16F using the **5V and GND pins on channel rows (CH1..CH16)**. Do **NOT** power the receiver through the dedicated telemetry EXT port!
+
+### 6.3 Low-CAN Transceiver (SN65HVD230 / VP230) Connections
+
+| CAN Module Pin | Connect To | Description / Notes |
+| :--- | :--- | :--- |
+| **TXD** | **ESP32 GPIO 5** | MCU CAN Transmit (Unified with RT/SYS) |
+| **RXD** | **ESP32 GPIO 4** | MCU CAN Receive (Unified with RT/SYS) |
+| **VCC** | **ESP32 3.3V** | Transceiver 3.3V logic power |
+| **GND** | **ESP32 GND** | Common Ground |
+| **CANH / CANL** | **Vehicle Low CAN Bus** | Differential CAN lines (500 kbit/s, Classic CAN 2.0A) |
+
+### 6.4 Step-by-Step Receiver Setup & SBUS Mode Activation
+
+#### Step A: Select Protocol on Transmitter (T12D)
+1. Power on T12D transmitter.
+2. Go to **SYSTEM / MODEL MENU** $\rightarrow$ **PROTOCOL**.
+3. Set Protocol to **FHSS V2.1** (required to carry all 12 channels).
+
+#### Step B: Bind Receiver (R16F)
+1. Place T12D transmitter approximately $0.5\dots 1.0\text{ m}$ away from R16F receiver.
+2. Power on the R16F receiver (via ESP32 5V rail).
+3. Press and hold the **ID SET** button on the side of R16F for $>1\text{ second}$.
+4. The LED will flash rapidly and then remain **solid**, confirming successful binding.
+
+#### Step C: Enable SBUS Output Mode (Crucial!)
+By default, the R16F outputs individual PWM servo pulses. You must switch physical **CH16** to **SBUS mode**:
+1. With receiver powered on, **short-press** the **ID SET** button **once**.
+2. Check the dual status LEDs on the R16F:
+   - **RED LED**: ON
+   - **BLUE LED**: ON
+   - **Meaning**: **Red + Blue ON = PWM + SBUS Mode**. CH16 is now active as the inverted 100 kbps SBUS serial line.
+
