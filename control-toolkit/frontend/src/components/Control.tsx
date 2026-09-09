@@ -36,9 +36,9 @@ function DirectActuatorCards({
   const txMotor = findMsg(messages, 'RT_DRIVE_CMD', 'low')
   const txSteer = findMsg(messages, 'VCU_SES_REQ', 'low')
   const txBrake = findMsg(messages, 'VCU_SEB_REQ', 'low')
-  const fbkMtr = findMsg(messages, 'MTR_MOTOR_FBK')
-  const fbkSes = findMsg(messages, 'SES_STATUS')
-  const fbkSeb = findMsg(messages, 'SEB_STATUS')
+  const fbkMtr = findMsg(messages, 'MTR_MOTOR_FBK', 'high')
+  const fbkSes = findMsg(messages, 'SES_STATUS', 'low')
+  const fbkSeb = findMsg(messages, 'SEB_STATUS', 'low')
 
   // Sync active chips from backend control status
   useEffect(() => {
@@ -215,9 +215,10 @@ function DirectActuatorCards({
           TX 0x204 ? speed={signalText(txMotor, 'motor_speed_mmps')} ? gear=
           {signalText(txMotor, 'gear')} ? {txMotor?.freshness ?? 'no frame yet'}
         </div>
-        <div className="fbk-line muted small mono">
-          FBK 0x206 ? {signalText(fbkMtr, 'motor_command_speed_mmps') || '?'} ? gear{' '}
-          {signalText(fbkMtr, 'gear_state') || signalText(fbkMtr, 'gear') || '?'}
+        <div className="fbk-line muted small mono" data-testid="direct-motor-fbk">
+          FBK high 0x206 ? {signalText(fbkMtr, 'motor_command_speed_mmps') || '?'} ? gear{' '}
+          {signalText(fbkMtr, 'gear_state') || signalText(fbkMtr, 'gear') || '?'} ?{' '}
+          {fbkMtr?.freshness ?? 'no peer yet'}
         </div>
         <div className="actions tight">
           <button
@@ -261,8 +262,9 @@ function DirectActuatorCards({
           {signalText(txSteer, 'control_enable')}/{signalText(txSteer, 'alignment_enable')} ?{' '}
           {txSteer?.freshness ?? 'no frame yet'}
         </div>
-        <div className="fbk-line muted small mono">
-          FBK SES ? {signalText(fbkSes, 'angle_deg') || signalText(fbkSes, 'target_angle_raw') || '?'}
+        <div className="fbk-line muted small mono" data-testid="direct-steer-fbk">
+          FBK low SES ? {signalText(fbkSes, 'angle_deg') || signalText(fbkSes, 'target_angle_raw') || '?'} ?{' '}
+          {fbkSes?.freshness ?? 'no peer yet'}
         </div>
         <div className="actions tight">
           <button
@@ -306,8 +308,9 @@ function DirectActuatorCards({
           {signalText(txBrake, 'control_enable')}/{signalText(txBrake, 'alignment_enable')} ?{' '}
           {txBrake?.freshness ?? 'no frame yet'}
         </div>
-        <div className="fbk-line muted small mono">
-          FBK SEB ? {signalText(fbkSeb, 'pressure_kpa') || signalText(fbkSeb, 'status') || '?'}
+        <div className="fbk-line muted small mono" data-testid="direct-brake-fbk">
+          FBK low SEB ? {signalText(fbkSeb, 'pressure_kpa') || signalText(fbkSeb, 'status') || '?'} ?{' '}
+          {fbkSeb?.freshness ?? 'no peer yet'}
         </div>
         <div className="actions tight">
           <button

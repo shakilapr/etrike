@@ -137,6 +137,8 @@ static bool json_get_byte_array(const std::string& json, const char* key,
 int main() {
     write_json("{\"type\":\"state\",\"ecu\":\"rt\",\"healthy\":true,\"uptime_ms\":0}");
     rt::DriveCmd commanded_drive{};
+    bool direct_motor_active = false;
+    rt::DriveCmd direct_drive{};
 
     while (!g_eof) {
         std::string line = read_line();
@@ -161,13 +163,25 @@ int main() {
                 } else {
                     write_json("{\"type\":\"error\",\"code\":\"invalid_host_drive_cmd\"}");
                 }
+            } else if (id == "0x204" && json_get_byte_array(line, "data", data, length)) {
+                etrike::protocol::Frame frame = etrike::protocol::Frame::standard(0x204u, static_cast<std::uint8_t>(length));
+                frame.data = data;
+                etrike::protocol::generated::RtDriveCmd direct{};
+                if (etrike::protocol::generated::decode(frame.view(), direct) == etrike::protocol::CodecStatus::Ok) {
+                    direct_motor_active = true;
+                    direct_drive = commanded_drive;
+                    direct_drive.speed_mmps = direct.motor_speed_mmps;
+                    write_json("{\"type\":\"ack\",\"id\":\"0x204\",\"name\":\"RT_DRIVE_CMD\"}");
+                } else {
+                    write_json("{\"type\":\"error\",\"code\":\"invalid_rt_drive_cmd\"}");
+                }
             }
         } else if (msg_type == "tick") {
             int dt_ms = json_get_int(line, "dt_ms", 10);
             g_sim_time_us += int64_t(dt_ms) * 1000;
 
             // Run physics: resolve a drive command
-            rt::DriveCmd cmd = commanded_drive;
+            rt::DriveCmd cmd = direct_motor_active ? direct_drive : commanded_drive;
             // Keep explicit scalar input for standalone simulator trace tools.
             if (line.find("\"speed_mmps\"") != std::string::npos)
                 cmd.speed_mmps = json_get_int(line, "speed_mmps", cmd.speed_mmps);

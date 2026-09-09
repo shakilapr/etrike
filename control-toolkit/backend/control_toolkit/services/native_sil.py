@@ -1,4 +1,8 @@
-"""Managed JSON-Lines bridge between virtual CAN and the native RT SIL engine."""
+"""Managed JSON-Lines bridge between virtual CAN and the native RT SIL engine.
+
+The bridge intentionally forwards only frames that are inputs to the native
+RT simulation. Frames authored by the native peer are not echoed back to it.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ from control_toolkit.transport.virtual import VirtualTransportAdapter
 
 
 class NativeSilBridge:
-    """Forward HOST_DRIVE_CMD TX to native RT and inject returned CAN frames."""
+    """Forward Host/RT command TX to native RT and inject returned CAN frames."""
 
     def __init__(
         self,
@@ -26,7 +30,8 @@ class NativeSilBridge:
         self.transport = transport
         self.on_error = on_error
         self._process: subprocess.Popen[str] | None = None
-        self._commands: queue.Queue[RawFrameEnvelope | None] = queue.Queue(maxsize=256)
+        self._commands: queue.Queue[str | None] = queue.Queue(maxsize=256)
+        self._low_input_count = 0
         self._writer: threading.Thread | None = None
         self._reader: threading.Thread | None = None
         self._stopping = threading.Event()
@@ -39,6 +44,10 @@ class NativeSilBridge:
     @property
     def pid(self) -> int | None:
         return self._process.pid if self.running and self._process is not None else None
+
+    @property
+    def low_input_count(self) -> int:
+        return self._low_input_count
 
     def start(self) -> None:
         if self.running:
@@ -92,27 +101,29 @@ class NativeSilBridge:
         self._reader = None
 
     def _on_tx(self, frame: RawFrameEnvelope) -> None:
-        if frame.channel is not ChannelId.HIGH or frame.can_id != 0x300:
+        input_line = sil_input_for(frame)
+        if input_line is None:
             return
+        if frame.channel is ChannelId.LOW:
+            self._low_input_count += 1
         try:
-            self._commands.put_nowait(frame)
+            self._commands.put_nowait(input_line)
         except queue.Full:
             self._error("native SIL command queue full")
 
     def _write_loop(self) -> None:
         while not self._stopping.is_set():
-            frame = self._commands.get()
-            if frame is None:
+            input_line = self._commands.get()
+            if input_line is None:
                 return
             process = self._process
             if process is None or process.stdin is None or process.poll() is not None:
                 self._error("native SIL process stopped")
                 return
             try:
-                process.stdin.write(json.dumps({
-                    "type": "frame", "bus": "high", "id": "0x300",
-                    "data": list(frame.data),
-                }) + "\n")
+                if self._stopping.is_set() or process.stdin.closed:
+                    return
+                process.stdin.write(input_line + "\n")
                 process.stdin.write('{"type":"tick","dt_ms":10}\n')
                 process.stdin.flush()
             except (BrokenPipeError, OSError) as exc:
@@ -152,3 +163,30 @@ class NativeSilBridge:
         self.last_error = detail
         if self.on_error is not None:
             self.on_error(detail)
+
+
+_SIL_INPUT_FRAMES = {
+    # Host command handled by the native RT engine.
+    (ChannelId.HIGH, 0x300),
+    # Low-bus operator commands the native RT engine must observe directly.
+    (ChannelId.LOW, 0x204),
+    (ChannelId.LOW, 0x169),
+    (ChannelId.LOW, 0x7B9),
+}
+
+
+def sil_input_for(frame: RawFrameEnvelope) -> str | None:
+    """Return a native SIM JSON input for a supported frame, if any."""
+    if (frame.channel, frame.can_id) not in _SIL_INPUT_FRAMES:
+        return None
+    if frame.dlc > 8:
+        return None
+    if frame.data and frame.dlc != len(frame.data):
+        return None
+    data = frame.data + b"\x00" * (frame.dlc - len(frame.data))
+    return json.dumps({
+        "type": "frame",
+        "bus": frame.channel.value,
+        "id": f"0x{frame.can_id:03X}",
+        "data": list(data),
+    })

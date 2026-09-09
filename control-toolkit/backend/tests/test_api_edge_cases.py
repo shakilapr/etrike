@@ -73,7 +73,6 @@ def test_session_and_control_invalid_inputs_are_rejected(client):
         400,
         422,
     }
-    assert client.post("/api/v1/control/direct", json={"actuator": "unknown"}).status_code in {
-        400,
-        422,
-    }
+    assert client.post(
+        "/api/v1/control/direct", json={"actuator": "unknown"}
+    ).status_code == 422

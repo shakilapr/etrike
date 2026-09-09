@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from control_toolkit.config import ToolkitConfig
 from control_toolkit.main import create_app
 from control_toolkit.models.frames import ChannelId
+from control_toolkit.services.native_sil import sil_input_for
 
 
 def _enable_pure_software_tx(client) -> None:
@@ -98,12 +99,57 @@ def test_keyboard_intent_round_trips_through_native_rt_physics_sil(client) -> No
     assert int(received["signals"]["motor_speed_mmps"]["engineering_value"]) == 1500
 
 
+def test_low_direct_motor_command_is_forwarded_to_native_rt(client) -> None:
+    exe = Path(__file__).parents[3] / "native-test" / "build-sil" / "sim_engine_native.exe"
+    assert exe.is_file(), "build native-test/build-sil/sim_engine_native before running SIL tests"
+
+    _enable_pure_software_tx(client)
+    lifecycle = client.app.state.lifecycle
+    lifecycle.start_native_sil()
+    sent = []
+    original_send = lifecycle.transport.send
+
+    def capture_send(frame):
+        if frame.channel is ChannelId.LOW and frame.can_id == 0x204:
+            sent.append(frame)
+        return original_send(frame)
+
+    lifecycle.transport.send = capture_send
+    try:
+        response = client.post(
+            "/api/v1/control/direct",
+            json={
+                "channel": "motor",
+                "enabled": True,
+                "values": {"motor_speed_mmps": 400, "gear": 1},
+            },
+        )
+        assert response.status_code == 200, response.text
+        deadline = time.monotonic() + 2.0
+        while not sent and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        lifecycle.transport.send = original_send
+        client.post("/api/v1/control/direct", json={"channel": "motor", "enabled": False})
+
+    assert sent
+    request = json.loads(sil_input_for(sent[0]))
+    assert request == {
+        "type": "frame",
+        "bus": "low",
+        "id": "0x204",
+        "data": list(sent[0].data),
+    }
+
+
 def test_managed_native_sil_connects_control_api_to_virtual_can() -> None:
     exe = Path(__file__).parents[3] / "native-test" / "build-sil" / "sim_engine_native.exe"
     assert exe.is_file(), "build native-test/build-sil/sim_engine_native before running SIL tests"
     app = create_app(ToolkitConfig(native_sil_executable=str(exe)))
 
     with TestClient(app) as client:
+        lifecycle = app.state.lifecycle
+        lifecycle.start_native_sil()
         _enable_pure_software_tx(client)
         response = client.post(
             "/api/v1/control/intent",
@@ -117,13 +163,19 @@ def test_managed_native_sil_connects_control_api_to_virtual_can() -> None:
             },
         )
         assert response.status_code == 200
-        assert app.state.lifecycle.native_sil.running is True
+        lifecycle = app.state.lifecycle
+        assert lifecycle.native_sil is not None
+        assert lifecycle.native_sil.running is True
+        assert lifecycle.native_sil.last_error is None, lifecycle.native_sil.last_error
 
         deadline = time.monotonic() + 3.0
         received = None
         while time.monotonic() < deadline:
             messages = client.get("/api/v1/state").json()["messages"]
-            received = next((m for m in messages if m.get("name") == "RT_DRIVE_CMD"), None)
+            received = next(
+                (m for m in messages if m.get("name") == "RT_DRIVE_CMD"),
+                None,
+            )
             if received is not None:
                 break
             time.sleep(0.01)
