@@ -24,8 +24,9 @@ constexpr int kSbusTxGpio     = -1;      // Unused (-1)
 constexpr int kSbusBaudRate   = 100'000;
 constexpr bool kSbusInverted  = true;    // Hardware UART RX inversion
 
-// ── SBUS Channels ──────────────────────────────────────────────────
-constexpr uint8_t kNumSbusChannels = 16;
+// ── SBUS & T12D Channels ───────────────────────────────────────────
+constexpr uint8_t kNumSbusChannels = 16;  // SBUS wire protocol frame capacity
+constexpr uint8_t kNumT12dChannels = 12;  // T12D hardware transmitter generated channels
 
 // Channel Indices (0-based):
 constexpr uint8_t kChSteering = 0;  // CH1: Right Stick Horizontal (Steering +/-45.0 deg)
@@ -38,6 +39,8 @@ constexpr uint8_t kChSwitchA  = 6;  // CH7: SWA 2-Position Switch (Autonomy Over
 constexpr uint8_t kChSwitchD  = 7;  // CH8: SWD 2-Position Switch (Aux / Fast ESTOP)
 constexpr uint8_t kChDialVra  = 8;  // CH9: VRA Knob (Speed Governor 0..100%)
 constexpr uint8_t kChDialVrb  = 9;  // CH10: VRB Knob (Aux Trim)
+constexpr uint8_t kChAux11    = 10; // CH11: Aux Channel 11
+constexpr uint8_t kChAux12    = 11; // CH12: Aux Channel 12
 
 // ── RadioLink T12D / SBUS Calibration & Conversion ────────────────
 // 11-bit SBUS raw values range ~172 (1000us) to ~1811 (2000us) with center ~992 (1500us).
@@ -77,5 +80,12 @@ constexpr int kRcCaptureHz              = 50;     // 20 ms loop
 constexpr int kCanTxHz                  = 50;     // 20 ms loop
 constexpr int kHeartbeatHz              = 10;     // 100 ms loop
 constexpr int kSignalLossTimeoutMs      = 100;    // Deadman signal loss threshold
+
+// ── Serial Telemetry & CAN Display Filtering ───────────────────────
+// Prevents UART buffer flooding at 50 Hz while providing instant change feedback
+constexpr int   kCanLogDecimation       = 25;     // 25 * 20ms = 500ms (2 Hz periodic summary)
+constexpr float kLogDeltaSteerDeg       = 1.0f;   // Immediate log if steer changes >= 1.0 deg
+constexpr float kLogDeltaBrakeMm        = 0.5f;   // Immediate log if brake changes >= 0.5 mm
+constexpr int32_t kLogDeltaSpeedMmps    = 50;     // Immediate log if speed changes >= 50 mm/s
 
 }  // namespace rm

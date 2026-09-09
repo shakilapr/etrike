@@ -153,7 +153,7 @@ Once wired and powered, monitor the serial telemetry log at 115200 baud:
 pio run -d rm-esp32-t12d -e vehicle -t upload -t monitor
 ```
 
-Expected startup logs:
+### Expected Startup Banner:
 ```text
 I (310) rm_t12d: =================================================
 I (310) rm_t12d:   RM-ESP32-T12D Receiver Gateway (RadioLink SBUS)
@@ -164,12 +164,47 @@ I (330) rc_rx: Initialized SBUS UART1 on RX GPIO 16 (100k, 8E2, inverted)
 I (340) rm_t12d: All tasks created successfully. RM-ESP32-T12D operational.
 ```
 
-When transmitting:
+### Serial Output Strategy (Change-Driven + 2 Hz Decimated Summary):
+To prevent UART TX buffer overflow and latency at 50 Hz, the firmware uses an optimal dual-rate display:
+1. **Immediate Delta Trigger**: Logs instantly whenever steering ($\ge 1.0^\circ$), brake ($\ge 0.5\text{ mm}$), speed ($\ge 50\text{ mm/s}$), gear, or ignition changes.
+2. **Periodic 2 Hz Pulse**: Logs a single consolidated summary every 500 ms when controls are steady.
+
 ```text
-I (1340) rm_t12d: STATUS | Valid=1 FS=0 Lost=0 Ign=1 Gear=D Steer=0.0 deg Brk=0.0 mm Throt=0% VRA=1.00 | CH[1..8]=[1500,1500,1000,1500,2000,2000,2000,1000]us | CAN ok=120 fail=0
+I (1450) can_tx: [CAN TX] 0x169 SES: raw=30045 (+4.5°) | 0x7B9 SEB: raw=600 (0.0mm) | 0x204 MTR: +1250mm/s [D] | 0x113 PWR: ON | 0x110 MODE: Auto
+I (1950) can_tx: [CAN TX] 0x169 SES: raw=30000 (+0.0°) | 0x7B9 SEB: raw=600 (0.0mm) | 0x204 MTR: +0mm/s [N] | 0x113 PWR: OFF | 0x110 MODE: Manual
 ```
 
-### Safety Test:
-Turn off the T12D transmitter while monitoring:
-- `FS=1` (hardware failsafe bit asserted).
-- Firmware immediately clamps brake to `27.0 mm`, centers steering, zeros throttle, and broadcasts `0x001 SAFETY_ESTOP`.
+Under Fail-Safe or ESTOP:
+```text
+W (2300) can_tx: [CAN TX | ESTOP] 0x001 SAFETY_ESTOP | 0x169 SES: raw=30000 (0.0°) | 0x7B9 SEB: raw=1140 (27.0mm) | 0x204 MTR: 0mm/s [N] | 0x113 PWR: OFF
+```
+
+---
+
+## 7. Critical T12D & R16F Operational Constraints
+
+| Constraint | Physical / Protocol Cause | Required Robot Action |
+| :--- | :--- | :--- |
+| **12 Channels Max** | T12D transmitter generates 12 channels; R16F SBUS slots 13–16 are unused. | Design vehicle logic around CH1–CH12 only. |
+| **FHSS V2.1 Mandatory** | FHSS V1 and V2 protocols limit R16F to 8 channels. | Freeze T12D RF setting to `FHSS V2.1`. |
+| **Rebind on Protocol Change** | Changing RF mode breaks existing binding. | Rebind transmitter and receiver after any RF menu change. |
+| **Mode Toggle Button Trap** | Short-pressing the R16F ID SET button changes mode. | Confirm **RED LED = ON** and **BLUE LED = ON** (PWM + SBUS). |
+| **RF Blocking (< 60 cm)** | Placing T12D within 60 cm of R16F causes signal desensitization and link loss. | Maintain $>1.0\text{ m}$ separation during bench testing. |
+| **Switch Jitter & Calibration** | Inherent ~0.25 µs jitter; switches never produce exact integer counts. | Decode switches using threshold hysteresis bands, not exact values. |
+| **Model Memory Drift** | Selecting wrong model memory changes channel reverses, curves, and mixes. | Create and lock a dedicated `ROBOT` model profile on the T12D. |
+| **No Direct Actuator Drive** | RC values must never directly feed motor/brake hardware. | Pass all inputs through plausibility, deadman, and arbitration layers. |
+
+---
+
+## 8. Pre-Drive Commissioning Checklist
+
+Before powering high-voltage motor drivers or operating the vehicle:
+
+- [ ] **Receiver Power**: Verify R16F is powered from clean 5.0 V regulated rail (NOT from raw traction battery, and NOT via EXT port).
+- [ ] **Common Ground**: Solid GND reference between R16F and ESP32.
+- [ ] **LED Status**: R16F shows solid **RED + BLUE LEDs** (PWM + SBUS).
+- [ ] **Transmitter Model**: T12D active model verified as `ROBOT`.
+- [ ] **RF Protocol**: T12D confirmed on `Internal Module` $\rightarrow$ `FHSS V2.1`.
+- [ ] **Startup Switch Check**: All switches in safe state before power (Ignition UP=OFF, Gear MID=N, ESTOP UP=Run).
+- [ ] **Failsafe Test**: Turn off T12D transmitter on bench: verify serial prints `[CAN TX | ESTOP]`, brake clamps to `27.0 mm`, and `0x001 SAFETY_ESTOP` is emitted.
+- [ ] **Recovery Test**: Turn T12D back on, cycle SWB to OFF, SWC to Neutral: verify ESTOP clears.
