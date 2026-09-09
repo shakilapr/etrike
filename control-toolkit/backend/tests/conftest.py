@@ -9,6 +9,6 @@ from control_toolkit.main import create_app
 
 @pytest.fixture()
 def client() -> TestClient:
-    app = create_app(ToolkitConfig())
+    app = create_app(ToolkitConfig(native_sil_executable=None))
     with TestClient(app) as c:
         yield c

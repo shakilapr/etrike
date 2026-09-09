@@ -38,6 +38,8 @@ class DirectBody(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
     period_ms: float | None = None
 
+    model_config = {"extra": "forbid"}
+
 
 def _mode_gate(life, control: dict) -> dict:
     """Enrich a control snapshot dict with the authoritative vehicle-mode gate."""

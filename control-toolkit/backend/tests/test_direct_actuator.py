@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from control_toolkit.config import ToolkitConfig
+from control_toolkit.main import create_app
+from control_toolkit.models.frames import ChannelId
+from control_toolkit.services.native_sil import sil_input_for
 
 
 def _tx(client):
@@ -139,3 +149,77 @@ def test_direct_stop_channel(client):
     )
     assert r.status_code == 200
     assert "motor" not in r.json()["control"]["direct_channels"]
+
+
+def test_native_sil_receives_low_direct_motor_command(client):
+    """Low direct commands must reach the native RT simulation, not just UI."""
+    exe = Path(__file__).parents[3] / "native-test" / "build-sil" / "sim_engine_native.exe"
+    if not exe.is_file():
+        pytest.skip("build native-test/build-sil/sim_engine_native before running SIL tests")
+
+    app = create_app(ToolkitConfig(native_sil_executable=str(exe)))
+    with TestClient(app) as sil_client:
+        lifecycle = app.state.lifecycle
+        assert lifecycle.native_sil is not None
+        assert lifecycle.native_sil.running
+        _tx(sil_client)
+        _verify_low_direct_reaches_bridge(sil_client, lifecycle)
+
+
+def _verify_low_direct_reaches_bridge(client, lifecycle) -> None:
+    if lifecycle.native_sil is None:
+        pytest.fail("native SIL bridge is not running")
+    try:
+        bridge_count = lifecycle.native_sil.low_input_count
+        low_frame = None
+        transport = lifecycle.transport
+        original_send = transport.send
+
+        def capture_send(frame):
+            nonlocal low_frame
+            if frame.channel is ChannelId.LOW and frame.can_id == 0x204:
+                low_frame = frame
+            return original_send(frame)
+
+        transport.send = capture_send
+        try:
+            response = client.post(
+                "/api/v1/control/direct",
+                json={
+                    "channel": "motor",
+                    "enabled": True,
+                    "values": {"motor_speed_mmps": 400, "gear": 1},
+                },
+            )
+            assert response.status_code == 200, response.text
+            deadline = time.monotonic() + 2.0
+            while low_frame is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+        finally:
+            transport.send = original_send
+        assert low_frame is not None
+
+        expected_input = {
+            "type": "frame",
+            "bus": "low",
+            "id": "0x204",
+            "data": list(low_frame.data),
+        }
+        parsed = json.loads(sil_input_for(low_frame))
+        assert parsed == expected_input
+        assert lifecycle.native_sil.low_input_count > bridge_count
+    finally:
+        client.post("/api/v1/control/direct", json={"channel": "motor", "enabled": False})
+
+
+def test_direct_request_rejects_unknown_body_fields(client):
+    response = client.post(
+        "/api/v1/control/direct",
+        json={"channel": "motor", "enabled": True, "actuator": "motor"},
+    )
+    assert response.status_code == 422
+
+
+def test_direct_request_rejects_legacy_actuator_shape(client):
+    response = client.post("/api/v1/control/direct", json={"actuator": "motor"})
+    assert response.status_code == 422
