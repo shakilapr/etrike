@@ -12,8 +12,8 @@ constexpr const char* kFirmwareVersion = "v0.8.0-alpha-rm-t12d";
 
 // ── CAN Bus (Built-in TWAI on Low-CAN) ─────────────────────────────
 constexpr int kCanBitrateHz = 500'000;
-constexpr int kCanTxGpio    = 21;
-constexpr int kCanRxGpio    = 22;
+constexpr int kCanTxGpio    = 5;   // Matches SYS & RT nodes (CTX = GPIO 5)
+constexpr int kCanRxGpio    = 4;   // Matches SYS & RT nodes (CRX = GPIO 4)
 
 // ── SBUS Serial Port Configuration ─────────────────────────────────
 // R16F CH16 (S.BUS output) connects to MCU UART RX pin.

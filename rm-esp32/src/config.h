@@ -12,8 +12,8 @@ constexpr const char* kFirmwareVersion = "v0.8.0-alpha-rm";
 
 // ── CAN Bus (Built-in TWAI on Low-CAN) ─────────────────────────────
 constexpr int kCanBitrateHz = 500'000;
-constexpr int kCanTxGpio    = 21;
-constexpr int kCanRxGpio    = 22;
+constexpr int kCanTxGpio    = 5;   // Matches SYS & RT nodes (CTX = GPIO 5)
+constexpr int kCanRxGpio    = 4;   // Matches SYS & RT nodes (CRX = GPIO 4)
 
 // ── RMT RC Inputs (6 PWM Channels from RC Receiver) ───────────────
 constexpr int kRcSteerGpio     = 18;  // CH0 / Pin 1: Right Stick Horizontal (Steering +/-45 deg)

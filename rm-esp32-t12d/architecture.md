@@ -50,7 +50,7 @@ In the E-Trike distributed network, `rm-esp32-t12d` acts strictly as an **Operat
 │    └── Enforces speed_safe (<= 50 mm/s) AND neutral dwell (>= 200 ms) before reverse torque │
 │                                                                                             │
 │  [task_can_tx] (Core 0, 50 Hz)                                                              │
-│    ├── Low CAN TWAI Driver (GPIO 21 TX, GPIO 22 RX @ 500 kbps)                              │
+│    ├── Low CAN TWAI Driver (GPIO 5 TX, GPIO 4 RX @ 500 kbps)                              │
 │    ├── 0x169 VCU_SES_REQ  (Deterministic Steer Rack Angle +/-45.0 deg)                     │
 │    ├── 0x204 RT_DRIVE_CMD (Signed Speed mm/s + Drive State + Reversal Guard)                │
 │    ├── 0x7B9 VCU_SEB_REQ  (Semantic Park/Hold Brake Stroke 15.0 mm)                         │

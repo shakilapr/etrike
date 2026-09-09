@@ -32,7 +32,7 @@ Pin-to-pin wiring guide for connecting the **RadioLink R16F V1.0** receiver to t
             │           Running rm-esp32-t12d Firmware          │
             │                                                   │
             └───────────┬───────────────────────────┬───────────┘
-                        │ GPIO 21 (CAN TX)          │ GPIO 22 (CAN RX)
+                        │ GPIO 5 (CAN TX)           │ GPIO 4 (CAN RX)
                         ▼                           ▼
             ┌───────────────────────────────────────────────────┐
             │        SN65HVD230 CAN Transceiver (3.3V)          │
@@ -86,8 +86,8 @@ Looking at the R16F receiver with the servo pin headers facing you:
 | :--- | :--- | :--- | :--- |
 | **3V3 / VCC** | **3V3** | Logic Power | 3.3 V clean logic rail |
 | **GND** | **GND** | Ground | Common system ground |
-| **CTX / TXD** | **GPIO 21** | CAN TX | ESP32 TWAI Transmit |
-| **CRX / RXD** | **GPIO 22** | CAN RX | ESP32 TWAI Receive |
+| **CTX / TXD** | **GPIO 5** | CAN TX | ESP32 TWAI Transmit |
+| **CRX / RXD** | **GPIO 4** | CAN RX | ESP32 TWAI Receive |
 | **CAN_H** | **Low-CAN Backbone** | CAN High | Differential bus (+120 Ω termination at bus ends) |
 | **CAN_L** | **Low-CAN Backbone** | CAN Low | Differential bus (+120 Ω termination at bus ends) |
 
