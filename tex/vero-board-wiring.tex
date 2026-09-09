@@ -427,7 +427,7 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 \textbf{\#} & \textbf{Signal} & \textbf{GPIO} & \textbf{Type} & \textbf{Connected To} & \textbf{Notes} \\
 \hline
 \endhead
-1 & ESTOP Button & 1 & Digital, NC, active-low & NC contact from 3.3\,V to GPIO1 & 10k external pull-down at GPIO1. LOW = ESTOP, including an open wire. \\
+1 & ESTOP Button & 1 & Digital, NC, active-low & NC contact from GND to GPIO1 & Internal pull-up. HIGH = ESTOP, including an open wire. \\
 \hline
 2 & Brake Lever & 2 & Digital, NO, active-low & Lever switch $\rightarrow$ GND & Internal pull-up. LOW = pressed $\rightarrow$ SEB via CAN 0x7B9 \\
 \hline
@@ -489,7 +489,7 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 \hline
 3 & READY Bulb & 17 & Digital out & Relay coil $\rightarrow$ 12\,V & Green — system ready (AUTO/MANUAL, RT alive, no faults) \\
 \hline
-4 & ESTOP Bulb & 20 & Digital out & Relay coil $\rightarrow$ 12\,V & Red — dedicated ESTOP indicator \\
+4 & ESTOP Bulb & 18 & Digital out & Relay coil $\rightarrow$ 12\,V & Red — dedicated ESTOP indicator \\
 \hline
 5 & Bypass Indicator & 14 & Digital out & Lamp driver / LED $\rightarrow$ GND & Yellow/amber — developer override / safety bypass active \\
 \hline
@@ -503,7 +503,7 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 \section{SYS — GPIO Quick Reference}
 
 \begin{lstlisting}
-GPIO 1  : ESTOP button (NC from 3.3 V, external pull-down, active-low)
+GPIO 1  : ESTOP button (NC from GND, internal pull-up, active-low)
 GPIO 2  : Brake lever (active-low) -> SEB via CAN 0x7B9
 GPIO 4  : CAN RX - low bus TWAI
 GPIO 5  : CAN TX - low bus TWAI
@@ -517,9 +517,9 @@ GPIO 12-13 : Bench-only gear sense
 GPIO 14 : Bypass indicator (yellow/amber)
 GPIO 15-16 : Bench-only MCP4725 I2C
 GPIO 17 : |\sout{READY bulb (green)}|
-GPIO 18 : |\sout{Left turn lamp}|
-GPIO 19 : |\sout{Right turn lamp}|
-GPIO 20 : |\sout{ESTOP bulb (red)}|
+GPIO 18 : ESTOP bulb (red)
+GPIO 19 : |\sout{Right turn signal}| (Unused - USB conflict)
+GPIO 20 : (Unused - USB conflict)
 GPIO 21 : |\sout{Brake light}|
 GPIO 33-37 : Unavailable on N16R8 octal-memory modules
 GPIO 39 : MANUAL mode bulb - external JTAG conflict

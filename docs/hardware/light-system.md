@@ -9,13 +9,14 @@ All lights controlled by SYS ESP32-S3. Design covers all modes: MANUAL, AUTO, ES
 | # | Light | GPIO | Type | Priority |
 |---|-------|------|------|----------|
 | 1 | Brake light | 21 | OUT — relay → 12V lamp | Safety-critical |
-| 2 | Left turn lamp | 18 | OUT — relay → 12V lamp | Safety-relevant |
-| 3 | Right turn lamp | 19 | OUT — relay → 12V lamp | Safety-relevant |
-| 4 | Headlight | 22 | OUT — relay → 12V lamp | Non-safety |
+| 2 | Left turn lamp | -- | *(Removed)* | -- |
+| 3 | Right turn lamp | -- | *(Removed)* | -- |
+| 4 | Headlight | -- | *(Removed)* | -- |
 | 5 | Reverse light | **TBD** | OUT — relay → 12V lamp | Non-safety |
 | 6 | Position/running lights | **TBD** | OUT — relay → 12V lamp | Non-safety |
-| 7 | AUTO mode bulb | 25 | OUT — relay → 12V bulb | Non-safety |
-| 8 | MANUAL mode bulb | 26 | OUT — relay → 12V bulb | Non-safety |
+| 7 | AUTO mode bulb | 48 | OUT — relay → 12V bulb | Non-safety |
+| 8 | MANUAL mode bulb | 39 | OUT — relay → 12V bulb | Non-safety |
+| 9 | ESTOP mode bulb | 18 | OUT — relay → 12V bulb | Safety-critical |
 
 GPIOs 8 and 9 are available for reverse and position lights. Need relay modules (same type as turn lamps).
 
@@ -136,13 +137,13 @@ Optional CAN override: if `g_light_state.position_lights` (new bit in `0x302`) i
 
 ---
 
-## 7. Mode indicator bulbs — GPIO48/26
+## 7. Mode indicator bulbs — GPIO48/39/18
 
-| Mode | AUTO bulb (GPIO48) | MANUAL bulb (GPIO39) |
-|------|-------------------|---------------------|
-| MANUAL | OFF | ON |
-| AUTO | ON | OFF |
-| ESTOP | OFF | OFF |
+| Mode | AUTO bulb (GPIO48) | MANUAL bulb (GPIO39) | ESTOP bulb (GPIO18) |
+|------|-------------------|---------------------|---------------------|
+| MANUAL | OFF | ON | OFF |
+| AUTO | ON | OFF | OFF |
+| ESTOP | OFF | OFF | ON |
 
 Both OFF = ESTOP (visually distinct from both MANUAL and AUTO). Bulbs powered from 12V accessory rail via relays — they go dark on ESTOP regardless of MCU state.
 

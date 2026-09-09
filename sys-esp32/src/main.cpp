@@ -961,10 +961,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool seb_braking = (seb_raw > 610);  // 610 raw ≈ 0.5mm
         auto out = g_lights.tick(mode, lever, bits, sw_L, sw_R, sw_H, seb_braking);
 #ifndef TESTING
-        gpio_set_level(static_cast<gpio_num_t>(sys::kLightLeftTurn), out.left_lamp ? 1 : 0);
-        gpio_set_level(static_cast<gpio_num_t>(sys::kLightRightTurn), out.right_lamp ? 1 : 0);
         gpio_set_level(static_cast<gpio_num_t>(sys::kLightBrake), out.brake_lamp ? 1 : 0);
-        gpio_set_level(static_cast<gpio_num_t>(sys::kLightHead), out.head_lamp ? 1 : 0);
 #endif
 
         // Pack light output state for 0x011 byte 2 (v0.0.5 — CAN feedback)
@@ -1247,10 +1244,7 @@ static TaskHandle_t h_indicator, h_power, h_can_tx, h_can_control, h_diag, h_hb;
 // Put every connected SYS GPIO in a deterministic, non-actuating state before
 // starting CAN or tasks. GPIO reset defaults leave button inputs floating.
 static void init_board_gpio() {
-    constexpr uint64_t kOutputPins = (1ULL << sys::kLightLeftTurn)
-                                  | (1ULL << sys::kLightRightTurn)
-                                  | (1ULL << sys::kLightBrake)
-                                  | (1ULL << sys::kLightHead)
+    constexpr uint64_t kOutputPins = (1ULL << sys::kLightBrake)
                                   | (1ULL << sys::kBulbAuto)
                                   | (1ULL << sys::kBulbManual)
                                   | (1ULL << sys::kBulbReady)
@@ -1267,8 +1261,8 @@ static void init_board_gpio() {
 
     // Latch LOW before enabling output drivers so relay and lamp drivers do
     // not receive an indeterminate boot pulse.
-    for (int pin : {sys::kLightLeftTurn, sys::kLightRightTurn, sys::kLightBrake,
-                    sys::kLightHead, sys::kBulbAuto, sys::kBulbManual,
+    for (int pin : {sys::kLightBrake,
+                    sys::kBulbAuto, sys::kBulbManual,
                     sys::kBulbReady, sys::kBulbEstop, sys::kBulbBypass, sys::kPower12vRelay/*,
                     sys::kWdtToggleGpio*/}) {
         ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(pin), 0));

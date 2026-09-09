@@ -99,7 +99,7 @@ Cannot exit ESTOP via: CAN command, MODE button short-press, automatic timeout.
 | **DC-DC converter** | CAN 0x012 enable = **1** (maintains 12V) | Keeps MCUs, CAN transceivers, and brake light powered. Safety tasks must run. |
 | **12V accessory relay** | GPIO40 OFF | Cuts headlight, turn signals, mode bulbs ? non-safety loads only. |
 | **Brake light** | **ON** | Powered from always-on DC-DC rail (independent of accessory relay). |
-| **Mode indicator bulbs** | Both AUTO and MANUAL OFF | Dark dashboard = ESTOP. Dedicated ESTOP red bulb on GPIO20. |
+| **Mode indicator bulbs** | Both AUTO and MANUAL OFF | Dark dashboard = ESTOP. Dedicated ESTOP red bulb on GPIO18. |
 | **Ready bulb** | OFF | Green ready bulb (GPIO17) OFF. |
 | **Throttle pass-through** | Ignored | ADC reads ignored, DAC forced to 0. |
 | **Gear pass-through** | Ignored | All gear relays forced OFF regardless of selector. |

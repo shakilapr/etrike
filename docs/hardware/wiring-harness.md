@@ -628,7 +628,7 @@ Wire lengths include 150–200 mm service loop at each connector plus 5–10% ro
 | Molex 39-01-2060 + 44476-1111 | 2 | Mini-Fit Jr 6-pin | SYS board I/O breakout J1a, J1b |
 | Molex 39-01-2040 + 44476-1111 | 1 | Mini-Fit Jr 4-pin | SYS board power J1c |
 | TE Superseal 1-967628-1 (3-pin) | 1 | Superseal 1.5 | Throttle grip connector J15 |
-| ESTOP button NC loop | 2-conductor 22 AWG, twisted, 1.5 m | NC contact from 3.3 V → SYS GPIO1; MTR branch only after its ESTOP hardware is implemented | Solder + adhesive heat-shrink. 10k external pull-down at each MCU input. An open wire must read LOW. |
+| ESTOP button NC loop | 2-conductor 22 AWG, twisted, 1.5 m | NC contact from GND → SYS GPIO1; MTR branch only after its ESTOP hardware is implemented | Solder + adhesive heat-shrink. Internal pull-up enabled at MCU input. An open wire must read HIGH (ESTOP active). |
 | SMBJ5.0A TVS | 1 | Littelfuse | Throttle signal protection (at SYS ADC) |
 | NUP2105L TVS | 1 | CAN protection | SYS CAN node |
 | 1N4007 flyback diode | 7 | — | SYS relay coils (gear×3, lights×3, GPIO40) |

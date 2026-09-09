@@ -1,0 +1,114 @@
+% ===========================================================================
+%  E-Trike SYS ESP32-S3 -> 12 V Relay Module Wiring (compact electrician sheet)
+%  Compile:  pdflatex -interaction=nonstopmode sys-controls-wiring.tex
+%  Source:   docs/hardware/sys-controls-wiring.md
+% ===========================================================================
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[top=14mm,bottom=14mm,left=14mm,right=14mm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{parskip}
+\usepackage{hyperref}
+
+\setlength{\tabcolsep}{8pt}
+\renewcommand{\arraystretch}{1.25}
+\pagestyle{plain}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  pdftitle={SYS ESP32-S3 to 12 V Relay Wiring},
+  pdfauthor={E-Trike Project},
+}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\begin{document}
+
+\begin{center}
+{\Large\bfseries SYS ESP32-S3 $\rightarrow$ 12 V Relay Wiring}
+\end{center}
+
+Relay: 12~V, 8-channel, \textbf{active-LOW} (IN LOW = relay ON).
+If your board is active-HIGH, skip the ULN and connect GPIO $\rightarrow$ IN direct.
+
+\section*{1. Power}
+
+\begin{verbatim}
++12 V (fused) -> Relay module VCC
+GND common: Relay GND = ULN2803 GND = ESP32 GND = lamp minus
+\end{verbatim}
+
+\section*{2. Outputs: ESP32 $\rightarrow$ ULN2803A $\rightarrow$ Relay IN}
+
+\begin{tabular}{l l l l}
+\toprule
+\textbf{ESP32} & \textbf{ULN2803} & \textbf{Relay} & \textbf{Function}\\
+\midrule
+GPIO48 & IN1 $\rightarrow$ OUT1 & IN1 / K1 & AUTO indicator\\
+GPIO39 & IN2 $\rightarrow$ OUT2 & IN2 / K2 & MANUAL indicator\\
+GPIO17 & IN3 $\rightarrow$ OUT3 & IN3 / K3 & READY indicator\\
+GPIO20 & IN4 $\rightarrow$ OUT4 & IN4 / K4 & \textit{(Unused - USB conflict)}\\
+GPIO14 & IN5 $\rightarrow$ OUT5 & IN5 / K5 & BYPASS amber indicator\\
+GPIO18 & IN6 $\rightarrow$ OUT6 & IN6 / K6 & \textbf{ESTOP red indicator}\\
+GPIO19 & IN7 $\rightarrow$ OUT7 & IN7 / K7 & \textit{(Unused - USB conflict)}\\
+GPIO21 & IN8 $\rightarrow$ OUT8 & IN8 / K8 & Brake lamp\\
+\bottomrule
+\end{tabular}
+
+\vspace{1em}
+\textbf{Special Note for Unused Pins (USB Conflict):} Relays K4 (GPIO20) and K7 (GPIO19) are connected to the ESP32-S3's Native USB data lines (D+ and D-). The side signal lamps and old ESTOP routing have been removed from the firmware. \textbf{Do not connect any side lamps or loads to Relay K4 or K7 while using USB!} If a USB cable is connected, the USB data signals will rapidly toggle these relays.
+
+\begin{verbatim}
+ESP32 GPIO -> ULN INx
+ULN OUTx -> Relay INx
+ULN COM: not used
+GPIO40: not used - leave unconnected
+\end{verbatim}
+
+\section*{3. Lamps (relay contacts)}
+
+\begin{verbatim}
++12 V (fused) -> Relay COM
+Relay NO -> Lamp +
+Lamp - -> GND
+\end{verbatim}
+
+\section*{4. Switches (each wire to GND)}
+
+\begin{tabular}{l l l}
+\toprule
+\textbf{Function} & \textbf{GPIO} & \textbf{Switch}\\
+\midrule
+Brake lever & GPIO2  & Momentary NO\\
+START       & GPIO41 & Momentary NO\\
+MODE        & GPIO11 & Momentary NO\\
+Bypass      & GPIO42 & Latching, closed at power-up = bypass ON\\
+Left        & GPIO9  & (not wired)\\
+Right       & GPIO6  & (not wired)\\
+Headlight   & GPIO7  & (not wired)\\
+\bottomrule
+\end{tabular}
+
+\section*{5. ESTOP switch}
+
+\begin{verbatim}
+GPIO1 -- ESTOP NC contact -- GND
+Released (contact closed) = normal
+Pressed (contact open) or broken wire = ESTOP
+\end{verbatim}
+
+\textbf{No resistors needed anywhere.} Every input uses the firmware internal
+pull-up. GPIO1 must not be wired to 3.3\,V (older docs describe that scheme) --
+against this firmware it reads as permanent ESTOP. The relay module contains its
+own drivers.
+
+\vspace{1em}
+{\large\bfseries Never connect +12 V to any ESP32 GPIO.}
+
+\end{document}
