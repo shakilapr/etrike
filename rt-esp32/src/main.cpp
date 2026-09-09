@@ -87,6 +87,8 @@ std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
 // ?? Derived state (written by control, read by tx tasks) ????????????
 std::atomic<uint8_t>  g_mode_current{0};
 std::atomic<bool>     g_seb_takeover{false};
+std::atomic<bool>     g_mtr_unavailable{false};
+std::atomic<uint8_t>  g_brake_fallback_state{0};
 
 // ?? Heartbeat tracking ?????????????????????????????????????????????
 std::atomic<int64_t>  g_last_sys_hb_us{0};
@@ -530,6 +532,10 @@ static void pump_diagnostics() {
             m_seb_takeover = fb_out.emergency_tx_0x7B9;
         }
         g_seb_takeover.store(m_seb_takeover);
+        // Publish supervision verdicts for the 0x620 RT_DIAG_RPT (tx task).
+        g_mtr_unavailable.store(rt::g_mtr_health.mtr_unavailable, std::memory_order_relaxed);
+        g_brake_fallback_state.store(static_cast<uint8_t>(rt::g_brake_fallback.state()),
+                                     std::memory_order_relaxed);
 
         // Propagate ESTOP reason from safety checks to telemetry atomic.
         if (sr.estop_reason != 0) {
@@ -654,6 +660,40 @@ static can::gen::RtNodeStatus build_rt_node_status() {
     ns.degraded = g_steering.state() == rt::SteerState::STEER_FAULT;
     ns.recovery_pending = false;
     return ns;
+}
+
+// ── 0x620 RT_DIAG_RPT (1 Hz, high bus) ────────────────────────────────
+// RT-exclusive diagnostics only — nothing that SYS 0x600 / RT 0x210 / MTR
+// 0x206 / STEER+BRAKE_DIAG already publish. Content: RT's own MCP2515 SPI
+// transport health (EFLG/TEC/REC + SPI transaction failures + recovery count,
+// the MCP is physically RT's peripheral), and RT's local supervision verdicts
+// (MTR 0x206 watchdog, SEB brake-fallback state, SYS 0x011 authority).
+static can::gen::RtDiagRpt build_rt_diag_rpt() {
+    can::gen::RtDiagRpt dr{};
+    dr.mcp_bus_off     = g_can_high.bus_off();
+    dr.mcp_recovering  = g_can_high.is_recovering();
+    uint8_t eflg = 0, tec = 0, rec = 0;
+    if (g_can_high.read_bus_diag(eflg, tec, rec)) {
+        dr.mcp_eflg = eflg;
+        dr.mcp_tec  = tec;
+        dr.mcp_rec  = rec;
+    }
+    // SPI-failure delta since the previous 1 Hz report (saturating uint8).
+    const uint32_t spi_total = g_can_high.spi_failure_count();
+    static uint32_t last_spi_total = 0;
+    static bool     last_spi_valid = false;
+    const uint32_t raw_delta = last_spi_valid
+        ? (spi_total >= last_spi_total ? spi_total - last_spi_total : spi_total)
+        : 0;  // first report establishes the baseline, no false positive
+    last_spi_total = spi_total;
+    last_spi_valid = true;
+    dr.spi_fault_delta = static_cast<uint8_t>(raw_delta > 255 ? 255 : raw_delta);
+    dr.spi_fault_since_report = dr.spi_fault_delta != 0;
+    dr.mcp_recovery_attempts = static_cast<uint8_t>(g_can_high.recovery_attempts());
+    dr.mtr_unavailable = g_mtr_unavailable.load(std::memory_order_relaxed);
+    dr.no_sys_authority = g_no_sys_authority.load(std::memory_order_relaxed);
+    dr.brake_fallback_state = g_brake_fallback_state.load(std::memory_order_relaxed);
+    return dr;
 }
 
 static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
@@ -940,6 +980,19 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             int16_t pid      = g_pid_output_mmps.load();
             can::gen::RtPidRpt message{setpoint, measured, pid};
             if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
+        }
+
+        // 0x620 RT_DIAG_RPT ? 1 Hz (RT-exclusive transport + supervision diag).
+        static int64_t last_diag_us = 0;
+        static uint8_t diag_counter = 0;
+        {
+            const int64_t now_diag = esp_timer_get_time();
+            if (now_diag - last_diag_us >= 1'000'000) {
+                last_diag_us = now_diag;
+                can::gen::RtDiagRpt dr = build_rt_diag_rpt();
+                dr.rolling_counter = diag_counter++;
+                if (can::encode_frame(dr, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
+            }
         }
 
     }

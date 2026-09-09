@@ -66,6 +66,14 @@ public:
     // ── Diagnostics ────────────────────────────────────────────────
 
     void get_error_counters(uint8_t& tec, uint8_t& rec);
+    /// Read EFLG/TEC/REC in one guard window (3 register reads, 1 Hz cadence).
+    /// Returns false (values zeroed) when uninitialized, recovering, or the
+    /// control mutex is contended. EFLG bits: 7=TXBO 6=TXEP 5=RXEP 4=TXWAR
+    /// 3=RXWAR 2=EWARN 1=TXERR 0=RXERR.
+    bool read_bus_diag(uint8_t& eflg, uint8_t& tec, uint8_t& rec);
+    /// Monotonic count of failed SPI transactions (mutex timeout or
+    /// spi_device_transmit error) since init. RT-exclusive transport health.
+    uint32_t spi_failure_count() const { return m_spi_fail_count.load(std::memory_order_relaxed); }
     bool bus_off() const { return m_bus_off.load(std::memory_order_relaxed); }
     uint32_t recovery_attempts() const { return m_recovery_attempts.load(std::memory_order_relaxed); }
     uint32_t recovery_failures() const { return m_recovery_failures.load(std::memory_order_relaxed); }
@@ -161,6 +169,9 @@ private:
 
     // ── Overflow telemetry ────────────────────────────────────────
     std::atomic<uint16_t> m_rx_overflow_count{0};
+
+    // ── SPI transport health (diagnostics, 1 Hz read by t_can_tx_high)
+    std::atomic<uint32_t> m_spi_fail_count{0};
 
     // ── Bus-off detection (set by ISR via receive path) ───────────
     std::atomic<bool> m_bus_off{false};

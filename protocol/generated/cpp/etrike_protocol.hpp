@@ -10,14 +10,14 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc";
+inline constexpr std::string_view kSemanticHash = "d3507d71f7fb498b171f1acc086057afe581a417a1f35a44a137fa4d2f79d0b0";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "06a53df9e527d55f7d8a284035d40f47acceae57b06034270e6852ab8a826f9c";
+inline constexpr std::string_view kNetworkHash = "8db464fb4cd64e7fa20a7536c4fcc9dbe3e209035947378ad009bdc7e0a22da3";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
 struct RouteMetadata { std::string_view key; std::string_view message; std::string_view from_bus; std::string_view to_bus; RouteSemantics semantics; };
-inline constexpr std::array<MessageMetadata, 58> kMessages{{
+inline constexpr std::array<MessageMetadata, 59> kMessages{{
     {"hmi:hmi_mode_req", "high", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_mode_req", "low", 0x111u, 2u, false, CodecStrategy::Generated},
     {"hmi:hmi_pwr_req", "high", 0x112u, 2u, false, CodecStrategy::Generated},
@@ -41,6 +41,7 @@ inline constexpr std::array<MessageMetadata, 58> kMessages{{
     {"rt:brake_diag", "high", 0x311u, 8u, false, CodecStrategy::Generated},
     {"rt:rt_brake_cmd", "low", 0x205u, 4u, false, CodecStrategy::Generated},
     {"rt:rt_diag_event_rpt", "high", 0x621u, 8u, false, CodecStrategy::Generated},
+    {"rt:rt_diag_rpt", "high", 0x620u, 8u, false, CodecStrategy::Generated},
     {"rt:rt_drive_cmd", "low", 0x204u, 5u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "high", 0x7FDu, 2u, false, CodecStrategy::Generated},
     {"rt:rt_heartbeat", "low", 0x7FDu, 2u, false, CodecStrategy::Generated},
@@ -1624,6 +1625,203 @@ inline CodecStatus decode_rt_diag_event_rpt(FrameView frame, RtDiagEventRpt& out
 
 inline CodecStatus encode(const RtDiagEventRpt& value, Frame& out) noexcept { return encode_rt_diag_event_rpt(value, out); }
 inline CodecStatus decode(FrameView frame, RtDiagEventRpt& out) noexcept { return decode_rt_diag_event_rpt(frame, out); }
+
+struct RtDiagRpt {
+    static constexpr std::string_view kKey = "rt:rt_diag_rpt";
+    static constexpr std::uint32_t kId = 0x620u;
+    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::uint32_t kCycleMs = 1000u;
+    static constexpr bool kExtended = false;
+    static constexpr std::uint32_t kHighId = 0x620u;
+    static constexpr std::uint32_t kHighCycleMs = 1000u;
+    static constexpr bool kHighExtended = false;
+    std::uint8_t mcp_eflg{};
+    std::uint8_t mcp_tec{};
+    std::uint8_t mcp_rec{};
+    bool mcp_bus_off{};
+    bool mcp_recovering{};
+    bool mtr_unavailable{};
+    bool no_sys_authority{};
+    bool spi_fault_since_report{};
+    std::uint8_t reserved_b3{0};
+    std::uint8_t brake_fallback_state{};
+    std::uint8_t reserved_b4{0};
+    std::uint8_t spi_fault_delta{};
+    std::uint8_t mcp_recovery_attempts{};
+    std::uint8_t rolling_counter{};
+    struct McpEflgMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct McpTecMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct McpRecMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct McpBusOffMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct McpRecoveringMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct MtrUnavailableMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct NoSysAuthorityMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct SpiFaultSinceReportMeta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint8_t kReservedB3 = 0;
+    struct ReservedB3Meta {
+        static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 3u;
+        static constexpr std::uint64_t kMask = 0x7ull;
+    };
+    static constexpr std::uint8_t kBrakeFallbackStateNormal = 0;
+    static constexpr std::uint8_t kBrakeFallbackStateSysDegraded = 1;
+    static constexpr std::uint8_t kBrakeFallbackStateEmergencyFallback = 2;
+    static constexpr std::uint8_t kBrakeFallbackStateReserved = 3;
+    struct BrakeFallbackStateMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 2u;
+        static constexpr std::uint64_t kMask = 0x3ull;
+    };
+    static constexpr std::uint8_t kReservedB4 = 0;
+    struct ReservedB4Meta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 6u;
+        static constexpr std::uint64_t kMask = 0x3Full;
+    };
+    struct SpiFaultDeltaMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct McpRecoveryAttemptsMeta {
+        static constexpr std::size_t kByte = 6u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct RollingCounterMeta {
+        static constexpr std::size_t kByte = 7u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+
+    CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (reserved_b3 != 0) return CodecStatus::ConstantMismatch;
+        if (brake_fallback_state != 0 && brake_fallback_state != 1 && brake_fallback_state != 2 && brake_fallback_state != 3) return CodecStatus::InvalidEnum;
+        if (reserved_b4 != 0) return CodecStatus::ConstantMismatch;
+        std::array<std::uint8_t, kDlc> payload{};
+        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(mcp_eflg));
+        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(mcp_tec));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(mcp_rec));
+        detail::insert(payload.data(), 3u, 0u, 1u, false, static_cast<std::uint64_t>(mcp_bus_off));
+        detail::insert(payload.data(), 3u, 1u, 1u, false, static_cast<std::uint64_t>(mcp_recovering));
+        detail::insert(payload.data(), 3u, 2u, 1u, false, static_cast<std::uint64_t>(mtr_unavailable));
+        detail::insert(payload.data(), 3u, 3u, 1u, false, static_cast<std::uint64_t>(no_sys_authority));
+        detail::insert(payload.data(), 3u, 4u, 1u, false, static_cast<std::uint64_t>(spi_fault_since_report));
+        detail::insert(payload.data(), 3u, 5u, 3u, false, static_cast<std::uint64_t>(reserved_b3));
+        detail::insert(payload.data(), 4u, 0u, 2u, false, static_cast<std::uint64_t>(brake_fallback_state));
+        detail::insert(payload.data(), 4u, 2u, 6u, false, static_cast<std::uint64_t>(reserved_b4));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(spi_fault_delta));
+        detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(mcp_recovery_attempts));
+        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
+        for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
+        return CodecStatus::Ok;
+    }
+
+    static CodecStatus unpack(const std::uint8_t* source, std::size_t length, RtDiagRpt& out) noexcept {
+        if (length != kDlc) return CodecStatus::UnexpectedLength;
+        if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        RtDiagRpt value{};
+        const std::uint64_t raw_mcp_eflg = detail::extract(source, 0u, 0u, 8u, false);
+        value.mcp_eflg = static_cast<std::uint8_t>(raw_mcp_eflg);
+        const std::uint64_t raw_mcp_tec = detail::extract(source, 1u, 0u, 8u, false);
+        value.mcp_tec = static_cast<std::uint8_t>(raw_mcp_tec);
+        const std::uint64_t raw_mcp_rec = detail::extract(source, 2u, 0u, 8u, false);
+        value.mcp_rec = static_cast<std::uint8_t>(raw_mcp_rec);
+        const std::uint64_t raw_mcp_bus_off = detail::extract(source, 3u, 0u, 1u, false);
+        value.mcp_bus_off = raw_mcp_bus_off != 0u;
+        const std::uint64_t raw_mcp_recovering = detail::extract(source, 3u, 1u, 1u, false);
+        value.mcp_recovering = raw_mcp_recovering != 0u;
+        const std::uint64_t raw_mtr_unavailable = detail::extract(source, 3u, 2u, 1u, false);
+        value.mtr_unavailable = raw_mtr_unavailable != 0u;
+        const std::uint64_t raw_no_sys_authority = detail::extract(source, 3u, 3u, 1u, false);
+        value.no_sys_authority = raw_no_sys_authority != 0u;
+        const std::uint64_t raw_spi_fault_since_report = detail::extract(source, 3u, 4u, 1u, false);
+        value.spi_fault_since_report = raw_spi_fault_since_report != 0u;
+        const std::uint64_t raw_reserved_b3 = detail::extract(source, 3u, 5u, 3u, false);
+        if (raw_reserved_b3 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b3 = static_cast<std::uint8_t>(raw_reserved_b3);
+        const std::uint64_t raw_brake_fallback_state = detail::extract(source, 4u, 0u, 2u, false);
+        value.brake_fallback_state = static_cast<std::uint8_t>(raw_brake_fallback_state);
+        if (value.brake_fallback_state != 0 && value.brake_fallback_state != 1 && value.brake_fallback_state != 2 && value.brake_fallback_state != 3) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_reserved_b4 = detail::extract(source, 4u, 2u, 6u, false);
+        if (raw_reserved_b4 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b4 = static_cast<std::uint8_t>(raw_reserved_b4);
+        const std::uint64_t raw_spi_fault_delta = detail::extract(source, 5u, 0u, 8u, false);
+        value.spi_fault_delta = static_cast<std::uint8_t>(raw_spi_fault_delta);
+        const std::uint64_t raw_mcp_recovery_attempts = detail::extract(source, 6u, 0u, 8u, false);
+        value.mcp_recovery_attempts = static_cast<std::uint8_t>(raw_mcp_recovery_attempts);
+        const std::uint64_t raw_rolling_counter = detail::extract(source, 7u, 0u, 8u, false);
+        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
+        out = value;
+        return CodecStatus::Ok;
+    }
+};
+
+inline CodecStatus encode_rt_diag_rpt(const RtDiagRpt& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(RtDiagRpt::kId, static_cast<std::uint8_t>(RtDiagRpt::kDlc));
+    const CodecStatus status = value.pack(frame.data.data(), RtDiagRpt::kDlc);
+    if (status != CodecStatus::Ok) return status;
+    out = frame;
+    return CodecStatus::Ok;
+}
+
+inline CodecStatus decode_rt_diag_rpt(FrameView frame, RtDiagRpt& out) noexcept {
+    if (frame.id() != 0x620u) return CodecStatus::WrongMessageId;
+    if (!(frame.id() == 0x620u && frame.extended() == false)) return CodecStatus::WrongFrameFormat;
+    if (frame.dlc() != RtDiagRpt::kDlc) return CodecStatus::UnexpectedLength;
+    return RtDiagRpt::unpack(frame.data(), frame.dlc(), out);
+}
+
+inline CodecStatus encode(const RtDiagRpt& value, Frame& out) noexcept { return encode_rt_diag_rpt(value, out); }
+inline CodecStatus decode(FrameView frame, RtDiagRpt& out) noexcept { return decode_rt_diag_rpt(frame, out); }
 
 struct RtDriveCmd {
     static constexpr std::string_view kKey = "rt:rt_drive_cmd";

@@ -62,6 +62,24 @@
     ]},"instances":[
       {"bus":"high","id":"0x621","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":0,"semantics":"independent"}
     ]},
+    {"key":"rt_diag_rpt","owner":"rt","protocol":"etrike.application.v1","name":"RT_DIAG_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"mcp_eflg","byte":0,"bit":0,"bits":8},
+      {"key":"mcp_tec","byte":1,"bit":0,"bits":8},
+      {"key":"mcp_rec","byte":2,"bit":0,"bits":8},
+      {"key":"mcp_bus_off","byte":3,"bit":0,"bits":1},
+      {"key":"mcp_recovering","byte":3,"bit":1,"bits":1},
+      {"key":"mtr_unavailable","byte":3,"bit":2,"bits":1},
+      {"key":"no_sys_authority","byte":3,"bit":3,"bits":1},
+      {"key":"spi_fault_since_report","byte":3,"bit":4,"bits":1},
+      {"key":"reserved_b3","byte":3,"bit":5,"bits":3,"constant":0},
+      {"key":"brake_fallback_state","byte":4,"bit":0,"bits":2,"min":0,"max":3,"enum":{"0":"NORMAL","1":"SYS_DEGRADED","2":"EMERGENCY_FALLBACK","3":"RESERVED"}},
+      {"key":"reserved_b4","byte":4,"bit":2,"bits":6,"constant":0},
+      {"key":"spi_fault_delta","byte":5,"bit":0,"bits":8},
+      {"key":"mcp_recovery_attempts","byte":6,"bit":0,"bits":8},
+      {"key":"rolling_counter","byte":7,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
+    ]},"instances":[
+      {"bus":"high","id":"0x620","frame_format":"standard","sender":"RT","receivers":["Host"],"cycle_ms":1000,"semantics":"independent"}
+    ]},
     {"key":"rt_node_status","owner":"rt","protocol":"etrike.application.v1","name":"RT_NODE_STATUS","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"node_state","byte":0,"bit":0,"bits":4,"min":0,"max":15,"enum":{"0":"INIT","1":"ACQUIRE","2":"STANDBY","3":"ACTIVE","4":"INHIBITED","5":"ESTOP","6":"RECOVER","15":"UNKNOWN"}},
       {"key":"reserved_b0","byte":0,"bit":4,"bits":4,"constant":0},

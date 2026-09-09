@@ -73,6 +73,9 @@ extern std::atomic<int64_t>  g_last_nonzero_cmd_us;
 // ?? Derived state (written by control, read by tx tasks) ????????????
 extern std::atomic<uint8_t>  g_mode_current;     // current mode (control publishes after event drain)
 extern std::atomic<bool>     g_seb_takeover;     // SEB takeover active (control publishes after safety checks)
+// Supervision verdicts for 0x620 RT_DIAG_RPT (written by t_control, read by tx).
+extern std::atomic<bool>     g_mtr_unavailable;       // issue #8: MTR 0x206 watchdog verdict
+extern std::atomic<uint8_t>  g_brake_fallback_state;  // SebBrakeState (NORMAL/SYS_DEGRADED/EMERGENCY_FALLBACK)
 
 // ?? Heartbeat tracking (written by dispatch, checked by control) ????
 extern std::atomic<int64_t>  g_last_sys_hb_us;
