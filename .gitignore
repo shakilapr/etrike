@@ -41,6 +41,7 @@ Desktop.ini
 /test_physics
 /test_pid
 /native-test/build*/
+/simulation/full_system/build*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -62,6 +63,7 @@ _filelist.txt
 # ── Generated CMakeLists (PlatformIO manages its own) ────────────────
 CMakeLists.txt
 !native-test/CMakeLists.txt
+!simulation/full_system/CMakeLists.txt
 !rm-esp32/CMakeLists.txt
 !rm-esp32/src/CMakeLists.txt
 !mtr-stm32/CMakeLists.txt
