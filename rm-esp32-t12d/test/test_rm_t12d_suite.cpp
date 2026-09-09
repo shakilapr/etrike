@@ -130,26 +130,71 @@ void test_sbus_byte_stream_parser() {
     ASSERT_EQ(out.channels[0], 992);
 }
 
-void test_sbus_flags_failsafe_and_framelost() {
+void test_graduated_link_states_and_failsafe() {
     rm::SbusFrame frame{};
-    for (int i = 0; i < 16; ++i) frame.channels[i] = 992; // Neutral
-    frame.failsafe = true; // Hardware failsafe asserted by receiver!
+    for (int i = 0; i < 16; ++i) frame.channels[i] = 992; // 1500us
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(1000); // UP (Disabled)
+    frame.channels[rm::kChParkHold]      = rm::pulse_us_to_sbus(1000); // UP (Park/Hold)
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1000); // Precision
+    frame.channels[rm::kChAutoRequest]   = rm::pulse_us_to_sbus(1000); // Manual
+
+    uint32_t last_ms = 1000;
+
+    // 1. Normal link (fresh: 20 ms dt <= 50 ms)
+    auto snap = rm::decode_sbus_frame(frame, last_ms, 1020);
+    ASSERT_TRUE(snap.link_state == rm::LinkState::Normal);
+    ASSERT_TRUE(snap.signal_valid);
+
+    // 2. Degraded link (stale: 75 ms dt, 50 < dt <= 100 ms)
+    snap = rm::decode_sbus_frame(frame, last_ms, 1075);
+    ASSERT_TRUE(snap.link_state == rm::LinkState::Degraded);
+    ASSERT_TRUE(snap.signal_valid);
+
+    // 3. Lost link (> 100 ms dt)
+    snap = rm::decode_sbus_frame(frame, last_ms, 1105);
+    ASSERT_TRUE(snap.link_state == rm::LinkState::Lost);
+    ASSERT_FALSE(snap.signal_valid);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+
+    // 4. Hardware failsafe flag asserted by receiver
+    frame.failsafe = true;
+    snap = rm::decode_sbus_frame(frame, last_ms, 1020);
+    ASSERT_TRUE(snap.failsafe);
+    ASSERT_TRUE(snap.link_state == rm::LinkState::Lost);
+    ASSERT_FALSE(snap.signal_valid);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.001f);
+}
+
+void test_channel_plausibility_clusters() {
+    rm::SbusFrame frame{};
+    for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChParkHold]      = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChAutoRequest]   = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
-    auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
 
-    ASSERT_TRUE(snap.failsafe);
-    ASSERT_FALSE(snap.signal_valid); // Signal MUST be flagged invalid
-    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.001f); // Immediate 27 mm clamp
-    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
-    ASSERT_NEAR(snap.steering_deg, 0.0f, 0.001f);
+    // Normal plausible frame
+    auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_TRUE(snap.input_plausible);
+    ASSERT_TRUE(snap.signal_valid);
+
+    // Switch sitting in invalid dead zone between clusters (e.g. 1280us)
+    frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1280);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_FALSE(snap.input_plausible);
+    ASSERT_FALSE(snap.signal_valid); // Marked invalid due to implausible cluster
 }
 
 void test_steering_deadband_and_limits() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992; // 1500us
-    frame.channels[rm::kChIgnition] = 1811; // Ignition ON
-    frame.channels[rm::kChGear]     = 1811; // Gear D
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChParkHold]      = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1500);
+    frame.channels[rm::kChAutoRequest]   = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
 
@@ -159,11 +204,11 @@ void test_steering_deadband_and_limits() {
     ASSERT_NEAR(snap.steering_deg, 0.0f, 0.01f);
 
     // 2. Deadband: +/- 30us
-    frame.channels[rm::kChSteering] = rm::pulse_us_to_sbus(1520);
+    frame.channels[rm::kChSteering] = rm::pulse_us_to_sbus(1525);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.steering_deg, 0.0f, 0.01f);
 
-    frame.channels[rm::kChSteering] = rm::pulse_us_to_sbus(1480);
+    frame.channels[rm::kChSteering] = rm::pulse_us_to_sbus(1475);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.steering_deg, 0.0f, 0.01f);
 
@@ -178,113 +223,164 @@ void test_steering_deadband_and_limits() {
     ASSERT_NEAR(snap.steering_deg, -rm::kMaxSteerAngleDeg, 0.5f);
 }
 
-void test_brake_threshold_and_linear_stroke() {
-    rm::SbusFrame frame{};
-    for (int i = 0; i < 16; ++i) frame.channels[i] = 992; // 1500us
-    uint32_t now_ms = 1000;
-
-    // 1. At center rest (1500us) -> 0.0 mm
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1500);
-    auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.01f);
-
-    // 2. Below engagement threshold (1515us <= 1520us) -> 0.0 mm
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1515);
-    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.01f);
-
-    // 3. Full brake stroke (1970us) -> 27.0 mm
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1970);
-    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.5f);
-}
-
-void test_throttle_deadband_and_governor() {
+void test_signed_velocity_and_speed_envelopes() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(2000); // SWA DOWN (Enable Req)
+    frame.channels[rm::kChParkHold]      = rm::pulse_us_to_sbus(2000); // SWB DOWN (Drive)
+    frame.channels[rm::kChAutoRequest]   = rm::pulse_us_to_sbus(1000); // Manual
+
     uint32_t now_ms = 1000;
 
-    // 1. Stick bottom idle (1000us) -> 0.0
-    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1000);
+    // 1. Precision Envelope (SWC <= 1250us -> 750 mm/s max fwd)
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChVelocity]      = rm::pulse_us_to_sbus(1950); // Full forward
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
+    ASSERT_TRUE(snap.drive_envelope == rm::DriveEnvelope::Precision);
+    ASSERT_NEAR(snap.velocity_norm, 1.0f, 0.01f);
+    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedPrecisionMaxMmps);
 
-    // 2. Idle threshold (1050us) -> 0.0
-    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1050);
+    // 2. Normal Envelope (SWC ~1500us -> 1800 mm/s max fwd)
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1500);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
+    ASSERT_TRUE(snap.drive_envelope == rm::DriveEnvelope::Normal);
+    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedNormalMaxMmps);
 
-    // 3. Mid throttle (1500us) -> 0.5
-    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1500);
+    // 3. Fast Envelope (SWC >= 1750us -> 3000 mm/s max fwd)
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(2000);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 0.5f, 0.05f);
+    ASSERT_TRUE(snap.drive_envelope == rm::DriveEnvelope::Fast);
+    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFastMaxMmps);
 
-    // 4. Full throttle (1950us) -> 1.0
-    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950);
+    // 4. Center deadband on velocity (1520us -> 0 mm/s)
+    frame.channels[rm::kChVelocity] = rm::pulse_us_to_sbus(1520);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
+    ASSERT_NEAR(snap.velocity_norm, 0.0f, 0.001f);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
 }
 
-void test_gear_and_ignition_switches() {
-    rm::SbusFrame frame{};
-    for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
+void test_strict_direction_reversal_guard() {
+    rm::ReversalTracker rev{};
+    uint32_t now_ms = 1000;
+    bool locked = false;
+
+    // 1. Driving forward: target speed = 1800 mm/s
+    int32_t spd = rev.process_velocity(1.0f, 1800, 1000, 1500, now_ms, &locked);
+    ASSERT_EQ(spd, 1800);
+    ASSERT_FALSE(locked);
+
+    // 2. Operator immediately pulls stick to full reverse (-1.0f)
+    // Vehicle is still rolling forward at 800 mm/s (> 50 mm/s threshold)
+    now_ms += 20;
+    spd = rev.process_velocity(-1.0f, 1800, 1000, 800, now_ms, &locked);
+    ASSERT_EQ(spd, 0); // Reverse locked out! Demand zero torque
+    ASSERT_TRUE(locked);
+
+    // 3. 500 ms passes (> 200 ms timeout), BUT vehicle is STILL rolling at 100 mm/s!
+    // A timer alone MUST NEVER authorize reverse torque while moving forward!
+    now_ms += 500;
+    spd = rev.process_velocity(-1.0f, 1800, 1000, 100, now_ms, &locked);
+    ASSERT_EQ(spd, 0); // Still locked!
+    ASSERT_TRUE(locked);
+
+    // 4. Vehicle finally comes to rest (speed = 20 mm/s <= 50 mm/s), but dwell timer just started
+    now_ms += 50;
+    spd = rev.process_velocity(-1.0f, 1800, 1000, 20, now_ms, &locked);
+    ASSERT_EQ(spd, 0); // Still locked, dwell pending
+    ASSERT_TRUE(locked);
+
+    // 5. Vehicle stationary AND 200 ms neutral dwell elapsed: reverse authorized!
+    now_ms += 205;
+    spd = rev.process_velocity(-1.0f, 1800, 1000, 0, now_ms, &locked);
+    ASSERT_EQ(spd, -1000); // Reverse torque now permitted!
+    ASSERT_FALSE(locked);
+}
+
+void test_edge_qualified_arming_sequence() {
+    rm::ArmingTracker arm{};
     uint32_t now_ms = 1000;
 
-    // Ignition OFF (1000us)
-    frame.channels[rm::kChIgnition] = rm::pulse_us_to_sbus(1000);
+    // Scenario A: Boot up with SWA already DOWN (unsafe)
+    arm.update(true, true, true, now_ms);
+    ASSERT_FALSE(arm.is_armed()); // Must refuse to arm!
+
+    // 600 ms passes, still DOWN
+    now_ms += 600;
+    arm.update(true, true, true, now_ms);
+    ASSERT_FALSE(arm.is_armed()); // Still refused!
+
+    // Operator observes T12D and flips SWA UP (Disabled)
+    now_ms += 50;
+    arm.update(false, true, true, now_ms);
+    ASSERT_FALSE(arm.is_armed());
+
+    // Operator now deliberately flips SWA DOWN with neutral stick -> ARMED!
+    now_ms += 50;
+    arm.update(true, true, true, now_ms);
+    ASSERT_TRUE(arm.is_armed());
+
+    // Operator flips SWA UP -> immediate disarm
+    now_ms += 50;
+    arm.update(false, true, true, now_ms);
+    ASSERT_FALSE(arm.is_armed());
+
+    // Scenario B: RF link lost while armed -> immediate disarm and require re-arm
+    now_ms += 50;
+    arm.update(true, true, true, now_ms);
+    ASSERT_TRUE(arm.is_armed());
+
+    // Link lost!
+    now_ms += 50;
+    arm.update(true, true, false, now_ms);
+    ASSERT_FALSE(arm.is_armed());
+
+    // Link recovers while SWA was left DOWN -> must NOT auto-arm!
+    now_ms += 600;
+    arm.update(true, true, true, now_ms);
+    ASSERT_FALSE(arm.is_armed());
+}
+
+void test_park_hold_semantic_request() {
+    rm::SbusFrame frame{};
+    for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(2000);
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1500);
+    frame.channels[rm::kChAutoRequest]   = rm::pulse_us_to_sbus(1000);
+
+    uint32_t now_ms = 1000;
+
+    // SWB UP (< 1500us) -> Park/Hold requested
+    frame.channels[rm::kChParkHold] = rm::pulse_us_to_sbus(1000);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_FALSE(snap.ignition);
-
-    // Ignition ON (2000us)
-    frame.channels[rm::kChIgnition] = rm::pulse_us_to_sbus(2000);
-    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_TRUE(snap.ignition);
-
-    // Gear R (1000us)
-    frame.channels[rm::kChGear] = rm::pulse_us_to_sbus(1000);
-    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_TRUE(snap.gear == can::Gear::R);
-
-    // Gear N (1500us)
-    frame.channels[rm::kChGear] = rm::pulse_us_to_sbus(1500);
-    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_TRUE(snap.park_hold_req);
+    ASSERT_NEAR(snap.brake_stroke_mm, rm::kParkBrakeStrokeMm, 0.001f);
     ASSERT_TRUE(snap.gear == can::Gear::N);
 
-    // Gear D (2000us)
-    frame.channels[rm::kChGear] = rm::pulse_us_to_sbus(2000);
+    // SWB DOWN (>= 1500us) -> Drive requested
+    frame.channels[rm::kChParkHold] = rm::pulse_us_to_sbus(2000);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_TRUE(snap.gear == can::Gear::D);
+    ASSERT_FALSE(snap.park_hold_req);
+    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
 }
 
-void test_auxiliary_controls() {
+void test_asymmetric_authority_request() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChParkHold]      = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChDriveEnvelope] = rm::pulse_us_to_sbus(1500);
+
     uint32_t now_ms = 1000;
 
-    // SWA (CH7), SWD (CH8), VRA (CH9), VRB (CH10)
-    frame.channels[rm::kChSwitchA] = rm::pulse_us_to_sbus(1800);
-    frame.channels[rm::kChSwitchD] = rm::pulse_us_to_sbus(1200);
-    frame.channels[rm::kChDialVra] = rm::pulse_us_to_sbus(1750); // ~0.75
-    frame.channels[rm::kChDialVrb] = rm::pulse_us_to_sbus(1250); // ~0.25
-
+    // SWD UP (< 1500us) -> Manual
+    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_TRUE(snap.switch_a);
-    ASSERT_FALSE(snap.switch_d);
-    ASSERT_NEAR(snap.dial_vra, 0.75f, 0.05f);
-    ASSERT_NEAR(snap.dial_vrb, 0.25f, 0.05f);
-}
+    ASSERT_FALSE(snap.auto_mode_req);
 
-void test_signal_loss_timeout() {
-    rm::SbusFrame frame{};
-    for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
-
-    uint32_t last_ms = 1000;
-    uint32_t now_ms = 1105; // 105 ms later (> 100 ms threshold)
-
-    auto snap = rm::decode_sbus_frame(frame, last_ms, now_ms);
-    ASSERT_FALSE(snap.signal_valid);
-    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.001f);
-    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
+    // SWD DOWN (>= 1500us) -> Auto Request
+    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(2000);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_TRUE(snap.auto_mode_req);
 }
 
 void test_can_frame_encoding() {
@@ -305,7 +401,7 @@ void test_can_frame_encoding() {
     seb_cmd.alignment_enable = true;
     seb_cmd.control_enable = true;
     seb_cmd.control_mode = can::custom::seb::ControlMode::Stroke;
-    seb_cmd.stroke_request_raw = 600; // 0.0 mm
+    seb_cmd.stroke_request_raw = 900; // 15.0 mm park hold
     seb_cmd.rolling_counter = 3;
     can::Frame seb_fr;
     ASSERT_EQ(can::custom::seb::encode_command(seb_cmd, seb_fr), can::gen::CodecStatus::Ok);
@@ -313,7 +409,7 @@ void test_can_frame_encoding() {
 
     // 3. 0x204 RT_DRIVE_CMD
     can::gen::RtDriveCmd drive_cmd{};
-    drive_cmd.motor_speed_mmps = 1500;
+    drive_cmd.motor_speed_mmps = 1800;
     drive_cmd.gear = static_cast<uint8_t>(can::Gear::D);
     can::Frame drive_fr;
     ASSERT_EQ(can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr), can::gen::CodecStatus::Ok);
@@ -331,18 +427,19 @@ void test_can_frame_encoding() {
 
 int main() {
     std::printf("====================================================\n");
-    std::printf("  RM-ESP32-T12D TEST SUITE (RadioLink SBUS Gateway)\n");
+    std::printf("  RM-ESP32-T12D TEST SUITE (Automotive HMI Gateway)\n");
     std::printf("====================================================\n");
 
     test_sbus_bit_unpacking_and_ranges();
     test_sbus_byte_stream_parser();
-    test_sbus_flags_failsafe_and_framelost();
+    test_graduated_link_states_and_failsafe();
+    test_channel_plausibility_clusters();
     test_steering_deadband_and_limits();
-    test_brake_threshold_and_linear_stroke();
-    test_throttle_deadband_and_governor();
-    test_gear_and_ignition_switches();
-    test_auxiliary_controls();
-    test_signal_loss_timeout();
+    test_signed_velocity_and_speed_envelopes();
+    test_strict_direction_reversal_guard();
+    test_edge_qualified_arming_sequence();
+    test_park_hold_semantic_request();
+    test_asymmetric_authority_request();
     test_can_frame_encoding();
 
     std::printf("----------------------------------------------------\n");
@@ -355,3 +452,4 @@ int main() {
         return 1;
     }
 }
+
