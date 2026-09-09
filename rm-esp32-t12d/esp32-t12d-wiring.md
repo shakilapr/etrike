@@ -103,23 +103,144 @@ uart_set_line_inverse(UART_NUM_1, UART_SIGNAL_RXD_INV);
 ```
 **No external transistor or inverter chip is needed.**
 
-### 4.2 Electrical High Level Verification
+### 4.2 Electrical High Level Verification & Resistor Divider
 Before plugging the signal wire directly into the ESP32:
 1. Power the R16F with 5 V.
-2. Measure the voltage between **CH16 Signal** and **GND** with a multimeter / oscilloscope:
+2. Measure the voltage between **CH16 Signal** and **GND** with a multimeter or oscilloscope:
    - If the high level is **$\approx 3.3\,\text{V}$**: Direct connection to GPIO 16 is safe.
-   - If the high level is **$\approx 5.0\,\text{V}$**: Insert a simple resistor divider to protect the 3.3 V ESP32 input:
-     ```
-     R16F CH16 Signal ────[ 2.2 kΩ ]────┬────► ESP32 GPIO 16
-                                        │
-                                     [ 3.3 kΩ ]
-                                        │
-                                       GND
-     ```
+   - If the high level is **$\approx 5.0\,\text{V}$**: Add a resistor divider to reduce 5 V down to $3.33\,\text{V}$ to protect the 3.3 V ESP32 input:
+
+```text
+R16F SBUS (5V Signal)
+          │
+        10 kΩ
+          │
+          ├────────► ESP32 GPIO 16 (UART RX)
+          │
+        20 kΩ
+          │
+         GND
+```
+
+The voltage reduction formula:
+$$5.0\,\text{V} \times \frac{20\,\text{k}\Omega}{10\,\text{k}\Omega + 20\,\text{k}\Omega} = 3.33\,\text{V}$$
+
+A dedicated 5-V-to-3.3-V logic buffer level shifter can also be used.
 
 ---
 
-## 5. RadioLink Configuration & LED Modes
+## 5. Protocol Specification & Reference Decoder
+
+### 5.1 Protocol Parameters
+```text
+Baud       100000
+Data       8 bits
+Parity     Even
+Stop bits  2
+Signal     Inverted (Idle Low, Start Bit High)
+Frame      25 bytes
+Channels   16 × 11-bit (Packed into bytes 1..22)
+```
+
+The hardware inversion is handled internally by ESP32 UART (`uart_set_line_inverse`), so no external transistor is needed.
+
+### 5.2 Standalone Reference SBUS Decoder (Arduino-ESP32 / Diagnostic)
+
+```cpp
+#include <Arduino.h>
+
+HardwareSerial SBUS(1);
+
+constexpr int SBUS_RX = 16;
+
+uint8_t frame[25];
+uint8_t indexPos = 0;
+
+uint16_t channels[16];
+
+void decodeSBUS(const uint8_t *f)
+{
+    // Channel data occupies bytes 1..22.
+    // 16 channels × 11 bits = 176 bits.
+
+    for (int ch = 0; ch < 16; ch++) {
+        int bitIndex  = ch * 11;
+        int byteIndex = 1 + bitIndex / 8;
+        int shift     = bitIndex % 8;
+
+        uint32_t value =
+            ((uint32_t)f[byteIndex]) |
+            ((uint32_t)f[byteIndex + 1] << 8) |
+            ((uint32_t)f[byteIndex + 2] << 16);
+
+        channels[ch] = (value >> shift) & 0x07FF;
+    }
+
+    bool frameLost = f[23] & 0x04;
+    bool failsafe  = f[23] & 0x08;
+
+    Serial.printf(
+        "CH1=%u CH2=%u CH3=%u CH4=%u  lost=%d failsafe=%d\n",
+        channels[0],
+        channels[1],
+        channels[2],
+        channels[3],
+        frameLost,
+        failsafe
+    );
+}
+
+void setup()
+{
+    Serial.begin(115200);
+
+    // baud, format, RX, TX, invert
+    SBUS.begin(
+        100000,
+        SERIAL_8E2,
+        SBUS_RX,
+        -1,
+        true
+    );
+
+    Serial.println("R16F SBUS reader started");
+}
+
+void loop()
+{
+    while (SBUS.available()) {
+
+        uint8_t b = SBUS.read();
+
+        // Wait for SBUS start byte
+        if (indexPos == 0 && b != 0x0F)
+            continue;
+
+        frame[indexPos++] = b;
+
+        if (indexPos == 25) {
+
+            // Typical SBUS end byte
+            if (frame[0] == 0x0F) {
+                decodeSBUS(frame);
+            }
+
+            indexPos = 0;
+        }
+    }
+}
+```
+
+### 5.3 Typical Raw SBUS Ranges
+```text
+Low       ~172
+Center    ~992
+High      ~1811
+```
+
+---
+
+## 6. RadioLink Configuration & LED Modes
 
 ### 5.1 Configure T12D Transmitter
 1. Turn on the T12D transmitter.
