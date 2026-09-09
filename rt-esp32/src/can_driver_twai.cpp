@@ -372,20 +372,6 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
         // Bus-Off recovery backoff window — TX intentionally suspended.
         return false;
     }
-    // ESTOP is an unbypassable, bounded event and may be attempted even while
-    // operational traffic is gated. All other traffic requires a known peer.
-    if (source.id != 0x001u && !m_tx_admitted.load(std::memory_order_acquire)) {
-        const int64_t now = esp_timer_get_time();
-        const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
-        if (now - last > 2000000) {
-            m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
-            ESP_LOGW(kTag,
-                     "Low CAN TX suppressed id=0x%lX: no ACK-capable peer seen "
-                     "(bus disconnected / miswired / wrong termination?)",
-                     static_cast<unsigned long>(source.id));
-        }
-        return false;
-    }
 
     const uint32_t pending_bit = actuation_pending_bit(source.id);
     if (pending_bit != 0

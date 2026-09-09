@@ -198,9 +198,6 @@ static uint32_t g_can_tx_consec_fail_low = 0;
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
     if (!drv) return false;
-    if (fr.id != can::kIdSafetyEstop && !drv->tx_admitted()) {
-        return false;
-    }
     if (drv->send(fr)) {
         if (g_can_tx_had_fail_low) {
             ESP_LOGI(TAG, "Low CAN TX recovered ? fail=%lu ok=%lu",
@@ -291,27 +288,17 @@ static void update_low_can_tx_admission(int64_t now_us) {
     auto* drv = rt::can_low_driver();
     if (!drv) return;
 
-    const int64_t last_peer = g_last_low_peer_us.load(std::memory_order_acquire);
-    bool admitted = last_peer > 0
-        && now_us - last_peer <= int64_t(rt::kLowCanPeerTimeoutMs) * 1000;
-#if ETRIKE_RT_TWAI_SELF_TEST
-    // Self-test is compiled only for the isolated software bench. It does not
-    // require an ACK peer, but unbypassable ESTOP processing remains enabled.
-    admitted = admitted || g_bench_solo_mode;
-#endif
+    // Transport remains open for heartbeat, status, and peer discovery.
+    drv->set_tx_admission(true);
 
-    const bool was_admitted = drv->tx_admitted();
-    drv->set_tx_admission(admitted);
+    const int64_t last_peer = g_last_low_peer_us.load(std::memory_order_acquire);
+    bool peer_fresh = last_peer > 0
+        && now_us - last_peer <= int64_t(rt::kLowCanPeerTimeoutMs) * 1000;
+
     // Report-only: low-speed CAN peer (e.g. SYS/MTR) lost beyond timeout.
-    if (!admitted && last_peer > 0) {
+    if (!peer_fresh && last_peer > 0) {
         rt::diag().raise(etrike::diagnostics::DiagId::RtLowCanPeerTimeout,
                          static_cast<std::uint16_t>((now_us - last_peer) / 1000));
-    }
-    if (admitted != was_admitted) {
-        ESP_LOGI(TAG, "Low CAN TX admission=%s peer_age_ms=%lld%s",
-                  admitted ? "open" : "closed",
-                  last_peer > 0 ? static_cast<long long>((now_us - last_peer) / 1000) : -1LL,
-                  g_bench_solo_mode ? " developer-bypass" : "");
     }
 }
 
@@ -1139,15 +1126,8 @@ extern "C" void app_main() {
 
     rt::can_low_init();
     if (auto* drv = rt::can_low_driver()) {
-#if ETRIKE_RT_TWAI_SELF_TEST
-        drv->set_tx_admission(g_bench_solo_mode);
-#else
-        drv->set_tx_admission(false);
-#endif
-        if (!drv->tx_admitted()) {
-            ESP_LOGW(TAG,
-                "Low CAN operational TX closed; waiting for a valid low-bus peer");
-        }
+        drv->set_tx_admission(true);
+        ESP_LOGI(TAG, "Low CAN transport initialized (streaming discovery & heartbeats)");
     }
     bool has_high_can = g_can_high.init();
     g_high_can_present.store(has_high_can, std::memory_order_relaxed);
