@@ -2,34 +2,6 @@
 
 namespace can {
 
-bool IRAM_ATTR CanDriver::on_rx_done_(twai_node_handle_t node,
-                                      const twai_rx_done_event_data_t*,
-                                      void* user_ctx) {
-    auto* self = static_cast<CanDriver*>(user_ctx);
-    RxItem item{};
-    twai_frame_t frame{};
-    frame.buffer = item.data;
-    frame.buffer_len = sizeof(item.data);
-    if (twai_node_receive_from_isr(node, &frame) != ESP_OK || frame.header.dlc > 8) {
-        return false;
-    }
-
-    // Drop our own high-rate TX frames in ISR to prevent rx_queue_ starvation.
-    // RM only needs to receive supervisor frames (e.g. 0x001 SAFETY_ESTOP). 0x110/0x113 are
-    // emulated by RM itself, so its own echoes are dropped; RM must NOT emit 0x111/0x112.
-    const uint32_t id = frame.header.id;
-    if (id == 0x169u || id == 0x7B9u || id == 0x204u || id == 0x110u || id == 0x113u) {
-        return false;
-    }
-
-    item.id = id;
-    item.dlc = static_cast<uint8_t>(frame.header.dlc);
-    item.extended = frame.header.ide;
-    BaseType_t wake = pdFALSE;
-    xQueueSendFromISR(self->rx_queue_, &item, &wake);
-    return wake == pdTRUE;
-}
-
 bool IRAM_ATTR CanDriver::on_tx_done_(twai_node_handle_t,
                                       const twai_tx_done_event_data_t* event,
                                       void* user_ctx) {
@@ -58,7 +30,6 @@ bool IRAM_ATTR CanDriver::on_state_change_(twai_node_handle_t,
                && event->new_sta == TWAI_ERROR_ACTIVE) {
         self->recovery_in_progress_.store(false, std::memory_order_release);
         self->recovery_completed_pending_.store(true, std::memory_order_release);
-        self->first_rx_pending_.store(true, std::memory_order_release);
         self->first_tx_pending_.store(true, std::memory_order_release);
     }
     return false;

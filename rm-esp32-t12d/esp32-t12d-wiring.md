@@ -278,26 +278,27 @@ pio run -d rm-esp32-t12d -e vehicle -t upload -t monitor
 ```text
 I (310) rm_t12d: =================================================
 I (310) rm_t12d:   RM-ESP32-T12D Receiver Gateway (RadioLink SBUS)
-I (310) rm_t12d:   Version: v0.8.0-alpha-rm-t12d
+I (310) rm_t12d:   Version: v0.8.0-clean-rm-t12d
 I (310) rm_t12d: =================================================
-I (320) can: TWAI TX=21 RX=22 @ 500 kbit/s
+I (320) can: TWAI TX=5 RX=4 @ 500 kbit/s
 I (330) rc_rx: Initialized SBUS UART1 on RX GPIO 16 (100k, 8E2, inverted)
 I (340) rm_t12d: All tasks created successfully. RM-ESP32-T12D operational.
 ```
 
 ### Serial Output Strategy (Change-Driven + 2 Hz Decimated Summary):
-To prevent UART TX buffer overflow and latency at 50 Hz, the firmware uses an optimal dual-rate display:
-1. **Immediate Delta Trigger**: Logs instantly whenever steering ($\ge 1.0^\circ$), brake ($\ge 0.5\text{ mm}$), speed ($\ge 50\text{ mm/s}$), gear, or ignition changes.
+To maintain optimal UART performance at 100 Hz CAN transmit rate, the gateway uses a dual-rate display:
+1. **Immediate Delta Trigger**: Logs instantly whenever steering ($\ge 1.0^\circ$), brake ($\ge 0.5\text{ mm}$), speed ($\ge 50\text{ mm/s}$), gear, enable, park, or mode changes.
 2. **Periodic 2 Hz Pulse**: Logs a single consolidated summary every 500 ms when controls are steady.
 
 ```text
-I (1450) can_tx: [CAN TX] 0x169 SES: raw=30045 (+4.5°) | 0x7B9 SEB: raw=600 (0.0mm) | 0x204 MTR: +1250mm/s [D] | 0x113 PWR: ON | 0x110 MODE: Auto
-I (1950) can_tx: [CAN TX] 0x169 SES: raw=30000 (+0.0°) | 0x7B9 SEB: raw=600 (0.0mm) | 0x204 MTR: +0mm/s [N] | 0x113 PWR: OFF | 0x110 MODE: Manual
+I (14502) tx: STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
+I (14522) tx: STR:+4.5 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
 ```
 
-Under Fail-Safe or ESTOP:
+Under Link Loss or Receiver Fail-Safe:
 ```text
-W (2300) can_tx: [CAN TX | ESTOP] 0x001 SAFETY_ESTOP | 0x169 SES: raw=30000 (0.0°) | 0x7B9 SEB: raw=1140 (27.0mm) | 0x204 MTR: 0mm/s [N] | 0x113 PWR: OFF
+W (2300) rm_t12d: RC Link LOST or Failsafe active! Safe stop commanded.
+I (2310) tx: STR:+0.0 BRK:15.0 MTR:+0[N] EN:OFF PRK:HOLD MOD:M
 ```
 
 ---
@@ -326,6 +327,6 @@ Before powering high-voltage motor drivers or operating the vehicle:
 - [ ] **LED Status**: R16F shows solid **RED + BLUE LEDs** (PWM + SBUS).
 - [ ] **Transmitter Model**: T12D active model verified as `ROBOT`.
 - [ ] **RF Protocol**: T12D confirmed on `Internal Module` $\rightarrow$ `FHSS V2.1`.
-- [ ] **Startup Switch Check**: All switches in safe state before power (Ignition UP=OFF, Gear MID=N, ESTOP UP=Run).
-- [ ] **Failsafe Test**: Turn off T12D transmitter on bench: verify serial prints `[CAN TX | ESTOP]`, brake clamps to `27.0 mm`, and `0x001 SAFETY_ESTOP` is emitted.
-- [ ] **Recovery Test**: Turn T12D back on, cycle SWB to OFF, SWC to Neutral: verify ESTOP clears.
+- [ ] **Startup Switch Check**: All switches in safe state before power (SWA UP=Disabled, SWB DOWN=Park Hold, SWC MID=N).
+- [ ] **Failsafe Test**: Turn off T12D transmitter on bench: verify serial logs `RC Link LOST`, gear forces to `[N]`, speed to `0 mm/s`, and brake clamps to `15.0 mm` park hold.
+- [ ] **Recovery Test**: Turn T12D back on: verify link restores and immediate control resumes.

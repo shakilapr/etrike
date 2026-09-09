@@ -51,10 +51,11 @@ bool RcReceiver::init() {
     }
 
     for (uint8_t i = 0; i < kNumSbusChannels; ++i) {
-        raw_sbus_[i].store(kSbusRawCenter, std::memory_order_relaxed);
-        pulse_us_[i].store(kPulseCenterUs, std::memory_order_relaxed);
         latest_frame_.channels[i] = kSbusRawCenter;
     }
+
+    // Initialize snapshot to safe failsafe state
+    snap_ = decode_sbus_frame(latest_frame_, 0, 0);
 
     ESP_LOGI(TAG, "Initialized SBUS UART%d on RX GPIO %d (100k, 8E2, inverted)", kSbusUartPort, kSbusRxGpio);
     return true;
@@ -62,7 +63,8 @@ bool RcReceiver::init() {
 
 void RcReceiver::sample(uint32_t now_ms) {
     uint8_t rx_buf[128];
-    int len = uart_read_bytes(static_cast<uart_port_t>(kSbusUartPort), rx_buf, sizeof(rx_buf), 0);
+    // Reactive 10ms timeout: wakes immediately when SBUS bytes arrive
+    int len = uart_read_bytes(static_cast<uart_port_t>(kSbusUartPort), rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(10));
     bool new_frame_decoded = false;
 
     if (len > 0) {
@@ -75,53 +77,26 @@ void RcReceiver::sample(uint32_t now_ms) {
 
     if (new_frame_decoded) {
         last_frame_time_ms_.store(now_ms, std::memory_order_release);
-        for (uint8_t i = 0; i < kNumSbusChannels; ++i) {
-            raw_sbus_[i].store(latest_frame_.channels[i], std::memory_order_relaxed);
-            pulse_us_[i].store(sbus_to_pulse_us(latest_frame_.channels[i]), std::memory_order_relaxed);
-        }
     }
 
     uint32_t last_frame_ms = last_frame_time_ms_.load(std::memory_order_acquire);
-    RcSnapshot snap = decode_sbus_frame(latest_frame_, last_frame_ms, now_ms);
+    RcSnapshot new_snap = decode_sbus_frame(latest_frame_, last_frame_ms, now_ms);
 
-    snap_steering_.store(snap.steering_deg, std::memory_order_relaxed);
-    snap_brake_.store(snap.brake_stroke_mm, std::memory_order_relaxed);
-    snap_throttle_norm_.store(snap.throttle_norm, std::memory_order_relaxed);
-    snap_yaw_spare_.store(snap.yaw_spare, std::memory_order_relaxed);
-    snap_ignition_.store(snap.ignition, std::memory_order_relaxed);
-    snap_gear_.store(snap.gear, std::memory_order_relaxed);
-    snap_switch_a_.store(snap.switch_a, std::memory_order_relaxed);
-    snap_switch_d_.store(snap.switch_d, std::memory_order_relaxed);
-    snap_dial_vra_.store(snap.dial_vra, std::memory_order_relaxed);
-    snap_dial_vrb_.store(snap.dial_vrb, std::memory_order_relaxed);
-    snap_frame_lost_.store(snap.frame_lost, std::memory_order_relaxed);
-    snap_failsafe_.store(snap.failsafe, std::memory_order_relaxed);
-    snap_valid_.store(snap.signal_valid, std::memory_order_relaxed);
-    snap_last_update_ms_.store(snap.last_update_ms, std::memory_order_relaxed);
+    // Seqlock atomic publication
+    seq_.fetch_add(1, std::memory_order_release);
+    snap_ = new_snap;
+    seq_.fetch_add(1, std::memory_order_release);
 }
 
 RcSnapshot RcReceiver::snapshot() const {
-    RcSnapshot snap;
-    snap.steering_deg    = snap_steering_.load(std::memory_order_relaxed);
-    snap.brake_stroke_mm = snap_brake_.load(std::memory_order_relaxed);
-    snap.throttle_norm   = snap_throttle_norm_.load(std::memory_order_relaxed);
-    snap.yaw_spare       = snap_yaw_spare_.load(std::memory_order_relaxed);
-    snap.ignition        = snap_ignition_.load(std::memory_order_relaxed);
-    snap.gear            = snap_gear_.load(std::memory_order_relaxed);
-    snap.switch_a        = snap_switch_a_.load(std::memory_order_relaxed);
-    snap.switch_d        = snap_switch_d_.load(std::memory_order_relaxed);
-    snap.dial_vra        = snap_dial_vra_.load(std::memory_order_relaxed);
-    snap.dial_vrb        = snap_dial_vrb_.load(std::memory_order_relaxed);
-    snap.frame_lost      = snap_frame_lost_.load(std::memory_order_relaxed);
-    snap.failsafe        = snap_failsafe_.load(std::memory_order_relaxed);
-    snap.signal_valid    = snap_valid_.load(std::memory_order_relaxed);
-    snap.last_update_ms  = snap_last_update_ms_.load(std::memory_order_relaxed);
-
-    for (uint8_t i = 0; i < kNumSbusChannels; ++i) {
-        snap.raw_channels[i] = raw_sbus_[i].load(std::memory_order_relaxed);
-        snap.pulse_us[i]     = pulse_us_[i].load(std::memory_order_relaxed);
-    }
-    return snap;
+    RcSnapshot copy;
+    uint32_t s1 = 0, s2 = 0;
+    do {
+        s1 = seq_.load(std::memory_order_acquire);
+        copy = snap_;
+        s2 = seq_.load(std::memory_order_acquire);
+    } while ((s1 & 1) != 0 || s1 != s2);
+    return copy;
 }
 
 }  // namespace rm
