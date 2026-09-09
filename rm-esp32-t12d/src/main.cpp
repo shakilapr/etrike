@@ -170,8 +170,8 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         // 4. Transmit Motor Command -> 0x204 RT_DRIVE_CMD (50 Hz)
         // Directly drives MTR on Low CAN bus when operating in standalone RM bypass mode.
         // Gated off when under ESTOP or signal loss so MTR watchdog (500 ms) trips independently.
+        int32_t target_motor_speed = 0;
         if (!estop_or_signal_loss) {
-            int32_t target_motor_speed = 0;
             // Brake-Over-Throttle interlock: zero throttle setpoint when mechanical brake > 5.0 mm
             constexpr float kBrakeCutoffStrokeMm = 5.0f;
             bool throttle_inhibited_by_brake = (snap.brake_stroke_mm > kBrakeCutoffStrokeMm);
@@ -199,12 +199,15 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
         bool ignition_changed = (snap.ignition != last_ignition);
         last_ignition = snap.ignition;
 
+        uint8_t pwr_state = (!estop_or_signal_loss && snap.ignition) ? 1u : 0u;
+        uint8_t mode_state = drive_active ? uint8_t(can::Mode::Auto) : uint8_t(can::Mode::Manual);
+
         if (++cmd_heartbeat_counter >= 5 || ignition_changed) { // 5 * 20ms = 100ms (10 Hz)
             cmd_heartbeat_counter = 0;
 
             // 0x110 SYS_MODE_CMD (authoritative mode)
             can::gen::SysModeCmd mode_cmd{};
-            mode_cmd.mode = drive_active ? uint8_t(can::Mode::Auto) : uint8_t(can::Mode::Manual);
+            mode_cmd.mode = mode_state;
             g_roll_sys_mode = (g_roll_sys_mode + 1) & 0xFF;
             mode_cmd.rolling_counter = g_roll_sys_mode;
             can::Frame mode_fr;
@@ -214,7 +217,7 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
 
             // 0x113 SYS_PWR_CMD (authoritative power)
             can::gen::SysPwrCmd pwr_cmd{};
-            pwr_cmd.power_state = (!estop_or_signal_loss && snap.ignition) ? 1u : 0u;
+            pwr_cmd.power_state = pwr_state;
             g_roll_sys_pwr = (g_roll_sys_pwr + 1) & 0xFF;
             pwr_cmd.rolling_counter = g_roll_sys_pwr;
             can::Frame pwr_fr;
@@ -234,6 +237,55 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
                 send_can_frame(ssts_fr, "SYS_SAFETY_STS");
             }
 #endif
+        }
+
+        // 6. Optimal Serial CAN Command Display (Delta-triggered + Decimated)
+        // Eliminates 250 Hz UART log flooding while logging every control change with 20ms latency.
+        static struct {
+            float   steer_deg{999.0f};
+            float   brake_mm{999.0f};
+            int32_t speed_mmps{999999};
+            uint8_t gear{0xFF};
+            uint8_t pwr{0xFF};
+            uint8_t mode{0xFF};
+            bool    estop{false};
+            uint32_t count{0};
+        } s_last_can_log;
+
+        bool steer_changed = std::abs(snap.steering_deg - s_last_can_log.steer_deg) >= rm::kLogDeltaSteerDeg;
+        bool brake_changed = std::abs(snap.brake_stroke_mm - s_last_can_log.brake_mm) >= rm::kLogDeltaBrakeMm;
+        bool speed_changed = std::abs(target_motor_speed - s_last_can_log.speed_mmps) >= rm::kLogDeltaSpeedMmps;
+        bool gear_changed  = (static_cast<uint8_t>(snap.gear) != s_last_can_log.gear);
+        bool pwr_changed   = (pwr_state != s_last_can_log.pwr);
+        bool estop_changed = (estop_or_signal_loss != s_last_can_log.estop);
+        bool periodic_tick = (++s_last_can_log.count >= rm::kCanLogDecimation);
+
+        if (steer_changed || brake_changed || speed_changed || gear_changed || pwr_changed || estop_changed || periodic_tick) {
+            s_last_can_log.steer_deg   = snap.steering_deg;
+            s_last_can_log.brake_mm    = snap.brake_stroke_mm;
+            s_last_can_log.speed_mmps  = target_motor_speed;
+            s_last_can_log.gear        = static_cast<uint8_t>(snap.gear);
+            s_last_can_log.pwr         = pwr_state;
+            s_last_can_log.mode        = mode_state;
+            s_last_can_log.estop       = estop_or_signal_loss;
+            s_last_can_log.count       = 0;
+
+            if (estop_or_signal_loss) {
+                ESP_LOGW("can_tx", "[CAN TX | ESTOP] 0x001 SAFETY_ESTOP | 0x169 SES: raw=%d (0.0°) | 0x7B9 SEB: raw=%u (%.1fmm) | 0x204 MTR: 0mm/s [N] | 0x113 PWR: OFF",
+                         rm::kSbwAngleOffset,
+                         stroke_raw,
+                         commanded_stroke);
+            } else {
+                ESP_LOGI("can_tx", "[CAN TX] 0x169 SES: raw=%d (%+.1f°) | 0x7B9 SEB: raw=%u (%.1fmm) | 0x204 MTR: %+dmm/s [%s] | 0x113 PWR: %s | 0x110 MODE: %s",
+                         angle_raw,
+                         snap.steering_deg,
+                         stroke_raw,
+                         commanded_stroke,
+                         target_motor_speed,
+                         (snap.gear == can::Gear::D) ? "D" : ((snap.gear == can::Gear::R) ? "R" : "N"),
+                         snap.ignition ? "ON" : "OFF",
+                         drive_active ? "Auto" : "Manual");
+            }
         }
 
         vTaskDelayUntil(&last, period);
