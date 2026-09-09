@@ -192,6 +192,28 @@ static void test_readiness_bitmask_clearing_on_loss() {
     TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
 }
 
+static void test_fresh_host_cmd_required_after_estop_clear() {
+    // Before trip: system running, all ready
+    uint8_t mask = rt::kMotionRequired;
+    TEST_ASSERT_TRUE(rt::is_motion_ready(mask));
+
+    // ESTOP occurs: authority and host bits cleared
+    mask &= ~(rt::READY_BIT_SAFETY | rt::READY_BIT_MODE | rt::READY_BIT_HOST);
+    TEST_ASSERT_FALSE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // SYS clears ESTOP and re-establishes safety authority (0x011 + 0x110)
+    mask |= (rt::READY_BIT_SAFETY | rt::READY_BIT_MODE);
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask));
+    // Crucial: motion remains BLOCKED until a fresh 0x300 arrives!
+    TEST_ASSERT_FALSE(rt::is_motion_ready(mask));
+
+    // Now fresh 0x300 arrives from host
+    mask |= rt::READY_BIT_HOST;
+    TEST_ASSERT_TRUE(rt::is_sys_authority_ready(mask));
+    TEST_ASSERT_TRUE(rt::is_motion_ready(mask));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -209,5 +231,6 @@ int main() {
     RUN_TEST(test_readiness_bitmask_sys_authority_requires_safety_and_mode);
     RUN_TEST(test_readiness_bitmask_parallel_recovery_order_independent);
     RUN_TEST(test_readiness_bitmask_clearing_on_loss);
+    RUN_TEST(test_fresh_host_cmd_required_after_estop_clear);
     return UNITY_END();
 }

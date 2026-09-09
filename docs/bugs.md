@@ -53,11 +53,12 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - Keep the ack window open until either `ESTOP_ACTIVE` is observed or a bounded retry count expires, not until one time-based check has run.
   - Record acknowledgment state explicitly in SYS node status rather than deriving it only from instantaneous 0x206 fault bits.
 
-### BUG-04: MTR post-authority reacquisition timing is undefined
+### BUG-04: MTR post-authority reacquisition timing is undefined (RESOLVED)
 
 - **Files**
   - `rt-esp32/src/main.cpp` lines 345–500
   - `mtr-stm32/src/motor_manager.h` lines 84–105, 281–310, 501–504
+  - `rt-esp32/src/safety_stream_loss.h`
 - **Symptom**
   - Reset or command path works in one test but not in the full pipeline.
 - **Bug**
@@ -66,25 +67,29 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
     - MTR can invalidate mode/power independently.
     - RT’s `0x204` watchdog and mode/power checks have separate timeouts and state transitions.
   - These interdependent validation threads are not synchronized, leading to nondeterministic post-reset behavior.
-- **Fix direction**
-  - Define and implement a state machine for the full authority reacquisition sequence across RT and MTR.
-  - Expose the exact state as a Host-visible report so reset progress is observable.
+- **Fix direction / Solution implemented**
+  - Implemented multi-stream authority readiness latch in RT (`READY_BIT_SAFETY | READY_BIT_MODE | READY_BIT_HOST`).
+  - Gated motion setpoints and TX on complete readiness; RT sends `{0, N}` keep-alive frames on `0x204` during reacquisition so MTR's drive watchdog stays fed without triggering active torque before MTR finishes REARM.
+  - Exposed `recovery_pending` in `RT_NODE_STATUS` (0x501) when SYS authority has recovered but fresh Host command is awaited.
 
 ## Severity 2 — command path and observability issues
 
-### BUG-05: RT does not require a fresh Host command after an ESTOP clear
+### BUG-05: RT does not require a fresh Host command after an ESTOP clear (RESOLVED)
 
 - **Files**
-  - `rt-esp32/src/main.cpp` lines 345–500
-  - `rt-esp32/src/can_dispatch.h` lines 445–465
+  - `rt-esp32/src/main.cpp`
+  - `rt-esp32/src/can_dispatch.h`
+  - `rt-esp32/src/safety_stream_loss.h`
 - **Symptom**
   - RT may resume using the pre-ESTOP command expressed in its local `cmd` variable, when the Host has not yet sent a new command after the clear.
 - **Bug**
   - During a safety trip, RT does overwrite `g_cmd_q` with `{0,0}`, which correctly forces a stop.
   - However, every control-tick iteration peeks that queue into the persistent local `cmd` variable, and `g_cmd_q` remains full with `{0,0}`. If the safety clear occurs immediately after the queue overwrite, RT continues to resolve `{0,0}` until the Host sends a new command, which is safe but lacks an explicit “fresh command required” state. It is therefore impossible to distinguish intentional zero motion from an idle post-clear state on the Host interface without knowing the safety-state transition.
   - This creates poor diagnosability and makes pipeline continuation depend on Host production timing.
-- **Fix direction**
-  - Reset RT’s local command state on an ESTOP clear and require a fresh `HOST_DRIVE_CMD` frame before marking the control path active, similar to the existing MTR rearm sequence.
+- **Fix direction / Solution implemented**
+  - On ESTOP assertion, stream loss, watchdog stale, and on `SAFETY_CLEAR`, `READY_BIT_HOST` is cleared in `g_ready_mask`, and `g_cmd_q` + local `cmd` are zeroed out.
+  - Motion is gated until a fresh `0x300 HOST_DRIVE_CMD` frame arrives post-clear, setting `READY_BIT_HOST`.
+  - Exposed in `RtNodeStatus` (0x501) with `recovery_pending = true` while waiting for the fresh Host drive command.
 
 ### BUG-06: missing SEB status at boot is treated differently from SEB loss while running
 

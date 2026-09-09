@@ -372,6 +372,10 @@ static void pump_diagnostics() {
         if (g_pending_safety_clear.exchange(false)) {
             m_estop_pending = false;
             m_estop_reason = rt::kEstopReasonNone;
+            rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                       std::memory_order_release);
+            cmd = {0, 0};
+            xQueueOverwrite(g_cmd_q, &cmd);
         }
         while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
             switch (evt.type) {
@@ -389,6 +393,10 @@ static void pump_diagnostics() {
                 // sequence. Replaces the old 0x110 mode-driven clear.
                 m_estop_pending = false;
                 m_estop_reason = rt::kEstopReasonNone;
+                rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                           std::memory_order_release);
+                cmd = {0, 0};
+                xQueueOverwrite(g_cmd_q, &cmd);
                 break;
             }
         }
@@ -663,7 +671,9 @@ static can::gen::RtNodeStatus build_rt_node_status() {
                       && g_last_speed_setpoint_mmps.load() != 0;
     ns.output_enabled = ns.ready && mode == uint8_t(can::Mode::Auto);
     ns.degraded = g_steering.state() == rt::SteerState::STEER_FAULT;
-    ns.recovery_pending = false;
+    const uint8_t cur_mask = rt::g_ready_mask.load(std::memory_order_relaxed);
+    ns.recovery_pending = !estop && !no_auth && rt::is_sys_authority_ready(cur_mask)
+                          && !rt::is_motion_ready(cur_mask);
     return ns;
 }
 

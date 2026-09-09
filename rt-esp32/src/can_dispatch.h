@@ -148,6 +148,7 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
             ctx.gw_hi = estop;
         }
         g_estop_reason.store(rt::kEstopReasonCanEstop);
+        g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST), std::memory_order_release);
         // Enqueue ESTOP event with 10ms timeout (blocking ? safety critical)
         rt::SafetyEvent evt{
             rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
