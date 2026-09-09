@@ -23,7 +23,7 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - Single barrier release: `g_no_sys_authority` is cleared only when `is_sys_authority_ready()` (`SAFETY` & `MODE`) is satisfied. Motion setpoints are gated until `is_motion_ready()` (`SAFETY`, `MODE`, and fresh `HOST`) is satisfied.
 
 
-### BUG-02: RT suppresses motion silently when the low bus has no ACK-capable peer
+### BUG-02: [FIXED] RT suppresses motion silently when the low bus has no ACK-capable peer
 
 - **Files**
   - `rt-esp32/src/main.cpp` lines 197–217
@@ -35,8 +35,9 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - RT blocks all low-bus traffic except 0x001 until it receives a known low-bus frame. At power-up with SYS, MTR, SES, or SEB absent, the blocking itself prevents the initial RT frames from reaching SYS. This can deadlock before SYS ever transmits.
   - The condition is only reported as a diagnostic, but no immediate Host-visible failure state or operator stop is raised.
 - **Fix direction**
-  - Add a bounded startup admission window before requiring ACK-positive peer discovery.
-  - Surface low-bus transport unavailability as an immediate operator/Host fault state with a defined escalation path, not merely a diagnostic.
+  - Decoupled CAN transport readiness from actuator readiness: removed global `peer_seen` low-bus TX suppression so discovery and heartbeat frames stream freely upon boot ($t=0$).
+  - Actuator output commands (`0x204` drive commands, steering, brakes) are independently gated using node-specific readiness status (`MTR_READY`, `SES_READY`, `SEB_READY`).
+  - Low-bus peer timeout remains monitored and reported via `RtLowCanPeerTimeout` over High CAN to the Host.
 
 ### BUG-03: SYS MTR ESTOP ACK timeout runs only once, even while the acknowledgment is still missing
 
