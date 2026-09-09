@@ -3,8 +3,14 @@ param(
     [switch]$Native,
     [switch]$Python,
     [switch]$Sim,
-    [switch]$Pio
+    [switch]$Pio,
+    [switch]$CompileDb
 )
+
+if ($CompileDb) {
+    python "$PSScriptRoot/generate_compile_commands.py"
+    exit $LASTEXITCODE
+}
 
 $argsList = @()
 if ($Quick) { $argsList += "--quick" }

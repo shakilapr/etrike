@@ -3,6 +3,12 @@ import sys
 import subprocess
 from pathlib import Path
 
+try:
+    Import("env")
+    env.Replace(COMPILATIONDB_INCLUDE_TOOLCHAIN=True)
+except Exception:
+    pass
+
 def main():
     repo_root = Path(__file__).resolve().parent.parent.parent
     protocol_dir = repo_root / 'protocol'
