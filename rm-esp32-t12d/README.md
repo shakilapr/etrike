@@ -116,8 +116,8 @@ Only **three connections** are required between the R16F receiver and the ESP32:
 ### CAN Bus Wiring:
 | Net | ESP32 Pin | Direction | Connected To |
 | :--- | :--- | :--- | :--- |
-| **CAN TX** | **GPIO 21** | Output | Low CAN Transceiver TXD |
-| **CAN RX** | **GPIO 22** | Input | Low CAN Transceiver RXD |
+| **CAN TX** | **GPIO 5** | Output | Low CAN Transceiver TXD |
+| **CAN RX** | **GPIO 4** | Input | Low CAN Transceiver RXD |
 
 ---
 
