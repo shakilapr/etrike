@@ -29,6 +29,8 @@ dependencies.lock
 # ── IDE & editor ─────────────────────────────────────────────────────
 .vscode/
 .idea/
+compile_commands.json
+**/compile_commands.json
 *.swp
 *.swo
 *~
