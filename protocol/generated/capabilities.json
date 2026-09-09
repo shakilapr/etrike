@@ -116,6 +116,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "rt:rt_diag_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "rt:rt_drive_cmd",
         "payload": "typed",
         "semantic_decode": true,
@@ -406,6 +413,13 @@
       {
         "implementation": "generated-v1",
         "message": "rt:rt_diag_event_rpt",
+        "payload": "typed",
+        "semantic_decode": true,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
+        "message": "rt:rt_diag_rpt",
         "payload": "typed",
         "semantic_decode": true,
         "strategy": "generated"
@@ -708,6 +722,13 @@
       },
       {
         "implementation": "generated-v1",
+        "message": "rt:rt_diag_rpt",
+        "payload": "raw_compatibility",
+        "semantic_decode": false,
+        "strategy": "generated"
+      },
+      {
+        "implementation": "generated-v1",
         "message": "rt:rt_drive_cmd",
         "payload": "raw_compatibility",
         "semantic_decode": false,
@@ -890,8 +911,8 @@
       }
     ]
   },
-  "network_hash": "06a53df9e527d55f7d8a284035d40f47acceae57b06034270e6852ab8a826f9c",
+  "network_hash": "8db464fb4cd64e7fa20a7536c4fcc9dbe3e209035947378ad009bdc7e0a22da3",
   "schema_version": 1,
-  "semantic_hash": "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc",
-  "wire_hash": "7bcf669d3f32a8b0ed6cc8c177492b098f56bbc39b3261ce8901e6e6b4fa97dc"
+  "semantic_hash": "d3507d71f7fb498b171f1acc086057afe581a417a1f35a44a137fa4d2f79d0b0",
+  "wire_hash": "d3507d71f7fb498b171f1acc086057afe581a417a1f35a44a137fa4d2f79d0b0"
 }

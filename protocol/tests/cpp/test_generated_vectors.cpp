@@ -286,6 +286,23 @@ void test_success_vectors() {
     mtr_node_status.e2e_crc = 0x5A;
     check_vector(mtr_node_status, std::array<std::uint8_t, 8>{0x03, 0x01, 0x23, 0x83,
                                                               0x00, 0x00, 0x07, 0x5A});
+
+    generated::RtDiagRpt rt_diag_rpt{};
+    rt_diag_rpt.mcp_eflg = 0xE0;
+    rt_diag_rpt.mcp_tec = 0x80;
+    rt_diag_rpt.mcp_rec = 0x7F;
+    rt_diag_rpt.mcp_bus_off = true;
+    rt_diag_rpt.mcp_recovering = true;
+    rt_diag_rpt.mtr_unavailable = true;
+    rt_diag_rpt.no_sys_authority = false;
+    rt_diag_rpt.spi_fault_since_report = true;
+    rt_diag_rpt.brake_fallback_state =
+        generated::RtDiagRpt::kBrakeFallbackStateEmergencyFallback;
+    rt_diag_rpt.spi_fault_delta = 9;
+    rt_diag_rpt.mcp_recovery_attempts = 3;
+    rt_diag_rpt.rolling_counter = 7;
+    check_vector(rt_diag_rpt, std::array<std::uint8_t, 8>{0xE0, 0x80, 0x7F, 0x17,
+                                                          0x02, 0x09, 0x03, 0x07});
 }
 
 void test_validation_and_unchanged_outputs() {
@@ -349,7 +366,7 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-  CHECK(etrike::protocol::kMessages.size() == 58);
+  CHECK(etrike::protocol::kMessages.size() == 59);
   CHECK(etrike::protocol::kRoutes.size() == 13);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);

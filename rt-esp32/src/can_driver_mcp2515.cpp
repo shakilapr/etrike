@@ -88,11 +88,16 @@ bool Mcp2515Driver::spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
     t.rx_buffer = rx;
     if (!spi_lock()) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting transfer");
+        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
     const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
-    return result == ESP_OK;
+    if (result != ESP_OK) {
+        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    return true;
 }
 
 void Mcp2515Driver::spi_write_byte(uint8_t addr, uint8_t data) {
@@ -160,12 +165,16 @@ bool Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len
     t.rx_buffer = rx_buf;
     if (!spi_lock()) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting burst read");
+        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
     const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
 
-    if (result != ESP_OK) return false;
+    if (result != ESP_OK) {
+        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
 
     memcpy(data, &rx_buf[2], len);
     return true;
@@ -185,11 +194,16 @@ bool Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, siz
     t.tx_buffer = tx_buf;
     if (!spi_lock()) {
         ESP_LOGE(kTag, "SPI mutex timeout — aborting burst write");
+        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
     const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
     spi_unlock();
-    return result == ESP_OK;
+    if (result != ESP_OK) {
+        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    return true;
 }
 
 // ── Burst frame read ─────────────────────────────────────────────
@@ -579,6 +593,19 @@ void Mcp2515Driver::get_error_counters(uint8_t& tec, uint8_t& rec) {
     if (!guard || is_recovering()) { tec = rec = 0; return; }
     tec = read_reg(kRegTec);
     rec = read_reg(kRegRec);
+}
+
+bool Mcp2515Driver::read_bus_diag(uint8_t& eflg, uint8_t& tec, uint8_t& rec) {
+    eflg = tec = rec = 0;
+    if (!is_initialized()) return false;
+    ControlGuard guard(5);
+    if (!guard || is_recovering()) return false;
+    // Register reads are safe while TXBO is latched (SPI is independent of the
+    // CAN bus state), so EFLG/TEC/REC stay meaningful during bus-off.
+    eflg = read_reg(kRegEflg);
+    tec  = read_reg(kRegTec);
+    rec  = read_reg(kRegRec);
+    return true;
 }
 
 void Mcp2515Driver::log_first_io_after_recovery(bool rx) {
