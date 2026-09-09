@@ -15,6 +15,13 @@
 
 namespace mtr {
 
+enum MtrReadyBits : uint8_t {
+    MTR_READY_MODE  = 1 << 0,  // 0x110 valid mode authority
+    MTR_READY_POWER = 1 << 1,  // 0x113 valid power authority & ON
+    MTR_READY_DRIVE = 1 << 2,  // 0x204 valid drive command & fresh
+};
+constexpr uint8_t MTR_REQUIRED_READY = MTR_READY_MODE | MTR_READY_POWER | MTR_READY_DRIVE;
+
 class MotorManager {
 public:
     MotorManager(RelayController& relays, DacController& dac)
@@ -60,7 +67,18 @@ public:
         drive_cmd_timed_out_ = false;
         drive_recover_count_ = 0;
         last_drive_gap_ok_ = true;
+        mtr_ready_mask_ = 0;
     }
+
+    void on_authority_loss() {
+        mtr_ready_mask_ = 0;
+    }
+
+    bool is_motor_ready() const {
+        return (mtr_ready_mask_ & MTR_REQUIRED_READY) == MTR_REQUIRED_READY;
+    }
+
+    uint8_t ready_mask() const { return mtr_ready_mask_; }
 
     // Process incoming CAN frames
     void handle_frame(const can::Frame& frame, uint32_t now_ms) {
@@ -80,14 +98,19 @@ public:
             break;
         }
 
-        case can::kIdSysModeCmd: { // 0x110 ? authoritative mode command from SYS (MANUAL/AUTO only)
+        case can::kIdSysModeCmd: { // 0x110 ─ authoritative mode command from SYS (MANUAL/AUTO only)
             can::gen::SysModeCmd mode_cmd{};
             if (can::gen::decode_sys_mode_cmd(frame.view(), mode_cmd) == can::gen::CodecStatus::Ok) {
                 const bool ok = mode_val_.observe(
                     static_cast<std::uint8_t>(mode_cmd.rolling_counter), now_ms);
+                const bool prev_mode_valid = mode_valid_;
                 mode_valid_ = ok;
-                if (!ok) break;  // stale/invalid authority: keep last mode, inhibit drive
+                if (!ok) {
+                    if (prev_mode_valid) on_authority_loss();
+                    break;  // stale/invalid authority: keep last mode, inhibit drive
+                }
                 current_mode_ = (mode_cmd.mode ? can::Mode::Auto : can::Mode::Manual);
+                mtr_ready_mask_ |= MTR_READY_MODE;
                 // NOTE: 0x110 no longer carries ESTOP. The latched E-stop is
                 // asserted/cleared solely via 0x011 SYS_SAFETY_STS.
             }
@@ -122,27 +145,39 @@ public:
                     drive_recover_count_ = 1;
                 }
                 last_drive_gap_ok_ = true;
+                if (!drive_cmd_timed_out_ || (drive_recover_count_ >= kDriveCmdRecoverFrames && last_drive_gap_ok_)) {
+                    mtr_ready_mask_ |= MTR_READY_DRIVE;
+                }
             }
             break;
         }
 
-        case can::kIdSysPwrCmd: { // 0x113 ? authoritative power command from SYS
+        case can::kIdSysPwrCmd: { // 0x113 ─ authoritative power command from SYS
             can::gen::SysPwrCmd pwr{};
             if (can::gen::decode_sys_pwr_cmd(frame.view(), pwr) == can::gen::CodecStatus::Ok) {
                 const bool ok = pwr_val_.observe(
                     static_cast<std::uint8_t>(pwr.rolling_counter), now_ms);
+                const bool prev_pwr_valid = power_valid_;
                 power_valid_ = ok;
-                if (!ok) break;  // stale/invalid power authority: enter power-safe (zero propulsion)
+                if (!ok) {
+                    if (prev_pwr_valid) on_authority_loss();
+                    break;  // stale/invalid power authority: enter power-safe (zero propulsion)
+                }
                 const bool pwr_on = (pwr.power_state != 0);
                 if (!pwr_on) {
                     rearm_off_seen_ = true;
+                    mtr_ready_mask_ &= ~MTR_READY_POWER;
                 } else if (rearm_required_ && rearm_off_seen_ && mode_valid_) {
                     rearm_observed_ = true;
                     rearm_start_ms_ = 0;   // REARM complete
+                    mtr_ready_mask_ |= MTR_READY_POWER;
                 } else if (rearm_required_ && !rearm_off_seen_) {
                     // 0x113 ON arrived but the required OFF edge was never observed:
-                    // REARM sequence violation. Reporting only ? reaction unchanged.
+                    // REARM sequence violation. Reporting only ─ reaction unchanged.
                     if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrRearmSequenceViolation);
+                    mtr_ready_mask_ &= ~MTR_READY_POWER;
+                } else if (!rearm_required_) {
+                    mtr_ready_mask_ |= MTR_READY_POWER;
                 }
                 prev_pwr_on_ = pwr_on;
                 power_state_on_ = pwr_on;
@@ -168,15 +203,18 @@ public:
             safety_state_valid_ = false;
             clear_confirm_ = 0;
             last_estop_zero_ = false;
+            on_authority_loss();
             if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrSysSafetyCrcError);
             return;
         }
 
         const bool ok = safety_val_.observe(static_cast<std::uint8_t>(msg.rolling_counter), now_ms);
+        const bool prev_safety_valid = safety_state_valid_;
         safety_state_valid_ = ok;
         if (!ok) {
             clear_confirm_ = 0;
             last_estop_zero_ = false;
+            if (prev_safety_valid) on_authority_loss();
             if (diag_) diag_->raise(etrike::diagnostics::DiagId::MtrSysSafetyCounterStale);
             return;
         }
@@ -243,13 +281,17 @@ public:
         // post-clear ON. Only rearm_observed_ must be re-acquired each recovery.
         rearm_observed_ = false;
         rearm_start_ms_ = now_ms;   // anchor the REARM-timeout diagnostic (issue RC4)
+        on_authority_loss();
     }
 
     // Periodic evaluation (called at 5 ms rate)
     void tick(uint32_t now_ms) {
         // 1. Check Comms Watchdog (500 ms)
         comms_timed_out_ = first_frame_seen_ && (now_ms - last_rx_ms_ > kWatchdogTimeoutMs);
-        if (comms_timed_out_) comms_healthy_ = false;
+        if (comms_timed_out_) {
+            comms_healthy_ = false;
+            on_authority_loss();
+        }
 
         // 2. Evaluate Actuation (fail-safe on latched ESTOP, CAN timeout, lost power
         //    authority, lost/invalid safety-state stream, or un-rearmed recovery).
@@ -263,6 +305,7 @@ public:
             safety_val_.invalidate_now();
             clear_confirm_ = 0;
             last_estop_zero_ = false;
+            on_authority_loss();
             if (diag_) {
                 diag_->raise(etrike::diagnostics::DiagId::MtrSysSafetyStsTimeout,
                              static_cast<std::uint16_t>(now_ms - last_safety_ms_));
@@ -290,12 +333,13 @@ public:
                 last_drive_gap_ok_ = false;
 
             if (drive_cmd_timed_out_) {
-                // Latched trip: release only via confirmed recovery ? N consecutive
+                // Latched trip: release only via confirmed recovery ─ N consecutive
                 // valid 0x204 frames at plausible cadence. Restart the stale clock
                 // so a subsequent silence re-trips after a full timeout.
                 if (drive_recover_count_ >= kDriveCmdRecoverFrames && last_drive_gap_ok_) {
                     drive_cmd_timed_out_ = false;
                     expected_since_ms_ = now_ms;
+                    mtr_ready_mask_ |= MTR_READY_DRIVE;
                 }
             } else {
                 // Reference time is the last valid 0x204; if none has ever arrived
@@ -304,6 +348,7 @@ public:
                 const uint32_t ref = drive_seen_ ? last_drive_ms_ : expected_since_ms_;
                 if ((now_ms - ref) > kDriveCmdTimeoutMs) {
                     drive_cmd_timed_out_ = true;
+                    mtr_ready_mask_ &= ~MTR_READY_DRIVE;
                     if (diag_) {
                         diag_->raise(etrike::diagnostics::DiagId::MtrRtDriveCmdTimeout,
                                      static_cast<std::uint16_t>(now_ms - expected_since_ms_));
@@ -320,7 +365,8 @@ public:
 
         if (estop_active_ || comms_timed_out_ || drive_cmd_timed_out_ ||
             !power_valid_ || !safety_state_valid_ ||
-            (rearm_required_ && !rearm_observed_)) {
+            (rearm_required_ && !rearm_observed_) ||
+            !is_motor_ready()) {
             target_speed_mmps_ = 0;
             relays_.set_state(RelayController::State::Off);
             dac_.force_zero();
@@ -411,6 +457,7 @@ public:
         shift_dwell_start_ms_ = 0;
         relays_.set_state(RelayController::State::Off);
         dac_.force_zero();
+        on_authority_loss();
         // Any new latch (hardwired 0x001, GPIO, or 0x011 assert) restarts the
         // asymmetric clear sequence: the next zero must establish a fresh baseline.
         clear_confirm_ = 0;
@@ -501,7 +548,8 @@ public:
         return estop_active_ || comms_timed_out_ || drive_cmd_timed_out_ ||
                !power_valid_ || !safety_state_valid_ ||
                (rearm_required_ && !rearm_observed_) ||
-               !ignition_on_ || (active_gear_ == can::Gear::N);
+               !ignition_on_ || (active_gear_ == can::Gear::N) ||
+               !is_motor_ready();
     }
 
 private:
@@ -581,14 +629,17 @@ private:
     static constexpr uint32_t kShiftDwellMs{50};
     uint32_t shift_dwell_start_ms_{0};
 
-    // ?? Dedicated 0x204 drive-command watchdog state (issue #2) ??
+    // Dedicated 0x204 drive-command watchdog state (issue #2) ──
     uint32_t last_drive_ms_{0};          // last valid 0x204 receive time (ms)
     bool     drive_seen_{false};         // has any valid 0x204 ever arrived
     bool     drive_expected_{false};     // computed each tick: AUTO+power+valid authority
     uint32_t expected_since_ms_{0};      // when drive_expected first became true (arm clock)
-    bool     drive_cmd_timed_out_{false};// latched trip ? 0x204 stale while expected
+    bool     drive_cmd_timed_out_{false};// latched trip ─ 0x204 stale while expected
     uint8_t  drive_recover_count_{0};    // consecutive valid 0x204 events (confirmed recovery)
     bool     last_drive_gap_ok_{true};   // inter-arrival gaps stayed within cadence window
+
+    // Multi-stream readiness bitmask latch (MODE | POWER | DRIVE)
+    uint8_t  mtr_ready_mask_{0};
 };
 
 }  // namespace mtr

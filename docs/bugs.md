@@ -72,6 +72,10 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - These interdependent validation threads are not synchronized, leading to nondeterministic post-reset behavior.
 - **Fix direction / Solution implemented**
   - Implemented multi-stream authority readiness latch in RT (`READY_BIT_SAFETY | READY_BIT_MODE | READY_BIT_HOST`).
+  - Implemented multi-stream authority readiness bitmask latch in MTR (`MTR_READY_MODE | MTR_READY_POWER | MTR_READY_DRIVE`):
+    - All 3 streams (`0x110` mode valid, `0x113` power valid and ON with REARM satisfied, `0x204` fresh drive setpoint) must be active and valid before propulsion is uninhibited.
+    - Zeroes `mtr_ready_mask_` on full authority loss (ESTOP assert, safety stream timeout/CRC corruption, CAN link timeout, authorized clear).
+    - Clears individual stream bits upon independent stream timeout/invalidation (`MTR_READY_DRIVE` cleared on 0x204 timeout, `MTR_READY_POWER` on power OFF/fault, `MTR_READY_MODE` on mode stream fault).
   - Gated motion setpoints and TX on complete readiness; RT sends `{0, N}` keep-alive frames on `0x204` during reacquisition so MTR's drive watchdog stays fed without triggering active torque before MTR finishes REARM.
   - Exposed `recovery_pending` in `RT_NODE_STATUS` (0x501) when SYS authority has recovered but fresh Host command is awaited.
 
@@ -94,18 +98,24 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - Motion is gated until a fresh `0x300 HOST_DRIVE_CMD` frame arrives post-clear, setting `READY_BIT_HOST`.
   - Exposed in `RtNodeStatus` (0x501) with `recovery_pending = true` while waiting for the fresh Host drive command.
 
-### BUG-06: missing SEB status at boot is treated differently from SEB loss while running
+### BUG-06: missing SEB status at boot is treated differently from SEB loss while running [RESOLVED]
 
 - **Files**
-  - `sys-esp32/src/inhibit_state.h` lines 7–60
-  - `sys-esp32/src/main.cpp` lines 380–450, 900–930
+  - `sys-esp32/src/config.h`
+  - `sys-esp32/src/inhibit_state.h`
+  - `sys-esp32/src/inhibit_state.cpp`
+  - `sys-esp32/src/main.cpp`
 - **Symptom**
   - Vehicle is stopped until SEB recovers, but no immediate estop/reset cause is surfaced.
 - **Bug**
-  - SYS uses `g_last_seb_status_tick = 0` as “never received,” and its staleness detector skips that case at startup.
-  - A never-connected SEB therefore remains outside the estop latch and may be recoverable without the ESTOP reset transaction, while a connected-then-lost SEB becomes a transient traction inhibit. This allows boot behavior to depend on whether any SEB frame arrived before the fault.
-- **Fix direction**
-  - Define whether SEB is required before motion. If required, add a startup acquisition deadline independent of the “last frame seen” sentinel.
+  - SYS used `g_last_seb_status_tick = 0` as “never received,” overloading timestamp 0 with state meaning.
+  - At startup with missing SEB, diagnostic staleness warnings were skipped, creating an observability asymmetry between boot-time missing SEB and runtime stream loss.
+- **Fix direction / Solution implemented**
+  - Decoupled SEB presence state from timestamps: added explicit `g_seb_seen` atomic boolean and `kSebStartupAcquireMs` (1000 ms) acquisition deadline.
+  - During boot, traction remains inhibited (`kInhibitSebCommsLoss`) while waiting for SEB to boot.
+  - If `kSebStartupAcquireMs` expires without receiving 0x721 (`!g_seb_seen`), traction remains inhibited and a startup acquisition failure warning is logged periodically.
+  - At runtime once `g_seb_seen` is true, 0x721 gap exceeding `kSebStatusTimeoutMs` triggers the runtime staleness warning and sets `kInhibitSebCommsLoss`.
+  - In both cases, receiving 3 consecutive valid frames clears `kInhibitSebCommsLoss` (hysteresis recovery).
 
 ### BUG-07: Full SES 0x202 L3 bit coverage is incomplete
 
