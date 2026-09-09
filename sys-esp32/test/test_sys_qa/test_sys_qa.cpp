@@ -49,10 +49,59 @@ void test_sys_qa_estop_rx_rate_limiting_bypass(void) {
     TEST_ASSERT_TRUE(dropped_estops > 0);
 }
 
+#include "mtr_estop_ack.h"
+
+void test_sys_mtr_estop_ack_watchdog(void) {
+    sys::MtrEstopAckWatchdog wd;
+    TEST_ASSERT_FALSE(wd.is_pending());
+
+    // 1. Trigger ESTOP when MTR has not acknowledged
+    wd.trigger(1000, 0);
+    TEST_ASSERT_TRUE(wd.is_pending());
+    TEST_ASSERT_EQUAL_UINT8(sys::kMtrEstopAckMaxRetries, wd.retries_left());
+    TEST_ASSERT_EQUAL_UINT32(1100, wd.deadline());
+
+    // 2. Before deadline, check returns None and stays pending
+    TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::None), int(wd.check_tick(1050, 0)));
+    TEST_ASSERT_TRUE(wd.is_pending());
+
+    // 3. At first deadline (1100ms), ACK still missing -> Action::Retry, retries decrements to 2
+    TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::Retry), int(wd.check_tick(1100, 0)));
+    TEST_ASSERT_TRUE(wd.is_pending());
+    TEST_ASSERT_EQUAL_UINT8(2, wd.retries_left());
+    TEST_ASSERT_EQUAL_UINT32(1200, wd.deadline());
+
+    // 4. Second deadline (1200ms) -> Action::Retry, retries decrements to 1
+    TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::Retry), int(wd.check_tick(1200, 0)));
+    TEST_ASSERT_TRUE(wd.is_pending());
+    TEST_ASSERT_EQUAL_UINT8(1, wd.retries_left());
+
+    // 5. Third deadline (1300ms) -> Action::Retry, retries decrements to 0
+    TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::Retry), int(wd.check_tick(1300, 0)));
+    TEST_ASSERT_TRUE(wd.is_pending());
+    TEST_ASSERT_EQUAL_UINT8(0, wd.retries_left());
+
+    // 6. Fourth deadline (1400ms) -> Action::ExhaustedFault, latched_fault set, pending cleared
+    TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::ExhaustedFault), int(wd.check_tick(1400, 0)));
+    TEST_ASSERT_FALSE(wd.is_pending());
+    TEST_ASSERT_TRUE(wd.has_latched_fault());
+
+    // 7. Early clear scenario: ACK arrives before deadline
+    wd.reset();
+    wd.trigger(2000, 0);
+    TEST_ASSERT_TRUE(wd.is_pending());
+    // 0x206 arrives with ESTOP_ACTIVE at 2020ms
+    wd.on_feedback_received(shared::kMtrFaultEstopActive);
+    TEST_ASSERT_FALSE(wd.is_pending());
+    TEST_ASSERT_FALSE(wd.has_latched_fault());
+    TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::None), int(wd.check_tick(2100, 0)));
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_sys_qa_brake_following_error_and_0x721_corruption);
     RUN_TEST(test_sys_qa_estop_rx_rate_limiting_bypass);
+    RUN_TEST(test_sys_mtr_estop_ack_watchdog);
     UNITY_END();
 }
 

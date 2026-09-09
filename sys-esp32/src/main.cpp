@@ -186,8 +186,15 @@ static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
 // ── SEB version first-receipt guard (0x741) ─────────────────────────
 static std::atomic<bool>     g_seb_version_logged{false};
 
-// ── ESTOP trigger timestamp (Gap #15: MTR ACK check) ────────────────
+// ── ESTOP trigger timestamp & MTR ACK state machine (Gap #15 / BUG-03) 
+#include "mtr_estop_ack.h"
 static std::atomic<uint32_t> g_last_estop_trigger_tick{0};
+static sys::MtrEstopAckWatchdog g_mtr_ack_watchdog;
+
+static inline void trigger_estop_ack_watchdog(uint32_t now) {
+    g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
+    g_mtr_ack_watchdog.trigger(now, g_motor_fault_flags.load(std::memory_order_relaxed));
+}
 
 // ── 0x206 staleness tracking (Gap #15) ───────────────────────────────
 static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
@@ -312,6 +319,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
             g_motor_command_speed_mmps.store(fbk.motor_command_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
+            g_mtr_ack_watchdog.on_feedback_received(fbk.fault_flags);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
             g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
@@ -365,7 +373,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 break;
             }
             g_mode_mgr.force_estop();
-            g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
+            trigger_estop_ack_watchdog(static_cast<uint32_t>(now));
             if (within_limit) {
                 ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             }
@@ -390,8 +398,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     sys::set_latched_fault(sys::kLatchedSebL3);
                     if (g_mode_mgr.mode() != can::Mode::Estop) {
                         g_mode_mgr.force_estop();
-                        g_last_estop_trigger_tick.store(xTaskGetTickCount(),
-                                                        std::memory_order_relaxed);
+                        trigger_estop_ack_watchdog(xTaskGetTickCount());
                         if (can_send_estop()) {
                             send_estop_frame("ESTOP");
                         }
@@ -466,8 +473,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                                 sys::set_latched_fault(sys::kLatchedBrakeFollowing);
                                 if (g_mode_mgr.mode() != can::Mode::Estop) {
                                     g_mode_mgr.force_estop();
-                                    g_last_estop_trigger_tick.store(xTaskGetTickCount(),
-                                                                    std::memory_order_relaxed);
+                                    trigger_estop_ack_watchdog(xTaskGetTickCount());
                                     if (can_send_estop()) {
                                         send_estop_frame("ESTOP");
                                     }
@@ -527,7 +533,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 // Record ESTOP trigger tick for MTR ACK timeout check (bug 6.5).
                 // Without this, the MTR ESTOP ACK safety check in task_safety
                 // is permanently bypassed for SEB-triggered ESTOPs.
-                g_last_estop_trigger_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+                trigger_estop_ack_watchdog(xTaskGetTickCount());
                 if (can_send_estop()) {
                     send_estop_frame("ESTOP");
                 }
@@ -595,7 +601,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (estop_triggered) {
             if (g_mode_mgr.mode() != can::Mode::Estop) {
                 g_mode_mgr.force_estop();
-                g_last_estop_trigger_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+                trigger_estop_ack_watchdog(xTaskGetTickCount());
                 // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
                 // Gap #14: rate-limited to prevent bus flooding
                 if (can_send_estop()) {
@@ -629,6 +635,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                                 >= pdMS_TO_TICKS(sys::kEgasFaultDurationMs)) {
                         if (g_mode_mgr.mode() != can::Mode::Estop) {
                             g_mode_mgr.force_estop();
+                            trigger_estop_ack_watchdog(xTaskGetTickCount());
                             if (can_send_estop()) {
                                 send_estop_frame("ESTOP");
                             }
@@ -643,22 +650,23 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 egas_fault_active = false;
             }
         }
-        // F3: MTR ESTOP ACK check (Gap #15)
-        // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags.
+        // F3: MTR ESTOP ACK check (Gap #15 / BUG-03)
+        // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags with bounded retries.
         if (!g_bypass_mtr_absent) {
-            uint32_t last_trig = g_last_estop_trigger_tick.load(std::memory_order_relaxed);
-            if (last_trig > 0
-                && (xTaskGetTickCount() - last_trig) >= pdMS_TO_TICKS(sys::kMtrEstopAckTimeoutMs)) {
-                uint8_t flags = g_motor_fault_flags.load(std::memory_order_relaxed);
-                if (!(flags & shared::kMtrFaultEstopActive)) {
-                    ESP_LOGE(TAG, "MTR ESTOP ACK timeout — retriggering ESTOP");
-                    g_mode_mgr.force_estop();
-                    if (can_send_estop()) {
-                        send_estop_frame("ESTOP");
-                    }
-                    g_brake_fault_active.store(true, std::memory_order_relaxed);
+            uint8_t flags = g_motor_fault_flags.load(std::memory_order_relaxed);
+            auto action = g_mtr_ack_watchdog.check_tick(xTaskGetTickCount(), flags);
+            if (action == sys::MtrEstopAckWatchdog::Action::Confirmed) {
+                ESP_LOGI(TAG, "MTR ESTOP ACK confirmed by motor controller");
+            } else if (action == sys::MtrEstopAckWatchdog::Action::Retry) {
+                ESP_LOGW(TAG, "MTR ESTOP ACK timeout — retriggering ESTOP (retries left: %u)",
+                         g_mtr_ack_watchdog.retries_left());
+                g_mode_mgr.force_estop();
+                if (can_send_estop()) {
+                    send_estop_frame("ESTOP");
                 }
-                g_last_estop_trigger_tick.store(0, std::memory_order_relaxed);  // reset
+            } else if (action == sys::MtrEstopAckWatchdog::Action::ExhaustedFault) {
+                ESP_LOGE(TAG, "MTR ESTOP ACK failed after retries — latched brake fault");
+                g_brake_fault_active.store(true, std::memory_order_relaxed);
             }
         }
 
@@ -793,8 +801,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                          pin.measured_mmps, pin.sensor_state);
                 if (g_mode_mgr.mode() != can::Mode::Estop) {
                     g_mode_mgr.force_estop();
-                    g_last_estop_trigger_tick.store(xTaskGetTickCount(),
-                                                    std::memory_order_relaxed);
+                    trigger_estop_ack_watchdog(xTaskGetTickCount());
                     if (can_send_estop()) {
                         send_estop_frame("ESTOP");
                     }

@@ -39,19 +39,22 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - Actuator output commands (`0x204` drive commands, steering, brakes) are independently gated using node-specific readiness status (`MTR_READY`, `SES_READY`, `SEB_READY`).
   - Low-bus peer timeout remains monitored and reported via `RtLowCanPeerTimeout` over High CAN to the Host.
 
-### BUG-03: SYS MTR ESTOP ACK timeout runs only once, even while the acknowledgment is still missing
+### BUG-03: [FIXED] SYS MTR ESTOP ACK timeout runs only once, even while the acknowledgment is still missing
 
 - **Files**
   - `sys-esp32/src/main.cpp` lines 645–664
-  - `sys-esp32/src/config.h` line 100
+  - `sys-esp32/src/config.h` lines 100–101
+  - `sys-esp32/src/mtr_estop_ack.h`
+  - `sys-esp32/test/test_sys_qa/test_sys_qa.cpp`
 - **Symptom**
   - MTR never acknowledges `ESTOP_ACTIVE`, but SYS samples 0x206 only once, then stops retrying or reporting the failed acknowledgment.
 - **Bug**
   - SYS updates `g_motor_fault_flags` from every 0x206 frame, but the F3 check clears `g_last_estop_trigger_tick` unconditionally after one timeout period, regardless of whether `ESTOP_ACTIVE` was observed.
   - The check therefore has a single 100ms sampling opportunity. If the first 0x206 feedback frame after SYS triggers estop is delayed, dropped, or arrives before the MTR latch is set, SYS never retries the missing-ack diagnostic or retry action.
 - **Fix direction**
-  - Keep the ack window open until either `ESTOP_ACTIVE` is observed or a bounded retry count expires, not until one time-based check has run.
-  - Record acknowledgment state explicitly in SYS node status rather than deriving it only from instantaneous 0x206 fault bits.
+  - Implemented `MtrEstopAckWatchdog` state machine tracking `pending`, `deadline`, and `retries_left` (`kMtrEstopAckMaxRetries = 3`).
+  - Clears `pending = false` immediately on receipt of `0x206` with `ESTOP_ACTIVE` (sub-millisecond early clearance).
+  - Performs bounded periodic re-transmissions on deadline expiration, and escalates to latched fault (`g_brake_fault_active`) only when retries are exhausted.
 
 ### BUG-04: MTR post-authority reacquisition timing is undefined (RESOLVED)
 
