@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["scenarios"]
+pythonpath = [".."]
+markers = [
+    "hardware: real-ECU bench (CANalyst-II + RT/SYS/MTR) required; skips when no bench is connected",
+    "selftest: runs on the host with the loopback virtual-CAN link, no hardware",
+]
+addopts = "-ra --strict-markers"
