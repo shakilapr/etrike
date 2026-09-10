@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 
 #include "freertos/FreeRTOS.h"
@@ -95,13 +96,27 @@ static bool send_can_frame(can::Frame& fr) {
         can::Gear active_gear = drive_active ? snap.gear : can::Gear::N;
 
         // 2. Emit canonical CAN cluster for current operating mode (BARE, SYS, RT)
-        g_emitter.emit_cluster(snap, tick_10ms_count++, [](can::Frame& fr) {
-            return send_can_frame(fr);
+        //    Capture what actually went out so the status line can show it.
+        uint16_t sent_ids[8];
+        uint8_t  sent_n = 0;
+        uint8_t  sent_fail = 0;
+        g_emitter.emit_cluster(snap, tick_10ms_count++, [&](can::Frame& fr) {
+            const bool ok = send_can_frame(fr);
+            if (ok) {
+                if (sent_n < sizeof(sent_ids) / sizeof(sent_ids[0])) {
+                    sent_ids[sent_n++] = static_cast<uint16_t>(fr.id);
+                }
+            } else {
+                ++sent_fail;
+            }
+            return ok;
         });
 
-        // 3. Serial CAN Command Display (Delta-triggered + 2 Hz Decimated)
+        // 3. Terse, change-driven status line. Only prints when an operator
+        //    control moves; shows link (L), CAN health (C), the frame IDs put
+        //    on the wire this cycle, and how many (n).
         static struct {
-            rm::OperatingMode mode{rm::OperatingMode::Bare};
+            rm::OperatingMode mode{static_cast<rm::OperatingMode>(0xFF)};
             float             steer_deg{999.0f};
             float             brake_mm{999.0f};
             float             throttle{999.0f};
@@ -112,7 +127,6 @@ static bool send_can_frame(can::Frame& fr) {
             bool              enable{false};
             bool              park{false};
             bool              valid{false};
-            uint32_t          count{0};
         } s_last_can_log;
 
         bool mode_changed     = (snap.op_mode != s_last_can_log.mode);
@@ -139,22 +153,24 @@ static bool send_can_frame(can::Frame& fr) {
             s_last_can_log.cmd_gear       = active_gear;
             s_last_can_log.enable         = snap.drive_enable_req;
             s_last_can_log.park           = snap.park_hold_req;
-            s_last_can_log.count          = 0;
 
-            const char* gear_str = (snap.gear == can::Gear::D) ? "D" :
-                                   ((snap.gear == can::Gear::R) ? "R" : "N");
+            const auto health = g_can.health_snapshot();
+            const char* can_state =
+                (health.state == can::CanDriver::HealthState::BusOff) ? "OFF" :
+                ((sent_n == 0 && sent_fail != 0) ? "FAIL" :
+                 (sent_n != 0 ? "OK" : "IDLE"));
 
-            ESP_LOGI("tx", "STR:%+5.1f BRK:%4.1f  THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s RF:%s",
-                     snap.steering_deg,
-                     snap.brake_stroke_mm,
-                     snap.throttle_norm * 100.0f,
-                     snap.aux_vra * 100.0f,
-                     static_cast<long>(target_motor_speed),
-                     gear_str,
-                     snap.drive_enable_req ? "ON" : "OFF",
-                     snap.park_hold_req ? "HOLD" : "OFF",
-                     rm::mode_name(snap.op_mode),
-                     snap.signal_valid ? "OK" : "LOST");
+            char ids_buf[64];
+            size_t pos = 0;
+            for (uint8_t i = 0; i < sent_n && pos < sizeof(ids_buf) - 1; ++i) {
+                pos += static_cast<size_t>(std::snprintf(
+                    ids_buf + pos, sizeof(ids_buf) - pos, i ? " %X" : "%X", sent_ids[i]));
+            }
+            ids_buf[pos] = '\0';
+
+            ESP_LOGI("tx", "L:%s C:%s [%s] n=%u",
+                     snap.signal_valid ? "OK" : "LOST",
+                     can_state, ids_buf, static_cast<unsigned>(sent_n));
         }
 
         vTaskDelayUntil(&last, period);
