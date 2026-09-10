@@ -47,12 +47,14 @@ constexpr uint8_t kNumSbusChannels = 16;  // SBUS wire protocol frame capacity
 constexpr uint8_t kChSteering      = 0;   // CH1: Right Stick Horizontal (Steering +/-45.0 deg)
 constexpr uint8_t kChBrake         = 1;   // CH2: Right Stick Vertical (Service Brake: 0 to 27mm stroke)
 constexpr uint8_t kChThrottle      = 2;   // CH3: Left Stick Vertical (Throttle: 0 to 100%)
-constexpr uint8_t kChDriveEnable   = 4;   // CH5: SWA 2-Position Switch (Drive Enable: UP=OFF, DOWN=ON)
-constexpr uint8_t kChParkHold      = 5;   // CH6: SWB 2-Position Switch (Park / Brake Hold: UP=OFF, DOWN=HOLD)
+constexpr uint8_t kChOperatingMode = 4;   // CH5: SWA 3-Position Switch (Target: UP=BARE, MID=SYS, DOWN=RT)
+constexpr uint8_t kChParkHold      = 5;   // CH6: SWB 3-Position Switch (Park Hold: UP=HOLD, MID/DOWN=OFF)
 constexpr uint8_t kChGear          = 6;   // CH7: SWC 3-Position Switch (Gear: UP=R, MID=N, DOWN=D)
-constexpr uint8_t kChOperatingMode = 7;   // CH8: SWD 3-Position Mode Switch (UP=BARE, MID=SYS, DOWN=RT)
+constexpr uint8_t kChDriveEnable   = 7;   // CH8: SWD 2-Position Switch (Drive Enable: UP=OFF, DOWN=ON)
 constexpr uint8_t kChAuxVra        = 8;   // CH9: VRA Knob (Aux Implement Analog: 0.0 to 1.0)
 constexpr uint8_t kChAuxVrb        = 9;   // CH10: VRB Knob (Aux Implement Analog: 0.0 to 1.0)
+constexpr uint8_t kChAuxVrc        = 10;  // CH11: VRC Knob (Aux Implement Analog: 0.0 to 1.0)
+constexpr uint8_t kChAuxVrd        = 11;  // CH12: VRD Knob (Aux Implement Analog: 0.0 to 1.0)
 
 // ── SBUS Calibration ───────────────────────────────────────────────
 constexpr uint16_t kSbusRawCenter   = 992;  // 11-bit SBUS raw center (~1500us)
@@ -63,20 +65,25 @@ constexpr uint32_t kPulseAbsoluteMaxUs  = 2200;
 constexpr uint32_t kPulseCenterUs       = 1500;
 constexpr uint32_t kPulseDeadbandUs     =   30;   // Steering center deadband (+/- 30us)
 
+// SWA 3-Position Operating Mode Thresholds (UP = BARE, MID = SYS, DOWN = RT)
+constexpr uint32_t kModeBareMaxUs       = 1300;
+constexpr uint32_t kModeRtMinUs         = 1700;
+
+// SWB 3-Position Park Brake Threshold (UP = HOLD [<= 1300us], MID/DOWN = OFF [> 1300us])
+constexpr uint32_t kParkHoldMaxUs       = 1300;
+
 // SWC 3-Position Gear Thresholds (UP = Reverse, MID = Neutral, DOWN = Drive)
 constexpr uint32_t kGearRevMaxUs        = 1300;
 constexpr uint32_t kGearDriveMinUs      = 1700;
 
-// SWD 3-Position Operating Mode Thresholds (UP = BARE, MID = SYS, DOWN = RT)
-constexpr uint32_t kModeBareMaxUs       = 1300;
-constexpr uint32_t kModeRtMinUs         = 1700;
-
-// 2-Position Switch Threshold (SWA, SWB)
+// SWD 2-Position Drive Enable Switch Threshold (UP = OFF [< 1500us], DOWN = ON [>= 1500us])
 constexpr uint32_t kSwitchThresholdUs   = 1500;
 
-// Throttle Limits (CH3 Left Stick Vertical: 1050us idle to 1950us full throttle)
-constexpr uint32_t kThrottleMinUs       = 1050;
-constexpr uint32_t kThrottleMaxUs       = 1950;
+// Throttle Calibration (CH3 Left Stick Vertical: -100 to +100 in T12D)
+// Idle deadband: pulses <= 1120us are strictly 0.0% so minor bumps/vibrations never trigger motion.
+// Full throttle: reached cleanly by 1900us.
+constexpr uint32_t kThrottleMinUs       = 1120;
+constexpr uint32_t kThrottleMaxUs       = 1900;
 
 // Brake Cutoff Interlock (mm) - motor throttle cut when brake > 5.0mm
 constexpr float    kBrakeThrottleCutoffMm = 5.0f;

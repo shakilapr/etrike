@@ -27,11 +27,13 @@ struct RcSnapshot {
     float      velocity_norm{0.0f};        // Signed demand: -1.0 (rev) to +1.0 (fwd)
 
     // ── Discrete HMI Toggles ─────────────────────────────────────────
-    bool          drive_enable_req{false};    // SWA: UP = Disabled, DOWN = Enable Request
-    bool          park_hold_req{true};        // SWB: UP = Released (0mm), DOWN = Park Hold (15mm)
-    OperatingMode op_mode{OperatingMode::Bare}; // SWD: UP = BARE, MID = SYS, DOWN = RT
+    bool          drive_enable_req{false};    // SWD: UP = Disabled, DOWN = Enable Request
+    bool          park_hold_req{true};        // SWB: UP = Park Hold (15mm), MID/DOWN = Released (0mm)
+    OperatingMode op_mode{OperatingMode::Bare}; // SWA: UP = BARE, MID = SYS, DOWN = RT
     float         aux_vra{0.0f};              // CH9: VRA Knob (0.0 to 1.0)
     float         aux_vrb{0.0f};              // CH10: VRB Knob (0.0 to 1.0)
+    float         aux_vrc{0.0f};              // CH11: VRC Knob (0.0 to 1.0)
+    float         aux_vrd{0.0f};              // CH12: VRD Knob (0.0 to 1.0)
 
     // ── Link & Health Status ─────────────────────────────────────────
     LinkState  link_state{LinkState::Lost};
@@ -64,9 +66,9 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
     uint32_t dt = (now_ms >= last_frame_ms) ? (now_ms - last_frame_ms) : 0;
     bool link_ok = (last_frame_ms > 0) && !hw_failsafe && (dt <= kLinkLostTimeoutMs);
 
-    // Pulse sanity check (pulses within basic electrical bounds)
+    // Pulse sanity check (pulses within basic electrical bounds across 12 channels)
     bool plausible = true;
-    for (uint8_t i = 0; i < 10; ++i) {
+    for (uint8_t i = 0; i < 12; ++i) {
         if (pulse_us[i] < kPulseAbsoluteMinUs || pulse_us[i] > kPulseAbsoluteMaxUs) {
             plausible = false;
             break;
@@ -104,8 +106,8 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
             stick_brake_mm = std::clamp(b_norm, 0.0f, 1.0f) * kMaxBrakeStrokeMm;
         }
 
-        // CH6: SWB -> Park / Brake Hold (UP = Released [0mm], DOWN = Park Hold [15mm])
-        snap.park_hold_req = (pulse_us[kChParkHold] >= kSwitchThresholdUs);
+        // CH6: SWB 3-Position Switch -> Park / Brake Hold (UP = Park Hold [15mm], MID/DOWN = Released [0mm])
+        snap.park_hold_req = (pulse_us[kChParkHold] <= kParkHoldMaxUs);
 
         // Apply Park holding stroke if requested
         snap.brake_stroke_mm = snap.park_hold_req ? std::max(stick_brake_mm, kParkBrakeStrokeMm) : stick_brake_mm;
@@ -124,10 +126,10 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         }
         snap.throttle_norm = throttle_demand;
 
-        // CH5: SWA -> Drive Enable (UP = Safe, DOWN = Enable Request)
+        // CH8: SWD 2-Position Switch -> Drive Enable (UP = Safe/Disabled, DOWN = Enable Request/Armed)
         snap.drive_enable_req = (pulse_us[kChDriveEnable] >= kSwitchThresholdUs);
 
-        // CH7: SWC -> 3-Position Gear Selector (UP = Reverse, MID = Neutral, DOWN = Drive)
+        // CH7: SWC 3-Position Switch -> Gear Selector (UP = Reverse, MID = Neutral, DOWN = Drive)
         if (snap.park_hold_req) {
             snap.gear = can::Gear::N;
         } else if (pulse_us[kChGear] <= kGearRevMaxUs) {
@@ -138,7 +140,7 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
             snap.gear = can::Gear::N;
         }
 
-        // CH8: SWD -> 3-Position Operating Mode (UP = BARE, MID = SYS, DOWN = RT)
+        // CH5: SWA 3-Position Switch -> Target Selection (UP = BARE, MID = SYS, DOWN = RT)
         if (pulse_us[kChOperatingMode] <= kModeBareMaxUs) {
             snap.op_mode = OperatingMode::Bare;
         } else if (pulse_us[kChOperatingMode] >= kModeRtMinUs) {
@@ -147,11 +149,15 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
             snap.op_mode = OperatingMode::Sys;
         }
 
-        // CH9 & CH10: Aux Analog Knobs (0.0 to 1.0)
+        // CH9..CH12: Aux Proportional Knobs (0.0 to 1.0)
         float vra = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVra]) - 1000) / 1000.0f;
         float vrb = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrb]) - 1000) / 1000.0f;
+        float vrc = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrc]) - 1000) / 1000.0f;
+        float vrd = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrd]) - 1000) / 1000.0f;
         snap.aux_vra = std::clamp(vra, 0.0f, 1.0f);
         snap.aux_vrb = std::clamp(vrb, 0.0f, 1.0f);
+        snap.aux_vrc = std::clamp(vrc, 0.0f, 1.0f);
+        snap.aux_vrd = std::clamp(vrd, 0.0f, 1.0f);
 
         // Target Speed Demand based on Gear and Throttle
         int32_t target_spd = 0;
@@ -177,6 +183,8 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         snap.brake_stroke_mm   = kParkBrakeStrokeMm; // 15mm holding stroke
         snap.aux_vra           = 0.0f;
         snap.aux_vrb           = 0.0f;
+        snap.aux_vrc           = 0.0f;
+        snap.aux_vrd           = 0.0f;
     }
 
     return snap;
