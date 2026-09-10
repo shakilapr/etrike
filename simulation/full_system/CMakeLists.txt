@@ -9,7 +9,7 @@ set(ETRIKE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 add_executable(etrike_sim
     scenarios/main.cpp
-    ${ETRIKE_ROOT}/rt-esp32/src/core/rt_core.cpp
+    vehicle/rt_core.cpp
 )
 
 target_include_directories(etrike_sim PRIVATE
