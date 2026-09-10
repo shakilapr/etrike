@@ -20,16 +20,17 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
                       [VRA]             [VRB]
                      (dial)            (dial)
                         │                 │
-                   AUX ANALOG 1      AUX ANALOG 2
-                    (0.0..1.0)        (0.0..1.0)
+                  SPEED GOVERNOR     AUX ANALOG 2
+                   (0% to 100%)       (0.0..1.0)
 
               [VRC - shoulder]   [VRD - shoulder]
-                 (0.0..1.0)         (0.0..1.0)
+             AUX BRAKE PULL 1   AUX BRAKE PULL 2
+              (0 to -100%)       (0 to -100%)
 
           ┌───────────────┐           ┌───────────────┐
           │       ▲       │           │       ▲       │
           │       │       │           │       │       │ SERVICE BRAKE
-          │   ◄───┼───►   │ (Spare)   │   ◄───┼───►   │ (0.0 to 27.0mm)
+          │   ◄───┼───►   │ (Spare)   │   ◄───┼───►   │ (0.0 to 27.0mm, ±220µs DB)
           │       ▼       │           │       ▼       │
           │    THROTTLE   │           │   STEER (X)   │
           │  (0% to 100%) │           │   BRAKE (Y)   │ (Spring Centered)
@@ -42,10 +43,10 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 ### Physical Controls & Channel Summary Table
 
 | Control ID | Hardware Type | Location | Channel / SBUS | Function | Physical Action | Pulse Range ($\mu\text{s}$) | Vehicle Output Range | Primary CAN ID / Frame |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Right Stick (X)** | 2-Axis Gimbal (Spring) | Lower Right | **CH1** | **Steering Rack** | Horizontal (Left / Right) | $1050 \dots 1950\,\mu\text{s}$ | $-45.0^\circ \dots +45.0^\circ$ | `0x169` `VCU_SES_REQ` / `0x303` `HOST_STEER_CMD` |
-| **Right Stick (Y)** | 2-Axis Gimbal (Spring) | Lower Right | **CH2** | **Service Brake Stroke** | Vertical (Push Forward / Pull) | $1720 \dots 1980\,\mu\text{s}$ | $0.0 \dots 27.0\,\text{mm}$ stroke ($\pm 220\,\mu\text{s}$ deadband) | `0x7B9` `VCU_SEB_REQ` / `0x301` `HOST_BRAKE_REQ` |
-| **Left Stick (Y)** | 2-Axis Gimbal (Ratcheted) | Lower Left | **CH3** | **Motor Throttle** | Vertical (Up / Down) | $1160 \dots 1950\,\mu\text{s}$ | $0\% \dots 100\%$ ($0 \dots \text{scaled max}$) | `0x204` `RT_DRIVE_CMD` / `0x300` `HOST_DRIVE_CMD` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Right Stick (X)** | 2-Axis Gimbal (Spring) | Lower Right | **CH1** | **Steering Rack** | Horizontal (Left / Right) | $1050 \dots 1950\,\mu\text{s}$ | $-45.0^\circ \dots +45.0^\circ$ ($\pm 30\,\mu\text{s}$ center DB) | `0x169` `VCU_SES_REQ` / `0x303` `HOST_STEER_CMD` |
+| **Right Stick (Y)** | 2-Axis Gimbal (Spring) | Lower Right | **CH2** | **Service Brake Stroke** | Vertical (Push / Pull) | $1720 \dots 1980\,\mu\text{s}$ / $<1280\,\mu\text{s}$ | $0.0 \dots 27.0\,\text{mm}$ stroke ($\pm 220\,\mu\text{s}$ deadband: $1280\dots 1720\,\mu\text{s}$) | `0x7B9` `VCU_SEB_REQ` / `0x301` `HOST_BRAKE_REQ` |
+| **Left Stick (Y)** | 2-Axis Gimbal (Ratcheted) | Lower Left | **CH3** | **Motor Throttle** | Vertical (Up / Down) | $1160 \dots 1900\,\mu\text{s}$ | $0\% \dots 100\%$ (idle $\le 1160\,\mu\text{s}$) | `0x204` `RT_DRIVE_CMD` / `0x300` `HOST_DRIVE_CMD` |
 | **Left Stick (X)** | 2-Axis Gimbal | Lower Left | **CH4** | **Reserved / Spare** | Horizontal (Left / Right) | $1000 \dots 2000\,\mu\text{s}$ | Unused | — |
 | **SWA Switch** | 3-Position Toggle | Top Far-Left | **CH5** | **Target Selection** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `BARE` / `SYS` / `RT` | Target Bus Cluster Selection |
 | **SWB Switch** | 3-Position Toggle | Top Inner-Left | **CH6** | **Electric Park Brake (Hold)** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | UP: `PRK:HOLD` ($15\,\text{mm}$) / MID,DOWN: `PRK:OFF` ($0\,\text{mm}$) | `0x7B9` `VCU_SEB_REQ` / `0x301` `HOST_BRAKE_REQ` |
@@ -130,12 +131,11 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 ## 3. Serial Monitor Log Reference
 
 ```text
-I (1336831) tx: STR: +0.0 BRK: 0.0  THR:  0% MTR:   +0[N]  ARM:OFF PRK:HOLD  MOD:BARE RF:OK  GOV: 50%
+I (1336831) tx: STR: +0.0 BRK: 0.0  THR:  0% GOV: 50% MTR:   +0[N]  ARM:OFF PRK:HOLD  MOD:BARE RF:OK
 ```
 
-Organized into distinct spatial clusters with fixed widths:
+Organized into distinct spatial clusters matching firmware:
 - **Steering & Braking**: `STR:+0.0` ($-45.0^\circ \dots +45.0^\circ$), `BRK: 0.0` ($0.0 \dots 27.0\,\text{mm}$).
-- **Propulsion**: `THR:  0%` ($0 \dots 100\%$), `MTR:   +0` commanded velocity in mm/s with current gear (`[D]`, `[N]`, or `[R]`).
-- **Safety Interlocks**: `ARM:OFF` (`ON` = drive armed / Auto mode, `OFF` = disarmed), `PRK:HOLD` (`HOLD` = park brake held, `OFF` = released).
+- **Propulsion & Governor**: `THR:  0%` ($0 \dots 100\%$), `GOV: 50%` ($0 \dots 100\%$ VRA dynamic ceiling), `MTR:   +0` commanded velocity in mm/s with current gear (`[D]`, `[N]`, or `[R]`).
+- **Safety Interlocks**: `ARM:OFF` (`ON` = drive armed, `OFF` = disarmed), `PRK:HOLD` (`HOLD` = park brake held, `OFF` = released).
 - **Control Context**: `MOD:BARE` (`BARE`, `SYS`, or `RT`), `RF:OK` (`OK` = SBUS valid, `LOST` = failsafe active).
-- **Governor**: `GOV: XX%` (printed when governor dial delta is adjusted).
