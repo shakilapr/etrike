@@ -134,10 +134,17 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
   [rm-RT+sys]    motion_ready(ever)=YES ready@2s=YES  sys_safety_acquired=200ms
   ```
 - **Result: NOT seamless (by design).** Without a SYS authority source rt-esp32 stays
-  UNACQUIRED; motion only proceeds if rt-esp32 is booted with `g_bench_solo_mode`
-  (`main.cpp:9,1311` which disables the SYS/HOST authority + watchdog gates at
-  `safety_monitor.h:167,211,227`, `main.cpp:1254`). Fix condition: rm RT mode must also
-  emulate SYS by emitting `0x011` + `0x110` (or the operator must run rt in bench-solo).
+  UNACQUIRED and never sets `READY_BIT_SAFETY`.
+- **[RE-OPENED] The `0x011`/`0x110` "fix" (Phase 3 item 2) does NOT work against real rt
+  firmware.** rt consumes `0x110`/`0x011` **only from its low bus** (`can_rx_router.h:64-84`,
+  `can_dispatch.h:157,366`) while Host `0x300/0x301/0x303` are consumed **only from its high
+  bus** (`can_rx_router.h:28/36/44`). `rm-esp32-t12d` is a single-bus device (one TWAI
+  driver), so its RT-mode emulated SYS authority lands on the high bus and is ignored.
+  `g_bench_solo_mode` does **not** help either: the motion gate
+  `if (!rt::is_motion_ready(cur_ready_mask))` (`rt-esp32/src/main.cpp:1100`) is
+  unconditional; solo mode only relaxes the *loss/fault* checks
+  (`safety_monitor.h:167,211,227`) — it never licenses motion without
+  `0x011`+`0x110`+`0x300`. Covered by `native-test` target `rm_gateway_ingest`.
 
 ---
 
@@ -145,9 +152,12 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
 
 1. **[FIXED] BARE mode missing `0x011` SYS_SAFETY_STS and `0x113` rearm edge** → MTR never ignites
    (`mtr-stm32/src/motor_manager.h:313/:194-212/:166-180`; `rm-esp32-t12d/src/can_emitter.h` BARE block).
-2. **[FIXED] RT mode missing `0x011` + `0x110`** → rt-esp32 grants no motion authority
-   (`rt-esp32/src/safety_stream_loss.h:50-51`; `can_emitter.h` RT block; only `g_bench_solo_mode`
-   bypasses, `rt-esp32/src/main.cpp:1311`).
+2. **[RE-OPENED] RT mode missing `0x011` + `0x110`** → rt-esp32 grants no motion authority
+   (`rt-esp32/src/safety_stream_loss.h:50-51`). rm now emits them, but on its single **high**
+   bus, where real rt does not consume them (`can_rx_router.h:64-84`); `g_bench_solo_mode`
+   does not bypass the ready-mask gate (`main.cpp:1100`). Standalone rm+rt motion needs a real
+   SYS on rt's low bus, or an rt bench build that accepts high-bus authority. See
+   "Real-Firmware Bus Contract" below.
 3. **[DOC/CONTRACT] HMI cadence mismatch** — `0x111/0x112` emitted at 10 Hz but
    `hmi.yaml` `kCycleMs=1000` (1 Hz); `architecture.md` states 10 Hz. Reconcile contract vs docs.
    `0x169/0x7B9` also 2× faster than `cycle_ms=20`. Confirm consumers tolerate over-frequency
@@ -281,6 +291,30 @@ No ESTOP reset/recovery defects found in the verified paths.
 | RT steer | +100° / −100° | +450 / −450 (0.1° units) | **PASS** |
 | rt host-heartbeat loss | drop `0x7FC` >1.5 s | assisted stop: zero drive + SEB 2.70 mm (2000 kPa) | **PASS** |
 
+## Real-Firmware Bus Contract (`native-test` → `rm_gateway_ingest`)
+
+The system testbench models rt with `RtNode`, which (a) accepts `0x110` on **either** bus
+(`testbench/src/nodes/rt_node.cpp:58`) and (b) does not model rt's `0x011`-based
+`READY_BIT_SAFETY` gate. To remove that model bias, `native-test/test/test_rm_gateway_ingest.cpp`
+feeds the **actual** `rm::CanEmitter` output through the **actual** `rt::route_frame`
+(`rt-esp32/src/can_rx_router.h`). Result: **56 pass / 0 fail**, including the negative checks:
+
+| Feed | Bus | Real rt router result | Verdict |
+| --- | --- | --- | --- |
+| `0x300/0x301/0x303` Host cmd | high | consumed; speed/brake/steer decode match | **PASS** |
+| `0x111/0x112` HMI req | high | forwarded high→low | **PASS** |
+| `0x110` SYS mode | **high** | **ignored** — `mode_valid` stays false | **PASS (proves gap)** |
+| `0x110` SYS mode | low | accepted after advancing counter → `mode_valid` | **PASS** |
+| `0x011` SYS safety sts | **high** | **not consumed, not forwarded** | **PASS (proves gap)** |
+| `0x011` SYS safety sts | low | forwarded low→high for Host | **PASS** |
+| BARE `0x169/0x7B9/0x204` | low | decode match (steer 30123, stroke 700, drive 1500) | **PASS** |
+| SYS `0x205` (no `0x7B9`) | low | brake intent 3704 kPa; no `0x7B9` collision | **PASS** |
+
+**Conclusion:** rm's Host/HMI emission in RT mode is exactly right (`0x300/0x301/0x303/0x111/
+0x112/0x7FC` on high). Its RT-mode **emulated SYS authority (`0x011`/`0x110`) is on the wrong
+bus** and cannot grant real rt motion authority. This is a firmware/bench-topology gap, not a
+wire/codec incompatibility.
+
 ## Summary
 
 | Phase | Check | Result |
@@ -289,10 +323,14 @@ No ESTOP reset/recovery defects found in the verified paths.
 | 1 | frames emitter→consumer decode round-trip | **PASS** (75 checks after fixes) |
 | 2A | BARE → MTR | **FIXED** — `0x011` + `0x113` rearm edge; MTR ignites |
 | 2B | SYS → sys-esp32 (freshness) | **SEAMLESS** |
-| 2C | RT → rt-esp32 | **FIXED** — rm emits `0x011`/`0x110`; motion authority granted |
+| 2C | RT → rt-esp32 | **PARTIAL** — Host/HMI frames accepted on high; emulated `0x011`/`0x110` land on high and are ignored by real rt (needs a real SYS on low) |
 | 3 | Pipeline issues | 7 items (2 functional fixed in rm, sys watchdog fixed, docs updated, rm integrated) |
 
-**Bottom line:** Wire/codec compatibility is proven (Phase 1). The two functional blockers
-(BARE: MTR never ignited — needed `0x011` *and* a `0x113` rearm edge; RT: no motion authority —
-needed `0x011`+`0x110`) are now fixed in `rm-esp32-t12d`, the sys-esp32 `0x204` watchdog is
-enforced, and rm is integrated into the testbench with all scenarios passing.
+**Bottom line:** Wire/codec compatibility is proven (Phase 1). The BARE blocker (MTR never
+ignited — needed `0x011` *and* a `0x113` rearm edge) is fixed and verified. The RT blocker is
+**only partially fixed**: the Host/HMI frames are accepted by real rt (verified against
+`rt::route_frame`), but motion authority still needs a SYS `0x011`/`0x110` on rt's **low** bus —
+rm's single-bus emulation of those frames (on high) is ignored by real rt firmware. The sys-esp32
+`0x204` watchdog is enforced; rm is integrated into the testbench. **Open action:** decide the
+RT-mode authority strategy (real SYS on low vs. an rt bench-solo build that accepts high-bus
+authority), and stop or relocate rm's RT-mode `0x011`/`0x110` emission accordingly.
