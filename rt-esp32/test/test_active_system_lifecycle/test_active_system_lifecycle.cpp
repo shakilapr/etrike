@@ -2,14 +2,12 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
-
-#include "stub/stm32g4xx_hal.h"
+#include "stm32g4xx_hal.h"
 #include "protocol/compat/can.hpp"
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 #include "physics_model.h"
 #include "motor_manager.h"
 #include "shared_config.h"
-
 using namespace rt;
 using namespace mtr;
 

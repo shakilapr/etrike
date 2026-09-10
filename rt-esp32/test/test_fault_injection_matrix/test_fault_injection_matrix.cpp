@@ -4,13 +4,11 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
-
-#include "stub/stm32g4xx_hal.h"
+#include "stm32g4xx_hal.h"
 #include "protocol/compat/can.hpp"
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 #include "protocol/codecs/ses.hpp"
 #include "protocol/codecs/seb.hpp"
-
 // Load configurations
 #include "shared_config.h"
 #include "sys-esp32/src/config.h"
@@ -22,6 +20,9 @@
 #include "sys-esp32/src/mode_manager.h"
 #include "sys-esp32/src/brake_control.h"
 #include "sys-esp32/src/inhibit_state.h"
+#include "sys-esp32/src/inhibit_state.cpp"
+#include "sys-esp32/src/mode_manager.cpp"
+#include "sys-esp32/src/safety_monitor.cpp"
 
 // RT safety, kinematics, & fallback
 #include "rt-esp32/src/physics_model.h"
@@ -39,10 +40,8 @@
 using namespace rt;
 using namespace mtr;
 
-namespace sys {
-    std::atomic<uint32_t> g_inhibit_reasons{0};
-    std::atomic<uint32_t> g_latched_fault_reasons{0};
-    extern int64_t g_sys_test_time_us;
+extern "C" int64_t esp_timer_get_time(void) {
+    return sys::g_sys_test_time_us;
 }
 
 extern "C" { FDCAN_HandleTypeDef hfdcan1; }
@@ -483,7 +482,7 @@ void test_brake_stream_loss_escalates_without_heartbeat_loss(void) {
     now += 100'000;
     in = rt::SebFallbackInput{now, /*sys_hb_fresh=*/true, /*sys_0x7B9_observed=*/true,
                               /*startup_grace_active=*/false};
-    for (int i = 0; i < rt::kSebHandbackVerifyFrames - 1; ++i) {
+    for (int i = 0; i < rt::kSebHandbackVerifyFrames; ++i) {
         out = fb.update(in);
         TEST_ASSERT_EQUAL(uint8_t(rt::SebBrakeState::EMERGENCY_FALLBACK), uint8_t(out.state));
     }

@@ -1,13 +1,11 @@
 #include <unity.h>
 #include <cstdint>
 #include <cstring>
-
-#include "stub/stm32g4xx_hal.h"     // MTR HAL mock
+#include "stm32g4xx_hal.h"     // MTR HAL mock
 #include "protocol/compat/can.hpp"
 #include "physics_model.h"          // Real RT physics resolver
 #include "motor_manager.h"          // Real MTR motor manager
 #include "shared_config.h"
-
 using namespace rt;
 using namespace mtr;
 
