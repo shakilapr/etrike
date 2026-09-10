@@ -193,6 +193,22 @@ target_include_directories(rt_can_rx_router PRIVATE
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
+# ── RM gateway -> real RT RX router integration ─────────────────────
+# Feeds the actual rm::CanEmitter output into the real rt::route_frame to
+# verify the rm-esp32-t12d <-> rt-esp32 bus contract at the firmware boundary.
+add_executable(rm_gateway_ingest
+    test/test_rm_gateway_ingest.cpp
+)
+target_link_libraries(rm_gateway_ingest PRIVATE freertos hal_stubs virtual_can)
+target_include_directories(rm_gateway_ingest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/rm-esp32-t12d/src
+)
+
 add_executable(rt_phase2_motion
     test/test_rt_phase2_motion.cpp
 )
@@ -329,6 +345,7 @@ add_test(NAME protocol_compat      COMMAND protocol_compat)
 add_test(NAME protocol_compat_cpp11 COMMAND protocol_compat_cpp11)
 add_test(NAME mcp2515_config      COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
+add_test(NAME rm_gateway_ingest   COMMAND rm_gateway_ingest)
 add_test(NAME rt_phase2_motion    COMMAND rt_phase2_motion)
 add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
 add_test(NAME rt_safety_checks     COMMAND rt_safety_checks)
