@@ -342,10 +342,25 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     uint8_t    diag_counter = 0;
     uint32_t   rpt_fail_count = 0;
     uint32_t   diag_fail_count = 0;
+    int64_t    last_high_init_retry_us = esp_timer_get_time();
 
     rt::HostDriveSnapshot host_snap{};
 
     while (true) {
+        if (!g_can_high.is_initialized()) {
+            const int64_t retry_now_us = esp_timer_get_time();
+            if (retry_now_us - last_high_init_retry_us >= 1'000'000) {
+                last_high_init_retry_us = retry_now_us;
+                const bool initialized = g_can_high.init();
+                g_high_can_present.store(initialized, std::memory_order_relaxed);
+                if (initialized) {
+                    ESP_LOGI(TAG, "High CAN MCP2515 recovered");
+                }
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         // 1. Sleep waiting for MCP2515 INT pin (GPIO 47) or 10 ms timeout
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
 
@@ -1365,14 +1380,12 @@ extern "C" void app_main() {
     g_safety_evt_q          = xQueueCreate(16, sizeof(rt::SafetyEvent));
 
     // Spawn only 3 tasks pinned to cores
-    if (has_high_can) {
+    {
         TaskHandle_t h_can_high = nullptr;
         xTaskCreatePinnedToCore(can_high_task, "can_high", 4096, nullptr, 4, &h_can_high, 0);
         if (h_can_high) {
             g_can_high.set_rx_task_handle(h_can_high);
         }
-    } else {
-        ESP_LOGW(TAG, "High CAN (MCP2515) not available — can_high_task skipped");
     }
 
     xTaskCreatePinnedToCore(can_low_task, "can_low", 4096, nullptr, 4, nullptr, 0);
