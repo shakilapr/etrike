@@ -1143,7 +1143,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 
         g_brake_kpa_to_send.store(bk);
 
-        int32_t measured_speed_mmps = 0;
+        [[maybe_unused]] int32_t measured_speed_mmps = 0;
 #if ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 1
         measured_speed_mmps = g_mtr_motor_command_speed_mmps.load();
 #elif ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 2

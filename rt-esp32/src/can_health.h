@@ -3,7 +3,7 @@
 #include "diag_rt.h"
 // Checks both buses for error-warning, bus-off, and triggers
 // ESTOP or recovery actions. Included into main.cpp for access
-// to static globals (same pattern as can_dispatch.h).
+// to static globals.
 
 static void monitor_can_bus_off() {
     static int bus_check_ctr = 0;
