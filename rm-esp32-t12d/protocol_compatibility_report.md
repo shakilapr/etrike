@@ -246,6 +246,32 @@ Testbench Section 7 probes ESTOP reset/recovery across the operator paths:
 
 No ESTOP reset/recovery defects found in the verified paths.
 
+## Safety, Fault Injection & Degraded Comms (Section 8)
+
+| Case | Injected fault | Observed | Result |
+| --- | --- | --- | --- |
+| RC link loss BARE | signal invalid + park | MTR safe-stops, recovers on link return | **PASS** |
+| RC link loss SYS | signal invalid | MTR safe-stops, recovers | **PASS** |
+| RC link loss RT | signal invalid | MTR safe-stops, recovers | **PASS** |
+| bus `0x001` while rm drives | continuous ESTOP frame | MTR stayed latched, did not move | **PASS** |
+| MTR `0x204` watchdog | drop `0x204` >150 ms | propulsion zeroed, recovers (3-frame) | **PASS** |
+| `0x011` E2E CRC | corrupt CRC byte | MTR dropped authority, recovers | **PASS** |
+| sys RT heartbeat | drop `0x7FD` >1 s | sys ESTOP, MTR stopped | **PASS** |
+| hot mode switch | BARE→SYS→RT | correct frame sets; SYS never emits `0x7B9` | **PASS** |
+
+**Notes / limitations:**
+- `rm-esp32-t12d` has **no CAN RX path** (`can_driver.h`), so it cannot itself honor a
+  bus `0x001` ESTOP. A *continuous* external `0x001` still holds the MTR latched
+  (re-latch outpaces rm's `0x011` clear); a one-shot `0x001` is cleared by rm's
+  continuous `0x011` (see BARE recovery). If rm must latch a bus ESTOP persistently,
+  it needs a CAN RX + ESTOP latch — a design change, not a defect today.
+- The testbench `RtNode`/`SysNode` are models; **host-heartbeat timeout at rt**
+  (`0x7FC`, 1500 ms → 2000 kPa assisted stop) is implemented in the real rt-esp32
+  firmware but **not modeled**, so it is not yet covered by an automated scenario.
+- The sys `0x204` staleness watchdog added in `ad631d5` lives in `sys-esp32/src/main.cpp`
+  `task_safety`, which the testbench does **not** compile; it remains covered only at
+  MTR (`0x204` drive watchdog, tested above). Add real-firmware coverage via `native-test`.
+
 ## Summary
 
 | Phase | Check | Result |
