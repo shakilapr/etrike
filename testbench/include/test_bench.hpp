@@ -10,6 +10,7 @@
 #include "nodes/mtr_node.hpp"
 #include "nodes/seb_model.hpp"
 #include "nodes/ses_model.hpp"
+#include "nodes/rm_operator_model.hpp"
 
 namespace testbench {
 
@@ -32,6 +33,7 @@ public:
     MtrNode& mtr() { return mtr_; }
     SebModel& seb() { return seb_; }
     SesModel& ses() { return ses_; }
+    RmOperatorModel& rm() { return rm_; }
 
     // Bus accessors (with fault injection)
     VirtualCanBus& high_can() { return high_can_; }
@@ -58,6 +60,7 @@ private:
     MtrNode mtr_;
     SebModel seb_;
     SesModel ses_;
+    RmOperatorModel rm_;
 
     void setup_routing();
 };

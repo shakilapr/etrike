@@ -11,7 +11,8 @@ TestBench::TestBench()
       sys_(low_can_),
       mtr_(low_can_),
       seb_(low_can_),
-      ses_(low_can_) {
+      ses_(low_can_),
+      rm_(low_can_) {
     setup_routing();
     boot();
 }
@@ -40,6 +41,9 @@ void TestBench::setup_routing() {
     });
     low_can_.register_node(NodeId::SES, [this](const etrike::protocol::Frame& f) {
         ses_.receive_can("LOW_CAN", f);
+    });
+    low_can_.register_node(NodeId::RM, [this](const etrike::protocol::Frame& f) {
+        rm_.receive_can("LOW_CAN", f);
     });
 }
 
@@ -73,6 +77,7 @@ void TestBench::step(uint32_t dt_ms) {
     mtr_.step(now, dt_ms);
     seb_.step(now, dt_ms);
     ses_.step(now, dt_ms);
+    rm_.step(now, dt_ms);
 
     // Deliver queued frames across buses
     high_can_.tick(now, dt_ms);

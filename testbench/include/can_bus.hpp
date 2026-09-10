@@ -15,6 +15,7 @@ enum class NodeId : uint8_t {
     MTR,
     SES,
     SEB,
+    RM,
     TEST_HARNESS
 };
 
@@ -26,6 +27,7 @@ inline const char* node_name(NodeId id) {
         case NodeId::MTR:  return "MTR";
         case NodeId::SES:  return "SES";
         case NodeId::SEB:  return "SEB";
+        case NodeId::RM:   return "RM";
         case NodeId::TEST_HARNESS: return "HARNESS";
         default: return "UNKNOWN";
     }

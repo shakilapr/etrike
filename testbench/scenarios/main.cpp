@@ -30,6 +30,11 @@ namespace testbench {
     bool test_estop_clear_with_transient_inflight_publishing();
     bool test_estop_clear_refused_when_continuously_publishing();
     bool test_estop_clear_does_not_mean_controllers_active();
+
+    // Section 4: rm-esp32-t12d operator gateway integration
+    bool test_rm_bare_ignites_mtr();
+    bool test_rm_sys_mode_seamless();
+    bool test_rm_rt_mode_reaches_rt();
 }
 
 int main(int argc, char* argv[]) {
@@ -88,6 +93,11 @@ int main(int argc, char* argv[]) {
     run_test("Test 12: In-Flight / Transient 0x001 Publishing During Clear", testbench::test_estop_clear_with_transient_inflight_publishing);
     run_test("Test 13: Continuous 0x001 Publishing Re-Latches (Refusal)", testbench::test_estop_clear_refused_when_continuously_publishing);
     run_test("Test 14: ESTOP Clear != Active State (Multi-Node Verification)", testbench::test_estop_clear_does_not_mean_controllers_active);
+
+    std::cout << "--- SECTION 4: rm-esp32-t12d Operator Gateway Integration ---\n";
+    run_test("RM BARE ignites MTR (0x011 present)", testbench::test_rm_bare_ignites_mtr);
+    run_test("RM SYS drives sys-esp32 seamlessly (AUTO)", testbench::test_rm_sys_mode_seamless);
+    run_test("RM RT frames reach rt-esp32 (0x300/0x011/0x110)", testbench::test_rm_rt_mode_reaches_rt);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();
