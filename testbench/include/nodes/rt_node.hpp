@@ -23,6 +23,10 @@ public:
     can::Mode active_mode() const { return active_mode_; }
     int32_t commanded_speed_mmps() const { return commanded_speed_mmps_; }
     bool is_mtr_feedback_lost() const { return mtr_feedback_lost_; }
+    int16_t host_steer_0_1deg() const { return host_steer_0_1deg_; }
+    int32_t host_brake_kpa() const { return host_brake_kpa_; }
+    bool has_host_steer() const { return host_steer_seen_; }
+    bool has_host_brake() const { return host_brake_seen_; }
 
     void trigger_software_estop();
     void clear_software_estop();
@@ -38,6 +42,15 @@ private:
     int32_t host_yaw_rate_{0};
     int32_t commanded_speed_mmps_{0};
 
+    // Host steer/brake intent forwarded to actuators (0x169 SES / 0x205 SYS)
+    int16_t host_steer_0_1deg_{0};
+    int32_t host_brake_kpa_{0};
+    bool    host_steer_seen_{false};
+    bool    host_brake_seen_{false};
+    uint8_t ses_counter_{0};
+    uint32_t last_steer_tx_ms_{0};
+    uint32_t last_brake_tx_ms_{0};
+
     uint8_t rt_hb_ctr_{0};
     uint8_t rt_clear_confirm_count_{0};
 
@@ -52,6 +65,8 @@ private:
     bool mtr_feedback_lost_{false};
 
     void publish_drive_cmd(uint32_t now_ms);
+    void publish_steer_cmd(uint32_t now_ms);
+    void publish_brake_cmd(uint32_t now_ms);
     void publish_heartbeat(uint32_t now_ms);
     void publish_state_report(uint32_t now_ms);
 };

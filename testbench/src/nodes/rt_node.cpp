@@ -1,4 +1,5 @@
 #include "nodes/rt_node.hpp"
+#include "protocol/codecs/ses.hpp"
 
 namespace testbench {
 
@@ -14,6 +15,12 @@ void RtNode::init() {
     host_speed_mmps_ = 0;
     host_yaw_rate_ = 0;
     commanded_speed_mmps_ = 0;
+    host_steer_0_1deg_ = 0;
+    host_brake_kpa_ = 0;
+    host_steer_seen_ = false;
+    host_brake_seen_ = false;
+    last_steer_tx_ms_ = 0;
+    last_brake_tx_ms_ = 0;
     rt_hb_ctr_ = 0;
     rt_clear_confirm_count_ = 0;
     last_drive_tx_ms_ = 0;
@@ -45,6 +52,14 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
     can::Frame cf = frame;
     bool is_high = (bus_name == high_can_.name());
 
+    // System mode authority (0x110) may arrive on either bus (rm emulating SYS).
+    if (cf.id == can::kIdSysModeCmd) {
+        can::gen::SysModeCmd mcmd{};
+        if (can::decode_frame(cf, mcmd) == can::gen::CodecStatus::Ok) {
+            active_mode_ = (mcmd.mode == 1) ? can::Mode::Auto : can::Mode::Manual;
+        }
+    }
+
     // ── High CAN Ingest & Gatewaying ─────────────────────────────────
     if (is_high) {
         if (cf.id == can::kIdHostDriveCmd) {
@@ -52,6 +67,18 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
             if (can::decode_frame(cf, cmd) == can::gen::CodecStatus::Ok) {
                 host_speed_mmps_ = cmd.speed_mmps;
                 host_yaw_rate_ = cmd.yaw_rate_mrad_s;
+            }
+        } else if (cf.id == can::kIdHostSteerCmd) {
+            can::gen::HostSteerCmd scmd{};
+            if (can::decode_frame(cf, scmd) == can::gen::CodecStatus::Ok) {
+                host_steer_0_1deg_ = scmd.steer_angle_0_1deg;
+                host_steer_seen_ = true;
+            }
+        } else if (cf.id == can::kIdHostBrakeReq) {
+            can::gen::HostBrakeReq bcmd{};
+            if (can::decode_frame(cf, bcmd) == can::gen::CodecStatus::Ok) {
+                host_brake_kpa_ = bcmd.brake_pressure_kpa;
+                host_brake_seen_ = true;
             }
         } else if (cf.id == can::kIdSafetyEstop) {
             estop_latched_ = true;
@@ -131,6 +158,16 @@ void RtNode::step(uint32_t now_ms, uint32_t dt_ms) {
         last_drive_tx_ms_ = now_ms;
     }
 
+    // 20 ms: 0x169 VCU_SES_REQ (steer -> SES) and 0x205 RT_BRAKE_CMD (brake -> SYS)
+    if (now_ms - last_steer_tx_ms_ >= 20) {
+        publish_steer_cmd(now_ms);
+        last_steer_tx_ms_ = now_ms;
+    }
+    if (now_ms - last_brake_tx_ms_ >= 20) {
+        publish_brake_cmd(now_ms);
+        last_brake_tx_ms_ = now_ms;
+    }
+
     // 20 ms: RT Heartbeat
     if (now_ms - last_hb_tx_ms_ >= 20) {
         publish_heartbeat(now_ms);
@@ -149,6 +186,38 @@ void RtNode::publish_drive_cmd(uint32_t now_ms) {
     can::gen::RtDriveCmd cmd{};
     cmd.motor_speed_mmps = commanded_speed_mmps_;
     cmd.gear = static_cast<uint8_t>(can::Gear::D);
+
+    can::Frame cf;
+    if (can::encode_frame(cmd, cf) == can::gen::CodecStatus::Ok) {
+        low_can_.send(NodeId::RT, cf);
+    }
+}
+
+void RtNode::publish_steer_cmd(uint32_t now_ms) {
+    (void)now_ms;
+    if (!host_steer_seen_) return;
+    if (active_mode_ != can::Mode::Auto || estop_latched_) return;
+
+    can::custom::ses::Command cmd{};
+    cmd.alignment_enable = true;
+    cmd.control_enable   = true;
+    cmd.target_angle_raw = static_cast<int16_t>(30000 + host_steer_0_1deg_);
+    cmd.target_speed_raw = 328;
+    cmd.rolling_counter  = static_cast<uint8_t>(ses_counter_++ & 0x0F);
+
+    can::Frame cf;
+    if (can::custom::ses::encode_command(cmd, cf) == can::gen::CodecStatus::Ok) {
+        low_can_.send(NodeId::RT, cf);
+    }
+}
+
+void RtNode::publish_brake_cmd(uint32_t now_ms) {
+    (void)now_ms;
+    if (!host_brake_seen_) return;
+    if (active_mode_ != can::Mode::Auto || estop_latched_) return;
+
+    can::gen::RtBrakeCmd cmd{};
+    cmd.brake_pressure_kpa = host_brake_kpa_;
 
     can::Frame cf;
     if (can::encode_frame(cmd, cf) == can::gen::CodecStatus::Ok) {

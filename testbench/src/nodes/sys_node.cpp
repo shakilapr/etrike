@@ -1,4 +1,5 @@
 #include "nodes/sys_node.hpp"
+#include <algorithm>
 #include <cmath>
 #include "protocol/compat/e2e.hpp"
 #include "protocol/codecs/seb.hpp"
@@ -37,6 +38,7 @@ void SysNode::init() {
 
     last_demanded_stroke_mm_ = 0.0f;
     following_excursion_start_ms_ = 0;
+    rt_brake_kpa_ = 0;
 
     sys::g_inhibit_reasons.store(0);
     sys::g_latched_fault_reasons.store(0);
@@ -95,6 +97,13 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
         if (!sys::rx_estop_suppressed(last_now_ms_)) {
             safety_.set_estop(true);
             mode_mgr_.force_estop();
+        }
+    } else if (cf.id == can::kIdRtBrakeCmd) {
+        // RT expresses service-brake intent via 0x205 (kPa); SYS applies it to
+        // SEB (0x7B9). Mirrors sys-esp32/src/main.cpp:296/892-906.
+        can::gen::RtBrakeCmd brk{};
+        if (can::gen::decode_rt_brake_cmd(cf.view(), brk) == can::gen::CodecStatus::Ok) {
+            rt_brake_kpa_ = brk.brake_pressure_kpa;
         }
     } else if (cf.id == etrike::protocol::codecs::seb::kStatusId) {
         uint8_t byte0 = cf.data[0];
@@ -309,7 +318,11 @@ void SysNode::publish_heartbeat(uint32_t now_ms) {
 void SysNode::publish_seb_cmd(uint32_t now_ms) {
     (void)now_ms;
     bool estop = is_estop_latched();
-    float demanded_stroke = estop ? 27.0f : 0.0f;
+    // Service brake from RT 0x205 (0..20000 kPa -> 0..27 mm); ESTOP overrides to
+    // full stroke. Mirrors sys brake arbitration.
+    float service_mm = (static_cast<float>(rt_brake_kpa_) / 20000.0f) * 27.0f;
+    service_mm = std::clamp(service_mm, 0.0f, 27.0f);
+    float demanded_stroke = estop ? 27.0f : service_mm;
     last_demanded_stroke_mm_ = demanded_stroke;
 
     etrike::protocol::codecs::seb::Command cmd{};

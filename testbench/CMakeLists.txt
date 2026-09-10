@@ -21,6 +21,7 @@ add_executable(etrike-system-test
     scenarios/test_all_estop_triggers.cpp
     scenarios/test_estop_clear_and_activation.cpp
     scenarios/test_rm_operator.cpp
+    scenarios/test_rm_signal_flow.cpp
     scenarios/main.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp

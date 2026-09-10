@@ -75,6 +75,9 @@ private:
     float last_demanded_stroke_mm_{0.0f};
     uint32_t following_excursion_start_ms_{0};
 
+    // Service brake intent from RT 0x205 (kPa); SYS applies it to SEB (0x7B9).
+    int32_t rt_brake_kpa_{0};
+
     void publish_safety_status(uint32_t now_ms);
     void publish_mode_cmd(uint32_t now_ms);
     void publish_pwr_cmd(uint32_t now_ms);
