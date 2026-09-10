@@ -127,3 +127,4 @@ extern std::atomic<int64_t>  g_last_low_peer_us;
 extern std::atomic<int64_t>  g_last_sys_safety_sts_us;
 extern std::atomic<int64_t>  g_last_estop_sent_us;
 extern std::atomic<int64_t>  g_last_nonzero_cmd_us;
+extern std::atomic<uint8_t>  g_heartbeat_flags;
