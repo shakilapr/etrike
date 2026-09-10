@@ -93,6 +93,28 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
     return CodecStatus::Ok;
 }
 
+// Mirror of decode_status (single source of truth for the STATUS bit layout).
+// Note the byte-5 overlap: target_angle_speed_raw[15:8] shares the wire byte
+// with steering_torque_raw, so steering_torque_raw is written last.
+inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
+    if (value.control_mode > 3u || value.error_status > 3u || value.rolling_counter > 15u)
+        return CodecStatus::ValueOutOfRange;
+
+    Frame frame = Frame::standard(kStatusId, kDlc);
+    frame.data[0] = static_cast<std::uint8_t>((value.angle_aligned ? 0x01u : 0u) |
+                                              ((value.control_mode & 0x03u) << 1u) |
+                                              ((value.error_status & 0x03u) << 6u));
+    write_le_u16(&frame.data[2], value.steering_angle_raw);
+    write_le_i16(&frame.data[4], value.target_angle_speed_raw);
+    frame.data[5] = value.steering_torque_raw;  // overlaps speed high byte
+    frame.data[6] = static_cast<std::uint8_t>((value.rolling_counter_enabled ? 0x01u : 0u) |
+                                              (value.checksum_enabled ? 0x02u : 0u) |
+                                              ((value.rolling_counter & 0x0Fu) << 4u));
+    frame.data[7] = profiles::xor8_ff_v1(frame.data.data(), 7);
+    out = frame;
+    return CodecStatus::Ok;
+}
+
 struct ErrorInfo {
     std::array<std::uint8_t, 8> raw{};
 };

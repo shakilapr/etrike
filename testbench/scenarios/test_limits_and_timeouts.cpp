@@ -4,10 +4,13 @@
 #include "can_bus.hpp"
 #include "virtual_can_bus.hpp"
 #include "protocol/codecs/ses.hpp"
+#include "protocol/codecs/seb.hpp"
+#include "shared_config.h"
 #include "nodes/mtr_node.hpp"
 #include "nodes/sys_node.hpp"
 #include "nodes/rt_node.hpp"
 #include "nodes/seb_model.hpp"
+#include "nodes/ses_model.hpp"
 #include "nodes/rm_operator_model.hpp"
 
 namespace testbench {
@@ -123,6 +126,77 @@ bool test_limit_rt_steer_clamp() {
     int left  = steer(-100.0f);  // -450
     std::cout << "  right=" << right << " (exp 450)  left=" << left << " (exp -450)\n";
     if (right != 450 || left != -450) { std::cerr << "  FAIL: RT steer clamp incorrect\n"; return false; }
+    return true;
+}
+
+// 9.5 SES/SEB status frames must use the canonical bit layout (decodable by
+// the frozen-protocol decoders, with valid XOR checksums).
+bool test_status_frames_canonical() {
+    std::cout << "TEST: SES/SEB status frames decode via canonical decoders\n";
+    VirtualCanBus low("LOW_CAN");
+    SesModel ses(low);
+    SebModel seb(low);
+    low.register_node(NodeId::SES, [&](const etrike::protocol::Frame& f) { ses.receive_can("LOW_CAN", f); });
+    low.register_node(NodeId::SEB, [&](const etrike::protocol::Frame& f) { seb.receive_can("LOW_CAN", f); });
+    ses.init();
+    seb.init();
+
+    can::custom::ses::Command sc{};
+    sc.alignment_enable = true;
+    sc.control_enable = true;
+    sc.target_angle_raw = 30200;  // +20.0 deg
+    sc.target_speed_raw = 328;
+    sc.rolling_counter = 0;
+    can::Frame sf;
+    if (can::custom::ses::encode_command(sc, sf) == can::gen::CodecStatus::Ok) {
+        low.send(NodeId::RT, sf);
+    }
+
+    can::custom::seb::Command bc{};
+    bc.alignment_enable = true;
+    bc.control_enable = true;
+    bc.control_mode = can::custom::seb::ControlMode::Stroke;
+    bc.stroke_request_raw = static_cast<uint16_t>(
+        std::round((15.0f - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale));
+    bc.rolling_counter = 0;
+    can::Frame bf;
+    if (can::custom::seb::encode_command(bc, bf) == can::gen::CodecStatus::Ok) {
+        low.send(NodeId::SYS, bf);
+    }
+
+    for (uint32_t t = 100; t <= 1200; t += 10) {
+        ses.step(t, 10);
+        seb.step(t, 10);
+        low.tick(t, 10);
+    }
+
+    can::Frame s201, s721;
+    if (!last_frame(low, 0x201, s201) || !last_frame(low, 0x721, s721)) {
+        std::cerr << "  FAIL: status frames not emitted\n";
+        return false;
+    }
+    can::custom::ses::Status ss{};
+    can::custom::seb::Status bs{};
+    bool ses_ok = (can::custom::ses::decode_status(s201.view(), ss) == can::gen::CodecStatus::Ok);
+    bool seb_ok = (can::custom::seb::decode_status(s721.view(), bs) == can::gen::CodecStatus::Ok);
+
+    std::cout << "  SES decode=" << ses_ok << " angle=" << ss.steering_angle_raw
+              << "  SEB decode=" << seb_ok << " stroke_raw=" << bs.stroke_value_raw << "\n";
+
+    if (!ses_ok || !seb_ok) {
+        std::cerr << "  FAIL: hand-rolled status layout diverged from canonical codec\n";
+        return false;
+    }
+    if (std::abs(static_cast<int>(ss.steering_angle_raw) - 30200) > 20) {
+        std::cerr << "  FAIL: SES status angle wrong\n";
+        return false;
+    }
+    float stroke_mm = static_cast<float>(bs.stroke_value_raw) * shared::kBrakeStrokeScale
+                      + shared::kBrakeStrokeOffset;
+    if (std::abs(stroke_mm - 15.0f) > 0.5f) {
+        std::cerr << "  FAIL: SEB status stroke wrong (" << stroke_mm << " mm)\n";
+        return false;
+    }
     return true;
 }
 

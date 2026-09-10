@@ -324,6 +324,26 @@ feeds the **actual** `rm::CanEmitter` output through the **actual** `rt::route_f
 bus** and cannot grant real rt motion authority. This is a firmware/bench-topology gap, not a
 wire/codec incompatibility.
 
+## Test-Harness Accuracy — Bit Anchoring (WS1)
+
+The testbench previously hand-rolled the SES/SEB **status** frames (`0x201`/`0x721`), with
+hard-coded offsets, duplicated `(x+30)/0.05` scaling, and **no checksum/DLC validation** on
+the SYS `0x721` decode. Those encoders could silently drift from the vendor layout.
+
+Fix: the canonical codecs now own both directions —
+- `protocol/codecs/ses.hpp` / `seb.hpp`: added `encode_status(...)` symmetric to
+  `decode_status(...)` (mode-mux on SEB byte 3, byte-5 overlap preserved, XOR-8/0xFF checksum).
+- Testbench models now use them: `ses_model.cpp` / `seb_model.cpp` encode status canonically;
+  `sys_node.cpp` decodes `0x721`/`0x731` canonically (checksum + DLC now enforced).
+- Shared scaling replaces the duplicated literals (`shared::kBrakeStrokeOffset/Scale`); the
+  SEB pressure scale is corrected to the vendor `0.05 MPa/bit = 50 kPa/bit`.
+- Frozen-vector tests: `test_protocol.cpp` now asserts `encode_status` reproduces the exact
+  wire bytes for the existing decode vectors; a new testbench case (`test_status_frames_canonical`)
+  proves emitted `0x201`/`0x721` decode via the canonical decoders.
+
+**Effect:** bit accuracy is anchored to the legacy vendor DBCs and the frozen `protocol/tests/cpp`
+vectors at both the protocol layer and the end-to-end harness.
+
 ## Summary
 
 | Phase | Check | Result |

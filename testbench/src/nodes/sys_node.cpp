@@ -3,6 +3,7 @@
 #include <cmath>
 #include "protocol/compat/e2e.hpp"
 #include "protocol/codecs/seb.hpp"
+#include "shared_config.h"
 
 namespace testbench {
 
@@ -106,19 +107,24 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
             rt_brake_kpa_ = brk.brake_pressure_kpa;
         }
     } else if (cf.id == etrike::protocol::codecs::seb::kStatusId) {
-        uint8_t byte0 = cf.data[0];
-        g_seb_status_byte0.store(byte0);
-        uint8_t error_status = (byte0 >> 6) & 0x03;
-        g_seb_error_status.store(error_status);
+        // Canonical decode: validates id, DLC and the XOR-8/0xFF checksum that
+        // the hand-rolled parser used to ignore.
+        etrike::protocol::codecs::seb::Status st{};
+        if (etrike::protocol::codecs::seb::decode_status(cf.view(), st)
+            != etrike::protocol::CodecStatus::Ok) {
+            return;
+        }
+        g_seb_status_byte0.store(st.status_byte);
+        g_seb_error_status.store(st.error_status);
 
-        if (error_status == 3) {
+        if (st.error_status == 3) {
             sys::set_latched_fault(sys::kLatchedSebL3);
             safety_.set_estop(true);
             mode_mgr_.force_estop();
         }
 
-        uint16_t s_raw = static_cast<uint16_t>(cf.data[2] | (cf.data[3] << 8));
-        float actual_stroke = (s_raw * 0.05f) - 30.0f;
+        float actual_stroke = (static_cast<float>(st.stroke_value_raw) * shared::kBrakeStrokeScale)
+                              + shared::kBrakeStrokeOffset;
 
         // Following error detection: tolerance 5mm
         if (std::abs(actual_stroke - last_demanded_stroke_mm_) > 5.0f) {
@@ -133,11 +139,15 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
             following_excursion_start_ms_ = 0;
         }
     } else if (cf.id == can::kIdSebErrInfo) {
+        etrike::protocol::codecs::seb::ErrorInfo info{};
+        if (etrike::protocol::codecs::seb::decode_error_info(cf.view(), info)
+            != etrike::protocol::CodecStatus::Ok) {
+            return;
+        }
         static const int kL3Bits[] = {2,3,4,5,6,7,8,9,10,11,13,17,18,20,21,22};
         bool l3_found = false;
         for (int i = 0; i < 16; ++i) {
-            int byte_idx = kL3Bits[i] / 8;
-            if (cf.data[byte_idx] & (1 << (kL3Bits[i] % 8))) {
+            if (info.raw[kL3Bits[i] / 8] & (1 << (kL3Bits[i] % 8))) {
                 l3_found = true;
                 break;
             }

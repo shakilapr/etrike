@@ -1,5 +1,5 @@
 #include "nodes/ses_model.hpp"
-#include "protocol/profiles/xor8_ff_v1.hpp"
+#include "protocol/codecs/ses.hpp"
 
 namespace testbench {
 
@@ -47,23 +47,23 @@ void SesModel::publish_status(uint32_t now_ms) {
         return;
     }
 
-    etrike::protocol::Frame frame = etrike::protocol::Frame::standard(
-        etrike::protocol::codecs::ses::kStatusId,
-        etrike::protocol::codecs::ses::kDlc
-    );
-    frame.data.fill(0);
+    // Single source of truth: canonical SES status encoder (protocol/codecs/ses.hpp).
+    etrike::protocol::codecs::ses::Status st{};
+    st.angle_aligned = aligned_;
+    st.control_mode = 1;  // Automatic
+    st.error_status = 0;
+    st.steering_angle_raw = static_cast<uint16_t>(actual_angle_0_1deg_);
+    st.target_angle_speed_raw = 0;
+    st.steering_torque_raw = 0;
+    st.rolling_counter_enabled = true;
+    st.checksum_enabled = true;
+    st.rolling_counter = rolling_counter_;
 
-    // Byte 0: Angle aligned (bit 0), control mode (bits 1-2)
-    frame.data[0] = aligned_ ? 0x01 : 0x00;
-
-    // Bytes 2-3: Steering angle LE
-    etrike::protocol::write_le_i16(&frame.data[2], actual_angle_0_1deg_);
-
-    // Byte 6: Rolling counter enabled (bit0=1), checksum enabled (bit1=1), rolling counter (bits4-7)
-    frame.data[6] = static_cast<uint8_t>(0x03 | ((rolling_counter_ & 0x0F) << 4));
-
-    // Byte 7: XOR8_FF checksum
-    frame.data[7] = etrike::protocol::profiles::xor8_ff_v1(frame.data.data(), 7);
+    etrike::protocol::Frame frame{};
+    if (etrike::protocol::codecs::ses::encode_status(st, frame)
+        != etrike::protocol::CodecStatus::Ok) {
+        return;
+    }
 
     rolling_counter_ = (rolling_counter_ + 1) & 0x0F;
 
