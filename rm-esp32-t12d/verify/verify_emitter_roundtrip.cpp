@@ -62,6 +62,12 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
                   c.control_mode == can::custom::seb::ControlMode::Stroke,
                   "BARE/SYS 0x7B9 VCU_SEB_REQ",
                   "decode OK + Stroke mode + alignment/control enabled");
+        } else if (fr.id == 0x205u) {
+            can::gen::RtBrakeCmd c{};
+            auto st = can::gen::decode_rt_brake_cmd(fr, c);
+            // rm maps 13.5/27.0 * 20000 = 10000 kPa
+            check(st == can::gen::CodecStatus::Ok && c.brake_pressure_kpa == 10000,
+                  "SYS 0x205 RT_BRAKE_CMD", "decode OK + pressure=10000 kPa");
         } else if (fr.id == 0x204u) {
             can::gen::RtDriveCmd c{};
             auto st = can::gen::decode_rt_drive_cmd(fr, c);

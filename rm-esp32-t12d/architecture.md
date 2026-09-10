@@ -93,7 +93,7 @@ All messages and signal formats are bound directly to canonical generated defini
 | Signal / Demand | `BARE` Mode (Actuator Direct) | `SYS` Mode (Target `sys-esp32`) | `RT` Mode (Target `rt-esp32`) |
 | :--- | :--- | :--- | :--- |
 | **Steering Demand** | `0x169 VCU_SES_REQ`<br>`can::custom::ses::encode_command` | `0x169 VCU_SES_REQ`<br>`can::custom::ses::encode_command` | `0x303 HOST_STEER_CMD`<br>`can::gen::encode_host_steer_cmd` |
-| **Brake Demand** | `0x7B9 VCU_SEB_REQ`<br>`can::custom::seb::encode_command` | `0x7B9 VCU_SEB_REQ`<br>`can::custom::seb::encode_command` | `0x301 HOST_BRAKE_REQ`<br>`can::gen::encode_host_brake_req` |
+| **Brake Demand** | `0x7B9 VCU_SEB_REQ`<br>`can::custom::seb::encode_command` | `0x205 RT_BRAKE_CMD`<br>`can::gen::encode_rt_brake_cmd` | `0x301 HOST_BRAKE_REQ`<br>`can::gen::encode_host_brake_req` |
 | **Speed & Gear** | `0x204 RT_DRIVE_CMD`<br>`can::gen::encode_rt_drive_cmd` | `0x204 RT_DRIVE_CMD`<br>`can::gen::encode_rt_drive_cmd` | `0x300 HOST_DRIVE_CMD`<br>`can::gen::encode_host_drive_cmd` |
 | **Mode Request** | `0x110 SYS_MODE_CMD`<br>`can::gen::encode_sys_mode_cmd` | `0x111 HMI_MODE_REQ`<br>`can::gen::encode_hmi_mode_req` | `0x111 HMI_MODE_REQ`<br>`can::gen::encode_hmi_mode_req` |
 | **Power Request** | `0x113 SYS_PWR_CMD`<br>`can::gen::encode_sys_pwr_cmd` | `0x112 HMI_PWR_REQ`<br>`can::gen::encode_hmi_pwr_req` | `0x112 HMI_PWR_REQ`<br>`can::gen::encode_hmi_pwr_req` |
@@ -113,7 +113,7 @@ All messages and signal formats are bound directly to canonical generated defini
 - Direct connection to `sys-esp32` on Low-CAN.
 - Emulates the presence of `rt-esp32` and HMI switches.
 - Emits `HMI_MODE_REQ` (0x111) and `HMI_PWR_REQ` (0x112) reflecting operator toggles.
-- Emits `RT_DRIVE_CMD` (0x204), `VCU_SES_REQ` (0x169), and `VCU_SEB_REQ` (0x7B9).
+- Emits `RT_DRIVE_CMD` (0x204) and `VCU_SES_REQ` (0x169), and expresses brake demand as `RT_BRAKE_CMD` (0x205, kPa). **`sys-esp32` is the sole `VCU_SEB_REQ` (0x7B9) producer and applies the `0x205` intent to SEB** (`sys-esp32/src/main.cpp:892-906`); rm must NOT emit `0x7B9` in SYS mode (it would collide with `sys-esp32`).
 - Emits `RT_HEARTBEAT` (0x7FD) at 2 Hz to prevent `sys-esp32` heartbeat timeout faults.
 - Suppresses `SYS_MODE_CMD` (0x110) and `SYS_PWR_CMD` (0x113) to avoid CAN arbitration conflict with `sys-esp32`.
 
