@@ -183,6 +183,27 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
 - `verify_emitter_roundtrip.cpp`: **75/75** checks pass (incl. `0x011` decode + `[0,0,1]` rearm edge).
 - `testbench` full suite: **ALL TESTS PASSED** — BARE ignites MTR, SYS reaches AUTO, RT reaches rt-esp32.
 
+## End-to-End Signal Flow (per mode)
+
+Testbench Section 5 injects operator demands (steer **20.0°** → 30200 raw, throttle
+**2000 mm/s**, brake **15.0 mm**) into rm and traces them through the intermediate
+controllers to the end units. Models were extended to mirror the real controllers
+(`RtNode` forwards `0x303`→`0x169` and `0x301`→`0x205`; `SysNode` applies `0x205`
+to `0x7B9`).
+
+| Mode | Path | SES angle | SEB stroke | MTR | Result |
+| --- | --- | --- | --- | --- | --- |
+| BARE | rm → SES/SEB/MTR (direct) | 30197 (30200) | 15.0 mm | traction=YES, dac=1544, gear=D | **PASS** |
+| SYS  | rm→SES ; rm→SYS→SEB ; rm→MTR | 30197 | 15.0 mm | traction=YES, AUTO | **PASS** |
+| RT   | rm→RT→SES ; rm→RT→SYS→SEB ; rm→RT→MTR | 30197 | 15.0 mm | traction=YES, AUTO, cmd=2000 | **PASS** |
+
+**Finding fixed here:** in SYS mode rm originally emitted `0x7B9` directly *and*
+`sys-esp32` emits `0x7B9` (its sole SEB command), so the two producers collided and
+operator braking was unreliable. rm SYS now sends `0x205 RT_BRAKE_CMD` (kPa) and lets
+SYS apply it to SEB (commit `7cd41e1`). One SYS test nuance: `SYS` requires a healthy
+`0x7FD` heartbeat before leaving MANUAL, and rm emits it at only 2 Hz, so START must be
+pressed after the first heartbeat.
+
 ## Summary
 
 | Phase | Check | Result |
