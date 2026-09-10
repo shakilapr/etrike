@@ -44,6 +44,7 @@ public:
         roll_host_steer_ = 0;
         alive_ctr_rt_ = 0;
         alive_ctr_host_ = 0;
+        rearm_pwr_ticks_ = 2;
     }
 
 private:
@@ -115,7 +116,12 @@ private:
             }
 
             can::gen::SysPwrCmd pwr_cmd{};
-            pwr_cmd.power_state = snap.signal_valid && snap.drive_enable_req;
+            // MTR requires a 0x113 OFF->ON power rearm edge after boot/reset
+            // (mtr-stm32/src/motor_manager.h:166-180). Force power_state=0 for
+            // the first few emissions so a following ON frame completes REARM.
+            const bool force_pwr_off = (rearm_pwr_ticks_ > 0);
+            if (force_pwr_off) --rearm_pwr_ticks_;
+            pwr_cmd.power_state = force_pwr_off ? 0u : (snap.signal_valid && snap.drive_enable_req);
             pwr_cmd.rolling_counter = roll_sys_pwr_++;
             can::Frame pwr_fr;
             if (can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr) == can::gen::CodecStatus::Ok) {
@@ -319,6 +325,7 @@ private:
     uint8_t roll_sys_mode_{0};
     uint8_t roll_sys_pwr_{0};
     uint8_t roll_sys_safety_{0};   // 0x011 SYS_SAFETY_STS rolling counter (BARE/RT emulated supervisor)
+    uint8_t rearm_pwr_ticks_{2};   // power rearm edge: force 0x113 power_state=0 for first N emissions after boot/reset
     uint8_t roll_hmi_mode_{0};
     uint8_t roll_hmi_pwr_{0};
     uint8_t roll_host_steer_{0};
