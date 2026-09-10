@@ -40,6 +40,7 @@ private:
     can::Mode active_mode_{can::Mode::Manual};
     int32_t host_speed_mmps_{0};
     int32_t host_yaw_rate_{0};
+    can::Gear host_gear_{can::Gear::D};
     int32_t commanded_speed_mmps_{0};
 
     // Host steer/brake intent forwarded to actuators (0x169 SES / 0x205 SYS)
