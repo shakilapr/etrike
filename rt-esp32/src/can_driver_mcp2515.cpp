@@ -387,6 +387,10 @@ bool Mcp2515Driver::set_mode(Mode mode) {
     return true;
 }
 
+void Mcp2515Driver::set_rx_task_handle(TaskHandle_t handle) {
+    g_rx_task_handle = handle;
+}
+
 // ── Send ───────────────────────────────────────────────────────────
 // Three-level TX buffer priority (MCP2515: TXB2 > TXB1 > TXB0):
 //   TXB2 (highest): ESTOP (0x001)
