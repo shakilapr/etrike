@@ -748,6 +748,7 @@ export function Inject() {
       className="inject-workspace"
       title="Inject"
       description="Named or raw CAN inject · host TX is managed in the shared Active TX rail"
+      sectionLabel="Analysis"
     >
       <Toolbar data-testid="inject-gate">
         <ToolbarGroup>

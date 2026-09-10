@@ -76,6 +76,7 @@ export function Bench() {
       className="bench-workspace"
       title="Bench"
       description="Physical ECU under test and synthetic peers. Physical Bench TX is the safety gate for bus activity."
+      sectionLabel="Analysis"
     >
       <div className="bench-grid">
       <section className="panel bench-setup-panel">

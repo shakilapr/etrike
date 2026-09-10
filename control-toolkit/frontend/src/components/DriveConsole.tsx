@@ -871,6 +871,7 @@ export function DriveConsole() {
             <span className="muted small drive-top-desc">
               High-bus kinematics (<span className="mono">HOST_DRIVE_CMD 0x300</span>)
             </span>
+            <span className="chip tiny">Operate</span>
           </div>
         </div>
         <div className="drive-top-chips" data-testid="drive-status-chips">
@@ -933,7 +934,7 @@ export function DriveConsole() {
               disabled={busy}
               onClick={() => void armControl()}
             >
-              Arm CAN control
+              Arm High-bus control
             </button>
           ) : (
             <button
@@ -1027,7 +1028,7 @@ export function DriveConsole() {
                   : armed
                     ? 'Armed — keys & keycaps publish HOST_DRIVE_CMD @ 10 ms'
                     : focused
-                      ? 'Local sim — Arm CAN control to transmit on the bus'
+                      ? 'Local preview — arm High-bus control to transmit on the bus'
                       : 'Click canvas or side panel, then use WASD / keycaps'}
               </div>
               <div className="drive-hud-telemetry">
@@ -1088,7 +1089,7 @@ export function DriveConsole() {
               </div>
               {!armed && (
                 <div className="keycap-banner" data-testid="keycap-local-banner">
-                  Local sim — not on bus until Armed
+                  Local preview — not transmitting until armed
                 </div>
               )}
             </div>
@@ -1236,7 +1237,7 @@ export function DriveConsole() {
               </span>
             </div>
             <dl className="kv preview-kv" data-testid="preview-telemetry">
-              <dt>HOST speed / yaw [0x300]</dt>
+              <dt>High command speed / yaw</dt>
               <dd className="mono">
                 {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
               </dd>
@@ -1264,12 +1265,12 @@ export function DriveConsole() {
             <li>
               <kbd>Q</kbd>/<kbd>E</kbd> gear · <kbd>Shift</kbd> hard brake · <kbd>Space</kbd> ESTOP
             </li>
-            <li>Hide browser tab disarms CAN (safety). Click keycaps to hold inputs.</li>
+            <li>Hiding the browser tab disarms control. Click keycaps to hold inputs.</li>
           </ul>
 
           <pre className="log" data-testid="drive-log">
             {log ||
-              'Click the canvas or any Drive control for keyboard focus. Local sim is free; Arm to TX on High bus.'}
+              'Click the canvas or any Drive control for keyboard focus. Visual preview is local until High-bus control is armed.'}
           </pre>
         </aside>
       </div>

@@ -33,6 +33,7 @@ export function UiKit() {
       testId="workspace-ui-kit"
       title="UI kit"
       description="Owned primitives only. Primary fill is opt-in via Button. New UI must use these — do not invent one-off button skins."
+      sectionLabel="System"
     >
       <Panel data-testid="ui-kit-rules">
         <PanelTitle>Rules</PanelTitle>

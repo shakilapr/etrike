@@ -9,6 +9,7 @@ export function WorkspaceShell({
   children,
   className,
   headerExtra,
+  sectionLabel,
 }: {
   testId: string
   title: string
@@ -16,6 +17,7 @@ export function WorkspaceShell({
   children: ReactNode
   className?: string
   headerExtra?: ReactNode
+  sectionLabel?: string
 }) {
   return (
     <div
@@ -34,6 +36,7 @@ export function WorkspaceShell({
             {description}
           </p>
         )}
+        {sectionLabel && <span className="chip tiny mt-1">{sectionLabel}</span>}
         {headerExtra}
       </header>
       {children}

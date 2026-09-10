@@ -136,7 +136,7 @@ function DirectActuatorCards({
         brake: ch.includes('brake'),
       })
       setLog(
-        `Low TX ${channel} ? method=${String(r.control.method)} ? active=${String(r.control.active)} ? channels=${JSON.stringify(ch)} ? safety bypass ON`,
+        `Low command started · channel=${channel} · active=${String(r.control.active)}`,
       )
       await refresh()
     } catch (e) {
@@ -157,7 +157,7 @@ function DirectActuatorCards({
         steering: ch.includes('steering'),
         brake: ch.includes('brake'),
       })
-      setLog(`Stopped low TX ${channel} ? remaining=${JSON.stringify(ch)}`)
+      setLog(`Stopped low command ${channel} · remaining=${JSON.stringify(ch)}`)
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -175,26 +175,26 @@ function DirectActuatorCards({
         {motorOnly ? (
           <><strong>MTR-only route.</strong> Streams only <span className="mono">RT_DRIVE_CMD 0x204</span> on Low CAN.</>
         ) : (
-          <><strong>Safety bypass ON</strong> for toolkit Low-bus unit tests: SES/SEB <span className="mono">control_enable</span> + <span className="mono">alignment_enable</span> are forced true on every TX.</>
-        )}{' '}Watch <strong>TX</strong> lines below; FBK only appears if a peer/ECU answers.
+          <><strong>Bench authority enabled.</strong> Low commands force SES/SEB <span className="mono">control_enable</span> and <span className="mono">alignment_enable</span>. Use only when the bench is clear.</>
+        )}{' '}Command lines update immediately; feedback lines require an ECU or simulator peer.
       </p>
       <p className="muted small mono" data-testid="direct-channels-live" style={{ gridColumn: '1 / -1' }}>
-        Backend direct channels: {channels.length ? channels.join(', ') : 'none'} ? method{' '}
-        {String(lastCtrl?.method ?? '?')}
+        Backend direct channels: {channels.length ? channels.join(', ') : 'none'} · method{' '}
+        {String(lastCtrl?.method ?? '—')}
       </p>
 
       <div className={`direct-card${active.motor ? ' streaming' : ''}`} data-testid="direct-motor">
         <div className="direct-card-head">
-          <h3>Motor ? Low ? 0x204</h3>
+          <h3>Motor · Low · 0x204</h3>
           <span className={`chip tiny ${active.motor ? 'ok' : ''}`}>
             {active.motor ? 'streaming' : 'idle'}
           </span>
         </div>
         <p className="muted small">
-          <span className="mono">RT_DRIVE_CMD</span> ? not Host 0x300
+          <span className="mono">RT_DRIVE_CMD</span> · not Host 0x300
         </p>
         <label className="field">
-          <span className="field-label">Speed, mm/s</span>
+          <span className="field-label">Motor command, mm/s</span>
           <NumericDraft testId="direct-motor-speed" value={motorSpeed} min={-500} max={3000} disabled={locked} onValue={setMotorSpeed} />
         </label>
         <label className="field">
@@ -212,13 +212,13 @@ function DirectActuatorCards({
           </select>
         </label>
         <div className="tx-line mono small" data-testid="direct-motor-tx">
-          TX 0x204 ? speed={signalText(txMotor, 'motor_speed_mmps')} ? gear=
-          {signalText(txMotor, 'gear')} ? {txMotor?.freshness ?? 'no frame yet'}
+          TX speed {signalText(txMotor, 'motor_speed_mmps')} · gear{' '}
+          {signalText(txMotor, 'gear')} · {txMotor?.freshness ?? 'not sent'}
         </div>
         <div className="fbk-line muted small mono" data-testid="direct-motor-fbk">
-          FBK high 0x206 ? {signalText(fbkMtr, 'motor_command_speed_mmps') || '?'} ? gear{' '}
-          {signalText(fbkMtr, 'gear_state') || signalText(fbkMtr, 'gear') || '?'} ?{' '}
-          {fbkMtr?.freshness ?? 'no peer yet'}
+          High 0x206 {signalText(fbkMtr, 'motor_command_speed_mmps') || '—'} · gear{' '}
+          {signalText(fbkMtr, 'gear_state') || signalText(fbkMtr, 'gear') || '—'} ·{' '}
+          {fbkMtr?.freshness ?? 'feedback off'}
         </div>
         <div className="actions tight">
           <button
@@ -244,27 +244,27 @@ function DirectActuatorCards({
 
       {!motorOnly && <div className={`direct-card${active.steering ? ' streaming' : ''}`} data-testid="direct-steering">
         <div className="direct-card-head">
-          <h3>Steering ? Low ? 0x169</h3>
+          <h3>Steering · Low · 0x169</h3>
           <span className={`chip tiny ${active.steering ? 'ok' : ''}`}>
             {active.steering ? 'streaming' : 'idle'}
           </span>
         </div>
         <p className="muted small">
-          <span className="mono">VCU_SES_REQ</span> ? safety bypass forced ON
+          <span className="mono">VCU_SES_REQ</span> · bench enables forced on
         </p>
         <label className="field">
-          <span className="field-label">Target angle raw (0.1?)</span>
+          <span className="field-label">Steering target, 0.1° units</span>
           <NumericDraft testId="direct-steer-angle" value={steerAngle} min={-450} max={450} disabled={locked} onValue={setSteerAngle} />
-          <span className="field-hint">?450 ? control_enable=1 ? alignment_enable=1</span>
+          <span className="field-hint">Range ±450 · enables are forced on for bench control</span>
         </label>
         <div className="tx-line mono small" data-testid="direct-steer-tx">
-          TX 0x169 ? angle={signalText(txSteer, 'target_angle_raw')} ? en=
-          {signalText(txSteer, 'control_enable')}/{signalText(txSteer, 'alignment_enable')} ?{' '}
-          {txSteer?.freshness ?? 'no frame yet'}
+          TX angle {signalText(txSteer, 'target_angle_raw')} · en{' '}
+          {signalText(txSteer, 'control_enable')}/{signalText(txSteer, 'alignment_enable')} ·{' '}
+          {txSteer?.freshness ?? 'not sent'}
         </div>
         <div className="fbk-line muted small mono" data-testid="direct-steer-fbk">
-          FBK low SES ? {signalText(fbkSes, 'angle_deg') || signalText(fbkSes, 'target_angle_raw') || '?'} ?{' '}
-          {fbkSes?.freshness ?? 'no peer yet'}
+          Low SES {signalText(fbkSes, 'angle_deg') || '—'} ·{' '}
+          {fbkSes?.freshness ?? 'feedback off'}
         </div>
         <div className="actions tight">
           <button
@@ -290,27 +290,27 @@ function DirectActuatorCards({
 
       {!motorOnly && <div className={`direct-card${active.brake ? ' streaming' : ''}`} data-testid="direct-brake">
         <div className="direct-card-head">
-          <h3>Brake ? Low ? 0x7B9</h3>
+          <h3>Brake · Low · 0x7B9</h3>
           <span className={`chip tiny ${active.brake ? 'ok' : ''}`}>
             {active.brake ? 'streaming' : 'idle'}
           </span>
         </div>
         <p className="muted small">
-          <span className="mono">VCU_SEB_REQ</span> ? safety bypass forced ON
+          <span className="mono">VCU_SEB_REQ</span> · bench enables forced on
         </p>
         <label className="field">
-          <span className="field-label">Pressure request raw 0?100</span>
+          <span className="field-label">Brake pressure request, 0–100</span>
           <NumericDraft testId="direct-brake-pressure" value={brakePressure} min={0} max={100} disabled={locked} onValue={setBrakePressure} />
-          <span className="field-hint">control_enable=1 ? alignment_enable=1</span>
+          <span className="field-hint">Vendor request scale · enables are forced on for bench control</span>
         </label>
         <div className="tx-line mono small" data-testid="direct-brake-tx">
-          TX 0x7B9 ? pressure={signalText(txBrake, 'pressure_request_raw')} ? en=
-          {signalText(txBrake, 'control_enable')}/{signalText(txBrake, 'alignment_enable')} ?{' '}
-          {txBrake?.freshness ?? 'no frame yet'}
+          TX pressure {signalText(txBrake, 'pressure_request_raw')} · en{' '}
+          {signalText(txBrake, 'control_enable')}/{signalText(txBrake, 'alignment_enable')} ·{' '}
+          {txBrake?.freshness ?? 'not sent'}
         </div>
         <div className="fbk-line muted small mono" data-testid="direct-brake-fbk">
-          FBK low SEB ? {signalText(fbkSeb, 'pressure_kpa') || signalText(fbkSeb, 'status') || '?'} ?{' '}
-          {fbkSeb?.freshness ?? 'no peer yet'}
+          Low SEB {signalText(fbkSeb, 'pressure_kpa') || '—'} ·{' '}
+          {fbkSeb?.freshness ?? 'feedback off'}
         </div>
         <div className="actions tight">
           <button
@@ -505,13 +505,13 @@ export function Control() {
       setMethod(next)
       setLog(
         (next === 'high'
-          ? 'Method: High bus ? Host kinematics (HOST_DRIVE_CMD 0x300)'
+          ? 'Method: High bus · Host kinematics (HOST_DRIVE_CMD 0x300)'
           : next === 'low'
-            ? 'Method: Low bus ? Direct actuators (motor / steer / brake)'
+            ? 'Method: Low bus · Direct actuators (motor / steer / brake)'
             : next === 'mtr'
-              ? 'Method: Direct MTR ? Low bus motor only (RT_DRIVE_CMD 0x204)'
-            : 'Method: HMI (mode/power requests only ? not motion)') +
-          (clean.ok ? '' : ` ? ${clean.detail}`),
+              ? 'Method: Low bus · Motor only (RT_DRIVE_CMD 0x204)'
+            : 'Method: HMI · Mode/power only, not motion') +
+          (clean.ok ? '' : ` · ${clean.detail}`),
       )
       await refresh()
     } catch (e) {
@@ -529,7 +529,7 @@ export function Control() {
         await api.setBenchTx(st.session.session_id!, true, st.session.revision)
         st = await refresh()
       }
-      setLog('Bench TX armed (explicit)')
+      setLog('Command TX unlocked')
       setStatus(st)
     } catch (e) {
       setLog(String(e))
@@ -544,17 +544,17 @@ export function Control() {
       const st = await refresh()
       const sid = st.session?.session_id
       if (!sid) {
-        setLog('No session ? Bench TX already off')
+        setLog('No session · command TX already locked')
         return
       }
       if (String(st.session?.bench_tx ?? '').toLowerCase() !== 'enabled') {
-        setLog('Bench TX already disabled')
+        setLog('Command TX already locked')
         return
       }
       setKbEnabled(false)
       await api.controlRelease('bench_tx_off').catch(() => undefined)
       await api.setBenchTx(sid, false, st.session.revision)
-      setLog('Bench TX disabled ? inject / keyboard TX gated off')
+      setLog('Command TX locked')
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -568,7 +568,7 @@ export function Control() {
     try {
       const st = await ensureSessionReady()
       if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
-        throw new Error('Bench TX is off. Arm TX explicitly before HostDrive inject.')
+        throw new Error('Command TX is locked. Unlock it before sending Host drive.')
       }
       setKbEnabled(false)
       const clean = await cleanupControlStreams('pre_inject')
@@ -581,8 +581,8 @@ export function Control() {
       const lid = (res as { lease_id?: string }).lease_id
       if (typeof lid === 'string') setLeaseId(lid)
       setLog(
-        `High-bus inject HOST_DRIVE_CMD: ${JSON.stringify(res)}` +
-          (clean.ok ? '' : ` ? ${clean.detail}`),
+          `High-bus HOST_DRIVE_CMD sent: ${JSON.stringify(res)}` +
+          (clean.ok ? '' : ` · ${clean.detail}`),
       )
       await refresh()
       await useActiveTxStore.getState().refreshJobs()
@@ -619,7 +619,7 @@ export function Control() {
       setKbEnabled(false)
       await useActiveTxStore.getState().stopAll().catch(() => undefined)
       setLeaseId(null)
-      setLog('Stop All ? high and low motion streams cleared')
+      setLog('Stopped all high and low motion streams')
       await refresh()
     } catch (e) {
       setLog(String(e))
@@ -677,7 +677,7 @@ export function Control() {
   }
 
   const activeMethod = String(ctrlStatus?.method ?? 'none')
-  const activeLabel = String(ctrlStatus?.method_label ?? 'No active motion method')
+  const activeLabel = String(ctrlStatus?.method_label ?? 'No active motion command')
   const benchOn = String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled'
   const sessionId = status?.session?.session_id
   const activeProfile = status?.session?.profile ?? status?.profile ?? 'pure_software'
@@ -697,7 +697,8 @@ export function Control() {
       testId="workspace-control"
       className="control-workspace"
       title="Control"
-      description={<>Select one motion method at a time. High, Low-all and MTR-only are exclusive because High control also makes RT publish Low <span className="mono">0x204</span>. All methods share the same Bench TX Arm gate. Quick keyboard / TX / fake-signal tools live in the Control activity sidebar.</>}
+      description={<>Choose one motion path. High kinematics and Low direct-actuator streams are mutually exclusive; the active backend method is shown below. Keyboard, command, and observation tools are available from the Control sidebar.</>}
+      sectionLabel="Operate"
     >
 
       <div className="control-setup-grid">
@@ -711,16 +712,16 @@ export function Control() {
             </strong>
           </div>
           <div className="control-status-item">
-            <span className="muted small">Bench TX (TX gate)</span>
+            <span className="muted small">Command TX</span>
             <strong
               className={benchOn ? 'ok-text' : 'danger-text'}
               data-testid="control-bench-tx"
             >
-              {benchOn ? 'ON ? bus TX allowed' : 'OFF ? inject/control blocked'}
+                {benchOn ? 'Unlocked' : 'Locked'}
             </strong>
           </div>
           <div className="control-status-item">
-            <span className="muted small">Backend motion</span>
+                    <span className="muted small">Active motion</span>
             <strong className="mono" data-testid="control-active-method">
               {activeMethod}
             </strong>
@@ -729,14 +730,13 @@ export function Control() {
         </div>
         {!benchOn && (
           <p className="control-callout" data-testid="control-bench-hint">
-            Turn <strong>Bench TX ON</strong> before keyboard, inject, or low-bus streams.
-            This is a safety gate, not a motion command.
+            Unlock <strong>command TX</strong> before sending commands. Unlocking does not move the vehicle by itself.
           </p>
         )}
         <div className="actions tight">
           {!sessionId ? (
             <p className="control-callout" data-testid="btn-open-settings-session">
-              No session ? start one from <strong>Settings</strong> in Workspace explorer.
+              No session · start one from <strong>Settings</strong>.
             </p>
           ) : benchOn ? (
             <>
@@ -747,17 +747,17 @@ export function Control() {
                 disabled={busy}
                 onClick={() => void disableTx()}
               >
-                Turn Bench TX off
+                Lock TX
               </button>
               <button
                 type="button"
                 className="secondary"
                 data-testid="btn-enable-tx"
                 disabled={busy}
-                title="Session already enabled ? re-assert gate"
+                title="Re-assert the bench TX gate"
                 onClick={() => void enableTx()}
               >
-                Keep Bench TX on
+                Keep TX unlocked
               </button>
             </>
           ) : (
@@ -768,7 +768,7 @@ export function Control() {
               disabled={busy}
               onClick={() => void enableTx()}
             >
-              Turn Bench TX on
+              Unlock TX
             </button>
           )}
           <button
@@ -779,14 +779,14 @@ export function Control() {
             title="Stop inject jobs, keyboard intent, and direct streams"
             onClick={() => void stopAll()}
           >
-            Stop all motion TX
+            Stop all motion
           </button>
         </div>
       </section>
 
       {/* ?? Method picker ?????????????????????????????????????????? */}
       <section className="panel control-method-panel" data-testid="control-method-picker">
-        <h2>What do you want to control?</h2>
+        <h2>Control path</h2>
         <div className="seg control-method-seg" role="tablist" aria-label="Control method">
           <button
             type="button"
@@ -797,7 +797,7 @@ export function Control() {
             disabled={busy}
             onClick={() => void selectMethod('high')}
           >
-            High bus ? Host drive
+            High · Host drive
           </button>
           {!fullVehicle && <button
             type="button"
@@ -808,7 +808,7 @@ export function Control() {
             disabled={busy}
             onClick={() => void selectMethod('low')}
           >
-            Low bus ? Actuators
+            Low · Actuators
           </button>}
           {!fullVehicle && <button
             type="button"
@@ -819,7 +819,7 @@ export function Control() {
             disabled={busy}
             onClick={() => void selectMethod('mtr')}
           >
-            MTR direct ? 0x204
+            Low · Motor only
           </button>}
           {!fullVehicle && <button
             type="button"
@@ -830,13 +830,13 @@ export function Control() {
             disabled={busy}
             onClick={() => void selectMethod('hmi')}
           >
-            HMI ? Mode / power
+            HMI · Mode / power
           </button>}
         </div>
         <div className="method-compare" data-testid="method-compare">
           {method === 'high' && (
             <div className="method-card active" data-testid="method-blurb-high">
-              <strong>High bus ? Host kinematics</strong>
+              <strong>High bus · Host kinematics</strong>
               <p className="muted small" style={{ margin: '6px 0 0' }}>
                 You send <span className="mono">HOST_DRIVE_CMD 0x300</span> (speed / yaw /
                 gear). RT runs kinematics. Use keyboard here or the Drive tab. Does{' '}
@@ -846,17 +846,17 @@ export function Control() {
           )}
           {method === 'low' && (
             <div className="method-card active" data-testid="method-blurb-low">
-              <strong>Low bus ? Direct actuators</strong>
+              <strong>Low bus · Direct actuators</strong>
               <p className="muted small" style={{ margin: '6px 0 0' }}>
                 Streams motor <span className="mono">0x204</span>, steer{' '}
                 <span className="mono">0x169</span>, brake <span className="mono">0x7B9</span>{' '}
-                for unit tests. Starting any channel stops high-bus Host drive jobs.
+                for bench tests. Starting any channel stops high-bus Host drive jobs.
               </p>
             </div>
           )}
           {method === 'mtr' && (
             <div className="method-card active" data-testid="method-blurb-mtr">
-              <strong>MTR direct ? Low CAN motor only</strong>
+              <strong>Low bus · Motor only</strong>
               <p className="muted small" style={{ margin: '6px 0 0' }}>
                 Streams <span className="mono">RT_DRIVE_CMD 0x204</span> directly to the
                 MTR contract without High-bus host kinematics. Selecting this route first
@@ -866,9 +866,9 @@ export function Control() {
           )}
           {method === 'hmi' && (
             <div className="method-card active" data-testid="method-blurb-hmi">
-              <strong>HMI ? Mode / power only</strong>
+              <strong>HMI · Mode / power only</strong>
               <p className="muted small" style={{ margin: '6px 0 0' }}>
-                Sends HMI request frames (and vehicle-view labels). Not a drive method ?
+                Sends HMI request frames (and vehicle-view labels). Not a drive method ·
                 no throttle/yaw. Requested vs confirmed stay separate until ECU feedback.
               </p>
             </div>
@@ -880,11 +880,10 @@ export function Control() {
       {method === 'high' && (
         <div className="control-high-grid">
           {!fullVehicle && <section className="panel" data-testid="keyboard-control">
-            <h2>1 ? Keyboard teleop</h2>
+            <h2>1 · Keyboard teleop</h2>
             <p className="muted small">
               Continuous Host intent via <span className="mono">POST /control/intent</span>{' '}
-              (shaped on backend). Needs Bench TX on. Focus the page; blur / hide tab
-              releases control.
+              (shaped on backend). Requires command TX. Blur or hide the tab to release control.
             </p>
             <div className="actions">
               <button
@@ -916,7 +915,7 @@ export function Control() {
                         await api.stopAnalysis().catch(() => undefined)
                         seqRef.current = 0
                         setKbEnabled(true)
-                        setLog('Keyboard control on ? WASD / arrows ? /control/intent')
+                        setLog('Keyboard control on · WASD / arrows')
                       })
                       .catch((e) => setLog(String(e)))
                   }
@@ -927,16 +926,16 @@ export function Control() {
             </div>
             <ul className="controls-legend muted small">
               <li>
-                <kbd>W</kbd>/<kbd>?</kbd> throttle ? <kbd>S</kbd>/<kbd>?</kbd> reverse
+                <kbd>W</kbd>/<kbd>↑</kbd> throttle · <kbd>S</kbd>/<kbd>↓</kbd> reverse
               </li>
               <li>
-                <kbd>A</kbd>/<kbd>D</kbd> yaw ? <kbd>Shift</kbd> hard brake ? <kbd>Space</kbd>{' '}
+                <kbd>A</kbd>/<kbd>D</kbd> yaw · <kbd>Shift</kbd> hard brake · <kbd>Space</kbd>{' '}
                 ESTOP
               </li>
             </ul>
             {kbEnabled && (
               <p className="ok-text small" data-testid="kb-active-banner">
-                Keyboard armed ? keys stream Host intent on High bus.
+                Keyboard active · keys stream Host intent on High bus.
               </p>
             )}
             {kbSnap && (
@@ -956,23 +955,20 @@ export function Control() {
           </section>}
 
           <section className="panel" data-testid="high-analysis-inject">
-            <h2>2 ? Numeric inject (analysis)</h2>
+            <h2>2 · Numeric command</h2>
             <p className="muted small">
-              One-shot or periodic <span className="mono">HOST_DRIVE_CMD</span> via{' '}
-              <span className="mono">POST /analysis/host-drive</span>. For fixed
-              speed/yaw experiments ? not the same as keyboard (keyboard uses
-              /control/intent).
+              One-shot or periodic <span className="mono">HOST_DRIVE_CMD 0x300</span> for fixed speed/yaw experiments. Keyboard teleop uses continuously shaped intent instead.
             </p>
             <div className="form-grid">
               <label>
-                Speed, mm/s
+                Speed command, mm/s
                 <NumericDraft testId="input-speed" value={speed} min={-500} max={3000} onValue={setSpeed} />
-                <span className="field-hint">?500 ? 3000</span>
+                <span className="field-hint">Range −500 to 3000</span>
               </label>
               <label>
                 Yaw rate, mrad/s
                 <NumericDraft testId="input-yaw" value={yaw} min={-3000} max={3000} onValue={setYaw} />
-                <span className="field-hint">?3000 ? 3000</span>
+                <span className="field-hint">Range −3000 to 3000</span>
               </label>
               <label>
                 Gear
@@ -1029,10 +1025,9 @@ export function Control() {
 
       {method === 'low' && (
         <section className="panel" data-testid="direct-actuators">
-          <h2>Low bus ? Direct actuators</h2>
+          <h2>Low bus · Direct actuators</h2>
           <p className="muted small">
-            Unit-test path. Each Start enables a continuous Low-bus job (needs Bench TX).
-            Starting any channel preempts high Host kinematics.
+            Start any channel to stream its Low-bus command. Starting a channel stops High-bus kinematics; stop each channel before switching paths.
           </p>
           <DirectActuatorCards
             busy={busy}
@@ -1046,10 +1041,9 @@ export function Control() {
 
       {method === 'mtr' && (
         <section className="panel" data-testid="direct-mtr">
-          <h2>MTR direct ? Low bus</h2>
+          <h2>Low bus · Motor only</h2>
           <p className="muted small">
-            Motor-only unit-test route. Uses the shared Bench TX Arm gate and backend
-            watchdog; leaving this workspace stops the stream.
+            Motor-only Low-bus route. It uses the same TX gate and backend watchdog; leaving this workspace stops the stream.
           </p>
           <DirectActuatorCards
             busy={busy}
@@ -1064,10 +1058,10 @@ export function Control() {
 
       {method === 'hmi' && (
         <section className="panel" data-testid="hmi-panel">
-          <h2>HMI ? Mode and power requests</h2>
+          <h2>HMI · Mode and power requests</h2>
           <p className="muted small">
             Wire: MANUAL/AUTO mode and ON/OFF power. PURE_SIM is UI-only (no HMI_MODE_REQ
-            enum yet). Needs Bench TX for bus TX.
+            enum yet). Requires command TX.
           </p>
           <div className="hmi-request-block">
             <span className="field-label">Mode request</span>
@@ -1132,13 +1126,13 @@ export function Control() {
           <dl className="kv compact" data-testid="hmi-requested-confirmed">
             <dt>Mode requested / confirmed</dt>
             <dd className="mono">
-              {status?.session?.requested_mode ?? '?'} /{' '}
-              {status?.session?.confirmed_mode ?? '?'}
+              {status?.session?.requested_mode ?? '—'} /{' '}
+              {status?.session?.confirmed_mode ?? '—'}
             </dd>
             <dt>Power requested / confirmed</dt>
             <dd className="mono">
-              {status?.session?.requested_power ?? '?'} /{' '}
-              {status?.session?.confirmed_power ?? '?'}
+              {status?.session?.requested_power ?? '—'} /{' '}
+              {status?.session?.confirmed_power ?? '—'}
             </dd>
           </dl>
         </section>
@@ -1146,7 +1140,7 @@ export function Control() {
 
       <pre className="log" data-testid="control-log">
         {log ||
-          '1) Turn Bench TX on  ?  2) Pick High / Low / HMI  ?  3) Start keyboard, inject, or streams'}
+          '1) Unlock TX · 2) Pick High or Low · 3) Start the desired stream'}
       </pre>
     </WorkspaceShell>
   )
