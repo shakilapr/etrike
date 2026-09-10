@@ -656,6 +656,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_alive_safety.store(xTaskGetTickCount(), std::memory_order_relaxed);
         // g_wdt.tick();  // GPIO23 toggle
 
+        // 0x204 staleness watchdog (arch §8.6: >200ms without RT_DRIVE_CMD ->
+        // zero speed + neutral). g_last_setpoint_tick is stamped on every 0x204
+        // receive (main.cpp:293) but was previously written and never enforced.
+        // Now actively fail-safe: a stale/absent RT_DRIVE_CMD cannot keep a last
+        // non-zero throttle applied.
+        {
+            static constexpr TickType_t kSetpointStaleTicks = pdMS_TO_TICKS(200);
+            const TickType_t since_setpoint =
+                xTaskGetTickCount() - g_last_setpoint_tick.load(std::memory_order_relaxed);
+            if (since_setpoint > kSetpointStaleTicks) {
+                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+                g_setpoint_gear.store(static_cast<uint8_t>(can::Gear::N), std::memory_order_relaxed);
+            }
+        }
+
         // Command-path / setpoint-echo consistency check (issue #1). 0x206
         // reports the APPLIED speed COMMAND, not physical speed (no encoder).
         // This detects RT-vs-MTR command-path disagreement only — it is NOT a
