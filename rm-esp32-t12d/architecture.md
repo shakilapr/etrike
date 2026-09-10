@@ -38,9 +38,10 @@ Across all three modes:
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                             OPERATOR CONTROLS (RadioLink T12D)                             │
 │   Right Stick: Steer (X) / Service Brake (Y)    │   Left Stick: Throttle (Y)                │
-│   SWA (Drive Enable: UP=OFF, DOWN=ON)           │   SWB (Park / Hold: UP=OFF, DOWN=HOLD)   │
-│   SWC (Gear: UP=R, MID=N, DOWN=D)               │   SWD (Mode: UP=BARE, MID=SYS, DOWN=RT)  │
-│   VRA (Aux Analog 1)                            │   VRB (Aux Analog 2)                     │
+│   SWA (Target Mode: UP=BARE, MID=SYS, DOWN=RT)  │   SWB (Park / Hold: UP=HOLD, MID/DN=REL)  │
+│   SWC (Gear: UP=R, MID=N, DOWN=D)               │   SWD (Drive Enable: UP=OFF, DOWN=ON)     │
+│   VRA (Dynamic Speed Governor 0..100%)          │   VRB (Aux Analog Knob 2)                 │
+│   VRC (Aux Pull-Down Brake 1)                   │   VRD (Aux Pull-Down Brake 2)             │
 └─────────────────────────────────────────────┬───────────────────────────────────────────────┘
                                               │ 2.4 GHz FHSS V2.1 (12 Channels)
                                               ▼
@@ -134,7 +135,7 @@ All messages and signal formats are bound directly to canonical generated defini
 - **Microsecond Mapping**:
   $$\text{Pulse } (\mu\text{s}) = 988 + \frac{\text{raw} - 172}{1811 - 172} \times (2012 - 988)$$
   Center position: $992 \approx 1500\,\mu\text{s}$.
-- **Electrical Plausibility Check**: Pulse validity ($800\dots 2200\,\mu\text{s}$) is scoped strictly to active vehicle channels 0..9 (`kChSteering` through `kChAuxVrb`). Unconfigured or floating auxiliary channels (10–11) are excluded from triggering signal loss / failsafe.
+- **Electrical Plausibility Check**: Pulse validity ($800\dots 2200\,\mu\text{s}$) is scoped across active channels 0..11 (`kChSteering` through `kChAuxVrd`).
 - **Hardware Failsafe Bits**: Byte 23 bits indicate Frame Lost (`0x04`) and Receiver Failsafe (`0x08`).
 
 ---
@@ -147,23 +148,23 @@ All messages and signal formats are bound directly to canonical generated defini
 ---
 
 ### 4.3 Direct Switch Mapping
-- **SWA Drive Enable**:
-  - `UP` ($< 1500\,\mu\text{s}$): Disabled (`drive_enable_req = false`).
-  - `DOWN` ($\ge 1500\,\mu\text{s}$): Enabled (`drive_enable_req = true`).
-  - Drive is active whenever `drive_enable_req && !park_hold_req && signal_valid`.
-- **SWB Park / Brake Hold**:
-  - `UP` ($< 1500\,\mu\text{s}$): Park Released (`park_hold_req = false`, $0\text{ mm}$ stroke).
-  - `DOWN` ($\ge 1500\,\mu\text{s}$): Park Engaged (`park_hold_req = true`, $15.0\text{ mm}$ stroke, Neutral gear, $0\text{ mm/s}$).
-- **SWC Gear Selector**:
-  - `UP` ($\le 1300\,\mu\text{s}$): Reverse (`Gear::R`).
-  - `MID` ($1300\dots 1700\,\mu\text{s}$): Neutral (`Gear::N`).
-  - `DOWN` ($\ge 1700\,\mu\text{s}$): Drive (`Gear::D`).
-  - **State Preservation**: Physical switch selection is preserved in `snap.gear` regardless of park hold status. `drive_cmd.gear` emits `snap.gear` whenever drive is active (`ARM:ON`), defaulting to `Gear::N` when disarmed or parked.
-- **SWD Operating Mode Selector (CH8, 3-Position Remote Switch)**:
+- **SWA Operating Mode Selector (CH5, 3-Position)**:
   - `UP` ($\le 1300\,\mu\text{s}$): `BARE` Mode (Direct Actuators on Low-CAN).
   - `MID` ($1300\dots 1700\,\mu\text{s}$): `SYS` Mode (Targeting `sys-esp32` on Low-CAN).
   - `DOWN` ($\ge 1700\,\mu\text{s}$): `RT` Mode (Targeting `rt-esp32` on High-CAN).
   - **Dynamic Runtime Switching**: Mode transitions take effect immediately in `task_can_tx`, re-routing the output cluster while preserving snapshot continuity and identical telemetry logging.
+- **SWB Park / Brake Hold (CH6, 3-Position)**:
+  - `UP` ($\le 1300\,\mu\text{s}$): Park Engaged (`park_hold_req = true`, $15.0\text{ mm}$ holding stroke, Neutral gear, $0\text{ mm/s}$).
+  - `MID` / `DOWN` ($> 1300\,\mu\text{s}$): Park Released (`park_hold_req = false`, $0\text{ mm}$ stroke).
+- **SWC Gear Selector (CH7, 3-Position)**:
+  - `UP` ($\le 1300\,\mu\text{s}$): Reverse (`Gear::R`).
+  - `MID` ($1300\dots 1700\,\mu\text{s}$): Neutral (`Gear::N`).
+  - `DOWN` ($\ge 1700\,\mu\text{s}$): Drive (`Gear::D`).
+  - **State Preservation**: Physical switch selection is preserved in `snap.gear` regardless of park hold status. `drive_cmd.gear` emits `snap.gear` whenever drive is active (`ARM:ON`), defaulting to `Gear::N` when disarmed or parked.
+- **SWD Drive Enable (CH8, 2-Position)**:
+  - `UP` ($< 1500\,\mu\text{s}$): Disabled (`drive_enable_req = false`).
+  - `DOWN` ($\ge 1500\,\mu\text{s}$): Enabled (`drive_enable_req = true`).
+  - Drive is active whenever `drive_enable_req && !park_hold_req && signal_valid`.
 
 ---
 
@@ -176,16 +177,22 @@ All messages and signal formats are bound directly to canonical generated defini
 
 ---
 
-### 4.5 Throttle & Brake Pipeline
+### 4.5 Throttle, Governor & Braking Pipeline
 - **Motor Throttle (CH3 Left Stick Vertical)**:
-  - Linear from $0\%$ at $1050\,\mu\text{s}$ to $100\%$ at $1950\,\mu\text{s}$.
-  - Scaled by transmission gear: Drive ($0\dots +3000\text{ mm/s}$), Reverse ($0\dots -500\text{ mm/s}$), Neutral ($0\text{ mm/s}$).
-  - Reverse speed is strictly capped at $500\,\text{mm/s}$ ($0.50\,\text{m/s}$), matching `shared::kMaxSpeedRevMmps = 500` and `mtr-stm32` safety bounds.
-- **Service Brake (CH2 Right Stick Vertical)**:
-  - Spring-centered stick: pushed forward past $1520\,\mu\text{s}$ commands $0.0\dots 27.0\text{ mm}$ stroke (or proportional kPa pressure in RT mode).
-  - **Brake-Over-Throttle Interlock**: Total brake $> 5.0\text{ mm}$ cuts motor throttle to $0$.
-- **Auxiliary Dials (VRA / VRB)**:
-  - Mapped directly to auxiliary outputs (`aux_vra`, `aux_vrb` $0.0\dots 1.0$) for implements; does not interfere with braking or throttle.
+  - Bottom idle deadband up to $1160\,\mu\text{s}$ ($0\%$ demand).
+  - Linear from $1160\,\mu\text{s}$ to $1950\,\mu\text{s}$ ($0\dots 100\%$).
+  - Scaled proportionally by **Dynamic Speed Governor (VRA, CH9)**:
+    - Drive: $0\dots (+3000\text{ mm/s} \times \text{GovScale})$.
+    - Reverse: $0\dots (-500\text{ mm/s} \times \text{GovScale})$.
+    - Neutral: strictly $0\text{ mm/s}$.
+- **Service Brake (CH2 Right Stick Vertical - Wide Deadband)**:
+  - Center neutral deadband: $1280 \dots 1720\,\mu\text{s}$ ($\pm 220\,\mu\text{s}$ around center) preventing accidental braking while steering.
+  - Forward push ($1720 \dots 1980\,\mu\text{s}$): commands $0.0 \dots 27.0\text{ mm}$ stroke.
+- **Auxiliary Pull-Down Service Brake (CH11 VRC & CH12 VRD)**:
+  - Pull-down deadband: $0 \dots -10\%$ ($1500 \dots 1450\,\mu\text{s}$) commands $0.0\,\text{mm}$.
+  - Active pull-down: $-10\% \dots -100\%$ ($1450 \dots 1000\,\mu\text{s}$) commands progressive $0.0 \dots 27.0\,\text{mm}$ service brake.
+  - Overall brake stroke is arbitrated by taking the maximum among Right Stick (Y), VRC, VRD, and SWB Park Hold.
+- **Brake-Over-Throttle Interlock**: Total brake stroke $> 5.0\text{ mm}$ instantly clamps motor throttle to $0$.
 
 ---
 
