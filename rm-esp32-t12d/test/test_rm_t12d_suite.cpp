@@ -248,9 +248,9 @@ void test_steering_deadband_and_limits() {
 void test_throttle_and_gear_combinations() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
-    frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000); // SWA DOWN (Enable)
-    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000); // SWB UP (Park Released)
-    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000); // SWD DOWN (Enable)
+    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500); // SWB MID (Park Released)
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
 
     uint32_t now_ms = 1000;
 
@@ -262,16 +262,16 @@ void test_throttle_and_gear_combinations() {
     ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
     ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps); // +3000
 
-    // 2. Drive + Half Throttle (1500us) -> ~1500 mm/s
+    // 2. Drive + Mid Throttle (1500us) -> ~49% (~1460 mm/s)
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1500);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 0.5f, 0.01f);
-    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), 1500.0f, 30.0f);
+    ASSERT_NEAR(snap.throttle_norm, 0.49f, 0.02f);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), 1460.0f, 50.0f);
 
-    // 3. Drive + Throttle Idle (1050us) -> 0 mm/s
-    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1050);
+    // 3. Drive + Throttle Idle Deadband (1100us <= 1120us) -> 0 mm/s
+    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1100);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.01f);
+    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
     ASSERT_EQ(snap.target_speed_mmps, 0);
 
     // 4. Reverse (SWC UP = 1000us) + Full Throttle (1950us) -> -500 mm/s
@@ -294,10 +294,10 @@ void test_service_and_backup_braking() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000);
-    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000); // Released
+    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500); // SWB MID (Released)
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
-    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
 
     uint32_t now_ms = 1000;
 
@@ -331,50 +331,58 @@ void test_service_and_backup_braking() {
 void test_park_hold_semantic_request() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
-    frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000);
+    frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000); // SWD DOWN (Enabled)
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
-    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
 
     uint32_t now_ms = 1000;
 
-    // SWB UP (< 1500us) -> Park Released (0mm stroke, full drive allowed)
+    // SWB UP (<= 1300us) -> Park Engaged (15mm holding stroke, Neutral gear, 0 mm/s)
     frame.channels[rm::kChParkHold] = rm::pulse_us_to_sbus(1000);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_TRUE(snap.park_hold_req);
+    ASSERT_NEAR(snap.brake_stroke_mm, rm::kParkBrakeStrokeMm, 0.001f); // 15.0 mm
+    ASSERT_TRUE(snap.gear == can::Gear::N);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+
+    // SWB MID (1500us > 1300us) -> Park Released (0mm stroke, full drive allowed)
+    frame.channels[rm::kChParkHold] = rm::pulse_us_to_sbus(1500);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_FALSE(snap.park_hold_req);
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
     ASSERT_TRUE(snap.gear == can::Gear::D);
     ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps);
 
-    // SWB DOWN (>= 1500us) -> Park Engaged (15mm holding stroke, Neutral gear, 0 mm/s)
+    // SWB DOWN (2000us > 1300us) -> Park Released (0mm stroke, full drive allowed)
     frame.channels[rm::kChParkHold] = rm::pulse_us_to_sbus(2000);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_TRUE(snap.park_hold_req);
-    ASSERT_NEAR(snap.brake_stroke_mm, rm::kParkBrakeStrokeMm, 0.001f); // 15.0 mm
-    ASSERT_TRUE(snap.gear == can::Gear::N);
-    ASSERT_EQ(snap.target_speed_mmps, 0);
+    ASSERT_FALSE(snap.park_hold_req);
+    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
+    ASSERT_TRUE(snap.gear == can::Gear::D);
+    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps);
 }
 
 void test_drive_enable_direct_switch() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
-    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500); // SWB MID (Park Released)
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000);
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
 
-    // SWA UP (< 1500us) -> Drive Disabled
+    // SWD UP (< 1500us) -> Drive Disabled
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_FALSE(snap.drive_enable_req);
 
-    // SWA DOWN (>= 1500us) -> Drive Enabled (Immediate, direct, no 500ms dwell or lockout)
+    // SWD DOWN (>= 1500us) -> Drive Enabled (Immediate, direct)
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_TRUE(snap.drive_enable_req);
 
-    // SWA UP -> Drive Disabled
+    // SWD UP -> Drive Disabled
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_FALSE(snap.drive_enable_req);
@@ -384,24 +392,24 @@ void test_operating_mode_switch_decoding() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000);
-    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500);
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1500);
 
     uint32_t now_ms = 1000;
 
-    // 1. SWD UP (<= 1300us, e.g. 1000us) -> OperatingMode::Bare
+    // 1. SWA UP (<= 1300us, e.g. 1000us) -> OperatingMode::Bare
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Bare);
     ASSERT_TRUE(std::string_view(rm::mode_name(snap.op_mode)) == "BARE");
 
-    // 2. SWD MID (1301..1699us, e.g. 1500us) -> OperatingMode::Sys
+    // 2. SWA MID (1301..1699us, e.g. 1500us) -> OperatingMode::Sys
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1500);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Sys);
     ASSERT_TRUE(std::string_view(rm::mode_name(snap.op_mode)) == "SYS");
 
-    // 3. SWD DOWN (>= 1700us, e.g. 2000us) -> OperatingMode::Rt
+    // 3. SWA DOWN (>= 1700us, e.g. 2000us) -> OperatingMode::Rt
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(2000);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Rt);

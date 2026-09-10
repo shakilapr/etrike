@@ -46,17 +46,17 @@ RadioLink T12D ──► R16F SBUS ──► MCU UART ──► Input Driver (Va
 | Channel | T12D Control | Physical Location & Type | Vehicle Purpose | MCU Interpretation & Range | CAN Target |
 | :---: | :--- | :--- | :--- | :--- | :--- |
 | **CH1** | **Right Stick X** | 2-Axis Gimbal (Spring Centered) | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw) | `0x169 VCU_SES_REQ` |
-| **CH2** | **Right Stick Y** | 2-Axis Gimbal (**Spring Centered**) | **Signed Longitudinal Velocity** | Proportional: $-1000\dots +3000\text{ mm/s}$ (Forward / Reverse with neutral dwell) | `0x204 RT_DRIVE_CMD` |
-| **CH3** | **Left Stick X** | 2-Axis Gimbal (Spring Centered) | **Implement / Aux X** | Proportional: $0.0\dots 1.0$ (Pan / lateral implement) | Telemetry / Aux |
-| **CH4** | **Left Stick Y** | 2-Axis Gimbal (Spring Centered) | **Implement / Aux Y** | Proportional: $0.0\dots 1.0$ (Tilt / vertical implement) | Telemetry / Aux |
-| **CH5** | **SWA Switch** | Top-Left Outer (2-Position) | **Drive Enable Request** | Edge-Qualified: UP = Disabled, DOWN = Arming Request | Safety Arbiter |
-| **CH6** | **SWB Switch** | Top-Left Inner (2-Position) | **Park / Brake Hold** | Semantic Request: UP = Park/Hold, DOWN = Drive | SYS / SEB |
-| **CH7** | **SWC Switch** | Top-Right Inner (3-Position) | **Drive Envelope** | 3-Tier: UP = Precision (0.75 m/s), MID = Normal (1.8 m/s), DOWN = Fast (3.0 m/s) | Speed Arbiter |
-| **CH8** | **SWD Switch** | Top-Right Outer (2-Position) | **Manual / Auto Request** | Asymmetric: UP = Manual, DOWN = Auto Request | `0x110 SYS_MODE_CMD` |
-| **CH9** | **VRA Knob** | Top Center-Left Rotary | **Spare / Auxiliary** | Removed from driving path (auxiliary / implement speed) | Aux / Telemetry |
-| **CH10**| **VRB Knob** | Top Center-Right Rotary | **Spare / Auxiliary** | Removed from steering dynamics (deterministic steering) | Aux / Telemetry |
-| **CH11**| *Unassigned* | Software NULL | **Spare / Expansion** | Reserved (Lights / Horn) | — |
-| **CH12**| *Unassigned* | Software NULL | **Spare / Expansion** | Reserved | — |
+| **CH2** | **Right Stick Y** | 2-Axis Gimbal (Spring Centered) | **Service Brake** | Proportional: $0.0 \dots 27.0\text{ mm}$ stroke | `0x7B9 VCU_SEB_REQ` |
+| **CH3** | **Left Stick Y** | 2-Axis Gimbal (Ratcheted) | **Motor Throttle** | Proportional: $0\% \dots 100\%$ ($0 \dots 3000\text{ mm/s}$) | `0x204 RT_DRIVE_CMD` |
+| **CH4** | **Left Stick X** | 2-Axis Gimbal (Spring Centered) | **Spare / Auxiliary** | Proportional: $0.0\dots 1.0$ (Implement lateral) | Telemetry / Aux |
+| **CH5** | **SWA Switch** | Top-Left Outer (3-Position) | **Target Selection** | 3-Tier: UP = BARE, MID = SYS, DOWN = RT | Mode Arbiter |
+| **CH6** | **SWB Switch** | Top-Left Inner (3-Position) | **Park / Brake Hold** | Semantic Request: UP = Park Hold (15mm), MID/DOWN = Drive (0mm) | SYS / SEB |
+| **CH7** | **SWC Switch** | Top-Right Inner (3-Position) | **Transmission Gear** | 3-Tier: UP = Reverse (0.5 m/s), MID = Neutral, DOWN = Drive (3.0 m/s) | Gear Arbiter |
+| **CH8** | **SWD Switch** | Top-Right Outer (2-Position) | **Drive Enable Request** | Direct: UP = Disabled (OFF), DOWN = Enable Request (ARMED) | Safety Arbiter |
+| **CH9** | **VRA Knob** | Top Center-Left Rotary | **Aux Analog Knob 1** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
+| **CH10**| **VRB Knob** | Top Center-Right Rotary | **Aux Analog Knob 2** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
+| **CH11**| **VRC Knob** | Top-Left Shoulder Rotary | **Aux Analog Knob 3** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
+| **CH12**| **VRD Knob** | Top-Right Shoulder Rotary | **Aux Analog Knob 4** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
 
 ---
 

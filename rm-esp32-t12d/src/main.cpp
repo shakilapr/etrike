@@ -123,10 +123,9 @@ static bool send_can_frame(can::Frame& fr) {
         bool gear_changed     = (snap.gear != s_last_can_log.selected_gear) || (active_gear != s_last_can_log.cmd_gear);
         bool enable_status_chg= (snap.drive_enable_req != s_last_can_log.enable);
         bool park_changed     = (snap.park_hold_req != s_last_can_log.park);
-        bool periodic_tick    = (++s_last_can_log.count >= static_cast<uint32_t>(rm::kCanLogDecimation));
 
         if (mode_changed || valid_changed || steer_changed || brake_changed || throttle_changed || speed_changed ||
-            gear_changed || enable_status_chg || park_changed || periodic_tick) {
+            gear_changed || enable_status_chg || park_changed) {
             s_last_can_log.mode           = snap.op_mode;
             s_last_can_log.valid          = snap.signal_valid;
             s_last_can_log.steer_deg      = snap.steering_deg;
@@ -162,34 +161,12 @@ static bool send_can_frame(can::Frame& fr) {
 [[noreturn]] static void task_heartbeat(void*) {
     TickType_t period = pdMS_TO_TICKS(1000 / rm::kHeartbeatHz);
     TickType_t last = xTaskGetTickCount();
-    uint32_t hb_count = 0;
 
     while (1) {
-        // 1 Hz periodic health & telemetry summary (every 10 ticks)
-        if (++hb_count % 10 == 0) {
-            const auto snap = g_rc.snapshot();
-            const char* gear_str = (snap.gear == can::Gear::D) ? "D" :
-                                   ((snap.gear == can::Gear::R) ? "R" : "N");
-            const char* link_str = (snap.link_state == rm::LinkState::Normal) ? "OK" :
-                                   ((snap.link_state == rm::LinkState::Degraded) ? "DEGR" : "LOST");
-
-            ESP_LOGI(TAG, "STATUS | Mode=%s Link=%s Valid=%d Enable=%d Gear=%s Steer=%+.1f deg Brk=%.1f mm Throt=%.0f%% Spd=%d | CAN ok=%lu fail=%lu",
-                     rm::mode_name(snap.op_mode),
-                     link_str,
-                     snap.signal_valid ? 1 : 0,
-                     snap.drive_enable_req ? 1 : 0,
-                     gear_str,
-                     snap.steering_deg,
-                     snap.brake_stroke_mm,
-                     snap.throttle_norm * 100.0f,
-                     snap.target_speed_mmps,
-                     static_cast<unsigned long>(g_can_tx_ok.load(std::memory_order_relaxed)),
-                     static_cast<unsigned long>(g_can_tx_fail.load(std::memory_order_relaxed)));
-
-            const auto health = g_can.health_snapshot();
-            if (health.state == can::CanDriver::HealthState::BusOff) {
-                ESP_LOGE(TAG, "CAN BUS-OFF active! Recovery attempts: %lu", static_cast<unsigned long>(health.recovery_attempts));
-            }
+        // Monitor CAN driver health continuously
+        const auto health = g_can.health_snapshot();
+        if (health.state == can::CanDriver::HealthState::BusOff) {
+            ESP_LOGE(TAG, "CAN BUS-OFF active! Recovery attempts: %lu", static_cast<unsigned long>(health.recovery_attempts));
         }
 
         vTaskDelayUntil(&last, period);
