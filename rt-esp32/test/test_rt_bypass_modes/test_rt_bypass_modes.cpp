@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "config.h"
 #include "bypass_modes.h"
+#include "task_health.h"
 
 // The four runtime bypass flags are defined by the firmware main.cpp (excluded
 // from the native test build). The bypass tests exercise the SHARED pure
@@ -65,9 +66,23 @@ void test_rt_bypass_modes(void) {
     TEST_ASSERT_TRUE(g_bypass_mtr_absent);
 }
 
+
+void test_rt_task_health_reflects_actual_task_liveness(void) {
+    constexpr int64_t now = 1'000'000;
+    constexpr int64_t timeout = 500'000;
+    TEST_ASSERT_EQUAL_UINT8(0x0F, rt::task_health_from_timestamps(
+        now, now, now, now, timeout));
+    TEST_ASSERT_EQUAL_UINT8(0x06, rt::task_health_from_timestamps(
+        now, now - timeout - 1, now, now, timeout));
+    TEST_ASSERT_EQUAL_UINT8(0x05, rt::task_health_from_timestamps(
+        now, now, now - timeout - 1, now, timeout));
+    TEST_ASSERT_EQUAL_UINT8(0x03, rt::task_health_from_timestamps(
+        now, now, now, now - timeout - 1, timeout));
+}
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_rt_bypass_modes);
+    RUN_TEST(test_rt_task_health_reflects_actual_task_liveness);
     UNITY_END();
 }
 

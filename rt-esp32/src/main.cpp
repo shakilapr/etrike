@@ -133,9 +133,14 @@ std::atomic<uint16_t> g_seb_motor_current{0};
 std::atomic<uint16_t> g_seb_ecu_temp_c{0};
 std::atomic<uint8_t>  g_heartbeat_flags{0};
 
+std::atomic<int64_t>  g_task_alive_high_us{0};
+std::atomic<int64_t>  g_task_alive_low_us{0};
+std::atomic<int64_t>  g_task_alive_control_us{0};
+
 // ── Safety monitor & Phase B diagnostics ────────────────────────────
 #include "safety_monitor.h"
 #include "diag_rt.h"
+#include "task_health.h"
 #include "protocol/compat/can.hpp"
 
 namespace rt {
@@ -330,7 +335,13 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     drv.send(fr);
 }
 
-// ── TASK 1: can_high_task (Core 0, Priority 4) ──────────────────────
+static uint8_t task_health_snapshot() {
+    return rt::task_health_from_timestamps(
+        esp_timer_get_time(),
+        g_task_alive_high_us.load(std::memory_order_relaxed),
+        g_task_alive_low_us.load(std::memory_order_relaxed),
+        g_task_alive_control_us.load(std::memory_order_relaxed));
+}// ── TASK 1: can_high_task (Core 0, Priority 4) ──────────────────────
 [[noreturn]] void can_high_task(void*) {
     can::Frame fr;
     TickType_t last_100hz = xTaskGetTickCount();
@@ -347,6 +358,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     rt::HostDriveSnapshot host_snap{};
 
     while (true) {
+        g_task_alive_high_us.store(esp_timer_get_time(), std::memory_order_relaxed);
         if (!g_can_high.is_initialized()) {
             const int64_t retry_now_us = esp_timer_get_time();
             if (retry_now_us - last_high_init_retry_us >= 1'000'000) {
@@ -506,7 +518,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
             rpt.estop_reason = g_estop_reason.load();
             rpt.steer_state  = static_cast<uint8_t>(ss);
-            rpt.task_health  = 0x0F;
+            rpt.task_health  = task_health_snapshot();
 #ifdef BENCH_BUILD_ACKNOWLEDGED
             rpt.task_health |= 0x80;
 #endif
@@ -650,6 +662,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     rt::ActuatorFeedbackSnapshot fbk_snap{};
 
     while (true) {
+        g_task_alive_low_us.store(esp_timer_get_time(), std::memory_order_relaxed);
         if (!drv) {
             vTaskDelay(pdMS_TO_TICKS(10));
             drv = rt::can_low_driver();
@@ -1002,6 +1015,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     bool     m_seb_takeover  = false;
 
     while (true) {
+        g_task_alive_control_us.store(esp_timer_get_time(), std::memory_order_relaxed);
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(10));
         tick_counter++;
         const int64_t now = esp_timer_get_time();

@@ -128,3 +128,6 @@ extern std::atomic<int64_t>  g_last_sys_safety_sts_us;
 extern std::atomic<int64_t>  g_last_estop_sent_us;
 extern std::atomic<int64_t>  g_last_nonzero_cmd_us;
 extern std::atomic<uint8_t>  g_heartbeat_flags;
+extern std::atomic<int64_t>  g_task_alive_high_us;
+extern std::atomic<int64_t>  g_task_alive_low_us;
+extern std::atomic<int64_t>  g_task_alive_control_us;
