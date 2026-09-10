@@ -81,6 +81,7 @@ class AuditLogService:
         self._entries: deque[AuditEntry] = deque(maxlen=capacity)
         self._capacity = capacity
         self._seq = 0
+        self._last_fingerprints: dict[str, tuple[str, str, str, str]] = {}
 
     def log(
         self,
@@ -96,8 +97,24 @@ class AuditLogService:
         correlation_id: str | None = None,
         source: str = "backend",
         data: dict[str, Any] | None = None,
+        only_on_change: bool = False,
+        dedup_key: str | None = None,
     ) -> AuditEntry:
         cat = category if category in CATEGORIES else "system"
+        payload_data = data or {}
+
+        if only_on_change or dedup_key is not None:
+            key = dedup_key or f"{cat}:{code}:{bus or ''}:{can_id or ''}"
+            fp = (title, detail, severity, str(payload_data))
+            with self._lock:
+                if self._last_fingerprints.get(key) == fp:
+                    # Return existing recent matching entry without adding duplicate log
+                    if self._entries:
+                        for existing in self._entries:
+                            if existing.code == code and existing.category == cat:
+                                return existing
+                self._last_fingerprints[key] = fp
+
         entry = AuditEntry(
             log_id=f"log_{uuid.uuid4().hex[:12]}",
             ts_mono=time.monotonic(),
@@ -112,7 +129,7 @@ class AuditLogService:
             session_id=session_id,
             correlation_id=correlation_id,
             source=source,
-            data=data or {},
+            data=payload_data,
         )
         with self._lock:
             self._seq += 1
@@ -165,6 +182,7 @@ class AuditLogService:
         with self._lock:
             n = len(self._entries)
             self._entries.clear()
+            self._last_fingerprints.clear()
             return n
 
     def stats(self) -> dict[str, Any]:
