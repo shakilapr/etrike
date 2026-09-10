@@ -12,6 +12,7 @@
 #include "config.h"
 #include "sbus_parser.h"
 #include "rc_decoder.h"
+#include "can_emitter.h"
 
 namespace {
 
@@ -136,7 +137,7 @@ void test_graduated_link_states_and_failsafe() {
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000); // UP (Disabled)
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000); // UP (Released)
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1500); // Neutral
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
 
     // 0. Boot Guard (last_frame_ms == 0) -> Lost
     auto snap = rm::decode_sbus_frame(frame, 0, 20);
@@ -180,7 +181,7 @@ void test_electrical_pulse_limits() {
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1500);
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
 
@@ -209,7 +210,7 @@ void test_steering_deadband_and_limits() {
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1500);
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
 
@@ -249,7 +250,7 @@ void test_throttle_and_gear_combinations() {
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000); // SWA DOWN (Enable)
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000); // SWB UP (Park Released)
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
 
     uint32_t now_ms = 1000;
 
@@ -296,7 +297,7 @@ void test_service_and_backup_braking() {
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000); // Released
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
 
     uint32_t now_ms = 1000;
 
@@ -333,7 +334,7 @@ void test_park_hold_semantic_request() {
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000);
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000); // Manual
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // Manual
 
     uint32_t now_ms = 1000;
 
@@ -359,7 +360,7 @@ void test_drive_enable_direct_switch() {
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000);
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000);
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
 
@@ -379,7 +380,7 @@ void test_drive_enable_direct_switch() {
     ASSERT_FALSE(snap.drive_enable_req);
 }
 
-void test_asymmetric_authority_request() {
+void test_operating_mode_switch_decoding() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(1000);
@@ -388,15 +389,143 @@ void test_asymmetric_authority_request() {
 
     uint32_t now_ms = 1000;
 
-    // SWD UP (< 1500us) -> Manual
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(1000);
+    // 1. SWD UP (<= 1300us, e.g. 1000us) -> OperatingMode::Bare
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_FALSE(snap.auto_mode_req);
+    ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Bare);
+    ASSERT_TRUE(std::string_view(rm::mode_name(snap.op_mode)) == "BARE");
 
-    // SWD DOWN (>= 1500us) -> Auto Request
-    frame.channels[rm::kChAutoRequest] = rm::pulse_us_to_sbus(2000);
+    // 2. SWD MID (1301..1699us, e.g. 1500us) -> OperatingMode::Sys
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1500);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_TRUE(snap.auto_mode_req);
+    ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Sys);
+    ASSERT_TRUE(std::string_view(rm::mode_name(snap.op_mode)) == "SYS");
+
+    // 3. SWD DOWN (>= 1700us, e.g. 2000us) -> OperatingMode::Rt
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(2000);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Rt);
+    ASSERT_TRUE(std::string_view(rm::mode_name(snap.op_mode)) == "RT");
+
+    // 4. Link lost -> Safe fallback to OperatingMode::Bare
+    snap = rm::decode_sbus_frame(frame, 0, now_ms);
+    ASSERT_FALSE(snap.signal_valid);
+    ASSERT_TRUE(snap.op_mode == rm::OperatingMode::Bare);
+}
+
+void test_can_emitter_three_modes() {
+    rm::CanEmitter emitter;
+    std::vector<can::Frame> emitted;
+    auto send_fn = [&](const can::Frame& fr) {
+        emitted.push_back(fr);
+        return true;
+    };
+
+    rm::RcSnapshot snap{};
+    snap.signal_valid = true;
+    snap.drive_enable_req = true;
+    snap.park_hold_req = false;
+    snap.gear = can::Gear::D;
+    snap.target_speed_mmps = 2500;
+    snap.steering_deg = 20.0f;
+    snap.brake_stroke_mm = 13.5f;
+
+    // ── Test Mode 1: BARE ──
+    snap.op_mode = rm::OperatingMode::Bare;
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, send_fn); // tick 0 triggers 10Hz messages too
+
+    bool has_ses = false;
+    bool has_seb = false;
+    bool has_drive = false;
+    bool has_sys_mode = false;
+    bool has_sys_pwr = false;
+    bool has_hmi_mode = false;
+    bool has_rt_hb = false;
+    bool has_host_steer = false;
+
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x169u) has_ses = true;
+        if (fr.id == 0x7B9u) has_seb = true;
+        if (fr.id == 0x204u) has_drive = true;
+        if (fr.id == 0x110u) has_sys_mode = true;
+        if (fr.id == 0x113u) has_sys_pwr = true;
+        if (fr.id == 0x111u) has_hmi_mode = true;
+        if (fr.id == 0x7FDu) has_rt_hb = true;
+        if (fr.id == 0x303u) has_host_steer = true;
+    }
+    ASSERT_TRUE(has_ses);
+    ASSERT_TRUE(has_seb);
+    ASSERT_TRUE(has_drive);
+    ASSERT_TRUE(has_sys_mode);
+    ASSERT_TRUE(has_sys_pwr);
+    ASSERT_FALSE(has_hmi_mode);
+    ASSERT_FALSE(has_rt_hb);
+    ASSERT_FALSE(has_host_steer);
+
+    // ── Test Mode 2: SYS ──
+    snap.op_mode = rm::OperatingMode::Sys;
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, send_fn); // tick 0 triggers 10Hz and 2Hz (500ms)
+
+    has_ses = false;
+    has_seb = false;
+    has_drive = false;
+    has_sys_mode = false;
+    has_sys_pwr = false;
+    has_hmi_mode = false;
+    bool has_hmi_pwr = false;
+    has_rt_hb = false;
+    bool has_host_hb = false;
+
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x169u) has_ses = true;
+        if (fr.id == 0x7B9u) has_seb = true;
+        if (fr.id == 0x204u) has_drive = true;
+        if (fr.id == 0x110u) has_sys_mode = true;
+        if (fr.id == 0x113u) has_sys_pwr = true;
+        if (fr.id == 0x111u) has_hmi_mode = true;
+        if (fr.id == 0x112u) has_hmi_pwr = true;
+        if (fr.id == 0x7FDu) has_rt_hb = true;
+        if (fr.id == 0x7FCu) has_host_hb = true;
+    }
+    ASSERT_TRUE(has_ses);
+    ASSERT_TRUE(has_seb);
+    ASSERT_TRUE(has_drive);
+    ASSERT_FALSE(has_sys_mode); // suppressed in SYS mode
+    ASSERT_FALSE(has_sys_pwr);  // suppressed in SYS mode
+    ASSERT_TRUE(has_hmi_mode);
+    ASSERT_TRUE(has_hmi_pwr);
+    ASSERT_TRUE(has_rt_hb);
+    ASSERT_FALSE(has_host_hb);
+
+    // ── Test Mode 3: RT ──
+    snap.op_mode = rm::OperatingMode::Rt;
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, send_fn);
+
+    has_ses = false;
+    has_drive = false;
+    has_host_steer = false;
+    bool has_host_brake = false;
+    bool has_host_drive = false;
+    has_hmi_mode = true;
+    has_host_hb = false;
+
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x169u) has_ses = true;
+        if (fr.id == 0x204u) has_drive = true;
+        if (fr.id == 0x303u) has_host_steer = true;
+        if (fr.id == 0x301u) has_host_brake = true;
+        if (fr.id == 0x300u) has_host_drive = true;
+        if (fr.id == 0x7FCu) has_host_hb = true;
+    }
+    ASSERT_FALSE(has_ses);
+    ASSERT_FALSE(has_drive);
+    ASSERT_TRUE(has_host_steer);
+    ASSERT_TRUE(has_host_brake);
+    ASSERT_TRUE(has_host_drive);
+    ASSERT_TRUE(has_host_hb);
 }
 
 void test_can_frame_encoding() {
@@ -471,7 +600,8 @@ int main() {
     test_service_and_backup_braking();
     test_park_hold_semantic_request();
     test_drive_enable_direct_switch();
-    test_asymmetric_authority_request();
+    test_operating_mode_switch_decoding();
+    test_can_emitter_three_modes();
     test_can_frame_encoding();
 
     std::printf("----------------------------------------------------\n");

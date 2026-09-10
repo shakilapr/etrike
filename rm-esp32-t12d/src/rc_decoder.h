@@ -27,11 +27,11 @@ struct RcSnapshot {
     float      velocity_norm{0.0f};        // Signed demand: -1.0 (rev) to +1.0 (fwd)
 
     // ── Discrete HMI Toggles ─────────────────────────────────────────
-    bool       drive_enable_req{false};    // SWA: UP = Disabled, DOWN = Enable Request
-    bool       park_hold_req{true};        // SWB: UP = Released (0mm), DOWN = Park Hold (15mm)
-    bool       auto_mode_req{false};       // SWD: UP = Manual, DOWN = Auto Request
-    float      aux_vra{0.0f};              // CH9: VRA Knob (0.0 to 1.0)
-    float      aux_vrb{0.0f};              // CH10: VRB Knob (0.0 to 1.0)
+    bool          drive_enable_req{false};    // SWA: UP = Disabled, DOWN = Enable Request
+    bool          park_hold_req{true};        // SWB: UP = Released (0mm), DOWN = Park Hold (15mm)
+    OperatingMode op_mode{OperatingMode::Bare}; // SWD: UP = BARE, MID = SYS, DOWN = RT
+    float         aux_vra{0.0f};              // CH9: VRA Knob (0.0 to 1.0)
+    float         aux_vrb{0.0f};              // CH10: VRB Knob (0.0 to 1.0)
 
     // ── Link & Health Status ─────────────────────────────────────────
     LinkState  link_state{LinkState::Lost};
@@ -138,8 +138,14 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
             snap.gear = can::Gear::N;
         }
 
-        // CH8: SWD -> Manual / Auto Request (UP = Manual, DOWN = Auto Request)
-        snap.auto_mode_req = (pulse_us[kChAutoRequest] >= kSwitchThresholdUs);
+        // CH8: SWD -> 3-Position Operating Mode (UP = BARE, MID = SYS, DOWN = RT)
+        if (pulse_us[kChOperatingMode] <= kModeBareMaxUs) {
+            snap.op_mode = OperatingMode::Bare;
+        } else if (pulse_us[kChOperatingMode] >= kModeRtMinUs) {
+            snap.op_mode = OperatingMode::Rt;
+        } else {
+            snap.op_mode = OperatingMode::Sys;
+        }
 
         // CH9 & CH10: Aux Analog Knobs (0.0 to 1.0)
         float vra = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVra]) - 1000) / 1000.0f;
@@ -166,9 +172,9 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         snap.throttle_norm     = 0.0f;
         snap.drive_enable_req  = false;
         snap.park_hold_req     = true;
+        snap.op_mode           = OperatingMode::Bare;
         snap.gear              = can::Gear::N;
         snap.brake_stroke_mm   = kParkBrakeStrokeMm; // 15mm holding stroke
-        snap.auto_mode_req     = false;
         snap.aux_vra           = 0.0f;
         snap.aux_vrb           = 0.0f;
     }
