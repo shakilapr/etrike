@@ -107,6 +107,7 @@ All messages and signal formats are bound directly to canonical generated defini
 - Sends `VCU_SEB_REQ` (0x7B9) with raw stroke request ($600\dots 1140$).
 - Sends `RT_DRIVE_CMD` (0x204) with signed target velocity in mm/s and gear (`N`, `D`, `R`).
 - Periodically emits `SYS_MODE_CMD` (0x110) and `SYS_PWR_CMD` (0x113) so actuators detect an active system supervisor.
+- **Emulates the SYS safety authority by emitting `SYS_SAFETY_STS` (0x011, `estop_active=0`, valid AUTOSAR E2E CRC) at 10 Hz.** MTR gates ignition on `safety_state_valid_`, which is set only by `0x011` (`mtr-stm32/src/motor_manager.h:313/:194-212`); without it the motor never ignites. (Not emitted in SYS mode — the real `sys-esp32` owns `0x011` there.)
 
 #### 3.2 `SYS` Mode
 - Direct connection to `sys-esp32` on Low-CAN.
@@ -124,6 +125,7 @@ All messages and signal formats are bound directly to canonical generated defini
 - Emits `HOST_BRAKE_REQ` (0x301) with brake pressure in kPa (converted from millimeter demand).
 - Emits `HMI_MODE_REQ` (0x111) and `HMI_PWR_REQ` (0x112) for mode and power arbitration by RT and SYS.
 - Emits `HOST_HEARTBEAT` (0x7FC) at 2 Hz to keep RT host watchdog fresh.
+- **Also emulates the SYS authority** so `rt-esp32` grants motion: `rt-esp32` requires `READY_BIT_SAFETY(0x011) | READY_BIT_MODE(0x110) | READY_BIT_HOST(0x300)` (`rt-esp32/src/safety_stream_loss.h:50-51`). RT mode therefore additionally emits `SYS_SAFETY_STS` (0x011, `estop_active=0`, valid E2E CRC) and `SYS_MODE_CMD` (0x110, `mode=AUTO` when driving) at 10 Hz. Without a SYS present this is required; alternatively `rt-esp32` may be booted in `g_bench_solo_mode` (`rt-esp32/src/main.cpp:1311`), which suppresses the SYS/HOST authority gates.
 
 ---
 
