@@ -346,6 +346,26 @@ void test_service_and_backup_braking() {
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
     ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
     ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), static_cast<float>(rm::kSpeedFwdMaxMmps) * 0.5f, 50.0f); // 1500 mm/s
+
+    // 6. VRC pull in deadband (0 to -10%: 1500us down to 1460us) -> strictly 0.0mm brake
+    frame.channels[rm::kChAuxVrc] = rm::pulse_us_to_sbus(1470); // -6%
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f); // No brake in deadband!
+
+    // 7. VRC pulled down to full -100% (1000us) -> full 27.0mm brake & throttle cut to 0
+    frame.channels[rm::kChAuxVrc] = rm::pulse_us_to_sbus(1000);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.1f);
+    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+
+    // 8. VRC released, VRD pulled down to full -100% (1000us) -> full 27.0mm brake
+    frame.channels[rm::kChAuxVrc] = rm::pulse_us_to_sbus(1500);
+    frame.channels[rm::kChAuxVrd] = rm::pulse_us_to_sbus(1000);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.1f);
+    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
 }
 
 void test_park_hold_semantic_request() {

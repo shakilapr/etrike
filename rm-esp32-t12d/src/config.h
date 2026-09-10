@@ -70,6 +70,12 @@ constexpr uint32_t kPulseDeadbandUs     =   30;   // Steering center deadband (+
 constexpr uint32_t kBrakeStartUs        = 1650;   // Brake starts only after pushing forward past 1650us
 constexpr uint32_t kBrakeMaxUs          = 1950;   // Full 27.0mm brake stroke reached at 1950us
 
+// Auxiliary Pull-Down Brake (VRC CH11 & VRD CH12):
+// Resting at 0 (1500us). From 0 to -10 (1500us down to 1450us), strictly NO brake (deadband).
+// Beyond -10 down to -100 (1450us down to 1000us), progressive service brake (0.0 to 27.0mm).
+constexpr uint32_t kAuxBrakeDeadbandUs  = 1450;   // 1500us down to 1450us (0 to -10%) is deadband
+constexpr uint32_t kAuxBrakeMaxUs       = 1000;   // 1000us (-100%) reaches full 27.0mm brake stroke
+
 // SWA 3-Position Operating Mode Thresholds (UP = BARE, MID = SYS, DOWN = RT)
 constexpr uint32_t kModeBareMaxUs       = 1300;
 constexpr uint32_t kModeRtMinUs         = 1700;

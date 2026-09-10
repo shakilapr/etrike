@@ -118,11 +118,27 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
             stick_brake_mm = std::clamp(b_norm, 0.0f, 1.0f) * kMaxBrakeStrokeMm;
         }
 
+        // CH11 (VRC) & CH12 (VRD) Auxiliary Pull-Down Brake:
+        // Resting at 0 (1500us). From 0 to -10 (1500us down to 1450us), no brake (deadband).
+        // Beyond -10 down to -100 (1450us down to 1000us), progressive service brake.
+        float aux_pull_brake_mm = 0.0f;
+        for (uint8_t ch : {kChAuxVrc, kChAuxVrd}) {
+            if (pulse_us[ch] < kAuxBrakeDeadbandUs) {
+                float b_norm = static_cast<float>(kAuxBrakeDeadbandUs - pulse_us[ch]) /
+                               static_cast<float>(kAuxBrakeDeadbandUs - kAuxBrakeMaxUs);
+                float ch_brake = std::clamp(b_norm, 0.0f, 1.0f) * kMaxBrakeStrokeMm;
+                aux_pull_brake_mm = std::max(aux_pull_brake_mm, ch_brake);
+            }
+        }
+
+        // Active Service Brake combines Right Stick (CH2) and Aux Pull-Downs (VRC / VRD)
+        float active_service_brake_mm = std::max(stick_brake_mm, aux_pull_brake_mm);
+
         // CH6: SWB 3-Position Switch -> Park / Brake Hold (UP = Park Hold [15mm], MID/DOWN = Released [0mm])
         snap.park_hold_req = (pulse_us[kChParkHold] <= kParkHoldMaxUs);
 
         // Apply Park holding stroke if requested
-        snap.brake_stroke_mm = snap.park_hold_req ? std::max(stick_brake_mm, kParkBrakeStrokeMm) : stick_brake_mm;
+        snap.brake_stroke_mm = snap.park_hold_req ? std::max(active_service_brake_mm, kParkBrakeStrokeMm) : active_service_brake_mm;
 
         // CH3: Left Stick Y -> Throttle (0.0 to 1.0)
         float throttle_demand = 0.0f;
@@ -165,10 +181,17 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         // VRA (CH9) serves as the Dynamic Speed Governor (0.0 to 1.0 scale of speed limits)
         float vra = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVra]) - 1000) / 1000.0f;
         float vrb = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrb]) - 1000) / 1000.0f;
-        float vrc = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrc]) - 1000) / 1000.0f;
-        float vrd = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrd]) - 1000) / 1000.0f;
         snap.aux_vra = std::clamp(vra, kSpeedGovernorMinScale, kSpeedGovernorMaxScale);
         snap.aux_vrb = std::clamp(vrb, 0.0f, 1.0f);
+
+        // VRC (CH11) & VRD (CH12): Rest at 0 (1500us). Down pull goes 0 to -100 (1500us down to 1000us).
+        // 0 to +100 (> 1500us) is ignored (0.0).
+        float vrc = (pulse_us[kChAuxVrc] < kPulseCenterUs)
+                    ? static_cast<float>(kPulseCenterUs - pulse_us[kChAuxVrc]) / 500.0f
+                    : 0.0f;
+        float vrd = (pulse_us[kChAuxVrd] < kPulseCenterUs)
+                    ? static_cast<float>(kPulseCenterUs - pulse_us[kChAuxVrd]) / 500.0f
+                    : 0.0f;
         snap.aux_vrc = std::clamp(vrc, 0.0f, 1.0f);
         snap.aux_vrd = std::clamp(vrd, 0.0f, 1.0f);
 
