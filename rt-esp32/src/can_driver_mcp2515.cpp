@@ -3,6 +3,7 @@
 
 #include "can_driver_mcp2515.h"
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
@@ -30,16 +31,16 @@ static SemaphoreHandle_t g_control_mutex = nullptr;
 // task when a CAN frame is available. See issues/latency-issues.md §3.
 // Task handle is set on first receive() call; null-guarded in ISR
 // for the cold-boot window between init() and task creation.
-static TaskHandle_t g_rx_task_handle = nullptr;
+static std::atomic<TaskHandle_t> g_rx_task_handle{nullptr};
 
 // GPIO ISR for MCP2515 INT pin (falling edge, active-low).
 // IRAM_ATTR: prevents crash during concurrent flash operations
 // (NVS writes, OTA, crash dumps). Both vTaskNotifyGiveFromISR and
 // portYIELD_FROM_ISR are already in IRAM under ESP-IDF defaults.
 static void IRAM_ATTR mcp_int_isr(void* arg) {
-    if (g_rx_task_handle) {
+    if (const TaskHandle_t rx_task = g_rx_task_handle.load(std::memory_order_acquire)) {
         BaseType_t yield = pdFALSE;
-        vTaskNotifyGiveFromISR(g_rx_task_handle, &yield);
+        vTaskNotifyGiveFromISR(rx_task, &yield);
         if (yield) portYIELD_FROM_ISR(yield);
     }
 }
@@ -388,7 +389,7 @@ bool Mcp2515Driver::set_mode(Mode mode) {
 }
 
 void Mcp2515Driver::set_rx_task_handle(TaskHandle_t handle) {
-    g_rx_task_handle = handle;
+    g_rx_task_handle.store(handle, std::memory_order_release);
 }
 
 // ── Send ───────────────────────────────────────────────────────────
@@ -455,8 +456,8 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
     // Cold boot: ISR is installed during init() but task doesn't
     // exist yet. Bus-off recovery: task already exists and handle
     // is already set (idempotent assignment).
-    if (g_rx_task_handle == nullptr)
-        g_rx_task_handle = xTaskGetCurrentTaskHandle();
+    // Interrupts are published from app_main after task creation; receive
+    // no longer mutates shared ISR state.
 
     // ── Return pre-read second buffer with zero SPI latency ───────
     // When both RXB0 and RXB1 have frames, the first is returned
