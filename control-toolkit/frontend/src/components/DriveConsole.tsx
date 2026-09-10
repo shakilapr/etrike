@@ -204,6 +204,10 @@ export function DriveConsole() {
     dynSlewDegS: 125,
   })
 
+  const [visMode, setVisMode] = useState<'auto' | 'high' | 'low' | 'local'>('auto')
+  const visModeRef = useRef<'auto' | 'high' | 'low' | 'local'>(visMode)
+  visModeRef.current = visMode
+
   /** Slider caps read from refs so canvas/intent loops do not tear down on every drag tick. */
   const maxSpeedRef = useRef(maxSpeedMmps)
   const maxYawRef = useRef(maxYawMrad)
@@ -255,35 +259,94 @@ export function DriveConsole() {
     highLive || lowDriveLive || motionLive || sesReqLive || sesStatusLive || sebReqLive || sebStatusLive || mtrLive
   const canLive = highLive || lowDriveLive || motionLive
 
-  const canSpeed = motionValid
+  // High Bus values (HOST_DRIVE_CMD 0x300, RT_MOTION_RPT 0x121)
+  const highSpeed = motionValid
     ? numSignal(motionMsg, 'speed_mmps')
-    : lowDriveLive
-      ? signalVal(lowDriveMsg, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
-      : highLive
-        ? numSignal(driveMsg, 'speed_mmps')
-        : mtrLive
-          ? signalVal(mtrFbkMsg, 'actual_speed_mmps', 'motor_command_speed_mmps')
-          : null
+    : highLive
+      ? numSignal(driveMsg, 'speed_mmps')
+      : null
+  const highYaw = motionValid
+    ? -(numSignal(motionMsg, 'yaw_rate_mrad_s') ?? 0)
+    : highLive
+      ? numSignal(driveMsg, 'yaw_rate_mrad_s')
+      : null
+  const highGear = gearFromCan(motionValid ? motionMsg : null) ?? gearFromCan(driveMsg)
 
-  const canSteerDeg = sesStatusLive
+  // Low Bus values (RT_DRIVE_CMD 0x204, SES, SEB, MTR 0x206)
+  const lowSpeed = lowDriveLive
+    ? signalVal(lowDriveMsg, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
+    : mtrLive
+      ? signalVal(mtrFbkMsg, 'actual_speed_mmps', 'motor_command_speed_mmps')
+      : null
+  const lowSteerDeg = sesStatusLive
     ? (numSignal(sesStatusMsg, 'angle_deg') ?? (numSignal(sesStatusMsg, 'actual_angle_raw') != null ? numSignal(sesStatusMsg, 'actual_angle_raw')! * 0.1 : null))
     : sesReqLive
       ? (numSignal(sesReqMsg, 'target_angle_deg') ?? (numSignal(sesReqMsg, 'target_angle_raw') != null ? numSignal(sesReqMsg, 'target_angle_raw')! * 0.1 : null))
       : null
+  const lowYaw = (lowSteerDeg != null && lowSpeed != null && Math.abs(lowSpeed) > 10)
+    ? ((lowSpeed / 1000 * Math.tan((lowSteerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000)
+    : null
+  const lowGear = gearFromCan(lowDriveLive ? lowDriveMsg : null) ?? gearFromCan(mtrFbkMsg)
 
-  const canYaw = motionValid
-    ? -(numSignal(motionMsg, 'yaw_rate_mrad_s') ?? 0)
-    : highLive
-      ? numSignal(driveMsg, 'yaw_rate_mrad_s')
-      : canSteerDeg != null && canSpeed != null && Math.abs(canSpeed) > 10
-        ? ((canSpeed / 1000 * Math.tan((canSteerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000)
-        : null
+  // Selected telemetry based on active visualizer mode
+  const canSpeed =
+    visMode === 'high'
+      ? highSpeed
+      : visMode === 'low'
+        ? lowSpeed
+        : visMode === 'local'
+          ? null
+          : (motionValid
+              ? numSignal(motionMsg, 'speed_mmps')
+              : lowDriveLive
+                ? signalVal(lowDriveMsg, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
+                : highLive
+                  ? numSignal(driveMsg, 'speed_mmps')
+                  : mtrLive
+                    ? signalVal(mtrFbkMsg, 'actual_speed_mmps', 'motor_command_speed_mmps')
+                    : null)
+
+  const canSteerDeg =
+    visMode === 'high'
+      ? (highYaw != null && canSpeed != null && Math.abs(canSpeed) > 10
+          ? (Math.atan(((highYaw / 1000) * (L / PIXELS_PER_METER)) / (canSpeed / 1000)) * 180) / Math.PI
+          : null)
+      : visMode === 'low'
+        ? lowSteerDeg
+        : visMode === 'local'
+          ? null
+          : (sesStatusLive
+              ? (numSignal(sesStatusMsg, 'angle_deg') ?? (numSignal(sesStatusMsg, 'actual_angle_raw') != null ? numSignal(sesStatusMsg, 'actual_angle_raw')! * 0.1 : null))
+              : sesReqLive
+                ? (numSignal(sesReqMsg, 'target_angle_deg') ?? (numSignal(sesReqMsg, 'target_angle_raw') != null ? numSignal(sesReqMsg, 'target_angle_raw')! * 0.1 : null))
+                : null)
+
+  const canYaw =
+    visMode === 'high'
+      ? highYaw
+      : visMode === 'low'
+        ? lowYaw
+        : visMode === 'local'
+          ? null
+          : (motionValid
+              ? -(numSignal(motionMsg, 'yaw_rate_mrad_s') ?? 0)
+              : highLive
+                ? numSignal(driveMsg, 'yaw_rate_mrad_s')
+                : canSteerDeg != null && canSpeed != null && Math.abs(canSpeed) > 10
+                  ? ((canSpeed / 1000 * Math.tan((canSteerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000)
+                  : null)
 
   const canGear =
-    gearFromCan(motionValid ? motionMsg : null) ??
-    gearFromCan(lowDriveLive ? lowDriveMsg : null) ??
-    gearFromCan(driveMsg) ??
-    gearFromCan(mtrFbkMsg)
+    visMode === 'high'
+      ? highGear
+      : visMode === 'low'
+        ? lowGear
+        : visMode === 'local'
+          ? null
+          : (gearFromCan(motionValid ? motionMsg : null) ??
+             gearFromCan(lowDriveLive ? lowDriveMsg : null) ??
+             gearFromCan(driveMsg) ??
+             gearFromCan(mtrFbkMsg))
   // RT reports trike-right-positive yaw; the Universe visualization is left-positive.
 
   // Vehicle motion gate (firmware): non-zero RT_DRIVE_CMD only in AUTO.
@@ -720,6 +783,8 @@ export function DriveConsole() {
     function updateFromCan(dt: number) {
       const state = stateRef.current
       const msgs = useAppStore.getState().messages
+      const mode = visModeRef.current
+
       const highDrive =
         msgs.find((m) => m.name === 'HOST_DRIVE_CMD' && m.bus === 'high') ??
         msgs.find((m) => m.name === 'HOST_DRIVE_CMD')
@@ -753,22 +818,35 @@ export function DriveConsole() {
       const highLiveNow = highDrive?.freshness?.toLowerCase() === 'live'
       const sesStatusLiveNow = sesStatus?.freshness?.toLowerCase() === 'live'
       const sesReqLiveNow = sesReq?.freshness?.toLowerCase() === 'live'
+      const sebStatusLiveNow = sebStatus?.freshness?.toLowerCase() === 'live'
+      const sebReqLiveNow = sebReq?.freshness?.toLowerCase() === 'live'
       const mtrLiveNow = mtrFbk?.freshness?.toLowerCase() === 'live'
 
-      // Speed selection: measured > low cmd > high cmd > mtr feedback > shaped
+      // Speed selection based on mode:
+      // high: measured (0x121) > high cmd (0x300) > shaped
+      // low: low cmd (0x204) > mtr feedback (0x206) > shaped
+      // auto: measured > low cmd > high cmd > mtr feedback > shaped
       const measuredSpeedMmps = motionIsValid ? numSignal(motion, 'speed_mmps') : null
+      const highSpeedMmps = highLiveNow ? numSignal(highDrive, 'speed_mmps') : null
       const lowSpeedMmps = lowLiveNow
         ? signalVal(lowDrive, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
         : null
-      const highSpeedMmps = highLiveNow ? numSignal(highDrive, 'speed_mmps') : null
       const mtrSpeedMmps = mtrLiveNow
         ? signalVal(mtrFbk, 'actual_speed_mmps', 'motor_command_speed_mmps')
         : null
-      const speedMmps =
-        measuredSpeedMmps ?? lowSpeedMmps ?? highSpeedMmps ?? mtrSpeedMmps ?? shapedRef.current.speed
+
+      let speedMmps: number
+      if (mode === 'high') {
+        speedMmps = measuredSpeedMmps ?? highSpeedMmps ?? shapedRef.current.speed
+      } else if (mode === 'low') {
+        speedMmps = lowSpeedMmps ?? mtrSpeedMmps ?? shapedRef.current.speed
+      } else {
+        speedMmps =
+          measuredSpeedMmps ?? lowSpeedMmps ?? highSpeedMmps ?? mtrSpeedMmps ?? shapedRef.current.speed
+      }
 
       // Steering / Yaw selection
-      const steerDeg =
+      const sesSteerDeg =
         (sesStatusLiveNow
           ? (numSignal(sesStatus, 'angle_deg') ??
              (numSignal(sesStatus, 'actual_angle_raw') != null
@@ -784,14 +862,40 @@ export function DriveConsole() {
 
       const measuredYawMrad = motionIsValid ? -(numSignal(motion, 'yaw_rate_mrad_s') ?? 0) : null
       const highYawMrad = highLiveNow ? numSignal(highDrive, 'yaw_rate_mrad_s') : null
-      const yawMrad = measuredYawMrad ?? highYawMrad ?? shapedRef.current.yaw
+
+      let steerDeg: number | null = null
+      let yawMrad: number = shapedRef.current.yaw
+
+      if (mode === 'high') {
+        yawMrad = measuredYawMrad ?? highYawMrad ?? shapedRef.current.yaw
+      } else if (mode === 'low') {
+        steerDeg = sesSteerDeg
+        if (steerDeg != null && Math.abs(speedMmps) > 10) {
+          yawMrad = (speedMmps / 1000 * Math.tan((steerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000
+        }
+      } else {
+        // auto
+        if (sesSteerDeg != null) {
+          steerDeg = sesSteerDeg
+        }
+        yawMrad = measuredYawMrad ?? highYawMrad ?? (steerDeg != null && Math.abs(speedMmps) > 10
+          ? (speedMmps / 1000 * Math.tan((steerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000
+          : shapedRef.current.yaw)
+      }
 
       // Gear selection
-      const g =
-        (motionIsValid ? gearFromCan(motion) : null) ??
-        (lowLiveNow ? gearFromCan(lowDrive) : null) ??
-        gearFromCan(highDrive) ??
-        gearFromCan(mtrFbk)
+      let g: Gear | null = null
+      if (mode === 'high') {
+        g = (motionIsValid ? gearFromCan(motion) : null) ?? gearFromCan(highDrive)
+      } else if (mode === 'low') {
+        g = (lowLiveNow ? gearFromCan(lowDrive) : null) ?? gearFromCan(mtrFbk)
+      } else {
+        g =
+          (motionIsValid ? gearFromCan(motion) : null) ??
+          (lowLiveNow ? gearFromCan(lowDrive) : null) ??
+          gearFromCan(highDrive) ??
+          gearFromCan(mtrFbk)
+      }
 
       // While armed, `gear` is the operator's next command. CAN gear remains
       // visible through displayGear but must not overwrite a freshly selected
@@ -820,12 +924,13 @@ export function DriveConsole() {
       state.alpha += (targetAlpha - state.alpha) * Math.min(1, 10 * dt)
 
       // Brake
-      const lowBrakeKpa =
-        numSignal(sebStatus, 'pressure_kpa') ??
-        (numSignal(sebReq, 'pressure_request_raw') != null
-          ? numSignal(sebReq, 'pressure_request_raw')! * 20
-          : null)
-      if (lowBrakeKpa != null && lowBrakeKpa > 50) {
+      const lowBrakeKpa = (mode === 'high')
+        ? null
+        : (numSignal(sebStatus, 'pressure_kpa') ??
+           (numSignal(sebReq, 'pressure_request_raw') != null
+             ? numSignal(sebReq, 'pressure_request_raw')! * 20
+             : null))
+      if (lowBrakeKpa != null && (sebStatusLiveNow || sebReqLiveNow) && lowBrakeKpa > 50) {
         state.brakePressureKpa = Math.min(2000, lowBrakeKpa)
         state.isBraking = true
       } else {
@@ -914,27 +1019,45 @@ export function DriveConsole() {
       const dt = (ts - lastTimeRef.current) / 1000
       lastTimeRef.current = ts
       if (dt < 0.1) {
+        const mode = visModeRef.current
         const msgs = useAppStore.getState().messages
-        const hasLiveMotion = msgs.some((m) => {
-          if (m.freshness?.toLowerCase() !== 'live') return false
-          return (
-            m.name === 'RT_MOTION_RPT' ||
-            m.name === 'RT_DRIVE_CMD' ||
-            m.name === 'HOST_DRIVE_CMD' ||
-            m.name === 'VCU_SES_REQ' ||
-            m.name === 'SES_STATUS' ||
-            m.name === 'MTR_MOTOR_FBK'
-          )
-        })
+
+        const hasHighTraffic = msgs.some(
+          (m) => m.freshness?.toLowerCase() === 'live' && (m.name === 'RT_MOTION_RPT' || m.name === 'HOST_DRIVE_CMD'),
+        )
+        const hasLowTraffic = msgs.some(
+          (m) =>
+            m.freshness?.toLowerCase() === 'live' &&
+            (m.name === 'RT_DRIVE_CMD' || m.name === 'VCU_SES_REQ' || m.name === 'SES_STATUS' || m.name === 'MTR_MOTOR_FBK'),
+        )
+        const hasLiveMotion = hasHighTraffic || hasLowTraffic
         const hasActiveKeys = Object.values(keysRef.current).some(Boolean)
-        if (armedRef.current) {
-          updateFromCan(dt)
-        } else if (hasActiveKeys) {
+
+        if (mode === 'local') {
           updateLocal(dt)
-        } else if (hasLiveMotion) {
-          updateFromCan(dt)
+        } else if (mode === 'high') {
+          if (armedRef.current || hasHighTraffic) {
+            updateFromCan(dt)
+          } else {
+            updateLocal(dt)
+          }
+        } else if (mode === 'low') {
+          if (hasLowTraffic) {
+            updateFromCan(dt)
+          } else {
+            updateLocal(dt)
+          }
         } else {
-          updateLocal(dt)
+          // 'auto'
+          if (armedRef.current) {
+            updateFromCan(dt)
+          } else if (hasActiveKeys) {
+            updateLocal(dt)
+          } else if (hasLiveMotion) {
+            updateFromCan(dt)
+          } else {
+            updateLocal(dt)
+          }
         }
       }
       const r = wrap!.getBoundingClientRect()
@@ -1031,63 +1154,54 @@ export function DriveConsole() {
       onPointerDownCapture={() => setFocused(true)}
     >
       <header className="drive-topbar" data-testid="drive-topbar">
-        <div className="drive-top-title">
+        <div className="drive-top-left">
           <div className="drive-top-headline">
             <h1>Drive</h1>
-            <span className="muted small drive-top-desc">
-              High-bus kinematics (<span className="mono">HOST_DRIVE_CMD 0x300</span>)
-            </span>
             <span className="chip tiny">Operate</span>
           </div>
+          <div className="drive-vis-selector" data-testid="drive-vis-selector">
+            <span className="drive-vis-label muted small">Visualizer:</span>
+            <div className="seg compact" data-testid="seg-vis-mode">
+              <button
+                type="button"
+                className={`seg-btn ${visMode === 'auto' ? 'active' : ''}`}
+                data-testid="vis-mode-auto"
+                title="Auto priority: measured report -> low actuals -> high command -> local"
+                onClick={() => setVisMode('auto')}
+              >
+                Auto
+              </button>
+              <button
+                type="button"
+                className={`seg-btn ${visMode === 'high' ? 'active' : ''}`}
+                data-testid="vis-mode-high"
+                title="Visualize High CAN bus: HOST_DRIVE_CMD 0x300 and RT_MOTION_RPT 0x121"
+                onClick={() => setVisMode('high')}
+              >
+                High CAN
+              </button>
+              <button
+                type="button"
+                className={`seg-btn ${visMode === 'low' ? 'active' : ''}`}
+                data-testid="vis-mode-low"
+                title="Visualize Low CAN bus: RT_DRIVE_CMD 0x204, SES, SEB, MTR 0x206"
+                onClick={() => setVisMode('low')}
+              >
+                Low CAN
+              </button>
+              <button
+                type="button"
+                className={`seg-btn ${visMode === 'local' ? 'active' : ''}`}
+                data-testid="vis-mode-local"
+                title="Visualize offline local physics only (keys/keycaps)"
+                onClick={() => setVisMode('local')}
+              >
+                Local Sim
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="drive-top-chips" data-testid="drive-status-chips">
-          <span className={`chip quality-${quality}`} title="WebSocket stream quality">
-            <span className="chip-k">Stream</span>
-            <span className="chip-v">
-              {quality === 'live'
-                ? 'Live'
-                : quality === 'delayed'
-                  ? 'Delayed'
-                  : quality === 'lost'
-                    ? 'Lost'
-                    : 'Connecting'}
-            </span>
-          </span>
-          <span className={`chip ${benchOn ? 'ok' : ''}`} title="Session Bench TX gate">
-            <span className="chip-k">Bench TX</span>
-            <span className="chip-v">{benchOn ? 'On' : 'Off'}</span>
-          </span>
-          <span className={`chip ${armed ? 'ok' : ''}`} data-testid="drive-arm-chip">
-            <span className="chip-k">Control</span>
-            <span className="chip-v">{armed ? 'Armed' : 'Local'}</span>
-          </span>
-          <span className={`chip ${motionValid ? 'ok' : canLive ? 'ok' : ''}`} title="RT_MOTION_RPT or CAN command freshness">
-            <span className="chip-k">{motionValid ? '0x121' : lowDriveLive ? '0x204' : highLive ? '0x300' : '0x121'}</span>
-            <span className="chip-v">{motionValid ? 'Measured' : lowDriveLive ? 'Low CMD' : highLive ? 'Command' : 'Idle'}</span>
-          </span>
-          <span
-            className={`chip ${rtModeLive && rtModeLabel === 'AUTO' ? 'ok' : motionLocked ? 'danger' : ''}`}
-            title="RT vehicle mode (from RT_STATE_RPT). Motion requires AUTO."
-            data-testid="drive-rt-mode-chip"
-          >
-            <span className="chip-k">RT mode</span>
-            <span className="chip-v">
-              {rtModeLive && rtModeLabel ? rtModeLabel : rtModeLabel ? `${rtModeLabel}?` : '—'}
-            </span>
-          </span>
-          <span
-            className={`chip ${sysLive ? 'ok' : isPhysical ? 'danger' : ''}`}
-            title="SYS heartbeat on Low bus — required for AUTO mode changes"
-            data-testid="drive-sys-chip"
-          >
-            <span className="chip-k">SYS</span>
-            <span className="chip-v">{sysLive ? 'Live' : isPhysical ? 'Missing' : 'N/A'}</span>
-          </span>
-          <span className={`chip ${focused ? 'ok' : ''}`} data-testid="drive-focus-chip">
-            <span className="chip-k">Keys</span>
-            <span className="chip-v">{focused ? 'Ready' : 'Click UI'}</span>
-          </span>
-        </div>
+
         <div className="actions tight drive-top-actions">
           {fullVehicle ? (
             <span className="chip danger" data-testid="drive-mode-restriction">
@@ -1129,6 +1243,65 @@ export function DriveConsole() {
         </div>
       </header>
 
+      <div className="drive-substrip" data-testid="drive-status-chips">
+        <div className="drive-chips-group">
+          <span className={`chip quality-${quality}`} title="WebSocket stream quality">
+            <span className="chip-k">Stream</span>
+            <span className="chip-v">
+              {quality === 'live'
+                ? 'Live'
+                : quality === 'delayed'
+                  ? 'Delayed'
+                  : quality === 'lost'
+                    ? 'Lost'
+                    : 'Connecting'}
+            </span>
+          </span>
+          <span className={`chip ${benchOn ? 'ok' : ''}`} title="Session Bench TX gate">
+            <span className="chip-k">Bench TX</span>
+            <span className="chip-v">{benchOn ? 'On' : 'Off'}</span>
+          </span>
+          <span className={`chip ${armed ? 'ok' : ''}`} data-testid="drive-arm-chip">
+            <span className="chip-k">Control</span>
+            <span className="chip-v">{armed ? 'Armed' : 'Local'}</span>
+          </span>
+          <span className={`chip ${motionValid ? 'ok' : canLive ? 'ok' : ''}`} title="RT_MOTION_RPT or CAN command freshness">
+            <span className="chip-k">
+              {visMode === 'high' ? 'High Bus' : visMode === 'low' ? 'Low Bus' : motionValid ? '0x121' : lowDriveLive ? '0x204' : highLive ? '0x300' : '0x121'}
+            </span>
+            <span className="chip-v">
+              {visMode === 'high'
+                ? motionValid ? 'Measured (0x121)' : highLive ? 'Command (0x300)' : 'Idle'
+                : visMode === 'low'
+                  ? lowDriveLive ? 'CMD (0x204)' : mtrLive ? 'MTR FBK (0x206)' : 'Idle'
+                  : motionValid ? 'Measured' : lowDriveLive ? 'Low CMD' : highLive ? 'Command' : 'Idle'}
+            </span>
+          </span>
+          <span
+            className={`chip ${rtModeLive && rtModeLabel === 'AUTO' ? 'ok' : motionLocked ? 'danger' : ''}`}
+            title="RT vehicle mode (from RT_STATE_RPT). Motion requires AUTO."
+            data-testid="drive-rt-mode-chip"
+          >
+            <span className="chip-k">RT mode</span>
+            <span className="chip-v">
+              {rtModeLive && rtModeLabel ? rtModeLabel : rtModeLabel ? `${rtModeLabel}?` : '—'}
+            </span>
+          </span>
+          <span
+            className={`chip ${sysLive ? 'ok' : isPhysical ? 'danger' : ''}`}
+            title="SYS heartbeat on Low bus — required for AUTO mode changes"
+            data-testid="drive-sys-chip"
+          >
+            <span className="chip-k">SYS</span>
+            <span className="chip-v">{sysLive ? 'Live' : isPhysical ? 'Missing' : 'N/A'}</span>
+          </span>
+          <span className={`chip ${focused ? 'ok' : ''}`} data-testid="drive-focus-chip">
+            <span className="chip-k">Keys</span>
+            <span className="chip-v">{focused ? 'Ready' : 'Click UI'}</span>
+          </span>
+        </div>
+      </div>
+
       <div className="drive-layout">
         <div
           className="preview-canvas-wrap"
@@ -1148,32 +1321,52 @@ export function DriveConsole() {
           }}
         >
           <canvas ref={canvasRef} data-testid="preview-canvas" />
-          <button
-            type="button"
-            className="drive-canvas-btn"
-            data-testid="btn-reset-view"
-            title="Reset vehicle position and heading"
-            onClick={(e) => {
-              e.stopPropagation()
-              resetPose()
-              focusDrive()
-            }}
-          >
-            Center vehicle
-          </button>
+
+          {/* Floating Canvas Top Toolbar */}
+          <div className="drive-canvas-toolbar" data-testid="drive-canvas-toolbar">
+            <div className="drive-canvas-source-badge" data-testid="drive-canvas-source">
+              <span className="pulse-dot" />
+              <span className="source-name">
+                {visMode === 'high'
+                  ? 'High CAN (0x300 / 0x121)'
+                  : visMode === 'low'
+                    ? 'Low CAN (0x204 / Actuators)'
+                    : visMode === 'local'
+                      ? 'Local Simulation'
+                      : armed
+                        ? 'Auto (Armed High 0x300)'
+                        : hasLiveBusTraffic
+                          ? 'Auto (Bus Traffic)'
+                          : 'Auto (Sim)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="drive-canvas-btn"
+              data-testid="btn-reset-view"
+              title="Reset vehicle position and heading"
+              onClick={(e) => {
+                e.stopPropagation()
+                resetPose()
+                focusDrive()
+              }}
+            >
+              Center vehicle
+            </button>
+          </div>
 
           {/* Cockpit Instrument HUD */}
           <div className="drive-canvas-hud" data-testid="drive-canvas-hud">
             <div className="drive-gauges" data-testid="drive-gauges">
               <Gauge
-                label="cmd speed"
+                label={visMode === 'low' ? 'low speed' : 'cmd speed'}
                 value={displaySpeed}
                 unit="mm/s"
                 max={Math.max(1, maxSpeedMmps)}
                 tone="accent"
               />
               <Gauge
-                label="cmd yaw"
+                label={visMode === 'low' ? 'calc yaw' : 'cmd yaw'}
                 value={displayYaw}
                 unit="mrad/s"
                 max={Math.max(1, maxYawMrad)}
@@ -1399,21 +1592,27 @@ export function DriveConsole() {
             <div className="drive-section-head">
               <h2>Telemetry details</h2>
               <span className="muted small mono">
-                {armed
-                  ? canLive
-                    ? lowDriveLive
-                      ? 'from Low bus (0x204)'
-                      : 'from High bus (0x300)'
-                    : 'waiting 0x300'
-                  : hasLiveBusTraffic
-                    ? lowDriveLive
-                      ? 'live Low bus (0x204)'
-                      : 'live High bus'
-                    : 'local preview'}
+                {visMode === 'high'
+                  ? 'High Bus mode'
+                  : visMode === 'low'
+                    ? 'Low Bus mode'
+                    : visMode === 'local'
+                      ? 'Local sim'
+                      : armed
+                        ? canLive
+                          ? lowDriveLive
+                            ? 'Auto (0x204)'
+                            : 'Auto (0x300)'
+                          : 'waiting 0x300'
+                        : hasLiveBusTraffic
+                          ? lowDriveLive
+                            ? 'Auto (0x204)'
+                            : 'Auto (High)'
+                          : 'local preview'}
               </span>
             </div>
             <dl className="kv preview-kv" data-testid="preview-telemetry">
-              <dt>{lowDriveLive ? 'Low command speed / steer' : 'Command speed / yaw'}</dt>
+              <dt>{visMode === 'low' || (visMode === 'auto' && lowDriveLive) ? 'Low command speed / steer' : 'Command speed / yaw'}</dt>
               <dd className="mono">
                 {displaySpeed.toFixed(0)} mm/s ·{' '}
                 {canSteerDeg != null
