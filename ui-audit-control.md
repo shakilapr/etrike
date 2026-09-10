@@ -1,0 +1,217 @@
+- generic [ref=f1e3] [box=0,0,1800,1125]:
+  - banner [ref=f1e4] [box=0,0,1800,87]:
+    - generic [ref=f1e5] [box=0,0,1800,54]:
+      - generic [ref=f1e6] [box=14,10,312,34]:
+        - generic [ref=f1e7] [box=14,14,140,26]: eT Control Toolkit
+        - group "Transport mode" [ref=f1e8] [box=162,10,164,34]:
+          - button "Computer" [pressed] [ref=f1e9] [cursor=pointer] [box=163,11,98,32]
+          - button "Real" [ref=f1e13] [cursor=pointer] [box=261,11,64,32]
+      - generic "System health" [ref=f1e21] [box=338,8,1324,38]:
+        - generic "Combined stream, adapter, ESTOP, and protocol health" [ref=f1e22] [box=349,13,67,28]: Healthy
+        - generic [ref=f1e26] [box=437,14,85,26]:
+          - generic [ref=f1e27] [box=446,17,39,16]: Stream
+          - generic [ref=f1e28] [box=490,17,23,16]: Live
+        - generic "Computer · dual virtual CAN" [ref=f1e365] [box=532,14,83,26]:
+          - generic [ref=f1e30] [box=541,17,23,16]: Link
+          - generic [ref=f1e31] [box=569,17,37,16]: Virtual
+        - generic "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP" [ref=f1e32] [box=624,14,132,26]:
+          - generic [ref=f1e33] [box=633,17,38,16]: ESTOP
+          - generic [ref=f1e34] [box=676,17,30,16]: Clear
+          - generic "SAFETY_ESTOP bus presence" [ref=f1e35] [box=713,19,35,16]:
+            - generic "No recent 0x001 on High" [ref=f1e36] [box=713,19,16,16]: H
+            - generic "No recent 0x001 on Low" [ref=f1e37] [box=732,19,16,16]: L
+        - generic "Bench TX must be enabled before inject / control" [ref=f1e38] [box=767,14,76,26]:
+          - generic [ref=f1e39] [box=776,17,16,16]: TX
+          - generic [ref=f1e40] [box=796,17,37,16]: Armed
+        - generic "High bus · activity active · rx 9402" [ref=f1e754] [box=864,16,154,23]:
+          - generic [ref=f1e44] [box=885,19,26,16]: High
+          - generic [ref=f1e45] [box=915,19,94,17]:
+            - text: active
+            - generic [ref=f1e46] [box=958,19,50,16]: · 9402
+        - generic "Low bus · activity active · rx 11952" [ref=f1e755] [box=1028,16,159,23]:
+          - generic [ref=f1e49] [box=1049,19,23,16]: Low
+          - generic [ref=f1e50] [box=1077,19,101,17]:
+            - text: active
+            - generic [ref=f1e51] [box=1120,19,58,16]: · 11952
+      - button "Inject ESTOP" [ref=f1e53] [cursor=pointer] [box=1674,11,112,32]
+    - generic [ref=f1e54] [box=0,54,1800,32]:
+      - generic "Operating profile / destination" [ref=f1e55] [box=14,61,200,17]:
+        - generic [ref=f1e56] [box=14,63,45,15]: Profile
+        - generic [ref=f1e57] [box=64,61,102,16]: Computer · Virtual
+        - generic [ref=f1e58] [box=171,61,4,16]: ·
+        - generic [ref=f1e59] [box=180,61,34,16]: virtual
+      - generic "Session phase and id" [ref=f1e60] [box=228,61,190,17]:
+        - generic [ref=f1e61] [box=228,63,48,15]: Session
+        - generic [ref=f1e62] [box=281,61,137,17]:
+          - text: running
+          - generic [ref=f1e521] [box=324,61,94,16]: · ses_3d4d98
+      - generic "virtual" [ref=f1e368] [box=432,61,90,17]:
+        - generic [ref=f1e64] [box=432,63,52,15]: Adapter
+        - generic [ref=f1e65] [box=488,61,34,16]: active
+      - generic "Requested vs confirmed vehicle mode" [ref=f1e66] [box=536,61,59,17]:
+        - generic [ref=f1e67] [box=536,63,33,15]: Mode
+        - generic [ref=f1e68] [box=574,61,21,17]: —→—
+      - generic "Requested vs confirmed power" [ref=f1e69] [box=609,61,66,17]:
+        - generic [ref=f1e70] [box=609,63,40,15]: Power
+        - generic [ref=f1e71] [box=654,61,21,17]: —→—
+      - generic [ref=f1e72] [box=689,61,44,17]:
+        - generic [ref=f1e73] [box=689,63,22,15]: Rec
+        - generic [ref=f1e74] [box=716,61,17,16]: "Off"
+      - generic "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c" [ref=f1e369] [box=747,61,111,17]:
+        - generic [ref=f1e76] [box=747,62,26,15]: Wire
+        - generic [ref=f1e77] [box=779,61,79,17]: a78bf0d5f1…
+      - generic "ECU connection from CAN" [ref=f1e78] [box=1536,59,250,21]:
+        - generic "Host · heartbeat 0x7FC High · missing · age 241352 ms" [ref=f1e756] [box=1547,59,34,21]: Host
+        - generic "RT · heartbeat 0x7FD High · offline" [ref=f1e82] [box=1581,59,35,21]: RT-H
+        - generic "RT · heartbeat 0x7FD Low · offline" [ref=f1e85] [box=1615,59,35,21]: RT-L
+        - generic "SYS · heartbeat 0x7FE Low · live · age 89 ms" [ref=f1e757] [box=1650,59,34,21]: SYS
+        - generic "MTR · motor feedback 0x206 Low · offline" [ref=f1e91] [box=1684,59,34,21]: MTR
+        - generic "Steering-by-wire (SES / EPS-C) · SES_STATUS 0x201 Low · offline" [ref=f1e94] [box=1718,59,34,21]: SBW
+        - generic "Brake-by-wire (SEB) · SEB_STATUS 0x721 Low · offline" [ref=f1e97] [box=1752,59,34,21]: BBW
+  - generic [ref=f1e100] [box=0,87,1800,1039]:
+    - complementary "Application sidebar" [ref=f1e101] [box=0,87,252,1039]:
+      - navigation "Activity bar" [ref=f1e102] [box=0,87,251,45]:
+        - button "Workspace explorer" [ref=f1e103] [cursor=pointer] [box=8,93,77,32]
+        - button "Control" [ref=f1e109] [cursor=pointer] [box=87,93,77,32]
+        - button "CAN monitor" [ref=f1e114] [cursor=pointer] [box=166,93,77,32]
+      - generic "Workspace explorer" [ref=f1e117] [box=0,132,251,994]:
+        - navigation "Primary workspaces" [ref=f1e118] [box=0,132,251,548]:
+          - generic [ref=f1e119] [box=10,146,231,119]:
+            - paragraph [ref=f1e120] [box=18,146,215,15]: Observe
+            - button "Overview" [ref=f1e121] [cursor=pointer] [box=10,166,231,32]
+            - button "Network" [ref=f1e128] [cursor=pointer] [box=10,199,231,32]
+            - button "Live CAN" [ref=f1e136] [cursor=pointer] [box=10,232,231,32]
+          - generic [ref=f1e140] [box=10,281,231,86]:
+            - paragraph [ref=f1e141] [box=18,281,215,15]: Operate
+            - button "Control" [active] [ref=f1e142] [cursor=pointer] [box=10,301,231,32]
+            - button "Drive" [ref=f1e148] [cursor=pointer] [box=10,334,231,32]
+          - generic [ref=f1e153] [box=10,383,231,185]:
+            - paragraph [ref=f1e154] [box=18,383,215,15]: Analysis
+            - button "Bench" [ref=f1e155] [cursor=pointer] [box=10,404,231,32]
+            - button "Inject" [ref=f1e159] [cursor=pointer] [box=10,437,231,32]
+            - button "Dictionary" [ref=f1e163] [cursor=pointer] [box=10,470,231,32]
+            - button "Diagnostics" [ref=f1e168] [cursor=pointer] [box=10,503,231,32]
+            - button "Logging" [ref=f1e173] [cursor=pointer] [box=10,536,231,32]
+          - generic [ref=f1e177] [box=10,585,231,86]:
+            - paragraph [ref=f1e178] [box=18,585,215,15]: System
+            - button "Settings" [ref=f1e179] [cursor=pointer] [box=10,605,231,32]
+            - button "UI kit" [ref=f1e184] [cursor=pointer] [box=10,638,231,32]
+        - region "eTrike" [ref=f1e191] [box=10,683,231,152]:
+          - generic [ref=f1e192] [box=11,684,229,47]:
+            - generic [ref=f1e197] [box=44,693,98,31]:
+              - strong [ref=f1e198] [box=44,693,98,17]: eTrike
+              - generic [ref=f1e199] [box=44,710,98,15]: Cmd TX ? feedback
+            - generic [ref=f1e200] [box=195,702,35,14]: Live
+          - generic [ref=f1e201] [box=11,732,229,58]:
+            - generic [ref=f1e202] [box=11,733,115,57]:
+              - generic [ref=f1e203] [box=21,740,95,13]: Speed fbk
+              - strong [ref=f1e204] [box=21,755,95,13]: "?"
+              - generic [ref=f1e205] [box=21,771,95,12]: cmd 0 mm/s
+            - generic [ref=f1e206] [box=126,733,115,57]:
+              - generic [ref=f1e207] [box=137,740,94,13]: Steer fbk
+              - strong [ref=f1e208] [box=137,755,94,13]: "?"
+              - generic [ref=f1e209] [box=137,771,94,12]: cmd yaw 0 mrad/s
+          - generic [ref=f1e210] [box=11,790,229,45]:
+            - generic [ref=f1e211] [box=19,797,213,13]:
+              - generic [ref=f1e212] [box=19,797,52,13]: TX High
+              - generic [ref=f1e213] [box=77,797,109,13]: 0x300 0 mm/s ? yaw 0 mrad/s ? gear D
+              - generic [ref=f1e214] [box=192,797,40,13]: missing
+            - generic [ref=f1e215] [box=19,814,213,13]:
+              - generic [ref=f1e216] [box=19,815,52,13]: TX Low
+              - generic [ref=f1e217] [box=77,814,109,13]: 0x204 0 mm/s ? gear N
+              - generic [ref=f1e218] [box=192,815,40,13]: missing
+        - generic [ref=f1e222] [box=36,1070,180,32]:
+          - strong [ref=f1e223] [box=36,1070,180,17]: Stream live
+          - generic [ref=f1e224] [box=36,1088,180,14]: Computer · Virtual ? adapter active
+    - main [ref=f1e225] [box=252,87,1280,1039]:
+      - generic [ref=f1e675] [box=252,87,1280,766]:
+        - generic [ref=f1e676] [box=270,103,1244,76]:
+          - heading "Control" [level=1] [ref=f1e677] [box=270,103,1244,23]
+          - paragraph [ref=f1e678] [box=270,128,545,50]: Select one motion method at a time. High, Low-all and MTR-only are exclusive because High control also makes RT publish Low 0x204. All methods share the same Bench TX Arm gate. Quick keyboard / TX / fake-signal tools live in the Control activity sidebar.
+        - generic [ref=f1e679] [box=270,190,1244,262]:
+          - generic [ref=f1e680] [box=270,190,615,262]:
+            - generic [ref=f1e681] [box=287,205,581,56]:
+              - generic [ref=f1e682] [box=287,205,183,56]:
+                - generic [ref=f1e683] [box=287,205,183,17]: Session
+                - strong [ref=f1e684] [box=287,224,183,18]: ses_3d4d98ede003
+              - generic [ref=f1e685] [box=486,205,183,56]:
+                - generic [ref=f1e686] [box=486,205,183,17]: Bench TX (TX gate)
+                - strong [ref=f1e687] [box=486,224,183,18]: ON ? bus TX allowed
+              - generic [ref=f1e688] [box=685,205,183,56]:
+                - generic [ref=f1e689] [box=685,205,183,17]: Backend motion
+                - strong [ref=f1e690] [box=685,224,183,18]: none
+                - generic [ref=f1e691] [box=685,244,183,17]: No active motion method
+            - generic [ref=f1e692] [box=287,271,581,32]:
+              - button "Turn Bench TX off" [ref=f1e693] [cursor=pointer] [box=287,271,132,32]
+              - button "Keep Bench TX on" [ref=f1e694] [cursor=pointer] [box=427,271,133,32]
+              - button "Stop all motion TX" [ref=f1e695] [cursor=pointer] [box=568,271,132,32]
+          - generic [ref=f1e696] [box=899,190,615,262]:
+            - heading "What do you want to control?" [level=2] [ref=f1e697] [box=916,205,581,17]
+            - tablist "Control method" [ref=f1e698] [box=916,230,581,70]:
+              - tab "High bus ? Host drive" [selected] [ref=f1e699] [cursor=pointer] [box=917,231,148,32]
+              - tab "Low bus ? Actuators" [ref=f1e700] [cursor=pointer] [box=1069,231,143,32]
+              - tab "MTR direct ? 0x204" [ref=f1e701] [cursor=pointer] [box=1217,231,139,32]
+              - tab "HMI ? Mode / power" [ref=f1e702] [cursor=pointer] [box=917,267,142,32]
+            - generic [ref=f1e704] [box=916,312,581,125]:
+              - strong [ref=f1e705] [box=931,325,551,18]: High bus ? Host kinematics
+              - paragraph [ref=f1e706] [box=931,349,551,75]:
+                - text: You send HOST_DRIVE_CMD 0x300 (speed / yaw / gear). RT runs kinematics. Use keyboard here or the Drive tab. Does
+                - strong [ref=f1e707] [box=931,383,551,18]: not
+                - text: talk to motor/steer/brake IDs on Low.
+        - generic [ref=f1e708] [box=270,464,1244,292]:
+          - generic [ref=f1e709] [box=270,464,437,292]:
+            - heading "1 ? Keyboard teleop" [level=2] [ref=f1e710] [box=285,477,407,17]
+            - paragraph [ref=f1e711] [box=285,502,407,50]: Continuous Host intent via POST /control/intent (shaped on backend). Needs Bench TX on. Focus the page; blur / hide tab releases control.
+            - button "Start keyboard" [ref=f1e713] [cursor=pointer] [box=285,564,112,32]
+            - list [ref=f1e714] [box=285,608,407,44]:
+              - listitem [ref=f1e715] [box=303,608,389,22]:
+                - generic [ref=f1e716] [box=303,608,18,22]: W
+                - text: /
+                - generic [ref=f1e717] [box=325,608,18,22]: "?"
+                - text: throttle ?
+                - generic [ref=f1e718] [box=399,608,18,22]: S
+                - text: /
+                - generic [ref=f1e719] [box=422,608,18,22]: "?"
+                - text: reverse
+              - listitem [ref=f1e720] [box=303,630,389,22]:
+                - generic [ref=f1e721] [box=303,630,18,22]: A
+                - text: /
+                - generic [ref=f1e722] [box=325,630,18,22]: D
+                - text: yaw ?
+                - generic [ref=f1e723] [box=382,630,42,22]: Shift
+                - text: hard brake ?
+                - generic [ref=f1e724] [box=501,630,42,22]: Space
+                - text: ESTOP
+          - generic [ref=f1e725] [box=721,464,793,292]:
+            - heading "2 ? Numeric inject (analysis)" [level=2] [ref=f1e726] [box=736,477,763,17]
+            - paragraph [ref=f1e727] [box=736,502,763,34]: One-shot or periodic HOST_DRIVE_CMD via POST /analysis/host-drive. For fixed speed/yaw experiments ? not the same as keyboard (keyboard uses /control/intent).
+            - generic [ref=f1e728] [box=736,548,763,140]:
+              - generic [ref=f1e729] [box=736,548,182,76]:
+                - text: Speed, mm/s
+                - textbox "Speed, mm/s ?500 ? 3000" [ref=f1e730] [box=736,570,104,32]: "500"
+                - generic [ref=f1e731] [box=736,608,182,15]: "?500 ? 3000"
+              - generic [ref=f1e732] [box=930,548,182,76]:
+                - text: Yaw rate, mrad/s
+                - textbox "Yaw rate, mrad/s ?3000 ? 3000" [ref=f1e733] [box=930,570,104,32]: "250"
+                - generic [ref=f1e734] [box=930,608,182,15]: "?3000 ? 3000"
+              - generic [ref=f1e735] [box=1124,548,182,76]:
+                - text: Gear
+                - combobox "Gear" [ref=f1e736] [box=1124,570,182,32]
+              - generic [ref=f1e737] [box=1317,548,182,76]:
+                - text: Period, ms
+                - textbox "Period, ms Only used if periodic is checked" [ref=f1e738] [box=1317,570,104,32]: "100"
+                - generic [ref=f1e739] [box=1317,608,182,15]: Only used if periodic is checked
+              - generic [ref=f1e740] [box=736,654,182,34]:
+                - checkbox "Periodic stream (else one-shot frame)" [checked] [ref=f1e741] [box=736,664,13,13]
+                - text: Periodic stream (else one-shot frame)
+            - generic [ref=f1e742] [box=736,699,763,32]:
+              - button "Start periodic inject" [ref=f1e743] [cursor=pointer] [box=736,699,140,32]
+              - button "Stop periodic inject" [ref=f1e744] [cursor=pointer] [box=884,699,139,32]
+        - generic [ref=f1e745] [box=270,780,1244,56]: 1) Turn Bench TX on ? 2) Pick High / Low / HMI ? 3) Start keyboard, inject, or streams
+    - complementary "Active host TX" [ref=f1e746] [box=1532,87,268,1039]:
+      - generic [ref=f1e747] [box=1543,97,247,26]:
+        - generic [ref=f1e748] [box=1543,100,76,19]:
+          - strong [ref=f1e749] [box=1543,100,62,18]: Active TX
+          - generic [ref=f1e750] [box=1611,102,7,17]: "0"
+        - button "Collapse Active TX" [expanded] [ref=f1e752] [cursor=pointer] [box=1764,97,26,26]: ›
+      - paragraph [ref=f1e753] [box=1543,135,247,17]: No host TX
