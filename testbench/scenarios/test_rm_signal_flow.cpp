@@ -137,13 +137,17 @@ bool test_signal_flow_rt() {
     float ses_ang = ses.actual_angle_0_1deg();
     float seb_mm  = seb.actual_stroke_mm();
     bool  mtr_ok  = mtr.node_status().ready && mtr.is_traction_enabled();
+    bool  auth    = rt.is_motion_authorized();
     std::cout << "  RT mode=" << (rt.active_mode() == can::Mode::Auto ? "AUTO" : "NOT-AUTO")
+              << "  authority=" << (auth ? "GRANTED" : "NONE")
               << "  RT cmd speed=" << rt.commanded_speed_mmps()
               << "  SES angle=" << ses_ang << " (exp " << kSteer20degRaw << ")"
               << "  SEB stroke=" << seb_mm << "mm (exp " << kBrake15mm << ")"
               << "  MTR traction=" << (mtr_ok ? "YES" : "NO") << "\n";
 
-    bool ok = near(ses_ang, kSteer20degRaw, 10.0f) && near(seb_mm, kBrake15mm, 0.6f) && mtr_ok;
+    // Motion authority must come from the real SYS on the LOW bus (all three
+    // readiness bits), not from rm's high-bus SYS emulation.
+    bool ok = auth && near(ses_ang, kSteer20degRaw, 10.0f) && near(seb_mm, kBrake15mm, 0.6f) && mtr_ok;
     if (!ok) std::cerr << "  FAIL: signal did not reach all RT-mode units\n";
     return ok;
 }

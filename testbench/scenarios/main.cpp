@@ -35,6 +35,8 @@ namespace testbench {
     bool test_rm_bare_ignites_mtr();
     bool test_rm_sys_mode_seamless();
     bool test_rm_rt_mode_reaches_rt();
+    bool test_rm_rt_low_sys_authority();
+    bool test_rm_rt_low_sys_011_loss();
     // Section 5: end-to-end signal flow through intermediate controllers
     bool test_signal_flow_bare();
     bool test_signal_flow_sys();
@@ -127,7 +129,9 @@ int main(int argc, char* argv[]) {
     std::cout << "--- SECTION 4: rm-esp32-t12d Operator Gateway Integration ---\n";
     run_test("RM BARE ignites MTR (0x011 present)", testbench::test_rm_bare_ignites_mtr);
     run_test("RM SYS drives sys-esp32 seamlessly (AUTO)", testbench::test_rm_sys_mode_seamless);
-    run_test("RM RT frames reach rt-esp32 (0x300/0x011/0x110)", testbench::test_rm_rt_mode_reaches_rt);
+    run_test("RM RT high-bus frames ignored for authority", testbench::test_rm_rt_mode_reaches_rt);
+    run_test("RM RT + LOW-bus SYS authority grants motion", testbench::test_rm_rt_low_sys_authority);
+    run_test("RM RT LOW-bus 0x011 loss -> rt fail-safe", testbench::test_rm_rt_low_sys_011_loss);
 
     std::cout << "--- SECTION 5: End-to-End Signal Flow (steer/throttle/brake) ---\n";
     run_test("Signal flow BARE: rm -> SES/SEB/MTR", testbench::test_signal_flow_bare);

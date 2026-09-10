@@ -1,5 +1,7 @@
 #include "nodes/rt_node.hpp"
 #include "protocol/codecs/ses.hpp"
+#include "protocol/compat/e2e.hpp"
+#include "shared_config.h"
 
 namespace testbench {
 
@@ -22,6 +24,19 @@ void RtNode::init() {
     host_hb_seen_ = false;
     host_hb_lost_ = false;
     last_host_hb_ms_ = 0;
+
+    // Authority gates: boot is UNACQUIRED (never "all clear").
+    safety_sup_.reset(0);
+    last_safety_sts_ms_ = -1;
+    sys_estop_ = false;
+    mode_val_inited_ = false;
+    mode_valid_ = false;
+    last_mode_ms_ = 0;
+    host_drive_seen_ = false;
+    last_host_drive_ms_ = 0;
+    safety_ok_ = false;
+    mode_ok_ = false;
+    host_ok_ = false;
     last_steer_tx_ms_ = 0;
     last_brake_tx_ms_ = 0;
     rt_hb_ctr_ = 0;
@@ -55,14 +70,6 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
     can::Frame cf = frame;
     bool is_high = (bus_name == high_can_.name());
 
-    // System mode authority (0x110) may arrive on either bus (rm emulating SYS).
-    if (cf.id == can::kIdSysModeCmd) {
-        can::gen::SysModeCmd mcmd{};
-        if (can::decode_frame(cf, mcmd) == can::gen::CodecStatus::Ok) {
-            active_mode_ = (mcmd.mode == 1) ? can::Mode::Auto : can::Mode::Manual;
-        }
-    }
-
     // ── High CAN Ingest & Gatewaying ─────────────────────────────────
     if (is_high) {
         if (cf.id == can::kIdHostDriveCmd) {
@@ -71,6 +78,8 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
                 host_speed_mmps_ = cmd.speed_mmps;
                 host_yaw_rate_ = cmd.yaw_rate_mrad_s;
                 host_gear_ = static_cast<can::Gear>(cmd.gear);
+                host_drive_seen_ = true;
+                last_host_drive_ms_ = last_now_ms_;
             }
         } else if (cf.id == can::kIdHostSteerCmd) {
             can::gen::HostSteerCmd scmd{};
@@ -109,26 +118,47 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
             // Gateway forward Low -> High (never echo back to Low!)
             high_can_.send(NodeId::RT, cf);
         } else if (cf.id == can::kIdSysSafetySts) {
+            // 0x011 is rt's authoritative E-stop / safety authority source, but
+            // ONLY on the low bus (can_dispatch.h:157). Validate the AUTOSAR E2E
+            // CRC before feeding the readiness supervisor (safety_stream_loss.h).
             can::gen::SysSafetySts smsg{};
             if (can::decode_frame(cf, smsg) == can::gen::CodecStatus::Ok) {
-                if (smsg.estop_active) {
-                    estop_latched_ = true;
-                    rt_clear_confirm_count_ = 0;
-                    commanded_speed_mmps_ = 0;
-                } else if (!software_estop_active_) {
-                    // Requires 2 consecutive clear frames before unlatching
-                    rt_clear_confirm_count_++;
-                    if (rt_clear_confirm_count_ >= 2) {
-                        estop_latched_ = false;
+                const uint8_t crc = can::e2e::sys_safety_sts_crc(cf.data.data());
+                if (crc == cf.data[4]) {
+                    last_safety_sts_ms_ = last_now_ms_;
+                    sys_estop_ = smsg.estop_active;
+                    if (smsg.estop_active) {
+                        estop_latched_ = true;
+                        rt_clear_confirm_count_ = 0;
+                        commanded_speed_mmps_ = 0;
+                    } else if (!software_estop_active_) {
+                        // Requires 2 consecutive clear frames before unlatching
+                        rt_clear_confirm_count_++;
+                        if (rt_clear_confirm_count_ >= 2) {
+                            estop_latched_ = false;
+                        }
                     }
                 }
             }
             // Forward safety status to High CAN for Host
             high_can_.send(NodeId::RT, cf);
         } else if (cf.id == can::kIdSysModeCmd) {
+            // 0x110 is authoritative ONLY on the low bus (can_rx_router.h:64-84).
+            // A high-bus 0x110 (e.g. rm emulating SYS) must be ignored so the
+            // model cannot mask a wrong-bus deployment.
             can::gen::SysModeCmd mcmd{};
             if (can::decode_frame(cf, mcmd) == can::gen::CodecStatus::Ok) {
-                active_mode_ = (mcmd.mode == 1) ? can::Mode::Auto : can::Mode::Manual;
+                if (!mode_val_inited_) {
+                    mode_val_.set_key(1, can::kIdSysModeCmd,
+                                      can::gen::SysModeCmd::kCycleMs * 5);
+                    mode_val_inited_ = true;
+                }
+                const bool ok = mode_val_.observe(mcmd.rolling_counter, last_now_ms_);
+                mode_valid_ = ok;
+                if (ok) {
+                    active_mode_ = (mcmd.mode == 1) ? can::Mode::Auto : can::Mode::Manual;
+                }
+                last_mode_ms_ = last_now_ms_;
             }
         } else if (cf.id == can::kIdMtrMotorFbk) {
             last_mtr_fbk_ms_ = last_now_ms_;
@@ -159,11 +189,31 @@ void RtNode::step(uint32_t now_ms, uint32_t dt_ms) {
         host_hb_lost_ = true;
     }
 
-    // Safety arbitration for motion authority:
-    // If in AUTO, no ESTOP, MTR feedback healthy and Host alive, command host speed.
-    // If MTR feedback is lost: zero setpoint (recoverable inhibit), but NO global ESTOP!
-    if (active_mode_ == can::Mode::Auto && !estop_latched_ && !mtr_feedback_lost_
-        && !host_hb_lost_) {
+    // SYS authority readiness (mirrors rt-esp32 main.cpp:1100 + safety_stream_loss.h).
+    // SAFETY (0x011, LOW) | MODE (0x110, LOW) | HOST (0x300, HIGH). Boot is
+    // UNACQUIRED; a never-seen 0x011 can never license motion.
+    {
+        const int64_t now_us = static_cast<int64_t>(now_ms) * 1000;
+        const int64_t last_us = (last_safety_sts_ms_ < 0)
+                                    ? -1
+                                    : static_cast<int64_t>(last_safety_sts_ms_) * 1000;
+        rt::SafetyStreamStatus sst = safety_sup_.update(now_us, last_us);
+        if (sst.estop_latch_required) estop_latched_ = true;  // ACQUIRED -> LOST fail-safe
+        safety_ok_ = sst.motion_authorized && !sys_estop_;
+
+        const uint32_t mode_window = can::gen::SysModeCmd::kCycleMs * 5;
+        mode_ok_ = mode_valid_ && (now_ms - last_mode_ms_ <= mode_window)
+                   && active_mode_ == can::Mode::Auto;
+
+        host_ok_ = host_drive_seen_
+                   && (now_ms - last_host_drive_ms_ <= shared::kHostCmdStaleTimeoutMs);
+    }
+
+    // Motion requires ALL THREE readiness bits, no ESTOP, healthy MTR feedback and
+    // Host heartbeat. A missing bit zeroes the setpoint (recoverable inhibit) —
+    // never a global ESTOP.
+    if (safety_ok_ && mode_ok_ && host_ok_ && !estop_latched_
+        && !mtr_feedback_lost_ && !host_hb_lost_) {
         commanded_speed_mmps_ = host_speed_mmps_;
     } else {
         commanded_speed_mmps_ = 0;
