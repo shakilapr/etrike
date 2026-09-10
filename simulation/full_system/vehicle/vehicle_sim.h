@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string>
 
-#include "core/rt_core.h"
+#include "rt_core.h"
 #include "models/host_model.h"
 #include "models/mtr_model.h"
 #include "models/sys_model.h"

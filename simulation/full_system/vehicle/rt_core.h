@@ -28,7 +28,7 @@
 #include <functional>
 
 #include "protocol/compat/can.hpp"
-#include "../safety_stream_loss.h"  // real rt::SafetyStreamSupervisor (pure C++)
+#include "rt-esp32/src/safety_stream_loss.h"  // real rt::SafetyStreamSupervisor (pure C++)
 
 namespace sim {
 
