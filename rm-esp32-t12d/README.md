@@ -16,30 +16,37 @@ In the E-Trike distributed control system, `rm-esp32-t12d` functions strictly as
 - **Immediate Authority**: Switch toggles command immediate vehicle setpoints without artificial arming delays or multi-second lockouts.
 
 ```
-              [SWA] (2-pos)             [SWB] (2-pos)             [SWC] (3-pos)             [SWD] (3-pos)
+              [SWA] (3-pos)             [SWB] (3-pos)             [SWC] (3-pos)             [SWD] (2-pos)
               ┌───────────┐             ┌───────────┐             ┌───────────┐             ┌───────────┐
-              │   DRIVE   │             │   PARK /  │             │   GEAR    │             │ OPERATING │
-              │   ENABLE  │             │    HOLD   │             │  SELECT   │             │   MODE    │
-              │  REQUEST  │             │           │             │           │             │  SELECT   │
+              │ OPERATING │             │   PARK /  │             │   GEAR    │             │   DRIVE   │
+              │   MODE    │             │    HOLD   │             │  SELECT   │             │   ENABLE  │
+              │  SELECT   │             │           │             │           │             │  REQUEST  │
               └───────────┘             └───────────┘             └───────────┘             └───────────┘
-               UP: DISABLE               UP: RELEASED (0mm)        UP:  REVERSE (R)          UP:  BARE
-               DN: ENABLE REQ            DN: PARK HOLD (15mm)      MID: NEUTRAL (N)          MID: SYS
-                                                                   DN:  DRIVE   (D)          DN:  RT
+               UP:  BARE                 UP:  PARK HOLD (15mm)     UP:  REVERSE (R)          UP: DISABLE
+               MID: SYS                  MID: RELEASED (0mm)       MID: NEUTRAL (N)          DN: ENABLE REQ
+               DN:  RT                   DN:  RELEASED (0mm)       DN:  DRIVE   (D)
 
                      [VRA] (rotary)                            [VRB] (rotary)
                      ┌───────────┐                             ┌───────────┐
-                     │    AUX    │                             │    AUX    │
-                     │  ANALOG 1 │                             │  ANALOG 2 │
+                     │   SPEED   │                             │    AUX    │
+                     │  GOVERNOR │                             │  ANALOG 2 │
                      └───────────┘                             └───────────┘
-                       (0.0..1.0)                                (0.0..1.0)
+                      (0.0..1.0)                                (0.0..1.0)
+
+                     [VRC] (shoulder)                          [VRD] (shoulder)
+                     ┌───────────┐                             ┌───────────┐
+                     │ AUX BRAKE │                             │ AUX BRAKE │
+                     │ PULL-DOWN │                             │ PULL-DOWN │
+                     └───────────┘                             └───────────┘
+                      (0 to -100%)                              (0 to -100%)
 
            LEFT GIMBAL (Ratcheted Throttle)               RIGHT GIMBAL (Spring Centered)
            ┌───────────────────────────┐              ┌───────────────────────────┐
            │             ▲             │              │             ▲             │
            │             │ THROTTLE    │              │             │ BRAKE (Y)   │ SERVICE BRAKE
            │     ◄───────┼───────►     │              │     ◄───────┼───────►     │ (0.0 to 27.0 mm)
-           │             │ (0 to 100%) │              │   STEER (X) │             │
-           │             ▼             │              │ (±45.0° Rack)             │
+           │             │ (0 to 100%) │              │   STEER (X) │ (Wide Center│ (Deadband: ±220us)
+           │             ▼             │              │ (±45.0° Rack) Deadband)   │
            └───────────────────────────┘              └───────────────────────────┘
                    (Left Stick)                               (Right Stick)
 ```
@@ -50,16 +57,18 @@ In the E-Trike distributed control system, `rm-esp32-t12d` functions strictly as
 
 | Channel | Physical Control | Function | Signal Interpretation & Range | CAN Target |
 | :---: | :--- | :--- | :--- | :--- |
-| **CH1** | **Right Stick X** | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw, $\pm 30\,\mu\text{s}$ deadband) | `0x169 VCU_SES_REQ` / `0x303 HOST_STEER_CMD` |
-| **CH2** | **Right Stick Y** | **Service Brake** | Proportional: $0.0\dots 27.0\text{ mm}$ stroke ($600\dots 1140$ raw, spring forward) | `0x7B9 VCU_SEB_REQ` / `0x301 HOST_BRAKE_REQ` |
-| **CH3** | **Left Stick Y** | **Motor Throttle** | Proportional: $0\dots 100\%$ ($1050\dots 1950\,\mu\text{s}$) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
-| **CH5** | **SWA Switch** | **Drive Enable** | 2-Position: UP = Disabled, DOWN = Enable Request | `0x113 SYS_PWR_CMD` / `0x112 HMI_PWR_REQ` |
-| **CH6** | **SWB Switch** | **Park / Brake Hold** | 2-Position: UP = Released ($0\text{ mm}$), DOWN = Park Hold ($15\text{ mm}$, Neutral) | `0x7B9` / `0x301` |
+| **CH1** | **Right Stick X** | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw, $\pm 30\,\mu\text{s}$ center deadband) | `0x169 VCU_SES_REQ` / `0x303 HOST_STEER_CMD` |
+| **CH2** | **Right Stick Y** | **Service Brake** | Proportional: $0.0\dots 27.0\text{ mm}$ stroke (Push/Pull outside $1280\dots 1720\,\mu\text{s}$ deadband) | `0x7B9 VCU_SEB_REQ` / `0x301 HOST_BRAKE_REQ` |
+| **CH3** | **Left Stick Y** | **Motor Throttle** | Proportional: $0\dots 100\%$ ($1160\dots 1900\,\mu\text{s}$, rest $\le 1160\,\mu\text{s} = 0\%$) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
+| **CH4** | **Left Stick X** | **Aux Implement X** | Proportional: $0.0\dots 1.0$ | Aux / Telemetry |
+| **CH5** | **SWA Switch** | **Operating Mode** | 3-Position: UP = `BARE`, MID = `SYS`, DOWN = `RT` | Target CAN Cluster Selection |
+| **CH6** | **SWB Switch** | **Park / Brake Hold** | 3-Position: UP = Park Hold ($15\text{ mm}$, Neutral), MID/DOWN = Released ($0\text{ mm}$) | `0x7B9` / `0x301` |
 | **CH7** | **SWC Switch** | **Gear Selector** | 3-Position: UP = Reverse (`R`), MID = Neutral (`N`), DOWN = Drive (`D`) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
-| **CH8** | **SWD Switch** | **Operating Mode**| 3-Position: UP = `BARE`, MID = `SYS`, DOWN = `RT` | Mode Cluster Selection |
-| **CH9** | **VRA Knob** | **Aux Analog 1** | Rotary Potentiometer: $0.0\dots 1.0$ | Telemetry / Aux |
+| **CH8** | **SWD Switch** | **Drive Enable** | 2-Position: UP = Disabled (OFF), DOWN = Enable Request (ON) | `0x113 SYS_PWR_CMD` / `0x112 HMI_PWR_REQ` |
+| **CH9** | **VRA Knob** | **Speed Governor** | Rotary Potentiometer: $0.0\dots 1.0$ (Scales max ceiling for D and R from 0% to 100%) | Motor Command Governor |
 | **CH10**| **VRB Knob** | **Aux Analog 2** | Rotary Potentiometer: $0.0\dots 1.0$ | Telemetry / Aux |
-| **CH4, CH11, CH12** | *Spare* | **Reserved** | Unused in core driving pipeline | — |
+| **CH11**| **VRC Knob** | **Aux Brake Pull** | Shoulder control: Rest at 0 (1500us); 0 to -10% deadband; -10% to -100% applies 0 to 27mm brake | `0x7B9` / `0x301` Service Brake |
+| **CH12**| **VRD Knob** | **Aux Brake Pull** | Shoulder control: Rest at 0 (1500us); 0 to -10% deadband; -10% to -100% applies 0 to 27mm brake | `0x7B9` / `0x301` Service Brake |
 
 ---
 
@@ -70,16 +79,18 @@ In the E-Trike distributed control system, `rm-esp32-t12d` functions strictly as
 - **Smooth Ramp**: Angle ramps continuously from $0.0^\circ$ beyond the deadband up to $\pm 45.0^\circ$ rack mechanical limit.
 - **Steer While Parked**: Steering remains functional while parked to allow tire pre-alignment.
 
-### B. Service Brake & Park Brake (CH2 Right Stick Y & CH6 SWB)
-- **Service Brake**: Pushing Right Stick Y forward applies $0.0\dots 27.0\text{ mm}$ progressive caliper stroke.
-- **Park / Brake Hold**: Flipping SWB DOWN engages $15.0\text{ mm}$ holding stroke and forces transmission gear to Neutral (`can::Gear::N`) and target speed to $0\text{ mm/s}$.
-- **Arbitration**: Caliper stroke commands $\max(\text{stick\_brake}, \text{park\_hold\_brake})$.
+### B. Service Brake & Park Brake (CH2, CH11, CH12 & CH6)
+- **Right Stick Service Brake (CH2)**: Extra-wide center deadband ($\pm 220\,\mu\text{s}$, active only outside $1280\dots 1720\,\mu\text{s}$) prevents accidental braking during hard steering. Beyond deadband, applies progressive $0.0\dots 27.0\text{ mm}$ stroke.
+- **Aux Pull-Down Brakes (VRC CH11 & VRD CH12)**: At rest ($0 / 1500\,\mu\text{s}$), brake is $0.0\text{ mm}$. First $0\dots -10\%$ is deadband (no brake). Pulling down past $-10\%$ to $-100\%$ progressively applies $0.0\dots 27.0\text{ mm}$ brake.
+- **Park / Brake Hold (SWB CH6)**: Flipping SWB UP engages $15.0\text{ mm}$ holding stroke and forces transmission gear to Neutral (`can::Gear::N`) and target speed to $0\text{ mm/s}$.
+- **Arbitration**: Caliper stroke commands $\max(\text{stick\_brake}, \text{vrc\_brake}, \text{vrd\_brake}, \text{park\_hold\_brake})$.
 
-### C. Throttle & Speed Calculation (CH3 Left Stick Y & CH7 SWC)
+### C. Throttle & VRA Speed Governor (CH3, CH9 & CH7)
 - **Drive Active Condition**: Drive requires `drive_enable_req && !park_hold_req && signal_valid`.
-- **Target Speed**:
-  - Gear **D**: $0\dots +3000\text{ mm/s}$ ($0\dots 10.8\text{ km/h}$).
-  - Gear **R**: $0\dots -500\text{ mm/s}$ ($0\dots 1.8\text{ km/h}$).
+- **Idle Deadband**: Pulses $\le 1160\,\mu\text{s}$ are strictly $0\%$ to provide a solid mechanical rest zone.
+- **VRA Dynamic Speed Governor (CH9)**: Scales maximum speed ceiling from $0\%$ to $100\%$ of parameter limits for both Drive and Reverse. Full Left Stick travel maps smoothly across the active ceiling:
+  - Gear **D**: $0\dots +(\text{VRA} \times 3000)\text{ mm/s}$ (up to $10.8\text{ km/h}$).
+  - Gear **R**: $0\dots -(\text{VRA} \times 500)\text{ mm/s}$ (up to $1.8\text{ km/h}$).
   - Gear **N** or Park: $0\text{ mm/s}$.
 - **Brake-Over-Throttle Interlock**: Total brake stroke $> 5.0\text{ mm}$ immediately cuts throttle demand to $0$.
 
@@ -113,15 +124,19 @@ Only **three connections** are required between the R16F receiver and the ESP32:
 ### 5.1 RadioLink T12D Transmitter Configuration
 1. Power on T12D.
 2. In the System/Model menu, ensure protocol is set to **FHSS V2.1** (required for 12 proportional channels).
-3. Assign physical controls:
+3. Assign physical controls in **BASIC MENU $\to$ AUX-CH**:
    - CH1: Right Stick X (Steering)
-   - CH2: Right Stick Y (Velocity)
-   - CH3: Left Stick X (Aux X)
-   - CH4: Left Stick Y (Aux Y)
-   - CH5: SWA (Drive Enable)
-   - CH6: SWB (Park / Brake Hold)
-   - CH7: SWC (Drive Envelope)
-   - CH8: SWD (Manual / Auto)
+   - CH2: Right Stick Y (Service Brake)
+   - CH3: Left Stick Y (Motor Throttle)
+   - CH4: Left Stick X (Aux Implement X)
+   - CH5: SWA (Operating Mode: UP=BARE, MID=SYS, DOWN=RT)
+   - CH6: SWB (Park Hold: UP=HOLD, MID/DOWN=OFF)
+   - CH7: SWC (Transmission Gear: UP=R, MID=N, DOWN=D)
+   - CH8: SWD (Drive Enable: UP=OFF, DOWN=ON)
+   - CH9: VRA (Speed Governor: 0% to 100%)
+   - CH10: VRB (Aux Analog 2)
+   - CH11: VRC (Aux Brake Pull: 0 to -100%)
+   - CH12: VRD (Aux Brake Pull: 0 to -100%)
 
 ### 5.2 Binding R16F Receiver
 1. Place transmitter and receiver ~60 cm apart.
@@ -142,13 +157,9 @@ Only **three connections** are required between the R16F receiver and the ESP32:
 ## 6. Serial Telemetry Logging
 
 To maintain optimal serial throughput at 100 Hz CAN transmit rate, `rm-esp32-t12d` uses a **dual-rate change-driven + 2 Hz decimated logger**:
-- Dynamic changes (steering $\ge 1^\circ$, brake $\ge 0.5\text{ mm}$, speed $\ge 50\text{ mm/s}$, gear, enable, park, mode) are logged immediately:
+- Dynamic changes (steering $\ge 1^\circ$, brake $\ge 0.5\text{ mm}$, throttle $\ge 5\%$, speed $\ge 50\text{ mm/s}$, governor $\ge 5\%$, gear, enable, park, mode) are logged immediately:
   ```text
-  I (14502) tx: [BARE] STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF
-  ```
-- 1 Hz periodic health and status summary:
-  ```text
-  I (24500) rm_t12d: STATUS | Link=OK Valid=1 Enable=1 Gear=D Steer=+0.0 deg Brk=0.0 mm Throt=60% Spd=1800 | CAN ok=1420 fail=0
+  I (14502) tx: STR:+0.0 BRK: 0.0  THR: 50% GOV: 80% MTR:+1200[D]  ARM:ON  PRK:OFF  MOD:BARE RF:OK
   ```
 
 ---

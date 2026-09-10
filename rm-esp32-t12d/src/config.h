@@ -66,9 +66,9 @@ constexpr uint32_t kPulseCenterUs       = 1500;
 constexpr uint32_t kPulseDeadbandUs     =   30;   // Steering center deadband (+/- 30us)
 
 // Service Brake Deadband on Right Stick Vertical (CH2)
-// Generous deadband (+150us, up to 1650us) so operator can freely steer left/right without accidentally grazing the brake.
-constexpr uint32_t kBrakeStartUs        = 1650;   // Brake starts only after pushing forward past 1650us
-constexpr uint32_t kBrakeMaxUs          = 1950;   // Full 27.0mm brake stroke reached at 1950us
+// Wide deadband (+/-220us, active only outside 1280..1720us) so operator can freely steer full-lock without grazing brake.
+constexpr uint32_t kBrakeStartUs        = 1720;   // Brake starts only after pushing forward past 1720us (+44% deflection)
+constexpr uint32_t kBrakeMaxUs          = 1980;   // Full 27.0mm brake stroke reached at 1980us
 
 // Auxiliary Pull-Down Brake (VRC CH11 & VRD CH12):
 // Resting at 0 (1500us). From 0 to -10 (1500us down to 1450us), strictly NO brake (deadband).
