@@ -98,24 +98,27 @@ std::atomic<int64_t>  g_last_sys_safety_sts_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
 // Issue #10: SYS 0x011 safety-authority derived flag. Default = no authority
-// (boot never grants it); t_control flips it once the 0x011 stream is acquired.
+// (boot never grants it); control_task flips it once the 0x011 stream is acquired.
 // g_safety_authority (the supervisor) is defined in namespace rt below.
+namespace rt {
 std::atomic<uint8_t> g_ready_mask{0};
 std::atomic<bool>    g_no_sys_authority{true};
+}
 
-// ?? Per-task alive counters for multi-task watchdog (gap #5) ??????
-static std::atomic<uint32_t> g_alive_control{0};
-static std::atomic<uint32_t> g_alive_dispatch{0};
-static std::atomic<uint32_t> g_alive_tx_low{0};
-static std::atomic<uint32_t> g_alive_tx_high{0};
-// False when MCP2515 is missing ? tx_high/rx_high never start; do not flag as stalled.
+// ── Mailboxes & Queues (3-Task Architecture) ────────────────────────
+QueueHandle_t g_host_cmd_mailbox      = nullptr;  // depth 1, rt::HostDriveSnapshot (overwrite)
+QueueHandle_t g_feedback_mailbox      = nullptr;  // depth 1, rt::ActuatorFeedbackSnapshot (overwrite)
+QueueHandle_t g_motion_output_mailbox  = nullptr;  // depth 1, rt::MotionOutputSnapshot (overwrite)
+QueueHandle_t g_high_to_low_gw_q      = nullptr;  // depth 8, rt::GatewayFrame
+std::atomic<uint32_t> g_gw_drop_count{0};
+
+// False when MCP2515 is missing — can_high_task does not transmit.
 static std::atomic<bool> g_high_can_present{false};
-static void check_task_watchdog();
 
-// ?? ESTOP reason atomic (written by dispatch/safety/health, read by tx) ?
+// ── ESTOP reason atomic (written by safety/health, read by tx) ──────
 std::atomic<uint8_t>  g_estop_reason{0};
 
-// ?? Telemetry atomics ??????????????????????????????????????????????
+// ── Telemetry atomics ───────────────────────────────────────────────
 std::atomic<int16_t>  g_last_cmd_angle_0_1deg{0};
 std::atomic<int16_t>  g_pid_output_mmps{0};
 std::atomic<int32_t>  g_last_speed_setpoint_mmps{0};
@@ -129,78 +132,29 @@ std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint16_t> g_seb_motor_current{0};
 std::atomic<uint16_t> g_seb_ecu_temp_c{0};
 
-// ?? Queues ?????????????????????????????????????????????????????????
-QueueHandle_t g_can_rx_low_q  = nullptr;
-QueueHandle_t g_can_rx_high_q = nullptr;
-QueueHandle_t g_cmd_q         = nullptr;
-QueueHandle_t g_setpoint_q    = nullptr;
-QueueHandle_t g_gw_tx_low_q   = nullptr;
-QueueHandle_t g_gw_tx_high_q  = nullptr;
-
-// ?? CAN RX ? unified (prio 5) ?????????????????????????????????????
-using CanReceiveFn = bool (*)(can::Frame&, uint32_t);
-struct CanRxParams { CanReceiveFn receive; QueueHandle_t queue; rt::Mcp2515Driver* overflow_drv = nullptr; };
-
-static bool low_receive(can::Frame& fr, uint32_t timeout) {
-    auto* drv = rt::can_low_driver();
-    return drv && drv->receive(fr, timeout);
-}
-
-static bool high_receive(can::Frame& fr, uint32_t timeout) {
-    return g_can_high.receive(fr, timeout);
-}
-
-[[noreturn]] static void task_can_rx(void* pv) {
-    auto& p = *static_cast<CanRxParams*>(pv);
-    can::Frame fr;
-    while (1) {
-        if (p.receive(fr, 100)) {
-            // ESTOP (0x001) gets priority: use send-to-front to skip queue
-            if (fr.id == can::kIdSafetyEstop) {
-                xQueueSendToFront(p.queue, &fr, 0);
-            } else if (xQueueSend(p.queue, &fr, 0) != pdTRUE && p.overflow_drv) {
-                p.overflow_drv->record_rx_overflow();
-                rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighRxOverflow);
-                static bool warned = false;
-                if (!warned) {
-                    ESP_LOGW(TAG, "High CAN RX queue overflow ? check RT_STATE_RPT byte 3");
-                    warned = true;
-                }
-            }
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(1));  // yield when silent or uninitialized
-        }
-    }
-}
-
-// ?? Dispatch (extracted to can_dispatch.h) ??????????????????????????
-#include "can_dispatch.h"
-// ?? Safety monitor (extracted to safety_monitor.h) ??????????????????
+// ── Safety monitor & Phase B diagnostics ────────────────────────────
 #include "safety_monitor.h"
-// ?? RT Phase B diagnostic reporter (singleton accessor) ??????????????
 #include "diag_rt.h"
 #include "protocol/compat/can.hpp"
 
-// Issue #8: MTR-feedback health supervisor (see safety_monitor.h). Tracks
-// AUTO-entry-relative acquisition grace, MTR-unavailable latch, and confirmed
-// recovery across control-loop cycles.
 namespace rt {
 MtrHealthSupervisor g_mtr_health;
 SebBrakeFallback    g_brake_fallback;
 SafetyStreamSupervisor g_safety_authority;  // issue #10 (0x011 authority acquisition)
 }  // namespace rt
 
-// ?? CAN TX helper ? checks return, logs failure, detects recovery ????
+// ── CAN TX helpers ──────────────────────────────────────────────────
 static uint32_t g_can_tx_fail_low = 0, g_can_tx_fail_high = 0;
 static uint32_t g_can_tx_ok_low = 0, g_can_tx_ok_high = 0;
 static bool g_can_tx_had_fail_low = false, g_can_tx_had_fail_high = false;
 static uint32_t g_can_tx_consec_fail_low = 0;
+
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
     if (!drv) return false;
     if (drv->send(fr)) {
         if (g_can_tx_had_fail_low) {
-            ESP_LOGI(TAG, "Low CAN TX recovered ? fail=%lu ok=%lu",
+            ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu",
                      static_cast<unsigned long>(g_can_tx_fail_low),
                      static_cast<unsigned long>(g_can_tx_ok_low));
             g_can_tx_had_fail_low = false;
@@ -213,7 +167,6 @@ static bool send_can_low(can::Frame& fr) {
     g_can_tx_consec_fail_low++;
     uint32_t state = 0, tec = 0, rec = 0;
     drv->status(state, tec, rec);
-    // Rate-limit: works-then-stops was caused by recovery thrash every 1s.
     if (!g_can_tx_had_fail_low || (g_can_tx_fail_low % 100 == 0)) {
         ESP_LOGW(TAG, "Low CAN TX failed (n=%lu consec=%lu state=%lu tec=%lu rec=%lu id=0x%lX)",
                  static_cast<unsigned long>(g_can_tx_fail_low),
@@ -224,12 +177,10 @@ static bool send_can_low(can::Frame& fr) {
                  static_cast<unsigned long>(fr.id));
         g_can_tx_had_fail_low = true;
     }
-    // Recovery has one owner: monitor_can_bus_off(). TX failures remain
-    // diagnostics and cannot reset the controller.
     return false;
 }
+
 static bool send_can_high(can::Frame& fr) {
-    // ListenOnly / missing MCP: never block waiting for a TX buffer that will not clear.
     if (!g_can_high.can_transmit()) {
         return false;
     }
@@ -238,73 +189,56 @@ static bool send_can_high(can::Frame& fr) {
         if (!g_can_tx_had_fail_high) { ESP_LOGW(TAG, "High CAN TX failed"); g_can_tx_had_fail_high = true; }
         return false;
     }
-    if (g_can_tx_had_fail_high) { ESP_LOGI(TAG, "High CAN TX recovered ? fail=%lu ok=%lu", g_can_tx_fail_high, g_can_tx_ok_high); g_can_tx_had_fail_high = false; }
+    if (g_can_tx_had_fail_high) {
+        ESP_LOGI(TAG, "High CAN TX recovered — fail=%lu ok=%lu", g_can_tx_fail_high, g_can_tx_ok_high);
+        g_can_tx_had_fail_high = false;
+    }
     g_can_tx_ok_high++;
     return true;
 }
 
-// ?? Gateway TX pump ?????????????????????????????????????????????????
-// Single-shot HW TX frees the one TX slot after every attempt, so a frame
-// that loses arbitration is dropped by hardware. Retain it in the gateway
-// queue and re-attempt from software each TX cycle until it is delivered or
-// goes stale. This is what lets HMI_MODE_REQ (0x111) eventually win
-// arbitration against SYS_MODE_CMD (0x110) without starving other Low traffic.
-static constexpr TickType_t kGwFreshnessTicks = pdMS_TO_TICKS(80);
-static constexpr uint16_t   kGwMaxAttempts    = 40;
+inline bool enqueue_safety_event(const rt::SafetyEvent& evt, TickType_t timeout) {
+    if (g_safety_evt_q && xQueueSend(g_safety_evt_q, &evt, timeout) == pdTRUE) return true;
 
-static bool gw_pump(QueueHandle_t q, bool (*send_fn)(can::Frame&), const char* tag) {
-    GwTxFrame gw;
-    if (xQueueReceive(q, &gw, 0) != pdTRUE) return false;
-    const bool accepted = send_fn(gw.frame);
-    if (gw.frame.id == can::kIdHmiModeReq) {
-        ESP_LOGI(tag, "HMI_MODE_REQ gateway TX accepted=%s attempts=%u depth=%u",
-                 accepted ? "yes" : "no", unsigned(gw.attempts),
-                 unsigned(uxQueueMessagesWaiting(q)));
+    g_safety_event_drops.fetch_add(1, std::memory_order_relaxed);
+    if (evt.type == rt::SafetyEvent::ESTOP) {
+        g_pending_estop_event.store(true, std::memory_order_release);
+    } else if (evt.type == rt::SafetyEvent::SAFETY_CLEAR) {
+        g_pending_safety_clear.store(true, std::memory_order_release);
+    } else {
+        g_pending_mode_event.store(evt.payload, std::memory_order_release);
     }
-    if (accepted) {
-        // HW accepted the frame; with auto-retransmit (fail_retry_cnt = -1) the
-        // controller retries until it wins arbitration and is delivered, which
-        // fires on_tx_done and frees the slot. Do NOT re-enqueue ? a fresh High
-        // 0x111 re-triggers forwarding. This avoids a duplicate storm.
-        return true;
+    return false;
+}
+
+inline bool post_gateway_frame(const can::Frame& fr) {
+    if (!g_high_to_low_gw_q) return false;
+    rt::GatewayFrame gw{fr, esp_timer_get_time()};
+    if (xQueueSend(g_high_to_low_gw_q, &gw, 0) != pdTRUE) {
+        g_gw_drop_count.fetch_add(1, std::memory_order_relaxed);
+        return false;
     }
-    // Transient failure (slot busy / TX not yet admitted): retry next cycle.
-    gw.attempts++;
-    if (gw.attempts <= kGwMaxAttempts) xQueueSendToFront(q, &gw, 0);
     return true;
 }
 
-// ?? CAN bus health monitor (extracted to can_health.h) ??????????????
+// ── CAN bus health monitor ──────────────────────────────────────────
 #include "can_health.h"
-
-// FreeRTOS rejects xTimeIncrement==0. With CONFIG_FREERTOS_HZ=100,
-// pdMS_TO_TICKS(ms<10) can round to 0 ? never pass that to DelayUntil.
-static inline TickType_t ticks_ms_at_least_1(uint32_t ms) {
-    TickType_t t = pdMS_TO_TICKS(ms);
-    return t > 0 ? t : static_cast<TickType_t>(1);
-}
 
 static void update_low_can_tx_admission(int64_t now_us) {
     auto* drv = rt::can_low_driver();
     if (!drv) return;
-
-    // Transport remains open for heartbeat, status, and peer discovery.
     drv->set_tx_admission(true);
 
     const int64_t last_peer = g_last_low_peer_us.load(std::memory_order_acquire);
     bool peer_fresh = last_peer > 0
         && now_us - last_peer <= int64_t(rt::kLowCanPeerTimeoutMs) * 1000;
 
-    // Report-only: low-speed CAN peer (e.g. SYS/MTR) lost beyond timeout.
     if (!peer_fresh && last_peer > 0) {
         rt::diag().raise(etrike::diagnostics::DiagId::RtLowCanPeerTimeout,
                          static_cast<std::uint16_t>((now_us - last_peer) / 1000));
     }
 }
 
-// ?? Phase B diagnostic drain (RT_DIAG_EVENT_RPT = 0x621, high bus) ??
-// Throttled to ~10 Hz to bound high-bus TX. Latched/active states are
-// re-broadcast via replay_active_set() so the sink keeps receiving them.
 static void pump_diagnostics() {
     static int64_t last_pump_us = 0;
     const int64_t now_us = esp_timer_get_time();
@@ -329,324 +263,6 @@ static void pump_diagnostics() {
     rt::diag().replay_active_set();
 }
 
-// ?? Control (prio 4, 100 Hz) ???????????????????????????????????????
-[[noreturn]] static void t_control(void*) {
-    TickType_t per = ticks_ms_at_least_1(10), last = xTaskGetTickCount();
-    can::gen::HostDriveCmd cmd{};
-
-    // Local state drained from safety event queue (architecture principle #1).
-    bool     m_estop_pending = false;
-    uint8_t  m_estop_reason  = rt::kEstopReasonCanEstop;
-    uint8_t  m_current_mode  = 0;   // 0=Manual, 1=Auto, 2=Estop
-    bool     m_seb_takeover  = false;
-
-    while (1) {
-        g_alive_control.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        static bool fallback_inited = false;
-        if (!fallback_inited) {
-            fallback_inited = true;
-            rt::g_brake_fallback.init(esp_timer_get_time());
-            rt::g_safety_authority.reset(esp_timer_get_time());
-        }
-        if (g_steering_estop_request.exchange(false)) {
-            g_steering.start_estop(false);
-        }
-        if (g_steering_exit_request.exchange(false)) {
-            g_steering.exit_estop();
-        }
-        // ?? Drain bounded safety events and their overflow fallbacks ?
-        rt::SafetyEvent evt;
-        bool had_estop_this_cycle = g_pending_estop_event.exchange(false);
-        if (had_estop_this_cycle) {
-            m_estop_pending = true;
-            const uint8_t fallback_reason = g_estop_reason.load();
-            m_estop_reason = fallback_reason != rt::kEstopReasonNone
-                ? fallback_reason : rt::kEstopReasonCanEstop;
-        }
-        int16_t pending_mode = g_pending_mode_event.exchange(-1);
-        if (pending_mode >= 0) {
-            // SYS_MODE_CMD now carries MANUAL/AUTO only (ESTOP lives on 0x001 /
-            // 0x011), so a mode change never clears an established E-stop latch.
-            m_current_mode = static_cast<uint8_t>(pending_mode);
-        }
-        if (g_pending_safety_clear.exchange(false)) {
-            m_estop_pending = false;
-            m_estop_reason = rt::kEstopReasonNone;
-            rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
-                                       std::memory_order_release);
-            cmd = {0, 0};
-            xQueueOverwrite(g_cmd_q, &cmd);
-        }
-        while (xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
-            switch (evt.type) {
-            case rt::SafetyEvent::ESTOP:
-                m_estop_pending = true;
-                m_estop_reason = evt.payload != rt::kEstopReasonNone
-                    ? evt.payload : rt::kEstopReasonCanEstop;
-                had_estop_this_cycle = true;
-                break;
-            case rt::SafetyEvent::MODE_CHANGE:
-                m_current_mode = evt.payload;
-                break;
-            case rt::SafetyEvent::SAFETY_CLEAR:
-                // Authoritative E-stop clear from SYS_SAFETY_STS (0x011) two-frame
-                // sequence. Replaces the old 0x110 mode-driven clear.
-                m_estop_pending = false;
-                m_estop_reason = rt::kEstopReasonNone;
-                rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
-                                           std::memory_order_release);
-                cmd = {0, 0};
-                xQueueOverwrite(g_cmd_q, &cmd);
-                break;
-            }
-        }
-        // Issue #10: SYS 0x011 safety-authority acquisition + freshness fail-safe.
-        // Booting grants NO authority: RT must receive N valid 0x011 frames before
-        // drive authority is confirmed (UNACQUIRED -> ACQUIRED). A post-acquisition
-        // stream loss (LOST) keeps/sets the E-stop latch — never a silent clear. A
-        // stream that never arrives within the acquisition window is a SYS-absent
-        // fail-safe (motion inhibited via g_no_sys_authority) but NOT a global ESTOP
-        // latch (a dead SYS could never send the two-frame clear to release it).
-        {
-            const int64_t now_safety = esp_timer_get_time();
-            const auto sst = rt::g_safety_authority.update(
-                now_safety, g_last_sys_safety_sts_us.load());
-            if (sst.estop_latch_required && !m_estop_pending) {
-                m_estop_pending = true;
-                m_estop_reason = rt::kEstopReasonCanEstop;
-                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
-                                 static_cast<std::uint16_t>(
-                                     (now_safety - g_last_sys_safety_sts_us.load())
-                                     / 1000));
-            }
-            if (sst.state == rt::SafetyStreamState::LOST || sst.sys_absent_fault || m_estop_pending) {
-                // Clear all authority bits when stream is lost, absent, or ESTOP is pending
-                rt::g_ready_mask.fetch_and(
-                    static_cast<uint8_t>(~(rt::READY_BIT_SAFETY | rt::READY_BIT_MODE | rt::READY_BIT_HOST)),
-                    std::memory_order_release);
-            } else if (sst.motion_authorized) {
-                rt::g_ready_mask.fetch_or(rt::READY_BIT_SAFETY, std::memory_order_release);
-            } else {
-                rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_SAFETY),
-                                           std::memory_order_release);
-            }
-
-            if (sst.sys_absent_fault) {
-                g_no_sys_authority.store(true, std::memory_order_relaxed);
-                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
-                                 static_cast<std::uint16_t>(
-                                     rt::kSysSafetyAcquireTimeoutUs / 1000));
-            } else {
-                // BUG-01: Multi-stream authority readiness barrier.
-                // g_no_sys_authority is cleared ONLY when both 0x011 (SAFETY) and 0x110 (MODE)
-                // streams have confirmed validity.
-                const uint8_t mask = rt::g_ready_mask.load(std::memory_order_acquire);
-                g_no_sys_authority.store(!rt::is_sys_authority_ready(mask),
-                                         std::memory_order_relaxed);
-            }
-        }
-        // Publish mode after event drain for read-heavy tx tasks (read at 50Hz/10Hz).
-        // SEB takeover is published immediately after safety checks below.
-        g_mode_current.store(m_current_mode);
-
-        // Hold the latest Host command between updates. HOST_DRIVE_CMD may run
-        // slower than the 100 Hz control loop; consuming the one-deep queue made
-        // every intervening control tick fall back to zero, producing an
-        // alternating {command, neutral} motor output. The watchdog explicitly
-        // overwrites this queue with zero when the command becomes stale.
-        // Also gate motion on readiness: if motion is not ready (missing fresh host command
-        // post-recovery or authority missing), hold zero setpoint (BUG-01 / BUG-05).
-        const uint8_t cur_ready_mask = rt::g_ready_mask.load(std::memory_order_acquire);
-        if (!rt::is_motion_ready(cur_ready_mask) || xQueuePeek(g_cmd_q, &cmd, 0) != pdTRUE)
-            cmd = {0, 0};
-
-        rt::ResolvedSetpoint sp;
-        g_resolver.resolve({cmd.speed_mmps, cmd.yaw_rate_mrad_s}, sp);
-        sp.cmd_gear = cmd.gear;  // propagate CAN gear override
-
-        can::gen::HostSteerCmd direct_steer{};
-        direct_steer.steer_angle_0_1deg = static_cast<int16_t>(
-            g_direct_steer_angle_0_1deg.load());
-        direct_steer.angle_valid = g_direct_steer_valid.load();
-        // While fresh and valid, 0x303 is authoritative over legacy 0x300 yaw,
-        // including at standstill. On invalid/stale input, legacy resolution
-        // resumes without affecting longitudinal open-loop drive.
-        rt::apply_fresh_direct_steering(direct_steer,
-            g_last_direct_steer_us.load(), esp_timer_get_time(), sp);
-
-        uint32_t obs = g_obstacle_mm.load();
-        sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
-
-        // Update calculated speed estimator with the commanded setpoint
-        // (runs always; is only consumed when SpeedFeedbackSource::Calculated).
-        g_calc_speed.update(sp.motor_speed_mmps, 0.01f);
-
-        if constexpr (rt::build::kEncodersEnabled) {
-            float enc_speed = rt::encoder_read_speed_mmps(0, 0.01f);
-            g_encoder_speed_mmps.store(static_cast<int32_t>(enc_speed));
-            rt::encoder_reset(0);
-        }
-
-        // ?? Dynamic angle clamp (arch ?7.6, fix #6) ?????????????????
-        {
-            float max_deg = rt::compute_dynamic_limit(static_cast<float>(std::abs(sp.motor_speed_mmps)));
-            int32_t limit_mdeg = static_cast<int32_t>(max_deg * 1000.0f);
-            sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
-        }
-
-        int32_t obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
-        int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
-
-        // ?? Safety checks ??????????????????????????????????????????
-        int64_t const now = esp_timer_get_time();
-        if (auto* drv = rt::can_low_driver()) {
-            // Restore transport independently of the latched safety state.
-            drv->service_recovery(now);
-        }
-        update_low_can_tx_admission(now);
-        bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
-
-        // Issue #8: record the most recent non-zero propulsion command (AUTO only,
-        // measured on the pre-safety setpoint). When MTR feedback is later lost we
-        // cannot measure true motion, so this "recently commanded to move" proxy
-        // drives the brake-escalation decision.
-        if (m_current_mode == uint8_t(can::Mode::Auto)
-            && std::abs(sp.motor_speed_mmps) > shared::kLowSpeedThreshMmps) {
-            g_last_nonzero_cmd_us.store(now, std::memory_order_relaxed);
-        }
-
-        rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
-                                                  m_estop_pending, m_current_mode, m_seb_takeover);
-        if (m_estop_pending && sr.estop_reason == rt::kEstopReasonCanEstop) {
-            sr.estop_reason = m_estop_reason;
-        }
-
-        // Issue #3/#5: SEB brake-ownership emergency fallback. run_safety_checks
-        // no longer grants RT brake ownership on SYS-heartbeat loss alone; this
-        // machine decides when RT must become the emergency 0x7B9 writer — once
-        // SYS's 0x7B9 has disappeared for the guard interval, watched INDEPENDENTLY
-        // of the heartbeat (issue #5: a live 0x7FE does not prove the SYS brake
-        // task is alive). In SYS_DEGRADED (HB lost, SYS 0x7B9 still present) motion
-        // is already prohibited via sr.zero_setpoints above but RT does NOT
-        // transmit 0x7B9.
-        {
-            rt::SebFallbackInput fb_in;
-            fb_in.now_us = now;
-            const int64_t last_hb = g_last_sys_hb_us.load();
-            const bool hb_lost = (!g_bench_solo_mode && (last_hb < 0
-                || (now - last_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000));
-            fb_in.sys_hb_fresh = !hb_lost;
-            const int64_t last_7b9 = g_last_0x7B9_rx_us.load();
-            fb_in.sys_0x7B9_observed =
-                (last_7b9 >= 0 && (now - last_7b9) < 100'000);  // seen within 100 ms
-            fb_in.startup_grace_active = startup_grace;
-            const auto fb_out = rt::g_brake_fallback.update(fb_in);
-            // RT becomes the emergency 0x7B9 writer ONLY in EMERGENCY_FALLBACK.
-            m_seb_takeover = fb_out.emergency_tx_0x7B9;
-        }
-        g_seb_takeover.store(m_seb_takeover);
-        // Publish supervision verdicts for the 0x620 RT_DIAG_RPT (tx task).
-        g_mtr_unavailable.store(rt::g_mtr_health.mtr_unavailable, std::memory_order_relaxed);
-        g_brake_fallback_state.store(static_cast<uint8_t>(rt::g_brake_fallback.state()),
-                                     std::memory_order_relaxed);
-
-        // Propagate ESTOP reason from safety checks to telemetry atomic.
-        if (sr.estop_reason != 0) {
-            g_estop_reason.store(sr.estop_reason);
-        } else if (!sr.zero_setpoints && !sr.disable_steering
-                   && m_current_mode != uint8_t(can::Mode::Estop)) {
-              g_estop_reason.store(rt::kEstopReasonNone);
-        }
-
-        if (sr.zero_setpoints) {
-            cmd = {0, 0};
-            xQueueOverwrite(g_cmd_q, &cmd);
-            sp = {};
-            g_calc_speed.reset();
-
-            // Broadcast 0x001 ONLY when RT actively originates an unhandled local emergency trip.
-            // Never broadcast 0x001 when reacting to external CAN ESTOP (CanEstop / Mode==Estop),
-            // nor when SYS clear is in progress, nor for soft disables (MTR fbk loss, host timeout).
-            const bool is_active_local_trip = (sr.obstacle_triggered ||
-                                               sr.estop_reason == rt::kEstopReasonFollowingError ||
-                                               sr.estop_reason == rt::kEstopReasonBusOff ||
-                                               sr.estop_reason == rt::kEstopReasonInternal ||
-                                               m_seb_takeover);
-            const bool sys_clear_in_progress = g_sys_clear_in_progress.load(std::memory_order_relaxed);
-            if (is_active_local_trip && !sys_clear_in_progress && can_send_estop()) {
-                // Protocol: SAFETY_ESTOP is DLC 0 ? always encode, never hand-roll.
-                can::Frame estop_frame;
-                can::gen::SafetyEstop estop_msg{};
-                if (can::gen::encode_safety_estop(estop_msg, estop_frame) == can::gen::CodecStatus::Ok) {
-                    GwTxFrame gwf_lo{estop_frame, xTaskGetTickCount(), 0};
-                    GwTxFrame gwf_hi{estop_frame, xTaskGetTickCount(), 0};
-                    xQueueSendToFront(g_gw_tx_low_q, &gwf_lo, pdMS_TO_TICKS(10));
-                    xQueueSendToFront(g_gw_tx_high_q, &gwf_hi, pdMS_TO_TICKS(10));
-                }
-            }
-        }
-        if (sr.brake_kpa) bk = sr.brake_kpa;
-        if (sr.disable_steering) {
-            g_steering.start_estop(sr.obstacle_triggered);
-            if (sr.obstacle_triggered) {
-                g_steering.set_estop_hold_time(esp_timer_get_time() / 1000);
-            }
-        }
-
-        g_brake_kpa_to_send.store(bk);
-
-        // ?? Speed feedback selection (build_config.h ?SpeedFeedbackSource) ?
-        int32_t measured_speed_mmps = 0;
-        if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Mtr) {
-            measured_speed_mmps = g_mtr_motor_command_speed_mmps.load();
-        } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::RtEncoder) {
-            measured_speed_mmps = g_encoder_speed_mmps.load();
-        } else if constexpr (rt::build::kSpeedFeedbackSource == rt::build::SpeedFeedbackSource::Calculated) {
-            measured_speed_mmps = g_calc_speed.get();
-        }
-
-        // ?? PID controller (build_config.h ?PidMode) ??????????????
-        {
-            int16_t pid_out = 0;
-            g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps, measured_speed_mmps, 0.01f, pid_out);
-            g_pid_output_mmps.store(pid_out);
-            g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
-
-            if constexpr (rt::build::kPidMode == rt::build::PidMode::Active) {
-                if (sp.motor_speed_mmps != 0) {
-                    sp.motor_speed_mmps += pid_out;
-                    sp.motor_speed_mmps = std::clamp<int32_t>(sp.motor_speed_mmps,
-                        -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
-                }
-            }
-        }
-
-        xQueueOverwrite(g_setpoint_q, &sp);
-
-        if (m_current_mode == uint8_t(can::Mode::Auto)) {
-            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_motor_command_speed_mmps.load());
-        }
-
-        g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
-        g_reversing.store(sp.reversing);
-
-        monitor_can_bus_off();
-
-        // Phase B: drain pending diagnostic reports to 0x621 (RT_DIAG_EVENT_RPT)
-        // on the high bus. pop_pending_report() is non-blocking; budget caps
-        // frames per iteration. replay_active_set() re-broadcasts latched/active
-        // states so the sink keeps receiving them.
-        pump_diagnostics();
-
-        vTaskDelayUntil(&last, per);
-    }
-}
-
-// ── 0x501 RT_NODE_STATUS (observational) ─────────────────────────────
-// Strictly observational: never clears ESTOP or grants authority. RT is
-// dual-bus: emitted independently on low (50 Hz) and high (10 Hz). node_state
-// mirrors RT's stop/authority model; block_mask bit0 = SYS authority not
-// acquired, bit1 = ESTOP latch active.
 static can::gen::RtNodeStatus build_rt_node_status() {
     can::gen::RtNodeStatus ns{};
     const uint8_t mode = g_mode_current.load();
@@ -671,18 +287,12 @@ static can::gen::RtNodeStatus build_rt_node_status() {
                       && g_last_speed_setpoint_mmps.load() != 0;
     ns.output_enabled = ns.ready && mode == uint8_t(can::Mode::Auto);
     ns.degraded = g_steering.state() == rt::SteerState::STEER_FAULT;
-    const uint8_t cur_mask = rt::g_ready_mask.load(std::memory_order_relaxed);
+    const uint8_t cur_mask = g_ready_mask.load(std::memory_order_relaxed);
     ns.recovery_pending = !estop && !no_auth && rt::is_sys_authority_ready(cur_mask)
                           && !rt::is_motion_ready(cur_mask);
     return ns;
 }
 
-// ── 0x620 RT_DIAG_RPT (1 Hz, high bus) ────────────────────────────────
-// RT-exclusive diagnostics only — nothing that SYS 0x600 / RT 0x210 / MTR
-// 0x206 / STEER+BRAKE_DIAG already publish. Content: RT's own MCP2515 SPI
-// transport health (EFLG/TEC/REC + SPI transaction failures + recovery count,
-// the MCP is physically RT's peripheral), and RT's local supervision verdicts
-// (MTR 0x206 watchdog, SEB brake-fallback state, SYS 0x011 authority).
 static can::gen::RtDiagRpt build_rt_diag_rpt() {
     can::gen::RtDiagRpt dr{};
     dr.mcp_bus_off     = g_can_high.bus_off();
@@ -693,13 +303,12 @@ static can::gen::RtDiagRpt build_rt_diag_rpt() {
         dr.mcp_tec  = tec;
         dr.mcp_rec  = rec;
     }
-    // SPI-failure delta since the previous 1 Hz report (saturating uint8).
     const uint32_t spi_total = g_can_high.spi_failure_count();
     static uint32_t last_spi_total = 0;
     static bool     last_spi_valid = false;
     const uint32_t raw_delta = last_spi_valid
         ? (spi_total >= last_spi_total ? spi_total - last_spi_total : spi_total)
-        : 0;  // first report establishes the baseline, no false positive
+        : 0;
     last_spi_total = spi_total;
     last_spi_valid = true;
     dr.spi_fault_delta = static_cast<uint8_t>(raw_delta > 255 ? 255 : raw_delta);
@@ -720,398 +329,956 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     drv.send(fr);
 }
 
-// ?? CAN TX low (prio 3) ????????????????????????????????????????????
-[[noreturn]] static void t_can_tx_low(void*) {
-    TickType_t last_wake = xTaskGetTickCount();
-    TickType_t t100 = last_wake, t50 = last_wake;
-    rt::ResolvedSetpoint sp{};
+// ── TASK 1: can_high_task (Core 0, Priority 4) ──────────────────────
+[[noreturn]] void can_high_task(void*) {
     can::Frame fr;
-    while (1) {
-        g_alive_tx_low.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        auto* drv = rt::can_low_driver();
-        if (!drv) { vTaskDelayUntil(&last_wake, ticks_ms_at_least_1(5)); continue; }
+    TickType_t last_100hz = xTaskGetTickCount();
+    TickType_t last_10hz  = xTaskGetTickCount();
+    int64_t    last_1hz_us = esp_timer_get_time();
+    uint8_t    motion_counter = 0;
+    uint8_t    node_status_roll_high = 0;
+    uint8_t    diag_counter = 0;
+    uint32_t   rpt_fail_count = 0;
+    uint32_t   diag_fail_count = 0;
 
-        if (xTaskGetTickCount() - t100 >= pdMS_TO_TICKS(10)) {
-            t100 = xTaskGetTickCount();
-            // MANUAL / ESTOP: still publish a keep-alive 0x204 {0,N} so bus monitors
-            // and MTR see RT is alive. Do NOT command motion (speed forced 0).
-            // Previously `continue` skipped the whole TX loop delay and silenced RT entirely.
-            const uint8_t mode_now_100 = g_mode_current.load();
-            const bool motion_mode =
-                mode_now_100 == uint8_t(can::Mode::Auto);  // only Auto may command speed
-            if (xQueuePeek(g_setpoint_q, &sp, 0) == pdTRUE || !motion_mode) {
-                // Drive motor lockout: only send motion when steering is ready (arch ?7.6).
-                // Otherwise send {0,N} instead of silence so MTR staleness does not trip.
-                auto ss = g_steering.state();
-                bool drive_allowed = motion_mode
-                    && (ss == rt::SteerState::STEER_ACTIVE
-                        || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
-                        || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT);
-                int32_t speed_out = drive_allowed ? sp.motor_speed_mmps : 0;
-                uint8_t gear_out;
-                if (!drive_allowed) {
-                    gear_out = uint8_t(can::Gear::N);
-                } else if (sp.cmd_gear != 0) {
-                    gear_out = sp.cmd_gear;  // CAN override
-                } else if (sp.motor_speed_mmps > 0) {
-                    gear_out = uint8_t(can::Gear::D);
-                } else if (sp.motor_speed_mmps < 0) {
-                    gear_out = uint8_t(can::Gear::R);
-                } else {
-                    gear_out = uint8_t(can::Gear::N);
+    rt::HostDriveSnapshot host_snap{};
+
+    while (true) {
+        // 1. Sleep waiting for MCP2515 INT pin (GPIO 47) or 10 ms timeout
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
+
+        // 2. Bounded RX Drain (budget = 8 frames)
+        for (unsigned i = 0; i < 8; ++i) {
+            if (!g_can_high.receive(fr, 0)) break;
+            const int64_t now_us = esp_timer_get_time();
+
+            // Check for Host Heartbeat (0x7FD)
+            if (fr.id == can::kIdHostHeartbeat) {
+                can::gen::HostHeartbeat hb{};
+                if (can::decode_frame(fr, hb) == can::gen::CodecStatus::Ok) {
+                    static uint8_t last_host_ctr = 0;
+                    static bool host_first = true;
+                    uint8_t delta = hb.alive_ctr - last_host_ctr;
+                    if (host_first || delta != 0) {
+                        host_first = false;
+                        last_host_ctr = hb.alive_ctr;
+                        g_last_host_hb_us.store(now_us);
+                    }
                 }
-                can::gen::RtDriveCmd message{speed_out, gear_out};
-                if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
+                continue;
+            }
+
+            // Check for SAFETY_ESTOP (0x001)
+            if (fr.id == can::kIdSafetyEstop) {
+                g_estop_reason.store(rt::kEstopReasonCanEstop);
+                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST), std::memory_order_release);
+                rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
+                enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+
+                can::Frame estop = can::Frame::standard(can::kIdSafetyEstop, 0);
+                post_gateway_frame(estop);
+                continue;
+            }
+
+            // Check for HOST_DRIVE_CMD (0x300)
+            if (fr.id == can::kIdHostDriveCmd) {
+                can::gen::HostDriveCmd cmd{};
+                if (can::decode_frame(fr, cmd) == can::gen::CodecStatus::Ok) {
+                    host_snap.speed_mmps = cmd.speed_mmps;
+                    host_snap.yaw_rate_mrad_s = cmd.yaw_rate_mrad_s;
+                    host_snap.gear_override = cmd.gear;
+                    host_snap.timestamp_us = now_us;
+                    host_snap.drive_cmd_valid = true;
+                    g_ready_mask.fetch_or(rt::READY_BIT_HOST, std::memory_order_release);
+                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &host_snap);
+                    g_watchdog.feed(now_us);
+                    g_steering_exit_request.store(true);
+                }
+                continue;
+            }
+
+            // Check for HOST_STEER_CMD (0x303)
+            if (fr.id == can::kIdHostSteerCmd) {
+                can::gen::HostSteerCmd scmd{};
+                if (can::decode_frame(fr, scmd) == can::gen::CodecStatus::Ok) {
+                    static uint8_t last_counter = 0;
+                    static bool first = true;
+                    const uint8_t delta = scmd.rolling_counter - last_counter;
+                    if (first || delta != 0) {
+                        first = false;
+                        last_counter = scmd.rolling_counter;
+                        g_direct_steer_angle_0_1deg.store(scmd.steer_angle_0_1deg);
+                        g_direct_steer_valid.store(scmd.angle_valid);
+                        g_last_direct_steer_us.store(now_us);
+
+                        host_snap.direct_steer_0_1deg = scmd.steer_angle_0_1deg;
+                        host_snap.direct_steer_valid = scmd.angle_valid;
+                        if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &host_snap);
+                    }
+                }
+                continue;
+            }
+
+            // Check for HOST_BRAKE_REQ (0x301)
+            if (fr.id == can::kIdHostBrakeReq) {
+                can::gen::HostBrakeReq b_req{};
+                if (can::decode_frame(fr, b_req) == can::gen::CodecStatus::Ok) {
+                    g_brake_request_kpa.store(b_req.brake_pressure_kpa);
+                }
+                continue;
+            }
+
+            // Check for HOST_OBSTACLE_DIST (0x320)
+            if (fr.id == can::kIdHostObstacleDist) {
+                can::gen::HostObstacleDist od{};
+                if (can::decode_frame(fr, od) == can::gen::CodecStatus::Ok) {
+                    g_obstacle_mm.store(od.distance_mm);
+                    host_snap.obstacle_distance_mm = od.distance_mm;
+                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &host_snap);
+                }
+                continue;
+            }
+
+            // Transparent High -> Low Gateway forwarding
+            if (fr.id == can::kIdHmiModeReq || fr.id == can::kIdHmiPwrReq ||
+                fr.id == can::kIdHostLightCmd || fr.id == can::kIdHostEstopResetReq ||
+                can::is_forwarded_high_to_low(fr.id)) {
+                post_gateway_frame(fr);
             }
         }
-        if (xTaskGetTickCount() - t50 >= pdMS_TO_TICKS(20)) {
-            t50 = xTaskGetTickCount();
-            // 0x205 RT_BRAKE_CMD at 50 Hz (arch ?7.4, fix C7).
-            // Architecture ?2.3: RT?SYS, AUTO only. Suppress in MANUAL ? SYS handles brake directly.
-            uint8_t mode_now = g_mode_current.load();
-            if (mode_now != uint8_t(can::Mode::Manual)) {
-                can::gen::RtBrakeCmd message{g_brake_kpa_to_send.load()};
-                if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
+
+        // 3. 100 Hz Periodic Output: 0x121 RT_MOTION_RPT
+        if (xTaskGetTickCount() - last_100hz >= pdMS_TO_TICKS(10)) {
+            last_100hz = xTaskGetTickCount();
+            rt::MotionOutputSnapshot out{};
+            rt::ActuatorFeedbackSnapshot fbk{};
+            if (g_motion_output_mailbox) xQueuePeek(g_motion_output_mailbox, &out, 0);
+            if (g_feedback_mailbox) xQueuePeek(g_feedback_mailbox, &fbk, 0);
+
+            can::Frame motion_fr;
+            auto rpt = rt::make_motion_report(
+                esp_timer_get_time(),
+                fbk.mtr_command_speed_mmps,
+                fbk.mtr_gear_state,
+                fbk.last_mtr_us,
+                fbk.ses_angle_0_1deg,
+                fbk.ses_angle_status,
+                fbk.last_ses_us,
+                motion_counter);
+            if (can::encode_frame(rpt, motion_fr) == can::gen::CodecStatus::Ok) {
+                if (send_can_high(motion_fr)) {
+                    ++motion_counter;
+                }
             }
-            // 0x169 VCU_SES_REQ at 50 Hz ? steering state machine gates transmission.
-            // Transmits in ACTIVE, ESTOP_RAMP_TO_ZERO, and ESTOP_HOLD_THEN_SILENT.
-            // Silent in BOOT_WAIT, LISTEN_SYNC, FAULT, and MANUAL mode.
-            // Allow in AUTO (active steering) and ESTOP (centering ramp per ?7.6 gap #3).
-            // Only block in MANUAL ? SES runs standalone, RT must not command.
-            if (g_mode_current.load() != uint8_t(can::Mode::Manual)) {
-                can::custom::ses::Command ses;
-                int64_t now_ms = esp_timer_get_time() / 1000;
-                if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
-                                    now_ms, ses)) {
-                    if (can::custom::ses::encode_command(ses, fr) == can::gen::CodecStatus::Ok) send_can_low(fr);
+        }
+
+        // 4. 10 Hz Periodic Telemetry: 0x210, 0x501, 0x310, 0x311, 0x220
+        if (xTaskGetTickCount() - last_10hz >= pdMS_TO_TICKS(100)) {
+            last_10hz = xTaskGetTickCount();
+
+            // 0x210 RT_STATE_RPT
+            can::gen::RtStateRpt rpt{};
+            rpt.mode = g_mode_current.load();
+            auto ss = g_steering.state();
+            rpt.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
+                               (ss == rt::SteerState::STEER_FAULT)   ? 2 : 1;
+            rpt.reversing    = g_reversing.load();
+            rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
+            rpt.estop_reason = g_estop_reason.load();
+            rpt.steer_state  = static_cast<uint8_t>(ss);
+            rpt.task_health  = 0x0F;
+#ifdef BENCH_BUILD_ACKNOWLEDGED
+            rpt.task_health |= 0x80;
+#endif
+            can::Frame state_fr{};
+            if (can::encode_frame(rpt, state_fr) == can::gen::CodecStatus::Ok) {
+                if (g_can_high.can_transmit()) {
+                    if (!g_can_high.send(state_fr)) {
+                        rpt_fail_count++;
+                        if (rpt_fail_count == 1 || rpt_fail_count % 100 == 0) {
+                            ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed (count=%lu)", rpt_fail_count);
+                        }
+                    } else if (rpt_fail_count > 0) {
+                        ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
+                        rpt_fail_count = 0;
+                    }
                 }
             }
 
-            // Issue #3: RT is NOT a normal 0x7B9 producer (SYS is the sole normal
-            // producer, converting RT's 0x205 intent into the final command).
-            // RT transmits 0x7B9 ONLY as the emergency fallback writer, when
-            // g_seb_takeover is set by the brake-fallback machine (SYS heartbeat
-            // lost AND SYS 0x7B9 has actually disappeared ? see brake_fallback.h).
-            static uint8_t seb_roll = 0;
-            bool seb_takeover = g_seb_takeover.load(std::memory_order_relaxed);
-            if (seb_takeover) {
-                send_seb_req(*drv, fr, rt::make_seb_takeover_req(), seb_roll);
+            // 0x501 RT_NODE_STATUS
+            can::gen::RtNodeStatus ns = build_rt_node_status();
+            ns.rolling_counter = node_status_roll_high++;
+            ns.e2e_crc = 0;
+            can::Frame ns_fr{};
+            if (can::encode_frame(ns, ns_fr) == can::gen::CodecStatus::Ok) {
+                ns.e2e_crc = can::e2e::crc8_h2f(ns_fr.data.data(), 7u, 0u);
+                if (can::encode_frame(ns, ns_fr) == can::gen::CodecStatus::Ok) {
+                    send_can_high(ns_fr);
+                }
             }
 
-            // 0x501 RT_NODE_STATUS at ~50 Hz on the low bus (observational).
-            static uint8_t node_status_roll = 0;
+            // 0x310 STEER_DIAG
+            int16_t angle = g_ses_angle_0_1deg.load();
+            uint8_t s_fault = (g_ses_error_status.load() > 0) ? 1 : 0;
+            uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);
+            uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);
+            can::gen::SteerDiag s_diag{};
+            s_diag.angle_0_1deg = angle * 0.1;
+            s_diag.fault = s_fault;
+            s_diag.motor_current = mtr_curr * 0.01;
+            s_diag.ecu_temp = ecu_tmp * 0.1;
+            can::Frame s_fr{};
+            if (can::encode_frame(s_diag, s_fr) == can::gen::CodecStatus::Ok) {
+                if (!g_can_high.send(s_fr)) {
+                    diag_fail_count++;
+                    if (diag_fail_count == 1 || diag_fail_count % 100 == 0) {
+                        ESP_LOGW(TAG, "MCP2515 STEER_DIAG send failed (count=%lu)", diag_fail_count);
+                    }
+                } else if (diag_fail_count > 0) {
+                    ESP_LOGI(TAG, "MCP2515 STEER_DIAG send recovered after %lu failures", diag_fail_count);
+                    diag_fail_count = 0;
+                }
+            }
+
+            // 0x311 BRAKE_DIAG
+            uint16_t seb_pressure = g_seb_pressure_raw.load();
+            uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
+            uint16_t b_mtr_curr   = uint16_t((g_seb_motor_current.load() * 25) / 32);
+            int32_t  b_ecu_tmp_raw = int32_t(g_seb_ecu_temp_c.load()) * 5 - 400;
+            uint16_t b_ecu_tmp    = b_ecu_tmp_raw < 0 ? 0 : uint16_t(b_ecu_tmp_raw);
+            can::gen::BrakeDiag b_diag{};
+            b_diag.pressure_raw  = seb_pressure * 0.05;
+            b_diag.fault         = seb_fault;
+            b_diag.motor_current = b_mtr_curr * 0.01;
+            b_diag.ecu_temp      = b_ecu_tmp * 0.1;
+            can::Frame b_fr{};
+            if (can::encode_frame(b_diag, b_fr) == can::gen::CodecStatus::Ok) {
+                send_can_high(b_fr);
+            }
+
+            // 0x220 RT_PID_RPT
+#if ETRIKE_RT_PID_MODE > 0
+            int16_t setpoint = static_cast<int16_t>(std::clamp(
+                g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
+            int16_t measured = g_mtr_motor_command_speed_mmps.load();
+            int16_t pid      = g_pid_output_mmps.load();
+            can::gen::RtPidRpt pid_msg{setpoint, measured, pid};
+            can::Frame pid_fr{};
+            if (can::encode_frame(pid_msg, pid_fr) == can::gen::CodecStatus::Ok) {
+                send_can_high(pid_fr);
+            }
+#endif
+        }
+
+        // 5. 1 Hz Telemetry: 0x620 RT_DIAG_RPT
+        const int64_t now_us = esp_timer_get_time();
+        if (now_us - last_1hz_us >= 1'000'000) {
+            last_1hz_us = now_us;
+            can::gen::RtDiagRpt dr = build_rt_diag_rpt();
+            dr.rolling_counter = diag_counter++;
+            can::Frame d_fr{};
+            if (can::encode_frame(dr, d_fr) == can::gen::CodecStatus::Ok) {
+                send_can_high(d_fr);
+            }
+        }
+    }
+}
+
+// ── TASK 2: can_low_task (Core 0, Priority 4) ───────────────────────
+[[noreturn]] void can_low_task(void*) {
+    can::Frame fr;
+    TickType_t last_100hz = xTaskGetTickCount();
+    TickType_t last_50hz  = xTaskGetTickCount();
+    uint8_t    node_status_roll = 0;
+    uint8_t    seb_roll = 0;
+    auto*      drv = rt::can_low_driver();
+
+    rt::ActuatorFeedbackSnapshot fbk_snap{};
+
+    while (true) {
+        if (!drv) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            drv = rt::can_low_driver();
+            continue;
+        }
+
+        // 1. Drain incoming Low CAN frames from TWAI queue (1 ms timeout)
+        while (drv->receive(fr, 1)) {
+            const int64_t now_us = esp_timer_get_time();
+
+            if (can::is_known_frame_on_bus(fr.id, fr.extended, fr.dlc, can::Bus::Low)) {
+                g_last_low_peer_us.store(now_us, std::memory_order_release);
+            }
+
+            // SYS_HEARTBEAT (0x7FE)
+            if (fr.id == can::kIdSysHeartbeat) {
+                can::gen::SysHeartbeat heartbeat{};
+                if (can::decode_frame(fr, heartbeat) == can::gen::CodecStatus::Ok) {
+                    static uint8_t last_sys_ctr = 0;
+                    static bool sys_first = true;
+                    uint8_t delta = heartbeat.alive_ctr - last_sys_ctr;
+                    if (sys_first || delta != 0) {
+                        sys_first = false;
+                        last_sys_ctr = heartbeat.alive_ctr;
+                        g_last_sys_hb_us.store(now_us);
+                        fbk_snap.last_sys_hb_us = now_us;
+                        if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                    }
+                }
+                continue;
+            }
+
+            // SYS_SAFETY_STS (0x011)
+            if (fr.id == can::kIdSysSafetySts) {
+                can::gen::SysSafetySts ssts{};
+                if (can::gen::decode_sys_safety_sts(fr.view(), ssts) == can::gen::CodecStatus::Ok) {
+                    const uint8_t crc = can::e2e::sys_safety_sts_crc(fr.data.data());
+                    static etrike::protocol::StreamValidity ssts_val;
+                    static bool ssts_inited = false;
+                    if (!ssts_inited) {
+                        ssts_val.set_key(1, can::kIdSysSafetySts, 700);
+                        ssts_inited = true;
+                    }
+                    if (crc != ssts.e2e_crc) {
+                        ssts_val.invalidate_now();
+                    } else {
+                        const bool ok = ssts_val.observe(
+                            static_cast<uint8_t>(ssts.rolling_counter), xTaskGetTickCount());
+                        if (ok) {
+                            g_last_sys_safety_sts_us.store(now_us, std::memory_order_release);
+                            fbk_snap.last_sys_safety_sts_us = now_us;
+                            if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+
+                            static bool ssts_latched = false;
+                            static uint8_t ssts_clear_confirm = 0;
+                            static bool ssts_last_zero = false;
+                            static uint8_t ssts_clear_last_ctr = 0;
+                            if (ssts.estop_active) {
+                                g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
+                                if (!ssts_latched) {
+                                    ssts_latched = true;
+                                    rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
+                                    enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                                }
+                                ssts_clear_confirm = 0;
+                                ssts_last_zero = false;
+                            } else if (!ssts_latched) {
+                                g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
+                                ssts_clear_confirm = 0;
+                                ssts_last_zero = true;
+                                ssts_clear_last_ctr = static_cast<uint8_t>(ssts.rolling_counter);
+                            } else {
+                                g_sys_clear_in_progress.store(true, std::memory_order_relaxed);
+                                const bool first_zero = !ssts_last_zero;
+                                const bool advances = (ssts.rolling_counter ==
+                                    static_cast<uint8_t>(ssts_clear_last_ctr + 1u));
+                                if (first_zero) {
+                                    ssts_clear_confirm = 1;
+                                } else if (advances) {
+                                    ++ssts_clear_confirm;
+                                } else {
+                                    ssts_clear_confirm = 1;
+                                }
+                                ssts_clear_last_ctr = static_cast<uint8_t>(ssts.rolling_counter);
+                                ssts_last_zero = true;
+                                if (ssts_clear_confirm >= 2) {
+                                    ssts_latched = false;
+                                    g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
+                                    rt::SafetyEvent clr{rt::SafetyEvent::SAFETY_CLEAR, 0};
+                                    enqueue_safety_event(clr, 0);
+                                    g_steering_exit_request.store(true);
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // SYS_MODE_CMD (0x110)
+            if (fr.id == can::kIdSysModeCmd) {
+                can::gen::SysModeCmd decoded{};
+                if (can::decode_frame(fr, decoded) == can::gen::CodecStatus::Ok) {
+                    static etrike::protocol::StreamValidity sval;
+                    static bool inited = false;
+                    if (!inited) {
+                        sval.set_key(1, can::kIdSysModeCmd, can::gen::SysModeCmd::kCycleMs * 5);
+                        inited = true;
+                    }
+                    const bool ok = sval.observe(
+                        static_cast<std::uint8_t>(decoded.rolling_counter), xTaskGetTickCount());
+                    fbk_snap.sys_mode_valid = ok;
+                    if (ok) {
+                        fbk_snap.sys_mode = decoded.mode;
+                        g_ready_mask.fetch_or(rt::READY_BIT_MODE, std::memory_order_release);
+                        rt::SafetyEvent evt{rt::SafetyEvent::MODE_CHANGE, decoded.mode};
+                        enqueue_safety_event(evt, 0);
+                    }
+                    if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                }
+                continue;
+            }
+
+            // SAFETY_ESTOP (0x001) from Low
+            if (fr.id == can::kIdSafetyEstop) {
+                g_estop_reason.store(rt::kEstopReasonCanEstop);
+                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST), std::memory_order_release);
+                rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonCanEstop};
+                enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                continue;
+            }
+
+            // MTR_MOTOR_FBK (0x206)
+            if (fr.id == can::kIdMtrMotorFbk) {
+                can::gen::MtrMotorFbk value{};
+                if (can::decode_frame(fr, value) == can::gen::CodecStatus::Ok) {
+                    g_mtr_motor_command_speed_mmps.store(value.motor_command_speed_mmps);
+                    g_mtr_gear_state.store(value.gear_state);
+                    g_last_mtr_feedback_us.store(now_us);
+
+                    fbk_snap.mtr_command_speed_mmps = value.motor_command_speed_mmps;
+                    fbk_snap.mtr_gear_state = value.gear_state;
+                    fbk_snap.last_mtr_us = now_us;
+                    if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                }
+                continue;
+            }
+
+            // SBW_STATUS (0x201)
+            if (fr.id == can::kIdSbwStatus) {
+                can::custom::ses::Status value{};
+                if (can::custom::ses::decode_status(fr.view(), value) == can::gen::CodecStatus::Ok) {
+                    static uint8_t last_eps_roll = 0;
+                    static bool eps_first = true;
+                    uint8_t roll = value.rolling_counter;
+                    uint8_t delta = roll - last_eps_roll;
+                    if (eps_first || delta != 0) {
+                        eps_first = false;
+                        last_eps_roll = roll;
+                        int16_t angle = static_cast<int16_t>(value.steering_angle_raw - rt::kSbwAngleOffset);
+                        g_ses_angle_0_1deg.store(angle);
+                        g_ses_angle_status.store(value.angle_aligned);
+                        g_last_ses_feedback_us.store(now_us);
+
+                        fbk_snap.ses_angle_0_1deg = angle;
+                        fbk_snap.ses_angle_status = value.angle_aligned;
+                        fbk_snap.last_ses_us = now_us;
+                    }
+                    g_ses_error_status.store(value.error_status);
+                    fbk_snap.ses_error_status = value.error_status;
+                    if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                }
+                continue;
+            }
+
+            // VCU_SEB_REQ (0x7B9) observation
+            if (fr.id == can::kIdVcuSebReq) {
+                g_last_0x7B9_rx_us.store(now_us, std::memory_order_relaxed);
+                fbk_snap.last_0x7b9_rx_us = now_us;
+                if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                continue;
+            }
+
+            // BBW_STATUS (0x721)
+            if (fr.id == can::kIdBbwStatus) {
+                can::custom::seb::Status value{};
+                if (can::custom::seb::decode_status(fr.view(), value) == can::gen::CodecStatus::Ok) {
+                    uint8_t seb_err = value.error_status;
+                    if (seb_err == 3) {
+                        rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault,
+                                         static_cast<std::uint16_t>(seb_err));
+                        g_estop_reason.store(rt::kEstopReasonInternal);
+                        rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
+                        enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                    }
+                    uint16_t pres = (value.control_mode == 1 ? value.pressure_value_raw : 0);
+                    g_seb_pressure_raw.store(pres);
+                    g_seb_error_status.store(seb_err);
+
+                    fbk_snap.seb_pressure_raw = pres;
+                    fbk_snap.seb_error_status = seb_err;
+                    if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                }
+                continue;
+            }
+
+            // SBW_ERR_INFO (0x202)
+            if (fr.id == can::kIdSbwErrInfo) {
+                can::custom::ses::ErrorInfo error{};
+                if (can::custom::ses::decode_error_info(fr.view(), error) == can::gen::CodecStatus::Ok) {
+                    constexpr uint16_t kSesL3Mask = 0x3C0F;
+                    const uint16_t fault_bits = static_cast<uint16_t>(error.raw[1]) |
+                                                (static_cast<uint16_t>(error.raw[2]) << 8);
+                    const uint16_t active_l3 = fault_bits & kSesL3Mask;
+                    if (active_l3 != 0) {
+                        ESP_LOGW(TAG, "SES_ErrInfo L3 fault: 0x%04X", active_l3);
+                        rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault, active_l3);
+                        g_estop_reason.store(rt::kEstopReasonInternal);
+                        rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
+                        enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                    }
+                }
+                continue;
+            }
+
+            // SBW_TEST (0x6FA)
+            if (fr.id == can::kIdSbwTest && fr.dlc >= 7) {
+                can::custom::ses::TestTelemetry telemetry{};
+                if (can::custom::ses::decode_test(fr.view(), telemetry) == can::gen::CodecStatus::Ok) {
+                    g_ses_motor_current.store(telemetry.motor_current_raw);
+                    g_ses_ecu_temp.store(telemetry.ecu_temperature_raw);
+                    g_ses_pow_volt.store(telemetry.supply_voltage_raw);
+                    fbk_snap.ses_motor_current = telemetry.motor_current_raw;
+                    fbk_snap.ses_ecu_temp = telemetry.ecu_temperature_raw;
+                    fbk_snap.ses_pow_volt = telemetry.supply_voltage_raw;
+                    if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                }
+                continue;
+            }
+
+            // BBW_TEST (0x6FB)
+            if (fr.id == can::kIdBbwTest && fr.dlc >= 5) {
+                can::custom::seb::TestTelemetry telemetry{};
+                if (can::custom::seb::decode_test(fr.view(), telemetry) == can::gen::CodecStatus::Ok) {
+                    g_seb_motor_current.store(telemetry.motor_current_raw);
+                    g_seb_ecu_temp_c.store(telemetry.ecu_temperature_raw);
+                    fbk_snap.seb_motor_current = telemetry.motor_current_raw;
+                    fbk_snap.seb_ecu_temp_c = telemetry.ecu_temperature_raw;
+                    if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
+                }
+                continue;
+            }
+        }
+
+        // 2. Forward Gateway Frames (High -> Low)
+        if (g_high_to_low_gw_q) {
+            rt::GatewayFrame gw{};
+            const int64_t now_us = esp_timer_get_time();
+            while (xQueueReceive(g_high_to_low_gw_q, &gw, 0) == pdTRUE) {
+                if (now_us - gw.enqueued_us <= 500'000) {
+                    drv->send(gw.frame);
+                }
+            }
+        }
+
+        // 3. 100 Hz Actuator Output: 0x204 RT_DRIVE_CMD
+        rt::MotionOutputSnapshot out{};
+        if (xTaskGetTickCount() - last_100hz >= pdMS_TO_TICKS(10)) {
+            last_100hz = xTaskGetTickCount();
+            if (g_motion_output_mailbox && xQueuePeek(g_motion_output_mailbox, &out, 0) == pdTRUE) {
+                can::gen::RtDriveCmd msg{out.motor_speed_mmps, out.motor_gear};
+                if (can::encode_frame(msg, fr) == can::gen::CodecStatus::Ok) {
+                    send_can_low(fr);
+                }
+            }
+        }
+
+        // 4. 50 Hz Actuator Outputs: 0x205, 0x169, 0x7B9, 0x501
+        if (xTaskGetTickCount() - last_50hz >= pdMS_TO_TICKS(20)) {
+            last_50hz = xTaskGetTickCount();
+            if (g_motion_output_mailbox) xQueuePeek(g_motion_output_mailbox, &out, 0);
+
+            if (out.current_mode != uint8_t(can::Mode::Manual)) {
+                // 0x205 Brake Command
+                can::gen::RtBrakeCmd bmsg{out.brake_kpa};
+                if (can::encode_frame(bmsg, fr) == can::gen::CodecStatus::Ok) {
+                    send_can_low(fr);
+                }
+
+                // 0x169 Steering Request
+                if (out.steer_command_enable) {
+                    can::custom::ses::Command smsg{};
+                    int64_t now_ms = esp_timer_get_time() / 1000;
+                    if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
+                                        now_ms, smsg)) {
+                        if (can::custom::ses::encode_command(smsg, fr) == can::gen::CodecStatus::Ok) {
+                            send_can_low(fr);
+                        }
+                    }
+                }
+
+                // 0x7B9 SEB Emergency Takeover
+                if (out.seb_emergency_takeover) {
+                    send_seb_req(*drv, fr, rt::make_seb_takeover_req(), seb_roll);
+                }
+            }
+
+            // 0x501 RT_NODE_STATUS on Low Bus
             can::gen::RtNodeStatus ns = build_rt_node_status();
             ns.rolling_counter = node_status_roll++;
             ns.e2e_crc = 0;
             can::Frame nfr{};
             if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
                 ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
-                if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) send_can_low(nfr);
+                if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
+                    send_can_low(nfr);
+                }
             }
         }
-
-        // Retain a gateway frame and retry it in software (single-shot HW TX)
-        // until delivered or stale. This fixes HMI_MODE_REQ (0x111) being
-        // dropped when it loses arbitration to SYS_MODE_CMD (0x110).
-        gw_pump(g_gw_tx_low_q, send_can_low, TAG);
-        vTaskDelayUntil(&last_wake, ticks_ms_at_least_1(5));
     }
 }
 
-// ?? CAN TX high (prio 3) ???????????????????????????????????????????
-// Gateway frames are drained at 100 Hz (10ms inner loop) while
-// periodic telemetry is produced at 10 Hz (100ms outer loop).
-[[noreturn]] static void t_can_tx_high(void*) {
-    can::Frame fr;
-    while (1) {
-        g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
-        // Drain a bounded batch every 10ms. An unbounded drain lets a faulty
-        // or flooded Low bus keep this task inside send_can_high() forever
-        // when High has no ACKing peer, starving telemetry and its liveness
-        // update. Eight matches the queue capacity and preserves a yield.
-        for (int i = 0; i < 10; i++) {
-            g_alive_tx_high.store(xTaskGetTickCount(), std::memory_order_relaxed);
-            for (int forwarded = 0; forwarded < 8; ++forwarded) {
-                if (!gw_pump(g_gw_tx_high_q, send_can_high, TAG)) break;
-            }
-            // 0x121 RT_MOTION_RPT ? coherent 100 Hz measured motion report.
-            // Speed and physical gear share the MTR feedback timestamp; yaw is
-            // valid only when both MTR speed and aligned SES angle are fresh.
-            static uint8_t motion_counter = 0;
-            auto motion = rt::make_motion_report(
-                esp_timer_get_time(),
-                g_mtr_motor_command_speed_mmps.load(),
-                g_mtr_gear_state.load(),
-                g_last_mtr_feedback_us.load(),
-                g_ses_angle_0_1deg.load(),
-                g_ses_angle_status.load(),
-                g_last_ses_feedback_us.load(),
-                motion_counter);
-            if (can::encode_frame(motion, fr) == can::gen::CodecStatus::Ok
-                && send_can_high(fr)) {
-                ++motion_counter;
-            }
-            vTaskDelay(pdMS_TO_TICKS(10));
+// ── TASK 3: control_task (Core 1, Priority 5) ───────────────────────
+[[noreturn]] void control_task(void*) {
+    TickType_t last_wake = xTaskGetTickCount();
+    uint32_t tick_counter = 0;
+
+    rt::g_brake_fallback.init(esp_timer_get_time());
+    rt::g_safety_authority.reset(esp_timer_get_time());
+
+    bool     m_estop_pending = false;
+    uint8_t  m_estop_reason  = rt::kEstopReasonCanEstop;
+    uint8_t  m_current_mode  = 0;
+    bool     m_seb_takeover  = false;
+
+    while (true) {
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(10));
+        tick_counter++;
+        const int64_t now = esp_timer_get_time();
+
+        if (g_steering_estop_request.exchange(false)) {
+            g_steering.start_estop(false);
+        }
+        if (g_steering_exit_request.exchange(false)) {
+            g_steering.exit_estop();
         }
 
-        // 0x210 RT_STATE_RPT ? 10 Hz (arch ?7.4)
-        can::gen::RtStateRpt rpt;
-        rpt.mode         = g_mode_current.load();
-        auto ss = g_steering.state();
-        rpt.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
-                           (ss == rt::SteerState::STEER_FAULT)   ? 2 : 1;
-                           // 0=Normal, 1=InternalEstop(ramp/hold), 2=Fault
-        rpt.reversing    = g_reversing.load();
-        rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
-        rpt.estop_reason = g_estop_reason.load();
-        rpt.steer_state  = static_cast<uint8_t>(ss);
-        // Task health bitmask: bit set = task alive within 500ms
+        // 1. Drain Safety Events
+        rt::SafetyEvent evt;
+        bool had_estop_this_cycle = g_pending_estop_event.exchange(false);
+        if (had_estop_this_cycle) {
+            m_estop_pending = true;
+            const uint8_t fallback_reason = g_estop_reason.load();
+            m_estop_reason = fallback_reason != rt::kEstopReasonNone
+                ? fallback_reason : rt::kEstopReasonCanEstop;
+        }
+        int16_t pending_mode = g_pending_mode_event.exchange(-1);
+        if (pending_mode >= 0) {
+            m_current_mode = static_cast<uint8_t>(pending_mode);
+        }
+        if (g_pending_safety_clear.exchange(false)) {
+            m_estop_pending = false;
+            m_estop_reason = rt::kEstopReasonNone;
+            g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                   std::memory_order_release);
+            rt::HostDriveSnapshot zero{};
+            if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
+        }
+        while (g_safety_evt_q && xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {
+            switch (evt.type) {
+            case rt::SafetyEvent::ESTOP:
+                m_estop_pending = true;
+                m_estop_reason = evt.payload != rt::kEstopReasonNone
+                    ? evt.payload : rt::kEstopReasonCanEstop;
+                had_estop_this_cycle = true;
+                break;
+            case rt::SafetyEvent::MODE_CHANGE:
+                m_current_mode = evt.payload;
+                break;
+            case rt::SafetyEvent::SAFETY_CLEAR:
+                m_estop_pending = false;
+                m_estop_reason = rt::kEstopReasonNone;
+                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                       std::memory_order_release);
+                rt::HostDriveSnapshot zero{};
+                if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
+                break;
+            }
+        }
+
+        // 2. 0x011 Safety Stream Authority Acquisition & Supervision
         {
-            TickType_t now = xTaskGetTickCount();
-            rpt.task_health = 0;
-            if (now - g_alive_control.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x01;
-            if (now - g_alive_dispatch.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x02;
-            if (now - g_alive_tx_low.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500)) rpt.task_health |= 0x04;
-            // High TX task is optional (no MCP on some N16R8 bench modules).
-            if (!g_high_can_present.load(std::memory_order_relaxed)
-                || now - g_alive_tx_high.load(std::memory_order_relaxed) <= pdMS_TO_TICKS(500))
-                rpt.task_health |= 0x08;
-#ifdef BENCH_BUILD_ACKNOWLEDGED
-            rpt.task_health |= 0x80;  // bit 7: bench build indicator
+            const auto sst = rt::g_safety_authority.update(
+                now, g_last_sys_safety_sts_us.load());
+            if (sst.estop_latch_required && !m_estop_pending) {
+                m_estop_pending = true;
+                m_estop_reason = rt::kEstopReasonCanEstop;
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                                 static_cast<std::uint16_t>(
+                                     (now - g_last_sys_safety_sts_us.load()) / 1000));
+            }
+            if (sst.state == rt::SafetyStreamState::LOST || sst.sys_absent_fault || m_estop_pending) {
+                g_ready_mask.fetch_and(
+                    static_cast<uint8_t>(~(rt::READY_BIT_SAFETY | rt::READY_BIT_MODE | rt::READY_BIT_HOST)),
+                    std::memory_order_release);
+            } else if (sst.motion_authorized) {
+                g_ready_mask.fetch_or(rt::READY_BIT_SAFETY, std::memory_order_release);
+            } else {
+                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_SAFETY),
+                                       std::memory_order_release);
+            }
+
+            if (sst.sys_absent_fault) {
+                g_no_sys_authority.store(true, std::memory_order_relaxed);
+                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                                 static_cast<std::uint16_t>(rt::kSysSafetyAcquireTimeoutUs / 1000));
+            } else {
+                const uint8_t mask = g_ready_mask.load(std::memory_order_acquire);
+                g_no_sys_authority.store(!rt::is_sys_authority_ready(mask),
+                                         std::memory_order_relaxed);
+            }
+        }
+        g_mode_current.store(m_current_mode);
+
+        // 3. Read input snapshots
+        rt::HostDriveSnapshot host{};
+        rt::ActuatorFeedbackSnapshot fbk{};
+        if (g_host_cmd_mailbox) xQueuePeek(g_host_cmd_mailbox, &host, 0);
+        if (g_feedback_mailbox) xQueuePeek(g_feedback_mailbox, &fbk, 0);
+
+        const uint8_t cur_ready_mask = g_ready_mask.load(std::memory_order_acquire);
+        if (!rt::is_motion_ready(cur_ready_mask)) {
+            host.speed_mmps = 0;
+            host.yaw_rate_mrad_s = 0;
+        }
+
+        // 4. Resolve Kinematics & Limits
+        rt::ResolvedSetpoint sp{};
+        g_resolver.resolve({host.speed_mmps, host.yaw_rate_mrad_s}, sp);
+        sp.cmd_gear = host.gear_override;
+
+        can::gen::HostSteerCmd direct_steer{};
+        direct_steer.steer_angle_0_1deg = static_cast<int16_t>(g_direct_steer_angle_0_1deg.load());
+        direct_steer.angle_valid = g_direct_steer_valid.load();
+        rt::apply_fresh_direct_steering(direct_steer,
+            g_last_direct_steer_us.load(), now, sp);
+
+        uint32_t obs = g_obstacle_mm.load();
+        sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
+
+#if ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 3
+        g_calc_speed.update(sp.motor_speed_mmps, 0.01f);
+#endif
+
+#if ETRIKE_RT_ENCODERS == 1
+        float enc_speed = rt::encoder_read_speed_mmps(0, 0.01f);
+        g_encoder_speed_mmps.store(static_cast<int32_t>(enc_speed));
+        rt::encoder_reset(0);
+#endif
+
+        // Dynamic angle clamp
+        {
+            float max_deg = rt::compute_dynamic_limit(static_cast<float>(std::abs(sp.motor_speed_mmps)));
+            int32_t limit_mdeg = static_cast<int32_t>(max_deg * 1000.0f);
+            sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
+        }
+
+        int32_t obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
+        int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
+
+        if (auto* drv = rt::can_low_driver()) {
+            drv->service_recovery(now);
+        }
+        update_low_can_tx_admission(now);
+        bool startup_grace = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
+
+        if (m_current_mode == uint8_t(can::Mode::Auto)
+            && std::abs(sp.motor_speed_mmps) > shared::kLowSpeedThreshMmps) {
+            g_last_nonzero_cmd_us.store(now, std::memory_order_relaxed);
+        }
+
+        rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
+                                                m_estop_pending, m_current_mode, m_seb_takeover);
+        if (m_estop_pending && sr.estop_reason == rt::kEstopReasonCanEstop) {
+            sr.estop_reason = m_estop_reason;
+        }
+
+        // SEB Brake Fallback Supervisor
+        {
+            rt::SebFallbackInput fb_in;
+            fb_in.now_us = now;
+            const int64_t last_hb = g_last_sys_hb_us.load();
+            const bool hb_lost = (!g_bench_solo_mode && (last_hb < 0
+                || (now - last_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000));
+            fb_in.sys_hb_fresh = !hb_lost;
+            const int64_t last_7b9 = g_last_0x7B9_rx_us.load();
+            fb_in.sys_0x7B9_observed =
+                (last_7b9 >= 0 && (now - last_7b9) < 100'000);
+            fb_in.startup_grace_active = startup_grace;
+            const auto fb_out = rt::g_brake_fallback.update(fb_in);
+            m_seb_takeover = fb_out.emergency_tx_0x7B9;
+        }
+        g_seb_takeover.store(m_seb_takeover);
+        g_mtr_unavailable.store(rt::g_mtr_health.mtr_unavailable, std::memory_order_relaxed);
+        g_brake_fallback_state.store(static_cast<uint8_t>(rt::g_brake_fallback.state()),
+                                     std::memory_order_relaxed);
+
+        if (sr.estop_reason != 0) {
+            g_estop_reason.store(sr.estop_reason);
+        } else if (!sr.zero_setpoints && !sr.disable_steering
+                   && m_current_mode != uint8_t(can::Mode::Estop)) {
+            g_estop_reason.store(rt::kEstopReasonNone);
+        }
+
+        if (sr.zero_setpoints) {
+            rt::HostDriveSnapshot zero{};
+            if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
+            sp = {};
+#if ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 3
+            g_calc_speed.reset();
+#endif
+
+            const bool is_active_local_trip = (sr.obstacle_triggered ||
+                                               sr.estop_reason == rt::kEstopReasonFollowingError ||
+                                               sr.estop_reason == rt::kEstopReasonBusOff ||
+                                               sr.estop_reason == rt::kEstopReasonInternal ||
+                                               m_seb_takeover);
+            const bool sys_clear_in_progress = g_sys_clear_in_progress.load(std::memory_order_relaxed);
+            if (is_active_local_trip && !sys_clear_in_progress && can_send_estop()) {
+                can::Frame estop_frame;
+                can::gen::SafetyEstop estop_msg{};
+                if (can::gen::encode_safety_estop(estop_msg, estop_frame) == can::gen::CodecStatus::Ok) {
+                    post_gateway_frame(estop_frame);
+                    send_can_high(estop_frame);
+                }
+            }
+        }
+        if (sr.brake_kpa) bk = sr.brake_kpa;
+        if (sr.disable_steering) {
+            g_steering.start_estop(sr.obstacle_triggered);
+            if (sr.obstacle_triggered) {
+                g_steering.set_estop_hold_time(now / 1000);
+            }
+        }
+
+        g_brake_kpa_to_send.store(bk);
+
+        int32_t measured_speed_mmps = 0;
+#if ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 1
+        measured_speed_mmps = g_mtr_motor_command_speed_mmps.load();
+#elif ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 2
+        measured_speed_mmps = g_encoder_speed_mmps.load();
+#elif ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 3
+        measured_speed_mmps = g_calc_speed.get();
+#endif
+
+#if ETRIKE_RT_PID_MODE > 0
+        {
+            int16_t pid_out = 0;
+            g_speed_ctrl.update_shadow_pid(sp.motor_speed_mmps, measured_speed_mmps, 0.01f, pid_out);
+            g_pid_output_mmps.store(pid_out);
+            g_last_speed_setpoint_mmps.store(sp.motor_speed_mmps);
+
+#if ETRIKE_RT_PID_MODE == 2
+            if (sp.motor_speed_mmps != 0) {
+                sp.motor_speed_mmps += pid_out;
+                sp.motor_speed_mmps = std::clamp<int32_t>(sp.motor_speed_mmps,
+                    -shared::kMaxSpeedRevMmps, shared::kMaxSpeedFwdMmps);
+            }
 #endif
         }
-        if (can::encode_frame(rpt, fr) != can::gen::CodecStatus::Ok) {
-            ESP_LOGE(TAG, "RT_STATE_RPT codec rejected local values");
-            continue;
+#endif
+
+        if (m_current_mode == uint8_t(can::Mode::Auto)) {
+            g_steering.set_target(sp.steer_angle_mdeg, g_mtr_motor_command_speed_mmps.load());
         }
-        // Always publish RT_STATE_RPT on low (TWAI) so SYS/host see RT even if MCP is ListenOnly.
-        auto* drv_low = rt::can_low_driver();
-        if (drv_low) {
-            if (!drv_low->send(fr)) {
-                ESP_LOGW(TAG, "Low CAN RT_STATE_RPT send failed");
-            }
+
+        g_last_cmd_angle_0_1deg.store(static_cast<int16_t>(sp.steer_angle_mdeg / 100));
+        g_reversing.store(sp.reversing);
+
+        // 5. Publish Motion Output Snapshot
+        rt::MotionOutputSnapshot motion_out{};
+        const bool motion_mode = (m_current_mode == uint8_t(can::Mode::Auto));
+        auto ss = g_steering.state();
+        bool drive_allowed = motion_mode
+            && (ss == rt::SteerState::STEER_ACTIVE
+                || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
+                || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT);
+
+        motion_out.motor_speed_mmps = drive_allowed ? sp.motor_speed_mmps : 0;
+        if (!drive_allowed) {
+            motion_out.motor_gear = uint8_t(can::Gear::N);
+        } else if (sp.cmd_gear != 0) {
+            motion_out.motor_gear = sp.cmd_gear;
+        } else if (sp.motor_speed_mmps > 0) {
+            motion_out.motor_gear = uint8_t(can::Gear::D);
+        } else if (sp.motor_speed_mmps < 0) {
+            motion_out.motor_gear = uint8_t(can::Gear::R);
+        } else {
+            motion_out.motor_gear = uint8_t(can::Gear::N);
         }
-        // High bus only when MCP can transmit (Normal mode with ACKing peers).
-        static uint32_t rpt_fail_count = 0;
-        if (g_can_high.can_transmit()) {
-            if (!g_can_high.send(fr)) {
-                rpt_fail_count++;
-                if (rpt_fail_count == 1 || rpt_fail_count % 100 == 0) {
-                    ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed (count=%lu)", rpt_fail_count);
+
+        motion_out.steer_angle_0_1deg = static_cast<int16_t>(sp.steer_angle_mdeg / 100);
+        motion_out.brake_kpa = bk;
+        motion_out.current_mode = m_current_mode;
+        motion_out.estop_reason = g_estop_reason.load();
+        motion_out.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
+                                  (ss == rt::SteerState::STEER_FAULT)   ? 2 : 1;
+        motion_out.seb_emergency_takeover = m_seb_takeover;
+        motion_out.steer_command_enable = (m_current_mode != uint8_t(can::Mode::Manual));
+        motion_out.reversing = sp.reversing;
+
+        if (g_motion_output_mailbox) xQueueOverwrite(g_motion_output_mailbox, &motion_out);
+
+        monitor_can_bus_off();
+        pump_diagnostics();
+
+        // 6. Tick-Divided 10 Hz Staleness Check (Every 10 ticks)
+        if (tick_counter % 10 == 0) {
+            if (!g_bench_solo_mode && g_watchdog.is_stale(now)) {
+                static int64_t last_stale_log_us = 0;
+                rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
+                                 static_cast<std::uint16_t>((now - g_watchdog.last_feed()) / 1000));
+                if (now - last_stale_log_us > 2'000'000) {
+                    last_stale_log_us = now;
+                    ESP_LOGW(TAG, "Command stale (no host drive)");
                 }
-            } else if (rpt_fail_count > 0) {
-                ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
-                rpt_fail_count = 0;
-            }
-        }
-
-        // 0x501 RT_NODE_STATUS at ~10 Hz on the high bus (independent dual-bus
-        // emission; low-bus copy runs at 50 Hz in tx_low).
-        {
-            static uint8_t node_status_roll_high = 0;
-            can::gen::RtNodeStatus ns = build_rt_node_status();
-            ns.rolling_counter = node_status_roll_high++;
-            ns.e2e_crc = 0;
-            can::Frame nfr{};
-            if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
-                ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
-                if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) send_can_high(nfr);
-            }
-        }
-
-        // 0x122 RT_WHEEL_SPEED_STS — physical wheel speed (issue #3). Published on
-        // the low bus for SYS ONLY when the encoder subsystem is compiled in. When
-        // disabled (the current vehicle has no wheel encoder) no frame is sent;
-        // SYS treats the absent stream as NOT_INSTALLED (no physical EGAS), and
-        // the 0x206 echo remains the command-path source. Sensor state ramps
-        // ACQUIRING -> VALID after the first frames following boot.
-        if constexpr (rt::build::kEncodersEnabled) {
-            static uint8_t ws_counter = 0;
-            static uint8_t ws_acquire = 0;
-            static constexpr uint8_t kWsAcquireFrames = 5;
-            can::gen::RtWheelSpeedSts ws{};
-            ws.measured_speed_mmps =
-                static_cast<std::int16_t>(g_encoder_speed_mmps.load());
-            ws.sensor_state = (ws_acquire < kWsAcquireFrames)
-                ? can::gen::RtWheelSpeedSts::kSensorStateAcquiring
-                : can::gen::RtWheelSpeedSts::kSensorStateValid;
-            if (ws_acquire < 255) ++ws_acquire;
-            ws.rolling_counter = ws_counter++;
-            can::Frame wfr{};
-            if (can::encode_frame(ws, wfr) == can::gen::CodecStatus::Ok) {
-                auto* drv_low = rt::can_low_driver();
-                if (drv_low) drv_low->send(wfr);
-            }
-        }
-
-        // 0x310 STEER_DIAG ? 10 Hz (v0.0.4: SES telemetry for Host)
-        // Rescale: SES_Test source (0.0078125 A/bit, 0.5 degC/bit) ? STEER_DIAG dest (0.01 A/bit, 0.1 degC/bit)
-        {
-            int16_t angle = g_ses_angle_0_1deg.load();
-            uint8_t fault = (g_ses_error_status.load() > 0) ? 1 : 0;
-            uint16_t mtr_curr = uint16_t((g_ses_motor_current.load() * 25) / 32);  // ?0.78125
-            uint16_t ecu_tmp = uint16_t(g_ses_ecu_temp.load() * 5);               // ?5
-            can::gen::SteerDiag message{};
-            message.angle_0_1deg = angle * 0.1;
-            message.fault = fault;
-            message.motor_current = mtr_curr * 0.01;
-            message.ecu_temp = ecu_tmp * 0.1;
-            if (can::encode_frame(message, fr) != can::gen::CodecStatus::Ok) continue;
-            static uint32_t diag_fail_count = 0;
-            if (!g_can_high.send(fr)) {
-                diag_fail_count++;
-                if (diag_fail_count == 1 || diag_fail_count % 100 == 0) {
-                    ESP_LOGW(TAG, "MCP2515 STEER_DIAG send failed (count=%lu)", diag_fail_count);
-                }
-            } else if (diag_fail_count > 0) {
-                ESP_LOGI(TAG, "MCP2515 STEER_DIAG send recovered after %lu failures", diag_fail_count);
-                diag_fail_count = 0;
-            }
-        }
-
-        // 0x311 BRAKE_DIAG ? 10 Hz (v0.0.4: SEB telemetry for Host)
-        // Rescale: SEB_Test source (0.0078125 A/bit, 0.5 degC/bit) ? BRAKE_DIAG dest (0.01 A/bit, 0.1 degC/bit)
-        {
-            uint16_t seb_pressure = g_seb_pressure_raw.load();
-            uint8_t  seb_fault    = (g_seb_error_status.load() > 0) ? 1 : 0;
-            uint16_t mtr_curr = uint16_t((g_seb_motor_current.load() * 25) / 32); // ?0.78125
-            // SEB: factor 0.5 offset -40 ? BRAKE_DIAG: factor 0.1 offset 0.
-            // Use signed intermediate to prevent wrap on sub-zero temps (bug B3).
-            int32_t ecu_tmp_raw = int32_t(g_seb_ecu_temp_c.load()) * 5 - 400;
-            uint16_t ecu_tmp = ecu_tmp_raw < 0 ? 0 : uint16_t(ecu_tmp_raw);
-            can::gen::BrakeDiag message{};
-            message.pressure_raw = seb_pressure * 0.05;
-            message.fault = seb_fault;
-            message.motor_current = mtr_curr * 0.01;
-            message.ecu_temp = ecu_tmp * 0.1;
-            if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
-        }
-
-        // 0x220 RT_PID_RPT ? 10 Hz (shadow PID telemetry, arch ?7.6, gap #5)
-        {
-            int16_t setpoint = static_cast<int16_t>(std::clamp(
-                g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
-            int16_t measured = g_mtr_motor_command_speed_mmps.load();
-            int16_t pid      = g_pid_output_mmps.load();
-            can::gen::RtPidRpt message{setpoint, measured, pid};
-            if (can::encode_frame(message, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
-        }
-
-        // 0x620 RT_DIAG_RPT ? 1 Hz (RT-exclusive transport + supervision diag).
-        static int64_t last_diag_us = 0;
-        static uint8_t diag_counter = 0;
-        {
-            const int64_t now_diag = esp_timer_get_time();
-            if (now_diag - last_diag_us >= 1'000'000) {
-                last_diag_us = now_diag;
-                can::gen::RtDiagRpt dr = build_rt_diag_rpt();
-                dr.rolling_counter = diag_counter++;
-                if (can::encode_frame(dr, fr) == can::gen::CodecStatus::Ok) send_can_high(fr);
-            }
-        }
-
-    }
-}
-
-// ?? Watchdog (prio 1, 10 Hz) ???????????????????????????????????????
-[[noreturn]] static void t_watchdog(void*) {
-    TickType_t per = ticks_ms_at_least_1(100), last = xTaskGetTickCount();
-    while (1) {
-        check_task_watchdog();
-        if (!g_bench_solo_mode && g_watchdog.is_stale(esp_timer_get_time())) {
-            static int64_t last_stale_log_us = 0;
-            const int64_t now_us = esp_timer_get_time();
-            rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
-                             static_cast<std::uint16_t>(
-                                 (now_us - g_watchdog.last_feed()) / 1000));
-            if (now_us - last_stale_log_us > 2'000'000) {
-                last_stale_log_us = now_us;
-                ESP_LOGW(TAG, "Command stale (no host drive)");
-            }
-            rt::g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
                                        std::memory_order_release);
-            can::gen::HostDriveCmd zero{};
-            xQueueOverwrite(g_cmd_q, &zero);
-            g_steering_estop_request.store(true);  // ramp to 0? (gap C3, replaces disable flag)
+                rt::HostDriveSnapshot zero{};
+                if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
+                g_steering_estop_request.store(true);
+            }
         }
-        vTaskDelayUntil(&last, per);
-    }
-}
 
-static void check_task_watchdog() {
-    TickType_t now = xTaskGetTickCount();
-    uint16_t stalled_mask = 0;
-    auto stale = [&](std::atomic<uint32_t>& a, const char* name, uint16_t bit) {
-        if (now - a.load(std::memory_order_relaxed) > pdMS_TO_TICKS(500)) {
-            ESP_LOGE(TAG, "Task %s stalled >500ms ? hardware WDT may fire", name);
-            stalled_mask |= bit;
-        }
-    };
-    stale(g_alive_control,  "control",  1u);
-    stale(g_alive_dispatch, "dispatch", 2u);
-    stale(g_alive_tx_low,   "tx_low",   4u);
-    if (g_high_can_present.load(std::memory_order_relaxed))
-        stale(g_alive_tx_high, "tx_high", 8u);
-    // Report-only: which RT task(s) missed their alive heartbeat (>500ms).
-    if (stalled_mask != 0)
-        rt::diag().raise(etrike::diagnostics::DiagId::RtTaskHealthFault, stalled_mask);
-}
-
-// ?? Heartbeat (prio 1, 2 Hz) ???????????????????????????????????????
-[[noreturn]] static void t_heartbeat(void*) {
-    TickType_t per = ticks_ms_at_least_1(rt::kHeartbeatIntervalMs), last = xTaskGetTickCount();
-    can::Frame fr;
-    while (1) {
-        // Compute health flags for heartbeat byte 1
-        uint8_t hf = 0;
-        {
-            int64_t now_us = esp_timer_get_time();
+        // 7. Tick-Divided 2 Hz Heartbeats (Every 50 ticks)
+        if (tick_counter % 50 == 0) {
+            uint8_t hf = 0;
             bool sys_alive = (g_last_sys_hb_us.load() > 0
-                && (now_us - g_last_sys_hb_us.load()) <= int64_t(rt::kHeartbeatTimeoutMsSys) * 1000);
+                && (now - g_last_sys_hb_us.load()) <= int64_t(rt::kHeartbeatTimeoutMsSys) * 1000);
             bool host_alive = (g_last_host_hb_us.load() > 0
-                && (now_us - g_last_host_hb_us.load()) <= int64_t(shared::kHeartbeatTimeoutMsHost) * 1000);
+                && (now - g_last_host_hb_us.load()) <= int64_t(shared::kHeartbeatTimeoutMsHost) * 1000);
             if (sys_alive && host_alive) hf |= rt::kHbHealthBitHeartbeatOk;
             if (g_steering.state() == rt::SteerState::ESTOP_RAMP_TO_ZERO
                 || g_steering.state() == rt::SteerState::ESTOP_HOLD_THEN_SILENT
-                || g_mode_current.load() == uint8_t(can::Mode::Estop))
+                || m_current_mode == uint8_t(can::Mode::Estop))
                 hf |= rt::kHbHealthBitEstopActive;
-            if (g_mode_current.load() == uint8_t(can::Mode::Auto))
+            if (m_current_mode == uint8_t(can::Mode::Auto))
                 hf |= rt::kHbHealthBitModeAuto;
             if (!g_can_high.bus_off())
                 hf |= rt::kHbHealthBitCanOk;
-        }
-        g_heartbeat.tick_low(fr, hf);
-        auto* drv = rt::can_low_driver();
-        if (drv) send_can_low(fr);
-        // High heartbeat only when MCP can actually transmit (not ListenOnly / missing).
-        if (g_can_high.can_transmit()) {
-            g_heartbeat.tick_high(fr, hf);
-            static uint32_t hb_fail_count = 0;
-            if (!g_can_high.send(fr)) {
-                hb_fail_count++;
-                if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
-                    ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
+
+            can::Frame h_fr{};
+            g_heartbeat.tick_low(h_fr, hf);
+            send_can_low(h_fr);
+
+            if (g_can_high.can_transmit()) {
+                g_heartbeat.tick_high(h_fr, hf);
+                static uint32_t hb_fail_count = 0;
+                if (!g_can_high.send(h_fr)) {
+                    hb_fail_count++;
+                    if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
+                        ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
+                    }
+                } else if (hb_fail_count > 0) {
+                    ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
+                    hb_fail_count = 0;
                 }
-            } else if (hb_fail_count > 0) {
-                ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
-                hb_fail_count = 0;
             }
         }
-        vTaskDelayUntil(&last, per);
     }
 }
 
-// ???????????????????????????????????????????????????????????????????
+// ── Application Entry Point ─────────────────────────────────────────
 extern "C" void app_main() {
-    ESP_LOGI(TAG, "RT ESP32-S3 boot");
-    
+    ESP_LOGI(TAG, "RT ESP32-S3 boot (3-Task Architecture)");
+
     // Evaluate System Run Mode
     {
         bool override_pin_low = false;
         if (SYSTEM_RUN_MODE == 1) {
             gpio_set_direction(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN), GPIO_MODE_INPUT);
             gpio_pullup_en(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN));
-            // Brief delay to let pull-up stabilize
             vTaskDelay(pdMS_TO_TICKS(10));
             override_pin_low = (gpio_get_level(static_cast<gpio_num_t>(DEVELOPER_OVERRIDE_PIN)) == 0);
         }
@@ -1137,57 +1304,38 @@ extern "C" void app_main() {
     rt::can_low_init();
     if (auto* drv = rt::can_low_driver()) {
         drv->set_tx_admission(true);
-        ESP_LOGI(TAG, "Low CAN transport initialized (streaming discovery & heartbeats)");
+        ESP_LOGI(TAG, "Low CAN transport initialized");
     }
     bool has_high_can = g_can_high.init();
     g_high_can_present.store(has_high_can, std::memory_order_relaxed);
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();
-    if constexpr (rt::build::kEncodersEnabled) {
-        rt::encoder_init();
-    }
+#if ETRIKE_RT_ENCODERS == 1
+    rt::encoder_init();
+#endif
 
-    // External watchdog GPIO ? toggled by control_task at 100 Hz (TPS3850 or equiv)
-    // gpio_set_direction(static_cast<gpio_num_t>(rt::kWdtToggleGpio), GPIO_MODE_OUTPUT);
-    // gpio_set_level(static_cast<gpio_num_t>(rt::kWdtToggleGpio), 0);
+    // Mailboxes (Depth 1 Overwrite)
+    g_host_cmd_mailbox      = xQueueCreate(1, sizeof(rt::HostDriveSnapshot));
+    g_feedback_mailbox      = xQueueCreate(1, sizeof(rt::ActuatorFeedbackSnapshot));
+    g_motion_output_mailbox = xQueueCreate(1, sizeof(rt::MotionOutputSnapshot));
 
-    g_can_rx_low_q  = xQueueCreate(16, sizeof(can::Frame));
-    g_can_rx_high_q = xQueueCreate(16, sizeof(can::Frame));
-    g_cmd_q         = xQueueCreate( 1, sizeof(can::gen::HostDriveCmd));  // overwrite queue ? only latest value matters
-    g_setpoint_q    = xQueueCreate( 1, sizeof(rt::ResolvedSetpoint));    // overwrite queue
-    g_gw_tx_low_q   = xQueueCreate( 8, sizeof(GwTxFrame));
-    g_gw_tx_high_q  = xQueueCreate( 8, sizeof(GwTxFrame));
-    g_safety_evt_q  = xQueueCreate(16, sizeof(rt::SafetyEvent));
+    // Bounded Gateway Queue (Depth 8)
+    g_high_to_low_gw_q      = xQueueCreate(8, sizeof(rt::GatewayFrame));
 
-    int task_count = 0;
+    // Safety Event Queue (Depth 16)
+    g_safety_evt_q          = xQueueCreate(16, sizeof(rt::SafetyEvent));
 
-    static CanRxParams rx_low_par  = { low_receive,  nullptr };
-    rx_low_par.queue  = g_can_rx_low_q;
-    xTaskCreate(task_can_rx, "rx_low",  4096, &rx_low_par,  5, nullptr);
-    task_count++;
-
+    // Spawn only 3 tasks pinned to cores
     if (has_high_can) {
-        static CanRxParams rx_high_par = { high_receive, nullptr, &g_can_high };
-        rx_high_par.queue = g_can_rx_high_q;
-        xTaskCreate(task_can_rx, "rx_high", 4096, &rx_high_par, 5, nullptr);
-        task_count++;
+        xTaskCreatePinnedToCore(can_high_task, "can_high", 4096, nullptr, 4, nullptr, 0);
     } else {
-        ESP_LOGW(TAG, "High CAN (MCP2515) not available ? rx_high/tx_high tasks skipped");
+        ESP_LOGW(TAG, "High CAN (MCP2515) not available — can_high_task skipped");
     }
 
-    xTaskCreate(t_dispatch,    "dispatch",4096, nullptr, 4, nullptr); task_count++;
-    xTaskCreate(t_control,     "control", 4096, nullptr, 4, nullptr); task_count++;
-    xTaskCreate(t_can_tx_low,  "tx_low",  3072, nullptr, 3, nullptr); task_count++;
+    xTaskCreatePinnedToCore(can_low_task, "can_low", 4096, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(control_task, "control", 4096, nullptr, 5, nullptr, 1);
 
-    if (has_high_can) {
-        xTaskCreate(t_can_tx_high, "tx_high", 3072, nullptr, 3, nullptr);
-        task_count++;
-    }
-
-    xTaskCreate(t_watchdog,    "watchdog",4096, nullptr, 1, nullptr); task_count++;
-    xTaskCreate(t_heartbeat,   "hb",      3072, nullptr, 1, nullptr); task_count++;
-
-    ESP_LOGI(TAG, "Ready ? %d tasks", task_count);
+    ESP_LOGI(TAG, "Ready — 3 tasks pinned");
     vTaskDelete(nullptr);
 }

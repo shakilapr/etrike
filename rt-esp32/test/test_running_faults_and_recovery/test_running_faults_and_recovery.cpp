@@ -324,9 +324,10 @@ public:
         if (f.id == can::kIdSbwErrInfo && !from_high) {
             can::custom::ses::ErrorInfo error{};
             if (can::custom::ses::decode_error_info(f.view(), error) == can::gen::CodecStatus::Ok) {
-                uint8_t angle_faults  = error.raw[1] & 0x0F;
-                uint8_t torque_faults = (error.raw[2] >> 2) & 0x0F;
-                if (angle_faults || torque_faults) {
+                constexpr uint16_t kSesL3Mask = 0x3C0F; // Byte 1 (0x0F) | (Byte 2 (0x3C) << 8)
+                const uint16_t fault_bits = static_cast<uint16_t>(error.raw[1]) |
+                                            (static_cast<uint16_t>(error.raw[2]) << 8);
+                if ((fault_bits & kSesL3Mask) != 0) {
                     rt_estop_active = true;
                     rt_estop_reason = rt::kEstopReasonInternal;
                     rt_brake_request_kpa = shared::kMaxBrakeKpa;
@@ -729,25 +730,67 @@ void test_running_fault_obstacle_collision_imminent_and_clearance(void) {
 
 // ── Test 7: Smart Actuator L3 Fatal Error (SES 0x202 & SEB 0x721) ──
 void test_running_fault_actuator_l3_fault_estop(void) {
-    RunningFaultSystemHarness s{};
-    s.init();
-    s.establish_active_cruise(2000, 0);
+    // 1. Verify that non-L3 fault bits do NOT trigger ESTOP
+    {
+        RunningFaultSystemHarness s{};
+        s.init();
+        s.establish_active_cruise(2000, 0);
 
-    TEST_ASSERT_EQUAL(RelayController::State::Drive, s.mtr_relays.state());
-    TEST_ASSERT_EQUAL(1544, s.mtr_dac.current_code());
+        // Byte 0: Controller Under/Over Voltage (L2), CAN Comms (L1), Temp (L1), etc.
+        can::Frame f_non_l3{};
+        f_non_l3.id = can::kIdSbwErrInfo;
+        f_non_l3.dlc = 8;
+        f_non_l3.data.fill(0);
+        f_non_l3.data[0] = 0xFF; // Non-L3 faults in byte 0
+        f_non_l3.data[1] = 0xF0; // Non-L3 faults in byte 1 (bits 4..7: power, centering, over-angle, stall)
+        f_non_l3.data[2] = 0xC3; // Non-L3 faults in byte 2 (bits 0..1 current/sensor5V, bits 6..7 angle-err/idling)
+        f_non_l3.data[3] = 0x01; // EEPROM fault (L2)
+        s.deliver_to_rt(f_non_l3, /*from_high=*/false);
 
-    // SES sends 0x202 with torque fault bit set
-    can::Frame f_202{};
-    f_202.id = can::kIdSbwErrInfo;
-    f_202.dlc = 8;
-    f_202.data.fill(0);
-    f_202.data[2] = (1 << 2); // torque_faults = 1
-    s.deliver_to_rt(f_202, /*from_high=*/false);
+        // No L3 bits are active -> ESTOP must NOT be triggered
+        TEST_ASSERT_FALSE(s.rt_estop_active);
+        TEST_ASSERT_EQUAL(rt::kEstopReasonNone, s.rt_estop_reason);
+        TEST_ASSERT_EQUAL(RelayController::State::Drive, s.mtr_relays.state());
+    }
 
-    // RT trips kEstopReasonInternal immediately
-    TEST_ASSERT_TRUE(s.rt_estop_active);
-    TEST_ASSERT_EQUAL(rt::kEstopReasonInternal, s.rt_estop_reason);
-    TEST_ASSERT_EQUAL(shared::kMaxBrakeKpa, s.rt_brake_request_kpa);
+    // 2. Exhaustively verify each of the 8 L3 fault bits individually triggers ESTOP
+    // Documented L3 bits:
+    // Byte 1 (Angle Sensor):
+    //   - bit 0 (0x01): Angle Sensor Pri. Open Circuit
+    //   - bit 1 (0x02): Angle Sensor Pri. Out of Range
+    //   - bit 2 (0x04): Angle Sensor Sec. Open Circuit
+    //   - bit 3 (0x08): Angle Sensor Sec. Out of Range
+    // Byte 2 (Torque Sensor):
+    //   - bit 2 (0x04): Torque Sensor T1 Open Circuit
+    //   - bit 3 (0x08): Torque Sensor T1 Out of Range
+    //   - bit 4 (0x10): Torque Sensor T2 Open Circuit
+    //   - bit 5 (0x20): Torque Sensor T2 Out of Range
+    struct L3BitTest {
+        uint8_t byte_idx;
+        uint8_t bit_mask;
+    };
+    const L3BitTest kL3Vectors[] = {
+        {1, 0x01}, {1, 0x02}, {1, 0x04}, {1, 0x08},
+        {2, 0x04}, {2, 0x08}, {2, 0x10}, {2, 0x20}
+    };
+
+    for (const auto& vec : kL3Vectors) {
+        RunningFaultSystemHarness s{};
+        s.init();
+        s.establish_active_cruise(2000, 0);
+
+        can::Frame f_l3{};
+        f_l3.id = can::kIdSbwErrInfo;
+        f_l3.dlc = 8;
+        f_l3.data.fill(0);
+        f_l3.data[vec.byte_idx] = vec.bit_mask;
+        s.deliver_to_rt(f_l3, /*from_high=*/false);
+
+        TEST_ASSERT_TRUE(s.rt_estop_active);
+        TEST_ASSERT_EQUAL(rt::kEstopReasonInternal, s.rt_estop_reason);
+        TEST_ASSERT_EQUAL(shared::kMaxBrakeKpa, s.rt_brake_request_kpa);
+        TEST_ASSERT_TRUE(s.rt_disable_steering);
+    }
 }
 
 // ── Test 8: Dedicated 0x204 Watchdog Trip & 3-Frame Recovery ───────

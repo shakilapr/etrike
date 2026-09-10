@@ -44,7 +44,7 @@ static void monitor_can_bus_off() {
                                      (static_cast<std::uint16_t>(health.tec) << 8)
                                      | static_cast<std::uint16_t>(health.rec)));
                 drv->set_tx_admission(false);
-                xQueueReset(g_gw_tx_low_q);
+                if (g_high_to_low_gw_q) xQueueReset(g_high_to_low_gw_q);
                 if (g_bench_solo_mode) {
                     ESP_LOGW(TAG,
                         "Low CAN unavailable in developer bypass: TEC=%u REC=%u; "
@@ -58,8 +58,8 @@ static void monitor_can_bus_off() {
                     const rt::SafetyEvent event{
                         rt::SafetyEvent::ESTOP, rt::kEstopReasonBusOff};
                     enqueue_safety_event(event, 0);
-                    can::gen::HostDriveCmd zero{};
-                    xQueueOverwrite(g_cmd_q, &zero);
+                    rt::HostDriveSnapshot zero{};
+                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
                     g_steering_estop_request.store(true);
                     g_estop_reason.store(rt::kEstopReasonBusOff);
                     if (can_send_estop()) {
@@ -67,7 +67,7 @@ static void monitor_can_bus_off() {
                         can::gen::SafetyEstop estop_msg{};
                         if (can::gen::encode_safety_estop(estop_msg, ef)
                             == can::gen::CodecStatus::Ok) {
-                            xQueueSend(g_gw_tx_high_q, &ef, 0);
+                            send_can_high(ef);
                         }
                     }
                 }
@@ -101,8 +101,8 @@ static void monitor_can_bus_off() {
             if (bus_off_count_high >= 5 && !g_bench_solo_mode) {
                 ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
                 g_estop_reason.store(rt::kEstopReasonBusOff);
-                can::gen::HostDriveCmd zero{};
-                xQueueOverwrite(g_cmd_q, &zero);
+                rt::HostDriveSnapshot zero{};
+                if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
                 g_steering_estop_request.store(true);
             }
         } else if (!g_can_high.is_recovering()) {

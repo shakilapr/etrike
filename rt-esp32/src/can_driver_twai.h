@@ -61,12 +61,6 @@ private:
     // ESP-IDF 5.5 abandons the active frame without on_tx_done on Bus-Off.
     // One driver/application slot lets recovery reclaim it deterministically.
     static constexpr uint8_t kTxSlots = 1;
-    // With single-shot TX a frame that loses arbitration is abandoned by the
-    // ESP on-chip driver WITHOUT a matching on_tx_done, so the TX slot would
-    // leak and block all further Low-bus transmits. Track the in-flight slot
-    // and reclaim it from send() if tx_done has not arrived within a short
-    // deadline (tx_done may fire late or never on arbitration loss).
-    static constexpr int64_t kTxReclaimUs = 5000;
     std::atomic<uint8_t>  m_inflight_slot{0xFF};  // 0xFF = none in flight
     std::atomic<uint32_t> m_inflight_id{0};       // id of in-flight frame (for diagnostics)
     std::atomic<int64_t>  m_inflight_us{0};

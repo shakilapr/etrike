@@ -182,25 +182,18 @@ bool TwaiDriver::init() {
     config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
     config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
     config.bit_timing.bitrate = m_config.bitrate_hz;
-    // Single-shot TX (fail_retry_cnt = 0). Combined with TWAI self-test mode
-    // (ETRIKE_RT_TWAI_SELF_TEST, bench only) the controller self-ACKs each
-    // one-shot transmit, so on_tx_done always fires and frees the single HW TX
-    // slot — no slot leak, and no prolonged TX holding that would accumulate TEC
-    // and trigger Bus-Off. Arbitration losses (e.g. 0x111 vs 0x110) are retried
-    // in software by the gateway pump in main.cpp, so delivery is still
-    // guaranteed without hardware auto-retransmission.
-    config.fail_retry_cnt = 0;
-    config.tx_queue_depth = 1;
-
 #if ETRIKE_RT_TWAI_SELF_TEST
-    // Self-test mode: ACK is not checked during TX. Used on bench when no peer
-    // node or CANalyst-II is in passive (listen-only) mode and cannot supply ACK.
-    // This prevents TEC accumulation from missing ACKs, so Bus-Off never fires
-    // and the slot/callback behaviour under normal operation can be measured.
-    // DO NOT use in vehicle — self-test masks real bus failures.
+    // Single-shot TX (fail_retry_cnt = 0) combined with self-test mode for
+    // bench only when no peer node supplies ACK.
+    config.fail_retry_cnt = 0;
     config.flags.enable_self_test = 1;
     ESP_LOGW(kTag, "TWAI SELF-TEST MODE ENABLED — ACK not required (bench only)");
+#else
+    // Standard CAN auto-retransmission: hardware retransmits on arbitration loss
+    // or missing ACK. Guaranteed on_tx_done when arbitration is won.
+    config.fail_retry_cnt = -1;
 #endif
+    config.tx_queue_depth = 1;
 
     esp_err_t result = twai_new_node_onchip(&config, &m_node);
     if (result == ESP_OK) {
@@ -384,51 +377,19 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
 
     uint8_t index = 0;
     if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
-        // No free slot. With kTxSlots==1 the single in-flight frame normally
-        // fires on_tx_done within a frame time at 500 kbit/s. If tx_done has
-        // not arrived within kTxReclaimUs, the controller abandoned the frame
-        // without a completion callback (arbitration loss with fail_retry_cnt=0,
-        // or an abort). Reclaim the slot so Low TX cannot deadlock permanently;
-        // the periodic TX tasks regenerate the value next cycle anyway.
-        const int64_t now = esp_timer_get_time();
-        const uint8_t inflight = m_inflight_slot.load(std::memory_order_acquire);
-        const int64_t inflight_us = m_inflight_us.load(std::memory_order_relaxed);
-        const uint32_t inflight_id = m_inflight_id.load(std::memory_order_relaxed);
-        if (inflight < kTxSlots
-            && inflight_us != 0
-            && now - inflight_us >= kTxReclaimUs) {
-            m_inflight_slot.store(0xFF, std::memory_order_release);
-            m_inflight_id.store(0, std::memory_order_release);
-            m_inflight_us.store(0, std::memory_order_release);
-            xQueueReset(m_free_tx_slots);
-            for (uint8_t s = 0; s < kTxSlots; ++s) {
-                xQueueSend(m_free_tx_slots, &s, 0);
-            }
-            ESP_LOGW(kTag,
-                     "Low CAN TX slot reclaimed after %lld ms (was id=0x%lX) — "
-                     "on_tx_done never fired",
-                     static_cast<long long>((now - inflight_us) / 1000),
-                     static_cast<unsigned long>(inflight_id));
-            if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
-                if (pending_bit != 0) {
-                    m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
-                }
-                return false;
-            }
-        } else {
-            if (pending_bit != 0) {
-                m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
-            }
-            const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
-            if (now - last > 2000000) {
-                m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
-                ESP_LOGW(kTag,
-                         "Low CAN TX dropped id=0x%lX: no free TX slot (in-flight "
-                         "frame not yet completed by controller)",
-                         static_cast<unsigned long>(source.id));
-            }
-            return false;
+        if (pending_bit != 0) {
+            m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
         }
+        const int64_t now = esp_timer_get_time();
+        const int64_t last = m_last_send_fail_log_us.load(std::memory_order_relaxed);
+        if (now - last > 2000000) {
+            m_last_send_fail_log_us.store(now, std::memory_order_relaxed);
+            ESP_LOGW(kTag,
+                     "Low CAN TX dropped id=0x%lX: TX slot busy (in-flight "
+                     "frame not yet completed by controller)",
+                     static_cast<unsigned long>(source.id));
+        }
+        return false;
     }
 
     // SAFETY_ESTOP (0x001) is classic DLC 0. Never retransmit padded DLC-8 zeros.

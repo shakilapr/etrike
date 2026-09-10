@@ -21,7 +21,7 @@
 
 #include "encoder_pcnt.h"
 
-#if ETRIKE_RT_ENCODERS
+#if ETRIKE_RT_ENCODERS == 1
 
 #include "driver/pcnt.h"
 #include "driver/gpio.h"

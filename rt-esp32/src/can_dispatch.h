@@ -276,22 +276,24 @@ static void process_frame(const can::Frame& fr, bool from_high, DispatchContext&
         }
     }
 
-    // 0x202 SES_ErrInfo ? L3 fault bits ? ESTOP (arch ?7.3)
+    // 0x202 SES_ErrInfo ─ L3 fault bits ─ ESTOP (arch §7.3)
+    // 8 documented Level 3 faults:
+    // - Byte 1 bits 0..3 (0x0F): Angle Sensor Pri/Sec Open Circuit & Out of Range
+    // - Byte 2 bits 2..5 (0x3C): Torque Sensor T1/T2 Open Circuit & Out of Range
     if (fr.id == can::kIdSbwErrInfo && !from_high) {
         can::custom::ses::ErrorInfo error{};
         if (can::custom::ses::decode_error_info(fr.view(), error) != can::gen::CodecStatus::Ok) return;
-        uint8_t angle_faults  = error.raw[1] & 0x0F;
-        uint8_t torque_faults = (error.raw[2] >> 2) & 0x0F;
-        if (angle_faults || torque_faults) {
-            ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: angle=0x%X torque=0x%X", angle_faults, torque_faults);
-            rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault,
-                             static_cast<std::uint16_t>(
-                                 (static_cast<std::uint16_t>(angle_faults) << 8)
-                                 | static_cast<std::uint16_t>(torque_faults)));
+        constexpr uint16_t kSesL3Mask = 0x3C0F; // Byte 1 (0x0F) | (Byte 2 (0x3C) << 8)
+        const uint16_t fault_bits = static_cast<uint16_t>(error.raw[1]) |
+                                    (static_cast<uint16_t>(error.raw[2]) << 8);
+        const uint16_t active_l3 = fault_bits & kSesL3Mask;
+        if (active_l3 != 0) {
+            ESP_LOGW(TAG_DISP, "SES_ErrInfo L3 fault: 0x%04X", active_l3);
+            rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault, active_l3);
             g_estop_reason.store(rt::kEstopReasonInternal);
             rt::SafetyEvent evt{
                 rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
-            // Use timeout to avoid silent ESTOP drop when queue is full (bug B4)
+            // Use timeout to avoid silent ESTOP drop when queue is full
             enqueue_safety_event(evt, pdMS_TO_TICKS(10));
         }
     }
