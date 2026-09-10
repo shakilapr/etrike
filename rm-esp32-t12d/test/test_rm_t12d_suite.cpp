@@ -302,29 +302,29 @@ void test_service_and_backup_braking() {
 
     uint32_t now_ms = 1000;
 
-    // 1. Right Stick inside deadband zone (1500us, 1400us, 1600us) -> 0.0mm brake
+    // 1. Right Stick inside deadband zone (1500us, 1300us, 1700us) -> 0.0mm brake
     frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1500);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
     ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
 
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1600); // within +150us deadband
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1700); // within +220us deadband
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
 
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1400); // within -150us deadband
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1300); // within -220us deadband
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
 
-    // 2. Right Stick Brake pushed forward (1950us -> full 27.0mm)
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1950);
+    // 2. Right Stick Brake pushed forward (1980us -> full 27.0mm)
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1980);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.1f);
     ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
     ASSERT_EQ(snap.target_speed_mmps, 0);
 
-    // 3. Right Stick Brake pulled down (1050us -> full 27.0mm)
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1050);
+    // 3. Right Stick Brake pulled down (1020us -> full 27.0mm)
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1020);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.1f);
     ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);

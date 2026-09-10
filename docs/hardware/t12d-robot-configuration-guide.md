@@ -12,13 +12,12 @@ For a ground vehicle, standard RC aircraft flight conventions (where throttle st
                LEFT GIMBAL                                   RIGHT GIMBAL
         ┌───────────────────────┐                     ┌───────────────────────┐
         │           ▲           │                     │           ▲           │
-        │           │           │                     │           │ SPEED (+) │
-        │   ◄───────┼───────►   │ AUX PROPORTIONAL    │   ◄───────┼───────►   │ STEERING
-        │   AUX X   │   AUX Y   │ (Pan/Tilt / Impl)   │  LEFT     │    RIGHT  │ (±45.0° Rack)
-        │           ▼           │                     │           ▼ SPEED (-) │
+        │           │           │                     │           │ BRAKE     │ SERVICE BRAKE
+        │   ◄───────┼───────►   │ MOTOR THROTTLE      │   ◄───────┼───────►   │ (0..27.0mm, ±220us DB)
+        │   AUX X   │ THROTTLE  │ (0..100%, Ratchet)  │  STEER L  │  STEER R  │ STEERING
+        │           ▼           │                     │           ▼ BRAKE     │ (±45.0° Rack)
         └───────────────────────┘                     └───────────────────────┘
-            Spring Centered                               Spring Centered
-                                                    (Release = 0 mm/s Stop)
+            Ratcheted Throttle Y                          Spring Centered X & Y
 ```
 
 ### Core Architecture: Requests vs Authoritative Actions
@@ -45,36 +44,38 @@ RadioLink T12D ──► R16F SBUS ──► MCU UART ──► Input Driver (Va
 
 | Channel | T12D Control | Physical Location & Type | Vehicle Purpose | MCU Interpretation & Range | CAN Target |
 | :---: | :--- | :--- | :--- | :--- | :--- |
-| **CH1** | **Right Stick X** | 2-Axis Gimbal (Spring Centered) | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw) | `0x169 VCU_SES_REQ` |
-| **CH2** | **Right Stick Y** | 2-Axis Gimbal (Spring Centered) | **Service Brake** | Proportional: $0.0 \dots 27.0\text{ mm}$ stroke | `0x7B9 VCU_SEB_REQ` |
-| **CH3** | **Left Stick Y** | 2-Axis Gimbal (Ratcheted) | **Motor Throttle** | Proportional: $0\% \dots 100\%$ ($0 \dots 3000\text{ mm/s}$) | `0x204 RT_DRIVE_CMD` |
+| **CH1** | **Right Stick X** | 2-Axis Gimbal (Spring Centered) | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw, $\pm 30\,\mu\text{s}$ center deadband) | `0x169 VCU_SES_REQ` |
+| **CH2** | **Right Stick Y** | 2-Axis Gimbal (Spring Centered) | **Service Brake** | Proportional: $0.0 \dots 27.0\text{ mm}$ stroke (Wide $\pm 220\,\mu\text{s}$ center deadband) | `0x7B9 VCU_SEB_REQ` |
+| **CH3** | **Left Stick Y** | 2-Axis Gimbal (Ratcheted) | **Motor Throttle** | Proportional: $0\% \dots 100\%$ ($1160\dots 1900\,\mu\text{s}$, rest $\le 1160\,\mu\text{s} = 0\%$) | `0x204 RT_DRIVE_CMD` |
 | **CH4** | **Left Stick X** | 2-Axis Gimbal (Spring Centered) | **Spare / Auxiliary** | Proportional: $0.0\dots 1.0$ (Implement lateral) | Telemetry / Aux |
 | **CH5** | **SWA Switch** | Top-Left Outer (3-Position) | **Target Selection** | 3-Tier: UP = BARE, MID = SYS, DOWN = RT | Mode Arbiter |
-| **CH6** | **SWB Switch** | Top-Left Inner (3-Position) | **Park / Brake Hold** | Semantic Request: UP = Park Hold (15mm), MID/DOWN = Drive (0mm) | SYS / SEB |
-| **CH7** | **SWC Switch** | Top-Right Inner (3-Position) | **Transmission Gear** | 3-Tier: UP = Reverse (0.5 m/s), MID = Neutral, DOWN = Drive (3.0 m/s) | Gear Arbiter |
-| **CH8** | **SWD Switch** | Top-Right Outer (2-Position) | **Drive Enable Request** | Direct: UP = Disabled (OFF), DOWN = Enable Request (ARMED) | Safety Arbiter |
-| **CH9** | **VRA Knob** | Top Center-Left Rotary | **Aux Analog Knob 1** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
+| **CH6** | **SWB Switch** | Top-Left Inner (3-Position) | **Park / Brake Hold** | Semantic Request: UP = Park Hold (15mm), MID/DOWN = Released (0mm) | SYS / SEB |
+| **CH7** | **SWC Switch** | Top-Right Inner (3-Position) | **Transmission Gear** | 3-Tier: UP = Reverse (`R`), MID = Neutral (`N`), DOWN = Drive (`D`) | Gear Arbiter |
+| **CH8** | **SWD Switch** | Top-Right Outer (2-Position) | **Drive Enable Request** | Direct: UP = Disabled (OFF), DOWN = Enable Request (ON) | Safety Arbiter |
+| **CH9** | **VRA Knob** | Top Center-Left Rotary | **Speed Governor** | Proportional: $0.0 \dots 1.0$ (Dynamically scales max speed ceiling 0..100% for D and R) | Motor Governor |
 | **CH10**| **VRB Knob** | Top Center-Right Rotary | **Aux Analog Knob 2** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
-| **CH11**| **VRC Knob** | Top-Left Shoulder Rotary | **Aux Analog Knob 3** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
-| **CH12**| **VRD Knob** | Top-Right Shoulder Rotary | **Aux Analog Knob 4** | Proportional: $0.0 \dots 1.0$ | Aux / Telemetry |
+| **CH11**| **VRC Knob** | Top-Left Shoulder Switch/Rotary| **Aux Brake Pull-Down** | Rest at 0 (1500us); 0 to -10% deadband; -10% to -100% applies 0..27mm brake | `0x7B9` Service Brake |
+| **CH12**| **VRD Knob** | Top-Right Shoulder Switch/Rotary| **Aux Brake Pull-Down** | Rest at 0 (1500us); 0 to -10% deadband; -10% to -100% applies 0..27mm brake | `0x7B9` Service Brake |
 
 ---
 
 ## 3. Critical Mechanical & Transmitter Setup Rules
 
-### 3.1 Self-Centering Speed Stick (Right Stick Y)
-- **Problem**: Aircraft throttles remain wherever they are left. If the operator drops or lets go of the transmitter, the robot continues moving.
-- **Solution**: Follow RadioLink's official mechanical gimbal adjustment tutorial to enable **self-centering spring tension** on the longitudinal stick.
-- **Result**: Releasing the stick immediately snaps velocity to **$0\text{ mm/s}$ (idle stop)**.
+### 3.1 Self-Centering Steering & Service Brake (Right Stick)
+- **Problem**: Accidental deflection during steering must not cause unintentional braking.
+- **Solution**:
+  - Right Stick X & Y are spring-centered.
+  - Right Stick Y utilizes a wide **$\pm 220\,\mu\text{s}$ center deadband** ($1280\dots 1720\,\mu\text{s}$) so full left/right steering sweeps do not accidentally engage the caliper.
+  - Deflecting beyond deadband pushes or pulls progressive caliper stroke up to $27.0\text{ mm}$.
 
 ### 3.2 Mandatory Switch Self-Check (Power-On Safety)
 The T12D features **Switch Self Check**, which warns if switches are in an active or unsafe state when powered on:
 - Enable via: `MAIN MENU` $\longrightarrow$ `Transmitter Settings` $\longrightarrow$ `SWITCH SELF CHECK` $\longrightarrow$ `ENABLE`.
 - Require at boot:
-  - **SWA**: `UP` (Drive Disabled)
+  - **SWA**: `UP` (BARE Mode)
   - **SWB**: `UP` (Park / Brake Hold Engaged)
-  - **SWC**: `UP` (Precision Mode — safest 25% envelope)
-  - **SWD**: `UP` (Manual Mode)
+  - **SWC**: `MID` (Neutral Gear `N`)
+  - **SWD**: `UP` (Drive Disabled / Disarmed)
 - *If any switch is bumped in the storage case, the T12D beeps and refuses to transmit until corrected.*
 
 ### 3.3 Zero Out Trims & Disable Transmitter Curves
@@ -84,63 +85,49 @@ The T12D features **Switch Self Check**, which warns if switches are in an activ
 - **Programmable Mixes**: Ensure `PROG.MIX 1` through `PROG.MIX 8` are set to `INH` (Inhibited). Reusing switches in flight mixes can cause unintended dual-channel crosstalk.
 - **Endpoints**: Set `END POINTS` to `100% / 100%` across all channels. Use **VRA** and MCU software limits to govern speed.
 
-### 3.4 Direction Reversal & Neutral Dwell Protection
-When the Right Stick Y controls both forward and reverse:
-- Crossing neutral ($|y| < \text{deadband}$) triggers **Neutral / Deceleration**.
-- The MCU controller will **not command reverse torque** until **BOTH** conditions are simultaneously met:
-  $$\text{measured\_vehicle\_speed} \le 50\text{ mm/s} \quad \mathbf{AND} \quad \text{neutral\_dwell\_timer} \ge 200\text{ ms}$$
-- A timer alone must **never** authorize reverse torque while the vehicle is still rolling forward, preventing severe inverter over-current and gearbox damage.
-
-### 3.5 Physical Labeling Standard (ISO 2575 / UN Reg 121)
+### 3.4 Physical Labeling Standard (ISO 2575 / UN Reg 121)
 Physical vinyl or engraved labels on the T12D faceplate:
 ```
   [SWA]              [SWB]              [SWC]              [SWD]
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    DRIVE    │    │   PARK /    │    │  PRECISION  │    │   MANUAL /  │
-│   ENABLE    │    │    HOLD     │    │   NORMAL    │    │     AUTO    │
-│             │    │             │    │    FAST     │    │   REQUEST   │
+│  OPERATING  │    │   PARK /    │    │    GEAR     │    │    DRIVE    │
+│    MODE     │    │    HOLD     │    │   SELECT    │    │   ENABLE    │
 └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-  UP: DISABLE        UP: PARK/HOLD      UP: 0.75 m/s (PREC) UP: MANUAL
-  DN: ENABLE         DN: DRIVE          MID: 1.8 m/s (NORM) DN: AUTO REQ
-                                        DN: 3.0 m/s (FAST)
+  UP:  BARE          UP:  PARK/HOLD     UP:  REVERSE (R)   UP: DISABLE
+  MID: SYS           MID: DRIVE (0mm)   MID: NEUTRAL (N)   DN: ENABLE (ARM)
+  DN:  RT            DN:  DRIVE (0mm)   DN:  DRIVE   (D)
 ```
 
 ---
 
 ## 4. Software Safety Architecture & Operator Arming (ISO 13850)
 
-### 4.1 Edge-Qualified SWA Arming Sequence
-SWA is an arming request, not merely a level-triggered signal:
-- At boot or after RF recovery, drive starts **Disarmed**.
-- Arming requires:
-  1. Link observed healthy for $\ge 500\text{ ms}$.
-  2. SWA first observed in the **DISABLED** position (`UP`).
-  3. Right Stick Y confirmed centered in neutral.
-  4. Deliberate operator transition `DISABLED (UP) -> ENABLED (DOWN)`.
-- Fllipping SWA `UP` disarms drive **immediately and unconditionally**.
+### 4.1 Direct Switch Control (SWD Drive Enable)
+- Drive is enabled immediately when SWD is switched **DOWN** (provided park is released, link is healthy, and brake is not holding).
+- Flipping SWD **UP** disables drive immediately.
 
 ### 4.2 Separation of Physical ESTOP from RF Loss
 Per ISO 13850:
 1. **Physical Emergency Stop**: Controlled exclusively by the vehicle's hardwired safety chain and red mushroom button. The radio controller **cannot** reset physical ESTOP. Resetting the emergency stop device must not restart the machine.
 2. **RF Link Degradation & Loss**:
    - $0\dots 50\text{ ms}$: Normal operation.
-   - $50\dots 100\text{ ms}$: Stale frames, hold previous safe state, log warning.
-   - $> 100\text{ ms}$: RC link lost. Traction demand forced to $0\text{ mm/s}$, controlled safe braking requested, drive disarmed. Re-arm sequence required upon RF recovery.
+   - $50\dots 150\text{ ms}$: Stale frames, hold previous safe state, log warning.
+   - $> 150\text{ ms}$: RC link lost. Traction demand forced to $0\text{ mm/s}$, safe park braking ($15.0\text{ mm}$) commanded, transmission set to Neutral. Normal operation resumes automatically once valid RF link is restored.
 
 ---
 
 ## 5. Summary Checklist for Commissioning
 
-- [ ] **Gimbal Mechanical Check**: Right stick Y self-centers reliably to spring neutral.
+- [ ] **Gimbal Mechanical Check**: Right stick X & Y self-center reliably to spring neutral. Left stick ratcheted throttle sits cleanly at bottom idle ($\le 1160\,\mu\text{s}$).
 - [ ] **RF Module**: `Internal Module` $\rightarrow$ `FHSS V2.1` frozen.
-- [ ] **Switch Self-Check**: Enabled for `SWA=UP, SWB=UP, SWC=UP, SWD=UP`.
-- [ ] **Model Memory**: Verified as `ROBOT_MAIN`.
+- [ ] **Switch Self-Check**: Enabled for `SWA=UP, SWB=UP, SWC=MID, SWD=UP`.
+- [ ] **AUX-CH Assignments**: CH1=STK-R-X, CH2=STK-R-Y, CH3=STK-L-Y, CH5=SWA, CH6=SWB, CH7=SWC, CH8=SWD, CH9=VRA, CH11=VRC, CH12=VRD.
+- [ ] **Model Memory**: Dedicated vehicle profile verified.
 - [ ] **Mixes & Delays**: `PROG.MIX 1..8 = INH`, `CH SPEED = 0s`.
 - [ ] **Trims & Curves**: Trims zeroed, curves linear ($100\%$).
-- [ ] **MONITOR Truth Test**: Moving Right Stick X moves ONLY CH1; Right Stick Y moves ONLY CH2; SWA moves ONLY CH5.
 - [ ] **Receiver Mode**: R16F solid **RED + BLUE LEDs** (PWM + SBUS).
 - [ ] **RF Separation**: Transmitter $\ge 1.0\text{ m}$ from receiver during bench testing.
-- [ ] **Failsafe**: Transmitter powered off $\rightarrow$ vehicle clamps brakes ($27.0\text{ mm}$), speed $0\text{ mm/s}$, `0x001 SAFETY_ESTOP` emitted.
+- [ ] **Failsafe**: Transmitter powered off $\rightarrow$ vehicle engages park brake ($15.0\text{ mm}$), speed $0\text{ mm/s}$, gear Neutral.
 
 ---
 
