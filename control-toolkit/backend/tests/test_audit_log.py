@@ -85,3 +85,39 @@ def test_logs_bus_and_can_id_filter(client):
     assert r_search.status_code == 200
     assert any(l.get("can_id") == 0x204 for l in r_search.json()["logs"])
 
+
+def test_logs_only_on_change_dedup(client):
+    audit = client.app.state.lifecycle.audit
+    audit.clear()
+
+    # Multiple identical calls with only_on_change=True should log only once
+    e1 = audit.log(
+        category="protocol",
+        code="test.periodic",
+        title="Periodic Status OK",
+        detail="Normal operation",
+        only_on_change=True,
+    )
+    e2 = audit.log(
+        category="protocol",
+        code="test.periodic",
+        title="Periodic Status OK",
+        detail="Normal operation",
+        only_on_change=True,
+    )
+    assert e1.log_id == e2.log_id
+    assert audit.stats()["count"] == 1
+
+    # State change causes a new entry to be logged
+    e3 = audit.log(
+        category="protocol",
+        code="test.periodic",
+        title="Periodic Status Fault",
+        detail="Degraded operation",
+        severity="error",
+        only_on_change=True,
+    )
+    assert e3.log_id != e1.log_id
+    assert audit.stats()["count"] == 2
+
+

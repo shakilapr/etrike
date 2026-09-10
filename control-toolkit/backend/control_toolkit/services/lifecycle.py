@@ -42,7 +42,7 @@ class Lifecycle:
         self.config = config
         self.latest = LatestStore()
         self.history = FrameHistory(capacity=getattr(config, "history_capacity", 4096))
-        self.topology = TopologyTracker()
+        self.topology = TopologyTracker(on_liveness_change=self._on_topology_liveness_change)
         self.storage = SqliteStorage("history.sqlite")
         self.events = EventBus()
         self.ownership = OwnershipTable()
@@ -165,6 +165,33 @@ class Lifecycle:
             can_id=getattr(ev, "can_id", None),
             correlation_id=getattr(ev, "correlation_id", None),
             data=dict(getattr(ev, "evidence", None) or {}),
+            only_on_change=True,
+        )
+
+    def _on_topology_liveness_change(self, node, prev, curr) -> None:
+        from control_toolkit.state.topology import NodeLiveness
+
+        if prev is NodeLiveness.OFFLINE and curr is NodeLiveness.OFFLINE:
+            return
+        severity = "info"
+        if curr in (NodeLiveness.MISSING, NodeLiveness.LATE):
+            severity = "warning"
+        elif curr is NodeLiveness.FAULT:
+            severity = "error"
+
+        self.diagnostics.emit(
+            code="protocol.node_liveness",
+            title=f"Node {node.node} ({node.bus.title()}) → {curr.value}",
+            detail=f"ECU presence transition from {prev.value} to {curr.value}",
+            severity=severity,
+            bus=node.bus,
+            can_id=node.can_id,
+            evidence={
+                "node": node.node,
+                "previous_liveness": prev.value,
+                "current_liveness": curr.value,
+                "validation_status": node.validation_status,
+            },
         )
 
     def _on_stop_all(self) -> None:
