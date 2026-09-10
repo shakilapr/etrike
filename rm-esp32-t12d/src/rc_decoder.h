@@ -162,22 +162,26 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         }
 
         // CH9..CH12: Aux Proportional Knobs (0.0 to 1.0)
+        // VRA (CH9) serves as the Dynamic Speed Governor (0.0 to 1.0 scale of speed limits)
         float vra = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVra]) - 1000) / 1000.0f;
         float vrb = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrb]) - 1000) / 1000.0f;
         float vrc = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrc]) - 1000) / 1000.0f;
         float vrd = static_cast<float>(static_cast<int32_t>(pulse_us[kChAuxVrd]) - 1000) / 1000.0f;
-        snap.aux_vra = std::clamp(vra, 0.0f, 1.0f);
+        snap.aux_vra = std::clamp(vra, kSpeedGovernorMinScale, kSpeedGovernorMaxScale);
         snap.aux_vrb = std::clamp(vrb, 0.0f, 1.0f);
         snap.aux_vrc = std::clamp(vrc, 0.0f, 1.0f);
         snap.aux_vrd = std::clamp(vrd, 0.0f, 1.0f);
 
-        // Target Speed Demand based on Gear and Throttle
+        // Target Speed Demand governed by VRA Rotary Knob:
+        // Left Stick throttle (0..100%) maps across the active speed ceiling (0 to configured limit * VRA)
         int32_t target_spd = 0;
         if (!snap.park_hold_req) {
             if (snap.gear == can::Gear::D) {
-                target_spd = static_cast<int32_t>(std::round(snap.throttle_norm * static_cast<float>(kSpeedFwdMaxMmps)));
+                float max_fwd = static_cast<float>(kSpeedFwdMaxMmps) * snap.aux_vra;
+                target_spd = static_cast<int32_t>(std::round(snap.throttle_norm * max_fwd));
             } else if (snap.gear == can::Gear::R) {
-                target_spd = -static_cast<int32_t>(std::round(snap.throttle_norm * static_cast<float>(kSpeedRevMaxMmps)));
+                float max_rev = static_cast<float>(kSpeedRevMaxMmps) * snap.aux_vra;
+                target_spd = -static_cast<int32_t>(std::round(snap.throttle_norm * max_rev));
             }
         }
         snap.target_speed_mmps = target_spd;

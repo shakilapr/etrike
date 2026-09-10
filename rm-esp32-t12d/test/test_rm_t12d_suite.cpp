@@ -251,6 +251,7 @@ void test_throttle_and_gear_combinations() {
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000); // SWD DOWN (Enable)
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500); // SWB MID (Park Released)
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
+    frame.channels[rm::kChAuxVra]      = rm::pulse_us_to_sbus(2000); // VRA 100% Speed Governor
 
     uint32_t now_ms = 1000;
 
@@ -334,17 +335,17 @@ void test_service_and_backup_braking() {
     frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1950);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f); // No brake from knob!
-    ASSERT_NEAR(snap.aux_vra, 0.95f, 0.1f);          // Knob maps to aux analog
+    ASSERT_NEAR(snap.aux_vra, 0.95f, 0.1f);          // Knob maps to aux analog / governor
     ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);    // Throttle NOT cut
-    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), static_cast<float>(rm::kSpeedFwdMaxMmps) * 0.94f, 100.0f);
 
-    // 3. Knobs centered
-    frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1000);
-    frame.channels[rm::kChAuxVrb] = rm::pulse_us_to_sbus(1000);
+    // 5. Knobs centered (1500us -> 50% governor)
+    frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1500);
+    frame.channels[rm::kChAuxVrb] = rm::pulse_us_to_sbus(1500);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
     ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
-    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), static_cast<float>(rm::kSpeedFwdMaxMmps) * 0.5f, 50.0f); // 1500 mm/s
 }
 
 void test_park_hold_semantic_request() {
@@ -354,6 +355,7 @@ void test_park_hold_semantic_request() {
     frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
+    frame.channels[rm::kChAuxVra]      = rm::pulse_us_to_sbus(2000); // VRA 100% Speed Governor
 
     uint32_t now_ms = 1000;
 
@@ -611,6 +613,59 @@ void test_can_frame_encoding() {
     ASSERT_EQ(estop_fr.dlc, 0u);
 }
 
+void test_vra_speed_governor_scaling() {
+    rm::SbusFrame frame{};
+    for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
+    frame.channels[rm::kChDriveEnable]   = rm::pulse_us_to_sbus(2000); // SWD DOWN (Enable)
+    frame.channels[rm::kChParkHold]      = rm::pulse_us_to_sbus(1500); // SWB MID (Park Released)
+    frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
+
+    uint32_t now_ms = 1000;
+
+    // 1. Full Throttle in Drive (D) with VRA at 100% (2000us) -> full +3000 mm/s
+    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(2000); // Drive
+    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950); // Full Throttle
+    frame.channels[rm::kChAuxVra]   = rm::pulse_us_to_sbus(2000); // 100% Governor
+    auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.aux_vra, 1.0f, 0.01f);
+    ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps); // 3000
+
+    // 2. Full Throttle in Drive (D) with VRA at 50% (1500us) -> 1500 mm/s (5.4 km/h)
+    frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1500); // 50% Governor
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.aux_vra, 0.5f, 0.02f);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), 1500.0f, 50.0f);
+
+    // 3. Mid Throttle in Drive (D) (~46%) with VRA at 50% -> ~46% of 1500 = ~689 mm/s
+    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1500); // Mid Throttle
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), 689.0f, 40.0f);
+
+    // 4. Full Throttle in Drive (D) with VRA at 0% (1000us) -> 0 mm/s
+    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950); // Full Throttle
+    frame.channels[rm::kChAuxVra]   = rm::pulse_us_to_sbus(1000); // 0% Governor
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.aux_vra, 0.0f, 0.01f);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+
+    // 5. Full Throttle in Reverse (R) with VRA at 100% (2000us) -> -500 mm/s
+    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(1000); // Reverse
+    frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950); // Full Throttle
+    frame.channels[rm::kChAuxVra]   = rm::pulse_us_to_sbus(2000); // 100% Governor
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_EQ(snap.target_speed_mmps, -rm::kSpeedRevMaxMmps); // -500
+
+    // 6. Full Throttle in Reverse (R) with VRA at 50% (1500us) -> -250 mm/s
+    frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1500); // 50% Governor
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), -250.0f, 15.0f);
+
+    // 7. Full Throttle in Reverse (R) with VRA at 0% (1000us) -> 0 mm/s
+    frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1000); // 0% Governor
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+}
+
 } // namespace
 
 int main() {
@@ -628,6 +683,7 @@ int main() {
     test_park_hold_semantic_request();
     test_drive_enable_direct_switch();
     test_operating_mode_switch_decoding();
+    test_vra_speed_governor_scaling();
     test_can_emitter_three_modes();
     test_can_frame_encoding();
 
