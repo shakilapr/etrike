@@ -262,11 +262,11 @@ void test_throttle_and_gear_combinations() {
     ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
     ASSERT_EQ(snap.target_speed_mmps, rm::kSpeedFwdMaxMmps); // +3000
 
-    // 2. Drive + Mid Throttle (1500us) -> ~49% (~1460 mm/s)
+    // 2. Drive + Mid Throttle (1500us) -> ~46% (~1378 mm/s with deadband 1160us)
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1500);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
-    ASSERT_NEAR(snap.throttle_norm, 0.49f, 0.02f);
-    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), 1460.0f, 50.0f);
+    ASSERT_NEAR(snap.throttle_norm, 0.46f, 0.02f);
+    ASSERT_NEAR(static_cast<float>(snap.target_speed_mmps), 1378.0f, 50.0f);
 
     // 3. Drive + Throttle Idle Deadband (1100us <= 1120us) -> 0 mm/s
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1100);
@@ -301,16 +301,35 @@ void test_service_and_backup_braking() {
 
     uint32_t now_ms = 1000;
 
-    // 1. Right Stick Brake pushed forward (1950us -> full 27.0mm)
-    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1950);
+    // 1. Right Stick inside deadband zone (1500us, 1400us, 1600us) -> 0.0mm brake
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1500);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
+    ASSERT_NEAR(snap.throttle_norm, 1.0f, 0.01f);
+
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1600); // within +150us deadband
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
+
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1400); // within -150us deadband
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, 0.0f, 0.001f);
+
+    // 2. Right Stick Brake pushed forward (1950us -> full 27.0mm)
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1950);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.1f);
-    // Brake-over-throttle cutoff: throttle must be cut to 0!
     ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
     ASSERT_EQ(snap.target_speed_mmps, 0);
 
-    // 2. Right Stick Brake released, VRA Aux Knob turned past center (1950us)
-    // Dials are aux implement controls now: they do NOT engage brake or cut throttle!
+    // 3. Right Stick Brake pulled down (1050us -> full 27.0mm)
+    frame.channels[rm::kChBrake] = rm::pulse_us_to_sbus(1050);
+    snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
+    ASSERT_NEAR(snap.brake_stroke_mm, rm::kMaxBrakeStrokeMm, 0.1f);
+    ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
+    ASSERT_EQ(snap.target_speed_mmps, 0);
+
+    // 4. Right Stick Brake released, VRA Aux Knob turned past center (1950us)
     frame.channels[rm::kChBrake]  = rm::pulse_us_to_sbus(1500);
     frame.channels[rm::kChAuxVra] = rm::pulse_us_to_sbus(1950);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
