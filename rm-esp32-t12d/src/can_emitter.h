@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include "protocol/compat/can.hpp"
+#include "protocol/compat/e2e.hpp"
 #include "shared_config.h"
 #include "config.h"
 #include "rc_decoder.h"
@@ -119,6 +120,23 @@ private:
             can::Frame pwr_fr;
             if (can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr) == can::gen::CodecStatus::Ok) {
                 send(pwr_fr);
+            }
+
+            // Emulated SYS safety authority (0x011 SYS_SAFETY_STS). MTR gates
+            // ignition on safety_state_valid_, which is set ONLY by 0x011
+            // (mtr-stm32/src/motor_manager.h:313/:194-212). Without it MTR never
+            // ignites. estop_active=0 emulates an all-clear supervisor; safe-stop
+            // is achieved via 0x204 speed=0 + 0x110 MANUAL on link loss.
+            can::gen::SysSafetySts safety_sts{};
+            safety_sts.estop_active   = 0;
+            safety_sts.heartbeat_ok   = snap.signal_valid ? 1 : 0;
+            safety_sts.rolling_counter = roll_sys_safety_++;
+            can::Frame safety_fr;
+            if (can::gen::encode_sys_safety_sts(safety_sts, safety_fr) == can::gen::CodecStatus::Ok) {
+                // SysSafetySts carries an AUTOSAR E2E CRC over bytes[0..3]; MTR/RT
+                // reject the frame without it (protocol/compat/e2e.hpp).
+                safety_fr.data[4] = can::e2e::sys_safety_sts_crc(safety_fr.data.data());
+                send(safety_fr);
             }
         }
     }
@@ -278,6 +296,7 @@ private:
     uint8_t roll_seb_{0};
     uint8_t roll_sys_mode_{0};
     uint8_t roll_sys_pwr_{0};
+    uint8_t roll_sys_safety_{0};   // 0x011 SYS_SAFETY_STS rolling counter (BARE/RT emulated supervisor)
     uint8_t roll_hmi_mode_{0};
     uint8_t roll_hmi_pwr_{0};
     uint8_t roll_host_steer_{0};
