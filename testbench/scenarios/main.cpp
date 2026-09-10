@@ -66,6 +66,7 @@ namespace testbench {
     bool test_limit_steer_clamp_bare();
     bool test_limit_rt_drive_clamp();
     bool test_limit_rt_steer_clamp();
+    bool test_status_frames_canonical();
     bool test_timeout_rt_host_heartbeat();
 }
 
@@ -166,6 +167,7 @@ int main(int argc, char* argv[]) {
     run_test("steering clamp BARE (29550..30450)", testbench::test_limit_steer_clamp_bare);
     run_test("RT drive/brake clamp (3000/-500/20000)", testbench::test_limit_rt_drive_clamp);
     run_test("RT steer clamp (+/-450)", testbench::test_limit_rt_steer_clamp);
+    run_test("SES/SEB status frames decode canonically", testbench::test_status_frames_canonical);
     run_test("rt host-heartbeat -> assisted stop", testbench::test_timeout_rt_host_heartbeat);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(

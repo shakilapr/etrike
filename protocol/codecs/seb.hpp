@@ -108,6 +108,32 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
     return CodecStatus::Ok;
 }
 
+// Mirror of decode_status (single source of truth for the STATUS bit layout).
+// Mode-mux on byte 3: Stroke (control_mode==0) carries stroke[15:8]; otherwise
+// the byte carries pressure_value_raw. Byte 5 also shares angle_value_raw.
+inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
+    if (value.control_mode > 3u || value.error_status > 3u || value.rolling_counter > 15u)
+        return CodecStatus::ValueOutOfRange;
+
+    Frame frame = Frame::standard(kStatusId, kDlc);
+    frame.data[0] = static_cast<std::uint8_t>((value.alignment_status ? 0x01u : 0u) |
+                                              (value.control_enabled ? 0x02u : 0u) |
+                                              ((value.control_mode & 0x03u) << 2u) |
+                                              (value.auto_brake_status ? 0x10u : 0u) |
+                                              ((value.error_status & 0x03u) << 6u));
+    frame.data[2] = static_cast<std::uint8_t>(value.stroke_value_raw & 0xFFu);
+    frame.data[3] = (value.control_mode == 0u)
+                        ? static_cast<std::uint8_t>(value.stroke_value_raw >> 8u)
+                        : value.pressure_value_raw;
+    write_le_i16(&frame.data[5], value.angle_value_raw);
+    frame.data[6] = static_cast<std::uint8_t>((value.rolling_counter_enabled ? 0x01u : 0u) |
+                                              (value.checksum_enabled ? 0x02u : 0u) |
+                                              ((value.rolling_counter & 0x0Fu) << 4u));
+    frame.data[7] = profiles::xor8_ff_v1(frame.data.data(), 7);
+    out = frame;
+    return CodecStatus::Ok;
+}
+
 struct ErrorInfo {
     std::array<std::uint8_t, 8> raw{};
 };

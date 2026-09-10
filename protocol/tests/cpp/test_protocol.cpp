@@ -97,6 +97,12 @@ void test_ses() {
     CHECK(status_value.target_angle_speed_raw == 0x0010);
     CHECK(status_value.steering_torque_raw == 0 && status_value.rolling_counter == 10);
 
+    // encode_status must reproduce the frozen wire bytes exactly.
+    Frame status_out{};
+    CHECK(ses::encode_status(status_value, status_out) == CodecStatus::Ok);
+    CHECK(status_out.id == ses::kStatusId && status_out.dlc == 8);
+    CHECK(status_out.data == status.data);
+
     Frame error = Frame::standard(ses::kErrorInfoId, 8);
     error.data = {0x01, 0x80, 0x04, 0x01, 0x00, 0x00, 0x00, 0x2A};
     ses::ErrorInfo error_value{};
@@ -148,6 +154,12 @@ void test_seb() {
     CHECK(value.pressure_value_raw == 0x12 && value.angle_value_raw ==
                                                      static_cast<std::int16_t>(0xA378));
     CHECK(value.rolling_counter == 10 && value.rolling_counter_enabled);
+
+    // encode_status must reproduce the frozen wire bytes exactly.
+    Frame status_out{};
+    CHECK(seb::encode_status(value, status_out) == CodecStatus::Ok);
+    CHECK(status_out.id == seb::kStatusId && status_out.dlc == 8);
+    CHECK(status_out.data == status.data);
 
     const seb::Status unchanged = value;
     status.id = 0x720;

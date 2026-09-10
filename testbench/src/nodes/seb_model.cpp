@@ -1,7 +1,8 @@
 #include "nodes/seb_model.hpp"
 #include <cmath>
 #include <algorithm>
-#include "protocol/profiles/xor8_ff_v1.hpp"
+#include "protocol/codecs/seb.hpp"
+#include "shared_config.h"
 
 namespace testbench {
 
@@ -54,10 +55,12 @@ void SebModel::receive_can(const std::string& bus_name, const etrike::protocol::
         if (etrike::protocol::codecs::seb::decode_command(frame.view(), cmd) == etrike::protocol::CodecStatus::Ok) {
             control_mode_ = static_cast<uint8_t>(cmd.control_mode);
             if (cmd.control_mode == etrike::protocol::codecs::seb::ControlMode::Stroke) {
-                target_stroke_mm_ = (cmd.stroke_request_raw * 0.05f) - 30.0f;
+                target_stroke_mm_ = (cmd.stroke_request_raw * shared::kBrakeStrokeScale)
+                                    + shared::kBrakeStrokeOffset;
             } else {
+                // Pressure mode: vendor scale is 0.05 MPa/bit == 50 kPa/bit.
                 target_stroke_mm_ = (cmd.pressure_request_raw > 0) ? 20.0f : 0.0f;
-                actual_pressure_kpa_ = cmd.pressure_request_raw * 10.0f;
+                actual_pressure_kpa_ = static_cast<float>(cmd.pressure_request_raw) * 50.0f;
             }
         }
     }
@@ -90,31 +93,26 @@ void SebModel::publish_status(uint32_t now_ms) {
         return;
     }
 
-    etrike::protocol::Frame frame = etrike::protocol::Frame::standard(
-        etrike::protocol::codecs::seb::kStatusId,
-        etrike::protocol::codecs::seb::kDlc
-    );
-    frame.data.fill(0);
+    // Single source of truth: canonical SEB status encoder (protocol/codecs/seb.hpp).
+    etrike::protocol::codecs::seb::Status st{};
+    st.alignment_status = true;      // aligned (model is always aligned once powered)
+    st.control_enabled = true;       // control enable feedback echoes the command
+    st.control_mode = control_mode_;
+    st.auto_brake_status = false;
+    st.error_status = error_status_;
+    st.stroke_value_raw = static_cast<uint16_t>(
+        std::round((actual_stroke_mm_ - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale));
+    st.pressure_value_raw = 0;
+    st.angle_value_raw = 0;
+    st.rolling_counter_enabled = true;
+    st.checksum_enabled = true;
+    st.rolling_counter = rolling_counter_;
 
-    // Byte 0: Alignment(0), ControlEnable(1), ControlMode(2..3), AutoBrake(4), ErrorStatus(6..7)
-    frame.data[0] = static_cast<uint8_t>(0x03 | ((control_mode_ & 0x03) << 2) | ((error_status_ & 0x03) << 6));
-
-    // Byte 1: Reserved = 0
-
-    // Bytes 2-3: Stroke Raw LE
-    uint16_t s_raw = static_cast<uint16_t>(std::round((actual_stroke_mm_ + 30.0f) / 0.05f));
-    frame.data[2] = static_cast<uint8_t>(s_raw & 0xFF);
-    frame.data[3] = static_cast<uint8_t>((s_raw >> 8) & 0xFF);
-
-    // Bytes 4-5: Pressure / angle raw
-    frame.data[4] = 0;
-    frame.data[5] = 0;
-
-    // Byte 6: Rolling counter enabled (bit0=1), checksum enabled (bit1=1), rolling counter (bits4-7)
-    frame.data[6] = static_cast<uint8_t>(0x03 | ((rolling_counter_ & 0x0F) << 4));
-
-    // Byte 7: XOR8_FF checksum
-    frame.data[7] = etrike::protocol::profiles::xor8_ff_v1(frame.data.data(), 7);
+    etrike::protocol::Frame frame{};
+    if (etrike::protocol::codecs::seb::encode_status(st, frame)
+        != etrike::protocol::CodecStatus::Ok) {
+        return;
+    }
 
     rolling_counter_ = (rolling_counter_ + 1) & 0x0F;
 
