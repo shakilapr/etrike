@@ -4,13 +4,11 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
-
-#include "stub/stm32g4xx_hal.h"
+#include "stm32g4xx_hal.h"
 #include "protocol/compat/can.hpp"
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 #include "protocol/codecs/ses.hpp"
 #include "protocol/codecs/seb.hpp"
-
 #include "physics_model.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
