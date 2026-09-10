@@ -45,6 +45,12 @@ namespace testbench {
     bool test_host_steer();
     bool test_host_brake();
     bool test_host_estop();
+    // Section 7: ESTOP reset / recovery paths
+    bool test_estop_reset_recovery_host();
+    bool test_estop_reset_blocked_by_fault();
+    bool test_estop_recovery_bare();
+    bool test_estop_recovery_rm_sys();
+    bool test_estop_recovery_rm_rt();
 }
 
 int main(int argc, char* argv[]) {
@@ -120,6 +126,13 @@ int main(int argc, char* argv[]) {
     run_test("HOST steer -> SES rack angle", testbench::test_host_steer);
     run_test("HOST brake -> SYS -> SEB", testbench::test_host_brake);
     run_test("HOST drive + ESTOP -> stop + full brake", testbench::test_host_estop);
+
+    std::cout << "--- SECTION 7: ESTOP Reset / Recovery Paths ---\n";
+    run_test("ESTOP reset/recovery HOST", testbench::test_estop_reset_recovery_host);
+    run_test("ESTOP reset refused while fault active", testbench::test_estop_reset_blocked_by_fault);
+    run_test("ESTOP recovery rm BARE (0x001)", testbench::test_estop_recovery_bare);
+    run_test("ESTOP recovery rm SYS path", testbench::test_estop_recovery_rm_sys);
+    run_test("ESTOP recovery rm RT path", testbench::test_estop_recovery_rm_rt);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();
