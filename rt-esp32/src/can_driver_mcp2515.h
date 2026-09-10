@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cstddef>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "protocol/compat/can.hpp"
 #include "config.h"
 
@@ -57,6 +59,9 @@ public:
     /// Switch operating mode. Returns false if the chip fails to enter
     /// the requested mode within 1ms. ListenOnly is safe for bus monitoring.
     bool set_mode(Mode mode);
+
+    /// Set FreeRTOS task handle for ISR wakeups.
+    void set_rx_task_handle(TaskHandle_t handle);
 
     // ── Frame I/O ──────────────────────────────────────────────────
 
