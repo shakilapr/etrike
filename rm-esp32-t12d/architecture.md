@@ -205,9 +205,9 @@ All messages and signal formats are bound directly to canonical generated defini
 | `task_heartbeat` | 1 | Core 1 | $100\text{ ms}$ (10 Hz) | 1 Hz health summary & TWAI status diagnostic logger |
 
 ### Telemetry Logging & Serial Feedback
-- **Delta-Triggered Logging**: Immediate serial output on change in steer ($\ge 1.0^\circ$), brake ($\ge 0.5\,\text{mm}$), throttle ($\ge 5\%$), speed ($\ge 50\,\text{mm/s}$), gear (`[R]/[N]/[D]`), drive enable (`EN`), park hold (`PRK`), or mode (`MOD`).
+- **Delta-Triggered Logging**: Immediate serial output on change in steer ($\ge 1.0^\circ$), brake ($\ge 0.5\,\text{mm}$), throttle ($\ge 5\%$), governor ($\ge 5\%$), speed ($\ge 50\,\text{mm/s}$), gear (`[R]/[N]/[D]`), drive enable (`ARM`), park hold (`PRK`), or mode (`MOD`).
 - **Periodic Decimated Telemetry**: 2 Hz summary logging (`kCanLogDecimation = 50` ticks = 500 ms) ensures continuous feedback on stationary controls.
-- **Single-Line Serial Format**: `STR:%+.1f BRK:%.1f MTR:%+d[%s] EN:%s PRK:%s MOD:%s`
+- **Single-Line Serial Format**: `STR:%+5.1f BRK:%4.1f  THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s RF:%s`
 
 ---
 
