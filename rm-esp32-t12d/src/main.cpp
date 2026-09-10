@@ -15,6 +15,7 @@
 
 #include "config.h"
 #include "can_driver.h"
+#include "can_emitter.h"
 #include "rc_receiver.h"
 
 static const char* TAG = "rm_t12d";
@@ -27,16 +28,11 @@ static can::CanDriver g_can(can::CanDriver::Config{
 });
 
 static rm::RcReceiver g_rc;
+static rm::CanEmitter g_emitter;
 
 // Telemetry counters
 static std::atomic<uint32_t> g_can_tx_ok{0};
 static std::atomic<uint32_t> g_can_tx_fail{0};
-
-// Rolling counters for protocol frames
-static uint8_t g_roll_ses = 0;
-static uint8_t g_roll_seb = 0;
-static uint8_t g_roll_sys_mode = 0;
-static uint8_t g_roll_sys_pwr = 0;
 
 static bool send_can_frame(can::Frame& fr) {
     if (!g_can.send(fr, 2)) {
@@ -68,12 +64,12 @@ static bool send_can_frame(can::Frame& fr) {
     }
 }
 
-// ── Task: CAN Transmit & Encode (50 Hz / 20 ms) ───────────────────
+// ── Task: CAN Transmit & Encode (100 Hz / 10 ms) ──────────────────
 [[noreturn]] static void task_can_tx(void*) {
     TickType_t period = pdMS_TO_TICKS(1000 / rm::kCanTxHz);
     TickType_t last = xTaskGetTickCount();
     static bool was_in_link_loss = false;
-    static int cmd_heartbeat_counter = 0;
+    static uint32_t tick_10ms_count = 0;
 
     while (1) {
         g_can.service_recovery(esp_timer_get_time());
@@ -95,139 +91,65 @@ static bool send_can_frame(can::Frame& fr) {
 
         // Active drive condition: SWA enabled, Park released, signal valid
         bool drive_active = snap.signal_valid && snap.drive_enable_req && !snap.park_hold_req;
-
-        // 2. Transmit Steering Setpoint -> 0x169 VCU_SES_REQ
-        can::custom::ses::Command ses_cmd{};
-        ses_cmd.alignment_enable = snap.signal_valid;
-        ses_cmd.control_enable   = drive_active;
-        int16_t angle_raw = static_cast<int16_t>(rm::kSbwAngleOffset);
-        if (snap.signal_valid) {
-            angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(rm::kSbwAngleOffset);
-            angle_raw = std::clamp(angle_raw, rm::kMinSteerRaw, rm::kMaxSteerRaw);
-        }
-        ses_cmd.target_angle_raw  = angle_raw;
-        ses_cmd.target_speed_raw  = 328; // Standard nominal slew rate
-        ses_cmd.rolling_counter   = g_roll_ses;
-        g_roll_ses = (g_roll_ses + 1) & 0x0F;
-        ses_cmd.vehicle_speed_raw = 0;
-
-        can::Frame ses_fr;
-        if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-            send_can_frame(ses_fr);
-        }
-
-        // 3. Transmit Brake Setpoint -> 0x7B9 VCU_SEB_REQ
-        can::custom::seb::Command seb_cmd{};
-        seb_cmd.alignment_enable = true;
-        seb_cmd.control_enable   = true;
-        seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
-        seb_cmd.auto_brake       = false;
-
-        float commanded_stroke = snap.brake_stroke_mm;
-        uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-        seb_cmd.stroke_request_raw   = stroke_raw;
-        seb_cmd.pressure_request_raw = 0;
-        seb_cmd.rolling_counter      = g_roll_seb;
-        g_roll_seb = (g_roll_seb + 1) & 0x0F;
-
-        can::Frame seb_fr;
-        if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
-            send_can_frame(seb_fr);
-        }
-
-        // 4. Transmit Motor Command -> 0x204 RT_DRIVE_CMD (100 Hz)
         int32_t target_motor_speed = drive_active ? snap.target_speed_mmps : 0;
+        can::Gear active_gear = drive_active ? snap.gear : can::Gear::N;
 
-        can::gen::RtDriveCmd drive_cmd{};
-        drive_cmd.motor_speed_mmps = target_motor_speed;
-        drive_cmd.gear = static_cast<uint8_t>(drive_active ? snap.gear : can::Gear::N);
+        // 2. Emit canonical CAN cluster for current operating mode (BARE, SYS, RT)
+        g_emitter.emit_cluster(snap, tick_10ms_count++, [](can::Frame& fr) {
+            return send_can_frame(fr);
+        });
 
-        can::Frame drive_fr;
-        if (can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {
-            send_can_frame(drive_fr);
-        }
-
-        // 5. Transmit Authoritative SYS Commands (10 Hz Heartbeat): 0x110 SYS_MODE_CMD + 0x113 SYS_PWR_CMD
-        static bool last_enable = false;
-        bool enable_changed = (snap.drive_enable_req != last_enable);
-        last_enable = snap.drive_enable_req;
-
-        bool pwr_state = snap.signal_valid && snap.drive_enable_req;
-        bool mode_state = drive_active && snap.auto_mode_req;
-
-        if (++cmd_heartbeat_counter >= 10 || enable_changed) { // 10 * 10ms = 100ms (10 Hz)
-            cmd_heartbeat_counter = 0;
-
-            // 0x110 SYS_MODE_CMD
-            can::gen::SysModeCmd mode_cmd{};
-            mode_cmd.mode = mode_state;
-            g_roll_sys_mode = (g_roll_sys_mode + 1) & 0xFF;
-            mode_cmd.rolling_counter = g_roll_sys_mode;
-            can::Frame mode_fr;
-            if (can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr) == can::gen::CodecStatus::Ok) {
-                send_can_frame(mode_fr);
-            }
-
-            // 0x113 SYS_PWR_CMD
-            can::gen::SysPwrCmd pwr_cmd{};
-            pwr_cmd.power_state = pwr_state;
-            g_roll_sys_pwr = (g_roll_sys_pwr + 1) & 0xFF;
-            pwr_cmd.rolling_counter = g_roll_sys_pwr;
-            can::Frame pwr_fr;
-            if (can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr) == can::gen::CodecStatus::Ok) {
-                send_can_frame(pwr_fr);
-            }
-        }
-
-        // 6. Serial CAN Command Display (Delta-triggered + 2 Hz Decimated)
+        // 3. Serial CAN Command Display (Delta-triggered + 2 Hz Decimated)
         static struct {
-            float      steer_deg{999.0f};
-            float      brake_mm{999.0f};
-            float      throttle{999.0f};
-            int32_t    speed_mmps{999999};
-            can::Gear  selected_gear{static_cast<can::Gear>(0xFF)};
-            uint8_t    cmd_gear{0xFF};
-            bool       enable{false};
-            bool       park{false};
-            bool       auto_mode{false};
-            uint32_t   count{0};
+            rm::OperatingMode mode{rm::OperatingMode::Bare};
+            float             steer_deg{999.0f};
+            float             brake_mm{999.0f};
+            float             throttle{999.0f};
+            int32_t           speed_mmps{999999};
+            can::Gear         selected_gear{static_cast<can::Gear>(0xFF)};
+            can::Gear         cmd_gear{static_cast<can::Gear>(0xFF)};
+            bool              enable{false};
+            bool              park{false};
+            bool              valid{false};
+            uint32_t          count{0};
         } s_last_can_log;
 
+        bool mode_changed     = (snap.op_mode != s_last_can_log.mode);
+        bool valid_changed    = (snap.signal_valid != s_last_can_log.valid);
         bool steer_changed    = std::abs(snap.steering_deg - s_last_can_log.steer_deg) >= rm::kLogDeltaSteerDeg;
-        bool brake_changed    = std::abs(commanded_stroke - s_last_can_log.brake_mm) >= rm::kLogDeltaBrakeMm;
+        bool brake_changed    = std::abs(snap.brake_stroke_mm - s_last_can_log.brake_mm) >= rm::kLogDeltaBrakeMm;
         bool throttle_changed = std::abs(snap.throttle_norm - s_last_can_log.throttle) >= 0.05f;
         bool speed_changed    = std::abs(target_motor_speed - s_last_can_log.speed_mmps) >= rm::kLogDeltaSpeedMmps;
-        bool gear_changed     = (snap.gear != s_last_can_log.selected_gear) || (drive_cmd.gear != s_last_can_log.cmd_gear);
+        bool gear_changed     = (snap.gear != s_last_can_log.selected_gear) || (active_gear != s_last_can_log.cmd_gear);
         bool enable_status_chg= (snap.drive_enable_req != s_last_can_log.enable);
         bool park_changed     = (snap.park_hold_req != s_last_can_log.park);
-        bool mode_changed     = (snap.auto_mode_req != s_last_can_log.auto_mode);
         bool periodic_tick    = (++s_last_can_log.count >= static_cast<uint32_t>(rm::kCanLogDecimation));
 
-        if (steer_changed || brake_changed || throttle_changed || speed_changed ||
-            gear_changed || enable_status_chg || park_changed || mode_changed || periodic_tick) {
+        if (mode_changed || valid_changed || steer_changed || brake_changed || throttle_changed || speed_changed ||
+            gear_changed || enable_status_chg || park_changed || periodic_tick) {
+            s_last_can_log.mode           = snap.op_mode;
+            s_last_can_log.valid          = snap.signal_valid;
             s_last_can_log.steer_deg      = snap.steering_deg;
-            s_last_can_log.brake_mm       = commanded_stroke;
+            s_last_can_log.brake_mm       = snap.brake_stroke_mm;
             s_last_can_log.throttle       = snap.throttle_norm;
             s_last_can_log.speed_mmps     = target_motor_speed;
             s_last_can_log.selected_gear  = snap.gear;
-            s_last_can_log.cmd_gear       = drive_cmd.gear;
+            s_last_can_log.cmd_gear       = active_gear;
             s_last_can_log.enable         = snap.drive_enable_req;
             s_last_can_log.park           = snap.park_hold_req;
-            s_last_can_log.auto_mode      = snap.auto_mode_req;
             s_last_can_log.count          = 0;
 
             const char* gear_str = (snap.gear == can::Gear::D) ? "D" :
                                    ((snap.gear == can::Gear::R) ? "R" : "N");
-            const char* mod_str = snap.auto_mode_req ? "A" : "M";
 
-            ESP_LOGI("tx", "STR:%+.1f BRK:%.1f MTR:%+d[%s] EN:%s PRK:%s MOD:%s",
+            ESP_LOGI("tx", "[%s] STR:%+.1f BRK:%.1f MTR:%+d[%s] EN:%s PRK:%s",
+                     rm::mode_name(snap.op_mode),
                      snap.steering_deg,
-                     commanded_stroke,
+                     snap.brake_stroke_mm,
                      target_motor_speed,
                      gear_str,
                      snap.drive_enable_req ? "ON" : "OFF",
-                     snap.park_hold_req ? "HOLD" : "OFF",
-                     mod_str);
+                     snap.park_hold_req ? "HOLD" : "OFF");
         }
 
         vTaskDelayUntil(&last, period);
@@ -249,7 +171,8 @@ static bool send_can_frame(can::Frame& fr) {
             const char* link_str = (snap.link_state == rm::LinkState::Normal) ? "OK" :
                                    ((snap.link_state == rm::LinkState::Degraded) ? "DEGR" : "LOST");
 
-            ESP_LOGI(TAG, "STATUS | Link=%s Valid=%d Enable=%d Gear=%s Steer=%+.1f deg Brk=%.1f mm Throt=%.0f%% Spd=%d | CAN ok=%lu fail=%lu",
+            ESP_LOGI(TAG, "STATUS | Mode=%s Link=%s Valid=%d Enable=%d Gear=%s Steer=%+.1f deg Brk=%.1f mm Throt=%.0f%% Spd=%d | CAN ok=%lu fail=%lu",
+                     rm::mode_name(snap.op_mode),
                      link_str,
                      snap.signal_valid ? 1 : 0,
                      snap.drive_enable_req ? 1 : 0,

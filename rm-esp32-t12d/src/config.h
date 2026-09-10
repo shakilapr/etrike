@@ -24,6 +24,22 @@ constexpr int kSbusTxGpio     = -1;      // Unused (-1)
 constexpr int kSbusBaudRate   = 100'000;
 constexpr bool kSbusInverted  = true;    // Hardware UART RX inversion
 
+// ── Operating Modes ────────────────────────────────────────────────
+enum class OperatingMode : uint8_t {
+    Bare = 0,  // Direct Actuator Control (SES, SEB, MTR) on Low-CAN
+    Sys  = 1,  // Targeting sys-esp32 (Emulate RT & HMI) on Low-CAN
+    Rt   = 2   // Targeting rt-esp32 (Emulate Host & HMI) on High-CAN
+};
+
+inline constexpr const char* mode_name(OperatingMode mode) noexcept {
+    switch (mode) {
+        case OperatingMode::Bare: return "BARE";
+        case OperatingMode::Sys:  return "SYS";
+        case OperatingMode::Rt:   return "RT";
+    }
+    return "BARE";
+}
+
 // ── SBUS Channels ──────────────────────────────────────────────────
 constexpr uint8_t kNumSbusChannels = 16;  // SBUS wire protocol frame capacity
 
@@ -34,7 +50,7 @@ constexpr uint8_t kChThrottle      = 2;   // CH3: Left Stick Vertical (Throttle:
 constexpr uint8_t kChDriveEnable   = 4;   // CH5: SWA 2-Position Switch (Drive Enable: UP=OFF, DOWN=ON)
 constexpr uint8_t kChParkHold      = 5;   // CH6: SWB 2-Position Switch (Park / Brake Hold: UP=OFF, DOWN=HOLD)
 constexpr uint8_t kChGear          = 6;   // CH7: SWC 3-Position Switch (Gear: UP=R, MID=N, DOWN=D)
-constexpr uint8_t kChAutoRequest   = 7;   // CH8: SWD 2-Position Switch (Manual / Auto Request)
+constexpr uint8_t kChOperatingMode = 7;   // CH8: SWD 3-Position Mode Switch (UP=BARE, MID=SYS, DOWN=RT)
 constexpr uint8_t kChAuxVra        = 8;   // CH9: VRA Knob (Aux Implement Analog: 0.0 to 1.0)
 constexpr uint8_t kChAuxVrb        = 9;   // CH10: VRB Knob (Aux Implement Analog: 0.0 to 1.0)
 
@@ -51,7 +67,11 @@ constexpr uint32_t kPulseDeadbandUs     =   30;   // Steering center deadband (+
 constexpr uint32_t kGearRevMaxUs        = 1300;
 constexpr uint32_t kGearDriveMinUs      = 1700;
 
-// 2-Position Switch Threshold (SWA, SWB, SWD)
+// SWD 3-Position Operating Mode Thresholds (UP = BARE, MID = SYS, DOWN = RT)
+constexpr uint32_t kModeBareMaxUs       = 1300;
+constexpr uint32_t kModeRtMinUs         = 1700;
+
+// 2-Position Switch Threshold (SWA, SWB)
 constexpr uint32_t kSwitchThresholdUs   = 1500;
 
 // Throttle Limits (CH3 Left Stick Vertical: 1050us idle to 1950us full throttle)
@@ -70,8 +90,10 @@ constexpr float kMaxSteerAngleDeg       = 45.0f;  // Mechanical rack limit (+/- 
 constexpr int   kSbwAngleOffset         = 30000;  // Steer-by-wire offset (0° -> 30000 raw)
 constexpr int16_t kMinSteerRaw          = 29550;  // -45.0 deg full left limit (29550 raw)
 constexpr int16_t kMaxSteerRaw          = 30450;  // +45.0 deg full right limit (30450 raw)
-constexpr float kMaxBrakeStrokeMm       = 27.0f;  // SEB Max Emergency Stroke
-constexpr float kParkBrakeStrokeMm      = 15.0f;  // SEB Park / Brake Hold Holding Stroke
+constexpr float   kMaxBrakeStrokeMm       = 27.0f;  // SEB Max Emergency Stroke
+constexpr float   kParkBrakeStrokeMm      = 15.0f;  // SEB Park / Brake Hold Holding Stroke
+constexpr int32_t kMaxBrakePressureKpa    = 20000;  // RT mode: 20,000 kPa max pressure
+constexpr int32_t kParkBrakePressureKpa   = 11111;  // RT mode: (15.0/27.0) * 20,000 kPa park holding pressure
 
 // ── Timing & Link Status ──────────────────────────────────────────
 constexpr int kRcCaptureHz              = 100;    // Up to 100 Hz event-driven capture

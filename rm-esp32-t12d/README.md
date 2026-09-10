@@ -16,15 +16,15 @@ In the E-Trike distributed control system, `rm-esp32-t12d` functions strictly as
 - **Immediate Authority**: Switch toggles command immediate vehicle setpoints without artificial arming delays or multi-second lockouts.
 
 ```
-              [SWA] (2-pos)             [SWB] (2-pos)             [SWC] (3-pos)             [SWD] (2-pos)
+              [SWA] (2-pos)             [SWB] (2-pos)             [SWC] (3-pos)             [SWD] (3-pos)
               ┌───────────┐             ┌───────────┐             ┌───────────┐             ┌───────────┐
-              │   DRIVE   │             │   PARK /  │             │   GEAR    │             │  MANUAL / │
-              │   ENABLE  │             │    HOLD   │             │  SELECT   │             │    AUTO   │
-              │  REQUEST  │             │           │             │           │             │  REQUEST  │
+              │   DRIVE   │             │   PARK /  │             │   GEAR    │             │ OPERATING │
+              │   ENABLE  │             │    HOLD   │             │  SELECT   │             │   MODE    │
+              │  REQUEST  │             │           │             │           │             │  SELECT   │
               └───────────┘             └───────────┘             └───────────┘             └───────────┘
-               UP: DISABLE               UP: RELEASED (0mm)        UP:  REVERSE (R)          UP: MANUAL
-               DN: ENABLE REQ            DN: PARK HOLD (15mm)      MID: NEUTRAL (N)          DN: AUTO REQ
-                                                                   DN:  DRIVE   (D)
+               UP: DISABLE               UP: RELEASED (0mm)        UP:  REVERSE (R)          UP:  BARE
+               DN: ENABLE REQ            DN: PARK HOLD (15mm)      MID: NEUTRAL (N)          MID: SYS
+                                                                   DN:  DRIVE   (D)          DN:  RT
 
                      [VRA] (rotary)                            [VRB] (rotary)
                      ┌───────────┐                             ┌───────────┐
@@ -50,13 +50,13 @@ In the E-Trike distributed control system, `rm-esp32-t12d` functions strictly as
 
 | Channel | Physical Control | Function | Signal Interpretation & Range | CAN Target |
 | :---: | :--- | :--- | :--- | :--- |
-| **CH1** | **Right Stick X** | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw, $\pm 30\,\mu\text{s}$ deadband) | `0x169 VCU_SES_REQ` |
-| **CH2** | **Right Stick Y** | **Service Brake** | Proportional: $0.0\dots 27.0\text{ mm}$ stroke ($600\dots 1140$ raw, spring forward) | `0x7B9 VCU_SEB_REQ` |
-| **CH3** | **Left Stick Y** | **Motor Throttle** | Proportional: $0\dots 100\%$ ($1050\dots 1950\,\mu\text{s}$) | `0x204 RT_DRIVE_CMD` |
-| **CH5** | **SWA Switch** | **Drive Enable** | 2-Position: UP = Disabled, DOWN = Enable Request | `0x113 SYS_PWR_CMD` |
-| **CH6** | **SWB Switch** | **Park / Brake Hold** | 2-Position: UP = Released ($0\text{ mm}$), DOWN = Park Hold ($15\text{ mm}$, Neutral) | `0x7B9` / `0x204` |
-| **CH7** | **SWC Switch** | **Gear Selector** | 3-Position: UP = Reverse (`R`), MID = Neutral (`N`), DOWN = Drive (`D`) | `0x204 RT_DRIVE_CMD` |
-| **CH8** | **SWD Switch** | **Manual / Auto** | 2-Position: UP = Manual, DOWN = Autonomous Mode Request | `0x110 SYS_MODE_CMD` |
+| **CH1** | **Right Stick X** | **Steering** | Proportional: $\pm 45.0^\circ$ rack angle ($29550\dots 30450$ raw, $\pm 30\,\mu\text{s}$ deadband) | `0x169 VCU_SES_REQ` / `0x303 HOST_STEER_CMD` |
+| **CH2** | **Right Stick Y** | **Service Brake** | Proportional: $0.0\dots 27.0\text{ mm}$ stroke ($600\dots 1140$ raw, spring forward) | `0x7B9 VCU_SEB_REQ` / `0x301 HOST_BRAKE_REQ` |
+| **CH3** | **Left Stick Y** | **Motor Throttle** | Proportional: $0\dots 100\%$ ($1050\dots 1950\,\mu\text{s}$) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
+| **CH5** | **SWA Switch** | **Drive Enable** | 2-Position: UP = Disabled, DOWN = Enable Request | `0x113 SYS_PWR_CMD` / `0x112 HMI_PWR_REQ` |
+| **CH6** | **SWB Switch** | **Park / Brake Hold** | 2-Position: UP = Released ($0\text{ mm}$), DOWN = Park Hold ($15\text{ mm}$, Neutral) | `0x7B9` / `0x301` |
+| **CH7** | **SWC Switch** | **Gear Selector** | 3-Position: UP = Reverse (`R`), MID = Neutral (`N`), DOWN = Drive (`D`) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
+| **CH8** | **SWD Switch** | **Operating Mode**| 3-Position: UP = `BARE`, MID = `SYS`, DOWN = `RT` | Mode Cluster Selection |
 | **CH9** | **VRA Knob** | **Aux Analog 1** | Rotary Potentiometer: $0.0\dots 1.0$ | Telemetry / Aux |
 | **CH10**| **VRB Knob** | **Aux Analog 2** | Rotary Potentiometer: $0.0\dots 1.0$ | Telemetry / Aux |
 | **CH4, CH11, CH12** | *Spare* | **Reserved** | Unused in core driving pipeline | — |
@@ -144,7 +144,7 @@ Only **three connections** are required between the R16F receiver and the ESP32:
 To maintain optimal serial throughput at 100 Hz CAN transmit rate, `rm-esp32-t12d` uses a **dual-rate change-driven + 2 Hz decimated logger**:
 - Dynamic changes (steering $\ge 1^\circ$, brake $\ge 0.5\text{ mm}$, speed $\ge 50\text{ mm/s}$, gear, enable, park, mode) are logged immediately:
   ```text
-  I (14502) tx: STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
+  I (14502) tx: [BARE] STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF
   ```
 - 1 Hz periodic health and status summary:
   ```text
@@ -177,4 +177,4 @@ pio run -e vehicle -t upload -t monitor
 C:\TDM-GCC-64\bin\g++.exe -std=c++17 -Wall -Wextra -Irm-esp32-t12d/src -I. -Ishared rm-esp32-t12d/src/sbus_parser.cpp rm-esp32-t12d/test/test_rm_t12d_suite.cpp -o rm-esp32-t12d/test/test_rm_t12d_suite.exe
 .\rm-esp32-t12d\test\test_rm_t12d_suite.exe
 ```
-All 129 test assertions validate SBUS parsing, microsecond calibration, steering deadband curves, gear selection, park hold logic, brake-over-throttle interlock, link loss failsafe, and CAN encoding.
+All 158 test assertions validate SBUS parsing, microsecond calibration, steering deadband curves, gear selection, park hold logic, brake-over-throttle interlock, 3 runtime operating modes (BARE, SYS, RT), link loss failsafe, and CAN encoding.

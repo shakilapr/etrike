@@ -10,12 +10,12 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 
 ```
               [SWA]   [SWB]             [SWC]   [SWD]
-             (2-pos) (2-pos)           (3-pos) (2-pos)
+             (2-pos) (2-pos)           (3-pos) (3-pos)
                 │       │                 │       │
-          DRIVE ENABLE PARK / HOLD   GEAR SELECT  AUTO MODE
-          UP:   OFF    UP:   RELEASE   UP:   REV  UP:   MANUAL (MOD:M)
-          DOWN: ON     DOWN: PARK      MID:  NEU  DOWN: AUTO   (MOD:A)
-                                       DOWN: DRV
+          DRIVE ENABLE PARK / HOLD   GEAR SELECT  OPERATING MODE
+          UP:   OFF    UP:   RELEASE   UP:   REV  UP:   BARE
+          DOWN: ON     DOWN: PARK      MID:  NEU  MID:  SYS
+                                       DOWN: DRV  DOWN: RT
 
                       [VRA]             [VRB]
                      (dial)            (dial)
@@ -40,14 +40,14 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 
 | Control ID | Hardware Type | Location | Channel / SBUS | Function | Physical Action | Pulse Range ($\mu\text{s}$) | Vehicle Output Range | Primary CAN ID / Frame |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Right Stick (X)** | 2-Axis Gimbal (Spring) | Lower Right | **CH1** | **Steering Rack** | Horizontal (Left / Right) | $1050 \dots 1950\,\mu\text{s}$ | $-45.0^\circ \dots +45.0^\circ$ | `0x169` `VCU_SES_REQ` (`raw: 29550..30450`) |
-| **Right Stick (Y)** | 2-Axis Gimbal (Spring) | Lower Right | **CH2** | **Service Brake Stroke** | Vertical (Push Forward) | $1520 \dots 1950\,\mu\text{s}$ | $0.0 \dots 27.0\,\text{mm}$ stroke | `0x7B9` `VCU_SEB_REQ` (`raw: 600..1140`) |
-| **Left Stick (Y)** | 2-Axis Gimbal (Ratcheted) | Lower Left | **CH3** | **Motor Throttle** | Vertical (Up / Down) | $1050 \dots 1950\,\mu\text{s}$ | $0\% \dots 100\%$ ($0 \dots 3000\,\text{mm/s}$) | `0x204` `RT_DRIVE_CMD` (`RT_MotorSpeed`) |
+| **Right Stick (X)** | 2-Axis Gimbal (Spring) | Lower Right | **CH1** | **Steering Rack** | Horizontal (Left / Right) | $1050 \dots 1950\,\mu\text{s}$ | $-45.0^\circ \dots +45.0^\circ$ | `0x169` `VCU_SES_REQ` / `0x303` `HOST_STEER_CMD` |
+| **Right Stick (Y)** | 2-Axis Gimbal (Spring) | Lower Right | **CH2** | **Service Brake Stroke** | Vertical (Push Forward) | $1520 \dots 1950\,\mu\text{s}$ | $0.0 \dots 27.0\,\text{mm}$ stroke | `0x7B9` `VCU_SEB_REQ` / `0x301` `HOST_BRAKE_REQ` |
+| **Left Stick (Y)** | 2-Axis Gimbal (Ratcheted) | Lower Left | **CH3** | **Motor Throttle** | Vertical (Up / Down) | $1050 \dots 1950\,\mu\text{s}$ | $0\% \dots 100\%$ ($0 \dots 3000\,\text{mm/s}$) | `0x204` `RT_DRIVE_CMD` / `0x300` `HOST_DRIVE_CMD` |
 | **Left Stick (X)** | 2-Axis Gimbal | Lower Left | **CH4** | **Reserved / Spare** | Horizontal (Left / Right) | $1000 \dots 2000\,\mu\text{s}$ | Unused | — |
-| **SWA Switch** | 2-Position Toggle | Top Far-Left | **CH5** | **Drive Enable Request** | UP / DOWN | $\approx 1000$ / $\approx 2000\,\mu\text{s}$ | `EN:OFF` (Disabled) / `EN:ON` (Enable Request) | `0x113` `SYS_PWR_CMD` (`power_state: 0/1`) |
-| **SWB Switch** | 2-Position Toggle | Top Inner-Left | **CH6** | **Electric Park Brake (Hold)** | UP / DOWN | $\approx 1000$ / $\approx 2000\,\mu\text{s}$ | `PRK:OFF` ($0\,\text{mm}$) / `PRK:HOLD` ($15\,\text{mm}$) | `0x7B9` `VCU_SEB_REQ` (`VCU_SEB_Stroke_Req`) |
-| **SWC Switch** | 3-Position Toggle | Top Inner-Right | **CH7** | **Transmission Gear Selector** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `[R]` Reverse / `[N]` Neutral / `[D]` Drive | `0x204` `RT_DRIVE_CMD` (`gear: 3/0/1`) |
-| **SWD Switch** | 2-Position Toggle | Top Far-Right | **CH8** | **Manual / Autonomous Mode** | UP / DOWN | $\approx 1000$ / $\approx 2000\,\mu\text{s}$ | `MOD:M` (Manual) / `MOD:A` (Auto Request) | `0x110` `SYS_MODE_CMD` (`mode: 0/1`) |
+| **SWA Switch** | 2-Position Toggle | Top Far-Left | **CH5** | **Drive Enable Request** | UP / DOWN | $\approx 1000$ / $\approx 2000\,\mu\text{s}$ | `EN:OFF` (Disabled) / `EN:ON` (Enable Request) | `0x113` `SYS_PWR_CMD` / `0x112` `HMI_PWR_REQ` |
+| **SWB Switch** | 2-Position Toggle | Top Inner-Left | **CH6** | **Electric Park Brake (Hold)** | UP / DOWN | $\approx 1000$ / $\approx 2000\,\mu\text{s}$ | `PRK:OFF` ($0\,\text{mm}$) / `PRK:HOLD` ($15\,\text{mm}$) | `0x7B9` `VCU_SEB_REQ` / `0x301` `HOST_BRAKE_REQ` |
+| **SWC Switch** | 3-Position Toggle | Top Inner-Right | **CH7** | **Transmission Gear Selector** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `[R]` Reverse / `[N]` Neutral / `[D]` Drive | `0x204` `RT_DRIVE_CMD` / `0x300` `HOST_DRIVE_CMD` |
+| **SWD Switch** | 3-Position Toggle | Top Far-Right | **CH8** | **Operating Mode Selector** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `BARE` / `SYS` / `RT` | Mode Cluster Selection |
 | **VRA Knob** | Rotary Potentiometer | Top Center-Left | **CH9** | **Aux Analog Knob 1** | Dial Rotation | $1000 \dots 2000\,\mu\text{s}$ | $0.0 \dots 1.0$ | Telemetry / Aux |
 | **VRB Knob** | Rotary Potentiometer | Top Center-Right | **CH10** | **Aux Analog Knob 2** | Dial Rotation | $1000 \dots 2000\,\mu\text{s}$ | $0.0 \dots 1.0$ | Telemetry / Aux |
 
@@ -58,7 +58,7 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 ### A. SWA: Direct Drive Enable Request
 - **UP (`EN:OFF`)**:
   - Drive request disabled (`drive_enable_req = false`).
-  - Motor target velocity clamped to $0\text{ mm/s}$ and powertrain command broadcasts disabled (`0x113 SYS_PWR_CMD`).
+  - Motor target velocity clamped to $0\text{ mm/s}$ and powertrain command broadcasts disabled.
 - **DOWN (`EN:ON`)**:
   - Driver requests drive enable (`drive_enable_req = true`).
   - Drive is active whenever `signal_valid && drive_enable_req && !park_hold_req`.
@@ -78,8 +78,8 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 ### C. Right Gimbal: Steering & Service Brake
 - **Horizontal Axis (CH1) — Steering Rack**:
   - Center ($1500\,\mu\text{s} \pm 30\,\mu\text{s}$ deadband): $0.0^\circ$ (Straight ahead).
-  - Full Left ($1050\,\mu\text{s}$): $-45.0^\circ$ (Hard Left, CAN `0x169` raw `29550`).
-  - Full Right ($1950\,\mu\text{s}$): $+45.0^\circ$ (Hard Right, CAN `0x169` raw `30450`).
+  - Full Left ($1050\,\mu\text{s}$): $-45.0^\circ$ (Hard Left).
+  - Full Right ($1950\,\mu\text{s}$): $+45.0^\circ$ (Hard Right).
 - **Vertical Axis (CH2) — Service Brake**:
   - Spring-centered rest ($\le 1520\,\mu\text{s}$): $0.0\,\text{mm}$ (Released).
   - Push Forward ($> 1520\,\mu\text{s}$ to $1950\,\mu\text{s}$): Progressively applies service brake up to $27.0\,\text{mm}$ full clamp.
@@ -104,16 +104,20 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 
 ---
 
-### F. SWD: Manual vs Autonomous Mode Request
-- **UP**: **Manual Mode** (`MOD:M`, CAN `0x110` mode = `0`).
-- **DOWN**: **Autonomous Mode Request** (`MOD:A`, CAN `0x110` mode = `1`).
+### F. SWD: 3-Position Operating Mode Selector
+- **UP ($\le 1300\,\mu\text{s}$)**: **`BARE` Mode**
+  - Direct actuator control (SES, SEB, MTR) on Low-CAN without SYS, RT, or Host.
+- **MID ($1301 \dots 1699\,\mu\text{s}$)**: **`SYS` Mode**
+  - Direct connection to `sys-esp32` on Low-CAN, emulating `rt-esp32` and HMI commands.
+- **DOWN ($\ge 1700\,\mu\text{s}$)**: **`RT` Mode**
+  - Direct connection to `rt-esp32` on High-CAN, emulating autonomous Host computer commands.
 
 ---
 
 ## 3. Serial Monitor Log Reference
 
 ```text
-I (14502) tx: STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
+I (1336831) tx: STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
 ```
 
 - **`STR:+0.0`**: Steering angle in degrees ($-45.0^\circ \dots +45.0^\circ$).
@@ -121,4 +125,4 @@ I (14502) tx: STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
 - **`MTR:+1800[D]`**: Motor speed setpoint in mm/s and gear (`[D]`, `[N]`, or `[R]`).
 - **`EN:ON`**: Powertrain enable request (`ON` = live, `OFF` = safe/disabled).
 - **`PRK:OFF`**: Park brake status (`OFF` = released, `HOLD` = 15mm hold engaged).
-- **`MOD:M`**: Vehicle mode (`M` = Manual, `A` = Autonomous).
+- **`MOD:M`**: Vehicle operating mode request (`M` = Manual, `A` = Auto).
