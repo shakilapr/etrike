@@ -910,35 +910,43 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                 }
             }
         }
-
         // 4. 50 Hz Actuator Outputs: 0x205, 0x169, 0x7B9, 0x501
-        if (xTaskGetTickCount() - last_50hz >= pdMS_TO_TICKS(20)) {
-            last_50hz = xTaskGetTickCount();
+        // TWAI has one application TX slot. Alternate secondary frames to
+        // avoid same-tick contention; node status remains every cycle.
+        const TickType_t tick_50hz = xTaskGetTickCount();
+        if (tick_50hz - last_50hz >= pdMS_TO_TICKS(20)) {
+            last_50hz = tick_50hz;
             if (g_motion_output_mailbox) xQueuePeek(g_motion_output_mailbox, &out, 0);
+            can::Frame secondary_frame{};
 
-            if (out.current_mode != uint8_t(can::Mode::Manual)) {
-                // 0x205 Brake Command
-                can::gen::RtBrakeCmd bmsg{out.brake_kpa};
-                if (can::encode_frame(bmsg, fr) == can::gen::CodecStatus::Ok) {
-                    send_can_low(fr);
-                }
-
-                // 0x169 Steering Request
-                if (out.steer_command_enable) {
-                    can::custom::ses::Command smsg{};
-                    int64_t now_ms = esp_timer_get_time() / 1000;
-                    if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
-                                        now_ms, smsg)) {
-                        if (can::custom::ses::encode_command(smsg, fr) == can::gen::CodecStatus::Ok) {
-                            send_can_low(fr);
-                        }
+            switch (node_status_roll % 3) {
+            case 0:
+                if (out.current_mode != uint8_t(can::Mode::Manual)) {
+                    can::gen::RtBrakeCmd bmsg{out.brake_kpa};
+                    if (can::encode_frame(bmsg, secondary_frame) == can::gen::CodecStatus::Ok) {
+                        send_can_low(secondary_frame);
                     }
                 }
-
-                // 0x7B9 SEB Emergency Takeover
-                if (out.seb_emergency_takeover) {
-                    send_seb_req(*drv, fr, rt::make_seb_takeover_req(), seb_roll);
+                break;
+            case 1:
+                if (out.current_mode != uint8_t(can::Mode::Manual)
+                    && out.steer_command_enable) {
+                    can::custom::ses::Command smsg{};
+                    const int64_t now_ms = esp_timer_get_time() / 1000;
+                    if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
+                                        now_ms, smsg)
+                        && can::custom::ses::encode_command(smsg, secondary_frame)
+                            == can::gen::CodecStatus::Ok) {
+                        send_can_low(secondary_frame);
+                    }
                 }
+                break;
+            default:
+                if (out.current_mode != uint8_t(can::Mode::Manual)
+                    && out.seb_emergency_takeover) {
+                    send_seb_req(*drv, secondary_frame, rt::make_seb_takeover_req(), seb_roll);
+                }
+                break;
             }
 
             // 0x501 RT_NODE_STATUS on Low Bus
@@ -955,7 +963,6 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         }
     }
 }
-
 // ── TASK 3: control_task (Core 1, Priority 5) ───────────────────────
 [[noreturn]] void control_task(void*) {
     TickType_t last_wake = xTaskGetTickCount();
