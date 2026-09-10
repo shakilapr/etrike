@@ -117,12 +117,12 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 ## 3. Serial Monitor Log Reference
 
 ```text
-I (1336831) tx: STR:+0.0 BRK:0.0 MTR:+1800[D] EN:ON PRK:OFF MOD:M
+I (1336831) tx: STR: +0.0 BRK: 0.0  THR:  0% MTR:   +0[N]  ARM:OFF PRK:HOLD  MOD:BARE RF:OK
 ```
 
-- **`STR:+0.0`**: Steering angle in degrees ($-45.0^\circ \dots +45.0^\circ$).
-- **`BRK:0.0`**: Service brake stroke in mm ($0.0 \dots 27.0\,\text{mm}$).
-- **`MTR:+1800[D]`**: Motor speed setpoint in mm/s and gear (`[D]`, `[N]`, or `[R]`).
-- **`EN:ON`**: Powertrain enable request (`ON` = live, `OFF` = safe/disabled).
-- **`PRK:OFF`**: Park brake status (`OFF` = released, `HOLD` = 15mm hold engaged).
-- **`MOD:M`**: Vehicle operating mode request (`M` = Manual, `A` = Auto).
+Organized into 4 distinct spatial clusters with fixed widths:
+- **Steering & Braking**: `STR:+0.0` ($-45.0^\circ \dots +45.0^\circ$), `BRK: 0.0` ($0.0 \dots 27.0\,\text{mm}$).
+- **Propulsion**: `THR:  0%` ($0 \dots 100\%$), `MTR:   +0` commanded velocity in mm/s with current gear (`[D]`, `[N]`, or `[R]`).
+- **Safety Interlocks**: `ARM:OFF` (`ON` = drive armed / Auto mode, `OFF` = disarmed), `PRK:HOLD` (`HOLD` = park brake held, `OFF` = released).
+- **Control Context**: `MOD:BARE` (`BARE`, `SYS`, or `RT`), `RF:OK` (`OK` = SBUS valid, `LOST` = failsafe active).
+

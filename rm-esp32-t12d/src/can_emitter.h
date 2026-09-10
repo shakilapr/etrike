@@ -101,7 +101,12 @@ private:
         // 4. Supervisor Emulation (10 Hz Heartbeat): 0x110 SYS_MODE_CMD + 0x113 SYS_PWR_CMD
         if (tick_10ms % 10 == 0) {
             can::gen::SysModeCmd mode_cmd{};
-            mode_cmd.mode = 0; // Manual mode
+            // MTR STM32 strictly requires AUTO mode (1) in 0x110 to accept CAN 0x204 RT_DRIVE_CMD
+            // and actuate the motor via DAC. In MANUAL mode (0), MTR ignores CAN speed commands
+            // and only listens to the physical handlebar throttle ADC.
+            // RM mimics the autonomous master, so when drive is active (SWA armed, Park released, link valid),
+            // we broadcast AUTO (1); when disarmed/idle, we broadcast MANUAL (0) so motor DAC stays safely zeroed.
+            mode_cmd.mode = drive_active ? 1u : 0u;
             mode_cmd.rolling_counter = roll_sys_mode_++;
             can::Frame mode_fr;
             if (can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr) == can::gen::CodecStatus::Ok) {

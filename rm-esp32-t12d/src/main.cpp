@@ -142,14 +142,16 @@ static bool send_can_frame(can::Frame& fr) {
             const char* gear_str = (snap.gear == can::Gear::D) ? "D" :
                                    ((snap.gear == can::Gear::R) ? "R" : "N");
 
-            ESP_LOGI("tx", "[%s] STR:%+.1f BRK:%.1f MTR:%+d[%s] EN:%s PRK:%s",
-                     rm::mode_name(snap.op_mode),
+            ESP_LOGI("tx", "STR:%+5.1f BRK:%4.1f  THR:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s RF:%s",
                      snap.steering_deg,
                      snap.brake_stroke_mm,
-                     target_motor_speed,
+                     snap.throttle_norm * 100.0f,
+                     static_cast<long>(target_motor_speed),
                      gear_str,
                      snap.drive_enable_req ? "ON" : "OFF",
-                     snap.park_hold_req ? "HOLD" : "OFF");
+                     snap.park_hold_req ? "HOLD" : "OFF",
+                     rm::mode_name(snap.op_mode),
+                     snap.signal_valid ? "OK" : "LOST");
         }
 
         vTaskDelayUntil(&last, period);
