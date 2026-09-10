@@ -221,6 +221,31 @@ Signals to the intermediate controllers were verified to exit to the units in al
 three rm modes (Section 5) and via the direct Host path (Section 6). rm and Host
 paths produce identical actuator outcomes for the same demand.
 
+## ESTOP Reset & Recovery
+
+Testbench Section 7 probes ESTOP reset/recovery across the operator paths:
+
+| Scenario | Behavior verified | Result |
+| --- | --- | --- |
+| HOST reset | ESTOP → START → re-command AUTO resumes motion, **no power cycle needed** | **PASS** |
+| Fault-active reset | Reset **refused** while SEB L3 cause still asserted; succeeds after it clears | **PASS** |
+| rm BARE | `0x001` ESTOP stops MTR; auto-clears + re-arms → recovers | **PASS** |
+| rm SYS | ESTOP → operator reset → MTR recovery | **PASS** |
+| rm RT | software ESTOP → SYS reset → rt clears (2-frame `0x011`) → recovery | **PASS** |
+
+**Findings:**
+- ESTOP correctly suppresses motion while latched (MTR DAC→0, SEB 27 mm).
+- Recovery does **not** require a power cycle: after `START` the system lands in
+  **MANUAL**, so the operator only needs to re-select **AUTO**. The earlier
+  `test_estop_recovery.cpp` power-cycle step is therefore stricter than necessary.
+- A reset press while the originating fault is still asserted is **consumed**
+  (safe, `mode_manager.cpp:44-56`); the operator must press again after the cause
+  clears. Not a bug.
+- `rt-esp32` clears ESTOP only after **two consecutive advancing `0x011` clear
+  frames** from SYS; a single/duplicate/gap frame does not clear (fail-safe).
+
+No ESTOP reset/recovery defects found in the verified paths.
+
 ## Summary
 
 | Phase | Check | Result |
