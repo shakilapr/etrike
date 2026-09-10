@@ -8,15 +8,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
+try:
+    from protocol.tests.python.compiler_helper import find_cpp_compiler
+except (ImportError, ModuleNotFoundError):
+    from compiler_helper import find_cpp_compiler
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 class GeneratedCppTests(unittest.TestCase):
     def compile_and_run(self, source: str, standard: str):
-        compiler = shutil.which("g++") or shutil.which("clang++")
+        compiler = find_cpp_compiler(standard)
         if compiler is None:
-            self.skipTest("a C++ compiler is not available")
+            self.skipTest(f"a {standard}-capable C++ compiler is not available")
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / Path(source).stem
             if sys.platform == "win32":
@@ -54,9 +59,9 @@ class GeneratedCppTests(unittest.TestCase):
         self.assertIn("PASS", output)
 
     def test_generated_codecs_compile_and_run_language_neutral_vectors(self):
-        compiler = shutil.which("g++") or shutil.which("clang++")
+        compiler = find_cpp_compiler("c++17")
         if compiler is None:
-            self.skipTest("a C++17 compiler is not available")
+            self.skipTest("a C++17-capable compiler is not available")
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "generated-vectors"
             if sys.platform == "win32":
