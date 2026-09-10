@@ -67,9 +67,17 @@ function numSignal(m: MessageState | undefined, key: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function gearFromCan(m: MessageState | undefined): Gear | null {
+function signalVal(m: MessageState | undefined, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = numSignal(m, k)
+    if (v != null) return v
+  }
+  return null
+}
+
+function gearFromCan(m: MessageState | null | undefined): Gear | null {
   if (!m) return null
-  const raw = m.signals?.gear
+  const raw = m.signals?.gear ?? m.signals?.gear_state ?? m.signals?.RT_Gear
   if (!raw) return null
   const label = String(raw.enum_label ?? raw.engineering_value ?? '').toUpperCase()
   if (label === 'N' || label === 'D' || label === 'S' || label === 'R') return label
@@ -206,17 +214,76 @@ export function DriveConsole() {
   gearRef.current = gear
   shiftRef.current = shiftMode
 
-  const driveMsg = messages.find((m) => m.name === 'HOST_DRIVE_CMD')
-  const motionMsg = messages.find((m) => m.name === 'RT_MOTION_RPT' && m.bus === 'high')
-  const canLive = driveMsg?.freshness?.toLowerCase() === 'live'
-  const canSpeed = numSignal(driveMsg, 'speed_mmps')
-  const canYaw = numSignal(driveMsg, 'yaw_rate_mrad_s')
-  const canGear = gearFromCan(driveMsg)
+  const driveMsg =
+    messages.find((m) => m.name === 'HOST_DRIVE_CMD' && m.bus === 'high') ??
+    messages.find((m) => m.name === 'HOST_DRIVE_CMD')
+  const lowDriveMsg =
+    messages.find((m) => m.name === 'RT_DRIVE_CMD' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'RT_DRIVE_CMD')
+  const motionMsg =
+    messages.find((m) => m.name === 'RT_MOTION_RPT' && m.bus === 'high') ??
+    messages.find((m) => m.name === 'RT_MOTION_RPT')
+  const sesReqMsg =
+    messages.find((m) => m.name === 'VCU_SES_REQ' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'VCU_SES_REQ')
+  const sesStatusMsg =
+    messages.find((m) => m.name === 'SES_STATUS' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'SES_STATUS')
+  const sebReqMsg =
+    messages.find((m) => m.name === 'VCU_SEB_REQ' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'VCU_SEB_REQ')
+  const sebStatusMsg =
+    messages.find((m) => m.name === 'SEB_STATUS' && m.bus === 'low') ??
+    messages.find((m) => m.name === 'SEB_STATUS')
+  const mtrFbkMsg = messages.find((m) => m.name === 'MTR_MOTOR_FBK')
+
+  const highLive = driveMsg?.freshness?.toLowerCase() === 'live'
+  const lowDriveLive = lowDriveMsg?.freshness?.toLowerCase() === 'live'
   const motionLive = motionMsg?.freshness?.toLowerCase() === 'live'
+  const sesReqLive = sesReqMsg?.freshness?.toLowerCase() === 'live'
+  const sesStatusLive = sesStatusMsg?.freshness?.toLowerCase() === 'live'
+  const sebReqLive = sebReqMsg?.freshness?.toLowerCase() === 'live'
+  const sebStatusLive = sebStatusMsg?.freshness?.toLowerCase() === 'live'
+  const mtrLive = mtrFbkMsg?.freshness?.toLowerCase() === 'live'
+
   const motionValid = motionLive &&
     numSignal(motionMsg, 'speed_valid') === 1 &&
     numSignal(motionMsg, 'yaw_rate_valid') === 1 &&
     numSignal(motionMsg, 'gear_valid') === 1
+
+  const hasLiveBusTraffic =
+    highLive || lowDriveLive || motionLive || sesReqLive || sesStatusLive || sebReqLive || sebStatusLive || mtrLive
+  const canLive = highLive || lowDriveLive || motionLive
+
+  const canSpeed = motionValid
+    ? numSignal(motionMsg, 'speed_mmps')
+    : lowDriveLive
+      ? signalVal(lowDriveMsg, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
+      : highLive
+        ? numSignal(driveMsg, 'speed_mmps')
+        : mtrLive
+          ? signalVal(mtrFbkMsg, 'actual_speed_mmps', 'motor_command_speed_mmps')
+          : null
+
+  const canSteerDeg = sesStatusLive
+    ? (numSignal(sesStatusMsg, 'angle_deg') ?? (numSignal(sesStatusMsg, 'actual_angle_raw') != null ? numSignal(sesStatusMsg, 'actual_angle_raw')! * 0.1 : null))
+    : sesReqLive
+      ? (numSignal(sesReqMsg, 'target_angle_deg') ?? (numSignal(sesReqMsg, 'target_angle_raw') != null ? numSignal(sesReqMsg, 'target_angle_raw')! * 0.1 : null))
+      : null
+
+  const canYaw = motionValid
+    ? -(numSignal(motionMsg, 'yaw_rate_mrad_s') ?? 0)
+    : highLive
+      ? numSignal(driveMsg, 'yaw_rate_mrad_s')
+      : canSteerDeg != null && canSpeed != null && Math.abs(canSpeed) > 10
+        ? ((canSpeed / 1000 * Math.tan((canSteerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000)
+        : null
+
+  const canGear =
+    gearFromCan(motionValid ? motionMsg : null) ??
+    gearFromCan(lowDriveLive ? lowDriveMsg : null) ??
+    gearFromCan(driveMsg) ??
+    gearFromCan(mtrFbkMsg)
   // RT reports trike-right-positive yaw; the Universe visualization is left-positive.
 
   // Vehicle motion gate (firmware): non-zero RT_DRIVE_CMD only in AUTO.
@@ -653,20 +720,79 @@ export function DriveConsole() {
     function updateFromCan(dt: number) {
       const state = stateRef.current
       const msgs = useAppStore.getState().messages
-      const drive = msgs.find((m) => m.name === 'HOST_DRIVE_CMD')
-      const motion = msgs.find((m) => m.name === 'RT_MOTION_RPT' && m.bus === 'high')
-      const motionIsValid = motion?.freshness?.toLowerCase() === 'live' &&
+      const highDrive =
+        msgs.find((m) => m.name === 'HOST_DRIVE_CMD' && m.bus === 'high') ??
+        msgs.find((m) => m.name === 'HOST_DRIVE_CMD')
+      const lowDrive =
+        msgs.find((m) => m.name === 'RT_DRIVE_CMD' && m.bus === 'low') ??
+        msgs.find((m) => m.name === 'RT_DRIVE_CMD')
+      const motion =
+        msgs.find((m) => m.name === 'RT_MOTION_RPT' && m.bus === 'high') ??
+        msgs.find((m) => m.name === 'RT_MOTION_RPT')
+      const sesReq =
+        msgs.find((m) => m.name === 'VCU_SES_REQ' && m.bus === 'low') ??
+        msgs.find((m) => m.name === 'VCU_SES_REQ')
+      const sesStatus =
+        msgs.find((m) => m.name === 'SES_STATUS' && m.bus === 'low') ??
+        msgs.find((m) => m.name === 'SES_STATUS')
+      const sebReq =
+        msgs.find((m) => m.name === 'VCU_SEB_REQ' && m.bus === 'low') ??
+        msgs.find((m) => m.name === 'VCU_SEB_REQ')
+      const sebStatus =
+        msgs.find((m) => m.name === 'SEB_STATUS' && m.bus === 'low') ??
+        msgs.find((m) => m.name === 'SEB_STATUS')
+      const mtrFbk = msgs.find((m) => m.name === 'MTR_MOTOR_FBK')
+
+      const motionIsValid =
+        motion?.freshness?.toLowerCase() === 'live' &&
         numSignal(motion, 'speed_valid') === 1 &&
         numSignal(motion, 'yaw_rate_valid') === 1 &&
         numSignal(motion, 'gear_valid') === 1
-      // Prefer fresh measured motion; fall back to command data in simulation/bench startup.
-      const fromBusSpeed = numSignal(drive, 'speed_mmps')
-      const fromBusYaw = numSignal(drive, 'yaw_rate_mrad_s')
+
+      const lowLiveNow = lowDrive?.freshness?.toLowerCase() === 'live'
+      const highLiveNow = highDrive?.freshness?.toLowerCase() === 'live'
+      const sesStatusLiveNow = sesStatus?.freshness?.toLowerCase() === 'live'
+      const sesReqLiveNow = sesReq?.freshness?.toLowerCase() === 'live'
+      const mtrLiveNow = mtrFbk?.freshness?.toLowerCase() === 'live'
+
+      // Speed selection: measured > low cmd > high cmd > mtr feedback > shaped
       const measuredSpeedMmps = motionIsValid ? numSignal(motion, 'speed_mmps') : null
+      const lowSpeedMmps = lowLiveNow
+        ? signalVal(lowDrive, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
+        : null
+      const highSpeedMmps = highLiveNow ? numSignal(highDrive, 'speed_mmps') : null
+      const mtrSpeedMmps = mtrLiveNow
+        ? signalVal(mtrFbk, 'actual_speed_mmps', 'motor_command_speed_mmps')
+        : null
+      const speedMmps =
+        measuredSpeedMmps ?? lowSpeedMmps ?? highSpeedMmps ?? mtrSpeedMmps ?? shapedRef.current.speed
+
+      // Steering / Yaw selection
+      const steerDeg =
+        (sesStatusLiveNow
+          ? (numSignal(sesStatus, 'angle_deg') ??
+             (numSignal(sesStatus, 'actual_angle_raw') != null
+               ? numSignal(sesStatus, 'actual_angle_raw')! * 0.1
+               : null))
+          : null) ??
+        (sesReqLiveNow
+          ? (numSignal(sesReq, 'target_angle_deg') ??
+             (numSignal(sesReq, 'target_angle_raw') != null
+               ? numSignal(sesReq, 'target_angle_raw')! * 0.1
+               : null))
+          : null)
+
       const measuredYawMrad = motionIsValid ? -(numSignal(motion, 'yaw_rate_mrad_s') ?? 0) : null
-      const speedMmps = measuredSpeedMmps ?? fromBusSpeed ?? shapedRef.current.speed
-      const yawMrad = measuredYawMrad ?? fromBusYaw ?? shapedRef.current.yaw
-      const g = (motionIsValid ? gearFromCan(motion) : null) ?? gearFromCan(drive)
+      const highYawMrad = highLiveNow ? numSignal(highDrive, 'yaw_rate_mrad_s') : null
+      const yawMrad = measuredYawMrad ?? highYawMrad ?? shapedRef.current.yaw
+
+      // Gear selection
+      const g =
+        (motionIsValid ? gearFromCan(motion) : null) ??
+        (lowLiveNow ? gearFromCan(lowDrive) : null) ??
+        gearFromCan(highDrive) ??
+        gearFromCan(mtrFbk)
+
       // While armed, `gear` is the operator's next command. CAN gear remains
       // visible through displayGear but must not overwrite a freshly selected
       // R/N/D/S value before the next intent tick.
@@ -679,18 +805,35 @@ export function DriveConsole() {
         }
       }
       const targetV = (speedMmps / 1000) * PIXELS_PER_METER
-      const omega = yawMrad / 1000
-      let targetAlpha = 0
-      if (Math.abs(targetV) > 1) targetAlpha = Math.atan((omega * L) / targetV)
       const dyn = computeDynamicLimits(state.v)
       const MAX_ALPHA = Math.min(maxAlphaRad(), dyn.maxAlphaRad)
+
+      let targetAlpha = 0
+      if (steerDeg != null) {
+        targetAlpha = (steerDeg * Math.PI) / 180
+      } else {
+        const omega = yawMrad / 1000
+        if (Math.abs(targetV) > 1) targetAlpha = Math.atan((omega * L) / targetV)
+      }
       targetAlpha = Math.max(-MAX_ALPHA, Math.min(MAX_ALPHA, targetAlpha))
       state.v += (targetV - state.v) * Math.min(1, 8 * dt)
       state.alpha += (targetAlpha - state.alpha) * Math.min(1, 10 * dt)
-      state.isBraking = Math.abs(targetV) < Math.abs(state.v) * 0.5 && Math.abs(state.v) > 5
-      state.brakePressureKpa = state.isBraking
-        ? Math.min(state.brakePressureKpa + 8000 * dt, 2000)
-        : Math.max(state.brakePressureKpa - 15000 * dt, 0)
+
+      // Brake
+      const lowBrakeKpa =
+        numSignal(sebStatus, 'pressure_kpa') ??
+        (numSignal(sebReq, 'pressure_request_raw') != null
+          ? numSignal(sebReq, 'pressure_request_raw')! * 20
+          : null)
+      if (lowBrakeKpa != null && lowBrakeKpa > 50) {
+        state.brakePressureKpa = Math.min(2000, lowBrakeKpa)
+        state.isBraking = true
+      } else {
+        state.isBraking = Math.abs(targetV) < Math.abs(state.v) * 0.5 && Math.abs(state.v) > 5
+        state.brakePressureKpa = state.isBraking
+          ? Math.min(state.brakePressureKpa + 8000 * dt, 2000)
+          : Math.max(state.brakePressureKpa - 15000 * dt, 0)
+      }
       state.omega = (state.v / L) * Math.tan(state.alpha)
       state.theta += state.omega * dt
       if (state.theta > Math.PI * 2) state.theta -= Math.PI * 2
@@ -735,7 +878,7 @@ export function DriveConsole() {
         ctx!.lineTo(0, R)
         ctx!.stroke()
         ctx!.setLineDash([])
-        ctx!.fillStyle = '#7c3aed'
+        ctx!.fillStyle = 'rgba(124, 58, 237, 0.6)'
         ctx!.beginPath()
         ctx!.arc(0, R, 4, 0, Math.PI * 2)
         ctx!.fill()
@@ -771,8 +914,28 @@ export function DriveConsole() {
       const dt = (ts - lastTimeRef.current) / 1000
       lastTimeRef.current = ts
       if (dt < 0.1) {
-        if (armedRef.current) updateFromCan(dt)
-        else updateLocal(dt)
+        const msgs = useAppStore.getState().messages
+        const hasLiveMotion = msgs.some((m) => {
+          if (m.freshness?.toLowerCase() !== 'live') return false
+          return (
+            m.name === 'RT_MOTION_RPT' ||
+            m.name === 'RT_DRIVE_CMD' ||
+            m.name === 'HOST_DRIVE_CMD' ||
+            m.name === 'VCU_SES_REQ' ||
+            m.name === 'SES_STATUS' ||
+            m.name === 'MTR_MOTOR_FBK'
+          )
+        })
+        const hasActiveKeys = Object.values(keysRef.current).some(Boolean)
+        if (armedRef.current) {
+          updateFromCan(dt)
+        } else if (hasActiveKeys) {
+          updateLocal(dt)
+        } else if (hasLiveMotion) {
+          updateFromCan(dt)
+        } else {
+          updateLocal(dt)
+        }
       }
       const r = wrap!.getBoundingClientRect()
       draw(r.width, r.height)
@@ -807,9 +970,12 @@ export function DriveConsole() {
   const k = keyUi
   const benchOn = status?.session?.bench_tx === 'enabled'
   const fullVehicle = (status?.session?.profile ?? status?.profile) === 'full_vehicle'
-  const displaySpeed = armed && canSpeed != null ? canSpeed : hud.speedMmps
-  const displayYaw = armed && canYaw != null ? canYaw : hud.yawMradS
-  const displayGear = armed && canGear ? canGear : gear
+  const displaySpeed =
+    (armed || hasLiveBusTraffic) && canSpeed != null ? canSpeed : hud.speedMmps
+  const displayYaw =
+    (armed || hasLiveBusTraffic) && canYaw != null ? canYaw : hud.yawMradS
+  const displayGear =
+    (armed || hasLiveBusTraffic) && canGear ? canGear : gear
   const shapedSpeed =
     ctrlSnap?.shaped_speed_mmps != null ? Number(ctrlSnap.shaped_speed_mmps) : null
   const shapedYaw =
@@ -895,9 +1061,9 @@ export function DriveConsole() {
             <span className="chip-k">Control</span>
             <span className="chip-v">{armed ? 'Armed' : 'Local'}</span>
           </span>
-          <span className={`chip ${motionValid ? 'ok' : ''}`} title="RT_MOTION_RPT measured feedback freshness">
-            <span className="chip-k">0x121</span>
-            <span className="chip-v">{motionValid ? 'Measured' : canLive ? 'Command' : 'Idle'}</span>
+          <span className={`chip ${motionValid ? 'ok' : canLive ? 'ok' : ''}`} title="RT_MOTION_RPT or CAN command freshness">
+            <span className="chip-k">{motionValid ? '0x121' : lowDriveLive ? '0x204' : highLive ? '0x300' : '0x121'}</span>
+            <span className="chip-v">{motionValid ? 'Measured' : lowDriveLive ? 'Low CMD' : highLive ? 'Command' : 'Idle'}</span>
           </span>
           <span
             className={`chip ${rtModeLive && rtModeLabel === 'AUTO' ? 'ok' : motionLocked ? 'danger' : ''}`}
@@ -1233,13 +1399,26 @@ export function DriveConsole() {
             <div className="drive-section-head">
               <h2>Telemetry details</h2>
               <span className="muted small mono">
-                {armed ? (canLive ? 'from bus' : 'waiting 0x300') : 'local sim'}
+                {armed
+                  ? canLive
+                    ? lowDriveLive
+                      ? 'from Low bus (0x204)'
+                      : 'from High bus (0x300)'
+                    : 'waiting 0x300'
+                  : hasLiveBusTraffic
+                    ? lowDriveLive
+                      ? 'live Low bus (0x204)'
+                      : 'live High bus'
+                    : 'local preview'}
               </span>
             </div>
             <dl className="kv preview-kv" data-testid="preview-telemetry">
-              <dt>High command speed / yaw</dt>
+              <dt>{lowDriveLive ? 'Low command speed / steer' : 'Command speed / yaw'}</dt>
               <dd className="mono">
-                {displaySpeed.toFixed(0)} mm/s · {displayYaw.toFixed(0)} mrad/s
+                {displaySpeed.toFixed(0)} mm/s ·{' '}
+                {canSteerDeg != null
+                  ? `${canSteerDeg.toFixed(1)}°`
+                  : `${displayYaw.toFixed(0)} mrad/s`}
               </dd>
               <dt>Gear · heading</dt>
               <dd className="mono">
