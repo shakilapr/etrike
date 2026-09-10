@@ -212,6 +212,7 @@ export function LiveCan() {
           ? `Latest-by-message · updates in place · ${filtered.length} rows`
           : `Chronological stream · ${chronoFiltered.length} frames (pause freezes rendering, not capture)`
       }
+      sectionLabel="Observe"
     >
 
       <div className="toolbar flex min-w-0 flex-wrap items-center gap-2.5">

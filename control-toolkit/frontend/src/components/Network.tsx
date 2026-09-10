@@ -21,6 +21,7 @@ export function Network() {
       testId="workspace-network"
       title="Network"
       description="ECU topology and bus health · High and Low never collapsed into one lamp"
+      sectionLabel="Observe"
     >
 
       <section className="bus-health" data-testid="bus-health">

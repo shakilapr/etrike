@@ -1,5 +1,5 @@
 /**
- * CAN Dictionary ? message cards (debug-tool layout) with:
+ * CAN Dictionary · message cards (debug-tool layout) with:
  *  - bit grid at top of each card
  *  - fixed-height hover inspector (no layout jump)
  *  - signal table rows expand on click to explain bit packing
@@ -75,18 +75,18 @@ function scaleFor(signal: DictField): string {
   const f = signal._factor
   const o = signal._offset
   if (f === 1 && o === 0) return '1:1 (raw = eng)'
-  if (f === 1) return `eng = raw ${o >= 0 ? '+' : '?'} ${Math.abs(o)}`
-  if (o === 0) return `eng = raw ? ${f}`
-  return `eng = raw ? ${f} ${o >= 0 ? '+' : '?'} ${Math.abs(o)}`
+  if (f === 1) return `eng = raw ${o >= 0 ? '+' : '−'} ${Math.abs(o)}`
+  if (o === 0) return `eng = raw × ${f}`
+  return `eng = raw × ${f} ${o >= 0 ? '+' : '−'} ${Math.abs(o)}`
 }
 
 function valuesFor(signal: DictField): string {
-  if (!signal.options?.length) return '?'
+  if (!signal.options?.length) return '—'
   return signal.options.map((opt) => `${opt.value}=${opt.label}`).join(', ')
 }
 
 function dash(value: string | number | null | undefined): string {
-  if (value === undefined || value === null || value === '') return '?'
+  if (value === undefined || value === null || value === '') return '—'
   return String(value)
 }
 
@@ -135,10 +135,10 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     why: 'RT shapes vehicle motion from Host intent on High bus (not a direct motor PWM).',
     dataType: 'Signed integer speed command (engineering mm/s).',
     examples: [
-      '0 ? standstill',
-      '1000 ? ~1 m/s forward',
-      '3000 ? firmware max forward',
-      '?500 ? max reverse command band',
+      '0 = standstill',
+      '1000 = ~1 m/s forward',
+      '3000 = firmware max forward',
+      '−500 = max reverse command band',
     ],
   },
   yaw_rate_mrad_s: {
@@ -146,9 +146,9 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     why: 'Pairs with speed so RT can run bicycle/tricycle kinematics (turn while moving).',
     dataType: 'Signed integer yaw rate (milliradians per second).',
     examples: [
-      '0 ? straight',
-      '1000 ? gentle left/right yaw (sign = direction)',
-      '?3000 ? firmware clamp',
+      '0 = straight',
+      '1000 = gentle left/right yaw (sign = direction)',
+      '−3000 = firmware clamp',
     ],
   },
   gear: {
@@ -160,7 +160,7 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   gear_state: {
     meaning: 'Gear currently reported by the motor controller.',
     why: 'Feedback path so Host/RT can confirm requested gear took effect.',
-    dataType: 'Unsigned integer gear report (same 0?3 map as command when used).',
+    dataType: 'Unsigned integer gear report (same 0–3 map as command when used).',
     examples: ['0 = N', '1 = D', '2 = S', '3 = R (if mapped the same way)'],
   },
   motor_speed_mmps: {
@@ -179,7 +179,7 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     meaning: 'Vehicle emergency-stop latched (1 = ESTOP active).',
     why: 'Safety state shared so all nodes freeze motion when latched.',
     dataType: 'Boolean-like unsigned (0/1, often full byte).',
-    examples: ['0 = motion allowed', '1 = ESTOP latched ? stop / no drive'],
+    examples: ['0 = motion allowed', '1 = ESTOP latched · stop / no drive'],
   },
   heartbeat_ok: {
     meaning: 'Safety heartbeat healthy flag from SYS.',
@@ -241,11 +241,11 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     dataType: 'Unsigned 8-bit bitfield (each bit is a status flag).',
     examples: ['0x00 = no flags', 'non-zero = one or more motor status bits set'],
     bits: [
-      'bit0 ? general fault / trip (if set by MCU firmware)',
-      'bit1 ? over-temp / thermal (typical MCU use)',
-      'bit2 ? over-current',
-      'bit3 ? under-voltage',
-      'bit4?7 ? vendor / reserved (treat as opaque unless MCU doc says otherwise)',
+      'bit0 = general fault / trip (if set by MCU firmware)',
+      'bit1 = over-temp / thermal (typical MCU use)',
+      'bit2 = over-current',
+      'bit3 = under-voltage',
+      'bit4–7 = vendor / reserved (treat as opaque unless MCU doc says otherwise)',
     ],
   },
   health_flags: {
@@ -257,9 +257,9 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   target_angle_raw: {
     meaning: 'Commanded SES target angle (vendor raw i16 on VCU_SES_REQ 0x169).',
     why: 'RT / Control Low bus writes this; not SI degrees until vendor scale applied.',
-    dataType: 'Signed 16-bit little-endian raw at B2?B3.',
+    dataType: 'Signed 16-bit little-endian raw at B2–B3.',
     examples: [
-      '0 ? center in internal RT mapping',
+      '0 = center in internal RT mapping',
       'positive/negative = left/right in raw ticks',
     ],
   },
@@ -272,8 +272,8 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   rolling_counter: {
     meaning: 'Rolling counter for frame freshness.',
     why: 'Receivers detect stuck/duplicate producers when the counter stops advancing.',
-    dataType: 'Unsigned wrapping counter (typically 8-bit 0?255).',
-    examples: ['? 10, 11, 12 ? increments each TX', 'frozen value ? stale producer'],
+    dataType: 'Unsigned wrapping counter (typically 8-bit 0–255).',
+    examples: ['10, 11, 12 = increments each TX', 'frozen value = stale producer'],
   },
   checksum: {
     meaning: 'Frame integrity checksum.',
@@ -301,7 +301,7 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   },
   distance_mm: {
     meaning: 'Obstacle distance ahead (mm), or clear sentinel.',
-    why: 'Host perception ? RT for slowdown / stop decisions.',
+    why: 'Host perception → RT for slowdown / stop decisions.',
     dataType: 'Unsigned distance; special enum for clear.',
     examples: ['1200 = 1.2 m', '4294967295 = clear (no obstacle)'],
   },
@@ -321,11 +321,11 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     meaning: 'RT safety state nibble/field.',
     why: 'Compact safety posture next to ESTOP reason.',
     dataType: 'Small unsigned field (2 bits in RT_STATE_RPT).',
-    examples: ['0?2 per RT safety mapping'],
+    examples: ['0–2 per RT safety mapping'],
   },
   estop_reason: {
     meaning: 'Why ESTOP latched (coded reason).',
-    why: 'Diagnostics after a stop ? not the stop itself.',
+    why: 'Diagnostics after a stop · not the stop itself.',
     dataType: 'Unsigned reason code (4 bits on RT_STATE_RPT).',
     examples: ['0 = none / clear', 'non-zero = coded cause'],
   },
@@ -351,14 +351,14 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     meaning: 'RT PID controller output (internal units).',
     why: 'Shows actuator effort after the speed loop.',
     dataType: 'Signed 16-bit loop quantity.',
-    examples: ['0 ? no effort', 'large magnitude = strong correction'],
+    examples: ['0 = no effort', 'large magnitude = strong correction'],
   },
   // ?? SES / SEB vendor (opaque codec keys) ??????????????????????????
   angle_aligned: {
     meaning: 'SES center-finding complete (1 = aligned / found).',
-    why: 'RT boot steers only after alignment; missing 0x201 aligned ? FAULT path.',
+    why: 'RT boot steers only after alignment; missing 0x201 aligned → FAULT path.',
     dataType: 'Flag bit (0/1).',
-    examples: ['0 = still finding center', '1 = aligned ? safe to command angle'],
+    examples: ['0 = still finding center', '1 = aligned · safe to command angle'],
   },
   control_mode: {
     meaning: 'Vendor control-mode feedback or request (SES/SEB).',
@@ -369,14 +369,14 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   error_status: {
     meaning: 'Aggregated vendor fault level on status frames.',
     why: 'L3 severe on SES/SEB escalates to ESTOP / freeze motion.',
-    dataType: '2-bit enum (0?3).',
+    dataType: '2-bit enum (0–3).',
     examples: ['0 = Normal', '1 = L1 warning', '2 = L2 general', '3 = L3 severe'],
   },
   steering_angle_raw: {
     meaning: 'SES measured steer angle in vendor raw units (SES_STATUS 0x201).',
     why: 'Primary feedback for RT following-error and Host steering display.',
-    dataType: 'Unsigned 16-bit raw; ? = raw?0.1 ? 3000 (0? ? raw 30000).',
-    examples: ['30000 ? 0? straight', '23000 ? ?700? full left', '37000 ? +700? full right'],
+    dataType: 'Unsigned 16-bit raw; degrees = (raw × 0.1) − 3000 (0° = raw 30000).',
+    examples: ['30000 = 0° straight', '23000 = −700° full left', '37000 = +700° full right'],
   },
   target_angle_speed_raw: {
     meaning: 'Steering angle-speed feedback from SES.',
@@ -387,8 +387,8 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   steering_torque_raw: {
     meaning: 'Steering-wheel torque feedback (muxed on B5 with speed high byte).',
     why: 'Hands-on detection / assist diagnostics.',
-    dataType: 'Unsigned 8-bit raw; Nm = raw?0.1 ? 12.1 (0 Nm ? raw 121).',
-    examples: ['121 ? 0 Nm', '0 ? ?12.1 Nm', '241 ? +12.0 Nm'],
+    dataType: 'Unsigned 8-bit raw; Nm = (raw × 0.1) − 12.1 (0 Nm = raw 121).',
+    examples: ['121 = 0 Nm', '0 = −12.1 Nm', '241 = +12.0 Nm'],
   },
   rolling_counter_enabled: {
     meaning: 'Vendor life-signal enable feedback (1 = counter path valid).',
@@ -411,7 +411,7 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   control_enable: {
     meaning: 'Command: enable active vendor control (angle or brake).',
     why: 'Without enable, unit stays in default assist / inactive path.',
-    dataType: 'Flag bit ? must be 1 for active control.',
+    dataType: 'Flag bit · must be 1 for active control.',
     examples: ['0 = disabled', '1 = control enabled'],
   },
   target_speed_raw: {
@@ -453,8 +453,8 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   stroke_request_raw: {
     meaning: 'Brake stroke position request (raw).',
     why: 'Mode 0 path for pushrod position commands (ESTOP full brake etc.).',
-    dataType: 'Unsigned 16-bit raw @ B2?B3 (muxed with pressure on B3).',
-    examples: ['600 ? released (typical)', 'higher raw ? more stroke'],
+    dataType: 'Unsigned 16-bit raw @ B2–B3 (muxed with pressure on B3).',
+    examples: ['600 = released (typical)', 'higher raw = more stroke'],
   },
   stroke_value_raw: {
     meaning: 'Measured SEB stroke feedback (raw).',
@@ -471,25 +471,25 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
   angle_value_raw: {
     meaning: 'SEB angle feedback raw (vendor).',
     why: 'Secondary SEB mechanical angle channel.',
-    dataType: 'Signed 16-bit @ B5?B6 (overlaps security bits).',
+    dataType: 'Signed 16-bit @ B5–B6 (overlaps security bits).',
     examples: ['See SEB vendor map for scale 0.5'],
   },
   motor_current_raw: {
     meaning: 'Vendor motor current telemetry (SES_TEST / SEB_TEST).',
     why: 'Detect binding / stall via elevated current.',
-    dataType: 'Signed 16-bit raw at B1?B2.',
-    examples: ['0 ? no load', 'large magnitude = high effort'],
+    dataType: 'Signed 16-bit raw at B1–B2.',
+    examples: ['0 = no load', 'large magnitude = high effort'],
   },
   ecu_temperature_raw: {
     meaning: 'Vendor ECU temperature telemetry.',
     why: 'Thermal protection / derate decisions.',
-    dataType: 'Unsigned 16-bit raw at B3?B4.',
+    dataType: 'Unsigned 16-bit raw at B3–B4.',
     examples: ['Rising value = warmer ECU'],
   },
   supply_voltage_raw: {
     meaning: 'Vendor supply voltage telemetry.',
     why: 'Under/over voltage diagnostics.',
-    dataType: 'Unsigned 16-bit raw at B5?B6.',
+    dataType: 'Unsigned 16-bit raw at B5–B6.',
     examples: ['Nominal band depends on 12 V system scale'],
   },
   software_raw: {
@@ -518,7 +518,7 @@ function dataTypeLabel(signal: DictField): string {
     return `Enumeration (${signal._size}-bit ${signal._type || 'unsigned'}${u ? `, ${u}` : ''}). One value, not ${signal._size} separate flags.`
   }
   if (/flags?$|mask$/i.test(signal.key)) {
-    return `Bitfield (${signal._size} bits) ? each bit is an independent flag.`
+    return `Bitfield (${signal._size} bits) · each bit is an independent flag.`
   }
   // Multi-bit numbers are ONE value; do not describe packing waffle.
   if (signed) {
@@ -534,7 +534,7 @@ function meaningFor(signal: DictField): string {
     return `${titleFor(signal)}: single flag bit (0 = off/false, 1 = on/true).`
   }
   if (signal.kind === 'enum' && signal.options?.length) {
-    return `${titleFor(signal)}: enumerated field ? ${valuesFor(signal)}.`
+    return `${titleFor(signal)}: enumerated field · ${valuesFor(signal)}.`
   }
   const u = unitFor(signal)
   return u
@@ -594,7 +594,7 @@ function bitsFor(signal: DictField): string[] | null {
   if (curated?.length) return curated
   // Only invent per-bit rows for true multi-flag bitfields (not plain multi-bit integers).
   if (signal._size > 1 && signal._size <= 8 && /flags?$|mask$/i.test(signal.key)) {
-    return Array.from({ length: signal._size }, (_, i) => `bit${i} ? vendor/status flag (see ECU doc)`)
+  return Array.from({ length: signal._size }, (_, i) => `bit${i} = vendor/status flag (see ECU doc)`)
   }
   return null
 }
@@ -606,7 +606,7 @@ function wirePosition(signal: DictField): string {
   if (signal._size === 1) {
     return `B${signal._byte}.${signal._bit_offset} (1 bit)`
   }
-  return `B${signal._byte}.${signal._bit_offset} ? B${endByte}.${endBit} ? ${signal._size} bit ${signal._type || 'int'}`
+  return `B${signal._byte}.${signal._bit_offset}–B${endByte}.${endBit} · ${signal._size} bit ${signal._type || 'int'}`
 }
 
 /** Compact hover line ? no multi-bit packing essay. */
@@ -616,10 +616,10 @@ function hoverDetail(signal: DictField, bitInField: number | null): string {
     return bits[bitInField]
   }
   if (signal._size === 1) {
-    return `${wirePosition(signal)} ? 0/1 flag`
+    return `${wirePosition(signal)} · 0/1 flag`
   }
   if (bitInField != null) {
-    return `${wirePosition(signal)} ? bit ${bitInField} of ${signal._size} (part of one ${dataTypeLabel(signal).replace(/\.$/, '')})`
+    return `${wirePosition(signal)} · bit ${bitInField} of ${signal._size} (part of one ${dataTypeLabel(signal).replace(/\.$/, '')})`
   }
   return wirePosition(signal)
 }
@@ -668,7 +668,7 @@ function BitGrid({
   if (dlc === 0) {
     return (
       <div className="bit-empty" data-testid="dict-bit-grid">
-        DLC=0 event frame ? no payload bits. The CAN ID itself is the signal.
+        DLC=0 event frame · no payload bits. The CAN ID itself is the signal.
       </div>
     )
   }
@@ -686,7 +686,7 @@ function BitGrid({
       <div className="bit-grid-head">
         <span>Byte layout</span>
         <em>
-          {mapped}/{dlc * 8} bits mapped ? hover a cell ? bits 7?0 in each byte
+          {mapped}/{dlc * 8} bits mapped · hover a cell · bits 7–0 in each byte
         </em>
       </div>
 
@@ -695,7 +695,7 @@ function BitGrid({
           {Array.from({ length: dlc }, (_, byte) => (
             <div key={byte} className="byte-col">
               <span className="byte-label">B{byte}</span>
-              <div className="bit-row" role="group" aria-label={`Byte ${byte} bits 7?0`}>
+              <div className="bit-row" role="group" aria-label={`Byte ${byte} bits 7–0`}>
                 {[7, 6, 5, 4, 3, 2, 1, 0].map((bit) => {
                   const linear = byte * 8 + bit
                   const si = bitMap[linear] ?? -1
@@ -715,9 +715,9 @@ function BitGrid({
                   let glyph = String(bit)
                   if (filled && sig) {
                     if (sig._size === 1) glyph = signalGlyph(sig.key)
-                    else if (isStart) glyph = '?'
-                    else if (isEnd) glyph = '?'
-                    else glyph = '?'
+                    else if (isStart) glyph = '‹'
+                    else if (isEnd) glyph = '›'
+                    else glyph = '·'
                   }
 
                   return (
@@ -744,7 +744,7 @@ function BitGrid({
                       }
                       title={
                         filled && sig
-                          ? `${titleFor(sig)} (${sig.key}) ? B${byte}.${bit}`
+                          ? `${titleFor(sig)} (${sig.key}) · B${byte}.${bit}`
                           : `B${byte}.${bit} unused`
                       }
                       aria-label={
@@ -779,7 +779,7 @@ function BitGrid({
         </div>
       </div>
 
-      {/* Fixed height ? hover content swaps in place; never grows the card */}
+      {/* Fixed height · hover content swaps in place, never grows the card */}
       <div
         className="bit-inspector bit-inspector-fixed"
         role="status"
@@ -826,7 +826,7 @@ function BitGrid({
   )
 }
 
-/* ?? Signal table with expand-on-click ?????????????????????????????? */
+/* Signal table with expand-on-click */
 
 function SignalExpandDoc({
   signal,
@@ -854,7 +854,7 @@ function SignalExpandDoc({
         <span className="mono sig-key">{signal.key}</span>
       </div>
 
-      {/* Vertical doc stack ? not the multi-column hover kv grid */}
+      {/* Vertical doc stack · not the multi-column hover kv grid */}
       <div className="dict-sig-doc" data-testid={`dict-sig-doc-${signal.key}`}>
         <section className="dict-sig-block">
           <h4>What</h4>
@@ -890,7 +890,7 @@ function SignalExpandDoc({
             <h4>Bits</h4>
             <p data-testid="dict-expand-bits-note">
               All {signal._size} bits form <strong>one</strong> numeric value (
-              {wirePosition(signal)}). Same-color grid cells are that whole field ? not
+              {wirePosition(signal)}). Same-color grid cells are that whole field · not
               separate meanings per cell.
             </p>
           </section>
@@ -905,7 +905,7 @@ function SignalExpandDoc({
             <p className="mono">
               {scaleFor(signal)}
               {signal.min != null || signal.max != null
-                ? ` ? ${dash(signal.min)} ? ${dash(signal.max)}`
+                ? ` · ${dash(signal.min)}–${dash(signal.max)}`
                 : ''}
               {unitFor(signal) ? ` ${unitFor(signal)}` : ''}
             </p>
@@ -989,7 +989,7 @@ function SignalTable({
                         setExpandedSignal(open ? -1 : index)
                       }}
                     >
-                      {open ? '?' : '?'}
+                      {open ? '−' : '+'}
                     </button>
                   </td>
                   <td data-label="Signal">
@@ -1093,7 +1093,7 @@ function MessageCard({ message }: { message: DictMessage }) {
       <div className="route-map" aria-label={`${message.name} sender and receivers`}>
         <span className="route-node tx">TX {message.sender}</span>
         <span className="route-arrow" aria-hidden>
-          ?
+          →
         </span>
         <span className="route-receivers">
           {receivers.map((r) => (
@@ -1164,7 +1164,7 @@ export function CanDictionary() {
           bus: String(m.bus || ''),
           id: String(m.id || ''),
           name: String(m.name || ''),
-          sender: String(m.sender || '?'),
+          sender: String(m.sender || '—'),
           receivers: Array.isArray(m.receivers) ? m.receivers : [],
           fields,
         } as DictMessage
@@ -1220,7 +1220,7 @@ export function CanDictionary() {
           <div className="toolbar-main">
             <div className="dictionary-title">
               <h1>CAN Dictionary</h1>
-              <span>Signal reference ? YAML protocol</span>
+              <span>Signal reference · YAML protocol · Reference</span>
             </div>
             <div className="bus-tabs" role="tablist" aria-label="Bus filter">
               {(['all', 'high', 'low'] as const).map((b) => (
@@ -1264,11 +1264,11 @@ export function CanDictionary() {
         <div className="dictionary-summary">
           <span>{messages.length} canonical protocol messages</span>
           <span className="mono" title={hash}>
-            hash {(hash || '?').slice(0, 12)}?
+            hash {(hash || '—').slice(0, 12)}
           </span>
           <span>{source || 'YAML'}</span>
           {loadedAt ? <span>loaded {loadedAt}</span> : null}
-          <span className="muted">Hover bits ? click a signal row to expand</span>
+          <span className="muted">Hover bits · click a signal row to expand</span>
         </div>
 
         {err && <p className="danger-text dict-err">{err}</p>}

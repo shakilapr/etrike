@@ -305,6 +305,7 @@ export function Settings() {
       testId="workspace-settings"
       title="Settings"
       description={<>Session, transport, adapter, and protocol · live from <span className="mono">GET /api/v1/settings</span></>}
+      sectionLabel="System"
     >
 
       <section className="panel" data-testid="transport-mode-panel">

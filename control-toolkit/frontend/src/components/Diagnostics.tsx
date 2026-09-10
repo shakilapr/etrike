@@ -191,6 +191,7 @@ export function Diagnostics() {
       className="diagnostics-workspace"
       title="Diagnostics"
       description="Protocol health, verification recipes, and episode capture."
+      sectionLabel="Analysis"
     >
 
       <section className="panel">

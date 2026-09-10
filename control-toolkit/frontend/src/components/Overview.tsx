@@ -25,7 +25,7 @@ export function Overview() {
   const ses = status?.session
   const estopObs = observeEstop(messages, ses)
 
-  // Single stream/CAN label ? never join two synonyms (was "lost ? lost").
+  // Single stream/CAN label · never join two synonyms.
   const streamHealthLabel =
     quality === 'live'
       ? 'Healthy'
@@ -74,20 +74,23 @@ export function Overview() {
     signalNum(sebStatus, 'pressure_kpa')
   const speedDelta =
     cmdSpeed != null && fbkSpeed != null ? fbkSpeed - cmdSpeed : null
+  const brakeCmdKpa =
+    signalNum(hostBrake, 'brake_pressure_kpa') ??
+    signalNum(rtBrake, 'brake_pressure_kpa')
 
-  const gearLabel =
-    signalText(drive, 'gear') || signalText(motor, 'gear_state') || '?'
+  const gearLabel = signalText(drive, 'gear')
   const benchOn = ses?.bench_tx === 'enabled'
 
   return (
     <WorkspaceShell
       testId="workspace-overview"
       title="Overview"
-      description={`Vehicle state and immediate health ? session ${ses?.session_id ?? 'none'} ? ${messages.length} live messages`}
+      description={`Vehicle command and feedback state · session ${ses?.session_id ?? 'none'} · ${messages.length} live messages`}
+      sectionLabel="Observe"
     >
 
       <section className="safety-strip" data-testid="safety-strip" aria-label="Safety and mode">
-        {/* Multi-source ESTOP (latch + 0x001 H/L + SYS/RT) ? same as topbar. */}
+        {/* Multi-source ESTOP (latch + 0x001 H/L + SYS/RT), matching the topbar. */}
         <div
           className={`strip-item ${estopObs.any ? 'hazard' : 'ok'}`}
           title={estopObs.detail}
@@ -135,9 +138,9 @@ export function Overview() {
         >
           <span className="strip-k">Brake pressure</span>
           <span className="strip-v mono">
-            {brakeKpa != null ? `${brakeKpa.toFixed(0)} kPa` : '?'}
+            {brakeKpa != null ? `${brakeKpa.toFixed(0)} kPa` : 'No signal'}
           </span>
-          {/* Continuous quantity ? progress bar only (no second text chip). */}
+          {/* Continuous quantity · progress bar only. */}
           <MeterBar
             value={brakeKpa}
             max={5000}
@@ -151,7 +154,7 @@ export function Overview() {
       <div className="cards metric-cards" data-testid="overview-meters">
         <MetricCard
           title="Speed request"
-          valueText={cmdSpeed != null ? cmdSpeed.toFixed(0) : '?'}
+          valueText={cmdSpeed != null ? cmdSpeed.toFixed(0) : '—'}
           unit="mm/s"
           sub="HOST_DRIVE_CMD 0x300"
           freshness={drive?.freshness}
@@ -163,7 +166,7 @@ export function Overview() {
         />
         <MetricCard
           title="Motor feedback"
-          valueText={fbkSpeed != null ? fbkSpeed.toFixed(0) : '?'}
+          valueText={fbkSpeed != null ? fbkSpeed.toFixed(0) : '—'}
           unit="mm/s"
           sub="MTR_MOTOR_FBK 0x206"
           freshness={motor?.freshness}
@@ -174,8 +177,8 @@ export function Overview() {
           meterTestId="meter-speed-fbk"
         />
         <MetricCard
-          title="Measured speed"
-          valueText={physSpeed != null ? physSpeed.toFixed(0) : 'n/a'}
+          title="Wheel speed"
+          valueText={physSpeed != null ? physSpeed.toFixed(0) : '—'}
           unit="mm/s"
           sub="RT_WHEEL_SPEED_STS 0x122"
           freshness={wheel?.freshness}
@@ -187,7 +190,7 @@ export function Overview() {
         />
         <MetricCard
           title="Yaw rate"
-          valueText={cmdYaw != null ? cmdYaw.toFixed(0) : '?'}
+          valueText={cmdYaw != null ? cmdYaw.toFixed(0) : '—'}
           unit="mrad/s"
           sub="HOST_DRIVE_CMD"
           freshness={drive?.freshness}
@@ -199,9 +202,9 @@ export function Overview() {
         />
         <MetricCard
           title="Steering angle"
-          valueText={steerDeg != null ? steerDeg.toFixed(1) : '?'}
-          unit="?"
-          sub="SES_STATUS 0x201"
+          valueText={steerDeg != null ? steerDeg.toFixed(1) : '—'}
+          unit="°"
+          sub="Low · SES_STATUS 0x201"
           freshness={sesStatus?.freshness}
           value={steerDeg}
           max={45}
@@ -212,12 +215,10 @@ export function Overview() {
         />
         <MetricCard
           title="Brake pressure"
-          valueText={brakeKpa != null ? brakeKpa.toFixed(0) : '?'}
+          valueText={brakeKpa != null ? brakeKpa.toFixed(0) : '—'}
           unit="kPa"
-          sub="HOST/RT brake ? continuous ? high ? red"
-          freshness={
-            hostBrake?.freshness ?? rtBrake?.freshness ?? brakeDiag?.freshness
-          }
+          sub={hostBrake ? 'High · HOST_BRAKE_REQ' : rtBrake ? 'Low · RT_BRAKE_CMD' : 'No brake command'}
+          freshness={hostBrake?.freshness ?? rtBrake?.freshness ?? sebStatus?.freshness}
           value={brakeKpa}
           max={5000}
           tone="high-bad"
@@ -229,15 +230,15 @@ export function Overview() {
             <div className="card-title">Gear</div>
             {drive ? <FreshnessBadge value={drive.freshness} /> : null}
           </div>
-          {/* Single discrete value ? no big text + pill with the same label. */}
+          {/* Single discrete value · no duplicate pill. */}
           <div className="metric metric-discrete" data-testid="metric-gear">
             <StatusPill
               label={gearLabel}
-              tone={gearLabel === 'N' || gearLabel === '?' ? 'muted' : 'accent'}
+              tone={gearLabel === 'N' || gearLabel === '—' ? 'muted' : 'accent'}
               testId="status-gear"
             />
           </div>
-          <div className="card-sub muted">N/D/S/R enum ? not a bar</div>
+          <div className="card-sub muted">High · HOST_DRIVE_CMD 0x300</div>
         </div>
         <div className="card metric-card" data-testid="card-ready">
           <div className="card-head">
@@ -250,7 +251,9 @@ export function Overview() {
               testId="status-backend-ready"
             />
           </div>
-          <div className="card-sub mono muted">{status?.adapter?.health ?? '?'}</div>
+          <div className="card-sub mono muted">
+            {status?.adapter?.identity ?? '—'} · {status?.adapter?.health ?? 'unknown'}
+          </div>
         </div>
       </div>
 
@@ -271,52 +274,46 @@ export function Overview() {
             <tr>
               <td>Drive</td>
               <td className="mono">
-                {cmdSpeed != null ? `${cmdSpeed.toFixed(0)} mm/s` : '?'}
+                {cmdSpeed != null ? `${cmdSpeed.toFixed(0)} mm/s` : '—'}
               </td>
               <td className="mono">
-                {fbkSpeed != null ? `${fbkSpeed.toFixed(0)} mm/s` : '?'}
+                {fbkSpeed != null ? `${fbkSpeed.toFixed(0)} mm/s` : '—'}
               </td>
               <td className="mono">
-                {speedDelta != null ? `${speedDelta.toFixed(0)} mm/s` : '?'}
+                {speedDelta != null ? `${speedDelta.toFixed(0)} mm/s` : '—'}
               </td>
               <td className="meter-cell">
                 <MeterBar value={Math.abs(fbkSpeed ?? 0)} max={3000} tone="auto" />
               </td>
-              <td>{drive ? <FreshnessBadge value={drive.freshness} /> : '?'}</td>
+              <td>{drive ? <FreshnessBadge value={drive.freshness} /> : '—'}</td>
             </tr>
             <tr>
               <td>Steering</td>
               <td className="mono">
-                {cmdYaw != null ? `${cmdYaw.toFixed(0)} mrad/s` : '?'}
+                {cmdYaw != null ? `${cmdYaw.toFixed(0)} mrad/s` : '—'}
               </td>
               <td className="mono">
-                {steerDeg != null ? `${steerDeg.toFixed(1)}?` : sesStatus ? 'SES_STATUS' : '?'}
+                {steerDeg != null ? `${steerDeg.toFixed(1)}°` : '—'}
               </td>
-              <td className="muted">?</td>
+              <td className="muted">not comparable</td>
               <td className="meter-cell">
                 <MeterBar value={steerDeg} max={45} min={-45} tone="auto" />
               </td>
               <td>
-                {sesStatus ? <FreshnessBadge value={sesStatus.freshness} /> : '?'}
+                {sesStatus ? <FreshnessBadge value={sesStatus.freshness} /> : '—'}
               </td>
             </tr>
             <tr>
               <td>Brake</td>
               <td className="mono">
-                {signalNum(hostBrake, 'brake_pressure_kpa') != null
-                  ? `${signalNum(hostBrake, 'brake_pressure_kpa')!.toFixed(0)} kPa`
-                  : signalNum(rtBrake, 'brake_pressure_kpa') != null
-                    ? `${signalNum(rtBrake, 'brake_pressure_kpa')!.toFixed(0)} kPa`
-                    : '?'}
+                {brakeCmdKpa != null ? `${brakeCmdKpa.toFixed(0)} kPa` : '—'}
               </td>
               <td className="mono">
                 {brakeKpa != null
                   ? `${brakeKpa.toFixed(0)} kPa`
-                  : sebStatus
-                    ? 'SEB_STATUS'
-                    : '?'}
+                  : '—'}
               </td>
-              <td className="muted">?</td>
+              <td className="muted">not comparable</td>
               <td className="meter-cell">
                 <MeterBar
                   value={brakeKpa}
@@ -336,35 +333,35 @@ export function Overview() {
                     }
                   />
                 ) : (
-                  '?'
+                  '—'
                 )}
               </td>
             </tr>
             <tr>
               <td>Safety STS</td>
-              <td className="muted">?</td>
+              <td className="muted">—</td>
               <td className="mono">
                 {safety
                   ? `estop=${signalText(safety, 'estop_active')} brake_lt=${signalText(safety, 'light_brake')}`
-                  : '?'}
+                  : '—'}
               </td>
-              <td className="muted">?</td>
+              <td className="muted">—</td>
               <td className="meter-cell">
-                {/* Binary ESTOP ? pill, not a 0/100 progress bar */}
+                {/* Binary ESTOP · pill, not a progress bar */}
                 <StatusPill
                   label={
                     estopObs.any
                       ? estopObs.label
-                      : safety
-                        ? 'ESTOP clear'
-                        : '?'
+                  : safety
+                    ? 'ESTOP clear'
+                    : 'No signal'
                   }
                   tone={estopObs.any ? 'danger' : safety ? 'ok' : 'muted'}
                   testId="status-safety-estop"
                 />
               </td>
               <td>
-                {safety ? <FreshnessBadge value={safety.freshness} /> : '?'}
+                {safety ? <FreshnessBadge value={safety.freshness} /> : '—'}
               </td>
             </tr>
           </tbody>

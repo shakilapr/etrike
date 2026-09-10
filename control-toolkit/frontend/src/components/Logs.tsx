@@ -84,6 +84,7 @@ export function Logs() {
       testId="workspace-logs"
       title="Logging"
       description="Operational audit trail (architecture §7 / §14). Session, transport, control, and safety events."
+      sectionLabel="Analysis"
     >
 
       <Card>
