@@ -66,7 +66,6 @@ public:
         expected_since_ms_ = 0;
         drive_cmd_timed_out_ = false;
         drive_recover_count_ = 0;
-        last_drive_gap_ok_ = true;
         mtr_ready_mask_ = 0;
     }
 
@@ -129,23 +128,23 @@ public:
                 target_gear_ = static_cast<can::Gear>(cmd.gear);
                 // ESTOP is no longer cleared by a 0x204 reset sequence; only 0x011 can.
 
-                // Dedicated 0x204 watchdog (issue #2): a valid drive command is
+                // Dedicated 0x204 watchdog: a valid drive command is
                 // the "heartbeat" that keeps the propulsion authority alive.
-                // The trip is released ONLY by the confirmed 3-frame recovery in
-                // tick(); a single valid frame must not clear the latched trip.
+                // Excessive gap restarts recover_count to 1; in-cadence frames increment;
+                // latched trip releases and ready bit sets only when recover_count >= kDriveCmdRecoverFrames.
+                const uint32_t gap = drive_seen_ ? (now_ms - last_drive_ms_) : 0;
                 last_drive_ms_ = now_ms;
                 drive_seen_ = true;
-                if (last_drive_gap_ok_) {
-                    // Consecutive valid receive events at plausible cadence count
-                    // toward confirmed recovery. 0x204 has no rolling counter, so
-                    // identical payloads still count as separate valid events.
-                    if (drive_recover_count_ < kDriveCmdRecoverFrames)
-                        ++drive_recover_count_;
-                } else {
+
+                if (gap > kDriveCmdRecoverMaxGapMs) {
                     drive_recover_count_ = 1;
+                } else if (drive_recover_count_ < kDriveCmdRecoverFrames) {
+                    ++drive_recover_count_;
                 }
-                last_drive_gap_ok_ = true;
-                if (!drive_cmd_timed_out_ || (drive_recover_count_ >= kDriveCmdRecoverFrames && last_drive_gap_ok_)) {
+
+                if (!drive_cmd_timed_out_ || drive_recover_count_ >= kDriveCmdRecoverFrames) {
+                    drive_cmd_timed_out_ = false;
+                    expected_since_ms_ = now_ms;
                     mtr_ready_mask_ |= MTR_READY_DRIVE;
                 }
             }
@@ -327,27 +326,15 @@ public:
 
         if (drive_expected_) {
             if (expected_since_ms_ == 0) expected_since_ms_ = now_ms;
-            // A gap longer than the recovery cadence window between valid 0x204
-            // events breaks the "consecutive at plausible cadence" recovery chain.
-            if (drive_seen_ && (now_ms - last_drive_ms_ > kDriveCmdRecoverMaxGapMs))
-                last_drive_gap_ok_ = false;
 
-            if (drive_cmd_timed_out_) {
-                // Latched trip: release only via confirmed recovery ─ N consecutive
-                // valid 0x204 frames at plausible cadence. Restart the stale clock
-                // so a subsequent silence re-trips after a full timeout.
-                if (drive_recover_count_ >= kDriveCmdRecoverFrames && last_drive_gap_ok_) {
-                    drive_cmd_timed_out_ = false;
-                    expected_since_ms_ = now_ms;
-                    mtr_ready_mask_ |= MTR_READY_DRIVE;
-                }
-            } else {
+            if (!drive_cmd_timed_out_) {
                 // Reference time is the last valid 0x204; if none has ever arrived
                 // while drive is expected (dead RT drive sender at startup), the
                 // arm time is used so the trip still fires.
                 const uint32_t ref = drive_seen_ ? last_drive_ms_ : expected_since_ms_;
                 if ((now_ms - ref) > kDriveCmdTimeoutMs) {
                     drive_cmd_timed_out_ = true;
+                    drive_recover_count_ = 0;
                     mtr_ready_mask_ &= ~MTR_READY_DRIVE;
                     if (diag_) {
                         diag_->raise(etrike::diagnostics::DiagId::MtrRtDriveCmdTimeout,
@@ -360,7 +347,6 @@ public:
             drive_cmd_timed_out_ = false;
             expected_since_ms_ = 0;
             drive_recover_count_ = 0;
-            last_drive_gap_ok_ = true;
         }
 
         if (estop_active_ || comms_timed_out_ || drive_cmd_timed_out_ ||
@@ -636,7 +622,6 @@ private:
     uint32_t expected_since_ms_{0};      // when drive_expected first became true (arm clock)
     bool     drive_cmd_timed_out_{false};// latched trip ─ 0x204 stale while expected
     uint8_t  drive_recover_count_{0};    // consecutive valid 0x204 events (confirmed recovery)
-    bool     last_drive_gap_ok_{true};   // inter-arrival gaps stayed within cadence window
 
     // Multi-stream readiness bitmask latch (MODE | POWER | DRIVE)
     uint8_t  mtr_ready_mask_{0};
