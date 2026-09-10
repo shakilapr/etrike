@@ -35,6 +35,10 @@ namespace testbench {
     bool test_rm_bare_ignites_mtr();
     bool test_rm_sys_mode_seamless();
     bool test_rm_rt_mode_reaches_rt();
+    // Section 5: end-to-end signal flow through intermediate controllers
+    bool test_signal_flow_bare();
+    bool test_signal_flow_sys();
+    bool test_signal_flow_rt();
 }
 
 int main(int argc, char* argv[]) {
@@ -98,6 +102,11 @@ int main(int argc, char* argv[]) {
     run_test("RM BARE ignites MTR (0x011 present)", testbench::test_rm_bare_ignites_mtr);
     run_test("RM SYS drives sys-esp32 seamlessly (AUTO)", testbench::test_rm_sys_mode_seamless);
     run_test("RM RT frames reach rt-esp32 (0x300/0x011/0x110)", testbench::test_rm_rt_mode_reaches_rt);
+
+    std::cout << "--- SECTION 5: End-to-End Signal Flow (steer/throttle/brake) ---\n";
+    run_test("Signal flow BARE: rm -> SES/SEB/MTR", testbench::test_signal_flow_bare);
+    run_test("Signal flow SYS: rm -> SYS -> units", testbench::test_signal_flow_sys);
+    run_test("Signal flow RT: rm -> RT -> SYS -> units", testbench::test_signal_flow_rt);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();
