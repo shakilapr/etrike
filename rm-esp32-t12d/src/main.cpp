@@ -191,8 +191,9 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(ret);
 
     // 1. Initialize TWAI CAN Controller
-    esp_log_level_set("esp_twai", ESP_LOG_NONE);
-    esp_log_level_set("can", ESP_LOG_NONE);
+    // Keep driver warnings (Bus-Off / TX errors) visible for diagnosis.
+    esp_log_level_set("esp_twai", ESP_LOG_WARN);
+    esp_log_level_set("can", ESP_LOG_WARN);
     if (!g_can.init()) {
         ESP_LOGE(TAG, "CAN initialization failed! Rebooting...");
         esp_restart();
