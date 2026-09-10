@@ -626,6 +626,8 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     can::Frame fr;
     TickType_t last_100hz = xTaskGetTickCount();
     TickType_t last_50hz  = xTaskGetTickCount();
+    int64_t    last_low_hb_us = esp_timer_get_time();
+
     uint8_t    node_status_roll = 0;
     uint8_t    seb_roll = 0;
     auto*      drv = rt::can_low_driver();
@@ -909,6 +911,15 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                 }
             }
         }
+        // 2 Hz heartbeat is Low-CAN traffic and remains owned by this task.
+        const int64_t now_low_us = esp_timer_get_time();
+        if (now_low_us - last_low_hb_us >= 500'000) {
+            last_low_hb_us = now_low_us;
+            can::Frame hb_frame{};
+            g_heartbeat.tick_low(hb_frame, g_heartbeat_flags.load(std::memory_order_relaxed));
+            send_can_low(hb_frame);
+        }
+
         // 4. 50 Hz Actuator Outputs: 0x205, 0x169, 0x7B9, 0x501
         // TWAI has one application TX slot. Alternate secondary frames to
         // avoid same-tick contention; node status remains every cycle.
@@ -948,7 +959,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                 break;
             }
 
-            // 0x501 RT_NODE_STATUS on Low Bus
+
             can::gen::RtNodeStatus ns = build_rt_node_status();
             ns.rolling_counter = node_status_roll++;
             ns.e2e_crc = 0;
@@ -1292,9 +1303,6 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 
             g_heartbeat_flags.store(hf, std::memory_order_relaxed);
 
-            can::Frame h_fr{};
-            g_heartbeat.tick_low(h_fr, hf);
-            send_can_low(h_fr);
         }
     }
 }
