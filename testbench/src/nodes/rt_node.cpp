@@ -67,6 +67,7 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
             if (can::decode_frame(cf, cmd) == can::gen::CodecStatus::Ok) {
                 host_speed_mmps_ = cmd.speed_mmps;
                 host_yaw_rate_ = cmd.yaw_rate_mrad_s;
+                host_gear_ = static_cast<can::Gear>(cmd.gear);
             }
         } else if (cf.id == can::kIdHostSteerCmd) {
             can::gen::HostSteerCmd scmd{};
@@ -185,7 +186,7 @@ void RtNode::publish_drive_cmd(uint32_t now_ms) {
     (void)now_ms;
     can::gen::RtDriveCmd cmd{};
     cmd.motor_speed_mmps = commanded_speed_mmps_;
-    cmd.gear = static_cast<uint8_t>(can::Gear::D);
+    cmd.gear = static_cast<uint8_t>(host_gear_);
 
     can::Frame cf;
     if (can::encode_frame(cmd, cf) == can::gen::CodecStatus::Ok) {

@@ -39,6 +39,12 @@ namespace testbench {
     bool test_signal_flow_bare();
     bool test_signal_flow_sys();
     bool test_signal_flow_rt();
+    // Section 6: Host-driven vehicle behavior (no rm): wheels, steer, brakes, ESTOP
+    bool test_host_forward_drive();
+    bool test_host_reverse_drive();
+    bool test_host_steer();
+    bool test_host_brake();
+    bool test_host_estop();
 }
 
 int main(int argc, char* argv[]) {
@@ -107,6 +113,13 @@ int main(int argc, char* argv[]) {
     run_test("Signal flow BARE: rm -> SES/SEB/MTR", testbench::test_signal_flow_bare);
     run_test("Signal flow SYS: rm -> SYS -> units", testbench::test_signal_flow_sys);
     run_test("Signal flow RT: rm -> RT -> SYS -> units", testbench::test_signal_flow_rt);
+
+    std::cout << "--- SECTION 6: Host-Driven Vehicle Behavior (no rm) ---\n";
+    run_test("HOST forward drive -> wheels turn", testbench::test_host_forward_drive);
+    run_test("HOST reverse drive -> wheels reverse", testbench::test_host_reverse_drive);
+    run_test("HOST steer -> SES rack angle", testbench::test_host_steer);
+    run_test("HOST brake -> SYS -> SEB", testbench::test_host_brake);
+    run_test("HOST drive + ESTOP -> stop + full brake", testbench::test_host_estop);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();
