@@ -100,9 +100,21 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         }
 
         // CH2: Right Stick Y -> Service Brake Stroke (0.0 to 27.0 mm)
+        // Generous deadband zone around center (1350 to 1650us) allows free steering without triggering brake.
+        // Pushing beyond deadband smoothly engages progressive service brake.
         float stick_brake_mm = 0.0f;
-        if (pulse_us[kChBrake] > (kPulseCenterUs + 20)) {
-            float b_norm = static_cast<float>(pulse_us[kChBrake] - (kPulseCenterUs + 20)) / 430.0f;
+        if (pulse_us[kChBrake] > kBrakeMaxUs) {
+            stick_brake_mm = kMaxBrakeStrokeMm;
+        } else if (pulse_us[kChBrake] > kBrakeStartUs) {
+            // Push forward brake (1650us to 1950us)
+            float b_norm = static_cast<float>(pulse_us[kChBrake] - kBrakeStartUs) /
+                           static_cast<float>(kBrakeMaxUs - kBrakeStartUs);
+            stick_brake_mm = std::clamp(b_norm, 0.0f, 1.0f) * kMaxBrakeStrokeMm;
+        } else if (pulse_us[kChBrake] < (kPulseCenterUs - (kBrakeStartUs - kPulseCenterUs))) {
+            // Pull down brake (< 1350us down to 1050us)
+            uint32_t pull_threshold = kPulseCenterUs - (kBrakeStartUs - kPulseCenterUs); // 1350us
+            float b_norm = static_cast<float>(pull_threshold - pulse_us[kChBrake]) /
+                           static_cast<float>(pull_threshold - 1050);
             stick_brake_mm = std::clamp(b_norm, 0.0f, 1.0f) * kMaxBrakeStrokeMm;
         }
 

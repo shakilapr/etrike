@@ -65,6 +65,11 @@ constexpr uint32_t kPulseAbsoluteMaxUs  = 2200;
 constexpr uint32_t kPulseCenterUs       = 1500;
 constexpr uint32_t kPulseDeadbandUs     =   30;   // Steering center deadband (+/- 30us)
 
+// Service Brake Deadband on Right Stick Vertical (CH2)
+// Generous deadband (+150us, up to 1650us) so operator can freely steer left/right without accidentally grazing the brake.
+constexpr uint32_t kBrakeStartUs        = 1650;   // Brake starts only after pushing forward past 1650us
+constexpr uint32_t kBrakeMaxUs          = 1950;   // Full 27.0mm brake stroke reached at 1950us
+
 // SWA 3-Position Operating Mode Thresholds (UP = BARE, MID = SYS, DOWN = RT)
 constexpr uint32_t kModeBareMaxUs       = 1300;
 constexpr uint32_t kModeRtMinUs         = 1700;
@@ -80,9 +85,9 @@ constexpr uint32_t kGearDriveMinUs      = 1700;
 constexpr uint32_t kSwitchThresholdUs   = 1500;
 
 // Throttle Calibration (CH3 Left Stick Vertical: -100 to +100 in T12D)
-// Idle deadband: pulses <= 1120us are strictly 0.0% so minor bumps/vibrations never trigger motion.
+// Generous idle deadband: pulses <= 1160us are strictly 0.0% so stick has a solid rest zone before motor engages.
 // Full throttle: reached cleanly by 1900us.
-constexpr uint32_t kThrottleMinUs       = 1120;
+constexpr uint32_t kThrottleMinUs       = 1160;
 constexpr uint32_t kThrottleMaxUs       = 1900;
 
 // Brake Cutoff Interlock (mm) - motor throttle cut when brake > 5.0mm
