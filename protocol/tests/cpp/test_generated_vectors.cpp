@@ -303,6 +303,19 @@ void test_success_vectors() {
     rt_diag_rpt.rolling_counter = 7;
     check_vector(rt_diag_rpt, std::array<std::uint8_t, 8>{0xE0, 0x80, 0x7F, 0x17,
                                                           0x02, 0x09, 0x03, 0x07});
+
+    generated::HostEstopResetReq reset_req{};
+    reset_req.request_seq = 1;
+    reset_req.reset_token = 21075;
+    reset_req.rolling_counter = 7;
+    check_vector(reset_req, std::array<std::uint8_t, 4>{0x01, 0x52, 0x53, 0x07});
+
+    generated::SysEstopResetRsp reset_rsp{};
+    reset_rsp.request_seq = 1;
+    reset_rsp.result = false;
+    reset_rsp.blocker_mask = 0;
+    reset_rsp.rolling_counter = 7;
+    check_vector(reset_rsp, std::array<std::uint8_t, 5>{0x01, 0x00, 0x00, 0x00, 0x07});
 }
 
 void test_validation_and_unchanged_outputs() {
@@ -366,8 +379,8 @@ void test_metadata_and_compatibility() {
     static_assert(std::is_same_v<can::generated::HostDriveCmd, generated::HostDriveCmd>);
     static_assert(generated::PwtDcdcCmd::kExtended);
     static_assert(generated::HostLightCmd::kHighId == generated::HostLightCmd::kLowId);
-  CHECK(etrike::protocol::kMessages.size() == 59);
-  CHECK(etrike::protocol::kRoutes.size() == 13);
+  CHECK(etrike::protocol::kMessages.size() == 63);
+  CHECK(etrike::protocol::kRoutes.size() == 15);
     CHECK(etrike::protocol::kRoutes[0].message == "safety:safety_estop");
     CHECK(etrike::protocol::kRoutes[0].semantics == etrike::protocol::RouteSemantics::SameFrame);
 

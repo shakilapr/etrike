@@ -3,19 +3,23 @@
 The firmware manager (shared/diagnostics.h) is embedded-safe C++17; we verify it
 on the host with the same C++17 compiler used for the protocol codec tests.
 """
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+try:
+    from protocol.tests.python.compiler_helper import find_cpp_compiler
+except (ImportError, ModuleNotFoundError):
+    from compiler_helper import find_cpp_compiler
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
 class TestDiagnosticManager(unittest.TestCase):
     def test_diagnostics_manager_compiles_and_runs(self):
-        compiler = shutil.which("g++") or shutil.which("clang++")
+        compiler = find_cpp_compiler("c++17")
         if compiler is None:
             self.skipTest("a C++17 compiler is not available")
         source = ROOT / "shared" / "test_diagnostics.cpp"
@@ -48,3 +52,7 @@ class TestDiagnosticManager(unittest.TestCase):
             )
             self.assertEqual(0, run_result.returncode, run_result.stdout + run_result.stderr)
             self.assertIn("PASS", run_result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
