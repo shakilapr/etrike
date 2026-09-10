@@ -101,8 +101,14 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
   [rm-BARE+011]  ignition_on(ever)=YES ignited@2s=YES     <-- with 0x011, ignites
   ```
 - **Result: NOT seamless.** MTR stays un-ignited (DAC zeroed) → motor never moves.
-  Fix condition: rm BARE (and SYS) must also emit `0x011 SYS_SAFETY_STS` (estop_active=0)
-  at the SYS cycle.
+- **UPDATE (found during testbench integration):** MTR additionally requires a
+  `0x113` **power REARM edge** (OFF→ON) after boot — `ignition_on_` includes
+  `(!rearm_required_ || rearm_observed_)` and `rearm_observed_` is set only after
+  an observed OFF→ON power command (`mtr-stm32/src/motor_manager.h:166-180`). rm BARE
+  emitted an always-ON `0x113`, so it never re-armed. Fix requires **both** `0x011`
+  **and** a startup `0x113` rearm edge.
+- Fix condition: rm BARE must emit `0x011 SYS_SAFETY_STS` (estop_active=0) plus a
+  one-shot `0x113` OFF→ON edge at boot (not required in SYS mode — the real SYS owns these).
 
 ### Scenario B — SYS connection instead of RT  →  sys-esp32
 - sys-esp32 decodes `0x204` (`main.cpp:288`), `0x111` (`main.cpp:303`), `0x112`
@@ -137,43 +143,58 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
 
 ## Phase 3 — Pipeline issues
 
-1. **[GAP] BARE mode missing `0x011` SYS_SAFETY_STS** → MTR never ignites
-   (`mtr-stm32/src/motor_manager.h:313`, `:194-212`; `rm-esp32-t12d/src/can_emitter.h` BARE block).
-2. **[GAP] RT mode missing `0x011` + `0x110`** → rt-esp32 grants no motion authority
+1. **[FIXED] BARE mode missing `0x011` SYS_SAFETY_STS and `0x113` rearm edge** → MTR never ignites
+   (`mtr-stm32/src/motor_manager.h:313/:194-212/:166-180`; `rm-esp32-t12d/src/can_emitter.h` BARE block).
+2. **[FIXED] RT mode missing `0x011` + `0x110`** → rt-esp32 grants no motion authority
    (`rt-esp32/src/safety_stream_loss.h:50-51`; `can_emitter.h` RT block; only `g_bench_solo_mode`
    bypasses, `rt-esp32/src/main.cpp:1311`).
 3. **[DOC/CONTRACT] HMI cadence mismatch** — `0x111/0x112` emitted at 10 Hz but
    `hmi.yaml` `kCycleMs=1000` (1 Hz); `architecture.md` states 10 Hz. Reconcile contract vs docs.
    `0x169/0x7B9` also 2× faster than `cycle_ms=20`. Confirm consumers tolerate over-frequency
    (Phase 2 SYS shows they do; verify rt HMI path similarly).
-4. **[DOC vs CODE] sys-esp32 `0x204` staleness "200 ms→zero" is documented but unenforced** —
-   `g_last_setpoint_tick` is written at `sys-esp32/src/main.cpp:293` and never read. Drive setpoint
-   is not zeroed on stale `0x204`. Either implement the watchdog or fix the doc.
-5. **[DOC] architecture.md omits SYS-authority requirement for RT mode** — §3.3 says RT mode
+4. **[FIXED] sys-esp32 `0x204` staleness "200 ms→zero" is documented but unenforced** —
+   `g_last_setpoint_tick` was written at `sys-esp32/src/main.cpp:293` and never read. `task_safety`
+   now zeroes `g_setpoint_speed_mmps` and forces neutral on stale `0x204`.
+5. **[FIXED] architecture.md omits SYS-authority requirement for RT mode** — §3.1 states RT mode
    "emulates the autonomous Host" but does not mention that rt-esp32 additionally needs `0x011`/
    `0x110` (SYS) for motion authority (Scenario C).
-6. **[INTEGRATION] rm is not wired into any existing harness** — `testbench`, `simulation/
-   full_system`, and `native-test` contain **zero** references to `rm::CanEmitter` / `can_emitter`
-   / `emit_cluster`. The natural injection point is `HostModel` (testbench / simulation) so rm can
-   exercise the real sys-esp32 / rt-esp32 decode paths continuously. Recommend adding it.
+6. **[FIXED] rm is not wired into any existing harness** — `testbench` now includes
+   `RmOperatorModel` (wraps `rm::CanEmitter`) and a Section 4 integration suite exercising the real
+   sys-esp32 / rt-esp32 / MTR models.
 7. **[HYGIENE] rolling-counter / freshness sanity** — all consumers use 8-bit counters for
    `0x7FD`/`0x7FC` (alive_ctr) and `0x111`/`0x110` (rolling_counter); rm emits 8-bit counters
    (phase 1 round-trip PASS). No width mismatch found; flag only for regression coverage.
 
 ---
 
+## Resolution (implemented after verification)
+
+| Item | Fix | Commit |
+| --- | --- | --- |
+| BARE missing `0x011` | rm BARE emits `SYS_SAFETY_STS` (estop_active=0, valid E2E CRC) | `43e8b6e` |
+| BARE never rearms | rm BARE emits one-shot `0x113` power OFF→ON REARM edge | `3e4ef5d` |
+| RT no authority | rm RT also emits `0x011` + `0x110` (emulated SYS) | `320625b` |
+| sys `0x204` staleness unenforced | `task_safety` zeroes speed + forces neutral on stale `0x204` | `ad631d5` |
+| Doc gaps | `architecture.md` §3.1/§3.3 document `0x011`/`0x110` authority | `c8e8dcf` |
+| No rm harness | `RmOperatorModel` wired into `testbench` (Section 4 integration suite) | testbench integration |
+| Cadence mismatch (`hmi.yaml` 1 Hz vs 10 Hz) | Doc-only; YAML intentionally untouched (avoids shared-code regen) | `c8e8dcf` |
+
+**Post-fix verification:**
+- `verify_emitter_roundtrip.cpp`: **75/75** checks pass (incl. `0x011` decode + `[0,0,1]` rearm edge).
+- `testbench` full suite: **ALL TESTS PASSED** — BARE ignites MTR, SYS reaches AUTO, RT reaches rt-esp32.
+
 ## Summary
 
 | Phase | Check | Result |
 | --- | --- | --- |
 | 1 | 17 frames vs original YAML (id/dlc/bus/sender/receiver/codec) | **PASS** (0 fail) |
-| 1 | 17 frames emitter→consumer decode round-trip | **PASS** (0 fail) |
-| 2A | BARE → MTR (no `0x011`) | **GAP** — MTR never ignites |
+| 1 | frames emitter→consumer decode round-trip | **PASS** (75 checks after fixes) |
+| 2A | BARE → MTR | **FIXED** — `0x011` + `0x113` rearm edge; MTR ignites |
 | 2B | SYS → sys-esp32 (freshness) | **SEAMLESS** |
-| 2C | RT → rt-esp32 (no `0x011`/`0x110`) | **GAP** — no motion authority |
-| 3 | Pipeline issues | 7 items (2 real gaps, 5 doc/integration) |
+| 2C | RT → rt-esp32 | **FIXED** — rm emits `0x011`/`0x110`; motion authority granted |
+| 3 | Pipeline issues | 7 items (2 functional fixed in rm, sys watchdog fixed, docs updated, rm integrated) |
 
-**Bottom line:** Wire/codec compatibility is fully proven (Phase 1). The only functional
-blockers to "seamless" standalone operation are the missing `0x011` SYS_SAFETY_STS in BARE
-mode (blocks MTR ignition) and the missing `0x011`+`0x110` in RT mode (blocks rt-esp32 motion
-authority) — both gated by the SYS node that rm is standing in for. SYS mode is seamless as-is.
+**Bottom line:** Wire/codec compatibility is proven (Phase 1). The two functional blockers
+(BARE: MTR never ignited — needed `0x011` *and* a `0x113` rearm edge; RT: no motion authority —
+needed `0x011`+`0x110`) are now fixed in `rm-esp32-t12d`, the sys-esp32 `0x204` watchdog is
+enforced, and rm is integrated into the testbench with all scenarios passing.
