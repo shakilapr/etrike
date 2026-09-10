@@ -72,7 +72,17 @@ public:
         // ESP-IDF 5.5 abandons the active frame without an on_tx_done
         // callback on Bus-Off. Keep one driver-owned frame so recovery can
         // reclaim its application slot deterministically.
+#ifdef ETRIKE_RM_TWAI_SELF_TEST
+        // Bench only: no ACK-capable peer present (e.g. listen-only analyzer),
+        // so supply our own ACK to keep the transceiver driving CAN_H/CAN_L.
         config.fail_retry_cnt = 0;
+        config.flags.enable_self_test = 1;
+#else
+        // Keep retrying on arbitration loss / missing ACK (matches rt-esp32).
+        // Single-shot (0) abandons the frame and walks TEC to Bus-Off, which
+        // stops the transceiver driving the bus.
+        config.fail_retry_cnt = -1;
+#endif
         config.tx_queue_depth = kTxSlots;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
