@@ -51,6 +51,15 @@ namespace testbench {
     bool test_estop_recovery_bare();
     bool test_estop_recovery_rm_sys();
     bool test_estop_recovery_rm_rt();
+    // Section 8: safety, fault injection and degraded comms
+    bool test_fault_rc_loss_bare();
+    bool test_fault_rc_loss_sys();
+    bool test_fault_rc_loss_rt();
+    bool test_fault_rm_ignores_0x001();
+    bool test_fault_mtr_drive_timeout();
+    bool test_fault_011_crc_rejected();
+    bool test_fault_sys_rt_heartbeat_loss();
+    bool test_fault_hot_mode_switch();
 }
 
 int main(int argc, char* argv[]) {
@@ -133,6 +142,16 @@ int main(int argc, char* argv[]) {
     run_test("ESTOP recovery rm BARE (0x001)", testbench::test_estop_recovery_bare);
     run_test("ESTOP recovery rm SYS path", testbench::test_estop_recovery_rm_sys);
     run_test("ESTOP recovery rm RT path", testbench::test_estop_recovery_rm_rt);
+
+    std::cout << "--- SECTION 8: Safety, Fault Injection & Degraded Comms ---\n";
+    run_test("RC link loss BARE -> safe stop", testbench::test_fault_rc_loss_bare);
+    run_test("RC link loss SYS -> safe stop", testbench::test_fault_rc_loss_sys);
+    run_test("RC link loss RT -> safe stop", testbench::test_fault_rc_loss_rt);
+    run_test("bus 0x001 ESTOP while rm drives", testbench::test_fault_rm_ignores_0x001);
+    run_test("MTR 0x204 drive watchdog", testbench::test_fault_mtr_drive_timeout);
+    run_test("corrupt 0x011 CRC -> drop authority", testbench::test_fault_011_crc_rejected);
+    run_test("sys 0x7FD heartbeat loss -> ESTOP", testbench::test_fault_sys_rt_heartbeat_loss);
+    run_test("hot mode switch + 0x7B9 regression", testbench::test_fault_hot_mode_switch);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();
