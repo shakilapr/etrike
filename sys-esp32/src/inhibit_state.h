@@ -45,8 +45,9 @@ enum InhibitReason : uint32_t {
 
 // Latched safety faults (cleared only by the explicit reset path).
 enum LatchedFaultReason : uint32_t {
-    kLatchedBrakeFollowing = 1u << 0,  // confirmed persistent following error
-    kLatchedSebL3          = 1u << 1,  // SEB error_status == 3
+    kLatchedBrakeFollowing    = 1u << 0,  // confirmed persistent following error
+    kLatchedSebL3             = 1u << 1,  // SEB error_status == 3
+    kLatchedMtrEstopAckFailed = 1u << 2,  // MTR failed to acknowledge ESTOP
 };
 
 // Remote ESTOP reset blocker mask bits (BUG-10)
@@ -56,7 +57,7 @@ enum EstopResetBlocker : uint16_t {
     kResetBlockLatchedFault     = 1u << 1,  // Latched fault cause still asserted
     kResetBlockMoving           = 1u << 2,  // Measured speed > 50 mm/s
     kResetBlockHeartbeatLoss    = 1u << 3,  // Heartbeat not ok
-    kResetBlockMtrEstopActive   = 1u << 4,  // MTR still reporting ESTOP_ACTIVE
+    kResetBlockMtrEstopActive   = 1u << 4,  // MTR never acknowledged ESTOP
     kResetBlockTransientInhibit = 1u << 5,  // Transient inhibit active
     kResetBlockInvalidToken     = 1u << 6,  // Invalid magic auth token
 };
@@ -103,7 +104,8 @@ inline bool latched_causes_currently_clearable() {
 inline void clear_latched_fault_reasons() {
     g_latched_fault_reasons.fetch_and(
         ~(static_cast<uint32_t>(kLatchedSebL3) |
-          static_cast<uint32_t>(kLatchedBrakeFollowing)),
+          static_cast<uint32_t>(kLatchedBrakeFollowing) |
+          static_cast<uint32_t>(kLatchedMtrEstopAckFailed)),
         std::memory_order_relaxed);
 }
 
@@ -112,11 +114,14 @@ inline bool latched_fault_present() { return g_latched_fault_reasons.load() != 0
 inline bool any_inhibit() { return transient_inhibited() || latched_fault_present(); }
 
 // Evaluate all blockers preventing ESTOP remote reset (BUG-10)
+// mtr_ack_confirmed: true if MTR has acknowledged the ESTOP (or on test bench without MTR).
+// Reject reset ONLY if MTR NEVER acknowledged the ESTOP.
+// If MTR acknowledged, ESTOP_ACTIVE is expected to remain 1 until SYS drops 0x011.
 inline uint16_t get_estop_reset_blockers(
     bool physical_estop,
     bool hb_ok,
     int16_t measured_speed_mmps,
-    uint16_t mtr_fault_flags,
+    bool mtr_ack_confirmed = true,
     uint16_t token = kRemoteResetTokenMagic
 ) {
     uint16_t mask = kResetBlockNone;
@@ -136,7 +141,7 @@ inline uint16_t get_estop_reset_blockers(
     if (!hb_ok) {
         mask |= kResetBlockHeartbeatLoss;
     }
-    if (mtr_fault_flags & 0x0001) { // kMtrFaultEstopActive (bit 0)
+    if (!mtr_ack_confirmed) {
         mask |= kResetBlockMtrEstopActive;
     }
     if (transient_inhibited()) {
