@@ -345,14 +345,13 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
 
     rt::HostDriveSnapshot host_snap{};
 
-    // Diagnostics reports are High-CAN traffic and therefore must be pumped
-    // by the driver's single-owner task, not by control_task.
-    pump_diagnostics();
-
     while (true) {
         // 1. Sleep waiting for MCP2515 INT pin (GPIO 47) or 10 ms timeout
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
 
+        // Diagnostics reports are High-CAN traffic and therefore must be
+        // pumped by the owner task after every periodic wake.
+        pump_diagnostics();
         // 2. Bounded RX Drain (budget = 8 frames)
         for (unsigned i = 0; i < 8; ++i) {
             if (!g_can_high.receive(fr, 0)) break;
