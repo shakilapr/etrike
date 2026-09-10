@@ -67,7 +67,7 @@ static void monitor_can_bus_off() {
                         can::gen::SafetyEstop estop_msg{};
                         if (can::gen::encode_safety_estop(estop_msg, ef)
                             == can::gen::CodecStatus::Ok) {
-                            send_can_high(ef);
+                            post_gateway_frame(ef);
                         }
                     }
                 }
@@ -77,27 +77,10 @@ static void monitor_can_bus_off() {
         }
     }
 
-    // High bus (MCP2515) — interrupt-driven + polled fallback
+    // High bus (MCP2515) — atomic state check only; SPI calls & recovery are owned by can_high_task
     {
-        // Bus-off is latched by the receive path and remains latched until a
-        // complete controller-only recovery succeeds.
         if (g_can_high.bus_off()) {
             bus_off_count_high++;
-            {
-                uint8_t tec = 0, rec = 0;
-                g_can_high.get_error_counters(tec, rec);
-                rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighBusOff,
-                                 static_cast<std::uint16_t>(
-                                     (static_cast<std::uint16_t>(tec) << 8)
-                                     | static_cast<std::uint16_t>(rec)));
-            }
-            static int64_t last_reinit_us = 0;
-            int64_t now = esp_timer_get_time();
-            if (last_reinit_us == 0 || now - last_reinit_us > 3'000'000) {
-                last_reinit_us = now;
-                ESP_LOGE(TAG, "High CAN bus-off — controller recovery");
-                g_can_high.recover();
-            }
             if (bus_off_count_high >= 5 && !g_bench_solo_mode) {
                 ESP_LOGE(TAG, "High CAN bus-off persistent - zeroing setpoints");
                 g_estop_reason.store(rt::kEstopReasonBusOff);
@@ -105,11 +88,7 @@ static void monitor_can_bus_off() {
                 if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
                 g_steering_estop_request.store(true);
             }
-        } else if (!g_can_high.is_recovering()) {
-            uint8_t tec = 0, rec = 0;
-            g_can_high.get_error_counters(tec, rec);
-            if (tec > 128)
-                ESP_LOGW(TAG, "High CAN error-warning: TEC=%u REC=%u", tec, rec);
+        } else {
             bus_off_count_high = 0;
         }
     }

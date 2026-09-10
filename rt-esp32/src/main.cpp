@@ -131,6 +131,7 @@ std::atomic<uint16_t> g_seb_pressure_raw{0};
 std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint16_t> g_seb_motor_current{0};
 std::atomic<uint16_t> g_seb_ecu_temp_c{0};
+std::atomic<uint8_t>  g_heartbeat_flags{0};
 
 // ── Safety monitor & Phase B diagnostics ────────────────────────────
 #include "safety_monitor.h"
@@ -335,6 +336,7 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     TickType_t last_100hz = xTaskGetTickCount();
     TickType_t last_10hz  = xTaskGetTickCount();
     int64_t    last_1hz_us = esp_timer_get_time();
+    int64_t    last_2hz_us = esp_timer_get_time();
     uint8_t    motion_counter = 0;
     uint8_t    node_status_roll_high = 0;
     uint8_t    diag_counter = 0;
@@ -342,6 +344,10 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
     uint32_t   diag_fail_count = 0;
 
     rt::HostDriveSnapshot host_snap{};
+
+    // Diagnostics reports are High-CAN traffic and therefore must be pumped
+    // by the driver's single-owner task, not by control_task.
+    pump_diagnostics();
 
     while (true) {
         // 1. Sleep waiting for MCP2515 INT pin (GPIO 47) or 10 ms timeout
@@ -579,6 +585,38 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             can::Frame d_fr{};
             if (can::encode_frame(dr, d_fr) == can::gen::CodecStatus::Ok) {
                 send_can_high(d_fr);
+            }
+        }
+
+        // 6. 2 Hz Heartbeat (0x7FC) & High CAN Bus Recovery
+        if (now_us - last_2hz_us >= 500'000) {
+            last_2hz_us = now_us;
+            if (g_can_high.can_transmit()) {
+                can::Frame h_fr{};
+                g_heartbeat.tick_high(h_fr, g_heartbeat_flags.load(std::memory_order_relaxed));
+                static uint32_t hb_fail_count = 0;
+                if (!g_can_high.send(h_fr)) {
+                    hb_fail_count++;
+                    if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
+                        ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
+                    }
+                } else if (hb_fail_count > 0) {
+                    ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
+                    hb_fail_count = 0;
+                }
+            }
+
+            if (g_can_high.bus_off()) {
+                static int64_t last_reinit_us = 0;
+                if (last_reinit_us == 0 || now_us - last_reinit_us > 3'000'000) {
+                    last_reinit_us = now_us;
+                    uint8_t tec = 0, rec = 0;
+                    g_can_high.get_error_counters(tec, rec);
+                    rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighBusOff,
+                                     static_cast<std::uint16_t>((static_cast<std::uint16_t>(tec) << 8) | rec));
+                    ESP_LOGE(TAG, "High CAN bus-off — controller recovery");
+                    g_can_high.recover();
+                }
             }
         }
     }
@@ -1129,7 +1167,6 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
                 can::gen::SafetyEstop estop_msg{};
                 if (can::gen::encode_safety_estop(estop_msg, estop_frame) == can::gen::CodecStatus::Ok) {
                     post_gateway_frame(estop_frame);
-                    send_can_high(estop_frame);
                 }
             }
         }
@@ -1211,7 +1248,6 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
         if (g_motion_output_mailbox) xQueueOverwrite(g_motion_output_mailbox, &motion_out);
 
         monitor_can_bus_off();
-        pump_diagnostics();
 
         // 6. Tick-Divided 10 Hz Staleness Check (Every 10 ticks)
         if (tick_counter % 10 == 0) {
@@ -1248,23 +1284,11 @@ static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
             if (!g_can_high.bus_off())
                 hf |= rt::kHbHealthBitCanOk;
 
+            g_heartbeat_flags.store(hf, std::memory_order_relaxed);
+
             can::Frame h_fr{};
             g_heartbeat.tick_low(h_fr, hf);
             send_can_low(h_fr);
-
-            if (g_can_high.can_transmit()) {
-                g_heartbeat.tick_high(h_fr, hf);
-                static uint32_t hb_fail_count = 0;
-                if (!g_can_high.send(h_fr)) {
-                    hb_fail_count++;
-                    if (hb_fail_count == 1 || hb_fail_count % 100 == 0) {
-                        ESP_LOGW(TAG, "MCP2515 heartbeat send failed (count=%lu)", hb_fail_count);
-                    }
-                } else if (hb_fail_count > 0) {
-                    ESP_LOGI(TAG, "MCP2515 heartbeat send recovered after %lu failures", hb_fail_count);
-                    hb_fail_count = 0;
-                }
-            }
         }
     }
 }
@@ -1328,7 +1352,11 @@ extern "C" void app_main() {
 
     // Spawn only 3 tasks pinned to cores
     if (has_high_can) {
-        xTaskCreatePinnedToCore(can_high_task, "can_high", 4096, nullptr, 4, nullptr, 0);
+        TaskHandle_t h_can_high = nullptr;
+        xTaskCreatePinnedToCore(can_high_task, "can_high", 4096, nullptr, 4, &h_can_high, 0);
+        if (h_can_high) {
+            g_can_high.set_rx_task_handle(h_can_high);
+        }
     } else {
         ESP_LOGW(TAG, "High CAN (MCP2515) not available — can_high_task skipped");
     }
