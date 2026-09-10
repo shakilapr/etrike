@@ -1,0 +1,144 @@
+- generic [ref=f1e3] [box=0,0,1800,1125]:
+  - banner [ref=f1e4] [box=0,0,1800,87]:
+    - generic [ref=f1e5] [box=0,0,1800,54]:
+      - generic [ref=f1e6] [box=14,10,312,34]:
+        - generic [ref=f1e7] [box=14,14,140,26]: eT Control Toolkit
+        - group "Transport mode" [ref=f1e8] [box=162,10,164,34]:
+          - button "Computer" [pressed] [ref=f1e9] [cursor=pointer] [box=163,11,98,32]
+          - button "Real" [ref=f1e13] [cursor=pointer] [box=261,11,64,32]
+      - generic "System health" [ref=f1e21] [box=338,8,1324,38]:
+        - generic "Combined stream, adapter, ESTOP, and protocol health" [ref=f1e22] [box=349,13,67,28]: Healthy
+        - generic [ref=f1e26] [box=437,14,85,26]:
+          - generic [ref=f1e27] [box=446,17,39,16]: Stream
+          - generic [ref=f1e28] [box=490,17,23,16]: Live
+        - generic "Computer · dual virtual CAN" [ref=f1e365] [box=532,14,83,26]:
+          - generic [ref=f1e30] [box=541,17,23,16]: Link
+          - generic [ref=f1e31] [box=569,17,37,16]: Virtual
+        - generic "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP" [ref=f1e32] [box=624,14,132,26]:
+          - generic [ref=f1e33] [box=633,17,38,16]: ESTOP
+          - generic [ref=f1e34] [box=676,17,30,16]: Clear
+          - generic "SAFETY_ESTOP bus presence" [ref=f1e35] [box=713,19,35,16]:
+            - generic "No recent 0x001 on High" [ref=f1e36] [box=713,19,16,16]: H
+            - generic "No recent 0x001 on Low" [ref=f1e37] [box=732,19,16,16]: L
+        - generic "Bench TX must be enabled before inject / control" [ref=f1e38] [box=767,14,76,26]:
+          - generic [ref=f1e39] [box=776,17,16,16]: TX
+          - generic [ref=f1e40] [box=796,17,37,16]: Armed
+        - generic "High bus · activity active · rx 9307" [ref=f1e667] [box=864,16,154,23]:
+          - generic [ref=f1e44] [box=885,19,26,16]: High
+          - generic [ref=f1e45] [box=915,19,94,17]:
+            - text: active
+            - generic [ref=f1e46] [box=958,19,50,16]: · 9307
+        - generic "Low bus · activity active · rx 11720" [ref=f1e668] [box=1028,16,159,23]:
+          - generic [ref=f1e49] [box=1049,19,23,16]: Low
+          - generic [ref=f1e50] [box=1077,19,101,17]:
+            - text: active
+            - generic [ref=f1e51] [box=1120,19,58,16]: · 11720
+      - button "Inject ESTOP" [ref=f1e53] [cursor=pointer] [box=1674,11,112,32]
+    - generic [ref=f1e54] [box=0,54,1800,32]:
+      - generic "Operating profile / destination" [ref=f1e55] [box=14,61,200,17]:
+        - generic [ref=f1e56] [box=14,63,45,15]: Profile
+        - generic [ref=f1e57] [box=64,61,102,16]: Computer · Virtual
+        - generic [ref=f1e58] [box=171,61,4,16]: ·
+        - generic [ref=f1e59] [box=180,61,34,16]: virtual
+      - generic "Session phase and id" [ref=f1e60] [box=228,61,190,17]:
+        - generic [ref=f1e61] [box=228,63,48,15]: Session
+        - generic [ref=f1e62] [box=281,61,137,17]:
+          - text: running
+          - generic [ref=f1e521] [box=324,61,94,16]: · ses_3d4d98
+      - generic "virtual" [ref=f1e368] [box=432,61,90,17]:
+        - generic [ref=f1e64] [box=432,63,52,15]: Adapter
+        - generic [ref=f1e65] [box=488,61,34,16]: active
+      - generic "Requested vs confirmed vehicle mode" [ref=f1e66] [box=536,61,59,17]:
+        - generic [ref=f1e67] [box=536,63,33,15]: Mode
+        - generic [ref=f1e68] [box=574,61,21,17]: —→—
+      - generic "Requested vs confirmed power" [ref=f1e69] [box=609,61,66,17]:
+        - generic [ref=f1e70] [box=609,63,40,15]: Power
+        - generic [ref=f1e71] [box=654,61,21,17]: —→—
+      - generic [ref=f1e72] [box=689,61,44,17]:
+        - generic [ref=f1e73] [box=689,63,22,15]: Rec
+        - generic [ref=f1e74] [box=716,61,17,16]: "Off"
+      - generic "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c" [ref=f1e369] [box=747,61,111,17]:
+        - generic [ref=f1e76] [box=747,62,26,15]: Wire
+        - generic [ref=f1e77] [box=779,61,79,17]: a78bf0d5f1…
+      - generic "ECU connection from CAN" [ref=f1e78] [box=1536,59,250,21]:
+        - generic "Host · heartbeat 0x7FC High · missing · age 224306 ms" [ref=f1e669] [box=1547,59,34,21]: Host
+        - generic "RT · heartbeat 0x7FD High · offline" [ref=f1e82] [box=1581,59,35,21]: RT-H
+        - generic "RT · heartbeat 0x7FD Low · offline" [ref=f1e85] [box=1615,59,35,21]: RT-L
+        - generic "SYS · heartbeat 0x7FE Low · live · age 46 ms" [ref=f1e670] [box=1650,59,34,21]: SYS
+        - generic "MTR · motor feedback 0x206 Low · offline" [ref=f1e91] [box=1684,59,34,21]: MTR
+        - generic "Steering-by-wire (SES / SES) · SES_STATUS 0x201 Low · offline" [ref=f1e94] [box=1718,59,34,21]: SBW
+        - generic "Brake-by-wire (SEB) · SEB_STATUS 0x721 Low · offline" [ref=f1e97] [box=1752,59,34,21]: BBW
+  - generic [ref=f1e100] [box=0,87,1800,1039]:
+    - complementary "Application sidebar" [ref=f1e101] [box=0,87,252,1039]:
+      - navigation "Activity bar" [ref=f1e102] [box=0,87,251,45]:
+        - button "Workspace explorer" [ref=f1e103] [cursor=pointer] [box=8,93,77,32]
+        - button "Control" [ref=f1e109] [cursor=pointer] [box=87,93,77,32]
+        - button "CAN monitor" [ref=f1e114] [cursor=pointer] [box=166,93,77,32]
+      - generic "Workspace explorer" [ref=f1e117] [box=0,132,251,994]:
+        - navigation "Primary workspaces" [ref=f1e118] [box=0,132,251,548]:
+          - generic [ref=f1e119] [box=10,146,231,119]:
+            - paragraph [ref=f1e120] [box=18,146,215,15]: Observe
+            - button "Overview" [ref=f1e121] [cursor=pointer] [box=10,166,231,32]
+            - button "Network" [ref=f1e128] [cursor=pointer] [box=10,199,231,32]
+            - button "Live CAN" [ref=f1e136] [cursor=pointer] [box=10,232,231,32]
+          - generic [ref=f1e140] [box=10,281,231,86]:
+            - paragraph [ref=f1e141] [box=18,281,215,15]: Operate
+            - button "Control" [ref=f1e142] [cursor=pointer] [box=10,301,231,32]
+            - button "Drive" [ref=f1e148] [cursor=pointer] [box=10,334,231,32]
+          - generic [ref=f1e153] [box=10,383,231,185]:
+            - paragraph [ref=f1e154] [box=18,383,215,15]: Analysis
+            - button "Bench" [ref=f1e155] [cursor=pointer] [box=10,404,231,32]
+            - button "Inject" [ref=f1e159] [cursor=pointer] [box=10,437,231,32]
+            - button "Dictionary" [ref=f1e163] [cursor=pointer] [box=10,470,231,32]
+            - button "Diagnostics" [ref=f1e168] [cursor=pointer] [box=10,503,231,32]
+            - button "Logging" [ref=f1e173] [cursor=pointer] [box=10,536,231,32]
+          - generic [ref=f1e177] [box=10,585,231,86]:
+            - paragraph [ref=f1e178] [box=18,585,215,15]: System
+            - button "Settings" [ref=f1e179] [cursor=pointer] [box=10,605,231,32]
+            - button "UI kit" [ref=f1e184] [cursor=pointer] [box=10,638,231,32]
+        - region "eTrike" [ref=f1e191] [box=10,683,231,152]:
+          - generic [ref=f1e192] [box=11,684,229,47]:
+            - generic [ref=f1e197] [box=44,693,98,31]
+            - generic [ref=f1e200] [box=195,702,35,14]: Live
+          - generic [ref=f1e201] [box=11,732,229,58]:
+            - generic [ref=f1e202] [box=11,733,115,57]
+            - generic [ref=f1e206] [box=126,733,115,57]
+          - generic [ref=f1e210] [box=11,790,229,45]:
+            - generic [ref=f1e211] [box=19,797,213,13]
+            - generic [ref=f1e215] [box=19,814,213,13]
+        - generic [ref=f1e222] [box=36,1070,180,32]:
+          - strong [ref=f1e223] [box=36,1070,180,17]: Stream live
+          - generic [ref=f1e224] [box=36,1088,180,14]: Computer · Virtual ? adapter active
+    - main [ref=f1e225] [box=252,87,1508,1039]:
+      - generic [ref=f1e524] [box=252,87,1508,1039]:
+        - generic [ref=f1e525] [box=270,103,1472,38]:
+          - generic [ref=f1e527] [box=270,108,335,28]:
+            - heading "Drive" [level=1] [ref=f1e528] [box=270,108,50,28]
+            - generic [ref=f1e529] [box=330,117,276,17]: High-bus kinematics (HOST_DRIVE_CMD 0x300)
+          - generic [ref=f1e530] [box=759,110,617,22]:
+            - generic "WebSocket stream quality" [ref=f1e531] [box=759,110,85,22]
+            - generic "Session Bench TX gate" [ref=f1e534] [box=849,110,92,22]
+            - generic [ref=f1e537] [box=947,110,93,22]
+            - generic "RT_MOTION_RPT measured feedback freshness" [ref=f1e540] [box=1045,110,79,22]
+            - generic "RT vehicle mode (from RT_STATE_RPT). Motion requires AUTO." [ref=f1e543] [box=1129,110,84,22]
+            - generic "SYS heartbeat on Low bus — required for AUTO mode changes" [ref=f1e546] [box=1218,110,69,22]
+            - generic [ref=f1e549] [box=1291,110,85,22]
+          - generic [ref=f1e552] [box=1530,103,212,38]:
+            - button "Arm CAN control" [ref=f1e553] [cursor=pointer] [box=1530,112,103,18]
+            - button "ESTOP" [ref=f1e555] [cursor=pointer] [box=1662,103,80,38]
+        - generic [ref=f1e556] [box=270,149,1472,977]:
+          - generic [ref=f1e557] [box=270,149,1040,977]:
+            - button "Center vehicle" [ref=f1e559] [cursor=pointer] [box=1195,160,104,27]
+            - generic [ref=f1e560] [box=271,1019,1038,105]
+          - complementary [ref=f1e584] [box=1322,149,420,977]:
+            - generic [ref=f1e585] [box=1337,131,371,228]
+            - generic [ref=f1e602] [box=1337,371,371,167]
+            - generic [ref=f1e616] [box=1337,549,371,164]
+            - generic [ref=f1e637] [box=1337,725,371,216]
+            - list [ref=f1e650] [box=1337,953,371,85]
+            - generic [ref=f1e662] [box=1337,1056,371,56]: Disarmed (disarm). Keyboard drives local sim only.
+    - complementary "Active host TX (collapsed)" [ref=f1e360] [box=1760,87,40,1039]:
+      - button "No host TX TX 0" [ref=f1e663] [cursor=pointer] [box=1765,95,31,72]:
+        - img "No host TX" [ref=f1e664] [box=1777,103,7,7]
+        - generic [ref=f1e665] [box=1774,116,14,15]: TX
+        - generic [ref=f1e666] [box=1777,137,7,15]: "0"

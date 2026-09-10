@@ -1,0 +1,97 @@
+- generic [ref=f1e3] [box=0,0,1298,812]:
+  - banner [ref=f1e4] [box=0,0,1298,117]:
+    - generic [ref=f1e5] [box=0,0,1298,85]:
+      - generic [ref=f1e6] [box=14,25,312,34]:
+        - generic [ref=f1e7] [box=14,29,140,26]: eT Control Toolkit
+        - group "Transport mode" [ref=f1e8] [box=162,25,164,34]:
+          - button "Computer" [pressed] [ref=f1e9] [cursor=pointer] [box=163,26,98,32]
+          - button "Real" [ref=f1e13] [cursor=pointer] [box=261,26,64,32]
+      - generic "System health" [ref=f1e21] [box=338,8,822,69]:
+        - generic "Combined stream, adapter, ESTOP, and protocol health" [ref=f1e22] [box=349,13,67,28]: Healthy
+        - generic [ref=f1e26] [box=437,14,85,26]:
+          - generic [ref=f1e27] [box=446,17,39,16]: Stream
+          - generic [ref=f1e28] [box=490,17,23,16]: Live
+        - generic "Computer · dual virtual CAN" [ref=f1e365] [box=532,14,83,26]:
+          - generic [ref=f1e30] [box=541,17,23,16]: Link
+          - generic [ref=f1e31] [box=569,17,37,16]: Virtual
+        - generic "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP" [ref=f1e32] [box=624,14,132,26]:
+          - generic [ref=f1e33] [box=633,17,38,16]: ESTOP
+          - generic [ref=f1e34] [box=676,17,30,16]: Clear
+          - generic "SAFETY_ESTOP bus presence" [ref=f1e35] [box=713,19,35,16]
+        - generic "Bench TX must be enabled before inject / control" [ref=f1e38] [box=767,14,76,26]:
+          - generic [ref=f1e39] [box=776,17,16,16]: TX
+          - generic [ref=f1e40] [box=796,17,37,16]: Armed
+        - generic "High bus · activity active · rx 8676" [ref=f1e519] [box=864,16,154,23]:
+          - generic [ref=f1e44] [box=885,19,26,16]: High
+          - generic [ref=f1e45] [box=915,19,94,17]
+        - generic "Low bus · activity active · rx 10174" [ref=f1e520] [box=349,49,159,23]:
+          - generic [ref=f1e49] [box=370,52,23,16]: Low
+          - generic [ref=f1e50] [box=398,52,101,17]
+      - button "Inject ESTOP" [ref=f1e53] [cursor=pointer] [box=1172,26,112,32]
+    - generic [ref=f1e54] [box=0,85,1298,32]:
+      - generic "Operating profile / destination" [ref=f1e55] [box=14,92,200,17]:
+        - generic [ref=f1e56] [box=14,94,45,15]: Profile
+        - generic [ref=f1e57] [box=64,92,102,16]: Computer · Virtual
+        - generic [ref=f1e58] [box=171,92,4,16]: ·
+        - generic [ref=f1e59] [box=180,92,34,16]: virtual
+      - generic "Session phase and id" [ref=f1e60] [box=228,92,190,17]:
+        - generic [ref=f1e61] [box=228,94,48,15]: Session
+        - generic [ref=f1e62] [box=281,92,137,17]:
+          - text: running
+          - generic [ref=f1e521] [box=324,92,94,16]: · ses_3d4d98
+      - generic "virtual" [ref=f1e368] [box=432,92,90,17]:
+        - generic [ref=f1e64] [box=432,94,52,15]: Adapter
+        - generic [ref=f1e65] [box=488,92,34,16]: active
+      - generic "Requested vs confirmed vehicle mode" [ref=f1e66] [box=536,92,59,17]:
+        - generic [ref=f1e67] [box=536,94,33,15]: Mode
+        - generic [ref=f1e68] [box=574,92,21,17]: —→—
+      - generic "Requested vs confirmed power" [ref=f1e69] [box=609,92,66,17]:
+        - generic [ref=f1e70] [box=609,94,40,15]: Power
+        - generic [ref=f1e71] [box=654,92,21,17]: —→—
+      - generic [ref=f1e72] [box=689,92,44,17]:
+        - generic [ref=f1e73] [box=689,94,22,15]: Rec
+        - generic [ref=f1e74] [box=716,92,17,16]: "Off"
+      - generic "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c" [ref=f1e369] [box=747,92,111,17]:
+        - generic [ref=f1e76] [box=747,93,26,15]: Wire
+        - generic [ref=f1e77] [box=779,92,79,17]: a78bf0d5f1…
+      - generic "ECU connection from CAN" [ref=f1e78] [box=1034,90,250,21]:
+        - generic "Host · heartbeat 0x7FC High · missing · age 110958 ms" [ref=f1e522] [box=1045,90,34,21]: Host
+        - generic "RT · heartbeat 0x7FD High · offline" [ref=f1e82] [box=1079,90,35,21]: RT-H
+        - generic "RT · heartbeat 0x7FD Low · offline" [ref=f1e85] [box=1113,90,35,21]: RT-L
+        - generic "SYS · heartbeat 0x7FE Low · live · age 60 ms" [ref=f1e523] [box=1148,90,34,21]: SYS
+        - generic "MTR · motor feedback 0x206 Low · offline" [ref=f1e91] [box=1182,90,34,21]: MTR
+        - generic "Steering-by-wire (SES / SES) · SES_STATUS 0x201 Low · offline" [ref=f1e94] [box=1216,90,34,21]: SBW
+        - generic "Brake-by-wire (SEB) · SEB_STATUS 0x721 Low · offline" [ref=f1e97] [box=1250,90,34,21]: BBW
+  - generic [ref=f1e100] [box=0,117,1298,695]:
+    - complementary "Application sidebar" [ref=f1e101] [box=0,117,252,695]:
+      - navigation "Activity bar" [ref=f1e102] [box=0,117,251,45]:
+        - button "Workspace explorer" [ref=f1e103] [cursor=pointer] [box=8,123,77,32]
+        - button "Control" [ref=f1e109] [cursor=pointer] [box=87,123,77,32]
+        - button "CAN monitor" [ref=f1e114] [cursor=pointer] [box=166,123,77,32]
+      - generic "Workspace explorer" [ref=f1e117] [box=0,162,251,650]:
+        - navigation "Primary workspaces" [ref=f1e118] [box=0,162,232,548]:
+          - generic [ref=f1e119] [box=10,176,212,119]
+          - generic [ref=f1e140] [box=10,312,212,86]
+          - generic [ref=f1e153] [box=10,414,212,185]
+          - generic [ref=f1e177] [box=10,615,212,86]
+        - region "eTrike" [ref=f1e191] [box=10,714,212,152]:
+          - generic [ref=f1e192] [box=11,715,210,47]
+          - generic [ref=f1e201] [box=11,762,210,58]
+          - generic [ref=f1e210] [box=11,821,210,45]
+        - generic [ref=f1e222] [box=36,877,175,46]:
+          - strong [ref=f1e223] [box=36,877,175,17]: Stream live
+          - generic [ref=f1e224] [box=36,895,175,29]: Computer · Virtual ? adapter active
+    - main [ref=f1e225] [box=252,117,1006,695]:
+      - generic [ref=f1e524] [box=252,117,1006,695]:
+        - generic [ref=f1e525] [box=270,133,970,74]:
+          - generic [ref=f1e527] [box=270,133,335,28]
+          - generic [ref=f1e530] [box=623,136,617,22]
+          - generic [ref=f1e552] [box=270,169,212,38]
+        - generic [ref=f1e556] [box=270,215,970,597]:
+          - generic [ref=f1e557] [box=270,215,538,597]
+          - complementary [ref=f1e584] [box=820,215,420,597]
+    - complementary "Active host TX (collapsed)" [ref=f1e360] [box=1258,117,40,695]:
+      - button "No host TX TX 0" [ref=f1e663] [cursor=pointer] [box=1263,125,31,72]:
+        - img "No host TX" [ref=f1e664] [box=1275,133,7,7]
+        - generic [ref=f1e665] [box=1272,146,14,15]: TX
+        - generic [ref=f1e666] [box=1275,168,7,15]: "0"
