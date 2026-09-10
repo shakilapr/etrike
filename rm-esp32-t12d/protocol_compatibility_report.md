@@ -204,6 +204,23 @@ SYS apply it to SEB (commit `7cd41e1`). One SYS test nuance: `SYS` requires a he
 `0x7FD` heartbeat before leaving MANUAL, and rm emits it at only 2 Hz, so START must be
 pressed after the first heartbeat.
 
+## Host-Driven Vehicle Behavior (no rm)
+
+Testbench Section 6 drives the vehicle through the **real Host node** (`Host→RT→SYS→
+actuators`) with rm inert, confirming the vehicle behaves as commanded:
+
+| Behavior | Command | Observed | Result |
+| --- | --- | --- | --- |
+| Forward | gear D, 1500 mm/s | MTR ready, gear D, DAC=1333, target=1500 | **PASS** |
+| Reverse | gear R, −400 mm/s | MTR gear R, DAC=1712, target=−400 | **PASS** |
+| Steering | 20.0° | SES rack angle 30197 (30200 raw) | **PASS** |
+| Brake | 10000 kPa | SEB stroke 13.5 mm (RT `0x205` → SYS `0x7B9`) | **PASS** |
+| ESTOP | drive + hardware button | wheels stop (DAC→0), SEB full 27 mm, estop latched | **PASS** |
+
+Signals to the intermediate controllers were verified to exit to the units in all
+three rm modes (Section 5) and via the direct Host path (Section 6). rm and Host
+paths produce identical actuator outcomes for the same demand.
+
 ## Summary
 
 | Phase | Check | Result |
