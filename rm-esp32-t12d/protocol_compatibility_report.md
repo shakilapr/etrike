@@ -201,6 +201,15 @@ controllers to the end units. Models were extended to mirror the real controller
 (`RtNode` forwards `0x303`→`0x169` and `0x301`→`0x205`; `SysNode` applies `0x205`
 to `0x7B9`).
 
+**Honest RT authority gate (updated):** `RtNode` now models the real firmware
+readiness mask — `0x011`/`0x110` accepted **only from the LOW bus** (via the real
+`rt::SafetyStreamSupervisor` + shared `StreamValidity`), `0x300` freshness on HIGH,
+and motion requires all three bits. The RT signal-flow below therefore derives its
+authority from the real `SysNode` on the low bus; rm's own high-bus `0x011`/`0x110`
+is ignored. New regression cases: rm RT high-bus frames → **no** authority;
+rm RT + low-bus SYS → authority (`cmd=1500`); low-bus `0x011` loss → ESTOP latch +
+motion zero.
+
 | Mode | Path | SES angle | SEB stroke | MTR | Result |
 | --- | --- | --- | --- | --- | --- |
 | BARE | rm → SES/SEB/MTR (direct) | 30197 (30200) | 15.0 mm | traction=YES, dac=1544, gear=D | **PASS** |

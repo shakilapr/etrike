@@ -3,6 +3,8 @@
 #include <cstdint>
 #include "ecu_node.hpp"
 #include "protocol/compat/can.hpp"
+#include "stream_validity.h"    // shared: 0x110 rolling-counter authority
+#include "safety_stream_loss.h" // rt-esp32: 0x011 SYS-authority supervisor
 
 namespace testbench {
 
@@ -28,6 +30,13 @@ public:
     bool has_host_steer() const { return host_steer_seen_; }
     bool has_host_brake() const { return host_brake_seen_; }
     bool is_host_heartbeat_lost() const { return host_hb_lost_; }
+
+    // Authority gates (mirror real rt-esp32 firmware). All three READY bits must
+    // hold for motion; they are only set by frames on the correct bus.
+    bool is_safety_stream_ok() const { return safety_ok_; }   // 0x011 (LOW bus)
+    bool is_mode_authority_ok() const { return mode_ok_; }    // 0x110 (LOW bus)
+    bool is_host_authority_ok() const { return host_ok_; }    // 0x300 (HIGH bus)
+    bool is_motion_authorized() const { return safety_ok_ && mode_ok_ && host_ok_; }
 
     void trigger_software_estop();
     void clear_software_estop();
@@ -57,6 +66,21 @@ private:
     bool     host_hb_seen_{false};
     bool     host_hb_lost_{false};
     uint32_t last_host_hb_ms_{0};
+
+    // SYS authority (readiness bits mirror rt-esp32/src/safety_stream_loss.h).
+    // Real rt only accepts 0x011/0x110 from its LOW bus and 0x300 from HIGH.
+    rt::SafetyStreamSupervisor safety_sup_;
+    int64_t  last_safety_sts_ms_{-1};
+    bool     sys_estop_{false};
+    etrike::protocol::StreamValidity mode_val_;
+    bool     mode_val_inited_{false};
+    bool     mode_valid_{false};
+    uint32_t last_mode_ms_{0};
+    bool     host_drive_seen_{false};
+    uint32_t last_host_drive_ms_{0};
+    bool     safety_ok_{false};
+    bool     mode_ok_{false};
+    bool     host_ok_{false};
 
     uint8_t rt_hb_ctr_{0};
     uint8_t rt_clear_confirm_count_{0};

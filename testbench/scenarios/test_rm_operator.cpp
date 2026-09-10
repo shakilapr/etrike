@@ -76,8 +76,12 @@ bool test_rm_sys_mode_seamless() {
 }
 
 bool test_rm_rt_mode_reaches_rt() {
-    std::cout << "TEST: rm RT mode frames reach rt-esp32 (0x300/0x011/0x110)\n";
-    // Standalone harness: rm (emulating Host+SYS) on High-CAN, rt-esp32 on High/Low.
+    std::cout << "TEST: rm RT high-bus frames reach rt but grant NO motion authority\n";
+    // rm is a single-bus (High) Host+SYS emulator. Real rt accepts the Host
+    // frames (0x300/0x301/0x303) on High but only accepts SYS authority
+    // (0x011/0x110) on LOW (rt-esp32/src/can_rx_router.h:28/36/44 vs :64-84).
+    // With no real SYS present the frames arrive but authority is NOT granted —
+    // this is the honest model that the previous testbench masked.
     VirtualCanBus high("HIGH_CAN");
     VirtualCanBus low("LOW_CAN");
     RtNode rt(high, low);
@@ -99,17 +103,118 @@ bool test_rm_rt_mode_reaches_rt() {
     }
 
     bool frames_ok = high.has_frame(0x300)   // HOST_DRIVE_CMD
-                  && high.has_frame(0x011)   // SYS_SAFETY_STS (emulated SYS)
-                  && high.has_frame(0x110);  // SYS_MODE_CMD (emulated SYS)
-    bool no_estop = !rt.is_estop_latched();
+                  && high.has_frame(0x011)   // SYS_SAFETY_STS (emulated SYS, wrong bus)
+                  && high.has_frame(0x110);  // SYS_MODE_CMD (emulated SYS, wrong bus)
+    bool no_authority = !rt.is_motion_authorized()
+                     && !rt.is_safety_stream_ok()
+                     && !rt.is_mode_authority_ok()
+                     && rt.commanded_speed_mmps() == 0;
+    bool not_auto = (rt.active_mode() != can::Mode::Auto);
 
-    std::cout << "  rt estop_latched=" << (no_estop ? "NO" : "YES")
-              << " 0x300=" << high.has_frame(0x300)
-              << " 0x011=" << high.has_frame(0x011)
-              << " 0x110=" << high.has_frame(0x110) << "\n";
+    std::cout << "  frames(0x300/0x011/0x110)=" << frames_ok
+              << " authority=" << (rt.is_motion_authorized() ? "GRANTED" : "NONE")
+              << " mode=" << (not_auto ? "NOT-AUTO" : "AUTO")
+              << " cmd=" << rt.commanded_speed_mmps() << "\n";
 
     if (!frames_ok) { std::cerr << "  FAIL: rm RT frames missing on High CAN\n"; return false; }
-    if (!no_estop)  { std::cerr << "  FAIL: rt-esp32 estop latched (authority not granted)\n"; return false; }
+    if (!no_authority || !not_auto) {
+        std::cerr << "  FAIL: rt accepted high-bus SYS authority (must be ignored)\n";
+        return false;
+    }
+    return true;
+}
+
+bool test_rm_rt_low_sys_authority() {
+    std::cout << "TEST: rm RT + real SYS authority on LOW bus grants motion\n";
+    // Same rm RT Host emulation, but now a real SysNode on the LOW bus grants
+    // 0x011 (SAFETY) + 0x110 AUTO (MODE). rt's third bit (HOST) comes from rm's
+    // 0x300 on High. All three readiness bits now set -> motion authorized.
+    VirtualCanBus high("HIGH_CAN");
+    VirtualCanBus low("LOW_CAN");
+    RtNode rt(high, low);
+    RmOperatorModel rm_op(high);
+    SysNode sys(low);
+
+    high.register_node(NodeId::RT, [&](const etrike::protocol::Frame& f) { rt.receive_can("HIGH_CAN", f); });
+    high.register_node(NodeId::RM, [&](const etrike::protocol::Frame& f) { rm_op.receive_can("HIGH_CAN", f); });
+    low.register_node(NodeId::RT,  [&](const etrike::protocol::Frame& f) { rt.receive_can("LOW_CAN", f); });
+    low.register_node(NodeId::SYS, [&](const etrike::protocol::Frame& f) { sys.receive_can("LOW_CAN", f); });
+
+    rt.init();
+    rm_op.init();
+    sys.init();
+    rm_op.set_op_mode(rm::OperatingMode::Rt);
+    rm_op.drive(1500);
+    sys.press_start_button();
+
+    for (uint32_t t = 100; t <= 2000; t += 10) {
+        rt.step(t, 10);
+        sys.step(t, 10);
+        rm_op.step(t, 10);
+        high.tick(t, 10);
+        low.tick(t, 10);
+    }
+
+    bool safety = rt.is_safety_stream_ok();
+    bool mode   = rt.is_mode_authority_ok();
+    bool host   = rt.is_host_authority_ok();
+    bool auth   = rt.is_motion_authorized();
+    bool moving = rt.commanded_speed_mmps() == 1500;
+    std::cout << "  safety=" << safety << " mode=" << mode << " host=" << host
+              << " authorized=" << auth << " cmd=" << rt.commanded_speed_mmps() << "\n";
+
+    if (!safety || !mode || !host || !auth || !moving) {
+        std::cerr << "  FAIL: low-bus SYS authority did not grant motion\n";
+        return false;
+    }
+    return true;
+}
+
+bool test_rm_rt_low_sys_011_loss() {
+    std::cout << "TEST: LOW-bus 0x011 loss -> rt fail-safe (estop latch, motion 0)\n";
+    VirtualCanBus high("HIGH_CAN");
+    VirtualCanBus low("LOW_CAN");
+    RtNode rt(high, low);
+    RmOperatorModel rm_op(high);
+    SysNode sys(low);
+
+    high.register_node(NodeId::RT, [&](const etrike::protocol::Frame& f) { rt.receive_can("HIGH_CAN", f); });
+    high.register_node(NodeId::RM, [&](const etrike::protocol::Frame& f) { rm_op.receive_can("HIGH_CAN", f); });
+    low.register_node(NodeId::RT,  [&](const etrike::protocol::Frame& f) { rt.receive_can("LOW_CAN", f); });
+    low.register_node(NodeId::SYS, [&](const etrike::protocol::Frame& f) { sys.receive_can("LOW_CAN", f); });
+
+    rt.init();
+    rm_op.init();
+    sys.init();
+    rm_op.set_op_mode(rm::OperatingMode::Rt);
+    rm_op.drive(1500);
+    sys.press_start_button();
+
+    for (uint32_t t = 100; t <= 1000; t += 10) {
+        rt.step(t, 10); sys.step(t, 10); rm_op.step(t, 10);
+        high.tick(t, 10); low.tick(t, 10);
+    }
+    bool authorized = rt.is_motion_authorized();
+    bool was_moving = (rt.commanded_speed_mmps() == 1500);
+
+    // Drop 0x011 (> 700 ms): ACQUIRED -> LOST must latch ESTOP (fail-safe).
+    low.drop(0x011, 200);
+    for (uint32_t t = 1010; t <= 2000; t += 10) {
+        rt.step(t, 10); sys.step(t, 10); rm_op.step(t, 10);
+        high.tick(t, 10); low.tick(t, 10);
+    }
+    bool lost = !rt.is_safety_stream_ok();
+    bool latched = rt.is_estop_latched();
+    bool stopped = (rt.commanded_speed_mmps() == 0);
+
+    std::cout << "  authorized=" << authorized << " moving=" << was_moving
+              << " after-loss: safety_ok=" << !lost << " estop=" << (latched ? "LATCHED" : "NO")
+              << " cmd=" << rt.commanded_speed_mmps() << "\n";
+
+    if (!authorized || !was_moving || !lost || !latched || !stopped) {
+        std::cerr << "  FAIL: 0x011 loss did not trip the rt fail-safe\n";
+        return false;
+    }
     return true;
 }
 
