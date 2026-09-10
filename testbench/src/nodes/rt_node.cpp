@@ -19,6 +19,9 @@ void RtNode::init() {
     host_brake_kpa_ = 0;
     host_steer_seen_ = false;
     host_brake_seen_ = false;
+    host_hb_seen_ = false;
+    host_hb_lost_ = false;
+    last_host_hb_ms_ = 0;
     last_steer_tx_ms_ = 0;
     last_brake_tx_ms_ = 0;
     rt_hb_ctr_ = 0;
@@ -80,6 +83,13 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
             if (can::decode_frame(cf, bcmd) == can::gen::CodecStatus::Ok) {
                 host_brake_kpa_ = bcmd.brake_pressure_kpa;
                 host_brake_seen_ = true;
+            }
+        } else if (cf.id == can::kIdHostHeartbeat) {
+            can::gen::HostHeartbeat hb{};
+            if (can::decode_frame(cf, hb) == can::gen::CodecStatus::Ok) {
+                last_host_hb_ms_ = last_now_ms_;
+                host_hb_seen_ = true;
+                host_hb_lost_ = false;
             }
         } else if (cf.id == can::kIdSafetyEstop) {
             estop_latched_ = true;
@@ -144,10 +154,16 @@ void RtNode::step(uint32_t now_ms, uint32_t dt_ms) {
         estop_latched_ = true;
     }
 
+    // Host heartbeat timeout (1500 ms) -> assisted stop (rt-esp32 safety_monitor.h:225).
+    if (host_hb_seen_ && (now_ms - last_host_hb_ms_ > 1500)) {
+        host_hb_lost_ = true;
+    }
+
     // Safety arbitration for motion authority:
-    // If in AUTO, no ESTOP, and MTR feedback is healthy, command host speed.
+    // If in AUTO, no ESTOP, MTR feedback healthy and Host alive, command host speed.
     // If MTR feedback is lost: zero setpoint (recoverable inhibit), but NO global ESTOP!
-    if (active_mode_ == can::Mode::Auto && !estop_latched_ && !mtr_feedback_lost_) {
+    if (active_mode_ == can::Mode::Auto && !estop_latched_ && !mtr_feedback_lost_
+        && !host_hb_lost_) {
         commanded_speed_mmps_ = host_speed_mmps_;
     } else {
         commanded_speed_mmps_ = 0;
@@ -214,11 +230,16 @@ void RtNode::publish_steer_cmd(uint32_t now_ms) {
 
 void RtNode::publish_brake_cmd(uint32_t now_ms) {
     (void)now_ms;
-    if (!host_brake_seen_) return;
-    if (active_mode_ != can::Mode::Auto || estop_latched_) return;
+    // Emit on host brake intent, or unconditionally on Host-heartbeat loss
+    // (assisted stop, 2000 kPa) regardless of mode.
+    if (!host_brake_seen_ && !host_hb_lost_) return;
+    if (!host_hb_lost_ && (active_mode_ != can::Mode::Auto || estop_latched_)) return;
 
+    constexpr int32_t kAssistStopKpa = 2000;
     can::gen::RtBrakeCmd cmd{};
-    cmd.brake_pressure_kpa = host_brake_kpa_;
+    cmd.brake_pressure_kpa = host_hb_lost_
+        ? (host_brake_kpa_ > kAssistStopKpa ? host_brake_kpa_ : kAssistStopKpa)
+        : host_brake_kpa_;
 
     can::Frame cf;
     if (can::encode_frame(cmd, cf) == can::gen::CodecStatus::Ok) {

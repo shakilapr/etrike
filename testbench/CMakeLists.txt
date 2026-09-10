@@ -25,6 +25,7 @@ add_executable(etrike-system-test
     scenarios/test_host_behavior.cpp
     scenarios/test_estop_recovery_paths.cpp
     scenarios/test_fault_injection.cpp
+    scenarios/test_limits_and_timeouts.cpp
     scenarios/main.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp
