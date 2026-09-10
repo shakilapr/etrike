@@ -85,15 +85,19 @@ void test_sys_mtr_estop_ack_watchdog(void) {
     TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::ExhaustedFault), int(wd.check_tick(1400, 0)));
     TEST_ASSERT_FALSE(wd.is_pending());
     TEST_ASSERT_TRUE(wd.has_latched_fault());
+    TEST_ASSERT_FALSE(wd.has_acknowledged());
 
     // 7. Early clear scenario: ACK arrives before deadline
     wd.reset();
+    TEST_ASSERT_FALSE(wd.has_acknowledged());
     wd.trigger(2000, 0);
     TEST_ASSERT_TRUE(wd.is_pending());
+    TEST_ASSERT_FALSE(wd.has_acknowledged());
     // 0x206 arrives with ESTOP_ACTIVE at 2020ms
     wd.on_feedback_received(shared::kMtrFaultEstopActive);
     TEST_ASSERT_FALSE(wd.is_pending());
     TEST_ASSERT_FALSE(wd.has_latched_fault());
+    TEST_ASSERT_TRUE(wd.has_acknowledged());
     TEST_ASSERT_EQUAL(int(sys::MtrEstopAckWatchdog::Action::None), int(wd.check_tick(2100, 0)));
 }
 

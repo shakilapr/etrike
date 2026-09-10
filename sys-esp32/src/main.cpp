@@ -199,6 +199,22 @@ static inline void trigger_estop_ack_watchdog(uint32_t now) {
     g_mtr_ack_watchdog.trigger(now, g_motor_fault_flags.load(std::memory_order_relaxed));
 }
 
+// Authoritative ESTOP entry helper. Arms MtrEstopAckWatchdog strictly on the
+// 0 -> 1 transition into ESTOP so that subsequent CAN 0x001 bursts or redundant
+// triggers do not push the deadline back and starve the watchdog timer.
+static void enter_estop(const char* reason) {
+    const bool was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
+    if (!was_estop) {
+        g_mode_mgr.force_estop();
+        trigger_estop_ack_watchdog(static_cast<uint32_t>(xTaskGetTickCount()));
+        ESP_LOGE(TAG, "ESTOP entered [edge]: %s", reason);
+    }
+    // Broadcast 0x001 on CAN (rate-limited by can_send_estop)
+    if (can_send_estop()) {
+        send_estop_frame(reason);
+    }
+}
+
 // ── 0x206 staleness tracking (Gap #15) ───────────────────────────────
 static std::atomic<uint32_t> g_last_mtr_fbk_tick{0};
 
@@ -335,7 +351,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 /*physical_estop=*/g_safety.estop_active(),
                 /*hb_ok=*/g_safety.heartbeat_ok(),
                 /*measured_speed_mmps=*/g_wheel_measured_mmps.load(std::memory_order_relaxed),
-                /*mtr_fault_flags=*/g_motor_fault_flags.load(std::memory_order_relaxed),
+                /*mtr_ack_confirmed=*/g_mtr_ack_watchdog.has_acknowledged(),
                 /*token=*/static_cast<uint16_t>(req.reset_token)
             );
 
@@ -385,10 +401,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if ((fbk.fault_flags & shared::kMtrFaultEstopActive)
                 && g_mode_mgr.mode() != can::Mode::Estop) {
                 ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
-                g_mode_mgr.force_estop();
-                if (can_send_estop()) {
-                    send_estop_frame("ESTOP");
-                }
+                enter_estop("MTR ESTOP_ACTIVE propagated");
             }
             break;
         }
@@ -428,8 +441,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
                 break;
             }
-            g_mode_mgr.force_estop();
-            trigger_estop_ack_watchdog(static_cast<uint32_t>(now));
+            enter_estop("CAN 0x001");
             if (within_limit) {
                 ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             }
@@ -452,13 +464,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     // confirms the underlying L3 has cleared.
                     ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x)", value.status_byte);
                     sys::set_latched_fault(sys::kLatchedSebL3);
-                    if (g_mode_mgr.mode() != can::Mode::Estop) {
-                        g_mode_mgr.force_estop();
-                        trigger_estop_ack_watchdog(xTaskGetTickCount());
-                        if (can_send_estop()) {
-                            send_estop_frame("ESTOP");
-                        }
-                    }
+                    enter_estop("SEB 0x721 L3 fault");
                 }
             }
             // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30).
@@ -528,13 +534,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                                               "diff=%u raw (~%d mm)",
                                          cmd, actual_raw, diff, int(diff * 0.05f));
                                 sys::set_latched_fault(sys::kLatchedBrakeFollowing);
-                                if (g_mode_mgr.mode() != can::Mode::Estop) {
-                                    g_mode_mgr.force_estop();
-                                    trigger_estop_ack_watchdog(xTaskGetTickCount());
-                                    if (can_send_estop()) {
-                                        send_estop_frame("ESTOP");
-                                    }
-                                }
+                                enter_estop("Brake following error latched");
                             }
                         }
                     } else {
@@ -586,14 +586,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
             }
             if (l3_found) {
-                g_mode_mgr.force_estop();
-                // Record ESTOP trigger tick for MTR ACK timeout check (bug 6.5).
-                // Without this, the MTR ESTOP ACK safety check in task_safety
-                // is permanently bypassed for SEB-triggered ESTOPs.
-                trigger_estop_ack_watchdog(xTaskGetTickCount());
-                if (can_send_estop()) {
-                    send_estop_frame("ESTOP");
-                }
+                enter_estop("SEB 0x731 L3 fault");
                 ESP_LOGW(TAG, "ESTOP triggered by SEB 0x731 L3 fault(s)");
             }
             break;
@@ -656,16 +649,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool estop_triggered = g_safety.estop_active()
             || (!g_bench_solo_mode && !g_safety.heartbeat_ok());
         if (estop_triggered) {
-            if (g_mode_mgr.mode() != can::Mode::Estop) {
-                g_mode_mgr.force_estop();
-                trigger_estop_ack_watchdog(xTaskGetTickCount());
-                // Broadcast CAN 0x001 ESTOP on low bus (architecture §8.4)
-                // Gap #14: rate-limited to prevent bus flooding
-                if (can_send_estop()) {
-                    send_estop_frame("ESTOP");
-                    ESP_LOGW(TAG, "ESTOP triggered — sent CAN 0x001");
-                }
-            }
+            enter_estop("Hardware ESTOP or Heartbeat Loss");
         }
 
         // Toggle external watchdog + per-task alive counter
@@ -690,15 +674,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                         egas_fault_start = xTaskGetTickCount();
                     } else if ((xTaskGetTickCount() - egas_fault_start)
                                 >= pdMS_TO_TICKS(sys::kEgasFaultDurationMs)) {
-                        if (g_mode_mgr.mode() != can::Mode::Estop) {
-                            g_mode_mgr.force_estop();
-                            trigger_estop_ack_watchdog(xTaskGetTickCount());
-                            if (can_send_estop()) {
-                                send_estop_frame("ESTOP");
-                            }
-                            ESP_LOGW(TAG, "Cmd-path mismatch: |0x204 %.0f - applied %.0f| > %d mm/s — ESTOP",
-                                     (double)cmd, (double)applied, sys::kEgasSpeedThresholdMmps);
-                        }
+                        enter_estop("Cmd-path mismatch");
+                        ESP_LOGW(TAG, "Cmd-path mismatch: |0x204 %.0f - applied %.0f| > %d mm/s — ESTOP",
+                                 (double)cmd, (double)applied, sys::kEgasSpeedThresholdMmps);
                     }
                 } else {
                     egas_fault_active = false;
@@ -722,8 +700,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     send_estop_frame("ESTOP");
                 }
             } else if (action == sys::MtrEstopAckWatchdog::Action::ExhaustedFault) {
-                ESP_LOGE(TAG, "MTR ESTOP ACK failed after retries — latched brake fault");
-                g_brake_fault_active.store(true, std::memory_order_relaxed);
+                ESP_LOGE(TAG, "MTR ESTOP ACK failed after retries — latched safety fault");
+                sys::set_latched_fault(sys::kLatchedMtrEstopAckFailed);
             }
         }
 
@@ -763,26 +741,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     // release requires a full fresh run of N observations.
                     mtr_fbk_recover_count = 0;
                 }
-            }
-        }
-
-        // Legacy brake-fault auto-recovery (SEB L3 / following-error paths; these
-        // are re-classified into the two-mask model by issue #5). MTR-feedback
-        // loss no longer sets g_brake_fault_active, so MTR freshness is removed
-        // from this recovery gate.
-        if (g_brake_fault_active.load(std::memory_order_relaxed)) {
-            bool seb_healthy = g_seb_error_status.load(std::memory_order_relaxed) < 3;
-            bool not_in_estop = (g_mode_mgr.mode() != can::Mode::Estop);
-
-            static int brake_recovery_count = 0;
-            if (seb_healthy && not_in_estop) {
-                if (++brake_recovery_count >= 30) {  // 30 * 100ms = 3s
-                    g_brake_fault_active.store(false, std::memory_order_relaxed);
-                    brake_recovery_count = 0;
-                    ESP_LOGI(TAG, "Brake fault cleared — all conditions recovered");
-                }
-            } else {
-                brake_recovery_count = 0;
             }
         }
 
@@ -856,13 +814,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 ESP_LOGE(TAG, "Physical EGAS trip (%d): cmd=%d measured=%d state=%u",
                          static_cast<int>(phys_verdict), pin.commanded_mmps,
                          pin.measured_mmps, pin.sensor_state);
-                if (g_mode_mgr.mode() != can::Mode::Estop) {
-                    g_mode_mgr.force_estop();
-                    trigger_estop_ack_watchdog(xTaskGetTickCount());
-                    if (can_send_estop()) {
-                        send_estop_frame("ESTOP");
-                    }
-                }
+                enter_estop("Physical EGAS trip");
             }
         }
 
@@ -1229,14 +1181,9 @@ static can::gen::SysNodeStatus build_sys_node_status() {
         static int critical_miss_count = 0;
         if ((task_health & kCriticalTaskMask) != kCriticalTaskMask) {
             if (++critical_miss_count >= 2) {   // persistent >= 2 s miss
-                if (g_mode_mgr.mode() != can::Mode::Estop) {
-                    ESP_LOGE(TAG, "SYS critical task(s) dead (mask=0x%X need 0x%02X) — "
-                                  "forcing ESTOP", task_health, kCriticalTaskMask);
-                    g_mode_mgr.force_estop();
-                    if (can_send_estop()) {
-                        send_estop_frame("ESTOP");
-                    }
-                }
+                ESP_LOGE(TAG, "SYS critical task(s) dead (mask=0x%X need 0x%02X) — "
+                              "forcing ESTOP", task_health, kCriticalTaskMask);
+                enter_estop("Critical task dead");
             }
         } else {
             critical_miss_count = 0;
@@ -1272,10 +1219,7 @@ static can::gen::SysNodeStatus build_sys_node_status() {
             bus_off_count++;
             if (bus_off_count >= 5) {
                 ESP_LOGE(TAG, "CAN bus-off persistent — forcing ESTOP");
-                g_mode_mgr.force_estop();
-                if (can_send_estop()) {
-                    send_estop_frame("ESTOP");
-                }
+                enter_estop("CAN bus-off persistent");
             }
         } else { bus_off_count = 0; }
 

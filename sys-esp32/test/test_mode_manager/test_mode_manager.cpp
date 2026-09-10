@@ -289,7 +289,7 @@ void test_remote_reset_rejected_when_physical_estop_active(void) {
         /*physical_estop=*/true,
         /*hb_ok=*/true,
         /*measured_speed_mmps=*/0,
-        /*mtr_fault_flags=*/0,
+        /*mtr_ack_confirmed=*/true,
         /*token=*/sys::kRemoteResetTokenMagic
     );
     TEST_ASSERT_TRUE(blockers & sys::kResetBlockPhysicalEstop);
@@ -307,7 +307,7 @@ void test_remote_reset_rejected_when_vehicle_moving(void) {
         /*physical_estop=*/false,
         /*hb_ok=*/true,
         /*measured_speed_mmps=*/100,
-        /*mtr_fault_flags=*/0,
+        /*mtr_ack_confirmed=*/true,
         /*token=*/sys::kRemoteResetTokenMagic
     );
     TEST_ASSERT_TRUE(blockers & sys::kResetBlockMoving);
@@ -324,7 +324,7 @@ void test_remote_reset_rejected_when_token_invalid(void) {
         /*physical_estop=*/false,
         /*hb_ok=*/true,
         /*measured_speed_mmps=*/0,
-        /*mtr_fault_flags=*/0,
+        /*mtr_ack_confirmed=*/true,
         /*token=*/0x1234  // Bad magic token
     );
     TEST_ASSERT_TRUE(blockers & sys::kResetBlockInvalidToken);
@@ -343,10 +343,27 @@ void test_remote_reset_rejected_when_latched_fault_asserted(void) {
         /*physical_estop=*/false,
         /*hb_ok=*/true,
         /*measured_speed_mmps=*/0,
-        /*mtr_fault_flags=*/0,
+        /*mtr_ack_confirmed=*/true,
         /*token=*/sys::kRemoteResetTokenMagic
     );
     TEST_ASSERT_TRUE(blockers & sys::kResetBlockLatchedFault);
+    TEST_ASSERT_FALSE(mm.try_exit_estop_remote(blockers));
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+}
+
+void test_remote_reset_rejected_when_mtr_ack_missing(void) {
+    ModeManager mm;
+    mm.init();
+    mm.force_estop();
+    
+    uint16_t blockers = sys::get_estop_reset_blockers(
+        /*physical_estop=*/false,
+        /*hb_ok=*/true,
+        /*measured_speed_mmps=*/0,
+        /*mtr_ack_confirmed=*/false,  // MTR has NOT acknowledged ESTOP yet
+        /*token=*/sys::kRemoteResetTokenMagic
+    );
+    TEST_ASSERT_TRUE(blockers & sys::kResetBlockMtrEstopActive);
     TEST_ASSERT_FALSE(mm.try_exit_estop_remote(blockers));
     TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
 }
@@ -363,7 +380,7 @@ void test_remote_reset_succeeds_when_clean(void) {
         /*physical_estop=*/false,
         /*hb_ok=*/true,
         /*measured_speed_mmps=*/0,
-        /*mtr_fault_flags=*/0,
+        /*mtr_ack_confirmed=*/true,
         /*token=*/sys::kRemoteResetTokenMagic
     );
     TEST_ASSERT_EQUAL_UINT16(0, blockers);
@@ -393,6 +410,7 @@ extern "C" void app_main() {
     RUN_TEST(test_remote_reset_rejected_when_vehicle_moving);
     RUN_TEST(test_remote_reset_rejected_when_token_invalid);
     RUN_TEST(test_remote_reset_rejected_when_latched_fault_asserted);
+    RUN_TEST(test_remote_reset_rejected_when_mtr_ack_missing);
     RUN_TEST(test_remote_reset_succeeds_when_clean);
     UNITY_END();
 }

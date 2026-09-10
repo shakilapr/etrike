@@ -21,9 +21,11 @@ public:
     };
 
     void trigger(uint32_t now_tick, uint8_t current_mtr_fault_flags) {
+        m_ack_received.store(false, std::memory_order_release);
         if (current_mtr_fault_flags & shared::kMtrFaultEstopActive) {
             // Already acknowledged by MTR
             m_pending.store(false, std::memory_order_release);
+            m_ack_received.store(true, std::memory_order_release);
             return;
         }
         m_pending.store(true, std::memory_order_release);
@@ -36,6 +38,7 @@ public:
     void on_feedback_received(uint8_t mtr_fault_flags) {
         if (mtr_fault_flags & shared::kMtrFaultEstopActive) {
             m_pending.store(false, std::memory_order_release);
+            m_ack_received.store(true, std::memory_order_release);
         }
     }
 
@@ -46,6 +49,7 @@ public:
 
         if (mtr_fault_flags & shared::kMtrFaultEstopActive) {
             m_pending.store(false, std::memory_order_release);
+            m_ack_received.store(true, std::memory_order_release);
             return Action::Confirmed;
         }
 
@@ -70,6 +74,10 @@ public:
         return m_pending.load(std::memory_order_acquire);
     }
 
+    bool has_acknowledged() const {
+        return m_ack_received.load(std::memory_order_acquire);
+    }
+
     uint8_t retries_left() const {
         return m_retries_left.load(std::memory_order_relaxed);
     }
@@ -84,6 +92,7 @@ public:
 
     void reset() {
         m_pending.store(false, std::memory_order_release);
+        m_ack_received.store(false, std::memory_order_release);
         m_deadline.store(0, std::memory_order_release);
         m_retries_left.store(0, std::memory_order_release);
         m_latched_fault.store(false, std::memory_order_relaxed);
@@ -91,6 +100,7 @@ public:
 
 private:
     std::atomic<bool>     m_pending{false};
+    std::atomic<bool>     m_ack_received{false};
     std::atomic<uint32_t> m_deadline{0};
     std::atomic<uint8_t>  m_retries_left{0};
     std::atomic<bool>     m_latched_fault{false};
