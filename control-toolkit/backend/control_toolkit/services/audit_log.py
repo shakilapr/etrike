@@ -126,6 +126,8 @@ class AuditLogService:
         category: str | None = None,
         severity: str | None = None,
         code: str | None = None,
+        bus: str | None = None,
+        can_id: int | None = None,
         q: str | None = None,
         since_mono: float | None = None,
     ) -> list[dict[str, Any]]:
@@ -140,10 +142,18 @@ class AuditLogService:
                 continue
             if code and e.code != code:
                 continue
+            if bus and e.bus != bus:
+                continue
+            if can_id is not None and e.can_id != can_id:
+                continue
             if since_mono is not None and e.ts_mono < since_mono:
                 continue
             if needle:
-                blob = f"{e.code} {e.title} {e.detail} {e.category}".lower()
+                hex_id = f"0x{e.can_id:x}" if e.can_id is not None else ""
+                dec_id = str(e.can_id) if e.can_id is not None else ""
+                bus_str = e.bus or ""
+                data_str = str(e.data) if e.data else ""
+                blob = f"{e.code} {e.title} {e.detail} {e.category} {bus_str} {hex_id} {dec_id} {data_str}".lower()
                 if needle not in blob:
                     continue
             out.append(e.to_dict())

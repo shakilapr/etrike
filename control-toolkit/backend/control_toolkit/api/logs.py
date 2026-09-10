@@ -16,11 +16,25 @@ def list_logs(
     category: str | None = None,
     severity: str | None = None,
     code: str | None = None,
+    bus: str | None = None,
+    can_id: str | None = None,
     q: str | None = None,
 ) -> dict:
+    parsed_can_id: int | None = None
+    if can_id is not None and can_id.strip() != "":
+        try:
+            parsed_can_id = int(can_id.strip(), 0)
+        except ValueError:
+            pass
     audit = request.app.state.lifecycle.audit
     entries = audit.list_logs(
-        limit=limit, category=category, severity=severity, code=code, q=q
+        limit=limit,
+        category=category,
+        severity=severity,
+        code=code,
+        bus=bus,
+        can_id=parsed_can_id,
+        q=q,
     )
     return {
         "count": len(entries),

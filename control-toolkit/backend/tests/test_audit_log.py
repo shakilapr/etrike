@@ -48,3 +48,40 @@ def test_logs_clear(client):
     after = client.get("/api/v1/logs").json()
     assert after["stats"]["count"] >= 1
     assert any(e["code"] == "log.cleared" for e in after["logs"])
+
+
+def test_logs_bus_and_can_id_filter(client):
+    # Log directly via audit service to test bus, can_id and hex search
+    audit = client.app.state.lifecycle.audit
+    audit.log(
+        category="protocol",
+        code="test.can_frame",
+        title="Test frame high",
+        bus="high",
+        can_id=0x300,
+        data={"speed": 100},
+    )
+    audit.log(
+        category="protocol",
+        code="test.can_frame",
+        title="Test frame low",
+        bus="low",
+        can_id=0x204,
+        data={"cmd": 1},
+    )
+
+    r_high = client.get("/api/v1/logs?bus=high")
+    assert r_high.status_code == 200
+    logs_high = r_high.json()["logs"]
+    assert all(l.get("bus") == "high" for l in logs_high if l.get("bus"))
+    assert any(l.get("can_id") == 0x300 for l in logs_high)
+
+    r_can = client.get("/api/v1/logs?can_id=0x300")
+    assert r_can.status_code == 200
+    assert len(r_can.json()["logs"]) >= 1
+    assert r_can.json()["logs"][0]["can_id"] == 0x300
+
+    r_search = client.get("/api/v1/logs?q=0x204")
+    assert r_search.status_code == 200
+    assert any(l.get("can_id") == 0x204 for l in r_search.json()["logs"])
+
