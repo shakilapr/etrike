@@ -77,8 +77,9 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
         } else if (fr.id == 0x113u) {
             can::gen::SysPwrCmd c{};
             auto st = can::gen::decode_sys_pwr_cmd(fr, c);
-            check(st == can::gen::CodecStatus::Ok && c.power_state == 1,
-                  "BARE/SYS 0x113 SYS_PWR_CMD", "decode OK + power=ON(1)");
+            // power_state is 0 on the first REARM emissions, then 1. Accept both.
+            check(st == can::gen::CodecStatus::Ok && (c.power_state == 0 || c.power_state == 1),
+                  "BARE/SYS 0x113 SYS_PWR_CMD", "decode OK (power_state 0/1 incl. rearm edge)");
         } else if (fr.id == 0x011u) {
             can::gen::SysSafetySts c{};
             auto st = can::gen::decode_sys_safety_sts(fr, c);
@@ -131,6 +132,31 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
     (void)mode_name;
 }
 
+// Verifies the MTR power REARM edge: the first two emitted 0x113 carry
+// power_state=0 and the third carries 1 (mtr-stm32/src/motor_manager.h:166-180).
+void test_power_rearm_edge() {
+    rm::CanEmitter em;
+    std::vector<uint8_t> seq;
+    auto snap = make_snap(rm::OperatingMode::Bare);
+    for (uint32_t tick : {0u, 10u, 20u}) {
+        em.emit_cluster(snap, tick, [&](const can::Frame& f) {
+            if (f.id == 0x113u) {
+                can::gen::SysPwrCmd c{};
+                if (can::gen::decode_sys_pwr_cmd(f, c) == can::gen::CodecStatus::Ok) {
+                    seq.push_back(static_cast<uint8_t>(c.power_state));
+                }
+            }
+            return true;
+        });
+    }
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "0x113 power_state seq=[%u,%u,%u] expect [0,0,1]",
+                  seq.size() > 0 ? seq[0] : 9u, seq.size() > 1 ? seq[1] : 9u,
+                  seq.size() > 2 ? seq[2] : 9u);
+    check(seq.size() == 3 && seq[0] == 0 && seq[1] == 0 && seq[2] == 1,
+          "BARE power REARM edge", buf);
+}
+
 }  // namespace
 
 int main() {
@@ -141,13 +167,17 @@ int main() {
     auto collect = [&](rm::OperatingMode m) {
         std::vector<can::Frame> out;
         auto snap = make_snap(m);
-        emitter.emit_cluster(snap, 0, [&](const can::Frame& f) { out.push_back(f); return true; });
+        // Emit several 10 ms ticks so the startup power REARM edge completes.
+        for (uint32_t tick : {0u, 10u, 20u, 30u}) {
+            emitter.emit_cluster(snap, tick, [&](const can::Frame& f) { out.push_back(f); return true; });
+        }
         return out;
     };
 
     std::printf("-- BARE --\n"); run_mode(rm::OperatingMode::Bare, "BARE", collect(rm::OperatingMode::Bare));
     std::printf("-- SYS  --\n"); run_mode(rm::OperatingMode::Sys,  "SYS",  collect(rm::OperatingMode::Sys));
     std::printf("-- RT   --\n"); run_mode(rm::OperatingMode::Rt,   "RT",   collect(rm::OperatingMode::Rt));
+    test_power_rearm_edge();
 
     std::printf("----------------------------------------------------\n");
     std::printf("Round-trip checks: %d pass, %d fail\n", g_pass, g_fail);
