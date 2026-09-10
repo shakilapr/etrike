@@ -524,12 +524,14 @@ void test_can_emitter_three_modes() {
     has_sys_pwr = false;
     has_hmi_mode = false;
     bool has_hmi_pwr = false;
+    bool has_rt_brake = false;
     has_rt_hb = false;
     bool has_host_hb = false;
 
     for (const auto& fr : emitted) {
         if (fr.id == 0x169u) has_ses = true;
         if (fr.id == 0x7B9u) has_seb = true;
+        if (fr.id == 0x205u) has_rt_brake = true;
         if (fr.id == 0x204u) has_drive = true;
         if (fr.id == 0x110u) has_sys_mode = true;
         if (fr.id == 0x113u) has_sys_pwr = true;
@@ -539,7 +541,9 @@ void test_can_emitter_three_modes() {
         if (fr.id == 0x7FCu) has_host_hb = true;
     }
     ASSERT_TRUE(has_ses);
-    ASSERT_TRUE(has_seb);
+    // SYS mode emulates RT: brake intent is 0x205 RT_BRAKE_CMD; SYS owns 0x7B9.
+    ASSERT_FALSE(has_seb);
+    ASSERT_TRUE(has_rt_brake);
     ASSERT_TRUE(has_drive);
     ASSERT_FALSE(has_sys_mode); // suppressed in SYS mode
     ASSERT_FALSE(has_sys_pwr);  // suppressed in SYS mode

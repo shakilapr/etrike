@@ -70,7 +70,10 @@ EMISSIONS = [
 
     # ---- SYS (Low-CAN -> sys-esp32) ----
     ("SYS", "VCU_SES_REQ",    "ses:vcu_ses_req",  "low", "RT",  "EPS_C", 0x169, None, "custom_ses"),
-    ("SYS", "VCU_SEB_REQ",    "seb:vcu_seb_req",  "low", "SYS", "SEB", 0x7B9, None, "custom_seb"),
+    # SYS mode emulates RT: brake intent is 0x205 RT_BRAKE_CMD (kPa); the real
+    # sys-esp32 is the sole 0x7B9 producer (seb.yaml sender=SYS) and applies it.
+    ("SYS", "RT_BRAKE_CMD",   "rt:rt_brake_cmd",  "low", "RT", "SYS", 0x205,
+     {"brake_pressure_kpa": 10000}, "gen"),
     ("SYS", "RT_DRIVE_CMD",   "rt:rt_drive_cmd",   "low", "RT",  "SYS", 0x204,
      {"motor_speed_mmps": 2500, "gear": 1}, "gen"),
     ("SYS", "HMI_MODE_REQ",   "hmi:hmi_mode_req",  "low", "Host", "SYS", 0x111,

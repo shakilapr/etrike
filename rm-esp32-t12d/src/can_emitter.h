@@ -170,21 +170,21 @@ private:
             send(ses_fr);
         }
 
-        can::custom::seb::Command seb_cmd{};
-        seb_cmd.alignment_enable = true;
-        seb_cmd.control_enable   = true;
-        seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
-        seb_cmd.auto_brake       = false;
-        float commanded_stroke = snap.brake_stroke_mm;
-        uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-        seb_cmd.stroke_request_raw   = stroke_raw;
-        seb_cmd.pressure_request_raw = 0;
-        seb_cmd.rolling_counter      = roll_seb_;
-        roll_seb_ = (roll_seb_ + 1) & 0x0F;
+        // Braking: 0x205 RT_BRAKE_CMD (RT brake *intent* in kPa). In SYS mode the
+        // real sys-esp32 is the sole 0x7B9 producer (seb.yaml sender=SYS) and
+        // applies this 0x205 intent to SEB (sys-esp32/src/main.cpp:892-906). rm
+        // emulates RT here, so it must NOT emit 0x7B9 (that would collide with SYS).
+        can::gen::RtBrakeCmd brake_cmd{};
+        float stroke_fraction = snap.brake_stroke_mm / kMaxBrakeStrokeMm;
+        stroke_fraction = std::clamp(stroke_fraction, 0.0f, 1.0f);
+        brake_cmd.brake_pressure_kpa =
+            static_cast<int32_t>(std::round(stroke_fraction * static_cast<float>(kMaxBrakePressureKpa)));
+        brake_cmd.brake_pressure_kpa =
+            std::clamp<int32_t>(brake_cmd.brake_pressure_kpa, 0, kMaxBrakePressureKpa);
 
-        can::Frame seb_fr;
-        if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
-            send(seb_fr);
+        can::Frame brake_fr;
+        if (can::gen::encode_rt_brake_cmd(brake_cmd, brake_fr) == can::gen::CodecStatus::Ok) {
+            send(brake_fr);
         }
 
         can::gen::RtDriveCmd drive_cmd{};
