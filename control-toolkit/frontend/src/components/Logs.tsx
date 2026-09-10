@@ -3,6 +3,7 @@ import { api } from '../api'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { Input } from './ui/input'
+import { Seg, SegButton } from './ui/seg'
 import { WorkspaceShell } from './WorkspaceShell'
 
 const LOG_CATEGORIES = [
@@ -25,6 +26,7 @@ export function Logs() {
   const [stats, setStats] = useState<Record<string, unknown> | null>(null)
   const [category, setCategory] = useState<string>('all')
   const [severity, setSeverity] = useState<string>('all')
+  const [bus, setBus] = useState<string>('all')
   const [q, setQ] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -37,6 +39,7 @@ export function Logs() {
         limit: 400,
         category: category === 'all' ? undefined : category,
         severity: severity === 'all' ? undefined : severity,
+        bus: bus === 'all' ? undefined : bus,
         q: q.trim() || undefined,
       })
       setLogs(Array.isArray(r.logs) ? r.logs : [])
@@ -46,7 +49,7 @@ export function Logs() {
       setLogs([])
       setErr(String(e))
     }
-  }, [category, severity, q])
+  }, [category, severity, bus, q])
 
   useEffect(() => {
     void refresh()
@@ -89,6 +92,18 @@ export function Logs() {
 
       <Card>
         <div className="toolbar logs-toolbar flex min-w-0 flex-wrap items-center gap-2.5">
+          <Seg data-testid="logs-bus-seg">
+            {(['all', 'high', 'low'] as const).map((b) => (
+              <SegButton
+                key={b}
+                active={bus === b}
+                onClick={() => setBus(b)}
+                data-testid={`logs-bus-${b}`}
+              >
+                {b === 'all' ? 'All Buses' : b.toUpperCase()}
+              </SegButton>
+            ))}
+          </Seg>
           <select
             data-testid="logs-category"
             value={category}
@@ -116,7 +131,7 @@ export function Logs() {
           <Input
             search
             data-testid="logs-filter"
-            placeholder="Search code, title, detail…"
+            placeholder="Search code, title, bus, CAN ID (0x300), detail…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -167,6 +182,7 @@ export function Logs() {
                   <th>Age</th>
                   <th>Sev</th>
                   <th>Cat</th>
+                  <th>Bus / ID</th>
                   <th>Code</th>
                   <th>Title</th>
                   <th>Detail</th>
@@ -193,6 +209,18 @@ export function Logs() {
                       </span>
                     </td>
                     <td className="mono">{String(e.category)}</td>
+                    <td className="mono small">
+                      {e.bus ? (
+                        <span className="badge badge-subtle">
+                          {String(e.bus)}
+                          {e.can_id != null
+                            ? ` 0x${Number(e.can_id).toString(16).toUpperCase()}`
+                            : ''}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                     <td className="mono">{String(e.code)}</td>
                     <td>{String(e.title)}</td>
                     <td className="muted small">{String(e.detail || '')}</td>
@@ -200,7 +228,7 @@ export function Logs() {
                 ))}
                 {logs.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="muted">
+                    <td colSpan={7} className="muted">
                       No log entries match filters.
                     </td>
                   </tr>

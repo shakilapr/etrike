@@ -585,12 +585,18 @@ export const api = {
     limit?: number
     category?: string
     severity?: string
+    bus?: string
+    can_id?: number | string
     q?: string
   }) => {
     const p = new URLSearchParams()
     p.set('limit', String(opts?.limit ?? 200))
     if (opts?.category) p.set('category', opts.category)
     if (opts?.severity) p.set('severity', opts.severity)
+    if (opts?.bus) p.set('bus', opts.bus)
+    if (opts?.can_id != null && String(opts.can_id).trim() !== '') {
+      p.set('can_id', String(opts.can_id))
+    }
     if (opts?.q) p.set('q', opts.q)
     return json<{
       count: number
