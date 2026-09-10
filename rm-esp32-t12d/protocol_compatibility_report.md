@@ -265,12 +265,21 @@ No ESTOP reset/recovery defects found in the verified paths.
   (re-latch outpaces rm's `0x011` clear); a one-shot `0x001` is cleared by rm's
   continuous `0x011` (see BARE recovery). If rm must latch a bus ESTOP persistently,
   it needs a CAN RX + ESTOP latch — a design change, not a defect today.
-- The testbench `RtNode`/`SysNode` are models; **host-heartbeat timeout at rt**
-  (`0x7FC`, 1500 ms → 2000 kPa assisted stop) is implemented in the real rt-esp32
-  firmware but **not modeled**, so it is not yet covered by an automated scenario.
+- The testbench `RtNode`/`SysNode` are models; the **rt host-heartbeat timeout**
+  (`0x7FC`, 1500 ms → 2000 kPa assisted stop) is now **modeled and tested** (Section 9).
 - The sys `0x204` staleness watchdog added in `ad631d5` lives in `sys-esp32/src/main.cpp`
   `task_safety`, which the testbench does **not** compile; it remains covered only at
   MTR (`0x204` drive watchdog, tested above). Add real-firmware coverage via `native-test`.
+
+## Limit Clamping & rt Host-Heartbeat (Section 9)
+
+| Case | Input | Observed | Result |
+| --- | --- | --- | --- |
+| BARE steering raw | +100° / −100° / 0° | 30450 / 29550 / 30000 (clamped) | **PASS** |
+| RT drive speed | +9999 / −9999 mm/s | 3000 / −500 (clamped) | **PASS** |
+| RT brake pressure | 27 mm / 100 mm | 20000 / 20000 kPa (clamped) | **PASS** |
+| RT steer | +100° / −100° | +450 / −450 (0.1° units) | **PASS** |
+| rt host-heartbeat loss | drop `0x7FC` >1.5 s | assisted stop: zero drive + SEB 2.70 mm (2000 kPa) | **PASS** |
 
 ## Summary
 
