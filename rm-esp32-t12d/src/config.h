@@ -93,9 +93,16 @@ constexpr uint32_t kThrottleMaxUs       = 1900;
 // Brake Cutoff Interlock (mm) - motor throttle cut when brake > 5.0mm
 constexpr float    kBrakeThrottleCutoffMm = 5.0f;
 
-// ── Speed Limits (mm/s) ────────────────────────────────────────────
-constexpr int32_t kSpeedFwdMaxMmps      = 3000;  // 3.00 m/s Drive Max
-constexpr int32_t kSpeedRevMaxMmps      =  500;  // 0.50 m/s Reverse Limit
+// ── Speed Limits & Dynamic Governor (mm/s) ────────────────────────
+// Base ceiling parameters (100% full scale speed):
+constexpr int32_t kSpeedFwdMaxMmps      = 3000;  // 3.00 m/s Drive Max (~10.8 km/h)
+constexpr int32_t kSpeedRevMaxMmps      =  500;  // 0.50 m/s Reverse Limit (~1.8 km/h)
+
+// VRA Rotary Knob (CH9) Speed Governor Scaling:
+// Dynamically scales the maximum ceiling for both Drive and Reverse from 0% to 100%.
+// Throttle stick maps 0..100% across the active governed ceiling.
+constexpr float   kSpeedGovernorMinScale = 0.0f;  // Fully counter-clockwise: 0 km/h limit
+constexpr float   kSpeedGovernorMaxScale = 1.0f;  // Fully clockwise: 100% of configured speed limits
 
 // ── Actuator Limits ───────────────────────────────────────────────
 constexpr float kMaxSteerAngleDeg       = 45.0f;  // Mechanical rack limit (+/- 45.0 deg)

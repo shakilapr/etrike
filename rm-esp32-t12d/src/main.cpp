@@ -105,6 +105,7 @@ static bool send_can_frame(can::Frame& fr) {
             float             steer_deg{999.0f};
             float             brake_mm{999.0f};
             float             throttle{999.0f};
+            float             governor{999.0f};
             int32_t           speed_mmps{999999};
             can::Gear         selected_gear{static_cast<can::Gear>(0xFF)};
             can::Gear         cmd_gear{static_cast<can::Gear>(0xFF)};
@@ -119,18 +120,20 @@ static bool send_can_frame(can::Frame& fr) {
         bool steer_changed    = std::abs(snap.steering_deg - s_last_can_log.steer_deg) >= rm::kLogDeltaSteerDeg;
         bool brake_changed    = std::abs(snap.brake_stroke_mm - s_last_can_log.brake_mm) >= rm::kLogDeltaBrakeMm;
         bool throttle_changed = std::abs(snap.throttle_norm - s_last_can_log.throttle) >= 0.05f;
+        bool gov_changed      = std::abs(snap.aux_vra - s_last_can_log.governor) >= 0.05f;
         bool speed_changed    = std::abs(target_motor_speed - s_last_can_log.speed_mmps) >= rm::kLogDeltaSpeedMmps;
         bool gear_changed     = (snap.gear != s_last_can_log.selected_gear) || (active_gear != s_last_can_log.cmd_gear);
         bool enable_status_chg= (snap.drive_enable_req != s_last_can_log.enable);
         bool park_changed     = (snap.park_hold_req != s_last_can_log.park);
 
-        if (mode_changed || valid_changed || steer_changed || brake_changed || throttle_changed || speed_changed ||
-            gear_changed || enable_status_chg || park_changed) {
+        if (mode_changed || valid_changed || steer_changed || brake_changed || throttle_changed || gov_changed ||
+            speed_changed || gear_changed || enable_status_chg || park_changed) {
             s_last_can_log.mode           = snap.op_mode;
             s_last_can_log.valid          = snap.signal_valid;
             s_last_can_log.steer_deg      = snap.steering_deg;
             s_last_can_log.brake_mm       = snap.brake_stroke_mm;
             s_last_can_log.throttle       = snap.throttle_norm;
+            s_last_can_log.governor       = snap.aux_vra;
             s_last_can_log.speed_mmps     = target_motor_speed;
             s_last_can_log.selected_gear  = snap.gear;
             s_last_can_log.cmd_gear       = active_gear;
@@ -141,10 +144,11 @@ static bool send_can_frame(can::Frame& fr) {
             const char* gear_str = (snap.gear == can::Gear::D) ? "D" :
                                    ((snap.gear == can::Gear::R) ? "R" : "N");
 
-            ESP_LOGI("tx", "STR:%+5.1f BRK:%4.1f  THR:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s RF:%s",
+            ESP_LOGI("tx", "STR:%+5.1f BRK:%4.1f  THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s RF:%s",
                      snap.steering_deg,
                      snap.brake_stroke_mm,
                      snap.throttle_norm * 100.0f,
+                     snap.aux_vra * 100.0f,
                      static_cast<long>(target_motor_speed),
                      gear_str,
                      snap.drive_enable_req ? "ON" : "OFF",
