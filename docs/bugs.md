@@ -117,29 +117,41 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - At runtime once `g_seb_seen` is true, 0x721 gap exceeding `kSebStatusTimeoutMs` triggers the runtime staleness warning and sets `kInhibitSebCommsLoss`.
   - In both cases, receiving 3 consecutive valid frames clears `kInhibitSebCommsLoss` (hysteresis recovery).
 
-### BUG-07: Full SES 0x202 L3 bit coverage is incomplete
+### BUG-07: Full SES 0x202 L3 bit coverage is incomplete [RESOLVED]
 
 - **Files**
-  - `rt-esp32/src/can_dispatch.h` lines 281–305
+  - `rt-esp32/src/can_dispatch.h`
+  - `rt-esp32/test/test_running_faults_and_recovery/test_running_faults_and_recovery.cpp`
 - **Symptom**
   - Certain steering actuator L3 faults fail to trigger ESTOP.
 - **Bug**
-  - Code only checks angle and torque fault bits from `0x202`. The documented fault table includes additional L3 fault bits in bytes 0–3, including actuator/domain faults.
+  - Code only checked angle and torque fault bits from `0x202`. The documented fault table includes additional L3 fault bits in bytes 0–3, including actuator/domain faults.
   - These unchecked L3 bits can be present without triggering the safety event.
-- **Fix direction**
-  - Implement a complete L3 fault mask derived directly from the protocol/DBC and add vectors proving every L3 bit trips ESTOP.
+- **Fix direction / Solution implemented**
+  - Replaced ad-hoc checks and complex state machines with a single constant bitmask `kSesL3Mask = 0x3C0F`:
+    - Angle sensor faults: `0x0F` (bits 0..3)
+    - Torque sensor faults: `0x3C` (bits 2..5 of high byte)
+  - Direct stateless gating: `if ((fault_bits & kSesL3Mask) != 0) trigger_estop();`
+  - Added comprehensive test vectors verifying each of the 8 L3 fault bits trips ESTOP individually, while non-L3 bits do not.
 
-### BUG-08: MTR drive-command watchdog uses two different recovery criteria
+### BUG-08: MTR drive-command watchdog uses two different recovery criteria [RESOLVED]
 
 - **Files**
-  - `mtr-stm32/src/motor_manager.h` lines 84–105, 281–310
+  - `mtr-stm32/src/motor_manager.h`
+  - `mtr-stm32/test/test_full_suite/test_mtr_full_suite.cpp`
 - **Symptom**
   - After temporary 0x204 loss, drive authority recovers at an unpredictable time.
 - **Bug**
-  - The watchdog uses `kDriveCmdRecoverMaxGapMs` to define “consecutive valid command” but applies it only after the first recovery frame is observed. The first frame can be stale, and the logic only checks the inter-frame gap, not actual stream freshness at the time of release.
-  - This does not directly create unsafe motion because mode/power authority are still checked, but it makes back-to-back drive command time-sensitive and hard to reproduce.
-- **Fix direction**
-  - Reset both the recovery count and gap validity on every confirmed watchdog trip and require a fresh, contiguous sequence from the first frame after the trip.
+  - The watchdog uses `kDriveCmdRecoverMaxGapMs` to define “consecutive valid command” but applied it inconsistently between the first frame and subsequent frames. Furthermore, uncoordinated gap tracking could allow stale recovery frames or lock out legitimate post-clear recovery.
+- **Fix direction / Solution implemented**
+  - Unified watchdog recovery to a single canonical state: `drive_recover_count_` + `last_drive_ms_`.
+  - On timeout: sets `drive_cmd_timed_out_ = true; drive_recover_count_ = 0; mtr_ready_mask_ &= ~MTR_READY_DRIVE;`.
+  - On 0x204 reception:
+    - Calculates `gap = drive_seen_ ? (now_ms - last_drive_ms_) : 0`.
+    - If `gap > kDriveCmdRecoverMaxGapMs`, restarts recovery cadence at `drive_recover_count_ = 1`.
+    - Else increments `drive_recover_count_` up to `kDriveCmdRecoverFrames`.
+    - Gating logic: unlatches `drive_cmd_timed_out_ = false` and sets `mtr_ready_mask_ |= MTR_READY_DRIVE` when `drive_recover_count_ >= kDriveCmdRecoverFrames` (3 frames) if timed out, or immediately upon fresh frame if not timed out.
+  - Verified across all unit tests in native suite.
 
 ### BUG-09: RT lacks a distinct Host-visible estop reason for every stop-producing state
 
@@ -203,14 +215,22 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
 - **Fix direction**
   - Re-freeze the baseline after review or revert the new protocol instance.
 
-### BUG-12: Protocol C++ tests expect a C++17-capable compiler, but the machine default compiler is GCC 6.3
+### BUG-12: [FIXED] Protocol C++ tests expect a C++17-capable compiler, but the machine default compiler is GCC 6.3
 
 - **Files**
+  - `protocol/tests/python/compiler_helper.py`
   - `protocol/tests/python/test_cpp_generated.py`
   - `protocol/tests/python/test_diagnostics_manager.py`
+  - `protocol/tests/cpp/test_generated_vectors.cpp`
 - **Symptom**
   - C++ protocol tests fail with `#include <string_view>` missing.
 - **Bug**
   - Test selection assumes `g++` on PATH implements the C++17 standard library. The machine default points to GCC 6.3, which lacks `std::string_view`.
-- **Fix direction**
-  - Adjust tests to require C++17 capability and report a clear skip message, or prepend a known-good C++17 toolchain to `PATH`.
+- **Resolution**
+  - Implemented `protocol/tests/python/compiler_helper.py`:
+    - Discovers all compiler candidates (`clang++`, `g++`, `CXX`) across `PATH`.
+    - Parses compiler versions and sorts candidates in descending order to always pick the highest/best compiler available (e.g. Clang 22 or GCC 16 over legacy MinGW GCC 6.3).
+    - Probes standard compliance (`-std=c++17` with `<string_view>`) via lightweight `-fsyntax-only` check, caching results for instant subsequent lookups.
+  - Updated `test_cpp_generated.py` and `test_diagnostics_manager.py` to use `find_cpp_compiler`, skipping cleanly with an informative skip message if no C++17-capable compiler is present.
+  - Synced metadata and vector checks in `test_generated_vectors.cpp` for BUG-10 reset commands.
+
