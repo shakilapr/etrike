@@ -23,13 +23,6 @@ constexpr const char* kTag = "mcp2515";
 
 spi_device_handle_t g_spi_handle = nullptr;
 
-// ── SPI mutex — serializes all MCP2515 SPI transactions ───────────
-// rx_high (prio 5), tx_high (prio 3), control (prio 4), heartbeat
-// (prio 1) all access the MCP2515 via SPI. ESP-IDF's SPI master
-// driver serializes per-device, but assertion failures (ret_trans)
-// during concurrent access indicate a driver-level race. An explicit
-// mutex prevents overlapping spi_device_transmit calls.
-static SemaphoreHandle_t g_spi_mutex = nullptr;
 static SemaphoreHandle_t g_control_mutex = nullptr;
 
 // ── ISR notification infrastructure ──────────────────────────────
@@ -49,15 +42,6 @@ static void IRAM_ATTR mcp_int_isr(void* arg) {
         vTaskNotifyGiveFromISR(g_rx_task_handle, &yield);
         if (yield) portYIELD_FROM_ISR(yield);
     }
-}
-
-// ── Mutex-guarded SPI transmit ────────────────────────────────────
-static bool spi_lock(uint32_t timeout_ms = 100) {
-    if (!g_spi_mutex) return true;  // init phase, no contention yet
-    return xSemaphoreTake(g_spi_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
-}
-static void spi_unlock() {
-    if (g_spi_mutex) xSemaphoreGive(g_spi_mutex);
 }
 
 class ControlGuard {
@@ -86,13 +70,7 @@ bool Mcp2515Driver::spi_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
     t.length    = len * 8;
     t.tx_buffer = tx;
     t.rx_buffer = rx;
-    if (!spi_lock()) {
-        ESP_LOGE(kTag, "SPI mutex timeout — aborting transfer");
-        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
     const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
-    spi_unlock();
     if (result != ESP_OK) {
         m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -144,13 +122,6 @@ uint8_t Mcp2515Driver::read_status() {
 // Reads 'len' consecutive bytes from the MCP2515 starting at
 // 'start_addr' in a single spi_device_transmit() call. The MCP2515
 // auto-increments its internal address register for burst reads.
-//
-// SPI bus contention note: ESP-IDF's SPI master serializes individual
-// spi_device_transmit() calls via a per-device queue spinlock. Since
-// this is a single transaction, there is no interleaving risk with
-// tx_high (prio 3) or get_error_counters() from t_control (prio 4).
-// If multi-transaction sequences are ever added, wrap them in
-// spi_device_acquire_bus() / spi_device_release_bus().
 bool Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len) {
     constexpr size_t kMaxBurst = 16;  // RX buffer is 13 bytes
     uint8_t tx_buf[kMaxBurst] = {};
@@ -163,13 +134,7 @@ bool Mcp2515Driver::spi_read_burst(uint8_t start_addr, uint8_t* data, size_t len
     t.rxlength  = (2 + len) * 8;
     t.tx_buffer = tx_buf;
     t.rx_buffer = rx_buf;
-    if (!spi_lock()) {
-        ESP_LOGE(kTag, "SPI mutex timeout — aborting burst read");
-        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
     const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
-    spi_unlock();
 
     if (result != ESP_OK) {
         m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
@@ -192,13 +157,7 @@ bool Mcp2515Driver::spi_write_burst(uint8_t start_addr, const uint8_t* data, siz
     spi_transaction_t t = {};
     t.length    = (2 + len) * 8;
     t.tx_buffer = tx_buf;
-    if (!spi_lock()) {
-        ESP_LOGE(kTag, "SPI mutex timeout — aborting burst write");
-        m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
     const esp_err_t result = spi_device_transmit(g_spi_handle, &t);
-    spi_unlock();
     if (result != ESP_OK) {
         m_spi_fail_count.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -292,14 +251,6 @@ bool Mcp2515Driver::init_spi() {
         return false;
     }
 
-    // Create mutex AFTER SPI device is ready (init-time only, no contention yet)
-    if (!g_spi_mutex) {
-        g_spi_mutex = xSemaphoreCreateMutex();
-        if (!g_spi_mutex) {
-            ESP_LOGE(kTag, "SPI mutex create failed");
-            return false;
-        }
-    }
     return true;
 }
 
