@@ -312,29 +312,39 @@ SYS persists reset reason and boot count to NVS flash:
 
 **6?8 FreeRTOS tasks (varies by hardware):** `rx_low`, `rx_high`*, `dispatch`, `control`, `tx_low`, `tx_high`*, `watchdog`, `heartbeat`. Tasks marked * are only created if MCP2515 init succeeds ? system degrades gracefully to 6 tasks when high CAN is absent. All tasks pinned to CPU0. Dual CAN (TWAI GPIO5/4 + MCP2515 SPI GPIO36-40).
 
+> See dedicated ECU document: [`rt-esp32/architecture.md`](rt-esp32/architecture.md).
+
 ### CAN I/O
 
 | Frame | Dir | Rate | Purpose |
 |-------|-----|------|---------|
-| 0x300 | RX (high) | ?100 Hz | Host drive ? kinematics ? 0x204+0x169 |
-| 0x301 | RX (high) | demand | Host brake ? max-select ? 0x205 |
-| 0x400 | RX (high) | 10 Hz | Obstacle distance ? speed limit |
-| 0x7FC | RX (high) | 2 Hz | Host heartbeat. Timeout 1500ms ? assisted stop (2000 kPa). |
+| 0x300 | RX (high) | ~100 Hz | Host drive → kinematics → 0x204+0x169 |
+| 0x301 | RX (high) | demand | Host brake → max-select → 0x205 |
+| 0x303 | RX (high) | ~100 Hz | Direct steering angle override (0.1°) |
+| 0x304 | RX (high) | 10 Hz | Obstacle distance → speed limit & obstacle brake curve |
+| 0x7FC | RX (high) | 2 Hz | Host heartbeat. Timeout 1500ms → assisted stop (2000 kPa). |
 | 0x001 | RX+TX (both) | event | ESTOP. Forwarded bidirectionally. TXB2 priority on MCP2515. |
-| 0x302 | RX+FW (high?low) | change | Host lights ? transparent forward to SYS |
-| 0x7FE | RX (low) | 10 Hz | SYS heartbeat. Timeout 200ms ? RT brake takeover. |
+| 0x011 | RX (low) | 5 Hz | SYS safety status (asymmetric 2-advancing-zero clear). |
+| 0x110 | RX (low) | 10 Hz | SYS mode command (MANUAL/AUTO). |
+| 0x121 | TX (high) | 100 Hz | Coherent motion report (speed, gear, yaw rate). |
+| 0x302 | RX+FW (high→low) | change | Host lights → transparent forward to SYS |
+| 0x7FE | RX (low) | 10 Hz | SYS heartbeat. Timeout 200ms → motion inhibited (SYS_DEGRADED). |
 | 0x201 | RX (low) | 100 Hz | SES steering angle. Checksum-validated. |
-| 0x202 | RX (low) | 10 Hz | SES L3 faults ? ESTOP |
+| 0x202 | RX (low) | 10 Hz | SES L3 faults → ESTOP |
 | 0x721 | RX (low) | 100 Hz | SEB status. Pressure stored only in Pressure mode. |
+| 0x7B9 | RX/TX (low) | 50 Hz | SEB brake command. Observed from SYS; RT emits ONLY in emergency fallback. |
 | 0x204 | TX (low) | 100 Hz | Motor speed+gear. Gated: only in AUTO/ESTOP. |
-| 0x205 | TX (low) | 50 Hz | Brake kPa ? SYS. Gated: only in AUTO/ESTOP. |
-| 0x169 | TX (low) | 50 Hz | Steering angle ? SES. Checksum XOR^0xFF. Gated: only in AUTO/ESTOP. YAML, scheduler, and steering state-machine timing agree. |
-| 0x210 | TX (high+low) | 10 Hz | Mode(byte0), safety_state(byte1:0-1), reversing(byte2), rx_overflow(byte3). SYS reads safety_state for takeover. |
-| 0x310 | TX (high) | 10 Hz | Steering diag: angle(u16 BE, factor 0.1, offset -3000), fault, current, temp |
+| 0x205 | TX (low) | 50 Hz | Brake kPa → SYS. Gated: only in AUTO/ESTOP. |
+| 0x169 | TX (low) | 50 Hz | Steering angle → SES. Dynamic slew rate. Gated: AUTO/ESTOP ramp. |
+| 0x210 | TX (high+low) | 10 Hz | Mode(byte0), safety_state(byte1), reversing(byte2), rx_overflow, task health. |
+| 0x310 | TX (high) | 10 Hz | Steering diag: angle, fault, current, temp |
 | 0x311 | TX (high) | 10 Hz | Brake diag: pressure, fault, current, temp |
-| 0x220 | TX (high) | 10 Hz | Shadow PID telemetry (setpoint, measured, output). 6 bytes. |
-| 0x6FA | RX (low) | 100 Hz | SES telemetry: motor current, ECU temp, voltage. Logs warnings on thresholds. |
-| 0x6FB | RX (low) | 100 Hz | SEB telemetry: motor current, ECU temp. Used for BRAKE_DIAG rescaling. |
+| 0x220 | TX (high) | 10 Hz | Shadow PID telemetry (setpoint, measured, output). |
+| 0x501 | TX (both) | 50Hz lo / 10Hz hi | RT node status: blocker bitmask, readiness, CRC-8. |
+| 0x620 | TX (high) | 1 Hz | RT diagnostic report: SPI health, supervision states. |
+| 0x621 | TX (high) | event | RT diagnostic event report: active fault replay. |
+| 0x6FA | RX (low) | 100 Hz | SES telemetry: motor current, ECU temp, voltage. |
+| 0x6FB | RX (low) | 100 Hz | SEB telemetry: motor current, ECU temp. |
 | 0x203 | RX (low) | 1 Hz | SES version. Logged once on first receipt. |
 | 0x7FD | TX (both) | 2 Hz | Independent counters per bus. DLC=2 (counter + health flags). Not bridged. |
 
@@ -346,7 +356,7 @@ SYS persists reset reason and boot count to NVS flash:
 | 1 | Internal ESTOP | Steering in RAMP_TO_ZERO or HOLD_THEN_SILENT |
 | 2 | Fault | Steering FAULT (sync timeout, angle implausible) |
 
-SYS reads this at 10 Hz. If `safety_state != 0`, SYS does NOT suppress its own 0x7B9 ? it assumes RT is degraded and continues sending brake commands.
+SYS is the sole normal producer of 0x7B9; RT monitors the stream and only enters EMERGENCY_FALLBACK (0x7B9 takeover) if SYS's 0x7B9 stream completely vanishes for >250 ms.
 
 ### MCP2515 (High Bus)
 
@@ -416,70 +426,77 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 
 ---
 
-## 8. SYS ESP32-S3 ? Vehicle Safety & Mode Authority
+## 8. SYS ESP32-S3 — Vehicle Safety & Mode Authority
 
-**Role:** SYS is the safety and mode authority. Physically wired to rider controls (ESTOP, Mode, Start buttons, brake lever). Owns the mode state machine ? all nodes follow SYS's mode via 0x110. Two concern groups share the MCU:
+**Role:** SYS is the master safety and mode authority, body controller, and command-path EGAS supervisor. Physically wired to rider controls (ESTOP mushroom, Mode toggle, Start button, brake lever, handlebar light switches). Owns the mode state machine (`MANUAL` ↔ `AUTO`, overlaid by latched `ESTOP`) — all nodes follow SYS's mode via `0x110 SYS_MODE_CMD` and power authority via `0x113 SYS_PWR_CMD`. Direct motor I/O (ADC/DAC/relays) is retired on SYS; motor actuation is owned by `mtr-stm32`.
 
-| Group | Priority | Functions |
-|-------|----------|-----------|
-| A ? Safety (ASIL) | 5?4 | ESTOP, mode, RT heartbeat, EGAS L2, brake control, CAN TX |
-| B ? Body (QM) | 3?1 | Lights, DCDC, indicators, 12V relay, diagnostics, heartbeat |
+**13 FreeRTOS tasks. Built-in TWAI on GPIO5 (TX) / GPIO4 (RX) @ 500 kbit/s (Low CAN bus only).**
 
-**12 FreeRTOS tasks. TWAI GPIO5/4 (low bus only). MTR owns all motor I/O in vehicle.**
+### CAN I/O Interface
 
-### CAN I/O
+| Frame | ID | Dir | Rate | Purpose |
+|---|---|---|---|---|
+| `SAFETY_ESTOP` | `0x001` | RX+TX | Event | Vehicle ESTOP broadcast. Rate-limited (max 2 per 500ms). Reset-grace (500ms) & loopback (50ms) suppression. |
+| `SYS_SAFETY_STS` | `0x011` | TX | 5 Hz | Authoritative safety status: `estop_active` (latched), `heartbeat_ok`, packed light state (`0x011` byte 2), CRC-8. |
+| `SYS_MODE_CMD` | `0x110` | TX | 10 Hz | Authoritative mode broadcast: `0=MANUAL`, `1=AUTO` + rolling counter. Clamped to MANUAL while ESTOP or inhibit active. |
+| `HMI_MODE_REQ` | `0x111` | RX | 1 Hz | Host mode request from Jetson via RT. Validated with `StreamValidity` (rolling counter + freshness). |
+| `HMI_PWR_REQ` | `0x112` | RX | 1 Hz | Host power request from Jetson via RT. Validated with `StreamValidity`. |
+| `SYS_PWR_CMD` | `0x113` | TX | 10 Hz | Authoritative power command: `0=OFF`, `1=ON` + rolling counter. Interlocks MTR 72V traction relays. |
+| `HOST_ESTOP_RESET_REQ` | `0x114` | RX | Event | Authenticated remote reset request with magic token `0x5253`. |
+| `SYS_ESTOP_RESET_RSP` | `0x115` | TX | Event | Response to `0x114` returning `result` (0=ACCEPTED, 1=REJECTED) and `blocker_mask`. |
+| `RT_WHEEL_SPEED_STS` | `0x122` | RX | 10 Hz | RT measured wheel speed (optional physical EGAS; compiled out on encoder-less vehicle). |
+| `RT_DRIVE_CMD` | `0x204` | RX | 100 Hz | RT speed setpoint (mm/s) and gear command. Supervised for staleness (200ms) and command-path consistency. |
+| `RT_BRAKE_CMD` | `0x205` | RX | 50 Hz | RT brake pressure setpoint (kPa). Converted to SEB pressure mode commands. |
+| `MTR_MOTOR_FBK` | `0x206` | RX | 50 Hz | MTR applied speed command echo (not physical speed), gear state, and fault flags (`ESTOP_ACTIVE`). |
+| `RT_STATE_RPT` | `0x210` | RX | 10 Hz | RT safety state (`0=Normal`, `1=InternalEstop`, `2=Fault`). |
+| `HOST_LIGHT_CMD` | `0x302` | RX | Event | Host automated light requests (turn signals, brake light, headlight). |
+| `SYS_NODE_STATUS` | `0x500` | TX | 5 Hz | Observational node state, `block_mask` (transient inhibits & latched faults), `ready`, `output_enabled`, `degraded`. |
+| `SYS_DIAG_RPT` | `0x600` | TX | 1 Hz | Diagnostic report: mode, brake engagement, brake/traction fault, heartbeat OK, heap, TEC/REC, rx overflow. |
+| `SEB_TEST` | `0x6FB` | RX | 100 Hz | SEB telemetry: motor current, ECU temperature (warns >80°C). |
+| `SEB_STATUS` | `0x721` | RX | 100 Hz | SEB stroke feedback, alignment bit, error status, rolling counter. Monitored for staleness (100ms) and following error. |
+| `SEB_ERR_INFO` | `0x731` | RX | 10 Hz | SEB 16 L3 fault bits → triggers ESTOP. |
+| `SEB_VERSION` | `0x741` | RX | 1 Hz | SEB firmware version. Logged once on boot. |
+| `VCU_SEB_REQ` | `0x7B9` | TX | 50 Hz | Primary brake command to Smart Electronic Brake actuator. SYS is the sole normal producer. |
+| `RT_HEARTBEAT` | `0x7FD` | RX | 2 Hz | RT heartbeat. Supervised by `SafetyMonitor` with rolling alive counter; 200ms timeout (after 3s startup grace). |
+| `SYS_HEARTBEAT` | `0x7FE` | TX | 10 Hz | SYS heartbeat. Carries `alive_ctr`, `heartbeat_ok`, `estop_active`, `mode_auto`, `can_ok`, and 4 task health bits. |
 
-| Frame | Dir | Rate | Purpose |
-|-------|-----|------|---------|
-| 0x001 | RX+TX | event | ESTOP. Rate-limited: max 2 per 500ms window. |
-| 0x204 | RX | 100 Hz | RT drive setpoint ? EGAS L2 monitor |
-| 0x205 | RX | 50 Hz | RT brake kPa ? SYS converts to 0x7B9 SEB pressure mode |
-| 0x206 | RX | 50 Hz | MTR applied speed command (setpoint echo; **not** a measured speed). Command-path consistency: compare vs 0x204 setpoint. Fault flags (ESTOP_ACTIVE, StartupReady). |
-| 0x210 | RX | 10 Hz | RT safety_state (byte1:0-1). Used for takeover detection. |
-| 0x302 | RX | change | Host lights (RT-forwarded) ? light control |
-| 0x721 | RX | 100 Hz | SEB status. Checksum-validated (XOR^0xFF). Stroke feedback. |
-| 0x731 | RX | 10 Hz | SEB L3 fault bits ? ESTOP |
-| 0x7FD | RX | 2 Hz | RT heartbeat. Frozen-counter detection. Timeout 1000ms ? ESTOP. |
-| 0x011 | TX | 5 Hz | Safety status: estop(byte0), hb_ok(byte1), light_state(byte2:0-3) |
-| 0x110 | TX | change + 1s | Mode command. Periodic refresh prevents split-brain on frame loss. |
-| 0x111 | RX | 1 Hz | HMI Mode Request. Evaluated by mode manager (ignored in ESTOP). |
-| 0x112 | RX | 1 Hz | HMI Power Request. |
-| 0x600 | TX | 1 Hz | Diag: mode, brake, hb, estop, heap, TEC/REC |
-| 0x7B9 | TX | 50 Hz | SEB brake command. Suppressed in AUTO when RT is healthy and RT safety_state==Normal. |
-| 0x6FB | RX | 100 Hz | SEB telemetry: motor current, ECU temp. Logs warning >80?C. |
-| 0x741 | RX | 1 Hz | SEB version. Logged once on first receipt. |
-| 0x7FE | TX | 10 Hz | SYS heartbeat. DLC=2 (counter + health flags: hb_ok, estop, mode, can_ok). |
+### 0x7B9 Brake Ownership & Priority
 
-### 0x7B9 Suppression Logic
+SYS is the **sole normal producer** of the final SEB brake command `0x7B9`. RT expresses brake intent via `0x205 RT_BRAKE_CMD` (kPa); SYS arbitrates priority through `BrakeControl`:
+1. **ESTOP:** Max stroke ($27\,\text{mm}$ raw 1140, Stroke mode).
+2. **Physical Brake Lever:** Hand lever switch overrides automated commands ($15\,\text{mm}$ raw 900, Stroke mode).
+3. **Automated Brake Request:** RT `0x205` pressure converted to raw units ($0.05\,\text{MPa/bit}$, Pressure mode). If `0x205` is stale in AUTO mode, falls back to max pressure ($20{,}000\,\text{kPa}$).
+4. **Released:** Release stroke ($0\,\text{mm}$ raw 600, Stroke mode).
 
-SYS suppresses its own 0x7B9 in AUTO mode to avoid dual-sender collision with RT:
-```
-suppress = (mode == AUTO) && rt_heartbeat_ok && rt_safety_state == Normal && !lever && !estop
-```
-When RT safety_state != Normal (InternalEstop or Fault), SYS does NOT suppress ? it continues sending brake commands. This resolves the triple-sender issue (S2).
+Dual-producer collision on `0x7B9` is eliminated by design: RT only transmits `0x7B9` in `EMERGENCY_FALLBACK` mode if SYS completely disappears from Low CAN.
 
+### FreeRTOS Task Architecture
 
+| Task | Priority | Stack | Cadence | Purpose |
+|---|---|---|---|---|
+| `task_can_rx` | 5 | 4608 B | Event | Receives TWAI frames from `rx_queue_` and forwards to `g_can_rx_queue` |
+| `task_safety` | 5 | 4608 B | 20 Hz | Polls ESTOP button & brake lever GPIOs, checks RT heartbeat timeout, evaluates EGAS command-path mismatch, checks MTR ESTOP ACK |
+| `task_dispatch` | 4 | 3584 B | Event | Dequeues from `g_can_rx_queue`, decodes CAN messages, updates atomic state variables |
+| `task_mode` | 4 | 2560 B | 10 Hz | Debounces MODE and START buttons, handles long-press, emits `0x110 SYS_MODE_CMD` and `0x113 SYS_PWR_CMD` |
+| `task_gear` | 3 | 2048 B | 50 Hz | Compares `0x204` commanded gear vs `0x206` reported gear state |
+| `task_brake` | 3 | 3584 B | 50 Hz | Executes `BrakeControl` state machine, transmits `0x7B9 VCU_SEB_REQ`, monitors `0x721` staleness |
+| `task_lights` | 3 | 2560 B | 20 Hz | Manages turn signal blinking, headlight toggle, and brake light relay |
+| `task_indicator` | 2 | 2560 B | 5 Hz | Drives Ready, ESTOP, Auto, Manual, and Bypass status LEDs |
+| `task_power` | 2 | 2560 B | 5 Hz | Drives 12V relay output pin based on ESTOP state |
+| `task_can_tx` | 2 | 3584 B | 5 Hz | Transmits `0x011 SYS_SAFETY_STS` and `0x500 SYS_NODE_STATUS` |
+| `task_can_control`| 2 | 2560 B | 50 Hz | Calls `g_can.service_recovery()` to service TWAI bus-off recovery |
+| `task_diag` | 1 | 3584 B | 1 Hz | Checks task alive counters, transmits `0x600 SYS_DIAG_RPT`, monitors bus-off persistent counts |
+| `task_hb` | 1 | 2560 B | 10 Hz | Transmits `0x7FE SYS_HEARTBEAT` with alive counter and task health flags |
 
-### Error Responses
+### Task Health Supervision
 
-| Failure | Detection | Response |
-|---------|-----------|----------|
-| ESTOP GPIO (hardware) | GPIO1 LOW (NC) | Immediate: mode?ESTOP. CAN 0x001 broadcast. |
-| RT heartbeat timeout (1000ms) | Frozen-counter on 0x7FD | ESTOP via 0x001. Brake=max. |
-| MTR ESTOP ACK timeout (100ms) | No ESTOP_ACTIVE bit in 0x206 after ESTOP | Retrigger ESTOP. Set persistent `brake_fault`. |
-| MTR feedback stale (200ms) | No 0x206 arrival | Zero speed setpoint + force Neutral. Set `brake_fault`. |
-| Command-path speed mismatch (setpoint-echo consistency) | \|0x204 ? 0x206\| > 500mm/s for 500ms | ESTOP. |
-| 0x204 staleness (200ms) | `g_last_setpoint_tick` | Zero speed + Neutral. |
-| 0x721 SEB checksum fail | XOR(bytes 0-6)^0xFF ? byte 7 | Drop frame. |
-| SEB L3 fault (0x731) | 16 L3 fault bits | ESTOP via 0x001. |
-| CAN bus-off | 1 Hz TEC poll | Auto-recover init(). 5 consecutive ? ESTOP. |
-| DAC write(0) fails in ESTOP | `g_dac.write(0)` returns false | ESP_LOGE. Rely on hardware ESTOP GPIO (Level 3). |
-| CAN TX mailbox full | `send_can()` retry once for 0x7B9/0x001 (20ms timeout) | Log failure, increment counter. |
-| CAN RX queue overflow | `xQueueSend` returns false | Log warning, increment counter. |
+Eight per-task alive counters (`g_alive_safety`, `g_alive_brake`, `g_alive_dispatch`, `g_alive_can_tx`, `g_alive_can_ctrl`, `g_alive_hb`, `g_alive_mode`, `g_alive_gear`) are refreshed each iteration. `task_diag` checks them at 1 Hz against a 1.5s deadline. If any critical task (`safety`, `brake`, `dispatch`, `can_tx`, `mode`) misses its deadline for $\ge 2$ consecutive cycles, SYS forces ESTOP and broadcasts `0x001`. Four task health bits are broadcast in `0x7FE` (`task_safety_ok`, `task_brake_ok`, `task_dispatch_ok`, `task_can_tx_ok`).
 
-### Task Watchdog
+### Fault Management & Inhibits
 
-Four per-task alive counters (safety, brake, dispatch, can_tx). Updated every task iteration. `task_diag` checks all at 1 Hz. Logs ERROR if any >200ms stale (500ms for can_tx). HW WDT (TPS3850) toggled from task_safety.
+SYS enforces a two-mask fault architecture ([`inhibit_state.h`](file:///e:/work/etrike/sys-esp32/src/inhibit_state.h)):
+- **`InhibitReason` (Transient / Recoverable):** `kInhibitMtrFbkLoss`, `kInhibitSebCommsLoss`, `kInhibitBrakeFollowing`. Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF. Clears automatically after $N$ consecutive healthy observations.
+- **`LatchedFaultReason` (Safety Latched):** `kLatchedBrakeFollowing`, `kLatchedSebL3`. Triggers full ESTOP. Cleared exclusively through an authenticated reset transaction (`START` button, 3s `MODE` long-press, or `0x114` remote reset) once underlying causes are proven clear.
 
 ---
 
