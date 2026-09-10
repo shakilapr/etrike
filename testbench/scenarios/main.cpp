@@ -60,6 +60,11 @@ namespace testbench {
     bool test_fault_011_crc_rejected();
     bool test_fault_sys_rt_heartbeat_loss();
     bool test_fault_hot_mode_switch();
+    // Section 9: limit clamping and rt host-heartbeat assisted stop
+    bool test_limit_steer_clamp_bare();
+    bool test_limit_rt_drive_clamp();
+    bool test_limit_rt_steer_clamp();
+    bool test_timeout_rt_host_heartbeat();
 }
 
 int main(int argc, char* argv[]) {
@@ -152,6 +157,12 @@ int main(int argc, char* argv[]) {
     run_test("corrupt 0x011 CRC -> drop authority", testbench::test_fault_011_crc_rejected);
     run_test("sys 0x7FD heartbeat loss -> ESTOP", testbench::test_fault_sys_rt_heartbeat_loss);
     run_test("hot mode switch + 0x7B9 regression", testbench::test_fault_hot_mode_switch);
+
+    std::cout << "--- SECTION 9: Limit Clamping & rt Host-Heartbeat ---\n";
+    run_test("steering clamp BARE (29550..30450)", testbench::test_limit_steer_clamp_bare);
+    run_test("RT drive/brake clamp (3000/-500/20000)", testbench::test_limit_rt_drive_clamp);
+    run_test("RT steer clamp (+/-450)", testbench::test_limit_rt_steer_clamp);
+    run_test("rt host-heartbeat -> assisted stop", testbench::test_timeout_rt_host_heartbeat);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();

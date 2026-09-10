@@ -27,6 +27,7 @@ public:
     int32_t host_brake_kpa() const { return host_brake_kpa_; }
     bool has_host_steer() const { return host_steer_seen_; }
     bool has_host_brake() const { return host_brake_seen_; }
+    bool is_host_heartbeat_lost() const { return host_hb_lost_; }
 
     void trigger_software_estop();
     void clear_software_estop();
@@ -51,6 +52,11 @@ private:
     uint8_t ses_counter_{0};
     uint32_t last_steer_tx_ms_{0};
     uint32_t last_brake_tx_ms_{0};
+
+    // Host heartbeat (0x7FC) supervision: 1500 ms -> assisted stop (2000 kPa).
+    bool     host_hb_seen_{false};
+    bool     host_hb_lost_{false};
+    uint32_t last_host_hb_ms_{0};
 
     uint8_t rt_hb_ctr_{0};
     uint8_t rt_clear_confirm_count_{0};
