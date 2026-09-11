@@ -129,7 +129,7 @@ bool test_mode_change_under_motion() {
 }
 
 // 11.5 Concurrent throttle + service brake: the brake path must still apply the
-// requested stroke (there is no software throttle interlock — documented).
+// requested pressure (there is no software throttle interlock — documented).
 bool test_brake_throttle_concurrent() {
     std::cout << "TEST: concurrent throttle + service brake\n";
     TestBench tb;
@@ -142,13 +142,13 @@ bool test_brake_throttle_concurrent() {
 
     tb.host().set_gear(can::Gear::D);
     tb.host().send_drive_cmd(1500);
-    tb.host().set_brake_kpa(10000);  // -> 13.5 mm stroke
+    tb.host().set_brake_kpa(10000);  // -> clamped 5000 kPa -> SEB pressure 5000
     tb.run_for_ms(1200, 10);
 
-    float mm = tb.seb().actual_stroke_mm();
-    std::cout << "  SEB stroke=" << mm << "mm (exp 13.5)  MTR traction="
+    float kpa = tb.seb().actual_pressure_kpa();
+    std::cout << "  SEB pressure=" << kpa << "kPa (exp 5000)  MTR traction="
               << (tb.mtr().is_traction_enabled() ? "YES" : "NO") << "\n";
-    if (!near(mm, 13.5f, 0.8f)) {
+    if (!near(kpa, 5000.0f, 300.0f)) {
         std::cerr << "  FAIL: service brake not applied while throttle active\n";
         return false;
     }

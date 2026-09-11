@@ -84,7 +84,7 @@ int main() {
         rm::CanEmitter em;
         em.reset_counters();
 
-        // tick 0 exercises the 10 Hz authority frames and the 2 Hz heartbeat.
+        // tick 0 exercises the 10 Hz frames and the 2 Hz heartbeat.
         auto frames = emit_rm(em, rm::OperatingMode::Rt, 0);
 
         CHECK(has_id(frames, can::kIdHostSteerCmd));
@@ -92,9 +92,10 @@ int main() {
         CHECK(has_id(frames, can::kIdHostDriveCmd));
         CHECK(has_id(frames, can::kIdHmiModeReq));
         CHECK(has_id(frames, can::kIdHmiPwrReq));
-        CHECK(has_id(frames, can::kIdSysSafetySts));
-        CHECK(has_id(frames, can::kIdSysModeCmd));
         CHECK(has_id(frames, can::kIdHostHeartbeat));
+        // RT mode is Host-only: SYS-owned 0x011/0x110 must NOT be emitted.
+        CHECK(!has_id(frames, can::kIdSysSafetySts));
+        CHECK(!has_id(frames, can::kIdSysModeCmd));
 
         can::Frame gw_lo{}, gw_hi{};
         can::gen::HostDriveCmd cmd{};
@@ -116,7 +117,7 @@ int main() {
 
         const can::Frame* b = find_id(frames, can::kIdHostBrakeReq);
         CHECK(rt::route_frame(*b, true, q) == can::gen::CodecStatus::Ok);
-        CHECK_EQ(brake_kpa, (int32_t)std::round(5.0f / 27.0f * 20000.0f));
+        CHECK_EQ(brake_kpa, (int32_t)std::round(5.0f / 27.0f * 5000.0f));
 
         const can::Frame* s = find_id(frames, can::kIdHostSteerCmd);
         CHECK(rt::route_frame(*s, true, q) == can::gen::CodecStatus::Ok);
@@ -131,36 +132,49 @@ int main() {
         CHECK(rt::route_frame(*find_id(frames, can::kIdHmiPwrReq), true, q) == can::gen::CodecStatus::Ok);
         CHECK_EQ((int)gw_lo.id, (int)can::kIdHmiPwrReq);
 
+        // The SYS authority frames are NOT produced by rm, so build them from a
+        // (real) SYS encoder to prove rt's bus rules.
+        can::gen::SysModeCmd mc{};
+        mc.mode = 1;  // AUTO
+        mc.rolling_counter = 0;
+        can::Frame m110{};
+        CHECK(can::gen::encode_sys_mode_cmd(mc, m110) == can::gen::CodecStatus::Ok);
+
         // 0x110 on the HIGH bus is NOT mode authority for real rt (waits LOW).
-        // The system testbench RtNode accepts it on either bus, masking this.
         mode = 0xFF; mode_valid = false;
-        CHECK(rt::route_frame(*find_id(frames, can::kIdSysModeCmd), true, q) == can::gen::CodecStatus::Ok);
+        CHECK(rt::route_frame(m110, true, q) == can::gen::CodecStatus::Ok);
         CHECK(!mode_valid);
         CHECK_EQ((int)mode, 0xFF);
 
         // 0x110 on the LOW bus (baseline then advancing counter) IS authority.
-        const can::Frame* m110 = find_id(frames, can::kIdSysModeCmd);
-        can::Frame base = *m110;
-        base.data[1] = 0;
+        can::Frame base = m110;
         CHECK(rt::route_frame(base, false, q) == can::gen::CodecStatus::Ok);
-        can::Frame adv = *m110;
+        can::Frame adv = m110;
         adv.data[1] = 1;
         CHECK(rt::route_frame(adv, false, q) == can::gen::CodecStatus::Ok);
         CHECK(mode_valid);
         CHECK_EQ((int)mode, 1);
 
-        // 0x011 on the HIGH bus is neither consumed nor forwarded by the router
-        // (it is a Low->High forward only, owned by can_dispatch.h:157).
+        // 0x011 (SYS_SAFETY_STS) with a valid E2E CRC. On the HIGH bus it is
+        // neither consumed nor forwarded by the router.
+        can::gen::SysSafetySts ssts{};
+        ssts.estop_active = 0;
+        ssts.heartbeat_ok = 1;
+        ssts.rolling_counter = 0;
+        can::Frame s011{};
+        CHECK(can::gen::encode_sys_safety_sts(ssts, s011) == can::gen::CodecStatus::Ok);
+        s011.data[4] = can::e2e::sys_safety_sts_crc(s011.data.data());
+
         gw_lo = can::Frame{}; gw_hi = can::Frame{};
         estop = false;
-        CHECK(rt::route_frame(*find_id(frames, can::kIdSysSafetySts), true, q) == can::gen::CodecStatus::Ok);
+        CHECK(rt::route_frame(s011, true, q) == can::gen::CodecStatus::Ok);
         CHECK(!estop);
         CHECK_EQ((int)gw_lo.id, 0);
         CHECK_EQ((int)gw_hi.id, 0);
 
         // ...but the same 0x011 on the LOW bus is forwarded Low -> High for Host.
         gw_lo = can::Frame{}; gw_hi = can::Frame{};
-        CHECK(rt::route_frame(*find_id(frames, can::kIdSysSafetySts), false, q) == can::gen::CodecStatus::Ok);
+        CHECK(rt::route_frame(s011, false, q) == can::gen::CodecStatus::Ok);
         CHECK_EQ((int)gw_hi.id, (int)can::kIdSysSafetySts);
     }
 
@@ -213,7 +227,7 @@ int main() {
 
         can::gen::RtBrakeCmd brake{};
         CHECK(can::decode_frame(*find_id(frames, can::kIdRtBrakeCmd), brake) == can::gen::CodecStatus::Ok);
-        CHECK_EQ(brake.brake_pressure_kpa, (int32_t)std::round(5.0f / 27.0f * 20000.0f));
+        CHECK_EQ(brake.brake_pressure_kpa, (int32_t)std::round(5.0f / 27.0f * 5000.0f));
     }
 
     std::printf("\n=== %d pass, %d fail ===\n", pass, fail);

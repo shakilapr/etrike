@@ -36,6 +36,7 @@ private:
     float actual_stroke_mm_{0.0f};
     float target_stroke_mm_{0.0f};
     float actual_pressure_kpa_{0.0f};
+    float target_pressure_kpa_{0.0f};
     uint8_t control_mode_{0}; // 0 = stroke, 1 = pressure
     uint8_t error_status_{0}; // 0 = normal, 3 = L3 fault
     uint8_t rolling_counter_{0};

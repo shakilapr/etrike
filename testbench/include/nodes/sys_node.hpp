@@ -78,6 +78,11 @@ private:
     // Service brake intent from RT 0x205 (kPa); SYS applies it to SEB (0x7B9).
     int32_t rt_brake_kpa_{0};
 
+    // Latest 0x721 SEB status (feeds the real sys::BrakeControl boot/sync logic).
+    uint8_t  seb_status_byte0_{0xFF};
+    uint16_t seb_stroke_raw_{0};
+    bool     brake_lever_{false};
+
     void publish_safety_status(uint32_t now_ms);
     void publish_mode_cmd(uint32_t now_ms);
     void publish_pwr_cmd(uint32_t now_ms);

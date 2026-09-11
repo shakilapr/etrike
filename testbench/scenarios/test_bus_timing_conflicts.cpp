@@ -115,15 +115,16 @@ bool test_duplicate_id_conflict() {
     return true;
 }
 
-// 12.5 Real SYS + rm RT on ONE low bus => duplicate 0x011/0x110 producers.
+// 12.5 Real SYS + rm RT on ONE low bus: rm is Host-only, so no 0x011/0x110
+// duplicate producers (guard against re-introducing the SYS emulation).
 bool test_sys_rm_authority_collision() {
-    std::cout << "TEST: real SYS + rm on same bus -> 0x011/0x110 collision flagged\n";
+    std::cout << "TEST: real SYS + rm on same bus -> no 0x011/0x110 duplicate producers\n";
     VirtualCanBus low("LOW_CAN");
     SysNode sys(low);
     RmOperatorModel rm(low);
     sys.init();
     rm.init();
-    rm.set_op_mode(rm::OperatingMode::Rt);   // rm RT emulates SYS authority on the same bus
+    rm.set_op_mode(rm::OperatingMode::Rt);   // rm RT is Host-only (no SYS authority)
     rm.drive(1500);
 
     for (uint32_t t = 100; t <= 500; t += 10) {
@@ -133,13 +134,13 @@ bool test_sys_rm_authority_collision() {
     }
 
     auto c = low.conflicts();
-    bool se = c.count(0x011) == 1 && c[0x011] >= 2;
-    bool md = c.count(0x110) == 1 && c[0x110] >= 2;
-    std::cout << "  0x011 producers=" << (c.count(0x011) ? (int)c[0x011] : 0)
-              << " 0x110 producers=" << (c.count(0x110) ? (int)c[0x110] : 0) << "\n";
+    // SysNode is the sole 0x011/0x110 producer; rm RT must not add a second.
+    bool no_collision = (c.count(0x011) == 0 && c.count(0x110) == 0);
+    std::cout << "  0x011 conflict=" << (c.count(0x011) ? "yes" : "no")
+              << " 0x110 conflict=" << (c.count(0x110) ? "yes" : "no") << "\n";
 
-    if (!se || !md) {
-        std::cerr << "  FAIL: same-bus authority collision not detected\n";
+    if (!no_collision) {
+        std::cerr << "  FAIL: rm RT emitted SYS-owned 0x011/0x110 on the SYS bus\n";
         return false;
     }
     return true;

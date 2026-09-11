@@ -65,9 +65,9 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
         } else if (fr.id == 0x205u) {
             can::gen::RtBrakeCmd c{};
             auto st = can::gen::decode_rt_brake_cmd(fr, c);
-            // rm maps 13.5/27.0 * 20000 = 10000 kPa
-            check(st == can::gen::CodecStatus::Ok && c.brake_pressure_kpa == 10000,
-                  "SYS 0x205 RT_BRAKE_CMD", "decode OK + pressure=10000 kPa");
+            // rm maps 13.5/27.0 * kMaxBrakeKpa(5000) = 2500 kPa
+            check(st == can::gen::CodecStatus::Ok && c.brake_pressure_kpa == 2500,
+                  "SYS 0x205 RT_BRAKE_CMD", "decode OK + pressure=2500 kPa");
         } else if (fr.id == 0x204u) {
             can::gen::RtDriveCmd c{};
             auto st = can::gen::decode_rt_drive_cmd(fr, c);
@@ -79,7 +79,7 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
             can::gen::SysModeCmd c{};
             auto st = can::gen::decode_sys_mode_cmd(fr, c);
             check(st == can::gen::CodecStatus::Ok && c.mode == 1,
-                  "BARE/SYS 0x110 SYS_MODE_CMD", "decode OK + mode=AUTO(1)");
+                  "BARE 0x110 SYS_MODE_CMD", "decode OK + mode=AUTO(1)");
         } else if (fr.id == 0x113u) {
             can::gen::SysPwrCmd c{};
             auto st = can::gen::decode_sys_pwr_cmd(fr, c);
@@ -90,7 +90,7 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
             can::gen::SysSafetySts c{};
             auto st = can::gen::decode_sys_safety_sts(fr, c);
             check(st == can::gen::CodecStatus::Ok && c.estop_active == 0,
-                  "BARE/RT 0x011 SYS_SAFETY_STS", "decode OK + estop_active=0 (E2E CRC valid)");
+                  "BARE 0x011 SYS_SAFETY_STS", "decode OK + estop_active=0 (E2E CRC valid)");
         } else if (fr.id == 0x111u) {
             can::gen::HmiModeReq c{};
             auto st = can::gen::decode_hmi_mode_req(fr, c);
@@ -116,9 +116,9 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
         } else if (fr.id == 0x301u) {
             can::gen::HostBrakeReq c{};
             auto st = can::gen::decode_host_brake_req(fr, c);
-            // rm maps 13.5/27.0 * 20000 = 10000 kPa
-            check(st == can::gen::CodecStatus::Ok && c.brake_pressure_kpa == 10000,
-                  "RT 0x301 HOST_BRAKE_REQ", "decode OK + pressure=10000 kPa");
+            // rm maps 13.5/27.0 * kMaxBrakeKpa(5000) = 2500 kPa
+            check(st == can::gen::CodecStatus::Ok && c.brake_pressure_kpa == 2500,
+                  "RT 0x301 HOST_BRAKE_REQ", "decode OK + pressure=2500 kPa");
         } else if (fr.id == 0x303u) {
             can::gen::HostSteerCmd c{};
             auto st = can::gen::decode_host_steer_cmd(fr, c);

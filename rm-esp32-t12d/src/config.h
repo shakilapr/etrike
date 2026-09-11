@@ -117,7 +117,12 @@ constexpr int16_t kMinSteerRaw          = 29550;  // -45.0 deg full left limit (
 constexpr int16_t kMaxSteerRaw          = 30450;  // +45.0 deg full right limit (30450 raw)
 constexpr float   kMaxBrakeStrokeMm       = 27.0f;  // SEB Max Emergency Stroke
 constexpr float   kParkBrakeStrokeMm      = 15.0f;  // SEB Park / Brake Hold Holding Stroke
-constexpr int32_t kMaxBrakePressureKpa    = 20000;  // RT mode: 20,000 kPa max pressure
+// RT/SYS-mode service-brake intent is expressed in kPa. The SEB actuator limit
+// is 5 MPa = 5000 kPa (see docs/communications/by-wire - brake.csv: pressure
+// 0.05 MPa/bit, status max 5 MPa; shared::kMaxBrakeKpa). Mapping full 27 mm
+// stroke to a higher value would just saturate in rt/sys. Keep the wire field
+// range (0x301/0x205 allow 0..20000) but emit only the usable range.
+constexpr int32_t kMaxBrakePressureKpa    = shared::kMaxBrakeKpa;  // 5000 kPa (SEB limit)
 constexpr int32_t kParkBrakePressureKpa   = 11111;  // RT mode: (15.0/27.0) * 20,000 kPa park holding pressure
 
 // ── Timing & Link Status ──────────────────────────────────────────

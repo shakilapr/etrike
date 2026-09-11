@@ -284,29 +284,14 @@ private:
             if (can::gen::encode_hmi_pwr_req(hmi_pwr, hmi_pwr_fr) == can::gen::CodecStatus::Ok) {
                 send(hmi_pwr_fr);
             }
-
-            // Emulate SYS authority so rt-esp32 grants motion. rt requires
-            // READY_BIT_SAFETY(0x011) | READY_BIT_MODE(0x110) | READY_BIT_HOST(0x300)
-            // (rt-esp32/src/safety_stream_loss.h:50-51); rm RT already sends 0x300
-            // (HOST_DRIVE_CMD) but not 0x011/0x110.
-            can::gen::SysSafetySts rt_safety_sts{};
-            rt_safety_sts.estop_active   = 0;
-            rt_safety_sts.heartbeat_ok   = snap.signal_valid ? 1 : 0;
-            rt_safety_sts.rolling_counter = roll_sys_safety_++;
-            can::Frame rt_safety_fr;
-            if (can::gen::encode_sys_safety_sts(rt_safety_sts, rt_safety_fr) == can::gen::CodecStatus::Ok) {
-                rt_safety_fr.data[4] = can::e2e::sys_safety_sts_crc(rt_safety_fr.data.data());
-                send(rt_safety_fr);
-            }
-
-            can::gen::SysModeCmd rt_mode_cmd{};
-            rt_mode_cmd.mode = drive_active ? 1u : 0u;
-            rt_mode_cmd.rolling_counter = roll_sys_mode_++;
-            can::Frame rt_mode_fr;
-            if (can::gen::encode_sys_mode_cmd(rt_mode_cmd, rt_mode_fr) == can::gen::CodecStatus::Ok) {
-                send(rt_mode_fr);
-            }
         }
+
+        // NOTE: RT mode emulates the autonomous Host ONLY. SYS-owned frames
+        // (0x011 SYS_SAFETY_STS / 0x110 SYS_MODE_CMD, contracts owner=sys) are
+        // deliberately NOT emitted here: rt-esp32 consumes them from its LOW bus
+        // (can_rx_router.h:64-84), while the Host lives on HIGH. Building these
+        // on HIGH is ignored by real rt and would collide with a real SYS.
+        // Motion authority therefore requires a real sys-esp32 on rt's low bus.
 
         // 5. Host Heartbeat: 0x7FC HOST_HEARTBEAT (2 Hz / 500 ms)
         if (tick_10ms % 50 == 0) {

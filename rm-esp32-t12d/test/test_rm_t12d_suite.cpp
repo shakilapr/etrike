@@ -564,6 +564,8 @@ void test_can_emitter_three_modes() {
     bool has_host_drive = false;
     has_hmi_mode = true;
     has_host_hb = false;
+    bool has_safety_sts = false;  // 0x011 must NOT be emitted by RT (SYS-owned)
+    has_sys_mode = false;         // 0x110 must NOT be emitted by RT (SYS-owned)
 
     for (const auto& fr : emitted) {
         if (fr.id == 0x169u) has_ses = true;
@@ -572,6 +574,8 @@ void test_can_emitter_three_modes() {
         if (fr.id == 0x301u) has_host_brake = true;
         if (fr.id == 0x300u) has_host_drive = true;
         if (fr.id == 0x7FCu) has_host_hb = true;
+        if (fr.id == 0x011u) has_safety_sts = true;
+        if (fr.id == 0x110u) has_sys_mode = true;
     }
     ASSERT_FALSE(has_ses);
     ASSERT_FALSE(has_drive);
@@ -579,6 +583,9 @@ void test_can_emitter_three_modes() {
     ASSERT_TRUE(has_host_brake);
     ASSERT_TRUE(has_host_drive);
     ASSERT_TRUE(has_host_hb);
+    // RT mode emulates the Host only: SYS-owned frames must be absent.
+    ASSERT_FALSE(has_safety_sts);
+    ASSERT_FALSE(has_sys_mode);
 }
 
 void test_can_frame_encoding() {

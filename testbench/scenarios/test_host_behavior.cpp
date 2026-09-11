@@ -84,12 +84,14 @@ bool test_host_brake() {
     TestBench tb;
     bring_up_auto(tb);
     tb.host().send_drive_cmd(500);
-    tb.host().set_brake_kpa(10000);  // 10000/20000*27 = 13.5 mm
+    // Host requests 10000 kPa; rt clamps to the SEB limit (5000) and SYS applies
+    // Pressure mode raw = 5000/50 = 100 -> 5000 kPa.
+    tb.host().set_brake_kpa(10000);
     tb.run_for_ms(1000, 10);
 
-    float mm = tb.seb().actual_stroke_mm();
-    std::cout << "  SEB stroke=" << mm << "mm (exp 13.5)\n";
-    if (!near(mm, 13.5f, 0.8f)) { std::cerr << "  FAIL: brake did not reach SEB\n"; return false; }
+    float kpa = tb.seb().actual_pressure_kpa();
+    std::cout << "  SEB pressure=" << kpa << "kPa (exp 5000)\n";
+    if (!near(kpa, 5000.0f, 300.0f)) { std::cerr << "  FAIL: brake did not reach SEB\n"; return false; }
     return true;
 }
 
