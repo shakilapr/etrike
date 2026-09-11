@@ -68,6 +68,11 @@ namespace testbench {
     bool test_limit_rt_steer_clamp();
     bool test_status_frames_canonical();
     bool test_timeout_rt_host_heartbeat();
+    // Section 10: frozen counters / stale producers
+    bool test_frozen_rt_mode_cmd();
+    bool test_frozen_rt_safety_sts();
+    bool test_frozen_rt_host_heartbeat();
+    bool test_frozen_sys_rt_heartbeat();
 }
 
 int main(int argc, char* argv[]) {
@@ -169,6 +174,12 @@ int main(int argc, char* argv[]) {
     run_test("RT steer clamp (+/-450)", testbench::test_limit_rt_steer_clamp);
     run_test("SES/SEB status frames decode canonically", testbench::test_status_frames_canonical);
     run_test("rt host-heartbeat -> assisted stop", testbench::test_timeout_rt_host_heartbeat);
+
+    std::cout << "--- SECTION 10: Frozen Counters / Stale Producers ---\n";
+    run_test("frozen 0x110 -> mode authority lost", testbench::test_frozen_rt_mode_cmd);
+    run_test("frozen 0x011 -> rt fail-safe", testbench::test_frozen_rt_safety_sts);
+    run_test("frozen 0x7FC -> rt assisted stop", testbench::test_frozen_rt_host_heartbeat);
+    run_test("frozen 0x7FD -> SYS ESTOP", testbench::test_frozen_sys_rt_heartbeat);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();
