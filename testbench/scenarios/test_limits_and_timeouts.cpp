@@ -60,7 +60,7 @@ bool test_limit_steer_clamp_bare() {
 
 // 9.2 RT drive speed + brake pressure clamps.
 bool test_limit_rt_drive_clamp() {
-    std::cout << "TEST: RT drive/brake limit clamp (speed 3000/-500, pressure 20000)\n";
+    std::cout << "TEST: RT drive/brake limit clamp (speed 3000/-500, pressure 5000)\n";
     VirtualCanBus bus("LOW_CAN");
     RmOperatorModel rm(bus);
     rm.init();
@@ -91,12 +91,14 @@ bool test_limit_rt_drive_clamp() {
 
     int32_t fwd = speed(9999, can::Gear::D);
     int32_t rev = speed(-9999, can::Gear::R);
-    int32_t pfull = pressure(27.0f);
-    int32_t pover = pressure(100.0f);
+    int32_t pmid = pressure(13.5f);   // 13.5/27 * 5000 = 2500 kPa (linear)
+    int32_t pfull = pressure(27.0f);  // full stroke -> SEB limit 5000 kPa
+    int32_t pover = pressure(100.0f); // clamped
 
     std::cout << "  fwd=" << fwd << " (exp 3000)  rev=" << rev << " (exp -500)"
-              << "  pfull=" << pfull << "  pover=" << pover << " (exp 20000)\n";
-    if (fwd != 3000 || rev != -500 || pfull != 20000 || pover != 20000) {
+              << "  pmid=" << pmid << " (exp 2500)  pfull=" << pfull
+              << "  pover=" << pover << " (exp 5000)\n";
+    if (fwd != 3000 || rev != -500 || pmid != 2500 || pfull != 5000 || pover != 5000) {
         std::cerr << "  FAIL: RT drive/brake clamp incorrect\n";
         return false;
     }
@@ -233,11 +235,12 @@ bool test_timeout_rt_host_heartbeat() {
     }
     bool hb_lost = rt.is_host_heartbeat_lost();
     bool stopped = !mtr.is_traction_enabled();
-    float seb_mm = seb.actual_stroke_mm();  // 2000/20000*27 = 2.7 mm
+    // Assisted stop = 2000 kPa via 0x205; SYS applies Pressure mode raw 40.
+    float seb_kpa = seb.actual_pressure_kpa();
 
     std::cout << "  driving=" << driving << " hb_lost=" << hb_lost
-              << " mtr_stopped=" << stopped << " SEB=" << seb_mm << "mm (exp ~2.7)\n";
-    if (!driving || !hb_lost || !stopped || !near(seb_mm, 2.7f, 0.6f)) {
+              << " mtr_stopped=" << stopped << " SEB=" << seb_kpa << "kPa (exp ~2000)\n";
+    if (!driving || !hb_lost || !stopped || !near(seb_kpa, 2000.0f, 150.0f)) {
         std::cerr << "  FAIL: rt host-heartbeat assisted stop incorrect\n";
         return false;
     }

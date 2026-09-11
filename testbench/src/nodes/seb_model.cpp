@@ -15,6 +15,7 @@ void SebModel::init() {
     actual_stroke_mm_ = 0.0f;
     target_stroke_mm_ = 0.0f;
     actual_pressure_kpa_ = 0.0f;
+    target_pressure_kpa_ = 0.0f;
     control_mode_ = 0;
     error_status_ = 0;
     rolling_counter_ = 0;
@@ -57,10 +58,10 @@ void SebModel::receive_can(const std::string& bus_name, const etrike::protocol::
             if (cmd.control_mode == etrike::protocol::codecs::seb::ControlMode::Stroke) {
                 target_stroke_mm_ = (cmd.stroke_request_raw * shared::kBrakeStrokeScale)
                                     + shared::kBrakeStrokeOffset;
+                target_pressure_kpa_ = 0.0f;
             } else {
                 // Pressure mode: vendor scale is 0.05 MPa/bit == 50 kPa/bit.
-                target_stroke_mm_ = (cmd.pressure_request_raw > 0) ? 20.0f : 0.0f;
-                actual_pressure_kpa_ = static_cast<float>(cmd.pressure_request_raw) * 50.0f;
+                target_pressure_kpa_ = static_cast<float>(cmd.pressure_request_raw) * 50.0f;
             }
         }
     }
@@ -77,8 +78,12 @@ void SebModel::step(uint32_t now_ms, uint32_t dt_ms) {
     if (now_ms - last_tx_ms_ >= 20) {
         if (fault_stuck_) {
             actual_stroke_mm_ = stuck_stroke_mm_;
+        } else if (control_mode_ == static_cast<uint8_t>(
+                       etrike::protocol::codecs::seb::ControlMode::Pressure)) {
+            // Pressure mode: hydraulic pressure follows the request (first-order lag).
+            actual_pressure_kpa_ += (target_pressure_kpa_ - actual_pressure_kpa_) * 0.4f;
         } else {
-            // Physical cylinder response lag: ~50% step per 20ms
+            // Stroke mode: physical cylinder response lag: ~40% step per 20ms
             float diff = target_stroke_mm_ - actual_stroke_mm_;
             actual_stroke_mm_ += diff * 0.4f;
         }
@@ -102,7 +107,9 @@ void SebModel::publish_status(uint32_t now_ms) {
     st.error_status = error_status_;
     st.stroke_value_raw = static_cast<uint16_t>(
         std::round((actual_stroke_mm_ - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale));
-    st.pressure_value_raw = 0;
+    int32_t praw = static_cast<int32_t>(std::round(actual_pressure_kpa_ / 50.0f));
+    praw = std::clamp(praw, 0, static_cast<int32_t>(shared::kSebMaxPressureRaw));
+    st.pressure_value_raw = static_cast<uint8_t>(praw);
     st.angle_value_raw = 0;
     st.rolling_counter_enabled = true;
     st.checksum_enabled = true;

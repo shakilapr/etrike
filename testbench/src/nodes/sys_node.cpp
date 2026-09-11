@@ -88,6 +88,7 @@ void SysNode::release_estop_button() {
 
 void SysNode::set_brake_lever(bool pressed) {
     safety_.set_brake_lever(pressed);
+    brake_lever_ = pressed;
 }
 
 void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::Frame& frame) {
@@ -116,6 +117,8 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
         }
         g_seb_status_byte0.store(st.status_byte);
         g_seb_error_status.store(st.error_status);
+        seb_status_byte0_ = st.status_byte;
+        seb_stroke_raw_ = st.stroke_value_raw;
 
         if (st.error_status == 3) {
             sys::set_latched_fault(sys::kLatchedSebL3);
@@ -123,17 +126,21 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
             mode_mgr_.force_estop();
         }
 
-        float actual_stroke = (static_cast<float>(st.stroke_value_raw) * shared::kBrakeStrokeScale)
-                              + shared::kBrakeStrokeOffset;
-
-        // Following error detection: tolerance 5mm
-        if (std::abs(actual_stroke - last_demanded_stroke_mm_) > 5.0f) {
-            if (following_excursion_start_ms_ == 0) {
-                following_excursion_start_ms_ = last_now_ms_;
-            } else if (last_now_ms_ - following_excursion_start_ms_ >= 200) {
-                sys::set_latched_fault(sys::kLatchedBrakeFollowing);
-                safety_.set_estop(true);
-                mode_mgr_.force_estop();
+        // Following error detection (Stroke mode only — mirrors sys main.cpp:510;
+        // in Pressure mode the shared byte-3 makes stroke_value_raw meaningless).
+        if (st.control_mode == 0) {
+            float actual_stroke = (static_cast<float>(st.stroke_value_raw) * shared::kBrakeStrokeScale)
+                                  + shared::kBrakeStrokeOffset;
+            if (std::abs(actual_stroke - last_demanded_stroke_mm_) > 5.0f) {
+                if (following_excursion_start_ms_ == 0) {
+                    following_excursion_start_ms_ = last_now_ms_;
+                } else if (last_now_ms_ - following_excursion_start_ms_ >= 200) {
+                    sys::set_latched_fault(sys::kLatchedBrakeFollowing);
+                    safety_.set_estop(true);
+                    mode_mgr_.force_estop();
+                }
+            } else {
+                following_excursion_start_ms_ = 0;
             }
         } else {
             following_excursion_start_ms_ = 0;
@@ -327,19 +334,19 @@ void SysNode::publish_heartbeat(uint32_t now_ms) {
 
 void SysNode::publish_seb_cmd(uint32_t now_ms) {
     (void)now_ms;
-    bool estop = is_estop_latched();
-    // Service brake from RT 0x205 (0..20000 kPa -> 0..27 mm); ESTOP overrides to
-    // full stroke. Mirrors sys brake arbitration.
-    float service_mm = (static_cast<float>(rt_brake_kpa_) / 20000.0f) * 27.0f;
-    service_mm = std::clamp(service_mm, 0.0f, 27.0f);
-    float demanded_stroke = estop ? 27.0f : service_mm;
-    last_demanded_stroke_mm_ = demanded_stroke;
-
+    // Real sys::BrakeControl: BOOT_WAIT -> LISTEN_SYNC -> ACTIVE/DEGRADED, with
+    // the architecture priority ESTOP > lever > 0x205 pressure > released.
     etrike::protocol::codecs::seb::Command cmd{};
-    cmd.control_enable = true;
-    cmd.control_mode = etrike::protocol::codecs::seb::ControlMode::Stroke;
-    cmd.stroke_request_raw = static_cast<uint16_t>(std::round((demanded_stroke + 30.0f) / 0.05f));
-    cmd.rolling_counter = (seb_seq_ctr_++) & 0x0F;
+    if (!brake_ctrl_.tick(brake_lever_, is_estop_latched(), rt_brake_kpa_,
+                          mode(), seb_status_byte0_, seb_stroke_raw_, cmd)) {
+        return;  // BOOT_WAIT: no frame yet
+    }
+
+    if (cmd.control_mode == etrike::protocol::codecs::seb::ControlMode::Stroke) {
+        last_demanded_stroke_mm_ =
+            (static_cast<float>(cmd.stroke_request_raw) * shared::kBrakeStrokeScale)
+            + shared::kBrakeStrokeOffset;
+    }
 
     etrike::protocol::Frame pf;
     if (etrike::protocol::codecs::seb::encode_command(cmd, pf) == etrike::protocol::CodecStatus::Ok) {

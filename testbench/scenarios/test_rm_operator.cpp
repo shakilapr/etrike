@@ -2,7 +2,7 @@
 // testbench (wrapping the real rm::CanEmitter). Verifies the Phase-1/2 findings:
 //  - BARE mode now ignites the MTR (0x011 SYS_SAFETY_STS present)
 //  - SYS mode drives sys-esp32 seamlessly (AUTO, no estop)
-//  - RT mode frames reach rt-esp32 (0x300/0x011/0x110) without estop latch
+//  - RT mode is Host-only: 0x300 reaches rt-esp32, and no SYS 0x011/0x110 is emitted
 #include <iostream>
 #include "test_bench.hpp"
 #include "can_bus.hpp"
@@ -76,12 +76,12 @@ bool test_rm_sys_mode_seamless() {
 }
 
 bool test_rm_rt_mode_reaches_rt() {
-    std::cout << "TEST: rm RT high-bus frames reach rt but grant NO motion authority\n";
-    // rm is a single-bus (High) Host+SYS emulator. Real rt accepts the Host
-    // frames (0x300/0x301/0x303) on High but only accepts SYS authority
-    // (0x011/0x110) on LOW (rt-esp32/src/can_rx_router.h:28/36/44 vs :64-84).
-    // With no real SYS present the frames arrive but authority is NOT granted —
-    // this is the honest model that the previous testbench masked.
+    std::cout << "TEST: rm RT is Host-only (0x300 yes, SYS 0x011/0x110 no)\n";
+    // rm is a single-bus (High) Host emulator. It emits Host frames
+    // (0x300/0x301/0x303) but must NOT emit the SYS-owned 0x011/0x110
+    // (contracts owner=sys). Real rt anyway consumes SYS authority only on LOW
+    // (rt-esp32/src/can_rx_router.h:28/36/44 vs :64-84), so with no real SYS the
+    // frames would be ignored. Authority is simply NOT granted here.
     VirtualCanBus high("HIGH_CAN");
     VirtualCanBus low("LOW_CAN");
     RtNode rt(high, low);
@@ -102,21 +102,26 @@ bool test_rm_rt_mode_reaches_rt() {
         low.tick(t, 10);
     }
 
-    bool frames_ok = high.has_frame(0x300)   // HOST_DRIVE_CMD
-                  && high.has_frame(0x011)   // SYS_SAFETY_STS (emulated SYS, wrong bus)
-                  && high.has_frame(0x110);  // SYS_MODE_CMD (emulated SYS, wrong bus)
+    // RT mode is Host-only: it must emit 0x300 but NOT the SYS-owned 0x011/0x110.
+    bool host_frame_ok = high.has_frame(0x300);   // HOST_DRIVE_CMD
+    bool no_sys_frames = !high.has_frame(0x011)   // SYS_SAFETY_STS (SYS-owned)
+                      && !high.has_frame(0x110);  // SYS_MODE_CMD (SYS-owned)
+    bool frames_ok = host_frame_ok && no_sys_frames;
     bool no_authority = !rt.is_motion_authorized()
                      && !rt.is_safety_stream_ok()
                      && !rt.is_mode_authority_ok()
                      && rt.commanded_speed_mmps() == 0;
     bool not_auto = (rt.active_mode() != can::Mode::Auto);
 
-    std::cout << "  frames(0x300/0x011/0x110)=" << frames_ok
+    std::cout << "  host(0x300)=" << host_frame_ok << " sys-frames-absent=" << no_sys_frames
               << " authority=" << (rt.is_motion_authorized() ? "GRANTED" : "NONE")
               << " mode=" << (not_auto ? "NOT-AUTO" : "AUTO")
               << " cmd=" << rt.commanded_speed_mmps() << "\n";
 
-    if (!frames_ok) { std::cerr << "  FAIL: rm RT frames missing on High CAN\n"; return false; }
+    if (!frames_ok) {
+        std::cerr << "  FAIL: rm RT must emit Host 0x300 and no SYS 0x011/0x110\n";
+        return false;
+    }
     if (!no_authority || !not_auto) {
         std::cerr << "  FAIL: rt accepted high-bus SYS authority (must be ignored)\n";
         return false;

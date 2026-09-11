@@ -92,14 +92,16 @@ bool test_signal_flow_sys() {
     }
 
     float ses_ang = ses.actual_angle_0_1deg();
-    float seb_mm  = seb.actual_stroke_mm();
+    // Service brake travels as 0x205 kPa and is applied by SYS in SEB *Pressure*
+    // mode (real sys::BrakeControl): 15/27*5000 = 2778 kPa -> raw 56 -> 2800 kPa.
+    float seb_kpa = seb.actual_pressure_kpa();
     bool  mtr_ok  = mtr.node_status().ready && mtr.is_traction_enabled();
     std::cout << "  SYS mode=" << (sys.mode() == can::Mode::Auto ? "AUTO" : "NOT-AUTO")
               << "  SES angle=" << ses_ang << " (exp " << kSteer20degRaw << ")"
-              << "  SEB stroke=" << seb_mm << "mm (exp " << kBrake15mm << ")"
+              << "  SEB pressure=" << seb_kpa << "kPa (exp 2800)"
               << "  MTR traction=" << (mtr_ok ? "YES" : "NO") << "\n";
 
-    bool ok = near(ses_ang, kSteer20degRaw, 10.0f) && near(seb_mm, kBrake15mm, 0.6f) && mtr_ok;
+    bool ok = near(ses_ang, kSteer20degRaw, 10.0f) && near(seb_kpa, 2800.0f, 150.0f) && mtr_ok;
     if (!ok) std::cerr << "  FAIL: signal did not reach all SYS-mode units\n";
     return ok;
 }
@@ -135,19 +137,20 @@ bool test_signal_flow_rt() {
     }
 
     float ses_ang = ses.actual_angle_0_1deg();
-    float seb_mm  = seb.actual_stroke_mm();
+    // 15/27*5000 = 2778 kPa -> SYS applies Pressure mode raw 56 -> 2800 kPa.
+    float seb_kpa = seb.actual_pressure_kpa();
     bool  mtr_ok  = mtr.node_status().ready && mtr.is_traction_enabled();
     bool  auth    = rt.is_motion_authorized();
     std::cout << "  RT mode=" << (rt.active_mode() == can::Mode::Auto ? "AUTO" : "NOT-AUTO")
               << "  authority=" << (auth ? "GRANTED" : "NONE")
               << "  RT cmd speed=" << rt.commanded_speed_mmps()
               << "  SES angle=" << ses_ang << " (exp " << kSteer20degRaw << ")"
-              << "  SEB stroke=" << seb_mm << "mm (exp " << kBrake15mm << ")"
+              << "  SEB pressure=" << seb_kpa << "kPa (exp 2800)"
               << "  MTR traction=" << (mtr_ok ? "YES" : "NO") << "\n";
 
     // Motion authority must come from the real SYS on the LOW bus (all three
     // readiness bits), not from rm's high-bus SYS emulation.
-    bool ok = auth && near(ses_ang, kSteer20degRaw, 10.0f) && near(seb_mm, kBrake15mm, 0.6f) && mtr_ok;
+    bool ok = auth && near(ses_ang, kSteer20degRaw, 10.0f) && near(seb_kpa, 2800.0f, 150.0f) && mtr_ok;
     if (!ok) std::cerr << "  FAIL: signal did not reach all RT-mode units\n";
     return ok;
 }

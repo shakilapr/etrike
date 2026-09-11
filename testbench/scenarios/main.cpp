@@ -149,7 +149,7 @@ int main(int argc, char* argv[]) {
     std::cout << "--- SECTION 4: rm-esp32-t12d Operator Gateway Integration ---\n";
     run_test("RM BARE ignites MTR (0x011 present)", testbench::test_rm_bare_ignites_mtr);
     run_test("RM SYS drives sys-esp32 seamlessly (AUTO)", testbench::test_rm_sys_mode_seamless);
-    run_test("RM RT high-bus frames ignored for authority", testbench::test_rm_rt_mode_reaches_rt);
+    run_test("RM RT Host-only (no SYS 0x011/0x110)", testbench::test_rm_rt_mode_reaches_rt);
     run_test("RM RT + LOW-bus SYS authority grants motion", testbench::test_rm_rt_low_sys_authority);
     run_test("RM RT LOW-bus 0x011 loss -> rt fail-safe", testbench::test_rm_rt_low_sys_011_loss);
 
@@ -207,7 +207,7 @@ int main(int argc, char* argv[]) {
     run_test("realistic serialization of a burst", testbench::test_realistic_serialization);
     run_test("optional self-reception", testbench::test_self_reception);
     run_test("duplicate-ID conflict detection", testbench::test_duplicate_id_conflict);
-    run_test("SYS + rm authority collision", testbench::test_sys_rm_authority_collision);
+    run_test("SYS + rm: no authority collision (Host-only)", testbench::test_sys_rm_authority_collision);
 
     std::cout << "--- SECTION 13: Heartbeat Margins ---\n";
     run_test("heartbeat margin tolerates 2 missed", testbench::test_heartbeat_margin);

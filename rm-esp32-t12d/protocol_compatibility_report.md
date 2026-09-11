@@ -133,18 +133,16 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
   [rm-RT-only]   motion_ready(ever)=NO  ready@2s=NO  sys_safety_acquired=never
   [rm-RT+sys]    motion_ready(ever)=YES ready@2s=YES  sys_safety_acquired=200ms
   ```
-- **Result: NOT seamless (by design).** Without a SYS authority source rt-esp32 stays
-  UNACQUIRED and never sets `READY_BIT_SAFETY`.
-- **[RE-OPENED] The `0x011`/`0x110` "fix" (Phase 3 item 2) does NOT work against real rt
-  firmware.** rt consumes `0x110`/`0x011` **only from its low bus** (`can_rx_router.h:64-84`,
-  `can_dispatch.h:157,366`) while Host `0x300/0x301/0x303` are consumed **only from its high
-  bus** (`can_rx_router.h:28/36/44`). `rm-esp32-t12d` is a single-bus device (one TWAI
-  driver), so its RT-mode emulated SYS authority lands on the high bus and is ignored.
-  `g_bench_solo_mode` does **not** help either: the motion gate
-  `if (!rt::is_motion_ready(cur_ready_mask))` (`rt-esp32/src/main.cpp:1100`) is
-  unconditional; solo mode only relaxes the *loss/fault* checks
-  (`safety_monitor.h:167,211,227`) — it never licenses motion without
-  `0x011`+`0x110`+`0x300`. Covered by `native-test` target `rm_gateway_ingest`.
+- **Result: NOT seamless — and intentionally so.** rm RT is a **Host emulator only**;
+  `0x011`/`0x110` are `owner=sys` (`protocol/contracts/sys.yaml`) and are **not** emitted
+  by rm in RT mode (commit reverting `320625b`). rt consumes `0x110`/`0x011` **only from its
+  low bus** (`can_rx_router.h:64-84`) and Host `0x300/0x301/0x303` **only from its high bus**
+  (`can_rx_router.h:28/36/44`); a single-bus rm on HIGH could not deliver low-bus authority
+  anyway. `g_bench_solo_mode` does **not** license motion: the gate
+  `if (!rt::is_motion_ready(cur_ready_mask))` (`rt-esp32/src/main.cpp:1100`) is unconditional.
+- **Correct topology:** rt motion authority requires a real `sys-esp32` on rt's LOW bus
+  (exactly the `rm(Host, high) + SYS(low) + rt` arrangement the testbench `SysNode` models).
+  Covered by `native-test` `rm_gateway_ingest` and testbench Sections 4/11.
 
 ---
 
@@ -152,12 +150,10 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
 
 1. **[FIXED] BARE mode missing `0x011` SYS_SAFETY_STS and `0x113` rearm edge** → MTR never ignites
    (`mtr-stm32/src/motor_manager.h:313/:194-212/:166-180`; `rm-esp32-t12d/src/can_emitter.h` BARE block).
-2. **[RE-OPENED] RT mode missing `0x011` + `0x110`** → rt-esp32 grants no motion authority
-   (`rt-esp32/src/safety_stream_loss.h:50-51`). rm now emits them, but on its single **high**
-   bus, where real rt does not consume them (`can_rx_router.h:64-84`); `g_bench_solo_mode`
-   does not bypass the ready-mask gate (`main.cpp:1100`). Standalone rm+rt motion needs a real
-   SYS on rt's low bus, or an rt bench build that accepts high-bus authority. See
-   "Real-Firmware Bus Contract" below.
+2. **[RESOLVED — reverted] RT mode `0x011`/`0x110`** — rm previously emitted SYS-owned
+   frames to fake motion authority. That was semantically wrong (duplicate SYS producers)
+   and ineffective (wrong bus). **Removed:** rm RT is Host-only; rt motion authority requires
+   a real `sys-esp32` on rt's low bus. See "Real-Firmware Bus Contract" below.
 3. **[DOC/CONTRACT] HMI cadence mismatch** — `0x111/0x112` emitted at 10 Hz but
    `hmi.yaml` `kCycleMs=1000` (1 Hz); `architecture.md` states 10 Hz. Reconcile contract vs docs.
    `0x169/0x7B9` also 2× faster than `cycle_ms=20`. Confirm consumers tolerate over-frequency
@@ -183,15 +179,25 @@ Faster-than-spec is generally tolerated by freshness gates (see Phase 2 SYS), bu
 | --- | --- | --- |
 | BARE missing `0x011` | rm BARE emits `SYS_SAFETY_STS` (estop_active=0, valid E2E CRC) | `43e8b6e` |
 | BARE never rearms | rm BARE emits one-shot `0x113` power OFF→ON REARM edge | `3e4ef5d` |
-| RT no authority | rm RT also emits `0x011` + `0x110` (emulated SYS) | `320625b` |
+| RT no authority (superseded) | ~~rm RT emits `0x011` + `0x110` (emulated SYS)~~ — removed; RT is Host-only, SYS owns `0x011`/`0x110` | `320625b` → reverted |
 | sys `0x204` staleness unenforced | `task_safety` zeroes speed + forces neutral on stale `0x204` | `ad631d5` |
 | Doc gaps | `architecture.md` §3.1/§3.3 document `0x011`/`0x110` authority | `c8e8dcf` |
 | No rm harness | `RmOperatorModel` wired into `testbench` (Section 4 integration suite) | testbench integration |
 | Cadence mismatch (`hmi.yaml` 1 Hz vs 10 Hz) | Doc-only; YAML intentionally untouched (avoids shared-code regen) | `c8e8dcf` |
+| RT emits SYS-owned frames | rm RT made **Host-only** (`0x011`/`0x110` removed); BARE keeps supervisor emulation | this change |
+| Service-brake scale | rm maps full 27 mm stroke to the SEB limit **5000 kPa** (`shared::kMaxBrakeKpa`), not 20000 | this change |
+| Testbench brake model | `SysNode` drives the real `sys::BrakeControl`; `SebModel` models SEB **Pressure** mode | this change |
+
+**Service-brake scaling (evidence):** `docs/communications/by-wire - brake.csv` shows SEB
+pressure `0.05 MPa/bit` with status max **5 MPa = 5000 kPa** (= `shared::kMaxBrakeKpa`). rm's
+RT/SYS brake intent is now `stroke/27mm × 5000 kPa`; rt's `brake_arbitrate` clamp becomes a
+defensive guard, and SYS maps `kPa/50` → SEB raw `0..100` (`sys-esp32/src/brake_control.h:118-123`).
+The `0x301` wire field still allows `0..20000` kPa, so foreign Hosts are clamped, not rejected.
 
 **Post-fix verification:**
-- `verify_emitter_roundtrip.cpp`: **75/75** checks pass (incl. `0x011` decode + `[0,0,1]` rearm edge).
-- `testbench` full suite: **ALL TESTS PASSED** — BARE ignites MTR, SYS reaches AUTO, RT reaches rt-esp32.
+- `verify_emitter_roundtrip.cpp`: **67/67** checks pass; `verify_yaml_contract.py`: **17/17**.
+- `rm_t12d_suite`: 189 assertions pass; `rm_gateway_ingest`: 58 pass.
+- `testbench` full suite: **ALL TESTS PASSED** (46 tests).
 
 ## End-to-End Signal Flow (per mode)
 
@@ -429,14 +435,14 @@ Verified by `test_heartbeat_margin` (compile-time policy `static_assert` + real
 | 1 | frames emitter→consumer decode round-trip | **PASS** (75 checks after fixes) |
 | 2A | BARE → MTR | **FIXED** — `0x011` + `0x113` rearm edge; MTR ignites |
 | 2B | SYS → sys-esp32 (freshness) | **SEAMLESS** |
-| 2C | RT → rt-esp32 | **PARTIAL** — Host/HMI frames accepted on high; emulated `0x011`/`0x110` land on high and are ignored by real rt (needs a real SYS on low) |
-| 3 | Pipeline issues | 7 items (2 functional fixed in rm, sys watchdog fixed, docs updated, rm integrated) |
+| 2C | RT → rt-esp32 | **BY DESIGN** — rm RT is Host-only (`0x300/0x301/0x303/0x111/0x112/0x7FC`); authority requires a real SYS `0x011`/`0x110` on rt's low bus |
+| 3 | Pipeline issues | 7 items (BARE fixed, RT reverted to Host-only, sys watchdog fixed, brake scale fixed, docs updated) |
 
-**Bottom line:** Wire/codec compatibility is proven (Phase 1). The BARE blocker (MTR never
-ignited — needed `0x011` *and* a `0x113` rearm edge) is fixed and verified. The RT blocker is
-**only partially fixed**: the Host/HMI frames are accepted by real rt (verified against
-`rt::route_frame`), but motion authority still needs a SYS `0x011`/`0x110` on rt's **low** bus —
-rm's single-bus emulation of those frames (on high) is ignored by real rt firmware. The sys-esp32
-`0x204` watchdog is enforced; rm is integrated into the testbench. **Open action:** decide the
-RT-mode authority strategy (real SYS on low vs. an rt bench-solo build that accepts high-bus
-authority), and stop or relocate rm's RT-mode `0x011`/`0x110` emission accordingly.
+**Bottom line:** Wire/codec compatibility is proven (Phase 1). Keeper boundaries are now
+correct: rm **BARE** emulates the SYS supervisor (`0x011/0x110/0x113`) for a standalone
+actuator bench; rm **SYS** mode emulates RT/HMI (real SYS owns `0x011/0x110`); rm **RT** mode is
+**Host-only** and no longer emits SYS-owned frames. rt motion authority is therefore provided by
+a real `sys-esp32` on rt's low bus — the actual vehicle topology. The service brake maps to the
+SEB limit (5000 kPa) and SYS applies it in SEB Pressure mode via the real `sys::BrakeControl`.
+The sys-esp32 `0x204` watchdog is enforced and rm is integrated into the testbench; all suites
+pass.
