@@ -113,9 +113,10 @@ class NativeSilBridge:
 
     def _write_loop(self) -> None:
         while not self._stopping.is_set():
-            input_line = self._commands.get()
-            if input_line is None:
-                return
+            try:
+                input_line = self._commands.get(timeout=0.01)
+            except queue.Empty:
+                input_line = None
             process = self._process
             if process is None or process.stdin is None or process.poll() is not None:
                 self._error("native SIL process stopped")
@@ -123,8 +124,9 @@ class NativeSilBridge:
             try:
                 if self._stopping.is_set() or process.stdin.closed:
                     return
-                process.stdin.write(input_line + "\n")
                 process.stdin.write('{"type":"tick","dt_ms":10}\n')
+                if input_line is not None:
+                    process.stdin.write(input_line + "\n")
                 process.stdin.flush()
             except (BrokenPipeError, OSError) as exc:
                 self._error(f"native SIL write failed: {exc}")
