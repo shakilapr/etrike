@@ -66,7 +66,9 @@ std::atomic<bool>     g_seb_takeover{false};
 std::atomic<int64_t>  g_last_estop_sent_us{-1000000};
 std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint8_t>  g_seb_status_byte0{0};
+namespace rt {
 std::atomic<bool>     g_no_sys_authority{true};
+}  // namespace rt
 
 bool g_bench_solo_mode = false;
 bool g_bypass_eps_sync = true;

@@ -68,8 +68,10 @@ extern int64_t g_sys_test_time_us;
 std::atomic<uint8_t> g_seb_status_byte0{0xFF};
 std::atomic<uint8_t> g_seb_error_status{0};
 // RT authority flag (see rt-esp32/src/rt_state.h); provided by the test build
-// since rt-esp32/src/main.cpp is not compiled here.
+// since rt-esp32/src/main.cpp is not compiled here. Lives in namespace rt.
+namespace rt {
 std::atomic<bool> g_no_sys_authority{true};
+}  // namespace rt
 
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
@@ -421,7 +423,8 @@ void test_017_sys_freeze_with_button_pressed(void) {
 
 void test_018_sys_freeze_while_driving_timeouts(void) {
     constexpr int kRtSysHbTimeoutMs = rt::kHeartbeatTimeoutMsSys;
-    TEST_ASSERT_EQUAL(200, kRtSysHbTimeoutMs);
+    // Policy: cycle*3 (tolerate two missed heartbeats).
+    TEST_ASSERT_EQUAL(can::gen::SysHeartbeat::kCycleMs * 3, kRtSysHbTimeoutMs);
     constexpr int kMtrDeadmanMs = mtr::kWatchdogTimeoutMs;
     TEST_ASSERT_EQUAL(500, kMtrDeadmanMs);
 }
@@ -999,7 +1002,8 @@ void test_067_host_heartbeat_timeout(void) {
 
 void test_068_sys_heartbeat_timeout_at_rt(void) {
     constexpr int kTimeout = rt::kHeartbeatTimeoutMsSys;
-    TEST_ASSERT_EQUAL(200, kTimeout);
+    // Policy: cycle*3 (tolerate two missed heartbeats).
+    TEST_ASSERT_EQUAL(can::gen::SysHeartbeat::kCycleMs * 3, kTimeout);
 }
 
 void test_069_rt_heartbeat_timeout_at_sys(void) {
@@ -1869,7 +1873,8 @@ void test_136_combined_turning_sys_brake_failure(void) {
 
 void test_137_combined_turning_sys_freeze(void) {
     constexpr int kTimeout = rt::kHeartbeatTimeoutMsSys;
-    TEST_ASSERT_EQUAL(200, kTimeout);
+    // Policy: cycle*3 (tolerate two missed heartbeats).
+    TEST_ASSERT_EQUAL(can::gen::SysHeartbeat::kCycleMs * 3, kTimeout);
 }
 
 void test_138_combined_turning_mtr_freeze(void) {
