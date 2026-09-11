@@ -63,13 +63,19 @@ private:
     uint32_t last_brake_tx_ms_{0};
 
     // Host heartbeat (0x7FC) supervision: 1500 ms -> assisted stop (2000 kPa).
+    // Real rt only re-arms on an *advancing* alive counter (main.cpp:391-397),
+    // so a frozen counter must NOT keep the watchdog fresh.
     bool     host_hb_seen_{false};
     bool     host_hb_lost_{false};
     uint32_t last_host_hb_ms_{0};
+    uint8_t  last_host_hb_ctr_{0};
+    bool     host_hb_first_{true};
 
     // SYS authority (readiness bits mirror rt-esp32/src/safety_stream_loss.h).
     // Real rt only accepts 0x011/0x110 from its LOW bus and 0x300 from HIGH.
     rt::SafetyStreamSupervisor safety_sup_;
+    etrike::protocol::StreamValidity safety_val_;  // 0x011 rolling-counter supervision
+    bool     safety_val_inited_{false};
     int64_t  last_safety_sts_ms_{-1};
     bool     sys_estop_{false};
     etrike::protocol::StreamValidity mode_val_;

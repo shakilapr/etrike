@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -43,6 +44,13 @@ public:
     // Corrupt a specific byte of next frame matching can_id
     void corrupt_byte(uint32_t can_id, uint8_t byte_idx, uint8_t mask = 0xFF);
 
+    // Freeze the payload of frames matching can_id: the first payload seen is
+    // replayed on subsequent frames (simulates a stuck rolling counter / stale
+    // producer that keeps transmitting). count = frames to freeze
+    // (default = until unfreeze/clear_faults).
+    void freeze_payload(uint32_t can_id, uint32_t count = 0xFFFFFFFFu);
+    void unfreeze(uint32_t can_id);
+
     // Disconnect / reconnect a node from this bus
     void disconnect(NodeId node);
     void reconnect(NodeId node);
@@ -73,6 +81,8 @@ private:
         uint8_t mask;
     };
     std::map<uint32_t, ByteCorruption> corruptions_;
+    std::map<uint32_t, std::array<uint8_t, 8>> frozen_payloads_;
+    std::map<uint32_t, uint32_t> freeze_counts_;
 
     uint32_t current_time_ms_{0};
 

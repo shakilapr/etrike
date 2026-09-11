@@ -24,9 +24,12 @@ void RtNode::init() {
     host_hb_seen_ = false;
     host_hb_lost_ = false;
     last_host_hb_ms_ = 0;
+    last_host_hb_ctr_ = 0;
+    host_hb_first_ = true;
 
     // Authority gates: boot is UNACQUIRED (never "all clear").
     safety_sup_.reset(0);
+    safety_val_inited_ = false;
     last_safety_sts_ms_ = -1;
     sys_estop_ = false;
     mode_val_inited_ = false;
@@ -96,9 +99,16 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
         } else if (cf.id == can::kIdHostHeartbeat) {
             can::gen::HostHeartbeat hb{};
             if (can::decode_frame(cf, hb) == can::gen::CodecStatus::Ok) {
-                last_host_hb_ms_ = last_now_ms_;
-                host_hb_seen_ = true;
-                host_hb_lost_ = false;
+                // Only an advancing alive counter re-arms the watchdog
+                // (frozen counter == stuck producer; main.cpp:391-397).
+                const uint8_t delta = hb.alive_ctr - last_host_hb_ctr_;
+                if (host_hb_first_ || delta != 0) {
+                    host_hb_first_ = false;
+                    last_host_hb_ctr_ = hb.alive_ctr;
+                    last_host_hb_ms_ = last_now_ms_;
+                    host_hb_seen_ = true;
+                    host_hb_lost_ = false;
+                }
             }
         } else if (cf.id == can::kIdSafetyEstop) {
             estop_latched_ = true;
@@ -123,8 +133,15 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
             // CRC before feeding the readiness supervisor (safety_stream_loss.h).
             can::gen::SysSafetySts smsg{};
             if (can::decode_frame(cf, smsg) == can::gen::CodecStatus::Ok) {
+                if (!safety_val_inited_) {
+                    safety_val_.set_key(1, can::kIdSysSafetySts, 700);
+                    safety_val_inited_ = true;
+                }
                 const uint8_t crc = can::e2e::sys_safety_sts_crc(cf.data.data());
-                if (crc == cf.data[4]) {
+                if (crc != smsg.e2e_crc) {
+                    safety_val_.invalidate_now();
+                } else if (safety_val_.observe(smsg.rolling_counter, last_now_ms_)) {
+                    // Valid AND counter advancing: authoritative (main.cpp:712-715).
                     last_safety_sts_ms_ = last_now_ms_;
                     sys_estop_ = smsg.estop_active;
                     if (smsg.estop_active) {
@@ -139,6 +156,8 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
                         }
                     }
                 }
+                // A frozen/invalid counter leaves last_safety_sts_ms_ stale;
+                // SafetyStreamSupervisor then trips the fail-safe in step().
             }
             // Forward safety status to High CAN for Host
             high_can_.send(NodeId::RT, cf);

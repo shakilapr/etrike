@@ -344,6 +344,21 @@ Fix: the canonical codecs now own both directions —
 **Effect:** bit accuracy is anchored to the legacy vendor DBCs and the frozen `protocol/tests/cpp`
 vectors at both the protocol layer and the end-to-end harness.
 
+## Frozen Counters / Stale Producers (WS5, Section 10)
+
+`VirtualCanBus::freeze_payload(id)` replays the first payload seen for an ID, so a
+"peer keeps transmitting but the rolling counter is stuck" is testable. `RtNode` was also
+made faithful: the `0x011` counter is supervised by a `StreamValidity` (mirrors
+`rt-esp32/src/main.cpp:703-713`) and the `0x7FC` host heartbeat only re-arms on an
+*advancing* alive counter (`main.cpp:391-397`).
+
+| Case | Injected fault | Observed | Result |
+| --- | --- | --- | --- |
+| frozen `0x110` | mode counter stuck | mode authority lost (500 ms), cmd→0 | **PASS** |
+| frozen `0x011` | safety counter stuck | StreamValidity invalid (~700 ms) → supervisor LOST → estop latch, cmd→0 | **PASS** |
+| frozen `0x7FC` | host alive counter stuck | not re-armed → assisted stop (1500 ms), cmd→0 | **PASS** |
+| frozen `0x7FD` | RT alive counter stuck | SYS heartbeat loss (~1 s) → ESTOP | **PASS** |
+
 ## Summary
 
 | Phase | Check | Result |

@@ -22,6 +22,16 @@ void VirtualCanBus::corrupt_byte(uint32_t can_id, uint8_t byte_idx, uint8_t mask
     corruptions_[can_id] = ByteCorruption{byte_idx, mask};
 }
 
+void VirtualCanBus::freeze_payload(uint32_t can_id, uint32_t count) {
+    freeze_counts_[can_id] = count;
+    frozen_payloads_.erase(can_id);  // first observed frame becomes the template
+}
+
+void VirtualCanBus::unfreeze(uint32_t can_id) {
+    freeze_counts_.erase(can_id);
+    frozen_payloads_.erase(can_id);
+}
+
 void VirtualCanBus::disconnect(NodeId node) {
     disconnected_nodes_.insert(node);
 }
@@ -38,6 +48,8 @@ void VirtualCanBus::clear_faults() {
     drop_counts_.clear();
     delays_ms_.clear();
     corruptions_.clear();
+    frozen_payloads_.clear();
+    freeze_counts_.clear();
     disconnected_nodes_.clear();
 }
 
@@ -64,6 +76,23 @@ bool VirtualCanBus::apply_faults_and_queue(NodeId source, etrike::protocol::Fram
             frame.data[corrupt_it->second.index] ^= corrupt_it->second.mask;
         }
         corruptions_.erase(corrupt_it);
+    }
+
+    // Check freeze fault: replay the first captured payload (stuck counter).
+    auto freeze_it = freeze_counts_.find(frame.id);
+    if (freeze_it != freeze_counts_.end() && freeze_it->second > 0) {
+        auto tmpl = frozen_payloads_.find(frame.id);
+        if (tmpl == frozen_payloads_.end()) {
+            frozen_payloads_[frame.id] = frame.data;  // capture template
+        } else {
+            frame.data = tmpl->second;
+        }
+        if (freeze_it->second != 0xFFFFFFFFu) {
+            if (--freeze_it->second == 0) {
+                frozen_payloads_.erase(frame.id);
+                freeze_counts_.erase(freeze_it);
+            }
+        }
     }
 
     // Check delay fault
