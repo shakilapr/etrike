@@ -73,6 +73,12 @@ namespace testbench {
     bool test_frozen_rt_safety_sts();
     bool test_frozen_rt_host_heartbeat();
     bool test_frozen_sys_rt_heartbeat();
+    // Section 11: real kinematics / brake arbitration
+    bool test_real_brake_arbitration();
+    bool test_real_obstacle_limits();
+    bool test_real_kinematics();
+    bool test_mode_change_under_motion();
+    bool test_brake_throttle_concurrent();
 }
 
 int main(int argc, char* argv[]) {
@@ -180,6 +186,13 @@ int main(int argc, char* argv[]) {
     run_test("frozen 0x011 -> rt fail-safe", testbench::test_frozen_rt_safety_sts);
     run_test("frozen 0x7FC -> rt assisted stop", testbench::test_frozen_rt_host_heartbeat);
     run_test("frozen 0x7FD -> SYS ESTOP", testbench::test_frozen_sys_rt_heartbeat);
+
+    std::cout << "--- SECTION 11: Real Kinematics & Arbitration ---\n";
+    run_test("real brake_arbitrate (max+clamp)", testbench::test_real_brake_arbitration);
+    run_test("real obstacle limit/brake scaling", testbench::test_real_obstacle_limits);
+    run_test("real PhysicsModel kinematics", testbench::test_real_kinematics);
+    run_test("AUTO->MANUAL under motion revokes authority", testbench::test_mode_change_under_motion);
+    run_test("concurrent throttle + service brake", testbench::test_brake_throttle_concurrent);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();

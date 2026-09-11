@@ -27,10 +27,12 @@ add_executable(etrike-system-test
     scenarios/test_fault_injection.cpp
     scenarios/test_limits_and_timeouts.cpp
     scenarios/test_frozen_counters.cpp
+    scenarios/test_kinematics_arbitration.cpp
     scenarios/main.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/inhibit_state.cpp
+    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
 )
 
 target_include_directories(etrike-system-test PRIVATE
