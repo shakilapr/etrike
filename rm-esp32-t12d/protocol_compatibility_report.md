@@ -359,6 +359,28 @@ made faithful: the `0x011` counter is supervised by a `StreamValidity` (mirrors
 | frozen `0x7FC` | host alive counter stuck | not re-armed → assisted stop (1500 ms), cmd→0 | **PASS** |
 | frozen `0x7FD` | RT alive counter stuck | SYS heartbeat loss (~1 s) → ESTOP | **PASS** |
 
+## Real Kinematics & Arbitration (WS4, Section 11)
+
+`testbench` now compiles `rt-esp32/src/physics_model.cpp` and exercises the real
+`rt::PhysicsModel`, `rt::brake_arbitrate` and `rt::compute_dynamic_limit` directly.
+
+| Case | Observed | Result |
+| --- | --- | --- |
+| brake arbitration `max(obstacle,host)` + clamp | `max=4500`, `over=5000` (=`kMaxBrakeKpa`) | **PASS** |
+| obstacle speed/brake scaling | stop→0 mm/s & 5000 kPa, mid→1000 mm/s, clear→full/0 | **PASS** |
+| inverse-bicycle kinematics | straight, spin-in-place=0 speed, reverse clamp −500, steer saturation | **PASS** |
+| dynamic steer limit | 40° at rest → 26.6° at 3 m/s | **PASS** |
+| AUTO→MANUAL under motion | rt mode authority revoked, cmd→0 | **PASS** |
+| concurrent throttle + service brake | SEB applies 13.5 mm while MTR stays in traction | **PASS** |
+
+**Findings surfaced:**
+- `rt::brake_arbitrate` clamps to `shared::kMaxBrakeKpa = 5000` kPa while rm's RT-mode
+  `0x301` allows up to `kMaxBrakePressureKpa = 20000` kPa — a **4× scale mismatch** between
+  rm's host brake request and rt's arbiter. Flag for review (arbiter is protective today).
+- There is **no software throttle/brake interlock**: a host drive command and a service-brake
+  request coexist (MTR stays in traction). This matches the mechanical service-brake model but
+  should be an explicit design decision.
+
 ## Summary
 
 | Phase | Check | Result |
