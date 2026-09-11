@@ -953,8 +953,8 @@
       }
     ]
   },
-  "network_hash": "a37f51545783bf4de5ae166f653e0ed80e26b16aa62153dc17a425c0a47312df",
+  "network_hash": "ea7117b2e6955a5b272300a7bd7f1cb0b6ac3f969f6557cf394ee177eba8ac58",
   "schema_version": 1,
-  "semantic_hash": "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c",
-  "wire_hash": "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c"
+  "semantic_hash": "508fae8bfaec0b50f1adeb6a0200fa7fc77ecafc012f4ceb3078904985dfb2d1",
+  "wire_hash": "508fae8bfaec0b50f1adeb6a0200fa7fc77ecafc012f4ceb3078904985dfb2d1"
 }

@@ -30,7 +30,7 @@ def test_no_legacy_dual_yaml_files():
 
 
 def test_message_count_and_strategies():
-    assert len(etrike_protocol.METADATA) == 43
+    assert len(etrike_protocol.METADATA) == 45
     strategies = {
         m["codec"]["strategy"] for m in etrike_protocol.METADATA.values()
     }
@@ -86,7 +86,7 @@ def test_discovery_manifest_hashes_match_runtime():
     assert discovery["semantic_hash"] == etrike_protocol.SEMANTIC_HASH
     assert discovery["wire_hash"] == etrike_protocol.WIRE_HASH
     assert discovery["network_hash"] == etrike_protocol.NETWORK_HASH
-    assert len(discovery["messages"]) == 43
+    assert len(discovery["messages"]) == 45
     from protocol.generated.python import diagnostics as diag
     assert discovery["diagnostics_hash"] == diag.DIAGNOSTICS_HASH
     assert len(diag.REGISTRY) == 149

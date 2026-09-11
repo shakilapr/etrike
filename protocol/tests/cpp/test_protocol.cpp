@@ -60,7 +60,7 @@ void test_ses() {
 
     Frame frame{};
     CHECK(ses::encode_command(command, frame) == CodecStatus::Ok);
-    const std::array<std::uint8_t, 8> expected{0x03, 0x00, 0x30, 0x75,
+    const std::array<std::uint8_t, 8> expected{0x03, 0x75, 0x30, 0x00,
                                                 0x7D, 0x53, 0x05, 0x92};
     CHECK(frame.id == ses::kCommandId && !frame.extended && frame.dlc == 8);
     CHECK(frame.data == expected);
@@ -89,7 +89,7 @@ void test_ses() {
     CHECK(output.id == preserved.id && output.data == preserved.data);
 
     Frame status = Frame::standard(ses::kStatusId, 8);
-    status.data = {0x41, 0x00, 0x30, 0x75, 0x10, 0x00, 0xA3, 0x48};
+    status.data = {0x41, 0x75, 0x30, 0x00, 0x10, 0x00, 0xA3, 0x48};
     ses::Status status_value{};
     CHECK(ses::decode_status(status.view(), status_value) == CodecStatus::Ok);
     CHECK(status_value.angle_aligned && status_value.error_status == 1);
@@ -145,7 +145,7 @@ void test_seb() {
     CHECK(decoded.stroke_request_raw == 0 && decoded.pressure_request_raw == 80);
 
     Frame status = Frame::standard(seb::kStatusId, 8);
-    status.data = {0x55, 0x00, 0x34, 0x12, 0x00, 0x78, 0xA3, 0x00};
+    status.data = {0x55, 0x12, 0x34, 0x12, 0xA3, 0x78, 0xA3, 0x00};
     status.data[7] = etrike::protocol::profiles::xor8_ff_v1(status.data.data(), 7);
     seb::Status value{};
     CHECK(seb::decode_status(status.view(), value) == CodecStatus::Ok);

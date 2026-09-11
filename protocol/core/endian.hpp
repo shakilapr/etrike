@@ -25,6 +25,10 @@ constexpr std::uint16_t read_be_u16(const std::uint8_t* data) noexcept {
            static_cast<std::uint16_t>(data[1]);
 }
 
+constexpr std::int16_t read_be_i16(const std::uint8_t* data) noexcept {
+    return static_cast<std::int16_t>(read_be_u16(data));
+}
+
 constexpr std::uint32_t read_be_u32(const std::uint8_t* data) noexcept {
     return (static_cast<std::uint32_t>(data[0]) << 24u) |
            (static_cast<std::uint32_t>(data[1]) << 16u) |
@@ -51,6 +55,10 @@ constexpr void write_le_u32(std::uint8_t* data, std::uint32_t value) noexcept {
 constexpr void write_be_u16(std::uint8_t* data, std::uint16_t value) noexcept {
     data[0] = static_cast<std::uint8_t>(value >> 8u);
     data[1] = static_cast<std::uint8_t>(value);
+}
+
+constexpr void write_be_i16(std::uint8_t* data, std::int16_t value) noexcept {
+    write_be_u16(data, static_cast<std::uint16_t>(value));
 }
 
 constexpr void write_be_u32(std::uint8_t* data, std::uint32_t value) noexcept {
