@@ -399,6 +399,28 @@ jitter, and a producer registry. `conflicts()` reports IDs emitted by more than 
 The last case formalises the earlier finding: a real `sys-esp32` and rm's RT-mode SYS emulation
 on the **same** bus are duplicate producers of `0x011`/`0x110` (must not be co-located).
 
+## Heartbeat Timeout Margins (WS6, Section 13)
+
+Both heartbeat timeouts were `cycle * 2`, i.e. a **single** dropped frame tripped them —
+fragile on a real FreeRTOS + WiFi + CAN system. Analysis supports widening to `cycle * 3`
+(tolerate two missed frames), since redundant faster trip paths still cover a truly dead peer
+(rt↔sys: `0x204` staleness 200 ms, `0x011` 700 ms).
+
+| Constant | Old | New | Effect |
+| --- | --- | --- | --- |
+| `rt::kHeartbeatTimeoutMsSys` (`0x7FE`, 100 ms) | 200 ms (1 miss) | **300 ms** (2 miss) | rt SYS_DEGRADED only after 2 missed |
+| `sys::kHeartbeatTimeoutMsRt` (`0x7FD`, 500 ms) | 1000 ms (1 miss) | **1500 ms** (2 miss) | SYS ESTOP only after 2 missed |
+
+Verified by `test_heartbeat_margin` (compile-time policy `static_assert` + real
+`sys::SafetyMonitor` timeline: 1-cycle and 2-cycle gaps healthy, expiry trips). The
+`ESTOP trigger 07` test was updated to drop >1500 ms.
+
+> Note: a few `native-test` targets (`remediation_fixes`, `rt_safety_monitor`,
+> `test_140_qualification_matrix`) currently fail to build due to in-flight parallel
+> rt refactoring (`rt_state.h` globals / a FreeRTOS shadow include path) — unrelated to this
+> change. Runnable targets (`sys_inhibit_state`, protocol, rm suites, `rm_gateway_ingest`)
+> pass.
+
 ## Summary
 
 | Phase | Check | Result |

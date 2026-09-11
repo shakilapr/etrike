@@ -47,7 +47,11 @@ constexpr int kPower12vRelay  = 40;
 // ── timing (ms / Hz) ─────────────────────────────────────────────
 constexpr int kControlLoopHz        =  100;
 constexpr int kHeartbeatIntervalMs  = can::gen::SysHeartbeat::kCycleMs;
-constexpr int kHeartbeatTimeoutMsRt = can::gen::RtHeartbeat::kCycleMs * 2; // policy: two missed frames
+// Policy: tolerate two consecutive missed heartbeats (trip on the third).
+// Single-frame loss is expected on a real FreeRTOS/WiFi/CAN system; redundant
+// faster trip paths (0x204 staleness 200 ms, 0x011 700 ms) still cover a truly
+// dead RT.
+constexpr int kHeartbeatTimeoutMsRt = can::gen::RtHeartbeat::kCycleMs * 3;
 constexpr int kSetpointStaleMs      = can::gen::RtDriveCmd::kCycleMs * 5;  // policy: five missed frames
 constexpr int kBrakeSetpointStaleMs = can::gen::RtBrakeCmd::kCycleMs * 5;  // policy: five missed frames
 constexpr int kSafetyCheckHz        =   20;

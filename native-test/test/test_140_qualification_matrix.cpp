@@ -793,7 +793,8 @@ void test_053_rt_loses_0x011_after_acquisition(void) {
     sys::SafetyMonitor sm; sm.init();
     sys::g_sys_test_time_us = 500000;
     sm.feed_heartbeat_rt(1);
-    sys::g_sys_test_time_us = 1500000;
+    // Gap must exceed the (now cycle*3) timeout; derive from the policy constant.
+    sys::g_sys_test_time_us = 500000 + int64_t(sys::kHeartbeatTimeoutMsRt + 100) * 1000;
     TEST_ASSERT_FALSE(sm.heartbeat_ok());
     sys::g_sys_test_time_us = 0;
 }
