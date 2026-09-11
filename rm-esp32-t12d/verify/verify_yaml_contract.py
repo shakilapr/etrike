@@ -132,7 +132,7 @@ for (mode, name, key, bus, sender, receiver, eid, sample, kind) in EMISSIONS:
         problems.append(f"id {cid:#04x} != {eid:#04x}")
     if msg["dlc"] != exp_dlc:
         problems.append(f"dlc {msg['dlc']} != expected {exp_dlc}")
-    if msg["byte_order"] != ("little" if kind.startswith("custom") else "big"):
+    if msg["byte_order"] != "big":
         problems.append(f"byte_order {msg['byte_order']}")
     strat = msg["codec"]["strategy"]
     if kind.startswith("custom") and strat != "custom":
