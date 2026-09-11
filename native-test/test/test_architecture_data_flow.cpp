@@ -58,6 +58,10 @@ static void auth_mode(mtr::MotorManager& m, can::Mode mode, uint32_t now) {
     etrike::protocol::Frame f1; generated::encode_sys_mode_cmd(c1, f1); m.handle_frame(f1, now);
 }
 static void auth_power(mtr::MotorManager& m, bool on, uint32_t now) {
+    // MTR requires an OFF->ON 0x113 rearm edge after boot before it energizes
+    // (mtr-stm32/src/motor_manager.h REARM). Emit the OFF edge first.
+    generated::SysPwrCmd off{0, g_tam_pwr_ctr++};
+    etrike::protocol::Frame f_off; generated::encode_sys_pwr_cmd(off, f_off); m.handle_frame(f_off, now);
     generated::SysPwrCmd c0{on, g_tam_pwr_ctr++};
     etrike::protocol::Frame f0; generated::encode_sys_pwr_cmd(c0, f0); m.handle_frame(f0, now);
     generated::SysPwrCmd c1{on, g_tam_pwr_ctr++};
@@ -353,11 +357,22 @@ static void test_flow_c_motor_actuation_pipeline() {
     // Power-on authority via 0x113 SYS_PWR_CMD (MTR no longer takes 0x112).
     auth_safety(motor, false, 10);
     auth_power(motor, true, 10);
-    motor.tick(10);
-    TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relay state transitions to Park upon ignition ON");
+    auth_mode(motor, can::Mode::Auto, 10);
 
-    // 2. Command Forward Drive 1500 mm/s in AUTO mode (mode authority 0x110)
-    auth_mode(motor, can::Mode::Auto, 50);
+    // MTR_REQUIRED_READY = MODE | POWER | DRIVE, so a (neutral) drive command is
+    // required to establish DRIVE authority before the relays energize to Park.
+    can::Frame neutral{};
+    neutral.id = can::kIdRtDriveCmd;
+    neutral.dlc = 5;
+    can::gen::RtDriveCmd ncmd{};
+    ncmd.motor_speed_mmps = 0;
+    ncmd.gear = static_cast<uint8_t>(can::Gear::N);
+    can::gen::encode_rt_drive_cmd(ncmd, neutral);
+    motor.handle_frame(neutral, 20);
+    motor.handle_frame(neutral, 30);
+    motor.handle_frame(neutral, 40);
+    motor.tick(40);
+    TEST_CHECK_EQ(relays.state(), mtr::RelayController::State::Park, "Relay state transitions to Park upon ignition ON");
 
     can::Frame fwd_frame{};
     fwd_frame.id = can::kIdRtDriveCmd; // 0x204

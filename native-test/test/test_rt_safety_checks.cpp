@@ -39,7 +39,9 @@ bool g_bench_solo_mode = false;
 // firmware globals (normally rt/sys main.cpp) provided for the unit-test build
 std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint8_t>  g_seb_status_byte0{0xFF};
-std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority granted
+namespace rt {
+std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority
+}  // namespace rt
 rt::SteeringControl g_steering{};  // header-only; steering-follow path skipped via g_bypass_eps_sync
 
 static int pass = 0;

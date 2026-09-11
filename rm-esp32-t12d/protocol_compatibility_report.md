@@ -421,11 +421,11 @@ Verified by `test_heartbeat_margin` (compile-time policy `static_assert` + real
 `sys::SafetyMonitor` timeline: 1-cycle and 2-cycle gaps healthy, expiry trips). The
 `ESTOP trigger 07` test was updated to drop >1500 ms.
 
-> Note: a few `native-test` targets (`remediation_fixes`, `rt_safety_monitor`,
-> `test_140_qualification_matrix`) currently fail to build due to in-flight parallel
-> rt refactoring (`rt_state.h` globals / a FreeRTOS shadow include path) — unrelated to this
-> change. Runnable targets (`sys_inhibit_state`, protocol, rm suites, `rm_gateway_ingest`)
-> pass.
+> Note: the `native-test` suite was repaired after the parallel rt refactor —
+> `hal/shadow/freertos/*` now resolve the real FreeRTOS headers, `rt_state.h` declares the
+> control/sensor atomics, namespace-`rt` globals are defined correctly in tests, the obsolete
+> `rt_can_dispatch` target (its `can_dispatch.h` was removed) is gone, and stale MTR/heartbeat
+> expectations were updated. **`ctest`: 45/45 targets pass.**
 
 ## Summary
 

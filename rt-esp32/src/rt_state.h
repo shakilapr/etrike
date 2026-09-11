@@ -87,6 +87,15 @@ extern std::atomic<bool>    g_no_sys_authority;
 using rt::g_ready_mask;
 using rt::g_no_sys_authority;
 
+// ── Control/sensor atomics consumed by safety_monitor.h ─────────────
+// (defined in main.cpp; declared here so the header is self-contained)
+extern std::atomic<int64_t> g_last_mtr_feedback_us;
+extern std::atomic<int32_t> g_brake_request_kpa;
+extern std::atomic<int16_t> g_last_cmd_angle_0_1deg;
+extern std::atomic<int32_t> g_ses_angle_0_1deg;
+extern std::atomic<int32_t> g_mtr_motor_command_speed_mmps;
+extern std::atomic<int64_t> g_last_0x7B9_rx_us;
+
 // ── Global objects ──────────────────────────────────────────────────
 extern rt::Mcp2515Driver             g_can_high;
 extern rt::ActiveResolver            g_resolver;

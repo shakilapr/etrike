@@ -70,7 +70,9 @@ std::atomic<uint32_t> g_latched_fault_reasons{0};
 // firmware globals (normally rt/sys main.cpp) provided for the unit-test build
 std::atomic<uint8_t>  g_seb_error_status{0};
 std::atomic<uint8_t>  g_seb_status_byte0{0xFF};
-std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority granted
+namespace rt {
+std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority
+}  // namespace rt
 // ?? RT atomics used by run_safety_checks (normally rt main.cpp) ??
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};

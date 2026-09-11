@@ -177,6 +177,9 @@ target_include_directories(mcp2515_config PRIVATE
     ${ETRIKE_ROOT}
     ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
+    # The hal/shadow freertos/*.h headers redirect to the real FreeRTOS headers.
+    ${freertos_kernel_SOURCE_DIR}/include
+    ${FREERTOS_PORT_DIR}
 )
 # The driver needs RT configuration headers, but no FreeRTOS or HAL library.
 
@@ -220,21 +223,7 @@ target_include_directories(rt_phase2_motion PRIVATE
     ${ETRIKE_ROOT}/rt-esp32/src
 )
 
-# ── RT CAN dispatch test ─────────────────────────────────────────────
-add_executable(rt_can_dispatch
-    test/test_rt_can_dispatch.cpp
-    ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
-)
-target_link_libraries(rt_can_dispatch PRIVATE freertos hal_stubs virtual_can)
-target_include_directories(rt_can_dispatch PRIVATE
-    ${freertos_kernel_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/hal/shadow
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${ETRIKE_ROOT}
-    ${ETRIKE_ROOT}/shared
-    ${ETRIKE_ROOT}/rt-esp32/src
-)
-
+# ── RT safety checks ─────────────────────────────────────────────────
 add_executable(rt_safety_checks
     test/test_rt_safety_checks.cpp
     ${ETRIKE_ROOT}/rt-esp32/src/physics_model.cpp
@@ -347,7 +336,6 @@ add_test(NAME mcp2515_config      COMMAND mcp2515_config)
 add_test(NAME rt_can_rx_router    COMMAND rt_can_rx_router)
 add_test(NAME rm_gateway_ingest   COMMAND rm_gateway_ingest)
 add_test(NAME rt_phase2_motion    COMMAND rt_phase2_motion)
-add_test(NAME rt_can_dispatch     COMMAND rt_can_dispatch)
 add_test(NAME rt_safety_checks     COMMAND rt_safety_checks)
 add_test(NAME sys_can_dispatch    COMMAND sys_can_dispatch)
 add_test(NAME task_watchdog       COMMAND task_watchdog)
@@ -380,6 +368,9 @@ target_include_directories(remediation_fixes PRIVATE
     ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
     ${ETRIKE_ROOT}/sys-esp32/src
+    # hal/shadow freertos/*.h redirect to the real FreeRTOS headers.
+    ${freertos_kernel_SOURCE_DIR}/include
+    ${FREERTOS_PORT_DIR}
 )
 add_test(NAME remediation_fixes    COMMAND remediation_fixes)
 

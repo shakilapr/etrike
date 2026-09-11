@@ -50,7 +50,9 @@ std::atomic<uint16_t> g_seb_pressure_raw{0};
 std::atomic<uint8_t> g_seb_error_status{0};
 // firmware globals (normally rt/sys main.cpp) provided for the unit-test build
 std::atomic<uint8_t>  g_seb_status_byte0{0xFF};
-std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority granted
+namespace rt {
+std::atomic<bool>     g_no_sys_authority{false};  // unit tests simulate SYS authority
+}  // namespace rt
 std::atomic<uint16_t> g_seb_motor_current{0};
 std::atomic<uint16_t> g_seb_ecu_temp_c{0};
 
