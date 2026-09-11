@@ -79,6 +79,12 @@ namespace testbench {
     bool test_real_kinematics();
     bool test_mode_change_under_motion();
     bool test_brake_throttle_concurrent();
+    // Section 12: realistic bus timing + conflicts
+    bool test_realistic_priority();
+    bool test_realistic_serialization();
+    bool test_self_reception();
+    bool test_duplicate_id_conflict();
+    bool test_sys_rm_authority_collision();
 }
 
 int main(int argc, char* argv[]) {
@@ -193,6 +199,13 @@ int main(int argc, char* argv[]) {
     run_test("real PhysicsModel kinematics", testbench::test_real_kinematics);
     run_test("AUTO->MANUAL under motion revokes authority", testbench::test_mode_change_under_motion);
     run_test("concurrent throttle + service brake", testbench::test_brake_throttle_concurrent);
+
+    std::cout << "--- SECTION 12: Realistic Bus Timing & Conflicts ---\n";
+    run_test("realistic priority (0x001 wins)", testbench::test_realistic_priority);
+    run_test("realistic serialization of a burst", testbench::test_realistic_serialization);
+    run_test("optional self-reception", testbench::test_self_reception);
+    run_test("duplicate-ID conflict detection", testbench::test_duplicate_id_conflict);
+    run_test("SYS + rm authority collision", testbench::test_sys_rm_authority_collision);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();

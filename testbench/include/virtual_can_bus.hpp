@@ -14,7 +14,7 @@ namespace testbench {
 class VirtualCanBus : public ICanBus {
 public:
     struct PendingFrame {
-        uint32_t deliver_at_ms;
+        uint32_t ready_at_ms;   // earliest time the frame may start (send + delay + jitter)
         NodeId source;
         etrike::protocol::Frame frame;
     };
@@ -59,6 +59,21 @@ public:
     // Clear all active faults
     void clear_faults();
 
+    // ── Realistic bus model (opt-in) ────────────────────────────────
+    // When enabled, frames are serialized (finite bus time per frame) and
+    // delivered in ascending CAN-ID order (arbitration), optionally with
+    // self-reception and deterministic jitter. Default OFF preserves the
+    // zero-latency behavior used by the signal-flow tests.
+    void set_realistic(bool on) { realistic_ = on; }
+    bool realistic() const { return realistic_; }
+    void set_bitrate(uint32_t bits_per_sec) { bitrate_ = bits_per_sec; }
+    void set_jitter_ms(uint32_t jitter_ms) { jitter_ms_ = jitter_ms; }
+    void set_self_reception(bool on) { self_reception_ = on; }
+
+    // IDs observed from more than one producing node on this bus (a CAN
+    // collision / duplicate-sender condition).
+    std::map<uint32_t, uint32_t> conflicts() const;
+
     // ── Trace & Assertion Helpers ───────────────────────────────────
     const std::vector<TraceEntry>& trace() const { return trace_; }
     void clear_trace() { trace_.clear(); }
@@ -84,9 +99,20 @@ private:
     std::map<uint32_t, std::array<uint8_t, 8>> frozen_payloads_;
     std::map<uint32_t, uint32_t> freeze_counts_;
 
+    // Realistic timing model state
+    bool     realistic_{false};
+    bool     self_reception_{false};
+    uint32_t bitrate_{500000};
+    uint32_t jitter_ms_{0};
+    uint32_t bus_free_ms_{0};
+    uint32_t jitter_state_{0x1234567u};
+    std::map<uint32_t, std::set<NodeId>> producers_;
+
     uint32_t current_time_ms_{0};
 
     bool apply_faults_and_queue(NodeId source, etrike::protocol::Frame frame);
+    void deliver(const PendingFrame& item);
+    uint32_t tx_time_ms(const etrike::protocol::Frame& frame) const;
 };
 
 } // namespace testbench
