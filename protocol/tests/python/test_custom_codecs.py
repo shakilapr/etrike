@@ -54,7 +54,7 @@ class SelectedCodecTests(unittest.TestCase):
         }
         status, frame = ses.encode_command(values)
         self.assertEqual("ok", status)
-        self.assertEqual(bytes.fromhex("030030757d530592"), frame.data)
+        self.assertEqual(bytes.fromhex("037530007d530592"), frame.data)
         self.assertEqual(("ok", values), ses.decode_command(frame))
 
     def test_seb_pressure_command_and_overlapping_status(self) -> None:
@@ -73,7 +73,7 @@ class SelectedCodecTests(unittest.TestCase):
         self.assertEqual("ok", status)
         self.assertEqual(80, command["pressure_request_raw"])
 
-        status_frame = Frame("low", seb.STATUS_ID, "standard", bytes.fromhex("450034120078a347"))
+        status_frame = Frame("low", seb.STATUS_ID, "standard", bytes.fromhex("45123412a378a3f6"))
         status, value = seb.decode_status(status_frame)
         self.assertEqual("ok", status)
         self.assertEqual(0x1234, value["stroke_value_raw"])

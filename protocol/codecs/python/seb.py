@@ -52,8 +52,8 @@ def encode_command(values: Mapping[str, object]) -> tuple[CodecStatus, Frame | N
         | (mode << 2)
         | (int(auto_brake) << 3)
     )
-    payload[2] = stroke & 0xFF
-    payload[3] = stroke >> 8 if mode == 0 else pressure
+    payload[1:3] = stroke.to_bytes(2, "big", signed=False)
+    payload[3] = pressure
     payload[6] = 0x03 | (counter << 4)
     payload[7] = compute(payload[:7])
     return "ok", Frame(BUS, COMMAND_ID, "standard", payload)
@@ -66,7 +66,7 @@ def decode_command(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]
     if frame.data[6] & 0x03 != 0x03:
         return "constant_mismatch", None
     mode = 1 if frame.data[0] & 0x04 else 0
-    pressure = frame.data[3] if mode == 1 else 0
+    pressure = frame.data[3]
     if pressure > 100:
         return "value_out_of_range", None
     return "ok", {
@@ -74,7 +74,7 @@ def decode_command(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]
         "control_enable": bool(frame.data[0] & 0x02),
         "control_mode": mode,
         "auto_brake": bool(frame.data[0] & 0x08),
-        "stroke_request_raw": frame.data[2] | (frame.data[3] << 8) if mode == 0 else frame.data[2],
+        "stroke_request_raw": int.from_bytes(frame.data[1:3], "big", signed=False),
         "pressure_request_raw": pressure,
         "rolling_counter": frame.data[6] >> 4,
     }
@@ -91,9 +91,9 @@ def decode_status(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]:
         "control_mode": (frame.data[0] >> 2) & 0x03,
         "auto_brake_status": bool(frame.data[0] & 0x10),
         "error_status": (frame.data[0] >> 6) & 0x03,
-        "stroke_value_raw": int.from_bytes(frame.data[2:4], "little"),
+        "stroke_value_raw": int.from_bytes(frame.data[1:3], "big"),
         "pressure_value_raw": frame.data[3],
-        "angle_value_raw": int.from_bytes(frame.data[5:7], "little", signed=True),
+        "angle_value_raw": int.from_bytes(frame.data[4:6], "big", signed=True),
         "rolling_counter_enabled": bool(frame.data[6] & 0x01),
         "checksum_enabled": bool(frame.data[6] & 0x02),
         "rolling_counter": frame.data[6] >> 4,

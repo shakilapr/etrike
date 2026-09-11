@@ -32,11 +32,9 @@ inline CodecStatus encode_command(const Command& value, Frame& out) noexcept {
     Frame frame = Frame::standard(kCommandId, kDlc);
     frame.data[0] = static_cast<std::uint8_t>((value.alignment_enable ? 0x01u : 0u) |
                                               (value.control_enable ? 0x02u : 0u));
-    // Bytes 1 and all unused bits remain zero from value initialization.
-    write_le_i16(&frame.data[2], value.target_angle_raw);
-    frame.data[4] = static_cast<std::uint8_t>(value.target_speed_raw);
+    write_be_i16(&frame.data[1], value.target_angle_raw);
+    write_be_u16(&frame.data[3], value.target_speed_raw);
     frame.data[5] = static_cast<std::uint8_t>(0x03u |
-                                              ((value.target_speed_raw >> 6u) & 0x0Cu) |
                                               (value.rolling_counter << 4u));
     frame.data[6] = value.vehicle_speed_raw;
     frame.data[7] = profiles::xor8_ff_v1(frame.data.data(), 7);
@@ -52,9 +50,8 @@ inline CodecStatus decode_command(FrameView frame, Command& out) noexcept {
     Command value{};
     value.alignment_enable = (frame[0] & 0x01u) != 0;
     value.control_enable = (frame[0] & 0x02u) != 0;
-    value.target_angle_raw = read_le_i16(frame.data() + 2);
-    value.target_speed_raw = static_cast<std::uint16_t>(frame[4]) |
-                             static_cast<std::uint16_t>((frame[5] & 0x0Cu) << 6u);
+    value.target_angle_raw = read_be_i16(frame.data() + 1);
+    value.target_speed_raw = read_be_u16(frame.data() + 3);
     value.rolling_counter = static_cast<std::uint8_t>(frame[5] >> 4u);
     value.vehicle_speed_raw = frame[6];
     if (value.target_speed_raw < 125 || value.target_speed_raw > 525)
@@ -69,7 +66,6 @@ struct Status {
     std::uint8_t error_status{0};
     std::uint16_t steering_angle_raw{0};
     std::int16_t target_angle_speed_raw{0};
-    // This is the same wire byte as the high byte of target_angle_speed_raw.
     std::uint8_t steering_torque_raw{0};
     bool rolling_counter_enabled{false};
     bool checksum_enabled{false};
@@ -83,8 +79,8 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
     value.angle_aligned = (frame[0] & 0x01u) != 0;
     value.control_mode = static_cast<std::uint8_t>((frame[0] >> 1u) & 0x03u);
     value.error_status = static_cast<std::uint8_t>((frame[0] >> 6u) & 0x03u);
-    value.steering_angle_raw = read_le_u16(frame.data() + 2);
-    value.target_angle_speed_raw = read_le_i16(frame.data() + 4);
+    value.steering_angle_raw = read_be_u16(frame.data() + 1);
+    value.target_angle_speed_raw = read_be_i16(frame.data() + 3);
     value.steering_torque_raw = frame[5];
     value.rolling_counter_enabled = (frame[6] & 0x01u) != 0;
     value.checksum_enabled = (frame[6] & 0x02u) != 0;
@@ -94,8 +90,6 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
 }
 
 // Mirror of decode_status (single source of truth for the STATUS bit layout).
-// Note the byte-5 overlap: target_angle_speed_raw[15:8] shares the wire byte
-// with steering_torque_raw, so steering_torque_raw is written last.
 inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
     if (value.control_mode > 3u || value.error_status > 3u || value.rolling_counter > 15u)
         return CodecStatus::ValueOutOfRange;
@@ -104,9 +98,9 @@ inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
     frame.data[0] = static_cast<std::uint8_t>((value.angle_aligned ? 0x01u : 0u) |
                                               ((value.control_mode & 0x03u) << 1u) |
                                               ((value.error_status & 0x03u) << 6u));
-    write_le_u16(&frame.data[2], value.steering_angle_raw);
-    write_le_i16(&frame.data[4], value.target_angle_speed_raw);
-    frame.data[5] = value.steering_torque_raw;  // overlaps speed high byte
+    write_be_u16(&frame.data[1], value.steering_angle_raw);
+    write_be_i16(&frame.data[3], value.target_angle_speed_raw);
+    frame.data[5] = value.steering_torque_raw;
     frame.data[6] = static_cast<std::uint8_t>((value.rolling_counter_enabled ? 0x01u : 0u) |
                                               (value.checksum_enabled ? 0x02u : 0u) |
                                               ((value.rolling_counter & 0x0Fu) << 4u));

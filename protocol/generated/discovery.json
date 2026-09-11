@@ -2057,7 +2057,7 @@
       "protocol": "seb.vendor.v1"
     },
     {
-      "byte_order": "little",
+      "byte_order": "big",
       "canonical_key": "seb:seb_status",
       "codec": {
         "implementation_id": "seb-status-v1",
@@ -2081,7 +2081,7 @@
       ],
       "key": "seb_status",
       "layout": {
-        "algorithm": "vendor pressure/stroke/angle overlap; XOR8-complement checksum",
+        "algorithm": "Motorola big-endian: stroke bytes 1..2, pressure byte 3, angle bytes 4..5, security byte 6, XOR8-complement checksum byte 7",
         "bytes": 8,
         "kind": "opaque"
       },
@@ -2155,7 +2155,7 @@
       "protocol": "seb.vendor.v1"
     },
     {
-      "byte_order": "little",
+      "byte_order": "big",
       "canonical_key": "seb:vcu_seb_req",
       "codec": {
         "implementation_id": "seb-command-v1",
@@ -2178,7 +2178,7 @@
       ],
       "key": "vcu_seb_req",
       "layout": {
-        "algorithm": "vendor pressure/stroke overlap; XOR8-complement checksum",
+        "algorithm": "Motorola big-endian: stroke req bytes 1..2, pressure req byte 3, reserved bytes 4..5, security byte 6, XOR8-complement checksum byte 7",
         "bytes": 8,
         "kind": "opaque"
       },
@@ -2219,7 +2219,7 @@
       "protocol": "ses.vendor.v1"
     },
     {
-      "byte_order": "little",
+      "byte_order": "big",
       "canonical_key": "ses:ses_status",
       "codec": {
         "implementation_id": "ses-status-v1",
@@ -2242,7 +2242,7 @@
       ],
       "key": "ses_status",
       "layout": {
-        "algorithm": "vendor overlapping status layout; XOR8-complement checksum",
+        "algorithm": "Motorola big-endian: steering angle bytes 1..2, speed bytes 3..4, torque byte 5, security byte 6, XOR8-complement checksum byte 7",
         "bytes": 8,
         "kind": "opaque"
       },
@@ -2316,7 +2316,7 @@
       "protocol": "ses.vendor.v1"
     },
     {
-      "byte_order": "little",
+      "byte_order": "big",
       "canonical_key": "ses:vcu_ses_req",
       "codec": {
         "implementation_id": "ses-command-v1",
@@ -2339,7 +2339,7 @@
       ],
       "key": "vcu_ses_req",
       "layout": {
-        "algorithm": "xor8-complement over bytes 0..6; rolling counter and enable bits share byte 5",
+        "algorithm": "Motorola big-endian: target angle bytes 1..2, speed bytes 3..4, security byte 5, vehicle speed byte 6, XOR8-complement checksum byte 7",
         "bytes": 8,
         "kind": "opaque"
       },
@@ -3087,7 +3087,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "a37f51545783bf4de5ae166f653e0ed80e26b16aa62153dc17a425c0a47312df",
+  "network_hash": "ea7117b2e6955a5b272300a7bd7f1cb0b6ac3f969f6557cf394ee177eba8ac58",
   "routes": [
     {
       "from": "low",
@@ -3196,6 +3196,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c",
-  "wire_hash": "a78bf0d5f1e609894059f25dfdb8282553cc9f58d969ec2cd405187fb22ab82c"
+  "semantic_hash": "508fae8bfaec0b50f1adeb6a0200fa7fc77ecafc012f4ceb3078904985dfb2d1",
+  "wire_hash": "508fae8bfaec0b50f1adeb6a0200fa7fc77ecafc012f4ceb3078904985dfb2d1"
 }

@@ -1,6 +1,6 @@
 # CAN Signal Dictionary ? E-Trike
 
-Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first) unless noted (steer-by-wire protocol uses Motorola LSB).
+Two physical CAN buses at 500 kbit/s. All fields big-endian (MSB first / Motorola forward order), including steer-by-wire (SES) and brake-by-wire (SEB) vendor protocols.
 
 > **Source of truth:** The canonical, machine-generated CAN contract now lives in [`protocol/`](../protocol). YAML contracts under `protocol/contracts/*.yaml` are the authoritative definitions; `protocol/generated/` holds derived artifacts (C++ header, Python/TypeScript codecs, CSV, DBC). Regenerate with `python -m protocol.tools.protocol generate` and check drift with `... generate --check`. This document is the human-readable companion ? signal tables for SES/SEB vendor frames (`0x169`/`0x201`/`0x202`/`0x6FA`/`0x721`/`0x731`/`0x741`/`0x7B9`) are hand-maintained because those use opaque custom codecs not represented in the generated CSV/DBC. Where this doc and `protocol/` disagree, `protocol/` wins.
 
@@ -178,7 +178,7 @@ RT max-select: `brake_kpa = max(rt_obstacle, jetson_0x301)`. SYS converts: `seb_
 Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 
 
-### 0x201 ? SES_STATUS (steer-by-wire unit Feedback)
+### 0x201 — SES_STATUS (steer-by-wire unit Feedback)
 
 | Property | Value |
 |----------|-------|
@@ -186,81 +186,67 @@ Byte layout (big-endian): Bytes 0-1=speed, Byte 2=gear, Byte 3=faults.
 | **Receiver(s)** | RT |
 | **DLC** | 8 |
 | **Period** | 10 ms (100 Hz) |
-| **Endianness** | Motorola LSB (little-endian) |
+| **Endianness** | Motorola Big-Endian (MSB first) |
 
-| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
-|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
-| `SES_INF_Angle_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | ? | Center Finding Status. 0=Center Finding, 1=Found. (CSV Row 11) |
-| `SES_Control_Mode_Status` | 1 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Control Mode Feedback. 0=Manual, 1=Automatic. (CSV Row 12) |
-| (unaccounted) | 3 | 3 | ? | ? | ? | ? | ? | ? | Byte 0 bits 3?5 ? not enumerated in CSV |
-| `SES_Error_Status` | 6 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Error Status. 0=Normal, 1=L1 Warning, 2=L2, 3=L3. (CSV Row 13) |
-| (unaccounted) | ? | 8 | ? | ? | ? | ? | ? | ? | Byte 1 ? not enumerated in CSV |
-| `SES_StrAngle` | 16 | 16 | u16 | 0.1 | -3000 | -700 | 700 | ? | Steering Angle. Unsigned per CSV. Raw 0?-3000?, raw 30000?0?, raw 23000?-700?, raw 37000?700?. (CSV Row 14) |
-| `SES_Tgt_StrAngleSpd` | 32 | 16 | i16 | 0.5 | 0 | 0 | 1480 | ?/s | Target Angle Speed. 16-bit signed per CSV. Overlaps Torq at byte 5. (CSV Row 15) |
-| `EPS_SteeringWheel_Torq` | 40 | 8 | u8 | 0.1 | -12.1 | -12 | 12 | Nm | Steering Wheel Torque Feedback. Overlaps StrAngleSpd[15:8] at byte 5. Init 0x79 (121 raw = 0 Nm). (CSV Row 16) |
-| `SES_RollCnt_Enable_Status` | 48 | 1 | bool | 1 | 0 | 0 | 1 | ? | Life Signal Enable Feedback. 0=Invalid, 1=Valid. (CSV Row 17) |
-| `SES_CheckSum_Enable_Status` | 49 | 1 | bool | 1 | 0 | 0 | 1 | ? | Checksum Enable Feedback. 0=Invalid, 1=Valid. (CSV Row 18) |
-| (unaccounted) | 50 | 2 | ? | ? | ? | ? | ? | ? | Byte 6 bits 2?3 ? not enumerated in CSV |
-| `SES_RollCnt_Status` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | ? | Life Signal Feedback. Rolling counter 0?15. (CSV Row 19) |
-| `SES_CheckSum_Status` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Checksum Feedback = XOR(bytes 0?6) ^ 0xFF. (CSV Row 20) |
+| Signal | Byte | Bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|------|-----|-----|------|-------|--------|-----|-----|------|-------------|
+| `SES_INF_Angle_Status` | 0 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Center Finding Status. 0=Center Finding, 1=Found. |
+| `SES_Control_Mode_Status` | 0 | 1 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Control Mode Feedback. 0=Manual, 1=Automatic. |
+| `SES_Error_Status` | 0 | 6 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Error Status. 0=Normal, 1=L1 Warning, 2=L2, 3=L3. |
+| `SES_StrAngle` | 1..2 | 0 | 16 | u16 | 0.1 | -3000 | -700 | 700 | ° | Steering Angle. Motorola MSB first (Byte 1=MSB, Byte 2=LSB). Raw 30000=0°. |
+| `SES_Tgt_StrAngleSpd` | 3..4 | 0 | 16 | i16 | 0.5 | 0 | 0 | 1480 | °/s | Target Angle Speed. Motorola MSB first (Byte 3=MSB, Byte 4=LSB). |
+| `EPS_SteeringWheel_Torq` | 5 | 0 | 8 | u8 | 0.1 | -12.1 | -12 | 12 | Nm | Steering Wheel Torque Feedback. |
+| `SES_RollCnt_Enable_Status` | 6 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Life Signal Enable Feedback. 0=Invalid, 1=Valid. |
+| `SES_CheckSum_Enable_Status` | 6 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Checksum Enable Feedback. 0=Invalid, 1=Valid. |
+| `SES_RollCnt_Status` | 6 | 4 | 4 | u8 | 1 | 0 | 0 | 15 | — | Life Signal Feedback. Rolling counter 0..15. |
+| `SES_CheckSum_Status` | 7 | 0 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum Feedback = XOR(bytes 0..6) ^ 0xFF. |
 
-**Byte layout** (little-endian, CSV as source of truth):
+**Byte layout** (Motorola big-endian):
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | AngleSts[0]+ModeSts[1:2]+(gap)+Error[6:7] | (unacc.) | StrAngle [7:0] | StrAngle [15:8] | Speed [7:0] | Speed[15:8] / Torq [7:0] (overlap) | RollCntEn[0]+CksEn[1]+(gap)+RollCnt[4:7] | CksSum_Stat |
+| Content | AngleSts[0]+ModeSts[1:2]+Error[6:7] | StrAngle [15:8] | StrAngle [7:0] | TgtAngleSpd [15:8] | TgtAngleSpd [7:0] | WheelTorque [7:0] | RollCntEn[0]+CksEn[1]+RollCnt[4:7] | CheckSum |
 
-> **StrAngle conversion (CSV Unsigned, offset=-3000):** `physical_deg = raw ? 0.1 ? 3000`. The SES encodes steering angle as an unsigned 16-bit value with -3000 offset. Raw 30000 ? 0? (straight). Raw 23000 ? -700? (full left). Raw 37000 ? 700? (full right). In practice, RT uses `internal_angle_mdeg / 100` to produce the raw value; adjust per actual calibration.
+> **StrAngle conversion (offset=-3000):** `physical_deg = raw * 0.1 - 3000`. Raw 30000 = 0° (straight). Raw 23000 = -700° (full left). Raw 37000 = 700° (full right).
 >
-> **Torq encoding (CSV scale=0.1, offset=-12.1):** `physical_Nm = raw ? 0.1 ? 12.1`. Raw 121 (0x79) ? 0.0 Nm (no torque). Raw 0 ? -12.1 Nm. Raw 241 ? 12.0 Nm. The SES biases torque readings so zero torque is at raw 121.
->
-> **Byte 5 overlap:** CSV declares `SES_Tgt_StrAngleSpd` as 16-bit (bytes 4?5, Signed) AND `EPS_SteeringWheel_Torq` as 8-bit (byte 5). Both are listed ? the SES may report these in alternate frames or the CSV represents signals available across firmware versions.
+> **Torq encoding (scale=0.1, offset=-12.1):** `physical_Nm = raw * 0.1 - 12.1`. Raw 121 (0x79) = 0.0 Nm.
 
 ---
 
-### 0x169 ? VCU_SES_REQ (steer-by-wire unit Command)
+### 0x169 — VCU_SES_REQ (steer-by-wire unit Command)
 
 | Property | Value |
 |----------|-------|
 | **Sender** | RT ESP32-S3 |
 | **Receiver(s)** | steer-by-wire unit (steering module) |
 | **DLC** | 8 |
-| **Period** | 20 ms (50 Hz) ? **continuous, every frame** |
-| **Endianness** | Motorola LSB (little-endian) |
+| **Period** | 20 ms (50 Hz) — **continuous, every frame** |
+| **Endianness** | Motorola Big-Endian (MSB first) |
 | **Note** | Factory default `0x169`. steer-by-wire unit is preprogrammed and not reconfigurable. `RT_DRIVE_CMD` placed at `0x204` to avoid collision. |
 
-| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
-|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
-| `VCU_SES_Alignment_Enable` | 0 | 1 | bool | 1 | 0 | 0 | 1 | ? | SES Angle Initial Alignment Enable. 0=disabled, 1=centering. (CSV Row 2) |
-| `VCU_SES_Control_Enable` | 1 | 1 | bool | 1 | 0 | 0 | 1 | ? | VCU Direction Control Enable. 0=Disabled (Default Assist), 1=Rising Edge Enable (Angle Control Mode). (CSV Row 3) |
-| (unaccounted) | 2 | 6 | ? | ? | ? | ? | ? | ? | Byte 0 bits 2?7 ? not enumerated in CSV |
-| (unaccounted) | ? | 8 | ? | ? | ? | ? | ? | ? | Byte 1 ? not enumerated in CSV |
-| `VCU_SES_Tgt_StrAngle` | 16 | 16 | i16 | 0.1 | -3000 | -700 | 700 | ? | Target Steering Angle. Negative = left. (CSV Row 4). Note: CSV offset=-3000 (see conversion note below). |
-| `VCU_SES_Tgt_StrAngleSpd` | 32 | 16 | u16 | 1 | 0 | 125 | 525 | ?/s | Target Steering Angle Speed. 16-bit per CSV. Overlaps security signals at byte 5. (CSV Row 5) |
-| `VCU_SES_RollCnt_Enable` | 40 | 1 | bool | 1 | 0 | 0 | 1 | ? | Life Signal Enable ? **Must be 1**. Overlaps StrAngleSpd[15:8]. (CSV Row 6) |
-| `VCU_SES_CheckSum_Enable` | 41 | 1 | bool | 1 | 0 | 0 | 1 | ? | Checksum Enable ? **Must be 1**. Overlaps StrAngleSpd[15:8]. (CSV Row 7) |
-| (unaccounted) | 42 | 2 | ? | ? | ? | ? | ? | ? | Byte 5 bits 2?3 ? not enumerated in CSV |
-| `VCU_SES_RollCnt` | 44 | 4 | u8 | 1 | 0 | 0 | 15 | ? | Life Signal rolling counter. Increment every frame. Overlaps StrAngleSpd[15:8]. (CSV Row 8) |
-| `VCU_Veh_Spd_Value` | 48 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Vehicle Speed. RT must populate with current speed. (CSV Row 9) |
-| `VCU_SES_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Checksum = XOR(bytes 0?6) ^ 0xFF (CSV Row 10) |
+| Signal | Byte | Bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|------|-----|-----|------|-------|--------|-----|-----|------|-------------|
+| `VCU_SES_Alignment_Enable` | 0 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | SES Angle Initial Alignment Enable. 0=disabled, 1=centering. |
+| `VCU_SES_Control_Enable` | 0 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | VCU Direction Control Enable. 0=Disabled (Default Assist), 1=Enable (Angle Control Mode). |
+| `VCU_SES_Tgt_StrAngle` | 1..2 | 0 | 16 | i16 | 0.1 | -3000 | -700 | 700 | ° | Target Steering Angle. Motorola MSB first (Byte 1=MSB, Byte 2=LSB). |
+| `VCU_SES_Tgt_StrAngleSpd` | 3..4 | 0 | 16 | u16 | 1 | 0 | 125 | 525 | °/s | Target Steering Angle Speed. Motorola MSB first (Byte 3=MSB, Byte 4=LSB). |
+| `VCU_SES_RollCnt_Enable` | 5 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Life Signal Enable — **Must be 1**. |
+| `VCU_SES_CheckSum_Enable` | 5 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Checksum Enable — **Must be 1**. |
+| `VCU_SES_RollCnt` | 5 | 4 | 4 | u8 | 1 | 0 | 0 | 15 | — | Life Signal rolling counter. Increment every frame. |
+| `VCU_Veh_Spd_Value` | 6 | 0 | 8 | u8 | 1 | 0 | 0 | 255 | — | Vehicle Speed. RT populates with current speed. |
+| `VCU_SES_CheckSum` | 7 | 0 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum = XOR(bytes 0..6) ^ 0xFF |
 
-**Byte layout** (little-endian, CSV as source of truth):
+**Byte layout** (Motorola big-endian):
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | Align[0]+CtrlEn[1] | (unacc.) | Angle [7:0] | Angle [15:8] | Speed [7:0] | Speed[15:8] / RollCntEn[0]+CksEn[1]+(gap)+RollCnt[4:7] (overlap) | Veh_Spd [7:0] | CheckSum |
+| Content | AlignEn[0]+CtrlEn[1] | TgtAngle [15:8] | TgtAngle [7:0] | TgtAngleSpd [15:8] | TgtAngleSpd [7:0] | RollCntEn[0]+CksEn[1]+RollCnt[4:7] | VehSpd [7:0] | CheckSum |
 
-> **Angle conversion (CSV offset=-3000):** `physical_deg = raw ? 0.1 + (-3000)`. This encoding places the ?700? physical range at raw values approximately 23000?37000. Raw 0 ? -3000? (outside normal range). This offset is unusual for a signed integer ? 0? does not map to raw 0. The CSV offset may be a tool artifact; verify against observed CAN bus values.
+> **Angle conversion (offset=-3000):** `physical_deg = raw * 0.1 - 3000`. Raw 30000 = 0° (straight).
 >
-> **Byte 5 overlap:** CSV declares `VCU_SES_Tgt_StrAngleSpd` as 16-bit (bytes 4?5) AND security signals at byte 5 (RollCnt_Enable, CheckSum_Enable, RollCnt). Both are listed in the manufacturer's DBC export. The SES may internally separate these ? the upper nibble of byte 5 carries security data while the lower bits carry speed. RT firmware should write the speed value to bytes 4?5 AND set security fields at byte 5 bits 0?3 + upper nibble; the SES validates the security portion independently of the speed portion.
+> **Security**: `RollCnt_Enable` (bit 0) and `CheckSum_Enable` (bit 1) must be 1. Byte 5 lower bits = 0x03. Checksum: `XOR(bytes[0..6]) ^ 0xFF`.
 >
-> **Slew rate:** Speed-dependent. RT computes `VCU_SES_Tgt_StrAngleSpd` based on speed to ensure smooth steering. CSV lists range 125?525 ?/s. The SES may reject speed commands below 125 ?/s.
-
-**Internal conversion (architecture, offset=0)**: `VCU_SES_Tgt_StrAngle_raw = internal_angle_mdeg / 100` (45500 mdeg ? 455 raw ? 45.5?). CSV declares offset=-3000; if that encoding is used, the formula would be `raw = internal_angle_mdeg / 100 + 30000` (45500 mdeg ? 30455 raw ? 45.5?). Verify which encoding the SES actually expects by observing CAN bus traffic.
-
-**Security**: If `roll_cnt_enable=0` or `checksum_enable=0`, unit may reject frames. Both must be 1. Checksum algorithm: `XOR(bytes[0..6]) ^ 0xFF` (verify exact formula against steer-by-wire spec).
-
-**Slew rate**: Speed-dependent. RT computes `VCU_SES_Tgt_StrAngleSpd` based on speed to ensure smooth steering. Lower speed ? lower slew rate for comfort; higher speed ? higher slew rate for responsiveness (within dynamic clamp).
+> **Slew rate**: Speed-dependent. RT computes `VCU_SES_Tgt_StrAngleSpd` based on speed (range 125..525 °/s).
 
 ---
 
@@ -404,40 +390,35 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok/rx_overflow, 3=estop, 4-
 
 ---
 
-### 0x7B9 ? VCU_SEB_REQ (brake-by-wire unit Brake Command)
+### 0x7B9 — VCU_SEB_REQ (brake-by-wire unit Brake Command)
 
 | Property | Value |
 |----------|-------|
 | **Sender** | SYS ESP32-S3 |
 | **Receiver(s)** | brake-by-wire unit (brake module) |
 | **DLC** | 8 |
-| **Period** | 20 ms (50 Hz) ? **continuous, every frame** |
-| **Endianness** | Motorola LSB (little-endian) |
+| **Period** | 20 ms (50 Hz) — **continuous, every frame** |
+| **Endianness** | Motorola Big-Endian (MSB first) |
 
-| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
-|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
-| `VCU_SEB_Alignment_Enable` | 0 | 1 | bool | 1 | 0 | 0 | 1 | ? | Calibration enable (CSV Row 2) |
-| `VCU_SEB_Control_Enable` | 1 | 1 | bool | 1 | 0 | 0 | 1 | ? | Active control enable (CSV Row 3) |
-| `VCU_SEB_Control_Mode` | 2 | 1 | bool | 1 | 0 | 0 | 1 | enum | 0=Stroke, 1=Pressure (CSV Row 4) |
-| `VCU_SEB_AutoBrake` | 3 | 1 | bool | 1 | 0 | 0 | 1 | ? | Auto-brake / emergency trigger (CSV Row 5) |
-| (unaccounted) | 4 | 4 | ? | ? | ? | ? | ? | ? | Byte 0 bits 4?7 ? not enumerated in CSV |
-| (unaccounted) | ? | 8 | ? | ? | ? | ? | ? | ? | Byte 1 ? not enumerated in CSV |
-| `VCU_SEB_Stroke_Value_Req` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Requested stroke position (CSV Row 6) |
-| `VCU_SEB_Pre_Value_Req` | 24 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Requested pressure (CSV Row 7). Raw = kPa ? 0.02. Overlaps Stroke[15:8] at byte 3 ? mode-dependent: Stroke uses full 16-bit in Mode 0, byte 3 carries pressure in Mode 1. |
-| (unaccounted) | 32 | 16 | ? | ? | ? | ? | ? | ? | Bytes 4?5 ? not enumerated in CSV |
-| `VCU_SEB_RollCnt_Enable` | 48 | 1 | bool | 1 | 0 | 0 | 1 | ? | Life Signal Validity ? **Must be 1** (CSV Row 8) |
-| `VCU_SEB_CheckSum_Enable` | 49 | 1 | bool | 1 | 0 | 0 | 1 | ? | Checksum Validity ? **Must be 1** (CSV Row 9) |
-| (unaccounted) | 50 | 2 | ? | ? | ? | ? | ? | ? | Byte 6 bits 2?3 ? not enumerated in CSV |
-| `VCU_SEB_RollCnt` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | ? | Life Signal rolling counter. Increment every frame. (CSV Row 10) |
-| `VCU_SEB_CheckSum` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Checksum = XOR(bytes 0?6) ^ 0xFF (CSV Row 11) |
+| Signal | Byte | Bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|------|-----|-----|------|-------|--------|-----|-----|------|-------------|
+| `VCU_SEB_Alignment_Enable` | 0 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Calibration enable |
+| `VCU_SEB_Control_Enable` | 0 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Active control enable |
+| `VCU_SEB_Control_Mode` | 0 | 2 | 1 | enum | 1 | 0 | 0 | 1 | enum | 0=Stroke, 1=Pressure |
+| `VCU_SEB_AutoBrake` | 0 | 3 | 1 | bool | 1 | 0 | 0 | 1 | — | Auto-brake / emergency trigger |
+| `VCU_SEB_Stroke_Value_Req` | 1..2 | 0 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Requested stroke position. Motorola MSB first (Byte 1=MSB, Byte 2=LSB). |
+| `VCU_SEB_Pre_Value_Req` | 3 | 0 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Requested pressure. Raw = kPa * 0.02. |
+| (reserved) | 4..5 | 0 | 16 | u16 | — | — | 0 | 0 | — | Reserved, set to 0x0000. |
+| `VCU_SEB_RollCnt_Enable` | 6 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Life Signal Validity — **Must be 1** |
+| `VCU_SEB_CheckSum_Enable` | 6 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Checksum Validity — **Must be 1** |
+| `VCU_SEB_RollCnt` | 6 | 4 | 4 | u8 | 1 | 0 | 0 | 15 | — | Life Signal rolling counter. Increment every frame. |
+| `VCU_SEB_CheckSum` | 7 | 0 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum = XOR(bytes 0..6) ^ 0xFF |
 
-**Byte layout** (little-endian, CSV as source of truth):
+**Byte layout** (Motorola big-endian):
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | Align[0]+CtrlEn[1]+Mode[2]+AutoBrk[3] | (unaccounted) | Stroke_Req [7:0] | Stroke_Req [15:8] / Pre_Req [7:0] (mode-muxed) | (unaccounted) | (unaccounted) | RollCntEn[0]+CksEn[1]+(gap)+RollCnt[4:7] | CheckSum |
-
-> **Byte 3 multiplexing:** In Stroke Mode (Mode=0), bytes 2?3 carry the 16-bit stroke value (`VCU_SEB_Stroke_Value_Req`). In Pressure Mode (Mode=1), byte 3 carries the 8-bit pressure value (`VCU_SEB_Pre_Value_Req`). Both signals are declared in the CSV at overlapping positions ? the SEB interprets byte 3 based on the active mode bit. Bytes 1, 4, and 5 are not enumerated in the CSV; the SEB may ignore them or use them for undocumented functions.
+| Content | AlignEn[0]+CtrlEn[1]+Mode[2]+AutoBrk[3] | Stroke_Req [15:8] | Stroke_Req [7:0] | Pre_Req [7:0] | (reserved 0) | (reserved 0) | RollCntEn[0]+CksEn[1]+RollCnt[4:7] | CheckSum |
 
 **Stroke conversion**: `raw = (physical_mm + 30.0) / 0.05`
 
@@ -448,14 +429,14 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok/rx_overflow, 3=estop, 4-
 | 15 mm | 900 | Manual lever pressed |
 | 27 mm | 1140 | ESTOP full brake |
 
-**Security**: Rolling counter must increment 0?15 every frame. Same value twice ? SEB rejects (assumes frozen controller). Checksum = `XOR(bytes[0..6]) ^ 0xFF` (verify against actuator spec).
+**Security**: Rolling counter must increment 0..15 every frame. Checksum = `XOR(bytes[0..6]) ^ 0xFF`.
 
 **Mode 0 (Stroke)**: Command a specific pushrod position in mm. Best for mimicking pedal travel / ESTOP full brake / manual lever.
-**Mode 1 (Pressure)**: Command hydraulic pressure in MPa. SEB's internal PID maintains target. Best for autonomous deceleration control (compensates for pad wear, temperature).
+**Mode 1 (Pressure)**: Command hydraulic pressure in MPa. SEB's internal PID maintains target. Best for autonomous deceleration control.
 
 ---
 
-### 0x721 ? SEB_STATUS (brake-by-wire unit Brake Feedback)
+### 0x721 — SEB_STATUS (brake-by-wire unit Brake Feedback)
 
 | Property | Value |
 |----------|-------|
@@ -463,35 +444,28 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok/rx_overflow, 3=estop, 4-
 | **Receiver(s)** | SYS ESP32-S3 |
 | **DLC** | 8 |
 | **Period** | 10 ms (100 Hz) |
-| **Endianness** | Motorola LSB (little-endian) |
+| **Endianness** | Motorola Big-Endian (MSB first) |
 
-| Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
-|--------|-----------|-----|------|-------|--------|-----|-----|------|-------------|
-| `SEB_Alignment_Status` | 0 | 1 | bool | 1 | 0 | 0 | 1 | ? | Alignment Info Feedback. 1 = aligned. (CSV Row 12) |
-| `SEB_Control_Enable_Status` | 1 | 1 | bool | 1 | 0 | 0 | 1 | ? | Control Enable Feedback (CSV Row 13) |
-| `SEB_Control_Mode_Status` | 2 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Control Mode Feedback: 0=?, 1=Stroke?, 2=Pressure?, 3=? (CSV Row 14) |
-| `SEB_AutoBrake_Status` | 4 | 1 | bool | 1 | 0 | 0 | 1 | ? | Auto Brake Status Feedback (CSV Row 15) |
-| (unaccounted) | 5 | 1 | ? | ? | ? | ? | ? | ? | Byte 0 bit 5 ? not enumerated in CSV |
-| `SEB_Error_Status` | 6 | 2 | u8 | 1 | 0 | 0 | 3 | enum | 0=No fault, 1=L1 minor, 2=L2 general, 3=L3 severe (CSV Row 16) |
-| (unaccounted) | ? | 8 | ? | ? | ? | ? | ? | ? | Byte 1 ? not enumerated in CSV |
-| `SEB_Stroke_Value` | 16 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Stroke Value Feedback (CSV Row 17) |
-| `SEB_Pressure_Value` | 24 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Pressure Value Feedback (CSV Row 18). Overlaps Stroke[15:8] at byte 3 ? mode-dependent. |
-| `SEB_Angle_Value` | 40 | 16 | i16 | 0.5 | 0 | -150 | 840 | ? | Angle Feedback (CSV Row 19). Overlaps security echo bits at byte 6 ? see note below. |
-| `SEB_RollCnt_Enable_Status` | 48 | 1 | bool | 1 | 0 | 0 | 1 | ? | Life Signal Status Feedback (CSV Row 20). Overlaps Angle_Value[15:8]. |
-| `SEB_CheckSum_Enable_Status` | 49 | 1 | bool | 1 | 0 | 0 | 1 | ? | Checksum Status Feedback (CSV Row 21). Overlaps Angle_Value[15:8]. |
-| (unaccounted) | 50 | 2 | ? | ? | ? | ? | ? | ? | Byte 6 bits 2?3 ? not enumerated in CSV |
-| `SEB_RollCnt_Status` | 52 | 4 | u8 | 1 | 0 | 0 | 15 | ? | Life Signal Feedback ? echoes received rolling counter (CSV Row 22) |
-| `SEB_CheckSum_Status` | 56 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Checksum Feedback (CSV Row 23) |
+| Signal | Byte | Bit | Len | Type | Scale | Offset | Min | Max | Unit | Description |
+|--------|------|-----|-----|------|-------|--------|-----|-----|------|-------------|
+| `SEB_Alignment_Status` | 0 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Alignment Info Feedback. 1 = aligned. |
+| `SEB_Control_Enable_Status` | 0 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Control Enable Feedback |
+| `SEB_Control_Mode_Status` | 0 | 2 | 2 | u8 | 1 | 0 | 0 | 3 | enum | Control Mode Feedback: 0=?, 1=Stroke, 2=Pressure, 3=? |
+| `SEB_AutoBrake_Status` | 0 | 4 | 1 | bool | 1 | 0 | 0 | 1 | — | Auto Brake Status Feedback |
+| `SEB_Error_Status` | 0 | 6 | 2 | u8 | 1 | 0 | 0 | 3 | enum | 0=No fault, 1=L1 minor, 2=L2 general, 3=L3 severe |
+| `SEB_Stroke_Value` | 1..2 | 0 | 16 | u16 | 0.05 | -30 | -5 | 27 | mm | Stroke Value Feedback. Motorola MSB first (Byte 1=MSB, Byte 2=LSB). |
+| `SEB_Pressure_Value` | 3 | 0 | 8 | u8 | 0.05 | 0 | 0 | 5 | MPa | Pressure Value Feedback. |
+| `SEB_Angle_Value` | 4..5 | 0 | 16 | i16 | 0.5 | 0 | -150 | 840 | ° | Angle Feedback. Motorola MSB first (Byte 4=MSB, Byte 5=LSB). |
+| `SEB_RollCnt_Enable_Status` | 6 | 0 | 1 | bool | 1 | 0 | 0 | 1 | — | Life Signal Status Feedback |
+| `SEB_CheckSum_Enable_Status` | 6 | 1 | 1 | bool | 1 | 0 | 0 | 1 | — | Checksum Status Feedback |
+| `SEB_RollCnt_Status` | 6 | 4 | 4 | u8 | 1 | 0 | 0 | 15 | — | Life Signal Feedback — echoes received rolling counter |
+| `SEB_CheckSum_Status` | 7 | 0 | 8 | u8 | 1 | 0 | 0 | 255 | — | Checksum Feedback |
 
-**Byte layout** (little-endian, CSV as source of truth):
+**Byte layout** (Motorola big-endian):
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|---|---|---|---|---|---|---|---|
-| Content | Align[0]+CtrlEn[1]+Mode[2:3]+AutoBrk[4]+(gap)+Error[6:7] | (unacc.) | Stroke [7:0] | Stroke [15:8] / Pressure [7:0] (mode-muxed) | (unacc.) | Angle [7:0] | Angle[15:8] / RollCntEn[0]+CksEn[1]+(gap)+RollCnt[4:7] (overlap) | CksSum_Stat |
-
-> **Byte 3 multiplexing:** Same pattern as command frame ? `SEB_Stroke_Value` uses full 16-bit at bytes 2?3 in Stroke Mode; `SEB_Pressure_Value` uses byte 3 in Pressure Mode. The SEB reports whichever is active.
->
-> **Byte 6 overlap:** CSV lists `SEB_Angle_Value` as 16-bit (bytes 5?6) AND security echo bits at byte 6 (bits 48?49, 52?55). These overlap. The CSV (manufacturer DBC export) declares both ? they may represent different firmware versions or the Angle_Value may be 8-bit in practice (byte 5 only). Trust the CSV's declaration and handle in firmware by reading Angle as 16-bit from bytes 5?6, understanding that the upper byte may carry security echo data in some SEB firmware revisions.
+| Content | Align[0]+CtrlEn[1]+Mode[2:3]+AutoBrk[4]+Error[6:7] | Stroke [15:8] | Stroke [7:0] | Pressure [7:0] | Angle [15:8] | Angle [7:0] | RollCntEn[0]+CksEn[1]+RollCnt[4:7] | CheckSum |
 
 **SYS usage**: Boot sync ? read `SEB_Stroke_Value` as initial command target. Active ? confirm `SEB_Alignment_Status == 1`. `SEB_Error_Status > 0` ? log and report via `0x011`. Subscribe to `0x731 SEB_ErrInfo` for detailed fault flags ? escalate L3 faults to ESTOP.
 

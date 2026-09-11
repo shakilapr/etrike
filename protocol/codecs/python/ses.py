@@ -46,9 +46,9 @@ def encode_command(values: Mapping[str, object]) -> tuple[CodecStatus, Frame | N
         return "value_out_of_range", None
     payload = bytearray(DLC)
     payload[0] = int(alignment_enable) | (int(control_enable) << 1)
-    payload[2:4] = target_angle.to_bytes(2, "little", signed=True)
-    payload[4] = target_speed & 0xFF
-    payload[5] = 0x03 | ((target_speed >> 6) & 0x0C) | (counter << 4)
+    payload[1:3] = target_angle.to_bytes(2, "big", signed=True)
+    payload[3:5] = target_speed.to_bytes(2, "big", signed=False)
+    payload[5] = 0x03 | (counter << 4)
     payload[6] = vehicle_speed
     payload[7] = compute(payload[:7])
     return "ok", Frame(BUS, COMMAND_ID, "standard", payload)
@@ -60,13 +60,13 @@ def decode_command(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]
         return status, None
     if frame.data[5] & 0x03 != 0x03:
         return "constant_mismatch", None
-    target_speed = frame.data[4] | ((frame.data[5] & 0x0C) << 6)
+    target_speed = int.from_bytes(frame.data[3:5], "big", signed=False)
     if not 125 <= target_speed <= 525:
         return "value_out_of_range", None
     return "ok", {
         "alignment_enable": bool(frame.data[0] & 0x01),
         "control_enable": bool(frame.data[0] & 0x02),
-        "target_angle_raw": int.from_bytes(frame.data[2:4], "little", signed=True),
+        "target_angle_raw": int.from_bytes(frame.data[1:3], "big", signed=True),
         "target_speed_raw": target_speed,
         "rolling_counter": frame.data[5] >> 4,
         "vehicle_speed_raw": frame.data[6],
@@ -81,8 +81,8 @@ def decode_status(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]:
         "angle_aligned": bool(frame.data[0] & 0x01),
         "control_mode": (frame.data[0] >> 1) & 0x03,
         "error_status": (frame.data[0] >> 6) & 0x03,
-        "steering_angle_raw": int.from_bytes(frame.data[2:4], "little"),
-        "target_angle_speed_raw": int.from_bytes(frame.data[4:6], "little", signed=True),
+        "steering_angle_raw": int.from_bytes(frame.data[1:3], "big"),
+        "target_angle_speed_raw": int.from_bytes(frame.data[3:5], "big", signed=True),
         "steering_torque_raw": frame.data[5],
         "rolling_counter_enabled": bool(frame.data[6] & 0x01),
         "checksum_enabled": bool(frame.data[6] & 0x02),

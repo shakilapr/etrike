@@ -42,8 +42,9 @@ export function encodeSebCommand(values: Readonly<Record<string, unknown>>): Enc
     (values.control_enable === true ? 2 : 0) |
     (mode << 2) |
     (values.auto_brake === true ? 8 : 0);
-  payload[2] = stroke & 0xff;
-  payload[3] = mode === 0 ? stroke >> 8 : pressure;
+  const view = new DataView(payload.buffer);
+  view.setUint16(1, stroke, false);
+  payload[3] = pressure;
   payload[6] = 0x03 | (counter << 4);
   payload[7] = compute(payload.subarray(0, 7));
   return ["ok", frame(SEB_BUS, SEB_COMMAND_ID, "standard", payload)];
@@ -54,14 +55,15 @@ export function decodeSebCommand(input: CanFrame): DecodeResult<Record<string, u
   if (status !== "ok") return [status];
   if ((input.data[6] & 0x03) !== 0x03) return ["constant_mismatch"];
   const mode = (input.data[0] & 4) !== 0 ? 1 : 0;
-  const pressure = mode === 1 ? input.data[3] : 0;
+  const pressure = input.data[3];
   if (pressure > 100) return ["value_out_of_range"];
+  const view = new DataView(input.data.buffer, input.data.byteOffset, input.data.byteLength);
   return ["ok", {
     alignment_enable: (input.data[0] & 1) !== 0,
     control_enable: (input.data[0] & 2) !== 0,
     control_mode: mode,
     auto_brake: (input.data[0] & 8) !== 0,
-    stroke_request_raw: mode === 0 ? input.data[2] | (input.data[3] << 8) : input.data[2],
+    stroke_request_raw: view.getUint16(1, false),
     pressure_request_raw: pressure,
     rolling_counter: input.data[6] >> 4,
   }];
@@ -78,9 +80,9 @@ export function decodeSebStatus(input: CanFrame): DecodeResult<Record<string, un
     control_mode: (input.data[0] >> 2) & 3,
     auto_brake_status: (input.data[0] & 0x10) !== 0,
     error_status: (input.data[0] >> 6) & 3,
-    stroke_value_raw: view.getUint16(2, true),
+    stroke_value_raw: view.getUint16(1, false),
     pressure_value_raw: input.data[3],
-    angle_value_raw: view.getInt16(5, true),
+    angle_value_raw: view.getInt16(4, false),
     rolling_counter_enabled: (input.data[6] & 1) !== 0,
     checksum_enabled: (input.data[6] & 2) !== 0,
     rolling_counter: input.data[6] >> 4,

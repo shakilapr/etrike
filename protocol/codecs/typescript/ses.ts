@@ -39,9 +39,10 @@ export function encodeSesCommand(values: Readonly<Record<string, unknown>>): Enc
   if (counter < 0 || counter > 15 || vehicleSpeed < 0 || vehicleSpeed > 0xff) return ["value_out_of_range"];
   const payload = new Uint8Array(SES_DLC);
   payload[0] = (values.alignment_enable === true ? 1 : 0) | (values.control_enable === true ? 2 : 0);
-  new DataView(payload.buffer).setInt16(2, targetAngle, true);
-  payload[4] = targetSpeed & 0xff;
-  payload[5] = 0x03 | ((targetSpeed >> 6) & 0x0c) | (counter << 4);
+  const view = new DataView(payload.buffer);
+  view.setInt16(1, targetAngle, false);
+  view.setUint16(3, targetSpeed, false);
+  payload[5] = 0x03 | (counter << 4);
   payload[6] = vehicleSpeed;
   payload[7] = compute(payload.subarray(0, 7));
   return ["ok", frame(SES_BUS, SES_COMMAND_ID, "standard", payload)];
@@ -51,12 +52,13 @@ export function decodeSesCommand(input: CanFrame): DecodeResult<Record<string, u
   const status = validate(input, SES_COMMAND_ID, true);
   if (status !== "ok") return [status];
   if ((input.data[5] & 0x03) !== 0x03) return ["constant_mismatch"];
-  const targetSpeed = input.data[4] | ((input.data[5] & 0x0c) << 6);
+  const view = new DataView(input.data.buffer, input.data.byteOffset, input.data.byteLength);
+  const targetSpeed = view.getUint16(3, false);
   if (targetSpeed < 125 || targetSpeed > 525) return ["value_out_of_range"];
   return ["ok", {
     alignment_enable: (input.data[0] & 1) !== 0,
     control_enable: (input.data[0] & 2) !== 0,
-    target_angle_raw: new DataView(input.data.buffer, input.data.byteOffset, input.data.byteLength).getInt16(2, true),
+    target_angle_raw: view.getInt16(1, false),
     target_speed_raw: targetSpeed,
     rolling_counter: input.data[5] >> 4,
     vehicle_speed_raw: input.data[6],
@@ -71,8 +73,8 @@ export function decodeSesStatus(input: CanFrame): DecodeResult<Record<string, un
     angle_aligned: (input.data[0] & 1) !== 0,
     control_mode: (input.data[0] >> 1) & 3,
     error_status: (input.data[0] >> 6) & 3,
-    steering_angle_raw: view.getUint16(2, true),
-    target_angle_speed_raw: view.getInt16(4, true),
+    steering_angle_raw: view.getUint16(1, false),
+    target_angle_speed_raw: view.getInt16(3, false),
     steering_torque_raw: input.data[5],
     rolling_counter_enabled: (input.data[6] & 1) !== 0,
     checksum_enabled: (input.data[6] & 2) !== 0,

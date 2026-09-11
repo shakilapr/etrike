@@ -38,10 +38,9 @@ inline CodecStatus encode_command(const Command& value, Frame& out) noexcept {
                                               (value.control_enable ? 0x02u : 0u) |
                                               (mode << 2u) |
                                               (value.auto_brake ? 0x08u : 0u));
-    frame.data[2] = static_cast<std::uint8_t>(value.stroke_request_raw);
-    frame.data[3] = mode == 0 ? static_cast<std::uint8_t>(value.stroke_request_raw >> 8u)
-                              : value.pressure_request_raw;
-    // Reserved bytes 1, 4, 5 and reserved bits are always zero.
+    write_be_u16(&frame.data[1], value.stroke_request_raw);
+    frame.data[3] = value.pressure_request_raw;
+    // Bytes 4 and 5 are reserved (0).
     frame.data[6] = static_cast<std::uint8_t>(0x03u | (value.rolling_counter << 4u));
     frame.data[7] = profiles::xor8_ff_v1(frame.data.data(), 7);
     out = frame;
@@ -58,15 +57,10 @@ inline CodecStatus decode_command(FrameView frame, Command& out) noexcept {
     value.control_enable = (frame[0] & 0x02u) != 0;
     value.control_mode = (frame[0] & 0x04u) != 0 ? ControlMode::Pressure : ControlMode::Stroke;
     value.auto_brake = (frame[0] & 0x08u) != 0;
+    value.stroke_request_raw = read_be_u16(frame.data() + 1);
+    value.pressure_request_raw = frame[3];
+    if (value.pressure_request_raw > 100) return CodecStatus::ValueOutOfRange;
     value.rolling_counter = static_cast<std::uint8_t>(frame[6] >> 4u);
-    if (value.control_mode == ControlMode::Stroke) {
-        value.stroke_request_raw = read_le_u16(frame.data() + 2);
-        value.pressure_request_raw = 0;
-    } else {
-        value.stroke_request_raw = frame[2];
-        value.pressure_request_raw = frame[3];
-        if (value.pressure_request_raw > 100) return CodecStatus::ValueOutOfRange;
-    }
     out = value;
     return CodecStatus::Ok;
 }
@@ -79,9 +73,7 @@ struct Status {
     bool auto_brake_status{false};
     std::uint8_t error_status{0};
     std::uint16_t stroke_value_raw{0};
-    // This is the same wire byte as the high byte of stroke_value_raw.
     std::uint8_t pressure_value_raw{0};
-    // Byte 6 is shared with integrity status, so this retains the exact overlap.
     std::int16_t angle_value_raw{0};
     bool rolling_counter_enabled{false};
     bool checksum_enabled{false};
@@ -98,9 +90,9 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
     value.control_mode = static_cast<std::uint8_t>((frame[0] >> 2u) & 0x03u);
     value.auto_brake_status = (frame[0] & 0x10u) != 0;
     value.error_status = static_cast<std::uint8_t>((frame[0] >> 6u) & 0x03u);
-    value.stroke_value_raw = read_le_u16(frame.data() + 2);
+    value.stroke_value_raw = read_be_u16(frame.data() + 1);
     value.pressure_value_raw = frame[3];
-    value.angle_value_raw = read_le_i16(frame.data() + 5);
+    value.angle_value_raw = read_be_i16(frame.data() + 4);
     value.rolling_counter_enabled = (frame[6] & 0x01u) != 0;
     value.checksum_enabled = (frame[6] & 0x02u) != 0;
     value.rolling_counter = static_cast<std::uint8_t>(frame[6] >> 4u);
@@ -109,8 +101,6 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
 }
 
 // Mirror of decode_status (single source of truth for the STATUS bit layout).
-// Mode-mux on byte 3: Stroke (control_mode==0) carries stroke[15:8]; otherwise
-// the byte carries pressure_value_raw. Byte 5 also shares angle_value_raw.
 inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
     if (value.control_mode > 3u || value.error_status > 3u || value.rolling_counter > 15u)
         return CodecStatus::ValueOutOfRange;
@@ -121,11 +111,9 @@ inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
                                               ((value.control_mode & 0x03u) << 2u) |
                                               (value.auto_brake_status ? 0x10u : 0u) |
                                               ((value.error_status & 0x03u) << 6u));
-    frame.data[2] = static_cast<std::uint8_t>(value.stroke_value_raw & 0xFFu);
-    frame.data[3] = (value.control_mode == 0u)
-                        ? static_cast<std::uint8_t>(value.stroke_value_raw >> 8u)
-                        : value.pressure_value_raw;
-    write_le_i16(&frame.data[5], value.angle_value_raw);
+    write_be_u16(&frame.data[1], value.stroke_value_raw);
+    frame.data[3] = value.pressure_value_raw;
+    write_be_i16(&frame.data[4], value.angle_value_raw);
     frame.data[6] = static_cast<std::uint8_t>((value.rolling_counter_enabled ? 0x01u : 0u) |
                                               (value.checksum_enabled ? 0x02u : 0u) |
                                               ((value.rolling_counter & 0x0Fu) << 4u));
