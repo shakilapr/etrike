@@ -381,6 +381,24 @@ made faithful: the `0x011` counter is supervised by a `StreamValidity` (mirrors
   request coexist (MTR stays in traction). This matches the mechanical service-brake model but
   should be an explicit design decision.
 
+## Realistic Bus Timing & Duplicate-ID Conflicts (WS2/WS3, Section 12)
+
+`VirtualCanBus` gained an **opt-in** realistic model (`set_realistic(true)`; default off keeps
+the zero-latency behavior of the signal-flow tests): finite per-frame bus time
+(`tx_time_ms` from bitrate/DLC), ascending-ID arbitration, optional self-reception, deterministic
+jitter, and a producer registry. `conflicts()` reports IDs emitted by more than one node.
+
+| Case | Observed | Result |
+| --- | --- | --- |
+| priority | `0x001` delivered before a `0x300` burst | **PASS** |
+| serialization | 5-frame burst drains 1 frame per bus slot (1@100 … 5@104) | **PASS** |
+| self-reception | off by default; on when enabled | **PASS** |
+| duplicate-ID detection | two `0x300` producers flagged; single producer not | **PASS** |
+| real SYS + rm RT on one bus | `0x011` and `0x110` each show 2 producers | **PASS** |
+
+The last case formalises the earlier finding: a real `sys-esp32` and rm's RT-mode SYS emulation
+on the **same** bus are duplicate producers of `0x011`/`0x110` (must not be co-located).
+
 ## Summary
 
 | Phase | Check | Result |

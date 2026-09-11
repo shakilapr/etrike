@@ -102,13 +102,50 @@ bool VirtualCanBus::apply_faults_and_queue(NodeId source, etrike::protocol::Fram
         delay = delay_it->second;
     }
 
-    uint32_t deliver_at = current_time_ms_ + delay;
-    pending_queue_.push_back(PendingFrame{deliver_at, source, frame});
+    uint32_t jitter = 0;
+    if (realistic_ && jitter_ms_ > 0) {
+        jitter_state_ = jitter_state_ * 1664525u + 1013904223u;  // deterministic LCG
+        jitter = (jitter_state_ >> 16) % (jitter_ms_ + 1u);
+    }
+
+    producers_[frame.id].insert(source);
+    uint32_t ready_at = current_time_ms_ + delay + jitter;
+    pending_queue_.push_back(PendingFrame{ready_at, source, frame});
 
     // Record trace
     trace_.push_back(TraceEntry{current_time_ms_, source, frame});
 
     return true;
+}
+
+void VirtualCanBus::deliver(const PendingFrame& item) {
+    for (auto& [node_id, callback] : subscribers_) {
+        if (node_id == item.source && !self_reception_) {
+            continue;  // no self-reception by default
+        }
+        if (is_disconnected(node_id)) {
+            continue;  // receiver is disconnected
+        }
+        if (callback) {
+            callback(item.frame);
+        }
+    }
+}
+
+uint32_t VirtualCanBus::tx_time_ms(const etrike::protocol::Frame& frame) const {
+    // Standard frame overhead (SOF/arbitration/control/CRC/ACK/EOF) plus payload,
+    // rounded up to the 1 ms tick resolution used by the harness.
+    uint32_t bits = 44u + 8u * static_cast<uint32_t>(frame.dlc) + (frame.extended ? 20u : 0u);
+    uint32_t t = (bits * 1000u + bitrate_ - 1u) / bitrate_;
+    return t == 0u ? 1u : t;
+}
+
+std::map<uint32_t, uint32_t> VirtualCanBus::conflicts() const {
+    std::map<uint32_t, uint32_t> out;
+    for (const auto& [id, sources] : producers_) {
+        if (sources.size() > 1) out[id] = static_cast<uint32_t>(sources.size());
+    }
+    return out;
 }
 
 bool VirtualCanBus::send(NodeId source, const etrike::protocol::Frame& frame) {
@@ -123,30 +160,49 @@ void VirtualCanBus::tick(uint32_t now_ms, uint32_t dt_ms) {
         return;
     }
 
-    // Process all frames due up to now_ms
-    std::deque<PendingFrame> remaining;
+    if (!realistic_) {
+        // Zero-latency model: deliver all frames due up to now_ms, in order.
+        std::deque<PendingFrame> remaining;
+        while (!pending_queue_.empty()) {
+            PendingFrame item = pending_queue_.front();
+            pending_queue_.pop_front();
+            if (item.ready_at_ms <= now_ms) {
+                deliver(item);
+            } else {
+                remaining.push_back(item);
+            }
+        }
+        pending_queue_ = std::move(remaining);
+        return;
+    }
+
+    // Realistic model: among frames ready to arbitrate, the lowest CAN ID wins
+    // each free bus slot; each frame occupies the bus for tx_time_ms.
+    std::vector<PendingFrame> ready;
+    std::deque<PendingFrame> not_ready;
     while (!pending_queue_.empty()) {
         PendingFrame item = pending_queue_.front();
         pending_queue_.pop_front();
-
-        if (item.deliver_at_ms <= now_ms) {
-            // Deliver to all connected subscribers except sender
-            for (auto& [node_id, callback] : subscribers_) {
-                if (node_id == item.source) {
-                    continue; // No self-reception by default
-                }
-                if (is_disconnected(node_id)) {
-                    continue; // Receiver is disconnected
-                }
-                if (callback) {
-                    callback(item.frame);
-                }
-            }
+        if (item.ready_at_ms <= now_ms) {
+            ready.push_back(item);
         } else {
-            remaining.push_back(item);
+            not_ready.push_back(item);
         }
     }
-    pending_queue_ = std::move(remaining);
+    std::sort(ready.begin(), ready.end(), [](const PendingFrame& a, const PendingFrame& b) {
+        if (a.frame.id != b.frame.id) return a.frame.id < b.frame.id;  // priority
+        return a.ready_at_ms < b.ready_at_ms;
+    });
+    for (const auto& item : ready) {
+        const uint32_t start = std::max(bus_free_ms_, item.ready_at_ms);
+        if (start > now_ms) {
+            not_ready.push_back(item);  // bus busy until after now
+            continue;
+        }
+        deliver(item);
+        bus_free_ms_ = start + tx_time_ms(item.frame);
+    }
+    pending_queue_ = std::move(not_ready);
 }
 
 size_t VirtualCanBus::count_frames(uint32_t can_id) const {
