@@ -255,9 +255,11 @@ bool test_estop_trigger_07_rt_heartbeat_timeout() {
     bench.boot();
     bench.run_for_ms(3200); // past 3000 ms startup grace
 
-    // 1. Drop RT heartbeat (0x7FD) on Low CAN (70 frames * 20 ms = 1400 ms > 1000 ms timeout)
-    bench.low_can().drop(can::kIdRtHeartbeat, 70);
-    bench.run_for_ms(1100); // > 1000 ms timeout
+    // 1. Drop RT heartbeat (0x7FD) on Low CAN. The SYS RT-heartbeat timeout is
+    //    now cycle*3 (= 1500 ms), so silence must exceed that:
+    //    90 frames * 20 ms = 1800 ms > 1500 ms timeout.
+    bench.low_can().drop(can::kIdRtHeartbeat, 90);
+    bench.run_for_ms(1600); // > 1500 ms timeout
 
     assert(bench.sys().is_estop_latched());
     assert(bench.rt().is_estop_latched());

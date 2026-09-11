@@ -85,6 +85,8 @@ namespace testbench {
     bool test_self_reception();
     bool test_duplicate_id_conflict();
     bool test_sys_rm_authority_collision();
+    // Section 13: heartbeat margins
+    bool test_heartbeat_margin();
 }
 
 int main(int argc, char* argv[]) {
@@ -206,6 +208,9 @@ int main(int argc, char* argv[]) {
     run_test("optional self-reception", testbench::test_self_reception);
     run_test("duplicate-ID conflict detection", testbench::test_duplicate_id_conflict);
     run_test("SYS + rm authority collision", testbench::test_sys_rm_authority_collision);
+
+    std::cout << "--- SECTION 13: Heartbeat Margins ---\n";
+    run_test("heartbeat margin tolerates 2 missed", testbench::test_heartbeat_margin);
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time).count();

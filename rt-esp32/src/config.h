@@ -47,7 +47,9 @@ constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then
 // ── timing (ms / Hz) ──────────────────────────────────────────────
 constexpr int kControlLoopHz           =  100;
 constexpr int kHeartbeatIntervalMs     = can::gen::RtHeartbeat::kCycleMs;
-constexpr int kHeartbeatTimeoutMsSys   = can::gen::SysHeartbeat::kCycleMs * 2; // policy: two missed frames
+// Policy: tolerate two consecutive missed heartbeats (trip on the third).
+// A single dropped frame on a real FreeRTOS/WiFi/CAN system must not degrade.
+constexpr int kHeartbeatTimeoutMsSys   = can::gen::SysHeartbeat::kCycleMs * 3;
 constexpr int kLowCanPeerTimeoutMs     = 1500;  // TX closes when no valid low-bus peer is heard
 
 // ── MTR feedback (0x206) health (issue #8) ────────────────────────

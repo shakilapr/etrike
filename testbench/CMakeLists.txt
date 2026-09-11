@@ -29,6 +29,7 @@ add_executable(etrike-system-test
     scenarios/test_frozen_counters.cpp
     scenarios/test_kinematics_arbitration.cpp
     scenarios/test_bus_timing_conflicts.cpp
+    scenarios/test_heartbeat_margin.cpp
     scenarios/main.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/mode_manager.cpp
     ${ETRIKE_ROOT}/sys-esp32/src/safety_monitor.cpp
