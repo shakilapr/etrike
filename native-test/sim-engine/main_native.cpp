@@ -138,6 +138,7 @@ int main() {
     write_json("{\"type\":\"state\",\"ecu\":\"rt\",\"healthy\":true,\"uptime_ms\":0}");
     rt::DriveCmd commanded_drive{};
     bool direct_motor_active = false;
+    uint32_t tick_count = 0;
     rt::DriveCmd direct_drive{};
 
     while (!g_eof) {
@@ -218,8 +219,53 @@ int main() {
                 sp.cmd_gear,
                 limit_deg,
                 follow_thr);
-            write_json(buf);
+            ++tick_count;
 
+            if (tick_count % 10 == 0) {
+                etrike::protocol::generated::RtStateRpt state{};
+                state.mode = etrike::protocol::generated::RtStateRpt::kModeManual;
+                state.safety_state = 0;
+                state.estop_reason = 0;
+                state.reversing = sp.reversing;
+                state.rx_overflow = 0;
+                state.task_health = 0x0f;
+                etrike::protocol::Frame state_frame{};
+                if (etrike::protocol::generated::encode(state, state_frame) ==
+                    etrike::protocol::CodecStatus::Ok) {
+                    snprintf(buf, sizeof(buf),
+                        "{\"type\":\"frame\",\"bus\":\"low\",\"id\":\"0x210\",\"dlc\":6,"
+                        "\"data\":[%d,%d,%d,%d,%d,%d],\"name\":\"RT_STATE_RPT\"}",
+                        state_frame.data[0], state_frame.data[1], state_frame.data[2],
+                        state_frame.data[3], state_frame.data[4], state_frame.data[5]);
+                    write_json(buf);
+                    snprintf(buf, sizeof(buf),
+                        "{\"type\":\"frame\",\"bus\":\"high\",\"id\":\"0x210\",\"dlc\":6,"
+                        "\"data\":[%d,%d,%d,%d,%d,%d],\"name\":\"RT_STATE_RPT\"}",
+                        state_frame.data[0], state_frame.data[1], state_frame.data[2],
+                        state_frame.data[3], state_frame.data[4], state_frame.data[5]);
+                    write_json(buf);
+                }
+            }
+
+            if (tick_count % 50 == 0) {
+                etrike::protocol::generated::RtHeartbeat heartbeat{};
+                heartbeat.alive_ctr = static_cast<std::uint8_t>(tick_count / 50);
+                heartbeat.health_flags = 0x09;
+                etrike::protocol::Frame heartbeat_frame{};
+                if (etrike::protocol::generated::encode(heartbeat, heartbeat_frame) ==
+                    etrike::protocol::CodecStatus::Ok) {
+                    snprintf(buf, sizeof(buf),
+                        "{\"type\":\"frame\",\"bus\":\"high\",\"id\":\"0x7FD\",\"dlc\":2,"
+                        "\"data\":[%d,%d],\"name\":\"RT_HEARTBEAT\"}",
+                        heartbeat_frame.data[0], heartbeat_frame.data[1]);
+                    write_json(buf);
+                    snprintf(buf, sizeof(buf),
+                        "{\"type\":\"frame\",\"bus\":\"low\",\"id\":\"0x7FD\",\"dlc\":2,"
+                        "\"data\":[%d,%d],\"name\":\"RT_HEARTBEAT\"}",
+                        heartbeat_frame.data[0], heartbeat_frame.data[1]);
+                    write_json(buf);
+                }
+            }
             // Motor command frame (0x204)
             if (ok) {
                 etrike::protocol::generated::RtDriveCmd command{};
