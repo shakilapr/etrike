@@ -185,3 +185,36 @@ def test_node_status_unlatched_reports_clear():
     assert "clear" in r["summary"].lower()
 
     assert r["rt"]["frame_fresh"] is False
+
+
+def test_rt_diag_event_rpt_ingested():
+    msgs = [
+        _msg(
+            "RT_STATE_RPT",
+            "high",
+            0x210,
+            {"mode": 2, "safety_state": 1, "estop_reason": 9},
+        ),
+        _msg(
+            "RT_DIAG_EVENT_RPT",
+            "high",
+            0x621,
+            {
+                "diag_id": 0x0208,  # RtHostDriveCmdStale
+                "state": 1,         # ACTIVE
+                "occurrence_count": 3,
+            },
+            freshness=FreshnessState.LIVE,
+            age_ms=50.0,
+        ),
+    ]
+    r = build_estop_report(msgs, host_latch=False)
+    assert r["active"] is True
+    assert len(r["rt"]["diag_events"]) == 1
+    ev = r["rt"]["diag_events"][0]
+    assert ev["diag_id"] == 0x0208
+    assert ev["state"] == "ACTIVE"
+    assert ev["occurrences"] == 3
+    assert "RT_HOST_DRIVE_CMD_STALE" in ev["key"]
+    assert "RT_HOST_DRIVE_CMD_STALE (ACTIVE)" in r["primary_cause"]
+
