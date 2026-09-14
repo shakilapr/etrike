@@ -365,6 +365,39 @@ export function Diagnostics() {
             </div>
           )
         })()}
+        {estopApi?.rt?.diag_events && estopApi.rt.diag_events.length > 0 ? (
+          <div className="mt-section">
+            <h3>RT Diagnostic Events (0x621)</h3>
+            <table className="data-table compact" data-testid="diag-rt-events">
+              <thead>
+                <tr>
+                  <th>Diag ID</th>
+                  <th>Event Key</th>
+                  <th>State</th>
+                  <th>Severity</th>
+                  <th>Count</th>
+                  <th>Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                {estopApi.rt.diag_events.map((ev, i) => (
+                  <tr key={String(ev.diag_id ?? i)}>
+                    <td className="mono">0x{Number(ev.diag_id ?? 0).toString(16).padStart(4, '0')}</td>
+                    <td className="mono font-semibold">{ev.key ?? '—'}</td>
+                    <td>
+                      <span className={`badge ${ev.state === 'ACTIVE' || ev.state === 'LATCHED' ? 'badge-danger' : 'badge-ok'}`}>
+                        {ev.state ?? '—'}
+                      </span>
+                    </td>
+                    <td className="uppercase text-xs">{ev.severity ?? '—'}</td>
+                    <td className="mono">{ev.occurrences ?? 1}</td>
+                    <td className="mono">{ev.age_ms != null ? `${Math.round(ev.age_ms)} ms` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
         <p className="muted small mono">
           RT reason map: 0=none 1=button 2=heartbeat_loss 3=following_error 4=obstacle 5=can_estop_frame
           6=bus_off 7=internal 8=egas_mismatch 9=stale_cmd 10=watchdog

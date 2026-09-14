@@ -172,12 +172,14 @@ def test_managed_native_sil_connects_control_api_to_virtual_can() -> None:
         received = None
         while time.monotonic() < deadline:
             messages = client.get("/api/v1/state").json()["messages"]
-            received = next(
+            candidate = next(
                 (m for m in messages if m.get("name") == "RT_DRIVE_CMD"),
                 None,
             )
-            if received is not None:
-                break
+            if candidate is not None:
+                received = candidate
+                if int(candidate["signals"]["motor_speed_mmps"]["engineering_value"]) == 1200:
+                    break
             time.sleep(0.01)
         assert received is not None
         assert int(received["signals"]["motor_speed_mmps"]["engineering_value"]) == 1200

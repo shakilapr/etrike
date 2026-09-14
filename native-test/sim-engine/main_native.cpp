@@ -219,6 +219,7 @@ int main() {
                 sp.cmd_gear,
                 limit_deg,
                 follow_thr);
+            write_json(buf);
             ++tick_count;
 
             if (tick_count % 10 == 0) {

@@ -15,6 +15,23 @@ from typing import Any
 
 from control_toolkit.models.state import MessageState
 
+try:
+    from protocol.generated.python.diagnostics import REGISTRY as DIAG_REGISTRY
+
+    DIAG_BY_ID: dict[int, dict[str, Any]] = {
+        int(info["id"]): info for info in DIAG_REGISTRY.values() if "id" in info
+    }
+except Exception:
+    DIAG_BY_ID = {}
+
+DIAG_STATE_LABELS: dict[int, str] = {
+    0: "PENDING",
+    1: "ACTIVE",
+    2: "LATCHED",
+    3: "RECOVERED",
+    4: "CLEARED",
+}
+
 # RT firmware (rt-esp32/src/config.h) — estop_reason on RT_STATE_RPT.
 RT_ESTOP_REASONS: dict[int, str] = {
     0: "none",
@@ -219,6 +236,38 @@ def build_estop_report(
     reason_explanation = reason_detail(reason_code)
     safety_state = _num(rt, "safety_state")
 
+    # Ingest 0x621 RT_DIAG_EVENT_RPT (the designed diagnostic "why" channel)
+    rt_diag_msg = (
+        _find(messages, "RT_DIAG_EVENT_RPT", "high")
+        or _find(messages, "RT_DIAG_EVENT_RPT", "low")
+        or _find(messages, "RT_DIAG_EVENT_RPT")
+    )
+    rt_diag_events: list[dict[str, Any]] = []
+    active_rt_diag_event: dict[str, Any] | None = None
+    if rt_diag_msg is not None:
+        diag_id = _num(rt_diag_msg, "diag_id")
+        diag_state_num = _num(rt_diag_msg, "state") or 0
+        diag_state_str = DIAG_STATE_LABELS.get(diag_state_num, f"STATE_{diag_state_num}")
+        occ_count = _num(rt_diag_msg, "occurrence_count") or 0
+        diag_info = DIAG_BY_ID.get(int(diag_id)) if diag_id is not None else None
+        diag_key = str(diag_info.get("key", f"DIAG_{diag_id}")) if diag_info else f"DIAG_{diag_id}"
+        diag_desc = str(diag_info.get("description", "")).strip() if diag_info else ""
+        diag_sev = str(diag_info.get("severity", "WARNING")) if diag_info else "WARNING"
+
+        ev_entry = {
+            "diag_id": diag_id,
+            "key": diag_key,
+            "state": diag_state_str,
+            "state_code": diag_state_num,
+            "severity": diag_sev,
+            "occurrences": occ_count,
+            "age_ms": rt_diag_msg.age_ms,
+            "description": diag_desc,
+        }
+        rt_diag_events.append(ev_entry)
+        if diag_state_num in (1, 2):  # ACTIVE or LATCHED
+            active_rt_diag_event = ev_entry
+
     sources: list[dict[str, Any]] = []
     causes: list[str] = []
 
@@ -389,7 +438,10 @@ def build_estop_report(
 
     primary_cause = "No active safety stop"
     cause_resolution = "clear"
-    if reason_code in (1, 2, 3, 4, 6, 7, 8, 9, 10):
+    if active_rt_diag_event is not None and (rt_mode_estop or reason_code != 0 or any(node_estop.values())):
+        primary_cause = f"RT: {active_rt_diag_event['key']} ({active_rt_diag_event['state']})"
+        cause_resolution = "reported"
+    elif reason_code in (1, 2, 3, 4, 6, 7, 8, 9, 10):
         primary_cause = f"RT: {reason_human}"
         cause_resolution = "reported"
     elif reason_code == 5 and host_latch:
@@ -448,6 +500,7 @@ def build_estop_report(
             "estop_reason_detail": reason_explanation,
             "safety_state": safety_state,
             "frame_fresh": rt_fresh,
+            "diag_events": rt_diag_events,
         },
         "sources": sources,
         "causes": causes,

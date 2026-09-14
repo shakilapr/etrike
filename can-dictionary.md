@@ -695,19 +695,21 @@ Forwarded from low-level by RT. Same payload layout as ?1 `0x120`.
 | **Sender** | RT |
 | **Receiver(s)** | Jetson (+ SYS on low bus) |
 | **DLC** | 6 |
-| **Period** | 10 Hz |
+| **Period** | 10 Hz (broadcast independently on High and Low CAN) |
 
 | Signal | Start bit | Len | Type | Min | Max | Unit |
 |--------|-----------|-----|------|-----|-----|------|
 | `RT_Mode` | 0 | 8 | u8 (enum) | 0 | 2 | ? |
 | `RT_SafetyState` | 8 | 2 | u8 (enum) | 0 | 2 | ? |
-| `RT_EstopReason` | 12 | 4 | u8 (enum) | 0 | 7 | ? |
+| `RT_EstopReason` | 12 | 4 | u8 (enum) | 0 | 15 | ? |
 | `RT_Reversing` | 16 | 8 | u8 (bool) | 0 | 1 | ? |
 | `RT_RxOverflow` | 24 | 8 | u8 | 0 | 255 | ? |
 | `RT_TaskHealth` | 32 | 8 | u8 | 0 | 255 | ? |
 | `RT_SteerState` | 40 | 8 | u8 (enum) | 0 | 5 | ? |
 
 Byte layout (big-endian): Byte 0=mode, 1=`safety_state[1:0]`+`estop_reason[7:4]`, 2=reversing, 3=rx_overflow, 4=task_health, 5=steer_state.
+
+`RT_EstopReason` codes: 0=none, 1=button, 2=heartbeat_loss, 3=following_error, 4=obstacle, 5=can_estop_frame, 6=bus_off, 7=internal, 8=egas_mismatch, 9=stale_cmd, 10=watchdog, 11..15=reserved.
 
 ---
 
@@ -979,10 +981,10 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x113`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
+| Low only | `0x012`, `0x110`, `0x113`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x500` (SYS_NODE_STATUS @ 200 ms), `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (steer-by-wire unit feedback) |
 | High only | `0x220`, `0x400` (obstacle distance), `0x310` (steer diag), `0x311` (brake diag) |
-| Both independent | `0x7FD`, `0x7FE`, `0x7FC`, `0x210` (per-node heartbeat ? NOT bridged; `0x210` independent on both buses) |
+| Both independent | `0x7FD`, `0x7FE`, `0x7FC`, `0x210` (RT_STATE_RPT @ 10 Hz), `0x501` (RT_NODE_STATUS: 100 ms High, 200 ms Low), `0x621` (RT_DIAG_EVENT_RPT: on event / 100 ms) |
 
 ---
 

@@ -109,6 +109,16 @@ export type Status = {
       estop_reason_display?: string
       estop_reason_detail?: string
       safety_state?: number | null
+      diag_events?: Array<{
+        diag_id?: number
+        key?: string
+        state?: string
+        state_code?: number
+        severity?: string
+        occurrences?: number
+        age_ms?: number
+        description?: string
+      }>
     }
     bus?: { high_0x001?: boolean; low_0x001?: boolean }
     sys?: Record<string, unknown>

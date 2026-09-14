@@ -54,6 +54,7 @@ export function LiveCan() {
     frame: HistoryFrame
     decoded: Awaited<ReturnType<typeof api.decodeFrame>>
   } | null>(null)
+  const [hideGhosts, setHideGhosts] = useState(false)
 
   const parentRef = useRef<HTMLDivElement>(null)
 
@@ -81,6 +82,7 @@ export function LiveCan() {
     return [...messages]
       .filter((m) => (busFilter === 'both' ? true : m.bus === busFilter))
       .filter((m) => {
+        if (hideGhosts && (m.age_ms == null || m.age_ms > 10000)) return false
         if (!q) return true
         const id = hexId(m.can_id).toLowerCase()
         const name = (m.name || '').toLowerCase()
@@ -88,7 +90,7 @@ export function LiveCan() {
         return id.includes(q) || name.includes(q) || sigs.includes(q) || m.bus.includes(q)
       })
       .sort((a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id)
-  }, [messages, liveFilter, busFilter])
+  }, [messages, liveFilter, busFilter, hideGhosts])
 
   const chronoView = paused ? chronoFrozen : chrono
   const chronoFiltered = useMemo(() => {
@@ -259,6 +261,21 @@ export function LiveCan() {
             Stream
           </SegButton>
         </Seg>
+        {viewMode === 'latest' && (
+          <label
+            data-testid="live-ghost-filter"
+            className="flex items-center gap-1.5 text-xs text-[var(--muted)] select-none cursor-pointer hover:text-[var(--text)] transition-colors"
+          >
+            <input
+              type="checkbox"
+              data-testid="live-hide-ghosts"
+              checked={hideGhosts}
+              onChange={(e) => setHideGhosts(e.target.checked)}
+              className="accent-[var(--accent)] cursor-pointer"
+            />
+            Hide inactive (&gt;10s)
+          </label>
+        )}
         {viewMode === 'chrono' && (
           <Button
             variant="secondary"

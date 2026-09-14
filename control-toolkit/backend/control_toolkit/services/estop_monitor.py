@@ -22,6 +22,8 @@ from control_toolkit.models.frames import RawFrameEnvelope
 from control_toolkit.models.state import MessageState
 from control_toolkit.services.diagnostics import DiagnosticsService
 from control_toolkit.services.estop_report import (
+    DIAG_BY_ID,
+    DIAG_STATE_LABELS,
     RT_ESTOP_REASONS,
     reason_detail,
     reason_display,
@@ -131,6 +133,8 @@ class EstopEventMonitor:
             self._observe_estop_frame(frame)
         elif message.name == "RT_STATE_RPT":
             self._observe_rt_state(message)
+        elif message.name == "RT_DIAG_EVENT_RPT":
+            self._observe_rt_diag_event_rpt(message)
         elif message.name in ("SYS_SAFETY_STS", "SYS_HEARTBEAT", "SYS_DIAG_RPT"):
             self._observe_sys_state(message, frame)
         elif message.name == "SES_ERR_INFO":
@@ -501,3 +505,41 @@ class EstopEventMonitor:
             )
         elif total_faults == 0 and prev_faults != 0:
             self._diagnostics.recover("safety.ses_steering_fault", scope=bus, force=True)
+
+    def _observe_rt_diag_event_rpt(self, message: MessageState) -> None:
+        diag_id = _signal_number(message, "diag_id")
+        if diag_id is None:
+            return
+        state = _signal_number(message, "state") or 0
+        state_label = DIAG_STATE_LABELS.get(state, f"STATE_{state}")
+        diag_info = DIAG_BY_ID.get(int(diag_id))
+        diag_key = str(diag_info.get("key", f"DIAG_{diag_id}")) if diag_info else f"DIAG_{diag_id}"
+        diag_sev = str(diag_info.get("severity", "WARNING")).lower() if diag_info else "warning"
+        if diag_sev not in ("info", "warning", "error", "critical"):
+            diag_sev = "warning"
+
+        code = f"rt.diag.{diag_key.lower()}"
+        bus = message.bus
+
+        if state in (1, 2):  # ACTIVE or LATCHED
+            detail = (
+                f"RT reported diagnostic event {diag_key} (id={diag_id:#x}) in state {state_label}. "
+                f"Occurrences: {_signal_number(message, 'occurrence_count') or 1}."
+            )
+            self._diagnostics.emit(
+                code=code,
+                title=f"RT {diag_key} · {state_label}",
+                detail=detail,
+                severity=diag_sev,
+                bus=bus,
+                can_id=message.can_id,
+                evidence={
+                    "diag_id": diag_id,
+                    "diag_key": diag_key,
+                    "state": state_label,
+                    "state_code": state,
+                    "session_id": self._get_session_id(),
+                },
+            )
+        elif state in (3, 4):  # RECOVERED or CLEARED
+            self._diagnostics.recover(code, scope=bus, force=True)
