@@ -44,6 +44,7 @@ Desktop.ini
 /test_pid
 /native-test/build*/
 /simulation/full_system/build*/
+/testbench/build*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake

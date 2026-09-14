@@ -1,0 +1,137 @@
+VERSION ""
+
+
+NS_ : 
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: VCU SEB
+
+
+BO_ 1787 SEB_Test: 8 SEB
+ SG_ SEB_PowVolt : 47|16@0+ (0.00390625,0.0) [0.0|32.0] "V"  VCU
+ SG_ SEB_ECUTemp : 31|16@0+ (0.5,0.0) [-40.0|215.0] "degC"  VCU
+ SG_ SEB_MtrCurr : 15|16@0- (0.0078125,0.0) [-255.0|255.0] "A"  VCU
+
+BO_ 1825 SEB_Status: 8 SEB
+ SG_ SEB_CheckSum_Status : 63|8@0+ (1,0) [0.0|255.0] ""  VCU
+ SG_ SEB_Angle_Value : 47|16@0- (0.5,0.0) [-150.0|840.0] "deg"  VCU
+ SG_ SEB_Stroke_Value : 23|16@0+ (0.05,-30.0) [-5.0|27.0] "mm"  VCU
+ SG_ SEB_Error_Status : 1|2@0+ (1.0,0.0) [0.0|3.0] ""  VCU
+ SG_ SEB_AutoBrake_Status : 3|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Control_Mode_Status : 5|2@0+ (1.0,0.0) [0.0|3.0] ""  VCU
+ SG_ SEB_Control_Enable_Status : 6|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_INF_Alignment_Status : 7|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+
+BO_ 1841 SEB_ErrInfo: 8 SEB
+ SG_ SEB_Low_Volt_Charging_Err : 30|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_PreSensorOver_Err : 31|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Mtr_No_load_Err : 17|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_SentValue_Err : 18|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_InitOil_Err : 19|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Oil_Err : 20|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_MtrD_C_Err : 21|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Mtr_Stall_Err : 22|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_AngleOver_Err : 8|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Alignment_Err : 9|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_SensorUCL_Err : 10|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_NOPreSensor_Err : 12|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_AngleSensor_S_AF_Err : 13|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_AngleSensor_S_O_C_Err : 14|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_AngleSensor_P_AF_Err : 15|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_AngleSensor_P_O_C_Err : 0|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Domain_drive_T_Err : 1|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Domain_drive_V_Err : 2|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_Domain_drive_SC_Err : 3|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_ECUTemp_Err : 4|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_CanCom_Err : 5|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_ECUOverVolt_Err : 6|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+ SG_ SEB_ECUUnderVolt_Err : 7|1@0+ (1.0,0.0) [0.0|1.0] ""  VCU
+
+BO_ 1857 SEB_Version: 8 SEB
+ SG_ SEB_HW_Version : 15|8@0+ (0.1,0.0) [0.0|25.5] ""  VCU
+ SG_ SEB_SW_Version : 7|8@0+ (0.01,0.0) [0.0|25.5] ""  VCU
+
+BO_ 1977 VCU_SEB_Req: 8 VCU
+ SG_ VCU_SEB_CheckSum : 63|8@0+ (1,0) [0.0|255.0] ""  SEB
+ SG_ VCU_SEB_RollCnt : 51|4@0+ (1,0) [0.0|15.0] ""  SEB
+ SG_ VCU_SEB_CheckSum_Enable : 54|1@0+ (1.0,0.0) [0.0|1.0] ""  SEB
+ SG_ VCU_SEB_RollCnt_Enable : 55|1@0+ (1.0,0.0) [0.0|1.0] ""  SEB
+ SG_ VCU_SEB_Stroke_Value_Req : 23|16@0+ (0.05,-30.0) [-5.0|27.0] "mm"  SEB
+ SG_ VCU_SEB_AutoBrake : 4|1@0+ (1.0,0.0) [0.0|1.0] ""  SEB
+ SG_ VCU_SEB_Control_Mode : 5|1@0+ (1.0,0.0) [0.0|1.0] ""  SEB
+ SG_ VCU_SEB_Control_Enable : 6|1@0+ (1.0,0.0) [0.0|1.0] ""  SEB
+ SG_ VCU_SEB_Alignment_Enable : 7|1@0+ (1.0,0.0) [0.0|1.0] ""  SEB
+
+
+
+
+
+
+
+
+VAL_ 1825 SEB_Error_Status 0 "None /" 1 "Level 1 /" 2 "Level 2 /" 3 "Level 3" ;
+VAL_ 1825 SEB_AutoBrake_Status 0 "Off /" 1 "On" ;
+VAL_ 1825 SEB_Control_Mode_Status 0 "Stroke Control /" 1 "Pressure Control" ;
+VAL_ 1825 SEB_Control_Enable_Status 0 "Disable /" 1 "Enable" ;
+VAL_ 1825 SEB_INF_Alignment_Status 0 "Not Aligned /" 1 "Aligned" ;
+VAL_ 1841 SEB_Low_Volt_Charging_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_PreSensorOver_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Mtr_No_load_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_SentValue_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_InitOil_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Oil_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_MtrD_C_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Mtr_Stall_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_AngleOver_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Alignment_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_SensorUCL_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_NOPreSensor_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_AngleSensor_S_AF_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_AngleSensor_S_O_C_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_AngleSensor_P_AF_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_AngleSensor_P_O_C_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Domain_drive_T_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Domain_drive_V_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_Domain_drive_SC_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_ECUTemp_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_CanCom_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_ECUOverVolt_Err 0 "False /" 1 "True" ;
+VAL_ 1841 SEB_ECUUnderVolt_Err 0 "False /" 1 "True" ;
+VAL_ 1977 VCU_SEB_CheckSum_Enable 0 "Invalid /" 1 "Valid" ;
+VAL_ 1977 VCU_SEB_RollCnt_Enable 0 "Invalid /" 1 "Valid" ;
+VAL_ 1977 VCU_SEB_AutoBrake 0 "Off /" 1 "On" ;
+VAL_ 1977 VCU_SEB_Control_Mode 0 "Stroke Control /" 1 "Pressure Control" ;
+VAL_ 1977 VCU_SEB_Control_Enable 0 "Disable /" 1 "Enable" ;
+VAL_ 1977 VCU_SEB_Alignment_Enable 0 "None /" 1 "Align" ;
+
+
+

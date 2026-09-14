@@ -26,82 +26,86 @@ public:
         gpio.Speed = GPIO_SPEED_FREQ_HIGH;
         HAL_GPIO_Init(GPIOA, &gpio);
 
+        // Power-on bus recovery: clock 9 pulses with SDA high to release any hung slave
+        bus_recover_();
+
+        // Allow 50 ms for ISO1540 and MCP4725 5.0 V rail (VCC2) to stabilize after power-up
+        HAL_Delay(50);
+
+        current_code_ = 0xFFFF;
         write_dac_raw(0); // Power up at 0.0 V
+        current_code_ = 0;
     }
 
     // Write safe clamped throttle:
     // When enabled = false or throttle_active = false: sets 0 V.
     // When active: clamps code to [kDacMinCode (655), kDacMaxCode (1966)] (~0.8V to ~2.4V)
     void set_throttle(uint16_t code, bool enabled) {
-        if (!enabled || code == 0) {
-            write_dac_raw(0);
-            current_code_ = 0;
+        uint16_t target = (!enabled || code == 0) ? 0 : std::clamp(code, kDacMinCode, kDacMaxCode);
+        if (target == current_code_) {
             return;
         }
-
-        uint16_t clamped = std::clamp(code, kDacMinCode, kDacMaxCode);
-        write_dac_raw(clamped);
-        current_code_ = clamped;
+        write_dac_raw(target);
+        current_code_ = target;
     }
 
     // Force zero voltage output (ESTOP / Watchdog timeout)
     void force_zero() {
+        if (current_code_ == 0) {
+            return;
+        }
         write_dac_raw(0);
         current_code_ = 0;
     }
 
     uint16_t current_code() const { return current_code_; }
 
-    // Direct MCP4725 fast write routine with multi-address scanning and caching
+    // Direct MCP4725 write routine identical to proven etrike-draft
     void write_dac_raw(uint16_t value) {
         if (value > 4095) value = 4095;
 
-        // If cached address is known, attempt write directly
-        if (cached_address_ != 0) {
-            i2c_start_();
-            uint8_t ack = i2c_write_byte_(cached_address_);
-            i2c_write_byte_(0x40);
-            i2c_write_byte_(static_cast<uint8_t>(value >> 4));
-            i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
-            i2c_stop_();
-            if (ack) return;
-            cached_address_ = 0; // Invalidate cache on NACK
-        }
-
-        // Candidate 7-bit addresses shifted for write form (addr << 1)
-        static const uint8_t kAddresses[] = {
+        // Candidate 7-bit addresses: 0x60 (A0=GND), 0x61 (A0=VCC), 0x62 (A1 variant)
+        static const uint8_t kCandidateAddresses[] = {
             static_cast<uint8_t>(0x60 << 1),
             static_cast<uint8_t>(0x61 << 1),
             static_cast<uint8_t>(0x62 << 1)
         };
 
-        for (uint8_t addr : kAddresses) {
+        for (uint8_t addr : kCandidateAddresses) {
             i2c_start_();
             uint8_t ack = i2c_write_byte_(addr);
-
-            // Fast mode write command (0x40): normal mode, no power-down
-            i2c_write_byte_(0x40);
-            i2c_write_byte_(static_cast<uint8_t>(value >> 4));
-            i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
+            (void)i2c_write_byte_(0x40);
+            (void)i2c_write_byte_(static_cast<uint8_t>((value >> 4) & 0xFF));
+            (void)i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
             i2c_stop_();
 
-            if (ack) {
-                // Device found and acknowledged
-                cached_address_ = addr;
-                break;
+            if (ack != 0) {
+                return;
             }
         }
     }
 
 private:
     static void i2c_delay_() {
-        for (volatile int i = 0; i < 40; ++i) {
+        for (volatile uint32_t i = 0; i < 40; ++i) {
             __NOP();
         }
     }
 
+    void bus_recover_() {
+        HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_SET);
+        for (int i = 0; i < 9; ++i) {
+            HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
+            i2c_delay_();
+            HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
+            i2c_delay_();
+        }
+        i2c_stop_();
+    }
+
     void i2c_start_() {
         HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_SET);
+        i2c_delay_();
         HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
         i2c_delay_();
         HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_RESET);
@@ -112,7 +116,6 @@ private:
 
     void i2c_stop_() {
         HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
         i2c_delay_();
         HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
         i2c_delay_();
@@ -121,24 +124,24 @@ private:
     }
 
     uint8_t i2c_write_byte_(uint8_t byte) {
+        uint8_t temp_byte = byte;
         for (uint8_t i = 0; i < 8; ++i) {
-            if (byte & 0x80) {
+            if (temp_byte & 0x80) {
                 HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_SET);
             } else {
                 HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_RESET);
             }
-            byte <<= 1;
+            temp_byte <<= 1;
             i2c_delay_();
             HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
             i2c_delay_();
             HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
-            i2c_delay_();
         }
 
-        // Release SDA for slave ACK
-        HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_SET);
+        // 9th clock cycle: ACK bit
+        HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_SET); // Release SDA for slave
         i2c_delay_();
-        HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET); // SCL high to clock ACK
         i2c_delay_();
         uint8_t ack = (HAL_GPIO_ReadPin(GPIOA, kI2cSdaPin) == GPIO_PIN_RESET) ? 1 : 0;
         HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
@@ -147,7 +150,6 @@ private:
     }
 
     uint16_t current_code_{0};
-    uint8_t cached_address_{0};
 };
 
 }  // namespace mtr
