@@ -56,8 +56,8 @@
       {"key":"rolling_counter","byte":6,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},
       {"key":"e2e_crc","byte":7,"bit":0,"bits":8,"max":255}
     ]},"instances":[
-      {"bus":"low","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":20,"semantics":"independent"},
-      {"bus":"high","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["Host"],"cycle_ms":20,"semantics":"same_frame"}
+      {"bus":"low","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":200,"semantics":"independent"},
+      {"bus":"high","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["Host"],"cycle_ms":200,"semantics":"same_frame"}
     ]},
     {"key":"sys_estop_reset_rsp","owner":"sys","protocol":"etrike.application.v1","name":"SYS_ESTOP_RESET_RSP","dlc":5,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"request_seq","byte":0,"bit":0,"bits":8,"min":0,"max":255},

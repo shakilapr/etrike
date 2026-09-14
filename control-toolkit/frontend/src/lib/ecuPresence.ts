@@ -18,6 +18,14 @@ export type EcuProbe = {
   names?: string[]
   title: string
   /**
+   * Fallback frames that prove node presence if primary heartbeat is absent/intermittent.
+   */
+  presenceFallbacks?: Array<{
+    bus: 'high' | 'low'
+    can_id: number
+    names?: string[]
+  }>
+  /**
    * Fault detection while the unit is still present.
    * - `onIfTruthy`: non-zero / true = error
    * - `onIfFalsy`: false / 0 = error (health flags)
@@ -45,7 +53,7 @@ export const ECU_PROBES: readonly EcuProbe[] = [
     bus: 'high',
     can_id: 0x7fc,
     names: ['HOST_HEARTBEAT'],
-    title: 'Host · heartbeat 0x7FC High',
+    title: 'Host · heartbeat 0x7FC High (absent when Bench TX off - expected)',
   },
   {
     node: 'RT_high',
@@ -54,6 +62,11 @@ export const ECU_PROBES: readonly EcuProbe[] = [
     can_id: 0x7fd,
     names: ['RT_HEARTBEAT'],
     title: 'RT · heartbeat 0x7FD High',
+    presenceFallbacks: [
+      { bus: 'high', can_id: 0x121, names: ['RT_MOTION_RPT'] },
+      { bus: 'high', can_id: 0x501, names: ['RT_NODE_STATUS'] },
+      { bus: 'high', can_id: 0x620, names: ['RT_DIAG_RPT'] },
+    ],
     faults: {
       companions: [
         {
@@ -124,7 +137,7 @@ export const ECU_PROBES: readonly EcuProbe[] = [
     bus: 'low',
     can_id: 0x206,
     names: ['MTR_MOTOR_FBK'],
-    title: 'MTR · motor feedback 0x206 Low',
+    title: 'MTR · motor feedback 0x206 Low (offline: unpowered on bench harness)',
     faults: {
       onIfTruthy: ['fault_flags'],
     },
@@ -135,7 +148,7 @@ export const ECU_PROBES: readonly EcuProbe[] = [
     bus: 'low',
     can_id: 0x201,
     names: ['SES_STATUS'],
-    title: 'Steering-by-wire (SES / SES) · SES_STATUS 0x201 Low',
+    title: 'Steering-by-wire (SES / SES) · SES_STATUS 0x201 Low (offline: unpowered on bench harness)',
     faults: {
       onIfTruthy: ['error_status'],
       companions: [
@@ -165,8 +178,8 @@ export const ECU_PROBES: readonly EcuProbe[] = [
     short: 'BBW',
     bus: 'low',
     can_id: 0x721,
-    names: ['SEB_STATUS'],
-    title: 'Brake-by-wire (SEB) · SEB_STATUS 0x721 Low',
+    names: ['SEB_STATUS', 'SEB_Status'],
+    title: 'Brake-by-wire (SEB / BBW) · SEB_STATUS 0x721 Low (offline: unpowered on bench harness)',
     faults: {
       onIfTruthy: ['error_status'],
       companions: [
@@ -363,10 +376,25 @@ export function buildEcuPresence(
       base = String(topo.liveness || 'offline').toLowerCase()
     }
 
+    let fallbackSatisfied: MessageState | undefined
+    if ((base === 'offline' || base === 'missing' || base === 'unseen') && probe.presenceFallbacks?.length) {
+      for (const fb of probe.presenceFallbacks) {
+        const fbMsg = findMessage(messages, fb.bus, fb.can_id, fb.names)
+        if (fbMsg) {
+          const fk = freshnessKey(fbMsg.freshness)
+          if (isPresentFreshness(fk) || fk === 'live' || fk === 'late') {
+            base = 'live'
+            fallbackSatisfied = fbMsg
+            break
+          }
+        }
+      }
+    }
+
     const issues =
       base === 'offline' || base === 'missing' || base === 'unseen'
         ? []
-        : detectIssues(probe, messages, msg)
+        : detectIssues(probe, messages, msg || fallbackSatisfied)
 
     // Topology may already report fault
     if (topo && String(topo.liveness || '').toLowerCase() === 'fault' && base !== 'offline') {
@@ -387,13 +415,17 @@ export function buildEcuPresence(
       liveness = 'degraded'
     } else if (base === 'fault' && issues.length === 0) {
       // invalid decode without extra issues still yellow while frames arrive
-      liveness = msg && isPresentFreshness(freshnessKey(msg.freshness)) ? 'degraded' : 'fault'
+      const activeMsg = msg || fallbackSatisfied
+      liveness = activeMsg && isPresentFreshness(freshnessKey(activeMsg.freshness)) ? 'degraded' : 'fault'
     }
 
     const age =
       msg?.age_ms != null && Number.isFinite(msg.age_ms)
         ? ` · age ${Math.round(msg.age_ms)} ms`
         : ''
+    const fallbackNote = fallbackSatisfied
+      ? ` (fallback: 0x${fallbackSatisfied.can_id?.toString(16).toUpperCase() ?? ''} ${fallbackSatisfied.name ?? ''})`
+      : ''
     const issueTxt = issues.length ? ` · ${issues.slice(0, 4).join('; ')}` : ''
 
     return {
@@ -403,7 +435,7 @@ export function buildEcuPresence(
       can_id: probe.can_id,
       liveness,
       issues,
-      title: `${probe.title} · ${liveness}${age}${issueTxt}`,
+      title: `${probe.title}${fallbackNote} · ${liveness}${age}${issueTxt}`,
     }
   })
 }

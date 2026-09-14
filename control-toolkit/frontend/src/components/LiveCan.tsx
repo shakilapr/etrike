@@ -30,6 +30,14 @@ export type HistoryFrame = {
   is_extended?: boolean
 }
 
+function formatRate(obs: number | null | undefined, exp: number | null | undefined): string {
+  if (obs == null || !Number.isFinite(obs)) return '—'
+  if (exp != null && exp > 0 && obs > 5.0 * exp) {
+    return `~${exp.toFixed(1)}`
+  }
+  return obs.toFixed(1)
+}
+
 export function LiveCan() {
   const messages = useAppStore((s) => s.messages)
   const liveFilter = useAppStore((s) => s.liveFilter)
@@ -320,7 +328,7 @@ export function LiveCan() {
                       <td className="mono">{hexId(m.can_id)}</td>
                       <td>{m.name}</td>
                       <td className="num mono">
-                        {m.observed_rate_hz != null ? m.observed_rate_hz.toFixed(1) : '—'}
+                        {formatRate(m.observed_rate_hz, m.expected_rate_hz)}
                         {m.expected_rate_hz != null ? ` / ${m.expected_rate_hz}` : ''}
                       </td>
                       <td>{m.validation_status}</td>
@@ -337,7 +345,8 @@ export function LiveCan() {
                       >
                         {formatAge(m.age_ms)}
                       </td>
-                      <td className="signals-cell">{Object.entries(m.signals || {})
+                      <td className={cn('signals-cell', (m.freshness === 'missing' || (m.age_ms != null && m.age_ms > 5000)) && 'opacity-40')}>
+                        {Object.entries(m.signals || {})
                           .map(([k, v]) => `${k}=${v.enum_label ?? v.engineering_value}`)
                           .join(' · ')}
                       </td>
@@ -476,7 +485,7 @@ export function LiveCan() {
                 <dd>{detail.validation_status}</dd>
                 <dt>Observed rate</dt>
                 <dd className="mono">
-                  {detail.observed_rate_hz?.toFixed(2) ?? '—'} Hz
+                  {formatRate(detail.observed_rate_hz, detail.expected_rate_hz)} Hz
                   {detail.expected_rate_hz != null
                     ? ` (expected ${detail.expected_rate_hz})`
                     : ''}

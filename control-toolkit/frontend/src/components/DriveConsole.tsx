@@ -1284,7 +1284,7 @@ export function DriveConsole() {
           >
             <span className="chip-k">RT mode</span>
             <span className="chip-v">
-              {rtModeLive && rtModeLabel ? rtModeLabel : rtModeLabel ? `${rtModeLabel}?` : '—'}
+              {rtModeLive && rtModeLabel ? rtModeLabel : rtModeLabel ? `${rtModeLabel} (stale)` : '—'}
             </span>
           </span>
           <span

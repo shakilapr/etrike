@@ -54,7 +54,17 @@ export function Topbar() {
   const adapterHealth = (status?.adapter?.health || '—').toLowerCase()
   const benchOn = (ses?.bench_tx || '').toLowerCase() === 'enabled'
   const estopObs = useMemo(() => observeEstop(messages, ses), [messages, ses])
-  const estopOn = estopObs.any
+  const backendEstop = status?.estop
+  // Prefer fresh backend structured estop report when present and active
+  const estopOn = backendEstop?.active != null ? backendEstop.active : estopObs.any
+  const estopLabel = (backendEstop?.active && backendEstop.primary_cause)
+    ? backendEstop.primary_cause
+    : (backendEstop?.active && backendEstop.summary)
+      ? backendEstop.summary
+      : estopObs.label
+  const estopDetail = backendEstop?.summary
+    ? `${backendEstop.summary} (CAN: ${estopObs.detail})`
+    : estopObs.detail
   const link = linkLabelFromStatus(status)
 
   // Always show full unit set (incl. SBW/BBW). Prefer live CAN; topology as fallback.
@@ -285,11 +295,11 @@ export function Topbar() {
           <div
             className={`chip ${estopOn ? 'danger' : 'ok'} health-chip chip-estop`}
             data-testid="chip-estop"
-            title={estopObs.detail}
+            title={estopDetail}
           >
             <span className="chip-k">ESTOP</span>
             <span className="chip-v" data-testid="chip-estop-label">
-              {estopObs.label}
+              {estopLabel}
             </span>
             {/* Bus presence of 0x001 — separate from host latch label */}
             <span className="estop-bus-lamps" aria-label="SAFETY_ESTOP bus presence">

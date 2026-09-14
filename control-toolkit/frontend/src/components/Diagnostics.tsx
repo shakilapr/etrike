@@ -5,6 +5,30 @@ import { observeEstop } from '../lib/signals'
 import { useAppStore } from '../store'
 import { WorkspaceShell } from './WorkspaceShell'
 
+function decodeBlockMask(node: string, mask: number): string[] {
+  if (!mask || mask === 0) return ['None']
+  const reasons: string[] = []
+  if (node.toLowerCase() === 'sys') {
+    if (mask & (1 << 0)) reasons.push('Physical button pressed')
+    if (mask & (1 << 1)) reasons.push('Brake fault')
+    if (mask & (1 << 2)) reasons.push('MTR unavailable')
+    if (mask & (1 << 3)) reasons.push('RT fault')
+    if (mask & (1 << 4)) reasons.push('MTR ESTOP active')
+    if (mask & (1 << 5)) reasons.push('Traction fault')
+    if (mask & (1 << 6)) reasons.push('Steer fault')
+    if (mask & (1 << 7)) reasons.push('Heartbeat loss')
+    if (mask & (1 << 8)) reasons.push('CAN bad')
+    if (mask & (1 << 9)) reasons.push('Brake pressure low')
+    if (mask & (1 << 10)) reasons.push('ESTOP active')
+  } else if (node.toLowerCase() === 'rt') {
+    if (mask & (1 << 0)) reasons.push('No SYS authority')
+    if (mask & (1 << 1)) reasons.push('No Host authority')
+    if (mask & (1 << 2)) reasons.push('MTR unavailable')
+    if (mask & (1 << 3)) reasons.push('Steer not ready')
+  }
+  return reasons.length > 0 ? reasons : [`0x${mask.toString(16)}`]
+}
+
 export function Diagnostics() {
   const status = useAppStore((s) => s.status)
   const setStatus = useAppStore((s) => s.setStatus)
@@ -268,9 +292,17 @@ export function Diagnostics() {
           </dd>
           <dt>RT</dt>
           <dd className="mono" data-testid="diag-estop-rt-reason">
-            mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode}:{' '}
-            {estopApi?.rt?.estop_reason_display || estopLive.rtReasonLabel}
-            {estopLive.safetyState != null ? ` · safety_state=${estopLive.safetyState}` : ''}
+            {estopLive.rtStale ? (
+              <span className="muted">
+                frame stale · last mode={estopLive.rtMode || '—'} · last reason={estopLive.lastKnownReasonCode} ({estopLive.lastKnownReasonLabel})
+              </span>
+            ) : (
+              <>
+                mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode}:{' '}
+                {estopApi?.rt?.estop_reason_display || estopLive.rtReasonLabel}
+                {estopLive.safetyState != null ? ` · safety_state=${estopLive.safetyState}` : ''}
+              </>
+            )}
           </dd>
         </dl>
         {(estopApi?.causes?.length || estopLive.causes.length) > 0 ? (
@@ -300,9 +332,42 @@ export function Diagnostics() {
             </tbody>
           </table>
         ) : null}
+        {(() => {
+          const estopNodes = (estopApi as { nodes?: Record<string, { state?: string; block_mask?: number }> } | undefined)?.nodes
+          if (!estopNodes || Object.keys(estopNodes).length === 0) return null
+          return (
+            <div className="mt-section">
+              <h3>Node Blockers (NODE_STATUS)</h3>
+              <table className="data-table compact" data-testid="diag-node-blockers">
+                <thead>
+                  <tr>
+                    <th>Node</th>
+                    <th>State</th>
+                    <th>Block Mask</th>
+                    <th>Decoded Blockers</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(estopNodes).map(([nodeName, nodeState]) => {
+                    const ns = nodeState as { state?: string; block_mask?: number }
+                    const mask = Number(ns.block_mask ?? 0)
+                    return (
+                      <tr key={nodeName}>
+                        <td className="mono font-semibold uppercase">{nodeName}</td>
+                        <td>{ns.state ?? '—'}</td>
+                        <td className="mono">{mask} (0x{mask.toString(16)})</td>
+                        <td>{decodeBlockMask(nodeName, mask).join(', ')}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
         <p className="muted small mono">
-          RT reason map: 0=none 2=heartbeat_loss 3=following_error 4=obstacle 5=can_estop_frame
-          6=bus_off 7=internal
+          RT reason map: 0=none 1=button 2=heartbeat_loss 3=following_error 4=obstacle 5=can_estop_frame
+          6=bus_off 7=internal 8=egas_mismatch 9=stale_cmd 10=watchdog
         </p>
       </section>
 
