@@ -135,6 +135,9 @@ export type EstopObservation = {
   rtModeEstop: boolean
   rtReasonCode: number
   rtReasonLabel: string
+  rtStale?: boolean
+  lastKnownReasonCode?: number
+  lastKnownReasonLabel?: string
   rtMode: string
   safetyState: number | null
   sysHeartbeatBad: boolean
@@ -175,10 +178,15 @@ export function observeEstop(
     !!sysHb && frameRecent(sysHb) && sysHb.signals?.can_ok != null && !signalIsOn(sysHb, 'can_ok')
   const sysBrakeFault = signalIsOn(sysDiag, 'brake_fault')
 
-  const rtState =
-    findMsg(messages, 'RT_STATE_RPT', 'high') ||
-    findMsg(messages, 'RT_STATE_RPT', 'low') ||
-    findMsg(messages, 'RT_STATE_RPT')
+  const candidates = [
+    findMsg(messages, 'RT_STATE_RPT', 'high'),
+    findMsg(messages, 'RT_STATE_RPT', 'low'),
+    findMsg(messages, 'RT_STATE_RPT'),
+  ].filter((m): m is MessageState => !!m)
+  const rtState = candidates.find((m) => frameRecent(m, 3000))
+  const lastKnownRtState = candidates[0]
+  const rtStale = !rtState && candidates.length > 0
+
   const rtModeRaw = rtState?.signals?.mode
   let rtMode = String(rtModeRaw?.enum_label ?? rtModeRaw?.engineering_value ?? '')
     .trim()
@@ -191,10 +199,18 @@ export function observeEstop(
   }
   const rtModeEstop = rtMode === 'ESTOP' || Number(rtModeRaw?.engineering_value) === 2
   const rtReasonCode = (() => {
+    if (!rtState) return 0
     const n = signalNum(rtState, 'estop_reason')
     return n != null && Number.isFinite(n) ? Math.trunc(n) : 0
   })()
   const rtReasonLabel = RT_ESTOP_REASONS[rtReasonCode] ?? `unknown_${rtReasonCode}`
+
+  const lastKnownReasonCode = (() => {
+    const n = signalNum(lastKnownRtState, 'estop_reason')
+    return n != null && Number.isFinite(n) ? Math.trunc(n) : 0
+  })()
+  const lastKnownReasonLabel = RT_ESTOP_REASONS[lastKnownReasonCode] ?? `unknown_${lastKnownReasonCode}`
+
   const safetyState = signalNum(rtState, 'safety_state')
 
   // NODE_STATUS (0x500/0x501/0x502) authoritative persistent latch.
@@ -263,6 +279,9 @@ export function observeEstop(
     rtModeEstop,
     rtReasonCode,
     rtReasonLabel,
+    rtStale,
+    lastKnownReasonCode,
+    lastKnownReasonLabel,
     rtMode,
     safetyState,
     sysHeartbeatBad,

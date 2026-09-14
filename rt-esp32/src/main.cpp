@@ -523,7 +523,8 @@ static uint8_t task_health_snapshot() {
             rpt.task_health |= 0x80;
 #endif
             can::Frame state_fr{};
-            if (can::encode_frame(rpt, state_fr) == can::gen::CodecStatus::Ok) {
+            const auto state_status = can::encode_frame(rpt, state_fr);
+            if (state_status == can::gen::CodecStatus::Ok) {
                 if (g_can_high.can_transmit()) {
                     if (!g_can_high.send(state_fr)) {
                         rpt_fail_count++;
@@ -534,6 +535,13 @@ static uint8_t task_health_snapshot() {
                         ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
                         rpt_fail_count = 0;
                     }
+                }
+            } else {
+                static uint32_t state_rpt_encode_fail_high = 0;
+                state_rpt_encode_fail_high++;
+                if (state_rpt_encode_fail_high == 1 || state_rpt_encode_fail_high % 100 == 0) {
+                    ESP_LOGE(TAG, "RT_STATE_RPT High encode failed: status=%d mode=%u reason=%u (count=%lu)",
+                             static_cast<int>(state_status), rpt.mode, rpt.estop_reason, state_rpt_encode_fail_high);
                 }
             }
 
@@ -653,6 +661,7 @@ static uint8_t task_health_snapshot() {
     can::Frame fr;
     TickType_t last_100hz = xTaskGetTickCount();
     TickType_t last_50hz  = xTaskGetTickCount();
+    TickType_t last_10hz  = xTaskGetTickCount();
     int64_t    last_low_hb_us = esp_timer_get_time();
 
     uint8_t    node_status_roll = 0;
@@ -996,6 +1005,37 @@ static uint8_t task_health_snapshot() {
                 ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
                 if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
                     send_can_low(nfr);
+                }
+            }
+        }
+
+        // 5. 10 Hz Periodic Telemetry on Low CAN: 0x210 RT_STATE_RPT
+        if (xTaskGetTickCount() - last_10hz >= pdMS_TO_TICKS(100)) {
+            last_10hz = xTaskGetTickCount();
+
+            can::gen::RtStateRpt rpt{};
+            rpt.mode = g_mode_current.load();
+            auto ss = g_steering.state();
+            rpt.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
+                               (ss == rt::SteerState::STEER_FAULT)   ? 2 : 1;
+            rpt.reversing    = g_reversing.load();
+            rpt.rx_overflow  = static_cast<uint8_t>(g_can_high.rx_overflow_count());
+            rpt.estop_reason = g_estop_reason.load();
+            rpt.steer_state  = static_cast<uint8_t>(ss);
+            rpt.task_health  = task_health_snapshot();
+#ifdef BENCH_BUILD_ACKNOWLEDGED
+            rpt.task_health |= 0x80;
+#endif
+            can::Frame state_fr{};
+            const auto state_status = can::encode_frame(rpt, state_fr);
+            if (state_status == can::gen::CodecStatus::Ok) {
+                send_can_low(state_fr);
+            } else {
+                static uint32_t state_rpt_encode_fail_low = 0;
+                state_rpt_encode_fail_low++;
+                if (state_rpt_encode_fail_low == 1 || state_rpt_encode_fail_low % 100 == 0) {
+                    ESP_LOGE(TAG, "RT_STATE_RPT Low encode failed: status=%d mode=%u reason=%u (count=%lu)",
+                             static_cast<int>(state_status), rpt.mode, rpt.estop_reason, state_rpt_encode_fail_low);
                 }
             }
         }

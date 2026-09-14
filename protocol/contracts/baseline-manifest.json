@@ -254,7 +254,7 @@
       "standard",
       "sys:sys_node_status",
       8,
-      20,
+      200,
       "SYS",
       [
         "Host"
@@ -266,7 +266,7 @@
       "standard",
       "rt:rt_node_status",
       8,
-      20,
+      100,
       "RT",
       [
         "SYS",
@@ -593,7 +593,7 @@
       "standard",
       "sys:sys_node_status",
       8,
-      20,
+      200,
       "SYS",
       [
         "RT"

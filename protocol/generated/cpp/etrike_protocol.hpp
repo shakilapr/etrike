@@ -10,9 +10,9 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "508fae8bfaec0b50f1adeb6a0200fa7fc77ecafc012f4ceb3078904985dfb2d1";
+inline constexpr std::string_view kSemanticHash = "ad2e52255a457025c9961683c434fd42af1c3a074e39f61127c00e243bf29ea5";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "ea7117b2e6955a5b272300a7bd7f1cb0b6ac3f969f6557cf394ee177eba8ac58";
+inline constexpr std::string_view kNetworkHash = "6922db4cc5f2bb1b0e8de9f24d619d605d627c84fa83cad337a26f7f4314cd9f";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
@@ -2194,10 +2194,10 @@ struct RtNodeStatus {
     static constexpr std::string_view kKey = "rt:rt_node_status";
     static constexpr std::uint32_t kId = 0x501u;
     static constexpr std::size_t kDlc = 8u;
-    static constexpr std::uint32_t kCycleMs = 20u;
+    static constexpr std::uint32_t kCycleMs = 100u;
     static constexpr bool kExtended = false;
     static constexpr std::uint32_t kHighId = 0x501u;
-    static constexpr std::uint32_t kHighCycleMs = 20u;
+    static constexpr std::uint32_t kHighCycleMs = 100u;
     static constexpr bool kHighExtended = false;
     static constexpr std::uint32_t kLowId = 0x501u;
     static constexpr std::uint32_t kLowCycleMs = 20u;
@@ -2538,7 +2538,6 @@ struct RtStateRpt {
         if (mode > 2) return CodecStatus::ValueOutOfRange;
         if (mode != 0 && mode != 1 && mode != 2) return CodecStatus::InvalidEnum;
         if (safety_state > 2) return CodecStatus::ValueOutOfRange;
-        if (estop_reason > 7) return CodecStatus::ValueOutOfRange;
         if (steer_state > 5) return CodecStatus::ValueOutOfRange;
         std::array<std::uint8_t, kDlc> payload{};
         detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(mode));
@@ -2565,7 +2564,6 @@ struct RtStateRpt {
         if (value.safety_state > 2) return CodecStatus::ValueOutOfRange;
         const std::uint64_t raw_estop_reason = detail::extract(source, 1u, 4u, 4u, false);
         value.estop_reason = static_cast<std::uint8_t>(raw_estop_reason);
-        if (value.estop_reason > 7) return CodecStatus::ValueOutOfRange;
         const std::uint64_t raw_reversing = detail::extract(source, 2u, 0u, 1u, false);
         value.reversing = raw_reversing != 0u;
         const std::uint64_t raw_rx_overflow = detail::extract(source, 3u, 0u, 8u, false);
@@ -3418,13 +3416,13 @@ struct SysNodeStatus {
     static constexpr std::string_view kKey = "sys:sys_node_status";
     static constexpr std::uint32_t kId = 0x500u;
     static constexpr std::size_t kDlc = 8u;
-    static constexpr std::uint32_t kCycleMs = 20u;
+    static constexpr std::uint32_t kCycleMs = 200u;
     static constexpr bool kExtended = false;
     static constexpr std::uint32_t kHighId = 0x500u;
-    static constexpr std::uint32_t kHighCycleMs = 20u;
+    static constexpr std::uint32_t kHighCycleMs = 200u;
     static constexpr bool kHighExtended = false;
     static constexpr std::uint32_t kLowId = 0x500u;
-    static constexpr std::uint32_t kLowCycleMs = 20u;
+    static constexpr std::uint32_t kLowCycleMs = 200u;
     static constexpr bool kLowExtended = false;
     std::uint8_t node_state{};
     std::uint8_t reserved_b0{0};
