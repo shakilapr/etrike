@@ -758,6 +758,8 @@ static uint8_t task_health_snapshot() {
                         }
                     }
                 }
+                // Forward SYS_SAFETY_STS Low→High so the host can observe it.
+                send_can_high(fr);
                 continue;
             }
 
@@ -807,6 +809,8 @@ static uint8_t task_health_snapshot() {
                     fbk_snap.last_mtr_us = now_us;
                     if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
                 }
+                // Forward MTR_MOTOR_FBK Low→High for host telemetry.
+                send_can_high(fr);
                 continue;
             }
 
@@ -913,6 +917,12 @@ static uint8_t task_health_snapshot() {
                     if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
                 }
                 continue;
+            }
+
+            // Catch-all: forward any Low→High transparent frames that have no
+            // local handler in this task (e.g. SYS_THROTTLE_STS, SYS_DIAG_RPT).
+            if (can::is_forwarded_low_to_high(fr.id)) {
+                send_can_high(fr);
             }
         }
 
@@ -1055,6 +1065,9 @@ static uint8_t task_health_snapshot() {
         }
         if (g_steering_exit_request.exchange(false)) {
             g_steering.exit_estop();
+            // If steering faulted (e.g. SES sync timeout during bench startup),
+            // reset it to LISTEN_SYNC so the system can re-acquire without reboot.
+            g_steering.reset_to_listen(static_cast<uint32_t>(now / 1000));
         }
 
         // 1. Drain Safety Events
