@@ -351,7 +351,12 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 /*physical_estop=*/g_safety.estop_active(),
                 /*hb_ok=*/g_safety.heartbeat_ok(),
                 /*measured_speed_mmps=*/g_wheel_measured_mmps.load(std::memory_order_relaxed),
-                /*mtr_ack_confirmed=*/g_mtr_ack_watchdog.has_acknowledged(),
+                // Bench/sim without an MTR (SYSTEM_RUN_MODE=1): the ACK watchdog
+                // tick is skipped under g_bypass_mtr_absent, so the ACK can never
+                // be confirmed. Without this OR, a CAN/ESTOP latch could never be
+                // cleared on the bench. The physical ESTOP block is unaffected.
+                /*mtr_ack_confirmed=*/(g_bypass_mtr_absent
+                                        || g_mtr_ack_watchdog.has_acknowledged()),
                 /*token=*/static_cast<uint16_t>(req.reset_token)
             );
 
@@ -915,6 +920,15 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         can::custom::seb::Command seb_cmd;
         uint8_t  seb_b0 = g_seb_status_byte0.load(std::memory_order_relaxed);
         uint16_t seb_stroke = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
+        if ((g_bench_solo_mode || g_bypass_seb_sync) && seb_b0 == 0xFF) {
+            // Bench/sim without an SEB node: assume an aligned, released actuator
+            // so BrakeControl skips LISTEN_SYNC->DEGRADED and applies the 0x205
+            // intent through the normal ACTIVE path. This is an internal bench
+            // assumption (SYSTEM_RUN_MODE=1) only — no frame is put on the bus,
+            // mirroring the steering bench bypass (steering_control.h listen-sync).
+            seb_b0 = 0x01;   // alignment bit -> BrakeControl ACTIVE
+            seb_stroke = 0;
+        }
         bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode,
                                       seb_b0, seb_stroke, seb_cmd);
         // Store commanded stroke for the following-error monitor even when not

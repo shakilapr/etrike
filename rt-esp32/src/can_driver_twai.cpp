@@ -358,7 +358,6 @@ bool TwaiDriver::receive(can::Frame& out, uint32_t timeout_ms) {
 }
 
 bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
-    (void)timeout_ms;
     if (!m_initialized || !m_node || source.dlc > 8) return false;
     if (esp_timer_get_time()
         < m_tx_resume_not_before_us.load(std::memory_order_acquire)) {
@@ -376,7 +375,8 @@ bool TwaiDriver::send(const can::Frame& source, uint32_t timeout_ms) {
     }
 
     uint8_t index = 0;
-    if (xQueueReceive(m_free_tx_slots, &index, 0) != pdTRUE) {
+    const TickType_t wait_ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
+    if (xQueueReceive(m_free_tx_slots, &index, wait_ticks) != pdTRUE) {
         if (pending_bit != 0) {
             m_actuation_pending.fetch_and(~pending_bit, std::memory_order_release);
         }

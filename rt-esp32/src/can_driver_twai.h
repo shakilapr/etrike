@@ -51,7 +51,9 @@ public:
     }
     HealthSnapshot health_snapshot() const;
     bool receive(can::Frame& out, uint32_t timeout_ms = 100);
-    // Strictly non-blocking. Periodic callers regenerate current values next cycle.
+    // Queue a frame for transmission. timeout_ms > 0 waits up to that long for
+    // a free TX slot (bounded); 0 = strictly non-blocking. Keep the wait short
+    // so a busy or broken bus cannot stall the calling task.
     bool send(const can::Frame& frame, uint32_t timeout_ms = 0);
     void get_error_counters(uint8_t& tec, uint8_t& rec) const;
     // state is twai_state_t cast to uint32_t (0=stopped … 3=bus-off).

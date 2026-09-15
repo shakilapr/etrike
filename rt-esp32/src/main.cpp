@@ -158,7 +158,7 @@ static uint32_t g_can_tx_consec_fail_low = 0;
 static bool send_can_low(can::Frame& fr) {
     auto* drv = rt::can_low_driver();
     if (!drv) return false;
-    if (drv->send(fr)) {
+    if (drv->send(fr, 2)) {
         if (g_can_tx_had_fail_low) {
             ESP_LOGI(TAG, "Low CAN TX recovered — fail=%lu ok=%lu",
                      static_cast<unsigned long>(g_can_tx_fail_low),
@@ -650,11 +650,12 @@ static uint8_t task_health_snapshot() {
 [[noreturn]] void can_low_task(void*) {
     can::Frame fr;
     TickType_t last_100hz = xTaskGetTickCount();
-    TickType_t last_50hz  = xTaskGetTickCount();
+    TickType_t last_secondary = xTaskGetTickCount();
     TickType_t last_10hz  = xTaskGetTickCount();
     int64_t    last_low_hb_us = esp_timer_get_time();
 
     uint8_t    node_status_roll = 0;
+    uint8_t    secondary_slot = 0;
     uint8_t    seb_roll = 0;
     auto*      drv = rt::can_low_driver();
 
@@ -957,27 +958,28 @@ static uint8_t task_health_snapshot() {
             send_can_low(hb_frame);
         }
 
-        // 4. 50 Hz Actuator Outputs: 0x205, 0x169, 0x7B9, 0x501
-        // TWAI has one application TX slot. Alternate secondary frames to
-        // avoid same-tick contention; node status remains every cycle.
-        const TickType_t tick_50hz = xTaskGetTickCount();
-        if (tick_50hz - last_50hz >= pdMS_TO_TICKS(20)) {
-            last_50hz = tick_50hz;
+        // 4. Actuator outputs: 0x205 + 0x169 at 50 Hz each, 0x7B9 emergency
+        // fallback, and 0x501 node status at 50 Hz.
+        // TWAI has one application TX slot, so secondary frames are alternated
+        // on a 10 ms cadence — each frame therefore lands every 20 ms (50 Hz).
+        const TickType_t tick_secondary = xTaskGetTickCount();
+        if (tick_secondary - last_secondary >= pdMS_TO_TICKS(10)) {
+            last_secondary = tick_secondary;
             if (g_motion_output_mailbox) xQueuePeek(g_motion_output_mailbox, &out, 0);
             can::Frame secondary_frame{};
 
-            switch (node_status_roll % 3) {
-            case 0:
-                if (out.current_mode != uint8_t(can::Mode::Manual)) {
+            if (out.current_mode != uint8_t(can::Mode::Manual)) {
+                if (out.seb_emergency_takeover) {
+                    // RT emergency 0x7B9 fallback wins over the alternation.
+                    send_seb_req(*drv, secondary_frame, rt::make_seb_takeover_req(), seb_roll);
+                } else if ((secondary_slot & 0x1) == 0) {
+                    // 0x205 RT_BRAKE_CMD (brake intent -> SYS -> SEB)
                     can::gen::RtBrakeCmd bmsg{out.brake_kpa};
                     if (can::encode_frame(bmsg, secondary_frame) == can::gen::CodecStatus::Ok) {
                         send_can_low(secondary_frame);
                     }
-                }
-                break;
-            case 1:
-                if (out.current_mode != uint8_t(can::Mode::Manual)
-                    && out.steer_command_enable) {
+                } else if (out.steer_command_enable) {
+                    // 0x169 VCU_SES_REQ (steer request -> SES)
                     can::custom::ses::Command smsg{};
                     const int64_t now_ms = esp_timer_get_time() / 1000;
                     if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
@@ -987,24 +989,20 @@ static uint8_t task_health_snapshot() {
                         send_can_low(secondary_frame);
                     }
                 }
-                break;
-            default:
-                if (out.current_mode != uint8_t(can::Mode::Manual)
-                    && out.seb_emergency_takeover) {
-                    send_seb_req(*drv, secondary_frame, rt::make_seb_takeover_req(), seb_roll);
-                }
-                break;
             }
+            secondary_slot++;
 
-
-            can::gen::RtNodeStatus ns = build_rt_node_status();
-            ns.rolling_counter = node_status_roll++;
-            ns.e2e_crc = 0;
-            can::Frame nfr{};
-            if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
-                ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
+            // 0x501 RT_NODE_STATUS at 50 Hz (every 2nd secondary tick = 20 ms).
+            if ((secondary_slot & 0x1) == 0) {
+                can::gen::RtNodeStatus ns = build_rt_node_status();
+                ns.rolling_counter = node_status_roll++;
+                ns.e2e_crc = 0;
+                can::Frame nfr{};
                 if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
-                    send_can_low(nfr);
+                    ns.e2e_crc = can::e2e::crc8_h2f(nfr.data.data(), 7u, 0u);
+                    if (can::encode_frame(ns, nfr) == can::gen::CodecStatus::Ok) {
+                        send_can_low(nfr);
+                    }
                 }
             }
         }
@@ -1340,19 +1338,31 @@ static uint8_t task_health_snapshot() {
 
         // 6. Tick-Divided 10 Hz Staleness Check (Every 10 ticks)
         if (tick_counter % 10 == 0) {
-            if (!g_bench_solo_mode && g_watchdog.is_stale(now)) {
-                static int64_t last_stale_log_us = 0;
-                rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
-                                 static_cast<std::uint16_t>((now - g_watchdog.last_feed()) / 1000));
-                if (now - last_stale_log_us > 2'000'000) {
-                    last_stale_log_us = now;
-                    ESP_LOGW(TAG, "Command stale (no host drive)");
+            if (g_watchdog.is_stale(now)) {
+                if (!g_bench_solo_mode) {
+                    // Production: advertise loss, zero the command, request a
+                    // steering ESTOP.
+                    static int64_t last_stale_log_us = 0;
+                    rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
+                                     static_cast<std::uint16_t>((now - g_watchdog.last_feed()) / 1000));
+                    if (now - last_stale_log_us > 2'000'000) {
+                        last_stale_log_us = now;
+                        ESP_LOGW(TAG, "Command stale (no host drive)");
+                    }
+                    g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                           std::memory_order_release);
+                    rt::HostDriveSnapshot zero{};
+                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
+                    g_steering_estop_request.store(true);
+                } else {
+                    // Bench solo: fail-safe zero the command without latching an
+                    // ESTOP or stopping steering. A resumed 0x300 stream re-arms
+                    // READY_BIT_HOST on the next frame.
+                    g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                           std::memory_order_release);
+                    rt::HostDriveSnapshot zero{};
+                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
                 }
-                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
-                                       std::memory_order_release);
-                rt::HostDriveSnapshot zero{};
-                if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
-                g_steering_estop_request.store(true);
             }
         }
 
