@@ -2,6 +2,23 @@
 
 All notable changes to the Control Toolkit project will be documented in this file.
 
+## [0.8.1-alpha] — 2026-09-15
+
+### Hardware Bench Integration & Gateway Bringup
+
+#### Dual-Controller Hardware Bench
+* **Dual-Node Topology**: Physical `rt-esp32` (`COM6`) and `sys-esp32` (`COM10`) both flashed with `hardware_bench` profile and interconnected via Low CAN (TWAI @ 500k). High CAN (MCP2515 @ 500k) connects RT to the Host CANalyst-II adapter.
+* **ESTOP Reset Verification**: Solved mutual trip/latch between RT and SYS. Verified 2-stage advancing counter reset sequence (`0x114 HOST_ESTOP_RESET_REQ` token `0x5253`). Confirmed both nodes transition to `STANDBY` state with `estop_active: false` and `block_mask: 0x0000`.
+
+#### Firmware Gateway Updates (`rt-esp32`)
+* **Low → High Forwarding**: Enabled explicit forwarding of `0x011 SYS_SAFETY_STS` and `0x206 MTR_MOTOR_FBK` from Low CAN to High CAN, restoring full host observability.
+* **Transparent Routing Catch-All**: Pushed all unhandled Low-bus frames designated by the protocol matrix (`0x500 SYS_NODE_STATUS`, `0x600 SYS_DIAG_RPT`, `0x115 SYS_ESTOP_RESET_RSP`) to High CAN.
+* **Steer Fault Re-acquisition**: Wired `g_steering.reset_to_listen()` on safety clear exit requests so boot sync timeouts recover cleanly to `LISTEN_SYNC` without requiring hardware reboots.
+
+#### Test Tooling & Codebase Utilities
+* **Codebase Script Consolidation**: Added `check_can_bus.py` (live traffic, node health, signal inspector) and `bench_control_ops.py` (CLI for session activation, ESTOP reset, power/mode transitions, drive streaming) to `control-toolkit/backend/scripts/`.
+* **Handoff Documentation**: Updated `hardware-test-handoff.md` with complete physical topology, API specifications, and step-by-step verification procedures.
+
 ## [0.8.0-alpha] — 2026-07-23
 
 This release covers the complete implementation and hardware testing bring-up of the Control Toolkit, bringing the system to a functional, stable, and testable bench & hardware engineering application.
