@@ -71,7 +71,7 @@ def get_status(request: Request) -> dict:
         "session": session.model_dump(),
         "estop": estop,
         "link": {
-            "mode": "real" if (session.destination or "") == "physical" else "computer",
+            "mode": "real",
             "destination": session.destination,
             "connected": lifecycle.transport is not None
             and adapter.health.value

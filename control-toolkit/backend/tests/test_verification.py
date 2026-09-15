@@ -6,7 +6,7 @@ import time
 
 
 def _enable_tx(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     client.post(

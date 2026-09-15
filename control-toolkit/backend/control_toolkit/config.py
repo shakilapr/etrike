@@ -14,34 +14,11 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
-def _discover_native_sil_executable() -> str | None:
-    """Find monorepo RT SIL binary when CTK_NATIVE_SIL_EXE is unset.
-
-    Search order matches e2e / docs: build-sil first, then common CMake outputs.
-    """
-    # control_toolkit/config.py → backend/control_toolkit → backend → control-toolkit → repo root
-    here = Path(__file__).resolve()
-    repo_root = here.parents[3]
-    candidates = [
-        repo_root / "native-test" / "build-sil" / "sim_engine_native.exe",
-        repo_root / "native-test" / "build-sil" / "sim_engine_native",
-        repo_root / "native-test" / "build" / "Release" / "sim_engine_native.exe",
-        repo_root / "native-test" / "build" / "Debug" / "sim_engine_native.exe",
-        repo_root / "native-test" / "build2" / "sim_engine_native.exe",
-        repo_root / "native-test" / "build2" / "sim_engine_native",
-    ]
-    for path in candidates:
-        if path.is_file():
-            return str(path)
-    return None
-
-
 class Profile(str, Enum):
-    """Operating profile (architecture §3). Default is the hardware-free profile."""
+    """Operating profile (architecture §3). Real hardware profiles."""
 
     FULL_VEHICLE = "full_vehicle"
     BENCH_TEST = "bench_test"
-    PURE_SOFTWARE = "pure_software"
 
 
 class ToolkitConfig(BaseModel):
@@ -54,7 +31,7 @@ class ToolkitConfig(BaseModel):
     # Single worker is mandatory — do not raise (architecture §4.5).
     workers: int = 1
 
-    default_profile: Profile = Profile.PURE_SOFTWARE
+    default_profile: Profile = Profile.BENCH_TEST
 
     # Stream/service-level targets (architecture §18.1), milliseconds.
     stream_heartbeat_ms: int = 250
@@ -66,11 +43,6 @@ class ToolkitConfig(BaseModel):
     rx_queue_maxsize: int = 65536
     # Chronological frame history capacity (bounded ring).
     history_capacity: int = 4096
-
-    # Optional native software-in-the-loop peer. When set, Pure Software sends
-    # HOST_DRIVE_CMD frames to this JSON-Lines process and receives its CAN
-    # responses through the normal virtual transport/router path.
-    native_sil_executable: str | None = None
 
     # CANalyst-II physical transport.  Keep these explicit rather than relying
     # on python-can global configuration so the Settings API and bench evidence
@@ -96,10 +68,6 @@ class ToolkitConfig(BaseModel):
             overrides["port"] = int(v)
         if v := os.getenv("CTK_PROFILE"):
             overrides["default_profile"] = Profile(v)
-        if v := os.getenv("CTK_NATIVE_SIL_EXE"):
-            overrides["native_sil_executable"] = v
-        elif discovered := _discover_native_sil_executable():
-            overrides["native_sil_executable"] = discovered
         if v := os.getenv("CTK_CANALYST_DEVICE_INDEX"):
             overrides["canalyst_device_index"] = int(v)
         if v := os.getenv("CTK_CANALYST_BITRATE"):

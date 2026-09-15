@@ -2,7 +2,7 @@
 
 
 def _ready(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     sid = ses["session_id"]

@@ -14,7 +14,7 @@ def test_logs_on_startup_and_session(client):
 
 
 def test_logs_filter_and_inject(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     client.post(

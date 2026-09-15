@@ -62,7 +62,7 @@ class SessionManager:
         self._state = SessionState(
             wire_hash=proto.WIRE_HASH,
             semantic_hash=proto.SEMANTIC_HASH,
-            destination="virtual",
+            destination="physical",
         )
         self._scheduler: Scheduler | None = None
 
@@ -126,7 +126,7 @@ class SessionManager:
         with self._lock:
             # Only report Listening/Running after the selected destination is
             # actually open.  This also records the new physical adapter epoch.
-            self._state.adapter_epoch = self._get_adapter_epoch()
+            self._state.adapter_epoch = self._get_adapter_epoch() or 0
             self._state.phase = SessionPhase.LISTENING
             self._state.revision += 1
             self._state.phase = SessionPhase.RUNNING
@@ -423,15 +423,17 @@ class SessionManager:
         show disconnected state. Physical TX remains gated by open adapter health.
         Never silently map physical → virtual traffic.
         """
-        if profile is Profile.PURE_SOFTWARE:
-            return
         if profile in PHYSICAL_PROFILES:
             return
-        raise SessionError("profile.unknown", f"unknown profile {profile}", status=400)
+        raise SessionError(
+            "profile.unknown",
+            f"unknown profile {profile}; only Real profiles are supported",
+            status=400,
+        )
 
     @staticmethod
     def _destination_for(profile: Profile) -> str:
-        return "virtual" if profile is Profile.PURE_SOFTWARE else "physical"
+        return "physical"
 
     def _neutralize_locked(self) -> None:
         """Cancel jobs/leases and disarm TX.

@@ -25,7 +25,7 @@ export function Bench() {
   async function ensureBenchTx() {
     let st = await api.status()
     if (!st.session?.session_id) {
-      throw new Error('No active session. Start Computer or connect Real in Settings first.')
+      throw new Error('No active session. Connect Real in Settings first.')
     }
     if (st.session.bench_tx !== 'enabled') {
       throw new Error(
@@ -150,7 +150,7 @@ export function Bench() {
           <h2>Bench stimuli unavailable</h2>
           <p className="muted">
             Full Vehicle observes physical ECUs and allows explicit named injection only.
-            Switch to Real Bench or Computer to run synthetic stimuli.
+            Switch to Real Bench to run synthetic stimuli.
           </p>
         </section>
       )}

@@ -118,12 +118,37 @@ class Client:
 
             self._http = httpx.Client(base_url=base or "http://127.0.0.1:8001", timeout=20.0)
         else:
+            import queue
             from fastapi.testclient import TestClient
 
             from control_toolkit.config import ToolkitConfig
             from control_toolkit.main import create_app
 
-            self._app = create_app(ToolkitConfig())
+            class LoopbackBus:
+                def __init__(self, **kwargs: Any) -> None:
+                    self.rx: queue.Queue[Any] = queue.Queue()
+                    self.sent: list[Any] = []
+                    self.shutdown_called = False
+                    self.RX_POLL_DELAY = 0.005
+
+                def recv(self, timeout: float | None = None) -> Any:
+                    try:
+                        return self.rx.get(timeout=timeout or 0.01)
+                    except queue.Empty:
+                        return None
+
+                def send(self, msg: Any, timeout: float | None = None) -> None:
+                    self.sent.append((msg, timeout))
+                    self.rx.put(msg)
+
+                def shutdown(self) -> None:
+                    self.shutdown_called = True
+
+            class TestBusFactory:
+                def __call__(self, **kwargs: Any) -> LoopbackBus:
+                    return LoopbackBus(**kwargs)
+
+            self._app = create_app(ToolkitConfig(), bus_factory=TestBusFactory())
             self._tc = TestClient(self._app)
 
     def close(self) -> None:
@@ -163,7 +188,7 @@ def ensure_bench(c: Client) -> dict[str, Any]:
             f"/api/v1/sessions/{ses['session_id']}",
             {"expected_revision": ses.get("revision", 0)},
         )
-    _, created = c.request("POST", "/api/v1/sessions", {"profile": "pure_software"})
+    _, created = c.request("POST", "/api/v1/sessions", {"profile": "bench_test"})
     ses = created["session"]
     _, bt = c.request(
         "POST",

@@ -1,15 +1,13 @@
 import type { MessageState } from '../store'
 
 export const PROFILE_LABELS: Record<string, string> = {
-  pure_software: 'Computer · Virtual',
   bench_test: 'Real · CANalyst Bench',
   full_vehicle: 'Real · CANalyst Vehicle',
 }
 
-/** Session profile → transport mode shown in Settings toggle. */
-export function transportModeOf(profile: string | undefined | null): 'computer' | 'real' {
-  if (profile === 'bench_test' || profile === 'full_vehicle') return 'real'
-  return 'computer'
+/** Session profile → transport mode shown in Settings. */
+export function transportModeOf(_profile?: string | undefined | null): 'real' {
+  return 'real'
 }
 
 export function signalText(m: MessageState | undefined, key: string): string {

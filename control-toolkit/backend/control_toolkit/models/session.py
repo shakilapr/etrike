@@ -28,7 +28,7 @@ class BenchTxState(str, Enum):
 class SessionState(BaseModel):
     """Full session snapshot for API and WebSocket."""
 
-    profile: Profile = Profile.PURE_SOFTWARE
+    profile: Profile = Profile.BENCH_TEST
     phase: SessionPhase = SessionPhase.STOPPED
     bench_tx: BenchTxState = BenchTxState.DISABLED
     session_id: str | None = None
@@ -37,12 +37,12 @@ class SessionState(BaseModel):
     adapter_epoch: int | None = None
     wire_hash: str | None = None
     semantic_hash: str | None = None
-    destination: str = "virtual"  # virtual | physical
+    destination: str = "physical"  # physical
     capabilities: list[str] = Field(default_factory=list)
     leases: list[str] = Field(default_factory=list)
     jobs: list[str] = Field(default_factory=list)
     # Requested vs observed vehicle state (UI header; not firmware authority).
-    requested_mode: str | None = None  # MANUAL | AUTO | PURE_SIM
+    requested_mode: str | None = None  # MANUAL | AUTO
     confirmed_mode: str | None = None
     requested_power: str | None = None  # OFF | ON
     confirmed_power: str | None = None
@@ -51,7 +51,7 @@ class SessionState(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    profile: Profile = Profile.PURE_SOFTWARE
+    profile: Profile = Profile.BENCH_TEST
     capabilities: list[str] = Field(default_factory=lambda: ["observe", "inject"])
     test_session_id: str | None = None
 

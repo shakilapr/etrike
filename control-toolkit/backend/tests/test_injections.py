@@ -7,7 +7,7 @@ import time
 
 def _session_with_tx(client):
     ses = client.post(
-        "/api/v1/sessions", json={"profile": "pure_software"}
+        "/api/v1/sessions", json={"profile": "bench_test"}
     ).json()["session"]
     sid = ses["session_id"]
     ses = client.post(
@@ -35,7 +35,7 @@ def test_preview_host_drive_cmd(client):
 
 
 def test_inject_requires_bench_tx(client):
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
     r = client.post(
         "/api/v1/injections",
         json={

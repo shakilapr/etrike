@@ -15,20 +15,20 @@ def test_status_ok(client):
         "messages": proto.message_count(),
         "instances": proto.instance_count(),
     }
-    # Top-level profile follows session (default pure_software with no session).
-    assert body["profile"] == "pure_software"
-    assert body["default_profile"] == "pure_software"
+    # Top-level profile follows session (default bench_test with no session).
+    assert body["profile"] == "bench_test"
+    assert body["default_profile"] == "bench_test"
 
 
 def test_status_profile_tracks_session(client):
     """Top-level status.profile follows the session profile, not only config default."""
     from control_toolkit.config import Profile
 
-    created = client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    created = client.post("/api/v1/sessions", json={"profile": "bench_test"})
     assert created.status_code == 200
     body = client.get("/api/v1/status").json()
-    assert body["profile"] == body["session"]["profile"] == "pure_software"
-    assert body["default_profile"] == "pure_software"
+    assert body["profile"] == body["session"]["profile"] == "bench_test"
+    assert body["default_profile"] == "bench_test"
 
     # Force a physical profile on the session manager without opening CANalyst
     # (avoids USB contention with a live toolkit process and message pollution).
@@ -39,7 +39,7 @@ def test_status_profile_tracks_session(client):
     body2 = client.get("/api/v1/status").json()
     assert body2["session"]["profile"] == "bench_test"
     assert body2["profile"] == "bench_test"
-    assert body2["default_profile"] == "pure_software"
+    assert body2["default_profile"] == "bench_test"
 
 
 def test_state_snapshot_is_valid(client):

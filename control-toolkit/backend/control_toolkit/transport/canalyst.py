@@ -695,8 +695,38 @@ class CanalystTransportAdapter:
             if self._health in (AdapterHealth.OPEN, AdapterHealth.QUIET):
                 self._health = AdapterHealth.ACTIVE
 
-    def inject(self, *args: Any, **kwargs: Any) -> None:
-        raise RuntimeError("inject not supported on physical CANalyst transport")
+    def inject(
+        self,
+        channel: ChannelId,
+        can_id: int,
+        data: bytes = b"",
+        *,
+        is_extended: bool = False,
+        is_remote: bool = False,
+        source: FrameSource = FrameSource.INJECTION,
+    ) -> RawFrameEnvelope:
+        arrival_ns = time.monotonic_ns()
+        with self._lock:
+            self._seq[channel] += 1
+            seq = self._seq[channel]
+            epoch = self._epoch
+        dlc = len(data)
+        env = RawFrameEnvelope(
+            adapter_epoch=epoch,
+            channel=channel,
+            device_timestamp=None,
+            backend_arrival_ns=arrival_ns,
+            can_id=can_id,
+            is_extended=is_extended,
+            is_remote=is_remote,
+            dlc=dlc,
+            data=data,
+            channel_sequence=seq,
+            direction=Direction.RX,
+            source=source,
+        )
+        self._enqueue(channel, env)
+        return env
 
     def close(self) -> None:
         """Idempotent shutdown; never close the USB bus under a live RX call."""

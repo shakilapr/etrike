@@ -40,18 +40,6 @@ def list_profiles(request: Request) -> dict:
     return {
         "transport_modes": [
             {
-                "id": "computer",
-                "label": "Computer (virtual)",
-                "description": (
-                    "Same Control Toolkit code on this PC. Dual virtual High/Low "
-                    "buses — no USB adapter required."
-                ),
-                "destination": "virtual",
-                "profile": "pure_software",
-                "available": True,
-                "adapter": "none",
-            },
-            {
                 "id": "real",
                 "label": "Real (CANalyst-II)",
                 "description": (
@@ -68,13 +56,6 @@ def list_profiles(request: Request) -> dict:
             },
         ],
         "profiles": [
-            {
-                "id": "pure_software",
-                "label": "Computer · Virtual buses",
-                "destination": "virtual",
-                "mode": "computer",
-                "available": True,
-            },
             {
                 "id": "bench_test",
                 "label": "Real · Bench Test (CANalyst-II)",

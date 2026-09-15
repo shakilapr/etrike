@@ -269,7 +269,7 @@ def test_failed_profile_transport_open_restores_previous_visible_profile() -> No
     ownership = OwnershipTable()
 
     def switch(profile: Profile) -> None:
-        if profile is Profile.BENCH_TEST:
+        if profile is Profile.FULL_VEHICLE:
             raise RuntimeError("fake USB open failure")
 
     manager = SessionManager(
@@ -279,12 +279,12 @@ def test_failed_profile_transport_open_restores_previous_visible_profile() -> No
         physical_available=lambda: (True, "probe succeeded"),
         on_profile_change=switch,
     )
-    current = manager.create(CreateSessionRequest(profile=Profile.PURE_SOFTWARE))
+    current = manager.create(CreateSessionRequest(profile=Profile.BENCH_TEST))
 
     try:
         manager.change_profile(
             ChangeProfileRequest(
-                profile=Profile.BENCH_TEST,
+                profile=Profile.FULL_VEHICLE,
                 confirm=True,
                 expected_revision=current.revision,
             )
@@ -295,7 +295,7 @@ def test_failed_profile_transport_open_restores_previous_visible_profile() -> No
         raise AssertionError("profile switch unexpectedly succeeded")
 
     restored = manager.snapshot()
-    assert restored.profile is Profile.PURE_SOFTWARE
-    assert restored.destination == "virtual"
+    assert restored.profile is Profile.BENCH_TEST
+    assert restored.destination == "physical"
     assert restored.session_id == current.session_id
     assert restored.bench_tx is BenchTxState.DISABLED

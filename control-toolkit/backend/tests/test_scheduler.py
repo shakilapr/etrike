@@ -6,7 +6,7 @@ import time
 
 
 def _tx(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     client.post(
@@ -51,7 +51,7 @@ def test_scheduler_periodic_counter_advances(client):
 
 
 def test_stop_all_cancels_jobs(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     sid = ses["session_id"]

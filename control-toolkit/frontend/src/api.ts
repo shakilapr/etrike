@@ -46,11 +46,11 @@ export type ProfileInfo = {
   destination: string
   available: boolean
   reason?: string
-  mode?: 'computer' | 'real' | string
+  mode?: 'real' | string
 }
 
 export type TransportModeInfo = {
-  id: 'computer' | 'real' | string
+  id: 'real' | string
   label: string
   description: string
   destination: string
@@ -88,7 +88,7 @@ export type RuntimeIndicator = {
 }
 
 export type SimulationSnapshot = {
-  mode: 'computer' | 'real'
+  mode: 'real'
   profile: string
   backend: RuntimeIndicator
   virtual_can: RuntimeIndicator
@@ -119,7 +119,7 @@ export type SettingsSnapshot = {
     active: {
       profile?: string | null
       destination?: string | null
-      mode?: 'computer' | 'real' | string
+      mode?: 'real' | string
     }
   }
   session: Record<string, unknown>
@@ -152,10 +152,10 @@ export type SettingsSnapshot = {
     canalyst_reconnect_initial_ms?: number
     canalyst_reconnect_max_ms?: number
     canalyst_recovery_stability_ms?: number
-    host?: string
-    port?: number
-    env_prefix?: string
-    notes?: string
+    host: string
+    port: number
+    env_prefix: string
+    notes: string
   }
   history: Record<string, number | unknown>
   control: Record<string, unknown>
@@ -165,7 +165,7 @@ export type SettingsSnapshot = {
     episodes: Array<Record<string, unknown>>
   }
   recording: { active: Record<string, unknown> | null }
-  simulation: SimulationSnapshot
+  simulation?: SimulationSnapshot
 }
 
 export type VehicleViewBody = {
@@ -426,20 +426,9 @@ export const api = {
     }>('/sessions/profiles'),
   /** Aggregated live settings: transport, session, adapter, protocol, runtime, … */
   settings: () => json<SettingsSnapshot>('/settings'),
-  simulation: () => json<{ simulation: SimulationSnapshot }>('/simulation'),
-  startSimulation: () =>
-    json<{ simulation: SimulationSnapshot }>('/simulation/start', {
-      method: 'POST',
-      body: '{}',
-    }),
-  stopSimulation: () =>
-    json<{ simulation: SimulationSnapshot }>('/simulation/stop', {
-      method: 'POST',
-      body: '{}',
-    }),
   session: () =>
     json<{ session: import('./store').SessionState }>('/sessions'),
-  createSession: (profile = 'pure_software') =>
+  createSession: (profile = 'bench_test') =>
     json<{ session: import('./store').SessionState }>('/sessions', {
       method: 'POST',
       body: JSON.stringify({ profile }),

@@ -5,31 +5,31 @@ from __future__ import annotations
 import time
 
 
-def _create_session(client, profile: str = "pure_software"):
+def _create_session(client, profile: str = "bench_test"):
     r = client.post("/api/v1/sessions", json={"profile": profile})
     return r
 
 
-def test_create_pure_software_session(client):
+def test_create_bench_test_session(client):
     r = _create_session(client)
     assert r.status_code == 200
     ses = r.json()["session"]
     assert ses["session_id"]
-    assert ses["profile"] == "pure_software"
+    assert ses["profile"] == "bench_test"
     assert ses["phase"] == "running"
     assert ses["bench_tx"] == "disabled"
     assert ses["revision"] >= 1
 
 
-def test_physical_profile_without_adapter(client):
+def test_physical_profile_without_adapter(unattached_client):
     """Real mode is allowed without CANalyst; link is absent and TX stays off."""
-    r = _create_session(client, "full_vehicle")
+    r = _create_session(unattached_client, "full_vehicle")
     assert r.status_code == 200
     body = r.json()["session"]
     assert body["profile"] == "full_vehicle"
     assert body["destination"] == "physical"
     assert body["bench_tx"] == "disabled"
-    st = client.get("/api/v1/status").json()
+    st = unattached_client.get("/api/v1/status").json()
     assert st["adapter"]["health"] == "absent"
     assert st["link"]["connected"] is False
 

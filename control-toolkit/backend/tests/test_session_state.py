@@ -2,7 +2,7 @@
 
 
 def test_session_fsm_reaches_running(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     assert ses["phase"] == "running"
@@ -13,14 +13,14 @@ def test_session_fsm_reaches_running(client):
 
 
 def test_cannot_create_second_active_session(client):
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
-    r = client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
+    r = client.post("/api/v1/sessions", json={"profile": "bench_test"})
     assert r.status_code == 409
     assert r.json()["code"] == "session.active"
 
 
 def test_close_with_outcome(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     r = client.request(
@@ -38,6 +38,6 @@ def test_close_with_outcome(client):
 def test_custom_test_session_id(client):
     ses = client.post(
         "/api/v1/sessions",
-        json={"profile": "pure_software", "test_session_id": "run_abc"},
+        json={"profile": "bench_test", "test_session_id": "run_abc"},
     ).json()["session"]
     assert ses["test_session_id"] == "run_abc"

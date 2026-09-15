@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 
-def _session(client, profile: str = "pure_software"):
+def _session(client, profile: str = "bench_test"):
     ses = client.post("/api/v1/sessions", json={"profile": profile}).json()["session"]
     client.post(
         f"/api/v1/sessions/{ses['session_id']}/bench-tx",
@@ -107,7 +107,7 @@ def test_verification_async_and_cancel(client):
 
 def test_full_vehicle_blocks_direct(client):
     """Full Vehicle rejects low-bus direct bypass even when TX could arm."""
-    ses = _session(client, "pure_software")
+    ses = _session(client, "bench_test")
     r = client.post(
         "/api/v1/control/direct",
         json={

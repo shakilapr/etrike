@@ -2,7 +2,7 @@
 
 
 def _session(client):
-    return client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    return client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
 
@@ -16,7 +16,7 @@ def _enable_bench(client, sid, rev):
 
 
 def test_rearm_requires_bench_tx(client):
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
     r = client.post("/api/v1/control/estop/rearm")
     assert r.status_code == 409
 

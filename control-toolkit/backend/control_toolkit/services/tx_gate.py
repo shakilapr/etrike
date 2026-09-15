@@ -58,7 +58,7 @@ class TxGate:
     ) -> TxResult:
         request_id = f"req_{uuid.uuid4().hex[:10]}"
         profile: Profile = self._get_profile()
-        if profile not in (Profile.PURE_SOFTWARE, Profile.BENCH_TEST, Profile.FULL_VEHICLE):
+        if profile not in (Profile.BENCH_TEST, Profile.FULL_VEHICLE):
             return TxResult("rejected", request_id, reason="unknown_profile")
 
         # Physical profiles require a real adapter (no silent virtual).
@@ -66,19 +66,18 @@ class TxGate:
         if transport is None:
             return TxResult("rejected", request_id, reason="no_transport")
 
-        if profile is not Profile.PURE_SOFTWARE:
-            # Allow TX only when transport is physical canalyst (not virtual).
+        # Allow TX only when transport is physical canalyst (not virtual).
+        identity = ""
+        try:
+            identity = str(transport.status().identity)
+        except Exception:
             identity = ""
-            try:
-                identity = str(transport.status().identity)
-            except Exception:
-                identity = ""
-            if "canalyst" not in identity.lower():
-                return TxResult(
-                    "rejected",
-                    request_id,
-                    reason="physical_profile_unavailable",
-                )
+        if "canalyst" not in identity.lower():
+            return TxResult(
+                "rejected",
+                request_id,
+                reason="physical_profile_unavailable",
+            )
 
         if self._get_bench_tx() is not BenchTxState.ENABLED:
             return TxResult("rejected", request_id, reason="bench_tx_disabled")
@@ -166,13 +165,22 @@ class TxGate:
         """Expert raw TX — no encode/range validation (fault-injection path)."""
         request_id = f"req_{uuid.uuid4().hex[:10]}"
         profile: Profile = self._get_profile()
-        if profile not in (Profile.PURE_SOFTWARE, Profile.BENCH_TEST, Profile.FULL_VEHICLE):
+        if profile not in (Profile.BENCH_TEST, Profile.FULL_VEHICLE):
             return TxResult("rejected", request_id, reason="unknown_profile")
         transport = self._get_transport()
         if transport is None:
             return TxResult("rejected", request_id, reason="no_transport")
-        if profile is not Profile.PURE_SOFTWARE:
-            pass
+        identity = ""
+        try:
+            identity = str(transport.status().identity)
+        except Exception:
+            identity = ""
+        if "canalyst" not in identity.lower():
+            return TxResult(
+                "rejected",
+                request_id,
+                reason="physical_profile_unavailable",
+            )
         if self._get_bench_tx() is not BenchTxState.ENABLED:
             return TxResult("rejected", request_id, reason="bench_tx_disabled")
         if bus not in ("high", "low"):
