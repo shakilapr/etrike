@@ -78,6 +78,10 @@ def bench(request, api_url) -> HwBench:
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"could not establish bench_test session: {exc}")
 
+    # SYS boots into ESTOP and needs one staged reset before it will accept
+    # power/AUTO; normalise that here so every test starts from STANDBY.
+    client.ensure_operational()
+
     yield client
 
 
@@ -100,6 +104,7 @@ def _bench_isolation(request):
 @pytest.fixture
 def auto_ready(bench: HwBench) -> HwBench:
     """Vehicle powered ON and in AUTO (drive-ready), per handoff Step 1."""
+    bench.ensure_operational()
     ok_power, _ = bench.command_power(True)
     assert ok_power, "SYS_PWR_CMD never reached power_state=1 (power ON)"
     ok_mode, state = bench.command_mode(True)

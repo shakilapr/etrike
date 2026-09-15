@@ -303,25 +303,37 @@ class HwBench(BenchClient):
     def assert_estop(self, bus: str = HIGH) -> bool:
         return self.inject_raw(bus, CAN_SAFETY_ESTOP, "")
 
-    def reset_estop(self, timeout_s: float = 6.0) -> bool:
-        for seq in (1, 2, 3):
+    def reset_estop(self, timeout_s: float = 8.0) -> bool:
+        """Clear a latched ESTOP via the staged host reset request.
+
+        The request is inherently multi-frame: the first frame only establishes
+        the SYS ``StreamValidity`` baseline; a later counter-advancing frame
+        restores authority and is accepted. Send several advancing frames to
+        also cover reorder/reacquire, then clear the host latch.
+        """
+        for seq in range(1, 6):
             self.inject(
                 HIGH,
                 KEY_ESTOP_RESET_REQ,
                 {"request_seq": seq, "reset_token": ESTOP_RESET_TOKEN},
             )
-            time.sleep(0.02)
-        time.sleep(0.1)
-        try:
-            self.rearm_estop()
-        except Exception:  # noqa: BLE001
-            pass
+            time.sleep(0.03)
         try:
             self.clear_host_estop()
         except Exception:  # noqa: BLE001
             pass
-        ok, _ = self.wait_signal(LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=0, timeout_s=timeout_s)
+        ok, _ = self.wait_signal(
+            LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=0, timeout_s=timeout_s
+        )
         return ok
+
+    def ensure_operational(self) -> None:
+        """Clear a latched ESTOP (e.g. a node rebooted into ESTOP) if needed."""
+        try:
+            if (self.get_status().get("estop") or {}).get("active"):
+                self.reset_estop()
+        except Exception:  # noqa: BLE001
+            pass
 
     def park(self) -> None:
         """Return the bench to a safe idle before the next test."""
@@ -335,19 +347,7 @@ class HwBench(BenchClient):
             pass
         try:
             if (self.get_status().get("estop") or {}).get("active"):
-                # Prefer the host reset request; never emit fake-SYS frames while
-                # a real SYS is on the bus (reset_estop's REARM is for SYS-less rigs).
-                for seq in (1, 2, 3):
-                    self.inject(
-                        HIGH,
-                        KEY_ESTOP_RESET_REQ,
-                        {"request_seq": seq, "reset_token": ESTOP_RESET_TOKEN},
-                    )
-                    time.sleep(0.02)
-                self.clear_host_estop()
-                self.wait_signal(
-                    LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=0, timeout_s=4.0
-                )
+                self.reset_estop()
         except Exception:  # noqa: BLE001
             pass
         try:

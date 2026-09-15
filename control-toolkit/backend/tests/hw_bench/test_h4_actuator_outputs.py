@@ -34,6 +34,7 @@ from harness import (
     CAN_SYS_SAFETY_STS,
     GEAR_D,
     LOW,
+    SEB_MODE_PRESSURE,
     SEB_MODE_STROKE,
     SEB_STROKE_RAW_ZERO,
     signal_from,
@@ -47,7 +48,7 @@ def test_rt_brake_intent_idle_zero(auto_ready):
     """Cruising with no brake request -> RT 0x205 intent is 0 kPa."""
     bench = auto_ready
     bench.start_drive(1000, gear=GEAR_D)
-    ok, _ = bench.wait_rate(LOW, CAN_RT_BRAKE_CMD, min_hz=10.0, timeout_s=4.0)
+    ok, _ = bench.wait_rate(LOW, CAN_RT_BRAKE_CMD, min_hz=30.0, timeout_s=4.0)
     assert ok, "RT 0x205 brake intent not streaming on Low"
     value = bench.signal(LOW, CAN_RT_BRAKE_CMD, "brake_pressure_kpa")
     assert value == 0, f"RT 0x205 idle brake intent != 0 ({value} kPa)"
@@ -57,7 +58,7 @@ def test_rt_brake_intent_tracks_host_request(auto_ready):
     """host_brake_req=3000 kPa -> RT 0x205 intent = 3000, then releases to 0."""
     bench = auto_ready
     bench.start_drive(1000, gear=GEAR_D)
-    ok, _ = bench.wait_rate(LOW, CAN_RT_BRAKE_CMD, min_hz=10.0, timeout_s=4.0)
+    ok, _ = bench.wait_rate(LOW, CAN_RT_BRAKE_CMD, min_hz=30.0, timeout_s=4.0)
     assert ok, "RT 0x205 brake intent not streaming on Low"
 
     bench.send_brake(3000)
@@ -82,7 +83,7 @@ def test_ses_req_streams_and_tracks_yaw(auto_ready):
     bench = auto_ready
 
     bench.start_drive(1500, yaw_rate_mrad_s=0, gear=GEAR_D)
-    ok, _ = bench.wait_rate(LOW, CAN_SES_REQ, min_hz=10.0, timeout_s=5.0)
+    ok, _ = bench.wait_rate(LOW, CAN_SES_REQ, min_hz=30.0, timeout_s=5.0)
     assert ok, "RT 0x169 SES request not streaming at >=10 Hz on Low"
     ok, state = bench.wait_for(
         lambda s: signal_from(s, LOW, CAN_SES_REQ, "target_angle_raw") is not None,
@@ -126,6 +127,39 @@ def test_seb_req_streams_released_stroke(auto_ready):
         f"SYS 0x7B9 released stroke != {SEB_STROKE_RAW_ZERO} (got {stroke}); "
         "no SEB status is present, so BrakeControl should hold 0 mm"
     )
+
+
+def test_seb_req_follows_brake_intent(auto_ready):
+    """SYS converts the 0x205 kPa intent into a 0x7B9 pressure command.
+
+    Verified with the bench brake bypass active (SYS assumes an aligned SEB when
+    none is present), so BrakeControl runs ACTIVE and maps kPa 1:1/50 to the
+    pressure request instead of falling back to DEGRADED lever-only defaults.
+    """
+    bench = auto_ready
+    ok, _ = bench.wait_rate(LOW, CAN_SEB_REQ, min_hz=20.0, timeout_s=5.0)
+    assert ok, "SYS 0x7B9 not streaming on Low"
+
+    # 3000 kPa -> pressure raw = round(3000/50) = 60 (shared_config.h scale).
+    bench.send_brake(3000)
+    ok, state = bench.wait_for(
+        lambda s: signal_of(s.get((LOW, CAN_SEB_REQ)), "control_mode") == SEB_MODE_PRESSURE
+        and signal_of(s.get((LOW, CAN_SEB_REQ)), "pressure_request_raw") == 60,
+        timeout_s=3.0,
+    )
+    assert ok, (
+        "SYS 0x7B9 did not follow 3000 kPa intent (expected Pressure/60): "
+        f"{state.get((LOW, CAN_SEB_REQ))}"
+    )
+    assert signal_of(state.get((LOW, CAN_SEB_REQ)), "auto_brake") == 1
+
+    bench.send_brake(0)
+    ok, state = bench.wait_for(
+        lambda s: signal_of(s.get((LOW, CAN_SEB_REQ)), "control_mode") == SEB_MODE_STROKE
+        and signal_of(s.get((LOW, CAN_SEB_REQ)), "stroke_request_raw") == SEB_STROKE_RAW_ZERO,
+        timeout_s=3.0,
+    )
+    assert ok, f"SYS 0x7B9 did not release back to 0 mm stroke: {state.get((LOW, CAN_SEB_REQ))}"
 
 
 def test_bypass_mode_holds_without_peers(auto_ready):

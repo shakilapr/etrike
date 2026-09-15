@@ -1,5 +1,16 @@
 # RT ↔ SYS CAN Bus Bench Test Plan
 
+> **SUPERSEDED / CORRECTIONS (2026-09-15).** This document describes the legacy
+> direct-CAN bench workflow and conflicts with two current directives: it
+> injects synthetic MTR / SES / SEB / Host traffic, and it opens the
+> CANalyst-II directly. The backend now owns the adapter (REST-only) and
+> absent-actuator feedback must never be faked. See
+> `docs/testing_and_validation/hardware-bench-suite-guide.md`
+> (`control-toolkit/backend/tests/hw_bench/`) instead. Also: the canonical
+> channel mapping is **CH0 = High, CH1 = Low** (the reversed mapping here is
+> stale), and the actuator output rates / IDs below are corrected in the new
+> guide.
+
 **Goal:** Validate CAN communication between RT-ESP32 and SYS-ESP32 on the
 low-level CAN bus, using CANalyst-II to monitor traffic and inject signals that
 mimic absent third-party hardware (MTR, SES, SEB, Host). No motor, steering

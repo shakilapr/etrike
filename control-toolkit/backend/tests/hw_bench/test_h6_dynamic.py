@@ -6,6 +6,8 @@ feedback is injected; this is the developer bypass mode in action.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from harness import (
@@ -38,21 +40,38 @@ def test_acceleration_ramp_tracks_targets(auto_ready):
         )
 
 
+def _send_lights_until(bench, *, left: int, right: int, timeout_s: float = 5.0):
+    """Retry the High->Low light command until SYS reflects it.
+
+    The 0x302 forward is best-effort (single non-blocking gateway frame), so a
+    single injection can be dropped; the turn lamps also blink at 500 ms.
+    """
+    deadline = time.monotonic() + timeout_s
+    state = {}
+    while time.monotonic() < deadline:
+        bench.send_lights(left=left, right=right)
+        ok, state = bench.wait_signal(
+            LOW, CAN_SYS_SAFETY_STS, "light_left", expected=left, timeout_s=1.0
+        )
+        if not ok:
+            continue
+        ok, state = bench.wait_signal(
+            LOW, CAN_SYS_SAFETY_STS, "light_right", expected=right, timeout_s=1.0
+        )
+        if ok:
+            return True, state
+    return False, state
+
+
 def test_cornering_activates_turn_lights(auto_ready):
     """Left/right turn commands are forwarded High->Low and actuated by SYS."""
     bench = auto_ready
     bench.start_drive(1500, yaw_rate_mrad_s=400, gear=GEAR_D)
 
-    bench.send_lights(left=1)
-    ok, state = bench.wait_signal(
-        LOW, CAN_SYS_SAFETY_STS, "light_left", expected=1, timeout_s=3.0
-    )
+    ok, state = _send_lights_until(bench, left=1, right=0)
     assert ok, f"SYS 0x011 light_left never asserted: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
 
-    bench.send_lights(right=1)
-    ok, state = bench.wait_signal(
-        LOW, CAN_SYS_SAFETY_STS, "light_right", expected=1, timeout_s=3.0
-    )
+    ok, state = _send_lights_until(bench, left=0, right=1)
     assert ok, f"SYS 0x011 light_right never asserted: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
 
     bench.send_lights()

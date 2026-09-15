@@ -41,10 +41,15 @@ def test_sys_heartbeat_on_low_managed_bus(bench):
 
 def test_sys_safety_status_clean(bench):
     """SYS 0x011 reports ESTOP clear with a healthy heartbeat on both buses."""
-    ok, state = bench.wait_live(LOW, CAN_SYS_SAFETY_STS, timeout_s=4.0)
-    assert ok, "SYS 0x011 not live on Low"
+    # SYS boots into ESTOP and needs a staged reset; normalise, then wait for
+    # the clear to actually be broadcast before asserting.
+    bench.ensure_operational()
+    ok, state = bench.wait_for(
+        lambda s: signal_of(s.get((LOW, CAN_SYS_SAFETY_STS)), "estop_active") == 0,
+        timeout_s=6.0,
+    )
+    assert ok, f"SYS 0x011 never reported estop_active=0: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
     msg = state[(LOW, CAN_SYS_SAFETY_STS)]
-    assert signal_of(msg, "estop_active") == 0, f"SYS 0x011 estop_active != 0: {msg}"
     assert signal_of(msg, "heartbeat_ok") == 1, f"SYS 0x011 heartbeat_ok != 1: {msg}"
 
     ok, state = bench.wait_live(HIGH, CAN_SYS_SAFETY_STS, timeout_s=4.0)

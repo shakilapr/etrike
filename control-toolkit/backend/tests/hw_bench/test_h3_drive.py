@@ -6,8 +6,6 @@ are all fresh; the resulting setpoint/gear is published on 0x204 for MTR.
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from harness import (
@@ -54,14 +52,12 @@ def test_zero_setpoint_is_neutral(auto_ready):
     assert ok, f"RT 0x204 did not settle to 0 mm/s / gear N: {state.get((LOW, CAN_RT_DRIVE_CMD))}"
 
 
-def test_host_stream_loss_does_not_latch_estop_in_bench_mode(auto_ready):
-    """Bench solo mode bypasses the host watchdog: stream loss must not latch.
+def test_host_stream_loss_zeroes_setpoint_in_bench_mode(auto_ready):
+    """Bench solo: losing the host 0x300 stream zeroes 0x204 without latching ESTOP.
 
-    The rig runs ``hardware_bench`` in developer bypass mode, so the production
-    host-command watchdog (rt-esp32/src/main.cpp, guarded by ``g_bench_solo_mode``)
-    is intentionally inert. This asserts the observable consequence: dropping the
-    host 0x300 stream mid-drive neither ESTOPs the vehicle nor decays the setpoint
-    to zero — the last commanded setpoint is held.
+    Production latches a steering ESTOP on host-command staleness; bench solo
+    mode keeps the fail-safe (setpoint -> 0) but never latches, and a resumed
+    stream re-arms motion authority.
     """
     bench = auto_ready
     job = bench.start_drive(1200, gear=GEAR_D)
@@ -70,16 +66,19 @@ def test_host_stream_loss_does_not_latch_estop_in_bench_mode(auto_ready):
     assert ok, "RT 0x204 never reached 1200 mm/s before stream-loss check"
 
     bench.cancel_injection(job)
-    time.sleep(1.5)
-
-    state = bench.state_map()
-    estop = signal_of(state.get((LOW, CAN_SYS_SAFETY_STS)), "estop_active")
-    assert estop == 0, "host stream loss wrongly latched SYS ESTOP in bench bypass mode"
-    rt_ns = state.get((LOW, CAN_RT_NODE_STATUS)) or {}
-    assert signal_of(rt_ns, "estop_active") == 0, "RT latched ESTOP on host stream loss"
-    assert signal_of(rt_ns, "block_mask") == 0, "RT block_mask set on host stream loss"
-
-    speed = signal_of(state.get((LOW, CAN_RT_DRIVE_CMD)), "motor_speed_mmps")
-    assert speed and speed >= 1000, (
-        f"bench solo mode should hold the last setpoint, got {speed} mm/s"
+    ok, state = bench.wait_for(
+        lambda s: signal_of(s.get((LOW, CAN_RT_DRIVE_CMD)), "motor_speed_mmps") == 0,
+        timeout_s=3.0,
     )
+    assert ok, f"RT 0x204 did not zero after host stream loss: {state.get((LOW, CAN_RT_DRIVE_CMD))} with no ESTOP"
+
+    # No safety stop must be latched by the bench-mode watchdog.
+    rt_ns = state.get((LOW, CAN_RT_NODE_STATUS)) or {}
+    assert signal_of(rt_ns, "estop_active") == 0, "RT latched ESTOP on host stream loss in bench mode"
+    assert signal_of(rt_ns, "block_mask") == 0, "RT block_mask set on host stream loss"
+    assert signal_of(state.get((LOW, CAN_SYS_SAFETY_STS)), "estop_active") == 0, "SYS latched ESTOP"
+
+    # A resumed stream re-arms motion authority.
+    bench.start_drive(1200, gear=GEAR_D)
+    ok, state = bench.wait_for(lambda s: _drive_cmd_is(s, speed=1200, gear=GEAR_D), timeout_s=4.0)
+    assert ok, "RT 0x204 did not re-engage after the host stream resumed"
