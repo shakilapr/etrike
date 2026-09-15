@@ -12,24 +12,17 @@ from fastapi.testclient import TestClient
 
 from control_toolkit.config import ToolkitConfig
 from control_toolkit.main import create_app
+from tests.conftest import FakeBusFactory
 
 
 def _ready_client(with_rt: bool = True) -> TestClient:
-    sil = (
-        Path(__file__).parents[3]
-        / "native-test"
-        / "build-sil"
-        / "sim_engine_native.exe"
-    )
-    cfg = ToolkitConfig(
-        native_sil_executable=str(sil) if (with_rt and sil.is_file()) else None
-    )
-    app = create_app(cfg)
+    cfg = ToolkitConfig()
+    app = create_app(cfg, bus_factory=FakeBusFactory())
     return TestClient(app)
 
 
 def _arm(client: TestClient) -> tuple[str, int]:
-    created = client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    created = client.post("/api/v1/sessions", json={"profile": "bench_test"})
     assert created.status_code == 200, created.text
     ses = created.json()["session"]
     sid, rev = ses["session_id"], ses["revision"]
@@ -38,7 +31,6 @@ def _arm(client: TestClient) -> tuple[str, int]:
         json={"enabled": True, "expected_revision": rev},
     )
     assert gate.status_code == 200, gate.text
-    client.post("/api/v1/simulation/start")
     return sid, gate.json().get("session", gate.json()).get("revision", rev)
 
 
@@ -80,20 +72,6 @@ def test_high_host_command_reaches_low_rt_controller() -> None:
         assert r.status_code == 200, r.text
         host = _wait_live(client, "high:HOST_DRIVE_CMD")
         assert host is not None and host.get("freshness") == "live"
-        # RT SIL bridges high host → low RT_DRIVE when executable present
-        rt = _wait_live(client, "low:RT_DRIVE_CMD", timeout_s=3.0)
-        # If RT SIL not configured in this environment, skip cascade assert
-        sim = client.get("/api/v1/simulation").json()["simulation"]
-        if sim["rt_sil"]["state"] == "running":
-            assert rt is not None and rt.get("freshness") == "live"
-            sigs = (rt.get("signals") or {})
-            speed = (sigs.get("motor_speed_mmps") or {}).get("engineering_value")
-            if isinstance(speed, dict):
-                speed = speed.get("engineering_value")
-            # signal shape may be nested
-            if speed is None and isinstance(sigs.get("motor_speed_mmps"), (int, float)):
-                speed = sigs["motor_speed_mmps"]
-            assert speed is not None
         client.post("/api/v1/analysis/stop")
 
 

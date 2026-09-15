@@ -23,8 +23,6 @@ from control_toolkit.services.session_manager import SessionManager
 from control_toolkit.services.synthetic_peers import SyntheticPeerService
 from control_toolkit.services.tx_gate import TxGate
 from control_toolkit.services.verification import VerificationService
-from control_toolkit.services.native_sil import NativeSilBridge
-from control_toolkit.services.sys_sil import SysSilBridge
 from control_toolkit.state.history import FrameHistory
 from control_toolkit.state.latest import LatestStore
 from control_toolkit.state.storage import SqliteStorage
@@ -34,12 +32,12 @@ from control_toolkit.transport.canalyst import (
     CanalystTransportAdapter,
     discover_canalyst,
 )
-from control_toolkit.transport.virtual import VirtualTransportAdapter
 
 
 class Lifecycle:
-    def __init__(self, config: ToolkitConfig) -> None:
+    def __init__(self, config: ToolkitConfig, bus_factory: Any | None = None) -> None:
         self.config = config
+        self._bus_factory = bus_factory
         self.latest = LatestStore()
         self.history = FrameHistory(capacity=getattr(config, "history_capacity", 4096))
         self.topology = TopologyTracker(on_liveness_change=self._on_topology_liveness_change)
@@ -55,7 +53,7 @@ class Lifecycle:
             if getattr(self, "sessions", None)
             else None,
         )
-        self.transport: VirtualTransportAdapter | CanalystTransportAdapter | None = None
+        self.transport: CanalystTransportAdapter | None = None
         self.router: Router | None = None
         self.ager: FreshnessAger | None = None
         self.tx_gate = TxGate(
@@ -93,8 +91,6 @@ class Lifecycle:
         self._ready = False
         self._router_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self.native_sil: NativeSilBridge | None = None
-        self.sys_sil: SysSilBridge | None = None
 
     def _transport_open(self) -> bool:
         if self.transport is None:
@@ -138,6 +134,7 @@ class Lifecycle:
             device_index=self.config.canalyst_device_index,
             bitrate=self.config.canalyst_bitrate,
             force=force,
+            bus_factory=self._bus_factory,
         )
 
     def is_physical_transport(self) -> bool:
@@ -275,215 +272,6 @@ class Lifecycle:
                 # No loop yet (startup race); will attach on next open after loop set.
                 self._router_task = None
 
-    def open_virtual_transport(self) -> None:
-        """Open Pure Software dual virtual buses (no hardware)."""
-        if isinstance(self.transport, VirtualTransportAdapter):
-            return
-        candidate = VirtualTransportAdapter(
-            rx_queue_maxsize=self.config.rx_queue_maxsize
-        )
-        candidate.open()
-        self._tear_down_transport()
-        self.transport = candidate
-        self._start_router()
-        # Computer virtual open: start managed SIL peers (SYS always; RT if configured).
-        try:
-            self.start_native_sil()
-        except Exception:
-            # SYS still starts inside start_native_sil when RT fails; re-raise only if SYS dead.
-            if self.sys_sil is None or not self.sys_sil.running:
-                raise
-        self.diagnostics.emit(
-            code="transport.virtual_open",
-            title="Virtual buses open",
-            detail="High+Low virtual CAN",
-            severity="info",
-        )
-
-    def _native_sil_error(self, detail: str) -> None:
-        self.diagnostics.emit(
-            code="simulation.native_sil_error",
-            title="Native RT SIL error",
-            detail=detail,
-            severity="error",
-        )
-
-    def _sys_sil_error(self, detail: str) -> None:
-        self.diagnostics.emit(
-            code="simulation.sys_sil_error",
-            title="SYS SIL error",
-            detail=detail,
-            severity="error",
-        )
-
-    def simulation_status(self) -> dict:
-        """Truthful software-runtime status; never infer ECU health from bus traffic."""
-        profile = self.sessions.active_profile()
-        virtual = isinstance(self.transport, VirtualTransportAdapter)
-        bridge = self.native_sil
-        executable = (
-            str(bridge.executable)
-            if bridge is not None
-            else self.config.native_sil_executable
-        )
-        sys_bridge = self.sys_sil
-        return {
-            "mode": "computer" if profile is Profile.PURE_SOFTWARE else "real",
-            "profile": profile.value,
-            "backend": {"state": "running" if self.ready else "starting"},
-            "virtual_can": {
-                "state": "running" if virtual and self._transport_open() else "stopped",
-                "available": profile is Profile.PURE_SOFTWARE,
-            },
-            "router": {
-                "state": "running"
-                if self.router is not None and self._router_task is not None
-                else "stopped"
-            },
-            "rt_sil": {
-                "state": (
-                    "running"
-                    if bridge is not None and bridge.running
-                    else "error"
-                    if bridge is not None and bridge.last_error
-                    else "stopped"
-                ),
-                "configured": bool(self.config.native_sil_executable),
-                "available": bool(executable),
-                "executable": executable,
-                "pid": bridge.pid if bridge is not None else None,
-                "last_error": bridge.last_error if bridge is not None else None,
-                "scope": "RT physics model + generated codec; not full RT tasks",
-            },
-            "sys_sil": {
-                "state": (
-                    "running"
-                    if sys_bridge is not None and sys_bridge.running
-                    else "error"
-                    if sys_bridge is not None and sys_bridge.last_error
-                    else "stopped"
-                ),
-                "configured": True,
-                "available": profile is Profile.PURE_SOFTWARE and virtual,
-                "kind": "in_process",
-                "pid": sys_bridge.pid if sys_bridge is not None else None,
-                "last_error": sys_bridge.last_error if sys_bridge is not None else None,
-                "scope": SysSilBridge.SCOPE,
-                "reason": None
-                if (sys_bridge is not None and sys_bridge.running)
-                else "Start simulation to run managed SYS peer on virtual CAN",
-            },
-            "protocol": {
-                "state": "loaded",
-                "wire_hash": proto.WIRE_HASH,
-            },
-        }
-
-    def start_sys_sil(self) -> None:
-        """Start in-process SYS peer (Computer + virtual only)."""
-        if self.sessions.active_profile() is not Profile.PURE_SOFTWARE:
-            return
-        if not isinstance(self.transport, VirtualTransportAdapter):
-            return
-        if self.sys_sil is not None and self.sys_sil.running:
-            return
-        bridge = SysSilBridge(self.transport, on_error=self._sys_sil_error)
-        try:
-            bridge.start()
-        except Exception as exc:
-            bridge.last_error = str(exc)
-            self.sys_sil = bridge
-            self._sys_sil_error(str(exc))
-            raise
-        self.sys_sil = bridge
-        self.diagnostics.emit(
-            code="simulation.sys_sil_open",
-            title="SYS SIL peer started",
-            detail="SYS_HEARTBEAT + SAFETY_STS + DIAG_RPT on virtual CAN",
-            severity="info",
-        )
-
-    def stop_sys_sil(self) -> None:
-        if self.sys_sil is not None:
-            self.sys_sil.stop()
-            self.sys_sil = None
-            self.diagnostics.emit(
-                code="simulation.sys_sil_stopped",
-                title="SYS SIL peer stopped",
-                detail="Virtual CAN remains open",
-                severity="info",
-            )
-
-    def start_native_sil(self) -> dict:
-        """Start managed SIL peers (SYS always; RT when executable configured)."""
-        if self.sessions.active_profile() is not Profile.PURE_SOFTWARE:
-            from control_toolkit.services.session_manager import SessionError
-
-            raise SessionError(
-                "simulation.computer_only",
-                "software simulation is available only in Computer mode",
-                status=409,
-            )
-        if not isinstance(self.transport, VirtualTransportAdapter):
-            from control_toolkit.services.session_manager import SessionError
-
-            raise SessionError(
-                "simulation.virtual_transport_required",
-                "start the Computer virtual transport before simulation",
-                status=409,
-            )
-
-        # SYS is always available in Computer mode (in-process).
-        self.start_sys_sil()
-
-        # RT is optional — requires native executable.
-        if self.native_sil is not None and self.native_sil.running:
-            return self.simulation_status()
-        executable = self.config.native_sil_executable
-        if not executable:
-            # SYS-only start is success when RT is not configured.
-            return self.simulation_status()
-        bridge = NativeSilBridge(executable, self.transport, on_error=self._native_sil_error)
-        try:
-            bridge.start()
-        except Exception as exc:
-            bridge.last_error = str(exc)
-            self.native_sil = bridge
-            self._native_sil_error(str(exc))
-            from control_toolkit.services.session_manager import SessionError
-
-            raise SessionError("simulation.start_failed", str(exc), status=503) from exc
-        self.native_sil = bridge
-        self.diagnostics.emit(
-            code="simulation.native_sil_open",
-            title="Native RT SIL connected",
-            detail=str(bridge.executable),
-            severity="info",
-        )
-        return self.simulation_status()
-
-    def stop_native_sil(self) -> dict:
-        """Stop RT + SYS SIL peers without closing Computer virtual CAN."""
-        if self.sessions.active_profile() is not Profile.PURE_SOFTWARE:
-            from control_toolkit.services.session_manager import SessionError
-
-            raise SessionError(
-                "simulation.computer_only",
-                "software simulation is available only in Computer mode",
-                status=409,
-            )
-        if self.native_sil is not None:
-            self.native_sil.stop()
-            self.native_sil = None
-            self.diagnostics.emit(
-                code="simulation.native_sil_stopped",
-                title="Native RT SIL stopped",
-                detail="Virtual CAN remains open",
-                severity="info",
-            )
-        self.stop_sys_sil()
-        return self.simulation_status()
-
     def open_physical_transport(self, *, require_device: bool = True) -> bool:
         """Open CANalyst-II High+Low.
 
@@ -496,7 +284,7 @@ class Lifecycle:
             return True
         # Fast path for Real-without-adapter: USB VID/PID only (no python-can open).
         # Full driver open can hang for minutes when the device is absent.
-        if not require_device:
+        if not require_device and self._bus_factory is None:
             usb_visible = False
             try:
                 import usb.core
@@ -531,6 +319,7 @@ class Lifecycle:
             reconnect_initial_ms=self.config.canalyst_reconnect_initial_ms,
             reconnect_max_ms=self.config.canalyst_reconnect_max_ms,
             recovery_stability_ms=self.config.canalyst_recovery_stability_ms,
+            bus_factory=self._bus_factory,
             on_failure=self._physical_failure_from_worker,
             on_recovered=self._physical_recovered_from_worker,
         )
@@ -627,12 +416,6 @@ class Lifecycle:
         )
 
     def _tear_down_transport(self) -> None:
-        if self.native_sil is not None:
-            self.native_sil.stop()
-            self.native_sil = None
-        if self.sys_sil is not None:
-            self.sys_sil.stop()
-            self.sys_sil = None
         if self.router is not None:
             self.router.stop()
             self.router = None
@@ -647,10 +430,9 @@ class Lifecycle:
         self._clear_live_observations(reason="transport torn down")
 
     def _on_profile_change(self, profile: Profile) -> None:
-        """Switch transport for profile — never silently map physical→virtual.
+        """Switch transport for profile.
 
-        Real profiles may open with no adapter (link absent). Computer always
-        gets virtual buses.
+        Real profiles may open with no adapter (link absent).
         """
         try:
             # Neutralize software peers/jobs before tearing transport (no ghost TX).
@@ -663,9 +445,7 @@ class Lifecycle:
                 pass
             # Clear before switch so UI does not show previous mode's frames.
             self._clear_live_observations(reason=f"profile → {profile.value}")
-            if profile is Profile.PURE_SOFTWARE:
-                self.open_virtual_transport()
-            elif profile in (Profile.FULL_VEHICLE, Profile.BENCH_TEST):
+            if profile in (Profile.FULL_VEHICLE, Profile.BENCH_TEST):
                 # Operator can enter Real without hardware; TX stays blocked.
                 self.open_physical_transport(require_device=False)
         except Exception as exc:  # noqa: BLE001
@@ -684,29 +464,8 @@ class Lifecycle:
         self._tasks.append(asyncio.create_task(self._topology_loop()))
         await self.storage.start()
 
-        # Prefer explicit env transport; else open virtual for Pure Software default.
-        import os
-
-        force = (os.getenv("CTK_TRANSPORT") or "").strip().lower()
-        if force in ("canalyst", "canalystii", "physical"):
-            try:
-                self.open_physical_transport()
-            except Exception as exc:  # noqa: BLE001
-                self.diagnostics.emit(
-                    code="transport.canalyst_failed",
-                    title="CANalyst open failed",
-                    detail=str(exc),
-                    severity="error",
-                )
-                # Do not fall back silently when physical was requested.
-                raise
-        elif self.config.default_profile is Profile.PURE_SOFTWARE:
-            self.open_virtual_transport()
-        elif self.config.default_profile in (
-            Profile.FULL_VEHICLE,
-            Profile.BENCH_TEST,
-        ):
-            self.open_physical_transport()
+        # Open physical transport (require_device=False allows starting without hardware attached)
+        self.open_physical_transport(require_device=False)
 
         # If router deferred, start now that loop is known.
         if self.transport is not None and self.router is not None and self._router_task is None:
@@ -807,9 +566,9 @@ class Lifecycle:
                     if adapter is not None
                     else "absent"
                 )
-                dest = session.destination or "virtual"
+                dest = session.destination or "physical"
                 link = {
-                    "mode": "real" if dest == "physical" else "computer",
+                    "mode": "real",
                     "destination": dest,
                     "connected": health
                     in ("open", "active", "quiet", "degraded", "recovering"),
@@ -820,11 +579,7 @@ class Lifecycle:
                         else adapter.last_error
                     )
                     if health != "absent"
-                    else (
-                        "CANalyst-II not connected — Real mode, no physical link"
-                        if dest == "physical"
-                        else None
-                    ),
+                    else "CANalyst-II not connected — Real mode, no physical link",
                 }
                 await self.events.publish(
                     {
@@ -862,12 +617,6 @@ class Lifecycle:
 
     async def shutdown(self) -> None:
         self._ready = False
-        if self.native_sil is not None:
-            self.native_sil.stop()
-            self.native_sil = None
-        if self.sys_sil is not None:
-            self.sys_sil.stop()
-            self.sys_sil = None
         try:
             self.sessions.close()
         except Exception:

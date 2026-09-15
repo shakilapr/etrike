@@ -90,18 +90,6 @@ def get_settings(request: Request) -> dict:
         "transport": {
             "modes": [
                 {
-                    "id": "computer",
-                    "label": "Computer (virtual)",
-                    "description": (
-                        "Same backend on this PC. Dual virtual High/Low buses — "
-                        "no USB adapter."
-                    ),
-                    "destination": "virtual",
-                    "profile": "pure_software",
-                    "available": True,
-                    "adapter": "none",
-                },
-                {
                     "id": "real",
                     "label": "Real (CANalyst-II)",
                     "description": (
@@ -117,13 +105,6 @@ def get_settings(request: Request) -> dict:
                 },
             ],
             "profiles": [
-                {
-                    "id": "pure_software",
-                    "label": "Computer · Virtual buses",
-                    "destination": "virtual",
-                    "mode": "computer",
-                    "available": True,
-                },
                 {
                     "id": "bench_test",
                     "label": "Real · Bench Test (CANalyst-II)",
@@ -154,13 +135,7 @@ def get_settings(request: Request) -> dict:
             "active": {
                 "profile": session.get("profile"),
                 "destination": dest,
-                "mode": (
-                    "real"
-                    if dest == "physical"
-                    or str(session.get("profile") or "")
-                    in ("bench_test", "full_vehicle")
-                    else "computer"
-                ),
+                "mode": "real",
             },
         },
         "session": session,
@@ -205,5 +180,4 @@ def get_settings(request: Request) -> dict:
             "episodes": diag_eps[:20] if isinstance(diag_eps, list) else [],
         },
         "recording": {"active": rec_active},
-        "simulation": life.simulation_status(),
     }

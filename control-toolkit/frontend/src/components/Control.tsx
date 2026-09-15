@@ -489,7 +489,7 @@ export function Control() {
   async function ensureSessionReady() {
     const st = await refresh()
     if (!st.session?.session_id) {
-      throw new Error('No active session. Start Computer or connect Real in Settings first.')
+      throw new Error('No active session. Connect Real in Settings first.')
     }
     return st
   }
@@ -680,7 +680,7 @@ export function Control() {
   const activeLabel = String(ctrlStatus?.method_label ?? 'No active motion command')
   const benchOn = String(status?.session?.bench_tx ?? '').toLowerCase() === 'enabled'
   const sessionId = status?.session?.session_id
-  const activeProfile = status?.session?.profile ?? status?.profile ?? 'pure_software'
+  const activeProfile = status?.session?.profile ?? status?.profile ?? 'bench_test'
   const fullVehicle = activeProfile === 'full_vehicle'
   const gearLabels: Record<number, string> = { 0: 'N', 1: 'D', 2: 'S', 3: 'R' }
 

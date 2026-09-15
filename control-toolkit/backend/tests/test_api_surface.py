@@ -15,7 +15,7 @@ def _tx_session(client):
             f"/api/v1/sessions/{cur['session_id']}",
             json={"expected_revision": cur["revision"], "outcome": "stopped"},
         )
-    created = client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    created = client.post("/api/v1/sessions", json={"profile": "bench_test"})
     assert created.status_code == 200, created.text
     ses = created.json()["session"]
     sid = ses["session_id"]
@@ -102,23 +102,21 @@ def test_sessions_full_lifecycle_api(client):
 
     profiles = client.get("/api/v1/sessions/profiles").json()["profiles"]
     assert {p["id"] for p in profiles} >= {
-        "pure_software",
         "bench_test",
         "full_vehicle",
     }
-    pure = next(p for p in profiles if p["id"] == "pure_software")
+    pure = next(p for p in profiles if p["id"] == "bench_test")
     assert pure["available"] is True
-    physical = [p for p in profiles if p["id"] != "pure_software"]
+    physical = [p for p in profiles if p["id"] != "bench_test"]
     assert all(p["available"] for p in physical)
-    assert all(p.get("link_available") is False for p in physical)
 
     created = client.post(
-        "/api/v1/sessions", json={"profile": "pure_software"}
+        "/api/v1/sessions", json={"profile": "bench_test"}
     ).json()["session"]
     sid = created["session_id"]
     assert created["phase"] == "running"
     assert created["bench_tx"] == "disabled"
-    assert created["destination"] == "virtual"
+    assert created["destination"] == "physical"
     rev = created["revision"]
 
     # physical profile allowed without adapter — Real + no link, not virtual
@@ -130,12 +128,12 @@ def test_sessions_full_lifecycle_api(client):
     assert r.json()["session"]["profile"] == "full_vehicle"
     assert r.json()["session"]["destination"] == "physical"
     assert r.json()["session"]["bench_tx"] == "disabled"
-    # Switch back to pure_software for remaining surface tests
+    # Switch back to bench_test for remaining surface tests
     ses = client.get("/api/v1/sessions").json()["session"]
     r = client.post(
         f"/api/v1/sessions/{sid}/profile",
         json={
-            "profile": "pure_software",
+            "profile": "bench_test",
             "expected_revision": ses["revision"],
             "confirm": True,
         },
@@ -294,7 +292,7 @@ def test_synthetic_peers_api(client):
     # without bench tx
     cur = client.get("/api/v1/sessions").json()["session"]
     if not cur.get("session_id"):
-        client.post("/api/v1/sessions", json={"profile": "pure_software"})
+        client.post("/api/v1/sessions", json={"profile": "bench_test"})
     r = client.post(
         "/api/v1/synthetic-peers/start", json={"names": ["host_drive_analysis"]}
     )

@@ -16,7 +16,7 @@ def test_tx_gate_rejects_without_session_bench_tx(client):
     assert r.status_code == 409
 
     # Session without TX
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
     r = client.post(
         "/api/v1/injections",
         json={
@@ -29,8 +29,8 @@ def test_tx_gate_rejects_without_session_bench_tx(client):
     assert r.json()["code"] == "bench_tx.disabled"
 
 
-def test_tx_gate_accepts_pure_software_with_bench_tx(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+def test_tx_gate_accepts_bench_test_with_bench_tx(client):
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     client.post(
@@ -51,7 +51,7 @@ def test_tx_gate_accepts_pure_software_with_bench_tx(client):
 
 
 def test_tx_gate_ownership_conflict(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     client.post(

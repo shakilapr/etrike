@@ -13,7 +13,7 @@ def _tx(client):
             f"/api/v1/sessions/{cur['session_id']}",
             json={"expected_revision": cur["revision"]},
         )
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     client.post(
@@ -23,7 +23,7 @@ def _tx(client):
 
 
 def test_intent_requires_bench_tx(client):
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
     r = client.post(
         "/api/v1/control/intent",
         json={"sequence": 1, "throttle": 0.5, "steer": 0.0, "mode": "kinematics"},

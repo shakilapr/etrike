@@ -6,7 +6,7 @@ import time
 
 
 def _tx(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     sid = ses["session_id"]
@@ -18,7 +18,7 @@ def _tx(client):
 
 
 def test_hmi_mode_requires_bench_tx(client):
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
     r = client.post("/api/v1/hmi/mode", json={"req_mode": 1, "enabled": True})
     assert r.status_code == 409
     assert r.json()["code"] == "bench_tx.disabled"

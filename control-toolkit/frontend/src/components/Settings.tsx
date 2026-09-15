@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type RuntimeIndicator, type SettingsSnapshot } from '../api'
-import { activateTransportProfile } from '../lib/session'
-import { PROFILE_LABELS, shortHash, transportModeOf } from '../lib/signals'
+import { api, type SettingsSnapshot } from '../api'
+import { PROFILE_LABELS, shortHash } from '../lib/signals'
 import { useAppStore } from '../store'
 import { Button } from './ui/button'
 import { WorkspaceShell } from './WorkspaceShell'
@@ -20,10 +19,8 @@ export function Settings() {
     (snap?.transport?.active?.profile as string | undefined) ||
     status?.session?.profile ||
     status?.profile ||
-    'pure_software'
-  const activeMode =
-    (snap?.transport?.active?.mode as 'computer' | 'real' | undefined) ||
-    transportModeOf(activeProfile)
+    'bench_test'
+  const activeMode: 'real' = 'real'
 
   const refreshSettings = useCallback(async () => {
     try {
@@ -51,9 +48,9 @@ export function Settings() {
           },
           channel_map: prev?.transport?.channel_map ?? {},
           active: prev?.transport?.active ?? {
-            profile: status?.session?.profile ?? status?.profile,
-            destination: status?.session?.destination,
-            mode: transportModeOf(status?.session?.profile ?? status?.profile),
+            profile: status?.session?.profile ?? status?.profile ?? 'bench_test',
+            destination: status?.session?.destination ?? 'physical',
+            mode: 'real',
           },
         },
         session: prev?.session ?? {},
@@ -65,29 +62,23 @@ export function Settings() {
           catalog: { messages: 0, instances: 0 },
         },
         runtime: prev?.runtime ?? {
-          default_profile: 'pure_software',
+          default_profile: 'bench_test',
           stream_heartbeat_ms: 0,
           latest_state_batch_hz: 0,
           browser_degraded_ms: 0,
           browser_lost_ms: 0,
           rx_queue_maxsize: 0,
           history_capacity: 0,
+          host: '—',
+          port: 0,
+          env_prefix: 'CTK_',
+          notes: '',
         },
         history: prev?.history ?? {},
         control: prev?.control ?? {},
         synthetic_peers: prev?.synthetic_peers ?? [],
         diagnostics: prev?.diagnostics ?? { episode_count: 0, episodes: [] },
         recording: prev?.recording ?? { active: null },
-        simulation: prev?.simulation ?? {
-          mode: 'computer',
-          profile: 'pure_software',
-          backend: { state: 'unknown' },
-          virtual_can: { state: 'unknown' },
-          router: { state: 'unknown' },
-          rt_sil: { state: 'unknown' },
-          sys_sil: { state: 'unavailable', available: false },
-          protocol: { state: 'unknown' },
-        },
       }))
     }
   }, [status?.session?.destination, status?.session?.profile, status?.profile])
@@ -103,60 +94,7 @@ export function Settings() {
     else if (activeProfile === 'bench_test') setRealSub('bench_test')
   }, [activeProfile])
 
-  async function ensureThenSetProfile(profile: string) {
-    setBusy(true)
-    try {
-      const nextStatus = await activateTransportProfile(profile)
-      setStatus(nextStatus)
-      await refreshSettings()
-      const label = PROFILE_LABELS[profile] ?? profile
-      setLog(
-        `Active: ${label} · session ${nextStatus.session.session_id} · phase ${nextStatus.session.phase}` +
-          (nextStatus.session.destination ? ` · dest ${nextStatus.session.destination}` : ''),
-      )
-    } catch (e) {
-      setLog(String(e))
-      try {
-        setStatus(await api.status())
-      } catch {
-        /* keep last known status */
-      }
-      await refreshSettings().catch(() => undefined)
-    } finally {
-      setBusy(false)
-    }
-  }
 
-  async function activateComputer() {
-    await ensureThenSetProfile('pure_software')
-  }
-
-  async function activateReal() {
-    setBusy(true)
-    try {
-      const nextStatus = await activateTransportProfile(realSub)
-      setStatus(nextStatus)
-      await refreshSettings()
-      const label = PROFILE_LABELS[realSub] ?? realSub
-      const noLink =
-        nextStatus.adapter?.health === 'absent' || nextStatus.link?.connected === false
-      setLog(
-        noLink
-          ? `Active: ${label} · Link: No connection (plug CANalyst when ready; TX stays off)`
-          : `Active: ${label} · Link: Connected · session ${nextStatus.session.session_id}`,
-      )
-    } catch (e) {
-      setLog(String(e))
-      try {
-        setStatus(await api.status())
-      } catch {
-        /* keep last */
-      }
-      await refreshSettings().catch(() => undefined)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function restartSession(profile: string) {
     setBusy(true)
@@ -170,7 +108,6 @@ export function Settings() {
       setStatus(next)
       await refreshSettings()
       const linkNote =
-        profile !== 'pure_software' &&
         (next.adapter?.health === 'absent' || next.link?.connected === false)
           ? ' · Link: No connection (plug CANalyst when ready)'
           : ''
@@ -258,24 +195,9 @@ export function Settings() {
     }
   }
 
-  async function setSimulationRunning(running: boolean) {
-    setBusy(true)
-    try {
-      const result = running ? await api.startSimulation() : await api.stopSimulation()
-      await refreshSettings()
-      setLog(`RT SIL ${result.simulation.rt_sil.state}. Virtual CAN remains ${result.simulation.virtual_can.state}.`)
-    } catch (e) {
-      setLog(String(e).replace(/^Error:\s*/i, ''))
-      await refreshSettings().catch(() => undefined)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const modes = snap?.transport?.modes ?? []
   const profiles = snap?.transport?.profiles ?? []
   const physAdapter = snap?.transport?.physical_adapter
-  const computerMode = modes.find((m) => m.id === 'computer')
   const realMode = modes.find((m) => m.id === 'real')
   const realOk = physAdapter?.available ?? realMode?.available ?? false
   const realReason =
@@ -291,7 +213,6 @@ export function Settings() {
   const history = snap?.history ?? {}
   const control = snap?.control ?? {}
   const service = snap?.service
-  const simulation = snap?.simulation
   const benchTx = String(session.bench_tx ?? 'disabled')
   const caps = Array.isArray(session.capabilities) ? (session.capabilities as string[]) : []
   const leases = Array.isArray(session.leases) ? (session.leases as string[]) : []
@@ -311,165 +232,12 @@ export function Settings() {
       <section className="panel" data-testid="transport-mode-panel">
         <h2>Transport mode</h2>
         <p className="muted small" style={{ marginTop: 0 }}>
-          Two runtimes of the <strong>same software</strong>: virtual buses on this PC, or physical
-          High/Low via CANalyst-II (no silent fallback).
+          Physical High/Low via CANalyst-II (CH0 = High, CH1 = Low @ 500 kbit/s).
         </p>
-
-        <div className="transport-toggle" data-testid="transport-toggle" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            className={activeMode === 'computer' ? 'transport-btn active' : 'transport-btn'}
-            data-testid="mode-computer"
-            aria-selected={activeMode === 'computer'}
-            disabled={busy}
-            onClick={() => void activateComputer()}
-          >
-            <span className="transport-btn-title">
-              {computerMode?.label?.split('(')[0]?.trim() || 'Computer'}
-            </span>
-            <span className="transport-btn-sub">Virtual dual CAN · no USB</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={activeMode === 'real' ? 'transport-btn active real' : 'transport-btn'}
-            data-testid="mode-real"
-            aria-selected={activeMode === 'real'}
-            disabled={busy}
-            title={
-              realOk
-                ? 'Connect via CANalyst-II'
-                : `Enter Real without adapter · ${String(realReason || 'no CANalyst yet')}`
-            }
-            onClick={() => void activateReal()}
-          >
-            <span className="transport-btn-title">
-              {realMode?.label?.split('(')[0]?.trim() || 'Real'}
-            </span>
-            <span className="transport-btn-sub">
-              {realOk ? 'CANalyst-II CH0/CH1' : 'No adapter · enter Real'}
-            </span>
-          </button>
-        </div>
 
         <div className="transport-cards" data-testid="profile-list">
           <div
-            className={`transport-card${activeMode === 'computer' ? ' active' : ''}`}
-            data-testid="card-mode-computer"
-          >
-            <div className="transport-card-head">
-              <h3>{computerMode?.label || 'Computer (virtual)'}</h3>
-              <span className={`chip tiny ${activeMode === 'computer' ? 'ok' : ''}`}>
-                {activeMode === 'computer' ? 'active' : 'idle'}
-              </span>
-            </div>
-            <p className="muted small">
-              {computerMode?.description ||
-                'Dual virtual High/Low buses on this PC. No CANalyst required.'}
-            </p>
-            <ul className="transport-bullets muted small">
-              <li>
-                Destination: <strong>{computerMode?.destination || 'virtual'}</strong>
-              </li>
-              <li>
-                Profile: <span className="mono">{computerMode?.profile || 'pure_software'}</span>
-              </li>
-              <li>
-                High → {channelMap.high?.physical || 'virtual:high'} · Low →{' '}
-                {channelMap.low?.physical || 'virtual:low'}
-              </li>
-            </ul>
-            {activeMode === 'computer' && (
-              <div className="software-runtime" data-testid="software-runtime-panel">
-                <div className="software-runtime-head">
-                  <strong>Software runtime</strong>
-                  <span className="muted small">explicit process health</span>
-                </div>
-                <div className="runtime-indicators">
-                  {[
-                    ['Backend', simulation?.backend],
-                    ['Virtual CAN', simulation?.virtual_can],
-                    ['Router', simulation?.router],
-                    ['RT SIL', simulation?.rt_sil],
-                    ['SYS SIL', simulation?.sys_sil],
-                    ['Protocol', simulation?.protocol],
-                  ].map(([label, indicator]) => {
-                    const item = indicator as RuntimeIndicator | undefined
-                    const state = item?.state || 'unknown'
-                    const tone = state === 'running' || state === 'loaded' ? 'ok' : state === 'error' ? 'danger' : 'muted'
-                    return (
-                      <div className="runtime-indicator" key={String(label)}>
-                        <span className={`status-dot ${tone === 'ok' ? 'live' : tone === 'danger' ? 'danger' : 'muted'}`} />
-                        <span>{String(label)}</span>
-                        <strong className="mono">{state}</strong>
-                      </div>
-                    )
-                  })}
-                </div>
-                <p className="muted small runtime-scope" data-testid="simulation-scope">
-                  RT: {simulation?.rt_sil?.scope || 'RT SIL status unavailable.'} · SYS:{' '}
-                  {simulation?.sys_sil?.scope ||
-                    simulation?.sys_sil?.reason ||
-                    simulation?.sys_sil?.state ||
-                    'unknown'}
-                  .
-                </p>
-                {!simulation?.rt_sil?.available && (
-                  <p className="muted small" data-testid="simulation-unavailable-hint">
-                    Start simulation is locked: RT SIL executable not configured.
-                    Build <span className="mono">native-test</span> (sim_engine_native) or set{' '}
-                    <span className="mono">CTK_NATIVE_SIL_EXE</span>, then restart the API.
-                  </p>
-                )}
-                <div className="actions tight">
-                  <button
-                    type="button"
-                    className="primary"
-                    data-testid="btn-simulation-start"
-                    disabled={
-                      busy ||
-                      simulation?.rt_sil?.state === 'running' ||
-                      !simulation?.rt_sil?.available
-                    }
-                    title={
-                      !simulation?.rt_sil?.available
-                        ? 'RT SIL executable missing — set CTK_NATIVE_SIL_EXE or build native-test SIL'
-                        : simulation?.rt_sil?.state === 'running'
-                          ? 'Already running'
-                          : 'Start RT SIL peer on virtual CAN'
-                    }
-                    onClick={() => void setSimulationRunning(true)}
-                  >
-                    Start simulation
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    data-testid="btn-simulation-stop"
-                    disabled={busy || simulation?.rt_sil?.state !== 'running'}
-                    onClick={() => void setSimulationRunning(false)}
-                  >
-                    Stop simulation
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="actions tight">
-              <button
-                type="button"
-                className="primary"
-                disabled={busy}
-                data-testid="btn-start-pure"
-                onClick={() => void restartSession('pure_software')}
-              >
-                {activeMode === 'computer' ? 'Restart Computer session' : 'Switch to Computer'}
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={`transport-card${activeMode === 'real' ? ' active' : ''}`}
+            className="transport-card active"
             data-testid="card-mode-real"
           >
             <div className="transport-card-head">
@@ -576,16 +344,14 @@ export function Settings() {
 
         <dl className="kv" style={{ marginTop: 16 }}>
           <dt>Mode</dt>
-          <dd data-testid="settings-active-mode">
-            {activeMode === 'real' ? 'Real · CANalyst-II' : 'Computer · Virtual'}
-          </dd>
+          <dd data-testid="settings-active-mode">Real · CANalyst-II</dd>
           <dt>Profile</dt>
           <dd data-testid="settings-active-profile">
             {PROFILE_LABELS[activeProfile] ?? activeProfile}
           </dd>
           <dt>Destination</dt>
           <dd className="mono">
-            {String(session.destination ?? status?.session?.destination ?? '—')}
+            {String(session.destination ?? status?.session?.destination ?? 'physical')}
           </dd>
           <dt>Revision</dt>
           <dd className="mono">{String(session.revision ?? status?.session?.revision ?? 0)}</dd>
@@ -617,7 +383,7 @@ export function Settings() {
         </dl>
         <pre className="log" data-testid="settings-log">
           {log ||
-            'Pick Computer (virtual buses) or Real (CANalyst-II). Other panels below reflect live backend state.'}
+            'Real (CANalyst-II) mode. Other panels below reflect live backend state.'}
         </pre>
       </section>
 

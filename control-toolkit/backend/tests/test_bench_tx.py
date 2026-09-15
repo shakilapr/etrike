@@ -2,7 +2,7 @@
 
 
 def _session(client):
-    return client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    return client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
 

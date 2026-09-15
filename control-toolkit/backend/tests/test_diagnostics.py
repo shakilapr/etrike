@@ -11,7 +11,7 @@ def test_backend_ready_event_on_startup(client):
 
 
 def test_stop_all_emits_event(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     sid = ses["session_id"]

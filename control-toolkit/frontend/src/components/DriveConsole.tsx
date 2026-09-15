@@ -204,8 +204,8 @@ export function DriveConsole() {
     dynSlewDegS: 125,
   })
 
-  const [visMode, setVisMode] = useState<'auto' | 'high' | 'low' | 'local'>('auto')
-  const visModeRef = useRef<'auto' | 'high' | 'low' | 'local'>(visMode)
+  const [visMode, setVisMode] = useState<'auto' | 'high' | 'low'>('auto')
+  const visModeRef = useRef<'auto' | 'high' | 'low'>(visMode)
   visModeRef.current = visMode
 
   /** Slider caps read from refs so canvas/intent loops do not tear down on every drag tick. */
@@ -294,17 +294,15 @@ export function DriveConsole() {
       ? highSpeed
       : visMode === 'low'
         ? lowSpeed
-        : visMode === 'local'
-          ? null
-          : (motionValid
-              ? numSignal(motionMsg, 'speed_mmps')
-              : lowDriveLive
-                ? signalVal(lowDriveMsg, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
-                : highLive
-                  ? numSignal(driveMsg, 'speed_mmps')
-                  : mtrLive
-                    ? signalVal(mtrFbkMsg, 'actual_speed_mmps', 'motor_command_speed_mmps')
-                    : null)
+        : (motionValid
+            ? numSignal(motionMsg, 'speed_mmps')
+            : lowDriveLive
+              ? signalVal(lowDriveMsg, 'motor_speed_mmps', 'speed_mmps', 'RT_MotorSpeed')
+              : highLive
+                ? numSignal(driveMsg, 'speed_mmps')
+                : mtrLive
+                  ? signalVal(mtrFbkMsg, 'actual_speed_mmps', 'motor_command_speed_mmps')
+                  : null)
 
   const canSteerDeg =
     visMode === 'high'
@@ -313,40 +311,34 @@ export function DriveConsole() {
           : null)
       : visMode === 'low'
         ? lowSteerDeg
-        : visMode === 'local'
-          ? null
-          : (sesStatusLive
-              ? (numSignal(sesStatusMsg, 'angle_deg') ?? (numSignal(sesStatusMsg, 'actual_angle_raw') != null ? numSignal(sesStatusMsg, 'actual_angle_raw')! * 0.1 : null))
-              : sesReqLive
-                ? (numSignal(sesReqMsg, 'target_angle_deg') ?? (numSignal(sesReqMsg, 'target_angle_raw') != null ? numSignal(sesReqMsg, 'target_angle_raw')! * 0.1 : null))
-                : null)
+        : (sesStatusLive
+            ? (numSignal(sesStatusMsg, 'angle_deg') ?? (numSignal(sesStatusMsg, 'actual_angle_raw') != null ? numSignal(sesStatusMsg, 'actual_angle_raw')! * 0.1 : null))
+            : sesReqLive
+              ? (numSignal(sesReqMsg, 'target_angle_deg') ?? (numSignal(sesReqMsg, 'target_angle_raw') != null ? numSignal(sesReqMsg, 'target_angle_raw')! * 0.1 : null))
+              : null)
 
   const canYaw =
     visMode === 'high'
       ? highYaw
       : visMode === 'low'
         ? lowYaw
-        : visMode === 'local'
-          ? null
-          : (motionValid
-              ? -(numSignal(motionMsg, 'yaw_rate_mrad_s') ?? 0)
-              : highLive
-                ? numSignal(driveMsg, 'yaw_rate_mrad_s')
-                : canSteerDeg != null && canSpeed != null && Math.abs(canSpeed) > 10
-                  ? ((canSpeed / 1000 * Math.tan((canSteerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000)
-                  : null)
+        : (motionValid
+            ? -(numSignal(motionMsg, 'yaw_rate_mrad_s') ?? 0)
+            : highLive
+              ? numSignal(driveMsg, 'yaw_rate_mrad_s')
+              : canSteerDeg != null && canSpeed != null && Math.abs(canSpeed) > 10
+                ? ((canSpeed / 1000 * Math.tan((canSteerDeg * Math.PI) / 180) / (L / PIXELS_PER_METER)) * 1000)
+                : null)
 
   const canGear =
     visMode === 'high'
       ? highGear
       : visMode === 'low'
         ? lowGear
-        : visMode === 'local'
-          ? null
-          : (gearFromCan(motionValid ? motionMsg : null) ??
-             gearFromCan(lowDriveLive ? lowDriveMsg : null) ??
-             gearFromCan(driveMsg) ??
-             gearFromCan(mtrFbkMsg))
+        : (gearFromCan(motionValid ? motionMsg : null) ??
+           gearFromCan(lowDriveLive ? lowDriveMsg : null) ??
+           gearFromCan(driveMsg) ??
+           gearFromCan(mtrFbkMsg))
   // RT reports trike-right-positive yaw; the Universe visualization is left-positive.
 
   // Vehicle motion gate (firmware): non-zero RT_DRIVE_CMD only in AUTO.
@@ -413,7 +405,7 @@ export function DriveConsole() {
   async function ensureArmedPath() {
     let st = await api.status()
     if (!st.session?.session_id) {
-      throw new Error('No active session. Start Computer or connect Real in Settings first.')
+      throw new Error('No active session. Connect Real in Settings first.')
     }
     let enabledBench = false
     if (st.session.bench_tx !== 'enabled') {
@@ -1033,9 +1025,7 @@ export function DriveConsole() {
         const hasLiveMotion = hasHighTraffic || hasLowTraffic
         const hasActiveKeys = Object.values(keysRef.current).some(Boolean)
 
-        if (mode === 'local') {
-          updateLocal(dt)
-        } else if (mode === 'high') {
+        if (mode === 'high') {
           if (armedRef.current || hasHighTraffic) {
             updateFromCan(dt)
           } else {
@@ -1189,15 +1179,6 @@ export function DriveConsole() {
               >
                 Low CAN
               </button>
-              <button
-                type="button"
-                className={`seg-btn ${visMode === 'local' ? 'active' : ''}`}
-                data-testid="vis-mode-local"
-                title="Visualize offline local physics only (keys/keycaps)"
-                onClick={() => setVisMode('local')}
-              >
-                Local Sim
-              </button>
             </div>
           </div>
         </div>
@@ -1331,13 +1312,11 @@ export function DriveConsole() {
                   ? 'High CAN (0x300 / 0x121)'
                   : visMode === 'low'
                     ? 'Low CAN (0x204 / Actuators)'
-                    : visMode === 'local'
-                      ? 'Local Simulation'
-                      : armed
-                        ? 'Auto (Armed High 0x300)'
-                        : hasLiveBusTraffic
-                          ? 'Auto (Bus Traffic)'
-                          : 'Auto (Sim)'}
+                    : armed
+                      ? 'Auto (Armed High 0x300)'
+                      : hasLiveBusTraffic
+                        ? 'Auto (Bus Traffic)'
+                        : 'Auto (Waiting Traffic)'}
               </span>
             </div>
             <button
@@ -1596,19 +1575,17 @@ export function DriveConsole() {
                   ? 'High Bus mode'
                   : visMode === 'low'
                     ? 'Low Bus mode'
-                    : visMode === 'local'
-                      ? 'Local sim'
-                      : armed
-                        ? canLive
-                          ? lowDriveLive
-                            ? 'Auto (0x204)'
-                            : 'Auto (0x300)'
-                          : 'waiting 0x300'
-                        : hasLiveBusTraffic
-                          ? lowDriveLive
-                            ? 'Auto (0x204)'
-                            : 'Auto (High)'
-                          : 'local preview'}
+                    : armed
+                      ? canLive
+                        ? lowDriveLive
+                          ? 'Auto (0x204)'
+                          : 'Auto (0x300)'
+                        : 'waiting 0x300'
+                      : hasLiveBusTraffic
+                        ? lowDriveLive
+                          ? 'Auto (0x204)'
+                          : 'Auto (High)'
+                        : 'waiting bus'}
               </span>
             </div>
             <dl className="kv preview-kv" data-testid="preview-telemetry">

@@ -8,14 +8,14 @@ def test_get_sessions_empty(client):
 
 
 def test_status_includes_session_fields(client):
-    client.post("/api/v1/sessions", json={"profile": "pure_software"})
+    client.post("/api/v1/sessions", json={"profile": "bench_test"})
     st = client.get("/api/v1/status").json()
     assert st["session"]["phase"] == "running"
-    assert st["session"]["destination"] == "virtual"
+    assert st["session"]["destination"] == "physical"
 
 
 def test_vehicle_view_updates_session_header_fields(client):
-    ses = client.post("/api/v1/sessions", json={"profile": "pure_software"}).json()[
+    ses = client.post("/api/v1/sessions", json={"profile": "bench_test"}).json()[
         "session"
     ]
     sid = ses["session_id"]

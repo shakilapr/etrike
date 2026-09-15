@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
-import { activateTransportProfile, linkLabelFromStatus } from '../lib/session'
+import { linkLabelFromStatus } from '../lib/session'
 import { buildEcuPresence } from '../lib/ecuPresence'
 import {
   busActivityTone,
@@ -10,7 +10,7 @@ import {
   type OverallHealth,
 } from '../lib/signals'
 import { useAppStore } from '../store'
-import { IconCable, IconMonitor } from './icons'
+import { IconCable } from './icons'
 
 /** green=clean live · yellow=late or live+errors · red=dead · muted=unknown */
 function ecuDotTone(liveness: string): 'live' | 'warning' | 'danger' | 'muted' {
@@ -42,7 +42,6 @@ export function Topbar() {
   const reconnect = useAppStore((s) => s.reconnectAttempts)
   const topology = useAppStore((s) => s.topology)
   const messages = useAppStore((s) => s.messages)
-  const [modeBusy, setModeBusy] = useState(false)
   const [modeErr, setModeErr] = useState<string | null>(null)
   const [estopHover, setEstopHover] = useState(false)
   const ses = status?.session
@@ -77,16 +76,12 @@ export function Topbar() {
     try {
       let st = await api.status()
       if (!st.session?.session_id) {
-        throw new Error('No active session. Start Computer or Real first.')
+        throw new Error('No active session. Connect Real in Settings first.')
       }
       if (st.session.bench_tx !== 'enabled') {
-        if (transportModeOf(st.session.profile) === 'computer') {
-          await api.setBenchTx(st.session.session_id, true, st.session.revision)
-        } else {
-          throw new Error(
-            'Physical TX is off. Enable Bench TX after the adapter is Connected before injecting ESTOP.',
-          )
-        }
+        throw new Error(
+          'Physical TX is off. Enable Bench TX after the adapter is Connected before injecting ESTOP.',
+        )
       }
       const result = await api.injectEstop()
       setStatus(await api.status())
@@ -113,33 +108,6 @@ export function Topbar() {
     }
   }
 
-  /** Same session path as Settings Computer / Real (Real allowed without USB). */
-  async function switchTransportMode(next: 'computer' | 'real') {
-    if (modeBusy) return
-    if (next === mode) return
-    setModeBusy(true)
-    setModeErr(null)
-    try {
-      const profile = next === 'computer' ? 'pure_software' : 'bench_test'
-      const st = await activateTransportProfile(profile)
-      setStatus(st)
-      if (next === 'real') {
-        const l = linkLabelFromStatus(st)
-        if (l.label === 'No connection') {
-          setModeErr(`Real mode active · ${l.detail}`)
-        }
-      }
-    } catch (e) {
-      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 120))
-      try {
-        setStatus(await api.status())
-      } catch {
-        /* keep last */
-      }
-    } finally {
-      setModeBusy(false)
-    }
-  }
 
   const streamText =
     quality === 'live'
@@ -227,36 +195,16 @@ export function Topbar() {
             data-testid="topbar-mode-toggle"
             role="group"
             aria-label="Transport mode"
-            title={
-              modeErr
-                ? modeErr
-                : mode === 'real'
-                  ? 'Real · physical CANalyst-II (CH0 High / CH1 Low)'
-                  : 'Computer · dual virtual CAN on this PC'
-            }
+            title="Real · physical CANalyst-II (CH0 High / CH1 Low)"
           >
-            <button
-              type="button"
-              className={`topbar-mode-btn mode-computer${mode === 'computer' ? ' active' : ''}`}
-              data-testid="topbar-mode-computer"
-              aria-pressed={mode === 'computer'}
-              disabled={modeBusy}
-              onClick={() => void switchTransportMode('computer')}
-            >
-              <IconMonitor />
-              <span>Computer</span>
-            </button>
-            <button
-              type="button"
-              className={`topbar-mode-btn mode-real${mode === 'real' ? ' active' : ''}`}
+            <div
+              className="topbar-mode-btn mode-real active"
               data-testid="topbar-mode-real"
-              aria-pressed={mode === 'real'}
-              disabled={modeBusy}
-              onClick={() => void switchTransportMode('real')}
+              style={{ cursor: 'default' }}
             >
               <IconCable />
               <span>Real</span>
-            </button>
+            </div>
           </div>
         </div>
 

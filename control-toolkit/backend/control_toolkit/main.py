@@ -25,7 +25,6 @@ from control_toolkit.api import (
     protocol_api,
     recordings,
     sessions,
-    simulation,
     settings,
     state,
     status,
@@ -38,9 +37,12 @@ from control_toolkit.config import ToolkitConfig
 from control_toolkit.services.lifecycle import Lifecycle
 
 
-def create_app(config: ToolkitConfig | None = None) -> FastAPI:
+def create_app(
+    config: ToolkitConfig | None = None,
+    bus_factory: Any | None = None,
+) -> FastAPI:
     config = config or ToolkitConfig.from_env()
-    lifecycle = Lifecycle(config)
+    lifecycle = Lifecycle(config, bus_factory=bus_factory)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -61,7 +63,6 @@ def create_app(config: ToolkitConfig | None = None) -> FastAPI:
     app.include_router(protocol_api.router, prefix=prefix)
     app.include_router(sessions.router, prefix=prefix)
     app.include_router(settings.router, prefix=prefix)
-    app.include_router(simulation.router, prefix=prefix)
     app.include_router(injections.router, prefix=prefix)
     app.include_router(synthetic.router, prefix=prefix)
     app.include_router(hmi.router, prefix=prefix)

@@ -34,8 +34,8 @@ def test_injected_frame_appears_decoded_in_state_api(client):
     assert hb["signals"]["alive_ctr"]["engineering_value"] == 255
 
 
-def test_status_reports_open_virtual_adapter(client):
+def test_status_reports_open_physical_adapter(client):
     body = client.get("/api/v1/status").json()
-    assert body["adapter"]["identity"] == "virtual"
+    assert "canalyst" in body["adapter"]["identity"].lower()
     assert body["adapter"]["capability"]["hw_timestamps"] is False
-    assert body["adapter"]["capability"]["tec_rec_reporting"] is False
+    assert body["adapter"]["capability"]["tec_rec_reporting"] is None
