@@ -410,13 +410,25 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
     }
 
     bool is_estop = (frame.id == 0x001);
-    bool is_telem = (frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220);
+    bool is_telem = (frame.id == 0x210 || frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220 || frame.id == 0x620);
     uint8_t txb_data_reg = is_estop ? kRegTxb2Data : (is_telem ? kRegTxb1Data : kRegTxb0Data);
     uint8_t rts_cmd      = is_estop ? kCmdRtsTx2 : (is_telem ? kCmdRtsTx1 : kCmdRtsTx0);
     uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : (is_telem ? kReadStatusTx1Req : kReadStatusTx0Req);
 
-    // Wait if the selected TX buffer is busy
+    // Check if the selected TX buffer is busy
     uint8_t status = read_status();
+    if (status & txreq_bit) {
+        // Dynamic buffer fallback: if preferred buffer is busy and alternate non-ESTOP buffer is free
+        if (!is_estop) {
+            const uint8_t alt_txreq = is_telem ? kReadStatusTx0Req : kReadStatusTx1Req;
+            if (!(status & alt_txreq)) {
+                txb_data_reg = is_telem ? kRegTxb0Data : kRegTxb1Data;
+                rts_cmd      = is_telem ? kCmdRtsTx0 : kCmdRtsTx1;
+                txreq_bit    = alt_txreq;
+            }
+        }
+    }
+
     if (status & txreq_bit) {
         int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
         while (read_status() & txreq_bit) {

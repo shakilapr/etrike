@@ -148,13 +148,25 @@ private:
     static constexpr uint8_t kRegRxb0Data  = 0x61;  // RXB0SIDH
     static constexpr uint8_t kRegRxb1Data  = 0x71;  // RXB1SIDH
 
-    // READ STATUS (0xA0) response bits — MCP2515 datasheet §12.3:
-    //   TX0REQ = bit 0 (0x01)
-    //   TX1REQ = bit 1 (0x02)
-    //   TX2REQ = bit 2 (0x04)
-    static constexpr uint8_t kReadStatusTx0Req = 0x01;
-    static constexpr uint8_t kReadStatusTx1Req = 0x02;
-    static constexpr uint8_t kReadStatusTx2Req = 0x04;
+public:
+    // READ STATUS (0xA0) response bits — MCP2515 datasheet §12.3 / Table 12-2:
+    //   RX0IF   = bit 0 (0x01) — RXB0 full interrupt flag
+    //   TX0IF   = bit 1 (0x02) — TXB0 empty interrupt flag
+    //   TX0REQ  = bit 2 (0x04) — TXB0 pending request
+    //   TX1IF   = bit 3 (0x08) — TXB1 empty interrupt flag
+    //   TX1REQ  = bit 4 (0x10) — TXB1 pending request
+    //   TX2IF   = bit 5 (0x20) — TXB2 empty interrupt flag
+    //   TX2REQ  = bit 6 (0x40) — TXB2 pending request
+    //   CANINTF = bit 7 (0x80) — Any interrupt pending
+    static constexpr uint8_t kReadStatusRx0If   = 0x01;
+    static constexpr uint8_t kReadStatusTx0If   = 0x02;
+    static constexpr uint8_t kReadStatusTx0Req  = 0x04;
+    static constexpr uint8_t kReadStatusTx1If   = 0x08;
+    static constexpr uint8_t kReadStatusTx1Req  = 0x10;
+    static constexpr uint8_t kReadStatusTx2If   = 0x20;
+    static constexpr uint8_t kReadStatusTx2Req  = 0x40;
+    static constexpr uint8_t kReadStatusCanIntf = 0x80;
+private:
 
     // Initialization sub-steps (Part 4)
     bool init_gpio();

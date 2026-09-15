@@ -96,6 +96,26 @@ int main() {
     double old_rate = 1.0e9 / (old_total * t_ns);
     printf("  Old bit rate ≈ %.0f kbit/s (vs 500 kbit/s expected)\n", old_rate / 1000.0);
 
+    // ── Test 5: MCP2515 READ STATUS (0xA0) bit layout (Table 12-2) ─
+    printf("\n-- Test 5: READ STATUS (0xA0) bit layout (Microchip DS21801D Table 12-2) --\n");
+    // Verify each bit constant strictly conforms to hardware specification:
+    // Bit 0: RX0IF (0x01), Bit 1: TX0IF (0x02), Bit 2: TX0REQ (0x04)
+    // Bit 3: TX1IF (0x08), Bit 4: TX1REQ (0x10), Bit 5: TX2IF (0x20), Bit 6: TX2REQ (0x40)
+    CHECK(rt::Mcp2515Driver::kReadStatusRx0If   == 0x01, "kReadStatusRx0If is Bit 0 (0x01)");
+    CHECK(rt::Mcp2515Driver::kReadStatusTx0If   == 0x02, "kReadStatusTx0If is Bit 1 (0x02)");
+    CHECK(rt::Mcp2515Driver::kReadStatusTx0Req  == 0x04, "kReadStatusTx0Req is Bit 2 (0x04) [NOT 0x01]");
+    CHECK(rt::Mcp2515Driver::kReadStatusTx1If   == 0x08, "kReadStatusTx1If is Bit 3 (0x08)");
+    CHECK(rt::Mcp2515Driver::kReadStatusTx1Req  == 0x10, "kReadStatusTx1Req is Bit 4 (0x10) [NOT 0x02]");
+    CHECK(rt::Mcp2515Driver::kReadStatusTx2If   == 0x20, "kReadStatusTx2If is Bit 5 (0x20)");
+    CHECK(rt::Mcp2515Driver::kReadStatusTx2Req  == 0x40, "kReadStatusTx2Req is Bit 6 (0x40) [NOT 0x04]");
+    CHECK(rt::Mcp2515Driver::kReadStatusCanIntf == 0x80, "kReadStatusCanIntf is Bit 7 (0x80)");
+
+    // Verify orthogonality: RX flags must never alias TXREQ bits
+    CHECK((rt::Mcp2515Driver::kReadStatusRx0If & rt::Mcp2515Driver::kReadStatusTx0Req) == 0,
+          "No alias between RX0IF and TX0REQ");
+    CHECK((rt::Mcp2515Driver::kReadStatusTx0If & rt::Mcp2515Driver::kReadStatusTx1Req) == 0,
+          "No alias between TX0IF and TX1REQ");
+
     // ── Results ─────────────────────────────────────────────────────
     printf("\n=== Results ===\n");
     printf("Pass: %d, Fail: %d\n", g_pass, g_fail);
