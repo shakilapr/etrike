@@ -166,9 +166,9 @@ export function observeEstop(
   const sysHb = findMsg(messages, 'SYS_HEARTBEAT')
   const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
   const sysReported =
-    signalIsOn(sysSafety, 'estop_active') ||
-    signalIsOn(sysHb, 'estop_active') ||
-    signalIsOn(sysDiag, 'estop_active')
+    (frameRecent(sysSafety) && signalIsOn(sysSafety, 'estop_active')) ||
+    (frameRecent(sysHb) && signalIsOn(sysHb, 'estop_active')) ||
+    (frameRecent(sysDiag) && signalIsOn(sysDiag, 'estop_active'))
   const sysHeartbeatBad =
     !!sysHb &&
     frameRecent(sysHb) &&
@@ -176,7 +176,7 @@ export function observeEstop(
     !signalIsOn(sysHb, 'heartbeat_ok')
   const sysCanBad =
     !!sysHb && frameRecent(sysHb) && sysHb.signals?.can_ok != null && !signalIsOn(sysHb, 'can_ok')
-  const sysBrakeFault = signalIsOn(sysDiag, 'brake_fault')
+  const sysBrakeFault = frameRecent(sysDiag) && signalIsOn(sysDiag, 'brake_fault')
 
   const candidates = [
     findMsg(messages, 'RT_STATE_RPT', 'high'),

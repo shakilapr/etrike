@@ -4,7 +4,6 @@ import { activateTransportProfile, linkLabelFromStatus } from '../lib/session'
 import { buildEcuPresence } from '../lib/ecuPresence'
 import {
   busActivityTone,
-  dash,
   observeEstop,
   PROFILE_LABELS,
   transportModeOf,
@@ -37,6 +36,7 @@ function ecuConnectedLabel(liveness: string): string {
 export function Topbar() {
   const status = useAppStore((s) => s.status)
   const setStatus = useAppStore((s) => s.setStatus)
+  const setWorkspace = useAppStore((s) => s.setWorkspace)
   const quality = useAppStore((s) => s.streamQuality)
   const mismatch = useAppStore((s) => s.protocolMismatch)
   const reconnect = useAppStore((s) => s.reconnectAttempts)
@@ -44,6 +44,7 @@ export function Topbar() {
   const messages = useAppStore((s) => s.messages)
   const [modeBusy, setModeBusy] = useState(false)
   const [modeErr, setModeErr] = useState<string | null>(null)
+  const [estopHover, setEstopHover] = useState(false)
   const ses = status?.session
   const high = status?.adapter?.channels?.high
   const low = status?.adapter?.channels?.low
@@ -62,9 +63,7 @@ export function Topbar() {
     : (backendEstop?.active && backendEstop.summary)
       ? backendEstop.summary
       : estopObs.label
-  const estopDetail = backendEstop?.summary
-    ? `${backendEstop.summary} (CAN: ${estopObs.detail})`
-    : estopObs.detail
+  const estopDetail = backendEstop?.summary || estopObs.detail
   const link = linkLabelFromStatus(status)
 
   // Always show full unit set (incl. SBW/BBW). Prefer live CAN; topology as fallback.
@@ -295,7 +294,20 @@ export function Topbar() {
           <div
             className={`chip ${estopOn ? 'danger' : 'ok'} health-chip chip-estop`}
             data-testid="chip-estop"
-            title={estopDetail}
+            role="button"
+            tabIndex={0}
+            onClick={() => setWorkspace('diagnostics')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setWorkspace('diagnostics')
+              }
+            }}
+            onMouseEnter={() => setEstopHover(true)}
+            onMouseLeave={() => setEstopHover(false)}
+            onFocus={() => setEstopHover(true)}
+            onBlur={() => setEstopHover(false)}
+            aria-label={`ESTOP status: ${estopLabel}. Click to open diagnostics.`}
           >
             <span className="chip-k">ESTOP</span>
             <span className="chip-v" data-testid="chip-estop-label">
@@ -316,6 +328,28 @@ export function Topbar() {
                 L
               </span>
             </span>
+
+            {/* Non-obstructive downward popover */}
+            {estopHover && (
+              <div
+                className="topbar-estop-popover"
+                data-testid="topbar-estop-popover"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setWorkspace('diagnostics')
+                }}
+              >
+                <div className={`topbar-estop-popover-title ${estopOn ? 'danger-text' : 'ok-text'}`}>
+                  {estopOn ? 'Safety Stop Active' : 'Safety Systems Clear'}
+                </div>
+                <div className="topbar-estop-popover-body">
+                  {estopDetail || (estopOn ? 'Safety stop active across monitored buses.' : 'All monitored safety lines clear.')}
+                </div>
+                <div className="topbar-estop-popover-hint">
+                  <span>Click to inspect root cause in Diagnostics →</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div
@@ -438,14 +472,22 @@ export function Topbar() {
         <div className="meta-group" data-testid="chip-mode" title="Requested vs confirmed vehicle mode">
           <span className="meta-k">Mode</span>
           <span className="meta-v mono">
-            {dash(ses?.requested_mode)}→{dash(ses?.confirmed_mode)}
+            {ses?.confirmed_mode
+              ? (ses.requested_mode && ses.requested_mode !== ses.confirmed_mode
+                  ? `${ses.requested_mode} → ${ses.confirmed_mode}`
+                  : ses.confirmed_mode)
+              : (ses?.requested_mode || 'Standby')}
           </span>
         </div>
 
         <div className="meta-group" data-testid="chip-power" title="Requested vs confirmed power">
           <span className="meta-k">Power</span>
           <span className="meta-v mono">
-            {dash(ses?.requested_power)}→{dash(ses?.confirmed_power)}
+            {ses?.confirmed_power
+              ? (ses.requested_power && ses.requested_power !== ses.confirmed_power
+                  ? `${ses.requested_power} → ${ses.confirmed_power}`
+                  : ses.confirmed_power)
+              : (ses?.requested_power || 'Off')}
           </span>
         </div>
 

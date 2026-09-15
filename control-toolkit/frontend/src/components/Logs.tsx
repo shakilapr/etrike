@@ -28,6 +28,7 @@ export function Logs() {
   const [severity, setSeverity] = useState<string>('all')
   const [bus, setBus] = useState<string>('all')
   const [q, setQ] = useState('')
+  const [hideLiveness, setHideLiveness] = useState(true)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null)
@@ -82,15 +83,76 @@ export function Logs() {
     URL.revokeObjectURL(url)
   }
 
+  const filteredLogs = logs.filter((e) => {
+    if (hideLiveness && String(e.code) === 'protocol.node_liveness') {
+      return false
+    }
+    return true
+  })
+
+  function formatWallTime(ts?: unknown): string {
+    if (typeof ts !== 'number' || !ts) return '—'
+    const d = new Date(ts * 1000)
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    const ss = String(d.getSeconds()).padStart(2, '0')
+    const ms = String(d.getMilliseconds()).padStart(3, '0')
+    return `${hh}:${mm}:${ss}.${ms}`
+  }
+
   return (
     <WorkspaceShell
       testId="workspace-logs"
       title="Logging"
-      description="Operational audit trail (architecture §7 / §14). Session, transport, control, and safety events."
+      description="Operational audit trail. Session, transport, control, and safety events."
       sectionLabel="Analysis"
     >
-
       <Card>
+        {/* Preset quick filter chips */}
+        <div className="logs-presets mb-2.5">
+          <button
+            type="button"
+            className={`logs-preset-btn ${category === 'all' && severity === 'all' ? 'active' : ''}`}
+            onClick={() => {
+              setCategory('all')
+              setSeverity('all')
+              setBus('all')
+            }}
+          >
+            All Logs
+          </button>
+          <button
+            type="button"
+            className={`logs-preset-btn ${category === 'safety' ? 'active' : ''}`}
+            onClick={() => {
+              setCategory('safety')
+              setSeverity('all')
+            }}
+          >
+            ⚠ Safety & ESTOP
+          </button>
+          <button
+            type="button"
+            className={`logs-preset-btn ${severity === 'warning' ? 'active' : ''}`}
+            onClick={() => {
+              setCategory('all')
+              setSeverity('warning')
+            }}
+          >
+            Warnings & Faults
+          </button>
+          <button
+            type="button"
+            className={`logs-preset-btn ${category === 'control' || category === 'inject' ? 'active' : ''}`}
+            onClick={() => {
+              setCategory('control')
+              setSeverity('all')
+            }}
+          >
+            ⚡ Control & Inject
+          </button>
+        </div>
+
         <div className="toolbar logs-toolbar flex min-w-0 flex-wrap items-center gap-2.5">
           <Seg data-testid="logs-bus-seg">
             {(['all', 'high', 'low'] as const).map((b) => (
@@ -135,6 +197,15 @@ export function Logs() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          <label className="check" title="Suppress repeated periodic node liveness frames">
+            <input
+              type="checkbox"
+              data-testid="logs-hide-liveness"
+              checked={hideLiveness}
+              onChange={(e) => setHideLiveness(e.target.checked)}
+            />
+            Hide liveness pings
+          </label>
           <label className="check">
             <input
               type="checkbox"
@@ -166,7 +237,7 @@ export function Logs() {
         </div>
         {stats && (
           <p className="muted small" data-testid="logs-stats">
-            {String(stats.count ?? 0)} / {String(stats.capacity ?? '—')} entries · seq{' '}
+            {String(filteredLogs.length)} shown ({String(stats.count ?? 0)} total) / {String(stats.capacity ?? '—')} capacity · seq{' '}
             {String(stats.sequence ?? '—')}
           </p>
         )}
@@ -179,7 +250,7 @@ export function Logs() {
             <table className="can-table" data-testid="logs-table">
               <thead>
                 <tr>
-                  <th>Age</th>
+                  <th>Timestamp</th>
                   <th>Sev</th>
                   <th>Cat</th>
                   <th>Bus / ID</th>
@@ -189,44 +260,59 @@ export function Logs() {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((e) => (
-                  <tr
-                    key={String(e.log_id)}
-                    className={
-                      selected?.log_id === e.log_id ? 'selected' : undefined
-                    }
-                    data-testid={`log-row-${String(e.log_id)}`}
-                    onClick={() => setSelected(e)}
-                  >
-                    <td className="mono num">
-                      {typeof e.age_s === 'number'
-                        ? `${(e.age_s as number).toFixed(1)}s`
-                        : '—'}
-                    </td>
-                    <td>
-                      <span className={`log-sev log-sev-${String(e.severity)}`}>
-                        {String(e.severity)}
-                      </span>
-                    </td>
-                    <td className="mono">{String(e.category)}</td>
-                    <td className="mono small">
-                      {e.bus ? (
-                        <span className="badge badge-subtle">
-                          {String(e.bus)}
-                          {e.can_id != null
-                            ? ` 0x${Number(e.can_id).toString(16).toUpperCase()}`
-                            : ''}
+                {filteredLogs.map((e) => {
+                  const repeatCount = Number(e.repeat_count ?? 1)
+                  return (
+                    <tr
+                      key={String(e.log_id)}
+                      className={
+                        selected?.log_id === e.log_id ? 'selected' : undefined
+                      }
+                      data-testid={`log-row-${String(e.log_id)}`}
+                      onClick={() => setSelected(e)}
+                    >
+                      <td>
+                        <div className="log-time-cell">
+                          <span className="log-time-wall">{formatWallTime(e.last_wall || e.ts_wall)}</span>
+                          <span className="log-time-age">
+                            {typeof e.age_s === 'number'
+                              ? `${(e.age_s as number).toFixed(1)}s ago`
+                              : '—'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`log-sev log-sev-${String(e.severity)}`}>
+                          {String(e.severity)}
                         </span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="mono">{String(e.code)}</td>
-                    <td>{String(e.title)}</td>
-                    <td className="muted small">{String(e.detail || '')}</td>
-                  </tr>
-                ))}
-                {logs.length === 0 && (
+                      </td>
+                      <td className="mono">{String(e.category)}</td>
+                      <td className="mono small">
+                        {e.bus ? (
+                          <span className="badge badge-subtle">
+                            {String(e.bus)}
+                            {e.can_id != null
+                              ? ` 0x${Number(e.can_id).toString(16).toUpperCase()}`
+                              : ''}
+                          </span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td className="mono">
+                        {String(e.code)}
+                        {repeatCount > 1 && (
+                          <span className="log-repeat-badge" title={`Repeated ${repeatCount} times without changing`}>
+                            {repeatCount}×
+                          </span>
+                        )}
+                      </td>
+                      <td>{String(e.title)}</td>
+                      <td className="muted small">{String(e.detail || '')}</td>
+                    </tr>
+                  )
+                })}
+                {filteredLogs.length === 0 && (
                   <tr>
                     <td colSpan={7} className="muted">
                       No log entries match filters.
