@@ -71,7 +71,7 @@ def reset_estop(base_url: str) -> bool:
         return False
 
     for ctr in [1, 2, 3]:
-        inject_message(base_url, "high", "host:host_estop_reset_req", {
+        inject_message(base_url, "high", "hmi:host_estop_reset_req", {
             "reset_token": 0x5253,
             "request_seq": ctr,
             "rolling_counter": ctr
@@ -98,7 +98,7 @@ def set_power(base_url: str, state_on: bool) -> bool:
 
     for ctr in [1, 2, 3]:
         inject_message(base_url, "high", "hmi:hmi_pwr_req", {
-            "power_req": req_val,
+            "req_start": req_val,
             "rolling_counter": ctr
         })
         time.sleep(0.02)
@@ -123,7 +123,7 @@ def set_mode(base_url: str, auto_mode: bool) -> bool:
 
     for ctr in [1, 2, 3]:
         inject_message(base_url, "high", "hmi:hmi_mode_req", {
-            "mode_req": req_val,
+            "req_mode": req_val,
             "rolling_counter": ctr
         })
         time.sleep(0.02)

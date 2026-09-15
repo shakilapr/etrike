@@ -12,7 +12,7 @@ Usage:
 Options:
     --url URL            Backend base URL (default: http://127.0.0.1:8001)
     --profile PROFILE    Operating profile: bench_test (default) or pure_software
-    --suite SUITE        all | baseline | kinematics | simulation | safety | dynamic
+    --suite SUITE        all | baseline | kinematics | safety | dynamic
     --test TEST          Run specific test by name substring
     --report PATH        Export JSON test execution report
     --verbose, -v        Enable detailed logging of CAN signal assertions
@@ -166,7 +166,7 @@ class BenchClient:
     def inject_single(self, bus: str, key: Optional[str] = None, can_id: Optional[int] = None, values: Optional[Dict[str, Any]] = None) -> bool:
         v = dict(values or {})
         # Automatically supply advancing rolling counter if key is supervised
-        if key in ("hmi:hmi_mode_req", "hmi:hmi_pwr_req", "host:host_estop_reset_req") and "rolling_counter" not in v:
+        if key in ("hmi:hmi_mode_req", "hmi:hmi_pwr_req", "hmi:host_estop_reset_req") and "rolling_counter" not in v:
             if not hasattr(self, "_counters"):
                 self._counters: Dict[str, int] = {}
             ctr = self._counters.get(key, 1)
@@ -268,83 +268,10 @@ class BenchClient:
         return code == 200
 
 
-# ── Actuator Peer Synthesizer (Absent Actuators Simulation) ───────────
-class ActuatorSynthesizer:
-    """Provides background periodic stimulation for missing nodes (SES, SEB, MTR, Host)."""
-
-    def __init__(self, client: BenchClient) -> None:
-        self.client = client
-        self.jobs: Dict[str, str] = {}
-
-    def start_baseline(self) -> None:
-        """Starts minimal peer set to keep RT and SYS state machines nominal."""
-        self.stop_all()
-
-        # 1. Host Heartbeat on High Bus (2 Hz)
-        j = self.client.inject_periodic(
-            bus="high", key="host:host_heartbeat", values={"alive_ctr": 1, "health_flags": 1}, period_ms=500.0
-        )
-        if j:
-            self.jobs["host_hb"] = j
-
-        # 2. SES Steering Status on Low Bus (0x201, 50 Hz, angle=0, aligned=1)
-        j = self.client.inject_periodic(
-            bus="low", key="ses:sbw_status", values={"angle_aligned": 1, "steering_angle_raw": 0}, period_ms=20.0
-        )
-        if j:
-            self.jobs["ses_status"] = j
-
-        # 3. SEB Brake Status on Low Bus (0x721, 50 Hz, stroke=0, status=1)
-        j = self.client.inject_periodic(
-            bus="low", key="seb:bbw_status", values={"stroke": 0, "status": 1}, period_ms=20.0
-        )
-        if j:
-            self.jobs["seb_status"] = j
-
-        # 4. MTR Motor Feedback on Low Bus (0x206, 50 Hz)
-        j = self.client.inject_periodic(
-            bus="low",
-            key="mtr:mtr_motor_fbk",
-            values={"motor_command_speed_mmps": 0, "gear_state": 0, "fault_flags": 0},
-            period_ms=20.0,
-        )
-        if j:
-            self.jobs["mtr_fbk"] = j
-
-        # 5. MTR Throttle Status on Low Bus (0x120, 50 Hz)
-        j = self.client.inject_periodic(
-            bus="low", key="mtr:sys_throttle_sts", values={"speed_mmps": 0}, period_ms=20.0
-        )
-        if j:
-            self.jobs["mtr_throttle"] = j
-
-    def update_feedback(self, speed_mmps: int = 0, steer_angle: int = 0, brake_stroke: int = 0) -> None:
-        """Update values for simulated peers during dynamic movement."""
-        self.client.inject_single(
-            bus="low",
-            key="mtr:mtr_motor_fbk",
-            values={"motor_command_speed_mmps": speed_mmps, "gear_state": 1 if speed_mmps > 0 else 0, "fault_flags": 0},
-        )
-        self.client.inject_single(
-            bus="low", key="mtr:sys_throttle_sts", values={"speed_mmps": speed_mmps}
-        )
-        self.client.inject_single(
-            bus="low", key="ses:sbw_status", values={"angle_aligned": 1, "steering_angle_raw": steer_angle}
-        )
-        self.client.inject_single(
-            bus="low", key="seb:bbw_status", values={"stroke": brake_stroke, "status": 1}
-        )
-
-    def stop_all(self) -> None:
-        self.client.cancel_all_injections()
-        self.jobs.clear()
-
-
 # ── Hardware Bench Test Suite Implementation ──────────────────────────
 class HardwareBenchRunner:
     def __init__(self, client: BenchClient, verbose: bool = False) -> None:
         self.client = client
-        self.synth = ActuatorSynthesizer(client)
         self.verbose = verbose
         self.results: List[TestResult] = []
 
@@ -549,51 +476,6 @@ class HardwareBenchRunner:
         return TestResult("kinematics", "2.6 Power Command Gateway", "PASS", dt, "SYS power command ON verified on Low Bus")
 
     # ══════════════════════════════════════════════════════════════════
-    # SUITE 3: Actuator Peer Simulation Subsystem
-    # ══════════════════════════════════════════════════════════════════
-    def test_3_1_simulated_ses_steering_feedback(self) -> TestResult:
-        """SES_STATUS 0x201 feedback keeps RT steering state machine ACTIVE."""
-        t0 = time.monotonic()
-        job = self.client.inject_periodic("low", key="ses:sbw_status", values={"angle_aligned": 1, "steering_angle_raw": 0}, period_ms=20.0)
-        ok, state = self.wait_until(
-            lambda s: "high:RT_STATE_RPT" in s and s["high:RT_STATE_RPT"]["signals"].get("steer_state") != 5,  # 5 is FAULT
-            timeout_s=2.0,
-        )
-        dt = (time.monotonic() - t0) * 1000
-        if not ok:
-            return TestResult("simulation", "3.1 Steering Angle Feedback", "FAIL", dt, "RT steering reported FAULT state")
-        return TestResult("simulation", "3.1 Steering Angle Feedback", "PASS", dt, "RT steering state machine healthy with synthetic SES")
-
-    def test_3_2_simulated_seb_brake_feedback(self) -> TestResult:
-        """SEB_STATUS 0x721 feedback prevents SYS brake fault warnings."""
-        t0 = time.monotonic()
-        job = self.client.inject_periodic("low", key="seb:bbw_status", values={"stroke": 0, "status": 1}, period_ms=20.0)
-        ok, state = self.wait_until(
-            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("brake_fault") == 0,
-            timeout_s=2.0,
-        )
-        dt = (time.monotonic() - t0) * 1000
-        if not ok:
-            return TestResult("simulation", "3.2 Brake Pressure Feedback", "FAIL", dt, "SYS reported brake_fault=1")
-        return TestResult("simulation", "3.2 Brake Pressure Feedback", "PASS", dt, "SYS brake task healthy with synthetic SEB")
-
-    def test_3_3_simulated_mtr_feedback(self) -> TestResult:
-        """MTR 0x120 & 0x206 forwarded Low->High for Host telemetry."""
-        t0 = time.monotonic()
-        j1 = self.client.inject_periodic("low", key="mtr:sys_throttle_sts", values={"speed_mmps": 250}, period_ms=20.0)
-        j2 = self.client.inject_periodic("low", key="mtr:mtr_motor_fbk", values={"motor_command_speed_mmps": 250, "gear_state": 1, "fault_flags": 0}, period_ms=20.0)
-        ok, state = self.wait_until(
-            lambda s: "high:SYS_THROTTLE_STS" in s and s["high:SYS_THROTTLE_STS"]["freshness"] == "live",
-            timeout_s=2.0,
-        )
-        if j1: self.client.cancel_injection(j1)
-        if j2: self.client.cancel_injection(j2)
-        dt = (time.monotonic() - t0) * 1000
-        if not ok:
-            return TestResult("simulation", "3.3 Motor Telemetry Forwarding", "FAIL", dt, "MTR telemetry not forwarded Low->High")
-        return TestResult("simulation", "3.3 Motor Telemetry Forwarding", "PASS", dt, "MTR throttle telemetry successfully forwarded Low->High")
-
-    # ══════════════════════════════════════════════════════════════════
     # SUITE 4: Safety & Emergency Stop Reactions
     # ══════════════════════════════════════════════════════════════════
     def test_4_1_high_bus_estop(self) -> TestResult:
@@ -678,8 +560,6 @@ class HardwareBenchRunner:
     def test_5_1_startup_and_drive_ready_lifecycle(self) -> TestResult:
         """Vehicle Startup: Cold -> Power ON -> Peers ON -> AUTO mode transition -> RT motion authority enabled."""
         t0 = time.monotonic()
-        self.synth.start_baseline()
-        time.sleep(0.2)
 
         # Step 1: Power ON request
         self.client.inject_single("high", key="hmi:hmi_pwr_req", values={"req_start": 1})
@@ -717,7 +597,6 @@ class HardwareBenchRunner:
         ramp_speeds = [500, 1200, 2200]
         for spd in ramp_speeds:
             job = self.client.inject_periodic("high", key="host:host_drive_cmd", values={"speed_mmps": spd, "yaw_rate_mrad_s": 0, "gear": 1}, period_ms=10.0)
-            self.synth.update_feedback(speed_mmps=spd)
             ok, state = self.wait_until(
                 lambda s, target=spd: "low:RT_DRIVE_CMD" in s and s["low:RT_DRIVE_CMD"]["signals"].get("motor_speed_mmps") == target,
                 timeout_s=1.5,
@@ -729,7 +608,6 @@ class HardwareBenchRunner:
 
         # Return to idle
         self.client.inject_single("high", key="host:host_drive_cmd", values={"speed_mmps": 0, "yaw_rate_mrad_s": 0, "gear": 1})
-        self.synth.update_feedback(speed_mmps=0)
         dt = (time.monotonic() - t0) * 1000
         return TestResult("dynamic", "5.2 Dynamic Acceleration Ramp", "PASS", dt, "Smooth acceleration ramp tracked: 0 -> 500 -> 1200 -> 2200 mm/s @ 100 Hz")
 
@@ -744,7 +622,8 @@ class HardwareBenchRunner:
             lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("light_left") == 1,
             timeout_s=1.5,
         )
-        if job1: self.client.cancel_injection(job1)
+        if job1:
+            self.client.cancel_injection(job1)
         if not ok1:
             return TestResult("dynamic", "5.3 Slalom Cornering & Angle Clamp", "FAIL", (time.monotonic() - t0) * 1000, "Left turn light not engaged on cornering")
 
@@ -755,7 +634,8 @@ class HardwareBenchRunner:
             lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("light_right") == 1,
             timeout_s=1.5,
         )
-        if job2: self.client.cancel_injection(job2)
+        if job2:
+            self.client.cancel_injection(job2)
         if not ok2:
             return TestResult("dynamic", "5.3 Slalom Cornering & Angle Clamp", "FAIL", (time.monotonic() - t0) * 1000, "Right turn light not engaged on counter-steer")
 
@@ -777,18 +657,15 @@ class HardwareBenchRunner:
 
         # Apply 3000 kPa brake
         self.client.inject_single("high", key="host:host_brake_req", values={"brake_pressure_kpa": 3000})
-        self.synth.update_feedback(speed_mmps=1000, brake_stroke=20)
         ok_brk, state = self.wait_until(
             lambda s: "low:RT_BRAKE_CMD" in s and s["low:RT_BRAKE_CMD"]["signals"].get("brake_pressure_kpa") == 3000,
             timeout_s=1.5,
         )
         # Release brake
         self.client.inject_single("high", key="host:host_brake_req", values={"brake_pressure_kpa": 0})
-        self.synth.update_feedback(speed_mmps=1800, brake_stroke=0)
         if job_drv:
             self.client.cancel_injection(job_drv)
         self.client.inject_single("high", key="host:host_drive_cmd", values={"speed_mmps": 0, "yaw_rate_mrad_s": 0, "gear": 0})
-        self.synth.update_feedback(speed_mmps=0)
         dt = (time.monotonic() - t0) * 1000
         if not ok_brk:
             return TestResult("dynamic", "5.4 Blended Trail Braking", "FAIL", dt, "RT 0x205 did not produce 3000 kPa brake pressure")
@@ -864,11 +741,6 @@ class HardwareBenchRunner:
                 self.test_2_5_host_light_gateway_sys,
                 self.test_2_6_hmi_power_gateway_sys,
             ],
-            "simulation": [
-                self.test_3_1_simulated_ses_steering_feedback,
-                self.test_3_2_simulated_seb_brake_feedback,
-                self.test_3_3_simulated_mtr_feedback,
-            ],
             "safety": [
                 self.test_4_1_high_bus_estop,
                 self.test_4_2_low_bus_estop,
@@ -887,9 +759,6 @@ class HardwareBenchRunner:
             ],
         }
 
-        self.synth.start_baseline()
-        time.sleep(0.5)
-
         tests_to_run = []
         for sname, tlist in suite_map.items():
             if suite_filter in ("all", sname):
@@ -900,7 +769,6 @@ class HardwareBenchRunner:
         self.log(f"\n{Color.BOLD}═══ Running {len(tests_to_run)} Hardware Bench Tests (Suite: {suite_filter}) ═══{Color.RESET}\n")
 
         for fn in tests_to_run:
-            test_doc = (fn.__doc__ or fn.__name__).split("\n")[0]
             sys.stdout.write(f"  • {fn.__name__:<42} ")
             sys.stdout.flush()
 
@@ -913,7 +781,6 @@ class HardwareBenchRunner:
             badge = f"{Color.GREEN}PASS{Color.RESET}" if res.disposition == "PASS" else f"{Color.RED}{res.disposition}{Color.RESET}"
             self.log(f"[{badge}] ({res.duration_ms:6.1f} ms) {Color.DIM}{res.detail}{Color.RESET}")
 
-        self.synth.stop_all()
         return self.results
 
 
@@ -943,7 +810,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="E-Trike Hardware Bench Test Suite (RT & SYS)")
     parser.add_argument("--url", default="http://127.0.0.1:8001", help="Control Toolkit backend URL")
     parser.add_argument("--profile", default="bench_test", help="Session profile: bench_test or pure_software")
-    parser.add_argument("--suite", default="all", help="Suite filter: all | baseline | kinematics | simulation | safety | dynamic")
+    parser.add_argument("--suite", default="all", help="Suite filter: all | baseline | kinematics | safety | dynamic")
     parser.add_argument("--test", default="", help="Filter by test function name substring")
     parser.add_argument("--report", default="", help="File path to save JSON execution report")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging")
@@ -959,7 +826,6 @@ def main() -> int:
 
     # Check physical adapter if bench_test profile is requested
     if args.profile == "bench_test":
-        adapter = st.get("adapter", {})
         print(f"{Color.CYAN}Connecting to physical hardware bench (CANalyst-II dual bus)...{Color.RESET}")
 
     try:
