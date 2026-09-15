@@ -164,6 +164,46 @@ class BenchClient:
                 raise RuntimeError(f"Failed to enable Bench TX: {res}")
 
     def inject_single(self, bus: str, key: Optional[str] = None, can_id: Optional[int] = None, values: Optional[Dict[str, Any]] = None) -> bool:
+        v = dict(values or {})
+        # Automatically supply advancing rolling counter if key is supervised
+        if key in ("hmi:hmi_mode_req", "hmi:hmi_pwr_req", "host:host_estop_reset_req") and "rolling_counter" not in v:
+            if not hasattr(self, "_counters"):
+                self._counters: Dict[str, int] = {}
+            ctr = self._counters.get(key, 1)
+            v["rolling_counter"] = ctr
+            self._counters[key] = (ctr + 1) % 256
+            # StreamValidity on SYS requires >=2 sequential frames to establish valid authority
+            code, res = self.request(
+                "POST",
+                "/injections",
+                {
+                    "bus": bus,
+                    "key": key,
+                    "can_id": can_id,
+                    "values": v,
+                    "period_ms": None,
+                    "owner": "hw_suite",
+                },
+            )
+            time.sleep(0.05)
+            ctr2 = self._counters[key]
+            v2 = dict(v)
+            v2["rolling_counter"] = ctr2
+            self._counters[key] = (ctr2 + 1) % 256
+            code2, res2 = self.request(
+                "POST",
+                "/injections",
+                {
+                    "bus": bus,
+                    "key": key,
+                    "can_id": can_id,
+                    "values": v2,
+                    "period_ms": None,
+                    "owner": "hw_suite",
+                },
+            )
+            return code2 == 200 and res2.get("ok", False)
+
         code, res = self.request(
             "POST",
             "/injections",
@@ -171,7 +211,7 @@ class BenchClient:
                 "bus": bus,
                 "key": key,
                 "can_id": can_id,
-                "values": values or {},
+                "values": v,
                 "period_ms": None,
                 "owner": "hw_suite",
             },
