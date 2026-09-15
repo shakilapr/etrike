@@ -525,17 +525,7 @@ static uint8_t task_health_snapshot() {
             can::Frame state_fr{};
             const auto state_status = can::encode_frame(rpt, state_fr);
             if (state_status == can::gen::CodecStatus::Ok) {
-                if (g_can_high.can_transmit()) {
-                    if (!g_can_high.send(state_fr)) {
-                        rpt_fail_count++;
-                        if (rpt_fail_count == 1 || rpt_fail_count % 100 == 0) {
-                            ESP_LOGW(TAG, "MCP2515 RT_STATE_RPT send failed (count=%lu)", rpt_fail_count);
-                        }
-                    } else if (rpt_fail_count > 0) {
-                        ESP_LOGI(TAG, "MCP2515 RT_STATE_RPT send recovered after %lu failures", rpt_fail_count);
-                        rpt_fail_count = 0;
-                    }
-                }
+                send_can_high(state_fr);
             } else {
                 static uint32_t state_rpt_encode_fail_high = 0;
                 state_rpt_encode_fail_high++;
@@ -1360,7 +1350,11 @@ static uint8_t task_health_snapshot() {
                 && (now - g_last_sys_hb_us.load()) <= int64_t(rt::kHeartbeatTimeoutMsSys) * 1000);
             bool host_alive = (g_last_host_hb_us.load() > 0
                 && (now - g_last_host_hb_us.load()) <= int64_t(shared::kHeartbeatTimeoutMsHost) * 1000);
-            if (sys_alive && host_alive) hf |= rt::kHbHealthBitHeartbeatOk;
+#ifdef BENCH_BUILD_ACKNOWLEDGED
+            if (sys_alive) hf |= rt::kHbHealthBitHeartbeatOk;
+#else
+            if (sys_alive && (host_alive || g_bench_solo_mode)) hf |= rt::kHbHealthBitHeartbeatOk;
+#endif
             if (g_steering.state() == rt::SteerState::ESTOP_RAMP_TO_ZERO
                 || g_steering.state() == rt::SteerState::ESTOP_HOLD_THEN_SILENT
                 || m_current_mode == uint8_t(can::Mode::Estop))
