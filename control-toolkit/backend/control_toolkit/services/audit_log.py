@@ -54,13 +54,17 @@ class AuditEntry:
     correlation_id: str | None = None
     source: str = "backend"
     data: dict[str, Any] = field(default_factory=dict)
+    repeat_count: int = 1
+    last_mono: float | None = None
+    last_wall: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "log_id": self.log_id,
             "ts_mono": self.ts_mono,
             "ts_wall": self.ts_wall,
-            "age_s": max(0.0, time.monotonic() - self.ts_mono),
+            "last_wall": self.last_wall or self.ts_wall,
+            "age_s": max(0.0, time.monotonic() - (self.last_mono or self.ts_mono)),
             "category": self.category,
             "severity": self.severity,
             "code": self.code,
@@ -71,6 +75,7 @@ class AuditEntry:
             "session_id": self.session_id,
             "correlation_id": self.correlation_id,
             "source": self.source,
+            "repeat_count": self.repeat_count,
             "data": dict(self.data),
         }
 
@@ -102,6 +107,8 @@ class AuditLogService:
     ) -> AuditEntry:
         cat = category if category in CATEGORIES else "system"
         payload_data = data or {}
+        now_mono = time.monotonic()
+        now_wall = time.time()
 
         if only_on_change or dedup_key is not None:
             key = dedup_key or f"{cat}:{code}:{bus or ''}:{can_id or ''}"
@@ -112,29 +119,52 @@ class AuditLogService:
                     if self._entries:
                         for existing in self._entries:
                             if existing.code == code and existing.category == cat:
+                                existing.repeat_count += 1
+                                existing.last_mono = now_mono
+                                existing.last_wall = now_wall
                                 return existing
                 self._last_fingerprints[key] = fp
 
-        entry = AuditEntry(
-            log_id=f"log_{uuid.uuid4().hex[:12]}",
-            ts_mono=time.monotonic(),
-            ts_wall=time.time(),
-            category=cat,
-            severity=severity,
-            code=code,
-            title=title,
-            detail=detail,
-            bus=bus,
-            can_id=can_id,
-            session_id=session_id,
-            correlation_id=correlation_id,
-            source=source,
-            data=payload_data,
-        )
         with self._lock:
+            # Check if top entry matches exactly to avoid repeating the exact same message
+            if self._entries:
+                top = self._entries[0]
+                if (
+                    top.category == cat
+                    and top.code == code
+                    and top.title == title
+                    and top.detail == detail
+                    and top.severity == severity
+                    and top.bus == bus
+                    and top.can_id == can_id
+                ):
+                    top.repeat_count += 1
+                    top.last_mono = now_mono
+                    top.last_wall = now_wall
+                    return top
+
+            entry = AuditEntry(
+                log_id=f"log_{uuid.uuid4().hex[:12]}",
+                ts_mono=now_mono,
+                ts_wall=now_wall,
+                last_mono=now_mono,
+                last_wall=now_wall,
+                category=cat,
+                severity=severity,
+                code=code,
+                title=title,
+                detail=detail,
+                bus=bus,
+                can_id=can_id,
+                session_id=session_id,
+                correlation_id=correlation_id,
+                source=source,
+                data=payload_data,
+                repeat_count=1,
+            )
             self._seq += 1
             self._entries.appendleft(entry)
-        return entry
+            return entry
 
     def list_logs(
         self,

@@ -252,86 +252,190 @@ export function Diagnostics() {
         </div>
       </section>
 
+      {/* Root-Cause Diagnostic Hero Card */}
       <section
-        className={`panel${estopLive.any || estopApi?.active ? ' panel-hazard' : ''}`}
+        className={`diag-root-cause-hero ${estopLive.any || estopApi?.active ? 'hazard' : 'healthy'}`}
         data-testid="diag-estop-panel"
       >
-        <h2>ESTOP causes</h2>
+        <div className="diag-hero-header">
+          <div className="diag-hero-title">
+            <span className={`pulse-indicator ${estopLive.any || estopApi?.active ? 'danger-text' : 'ok-text'}`} />
+            <span>
+              {estopLive.any || estopApi?.active ? (
+                <>
+                  <span className="badge-root">Root Cause</span>{' '}
+                  {estopApi?.primary_cause ||
+                    (estopLive.rtReasonCode !== 0
+                      ? `RT: ${estopLive.rtReasonLabel}`
+                      : estopLive.causes[0] || 'Active Safety Stop')}
+                </>
+              ) : (
+                <span className="ok-text">Safety Systems Normal · No Active Inhibit</span>
+              )}
+            </span>
+          </div>
+          {estopApi?.cause_resolution && (
+            <span className="badge badge-subtle mono">
+              attribution={estopApi.cause_resolution}
+            </span>
+          )}
+        </div>
+
         <p className="muted small">
-          Multi-source: host inject latch, bus 0x001 SAFETY_ESTOP, SYS flags, and RT{' '}
-          <span className="mono">estop_reason</span> (firmware codes). Clear latch only clears the
-          host side.
+          {estopApi?.summary || estopLive.detail}
         </p>
-        <dl className="kv" data-testid="diag-estop-summary">
-          <dt>State</dt>
-          <dd className={estopLive.any ? 'danger-text' : 'ok-text'}>
-            {estopApi?.summary || estopLive.detail}
-          </dd>
-          <dt>Primary cause</dt>
-          <dd className={estopLive.any ? 'danger-text' : 'ok-text'}>
-            {estopApi?.primary_cause ||
-              (estopLive.rtReasonCode !== 0
-                ? `RT: ${estopLive.rtReasonLabel}`
-                : estopLive.causes[0] || 'No active safety stop')}
-            {estopApi?.cause_resolution
-              ? ` · attribution=${estopApi.cause_resolution}`
-              : ''}
-          </dd>
-          <dt>Host latch</dt>
-          <dd className="mono">{estopLive.hostLatch ? 'ON' : 'off'}</dd>
-          <dt>Bus 0x001</dt>
-          <dd className="mono">
-            H={estopLive.busHigh ? 'recent' : '—'} · L={estopLive.busLow ? 'recent' : '—'}
-          </dd>
-          <dt>SYS</dt>
-          <dd className="mono">
-            estop={estopLive.sysReported ? '1' : '0'}
-            {estopLive.sysHeartbeatBad ? ' · heartbeat_ok=0' : ''}
-            {estopLive.sysCanBad ? ' · can_ok=0' : ''}
-            {estopLive.sysBrakeFault ? ' · brake_fault' : ''}
-          </dd>
-          <dt>RT</dt>
-          <dd className="mono" data-testid="diag-estop-rt-reason">
-            {estopLive.rtStale ? (
-              <span className="muted">
-                frame stale · last mode={estopLive.rtMode || '—'} · last reason={estopLive.lastKnownReasonCode} ({estopLive.lastKnownReasonLabel})
-              </span>
-            ) : (
-              <>
-                mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode}:{' '}
-                {estopApi?.rt?.estop_reason_display || estopLive.rtReasonLabel}
-                {estopLive.safetyState != null ? ` · safety_state=${estopLive.safetyState}` : ''}
-              </>
-            )}
-          </dd>
-        </dl>
-        {(estopApi?.causes?.length || estopLive.causes.length) > 0 ? (
-          <ul className="diag-estop-causes" data-testid="diag-estop-causes">
-            {(estopApi?.causes?.length ? estopApi.causes : estopLive.causes).map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted small">No active ESTOP sources.</p>
-        )}
+
+        <div className="diag-hero-grid">
+          {/* Left: Root Cause vs Downstream Cascades */}
+          <div className="diag-hero-col">
+            <dl className="kv" data-testid="diag-estop-summary">
+              <dt>Status</dt>
+              <dd className={estopLive.any ? 'danger-text font-semibold' : 'ok-text'}>
+                {estopLive.any ? 'STOP / INHIBITED' : 'CLEAR'}
+              </dd>
+              <dt>Originating Bus</dt>
+              <dd className="mono">
+                {estopLive.busHigh && estopLive.busLow
+                  ? 'High CAN & Low CAN'
+                  : estopLive.busHigh
+                    ? 'High CAN (Ch0)'
+                    : estopLive.busLow
+                      ? 'Low CAN (Ch1)'
+                      : 'Internal / Interlock'}
+              </dd>
+              <dt>Host Latch</dt>
+              <dd className="mono">{estopLive.hostLatch ? 'LATCHED (Active)' : 'Clear'}</dd>
+              <dt>Bus 0x001 Frame</dt>
+              <dd className="mono">
+                High={estopLive.busHigh ? 'RECENT' : '—'} · Low={estopLive.busLow ? 'RECENT' : '—'}
+              </dd>
+              <dt>SYS Interlocks</dt>
+              <dd className="mono">
+                estop={estopLive.sysReported ? '1' : '0'}
+                {estopLive.sysHeartbeatBad ? ' · heartbeat_ok=0' : ''}
+                {estopLive.sysCanBad ? ' · can_ok=0' : ''}
+                {estopLive.sysBrakeFault ? ' · brake_fault' : ''}
+              </dd>
+              <dt>RT Mode & Reason</dt>
+              <dd className="mono" data-testid="diag-estop-rt-reason">
+                {estopLive.rtStale ? (
+                  <span className="muted">
+                    frame stale · last mode={estopLive.rtMode || '—'} · last reason={estopLive.lastKnownReasonCode} ({estopLive.lastKnownReasonLabel})
+                  </span>
+                ) : (
+                  <>
+                    mode={estopLive.rtMode || '—'} · reason={estopLive.rtReasonCode}:{' '}
+                    {estopApi?.rt?.estop_reason_display || estopLive.rtReasonLabel}
+                    {estopLive.safetyState != null ? ` · safety_state=${estopLive.safetyState}` : ''}
+                  </>
+                )}
+              </dd>
+            </dl>
+
+            {/* Downstream Cascades List */}
+            {(estopApi?.causes?.length || estopLive.causes.length) > 0 ? (
+              <div className="mt-2">
+                <div className="text-xs font-bold uppercase text-secondary mb-1">
+                  Active Sources & Cascade Reactions:
+                </div>
+                <div className="diag-cascade-list" data-testid="diag-estop-causes">
+                  {(estopApi?.causes?.length ? estopApi.causes : estopLive.causes).map((c, i) => (
+                    <div key={c} className="diag-cascade-item">
+                      <span className={i === 0 ? 'badge-root' : 'badge-cascade'}>
+                        {i === 0 ? 'Trigger' : 'Cascade'}
+                      </span>
+                      <span className="font-mono">{c}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Right: Actionable Operator Recovery Guide */}
+          <div className="diag-hero-col">
+            <div className="diag-recovery-box">
+              <div className="diag-recovery-title">Actionable Recovery Checklist</div>
+              <ol className="diag-recovery-steps">
+                {estopLive.hostLatch && (
+                  <li>
+                    <strong>Host inject latch is active:</strong> Click &quot;Clear Host Latch&quot; below to clear the testbed software latch.
+                  </li>
+                )}
+                {estopLive.sysBrakeFault && (
+                  <li>
+                    <strong>SYS Brake Fault:</strong> Verify hydraulic pressure sensor calibration and BBW feedback wiring on Low CAN.
+                  </li>
+                )}
+                {estopLive.sysHeartbeatBad && (
+                  <li>
+                    <strong>SYS Heartbeat Loss:</strong> Inspect SYS ECU 12V harness and 0x7FE transmission cycle.
+                  </li>
+                )}
+                {estopLive.rtReasonCode === 10 && (
+                  <li>
+                    <strong>RT Watchdog:</strong> Real-time task loop overrun detected. Check task execution time in RT telemetry.
+                  </li>
+                )}
+                {estopLive.busHigh || estopLive.busLow ? (
+                  <li>
+                    <strong>0x001 SAFETY_ESTOP:</strong> Physical button or bus broadcast active. Release hardware e-stop button if depressed.
+                  </li>
+                ) : null}
+                {!estopLive.any && (
+                  <li>All safety parameters in bounds. System ready to arm Bench TX or transition to Active.</li>
+                )}
+              </ol>
+
+              {estopLive.hostLatch && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="secondary w-full text-xs font-bold"
+                    data-testid="btn-diag-clear-latch"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      try {
+                        await api.clearEstop()
+                        await refreshDiag()
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                  >
+                    Clear Host Latch (Software Only)
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Structured sources breakdown if provided by backend */}
         {estopApi?.sources && Array.isArray(estopApi.sources) && estopApi.sources.length > 0 ? (
-          <table className="data-table compact" data-testid="diag-estop-sources">
-            <thead>
-              <tr>
-                <th>Source</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {estopApi.sources.map((s, i) => (
-                <tr key={String(s.id ?? i)}>
-                  <td>{String(s.title ?? s.id ?? '—')}</td>
-                  <td className="mono small">{String(s.detail ?? '—')}</td>
+          <div className="mt-section">
+            <h3>Fault Sources Breakdown</h3>
+            <table className="data-table compact" data-testid="diag-estop-sources">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Detail</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {estopApi.sources.map((s, i) => (
+                  <tr key={String(s.id ?? i)}>
+                    <td>{String(s.title ?? s.id ?? '—')}</td>
+                    <td className="mono small">{String(s.detail ?? '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
+
+        {/* Node Blockers (NODE_STATUS) */}
         {(() => {
           const estopNodes = (estopApi as { nodes?: Record<string, { state?: string; block_mask?: number }> } | undefined)?.nodes
           if (!estopNodes || Object.keys(estopNodes).length === 0) return null
@@ -365,6 +469,8 @@ export function Diagnostics() {
             </div>
           )
         })()}
+
+        {/* RT Diagnostic Events (0x621) */}
         {estopApi?.rt?.diag_events && estopApi.rt.diag_events.length > 0 ? (
           <div className="mt-section">
             <h3>RT Diagnostic Events (0x621)</h3>
@@ -398,10 +504,6 @@ export function Diagnostics() {
             </table>
           </div>
         ) : null}
-        <p className="muted small mono">
-          RT reason map: 0=none 1=button 2=heartbeat_loss 3=following_error 4=obstacle 5=can_estop_frame
-          6=bus_off 7=internal 8=egas_mismatch 9=stale_cmd 10=watchdog
-        </p>
       </section>
 
       <section className="panel" data-testid="recording-panel">
@@ -581,30 +683,67 @@ export function Diagnostics() {
       </section>
 
       <section className="panel" data-testid="episodes-panel">
-        <h2>Episodes</h2>
+        <h2>Episodes & Fault Duration</h2>
+        <p className="muted small">
+          Active fault duration, occurrence count, and recovery lifecycle.
+        </p>
         {episodes.length === 0 ? (
           <p className="muted small">No active diagnostic episodes.</p>
         ) : (
-          <table className="data-table compact">
+          <table className="data-table compact" data-testid="episodes-table">
             <thead>
               <tr>
                 <th>Code</th>
                 <th>Scope</th>
+                <th>Status</th>
+                <th>Active Duration</th>
+                <th>First Seen</th>
                 <th>Count</th>
                 <th>Severity</th>
-                <th>Recovered</th>
               </tr>
             </thead>
             <tbody>
-              {episodes.map((e) => (
-                <tr key={String(e.episode_id)}>
-                  <td className="mono">{String(e.code)}</td>
-                  <td>{String(e.scope)}</td>
-                  <td className="num">{String(e.count)}</td>
-                  <td>{String(e.severity)}</td>
-                  <td>{e.recovered ? 'yes' : 'no'}</td>
-                </tr>
-              ))}
+              {episodes.map((e) => {
+                const isRecovered = !!e.recovered
+                const durationMs = typeof e.active_duration_ms === 'number' ? e.active_duration_ms : 0
+                const durationStr = durationMs > 1000
+                  ? `${(durationMs / 1000).toFixed(1)}s`
+                  : `${Math.round(durationMs)} ms`
+                const firstWall = typeof e.first_wall === 'number' ? e.first_wall : null
+                const timeStr = firstWall
+                  ? new Date(firstWall * 1000).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  : '—'
+                return (
+                  <tr key={String(e.episode_id)}>
+                    <td className="mono font-semibold">{String(e.code)}</td>
+                    <td className="mono">{String(e.scope)}</td>
+                    <td>
+                      {isRecovered ? (
+                        <span className="badge badge-ok">Recovered</span>
+                      ) : (
+                        <span className="badge badge-danger">
+                          <span className="pulse-indicator inline-block mr-1" />
+                          Active
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={isRecovered ? 'episode-timing-recovered' : 'episode-timing-active'}>
+                        {durationStr}
+                      </span>
+                    </td>
+                    <td className="mono text-xs">{timeStr}</td>
+                    <td className="num mono">
+                      {String(e.count)}×
+                    </td>
+                    <td>
+                      <span className={`badge ${String(e.severity) === 'critical' ? 'badge-danger' : 'badge-warning'}`}>
+                        {String(e.severity)}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

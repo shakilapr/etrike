@@ -22,6 +22,7 @@ class DiagnosticEvent:
     can_id: int | None = None
     correlation_id: str | None = None
     evidence: dict[str, Any] = field(default_factory=dict)
+    first_wall: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -31,10 +32,15 @@ class Episode:
     scope: str
     first_mono: float
     last_mono: float
+    first_wall: float = field(default_factory=time.time)
+    last_wall: float = field(default_factory=time.time)
     count: int = 1
     recovered: bool = False
+    recovery_mono: float | None = None
+    active_duration_ms: float = 0.0
     title: str = ""
     severity: str = "warning"
+    freeze_frame: dict[str, Any] = field(default_factory=dict)
 
 
 class DiagnosticsService:
@@ -64,28 +70,39 @@ class DiagnosticsService:
         can_id: int | None = None,
         correlation_id: str | None = None,
         evidence: dict[str, Any] | None = None,
+        freeze_frame: dict[str, Any] | None = None,
     ) -> DiagnosticEvent:
-        now = time.monotonic()
+        now_mono = time.monotonic()
+        now_wall = time.time()
         ev = DiagnosticEvent(
             event_id=f"evt_{uuid.uuid4().hex[:12]}",
             code=code,
             severity=severity,
             title=title,
             detail=detail,
-            created_mono=now,
+            created_mono=now_mono,
             bus=bus,
             can_id=can_id,
             correlation_id=correlation_id,
             evidence=evidence or {},
+            first_wall=now_wall,
         )
+        should_emit_event = True
         with self._lock:
-            self._events.appendleft(ev)
             if severity in ("warning", "error", "critical"):
-                # Re-fault cancels pending recovery hysteresis.
                 scope = bus or "global"
                 self._pending_recover.pop(f"{code}|{scope}", None)
-                self._touch_episode_locked(ev, now)
-        if self._on_emit is not None:
+                is_duplicate = self._touch_episode_locked(
+                    ev, now_mono, now_wall, freeze_frame=freeze_frame
+                )
+                # Suppress identical repeating event spam (title, detail, severity unchanged)
+                if is_duplicate:
+                    should_emit_event = False
+
+            if should_emit_event:
+                self._events.appendleft(ev)
+
+        if should_emit_event and self._on_emit is not None:
             try:
                 self._on_emit(ev)
             except Exception:
@@ -95,13 +112,14 @@ class DiagnosticsService:
     def recover(
         self, code: str, scope: str = "global", *, force: bool = False
     ) -> bool:
-        """Mark episode recovered after recovery hysteresis (anti-chatter).
+        """Mark episode recovered after recovery hysteresis.
 
         Returns True when recovery is committed. Pass ``force=True`` to skip
         hysteresis (tests / explicit clear).
         """
         key = f"{code}|{scope}"
-        now = time.monotonic()
+        now_mono = time.monotonic()
+        now_wall = time.time()
         with self._lock:
             ep = self._episodes.get(key)
             if ep is None or ep.recovered:
@@ -109,17 +127,23 @@ class DiagnosticsService:
                 return bool(ep and ep.recovered)
             if force:
                 ep.recovered = True
-                ep.last_mono = now
+                ep.last_mono = now_mono
+                ep.last_wall = now_wall
+                ep.recovery_mono = now_mono
+                ep.active_duration_ms = max(0.0, (now_mono - ep.first_mono) * 1000.0)
                 self._pending_recover.pop(key, None)
                 return True
             pending = self._pending_recover.get(key)
             if pending is None:
-                self._pending_recover[key] = now
+                self._pending_recover[key] = now_mono
                 return False
-            if now - pending < self._recovery_hysteresis_s:
+            if now_mono - pending < self._recovery_hysteresis_s:
                 return False
             ep.recovered = True
-            ep.last_mono = now
+            ep.last_mono = now_mono
+            ep.last_wall = now_wall
+            ep.recovery_mono = now_mono
+            ep.active_duration_ms = max(0.0, (now_mono - ep.first_mono) * 1000.0)
             self._pending_recover.pop(key, None)
             return True
 
@@ -151,6 +175,7 @@ class DiagnosticsService:
         return None
 
     def list_episodes(self) -> list[dict[str, Any]]:
+        now_mono = time.monotonic()
         with self._lock:
             eps = list(self._episodes.values())
         return [
@@ -162,12 +187,27 @@ class DiagnosticsService:
                 "recovered": e.recovered,
                 "title": e.title,
                 "severity": e.severity,
-                "age_s": time.monotonic() - e.last_mono,
+                "first_wall": e.first_wall,
+                "last_wall": e.last_wall,
+                "active_duration_ms": (
+                    e.active_duration_ms
+                    if e.recovered
+                    else max(0.0, (now_mono - e.first_mono) * 1000.0)
+                ),
+                "age_s": now_mono - e.last_mono,
+                "freeze_frame": e.freeze_frame,
             }
             for e in sorted(eps, key=lambda x: x.last_mono, reverse=True)
         ]
 
-    def _touch_episode_locked(self, ev: DiagnosticEvent, now: float) -> None:
+    def _touch_episode_locked(
+        self,
+        ev: DiagnosticEvent,
+        now_mono: float,
+        now_wall: float,
+        freeze_frame: dict[str, Any] | None = None,
+    ) -> bool:
+        """Update or create episode. Returns True if this was an active duplicate."""
         scope = ev.bus or "global"
         key = f"{ev.code}|{scope}"
         ep = self._episodes.get(key)
@@ -176,16 +216,28 @@ class DiagnosticsService:
                 episode_id=f"ep_{uuid.uuid4().hex[:10]}",
                 code=ev.code,
                 scope=scope,
-                first_mono=now,
-                last_mono=now,
+                first_mono=now_mono,
+                last_mono=now_mono,
+                first_wall=now_wall,
+                last_wall=now_wall,
                 title=ev.title,
                 severity=ev.severity,
+                freeze_frame=freeze_frame or ev.evidence or {},
             )
+            return False
         else:
             ep.count += 1
-            ep.last_mono = now
+            ep.last_mono = now_mono
+            ep.last_wall = now_wall
+            ep.active_duration_ms = max(0.0, (now_mono - ep.first_mono) * 1000.0)
+            is_same_content = (
+                ep.title == ev.title
+                and ep.severity == ev.severity
+            )
+            ep.title = ev.title
             if ev.severity == "critical":
                 ep.severity = "critical"
+            return is_same_content
 
     @staticmethod
     def _event_dict(e: DiagnosticEvent) -> dict[str, Any]:
@@ -199,5 +251,6 @@ class DiagnosticsService:
             "can_id": e.can_id,
             "correlation_id": e.correlation_id,
             "evidence": e.evidence,
+            "first_wall": getattr(e, "first_wall", None),
             "age_s": time.monotonic() - e.created_mono,
         }
