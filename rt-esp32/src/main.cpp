@@ -94,6 +94,7 @@ std::atomic<uint8_t>  g_brake_fallback_state{0};
 std::atomic<int64_t>  g_last_sys_hb_us{0};
 std::atomic<int64_t>  g_last_host_hb_us{0};
 std::atomic<int64_t>  g_last_low_peer_us{0};
+std::atomic<int64_t>  g_last_high_peer_us{0};
 std::atomic<int64_t>  g_last_sys_safety_sts_us{0};
 std::atomic<int64_t>  g_last_estop_sent_us{0};
 
@@ -114,6 +115,10 @@ std::atomic<uint32_t> g_gw_drop_count{0};
 
 // False when MCP2515 is missing — can_high_task does not transmit.
 static std::atomic<bool> g_high_can_present{false};
+
+// High CAN health, surfaced on the Low bus via RT_HEARTBEAT.health_flags.can_ok.
+// False when the MCP2515/SPI stops responding even if bus_off() never latches.
+std::atomic<bool> g_can_high_healthy{true};
 
 // ── ESTOP reason atomic (written by safety/health, read by tx) ──────
 std::atomic<uint8_t>  g_estop_reason{0};
@@ -384,6 +389,10 @@ static uint8_t task_health_snapshot() {
             if (!g_can_high.receive(fr, 0)) break;
             const int64_t now_us = esp_timer_get_time();
 
+            if (can::is_known_frame_on_bus(fr.id, fr.extended, fr.dlc, can::Bus::High)) {
+                g_last_high_peer_us.store(now_us, std::memory_order_release);
+            }
+
             // Check for Host Heartbeat (0x7FD)
             if (fr.id == can::kIdHostHeartbeat) {
                 can::gen::HostHeartbeat hb{};
@@ -639,6 +648,48 @@ static uint8_t task_health_snapshot() {
                     rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighBusOff,
                                      static_cast<std::uint16_t>((static_cast<std::uint16_t>(tec) << 8) | rec));
                     ESP_LOGE(TAG, "High CAN bus-off — controller recovery");
+                    g_can_high.recover();
+                }
+            }
+
+            // High CAN liveness watchdog. A silent MCP2515/SPI reads CANINTF as
+            // 0x00, so EFLG.TXBO never sets, bus_off() never latches and the 3 s
+            // recovery above never fires — the High bus is dead while RT still
+            // reports healthy. Probe the MCP configuration registers; if they
+            // stop reading back, force recovery regardless of bus_off(). Also
+            // surfaced on the Low bus via RT_HEARTBEAT.health_flags.can_ok.
+            const bool high_tx_capable = g_can_high.can_transmit();
+            static int64_t probe_fail_since_us = 0;
+            static int64_t last_wd_recover_us = 0;
+            if (high_tx_capable) {
+                if (g_can_high.health_probe()) {
+                    probe_fail_since_us = 0;
+                } else if (probe_fail_since_us == 0) {
+                    probe_fail_since_us = now_us;
+                }
+            }
+            const bool probe_dead = high_tx_capable && probe_fail_since_us != 0
+                                 && now_us - probe_fail_since_us > 2'000'000;
+            const bool high_healthy = g_can_high.is_initialized()
+                                   && !g_can_high.bus_off()
+                                   && !g_can_high.is_recovering()
+                                   && !probe_dead;
+            if (g_can_high_healthy.exchange(high_healthy, std::memory_order_relaxed)
+                != high_healthy) {
+                if (high_healthy) {
+                    ESP_LOGI(TAG, "High CAN health restored");
+                } else if (probe_dead) {
+                    ESP_LOGE(TAG, "High CAN unhealthy — MCP2515/SPI not responding");
+                } else {
+                    ESP_LOGW(TAG, "High CAN unavailable (bus-off/recovering/uninitialized)");
+                }
+            }
+            if (probe_dead) {
+                if (last_wd_recover_us == 0 || now_us - last_wd_recover_us > 1'000'000) {
+                    last_wd_recover_us = now_us;
+                    rt::diag().raise(etrike::diagnostics::DiagId::RtCanHighBusOff,
+                                     static_cast<std::uint16_t>(0xFFFF));
+                    ESP_LOGE(TAG, "High CAN liveness watchdog — forcing MCP2515 recovery");
                     g_can_high.recover();
                 }
             }
@@ -933,7 +984,7 @@ static uint8_t task_health_snapshot() {
             const int64_t now_us = esp_timer_get_time();
             while (xQueueReceive(g_high_to_low_gw_q, &gw, 0) == pdTRUE) {
                 if (now_us - gw.enqueued_us <= 500'000) {
-                    drv->send(gw.frame);
+                    drv->send(gw.frame, 2);
                 }
             }
         }
@@ -1384,7 +1435,7 @@ static uint8_t task_health_snapshot() {
                 hf |= rt::kHbHealthBitEstopActive;
             if (m_current_mode == uint8_t(can::Mode::Auto))
                 hf |= rt::kHbHealthBitModeAuto;
-            if (!g_can_high.bus_off())
+            if (g_can_high_healthy.load(std::memory_order_relaxed))
                 hf |= rt::kHbHealthBitCanOk;
 
             g_heartbeat_flags.store(hf, std::memory_order_relaxed);

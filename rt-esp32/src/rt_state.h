@@ -133,6 +133,7 @@ extern std::atomic<int32_t>  g_encoder_speed_mmps;
 extern std::atomic<int64_t>  g_last_sys_hb_us;
 extern std::atomic<int64_t>  g_last_host_hb_us;
 extern std::atomic<int64_t>  g_last_low_peer_us;
+extern std::atomic<int64_t>  g_last_high_peer_us;
 extern std::atomic<int64_t>  g_last_sys_safety_sts_us;
 extern std::atomic<int64_t>  g_last_estop_sent_us;
 extern std::atomic<int64_t>  g_last_nonzero_cmd_us;

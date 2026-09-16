@@ -243,6 +243,33 @@ bool TwaiDriver::recovery() {
 }
 
 bool TwaiDriver::service_recovery(int64_t now_us) {
+    // ── Reclaim a leaked in-flight slot ───────────────────────────────
+    // A single-shot frame (fail_retry_cnt == 0, used in the bench self-test
+    // build) that loses arbitration is abandoned by the controller WITHOUT an
+    // on_tx_done callback. The bus stays ACTIVE, so no Bus-Off reclamation
+    // fires and, with kTxSlots == 1, Low TX is permanently disabled. Bound the
+    // in-flight age and reclaim the slot via CAS so a late callback (which
+    // loads the tracker before pushing) cannot double-free the queue.
+    {
+        constexpr int64_t kTxSlotLeakTimeoutUs = 100'000;  // 100 ms ≫ one frame
+        const uint8_t idx = m_inflight_slot.load(std::memory_order_acquire);
+        if (idx < kTxSlots) {
+            const int64_t sent_us = m_inflight_us.load(std::memory_order_acquire);
+            if (sent_us > 0 && now_us - sent_us > kTxSlotLeakTimeoutUs) {
+                uint8_t expected = idx;
+                if (m_inflight_slot.compare_exchange_strong(
+                        expected, 0xFF, std::memory_order_acq_rel)) {
+                    m_inflight_id.store(0, std::memory_order_release);
+                    xQueueSend(m_free_tx_slots, &idx, 0);
+                    ESP_LOGW(kTag,
+                             "Low CAN TX slot reclaimed after %lld ms without tx_done "
+                             "(arbitration loss; slot was leaked)",
+                             static_cast<long long>((now_us - sent_us) / 1000));
+                }
+            }
+        }
+    }
+
     if (m_recovery_completed_pending.exchange(false, std::memory_order_acq_rel)) {
         const TickType_t elapsed = xTaskGetTickCount()
             - m_bus_off_started_tick.load(std::memory_order_relaxed);

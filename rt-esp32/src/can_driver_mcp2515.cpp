@@ -563,6 +563,32 @@ void Mcp2515Driver::get_error_counters(uint8_t& tec, uint8_t& rec) {
     rec = read_reg(kRegRec);
 }
 
+bool Mcp2515Driver::health_probe() {
+    if (!m_initialized) return false;
+    ControlGuard guard(5);
+    // Cannot assess while recovering or contended — never alarm in that window.
+    if (!guard || is_recovering()) return true;
+    // Read back config registers with known values written by init_mcp2515_regs().
+    // CNF2/CNF3 are pure configuration (no read-only status bits), so they never
+    // change during normal operation; a mismatch means the SPI link or the
+    // MCP2515 itself has stopped responding. (Do NOT probe RXBnCTRL — its
+    // read-only FILHIT/RXRTR/BUKT1 status bits change as frames are received.)
+    const uint8_t cnf2 = read_reg(kRegCnf2);
+    const uint8_t cnf3 = read_reg(kRegCnf3);
+    const bool ok = cnf2 == kCnf2_500k && cnf3 == kCnf3_500k;
+    if (!ok) {
+        static int64_t last_log_us = 0;
+        const int64_t now = esp_timer_get_time();
+        if (now - last_log_us > 5'000'000) {
+            last_log_us = now;
+            ESP_LOGW(kTag, "health_probe mismatch: CNF2=0x%02X (exp 0x%02X) CNF3=0x%02X (exp 0x%02X) spi_fail=%lu",
+                     cnf2, kCnf2_500k, cnf3, kCnf3_500k,
+                     static_cast<unsigned long>(m_spi_fail_count.load(std::memory_order_relaxed)));
+        }
+    }
+    return ok;
+}
+
 bool Mcp2515Driver::read_bus_diag(uint8_t& eflg, uint8_t& tec, uint8_t& rec) {
     eflg = tec = rec = 0;
     if (!is_initialized()) return false;

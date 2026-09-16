@@ -79,6 +79,12 @@ public:
     /// Monotonic count of failed SPI transactions (mutex timeout or
     /// spi_device_transmit error) since init. RT-exclusive transport health.
     uint32_t spi_failure_count() const { return m_spi_fail_count.load(std::memory_order_relaxed); }
+    /// Liveness probe: read back two static configuration registers (CNF2/CNF3)
+    /// written at init. A silent MCP2515/SPI (power loss, dead MISO) reads back
+    /// 0x00/0xFF and fails, whereas a healthy idle chip still returns them.
+    /// Used to detect a dead High bus that never latches bus-off. Returns true
+    /// (cannot assess) while uninitialized/recovering or on mutex contention.
+    bool health_probe();
     bool bus_off() const { return m_bus_off.load(std::memory_order_relaxed); }
     uint32_t recovery_attempts() const { return m_recovery_attempts.load(std::memory_order_relaxed); }
     uint32_t recovery_failures() const { return m_recovery_failures.load(std::memory_order_relaxed); }

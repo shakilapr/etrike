@@ -18,9 +18,9 @@ constexpr int kCanTxGpio    =       5;
 constexpr int kCanRxGpio    =       4;
 
 // ── safety inputs ─────────────────────────────────────────────────
-// NC contact must connect this pin to 3.3 V when healthy; an external 10 kOhm
-// pull-down makes an open wire or pressed button read LOW (ESTOP active).
-constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-low, pull-down
+// NC contact must connect this pin to GND when healthy; the internal pull-up
+// makes an open wire or pressed button read HIGH (ESTOP active). Fail-safe.
+constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-high-on-open, pull-up
 constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
 constexpr int kStartBtnGpio   = 41;   // green momentary — ESTOP exit to MANUAL
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
