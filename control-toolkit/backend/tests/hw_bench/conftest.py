@@ -20,10 +20,47 @@ Override the backend URL with ``--api-url`` or ``CTK_API_URL``.
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
-from harness import LOW, HwBench
+from harness import (
+    CAN_RT_STATE_RPT,
+    ESTOP_REASON_WATCHDOG,
+    HIGH,
+    LOW,
+    HwBench,
+    signal_of,
+)
+
+# How long after entering AUTO to wait for the MTR-absent watchdog signature.
+_BYPASS_GUARD_S = 1.5
+
+
+def _fail_if_bench_bypass_inactive(client: HwBench) -> None:
+    """Fail fast (once) when the GPIO42 developer-override jumper is missing.
+
+    With ``SYSTEM_RUN_MODE=1`` the bench bypasses require GPIO42 jumpered to
+    GND. Without it ``g_bypass_mtr_absent`` is false, so the absent MTR trips
+    ``RtMtrFbkTimeout`` (``estop_reason=10``) a few hundred ms after AUTO
+    (``kMtrFbkAcquireGraceMs``) and every drive setpoint is zeroed — which
+    otherwise surfaces as ~10 opaque assertion failures across the suite.
+    """
+    client.command_power(True)
+    ok, _ = client.command_mode(True)
+    if not ok:
+        return  # not the failure signature we guard for; let tests report it
+    deadline = time.monotonic() + _BYPASS_GUARD_S
+    while time.monotonic() < deadline:
+        reason = signal_of(client.state_map().get((HIGH, CAN_RT_STATE_RPT)), "estop_reason")
+        if reason == ESTOP_REASON_WATCHDOG:
+            pytest.fail(
+                "GPIO42 developer-override jumper is NOT installed: bench bypasses "
+                "are inactive and the absent MTR trips RtMtrFbkTimeout "
+                "(estop_reason=10), which zeroes all motion. Jumper GPIO42 to GND, "
+                "reboot RT, then re-run the suite."
+            )
+        time.sleep(0.1)
 
 
 def pytest_addoption(parser) -> None:
@@ -81,6 +118,11 @@ def bench(request, api_url) -> HwBench:
     # SYS boots into ESTOP and needs one staged reset before it will accept
     # power/AUTO; normalise that here so every test starts from STANDBY.
     client.ensure_operational()
+
+    # One-time rig guard: abort with a clear message if the bench bypasses are
+    # inactive (GPIO42 not jumped), then return to a parked MANUAL state.
+    _fail_if_bench_bypass_inactive(client)
+    client.park()
 
     yield client
 

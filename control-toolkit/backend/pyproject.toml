@@ -38,4 +38,5 @@ asyncio_mode = "auto"
 markers = [
     "hardware: opt-in CANalyst-II checks; requires CTK_PHYSICAL=1 and never transmits",
     "hw_bench: live hardware bench driven through the backend REST API (tests/hw_bench)",
+    "slow: long real-time bench scenarios (H8/H9/H10); scale with ETRIKE_BENCH_SCENARIO_SCALE",
 ]

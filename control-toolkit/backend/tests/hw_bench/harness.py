@@ -46,9 +46,11 @@ CAN_RT_DRIVE_CMD = 0x204
 CAN_RT_BRAKE_CMD = 0x205
 CAN_RT_STATE_RPT = 0x210
 CAN_RT_MOTION_RPT = 0x121
+CAN_RT_DIAG_RPT = 0x620
 CAN_HOST_DRIVE_CMD = 0x300
 CAN_HOST_BRAKE_REQ = 0x301
 CAN_HOST_LIGHT_CMD = 0x302
+CAN_HOST_STEER_CMD = 0x303
 CAN_HOST_OBSTACLE_DIST = 0x400
 CAN_SYS_NODE_STATUS = 0x500
 CAN_RT_NODE_STATUS = 0x501
@@ -63,6 +65,7 @@ KEY_MODE_REQ = "hmi:hmi_mode_req"          # signal: req_mode      (0=MANUAL, 1=
 KEY_PWR_REQ = "hmi:hmi_pwr_req"            # signal: req_start     (0=OFF, 1=ON)
 KEY_ESTOP_RESET_REQ = "hmi:host_estop_reset_req"  # request_seq + reset_token
 KEY_HOST_DRIVE = "host:host_drive_cmd"     # speed_mmps / yaw_rate_mrad_s / gear
+KEY_HOST_STEER = "host:host_steer_cmd"     # steer_angle_0_1deg / angle_valid (direct steering)
 KEY_HOST_BRAKE = "host:host_brake_req"     # brake_pressure_kpa
 KEY_HOST_LIGHT = "host:host_light_cmd"     # left_turn / right_turn / brake_light / headlight
 KEY_HOST_OBSTACLE = "host:host_obstacle_dist"  # distance_mm (0xFFFFFFFF = clear)
@@ -77,6 +80,11 @@ NODE_STATES_OPERATIONAL = (NODE_STANDBY, NODE_ACTIVE)
 MODE_MANUAL = 0
 MODE_AUTO = 1
 MODE_ESTOP = 2
+
+# rt-esp32/src/config.h kEstopReasonWatchdog — raised when the MTR feedback
+# supervision trips (also the signature of "bench bypasses inactive").
+ESTOP_REASON_NONE = 0
+ESTOP_REASON_WATCHDOG = 10
 
 GEAR_N = 0
 GEAR_D = 1
@@ -133,7 +141,7 @@ class HwBench(BenchClient):
     def __init__(self, base_url: str = "http://127.0.0.1:8001") -> None:
         super().__init__(base_url=base_url)
         self._hb_ctr: dict[str, int] = {}
-        self._supervised = {KEY_MODE_REQ, KEY_PWR_REQ, KEY_ESTOP_RESET_REQ}
+        self._supervised = {KEY_MODE_REQ, KEY_PWR_REQ, KEY_ESTOP_RESET_REQ, KEY_HOST_STEER}
 
     # ── state reads ──────────────────────────────────────────────────────
     def state_map(self) -> StateMap:
@@ -288,6 +296,25 @@ class HwBench(BenchClient):
 
     def send_brake(self, kpa: int) -> bool:
         return self.inject(HIGH, KEY_HOST_BRAKE, {"brake_pressure_kpa": int(kpa)})[0]
+
+    def start_steer(
+        self,
+        angle_0_1deg: int,
+        valid: int = 1,
+        period_ms: float = 10.0,
+    ) -> Optional[str]:
+        """Stream HOST_STEER_CMD (0x303) to drive RT's direct-steering path.
+
+        A single frame goes stale after 100 ms (``kDirectSteerTimeoutMs``), so
+        the command must be periodic to keep direct authority.
+        """
+        ok, res = self.inject(
+            HIGH,
+            KEY_HOST_STEER,
+            {"steer_angle_0_1deg": int(angle_0_1deg), "angle_valid": int(valid)},
+            period_ms=period_ms,
+        )
+        return res.get("job_id") if ok else None
 
     def send_lights(self, left: int = 0, right: int = 0, brake: int = 0, head: int = 0) -> bool:
         return self.inject(
